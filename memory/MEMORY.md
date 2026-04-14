@@ -1,19 +1,7 @@
-# DesignCAD Project Memory
+# Dzign3D Project Memory
 
-## Core Architecture
-- [Project Architecture](project_architecture.md) — Stack (React 19/TypeScript/Vite/Three.js), workspace structure, store locations, key files, R3F/Three.js patterns, slicer parity status
-- [Theme System](theme_system.md) — How light/dark theming works; CSS vars via themeStore; 3D viewport theming; migration status
-- [Parameters System](parameters_system.md) — Named variable/parametric design feature; expression evaluator; dialog integration pattern
-- [UI Architecture](ui_architecture.md) — Fusion 360-style ribbon toolbar, ViewCube, canvas controls, flyout menus (portal-based), sketch palette, WorldAxes, SketchPlaneGrid
-- [Sketch Tools](sketch_tools.md) — Click sequences for each tool, plane-aware math (t1/t2 axes), preview rendering (useFrame), entity rendering (SketchGeometry), bugs fixed
-
-## Slicer
-- [Slicer Implementation](slicer_implementation.md) — Architecture, bugs fixed, full PrintProfile settings list, 16 UI sections, file import, transform controls, known remaining gaps vs Cura
-- [Slicer Profiles Reference](slicer_profiles.md) — All 3 printer profiles, 9 material profiles, 3 print profiles with key values; G-code preview color coding
-- [Cura Feature Inventory](cura_feature_inventory.md) — Complete Cura 5.12.0 feature set: 17 setting categories, 416 settings, 40+ plugins, file formats, advanced features — used as parity target
-
-## Deployment
-- [Azure Hosting](azure_hosting.md) — Azure Static Web App details, staging URL, dzign3d.com domain steps (not yet live)
-
-## Build & Debug
-- [VS 2026 Setup](vs2026_setup.md) — Visual Studio 2026 .esproj configuration, F5 debugging, SDK version pinning
+- [intent.md](intent.md) — Dzign3D goal: Fusion 360 CAD + Cura 5 slicer + Duet3D control parity; deferred dzign3d.com launch
+- [gotchas.md](gotchas.md) — Vite/rolldown `import type`, drei Grid broken on non-horizontal planes, R3F 9.6.0 min, hook-rules crash, getPlaneAxes SSoT
+- [slicer_gaps.md](slicer_gaps.md) — Slicer settings whose UI exists but engine ignores or stubs (gyroid, tree support, adaptive layers, mold, fuzzy skin, etc.)
+- [cura_categories.md](cura_categories.md) — Cura 5.12 17-category parity scoreboard with setting counts
+- [azure_hosting.md](azure_hosting.md) — Azure Static Web App resource IDs and the dzign3d.com custom-domain plan

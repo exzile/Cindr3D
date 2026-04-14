@@ -3,6 +3,14 @@ import type { Sketch, SketchEntity, SketchPoint, SketchPlane } from '../types/ca
 
 // Shared materials — created once, never duplicated per-entity
 const SKETCH_MATERIAL = new THREE.LineBasicMaterial({ color: 0x00aaff, linewidth: 2 });
+// Construction lines: orange, short dash — reference geometry, not part of profile
+const CONSTRUCTION_MATERIAL = new THREE.LineDashedMaterial({
+  color: 0xff8800, linewidth: 1, dashSize: 0.3, gapSize: 0.18,
+});
+// Centerlines: dark green/teal, long dash + small gap — used for symmetry/revolve axes
+const CENTERLINE_MATERIAL = new THREE.LineDashedMaterial({
+  color: 0x00aa55, linewidth: 1, dashSize: 0.7, gapSize: 0.2,
+});
 const EXTRUDE_MATERIAL = new THREE.MeshPhysicalMaterial({
   color: 0x8899aa,
   metalness: 0.3,
@@ -41,10 +49,12 @@ export class GeometryEngine {
   static createEntityGeometry(entity: SketchEntity, plane: SketchPlane = 'XZ'): THREE.Object3D | null {
     const material = SKETCH_MATERIAL;
     switch (entity.type) {
-      case 'line':      return this.createLine(entity.points, material);
-      case 'circle':    return this.createCircle(entity, material, plane);
-      case 'rectangle': return this.createRectangle(entity.points, material, plane);
-      case 'arc':       return this.createArc(entity, material, plane);
+      case 'line':              return this.createLine(entity.points, material);
+      case 'construction-line': return this.createDashedLine(entity.points, CONSTRUCTION_MATERIAL);
+      case 'centerline':        return this.createDashedLine(entity.points, CENTERLINE_MATERIAL);
+      case 'circle':            return this.createCircle(entity, material, plane);
+      case 'rectangle':         return this.createRectangle(entity.points, material, plane);
+      case 'arc':               return this.createArc(entity, material, plane);
       default: return null;
     }
   }
@@ -54,6 +64,16 @@ export class GeometryEngine {
     const vertices = new Float32Array(points.flatMap(p => [p.x, p.y, p.z]));
     geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
     return new THREE.Line(geometry, material);
+  }
+
+  private static createDashedLine(points: SketchPoint[], material: THREE.LineDashedMaterial): THREE.Line {
+    const geometry = new THREE.BufferGeometry();
+    const vertices = new Float32Array(points.flatMap(p => [p.x, p.y, p.z]));
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    const line = new THREE.Line(geometry, material);
+    // Required for LineDashedMaterial — computes per-vertex distances along the line
+    line.computeLineDistances();
+    return line;
   }
 
   private static createCircle(entity: SketchEntity, material: THREE.LineBasicMaterial, plane: SketchPlane): THREE.Line {

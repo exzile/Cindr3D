@@ -1,7 +1,98 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import * as THREE from 'three';
 import type { Tool, ViewMode, SketchPlane, Sketch, SketchEntity, Feature, Parameter } from '../types/cad';
 import { evaluateExpression, resolveParameters } from '../utils/expressionEval';
+import { GeometryEngine } from '../engine/GeometryEngine';
+
+// ── IndexedDB storage adapter (same pattern as slicerStore) ────────────────
+function openCadDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('dzign3d-cad', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('kv');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+const idbStorage = {
+  getItem: async (name: string): Promise<string | null> => {
+    try {
+      const db = await openCadDB();
+      return new Promise((resolve) => {
+        const tx  = db.transaction('kv', 'readonly');
+        const req = tx.objectStore('kv').get(name);
+        req.onsuccess = () => { db.close(); resolve(req.result ?? null); };
+        req.onerror   = () => { db.close(); resolve(null); };
+      });
+    } catch { return null; }
+  },
+  setItem: async (name: string, value: string): Promise<void> => {
+    try {
+      const db = await openCadDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('kv', 'readwrite');
+        tx.objectStore('kv').put(value, name);
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror    = () => { db.close(); reject(tx.error); };
+      });
+    } catch { /* storage unavailable — silently skip */ }
+  },
+  removeItem: async (name: string): Promise<void> => {
+    try {
+      const db = await openCadDB();
+      const tx = db.transaction('kv', 'readwrite');
+      tx.objectStore('kv').delete(name);
+      db.close();
+    } catch { /* ignore */ }
+  },
+};
+
+// ── THREE.js serialization helpers ─────────────────────────────────────────
+/** Serialize a Sketch for JSON storage — converts THREE.Vector3 fields to {x,y,z} */
+function serializeSketch(sketch: Sketch): any {
+  return {
+    ...sketch,
+    planeNormal: { x: sketch.planeNormal.x, y: sketch.planeNormal.y, z: sketch.planeNormal.z },
+    planeOrigin: { x: sketch.planeOrigin.x, y: sketch.planeOrigin.y, z: sketch.planeOrigin.z },
+  };
+}
+
+/** Reconstruct THREE.Vector3 fields on a deserialized Sketch */
+function deserializeSketch(raw: any): Sketch {
+  return {
+    ...raw,
+    planeNormal: new THREE.Vector3(raw.planeNormal?.x ?? 0, raw.planeNormal?.y ?? 1, raw.planeNormal?.z ?? 0),
+    planeOrigin: new THREE.Vector3(raw.planeOrigin?.x ?? 0, raw.planeOrigin?.y ?? 0, raw.planeOrigin?.z ?? 0),
+  };
+}
+
+/** Serialize a Feature — strip the non-serializable mesh */
+function serializeFeature(feature: Feature): any {
+  const { mesh, ...rest } = feature;
+  return rest;
+}
+
+/** Rebuild a Feature's mesh from its sketch data */
+function rebuildFeatureMesh(feature: Feature, sketches: Sketch[]): Feature {
+  if (feature.mesh) return feature; // already has a mesh
+  const sketch = feature.sketchId ? sketches.find(s => s.id === feature.sketchId) : undefined;
+  if (!sketch) return feature;
+
+  try {
+    if (feature.type === 'extrude') {
+      const distance = (feature.params.distance as number) || 10;
+      feature.mesh = GeometryEngine.extrudeSketch(sketch, distance) ?? undefined;
+    } else if (feature.type === 'revolve') {
+      const angle = ((feature.params.angle as number) || 360) * (Math.PI / 180);
+      const axis = new THREE.Vector3(0, 1, 0);
+      feature.mesh = GeometryEngine.revolveSketch(sketch, angle, axis) ?? undefined;
+    }
+  } catch {
+    // Geometry reconstruction failed — feature will render without mesh
+  }
+  return feature;
+}
 
 interface CADState {
   // Tool state
@@ -71,6 +162,10 @@ interface CADState {
   // Camera target orientation (for ViewCube animated transitions)
   cameraTargetQuaternion: THREE.Quaternion | null;
   setCameraTargetQuaternion: (q: THREE.Quaternion | null) => void;
+  // Orbit pivot to lerp toward during the next animation (e.g. sketch origin
+  // when entering sketch mode). Captured by CameraController on animation start.
+  cameraTargetOrbit: THREE.Vector3 | null;
+  setCameraTargetOrbit: (v: THREE.Vector3 | null) => void;
 
   // Extrude dialog
   showExtrudeDialog: boolean;
@@ -85,6 +180,11 @@ interface CADState {
   // Active feature dialog
   activeDialog: string | null;
   setActiveDialog: (dialog: string | null) => void;
+
+  // Measure
+  measurePoints: { x: number; y: number; z: number }[];
+  setMeasurePoints: (pts: { x: number; y: number; z: number }[]) => void;
+  clearMeasure: () => void;
 
   // Status
   statusMessage: string;
@@ -119,9 +219,9 @@ function getPlaneNormal(plane: SketchPlane): THREE.Vector3 {
   }
 }
 
-export const useCADStore = create<CADState>((set, get) => ({
+export const useCADStore = create<CADState>()(persist((set, get) => ({
   activeTool: 'select',
-  setActiveTool: (tool) => set({ activeTool: tool }),
+  setActiveTool: (tool) => set({ activeTool: tool, measurePoints: [] }),
 
   viewMode: '3d',
   setViewMode: (mode) => set({ viewMode: mode }),
@@ -168,6 +268,7 @@ export const useCADStore = create<CADState>((set, get) => ({
       viewMode: 'sketch',
       activeTool: 'line',
       cameraTargetQuaternion: targetQuat,
+      cameraTargetOrbit: new THREE.Vector3(0, 0, 0),
       statusMessage: `Sketching on ${plane} plane`,
     });
   },
@@ -195,6 +296,7 @@ export const useCADStore = create<CADState>((set, get) => ({
       viewMode: 'sketch',
       activeTool: 'line',
       cameraTargetQuaternion: targetQuat,
+      cameraTargetOrbit: new THREE.Vector3(0, 0, 0),
       statusMessage: `Editing ${sketch.name} on ${sketch.plane} plane`,
     });
   },
@@ -325,6 +427,8 @@ export const useCADStore = create<CADState>((set, get) => ({
 
   cameraTargetQuaternion: null,
   setCameraTargetQuaternion: (q) => set({ cameraTargetQuaternion: q }),
+  cameraTargetOrbit: null,
+  setCameraTargetOrbit: (v) => set({ cameraTargetOrbit: v }),
 
   showExtrudeDialog: false,
   setShowExtrudeDialog: (show) => set({ showExtrudeDialog: show }),
@@ -336,6 +440,10 @@ export const useCADStore = create<CADState>((set, get) => ({
 
   activeDialog: null,
   setActiveDialog: (dialog) => set({ activeDialog: dialog }),
+
+  measurePoints: [],
+  setMeasurePoints: (pts) => set({ measurePoints: pts }),
+  clearMeasure: () => set({ measurePoints: [] }),
 
   statusMessage: 'Ready',
   setStatusMessage: (message) => set({ statusMessage: message }),
@@ -375,5 +483,38 @@ export const useCADStore = create<CADState>((set, get) => ({
   },
   evaluateExpression: (expr) => {
     return evaluateExpression(expr, get().parameters);
+  },
+}),
+{
+  name: 'dzign3d-cad',
+  storage: idbStorage,
+
+  // Only persist design data and user preferences — NOT ephemeral UI state
+  partialize: (state) => ({
+    sketches: state.sketches.map(serializeSketch),
+    features: state.features.map(serializeFeature),
+    parameters: state.parameters,
+    // User preferences
+    gridSize: state.gridSize,
+    snapEnabled: state.snapEnabled,
+    gridVisible: state.gridVisible,
+    units: state.units,
+    visualStyle: state.visualStyle,
+    showEnvironment: state.showEnvironment,
+    showShadows: state.showShadows,
+    showGroundPlane: state.showGroundPlane,
+  }),
+
+  // After loading from IDB, reconstruct THREE.js objects and rebuild feature meshes
+  onRehydrateStorage: () => (state) => {
+    if (!state) return;
+    // Reconstruct THREE.Vector3 fields on sketches
+    if (state.sketches) {
+      state.sketches = state.sketches.map((s: any) => deserializeSketch(s));
+    }
+    // Rebuild feature meshes from sketch + params
+    if (state.features && state.sketches) {
+      state.features = state.features.map((f: any) => rebuildFeatureMesh(f, state.sketches));
+    }
   },
 }));

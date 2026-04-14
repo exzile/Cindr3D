@@ -1,13 +1,13 @@
-import Viewport from './components/Viewport';
-import Toolbar from './components/Toolbar';
-import Timeline from './components/Timeline';
-import ComponentTree from './components/ComponentTree';
-import StatusBar from './components/StatusBar';
-import ExtrudeDialog from './components/ExtrudeDialog';
-import ExportDialog from './components/ExportDialog';
-import DuetPrinterPanel from './components/DuetPrinterPanel';
-import DuetSettings from './components/DuetSettings';
-import SlicerWorkspace from './components/SlicerWorkspace';
+import Viewport from './components/viewport/Viewport';
+import Toolbar from './components/toolbar/Toolbar';
+import Timeline from './components/panels/Timeline';
+import ComponentTree from './components/panels/ComponentTree';
+import StatusBar from './components/panels/StatusBar';
+import ExtrudeDialog from './components/dialogs/ExtrudeDialog';
+import ExportDialog from './components/dialogs/ExportDialog';
+import DuetPrinterPanel from './components/printer/DuetPrinterPanel';
+import DuetSettings from './components/printer/DuetSettings';
+import SlicerWorkspace from './components/slicer/SlicerWorkspace';
 import {
   ShellDialog,
   LinearPatternDialog,
@@ -17,8 +17,8 @@ import {
   HoleDialog,
   ConstructionPlaneDialog,
   JointDialog,
-} from './components/FeatureDialogs';
-import ParametersPanel from './components/ParametersPanel';
+} from './components/dialogs/FeatureDialogs';
+import ParametersPanel from './components/panels/ParametersPanel';
 import { useCADStore } from './store/cadStore';
 import './App.css';
 

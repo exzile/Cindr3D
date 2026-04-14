@@ -44,7 +44,9 @@
       "Bash(node -e \"const l = require\\('lucide-react'\\); const names = Object.keys\\(l\\).filter\\(k => /^[A-Z]/.test\\(k\\)\\); const want = ['PenLine','PenTool','Pen','Pencil','Spline','CircleDot','RectangleHorizontal','Hexagon','Equal','ArrowLeftRight','ArrowUpDown','FlipHorizontal2','Tangent','Focus','Dot','GitMerge','CornerDownRight','ChevronsRight','ScanLine','VectorSquare','Pentagon','Waypoints']; want.forEach\\(n => console.log\\(n, !!l[n]\\)\\);\")",
       "Bash(npm info:*)",
       "Bash(npx npm-check-updates:*)",
-      "Bash(npm list:*)"
+      "Bash(npm list:*)",
+      "Bash(dir \"C:/Users/joeyp/source/repos/exzile/DesignCAD\")",
+      "Bash(node_modules/.bin/tsc --noEmit)"
     ]
   }
 }
