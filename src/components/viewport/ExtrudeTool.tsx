@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { useCADStore, type ExtrudeDirection } from '../../store/cadStore';
 import { GeometryEngine } from '../../engine/GeometryEngine';
 import type { Sketch } from '../../types/cad';
+import { disposeGeometries } from '../../utils/threeDisposal';
 
 // Shared materials — created once (module-level). Never dispose these.
 const PROFILE_MATERIAL = new THREE.MeshBasicMaterial({
@@ -296,10 +297,7 @@ function FaceHighlight({ boundary }: { boundary: THREE.Vector3[] }) {
   }, [boundary]);
 
   useEffect(() => {
-    return () => {
-      fillGeom?.dispose();
-      outlineGeom?.dispose();
-    };
+    return () => disposeGeometries(fillGeom, outlineGeom);
   }, [fillGeom, outlineGeom]);
 
   if (!fillGeom || !outlineGeom) return null;

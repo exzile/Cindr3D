@@ -22,18 +22,11 @@ import {
 import { usePrinterStore } from '../../store/printerStore';
 import type { DuetFileInfo, DuetGCodeFileInfo } from '../../types/duet';
 import DuetFileEditor from './DuetFileEditor';
+import { formatDurationWords, formatFileSize, formatFilamentLength } from '../../utils/printerFormat';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function formatFileSize(bytes: number): string {
-  if (bytes <= 0) return '--';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return '--';
@@ -52,21 +45,8 @@ function formatDate(dateStr: string): string {
   }
 }
 
-function formatDuration(seconds: number | undefined | null): string {
-  if (!seconds || seconds <= 0) return '--';
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (h > 0) return `${h}h ${m}m ${s}s`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-}
-
-function formatFilament(mm: number): string {
-  if (!mm || mm <= 0) return '--';
-  if (mm >= 1000) return `${(mm / 1000).toFixed(2)} m`;
-  return `${mm.toFixed(1)} mm`;
-}
+const formatDuration = (seconds: number | undefined | null) => formatDurationWords(seconds, '--', true);
+const formatFilament = (mm: number) => formatFilamentLength(mm, '--');
 
 function isGCodeFile(name: string): boolean {
   const lower = name.toLowerCase();

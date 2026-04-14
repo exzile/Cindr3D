@@ -1,11 +1,26 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { X, Download } from 'lucide-react';
+import { Vector3 } from 'three';
+import type { Mesh, Object3D } from 'three';
 import { useCADStore } from '../../store/cadStore';
 import { usePrinterStore } from '../../store/printerStore';
 import { GeometryEngine } from '../../engine/GeometryEngine';
 import { STLExporter, ThreeMFExporter } from '../../engine/STLExporter';
 import { GCodeGenerator, DEFAULT_SLICER_SETTINGS } from '../../engine/GCodeGenerator';
 import type { SlicerSettings } from '../../engine/GCodeGenerator';
+
+type ExportFormat = 'stl-binary' | 'stl-ascii' | '3mf' | 'obj' | 'gcode';
+type InfillPattern = SlicerSettings['infillPattern'];
+
+function getRevolveAxisVector(axis: unknown): Vector3 {
+  switch (axis) {
+    case 'X': return new Vector3(1, 0, 0);
+    case 'Z': return new Vector3(0, 0, 1);
+    case 'Y':
+    default:
+      return new Vector3(0, 1, 0);
+  }
+}
 
 export default function ExportDialog() {
   const showExportDialog = useCADStore((s) => s.showExportDialog);
@@ -22,16 +37,23 @@ export default function ExportDialog() {
   const [sendToPrinter, setSendToPrinter] = useState(false);
   const [startPrintAfterUpload, setStartPrintAfterUpload] = useState(false);
 
-  type ExportFormat = 'stl-binary' | 'stl-ascii' | '3mf' | 'obj' | 'gcode';
-  type InfillPattern = SlicerSettings['infillPattern'];
-
-  if (!showExportDialog) return null;
+  const disposeTransientMesh = (mesh: Object3D, disposable: boolean) => {
+    if (!disposable) return;
+    const m = mesh as Mesh;
+    m.geometry?.dispose?.();
+    const mats = m.material;
+    if (Array.isArray(mats)) {
+      mats.forEach((mat) => mat?.dispose?.());
+    } else {
+      mats?.dispose?.();
+    }
+  };
 
   const updateSetting = <K extends keyof SlicerSettings>(key: K, value: SlicerSettings[K]) => {
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  const getMeshForExport = () => {
+  const getMeshForExport = (): { mesh: Object3D; disposable: boolean } | null => {
     // Collect all visible extruded/revolved bodies
     for (const feature of features) {
       if (!feature.visible) continue;
@@ -39,24 +61,35 @@ export default function ExportDialog() {
       if (feature.type === 'extrude' && feature.sketchId) {
         const sketch = sketches.find(s => s.id === feature.sketchId);
         if (!sketch) continue;
-        const distance = feature.params.distance as number || 10;
+        const distance = typeof feature.params.distance === 'number' ? feature.params.distance : 10;
         const mesh = GeometryEngine.extrudeSketch(sketch, distance);
-        if (mesh) return mesh;
+        if (mesh) return { mesh, disposable: true };
+      }
+
+      if (feature.type === 'revolve' && feature.sketchId) {
+        const sketch = sketches.find(s => s.id === feature.sketchId);
+        if (!sketch) continue;
+        const angleDeg = typeof feature.params.angle === 'number' ? feature.params.angle : 360;
+        const axis = getRevolveAxisVector(feature.params.axis);
+        const mesh = GeometryEngine.revolveSketch(sketch, (angleDeg * Math.PI) / 180, axis);
+        if (mesh) return { mesh, disposable: true };
       }
 
       if (feature.type === 'import' && feature.mesh) {
-        return feature.mesh;
+        return { mesh: feature.mesh, disposable: false };
       }
     }
     return null;
   };
 
   const handleExport = async () => {
-    const mesh = getMeshForExport();
-    if (!mesh) {
+    const source = getMeshForExport();
+    if (!source) {
       setStatusMessage('No geometry to export. Create an extrusion or import a model first.');
       return;
     }
+
+    const { mesh, disposable } = source;
 
     mesh.updateMatrixWorld(true);
 
@@ -127,17 +160,26 @@ export default function ExportDialog() {
       setShowExportDialog(false);
     } catch (err) {
       setStatusMessage(`Export failed: ${(err as Error).message}`);
+    } finally {
+      disposeTransientMesh(mesh, disposable);
     }
   };
 
-  const estimate = (() => {
-    if (format !== 'gcode') return null;
-    const mesh = getMeshForExport();
-    if (!mesh) return null;
+  const estimate = useMemo(() => {
+    if (!showExportDialog || format !== 'gcode') return null;
+    const source = getMeshForExport();
+    if (!source) return null;
+    const { mesh, disposable } = source;
     mesh.updateMatrixWorld(true);
     const gen = new GCodeGenerator(settings);
-    return gen.estimate(mesh);
-  })();
+    const result = gen.estimate(mesh);
+
+    disposeTransientMesh(mesh, disposable);
+
+    return result;
+  }, [showExportDialog, format, settings, features, sketches]);
+
+  if (!showExportDialog) return null;
 
   return (
     <div className="dialog-overlay">

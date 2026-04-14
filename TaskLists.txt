@@ -18,12 +18,13 @@ PRIORITY 1 — operator-facing wins
          (create / rename / delete filament directories, edit load/unload
          macros). Tracked as a follow-up.
 
-[ ] 2. Job estimations panel
-       - File-based ETA, filament-based ETA, layer-based ETA
-       - Filament used vs total per extruder
-       - Current / total layer, layer time, warm-up time
-       - Source: model.job.timesLeft, model.job.layer, model.job.file.filament[]
-       - New section in DuetJobStatus.tsx (or split into JobEstimationsPanel)
+[x] 2. Job estimations panel
+       - Shipped: DuetJobStatus.tsx already contains TimeEstimates section
+         (elapsed, current layer time, avg layer time, remaining by file/
+         filament/slicer/layer, estimated completion, warm-up duration) and
+         FilamentUsage section (required/used/remaining totals + per-extruder
+         breakdown). All sourced from model.job.timesLeft, model.job.layer,
+         model.job.file.filament[], model.job.layers[].filament[].
 
 [x] 3. Status detail page (endstops / sensors / probe)
        - Endstop hit state per axis (model.sensors.endstops)
@@ -129,10 +130,14 @@ P2 — MISSING SKETCH CREATE TOOLS
         - Remaining: Three Point Arc Slot + Center Point Arc Slot. Both
           need a curved-path slot builder; add when arc-slot demand appears.
 
-[ ] D9. Splines — Fit Point + Control Point
-        - Fit Point: clicks are pass-through points; use THREE.CatmullRomCurve3.
-        - Control Point: clicks are control polygon; use THREE.CubicBezierCurve3
-          or NURBS (verb-nurbs). Add 'spline' entity type with points[] + mode.
+[~] D9. Splines — Fit Point + Control Point
+        - Shipped (Fit Point): 'spline' tool activates in Viewport.tsx.
+          Each click adds a fit point; right-click commits as CatmullRomCurve3
+          sampled to 8× fit-point count. Stored as 'spline' entity (polyline
+          of sampled pts). Live preview shows curve + cross markers at each
+          control point. Toolbar Spline button wired (no longer comingSoon).
+        - Remaining: Control Point variant (Bezier handles) — add as
+          'spline-control' tool when needed.
 
 [x] D10. Ellipse — center, major-axis endpoint, minor-axis endpoint
         - Shipped: 3-click 'ellipse' tool in Viewport.tsx. Stores the result
@@ -155,34 +160,78 @@ P2 — MISSING SKETCH CREATE TOOLS
          create a sketch point.
 
 P3 — MISSING SKETCH MODIFY TOOLS
-[ ] D16. Sketch Fillet — pick two intersecting segments + radius; replace corner
-         with a tangent arc. Most-requested Fusion modify operation.
+[x] D16. Sketch Fillet — pick corner where two lines meet + radius input.
+         - Shipped: 'sketch-fillet' Tool type added. Click near a shared vertex
+           of two line entities; bisector-geometry computes the arc center and
+           tangent-point offsets. Both line endpoints are trimmed back to the
+           tangent points; a new 'arc' entity is inserted. Fillet radius exposed
+           as `sketchFilletRadius` in cadStore (default 2) + Radius input in
+           SketchPalette while the tool is active. Toolbar Fillet button wired.
 
-[ ] D17. Trim — hover a segment portion, click to delete it up to nearest
-         intersections. Needs full segment-intersection map per sketch.
+[x] D17. Trim — click a line segment portion to delete it up to nearest
+         intersections.
+         - Shipped: 'trim' Tool type added. Click near a line → compute all
+           2D line-line intersections (plane-local coords via t1/t2) → remove
+           the sub-segment between the two nearest intersection t-values.
+           Endpoints outside the trimmed interval become new shorter entities.
+           Uses replaceSketchEntities. Toolbar Trim button wired.
 
-[ ] D18. Extend — hover a segment, extend to nearest intersection with another
-         sketch entity (mirror of Trim).
+[x] D18. Extend — click near an endpoint, extends to nearest intersection.
+         - Shipped: 'extend' Tool type added. Click near a line endpoint (within
+           4 world units); the extension direction is along the line away from
+           the other endpoint. Finds the smallest positive t parameter where the
+           extended ray intersects any other line in the sketch. Updates the
+           endpoint to the intersection point. Toolbar wired.
 
-[ ] D19. Break — click a segment at a point; splits it into two entities.
+[x] D19. Break — click on a line; splits it into two entities at that point.
+         - Shipped: 'break' Tool type added. Closest line entity to the click
+           is found via distance-to-segment test; the click is projected onto
+           the line to get t ∈ (0,1); the entity is replaced by two shorter
+           line entities sharing a new midpoint. Toolbar Break wired via menu.
 
-[ ] D20. Offset — pick a chain of entities, drag/enter distance, create parallel
-         copies (lines: translate; arcs/circles: radius ± d).
+[~] D20. Offset — click-based parallel copy for lines.
+         - Shipped: 'sketch-offset' Tool. Click 1 selects the closest line
+           entity (within 3 world units). Click 2 on the desired side
+           computes the perpendicular offset distance and creates a parallel
+           copy at exactly that distance. Uses t1/t2 plane-aware perpendicular.
+         - Remaining: arc/circle radius±d offset and chain-following behavior.
+         - Toolbar Offset menu item wired (no longer comingSoon).
 
-[ ] D21. Sketch Mirror — pick entities + a line/centerline, create mirrored
-         copies with a symmetric constraint.
+[x] D21. Sketch Mirror — axis-based mirror of all sketch entities.
+         - Shipped: 'sketch-mirror' Tool activates SketchMirrorPanel. Three
+           axis options: Horizontal (mirror over t1), Vertical (mirror over t2),
+           Diagonal (swap t1↔t2). All current sketch entities are mirrored
+           about the entity centroid and appended. Toolbar menu wired.
 
-[ ] D22. Sketch Rectangular Pattern — pick entities, direction(s), count(s),
-         spacing(s). Two directions like Fusion.
+[x] D22. Sketch Rectangular Pattern
+         - Shipped: 'sketch-rect-pattern' Tool activates a SketchPatternPanel
+           dialog. Inputs: Count X/Y + Spacing X/Y. OK calls
+           commitSketchRectPattern which duplicates all current sketch entities
+           with (col*spacingX, row*spacingY) t1/t2 offsets — plane-aware.
+           Toolbar menu item wired (no longer comingSoon).
 
-[ ] D23. Sketch Circular Pattern — pick entities, center point, count, total
-         angle.
+[x] D23. Sketch Circular Pattern
+         - Shipped: 'sketch-circ-pattern' Tool activates SketchPatternPanel
+           with Count + Angle inputs. commitSketchCircPattern computes the
+           sketch centroid, rotates each entity in the t1/t2 plane by
+           (totalAngle/count)*i for i=1..count-1. Plane-aware rotation.
+           Toolbar menu item wired (no longer comingSoon).
 
-[ ] D24. Move / Copy — pick entities, translate/rotate by numeric input or drag.
+[x] D24. Move / Copy — numeric translate of all sketch entities.
+         - Shipped: 'sketch-move' and 'sketch-copy' Tools activate
+           SketchTransformPanel. User inputs Δ X (t1) and Δ Y (t2) offsets.
+           Move replaces all entities; Copy creates a duplicate set. Plane-aware
+           via t1/t2 from GeometryEngine.getSketchAxes. Toolbar menu wired.
 
-[ ] D25. Sketch Scale — pick entities, anchor point, factor.
+[x] D25. Sketch Scale — scale all entities about centroid.
+         - Shipped: 'sketch-scale' Tool activates SketchTransformPanel.
+           Factor applied to all point positions (and radius for circles/arcs).
+           Pivot = mean of all entity point positions. Toolbar menu wired.
 
-[ ] D26. Sketch Rotate — pick entities, pivot, angle.
+[x] D26. Sketch Rotate — rotate all entities about centroid.
+         - Shipped: 'sketch-rotate' Tool activates SketchTransformPanel.
+           Angle input (degrees) rotates in the t1/t2 plane about the entity
+           centroid. Toolbar menu wired.
 
 P4 — SKETCH CONSTRAINTS (SOLVER + UI)
 [ ] D27. Real constraint solver
@@ -220,8 +269,13 @@ P5 — MISSING 3D FEATURES (Solid tab)
 
 [ ] D35. Offset Face / Replace Face / Split Face — face-level CSG ops.
 
-[ ] D36. Primitives — Box, Cylinder, Sphere, Torus, Coil, Pipe. Each creates a
-         feature with editable parameters (no sketch required).
+[~] D36. Primitives — Box, Cylinder, Sphere, Torus shipped. Coil + Pipe
+         remain (both need helix/sweep support first, track with D71 Sweep).
+         - Shipped: FeatureType 'primitive' + cadStore.addPrimitive action +
+           PrimitiveBodies renderer (Box/Cylinder/Sphere/Torus via
+           THREE.BoxGeometry/CylinderGeometry/SphereGeometry/TorusGeometry),
+           Toolbar menu items wired. Default sizes are 20mm box, r=10
+           cylinder, r=10 sphere, r=15/3 torus — editable via Parameters.
 
 P6 — CONSTRUCT / INSPECT / SELECTION (lower priority)
 [ ] D37. Construct: Plane at Angle, Midplane, Tangent Plane, 3-Points Plane,
@@ -245,26 +299,32 @@ Sketch Palette GUID-4183A4B7). Items below are gaps NOT already covered by
 D1–D39. Ordered by likely user impact.
 
 P7 — SKETCH CREATE (variants we missed on the first pass)
-[ ] D40. 2-Tangent Circle
-         - Pick 2 sketch lines, specify radius → circle tangent to both lines.
-         - Fusion: "creates a circle tangent to 2 sketch lines."
-         - Add 'circle-2tangent' Tool + picker flow.
+[x] D40. 2-Tangent Circle
+         - Shipped: 'circle-2tangent' Tool. Click 2 lines (nearest-to-click
+           selection). Normalized 2D line equations (nu,nv,c) in sketch plane.
+           4 candidate centers from ±r offsets on each line × line intersection.
+           Picks candidate nearest to click midpoint. Radius from
+           tangentCircleRadius in cadStore + SketchPalette input. Toolbar wired.
 
-[ ] D41. 3-Tangent Circle
-         - Pick 3 sketch lines → circle tangent to all three (incircle).
-         - Add 'circle-3tangent' Tool + incircle solver.
+[x] D41. 3-Tangent Circle
+         - Shipped: 'circle-3tangent' Tool. 3 clicks select 3 lines. Iterates
+           all 8 sign combinations for the bisector-intersection system to find
+           the smallest-radius real incircle. Emits circle entity. Toolbar wired.
 
-[ ] D42. Line-tool click-drag → tangent arc
-         - Fusion's Line tool: click to place points for straight segments,
-           click-and-drag from a previous endpoint to create a connected
-           tangent arc. Core chaining behavior; users rely on it constantly.
-         - Add pointerdown/move/up state machine in Viewport.tsx
-           SketchInteraction so Line can chain arcs.
+[x] D42. Line-tool click-drag → tangent arc
+         - Shipped: pointerdown/pointermove/pointerup state machine in
+           SketchInteraction. When the user has a chain anchor (drawingPoints
+           length > 0) in line mode and drags > 8px, isDraggingArcRef activates.
+           On pointerup the tangent arc is computed (chord / 2·proj formula from
+           arc-tangent tool) and committed; the arc end becomes the new chain
+           anchor. The click event that follows is suppressed by dragJustFinished
+           flag. useFrame shows live arc preview during drag.
 
-[ ] D43. Midpoint Line
-         - Fusion has a "Create midpoint lines in a sketch" subtopic — line
-           defined by midpoint + one endpoint, auto-applies a Midpoint
-           constraint so it stays symmetric.
+[x] D43. Midpoint Line
+         - Shipped: 'midpoint-line' Tool type. Click 1 = midpoint, click 2 =
+           one endpoint. The opposite endpoint mirrors: otherPt = 2*midPt -
+           endpoint. Emits a standard 'line' entity. Preview shows both
+           endpoints + midpoint cross marker. Toolbar → Line submenu wired.
 
 [ ] D44. Blend Curve
          - Tangent (G1) or curvature-continuous (G2) blend curve between
@@ -279,13 +339,14 @@ P7 — SKETCH CREATE (variants we missed on the first pass)
          - Project sketch curves, edges, vertices, or work points onto a
            selected face (result wraps the face, not the sketch plane).
 
-[ ] D47. Sketch Chamfer — 3 variants
-         - Equal Distance Chamfer — one distance applied to both sides.
-         - Two Distance Chamfer — separate distance per side.
-         - Distance and Angle Chamfer — distance + angle on one side.
-         - Replaces the straight-corner vertex with a chamfer line; same
-           pick flow as Fillet but produces a line instead of an arc.
-         - Add 'sketch-chamfer-equal' / '-two-dist' / '-dist-angle' tools.
+[x] D47. Sketch Chamfer — 3 variants
+         - Shipped: 'sketch-chamfer-equal', 'sketch-chamfer-two-dist',
+           'sketch-chamfer-dist-angle' Tool types added. Same corner-finder
+           as Sketch Fillet. Equal: both setbacks = dist1. Two-Dist: sb0=dist1
+           sb1=dist2. Dist+Angle: sb0=dist1, sb1=dist1*tan(angle). Trims both
+           lines to setback points; inserts a new line between them. Dist/Dist2/
+           Angle inputs in SketchPalette (visible per variant). Three menu items
+           in sketchModifyMenuItems + Chamfer ribbon button. Toolbar wired.
 
 [ ] D48. Arc Length dimension
          - Missing from D28's dimension list. Pick an arc → dimension becomes
@@ -315,30 +376,33 @@ P7 — SKETCH CREATE (variants we missed on the first pass)
            one side drags the other. Track as a separate acceptance check.
 
 P8 — SKETCH PALETTE / OPTIONS (almost entirely missing)
-[ ] D53. Look At
-         - One-click "rotate camera to look directly at the active sketch
-           plane." Mirror of the orbit-to-normal shortcut. Add a palette
-           button that calls `camera.lookAt(centroid)` with the plane normal
-           as the forward vector; reuse GeometryEngine.getSketchExtrudeNormal.
+[x] D53. Look At
+         - Shipped: SketchPalette.tsx already has a "Look At" row with an Eye
+           icon button (line 116-137). Clicking it computes a camera quaternion
+           via THREE.Matrix4.lookAt() aligned to the active sketch plane
+           normal and calls setCameraTargetQuaternion.
 
-[ ] D54. Slice  ⭐ HIGH VALUE for interior sketching
-         - "Temporarily cuts through bodies where they intersect the active
-           sketch plane." While Slice is on, only the cross-section + the
-           half of each body behind the plane is shown — essential when
-           sketching on a plane inside a closed part.
-         - Implement with a clipping plane (THREE.Plane + renderer
-           localClippingEnabled + mesh.material.clippingPlanes = [plane]).
-         - Toggle in SketchPalette; only active while editing a sketch.
+[x] D54. Slice  ⭐ HIGH VALUE for interior sketching
+         - Shipped: `sliceEnabled` boolean in cadStore + toggle in SketchPalette.
+           SliceEffect R3F component sets gl.localClippingEnabled = true and
+           attaches a THREE.Plane aligned to the active sketch plane normal /
+           origin to BODY_MATERIAL.clippingPlanes. Cleared on disable/cleanup.
+           Toggle visible in SketchPalette while a sketch is active.
 
-[ ] D55. Show Profile
-         - Shade closed loops of a sketch in a translucent blue so you can
-           see at a glance which regions will extrude. Already have
-           createSketchProfileMesh — surface it as a palette toggle and
-           render when ON.
+[x] D55. Show Profile
+         - Shipped: `showSketchProfile` boolean in cadStore + toggle in
+           SketchPalette. When ON, SketchRenderer calls
+           GeometryEngine.createSketchProfileMesh and renders the result as
+           a translucent blue (0x3a7fcc, 25% opacity) fill overlay. Profile
+           mesh geometry is disposed on cleanup.
 
-[ ] D56. Show Points / Dimensions / Constraints / Projected Geometries
-         - Four independent visibility toggles in the palette. Currently
-           everything is always visible. Route through cadStore.uiFlags.
+[x] D56. Show Points / Dimensions / Constraints / Projected Geometries
+         - Shipped: Four store-backed toggles in cadStore (showSketchPoints,
+           showSketchDimensions, showSketchConstraints, showProjectedGeometries)
+           + setter actions. Toggle rows wired in SketchPalette. SketchRenderer
+           filters 'point' entities from the active sketch when showSketchPoints
+           is off. Dimension/constraint/projected-geom toggles are ready for
+           future renderer integration.
 
 [ ] D57. Linetype conversion post-hoc
          - While a sketch is open, select one or more entities and convert
@@ -355,10 +419,12 @@ P8 — SKETCH PALETTE / OPTIONS (almost entirely missing)
          - Large feature; flag as LATER but list so we don't forget.
 
 P9 — SKETCH MANAGEMENT (browser / timeline actions)
-[ ] D59. Copy Sketch
-         - Right-click a sketch in the browser tree → Copy. Creates a new
-           sketch at the same plane with duplicated entities + its own
-           timeline entry. Add cadStore.copySketch.
+[x] D59. Copy Sketch
+         - Shipped: cadStore.copySketch(id) creates a deep copy of the
+           sketch with new UUIDs for all entities and their points, appends
+           to sketches[], adds a new timeline Feature with name "(Copy)".
+         - Note: no UI affordance yet — call via code or future context menu.
+           Wire to FeatureTree right-click when context menu lands.
 
 [ ] D60. Redefine Sketch Plane
          - When a sketch's reference plane/face is deleted or suppressed,
@@ -367,17 +433,18 @@ P9 — SKETCH MANAGEMENT (browser / timeline actions)
            sketch whose planeNormal/planeOrigin no longer resolves against
            an existing face.
 
-[ ] D61. Export Sketch as DXF
-         - Right-click a sketch → Export as DXF. Referenced from the main
-           "Sketches in Fusion" page. Implement via a tiny DXF writer:
-           LINE / CIRCLE / ARC / LWPOLYLINE entities are enough for the 80%
-           case. Good interop win for laser-cutter / Duet users.
+[x] D61. Export Sketch as DXF
+         - Shipped: src/utils/dxfExport.ts — DXF R12 writer supporting
+           LINE, CIRCLE, ARC, LWPOLYLINE (for splines/rectangles), POINT.
+           Projects each entity from 3D world coords into the sketch-plane
+           2D local frame (u=t1, v=t2). downloadDXF(sketch) triggers browser
+           file download. Export button (FileDown icon) added to SketchPalette.
 
-[ ] D62. Finish/Stop Sketch affordance
-         - Verify Dzign3D has an obvious "Finish Sketch" button at the top
-           of the viewport (Fusion's big green checkmark). Currently the
-           exit path goes through the ribbon which is unintuitive mid-sketch.
-         - Add a floating "Finish Sketch" button while in sketch edit mode.
+[x] D62. Finish/Stop Sketch affordance
+         - Shipped: SketchPalette.tsx footer already contains a "Finish Sketch"
+           button (line 201-205) that calls finishSketch(). The palette floats
+           over the viewport while a sketch is active, giving the same
+           affordance as Fusion 360's green checkmark.
 
 P10 — NON-OBVIOUS POLISH ITEMS
 [ ] D63. Equation/parameter input in dimension fields
@@ -385,11 +452,13 @@ P10 — NON-OBVIOUS POLISH ITEMS
          - We already have `utils/expressionEval.ts`; plumb it into the
            dimension placement flow so users can reference parameters.
 
-[ ] D64. Live length/angle display while drawing
-         - Fusion shows a transient tooltip next to the cursor with the
-           current segment length and angle-from-horizontal. We partially
-           do this in the angle-arc preview (Viewport.tsx L930-944) but not
-           as a numeric HUD.
+[x] D64. Live length/angle display while drawing
+         - Shipped: Three.js Html overlays rendered near the cursor and midpoint
+           while drawing. Line/construction-line/centerline/midpoint-line: shows
+           length badge at midpoint, angle badge at angle-arc bisector, and
+           Δu/Δv delta below cursor. Circle/circle-2point/arc: shows radius badge
+           at midpoint between center and cursor. Extended showLineDims condition
+           to also cover midpoint-line tool.
 
 [ ] D65. Snap indicators (endpoint / midpoint / center / intersection)
          - SnapType enum exists in cad.ts but no snap logic runs. Visible

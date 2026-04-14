@@ -1,50 +1,15 @@
-import React from 'react';
+import { Fragment } from 'react';
 import {
   Activity, CircuitBoard, Crosshair, Cpu, Zap, Radar, Gauge,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
-import { colors as COLORS } from '../../utils/theme';
+import {
+  panelStyle,
+  sectionTitleStyle as sectionTitle,
+  twoColRowGridStyle as rowGrid,
+} from '../../utils/printerPanelStyles';
 
 const EMPTY_ARRAY: readonly never[] = [];
-
-// ---------------------------------------------------------------------------
-// Local style helpers — kept in sync with DuetDashboard's look-and-feel
-// ---------------------------------------------------------------------------
-function panelStyle(): React.CSSProperties {
-  return {
-    background: COLORS.panel,
-    border: `1px solid ${COLORS.panelBorder}`,
-    borderRadius: 8,
-    padding: 16,
-  };
-}
-function sectionTitle(): React.CSSProperties {
-  return {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    fontSize: 11,
-    color: COLORS.textDim,
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    marginBottom: 10,
-    fontWeight: 600,
-  };
-}
-function rowGrid(): React.CSSProperties {
-  return {
-    display: 'grid',
-    gridTemplateColumns: '1fr auto',
-    gap: '6px 12px',
-    fontSize: 12,
-  };
-}
-function dim(): React.CSSProperties {
-  return { color: COLORS.textDim };
-}
-function mono(extra?: React.CSSProperties): React.CSSProperties {
-  return { fontFamily: 'monospace', fontSize: 12, fontWeight: 600, ...extra };
-}
 
 // ---------------------------------------------------------------------------
 // Sub-panels
@@ -62,7 +27,7 @@ function EndstopsPanel() {
     return (
       <div style={panelStyle()}>
         <div style={sectionTitle()}><Crosshair size={14} /> Endstops</div>
-        <div style={dim()}>No endstops reported.</div>
+        <div className="duet-status-dim">No endstops reported.</div>
       </div>
     );
   }
@@ -75,15 +40,12 @@ function EndstopsPanel() {
           const axisLetter = axes[i]?.letter ?? `#${i}`;
           const triggered = es?.triggered;
           return (
-            <React.Fragment key={i}>
-              <span>{axisLetter} <span style={dim()}>({es?.type ?? 'unknown'})</span></span>
-              <span style={{
-                fontWeight: 600,
-                color: triggered ? COLORS.danger : COLORS.success,
-              }}>
+            <Fragment key={i}>
+              <span>{axisLetter} <span className="duet-status-dim">({es?.type ?? 'unknown'})</span></span>
+              <span className={`duet-status-flag ${triggered ? 'danger' : 'success'}`}>
                 {triggered ? 'TRIGGERED' : 'open'}
               </span>
-            </React.Fragment>
+            </Fragment>
           );
         })}
       </div>
@@ -102,7 +64,7 @@ function ProbesPanel() {
     return (
       <div style={panelStyle()}>
         <div style={sectionTitle()}><Radar size={14} /> Z-Probes</div>
-        <div style={dim()}>No probes configured.</div>
+        <div className="duet-status-dim">No probes configured.</div>
       </div>
     );
   }
@@ -115,25 +77,22 @@ function ProbesPanel() {
         const value = p?.value ?? 0;
         const triggered = threshold > 0 && value >= threshold;
         return (
-          <div key={i} style={{ marginBottom: idx < populated.length - 1 ? 12 : 0 }}>
-            <div style={{ ...rowGrid(), marginBottom: 4 }}>
-              <span style={dim()}>Probe {i} (type {p?.type ?? '—'})</span>
-              <span style={{
-                fontWeight: 600,
-                color: triggered ? COLORS.danger : COLORS.success,
-              }}>
+          <div key={i} className={idx < populated.length - 1 ? 'duet-status-block' : undefined}>
+            <div style={rowGrid()} className="duet-status-row-gap">
+              <span className="duet-status-dim">Probe {i} (type {p?.type ?? '—'})</span>
+              <span className={`duet-status-flag ${triggered ? 'danger' : 'success'}`}>
                 {triggered ? 'TRIGGERED' : 'open'}
               </span>
             </div>
             <div style={rowGrid()}>
-              <span style={dim()}>Value</span>
-              <span style={mono()}>{value} / {threshold}</span>
-              <span style={dim()}>Trigger height</span>
-              <span style={mono()}>{p?.triggerHeight?.toFixed(3) ?? '—'} mm</span>
-              <span style={dim()}>Dive height</span>
-              <span style={mono()}>{p?.diveHeight?.toFixed(2) ?? '—'} mm</span>
-              <span style={dim()}>Speed</span>
-              <span style={mono()}>{p?.speed ?? '—'} mm/s</span>
+              <span className="duet-status-dim">Value</span>
+              <span className="duet-status-mono">{value} / {threshold}</span>
+              <span className="duet-status-dim">Trigger height</span>
+              <span className="duet-status-mono">{p?.triggerHeight?.toFixed(3) ?? '—'} mm</span>
+              <span className="duet-status-dim">Dive height</span>
+              <span className="duet-status-mono">{p?.diveHeight?.toFixed(2) ?? '—'} mm</span>
+              <span className="duet-status-dim">Speed</span>
+              <span className="duet-status-mono">{p?.speed ?? '—'} mm/s</span>
             </div>
           </div>
         );
@@ -154,7 +113,7 @@ function AnalogSensorsPanel() {
     return (
       <div style={panelStyle()}>
         <div style={sectionTitle()}><Activity size={14} /> Analog Sensors</div>
-        <div style={dim()}>No analog sensors reported.</div>
+        <div className="duet-status-dim">No analog sensors reported.</div>
       </div>
     );
   }
@@ -164,12 +123,12 @@ function AnalogSensorsPanel() {
       <div style={sectionTitle()}><Activity size={14} /> Analog Sensors</div>
       <div style={rowGrid()}>
         {populated.map(({ s, i }) => (
-          <React.Fragment key={i}>
-            <span>{s.name} <span style={dim()}>({s.type})</span></span>
-            <span style={mono()}>
+          <Fragment key={i}>
+            <span>{s.name} <span className="duet-status-dim">({s.type})</span></span>
+            <span className="duet-status-mono">
               {typeof s.lastReading === 'number' ? `${s.lastReading.toFixed(1)}°` : '—'}
             </span>
-          </React.Fragment>
+          </Fragment>
         ))}
       </div>
     </div>
@@ -184,7 +143,7 @@ function BoardsPanel() {
     return (
       <div style={panelStyle()}>
         <div style={sectionTitle()}><CircuitBoard size={14} /> Boards</div>
-        <div style={dim()}>No board info reported.</div>
+        <div className="duet-status-dim">No board info reported.</div>
       </div>
     );
   }
@@ -193,39 +152,39 @@ function BoardsPanel() {
     <div style={panelStyle()}>
       <div style={sectionTitle()}><CircuitBoard size={14} /> Boards</div>
       {boards.map((b, i) => (
-        <div key={i} style={{ marginBottom: i < boards.length - 1 ? 12 : 0 }}>
-          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
+        <div key={i} className={i < boards.length - 1 ? 'duet-status-block' : undefined}>
+          <div className="duet-status-board-title">
             {b.name || b.shortName || `Board ${i}`}
           </div>
           <div style={rowGrid()}>
-            <span style={dim()}>Firmware</span>
-            <span style={mono()}>{b.firmwareName} {b.firmwareVersion}</span>
+            <span className="duet-status-dim">Firmware</span>
+            <span className="duet-status-mono">{b.firmwareName} {b.firmwareVersion}</span>
             {b.firmwareDate && (
               <>
-                <span style={dim()}>Build date</span>
-                <span style={mono()}>{b.firmwareDate}</span>
+                <span className="duet-status-dim">Build date</span>
+                <span className="duet-status-mono">{b.firmwareDate}</span>
               </>
             )}
             {b.mcuTemp && (
               <>
-                <span style={dim()}>MCU temp</span>
-                <span style={mono()}>
+                <span className="duet-status-dim">MCU temp</span>
+                <span className="duet-status-mono">
                   {b.mcuTemp.current?.toFixed(1)}° (min {b.mcuTemp.min?.toFixed(0)}°, max {b.mcuTemp.max?.toFixed(0)}°)
                 </span>
               </>
             )}
             {b.vIn && (
               <>
-                <span style={dim()}>VIN</span>
-                <span style={mono()}>
+                <span className="duet-status-dim">VIN</span>
+                <span className="duet-status-mono">
                   {b.vIn.current?.toFixed(1)} V (min {b.vIn.min?.toFixed(1)}, max {b.vIn.max?.toFixed(1)})
                 </span>
               </>
             )}
             {b.v12 && (
               <>
-                <span style={dim()}>V12</span>
-                <span style={mono()}>{b.v12.current?.toFixed(1)} V</span>
+                <span className="duet-status-dim">V12</span>
+                <span className="duet-status-mono">{b.v12.current?.toFixed(1)} V</span>
               </>
             )}
           </div>
@@ -255,10 +214,10 @@ function DriversPanel() {
       <div style={sectionTitle()}><Cpu size={14} /> Motor Drivers</div>
       <div style={rowGrid()}>
         {rows.map((r, i) => (
-          <React.Fragment key={i}>
+          <Fragment key={i}>
             <span>{r.label}</span>
-            <span style={mono()}>{r.driver || '—'}</span>
-          </React.Fragment>
+            <span className="duet-status-mono">{r.driver || '—'}</span>
+          </Fragment>
         ))}
       </div>
     </div>
@@ -280,7 +239,7 @@ function GpioPanel() {
     return (
       <div style={panelStyle()}>
         <div style={sectionTitle()}><Zap size={14} /> General Purpose Outputs</div>
-        <div style={dim()}>No GP outputs configured.</div>
+        <div className="duet-status-dim">No GP outputs configured.</div>
       </div>
     );
   }
@@ -290,10 +249,10 @@ function GpioPanel() {
       <div style={sectionTitle()}><Zap size={14} /> General Purpose Outputs</div>
       <div style={rowGrid()}>
         {populated.map(({ g, i }) => (
-          <React.Fragment key={i}>
+          <Fragment key={i}>
             <span>GP{i}</span>
-            <span style={mono()}>{((g?.pwm ?? 0) * 100).toFixed(0)}%</span>
-          </React.Fragment>
+            <span className="duet-status-mono">{((g?.pwm ?? 0) * 100).toFixed(0)}%</span>
+          </Fragment>
         ))}
       </div>
     </div>
@@ -308,14 +267,14 @@ function MachineSummaryPanel() {
     <div style={panelStyle()}>
       <div style={sectionTitle()}><Gauge size={14} /> Machine Summary</div>
       <div style={rowGrid()}>
-        <span style={dim()}>Status</span>
-        <span style={mono()}>{state?.status ?? 'unknown'}</span>
-        <span style={dim()}>Current tool</span>
-        <span style={mono()}>{(state?.currentTool ?? -1) >= 0 ? `T${state?.currentTool}` : 'none'}</span>
-        <span style={dim()}>Compensation</span>
-        <span style={mono()}>{move?.compensation?.type ?? 'none'}</span>
-        <span style={dim()}>Workplace</span>
-        <span style={mono()}>G54</span>
+        <span className="duet-status-dim">Status</span>
+        <span className="duet-status-mono">{state?.status ?? 'unknown'}</span>
+        <span className="duet-status-dim">Current tool</span>
+        <span className="duet-status-mono">{(state?.currentTool ?? -1) >= 0 ? `T${state?.currentTool}` : 'none'}</span>
+        <span className="duet-status-dim">Compensation</span>
+        <span className="duet-status-mono">{move?.compensation?.type ?? 'none'}</span>
+        <span className="duet-status-dim">Workplace</span>
+        <span className="duet-status-mono">G54</span>
       </div>
     </div>
   );
@@ -326,13 +285,7 @@ function MachineSummaryPanel() {
 // ---------------------------------------------------------------------------
 export default function DuetStatus() {
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-      gap: 10,
-      padding: 12,
-      alignItems: 'start',
-    }}>
+    <div className="duet-status-grid">
       <MachineSummaryPanel />
       <EndstopsPanel />
       <ProbesPanel />

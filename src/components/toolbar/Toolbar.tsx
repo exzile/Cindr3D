@@ -547,6 +547,7 @@ export default function Toolbar() {
         { icon: <Minus size={MI} />, label: 'Line', shortcut: 'L', onClick: () => setActiveTool('line' as Tool) },
         { icon: <Minus size={MI} />, label: 'Construction Line', onClick: () => setActiveTool('construction-line' as Tool) },
         { icon: <Minus size={MI} />, label: 'Centerline', onClick: () => setActiveTool('centerline' as Tool) },
+        { icon: <Minus size={MI} />, label: 'Midpoint Line', onClick: () => { setActiveTool('midpoint-line' as Tool); setStatusMessage('Midpoint Line: click the midpoint, then one endpoint'); } },
       ],
     },
     {
@@ -563,6 +564,8 @@ export default function Toolbar() {
         { icon: <Circle size={MI} />, label: 'Center Diameter Circle', shortcut: 'C', onClick: () => setActiveTool('circle' as Tool) },
         { icon: <Circle size={MI} />, label: '2-Point Circle', onClick: () => setActiveTool('circle-2point' as Tool) },
         { icon: <Circle size={MI} />, label: '3-Point Circle', onClick: () => setActiveTool('circle-3point' as Tool) },
+        { icon: <Circle size={MI} />, label: '2-Tangent Circle', onClick: () => { setActiveTool('circle-2tangent' as Tool); setStatusMessage('2-Tangent Circle: click first line, then second line — set radius in palette'); } },
+        { icon: <Circle size={MI} />, label: '3-Tangent Circle', onClick: () => { setActiveTool('circle-3tangent' as Tool); setStatusMessage('3-Tangent Circle: click three lines to create the incircle'); } },
       ],
     },
     {
@@ -570,7 +573,7 @@ export default function Toolbar() {
       submenu: [
         { icon: <Spline size={MI} />, label: '3-Point Arc', onClick: () => setActiveTool('arc-3point' as Tool) },
         { icon: <Spline size={MI} />, label: 'Center Point Arc', onClick: () => setActiveTool('arc' as Tool) },
-        { icon: <Spline size={MI} />, label: 'Tangent Arc', onClick: comingSoon('Tangent Arc') },
+        { icon: <Spline size={MI} />, label: 'Tangent Arc', onClick: () => setActiveTool('arc-tangent' as Tool) },
       ],
     },
     {
@@ -592,7 +595,7 @@ export default function Toolbar() {
         { icon: <Circle size={MI} />, label: 'Center Point Arc Slot', onClick: comingSoon('Center Point Arc Slot') },
       ],
     },
-    { separator: true, icon: <Waypoints size={MI} />, label: 'Spline', onClick: comingSoon('Spline') },
+    { separator: true, icon: <Waypoints size={MI} />, label: 'Spline', onClick: () => { setActiveTool('spline' as Tool); setStatusMessage('Spline: click to place fit points, right-click to finish'); } },
     { icon: <Waypoints size={MI} />, label: 'Conic Curve', onClick: comingSoon('Conic Curve') },
     { separator: true, icon: <CircleDot size={MI} />, label: 'Point', onClick: () => setActiveTool('point' as Tool) },
     { separator: true, icon: <ArrowUpFromLine size={MI} />, label: 'Project / Include', onClick: comingSoon('Project') },
@@ -600,17 +603,21 @@ export default function Toolbar() {
   ];
 
   const sketchModifyMenuItems: MenuItem[] = [
-    { icon: <Blend size={MI} />, label: 'Fillet', shortcut: 'F', onClick: comingSoon('Sketch Fillet') },
-    { icon: <Scissors size={MI} />, label: 'Trim', shortcut: 'T', onClick: comingSoon('Trim') },
-    { icon: <Maximize2 size={MI} />, label: 'Extend', onClick: comingSoon('Extend') },
-    { icon: <Scissors size={MI} />, label: 'Break', onClick: comingSoon('Break') },
-    { separator: true, icon: <Copy size={MI} />, label: 'Offset', shortcut: 'O', onClick: comingSoon('Offset') },
-    { icon: <FlipHorizontal size={MI} />, label: 'Mirror', onClick: comingSoon('Sketch Mirror') },
-    { separator: true, icon: <Repeat size={MI} />, label: 'Circular Pattern', onClick: comingSoon('Sketch Circular Pattern') },
-    { icon: <Repeat size={MI} />, label: 'Rectangular Pattern', onClick: comingSoon('Sketch Rectangular Pattern') },
-    { separator: true, icon: <Move size={MI} />, label: 'Move / Copy', shortcut: 'M', onClick: comingSoon('Move/Copy') },
-    { icon: <Maximize2 size={MI} />, label: 'Scale', onClick: comingSoon('Scale') },
-    { icon: <RotateCw size={MI} />, label: 'Rotate', onClick: comingSoon('Rotate') },
+    { icon: <Blend size={MI} />, label: 'Fillet', shortcut: 'F', onClick: () => { setActiveTool('sketch-fillet' as Tool); setStatusMessage('Sketch Fillet: click near the corner of two intersecting lines'); } },
+    { icon: <Blend size={MI} />, label: 'Chamfer (Equal)', onClick: () => { setActiveTool('sketch-chamfer-equal' as Tool); setStatusMessage('Sketch Chamfer: click near a corner to chamfer — set distance in palette'); } },
+    { icon: <Blend size={MI} />, label: 'Chamfer (Two Dist)', onClick: () => { setActiveTool('sketch-chamfer-two-dist' as Tool); setStatusMessage('Sketch Chamfer: click near a corner — set Dist 1 and Dist 2 in palette'); } },
+    { icon: <Blend size={MI} />, label: 'Chamfer (Dist+Angle)', onClick: () => { setActiveTool('sketch-chamfer-dist-angle' as Tool); setStatusMessage('Sketch Chamfer: click near a corner — set Dist and Angle in palette'); } },
+    { icon: <Scissors size={MI} />, label: 'Trim', shortcut: 'T', onClick: () => { setActiveTool('trim' as Tool); setStatusMessage('Trim: click a segment portion to remove it'); } },
+    { icon: <Maximize2 size={MI} />, label: 'Extend', onClick: () => { setActiveTool('extend' as Tool); setStatusMessage('Extend: click near an endpoint of a line to extend it to the nearest intersection'); } },
+    { icon: <Scissors size={MI} />, label: 'Break', onClick: () => { setActiveTool('break' as Tool); setStatusMessage('Break: click on a line to split it at that point'); } },
+    { separator: true, icon: <Copy size={MI} />, label: 'Offset', shortcut: 'O', onClick: () => { setActiveTool('sketch-offset' as Tool); setStatusMessage('Offset: click a line, then click the side to offset towards'); } },
+    { icon: <FlipHorizontal size={MI} />, label: 'Mirror', onClick: () => { setActiveTool('sketch-mirror' as Tool); setStatusMessage('Mirror: select axis direction, then click OK'); } },
+    { separator: true, icon: <Repeat size={MI} />, label: 'Circular Pattern', onClick: () => { setActiveTool('sketch-circ-pattern' as Tool); setStatusMessage('Circular Pattern: set count and angle, then click OK'); } },
+    { icon: <Repeat size={MI} />, label: 'Rectangular Pattern', onClick: () => { setActiveTool('sketch-rect-pattern' as Tool); setStatusMessage('Rectangular Pattern: set counts and spacing, then click OK'); } },
+    { separator: true, icon: <Move size={MI} />, label: 'Move', shortcut: 'M', onClick: () => { setActiveTool('sketch-move' as Tool); setStatusMessage('Move: set X/Y offset in plane-local coords, then click OK'); } },
+    { icon: <Copy size={MI} />, label: 'Copy', onClick: () => { setActiveTool('sketch-copy' as Tool); setStatusMessage('Copy: set X/Y offset, then click OK to duplicate entities'); } },
+    { icon: <Maximize2 size={MI} />, label: 'Scale', onClick: () => { setActiveTool('sketch-scale' as Tool); setStatusMessage('Scale: set factor about centroid, then click OK'); } },
+    { icon: <RotateCw size={MI} />, label: 'Rotate', onClick: () => { setActiveTool('sketch-rotate' as Tool); setStatusMessage('Rotate: set angle about centroid, then click OK'); } },
   ];
 
   const sketchConstraintMenuItems: MenuItem[] = [
@@ -1019,17 +1026,18 @@ export default function Toolbar() {
               />
               <ToolButton icon={<CircleDot size={20} />}          label="Ellipse"   onClick={() => { setActiveTool('ellipse'); setStatusMessage('Ellipse: click centre, then major-axis, then minor-axis endpoint'); }}  colorClass="icon-blue" />
               <ToolButton icon={<CircleDot size={20} />}          label="Point"     tool="point"                     colorClass="icon-blue" />
-              <ToolButton icon={<Waypoints size={20} />}          label="Spline"    onClick={comingSoon('Spline')}   colorClass="icon-blue" />
+              <ToolButton icon={<Waypoints size={20} />}          label="Spline"    onClick={() => { setActiveTool('spline' as Tool); setStatusMessage('Spline: click to place fit points, right-click to finish'); }}   colorClass="icon-blue" />
             </RibbonSection>
 
             {/* ── MODIFY ─────────────────────────────────── */}
             <RibbonSection title="MODIFY" menuItems={sketchModifyMenuItems} accentColor="#0078d7">
-              <ToolButton icon={<CornerDownRight size={20} />}   label="Fillet"  onClick={comingSoon('Fillet')}  colorClass="icon-blue" />
-              <ToolButton icon={<Scissors size={20} />}          label="Trim"    onClick={comingSoon('Trim')}    colorClass="icon-blue" />
-              <ToolButton icon={<ChevronsRight size={20} />}     label="Extend"  onClick={comingSoon('Extend')}  colorClass="icon-blue" />
+              <ToolButton icon={<CornerDownRight size={20} />}   label="Fillet"   onClick={() => { setActiveTool('sketch-fillet' as Tool); setStatusMessage('Sketch Fillet: click near the corner of two lines'); }}  colorClass="icon-blue" />
+              <ToolButton icon={<Blend size={20} />}             label="Chamfer"  onClick={() => { setActiveTool('sketch-chamfer-equal' as Tool); setStatusMessage('Sketch Chamfer: click near a corner — set distance in palette'); }}  colorClass="icon-blue" />
+              <ToolButton icon={<Scissors size={20} />}          label="Trim"    onClick={() => { setActiveTool('trim' as Tool); setStatusMessage('Trim: click a segment portion to remove it'); }}    colorClass="icon-blue" />
+              <ToolButton icon={<ChevronsRight size={20} />}     label="Extend"  onClick={() => { setActiveTool('extend' as Tool); setStatusMessage('Extend: click near an endpoint to extend to nearest intersection'); }}  colorClass="icon-blue" />
               <ToolButton icon={<Copy size={20} />}              label="Offset"  onClick={comingSoon('Offset')}  colorClass="icon-blue" />
               <ToolButton icon={<FlipHorizontal2 size={20} />}   label="Mirror"  onClick={comingSoon('Mirror')}  colorClass="icon-blue" />
-              <ToolButton icon={<Move size={20} />}              label="Move"    onClick={comingSoon('Move')}    colorClass="icon-blue" />
+              <ToolButton icon={<Move size={20} />}              label="Move"    onClick={() => { setActiveTool('sketch-move' as Tool); setStatusMessage('Move: set X/Y offset, then click OK'); }}    colorClass="icon-blue" />
             </RibbonSection>
 
             {/* ── CONSTRAINTS ────────────────────────────── */}

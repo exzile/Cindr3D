@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import * as THREE from 'three';
-import { Eye, X } from 'lucide-react';
+import { Eye, X, FileDown } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore';
+import { downloadDXF } from '../../utils/dxfExport';
 
 interface SketchOption {
   label: string;
@@ -9,14 +10,8 @@ interface SketchOption {
   defaultValue: boolean;
 }
 
+// Local-only palette options (no store backing needed)
 const SKETCH_OPTIONS: SketchOption[] = [
-  // Note: 'sketchGrid' and 'snap' are handled separately via the CAD store
-  { label: 'Slice', key: 'slice', defaultValue: false },
-  { label: 'Profile', key: 'profile', defaultValue: true },
-  { label: 'Points', key: 'points', defaultValue: true },
-  { label: 'Dimensions', key: 'dimensions', defaultValue: true },
-  { label: 'Constraints', key: 'constraints', defaultValue: true },
-  { label: 'Projected Geometries', key: 'projectedGeom', defaultValue: true },
   { label: 'Construction Geometries', key: 'constructionGeom', defaultValue: true },
   { label: '3D Sketch', key: 'sketch3d', defaultValue: false },
 ];
@@ -31,6 +26,28 @@ export default function SketchPalette() {
   const setGridVisible = useCADStore((s) => s.setGridVisible);
   const polygonSides = useCADStore((s) => s.sketchPolygonSides);
   const setPolygonSides = useCADStore((s) => s.setSketchPolygonSides);
+  const filletRadius = useCADStore((s) => s.sketchFilletRadius);
+  const setFilletRadius = useCADStore((s) => s.setSketchFilletRadius);
+  const tangentCircleRadius = useCADStore((s) => s.tangentCircleRadius);
+  const setTangentCircleRadius = useCADStore((s) => s.setTangentCircleRadius);
+  const chamferDist1 = useCADStore((s) => s.sketchChamferDist1);
+  const setChamferDist1 = useCADStore((s) => s.setSketchChamferDist1);
+  const chamferDist2 = useCADStore((s) => s.sketchChamferDist2);
+  const setChamferDist2 = useCADStore((s) => s.setSketchChamferDist2);
+  const chamferAngle = useCADStore((s) => s.sketchChamferAngle);
+  const setChamferAngle = useCADStore((s) => s.setSketchChamferAngle);
+  const showProfile = useCADStore((s) => s.showSketchProfile);
+  const setShowProfile = useCADStore((s) => s.setShowSketchProfile);
+  const sliceEnabled = useCADStore((s) => s.sliceEnabled);
+  const setSliceEnabled = useCADStore((s) => s.setSliceEnabled);
+  const showSketchPoints = useCADStore((s) => s.showSketchPoints);
+  const setShowSketchPoints = useCADStore((s) => s.setShowSketchPoints);
+  const showSketchDimensions = useCADStore((s) => s.showSketchDimensions);
+  const setShowSketchDimensions = useCADStore((s) => s.setShowSketchDimensions);
+  const showSketchConstraints = useCADStore((s) => s.showSketchConstraints);
+  const setShowSketchConstraints = useCADStore((s) => s.setShowSketchConstraints);
+  const showProjectedGeometries = useCADStore((s) => s.showProjectedGeometries);
+  const setShowProjectedGeometries = useCADStore((s) => s.setShowProjectedGeometries);
   const setCameraTargetQuaternion = useCADStore((s) => s.setCameraTargetQuaternion);
   const [dismissed, setDismissed] = useState(false);
   const isPolygonTool =
@@ -38,6 +55,12 @@ export default function SketchPalette() {
     activeTool === 'polygon-inscribed' ||
     activeTool === 'polygon-circumscribed' ||
     activeTool === 'polygon-edge';
+  const isFilletTool = activeTool === 'sketch-fillet';
+  const isChamferEqualTool = activeTool === 'sketch-chamfer-equal';
+  const isChamferTwoDistTool = activeTool === 'sketch-chamfer-two-dist';
+  const isChamferDistAngleTool = activeTool === 'sketch-chamfer-dist-angle';
+  const isChamferTool = isChamferEqualTool || isChamferTwoDistTool || isChamferDistAngleTool;
+  const isTangentCircleTool = activeTool === 'circle-2tangent';
 
   // Reset dismissed state each time a new sketch session starts
   useEffect(() => {
@@ -162,6 +185,32 @@ export default function SketchPalette() {
             </label>
           </div>
 
+          {/* Show Profile — D55 translucent fill of closed sketch loops */}
+          <div className="sketch-palette-row">
+            <span className="sketch-palette-label">Show Profile</span>
+            <label className="sketch-palette-check">
+              <input
+                type="checkbox"
+                checked={showProfile}
+                onChange={() => setShowProfile(!showProfile)}
+              />
+              <span className="sketch-palette-checkmark" />
+            </label>
+          </div>
+
+          {/* Slice — D54 clipping plane at sketch plane */}
+          <div className="sketch-palette-row">
+            <span className="sketch-palette-label">Slice</span>
+            <label className="sketch-palette-check">
+              <input
+                type="checkbox"
+                checked={sliceEnabled}
+                onChange={() => setSliceEnabled(!sliceEnabled)}
+              />
+              <span className="sketch-palette-checkmark" />
+            </label>
+          </div>
+
           {/* Polygon sides — only visible while a polygon tool is active */}
           {isPolygonTool && (
             <div className="sketch-palette-row">
@@ -182,6 +231,116 @@ export default function SketchPalette() {
             </div>
           )}
 
+          {/* Fillet radius — only visible while sketch-fillet tool is active */}
+          {isFilletTool && (
+            <div className="sketch-palette-row">
+              <span className="sketch-palette-label">Radius</span>
+              <input
+                type="number"
+                min={0.01}
+                step={0.5}
+                value={filletRadius}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (!Number.isNaN(v) && v > 0) setFilletRadius(v);
+                }}
+                className="measure-select"
+                style={{ width: 64 }}
+              />
+            </div>
+          )}
+
+          {/* Tangent circle radius — visible while 2-tangent circle tool is active (D40) */}
+          {isTangentCircleTool && (
+            <div className="sketch-palette-row">
+              <span className="sketch-palette-label">Radius</span>
+              <input
+                type="number"
+                min={0.01}
+                step={0.5}
+                value={tangentCircleRadius}
+                onChange={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v) && v > 0) setTangentCircleRadius(v); }}
+                className="measure-select"
+                style={{ width: 64 }}
+              />
+            </div>
+          )}
+
+          {/* Chamfer inputs — visible while any chamfer tool is active (D47) */}
+          {isChamferTool && (
+            <div className="sketch-palette-row">
+              <span className="sketch-palette-label">{isChamferDistAngleTool ? 'Dist' : 'Dist 1'}</span>
+              <input
+                type="number"
+                min={0.01}
+                step={0.5}
+                value={chamferDist1}
+                onChange={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v) && v > 0) setChamferDist1(v); }}
+                className="measure-select"
+                style={{ width: 64 }}
+              />
+            </div>
+          )}
+          {isChamferTwoDistTool && (
+            <div className="sketch-palette-row">
+              <span className="sketch-palette-label">Dist 2</span>
+              <input
+                type="number"
+                min={0.01}
+                step={0.5}
+                value={chamferDist2}
+                onChange={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v) && v > 0) setChamferDist2(v); }}
+                className="measure-select"
+                style={{ width: 64 }}
+              />
+            </div>
+          )}
+          {isChamferDistAngleTool && (
+            <div className="sketch-palette-row">
+              <span className="sketch-palette-label">Angle °</span>
+              <input
+                type="number"
+                min={1}
+                max={89}
+                step={1}
+                value={chamferAngle}
+                onChange={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v)) setChamferAngle(v); }}
+                className="measure-select"
+                style={{ width: 64 }}
+              />
+            </div>
+          )}
+
+          {/* Store-backed visibility toggles (D56) */}
+          <div className="sketch-palette-row">
+            <span className="sketch-palette-label">Points</span>
+            <label className="sketch-palette-check">
+              <input type="checkbox" checked={showSketchPoints} onChange={() => setShowSketchPoints(!showSketchPoints)} />
+              <span className="sketch-palette-checkmark" />
+            </label>
+          </div>
+          <div className="sketch-palette-row">
+            <span className="sketch-palette-label">Dimensions</span>
+            <label className="sketch-palette-check">
+              <input type="checkbox" checked={showSketchDimensions} onChange={() => setShowSketchDimensions(!showSketchDimensions)} />
+              <span className="sketch-palette-checkmark" />
+            </label>
+          </div>
+          <div className="sketch-palette-row">
+            <span className="sketch-palette-label">Constraints</span>
+            <label className="sketch-palette-check">
+              <input type="checkbox" checked={showSketchConstraints} onChange={() => setShowSketchConstraints(!showSketchConstraints)} />
+              <span className="sketch-palette-checkmark" />
+            </label>
+          </div>
+          <div className="sketch-palette-row">
+            <span className="sketch-palette-label">Projected Geom.</span>
+            <label className="sketch-palette-check">
+              <input type="checkbox" checked={showProjectedGeometries} onChange={() => setShowProjectedGeometries(!showProjectedGeometries)} />
+              <span className="sketch-palette-checkmark" />
+            </label>
+          </div>
+
           {/* Remaining local-only options */}
           {SKETCH_OPTIONS.map((opt) => (
             <div className="sketch-palette-row" key={opt.key}>
@@ -196,6 +355,20 @@ export default function SketchPalette() {
               </label>
             </div>
           ))}
+
+          {/* Export DXF button (D61) */}
+          <div className="sketch-palette-row">
+            <span className="sketch-palette-label">Export</span>
+            <button
+              className="spl-btn"
+              title="Export sketch as DXF (for laser cutting / CNC)"
+              onClick={() => {
+                if (activeSketch) downloadDXF(activeSketch);
+              }}
+            >
+              <FileDown size={14} />
+            </button>
+          </div>
 
           {/* Finish Sketch button */}
           <div className="sketch-palette-footer">

@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { useCADStore } from '../../store/cadStore';
 import { useThemeStore } from '../../store/themeStore';
 import { GeometryEngine } from '../../engine/GeometryEngine';
+import { clearGroupChildren, disposeLineGeometries } from '../../utils/threeDisposal';
 // import ToolPanel from './ToolPanel'; // Removed — sketch options handled by SketchPalette
 import ViewCube from './ViewCube';
 import CanvasControls from './CanvasControls';
@@ -13,6 +14,9 @@ import MeasurePanel from './MeasurePanel';
 import ExtrudeTool from './ExtrudeTool';
 import ExtrudePanel from './ExtrudePanel';
 import RevolvePanel from './RevolvePanel';
+import SketchPatternPanel from './SketchPatternPanel';
+import SketchTransformPanel from './SketchTransformPanel';
+import SketchMirrorPanel from './SketchMirrorPanel';
 import type { SketchEntity, SketchPoint, Sketch, Feature } from '../../types/cad';
 
 /** Syncs the Three.js scene background / clear color with the active theme */
@@ -30,6 +34,41 @@ function SceneTheme() {
 }
 
 /**
+ * D54 Slice — enables a clipping plane on the renderer and body material
+ * so only the portion of bodies above the active sketch plane is visible.
+ * Restores defaults when disabled or when the sketch closes.
+ */
+function SliceEffect() {
+  const { gl } = useThree();
+  const activeSketch = useCADStore((s) => s.activeSketch);
+  const sliceEnabled = useCADStore((s) => s.sliceEnabled);
+
+  useEffect(() => {
+    if (!sliceEnabled || !activeSketch) {
+      gl.localClippingEnabled = false;
+      BODY_MATERIAL.clippingPlanes = [];
+      BODY_MATERIAL.needsUpdate = true;
+      return;
+    }
+
+    gl.localClippingEnabled = true;
+    const n = activeSketch.planeNormal.clone().normalize();
+    const d = -n.dot(activeSketch.planeOrigin);
+    const plane = new THREE.Plane(n, d);
+    BODY_MATERIAL.clippingPlanes = [plane];
+    BODY_MATERIAL.needsUpdate = true;
+
+    return () => {
+      gl.localClippingEnabled = false;
+      BODY_MATERIAL.clippingPlanes = [];
+      BODY_MATERIAL.needsUpdate = true;
+    };
+  }, [sliceEnabled, activeSketch, gl]);
+
+  return null;
+}
+
+/**
  * Renders one sketch's wire geometry. Caches the Three.js Group via useMemo so it is
  * only recreated when the sketch reference changes (Zustand does immutable updates),
  * and disposes all child line geometries on cleanup to prevent GPU memory leaks.
@@ -39,13 +78,7 @@ function SketchGeometry({ sketch }: { sketch: Sketch }) {
   const group = useMemo(() => GeometryEngine.createSketchGeometry(sketch), [sketch]);
 
   useEffect(() => {
-    return () => {
-      group.traverse((obj) => {
-        if ((obj as THREE.Line).isLine) {
-          (obj as THREE.Line).geometry.dispose();
-        }
-      });
-    };
+    return () => disposeLineGeometries(group);
   }, [group]);
 
   return <primitive object={group} />;
@@ -55,6 +88,25 @@ function SketchRenderer() {
   const activeSketch = useCADStore((s) => s.activeSketch);
   const features = useCADStore((s) => s.features);
   const sketches = useCADStore((s) => s.sketches);
+  const showProfile = useCADStore((s) => s.showSketchProfile);
+  const showSketchPoints = useCADStore((s) => s.showSketchPoints);
+
+  // Profile fill material — created once, never disposed (module-level won't work due to hooks rule)
+  const profileMaterial = useMemo(() => new THREE.MeshBasicMaterial({
+    color: 0x3a7fcc, opacity: 0.25, transparent: true, side: THREE.DoubleSide, depthWrite: false,
+  }), []);
+
+  // Build profile mesh from active sketch when Show Profile is on
+  const profileMesh = useMemo(() => {
+    if (!showProfile || !activeSketch) return null;
+    return GeometryEngine.createSketchProfileMesh(activeSketch, profileMaterial);
+  }, [showProfile, activeSketch, profileMaterial]);
+
+  useEffect(() => {
+    return () => {
+      if (profileMesh) profileMesh.geometry.dispose();
+    };
+  }, [profileMesh]);
 
   return (
     <>
@@ -63,9 +115,23 @@ function SketchRenderer() {
         if (!sketch) return null;
         return <SketchGeometry key={feature.id} sketch={sketch} />;
       })}
-      {activeSketch && activeSketch.entities.length > 0 && (
-        <SketchGeometry key={`active-${activeSketch.id}-e${activeSketch.entities.length}`} sketch={activeSketch} />
-      )}
+      {activeSketch && activeSketch.entities.length > 0 && (() => {
+        // Filter entities based on visibility toggles (D56)
+        const filteredEntities = activeSketch.entities.filter(e => {
+          if (e.type === 'point' && !showSketchPoints) return false;
+          return true;
+        });
+        const filteredSketch = filteredEntities.length === activeSketch.entities.length
+          ? activeSketch
+          : { ...activeSketch, entities: filteredEntities };
+        return (
+          <SketchGeometry
+            key={`active-${activeSketch.id}-e${activeSketch.entities.length}-pts${showSketchPoints ? 1 : 0}`}
+            sketch={filteredSketch}
+          />
+        );
+      })()}
+      {profileMesh && <primitive key={`profile-${activeSketch?.id}-${activeSketch?.entities.length}`} object={profileMesh} />}
     </>
   );
 }
@@ -464,11 +530,17 @@ function SketchInteraction() {
   const activeTool = useCADStore((s) => s.activeTool);
   const activeSketch = useCADStore((s) => s.activeSketch);
   const addSketchEntity = useCADStore((s) => s.addSketchEntity);
+  const replaceSketchEntities = useCADStore((s) => s.replaceSketchEntities);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const snapEnabled = useCADStore((s) => s.snapEnabled);
   const gridSize = useCADStore((s) => s.gridSize);
   const units = useCADStore((s) => s.units);
   const polygonSides = useCADStore((s) => s.sketchPolygonSides);
+  const filletRadius = useCADStore((s) => s.sketchFilletRadius);
+  const chamferDist1 = useCADStore((s) => s.sketchChamferDist1);
+  const chamferDist2 = useCADStore((s) => s.sketchChamferDist2);
+  const chamferAngle = useCADStore((s) => s.sketchChamferAngle);
+  const tangentCircleRadius = useCADStore((s) => s.tangentCircleRadius);
   const themeColors = useThemeStore((s) => s.colors);
 
   const [drawingPoints, setDrawingPoints] = useState<SketchPoint[]>([]);
@@ -482,6 +554,10 @@ function SketchInteraction() {
   const centerlinePreviewMaterial = useRef(new THREE.LineDashedMaterial({
     color: 0x00aa55, linewidth: 1, dashSize: 0.7, gapSize: 0.2,
   }));
+
+  // D42: click-drag tangent arc detection for line tool
+  const isDraggingArcRef = useRef(false);
+  const dragScreenStartRef = useRef<{ x: number; y: number } | null>(null);
 
   // Dispose the shared preview materials when SketchInteraction unmounts
   useEffect(() => {
@@ -613,6 +689,8 @@ function SketchInteraction() {
 
     const handleClick = (event: MouseEvent) => {
       if (event.button !== 0) return;
+      // Suppress the click that follows a drag-arc completion
+      if (dragJustFinished) { dragJustFinished = false; return; }
       const point = getWorldPoint(event);
       if (!point) return;
 
@@ -648,6 +726,32 @@ function SketchInteraction() {
           }
           break;
         }
+        // D43: Midpoint Line — click midpoint, then one endpoint; other endpoint mirrors
+        case 'midpoint-line': {
+          if (drawingPoints.length === 0) {
+            setDrawingPoints([sketchPoint]);
+            setStatusMessage('Midpoint Line: midpoint placed — click to set one endpoint');
+          } else {
+            const midPt = drawingPoints[0];
+            // Mirror: other end = midPt + (midPt - endpoint) = 2*midPt - endpoint
+            const otherPt: SketchPoint = {
+              id: crypto.randomUUID(),
+              x: 2 * midPt.x - sketchPoint.x,
+              y: 2 * midPt.y - sketchPoint.y,
+              z: 2 * midPt.z - sketchPoint.z,
+            };
+            addSketchEntity({
+              id: crypto.randomUUID(),
+              type: 'line',
+              points: [sketchPoint, otherPt],
+            });
+            setDrawingPoints([]);
+            const len = new THREE.Vector3(sketchPoint.x - otherPt.x, sketchPoint.y - otherPt.y, sketchPoint.z - otherPt.z).length();
+            setStatusMessage(`Midpoint Line added (length=${len.toFixed(2)})`);
+          }
+          break;
+        }
+
         case 'circle': {
           if (drawingPoints.length === 0) {
             setDrawingPoints([sketchPoint]);
@@ -874,6 +978,187 @@ function SketchInteraction() {
           }
           break;
         }
+        // D40: 2-Tangent Circle — pick 2 lines, get circle tangent to both at given radius
+        case 'circle-2tangent': {
+          if (!activeSketch) break;
+          type TLine = typeof activeSketch.entities[0] & { type: 'line' };
+          const tLines = activeSketch.entities.filter((e): e is TLine => e.type === 'line' && e.points.length >= 2);
+
+          if (drawingPoints.length === 0) {
+            // First click — record click point as a sentinel to select nearest line later
+            setDrawingPoints([sketchPoint]);
+            setStatusMessage('2-Tangent Circle: first line selected — click a second line');
+            break;
+          }
+
+          // Second click: find the two closest lines to each click point
+          const clickVec0 = new THREE.Vector3(drawingPoints[0].x, drawingPoints[0].y, drawingPoints[0].z);
+          const clickVec1 = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z);
+
+          const distToSeg = (pt: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3) => {
+            const ab = b.clone().sub(a);
+            const ap = pt.clone().sub(a);
+            const t2c = Math.max(0, Math.min(1, ap.dot(ab) / (ab.lengthSq() || 1)));
+            return a.clone().lerp(b, t2c).distanceTo(pt);
+          };
+
+          let bestLine0: TLine | null = null, bestDist0 = Infinity;
+          let bestLine1: TLine | null = null, bestDist1 = Infinity;
+          for (const l of tLines) {
+            const a = new THREE.Vector3(l.points[0].x, l.points[0].y, l.points[0].z);
+            const b = new THREE.Vector3(l.points[1].x, l.points[1].y, l.points[1].z);
+            const d0 = distToSeg(clickVec0, a, b);
+            const d1 = distToSeg(clickVec1, a, b);
+            if (d0 < bestDist0) { bestDist0 = d0; bestLine0 = l; }
+            if (d1 < bestDist1) { bestDist1 = d1; bestLine1 = l; }
+          }
+
+          if (!bestLine0 || !bestLine1 || bestLine0.id === bestLine1.id) {
+            setStatusMessage('2-Tangent Circle: need to click two different lines');
+            setDrawingPoints([]);
+            break;
+          }
+
+          // Project both lines into sketch-plane 2D (u, v)
+          const toUV = (pt: { x: number; y: number; z: number }) => ({ u: new THREE.Vector3(pt.x, pt.y, pt.z).dot(t1), v: new THREE.Vector3(pt.x, pt.y, pt.z).dot(t2) });
+          const a0 = toUV(bestLine0.points[0]), b0 = toUV(bestLine0.points[1]);
+          const a1 = toUV(bestLine1.points[0]), b1 = toUV(bestLine1.points[1]);
+          // Line equation form: au·x + av·y + c = 0, normalized
+          const lineEq = (a: {u:number;v:number}, b: {u:number;v:number}) => {
+            const du = b.u - a.u, dv = b.v - a.v;
+            const len = Math.sqrt(du*du + dv*dv);
+            if (len < 1e-8) return null;
+            // Normal to the line (rotated 90°): (-dv, du) / len
+            const nu = -dv / len, nv = du / len;
+            const c = -(nu * a.u + nv * a.v);
+            return { nu, nv, c };
+          };
+          const eq0 = lineEq(a0, b0), eq1 = lineEq(a1, b1);
+          if (!eq0 || !eq1) { setDrawingPoints([]); break; }
+
+          const r = tangentCircleRadius;
+          // 4 candidate center lines (offsets on both sides of each line)
+          const candidates: { cu: number; cv: number }[] = [];
+          for (const s0 of [1, -1]) {
+            for (const s1 of [1, -1]) {
+              // Offset line 0: nu·x + nv·y + (c + s0*r) = 0
+              // Offset line 1: nu·x + nv·y + (c + s1*r) = 0
+              // Intersect two 2D lines: [nu0, nv0; nu1, nv1] * [x, y] = [-c0', -c1']
+              const c0p = eq0.c + s0 * r, c1p = eq1.c + s1 * r;
+              const det = eq0.nu * eq1.nv - eq0.nv * eq1.nu;
+              if (Math.abs(det) < 1e-8) continue; // parallel lines
+              const cu = ((-c0p) * eq1.nv - (-c1p) * eq0.nv) / det;
+              const cv = (eq0.nu * (-c1p) - eq1.nu * (-c0p)) / det;
+              candidates.push({ cu, cv });
+            }
+          }
+
+          if (candidates.length === 0) { setStatusMessage('2-Tangent Circle: lines are parallel, no solution'); setDrawingPoints([]); break; }
+
+          // Pick the candidate closest to the average of the two click points
+          const avgU = (toUV(drawingPoints[0]).u + toUV(sketchPoint).u) / 2;
+          const avgV = (toUV(drawingPoints[0]).v + toUV(sketchPoint).v) / 2;
+          const best = candidates.reduce((acc, c) => {
+            const d = Math.hypot(c.cu - avgU, c.cv - avgV);
+            return d < acc.d ? { d, c } : acc;
+          }, { d: Infinity, c: candidates[0] }).c;
+
+          // Convert back to world coords
+          const worldCenter = t1.clone().multiplyScalar(best.cu).add(t2.clone().multiplyScalar(best.cv));
+          addSketchEntity({
+            id: crypto.randomUUID(), type: 'circle',
+            points: [{ id: crypto.randomUUID(), x: worldCenter.x, y: worldCenter.y, z: worldCenter.z }],
+            radius: r,
+          });
+          setDrawingPoints([]);
+          setStatusMessage(`2-Tangent Circle added (r=${r.toFixed(2)})`);
+          break;
+        }
+
+        // D41: 3-Tangent Circle — incircle tangent to three lines
+        case 'circle-3tangent': {
+          if (!activeSketch) break;
+          type TTLine = typeof activeSketch.entities[0] & { type: 'line' };
+          const ttLines = activeSketch.entities.filter((e): e is TTLine => e.type === 'line' && e.points.length >= 2);
+
+          if (drawingPoints.length < 2) {
+            setDrawingPoints([...drawingPoints, sketchPoint]);
+            const remaining = 3 - drawingPoints.length - 1;
+            setStatusMessage(`3-Tangent Circle: ${remaining > 0 ? `click ${remaining} more line(s)` : 'click the third line'}`);
+            break;
+          }
+
+          // Third click — find all 3 lines and compute incircle
+          const clickVecs = [...drawingPoints, sketchPoint].map(p => new THREE.Vector3(p.x, p.y, p.z));
+          const distToSeg3 = (pt: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3) => {
+            const ab = b.clone().sub(a);
+            const ap = pt.clone().sub(a);
+            const t3 = Math.max(0, Math.min(1, ap.dot(ab) / (ab.lengthSq() || 1)));
+            return a.clone().lerp(b, t3).distanceTo(pt);
+          };
+          const selectedLines: TTLine[] = [];
+          for (const cv of clickVecs) {
+            let bst: TTLine | null = null, bd = Infinity;
+            for (const l of ttLines) {
+              if (selectedLines.some(s => s.id === l.id)) continue;
+              const a3 = new THREE.Vector3(l.points[0].x, l.points[0].y, l.points[0].z);
+              const b3 = new THREE.Vector3(l.points[1].x, l.points[1].y, l.points[1].z);
+              const d3 = distToSeg3(cv, a3, b3);
+              if (d3 < bd) { bd = d3; bst = l; }
+            }
+            if (bst) selectedLines.push(bst);
+          }
+
+          if (selectedLines.length < 3) { setStatusMessage('3-Tangent Circle: need 3 distinct lines'); setDrawingPoints([]); break; }
+
+          const toUV3 = (pt: { x: number; y: number; z: number }) => ({ u: new THREE.Vector3(pt.x, pt.y, pt.z).dot(t1), v: new THREE.Vector3(pt.x, pt.y, pt.z).dot(t2) });
+          const lineEq3 = (a: {u:number;v:number}, b: {u:number;v:number}) => {
+            const du = b.u - a.u, dv = b.v - a.v;
+            const len = Math.sqrt(du*du + dv*dv);
+            if (len < 1e-8) return null;
+            const nu = -dv / len, nv = du / len;
+            return { nu, nv, c: -(nu * a.u + nv * a.v) };
+          };
+
+          const eqs = selectedLines.map(l => lineEq3(toUV3(l.points[0]), toUV3(l.points[1])));
+          if (eqs.some(e => !e)) { setStatusMessage('3-Tangent Circle: degenerate line'); setDrawingPoints([]); break; }
+          const [e0, e1, e2] = eqs as { nu: number; nv: number; c: number }[];
+
+          // Incircle = intersection of bisectors of the 3 lines
+          // Try all 8 sign combinations and pick the one whose radius is smallest positive
+          let bestCenter: { cu: number; cv: number; r: number } | null = null;
+          for (const s0 of [1, -1]) {
+            for (const s1 of [1, -1]) {
+              for (const s2 of [1, -1]) {
+                // System: for each pair of lines, the center is equidistant
+                // (nu0·x + nv0·y + c0) * s0 = (nu1·x + nv1·y + c1) * s1
+                // Bisector 1: (s0*nu0 - s1*nu1)x + (s0*nv0 - s1*nv1)y + (s0*c0 - s1*c1) = 0
+                // Bisector 2: (s1*nu1 - s2*nu2)x + (s1*nv1 - s2*nv2)y + (s1*c1 - s2*c2) = 0
+                const A1 = s0*e0.nu - s1*e1.nu, B1 = s0*e0.nv - s1*e1.nv, C1 = -(s0*e0.c - s1*e1.c);
+                const A2 = s1*e1.nu - s2*e2.nu, B2 = s1*e1.nv - s2*e2.nv, C2 = -(s1*e1.c - s2*e2.c);
+                const det3 = A1*B2 - A2*B1;
+                if (Math.abs(det3) < 1e-8) continue;
+                const cu3 = (C1*B2 - C2*B1) / det3;
+                const cv3 = (A1*C2 - A2*C1) / det3;
+                const r3 = Math.abs(e0.nu*cu3 + e0.nv*cv3 + e0.c);
+                if (r3 < 0.001) continue;
+                if (!bestCenter || r3 < bestCenter.r) bestCenter = { cu: cu3, cv: cv3, r: r3 };
+              }
+            }
+          }
+
+          if (!bestCenter) { setStatusMessage('3-Tangent Circle: could not solve incircle'); setDrawingPoints([]); break; }
+          const wc3 = t1.clone().multiplyScalar(bestCenter.cu).add(t2.clone().multiplyScalar(bestCenter.cv));
+          addSketchEntity({
+            id: crypto.randomUUID(), type: 'circle',
+            points: [{ id: crypto.randomUUID(), x: wc3.x, y: wc3.y, z: wc3.z }],
+            radius: bestCenter.r,
+          });
+          setDrawingPoints([]);
+          setStatusMessage(`3-Tangent Circle added (r=${bestCenter.r.toFixed(2)})`);
+          break;
+        }
+
         case 'arc-3point': {
           // Click start, point on arc, end
           if (drawingPoints.length === 0) {
@@ -1307,6 +1592,541 @@ function SketchInteraction() {
           }
           break;
         }
+
+        // ── D9 Spline (Fit-Point / CatmullRom) ────────────────────────────
+        // Clicks accumulate control points; right-click commits the spline.
+        case 'spline': {
+          setDrawingPoints([...drawingPoints, sketchPoint]);
+          const n = drawingPoints.length + 1;
+          if (n === 1) {
+            setStatusMessage('Spline: first point placed — click to add more points, right-click to finish');
+          } else {
+            setStatusMessage(`Spline: ${n} points — click to continue, right-click to finish`);
+          }
+          break;
+        }
+
+        // ── D19 Break ──────────────────────────────────────────────────────
+        // Click on / near a line: split it at the closest point to the click.
+        case 'break': {
+          if (!activeSketch) break;
+          const clickPt = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z);
+          let bestEnt: typeof activeSketch.entities[0] | null = null;
+          let bestT = 0;
+          let bestDist = Infinity;
+
+          for (const ent of activeSketch.entities) {
+            if (ent.type !== 'line' || ent.points.length < 2) continue;
+            const a = new THREE.Vector3(ent.points[0].x, ent.points[0].y, ent.points[0].z);
+            const b = new THREE.Vector3(ent.points[1].x, ent.points[1].y, ent.points[1].z);
+            const ab = b.clone().sub(a);
+            const len2 = ab.lengthSq();
+            if (len2 < 1e-8) continue;
+            const t = Math.max(0, Math.min(1, clickPt.clone().sub(a).dot(ab) / len2));
+            const closest = a.clone().addScaledVector(ab, t);
+            const dist = clickPt.distanceTo(closest);
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestEnt = ent;
+              bestT = t;
+            }
+          }
+
+          // Only act if within a reasonable pick distance (~2 world units)
+          if (!bestEnt || bestDist > 2 || bestT <= 0.001 || bestT >= 0.999) {
+            setStatusMessage('Break: click closer to a line to split it');
+            break;
+          }
+
+          const a = bestEnt.points[0];
+          const b = bestEnt.points[1];
+          const midPt: typeof a = {
+            id: crypto.randomUUID(),
+            x: a.x + (b.x - a.x) * bestT,
+            y: a.y + (b.y - a.y) * bestT,
+            z: a.z + (b.z - a.z) * bestT,
+          };
+
+          const updated = activeSketch.entities.flatMap((e) => {
+            if (e.id !== bestEnt!.id) return [e];
+            return [
+              { ...e, id: crypto.randomUUID(), points: [a, midPt] },
+              { ...e, id: crypto.randomUUID(), points: [midPt, b] },
+            ];
+          });
+          replaceSketchEntities(updated);
+          setStatusMessage('Break: line split at selected point');
+          break;
+        }
+
+        // ── D17 Trim ───────────────────────────────────────────────────────
+        // Click on a segment portion: remove it between nearest intersections.
+        case 'trim': {
+          if (!activeSketch) break;
+          const clickPt = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z);
+
+          // Helper: 2-D line-line intersection parameter along segment a→b
+          const lineLineT = (
+            ax: number, ay: number, bx: number, by: number,
+            cx: number, cy: number, dx: number, dy: number,
+          ): { t: number; u: number } | null => {
+            const rx = bx - ax, ry = by - ay;
+            const sx = dx - cx, sy = dy - cy;
+            const cross = rx * sy - ry * sx;
+            if (Math.abs(cross) < 1e-10) return null;
+            const qx = cx - ax, qy = cy - ay;
+            const t = (qx * sy - qy * sx) / cross;
+            const u = (qx * ry - qy * rx) / cross;
+            return { t, u };
+          };
+
+          // Project a 3D point onto a line entity, returning t in [0,1]
+          const ptOnLine = (pt: THREE.Vector3, ent: typeof activeSketch.entities[0]): number => {
+            if (ent.type !== 'line' || ent.points.length < 2) return -1;
+            const a2 = new THREE.Vector3(ent.points[0].x, ent.points[0].y, ent.points[0].z);
+            const b2 = new THREE.Vector3(ent.points[1].x, ent.points[1].y, ent.points[1].z);
+            const ab2 = b2.clone().sub(a2);
+            const len2 = ab2.lengthSq();
+            if (len2 < 1e-8) return -1;
+            return Math.max(0, Math.min(1, pt.clone().sub(a2).dot(ab2) / len2));
+          };
+
+          // Find the line closest to the click
+          let bestEnt2: typeof activeSketch.entities[0] | null = null;
+          let bestDist2 = Infinity;
+          for (const ent of activeSketch.entities) {
+            if (ent.type !== 'line' || ent.points.length < 2) continue;
+            const a2 = new THREE.Vector3(ent.points[0].x, ent.points[0].y, ent.points[0].z);
+            const b2 = new THREE.Vector3(ent.points[1].x, ent.points[1].y, ent.points[1].z);
+            const ab2 = b2.clone().sub(a2);
+            const len2 = ab2.lengthSq();
+            if (len2 < 1e-8) continue;
+            const t2 = Math.max(0, Math.min(1, clickPt.clone().sub(a2).dot(ab2) / len2));
+            const closest = a2.clone().addScaledVector(ab2, t2);
+            const dist = clickPt.distanceTo(closest);
+            if (dist < bestDist2) { bestDist2 = dist; bestEnt2 = ent; }
+          }
+
+          if (!bestEnt2 || bestDist2 > 2) {
+            setStatusMessage('Trim: click closer to a line segment');
+            break;
+          }
+
+          const trimEnt = bestEnt2;
+          // Collect all intersection t-values along trimEnt from every other line
+          const intersections: number[] = [0, 1]; // sentinel endpoints
+          const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+          const toLocal = (p: typeof activeSketch.entities[0]['points'][0]) => ({
+            x: new THREE.Vector3(p.x, p.y, p.z).dot(t1),
+            y: new THREE.Vector3(p.x, p.y, p.z).dot(t2),
+          });
+
+          const ta0 = toLocal(trimEnt.points[0]);
+          const ta1 = toLocal(trimEnt.points[1]);
+
+          for (const other of activeSketch.entities) {
+            if (other.id === trimEnt.id || other.type !== 'line' || other.points.length < 2) continue;
+            const tb0 = toLocal(other.points[0]);
+            const tb1 = toLocal(other.points[1]);
+            const res = lineLineT(ta0.x, ta0.y, ta1.x, ta1.y, tb0.x, tb0.y, tb1.x, tb1.y);
+            if (res && res.t > 1e-6 && res.t < 1 - 1e-6 && res.u >= 0 && res.u <= 1) {
+              intersections.push(res.t);
+            }
+          }
+          intersections.sort((a2, b2) => a2 - b2);
+
+          // Find which interval was clicked
+          const clickT = ptOnLine(clickPt, trimEnt);
+          let segStart = 0, segEnd = 1;
+          for (let k = 0; k < intersections.length - 1; k++) {
+            if (clickT >= intersections[k] && clickT <= intersections[k + 1]) {
+              segStart = intersections[k];
+              segEnd = intersections[k + 1];
+              break;
+            }
+          }
+
+          // Build replacement: keep segments outside the removed interval
+          const interpPt = (ent: typeof trimEnt, t3: number): typeof ent.points[0] => ({
+            id: crypto.randomUUID(),
+            x: ent.points[0].x + (ent.points[1].x - ent.points[0].x) * t3,
+            y: ent.points[0].y + (ent.points[1].y - ent.points[0].y) * t3,
+            z: ent.points[0].z + (ent.points[1].z - ent.points[0].z) * t3,
+          });
+
+          const replacements: typeof activeSketch.entities[0][] = [];
+          if (segStart > 1e-6) {
+            replacements.push({ ...trimEnt, id: crypto.randomUUID(), points: [trimEnt.points[0], interpPt(trimEnt, segStart)] });
+          }
+          if (segEnd < 1 - 1e-6) {
+            replacements.push({ ...trimEnt, id: crypto.randomUUID(), points: [interpPt(trimEnt, segEnd), trimEnt.points[1]] });
+          }
+
+          const updated2 = activeSketch.entities.flatMap((e) =>
+            e.id === trimEnt.id ? replacements : [e],
+          );
+          replaceSketchEntities(updated2);
+          setStatusMessage(replacements.length === 0 ? 'Trim: entity removed' : 'Trim: segment trimmed');
+          break;
+        }
+
+        // ── D18 Extend ─────────────────────────────────────────────────────
+        // Click near an endpoint of a line to extend it to the nearest intersection.
+        case 'extend': {
+          if (!activeSketch) break;
+          const clickPt2 = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z);
+
+          // Find the line whose nearest endpoint is closest to click
+          let extEnt: typeof activeSketch.entities[0] | null = null;
+          let extEndIdx: 0 | 1 = 0;
+          let extBestDist = Infinity;
+
+          for (const ent of activeSketch.entities) {
+            if (ent.type !== 'line' || ent.points.length < 2) continue;
+            const p0 = new THREE.Vector3(ent.points[0].x, ent.points[0].y, ent.points[0].z);
+            const p1 = new THREE.Vector3(ent.points[1].x, ent.points[1].y, ent.points[1].z);
+            const d0 = clickPt2.distanceTo(p0);
+            const d1 = clickPt2.distanceTo(p1);
+            if (d0 < extBestDist) { extBestDist = d0; extEnt = ent; extEndIdx = 0; }
+            if (d1 < extBestDist) { extBestDist = d1; extEnt = ent; extEndIdx = 1; }
+          }
+
+          if (!extEnt || extBestDist > 4) {
+            setStatusMessage('Extend: click near the endpoint of a line you want to extend');
+            break;
+          }
+
+          const extA = new THREE.Vector3(extEnt.points[0].x, extEnt.points[0].y, extEnt.points[0].z);
+          const extB = new THREE.Vector3(extEnt.points[1].x, extEnt.points[1].y, extEnt.points[1].z);
+          const extDir = extEndIdx === 1 ? extB.clone().sub(extA).normalize() : extA.clone().sub(extB).normalize();
+          const extOrigin = extEndIdx === 1 ? extB : extA;
+          // Plane-local axes for intersection test
+          const { t1: extT1, t2: extT2 } = GeometryEngine.getSketchAxes(activeSketch);
+
+          const toLocal2 = (p: typeof activeSketch.entities[0]['points'][0]) => ({
+            x: new THREE.Vector3(p.x, p.y, p.z).dot(extT1),
+            y: new THREE.Vector3(p.x, p.y, p.z).dot(extT2),
+          });
+          const lineLineT2 = (
+            ax2: number, ay2: number, bx2: number, by2: number,
+            cx2: number, cy2: number, dx2: number, dy2: number,
+          ): { t: number; u: number } | null => {
+            const rx2 = bx2 - ax2, ry2 = by2 - ay2;
+            const sx2 = dx2 - cx2, sy2 = dy2 - cy2;
+            const cross2 = rx2 * sy2 - ry2 * sx2;
+            if (Math.abs(cross2) < 1e-10) return null;
+            const qx2 = cx2 - ax2, qy2 = cy2 - ay2;
+            const t2r = (qx2 * sy2 - qy2 * sx2) / cross2;
+            const u2r = (qx2 * ry2 - qy2 * rx2) / cross2;
+            return { t: t2r, u: u2r };
+          };
+
+          const extOrigLocal = toLocal2(extEnt.points[extEndIdx]);
+          const extDirLocal = { x: extDir.dot(extT1), y: extDir.dot(extT2) };
+          const extEnd2 = { x: extOrigLocal.x + extDirLocal.x * 1000, y: extOrigLocal.y + extDirLocal.y * 1000 };
+
+          let closestT: number | null = null;
+          for (const other of activeSketch.entities) {
+            if (other.id === extEnt.id || other.type !== 'line' || other.points.length < 2) continue;
+            const ol0 = toLocal2(other.points[0]);
+            const ol1 = toLocal2(other.points[1]);
+            const res2 = lineLineT2(extOrigLocal.x, extOrigLocal.y, extEnd2.x, extEnd2.y, ol0.x, ol0.y, ol1.x, ol1.y);
+            if (res2 && res2.t > 1e-4 && res2.u >= -0.01 && res2.u <= 1.01) {
+              if (closestT === null || res2.t < closestT) closestT = res2.t;
+            }
+          }
+
+          if (closestT === null) {
+            setStatusMessage('Extend: no intersection found along that direction');
+            break;
+          }
+
+          const newEndPt: typeof extEnt.points[0] = {
+            id: crypto.randomUUID(),
+            x: extOrigin.x + extDir.x * closestT * 1000,
+            y: extOrigin.y + extDir.y * closestT * 1000,
+            z: extOrigin.z + extDir.z * closestT * 1000,
+          };
+
+          const updExt = activeSketch.entities.map((e) => {
+            if (e.id !== extEnt!.id) return e;
+            const pts = [...e.points];
+            pts[extEndIdx] = newEndPt;
+            return { ...e, id: crypto.randomUUID(), points: pts };
+          });
+          replaceSketchEntities(updExt);
+          setStatusMessage('Extend: line extended to nearest intersection');
+          break;
+        }
+
+        // ── D20 Sketch Offset ──────────────────────────────────────────────
+        // Click 1: pick a line entity. Click 2: pick the side (offset direction).
+        case 'sketch-offset': {
+          if (!activeSketch) break;
+          const clickPt = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z);
+
+          if (drawingPoints.length === 0) {
+            // First click: find the closest line
+            let bestEnt3: typeof activeSketch.entities[0] | null = null;
+            let bestDist3 = Infinity;
+            for (const ent of activeSketch.entities) {
+              if (ent.type !== 'line' || ent.points.length < 2) continue;
+              const a3 = new THREE.Vector3(ent.points[0].x, ent.points[0].y, ent.points[0].z);
+              const b3 = new THREE.Vector3(ent.points[1].x, ent.points[1].y, ent.points[1].z);
+              const ab3 = b3.clone().sub(a3);
+              const len23 = ab3.lengthSq();
+              if (len23 < 1e-8) continue;
+              const t3 = Math.max(0, Math.min(1, clickPt.clone().sub(a3).dot(ab3) / len23));
+              const dist = clickPt.distanceTo(a3.clone().addScaledVector(ab3, t3));
+              if (dist < bestDist3) { bestDist3 = dist; bestEnt3 = ent; }
+            }
+            if (!bestEnt3 || bestDist3 > 3) {
+              setStatusMessage('Offset: click closer to a line to select it');
+              break;
+            }
+            // Store the selected entity id encoded into drawingPoints[0].id
+            setDrawingPoints([{ ...sketchPoint, id: bestEnt3.id }]);
+            setStatusMessage('Offset: entity selected — click on the side where you want the offset copy');
+          } else {
+            // Second click: compute offset direction and distance
+            const selectedId = drawingPoints[0].id;
+            const ent = activeSketch.entities.find((e) => e.id === selectedId);
+            if (!ent || ent.type !== 'line' || ent.points.length < 2) {
+              setDrawingPoints([]); break;
+            }
+            const a4 = new THREE.Vector3(ent.points[0].x, ent.points[0].y, ent.points[0].z);
+            const b4 = new THREE.Vector3(ent.points[1].x, ent.points[1].y, ent.points[1].z);
+            const ab4 = b4.clone().sub(a4).normalize();
+            const planeNorm4 = t1.clone().cross(t2).normalize();
+            const perpDir4 = ab4.clone().cross(planeNorm4).normalize();
+            const toClick4 = clickPt.clone().sub(a4);
+            const signedDist4 = toClick4.dot(perpDir4);
+            const d4 = Math.abs(signedDist4);
+            const sign4 = signedDist4 > 0 ? 1 : -1;
+            if (d4 < 0.001) { setStatusMessage('Offset: click further from the line'); break; }
+            addSketchEntity({
+              ...ent,
+              id: crypto.randomUUID(),
+              points: [
+                { ...ent.points[0], id: crypto.randomUUID(), x: ent.points[0].x + perpDir4.x * d4 * sign4, y: ent.points[0].y + perpDir4.y * d4 * sign4, z: ent.points[0].z + perpDir4.z * d4 * sign4 },
+                { ...ent.points[1], id: crypto.randomUUID(), x: ent.points[1].x + perpDir4.x * d4 * sign4, y: ent.points[1].y + perpDir4.y * d4 * sign4, z: ent.points[1].z + perpDir4.z * d4 * sign4 },
+              ],
+            });
+            setDrawingPoints([]);
+            setStatusMessage(`Offset: line copied at distance ${d4.toFixed(2)}`);
+          }
+          break;
+        }
+
+        // ── D16 Sketch Fillet ──────────────────────────────────────────────
+        // Click the shared corner of two lines; replaces it with a tangent arc.
+        // Two clicks needed: click near a vertex where two lines meet.
+        case 'sketch-fillet': {
+          if (!activeSketch) break;
+          const clickPt = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z);
+          const r = filletRadius;
+
+          // Find the closest vertex shared by two line entities
+          type LineEnt = typeof activeSketch.entities[0] & { type: 'line' };
+          const lineEnts = activeSketch.entities.filter((e): e is LineEnt => e.type === 'line' && e.points.length >= 2);
+
+          // Collect all endpoints across all lines
+          interface VertexCandidate {
+            pos: THREE.Vector3;
+            lineIdx: number;
+            ptIdx: 0 | 1; // which endpoint on that line
+          }
+          const vertices: VertexCandidate[] = [];
+          lineEnts.forEach((e, i) => {
+            vertices.push({ pos: new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z), lineIdx: i, ptIdx: 0 });
+            vertices.push({ pos: new THREE.Vector3(e.points[1].x, e.points[1].y, e.points[1].z), lineIdx: i, ptIdx: 1 });
+          });
+
+          // Group vertices that are within snap tolerance of each other
+          const SNAP_TOL = 0.5;
+          let bestCorner: { pos: THREE.Vector3; lines: { idx: number; ptIdx: 0 | 1 }[] } | null = null;
+          let bestCornerDist = Infinity;
+
+          for (let i = 0; i < vertices.length; i++) {
+            const coinc: typeof vertices = [vertices[i]];
+            for (let j = i + 1; j < vertices.length; j++) {
+              if (vertices[j].lineIdx === vertices[i].lineIdx) continue;
+              if (vertices[j].pos.distanceTo(vertices[i].pos) < SNAP_TOL) {
+                coinc.push(vertices[j]);
+              }
+            }
+            if (coinc.length < 2) continue;
+            const dist = clickPt.distanceTo(vertices[i].pos);
+            if (dist < bestCornerDist) {
+              bestCornerDist = dist;
+              bestCorner = {
+                pos: vertices[i].pos.clone(),
+                lines: coinc.map((c) => ({ idx: c.lineIdx, ptIdx: c.ptIdx })),
+              };
+            }
+          }
+
+          if (!bestCorner || bestCornerDist > 4 || bestCorner.lines.length < 2) {
+            setStatusMessage('Fillet: click near a corner where two lines meet');
+            break;
+          }
+
+          const corner = bestCorner.pos;
+          // Use the first two lines at the corner
+          const li0 = bestCorner.lines[0];
+          const li1 = bestCorner.lines[1];
+          const ent0 = lineEnts[li0.idx];
+          const ent1 = lineEnts[li1.idx];
+
+          // Direction vectors pointing AWAY from the corner along each line
+          const otherPt0 = li0.ptIdx === 0 ? ent0.points[1] : ent0.points[0];
+          const otherPt1 = li1.ptIdx === 0 ? ent1.points[1] : ent1.points[0];
+          const dir0 = new THREE.Vector3(otherPt0.x - corner.x, otherPt0.y - corner.y, otherPt0.z - corner.z).normalize();
+          const dir1 = new THREE.Vector3(otherPt1.x - corner.x, otherPt1.y - corner.y, otherPt1.z - corner.z).normalize();
+
+          // Half-angle bisector: fillet center is at distance r/sin(halfAngle) from corner
+          const cosA = dir0.dot(dir1);
+          const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+          if (sinA < 0.01) { setStatusMessage('Fillet: lines are nearly parallel, cannot fillet'); break; }
+          const halfAngle = Math.acos(Math.max(-1, Math.min(1, cosA))) / 2;
+          const distToCenter = r / Math.sin(halfAngle);
+          const bisector = dir0.clone().add(dir1).normalize();
+          const arcCenter = corner.clone().addScaledVector(bisector, distToCenter);
+
+          // Tangent points: where fillet circle meets each line
+          const tangent0 = corner.clone().addScaledVector(dir0, r / Math.tan(halfAngle));
+          const tangent1 = corner.clone().addScaledVector(dir1, r / Math.tan(halfAngle));
+
+          // Arc angles in the sketch plane
+          const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+          const toAngle = (v: THREE.Vector3) => Math.atan2(v.dot(t2), v.dot(t1));
+          const arcStart = toAngle(tangent0.clone().sub(arcCenter));
+          const arcEnd = toAngle(tangent1.clone().sub(arcCenter));
+
+          // Build replacement entities
+          const toSkPt = (v: THREE.Vector3): typeof activeSketch.entities[0]['points'][0] => ({
+            id: crypto.randomUUID(), x: v.x, y: v.y, z: v.z,
+          });
+
+          const updated3 = activeSketch.entities.flatMap((e) => {
+            if (e.id === ent0.id) {
+              // Shorten ent0: keep the far end → tangent point
+              const farPt = li0.ptIdx === 0 ? e.points[1] : e.points[0];
+              const t0Pt = toSkPt(tangent0);
+              return [{ ...e, id: crypto.randomUUID(), points: li0.ptIdx === 0 ? [e.points[0], t0Pt] : [t0Pt, farPt] }];
+            }
+            if (e.id === ent1.id) {
+              const farPt2 = li1.ptIdx === 0 ? e.points[1] : e.points[0];
+              const t1Pt = toSkPt(tangent1);
+              return [{ ...e, id: crypto.randomUUID(), points: li1.ptIdx === 0 ? [e.points[0], t1Pt] : [t1Pt, farPt2] }];
+            }
+            return [e];
+          });
+
+          // Insert fillet arc
+          updated3.push({
+            id: crypto.randomUUID(),
+            type: 'arc',
+            points: [toSkPt(arcCenter)],
+            radius: r,
+            startAngle: arcStart,
+            endAngle: arcEnd,
+          });
+          replaceSketchEntities(updated3);
+          setStatusMessage(`Fillet: r=${r.toFixed(2)} applied`);
+          break;
+        }
+
+        // D47: Sketch Chamfer — equal / two-dist / dist+angle variants
+        case 'sketch-chamfer-equal':
+        case 'sketch-chamfer-two-dist':
+        case 'sketch-chamfer-dist-angle': {
+          if (!activeSketch) break;
+          const chamferClickPt = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z);
+
+          // Reuse the same corner-finder as sketch-fillet
+          type CLineEnt = typeof activeSketch.entities[0] & { type: 'line' };
+          const chamferLines = activeSketch.entities.filter((e): e is CLineEnt => e.type === 'line' && e.points.length >= 2);
+          interface CVtx { pos: THREE.Vector3; lineIdx: number; ptIdx: 0 | 1; }
+          const chamferVerts: CVtx[] = [];
+          chamferLines.forEach((e, i) => {
+            chamferVerts.push({ pos: new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z), lineIdx: i, ptIdx: 0 });
+            chamferVerts.push({ pos: new THREE.Vector3(e.points[1].x, e.points[1].y, e.points[1].z), lineIdx: i, ptIdx: 1 });
+          });
+
+          const CTOL = 0.5;
+          let bestChamferCorner: { pos: THREE.Vector3; lines: { idx: number; ptIdx: 0 | 1 }[] } | null = null;
+          let bestChamferDist = Infinity;
+          for (let i = 0; i < chamferVerts.length; i++) {
+            const coinc: CVtx[] = [chamferVerts[i]];
+            for (let j = i + 1; j < chamferVerts.length; j++) {
+              if (chamferVerts[j].lineIdx === chamferVerts[i].lineIdx) continue;
+              if (chamferVerts[j].pos.distanceTo(chamferVerts[i].pos) < CTOL) coinc.push(chamferVerts[j]);
+            }
+            if (coinc.length < 2) continue;
+            const dist = chamferClickPt.distanceTo(chamferVerts[i].pos);
+            if (dist < bestChamferDist) {
+              bestChamferDist = dist;
+              bestChamferCorner = { pos: chamferVerts[i].pos.clone(), lines: coinc.map((c) => ({ idx: c.lineIdx, ptIdx: c.ptIdx })) };
+            }
+          }
+
+          if (!bestChamferCorner || bestChamferDist > 4 || bestChamferCorner.lines.length < 2) {
+            setStatusMessage('Chamfer: click near a corner where two lines meet');
+            break;
+          }
+
+          const cCorner = bestChamferCorner.pos;
+          const cLi0 = bestChamferCorner.lines[0];
+          const cLi1 = bestChamferCorner.lines[1];
+          const cEnt0 = chamferLines[cLi0.idx];
+          const cEnt1 = chamferLines[cLi1.idx];
+          const cOther0 = cLi0.ptIdx === 0 ? cEnt0.points[1] : cEnt0.points[0];
+          const cOther1 = cLi1.ptIdx === 0 ? cEnt1.points[1] : cEnt1.points[0];
+          const cDir0 = new THREE.Vector3(cOther0.x - cCorner.x, cOther0.y - cCorner.y, cOther0.z - cCorner.z).normalize();
+          const cDir1 = new THREE.Vector3(cOther1.x - cCorner.x, cOther1.y - cCorner.y, cOther1.z - cCorner.z).normalize();
+
+          // Determine setback distances based on variant
+          let sb0 = chamferDist1;
+          let sb1 = chamferDist1;
+          if (activeTool === 'sketch-chamfer-two-dist') {
+            sb0 = chamferDist1;
+            sb1 = chamferDist2;
+          } else if (activeTool === 'sketch-chamfer-dist-angle') {
+            sb0 = chamferDist1;
+            sb1 = chamferDist1 * Math.tan((chamferAngle * Math.PI) / 180);
+          }
+
+          // Setback points along each line
+          const cTangent0 = cCorner.clone().addScaledVector(cDir0, sb0);
+          const cTangent1 = cCorner.clone().addScaledVector(cDir1, sb1);
+
+          const toCSkPt = (v: THREE.Vector3): SketchPoint => ({ id: crypto.randomUUID(), x: v.x, y: v.y, z: v.z });
+
+          const chamferUpdated = activeSketch.entities.flatMap((e) => {
+            if (e.id === cEnt0.id) {
+              const farPt = cLi0.ptIdx === 0 ? e.points[1] : e.points[0];
+              const newCornerPt = toCSkPt(cTangent0);
+              return [{ ...e, id: crypto.randomUUID(), points: cLi0.ptIdx === 0 ? [e.points[0], newCornerPt] : [newCornerPt, farPt] }];
+            }
+            if (e.id === cEnt1.id) {
+              const farPt2 = cLi1.ptIdx === 0 ? e.points[1] : e.points[0];
+              const newCornerPt2 = toCSkPt(cTangent1);
+              return [{ ...e, id: crypto.randomUUID(), points: cLi1.ptIdx === 0 ? [e.points[0], newCornerPt2] : [newCornerPt2, farPt2] }];
+            }
+            return [e];
+          });
+
+          // Insert chamfer line between the two setback points
+          chamferUpdated.push({
+            id: crypto.randomUUID(),
+            type: 'line',
+            points: [toCSkPt(cTangent0), toCSkPt(cTangent1)],
+          });
+          replaceSketchEntities(chamferUpdated);
+          setStatusMessage(`Chamfer: ${sb0.toFixed(2)} × ${sb1.toFixed(2)} applied`);
+          break;
+        }
       }
     };
 
@@ -1317,8 +2137,24 @@ function SketchInteraction() {
       }
     };
 
-    // Right-click stops the current drawing operation at the last placed point
+    // Right-click stops the current drawing operation at the last placed point;
+    // for spline tool it commits the curve if ≥2 points are placed.
     const handleContextMenu = (event: MouseEvent) => {
+      if (activeTool === 'spline' && drawingPoints.length >= 2) {
+        event.preventDefault();
+        event.stopPropagation();
+        const curve = new THREE.CatmullRomCurve3(
+          drawingPoints.map((p) => new THREE.Vector3(p.x, p.y, p.z)),
+        );
+        const sampledPts = curve.getPoints(Math.max(50, drawingPoints.length * 8));
+        const splinePts: typeof drawingPoints = sampledPts.map((p) => ({
+          id: crypto.randomUUID(), x: p.x, y: p.y, z: p.z,
+        }));
+        addSketchEntity({ id: crypto.randomUUID(), type: 'spline', points: splinePts });
+        setDrawingPoints([]);
+        setStatusMessage(`Spline added (${drawingPoints.length} fit points)`);
+        return;
+      }
       if (drawingPoints.length > 0) {
         event.preventDefault();
         event.stopPropagation();
@@ -1327,29 +2163,139 @@ function SketchInteraction() {
       }
     };
 
+    // D42: line-tool click-drag → tangent arc
+    const DRAG_THRESHOLD_PX = 8;
+    // Set to true on pointerup after a drag; cleared after first click event that reads it
+    let dragJustFinished = false;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      isDraggingArcRef.current = false;
+      dragJustFinished = false;
+      dragScreenStartRef.current = { x: event.clientX, y: event.clientY };
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (event.buttons !== 1) return; // only while left button held
+      const start = dragScreenStartRef.current;
+      if (!start) return;
+      // Only activate drag-arc when we already have a chain start point
+      const isLineMode = activeTool === 'line' || activeTool === 'construction-line' || activeTool === 'centerline';
+      if (!isLineMode) return;
+      if (drawingPoints.length === 0) return; // need a chain anchor
+      const dx = event.clientX - start.x;
+      const dy = event.clientY - start.y;
+      if (!isDraggingArcRef.current && Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD_PX) {
+        isDraggingArcRef.current = true;
+        setStatusMessage('Drag: tangent arc — release to place');
+      }
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      if (!isDraggingArcRef.current) return;
+      isDraggingArcRef.current = false;
+      dragJustFinished = true;
+      dragScreenStartRef.current = null;
+
+      if (drawingPoints.length === 0 || !mousePos) return;
+      const isLineMode = activeTool === 'line' || activeTool === 'construction-line' || activeTool === 'centerline';
+      if (!isLineMode || !activeSketch) return;
+
+      // Get tangent direction from the last committed entity or the drawingPoints direction
+      const sk = useCADStore.getState().activeSketch;
+      const { t1: _t1, t2: _t2 } = GeometryEngine.getSketchAxes(activeSketch);
+      const lastEntity = sk?.entities[sk.entities.length - 1];
+      const chainPt = drawingPoints[0];
+      let tangentDir: THREE.Vector3;
+
+      if (lastEntity && (lastEntity.type === 'line' || lastEntity.type === 'construction-line' || lastEntity.type === 'centerline')) {
+        const a = lastEntity.points[0];
+        const b = lastEntity.points[lastEntity.points.length - 1];
+        tangentDir = new THREE.Vector3(b.x - a.x, b.y - a.y, b.z - a.z).normalize();
+      } else if (lastEntity && lastEntity.type === 'arc') {
+        const c = lastEntity.points[0];
+        const r = lastEntity.radius || 1;
+        const ea = lastEntity.endAngle ?? Math.PI;
+        const radial = new THREE.Vector3(
+          _t1.x * Math.cos(ea) + _t2.x * Math.sin(ea),
+          _t1.y * Math.cos(ea) + _t2.y * Math.sin(ea),
+          _t1.z * Math.cos(ea) + _t2.z * Math.sin(ea),
+        );
+        const endPtArc = { x: c.x + radial.x * r, y: c.y + radial.y * r, z: c.z + radial.z * r };
+        // Verify the arc's end point matches chainPt (within tolerance)
+        const distToEnd = new THREE.Vector3(endPtArc.x - chainPt.x, endPtArc.y - chainPt.y, endPtArc.z - chainPt.z).length();
+        if (distToEnd < 1) {
+          const planeNorm = _t1.clone().cross(_t2).normalize();
+          tangentDir = radial.clone().cross(planeNorm).normalize();
+        } else {
+          // Fallback: tangent along drag direction
+          tangentDir = mousePos.clone().sub(new THREE.Vector3(chainPt.x, chainPt.y, chainPt.z)).normalize();
+        }
+      } else {
+        // No previous entity — tangent is the drag direction
+        tangentDir = mousePos.clone().sub(new THREE.Vector3(chainPt.x, chainPt.y, chainPt.z)).normalize();
+      }
+
+      const startPt = chainPt;
+      const endPtWorld = mousePos;
+      const planeNormal2 = _t1.clone().cross(_t2).normalize();
+      const normalInPlane = tangentDir.clone().cross(planeNormal2).normalize();
+      const chord = new THREE.Vector3(endPtWorld.x - startPt.x, endPtWorld.y - startPt.y, endPtWorld.z - startPt.z);
+      const chordLenSq = chord.lengthSq();
+      const projOnNormal = chord.dot(normalInPlane);
+      if (Math.abs(projOnNormal) < 1e-5 || chordLenSq < 0.001) {
+        setStatusMessage('Tangent arc too short — skipped');
+        return;
+      }
+      const d = chordLenSq / (2 * projOnNormal);
+      const cx = startPt.x + normalInPlane.x * d;
+      const cy = startPt.y + normalInPlane.y * d;
+      const cz = startPt.z + normalInPlane.z * d;
+      const arcRadius = Math.abs(d);
+      const toStart = new THREE.Vector3(startPt.x - cx, startPt.y - cy, startPt.z - cz);
+      const toEnd = new THREE.Vector3(endPtWorld.x - cx, endPtWorld.y - cy, endPtWorld.z - cz);
+      const startAngle = Math.atan2(toStart.dot(_t2), toStart.dot(_t1));
+      const endAngle = Math.atan2(toEnd.dot(_t2), toEnd.dot(_t1));
+      const arcCenter: SketchPoint = { id: crypto.randomUUID(), x: cx, y: cy, z: cz };
+      const arcEnd: SketchPoint = { id: crypto.randomUUID(), x: endPtWorld.x, y: endPtWorld.y, z: endPtWorld.z };
+      addSketchEntity({
+        id: crypto.randomUUID(),
+        type: 'arc',
+        points: [arcCenter],
+        radius: arcRadius,
+        startAngle,
+        endAngle,
+      });
+      // Chain: next line starts at arc end
+      setDrawingPoints([arcEnd]);
+      setStatusMessage(`Tangent arc added (r=${arcRadius.toFixed(2)}) — click to continue line`);
+    };
+
     const canvas = gl.domElement;
+    canvas.addEventListener('pointerdown', handlePointerDown);
+    canvas.addEventListener('pointermove', handlePointerMove);
+    canvas.addEventListener('pointerup', handlePointerUp);
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('click', handleClick);
     canvas.addEventListener('contextmenu', handleContextMenu);
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
+      canvas.removeEventListener('pointerdown', handlePointerDown);
+      canvas.removeEventListener('pointermove', handlePointerMove);
+      canvas.removeEventListener('pointerup', handlePointerUp);
       canvas.removeEventListener('mousemove', handleMouseMove);
       canvas.removeEventListener('click', handleClick);
       canvas.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeSketch, activeTool, drawingPoints, getWorldPoint, addSketchEntity, setStatusMessage]);
+  }, [activeSketch, activeTool, drawingPoints, mousePos, getWorldPoint, addSketchEntity, replaceSketchEntities, setStatusMessage, filletRadius, chamferDist1, chamferDist2, chamferAngle, tangentCircleRadius]);
 
   // Preview of current drawing operation
   useFrame(() => {
     if (!previewRef.current) return;
-    // Dispose geometry of each child before removing — prevents GPU memory leak
-    while (previewRef.current.children.length > 0) {
-      const child = previewRef.current.children[0] as THREE.Line;
-      child.geometry?.dispose(); // dispose geometry (material is shared — do NOT dispose it)
-      previewRef.current.remove(child);
-    }
+    clearGroupChildren(previewRef.current);
 
     if (drawingPoints.length === 0 || !mousePos) return;
 
@@ -1390,6 +2336,48 @@ function SketchInteraction() {
           activeTool === 'construction-line' ? constructionPreviewMaterial.current
           : activeTool === 'centerline' ? centerlinePreviewMaterial.current
           : material;
+
+        // D42: if drag-arc mode active, show tangent arc preview instead of line
+        if (isDraggingArcRef.current && drawingPoints.length > 0) {
+          const sk = useCADStore.getState().activeSketch;
+          const lastEntity = sk?.entities[sk.entities.length - 1];
+          let tDir: THREE.Vector3;
+          if (lastEntity && (lastEntity.type === 'line' || lastEntity.type === 'construction-line' || lastEntity.type === 'centerline')) {
+            const a = lastEntity.points[0];
+            const b = lastEntity.points[lastEntity.points.length - 1];
+            tDir = new THREE.Vector3(b.x - a.x, b.y - a.y, b.z - a.z).normalize();
+          } else {
+            tDir = mousePos.clone().sub(startV).normalize();
+          }
+          const pn = t1.clone().cross(t2).normalize();
+          const nip = tDir.clone().cross(pn).normalize();
+          const chord2 = mousePos.clone().sub(startV);
+          const cLenSq = chord2.lengthSq();
+          const proj2 = chord2.dot(nip);
+          if (Math.abs(proj2) > 1e-5 && cLenSq > 0.001) {
+            const d2 = cLenSq / (2 * proj2);
+            const arcCx = startV.x + nip.x * d2;
+            const arcCy = startV.y + nip.y * d2;
+            const arcCz = startV.z + nip.z * d2;
+            const arcCenter2 = new THREE.Vector3(arcCx, arcCy, arcCz);
+            const arcR2 = Math.abs(d2);
+            const toS = startV.clone().sub(arcCenter2);
+            const toE = mousePos.clone().sub(arcCenter2);
+            const sa = Math.atan2(toS.dot(t2), toS.dot(t1));
+            const ea = Math.atan2(toE.dot(t2), toE.dot(t1));
+            const segs2 = 32;
+            const arcPrev: THREE.Vector3[] = [];
+            for (let i = 0; i <= segs2; i++) {
+              const ang = sa + (i / segs2) * (ea - sa);
+              arcPrev.push(arcCenter2.clone().addScaledVector(t1, Math.cos(ang) * arcR2).addScaledVector(t2, Math.sin(ang) * arcR2));
+            }
+            addLine(arcPrev);
+          } else {
+            addLine([startV, mousePos], lineMat);
+          }
+          break;
+        }
+
         addLine([startV, mousePos], lineMat);
         // Angle arc visualization (sweep from +t1 axis to current line direction) — always solid
         const lineDelta = mousePos.clone().sub(startV);
@@ -1409,6 +2397,17 @@ function SketchInteraction() {
         }
         break;
       }
+      case 'midpoint-line': {
+        // startV is the midpoint; mousePos is one endpoint; mirror for the other
+        const otherEnd = startV.clone().multiplyScalar(2).sub(mousePos);
+        addLine([mousePos, otherEnd]);
+        // Mark the midpoint with a cross
+        const crossSize = 0.3;
+        addLine([startV.clone().addScaledVector(t1, -crossSize), startV.clone().addScaledVector(t1, crossSize)]);
+        addLine([startV.clone().addScaledVector(t2, -crossSize), startV.clone().addScaledVector(t2, crossSize)]);
+        break;
+      }
+
       case 'rectangle': {
         const delta = mousePos.clone().sub(startV);
         const dt1 = t1.clone().multiplyScalar(delta.dot(t1));
@@ -1577,16 +2576,35 @@ function SketchInteraction() {
         }
         break;
       }
+      // Spline preview: CatmullRomCurve3 through placed points + mouse cursor
+      case 'spline': {
+        if (drawingPoints.length === 0) {
+          addLine([startV, mousePos]);
+        } else {
+          const pts3d = drawingPoints.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+          pts3d.push(mousePos.clone());
+          const curve = new THREE.CatmullRomCurve3(pts3d);
+          const previewPts = curve.getPoints(Math.max(50, pts3d.length * 8));
+          addLine(previewPts);
+          // Dot markers at each control point
+          for (const cp of drawingPoints) {
+            const cv = new THREE.Vector3(cp.x, cp.y, cp.z);
+            addLine([cv.clone().addScaledVector(t1, 0.15), cv.clone().addScaledVector(t1, -0.15)]);
+            addLine([cv.clone().addScaledVector(t2, 0.15), cv.clone().addScaledVector(t2, -0.15)]);
+          }
+        }
+        break;
+      }
     }
   });
 
   // Cursor crosshair at mouse position
   if (!mousePos || !activeSketch) return null;
 
-  // Live dimension labels for the line tools (between first click and second click)
+  // Live dimension labels for drawing tools (D64)
   const showLineDims =
-    (activeTool === 'line' || activeTool === 'construction-line' || activeTool === 'centerline')
-    && drawingPoints.length === 1
+    (activeTool === 'line' || activeTool === 'construction-line' || activeTool === 'centerline' || activeTool === 'midpoint-line')
+    && drawingPoints.length >= 1
     && mousePos !== null;
   let lineLengthText = '';
   let lineAngleText = '';
@@ -1596,7 +2614,10 @@ function SketchInteraction() {
   if (showLineDims) {
     const startPt = drawingPoints[0];
     const startVec = new THREE.Vector3(startPt.x, startPt.y, startPt.z);
-    const delta = mousePos.clone().sub(startVec);
+    // For midpoint-line the effective start is the midpoint, but we show full length
+    const delta = activeTool === 'midpoint-line'
+      ? mousePos.clone().sub(startVec).multiplyScalar(2) // full line length = 2 * half
+      : mousePos.clone().sub(startVec);
     const len = delta.length();
     const { t1, t2 } = activeSketch
       ? GeometryEngine.getSketchAxes(activeSketch)
@@ -1610,11 +2631,30 @@ function SketchInteraction() {
     lineDeltaText = `Δ ${du.toFixed(2)}, ${dv.toFixed(2)}`;
     lineMidpoint = startVec.clone().add(mousePos).multiplyScalar(0.5);
     // Position angle label along the angle bisector, just outside the arc
-    const arcRadius = Math.min(len * 0.25, 1.5);
+    const arcRadiusHUD = Math.min(len * 0.25, 1.5);
     const midAng = angRad / 2;
     lineAnglePos = startVec.clone()
-      .addScaledVector(t1, Math.cos(midAng) * arcRadius * 1.9)
-      .addScaledVector(t2, Math.sin(midAng) * arcRadius * 1.9);
+      .addScaledVector(t1, Math.cos(midAng) * arcRadiusHUD * 1.9)
+      .addScaledVector(t2, Math.sin(midAng) * arcRadiusHUD * 1.9);
+  }
+
+  // Live radius HUD for circle / arc tools
+  const showRadiusHUD = (activeTool === 'circle' || activeTool === 'circle-2point' || activeTool === 'arc')
+    && drawingPoints.length >= 1
+    && mousePos !== null;
+  let radiusHUDText = '';
+  let radiusHUDPos: THREE.Vector3 | null = null;
+  if (showRadiusHUD) {
+    const centerPt = drawingPoints[0];
+    const centerVec = new THREE.Vector3(centerPt.x, centerPt.y, centerPt.z);
+    let r = 0;
+    if (activeTool === 'circle-2point') {
+      r = mousePos.distanceTo(centerVec) / 2;
+    } else {
+      r = mousePos.distanceTo(centerVec);
+    }
+    radiusHUDText = `r=${r.toFixed(3)} ${units}`;
+    radiusHUDPos = centerVec.clone().add(mousePos).multiplyScalar(0.5);
   }
 
   // Shared label styles (themed via themeColors)
@@ -1668,7 +2708,7 @@ function SketchInteraction() {
         </group>
       </group>
 
-      {/* Live line-tool dimension overlays — outside previewRef so useFrame doesn't strip them */}
+      {/* Live dimension overlays (D64) — outside previewRef so useFrame doesn't strip them */}
       {showLineDims && lineMidpoint && lineAnglePos && (
         <>
           <Html position={lineMidpoint} center zIndexRange={[100, 0]}>
@@ -1684,6 +2724,11 @@ function SketchInteraction() {
             <div style={deltaLabelStyle}>{lineDeltaText}</div>
           </Html>
         </>
+      )}
+      {showRadiusHUD && radiusHUDPos && (
+        <Html position={radiusHUDPos} center zIndexRange={[100, 0]}>
+          <div style={lengthLabelStyle}>{radiusHUDText}</div>
+        </Html>
       )}
     </>
   );
@@ -1804,13 +2849,7 @@ function MeasureInteraction() {
   // Draw measurement line / preview in the scene
   useFrame(() => {
     if (!previewRef.current) return;
-    // Clear previous children
-    while (previewRef.current.children.length > 0) {
-      const child = previewRef.current.children[0];
-      if ((child as THREE.Line).isLine) (child as THREE.Line).geometry?.dispose();
-      if ((child as THREE.Mesh).isMesh) (child as THREE.Mesh).geometry?.dispose();
-      previewRef.current.remove(child);
-    }
+    clearGroupChildren(previewRef.current, { disposeMeshMaterial: true });
 
     if (activeTool !== 'measure') return;
 
@@ -2374,6 +3413,8 @@ export default function Viewport() {
       >
         {/* Sync scene background with theme */}
         <SceneTheme />
+        {/* D54 Slice clipping plane */}
+        <SliceEffect />
 
         {/* Lighting */}
         <ambientLight intensity={0.4} />
@@ -2473,6 +3514,9 @@ export default function Viewport() {
       {/* Extrude Panel (Fusion 360 style properties panel) */}
       <ExtrudePanel />
       <RevolvePanel />
+      <SketchPatternPanel />
+      <SketchTransformPanel />
+      <SketchMirrorPanel />
     </div>
   );
 }

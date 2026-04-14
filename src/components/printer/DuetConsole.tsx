@@ -15,6 +15,7 @@ import {
   Search,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
+import { formatTimeOfDay } from '../../utils/printerFormat';
 
 const QUICK_COMMANDS: {
   label: string;
@@ -82,13 +83,7 @@ type FilterType = 'all' | 'command' | 'response' | 'warning' | 'error';
 const TEMP_REPORT_PATTERN = /\b(ok\s+)?(T\d*:\s*[\d.]+|B:\s*[\d.]+)/i;
 
 function formatTime(date: Date): string {
-  const d = date instanceof Date ? date : new Date(date);
-  return d.toLocaleTimeString('en-US', {
-    hour12: false,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+  return formatTimeOfDay(date);
 }
 
 function fuzzyMatch(query: string, target: string): boolean {

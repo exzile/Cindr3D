@@ -5,31 +5,16 @@ import {
   Box, XCircle,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
+import { formatDurationClock, formatFileSize, formatFilamentLength } from '../../utils/printerFormat';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatTime(seconds: number | undefined | null): string {
-  if (!seconds || seconds <= 0) return '--:--:--';
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
+const formatTime = (seconds: number | undefined | null) => formatDurationClock(seconds, '--:--:--');
 
-function formatBytes(bytes: number | undefined | null): string {
-  if (bytes == null || bytes <= 0) return '0 B';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-function formatFilament(mm: number | undefined | null): string {
-  if (mm == null || mm <= 0) return '0 mm';
-  if (mm >= 1000) return `${(mm / 1000).toFixed(2)} m`;
-  return `${mm.toFixed(1)} mm`;
-}
+const formatBytes = (bytes: number | undefined | null) => formatFileSize(bytes, '0 B');
+const formatFilament = (mm: number | undefined | null) => formatFilamentLength(mm, '0 mm');
 
 function estimatedCompletion(remainingSeconds: number | undefined | null): string {
   if (!remainingSeconds || remainingSeconds <= 0) return '--:--';

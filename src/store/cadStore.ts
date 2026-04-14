@@ -127,6 +127,10 @@ interface CADState {
   finishSketch: () => void;
   cancelSketch: () => void;
   addSketchEntity: (entity: SketchEntity) => void;
+  replaceSketchEntities: (entities: SketchEntity[]) => void;
+  /** D57: toggle a single entity's linetype (line ↔ construction-line ↔ centerline) */
+  cycleEntityLinetype: (entityId: string) => void;
+  copySketch: (id: string) => void;
 
   // Feature timeline
   features: Feature[];
@@ -151,6 +155,64 @@ interface CADState {
   // Sketch tool options
   sketchPolygonSides: number;
   setSketchPolygonSides: (sides: number) => void;
+  sketchFilletRadius: number;
+  setSketchFilletRadius: (r: number) => void;
+  // Sketch pattern state (D22/D23)
+  sketchRectPatternCountX: number;
+  sketchRectPatternCountY: number;
+  sketchRectPatternSpacingX: number;
+  sketchRectPatternSpacingY: number;
+  setSketchRectPattern: (params: { countX?: number; countY?: number; spacingX?: number; spacingY?: number }) => void;
+  commitSketchRectPattern: () => void;
+  sketchCircPatternCount: number;
+  sketchCircPatternRadius: number;
+  sketchCircPatternAngle: number; // total sweep angle in degrees
+  setSketchCircPattern: (params: { count?: number; radius?: number; angle?: number }) => void;
+  commitSketchCircPattern: () => void;
+  // Sketch transform state (D24/D25/D26)
+  sketchMoveDx: number;
+  sketchMoveDy: number;
+  sketchMoveCopy: boolean;
+  setSketchMove: (params: { dx?: number; dy?: number; copy?: boolean }) => void;
+  commitSketchMove: () => void;
+  sketchScaleFactor: number;
+  setSketchScaleFactor: (f: number) => void;
+  commitSketchScale: () => void;
+  sketchRotateAngle: number; // degrees
+  setSketchRotateAngle: (a: number) => void;
+  commitSketchRotate: () => void;
+  // Sketch offset (D20)
+  sketchOffsetDistance: number;
+  setSketchOffsetDistance: (d: number) => void;
+  // Sketch mirror (D21)
+  sketchMirrorAxis: 'horizontal' | 'vertical' | 'diagonal';
+  setSketchMirrorAxis: (axis: 'horizontal' | 'vertical' | 'diagonal') => void;
+  commitSketchMirror: () => void;
+  // Tangent circles (D40, D41)
+  tangentCircleRadius: number;
+  setTangentCircleRadius: (r: number) => void;
+  // Sketch chamfer (D47)
+  sketchChamferDist1: number;
+  setSketchChamferDist1: (d: number) => void;
+  sketchChamferDist2: number;
+  setSketchChamferDist2: (d: number) => void;
+  sketchChamferAngle: number;
+  setSketchChamferAngle: (a: number) => void;
+  // Show Profile toggle (D55)
+  showSketchProfile: boolean;
+  setShowSketchProfile: (show: boolean) => void;
+  // Slice toggle (D54)
+  sliceEnabled: boolean;
+  setSliceEnabled: (enabled: boolean) => void;
+  // Visibility toggles (D56)
+  showSketchPoints: boolean;
+  setShowSketchPoints: (v: boolean) => void;
+  showSketchDimensions: boolean;
+  setShowSketchDimensions: (v: boolean) => void;
+  showSketchConstraints: boolean;
+  setShowSketchConstraints: (v: boolean) => void;
+  showProjectedGeometries: boolean;
+  setShowProjectedGeometries: (v: boolean) => void;
   gridVisible: boolean;
   setGridVisible: (visible: boolean) => void;
   gridLocked: boolean;
@@ -485,6 +547,45 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     }
   },
 
+  replaceSketchEntities: (entities) => {
+    const { activeSketch } = get();
+    if (activeSketch) {
+      set({ activeSketch: { ...activeSketch, entities } });
+    }
+  },
+
+  copySketch: (id) => set((state) => {
+    const src = state.sketches.find((s) => s.id === id);
+    if (!src) return state;
+    const copy: Sketch = {
+      ...src,
+      id: crypto.randomUUID(),
+      name: `${src.name} (Copy)`,
+      entities: src.entities.map((e) => ({
+        ...e,
+        id: crypto.randomUUID(),
+        points: e.points.map((p) => ({ ...p, id: crypto.randomUUID() })),
+      })),
+      constraints: [],
+      dimensions: [],
+    };
+    const copyFeature: Feature = {
+      id: crypto.randomUUID(),
+      name: copy.name,
+      type: 'sketch',
+      sketchId: copy.id,
+      params: { plane: copy.plane },
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+    };
+    return {
+      sketches: [...state.sketches, copy],
+      features: [...state.features, copyFeature],
+      statusMessage: `Sketch copied as "${copy.name}"`,
+    };
+  }),
+
   features: [],
   addFeature: (feature) => set((state) => ({
     features: [...state.features, feature],
@@ -539,6 +640,268 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   setGridVisible: (visible) => set({ gridVisible: visible }),
   sketchPolygonSides: 6,
   setSketchPolygonSides: (sides) => set({ sketchPolygonSides: Math.max(3, Math.min(128, Math.round(sides))) }),
+  sketchFilletRadius: 2,
+  setSketchFilletRadius: (r) => set({ sketchFilletRadius: Math.max(0.01, r) }),
+
+  sketchRectPatternCountX: 3,
+  sketchRectPatternCountY: 2,
+  sketchRectPatternSpacingX: 10,
+  sketchRectPatternSpacingY: 10,
+  setSketchRectPattern: (params) => set((state) => ({
+    sketchRectPatternCountX: params.countX ?? state.sketchRectPatternCountX,
+    sketchRectPatternCountY: params.countY ?? state.sketchRectPatternCountY,
+    sketchRectPatternSpacingX: params.spacingX ?? state.sketchRectPatternSpacingX,
+    sketchRectPatternSpacingY: params.spacingY ?? state.sketchRectPatternSpacingY,
+  })),
+  commitSketchRectPattern: () => {
+    const { activeSketch, sketchRectPatternCountX: cx, sketchRectPatternCountY: cy,
+            sketchRectPatternSpacingX: sx, sketchRectPatternSpacingY: sy } = get();
+    if (!activeSketch || activeSketch.entities.length === 0) return;
+    const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+    const copies: SketchEntity[] = [];
+    for (let row = 0; row < cy; row++) {
+      for (let col = 0; col < cx; col++) {
+        if (row === 0 && col === 0) continue; // skip the original instance
+        const dx = t1.x * sx * col + t2.x * sy * row;
+        const dy = t1.y * sx * col + t2.y * sy * row;
+        const dz = t1.z * sx * col + t2.z * sy * row;
+        for (const ent of activeSketch.entities) {
+          copies.push({
+            ...ent,
+            id: crypto.randomUUID(),
+            points: ent.points.map((p) => ({ ...p, id: crypto.randomUUID(), x: p.x + dx, y: p.y + dy, z: p.z + dz })),
+          });
+        }
+      }
+    }
+    set({
+      activeSketch: { ...activeSketch, entities: [...activeSketch.entities, ...copies] },
+      statusMessage: `Rectangular pattern: ${cx}×${cy} (${copies.length} new entities added)`,
+    });
+  },
+
+  sketchCircPatternCount: 6,
+  sketchCircPatternRadius: 10,
+  sketchCircPatternAngle: 360,
+  setSketchCircPattern: (params) => set((state) => ({
+    sketchCircPatternCount: params.count ?? state.sketchCircPatternCount,
+    sketchCircPatternRadius: params.radius ?? state.sketchCircPatternRadius,
+    sketchCircPatternAngle: params.angle ?? state.sketchCircPatternAngle,
+  })),
+  commitSketchCircPattern: () => {
+    const { activeSketch, sketchCircPatternCount: cnt,
+            sketchCircPatternAngle: totalDeg } = get();
+    if (!activeSketch || activeSketch.entities.length === 0) return;
+    const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+    // Compute centroid of current sketch entities as pattern origin
+    let cx = 0, cy2 = 0, cz = 0, ptCount = 0;
+    for (const ent of activeSketch.entities) {
+      for (const p of ent.points) { cx += p.x; cy2 += p.y; cz += p.z; ptCount++; }
+    }
+    if (ptCount === 0) return;
+    cx /= ptCount; cy2 /= ptCount; cz /= ptCount;
+    const copies: SketchEntity[] = [];
+    const totalRad = (totalDeg * Math.PI) / 180;
+    for (let i = 1; i < cnt; i++) {
+      const angle = (totalRad / cnt) * i;
+      const cosA = Math.cos(angle), sinA = Math.sin(angle);
+      for (const ent of activeSketch.entities) {
+        copies.push({
+          ...ent,
+          id: crypto.randomUUID(),
+          points: ent.points.map((p) => {
+            // Translate to centroid, rotate in t1/t2 plane, translate back
+            const lx = (p.x - cx) * t1.x + (p.y - cy2) * t1.y + (p.z - cz) * t1.z;
+            const ly = (p.x - cx) * t2.x + (p.y - cy2) * t2.y + (p.z - cz) * t2.z;
+            const rx = lx * cosA - ly * sinA;
+            const ry = lx * sinA + ly * cosA;
+            return {
+              ...p, id: crypto.randomUUID(),
+              x: cx + t1.x * rx + t2.x * ry,
+              y: cy2 + t1.y * rx + t2.y * ry,
+              z: cz + t1.z * rx + t2.z * ry,
+            };
+          }),
+        });
+      }
+    }
+    set({
+      activeSketch: { ...activeSketch, entities: [...activeSketch.entities, ...copies] },
+      statusMessage: `Circular pattern: ${cnt} instances (${copies.length} new entities added)`,
+    });
+  },
+
+  // Sketch Move / Copy (D24)
+  sketchMoveDx: 10,
+  sketchMoveDy: 0,
+  sketchMoveCopy: false,
+  setSketchMove: (params) => set((state) => ({
+    sketchMoveDx: params.dx ?? state.sketchMoveDx,
+    sketchMoveDy: params.dy ?? state.sketchMoveDy,
+    sketchMoveCopy: params.copy ?? state.sketchMoveCopy,
+  })),
+  commitSketchMove: () => {
+    const { activeSketch, sketchMoveDx: dx, sketchMoveDy: dy, sketchMoveCopy: copy } = get();
+    if (!activeSketch || activeSketch.entities.length === 0) return;
+    const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+    const offsetX = t1.x * dx + t2.x * dy;
+    const offsetY = t1.y * dx + t2.y * dy;
+    const offsetZ = t1.z * dx + t2.z * dy;
+    const translatePts = (ents: SketchEntity[]): SketchEntity[] =>
+      ents.map((e) => ({
+        ...e,
+        id: crypto.randomUUID(),
+        points: e.points.map((p) => ({ ...p, id: crypto.randomUUID(), x: p.x + offsetX, y: p.y + offsetY, z: p.z + offsetZ })),
+      }));
+    const translated = translatePts(activeSketch.entities);
+    const newEntities = copy
+      ? [...activeSketch.entities, ...translated]
+      : translated;
+    set({
+      activeSketch: { ...activeSketch, entities: newEntities },
+      statusMessage: copy ? `Copy moved by (${dx}, ${dy})` : `Sketch moved by (${dx}, ${dy})`,
+    });
+  },
+
+  // Sketch Scale (D25)
+  sketchScaleFactor: 2,
+  setSketchScaleFactor: (f) => set({ sketchScaleFactor: Math.max(0.001, f) }),
+  commitSketchScale: () => {
+    const { activeSketch, sketchScaleFactor: factor } = get();
+    if (!activeSketch || activeSketch.entities.length === 0) return;
+    // Compute centroid as scale anchor
+    let cx = 0, cy2 = 0, cz = 0, n = 0;
+    for (const e of activeSketch.entities) {
+      for (const p of e.points) { cx += p.x; cy2 += p.y; cz += p.z; n++; }
+    }
+    if (n === 0) return;
+    cx /= n; cy2 /= n; cz /= n;
+    const scaled = activeSketch.entities.map((e) => ({
+      ...e,
+      id: crypto.randomUUID(),
+      points: e.points.map((p) => ({
+        ...p, id: crypto.randomUUID(),
+        x: cx + (p.x - cx) * factor,
+        y: cy2 + (p.y - cy2) * factor,
+        z: cz + (p.z - cz) * factor,
+      })),
+      radius: e.radius !== undefined ? e.radius * Math.abs(factor) : undefined,
+    }));
+    set({
+      activeSketch: { ...activeSketch, entities: scaled },
+      statusMessage: `Sketch scaled by ${factor}×`,
+    });
+  },
+
+  // Sketch Rotate (D26)
+  sketchRotateAngle: 90,
+  setSketchRotateAngle: (a) => set({ sketchRotateAngle: a }),
+  commitSketchRotate: () => {
+    const { activeSketch, sketchRotateAngle: angleDeg } = get();
+    if (!activeSketch || activeSketch.entities.length === 0) return;
+    const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+    // Compute centroid as pivot
+    let cx = 0, cy2 = 0, cz = 0, n = 0;
+    for (const e of activeSketch.entities) {
+      for (const p of e.points) { cx += p.x; cy2 += p.y; cz += p.z; n++; }
+    }
+    if (n === 0) return;
+    cx /= n; cy2 /= n; cz /= n;
+    const angle = (angleDeg * Math.PI) / 180;
+    const cosA = Math.cos(angle), sinA = Math.sin(angle);
+    const rotPt = (p: SketchPoint): SketchPoint => {
+      const lx = (p.x - cx) * t1.x + (p.y - cy2) * t1.y + (p.z - cz) * t1.z;
+      const ly = (p.x - cx) * t2.x + (p.y - cy2) * t2.y + (p.z - cz) * t2.z;
+      const rx = lx * cosA - ly * sinA;
+      const ry = lx * sinA + ly * cosA;
+      return { ...p, id: crypto.randomUUID(), x: cx + t1.x * rx + t2.x * ry, y: cy2 + t1.y * rx + t2.y * ry, z: cz + t1.z * rx + t2.z * ry };
+    };
+    const rotated = activeSketch.entities.map((e) => ({
+      ...e,
+      id: crypto.randomUUID(),
+      points: e.points.map(rotPt),
+    }));
+    set({
+      activeSketch: { ...activeSketch, entities: rotated },
+      statusMessage: `Sketch rotated ${angleDeg}°`,
+    });
+  },
+
+  // Sketch Offset (D20)
+  sketchOffsetDistance: 2,
+  setSketchOffsetDistance: (d) => set({ sketchOffsetDistance: Math.max(0.001, Math.abs(d)) }),
+
+  // Sketch Mirror (D21)
+  sketchMirrorAxis: 'vertical',
+  setSketchMirrorAxis: (axis) => set({ sketchMirrorAxis: axis }),
+  commitSketchMirror: () => {
+    const { activeSketch, sketchMirrorAxis } = get();
+    if (!activeSketch || activeSketch.entities.length === 0) return;
+    const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+    // Centroid as mirror origin
+    let cx = 0, cy2 = 0, cz = 0, n = 0;
+    for (const e of activeSketch.entities) {
+      for (const p of e.points) { cx += p.x; cy2 += p.y; cz += p.z; n++; }
+    }
+    if (n === 0) return;
+    cx /= n; cy2 /= n; cz /= n;
+    const mirrorPt = (p: SketchPoint): SketchPoint => {
+      const lx = (p.x - cx) * t1.x + (p.y - cy2) * t1.y + (p.z - cz) * t1.z;
+      const ly = (p.x - cx) * t2.x + (p.y - cy2) * t2.y + (p.z - cz) * t2.z;
+      let mx = lx, my = ly;
+      if (sketchMirrorAxis === 'horizontal') my = -ly;       // mirror over t1 axis
+      else if (sketchMirrorAxis === 'vertical') mx = -lx;    // mirror over t2 axis
+      else { const tmp = lx; mx = ly; my = tmp; }            // diagonal (swap)
+      return {
+        ...p, id: crypto.randomUUID(),
+        x: cx + t1.x * mx + t2.x * my,
+        y: cy2 + t1.y * mx + t2.y * my,
+        z: cz + t1.z * mx + t2.z * my,
+      };
+    };
+    const mirrored: SketchEntity[] = activeSketch.entities.map((e) => ({
+      ...e,
+      id: crypto.randomUUID(),
+      points: e.points.map(mirrorPt),
+      startAngle: e.startAngle !== undefined ? -e.endAngle! : undefined,
+      endAngle: e.endAngle !== undefined ? -e.startAngle! : undefined,
+    }));
+    set({
+      activeSketch: { ...activeSketch, entities: [...activeSketch.entities, ...mirrored] },
+      statusMessage: `Mirror: ${mirrored.length} entities added (${sketchMirrorAxis})`,
+    });
+  },
+
+  // Tangent circles (D40, D41)
+  tangentCircleRadius: 5,
+  setTangentCircleRadius: (r) => set({ tangentCircleRadius: Math.max(0.01, r) }),
+
+  // Sketch chamfer (D47)
+  sketchChamferDist1: 2,
+  setSketchChamferDist1: (d) => set({ sketchChamferDist1: Math.max(0.01, d) }),
+  sketchChamferDist2: 2,
+  setSketchChamferDist2: (d) => set({ sketchChamferDist2: Math.max(0.01, d) }),
+  sketchChamferAngle: 45,
+  setSketchChamferAngle: (a) => set({ sketchChamferAngle: Math.max(1, Math.min(89, a)) }),
+
+  // Show Profile (D55)
+  showSketchProfile: false,
+  setShowSketchProfile: (show) => set({ showSketchProfile: show }),
+
+  // Slice (D54)
+  sliceEnabled: false,
+  setSliceEnabled: (enabled) => set({ sliceEnabled: enabled }),
+
+  // Visibility toggles (D56)
+  showSketchPoints: true,
+  setShowSketchPoints: (v) => set({ showSketchPoints: v }),
+  showSketchDimensions: true,
+  setShowSketchDimensions: (v) => set({ showSketchDimensions: v }),
+  showSketchConstraints: true,
+  setShowSketchConstraints: (v) => set({ showSketchConstraints: v }),
+  showProjectedGeometries: true,
+  setShowProjectedGeometries: (v) => set({ showProjectedGeometries: v }),
+
   gridLocked: false,
   setGridLocked: (locked) => set({ gridLocked: locked }),
   incrementalMove: false,
@@ -804,6 +1167,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     snapEnabled: state.snapEnabled,
     gridVisible: state.gridVisible,
     sketchPolygonSides: state.sketchPolygonSides,
+    sketchFilletRadius: state.sketchFilletRadius,
     units: state.units,
     visualStyle: state.visualStyle,
     showEnvironment: state.showEnvironment,

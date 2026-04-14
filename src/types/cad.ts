@@ -47,7 +47,26 @@ export type Tool =
   | 'circular-pattern'
   | 'mirror'
   | 'joint'
-  | 'as-built-joint';
+  | 'as-built-joint'
+  | 'trim'
+  | 'break'
+  | 'sketch-fillet'
+  | 'sketch-rect-pattern'
+  | 'sketch-circ-pattern'
+  | 'sketch-move'
+  | 'sketch-copy'
+  | 'sketch-scale'
+  | 'sketch-rotate'
+  | 'sketch-offset'
+  | 'sketch-mirror'
+  | 'extend'
+  | 'sketch-chamfer-equal'
+  | 'sketch-chamfer-two-dist'
+  | 'sketch-chamfer-dist-angle'
+  | 'midpoint-line'
+  | 'circle-2tangent'
+  | 'circle-3tangent'
+  | 'linetype-convert';
 
 export type ViewMode = '3d' | 'sketch';
 

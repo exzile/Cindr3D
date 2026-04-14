@@ -1,79 +1,17 @@
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { Zap, Plus, Pencil, Trash2, Check, X, Loader2 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
-import { colors as COLORS } from '../../utils/theme';
+import {
+  compactIconOnlyButtonStyle,
+  compactActionButtonStyle as iconBtn,
+  panelInputStyle as inputStyle,
+  panelStyle,
+  primaryActionButtonStyle,
+  sectionTitleStyle as sectionTitle,
+} from '../../utils/printerPanelStyles';
 import {
   getDuetPrefs, updateDuetPrefs, type CustomButton,
 } from '../../utils/duetPrefs';
-
-// ---------------------------------------------------------------------------
-// Styles (match the other dashboard panels)
-// ---------------------------------------------------------------------------
-const panelStyle: React.CSSProperties = {
-  background: COLORS.panel,
-  border: `1px solid ${COLORS.panelBorder}`,
-  borderRadius: 8,
-  padding: 16,
-};
-
-const sectionTitle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 6,
-  fontSize: 11,
-  color: COLORS.textDim,
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
-  fontWeight: 600,
-};
-
-const gridStyle: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
-  gap: 8,
-};
-
-const buttonStyle: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  gap: 4,
-  padding: '10px 8px',
-  background: COLORS.surface,
-  border: `1px solid ${COLORS.panelBorder}`,
-  borderRadius: 6,
-  cursor: 'pointer',
-  color: COLORS.text,
-  fontSize: 12,
-  fontWeight: 600,
-  minHeight: 58,
-};
-
-const iconBtn: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 4,
-  padding: '4px 10px',
-  borderRadius: 4,
-  border: `1px solid ${COLORS.panelBorder}`,
-  background: COLORS.surface,
-  color: COLORS.text,
-  cursor: 'pointer',
-  fontSize: 11,
-};
-
-const inputStyle: React.CSSProperties = {
-  background: COLORS.inputBg,
-  border: `1px solid ${COLORS.inputBorder}`,
-  borderRadius: 4,
-  color: COLORS.text,
-  padding: '6px 8px',
-  fontSize: 12,
-  outline: 'none',
-  width: '100%',
-  boxSizing: 'border-box',
-  fontFamily: 'inherit',
-};
 
 // ---------------------------------------------------------------------------
 // Component
@@ -140,11 +78,11 @@ export default function DuetCustomButtons() {
   const isDraftValid = draftLabel.trim().length > 0 && draftGcode.trim().length > 0;
 
   return (
-    <div style={panelStyle}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={sectionTitle}><Zap size={14} /> Custom Buttons</div>
+    <div style={panelStyle()}>
+      <div className="duet-custom-header">
+        <div style={sectionTitle()}><Zap size={14} /> Custom Buttons</div>
         <button
-          style={iconBtn}
+          style={iconBtn()}
           onClick={() => {
             setEditing((v) => !v);
             handleCancelDraft();
@@ -157,47 +95,37 @@ export default function DuetCustomButtons() {
       </div>
 
       {buttons.length === 0 && !editing && (
-        <div style={{ color: COLORS.textDim, fontSize: 12, textAlign: 'center', padding: '12px 0' }}>
+        <div className="duet-custom-empty">
           No custom buttons yet. Click <strong>Edit</strong> to add some.
         </div>
       )}
 
       {buttons.length > 0 && (
-        <div style={gridStyle}>
+        <div className="duet-custom-grid">
           {buttons.map((btn) => {
             const isRunning = running === btn.id;
             return (
-              <div key={btn.id} style={{ position: 'relative' }}>
+              <div key={btn.id} className="duet-custom-item">
                 <button
-                  style={{
-                    ...buttonStyle,
-                    opacity: connected ? 1 : 0.5,
-                    cursor: connected && !isRunning ? 'pointer' : 'not-allowed',
-                  }}
+                  className="duet-custom-btn"
                   onClick={() => handleRun(btn)}
                   disabled={!connected || isRunning}
                   title={btn.gcode}
                 >
                   {isRunning ? <Loader2 size={16} className="spin" /> : <Zap size={16} />}
-                  <span style={{ textAlign: 'center', lineHeight: 1.2 }}>{btn.label}</span>
+                  <span className="duet-custom-btn-label">{btn.label}</span>
                 </button>
                 {editing && (
-                  <div style={{
-                    position: 'absolute',
-                    top: 2,
-                    right: 2,
-                    display: 'flex',
-                    gap: 2,
-                  }}>
+                  <div className="duet-custom-overlay-actions">
                     <button
-                      style={{ ...iconBtn, padding: 3, fontSize: 10 }}
+                      style={compactIconOnlyButtonStyle()}
                       onClick={() => handleStartEdit(btn)}
                       title="Edit"
                     >
                       <Pencil size={10} />
                     </button>
                     <button
-                      style={{ ...iconBtn, padding: 3, fontSize: 10, color: COLORS.danger }}
+                      style={compactIconOnlyButtonStyle({ color: 'var(--error)' })}
                       onClick={() => handleDelete(btn.id)}
                       title="Delete"
                     >
@@ -212,19 +140,13 @@ export default function DuetCustomButtons() {
       )}
 
       {editing && (
-        <div style={{
-          marginTop: 12,
-          padding: 12,
-          background: COLORS.surface,
-          borderRadius: 6,
-          border: `1px solid ${COLORS.panelBorder}`,
-        }}>
-          <div style={{ ...sectionTitle, marginBottom: 10 }}>
+        <div className="duet-custom-editor">
+          <div style={sectionTitle({ marginBottom: 10 })}>
             {draftId ? 'Edit button' : <><Plus size={12} /> New button</>}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="duet-custom-fields">
             <input
-              style={inputStyle}
+              style={inputStyle()}
               type="text"
               placeholder="Label (e.g. Preheat PLA)"
               value={draftLabel}
@@ -232,25 +154,19 @@ export default function DuetCustomButtons() {
               maxLength={40}
             />
             <textarea
-              style={{ ...inputStyle, fontFamily: 'monospace', minHeight: 60, resize: 'vertical' }}
+              style={inputStyle({ fontFamily: 'monospace', minHeight: 60, resize: 'vertical' })}
               placeholder={'G-code (one command per line)\nM104 S200\nM140 S60'}
               value={draftGcode}
               onChange={(e) => setDraftGcode(e.target.value)}
             />
-            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+            <div className="duet-custom-field-actions">
               {draftId && (
-                <button style={iconBtn} onClick={handleCancelDraft}>
+                <button style={iconBtn()} onClick={handleCancelDraft}>
                   <X size={12} /> Cancel
                 </button>
               )}
               <button
-                style={{
-                  ...iconBtn,
-                  background: isDraftValid ? COLORS.accent : COLORS.surface,
-                  color: isDraftValid ? '#fff' : COLORS.textDim,
-                  borderColor: isDraftValid ? COLORS.accent : COLORS.panelBorder,
-                  cursor: isDraftValid ? 'pointer' : 'not-allowed',
-                }}
+                style={primaryActionButtonStyle(isDraftValid)}
                 onClick={handleSaveDraft}
                 disabled={!isDraftValid}
               >

@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import { Fragment, useState, useMemo, useCallback } from 'react';
+import type { CSSProperties } from 'react';
 import {
   Thermometer, Home, ArrowUp, ArrowDown, Power, Play, Fan,
   Gauge, Droplets, Cpu, Clock, ChevronUp, ChevronDown,
@@ -11,46 +12,18 @@ import { usePrinterStore } from '../../store/printerStore';
 // Theme — shared CSS-var tokens so all pages follow the active theme
 // ---------------------------------------------------------------------------
 import { colors as COLORS } from '../../utils/theme';
+import {
+  compactPanelInputStyle as inputStyle,
+  dashboardButtonStyle as btnStyle,
+  panelStyle,
+  sectionTitleStyle as labelStyle,
+} from '../../utils/printerPanelStyles';
 import DuetCustomButtons from './DuetCustomButtons';
 
 const HEATER_CHART_COLORS = [
   '#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7',
   '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
 ];
-
-function panelStyle(extra?: React.CSSProperties): React.CSSProperties {
-  return {
-    background: COLORS.panel,
-    border: `1px solid ${COLORS.panelBorder}`,
-    borderRadius: 8,
-    padding: 16,
-    ...extra,
-  };
-}
-
-function labelStyle(): React.CSSProperties {
-  return { fontSize: 11, color: COLORS.textDim, textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 8, fontWeight: 600 };
-}
-
-function btnStyle(variant: 'default' | 'accent' | 'danger' | 'success' = 'default', small = false): React.CSSProperties {
-  const base: React.CSSProperties = {
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-    border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
-    fontSize: small ? 11 : 12, fontWeight: 500, transition: 'background 0.15s, opacity 0.15s',
-    padding: small ? '3px 6px' : '6px 12px', color: '#fff',
-  };
-  if (variant === 'accent') return { ...base, background: COLORS.accent };
-  if (variant === 'danger') return { ...base, background: COLORS.danger };
-  if (variant === 'success') return { ...base, background: COLORS.success };
-  return { ...base, background: COLORS.surface, color: COLORS.text };
-}
-
-function inputStyle(width = 60): React.CSSProperties {
-  return {
-    background: COLORS.inputBg, border: `1px solid ${COLORS.inputBorder}`, borderRadius: 4,
-    color: COLORS.text, padding: '4px 6px', fontSize: 12, width, fontFamily: 'inherit', outline: 'none',
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -119,28 +92,28 @@ function MachineStatusHeader() {
   const upTime = model.state?.upTime ?? 0;
 
   return (
-    <div style={{
-      ...panelStyle(), display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div style={{
-          width: 10, height: 10, borderRadius: '50%', background: statusColor(status),
-          boxShadow: `0 0 8px ${statusColor(status)}`,
-        }} />
-        <span style={{ fontSize: 16, fontWeight: 600, textTransform: 'capitalize' }}>{status}</span>
+    <div style={panelStyle()} className="duet-dash-status-header">
+      <div className="duet-dash-status-main">
+        <div
+          className="duet-dash-status-dot"
+          style={{
+            '--duet-status-dot': statusColor(status),
+          } as CSSProperties}
+        />
+        <span className="duet-dash-status-text">{status}</span>
       </div>
       {board && (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: COLORS.textDim, fontSize: 12 }}>
+          <div className="duet-dash-muted-row">
             <Cpu size={13} />
             <span>{board.name || board.shortName}</span>
           </div>
-          <div style={{ color: COLORS.textDim, fontSize: 12 }}>
+          <div className="duet-dash-muted-text">
             {board.firmwareName} {board.firmwareVersion}
           </div>
         </>
       )}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: COLORS.textDim, fontSize: 12, marginLeft: 'auto' }}>
+      <div className="duet-dash-muted-row duet-dash-uptime">
         <Clock size={13} />
         <span>{formatUptime(upTime)}</span>
       </div>
@@ -215,18 +188,18 @@ function TemperaturePanel() {
 
   return (
     <div style={panelStyle()}>
-      <div style={{ ...labelStyle(), display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={labelStyle()} className="duet-dash-section-title-row">
         <Thermometer size={14} /> Temperatures
       </div>
 
       {/* Heater table */}
-      <div style={{ display: 'grid', gridTemplateColumns: '120px 80px 80px 80px 1fr 40px', gap: '6px 8px', alignItems: 'center', fontSize: 12, marginBottom: 12 }}>
-        <span style={{ color: COLORS.textDim, fontSize: 10 }}>Heater</span>
-        <span style={{ color: COLORS.textDim, fontSize: 10 }}>Current</span>
-        <span style={{ color: COLORS.textDim, fontSize: 10 }}>Active</span>
-        <span style={{ color: COLORS.textDim, fontSize: 10 }}>Standby</span>
-        <span style={{ color: COLORS.textDim, fontSize: 10 }}>Bar</span>
-        <span style={{ color: COLORS.textDim, fontSize: 10 }}>State</span>
+      <div className="duet-dash-heater-grid">
+        <span className="duet-dash-heater-col">Heater</span>
+        <span className="duet-dash-heater-col">Current</span>
+        <span className="duet-dash-heater-col">Active</span>
+        <span className="duet-dash-heater-col">Standby</span>
+        <span className="duet-dash-heater-col">Bar</span>
+        <span className="duet-dash-heater-col">State</span>
 
         {rows.map((row) => {
           const h = heaters[row.index];
@@ -237,9 +210,14 @@ function TemperaturePanel() {
           const barPct = Math.min(100, Math.max(0, (current / 300) * 100));
 
           return (
-            <React.Fragment key={row.index}>
-              <span style={{ fontWeight: 500, color: HEATER_CHART_COLORS[row.index % HEATER_CHART_COLORS.length] }}>{row.label}</span>
-              <span style={{ fontWeight: 600 }}>{current.toFixed(1)}&deg;C</span>
+            <Fragment key={row.index}>
+                <span
+                  className="duet-dash-heater-label"
+                  style={{ '--duet-heater-color': HEATER_CHART_COLORS[row.index % HEATER_CHART_COLORS.length] } as CSSProperties}
+                >
+                  {row.label}
+                </span>
+                <span className="duet-dash-heater-current">{current.toFixed(1)}&deg;C</span>
 
               {/* Active temp input */}
               <input
@@ -273,7 +251,7 @@ function TemperaturePanel() {
               />
 
               {/* Temperature bar */}
-              <div style={{ height: 8, borderRadius: 4, background: COLORS.inputBg, overflow: 'hidden', position: 'relative' }}>
+                <div className="duet-dash-tempbar-wrap">
                 <div style={{
                   height: '100%', width: `${barPct}%`, borderRadius: 4,
                   background: tempBarGradient(current),
@@ -282,13 +260,15 @@ function TemperaturePanel() {
               </div>
 
               {/* Heater state indicator */}
-              <div style={{
-                width: 10, height: 10, borderRadius: '50%',
-                background: heaterStateColor(h.state),
-                boxShadow: h.state !== 'off' ? `0 0 6px ${heaterStateColor(h.state)}` : 'none',
-                margin: '0 auto',
-              }} title={h.state} />
-            </React.Fragment>
+                <div
+                  className="duet-dash-heater-state"
+                  style={{
+                    '--duet-heater-state': heaterStateColor(h.state),
+                    '--duet-heater-glow': h.state !== 'off' ? `0 0 6px ${heaterStateColor(h.state)}` : 'none',
+                  } as CSSProperties}
+                  title={h.state}
+                />
+            </Fragment>
           );
         })}
       </div>
@@ -362,7 +342,7 @@ function TemperatureChart({
   }, [maxTemp]);
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', maxHeight: 180 }}>
+    <svg viewBox={`0 0 ${W} ${H}`} className="duet-dash-tempchart">
       {/* Grid lines */}
       {yTicks.map((v) => (
         <g key={v}>
@@ -402,12 +382,12 @@ function AxisMovementPanel() {
 
   return (
     <div style={panelStyle()}>
-      <div style={{ ...labelStyle(), display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={labelStyle()} className="duet-dash-section-title-row">
         <MoveHorizontal size={14} /> Axes &amp; Movement
       </div>
 
       {/* Current positions with endstop indicators */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+      <div className="duet-dash-axis-pos-wrap">
         {axes.map((ax, axIdx) => {
           const endstops = model.sensors?.endstops ?? [];
           const endstop = endstops[axIdx];
@@ -426,23 +406,20 @@ function AxisMovementPanel() {
             }
           }
           return (
-            <div key={ax.letter} style={{
-              background: COLORS.surface, borderRadius: 6, padding: '8px 14px', minWidth: 80, textAlign: 'center',
-            }}>
-              <div style={{ fontSize: 11, color: COLORS.textDim, marginBottom: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+            <div key={ax.letter} className="duet-dash-axis-card" style={{ background: COLORS.surface }}>
+              <div className="duet-dash-axis-card-head">
                 {ax.letter}
-                {!ax.homed && <span style={{ color: COLORS.warning, fontSize: 9 }}>?</span>}
+                {!ax.homed && <span className="duet-dash-axis-unhomed" style={{ color: COLORS.warning }}>?</span>}
                 <div
+                  className="duet-dash-axis-endstop-dot"
                   style={{
-                    width: 7, height: 7, borderRadius: '50%',
-                    background: endstopColor,
-                    boxShadow: endstop?.triggered ? `0 0 5px ${endstopColor}` : 'none',
-                    flexShrink: 0,
-                  }}
+                    '--duet-axis-endstop': endstopColor,
+                    '--duet-axis-endstop-glow': endstop?.triggered ? `0 0 5px ${endstopColor}` : 'none',
+                  } as CSSProperties}
                   title={endstopTitle}
                 />
               </div>
-              <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'monospace' }}>
+              <div className="duet-dash-axis-value">
                 {ax.userPosition.toFixed(2)}
               </div>
             </div>
@@ -455,14 +432,15 @@ function AxisMovementPanel() {
         const compType = model.move?.compensation?.type;
         const hasComp = compType && compType !== 'none' && compType !== '';
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-              background: hasComp ? 'rgba(34,197,94,0.15)' : 'rgba(136,136,170,0.15)',
-              color: hasComp ? COLORS.success : COLORS.textDim,
-              fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 4,
-              border: `1px solid ${hasComp ? 'rgba(34,197,94,0.3)' : 'rgba(136,136,170,0.2)'}`,
-            }}>
+          <div className="duet-dash-comp-row">
+            <span
+              className="duet-dash-comp-badge"
+              style={{
+                '--duet-comp-bg': hasComp ? 'rgba(34,197,94,0.15)' : 'rgba(136,136,170,0.15)',
+                '--duet-comp-color': hasComp ? COLORS.success : COLORS.textDim,
+                '--duet-comp-border': hasComp ? 'rgba(34,197,94,0.3)' : 'rgba(136,136,170,0.2)',
+              } as CSSProperties}
+            >
               Mesh Comp: {hasComp ? 'Active' : 'Off'}
             </span>
           </div>
@@ -470,7 +448,7 @@ function AxisMovementPanel() {
       })()}
 
       {/* Home buttons */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+      <div className="duet-dash-home-row">
         <button style={btnStyle('accent')} onClick={() => homeAxes()}>
           <Home size={13} /> Home All
         </button>
@@ -482,9 +460,9 @@ function AxisMovementPanel() {
       </div>
 
       {/* Step size selector */}
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 4 }}>Step Size (mm)</div>
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+      <div className="duet-dash-step-block">
+        <div className="duet-dash-label-xs">Step Size (mm)</div>
+        <div className="duet-dash-step-options">
           {jogDistances.map((d) => (
             <button
               key={d}
@@ -502,8 +480,8 @@ function AxisMovementPanel() {
 
       {/* Jog buttons per axis */}
       {axes.map((ax) => (
-        <div key={ax.letter} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
-          <span style={{ width: 24, fontWeight: 600, fontSize: 13 }}>{ax.letter}</span>
+        <div key={ax.letter} className="duet-dash-jog-row">
+          <span className="duet-dash-jog-axis">{ax.letter}</span>
           {jogButtons.map((j) => (
             <button
               key={j}
@@ -522,13 +500,13 @@ function AxisMovementPanel() {
       ))}
 
       {/* Baby stepping */}
-      <div style={{ marginTop: 12, borderTop: `1px solid ${COLORS.panelBorder}`, paddingTop: 10 }}>
-        <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 6 }}>Baby Stepping (Z offset)</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div className="duet-dash-baby-block" style={{ borderTopColor: COLORS.panelBorder }}>
+        <div className="duet-dash-label-xs duet-dash-baby-label">Baby Stepping (Z offset)</div>
+        <div className="duet-dash-baby-row">
           <button style={btnStyle()} onClick={() => { setBabyStep(-0.02); setBabyStepValue((v) => v - 0.02); }}>
             <ChevronDown size={12} /> -0.02
           </button>
-          <span style={{ fontFamily: 'monospace', fontSize: 14, fontWeight: 600, minWidth: 60, textAlign: 'center' }}>
+          <span className="duet-dash-baby-value">
             {babyStepValue.toFixed(3)} mm
           </span>
           <button style={btnStyle()} onClick={() => { setBabyStep(0.02); setBabyStepValue((v) => v + 0.02); }}>
@@ -569,14 +547,14 @@ function ExtruderControlPanel() {
 
   return (
     <div style={panelStyle()}>
-      <div style={{ ...labelStyle(), display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={labelStyle()} className="duet-dash-section-title-row">
         <Droplets size={14} /> Extruder
       </div>
 
       {/* Tool selector */}
       {tools.length > 1 && (
-        <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11, color: COLORS.textDim }}>Tool:</span>
+        <div className="duet-dash-extruder-tool-row">
+          <span className="duet-dash-label-sm">Tool:</span>
           <select
             style={{ ...inputStyle(120), cursor: 'pointer' }}
             value={selectedTool}
@@ -590,9 +568,9 @@ function ExtruderControlPanel() {
       )}
 
       {/* Amount presets */}
-      <div style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 4 }}>Amount (mm)</div>
-        <div style={{ display: 'flex', gap: 4 }}>
+      <div className="duet-dash-extruder-block">
+        <div className="duet-dash-label-xs">Amount (mm)</div>
+        <div className="duet-dash-extruder-row">
           {amounts.map((a) => (
             <button
               key={a}
@@ -613,8 +591,8 @@ function ExtruderControlPanel() {
       </div>
 
       {/* Feedrate */}
-      <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 10, color: COLORS.textDim }}>Feedrate (mm/min):</span>
+      <div className="duet-dash-extruder-tool-row duet-dash-extruder-feed-row">
+        <span className="duet-dash-label-xs">Feedrate (mm/min):</span>
         <input
           type="number"
           style={inputStyle(80)}
@@ -625,7 +603,7 @@ function ExtruderControlPanel() {
       </div>
 
       {/* Extrude / Retract */}
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div className="duet-dash-extruder-actions">
         <button style={btnStyle('success')} onClick={() => handleExtrude(1)}>
           <ArrowDown size={13} /> Extrude
         </button>
@@ -656,14 +634,14 @@ function SpeedFlowPanel() {
 
   return (
     <div style={panelStyle()}>
-      <div style={{ ...labelStyle(), display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={labelStyle()} className="duet-dash-section-title-row">
         <Gauge size={14} /> Speed &amp; Flow
       </div>
 
       {/* Speed factor */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 11, color: COLORS.textDim, marginBottom: 4 }}>Speed Factor</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div className="duet-dash-flow-block">
+        <div className="duet-dash-label-sm">Speed Factor</div>
+        <div className="duet-dash-slider-row">
           <input
             type="range"
             min={50} max={200} step={1}
@@ -671,7 +649,8 @@ function SpeedFlowPanel() {
             onChange={(e) => setSpeedInput(e.target.value)}
             onMouseUp={() => { if (speedInput !== '') { setSpeedFactor(Number(speedInput)); setSpeedInput(''); } }}
             onTouchEnd={() => { if (speedInput !== '') { setSpeedFactor(Number(speedInput)); setSpeedInput(''); } }}
-            style={{ flex: 1, accentColor: COLORS.accent }}
+            className="duet-dash-range"
+            style={{ accentColor: COLORS.accent }}
           />
           <input
             type="number"
@@ -681,7 +660,7 @@ function SpeedFlowPanel() {
             onBlur={() => { if (speedInput !== '') { setSpeedFactor(Number(speedInput)); setSpeedInput(''); } }}
             onKeyDown={(e) => { if (e.key === 'Enter' && speedInput !== '') { setSpeedFactor(Number(speedInput)); setSpeedInput(''); } }}
           />
-          <span style={{ fontSize: 12, color: COLORS.textDim }}>%</span>
+          <span className="duet-dash-slider-unit">%</span>
         </div>
       </div>
 
@@ -690,9 +669,9 @@ function SpeedFlowPanel() {
         const pct = Math.round(ext.factor * 100);
         const localVal = extFactors[i];
         return (
-          <div key={i} style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: 11, color: COLORS.textDim, marginBottom: 4 }}>Extruder {i} Flow</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div key={i} className="duet-dash-flow-block duet-dash-flow-block-last">
+            <div className="duet-dash-label-sm">Extruder {i} Flow</div>
+            <div className="duet-dash-slider-row">
               <input
                 type="range"
                 min={50} max={150} step={1}
@@ -700,7 +679,8 @@ function SpeedFlowPanel() {
                 onChange={(e) => setExtFactors((p) => ({ ...p, [i]: e.target.value }))}
                 onMouseUp={() => { if (localVal !== undefined) { setExtrusionFactor(i, Number(localVal)); setExtFactors((p) => { const n = { ...p }; delete n[i]; return n; }); } }}
                 onTouchEnd={() => { if (localVal !== undefined) { setExtrusionFactor(i, Number(localVal)); setExtFactors((p) => { const n = { ...p }; delete n[i]; return n; }); } }}
-                style={{ flex: 1, accentColor: COLORS.accent }}
+                className="duet-dash-range"
+                style={{ accentColor: COLORS.accent }}
               />
               <input
                 type="number"
@@ -714,7 +694,7 @@ function SpeedFlowPanel() {
                   if (e.key === 'Enter' && localVal !== undefined) { setExtrusionFactor(i, Number(localVal)); setExtFactors((p) => { const n = { ...p }; delete n[i]; return n; }); }
                 }}
               />
-              <span style={{ fontSize: 12, color: COLORS.textDim }}>%</span>
+              <span className="duet-dash-slider-unit">%</span>
             </div>
           </div>
         );
@@ -738,7 +718,7 @@ function FanControlPanel() {
 
   return (
     <div style={panelStyle()}>
-      <div style={{ ...labelStyle(), display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={labelStyle()} className="duet-dash-section-title-row">
         <Fan size={14} /> Fans
       </div>
 
@@ -746,14 +726,14 @@ function FanControlPanel() {
         const pct = Math.round(fan.actualValue * 100);
         const localVal = localFanValues[i];
         return (
-          <div key={i} style={{ marginBottom: 10 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <span style={{ fontSize: 12 }}>{fan.name || `Fan ${i}`}</span>
+          <div key={i} className="duet-dash-fan-item">
+            <div className="duet-dash-fan-header">
+              <span className="duet-dash-fan-name">{fan.name || `Fan ${i}`}</span>
               {fan.rpm > 0 && (
-                <span style={{ fontSize: 10, color: COLORS.textDim }}>{fan.rpm} RPM</span>
+                <span className="duet-dash-fan-rpm">{fan.rpm} RPM</span>
               )}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div className="duet-dash-slider-row">
               <input
                 type="range"
                 min={0} max={100} step={1}
@@ -761,9 +741,10 @@ function FanControlPanel() {
                 onChange={(e) => setLocalFanValues((p) => ({ ...p, [i]: e.target.value }))}
                 onMouseUp={() => { if (localVal !== undefined) { setFanSpeed(i, Number(localVal)); setLocalFanValues((p) => { const n = { ...p }; delete n[i]; return n; }); } }}
                 onTouchEnd={() => { if (localVal !== undefined) { setFanSpeed(i, Number(localVal)); setLocalFanValues((p) => { const n = { ...p }; delete n[i]; return n; }); } }}
-                style={{ flex: 1, accentColor: COLORS.accent }}
+                className="duet-dash-range"
+                style={{ accentColor: COLORS.accent }}
               />
-              <span style={{ fontSize: 12, fontFamily: 'monospace', minWidth: 36, textAlign: 'right' }}>
+              <span className="duet-dash-fan-value">
                 {localVal ?? pct}%
               </span>
             </div>
@@ -814,20 +795,20 @@ function SystemInfoPanel() {
 
   return (
     <div style={panelStyle()}>
-      <div style={{ ...labelStyle(), display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={labelStyle()} className="duet-dash-section-title-row">
         <Server size={14} /> System Info
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12 }}>
+      <div className="duet-dash-sys-grid">
         {/* Board Info */}
-        <div style={{ gridColumn: '1 / -1', background: COLORS.surface, borderRadius: 6, padding: '8px 12px' }}>
-          <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 4 }}>Board</div>
-          <div style={{ fontWeight: 600 }}>{board.name || board.shortName}</div>
-          <div style={{ color: COLORS.textDim, fontSize: 11, marginTop: 2 }}>
+        <div className="duet-dash-sys-card duet-dash-sys-span-full" style={{ background: COLORS.surface }}>
+          <div className="duet-dash-sys-label">Board</div>
+          <div className="duet-dash-sys-strong">{board.name || board.shortName}</div>
+          <div className="duet-dash-sys-subtext">
             {board.firmwareName} {board.firmwareVersion}
           </div>
           {board.firmwareDate && (
-            <div style={{ color: COLORS.textDim, fontSize: 10, marginTop: 1 }}>
+            <div className="duet-dash-sys-subtext duet-dash-sys-subtext-tight">
               Built: {board.firmwareDate}
             </div>
           )}
@@ -835,21 +816,19 @@ function SystemInfoPanel() {
 
         {/* MCU Temperature */}
         {mcuTemp && (
-          <div style={{ background: COLORS.surface, borderRadius: 6, padding: '8px 12px' }}>
-            <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div className="duet-dash-sys-card" style={{ background: COLORS.surface }}>
+            <div className="duet-dash-sys-head-row">
               <Cpu size={10} /> MCU Temp
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{
-                width: 8, height: 8, borderRadius: '50%',
-                background: tempColorIndicator(mcuTemp.current),
-                boxShadow: `0 0 6px ${tempColorIndicator(mcuTemp.current)}`,
-              }} />
-              <span style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 16 }}>
+            <div className="duet-dash-sys-value-row">
+              <div className="duet-dash-sys-dot" style={{
+                '--duet-sys-dot': tempColorIndicator(mcuTemp.current),
+              } as CSSProperties} />
+              <span className="duet-dash-sys-mono-lg">
                 {mcuTemp.current.toFixed(1)}&deg;C
               </span>
             </div>
-            <div style={{ fontSize: 10, color: COLORS.textDim, marginTop: 4 }}>
+            <div className="duet-dash-sys-subtext-top">
               Min: {mcuTemp.min.toFixed(1)}&deg;C / Max: {mcuTemp.max.toFixed(1)}&deg;C
             </div>
           </div>
@@ -857,21 +836,19 @@ function SystemInfoPanel() {
 
         {/* Input Voltage */}
         {vIn && (
-          <div style={{ background: COLORS.surface, borderRadius: 6, padding: '8px 12px' }}>
-            <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div className="duet-dash-sys-card" style={{ background: COLORS.surface }}>
+            <div className="duet-dash-sys-head-row">
               <Zap size={10} /> Vin
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{
-                width: 8, height: 8, borderRadius: '50%',
-                background: vinColorIndicator(vIn.current),
-                boxShadow: `0 0 6px ${vinColorIndicator(vIn.current)}`,
-              }} />
-              <span style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 16 }}>
+            <div className="duet-dash-sys-value-row">
+              <div className="duet-dash-sys-dot" style={{
+                '--duet-sys-dot': vinColorIndicator(vIn.current),
+              } as CSSProperties} />
+              <span className="duet-dash-sys-mono-lg">
                 {vIn.current.toFixed(1)}V
               </span>
             </div>
-            <div style={{ fontSize: 10, color: COLORS.textDim, marginTop: 4 }}>
+            <div className="duet-dash-sys-subtext-top">
               Min: {vIn.min.toFixed(1)}V / Max: {vIn.max.toFixed(1)}V
             </div>
           </div>
@@ -879,42 +856,42 @@ function SystemInfoPanel() {
 
         {/* 5V Rail (v12) */}
         {v12 && (
-          <div style={{ background: COLORS.surface, borderRadius: 6, padding: '8px 12px' }}>
-            <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div className="duet-dash-sys-card" style={{ background: COLORS.surface }}>
+            <div className="duet-dash-sys-head-row">
               <Zap size={10} /> 5V Rail
             </div>
-            <div style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 16 }}>
+            <div className="duet-dash-sys-mono-lg">
               {v12.current.toFixed(2)}V
             </div>
-            <div style={{ fontSize: 10, color: COLORS.textDim, marginTop: 4 }}>
+            <div className="duet-dash-sys-subtext-top">
               Min: {v12.min.toFixed(2)}V / Max: {v12.max.toFixed(2)}V
             </div>
           </div>
         )}
 
         {/* Uptime */}
-        <div style={{ background: COLORS.surface, borderRadius: 6, padding: '8px 12px' }}>
-          <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div className="duet-dash-sys-card" style={{ background: COLORS.surface }}>
+          <div className="duet-dash-sys-head-row">
             <Clock size={10} /> Uptime
           </div>
-          <div style={{ fontWeight: 600, fontFamily: 'monospace' }}>
+          <div className="duet-dash-sys-mono">
             {formatUptime(upTime)}
           </div>
         </div>
 
         {/* Network */}
         {network && (
-          <div style={{ background: COLORS.surface, borderRadius: 6, padding: '8px 12px' }}>
-            <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div className="duet-dash-sys-card" style={{ background: COLORS.surface }}>
+            <div className="duet-dash-sys-head-row">
               <Wifi size={10} /> Network
             </div>
-            <div style={{ fontWeight: 600, fontSize: 11 }}>{network.hostname || network.name}</div>
+            <div className="duet-dash-sys-strong-sm">{network.hostname || network.name}</div>
             {iface && (
               <>
-                <div style={{ fontSize: 10, color: COLORS.textDim, marginTop: 2 }}>
+                <div className="duet-dash-sys-subtext duet-dash-sys-subtext-top-tight">
                   {iface.actualIP}
                 </div>
-                <div style={{ fontSize: 10, color: COLORS.textDim }}>
+                <div className="duet-dash-sys-subtext">
                   {iface.type} {iface.speed > 0 ? `(${iface.speed}Mbps)` : ''}
                 </div>
               </>
@@ -924,20 +901,20 @@ function SystemInfoPanel() {
 
         {/* Free Space */}
         {volumes.length > 0 && (
-          <div style={{ gridColumn: '1 / -1', background: COLORS.surface, borderRadius: 6, padding: '8px 12px' }}>
-            <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div className="duet-dash-sys-card duet-dash-sys-span-full" style={{ background: COLORS.surface }}>
+            <div className="duet-dash-sys-head-row">
               <HardDrive size={10} /> Storage
             </div>
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            <div className="duet-dash-sys-storage-wrap">
               {volumes.filter((v) => v.mounted).map((vol, i) => {
                 const usedPct = vol.totalSpace > 0 ? ((vol.totalSpace - vol.freeSpace) / vol.totalSpace) * 100 : 0;
                 return (
-                  <div key={i} style={{ minWidth: 100 }}>
-                    <div style={{ fontSize: 11, fontWeight: 500 }}>{vol.path || vol.name || `Volume ${i}`}</div>
-                    <div style={{ fontSize: 10, color: COLORS.textDim, marginTop: 2 }}>
+                  <div key={i} className="duet-dash-sys-storage-item">
+                    <div className="duet-dash-sys-storage-name">{vol.path || vol.name || `Volume ${i}`}</div>
+                    <div className="duet-dash-sys-subtext duet-dash-sys-subtext-top-tight">
                       {formatBytes(vol.freeSpace)} free / {formatBytes(vol.totalSpace)}
                     </div>
-                    <div style={{ height: 4, borderRadius: 2, background: COLORS.inputBg, overflow: 'hidden', marginTop: 4 }}>
+                    <div className="duet-dash-sys-storage-bar" style={{ background: COLORS.inputBg }}>
                       <div style={{
                         height: '100%', width: `${usedPct}%`, borderRadius: 2,
                         background: usedPct > 90 ? COLORS.danger : usedPct > 75 ? COLORS.warning : COLORS.accent,
@@ -964,16 +941,17 @@ function AtxPowerPanel() {
   const atxPower = model.state?.atxPower ?? false;
 
   return (
-    <div style={panelStyle({ display: 'flex', alignItems: 'center', justifyContent: 'space-between' })}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    <div style={panelStyle()} className="duet-dash-atx-row">
+      <div className="duet-dash-atx-title">
         <Zap size={14} color={atxPower ? COLORS.success : COLORS.textDim} />
-        <span style={{ fontSize: 13, fontWeight: 500 }}>ATX Power</span>
+        <span className="duet-dash-atx-name">ATX Power</span>
       </div>
       <button
         style={{
           ...btnStyle(atxPower ? 'danger' : 'success'),
           minWidth: 60,
         }}
+        className="duet-dash-atx-btn"
         onClick={() => sendGCode(atxPower ? 'M81' : 'M80')}
       >
         <Power size={13} />
@@ -995,10 +973,10 @@ function MacroPanel() {
 
   return (
     <div style={panelStyle()}>
-      <div style={{ ...labelStyle(), display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={labelStyle()} className="duet-dash-section-title-row">
         <FileText size={14} /> Macros
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      <div className="duet-dash-macro-list">
         {macros
           .filter((m) => m.type === 'f')
           .map((macro) => (
@@ -1084,8 +1062,8 @@ function ToolSelectorPanel() {
 
   return (
     <div style={panelStyle()}>
-      <div style={{ ...labelStyle(), display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={labelStyle()} className="duet-dash-tools-header-row">
+        <div className="duet-dash-section-title-row">
           <Wrench size={14} /> Tools
         </div>
         {currentTool >= 0 && (
@@ -1093,7 +1071,7 @@ function ToolSelectorPanel() {
             style={{
               ...btnStyle('default', true),
               fontSize: 10,
-              textTransform: 'uppercase' as React.CSSProperties['textTransform'],
+              textTransform: 'uppercase' as CSSProperties['textTransform'],
               letterSpacing: '0.04em',
             }}
             onClick={handleDeselectTool}
@@ -1111,17 +1089,14 @@ function ToolSelectorPanel() {
         return (
           <div
             key={tool.number}
+            className="duet-dash-tool-card"
             style={{
-              background: isActive ? 'rgba(80, 120, 255, 0.12)' : COLORS.surface,
-              border: `1px solid ${isActive ? COLORS.accent : COLORS.panelBorder}`,
-              borderRadius: 8,
-              padding: 12,
-              marginBottom: 8,
-              transition: 'border-color 0.2s, background 0.2s',
-            }}
+              '--duet-tool-card-bg': isActive ? 'rgba(80, 120, 255, 0.12)' : COLORS.surface,
+              '--duet-tool-card-border': isActive ? COLORS.accent : COLORS.panelBorder,
+            } as CSSProperties}
           >
             {/* Tool header row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <div className="duet-dash-tool-card-header">
               <button
                 style={{
                   ...btnStyle(isActive ? 'accent' : 'default', true),
@@ -1134,25 +1109,16 @@ function ToolSelectorPanel() {
               >
                 T{tool.number}
               </button>
-              <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{toolName}</span>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-              }}>
-                <div style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  background: toolStateColor(tool.state),
-                  boxShadow: tool.state !== 'off' ? `0 0 6px ${toolStateColor(tool.state)}` : 'none',
-                }} />
-                <span style={{
-                  fontSize: 11,
-                  color: toolStateColor(tool.state),
-                  textTransform: 'capitalize',
-                  fontWeight: 500,
-                }}>
+              <span className="duet-dash-tool-name">{toolName}</span>
+              <div className="duet-dash-tool-state-wrap">
+                <div
+                  className="duet-dash-tool-state-dot"
+                  style={{
+                    '--duet-tool-state-color': toolStateColor(tool.state),
+                    '--duet-tool-state-glow': tool.state !== 'off' ? `0 0 6px ${toolStateColor(tool.state)}` : 'none',
+                  } as CSSProperties}
+                />
+                <span className="duet-dash-tool-state-text" style={{ '--duet-tool-state-color': toolStateColor(tool.state) } as CSSProperties}>
                   {tool.state}
                 </span>
               </div>
@@ -1160,19 +1126,13 @@ function ToolSelectorPanel() {
 
             {/* Heaters with temperature inputs */}
             {tool.heaters.length > 0 && (
-              <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 4 }}>Heaters</div>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: '70px 65px 65px 65px',
-                  gap: '4px 6px',
-                  alignItems: 'center',
-                  fontSize: 11,
-                }}>
-                  <span style={{ color: COLORS.textDim, fontSize: 9 }}>Heater</span>
-                  <span style={{ color: COLORS.textDim, fontSize: 9 }}>Current</span>
-                  <span style={{ color: COLORS.textDim, fontSize: 9 }}>Active</span>
-                  <span style={{ color: COLORS.textDim, fontSize: 9 }}>Standby</span>
+              <div className="duet-dash-tool-section">
+                <div className="duet-dash-tool-section-title">Heaters</div>
+                <div className="duet-dash-tool-heaters-grid">
+                  <span className="duet-dash-tool-heaters-col">Heater</span>
+                  <span className="duet-dash-tool-heaters-col">Current</span>
+                  <span className="duet-dash-tool-heaters-col">Active</span>
+                  <span className="duet-dash-tool-heaters-col">Standby</span>
 
                   {tool.heaters.map((hIdx, hi) => {
                     const h = heaters[hIdx];
@@ -1181,24 +1141,18 @@ function ToolSelectorPanel() {
                     const standbyKey = `t${tool.number}-h${hi}-standby`;
 
                     return (
-                      <React.Fragment key={hIdx}>
-                        <span style={{
-                          fontWeight: 500,
-                          color: HEATER_CHART_COLORS[hIdx % HEATER_CHART_COLORS.length],
-                          fontSize: 11,
-                        }}>
+                      <Fragment key={hIdx}>
+                        <span
+                          className="duet-dash-tool-heater-name"
+                          style={{ '--duet-heater-color': HEATER_CHART_COLORS[hIdx % HEATER_CHART_COLORS.length] } as CSSProperties}
+                        >
                           H{hIdx}
-                          <span style={{
-                            display: 'inline-block',
-                            width: 6,
-                            height: 6,
-                            borderRadius: '50%',
-                            background: heaterStateColor(h.state),
-                            marginLeft: 4,
-                            verticalAlign: 'middle',
-                          }} />
+                          <span
+                            className="duet-dash-tool-heater-dot"
+                            style={{ '--duet-heater-state': heaterStateColor(h.state) } as CSSProperties}
+                          />
                         </span>
-                        <span style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 12 }}>
+                        <span className="duet-dash-tool-heater-current">
                           {h.current.toFixed(1)}&deg;
                         </span>
                         <input
@@ -1221,7 +1175,7 @@ function ToolSelectorPanel() {
                           onKeyDown={(e) => { if (e.key === 'Enter') handleTempSubmit(standbyKey, tool.number, hi, true); }}
                           title="Standby temperature"
                         />
-                      </React.Fragment>
+                      </Fragment>
                     );
                   })}
                 </div>
@@ -1230,21 +1184,15 @@ function ToolSelectorPanel() {
 
             {/* Tool Offsets */}
             {tool.offsets && tool.offsets.some((o) => o !== 0) && (
-              <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 4 }}>Offsets</div>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <div className="duet-dash-tool-section">
+                <div className="duet-dash-tool-section-title">Offsets</div>
+                <div className="duet-dash-tool-offsets">
                   {tool.offsets.map((offset, idx) => {
                     const axisLetter = ['X', 'Y', 'Z', 'U', 'V', 'W', 'A', 'B', 'C'][idx] ?? `#${idx}`;
                     return (
-                      <div key={idx} style={{
-                        background: COLORS.inputBg,
-                        borderRadius: 4,
-                        padding: '3px 8px',
-                        fontSize: 11,
-                        fontFamily: 'monospace',
-                      }}>
-                        <span style={{ color: COLORS.textDim }}>{axisLetter}:</span>{' '}
-                        <span style={{ fontWeight: 600 }}>{offset.toFixed(3)}</span>
+                      <div key={idx} className="duet-dash-tool-offset-chip" style={{ background: COLORS.inputBg }}>
+                        <span className="duet-dash-tool-offset-axis">{axisLetter}:</span>{' '}
+                        <span className="duet-dash-tool-offset-value">{offset.toFixed(3)}</span>
                       </div>
                     );
                   })}
@@ -1259,9 +1207,9 @@ function ToolSelectorPanel() {
                 : tool.extruders[0];
               const loaded = extrudersModel[extruderIdx]?.filament ?? '';
               return (
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 4 }}>Filament</div>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <div className="duet-dash-tool-section">
+                  <div className="duet-dash-tool-section-title">Filament</div>
+                  <div className="duet-dash-tool-filament-row">
                     <Package size={12} color={COLORS.textDim} />
                     <select
                       style={{
@@ -1302,18 +1250,18 @@ function ToolSelectorPanel() {
             })()}
 
             {/* Assigned extruders and fans */}
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 11 }}>
+            <div className="duet-dash-tool-assigned-row">
               {tool.extruders.length > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div className="duet-dash-tool-assigned-item">
                   <Droplets size={11} color={COLORS.textDim} />
-                  <span style={{ color: COLORS.textDim }}>Extruders:</span>
+                  <span className="duet-dash-tool-assigned-label">Extruders:</span>
                   <span>{tool.extruders.join(', ')}</span>
                 </div>
               )}
               {tool.fans.length > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div className="duet-dash-tool-assigned-item">
                   <Fan size={11} color={COLORS.textDim} />
-                  <span style={{ color: COLORS.textDim }}>Fans:</span>
+                  <span className="duet-dash-tool-assigned-label">Fans:</span>
                   <span>
                     {tool.fans.map((fIdx) => {
                       const f = fans[fIdx];
@@ -1339,22 +1287,14 @@ export default function DuetDashboard() {
   const setError = usePrinterStore((s) => s.setError);
 
   return (
-    <div style={{
-      height: '100%',
-      overflow: 'auto',
-      background: COLORS.bg,
-      padding: 16,
-    }}>
+    <div className="duet-dash-root" style={{ background: COLORS.bg }}>
       {/* Error banner */}
       {error && (
-        <div style={{
-          background: 'rgba(239,68,68,0.15)', border: `1px solid ${COLORS.danger}`, borderRadius: 6,
-          padding: '8px 14px', marginBottom: 12, fontSize: 12, color: COLORS.danger,
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        }}>
+        <div className="duet-dash-error-banner" style={{ borderColor: COLORS.danger, color: COLORS.danger }}>
           <span>{error}</span>
           <button
-            style={{ background: 'none', border: 'none', color: COLORS.danger, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
+            className="duet-dash-error-dismiss"
+            style={{ color: COLORS.danger }}
             onClick={() => setError(null)}
           >
             &times;
@@ -1362,32 +1302,26 @@ export default function DuetDashboard() {
         </div>
       )}
 
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: 12,
-        maxWidth: 1400,
-        margin: '0 auto',
-      }}>
+      <div className="duet-dash-layout">
         {/* Full-width status header */}
-        <div style={{ gridColumn: '1 / -1' }}>
+        <div className="duet-dash-span-full">
           <MachineStatusHeader />
         </div>
 
         {/* Full-width tool selector */}
-        <div style={{ gridColumn: '1 / -1' }}>
+        <div className="duet-dash-span-full">
           <ToolSelectorPanel />
         </div>
 
         {/* Left column: temperatures, speed/flow */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="duet-dash-col">
           <TemperaturePanel />
           <SpeedFlowPanel />
           <FanControlPanel />
         </div>
 
         {/* Right column: axes, extruder, power, macros */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="duet-dash-col">
           <AxisMovementPanel />
           <ExtruderControlPanel />
           <AtxPowerPanel />
@@ -1395,12 +1329,12 @@ export default function DuetDashboard() {
         </div>
 
         {/* Full-width custom buttons */}
-        <div style={{ gridColumn: '1 / -1' }}>
+        <div className="duet-dash-span-full">
           <DuetCustomButtons />
         </div>
 
         {/* Full-width system info */}
-        <div style={{ gridColumn: '1 / -1' }}>
+        <div className="duet-dash-span-full">
           <SystemInfoPanel />
         </div>
       </div>

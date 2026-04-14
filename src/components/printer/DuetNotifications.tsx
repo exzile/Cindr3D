@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import type { CSSProperties } from 'react';
 import { X } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 
@@ -34,7 +35,11 @@ const AUTO_DISMISS_MS = 5000;
 
 function playBeep(frequency: number, durationMs: number) {
   try {
-    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const win = window as Window & { webkitAudioContext?: typeof AudioContext };
+    const AudioCtxCtor = window.AudioContext ?? win.webkitAudioContext;
+    if (!AudioCtxCtor) return;
+
+    const audioCtx = new AudioCtxCtor();
     const oscillator = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
 
@@ -90,17 +95,21 @@ export default function DuetNotifications() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Auto-dismiss timer
+  // Auto-dismiss timer (single-shot to next expiry; avoids constant interval work)
   useEffect(() => {
     if (toasts.length === 0) return;
 
-    const interval = setInterval(() => {
-      const now = Date.now();
-      setToasts((prev) => prev.filter((t) => now - t.timestamp < AUTO_DISMISS_MS));
-    }, 500);
+    const now = Date.now();
+    const nextExpiry = Math.min(...toasts.map((t) => t.timestamp + AUTO_DISMISS_MS));
+    const delayMs = Math.max(0, nextExpiry - now) + 10;
 
-    return () => clearInterval(interval);
-  }, [toasts.length]);
+    const timeout = window.setTimeout(() => {
+      const cutoff = Date.now() - AUTO_DISMISS_MS;
+      setToasts((prev) => prev.filter((t) => t.timestamp > cutoff));
+    }, delayMs);
+
+    return () => clearTimeout(timeout);
+  }, [toasts]);
 
   // Watch for beep
   useEffect(() => {
@@ -167,54 +176,25 @@ export default function DuetNotifications() {
   if (toasts.length === 0) return null;
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        bottom: 16,
-        right: 16,
-        zIndex: 2000,
-        display: 'flex',
-        flexDirection: 'column-reverse',
-        gap: 8,
-        maxWidth: 360,
-        pointerEvents: 'none',
-      }}
-    >
+    <div className="duet-toast-stack">
       {toasts.map((toast) => {
         const colors = TOAST_COLORS[toast.type];
+        const toastVars = {
+          '--duet-toast-bg': colors.bg,
+          '--duet-toast-border': colors.border,
+          '--duet-toast-text': colors.text,
+        } as CSSProperties;
+
         return (
           <div
             key={toast.id}
-            style={{
-              background: colors.bg,
-              border: `1px solid ${colors.border}`,
-              borderRadius: 8,
-              padding: '10px 14px',
-              fontSize: 12,
-              color: colors.text,
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: 8,
-              pointerEvents: 'auto',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-              fontFamily: "'Inter', 'Segoe UI', sans-serif",
-              animation: 'duetToastSlideIn 0.2s ease-out',
-            }}
+            className="duet-toast"
+            style={toastVars}
           >
-            <span style={{ flex: 1, lineHeight: 1.4 }}>{toast.message}</span>
+            <span className="duet-toast-message">{toast.message}</span>
             <button
               onClick={() => removeToast(toast.id)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: colors.text,
-                cursor: 'pointer',
-                padding: 2,
-                display: 'flex',
-                alignItems: 'center',
-                opacity: 0.7,
-                flexShrink: 0,
-              }}
+              className="duet-toast-close"
               title="Dismiss"
             >
               <X size={14} />
@@ -222,20 +202,6 @@ export default function DuetNotifications() {
           </div>
         );
       })}
-
-      {/* Inline animation keyframes */}
-      <style>{`
-        @keyframes duetToastSlideIn {
-          from {
-            opacity: 0;
-            transform: translateX(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateX(0);
-          }
-        }
-      `}</style>
     </div>
   );
 }

@@ -50,7 +50,9 @@
       "Bash(mkdir -p __TRACKED_VAR__/.claude/memory)",
       "Bash(mkdir -p __TRACKED_VAR__/.claude/commands)",
       "Bash(mkdir -p __TRACKED_VAR__/.claude/memory __TRACKED_VAR__/.claude/commands)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(C:/Users/joeyp/source/repos/exzile/DesignCAD/node_modules/.bin/tsc --noEmit)",
+      "Bash(timeout 60 ./node_modules/.bin/tsc --noEmit --skipLibCheck)"
     ]
   }
 }
