@@ -324,9 +324,11 @@ export default function Toolbar() {
   const gridVisible = useCADStore((s) => s.gridVisible);
   const setGridVisible = useCADStore((s) => s.setGridVisible);
   const startExtrudeTool = useCADStore((s) => s.startExtrudeTool);
+  const startRevolveTool = useCADStore((s) => s.startRevolveTool);
   const setShowExportDialog = useCADStore((s) => s.setShowExportDialog);
   const setActiveDialog = useCADStore((s) => s.setActiveDialog);
   const addFeature = useCADStore((s) => s.addFeature);
+  const addPrimitive = useCADStore((s) => s.addPrimitive);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const sketches = useCADStore((s) => s.sketches);
   const setWorkspaceMode = useCADStore((s) => s.setWorkspaceMode);
@@ -379,6 +381,14 @@ export default function Toolbar() {
     startExtrudeTool();
   };
 
+  const handleRevolve = () => {
+    if (sketches.length === 0) {
+      setStatusMessage('Create a sketch first before revolving');
+      return;
+    }
+    startRevolveTool();
+  };
+
   const handleWorkspaceSwitch = (ws: Workspace) => {
     setWorkspace(ws);
     setWsDropdownOpen(false);
@@ -408,15 +418,15 @@ export default function Toolbar() {
     { icon: <Package size={MI} />, label: 'New Component', onClick: comingSoon('New Component') },
     { icon: <PenTool size={MI} />, label: 'Create Sketch', shortcut: 'S', onClick: beginSketchFlow },
     { separator: true, icon: <ArrowUpFromLine size={MI} />, label: 'Extrude', shortcut: 'E', onClick: handleExtrude },
-    { icon: <RotateCcw size={MI} />, label: 'Revolve', onClick: comingSoon('Revolve') },
+    { icon: <RotateCcw size={MI} />, label: 'Revolve', onClick: handleRevolve },
     { icon: <Spline size={MI} />, label: 'Sweep', onClick: comingSoon('Sweep') },
     { icon: <Layers size={MI} />, label: 'Loft', onClick: comingSoon('Loft') },
     { separator: true, icon: <CircleDot size={MI} />, label: 'Hole', shortcut: 'H', onClick: () => setActiveDialog('hole') },
     { icon: <Wrench size={MI} />, label: 'Thread', onClick: comingSoon('Thread') },
-    { separator: true, icon: <Box size={MI} />, label: 'Box', onClick: comingSoon('Box primitive') },
-    { icon: <Circle size={MI} />, label: 'Cylinder', onClick: comingSoon('Cylinder primitive') },
-    { icon: <Globe size={MI} />, label: 'Sphere', onClick: comingSoon('Sphere primitive') },
-    { icon: <CircleDot size={MI} />, label: 'Torus', onClick: comingSoon('Torus primitive') },
+    { separator: true, icon: <Box size={MI} />, label: 'Box', onClick: () => { addPrimitive('box', { width: 20, height: 20, depth: 20 }); } },
+    { icon: <Circle size={MI} />, label: 'Cylinder', onClick: () => { addPrimitive('cylinder', { radius: 10, height: 20 }); } },
+    { icon: <Globe size={MI} />, label: 'Sphere', onClick: () => { addPrimitive('sphere', { radius: 10 }); } },
+    { icon: <CircleDot size={MI} />, label: 'Torus', onClick: () => { addPrimitive('torus', { radius: 15, tubeRadius: 3 }); } },
     { icon: <Spline size={MI} />, label: 'Coil', onClick: comingSoon('Coil primitive') },
     { icon: <Minus size={MI} />, label: 'Pipe', onClick: comingSoon('Pipe primitive') },
     {
@@ -571,13 +581,13 @@ export default function Toolbar() {
         { icon: <Hexagon size={MI} />, label: 'Edge Polygon', onClick: () => setActiveTool('polygon-edge' as Tool) },
       ],
     },
-    { separator: true, icon: <CircleDot size={MI} />, label: 'Ellipse', onClick: comingSoon('Ellipse') },
+    { separator: true, icon: <CircleDot size={MI} />, label: 'Ellipse', onClick: () => { setActiveTool('ellipse'); setStatusMessage('Ellipse: click centre, then major-axis, then minor-axis endpoint'); } },
     {
       icon: <Circle size={MI} />, label: 'Slot',
       submenu: [
-        { icon: <Circle size={MI} />, label: 'Center to Center Slot', onClick: comingSoon('Center to Center Slot') },
-        { icon: <Circle size={MI} />, label: 'Overall Slot', onClick: comingSoon('Overall Slot') },
-        { icon: <Circle size={MI} />, label: 'Center Point Slot', onClick: comingSoon('Center Point Slot') },
+        { icon: <Circle size={MI} />, label: 'Center to Center Slot', onClick: () => { setActiveTool('slot-center'); setStatusMessage('Center Slot: click first centre, then second centre, then width'); } },
+        { icon: <Circle size={MI} />, label: 'Overall Slot', onClick: () => { setActiveTool('slot-overall'); setStatusMessage('Overall Slot: click first end, then second end, then width'); } },
+        { icon: <Circle size={MI} />, label: 'Center Point Slot', onClick: () => { setActiveTool('slot-center-point'); setStatusMessage('Center Point Slot: click centre, then end, then width'); } },
         { icon: <Circle size={MI} />, label: 'Three Point Arc Slot', onClick: comingSoon('Three Point Arc Slot') },
         { icon: <Circle size={MI} />, label: 'Center Point Arc Slot', onClick: comingSoon('Center Point Arc Slot') },
       ],
@@ -770,7 +780,7 @@ export default function Toolbar() {
                 onClick={beginSketchFlow}
               />
               <ToolButton icon={<ArrowUpFromLine size={ICON_LG} />} label="Extrude" onClick={handleExtrude} large colorClass="icon-blue" />
-              <ToolButton icon={<RotateCcw size={ICON_LG} />} label="Revolve" onClick={() => setStatusMessage('Select a sketch profile to revolve')} large colorClass="icon-blue" />
+              <ToolButton icon={<RotateCcw size={ICON_LG} />} label="Revolve" onClick={handleRevolve} large colorClass="icon-blue" />
               <div className="ribbon-stack">
                 <ToolButton icon={<CircleDot size={ICON_SM} />} label="Hole" onClick={() => setActiveDialog('hole')} colorClass="icon-blue" />
                 <ToolButton icon={<Box size={ICON_SM} />} label="Shell" onClick={() => setActiveDialog('shell')} colorClass="icon-blue" />
@@ -1007,7 +1017,7 @@ export default function Toolbar() {
                   { label: 'Edge Polygon', icon: <Hexagon size={14} />, onClick: () => setActiveTool('polygon-edge' as Tool) },
                 ]}
               />
-              <ToolButton icon={<CircleDot size={20} />}          label="Ellipse"   onClick={comingSoon('Ellipse')}  colorClass="icon-blue" />
+              <ToolButton icon={<CircleDot size={20} />}          label="Ellipse"   onClick={() => { setActiveTool('ellipse'); setStatusMessage('Ellipse: click centre, then major-axis, then minor-axis endpoint'); }}  colorClass="icon-blue" />
               <ToolButton icon={<CircleDot size={20} />}          label="Point"     tool="point"                     colorClass="icon-blue" />
               <ToolButton icon={<Waypoints size={20} />}          label="Spline"    onClick={comingSoon('Spline')}   colorClass="icon-blue" />
             </RibbonSection>

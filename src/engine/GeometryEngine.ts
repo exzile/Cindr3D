@@ -1,5 +1,10 @@
 import * as THREE from 'three';
+import { Brush, Evaluator, ADDITION, SUBTRACTION } from 'three-bvh-csg';
 import type { Sketch, SketchEntity, SketchPoint, SketchPlane } from '../types/cad';
+
+// Single shared CSG evaluator — constructing one is cheap but reusing is free
+const _csgEvaluator = new Evaluator();
+_csgEvaluator.useGroups = false;
 
 // Shared materials — created once, never duplicated per-entity
 const SKETCH_MATERIAL = new THREE.LineBasicMaterial({ color: 0x00aaff, linewidth: 2 });
@@ -417,8 +422,33 @@ export class GeometryEngine {
       case 'circle':            return this.createCircle(entity, material, planeAxes);
       case 'rectangle':         return this.createRectangle(entity.points, material, planeAxes);
       case 'arc':               return this.createArc(entity, material, planeAxes);
+      case 'point':             return this.createPointMarker(entity.points[0], planeAxes);
+      case 'spline':            return this.createLine(entity.points, material);
       default: return null;
     }
+  }
+
+  /**
+   * Render a sketch point as a small 2-line cross lying in the sketch plane.
+   * Uses t1/t2 so it stays visually aligned regardless of plane orientation.
+   */
+  private static createPointMarker(
+    point: SketchPoint | undefined,
+    axes: { t1: THREE.Vector3; t2: THREE.Vector3 },
+  ): THREE.Object3D | null {
+    if (!point) return null;
+    const size = 0.4;
+    const { t1, t2 } = axes;
+    const cx = point.x, cy = point.y, cz = point.z;
+    const positions = new Float32Array([
+      cx - t1.x * size, cy - t1.y * size, cz - t1.z * size,
+      cx + t1.x * size, cy + t1.y * size, cz + t1.z * size,
+      cx - t2.x * size, cy - t2.y * size, cz - t2.z * size,
+      cx + t2.x * size, cy + t2.y * size, cz + t2.z * size,
+    ]);
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    return new THREE.LineSegments(geom, SKETCH_MATERIAL);
   }
 
   private static createLine(points: SketchPoint[], material: THREE.LineBasicMaterial): THREE.Line {
@@ -573,6 +603,66 @@ export class GeometryEngine {
     const geometry = mesh.geometry.clone();
     const material = (mesh.material as THREE.Material).clone();
     return new THREE.Mesh(geometry, material);
+  }
+
+  /**
+   * Build the mesh for a single extrude feature, including direction handling
+   * (normal / reverse / symmetric). Positions the mesh in world space and
+   * returns it. Caller owns disposal of the geometry.
+   *
+   * `distance` here is always the absolute extrusion depth (>0). For press-pull
+   * inward / reverse, pass `direction: 'reverse'`.
+   */
+  static buildExtrudeFeatureMesh(
+    sketch: Sketch,
+    distance: number,
+    direction: 'normal' | 'reverse' | 'symmetric',
+  ): THREE.Mesh | null {
+    const depth = direction === 'symmetric' ? distance : distance;
+    const mesh = this.extrudeSketch(sketch, depth);
+    if (!mesh) return null;
+    if (direction !== 'normal') {
+      const offset = direction === 'symmetric' ? distance / 2 : distance;
+      mesh.position.sub(this.getSketchExtrudeNormal(sketch).multiplyScalar(offset));
+    }
+    return mesh;
+  }
+
+  /**
+   * Bake a mesh's position/rotation/scale into its BufferGeometry, returning a
+   * new world-space geometry. Leaves the input mesh untouched (clones geometry
+   * first). Needed for CSG, which operates in the brush's local space.
+   */
+  static bakeMeshWorldGeometry(mesh: THREE.Mesh): THREE.BufferGeometry {
+    mesh.updateMatrixWorld(true);
+    const cloned = mesh.geometry.clone();
+    cloned.applyMatrix4(mesh.matrixWorld);
+    return cloned;
+  }
+
+  /**
+   * Boolean A − B (subtract) on two world-space geometries. Returns a new
+   * BufferGeometry. Disposes nothing — caller owns all inputs and the output.
+   */
+  static csgSubtract(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.BufferGeometry {
+    const brushA = new Brush(a);
+    const brushB = new Brush(b);
+    brushA.updateMatrixWorld();
+    brushB.updateMatrixWorld();
+    const result = _csgEvaluator.evaluate(brushA, brushB, SUBTRACTION);
+    return result.geometry;
+  }
+
+  /**
+   * Boolean A ∪ B (union) on two world-space geometries. See csgSubtract.
+   */
+  static csgUnion(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.BufferGeometry {
+    const brushA = new Brush(a);
+    const brushB = new Brush(b);
+    brushA.updateMatrixWorld();
+    brushB.updateMatrixWorld();
+    const result = _csgEvaluator.evaluate(brushA, brushB, ADDITION);
+    return result.geometry;
   }
 
   static revolveSketch(sketch: Sketch, angle: number, _axis: THREE.Vector3): THREE.Mesh | null {

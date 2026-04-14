@@ -171,6 +171,7 @@ interface PrinterStore {
   refreshFilaments: () => Promise<void>;
   loadFilament: (toolNumber: number, name: string) => Promise<void>;
   unloadFilament: (toolNumber: number) => Promise<void>;
+  changeFilament: (toolNumber: number, name: string) => Promise<void>;
 
   // Firmware
   uploadFirmware: (file: File) => Promise<void>;
@@ -740,6 +741,20 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
       await service.sendGCode('M702');
     } catch (err) {
       set({ error: `Failed to unload filament: ${(err as Error).message}` });
+    }
+  },
+
+  changeFilament: async (toolNumber, name) => {
+    const { service } = get();
+    if (!service) return;
+    try {
+      // Duet's documented filament-change flow is unload + load with the
+      // new name. M703 prints the loaded configuration; it doesn't swap.
+      await service.sendGCode(`T${toolNumber}`);
+      await service.sendGCode('M702');
+      await service.sendGCode(`M701 S"${name}"`);
+    } catch (err) {
+      set({ error: `Failed to change filament: ${(err as Error).message}` });
     }
   },
 

@@ -24,13 +24,20 @@ export default function ExtrudePanel() {
   if (activeTool !== 'extrude' || !selectedId) return null;
 
   const extrudable = sketches.filter((s) => s.entities.length > 0);
-  const canCommit = !!selectedId && distance > 0;
+  const isCutMode = distance < 0;
+  const canCommit = !!selectedId && Math.abs(distance) > 0.01;
+  // When the user drags the gizmo through zero, the Operation dropdown should
+  // reflect reality: negative distance == cut.
+  const effectiveOperation = isCutMode ? 'cut' : operation;
 
   return (
     <div className="extrude-panel">
       <div className="sketch-palette-header">
-        <span className="sketch-palette-dot" style={{ background: '#3b82f6' }} />
-        <span className="sketch-palette-title">EXTRUDE</span>
+        <span
+          className="sketch-palette-dot"
+          style={{ background: isCutMode ? '#ef4444' : '#3b82f6' }}
+        />
+        <span className="sketch-palette-title">{isCutMode ? 'PRESS-PULL CUT' : 'EXTRUDE'}</span>
         <button
           className="sketch-palette-close"
           onClick={cancelExtrudeTool}
@@ -74,11 +81,10 @@ export default function ExtrudePanel() {
             <input
               type="number"
               step="0.1"
-              min="0.1"
               value={distance}
               onChange={(e) => {
                 const v = Number(e.target.value);
-                if (!Number.isNaN(v) && v > 0) setDistance(v);
+                if (!Number.isNaN(v)) setDistance(v);
               }}
             />
             <span className="extrude-unit">{units}</span>
@@ -89,7 +95,9 @@ export default function ExtrudePanel() {
           <span className="sketch-palette-label">Operation</span>
           <select
             className="measure-select"
-            value={operation}
+            value={effectiveOperation}
+            disabled={isCutMode}
+            title={isCutMode ? 'Negative distance → auto-switched to Cut' : undefined}
             onChange={(e) => setOperation(e.target.value as ExtrudeOperation)}
           >
             <option value="new-body">New Body</option>

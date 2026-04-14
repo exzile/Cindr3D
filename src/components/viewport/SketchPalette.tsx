@@ -23,13 +23,21 @@ const SKETCH_OPTIONS: SketchOption[] = [
 
 export default function SketchPalette() {
   const activeSketch = useCADStore((s) => s.activeSketch);
+  const activeTool = useCADStore((s) => s.activeTool);
   const finishSketch = useCADStore((s) => s.finishSketch);
   const snapEnabled = useCADStore((s) => s.snapEnabled);
   const setSnapEnabled = useCADStore((s) => s.setSnapEnabled);
   const gridVisible = useCADStore((s) => s.gridVisible);
   const setGridVisible = useCADStore((s) => s.setGridVisible);
+  const polygonSides = useCADStore((s) => s.sketchPolygonSides);
+  const setPolygonSides = useCADStore((s) => s.setSketchPolygonSides);
   const setCameraTargetQuaternion = useCADStore((s) => s.setCameraTargetQuaternion);
   const [dismissed, setDismissed] = useState(false);
+  const isPolygonTool =
+    activeTool === 'polygon' ||
+    activeTool === 'polygon-inscribed' ||
+    activeTool === 'polygon-circumscribed' ||
+    activeTool === 'polygon-edge';
 
   // Reset dismissed state each time a new sketch session starts
   useEffect(() => {
@@ -153,6 +161,26 @@ export default function SketchPalette() {
               <span className="sketch-palette-checkmark" />
             </label>
           </div>
+
+          {/* Polygon sides — only visible while a polygon tool is active */}
+          {isPolygonTool && (
+            <div className="sketch-palette-row">
+              <span className="sketch-palette-label">Sides</span>
+              <input
+                type="number"
+                min={3}
+                max={128}
+                step={1}
+                value={polygonSides}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (!Number.isNaN(v)) setPolygonSides(v);
+                }}
+                className="measure-select"
+                style={{ width: 64 }}
+              />
+            </div>
+          )}
 
           {/* Remaining local-only options */}
           {SKETCH_OPTIONS.map((opt) => (

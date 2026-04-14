@@ -35,8 +35,19 @@ const PREVIEW_MATERIAL = new THREE.MeshPhysicalMaterial({
   opacity: 0.55,
   side: THREE.DoubleSide,
 });
+// Red preview used when press-pulling INTO a body (cut mode)
+const PREVIEW_MATERIAL_CUT = new THREE.MeshPhysicalMaterial({
+  color: 0xef4444,
+  metalness: 0.15,
+  roughness: 0.35,
+  transparent: true,
+  opacity: 0.55,
+  side: THREE.DoubleSide,
+});
 const ARROW_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+const ARROW_MATERIAL_CUT = new THREE.MeshBasicMaterial({ color: 0xef4444 });
 const ARROW_LINE_MATERIAL = new THREE.LineBasicMaterial({ color: 0xffaa00 });
+const ARROW_LINE_MATERIAL_CUT = new THREE.LineBasicMaterial({ color: 0xef4444 });
 // Face-highlight materials for press-pull face picking
 const FACE_HIGHLIGHT_FILL = new THREE.MeshBasicMaterial({
   color: 0x60a5fa,
@@ -48,6 +59,20 @@ const FACE_HIGHLIGHT_FILL = new THREE.MeshBasicMaterial({
 });
 const FACE_HIGHLIGHT_OUTLINE = new THREE.LineBasicMaterial({
   color: 0x3b82f6,
+  transparent: true,
+  opacity: 0.95,
+  depthTest: false,
+});
+const FACE_HIGHLIGHT_FILL_CUT = new THREE.MeshBasicMaterial({
+  color: 0xef4444,
+  transparent: true,
+  opacity: 0.4,
+  side: THREE.DoubleSide,
+  depthWrite: false,
+  depthTest: false,
+});
+const FACE_HIGHLIGHT_OUTLINE_CUT = new THREE.LineBasicMaterial({
+  color: 0xdc2626,
   transparent: true,
   opacity: 0.95,
   depthTest: false,
@@ -105,16 +130,23 @@ function ExtrudePreview({ sketch, distance, direction }: {
   distance: number;
   direction: ExtrudeDirection;
 }) {
+  // Signed distance: negative = press-pulled INTO the body → cut preview.
+  // Always extrude with positive depth, then offset backwards when reverse.
+  const isCut = distance < 0;
+  const absDistance = Math.abs(distance);
+  const effectiveDirection: ExtrudeDirection = isCut ? 'reverse' : direction;
+
   const mesh = useMemo(() => {
-    const m = GeometryEngine.extrudeSketch(sketch, distance);
+    if (absDistance < 0.001) return null;
+    const m = GeometryEngine.extrudeSketch(sketch, absDistance);
     if (!m) return null;
-    m.material = PREVIEW_MATERIAL;
-    if (direction !== 'normal') {
-      const offset = direction === 'symmetric' ? distance / 2 : distance;
+    m.material = isCut ? PREVIEW_MATERIAL_CUT : PREVIEW_MATERIAL;
+    if (effectiveDirection !== 'normal') {
+      const offset = effectiveDirection === 'symmetric' ? absDistance / 2 : absDistance;
       m.position.sub(GeometryEngine.getSketchExtrudeNormal(sketch).multiplyScalar(offset));
     }
     return m;
-  }, [sketch, distance, direction]);
+  }, [sketch, absDistance, effectiveDirection, isCut]);
 
   useEffect(() => {
     return () => { mesh?.geometry.dispose(); };
@@ -133,12 +165,16 @@ function ExtrudeGizmo({ sketch }: { sketch: Sketch }) {
   const distance = useCADStore((s) => s.extrudeDistance);
   const setDistance = useCADStore((s) => s.setExtrudeDistance);
 
+  // Cut mode = signed distance is negative (dragged into the body)
+  const isCut = distance < 0;
+
   // Compute centroid + world normal once per sketch
   const { centroid, normal } = useMemo(() => {
     const c = GeometryEngine.getSketchProfileCentroid(sketch) ?? new THREE.Vector3();
     return { centroid: c, normal: GeometryEngine.getSketchExtrudeNormal(sketch) };
   }, [sketch]);
 
+  // Arrow tip flips automatically with signed distance
   const arrowTip = useMemo(
     () => centroid.clone().addScaledVector(normal, distance),
     [centroid, normal, distance],
@@ -147,18 +183,20 @@ function ExtrudeGizmo({ sketch }: { sketch: Sketch }) {
   // Line geometry rebuilt whenever arrow tip moves
   const arrowLine = useMemo(() => {
     const geom = new THREE.BufferGeometry().setFromPoints([centroid, arrowTip]);
-    return new THREE.Line(geom, ARROW_LINE_MATERIAL);
-  }, [centroid, arrowTip]);
+    return new THREE.Line(geom, isCut ? ARROW_LINE_MATERIAL_CUT : ARROW_LINE_MATERIAL);
+  }, [centroid, arrowTip, isCut]);
 
   useEffect(() => {
     return () => { arrowLine.geometry.dispose(); };
   }, [arrowLine]);
 
-  // Cone quaternion: rotate default +Y up to the sketch normal
+  // Cone quaternion: rotate default +Y to the effective arrow direction.
+  // Cut mode flips the cone to point INTO the body.
   const coneQuat = useMemo(() => {
     const up = new THREE.Vector3(0, 1, 0);
-    return new THREE.Quaternion().setFromUnitVectors(up, normal);
-  }, [normal]);
+    const dir = isCut ? normal.clone().negate() : normal;
+    return new THREE.Quaternion().setFromUnitVectors(up, dir);
+  }, [normal, isCut]);
 
   // Drag: track pointer ray → project onto (centroid, normal) axis line
   const draggingRef = useRef(false);
@@ -202,8 +240,9 @@ function ExtrudeGizmo({ sketch }: { sketch: Sketch }) {
       );
       const s = rayToAxisDistance(ndc);
       if (s === null) return;
-      const newDist = Math.round(Math.max(0.1, s + dragOffsetRef.current) * 100) / 100;
-      // Skip no-op store writes so subscribers don't re-render every frame
+      // Signed distance — allow negative so dragging INTO the face becomes
+      // press-pull cut. Snap to 0.01 but don't clamp out the zero crossing.
+      const newDist = Math.round((s + dragOffsetRef.current) * 100) / 100;
       if (newDist !== useCADStore.getState().extrudeDistance) setDistance(newDist);
     };
     const onUp = () => {
@@ -231,7 +270,7 @@ function ExtrudeGizmo({ sketch }: { sketch: Sketch }) {
         onPointerOut={() => { if (!draggingRef.current) gl.domElement.style.cursor = ''; }}
       >
         <coneGeometry args={[1.2, 4, 16]} />
-        <primitive object={ARROW_MATERIAL} attach="material" />
+        <primitive object={isCut ? ARROW_MATERIAL_CUT : ARROW_MATERIAL} attach="material" />
       </mesh>
     </group>
   );

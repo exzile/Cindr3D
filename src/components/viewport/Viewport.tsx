@@ -12,6 +12,7 @@ import SketchPalette from './SketchPalette';
 import MeasurePanel from './MeasurePanel';
 import ExtrudeTool from './ExtrudeTool';
 import ExtrudePanel from './ExtrudePanel';
+import RevolvePanel from './RevolvePanel';
 import type { SketchEntity, SketchPoint, Sketch, Feature } from '../../types/cad';
 
 /** Syncs the Three.js scene background / clear color with the active theme */
@@ -69,33 +70,90 @@ function SketchRenderer() {
   );
 }
 
-/** Extrude geometry item — memoized, disposes ExtrudeGeometry on change/unmount. */
-function ExtrudeItem({ feature, sketch }: { feature: Feature; sketch: Sketch }) {
-  const distance = (feature.params.distance as number) || 10;
-  const mesh = useMemo(
-    () => GeometryEngine.extrudeSketch(sketch, distance),
-    [sketch, distance],
-  );
-  useEffect(() => {
-    if (mesh) {
-      mesh.userData.pickable = true;
-      mesh.userData.featureId = feature.id;
+/** Shared material for all CSG-evaluated bodies. */
+const BODY_MATERIAL = new THREE.MeshPhysicalMaterial({
+  color: 0x8899aa,
+  metalness: 0.3,
+  roughness: 0.4,
+  side: THREE.DoubleSide,
+});
+
+/** Primitive solid bodies — Box / Cylinder / Sphere / Torus */
+function PrimitiveBodies() {
+  const features = useCADStore((s) => s.features);
+  const bodies = useMemo(() => {
+    const out: { id: string; geom: THREE.BufferGeometry }[] = [];
+    for (const f of features) {
+      if (f.type !== 'primitive' || !f.visible) continue;
+      const kind = f.params.kind as 'box' | 'cylinder' | 'sphere' | 'torus';
+      let geom: THREE.BufferGeometry | null = null;
+      if (kind === 'box') {
+        geom = new THREE.BoxGeometry(
+          (f.params.width as number) || 20,
+          (f.params.height as number) || 20,
+          (f.params.depth as number) || 20,
+        );
+      } else if (kind === 'cylinder') {
+        geom = new THREE.CylinderGeometry(
+          (f.params.radius as number) || 10,
+          (f.params.radius as number) || 10,
+          (f.params.height as number) || 20,
+          48,
+        );
+      } else if (kind === 'sphere') {
+        geom = new THREE.SphereGeometry((f.params.radius as number) || 10, 48, 32);
+      } else if (kind === 'torus') {
+        geom = new THREE.TorusGeometry(
+          (f.params.radius as number) || 15,
+          (f.params.tubeRadius as number) || 3,
+          24,
+          48,
+        );
+      }
+      if (geom) out.push({ id: f.id, geom });
     }
-    return () => { mesh?.geometry.dispose(); };
-  }, [mesh, feature.id]);
-  if (!mesh) return null;
-  return <primitive object={mesh} />;
+    return out;
+  }, [features]);
+
+  useEffect(() => {
+    return () => { for (const b of bodies) b.geom.dispose(); };
+  }, [bodies]);
+
+  return (
+    <>
+      {bodies.map((b) => (
+        <mesh
+          key={b.id}
+          geometry={b.geom}
+          material={BODY_MATERIAL}
+          castShadow
+          receiveShadow
+          onUpdate={(m) => { m.userData.pickable = true; m.userData.featureId = b.id; }}
+        />
+      ))}
+    </>
+  );
 }
 
 /** Revolve geometry item — memoized, disposes LatheGeometry on change/unmount. */
 function RevolveItem({ feature, sketch }: { feature: Feature; sketch: Sketch }) {
   const angle = ((feature.params.angle as number) || 360) * (Math.PI / 180);
-  // Stable axis vector — created once per component instance
-  const axis = useMemo(() => new THREE.Vector3(0, 1, 0), []);
-  const mesh = useMemo(
-    () => GeometryEngine.revolveSketch(sketch, angle, axis),
-    [sketch, angle, axis],
-  );
+  const axisKey = (feature.params.axis as 'X' | 'Y' | 'Z') || 'Y';
+  // Stable axis vector — created once per axisKey change
+  const axis = useMemo(() => {
+    if (axisKey === 'X') return new THREE.Vector3(1, 0, 0);
+    if (axisKey === 'Z') return new THREE.Vector3(0, 0, 1);
+    return new THREE.Vector3(0, 1, 0);
+  }, [axisKey]);
+  const mesh = useMemo(() => {
+    const m = GeometryEngine.revolveSketch(sketch, angle, axis);
+    if (!m) return null;
+    // LatheGeometry revolves around local +Y. Post-rotate so the mesh's
+    // lathe-Y aligns with the requested world axis.
+    if (axisKey === 'X') m.rotation.set(0, 0, -Math.PI / 2);
+    else if (axisKey === 'Z') m.rotation.set(Math.PI / 2, 0, 0);
+    return m;
+  }, [sketch, angle, axis, axisKey]);
   useEffect(() => {
     if (mesh) {
       mesh.userData.pickable = true;
@@ -107,19 +165,109 @@ function RevolveItem({ feature, sketch }: { feature: Feature; sketch: Sketch }) 
   return <primitive object={mesh} />;
 }
 
+/**
+ * Walks extrude features in timeline order, applying CSG boolean ops.
+ *
+ *   new-body: push current brush, start a fresh one
+ *   join:     union tool geometry onto current brush
+ *   cut:      subtract tool geometry from current brush
+ *
+ * Each resulting body becomes a single pickable mesh. This keeps the scene
+ * tree flat (one mesh per body) so press-pull face picking continues to work.
+ */
 function ExtrudedBodies() {
   const features = useCADStore((s) => s.features);
   const sketches = useCADStore((s) => s.sketches);
 
+  // Build each tool mesh (un-CSG) for an extrude feature, positioned in world
+  // space per its direction. Returns a transient mesh — caller owns disposal.
+  const buildToolMesh = (feature: Feature, sketch: Sketch): THREE.Mesh | null => {
+    const distance = (feature.params.distance as number) || 10;
+    const direction = ((feature.params.direction as 'normal' | 'reverse' | 'symmetric') ?? 'normal');
+    return GeometryEngine.buildExtrudeFeatureMesh(sketch, distance, direction);
+  };
+
+  const { bodies, featureIds } = useMemo(() => {
+    const extrudeFeatures = [...features]
+      .filter((f) => f.type === 'extrude' && f.visible)
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    const outBodies: THREE.BufferGeometry[] = [];
+    const outIds: string[] = []; // featureId of the last op that contributed to each body
+    let currentGeom: THREE.BufferGeometry | null = null;
+    let currentFeatureId: string | null = null;
+
+    const commitCurrent = () => {
+      if (currentGeom && currentFeatureId) {
+        outBodies.push(currentGeom);
+        outIds.push(currentFeatureId);
+      }
+      currentGeom = null;
+      currentFeatureId = null;
+    };
+
+    for (const feature of extrudeFeatures) {
+      const sketch = sketches.find((s) => s.id === feature.sketchId);
+      if (!sketch) continue;
+      const toolMesh = buildToolMesh(feature, sketch);
+      if (!toolMesh) continue;
+
+      const toolGeom = GeometryEngine.bakeMeshWorldGeometry(toolMesh);
+      toolMesh.geometry.dispose(); // original pre-baked geometry no longer needed
+
+      const op = (feature.params.operation as 'new-body' | 'join' | 'cut') ?? 'new-body';
+
+      if (!currentGeom || op === 'new-body') {
+        // Start (or restart) a new body
+        commitCurrent();
+        currentGeom = toolGeom;
+        currentFeatureId = feature.id;
+        continue;
+      }
+
+      if (op === 'cut') {
+        const next = GeometryEngine.csgSubtract(currentGeom, toolGeom);
+        currentGeom.dispose();
+        toolGeom.dispose();
+        currentGeom = next;
+        currentFeatureId = feature.id;
+      } else if (op === 'join') {
+        const next = GeometryEngine.csgUnion(currentGeom, toolGeom);
+        currentGeom.dispose();
+        toolGeom.dispose();
+        currentGeom = next;
+        currentFeatureId = feature.id;
+      }
+    }
+    commitCurrent();
+
+    return { bodies: outBodies, featureIds: outIds };
+  }, [features, sketches]);
+
+  // Dispose the geometry set when the memo changes or on unmount
+  useEffect(() => {
+    return () => {
+      for (const g of bodies) g.dispose();
+    };
+  }, [bodies]);
+
   return (
     <>
-      {features.filter(f => f.type === 'extrude' && f.visible).map((feature) => {
-        const sketch = sketches.find(s => s.id === feature.sketchId);
-        if (!sketch) return null;
-        return <ExtrudeItem key={feature.id} feature={feature} sketch={sketch} />;
-      })}
-      {features.filter(f => f.type === 'revolve' && f.visible).map((feature) => {
-        const sketch = sketches.find(s => s.id === feature.sketchId);
+      {bodies.map((geom, i) => (
+        <mesh
+          key={featureIds[i] ?? i}
+          geometry={geom}
+          material={BODY_MATERIAL}
+          castShadow
+          receiveShadow
+          onUpdate={(m) => {
+            m.userData.pickable = true;
+            m.userData.featureId = featureIds[i];
+          }}
+        />
+      ))}
+      {features.filter((f) => f.type === 'revolve' && f.visible).map((feature) => {
+        const sketch = sketches.find((s) => s.id === feature.sketchId);
         if (!sketch) return null;
         return <RevolveItem key={feature.id} feature={feature} sketch={sketch} />;
       })}
@@ -320,6 +468,7 @@ function SketchInteraction() {
   const snapEnabled = useCADStore((s) => s.snapEnabled);
   const gridSize = useCADStore((s) => s.gridSize);
   const units = useCADStore((s) => s.units);
+  const polygonSides = useCADStore((s) => s.sketchPolygonSides);
   const themeColors = useThemeStore((s) => s.colors);
 
   const [drawingPoints, setDrawingPoints] = useState<SketchPoint[]>([]);
@@ -581,7 +730,7 @@ function SketchInteraction() {
             const radius = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z)
               .distanceTo(new THREE.Vector3(center.x, center.y, center.z));
             if (radius > 0.001) {
-              const sides = 6;
+              const sides = polygonSides;
               for (let i = 0; i < sides; i++) {
                 const a1 = (i / sides) * Math.PI * 2;
                 const a2 = ((i + 1) / sides) * Math.PI * 2;
@@ -589,7 +738,7 @@ function SketchInteraction() {
                 const p2: SketchPoint = { id: crypto.randomUUID(), x: center.x + t1.x * Math.cos(a2) * radius + t2.x * Math.sin(a2) * radius, y: center.y + t1.y * Math.cos(a2) * radius + t2.y * Math.sin(a2) * radius, z: center.z + t1.z * Math.cos(a2) * radius + t2.z * Math.sin(a2) * radius };
                 addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [p1, p2] });
               }
-              setStatusMessage(`Hexagon (inscribed) added (vertex r=${radius.toFixed(2)})`);
+              setStatusMessage(`${sides}-gon (inscribed) added (vertex r=${radius.toFixed(2)})`);
             } else { setStatusMessage('Polygon too small — try again'); }
             setDrawingPoints([]);
           }
@@ -604,7 +753,7 @@ function SketchInteraction() {
             const center = drawingPoints[0];
             const apothem = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z)
               .distanceTo(new THREE.Vector3(center.x, center.y, center.z));
-            const sides = 6;
+            const sides = polygonSides;
             const radius = apothem / Math.cos(Math.PI / sides); // vertex distance
             if (radius > 0.001) {
               for (let i = 0; i < sides; i++) {
@@ -614,7 +763,7 @@ function SketchInteraction() {
                 const p2: SketchPoint = { id: crypto.randomUUID(), x: center.x + t1.x * Math.cos(a2) * radius + t2.x * Math.sin(a2) * radius, y: center.y + t1.y * Math.cos(a2) * radius + t2.y * Math.sin(a2) * radius, z: center.z + t1.z * Math.cos(a2) * radius + t2.z * Math.sin(a2) * radius };
                 addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [p1, p2] });
               }
-              setStatusMessage(`Hexagon (circumscribed) added (apothem=${apothem.toFixed(2)})`);
+              setStatusMessage(`${sides}-gon (circumscribed) added (apothem=${apothem.toFixed(2)})`);
             } else { setStatusMessage('Polygon too small — try again'); }
             setDrawingPoints([]);
           }
@@ -627,7 +776,7 @@ function SketchInteraction() {
             setStatusMessage('Edge polygon: first edge endpoint placed — click second endpoint');
           } else {
             const p1 = drawingPoints[0];
-            const sides = 6;
+            const sides = polygonSides;
             const edgeVec = new THREE.Vector3(sketchPoint.x - p1.x, sketchPoint.y - p1.y, sketchPoint.z - p1.z);
             const edgeLen = edgeVec.length();
             if (edgeLen > 0.001) {
@@ -650,7 +799,7 @@ function SketchInteraction() {
                 const v2: SketchPoint = { id: crypto.randomUUID(), x: centerPt.x + t1.x * Math.cos(a2) * radius + t2.x * Math.sin(a2) * radius, y: centerPt.y + t1.y * Math.cos(a2) * radius + t2.y * Math.sin(a2) * radius, z: centerPt.z + t1.z * Math.cos(a2) * radius + t2.z * Math.sin(a2) * radius };
                 addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [v1, v2] });
               }
-              setStatusMessage(`Hexagon (edge) added (side=${sideLen.toFixed(2)})`);
+              setStatusMessage(`${sides}-gon (edge) added (side=${sideLen.toFixed(2)})`);
             } else { setStatusMessage('Edge too small — try again'); }
             setDrawingPoints([]);
           }
@@ -757,9 +906,405 @@ function SketchInteraction() {
           break;
         }
         case 'point': {
-          // Single click creates a point
-          addSketchEntity({ id: crypto.randomUUID(), type: 'circle', points: [sketchPoint], radius: 0.3 });
-          setStatusMessage('Point added');
+          // Single click creates a real Point entity (rendered as a cross)
+          addSketchEntity({ id: crypto.randomUUID(), type: 'point', points: [sketchPoint] });
+          setStatusMessage(`Point added (${sketchPoint.x.toFixed(2)}, ${sketchPoint.y.toFixed(2)}, ${sketchPoint.z.toFixed(2)})`);
+          break;
+        }
+        case 'rectangle-3point': {
+          // Click 1: base-start, click 2: base-end, click 3: height (projected perpendicular)
+          if (drawingPoints.length === 0) {
+            setDrawingPoints([sketchPoint]);
+            setStatusMessage('3-Point Rect: place base start — click base end next');
+          } else if (drawingPoints.length === 1) {
+            setDrawingPoints([...drawingPoints, sketchPoint]);
+            setStatusMessage('3-Point Rect: base end placed — click height point');
+          } else {
+            const p1 = drawingPoints[0];
+            const p2 = drawingPoints[1];
+            // Base direction in plane
+            const edge = new THREE.Vector3(p2.x - p1.x, p2.y - p1.y, p2.z - p1.z);
+            const edgeLen = edge.length();
+            if (edgeLen < 0.001) {
+              setStatusMessage('Base too short — try again');
+              setDrawingPoints([]);
+              break;
+            }
+            const edgeDir = edge.clone().normalize();
+            const planeNormal = t1.clone().cross(t2).normalize();
+            // Perpendicular to edge, inside the sketch plane
+            const perpDir = edgeDir.clone().cross(planeNormal).normalize();
+            // Signed height = (p3 − p1) · perpDir
+            const toP3 = new THREE.Vector3(sketchPoint.x - p1.x, sketchPoint.y - p1.y, sketchPoint.z - p1.z);
+            const height = toP3.dot(perpDir);
+            if (Math.abs(height) < 0.001) {
+              setStatusMessage('Height too small — try again');
+              setDrawingPoints([]);
+              break;
+            }
+            const v = (base: SketchPoint, dx: number, dy: number, dz: number): SketchPoint => ({
+              id: crypto.randomUUID(),
+              x: base.x + dx, y: base.y + dy, z: base.z + dz,
+            });
+            const hx = perpDir.x * height, hy = perpDir.y * height, hz = perpDir.z * height;
+            const corners = [
+              p1,
+              p2,
+              v(p2, hx, hy, hz),
+              v(p1, hx, hy, hz),
+              p1,
+            ];
+            for (let i = 0; i < 4; i++) {
+              addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [corners[i], corners[i + 1]] });
+            }
+            setStatusMessage(`3-Point Rectangle added (${edgeLen.toFixed(2)} × ${Math.abs(height).toFixed(2)})`);
+            setDrawingPoints([]);
+          }
+          break;
+        }
+        case 'arc-tangent': {
+          // Tangent arc: takes the end-tangent of the previous sketch entity
+          // (a line or arc) and sweeps through the clicked endpoint.
+          if (drawingPoints.length === 0) {
+            // Peek the last entity in the active sketch
+            const store = useCADStore.getState();
+            const sk = store.activeSketch;
+            const lastEntity = sk?.entities[sk.entities.length - 1];
+            if (!lastEntity || (lastEntity.type !== 'line' && lastEntity.type !== 'arc')) {
+              setStatusMessage('Tangent Arc: need a previous line or arc to attach to');
+              break;
+            }
+            setDrawingPoints([sketchPoint]);
+            setStatusMessage('Tangent Arc: click arc endpoint');
+            break;
+          }
+          const store = useCADStore.getState();
+          const sk = store.activeSketch;
+          const lastEntity = sk?.entities[sk.entities.length - 1];
+          if (!sk || !lastEntity) { setDrawingPoints([]); break; }
+
+          // Compute the start point + tangent direction from the last entity
+          let startPt: SketchPoint;
+          let tangentDir: THREE.Vector3;
+          if (lastEntity.type === 'line') {
+            const a = lastEntity.points[0];
+            const b = lastEntity.points[lastEntity.points.length - 1];
+            startPt = b;
+            tangentDir = new THREE.Vector3(b.x - a.x, b.y - a.y, b.z - a.z).normalize();
+          } else {
+            // Arc: tangent at endAngle is perpendicular to the radius
+            const c = lastEntity.points[0];
+            const r = lastEntity.radius || 1;
+            const ea = lastEntity.endAngle ?? Math.PI;
+            const radial = new THREE.Vector3(
+              t1.x * Math.cos(ea) + t2.x * Math.sin(ea),
+              t1.y * Math.cos(ea) + t2.y * Math.sin(ea),
+              t1.z * Math.cos(ea) + t2.z * Math.sin(ea),
+            );
+            startPt = { id: '', x: c.x + radial.x * r, y: c.y + radial.y * r, z: c.z + radial.z * r };
+            const planeNormal = t1.clone().cross(t2).normalize();
+            tangentDir = radial.clone().cross(planeNormal).normalize();
+          }
+          const endPt = sketchPoint;
+          // Circle tangent at startPt with direction tangentDir passing through endPt
+          // Center lies along the normal to tangentDir within the sketch plane:
+          //   center = startPt + n * d, where n ⟂ tangentDir in plane
+          //   |center − endPt| = |center − startPt| = d
+          const planeNormal = t1.clone().cross(t2).normalize();
+          const normalInPlane = tangentDir.clone().cross(planeNormal).normalize();
+          const chord = new THREE.Vector3(endPt.x - startPt.x, endPt.y - startPt.y, endPt.z - startPt.z);
+          const chordLenSq = chord.lengthSq();
+          const projOnNormal = chord.dot(normalInPlane);
+          if (Math.abs(projOnNormal) < 1e-5) {
+            setStatusMessage('Tangent Arc: endpoint is colinear with tangent — cannot form arc');
+            setDrawingPoints([]);
+            break;
+          }
+          const d = chordLenSq / (2 * projOnNormal);
+          const cx = startPt.x + normalInPlane.x * d;
+          const cy = startPt.y + normalInPlane.y * d;
+          const cz = startPt.z + normalInPlane.z * d;
+          const arcRadius = Math.abs(d);
+          // Compute plane-local start/end angles
+          const toStart = new THREE.Vector3(startPt.x - cx, startPt.y - cy, startPt.z - cz);
+          const toEnd = new THREE.Vector3(endPt.x - cx, endPt.y - cy, endPt.z - cz);
+          const startAngle = Math.atan2(toStart.dot(t2), toStart.dot(t1));
+          const endAngle = Math.atan2(toEnd.dot(t2), toEnd.dot(t1));
+          addSketchEntity({
+            id: crypto.randomUUID(),
+            type: 'arc',
+            points: [{ id: crypto.randomUUID(), x: cx, y: cy, z: cz }],
+            radius: arcRadius,
+            startAngle,
+            endAngle,
+          });
+          setStatusMessage(`Tangent Arc added (r=${arcRadius.toFixed(2)})`);
+          setDrawingPoints([]);
+          break;
+        }
+        // ── D8 Slots ───────────────────────────────────────────────────
+        // A slot is 2 parallel lines joined by 2 semicircular arcs. We
+        // emit them as 2 lines + 2 arc entities in plane-local math so
+        // every variant stays flat to the sketch plane.
+        case 'slot':
+        case 'slot-center': {
+          // Center-to-Center Slot: click 1 = first end centre, click 2 =
+          // second end centre, click 3 = width (perpendicular offset).
+          if (drawingPoints.length === 0) {
+            setDrawingPoints([sketchPoint]);
+            setStatusMessage('Slot: place first centre — click second centre next');
+          } else if (drawingPoints.length === 1) {
+            setDrawingPoints([...drawingPoints, sketchPoint]);
+            setStatusMessage('Slot: second centre placed — click to set width');
+          } else {
+            const c1 = drawingPoints[0];
+            const c2 = drawingPoints[1];
+            const axis = new THREE.Vector3(c2.x - c1.x, c2.y - c1.y, c2.z - c1.z);
+            const axisLen = axis.length();
+            if (axisLen < 0.001) {
+              setStatusMessage('Slot too short — try again');
+              setDrawingPoints([]);
+              break;
+            }
+            const axisDir = axis.clone().normalize();
+            const planeNormal = t1.clone().cross(t2).normalize();
+            const perpDir = axisDir.clone().cross(planeNormal).normalize();
+            // Signed half-width = (p3 − c1) · perpDir — user drags perpendicular
+            const to3 = new THREE.Vector3(sketchPoint.x - c1.x, sketchPoint.y - c1.y, sketchPoint.z - c1.z);
+            const halfWidth = Math.abs(to3.dot(perpDir));
+            if (halfWidth < 0.001) {
+              setStatusMessage('Slot width must be > 0');
+              setDrawingPoints([]);
+              break;
+            }
+            // Four offsets along perpDir
+            const a = (p: SketchPoint, sign: 1 | -1): SketchPoint => ({
+              id: crypto.randomUUID(),
+              x: p.x + perpDir.x * sign * halfWidth,
+              y: p.y + perpDir.y * sign * halfWidth,
+              z: p.z + perpDir.z * sign * halfWidth,
+            });
+            const sideA1 = a(c1, 1);
+            const sideA2 = a(c2, 1);
+            const sideB1 = a(c1, -1);
+            const sideB2 = a(c2, -1);
+            // Two straight sides
+            addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [sideA1, sideA2] });
+            addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [sideB1, sideB2] });
+            // Two end arcs — angles are plane-local (via t1/t2), perpDir
+            // always points in +t2 relative to axisDir so start = +π/2, end = -π/2
+            // for the end cap at c1 (swept the long way) and opposite at c2.
+            const perpAngleAt = (centre: SketchPoint) => {
+              // perpDir relative to axisDir in local coords
+              const local = new THREE.Vector3(
+                perpDir.dot(t1),
+                perpDir.dot(t2),
+                0,
+              );
+              const axisLocal = new THREE.Vector3(
+                axisDir.dot(t1),
+                axisDir.dot(t2),
+                0,
+              );
+              // start angle (from +t1) of perpDir
+              return { local, axisLocal, centre };
+            };
+            const { local: perpLocal, axisLocal: axisLocal } = perpAngleAt(c1);
+            // Start angle of perpDir = atan2(local.y, local.x) in plane coords
+            const perpAngle = Math.atan2(perpLocal.y, perpLocal.x);
+            const axisAngle = Math.atan2(axisLocal.y, axisLocal.x);
+            // Arc at c1: from +perpDir (perpAngle) sweeping opposite to axis
+            // through -perpDir. For Fusion-like rendering, we just emit a
+            // half-turn of radius = halfWidth at each centre.
+            addSketchEntity({
+              id: crypto.randomUUID(),
+              type: 'arc',
+              points: [c1],
+              radius: halfWidth,
+              startAngle: perpAngle,
+              endAngle: perpAngle + Math.PI,
+            });
+            addSketchEntity({
+              id: crypto.randomUUID(),
+              type: 'arc',
+              points: [c2],
+              radius: halfWidth,
+              startAngle: axisAngle - Math.PI / 2, // -perpDir side
+              endAngle: axisAngle + Math.PI / 2,   // +perpDir side
+            });
+            setStatusMessage(`Slot added (${axisLen.toFixed(2)} × ${(halfWidth * 2).toFixed(2)})`);
+            setDrawingPoints([]);
+          }
+          break;
+        }
+        case 'slot-overall': {
+          // Overall Slot: click 1 = one straight-line end (tip of cap),
+          // click 2 = opposite end tip, click 3 = width. The two straight
+          // sides connect end-to-end at half-width offset from the centre axis.
+          if (drawingPoints.length === 0) {
+            setDrawingPoints([sketchPoint]);
+            setStatusMessage('Overall Slot: place first end — click second end');
+          } else if (drawingPoints.length === 1) {
+            setDrawingPoints([...drawingPoints, sketchPoint]);
+            setStatusMessage('Overall Slot: second end placed — click to set width');
+          } else {
+            const p1 = drawingPoints[0];
+            const p2 = drawingPoints[1];
+            const axis = new THREE.Vector3(p2.x - p1.x, p2.y - p1.y, p2.z - p1.z);
+            const overallLen = axis.length();
+            if (overallLen < 0.001) {
+              setStatusMessage('Slot too short — try again');
+              setDrawingPoints([]);
+              break;
+            }
+            const axisDir = axis.clone().normalize();
+            const planeNormal = t1.clone().cross(t2).normalize();
+            const perpDir = axisDir.clone().cross(planeNormal).normalize();
+            const to3 = new THREE.Vector3(sketchPoint.x - p1.x, sketchPoint.y - p1.y, sketchPoint.z - p1.z);
+            const halfWidth = Math.abs(to3.dot(perpDir));
+            if (halfWidth < 0.001 || halfWidth * 2 > overallLen) {
+              setStatusMessage('Overall Slot width must be > 0 and < length');
+              setDrawingPoints([]);
+              break;
+            }
+            // Centres are inset by halfWidth from the end tips
+            const c1: SketchPoint = {
+              id: crypto.randomUUID(),
+              x: p1.x + axisDir.x * halfWidth,
+              y: p1.y + axisDir.y * halfWidth,
+              z: p1.z + axisDir.z * halfWidth,
+            };
+            const c2: SketchPoint = {
+              id: crypto.randomUUID(),
+              x: p2.x - axisDir.x * halfWidth,
+              y: p2.y - axisDir.y * halfWidth,
+              z: p2.z - axisDir.z * halfWidth,
+            };
+            const offset = (p: SketchPoint, sign: 1 | -1): SketchPoint => ({
+              id: crypto.randomUUID(),
+              x: p.x + perpDir.x * sign * halfWidth,
+              y: p.y + perpDir.y * sign * halfWidth,
+              z: p.z + perpDir.z * sign * halfWidth,
+            });
+            addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [offset(c1, 1), offset(c2, 1)] });
+            addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [offset(c1, -1), offset(c2, -1)] });
+            const axisLocal = new THREE.Vector3(axisDir.dot(t1), axisDir.dot(t2), 0);
+            const axisAngle = Math.atan2(axisLocal.y, axisLocal.x);
+            addSketchEntity({
+              id: crypto.randomUUID(),
+              type: 'arc',
+              points: [c1],
+              radius: halfWidth,
+              startAngle: axisAngle + Math.PI / 2,
+              endAngle: axisAngle + (3 * Math.PI) / 2,
+            });
+            addSketchEntity({
+              id: crypto.randomUUID(),
+              type: 'arc',
+              points: [c2],
+              radius: halfWidth,
+              startAngle: axisAngle - Math.PI / 2,
+              endAngle: axisAngle + Math.PI / 2,
+            });
+            setStatusMessage(`Overall Slot added (${overallLen.toFixed(2)} × ${(halfWidth * 2).toFixed(2)})`);
+            setDrawingPoints([]);
+          }
+          break;
+        }
+        case 'slot-center-point': {
+          // Center Point Slot: click 1 = slot centre (midpoint between the
+          // two cap centres), click 2 = one cap centre (sets axis + length),
+          // click 3 = width (perpendicular offset).
+          if (drawingPoints.length === 0) {
+            setDrawingPoints([sketchPoint]);
+            setStatusMessage('Center Slot: place centre — click end centre');
+          } else if (drawingPoints.length === 1) {
+            setDrawingPoints([...drawingPoints, sketchPoint]);
+            setStatusMessage('Center Slot: end placed — click to set width');
+          } else {
+            const mid = drawingPoints[0];
+            const endPt = drawingPoints[1];
+            const half = new THREE.Vector3(endPt.x - mid.x, endPt.y - mid.y, endPt.z - mid.z);
+            const halfLen = half.length();
+            if (halfLen < 0.001) { setStatusMessage('Slot too short'); setDrawingPoints([]); break; }
+            const axisDir = half.clone().normalize();
+            const planeNormal = t1.clone().cross(t2).normalize();
+            const perpDir = axisDir.clone().cross(planeNormal).normalize();
+            const to3 = new THREE.Vector3(sketchPoint.x - mid.x, sketchPoint.y - mid.y, sketchPoint.z - mid.z);
+            const halfWidth = Math.abs(to3.dot(perpDir));
+            if (halfWidth < 0.001) { setStatusMessage('Slot width too small'); setDrawingPoints([]); break; }
+            const c1 = endPt;
+            const c2: SketchPoint = {
+              id: crypto.randomUUID(),
+              x: mid.x - axisDir.x * halfLen,
+              y: mid.y - axisDir.y * halfLen,
+              z: mid.z - axisDir.z * halfLen,
+            };
+            const off = (p: SketchPoint, sign: 1 | -1): SketchPoint => ({
+              id: crypto.randomUUID(),
+              x: p.x + perpDir.x * sign * halfWidth,
+              y: p.y + perpDir.y * sign * halfWidth,
+              z: p.z + perpDir.z * sign * halfWidth,
+            });
+            addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [off(c1, 1), off(c2, 1)] });
+            addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [off(c1, -1), off(c2, -1)] });
+            const axisLocal = new THREE.Vector3(axisDir.dot(t1), axisDir.dot(t2), 0);
+            const axisAngle = Math.atan2(axisLocal.y, axisLocal.x);
+            addSketchEntity({
+              id: crypto.randomUUID(), type: 'arc', points: [c1], radius: halfWidth,
+              startAngle: axisAngle - Math.PI / 2, endAngle: axisAngle + Math.PI / 2,
+            });
+            addSketchEntity({
+              id: crypto.randomUUID(), type: 'arc', points: [c2], radius: halfWidth,
+              startAngle: axisAngle + Math.PI / 2, endAngle: axisAngle + (3 * Math.PI) / 2,
+            });
+            setStatusMessage(`Center Slot added (${(halfLen * 2).toFixed(2)} × ${(halfWidth * 2).toFixed(2)})`);
+            setDrawingPoints([]);
+          }
+          break;
+        }
+        // ── D10 Ellipse ────────────────────────────────────────────────
+        // Click 1: centre, click 2: major-axis endpoint (sets major radius
+        // + rotation), click 3: minor-axis endpoint (signed minor radius).
+        // Approximated as a closed polyline of 64 segments in the sketch
+        // plane. Stored as a 'spline' entity type so the extrude path still
+        // picks it up through the generic points[] handling.
+        case 'ellipse': {
+          if (drawingPoints.length === 0) {
+            setDrawingPoints([sketchPoint]);
+            setStatusMessage('Ellipse: centre placed — click major-axis endpoint');
+          } else if (drawingPoints.length === 1) {
+            setDrawingPoints([...drawingPoints, sketchPoint]);
+            setStatusMessage('Ellipse: major placed — click minor-axis endpoint');
+          } else {
+            const centre = drawingPoints[0];
+            const majorPt = drawingPoints[1];
+            const majorVec = new THREE.Vector3(majorPt.x - centre.x, majorPt.y - centre.y, majorPt.z - centre.z);
+            const majorLen = majorVec.length();
+            if (majorLen < 0.001) { setStatusMessage('Ellipse too small'); setDrawingPoints([]); break; }
+            const majorDir = majorVec.clone().normalize();
+            const planeNormal = t1.clone().cross(t2).normalize();
+            const minorDir = majorDir.clone().cross(planeNormal).normalize();
+            const to3 = new THREE.Vector3(sketchPoint.x - centre.x, sketchPoint.y - centre.y, sketchPoint.z - centre.z);
+            const minorLen = Math.abs(to3.dot(minorDir));
+            if (minorLen < 0.001) { setStatusMessage('Ellipse minor axis too small'); setDrawingPoints([]); break; }
+            const segments = 64;
+            const pts: SketchPoint[] = [];
+            for (let i = 0; i <= segments; i++) {
+              const a = (i / segments) * Math.PI * 2;
+              const ca = Math.cos(a) * majorLen;
+              const sa = Math.sin(a) * minorLen;
+              pts.push({
+                id: crypto.randomUUID(),
+                x: centre.x + majorDir.x * ca + minorDir.x * sa,
+                y: centre.y + majorDir.y * ca + minorDir.y * sa,
+                z: centre.z + majorDir.z * ca + minorDir.z * sa,
+              });
+            }
+            addSketchEntity({ id: crypto.randomUUID(), type: 'spline', points: pts });
+            setStatusMessage(`Ellipse added (${majorLen.toFixed(2)} × ${minorLen.toFixed(2)})`);
+            setDrawingPoints([]);
+          }
           break;
         }
       }
@@ -1871,6 +2416,7 @@ export default function Viewport() {
         {/* CAD Content */}
         <SketchRenderer />
         <ExtrudedBodies />
+        <PrimitiveBodies />
         <ImportedModels />
         <SketchPlaneIndicator />
         <SketchInteraction />
@@ -1917,6 +2463,7 @@ export default function Viewport() {
 
       {/* Extrude Panel (Fusion 360 style properties panel) */}
       <ExtrudePanel />
+      <RevolvePanel />
     </div>
   );
 }

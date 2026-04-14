@@ -48,7 +48,9 @@
       "Bash(dir \"C:/Users/joeyp/source/repos/exzile/DesignCAD\")",
       "Bash(node_modules/.bin/tsc --noEmit)",
       "Bash(mkdir -p __TRACKED_VAR__/.claude/memory)",
-      "Bash(mkdir -p __TRACKED_VAR__/.claude/commands)"
+      "Bash(mkdir -p __TRACKED_VAR__/.claude/commands)",
+      "Bash(mkdir -p __TRACKED_VAR__/.claude/memory __TRACKED_VAR__/.claude/commands)",
+      "Read(//tmp/**)"
     ]
   }
 }

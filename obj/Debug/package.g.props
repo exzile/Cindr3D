@@ -17,6 +17,7 @@
     <PackageJsonDependenciesReact Condition="$(PackageJsonDependenciesReact) == ''">^19.2.5</PackageJsonDependenciesReact>
     <PackageJsonDependenciesReactDom Condition="$(PackageJsonDependenciesReactDom) == ''">^19.2.5</PackageJsonDependenciesReactDom>
     <PackageJsonDependenciesThree Condition="$(PackageJsonDependenciesThree) == ''">^0.183.2</PackageJsonDependenciesThree>
+    <PackageJsonDependenciesThreeBvhCsg Condition="$(PackageJsonDependenciesThreeBvhCsg) == ''">^0.0.18</PackageJsonDependenciesThreeBvhCsg>
     <PackageJsonDependenciesZustand Condition="$(PackageJsonDependenciesZustand) == ''">^5.0.12</PackageJsonDependenciesZustand>
     <PackageJsonDevdependenciesEslintJs Condition="$(PackageJsonDevdependenciesEslintJs) == ''">^9.39.4</PackageJsonDevdependenciesEslintJs>
     <PackageJsonDevdependenciesTypesNode Condition="$(PackageJsonDevdependenciesTypesNode) == ''">^25.6.0</PackageJsonDevdependenciesTypesNode>

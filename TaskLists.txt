@@ -7,11 +7,16 @@ Gaps identified by comparing src/components/printer/* with the DWC v3 panel
 and route inventory at github.com/Duet3D/DuetWebControl. Ordered by user impact.
 
 PRIORITY 1 — operator-facing wins
-[ ] 1. Filament management UI
-       - Per-tool load / unload / change (M701 / M702 / M703)
-       - List filaments from 0:/filaments, show currently loaded
-       - Add inline control on each tool row in the dashboard tool selector
-       - Add a Filaments sub-page (or expand the existing Files > Filaments view)
+[~] 1. Filament management UI
+       - Shipped: inline per-tool Filament select on each DuetDashboard tool
+         row. Shows currently loaded filament (model.move.extruders[n].filament),
+         lists names from 0:/filaments, and calls the right M-code:
+           * M701 S"name" for a fresh load,
+           * M702 + M701 S"new" for a swap (via new changeFilament store action),
+           * M702 for unload (existing Unload button).
+       - Remaining: dedicated Filaments sub-page / Files > Filaments editor
+         (create / rename / delete filament directories, edit load/unload
+         macros). Tracked as a follow-up.
 
 [ ] 2. Job estimations panel
        - File-based ETA, filament-based ETA, layer-based ETA
@@ -68,3 +73,784 @@ EXPLICITLY OUT OF SCOPE
 - Multi-machine switcher — single-printer connection by design
 - Internationalization (i18n)
 - Workspace layout editor (custom panel arrangements)
+
+
+DESIGN WORKSPACE — FUSION 360 PARITY GAPS
+==========================================
+Audit source: help.autodesk.com/view/fusion360/ENU (Sketch Tools, Sketch Modify,
+Create Slots, Create Splines, Sketch Constraints, Solid Create, Solid Modify).
+Cross-referenced against src/types/cad.ts Tool union, Toolbar.tsx menus, and
+Viewport.tsx SketchInteraction.handleClick. Ordered by user impact.
+
+P1 — BROKEN / INCONSISTENT (existing tools do not behave as advertised)
+[x] D1. 3-Point Rectangle has no handler
+        - Shipped: added 'rectangle-3point' case in Viewport.tsx SketchInteraction
+          with 3-click flow (base-start, base-end, height projected perpendicular
+          within the sketch plane).
+
+[x] D2. Polygon sides hardcoded to 6
+        - Shipped: cadStore.sketchPolygonSides (3-128) + setSketchPolygonSides,
+          SketchPalette field visible while a polygon tool is active, all three
+          polygon cases now use the live value.
+
+[x] D3. Point tool creates a tiny circle instead of a SketchPoint
+        - Shipped: SketchEntity.type now includes 'point', GeometryEngine renders
+          a plane-aware cross marker, and the handler writes a real 'point'
+          entity instead of a fake 0.3-radius circle.
+
+[x] D4. Tangent Arc is advertised in the Arc flyout but is comingSoon
+        - Shipped: 'arc-tangent' case in Viewport.tsx reads the last committed
+          line/arc end tangent, solves for the circle centre so the arc stays
+          tangent at the start and passes through the clicked endpoint.
+
+[x] D5. Revolve is implemented in GeometryEngine but not wired to the ribbon
+        - Shipped: startRevolveTool / commitRevolve / cancelRevolveTool actions +
+          revolveSelectedSketchId / revolveAxis (X/Y/Z) / revolveAngle state,
+          new RevolvePanel component mirroring ExtrudePanel, Toolbar.tsx
+          handleRevolve replaces comingSoon, RevolveItem post-rotates the lathe
+          mesh so X/Y/Z axes actually work.
+
+[ ] D6. 3D Fillet is a no-op
+        - GeometryEngine.createFilletGeometry (L576) takes `_radius` and returns
+          the input mesh unchanged. Either delete the button or implement real
+          edge-fillet (three-bvh-csg + cylinder sweep, or switch to manifold3d).
+        - BLOCKED: no edge-picker infrastructure exists yet. Pair with D7.
+
+[ ] D7. Chamfer sets activeTool='chamfer' but has no dialog / no operation.
+        - BLOCKED: same edge-picker gap as D6. Do both together once face/edge
+          picking lands.
+
+P2 — MISSING SKETCH CREATE TOOLS
+[~] D8. Slots — 3 of 5 Fusion 360 variants shipped (SKT-CREATE-SLOTS)
+        - Shipped: Center to Center Slot ('slot-center'), Overall Slot
+          ('slot-overall'), Center Point Slot ('slot-center-point'). Each
+          emits 2 line + 2 arc SketchEntity primitives in plane-local math
+          and reuses the extrude path unchanged.
+        - Remaining: Three Point Arc Slot + Center Point Arc Slot. Both
+          need a curved-path slot builder; add when arc-slot demand appears.
+
+[ ] D9. Splines — Fit Point + Control Point
+        - Fit Point: clicks are pass-through points; use THREE.CatmullRomCurve3.
+        - Control Point: clicks are control polygon; use THREE.CubicBezierCurve3
+          or NURBS (verb-nurbs). Add 'spline' entity type with points[] + mode.
+
+[x] D10. Ellipse — center, major-axis endpoint, minor-axis endpoint
+        - Shipped: 3-click 'ellipse' tool in Viewport.tsx. Stores the result
+          as a closed 64-segment 'spline' SketchEntity in plane-local (t1,t2)
+          basis so extrude still picks it up. GeometryEngine renders 'spline'
+          via the existing polyline path.
+
+[ ] D11. Conic Curve — start, end, rho (0.01-0.99)
+
+[ ] D12. Sketch Text — anchor + string + font + height; triangulate glyphs into
+         SketchEntity outlines for extrude support.
+
+[x] D13. Point as real entity (see D3). Shipped alongside D3 — 'point'
+         SketchEntity type + GeometryEngine.createPointMarker cross renderer.
+
+[ ] D14. Project / Include Geometry — pick a 3D edge/face, project its outline
+         into the active sketch plane as read-only sketch geometry.
+
+[ ] D15. Intersect — pick a 3D edge, intersect it with the sketch plane to
+         create a sketch point.
+
+P3 — MISSING SKETCH MODIFY TOOLS
+[ ] D16. Sketch Fillet — pick two intersecting segments + radius; replace corner
+         with a tangent arc. Most-requested Fusion modify operation.
+
+[ ] D17. Trim — hover a segment portion, click to delete it up to nearest
+         intersections. Needs full segment-intersection map per sketch.
+
+[ ] D18. Extend — hover a segment, extend to nearest intersection with another
+         sketch entity (mirror of Trim).
+
+[ ] D19. Break — click a segment at a point; splits it into two entities.
+
+[ ] D20. Offset — pick a chain of entities, drag/enter distance, create parallel
+         copies (lines: translate; arcs/circles: radius ± d).
+
+[ ] D21. Sketch Mirror — pick entities + a line/centerline, create mirrored
+         copies with a symmetric constraint.
+
+[ ] D22. Sketch Rectangular Pattern — pick entities, direction(s), count(s),
+         spacing(s). Two directions like Fusion.
+
+[ ] D23. Sketch Circular Pattern — pick entities, center point, count, total
+         angle.
+
+[ ] D24. Move / Copy — pick entities, translate/rotate by numeric input or drag.
+
+[ ] D25. Sketch Scale — pick entities, anchor point, factor.
+
+[ ] D26. Sketch Rotate — pick entities, pivot, angle.
+
+P4 — SKETCH CONSTRAINTS (SOLVER + UI)
+[ ] D27. Real constraint solver
+        - Currently `SketchConstraint` type exists but no solver runs.
+        - Integrate planck-sketch or a minimal DOF solver so that adding
+          horizontal/vertical/coincident actually snaps/locks geometry.
+        - `Sketch.fullyConstrained` flag is defined but never updated.
+
+[ ] D28. Dimension tool full flow
+        - activeTool='dimension' is wired but clicking does nothing.
+        - Implement: pick 1-2 entities → show text input at cursor → create a
+          SketchDimension and drive the solver.
+        - Types: linear, angular, radial, diameter, aligned.
+
+[ ] D29. Geometric constraints (12 types)
+        - Coincident, Collinear, Concentric, Midpoint, Horizontal, Vertical,
+          Perpendicular, Parallel, Tangent, Equal, Symmetric, Fix/Unfix.
+        - Each needs: a pick flow, an icon overlay on the affected entities,
+          and solver enforcement.
+
+P5 — MISSING 3D FEATURES (Solid tab)
+[ ] D30. Sweep — profile sketch + path sketch → addon(three-geometries/sweep)
+         or extrude along curve segments.
+
+[ ] D31. Loft — pick 2+ profile sketches, optional rails → ruled/blended mesh.
+
+[x] D32. Press Pull — pick a face, drag to extrude/offset; convenience wrapper
+         over extrude+offset-face. Shipped: ExtrudeTool face picker +
+         GeometryEngine.computeCoplanarFaceBoundary + signed distance for
+         inward press-pull cut (red preview + three-bvh-csg subtract).
+
+[ ] D33. Draft — pick face(s) + pull direction + angle; angle-tilts the face.
+
+[ ] D34. Thread — cosmetic + modeled (pick cylinder face, pitch, size table).
+
+[ ] D35. Offset Face / Replace Face / Split Face — face-level CSG ops.
+
+[ ] D36. Primitives — Box, Cylinder, Sphere, Torus, Coil, Pipe. Each creates a
+         feature with editable parameters (no sketch required).
+
+P6 — CONSTRUCT / INSPECT / SELECTION (lower priority)
+[ ] D37. Construct: Plane at Angle, Midplane, Tangent Plane, 3-Points Plane,
+         Axis Through Cylinder, Axis Through Two Points (set status but no op).
+
+[ ] D38. Inspect: Interference, Section Analysis, Curvature Comb, Zebra,
+         Draft Analysis, Center of Mass.
+
+[ ] D39. Selection: Window / Freeform / Paint selection modes + priority +
+         filters (currently all comingSoon).
+
+
+DESIGN SKETCH — DEEP AUDIT GAPS (Fusion 360 reference, 2026-04-14)
+==================================================================
+Sourced by reading the Fusion 360 /cloudhelp/ENU/Fusion-Sketch pages directly
+(SKT-3D-SKETCH, SKT-SKETCH-CREATE-CIRCLES, -ARCS, -RECTANGLES, -POLYGONS,
+-SLOTS, -SPLINES, -ELLIPSES, -CONIC-CURVES, -TEXT, -MIRRORS-PATTERNS,
+-PROJECT-INCLUDE, -DIMENSIONS, SKT-SKETCH-MODIFY-TOOLS, SKT-CONSTRAINTS,
+SKT-AUTO-CONSTRAIN, SKT-TRIM-EXTEND, SKT-BREAK, SKT-SCALE, SKT-CREATE-MIRROR,
+Sketch Palette GUID-4183A4B7). Items below are gaps NOT already covered by
+D1–D39. Ordered by likely user impact.
+
+P7 — SKETCH CREATE (variants we missed on the first pass)
+[ ] D40. 2-Tangent Circle
+         - Pick 2 sketch lines, specify radius → circle tangent to both lines.
+         - Fusion: "creates a circle tangent to 2 sketch lines."
+         - Add 'circle-2tangent' Tool + picker flow.
+
+[ ] D41. 3-Tangent Circle
+         - Pick 3 sketch lines → circle tangent to all three (incircle).
+         - Add 'circle-3tangent' Tool + incircle solver.
+
+[ ] D42. Line-tool click-drag → tangent arc
+         - Fusion's Line tool: click to place points for straight segments,
+           click-and-drag from a previous endpoint to create a connected
+           tangent arc. Core chaining behavior; users rely on it constantly.
+         - Add pointerdown/move/up state machine in Viewport.tsx
+           SketchInteraction so Line can chain arcs.
+
+[ ] D43. Midpoint Line
+         - Fusion has a "Create midpoint lines in a sketch" subtopic — line
+           defined by midpoint + one endpoint, auto-applies a Midpoint
+           constraint so it stays symmetric.
+
+[ ] D44. Blend Curve
+         - Tangent (G1) or curvature-continuous (G2) blend curve between
+           endpoints of two existing sketch curves / edges. Lives in Modify.
+
+[ ] D45. Include 3D Geometry
+         - Distinct from Project: pulls 3D edges / work geometry / sketch
+           curves into the active sketch as-is (no projection onto plane).
+         - Needed for 3D sketches + sweep paths.
+
+[ ] D46. Project to Surface
+         - Project sketch curves, edges, vertices, or work points onto a
+           selected face (result wraps the face, not the sketch plane).
+
+[ ] D47. Sketch Chamfer — 3 variants
+         - Equal Distance Chamfer — one distance applied to both sides.
+         - Two Distance Chamfer — separate distance per side.
+         - Distance and Angle Chamfer — distance + angle on one side.
+         - Replaces the straight-corner vertex with a chamfer line; same
+           pick flow as Fillet but produces a line instead of an arc.
+         - Add 'sketch-chamfer-equal' / '-two-dist' / '-dist-angle' tools.
+
+[ ] D48. Arc Length dimension
+         - Missing from D28's dimension list. Pick an arc → dimension becomes
+           its arc length rather than radius.
+
+[ ] D49. Aligned (true-length) dimension
+         - D28 lists linear/angular/radial/diameter but misses Aligned: pick
+           2 points and the dimension is measured along the line between
+           them, not along X or Y axes.
+
+[ ] D50. AutoConstrain
+         - Fusion's SKT-AUTO-CONSTRAIN: analyzes the current sketch, proposes
+           constraints + dimensions in purple, lets user tweak via a slider
+           (how aggressive) and selectively apply. Depends on the solver from
+           D27 but also needs a candidate-generation pass (near-parallel,
+           near-horizontal, near-equal-length detection with tolerances).
+
+[ ] D51. Curvature constraint (G2)
+         - Not in D29's list. Constrains a spline and another sketch curve
+           to share curvature (smooth continuous G2 blend). Only meaningful
+           once splines (D9) ship.
+
+[ ] D52. Symmetry constraint (explicit)
+         - Already listed as a geometric constraint in D29 but Fusion's
+           Mirror tool AUTO-APPLIES symmetry. When D21 (sketch mirror) lands,
+           every mirrored pair must get a symmetry constraint so dragging
+           one side drags the other. Track as a separate acceptance check.
+
+P8 — SKETCH PALETTE / OPTIONS (almost entirely missing)
+[ ] D53. Look At
+         - One-click "rotate camera to look directly at the active sketch
+           plane." Mirror of the orbit-to-normal shortcut. Add a palette
+           button that calls `camera.lookAt(centroid)` with the plane normal
+           as the forward vector; reuse GeometryEngine.getSketchExtrudeNormal.
+
+[ ] D54. Slice  ⭐ HIGH VALUE for interior sketching
+         - "Temporarily cuts through bodies where they intersect the active
+           sketch plane." While Slice is on, only the cross-section + the
+           half of each body behind the plane is shown — essential when
+           sketching on a plane inside a closed part.
+         - Implement with a clipping plane (THREE.Plane + renderer
+           localClippingEnabled + mesh.material.clippingPlanes = [plane]).
+         - Toggle in SketchPalette; only active while editing a sketch.
+
+[ ] D55. Show Profile
+         - Shade closed loops of a sketch in a translucent blue so you can
+           see at a glance which regions will extrude. Already have
+           createSketchProfileMesh — surface it as a palette toggle and
+           render when ON.
+
+[ ] D56. Show Points / Dimensions / Constraints / Projected Geometries
+         - Four independent visibility toggles in the palette. Currently
+           everything is always visible. Route through cadStore.uiFlags.
+
+[ ] D57. Linetype conversion post-hoc
+         - While a sketch is open, select one or more entities and convert
+           them Normal ↔ Construction ↔ Centerline via the palette (no need
+           to delete + redraw). Toolbar action + store mutation.
+
+[ ] D58. 3D Sketch mode toggle + manipulator
+         - Entire missing capability: sketches are 2D-only right now. Fusion
+           lets a sketch operate in free 3D: Alt cycles planes, Tab cycles
+           rotation handles, Up arrow locks XY and shifts Z.
+         - Requires: a THREE.TransformControls-style manipulator at the
+           sketch cursor, a mode flag on Sketch, and 3D-aware variants of
+           every click handler (no more forced projectToPlane).
+         - Large feature; flag as LATER but list so we don't forget.
+
+P9 — SKETCH MANAGEMENT (browser / timeline actions)
+[ ] D59. Copy Sketch
+         - Right-click a sketch in the browser tree → Copy. Creates a new
+           sketch at the same plane with duplicated entities + its own
+           timeline entry. Add cadStore.copySketch.
+
+[ ] D60. Redefine Sketch Plane
+         - When a sketch's reference plane/face is deleted or suppressed,
+           Fusion shows "The sketch plane is lost. Cache is used." and lets
+           the user pick a new plane. Add a "Redefine Plane" action on any
+           sketch whose planeNormal/planeOrigin no longer resolves against
+           an existing face.
+
+[ ] D61. Export Sketch as DXF
+         - Right-click a sketch → Export as DXF. Referenced from the main
+           "Sketches in Fusion" page. Implement via a tiny DXF writer:
+           LINE / CIRCLE / ARC / LWPOLYLINE entities are enough for the 80%
+           case. Good interop win for laser-cutter / Duet users.
+
+[ ] D62. Finish/Stop Sketch affordance
+         - Verify Dzign3D has an obvious "Finish Sketch" button at the top
+           of the viewport (Fusion's big green checkmark). Currently the
+           exit path goes through the ribbon which is unintuitive mid-sketch.
+         - Add a floating "Finish Sketch" button while in sketch edit mode.
+
+P10 — NON-OBVIOUS POLISH ITEMS
+[ ] D63. Equation/parameter input in dimension fields
+         - Fusion lets you type `width/2+3` in any dimension input box.
+         - We already have `utils/expressionEval.ts`; plumb it into the
+           dimension placement flow so users can reference parameters.
+
+[ ] D64. Live length/angle display while drawing
+         - Fusion shows a transient tooltip next to the cursor with the
+           current segment length and angle-from-horizontal. We partially
+           do this in the angle-arc preview (Viewport.tsx L930-944) but not
+           as a numeric HUD.
+
+[ ] D65. Snap indicators (endpoint / midpoint / center / intersection)
+         - SnapType enum exists in cad.ts but no snap logic runs. Visible
+           glyphs next to the cursor (square = endpoint, triangle =
+           midpoint, circle = center) guide precise placement.
+         - Adds massively perceived precision; implement alongside trim/
+           extend since they share the intersection-map infrastructure.
+
+
+DESIGN SOLID — DEEP AUDIT GAPS (Fusion 360 reference, 2026-04-14)
+==================================================================
+Sourced by reading /cloudhelp/ENU/Fusion-Model/files/SLD-*.htm pages
+(CREATE-SOLID-FROM-SKETCH, MODIFY-SOLID-BODY, EXTRUDE-SOLID, REVOLVE-SOLID,
+SWEEP-SOLID, LOFT-SOLID, RIB, CHAMFER-SOLID, FILLET-SOLID, REF-DRAFT,
+HOLE-THREAD, CONSTRUCT-TOOLS). Everything below is a gap beyond what's
+already tracked in D6-D7 / D30-D39. Ordered by user impact.
+
+P11 — SOLID CREATE (missing feature tools)
+[ ] D66. Thin Extrude (wall thickness)
+         - Fusion: "Thin Extrude for open or closed profiles with wall
+           thickness." Current ExtrudePanel is body-only. Add
+           type: 'solid' | 'thin' + wall thickness + thickness-location
+           (inside / outside / center).
+         - Unlocks sheet-metal-style features from open sketches.
+
+[ ] D67. Extrude start options
+         - Currently Start is always Profile Plane. Fusion offers:
+           Profile Plane, Offset, From Object.
+         - Add `extrudeStart: { type: 'profile' | 'offset' | 'object';
+           value: number; reference?: FaceId }` to cadStore.
+
+[ ] D68. Extrude extent: To Object / All
+         - Only Distance is supported. Add extent types:
+           * Distance (have)
+           * To Object (raycast profile normal, trim at first hit)
+           * All (extrude through every visible body)
+         - Needed for adaptive cutouts on imported meshes.
+
+[ ] D69. Extrude taper angle
+         - Fusion's Taper Angle input widens/narrows the extrusion along
+           its depth. Non-zero taper ⇒ Three.ExtrudeGeometry with a per-slice
+           scale factor (or sweep custom shape along a line with scale).
+
+[ ] D70. Revolve extent: Partial / Full / To Object + direction modes
+         - We currently have just `revolveAngle`. Fusion offers:
+           * Partial (one side / two sides / symmetric) with angle each side
+           * Full (360°)
+           * To Object
+         - Mirror the extrude direction UI so users can revolve symmetrically.
+
+[ ] D71. Sweep (implement D30 with full Fusion options)
+         - When D30 lands, cover all four sweep types:
+           * Single Path — profile along a path
+           * Solid Sweep — sweep a solid body
+           * Path + Guide Rail — guide curve controls scale/orientation
+           * Path + Guide Surface — guide surface controls orientation
+         - Options: Orientation (perpendicular / parallel), Twist Angle,
+           Taper Angle, Distance (percent along path).
+
+[ ] D72. Loft (implement D31 with full Fusion options)
+         - Profiles list + Rails list OR Centerline.
+         - End conditions: Connected (G0), Tangent (G1), Curvature (G2),
+           Direction — for first & last profile.
+         - Closed Loft checkbox, Merge/Keep tangent edges, Operation types.
+
+[ ] D73. Rib feature
+         - Open sketch profile + thin rib perpendicular to plane + "to
+           nearest faces" extent. Symmetric or one-side thickness, optional
+           draft angle + fillet radius.
+
+[ ] D74. Web feature
+         - Like Rib but perpendicular to the sketch plane rather than
+           parallel. Different use case (enclosure stiffeners).
+
+[ ] D75. Emboss feature
+         - Raises or recesses a sketch profile onto a face of a solid.
+           Closed profile + target face + depth + direction.
+
+[ ] D76. Rest feature
+         - "Creates a rest feature that intersects the overall solid body
+           and forms a flat area." Used for creating seating surfaces.
+
+[ ] D77. Thicken (already comingSoon in Toolbar.tsx L433)
+         - Turn a surface/face into a thin-walled solid by offsetting it.
+           Inside / Outside / Symmetric direction + distance.
+
+[ ] D78. Boundary Fill
+         - Seal a region defined by intersecting surfaces/planes/bodies into
+           a new solid. Low priority but important for reverse-engineering.
+
+[ ] D79. Create Base Feature
+         - Non-timeline modeling container. User can free-form edit inside
+           a Base Feature without triggering parametric recompute — escape
+           hatch for imported meshes. Lower priority.
+
+[ ] D80. Primitives (already in D36; expanded)
+         - Box, Cylinder, Sphere, Torus, Coil, Pipe — each needs its own
+           dialog with editable params. Coil has helix-path parameters
+           (revolutions, pitch, diameter, section shape). Pipe has a
+           path-selection flow and cross-section shape.
+
+P12 — SOLID MODIFY (missing or incomplete)
+[ ] D81. Fillet upgrade (replaces D6 placeholder once edge picking lands)
+         - Constant Radius (base case)
+         - Variable Radius — per-edge-point radius control
+         - Chord Length — distance between fillet endpoints instead of
+           radius
+         - Rule Fillet — fillet all edges of a selection, or only shared
+           edges between two selections
+         - Full Round Fillet — replace a face by filleting two opposing
+           faces together
+         - G1 tangent vs G2 curvature continuity option
+         - Corner types: Rolling Ball, Setback
+         - Tangent Chain auto-selection toggle
+
+[ ] D82. Chamfer upgrade (replaces D7 placeholder)
+         - Types: Equal Distance, Two Distance, Distance and Angle
+         - Corner types: Chamfer, Miter, Blend
+         - Tangent Chain toggle
+         - Already-wired `activeTool='chamfer'` + a real dialog behind it.
+
+[ ] D83. Shell
+         - Already in Toolbar → `setActiveDialog('shell')`. Verify the
+           dialog actually:
+           * Accepts per-face different thicknesses
+           * Direction: Inside / Outside / Both Sides
+           * Tangent Chain toggle on face selection
+           * Approximates via inset + boolean if no manifold kernel.
+
+[ ] D84. Draft (expanded beyond D33)
+         - Type: Fixed Plane vs Parting Line
+         - Pull Direction + Flip
+         - Angle field with One Side / Two Side / Symmetric modes
+         - Parting Line: Fix vs Move mode + Fixed Edges list
+         - Tangent Chain toggle.
+
+[ ] D85. Scale (solid) — dialog is missing
+         - Toolbar sets `activeTool='scale'` but no flow exists. Uniform
+           (1 factor) or Non-Uniform (X/Y/Z) scale. Reference point picker.
+
+[ ] D86. Combine — verify dialog supports all three operation types
+         - Join / Cut / Intersect + Keep Tools checkbox. Currently wired
+           to `setActiveDialog('combine')`; audit the dialog code.
+
+[ ] D87. Offset Face / Replace Face / Split Face (already D35, flag here
+         for grouping with other modify items).
+
+[ ] D88. Silhouette Split (already comingSoon in Toolbar L448).
+
+[ ] D89. Align
+         - Toolbar wires `activeTool='align'` but no alignment flow.
+           Fusion: aligns objects using a point/line/plane/circle/coord
+           system — pick "from" + "to" geometry and snap.
+
+[ ] D90. Remove
+         - Deletes a face and extends adjacent faces to close the gap.
+           Non-trivial without a real kernel — can fake it for planar
+           deletions.
+
+P13 — HOLES & THREADS (Fusion-authoritative detail)
+[ ] D91. Hole dialog audit — verify vs Fusion's feature set
+         - Types: Simple, Counterbore, Countersink (+ Counterbore+Countersink)
+         - Tap: Clearance, Tapped (with thread standard)
+         - Drill Point: Flat, Angled (default 118°)
+         - Termination: Blind (distance), Through All, To Face, To Next,
+           Symmetric
+         - Placement: sketch point, point on face, edge reference, two
+           linear edges, face + two edges
+         - File → C:\Users\joeyp\source\repos\exzile\DesignCAD\src\components\dialogs\FeatureDialogs.tsx
+
+[ ] D92. Thread feature
+         - Cosmetic (visual texture only) vs Modeled (true geometry).
+         - Standard: ISO Metric, ANSI Unified, NPT. Pull size table from
+           an embedded JSON.
+         - Designation (M8x1.25, 1/4-20, etc), Class, Diameter, Length,
+           Offset, Full Length toggle.
+         - Currently comingSoon in Toolbar L415.
+
+P14 — CONSTRUCT GEOMETRY (beyond D37)
+[ ] D93. Perpendicular Plane
+         - "Creates a construction plane perpendicular to a plane or face."
+           Not in the current Construct menu (Toolbar L471-488).
+
+[ ] D94. Plane Along Path
+         - "Creates a construction plane normal to a specific point along
+           a path." Already comingSoon in Toolbar L479.
+
+[ ] D95. Point At Edge And Plane
+         - Construction point at intersection of a linear edge/axis and a
+           plane. Missing entirely.
+
+[ ] D96. Point Along Path
+         - Construction point at a specified distance along a path curve.
+           Missing entirely.
+
+[ ] D97. Axis Perpendicular To Face — at a selected point on the face
+         - Toolbar L481 has this as comingSoon; wire it.
+
+P15 — PATTERNS
+[ ] D98. Linear Pattern — verify all Fusion parameters
+         - 1 or 2 directions, count per direction, spacing per direction,
+           Distribution (Extent / Spacing), Suppress individual instances.
+         - File: FeatureDialogs.tsx LinearPattern dialog (exists).
+
+[ ] D99. Circular Pattern — verify all Fusion parameters
+         - Axis, Count, Total Angle, Symmetric option, Suppress individual
+           instances, Compute Type (Optimized / Identical / Adjust).
+
+[ ] D100. Pattern on Path
+          - Distribute copies along a curve. Toolbar L429 currently
+            comingSoon. Needs path selection + count + alignment (tangent
+            to path vs fixed orientation).
+
+P16 — OUT OF SCOPE FOR NOW (documented so we don't forget)
+- Plastic tab: Boss / Snap Fit / Lip (injection-molding only).
+- Generative Design workspace.
+- Simulation / CAM / Render / Animation workspaces.
+
+
+DESIGN SURFACE — AUDIT GAPS (Fusion 360 reference, 2026-04-14)
+==================================================================
+Current state: Toolbar.tsx L828-843 has a SURFACE tab with just
+Sketch / Extrude / Revolve-stub / Trim-stub / Extend-stub — nothing else.
+Surface extrude reuses the solid extrude flow so it outputs a SOLID, not a
+surface body. There is no distinct surface-body type in cad.ts at all.
+
+P17 — SURFACE WORKSPACE (body type + core tools)
+[ ] D101. Surface-body concept in the type system
+          - Add `Body.kind: 'solid' | 'surface' | 'mesh'` to cad.ts. Most
+            of the modify ops need to know whether the target has volume.
+            Without this, every surface tool below is meaningless.
+
+[ ] D102. Surface Extrude (distinct from solid extrude)
+          - Extrudes a sketch profile OR a sketch curve OR single-line text
+            as a SURFACE body (no end caps). Open profiles become ruled
+            surfaces; closed profiles become a cylindrical-like shell.
+          - Fusion: "adds depth to a sketch profile, sketch curve, planar
+            face, or single line text object."
+          - Add a `type: 'solid' | 'surface'` flag to the extrude operation
+            and skip the ExtrudeGeometry end-cap when surface.
+
+[ ] D103. Surface Revolve
+          - Same as solid revolve but produces an open lathe surface.
+            Replace the stub at Toolbar.tsx L833.
+
+[ ] D104. Surface Sweep — profile/curve along a path
+
+[ ] D105. Surface Loft — transitional surface between profiles (no end caps)
+
+[ ] D106. Patch
+          - Creates a planar or 3D surface inside a closed edge loop.
+            Primary use: closing holes on imported STEP parts before Stitch.
+          - Fusion: "creates a planar or 3D surface within the boundary of
+            a closed loop."
+
+[ ] D107. Ruled Surface
+          - Extends edges into a ruled (straight-line) surface at a
+            specified distance and angle. Useful for mold parting.
+
+[ ] D108. Offset (surface)
+          - Creates a parallel surface at a given distance from a selected
+            face. Different from offset-face (which is a modify op).
+
+P18 — SURFACE MODIFY
+[ ] D109. Surface Trim
+          - Splits intersecting surfaces/quilts and removes selected
+            sections. Replace Toolbar L836 stub.
+
+[ ] D110. Untrim
+          - Extends trimmed surfaces and fills gaps / empty regions.
+
+[ ] D111. Surface Extend
+          - Lengthens a face/surface by moving one or more edges outward.
+            Replace Toolbar L837 stub.
+
+[ ] D112. Stitch
+          - Combines surfaces into a single quilt; if the result is
+            watertight, Fusion auto-converts to a solid. High-value for
+            STEP cleanup and 3D-print prep.
+
+[ ] D113. Unstitch
+          - Separates a stitched body back into individual face surfaces.
+
+[ ] D114. Merge (surface)
+          - Combines surfaces within one body into a single quilt face.
+
+[ ] D115. Reverse Normal
+          - Flips which side of a surface is considered positive. Required
+            for correct shading + for meaningful offset/thicken operations.
+
+[ ] D116. Split Face / Split Body (surface variants)
+          - Already scoped under D35/D87 but needs a surface-aware path
+            that cuts without requiring a closed volume.
+
+[ ] D117. Thicken
+          - Already scoped (D77) — but should ALSO be accessible from the
+            Surface > Modify panel since the primary use is converting a
+            finished surface body into a solid.
+
+
+DESIGN MESH — AUDIT GAPS
+==================================================================
+Current state: Toolbar.tsx L845-859 has a MESH tab with 3 stub buttons
+(Tessellate / Reduce / Repair). None are wired to a mesh pipeline.
+We already import meshes via FileImporter.ts, so the data is present —
+we just have no tools that operate on it.
+
+P19 — MESH WORKSPACE (Create panel)
+[ ] D118. Mesh body type in the type system
+          - As with D101, add `kind: 'mesh'` + a separate storage path for
+            mesh bodies so face-group selection and triangle counts can be
+            tracked without abusing the solid Feature path.
+
+[ ] D119. Tessellate
+          - Converts a solid OR surface body into a mesh body with a
+            user-controlled tolerance (coarse ↔ fine).
+          - Trivial on top of three.js: mesh is already triangulated.
+
+[ ] D120. Insert Mesh
+          - Drag/drop or File > Insert STL/OBJ/3MF as a mesh body in the
+            design, not as a feature. FileImporter already reads these;
+            route the output to a mesh body rather than a Feature.
+
+[ ] D121. Mesh Section Sketch
+          - Intersects a mesh body with a plane and drops the resulting
+            polyline into a 2D sketch. Essential for reverse-engineering
+            scanned parts.
+
+[ ] D122. Mesh primitive pass-through
+          - Box / Sphere / Cylinder / Torus as mesh bodies (distinct from
+            solid primitives in D80). Usually the same sketch code but
+            output to the mesh path.
+
+P20 — MESH WORKSPACE (Modify panel)
+[ ] D123. Direct Edit
+          - Enters a "Direct Mesh Editing" contextual mode: click
+            face-groups → move / rotate / scale without rebuilding the
+            whole mesh. Foundation for everything else here.
+
+[ ] D124. Remesh
+          - Refines or coarsens mesh faces via subdivision + collapse.
+            Use an existing JS library (mesh-simplifier, quad-remesher-js).
+
+[ ] D125. Reduce
+          - Decreases triangle count by edge collapse (progressive mesh).
+            Three.js has `SimplifyModifier` — use that directly.
+          - Replace Toolbar L852 stub.
+
+[ ] D126. Plane Cut (mesh)
+          - Trim, split, or divide a mesh body with a plane. Three-way
+            output: keep above / keep below / split into two bodies.
+
+[ ] D127. Make Closed Mesh
+          - Auto-repair: fills holes + fixes flipped normals until the
+            mesh is watertight. Combine with three-bvh-csg self-intersect
+            detection. Replaces Toolbar L853 "Repair" stub.
+
+[ ] D128. Erase And Fill
+          - Pick a face-group, delete it, and rebuild a patch over the
+            resulting hole. Depends on D127's hole-fill algorithm.
+
+[ ] D129. Smooth
+          - Softens rough or creased mesh regions (Laplacian smoothing).
+
+[ ] D130. Mesh Shell
+          - Hollow the interior of a mesh body; like D83 but on triangles.
+
+[ ] D131. Mesh Combine (boolean)
+          - Union / subtract / intersect between two mesh bodies. Use the
+            three-bvh-csg kernel already in the repo.
+
+[ ] D132. Mesh Reverse Normal — mirror of D115 for mesh faces.
+
+[ ] D133. Mesh Align — align a mesh face to a specified plane.
+
+[ ] D134. Mesh Separate
+          - Split a mesh body into multiple bodies at disconnected face
+            islands. Use BFS over triangle adjacency.
+
+[ ] D135. Mesh Move/Copy / Scale
+          - Transform tools specific to mesh bodies.
+
+[ ] D136. Convert Mesh → BRep
+          - Reverse of Tessellate: fit solid/surface faces back onto a
+            mesh. Fusion's implementation is limited (facet / prismatic /
+            organic modes). Ship facet mode first — one triangle = one
+            face — since it's cheap.
+
+[ ] D137. Texture Extrude
+          - Applies an image-based bump/displacement to mesh geometry.
+            Low priority; flag as LATER.
+
+
+DESIGN FORM — AUDIT GAPS (T-Spline / subdivision surfaces)
+==================================================================
+Current state: **Dzign3D has no FORM tab at all.** `designTab` options in
+Toolbar.tsx are only 'solid' | 'surface' | 'mesh' | 'sheet-metal'. Adding
+Form means a new workspace mode, a new body type, and a subdivision-
+surface kernel.
+
+P21 — FORM WORKSPACE (bootstrapping the workspace)
+[ ] D138. Add 'form' to designTab union + a new ribbon tab
+          - Toolbar.tsx type + render branch + App.tsx tab chip.
+          - Status: STUB until D139 lands (no tools are usable without the
+            kernel).
+
+[ ] D139. T-Spline / subdivision-surface kernel
+          - Foundational decision. Options:
+            a) Catmull-Clark subdivision (three-subdivide) — cheap, free,
+               covers 80% of Form's behavior but not true T-junctions.
+            b) OpenSubdiv WASM build — matches Pixar / Maya / Fusion.
+            c) Custom half-edge mesh with edge-loop support.
+          - Recommendation: start with (a). Most consumer Form work is
+            Catmull-Clark anyway and users won't notice the T-junction gap
+            until much later.
+
+P22 — FORM CREATE panel (primitives)
+[ ] D140. T-Spline Box — 6-face cage + subdivision
+[ ] D141. T-Spline Plane — flat cage
+[ ] D142. T-Spline Cylinder — cage with cap rings
+[ ] D143. T-Spline Sphere — generally subdivided from a cube
+[ ] D144. T-Spline Torus
+[ ] D145. T-Spline Quadball — sphere-alternative with uniform faces
+[ ] D146. T-Spline Pipe — along a path
+[ ] D147. T-Spline Face — single 4-vertex face for manual building
+[ ] D148. T-Spline Extrude — "adds faces along a vector" to an existing
+          T-Spline edge or face
+[ ] D149. T-Spline Revolve — revolve sketch/model geometry to form a cage
+[ ] D150. T-Spline Sweep — sweep edges or curves along a path
+[ ] D151. T-Spline Loft — transition between profiles
+
+P23 — FORM MODIFY panel
+[ ] D152. Edit Form ⭐ THE core Form tool
+          - Select faces / edges / vertices and manipulate with a 6-handle
+            widget: Rotate (3 axes), Arrow (3-axis move), Dash (1-axis
+            scale), Corner (2-axis scale), Square (plane move), Center
+            (uniform scale). Alt-drag adds new geometry.
+          - Equivalent of three.js TransformControls but operating on
+            the control cage.
+
+[ ] D153. Insert Edge — split a face by inserting a new edge loop
+[ ] D154. Insert Point — add a vertex on an edge
+[ ] D155. Subdivide — recursively split selected faces
+[ ] D156. Bridge — connect two open faces with a new tube of faces
+[ ] D157. Fill Hole — cap an open boundary with a new face
+[ ] D158. Weld / Unweld Vertices — merge or split coincident vertices
+[ ] D159. Merge Edge / Match Edge — align edge loops between two cages
+[ ] D160. Crease / Uncrease — mark an edge as sharp (G0) in the subdivision
+[ ] D161. Flatten — project selected vertices onto a plane
+[ ] D162. Make Uniform — equalize face sizes in a selection
+[ ] D163. Pull — pull vertices toward another mesh/surface
+[ ] D164. Interpolate — smooth transition between two vertex sets
+[ ] D165. Thicken (Form) — shell the subdivision surface into a solid
+[ ] D166. Freeze — lock vertices so Edit Form can't move them
+[ ] D167. Delete — remove a face / edge / vertex from the cage
+
+
+DESIGN SHEET METAL — NOTED BUT DEFERRED
+==================================================================
+Current state: Toolbar.tsx L862-879 has a SHEET METAL tab with Flange,
+Bend, Unfold, Flat Pattern stubs. This is a real workspace in Fusion with
+its own rules (K-factor, bend radius tables, relief types). Keeping it in
+P16 out-of-scope until Surface + Mesh + Form land — flat patterns depend
+on the Surface Unfold math anyway.

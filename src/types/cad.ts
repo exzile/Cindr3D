@@ -10,6 +10,9 @@ export type Tool =
   | 'spline'
   | 'polygon'
   | 'slot'
+  | 'slot-center'
+  | 'slot-overall'
+  | 'slot-center-point'
   | 'rectangle-3point'
   | 'rectangle-center'
   | 'circle-2point'
@@ -61,7 +64,7 @@ export interface SketchPoint {
 
 export interface SketchEntity {
   id: string;
-  type: 'line' | 'circle' | 'arc' | 'rectangle' | 'spline' | 'polygon' | 'slot' | 'construction-line' | 'centerline';
+  type: 'line' | 'circle' | 'arc' | 'rectangle' | 'spline' | 'polygon' | 'slot' | 'point' | 'construction-line' | 'centerline';
   points: SketchPoint[];
   closed?: boolean;
   radius?: number;
@@ -135,7 +138,8 @@ export type FeatureType =
   | 'combine'
   | 'construction-plane'
   | 'construction-axis'
-  | 'import';
+  | 'import'
+  | 'primitive';
 
 export type BooleanOperation = 'new-body' | 'join' | 'cut' | 'intersect';
 

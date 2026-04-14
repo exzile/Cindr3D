@@ -125,6 +125,7 @@ interface CADState {
   // Feature timeline
   features: Feature[];
   addFeature: (feature: Feature) => void;
+  addPrimitive: (kind: 'box' | 'cylinder' | 'sphere' | 'torus', params: Record<string, number>) => void;
   removeFeature: (id: string) => void;
   toggleFeatureVisibility: (id: string) => void;
   selectedFeatureId: string | null;
@@ -140,6 +141,10 @@ interface CADState {
   setGridSize: (size: number) => void;
   snapEnabled: boolean;
   setSnapEnabled: (enabled: boolean) => void;
+
+  // Sketch tool options
+  sketchPolygonSides: number;
+  setSketchPolygonSides: (sides: number) => void;
   gridVisible: boolean;
   setGridVisible: (visible: boolean) => void;
   gridLocked: boolean;
@@ -184,6 +189,17 @@ interface CADState {
   startExtrudeFromFace: (boundary: THREE.Vector3[], normal: THREE.Vector3, centroid: THREE.Vector3) => void;
   cancelExtrudeTool: () => void;
   commitExtrude: () => void;
+
+  // Revolve tool
+  revolveSelectedSketchId: string | null;
+  setRevolveSelectedSketchId: (id: string | null) => void;
+  revolveAxis: 'X' | 'Y' | 'Z';
+  setRevolveAxis: (a: 'X' | 'Y' | 'Z') => void;
+  revolveAngle: number;
+  setRevolveAngle: (angle: number) => void;
+  startRevolveTool: () => void;
+  cancelRevolveTool: () => void;
+  commitRevolve: () => void;
 
   // Export dialog
   showExportDialog: boolean;
@@ -239,13 +255,20 @@ const EXTRUDE_DEFAULTS = {
   extrudeOperation: 'new-body' as ExtrudeOperation,
 };
 
+const REVOLVE_DEFAULTS = {
+  revolveSelectedSketchId: null as string | null,
+  revolveAxis: 'Y' as 'X' | 'Y' | 'Z',
+  revolveAngle: 360,
+};
+
 export const useCADStore = create<CADState>()(persist((set, get) => ({
   activeTool: 'select',
   setActiveTool: (tool) => set({
     activeTool: tool,
     measurePoints: [],
-    // Reset transient extrude state when switching away from the extrude tool
+    // Reset transient extrude/revolve state when switching away from them
     ...(tool !== 'extrude' ? EXTRUDE_DEFAULTS : {}),
+    ...(tool !== 'revolve' ? REVOLVE_DEFAULTS : {}),
   }),
 
   viewMode: '3d',
@@ -460,6 +483,26 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   addFeature: (feature) => set((state) => ({
     features: [...state.features, feature],
   })),
+  addPrimitive: (kind, params) => set((state) => {
+    const label =
+      kind === 'box' ? 'Box' :
+      kind === 'cylinder' ? 'Cylinder' :
+      kind === 'sphere' ? 'Sphere' : 'Torus';
+    const count = state.features.filter((f) => f.type === 'primitive').length + 1;
+    const feature: Feature = {
+      id: crypto.randomUUID(),
+      name: `${label} ${count}`,
+      type: 'primitive',
+      params: { kind, ...params },
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+    };
+    return {
+      features: [...state.features, feature],
+      statusMessage: `${label} added`,
+    };
+  }),
   removeFeature: (id) => set((state) => ({
     features: state.features.filter((f) => f.id !== id),
   })),
@@ -488,6 +531,8 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   setSnapEnabled: (enabled) => set({ snapEnabled: enabled }),
   gridVisible: true,
   setGridVisible: (visible) => set({ gridVisible: visible }),
+  sketchPolygonSides: 6,
+  setSketchPolygonSides: (sides) => set({ sketchPolygonSides: Math.max(3, Math.min(128, Math.round(sides))) }),
   gridLocked: false,
   setGridLocked: (locked) => set({ gridLocked: locked }),
   incrementalMove: false,
@@ -595,20 +640,27 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       set({ statusMessage: 'Selected profile not found' });
       return;
     }
-    if (extrudeDistance <= 0) {
-      set({ statusMessage: 'Distance must be > 0' });
+    if (Math.abs(extrudeDistance) < 0.01) {
+      set({ statusMessage: 'Distance must be non-zero' });
       return;
     }
+    // Signed distance: negative means press-pull INTO the body → cut.
+    // The feature always stores a positive depth and records direction +
+    // operation from the sign.
+    const isCutDrag = extrudeDistance < 0;
+    const absDistance = Math.abs(extrudeDistance);
+    const finalDirection = isCutDrag ? 'reverse' : extrudeDirection;
+    const finalOperation = isCutDrag ? 'cut' : extrudeOperation;
     const feature: Feature = {
       id: crypto.randomUUID(),
-      name: `Extrude ${features.filter(f => f.type === 'extrude').length + 1}`,
+      name: `${finalOperation === 'cut' ? 'Cut' : 'Extrude'} ${features.filter(f => f.type === 'extrude').length + 1}`,
       type: 'extrude',
       sketchId: extrudeSelectedSketchId,
       params: {
-        distance: extrudeDirection === 'symmetric' ? extrudeDistance / 2 : extrudeDistance,
-        distanceExpr: String(extrudeDistance),
-        direction: extrudeDirection,
-        operation: extrudeOperation,
+        distance: finalDirection === 'symmetric' ? absDistance / 2 : absDistance,
+        distanceExpr: String(absDistance),
+        direction: finalDirection,
+        operation: finalOperation,
       },
       visible: true,
       suppressed: false,
@@ -618,7 +670,67 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       features: [...features, feature],
       activeTool: 'select',
       ...EXTRUDE_DEFAULTS,
-      statusMessage: `Extruded ${sketch.name} by ${extrudeDistance}${units}`,
+      statusMessage: `${finalOperation === 'cut' ? 'Cut' : 'Extruded'} ${sketch.name} by ${absDistance}${units}`,
+    });
+  },
+
+  // ─── Revolve tool ──────────────────────────────────────────────────────
+  ...REVOLVE_DEFAULTS,
+  setRevolveSelectedSketchId: (id) => set({ revolveSelectedSketchId: id }),
+  setRevolveAxis: (a) => set({ revolveAxis: a }),
+  setRevolveAngle: (angle) => set({ revolveAngle: angle }),
+  startRevolveTool: () => {
+    const extrudable = get().sketches.filter((s) => s.entities.length > 0);
+    if (extrudable.length === 0) {
+      set({ statusMessage: 'Create a sketch first before revolving' });
+      return;
+    }
+    set({
+      activeTool: 'revolve',
+      ...REVOLVE_DEFAULTS,
+      statusMessage: 'Revolve — pick a profile from the panel',
+    });
+  },
+  cancelRevolveTool: () => {
+    set({
+      activeTool: 'select',
+      ...REVOLVE_DEFAULTS,
+      statusMessage: 'Revolve cancelled',
+    });
+  },
+  commitRevolve: () => {
+    const { revolveSelectedSketchId, revolveAxis, revolveAngle, sketches, features, units } = get();
+    if (!revolveSelectedSketchId) {
+      set({ statusMessage: 'No profile selected for revolve' });
+      return;
+    }
+    const sketch = sketches.find((s) => s.id === revolveSelectedSketchId);
+    if (!sketch) {
+      set({ statusMessage: 'Selected profile not found' });
+      return;
+    }
+    if (Math.abs(revolveAngle) < 0.5) {
+      set({ statusMessage: 'Angle must be greater than 0' });
+      return;
+    }
+    const feature: Feature = {
+      id: crypto.randomUUID(),
+      name: `Revolve ${features.filter((f) => f.type === 'revolve').length + 1}`,
+      type: 'revolve',
+      sketchId: revolveSelectedSketchId,
+      params: {
+        angle: revolveAngle,
+        axis: revolveAxis,
+      },
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+    };
+    set({
+      features: [...features, feature],
+      activeTool: 'select',
+      ...REVOLVE_DEFAULTS,
+      statusMessage: `Revolved ${sketch.name} by ${revolveAngle}° around ${revolveAxis} (${units})`,
     });
   },
 
@@ -685,6 +797,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     gridSize: state.gridSize,
     snapEnabled: state.snapEnabled,
     gridVisible: state.gridVisible,
+    sketchPolygonSides: state.sketchPolygonSides,
     units: state.units,
     visualStyle: state.visualStyle,
     showEnvironment: state.showEnvironment,

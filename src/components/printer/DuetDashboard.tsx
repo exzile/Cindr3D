@@ -1055,6 +1055,7 @@ function ToolSelectorPanel() {
   const filaments = usePrinterStore((s) => s.filaments);
   const loadFilament = usePrinterStore((s) => s.loadFilament);
   const unloadFilament = usePrinterStore((s) => s.unloadFilament);
+  const changeFilament = usePrinterStore((s) => s.changeFilament);
   const tools = model.tools ?? [];
   const heaters = model.heat?.heaters ?? [];
   const fans = model.fans ?? [];
@@ -1281,9 +1282,13 @@ function ToolSelectorPanel() {
                       value={loaded}
                       onChange={(e) => {
                         const name = e.target.value;
-                        if (name) loadFilament(tool.number, name);
+                        if (!name) return;
+                        // If a filament is already loaded, swap via M702+M701.
+                        // Otherwise fresh-load with M701.
+                        if (loaded) changeFilament(tool.number, name);
+                        else loadFilament(tool.number, name);
                       }}
-                      title={loaded ? `Loaded: ${loaded}` : 'No filament loaded'}
+                      title={loaded ? `Loaded: ${loaded} (pick another to swap)` : 'No filament loaded'}
                     >
                       <option value="">{loaded ? loaded : '— none —'}</option>
                       {filaments
