@@ -30,6 +30,7 @@ export type Tool =
   | 'constrain'
   | 'extrude'
   | 'revolve'
+  | 'sweep'
   | 'fillet'
   | 'chamfer'
   | 'shell'
@@ -66,7 +67,8 @@ export type Tool =
   | 'midpoint-line'
   | 'circle-2tangent'
   | 'circle-3tangent'
-  | 'linetype-convert';
+  | 'linetype-convert'
+  | 'conic';
 
 export type ViewMode = '3d' | 'sketch';
 
@@ -158,7 +160,8 @@ export type FeatureType =
   | 'construction-plane'
   | 'construction-axis'
   | 'import'
-  | 'primitive';
+  | 'primitive'
+  | 'sweep';
 
 export type BooleanOperation = 'new-body' | 'join' | 'cut' | 'intersect';
 

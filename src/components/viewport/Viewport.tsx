@@ -14,6 +14,7 @@ import MeasurePanel from './MeasurePanel';
 import ExtrudeTool from './ExtrudeTool';
 import ExtrudePanel from './ExtrudePanel';
 import RevolvePanel from './RevolvePanel';
+import SweepPanel from './SweepPanel';
 import SketchPatternPanel from './SketchPatternPanel';
 import SketchTransformPanel from './SketchTransformPanel';
 import SketchMirrorPanel from './SketchMirrorPanel';
@@ -337,6 +338,17 @@ function ExtrudedBodies() {
         if (!sketch) return null;
         return <RevolveItem key={feature.id} feature={feature} sketch={sketch} />;
       })}
+      {/* D30: Sweep features — render via stored mesh if available */}
+      {features.filter((f) => f.type === 'sweep' && f.visible && f.mesh).map((feature) => (
+        <primitive
+          key={feature.id}
+          object={feature.mesh!}
+          onUpdate={(m: THREE.Object3D) => {
+            m.userData.pickable = true;
+            m.userData.featureId = feature.id;
+          }}
+        />
+      ))}
     </>
   );
 }
@@ -541,6 +553,8 @@ function SketchInteraction() {
   const chamferDist2 = useCADStore((s) => s.sketchChamferDist2);
   const chamferAngle = useCADStore((s) => s.sketchChamferAngle);
   const tangentCircleRadius = useCADStore((s) => s.tangentCircleRadius);
+  const cycleEntityLinetype = useCADStore((s) => s.cycleEntityLinetype);
+  const conicRho = useCADStore((s) => s.conicRho);
   const themeColors = useThemeStore((s) => s.colors);
 
   const [drawingPoints, setDrawingPoints] = useState<SketchPoint[]>([]);
@@ -978,6 +992,42 @@ function SketchInteraction() {
           }
           break;
         }
+        // D11: Conic Curve — rational Bézier conic defined by start, end, shoulder + rho
+        case 'conic': {
+          if (drawingPoints.length === 0) {
+            setDrawingPoints([sketchPoint]);
+            setStatusMessage('Conic: start placed — click end point');
+          } else if (drawingPoints.length === 1) {
+            setDrawingPoints([...drawingPoints, sketchPoint]);
+            setStatusMessage('Conic: end placed — click shoulder point (tangent intersection)');
+          } else {
+            // drawingPoints = [P0, P2], sketchPoint = P1 (shoulder)
+            const P0 = new THREE.Vector3(drawingPoints[0].x, drawingPoints[0].y, drawingPoints[0].z);
+            const P2 = new THREE.Vector3(drawingPoints[1].x, drawingPoints[1].y, drawingPoints[1].z);
+            const P1 = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z);
+            const rho = conicRho;
+            const w = rho / (1 - rho); // rational weight
+            const N_SEGS = 48;
+            const pts: SketchPoint[] = [];
+            for (let i = 0; i <= N_SEGS; i++) {
+              const t = i / N_SEGS;
+              const b0 = (1 - t) * (1 - t);
+              const b1 = 2 * t * (1 - t) * w;
+              const b2 = t * t;
+              const denom = b0 + b1 + b2;
+              const x = (b0 * P0.x + b1 * P1.x + b2 * P2.x) / denom;
+              const y = (b0 * P0.y + b1 * P1.y + b2 * P2.y) / denom;
+              const z = (b0 * P0.z + b1 * P1.z + b2 * P2.z) / denom;
+              pts.push({ id: crypto.randomUUID(), x, y, z });
+            }
+            addSketchEntity({ id: crypto.randomUUID(), type: 'spline', points: pts });
+            setDrawingPoints([]);
+            const shape = rho < 0.5 ? 'ellipse' : rho > 0.5 ? 'hyperbola' : 'parabola';
+            setStatusMessage(`Conic (${shape}, ρ=${rho.toFixed(2)}) added`);
+          }
+          break;
+        }
+
         // D40: 2-Tangent Circle — pick 2 lines, get circle tangent to both at given radius
         case 'circle-2tangent': {
           if (!activeSketch) break;
@@ -1659,6 +1709,35 @@ function SketchInteraction() {
           break;
         }
 
+        // D57: Linetype conversion — click a line to cycle its type
+        case 'linetype-convert': {
+          if (!activeSketch) break;
+          const ltClickPt = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z);
+          // Find closest line-type entity within snap distance
+          let ltBest: typeof activeSketch.entities[0] | null = null;
+          let ltBestDist = 3;
+          for (const e of activeSketch.entities) {
+            if (e.type !== 'line' && e.type !== 'construction-line' && e.type !== 'centerline') continue;
+            if (e.points.length < 2) continue;
+            const a = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
+            const b = new THREE.Vector3(e.points[1].x, e.points[1].y, e.points[1].z);
+            const ab = b.clone().sub(a);
+            const ap = ltClickPt.clone().sub(a);
+            const tc = Math.max(0, Math.min(1, ap.dot(ab) / (ab.lengthSq() || 1)));
+            const closest = a.clone().lerp(b, tc);
+            const d = ltClickPt.distanceTo(closest);
+            if (d < ltBestDist) { ltBestDist = d; ltBest = e; }
+          }
+          if (ltBest) {
+            cycleEntityLinetype(ltBest.id);
+            const nextMap: Record<string, string> = { 'line': 'construction-line', 'construction-line': 'centerline', 'centerline': 'line' };
+            setStatusMessage(`Linetype → ${nextMap[ltBest.type] ?? ltBest.type}`);
+          } else {
+            setStatusMessage('Linetype Convert: click near a line to change its type');
+          }
+          break;
+        }
+
         // ── D17 Trim ───────────────────────────────────────────────────────
         // Click on a segment portion: remove it between nearest intersections.
         case 'trim': {
@@ -2290,7 +2369,7 @@ function SketchInteraction() {
       canvas.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeSketch, activeTool, drawingPoints, mousePos, getWorldPoint, addSketchEntity, replaceSketchEntities, setStatusMessage, filletRadius, chamferDist1, chamferDist2, chamferAngle, tangentCircleRadius]);
+  }, [activeSketch, activeTool, drawingPoints, mousePos, getWorldPoint, addSketchEntity, replaceSketchEntities, cycleEntityLinetype, setStatusMessage, filletRadius, chamferDist1, chamferDist2, chamferAngle, tangentCircleRadius, conicRho]);
 
   // Preview of current drawing operation
   useFrame(() => {
@@ -2405,6 +2484,40 @@ function SketchInteraction() {
         const crossSize = 0.3;
         addLine([startV.clone().addScaledVector(t1, -crossSize), startV.clone().addScaledVector(t1, crossSize)]);
         addLine([startV.clone().addScaledVector(t2, -crossSize), startV.clone().addScaledVector(t2, crossSize)]);
+        break;
+      }
+
+      // D11: Conic curve preview
+      case 'conic': {
+        if (drawingPoints.length === 1) {
+          // Show line from start to mouse (preview of chord)
+          addLine([startV, mousePos]);
+        } else if (drawingPoints.length === 2) {
+          // Show rational Bézier conic preview
+          const P0c = startV;
+          const P2c = new THREE.Vector3(drawingPoints[1].x, drawingPoints[1].y, drawingPoints[1].z);
+          const P1c = mousePos; // shoulder at mouse
+          const rhoC = conicRho;
+          const wC = rhoC / (1 - rhoC);
+          const N_PC = 32;
+          const conicPreviewPts: THREE.Vector3[] = [];
+          for (let i = 0; i <= N_PC; i++) {
+            const tc = i / N_PC;
+            const b0c = (1 - tc) * (1 - tc);
+            const b1c = 2 * tc * (1 - tc) * wC;
+            const b2c = tc * tc;
+            const dc = b0c + b1c + b2c;
+            conicPreviewPts.push(new THREE.Vector3(
+              (b0c * P0c.x + b1c * P1c.x + b2c * P2c.x) / dc,
+              (b0c * P0c.y + b1c * P1c.y + b2c * P2c.y) / dc,
+              (b0c * P0c.z + b1c * P1c.z + b2c * P2c.z) / dc,
+            ));
+          }
+          addLine(conicPreviewPts);
+          // Dashed lines to shoulder
+          addLine([P0c, P1c]);
+          addLine([P2c, P1c]);
+        }
         break;
       }
 
@@ -3514,6 +3627,7 @@ export default function Viewport() {
       {/* Extrude Panel (Fusion 360 style properties panel) */}
       <ExtrudePanel />
       <RevolvePanel />
+      <SweepPanel />
       <SketchPatternPanel />
       <SketchTransformPanel />
       <SketchMirrorPanel />

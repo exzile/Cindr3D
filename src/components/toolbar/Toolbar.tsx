@@ -324,6 +324,7 @@ export default function Toolbar() {
   const setGridVisible = useCADStore((s) => s.setGridVisible);
   const startExtrudeTool = useCADStore((s) => s.startExtrudeTool);
   const startRevolveTool = useCADStore((s) => s.startRevolveTool);
+  const startSweepTool = useCADStore((s) => s.startSweepTool);
   const setShowExportDialog = useCADStore((s) => s.setShowExportDialog);
   const setActiveDialog = useCADStore((s) => s.setActiveDialog);
   const addFeature = useCADStore((s) => s.addFeature);
@@ -419,7 +420,7 @@ export default function Toolbar() {
     { icon: <PenTool size={MI} />, label: 'Create Sketch', shortcut: 'S', onClick: beginSketchFlow },
     { separator: true, icon: <ArrowUpFromLine size={MI} />, label: 'Extrude', shortcut: 'E', onClick: handleExtrude },
     { icon: <RotateCcw size={MI} />, label: 'Revolve', onClick: handleRevolve },
-    { icon: <Spline size={MI} />, label: 'Sweep', onClick: comingSoon('Sweep') },
+    { icon: <Spline size={MI} />, label: 'Sweep', onClick: startSweepTool },
     { icon: <Layers size={MI} />, label: 'Loft', onClick: comingSoon('Loft') },
     { separator: true, icon: <CircleDot size={MI} />, label: 'Hole', shortcut: 'H', onClick: () => setActiveDialog('hole') },
     { icon: <Wrench size={MI} />, label: 'Thread', onClick: comingSoon('Thread') },
@@ -596,7 +597,7 @@ export default function Toolbar() {
       ],
     },
     { separator: true, icon: <Waypoints size={MI} />, label: 'Spline', onClick: () => { setActiveTool('spline' as Tool); setStatusMessage('Spline: click to place fit points, right-click to finish'); } },
-    { icon: <Waypoints size={MI} />, label: 'Conic Curve', onClick: comingSoon('Conic Curve') },
+    { icon: <Waypoints size={MI} />, label: 'Conic Curve', onClick: () => { setActiveTool('conic' as Tool); setStatusMessage('Conic: click start, then end, then shoulder point — set ρ in palette'); } },
     { separator: true, icon: <CircleDot size={MI} />, label: 'Point', onClick: () => setActiveTool('point' as Tool) },
     { separator: true, icon: <ArrowUpFromLine size={MI} />, label: 'Project / Include', onClick: comingSoon('Project') },
     { icon: <Scissors size={MI} />, label: 'Intersect', onClick: comingSoon('Intersect') },
@@ -604,6 +605,7 @@ export default function Toolbar() {
 
   const sketchModifyMenuItems: MenuItem[] = [
     { icon: <Blend size={MI} />, label: 'Fillet', shortcut: 'F', onClick: () => { setActiveTool('sketch-fillet' as Tool); setStatusMessage('Sketch Fillet: click near the corner of two intersecting lines'); } },
+    { icon: <Minus size={MI} />, label: 'Linetype', onClick: () => { setActiveTool('linetype-convert' as Tool); setStatusMessage('Linetype Convert: click a line to cycle Normal → Construction → Centerline'); } },
     { icon: <Blend size={MI} />, label: 'Chamfer (Equal)', onClick: () => { setActiveTool('sketch-chamfer-equal' as Tool); setStatusMessage('Sketch Chamfer: click near a corner to chamfer — set distance in palette'); } },
     { icon: <Blend size={MI} />, label: 'Chamfer (Two Dist)', onClick: () => { setActiveTool('sketch-chamfer-two-dist' as Tool); setStatusMessage('Sketch Chamfer: click near a corner — set Dist 1 and Dist 2 in palette'); } },
     { icon: <Blend size={MI} />, label: 'Chamfer (Dist+Angle)', onClick: () => { setActiveTool('sketch-chamfer-dist-angle' as Tool); setStatusMessage('Sketch Chamfer: click near a corner — set Dist and Angle in palette'); } },

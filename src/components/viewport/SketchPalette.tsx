@@ -30,6 +30,8 @@ export default function SketchPalette() {
   const setFilletRadius = useCADStore((s) => s.setSketchFilletRadius);
   const tangentCircleRadius = useCADStore((s) => s.tangentCircleRadius);
   const setTangentCircleRadius = useCADStore((s) => s.setTangentCircleRadius);
+  const conicRho = useCADStore((s) => s.conicRho);
+  const setConicRho = useCADStore((s) => s.setConicRho);
   const chamferDist1 = useCADStore((s) => s.sketchChamferDist1);
   const setChamferDist1 = useCADStore((s) => s.setSketchChamferDist1);
   const chamferDist2 = useCADStore((s) => s.sketchChamferDist2);
@@ -61,6 +63,7 @@ export default function SketchPalette() {
   const isChamferDistAngleTool = activeTool === 'sketch-chamfer-dist-angle';
   const isChamferTool = isChamferEqualTool || isChamferTwoDistTool || isChamferDistAngleTool;
   const isTangentCircleTool = activeTool === 'circle-2tangent';
+  const isConicTool = activeTool === 'conic';
 
   // Reset dismissed state each time a new sketch session starts
   useEffect(() => {
@@ -244,6 +247,23 @@ export default function SketchPalette() {
                   const v = Number(e.target.value);
                   if (!Number.isNaN(v) && v > 0) setFilletRadius(v);
                 }}
+                className="measure-select"
+                style={{ width: 64 }}
+              />
+            </div>
+          )}
+
+          {/* Conic rho — visible while conic tool is active (D11) */}
+          {isConicTool && (
+            <div className="sketch-palette-row">
+              <span className="sketch-palette-label">Rho ρ</span>
+              <input
+                type="number"
+                min={0.01}
+                max={0.99}
+                step={0.05}
+                value={conicRho}
+                onChange={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v)) setConicRho(v); }}
                 className="measure-select"
                 style={{ width: 64 }}
               />

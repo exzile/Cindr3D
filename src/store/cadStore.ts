@@ -188,6 +188,9 @@ interface CADState {
   sketchMirrorAxis: 'horizontal' | 'vertical' | 'diagonal';
   setSketchMirrorAxis: (axis: 'horizontal' | 'vertical' | 'diagonal') => void;
   commitSketchMirror: () => void;
+  // Conic curve rho (D11)
+  conicRho: number;
+  setConicRho: (r: number) => void;
   // Tangent circles (D40, D41)
   tangentCircleRadius: number;
   setTangentCircleRadius: (r: number) => void;
@@ -268,6 +271,15 @@ interface CADState {
   startRevolveTool: () => void;
   cancelRevolveTool: () => void;
   commitRevolve: () => void;
+
+  // Sweep tool (D30)
+  sweepProfileSketchId: string | null;
+  setSweepProfileSketchId: (id: string | null) => void;
+  sweepPathSketchId: string | null;
+  setSweepPathSketchId: (id: string | null) => void;
+  startSweepTool: () => void;
+  cancelSweepTool: () => void;
+  commitSweep: () => void;
 
   // Export dialog
   showExportDialog: boolean;
@@ -552,6 +564,23 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     if (activeSketch) {
       set({ activeSketch: { ...activeSketch, entities } });
     }
+  },
+
+  cycleEntityLinetype: (entityId) => {
+    const { activeSketch } = get();
+    if (!activeSketch) return;
+    const CYCLE: Record<string, 'line' | 'construction-line' | 'centerline'> = {
+      'line': 'construction-line',
+      'construction-line': 'centerline',
+      'centerline': 'line',
+    };
+    const updated = activeSketch.entities.map((e) => {
+      if (e.id !== entityId) return e;
+      const next = CYCLE[e.type];
+      if (!next) return e; // non-line types unchanged
+      return { ...e, type: next };
+    });
+    set({ activeSketch: { ...activeSketch, entities: updated } });
   },
 
   copySketch: (id) => set((state) => {
@@ -872,6 +901,10 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     });
   },
 
+  // Conic curve rho (D11)
+  conicRho: 0.5,
+  setConicRho: (r) => set({ conicRho: Math.max(0.01, Math.min(0.99, r)) }),
+
   // Tangent circles (D40, D41)
   tangentCircleRadius: 5,
   setTangentCircleRadius: (r) => set({ tangentCircleRadius: Math.max(0.01, r) }),
@@ -1100,6 +1133,53 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       activeTool: 'select',
       ...REVOLVE_DEFAULTS,
       statusMessage: `Revolved ${sketch.name} by ${revolveAngle}° around ${revolveAxis} (${units})`,
+    });
+  },
+
+  // ─── Sweep tool (D30) ──────────────────────────────────────────────────
+  sweepProfileSketchId: null,
+  setSweepProfileSketchId: (id) => set({ sweepProfileSketchId: id }),
+  sweepPathSketchId: null,
+  setSweepPathSketchId: (id) => set({ sweepPathSketchId: id }),
+  startSweepTool: () => {
+    const extrudable = get().sketches.filter((s) => s.entities.length > 0);
+    if (extrudable.length < 2) {
+      set({ statusMessage: 'Sweep requires at least 2 sketches — a profile and a path' });
+      return;
+    }
+    set({ activeTool: 'sweep', sweepProfileSketchId: null, sweepPathSketchId: null, statusMessage: 'Sweep — pick a profile sketch, then a path sketch in the panel' });
+  },
+  cancelSweepTool: () => set({ activeTool: 'select', sweepProfileSketchId: null, sweepPathSketchId: null, statusMessage: 'Sweep cancelled' }),
+  commitSweep: () => {
+    const { sweepProfileSketchId, sweepPathSketchId, sketches, features, units } = get();
+    if (!sweepProfileSketchId || !sweepPathSketchId) {
+      set({ statusMessage: 'Select both a profile sketch and a path sketch' });
+      return;
+    }
+    const profileSketch = sketches.find((s) => s.id === sweepProfileSketchId);
+    const pathSketch = sketches.find((s) => s.id === sweepPathSketchId);
+    if (!profileSketch || !pathSketch) {
+      set({ statusMessage: 'Selected sketch(es) not found' });
+      return;
+    }
+    const mesh = GeometryEngine.sweepSketchInternal(profileSketch, pathSketch);
+    const feature: Feature = {
+      id: crypto.randomUUID(),
+      name: `Sweep ${features.filter((f) => f.type === 'sweep').length + 1}`,
+      type: 'sweep',
+      sketchId: sweepProfileSketchId,
+      params: { pathSketchId: sweepPathSketchId },
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+      mesh: mesh ?? undefined,
+    };
+    set({
+      features: [...features, feature],
+      activeTool: 'select',
+      sweepProfileSketchId: null,
+      sweepPathSketchId: null,
+      statusMessage: `Sweep created (${units})`,
     });
   },
 

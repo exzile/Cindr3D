@@ -686,4 +686,108 @@ export class GeometryEngine {
     mesh.receiveShadow = true;
     return mesh;
   }
+
+  /** Internal sweep implementation that takes both the curve and Frenet frames */
+  private static _sweepWithCurve(
+    profilePts2D: THREE.Vector2[],
+    curve: THREE.CatmullRomCurve3,
+    N_FRAMES: number,
+  ): THREE.Mesh | null {
+    const nProfile = profilePts2D.length;
+    const positions: number[] = [];
+    const indices: number[] = [];
+
+    const frames = curve.computeFrenetFrames(N_FRAMES, false);
+    const curvePts = curve.getPoints(N_FRAMES);
+
+    for (let i = 0; i <= N_FRAMES; i++) {
+      const fi = Math.min(i, N_FRAMES - 1);
+      const origin = curvePts[i] ?? curvePts[curvePts.length - 1];
+      const N2 = frames.normals[fi];
+      const B = frames.binormals[fi];
+
+      for (let j = 0; j < nProfile; j++) {
+        const { x: u, y: v } = profilePts2D[j];
+        positions.push(
+          origin.x + N2.x * u + B.x * v,
+          origin.y + N2.y * u + B.y * v,
+          origin.z + N2.z * u + B.z * v,
+        );
+      }
+    }
+
+    // Build quad-strip indices
+    for (let i = 0; i < N_FRAMES; i++) {
+      for (let j = 0; j < nProfile - 1; j++) {
+        const a = i * nProfile + j;
+        const b = a + 1;
+        const c = a + nProfile;
+        const d = c + 1;
+        indices.push(a, c, b);
+        indices.push(b, c, d);
+      }
+    }
+
+    // Cap start (fan)
+    const startOffset = 0;
+    for (let j = 1; j < nProfile - 1; j++) {
+      indices.push(startOffset, startOffset + j, startOffset + j + 1);
+    }
+    // Cap end (fan, reversed)
+    const endOffset = N_FRAMES * nProfile;
+    for (let j = 1; j < nProfile - 1; j++) {
+      indices.push(endOffset, endOffset + j + 1, endOffset + j);
+    }
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+
+    const mesh = new THREE.Mesh(geom, EXTRUDE_MATERIAL);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
+  }
+
+  /** Public entry point — sweepSketch calls this after extracting shape + curve */
+  static sweepSketchInternal(profileSketch: Sketch, pathSketch: Sketch): THREE.Mesh | null {
+    if (profileSketch.entities.length === 0 || pathSketch.entities.length === 0) return null;
+
+    // Path points
+    const pathPts: THREE.Vector3[] = [];
+    for (const e of pathSketch.entities) {
+      for (const p of e.points) pathPts.push(new THREE.Vector3(p.x, p.y, p.z));
+    }
+    const deduped: THREE.Vector3[] = [pathPts[0]];
+    for (let i = 1; i < pathPts.length; i++) {
+      if (pathPts[i].distanceTo(deduped[deduped.length - 1]) > 0.001) deduped.push(pathPts[i]);
+    }
+    if (deduped.length < 2) return null;
+
+    const N_FRAMES = Math.max(32, deduped.length * 4);
+    const curve = new THREE.CatmullRomCurve3(deduped, false, 'centripetal');
+
+    // Profile polygon
+    const { t1, t2 } = this.getSketchAxes(profileSketch);
+    const profileOrigin = profileSketch.planeOrigin;
+    const projFn = (p: SketchPoint): { u: number; v: number } => {
+      const d = new THREE.Vector3(p.x - profileOrigin.x, p.y - profileOrigin.y, p.z - profileOrigin.z);
+      return { u: d.dot(t1), v: d.dot(t2) };
+    };
+    const shape = this.entitiesToShape(profileSketch.entities, projFn);
+    const PROFILE_SEGS = 32;
+    let pts2D: THREE.Vector2[];
+    if (shape) {
+      pts2D = shape.getPoints(PROFILE_SEGS).map(p => new THREE.Vector2(p.x, p.y));
+    } else {
+      pts2D = profileSketch.entities.flatMap(e => e.points).map(p => {
+        const { u, v } = projFn(p);
+        return new THREE.Vector2(u, v);
+      });
+    }
+    if (pts2D.length < 2) return null;
+
+    return this._sweepWithCurve(pts2D, curve, N_FRAMES);
+  }
 }

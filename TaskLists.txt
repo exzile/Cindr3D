@@ -145,7 +145,13 @@ P2 — MISSING SKETCH CREATE TOOLS
           basis so extrude still picks it up. GeometryEngine renders 'spline'
           via the existing polyline path.
 
-[ ] D11. Conic Curve — start, end, rho (0.01-0.99)
+[x] D11. Conic Curve — start, end, rho (0.01-0.99)
+         - Shipped: 'conic' Tool. 3-click flow: P0 (start), P2 (end), P1
+           (shoulder/tangent intersection). Rational Bézier formula with
+           w=rho/(1-rho) sampled at 48 segments, emitted as 'spline' entity.
+           ρ < 0.5 = ellipse, 0.5 = parabola, > 0.5 = hyperbola. Live preview
+           shows curve + dashed lines to shoulder. ρ input in SketchPalette.
+           Toolbar "Conic Curve" menu item wired.
 
 [ ] D12. Sketch Text — anchor + string + font + height; triangulate glyphs into
          SketchEntity outlines for extrude support.
@@ -253,8 +259,15 @@ P4 — SKETCH CONSTRAINTS (SOLVER + UI)
           and solver enforcement.
 
 P5 — MISSING 3D FEATURES (Solid tab)
-[ ] D30. Sweep — profile sketch + path sketch → addon(three-geometries/sweep)
-         or extrude along curve segments.
+[x] D30. Sweep — profile sketch + path sketch.
+         - Shipped: GeometryEngine.sweepSketchInternal — samples path as
+           CatmullRomCurve3, computes N Frenet frames, places profile polygon
+           (Shape.getPoints) at each frame using normal/binormal vectors, connects
+           cross-sections as a quad-strip BufferGeometry with capped ends.
+           cadStore: sweepProfileSketchId, sweepPathSketchId + startSweepTool /
+           commitSweep / cancelSweepTool. SweepPanel.tsx: two dropdowns (profile,
+           path) + OK/Cancel. ExtrudedBodies renders sweep feature meshes.
+           Toolbar 'Sweep' menu item wired (no longer comingSoon).
 
 [ ] D31. Loft — pick 2+ profile sketches, optional rails → ruled/blended mesh.
 
@@ -404,10 +417,11 @@ P8 — SKETCH PALETTE / OPTIONS (almost entirely missing)
            is off. Dimension/constraint/projected-geom toggles are ready for
            future renderer integration.
 
-[ ] D57. Linetype conversion post-hoc
-         - While a sketch is open, select one or more entities and convert
-           them Normal ↔ Construction ↔ Centerline via the palette (no need
-           to delete + redraw). Toolbar action + store mutation.
+[x] D57. Linetype conversion post-hoc
+         - Shipped: 'linetype-convert' Tool. Click near a line/construction-line/
+           centerline entity; cycles its type: line → construction-line →
+           centerline → line. cycleEntityLinetype store action does the mutation.
+           Wired in Toolbar sketchModifyMenuItems as "Linetype" menu item.
 
 [ ] D58. 3D Sketch mode toggle + manipulator
          - Entire missing capability: sketches are 2D-only right now. Fusion
