@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="DesignCAD.esproj">
+    <Build />
+    <Deploy />
+  </Project>
+</Solution>
