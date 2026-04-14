@@ -60,7 +60,7 @@ function SketchRenderer() {
         return <SketchGeometry key={feature.id} sketch={sketch} />;
       })}
       {activeSketch && activeSketch.entities.length > 0 && (
-        <SketchGeometry key={`active-${activeSketch.id}`} sketch={activeSketch} />
+        <SketchGeometry key={`active-${activeSketch.id}-e${activeSketch.entities.length}`} sketch={activeSketch} />
       )}
     </>
   );
@@ -307,24 +307,39 @@ function SketchInteraction() {
   useEffect(() => {
     if (!activeSketch || activeTool === 'select') return;
 
+    // Plane-aware tangent axes — same as GeometryEngine.getPlaneAxes
+    const { t1, t2 } = GeometryEngine.getPlaneAxes(activeSketch.plane);
+
+    // Project a 3-D point difference onto the plane's 2-D local axes
+    const projectToPlane = (pt: SketchPoint, origin: SketchPoint) => {
+      const d = new THREE.Vector3(pt.x - origin.x, pt.y - origin.y, pt.z - origin.z);
+      return { u: d.dot(t1), v: d.dot(t2) };
+    };
+
     const handleMouseMove = (event: MouseEvent) => {
       const point = getWorldPoint(event);
       if (point) {
         setMousePos(point);
         if (drawingPoints.length > 0) {
           const start = drawingPoints[0];
-          if (activeTool === 'circle') {
-            const dx = point.x - start.x;
-            const dy = point.y - start.y;
-            const radius = Math.sqrt(dx * dx + dy * dy);
-            setStatusMessage(`Radius: ${radius.toFixed(2)}`);
+          if (activeTool === 'circle' || activeTool === 'polygon') {
+            const radius = point.distanceTo(new THREE.Vector3(start.x, start.y, start.z));
+            setStatusMessage(`Radius: ${radius.toFixed(2)} — click to place`);
+          } else if (activeTool === 'arc') {
+            if (drawingPoints.length === 1) {
+              const r = point.distanceTo(new THREE.Vector3(start.x, start.y, start.z));
+              setStatusMessage(`Arc radius: ${r.toFixed(2)} — click to set start angle`);
+            } else {
+              setStatusMessage('Click to set end angle');
+            }
           } else {
             const dx = point.x - start.x;
             const dy = point.y - start.y;
-            setStatusMessage(`dx: ${dx.toFixed(2)}, dy: ${dy.toFixed(2)}`);
+            const dz = point.z - start.z;
+            setStatusMessage(`Δ: ${dx.toFixed(2)}, ${dy.toFixed(2)}, ${dz.toFixed(2)}`);
           }
         } else {
-          setStatusMessage(`Position: ${point.x.toFixed(2)}, ${point.y.toFixed(2)}`);
+          setStatusMessage(`Click to start ${activeTool} — Position: ${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)}`);
         }
       }
     };
@@ -345,6 +360,7 @@ function SketchInteraction() {
         case 'line': {
           if (drawingPoints.length === 0) {
             setDrawingPoints([sketchPoint]);
+            setStatusMessage('Line start placed — click to set end point (right-click to cancel)');
           } else {
             const entity: SketchEntity = {
               id: crypto.randomUUID(),
@@ -352,30 +368,30 @@ function SketchInteraction() {
               points: [drawingPoints[0], sketchPoint],
             };
             addSketchEntity(entity);
-            setDrawingPoints([sketchPoint]); // Chain lines
+            setDrawingPoints([sketchPoint]); // Chain lines — next start = this end
+            setStatusMessage('Line added — click to continue, right-click or Escape to stop');
           }
           break;
         }
         case 'circle': {
           if (drawingPoints.length === 0) {
             setDrawingPoints([sketchPoint]);
+            setStatusMessage('Circle center placed — click to set radius');
           } else {
             const center = drawingPoints[0];
-            // Use full 3D distance — correct for all planes regardless of which
-            // component happens to be zero (e.g. Y=0 on XY plane, Z=0 on XZ, X=0 on YZ)
-            const radius = Math.sqrt(
-              (sketchPoint.x - center.x) ** 2 +
-              (sketchPoint.y - center.y) ** 2 +
-              (sketchPoint.z - center.z) ** 2
-            );
+            // Full 3-D distance — correct for every sketch plane
+            const radius = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z)
+              .distanceTo(new THREE.Vector3(center.x, center.y, center.z));
             if (radius > 0.001) {
-              const entity: SketchEntity = {
+              addSketchEntity({
                 id: crypto.randomUUID(),
                 type: 'circle',
                 points: [center],
                 radius,
-              };
-              addSketchEntity(entity);
+              });
+              setStatusMessage(`Circle added (r=${radius.toFixed(2)})`);
+            } else {
+              setStatusMessage('Circle too small — try again');
             }
             setDrawingPoints([]);
           }
@@ -384,42 +400,81 @@ function SketchInteraction() {
         case 'rectangle': {
           if (drawingPoints.length === 0) {
             setDrawingPoints([sketchPoint]);
+            setStatusMessage('Rectangle corner placed — click to set opposite corner');
           } else {
-            const entity: SketchEntity = {
+            addSketchEntity({
               id: crypto.randomUUID(),
               type: 'rectangle',
               points: [drawingPoints[0], sketchPoint],
               closed: true,
-            };
-            addSketchEntity(entity);
+            });
             setDrawingPoints([]);
+            setStatusMessage('Rectangle added');
           }
           break;
         }
         case 'arc': {
           if (drawingPoints.length === 0) {
             setDrawingPoints([sketchPoint]); // center
+            setStatusMessage('Arc center placed — click to set radius & start angle');
           } else if (drawingPoints.length === 1) {
             setDrawingPoints([...drawingPoints, sketchPoint]); // start point
+            setStatusMessage('Arc start set — click to set end angle');
           } else {
+            // Use plane-local 2-D coordinates so angles are correct on every plane
             const center = drawingPoints[0];
             const startPt = drawingPoints[1];
-            const dx1 = startPt.x - center.x;
-            const dy1 = startPt.y - center.y;
-            const dx2 = sketchPoint.x - center.x;
-            const dy2 = sketchPoint.y - center.y;
-            const radius = Math.sqrt(dx1 * dx1 + dy1 * dy1);
-            const startAngle = Math.atan2(dy1, dx1);
-            const endAngle = Math.atan2(dy2, dx2);
-            const entity: SketchEntity = {
-              id: crypto.randomUUID(),
-              type: 'arc',
-              points: [center],
-              radius,
-              startAngle,
-              endAngle,
-            };
-            addSketchEntity(entity);
+            const { u: u1, v: v1 } = projectToPlane(startPt, center);
+            const { u: u2, v: v2 } = projectToPlane(sketchPoint, center);
+            const radius = Math.sqrt(u1 * u1 + v1 * v1);
+            if (radius > 0.001) {
+              addSketchEntity({
+                id: crypto.randomUUID(),
+                type: 'arc',
+                points: [center],
+                radius,
+                startAngle: Math.atan2(v1, u1),
+                endAngle: Math.atan2(v2, u2),
+              });
+              setStatusMessage('Arc added');
+            } else {
+              setStatusMessage('Arc too small — try again');
+            }
+            setDrawingPoints([]);
+          }
+          break;
+        }
+        case 'polygon': {
+          if (drawingPoints.length === 0) {
+            setDrawingPoints([sketchPoint]);
+            setStatusMessage('Polygon center placed — click to set radius (6-sided)');
+          } else {
+            const center = drawingPoints[0];
+            const radius = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z)
+              .distanceTo(new THREE.Vector3(center.x, center.y, center.z));
+            if (radius > 0.001) {
+              const sides = 6; // hexagon by default
+              for (let i = 0; i < sides; i++) {
+                const a1 = (i / sides) * Math.PI * 2;
+                const a2 = ((i + 1) / sides) * Math.PI * 2;
+                const p1: SketchPoint = {
+                  id: crypto.randomUUID(),
+                  x: center.x + t1.x * Math.cos(a1) * radius + t2.x * Math.sin(a1) * radius,
+                  y: center.y + t1.y * Math.cos(a1) * radius + t2.y * Math.sin(a1) * radius,
+                  z: center.z + t1.z * Math.cos(a1) * radius + t2.z * Math.sin(a1) * radius,
+                };
+                const p2: SketchPoint = {
+                  id: crypto.randomUUID(),
+                  x: center.x + t1.x * Math.cos(a2) * radius + t2.x * Math.sin(a2) * radius,
+                  y: center.y + t1.y * Math.cos(a2) * radius + t2.y * Math.sin(a2) * radius,
+                  z: center.z + t1.z * Math.cos(a2) * radius + t2.z * Math.sin(a2) * radius,
+                };
+                addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [p1, p2] });
+              }
+              setStatusMessage(`Hexagon added (r=${radius.toFixed(2)})`);
+            } else {
+              setStatusMessage('Polygon too small — try again');
+            }
             setDrawingPoints([]);
           }
           break;
@@ -474,50 +529,86 @@ function SketchInteraction() {
     const start = drawingPoints[0];
     const startV = new THREE.Vector3(start.x, start.y, start.z);
 
-    // Plane-aware axis vectors — must match getPlaneAxes() in GeometryEngine
-    const sketchPlane = activeSketch?.plane ?? 'XZ';
-    const t1 = sketchPlane === 'XY' ? new THREE.Vector3(1, 0, 0)
-              : sketchPlane === 'YZ' ? new THREE.Vector3(0, 1, 0)
-              : new THREE.Vector3(1, 0, 0); // XZ default
-    const t2 = sketchPlane === 'XY' ? new THREE.Vector3(0, 0, 1)
-              : sketchPlane === 'YZ' ? new THREE.Vector3(0, 0, 1)
-              : new THREE.Vector3(0, 1, 0); // XZ default
+    // Plane-aware axis vectors via GeometryEngine helper
+    const { t1, t2 } = GeometryEngine.getPlaneAxes(activeSketch?.plane ?? 'XZ');
+
+    const addLine = (pts: THREE.Vector3[]) => {
+      const geom = new THREE.BufferGeometry().setFromPoints(pts);
+      previewRef.current!.add(new THREE.Line(geom, material));
+    };
+
+    const circlePoints = (center: THREE.Vector3, radius: number, segs = 64): THREE.Vector3[] => {
+      const pts: THREE.Vector3[] = [];
+      for (let i = 0; i <= segs; i++) {
+        const a = (i / segs) * Math.PI * 2;
+        pts.push(center.clone().addScaledVector(t1, Math.cos(a) * radius).addScaledVector(t2, Math.sin(a) * radius));
+      }
+      return pts;
+    };
 
     switch (activeTool) {
       case 'line': {
-        const geom = new THREE.BufferGeometry().setFromPoints([startV, mousePos]);
-        previewRef.current.add(new THREE.Line(geom, material));
+        addLine([startV, mousePos]);
         break;
       }
       case 'rectangle': {
         const delta = mousePos.clone().sub(startV);
         const dt1 = t1.clone().multiplyScalar(delta.dot(t1));
         const dt2 = t2.clone().multiplyScalar(delta.dot(t2));
-        const corners = [
+        addLine([
           startV.clone(),
           startV.clone().add(dt1),
           startV.clone().add(dt1).add(dt2),
           startV.clone().add(dt2),
           startV.clone(),
-        ];
-        const geom = new THREE.BufferGeometry().setFromPoints(corners);
-        previewRef.current.add(new THREE.Line(geom, material));
+        ]);
         break;
       }
       case 'circle': {
-        // 3D distance — correct on any plane since mousePos is on the plane
         const radius = mousePos.distanceTo(startV);
-        const pts: THREE.Vector3[] = [];
-        for (let i = 0; i <= 64; i++) {
-          const angle = (i / 64) * Math.PI * 2;
-          pts.push(
-            startV.clone()
-              .addScaledVector(t1, Math.cos(angle) * radius)
-              .addScaledVector(t2, Math.sin(angle) * radius)
-          );
+        addLine(circlePoints(startV, radius));
+        // Radius indicator line
+        addLine([startV, mousePos]);
+        break;
+      }
+      case 'arc': {
+        if (drawingPoints.length === 1) {
+          // Show radius line from center to mouse
+          addLine([startV, mousePos]);
+          // Show dashed circle outline at radius
+          addLine(circlePoints(startV, mousePos.distanceTo(startV)));
+        } else if (drawingPoints.length === 2) {
+          // Second point defines the start angle; mouse defines end angle
+          const startPt2 = drawingPoints[1];
+          const startV2 = new THREE.Vector3(startPt2.x, startPt2.y, startPt2.z);
+          const radius = startV2.distanceTo(startV);
+          const d1 = startV2.clone().sub(startV);
+          const d2 = mousePos.clone().sub(startV);
+          const startAngle = Math.atan2(d1.dot(t2), d1.dot(t1));
+          const endAngle = Math.atan2(d2.dot(t2), d2.dot(t1));
+          const segs = 32;
+          const arcPts: THREE.Vector3[] = [];
+          for (let i = 0; i <= segs; i++) {
+            const a = startAngle + (i / segs) * (endAngle - startAngle);
+            arcPts.push(startV.clone().addScaledVector(t1, Math.cos(a) * radius).addScaledVector(t2, Math.sin(a) * radius));
+          }
+          addLine(arcPts);
+          // Show radius lines to start and end
+          addLine([startV, startV2]);
+          addLine([startV, mousePos.clone().sub(startV).normalize().multiplyScalar(radius).add(startV)]);
         }
-        const geom = new THREE.BufferGeometry().setFromPoints(pts);
-        previewRef.current.add(new THREE.Line(geom, material));
+        break;
+      }
+      case 'polygon': {
+        const radius = mousePos.distanceTo(startV);
+        const sides = 6;
+        const polyPts: THREE.Vector3[] = [];
+        for (let i = 0; i <= sides; i++) {
+          const a = (i / sides) * Math.PI * 2;
+          polyPts.push(startV.clone().addScaledVector(t1, Math.cos(a) * radius).addScaledVector(t2, Math.sin(a) * radius));
+        }
+        addLine(polyPts);
+        addLine([startV, mousePos]);
         break;
       }
     }

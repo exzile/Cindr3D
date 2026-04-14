@@ -19,7 +19,7 @@ export class GeometryEngine {
    *   XZ  (vertical front, Z-normal) → draws in X–Y world plane
    *   YZ  (vertical side, X-normal)  → draws in Y–Z world plane
    */
-  private static getPlaneAxes(plane: SketchPlane): { t1: THREE.Vector3; t2: THREE.Vector3 } {
+  static getPlaneAxes(plane: SketchPlane): { t1: THREE.Vector3; t2: THREE.Vector3 } {
     switch (plane) {
       case 'XY': return { t1: new THREE.Vector3(1, 0, 0), t2: new THREE.Vector3(0, 0, 1) };
       case 'YZ': return { t1: new THREE.Vector3(0, 1, 0), t2: new THREE.Vector3(0, 0, 1) };

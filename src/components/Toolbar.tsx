@@ -580,7 +580,7 @@ export default function Toolbar() {
       {/* ── Quick Access Bar (title bar) ── */}
       <div className="ribbon-quick-access">
         <div className="ribbon-quick-left">
-          <button className="ribbon-quick-btn" title="Home" onClick={() => setStatusMessage('DesignCAD Home')}>
+          <button className="ribbon-quick-btn" title="Home" onClick={() => setStatusMessage('Dzign3D Home')}>
             <Home size={14} />
           </button>
           <div className="ribbon-quick-divider" />
@@ -603,7 +603,7 @@ export default function Toolbar() {
           <input ref={fileInputRef} type="file" accept=".step,.stp,.f3d,.stl,.obj" style={{ display: 'none' }} onChange={handleImport} />
         </div>
         <div className="ribbon-quick-center">
-          <span className="ribbon-title">Untitled - DesignCAD</span>
+          <span className="ribbon-title">Untitled - Dzign3D</span>
         </div>
         <div className="ribbon-quick-right">
           <button className="ribbon-quick-btn" title="Toggle theme" onClick={toggleTheme}>

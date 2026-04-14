@@ -3,7 +3,7 @@ import { X, Wifi, WifiOff, Loader2, CheckCircle, AlertCircle, Info } from 'lucid
 import { usePrinterStore } from '../store/printerStore';
 import { colors as COLORS } from '../utils/theme';
 
-const AUTO_RECONNECT_KEY = 'designcad-duet-autoreconnect';
+const AUTO_RECONNECT_KEY = 'dzign3d-duet-autoreconnect';
 
 // ---------------------------------------------------------------------------
 // Inline styles
@@ -534,7 +534,7 @@ export default function DuetSettings() {
             <p style={{ ...styles.aboutText, marginTop: 8 }}>
               Features include real-time machine monitoring, G-code console, file management,
               macro execution, and height map visualization -- all integrated directly into
-              DesignCAD.
+              Dzign3D.
             </p>
           </div>
         </div>

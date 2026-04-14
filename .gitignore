@@ -21,4 +21,18 @@ dist-ssr
 *.ntvs*
 *.njsproj
 *.sln
+*.slnx
 *.sw?
+
+# Visual Studio JS project files (Windows-specific, not needed by contributors)
+*.esproj
+.vs/
+
+# Claude Code — personal AI assistant config and dev notes (never commit)
+.claude/
+memory/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example

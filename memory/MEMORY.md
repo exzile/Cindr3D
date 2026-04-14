@@ -11,5 +11,8 @@
 - [Slicer Profiles Reference](slicer_profiles.md) — All 3 printer profiles, 9 material profiles, 3 print profiles with key values; G-code preview color coding
 - [Cura Feature Inventory](cura_feature_inventory.md) — Complete Cura 5.12.0 feature set: 17 setting categories, 416 settings, 40+ plugins, file formats, advanced features — used as parity target
 
+## Deployment
+- [Azure Hosting](azure_hosting.md) — Azure Static Web App details, staging URL, dzign3d.com domain steps (not yet live)
+
 ## Build & Debug
 - [VS 2026 Setup](vs2026_setup.md) — Visual Studio 2026 .esproj configuration, F5 debugging, SDK version pinning

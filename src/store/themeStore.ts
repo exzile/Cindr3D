@@ -222,7 +222,7 @@ function getColorsForTheme(theme: ThemeMode): ThemeColors {
 
 function getSavedTheme(): ThemeMode {
   try {
-    const saved = localStorage.getItem('designcad-theme');
+    const saved = localStorage.getItem('dzign3d-theme');
     if (saved === 'light' || saved === 'dark') return saved;
   } catch {}
   return 'light'; // Default to light (Fusion 360 style)
@@ -241,7 +241,7 @@ export const useThemeStore = create<ThemeStore>((set) => ({
   setTheme: (theme: ThemeMode) => {
     const colors = getColorsForTheme(theme);
     applyTheme(colors, theme);
-    try { localStorage.setItem('designcad-theme', theme); } catch {}
+    try { localStorage.setItem('dzign3d-theme', theme); } catch {}
     set({ theme, colors });
   },
 
@@ -250,7 +250,7 @@ export const useThemeStore = create<ThemeStore>((set) => ({
       const newTheme: ThemeMode = state.theme === 'light' ? 'dark' : 'light';
       const colors = getColorsForTheme(newTheme);
       applyTheme(colors, newTheme);
-      try { localStorage.setItem('designcad-theme', newTheme); } catch {}
+      try { localStorage.setItem('dzign3d-theme', newTheme); } catch {}
       return { theme: newTheme, colors };
     });
   },

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import * as THREE from 'three';
 import type {
   PrinterProfile, MaterialProfile, PrintProfile, PlateObject,
@@ -10,7 +11,7 @@ import {
 import { Slicer } from '../engine/Slicer';
 import { usePrinterStore } from './printerStore';
 
-const STORAGE_KEY = 'designcad-slicer-profiles';
+const STORAGE_KEY = 'dzign3d-slicer-profiles';
 
 interface SavedSelections {
   activePrinterProfileId: string;
@@ -118,12 +119,92 @@ interface SlicerStore {
   setTransformMode: (mode: 'move' | 'scale' | 'rotate' | 'mirror' | 'settings') => void;
 }
 
+// =============================================================================
+// Geometry serialization — THREE.BufferGeometry <-> plain JSON-safe object
+// =============================================================================
+interface SerializedGeom {
+  position: number[];
+  normal?: number[];
+  uv?: number[];
+  index?: number[];
+}
+
+function serializeGeom(geom: any): SerializedGeom | null {
+  if (!geom?.attributes?.position) return null;
+  try {
+    const out: SerializedGeom = {
+      position: Array.from(geom.attributes.position.array as Float32Array),
+    };
+    if (geom.attributes.normal) out.normal = Array.from(geom.attributes.normal.array as Float32Array);
+    if (geom.attributes.uv)     out.uv     = Array.from(geom.attributes.uv.array as Float32Array);
+    if (geom.index)              out.index  = Array.from(geom.index.array as Uint16Array | Uint32Array);
+    return out;
+  } catch { return null; }
+}
+
+function deserializeGeom(data: SerializedGeom): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(data.position, 3));
+  if (data.normal) g.setAttribute('normal', new THREE.Float32BufferAttribute(data.normal, 3));
+  if (data.uv)     g.setAttribute('uv',     new THREE.Float32BufferAttribute(data.uv, 2));
+  if (data.index)  g.setIndex(new THREE.BufferAttribute(new Uint32Array(data.index), 1));
+  g.computeBoundingBox();
+  return g;
+}
+
+// =============================================================================
+// IndexedDB storage adapter (no 5 MB limit — handles large geometry arrays)
+// =============================================================================
+function openSlicerDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('dzign3d-slicer', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('kv');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+const idbStorage = {
+  getItem: async (name: string): Promise<string | null> => {
+    try {
+      const db = await openSlicerDB();
+      return new Promise((resolve) => {
+        const tx  = db.transaction('kv', 'readonly');
+        const req = tx.objectStore('kv').get(name);
+        req.onsuccess = () => { db.close(); resolve(req.result ?? null); };
+        req.onerror   = () => { db.close(); resolve(null); };
+      });
+    } catch { return null; }
+  },
+  setItem: async (name: string, value: string): Promise<void> => {
+    try {
+      const db = await openSlicerDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('kv', 'readwrite');
+        tx.objectStore('kv').put(value, name);
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror    = () => { db.close(); reject(tx.error); };
+      });
+    } catch { /* storage unavailable — silently skip */ }
+  },
+  removeItem: async (name: string): Promise<void> => {
+    try {
+      const db = await openSlicerDB();
+      const tx = db.transaction('kv', 'readwrite');
+      tx.objectStore('kv').delete(name);
+      db.close();
+    } catch { /* ignore */ }
+  },
+};
+
+// =============================================================================
 // Internal ref to active slicer instance for cancellation
+// =============================================================================
 let activeSlicer: Slicer | null = null;
 
 const savedSelections = loadSavedSelections();
 
-export const useSlicerStore = create<SlicerStore>((set, get) => ({
+export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
   // Profiles
   printerProfiles: DEFAULT_PRINTER_PROFILES,
   materialProfiles: DEFAULT_MATERIAL_PROFILES,
@@ -614,4 +695,28 @@ export const useSlicerStore = create<SlicerStore>((set, get) => ({
 
   setSettingsPanel: (panel) => set({ settingsPanel: panel }),
   setTransformMode: (mode) => set({ transformMode: mode }),
+}),
+{
+  name: 'dzign3d-slicer-plate',
+  storage: idbStorage,
+
+  // Only persist plate-related state — not ephemeral slice/preview/progress state
+  partialize: (state) => ({
+    plateObjects: state.plateObjects.map((obj) => ({
+      ...obj,
+      // Serialize THREE.BufferGeometry to a plain JSON-safe object
+      geometry: serializeGeom(obj.geometry),
+    })),
+    selectedPlateObjectId: state.selectedPlateObjectId,
+    transformMode: state.transformMode,
+  }),
+
+  // After loading from IDB, reconstruct BufferGeometry objects
+  onRehydrateStorage: () => (state) => {
+    if (!state?.plateObjects) return;
+    state.plateObjects = state.plateObjects.map((obj: any) => ({
+      ...obj,
+      geometry: obj.geometry ? deserializeGeom(obj.geometry as SerializedGeom) : null,
+    }));
+  },
 }));

@@ -12,7 +12,7 @@ import type {
 
 const MAX_TEMPERATURE_HISTORY = 200;
 const MAX_CONSOLE_HISTORY = 500;
-const STORAGE_KEY = 'designcad-duet-config';
+const STORAGE_KEY = 'dzign3d-duet-config';
 
 interface PrinterStore {
   // Connection

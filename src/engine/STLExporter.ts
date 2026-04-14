@@ -15,7 +15,7 @@ export class STLExporter {
     const view = new DataView(buffer);
 
     // Header (80 bytes) - can be anything
-    const header = 'DesignCAD STL Export';
+    const header = 'Dzign3D STL Export';
     for (let i = 0; i < 80; i++) {
       view.setUint8(i, i < header.length ? header.charCodeAt(i) : 0);
     }
@@ -55,7 +55,7 @@ export class STLExporter {
   /**
    * Export a mesh or group as ASCII STL
    */
-  static exportASCII(object: THREE.Object3D, name = 'DesignCAD_Model'): string {
+  static exportASCII(object: THREE.Object3D, name = 'Dzign3D_Model'): string {
     const triangles = this.collectTriangles(object);
     const lines: string[] = [`solid ${name}`];
 
@@ -76,9 +76,9 @@ export class STLExporter {
   /**
    * Export as OBJ format
    */
-  static exportOBJ(object: THREE.Object3D, name = 'DesignCAD_Model'): string {
+  static exportOBJ(object: THREE.Object3D, name = 'Dzign3D_Model'): string {
     const triangles = this.collectTriangles(object);
-    const lines: string[] = [`# ${name}`, `# Exported from DesignCAD`, ''];
+    const lines: string[] = [`# ${name}`, `# Exported from Dzign3D`, ''];
 
     // Collect unique vertices
     const vertexMap = new Map<string, number>();
@@ -202,7 +202,7 @@ interface Triangle {
  * This produces a minimal valid 3MF file compatible with most slicers
  */
 export class ThreeMFExporter {
-  static async export(object: THREE.Object3D, name = 'DesignCAD_Model'): Promise<Blob> {
+  static async export(object: THREE.Object3D, name = 'Dzign3D_Model'): Promise<Blob> {
     const { vertices, triangles } = this.collectMeshData(object);
 
     const modelXml = this.buildModelXml(vertices, triangles, name);
@@ -273,7 +273,7 @@ export class ThreeMFExporter {
     let xml = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
   <metadata name="Title">${name}</metadata>
-  <metadata name="Application">DesignCAD</metadata>
+  <metadata name="Application">Dzign3D</metadata>
   <resources>
     <object id="1" type="model" name="${name}">
       <mesh>
