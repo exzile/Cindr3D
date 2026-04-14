@@ -1,10 +1,11 @@
 # DesignCAD Project Memory
 
 ## Core Architecture
-- [Project Architecture](project_architecture.md) — Stack (React 19/TypeScript/Vite/Three.js), workspace structure, store locations, key files, slicer parity status
+- [Project Architecture](project_architecture.md) — Stack (React 19/TypeScript/Vite/Three.js), workspace structure, store locations, key files, R3F/Three.js patterns, slicer parity status
 - [Theme System](theme_system.md) — How light/dark theming works; CSS vars via themeStore; 3D viewport theming; migration status
 - [Parameters System](parameters_system.md) — Named variable/parametric design feature; expression evaluator; dialog integration pattern
-- [UI Architecture](ui_architecture.md) — Fusion 360-style ribbon toolbar, ViewCube, canvas controls, flyout menus (portal-based), sketch palette
+- [UI Architecture](ui_architecture.md) — Fusion 360-style ribbon toolbar, ViewCube, canvas controls, flyout menus (portal-based), sketch palette, WorldAxes, SketchPlaneGrid
+- [Sketch Tools](sketch_tools.md) — Click sequences for each tool, plane-aware math (t1/t2 axes), preview rendering (useFrame), entity rendering (SketchGeometry), bugs fixed
 
 ## Slicer
 - [Slicer Implementation](slicer_implementation.md) — Architecture, bugs fixed, full PrintProfile settings list, 16 UI sections, file import, transform controls, known remaining gaps vs Cura

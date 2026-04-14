@@ -55,6 +55,50 @@ Implemented Cura 5.x parity across 16 setting sections with ~136 controls:
 - Full Cura setting categories: Quality (+ Adaptive Layers), Walls, Top/Bottom (+ Bridges), Infill (16 patterns), Speed, Travel, Cooling, Support (+ Roof/Floor), Adhesion (+ full Raft layers), Special Modes (+ Mold + Surface Mode), Experimental (+ Fuzzy Skin + Overhang), Acceleration & Jerk, Mesh Fixes
 - Bugs fixed: Slicer constructor args, setProgressCallback, slice() geometry format, cancel() method added
 
+## Three.js / R3F Patterns (learned through session)
+
+### Geometry lifecycle — avoid memory leaks
+```tsx
+function SketchGeometry({ sketch }: { sketch: Sketch }) {
+  const group = useMemo(() => GeometryEngine.createSketchGeometry(sketch), [sketch]);
+  useEffect(() => {
+    return () => {
+      group.traverse((obj) => {
+        if ((obj as THREE.Line).isLine) (obj as THREE.Line).geometry.dispose();
+      });
+    };
+  }, [group]);
+  return <primitive object={group} />;
+}
+```
+- Never dispose shared module-level materials (SKETCH_MATERIAL, EXTRUDE_MATERIAL in GeometryEngine)
+- Force remount on entity count change: include `entities.length` in key → `key={`active-${id}-e${entities.length}`}`
+- Preview geometry (useFrame): clear group children + dispose geometry each frame before rebuilding
+- Stable refs for hot paths: `useRef(new THREE.Vector3())` — no per-frame GC
+
+### Rules of Hooks
+Never call hooks after a conditional return. All `useCADStore(...)` calls must precede any `if (!x) return null`.
+
+### R3F / Three.js version
+- Three.js r170+ deprecated `THREE.Clock` — R3F 9.5.0 caused warning; fixed in **R3F 9.6.0** (current)
+- `<Grid infiniteGrid>` (drei) broken for non-horizontal planes — use `THREE.GridHelper` instead
+
+### GridHelper orientation for sketch planes
+```tsx
+// XZ (front, Z-normal): group rotation [-PI/2, 0, 0]
+// YZ (side, X-normal):  group rotation [0, 0, PI/2]
+// XY (floor, Y-normal): group rotation [0, 0, 0] (default)
+```
+
+### Sketch plane coordinate system
+| Plane | Normal | THREE.Plane | t1 | t2 | Points have |
+|---|---|---|---|---|---|
+| 'XZ' (front, default) | Z | `(0,0,1)` z=0 | X (1,0,0) | Y (0,1,0) | z=0 |
+| 'XY' (floor) | Y | `(0,1,0)` y=0 | X (1,0,0) | Z (0,0,1) | y=0 |
+| 'YZ' (side) | X | `(1,0,0)` x=0 | Y (0,1,0) | Z (0,0,1) | x=0 |
+
+Single source of truth: `GeometryEngine.getPlaneAxes(plane)` (public static) — used in both engine and Viewport.tsx.
+
 ## Key Utility Files
 - `src/utils/theme.ts` — single source of truth for color tokens (CSS var references)
 - `src/utils/expressionEval.ts` — parameter expression evaluator (`evaluateExpression`, `resolveParameters`)

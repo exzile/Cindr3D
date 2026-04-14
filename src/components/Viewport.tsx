@@ -1006,7 +1006,9 @@ export default function Viewport() {
         {gridVisible && !activeSketch && <GroundPlaneGrid />}
 
         {/* Sketch-plane grid — shown only while a sketch is active */}
-        {activeSketch && <SketchPlaneGrid plane={activeSketch.plane} />}
+        {activeSketch && (activeSketch.plane === 'XY' || activeSketch.plane === 'XZ' || activeSketch.plane === 'YZ') && (
+          <SketchPlaneGrid plane={activeSketch.plane} />
+        )}
 
         {/* Plane selection for Create Sketch */}
         <SketchPlaneSelector />
