@@ -442,8 +442,6 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
 
       const rawW = (obj.boundingBox.max.x - obj.boundingBox.min.x) * sx;
       const rawD = (obj.boundingBox.max.y - obj.boundingBox.min.y) * sy;
-      const rawZ = (obj.boundingBox.min.z) * sz;
-
       const w = isFinite(rawW) && rawW > 0 ? rawW : 50;
       const d = isFinite(rawD) && rawD > 0 ? rawD : 50;
 
@@ -634,7 +632,7 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
 
   cancelSlice: () => {
     if (activeSlicer) {
-      try { (activeSlicer as any).cancel?.(); } catch {}
+      try { (activeSlicer as { cancel?: () => void }).cancel?.(); } catch { /* ignore cancellation errors */ }
       activeSlicer = null;
     }
     set({
@@ -668,7 +666,7 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = sliceResult.filename || 'output.gcode';
+    a.download = 'output.gcode';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -684,7 +682,7 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
       throw new Error('Printer not connected');
     }
 
-    const filename = sliceResult.filename || 'output.gcode';
+    const filename = 'output.gcode';
     const blob = new Blob([sliceResult.gcode], { type: 'text/plain' });
     const file = new File([blob], filename, { type: 'text/plain' });
 
@@ -698,7 +696,7 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
 }),
 {
   name: 'dzign3d-slicer-plate',
-  storage: idbStorage,
+  storage: idbStorage as any,
 
   // Only persist plate-related state — not ephemeral slice/preview/progress state
   partialize: (state) => ({

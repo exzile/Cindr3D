@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as THREE from 'three';
-import { Eye, EyeOff, X } from 'lucide-react';
+import { Eye, X } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore';
 
 interface SketchOption {

@@ -16,6 +16,22 @@ export interface PrinterStatus {
   };
 }
 
+interface OctoPrinterResponse {
+  state: PrinterStatus;
+  temperature: TemperatureData;
+}
+
+interface OctoFilesResponse {
+  files: Array<{
+    name: string;
+    path?: string;
+    type: string;
+    size: number;
+    date: number;
+    origin: 'local' | 'sdcard';
+  }>;
+}
+
 export interface TemperatureData {
   bed: { actual: number; target: number; offset: number };
   tool0: { actual: number; target: number; offset: number };
@@ -63,6 +79,8 @@ export interface ConnectionSettings {
 export class OctoPrintService {
   private config: OctoPrintConfig;
   private eventSource: EventSource | null = null;
+  private _pollInterval: number | null = null;
+  private _pollInFlight = false;
 
   constructor(config: OctoPrintConfig) {
     this.config = config;
@@ -123,7 +141,7 @@ export class OctoPrintService {
   // ===== Printer Status =====
 
   async getPrinterState(): Promise<{ state: PrinterStatus; temperature: TemperatureData }> {
-    const data = await this.request<any>('/printer');
+    const data = await this.request<OctoPrinterResponse>('/printer');
     return {
       state: data.state,
       temperature: data.temperature,
@@ -193,7 +211,7 @@ export class OctoPrintService {
   // ===== File Management =====
 
   async listFiles(): Promise<PrinterFile[]> {
-    const data = await this.request<{ files: any[] }>('/files');
+    const data = await this.request<OctoFilesResponse>('/files');
     return data.files.map((f) => ({
       name: f.name,
       path: f.path || f.name,
@@ -294,6 +312,8 @@ export class OctoPrintService {
     // OctoPrint uses SockJS, but we can poll as a simpler alternative
     // For real-time updates, we'll poll every 2 seconds
     const poll = async () => {
+      if (this._pollInFlight) return;
+      this._pollInFlight = true;
       try {
         const [printerData, jobData] = await Promise.all([
           this.getPrinterState().catch(() => null),
@@ -321,8 +341,10 @@ export class OctoPrintService {
             data: jobData.job,
           });
         }
-      } catch (err) {
+      } catch {
         onError?.(new Event('error'));
+      } finally {
+        this._pollInFlight = false;
       }
     };
 
@@ -330,13 +352,12 @@ export class OctoPrintService {
     this._pollInterval = window.setInterval(poll, 2000);
   }
 
-  private _pollInterval: number | null = null;
-
   stopEventStream(): void {
     if (this._pollInterval) {
       clearInterval(this._pollInterval);
       this._pollInterval = null;
     }
+    this._pollInFlight = false;
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
@@ -346,7 +367,7 @@ export class OctoPrintService {
 
 export interface OctoPrintEvent {
   type: 'temperature' | 'state' | 'progress' | 'job';
-  data: any;
+  data: TemperatureData | PrinterStatus | PrintProgress | PrintJob;
 }
 
 // ===== Printer Store =====

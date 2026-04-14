@@ -7,12 +7,13 @@ export default function PrinterSettings() {
   const setShowSettings = usePrinterStore((s) => s.setShowSettings);
   const connected = usePrinterStore((s) => s.connected);
   const config = usePrinterStore((s) => s.config);
-  const connectPrinter = usePrinterStore((s) => s.connectPrinter);
-  const disconnectPrinter = usePrinterStore((s) => s.disconnectPrinter);
+  const setConfig = usePrinterStore((s) => s.setConfig);
+  const connectPrinter = usePrinterStore((s) => s.connect);
+  const disconnectPrinter = usePrinterStore((s) => s.disconnect);
   const error = usePrinterStore((s) => s.error);
 
-  const [url, setUrl] = useState(config?.url || 'http://octopi.local');
-  const [apiKey, setApiKey] = useState(config?.apiKey || '');
+  const [url, setUrl] = useState(config?.hostname || 'http://duet.local');
+  const [apiKey, setApiKey] = useState(config?.password || '');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<'success' | 'fail' | null>(null);
 
@@ -24,7 +25,12 @@ export default function PrinterSettings() {
     setTestResult(null);
 
     try {
-      await connectPrinter({ url: url.replace(/\/$/, ''), apiKey });
+      setConfig({
+        hostname: url.replace(/\/$/, ''),
+        password: apiKey,
+        mode: 'standalone',
+      });
+      await connectPrinter();
       setTestResult('success');
     } catch {
       setTestResult('fail');

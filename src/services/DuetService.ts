@@ -19,11 +19,16 @@ export class DuetService {
   private listeners: Map<string, Set<(data: unknown) => void>> = new Map();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private pollInFlight = false;
   private static readonly POLL_INTERVAL = 250;
   private static readonly RECONNECT_DELAY = 2000;
 
   constructor(config: DuetConfig) {
     this.config = config;
+  }
+
+  onModelUpdate(callback: (model: Partial<DuetObjectModel>) => void): () => void {
+    return this.on('modelUpdate', (data) => callback(data as Partial<DuetObjectModel>));
   }
 
   // ---------------------------------------------------------------------------
@@ -71,6 +76,8 @@ export class DuetService {
 
   async connect(): Promise<boolean> {
     try {
+      if (this.connected) return true;
+
       if (this.config.mode === 'sbc') {
         // DSF uses a simple password query param on connect
         const url = `${this.baseUrl}/machine/connect?password=${encodeURIComponent(this.config.password)}`;
@@ -243,12 +250,17 @@ export class DuetService {
         this.stopPolling();
         return;
       }
+      if (this.pollInFlight) return;
+
+      this.pollInFlight = true;
       try {
         const model = await this.getObjectModel();
         this.objectModel = model;
         this.emit('modelUpdate', this.objectModel);
       } catch (err) {
         this.emit('error', err);
+      } finally {
+        this.pollInFlight = false;
       }
     }, DuetService.POLL_INTERVAL);
   }
@@ -258,10 +270,50 @@ export class DuetService {
       clearInterval(this.pollTimer);
       this.pollTimer = null;
     }
+    this.pollInFlight = false;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+  }
+
+  private uploadViaXhr(
+    method: 'PUT' | 'POST',
+    url: string,
+    content: Blob | File,
+    onProgress?: (percent: number) => void,
+    validateResponse?: (responseText: string) => void
+  ): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(method, url, true);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+
+      if (onProgress) {
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            onProgress(Math.round((e.loaded / e.total) * 100));
+          }
+        });
+      }
+
+      xhr.onload = () => {
+        if (xhr.status < 200 || xhr.status >= 300) {
+          reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`));
+          return;
+        }
+
+        try {
+          validateResponse?.(xhr.responseText);
+          resolve();
+        } catch (err) {
+          reject(err instanceof Error ? err : new Error(String(err)));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Upload network error'));
+      xhr.send(content);
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -603,65 +655,23 @@ export class DuetService {
   ): Promise<void> {
     if (this.config.mode === 'sbc') {
       const url = `${this.baseUrl}/machine/file/${encodeURIComponent(path)}`;
-      // Use XMLHttpRequest for progress tracking
-      return new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('PUT', url, true);
-        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-
-        if (onProgress) {
-          xhr.upload.addEventListener('progress', (e) => {
-            if (e.lengthComputable) {
-              onProgress(Math.round((e.loaded / e.total) * 100));
-            }
-          });
-        }
-
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve();
-          } else {
-            reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`));
-          }
-        };
-        xhr.onerror = () => reject(new Error('Upload network error'));
-        xhr.send(content);
-      });
+      return this.uploadViaXhr('PUT', url, content, onProgress);
     }
 
     // Standalone – POST to /rr_upload
     const url = `${this.baseUrl}/rr_upload?name=${encodeURIComponent(path)}&time=${encodeURIComponent(new Date().toISOString())}`;
-    return new Promise<void>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', url, true);
-      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-
-      if (onProgress) {
-        xhr.upload.addEventListener('progress', (e) => {
-          if (e.lengthComputable) {
-            onProgress(Math.round((e.loaded / e.total) * 100));
-          }
-        });
-      }
-
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const res = JSON.parse(xhr.responseText);
-            if (res.err !== 0) {
-              reject(new Error(`Upload error (err=${res.err})`));
-              return;
-            }
-          } catch {
-            // Non-JSON response is fine
-          }
-          resolve();
-        } else {
-          reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`));
+    return this.uploadViaXhr('POST', url, content, onProgress, (responseText) => {
+      try {
+        const res = JSON.parse(responseText);
+        if (res.err !== 0) {
+          throw new Error(`Upload error (err=${res.err})`);
         }
-      };
-      xhr.onerror = () => reject(new Error('Upload network error'));
-      xhr.send(content);
+      } catch (err) {
+        if (err instanceof Error && err.message.startsWith('Upload error')) {
+          throw err;
+        }
+        // Non-JSON response is fine
+      }
     });
   }
 

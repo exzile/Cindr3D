@@ -108,7 +108,7 @@ function computeStats(hm: HeightMapData): HeightMapStats {
 // ---------------------------------------------------------------------------
 
 function HeightMapMesh({ heightMap }: { heightMap: HeightMapData }) {
-  const { geometry, stats } = useMemo(() => {
+  const { geometry } = useMemo(() => {
     const s = computeStats(heightMap);
     const geo = new THREE.BufferGeometry();
 

@@ -16,11 +16,14 @@ export default function ExportDialog() {
   const printerService = usePrinterStore((s) => s.service);
   const printerConnected = usePrinterStore((s) => s.connected);
 
-  const [format, setFormat] = useState<'stl-binary' | 'stl-ascii' | '3mf' | 'obj' | 'gcode'>('stl-binary');
+  const [format, setFormat] = useState<ExportFormat>('stl-binary');
   const [settings, setSettings] = useState<SlicerSettings>({ ...DEFAULT_SLICER_SETTINGS });
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [sendToPrinter, setSendToPrinter] = useState(false);
   const [startPrintAfterUpload, setStartPrintAfterUpload] = useState(false);
+
+  type ExportFormat = 'stl-binary' | 'stl-ascii' | '3mf' | 'obj' | 'gcode';
+  type InfillPattern = SlicerSettings['infillPattern'];
 
   if (!showExportDialog) return null;
 
@@ -98,7 +101,11 @@ export default function ExportDialog() {
 
       if (sendToPrinter && printerService && printerConnected) {
         setStatusMessage(`Uploading ${filename} to printer...`);
-        await printerService.uploadFile(blob, filename, startPrintAfterUpload);
+        const remotePath = `0:/gcodes/${filename}`;
+        await printerService.uploadFile(remotePath, blob);
+        if (startPrintAfterUpload) {
+          await printerService.startPrint(remotePath);
+        }
         setStatusMessage(
           startPrintAfterUpload
             ? `Uploaded and started printing ${filename}`
@@ -146,7 +153,7 @@ export default function ExportDialog() {
           {/* Format selection */}
           <div className="form-group">
             <label>Format</label>
-            <select value={format} onChange={(e) => setFormat(e.target.value as any)}>
+            <select value={format} onChange={(e) => setFormat(e.target.value as ExportFormat)}>
               <option value="stl-binary">STL (Binary)</option>
               <option value="stl-ascii">STL (ASCII)</option>
               <option value="3mf">3MF</option>
@@ -195,7 +202,7 @@ export default function ExportDialog() {
                   <label>Infill Pattern</label>
                   <select
                     value={settings.infillPattern}
-                    onChange={(e) => updateSetting('infillPattern', e.target.value as any)}
+                    onChange={(e) => updateSetting('infillPattern', e.target.value as InfillPattern)}
                   >
                     <option value="grid">Grid</option>
                     <option value="lines">Lines</option>
@@ -375,7 +382,7 @@ export default function ExportDialog() {
                   checked={sendToPrinter}
                   onChange={(e) => setSendToPrinter(e.target.checked)}
                 />
-                Send directly to printer (OctoPrint)
+                Send directly to printer
               </label>
               {sendToPrinter && (
                 <label className="checkbox-label indent">

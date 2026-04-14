@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import * as THREE from 'three';
-import type { Tool, ViewMode, SketchPlane, Sketch, SketchEntity, Feature, Parameter, BooleanOperation } from '../types/cad';
+import type { Tool, ViewMode, SketchPlane, Sketch, SketchEntity, SketchPoint, Feature, Parameter, BooleanOperation } from '../types/cad';
 
 export type ExtrudeDirection = 'normal' | 'symmetric' | 'reverse';
 export type ExtrudeOperation = Extract<BooleanOperation, 'new-body' | 'join' | 'cut'>;
@@ -53,7 +53,13 @@ const idbStorage = {
 
 // ── THREE.js serialization helpers ─────────────────────────────────────────
 /** Serialize a Sketch for JSON storage — converts THREE.Vector3 fields to {x,y,z} */
-function serializeSketch(sketch: Sketch): any {
+type SerializedVector3 = { x: number; y: number; z: number };
+type SerializedSketch = Omit<Sketch, 'planeNormal' | 'planeOrigin'> & {
+  planeNormal: SerializedVector3;
+  planeOrigin: SerializedVector3;
+};
+
+function serializeSketch(sketch: Sketch): SerializedSketch {
   return {
     ...sketch,
     planeNormal: { x: sketch.planeNormal.x, y: sketch.planeNormal.y, z: sketch.planeNormal.z },
@@ -62,7 +68,7 @@ function serializeSketch(sketch: Sketch): any {
 }
 
 /** Reconstruct THREE.Vector3 fields on a deserialized Sketch */
-function deserializeSketch(raw: any): Sketch {
+function deserializeSketch(raw: SerializedSketch): Sketch {
   return {
     ...raw,
     planeNormal: new THREE.Vector3(raw.planeNormal?.x ?? 0, raw.planeNormal?.y ?? 1, raw.planeNormal?.z ?? 0),
@@ -71,7 +77,7 @@ function deserializeSketch(raw: any): Sketch {
 }
 
 /** Serialize a Feature — strip the non-serializable mesh */
-function serializeFeature(feature: Feature): any {
+function serializeFeature(feature: Feature): Omit<Feature, 'mesh'> {
   const { mesh, ...rest } = feature;
   return rest;
 }
@@ -786,7 +792,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
 }),
 {
   name: 'dzign3d-cad',
-  storage: idbStorage,
+  storage: idbStorage as any,
 
   // Only persist design data and user preferences — NOT ephemeral UI state
   partialize: (state) => ({
@@ -810,11 +816,13 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     if (!state) return;
     // Reconstruct THREE.Vector3 fields on sketches
     if (state.sketches) {
-      state.sketches = state.sketches.map((s: any) => deserializeSketch(s));
+      const sketches = state.sketches as unknown as SerializedSketch[];
+      state.sketches = sketches.map((s) => deserializeSketch(s));
     }
     // Rebuild feature meshes from sketch + params
     if (state.features && state.sketches) {
-      state.features = state.features.map((f: any) => rebuildFeatureMesh(f, state.sketches));
+      const features = state.features as Feature[];
+      state.features = features.map((f) => rebuildFeatureMesh(f, state.sketches));
     }
   },
 }));

@@ -750,13 +750,6 @@ export default function DuetFileManager() {
     [navigateToDirectory],
   );
 
-  const handleGoUp = useCallback(() => {
-    const parent = currentDirectory.replace(/\/[^/]+$/, '');
-    if (parent && parent !== currentDirectory) {
-      handleNavigate(parent);
-    }
-  }, [currentDirectory, handleNavigate]);
-
   // Tab switching
   const handleTabSwitch = useCallback(
     async (tabId: string) => {

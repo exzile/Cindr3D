@@ -2010,6 +2010,7 @@ function SketchPlaneSelector() {
   // Stable scratch objects for the hot-path raycasting handlers
   const _mouse = useRef(new THREE.Vector2());
   const _normalMatrix = useRef(new THREE.Matrix3());
+  const _pickableMeshes = useRef<THREE.Mesh[]>([]);
   const { gl, camera, raycaster, scene } = useThree();
 
   // Change cursor when hovering a plane or a face
@@ -2033,14 +2034,16 @@ function SketchPlaneSelector() {
   useEffect(() => {
     if (!selecting) return;
 
-    const collectPickable = (): THREE.Mesh[] => {
-      const out: THREE.Mesh[] = [];
+    const refreshPickableMeshes = () => {
+      const out = _pickableMeshes.current;
+      out.length = 0;
       scene.traverse((obj) => {
         const m = obj as THREE.Mesh;
         if (m.isMesh && obj.userData?.pickable) out.push(m);
       });
-      return out;
     };
+
+    refreshPickableMeshes();
 
     const updateMouseFromEvent = (event: { clientX: number; clientY: number }) => {
       const rect = gl.domElement.getBoundingClientRect();
@@ -2051,9 +2054,13 @@ function SketchPlaneSelector() {
     };
 
     const handlePointerMove = (event: PointerEvent) => {
+      if (_pickableMeshes.current.length === 0) {
+        refreshPickableMeshes();
+      }
+
       updateMouseFromEvent(event);
       raycaster.setFromCamera(_mouse.current, camera);
-      const hits = raycaster.intersectObjects(collectPickable(), false);
+      const hits = raycaster.intersectObjects(_pickableMeshes.current, false);
       if (hits.length > 0 && hits[0].face) {
         const hit = hits[0];
         // Transform face normal from local to world space (reusing scratch matrix)
@@ -2070,9 +2077,10 @@ function SketchPlaneSelector() {
     const handleClick = (event: MouseEvent) => {
       if (event.button !== 0) return;
       // Re-raycast on click (faceHit may be stale or null if pointer didn't move)
+      refreshPickableMeshes();
       updateMouseFromEvent(event);
       raycaster.setFromCamera(_mouse.current, camera);
-      const hits = raycaster.intersectObjects(collectPickable(), false);
+      const hits = raycaster.intersectObjects(_pickableMeshes.current, false);
       if (hits.length > 0 && hits[0].face) {
         const hit = hits[0];
         const normal = hit.face!.normal.clone()
@@ -2093,6 +2101,7 @@ function SketchPlaneSelector() {
       canvas.removeEventListener('pointermove', handlePointerMove);
       canvas.removeEventListener('click', handleClick, true);
       setFaceHit(null);
+      _pickableMeshes.current.length = 0;
     };
   }, [selecting, gl, camera, raycaster, scene, startSketchOnFace, setStatusMessage]);
 

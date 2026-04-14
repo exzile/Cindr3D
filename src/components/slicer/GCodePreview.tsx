@@ -1,6 +1,5 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo } from 'react';
 import * as THREE from 'three';
-import { useFrame } from '@react-three/fiber';
 import { Html, Line, Grid } from '@react-three/drei';
 import { useSlicerStore } from '../../store/slicerStore';
 import type { SliceLayer, SliceMove } from '../../types/slicer';
@@ -160,10 +159,6 @@ const LayerMesh = React.memo(function LayerMesh({
   showTravel,
   showRetractions,
 }: LayerMeshProps) {
-  const extGeoRef = useRef<THREE.BufferGeometry>(null);
-  const travGeoRef = useRef<THREE.BufferGeometry>(null);
-  const retGeoRef = useRef<THREE.BufferGeometry>(null);
-
   // Build extrusion geometry
   const extGeo = useMemo(() => {
     if (data.extrusionPositions.length === 0) return null;
@@ -245,43 +240,6 @@ interface BuildPlateProps {
   volumeY: number;
   volumeZ: number;
   originCenter: boolean;
-}
-
-function BuildPlate({ volumeX, volumeY, volumeZ, originCenter }: BuildPlateProps) {
-  const offsetX = originCenter ? 0 : volumeX / 2;
-  const offsetY = originCenter ? 0 : volumeY / 2;
-
-  return (
-    <group position={[offsetX, offsetY, 0]}>
-      {/* Grid on bed */}
-      <Grid
-        args={[volumeX, volumeY]}
-        cellSize={10}
-        cellThickness={0.5}
-        cellColor="#555555"
-        sectionSize={50}
-        sectionThickness={1}
-        sectionColor="#888888"
-        fadeDistance={1000}
-        fadeStrength={0}
-        infiniteGrid={false}
-        position={[0, 0, 0]}
-        rotation={[0, 0, 0]}
-      />
-
-      {/* Build volume wireframe */}
-      <lineSegments>
-        <edgesGeometry
-          args={[new THREE.BoxGeometry(volumeX, volumeY, volumeZ)]}
-        />
-        <lineBasicMaterial color="#666666" transparent opacity={0.3} />
-      </lineSegments>
-      {/* Shift box so bottom is at z=0 */}
-      <mesh visible={false}>
-        <boxGeometry args={[volumeX, volumeY, volumeZ]} />
-      </mesh>
-    </group>
-  );
 }
 
 // Rewrite BuildPlate to position the wireframe box correctly (bottom at z=0):

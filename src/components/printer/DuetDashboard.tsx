@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import {
   Thermometer, Home, ArrowUp, ArrowDown, Power, Play, Fan,
   Gauge, Droplets, Cpu, Clock, ChevronUp, ChevronDown,
-  MoveHorizontal, Zap, FileText, Server, HardDrive, Wifi, MonitorSmartphone,
+  MoveHorizontal, Zap, FileText, Server, HardDrive, Wifi,
   Wrench, XCircle, Package,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
@@ -12,15 +12,6 @@ import { usePrinterStore } from '../../store/printerStore';
 // ---------------------------------------------------------------------------
 import { colors as COLORS } from '../../utils/theme';
 import DuetCustomButtons from './DuetCustomButtons';
-
-// Semantic heater-state colors (not theme-dependent — always meaningful)
-const HEATER_STATE = {
-  off:     '#555577',
-  standby: 'var(--warning)',
-  active:  'var(--error)',
-  tuning:  '#a855f7',
-  fault:   'var(--error)',
-} as const;
 
 const HEATER_CHART_COLORS = [
   '#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7',
@@ -92,11 +83,11 @@ function statusColor(status: string): string {
 
 function heaterStateColor(state: string): string {
   switch (state) {
-    case 'active': return COLORS.heaterActive;
-    case 'standby': return COLORS.heaterStandby;
-    case 'fault': return COLORS.fault;
-    case 'tuning': return COLORS.heaterTuning;
-    default: return COLORS.heaterOff;
+    case 'active': return COLORS.success;
+    case 'standby': return COLORS.warning;
+    case 'fault': return COLORS.danger;
+    case 'tuning': return COLORS.accent;
+    default: return COLORS.textDim;
   }
 }
 

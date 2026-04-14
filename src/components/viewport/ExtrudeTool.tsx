@@ -63,21 +63,6 @@ const FACE_HIGHLIGHT_OUTLINE = new THREE.LineBasicMaterial({
   opacity: 0.95,
   depthTest: false,
 });
-const FACE_HIGHLIGHT_FILL_CUT = new THREE.MeshBasicMaterial({
-  color: 0xef4444,
-  transparent: true,
-  opacity: 0.4,
-  side: THREE.DoubleSide,
-  depthWrite: false,
-  depthTest: false,
-});
-const FACE_HIGHLIGHT_OUTLINE_CUT = new THREE.LineBasicMaterial({
-  color: 0xdc2626,
-  transparent: true,
-  opacity: 0.95,
-  depthTest: false,
-});
-
 // ── Profile picking ────────────────────────────────────────────────────────
 
 function SketchProfile({

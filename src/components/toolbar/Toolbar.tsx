@@ -24,7 +24,6 @@ import { useCADStore } from '../../store/cadStore';
 import { usePrinterStore } from '../../store/printerStore';
 import { useSlicerStore } from '../../store/slicerStore';
 import { useThemeStore } from '../../store/themeStore';
-import { FileImporter } from '../../engine/FileImporter';
 import type { Tool, Feature } from '../../types/cad';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -354,6 +353,7 @@ export default function Toolbar() {
     if (!file) return;
     setStatusMessage(`Importing ${file.name}...`);
     try {
+      const { FileImporter } = await import('../../engine/FileImporter');
       const group = await FileImporter.importFile(file);
       const feature: Feature = {
         id: crypto.randomUUID(),

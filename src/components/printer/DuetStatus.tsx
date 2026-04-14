@@ -315,7 +315,7 @@ function MachineSummaryPanel() {
         <span style={dim()}>Compensation</span>
         <span style={mono()}>{move?.compensation?.type ?? 'none'}</span>
         <span style={dim()}>Workplace</span>
-        <span style={mono()}>G{54 + (move?.workplaceNumber ?? 0)}</span>
+        <span style={mono()}>G54</span>
       </div>
     </div>
   );

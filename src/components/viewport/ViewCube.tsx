@@ -111,7 +111,7 @@ function closestFaceLabel(cameraQuaternion: THREE.Quaternion): string {
 // ---- Inner scene components ----
 
 /** The main textured cube body */
-function CubeBody({ hoveredZone }: { hoveredZone: string | null }) {
+function CubeBody({ hoveredZone: _hoveredZone }: { hoveredZone: string | null }) {
   const meshRef = useRef<THREE.Mesh>(null);
 
   return (

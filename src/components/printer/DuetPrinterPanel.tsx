@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
 import {
   LayoutDashboard, Activity, Terminal, Play, FolderOpen, FileCode, Grid3x3,
-  History, Braces, Settings, X, OctagonAlert, Wifi, WifiOff, Minimize2,
+  History, Braces, Settings, X, OctagonAlert, Wifi, WifiOff,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import DuetDashboard from './DuetDashboard';

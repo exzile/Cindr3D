@@ -1,11 +1,10 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
-  Play, Pause, Square, FileText, Clock, Layers, ChevronUp, ChevronDown,
+  Play, Pause, Square, FileText, Clock, Layers,
   Gauge, Droplets, Video, ArrowUpDown, Minus, Plus, Timer, Thermometer,
   Box, XCircle,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
-import type { TemperatureSample } from '../../types/duet';
 
 // ---------------------------------------------------------------------------
 // Helpers

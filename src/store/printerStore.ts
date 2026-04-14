@@ -201,7 +201,7 @@ function loadSavedConfig(): DuetConfig {
   } catch {
     // Invalid saved config, use defaults
   }
-  return { hostname: '', password: '' };
+  return { hostname: '', password: '', mode: 'standalone' };
 }
 
 function saveConfig(config: DuetConfig): void {
@@ -284,7 +284,10 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
     const service = new DuetService(config);
 
     try {
-      await service.connect();
+      const connected = await service.connect();
+      if (!connected) {
+        throw new Error('Connection refused');
+      }
 
       // Set up model update listener that records temperature samples
       service.onModelUpdate((model: Partial<DuetObjectModel>) => {
@@ -294,19 +297,16 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
         // Build temperature sample from the model
         const sample: TemperatureSample = {
           timestamp: now,
-          bed: model.heat?.heaters?.[0]
-            ? { current: model.heat.heaters[0].current, target: model.heat.heaters[0].active }
-            : undefined,
-          tools: model.heat?.heaters?.slice(1).map((h) => ({
-            current: h.current,
-            target: h.active,
-          })) ?? [],
-          chamber: model.heat?.heaters?.find((_, i) => {
-            // Chamber heater is identified by the boards config; fallback: skip
-            return model.heat?.bedHeaters !== undefined ? false : i > 0;
-          })
-            ? undefined
-            : undefined,
+          heaters: (model.heat?.heaters ?? []).map((heater, index) => ({
+            index,
+            current: heater.current,
+            active: heater.active,
+            standby: heater.standby,
+          })),
+          sensors: (model.sensors?.analog ?? []).map((sensor, index) => ({
+            index,
+            value: sensor.lastReading,
+          })),
         };
 
         const history = [...state.temperatureHistory, sample];
@@ -387,7 +387,7 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
     if (!service) return;
 
     const commandEntry: ConsoleEntry = {
-      timestamp: Date.now(),
+      timestamp: new Date(),
       type: 'command',
       content: code,
     };
@@ -398,7 +398,7 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
     try {
       const response = await service.sendGCode(code);
       const responseEntry: ConsoleEntry = {
-        timestamp: Date.now(),
+        timestamp: new Date(),
         type: 'response',
         content: response || 'ok',
       };
@@ -407,7 +407,7 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
       set({ consoleHistory: history.slice(-MAX_CONSOLE_HISTORY) });
     } catch (err) {
       const errorEntry: ConsoleEntry = {
-        timestamp: Date.now(),
+        timestamp: new Date(),
         type: 'error',
         content: (err as Error).message,
       };
@@ -422,7 +422,7 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
 
   // --- Temperature ---
 
-  setToolTemp: async (tool, heater, temp) => {
+  setToolTemp: async (tool, _heater, temp) => {
     const { service } = get();
     if (!service) return;
     try {
@@ -631,8 +631,8 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
     set({ uploading: true, uploadProgress: 0 });
     try {
       await service.uploadFile(
-        file,
         `${currentDirectory}/${file.name}`,
+        file,
         (progress) => set({ uploadProgress: progress }),
       );
       set({ uploading: false, uploadProgress: 100 });

@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
+import { Canvas } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, TransformControls, Line, Text } from '@react-three/drei';
 import * as THREE from 'three';
@@ -7,13 +7,12 @@ import {
   Plus, Trash2, LayoutGrid, XCircle, ChevronDown, ChevronRight,
   Edit3, Eye, EyeOff, Download, Send, Play, X, Settings, Layers,
   Box, Printer, Droplets, SlidersHorizontal,
-  Upload, Move, RotateCw, Maximize2, FlipHorizontal, Search, RefreshCw, Wrench,
+  Upload, Move, RotateCw, Maximize2, FlipHorizontal, Search, RefreshCw,
   Lock, Unlock, ArrowDownToLine,
 } from 'lucide-react';
 import { useSlicerStore } from '../../store/slicerStore';
 import { useCADStore } from '../../store/cadStore';
 import { usePrinterStore } from '../../store/printerStore';
-import { FileImporter } from '../../engine/FileImporter';
 import type {
   PrinterProfile, MaterialProfile, PrintProfile, PlateObject,
   SliceResult,
@@ -194,7 +193,7 @@ function PlateObjectMesh({
       {/* Interactive transform gizmo — only for move/rotate/scale modes */}
       {showGizmo && meshRef.current && (
         <TransformControls
-          object={meshRef}
+          object={meshRef.current}
           mode={gizmoMode}
           onMouseUp={handleDragEnd}
         />
@@ -622,7 +621,7 @@ function ViewportOverlays() {
     const finalEuler = new THREE.Euler().setFromQuaternion(finalQuat, 'XYZ');
 
     // Drop to bed: find lowest Z corner under the final rotation + current scale
-    const tmpBox = new THREE.Box3().setFromBufferAttribute(posAttr);
+    const tmpBox = new THREE.Box3().setFromBufferAttribute(posAttr as THREE.BufferAttribute);
     const rotMat = new THREE.Matrix4().makeRotationFromQuaternion(finalQuat);
     const cornerOffsets: [number, number, number][] = [
       [tmpBox.min.x, tmpBox.min.y, tmpBox.min.z], [tmpBox.max.x, tmpBox.min.y, tmpBox.min.z],
@@ -1150,9 +1149,6 @@ function SettingsPanel({ onEditProfile }: { onEditProfile: (type: 'printer' | 'm
   const print = getActivePrintProfile();
 
   const [settingsSearch, setSettingsSearch] = useState('');
-
-  // Filter helper — returns true if label matches search
-  const show = (label: string) => !settingsSearch || label.toLowerCase().includes(settingsSearch.toLowerCase());
 
   const upd = useCallback((updates: Partial<PrintProfile>) => {
     if (print) updatePrintProfile(print.id, updates);

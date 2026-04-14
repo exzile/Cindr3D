@@ -57,7 +57,7 @@ function Popover({
 
 // ---- Sub-panels ----
 
-function DisplaySettingsPanel({ onClose }: { onClose: () => void }) {
+function DisplaySettingsPanel({ onClose: _onClose }: { onClose: () => void }) {
   const visualStyle = useCADStore((s) => s.visualStyle);
   const setVisualStyle = useCADStore((s) => s.setVisualStyle);
   const showEnvironment = useCADStore((s) => s.showEnvironment);
@@ -140,7 +140,7 @@ function DisplaySettingsPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-function GridSettingsPanel({ onClose }: { onClose: () => void }) {
+function GridSettingsPanel({ onClose: _onClose }: { onClose: () => void }) {
   const gridSize = useCADStore((s) => s.gridSize);
   const setGridSize = useCADStore((s) => s.setGridSize);
   const [localSize, setLocalSize] = useState(String(gridSize));
@@ -177,7 +177,7 @@ function GridSettingsPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-function IncrementSettingsPanel({ onClose }: { onClose: () => void }) {
+function IncrementSettingsPanel({ onClose: _onClose }: { onClose: () => void }) {
   const moveIncrement = useCADStore((s) => s.moveIncrement);
   const setMoveIncrement = useCADStore((s) => s.setMoveIncrement);
   const rotateIncrement = useCADStore((s) => s.rotateIncrement);
