@@ -3,29 +3,18 @@ import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 
 export function UnstitchDialog({ onClose }: { onClose: () => void }) {
-  const addFeature = useCADStore((s) => s.addFeature);
+  const commitUnstitch = useCADStore((s) => s.commitUnstitch);
   const features = useCADStore((s) => s.features);
-  const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
+  // Surface bodies that can be unstitched (any visible surface with a mesh)
   const surfaceFeatures = features.filter(
-    (f) => (f.params as Record<string, unknown>)?.bodyKind === 'surface' ||
-            f.type === 'sweep' || f.type === 'extrude'
+    (f) => f.bodyKind === 'surface' && f.visible && f.mesh,
   );
   const [selectedId, setSelectedId] = useState<string>(surfaceFeatures[0]?.id ?? '');
   const [keepOriginal, setKeepOriginal] = useState(false);
 
   const handleOK = () => {
-    const n = features.filter((f) => f.name.startsWith('Unstitch')).length + 1;
-    addFeature({
-      id: crypto.randomUUID(),
-      name: `Unstitch ${n}`,
-      type: 'split-body',
-      params: { unstitch: true, keepOriginal, sourceFeatureId: selectedId },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    });
-    setStatusMessage(`Unstitch ${n}: separated surface faces`);
+    commitUnstitch({ sourceFeatureId: selectedId, keepOriginal });
     onClose();
   };
 
@@ -50,14 +39,24 @@ export function UnstitchDialog({ onClose }: { onClose: () => void }) {
             </div>
           )}
           <label className="checkbox-label">
-            <input type="checkbox" checked={keepOriginal} onChange={(e) => setKeepOriginal(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={keepOriginal}
+              onChange={(e) => setKeepOriginal(e.target.checked)}
+            />
             Keep Original Body
           </label>
-          <p className="dialog-hint">Separates the selected stitched body back into individual face surfaces.</p>
+          <p className="dialog-hint">Separates the selected body back into individual face surfaces.</p>
         </div>
         <div className="dialog-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK} disabled={surfaceFeatures.length === 0 || !selectedId}>OK</button>
+          <button
+            className="btn btn-primary"
+            onClick={handleOK}
+            disabled={surfaceFeatures.length === 0 || !selectedId}
+          >
+            OK
+          </button>
         </div>
       </div>
     </div>

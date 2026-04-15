@@ -1,0 +1,147 @@
+.slicer-bottom-bar {
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+}
+
+.slicer-bottom-bar__slice-btn {
+  background: #4466ff;
+  color: #fff;
+  border: 1px solid #4466ff;
+  border-radius: 4px;
+  padding: 8px 24px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.slicer-bottom-bar__slice-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.slicer-bottom-bar__cancel-btn {
+  background: transparent;
+  color: var(--error);
+  border: 1px solid var(--error);
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.slicer-bottom-bar__progress {
+  flex: 1;
+  max-width: 300px;
+}
+
+.slicer-bottom-bar__progress-message {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.slicer-bottom-bar__progress-track {
+  background: var(--bg-primary);
+  border-radius: 4px;
+  height: 6px;
+  overflow: hidden;
+}
+
+.slicer-bottom-bar__progress-fill {
+  background: var(--accent);
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.2s;
+}
+
+.slicer-bottom-bar__stats {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.slicer-bottom-bar__stat-value {
+  color: var(--text-primary);
+}
+
+.slicer-bottom-bar__error {
+  color: var(--error);
+  font-size: 12px;
+}
+
+.slicer-bottom-bar__spacer {
+  flex: 1;
+}
+
+.slicer-bottom-bar__preview-btn {
+  background: var(--bg-toolbar);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.slicer-bottom-bar__preview-btn.is-active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.slicer-bottom-bar__layer-slider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.slicer-bottom-bar__layer-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.slicer-bottom-bar__layer-input {
+  width: 120px;
+  accent-color: var(--accent);
+}
+
+.slicer-bottom-bar__layer-count {
+  font-size: 11px;
+  color: var(--text-primary);
+  min-width: 40px;
+}
+
+.slicer-bottom-bar__btn {
+  background: var(--bg-toolbar);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.slicer-bottom-bar__btn--accent {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  font-weight: 600;
+}

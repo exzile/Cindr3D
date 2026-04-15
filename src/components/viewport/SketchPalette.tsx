@@ -62,6 +62,9 @@ export default function SketchPalette() {
   const setSketchSnapEnabled = useCADStore((s) => s.setSketchSnapEnabled);
   const sketch3DMode = useCADStore((s) => s.sketch3DMode);
   const toggleSketch3DMode = useCADStore((s) => s.toggleSketch3DMode);
+  // S7: active draw plane for 3D sketch multi-plane
+  const sketch3DActivePlane = useCADStore((s) => s.sketch3DActivePlane);
+  const setSketch3DActivePlane = useCADStore((s) => s.setSketch3DActivePlane);
   const [dismissed, setDismissed] = useState(false);
   const isPolygonTool =
     activeTool === 'polygon' ||
@@ -461,6 +464,32 @@ export default function SketchPalette() {
               <span className="sketch-palette-checkmark" />
             </label>
           </div>
+
+          {/* S7: Active draw plane indicator — shown when 3D mode is on */}
+          {sketch3DMode && (
+            <div className="sketch-palette-row" style={{ flexWrap: 'wrap', gap: 4 }}>
+              <span className="sketch-palette-label">Plane</span>
+              <span
+                style={{
+                  fontSize: 11,
+                  color: sketch3DActivePlane ? '#f97316' : '#94a3b8',
+                  flexShrink: 0,
+                }}
+              >
+                {sketch3DActivePlane ? 'Custom Face' : activeSketch?.plane ?? 'XY'}
+              </span>
+              {sketch3DActivePlane && (
+                <button
+                  className="spl-btn"
+                  title="Reset to sketch primary plane"
+                  style={{ marginLeft: 4 }}
+                  onClick={() => setSketch3DActivePlane(null)}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Remaining local-only options */}
           {SKETCH_OPTIONS.map((opt) => (

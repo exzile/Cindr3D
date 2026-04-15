@@ -3,23 +3,18 @@ import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 
 export function UntrimDialog({ onClose }: { onClose: () => void }) {
-  const addFeature = useCADStore((s) => s.addFeature);
+  const commitUntrim = useCADStore((s) => s.commitUntrim);
   const features = useCADStore((s) => s.features);
 
-  const [untrimType, setUntrimType] = useState<'extend' | 'fill'>('extend');
-  const [mergeAdjacent, setMergeAdjacent] = useState(true);
+  const surfaceBodies = features.filter(
+    (f) => f.bodyKind === 'surface' && f.mesh && f.visible,
+  );
+
+  const [sourceFeatureId, setSourceFeatureId] = useState(surfaceBodies[0]?.id ?? '');
+  const [expandFactor, setExpandFactor] = useState(1.5);
 
   const handleOK = () => {
-    const n = features.filter((f) => f.name.startsWith('Untrim')).length + 1;
-    addFeature({
-      id: crypto.randomUUID(),
-      name: `Untrim ${n}`,
-      type: 'sweep',
-      params: { isUntrim: true, untrimType, mergeAdjacent },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    });
+    commitUntrim({ sourceFeatureId, expandFactor });
     onClose();
   };
 
@@ -32,29 +27,44 @@ export function UntrimDialog({ onClose }: { onClose: () => void }) {
         </div>
         <div className="dialog-body">
           <div className="dialog-field">
-            <label className="dialog-label">Untrim Type</label>
+            <label className="dialog-label">Surface Body</label>
             <select
               className="dialog-input"
-              value={untrimType}
-              onChange={(e) => setUntrimType(e.target.value as 'extend' | 'fill')}
+              value={sourceFeatureId}
+              onChange={(e) => setSourceFeatureId(e.target.value)}
             >
-              <option value="extend">Extend</option>
-              <option value="fill">Fill</option>
+              <option value="">— select —</option>
+              {surfaceBodies.map((f) => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
             </select>
           </div>
-          <label className="checkbox-label">
+          <div className="dialog-field">
+            <label className="dialog-label">Expand Factor</label>
             <input
-              type="checkbox"
-              checked={mergeAdjacent}
-              onChange={(e) => setMergeAdjacent(e.target.checked)}
+              type="number"
+              className="dialog-input"
+              value={expandFactor}
+              min={1.01}
+              max={10}
+              step={0.1}
+              onChange={(e) => setExpandFactor(parseFloat(e.target.value) || 1.5)}
             />
-            Merge Adjacent Faces
-          </label>
-          <p className="dialog-hint">Select trimmed edges or surfaces to untrim in the viewport.</p>
+          </div>
+          <p className="dialog-hint">
+            Extends the trimmed boundary edges of the selected surface outward
+            to its natural (un-trimmed) boundary by the given expansion factor.
+          </p>
         </div>
         <div className="dialog-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
+          <button
+            className="btn btn-primary"
+            onClick={handleOK}
+            disabled={!sourceFeatureId}
+          >
+            OK
+          </button>
         </div>
       </div>
     </div>

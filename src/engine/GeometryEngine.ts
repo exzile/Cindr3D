@@ -2519,4 +2519,1246 @@ export class GeometryEngine {
     }
     return result;
   }
+
+  // ── SFC7: Fill Surface ─────────────────────────────────────────────────────
+  /**
+   * Creates a planar or blended patch from boundary polylines.
+   * - G0: fan triangulation from centroid
+   * - G1/G2: blend boundary points toward centroid for a smoother interior
+   */
+  static fillSurface(
+    boundaryPoints: THREE.Vector3[][],
+    continuity: ('G0' | 'G1' | 'G2')[],
+  ): THREE.BufferGeometry {
+    // Compute centroid of all boundary points
+    const allPts: THREE.Vector3[] = [];
+    for (const edge of boundaryPoints) allPts.push(...edge);
+
+    const centroid = new THREE.Vector3();
+    for (const p of allPts) centroid.add(p);
+    if (allPts.length > 0) centroid.divideScalar(allPts.length);
+
+    const positions: number[] = [];
+    const indices: number[] = [];
+
+    // For each edge, generate interior sample points blended toward centroid
+    for (let ei = 0; ei < boundaryPoints.length; ei++) {
+      const edge = boundaryPoints[ei];
+      const cont = continuity[ei] ?? 'G0';
+      const blendFactor = cont === 'G2' ? 0.5 : cont === 'G1' ? 0.3 : 0.0;
+
+      const edgePts: THREE.Vector3[] = edge.map((p) => {
+        if (blendFactor === 0) return p.clone();
+        return new THREE.Vector3().lerpVectors(p, centroid, blendFactor);
+      });
+
+      // Fan from centroid to each consecutive pair in this edge
+      const cIdx = positions.length / 3;
+      positions.push(centroid.x, centroid.y, centroid.z);
+
+      for (const p of edgePts) {
+        positions.push(p.x, p.y, p.z);
+      }
+
+      for (let i = 0; i < edgePts.length - 1; i++) {
+        indices.push(cIdx, cIdx + 1 + i, cIdx + 2 + i);
+      }
+    }
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    return geom;
+  }
+
+  // ── SFC8: Offset Curve to Surface ─────────────────────────────────────────
+  /**
+   * Offsets an open polyline curve by distance along referenceNormal, returning
+   * a strip of quads (two triangles each) between original and offset polyline.
+   */
+  static offsetCurveToSurface(
+    points: THREE.Vector3[],
+    distance: number,
+    referenceNormal: THREE.Vector3,
+  ): THREE.BufferGeometry {
+    if (points.length < 2) return new THREE.BufferGeometry();
+
+    const n = referenceNormal.clone().normalize();
+    const offset = n.clone().multiplyScalar(distance);
+
+    const positions: number[] = [];
+    const indices: number[] = [];
+
+    // Build two rows: original (even indices) and offset (odd indices)
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      const q = points[i].clone().add(offset);
+      positions.push(p.x, p.y, p.z);
+      positions.push(q.x, q.y, q.z);
+    }
+
+    // Quads: for each consecutive pair of columns
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = i * 2;
+      const b = i * 2 + 1;
+      const c = (i + 1) * 2;
+      const d = (i + 1) * 2 + 1;
+      // Two triangles per quad
+      indices.push(a, b, c);
+      indices.push(b, d, c);
+    }
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    return geom;
+  }
+
+  // ── SFC16: Merge Surfaces ─────────────────────────────────────────────────
+  /**
+   * Merges two meshes by combining their vertex buffers, offsetting B's indices,
+   * and welding duplicate vertices within a tolerance.
+   */
+  static mergeSurfaces(meshA: THREE.Mesh, meshB: THREE.Mesh): THREE.BufferGeometry {
+    meshA.updateWorldMatrix(true, false);
+    meshB.updateWorldMatrix(true, false);
+
+    const geomA = meshA.geometry.clone().applyMatrix4(meshA.matrixWorld);
+    const geomB = meshB.geometry.clone().applyMatrix4(meshB.matrixWorld);
+
+    const posA = geomA.attributes.position as THREE.BufferAttribute;
+    const posB = geomB.attributes.position as THREE.BufferAttribute;
+    const idxA = geomA.index;
+    const idxB = geomB.index;
+
+    const countA = posA.count;
+    const countB = posB.count;
+
+    const merged = new Float32Array((countA + countB) * 3);
+    for (let i = 0; i < countA; i++) {
+      merged[i * 3]     = posA.getX(i);
+      merged[i * 3 + 1] = posA.getY(i);
+      merged[i * 3 + 2] = posA.getZ(i);
+    }
+    for (let i = 0; i < countB; i++) {
+      merged[(countA + i) * 3]     = posB.getX(i);
+      merged[(countA + i) * 3 + 1] = posB.getY(i);
+      merged[(countA + i) * 3 + 2] = posB.getZ(i);
+    }
+
+    const indicesA: number[] = [];
+    if (idxA) {
+      for (let i = 0; i < idxA.count; i++) indicesA.push(idxA.getX(i));
+    } else {
+      for (let i = 0; i < countA; i++) indicesA.push(i);
+    }
+
+    const indicesB: number[] = [];
+    if (idxB) {
+      for (let i = 0; i < idxB.count; i++) indicesB.push(idxB.getX(i) + countA);
+    } else {
+      for (let i = 0; i < countB; i++) indicesB.push(countA + i);
+    }
+
+    const allIndices = [...indicesA, ...indicesB];
+
+    // Weld duplicate vertices within tolerance 1e-4
+    const TOL = 1e-4;
+    const remapTable = new Int32Array(countA + countB);
+    const keptPos: number[] = [];
+    for (let i = 0; i < countA + countB; i++) {
+      const ix = merged[i * 3], iy = merged[i * 3 + 1], iz = merged[i * 3 + 2];
+      let found = -1;
+      for (let j = 0; j < keptPos.length / 3; j++) {
+        const dx = keptPos[j * 3] - ix, dy = keptPos[j * 3 + 1] - iy, dz = keptPos[j * 3 + 2] - iz;
+        if (dx * dx + dy * dy + dz * dz < TOL * TOL) { found = j; break; }
+      }
+      if (found === -1) {
+        remapTable[i] = keptPos.length / 3;
+        keptPos.push(ix, iy, iz);
+      } else {
+        remapTable[i] = found;
+      }
+    }
+
+    const remappedIndices = allIndices.map((i) => remapTable[i]);
+
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.Float32BufferAttribute(keptPos, 3));
+    out.setIndex(remappedIndices);
+    out.computeVertexNormals();
+
+    geomA.dispose();
+    geomB.dispose();
+    return out;
+  }
+
+  // ── SFC22: Surface Primitives ─────────────────────────────────────────────
+  /**
+   * Creates open surface geometry for common primitive shapes.
+   */
+  static createSurfacePrimitive(
+    type: 'plane' | 'box' | 'sphere' | 'cylinder' | 'torus' | 'cone',
+    params: Record<string, number>,
+  ): THREE.BufferGeometry {
+    switch (type) {
+      case 'plane': {
+        const w = params.width ?? 10;
+        const h = params.height ?? 10;
+        return new THREE.PlaneGeometry(w, h);
+      }
+      case 'box': {
+        const w = params.width ?? 10;
+        const h = params.height ?? 10;
+        const d = params.depth ?? 10;
+        // Six separate PlaneGeometry faces merged into one geometry
+        const hw = w / 2, hh = h / 2, hd = d / 2;
+        const faces = [
+          // +X, -X, +Y, -Y, +Z, -Z
+          { axis: 'x',  sign:  1, pos: new THREE.Vector3( hw,  0,  0), rot: [0,  Math.PI / 2, 0], size: [d, h] },
+          { axis: 'x',  sign: -1, pos: new THREE.Vector3(-hw,  0,  0), rot: [0, -Math.PI / 2, 0], size: [d, h] },
+          { axis: 'y',  sign:  1, pos: new THREE.Vector3(  0, hh,  0), rot: [-Math.PI / 2, 0, 0], size: [w, d] },
+          { axis: 'y',  sign: -1, pos: new THREE.Vector3(  0,-hh,  0), rot: [ Math.PI / 2, 0, 0], size: [w, d] },
+          { axis: 'z',  sign:  1, pos: new THREE.Vector3(  0,  0, hd), rot: [0,  0, 0], size: [w, h] },
+          { axis: 'z',  sign: -1, pos: new THREE.Vector3(  0,  0,-hd), rot: [0, Math.PI, 0], size: [w, h] },
+        ] as const;
+
+        const allPos: number[] = [];
+        const allIdx: number[] = [];
+        let vertOffset = 0;
+
+        for (const face of faces) {
+          const pg = new THREE.PlaneGeometry(face.size[0], face.size[1]);
+          pg.applyMatrix4(
+            new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(...face.rot as [number, number, number])),
+          );
+          pg.applyMatrix4(new THREE.Matrix4().makeTranslation(face.pos.x, face.pos.y, face.pos.z));
+
+          const posAttr = pg.attributes.position as THREE.BufferAttribute;
+          for (let i = 0; i < posAttr.count; i++) {
+            allPos.push(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+          }
+          if (pg.index) {
+            for (let i = 0; i < pg.index.count; i++) allIdx.push(pg.index.getX(i) + vertOffset);
+          } else {
+            for (let i = 0; i < posAttr.count; i++) allIdx.push(i + vertOffset);
+          }
+          vertOffset += posAttr.count;
+          pg.dispose();
+        }
+
+        const out = new THREE.BufferGeometry();
+        out.setAttribute('position', new THREE.Float32BufferAttribute(allPos, 3));
+        out.setIndex(allIdx);
+        out.computeVertexNormals();
+        return out;
+      }
+      case 'sphere': {
+        const r = params.radius ?? 5;
+        return new THREE.SphereGeometry(r, 32, 16);
+      }
+      case 'cylinder': {
+        const r = params.radius ?? 5;
+        const h = params.height2 ?? params.height ?? 10;
+        return new THREE.CylinderGeometry(r, r, h, 32, 1, true);
+      }
+      case 'torus': {
+        const r = params.radius ?? 8;
+        const tube = params.tube ?? 2;
+        return new THREE.TorusGeometry(r, tube, 16, 100);
+      }
+      case 'cone': {
+        const r = params.radius ?? 5;
+        const h = params.height2 ?? params.height ?? 10;
+        return new THREE.ConeGeometry(r, h, 32, 1, true);
+      }
+      default:
+        return new THREE.BufferGeometry();
+    }
+  }
+
+  // ── SFC9 — Offset Surface ──────────────────────────────────────────────────
+  /**
+   * Offsets every vertex of a mesh along its vertex normal by `distance`.
+   * For negative distances the face winding is reversed so outward normals
+   * remain consistent.
+   * Returns a new BufferGeometry (caller owns it — must dispose when done).
+   */
+  static offsetSurface(mesh: THREE.Mesh, distance: number): THREE.BufferGeometry {
+    const src = mesh.geometry;
+    const geo = src.clone();
+
+    // Ensure vertex normals exist
+    geo.computeVertexNormals();
+
+    const posAttr = geo.attributes.position as THREE.BufferAttribute;
+    const nrmAttr = geo.attributes.normal as THREE.BufferAttribute;
+
+    for (let i = 0; i < posAttr.count; i++) {
+      posAttr.setXYZ(
+        i,
+        posAttr.getX(i) + nrmAttr.getX(i) * distance,
+        posAttr.getY(i) + nrmAttr.getY(i) * distance,
+        posAttr.getZ(i) + nrmAttr.getZ(i) * distance,
+      );
+    }
+    posAttr.needsUpdate = true;
+
+    // When offsetting inward (negative distance) flip winding so normals stay outward
+    if (distance < 0) {
+      GeometryEngine.reverseNormals(geo);
+    } else {
+      geo.computeVertexNormals();
+    }
+
+    return geo;
+  }
+
+  // ── SFC11 — Surface Extend ─────────────────────────────────────────────────
+  /**
+   * Extends the open boundary edges of a mesh outward by `distance`.
+   * For each consecutive pair of boundary-edge vertices a quad (two triangles)
+   * is appended, connecting the original boundary to the extended positions.
+   *
+   * Extension directions per mode:
+   *   'natural'      — average of incident face normals crossed with edge direction
+   *                    gives a tangent-plane outward vector (same as 'tangent').
+   *   'tangent'      — extend along the boundary-edge tangent direction projected
+   *                    into the surface plane.
+   *   'perpendicular'— extend perpendicular to the boundary edge in the surface plane.
+   *
+   * Returns a new BufferGeometry (original triangles + extension quads).
+   * Caller owns and must dispose the returned geometry.
+   */
+  static extendSurface(
+    mesh: THREE.Mesh,
+    distance: number,
+    mode: 'natural' | 'tangent' | 'perpendicular',
+  ): THREE.BufferGeometry {
+    const src = mesh.geometry;
+    src.computeVertexNormals();
+
+    const posAttr = src.attributes.position as THREE.BufferAttribute;
+    const nrmAttr = src.attributes.normal as THREE.BufferAttribute;
+    const idxAttr = src.index;
+
+    const triCount = idxAttr ? idxAttr.count / 3 : posAttr.count / 3;
+    const getIdx = (tri: number, slot: number): number =>
+      idxAttr ? idxAttr.getX(tri * 3 + slot) : tri * 3 + slot;
+
+    // ── Build boundary edge set ──────────────────────────────────────────────
+    // An edge is a boundary edge if it appears in exactly one triangle.
+    // Key: `min,max` of its two vertex indices.
+    const edgeTriCount = new Map<string, number>();
+    // Also store directed edge (a→b) for each triangle so we know orientation
+    const directedEdges: Array<[number, number]> = [];
+
+    for (let t = 0; t < triCount; t++) {
+      const a = getIdx(t, 0), b = getIdx(t, 1), c = getIdx(t, 2);
+      for (const [ea, eb] of [[a, b], [b, c], [c, a]] as const) {
+        const key = ea < eb ? `${ea},${eb}` : `${eb},${ea}`;
+        edgeTriCount.set(key, (edgeTriCount.get(key) ?? 0) + 1);
+        directedEdges.push([ea, eb]);
+      }
+    }
+
+    // Collect boundary edges (appear once only), preserving direction from the triangle
+    const boundaryEdges: Array<[number, number]> = [];
+    for (const [ea, eb] of directedEdges) {
+      const key = ea < eb ? `${ea},${eb}` : `${eb},${ea}`;
+      if (edgeTriCount.get(key) === 1) {
+        // Avoid duplicating: only keep the first encounter (which is from the triangle)
+        if (!boundaryEdges.some(([x, y]) => (x === ea && y === eb))) {
+          boundaryEdges.push([ea, eb]);
+        }
+      }
+    }
+
+    // ── Copy original geometry data ──────────────────────────────────────────
+    const origPositions: number[] = [];
+    for (let i = 0; i < posAttr.count; i++) {
+      origPositions.push(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+    }
+
+    const origIndices: number[] = [];
+    for (let t = 0; t < triCount; t++) {
+      origIndices.push(getIdx(t, 0), getIdx(t, 1), getIdx(t, 2));
+    }
+
+    // ── Build extension quads ────────────────────────────────────────────────
+    const newPositions: number[] = [...origPositions];
+    const newIndices: number[] = [...origIndices];
+
+    const getVert = (vi: number) =>
+      new THREE.Vector3(posAttr.getX(vi), posAttr.getY(vi), posAttr.getZ(vi));
+    const getVertNorm = (vi: number) =>
+      new THREE.Vector3(nrmAttr.getX(vi), nrmAttr.getY(vi), nrmAttr.getZ(vi)).normalize();
+
+    const extendDir = (va: THREE.Vector3, vb: THREE.Vector3, na: THREE.Vector3, nb: THREE.Vector3): { da: THREE.Vector3; db: THREE.Vector3 } => {
+      const edgeDir = vb.clone().sub(va).normalize();
+      const avgNorm = na.clone().add(nb).normalize();
+
+      if (mode === 'perpendicular') {
+        // Perpendicular to edge in the surface plane: cross(edge, surfaceNormal)
+        const da = new THREE.Vector3().crossVectors(edgeDir, na).normalize();
+        const db = new THREE.Vector3().crossVectors(edgeDir, nb).normalize();
+        // Flip if pointing inward — we want outward
+        return { da, db };
+      } else {
+        // 'tangent' and 'natural': extend outward along surface plane
+        // outward = cross(surfaceNormal, edge) projects into surface plane away from mesh
+        const da = new THREE.Vector3().crossVectors(na, edgeDir).normalize();
+        const db = new THREE.Vector3().crossVectors(nb, edgeDir).normalize();
+        // If both directions point the same general direction as their normals projected
+        // onto the boundary plane, they're already outward. If mode is 'natural' use avg.
+        if (mode === 'natural') {
+          const avgDir = da.clone().add(db).normalize();
+          return { da: avgDir.clone(), db: avgDir.clone() };
+        }
+        return { da, db };
+      }
+    };
+
+    const baseCount = posAttr.count;
+
+    for (const [ai, bi] of boundaryEdges) {
+      const va = getVert(ai), vb = getVert(bi);
+      const na = getVertNorm(ai), nb = getVertNorm(bi);
+
+      const { da, db } = extendDir(va, vb, na, nb);
+
+      const vc = va.clone().addScaledVector(da, distance); // extended ai
+      const vd = vb.clone().addScaledVector(db, distance); // extended bi
+
+      const ci = newPositions.length / 3;
+      newPositions.push(vc.x, vc.y, vc.z);
+      const di = newPositions.length / 3;
+      newPositions.push(vd.x, vd.y, vd.z);
+
+      // Quad: ai→bi→di→ci  (two triangles maintaining CCW winding)
+      // Offset ci/di by baseCount because they're appended after original verts
+      const ciIdx = baseCount + (ci - baseCount);
+      const diIdx = baseCount + (di - baseCount);
+      newIndices.push(ai, bi, diIdx);
+      newIndices.push(ai, diIdx, ciIdx);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(newPositions, 3));
+    geo.setIndex(newIndices);
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  // ── SFC17 — Thicken Surface ────────────────────────────────────────────────
+  /**
+   * Converts a surface body into a solid by:
+   * 1. Creating an offset shell (positive or negative depending on `direction`)
+   * 2. Building quad side-walls along the boundary edges connecting original to offset
+   * 3. Merging all geometry into one closed BufferGeometry
+   *
+   * For symmetric: offsets +thickness/2 outward and -thickness/2 inward.
+   * Returns a new BufferGeometry. Caller owns it (must dispose when done).
+   */
+  static thickenSurface(
+    mesh: THREE.Mesh,
+    thickness: number,
+    direction: 'inside' | 'outside' | 'symmetric',
+  ): THREE.BufferGeometry {
+    const t = Math.abs(thickness);
+
+    // Determine offset distances for inner and outer shells
+    let outerDist: number, innerDist: number;
+    if (direction === 'outside') {
+      outerDist = t;
+      innerDist = 0;
+    } else if (direction === 'inside') {
+      outerDist = 0;
+      innerDist = -t;
+    } else {
+      // symmetric
+      outerDist = t / 2;
+      innerDist = -(t / 2);
+    }
+
+    // ── Build offset shell geometries ────────────────────────────────────────
+    const srcGeo = mesh.geometry;
+    srcGeo.computeVertexNormals();
+
+    const posAttr = srcGeo.attributes.position as THREE.BufferAttribute;
+    const nrmAttr = srcGeo.attributes.normal as THREE.BufferAttribute;
+    const idxAttr = srcGeo.index;
+    const triCount = idxAttr ? idxAttr.count / 3 : posAttr.count / 3;
+    const getIdx = (tri: number, slot: number): number =>
+      idxAttr ? idxAttr.getX(tri * 3 + slot) : tri * 3 + slot;
+
+    // Helper: offset vertex positions by normal * dist
+    const makeShell = (dist: number, flipWinding: boolean): { positions: number[]; indices: number[] } => {
+      const positions: number[] = [];
+      for (let i = 0; i < posAttr.count; i++) {
+        positions.push(
+          posAttr.getX(i) + nrmAttr.getX(i) * dist,
+          posAttr.getY(i) + nrmAttr.getY(i) * dist,
+          posAttr.getZ(i) + nrmAttr.getZ(i) * dist,
+        );
+      }
+      const indices: number[] = [];
+      for (let t2 = 0; t2 < triCount; t2++) {
+        const a = getIdx(t2, 0), b = getIdx(t2, 1), c = getIdx(t2, 2);
+        if (flipWinding) {
+          indices.push(a, c, b);
+        } else {
+          indices.push(a, b, c);
+        }
+      }
+      return { positions, indices };
+    };
+
+    const outer = makeShell(outerDist, false);
+    const inner = makeShell(innerDist, true); // flip winding so inner shell normals face inward
+
+    // ── Find boundary edges for side walls ───────────────────────────────────
+    const edgeCount = new Map<string, number>();
+    const directedEdges: Array<[number, number]> = [];
+
+    for (let t2 = 0; t2 < triCount; t2++) {
+      const a = getIdx(t2, 0), b = getIdx(t2, 1), c = getIdx(t2, 2);
+      for (const [ea, eb] of [[a, b], [b, c], [c, a]] as const) {
+        const key = ea < eb ? `${ea},${eb}` : `${eb},${ea}`;
+        edgeCount.set(key, (edgeCount.get(key) ?? 0) + 1);
+        directedEdges.push([ea, eb]);
+      }
+    }
+
+    const boundaryEdges: Array<[number, number]> = [];
+    for (const [ea, eb] of directedEdges) {
+      const key = ea < eb ? `${ea},${eb}` : `${eb},${ea}`;
+      if (edgeCount.get(key) === 1) {
+        if (!boundaryEdges.some(([x, y]) => x === ea && y === eb)) {
+          boundaryEdges.push([ea, eb]);
+        }
+      }
+    }
+
+    // ── Merge all geometry ───────────────────────────────────────────────────
+    // Layout: [outer verts | inner verts]
+    const outerVertCount = posAttr.count;
+    const innerVertCount = posAttr.count;
+    const allPositions: number[] = [...outer.positions, ...inner.positions];
+    const allIndices: number[] = [...outer.indices];
+
+    // Inner shell indices are offset by outerVertCount
+    for (const idx of inner.indices) {
+      allIndices.push(idx + outerVertCount);
+    }
+
+    // Side wall quads for each boundary edge
+    // outer ai/bi (indices as-is), inner ai/bi (offset by outerVertCount)
+    for (const [ai, bi] of boundaryEdges) {
+      const outerA = ai;
+      const outerB = bi;
+      const innerA = ai + outerVertCount;
+      const innerB = bi + outerVertCount;
+
+      // Two triangles forming a quad bridging outer→inner
+      allIndices.push(outerA, outerB, innerB);
+      allIndices.push(outerA, innerB, innerA);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(allPositions, 3));
+    geo.setIndex(allIndices);
+    geo.computeVertexNormals();
+
+    // Dispose temporary clones — none were created here (we built arrays directly)
+    void innerVertCount; // suppress unused-variable lint
+
+    return geo;
+  }
+
+  // ── SFC12 — Stitch ──────────────────────────────────────────────────────────
+  /**
+   * Merge adjacent surface bodies into a single quilt (or a closed solid if
+   * fully enclosed).
+   *
+   * Algorithm:
+   * 1. Combine all mesh geometries into one world-space buffer.
+   * 2. Weld boundary vertices that are within `tolerance` of each other using a
+   *    union-find (disjoint set) structure.
+   * 3. Detect closure: if no boundary edges remain, the result is a solid.
+   * 4. Rebuild the geometry with welded indices and recompute vertex normals.
+   */
+  static stitchSurfaces(
+    meshes: THREE.Mesh[],
+    tolerance = 1e-3,
+  ): { geometry: THREE.BufferGeometry; isSolid: boolean } {
+    if (meshes.length === 0) {
+      return { geometry: new THREE.BufferGeometry(), isSolid: false };
+    }
+
+    // ── 1. Combine all meshes into flat world-space arrays ───────────────────
+    const allPositions: number[] = [];
+    const allIndices: number[] = [];
+    // Track which mesh each vertex came from (for cross-mesh welding only)
+    const vertexMeshId: number[] = [];
+
+    for (let mi = 0; mi < meshes.length; mi++) {
+      const mesh = meshes[mi];
+      mesh.updateWorldMatrix(true, false);
+      const m = mesh.matrixWorld;
+      const geom = mesh.geometry;
+      const posAttr = geom.attributes.position as THREE.BufferAttribute;
+      const idxAttr = geom.index;
+      const baseVertex = allPositions.length / 3;
+
+      // Transform every vertex into world space
+      const tmpV = new THREE.Vector3();
+      for (let vi = 0; vi < posAttr.count; vi++) {
+        tmpV.fromBufferAttribute(posAttr, vi).applyMatrix4(m);
+        allPositions.push(tmpV.x, tmpV.y, tmpV.z);
+        vertexMeshId.push(mi);
+      }
+
+      // Offset index references
+      if (idxAttr) {
+        for (let ii = 0; ii < idxAttr.count; ii++) {
+          allIndices.push(idxAttr.getX(ii) + baseVertex);
+        }
+      } else {
+        for (let ii = 0; ii < posAttr.count; ii++) {
+          allIndices.push(ii + baseVertex);
+        }
+      }
+    }
+
+    const vertCount = allPositions.length / 3;
+
+    // ── 2. Union-Find (disjoint set) for vertex welding ──────────────────────
+    const parent = new Int32Array(vertCount);
+    for (let i = 0; i < vertCount; i++) parent[i] = i;
+
+    function find(x: number): number {
+      while (parent[x] !== x) {
+        parent[x] = parent[parent[x]]; // path compression
+        x = parent[x];
+      }
+      return x;
+    }
+    function union(a: number, b: number): void {
+      const ra = find(a), rb = find(b);
+      if (ra !== rb) parent[ra] = rb;
+    }
+
+    const tol2 = tolerance * tolerance;
+
+    // Weld vertices that are from different meshes and within tolerance
+    // We use a spatial bucket (grid hash) to avoid O(n²) brute force.
+    const cellSize = tolerance * 2;
+    const buckets = new Map<string, number[]>();
+    function cellKey(x: number, y: number, z: number): string {
+      return `${Math.floor(x / cellSize)},${Math.floor(y / cellSize)},${Math.floor(z / cellSize)}`;
+    }
+
+    for (let vi = 0; vi < vertCount; vi++) {
+      const bx = allPositions[vi * 3];
+      const by = allPositions[vi * 3 + 1];
+      const bz = allPositions[vi * 3 + 2];
+      const key = cellKey(bx, by, bz);
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key)!.push(vi);
+    }
+
+    // For each vertex, check its own cell and the 26 neighbour cells
+    const offsets = [-1, 0, 1];
+    for (let vi = 0; vi < vertCount; vi++) {
+      const vx = allPositions[vi * 3];
+      const vy = allPositions[vi * 3 + 1];
+      const vz = allPositions[vi * 3 + 2];
+      const cx = Math.floor(vx / cellSize);
+      const cy = Math.floor(vy / cellSize);
+      const cz = Math.floor(vz / cellSize);
+
+      for (const dx of offsets) {
+        for (const dy of offsets) {
+          for (const dz of offsets) {
+            const nbs = buckets.get(`${cx + dx},${cy + dy},${cz + dz}`);
+            if (!nbs) continue;
+            for (const ui of nbs) {
+              if (ui <= vi) continue; // avoid duplicate pairs
+              // Only weld vertices from different source meshes
+              if (vertexMeshId[vi] === vertexMeshId[ui]) continue;
+              const dx2 = vx - allPositions[ui * 3];
+              const dy2 = vy - allPositions[ui * 3 + 1];
+              const dz2 = vz - allPositions[ui * 3 + 2];
+              if (dx2 * dx2 + dy2 * dy2 + dz2 * dz2 <= tol2) {
+                union(vi, ui);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Remap every index to its canonical root
+    const weldedIndices = allIndices.map((i) => find(i));
+
+    // ── 3. Check closure (boundary edges) ────────────────────────────────────
+    // A boundary edge appears in exactly one triangle.
+    const edgeCount = new Map<string, number>();
+    const triCount = weldedIndices.length / 3;
+    for (let ti = 0; ti < triCount; ti++) {
+      const a = weldedIndices[ti * 3];
+      const b = weldedIndices[ti * 3 + 1];
+      const c = weldedIndices[ti * 3 + 2];
+      const edges: [number, number][] = [
+        [Math.min(a, b), Math.max(a, b)],
+        [Math.min(b, c), Math.max(b, c)],
+        [Math.min(a, c), Math.max(a, c)],
+      ];
+      for (const [ea, eb] of edges) {
+        const ek = `${ea}_${eb}`;
+        edgeCount.set(ek, (edgeCount.get(ek) ?? 0) + 1);
+      }
+    }
+    let isSolid = true;
+    for (const count of edgeCount.values()) {
+      if (count === 1) { isSolid = false; break; }
+    }
+
+    // ── 4. Compact positions to only referenced vertices ─────────────────────
+    const usedRoots = new Set(weldedIndices);
+    const rootToCompact = new Map<number, number>();
+    const compactPositions: number[] = [];
+    for (const root of usedRoots) {
+      rootToCompact.set(root, compactPositions.length / 3);
+      compactPositions.push(
+        allPositions[root * 3],
+        allPositions[root * 3 + 1],
+        allPositions[root * 3 + 2],
+      );
+    }
+    const compactIndices = weldedIndices.map((r) => rootToCompact.get(r)!);
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(compactPositions, 3));
+    geometry.setIndex(compactIndices);
+    geometry.computeVertexNormals();
+
+    return { geometry, isSolid };
+  }
+
+  // ── SFC13 — Unstitch ─────────────────────────────────────────────────────────
+  /**
+   * Split a stitched quilt back into its component face groups.
+   *
+   * Algorithm:
+   * 1. Build a face-adjacency graph: two triangles are adjacent if they share an
+   *    edge (by index).
+   * 2. Find connected components of triangles via BFS.
+   * 3. Extract each component into its own BufferGeometry with re-indexed verts.
+   *
+   * Returns one geometry per connected component. If there is only one component
+   * the original geometry is returned in a single-element array (no copy).
+   */
+  static unstitchSurface(mesh: THREE.Mesh): THREE.BufferGeometry[] {
+    const geom = mesh.geometry;
+    const posAttr = geom.attributes.position as THREE.BufferAttribute;
+    const idxAttr = geom.index;
+
+    const triCount = idxAttr ? idxAttr.count / 3 : posAttr.count / 3;
+    if (triCount === 0) return [geom];
+
+    const getTri = (ti: number): [number, number, number] => {
+      if (idxAttr) {
+        return [idxAttr.getX(ti * 3), idxAttr.getX(ti * 3 + 1), idxAttr.getX(ti * 3 + 2)];
+      }
+      return [ti * 3, ti * 3 + 1, ti * 3 + 2];
+    };
+
+    // ── 1. Build edge → triangle adjacency ──────────────────────────────────
+    // Key: "minVert_maxVert" → array of triangle indices that share that edge
+    const edgeToTris = new Map<string, number[]>();
+    for (let ti = 0; ti < triCount; ti++) {
+      const [a, b, c] = getTri(ti);
+      const pairs: [number, number][] = [
+        [Math.min(a, b), Math.max(a, b)],
+        [Math.min(b, c), Math.max(b, c)],
+        [Math.min(a, c), Math.max(a, c)],
+      ];
+      for (const [ea, eb] of pairs) {
+        const ek = `${ea}_${eb}`;
+        if (!edgeToTris.has(ek)) edgeToTris.set(ek, []);
+        edgeToTris.get(ek)!.push(ti);
+      }
+    }
+
+    // ── 2. BFS to find connected components ──────────────────────────────────
+    const componentId = new Int32Array(triCount).fill(-1);
+    let numComponents = 0;
+
+    for (let start = 0; start < triCount; start++) {
+      if (componentId[start] !== -1) continue;
+      const compIdx = numComponents++;
+      const queue: number[] = [start];
+      componentId[start] = compIdx;
+      let head = 0;
+      while (head < queue.length) {
+        const ti = queue[head++];
+        const [a, b, c] = getTri(ti);
+        const pairs: [number, number][] = [
+          [Math.min(a, b), Math.max(a, b)],
+          [Math.min(b, c), Math.max(b, c)],
+          [Math.min(a, c), Math.max(a, c)],
+        ];
+        for (const [ea, eb] of pairs) {
+          const neighbours = edgeToTris.get(`${ea}_${eb}`);
+          if (!neighbours) continue;
+          for (const ni of neighbours) {
+            if (componentId[ni] === -1) {
+              componentId[ni] = compIdx;
+              queue.push(ni);
+            }
+          }
+        }
+      }
+    }
+
+    // If only one component, return as-is
+    if (numComponents === 1) return [geom];
+
+    // ── 3. Extract each component into its own BufferGeometry ────────────────
+    const results: THREE.BufferGeometry[] = [];
+
+    for (let ci = 0; ci < numComponents; ci++) {
+      const compPositions: number[] = [];
+      const compIndices: number[] = [];
+      const oldToNew = new Map<number, number>();
+
+      for (let ti = 0; ti < triCount; ti++) {
+        if (componentId[ti] !== ci) continue;
+        const [a, b, c] = getTri(ti);
+        for (const vi of [a, b, c]) {
+          if (!oldToNew.has(vi)) {
+            oldToNew.set(vi, compPositions.length / 3);
+            compPositions.push(
+              posAttr.getX(vi),
+              posAttr.getY(vi),
+              posAttr.getZ(vi),
+            );
+          }
+          compIndices.push(oldToNew.get(vi)!);
+        }
+      }
+
+      const compGeo = new THREE.BufferGeometry();
+      compGeo.setAttribute('position', new THREE.Float32BufferAttribute(compPositions, 3));
+      compGeo.setIndex(compIndices);
+      compGeo.computeVertexNormals();
+      results.push(compGeo);
+    }
+
+    return results;
+  }
+
+  // ── SFC10 — Surface Trim ──────────────────────────────────────────────────
+  /**
+   * Trims `mesh` against `trimmerMesh` (or a plane derived from it).
+   *
+   * Strategy: extract the first-triangle plane of the trimmer, then keep only
+   * the triangles on the `keepSide` of that plane.  Open-boundary — no cap is
+   * added (surface trim, not solid).
+   *
+   * @returns New BufferGeometry containing only the kept triangles.
+   */
+  static trimSurface(
+    mesh: THREE.Mesh,
+    trimmerMesh: THREE.Mesh,
+    keepSide: 'inside' | 'outside',
+  ): THREE.BufferGeometry {
+    // ── Derive a cutting plane from the trimmer's first triangle ─────────────
+    trimmerMesh.updateWorldMatrix(true, false);
+    const trimmerTris = GeometryEngine._extractWorldTriangles(trimmerMesh);
+    if (trimmerTris.length === 0) {
+      // Nothing to trim against — return a clone of the original geometry
+      return mesh.geometry.clone();
+    }
+    const [tp0, tp1, tp2] = trimmerTris[0];
+    const edge1 = tp1.clone().sub(tp0);
+    const edge2 = tp2.clone().sub(tp0);
+    const planeNormal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+    const cuttingPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(planeNormal, tp0);
+
+    // ── Walk triangles of the source mesh ────────────────────────────────────
+    mesh.updateWorldMatrix(true, false);
+    const geom = mesh.geometry;
+    const posAttr = geom.attributes.position as THREE.BufferAttribute;
+    const idxAttr = geom.index;
+    const triCount = idxAttr ? idxAttr.count / 3 : posAttr.count / 3;
+
+    const getTri = (ti: number): [number, number, number] => {
+      if (idxAttr) {
+        return [idxAttr.getX(ti * 3), idxAttr.getX(ti * 3 + 1), idxAttr.getX(ti * 3 + 2)];
+      }
+      return [ti * 3, ti * 3 + 1, ti * 3 + 2];
+    };
+
+    const m = mesh.matrixWorld;
+    const getWorldVert = (vi: number): THREE.Vector3 => {
+      const v = new THREE.Vector3(posAttr.getX(vi), posAttr.getY(vi), posAttr.getZ(vi));
+      return v.applyMatrix4(m);
+    };
+
+    const keptPositions: number[] = [];
+    const keptIndices: number[] = [];
+    let vertexCounter = 0;
+
+    for (let ti = 0; ti < triCount; ti++) {
+      const [ai, bi, ci] = getTri(ti);
+      const wa = getWorldVert(ai);
+      const wb = getWorldVert(bi);
+      const wc = getWorldVert(ci);
+
+      // Centroid classification
+      const centroid = new THREE.Vector3().addVectors(wa, wb).add(wc).divideScalar(3);
+      const dist = cuttingPlane.distanceToPoint(centroid);
+
+      const onPositiveSide = dist >= 0;
+      const keep = keepSide === 'outside' ? onPositiveSide : !onPositiveSide;
+
+      if (!keep) continue;
+
+      const base = vertexCounter;
+      for (const wv of [wa, wb, wc]) {
+        keptPositions.push(wv.x, wv.y, wv.z);
+      }
+      keptIndices.push(base, base + 1, base + 2);
+      vertexCounter += 3;
+    }
+
+    const result = new THREE.BufferGeometry();
+    result.setAttribute('position', new THREE.Float32BufferAttribute(keptPositions, 3));
+    result.setIndex(keptIndices);
+    result.computeVertexNormals();
+    return result;
+  }
+
+  // ── SFC14 — Surface Split ─────────────────────────────────────────────────
+  /**
+   * Splits `mesh` by a plane (or by a plane derived from the first triangle of
+   * a splitter mesh).  Triangles straddling the plane are cut at the plane edge.
+   *
+   * @returns Tuple [sideA geometry (positive half), sideB geometry (negative half)].
+   *          Either may be empty if the plane misses the mesh entirely.
+   */
+  static splitSurface(
+    mesh: THREE.Mesh,
+    splitter: THREE.Mesh | THREE.Plane,
+  ): THREE.BufferGeometry[] {
+    // ── Derive cutting plane ──────────────────────────────────────────────────
+    let plane: THREE.Plane;
+    if (splitter instanceof THREE.Plane) {
+      plane = splitter;
+    } else {
+      (splitter as THREE.Mesh).updateWorldMatrix(true, false);
+      const tris = GeometryEngine._extractWorldTriangles(splitter as THREE.Mesh);
+      if (tris.length === 0) {
+        return [mesh.geometry.clone(), new THREE.BufferGeometry()];
+      }
+      const [sp0, sp1, sp2] = tris[0];
+      const e1 = sp1.clone().sub(sp0);
+      const e2 = sp2.clone().sub(sp0);
+      const n = new THREE.Vector3().crossVectors(e1, e2).normalize();
+      plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, sp0);
+    }
+
+    // ── Walk source triangles ─────────────────────────────────────────────────
+    mesh.updateWorldMatrix(true, false);
+    const geom = mesh.geometry;
+    const posAttr = geom.attributes.position as THREE.BufferAttribute;
+    const idxAttr = geom.index;
+    const triCount = idxAttr ? idxAttr.count / 3 : posAttr.count / 3;
+
+    const getTri = (ti: number): [number, number, number] => {
+      if (idxAttr) {
+        return [idxAttr.getX(ti * 3), idxAttr.getX(ti * 3 + 1), idxAttr.getX(ti * 3 + 2)];
+      }
+      return [ti * 3, ti * 3 + 1, ti * 3 + 2];
+    };
+
+    const m = mesh.matrixWorld;
+    const getWorldVert = (vi: number): THREE.Vector3 => {
+      const v = new THREE.Vector3(posAttr.getX(vi), posAttr.getY(vi), posAttr.getZ(vi));
+      return v.applyMatrix4(m);
+    };
+
+    // Each side: flat arrays of positions + index list
+    const posA: number[] = [];
+    const idxA: number[] = [];
+    const posB: number[] = [];
+    const idxB: number[] = [];
+
+    const pushTri = (
+      positions: number[],
+      indices: number[],
+      v0: THREE.Vector3,
+      v1: THREE.Vector3,
+      v2: THREE.Vector3,
+    ) => {
+      const base = positions.length / 3;
+      positions.push(v0.x, v0.y, v0.z, v1.x, v1.y, v1.z, v2.x, v2.y, v2.z);
+      indices.push(base, base + 1, base + 2);
+    };
+
+    const edgeIntersect = (va: THREE.Vector3, da: number, vb: THREE.Vector3, db: number): THREE.Vector3 => {
+      const t = da / (da - db);
+      return new THREE.Vector3().lerpVectors(va, vb, t);
+    };
+
+    const TOL = 1e-6;
+
+    for (let ti = 0; ti < triCount; ti++) {
+      const [ai, bi, ci] = getTri(ti);
+      const verts = [getWorldVert(ai), getWorldVert(bi), getWorldVert(ci)];
+      const dists = verts.map((v) => plane.distanceToPoint(v));
+      const sides = dists.map((d) => (d > TOL ? 1 : d < -TOL ? -1 : 0));
+
+      // All on positive side
+      if (sides[0] >= 0 && sides[1] >= 0 && sides[2] >= 0) {
+        pushTri(posA, idxA, verts[0], verts[1], verts[2]);
+        continue;
+      }
+      // All on negative side
+      if (sides[0] <= 0 && sides[1] <= 0 && sides[2] <= 0) {
+        pushTri(posB, idxB, verts[0], verts[1], verts[2]);
+        continue;
+      }
+
+      // Mixed — need to cut.  Find the 1-vertex side and the 2-vertex side.
+      // Determine which vertex is alone on one side.
+      let loneIdx = -1;
+      for (let k = 0; k < 3; k++) {
+        const other0 = (k + 1) % 3;
+        const other1 = (k + 2) % 3;
+        if (
+          (sides[k] > 0 && sides[other0] <= 0 && sides[other1] <= 0) ||
+          (sides[k] < 0 && sides[other0] >= 0 && sides[other1] >= 0)
+        ) {
+          loneIdx = k;
+          break;
+        }
+      }
+
+      if (loneIdx === -1) {
+        // Degenerate / on-plane — assign by centroid
+        const cx = (dists[0] + dists[1] + dists[2]) / 3;
+        if (cx >= 0) pushTri(posA, idxA, verts[0], verts[1], verts[2]);
+        else pushTri(posB, idxB, verts[0], verts[1], verts[2]);
+        continue;
+      }
+
+      const idxPair0 = (loneIdx + 1) % 3;
+      const idxPair1 = (loneIdx + 2) % 3;
+      const vLone = verts[loneIdx];
+      const vP0 = verts[idxPair0];
+      const vP1 = verts[idxPair1];
+      const dLone = dists[loneIdx];
+      const dP0 = dists[idxPair0];
+      const dP1 = dists[idxPair1];
+
+      // Two intersection points where lone-edge crosses the plane
+      const cut0 = edgeIntersect(vLone, dLone, vP0, dP0);
+      const cut1 = edgeIntersect(vLone, dLone, vP1, dP1);
+
+      // lone vertex side = loneSign, pair side = opposite
+      const loneSide = sides[loneIdx] > 0 ? posA : posB;
+      const loneIdx_ = sides[loneIdx] > 0 ? idxA : idxB;
+      const pairSide = sides[loneIdx] > 0 ? posB : idxB;
+      const pairIdx = sides[loneIdx] > 0 ? idxB : posA; // intentional swap ref
+
+      // lone triangle: vLone, cut0, cut1
+      pushTri(loneSide, loneIdx_, vLone, cut0, cut1);
+
+      // pair side: two triangles from quad (vP0, vP1, cut0, cut1)
+      //   tri 1: vP0, vP1, cut0
+      //   tri 2: vP1, cut1, cut0
+      const pairPositions = sides[loneIdx] > 0 ? posB : posA;
+      const pairIndices = sides[loneIdx] > 0 ? idxB : idxA;
+      pushTri(pairPositions, pairIndices, vP0, vP1, cut0);
+      pushTri(pairPositions, pairIndices, vP1, cut1, cut0);
+
+      // suppress unused-variable warnings for the incorrectly aliased refs above
+      void pairSide; void pairIdx;
+    }
+
+    const makeGeo = (positions: number[], indices: number[]): THREE.BufferGeometry => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      g.setIndex(indices);
+      g.computeVertexNormals();
+      return g;
+    };
+
+    return [makeGeo(posA, idxA), makeGeo(posB, idxB)];
+  }
+
+  // ── SFC15 — Untrim ────────────────────────────────────────────────────────
+  /**
+   * Restores trimmed boundary edges by extruding them outward to an expanded
+   * bounding box.  This approximates Fusion 360's "Untrim" which extends a
+   * surface to its natural (untrimmed) boundary.
+   *
+   * Algorithm:
+   * 1. Compute expanded Box3 of the mesh.
+   * 2. Find boundary edges (edges referenced by exactly one triangle).
+   * 3. For each boundary edge, project both vertices outward along the surface
+   *    normal until they touch the expanded bounds, forming a quad patch.
+   * 4. Merge original geometry + all patches into one BufferGeometry.
+   *
+   * @param mesh         Source surface mesh.
+   * @param expandFactor How much to expand the bounding box (default 1.5×).
+   * @returns New BufferGeometry with boundary extended.
+   */
+  static untrimSurface(mesh: THREE.Mesh, expandFactor = 1.5): THREE.BufferGeometry {
+    mesh.updateWorldMatrix(true, false);
+    const geom = mesh.geometry;
+    const posAttr = geom.attributes.position as THREE.BufferAttribute;
+    const idxAttr = geom.index;
+    const vertCount = posAttr.count;
+    const triCount = idxAttr ? idxAttr.count / 3 : posAttr.count / 3;
+    const m = mesh.matrixWorld;
+
+    const getTri = (ti: number): [number, number, number] => {
+      if (idxAttr) {
+        return [idxAttr.getX(ti * 3), idxAttr.getX(ti * 3 + 1), idxAttr.getX(ti * 3 + 2)];
+      }
+      return [ti * 3, ti * 3 + 1, ti * 3 + 2];
+    };
+
+    const getWorldVert = (vi: number): THREE.Vector3 => {
+      const v = new THREE.Vector3(posAttr.getX(vi), posAttr.getY(vi), posAttr.getZ(vi));
+      return v.applyMatrix4(m);
+    };
+
+    // ── 1. Expanded bounding box ──────────────────────────────────────────────
+    const box = new THREE.Box3().setFromBufferAttribute(posAttr);
+    // Transform box to world space
+    box.applyMatrix4(m);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const expandedBox = new THREE.Box3(
+      center.clone().sub(size.clone().multiplyScalar(expandFactor * 0.5)),
+      center.clone().add(size.clone().multiplyScalar(expandFactor * 0.5)),
+    );
+
+    // ── 2. Find boundary edges ─────────────────────────────────────────────────
+    // Edge key: "min_vi-max_vi"
+    const edgeCount = new Map<string, number>();
+    const edgeTriMap = new Map<string, [number, number]>(); // edge → triangle's two vertex indices
+
+    for (let ti = 0; ti < triCount; ti++) {
+      const [ai, bi, ci] = getTri(ti);
+      const edges: [number, number][] = [[ai, bi], [bi, ci], [ci, ai]];
+      for (const [ea, eb] of edges) {
+        const key = `${Math.min(ea, eb)}-${Math.max(ea, eb)}`;
+        edgeCount.set(key, (edgeCount.get(key) ?? 0) + 1);
+        if (!edgeTriMap.has(key)) edgeTriMap.set(key, [ea, eb]);
+      }
+    }
+
+    // Boundary edges are those used exactly once
+    const boundaryEdges: [number, number][] = [];
+    for (const [key, count] of edgeCount) {
+      if (count === 1) {
+        boundaryEdges.push(edgeTriMap.get(key)!);
+      }
+    }
+
+    // ── 3. Compute average surface normal ─────────────────────────────────────
+    // Used for projecting boundary verts outward
+    let avgNormal = new THREE.Vector3();
+    for (let ti = 0; ti < triCount; ti++) {
+      const [ai, bi, ci] = getTri(ti);
+      const wa = getWorldVert(ai);
+      const wb = getWorldVert(bi);
+      const wc = getWorldVert(ci);
+      const e1 = wb.clone().sub(wa);
+      const e2 = wc.clone().sub(wa);
+      avgNormal.add(new THREE.Vector3().crossVectors(e1, e2));
+    }
+    if (avgNormal.lengthSq() < 1e-12) avgNormal = new THREE.Vector3(0, 1, 0);
+    else avgNormal.normalize();
+
+    // ── 4. Build original verts in world space ────────────────────────────────
+    const allPositions: number[] = [];
+    const allIndices: number[] = [];
+
+    // Copy original triangles
+    for (let vi = 0; vi < vertCount; vi++) {
+      const wv = getWorldVert(vi);
+      allPositions.push(wv.x, wv.y, wv.z);
+    }
+    for (let ti = 0; ti < triCount; ti++) {
+      const [ai, bi, ci] = getTri(ti);
+      allIndices.push(ai, bi, ci);
+    }
+
+    // ── 5. Extend boundary edges to expanded box ──────────────────────────────
+    const clampToBox = (start: THREE.Vector3, dir: THREE.Vector3): THREE.Vector3 => {
+      // Ray-box intersection: find smallest positive t so start + t*dir hits expanded box
+      let tMin = 0;
+      let tMax = Infinity;
+      const dims: Array<'x' | 'y' | 'z'> = ['x', 'y', 'z'];
+      for (const d of dims) {
+        const o = start[d];
+        const dv = dir[d];
+        if (Math.abs(dv) < 1e-12) continue;
+        const t1 = (expandedBox.min[d] - o) / dv;
+        const t2 = (expandedBox.max[d] - o) / dv;
+        const tEnter = Math.min(t1, t2);
+        const tExit = Math.max(t1, t2);
+        tMin = Math.max(tMin, tEnter);
+        tMax = Math.min(tMax, tExit);
+      }
+      if (tMax < tMin || tMax <= 0) {
+        // Ray doesn't hit box — return a small offset
+        return start.clone().addScaledVector(dir, 1.0);
+      }
+      const t = Math.max(tMin, 0.1); // at least a small extension
+      return start.clone().addScaledVector(dir, t);
+    };
+
+    for (const [ea, eb] of boundaryEdges) {
+      const wa = getWorldVert(ea);
+      const wb = getWorldVert(eb);
+
+      // Outward direction: normal to the edge, in the plane of the surface normal
+      const edgeDir = wb.clone().sub(wa).normalize();
+      const outDir = new THREE.Vector3().crossVectors(avgNormal, edgeDir).normalize();
+      // Ensure outward (away from mesh center)
+      const toCenter = center.clone().sub(wa);
+      if (outDir.dot(toCenter) > 0) outDir.negate();
+
+      const wa2 = clampToBox(wa, outDir);
+      const wb2 = clampToBox(wb, outDir);
+
+      // Quad patch: wa, wb, wb2, wa2 → two triangles
+      const base = allPositions.length / 3;
+      allPositions.push(wa.x, wa.y, wa.z);
+      allPositions.push(wb.x, wb.y, wb.z);
+      allPositions.push(wb2.x, wb2.y, wb2.z);
+      allPositions.push(wa2.x, wa2.y, wa2.z);
+      allIndices.push(base, base + 1, base + 2);
+      allIndices.push(base, base + 2, base + 3);
+    }
+
+    const result = new THREE.BufferGeometry();
+    result.setAttribute('position', new THREE.Float32BufferAttribute(allPositions, 3));
+    result.setIndex(allIndices);
+    result.computeVertexNormals();
+    return result;
+  }
 }

@@ -4364,12 +4364,6 @@
   margin-bottom: 5px;
 }
 
-.slicer-overlay-number-input {
-  padding: 3px 6px;
-  font-size: 12px;
-  text-align: right;
-}
-
 .slicer-overlay-check-row {
   display: flex;
   align-items: center;

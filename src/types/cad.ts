@@ -562,6 +562,14 @@ export interface ContactSetEntry {
   enabled: boolean;
 }
 
+// ===== Joint Animation (A19) =====
+export interface JointTrack {
+  jointId: string;
+  startValue: number;    // start position/angle (degrees or mm)
+  endValue: number;      // end position/angle
+  easing: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out';
+}
+
 // ===== Parameters =====
 export interface Parameter {
   id: string;

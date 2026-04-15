@@ -43,7 +43,10 @@ import SketchPlaneSelector from './interaction/SketchPlaneSelector';
 import FormInteraction from './FormInteraction';
 import FormBodies from './scene/FormBodies';
 import JointGizmos from './scene/JointGizmos';
+import JointAnimationPlayer from './scene/JointAnimationPlayer';
+import ExplodedViewPanel from './ExplodedViewPanel';
 import SketchPlaneDragger from './SketchPlaneDragger';
+import Sketch3DPlaneIndicator from './Sketch3DPlaneIndicator';
 import FilletEdgeHighlight from './scene/FilletEdgeHighlight';
 import ChamferEdgeHighlight from './scene/ChamferEdgeHighlight';
 import ConstructionGeometryInteraction from './scene/ConstructionGeometryInteraction';
@@ -303,7 +306,9 @@ export default function Viewport() {
         <FormBodies />
         <FormInteraction />
         <JointGizmos />
+        <JointAnimationPlayer />
         <SketchPlaneDragger />
+        <Sketch3DPlaneIndicator />
         <FilletEdgeHighlight />
         <ChamferEdgeHighlight />
         <ConstructionGeometryInteraction />
@@ -381,6 +386,7 @@ export default function Viewport() {
       <ConstructTwoPlanePanel />
       <ConstructThreePlanePanel />
       <AnalysisPanel />
+      <ExplodedViewPanel />
     </div>
   );
 }

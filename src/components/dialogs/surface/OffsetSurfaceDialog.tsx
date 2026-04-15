@@ -3,26 +3,14 @@ import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 
 export function OffsetSurfaceDialog({ onClose }: { onClose: () => void }) {
-  const addFeature = useCADStore((s) => s.addFeature);
-  const features = useCADStore((s) => s.features);
-  const setStatusMessage = useCADStore((s) => s.setStatusMessage);
+  const commitOffsetSurface = useCADStore((s) => s.commitOffsetSurface);
 
   const [distance, setDistance] = useState(1);
   const [direction, setDirection] = useState<'outward' | 'inward' | 'both'>('outward');
   const [operation, setOperation] = useState<'new-body' | 'join'>('new-body');
 
   const handleOK = () => {
-    const n = features.filter((f) => f.name.startsWith('Offset Surface')).length + 1;
-    addFeature({
-      id: crypto.randomUUID(),
-      name: `Offset Surface ${n}`,
-      type: 'sweep',
-      params: { offsetDistance: distance, direction, operation, isSurfaceOffset: true },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    });
-    setStatusMessage(`Offset Surface ${n}: ${distance}mm ${direction}`);
+    commitOffsetSurface({ offsetDistance: distance, direction, operation });
     onClose();
   };
 

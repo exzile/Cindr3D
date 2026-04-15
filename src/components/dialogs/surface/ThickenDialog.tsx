@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
-import type { Feature } from '../../../types/cad';
 
 export function ThickenDialog({ onClose }: { onClose: () => void }) {
   const editingFeatureId = useCADStore((s) => s.editingFeatureId);
@@ -13,7 +12,7 @@ export function ThickenDialog({ onClose }: { onClose: () => void }) {
   const [direction, setDirection] = useState<'inside' | 'outside' | 'symmetric'>((p.direction as 'inside' | 'outside' | 'symmetric') ?? 'inside');
   const [operation, setOperation] = useState<'new-body' | 'join' | 'cut'>((p.operation as 'new-body' | 'join' | 'cut') ?? 'new-body');
 
-  const addFeature = useCADStore((s) => s.addFeature);
+  const commitThicken = useCADStore((s) => s.commitThicken);
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
@@ -22,17 +21,7 @@ export function ThickenDialog({ onClose }: { onClose: () => void }) {
       updateFeatureParams(editing.id, { thickness, direction, operation });
       setStatusMessage(`Updated thicken: ${thickness}mm ${direction}`);
     } else {
-      const feature: Feature = {
-        id: crypto.randomUUID(),
-        name: `Thicken (${thickness}mm, ${direction})`,
-        type: 'thicken',
-        params: { thickness, direction, operation },
-        visible: true,
-        suppressed: false,
-        timestamp: Date.now(),
-      };
-      addFeature(feature);
-      setStatusMessage(`Created thicken: ${thickness}mm ${direction}`);
+      commitThicken({ thickness, direction, operation });
     }
     onClose();
   };

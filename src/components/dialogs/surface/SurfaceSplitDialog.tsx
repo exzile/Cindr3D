@@ -3,27 +3,18 @@ import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 
 export function SurfaceSplitDialog({ onClose }: { onClose: () => void }) {
-  const addFeature = useCADStore((s) => s.addFeature);
+  const commitSurfaceSplit = useCADStore((s) => s.commitSurfaceSplit);
   const features = useCADStore((s) => s.features);
-  const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
-  const [splitType, setSplitType] = useState<'split-face' | 'split-body'>('split-face');
-  const [target, setTarget] = useState('');
-  const [tool, setTool] = useState('');
-  const [keepBothSides, setKeepBothSides] = useState(true);
+  const surfaceBodies = features.filter(
+    (f) => f.bodyKind === 'surface' && f.mesh && f.visible,
+  );
+
+  const [sourceFeatureId, setSourceFeatureId] = useState(surfaceBodies[0]?.id ?? '');
+  const [splitterFeatureId, setSplitterFeatureId] = useState(surfaceBodies[1]?.id ?? '');
 
   const handleOK = () => {
-    const n = features.filter((f) => f.name.startsWith('Surface Split')).length + 1;
-    addFeature({
-      id: crypto.randomUUID(),
-      name: `Surface Split ${n}`,
-      type: 'split-body',
-      params: { splitType, target, tool, keepBothSides, isSurfaceSplit: true },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    });
-    setStatusMessage(`Surface Split ${n}: ${splitType}`);
+    commitSurfaceSplit({ sourceFeatureId, splitterFeatureId });
     onClose();
   };
 
@@ -36,39 +27,46 @@ export function SurfaceSplitDialog({ onClose }: { onClose: () => void }) {
         </div>
         <div className="dialog-body">
           <div className="form-group">
-            <label>Split Type</label>
-            <select value={splitType} onChange={(e) => setSplitType(e.target.value as 'split-face' | 'split-body')}>
-              <option value="split-face">Split Face</option>
-              <option value="split-body">Split Body</option>
+            <label>Surface to Split</label>
+            <select
+              value={sourceFeatureId}
+              onChange={(e) => setSourceFeatureId(e.target.value)}
+            >
+              <option value="">— select —</option>
+              {surfaceBodies.map((f) => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
             </select>
           </div>
           <div className="form-group">
-            <label>Target</label>
-            <input
-              type="text"
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-              placeholder="body or face to split"
-            />
+            <label>Splitting Tool</label>
+            <select
+              value={splitterFeatureId}
+              onChange={(e) => setSplitterFeatureId(e.target.value)}
+            >
+              <option value="">— select —</option>
+              {surfaceBodies
+                .filter((f) => f.id !== sourceFeatureId)
+                .map((f) => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+            </select>
           </div>
-          <div className="form-group">
-            <label>Tool</label>
-            <input
-              type="text"
-              value={tool}
-              onChange={(e) => setTool(e.target.value)}
-              placeholder="splitting surface or plane"
-            />
-          </div>
-          <label className="checkbox-label">
-            <input type="checkbox" checked={keepBothSides} onChange={(e) => setKeepBothSides(e.target.checked)} />
-            Keep Both Sides
-          </label>
-          <p className="dialog-hint">Select target geometry and the splitting tool in the viewport.</p>
+          <p className="dialog-hint">
+            Select the surface to split and the surface or plane used as the
+            splitting tool. The source surface will be hidden and replaced by
+            two new surface bodies.
+          </p>
         </div>
         <div className="dialog-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
+          <button
+            className="btn btn-primary"
+            onClick={handleOK}
+            disabled={!sourceFeatureId || !splitterFeatureId}
+          >
+            OK
+          </button>
         </div>
       </div>
     </div>

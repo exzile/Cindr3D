@@ -269,6 +269,8 @@ function ComponentNode({ componentId, depth = 0 }: { componentId: string; depth?
   const removeComponent = useComponentStore((s) => s.removeComponent);
   const duplicateComponent = useComponentStore((s) => s.duplicateComponent);
   const addBody = useComponentStore((s) => s.addBody);
+  const setComponentGrounded = useComponentStore((s) => s.setComponentGrounded);
+  const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -351,6 +353,15 @@ function ComponentNode({ componentId, depth = 0 }: { componentId: string; depth?
           </button>
           <button onClick={() => { addBody(componentId); setShowContextMenu(false); }}>
             <Box size={12} /> New Body
+          </button>
+          {/* A21: Ground / Unground toggle */}
+          <button onClick={() => {
+            const next = !component.grounded;
+            setComponentGrounded(componentId, next);
+            setStatusMessage(`${component.name}: ${next ? 'Grounded' : 'Ungrounded'}`);
+            setShowContextMenu(false);
+          }}>
+            <Anchor size={12} /> {component.grounded ? 'Unground' : 'Ground'}
           </button>
           {!isRoot && (
             <>

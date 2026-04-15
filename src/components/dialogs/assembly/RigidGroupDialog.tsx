@@ -1,29 +1,37 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
+import { useComponentStore } from '../../../store/componentStore';
 import { useCADStore } from '../../../store/cadStore';
 
 export function RigidGroupDialog({ onClose }: { onClose: () => void }) {
-  const addFeature = useCADStore((s) => s.addFeature);
-  const features = useCADStore((s) => s.features);
+  const addRigidGroup    = useComponentStore((s) => s.addRigidGroup);
+  const rigidGroups      = useComponentStore((s) => s.rigidGroups);
+  const components       = useComponentStore((s) => s.components);
+  const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
-  const n = features.filter((f) => f.name.startsWith('Rigid Group')).length + 1;
-  const [componentNames, setComponentNames] = useState('');
-  const [groupName, setGroupName] = useState(`Rigid Group ${n}`);
+  const n = rigidGroups.length + 1;
+  const [groupName, setGroupName]       = useState(`Rigid Group ${n}`);
+  const [selectedIds, setSelectedIds]   = useState<Set<string>>(new Set());
+
+  const componentList = Object.values(components);
+
+  const toggleId = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const handleOK = () => {
-    const components = componentNames
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    addFeature({
-      id: crypto.randomUUID(),
-      name: groupName || `Rigid Group ${n}`,
-      type: 'import',
-      params: { isRigidGroup: true, components: components.join(','), groupName: groupName || `Rigid Group ${n}` },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    });
+    const ids = Array.from(selectedIds);
+    if (ids.length < 2) {
+      setStatusMessage('Rigid Group: select at least 2 components');
+      return;
+    }
+    addRigidGroup(ids, groupName || `Rigid Group ${n}`);
+    setStatusMessage(`Created rigid group: ${groupName || `Rigid Group ${n}`}`);
     onClose();
   };
 
@@ -45,15 +53,38 @@ export function RigidGroupDialog({ onClose }: { onClose: () => void }) {
             />
           </div>
           <div className="dialog-field">
-            <label className="dialog-label">Components (one per line)</label>
-            <textarea
-              className="dialog-input"
-              rows={5}
-              placeholder="Enter component names, one per line"
-              value={componentNames}
-              onChange={(e) => setComponentNames(e.target.value)}
-              style={{ resize: 'vertical', fontFamily: 'inherit' }}
-            />
+            <label className="dialog-label">Components</label>
+            <div style={{ border: '1px solid var(--border)', borderRadius: 4, maxHeight: 180, overflowY: 'auto', padding: '4px 0' }}>
+              {componentList.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', fontSize: 12, padding: '4px 8px', margin: 0 }}>
+                  No components available.
+                </p>
+              ) : (
+                componentList.map((comp) => (
+                  <label
+                    key={comp.id}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 8px', cursor: 'pointer', fontSize: 13 }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(comp.id)}
+                      onChange={() => toggleId(comp.id)}
+                    />
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        width: 10,
+                        height: 10,
+                        borderRadius: 2,
+                        background: comp.color,
+                        flexShrink: 0,
+                      }}
+                    />
+                    {comp.name}
+                  </label>
+                ))
+              )}
+            </div>
           </div>
         </div>
         <div className="dialog-footer">

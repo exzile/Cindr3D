@@ -7,6 +7,9 @@ import ExportDialog from './components/dialogs/ExportDialog';
 import DuetPrinterPanel from './components/printer/DuetPrinterPanel';
 import DuetSettings from './components/printer/DuetSettings';
 import SlicerWorkspace from './components/slicer/SlicerWorkspace';
+import { MirrorComponentDialog } from './components/dialogs/assembly/MirrorComponentDialog';
+import { DuplicateWithJointsDialog } from './components/dialogs/assembly/DuplicateWithJointsDialog';
+import { BOMDialog } from './components/dialogs/assembly/BOMDialog';
 import {
   ShellDialog,
   LinearPatternDialog,
@@ -52,6 +55,10 @@ import {
   ComponentPatternDialog,
   UntrimDialog,
   SurfaceMergeDialog,
+  FillDialog,
+  OffsetCurveDialog,
+  DeleteFaceDialog,
+  SurfacePrimitivesDialog,
   MeshSectionSketchDialog,
   MeshPrimitivesDialog,
   RemeshDialog,
@@ -205,12 +212,14 @@ function BoundingSolidDialogConnected({ onClose }: { onClose: () => void }) {
 }
 
 function ContactSetsDialogConnected({ onClose }: { onClose: () => void }) {
-  const componentMap = useComponentStore((s) => s.components);
-  const components = Object.values(componentMap);
-  const contactSets = useCADStore((s) => s.contactSets);
-  const addContactSet = useCADStore((s) => s.addContactSet);
-  const toggleContactSet = useCADStore((s) => s.toggleContactSet);
-  const removeContactSet = useCADStore((s) => s.removeContactSet);
+  const componentMap       = useComponentStore((s) => s.components);
+  const components         = Object.values(componentMap);
+  const contactSets        = useCADStore((s) => s.contactSets);
+  const addContactSet      = useCADStore((s) => s.addContactSet);
+  const toggleContactSet   = useCADStore((s) => s.toggleContactSet);
+  const removeContactSet   = useCADStore((s) => s.removeContactSet);
+  const enableAllContactSets  = useCADStore((s) => s.enableAllContactSets);
+  const disableAllContactSets = useCADStore((s) => s.disableAllContactSets);
   return (
     <ContactSetsDialog
       open={true}
@@ -219,6 +228,8 @@ function ContactSetsDialogConnected({ onClose }: { onClose: () => void }) {
       onAdd={addContactSet}
       onToggle={toggleContactSet}
       onRemove={removeContactSet}
+      onEnableAll={enableAllContactSets}
+      onDisableAll={disableAllContactSets}
       onClose={onClose}
     />
   );
@@ -256,6 +267,138 @@ function LipGrooveDialogConnected({ onClose }: { onClose: () => void }) {
       open={true}
       edgeId={lipGrooveEdgeId}
       onOk={commitLipGroove}
+      onClose={onClose}
+    />
+  );
+}
+
+function MirrorComponentDialogConnected({ onClose }: { onClose: () => void }) {
+  const componentMap = useComponentStore((s) => s.components);
+  const components = Object.values(componentMap);
+  const mirrorComponent = useComponentStore((s) => s.mirrorComponent);
+  const constructionPlanes = useCADStore((s) => s.constructionPlanes);
+  return (
+    <MirrorComponentDialog
+      open={true}
+      components={components}
+      constructionPlanes={constructionPlanes}
+      onOk={(params) => { mirrorComponent(params); }}
+      onClose={onClose}
+    />
+  );
+}
+
+function DuplicateWithJointsDialogConnected({ onClose }: { onClose: () => void }) {
+  const duplicateWithJointsTargetId = useCADStore((s) => s.duplicateWithJointsTargetId);
+  const componentMap = useComponentStore((s) => s.components);
+  const joints = useComponentStore((s) => s.joints);
+  const duplicateComponentWithJoints = useComponentStore((s) => s.duplicateComponentWithJoints);
+  const component = duplicateWithJointsTargetId ? componentMap[duplicateWithJointsTargetId] ?? null : null;
+  const jointCount = duplicateWithJointsTargetId
+    ? Object.values(joints).filter(
+        (j) => j.componentId1 === duplicateWithJointsTargetId || j.componentId2 === duplicateWithJointsTargetId
+      ).length
+    : 0;
+  return (
+    <DuplicateWithJointsDialog
+      open={true}
+      component={component}
+      jointCount={jointCount}
+      onOk={() => { if (duplicateWithJointsTargetId) duplicateComponentWithJoints(duplicateWithJointsTargetId); }}
+      onClose={onClose}
+    />
+  );
+}
+
+function BOMDialogConnected({ onClose }: { onClose: () => void }) {
+  const getBOMEntries = useCADStore((s) => s.getBOMEntries);
+  const entries = getBOMEntries();
+
+  const handleExportCSV = () => {
+    const header = '#,Name,Qty,Material,Est. Mass,Description';
+    const rows = entries.map((e) =>
+      [e.partNumber, `"${e.name}"`, e.quantity, `"${e.material}"`, `"${e.estimatedMass}"`, `"${e.description}"`].join(',')
+    );
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'bill-of-materials.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <BOMDialog
+      open={true}
+      entries={entries}
+      onExportCSV={handleExportCSV}
+      onClose={onClose}
+    />
+  );
+}
+
+function FillDialogConnected({ onClose }: { onClose: () => void }) {
+  const fillBoundaryEdgeIds = useCADStore((s) => s.fillBoundaryEdgeIds);
+  const commitFill = useCADStore((s) => s.commitFill);
+  return (
+    <FillDialog
+      open={true}
+      edgeCount={Math.max(fillBoundaryEdgeIds.length, 1)}
+      onOk={(params) => { commitFill(params); onClose(); }}
+      onClose={onClose}
+    />
+  );
+}
+
+function OffsetCurveDialogConnected({ onClose }: { onClose: () => void }) {
+  const sketches = useCADStore((s) => s.sketches);
+  const commitOffsetCurve = useCADStore((s) => s.commitOffsetCurve);
+  return (
+    <OffsetCurveDialog
+      open={true}
+      sketches={sketches}
+      onOk={(params) => { commitOffsetCurve(params); onClose(); }}
+      onClose={onClose}
+    />
+  );
+}
+
+function SurfaceMergeDialogConnected({ onClose }: { onClose: () => void }) {
+  const surfaceMergeFace1Id = useCADStore((s) => s.surfaceMergeFace1Id);
+  const surfaceMergeFace2Id = useCADStore((s) => s.surfaceMergeFace2Id);
+  const commitSurfaceMerge = useCADStore((s) => s.commitSurfaceMerge);
+  return (
+    <SurfaceMergeDialog
+      open={true}
+      face1Id={surfaceMergeFace1Id}
+      face2Id={surfaceMergeFace2Id}
+      onOk={(params) => { commitSurfaceMerge(params); onClose(); }}
+      onClose={onClose}
+    />
+  );
+}
+
+function DeleteFaceDialogConnected({ onClose }: { onClose: () => void }) {
+  const deleteFaceIds = useCADStore((s) => s.deleteFaceIds);
+  const commitDeleteFace = useCADStore((s) => s.commitDeleteFace);
+  return (
+    <DeleteFaceDialog
+      open={true}
+      faceCount={deleteFaceIds.length}
+      onOk={(params) => { commitDeleteFace({ ...params, faceIds: deleteFaceIds }); onClose(); }}
+      onClose={onClose}
+    />
+  );
+}
+
+function SurfacePrimitivesDialogConnected({ onClose }: { onClose: () => void }) {
+  const commitSurfacePrimitive = useCADStore((s) => s.commitSurfacePrimitive);
+  return (
+    <SurfacePrimitivesDialog
+      open={true}
+      onOk={(params) => { commitSurfacePrimitive(params); onClose(); }}
       onClose={onClose}
     />
   );
@@ -322,7 +465,11 @@ function ActiveDialog() {
     case 'motion-link': return <MotionLinkDialog onClose={close} />;
     case 'rigid-group': return <RigidGroupDialog onClose={close} />;
     case 'untrim': return <UntrimDialog onClose={close} />;
-    case 'surface-merge': return <SurfaceMergeDialog onClose={close} />;
+    case 'surface-merge': return <SurfaceMergeDialogConnected onClose={close} />;
+    case 'fill': return <FillDialogConnected onClose={close} />;
+    case 'offset-curve': return <OffsetCurveDialogConnected onClose={close} />;
+    case 'delete-face': return <DeleteFaceDialogConnected onClose={close} />;
+    case 'surface-primitives': return <SurfacePrimitivesDialogConnected onClose={close} />;
     case 'mesh-section-sketch': return <MeshSectionSketchDialog onClose={close} />;
     case 'mesh-primitives': return <MeshPrimitivesDialog onClose={close} />;
     case 'remesh': return <RemeshDialog onClose={close} />;
@@ -358,6 +505,9 @@ function ActiveDialog() {
     case 'insert-component': return <InsertComponentDialogConnected onClose={close} />;
     case 'snap-fit': return <SnapFitDialogConnected onClose={close} />;
     case 'lip-groove': return <LipGrooveDialogConnected onClose={close} />;
+    case 'mirror-component': return <MirrorComponentDialogConnected onClose={close} />;
+    case 'duplicate-with-joints': return <DuplicateWithJointsDialogConnected onClose={close} />;
+    case 'bom': return <BOMDialogConnected onClose={close} />;
     default: return null;
   }
 }

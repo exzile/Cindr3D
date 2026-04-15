@@ -77,6 +77,11 @@ export { MotionLinkDialog } from './assembly/MotionLinkDialog';
 export { RigidGroupDialog } from './assembly/RigidGroupDialog';
 export { ComponentPatternDialog } from './assembly/ComponentPatternDialog';
 export { JointOriginDialog } from './assembly/JointOriginDialog';
+export { MirrorComponentDialog } from './assembly/MirrorComponentDialog';
+export type { MirrorComponentParams } from './assembly/MirrorComponentDialog';
+export { DuplicateWithJointsDialog } from './assembly/DuplicateWithJointsDialog';
+export { BOMDialog } from './assembly/BOMDialog';
+export type { BOMEntry } from './assembly/BOMDialog';
 
 // inspect
 export { InterferenceDialog } from './inspect/InterferenceDialog';
@@ -95,3 +100,12 @@ export { AppearanceDialog } from './solid/AppearanceDialog';
 // additional surface dialogs
 export { UntrimDialog } from './surface/UntrimDialog';
 export { SurfaceMergeDialog } from './surface/SurfaceMergeDialog';
+export type { SurfaceMergeParams } from './surface/SurfaceMergeDialog';
+export { FillDialog } from './surface/FillDialog';
+export type { FillParams } from './surface/FillDialog';
+export { OffsetCurveDialog } from './surface/OffsetCurveDialog';
+export type { OffsetCurveParams } from './surface/OffsetCurveDialog';
+export { DeleteFaceDialog } from './surface/DeleteFaceDialog';
+export type { DeleteFaceParams } from './surface/DeleteFaceDialog';
+export { SurfacePrimitivesDialog } from './surface/SurfacePrimitivesDialog';
+export type { SurfacePrimitiveParams } from './surface/SurfacePrimitivesDialog';

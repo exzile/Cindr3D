@@ -7,11 +7,9 @@ import {
 } from 'lucide-react';
 import { useSlicerStore } from '../../../../store/slicerStore';
 import type { PlateObject } from '../../../../types/slicer';
-import { colors, sharedStyles } from '../../../../utils/theme';
+import { colors } from '../../../../utils/theme';
 import { normalizeRotationRadians, normalizeScale } from '../../../../utils/slicerTransforms';
-
-const btnBase = sharedStyles.btnBase;
-const inputStyle = sharedStyles.input;
+import './SlicerViewportOverlays.css';
 
 type TransformMode = 'move' | 'scale' | 'rotate' | 'mirror' | 'settings';
 
@@ -38,13 +36,12 @@ export function SlicerViewportOverlays() {
     val: string,
     onChange: (v: string) => void,
     disabled = false,
-    width = 72,
+    narrow = false,
   ) => (
     <input
       type="number"
       disabled={disabled}
-      className="slicer-overlay-number-input"
-      style={{ ...inputStyle, width }}
+      className={`slicer-overlay-number-input${narrow ? ' slicer-overlay-number-input--narrow' : ''}`}
       value={val}
       onChange={(e) => onChange(e.target.value)}
     />
@@ -134,12 +131,11 @@ export function SlicerViewportOverlays() {
         }}
       >
         <ArrowDownToLine size={13} color={locked ? colors.textDim : colors.accent} />
-        Drop Down <span style={{ color: colors.accent, fontWeight: 600, marginLeft: 3 }}>Model</span>
+        Drop Down <span className="slicer-overlay-drop-highlight">Model</span>
       </label>
       <button
-        style={{ ...btnBase, marginTop: 8, width: '100%', justifyContent: 'center', fontSize: 11 }}
+        className="slicer-overlay-full-btn"
         disabled={locked}
-        title="Center the object on the build plate"
         onClick={() => {
           const bv = useSlicerStore.getState().getActivePrinterProfile()?.buildVolume ?? { x: 220, y: 220, z: 250 };
           const b = obj.boundingBox;
@@ -279,9 +275,9 @@ export function SlicerViewportOverlays() {
         return (
           <div key={ax} className="slicer-overlay-row">
             <span className={`slicer-overlay-axis ${axisClass[i]}`}>{ax.toUpperCase()}</span>
-            {numIn(sizeMm, (v) => setScale(ax, v, true), locked, 72)}
+            {numIn(sizeMm, (v) => setScale(ax, v, true), locked)}
             <span className="slicer-overlay-unit slicer-overlay-unit--wide">mm</span>
-            {numIn(pct, (v) => setScale(ax, v, false), locked, 56)}
+            {numIn(pct, (v) => setScale(ax, v, false), locked, true)}
             <span className="slicer-overlay-unit">%</span>
           </div>
         );
@@ -290,7 +286,7 @@ export function SlicerViewportOverlays() {
       {checkRow('Snap Scaling', snapScale, () => setSnap(!snapScale))}
       {checkRow('Uniform Scaling', uniformScale, () => setUniform(!uniformScale))}
       <button
-        style={{ ...btnBase, marginTop: 8, width: '100%', justifyContent: 'center', fontSize: 11 }}
+        className="slicer-overlay-full-btn"
         disabled={locked}
         onClick={() => upd({ scale: { x: 1, y: 1, z: 1 } })}
       >
@@ -314,12 +310,12 @@ export function SlicerViewportOverlays() {
         </div>
       ))}
       {divider}
-      <div style={{ display: 'flex', gap: 6 }}>
+      <div className="slicer-overlay-btn-row">
         {(['x', 'y', 'z'] as const).map((ax, i) => (
           <button
             key={ax}
             disabled={locked}
-            style={{ ...btnBase, flex: 1, justifyContent: 'center', fontSize: 11 }}
+            className="slicer-overlay-flex-btn"
             title={`Rotate 90° around ${ax.toUpperCase()}`}
             onClick={() => {
               const cur = rot[ax];
@@ -330,9 +326,9 @@ export function SlicerViewportOverlays() {
           </button>
         ))}
       </div>
-      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+      <div className="slicer-overlay-btn-row slicer-overlay-btn-row--mt">
         <button
-          style={{ ...btnBase, flex: 1, justifyContent: 'center', fontSize: 11 }}
+          className="slicer-overlay-flex-btn"
           disabled={locked}
           onClick={layFlat}
           title="Rotate so the largest flat face rests on the build plate"
@@ -340,7 +336,7 @@ export function SlicerViewportOverlays() {
           <ArrowDownToLine size={11} /> Lay Flat
         </button>
         <button
-          style={{ ...btnBase, flex: 1, justifyContent: 'center', fontSize: 11 }}
+          className="slicer-overlay-flex-btn"
           disabled={locked}
           onClick={() => upd({ rotation: { x: 0, y: 0, z: 0 } })}
         >
@@ -353,7 +349,7 @@ export function SlicerViewportOverlays() {
   const mirrorPanel = (
     <div className="slicer-overlay-panel">
       {header}
-      <div style={{ display: 'flex', gap: 6 }}>
+      <div className="slicer-overlay-btn-row">
         {(['x', 'y', 'z'] as const).map((ax, i) => {
           const key = `mirror${ax.toUpperCase()}` as 'mirrorX' | 'mirrorY' | 'mirrorZ';
           const active = !!(obj as { mirrorX?: boolean; mirrorY?: boolean; mirrorZ?: boolean })[key];
@@ -361,11 +357,7 @@ export function SlicerViewportOverlays() {
             <button
               key={ax}
               disabled={locked}
-              style={{
-                ...btnBase, flex: 1, justifyContent: 'center',
-                background: active ? colors.accentDim : colors.elevated,
-                border: `1px solid ${active ? colors.accent : colors.panelBorder}`,
-              }}
+              className={`slicer-overlay-mirror-btn${active ? ' is-active' : ''}`}
               onClick={() => upd({ [key]: !active })}
             >
               <FlipHorizontal size={13} />
@@ -375,7 +367,7 @@ export function SlicerViewportOverlays() {
         })}
       </div>
       {divider}
-      <div style={{ fontSize: 11, color: colors.textDim, textAlign: 'center' }}>
+      <div className="slicer-overlay-hint">
         Click an axis to toggle mirroring
       </div>
     </div>
@@ -384,7 +376,7 @@ export function SlicerViewportOverlays() {
   const settingsPanel = (
     <div className="slicer-overlay-panel">
       {header}
-      <div style={{ fontSize: 11, color: colors.textDim, marginBottom: 8 }}>
+      <div className="slicer-overlay-settings-intro">
         Override global print settings for this object only.
       </div>
       {([
@@ -396,14 +388,14 @@ export function SlicerViewportOverlays() {
         const val = perObj[key] ?? '';
         return (
           <div key={key} className="slicer-overlay-row">
-            <span style={{ fontSize: 12, color: colors.text, flex: 1 }}>{label}</span>
+            <span className="slicer-overlay-settings-label">{label}</span>
             <input
               type="number"
               min={min}
               max={max}
               placeholder="(global)"
               disabled={locked}
-              style={{ ...inputStyle, width: 64, padding: '3px 6px', fontSize: 12, textAlign: 'right' }}
+              className="slicer-overlay-settings-input"
               value={val}
               onChange={(e) => {
                 const v = e.target.value === '' ? undefined : parseFloat(e.target.value);
@@ -412,7 +404,7 @@ export function SlicerViewportOverlays() {
                 upd({ perObjectSettings: next });
               }}
             />
-            {unit && <span style={{ fontSize: 11, color: colors.textDim, width: 18 }}>{unit}</span>}
+            {unit && <span className="slicer-overlay-settings-unit">{unit}</span>}
           </div>
         );
       })}

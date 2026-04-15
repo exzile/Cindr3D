@@ -27,6 +27,8 @@ import {
   GitFork,
   TrendingDown, Activity, Grid, BarChart2, AlertCircle,
   Edit2, MapPin,
+  Anchor,
+  MoveRight, Grid3x3, Expand,
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore';
 import { useComponentStore } from '../../store/componentStore';
@@ -374,10 +376,25 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const openSnapFitDialog = useCADStore((s) => s.openSnapFitDialog);
   const openLipGrooveDialog = useCADStore((s) => s.openLipGrooveDialog);
   const setActiveAnalysis = useCADStore((s) => s.setActiveAnalysis);
+  const openMirrorComponentDialog = useCADStore((s) => s.openMirrorComponentDialog);
+  const openDuplicateWithJointsDialog = useCADStore((s) => s.openDuplicateWithJointsDialog);
+  const openBOMDialog = useCADStore((s) => s.openBOMDialog);
+  const openFillDialog = useCADStore((s) => s.openFillDialog);
+  const openOffsetCurveDialog = useCADStore((s) => s.openOffsetCurveDialog);
+  const openSurfaceMergeDialog = useCADStore((s) => s.openSurfaceMergeDialog);
+  const openDeleteFaceDialog = useCADStore((s) => s.openDeleteFaceDialog);
+  const openSurfacePrimitivesDialog = useCADStore((s) => s.openSurfacePrimitivesDialog);
 
   // Component store (D193)
   const addComponent = useComponentStore((s) => s.addComponent);
   const rootComponentId = useComponentStore((s) => s.rootComponentId);
+  // A21: Ground / Unground active component
+  const setComponentGrounded = useComponentStore((s) => s.setComponentGrounded);
+  const activeComponentId = useComponentStore((s) => s.activeComponentId);
+  const activeComponent = useComponentStore((s) => s.components[s.activeComponentId]);
+  // A27: Exploded View
+  const toggleExplode = useComponentStore((s) => s.toggleExplode);
+  const explodeActive = useComponentStore((s) => s.explodeActive);
 
   // D193 New Component helper
   const handleNewComponent = useCallback(() => {
@@ -561,7 +578,8 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
     { icon: <Download size={MI} />, label: 'Insert Component', onClick: openInsertComponentDialog },
     { separator: true, icon: <Shield size={MI} />, label: 'Contact Sets', onClick: openContactSetsDialog },
     { icon: <Package size={MI} />, label: 'New Component', onClick: handleNewComponent },
-    { icon: <Copy size={MI} />, label: 'Duplicate With Joints', onClick: comingSoon('Duplicate With Joints') },
+    { icon: <Copy size={MI} />, label: 'Duplicate With Joints', onClick: () => { if (activeComponentId) openDuplicateWithJointsDialog(activeComponentId); else comingSoon('Duplicate With Joints')(); } },
+    { icon: <FlipHorizontal size={MI} />, label: 'Mirror Component', onClick: openMirrorComponentDialog },
     { separator: true, icon: <Link2 size={MI} />, label: 'Constrain Components', onClick: comingSoon('Constrain Components') },
     { icon: <Link2 size={MI} />, label: 'Joint', shortcut: 'J', onClick: () => setActiveDialog('joint') },
     { icon: <Link2 size={MI} />, label: 'As-Built Joint', shortcut: 'Shift+J', onClick: () => setActiveDialog('as-built-joint') },
@@ -570,7 +588,20 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
     { icon: <Play size={MI} />, label: 'Drive Joints', onClick: () => setActiveDialog('drive-joints') },
     { icon: <GitMerge size={MI} />, label: 'Motion Link', onClick: () => setActiveDialog('motion-link') },
     { icon: <Play size={MI} />, label: 'Motion Study', onClick: comingSoon('Motion Study') },
+    { icon: <Expand size={MI} />, label: 'Exploded View', onClick: toggleExplode, checked: explodeActive },
     { separator: true, icon: <Repeat size={MI} />, label: 'Component Pattern', onClick: () => setActiveDialog('component-pattern') },
+    // A21: Ground / Unground active component
+    {
+      separator: true,
+      icon: <Anchor size={MI} />,
+      label: activeComponent?.grounded ? 'Unground' : 'Ground',
+      onClick: () => {
+        if (!activeComponentId) return;
+        const next = !(activeComponent?.grounded ?? false);
+        setComponentGrounded(activeComponentId, next);
+        setStatusMessage(`${activeComponent?.name ?? 'Component'}: ${next ? 'Grounded' : 'Ungrounded'}`);
+      },
+    },
   ];
 
   const constructMenuItems: MenuItem[] = [
@@ -939,6 +970,26 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
               <div className="ribbon-stack">
                 <ToolButton icon={<Link2 size={ICON_SM} />} label="Joint" onClick={() => setActiveDialog('joint')} colorClass="icon-green" />
                 <ToolButton icon={<Layers size={ICON_SM} />} label="Plane" onClick={() => setActiveDialog('construction-plane')} colorClass="icon-green" />
+                {/* A21: Ground toggle */}
+                <ToolButton
+                  icon={<Anchor size={ICON_SM} />}
+                  label={activeComponent?.grounded ? 'Unground' : 'Ground'}
+                  colorClass="icon-green"
+                  active={activeComponent?.grounded}
+                  onClick={() => {
+                    const next = !(activeComponent?.grounded ?? false);
+                    setComponentGrounded(activeComponentId, next);
+                    setStatusMessage(`${activeComponent?.name ?? 'Component'}: ${next ? 'Grounded' : 'Ungrounded'}`);
+                  }}
+                />
+                {/* A27: Exploded View */}
+                <ToolButton
+                  icon={<Expand size={ICON_SM} />}
+                  label="Exploded View"
+                  colorClass="icon-green"
+                  active={explodeActive}
+                  onClick={toggleExplode}
+                />
               </div>
             </RibbonSection>
 
@@ -987,6 +1038,9 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
               <ToolButton icon={<Layers size={ICON_LG} />} label="Loft" onClick={startLoftTool} large colorClass="icon-green" />
               <ToolButton icon={<Diamond size={ICON_LG} />} label="Patch" onClick={startPatchTool} large colorClass="icon-green" />
               <ToolButton icon={<Grid3X3 size={ICON_LG} />} label="Ruled Surface" onClick={startRuledSurfaceTool} large colorClass="icon-green" />
+              <ToolButton icon={<Layers size={ICON_LG} />} label="Fill" onClick={openFillDialog} large colorClass="icon-green" />
+              <ToolButton icon={<MoveRight size={ICON_LG} />} label="Offset Curve" onClick={openOffsetCurveDialog} large colorClass="icon-green" />
+              <ToolButton icon={<Grid3x3 size={ICON_LG} />} label="Primitives" onClick={openSurfacePrimitivesDialog} large colorClass="icon-green" />
             </RibbonSection>
             <RibbonSection title="MODIFY">
               <ToolButton icon={<ZoomOut size={ICON_LG} />} label="Offset Surface" onClick={() => setActiveDialog('offset-surface')} large colorClass="icon-orange" />
@@ -997,7 +1051,8 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
               <ToolButton icon={<SplitSquareHorizontal size={ICON_LG} />} label="Surface Split" onClick={() => setActiveDialog('surface-split')} large colorClass="icon-orange" />
               <ToolButton icon={<RefreshCw size={ICON_LG} />} label="Reverse Normal" onClick={() => setActiveDialog('reverse-normal')} large colorClass="icon-orange" />
               <ToolButton icon={<Layers size={ICON_LG} />} label="Untrim" onClick={() => setActiveDialog('untrim')} large colorClass="icon-orange" />
-              <ToolButton icon={<Combine size={ICON_LG} />} label="Merge" onClick={() => setActiveDialog('surface-merge')} large colorClass="icon-orange" />
+              <ToolButton icon={<Combine size={ICON_LG} />} label="Merge" onClick={openSurfaceMergeDialog} large colorClass="icon-orange" />
+              <ToolButton icon={<Trash2 size={ICON_LG} />} label="Delete Face" onClick={openDeleteFaceDialog} large colorClass="icon-orange" />
               <ToolButton icon={<Layers size={ICON_LG} />} label="Thicken" onClick={() => setActiveDialog('thicken')} large colorClass="icon-orange" />
             </RibbonSection>
             <RibbonSection title="SELECT">
@@ -1172,6 +1227,9 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
         {/* ═══════════════ DESIGN > UTILITIES TAB ═══════════════ */}
         {!inSketch && workspace === 'design' && designTab === 'utilities' && (
           <>
+            <RibbonSection title="INSPECT">
+              <ToolButton icon={<BarChart2 size={ICON_LG} />} label="Bill of Materials" onClick={openBOMDialog} large colorClass="icon-green" />
+            </RibbonSection>
             <RibbonSection title="MAKE">
               <ToolButton icon={<Printer size={ICON_LG} />} label="3D Print" onClick={() => setShowExportDialog(true)} large colorClass="icon-gray" />
               <ToolButton icon={<Download size={ICON_LG} />} label="Export" onClick={() => setShowExportDialog(true)} large colorClass="icon-gray" />

@@ -1,0 +1,132 @@
+.slicer-overlay-number-input {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 12px;
+  text-align: right;
+  outline: none;
+  width: 72px;
+}
+
+.slicer-overlay-number-input--narrow {
+  width: 56px;
+}
+
+.slicer-overlay-full-btn {
+  margin-top: 8px;
+  width: 100%;
+  justify-content: center;
+  font-size: 11px;
+  background: var(--bg-toolbar);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.slicer-overlay-full-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.slicer-overlay-btn-row {
+  display: flex;
+  gap: 6px;
+}
+
+.slicer-overlay-btn-row--mt {
+  margin-top: 6px;
+}
+
+.slicer-overlay-flex-btn {
+  flex: 1;
+  justify-content: center;
+  font-size: 11px;
+  background: var(--bg-toolbar);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.slicer-overlay-flex-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.slicer-overlay-mirror-btn {
+  flex: 1;
+  justify-content: center;
+  font-size: 11px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.slicer-overlay-mirror-btn.is-active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
+.slicer-overlay-mirror-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.slicer-overlay-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.slicer-overlay-settings-intro {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.slicer-overlay-settings-label {
+  font-size: 12px;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.slicer-overlay-settings-input {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 12px;
+  text-align: right;
+  outline: none;
+  width: 64px;
+}
+
+.slicer-overlay-settings-unit {
+  font-size: 11px;
+  color: var(--text-muted);
+  width: 18px;
+}
+
+.slicer-overlay-drop-highlight {
+  color: var(--accent);
+  font-weight: 600;
+  margin-left: 3px;
+}

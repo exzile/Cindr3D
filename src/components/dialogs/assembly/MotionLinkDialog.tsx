@@ -1,27 +1,30 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
+import { useComponentStore } from '../../../store/componentStore';
 import { useCADStore } from '../../../store/cadStore';
 
 export function MotionLinkDialog({ onClose }: { onClose: () => void }) {
-  const addFeature = useCADStore((s) => s.addFeature);
-  const features = useCADStore((s) => s.features);
+  const addMotionLink    = useComponentStore((s) => s.addMotionLink);
+  const motionLinks      = useComponentStore((s) => s.motionLinks);
+  const joints           = useComponentStore((s) => s.joints);
+  const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
-  const [sourceJoint, setSourceJoint] = useState('');
-  const [targetJoint, setTargetJoint] = useState('');
-  const [ratio, setRatio] = useState(1.0);
+  const jointList = Object.values(joints);
+
+  const [sourceJointId, setSourceJointId] = useState(jointList[0]?.id ?? '');
+  const [targetJointId, setTargetJointId] = useState(jointList[1]?.id ?? jointList[0]?.id ?? '');
+  const [ratio, setRatio]   = useState(1.0);
   const [offset, setOffset] = useState(0);
 
   const handleOK = () => {
-    const n = features.filter((f) => f.name.startsWith('Motion Link')).length + 1;
-    addFeature({
-      id: crypto.randomUUID(),
-      name: `Motion Link ${n}`,
-      type: 'import',
-      params: { isMotionLink: true, sourceJoint, targetJoint, ratio, offset },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    });
+    if (!sourceJointId || !targetJointId) {
+      setStatusMessage('Motion Link: select source and target joints');
+      return;
+    }
+    const n = motionLinks.length + 1;
+    const name = `Motion Link ${n}`;
+    addMotionLink({ name, sourceJointId, targetJointId, ratio, offset });
+    setStatusMessage(`Created motion link: ${name}`);
     onClose();
   };
 
@@ -35,23 +38,29 @@ export function MotionLinkDialog({ onClose }: { onClose: () => void }) {
         <div className="dialog-body">
           <div className="dialog-field">
             <label className="dialog-label">Source Joint</label>
-            <input
+            <select
               className="dialog-input"
-              type="text"
-              placeholder="Joint name"
-              value={sourceJoint}
-              onChange={(e) => setSourceJoint(e.target.value)}
-            />
+              value={sourceJointId}
+              onChange={(e) => setSourceJointId(e.target.value)}
+            >
+              {jointList.length === 0
+                ? <option value="">— no joints —</option>
+                : jointList.map((j) => <option key={j.id} value={j.id}>{j.name}</option>)
+              }
+            </select>
           </div>
           <div className="dialog-field">
             <label className="dialog-label">Target Joint</label>
-            <input
+            <select
               className="dialog-input"
-              type="text"
-              placeholder="Joint name"
-              value={targetJoint}
-              onChange={(e) => setTargetJoint(e.target.value)}
-            />
+              value={targetJointId}
+              onChange={(e) => setTargetJointId(e.target.value)}
+            >
+              {jointList.length === 0
+                ? <option value="">— no joints —</option>
+                : jointList.map((j) => <option key={j.id} value={j.id}>{j.name}</option>)
+              }
+            </select>
           </div>
           <div className="dialog-field">
             <label className="dialog-label">Ratio</label>

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
+import { useComponentStore } from '../../../store/componentStore';
 import { useCADStore } from '../../../store/cadStore';
+import * as THREE from 'three';
 import type { JointType } from '../../../types/cad';
 
 interface Props {
@@ -18,25 +20,34 @@ const JOINT_TYPES: { value: JointType; label: string }[] = [
 ];
 
 export default function AsBuiltJointDialog({ onClose }: Props) {
-  const addFeature  = useCADStore((s) => s.addFeature);
-  const features    = useCADStore((s) => s.features);
+  const addJoint          = useComponentStore((s) => s.addJoint);
+  const joints            = useComponentStore((s) => s.joints);
+  const components        = useComponentStore((s) => s.components);
+  const activeComponentId = useComponentStore((s) => s.activeComponentId);
+  const setStatusMessage  = useCADStore((s) => s.setStatusMessage);
 
-  const [component1, setComponent1] = useState('');
-  const [component2, setComponent2] = useState('');
-  const [jointType, setJointType]   = useState<JointType>('rigid');
+  const componentList = Object.values(components);
+
+  const [componentId1, setComponentId1] = useState(activeComponentId);
+  const [componentId2, setComponentId2] = useState(activeComponentId);
+  const [jointType, setJointType]       = useState<JointType>('rigid');
 
   function handleOK() {
-    const n    = features.filter((f) => f.params?.asBuilt).length + 1;
+    const n    = Object.values(joints).filter((j) => j.asBuilt).length + 1;
     const name = `As-Built Joint ${n}`;
-    addFeature({
-      id:         `ab-joint-${Date.now()}`,
+    addJoint({
       name,
-      type:       'import',
-      params:     { asBuilt: true, jointType, component1, component2 },
-      visible:    true,
-      suppressed: false,
-      timestamp:  Date.now(),
+      type:       jointType,
+      componentId1,
+      componentId2,
+      origin:     new THREE.Vector3(0, 0, 0),
+      axis:       new THREE.Vector3(0, 1, 0),
+      rotationValue:    0,
+      translationValue: 0,
+      locked:     false,
+      asBuilt:    true,
     });
+    setStatusMessage(`Created as-built ${jointType} joint: ${name}`);
     onClose();
   }
 
@@ -49,32 +60,29 @@ export default function AsBuiltJointDialog({ onClose }: Props) {
         </div>
 
         <div className="dialog-body">
-          <div className="form-row">
-            <label className="form-label">Component 1</label>
-            <input
-              className="form-input"
-              type="text"
-              placeholder="Component name"
-              value={component1}
-              onChange={(e) => setComponent1(e.target.value)}
-            />
+          <div className="form-group">
+            <label>Component 1</label>
+            <select value={componentId1} onChange={(e) => setComponentId1(e.target.value)}>
+              {componentList.length === 0
+                ? <option value="">— no components —</option>
+                : componentList.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)
+              }
+            </select>
           </div>
 
-          <div className="form-row">
-            <label className="form-label">Component 2</label>
-            <input
-              className="form-input"
-              type="text"
-              placeholder="Component name"
-              value={component2}
-              onChange={(e) => setComponent2(e.target.value)}
-            />
+          <div className="form-group">
+            <label>Component 2</label>
+            <select value={componentId2} onChange={(e) => setComponentId2(e.target.value)}>
+              {componentList.length === 0
+                ? <option value="">— no components —</option>
+                : componentList.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)
+              }
+            </select>
           </div>
 
-          <div className="form-row">
-            <label className="form-label">Joint Type</label>
+          <div className="form-group">
+            <label>Joint Type</label>
             <select
-              className="form-select"
               value={jointType}
               onChange={(e) => setJointType(e.target.value as JointType)}
             >

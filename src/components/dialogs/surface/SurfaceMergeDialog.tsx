@@ -1,68 +1,54 @@
-import { useState } from 'react';
 import { X } from 'lucide-react';
-import { useCADStore } from '../../../store/cadStore';
 
-export function SurfaceMergeDialog({ onClose }: { onClose: () => void }) {
-  const addFeature = useCADStore((s) => s.addFeature);
-  const features = useCADStore((s) => s.features);
+export interface SurfaceMergeParams {
+  face1Id: string | null;
+  face2Id: string | null;
+}
 
-  const [mergeType, setMergeType] = useState<'tangent' | 'curvature' | 'position'>('tangent');
-  const [tolerance, setTolerance] = useState(0.01);
+interface SurfaceMergeDialogProps {
+  open: boolean;
+  onOk: (params: SurfaceMergeParams) => void;
+  onClose: () => void;
+  face1Id?: string | null;
+  face2Id?: string | null;
+}
 
-  const handleOK = () => {
-    const n = features.filter((f) => f.name.startsWith('Surface Merge')).length + 1;
-    addFeature({
-      id: crypto.randomUUID(),
-      name: `Surface Merge ${n}`,
-      type: 'thicken',
-      params: { isSurfaceMerge: true, mergeType, tolerance },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    });
-    onClose();
-  };
+export function SurfaceMergeDialog({ open, onOk, onClose, face1Id = null, face2Id = null }: SurfaceMergeDialogProps) {
+  if (!open) return null;
+
+  const canCommit = face1Id !== null && face2Id !== null;
 
   return (
     <div className="dialog-overlay">
-      <div className="dialog-panel">
+      <div className="dialog dialog-sm">
         <div className="dialog-header">
-          <span className="dialog-title">Merge (Surface)</span>
-          <button className="dialog-close" onClick={onClose}><X size={14} /></button>
+          <h3>Merge (Surface)</h3>
+          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="dialog-body">
-          <div className="dialog-field">
-            <label className="dialog-label">Merge Type</label>
-            <select
-              className="dialog-input"
-              value={mergeType}
-              onChange={(e) => setMergeType(e.target.value as 'tangent' | 'curvature' | 'position')}
-            >
-              <option value="tangent">Tangent</option>
-              <option value="curvature">Curvature</option>
-              <option value="position">Position</option>
-            </select>
+          <div className="form-group">
+            <label>Face 1</label>
+            <span className="dialog-info">
+              {face1Id ? `Face picked (${face1Id.slice(0, 8)}…)` : 'Click a face in the viewport'}
+            </span>
           </div>
-          <div className="dialog-field">
-            <label className="dialog-label">Tolerance (mm)</label>
-            <input
-              className="dialog-input"
-              type="number"
-              min={0.001}
-              max={1.0}
-              step={0.001}
-              value={tolerance}
-              onChange={(e) => {
-                const v = parseFloat(e.target.value);
-                if (!isNaN(v)) setTolerance(Math.min(1.0, Math.max(0.001, v)));
-              }}
-            />
+          <div className="form-group">
+            <label>Face 2</label>
+            <span className="dialog-info">
+              {face2Id ? `Face picked (${face2Id.slice(0, 8)}…)` : 'Click a second face in the viewport'}
+            </span>
           </div>
-          <p className="dialog-hint">Select surfaces to merge into a single quilt face.</p>
+          <p className="dialog-hint">Pick two tangent or coincident surface faces to merge their shared edge.</p>
         </div>
         <div className="dialog-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
+          <button
+            className="btn btn-primary"
+            disabled={!canCommit}
+            onClick={() => onOk({ face1Id, face2Id })}
+          >
+            OK
+          </button>
         </div>
       </div>
     </div>

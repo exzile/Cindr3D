@@ -53,6 +53,10 @@ export default function SketchInteraction() {
   const clearConstraintSelection = useCADStore((s) => s.clearConstraintSelection);
   const addSketchConstraint = useCADStore((s) => s.addSketchConstraint);
   const setActiveTool = useCADStore((s) => s.setActiveTool);
+  // S7: 3D sketch multi-plane
+  const sketch3DMode = useCADStore((s) => s.sketch3DMode);
+  const sketch3DActivePlane = useCADStore((s) => s.sketch3DActivePlane);
+  const setSketch3DActivePlane = useCADStore((s) => s.setSketch3DActivePlane);
 
   const [drawingPoints, setDrawingPoints] = useState<SketchPoint[]>([]);
   const [mousePos, setMousePos] = useState<THREE.Vector3 | null>(null);
@@ -87,6 +91,9 @@ export default function SketchInteraction() {
     color: 0x00ccff, linewidth: 1, dashSize: 0.4, gapSize: 0.2,
   }));
 
+  // S7: plane-pick pending — set true when Tab is pressed to redirect draw plane
+  const planePickPendingRef = useRef(false);
+
   // Dispose the shared preview materials when SketchInteraction unmounts
   useEffect(() => {
     const mat = previewMaterial.current;
@@ -114,6 +121,13 @@ export default function SketchInteraction() {
   const getSketchPlane = useCallback((): THREE.Plane => {
     if (!activeSketch) return new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
+    // S7: when a 3D active draw plane override is set, use it
+    if (sketch3DActivePlane) {
+      const n = new THREE.Vector3(...sketch3DActivePlane.normal).normalize();
+      const o = new THREE.Vector3(...sketch3DActivePlane.origin);
+      return new THREE.Plane(n, -n.dot(o));
+    }
+
     // Normals must match getPlaneNormal() in cadStore and the visual plane selector:
     //   XY = horizontal ground   → Y-normal  (0, 1, 0)
     //   XZ = vertical front wall → Z-normal  (0, 0, 1)
@@ -129,7 +143,7 @@ export default function SketchInteraction() {
       }
       default:   return new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     }
-  }, [activeSketch]);
+  }, [activeSketch, sketch3DActivePlane]);
 
   const snapToGrid = useCallback((point: THREE.Vector3): THREE.Vector3 => {
     // D207: sketchSnapEnabled controls snap-to-grid; snapEnabled is global geometry snap
@@ -320,6 +334,41 @@ export default function SketchInteraction() {
       if (event.button !== 0) return;
       // Suppress the click that follows a drag-arc completion
       if (dragJustFinishedRef.current) { dragJustFinishedRef.current = false; return; }
+
+      // S7: plane-pick mode — intercept click to redirect the active draw plane
+      if (planePickPendingRef.current && sketch3DMode) {
+        const rect = gl.domElement.getBoundingClientRect();
+        const mouse = new THREE.Vector2(
+          ((event.clientX - rect.left) / rect.width) * 2 - 1,
+          -((event.clientY - rect.top) / rect.height) * 2 + 1,
+        );
+        raycaster.setFromCamera(mouse, camera);
+        const pickable: THREE.Mesh[] = [];
+        scene.traverse((obj) => {
+          const m = obj as THREE.Mesh;
+          if (m.isMesh && obj.userData?.pickable) pickable.push(m);
+        });
+        const hits = raycaster.intersectObjects(pickable, false);
+        if (hits.length > 0 && hits[0].faceIndex !== undefined && hits[0].face) {
+          const hit = hits[0];
+          // Compute face normal in world space
+          const normalLocal = hit.face!.normal.clone();
+          const normalMatrix = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
+          const worldNormal = normalLocal.applyMatrix3(normalMatrix).normalize();
+          // Use the hit point as origin on that plane
+          const worldOrigin = hit.point.clone();
+          setSketch3DActivePlane({
+            normal: [worldNormal.x, worldNormal.y, worldNormal.z],
+            origin: [worldOrigin.x, worldOrigin.y, worldOrigin.z],
+          });
+          planePickPendingRef.current = false;
+          setStatusMessage(`Draw plane switched to face — Tab to change again`);
+        } else {
+          setStatusMessage('No face hit — click a solid face to switch plane');
+        }
+        return;
+      }
+
       const point = getWorldPoint(event);
       if (!point) return;
 
@@ -456,8 +505,25 @@ export default function SketchInteraction() {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        // S7: if in plane-pick mode, cancel it first
+        if (planePickPendingRef.current) {
+          planePickPendingRef.current = false;
+          setStatusMessage('Plane pick cancelled');
+          return;
+        }
         setDrawingPoints([]);
         setStatusMessage('Drawing cancelled');
+        return;
+      }
+      // S7: Tab key — enter plane-pick mode (3D sketch only)
+      if (event.key === 'Tab' && sketch3DMode) {
+        event.preventDefault();
+        planePickPendingRef.current = !planePickPendingRef.current;
+        if (planePickPendingRef.current) {
+          setStatusMessage('Click a face or construction plane to switch draw plane [Tab to cancel]');
+        } else {
+          setStatusMessage('Plane pick cancelled');
+        }
         return;
       }
       // S9: 'A' key — toggle inline arc mode during line tool
@@ -644,7 +710,7 @@ export default function SketchInteraction() {
       canvas.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeSketch, activeTool, drawingPoints, mousePos, getWorldPoint, findSnapCandidate, addSketchEntity, replaceSketchEntities, cycleEntityLinetype, setStatusMessage, polygonSides, filletRadius, chamferDist1, chamferDist2, chamferAngle, tangentCircleRadius, conicRho, blendCurveMode, camera, gl, raycaster]);
+  }, [activeSketch, activeTool, drawingPoints, mousePos, getWorldPoint, findSnapCandidate, addSketchEntity, replaceSketchEntities, cycleEntityLinetype, setStatusMessage, polygonSides, filletRadius, chamferDist1, chamferDist2, chamferAngle, tangentCircleRadius, conicRho, blendCurveMode, camera, gl, raycaster, sketch3DMode, setSketch3DActivePlane, scene]);
 
   // D14: Project / Include Geometry — pick a solid face, project its boundary onto the sketch plane
   useEffect(() => {

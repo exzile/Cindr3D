@@ -3,26 +3,19 @@ import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 
 export function SurfaceTrimDialog({ onClose }: { onClose: () => void }) {
-  const addFeature = useCADStore((s) => s.addFeature);
+  const commitSurfaceTrim = useCADStore((s) => s.commitSurfaceTrim);
   const features = useCADStore((s) => s.features);
-  const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
-  const [trimmingTools, setTrimmingTools] = useState('');
-  const [keep, setKeep] = useState<'first-half' | 'second-half' | 'both'>('first-half');
-  const [removeInterior, setRemoveInterior] = useState(false);
+  const surfaceBodies = features.filter(
+    (f) => f.bodyKind === 'surface' && f.mesh && f.visible,
+  );
+
+  const [sourceFeatureId, setSourceFeatureId] = useState(surfaceBodies[0]?.id ?? '');
+  const [trimmerFeatureId, setTrimmerFeatureId] = useState(surfaceBodies[1]?.id ?? '');
+  const [keepSide, setKeepSide] = useState<'inside' | 'outside'>('outside');
 
   const handleOK = () => {
-    const n = features.filter((f) => f.name.startsWith('Surface Trim')).length + 1;
-    addFeature({
-      id: crypto.randomUUID(),
-      name: `Surface Trim ${n}`,
-      type: 'split-body',
-      params: { trimmingTools, keep, removeInterior, isSurfaceTrim: true },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    });
-    setStatusMessage(`Surface Trim ${n}: keep ${keep}`);
+    commitSurfaceTrim({ sourceFeatureId, trimmerFeatureId, keepSide });
     onClose();
   };
 
@@ -35,31 +28,55 @@ export function SurfaceTrimDialog({ onClose }: { onClose: () => void }) {
         </div>
         <div className="dialog-body">
           <div className="form-group">
-            <label>Trimming Tools</label>
-            <input
-              type="text"
-              value={trimmingTools}
-              onChange={(e) => setTrimmingTools(e.target.value)}
-              placeholder="Select trimming surfaces/edges"
-            />
-          </div>
-          <div className="form-group">
-            <label>Keep</label>
-            <select value={keep} onChange={(e) => setKeep(e.target.value as 'first-half' | 'second-half' | 'both')}>
-              <option value="first-half">First Half</option>
-              <option value="second-half">Second Half</option>
-              <option value="both">Both</option>
+            <label>Source Surface</label>
+            <select
+              value={sourceFeatureId}
+              onChange={(e) => setSourceFeatureId(e.target.value)}
+            >
+              <option value="">— select —</option>
+              {surfaceBodies.map((f) => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
             </select>
           </div>
-          <label className="checkbox-label">
-            <input type="checkbox" checked={removeInterior} onChange={(e) => setRemoveInterior(e.target.checked)} />
-            Remove Interior
-          </label>
-          <p className="dialog-hint">Select the surface(s) to trim in the viewport, then specify trimming geometry.</p>
+          <div className="form-group">
+            <label>Trimming Tool</label>
+            <select
+              value={trimmerFeatureId}
+              onChange={(e) => setTrimmerFeatureId(e.target.value)}
+            >
+              <option value="">— select —</option>
+              {surfaceBodies
+                .filter((f) => f.id !== sourceFeatureId)
+                .map((f) => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Keep Side</label>
+            <select
+              value={keepSide}
+              onChange={(e) => setKeepSide(e.target.value as 'inside' | 'outside')}
+            >
+              <option value="outside">Outside (positive side)</option>
+              <option value="inside">Inside (negative side)</option>
+            </select>
+          </div>
+          <p className="dialog-hint">
+            Select the surface to trim and the surface or plane to trim against.
+            The selected keep-side of the source surface will be retained.
+          </p>
         </div>
         <div className="dialog-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
+          <button
+            className="btn btn-primary"
+            onClick={handleOK}
+            disabled={!sourceFeatureId || !trimmerFeatureId}
+          >
+            OK
+          </button>
         </div>
       </div>
     </div>

@@ -12,10 +12,12 @@ interface Props {
   onAdd: (c1: string, c2: string) => void;
   onToggle: (id: string) => void;
   onRemove: (id: string) => void;
+  onEnableAll: () => void;
+  onDisableAll: () => void;
   onClose: () => void;
 }
 
-export function ContactSetsDialog({ open, components, contactSets, onAdd, onToggle, onRemove, onClose }: Props) {
+export function ContactSetsDialog({ open, components, contactSets, onAdd, onToggle, onRemove, onEnableAll, onDisableAll, onClose }: Props) {
   const [sel1, setSel1] = useState('');
   const [sel2, setSel2] = useState('');
 
@@ -38,6 +40,16 @@ export function ContactSetsDialog({ open, components, contactSets, onAdd, onTogg
           <button className="dialog-close" onClick={onClose}><X size={14} /></button>
         </div>
         <div className="dialog-body">
+          {/* A25: bulk enable / disable */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            <button className="btn btn-secondary" style={{ flex: 1, fontSize: 12 }} onClick={onEnableAll}>
+              Enable All
+            </button>
+            <button className="btn btn-secondary" style={{ flex: 1, fontSize: 12 }} onClick={onDisableAll}>
+              Disable All
+            </button>
+          </div>
+
           {contactSets.length === 0 && (
             <p style={{ color: 'var(--text-muted)', fontSize: 12, margin: '0 0 8px' }}>
               No contact sets defined.
