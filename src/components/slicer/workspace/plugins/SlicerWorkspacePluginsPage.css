@@ -1,0 +1,252 @@
+.slicer-workspace-plugins-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+}
+
+.slicer-workspace-plugins-page__header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.slicer-workspace-plugins-page__title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.slicer-workspace-plugins-page__title-icon {
+  color: var(--accent);
+}
+
+.slicer-workspace-plugins-page__subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.slicer-workspace-plugins-page__controls {
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.slicer-workspace-plugins-page__search-wrap {
+  position: relative;
+  max-width: 380px;
+}
+
+.slicer-workspace-plugins-page__search-icon {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.slicer-workspace-plugins-page__search-input {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px 3px 30px;
+  font-size: 12px;
+  outline: none;
+  width: 100%;
+  height: 30px;
+}
+
+.slicer-workspace-plugins-page__tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.slicer-workspace-plugins-page__tab {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.slicer-workspace-plugins-page__tab.is-active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.slicer-workspace-plugins-page__grid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+
+.slicer-workspace-plugin-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color 0.15s;
+  position: relative;
+}
+
+.slicer-workspace-plugin-card__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.slicer-workspace-plugin-card__icon-wrap {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--bg-toolbar);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.slicer-workspace-plugin-card__title-area {
+  flex: 1;
+  min-width: 0;
+}
+
+.slicer-workspace-plugin-card__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slicer-workspace-plugin-card__desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.slicer-workspace-plugin-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.slicer-workspace-plugin-card__version {
+  background: var(--bg-toolbar);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+.slicer-workspace-plugin-card__author {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.slicer-workspace-plugin-card__installed {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  border-radius: 4px;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #22c55e;
+  margin-left: auto;
+}
+
+.slicer-workspace-plugin-card__settings,
+.slicer-workspace-plugin-card__install {
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.slicer-workspace-plugin-card__settings {
+  background: var(--bg-toolbar);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  flex-shrink: 0;
+}
+
+.slicer-workspace-plugin-card__install {
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+  padding: 4px 12px;
+  margin-left: auto;
+  font-weight: 600;
+}
+
+.slicer-workspace-plugin-card__install.is-installing {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.slicer-workspace-plugins-page__empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  gap: 10px;
+  padding: 40px;
+}
+
+.slicer-workspace-plugins-page__empty-icon {
+  opacity: 0.35;
+}
+
+.slicer-workspace-plugins-page__empty-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.slicer-workspace-plugins-page__empty-subtitle {
+  font-size: 11px;
+}

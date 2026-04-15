@@ -4,22 +4,8 @@ import { Plus, Trash2, LayoutGrid, XCircle, Upload, Box, FlipHorizontal, Refresh
 import { useSlicerStore } from '../../../../store/slicerStore';
 import { useCADStore } from '../../../../store/cadStore';
 import type { PlateObject } from '../../../../types/slicer';
-import { colors, sharedStyles } from '../../../../utils/theme';
 import { normalizeRotationRadians, normalizeScale } from '../../../../utils/slicerTransforms';
-
-const panelStyle: React.CSSProperties = {
-  background: colors.panel,
-  borderRight: `1px solid ${colors.panelBorder}`,
-  display: 'flex',
-  flexDirection: 'column',
-  overflow: 'hidden',
-};
-
-const btnBase = sharedStyles.btnBase;
-const btnAccent = sharedStyles.btnAccent;
-const btnDanger = sharedStyles.btnDanger;
-const inputStyle = sharedStyles.input;
-const labelStyle = sharedStyles.label;
+import './SlicerWorkspaceObjectsPanel.css';
 
 export function SlicerWorkspaceObjectsPanel() {
   const plateObjects = useSlicerStore((s) => s.plateObjects);
@@ -88,20 +74,22 @@ export function SlicerWorkspaceObjectsPanel() {
   const rot = selectedObj ? normalizeRotationRadians((selectedObj as { rotation?: unknown }).rotation) : null;
   const scl = selectedObj ? normalizeScale((selectedObj as { scale?: unknown }).scale) : null;
 
-  const numStyle: React.CSSProperties = { ...inputStyle, width: 52, padding: '2px 4px', fontSize: 11 };
   const xyzRow = (
     label: string,
     vals: { x: number; y: number; z: number },
     onChange: (axis: 'x' | 'y' | 'z', v: number) => void,
     step = 1,
   ) => (
-    <div style={{ marginBottom: 6 }}>
-      <div style={labelStyle}>{label}</div>
-      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+    <div className="slicer-workspace-objects-panel__xyz-row">
+      <div className="slicer-workspace-objects-panel__xyz-label">{label}</div>
+      <div className="slicer-workspace-objects-panel__xyz-inputs">
         {(['x', 'y', 'z'] as const).map((ax) => (
-          <label key={ax} style={{ display: 'flex', alignItems: 'center', gap: 2, color: colors.textDim, fontSize: 10 }}>
+          <label key={ax} className="slicer-workspace-objects-panel__axis-field">
             {ax.toUpperCase()}
-            <input type="number" style={numStyle} step={step}
+            <input
+              type="number"
+              className="slicer-workspace-objects-panel__axis-input"
+              step={step}
               value={vals[ax].toFixed(step < 1 ? 3 : 1)}
               onChange={(e) => onChange(ax, parseFloat(e.target.value) || 0)} />
           </label>
@@ -111,64 +99,40 @@ export function SlicerWorkspaceObjectsPanel() {
   );
 
   return (
-    <div style={{ ...panelStyle, width: 240, borderRight: `1px solid ${colors.panelBorder}`, flexShrink: 0 }}>
-      <div style={{
-        padding: '10px', borderBottom: `1px solid ${colors.panelBorder}`,
-        display: 'flex', alignItems: 'center', gap: 6,
-        color: colors.text, fontSize: 13, fontWeight: 600,
-      }}>
+    <div className="slicer-workspace-objects-panel">
+      <div className="slicer-workspace-objects-panel__header">
         <Layers size={16} />
         Objects on Plate
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div className="slicer-workspace-objects-panel__list">
         <div
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
-          style={{
-            margin: 8,
-            padding: '10px 8px',
-            border: `2px dashed ${isDragging ? colors.accent : colors.panelBorder}`,
-            borderRadius: 6,
-            textAlign: 'center',
-            fontSize: 11,
-            color: isDragging ? colors.accent : colors.textDim,
-            cursor: 'pointer',
-            background: isDragging ? colors.accentLight : 'transparent',
-            transition: 'all 0.15s',
-          }}
+          className={`slicer-workspace-objects-panel__dropzone ${isDragging ? 'is-dragging' : ''}`}
           onClick={() => fileInputRef.current?.click()}
         >
-          <Upload size={16} style={{ margin: '0 auto 4px', display: 'block', opacity: 0.6 }} />
+          <Upload size={16} className="slicer-workspace-objects-panel__dropzone-icon" />
           {importing ? 'Importing...' : 'Drop STL/OBJ/3MF or click'}
         </div>
         {importError && (
-          <div style={{ padding: '4px 8px', color: colors.danger, fontSize: 11 }}>{importError}</div>
+          <div className="slicer-workspace-objects-panel__import-error">{importError}</div>
         )}
-        <input ref={fileInputRef} type="file" accept=".stl,.obj,.3mf,.amf,.step,.stp"
-          style={{ display: 'none' }} onChange={handleFileInput} />
+        <input ref={fileInputRef} type="file" accept=".stl,.obj,.3mf,.amf,.step,.stp" className="slicer-workspace-objects-panel__file-input" onChange={handleFileInput} />
 
         {plateObjects.length === 0 && !importing && (
-          <div style={{ padding: '8px 10px', color: colors.textDim, fontSize: 11, textAlign: 'center' }}>
+          <div className="slicer-workspace-objects-panel__empty">
             No objects on the build plate.
           </div>
         )}
         {plateObjects.map((obj) => (
-          <div key={obj.id} onClick={() => selectPlateObject(obj.id)}
-            style={{
-              padding: '5px 10px',
-              background: obj.id === selectedId ? colors.panelLight : 'transparent',
-              borderLeft: obj.id === selectedId ? `3px solid ${colors.accent}` : '3px solid transparent',
-              cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            }}>
+          <div key={obj.id} onClick={() => selectPlateObject(obj.id)} className={`slicer-workspace-objects-panel__row ${obj.id === selectedId ? 'is-selected' : ''}`}>
             <div>
-              <div style={{ color: colors.text, fontSize: 12 }}>{obj.name}</div>
-              <div style={{ color: colors.textDim, fontSize: 10 }}>{sizeStr(obj)}</div>
+              <div className="slicer-workspace-objects-panel__name">{obj.name}</div>
+              <div className="slicer-workspace-objects-panel__size">{sizeStr(obj)}</div>
             </div>
-            <button title="Remove" onClick={(e) => { e.stopPropagation(); removeFromPlate(obj.id); }}
-              style={{ background: 'transparent', border: 'none', color: colors.danger, cursor: 'pointer', padding: 2, display: 'flex' }}>
+            <button title="Remove" className="slicer-workspace-objects-panel__remove" onClick={(e) => { e.stopPropagation(); removeFromPlate(obj.id); }}>
               <Trash2 size={14} />
             </button>
           </div>
@@ -176,19 +140,19 @@ export function SlicerWorkspaceObjectsPanel() {
       </div>
 
       {selectedObj && pos && rot && scl && (
-        <div style={{ borderTop: `1px solid ${colors.panelBorder}`, padding: 10 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: colors.textDim, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        <div className="slicer-workspace-objects-panel__transform">
+          <div className="slicer-workspace-objects-panel__transform-title">
             Transform
           </div>
           {xyzRow('Position (mm)', pos, (ax, v) => updObj({ position: { ...pos, [ax]: v } }), 0.1)}
           {xyzRow('Rotation (°)', rot, (ax, v) => updObj({ rotation: { ...rot, [ax]: v } }), 1)}
           {xyzRow('Scale', scl, (ax, v) => updObj({ scale: { ...scl, [ax]: Math.max(0.001, v) } }), 0.01)}
-          <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
-            <button style={{ ...btnBase, fontSize: 10, padding: '3px 6px', flex: 1 }}
+          <div className="slicer-workspace-objects-panel__button-row">
+            <button className="slicer-workspace-objects-panel__button"
               onClick={() => updObj({ scale: { x: 1, y: 1, z: 1 }, rotation: { x: 0, y: 0, z: 0 } })}>
               <RefreshCw size={10} /> Reset
             </button>
-            <button style={{ ...btnBase, fontSize: 10, padding: '3px 6px', flex: 1 }}
+            <button className="slicer-workspace-objects-panel__button"
               onClick={() => {
                 const b = selectedObj.boundingBox;
                 const bv = getActivePrinterProfile()?.buildVolume ?? { x: 220, y: 220, z: 250 };
@@ -205,18 +169,18 @@ export function SlicerWorkspaceObjectsPanel() {
               Center
             </button>
           </div>
-          <div style={{ display: 'flex', gap: 4 }}>
-            <button style={{ ...btnBase, fontSize: 10, padding: '3px 6px', flex: 1 }}
+          <div className="slicer-workspace-objects-panel__button-row slicer-workspace-objects-panel__button-row--mirrors">
+            <button className="slicer-workspace-objects-panel__button"
               title="Mirror X"
               onClick={() => updObj({ mirrorX: !(selectedObj as { mirrorX?: boolean }).mirrorX })}>
               <FlipHorizontal size={10} /> X
             </button>
-            <button style={{ ...btnBase, fontSize: 10, padding: '3px 6px', flex: 1 }}
+            <button className="slicer-workspace-objects-panel__button"
               title="Mirror Y"
               onClick={() => updObj({ mirrorY: !(selectedObj as { mirrorY?: boolean }).mirrorY })}>
               <FlipHorizontal size={10} /> Y
             </button>
-            <button style={{ ...btnBase, fontSize: 10, padding: '3px 6px', flex: 1 }}
+            <button className="slicer-workspace-objects-panel__button"
               title="Mirror Z"
               onClick={() => updObj({ mirrorZ: !(selectedObj as { mirrorZ?: boolean }).mirrorZ })}>
               <FlipHorizontal size={10} /> Z
@@ -225,38 +189,31 @@ export function SlicerWorkspaceObjectsPanel() {
         </div>
       )}
 
-      <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 6, borderTop: `1px solid ${colors.panelBorder}` }}>
-        <div style={{ position: 'relative' }}>
-          <button style={{ ...btnAccent, width: '100%', justifyContent: 'center' }} onClick={() => setShowAddMenu(!showAddMenu)}>
+      <div className="slicer-workspace-objects-panel__actions">
+        <div className="slicer-workspace-objects-panel__add-wrap">
+          <button className="slicer-workspace-objects-panel__action-button" onClick={() => setShowAddMenu(!showAddMenu)}>
             <Plus size={14} /> Add from CAD
           </button>
           {showAddMenu && (
-            <div style={{
-              position: 'absolute', bottom: '100%', left: 0, right: 0,
-              background: colors.panelLight, border: `1px solid ${colors.panelBorder}`,
-              borderRadius: 4, marginBottom: 4, maxHeight: 180, overflowY: 'auto', zIndex: 10,
-            }}>
+            <div className="slicer-workspace-objects-panel__menu">
               {features.length === 0 && (
-                <div style={{ padding: 10, color: colors.textDim, fontSize: 11 }}>
+                <div className="slicer-workspace-objects-panel__menu-empty">
                   No CAD features available.
                 </div>
               )}
               {features.filter(f => f.type !== 'sketch').map((f) => (
-                <div key={f.id} onClick={() => handleAddModel(f)}
-                  style={{ padding: '5px 10px', cursor: 'pointer', fontSize: 12, color: colors.text, borderBottom: `1px solid ${colors.panelBorder}` }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = colors.panel)}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-                  <Box size={12} style={{ marginRight: 6 }} />
+                <div key={f.id} onClick={() => handleAddModel(f)} className="slicer-workspace-objects-panel__menu-item">
+                  <Box size={12} className="slicer-workspace-objects-panel__menu-item-icon" />
                   {f.name}
                 </div>
               ))}
             </div>
           )}
         </div>
-        <button style={{ ...btnBase, justifyContent: 'center' }} onClick={() => autoArrange()}>
+        <button className="slicer-workspace-objects-panel__secondary-button" onClick={() => autoArrange()}>
           <LayoutGrid size={14} /> Auto Arrange
         </button>
-        <button style={{ ...btnDanger, justifyContent: 'center' }} onClick={() => clearPlate()} disabled={plateObjects.length === 0}>
+        <button className="slicer-workspace-objects-panel__danger-button" onClick={() => clearPlate()} disabled={plateObjects.length === 0}>
           <XCircle size={14} /> Clear Plate
         </button>
       </div>

@@ -27,10 +27,6 @@
 .slicer-preview-legend__layer-title,
 .slicer-preview-legend__mode-title {
   font-weight: 700;
-}
-
-.slicer-preview-legend__layer-title,
-.slicer-preview-legend__mode-title {
   margin-bottom: 2px;
 }
 

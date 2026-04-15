@@ -1,0 +1,280 @@
+.slicer-workspace-objects-panel {
+  width: 240px;
+  flex-shrink: 0;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.slicer-workspace-objects-panel__header {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.slicer-workspace-objects-panel__list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.slicer-workspace-objects-panel__dropzone {
+  margin: 8px;
+  padding: 10px 8px;
+  border: 2px dashed var(--border);
+  border-radius: 6px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  background: transparent;
+  transition: all 0.15s;
+}
+
+.slicer-workspace-objects-panel__dropzone.is-dragging {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+.slicer-workspace-objects-panel__dropzone-icon {
+  margin: 0 auto 4px;
+  display: block;
+  opacity: 0.6;
+}
+
+.slicer-workspace-objects-panel__import-error {
+  padding: 4px 8px;
+  color: var(--error);
+  font-size: 11px;
+}
+
+.slicer-workspace-objects-panel__file-input {
+  display: none;
+}
+
+.slicer-workspace-objects-panel__empty {
+  padding: 8px 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.slicer-workspace-objects-panel__row {
+  padding: 5px 10px;
+  border-left: 3px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.slicer-workspace-objects-panel__row.is-selected {
+  background: var(--bg-toolbar);
+  border-left-color: var(--accent);
+}
+
+.slicer-workspace-objects-panel__name {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.slicer-workspace-objects-panel__size {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.slicer-workspace-objects-panel__remove {
+  background: transparent;
+  border: none;
+  color: var(--error);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+}
+
+.slicer-workspace-objects-panel__transform {
+  border-top: 1px solid var(--border);
+  padding: 10px;
+}
+
+.slicer-workspace-objects-panel__transform-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.slicer-workspace-objects-panel__xyz-row {
+  margin-bottom: 6px;
+}
+
+.slicer-workspace-objects-panel__xyz-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.slicer-workspace-objects-panel__xyz-inputs {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.slicer-workspace-objects-panel__axis-field {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.slicer-workspace-objects-panel__axis-input {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-size: 11px;
+  width: 52px;
+  outline: none;
+}
+
+.slicer-workspace-objects-panel__button-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.slicer-workspace-objects-panel__button-row--mirrors {
+  margin-bottom: 0;
+}
+
+.slicer-workspace-objects-panel__button {
+  flex: 1;
+  background: var(--bg-toolbar);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 3px 6px;
+  font-size: 10px;
+}
+
+.slicer-workspace-objects-panel__actions {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.slicer-workspace-objects-panel__add-wrap {
+  position: relative;
+}
+
+.slicer-workspace-objects-panel__action-button {
+  width: 100%;
+  justify-content: center;
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.slicer-workspace-objects-panel__menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background: var(--bg-toolbar);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+.slicer-workspace-objects-panel__menu-empty {
+  padding: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.slicer-workspace-objects-panel__menu-item {
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+}
+
+.slicer-workspace-objects-panel__menu-item:hover {
+  background: var(--bg-panel);
+}
+
+.slicer-workspace-objects-panel__menu-item-icon {
+  margin-right: 6px;
+}
+
+.slicer-workspace-objects-panel__secondary-button {
+  width: 100%;
+  justify-content: center;
+  background: var(--bg-toolbar);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.slicer-workspace-objects-panel__danger-button {
+  width: 100%;
+  justify-content: center;
+  background: transparent;
+  color: var(--error);
+  border: 1px solid var(--error);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.slicer-workspace-objects-panel__danger-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
