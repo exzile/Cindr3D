@@ -56,6 +56,10 @@ export default function SketchPalette() {
   const setShowProjectedGeometries = useCADStore((s) => s.setShowProjectedGeometries);
   const setCameraTargetQuaternion = useCADStore((s) => s.setCameraTargetQuaternion);
   const solveSketch = useCADStore((s) => s.solveSketch);
+  const sketchGridEnabled = useCADStore((s) => s.sketchGridEnabled);
+  const setSketchGridEnabled = useCADStore((s) => s.setSketchGridEnabled);
+  const sketchSnapEnabled = useCADStore((s) => s.sketchSnapEnabled);
+  const setSketchSnapEnabled = useCADStore((s) => s.setSketchSnapEnabled);
   const sketch3DMode = useCADStore((s) => s.sketch3DMode);
   const toggleSketch3DMode = useCADStore((s) => s.toggleSketch3DMode);
   const [dismissed, setDismissed] = useState(false);
@@ -173,20 +177,29 @@ export default function SketchPalette() {
             </button>
           </div>
 
-          {/* Sketch Grid — synced with CAD store */}
+          {/* ─── Grid & Snap section (D207) ─── */}
+          <div className="sketch-palette-section-header" style={{ marginTop: 4 }}>
+            <span>▼ Grid &amp; Snap</span>
+          </div>
+
+          {/* Sketch Grid — D207: driven by sketchGridEnabled in store */}
           <div className="sketch-palette-row">
-            <span className="sketch-palette-label">Sketch Grid</span>
+            <span className="sketch-palette-label">Show Grid</span>
             <label className="sketch-palette-check">
               <input
                 type="checkbox"
-                checked={gridVisible}
-                onChange={() => setGridVisible(!gridVisible)}
+                checked={sketchGridEnabled && gridVisible}
+                onChange={() => {
+                  const next = !(sketchGridEnabled && gridVisible);
+                  setSketchGridEnabled(next);
+                  setGridVisible(next);
+                }}
               />
               <span className="sketch-palette-checkmark" />
             </label>
           </div>
           {/* S7: Per-sketch grid size override */}
-          {gridVisible && (
+          {sketchGridEnabled && gridVisible && (
             <div className="sketch-palette-row">
               <span className="sketch-palette-label">Grid Size</span>
               <input
@@ -205,9 +218,22 @@ export default function SketchPalette() {
             </div>
           )}
 
-          {/* Snap — synced with CAD store */}
+          {/* Snap to Grid — D207 */}
           <div className="sketch-palette-row">
-            <span className="sketch-palette-label">Snap</span>
+            <span className="sketch-palette-label">Snap to Grid</span>
+            <label className="sketch-palette-check">
+              <input
+                type="checkbox"
+                checked={sketchSnapEnabled}
+                onChange={() => setSketchSnapEnabled(!sketchSnapEnabled)}
+              />
+              <span className="sketch-palette-checkmark" />
+            </label>
+          </div>
+
+          {/* Snap to Geometry (endpoint/midpoint/intersection) — driven by global snap */}
+          <div className="sketch-palette-row">
+            <span className="sketch-palette-label">Snap to Geom.</span>
             <label className="sketch-palette-check">
               <input
                 type="checkbox"

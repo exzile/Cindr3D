@@ -74,14 +74,192 @@ import {
   InsertSVGDialog,
   InsertDXFDialog,
   InsertCanvasDialog,
+  JointOriginDialog,
+  InterferenceDialog,
 } from './components/dialogs';
 import ParametersPanel from './components/panels/ParametersPanel';
 import { OffsetFaceDialog } from './components/dialogs/solid/OffsetFaceDialog';
 import { AlignDialog } from './components/dialogs/solid/AlignDialog';
 import { FilletDialog } from './components/dialogs/solid/FilletDialog';
 import { ChamferDialog } from './components/dialogs/solid/ChamferDialog';
+import DirectEditDialog from './components/dialogs/solid/DirectEditDialog';
+import TextureExtrudeDialog from './components/dialogs/solid/TextureExtrudeDialog';
+import ReplaceFacePanel from './components/viewport/ReplaceFacePanel';
+import { DecalDialog } from './components/dialogs/insert/DecalDialog';
+import { AttachedCanvasDialog } from './components/dialogs/insert/AttachedCanvasDialog';
+import { SplitFaceDialog } from './components/dialogs/solid/SplitFaceDialog';
+import { BoundingSolidDialog } from './components/dialogs/solid/BoundingSolidDialog';
+import { ContactSetsDialog } from './components/dialogs/assembly/ContactSetsDialog';
+import { InsertComponentDialog } from './components/dialogs/assembly/InsertComponentDialog';
+import { SnapFitDialog } from './components/dialogs/solid/SnapFitDialog';
+import { LipGrooveDialog } from './components/dialogs/solid/LipGrooveDialog';
 import { useCADStore } from './store/cadStore';
+import { useComponentStore } from './store/componentStore';
 import './App.css';
+
+function DirectEditDialogConnected({ onClose }: { onClose: () => void }) {
+  const commitDirectEdit = useCADStore((s) => s.commitDirectEdit);
+  const directEditFaceId = useCADStore((s) => s.directEditFaceId);
+  return (
+    <DirectEditDialog
+      open={true}
+      onClose={onClose}
+      onConfirm={commitDirectEdit}
+      selectedFaceInfo={directEditFaceId ? 'Face selected' : undefined}
+    />
+  );
+}
+
+function TextureExtrudeDialogConnected({ onClose }: { onClose: () => void }) {
+  const commitTextureExtrude = useCADStore((s) => s.commitTextureExtrude);
+  return (
+    <TextureExtrudeDialog
+      open={true}
+      onClose={onClose}
+      onConfirm={commitTextureExtrude}
+    />
+  );
+}
+
+function DecalDialogConnected({ onClose }: { onClose: () => void }) {
+  const decalFaceId = useCADStore((s) => s.decalFaceId);
+  const commitDecal = useCADStore((s) => s.commitDecal);
+  return (
+    <DecalDialog
+      open={true}
+      faceId={decalFaceId}
+      onOk={commitDecal}
+      onClose={onClose}
+    />
+  );
+}
+
+function AttachedCanvasDialogConnected({ onClose }: { onClose: () => void }) {
+  const canvasReferences = useCADStore((s) => s.canvasReferences);
+  const attachedCanvasId = useCADStore((s) => s.attachedCanvasId);
+  const updateCanvas = useCADStore((s) => s.updateCanvas);
+  const openAttachedCanvasDialog = useCADStore((s) => s.openAttachedCanvasDialog);
+  return (
+    <AttachedCanvasDialog
+      open={true}
+      canvases={canvasReferences}
+      selectedId={attachedCanvasId}
+      onSelectCanvas={(id) => openAttachedCanvasDialog(id)}
+      onOk={(id, changes) => { updateCanvas(id, changes); onClose(); }}
+      onClose={onClose}
+    />
+  );
+}
+
+function SplitFaceDialogConnected({ onClose }: { onClose: () => void }) {
+  const splitFaceId = useCADStore((s) => s.splitFaceId);
+  const sketches = useCADStore((s) => s.sketches);
+  const constructionPlanes = useCADStore((s) => s.constructionPlanes);
+  const commitSplitFace = useCADStore((s) => s.commitSplitFace);
+  return (
+    <SplitFaceDialog
+      open={true}
+      faceId={splitFaceId}
+      sketches={sketches}
+      constructionPlanes={constructionPlanes}
+      onOk={commitSplitFace}
+      onClose={onClose}
+    />
+  );
+}
+
+function JointOriginDialogConnected({ onClose }: { onClose: () => void }) {
+  const componentMap = useComponentStore((s) => s.components);
+  const components = Object.values(componentMap);
+  const commitJointOrigin = useCADStore((s) => s.commitJointOrigin);
+  return (
+    <JointOriginDialog
+      open={true}
+      components={components}
+      onOk={(params) => { commitJointOrigin(params); }}
+      onClose={onClose}
+    />
+  );
+}
+
+function InterferenceDialogConnected({ onClose }: { onClose: () => void }) {
+  const computeInterference = useCADStore((s) => s.computeInterference);
+  return (
+    <InterferenceDialog
+      open={true}
+      onClose={onClose}
+      onRun={() => { computeInterference(); return useCADStore.getState().interferenceResults; }}
+    />
+  );
+}
+
+function BoundingSolidDialogConnected({ onClose }: { onClose: () => void }) {
+  const commitBoundingSolid = useCADStore((s) => s.commitBoundingSolid);
+  return (
+    <BoundingSolidDialog
+      open={true}
+      onOk={commitBoundingSolid}
+      onClose={onClose}
+    />
+  );
+}
+
+function ContactSetsDialogConnected({ onClose }: { onClose: () => void }) {
+  const componentMap = useComponentStore((s) => s.components);
+  const components = Object.values(componentMap);
+  const contactSets = useCADStore((s) => s.contactSets);
+  const addContactSet = useCADStore((s) => s.addContactSet);
+  const toggleContactSet = useCADStore((s) => s.toggleContactSet);
+  const removeContactSet = useCADStore((s) => s.removeContactSet);
+  return (
+    <ContactSetsDialog
+      open={true}
+      components={components}
+      contactSets={contactSets}
+      onAdd={addContactSet}
+      onToggle={toggleContactSet}
+      onRemove={removeContactSet}
+      onClose={onClose}
+    />
+  );
+}
+
+function InsertComponentDialogConnected({ onClose }: { onClose: () => void }) {
+  const commitInsertComponent = useCADStore((s) => s.commitInsertComponent);
+  return (
+    <InsertComponentDialog
+      open={true}
+      onOk={commitInsertComponent}
+      onClose={onClose}
+    />
+  );
+}
+
+function SnapFitDialogConnected({ onClose }: { onClose: () => void }) {
+  const snapFitFaceId = useCADStore((s) => s.snapFitFaceId);
+  const commitSnapFit = useCADStore((s) => s.commitSnapFit);
+  return (
+    <SnapFitDialog
+      open={true}
+      faceId={snapFitFaceId}
+      onOk={commitSnapFit}
+      onClose={onClose}
+    />
+  );
+}
+
+function LipGrooveDialogConnected({ onClose }: { onClose: () => void }) {
+  const lipGrooveEdgeId = useCADStore((s) => s.lipGrooveEdgeId);
+  const commitLipGroove = useCADStore((s) => s.commitLipGroove);
+  return (
+    <LipGrooveDialog
+      open={true}
+      edgeId={lipGrooveEdgeId}
+      onOk={commitLipGroove}
+      onClose={onClose}
+    />
+  );
+}
 
 function ActiveDialog() {
   const activeDialog = useCADStore((s) => s.activeDialog);
@@ -167,6 +345,19 @@ function ActiveDialog() {
     case 'insert-svg': return <InsertSVGDialog onClose={close} />;
     case 'insert-dxf': return <InsertDXFDialog onClose={close} />;
     case 'insert-canvas': return <InsertCanvasDialog onClose={close} />;
+    case 'replace-face': return <ReplaceFacePanel />;
+    case 'direct-edit': return <DirectEditDialogConnected onClose={close} />;
+    case 'texture-extrude': return <TextureExtrudeDialogConnected onClose={close} />;
+    case 'decal': return <DecalDialogConnected onClose={close} />;
+    case 'attached-canvas': return <AttachedCanvasDialogConnected onClose={close} />;
+    case 'split-face': return <SplitFaceDialogConnected onClose={close} />;
+    case 'bounding-solid': return <BoundingSolidDialogConnected onClose={close} />;
+    case 'joint-origin': return <JointOriginDialogConnected onClose={close} />;
+    case 'interference': return <InterferenceDialogConnected onClose={close} />;
+    case 'contact-sets': return <ContactSetsDialogConnected onClose={close} />;
+    case 'insert-component': return <InsertComponentDialogConnected onClose={close} />;
+    case 'snap-fit': return <SnapFitDialogConnected onClose={close} />;
+    case 'lip-groove': return <LipGrooveDialogConnected onClose={close} />;
     default: return null;
   }
 }

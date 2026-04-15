@@ -26,6 +26,7 @@ export type Tool =
   | 'polygon-circumscribed'
   | 'polygon-edge'
   | 'ellipse'
+  | 'elliptical-arc'
   | 'point'
   | 'construction-line'
   | 'centerline'
@@ -124,7 +125,20 @@ export type Tool =
   | 'form-delete'
   | 'patch'
   | 'ruled-surface'
-  | 'sketch-text';
+  | 'sketch-text'
+  // ── Construction Geometry tools ──
+  | 'construct-plane-two-edges'
+  | 'construct-axis-through-edge'
+  | 'construct-axis-two-points'
+  | 'construct-point-vertex'
+  | 'construct-point-two-edges'
+  | 'construct-point-center'
+  | 'construct-tangent-plane'
+  | 'construct-plane-tangent-at-point'
+  | 'construct-axis-cylinder'
+  | 'construct-axis-perp-at-point'
+  | 'construct-axis-two-planes'
+  | 'construct-point-three-planes';
 
 export type ViewMode = '3d' | 'sketch';
 
@@ -141,7 +155,7 @@ export interface SketchPoint {
 
 export interface SketchEntity {
   id: string;
-  type: 'line' | 'circle' | 'arc' | 'rectangle' | 'spline' | 'polygon' | 'slot' | 'point' | 'construction-line' | 'centerline';
+  type: 'line' | 'circle' | 'arc' | 'rectangle' | 'spline' | 'polygon' | 'slot' | 'point' | 'construction-line' | 'centerline' | 'ellipse' | 'elliptical-arc';
   points: SketchPoint[];
   closed?: boolean;
   radius?: number;
@@ -152,6 +166,12 @@ export interface SketchEntity {
   /** S6: projected entities stay linked to their source until unlinked. */
   linked?: boolean;
   constraints?: SketchConstraint[];
+  // Ellipse / elliptical-arc analytic fields (S5/S6)
+  cx?: number;              // center x (sketch plane coords)
+  cy?: number;              // center y (sketch plane coords)
+  majorRadius?: number;     // semi-major axis length
+  minorRadius?: number;     // semi-minor axis length
+  rotation?: number;        // angle of major axis from t1, in radians (default 0)
 }
 
 export type ConstraintType =
@@ -354,6 +374,29 @@ export type ConstructionDefinition =
   | { method: 'point-at-vertex'; vertexId: string }
   | { method: 'origin'; axis: 'x' | 'y' | 'z' };
 
+// ── Construction Geometry (D175–D180) ──
+export interface ConstructionPlane {
+  id: string;
+  name: string;
+  origin: [number, number, number];
+  normal: [number, number, number];
+  size: number; // display size, default 10
+}
+
+export interface ConstructionAxis {
+  id: string;
+  name: string;
+  origin: [number, number, number];
+  direction: [number, number, number];
+  length: number; // display length, default 20
+}
+
+export interface ConstructionPoint {
+  id: string;
+  name: string;
+  position: [number, number, number];
+}
+
 // ===== Joints =====
 export type JointType =
   | 'rigid'
@@ -379,6 +422,25 @@ export interface Joint {
   rotationValue: number;
   translationValue: number;
   locked: boolean;
+  /** A17: created from current component positions (As-Built Joint) */
+  asBuilt?: boolean;
+}
+
+// ===== Rigid Group (A18) =====
+export interface RigidGroup {
+  id: string;
+  name: string;
+  componentIds: string[];
+}
+
+// ===== Motion Link (A20) =====
+export interface MotionLink {
+  id: string;
+  name: string;
+  sourceJointId: string;
+  targetJointId: string;
+  ratio: number;
+  offset: number;
 }
 
 // ===== Pattern Features =====
@@ -472,6 +534,32 @@ export type SnapType = 'grid' | 'endpoint' | 'midpoint' | 'center' | 'intersecti
 export interface SnapPoint {
   point: THREE.Vector3;
   type: SnapType;
+}
+
+// ===== Joint Origins (A11) =====
+export interface JointOriginRecord {
+  id: string;
+  name: string;
+  componentId: string | null;
+  position: [number, number, number];
+  normal: [number, number, number];
+}
+
+// ===== Interference (D196) =====
+export interface InterferenceResult {
+  bodyAName: string;
+  bodyBName: string;
+  hasInterference: boolean;
+  intersectionCurveCount: number;
+}
+
+// ===== Contact Sets (A12) =====
+export interface ContactSetEntry {
+  id: string;
+  name: string;
+  component1Id: string;
+  component2Id: string;
+  enabled: boolean;
 }
 
 // ===== Parameters =====

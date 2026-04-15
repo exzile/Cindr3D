@@ -1041,12 +1041,10 @@ export function commitSketchTool(ctx: SketchCommitCtx): void {
           }
           break;
         }
-        // ── D10 Ellipse ────────────────────────────────────────────────
+        // ── D10 / S5 Ellipse ──────────────────────────────────────────
         // Click 1: centre, click 2: major-axis endpoint (sets major radius
-        // + rotation), click 3: minor-axis endpoint (signed minor radius).
-        // Approximated as a closed polyline of 64 segments in the sketch
-        // plane. Stored as a 'spline' entity type so the extrude path still
-        // picks it up through the generic points[] handling.
+        // + rotation), click 3: minor-axis endpoint (perpendicular distance).
+        // Stored as a proper analytic 'ellipse' entity.
         case 'ellipse': {
           if (drawingPoints.length === 0) {
             setDrawingPoints([sketchPoint]);
@@ -1066,21 +1064,69 @@ export function commitSketchTool(ctx: SketchCommitCtx): void {
             const to3 = new THREE.Vector3(sketchPoint.x - centre.x, sketchPoint.y - centre.y, sketchPoint.z - centre.z);
             const minorLen = Math.abs(to3.dot(minorDir));
             if (minorLen < 0.001) { setStatusMessage('Ellipse minor axis too small'); setDrawingPoints([]); break; }
-            const segments = 64;
-            const pts: SketchPoint[] = [];
-            for (let i = 0; i <= segments; i++) {
-              const a = (i / segments) * Math.PI * 2;
-              const ca = Math.cos(a) * majorLen;
-              const sa = Math.sin(a) * minorLen;
-              pts.push({
-                id: crypto.randomUUID(),
-                x: centre.x + majorDir.x * ca + minorDir.x * sa,
-                y: centre.y + majorDir.y * ca + minorDir.y * sa,
-                z: centre.z + majorDir.z * ca + minorDir.z * sa,
-              });
-            }
-            addSketchEntity({ id: crypto.randomUUID(), type: 'spline', points: pts });
+            // Rotation is angle of major axis from t1
+            const rotation = Math.atan2(majorDir.dot(t2), majorDir.dot(t1));
+            addSketchEntity({
+              id: crypto.randomUUID(),
+              type: 'ellipse',
+              points: [{ id: crypto.randomUUID(), x: centre.x, y: centre.y, z: centre.z }],
+              cx: centre.x,
+              cy: centre.y,
+              majorRadius: majorLen,
+              minorRadius: minorLen,
+              rotation,
+              isConstruction: false,
+            });
             setStatusMessage(`Ellipse added (${majorLen.toFixed(2)} × ${minorLen.toFixed(2)})`);
+            setDrawingPoints([]);
+          }
+          break;
+        }
+
+        // ── S6 Elliptical Arc ──────────────────────────────────────────
+        // Click 1: centre, click 2: major-axis endpoint, click 3: minor
+        // axis endpoint, click 4: end angle (arc sweeps from major-axis
+        // direction (angle=0) to the clicked angle).
+        case 'elliptical-arc': {
+          if (drawingPoints.length === 0) {
+            setDrawingPoints([sketchPoint]);
+            setStatusMessage('Elliptical Arc: centre placed — click major-axis endpoint');
+          } else if (drawingPoints.length === 1) {
+            setDrawingPoints([...drawingPoints, sketchPoint]);
+            setStatusMessage('Elliptical Arc: major placed — click minor-axis endpoint');
+          } else if (drawingPoints.length === 2) {
+            setDrawingPoints([...drawingPoints, sketchPoint]);
+            setStatusMessage('Elliptical Arc: minor placed — click end-angle point');
+          } else {
+            const centre = drawingPoints[0];
+            const majorPt = drawingPoints[1];
+            const majorVec = new THREE.Vector3(majorPt.x - centre.x, majorPt.y - centre.y, majorPt.z - centre.z);
+            const majorLen = majorVec.length();
+            if (majorLen < 0.001) { setStatusMessage('Elliptical arc too small'); setDrawingPoints([]); break; }
+            const majorDir = majorVec.clone().normalize();
+            const planeNormal = t1.clone().cross(t2).normalize();
+            const minorDir = majorDir.clone().cross(planeNormal).normalize();
+            const to3 = new THREE.Vector3(drawingPoints[2].x - centre.x, drawingPoints[2].y - centre.y, drawingPoints[2].z - centre.z);
+            const minorLen = Math.abs(to3.dot(minorDir));
+            if (minorLen < 0.001) { setStatusMessage('Elliptical arc minor axis too small'); setDrawingPoints([]); break; }
+            const rotation = Math.atan2(majorDir.dot(t2), majorDir.dot(t1));
+            // End angle: angle from centre to click 4, measured in the local ellipse frame
+            const toEnd = new THREE.Vector3(sketchPoint.x - centre.x, sketchPoint.y - centre.y, sketchPoint.z - centre.z);
+            const endAngle = Math.atan2(toEnd.dot(minorDir), toEnd.dot(majorDir));
+            addSketchEntity({
+              id: crypto.randomUUID(),
+              type: 'elliptical-arc',
+              points: [{ id: crypto.randomUUID(), x: centre.x, y: centre.y, z: centre.z }],
+              cx: centre.x,
+              cy: centre.y,
+              majorRadius: majorLen,
+              minorRadius: minorLen,
+              rotation,
+              startAngle: 0,
+              endAngle,
+              isConstruction: false,
+            });
+            setStatusMessage(`Elliptical Arc added (${majorLen.toFixed(2)} × ${minorLen.toFixed(2)}, sweep ${(endAngle * 180 / Math.PI).toFixed(1)}°)`);
             setDrawingPoints([]);
           }
           break;
@@ -1394,11 +1440,48 @@ export function commitSketchTool(ctx: SketchCommitCtx): void {
           break;
         }
 
-        // ── D20 Sketch Offset ──────────────────────────────────────────────
-        // Click 1: pick a line entity. Click 2: pick the side (offset direction).
+        // ── D20 / S12 Sketch Offset ────────────────────────────────────────
+        // Click 1: pick a line entity (selects the whole connected chain).
+        // Click 2: pick the side (offset direction) → offsets entire chain.
         case 'sketch-offset': {
           if (!activeSketch) break;
           const clickPt = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z);
+
+          // S12: Build adjacency for chain-walking
+          const findConnectedChain = (startId: string, entities: typeof activeSketch.entities): typeof activeSketch.entities => {
+            const TOL = 0.01;
+            const lineEnts = entities.filter((e) => e.type === 'line' && e.points.length >= 2);
+            // endpoint-sharing adjacency: for two entities to be adjacent, they share an endpoint
+            const sharesEndpoint = (eA: typeof lineEnts[0], eB: typeof lineEnts[0]): boolean => {
+              const pts = [
+                new THREE.Vector3(eA.points[0].x, eA.points[0].y, eA.points[0].z),
+                new THREE.Vector3(eA.points[eA.points.length - 1].x, eA.points[eA.points.length - 1].y, eA.points[eA.points.length - 1].z),
+              ];
+              const pts2 = [
+                new THREE.Vector3(eB.points[0].x, eB.points[0].y, eB.points[0].z),
+                new THREE.Vector3(eB.points[eB.points.length - 1].x, eB.points[eB.points.length - 1].y, eB.points[eB.points.length - 1].z),
+              ];
+              for (const p of pts) for (const q of pts2) if (p.distanceTo(q) < TOL) return true;
+              return false;
+            };
+            const chain: typeof lineEnts = [];
+            const visited = new Set<string>();
+            const startEnt = lineEnts.find((e) => e.id === startId);
+            if (!startEnt) return chain;
+            const queue = [startEnt];
+            while (queue.length > 0) {
+              const cur = queue.shift()!;
+              if (visited.has(cur.id)) continue;
+              visited.add(cur.id);
+              chain.push(cur);
+              for (const neighbor of lineEnts) {
+                if (!visited.has(neighbor.id) && sharesEndpoint(cur, neighbor)) {
+                  queue.push(neighbor);
+                }
+              }
+            }
+            return chain;
+          };
 
           if (drawingPoints.length === 0) {
             // First click: find the closest line
@@ -1420,15 +1503,18 @@ export function commitSketchTool(ctx: SketchCommitCtx): void {
               break;
             }
             // Store the selected entity id encoded into drawingPoints[0].id
+            const chain12 = findConnectedChain(bestEnt3.id, activeSketch.entities);
             setDrawingPoints([{ ...sketchPoint, id: bestEnt3.id }]);
-            setStatusMessage('Offset: entity selected — click on the side where you want the offset copy');
+            const chainNote = chain12.length > 1 ? ` (chain: ${chain12.length} segments)` : '';
+            setStatusMessage(`Offset: entity selected${chainNote} — click the side to offset towards`);
           } else {
-            // Second click: compute offset direction and distance
+            // Second click: compute offset direction and add offset copies for entire chain
             const selectedId = drawingPoints[0].id;
             const ent = activeSketch.entities.find((e) => e.id === selectedId);
             if (!ent || ent.type !== 'line' || ent.points.length < 2) {
               setDrawingPoints([]); break;
             }
+            // Determine offset sign from first entity
             const a4 = new THREE.Vector3(ent.points[0].x, ent.points[0].y, ent.points[0].z);
             const b4 = new THREE.Vector3(ent.points[1].x, ent.points[1].y, ent.points[1].z);
             const ab4 = b4.clone().sub(a4).normalize();
@@ -1439,16 +1525,27 @@ export function commitSketchTool(ctx: SketchCommitCtx): void {
             const d4 = Math.abs(signedDist4);
             const sign4 = signedDist4 > 0 ? 1 : -1;
             if (d4 < 0.001) { setStatusMessage('Offset: click further from the line'); break; }
-            addSketchEntity({
-              ...ent,
-              id: crypto.randomUUID(),
-              points: [
-                { ...ent.points[0], id: crypto.randomUUID(), x: ent.points[0].x + perpDir4.x * d4 * sign4, y: ent.points[0].y + perpDir4.y * d4 * sign4, z: ent.points[0].z + perpDir4.z * d4 * sign4 },
-                { ...ent.points[1], id: crypto.randomUUID(), x: ent.points[1].x + perpDir4.x * d4 * sign4, y: ent.points[1].y + perpDir4.y * d4 * sign4, z: ent.points[1].z + perpDir4.z * d4 * sign4 },
-              ],
-            });
+
+            // Walk chain and offset every member
+            const chain12b = findConnectedChain(selectedId, activeSketch.entities);
+            for (const chainEnt of chain12b) {
+              if (chainEnt.type !== 'line' || chainEnt.points.length < 2) continue;
+              const ca = new THREE.Vector3(chainEnt.points[0].x, chainEnt.points[0].y, chainEnt.points[0].z);
+              const cb = new THREE.Vector3(chainEnt.points[chainEnt.points.length - 1].x, chainEnt.points[chainEnt.points.length - 1].y, chainEnt.points[chainEnt.points.length - 1].z);
+              const cab = cb.clone().sub(ca).normalize();
+              const cperpDir = cab.clone().cross(planeNorm4).normalize();
+              addSketchEntity({
+                ...chainEnt,
+                id: crypto.randomUUID(),
+                points: [
+                  { ...chainEnt.points[0], id: crypto.randomUUID(), x: chainEnt.points[0].x + cperpDir.x * d4 * sign4, y: chainEnt.points[0].y + cperpDir.y * d4 * sign4, z: chainEnt.points[0].z + cperpDir.z * d4 * sign4 },
+                  { ...chainEnt.points[chainEnt.points.length - 1], id: crypto.randomUUID(), x: chainEnt.points[chainEnt.points.length - 1].x + cperpDir.x * d4 * sign4, y: chainEnt.points[chainEnt.points.length - 1].y + cperpDir.y * d4 * sign4, z: chainEnt.points[chainEnt.points.length - 1].z + cperpDir.z * d4 * sign4 },
+                ],
+              });
+            }
             setDrawingPoints([]);
-            setStatusMessage(`Offset: line copied at distance ${d4.toFixed(2)}`);
+            const plural = chain12b.length > 1 ? `${chain12b.length} lines` : 'line';
+            setStatusMessage(`Offset: ${plural} copied at distance ${d4.toFixed(2)}`);
           }
           break;
         }

@@ -483,6 +483,105 @@ export function renderSketchPreview(ctx: SketchPreviewCtx): void {
         }
         break;
       }
+      case 'ellipse': {
+        if (drawingPoints.length === 1) {
+          // Preview: line from centre to mouse (major axis direction)
+          addLine([startV, mousePos]);
+        } else if (drawingPoints.length === 2) {
+          // Preview: full ellipse with computed major/minor
+          const majorPt = drawingPoints[1];
+          const majorVec = new THREE.Vector3(majorPt.x - start.x, majorPt.y - start.y, majorPt.z - start.z);
+          const majorLen = majorVec.length();
+          if (majorLen > 0.001) {
+            const majorDir = majorVec.clone().normalize();
+            const pn = t1.clone().cross(t2).normalize();
+            const minorDir = majorDir.clone().cross(pn).normalize();
+            const toMouse = mousePos.clone().sub(startV);
+            const minorLen = Math.abs(toMouse.dot(minorDir));
+            const rotation = Math.atan2(majorDir.dot(t2), majorDir.dot(t1));
+            const cosR = Math.cos(rotation);
+            const sinR = Math.sin(rotation);
+            const ellipsePts: THREE.Vector3[] = [];
+            const segs = 64;
+            for (let i = 0; i <= segs; i++) {
+              const tt = (i / segs) * Math.PI * 2;
+              const u = majorLen * Math.cos(tt) * cosR - minorLen * Math.sin(tt) * sinR;
+              const v = majorLen * Math.cos(tt) * sinR + minorLen * Math.sin(tt) * cosR;
+              ellipsePts.push(startV.clone().addScaledVector(t1, u).addScaledVector(t2, v));
+            }
+            addLine(ellipsePts);
+            // Major axis line
+            const majorV = new THREE.Vector3(majorPt.x, majorPt.y, majorPt.z);
+            addLine([startV, majorV]);
+            // Minor radius line to mouse projection
+            addLine([startV, startV.clone().addScaledVector(t1, minorDir.dot(t1) * minorLen).addScaledVector(t2, minorDir.dot(t2) * minorLen)]);
+          }
+        }
+        break;
+      }
+
+      case 'elliptical-arc': {
+        if (drawingPoints.length === 1) {
+          addLine([startV, mousePos]);
+        } else if (drawingPoints.length === 2) {
+          const majorPt = drawingPoints[1];
+          const majorVec = new THREE.Vector3(majorPt.x - start.x, majorPt.y - start.y, majorPt.z - start.z);
+          const majorLen = majorVec.length();
+          if (majorLen > 0.001) {
+            const majorDir = majorVec.clone().normalize();
+            const pn = t1.clone().cross(t2).normalize();
+            const minorDir = majorDir.clone().cross(pn).normalize();
+            const toMouse = mousePos.clone().sub(startV);
+            const minorLen = Math.abs(toMouse.dot(minorDir));
+            const rotation = Math.atan2(majorDir.dot(t2), majorDir.dot(t1));
+            const cosR = Math.cos(rotation);
+            const sinR = Math.sin(rotation);
+            // Show ghost full ellipse
+            const ellipsePts: THREE.Vector3[] = [];
+            const segs = 64;
+            for (let i = 0; i <= segs; i++) {
+              const tt = (i / segs) * Math.PI * 2;
+              const u = majorLen * Math.cos(tt) * cosR - minorLen * Math.sin(tt) * sinR;
+              const v = majorLen * Math.cos(tt) * sinR + minorLen * Math.sin(tt) * cosR;
+              ellipsePts.push(startV.clone().addScaledVector(t1, u).addScaledVector(t2, v));
+            }
+            addLine(ellipsePts);
+            const majorV = new THREE.Vector3(majorPt.x, majorPt.y, majorPt.z);
+            addLine([startV, majorV]);
+          }
+        } else if (drawingPoints.length === 3) {
+          // All geometry defined — show arc from 0 to mouse angle
+          const majorPt = drawingPoints[1];
+          const majorVec = new THREE.Vector3(majorPt.x - start.x, majorPt.y - start.y, majorPt.z - start.z);
+          const majorLen = majorVec.length();
+          if (majorLen > 0.001) {
+            const majorDir = majorVec.clone().normalize();
+            const pn = t1.clone().cross(t2).normalize();
+            const minorDir = majorDir.clone().cross(pn).normalize();
+            const to3 = new THREE.Vector3(drawingPoints[2].x - start.x, drawingPoints[2].y - start.y, drawingPoints[2].z - start.z);
+            const minorLen = Math.abs(to3.dot(minorDir));
+            if (minorLen > 0.001) {
+              const rotation = Math.atan2(majorDir.dot(t2), majorDir.dot(t1));
+              const cosR = Math.cos(rotation);
+              const sinR = Math.sin(rotation);
+              const toMouse = mousePos.clone().sub(startV);
+              const endAngle = Math.atan2(toMouse.dot(minorDir), toMouse.dot(majorDir));
+              const segs = 64;
+              const arcPts: THREE.Vector3[] = [];
+              for (let i = 0; i <= segs; i++) {
+                const tt = (i / segs) * endAngle;
+                const u = majorLen * Math.cos(tt) * cosR - minorLen * Math.sin(tt) * sinR;
+                const v = majorLen * Math.cos(tt) * sinR + minorLen * Math.sin(tt) * cosR;
+                arcPts.push(startV.clone().addScaledVector(t1, u).addScaledVector(t2, v));
+              }
+              addLine(arcPts);
+              addLine([startV, mousePos]);
+            }
+          }
+        }
+        break;
+      }
+
       case 'blend-curve': {
         void blendCurveMode;
         if (drawingPoints.length >= 2) {

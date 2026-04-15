@@ -20,8 +20,13 @@ import {
   CornerDownRight, FlipHorizontal2, ChevronsRight,
   ArrowLeftRight, ArrowUpDown, Equal, Tangent,
   RefreshCw, Unlink, SplitSquareHorizontal, Link, ZoomOut,
-  GitMerge, Zap, Type,
+  GitMerge, Zap, Type, Shield,
   Lock, LocateFixed,
+  ArrowRight, Dot,
+  Pencil, Image,
+  GitFork,
+  TrendingDown, Activity, Grid, BarChart2, AlertCircle,
+  Edit2, MapPin,
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore';
 import { useComponentStore } from '../../store/componentStore';
@@ -338,7 +343,12 @@ export default function Toolbar() {
   const setShowExportDialog = useCADStore((s) => s.setShowExportDialog);
   const setActiveDialog = useCADStore((s) => s.setActiveDialog);
   const setSectionEnabled = useCADStore((s) => s.setSectionEnabled);
+  const selectionFilter = useCADStore((s) => s.selectionFilter);
   const setSelectionFilter = useCADStore((s) => s.setSelectionFilter);
+  const sketchGridEnabled = useCADStore((s) => s.sketchGridEnabled);
+  const setSketchGridEnabled = useCADStore((s) => s.setSketchGridEnabled);
+  const sketchSnapEnabled = useCADStore((s) => s.sketchSnapEnabled);
+  const setSketchSnapEnabled = useCADStore((s) => s.setSketchSnapEnabled);
   const selectedFeatureId = useCADStore((s) => s.selectedFeatureId);
   const removeFeature = useCADStore((s) => s.removeFeature);
   const addFeature = useCADStore((s) => s.addFeature);
@@ -350,6 +360,20 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const setWorkspaceMode = useCADStore((s) => s.setWorkspaceMode);
   const setActiveTool = useCADStore((s) => s.setActiveTool);
   const activeTool = useCADStore((s) => s.activeTool);
+  const openReplaceFaceDialog = useCADStore((s) => s.openReplaceFaceDialog);
+  const openDirectEditDialog = useCADStore((s) => s.openDirectEditDialog);
+  const openTextureExtrudeDialog = useCADStore((s) => s.openTextureExtrudeDialog);
+  const openDecalDialog = useCADStore((s) => s.openDecalDialog);
+  const openAttachedCanvasDialog = useCADStore((s) => s.openAttachedCanvasDialog);
+  const openSplitFaceDialog = useCADStore((s) => s.openSplitFaceDialog);
+  const openBoundingSolidDialog = useCADStore((s) => s.openBoundingSolidDialog);
+  const openJointOriginDialog = useCADStore((s) => s.openJointOriginDialog);
+  const openInterferenceDialog = useCADStore((s) => s.openInterferenceDialog);
+  const openContactSetsDialog = useCADStore((s) => s.openContactSetsDialog);
+  const openInsertComponentDialog = useCADStore((s) => s.openInsertComponentDialog);
+  const openSnapFitDialog = useCADStore((s) => s.openSnapFitDialog);
+  const openLipGrooveDialog = useCADStore((s) => s.openLipGrooveDialog);
+  const setActiveAnalysis = useCADStore((s) => s.setActiveAnalysis);
 
   // Component store (D193)
   const addComponent = useComponentStore((s) => s.addComponent);
@@ -502,6 +526,7 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
     { icon: <FlipHorizontal size={MI} />, label: 'Mirror', onClick: () => setActiveDialog('mirror') },
     { icon: <Layers size={MI} />, label: 'Thicken', onClick: () => setActiveDialog('thicken') },
     { icon: <Square size={MI} />, label: 'Boundary Fill', onClick: () => setActiveDialog('boundary-fill') },
+    { separator: true, icon: <Box size={MI} />, label: 'Bounding Solid', onClick: openBoundingSolidDialog },
   ];
 
   const modifyMenuItems: MenuItem[] = [
@@ -513,8 +538,10 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
     { icon: <Maximize2 size={MI} />, label: 'Scale', onClick: () => setActiveDialog('scale') },
     { icon: <Combine size={MI} />, label: 'Combine', onClick: () => setActiveDialog('combine') },
     { separator: true, icon: <Square size={MI} />, label: 'Offset Face', onClick: () => setActiveDialog('offset-face') },
-    { icon: <Square size={MI} />, label: 'Replace Face', onClick: comingSoon('Replace Face') },
-    { icon: <Scissors size={MI} />, label: 'Split Face', onClick: comingSoon('Split Face') },
+    { icon: <Square size={MI} />, label: 'Replace Face', onClick: openReplaceFaceDialog },
+    { icon: <Pencil size={MI} />, label: 'Direct Edit', onClick: openDirectEditDialog },
+    { icon: <Image size={MI} />, label: 'Texture Extrude', onClick: openTextureExtrudeDialog },
+    { icon: <Scissors size={MI} />, label: 'Split Face', onClick: openSplitFaceDialog },
     { icon: <Scissors size={MI} />, label: 'Split Body', onClick: () => setActiveDialog('split') },
     { icon: <Scissors size={MI} />, label: 'Silhouette Split', onClick: () => setActiveDialog('silhouette-split') },
     { separator: true, icon: <Move size={MI} />, label: 'Move/Copy', shortcut: 'M', onClick: () => setActiveTool('move' as Tool) },
@@ -531,14 +558,15 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   ];
 
   const assembleMenuItems: MenuItem[] = [
-    { icon: <FolderOpen size={MI} />, label: 'Insert Component', onClick: comingSoon('Insert Component') },
+    { icon: <Download size={MI} />, label: 'Insert Component', onClick: openInsertComponentDialog },
+    { separator: true, icon: <Shield size={MI} />, label: 'Contact Sets', onClick: openContactSetsDialog },
     { icon: <Package size={MI} />, label: 'New Component', onClick: handleNewComponent },
     { icon: <Copy size={MI} />, label: 'Duplicate With Joints', onClick: comingSoon('Duplicate With Joints') },
     { separator: true, icon: <Link2 size={MI} />, label: 'Constrain Components', onClick: comingSoon('Constrain Components') },
     { icon: <Link2 size={MI} />, label: 'Joint', shortcut: 'J', onClick: () => setActiveDialog('joint') },
     { icon: <Link2 size={MI} />, label: 'As-Built Joint', shortcut: 'Shift+J', onClick: () => setActiveDialog('as-built-joint') },
     { separator: true, icon: <Layers size={MI} />, label: 'Rigid Group', onClick: () => setActiveDialog('rigid-group') },
-    { icon: <Crosshair size={MI} />, label: 'Joint Origin', onClick: comingSoon('Joint Origin') },
+    { icon: <MapPin size={MI} />, label: 'Joint Origin', onClick: () => openJointOriginDialog() },
     { icon: <Play size={MI} />, label: 'Drive Joints', onClick: () => setActiveDialog('drive-joints') },
     { icon: <GitMerge size={MI} />, label: 'Motion Link', onClick: () => setActiveDialog('motion-link') },
     { icon: <Play size={MI} />, label: 'Motion Study', onClick: comingSoon('Motion Study') },
@@ -548,34 +576,37 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const constructMenuItems: MenuItem[] = [
     { icon: <Layers size={MI} />, label: 'Offset Plane', onClick: () => setActiveDialog('construction-plane') },
     { icon: <Layers size={MI} />, label: 'Plane at Angle', onClick: () => setActiveDialog('construction-plane-angle') },
-    { icon: <Layers size={MI} />, label: 'Tangent Plane', onClick: comingSoon('Tangent Plane') },
+    { icon: <Hexagon size={MI} />, label: 'Tangent Plane', onClick: () => { setActiveTool('construct-tangent-plane'); setStatusMessage('Tangent Plane: click a curved face'); } },
     { icon: <Layers size={MI} />, label: 'Midplane', onClick: () => setActiveDialog('construction-plane-midplane') },
     { icon: <Layers size={MI} />, label: 'Perpendicular Plane', onClick: () => setActiveDialog('perpendicular-plane') },
-    { separator: true, icon: <Layers size={MI} />, label: 'Plane Through Two Edges', onClick: comingSoon('Plane Through Two Edges') },
+    { separator: true, icon: <Square size={MI} />, label: 'Plane Through Two Edges', onClick: () => { setActiveTool('construct-plane-two-edges'); setStatusMessage('Plane Through Two Edges: click first edge, then second edge'); } },
     { icon: <Layers size={MI} />, label: 'Plane Through Three Points', onClick: comingSoon('Plane Through Three Points') },
-    { icon: <Layers size={MI} />, label: 'Plane Tangent to Face at Point', onClick: comingSoon('Plane Tangent to Face at Point') },
+    { icon: <Layers size={MI} />, label: 'Plane Tangent to Face at Point', onClick: () => { setActiveTool('construct-plane-tangent-at-point'); setStatusMessage('Plane Tangent at Point: click a curved face, then a vertex'); } },
     { icon: <Layers size={MI} />, label: 'Plane Along Path', onClick: () => setActiveDialog('plane-along-path') },
-    { separator: true, icon: <Axis3D size={MI} />, label: 'Axis Through Cylinder/Cone/Torus', onClick: comingSoon('Axis Through Cylinder/Cone/Torus') },
+    { separator: true, icon: <RotateCcw size={MI} />, label: 'Axis Through Cylinder/Cone/Torus', onClick: () => { setActiveTool('construct-axis-cylinder'); setStatusMessage('Axis Through Cylinder: click a curved face'); } },
     { icon: <Axis3D size={MI} />, label: 'Axis Perpendicular To Face', onClick: () => setActiveDialog('axis-perp-to-face') },
-    { icon: <Axis3D size={MI} />, label: 'Axis Perpendicular at Point', onClick: comingSoon('Axis Perpendicular at Point') },
-    { icon: <Axis3D size={MI} />, label: 'Axis Through Two Planes', onClick: comingSoon('Axis Through Two Planes') },
-    { icon: <Axis3D size={MI} />, label: 'Axis Through Two Points', onClick: () => setStatusMessage('Click two points to define an axis') },
-    { icon: <Axis3D size={MI} />, label: 'Axis Through Edge', onClick: comingSoon('Axis Through Edge') },
-    { separator: true, icon: <CircleDot size={MI} />, label: 'Point at Vertex', onClick: comingSoon('Point at Vertex') },
-    { icon: <CircleDot size={MI} />, label: 'Point Through Two Edges', onClick: comingSoon('Point Through Two Edges') },
-    { icon: <CircleDot size={MI} />, label: 'Point Through Three Planes', onClick: comingSoon('Point Through Three Planes') },
-    { icon: <CircleDot size={MI} />, label: 'Point at Center of Circle/Sphere/Torus', onClick: comingSoon('Point at Center of Circle/Sphere/Torus') },
+    { icon: <ArrowUpFromLine size={MI} />, label: 'Axis Perpendicular at Point', onClick: () => { setActiveTool('construct-axis-perp-at-point'); setStatusMessage('Axis Perpendicular at Point: click a planar face, then a vertex'); } },
+    { icon: <GitFork size={MI} />, label: 'Axis Through Two Planes', onClick: () => { setActiveTool('construct-axis-two-planes'); setStatusMessage('Axis Through Two Planes: select two construction planes in the panel'); } },
+    { icon: <ArrowRight size={MI} />, label: 'Axis Through Two Points', onClick: () => { setActiveTool('construct-axis-two-points'); setStatusMessage('Axis Through Two Points: click first point, then second point'); } },
+    { icon: <Minus size={MI} />, label: 'Axis Through Edge', onClick: () => { setActiveTool('construct-axis-through-edge'); setStatusMessage('Axis Through Edge: click an edge to create axis along it'); } },
+    { separator: true, icon: <Dot size={MI} />, label: 'Point at Vertex', onClick: () => { setActiveTool('construct-point-vertex'); setStatusMessage('Point at Vertex: click a vertex to create a construction point'); } },
+    { icon: <Crosshair size={MI} />, label: 'Point Through Two Edges', onClick: () => { setActiveTool('construct-point-two-edges'); setStatusMessage('Point Through Two Edges: click first edge, then second edge'); } },
+    { icon: <Crosshair size={MI} />, label: 'Point Through Three Planes', onClick: () => { setActiveTool('construct-point-three-planes'); setStatusMessage('Point Through Three Planes: select three construction planes in the panel'); } },
+    { icon: <Target size={MI} />, label: 'Point at Center of Circle/Sphere/Torus', onClick: () => { setActiveTool('construct-point-center'); setStatusMessage('Point at Center: click a circular face to create a point at its center'); } },
     { icon: <CircleDot size={MI} />, label: 'Point At Edge And Plane', onClick: () => setActiveDialog('point-at-edge-plane') },
     { icon: <CircleDot size={MI} />, label: 'Point Along Path', onClick: () => setActiveDialog('point-along-path') },
   ];
 
   const inspectMenuItems: MenuItem[] = [
     { icon: <Ruler size={MI} />, label: 'Measure', shortcut: 'I', onClick: () => { setActiveTool('measure' as Tool); setStatusMessage('Measure: click two points or entities to measure distance'); } },
-    { icon: <AlertTriangle size={MI} />, label: 'Interference', onClick: comingSoon('Interference') },
-    { separator: true, icon: <Spline size={MI} />, label: 'Curvature Comb Analysis', onClick: comingSoon('Curvature Comb Analysis') },
-    { icon: <Spline size={MI} />, label: 'Zebra Analysis', onClick: comingSoon('Zebra Analysis') },
-    { icon: <ArrowUp size={MI} />, label: 'Draft Analysis', onClick: comingSoon('Draft Analysis') },
-    { icon: <Spline size={MI} />, label: 'Curvature Map Analysis', onClick: comingSoon('Curvature Map Analysis') },
+    { icon: <AlertTriangle size={MI} />, label: 'Interference', onClick: () => openInterferenceDialog() },
+    { separator: true, icon: <BarChart2 size={MI} />, label: 'Curvature Comb Analysis', onClick: () => setActiveAnalysis('curvature-comb') },
+    { icon: <Layers size={MI} />, label: 'Zebra Analysis', onClick: () => setActiveAnalysis('zebra') },
+    { icon: <TrendingDown size={MI} />, label: 'Draft Analysis', onClick: () => setActiveAnalysis('draft') },
+    { icon: <Activity size={MI} />, label: 'Curvature Map Analysis', onClick: () => setActiveAnalysis('curvature-map') },
+    { icon: <Grid size={MI} />, label: 'Isocurve Analysis', onClick: () => setActiveAnalysis('isocurve') },
+    { icon: <Eye size={MI} />, label: 'Accessibility Analysis', onClick: () => setActiveAnalysis('accessibility') },
+    { icon: <AlertCircle size={MI} />, label: 'Minimum Radius Analysis', onClick: () => setActiveAnalysis('min-radius') },
     { icon: <Scissors size={MI} />, label: 'Section Analysis', onClick: () => setSectionEnabled(true) },
     { icon: <Target size={MI} />, label: 'Center of Mass', onClick: () => {
       const fs = useCADStore.getState().features.filter((f) => f.visible && f.type === 'primitive');
@@ -611,11 +642,11 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
       icon: <MousePointer2 size={MI} />,
       label: 'Selection Filters',
       submenu: [
-        { icon: <MousePointer2 size={MI} />, label: 'Select All', onClick: () => { setSelectionFilter('all'); setStatusMessage('Selection filter: All'); } },
-        { icon: <Box size={MI} />, label: 'Select Bodies', onClick: () => { setSelectionFilter('bodies'); setStatusMessage('Selection filter: Bodies only'); } },
-        { icon: <Square size={MI} />, label: 'Select Faces', onClick: () => { setSelectionFilter('faces'); setStatusMessage('Selection filter: Faces only'); } },
-        { icon: <Minus size={MI} />, label: 'Select Edges', onClick: () => { setSelectionFilter('edges'); setStatusMessage('Selection filter: Edges only'); } },
-        { icon: <PenTool size={MI} />, label: 'Select Sketches', onClick: () => { setSelectionFilter('sketches'); setStatusMessage('Selection filter: Sketches only'); } },
+        { icon: <MousePointer2 size={MI} />, label: 'Select All', onClick: () => { setSelectionFilter({ bodies: true, faces: true, edges: true, vertices: true, sketches: true, construction: true }); setStatusMessage('Selection filter: All'); } },
+        { icon: <Box size={MI} />, label: 'Select Bodies', onClick: () => { setSelectionFilter({ bodies: true, faces: false, edges: false, vertices: false, sketches: false, construction: false }); setStatusMessage('Selection filter: Bodies only'); } },
+        { icon: <Square size={MI} />, label: 'Select Faces', onClick: () => { setSelectionFilter({ bodies: false, faces: true, edges: false, vertices: false, sketches: false, construction: false }); setStatusMessage('Selection filter: Faces only'); } },
+        { icon: <Minus size={MI} />, label: 'Select Edges', onClick: () => { setSelectionFilter({ bodies: false, faces: false, edges: true, vertices: false, sketches: false, construction: false }); setStatusMessage('Selection filter: Edges only'); } },
+        { icon: <PenTool size={MI} />, label: 'Select Sketches', onClick: () => { setSelectionFilter({ bodies: false, faces: false, edges: false, vertices: false, sketches: true, construction: false }); setStatusMessage('Selection filter: Sketches only'); } },
       ],
     },
   ];
@@ -666,7 +697,14 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
         { icon: <Hexagon size={MI} />, label: 'Edge Polygon', onClick: () => setActiveTool('polygon-edge' as Tool) },
       ],
     },
-    { separator: true, icon: <CircleDot size={MI} />, label: 'Ellipse', onClick: () => { setActiveTool('ellipse'); setStatusMessage('Ellipse: click centre, then major-axis, then minor-axis endpoint'); } },
+    {
+      separator: true, icon: <CircleDot size={MI} />, label: 'Ellipse',
+      onClick: () => { setActiveTool('ellipse'); setStatusMessage('Ellipse: click centre, then major-axis, then minor-axis endpoint'); },
+      submenu: [
+        { icon: <CircleDot size={MI} />, label: 'Ellipse', onClick: () => { setActiveTool('ellipse'); setStatusMessage('Ellipse: click centre, then major-axis, then minor-axis endpoint'); } },
+        { icon: <CircleDot size={MI} />, label: 'Elliptical Arc', onClick: () => { setActiveTool('elliptical-arc' as Tool); setStatusMessage('Elliptical Arc: click centre, major-axis, minor-axis, then end angle point'); } },
+      ],
+    },
     {
       icon: <Circle size={MI} />, label: 'Slot',
       submenu: [
@@ -917,10 +955,23 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
             <RibbonSection title="INSERT">
               <ToolButton icon={<FolderOpen size={ICON_LG} />} label="Import" onClick={() => fileInputRef.current?.click()} large colorClass="icon-gray" />
+              <div className="ribbon-stack">
+                <ToolButton icon={<Image size={ICON_SM} />} label="Decal" onClick={openDecalDialog} colorClass="icon-gray" />
+                <ToolButton icon={<Edit2 size={ICON_SM} />} label="Attached Canvas" onClick={() => openAttachedCanvasDialog()} colorClass="icon-gray" />
+                <ToolButton icon={<Box size={ICON_SM} />} label="Bounding Solid" onClick={openBoundingSolidDialog} colorClass="icon-gray" />
+              </div>
             </RibbonSection>
 
             <RibbonSection title="SELECT" menuItems={selectMenuItems} accentColor="#0078d7">
               <ToolButton icon={<MousePointer2 size={ICON_LG} />} label="Select" tool="select" large colorClass="icon-blue" />
+              <div className="ribbon-stack">
+                <ToolButton icon={<Box size={ICON_SM} />}      label="Bodies"       active={selectionFilter.bodies}       onClick={() => setSelectionFilter({ bodies: !selectionFilter.bodies })}       colorClass="icon-blue" />
+                <ToolButton icon={<Square size={ICON_SM} />}   label="Faces"        active={selectionFilter.faces}        onClick={() => setSelectionFilter({ faces: !selectionFilter.faces })}        colorClass="icon-blue" />
+                <ToolButton icon={<Minus size={ICON_SM} />}    label="Edges"        active={selectionFilter.edges}        onClick={() => setSelectionFilter({ edges: !selectionFilter.edges })}        colorClass="icon-blue" />
+                <ToolButton icon={<Dot size={ICON_SM} />}      label="Vertices"     active={selectionFilter.vertices}     onClick={() => setSelectionFilter({ vertices: !selectionFilter.vertices })}  colorClass="icon-blue" />
+                <ToolButton icon={<PenLine size={ICON_SM} />}  label="Sketches"     active={selectionFilter.sketches}     onClick={() => setSelectionFilter({ sketches: !selectionFilter.sketches })}  colorClass="icon-blue" />
+                <ToolButton icon={<Layers size={ICON_SM} />}   label="Construction" active={selectionFilter.construction} onClick={() => setSelectionFilter({ construction: !selectionFilter.construction })} colorClass="icon-blue" />
+              </div>
             </RibbonSection>
           </>
         )}
@@ -1076,7 +1127,8 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
           <>
             <RibbonSection title="CREATE">
               <ToolButton icon={<Box size={ICON_LG} />} label="Boss" onClick={() => setStatusMessage('Plastic: Boss - coming soon')} large colorClass="icon-blue" />
-              <ToolButton icon={<CircleDot size={ICON_LG} />} label="Snap Fit" onClick={() => setStatusMessage('Plastic: Snap Fit - coming soon')} large colorClass="icon-blue" />
+              <ToolButton icon={<Zap size={ICON_LG} />} label="Snap Fit" onClick={openSnapFitDialog} large colorClass="icon-blue" />
+              <ToolButton icon={<Layers size={ICON_LG} />} label="Lip / Groove" onClick={openLipGrooveDialog} large colorClass="icon-blue" />
             </RibbonSection>
             <RibbonSection title="MODIFY">
               <ToolButton icon={<Blend size={ICON_LG} />} label="Draft" onClick={() => setStatusMessage('Plastic: Draft - coming soon')} large colorClass="icon-blue" />
@@ -1192,12 +1244,13 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
               <ToolButton
                 icon={<Spline size={20} />}
                 label="Arc"
-                active={['arc','arc-3point'].includes(activeTool)}
+                active={['arc','arc-3point','arc-tangent'].includes(activeTool)}
                 onClick={() => setActiveTool('arc-3point' as Tool)}
                 colorClass="icon-blue"
                 dropdown={[
                   { label: '3-Point Arc', icon: <Spline size={14} />, onClick: () => setActiveTool('arc-3point' as Tool) },
                   { label: 'Center Point Arc', icon: <Spline size={14} />, onClick: () => setActiveTool('arc' as Tool) },
+                  { label: 'Tangent Arc', icon: <Spline size={14} />, onClick: () => setActiveTool('arc-tangent' as Tool) },
                 ]}
               />
               <ToolButton
@@ -1212,7 +1265,15 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
                   { label: 'Edge Polygon', icon: <Hexagon size={14} />, onClick: () => setActiveTool('polygon-edge' as Tool) },
                 ]}
               />
-              <ToolButton icon={<CircleDot size={20} />}          label="Ellipse"   onClick={() => { setActiveTool('ellipse'); setStatusMessage('Ellipse: click centre, then major-axis, then minor-axis endpoint'); }}  colorClass="icon-blue" />
+              <ToolButton icon={<CircleDot size={20} />}          label="Ellipse"
+                active={activeTool === 'ellipse' || activeTool === 'elliptical-arc'}
+                onClick={() => { setActiveTool('ellipse'); setStatusMessage('Ellipse: click centre, then major-axis, then minor-axis endpoint'); }}
+                colorClass="icon-blue"
+                dropdown={[
+                  { label: 'Ellipse', icon: <CircleDot size={14} />, onClick: () => { setActiveTool('ellipse'); setStatusMessage('Ellipse: click centre, then major-axis, then minor-axis endpoint'); } },
+                  { label: 'Elliptical Arc', icon: <CircleDot size={14} />, onClick: () => { setActiveTool('elliptical-arc' as import('../../types/cad').Tool); setStatusMessage('Elliptical Arc: click centre, major-axis, minor-axis, then end angle point'); } },
+                ]}
+              />
               <ToolButton icon={<CircleDot size={20} />}          label="Point"     tool="point"                     colorClass="icon-blue" />
               <ToolButton icon={<Waypoints size={20} />}          label="Spline"    onClick={() => { setActiveTool('spline' as Tool); setStatusMessage('Spline: click to place fit points, right-click to finish'); }}   colorClass="icon-blue"
                 dropdown={[
@@ -1232,8 +1293,8 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
               <ToolButton icon={<Blend size={20} />}             label="Chamfer"  onClick={() => { setActiveTool('sketch-chamfer-equal' as Tool); setStatusMessage('Sketch Chamfer: click near a corner — set distance in palette'); }}  colorClass="icon-blue" />
               <ToolButton icon={<Scissors size={20} />}          label="Trim"    onClick={() => { setActiveTool('trim' as Tool); setStatusMessage('Trim: click a segment portion to remove it'); }}    colorClass="icon-blue" />
               <ToolButton icon={<ChevronsRight size={20} />}     label="Extend"  onClick={() => { setActiveTool('extend' as Tool); setStatusMessage('Extend: click near an endpoint to extend to nearest intersection'); }}  colorClass="icon-blue" />
-              <ToolButton icon={<Copy size={20} />}              label="Offset"  onClick={comingSoon('Offset')}  colorClass="icon-blue" />
-              <ToolButton icon={<FlipHorizontal2 size={20} />}   label="Mirror"  onClick={comingSoon('Mirror')}  colorClass="icon-blue" />
+              <ToolButton icon={<Copy size={20} />}              label="Offset"  active={activeTool === 'sketch-offset'}  onClick={() => { setActiveTool('sketch-offset' as Tool); setStatusMessage('Offset: click a line, then click the side to offset towards'); }}  colorClass="icon-blue" />
+              <ToolButton icon={<FlipHorizontal2 size={20} />}   label="Mirror"  active={activeTool === 'sketch-mirror'}  onClick={() => { setActiveTool('sketch-mirror' as Tool); setStatusMessage('Mirror: select axis direction, then click OK'); }}  colorClass="icon-blue" />
               <ToolButton icon={<Move size={20} />}              label="Move"    onClick={() => { setActiveTool('sketch-move' as Tool); setStatusMessage('Move: set X/Y offset, then click OK'); }}    colorClass="icon-blue" />
             </RibbonSection>
 
@@ -1259,8 +1320,8 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
             {/* ── CONFIGURE ──────────────────────────────── */}
             <RibbonSection title="CONFIGURE" accentColor="#555">
               <div className="ribbon-stack">
-                <ToolButton icon={<Grid3X3 size={ICON_SM} />} label="Grid" onClick={comingSoon('Grid')} colorClass="icon-gray" />
-                <ToolButton icon={<Magnet size={ICON_SM} />}  label="Snap" onClick={comingSoon('Snap')} colorClass="icon-gray" />
+                <ToolButton icon={<Grid3X3 size={ICON_SM} />} label="Grid" active={sketchGridEnabled} onClick={() => { setSketchGridEnabled(!sketchGridEnabled); setStatusMessage(`Sketch grid: ${sketchGridEnabled ? 'OFF' : 'ON'}`); }} colorClass="icon-gray" />
+                <ToolButton icon={<Magnet size={ICON_SM} />}  label="Snap" active={sketchSnapEnabled} onClick={() => { setSketchSnapEnabled(!sketchSnapEnabled); setStatusMessage(`Sketch snap: ${sketchSnapEnabled ? 'OFF' : 'ON'}`); }} colorClass="icon-gray" />
               </div>
             </RibbonSection>
 

@@ -1,0 +1,132 @@
+/**
+ * ConstructTwoPlanePanel — D190: Axis Through Two Planes
+ *
+ * Shows when activeTool === 'construct-axis-two-planes'. Lists construction
+ * planes by name; user picks two to compute their intersection axis.
+ */
+
+import { useState } from 'react';
+import * as THREE from 'three';
+import { useCADStore } from '../../store/cadStore';
+import type { ConstructionPlane } from '../../types/cad';
+
+// Module-level scratch — no per-render allocation
+const _n1 = new THREE.Vector3();
+const _n2 = new THREE.Vector3();
+const _axis = new THREE.Vector3();
+
+function computeIntersectionAxis(
+  p1: ConstructionPlane,
+  p2: ConstructionPlane,
+): { origin: [number, number, number]; direction: [number, number, number] } | null {
+  _n1.fromArray(p1.normal);
+  _n2.fromArray(p2.normal);
+  _axis.crossVectors(_n1, _n2);
+  const lenSq = _axis.lengthSq();
+  if (lenSq < 1e-10) return null; // parallel planes
+
+  _axis.normalize();
+
+  // Find a point on both planes via the formula:
+  //   P = ((d2*(n1×n2)×n1) - (d1*(n1×n2)×n2)) / |n1×n2|²
+  const d1 = -(_n1.dot(new THREE.Vector3().fromArray(p1.origin)));
+  const d2 = -(_n2.dot(new THREE.Vector3().fromArray(p2.origin)));
+
+  const axisXn1 = new THREE.Vector3().crossVectors(_axis, _n1);
+  const axisXn2 = new THREE.Vector3().crossVectors(_axis, _n2);
+  // origin = (axisXn1 * (-d1) - axisXn2 * (-d2)) / lenSq ... using plane eq: n·P + d = 0 → d = -n·O
+  // Standard formula: P = (d2 * (n1×n2)×n1 - d1 * (n1×n2)×n2) / |n1×n2|²  where di = -ni·Oi
+  const origin = new THREE.Vector3()
+    .addScaledVector(axisXn1, -d2)
+    .addScaledVector(axisXn2, d1)
+    .divideScalar(lenSq);
+
+  return {
+    origin: origin.toArray() as [number, number, number],
+    direction: _axis.toArray() as [number, number, number],
+  };
+}
+
+export default function ConstructTwoPlanePanel() {
+  const activeTool = useCADStore((s) => s.activeTool);
+  const constructionPlanes = useCADStore((s) => s.constructionPlanes);
+  const addConstructionAxis = useCADStore((s) => s.addConstructionAxis);
+  const cancelConstructTool = useCADStore((s) => s.cancelConstructTool);
+
+  const [selected, setSelected] = useState<string[]>([]);
+
+  if (activeTool !== 'construct-axis-two-planes') return null;
+
+  const toggle = (id: string) => {
+    setSelected((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= 2) return [prev[1], id];
+      return [...prev, id];
+    });
+  };
+
+  const handleCreate = () => {
+    if (selected.length !== 2) return;
+    const p1 = constructionPlanes.find((p) => p.id === selected[0]);
+    const p2 = constructionPlanes.find((p) => p.id === selected[1]);
+    if (!p1 || !p2) return;
+    const result = computeIntersectionAxis(p1, p2);
+    if (!result) return;
+    addConstructionAxis({ origin: result.origin, direction: result.direction, length: 20 });
+    setSelected([]);
+    cancelConstructTool();
+  };
+
+  return (
+    <div style={{
+      position: 'absolute', top: 16, right: 16, width: 220,
+      background: 'var(--color-panel, #1e1e2e)', border: '1px solid var(--color-border, #444)',
+      borderRadius: 6, padding: '10px 12px', color: 'var(--color-text, #cdd6f4)',
+      fontSize: 12, zIndex: 50, boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+    }}>
+      <div style={{ fontWeight: 600, marginBottom: 8 }}>Axis Through Two Planes</div>
+      <div style={{ marginBottom: 6, opacity: 0.7 }}>
+        Select 2 construction planes ({selected.length}/2):
+      </div>
+      {constructionPlanes.length === 0 && (
+        <div style={{ opacity: 0.5 }}>No construction planes in scene.</div>
+      )}
+      {constructionPlanes.map((p) => (
+        <div
+          key={p.id}
+          onClick={() => toggle(p.id)}
+          style={{
+            padding: '4px 8px', marginBottom: 2, borderRadius: 4, cursor: 'pointer',
+            background: selected.includes(p.id) ? 'var(--color-accent, #89b4fa33)' : 'transparent',
+            border: selected.includes(p.id) ? '1px solid var(--color-accent, #89b4fa)' : '1px solid transparent',
+          }}
+        >
+          {p.name}
+        </div>
+      ))}
+      <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+        <button
+          onClick={handleCreate}
+          disabled={selected.length !== 2}
+          style={{
+            flex: 1, padding: '4px 0', borderRadius: 4, cursor: selected.length === 2 ? 'pointer' : 'default',
+            background: selected.length === 2 ? 'var(--color-accent, #89b4fa)' : '#444',
+            color: selected.length === 2 ? '#1e1e2e' : '#888', border: 'none', fontWeight: 600,
+          }}
+        >
+          Create
+        </button>
+        <button
+          onClick={() => { setSelected([]); cancelConstructTool(); }}
+          style={{
+            padding: '4px 10px', borderRadius: 4, cursor: 'pointer',
+            background: 'transparent', color: 'var(--color-text, #cdd6f4)',
+            border: '1px solid var(--color-border, #444)',
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}

@@ -84,8 +84,30 @@ function entityEndpoints(e: SketchEntity): [Pt2, Pt2] | null {
       ];
     }
     case 'circle':
-      // Circles are closed by nature — no open endpoints
+    case 'ellipse':
+      // These are closed by nature — no open endpoints
       return null;
+    case 'elliptical-arc': {
+      // Open arc — endpoints at startAngle and endAngle
+      if (e.points.length < 1 || e.majorRadius == null || e.minorRadius == null) return null;
+      const sa = e.startAngle ?? 0;
+      const ea = e.endAngle ?? Math.PI;
+      const rot = e.rotation ?? 0;
+      const cosR = Math.cos(rot);
+      const sinR = Math.sin(rot);
+      const cx = e.points[0].x;
+      const cy = e.points[0].y;
+      const a = e.majorRadius;
+      const b = e.minorRadius;
+      const sxU = a * Math.cos(sa) * cosR - b * Math.sin(sa) * sinR;
+      const syU = a * Math.cos(sa) * sinR + b * Math.sin(sa) * cosR;
+      const exU = a * Math.cos(ea) * cosR - b * Math.sin(ea) * sinR;
+      const eyU = a * Math.cos(ea) * sinR + b * Math.sin(ea) * cosR;
+      return [
+        { x: cx + sxU, y: cy + syU },
+        { x: cx + exU, y: cy + eyU },
+      ];
+    }
     case 'spline': {
       if (e.points.length < 2) return null;
       const first = e.points[0];
@@ -153,6 +175,44 @@ function sampleEntityPoints(e: SketchEntity, arcSamples = 8): Pt2[] {
       for (let i = 0; i < arcSamples; i++) {
         const t = (2 * Math.PI * i) / arcSamples;
         pts.push({ x: cx + r * Math.cos(t), y: cy + r * Math.sin(t) });
+      }
+      return pts;
+    }
+    case 'ellipse': {
+      if (e.points.length < 1 || e.majorRadius == null || e.minorRadius == null) return [];
+      const cx = e.points[0].x;
+      const cy = e.points[0].y;
+      const a = e.majorRadius;
+      const b = e.minorRadius;
+      const rot = e.rotation ?? 0;
+      const cosR = Math.cos(rot);
+      const sinR = Math.sin(rot);
+      const pts: Pt2[] = [];
+      for (let i = 0; i < arcSamples; i++) {
+        const t = (2 * Math.PI * i) / arcSamples;
+        const u = a * Math.cos(t) * cosR - b * Math.sin(t) * sinR;
+        const v = a * Math.cos(t) * sinR + b * Math.sin(t) * cosR;
+        pts.push({ x: cx + u, y: cy + v });
+      }
+      return pts;
+    }
+    case 'elliptical-arc': {
+      if (e.points.length < 1 || e.majorRadius == null || e.minorRadius == null) return [];
+      const cx = e.points[0].x;
+      const cy = e.points[0].y;
+      const a = e.majorRadius;
+      const b = e.minorRadius;
+      const rot = e.rotation ?? 0;
+      const cosR = Math.cos(rot);
+      const sinR = Math.sin(rot);
+      const sa = e.startAngle ?? 0;
+      const ea = e.endAngle ?? Math.PI;
+      const pts: Pt2[] = [];
+      for (let i = 0; i <= arcSamples; i++) {
+        const t = sa + ((ea - sa) * i) / arcSamples;
+        const u = a * Math.cos(t) * cosR - b * Math.sin(t) * sinR;
+        const v = a * Math.cos(t) * sinR + b * Math.sin(t) * cosR;
+        pts.push({ x: cx + u, y: cy + v });
       }
       return pts;
     }
@@ -503,6 +563,12 @@ export class SketchAnalyzer {
           break;
         case 'arc':
           totalDof += 5; // cx, cy, r, startAngle, endAngle
+          break;
+        case 'ellipse':
+          totalDof += 5; // cx, cy, majorRadius, minorRadius, rotation
+          break;
+        case 'elliptical-arc':
+          totalDof += 7; // cx, cy, majorRadius, minorRadius, rotation, startAngle, endAngle
           break;
         case 'spline':
           // Each control point = 2 DOF

@@ -1,7 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import * as THREE from 'three';
-import type { Tool, ViewMode, SketchPlane, Sketch, SketchEntity, SketchPoint, SketchConstraint, SketchDimension, Feature, Parameter, BooleanOperation, FormCage, FormSelection, FormElementType } from '../types/cad';
+import type { Tool, ViewMode, SketchPlane, Sketch, SketchEntity, SketchPoint, SketchConstraint, SketchDimension, Feature, Parameter, BooleanOperation, FormCage, FormSelection, FormElementType, ConstructionPlane, ConstructionAxis, ConstructionPoint, JointOriginRecord, InterferenceResult, ContactSetEntry } from '../types/cad';
+import type { InsertComponentParams } from '../components/dialogs/assembly/InsertComponentDialog';
+import type { SnapFitParams } from '../components/dialogs/solid/SnapFitDialog';
+import type { LipGrooveParams } from '../components/dialogs/solid/LipGrooveDialog';
+import type { DirectEditParams } from '../components/dialogs/solid/DirectEditDialog';
+import type { TextureExtrudeParams } from '../components/dialogs/solid/TextureExtrudeDialog';
 
 export type ExtrudeDirection = 'normal' | 'symmetric' | 'reverse';
 export type ExtrudeOperation = Extract<BooleanOperation, 'new-body' | 'join' | 'cut'>;
@@ -125,6 +130,21 @@ interface CADState {
   selectedEntityIds: string[];
   setSelectedEntityIds: (ids: string[]) => void;
   toggleEntitySelection: (id: string) => void;
+
+  // D204 — Window Selection
+  windowSelecting: boolean;
+  windowSelectStart: { x: number; y: number } | null;
+  windowSelectEnd: { x: number; y: number } | null;
+  setWindowSelectStart: (p: { x: number; y: number }) => void;
+  setWindowSelectEnd: (p: { x: number; y: number }) => void;
+  clearWindowSelect: () => void;
+
+  // D205 — Lasso Selection
+  lassoSelecting: boolean;
+  lassoPoints: { x: number; y: number }[];
+  setLassoSelecting: (v: boolean) => void;
+  setLassoPoints: (pts: { x: number; y: number }[]) => void;
+  clearLasso: () => void;
 
   // ── Form (T-Spline / subdivision) state ─────────────────────────────
   formBodies: FormCage[];
@@ -440,9 +460,22 @@ interface CADState {
   // Units
   units: 'mm' | 'cm' | 'in';
   setUnits: (units: 'mm' | 'cm' | 'in') => void;
-  // D39 Selection Filter
-  selectionFilter: 'all' | 'bodies' | 'faces' | 'edges' | 'sketches';
-  setSelectionFilter: (filter: 'all' | 'bodies' | 'faces' | 'edges' | 'sketches') => void;
+  // D39/D206 Selection Filter — multi-toggle object
+  selectionFilter: {
+    bodies: boolean;
+    faces: boolean;
+    edges: boolean;
+    vertices: boolean;
+    sketches: boolean;
+    construction: boolean;
+  };
+  setSelectionFilter: (f: Partial<CADState['selectionFilter']>) => void;
+
+  // D207 — Sketch Grid / Snap settings
+  sketchGridEnabled: boolean;
+  sketchSnapEnabled: boolean;
+  setSketchGridEnabled: (v: boolean) => void;
+  setSketchSnapEnabled: (v: boolean) => void;
 
   // Camera
   cameraHomeCounter: number;
@@ -509,6 +542,123 @@ interface CADState {
   // D46 — Project to Surface
   startSketchProjectSurfaceTool: () => void;
   cancelSketchProjectSurfaceTool: () => void;
+
+  // ── CONSTRUCTION GEOMETRY (D175–D180) ──
+  constructionPlanes: ConstructionPlane[];
+  constructionAxes: ConstructionAxis[];
+  constructionPoints: ConstructionPoint[];
+  addConstructionPlane: (p: Omit<ConstructionPlane, 'id' | 'name'>) => void;
+  addConstructionAxis: (a: Omit<ConstructionAxis, 'id' | 'name'>) => void;
+  addConstructionPoint: (p: Omit<ConstructionPoint, 'id' | 'name'>) => void;
+  cancelConstructTool: () => void;
+
+  // ── D171 Replace Face ────────────────────────────────────────────────────
+  replaceFaceSourceId: string | null;
+  replaceFaceTargetId: string | null;
+  openReplaceFaceDialog: () => void;
+  setReplaceFaceSource: (id: string) => void;
+  setReplaceFaceTarget: (id: string) => void;
+  commitReplaceFace: () => void;
+
+  // ── D192 Decal ───────────────────────────────────────────────────────────
+  decalFaceId: string | null;
+  decalFaceNormal: [number, number, number] | null;
+  decalFaceCentroid: [number, number, number] | null;
+  openDecalDialog: () => void;
+  setDecalFace: (id: string, normal: [number, number, number], centroid: [number, number, number]) => void;
+  closeDecalDialog: () => void;
+  commitDecal: (params: import('../components/dialogs/insert/DecalDialog').DecalParams) => void;
+
+  // ── D193 Attached Canvas ─────────────────────────────────────────────────
+  attachedCanvasId: string | null;
+  openAttachedCanvasDialog: (canvasId?: string) => void;
+  closeAttachedCanvasDialog: () => void;
+  updateCanvas: (id: string, changes: Partial<{ dataUrl: string; plane: string; offsetX: number; offsetY: number; scale: number; opacity: number }>) => void;
+
+  // ── D185 Split Face ──────────────────────────────────────────────────────
+  splitFaceId: string | null;
+  openSplitFaceDialog: () => void;
+  setSplitFace: (id: string) => void;
+  closeSplitFaceDialog: () => void;
+  commitSplitFace: (params: import('../components/dialogs/solid/SplitFaceDialog').SplitFaceParams) => void;
+
+  // ── D183 Bounding Solid ──────────────────────────────────────────────────
+  openBoundingSolidDialog: () => void;
+  closeBoundingSolidDialog: () => void;
+  commitBoundingSolid: (params: import('../components/dialogs/solid/BoundingSolidDialog').BoundingSolidParams) => void;
+
+  // ── D123 Direct Edit ────────────────────────────────────────────────────
+  directEditFaceId: string | null;
+  openDirectEditDialog: () => void;
+  setDirectEditFace: (id: string) => void;
+  commitDirectEdit: (params: DirectEditParams) => void;
+
+  // ── D137 Texture Extrude ────────────────────────────────────────────────
+  textureExtrudeFaceId: string | null;
+  openTextureExtrudeDialog: () => void;
+  setTextureExtrudeFace: (id: string) => void;
+  commitTextureExtrude: (params: TextureExtrudeParams) => void;
+
+  // ── A11 — Joint Origins ────────────────────────────────────────────────
+  jointOrigins: JointOriginRecord[];
+  showJointOriginDialog: boolean;
+  jointOriginPickedPoint: [number, number, number] | null;
+  openJointOriginDialog(): void;
+  closeJointOriginDialog(): void;
+  setJointOriginPoint(p: [number, number, number]): void;
+  commitJointOrigin(params: { name: string; componentId: string | null; alignmentType: 'default' | 'between-two-faces' | 'on-face' }): void;
+
+  // ── D196 — Interference ─────────────────────────────────────────────────
+  showInterferenceDialog: boolean;
+  interferenceResults: InterferenceResult[];
+  openInterferenceDialog(): void;
+  closeInterferenceDialog(): void;
+  computeInterference(): void;
+
+  // ── A12 — Contact Sets ────────────────────────────────────────────────────
+  contactSets: ContactSetEntry[];
+  showContactSetsDialog: boolean;
+  openContactSetsDialog(): void;
+  closeContactSetsDialog(): void;
+  addContactSet(comp1Id: string, comp2Id: string): void;
+  toggleContactSet(id: string): void;
+  removeContactSet(id: string): void;
+
+  // ── A13 — Insert Component ────────────────────────────────────────────────
+  showInsertComponentDialog: boolean;
+  openInsertComponentDialog(): void;
+  closeInsertComponentDialog(): void;
+  commitInsertComponent(params: InsertComponentParams): void;
+
+  // ── D181 — Snap Fit ──────────────────────────────────────────────────────
+  showSnapFitDialog: boolean;
+  snapFitFaceId: string | null;
+  openSnapFitDialog(): void;
+  setSnapFitFace(id: string): void;
+  closeSnapFitDialog(): void;
+  commitSnapFit(params: SnapFitParams): void;
+
+  // ── D182 — Lip / Groove ──────────────────────────────────────────────────
+  showLipGrooveDialog: boolean;
+  lipGrooveEdgeId: string | null;
+  openLipGrooveDialog(): void;
+  setLipGrooveEdge(id: string): void;
+  closeLipGrooveDialog(): void;
+  commitLipGroove(params: LipGrooveParams): void;
+
+  // ── D197–D203 Surface & Body Analysis Overlays ──────────────────────────
+  activeAnalysis: 'zebra' | 'draft' | 'curvature-map' | 'isocurve' | 'accessibility' | 'min-radius' | 'curvature-comb' | null;
+  setActiveAnalysis: (a: 'zebra' | 'draft' | 'curvature-map' | 'isocurve' | 'accessibility' | 'min-radius' | 'curvature-comb' | null) => void;
+  analysisParams: {
+    direction: 'x' | 'y' | 'z';
+    frequency: number;
+    minAngle: number;
+    uCount: number;
+    vCount: number;
+    minRadius: number;
+    combScale: number;
+  };
+  setAnalysisParams: (p: Partial<CADState['analysisParams']>) => void;
 }
 
 // Plane normals consistent with the visual selector (Three.js Y-up):
@@ -1075,6 +1225,22 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
         : [...ids, id],
     };
   }),
+
+  // D204 — Window Selection
+  windowSelecting: false,
+  windowSelectStart: null,
+  windowSelectEnd: null,
+  setWindowSelectStart: (p) => set({ windowSelecting: true, windowSelectStart: p, windowSelectEnd: p }),
+  setWindowSelectEnd: (p) => set({ windowSelectEnd: p }),
+  clearWindowSelect: () => set({ windowSelecting: false, windowSelectStart: null, windowSelectEnd: null }),
+
+  // D205 — Lasso Selection
+  lassoSelecting: false,
+  lassoPoints: [],
+  setLassoSelecting: (v) => set({ lassoSelecting: v }),
+  setLassoPoints: (pts) => set({ lassoPoints: pts }),
+  clearLasso: () => set({ lassoSelecting: false, lassoPoints: [] }),
+
 
   // ── Form state ───────────────────────────────────────────────────────
   formBodies: [],
@@ -2269,8 +2435,14 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
 
   units: 'mm',
   setUnits: (units) => set({ units: units }),
-  selectionFilter: 'all',
-  setSelectionFilter: (filter) => set({ selectionFilter: filter }),
+  selectionFilter: { bodies: true, faces: true, edges: true, vertices: true, sketches: true, construction: true },
+  setSelectionFilter: (f) => set((state) => ({ selectionFilter: { ...state.selectionFilter, ...f } })),
+
+  // D207 — Sketch Grid / Snap settings
+  sketchGridEnabled: true,
+  sketchSnapEnabled: true,
+  setSketchGridEnabled: (v) => set({ sketchGridEnabled: v }),
+  setSketchSnapEnabled: (v) => set({ sketchSnapEnabled: v }),
 
   cameraHomeCounter: 0,
   triggerCameraHome: () => set((state) => ({ cameraHomeCounter: state.cameraHomeCounter + 1 })),
@@ -2492,6 +2664,436 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     activeTool: 'select',
     statusMessage: 'Project to surface cancelled',
   }),
+
+  // ── CONSTRUCTION GEOMETRY (D175–D180) ──
+  constructionPlanes: [],
+  constructionAxes: [],
+  constructionPoints: [],
+  addConstructionPlane: (p) => set((state) => ({
+    constructionPlanes: [
+      ...state.constructionPlanes,
+      {
+        ...p,
+        id: crypto.randomUUID(),
+        name: 'Plane ' + (state.constructionPlanes.length + 1),
+      },
+    ],
+  })),
+  addConstructionAxis: (a) => set((state) => ({
+    constructionAxes: [
+      ...state.constructionAxes,
+      {
+        ...a,
+        id: crypto.randomUUID(),
+        name: 'Axis ' + (state.constructionAxes.length + 1),
+      },
+    ],
+  })),
+  addConstructionPoint: (p) => set((state) => ({
+    constructionPoints: [
+      ...state.constructionPoints,
+      {
+        ...p,
+        id: crypto.randomUUID(),
+        name: 'Point ' + (state.constructionPoints.length + 1),
+      },
+    ],
+  })),
+  cancelConstructTool: () => set({ activeTool: 'select' }),
+
+  // ── D171 Replace Face ────────────────────────────────────────────────────
+  replaceFaceSourceId: null,
+  replaceFaceTargetId: null,
+  openReplaceFaceDialog: () => set({
+    activeDialog: 'replace-face',
+    replaceFaceSourceId: null,
+    replaceFaceTargetId: null,
+  }),
+  setReplaceFaceSource: (id) => set({ replaceFaceSourceId: id }),
+  setReplaceFaceTarget: (id) => set({ replaceFaceTargetId: id }),
+  commitReplaceFace: () => {
+    const { replaceFaceSourceId, replaceFaceTargetId, features, setActiveDialog } = get();
+    if (!replaceFaceSourceId || !replaceFaceTargetId) return;
+    const n = features.filter((f) => f.type === 'replace-face').length + 1;
+    const feature: Feature = {
+      id: crypto.randomUUID(),
+      name: `Replace Face ${n}`,
+      type: 'replace-face',
+      params: { sourceId: replaceFaceSourceId, targetId: replaceFaceTargetId },
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+    };
+    get().addFeature(feature);
+    setActiveDialog(null);
+    set({ replaceFaceSourceId: null, replaceFaceTargetId: null });
+  },
+
+  // ── D123 Direct Edit ────────────────────────────────────────────────────
+  directEditFaceId: null,
+  openDirectEditDialog: () => set({
+    activeDialog: 'direct-edit',
+    directEditFaceId: null,
+  }),
+  setDirectEditFace: (id) => set({ directEditFaceId: id }),
+  commitDirectEdit: (params) => {
+    const { directEditFaceId, features, setActiveDialog } = get();
+    const n = features.filter((f) => f.type === 'direct-edit').length + 1;
+    const feature: Feature = {
+      id: crypto.randomUUID(),
+      name: `Direct Edit ${n}`,
+      type: 'direct-edit',
+      params: { faceId: directEditFaceId, ...params },
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+    };
+    get().addFeature(feature);
+    setActiveDialog(null);
+    set({ directEditFaceId: null });
+  },
+
+  // ── D137 Texture Extrude ────────────────────────────────────────────────
+  textureExtrudeFaceId: null,
+  openTextureExtrudeDialog: () => set({
+    activeDialog: 'texture-extrude',
+    textureExtrudeFaceId: null,
+  }),
+  setTextureExtrudeFace: (id) => set({ textureExtrudeFaceId: id }),
+  commitTextureExtrude: (params) => {
+    const { textureExtrudeFaceId, features, setActiveDialog } = get();
+    const n = features.filter((f) => f.type === 'texture-extrude').length + 1;
+    const feature: Feature = {
+      id: crypto.randomUUID(),
+      name: `Texture Extrude ${n}`,
+      type: 'texture-extrude',
+      params: { faceId: textureExtrudeFaceId, ...params },
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+    };
+    get().addFeature(feature);
+    setActiveDialog(null);
+    set({ textureExtrudeFaceId: null });
+  },
+
+  // ── D192 Decal ───────────────────────────────────────────────────────────
+  decalFaceId: null,
+  decalFaceNormal: null,
+  decalFaceCentroid: null,
+  openDecalDialog: () => set({
+    activeDialog: 'decal',
+    decalFaceId: null,
+    decalFaceNormal: null,
+    decalFaceCentroid: null,
+  }),
+  setDecalFace: (id, normal, centroid) => set({ decalFaceId: id, decalFaceNormal: normal, decalFaceCentroid: centroid }),
+  closeDecalDialog: () => set({ activeDialog: null, decalFaceId: null, decalFaceNormal: null, decalFaceCentroid: null }),
+  commitDecal: (params) => {
+    const { decalFaceId, features, setActiveDialog } = get();
+    const n = features.filter((f) => f.type === 'decal').length + 1;
+    const feature: Feature = {
+      id: crypto.randomUUID(),
+      name: `Decal ${n}`,
+      type: 'decal',
+      params: { faceId: decalFaceId, ...params },
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+    };
+    get().addFeature(feature);
+    setActiveDialog(null);
+    set({ decalFaceId: null, decalFaceNormal: null, decalFaceCentroid: null });
+  },
+
+  // ── D193 Attached Canvas ─────────────────────────────────────────────────
+  attachedCanvasId: null,
+  openAttachedCanvasDialog: (canvasId) => set({
+    activeDialog: 'attached-canvas',
+    attachedCanvasId: canvasId ?? null,
+  }),
+  closeAttachedCanvasDialog: () => set({ activeDialog: null, attachedCanvasId: null }),
+  updateCanvas: (id, changes) => set((state) => ({
+    canvasReferences: state.canvasReferences.map((c) =>
+      c.id === id ? { ...c, ...changes } : c
+    ),
+    // Also update matching feature params
+    features: state.features.map((f) => {
+      if (f.id !== id) return f;
+      return { ...f, params: { ...f.params, ...changes } };
+    }),
+  })),
+
+  // ── D185 Split Face ──────────────────────────────────────────────────────
+  splitFaceId: null,
+  openSplitFaceDialog: () => set({
+    activeDialog: 'split-face',
+    splitFaceId: null,
+  }),
+  setSplitFace: (id) => set({ splitFaceId: id }),
+  closeSplitFaceDialog: () => set({ activeDialog: null, splitFaceId: null }),
+  commitSplitFace: (params) => {
+    const { splitFaceId, features, setActiveDialog } = get();
+    const n = features.filter((f) => f.type === 'split-face').length + 1;
+    const feature: Feature = {
+      id: crypto.randomUUID(),
+      name: `Split Face ${n}`,
+      type: 'split-face',
+      params: { faceId: splitFaceId, ...params },
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+    };
+    get().addFeature(feature);
+    setActiveDialog(null);
+    set({ splitFaceId: null });
+  },
+
+  // ── D183 Bounding Solid ──────────────────────────────────────────────────
+  openBoundingSolidDialog: () => set({ activeDialog: 'bounding-solid' }),
+  closeBoundingSolidDialog: () => set({ activeDialog: null }),
+  commitBoundingSolid: (params) => {
+    const { features, setActiveDialog } = get();
+    const { shape, padding } = params;
+    const n = features.filter((f) => f.type === 'bounding-solid').length + 1;
+
+    // Compute the combined Box3 of all feature meshes
+    const box = new THREE.Box3();
+    let hasGeometry = false;
+    for (const f of features) {
+      if (!f.mesh || !f.visible) continue;
+      const b = new THREE.Box3().setFromObject(f.mesh);
+      if (!b.isEmpty()) {
+        box.union(b);
+        hasGeometry = true;
+      }
+    }
+
+    let geom: THREE.BufferGeometry;
+    if (!hasGeometry) {
+      // Fallback: unit box
+      geom = new THREE.BoxGeometry(1, 1, 1);
+    } else {
+      box.expandByScalar(padding);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+
+      if (shape === 'box') {
+        geom = new THREE.BoxGeometry(size.x, size.y, size.z);
+      } else {
+        // Cylinder: bounding sphere radius
+        const sphere = new THREE.Sphere();
+        box.getBoundingSphere(sphere);
+        const r = sphere.radius;
+        geom = new THREE.CylinderGeometry(r, r, size.y + padding * 2, 32);
+      }
+
+      const mat = new THREE.MeshStandardMaterial({ color: 0x4488ff, transparent: true, opacity: 0.3, wireframe: false });
+      const mesh = new THREE.Mesh(geom, mat);
+
+      const center2 = new THREE.Vector3();
+      box.getCenter(center2);
+      mesh.position.copy(center2);
+
+      const feature: Feature = {
+        id: crypto.randomUUID(),
+        name: `Bounding Solid ${n}`,
+        type: 'bounding-solid',
+        params: { shape, padding },
+        mesh,
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+      };
+      get().addFeature(feature);
+      setActiveDialog(null);
+      return;
+    }
+
+    // Fallback path (no geometry)
+    const mat = new THREE.MeshStandardMaterial({ color: 0x4488ff, transparent: true, opacity: 0.3 });
+    const mesh = new THREE.Mesh(geom, mat);
+    const feature: Feature = {
+      id: crypto.randomUUID(),
+      name: `Bounding Solid ${n}`,
+      type: 'bounding-solid',
+      params: { shape, padding },
+      mesh,
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+    };
+    get().addFeature(feature);
+    setActiveDialog(null);
+  },
+
+  // ── A11 — Joint Origins ────────────────────────────────────────────────
+  jointOrigins: [],
+  showJointOriginDialog: false,
+  jointOriginPickedPoint: null,
+  openJointOriginDialog: () => set({ activeDialog: 'joint-origin', showJointOriginDialog: true, jointOriginPickedPoint: null }),
+  closeJointOriginDialog: () => set({ activeDialog: null, showJointOriginDialog: false, jointOriginPickedPoint: null }),
+  setJointOriginPoint: (p) => set({ jointOriginPickedPoint: p }),
+  commitJointOrigin: (params) => {
+    const { jointOrigins, jointOriginPickedPoint } = get();
+    const n = jointOrigins.length + 1;
+    const record: JointOriginRecord = {
+      id: crypto.randomUUID(),
+      name: params.name || `Joint Origin ${n}`,
+      componentId: params.componentId,
+      position: jointOriginPickedPoint ?? [0, 0, 0],
+      normal: [0, 1, 0],
+    };
+    set({ jointOrigins: [...jointOrigins, record], activeDialog: null, showJointOriginDialog: false, jointOriginPickedPoint: null });
+  },
+
+  // ── D196 — Interference ─────────────────────────────────────────────────
+  showInterferenceDialog: false,
+  interferenceResults: [],
+  openInterferenceDialog: () => set({ activeDialog: 'interference', showInterferenceDialog: true }),
+  closeInterferenceDialog: () => set({ activeDialog: null, showInterferenceDialog: false }),
+  computeInterference: () => {
+    const { features } = get();
+    const solidFeatures = features.filter(
+      (f) => f.mesh && f.visible && (!f.bodyKind || f.bodyKind === 'solid') && (f.mesh as THREE.Mesh).isMesh,
+    );
+    const results: InterferenceResult[] = [];
+    for (let i = 0; i < solidFeatures.length; i++) {
+      for (let j = i + 1; j < solidFeatures.length; j++) {
+        const fA = solidFeatures[i];
+        const fB = solidFeatures[j];
+        const meshA = fA.mesh as THREE.Mesh;
+        const meshB = fB.mesh as THREE.Mesh;
+        const boxA = new THREE.Box3().setFromObject(meshA);
+        const boxB = new THREE.Box3().setFromObject(meshB);
+        let hasInterference = false;
+        let intersectionCurveCount = 0;
+        if (boxA.intersectsBox(boxB)) {
+          const curves = GeometryEngine.computeMeshIntersectionCurve(meshA, meshB, 1e-3);
+          hasInterference = curves.length > 0;
+          intersectionCurveCount = curves.length;
+        }
+        results.push({ bodyAName: fA.name, bodyBName: fB.name, hasInterference, intersectionCurveCount });
+      }
+    }
+    set({ interferenceResults: results });
+  },
+
+  // ── A12 — Contact Sets ────────────────────────────────────────────────────
+  contactSets: [],
+  showContactSetsDialog: false,
+  openContactSetsDialog: () => set({ activeDialog: 'contact-sets', showContactSetsDialog: true }),
+  closeContactSetsDialog: () => set({ activeDialog: null, showContactSetsDialog: false }),
+  addContactSet: (comp1Id, comp2Id) => {
+    const { contactSets } = get();
+    const componentStore = useComponentStore.getState();
+    const comp1 = componentStore.components[comp1Id];
+    const comp2 = componentStore.components[comp2Id];
+    const name = `Contact ${comp1?.name ?? comp1Id}–${comp2?.name ?? comp2Id}`;
+    const entry: ContactSetEntry = {
+      id: crypto.randomUUID(),
+      name,
+      component1Id: comp1Id,
+      component2Id: comp2Id,
+      enabled: true,
+    };
+    set({ contactSets: [...contactSets, entry] });
+  },
+  toggleContactSet: (id) => set((state) => ({
+    contactSets: state.contactSets.map((cs) => cs.id === id ? { ...cs, enabled: !cs.enabled } : cs),
+  })),
+  removeContactSet: (id) => set((state) => ({
+    contactSets: state.contactSets.filter((cs) => cs.id !== id),
+  })),
+
+  // ── A13 — Insert Component ────────────────────────────────────────────────
+  showInsertComponentDialog: false,
+  openInsertComponentDialog: () => set({ activeDialog: 'insert-component', showInsertComponentDialog: true }),
+  closeInsertComponentDialog: () => set({ activeDialog: null, showInsertComponentDialog: false }),
+  commitInsertComponent: (params) => {
+    const { features } = get();
+    const n = features.filter((f) => f.type === 'import').length + 1;
+    const componentStore = useComponentStore.getState();
+    const rootId = componentStore.rootComponentId;
+    componentStore.addComponent(rootId, params.name);
+    const feature: Feature = {
+      id: crypto.randomUUID(),
+      name: params.name || `Inserted Component ${n}`,
+      type: 'import',
+      params: { sourceUrl: params.sourceUrl, scale: params.scale, posX: params.position[0], posY: params.position[1], posZ: params.position[2] },
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+    };
+    get().addFeature(feature);
+    set({ activeDialog: null, showInsertComponentDialog: false });
+    get().setStatusMessage(`Inserted component: ${params.name} (mesh loading deferred)`);
+  },
+
+  // ── D181 — Snap Fit ──────────────────────────────────────────────────────
+  showSnapFitDialog: false,
+  snapFitFaceId: null,
+  openSnapFitDialog: () => set({ activeDialog: 'snap-fit', showSnapFitDialog: true, snapFitFaceId: null }),
+  setSnapFitFace: (id) => set({ snapFitFaceId: id }),
+  closeSnapFitDialog: () => set({ activeDialog: null, showSnapFitDialog: false, snapFitFaceId: null }),
+  commitSnapFit: (params) => {
+    const { features } = get();
+    const n = features.filter((f) => f.type === 'import' /* proxy */ || f.params?.featureKind === 'snap-fit').length + 1;
+    const snapN = features.filter((f) => f.params?.featureKind === 'snap-fit').length + 1;
+    const feature: Feature = {
+      id: crypto.randomUUID(),
+      name: `Snap Fit ${snapN}`,
+      type: 'import',
+      params: { featureKind: 'snap-fit', ...params },
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+    };
+    get().addFeature(feature);
+    set({ activeDialog: null, showSnapFitDialog: false, snapFitFaceId: null });
+  },
+
+  // ── D182 — Lip / Groove ──────────────────────────────────────────────────
+  showLipGrooveDialog: false,
+  lipGrooveEdgeId: null,
+  openLipGrooveDialog: () => set({ activeDialog: 'lip-groove', showLipGrooveDialog: true, lipGrooveEdgeId: null }),
+  setLipGrooveEdge: (id) => set({ lipGrooveEdgeId: id }),
+  closeLipGrooveDialog: () => set({ activeDialog: null, showLipGrooveDialog: false, lipGrooveEdgeId: null }),
+  commitLipGroove: (params) => {
+    const { features } = get();
+    const n = features.filter((f) => f.params?.featureKind === 'lip-groove').length + 1;
+    const feature: Feature = {
+      id: crypto.randomUUID(),
+      name: `Lip/Groove ${n}`,
+      type: 'import',
+      params: { featureKind: 'lip-groove', ...params },
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+    };
+    get().addFeature(feature);
+    set({ activeDialog: null, showLipGrooveDialog: false, lipGrooveEdgeId: null });
+  },
+
+  // ── D197–D203 Surface & Body Analysis Overlays ──────────────────────────
+  activeAnalysis: null,
+  setActiveAnalysis: (a) => set((s) => ({
+    activeAnalysis: s.activeAnalysis === a ? null : a,
+  })),
+  analysisParams: {
+    direction: 'y',
+    frequency: 8,
+    minAngle: 15,
+    uCount: 5,
+    vCount: 5,
+    minRadius: 1.0,
+    combScale: 1.0,
+  },
+  setAnalysisParams: (p) => set((s) => ({
+    analysisParams: { ...s.analysisParams, ...p },
+  })),
 }),
 {
   name: 'dzign3d-cad',

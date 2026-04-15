@@ -526,6 +526,8 @@ export class GeometryEngine {
       case 'arc':               return this.createArc(entity, material, planeAxes);
       case 'point':             return this.createPointMarker(entity.points[0], planeAxes);
       case 'spline':            return this.createLine(entity.points, material);
+      case 'ellipse':           return this.createEllipse(entity, material, planeAxes);
+      case 'elliptical-arc':    return this.createEllipticalArc(entity, material, planeAxes);
       default: return null;
     }
   }
@@ -630,6 +632,71 @@ export class GeometryEngine {
       );
     }
 
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    return new THREE.Line(geometry, material);
+  }
+
+  /**
+   * S5: Render a proper analytic ellipse entity.
+   * cx/cy are in sketch-plane coordinates (along t1/t2 from origin).
+   * rotation is the angle of the major axis from t1 (radians).
+   */
+  private static createEllipse(entity: SketchEntity, material: THREE.LineBasicMaterial, axes: { t1: THREE.Vector3; t2: THREE.Vector3 }): THREE.Line {
+    const { t1, t2 } = axes;
+    const cx = entity.cx ?? entity.points[0]?.x ?? 0;
+    const cy = entity.cy ?? entity.points[0]?.y ?? 0;
+    const cz = entity.points[0]?.z ?? 0;
+    const a = entity.majorRadius ?? 1;
+    const b = entity.minorRadius ?? 0.5;
+    const rot = entity.rotation ?? 0;
+    const cosR = Math.cos(rot);
+    const sinR = Math.sin(rot);
+    const segments = 64;
+    const points: THREE.Vector3[] = [];
+    const center = new THREE.Vector3(cx, cy, cz);
+    // Map from sketch-plane (u,v) to 3-D world using t1/t2
+    // But cx/cy are already in world coords projected from the sketch origin —
+    // so we need to recover the 3-D center by offsetting along t1/t2 from the origin.
+    // Since points[0] stores the 3-D center directly, use it.
+    const center3 = entity.points.length > 0
+      ? new THREE.Vector3(entity.points[0].x, entity.points[0].y, entity.points[0].z)
+      : center;
+    for (let i = 0; i <= segments; i++) {
+      const t = (i / segments) * Math.PI * 2;
+      // Parametric ellipse in local (u,v) rotated by rot
+      const u = a * Math.cos(t) * cosR - b * Math.sin(t) * sinR;
+      const v = a * Math.cos(t) * sinR + b * Math.sin(t) * cosR;
+      points.push(center3.clone().addScaledVector(t1, u).addScaledVector(t2, v));
+    }
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    return new THREE.Line(geometry, material);
+  }
+
+  /**
+   * S6: Render a proper analytic elliptical-arc entity.
+   * Sweeps from startAngle to endAngle around the ellipse equation.
+   * Angles are measured from the major axis (rotated by entity.rotation).
+   */
+  private static createEllipticalArc(entity: SketchEntity, material: THREE.LineBasicMaterial, axes: { t1: THREE.Vector3; t2: THREE.Vector3 }): THREE.Line {
+    const { t1, t2 } = axes;
+    const a = entity.majorRadius ?? 1;
+    const b = entity.minorRadius ?? 0.5;
+    const rot = entity.rotation ?? 0;
+    const cosR = Math.cos(rot);
+    const sinR = Math.sin(rot);
+    const sa = entity.startAngle ?? 0;
+    const ea = entity.endAngle ?? Math.PI;
+    const segments = 64;
+    const points: THREE.Vector3[] = [];
+    const center3 = entity.points.length > 0
+      ? new THREE.Vector3(entity.points[0].x, entity.points[0].y, entity.points[0].z)
+      : new THREE.Vector3(0, 0, 0);
+    for (let i = 0; i <= segments; i++) {
+      const t = sa + (i / segments) * (ea - sa);
+      const u = a * Math.cos(t) * cosR - b * Math.sin(t) * sinR;
+      const v = a * Math.cos(t) * sinR + b * Math.sin(t) * cosR;
+      points.push(center3.clone().addScaledVector(t1, u).addScaledVector(t2, v));
+    }
     const geometry = new THREE.BufferGeometry().setFromPoints(points);
     return new THREE.Line(geometry, material);
   }

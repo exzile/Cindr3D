@@ -68,14 +68,22 @@ export { PointAlongPathDialog } from './construction/PointAlongPathDialog';
 export { PrimitivesDialog } from './primitives/PrimitivesDialog';
 
 // assembly
+export { ContactSetsDialog } from './assembly/ContactSetsDialog';
+export { InsertComponentDialog } from './assembly/InsertComponentDialog';
 export { JointDialog } from './assembly/JointDialog';
 export { default as AsBuiltJointDialog } from './assembly/AsBuiltJointDialog';
 export { DriveJointsDialog } from './assembly/DriveJointsDialog';
 export { MotionLinkDialog } from './assembly/MotionLinkDialog';
 export { RigidGroupDialog } from './assembly/RigidGroupDialog';
 export { ComponentPatternDialog } from './assembly/ComponentPatternDialog';
+export { JointOriginDialog } from './assembly/JointOriginDialog';
+
+// inspect
+export { InterferenceDialog } from './inspect/InterferenceDialog';
 
 // additional solid dialogs
+export { SnapFitDialog } from './solid/SnapFitDialog';
+export { LipGrooveDialog } from './solid/LipGrooveDialog';
 export { OffsetFaceDialog } from './solid/OffsetFaceDialog';
 export { AlignDialog } from './solid/AlignDialog';
 export { PipeDialog } from './solid/PipeDialog';

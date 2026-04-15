@@ -19,6 +19,7 @@ export default function SketchInteraction() {
   const replaceSketchEntities = useCADStore((s) => s.replaceSketchEntities);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const snapEnabled = useCADStore((s) => s.snapEnabled);
+  const sketchSnapEnabled = useCADStore((s) => s.sketchSnapEnabled);
   const gridSize = useCADStore((s) => s.gridSize);
   const units = useCADStore((s) => s.units);
   const polygonSides = useCADStore((s) => s.sketchPolygonSides);
@@ -76,15 +77,27 @@ export default function SketchInteraction() {
   // Set to true on pointerup after a drag; consumed by the next click event.
   const dragJustFinishedRef = useRef(false);
 
+  // S9: 'A' key inline arc toggle during line tool
+  const lineArcModeRef = useRef(false);
+
+  // S10: 'X' key construction-mode toggle
+  const drawingConstructionRef = useRef(false);
+  // S10: construction-mode preview material (cyan dashed)
+  const constructionModePreviewMaterial = useRef(new THREE.LineDashedMaterial({
+    color: 0x00ccff, linewidth: 1, dashSize: 0.4, gapSize: 0.2,
+  }));
+
   // Dispose the shared preview materials when SketchInteraction unmounts
   useEffect(() => {
     const mat = previewMaterial.current;
     const constMat = constructionPreviewMaterial.current;
     const cenMat = centerlinePreviewMaterial.current;
+    const constrModeMat = constructionModePreviewMaterial.current;
     return () => {
       mat.dispose();
       constMat.dispose();
       cenMat.dispose();
+      constrModeMat.dispose();
     };
   }, []);
 
@@ -93,6 +106,9 @@ export default function SketchInteraction() {
     setDrawingPoints([]);
     setMousePos(null);
     setSnapTarget(null);
+    // S9/S10: reset inline-arc and construction-mode toggles on tool change
+    lineArcModeRef.current = false;
+    drawingConstructionRef.current = false;
   }, [activeTool]);
 
   const getSketchPlane = useCallback((): THREE.Plane => {
@@ -116,14 +132,15 @@ export default function SketchInteraction() {
   }, [activeSketch]);
 
   const snapToGrid = useCallback((point: THREE.Vector3): THREE.Vector3 => {
-    if (!snapEnabled) return point;
+    // D207: sketchSnapEnabled controls snap-to-grid; snapEnabled is global geometry snap
+    if (!snapEnabled && !sketchSnapEnabled) return point;
     const snap = gridSize / 10;
     return new THREE.Vector3(
       Math.round(point.x / snap) * snap,
       Math.round(point.y / snap) * snap,
       Math.round(point.z / snap) * snap
     );
-  }, [snapEnabled, gridSize]);
+  }, [snapEnabled, sketchSnapEnabled, gridSize]);
 
   // D65 / S8: find nearest snap candidate (endpoint / midpoint / center / intersection) within snap radius
   const SNAP_RADIUS = 4;
@@ -338,6 +355,81 @@ export default function SketchInteraction() {
         return;
       }
 
+      // S9: inline arc toggle — when lineArcMode is active and line tool has a chain start,
+      // add a tangent arc from the last point to the new point instead of a straight line.
+      const isLineToolActive = activeTool === 'line' || activeTool === 'construction-line' || activeTool === 'centerline';
+      if (isLineToolActive && lineArcModeRef.current && drawingPoints.length >= 1) {
+        const startPt = drawingPoints[0];
+        const endPtWorld = point;
+        // Compute tangent direction from last entity or fallback to chord direction
+        const sk9 = useCADStore.getState().activeSketch;
+        const lastEnt9 = sk9?.entities[sk9.entities.length - 1];
+        let tangentDir9: THREE.Vector3;
+        if (lastEnt9 && (lastEnt9.type === 'line' || lastEnt9.type === 'construction-line' || lastEnt9.type === 'centerline') && lastEnt9.points.length >= 2) {
+          const a9 = lastEnt9.points[0];
+          const b9 = lastEnt9.points[lastEnt9.points.length - 1];
+          tangentDir9 = new THREE.Vector3(b9.x - a9.x, b9.y - a9.y, b9.z - a9.z).normalize();
+        } else if (lastEnt9 && lastEnt9.type === 'arc') {
+          const c9 = lastEnt9.points[0];
+          const r9 = lastEnt9.radius || 1;
+          const ea9 = lastEnt9.endAngle ?? Math.PI;
+          const radial9 = new THREE.Vector3(
+            t1.x * Math.cos(ea9) + t2.x * Math.sin(ea9),
+            t1.y * Math.cos(ea9) + t2.y * Math.sin(ea9),
+            t1.z * Math.cos(ea9) + t2.z * Math.sin(ea9),
+          );
+          const endPtArc9 = { x: c9.x + radial9.x * r9, y: c9.y + radial9.y * r9, z: c9.z + radial9.z * r9 };
+          const distToEnd9 = new THREE.Vector3(endPtArc9.x - startPt.x, endPtArc9.y - startPt.y, endPtArc9.z - startPt.z).length();
+          if (distToEnd9 < 1) {
+            const planeNorm9 = t1.clone().cross(t2).normalize();
+            tangentDir9 = radial9.clone().cross(planeNorm9).normalize();
+          } else {
+            tangentDir9 = endPtWorld.clone().sub(new THREE.Vector3(startPt.x, startPt.y, startPt.z)).normalize();
+          }
+        } else {
+          tangentDir9 = endPtWorld.clone().sub(new THREE.Vector3(startPt.x, startPt.y, startPt.z)).normalize();
+        }
+        const planeNormal9 = t1.clone().cross(t2).normalize();
+        const normalInPlane9 = tangentDir9.clone().cross(planeNormal9).normalize();
+        const chord9 = new THREE.Vector3(endPtWorld.x - startPt.x, endPtWorld.y - startPt.y, endPtWorld.z - startPt.z);
+        const chordLenSq9 = chord9.lengthSq();
+        const projOnNormal9 = chord9.dot(normalInPlane9);
+        if (Math.abs(projOnNormal9) < 1e-5 || chordLenSq9 < 0.001) {
+          setStatusMessage('Tangent arc too short — click further away');
+        } else {
+          const d9 = chordLenSq9 / (2 * projOnNormal9);
+          const cx9 = startPt.x + normalInPlane9.x * d9;
+          const cy9 = startPt.y + normalInPlane9.y * d9;
+          const cz9 = startPt.z + normalInPlane9.z * d9;
+          const arcRadius9 = Math.abs(d9);
+          const toStart9 = new THREE.Vector3(startPt.x - cx9, startPt.y - cy9, startPt.z - cz9);
+          const toEnd9 = new THREE.Vector3(endPtWorld.x - cx9, endPtWorld.y - cy9, endPtWorld.z - cz9);
+          const startAngle9 = Math.atan2(toStart9.dot(t2), toStart9.dot(t1));
+          const endAngle9 = Math.atan2(toEnd9.dot(t2), toEnd9.dot(t1));
+          const arcCenter9: SketchPoint = { id: crypto.randomUUID(), x: cx9, y: cy9, z: cz9 };
+          const arcEnd9: SketchPoint = { id: crypto.randomUUID(), x: endPtWorld.x, y: endPtWorld.y, z: endPtWorld.z };
+          addSketchEntity({
+            id: crypto.randomUUID(),
+            type: 'arc',
+            points: [arcCenter9],
+            radius: arcRadius9,
+            startAngle: startAngle9,
+            endAngle: endAngle9,
+            isConstruction: drawingConstructionRef.current || undefined,
+          });
+          setDrawingPoints([arcEnd9]);
+          const arcSuffix = ' [ARC]';
+          const constrSuffix = drawingConstructionRef.current ? ' [CONSTRUCTION]' : '';
+          setStatusMessage(`Tangent arc added (r=${arcRadius9.toFixed(2)})${arcSuffix}${constrSuffix} — click next point`);
+        }
+        return;
+      }
+
+      // S10: construction-mode toggle — wrap addSketchEntity to inject isConstruction flag
+      const addSketchEntityWrapped: typeof addSketchEntity = drawingConstructionRef.current
+        ? (entity) => addSketchEntity({ ...entity, isConstruction: true })
+        : addSketchEntity;
+
       commitSketchTool({
         activeTool,
         activeSketch,
@@ -347,7 +439,7 @@ export default function SketchInteraction() {
         t1,
         t2,
         projectToPlane,
-        addSketchEntity,
+        addSketchEntity: addSketchEntityWrapped,
         replaceSketchEntities,
         cycleEntityLinetype,
         setStatusMessage,
@@ -366,6 +458,24 @@ export default function SketchInteraction() {
       if (event.key === 'Escape') {
         setDrawingPoints([]);
         setStatusMessage('Drawing cancelled');
+        return;
+      }
+      // S9: 'A' key — toggle inline arc mode during line tool
+      if ((event.key === 'a' || event.key === 'A') && (activeTool === 'line' || activeTool === 'construction-line' || activeTool === 'centerline')) {
+        lineArcModeRef.current = !lineArcModeRef.current;
+        const base = `Click to place — ${drawingPoints.length === 0 ? 'start point' : 'next point'}`;
+        const arcSuffix = lineArcModeRef.current ? ' [ARC]' : '';
+        const constrSuffix = drawingConstructionRef.current ? ' [CONSTRUCTION]' : '';
+        setStatusMessage(base + arcSuffix + constrSuffix);
+        return;
+      }
+      // S10: 'X' key — toggle construction mode for any sketch drawing tool
+      if (event.key === 'x' || event.key === 'X') {
+        drawingConstructionRef.current = !drawingConstructionRef.current;
+        const arcSuffix = lineArcModeRef.current ? ' [ARC]' : '';
+        const constrSuffix = drawingConstructionRef.current ? ' [CONSTRUCTION]' : '';
+        setStatusMessage(`${activeTool.replace(/-/g, ' ')}${arcSuffix}${constrSuffix}`);
+        return;
       }
     };
 
@@ -1147,6 +1257,10 @@ export default function SketchInteraction() {
   // Preview of current drawing operation
   useFrame(() => {
     if (!previewRef.current) return;
+    // S10: when construction-mode toggle is active, use cyan dashed material for preview
+    const activeLine = drawingConstructionRef.current
+      ? constructionModePreviewMaterial.current
+      : previewMaterial.current;
     renderSketchPreview({
       previewGroup: previewRef.current,
       drawingPoints,
@@ -1155,7 +1269,7 @@ export default function SketchInteraction() {
       activeTool,
       isDraggingArc: isDraggingArcRef.current,
       startV: startVRef.current,
-      lineMat: previewMaterial.current,
+      lineMat: activeLine,
       constructionMat: constructionPreviewMaterial.current,
       centerlineMat: centerlinePreviewMaterial.current,
       conicRho,

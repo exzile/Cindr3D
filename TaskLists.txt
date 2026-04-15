@@ -2,47 +2,177 @@ DZIGN3D — OPEN TASKS
 ====================
 Completed tasks removed to save context. Full history: git log --oneline.
 
-STATUS KEY:  [ ] = open   [x] = done   [~] = blocked (needs edge/face picker)
+STATUS KEY:  [ ] = open   [x] = done   [~] = deferred/blocked
 
 ═══════════════════════════════════════════════════════════════
 DESIGN WORKSPACE — OPEN ITEMS
 ═══════════════════════════════════════════════════════════════
  
 
-── SOLID MODIFY ──────────────────────────────────────────────
-[~] D6.  3D Fillet — no-op; blocked on edge picker
-[~] D7.  3D Chamfer — no-op; blocked on edge picker
-[~] D81. Fillet upgrade (variable radius, chord length, rule fillet) — blocked on edge picker
-[~] D82. Chamfer upgrade (two-dist, dist+angle) — blocked on edge picker
-[~] D171. Replace Face — blocked on face picker
+═══════════════════════════════════════════════════════════════
+SOLID WORKSPACE AUDIT GAPS (Fusion 360 help page review)
+═══════════════════════════════════════════════════════════════
+
+── SOLID CREATE ────────────────────────────────────────────── 
+[ ] D184. Automated Modeling — AI-driven design-alternative generator (very hard — deferred)
+   
+── INSERT ────────────────────────────────────────────────────
+[x] D192. Decal — place a raster image onto a selected face as a visual decal (easy-medium)
+[x] D193. Attached Canvas — re-attach / edit an existing canvas placed on a plane (easy)
+[ ] D194. Insert Fastener — fastener library browser to insert bolts/screws as solid bodies (very hard — deferred)
+[ ] D195. Derive — pull bodies/sketches/params from another file with live parametric link (very hard — deferred)
+
  
-
-── SKETCH CONSTRAIN / DIMENSION ──────────────────────────────
-[ ] D27. Real constraint solver (geometric + dimensional, 2D DOF system) 
-[ ] D48. Arc Length dimension
-[ ] D49. Aligned (true-length) dimension 
-[ ] D51. Curvature constraint (G2 spline continuity)  
-
-── CONSTRUCTION GEOMETRY ──────────────────────────────────────
-[~] D175. Plane Through Two Edges — blocked on edge picker
-[~] D176. Axis Through Edge/Sketch Line — blocked on edge picker
-[~] D177. Axis Through Two Points — blocked on vertex picker
-[~] D178. Point at Vertex — blocked on vertex picker
-[~] D179. Point Through Two Edges — blocked on edge picker
-[~] D180. Point at Center of Circle/Sphere/Torus — blocked on face picker
-
-── DIRECT EDIT / INSERT ───────────────────────────────────────
-[ ] D123. Direct Edit — contextual face-push mode (no full rebuild)
-[ ] D137. Texture Extrude — extrude profile driven by texture map height
- 
+  
 
 ═══════════════════════════════════════════════════════════════
 SKETCH SECOND AUDIT GAPS
-═══════════════════════════════════════════════════════════════ 
-[ ] S4.  Isoparametric Curve — UV-parameter curve on a NURBS surface (deferred) 
+═══════════════════════════════════════════════════════════════
+[ ] S4.  Isoparametric Curve — UV-parameter curve on a NURBS surface (deferred)
+
+── SKETCH CREATE (Fusion 360 doc audit) ────────────────────── 
+[ ] S7.  3D Sketch mode — no multi-plane single-sketch support. Fusion lets you click a
+         new face or plane mid-sketch to change the active draw plane without ending the
+         sketch. Our sketches are locked to one plane for their entire lifetime. 
+
+  
 
 ═══════════════════════════════════════════════════════════════
-ASSEMBLY GAPS
-═══════════════════════════════════════════════════════════════ 
-[ ] A10. Motion Study (timeline-based joint animation — DEFERRED, very hard)
+SURFACE WORKSPACE AUDIT GAPS (Fusion 360 doc audit)
+═══════════════════════════════════════════════════════════════
+
+── SURFACE CREATE ──────────────────────────────────────────── 
+[ ] SFC7. Fill — Fusion: Surface > Create > Fill — creates a planar or blended patch from a
+         boundary of curves/edges with selectable G0/G1/G2 continuity per edge; not implemented
+         at all. Distinct from Patch (Patch takes a closed sketch profile; Fill picks individual
+         boundary edges/curves with per-edge continuity). No FillDialog, no store action, not
+         present in Surface CREATE ribbon. (medium-hard)
+[ ] SFC8. Offset curve-to-surface — Fusion: Surface > Create > Offset — offsets an open or
+         closed curve/edge at a specified distance to create a new surface strip. Not the same as
+         Offset Surface (which offsets an existing surface body). Not present in our Surface CREATE
+         section. (medium)
+[ ] SFC22. Surface Primitives — Fusion: Surface > Create > Primitives — creates open surface
+          bodies (Plane, Box, Sphere, Cylinder, Torus, Cone) with no solid interior; these are
+          surface quilts, not solid volumes. Completely absent from the Surface tab. Solid
+          primitives use addPrimitive() → PrimitiveBodies.tsx (Three.js BoxGeometry, etc.) with
+          closed caps; mesh primitives use MeshPrimitivesDialog with bodyKind:'mesh'. No
+          bodyKind:'surface' primitive path exists. Surface variants differ: Cylinder has no end
+          caps, Box is 6 disconnected face patches, Sphere/Torus/Cone are shell surfaces. Needs
+          a SurfacePrimitivesDialog, addSurfacePrimitive store action, and a SurfacePrimitiveBodies
+          renderer that generates open geometries. (medium)
+
+── SURFACE MODIFY (ALL ARE UI STUBS — no GeometryEngine calls) ───────────────────────────────
+[ ] SFC9.  Offset Surface stub — OffsetSurfaceDialog calls addFeature() with type:'sweep' and
+          isSurfaceOffset:true; GeometryEngine never processes that flag. Needs a real
+          GeometryEngine.offsetSurface(mesh, distance) implementation and dedicated feature type.
+          (medium)
+[ ] SFC10. Trim stub — SurfaceTrimDialog calls addFeature() with type:'split-body' and
+          isSurfaceTrim:true; no geometry computed. Needs GeometryEngine surface-trim logic
+          (intersect surface with trimming tools, discard selected regions). (hard)
+[ ] SFC11. Extend stub — SurfaceExtendDialog calls addFeature() with type:'sweep' and
+          isSurfaceExtend:true; no geometry. Needs edge-extension logic (natural/tangent/
+          perpendicular extension mode). (medium-hard)
+[ ] SFC12. Stitch stub — StitchDialog calls addFeature() with type:'thicken' and isStitch:true;
+          no geometry. Should merge adjacent surface bodies into a single quilt (or closed solid
+          if fully enclosed). (hard)
+[ ] SFC13. Unstitch stub — UnstitchDialog calls addFeature() with type:'split-body' and
+          unstitch:true; no geometry. Should split a stitched quilt back into its component
+          surface faces. (hard)
+[ ] SFC14. Surface Split stub — SurfaceSplitDialog calls addFeature() with type:'split-body'
+          and isSurfaceSplit:true; no geometry. Should split one surface body using another
+          surface or sketch as the splitting tool. (hard)
+[ ] SFC15. Untrim stub — UntrimDialog calls addFeature() with type:'sweep' and isUntrim:true;
+          no geometry. Should restore a trimmed edge of a surface face to its original untrimmed
+          boundary. (hard)
+[ ] SFC16. Merge stub — SurfaceMergeDialog calls addFeature() with type:'thicken' and
+          isSurfaceMerge:true; no geometry. Should merge two tangent or coincident surface faces
+          into a single face, removing the shared edge. (medium)
+[ ] SFC17. Thicken stub — ThickenDialog has good UI (thickness, direction, operation) but calls
+          addFeature() only; no GeometryEngine.thicken() call. Shared with Solid tab. Needs
+          offset-mesh shell generation to produce a solid from a surface body. (medium-hard)
+
+── SURFACE MODIFY MISSING TOOLS ──────────────────────────────
+[ ] SFC18. Delete Face — Fusion: Surface > Modify > Delete Face — removes selected faces from a
+          surface body/quilt; healing options (tangent/curvature patch or leave open). Not present
+          in our Surface MODIFY ribbon at all. (medium)
+          Note: Fillet and Chamfer are NOT part of Fusion 360's Surface > Modify — they are
+          Solid > Modify operations only and do not appear in the surface workspace.
+           
+
+═══════════════════════════════════════════════════════════════
+ASSEMBLY GAPS (Fusion 360 ASM-DESIGNS audit)
+═══════════════════════════════════════════════════════════════
+ 
+── ASSEMBLY — UI STUBS (no real implementation) ──────────────
+[ ] A17. As-Built Joint stub — AsBuiltJointDialog calls addFeature() with type:'import' and
+         asBuilt:true; it does NOT call componentStore.addJoint(), so no kinematic relationship
+         exists in the data model. Should be wired to addJoint the same way as JointDialog.
+         Also uses free-text input for component names instead of a component picker. (medium)
+[ ] A18. Rigid Group stub — RigidGroupDialog calls addFeature() with isRigidGroup:true; takes
+         component names as newline-delimited plain text. No real rigidification — components
+         are not locked together in componentStore. Should store a set of real component IDs
+         and prevent relative motion between them during Drive Joints. (medium)
+[ ] A19. Drive Joints stub — DriveJointsDialog calls addFeature() with isDriveJoint:true;
+         no animation or playback logic. Should drive joint.rotationValue /
+         joint.translationValue over a timeline using setJointValue() in componentStore.
+         No animation loop, no playback controls, no timeline UI exists. (hard)
+[ ] A20. Motion Link stub — MotionLinkDialog calls addFeature() with isMotionLink:true;
+         no coupling logic. Should link two specific joint IDs so that moving one drives
+         the other at a configurable ratio + offset. Source/target are free-text fields
+         instead of real joint pickers. (medium)
+
+── ASSEMBLY — GROUND/UNGROUND COMPONENT ─────────────────────
+[ ] A21. Ground/Unground toggle UI — setComponentGrounded(id, bool) exists in componentStore
+         and ComponentNode shows an Anchor icon when grounded:true, but there is no UI
+         interaction to toggle it: no button in assembleMenuItems flyout, no right-click
+         context menu item in ComponentNode (context menu has New/Duplicate/Delete only).
+         Root Assembly is grounded:true by default but child components cannot be grounded
+         from the UI. Ground is fundamental — it fixes one component as the immovable reference
+         so joint simulation is meaningful. (easy — just wire setComponentGrounded to a
+         context menu item and add an Anchor toggle button)
+
+── ASSEMBLY — MISSING TOOLS ──────────────────────────────────
+[ ] A22. Mirror Components — Fusion: Assemble > Mirror — mirrors an entire component (all
+         bodies/features) about XY/XZ/YZ or a construction plane. mirrorBody() exists for
+         individual bodies but no mirrorComponent() in componentStore. Not in assembleMenuItems.
+         (medium)
+[ ] A23. Duplicate With Joints — Fusion: Assemble > Duplicate With Joints — duplicates a
+         component AND copies its associated joints (re-linking to the new component ID).
+         Currently comingSoon stub in assembleMenuItems. duplicateComponent() in componentStore
+         does not copy joints. (medium)
+[ ] A24. Constrain Components — Fusion: Assemble > Constrain Components — Inventor-style
+         mate/flush/angle/tangent constraints as an alternative positioning system to Joints.
+         Currently comingSoon stub. Requires a constraint solver for rigid body placement.
+         (hard — deferred)
+[ ] A25. Enable All Contact — Fusion: Contact Sets panel has a global "Enable All" / "Disable
+         All" toggle. ContactSetsDialog only toggles individual ContactSetEntry items (via
+         onToggle per set); no bulk enable/disable button exists. (easy)
+[ ] A26. Bill of Materials (BOM) — Fusion: Utilities > Bill of Materials — generates a table of
+         all components with quantity, part number, description, material, and mass. Not
+         implemented. Would require traversing the component tree and summarizing body materials.
+         (medium)
+[ ] A27. Exploded View — Fusion: Assemble > Explode (or via Motion Study) — offsets each
+         component outward along its assembly axis for documentation diagrams. Not implemented;
+         no explode dialog, no explode store action. (hard)
+[ ] A28. Make Independent — Fusion: right-click a linked/referenced component > Make
+         Independent — breaks the live reference to an external design file so the component
+         becomes a local copy. Related to D195 Derive (deferred) and A13 Insert Component.
+         isLinked:true flag exists on Component type but no Make Independent UI or action. (medium
+         — blocked until external reference loading is real)
+
+
+═══════════════════════════════════════════════════════════════
+RECENTLY COMPLETED (this session)
+═══════════════════════════════════════════════════════════════
+D6/D7/D81/D82 Fillet+Chamfer full wiring (useEdgePicker, dialogs, store, highlights)
+D27 Constraint solver auto-trigger + Solve button in SketchPalette
+D48/D49 Arc Length + Aligned dimension types wired in SketchInteraction
+D51 Curvature (G2) constraint tool
+D123 Direct Edit dialog + face picker wired
+D137 Texture Extrude dialog + face picker wired
+D171 Replace Face two-step face picker + panel wired
+D175–D180 Construction Geometry (planes/axes/points) — interaction + renderer + store
+useFacePicker / useEdgePicker / useVertexPicker hooks extracted from ExtrudeTool
+D15 Intersect (was already implemented — verified + marked done)
+FilletDialog + ChamferDialog standalone components
   

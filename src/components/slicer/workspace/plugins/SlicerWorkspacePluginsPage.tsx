@@ -1,4 +1,4 @@
-import * as React from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   Search, Check, Download, Settings, Puzzle, Package,
   Cloud, Zap, FileOutput, Wrench,
@@ -15,7 +15,7 @@ interface PluginEntry {
   author: string;
   category: Exclude<PluginCategory, 'All'>;
   installedInitially: boolean;
-  icon: React.ReactNode;
+  icon: ReactNode;
 }
 
 const PLUGIN_DATA: PluginEntry[] = [
@@ -144,12 +144,12 @@ function PluginCard({ plugin, installed, installing, onInstall }: PluginCardProp
 }
 
 export function SlicerWorkspacePluginsPage() {
-  const [search, setSearch] = React.useState('');
-  const [activeCategory, setActiveCategory] = React.useState<PluginCategory>('All');
-  const [installedIds, setInstalledIds] = React.useState<Set<string>>(
+  const [search, setSearch] = useState('');
+  const [activeCategory, setActiveCategory] = useState<PluginCategory>('All');
+  const [installedIds, setInstalledIds] = useState<Set<string>>(
     () => new Set(PLUGIN_DATA.filter((p) => p.installedInitially).map((p) => p.id)),
   );
-  const [installingIds, setInstallingIds] = React.useState<Set<string>>(new Set());
+  const [installingIds, setInstallingIds] = useState<Set<string>>(new Set());
 
   const handleInstall = (id: string) => {
     setInstallingIds((prev) => new Set([...prev, id]));
@@ -163,7 +163,7 @@ export function SlicerWorkspacePluginsPage() {
     }, 1000);
   };
 
-  const filteredPlugins = React.useMemo(() => {
+  const filteredPlugins = useMemo(() => {
     const q = search.toLowerCase();
     return PLUGIN_DATA.filter((p) => {
       const matchesCategory = activeCategory === 'All' || p.category === activeCategory;

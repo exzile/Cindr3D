@@ -9,7 +9,6 @@ export default function StatusBar() {
   const snapEnabled = useCADStore((s) => s.snapEnabled);
   const activeSketch = useCADStore((s) => s.activeSketch);
   const selectionFilter = useCADStore((s) => s.selectionFilter);
-  const setSelectionFilter = useCADStore((s) => s.setSelectionFilter);
 
   return (
     <div className="status-bar">
@@ -31,18 +30,9 @@ export default function StatusBar() {
         <span className={`status-badge ${snapEnabled ? 'active' : ''}`}>
           Snap: {snapEnabled ? 'ON' : 'OFF'}
         </span>
-        <select
-          className="status-units"
-          value={selectionFilter}
-          onChange={(e) => setSelectionFilter(e.target.value as typeof selectionFilter)}
-          title="Selection filter"
-        >
-          <option value="all">Select All</option>
-          <option value="bodies">Bodies</option>
-          <option value="faces">Faces</option>
-          <option value="edges">Edges</option>
-          <option value="sketches">Sketches</option>
-        </select>
+        <span className="status-badge" title="Selection filter">
+          Filter: {Object.entries(selectionFilter).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none'}
+        </span>
         <select
           className="status-units"
           value={units}
