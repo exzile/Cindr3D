@@ -1,0 +1,126 @@
+.replace-face-panel {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 260px;
+  background: var(--panel-bg, #1e1e2e);
+  color: var(--panel-text, #cdd6f4);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  font-family: inherit;
+  font-size: 13px;
+  z-index: 50;
+  user-select: none;
+}
+
+.replace-face-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.replace-face-panel__title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.replace-face-panel__close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  padding: 0;
+  line-height: 1;
+}
+
+.replace-face-panel__body {
+  padding: 12px 14px;
+}
+
+.replace-face-panel__step {
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.replace-face-panel__step--last {
+  margin-bottom: 16px;
+}
+
+.replace-face-panel__step--source-active {
+  background: rgba(33, 150, 243, 0.18);
+}
+
+.replace-face-panel__step--target-active {
+  background: rgba(76, 175, 80, 0.18);
+}
+
+.replace-face-panel__step--disabled {
+  opacity: 0.45;
+}
+
+.replace-face-panel__step-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.replace-face-panel__step-dot--source {
+  background: #2196f3;
+}
+
+.replace-face-panel__step-dot--target {
+  background: #4caf50;
+}
+
+.replace-face-panel__check--source {
+  color: #ff6600;
+  flex-shrink: 0;
+}
+
+.replace-face-panel__check--target {
+  color: #4caf50;
+  flex-shrink: 0;
+}
+
+.replace-face-panel__footer {
+  display: flex;
+  gap: 8px;
+  padding: 0 14px 12px;
+  justify-content: flex-end;
+}
+
+.replace-face-panel__btn-cancel {
+  padding: 6px 14px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.replace-face-panel__btn-ok {
+  padding: 6px 14px;
+  border-radius: 5px;
+  border: none;
+  background: #2196f3;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.replace-face-panel__btn-ok:disabled {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.35);
+  cursor: not-allowed;
+}

@@ -36,23 +36,12 @@ function GroupHeader({ group }: { group: FeatureGroup }) {
   return (
     <div
       className="timeline-group-header"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 4,
-        padding: '3px 6px',
-        background: 'var(--surface-2, #2a2a2a)',
-        borderRadius: 4,
-        marginBottom: 2,
-        cursor: 'pointer',
-        userSelect: 'none',
-      }}
       onClick={() => toggleFeatureGroup(group.id)}
     >
-      <span style={{ color: 'var(--accent, #5b9bd5)', flexShrink: 0 }}>
+      <span className="timeline-group-header__accent">
         {group.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
       </span>
-      <span style={{ color: 'var(--accent, #5b9bd5)', flexShrink: 0 }}>
+      <span className="timeline-group-header__accent">
         {group.collapsed ? <Folder size={13} /> : <FolderOpen size={13} />}
       </span>
       {editing ? (
@@ -63,24 +52,22 @@ function GroupHeader({ group }: { group: FeatureGroup }) {
           onBlur={commitRename}
           onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setEditing(false); }}
           onClick={(e) => e.stopPropagation()}
-          style={{ flex: 1, fontSize: 12, background: 'transparent', border: '1px solid var(--accent, #5b9bd5)', borderRadius: 2, color: 'inherit', padding: '0 3px' }}
+          className="timeline-group-header__input"
         />
       ) : (
-        <span style={{ flex: 1, fontSize: 12, fontWeight: 600 }}>{group.name}</span>
+        <span className="timeline-group-header__name">{group.name}</span>
       )}
       <button
-        className="timeline-action-btn"
+        className="timeline-action-btn timeline-group-header__btn"
         onClick={(e) => { e.stopPropagation(); setEditName(group.name); setEditing(true); }}
         title="Rename group"
-        style={{ padding: '1px 3px' }}
       >
         <Pencil size={11} />
       </button>
       <button
-        className="timeline-action-btn danger"
+        className="timeline-action-btn danger timeline-group-header__btn"
         onClick={(e) => { e.stopPropagation(); deleteFeatureGroup(group.id); }}
         title="Delete group"
-        style={{ padding: '1px 3px' }}
       >
         <Trash2 size={11} />
       </button>
@@ -214,7 +201,7 @@ function FeatureItem({ feature, index, indented }: { feature: Feature; index: nu
   return (
     <>
     <div
-      className={`timeline-item ${isSelected ? 'selected' : ''} ${isRolledBack ? 'rolled-back' : ''}`}
+      className={`timeline-item ${isSelected ? 'selected' : ''} ${isRolledBack ? 'rolled-back' : ''} ${indented ? 'indented' : ''}`}
       draggable
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
@@ -223,7 +210,6 @@ function FeatureItem({ feature, index, indented }: { feature: Feature; index: nu
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
       title="Double-click to edit • Drag to reorder • Right-click for options"
-      style={{ ...(isRolledBack ? { opacity: 0.4 } : {}), ...(indented ? { paddingLeft: 20 } : {}) }}
     >
       <div className="timeline-item-icon">
         <FeatureIcon type={feature.type} />
@@ -275,32 +261,17 @@ function FeatureItem({ feature, index, indented }: { feature: Feature; index: nu
     {contextMenu && (
       <>
         <div
-          style={{ position: 'fixed', inset: 0, zIndex: 999 }}
+          className="timeline-context-overlay"
           onClick={closeContextMenu}
           onContextMenu={(e) => { e.preventDefault(); closeContextMenu(); }}
         />
         <div
-          style={{
-            position: 'fixed',
-            left: contextMenu.x,
-            top: contextMenu.y,
-            background: 'var(--surface-2, #2a2a2a)',
-            border: '1px solid var(--border, #444)',
-            borderRadius: 4,
-            zIndex: 1000,
-            minWidth: 150,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-            padding: '4px 0',
-          }}
+          className="timeline-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
           <button
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              width: '100%', padding: '6px 12px',
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'inherit', fontSize: 12, textAlign: 'left',
-            }}
+            className="timeline-context-menu__btn"
             onClick={() => {
               createFeatureGroup('Group', [feature.id]);
               closeContextMenu();

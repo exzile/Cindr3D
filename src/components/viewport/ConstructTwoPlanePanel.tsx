@@ -9,6 +9,7 @@ import { useState } from 'react';
 import * as THREE from 'three';
 import { useCADStore } from '../../store/cadStore';
 import type { ConstructionPlane } from '../../types/cad';
+import './ConstructPanel.css';
 
 // Module-level scratch — no per-render allocation
 const _n1 = new THREE.Vector3();
@@ -78,51 +79,34 @@ export default function ConstructTwoPlanePanel() {
   };
 
   return (
-    <div style={{
-      position: 'absolute', top: 16, right: 16, width: 220,
-      background: 'var(--color-panel, #1e1e2e)', border: '1px solid var(--color-border, #444)',
-      borderRadius: 6, padding: '10px 12px', color: 'var(--color-text, #cdd6f4)',
-      fontSize: 12, zIndex: 50, boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-    }}>
-      <div style={{ fontWeight: 600, marginBottom: 8 }}>Axis Through Two Planes</div>
-      <div style={{ marginBottom: 6, opacity: 0.7 }}>
+    <div className="construct-panel">
+      <div className="construct-panel__title">Axis Through Two Planes</div>
+      <div className="construct-panel__hint">
         Select 2 construction planes ({selected.length}/2):
       </div>
       {constructionPlanes.length === 0 && (
-        <div style={{ opacity: 0.5 }}>No construction planes in scene.</div>
+        <div className="construct-panel__empty">No construction planes in scene.</div>
       )}
       {constructionPlanes.map((p) => (
         <div
           key={p.id}
           onClick={() => toggle(p.id)}
-          style={{
-            padding: '4px 8px', marginBottom: 2, borderRadius: 4, cursor: 'pointer',
-            background: selected.includes(p.id) ? 'var(--color-accent, #89b4fa33)' : 'transparent',
-            border: selected.includes(p.id) ? '1px solid var(--color-accent, #89b4fa)' : '1px solid transparent',
-          }}
+          className={`construct-panel__item${selected.includes(p.id) ? ' construct-panel__item--selected' : ''}`}
         >
           {p.name}
         </div>
       ))}
-      <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+      <div className="construct-panel__footer">
         <button
           onClick={handleCreate}
           disabled={selected.length !== 2}
-          style={{
-            flex: 1, padding: '4px 0', borderRadius: 4, cursor: selected.length === 2 ? 'pointer' : 'default',
-            background: selected.length === 2 ? 'var(--color-accent, #89b4fa)' : '#444',
-            color: selected.length === 2 ? '#1e1e2e' : '#888', border: 'none', fontWeight: 600,
-          }}
+          className="construct-panel__btn-create"
         >
           Create
         </button>
         <button
           onClick={() => { setSelected([]); cancelConstructTool(); }}
-          style={{
-            padding: '4px 10px', borderRadius: 4, cursor: 'pointer',
-            background: 'transparent', color: 'var(--color-text, #cdd6f4)',
-            border: '1px solid var(--color-border, #444)',
-          }}
+          className="construct-panel__btn-cancel"
         >
           Cancel
         </button>

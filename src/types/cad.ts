@@ -247,7 +247,9 @@ export type FeatureType =
   | 'pattern-on-path'
   | 'scale'
   | 'form'
-  | 'base-feature';
+  | 'base-feature'
+  | 'sheet-flange'
+  | 'sheet-bend';
 
 export type BooleanOperation = 'new-body' | 'join' | 'cut' | 'intersect';
 

@@ -395,6 +395,10 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const openSurfaceMergeDialog = useCADStore((s) => s.openSurfaceMergeDialog);
   const openDeleteFaceDialog = useCADStore((s) => s.openDeleteFaceDialog);
   const openSurfacePrimitivesDialog = useCADStore((s) => s.openSurfacePrimitivesDialog);
+  const openFlangeDialog = useCADStore((s) => s.openFlangeDialog);
+  const openBendDialog = useCADStore((s) => s.openBendDialog);
+  const openUnfoldDialog = useCADStore((s) => s.openUnfoldDialog);
+  const openFlatPatternDialog = useCADStore((s) => s.openFlatPatternDialog);
 
   // Component store (D193)
   const addComponent = useComponentStore((s) => s.addComponent);
@@ -1228,12 +1232,12 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
         {!inSketch && workspace === 'design' && designTab === 'sheet-metal' && (
           <>
             <RibbonSection title="CREATE">
-              <ToolButton icon={<Box size={ICON_LG} />} label="Flange" onClick={() => setStatusMessage('Sheet Metal: Flange - coming soon')} large colorClass="icon-teal" />
-              <ToolButton icon={<ArrowUpFromLine size={ICON_LG} />} label="Bend" onClick={() => setStatusMessage('Sheet Metal: Bend - coming soon')} large colorClass="icon-teal" />
+              <ToolButton icon={<Box size={ICON_LG} />} label="Flange" onClick={openFlangeDialog} large colorClass="icon-teal" />
+              <ToolButton icon={<ArrowUpFromLine size={ICON_LG} />} label="Bend" onClick={openBendDialog} large colorClass="icon-teal" />
             </RibbonSection>
             <RibbonSection title="MODIFY">
-              <ToolButton icon={<Scissors size={ICON_LG} />} label="Unfold" onClick={() => setStatusMessage('Sheet Metal: Unfold - coming soon')} large colorClass="icon-teal" />
-              <ToolButton icon={<Layers size={ICON_LG} />} label="Flat Pattern" onClick={() => setStatusMessage('Sheet Metal: Flat Pattern - coming soon')} large colorClass="icon-teal" />
+              <ToolButton icon={<Scissors size={ICON_LG} />} label="Unfold" onClick={openUnfoldDialog} large colorClass="icon-teal" />
+              <ToolButton icon={<Layers size={ICON_LG} />} label="Flat Pattern" onClick={openFlatPatternDialog} large colorClass="icon-teal" />
             </RibbonSection>
             <RibbonSection title="SELECT">
               <ToolButton icon={<MousePointer2 size={ICON_LG} />} label="Select" tool="select" large colorClass="icon-blue" />

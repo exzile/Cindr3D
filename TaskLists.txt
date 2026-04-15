@@ -3,17 +3,8 @@ DZIGN3D — OPEN TASKS
 Completed tasks removed to save context. Full history: git log --oneline.
 
 STATUS KEY:  [ ] = open   [x] = done   [~] = deferred/blocked
-
-═══════════════════════════════════════════════════════════════
-DESIGN WORKSPACE — OPEN ITEMS
-═══════════════════════════════════════════════════════════════
  
-
-═══════════════════════════════════════════════════════════════
-SOLID WORKSPACE AUDIT GAPS (Fusion 360 help page review)
-═══════════════════════════════════════════════════════════════
  
-   
 ── INSERT ──────────────────────────────────────────────────── 
 [ ] D194. Insert Fastener — fastener library browser to insert bolts/screws as solid bodies (very hard — deferred)
 [ ] D195. Derive — pull bodies/sketches/params from another file with live parametric link (very hard — deferred)
@@ -25,10 +16,7 @@ SOLID WORKSPACE AUDIT GAPS (Fusion 360 help page review)
 SKETCH SECOND AUDIT GAPS
 ═══════════════════════════════════════════════════════════════
 [ ] S4.  Isoparametric Curve — UV-parameter curve on a NURBS surface (deferred)
- 
   
- 
-
 ── ASSEMBLY — MISSING TOOLS ──────────────────────────────────
  
 [ ] A24. Constrain Components — Fusion: Assemble > Constrain Components — Inventor-style
@@ -41,142 +29,12 @@ SKETCH SECOND AUDIT GAPS
          becomes a local copy. Related to D195 Derive (deferred) and A13 Insert Component.
          isLinked:true flag exists on Component type but no Make Independent UI or action. (medium
          — blocked until external reference loading is real)
-
-
+ 
+ 
+ 
  
 
  
-═══════════════════════════════════════════════════════════════
-MESH WORKSPACE — UI STUB GAPS (no GeometryEngine compute)
-═══════════════════════════════════════════════════════════════
 
-── MESH MODIFY STUBS ─────────────────────────────────────────
  
-[ ] MSH4. Erase and Fill stub — EraseAndFillDialog calls addFeature() with isEraseAndFill:true;
-          no geometry. Should remove the selected region of triangles and re-mesh the hole
-          using a smooth Laplacian patch. (hard)
- 
-[ ] MSH6. Mesh Shell stub — MeshShellDialog calls addFeature() with isMeshShell:true;
-          no geometry. Should offset mesh inward/outward to create a hollow body with given
-          wall thickness (face-normal offset per vertex + cap). (hard)
- 
-[ ] MSH9. Mesh Align stub — MeshAlignDialog calls addFeature() with isMeshAlign:true;
-          no geometry. Should compute a rigid transform to best-fit one mesh body onto
-          another (e.g., ICP or centroid-match). (hard) 
-[ ] MSH12. Convert Mesh to BRep stub — ConvertMeshToBRepDialog calls addFeature(
-           type:'import', isConvertMeshToBRep:true); no geometry. Needs GeometryEngine
-           to approximate mesh faces as planar/NURBS patches (Facet = keep triangles as
-           flat BRep faces; Prismatic = merge coplanar regions; Organic = fit smooth
-           surfaces). Very hard in full fidelity; a basic coplanar-merge approximation
-           is medium. (hard) 
-
-═══════════════════════════════════════════════════════════════
-FORM WORKSPACE — MODIFY STUBS (blocked by missing pickers/solvers)
-═══════════════════════════════════════════════════════════════
-All Create and basic Modify tools (Box/Plane/Cylinder/Sphere/Torus/Quadball/Pipe/Face/
-Extrude/Revolve/Sweep/Loft, EditForm vertex drag, Subdivide, Crease/Uncrease, Freeze,
-Delete) are real implementations in FormInteraction.tsx + SubdivisionEngine. The eleven
-tools below are blocked in FormInteraction.tsx because they require pickers or solvers
-that do not yet exist.
-
-[ ] FM1. Insert Edge stub — form-insert-edge sets status "requires face-picker (blocked)";
-         click handler is a no-op. Needs a face-picker to identify which face to split and
-         a SubdivisionEngine.insertEdge() that adds a new edge loop across the face. (hard)
-[ ] FM2. Insert Point stub — form-insert-point sets status "requires edge-picker (blocked)".
-         Needs an edge-picker + SubdivisionEngine.insertPoint() to subdivide the picked
-         edge at the parametric click position. (medium-hard)
-[ ] FM3. Bridge stub — form-bridge sets status "requires edge-loop picker (blocked)".
-         Needs a two-step edge-loop picker + SubdivisionEngine.bridge() to generate quad
-         faces connecting two selected open boundary rings. (hard)
-[ ] FM4. Fill Hole stub — form-fill-hole sets status "requires boundary-edge picker
-         (blocked)". Needs a boundary-edge picker + SubdivisionEngine.fillHole() to cap
-         an open loop with a planar or minimal-surface patch. (medium-hard)
-[ ] FM5. Weld stub — form-weld sets status "requires multi-vertex picker (blocked)".
-         Needs multi-vertex selection + SubdivisionEngine.weld() to merge coincident or
-         near-coincident vertices into a single vertex. (medium)
-[ ] FM6. Unweld stub — form-unweld sets status "requires vertex-picker (blocked)".
-         Needs vertex-picker + SubdivisionEngine.unweld() to split a shared vertex into
-         per-face copies, opening a seam. (medium)
-[ ] FM7. Flatten stub — form-flatten sets status "requires plane-projection solver
-         (blocked)". Needs selection of vertices + a target plane, then projects each
-         vertex onto that plane while holding edge lengths. (medium-hard)
-[ ] FM8. Make Uniform stub — form-uniform sets status "requires length-equalizer
-         (blocked)". Needs SubdivisionEngine.makeUniform() to equalize edge lengths
-         across the cage via iterative Laplacian smoothing of edge midpoints. (medium-hard)
-[ ] FM9. Pull stub — form-pull sets status "requires limit-surface solver (blocked)".
-         Needs SubdivisionEngine.pullToLimitSurface() to move cage vertices toward the
-         Catmull-Clark limit positions (approximating a smooth surface fit). (hard)
-[ ] FM10. Interpolate stub — form-interpolate sets status "requires interpolation solver
-          (blocked)". Needs a through-point interpolation system: fit a control cage such
-          that the smooth limit surface passes through given world-space points. (very hard)
-[ ] FM11. Thicken Form stub — form-thicken sets status "requires offset-cage engine
-          (blocked)". Needs SubdivisionEngine.thickenCage() to offset each cage vertex
-          outward along its averaged normal, generating a double-sided shell cage body. (hard)
-
-═══════════════════════════════════════════════════════════════
-SHEET METAL WORKSPACE — ENTIRELY MISSING
-═══════════════════════════════════════════════════════════════
-All four Sheet Metal tools are inline setStatusMessage('Sheet Metal: X — coming soon')
-in Toolbar.tsx with zero dialog files, no store actions, and no GeometryEngine calls.
-No dialogs/sheet-metal/ folder exists. The entire workspace is a placeholder.
-
-[ ] SM1. Flange — Fusion: Sheet Metal > Create > Flange — extrudes a thin wall from a
-         selected edge, bending at a given angle with configurable relief cuts and K-factor.
-         Needs: FlangePath sheet metal feature type, GeometryEngine.sheetFlange(), store
-         action, dialog with edge-picker + angle + thickness + relief params. (hard)
-[ ] SM2. Bend — Fusion: Sheet Metal > Create > Bend — adds a bend line to an existing
-         sheet face; folds the face at that line. Needs: bend-line picker, BendDialog,
-         GeometryEngine.sheetBend() (rotate face around bend line with K-factor). (hard)
-[ ] SM3. Unfold — Fusion: Sheet Metal > Modify > Unfold — flattens a bent sheet metal
-         body into its flat-pattern layout. Needs: inverse of all bend transforms applied
-         to unfold face planes into a single flat geometry. (very hard)
-[ ] SM4. Flat Pattern — Fusion: Sheet Metal > Modify > Flat Pattern — persistent flat-
-         pattern view (separate from Unfold; stays linked to the parametric model and
-         updates on feature edits). Tied to Unfold + parametric recompute (MM5). (very hard)
-
-═══════════════════════════════════════════════════════════════
-PLASTIC WORKSPACE — MISSING TOOLS
-═══════════════════════════════════════════════════════════════
-SnapFit and LipGroove already have real dialogs (wired to openSnapFitDialog /
-openLipGrooveDialog). Boss and Draft are inline stubs with no dialog infrastructure.
-
-[x] PL1. Boss stub — Toolbar: onClick = setStatusMessage('Plastic: Boss — coming soon');
-         no dialog, no store action. Fusion: Boss creates a cylindrical boss (raised hub
-         with draft and fillet) for screw attachment. Needs BossDialog (diameter, height,
-         wall thickness, draft angle, head fillet) + GeometryEngine boss-geometry builder.
-         (medium)
-[x] PL2. Plastic Draft stub — Toolbar: onClick = setStatusMessage('Plastic: Draft —
-         coming soon'); no dialog. Note: Solid > Modify > Draft already has DraftDialog
-         (SLD11 above); the Plastic tab version is meant to be a shortcut alias. Easiest
-         fix: wire PL2 onClick to setActiveDialog('draft') reusing the existing DraftDialog
-         rather than building a new one. (easy)
-
-═══════════════════════════════════════════════════════════════
-UTILITIES / MANAGE — MISSING FEATURES
-═══════════════════════════════════════════════════════════════
-
-[x] UTL1. Show All / Hide — Utilities tab DISPLAY section has Show All and Hide buttons
-          that both call setStatusMessage('Show All/Hide: coming soon'). Should toggle
-          feature.visible on all features (Show All) or on the currently selected feature
-          (Hide). useCADStore already has visible per feature; just wire the buttons. (easy)
-[x] UTL2. Save — Quick Access Bar Save button and the title area have no save logic;
-          onClick = setStatusMessage('Save: coming soon'). Needs serialization of cadStore
-          features[], sketches[], componentStore components/joints, and formBodies[] to
-          JSON, then download-as-file or IndexedDB persist. Undo/Redo (MM2) and Save are
-          tightly coupled — a save format should capture the full store snapshot. (hard)
-
-═══════════════════════════════════════════════════════════════
-RECENTLY COMPLETED (this session)
-═══════════════════════════════════════════════════════════════
-D6/D7/D81/D82 Fillet+Chamfer full wiring (useEdgePicker, dialogs, store, highlights)
-D27 Constraint solver auto-trigger + Solve button in SketchPalette
-D48/D49 Arc Length + Aligned dimension types wired in SketchInteraction
-D51 Curvature (G2) constraint tool
-D123 Direct Edit dialog + face picker wired
-D137 Texture Extrude dialog + face picker wired
-D171 Replace Face two-step face picker + panel wired
-D175–D180 Construction Geometry (planes/axes/points) — interaction + renderer + store
-useFacePicker / useEdgePicker / useVertexPicker hooks extracted from ExtrudeTool
-D15 Intersect (was already implemented — verified + marked done)
-FilletDialog + ChamferDialog standalone components
   

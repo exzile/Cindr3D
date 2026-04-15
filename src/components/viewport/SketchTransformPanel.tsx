@@ -1,5 +1,5 @@
-import type React from 'react';
 import { useCADStore } from '../../store/cadStore';
+import './SketchToolPanel.css';
 
 /**
  * Floating panel for sketch transform operations:
@@ -44,67 +44,30 @@ export default function SketchTransformPanel() {
     setActiveTool('select');
   };
 
-  const panelStyle: React.CSSProperties = {
-    position: 'absolute',
-    bottom: 48,
-    left: '50%',
-    transform: 'translateX(-50%)',
-    background: '#12122a',
-    border: '1px solid #333366',
-    borderRadius: 8,
-    padding: '12px 16px',
-    minWidth: 240,
-    zIndex: 200,
-    boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
-    color: '#e0e0ff',
-    fontFamily: 'system-ui, sans-serif',
-    fontSize: 13,
-  };
-
-  const rowStyle: React.CSSProperties = {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 8, gap: 8,
-  };
-
-  const inputStyle: React.CSSProperties = {
-    width: 80, background: '#1e1e3a', border: '1px solid #333366',
-    borderRadius: 4, color: '#e0e0ff', padding: '3px 6px', fontSize: 12,
-  };
-
-  const btnStyle = (primary: boolean): React.CSSProperties => ({
-    flex: 1, padding: '6px 0', borderRadius: 4, border: 'none',
-    cursor: 'pointer', fontWeight: 600, fontSize: 12,
-    background: primary ? '#0078d7' : '#333355',
-    color: '#fff',
-  });
-
   const title = isMove
     ? (activeTool === 'sketch-copy' ? 'COPY' : 'MOVE')
     : isScale ? 'SCALE' : 'ROTATE';
 
   return (
-    <div style={panelStyle}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#44aaff', display: 'inline-block' }} />
-        <span style={{ fontWeight: 700, letterSpacing: 1, fontSize: 11, color: '#aaaacc' }}>
-          SKETCH {title}
-        </span>
+    <div className="sketch-tool-panel">
+      <div className="sketch-tool-panel__header">
+        <span className="sketch-tool-panel__dot" />
+        <span className="sketch-tool-panel__title">SKETCH {title}</span>
       </div>
 
       {isMove && (
         <>
-          <div style={rowStyle}>
+          <div className="sketch-tool-panel__row">
             <span>Δ X (along t1)</span>
-            <input type="number" step={1} value={moveDx} style={inputStyle}
+            <input type="number" step={1} value={moveDx} className="sketch-tool-panel__input"
               onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setMove({ dx: v }); }} />
           </div>
-          <div style={rowStyle}>
+          <div className="sketch-tool-panel__row">
             <span>Δ Y (along t2)</span>
-            <input type="number" step={1} value={moveDy} style={inputStyle}
+            <input type="number" step={1} value={moveDy} className="sketch-tool-panel__input"
               onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setMove({ dy: v }); }} />
           </div>
-          <div style={{ ...rowStyle, marginBottom: 12 }}>
+          <div className="sketch-tool-panel__row sketch-tool-panel__row--last">
             <span>Copy entities</span>
             <input type="checkbox" checked={activeTool === 'sketch-copy'}
               onChange={() => {
@@ -116,30 +79,30 @@ export default function SketchTransformPanel() {
       )}
 
       {isScale && (
-        <div style={rowStyle}>
+        <div className="sketch-tool-panel__row">
           <span>Scale factor</span>
-          <input type="number" min={0.001} step={0.1} value={scaleFactor} style={inputStyle}
+          <input type="number" min={0.001} step={0.1} value={scaleFactor} className="sketch-tool-panel__input"
             onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) setScaleFactor(v); }} />
         </div>
       )}
 
       {isRotate && (
-        <div style={rowStyle}>
+        <div className="sketch-tool-panel__row">
           <span>Angle (°)</span>
-          <input type="number" step={5} value={rotateAngle} style={inputStyle}
+          <input type="number" step={5} value={rotateAngle} className="sketch-tool-panel__input"
             onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setRotateAngle(v); }} />
         </div>
       )}
 
       {(isScale || isRotate) && (
-        <div style={{ fontSize: 11, color: '#666688', marginBottom: 8 }}>
+        <div className="sketch-tool-panel__hint">
           Pivot: centroid of all sketch entities
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-        <button style={btnStyle(false)} onClick={cancel}>Cancel</button>
-        <button style={btnStyle(true)} onClick={commit}>OK</button>
+      <div className="sketch-tool-panel__footer">
+        <button className="sketch-tool-panel__btn" onClick={cancel}>Cancel</button>
+        <button className="sketch-tool-panel__btn sketch-tool-panel__btn--primary" onClick={commit}>OK</button>
       </div>
     </div>
   );

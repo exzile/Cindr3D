@@ -3,35 +3,41 @@ import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 
 export function MeshShellDialog({ onClose }: { onClose: () => void }) {
-  const addFeature = useCADStore((s) => s.addFeature);
   const features = useCADStore((s) => s.features);
+  const commitMeshShell = useCADStore((s) => s.commitMeshShell);
+  const setStatusMessage = useCADStore((s) => s.setStatusMessage);
+
+  const bodyFeatures = features.filter((f) => !!f.mesh);
+  const [selectedId, setSelectedId] = useState<string>(bodyFeatures[0]?.id ?? '');
   const [thickness, setThickness] = useState(2);
-  const [direction, setDirection] = useState<'Inside' | 'Outside'>('Inside');
-  const [openFaces, setOpenFaces] = useState('');
+  const [direction, setDirection] = useState<'inward' | 'outward' | 'symmetric'>('inward');
 
   const handleOK = () => {
-    const n = features.filter((f) => f.name.startsWith('Mesh Shell')).length + 1;
-    addFeature({
-      id: crypto.randomUUID(),
-      name: `Mesh Shell ${n}`,
-      type: 'import',
-      params: { isMeshShell: true, thickness, direction, openFaces },
-      bodyKind: 'mesh',
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    });
+    if (!selectedId) {
+      setStatusMessage('Mesh Shell: no body selected');
+      return;
+    }
+    commitMeshShell(selectedId, thickness, direction);
     onClose();
   };
 
   return (
     <div className="dialog-overlay">
-      <div className="dialog-panel">
+      <div className="dialog dialog-sm">
         <div className="dialog-header">
-          <span className="dialog-title">Mesh Shell</span>
-          <button className="dialog-close" onClick={onClose}><X size={14} /></button>
+          <h3>Mesh Shell</h3>
+          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="dialog-body">
+          <div className="form-group">
+            <label>Body</label>
+            <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
+              {bodyFeatures.length === 0 && <option value="">— no bodies —</option>}
+              {bodyFeatures.map((f) => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
+            </select>
+          </div>
           <div className="form-group">
             <label>Thickness (0.5–50 mm)</label>
             <input
@@ -46,24 +52,16 @@ export function MeshShellDialog({ onClose }: { onClose: () => void }) {
           <div className="form-group">
             <label>Direction</label>
             <select value={direction} onChange={(e) => setDirection(e.target.value as typeof direction)}>
-              <option value="Inside">Inside</option>
-              <option value="Outside">Outside</option>
+              <option value="inward">Inside</option>
+              <option value="outward">Outside</option>
+              <option value="symmetric">Symmetric</option>
             </select>
-          </div>
-          <div className="form-group">
-            <label>Open Faces</label>
-            <input
-              type="text"
-              placeholder="None"
-              value={openFaces}
-              onChange={(e) => setOpenFaces(e.target.value)}
-            />
           </div>
           <p className="dialog-hint">Hollows the interior of the mesh body to the specified wall thickness.</p>
         </div>
         <div className="dialog-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
+          <button className="btn btn-primary" onClick={handleOK} disabled={!selectedId}>OK</button>
         </div>
       </div>
     </div>

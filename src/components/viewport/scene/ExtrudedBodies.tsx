@@ -155,6 +155,29 @@ export default function ExtrudedBodies() {
     };
   }, [bodies]);
 
+  // Apply dim / restore materials on pre-built stored meshes in an effect,
+  // never in render, so cleanup is guaranteed when Edit In Place exits.
+  useEffect(() => {
+    const storedMeshFeatures = features.filter((f) => isActive(f) && f.mesh);
+    storedMeshFeatures.forEach((feature) => {
+      const dim = editingInPlace && feature.componentId !== activeComponentId;
+      const mesh = feature.mesh!;
+      const isSurface = feature.bodyKind === 'surface';
+      if (dim) {
+        if (!mesh.userData._origMaterial) mesh.userData._origMaterial = mesh.material;
+        mesh.material = DIM_MATERIAL;
+      } else {
+        if (mesh.userData._origMaterial) {
+          mesh.material = mesh.userData._origMaterial as THREE.Material;
+          mesh.userData._origMaterial = undefined;
+        } else {
+          mesh.material = isSurface ? SURFACE_MATERIAL : BODY_MATERIAL;
+        }
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [features, editingInPlace, activeComponentId, rollbackIndex]);
+
   return (
     <>
       {bodies.map((geom, i) => (
@@ -176,21 +199,18 @@ export default function ExtrudedBodies() {
         return <RevolveItem key={feature.id} feature={feature} sketch={sketch} />;
       })}
       {/* Render features that have a pre-built stored mesh (D30 Sweep, D66 Thin Extrude,
-          D69 Taper Extrude, D73 Rib). All these set feature.mesh at commit time. */}
-      {features.filter((f) => isActive(f) && f.mesh).map((feature) => {
-        const mat = getMaterial(feature.componentId, feature.bodyKind === 'surface');
-        feature.mesh!.material = mat;
-        return (
-          <primitive
-            key={feature.id}
-            object={feature.mesh!}
-            onUpdate={(m: THREE.Object3D) => {
-              m.userData.pickable = true;
-              m.userData.featureId = feature.id;
-            }}
-          />
-        );
-      })}
+          D69 Taper Extrude, D73 Rib). All these set feature.mesh at commit time.
+          Material assignment is done in a useEffect below — never in render. */}
+      {features.filter((f) => isActive(f) && f.mesh).map((feature) => (
+        <primitive
+          key={feature.id}
+          object={feature.mesh!}
+          onUpdate={(m: THREE.Object3D) => {
+            m.userData.pickable = true;
+            m.userData.featureId = feature.id;
+          }}
+        />
+      ))}
     </>
   );
 }

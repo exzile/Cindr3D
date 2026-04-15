@@ -27,6 +27,30 @@ export default function ImportedModels() {
     });
   }, [features]);
 
+  // Apply / restore dim material in an effect — never in render to avoid side effects
+  // and ensure cleanup when Edit In Place mode exits.
+  useEffect(() => {
+    const visible = features.filter(f => f.type === 'import' && f.mesh && f.visible && !f.suppressed);
+    visible.forEach((feature) => {
+      const dim = editingInPlace && feature.componentId !== activeComponentId;
+      feature.mesh!.traverse((obj) => {
+        const m = obj as THREE.Mesh;
+        if (!m.isMesh) return;
+        if (dim) {
+          // Stash original material the first time we dim this mesh
+          if (!m.userData._origMaterial) m.userData._origMaterial = m.material;
+          m.material = DIM_MATERIAL;
+        } else {
+          // Restore original if we stashed one
+          if (m.userData._origMaterial) {
+            m.material = m.userData._origMaterial as THREE.Material;
+            m.userData._origMaterial = undefined;
+          }
+        }
+      });
+    });
+  }, [features, editingInPlace, activeComponentId]);
+
   return (
     <>
       {features.filter((f, i) => {
@@ -34,17 +58,9 @@ export default function ImportedModels() {
         if (f.type !== 'import' || !f.visible || f.suppressed || !f.mesh) return false;
         if (rollbackIndex >= 0 && i > rollbackIndex) return false;
         return true;
-      }).map((feature) => {
-        if (editingInPlace && feature.componentId !== activeComponentId) {
-          // Apply dim material to all mesh children
-          feature.mesh!.traverse((obj) => {
-            if ((obj as THREE.Mesh).isMesh) {
-              (obj as THREE.Mesh).material = DIM_MATERIAL;
-            }
-          });
-        }
-        return <primitive key={feature.id} object={feature.mesh!} />;
-      })}
+      }).map((feature) => (
+        <primitive key={feature.id} object={feature.mesh!} />
+      ))}
     </>
   );
 }

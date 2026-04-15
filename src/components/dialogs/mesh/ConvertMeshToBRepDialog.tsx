@@ -3,67 +3,70 @@ import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 
 export function ConvertMeshToBRepDialog({ onClose }: { onClose: () => void }) {
-  const addFeature = useCADStore((s) => s.addFeature);
   const features = useCADStore((s) => s.features);
-  const [conversionMode, setConversionMode] = useState<'Facet' | 'Prismatic' | 'Organic'>('Facet');
-  const [mergeCoplanar, setMergeCoplanar] = useState(true);
-  const [tolerance, setTolerance] = useState(0.01);
+  const commitConvertMeshToBRep = useCADStore((s) => s.commitConvertMeshToBRep);
+  const setStatusMessage = useCADStore((s) => s.setStatusMessage);
+
+  const bodyFeatures = features.filter((f) => !!f.mesh);
+  const [selectedId, setSelectedId] = useState<string>(bodyFeatures[0]?.id ?? '');
+  const [mode, setMode] = useState<'facet' | 'prismatic'>('facet');
 
   const handleOK = () => {
-    const n = features.filter((f) => f.name.startsWith('Convert to BRep')).length + 1;
-    addFeature({
-      id: crypto.randomUUID(),
-      name: `Convert to BRep ${n}`,
-      type: 'import',
-      params: { isConvertMeshToBRep: true, conversionMode, mergeCoplanar, tolerance },
-      bodyKind: 'solid',
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    });
+    if (!selectedId) {
+      setStatusMessage('Convert to BRep: no body selected');
+      return;
+    }
+    commitConvertMeshToBRep(selectedId, mode);
     onClose();
   };
 
   return (
     <div className="dialog-overlay">
-      <div className="dialog-panel">
+      <div className="dialog dialog-sm">
         <div className="dialog-header">
-          <span className="dialog-title">Convert Mesh to BRep</span>
-          <button className="dialog-close" onClick={onClose}><X size={14} /></button>
+          <h3>Convert Mesh to BRep</h3>
+          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="dialog-body">
           <div className="form-group">
-            <label>Conversion Mode</label>
-            <select value={conversionMode} onChange={(e) => setConversionMode(e.target.value as typeof conversionMode)}>
-              <option value="Facet">Facet</option>
-              <option value="Prismatic">Prismatic</option>
-              <option value="Organic">Organic</option>
+            <label>Body</label>
+            <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
+              {bodyFeatures.length === 0 && <option value="">— no bodies —</option>}
+              {bodyFeatures.map((f) => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
             </select>
           </div>
-          <div className="form-group form-group-inline">
-            <label>Merge Coplanar Faces</label>
-            <input
-              type="checkbox"
-              checked={mergeCoplanar}
-              onChange={(e) => setMergeCoplanar(e.target.checked)}
-            />
-          </div>
           <div className="form-group">
-            <label>Tolerance (0.001–1.0)</label>
-            <input
-              type="number"
-              min={0.001}
-              max={1.0}
-              step={0.001}
-              value={tolerance}
-              onChange={(e) => setTolerance(Math.min(1.0, Math.max(0.001, parseFloat(e.target.value) || 0.01)))}
-            />
+            <label>Conversion Mode</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label className="checkbox-label">
+                <input
+                  type="radio"
+                  name="mode"
+                  value="facet"
+                  checked={mode === 'facet'}
+                  onChange={() => setMode('facet')}
+                />
+                Facet — keep triangles as-is, reclassify as solid body
+              </label>
+              <label className="checkbox-label">
+                <input
+                  type="radio"
+                  name="mode"
+                  value="prismatic"
+                  checked={mode === 'prismatic'}
+                  onChange={() => setMode('prismatic')}
+                />
+                Prismatic — ensure watertight before converting
+              </label>
+            </div>
           </div>
           <p className="dialog-hint">Converts the mesh body into a solid BRep. Facet mode is fastest (one triangle = one face).</p>
         </div>
         <div className="dialog-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
+          <button className="btn btn-primary" onClick={handleOK} disabled={!selectedId}>OK</button>
         </div>
       </div>
     </div>

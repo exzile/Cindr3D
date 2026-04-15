@@ -4429,4 +4429,123 @@ export class GeometryEngine {
     geom.computeVertexNormals();
     return new THREE.Mesh(geom, new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4 }));
   }
+
+  // ── MSH9 — Mesh Align ────────────────────────────────────────────────────
+  static alignMeshToCentroid(sourceMesh: THREE.Mesh, targetMesh: THREE.Mesh): THREE.Mesh {
+    const srcBox = new THREE.Box3().setFromObject(sourceMesh);
+    const tgtBox = new THREE.Box3().setFromObject(targetMesh);
+    const srcCen = new THREE.Vector3();
+    const tgtCen = new THREE.Vector3();
+    srcBox.getCenter(srcCen);
+    tgtBox.getCenter(tgtCen);
+    const offset = tgtCen.sub(srcCen);
+    const geom = sourceMesh.geometry.clone();
+    geom.applyMatrix4(sourceMesh.matrixWorld);
+    geom.translate(offset.x, offset.y, offset.z);
+    geom.computeVertexNormals();
+    const result = new THREE.Mesh(geom, sourceMesh.material);
+    result.userData = { ...sourceMesh.userData };
+    return result;
+  }
+
+  // ── SM1 — Sheet Metal Flange ─────────────────────────────────────────────
+  static createFlange(
+    edgeStart: THREE.Vector3,
+    edgeEnd: THREE.Vector3,
+    faceNormal: THREE.Vector3,
+    thickness: number,
+    length: number,
+    bendAngle: number,
+  ): THREE.Mesh {
+    const edgeDir = edgeEnd.clone().sub(edgeStart).normalize();
+    const edgeLen = edgeEnd.distanceTo(edgeStart);
+
+    const bendRad = bendAngle * Math.PI / 180;
+    const inPlane = new THREE.Vector3().crossVectors(edgeDir, faceNormal).normalize();
+    const flangeDir = faceNormal.clone().multiplyScalar(Math.sin(bendRad))
+      .addScaledVector(inPlane, Math.cos(bendRad)).normalize();
+
+    const right = edgeDir.clone().multiplyScalar(edgeLen);
+    const thick = faceNormal.clone().multiplyScalar(thickness);
+    const ext   = flangeDir.clone().multiplyScalar(length);
+
+    const p0 = edgeStart.clone();
+    const p1 = edgeStart.clone().add(right);
+    const p2 = edgeStart.clone().add(right).add(ext);
+    const p3 = edgeStart.clone().add(ext);
+
+    const vertsArr = [
+      // Front face
+      p0, p1, p2, p0, p2, p3,
+      // Back face (flipped winding)
+      p0.clone().add(thick), p2.clone().add(thick), p1.clone().add(thick),
+      p0.clone().add(thick), p3.clone().add(thick), p2.clone().add(thick),
+      // Left cap
+      p0, p0.clone().add(thick), p1.clone().add(thick), p0, p1.clone().add(thick), p1,
+      // Right cap
+      p2, p3.clone().add(thick), p3, p2, p2.clone().add(thick), p3.clone().add(thick),
+      // Top cap
+      p1, p1.clone().add(thick), p2.clone().add(thick), p1, p2.clone().add(thick), p2,
+      // Bottom cap
+      p0, p3, p3.clone().add(thick), p0, p3.clone().add(thick), p0.clone().add(thick),
+    ];
+
+    const arr = new Float32Array(vertsArr.length * 3);
+    vertsArr.forEach((v, i) => { arr[i * 3] = v.x; arr[i * 3 + 1] = v.y; arr[i * 3 + 2] = v.z; });
+    const flangeGeom = new THREE.BufferGeometry();
+    flangeGeom.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    flangeGeom.computeVertexNormals();
+    return new THREE.Mesh(flangeGeom, new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4 }));
+  }
+
+  // ── SM2 — Sheet Metal Bend ───────────────────────────────────────────────
+  static createBend(
+    sheetMesh: THREE.Mesh,
+    bendLineStart: THREE.Vector3,
+    bendLineEnd: THREE.Vector3,
+    bendAngle: number,
+    kFactor = 0.5,
+  ): THREE.Mesh {
+    void kFactor; // reserved for future bend allowance calculation
+    const geom = sheetMesh.geometry.clone().toNonIndexed();
+    geom.applyMatrix4(sheetMesh.matrixWorld);
+    const pos = geom.attributes.position as THREE.BufferAttribute;
+
+    const bendDir = bendLineEnd.clone().sub(bendLineStart).normalize();
+    const planeNormal = bendDir.clone();
+    const planeOffset = planeNormal.dot(bendLineStart);
+
+    const q = new THREE.Quaternion().setFromAxisAngle(bendDir, bendAngle * Math.PI / 180);
+
+    for (let i = 0; i < pos.count; i++) {
+      const v = new THREE.Vector3().fromBufferAttribute(pos, i);
+      const dist = planeNormal.dot(v) - planeOffset;
+      if (dist > 0) {
+        const local = v.clone().sub(bendLineStart);
+        local.applyQuaternion(q);
+        const rotated = local.add(bendLineStart);
+        pos.setXYZ(i, rotated.x, rotated.y, rotated.z);
+      }
+    }
+    pos.needsUpdate = true;
+    geom.computeVertexNormals();
+    const result = new THREE.Mesh(geom, sheetMesh.material);
+    result.userData = { ...sheetMesh.userData };
+    return result;
+  }
+
+  // ── SM3 — Unfold Sheet Metal ─────────────────────────────────────────────
+  static unfoldSheetMetal(mesh: THREE.Mesh): THREE.Mesh {
+    const geom = mesh.geometry.clone().toNonIndexed();
+    geom.applyMatrix4(mesh.matrixWorld);
+    const pos = geom.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) {
+      pos.setXYZ(i, pos.getX(i), 0, pos.getZ(i));
+    }
+    pos.needsUpdate = true;
+    geom.computeVertexNormals();
+    const result = new THREE.Mesh(geom, mesh.material);
+    result.userData = { ...mesh.userData };
+    return result;
+  }
 }

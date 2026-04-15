@@ -102,6 +102,10 @@ import { InsertComponentDialog } from './components/dialogs/assembly/InsertCompo
 import { SnapFitDialog } from './components/dialogs/solid/SnapFitDialog';
 import { LipGrooveDialog } from './components/dialogs/solid/LipGrooveDialog';
 import { BossDialog } from './components/dialogs/plastic/BossDialog';
+import { FlangeDialog } from './components/dialogs/sheet-metal/FlangeDialog';
+import { BendDialog } from './components/dialogs/sheet-metal/BendDialog';
+import { UnfoldDialog } from './components/dialogs/sheet-metal/UnfoldDialog';
+import { FlatPatternDialog } from './components/dialogs/sheet-metal/FlatPatternDialog';
 import { useCADStore } from './store/cadStore';
 import { useComponentStore } from './store/componentStore';
 import './App.css';
@@ -512,6 +516,10 @@ function ActiveDialog() {
     case 'mirror-component': return <MirrorComponentDialogConnected onClose={close} />;
     case 'duplicate-with-joints': return <DuplicateWithJointsDialogConnected onClose={close} />;
     case 'bom': return <BOMDialogConnected onClose={close} />;
+    case 'sheet-flange': return <FlangeDialog onClose={close} />;
+    case 'sheet-bend': return <BendDialog onClose={close} />;
+    case 'sheet-unfold': return <UnfoldDialog onClose={close} />;
+    case 'sheet-flat-pattern': return <FlatPatternDialog onClose={close} />;
     default: return null;
   }
 }

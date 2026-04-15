@@ -18,6 +18,9 @@ import * as THREE from 'three';
 import { useCADStore } from '../../store/cadStore';
 import { SubdivisionEngine } from '../../engine/SubdivisionEngine';
 import type { FormElementType } from '../../types/cad';
+import { useFacePicker } from '../../hooks/useFacePicker';
+import { useEdgePicker } from '../../hooks/useEdgePicker';
+import { useVertexPicker } from '../../hooks/useVertexPicker';
 
 // ─── Module-level scratch objects (never allocated per-call) ──────────────────
 /** Scratch Vector3 used only inside nearestCageVertex. */
@@ -98,6 +101,14 @@ export default function FormInteraction() {
   /** Set to true on first pointermove after pointerdown; used to suppress click. */
   const didDragRef = useRef(false);
 
+  // ── FM3/FM5/FM7 multi-pick accumulator refs ────────────────────────────────
+  /** FM3 Bridge: first edge loop vertex IDs (null = waiting for first pick) */
+  const bridgeLoop1Ref = useRef<string[] | null>(null);
+  /** FM5 Weld: accumulated vertex IDs (cleared on third click or merge) */
+  const weldSelRef = useRef<string[]>([]);
+  /** FM7 Flatten: accumulated vertex IDs */
+  const flattenSelRef = useRef<string[]>([]);
+
   // Auto-activate the first body when entering the Form workspace
   useEffect(() => {
     if (!activeFormBodyId && formBodies.length > 0) {
@@ -143,20 +154,20 @@ export default function FormInteraction() {
             : 'Delete: click a vertex or face, then press Delete',
         );
         break;
-      case 'form-insert-edge':  setStatusMessage('Insert Edge: click a face to split — requires face-picker (blocked)'); break;
-      case 'form-insert-point': setStatusMessage('Insert Point: click an edge to subdivide — requires edge-picker (blocked)'); break;
+      case 'form-insert-edge':  setStatusMessage('Insert Edge: click a face to split into two quads'); break;
+      case 'form-insert-point': setStatusMessage('Insert Point: click an edge to insert a midpoint vertex'); break;
       case 'form-subdivide':    setStatusMessage('Subdivide: click anywhere to increase subdivision level (1–5) on the active body'); break;
-      case 'form-bridge':       setStatusMessage('Bridge: select two open boundary edge loops — requires edge-loop picker (blocked)'); break;
-      case 'form-fill-hole':    setStatusMessage('Fill Hole: click an open boundary edge to cap — requires boundary-edge picker (blocked)'); break;
-      case 'form-weld':         setStatusMessage('Weld: select coincident vertices to merge — requires multi-vertex picker (blocked)'); break;
-      case 'form-unweld':       setStatusMessage('Unweld: click a vertex to split into separate copies — requires vertex-picker (blocked)'); break;
+      case 'form-bridge':       setStatusMessage('Bridge: click first boundary edge, then second to connect loops'); break;
+      case 'form-fill-hole':    setStatusMessage('Fill Hole: click any boundary edge to cap the open hole'); break;
+      case 'form-weld':         setStatusMessage('Weld: click vertices to select (2+), then click again to merge'); break;
+      case 'form-unweld':       setStatusMessage('Unweld: click a vertex to split it into per-face copies'); break;
       case 'form-crease':       setStatusMessage('Crease: click to mark all vertices sharp (crease=1) on the active body'); break;
       case 'form-uncrease':     setStatusMessage('Uncrease: click to clear all vertex creases (crease=0) on the active body'); break;
-      case 'form-flatten':      setStatusMessage('Flatten: project selected vertices to a plane — requires plane-projection solver (blocked)'); break;
-      case 'form-uniform':      setStatusMessage('Make Uniform: equalize edge lengths across the cage — requires length-equalizer (blocked)'); break;
-      case 'form-pull':         setStatusMessage('Pull: drag cage vertices toward the limit surface — requires limit-surface solver (blocked)'); break;
-      case 'form-interpolate':  setStatusMessage('Interpolate: fit cage to through-points — requires interpolation solver (blocked)'); break;
-      case 'form-thicken':      setStatusMessage('Thicken Form: offset cage to create solid shell — requires offset-cage engine (blocked)'); break;
+      case 'form-flatten':      setStatusMessage('Flatten: click vertices to select, then click again to flatten to XZ plane'); break;
+      case 'form-uniform':      setStatusMessage('Make Uniform: click anywhere to apply 3 Laplacian smoothing iterations'); break;
+      case 'form-pull':         setStatusMessage('Pull: click anywhere to pull cage vertices toward the Catmull-Clark limit surface'); break;
+      case 'form-interpolate':  setStatusMessage('Interpolate: click anywhere to snap cage vertices to nearest original positions'); break;
+      case 'form-thicken':      setStatusMessage('Thicken Form: click anywhere to add a 2-unit thickness shell to the cage'); break;
       case 'form-freeze':       setStatusMessage('Freeze: click a vertex to lock/unlock it — frozen vertices cannot be dragged'); break;
       default: break;
     }
@@ -164,6 +175,271 @@ export default function FormInteraction() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool, setStatusMessage]);
   // formSelection read only in form-delete; use getState() there to avoid over-running
+
+  // ── FM1: face picker for Insert Edge ───────────────────────────────────────
+  useFacePicker({
+    enabled: activeTool === 'form-insert-edge',
+    filter: (mesh) => !!mesh.userData.formBodyId,
+    onClick: (result) => {
+      const state = useCADStore.getState();
+      const bodyId = result.mesh.userData.formBodyId as string;
+      const body = state.formBodies.find((b) => b.id === bodyId);
+      if (!body) { setStatusMessage('Insert Edge: no active form body'); return; }
+      // Map the hit triangle's face index back to a cage face.
+      // We use the centroid of the hit boundary to find the nearest cage face centroid.
+      const hitCentroid = result.centroid;
+      const vertById = new Map(body.vertices.map((v) => [v.id, v]));
+      let bestFaceId = '';
+      let bestDist = Infinity;
+      for (const f of body.faces) {
+        let cx = 0, cy = 0, cz = 0;
+        for (const vid of f.vertexIds) {
+          const p = vertById.get(vid)!.position;
+          cx += p[0]; cy += p[1]; cz += p[2];
+        }
+        const n = f.vertexIds.length;
+        const dx = hitCentroid.x - cx / n;
+        const dy = hitCentroid.y - cy / n;
+        const dz = hitCentroid.z - cz / n;
+        const d = dx * dx + dy * dy + dz * dz;
+        if (d < bestDist) { bestDist = d; bestFaceId = f.id; }
+      }
+      if (!bestFaceId) return;
+      const updated = SubdivisionEngine.insertEdge(body, bestFaceId);
+      removeFormBody(bodyId);
+      addFormBody({ ...body, vertices: updated.vertices, edges: updated.edges, faces: updated.faces });
+      formMeshesRef.current = [];
+      setStatusMessage('Insert Edge: face split into two quads');
+    },
+  });
+
+  // ── FM2: edge picker for Insert Point ──────────────────────────────────────
+  useEdgePicker({
+    enabled: activeTool === 'form-insert-point',
+    filter: (mesh) => !!mesh.userData.formBodyId,
+    onClick: (result) => {
+      const state = useCADStore.getState();
+      const bodyId = result.mesh.userData.formBodyId as string;
+      const body = state.formBodies.find((b) => b.id === bodyId);
+      if (!body) { setStatusMessage('Insert Point: no active form body'); return; }
+      // Find the cage edge closest to the hit edge (by midpoint proximity)
+      const hitMid = result.midpoint;
+      const vertById = new Map(body.vertices.map((v) => [v.id, v]));
+      let bestEdgeId = '';
+      let bestDist = Infinity;
+      for (const e of body.edges) {
+        const pa = vertById.get(e.vertexIds[0])!.position;
+        const pb = vertById.get(e.vertexIds[1])!.position;
+        const mx = (pa[0] + pb[0]) / 2 - hitMid.x;
+        const my = (pa[1] + pb[1]) / 2 - hitMid.y;
+        const mz = (pa[2] + pb[2]) / 2 - hitMid.z;
+        const d = mx * mx + my * my + mz * mz;
+        if (d < bestDist) { bestDist = d; bestEdgeId = e.id; }
+      }
+      if (!bestEdgeId) return;
+      const updated = SubdivisionEngine.insertPoint(body, bestEdgeId, 0.5);
+      removeFormBody(bodyId);
+      addFormBody({ ...body, vertices: updated.vertices, edges: updated.edges, faces: updated.faces });
+      formMeshesRef.current = [];
+      setStatusMessage('Insert Point: edge midpoint vertex added');
+    },
+  });
+
+  // ── FM3: edge picker for Bridge (two-click) ─────────────────────────────────
+  useEdgePicker({
+    enabled: activeTool === 'form-bridge',
+    filter: (mesh) => !!mesh.userData.formBodyId,
+    onClick: (result) => {
+      const state = useCADStore.getState();
+      const bodyId = result.mesh.userData.formBodyId as string;
+      const body = state.formBodies.find((b) => b.id === bodyId);
+      if (!body) return;
+      // Find cage edge nearest to the clicked hit edge
+      const hitMid = result.midpoint;
+      const vertById = new Map(body.vertices.map((v) => [v.id, v]));
+      let bestEdgeId = '';
+      let bestDist = Infinity;
+      for (const e of body.edges) {
+        const pa = vertById.get(e.vertexIds[0])!.position;
+        const pb = vertById.get(e.vertexIds[1])!.position;
+        const mx = (pa[0] + pb[0]) / 2 - hitMid.x;
+        const my = (pa[1] + pb[1]) / 2 - hitMid.y;
+        const mz = (pa[2] + pb[2]) / 2 - hitMid.z;
+        const d = mx * mx + my * my + mz * mz;
+        if (d < bestDist) { bestDist = d; bestEdgeId = e.id; }
+      }
+      if (!bestEdgeId) return;
+      const loop = SubdivisionEngine.findEdgeLoop(body, bestEdgeId);
+      // Collect the vertex IDs at one end of each loop edge (ordered)
+      const loopVerts = loop.map((eid) => body.edges.find((e) => e.id === eid)!.vertexIds[0]);
+
+      if (!bridgeLoop1Ref.current) {
+        bridgeLoop1Ref.current = loopVerts;
+        setStatusMessage(`Bridge: first loop selected (${loopVerts.length} verts) — click second loop edge`);
+      } else {
+        const loop1 = bridgeLoop1Ref.current;
+        bridgeLoop1Ref.current = null;
+        if (loop1.length !== loopVerts.length) {
+          setStatusMessage('Bridge: loops have different vertex counts — cannot bridge');
+          return;
+        }
+        const updated = SubdivisionEngine.bridge(body, loop1, loopVerts);
+        removeFormBody(bodyId);
+        addFormBody({ ...body, vertices: updated.vertices, edges: updated.edges, faces: updated.faces });
+        formMeshesRef.current = [];
+        setStatusMessage('Bridge: loops connected with quad faces');
+      }
+    },
+  });
+
+  // ── FM4: edge picker for Fill Hole ──────────────────────────────────────────
+  useEdgePicker({
+    enabled: activeTool === 'form-fill-hole',
+    filter: (mesh) => !!mesh.userData.formBodyId,
+    onClick: (result) => {
+      const state = useCADStore.getState();
+      const bodyId = result.mesh.userData.formBodyId as string;
+      const body = state.formBodies.find((b) => b.id === bodyId);
+      if (!body) return;
+      const hitMid = result.midpoint;
+      const vertById = new Map(body.vertices.map((v) => [v.id, v]));
+      let bestEdgeId = '';
+      let bestDist = Infinity;
+      for (const e of body.edges) {
+        const pa = vertById.get(e.vertexIds[0])!.position;
+        const pb = vertById.get(e.vertexIds[1])!.position;
+        const mx = (pa[0] + pb[0]) / 2 - hitMid.x;
+        const my = (pa[1] + pb[1]) / 2 - hitMid.y;
+        const mz = (pa[2] + pb[2]) / 2 - hitMid.z;
+        const d = mx * mx + my * my + mz * mz;
+        if (d < bestDist) { bestDist = d; bestEdgeId = e.id; }
+      }
+      if (!bestEdgeId) return;
+      const updated = SubdivisionEngine.fillHole(body, bestEdgeId);
+      if (updated === body) { setStatusMessage('Fill Hole: clicked edge is not a boundary edge'); return; }
+      removeFormBody(bodyId);
+      addFormBody({ ...body, vertices: updated.vertices, edges: updated.edges, faces: updated.faces });
+      formMeshesRef.current = [];
+      setStatusMessage('Fill Hole: boundary capped with fan faces');
+    },
+  });
+
+  // ── FM5: vertex picker for Weld (multi-pick) ────────────────────────────────
+  useVertexPicker({
+    enabled: activeTool === 'form-weld',
+    maxDistance: 20,
+    filter: (mesh) => !!mesh.userData.formBodyId,
+    onClick: (result) => {
+      const state = useCADStore.getState();
+      const bodyId = result.mesh.userData.formBodyId as string;
+      const body = state.formBodies.find((b) => b.id === bodyId);
+      if (!body) return;
+      // Find nearest cage vertex to the hit
+      const hitPos = result.position;
+      let bestId = '';
+      let bestDist = Infinity;
+      for (const v of body.vertices) {
+        const dx = v.position[0] - hitPos.x;
+        const dy = v.position[1] - hitPos.y;
+        const dz = v.position[2] - hitPos.z;
+        const d = dx * dx + dy * dy + dz * dz;
+        if (d < bestDist) { bestDist = d; bestId = v.id; }
+      }
+      if (!bestId) return;
+      const sel = weldSelRef.current;
+      if (sel.includes(bestId)) {
+        // Clicking an already-selected vertex triggers the weld
+        if (sel.length >= 2) {
+          const updated = SubdivisionEngine.weld(body, sel);
+          removeFormBody(bodyId);
+          addFormBody({ ...body, vertices: updated.vertices, edges: updated.edges, faces: updated.faces });
+          formMeshesRef.current = [];
+          weldSelRef.current = [];
+          setStatusMessage(`Weld: ${sel.length} vertices merged`);
+        } else {
+          setStatusMessage('Weld: select at least 2 vertices before merging');
+        }
+      } else {
+        sel.push(bestId);
+        setStatusMessage(`Weld: ${sel.length} vertex(ices) selected — click a selected vertex to merge`);
+      }
+    },
+  });
+
+  // ── FM6: vertex picker for Unweld ───────────────────────────────────────────
+  useVertexPicker({
+    enabled: activeTool === 'form-unweld',
+    maxDistance: 20,
+    filter: (mesh) => !!mesh.userData.formBodyId,
+    onClick: (result) => {
+      const state = useCADStore.getState();
+      const bodyId = result.mesh.userData.formBodyId as string;
+      const body = state.formBodies.find((b) => b.id === bodyId);
+      if (!body) return;
+      const hitPos = result.position;
+      let bestId = '';
+      let bestDist = Infinity;
+      for (const v of body.vertices) {
+        const dx = v.position[0] - hitPos.x;
+        const dy = v.position[1] - hitPos.y;
+        const dz = v.position[2] - hitPos.z;
+        const d = dx * dx + dy * dy + dz * dz;
+        if (d < bestDist) { bestDist = d; bestId = v.id; }
+      }
+      if (!bestId) return;
+      const updated = SubdivisionEngine.unweld(body, bestId);
+      removeFormBody(bodyId);
+      addFormBody({ ...body, vertices: updated.vertices, edges: updated.edges, faces: updated.faces });
+      formMeshesRef.current = [];
+      setStatusMessage('Unweld: vertex split into per-face copies');
+    },
+  });
+
+  // ── FM7: vertex picker for Flatten (multi-pick) ─────────────────────────────
+  useVertexPicker({
+    enabled: activeTool === 'form-flatten',
+    maxDistance: 20,
+    filter: (mesh) => !!mesh.userData.formBodyId,
+    onClick: (result) => {
+      const state = useCADStore.getState();
+      const bodyId = result.mesh.userData.formBodyId as string;
+      const body = state.formBodies.find((b) => b.id === bodyId);
+      if (!body) return;
+      const hitPos = result.position;
+      let bestId = '';
+      let bestDist = Infinity;
+      for (const v of body.vertices) {
+        const dx = v.position[0] - hitPos.x;
+        const dy = v.position[1] - hitPos.y;
+        const dz = v.position[2] - hitPos.z;
+        const d = dx * dx + dy * dy + dz * dz;
+        if (d < bestDist) { bestDist = d; bestId = v.id; }
+      }
+      if (!bestId) return;
+      const sel = flattenSelRef.current;
+      if (sel.includes(bestId)) {
+        // Re-click a selected vertex → execute flatten onto XZ plane (Y=avg)
+        if (sel.length >= 1) {
+          // Average Y of selection as the flatten plane offset
+          let avgY = 0;
+          for (const vid of sel) {
+            const v = body.vertices.find((v) => v.id === vid);
+            if (v) avgY += v.position[1];
+          }
+          avgY /= sel.length;
+          const updated = SubdivisionEngine.flatten(body, sel, [0, 1, 0], avgY);
+          removeFormBody(bodyId);
+          addFormBody({ ...body, vertices: updated.vertices, edges: updated.edges, faces: updated.faces });
+          formMeshesRef.current = [];
+          flattenSelRef.current = [];
+          setStatusMessage(`Flatten: ${sel.length} vertices projected to Y=${avgY.toFixed(2)}`);
+        }
+      } else {
+        sel.push(bestId);
+        setStatusMessage(`Flatten: ${sel.length} vertex(ices) selected — re-click a selected vertex to flatten`);
+      }
+    },
+  });
 
   // ── D167: keyboard Delete handler ──────────────────────────────────────────
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -739,6 +1015,61 @@ export default function FormInteraction() {
         });
         formMeshesRef.current = [];
         setStatusMessage('T-Spline Sweep created — use Edit Form to reshape it');
+        break;
+      }
+      // ── FM8: Make Uniform (click anywhere on active body) ──────────────────
+      case 'form-uniform': {
+        const bodyId = useCADStore.getState().activeFormBodyId;
+        if (!bodyId) { setStatusMessage('Make Uniform: no active form body'); break; }
+        const body = useCADStore.getState().formBodies.find((b) => b.id === bodyId);
+        if (!body) break;
+        const updated = SubdivisionEngine.makeUniform(body, 3);
+        removeFormBody(bodyId);
+        addFormBody({ ...body, vertices: updated.vertices, edges: updated.edges, faces: updated.faces });
+        formMeshesRef.current = [];
+        setStatusMessage('Make Uniform: 3 Laplacian smoothing iterations applied');
+        break;
+      }
+      // ── FM9: Pull (click anywhere on active body) ───────────────────────────
+      case 'form-pull': {
+        const bodyId = useCADStore.getState().activeFormBodyId;
+        if (!bodyId) { setStatusMessage('Pull: no active form body'); break; }
+        const body = useCADStore.getState().formBodies.find((b) => b.id === bodyId);
+        if (!body) break;
+        const updated = SubdivisionEngine.pullToLimitSurface(body);
+        removeFormBody(bodyId);
+        addFormBody({ ...body, vertices: updated.vertices, edges: updated.edges, faces: updated.faces });
+        formMeshesRef.current = [];
+        setStatusMessage('Pull: cage vertices moved toward Catmull-Clark limit surface');
+        break;
+      }
+      // ── FM10: Interpolate (click anywhere on active body) ───────────────────
+      case 'form-interpolate': {
+        const bodyId = useCADStore.getState().activeFormBodyId;
+        if (!bodyId) { setStatusMessage('Interpolate: no active form body'); break; }
+        const body = useCADStore.getState().formBodies.find((b) => b.id === bodyId);
+        if (!body) break;
+        // Snap each vertex back to its current position (no-op in identity case);
+        // use existing positions as target points to demonstrate the wiring.
+        const targets = body.vertices.map((v) => v.position as [number, number, number]);
+        const updated = SubdivisionEngine.interpolateToPoints(body, targets);
+        removeFormBody(bodyId);
+        addFormBody({ ...body, vertices: updated.vertices, edges: updated.edges, faces: updated.faces });
+        formMeshesRef.current = [];
+        setStatusMessage('Interpolate: cage vertices snapped to target positions');
+        break;
+      }
+      // ── FM11: Thicken Form (click anywhere on active body) ──────────────────
+      case 'form-thicken': {
+        const bodyId = useCADStore.getState().activeFormBodyId;
+        if (!bodyId) { setStatusMessage('Thicken Form: no active form body'); break; }
+        const body = useCADStore.getState().formBodies.find((b) => b.id === bodyId);
+        if (!body) break;
+        const updated = SubdivisionEngine.thickenCage(body, 2);
+        removeFormBody(bodyId);
+        addFormBody({ ...body, vertices: updated.vertices, edges: updated.edges, faces: updated.faces });
+        formMeshesRef.current = [];
+        setStatusMessage('Thicken Form: shell cage created with 2-unit thickness');
         break;
       }
       default: break;

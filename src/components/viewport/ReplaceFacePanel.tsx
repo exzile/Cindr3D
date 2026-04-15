@@ -7,6 +7,7 @@
 
 import { X, Check } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore';
+import './ReplaceFacePanel.css';
 
 export default function ReplaceFacePanel() {
   const activeDialog = useCADStore((s) => s.activeDialog);
@@ -21,127 +22,47 @@ export default function ReplaceFacePanel() {
   const canCommit = replaceFaceSourceId !== null && replaceFaceTargetId !== null;
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        top: 16,
-        right: 16,
-        width: 260,
-        background: 'var(--panel-bg, #1e1e2e)',
-        color: 'var(--panel-text, #cdd6f4)',
-        borderRadius: 8,
-        boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
-        fontFamily: 'inherit',
-        fontSize: 13,
-        zIndex: 50,
-        userSelect: 'none',
-      }}
-    >
+    <div className="replace-face-panel">
       {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '10px 14px 8px',
-          borderBottom: '1px solid rgba(255,255,255,0.08)',
-        }}
-      >
-        <span style={{ fontWeight: 600, fontSize: 14 }}>Replace Face</span>
-        <button
-          onClick={() => setActiveDialog(null)}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: 0, lineHeight: 1 }}
-        >
+      <div className="replace-face-panel__header">
+        <span className="replace-face-panel__title">Replace Face</span>
+        <button className="replace-face-panel__close" onClick={() => setActiveDialog(null)} title="Close">
           <X size={16} />
         </button>
       </div>
 
       {/* Body */}
-      <div style={{ padding: '12px 14px' }}>
-        {/* Step indicator */}
-        <div
-          style={{
-            padding: '8px 10px',
-            borderRadius: 6,
-            background: step === 1 ? 'rgba(33,150,243,0.18)' : 'rgba(255,255,255,0.06)',
-            marginBottom: 8,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
+      <div className="replace-face-panel__body">
+        <div className={`replace-face-panel__step${step === 1 ? ' replace-face-panel__step--source-active' : ''}`}>
           {replaceFaceSourceId ? (
-            <Check size={14} style={{ color: '#ff6600', flexShrink: 0 }} />
+            <Check size={14} className="replace-face-panel__check--source" />
           ) : (
-            <span style={{ width: 14, height: 14, borderRadius: '50%', background: '#2196f3', flexShrink: 0, display: 'inline-block' }} />
+            <span className="replace-face-panel__step-dot replace-face-panel__step-dot--source" />
           )}
-          <span>
-            {replaceFaceSourceId ? 'Source face selected' : 'Step 1: Click source face'}
-          </span>
+          <span>{replaceFaceSourceId ? 'Source face selected' : 'Step 1: Click source face'}</span>
         </div>
 
         <div
-          style={{
-            padding: '8px 10px',
-            borderRadius: 6,
-            background: step === 2 ? 'rgba(76,175,80,0.18)' : 'rgba(255,255,255,0.06)',
-            marginBottom: 16,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            opacity: replaceFaceSourceId === null ? 0.45 : 1,
-          }}
+          className={[
+            'replace-face-panel__step',
+            'replace-face-panel__step--last',
+            step === 2 ? 'replace-face-panel__step--target-active' : '',
+            replaceFaceSourceId === null ? 'replace-face-panel__step--disabled' : '',
+          ].filter(Boolean).join(' ')}
         >
           {replaceFaceTargetId ? (
-            <Check size={14} style={{ color: '#4caf50', flexShrink: 0 }} />
+            <Check size={14} className="replace-face-panel__check--target" />
           ) : (
-            <span style={{ width: 14, height: 14, borderRadius: '50%', background: '#4caf50', flexShrink: 0, display: 'inline-block' }} />
+            <span className="replace-face-panel__step-dot replace-face-panel__step-dot--target" />
           )}
-          <span>
-            {replaceFaceTargetId ? 'Target face selected' : 'Step 2: Click target face'}
-          </span>
+          <span>{replaceFaceTargetId ? 'Target face selected' : 'Step 2: Click target face'}</span>
         </div>
       </div>
 
       {/* Footer */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          padding: '0 14px 12px',
-          justifyContent: 'flex-end',
-        }}
-      >
-        <button
-          onClick={() => setActiveDialog(null)}
-          style={{
-            padding: '6px 14px',
-            borderRadius: 5,
-            border: '1px solid rgba(255,255,255,0.15)',
-            background: 'transparent',
-            color: 'inherit',
-            cursor: 'pointer',
-            fontSize: 13,
-          }}
-        >
-          Cancel
-        </button>
-        <button
-          onClick={commitReplaceFace}
-          disabled={!canCommit}
-          style={{
-            padding: '6px 14px',
-            borderRadius: 5,
-            border: 'none',
-            background: canCommit ? '#2196f3' : 'rgba(255,255,255,0.1)',
-            color: canCommit ? '#fff' : 'rgba(255,255,255,0.35)',
-            cursor: canCommit ? 'pointer' : 'not-allowed',
-            fontSize: 13,
-            fontWeight: 600,
-          }}
-        >
-          OK
-        </button>
+      <div className="replace-face-panel__footer">
+        <button className="replace-face-panel__btn-cancel" onClick={() => setActiveDialog(null)}>Cancel</button>
+        <button className="replace-face-panel__btn-ok" onClick={commitReplaceFace} disabled={!canCommit}>OK</button>
       </div>
     </div>
   );

@@ -723,6 +723,14 @@
   border-color: var(--accent);
 }
 
+.timeline-item.rolled-back {
+  opacity: 0.4;
+}
+
+.timeline-item.indented {
+  padding-left: 20px;
+}
+
 .timeline-item-icon {
   display: flex;
   align-items: center;
@@ -4480,4 +4488,240 @@
 
 .slicer-overlay-mirror-axis-label {
   margin-left: 2px;
+}
+
+/* ===== Timeline — Group Headers, Context Menu, Banners ===== */
+
+.timeline-group-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  background: var(--surface-2, #2a2a2a);
+  border-radius: 4px;
+  margin-bottom: 2px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.timeline-group-header__accent {
+  color: var(--accent, #5b9bd5);
+  flex-shrink: 0;
+}
+
+.timeline-group-header__name {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.timeline-group-header__input {
+  flex: 1;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--accent, #5b9bd5);
+  border-radius: 2px;
+  color: inherit;
+  padding: 0 3px;
+}
+
+.timeline-group-header__btn {
+  padding: 1px 3px;
+}
+
+.timeline-context-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+}
+
+.timeline-context-menu {
+  position: fixed;
+  background: var(--surface-2, #2a2a2a);
+  border: 1px solid var(--border, #444);
+  border-radius: 4px;
+  z-index: 1000;
+  min-width: 150px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  padding: 4px 0;
+}
+
+.timeline-context-menu__btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.timeline-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.timeline-banner--direct-modeling {
+  background: #4a3800;
+  color: #ffb300;
+  border-bottom: 1px solid #7a5e00;
+}
+
+.timeline-banner--base-feature {
+  background: #7c5c00;
+  color: #ffd966;
+  border-bottom: 1px solid #a07800;
+}
+
+.timeline-banner__label {
+  flex: 1;
+}
+
+.timeline-banner__finish-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #ffd966;
+  color: #3a2c00;
+  border: none;
+  border-radius: 3px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.timeline-header__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timeline-action-btn--small {
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+.timeline-drop-target {
+  height: 6px;
+  border-radius: 3px;
+  background: transparent;
+  transition: background 120ms;
+}
+
+.timeline-drop-target.active {
+  background: var(--accent);
+}
+
+/* ===== Analysis Panel — Slider rows ===== */
+
+.analysis-slider-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: 1;
+}
+
+.analysis-slider-row__input {
+  flex: 1;
+}
+
+.analysis-slider-row__value {
+  min-width: 24px;
+  text-align: right;
+  font-size: 11px;
+}
+
+.analysis-slider-row__value--wide {
+  min-width: 32px;
+  text-align: right;
+  font-size: 11px;
+}
+
+.analysis-hint-label {
+  font-size: 11px;
+  color: var(--text-secondary, var(--text-muted));
+}
+
+/* ===== Sketch Palette — narrow tool inputs ===== */
+
+.sketch-palette-input--narrow {
+  width: 64px;
+}
+
+.sketch-palette-section-header--spaced {
+  margin-top: 4px;
+}
+
+/* ===== Loft Panel — flex rows ===== */
+
+.loft-profile-row {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+.loft-profile-row__select {
+  flex: 1;
+}
+
+.loft-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+/* ===== Exploded View Panel ===== */
+
+.exploded-value-text {
+  font-size: 12px;
+  color: var(--color-text-secondary, #aaa);
+  text-align: right;
+  display: block;
+}
+
+.exploded-btn-row {
+  display: flex;
+  gap: 6px;
+}
+
+.exploded-btn-row .btn {
+  flex: 1;
+  font-size: 12px;
+}
+
+/* ===== Sketch Project Panel ===== */
+
+.sketch-project-link-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.sketch-project-hint {
+  font-size: 11px;
+  color: #94a3b8;
+  padding: 0 4px 4px;
+}
+
+/* ===== Measure Panel ===== */
+
+.measure-result-row--empty {
+  opacity: 0.5;
+}
+
+/* ===== Component Tree — Origin icon ===== */
+
+.origin-axis-icon {
+  color: var(--text-dim, var(--text-muted));
 }

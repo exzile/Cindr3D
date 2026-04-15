@@ -900,6 +900,52 @@ interface CADState {
 
   // ── SLD15 — Silhouette Split ─────────────────────────────────────────────
   commitSilhouetteSplit(featureId: string, planeNormal: THREE.Vector3, planeOffset: number): void;
+
+  // ── MSH4 — Erase and Fill ────────────────────────────────────────────────
+  commitEraseAndFill(featureId: string, faceNormal: THREE.Vector3, faceCentroid: THREE.Vector3): void;
+
+  // ── MSH6 — Mesh Shell ────────────────────────────────────────────────────
+  commitMeshShell(featureId: string, thickness: number, direction: 'inward' | 'outward' | 'symmetric'): void;
+
+  // ── MSH9 — Mesh Align ────────────────────────────────────────────────────
+  commitMeshAlign(sourceFeatureId: string, targetFeatureId: string): void;
+
+  // ── MSH12 — Convert Mesh to BRep ─────────────────────────────────────────
+  commitConvertMeshToBRep(featureId: string, mode: 'facet' | 'prismatic'): void;
+
+  // ── SM1 — Sheet Metal Flange ─────────────────────────────────────────────
+  showFlangeDialog: boolean;
+  openFlangeDialog(): void;
+  closeFlangeDialog(): void;
+  commitFlange(params: {
+    edgeStartX: number; edgeStartY: number; edgeStartZ: number;
+    edgeEndX: number; edgeEndY: number; edgeEndZ: number;
+    faceNormalX: number; faceNormalY: number; faceNormalZ: number;
+    thickness: number; length: number; bendAngle: number;
+  }): void;
+
+  // ── SM2 — Sheet Metal Bend ───────────────────────────────────────────────
+  showBendDialog: boolean;
+  openBendDialog(): void;
+  closeBendDialog(): void;
+  commitBend(params: {
+    featureId: string;
+    bendLineStartX: number; bendLineStartY: number; bendLineStartZ: number;
+    bendLineEndX: number; bendLineEndY: number; bendLineEndZ: number;
+    bendAngle: number; kFactor: number;
+  }): void;
+
+  // ── SM3 — Unfold ─────────────────────────────────────────────────────────
+  showUnfoldDialog: boolean;
+  openUnfoldDialog(): void;
+  closeUnfoldDialog(): void;
+  commitUnfold(featureId: string): void;
+
+  // ── SM4 — Flat Pattern ───────────────────────────────────────────────────
+  showFlatPatternDialog: boolean;
+  openFlatPatternDialog(): void;
+  closeFlatPatternDialog(): void;
+  commitFlatPattern(featureId: string): void;
 }
 
 // Plane normals consistent with the visual selector (Three.js Y-up):
@@ -4979,6 +5025,212 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     );
     set({ features: [...nextFeatures, featureA, featureB] });
     get().setStatusMessage(`Split Body ${n}: split into two parts`);
+  },
+
+  // ── MSH4 — Erase and Fill ────────────────────────────────────────────────
+  commitEraseAndFill: (featureId, faceNormal, faceCentroid) => {
+    const { features } = get();
+    const srcFeature = features.find((f) => f.id === featureId);
+    const srcMesh = srcFeature?.mesh as THREE.Mesh | undefined;
+    if (!srcFeature || !srcMesh?.isMesh) {
+      get().setStatusMessage('Erase And Fill: no mesh found for selected feature');
+      return;
+    }
+    const result = GeometryEngine.removeFaceAndHeal(srcMesh, faceNormal, faceCentroid);
+    result.castShadow = true;
+    result.receiveShadow = true;
+    const nextFeatures = features.map((f) =>
+      f.id === featureId
+        ? { ...f, mesh: result, params: { ...f.params, featureKind: 'erase-and-fill' } }
+        : f,
+    );
+    set({ features: nextFeatures });
+    get().setStatusMessage('Erase And Fill: face removed and healed');
+  },
+
+  // ── MSH6 — Mesh Shell ────────────────────────────────────────────────────
+  commitMeshShell: (featureId, thickness, direction) => {
+    const { features } = get();
+    const srcFeature = features.find((f) => f.id === featureId);
+    const srcMesh = srcFeature?.mesh as THREE.Mesh | undefined;
+    if (!srcFeature || !srcMesh?.isMesh) {
+      get().setStatusMessage('Mesh Shell: no mesh found for selected feature');
+      return;
+    }
+    const result = GeometryEngine.shellMesh(srcMesh, thickness, direction);
+    result.castShadow = true;
+    result.receiveShadow = true;
+    const nextFeatures = features.map((f) =>
+      f.id === featureId
+        ? { ...f, mesh: result, params: { ...f.params, featureKind: 'mesh-shell', thickness, direction } }
+        : f,
+    );
+    set({ features: nextFeatures });
+    get().setStatusMessage(`Mesh Shell: ${thickness}mm ${direction} applied`);
+  },
+
+  // ── MSH9 — Mesh Align ────────────────────────────────────────────────────
+  commitMeshAlign: (sourceFeatureId, targetFeatureId) => {
+    const { features } = get();
+    const srcFeature = features.find((f) => f.id === sourceFeatureId);
+    const tgtFeature = features.find((f) => f.id === targetFeatureId);
+    const srcMesh = srcFeature?.mesh as THREE.Mesh | undefined;
+    const tgtMesh = tgtFeature?.mesh as THREE.Mesh | undefined;
+    if (!srcFeature || !srcMesh?.isMesh || !tgtFeature || !tgtMesh?.isMesh) {
+      get().setStatusMessage('Mesh Align: source or target mesh not found');
+      return;
+    }
+    const result = GeometryEngine.alignMeshToCentroid(srcMesh, tgtMesh);
+    result.castShadow = true;
+    result.receiveShadow = true;
+    const nextFeatures = features.map((f) =>
+      f.id === sourceFeatureId
+        ? { ...f, mesh: result, params: { ...f.params, featureKind: 'mesh-align', targetFeatureId } }
+        : f,
+    );
+    set({ features: nextFeatures });
+    get().setStatusMessage(`Mesh Align: "${srcFeature.name}" aligned to "${tgtFeature.name}"`);
+  },
+
+  // ── MSH12 — Convert Mesh to BRep ─────────────────────────────────────────
+  commitConvertMeshToBRep: (featureId, mode) => {
+    const { features } = get();
+    const srcFeature = features.find((f) => f.id === featureId);
+    const srcMesh = srcFeature?.mesh as THREE.Mesh | undefined;
+    if (!srcFeature || !srcMesh?.isMesh) {
+      get().setStatusMessage('Convert to BRep: no mesh found for selected feature');
+      return;
+    }
+    let resultMesh: THREE.Mesh = srcMesh;
+    if (mode === 'prismatic') {
+      resultMesh = GeometryEngine.makeClosedMesh(srcMesh);
+    }
+    resultMesh.castShadow = true;
+    resultMesh.receiveShadow = true;
+    const nextFeatures = features.map((f) =>
+      f.id === featureId
+        ? {
+            ...f,
+            mesh: resultMesh,
+            type: 'extrude' as Feature['type'],
+            bodyKind: 'solid' as Feature['bodyKind'],
+            params: { ...f.params, featureKind: 'convert-mesh-to-brep', convertMode: mode },
+          }
+        : f,
+    );
+    set({ features: nextFeatures });
+    get().setStatusMessage(`Convert to BRep (${mode}): "${srcFeature.name}" is now a solid body`);
+  },
+
+  // ── SM1 — Sheet Metal Flange ─────────────────────────────────────────────
+  showFlangeDialog: false,
+  openFlangeDialog: () => set({ activeDialog: 'sheet-flange', showFlangeDialog: true }),
+  closeFlangeDialog: () => set({ activeDialog: null, showFlangeDialog: false }),
+  commitFlange: (params) => {
+    const { features } = get();
+    const edgeStart = new THREE.Vector3(params.edgeStartX, params.edgeStartY, params.edgeStartZ);
+    const edgeEnd   = new THREE.Vector3(params.edgeEndX,   params.edgeEndY,   params.edgeEndZ);
+    const faceNormal = new THREE.Vector3(params.faceNormalX, params.faceNormalY, params.faceNormalZ);
+    const mesh = GeometryEngine.createFlange(edgeStart, edgeEnd, faceNormal, params.thickness, params.length, params.bendAngle);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    const n = features.filter((f) => f.params?.featureKind === 'sheet-flange').length + 1;
+    const feature: Feature = {
+      id: crypto.randomUUID(),
+      name: `Flange ${n}`,
+      type: 'extrude' as Feature['type'],
+      params: { featureKind: 'sheet-flange', ...params },
+      mesh,
+      bodyKind: 'solid',
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+    };
+    get().addFeature(feature);
+    set({ activeDialog: null, showFlangeDialog: false });
+    get().setStatusMessage(`Flange ${n}: ${params.length}mm × ${params.thickness}mm at ${params.bendAngle}°`);
+  },
+
+  // ── SM2 — Sheet Metal Bend ───────────────────────────────────────────────
+  showBendDialog: false,
+  openBendDialog: () => set({ activeDialog: 'sheet-bend', showBendDialog: true }),
+  closeBendDialog: () => set({ activeDialog: null, showBendDialog: false }),
+  commitBend: (params) => {
+    const { features } = get();
+    const srcFeature = features.find((f) => f.id === params.featureId);
+    const srcMesh = srcFeature?.mesh as THREE.Mesh | undefined;
+    if (!srcFeature || !srcMesh?.isMesh) {
+      get().setStatusMessage('Bend: no mesh found for selected feature');
+      return;
+    }
+    const bendLineStart = new THREE.Vector3(params.bendLineStartX, params.bendLineStartY, params.bendLineStartZ);
+    const bendLineEnd   = new THREE.Vector3(params.bendLineEndX,   params.bendLineEndY,   params.bendLineEndZ);
+    const result = GeometryEngine.createBend(srcMesh, bendLineStart, bendLineEnd, params.bendAngle, params.kFactor);
+    result.castShadow = true;
+    result.receiveShadow = true;
+    const nextFeatures = features.map((f) =>
+      f.id === params.featureId
+        ? { ...f, mesh: result, params: { ...f.params, featureKind: 'sheet-bend', ...params } }
+        : f,
+    );
+    set({ features: nextFeatures, activeDialog: null, showBendDialog: false });
+    get().setStatusMessage(`Bend: ${params.bendAngle}° applied`);
+  },
+
+  // ── SM3 — Unfold ─────────────────────────────────────────────────────────
+  showUnfoldDialog: false,
+  openUnfoldDialog: () => set({ activeDialog: 'sheet-unfold', showUnfoldDialog: true }),
+  closeUnfoldDialog: () => set({ activeDialog: null, showUnfoldDialog: false }),
+  commitUnfold: (featureId) => {
+    const { features } = get();
+    const srcFeature = features.find((f) => f.id === featureId);
+    const srcMesh = srcFeature?.mesh as THREE.Mesh | undefined;
+    if (!srcFeature || !srcMesh?.isMesh) {
+      get().setStatusMessage('Unfold: no mesh found for selected feature');
+      return;
+    }
+    const result = GeometryEngine.unfoldSheetMetal(srcMesh);
+    result.castShadow = true;
+    result.receiveShadow = true;
+    const nextFeatures = features.map((f) =>
+      f.id === featureId
+        ? { ...f, mesh: result, params: { ...f.params, featureKind: 'sheet-unfold' } }
+        : f,
+    );
+    set({ features: nextFeatures, activeDialog: null, showUnfoldDialog: false });
+    get().setStatusMessage(`Unfold: "${srcFeature.name}" flattened`);
+  },
+
+  // ── SM4 — Flat Pattern ───────────────────────────────────────────────────
+  showFlatPatternDialog: false,
+  openFlatPatternDialog: () => set({ activeDialog: 'sheet-flat-pattern', showFlatPatternDialog: true }),
+  closeFlatPatternDialog: () => set({ activeDialog: null, showFlatPatternDialog: false }),
+  commitFlatPattern: (featureId) => {
+    const { features } = get();
+    const srcFeature = features.find((f) => f.id === featureId);
+    const srcMesh = srcFeature?.mesh as THREE.Mesh | undefined;
+    if (!srcFeature || !srcMesh?.isMesh) {
+      get().setStatusMessage('Flat Pattern: no mesh found for selected feature');
+      return;
+    }
+    const result = GeometryEngine.unfoldSheetMetal(srcMesh);
+    result.castShadow = true;
+    result.receiveShadow = true;
+    const n = features.filter((f) => f.params?.featureKind === 'sheet-flat-pattern').length + 1;
+    const feature: Feature = {
+      id: crypto.randomUUID(),
+      name: `Flat Pattern ${n} of ${srcFeature.name}`,
+      type: 'extrude' as Feature['type'],
+      params: { featureKind: 'sheet-flat-pattern', sourceFeatureId: featureId },
+      mesh: result,
+      bodyKind: 'solid',
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+    };
+    get().addFeature(feature);
+    set({ activeDialog: null, showFlatPatternDialog: false });
+    get().setStatusMessage(`Flat Pattern ${n}: unfolded from "${srcFeature.name}"`);
   },
 
   // ── PL1 — Boss ───────────────────────────────────────────────────────────

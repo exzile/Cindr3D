@@ -1,0 +1,109 @@
+/* Shared panel style for bottom-centered sketch tool panels
+   (SketchMirrorPanel, SketchTransformPanel) */
+
+.sketch-tool-panel {
+  position: absolute;
+  bottom: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #12122a;
+  border: 1px solid #333366;
+  border-radius: 8px;
+  padding: 12px 16px;
+  min-width: 240px;
+  z-index: 200;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  color: #e0e0ff;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+}
+
+.sketch-tool-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sketch-tool-panel__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #44aaff;
+  display: inline-block;
+}
+
+.sketch-tool-panel__title {
+  font-weight: 700;
+  letter-spacing: 1px;
+  font-size: 11px;
+  color: #aaaacc;
+}
+
+.sketch-tool-panel__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 8px;
+}
+
+.sketch-tool-panel__row--last {
+  margin-bottom: 12px;
+}
+
+.sketch-tool-panel__input {
+  width: 80px;
+  background: #1e1e3a;
+  border: 1px solid #333366;
+  border-radius: 4px;
+  color: #e0e0ff;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.sketch-tool-panel__axis-section {
+  margin-bottom: 10px;
+}
+
+.sketch-tool-panel__axis-label {
+  font-size: 11px;
+  color: #aaaacc;
+  margin-bottom: 6px;
+}
+
+.sketch-tool-panel__radio-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+  cursor: pointer;
+}
+
+.sketch-tool-panel__hint {
+  font-size: 11px;
+  color: #666688;
+  margin-bottom: 8px;
+}
+
+.sketch-tool-panel__footer {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.sketch-tool-panel__btn {
+  flex: 1;
+  padding: 6px 0;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+  color: #fff;
+  background: #333355;
+}
+
+.sketch-tool-panel__btn--primary {
+  background: #0078d7;
+}
