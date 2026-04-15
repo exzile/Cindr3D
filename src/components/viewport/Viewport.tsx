@@ -12,6 +12,7 @@ import ExtrudeTool from './ExtrudeTool';
 import ExtrudePanel from './ExtrudePanel';
 import RevolvePanel from './RevolvePanel';
 import SweepPanel from './SweepPanel';
+import LoftPanel from './LoftPanel';
 import RibPanel from './RibPanel';
 import SectionAnalysisPanel from './SectionAnalysisPanel';
 import SketchPatternPanel from './SketchPatternPanel';
@@ -31,6 +32,8 @@ import ShiftMiddlePan from './interaction/ShiftMiddlePan';
 import SketchInteraction from './interaction/SketchInteraction';
 import MeasureInteraction from './interaction/MeasureInteraction';
 import SketchPlaneSelector from './interaction/SketchPlaneSelector';
+import FormInteraction from './FormInteraction';
+import FormBodies from './scene/FormBodies';
 
 
 
@@ -150,6 +153,8 @@ export default function Viewport() {
         <SketchInteraction />
         <MeasureInteraction />
         <ExtrudeTool />
+        <FormBodies />
+        <FormInteraction />
 
         {/* Camera controller — also feeds quaternion to ViewCube */}
         <CameraController onQuaternionChange={handleQuaternionChange} />
@@ -193,6 +198,7 @@ export default function Viewport() {
       <ExtrudePanel />
       <RevolvePanel />
       <SweepPanel />
+      <LoftPanel />
       <RibPanel />
       <SectionAnalysisPanel />
       <SketchPatternPanel />

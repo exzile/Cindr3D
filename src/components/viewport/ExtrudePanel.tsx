@@ -36,6 +36,9 @@ export default function ExtrudePanel() {
   // D69 taper angle
   const taperAngle = useCADStore((s) => s.extrudeTaperAngle);
   const setTaperAngle = useCADStore((s) => s.setExtrudeTaperAngle);
+  // D102 body kind
+  const bodyKind = useCADStore((s) => s.extrudeBodyKind);
+  const setBodyKind = useCADStore((s) => s.setExtrudeBodyKind);
   const units = useCADStore((s) => s.units);
 
   // Hide the panel until the user has actually picked a profile in the viewport
@@ -206,6 +209,19 @@ export default function ExtrudePanel() {
             </div>
           </>
         )}
+
+        {/* D102: Body kind — Solid vs Surface */}
+        <div className="sketch-palette-row">
+          <span className="sketch-palette-label">Output</span>
+          <select
+            className="measure-select"
+            value={bodyKind}
+            onChange={(e) => setBodyKind(e.target.value as 'solid' | 'surface')}
+          >
+            <option value="solid">Solid Body</option>
+            <option value="surface">Surface Body</option>
+          </select>
+        </div>
 
         <div className="extrude-panel-actions">
           <button className="btn btn-secondary" onClick={cancelExtrudeTool}>

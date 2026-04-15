@@ -30,7 +30,7 @@ import type { Tool, Feature } from '../../types/cad';
 
 type Workspace = 'design' | 'prepare' | 'printer';
 
-type DesignTab = 'solid' | 'surface' | 'mesh' | 'sheet-metal' | 'plastic' | 'manage' | 'utilities';
+type DesignTab = 'solid' | 'surface' | 'mesh' | 'form' | 'sheet-metal' | 'plastic' | 'manage' | 'utilities';
 type PrepareTab = 'plate' | 'profiles' | 'slice' | 'export';
 type SketchTab = 'sketch';
 
@@ -284,6 +284,7 @@ const designTabs: TabDef[] = [
   { id: 'solid', label: 'SOLID', color: 'var(--tab-solid)' },
   { id: 'surface', label: 'SURFACE', color: 'var(--tab-surface)' },
   { id: 'mesh', label: 'MESH', color: 'var(--tab-mesh)' },
+  { id: 'form', label: 'FORM', color: 'var(--tab-form)' },
   { id: 'sheet-metal', label: 'SHEET METAL', color: 'var(--tab-sheet-metal)' },
   { id: 'plastic', label: 'PLASTIC', color: 'var(--tab-plastic)' },
   { id: 'manage', label: 'MANAGE', color: 'var(--tab-manage)' },
@@ -325,6 +326,7 @@ export default function Toolbar() {
   const startExtrudeTool = useCADStore((s) => s.startExtrudeTool);
   const startRevolveTool = useCADStore((s) => s.startRevolveTool);
   const startSweepTool = useCADStore((s) => s.startSweepTool);
+  const startLoftTool = useCADStore((s) => s.startLoftTool);
   const startRibTool = useCADStore((s) => s.startRibTool);
   const setShowExportDialog = useCADStore((s) => s.setShowExportDialog);
   const setActiveDialog = useCADStore((s) => s.setActiveDialog);
@@ -426,7 +428,7 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
     { separator: true, icon: <ArrowUpFromLine size={MI} />, label: 'Extrude', shortcut: 'E', onClick: handleExtrude },
     { icon: <RotateCcw size={MI} />, label: 'Revolve', onClick: handleRevolve },
     { icon: <Spline size={MI} />, label: 'Sweep', onClick: startSweepTool },
-    { icon: <Layers size={MI} />, label: 'Loft', onClick: comingSoon('Loft') },
+    { icon: <Layers size={MI} />, label: 'Loft', onClick: startLoftTool },
     { icon: <Minus size={MI} />, label: 'Rib', onClick: startRibTool },
     { icon: <Grid3X3 size={MI} />, label: 'Web', onClick: () => setActiveDialog('web') },
     { icon: <ArrowUp size={MI} />, label: 'Emboss', onClick: () => setActiveDialog('emboss') },
@@ -632,6 +634,7 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
     { icon: <Blend size={MI} />, label: 'Chamfer (Equal)', onClick: () => { setActiveTool('sketch-chamfer-equal' as Tool); setStatusMessage('Sketch Chamfer: click near a corner to chamfer — set distance in palette'); } },
     { icon: <Blend size={MI} />, label: 'Chamfer (Two Dist)', onClick: () => { setActiveTool('sketch-chamfer-two-dist' as Tool); setStatusMessage('Sketch Chamfer: click near a corner — set Dist 1 and Dist 2 in palette'); } },
     { icon: <Blend size={MI} />, label: 'Chamfer (Dist+Angle)', onClick: () => { setActiveTool('sketch-chamfer-dist-angle' as Tool); setStatusMessage('Sketch Chamfer: click near a corner — set Dist and Angle in palette'); } },
+    { icon: <Blend size={MI} />, label: 'Blend Curve', onClick: () => { setActiveTool('blend-curve' as Tool); setStatusMessage('Blend Curve: click near an endpoint of a sketch entity, then click a second endpoint'); } },
     { icon: <Scissors size={MI} />, label: 'Trim', shortcut: 'T', onClick: () => { setActiveTool('trim' as Tool); setStatusMessage('Trim: click a segment portion to remove it'); } },
     { icon: <Maximize2 size={MI} />, label: 'Extend', onClick: () => { setActiveTool('extend' as Tool); setStatusMessage('Extend: click near an endpoint of a line to extend it to the nearest intersection'); } },
     { icon: <Scissors size={MI} />, label: 'Break', onClick: () => { setActiveTool('break' as Tool); setStatusMessage('Break: click on a line to split it at that point'); } },
@@ -863,7 +866,9 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
             <RibbonSection title="CREATE">
               <ToolButton icon={<PenTool size={ICON_LG} />} label="Sketch" onClick={beginSketchFlow} large colorClass="icon-blue" />
               <ToolButton icon={<ArrowUpFromLine size={ICON_LG} />} label="Extrude" onClick={handleExtrude} large colorClass="icon-green" />
-              <ToolButton icon={<RotateCcw size={ICON_LG} />} label="Revolve" onClick={() => setStatusMessage('Surface Revolve: coming soon')} large colorClass="icon-green" />
+              <ToolButton icon={<RotateCcw size={ICON_LG} />} label="Revolve" onClick={startRevolveTool} large colorClass="icon-green" />
+              <ToolButton icon={<Spline size={ICON_LG} />} label="Sweep" onClick={startSweepTool} large colorClass="icon-green" />
+              <ToolButton icon={<Layers size={ICON_LG} />} label="Loft" onClick={startLoftTool} large colorClass="icon-green" />
             </RibbonSection>
             <RibbonSection title="MODIFY">
               <ToolButton icon={<Scissors size={ICON_LG} />} label="Trim" onClick={() => setStatusMessage('Surface Trim: coming soon')} large colorClass="icon-orange" />
@@ -885,6 +890,53 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
               <ToolButton icon={<Blend size={ICON_LG} />} label="Reduce" onClick={() => setStatusMessage('Mesh: Reduce - coming soon')} large colorClass="icon-purple" />
               <ToolButton icon={<Combine size={ICON_LG} />} label="Repair" onClick={() => setStatusMessage('Mesh: Repair - coming soon')} large colorClass="icon-purple" />
             </RibbonSection>
+            <RibbonSection title="SELECT">
+              <ToolButton icon={<MousePointer2 size={ICON_LG} />} label="Select" tool="select" large colorClass="icon-blue" />
+            </RibbonSection>
+          </>
+        )}
+
+        {/* ═══════════════ DESIGN > FORM TAB ═══════════════ */}
+        {!inSketch && workspace === 'design' && designTab === 'form' && (
+          <>
+            {/* D140-D151: CREATE panel — T-Spline primitives */}
+            <RibbonSection title="CREATE">
+              <ToolButton icon={<Box size={ICON_LG} />} label="Box" tool="form-box" large colorClass="icon-orange" />
+              <ToolButton icon={<Square size={ICON_LG} />} label="Plane" tool="form-plane" large colorClass="icon-orange" />
+              <ToolButton icon={<Circle size={ICON_LG} />} label="Cylinder" tool="form-cylinder" large colorClass="icon-orange" />
+              <ToolButton icon={<CircleDot size={ICON_LG} />} label="Sphere" tool="form-sphere" large colorClass="icon-orange" />
+              <ToolButton icon={<Repeat size={ICON_LG} />} label="Torus" tool="form-torus" large colorClass="icon-orange" />
+              <ToolButton icon={<Diamond size={ICON_LG} />} label="Quadball" tool="form-quadball" large colorClass="icon-orange" />
+              <ToolButton icon={<Spline size={ICON_LG} />} label="Pipe" tool="form-pipe" large colorClass="icon-orange" />
+              <ToolButton icon={<PenTool size={ICON_LG} />} label="Face" tool="form-face" large colorClass="icon-orange" />
+              <ToolButton icon={<ArrowUpFromLine size={ICON_LG} />} label="Extrude" tool="form-extrude" large colorClass="icon-orange" />
+              <ToolButton icon={<RotateCw size={ICON_LG} />} label="Revolve" tool="form-revolve" large colorClass="icon-orange" />
+              <ToolButton icon={<Waypoints size={ICON_LG} />} label="Sweep" tool="form-sweep" large colorClass="icon-orange" />
+              <ToolButton icon={<Layers size={ICON_LG} />} label="Loft" tool="form-loft" large colorClass="icon-orange" />
+            </RibbonSection>
+
+            {/* D152-D167: MODIFY panel */}
+            <RibbonSection title="MODIFY">
+              <ToolButton icon={<Move size={ICON_LG} />} label="Edit Form" tool="form-edit" large colorClass="icon-orange" />
+              <ToolButton icon={<Minus size={ICON_LG} />} label="Insert Edge" tool="form-insert-edge" large colorClass="icon-orange" />
+              <ToolButton icon={<Diamond size={ICON_LG} />} label="Insert Point" tool="form-insert-point" large colorClass="icon-orange" />
+              <ToolButton icon={<Grid3X3 size={ICON_LG} />} label="Subdivide" tool="form-subdivide" large colorClass="icon-orange" />
+              <ToolButton icon={<Link2 size={ICON_LG} />} label="Bridge" tool="form-bridge" large colorClass="icon-orange" />
+              <ToolButton icon={<Target size={ICON_LG} />} label="Fill Hole" tool="form-fill-hole" large colorClass="icon-orange" />
+              <ToolButton icon={<Combine size={ICON_LG} />} label="Weld" tool="form-weld" large colorClass="icon-orange" />
+              <ToolButton icon={<Blend size={ICON_LG} />} label="Unweld" tool="form-unweld" large colorClass="icon-orange" />
+              <ToolButton icon={<Maximize2 size={ICON_LG} />} label="Crease" tool="form-crease" large colorClass="icon-orange" />
+              <ToolButton icon={<Blend size={ICON_LG} />} label="Uncrease" tool="form-uncrease" large colorClass="icon-orange" />
+              <ToolButton icon={<AlignCenter size={ICON_LG} />} label="Flatten" tool="form-flatten" large colorClass="icon-orange" />
+              <ToolButton icon={<Equal size={ICON_LG} />} label="Uniform" tool="form-uniform" large colorClass="icon-orange" />
+              <ToolButton icon={<ArrowUpFromLine size={ICON_LG} />} label="Pull" tool="form-pull" large colorClass="icon-orange" />
+              <ToolButton icon={<Tangent size={ICON_LG} />} label="Interpolate" tool="form-interpolate" large colorClass="icon-orange" />
+              <ToolButton icon={<Layers size={ICON_LG} />} label="Thicken" tool="form-thicken" large colorClass="icon-orange" />
+              <ToolButton icon={<Package size={ICON_LG} />} label="Freeze" tool="form-freeze" large colorClass="icon-orange" />
+              {/* D167: Delete — remove selected cage elements */}
+              <ToolButton icon={<Trash2 size={ICON_LG} />} label="Delete" tool="form-delete" large colorClass="icon-red" />
+            </RibbonSection>
+
             <RibbonSection title="SELECT">
               <ToolButton icon={<MousePointer2 size={ICON_LG} />} label="Select" tool="select" large colorClass="icon-blue" />
             </RibbonSection>

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import * as THREE from 'three';
-import type { Tool, ViewMode, SketchPlane, Sketch, SketchEntity, SketchPoint, Feature, Parameter, BooleanOperation } from '../types/cad';
+import type { Tool, ViewMode, SketchPlane, Sketch, SketchEntity, SketchPoint, Feature, Parameter, BooleanOperation, FormCage, FormSelection, FormElementType } from '../types/cad';
 
 export type ExtrudeDirection = 'normal' | 'symmetric' | 'reverse';
 export type ExtrudeOperation = Extract<BooleanOperation, 'new-body' | 'join' | 'cut'>;
@@ -151,6 +151,17 @@ interface CADState {
   setSelectedEntityIds: (ids: string[]) => void;
   toggleEntitySelection: (id: string) => void;
 
+  // ── Form (T-Spline / subdivision) state ─────────────────────────────
+  formBodies: FormCage[];
+  activeFormBodyId: string | null;
+  formSelection: FormSelection | null;
+  addFormBody: (cage: FormCage) => void;
+  removeFormBody: (id: string) => void;
+  setActiveFormBody: (id: string | null) => void;
+  setFormSelection: (sel: FormSelection | null) => void;
+  /** D167: Remove selected vertices/edges/faces from the active cage. */
+  deleteFormElements: (type: FormElementType, ids: string[]) => void;
+
   // Grid & snap
   gridSize: number;
   setGridSize: (size: number) => void;
@@ -199,6 +210,9 @@ interface CADState {
   // Tangent circles (D40, D41)
   tangentCircleRadius: number;
   setTangentCircleRadius: (r: number) => void;
+  // Blend curve continuity (D44)
+  blendCurveMode: 'g1' | 'g2';
+  setBlendCurveMode: (mode: 'g1' | 'g2') => void;
   // Sketch chamfer (D47)
   sketchChamferDist1: number;
   setSketchChamferDist1: (d: number) => void;
@@ -292,6 +306,9 @@ interface CADState {
   // Extrude taper angle (D69)
   extrudeTaperAngle: number;
   setExtrudeTaperAngle: (a: number) => void;
+  // Extrude body kind (D102)
+  extrudeBodyKind: 'solid' | 'surface';
+  setExtrudeBodyKind: (k: 'solid' | 'surface') => void;
 
   // Revolve tool
   revolveSelectedSketchId: string | null;
@@ -305,6 +322,9 @@ interface CADState {
   setRevolveDirection: (d: 'one-side' | 'symmetric' | 'two-sides') => void;
   revolveAngle2: number;
   setRevolveAngle2: (a: number) => void;
+  // Revolve body kind (D103)
+  revolveBodyKind: 'solid' | 'surface';
+  setRevolveBodyKind: (k: 'solid' | 'surface') => void;
   startRevolveTool: () => void;
   cancelRevolveTool: () => void;
   commitRevolve: () => void;
@@ -314,9 +334,21 @@ interface CADState {
   setSweepProfileSketchId: (id: string | null) => void;
   sweepPathSketchId: string | null;
   setSweepPathSketchId: (id: string | null) => void;
+  // D104 surface sweep
+  sweepBodyKind: 'solid' | 'surface';
+  setSweepBodyKind: (k: 'solid' | 'surface') => void;
   startSweepTool: () => void;
   cancelSweepTool: () => void;
   commitSweep: () => void;
+
+  // Loft tool (D31 / D105)
+  loftProfileSketchIds: string[];
+  setLoftProfileSketchIds: (ids: string[]) => void;
+  loftBodyKind: 'solid' | 'surface';
+  setLoftBodyKind: (k: 'solid' | 'surface') => void;
+  startLoftTool: () => void;
+  cancelLoftTool: () => void;
+  commitLoft: () => void;
 
   // Rib tool (D73)
   ribSelectedSketchId: string | null;
@@ -398,6 +430,8 @@ const EXTRUDE_DEFAULTS = {
   extrudeExtentType: 'distance' as 'distance' | 'all',
   // D69 taper angle
   extrudeTaperAngle: 0,
+  // D102 body kind
+  extrudeBodyKind: 'solid' as 'solid' | 'surface',
 };
 
 const REVOLVE_DEFAULTS = {
@@ -407,6 +441,8 @@ const REVOLVE_DEFAULTS = {
   // D70 direction modes
   revolveDirection: 'one-side' as 'one-side' | 'symmetric' | 'two-sides',
   revolveAngle2: 360,
+  // D103 body kind
+  revolveBodyKind: 'solid' as 'solid' | 'surface',
 };
 
 export const useCADStore = create<CADState>()(persist((set, get) => ({
@@ -759,6 +795,42 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     };
   }),
 
+  // ── Form state ───────────────────────────────────────────────────────
+  formBodies: [],
+  activeFormBodyId: null,
+  formSelection: null,
+  addFormBody: (cage) => set((state) => ({ formBodies: [...state.formBodies, cage] })),
+  removeFormBody: (id) => set((state) => ({
+    formBodies: state.formBodies.filter((b) => b.id !== id),
+    activeFormBodyId: state.activeFormBodyId === id ? null : state.activeFormBodyId,
+    formSelection: state.formSelection?.bodyId === id ? null : state.formSelection,
+  })),
+  setActiveFormBody: (id) => set({ activeFormBodyId: id }),
+  setFormSelection: (sel) => set({ formSelection: sel }),
+  deleteFormElements: (type, ids) => set((state) => {
+    const body = state.formBodies.find((b) => b.id === state.activeFormBodyId);
+    if (!body) return {};
+    let updated: FormCage;
+    if (type === 'vertex') {
+      const removed = new Set(ids);
+      // Remove vertex + any edges/faces that reference it
+      const cleanEdges = body.edges.filter(
+        (e) => !removed.has(e.vertexIds[0]) && !removed.has(e.vertexIds[1])
+      );
+      const cleanFaces = body.faces.filter(
+        (f) => !f.vertexIds.some((v) => removed.has(v))
+      );
+      updated = { ...body, vertices: body.vertices.filter((v) => !removed.has(v.id)), edges: cleanEdges, faces: cleanFaces };
+    } else if (type === 'edge') {
+      const removed = new Set(ids);
+      updated = { ...body, edges: body.edges.filter((e) => !removed.has(e.id)) };
+    } else {
+      const removed = new Set(ids);
+      updated = { ...body, faces: body.faces.filter((f) => !removed.has(f.id)) };
+    }
+    return { formBodies: state.formBodies.map((b) => b.id === updated.id ? updated : b), formSelection: null };
+  }),
+
   gridSize: 10,
   setGridSize: (size) => set({ gridSize: size }),
   snapEnabled: true,
@@ -1007,6 +1079,10 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   tangentCircleRadius: 5,
   setTangentCircleRadius: (r) => set({ tangentCircleRadius: Math.max(0.01, r) }),
 
+  // Blend curve continuity (D44)
+  blendCurveMode: 'g1' as 'g1' | 'g2',
+  setBlendCurveMode: (mode) => set({ blendCurveMode: mode }),
+
   // Sketch chamfer (D47)
   sketchChamferDist1: 2,
   setSketchChamferDist1: (d) => set({ sketchChamferDist1: Math.max(0.01, d) }),
@@ -1084,6 +1160,8 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   setExtrudeExtentType: (t) => set({ extrudeExtentType: t }),
   // D69 taper angle
   setExtrudeTaperAngle: (a) => set({ extrudeTaperAngle: a }),
+  // D102 body kind
+  setExtrudeBodyKind: (k) => set({ extrudeBodyKind: k }),
   startExtrudeTool: () => {
     set({
       activeTool: 'extrude',
@@ -1152,6 +1230,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       extrudeSelectedSketchId, extrudeDistance, extrudeDirection,
       extrudeOperation, extrudeThinEnabled, extrudeThinThickness, extrudeThinSide,
       extrudeStartType, extrudeStartOffset, extrudeExtentType, extrudeTaperAngle,
+      extrudeBodyKind,
       sketches, features, units,
     } = get();
     if (!extrudeSelectedSketchId) {
@@ -1173,9 +1252,11 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     const absDistance = extrudeExtentType === 'all' ? 10000 : Math.abs(extrudeDistance);
     const finalDirection = isCutDrag ? 'reverse' : extrudeDirection;
     const finalOperation = isCutDrag ? 'cut' : extrudeOperation;
-    // Generate mesh: prefer thin → taper → standard
+    // Generate mesh: surface → thin → taper → standard
     let featureMesh: THREE.Mesh | undefined;
-    if (extrudeThinEnabled) {
+    if (extrudeBodyKind === 'surface') {
+      featureMesh = GeometryEngine.extrudeSketchSurface(sketch, absDistance) ?? undefined;
+    } else if (extrudeThinEnabled) {
       featureMesh = GeometryEngine.extrudeThinSketch(sketch, absDistance, extrudeThinThickness, extrudeThinSide) ?? undefined;
     } else if (Math.abs(extrudeTaperAngle) > 0.01) {
       featureMesh = GeometryEngine.extrudeSketchWithTaper(sketch, absDistance, extrudeTaperAngle) ?? undefined;
@@ -1207,12 +1288,13 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       suppressed: false,
       timestamp: Date.now(),
       mesh: featureMesh,
+      bodyKind: extrudeBodyKind === 'surface' ? 'surface' : 'solid',
     };
     set({
       features: [...features, feature],
       activeTool: 'select',
       ...EXTRUDE_DEFAULTS,
-      statusMessage: `${extrudeThinEnabled ? 'Thin ' : ''}${finalOperation === 'cut' ? 'Cut' : 'Extruded'} ${sketch.name}${extrudeExtentType === 'all' ? ' (All)' : ` by ${absDistance}${units}`}`,
+      statusMessage: `${extrudeBodyKind === 'surface' ? 'Surface ' : extrudeThinEnabled ? 'Thin ' : ''}${finalOperation === 'cut' ? 'Cut' : 'Extruded'} ${sketch.name}${extrudeExtentType === 'all' ? ' (All)' : ` by ${absDistance}${units}`}`,
     });
   },
 
@@ -1224,6 +1306,8 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   // D70 direction modes
   setRevolveDirection: (d) => set({ revolveDirection: d }),
   setRevolveAngle2: (a) => set({ revolveAngle2: a }),
+  // D103 body kind
+  setRevolveBodyKind: (k) => set({ revolveBodyKind: k }),
   startRevolveTool: () => {
     const extrudable = get().sketches.filter((s) => s.entities.length > 0);
     if (extrudable.length === 0) {
@@ -1244,7 +1328,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     });
   },
   commitRevolve: () => {
-    const { revolveSelectedSketchId, revolveAxis, revolveAngle, revolveDirection, revolveAngle2, sketches, features, units } = get();
+    const { revolveSelectedSketchId, revolveAxis, revolveAngle, revolveDirection, revolveAngle2, revolveBodyKind, sketches, features, units } = get();
     if (!revolveSelectedSketchId) {
       set({ statusMessage: 'No profile selected for revolve' });
       return;
@@ -1263,7 +1347,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     }
     const feature: Feature = {
       id: crypto.randomUUID(),
-      name: `Revolve ${features.filter((f) => f.type === 'revolve').length + 1}`,
+      name: `${revolveBodyKind === 'surface' ? 'Surface ' : ''}Revolve ${features.filter((f) => f.type === 'revolve').length + 1}`,
       type: 'revolve',
       sketchId: revolveSelectedSketchId,
       params: {
@@ -1275,6 +1359,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       visible: true,
       suppressed: false,
       timestamp: Date.now(),
+      bodyKind: revolveBodyKind === 'surface' ? 'surface' : 'solid',
     };
     const angleDesc = revolveDirection === 'symmetric'
       ? `±${revolveAngle / 2}°`
@@ -1289,11 +1374,13 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     });
   },
 
-  // ─── Sweep tool (D30) ──────────────────────────────────────────────────
+  // ─── Sweep tool (D30 / D104) ───────────────────────────────────────────
   sweepProfileSketchId: null,
   setSweepProfileSketchId: (id) => set({ sweepProfileSketchId: id }),
   sweepPathSketchId: null,
   setSweepPathSketchId: (id) => set({ sweepPathSketchId: id }),
+  sweepBodyKind: 'solid',
+  setSweepBodyKind: (k) => set({ sweepBodyKind: k }),
   startSweepTool: () => {
     const extrudable = get().sketches.filter((s) => s.entities.length > 0);
     if (extrudable.length < 2) {
@@ -1304,7 +1391,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   },
   cancelSweepTool: () => set({ activeTool: 'select', sweepProfileSketchId: null, sweepPathSketchId: null, statusMessage: 'Sweep cancelled' }),
   commitSweep: () => {
-    const { sweepProfileSketchId, sweepPathSketchId, sketches, features, units } = get();
+    const { sweepProfileSketchId, sweepPathSketchId, sweepBodyKind, sketches, features, units } = get();
     if (!sweepProfileSketchId || !sweepPathSketchId) {
       set({ statusMessage: 'Select both a profile sketch and a path sketch' });
       return;
@@ -1315,10 +1402,10 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       set({ statusMessage: 'Selected sketch(es) not found' });
       return;
     }
-    const mesh = GeometryEngine.sweepSketchInternal(profileSketch, pathSketch);
+    const mesh = GeometryEngine.sweepSketchInternal(profileSketch, pathSketch, sweepBodyKind === 'surface');
     const feature: Feature = {
       id: crypto.randomUUID(),
-      name: `Sweep ${features.filter((f) => f.type === 'sweep').length + 1}`,
+      name: `${sweepBodyKind === 'surface' ? 'Surface ' : ''}Sweep ${features.filter((f) => f.type === 'sweep').length + 1}`,
       type: 'sweep',
       sketchId: sweepProfileSketchId,
       params: { pathSketchId: sweepPathSketchId },
@@ -1326,13 +1413,62 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       suppressed: false,
       timestamp: Date.now(),
       mesh: mesh ?? undefined,
+      bodyKind: sweepBodyKind === 'surface' ? 'surface' : 'solid',
     };
     set({
       features: [...features, feature],
       activeTool: 'select',
       sweepProfileSketchId: null,
       sweepPathSketchId: null,
-      statusMessage: `Sweep created (${units})`,
+      sweepBodyKind: 'solid',
+      statusMessage: `${sweepBodyKind === 'surface' ? 'Surface ' : ''}Sweep created (${units})`,
+    });
+  },
+
+  // ─── Loft tool (D31 / D105) ───────────────────────────────────────────
+  loftProfileSketchIds: [],
+  setLoftProfileSketchIds: (ids) => set({ loftProfileSketchIds: ids }),
+  loftBodyKind: 'solid',
+  setLoftBodyKind: (k) => set({ loftBodyKind: k }),
+  startLoftTool: () => {
+    const extrudable = get().sketches.filter((s) => s.entities.length > 0);
+    if (extrudable.length < 2) {
+      set({ statusMessage: 'Loft requires at least 2 profile sketches' });
+      return;
+    }
+    set({ activeTool: 'loft', loftProfileSketchIds: ['', ''], statusMessage: 'Loft — select 2+ profile sketches in the panel, then OK' });
+  },
+  cancelLoftTool: () => set({ activeTool: 'select', loftProfileSketchIds: [], statusMessage: 'Loft cancelled' }),
+  commitLoft: () => {
+    const { loftProfileSketchIds, loftBodyKind, sketches, features, units } = get();
+    const validIds = loftProfileSketchIds.filter(Boolean);
+    if (validIds.length < 2) {
+      set({ statusMessage: 'Select at least 2 profile sketches' });
+      return;
+    }
+    const profileSketches = validIds.map((id) => sketches.find((s) => s.id === id)).filter(Boolean) as typeof sketches;
+    if (profileSketches.length < 2) {
+      set({ statusMessage: 'One or more selected profiles not found' });
+      return;
+    }
+    const mesh = GeometryEngine.loftSketches(profileSketches, loftBodyKind === 'surface');
+    const feature: Feature = {
+      id: crypto.randomUUID(),
+      name: `${loftBodyKind === 'surface' ? 'Surface ' : ''}Loft ${features.filter((f) => f.type === 'loft').length + 1}`,
+      type: 'loft',
+      sketchId: validIds[0],
+      params: { loftProfileIds: validIds.join(',') },
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+      mesh: mesh ?? undefined,
+      bodyKind: loftBodyKind === 'surface' ? 'surface' : 'solid',
+    };
+    set({
+      features: [...features, feature],
+      activeTool: 'select',
+      loftProfileSketchIds: [],
+      statusMessage: `${loftBodyKind === 'surface' ? 'Surface ' : ''}Loft created across ${profileSketches.length} profiles (${units})`,
     });
   },
 

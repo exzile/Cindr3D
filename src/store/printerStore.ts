@@ -114,7 +114,7 @@ interface PrinterStore {
   // UI state
   showPrinter: boolean;
   showSettings: boolean;
-  activeTab: 'dashboard' | 'status' | 'console' | 'job' | 'history' | 'files' | 'macros' | 'settings' | 'heightmap' | 'model';
+  activeTab: 'dashboard' | 'status' | 'console' | 'job' | 'history' | 'files' | 'filaments' | 'macros' | 'settings' | 'heightmap' | 'model';
   error: string | null;
   jogDistance: number;
   extrudeAmount: number;

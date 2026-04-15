@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
 import {
   LayoutDashboard, Activity, Terminal, Play, FolderOpen, FileCode, Grid3x3,
-  History, Braces, Settings, X, OctagonAlert, Wifi, WifiOff,
+  History, Braces, Settings, X, OctagonAlert, Wifi, WifiOff, FlaskConical,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import DuetDashboard from './DuetDashboard';
@@ -10,6 +10,7 @@ import DuetConsole from './DuetConsole';
 import DuetJobStatus from './DuetJobStatus';
 import DuetPrintHistory from './DuetPrintHistory';
 import DuetFileManager from './DuetFileManager';
+import DuetFilamentManager from './DuetFilamentManager';
 import DuetMacros from './DuetMacros';
 import DuetHeightMap from './DuetHeightMap';
 import DuetObjectModelBrowser from './DuetObjectModelBrowser';
@@ -31,6 +32,7 @@ const TABS = [
   { key: 'job' as const, label: 'Job', Icon: Play },
   { key: 'history' as const, label: 'History', Icon: History },
   { key: 'files' as const, label: 'Files', Icon: FolderOpen },
+  { key: 'filaments' as const, label: 'Filaments', Icon: FlaskConical },
   { key: 'macros' as const, label: 'Macros', Icon: FileCode },
   { key: 'heightmap' as const, label: 'Height Map', Icon: Grid3x3 },
   { key: 'model' as const, label: 'Model', Icon: Braces },
@@ -249,6 +251,8 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
         return <DuetPrintHistory />;
       case 'files':
         return <DuetFileManager />;
+      case 'filaments':
+        return <DuetFilamentManager />;
       case 'macros':
         return <DuetMacros />;
       case 'heightmap':

@@ -33,6 +33,7 @@ export interface ThemeColors {
   tabSolid: string;
   tabSurface: string;
   tabMesh: string;
+  tabForm: string;
   tabSheetMetal: string;
   tabPlastic: string;
   tabManage: string;
@@ -92,6 +93,7 @@ const lightColors: ThemeColors = {
   tabSolid: '#ff6b00',
   tabSurface: '#4caf50',
   tabMesh: '#7b1fa2',
+  tabForm: '#e65100',
   tabSheetMetal: '#00897b',
   tabPlastic: '#1976d2',
   tabManage: '#757575',
@@ -142,6 +144,7 @@ const darkColors: ThemeColors = {
   tabSolid: '#ff8c40',
   tabSurface: '#66bb6a',
   tabMesh: '#ab47bc',
+  tabForm: '#ff7043',
   tabSheetMetal: '#26a69a',
   tabPlastic: '#42a5f5',
   tabManage: '#9e9e9e',
@@ -194,6 +197,7 @@ function applyTheme(colors: ThemeColors, mode: ThemeMode) {
   root.style.setProperty('--tab-solid', colors.tabSolid);
   root.style.setProperty('--tab-surface', colors.tabSurface);
   root.style.setProperty('--tab-mesh', colors.tabMesh);
+  root.style.setProperty('--tab-form', colors.tabForm);
   root.style.setProperty('--tab-sheet-metal', colors.tabSheetMetal);
   root.style.setProperty('--tab-plastic', colors.tabPlastic);
   root.style.setProperty('--tab-manage', colors.tabManage);

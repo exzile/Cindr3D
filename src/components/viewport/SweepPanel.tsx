@@ -8,6 +8,9 @@ export default function SweepPanel() {
   const setProfileId = useCADStore((s) => s.setSweepProfileSketchId);
   const pathId = useCADStore((s) => s.sweepPathSketchId);
   const setPathId = useCADStore((s) => s.setSweepPathSketchId);
+  // D104 surface sweep
+  const bodyKind = useCADStore((s) => s.sweepBodyKind);
+  const setBodyKind = useCADStore((s) => s.setSweepBodyKind);
   const commitSweep = useCADStore((s) => s.commitSweep);
   const cancelSweepTool = useCADStore((s) => s.cancelSweepTool);
 
@@ -54,6 +57,19 @@ export default function SweepPanel() {
               .map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
+          </select>
+        </div>
+
+        {/* D104: Body kind */}
+        <div className="sketch-palette-row">
+          <span className="sketch-palette-label">Output</span>
+          <select
+            className="measure-select"
+            value={bodyKind}
+            onChange={(e) => setBodyKind(e.target.value as 'solid' | 'surface')}
+          >
+            <option value="solid">Solid Body</option>
+            <option value="surface">Surface Body</option>
           </select>
         </div>
 

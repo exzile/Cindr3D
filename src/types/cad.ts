@@ -31,6 +31,7 @@ export type Tool =
   | 'extrude'
   | 'revolve'
   | 'sweep'
+  | 'loft'
   | 'rib'
   | 'fillet'
   | 'chamfer'
@@ -69,7 +70,38 @@ export type Tool =
   | 'circle-2tangent'
   | 'circle-3tangent'
   | 'linetype-convert'
-  | 'conic';
+  | 'conic'
+  | 'blend-curve'
+  // ── Form (T-Spline / subdivision) workspace tools ──
+  | 'form-box'
+  | 'form-plane'
+  | 'form-cylinder'
+  | 'form-sphere'
+  | 'form-torus'
+  | 'form-quadball'
+  | 'form-pipe'
+  | 'form-face'
+  | 'form-extrude'
+  | 'form-revolve'
+  | 'form-sweep'
+  | 'form-loft'
+  | 'form-edit'
+  | 'form-insert-edge'
+  | 'form-insert-point'
+  | 'form-subdivide'
+  | 'form-bridge'
+  | 'form-fill-hole'
+  | 'form-weld'
+  | 'form-unweld'
+  | 'form-crease'
+  | 'form-uncrease'
+  | 'form-flatten'
+  | 'form-uniform'
+  | 'form-pull'
+  | 'form-interpolate'
+  | 'form-thicken'
+  | 'form-freeze'
+  | 'form-delete';
 
 export type ViewMode = '3d' | 'sketch';
 
@@ -163,13 +195,17 @@ export type FeatureType =
   | 'import'
   | 'primitive'
   | 'sweep'
+  | 'loft'
   | 'thicken'
   | 'rib'
   | 'pattern-on-path'
   | 'scale'
-  | 'draft';
+  | 'form';
 
 export type BooleanOperation = 'new-body' | 'join' | 'cut' | 'intersect';
+
+/** Discriminates the kind of body produced by a feature. Defaults to 'solid'. */
+export type BodyKind = 'solid' | 'surface' | 'mesh';
 
 export interface Feature {
   id: string;
@@ -180,9 +216,55 @@ export interface Feature {
   componentId?: string;
   params: Record<string, number | string | boolean | number[]>;
   mesh?: THREE.Mesh;
+  /** Kind of body produced — solid (default), surface, or mesh. */
+  bodyKind?: BodyKind;
   visible: boolean;
   suppressed: boolean;
   timestamp: number;
+}
+
+// ===== Form (T-Spline / Catmull-Clark Subdivision) Types =====
+
+export type FormElementType = 'vertex' | 'edge' | 'face';
+
+/** Single vertex in the control cage. crease 0=smooth, 1=corner. */
+export interface FormVertex {
+  id: string;
+  position: [number, number, number];
+  crease: number;
+}
+
+/** Directed edge between two vertices. crease 0=smooth, 1=sharp. */
+export interface FormEdge {
+  id: string;
+  vertexIds: [string, string];
+  crease: number;
+}
+
+/** A polygonal face in the control cage (usually quads, tri allowed). */
+export interface FormFace {
+  id: string;
+  /** Vertex IDs in winding order. */
+  vertexIds: string[];
+}
+
+/** The full control cage representing a T-Spline / subdivision body. */
+export interface FormCage {
+  id: string;
+  name: string;
+  vertices: FormVertex[];
+  edges: FormEdge[];
+  faces: FormFace[];
+  subdivisionLevel: number;
+  visible: boolean;
+  componentId?: string;
+}
+
+/** Current selection state for Form editing. */
+export interface FormSelection {
+  bodyId: string;
+  type: FormElementType;
+  ids: string[];
 }
 
 // ===== Component/Assembly =====

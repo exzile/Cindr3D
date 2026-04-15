@@ -15,6 +15,9 @@ export default function RevolvePanel() {
   const setRevolveDirection = useCADStore((s) => s.setRevolveDirection);
   const angle2 = useCADStore((s) => s.revolveAngle2);
   const setAngle2 = useCADStore((s) => s.setRevolveAngle2);
+  // D103 body kind
+  const bodyKind = useCADStore((s) => s.revolveBodyKind);
+  const setBodyKind = useCADStore((s) => s.setRevolveBodyKind);
   const commitRevolve = useCADStore((s) => s.commitRevolve);
   const cancelRevolveTool = useCADStore((s) => s.cancelRevolveTool);
 
@@ -109,6 +112,19 @@ export default function RevolvePanel() {
             </div>
           </div>
         )}
+
+        {/* D103: Body kind */}
+        <div className="sketch-palette-row">
+          <span className="sketch-palette-label">Output</span>
+          <select
+            className="measure-select"
+            value={bodyKind}
+            onChange={(e) => setBodyKind(e.target.value as 'solid' | 'surface')}
+          >
+            <option value="solid">Solid Body</option>
+            <option value="surface">Surface Body</option>
+          </select>
+        </div>
 
         <div className="extrude-panel-actions">
           <button className="btn btn-secondary" onClick={cancelRevolveTool}>

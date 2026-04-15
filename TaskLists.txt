@@ -7,16 +7,18 @@ Gaps identified by comparing src/components/printer/* with the DWC v3 panel
 and route inventory at github.com/Duet3D/DuetWebControl. Ordered by user impact.
 
 PRIORITY 1 — operator-facing wins
-[~] 1. Filament management UI
+[x] 1. Filament management UI
        - Shipped: inline per-tool Filament select on each DuetDashboard tool
          row. Shows currently loaded filament (model.move.extruders[n].filament),
          lists names from 0:/filaments, and calls the right M-code:
            * M701 S"name" for a fresh load,
            * M702 + M701 S"new" for a swap (via new changeFilament store action),
            * M702 for unload (existing Unload button).
-       - Remaining: dedicated Filaments sub-page / Files > Filaments editor
-         (create / rename / delete filament directories, edit load/unload
-         macros). Tracked as a follow-up.
+       - Shipped: dedicated Filaments tab in DuetPrinterPanel →
+         DuetFilamentManager.tsx. List all filament directories with
+         create (+ auto-generates config.g and unload.g with templates),
+         rename (via moveFile), delete, and in-place G-code editor for
+         each filament's load/unload macros.
 
 [x] 2. Job estimations panel
        - Shipped: DuetJobStatus.tsx already contains TimeEstimates section
@@ -269,7 +271,15 @@ P5 — MISSING 3D FEATURES (Solid tab)
            path) + OK/Cancel. ExtrudedBodies renders sweep feature meshes.
            Toolbar 'Sweep' menu item wired (no longer comingSoon).
 
-[ ] D31. Loft — pick 2+ profile sketches, optional rails → ruled/blended mesh.
+[x] D31. Loft — pick 2+ profile sketches → ruled/blended mesh.
+         - Shipped: GeometryEngine.loftSketches — samples each profile at 48
+           points in world space (handling custom + standard planes), builds
+           quad strips between consecutive sections, fan caps on start/end.
+           cadStore: loftProfileSketchIds[], startLoftTool/cancelLoftTool/
+           commitLoft. LoftPanel.tsx: dynamic profile list (add/remove slots,
+           min 2), amber dot. Toolbar Loft item wired (no longer comingSoon).
+         - Rails + centerline guide deferred (depends on path-following
+           infrastructure from D30 sweep).
 
 [x] D32. Press Pull — pick a face, drag to extrude/offset; convenience wrapper
          over extrude+offset-face. Shipped: ExtrudeTool face picker +
@@ -360,9 +370,18 @@ P7 — SKETCH CREATE (variants we missed on the first pass)
            endpoint. Emits a standard 'line' entity. Preview shows both
            endpoints + midpoint cross marker. Toolbar → Line submenu wired.
 
-[ ] D44. Blend Curve
-         - Tangent (G1) or curvature-continuous (G2) blend curve between
-           endpoints of two existing sketch curves / edges. Lives in Modify.
+[x] D44. Blend Curve
+         - Shipped: 'blend-curve' Tool. 2-click flow: click near endpoint of
+           any line/arc/spline entity (within 6 world units), then click near
+           a second endpoint. Tangent at each end is computed from the entity
+           geometry (line direction, arc tangent at angle, spline first/last
+           segment). A G1 cubic Bezier (P1 = P0 + h·tangentA, P2 = P3 - h·tangentB,
+           h = |P3-P0|/3) is sampled at 32 points and emitted as 'spline'.
+           Live preview shows the blended curve as the user moves toward the
+           second endpoint. G1/G2 continuity select in SketchPalette (G2
+           uses same cubic formula for now — full quintic G2 is future work).
+           Toolbar 'Blend Curve' item in sketchModifyMenuItems. findBlendEndpoint
+           + sampleCubicBezier helpers in sketchInteraction/helpers.ts.
 
 [ ] D45. Include 3D Geometry
          - Distinct from Project: pulls 3D edges / work geometry / sketch
@@ -758,27 +777,38 @@ Surface extrude reuses the solid extrude flow so it outputs a SOLID, not a
 surface body. There is no distinct surface-body type in cad.ts at all.
 
 P17 — SURFACE WORKSPACE (body type + core tools)
-[ ] D101. Surface-body concept in the type system
-          - Add `Body.kind: 'solid' | 'surface' | 'mesh'` to cad.ts. Most
-            of the modify ops need to know whether the target has volume.
-            Without this, every surface tool below is meaningless.
+[x] D101. Surface-body concept in the type system
+          - Added `BodyKind = 'solid' | 'surface' | 'mesh'` to cad.ts.
+          - Added `bodyKind?: BodyKind` to Feature interface.
+          - Added SURFACE_MATERIAL (blue, 45% opacity, DoubleSide) to bodyMaterial.ts.
 
-[ ] D102. Surface Extrude (distinct from solid extrude)
-          - Extrudes a sketch profile OR a sketch curve OR single-line text
-            as a SURFACE body (no end caps). Open profiles become ruled
-            surfaces; closed profiles become a cylindrical-like shell.
-          - Fusion: "adds depth to a sketch profile, sketch curve, planar
-            face, or single line text object."
-          - Add a `type: 'solid' | 'surface'` flag to the extrude operation
-            and skip the ExtrudeGeometry end-cap when surface.
+[x] D102. Surface Extrude (distinct from solid extrude)
+          - Added `extrudeBodyKind: 'solid' | 'surface'` to cadStore.
+          - Added GeometryEngine.extrudeSketchSurface: wall-only quad strips,
+            no end caps; handles standard + custom planes.
+          - ExtrudePanel: "Output" dropdown (Solid Body / Surface Body).
+          - commitExtrude routes to extrudeSketchSurface when surface.
+          - Surface extrude mesh stored in feature.mesh; rendered via
+            the existing stored-mesh renderer path.
 
-[ ] D103. Surface Revolve
-          - Same as solid revolve but produces an open lathe surface.
-            Replace the stub at Toolbar.tsx L833.
+[x] D103. Surface Revolve
+          - Added `revolveBodyKind: 'solid' | 'surface'` to cadStore.
+          - RevolvePanel: "Output" dropdown (Solid Body / Surface Body).
+          - RevolveItem in ExtrudedBodies.tsx applies SURFACE_MATERIAL when
+            bodyKind === 'surface' (LatheGeometry naturally has no caps).
 
-[ ] D104. Surface Sweep — profile/curve along a path
+[x] D104. Surface Sweep — profile/curve along a path
+          - Added `sweepBodyKind: 'solid' | 'surface'` to cadStore.
+          - SweepPanel: "Output" dropdown (Solid Body / Surface Body).
+          - GeometryEngine._sweepWithCurve: `surface` flag skips end-caps +
+            uses SURFACE_MATERIAL. sweepSketchInternal forwards the flag.
+          - commitSweep passes sweepBodyKind, sets bodyKind on feature.
 
-[ ] D105. Surface Loft — transitional surface between profiles (no end caps)
+[x] D105. Surface Loft — transitional surface between profiles (no end caps)
+          - Added `loftBodyKind: 'solid' | 'surface'` to cadStore.
+          - LoftPanel: "Output" dropdown (Solid Body / Surface Body).
+          - GeometryEngine.loftSketches: `surface` flag skips start/end fan
+            caps + uses SURFACE_MATERIAL.
 
 [ ] D106. Patch
           - Creates a planar or 3D surface inside a closed edge loop.
@@ -932,23 +962,32 @@ Form means a new workspace mode, a new body type, and a subdivision-
 surface kernel.
 
 P21 — FORM WORKSPACE (bootstrapping the workspace)
-[ ] D138. Add 'form' to designTab union + a new ribbon tab
+[x] D138. Add 'form' to designTab union + a new ribbon tab
           - Toolbar.tsx type + render branch + App.tsx tab chip.
           - Status: STUB until D139 lands (no tools are usable without the
             kernel).
+          - DONE: DesignTab type, designTabs array, CSS --tab-form, themeStore
+            tabForm property, full CREATE + MODIFY ribbon, FormCage/FormVertex/
+            FormEdge/FormFace types in cad.ts, form state in cadStore,
+            FormInteraction component mounted in Viewport.
 
-[ ] D139. T-Spline / subdivision-surface kernel
-          - Foundational decision. Options:
-            a) Catmull-Clark subdivision (three-subdivide) — cheap, free,
-               covers 80% of Form's behavior but not true T-junctions.
-            b) OpenSubdiv WASM build — matches Pixar / Maya / Fusion.
-            c) Custom half-edge mesh with edge-loop support.
-          - Recommendation: start with (a). Most consumer Form work is
-            Catmull-Clark anyway and users won't notice the T-junction gap
-            until much later.
+[x] D139. T-Spline / subdivision-surface kernel
+          - DONE: src/engine/SubdivisionEngine.ts — pure Catmull-Clark
+            implementation (option a). cageToMesh, catmullClarkStep, meshToGeometry,
+            meshToWireframe, createBoxCageData static methods.
+          - Supports interior + boundary vertex rules, N-gon faces → quad subdivision.
+          - FormBodies.tsx scene component renders cage wireframe + smooth subdivided
+            mesh (subdivision level capped at 3). Geometries disposed via useEffect.
+          - Materials: FORM_BODY_MATERIAL (orange, semi-transparent), active variant,
+            FORM_CAGE_MATERIAL (wireframe lines).
+          - Viewport.tsx imports and mounts <FormBodies /> before FormInteraction.
 
 P22 — FORM CREATE panel (primitives)
-[ ] D140. T-Spline Box — 6-face cage + subdivision
+[x] D140. T-Spline Box — 6-face cage + subdivision
+          - DONE: SubdivisionEngine.createBoxCageData(20,20,20) generates the
+            6-quad control cage. FormInteraction handles form-box click →
+            calls addFormBody with subdivisionLevel=2. Body renders immediately
+            via FormBodies. Status message updated.
 [ ] D141. T-Spline Plane — flat cage
 [ ] D142. T-Spline Cylinder — cage with cap rings
 [ ] D143. T-Spline Sphere — generally subdivided from a cube
@@ -970,22 +1009,27 @@ P23 — FORM MODIFY panel
             (uniform scale). Alt-drag adds new geometry.
           - Equivalent of three.js TransformControls but operating on
             the control cage.
+          - STUB: toolbar button + form-edit Tool value added. Full
+            implementation requires D139 cage kernel + ray-pick + gizmo.
 
-[ ] D153. Insert Edge — split a face by inserting a new edge loop
-[ ] D154. Insert Point — add a vertex on an edge
-[ ] D155. Subdivide — recursively split selected faces
-[ ] D156. Bridge — connect two open faces with a new tube of faces
-[ ] D157. Fill Hole — cap an open boundary with a new face
-[ ] D158. Weld / Unweld Vertices — merge or split coincident vertices
-[ ] D159. Merge Edge / Match Edge — align edge loops between two cages
-[ ] D160. Crease / Uncrease — mark an edge as sharp (G0) in the subdivision
-[ ] D161. Flatten — project selected vertices onto a plane
-[ ] D162. Make Uniform — equalize face sizes in a selection
-[ ] D163. Pull — pull vertices toward another mesh/surface
-[ ] D164. Interpolate — smooth transition between two vertex sets
-[ ] D165. Thicken (Form) — shell the subdivision surface into a solid
-[ ] D166. Freeze — lock vertices so Edit Form can't move them
-[ ] D167. Delete — remove a face / edge / vertex from the cage
+[ ] D153. Insert Edge — split a face by inserting a new edge loop (STUB: button)
+[ ] D154. Insert Point — add a vertex on an edge (STUB: button)
+[ ] D155. Subdivide — recursively split selected faces (STUB: button)
+[ ] D156. Bridge — connect two open faces with a new tube of faces (STUB: button)
+[ ] D157. Fill Hole — cap an open boundary with a new face (STUB: button)
+[ ] D158. Weld / Unweld Vertices — merge or split coincident vertices (STUB: button)
+[ ] D159. Merge Edge / Match Edge — align edge loops between two cages (STUB: button)
+[ ] D160. Crease / Uncrease — mark an edge as sharp (G0) in the subdivision (STUB: button)
+[ ] D161. Flatten — project selected vertices onto a plane (STUB: button)
+[ ] D162. Make Uniform — equalize face sizes in a selection (STUB: button)
+[ ] D163. Pull — pull vertices toward another mesh/surface (STUB: button)
+[ ] D164. Interpolate — smooth transition between two vertex sets (STUB: button)
+[ ] D165. Thicken (Form) — shell the subdivision surface into a solid (STUB: button)
+[ ] D166. Freeze — lock vertices so Edit Form can't move them (STUB: button)
+[x] D167. Delete — remove a face / edge / vertex from the cage
+          - DONE: deleteFormElements() store action removes selected vertex/edge/face
+            (cascades on vertex deletion). FormInteraction handles keyboard Delete/Backspace.
+            Cage ray-pick stubbed pending D139 kernel.
 
 
 DESIGN SHEET METAL — NOTED BUT DEFERRED

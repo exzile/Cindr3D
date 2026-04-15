@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
 import type { Feature, Sketch } from '../../../types/cad';
-import { BODY_MATERIAL } from './bodyMaterial';
+import { BODY_MATERIAL, SURFACE_MATERIAL } from './bodyMaterial';
 
 /** Revolve geometry item — memoized, disposes LatheGeometry on change/unmount. */
 function RevolveItem({ feature, sketch }: { feature: Feature; sketch: Sketch }) {
@@ -14,6 +14,7 @@ function RevolveItem({ feature, sketch }: { feature: Feature; sketch: Sketch }) 
     if (axisKey === 'Z') return new THREE.Vector3(0, 0, 1);
     return new THREE.Vector3(0, 1, 0);
   }, [axisKey]);
+  const isSurface = feature.bodyKind === 'surface';
   const mesh = useMemo(() => {
     const m = GeometryEngine.revolveSketch(sketch, angle, axis);
     if (!m) return null;
@@ -21,8 +22,10 @@ function RevolveItem({ feature, sketch }: { feature: Feature; sketch: Sketch }) 
     // lathe-Y aligns with the requested world axis.
     if (axisKey === 'X') m.rotation.set(0, 0, -Math.PI / 2);
     else if (axisKey === 'Z') m.rotation.set(Math.PI / 2, 0, 0);
+    // Apply surface material for surface body kind
+    m.material = isSurface ? SURFACE_MATERIAL : BODY_MATERIAL;
     return m;
-  }, [sketch, angle, axis, axisKey]);
+  }, [sketch, angle, axis, axisKey, isSurface]);
   useEffect(() => {
     if (mesh) {
       mesh.userData.pickable = true;

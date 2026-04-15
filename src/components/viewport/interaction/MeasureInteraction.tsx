@@ -19,10 +19,30 @@ export default function MeasureInteraction() {
   const matRef = useRef(new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 2 }));
   const dashedRef = useRef(new THREE.LineDashedMaterial({ color: 0xffaa00, linewidth: 1, dashSize: 1, gapSize: 0.5 }));
 
+  // Reusable dot geometry + material — created once, never reallocated
+  const dotGeoRef = useRef(new THREE.SphereGeometry(0.3, 8, 8));
+  const dotMatRef = useRef(new THREE.MeshBasicMaterial({ color: 0xffaa00, depthTest: false }));
+  // Two reusable sphere meshes (at most 2 dots are shown at a time)
+  const dot1Ref = useRef<THREE.Mesh>(new THREE.Mesh());
+  const dot2Ref = useRef<THREE.Mesh>(new THREE.Mesh());
+  // Scratch Vector3s for useFrame — avoids per-frame allocation
+  const _p1Scratch = useRef(new THREE.Vector3());
+  const _endScratch = useRef(new THREE.Vector3());
+
   useEffect(() => {
+    // Assign geometry + material to the reusable meshes once
+    dot1Ref.current.geometry = dotGeoRef.current;
+    dot1Ref.current.material = dotMatRef.current;
+    dot1Ref.current.renderOrder = 999;
+    dot2Ref.current.geometry = dotGeoRef.current;
+    dot2Ref.current.material = dotMatRef.current;
+    dot2Ref.current.renderOrder = 999;
+
     const m1 = matRef.current;
     const m2 = dashedRef.current;
-    return () => { m1.dispose(); m2.dispose(); };
+    const g = dotGeoRef.current;
+    const dm = dotMatRef.current;
+    return () => { m1.dispose(); m2.dispose(); g.dispose(); dm.dispose(); };
   }, []);
 
   // Raycast against scene geometry + ground plane fallback
@@ -109,35 +129,34 @@ export default function MeasureInteraction() {
   // Draw measurement line / preview in the scene
   useFrame(() => {
     if (!previewRef.current) return;
-    clearGroupChildren(previewRef.current, { disposeMeshMaterial: true });
+    // Remove reusable dot meshes first so clearGroupChildren won't dispose their shared geometry
+    previewRef.current.remove(dot1Ref.current);
+    previewRef.current.remove(dot2Ref.current);
+    clearGroupChildren(previewRef.current, { disposeMeshMaterial: false });
 
     if (activeTool !== 'measure') return;
 
     const mat = matRef.current;
-
-    // Helper to add a small sphere at a point
-    const addDot = (pos: THREE.Vector3) => {
-      const geo = new THREE.SphereGeometry(0.3, 8, 8);
-      const meshMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, depthTest: false });
-      const m = new THREE.Mesh(geo, meshMat);
-      m.position.copy(pos);
-      m.renderOrder = 999;
-      previewRef.current!.add(m);
-    };
+    const group = previewRef.current;
 
     if (measurePoints.length >= 1) {
-      const p1v = new THREE.Vector3(measurePoints[0].x, measurePoints[0].y, measurePoints[0].z);
-      addDot(p1v);
+      const p1v = _p1Scratch.current.set(measurePoints[0].x, measurePoints[0].y, measurePoints[0].z);
+      dot1Ref.current.position.copy(p1v);
+      group.add(dot1Ref.current);
 
       const endPoint = measurePoints.length >= 2
-        ? new THREE.Vector3(measurePoints[1].x, measurePoints[1].y, measurePoints[1].z)
+        ? _endScratch.current.set(measurePoints[1].x, measurePoints[1].y, measurePoints[1].z)
         : mousePos;
 
       if (endPoint) {
-        // Line between points
+        // Line between 2 points — geometry recreated per frame (2 verts, minimal GC)
         const lineGeo = new THREE.BufferGeometry().setFromPoints([p1v, endPoint]);
-        previewRef.current!.add(new THREE.Line(lineGeo, mat));
-        if (measurePoints.length >= 2) addDot(endPoint);
+        const line = new THREE.Line(lineGeo, mat);
+        group.add(line);
+        if (measurePoints.length >= 2) {
+          dot2Ref.current.position.copy(endPoint);
+          group.add(dot2Ref.current);
+        }
       }
     }
   });

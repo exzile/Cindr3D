@@ -30,6 +30,8 @@ export default function SketchPalette() {
   const setFilletRadius = useCADStore((s) => s.setSketchFilletRadius);
   const tangentCircleRadius = useCADStore((s) => s.tangentCircleRadius);
   const setTangentCircleRadius = useCADStore((s) => s.setTangentCircleRadius);
+  const blendCurveMode = useCADStore((s) => s.blendCurveMode);
+  const setBlendCurveMode = useCADStore((s) => s.setBlendCurveMode);
   const conicRho = useCADStore((s) => s.conicRho);
   const setConicRho = useCADStore((s) => s.setConicRho);
   const chamferDist1 = useCADStore((s) => s.sketchChamferDist1);
@@ -64,6 +66,7 @@ export default function SketchPalette() {
   const isChamferTool = isChamferEqualTool || isChamferTwoDistTool || isChamferDistAngleTool;
   const isTangentCircleTool = activeTool === 'circle-2tangent';
   const isConicTool = activeTool === 'conic';
+  const isBlendCurveTool = activeTool === 'blend-curve';
 
   // Reset dismissed state each time a new sketch session starts
   useEffect(() => {
@@ -267,6 +270,22 @@ export default function SketchPalette() {
                 className="measure-select"
                 style={{ width: 64 }}
               />
+            </div>
+          )}
+
+          {/* Blend Curve mode — G1/G2 toggle while blend-curve tool is active (D44) */}
+          {isBlendCurveTool && (
+            <div className="sketch-palette-row">
+              <span className="sketch-palette-label">Continuity</span>
+              <select
+                className="measure-select"
+                value={blendCurveMode}
+                onChange={(e) => setBlendCurveMode(e.target.value as 'g1' | 'g2')}
+                style={{ width: 64 }}
+              >
+                <option value="g1">G1</option>
+                <option value="g2">G2</option>
+              </select>
             </div>
           )}
 
