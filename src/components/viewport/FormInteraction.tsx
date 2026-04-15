@@ -350,7 +350,8 @@ export default function FormInteraction() {
         break;
       }
       case 'form-subdivide': {
-        // D155: increment subdivision level of the active form body (clamp 1..5)
+        // D155: increment subdivision level of the active form body.
+        // FormBodies renderer caps subdivision at 3 for performance — match here.
         const bodyId = useCADStore.getState().activeFormBodyId;
         if (!bodyId) {
           setStatusMessage('Subdivide: no active form body — place a primitive first');
@@ -358,10 +359,10 @@ export default function FormInteraction() {
         }
         const body = useCADStore.getState().formBodies.find((b) => b.id === bodyId);
         if (!body) break;
-        const newLevel = Math.min(5, (body.subdivisionLevel ?? 1) + 1);
+        const newLevel = Math.min(3, (body.subdivisionLevel ?? 1) + 1);
         setFormBodySubdivisionLevel(bodyId, newLevel);
         formMeshesRef.current = [];
-        setStatusMessage(`Subdivision level set to ${newLevel}${newLevel === 5 ? ' (maximum)' : ''}`);
+        setStatusMessage(`Subdivision level set to ${newLevel}${newLevel === 3 ? ' (maximum)' : ''}`);
         break;
       }
       case 'form-crease': {

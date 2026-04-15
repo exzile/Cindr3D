@@ -123,6 +123,14 @@ function PlateObjectMesh({
   onTransformCommit: (id: string, pos: {x:number;y:number;z:number}, rot: {x:number;y:number;z:number}, scl: {x:number;y:number;z:number}) => void;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
+  // Callback-ref wrapper so the gizmo can re-render once the mesh mounts.
+  // Reading `meshRef.current` directly in render violates React's rules
+  // (the ref is null on the first render and never triggers an update).
+  const [meshInstance, setMeshInstance] = useState<THREE.Mesh | null>(null);
+  const setMeshRef = useCallback((m: THREE.Mesh | null) => {
+    meshRef.current = m;
+    setMeshInstance(m);
+  }, []);
 
   const pos = obj.position as { x: number; y: number; z?: number };
   const rot = typeof (obj as any).rotation === 'number'
@@ -165,7 +173,7 @@ function PlateObjectMesh({
   return (
     <>
       <mesh
-        ref={meshRef}
+        ref={setMeshRef}
         position={[pos.x, pos.y, pos.z ?? 0]}
         rotation={[rot.x, rot.y, rot.z]}
         scale={[scl.x, scl.y, scl.z]}
@@ -191,9 +199,9 @@ function PlateObjectMesh({
       </mesh>
 
       {/* Interactive transform gizmo — only for move/rotate/scale modes */}
-      {showGizmo && meshRef.current && (
+      {showGizmo && meshInstance && (
         <TransformControls
-          object={meshRef.current}
+          object={meshInstance}
           mode={gizmoMode}
           onMouseUp={handleDragEnd}
         />

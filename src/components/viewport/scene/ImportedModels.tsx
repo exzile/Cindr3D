@@ -4,6 +4,7 @@ import { useCADStore } from '../../../store/cadStore';
 
 export default function ImportedModels() {
   const features = useCADStore((s) => s.features);
+  const rollbackIndex = useCADStore((s) => s.rollbackIndex);
 
   // Tag imported meshes as pickable so the SketchPlaneSelector can hit-test them
   useEffect(() => {
@@ -22,7 +23,12 @@ export default function ImportedModels() {
 
   return (
     <>
-      {features.filter(f => f.type === 'import' && f.visible && f.mesh).map((feature) => (
+      {features.filter((f, i) => {
+        // D187 suppress + D190 rollback + visibility
+        if (f.type !== 'import' || !f.visible || f.suppressed || !f.mesh) return false;
+        if (rollbackIndex >= 0 && i > rollbackIndex) return false;
+        return true;
+      }).map((feature) => (
         <primitive key={feature.id} object={feature.mesh!} />
       ))}
     </>

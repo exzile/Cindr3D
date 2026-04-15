@@ -6,10 +6,14 @@ import { BODY_MATERIAL } from './bodyMaterial';
 /** Primitive solid bodies — Box / Cylinder / Sphere / Torus */
 export default function PrimitiveBodies() {
   const features = useCADStore((s) => s.features);
+  const rollbackIndex = useCADStore((s) => s.rollbackIndex);
   const bodies = useMemo(() => {
     const out: { id: string; geom: THREE.BufferGeometry }[] = [];
-    for (const f of features) {
-      if (f.type !== 'primitive' || !f.visible) continue;
+    for (let i = 0; i < features.length; i++) {
+      const f = features[i];
+      // D187 suppress + D190 rollback + visibility
+      if (f.type !== 'primitive' || !f.visible || f.suppressed) continue;
+      if (rollbackIndex >= 0 && i > rollbackIndex) continue;
       const kind = f.params.kind as 'box' | 'cylinder' | 'sphere' | 'torus';
       let geom: THREE.BufferGeometry | null = null;
       if (kind === 'box') {
@@ -38,7 +42,7 @@ export default function PrimitiveBodies() {
       if (geom) out.push({ id: f.id, geom });
     }
     return out;
-  }, [features]);
+  }, [features, rollbackIndex]);
 
   useEffect(() => {
     return () => { for (const b of bodies) b.geom.dispose(); };

@@ -1,11 +1,23 @@
 import { useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
-import type { SketchEntity, SketchPoint } from '../../../types/cad';
+import { GeometryEngine } from '../../../engine/GeometryEngine';
+import type { SketchEntity, SketchPoint, Sketch } from '../../../types/cad';
+
+/** One (code, value) pair from the DXF file. */
+interface DxfPair { code: number; value: string }
+
+/** Simple parsed entity — we keep one lookup map for single-valued codes
+ *  and an ordered `pairs` list so LWPOLYLINE can iterate repeated 10/20. */
+interface DxfEntity {
+  type: string;
+  lookup: Record<number, string>;
+  pairs: DxfPair[];
+}
 
 export function InsertDXFDialog({ onClose }: { onClose: () => void }) {
   const [scale, setScale] = useState(1);
-  const [flipZ, setFlipZ] = useState(false);
+  const [flipY, setFlipY] = useState(false);
   const [fileName, setFileName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
@@ -15,42 +27,76 @@ export function InsertDXFDialog({ onClose }: { onClose: () => void }) {
     fileInputRef.current?.click();
   };
 
-  /** Parse DXF R12 group-code format — alternating code/value lines. */
-  const parseDXF = (text: string) => {
+  /**
+   * Parse DXF R12 group-code format — alternating code/value lines.
+   * Preserves the full ordered pair list on each entity so repeated group
+   * codes (e.g. LWPOLYLINE 10/20 vertex pairs) survive parsing.
+   */
+  const parseDXF = (text: string): DxfEntity[] => {
     const lines = text.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim());
-    const pairs: Array<{ code: number; value: string }> = [];
+    const pairs: DxfPair[] = [];
     for (let i = 0; i + 1 < lines.length; i += 2) {
       const code = parseInt(lines[i], 10);
       if (!isNaN(code)) pairs.push({ code, value: lines[i + 1] ?? '' });
     }
 
-    // Find ENTITIES section
+    const entities: DxfEntity[] = [];
     let inEntities = false;
-    const entities: Array<Record<number, string>> = [];
-    let current: Record<number, string> | null = null;
+    let current: DxfEntity | null = null;
 
-    for (const { code, value } of pairs) {
-      if (code === 0 && value === 'SECTION') { inEntities = false; current = null; continue; }
-      if (code === 2 && value === 'ENTITIES') { inEntities = true; continue; }
-      if (code === 0 && value === 'ENDSEC') { if (inEntities && current) entities.push(current); inEntities = false; current = null; continue; }
+    const flushCurrent = () => {
+      if (current) { entities.push(current); current = null; }
+    };
+
+    for (let i = 0; i < pairs.length; i++) {
+      const { code, value } = pairs[i];
+
+      // SECTION bookkeeping
+      if (code === 0 && value === 'SECTION') {
+        flushCurrent();
+        // Peek at the next pair (code 2) for the section name
+        const next = pairs[i + 1];
+        inEntities = next && next.code === 2 && next.value === 'ENTITIES';
+        continue;
+      }
+      if (code === 0 && value === 'ENDSEC') {
+        flushCurrent();
+        inEntities = false;
+        continue;
+      }
       if (!inEntities) continue;
 
+      // New entity starts with code 0
       if (code === 0) {
-        if (current) entities.push(current);
-        current = { 0: value };
-      } else if (current) {
-        current[code] = value;
+        flushCurrent();
+        current = { type: value, lookup: {}, pairs: [] };
+        continue;
+      }
+      if (current) {
+        current.pairs.push({ code, value });
+        // First occurrence wins for single-valued lookup
+        if (!(code in current.lookup)) current.lookup[code] = value;
       }
     }
-    if (current && inEntities) entities.push(current);
+    flushCurrent();
     return entities;
   };
 
-  const applyTransform = (x: number, y: number, z?: number): { x: number; y: number; z: number } => ({
-    x: x * scale,
-    y: y * scale,
-    z: ((flipZ ? -(z ?? 0) : (z ?? 0))) * scale,
-  });
+  /** Project a DXF (x, y) pair onto the active sketch plane in world space. */
+  const makeSketchPointFactory = (sketch: Sketch) => {
+    const { t1, t2 } = GeometryEngine.getSketchAxes(sketch);
+    const origin = sketch.planeOrigin;
+    return (dxfX: number, dxfY: number): SketchPoint => {
+      const u = dxfX * scale;
+      const v = (flipY ? -dxfY : dxfY) * scale;
+      return {
+        id: crypto.randomUUID(),
+        x: origin.x + u * t1.x + v * t2.x,
+        y: origin.y + u * t1.y + v * t2.y,
+        z: origin.z + u * t1.z + v * t2.z,
+      };
+    };
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -63,6 +109,7 @@ export function InsertDXFDialog({ onClose }: { onClose: () => void }) {
       return;
     }
 
+    const mkPoint = makeSketchPointFactory(activeSketch);
     setFileName(file.name);
 
     const reader = new FileReader();
@@ -74,80 +121,79 @@ export function InsertDXFDialog({ onClose }: { onClose: () => void }) {
       let count = 0;
 
       for (const ent of dxfEntities) {
-        const type = ent[0] ?? '';
-
-        if (type === 'LINE') {
-          const p1 = applyTransform(parseFloat(ent[10] ?? '0'), parseFloat(ent[20] ?? '0'), parseFloat(ent[30] ?? '0'));
-          const p2 = applyTransform(parseFloat(ent[11] ?? '0'), parseFloat(ent[21] ?? '0'), parseFloat(ent[31] ?? '0'));
-          const points: SketchPoint[] = [
-            { id: crypto.randomUUID(), x: p1.x, y: p1.y, z: p1.z },
-            { id: crypto.randomUUID(), x: p2.x, y: p2.y, z: p2.z },
-          ];
-          const entity: SketchEntity = { id: crypto.randomUUID(), type: 'line', points };
+        if (ent.type === 'LINE') {
+          const x1 = parseFloat(ent.lookup[10] ?? '0');
+          const y1 = parseFloat(ent.lookup[20] ?? '0');
+          const x2 = parseFloat(ent.lookup[11] ?? '0');
+          const y2 = parseFloat(ent.lookup[21] ?? '0');
+          const entity: SketchEntity = {
+            id: crypto.randomUUID(),
+            type: 'line',
+            points: [mkPoint(x1, y1), mkPoint(x2, y2)],
+          };
           addSketchEntity(entity);
           count++;
-        } else if (type === 'CIRCLE') {
-          const cx = parseFloat(ent[10] ?? '0');
-          const cy = parseFloat(ent[20] ?? '0');
-          const cz = parseFloat(ent[30] ?? '0');
-          const r  = parseFloat(ent[40] ?? '0');
+        } else if (ent.type === 'CIRCLE') {
+          const cx = parseFloat(ent.lookup[10] ?? '0');
+          const cy = parseFloat(ent.lookup[20] ?? '0');
+          const r  = parseFloat(ent.lookup[40] ?? '0');
           if (!r) continue;
-          const t = applyTransform(cx, cy, cz);
           const entity: SketchEntity = {
             id: crypto.randomUUID(),
             type: 'circle',
-            points: [{ id: crypto.randomUUID(), x: t.x, y: t.y, z: t.z }],
+            points: [mkPoint(cx, cy)],
             radius: r * scale,
           };
           addSketchEntity(entity);
           count++;
-        } else if (type === 'ARC') {
-          const cx = parseFloat(ent[10] ?? '0');
-          const cy = parseFloat(ent[20] ?? '0');
-          const cz = parseFloat(ent[30] ?? '0');
-          const r  = parseFloat(ent[40] ?? '0');
-          const sa = parseFloat(ent[50] ?? '0');
-          const ea = parseFloat(ent[51] ?? '360');
+        } else if (ent.type === 'ARC') {
+          const cx = parseFloat(ent.lookup[10] ?? '0');
+          const cy = parseFloat(ent.lookup[20] ?? '0');
+          const r  = parseFloat(ent.lookup[40] ?? '0');
+          const sa = parseFloat(ent.lookup[50] ?? '0');
+          const ea = parseFloat(ent.lookup[51] ?? '360');
           if (!r) continue;
-          const t = applyTransform(cx, cy, cz);
           const entity: SketchEntity = {
             id: crypto.randomUUID(),
             type: 'arc',
-            points: [{ id: crypto.randomUUID(), x: t.x, y: t.y, z: t.z }],
+            points: [mkPoint(cx, cy)],
             radius: r * scale,
             startAngle: sa,
             endAngle: ea,
           };
           addSketchEntity(entity);
           count++;
-        } else if (type === 'LWPOLYLINE') {
-          // LWPOLYLINE: group 10/20 pairs form the vertices; count in group 90
-          const vertexCount = parseInt(ent[90] ?? '0', 10);
-          if (!vertexCount) continue;
-          // Collect all group-10 and group-20 entries (there are multiple with same code)
-          // They've been overwritten in our map — we need to re-parse inline
-          // Since we stored only the last value per code, re-extract from raw text isn't feasible here.
-          // As a fallback, emit a single segment with whatever values we have.
-          const px = parseFloat(ent[10] ?? '0');
-          const py = parseFloat(ent[20] ?? '0');
-          const t = applyTransform(px, py);
-          const entity: SketchEntity = {
-            id: crypto.randomUUID(),
-            type: 'spline',
-            points: [{ id: crypto.randomUUID(), x: t.x, y: t.y, z: 0 }],
-            closed: (parseInt(ent[70] ?? '0', 10) & 1) === 1,
-          };
-          addSketchEntity(entity);
-          count++;
-        } else if (type === 'POINT') {
-          const px = parseFloat(ent[10] ?? '0');
-          const py = parseFloat(ent[20] ?? '0');
-          const pz = parseFloat(ent[30] ?? '0');
-          const t = applyTransform(px, py, pz);
+        } else if (ent.type === 'LWPOLYLINE' || ent.type === 'POLYLINE') {
+          // Iterate the ordered pair list, picking up every (10, 20) pair in
+          // order. Each pair is a polyline vertex. Repeated codes are
+          // preserved by the new parser.
+          const verts: SketchPoint[] = [];
+          let pendingX: number | null = null;
+          for (const { code, value } of ent.pairs) {
+            if (code === 10) { pendingX = parseFloat(value); }
+            else if (code === 20 && pendingX !== null) {
+              verts.push(mkPoint(pendingX, parseFloat(value)));
+              pendingX = null;
+            }
+          }
+          if (verts.length >= 2) {
+            const closed = (parseInt(ent.lookup[70] ?? '0', 10) & 1) === 1;
+            const entity: SketchEntity = {
+              id: crypto.randomUUID(),
+              type: 'spline',
+              points: verts,
+              closed,
+            };
+            addSketchEntity(entity);
+            count++;
+          }
+        } else if (ent.type === 'POINT') {
+          const px = parseFloat(ent.lookup[10] ?? '0');
+          const py = parseFloat(ent.lookup[20] ?? '0');
           const entity: SketchEntity = {
             id: crypto.randomUUID(),
             type: 'point',
-            points: [{ id: crypto.randomUUID(), x: t.x, y: t.y, z: t.z }],
+            points: [mkPoint(px, py)],
           };
           addSketchEntity(entity);
           count++;
@@ -196,12 +242,12 @@ export function InsertDXFDialog({ onClose }: { onClose: () => void }) {
           <label className="checkbox-label">
             <input
               type="checkbox"
-              checked={flipZ}
-              onChange={(e) => setFlipZ(e.target.checked)}
+              checked={flipY}
+              onChange={(e) => setFlipY(e.target.checked)}
             />
-            Flip Z axis
+            Flip Y axis
           </label>
-          <p className="dialog-hint">Imports LINE, CIRCLE, ARC, LWPOLYLINE, and POINT entities from DXF R12 into the active sketch.</p>
+          <p className="dialog-hint">Imports LINE, CIRCLE, ARC, LWPOLYLINE, and POINT entities from DXF R12 into the active sketch plane.</p>
         </div>
         <div className="dialog-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>

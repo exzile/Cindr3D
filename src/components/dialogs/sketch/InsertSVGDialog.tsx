@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
-import type { SketchEntity, SketchPoint } from '../../../types/cad';
+import { GeometryEngine } from '../../../engine/GeometryEngine';
+import type { SketchEntity, SketchPoint, Sketch } from '../../../types/cad';
 
 export function InsertSVGDialog({ onClose }: { onClose: () => void }) {
   const [scale, setScale] = useState(1);
@@ -27,10 +28,21 @@ export function InsertSVGDialog({ onClose }: { onClose: () => void }) {
     return pts;
   };
 
-  const applyTransform = (x: number, y: number): { x: number; y: number } => ({
-    x: x * scale,
-    y: (flipY ? -y : y) * scale,
-  });
+  /** Project a 2D SVG (u,v) into world space using the active sketch's plane axes. */
+  const makeSketchPointFactory = (sketch: Sketch) => {
+    const { t1, t2 } = GeometryEngine.getSketchAxes(sketch);
+    const origin = sketch.planeOrigin;
+    return (svgX: number, svgY: number): SketchPoint => {
+      const u = svgX * scale;
+      const v = (flipY ? -svgY : svgY) * scale;
+      return {
+        id: crypto.randomUUID(),
+        x: origin.x + u * t1.x + v * t2.x,
+        y: origin.y + u * t1.y + v * t2.y,
+        z: origin.z + u * t1.z + v * t2.z,
+      };
+    };
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -42,6 +54,9 @@ export function InsertSVGDialog({ onClose }: { onClose: () => void }) {
       onClose();
       return;
     }
+
+    // Plane-aware projection: SVG (u,v) → sketch plane world coordinates.
+    const mkPoint = makeSketchPointFactory(activeSketch);
 
     setFileName(file.name);
 
@@ -71,10 +86,7 @@ export function InsertSVGDialog({ onClose }: { onClose: () => void }) {
 
         try {
           const rawPts = samplePath(tmpPath as SVGGeometryElement, 64);
-          const points: SketchPoint[] = rawPts.map((p) => {
-            const t = applyTransform(p.x, p.y);
-            return { id: crypto.randomUUID(), x: t.x, y: t.y, z: 0 };
-          });
+          const points: SketchPoint[] = rawPts.map((p) => mkPoint(p.x, p.y));
 
           if (points.length >= 2) {
             const entity: SketchEntity = {
@@ -98,8 +110,7 @@ export function InsertSVGDialog({ onClose }: { onClose: () => void }) {
         const r  = parseFloat(circleEl.getAttribute('r')  ?? '0');
         if (!r) return;
 
-        const t = applyTransform(cx, cy);
-        const center: SketchPoint = { id: crypto.randomUUID(), x: t.x, y: t.y, z: 0 };
+        const center = mkPoint(cx, cy);
 
         const entity: SketchEntity = {
           id: crypto.randomUUID(),
@@ -119,16 +130,13 @@ export function InsertSVGDialog({ onClose }: { onClose: () => void }) {
         const rh = parseFloat(rectEl.getAttribute('height') ?? '0');
         if (!rw || !rh) return;
 
-        // Four corners
-        const corners = [
-          applyTransform(rx,      ry),
-          applyTransform(rx + rw, ry),
-          applyTransform(rx + rw, ry + rh),
-          applyTransform(rx,      ry + rh),
+        // Four corners, projected onto the active sketch plane
+        const points: SketchPoint[] = [
+          mkPoint(rx,      ry),
+          mkPoint(rx + rw, ry),
+          mkPoint(rx + rw, ry + rh),
+          mkPoint(rx,      ry + rh),
         ];
-        const points: SketchPoint[] = corners.map((c) => ({
-          id: crypto.randomUUID(), x: c.x, y: c.y, z: 0,
-        }));
 
         const entity: SketchEntity = {
           id: crypto.randomUUID(),

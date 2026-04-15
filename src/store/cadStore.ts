@@ -1025,8 +1025,10 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   }),
 
   setFormBodySubdivisionLevel: (id, level) => set((state) => ({
+    // Clamp at 3 — FormBodies renderer caps subdivision at 3 for performance;
+    // higher levels would be silently ignored and confuse the user.
     formBodies: state.formBodies.map((b) =>
-      b.id !== id ? b : { ...b, subdivisionLevel: Math.max(1, Math.min(5, level)) }
+      b.id !== id ? b : { ...b, subdivisionLevel: Math.max(1, Math.min(3, level)) }
     ),
   })),
 

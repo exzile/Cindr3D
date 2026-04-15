@@ -30,13 +30,16 @@ export default function MeasureInteraction() {
   const _endScratch = useRef(new THREE.Vector3());
 
   useEffect(() => {
-    // Assign geometry + material to the reusable meshes once
+    // Assign geometry + material to the reusable meshes once.
+    // Mark them non-pickable so the Measure raycast can't hit its own preview.
     dot1Ref.current.geometry = dotGeoRef.current;
     dot1Ref.current.material = dotMatRef.current;
     dot1Ref.current.renderOrder = 999;
+    dot1Ref.current.userData.measurePreview = true;
     dot2Ref.current.geometry = dotGeoRef.current;
     dot2Ref.current.material = dotMatRef.current;
     dot2Ref.current.renderOrder = 999;
+    dot2Ref.current.userData.measurePreview = true;
 
     const m1 = matRef.current;
     const m2 = dashedRef.current;
@@ -54,10 +57,13 @@ export default function MeasureInteraction() {
     );
     raycaster.setFromCamera(mouse, camera);
 
-    // Try to hit meshes in the scene first
+    // Try to hit meshes in the scene first — skip our own measure preview
+    // objects so the raycast can't hit the marker dots / preview line.
     const meshes: THREE.Object3D[] = [];
     scene.traverse((obj) => {
-      if ((obj as THREE.Mesh).isMesh) meshes.push(obj);
+      if ((obj as THREE.Mesh).isMesh && !obj.userData.measurePreview) {
+        meshes.push(obj);
+      }
     });
     const hits = raycaster.intersectObjects(meshes, false);
     if (hits.length > 0) return hits[0].point.clone();
@@ -129,6 +135,8 @@ export default function MeasureInteraction() {
   // Draw measurement line / preview in the scene
   useFrame(() => {
     if (!previewRef.current) return;
+    // Mark the whole preview subtree non-pickable for the measure raycast
+    previewRef.current.userData.measurePreview = true;
     // Remove reusable dot meshes first so clearGroupChildren won't dispose their shared geometry
     previewRef.current.remove(dot1Ref.current);
     previewRef.current.remove(dot2Ref.current);
@@ -152,6 +160,7 @@ export default function MeasureInteraction() {
         // Line between 2 points — geometry recreated per frame (2 verts, minimal GC)
         const lineGeo = new THREE.BufferGeometry().setFromPoints([p1v, endPoint]);
         const line = new THREE.Line(lineGeo, mat);
+        line.userData.measurePreview = true;
         group.add(line);
         if (measurePoints.length >= 2) {
           dot2Ref.current.position.copy(endPoint);
