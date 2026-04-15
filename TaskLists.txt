@@ -921,7 +921,96 @@ P15 — PATTERNS
                         rendered behind all sketch entities; controlled by a CanvasPanel
                         (opacity slider, scale, X/Y offset). No timeline entry needed.
 
-            P16 — OUT OF SCOPE FOR NOW (documented so we don't forget)
+            P15.7 — PARAMETRIC WORKFLOW (timeline-level operations)
+            These gaps are orthogonal to individual feature tools — they make the
+            parametric history system functional. Confirmed absent by code_search:
+            no editFeature, editingFeature, rollback, reorderFeature, or sketchOnFace
+            patterns exist anywhere in the codebase. Feature.suppressed exists in
+            cad.ts and cadStore.ts but has no UI to toggle it.
+
+            [ ] D186. Edit Feature ⭐ CRITICAL
+                      - Double-click a timeline entry to reopen its committed dialog
+                        with current param values pre-filled for editing.
+                      - Without this, no value can ever be changed after commit,
+                        making the parametric system effectively read-only.
+                      - Implementation: editingFeatureId: string|null in cadStore.
+                        Timeline.tsx: onDoubleClick → setEditingFeature(id).
+                        Each panel/dialog (ExtrudePanel, RevolvePanel, etc.) checks
+                        editingFeatureId on mount and pre-fills inputs from
+                        feature.params. commitXxx re-uses the feature slot instead
+                        of pushing a new one (replaceFeature vs addFeature).
+                      - Affects: every dialog-backed feature in the system.
+
+            [ ] D187. Suppress / Unsuppress Feature ⭐ HIGH IMPACT
+                      - Feature.suppressed: boolean is defined in cad.ts and stored
+                        in cadStore.ts, but there is no UI action to toggle it and
+                        no renderer logic to skip suppressed features.
+                      - Timeline.tsx renders the suppressed state visually but wires
+                        no click/right-click handler to change it.
+                      - Implementation: toggleFeatureSuppressed(id) store action;
+                        right-click context menu in Timeline.tsx with
+                        'Suppress' / 'Unsuppress'; ExtrudedBodies / PrimitiveBodies
+                        skip features where suppressed === true.
+
+            [ ] D188. Sketch on Body Face ⭐ CRITICAL
+                      - Click a planar face of a solid body to start a new sketch
+                        aligned to that face's plane (normal + origin from the face
+                        centroid). Currently only XY/XZ/YZ/offset planes work.
+                      - Without this, users cannot add features to an existing
+                        solid face — the most common solid modeling workflow.
+                      - Implementation: raycaster in 'sketch' tool mode detects a
+                        body face hit; compute face normal via triangle cross-product;
+                        derive t1/t2 axes; call startSketch with a custom plane
+                        normal + origin. Requires face-normal extraction from
+                        BufferGeometry (existing mesh data, no edge-picker needed).
+
+            [ ] D189. Timeline Reorder (drag features)
+                      - Drag a timeline entry to a different position to change the
+                        order in which features are applied to the model.
+                      - Implementation: drag-and-drop in Timeline.tsx; reorderFeature
+                        store action that splices the features array; full
+                        re-evaluation of the feature stack after reorder.
+                      - Depends on D186 Edit Feature infrastructure for re-evaluation.
+
+            [ ] D190. Rollback Bar
+                      - A draggable end-marker in the timeline that suppresses all
+                        features after it, rolling the model back to any point in
+                        history for inspection or sketching.
+                      - Implementation: rollbackIndex: number in cadStore (default
+                        features.length). Renderer skips features at index >
+                        rollbackIndex. Timeline.tsx shows the bar as a draggable
+                        divider. Sketching after rollback inserts the new feature
+                        at rollbackIndex rather than appending.
+
+            [ ] D191. Split Face (solid)
+                      - D172 splits the solid body into two bodies. This splits one
+                        face into multiple faces within the same body (e.g. split a
+                        top face into two halves along a sketch line).
+                      - Distinct from D88 Silhouette Split and D172 Split Body.
+                      - SplitFaceDialog: target face description, splitting tool
+                        (sketch / construction plane / edge).
+                      - BLOCKED: requires face-picker infrastructure.
+
+            [ ] D192. Offset Plane (explicit Construct toolbar item)
+                      - D60 wires 'Offset Plane' only via the ComponentTree sketch
+                        context menu. Fusion 360 also exposes it as a first-class
+                        item in CONSTRUCT > Offset Plane with a body/face origin
+                        picker and numeric distance.
+                      - Implementation: add 'offset-plane' to constructMenuItems in
+                        Toolbar.tsx; reuse or extend ConstructionPlaneDialog with
+                        initialMethod='offset'.
+
+            [ ] D193. New Component / Make Components from Bodies
+                      - New Component: creates an empty Component container that
+                        subsequent features are placed inside. Absent from Toolbar.
+                      - Make Components from Bodies: promotes one or more solid
+                        feature bodies to named Component records in the store,
+                        enabling joint and assembly operations (D37 A1-A10).
+                      - Implementation: newComponent() + makeComponentsFromBodies()
+                        store actions; ComponentBrowser (A1) needed to expose them
+                        in UI; can be prototyped as simple Toolbar menu items.
+
+P16 — OUT OF SCOPE FOR NOW (documented so we don't forget)
 - Plastic tab: Boss / Snap Fit / Lip (injection-molding only).
 - Generative Design workspace.
 - Simulation / CAM / Render / Animation workspaces.

@@ -4,6 +4,7 @@ import type {
   Component, Body, ConstructionGeometry, Joint,
   MaterialAppearance,
 } from '../types/cad';
+import { GeometryEngine } from '../engine/GeometryEngine';
 
 interface ComponentStore {
   // Root assembly
@@ -36,6 +37,8 @@ interface ComponentStore {
   setBodyMaterial: (id: string, material: MaterialAppearance) => void;
   setBodyMesh: (id: string, mesh: THREE.Mesh | THREE.Group) => void;
   addFeatureToBody: (bodyId: string, featureId: string) => void;
+  /** D168: Mirror a body through XY/XZ/YZ plane, adding the reflected body to the same component. */
+  mirrorBody: (bodyId: string, plane: 'XY' | 'XZ' | 'YZ') => string | null;
 
   // Construction geometry
   addConstruction: (geometry: Omit<ConstructionGeometry, 'id'>) => string;

@@ -1488,4 +1488,51 @@ export class GeometryEngine {
     }
     geom.computeVertexNormals();
   }
+
+  // ── D168 Mirror Mesh ───────────────────────────────────────────────────────
+  /**
+   * Reflect a mesh through a named plane (XY, XZ, YZ).
+   * Returns a new THREE.Mesh with cloned + reflected geometry and flipped face normals.
+   * Caller owns the returned mesh (must dispose when done).
+   */
+  static mirrorMesh(source: THREE.Mesh, plane: 'XY' | 'XZ' | 'YZ'): THREE.Mesh {
+    // Build a scale matrix that reflects through the chosen plane
+    const scale = new THREE.Vector3(
+      plane === 'YZ' ? -1 : 1,
+      plane === 'XZ' ? -1 : 1,
+      plane === 'XY' ? -1 : 1,
+    );
+    const reflectMatrix = new THREE.Matrix4().makeScale(scale.x, scale.y, scale.z);
+
+    // Clone the geometry and apply the reflection
+    const geo = source.geometry.clone();
+    geo.applyMatrix4(reflectMatrix);
+
+    // Reflection reverses winding order → flip face indices so normals are outward
+    const idx = geo.index;
+    if (idx) {
+      for (let i = 0; i < idx.count; i += 3) {
+        const a = idx.getX(i + 1);
+        const b = idx.getX(i + 2);
+        idx.setX(i + 1, b);
+        idx.setX(i + 2, a);
+      }
+      idx.needsUpdate = true;
+    } else {
+      // Non-indexed: swap vertices 1 and 2 in each triangle
+      const pos = geo.attributes.position;
+      const tmp = new THREE.Vector3();
+      for (let i = 0; i < pos.count; i += 3) {
+        tmp.fromBufferAttribute(pos, i + 1);
+        pos.setXYZ(i + 1, pos.getX(i + 2), pos.getY(i + 2), pos.getZ(i + 2));
+        pos.setXYZ(i + 2, tmp.x, tmp.y, tmp.z);
+      }
+      pos.needsUpdate = true;
+    }
+    geo.computeVertexNormals();
+
+    const mat = Array.isArray(source.material) ? source.material[0].clone() : source.material.clone();
+    const mirrored = new THREE.Mesh(geo, mat);
+    return mirrored;
+  }
 }
