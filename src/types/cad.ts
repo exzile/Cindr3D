@@ -75,6 +75,22 @@ export type Tool =
   | 'linetype-convert'
   | 'conic'
   | 'blend-curve'
+  | 'sketch-project'
+  | 'sketch-intersect'
+  | 'sketch-project-surface'
+  // ── Geometric constraint tools ──
+  | 'constrain-coincident'
+  | 'constrain-collinear'
+  | 'constrain-concentric'
+  | 'constrain-fix'
+  | 'constrain-parallel'
+  | 'constrain-perpendicular'
+  | 'constrain-horizontal'
+  | 'constrain-vertical'
+  | 'constrain-tangent'
+  | 'constrain-equal'
+  | 'constrain-midpoint'
+  | 'constrain-symmetric'
   // ── Form (T-Spline / subdivision) workspace tools ──
   | 'form-box'
   | 'form-plane'
@@ -106,7 +122,8 @@ export type Tool =
   | 'form-freeze'
   | 'form-delete'
   | 'patch'
-  | 'ruled-surface';
+  | 'ruled-surface'
+  | 'sketch-text';
 
 export type ViewMode = '3d' | 'sketch';
 

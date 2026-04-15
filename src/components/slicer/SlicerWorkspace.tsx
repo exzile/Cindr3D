@@ -1,15 +1,17 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
+import type * as React from 'react';
 import { Canvas } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, TransformControls, Line, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import {
-  Plus, Trash2, LayoutGrid, XCircle, ChevronDown, ChevronRight,
+  Plus, Trash2, LayoutGrid, XCircle,
   Edit3, Eye, EyeOff, Download, Send, Play, X, Settings, Layers,
   Box, Printer, Droplets, SlidersHorizontal,
   Upload, Move, RotateCw, Maximize2, FlipHorizontal, Search, RefreshCw,
-  Lock, Unlock, ArrowDownToLine,
+  Lock, Unlock, ArrowDownToLine, Puzzle,
 } from 'lucide-react';
+import PluginsPage from './PluginsPage';
 import { useSlicerStore } from '../../store/slicerStore';
 import { useCADStore } from '../../store/cadStore';
 import { usePrinterStore } from '../../store/printerStore';
@@ -23,6 +25,8 @@ import type {
 // =============================================================================
 import { colors, sharedStyles } from '../../utils/theme';
 import { normalizeRotationRadians, normalizeScale } from '../../utils/slicerTransforms';
+import { Num, Check, Sel, Density, SectionDivider } from './SettingsFieldControls';
+import { SlicerSection } from './SlicerSection';
 
 const panelStyle: React.CSSProperties = {
   background: colors.panel,
@@ -134,15 +138,18 @@ function PlateObjectMesh({
   }, []);
 
   const pos = obj.position as { x: number; y: number; z?: number };
-  const rot = normalizeRotationRadians((obj as any).rotation);
-  const scl = normalizeScale((obj as any).scale);
+  const rot = normalizeRotationRadians((obj as { rotation?: unknown }).rotation);
+  const scl = normalizeScale((obj as { scale?: unknown }).scale);
 
   const handleClick = useCallback((e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
     onClick();
   }, [onClick]);
 
-  const hasGeometry = obj.geometry && (obj.geometry instanceof THREE.BufferGeometry || (obj.geometry as any)?.isBufferGeometry);
+  const geometry = obj.geometry as unknown;
+  const hasGeometry =
+    geometry instanceof THREE.BufferGeometry ||
+    (!!geometry && typeof geometry === 'object' && (geometry as { isBufferGeometry?: boolean }).isBufferGeometry === true);
 
   // Three.js gizmo mode (TransformControls only supports translate/rotate/scale)
   const locked = !!obj.locked;
@@ -377,9 +384,9 @@ function ViewportOverlays() {
 
   const obj = plateObjects.find((o) => o.id === selectedId) ?? null;
 
-  const upd = (changes: Record<string, any>) => {
+  const upd = (changes: Record<string, unknown>) => {
     if (!obj) return;
-    updatePlateObject(obj.id, changes as any);
+    updatePlateObject(obj.id, changes as Partial<PlateObject>);
   };
 
   // ── shared styles ────────────────────────────────────────────────────────────
@@ -469,8 +476,8 @@ function ViewportOverlays() {
   if (!obj) return toolbar;
 
   const pos    = obj.position as { x: number; y: number; z: number };
-  const rot    = (obj as any).rotation as { x: number; y: number; z: number } ?? { x: 0, y: 0, z: 0 };
-  const scl    = (obj as any).scale    as { x: number; y: number; z: number } ?? { x: 1, y: 1, z: 1 };
+  const rot = normalizeRotationRadians((obj as { rotation?: unknown }).rotation);
+  const scl = normalizeScale((obj as { scale?: unknown }).scale);
   const locked = !!obj.locked;
 
   const bboxSize = {
@@ -758,7 +765,7 @@ function ViewportOverlays() {
       <div style={{ display: 'flex', gap: 6 }}>
         {(['x', 'y', 'z'] as const).map((ax, i) => {
           const key = `mirror${ax.toUpperCase()}` as 'mirrorX' | 'mirrorY' | 'mirrorZ';
-          const active = !!(obj as any)[key];
+          const active = !!(obj as { mirrorX?: boolean; mirrorY?: boolean; mirrorZ?: boolean })[key];
           return (
             <button
               key={ax}
@@ -795,7 +802,7 @@ function ViewportOverlays() {
         ['wallCount',        'Wall Count',      '',  1, 20 ],
         ['layerHeight',      'Layer Height',    'mm',0.05,1],
       ] as [string, string, string, number, number][]).map(([key, label, unit, min, max]) => {
-        const perObj = (obj as any).perObjectSettings ?? {};
+        const perObj = (obj as { perObjectSettings?: Record<string, number | undefined> }).perObjectSettings ?? {};
         const val = perObj[key] ?? '';
         return (
           <div key={key} style={rowStyle}>
@@ -838,41 +845,6 @@ function ViewportOverlays() {
 }
 
 // =============================================================================
-// Collapsible Section
-// =============================================================================
-function Section({
-  title,
-  icon,
-  defaultOpen = true,
-  children,
-}: {
-  title: string;
-  icon?: React.ReactNode;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div style={{ borderBottom: `1px solid ${colors.panelBorder}` }}>
-      <div
-        onClick={() => setOpen(!open)}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          padding: '8px 10px', cursor: 'pointer',
-          color: colors.text, fontSize: 12, fontWeight: 600,
-          userSelect: 'none',
-        }}
-      >
-        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        {icon}
-        {title}
-      </div>
-      {open && <div style={{ padding: '0 10px 10px' }}>{children}</div>}
-    </div>
-  );
-}
-
-// =============================================================================
 // Left Panel: Objects List
 // =============================================================================
 function ObjectsPanel() {
@@ -884,7 +856,7 @@ function ObjectsPanel() {
   const clearPlate = useSlicerStore((s) => s.clearPlate);
   const addToPlate = useSlicerStore((s) => s.addToPlate);
   const updatePlateObject = useSlicerStore((s) => s.updatePlateObject);
-  const importFileToPlate = useSlicerStore((s) => (s as any).importFileToPlate as (f: File) => Promise<void>);
+  const importFileToPlate = useSlicerStore((s) => s.importFileToPlate);
   const getActivePrinterProfile = useSlicerStore((s) => s.getActivePrinterProfile);
   const features = useCADStore((s) => s.features);
 
@@ -933,14 +905,14 @@ function ObjectsPanel() {
     return `${sx} × ${sy} × ${sz} mm`;
   };
 
-  const updObj = useCallback((updates: Record<string, any>) => {
+  const updObj = useCallback((updates: Record<string, unknown>) => {
     if (!selectedId) return;
-    updatePlateObject(selectedId, updates as any);
+    updatePlateObject(selectedId, updates as Partial<PlateObject>);
   }, [selectedId, updatePlateObject]);
 
   const pos = selectedObj ? (selectedObj.position as { x: number; y: number; z: number }) : null;
-  const rot = selectedObj ? normalizeRotationRadians((selectedObj as any).rotation) : null;
-  const scl = selectedObj ? normalizeScale((selectedObj as any).scale) : null;
+  const rot = selectedObj ? normalizeRotationRadians((selectedObj as { rotation?: unknown }).rotation) : null;
+  const scl = selectedObj ? normalizeScale((selectedObj as { scale?: unknown }).scale) : null;
 
   const numStyle: React.CSSProperties = { ...inputStyle, width: 52, padding: '2px 4px', fontSize: 11 };
   const xyzRow = (
@@ -1050,7 +1022,7 @@ function ObjectsPanel() {
               onClick={() => {
                 const b   = selectedObj.boundingBox;
                 const bv  = getActivePrinterProfile()?.buildVolume ?? { x: 220, y: 220, z: 250 };
-                const s   = (selectedObj as any).scale ?? { x: 1, y: 1, z: 1 };
+                const s = normalizeScale((selectedObj as { scale?: unknown }).scale);
                 const w   = (b.max.x - b.min.x) * s.x;
                 const d   = (b.max.y - b.min.y) * s.y;
                 const minZ = b.min.z * s.z;
@@ -1066,17 +1038,17 @@ function ObjectsPanel() {
           <div style={{ display: 'flex', gap: 4 }}>
             <button style={{ ...btnBase, fontSize: 10, padding: '3px 6px', flex: 1 }}
               title="Mirror X"
-              onClick={() => updObj({ mirrorX: !(selectedObj as any).mirrorX })}>
+              onClick={() => updObj({ mirrorX: !(selectedObj as { mirrorX?: boolean }).mirrorX })}>
               <FlipHorizontal size={10} /> X
             </button>
             <button style={{ ...btnBase, fontSize: 10, padding: '3px 6px', flex: 1 }}
               title="Mirror Y"
-              onClick={() => updObj({ mirrorY: !(selectedObj as any).mirrorY })}>
+              onClick={() => updObj({ mirrorY: !(selectedObj as { mirrorY?: boolean }).mirrorY })}>
               <FlipHorizontal size={10} /> Y
             </button>
             <button style={{ ...btnBase, fontSize: 10, padding: '3px 6px', flex: 1 }}
               title="Mirror Z"
-              onClick={() => updObj({ mirrorZ: !(selectedObj as any).mirrorZ })}>
+              onClick={() => updObj({ mirrorZ: !(selectedObj as { mirrorZ?: boolean }).mirrorZ })}>
               <FlipHorizontal size={10} /> Z
             </button>
           </div>
@@ -1123,113 +1095,6 @@ function ObjectsPanel() {
   );
 }
 
-function Num({
-  label,
-  value,
-  onChange,
-  step = 1,
-  min = 0,
-  max = 9999,
-  unit,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  step?: number;
-  min?: number;
-  max?: number;
-  unit?: string;
-}) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 6 }}>
-      <div style={labelStyle}>{label}{unit ? ` (${unit})` : ''}</div>
-      <input
-        type="number"
-        style={inputStyle}
-        value={value}
-        step={step}
-        min={min}
-        max={max}
-        onChange={(e) => onChange(parseFloat(e.target.value) || min)}
-      />
-    </div>
-  );
-}
-
-function Check({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: colors.text, fontSize: 12, cursor: 'pointer', marginBottom: 6 }}>
-      <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} style={{ accentColor: colors.accent }} />
-      {label}
-    </label>
-  );
-}
-
-function Sel<T extends string>({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: T;
-  onChange: (v: T) => void;
-  options: { value: T; label: string }[];
-}) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 6 }}>
-      <div style={labelStyle}>{label}</div>
-      <select style={selectStyle} value={value} onChange={(e) => onChange(e.target.value as T)}>
-        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-    </div>
-  );
-}
-
-function Density({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 6 }}>
-      <div style={labelStyle}>Density ({value}%)</div>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          value={value}
-          onChange={(e) => onChange(parseInt(e.target.value))}
-          style={{ flex: 1, accentColor: colors.accent }}
-        />
-        <input
-          type="number"
-          style={{ ...inputStyle, width: 48 }}
-          value={value}
-          min={0}
-          max={100}
-          onChange={(e) => onChange(parseInt(e.target.value) || 0)}
-        />
-      </div>
-    </div>
-  );
-}
-
-function SectionDivider({ label }: { label: string }) {
-  return (
-    <div style={{
-      fontSize: 10,
-      fontWeight: 700,
-      color: colors.textDim,
-      textTransform: 'uppercase',
-      letterSpacing: '0.6px',
-      borderBottom: `1px solid ${colors.panelBorder}`,
-      paddingBottom: 3,
-      marginBottom: 8,
-      marginTop: 4,
-    }}>
-      {label}
-    </div>
-  );
-}
-
 // =============================================================================
 // Right Panel: Settings
 // =============================================================================
@@ -1254,8 +1119,8 @@ function SettingsPanel({ onEditProfile }: { onEditProfile: (type: 'printer' | 'm
 
   const [settingsSearch, setSettingsSearch] = useState('');
 
-  const upd = useCallback((updates: Partial<PrintProfile>) => {
-    if (print) updatePrintProfile(print.id, updates);
+  const upd = useCallback((updates: Record<string, unknown>) => {
+    if (print) updatePrintProfile(print.id, updates as Partial<PrintProfile>);
   }, [print, updatePrintProfile]);
 
   return (
@@ -1286,7 +1151,7 @@ function SettingsPanel({ onEditProfile }: { onEditProfile: (type: 'printer' | 'm
       <div style={{ flex: 1, overflowY: 'auto' }}>
 
         {/* ── Printer ──────────────────────────────────────────────────── */}
-        <Section title="Printer" icon={<Printer size={14} />}>
+        <SlicerSection title="Printer" icon={<Printer size={14} />}>
           <select style={selectStyle} value={activePrinterId} onChange={(e) => setActivePrinter(e.target.value)}>
             {printerProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
@@ -1300,10 +1165,10 @@ function SettingsPanel({ onEditProfile }: { onEditProfile: (type: 'printer' | 'm
           <button style={{ ...btnBase, marginTop: 6, fontSize: 11 }} onClick={() => onEditProfile('printer')}>
             <Edit3 size={12} /> Edit Printer
           </button>
-        </Section>
+        </SlicerSection>
 
         {/* ── Material ─────────────────────────────────────────────────── */}
-        <Section title="Material" icon={<Droplets size={14} />}>
+        <SlicerSection title="Material" icon={<Droplets size={14} />}>
           <select style={selectStyle} value={activeMaterialId} onChange={(e) => setActiveMaterial(e.target.value)}>
             {materialProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
@@ -1322,10 +1187,10 @@ function SettingsPanel({ onEditProfile }: { onEditProfile: (type: 'printer' | 'm
           <button style={{ ...btnBase, marginTop: 6, fontSize: 11 }} onClick={() => onEditProfile('material')}>
             <Edit3 size={12} /> Edit Material
           </button>
-        </Section>
+        </SlicerSection>
 
         {/* ── Print Profile selector ────────────────────────────────────── */}
-        <Section title="Print Profile" icon={<SlidersHorizontal size={14} />}>
+        <SlicerSection title="Print Profile" icon={<SlidersHorizontal size={14} />}>
           <div style={{ display: 'flex', gap: 6 }}>
             <select style={{ ...selectStyle, flex: 1 }} value={activePrintId} onChange={(e) => setActivePrint(e.target.value)}>
               {printProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -1334,13 +1199,13 @@ function SettingsPanel({ onEditProfile }: { onEditProfile: (type: 'printer' | 'm
               <Edit3 size={12} />
             </button>
           </div>
-        </Section>
+        </SlicerSection>
 
         {/* ── Per-category settings (only when a print profile is active) ── */}
         {print && (<>
 
           {/* ── Quality ─────────────────────────────────────────────────── */}
-          <Section title="Quality" defaultOpen={true}>
+          <SlicerSection title="Quality" defaultOpen={true}>
             <Num label="Layer Height" unit="mm" value={print.layerHeight} step={0.05} min={0.01} max={1.0} onChange={(v) => upd({ layerHeight: v })} />
             <Num label="First Layer Height" unit="mm" value={print.firstLayerHeight} step={0.05} min={0.05} max={1.0} onChange={(v) => upd({ firstLayerHeight: v })} />
             <SectionDivider label="Line Widths" />
@@ -1349,15 +1214,15 @@ function SettingsPanel({ onEditProfile }: { onEditProfile: (type: 'printer' | 'm
             <Num label="Top/Bottom Line Width" unit="mm" value={print.topBottomLineWidth ?? 0.4} step={0.01} min={0.1} max={2.0} onChange={(v) => upd({ topBottomLineWidth: v })} />
             <Num label="Initial Layer Width Factor" unit="%" value={print.initialLayerLineWidthFactor ?? 120} step={5} min={50} max={200} onChange={(v) => upd({ initialLayerLineWidthFactor: v })} />
             <SectionDivider label="Adaptive Layers" />
-            <Check label="Enable Adaptive Layers" value={(print as any).adaptiveLayersEnabled ?? false} onChange={(v) => upd({ adaptiveLayersEnabled: v } as any)} />
-            {(print as any).adaptiveLayersEnabled && (<>
-              <Num label="Max Variation" unit="mm" value={(print as any).adaptiveLayersMaxVariation ?? 0.1} step={0.01} min={0.01} max={0.5} onChange={(v) => upd({ adaptiveLayersMaxVariation: v } as any)} />
-              <Num label="Variation Step" unit="mm" value={(print as any).adaptiveLayersVariationStep ?? 0.05} step={0.01} min={0.01} max={0.2} onChange={(v) => upd({ adaptiveLayersVariationStep: v } as any)} />
+            <Check label="Enable Adaptive Layers" value={(print as unknown as Record<string, unknown>).adaptiveLayersEnabled as boolean ?? false} onChange={(v) => upd({ adaptiveLayersEnabled: v })} />
+            {((print as unknown as Record<string, unknown>).adaptiveLayersEnabled as boolean ?? false) && (<>
+              <Num label="Max Variation" unit="mm" value={(print as unknown as Record<string, unknown>).adaptiveLayersMaxVariation as number ?? 0.1} step={0.01} min={0.01} max={0.5} onChange={(v) => upd({ adaptiveLayersMaxVariation: v })} />
+              <Num label="Variation Step" unit="mm" value={(print as unknown as Record<string, unknown>).adaptiveLayersVariationStep as number ?? 0.05} step={0.01} min={0.01} max={0.2} onChange={(v) => upd({ adaptiveLayersVariationStep: v })} />
             </>)}
-          </Section>
+          </SlicerSection>
 
           {/* ── Walls ────────────────────────────────────────────────────── */}
-          <Section title="Walls" defaultOpen={false}>
+          <SlicerSection title="Walls" defaultOpen={false}>
             <Num label="Wall Count" value={print.wallCount} min={1} max={20} onChange={(v) => upd({ wallCount: v })} />
             <Num label="Wall Line Width" unit="mm" value={print.wallLineWidth} step={0.01} min={0.1} max={2.0} onChange={(v) => upd({ wallLineWidth: v })} />
             <Check label="Outer Wall First" value={print.outerWallFirst ?? false} onChange={(v) => upd({ outerWallFirst: v })} />
@@ -1372,13 +1237,13 @@ function SettingsPanel({ onEditProfile }: { onEditProfile: (type: 'printer' | 'm
               ]} />
             <Check label="Thin Wall Detection" value={print.thinWallDetection} onChange={(v) => upd({ thinWallDetection: v })} />
             <SectionDivider label="Advanced" />
-            <Num label="Min Wall Line Width" unit="mm" value={(print as any).minWallLineWidth ?? 0.2} step={0.01} min={0.05} max={1} onChange={(v) => upd({ minWallLineWidth: v } as any)} />
-            <Num label="Wall Transition Length" unit="mm" value={(print as any).wallTransitionLength ?? 1.0} step={0.1} min={0.1} max={10} onChange={(v) => upd({ wallTransitionLength: v } as any)} />
-            <Num label="Outer Wall Wipe Distance" unit="mm" value={(print as any).outerWallWipeDistance ?? 0} step={0.1} min={0} max={5} onChange={(v) => upd({ outerWallWipeDistance: v } as any)} />
-          </Section>
+            <Num label="Min Wall Line Width" unit="mm" value={(print as unknown as Record<string, unknown>).minWallLineWidth as number ?? 0.2} step={0.01} min={0.05} max={1} onChange={(v) => upd({ minWallLineWidth: v })} />
+            <Num label="Wall Transition Length" unit="mm" value={(print as unknown as Record<string, unknown>).wallTransitionLength as number ?? 1.0} step={0.1} min={0.1} max={10} onChange={(v) => upd({ wallTransitionLength: v })} />
+            <Num label="Outer Wall Wipe Distance" unit="mm" value={(print as unknown as Record<string, unknown>).outerWallWipeDistance as number ?? 0} step={0.1} min={0} max={5} onChange={(v) => upd({ outerWallWipeDistance: v })} />
+          </SlicerSection>
 
           {/* ── Top / Bottom ─────────────────────────────────────────────── */}
-          <Section title="Top / Bottom" defaultOpen={false}>
+          <SlicerSection title="Top / Bottom" defaultOpen={false}>
             <Num label="Top Layers" value={print.topLayers} min={0} max={50} onChange={(v) => upd({ topLayers: v })} />
             <Num label="Bottom Layers" value={print.bottomLayers} min={0} max={50} onChange={(v) => upd({ bottomLayers: v })} />
             <Sel label="Pattern" value={print.topBottomPattern}
@@ -1397,17 +1262,17 @@ function SettingsPanel({ onEditProfile }: { onEditProfile: (type: 'printer' | 'm
               <Num label="Ironing Spacing" unit="mm" value={print.ironingSpacing} step={0.01} min={0.01} max={1.0} onChange={(v) => upd({ ironingSpacing: v })} />
             </>)}
             <SectionDivider label="Monotonic & Roof" />
-            <Check label="Monotonic Top/Bottom Order" value={(print as any).monotonicTopBottomOrder ?? false} onChange={(v) => upd({ monotonicTopBottomOrder: v } as any)} />
-            <Num label="Top Surface Layers (Roofing)" value={(print as any).roofingLayers ?? 0} min={0} max={10} onChange={(v) => upd({ roofingLayers: v } as any)} />
+            <Check label="Monotonic Top/Bottom Order" value={(print as unknown as Record<string, unknown>).monotonicTopBottomOrder as boolean ?? false} onChange={(v) => upd({ monotonicTopBottomOrder: v })} />
+            <Num label="Top Surface Layers (Roofing)" value={(print as unknown as Record<string, unknown>).roofingLayers as number ?? 0} min={0} max={10} onChange={(v) => upd({ roofingLayers: v })} />
             <SectionDivider label="Bridges" />
-            <Num label="Bridge Wall Speed" unit="mm/s" value={(print as any).bridgeWallSpeed ?? 25} min={1} max={300} onChange={(v) => upd({ bridgeWallSpeed: v } as any)} />
-            <Num label="Bridge Skin Speed" unit="mm/s" value={(print as any).bridgeSkinSpeed ?? 25} min={1} max={300} onChange={(v) => upd({ bridgeSkinSpeed: v } as any)} />
-            <Num label="Bridge Skin Flow" unit="%" value={(print as any).bridgeSkinFlow ?? 60} min={10} max={200} onChange={(v) => upd({ bridgeSkinFlow: v } as any)} />
-            <Num label="Bridge Angle Override" unit="°" value={(print as any).bridgeAngle ?? 0} min={0} max={180} onChange={(v) => upd({ bridgeAngle: v } as any)} />
-          </Section>
+            <Num label="Bridge Wall Speed" unit="mm/s" value={(print as unknown as Record<string, unknown>).bridgeWallSpeed as number ?? 25} min={1} max={300} onChange={(v) => upd({ bridgeWallSpeed: v })} />
+            <Num label="Bridge Skin Speed" unit="mm/s" value={(print as unknown as Record<string, unknown>).bridgeSkinSpeed as number ?? 25} min={1} max={300} onChange={(v) => upd({ bridgeSkinSpeed: v })} />
+            <Num label="Bridge Skin Flow" unit="%" value={(print as unknown as Record<string, unknown>).bridgeSkinFlow as number ?? 60} min={10} max={200} onChange={(v) => upd({ bridgeSkinFlow: v })} />
+            <Num label="Bridge Angle Override" unit="°" value={(print as unknown as Record<string, unknown>).bridgeAngle as number ?? 0} min={0} max={180} onChange={(v) => upd({ bridgeAngle: v })} />
+          </SlicerSection>
 
           {/* ── Infill ───────────────────────────────────────────────────── */}
-          <Section title="Infill" defaultOpen={true}>
+          <SlicerSection title="Infill" defaultOpen={true}>
             <Density value={print.infillDensity} onChange={(v) => upd({ infillDensity: v })} />
             <Sel label="Pattern" value={print.infillPattern}
               onChange={(v) => upd({ infillPattern: v })}
@@ -1434,13 +1299,13 @@ function SettingsPanel({ onEditProfile }: { onEditProfile: (type: 'printer' | 'm
             <Num label="Extra Infill Walls" value={print.infillWallCount ?? 0} min={0} max={5} onChange={(v) => upd({ infillWallCount: v })} />
             <Num label="Gradual Infill Steps" value={print.gradualInfillSteps ?? 0} min={0} max={5} onChange={(v) => upd({ gradualInfillSteps: v })} />
             <SectionDivider label="Advanced" />
-            <Check label="Infill Before Walls" value={(print as any).infillBeforeWalls ?? false} onChange={(v) => upd({ infillBeforeWalls: v } as any)} />
-            <Check label="Randomize Infill Start" value={(print as any).randomInfillStart ?? false} onChange={(v) => upd({ randomInfillStart: v } as any)} />
-            <Num label="Multiply Infill Lines" value={(print as any).multiplyInfill ?? 1} min={1} max={8} onChange={(v) => upd({ multiplyInfill: v } as any)} />
-          </Section>
+            <Check label="Infill Before Walls" value={(print as unknown as Record<string, unknown>).infillBeforeWalls as boolean ?? false} onChange={(v) => upd({ infillBeforeWalls: v })} />
+            <Check label="Randomize Infill Start" value={(print as unknown as Record<string, unknown>).randomInfillStart as boolean ?? false} onChange={(v) => upd({ randomInfillStart: v })} />
+            <Num label="Multiply Infill Lines" value={(print as unknown as Record<string, unknown>).multiplyInfill as number ?? 1} min={1} max={8} onChange={(v) => upd({ multiplyInfill: v })} />
+          </SlicerSection>
 
           {/* ── Speed ────────────────────────────────────────────────────── */}
-          <Section title="Speed" defaultOpen={false}>
+          <SlicerSection title="Speed" defaultOpen={false}>
             <Num label="Print Speed" unit="mm/s" value={print.printSpeed} min={1} max={1000} onChange={(v) => upd({ printSpeed: v })} />
             <Num label="Travel Speed" unit="mm/s" value={print.travelSpeed} min={1} max={1000} onChange={(v) => upd({ travelSpeed: v })} />
             <Num label="First Layer Speed" unit="mm/s" value={print.firstLayerSpeed} min={1} max={200} onChange={(v) => upd({ firstLayerSpeed: v })} />
@@ -1450,10 +1315,10 @@ function SettingsPanel({ onEditProfile }: { onEditProfile: (type: 'printer' | 'm
             <Num label="Infill Speed" unit="mm/s" value={print.infillSpeed} min={1} max={500} onChange={(v) => upd({ infillSpeed: v })} />
             <Num label="Support Speed" unit="mm/s" value={print.supportSpeed ?? 40} min={1} max={500} onChange={(v) => upd({ supportSpeed: v })} />
             <Num label="Small Area Speed" unit="mm/s" value={print.smallAreaSpeed ?? 20} min={1} max={200} onChange={(v) => upd({ smallAreaSpeed: v })} />
-          </Section>
+          </SlicerSection>
 
           {/* ── Travel ───────────────────────────────────────────────────── */}
-          <Section title="Travel" defaultOpen={false}>
+          <SlicerSection title="Travel" defaultOpen={false}>
             <Sel label="Combing Mode" value={print.combingMode}
               onChange={(v) => upd({ combingMode: v })}
               options={[
@@ -1464,16 +1329,16 @@ function SettingsPanel({ onEditProfile }: { onEditProfile: (type: 'printer' | 'm
               ]} />
             <Check label="Avoid Crossing Perimeters" value={print.avoidCrossingPerimeters} onChange={(v) => upd({ avoidCrossingPerimeters: v })} />
             <Num label="Min Travel Before Retract" unit="mm" value={print.retractionMinTravel ?? 1.5} step={0.1} min={0} max={20} onChange={(v) => upd({ retractionMinTravel: v })} />
-            <Check label="Retract at Layer Change" value={(print as any).retractAtLayerChange ?? true} onChange={(v) => upd({ retractAtLayerChange: v } as any)} />
-            <Check label="Retract Before Outer Wall" value={(print as any).travelRetractBeforeOuterWall ?? false} onChange={(v) => upd({ travelRetractBeforeOuterWall: v } as any)} />
-            <Check label="Combing Avoids Supports" value={(print as any).combingAvoidsSupports ?? false} onChange={(v) => upd({ combingAvoidsSupports: v } as any)} />
+            <Check label="Retract at Layer Change" value={(print as unknown as Record<string, unknown>).retractAtLayerChange as boolean ?? true} onChange={(v) => upd({ retractAtLayerChange: v })} />
+            <Check label="Retract Before Outer Wall" value={(print as unknown as Record<string, unknown>).travelRetractBeforeOuterWall as boolean ?? false} onChange={(v) => upd({ travelRetractBeforeOuterWall: v })} />
+            <Check label="Combing Avoids Supports" value={(print as unknown as Record<string, unknown>).combingAvoidsSupports as boolean ?? false} onChange={(v) => upd({ combingAvoidsSupports: v })} />
             <SectionDivider label="Retraction Limits" />
-            <Num label="Max Retraction Count" value={(print as any).maxRetractionCount ?? 90} min={1} max={300} onChange={(v) => upd({ maxRetractionCount: v } as any)} />
-            <Num label="Extra Prime Amount" unit="mm³" value={(print as any).retractionExtraPrimeAmount ?? 0} step={0.01} min={0} max={1} onChange={(v) => upd({ retractionExtraPrimeAmount: v } as any)} />
-          </Section>
+            <Num label="Max Retraction Count" value={(print as unknown as Record<string, unknown>).maxRetractionCount as number ?? 90} min={1} max={300} onChange={(v) => upd({ maxRetractionCount: v })} />
+            <Num label="Extra Prime Amount" unit="mm³" value={(print as unknown as Record<string, unknown>).retractionExtraPrimeAmount as number ?? 0} step={0.01} min={0} max={1} onChange={(v) => upd({ retractionExtraPrimeAmount: v })} />
+          </SlicerSection>
 
           {/* ── Cooling ──────────────────────────────────────────────────── */}
-          <Section title="Cooling" defaultOpen={false}>
+          <SlicerSection title="Cooling" defaultOpen={false}>
             <Num label="Min Layer Time" unit="s" value={print.minLayerTime} min={0} max={120} onChange={(v) => upd({ minLayerTime: v })} />
             <Num label="Full Fan Speed at Layer" value={print.fanFullLayer ?? 4} min={1} max={50} onChange={(v) => upd({ fanFullLayer: v })} />
             <Num label="Min Print Speed" unit="mm/s" value={print.minPrintSpeed ?? 10} min={1} max={100} onChange={(v) => upd({ minPrintSpeed: v })} />
@@ -1483,12 +1348,12 @@ function SettingsPanel({ onEditProfile }: { onEditProfile: (type: 'printer' | 'm
               <Num label="Bridge Fan Speed" unit="%" value={print.bridgeFanSpeed} min={0} max={100} onChange={(v) => upd({ bridgeFanSpeed: v })} />
             )}
             <SectionDivider label="Fan Ramp-up" />
-            <Num label="Regular Fan Speed at Layer" value={(print as any).regularFanSpeedLayer ?? 1} min={0} max={100} onChange={(v) => upd({ regularFanSpeedLayer: v } as any)} />
-            <Num label="Fan Kickstart Time" unit="ms" value={(print as any).fanKickstartTime ?? 100} step={10} min={0} max={5000} onChange={(v) => upd({ fanKickstartTime: v } as any)} />
-          </Section>
+            <Num label="Regular Fan Speed at Layer" value={(print as unknown as Record<string, unknown>).regularFanSpeedLayer as number ?? 1} min={0} max={100} onChange={(v) => upd({ regularFanSpeedLayer: v })} />
+            <Num label="Fan Kickstart Time" unit="ms" value={(print as unknown as Record<string, unknown>).fanKickstartTime as number ?? 100} step={10} min={0} max={5000} onChange={(v) => upd({ fanKickstartTime: v })} />
+          </SlicerSection>
 
           {/* ── Support ──────────────────────────────────────────────────── */}
-          <Section title="Support" defaultOpen={print.supportEnabled}>
+          <SlicerSection title="Support" defaultOpen={print.supportEnabled}>
             <Check label="Enable Support" value={print.supportEnabled} onChange={(v) => upd({ supportEnabled: v })} />
             {print.supportEnabled && (<>
               <Sel label="Support Structure" value={print.supportType}
@@ -1521,28 +1386,28 @@ function SettingsPanel({ onEditProfile }: { onEditProfile: (type: 'printer' | 'm
                 <Num label="Branch Diameter" unit="mm" value={print.supportTreeBranchDiameter ?? 5} step={0.5} min={1} max={20} onChange={(v) => upd({ supportTreeBranchDiameter: v })} />
               </>)}
               <SectionDivider label="Placement" />
-              <Check label="Build Plate Only" value={(print as any).supportBuildplateOnly ?? false} onChange={(v) => upd({ supportBuildplateOnly: v } as any)} />
-              <Num label="Support Wall Count" value={(print as any).supportWallCount ?? 0} min={0} max={5} onChange={(v) => upd({ supportWallCount: v } as any)} />
-              <Num label="Bottom Support Distance" unit="mm" value={(print as any).supportBottomDistance ?? 0.2} step={0.05} min={0} max={5} onChange={(v) => upd({ supportBottomDistance: v } as any)} />
+              <Check label="Build Plate Only" value={(print as unknown as Record<string, unknown>).supportBuildplateOnly as boolean ?? false} onChange={(v) => upd({ supportBuildplateOnly: v })} />
+              <Num label="Support Wall Count" value={(print as unknown as Record<string, unknown>).supportWallCount as number ?? 0} min={0} max={5} onChange={(v) => upd({ supportWallCount: v })} />
+              <Num label="Bottom Support Distance" unit="mm" value={(print as unknown as Record<string, unknown>).supportBottomDistance as number ?? 0.2} step={0.05} min={0} max={5} onChange={(v) => upd({ supportBottomDistance: v })} />
               <SectionDivider label="Roof / Floor" />
-              <Check label="Support Roof" value={(print as any).supportRoofEnable ?? false} onChange={(v) => upd({ supportRoofEnable: v } as any)} />
-              <Check label="Support Floor" value={(print as any).supportFloorEnable ?? false} onChange={(v) => upd({ supportFloorEnable: v } as any)} />
-              {((print as any).supportRoofEnable || (print as any).supportFloorEnable) && (<>
-                <Sel label="Interface Pattern" value={(print as any).supportInterfacePattern ?? 'lines'}
-                  onChange={(v) => upd({ supportInterfacePattern: v } as any)}
+              <Check label="Support Roof" value={(print as unknown as Record<string, unknown>).supportRoofEnable as boolean ?? false} onChange={(v) => upd({ supportRoofEnable: v })} />
+              <Check label="Support Floor" value={(print as unknown as Record<string, unknown>).supportFloorEnable as boolean ?? false} onChange={(v) => upd({ supportFloorEnable: v })} />
+              {(((print as unknown as Record<string, unknown>).supportRoofEnable as boolean ?? false) || ((print as unknown as Record<string, unknown>).supportFloorEnable as boolean ?? false)) && (<>
+                <Sel label="Interface Pattern" value={(print as unknown as Record<string, unknown>).supportInterfacePattern as 'lines' | 'grid' | 'concentric' | 'zigzag' ?? 'lines'}
+                  onChange={(v) => upd({ supportInterfacePattern: v })}
                   options={[
                     { value: 'lines', label: 'Lines' },
                     { value: 'grid', label: 'Grid' },
                     { value: 'concentric', label: 'Concentric' },
                     { value: 'zigzag', label: 'Zigzag' },
                   ]} />
-                <Num label="Interface Density" unit="%" value={(print as any).supportInterfaceDensity ?? 100} min={0} max={100} onChange={(v) => upd({ supportInterfaceDensity: v } as any)} />
+                <Num label="Interface Density" unit="%" value={(print as unknown as Record<string, unknown>).supportInterfaceDensity as number ?? 100} min={0} max={100} onChange={(v) => upd({ supportInterfaceDensity: v })} />
               </>)}
             </>)}
-          </Section>
+          </SlicerSection>
 
           {/* ── Build Plate Adhesion ─────────────────────────────────────── */}
-          <Section title="Build Plate Adhesion" defaultOpen={false}>
+          <SlicerSection title="Build Plate Adhesion" defaultOpen={false}>
             <Sel label="Type" value={print.adhesionType}
               onChange={(v) => upd({ adhesionType: v })}
               options={[
@@ -1570,22 +1435,22 @@ function SettingsPanel({ onEditProfile }: { onEditProfile: (type: 'printer' | 'm
               <Num label="Raft Layers" value={print.raftLayers} min={1} max={10} onChange={(v) => upd({ raftLayers: v })} />
               <Num label="Raft Margin" unit="mm" value={print.raftMargin ?? 5} step={0.5} min={0} max={30} onChange={(v) => upd({ raftMargin: v })} />
               <SectionDivider label="Raft Layers (Advanced)" />
-              <Num label="Base Thickness" unit="mm" value={(print as any).raftBaseThickness ?? 0.3} step={0.05} min={0.1} max={2} onChange={(v) => upd({ raftBaseThickness: v } as any)} />
-              <Num label="Base Line Width" unit="mm" value={(print as any).raftBaseLineWidth ?? 0.8} step={0.05} min={0.1} max={3} onChange={(v) => upd({ raftBaseLineWidth: v } as any)} />
-              <Num label="Base Speed" unit="mm/s" value={(print as any).raftBaseSpeed ?? 20} min={1} max={200} onChange={(v) => upd({ raftBaseSpeed: v } as any)} />
-              <Num label="Interface Thickness" unit="mm" value={(print as any).raftInterfaceThickness ?? 0.27} step={0.05} min={0.1} max={2} onChange={(v) => upd({ raftInterfaceThickness: v } as any)} />
-              <Num label="Surface Air Gap" unit="mm" value={(print as any).raftAirGap ?? 0.3} step={0.05} min={0} max={2} onChange={(v) => upd({ raftAirGap: v } as any)} />
+              <Num label="Base Thickness" unit="mm" value={(print as unknown as Record<string, unknown>).raftBaseThickness as number ?? 0.3} step={0.05} min={0.1} max={2} onChange={(v) => upd({ raftBaseThickness: v })} />
+              <Num label="Base Line Width" unit="mm" value={(print as unknown as Record<string, unknown>).raftBaseLineWidth as number ?? 0.8} step={0.05} min={0.1} max={3} onChange={(v) => upd({ raftBaseLineWidth: v })} />
+              <Num label="Base Speed" unit="mm/s" value={(print as unknown as Record<string, unknown>).raftBaseSpeed as number ?? 20} min={1} max={200} onChange={(v) => upd({ raftBaseSpeed: v })} />
+              <Num label="Interface Thickness" unit="mm" value={(print as unknown as Record<string, unknown>).raftInterfaceThickness as number ?? 0.27} step={0.05} min={0.1} max={2} onChange={(v) => upd({ raftInterfaceThickness: v })} />
+              <Num label="Surface Air Gap" unit="mm" value={(print as unknown as Record<string, unknown>).raftAirGap as number ?? 0.3} step={0.05} min={0} max={2} onChange={(v) => upd({ raftAirGap: v })} />
             </>)}
             {print.adhesionType === 'skirt' && (
-              <Num label="Skirt Height (layers)" value={(print as any).skirtHeight ?? 1} min={1} max={10} onChange={(v) => upd({ skirtHeight: v } as any)} />
+              <Num label="Skirt Height (layers)" value={(print as unknown as Record<string, unknown>).skirtHeight as number ?? 1} min={1} max={10} onChange={(v) => upd({ skirtHeight: v })} />
             )}
-          </Section>
+          </SlicerSection>
 
           {/* ── Special Modes ────────────────────────────────────────────── */}
-          <Section title="Special Modes" defaultOpen={false}>
+          <SlicerSection title="Special Modes" defaultOpen={false}>
             <Check label="Vase Mode (Spiralize Contour)" value={print.spiralizeContour ?? false} onChange={(v) => upd({ spiralizeContour: v })} />
-            <Sel label="Surface Mode" value={(print as any).surfaceMode ?? 'normal'}
-              onChange={(v) => upd({ surfaceMode: v } as any)}
+            <Sel label="Surface Mode" value={(print as unknown as Record<string, unknown>).surfaceMode as 'normal' | 'surface' | 'both' ?? 'normal'}
+              onChange={(v) => upd({ surfaceMode: v })}
               options={[
                 { value: 'normal', label: 'Normal — solid model' },
                 { value: 'surface', label: 'Surface — shell only' },
@@ -1598,15 +1463,15 @@ function SettingsPanel({ onEditProfile }: { onEditProfile: (type: 'printer' | 'm
                 { value: 'one_at_a_time', label: 'One at a Time' },
               ]} />
             <SectionDivider label="Mold" />
-            <Check label="Enable Mold Mode" value={(print as any).moldEnabled ?? false} onChange={(v) => upd({ moldEnabled: v } as any)} />
-            {(print as any).moldEnabled && (<>
-              <Num label="Mold Draft Angle" unit="°" value={(print as any).moldAngle ?? 40} min={0} max={89} onChange={(v) => upd({ moldAngle: v } as any)} />
-              <Num label="Mold Roof Height" unit="mm" value={(print as any).moldRoofHeight ?? 0.5} step={0.1} min={0} max={10} onChange={(v) => upd({ moldRoofHeight: v } as any)} />
+            <Check label="Enable Mold Mode" value={(print as unknown as Record<string, unknown>).moldEnabled as boolean ?? false} onChange={(v) => upd({ moldEnabled: v })} />
+            {((print as unknown as Record<string, unknown>).moldEnabled as boolean ?? false) && (<>
+              <Num label="Mold Draft Angle" unit="°" value={(print as unknown as Record<string, unknown>).moldAngle as number ?? 40} min={0} max={89} onChange={(v) => upd({ moldAngle: v })} />
+              <Num label="Mold Roof Height" unit="mm" value={(print as unknown as Record<string, unknown>).moldRoofHeight as number ?? 0.5} step={0.1} min={0} max={10} onChange={(v) => upd({ moldRoofHeight: v })} />
             </>)}
-          </Section>
+          </SlicerSection>
 
           {/* ── Experimental ─────────────────────────────────────────────── */}
-          <Section title="Experimental" defaultOpen={false}>
+          <SlicerSection title="Experimental" defaultOpen={false}>
             <Check label="Draft Shield" value={print.draftShieldEnabled ?? false} onChange={(v) => upd({ draftShieldEnabled: v })} />
             {print.draftShieldEnabled && (
               <Num label="Draft Shield Distance" unit="mm" value={print.draftShieldDistance ?? 10} step={1} min={1} max={50} onChange={(v) => upd({ draftShieldDistance: v })} />
@@ -1616,62 +1481,62 @@ function SettingsPanel({ onEditProfile }: { onEditProfile: (type: 'printer' | 'm
               <Num label="Coasting Volume" unit="mm³" value={print.coastingVolume ?? 0.064} step={0.001} min={0} max={1} onChange={(v) => upd({ coastingVolume: v })} />
             )}
             <SectionDivider label="Fuzzy Skin" />
-            <Check label="Enable Fuzzy Skin" value={(print as any).fuzzySkinsEnabled ?? false} onChange={(v) => upd({ fuzzySkinsEnabled: v } as any)} />
-            {(print as any).fuzzySkinsEnabled && (<>
-              <Num label="Fuzzy Thickness" unit="mm" value={(print as any).fuzzySkinThickness ?? 0.3} step={0.05} min={0.01} max={2} onChange={(v) => upd({ fuzzySkinThickness: v } as any)} />
-              <Num label="Fuzzy Point Distance" unit="mm" value={(print as any).fuzzySkinPointDist ?? 0.8} step={0.05} min={0.1} max={5} onChange={(v) => upd({ fuzzySkinPointDist: v } as any)} />
+            <Check label="Enable Fuzzy Skin" value={(print as unknown as Record<string, unknown>).fuzzySkinsEnabled as boolean ?? false} onChange={(v) => upd({ fuzzySkinsEnabled: v })} />
+            {((print as unknown as Record<string, unknown>).fuzzySkinsEnabled as boolean ?? false) && (<>
+              <Num label="Fuzzy Thickness" unit="mm" value={(print as unknown as Record<string, unknown>).fuzzySkinThickness as number ?? 0.3} step={0.05} min={0.01} max={2} onChange={(v) => upd({ fuzzySkinThickness: v })} />
+              <Num label="Fuzzy Point Distance" unit="mm" value={(print as unknown as Record<string, unknown>).fuzzySkinPointDist as number ?? 0.8} step={0.05} min={0.1} max={5} onChange={(v) => upd({ fuzzySkinPointDist: v })} />
             </>)}
             <SectionDivider label="Overhang" />
-            <Check label="Make Overhang Printable" value={(print as any).makeOverhangPrintable ?? false} onChange={(v) => upd({ makeOverhangPrintable: v } as any)} />
-            {(print as any).makeOverhangPrintable && (
-              <Num label="Max Overhang Angle" unit="°" value={(print as any).makeOverhangPrintableMaxAngle ?? 50} min={0} max={89} onChange={(v) => upd({ makeOverhangPrintableMaxAngle: v } as any)} />
+            <Check label="Make Overhang Printable" value={(print as unknown as Record<string, unknown>).makeOverhangPrintable as boolean ?? false} onChange={(v) => upd({ makeOverhangPrintable: v })} />
+            {((print as unknown as Record<string, unknown>).makeOverhangPrintable as boolean ?? false) && (
+              <Num label="Max Overhang Angle" unit="°" value={(print as unknown as Record<string, unknown>).makeOverhangPrintableMaxAngle as number ?? 50} min={0} max={89} onChange={(v) => upd({ makeOverhangPrintableMaxAngle: v })} />
             )}
             <SectionDivider label="Slicing" />
-            <Sel label="Slicing Tolerance" value={(print as any).slicingTolerance ?? 'middle'}
-              onChange={(v) => upd({ slicingTolerance: v } as any)}
+            <Sel label="Slicing Tolerance" value={(print as unknown as Record<string, unknown>).slicingTolerance as 'middle' | 'inclusive' | 'exclusive' ?? 'middle'}
+              onChange={(v) => upd({ slicingTolerance: v })}
               options={[
                 { value: 'middle', label: 'Middle — balanced' },
                 { value: 'inclusive', label: 'Inclusive — thicker' },
                 { value: 'exclusive', label: 'Exclusive — thinner' },
               ]} />
-            <Num label="Min Polygon Circumference" unit="mm" value={(print as any).minimumPolygonCircumference ?? 1.0} step={0.1} min={0.1} max={10} onChange={(v) => upd({ minimumPolygonCircumference: v } as any)} />
-            <Num label="Small Hole Max Size" unit="mm" value={(print as any).smallHoleMaxSize ?? 0} step={0.1} min={0} max={10} onChange={(v) => upd({ smallHoleMaxSize: v } as any)} />
-          </Section>
+            <Num label="Min Polygon Circumference" unit="mm" value={(print as unknown as Record<string, unknown>).minimumPolygonCircumference as number ?? 1.0} step={0.1} min={0.1} max={10} onChange={(v) => upd({ minimumPolygonCircumference: v })} />
+            <Num label="Small Hole Max Size" unit="mm" value={(print as unknown as Record<string, unknown>).smallHoleMaxSize as number ?? 0} step={0.1} min={0} max={10} onChange={(v) => upd({ smallHoleMaxSize: v })} />
+          </SlicerSection>
 
           {/* ── Acceleration & Jerk ───────────────────────────────────────── */}
-          <Section title="Acceleration & Jerk" defaultOpen={false}>
-            <Check label="Enable Acceleration Control" value={(print as any).accelerationEnabled ?? false} onChange={(v) => upd({ accelerationEnabled: v } as any)} />
-            {(print as any).accelerationEnabled && (<>
+          <SlicerSection title="Acceleration & Jerk" defaultOpen={false}>
+            <Check label="Enable Acceleration Control" value={(print as unknown as Record<string, unknown>).accelerationEnabled as boolean ?? false} onChange={(v) => upd({ accelerationEnabled: v })} />
+            {((print as unknown as Record<string, unknown>).accelerationEnabled as boolean ?? false) && (<>
               <SectionDivider label="Acceleration (mm/s²)" />
-              <Num label="Print" unit="mm/s²" value={(print as any).accelerationPrint ?? 3000} min={100} max={20000} onChange={(v) => upd({ accelerationPrint: v } as any)} />
-              <Num label="Travel" unit="mm/s²" value={(print as any).accelerationTravel ?? 3000} min={100} max={20000} onChange={(v) => upd({ accelerationTravel: v } as any)} />
-              <Num label="Outer Wall" unit="mm/s²" value={(print as any).accelerationWall ?? 1000} min={100} max={20000} onChange={(v) => upd({ accelerationWall: v } as any)} />
-              <Num label="Infill" unit="mm/s²" value={(print as any).accelerationInfill ?? 3000} min={100} max={20000} onChange={(v) => upd({ accelerationInfill: v } as any)} />
-              <Num label="Top/Bottom" unit="mm/s²" value={(print as any).accelerationTopBottom ?? 1000} min={100} max={20000} onChange={(v) => upd({ accelerationTopBottom: v } as any)} />
-              <Num label="Support" unit="mm/s²" value={(print as any).accelerationSupport ?? 2000} min={100} max={20000} onChange={(v) => upd({ accelerationSupport: v } as any)} />
+              <Num label="Print" unit="mm/s²" value={(print as unknown as Record<string, unknown>).accelerationPrint as number ?? 3000} min={100} max={20000} onChange={(v) => upd({ accelerationPrint: v })} />
+              <Num label="Travel" unit="mm/s²" value={(print as unknown as Record<string, unknown>).accelerationTravel as number ?? 3000} min={100} max={20000} onChange={(v) => upd({ accelerationTravel: v })} />
+              <Num label="Outer Wall" unit="mm/s²" value={(print as unknown as Record<string, unknown>).accelerationWall as number ?? 1000} min={100} max={20000} onChange={(v) => upd({ accelerationWall: v })} />
+              <Num label="Infill" unit="mm/s²" value={(print as unknown as Record<string, unknown>).accelerationInfill as number ?? 3000} min={100} max={20000} onChange={(v) => upd({ accelerationInfill: v })} />
+              <Num label="Top/Bottom" unit="mm/s²" value={(print as unknown as Record<string, unknown>).accelerationTopBottom as number ?? 1000} min={100} max={20000} onChange={(v) => upd({ accelerationTopBottom: v })} />
+              <Num label="Support" unit="mm/s²" value={(print as unknown as Record<string, unknown>).accelerationSupport as number ?? 2000} min={100} max={20000} onChange={(v) => upd({ accelerationSupport: v })} />
             </>)}
-            <Check label="Enable Jerk Control" value={(print as any).jerkEnabled ?? false} onChange={(v) => upd({ jerkEnabled: v } as any)} />
-            {(print as any).jerkEnabled && (<>
+            <Check label="Enable Jerk Control" value={(print as unknown as Record<string, unknown>).jerkEnabled as boolean ?? false} onChange={(v) => upd({ jerkEnabled: v })} />
+            {((print as unknown as Record<string, unknown>).jerkEnabled as boolean ?? false) && (<>
               <SectionDivider label="Jerk (mm/s)" />
-              <Num label="Print Jerk" unit="mm/s" value={(print as any).jerkPrint ?? 10} min={1} max={30} onChange={(v) => upd({ jerkPrint: v } as any)} />
-              <Num label="Travel Jerk" unit="mm/s" value={(print as any).jerkTravel ?? 10} min={1} max={30} onChange={(v) => upd({ jerkTravel: v } as any)} />
-              <Num label="Wall Jerk" unit="mm/s" value={(print as any).jerkWall ?? 8} min={1} max={30} onChange={(v) => upd({ jerkWall: v } as any)} />
-              <Num label="Infill Jerk" unit="mm/s" value={(print as any).jerkInfill ?? 10} min={1} max={30} onChange={(v) => upd({ jerkInfill: v } as any)} />
-              <Num label="Top/Bottom Jerk" unit="mm/s" value={(print as any).jerkTopBottom ?? 8} min={1} max={30} onChange={(v) => upd({ jerkTopBottom: v } as any)} />
+              <Num label="Print Jerk" unit="mm/s" value={(print as unknown as Record<string, unknown>).jerkPrint as number ?? 10} min={1} max={30} onChange={(v) => upd({ jerkPrint: v })} />
+              <Num label="Travel Jerk" unit="mm/s" value={(print as unknown as Record<string, unknown>).jerkTravel as number ?? 10} min={1} max={30} onChange={(v) => upd({ jerkTravel: v })} />
+              <Num label="Wall Jerk" unit="mm/s" value={(print as unknown as Record<string, unknown>).jerkWall as number ?? 8} min={1} max={30} onChange={(v) => upd({ jerkWall: v })} />
+              <Num label="Infill Jerk" unit="mm/s" value={(print as unknown as Record<string, unknown>).jerkInfill as number ?? 10} min={1} max={30} onChange={(v) => upd({ jerkInfill: v })} />
+              <Num label="Top/Bottom Jerk" unit="mm/s" value={(print as unknown as Record<string, unknown>).jerkTopBottom as number ?? 8} min={1} max={30} onChange={(v) => upd({ jerkTopBottom: v })} />
             </>)}
-          </Section>
+          </SlicerSection>
 
           {/* ── Mesh Fixes ───────────────────────────────────────────────── */}
-          <Section title="Mesh Fixes" defaultOpen={false}>
-            <Check label="Union Overlapping Volumes" value={(print as any).unionOverlappingVolumes ?? true} onChange={(v) => upd({ unionOverlappingVolumes: v } as any)} />
-            <Check label="Remove All Holes" value={(print as any).removeAllHoles ?? false} onChange={(v) => upd({ removeAllHoles: v } as any)} />
-            <Check label="Extensive Stitching" value={(print as any).extensiveStitching ?? false} onChange={(v) => upd({ extensiveStitching: v } as any)} />
-            <Check label="Keep Disconnected Faces" value={(print as any).keepDisconnectedFaces ?? false} onChange={(v) => upd({ keepDisconnectedFaces: v } as any)} />
+          <SlicerSection title="Mesh Fixes" defaultOpen={false}>
+            <Check label="Union Overlapping Volumes" value={(print as unknown as Record<string, unknown>).unionOverlappingVolumes as boolean ?? true} onChange={(v) => upd({ unionOverlappingVolumes: v })} />
+            <Check label="Remove All Holes" value={(print as unknown as Record<string, unknown>).removeAllHoles as boolean ?? false} onChange={(v) => upd({ removeAllHoles: v })} />
+            <Check label="Extensive Stitching" value={(print as unknown as Record<string, unknown>).extensiveStitching as boolean ?? false} onChange={(v) => upd({ extensiveStitching: v })} />
+            <Check label="Keep Disconnected Faces" value={(print as unknown as Record<string, unknown>).keepDisconnectedFaces as boolean ?? false} onChange={(v) => upd({ keepDisconnectedFaces: v })} />
             <SectionDivider label="Precision" />
-            <Num label="Maximum Resolution" unit="mm" value={(print as any).maxResolution ?? 0.5} step={0.01} min={0.01} max={2} onChange={(v) => upd({ maxResolution: v } as any)} />
-            <Num label="Maximum Deviation" unit="mm" value={(print as any).maxDeviation ?? 0.025} step={0.005} min={0.001} max={1} onChange={(v) => upd({ maxDeviation: v } as any)} />
-            <Num label="Max Travel Resolution" unit="mm" value={(print as any).maxTravelResolution ?? 0.8} step={0.1} min={0.1} max={5} onChange={(v) => upd({ maxTravelResolution: v } as any)} />
-          </Section>
+            <Num label="Maximum Resolution" unit="mm" value={(print as unknown as Record<string, unknown>).maxResolution as number ?? 0.5} step={0.01} min={0.01} max={2} onChange={(v) => upd({ maxResolution: v })} />
+            <Num label="Maximum Deviation" unit="mm" value={(print as unknown as Record<string, unknown>).maxDeviation as number ?? 0.025} step={0.005} min={0.001} max={1} onChange={(v) => upd({ maxDeviation: v })} />
+            <Num label="Max Travel Resolution" unit="mm" value={(print as unknown as Record<string, unknown>).maxTravelResolution as number ?? 0.8} step={0.1} min={0.1} max={5} onChange={(v) => upd({ maxTravelResolution: v })} />
+          </SlicerSection>
 
         </>)}
       </div>
@@ -2164,7 +2029,7 @@ function ProfileEditorModal({
               <div style={fieldRow}>
                 <div style={labelStyle}>Top/Bottom Pattern</div>
                 <select style={selectStyle} value={print.topBottomPattern}
-                  onChange={(e) => updatePrintProfile(print.id, { topBottomPattern: e.target.value as any })}>
+                  onChange={(e) => updatePrintProfile(print.id, { topBottomPattern: e.target.value as PrintProfile['topBottomPattern'] })}>
                   <option value="lines">Lines</option>
                   <option value="concentric">Concentric</option>
                   <option value="zigzag">Zigzag</option>
@@ -2211,7 +2076,7 @@ function ProfileEditorModal({
               <div style={fieldRow}>
                 <div style={labelStyle}>Infill Pattern</div>
                 <select style={selectStyle} value={print.infillPattern}
-                  onChange={(e) => updatePrintProfile(print.id, { infillPattern: e.target.value as any })}>
+                  onChange={(e) => updatePrintProfile(print.id, { infillPattern: e.target.value as PrintProfile['infillPattern'] })}>
                   {['grid','lines','triangles','cubic','gyroid','honeycomb','lightning','concentric'].map((p) => (
                     <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
                   ))}
@@ -2271,7 +2136,7 @@ function ProfileEditorModal({
                   <div style={fieldRow}>
                     <div style={labelStyle}>Support Type</div>
                     <select style={selectStyle} value={print.supportType}
-                      onChange={(e) => updatePrintProfile(print.id, { supportType: e.target.value as any })}>
+                      onChange={(e) => updatePrintProfile(print.id, { supportType: e.target.value as PrintProfile['supportType'] })}>
                       <option value="normal">Normal</option>
                       <option value="tree">Tree</option>
                       <option value="organic">Organic</option>
@@ -2290,7 +2155,7 @@ function ProfileEditorModal({
                   <div style={fieldRow}>
                     <div style={labelStyle}>Support Pattern</div>
                     <select style={selectStyle} value={print.supportPattern}
-                      onChange={(e) => updatePrintProfile(print.id, { supportPattern: e.target.value as any })}>
+                      onChange={(e) => updatePrintProfile(print.id, { supportPattern: e.target.value as PrintProfile['supportPattern'] })}>
                       <option value="lines">Lines</option>
                       <option value="grid">Grid</option>
                       <option value="zigzag">Zigzag</option>
@@ -2328,7 +2193,7 @@ function ProfileEditorModal({
               <div style={fieldRow}>
                 <div style={labelStyle}>Adhesion Type</div>
                 <select style={selectStyle} value={print.adhesionType}
-                  onChange={(e) => updatePrintProfile(print.id, { adhesionType: e.target.value as any })}>
+                  onChange={(e) => updatePrintProfile(print.id, { adhesionType: e.target.value as PrintProfile['adhesionType'] })}>
                   <option value="none">None</option>
                   <option value="skirt">Skirt</option>
                   <option value="brim">Brim</option>
@@ -2370,7 +2235,7 @@ function ProfileEditorModal({
               <div style={fieldRow}>
                 <div style={labelStyle}>Z Seam Alignment</div>
                 <select style={selectStyle} value={print.zSeamAlignment}
-                  onChange={(e) => updatePrintProfile(print.id, { zSeamAlignment: e.target.value as any })}>
+                  onChange={(e) => updatePrintProfile(print.id, { zSeamAlignment: e.target.value as PrintProfile['zSeamAlignment'] })}>
                   <option value="random">Random</option>
                   <option value="aligned">Aligned</option>
                   <option value="sharpest_corner">Sharpest Corner</option>
@@ -2380,7 +2245,7 @@ function ProfileEditorModal({
               <div style={fieldRow}>
                 <div style={labelStyle}>Combing Mode</div>
                 <select style={selectStyle} value={print.combingMode}
-                  onChange={(e) => updatePrintProfile(print.id, { combingMode: e.target.value as any })}>
+                  onChange={(e) => updatePrintProfile(print.id, { combingMode: e.target.value as PrintProfile['combingMode'] })}>
                   <option value="off">Off</option>
                   <option value="all">All</option>
                   <option value="noskin">No Skin</option>
@@ -2506,8 +2371,66 @@ function ProfileEditorModal({
 // =============================================================================
 // Main Export: SlicerWorkspace
 // =============================================================================
+// =============================================================================
+// Workspace nav bar
+// =============================================================================
+type SlicerPage = 'prepare' | 'plugins';
+
+function WorkspaceNavBar({
+  currentPage,
+  onChangePage,
+}: {
+  currentPage: SlicerPage;
+  onChangePage: (page: SlicerPage) => void;
+}) {
+  const navStyle: React.CSSProperties = {
+    background: colors.panel,
+    borderBottom: `1px solid ${colors.panelBorder}`,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 2,
+    padding: '0 12px',
+    height: 36,
+    flexShrink: 0,
+  };
+
+  const tabStyle = (active: boolean): React.CSSProperties => ({
+    background: active ? colors.active : 'transparent',
+    color: active ? colors.text : colors.textDim,
+    border: 'none',
+    borderBottom: active ? `2px solid ${colors.accent}` : '2px solid transparent',
+    borderRadius: 0,
+    padding: '0 14px',
+    height: '100%',
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: active ? 600 : 400,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    transition: 'color 0.12s, border-color 0.12s',
+  });
+
+  return (
+    <div style={navStyle}>
+      <button style={tabStyle(currentPage === 'prepare')} onClick={() => onChangePage('prepare')}>
+        <Layers size={13} />
+        Prepare
+      </button>
+      <button style={tabStyle(currentPage === 'plugins')} onClick={() => onChangePage('plugins')}>
+        <Puzzle size={13} />
+        Plugins
+      </button>
+    </div>
+  );
+}
+
+// =============================================================================
+// Main Export: SlicerWorkspace
+// =============================================================================
 export default function SlicerWorkspace() {
   const [editingProfile, setEditingProfile] = useState<'printer' | 'material' | 'print' | null>(null);
+  const [currentPage, setCurrentPage] = useState<SlicerPage>('prepare');
 
   return (
     <div style={{
@@ -2520,8 +2443,14 @@ export default function SlicerWorkspace() {
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
       overflow: 'hidden',
     }}>
-      {/* Main content area: left panel + 3D view + right panel */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      {/* Workspace navigation tabs */}
+      <WorkspaceNavBar currentPage={currentPage} onChangePage={setCurrentPage} />
+
+      {/* Plugins page */}
+      {currentPage === 'plugins' && <PluginsPage />}
+
+      {/* Prepare page: left panel + 3D view + right panel (hidden when plugins active) */}
+      <div style={{ flex: 1, display: currentPage === 'prepare' ? 'flex' : 'none', overflow: 'hidden' }}>
         {/* Left Panel - Objects */}
         <ObjectsPanel />
 
@@ -2541,8 +2470,8 @@ export default function SlicerWorkspace() {
         <SettingsPanel onEditProfile={(type) => setEditingProfile(type)} />
       </div>
 
-      {/* Bottom Bar */}
-      <BottomBar />
+      {/* Bottom Bar — only shown on Prepare page */}
+      {currentPage === 'prepare' && <BottomBar />}
 
       {/* Profile Editor Modal */}
       {editingProfile && (

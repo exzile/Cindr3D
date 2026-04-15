@@ -1,12 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import * as THREE from 'three';
-import type { Tool, ViewMode, SketchPlane, Sketch, SketchEntity, SketchPoint, SketchConstraint, Feature, Parameter, BooleanOperation, FormCage, FormSelection, FormElementType } from '../types/cad';
+import type { Tool, ViewMode, SketchPlane, Sketch, SketchEntity, SketchPoint, SketchConstraint, SketchDimension, Feature, Parameter, BooleanOperation, FormCage, FormSelection, FormElementType } from '../types/cad';
 
 export type ExtrudeDirection = 'normal' | 'symmetric' | 'reverse';
 export type ExtrudeOperation = Extract<BooleanOperation, 'new-body' | 'join' | 'cut'>;
 import { evaluateExpression, resolveParameters } from '../utils/expressionEval';
 import { GeometryEngine } from '../engine/GeometryEngine';
+import { solveConstraints } from '../engine/ConstraintSolver';
 import { useComponentStore } from './componentStore';
 
 // ── IndexedDB storage adapter (same pattern as slicerStore) ────────────────
@@ -88,6 +89,8 @@ interface CADState {
   redefineSketchPlane: (id: string, plane: SketchPlane, normal: THREE.Vector3, origin: THREE.Vector3) => void;
   /** D50: Auto-detect and apply geometric constraints (horizontal/vertical/coincident/parallel/equal) */
   autoConstrainSketch: () => void;
+  /** D27: Run the Newton-Raphson constraint solver on the active sketch. */
+  solveSketch: () => void;
 
   // Feature timeline
   features: Feature[];
@@ -432,12 +435,57 @@ interface CADState {
   // A5 — ground/unground a component (stub; components array populated in A1)
   groundComponent: (id: string, grounded: boolean) => void;
 
+  // D12 — Sketch Text tool
+  sketchTextContent: string;
+  sketchTextHeight: number;
+  sketchTextFont: string;
+  setSketchTextContent: (v: string) => void;
+  setSketchTextHeight: (v: number) => void;
+  setSketchTextFont: (v: string) => void;
+  startSketchTextTool: () => void;
+  commitSketchTextEntities: (segments: Array<{ x1: number; y1: number; z1: number; x2: number; y2: number; z2: number }>) => void;
+  cancelSketchTextTool: () => void;
+
+  // D28 — Dimension tool
+  activeDimensionType: 'linear' | 'angular' | 'radial' | 'diameter';
+  dimensionOffset: number;
+  pendingDimensionEntityIds: string[];
+  setActiveDimensionType: (t: 'linear' | 'angular' | 'radial' | 'diameter') => void;
+  setDimensionOffset: (v: number) => void;
+  startDimensionTool: () => void;
+  cancelDimensionTool: () => void;
+  addPendingDimensionEntity: (id: string) => void;
+  addSketchDimension: (dim: SketchDimension) => void;
+  removeDimension: (dimId: string) => void;
+
   // A9 — Component Pattern (linear/circular array of component instances)
   createComponentPattern: (
     sourceId: string,
     type: 'linear' | 'circular',
     params: { axis: 'X' | 'Y' | 'Z'; count: number; spacing: number; circularAxis: 'X' | 'Y' | 'Z'; circularCount: number }
   ) => void;
+
+  // S10 — Spline post-commit handle editing
+  editingSplineEntityId: string | null;
+  hoveredSplinePointIndex: number | null;
+  draggingSplinePointIndex: number | null;
+  setEditingSplineEntityId: (id: string | null) => void;
+  setHoveredSplinePointIndex: (i: number | null) => void;
+  setDraggingSplinePointIndex: (i: number | null) => void;
+  updateSplineControlPoint: (entityId: string, pointIndex: number, x: number, y: number, z: number) => void;
+
+  // D45 — Project / Include live-link toggle
+  projectLiveLink: boolean;
+  setProjectLiveLink: (v: boolean) => void;
+  cancelSketchProjectTool: () => void;
+
+  // S3 — Intersection Curve
+  startSketchIntersectTool: () => void;
+  cancelSketchIntersectTool: () => void;
+
+  // D46 — Project to Surface
+  startSketchProjectSurfaceTool: () => void;
+  cancelSketchProjectSurfaceTool: () => void;
 }
 
 // Plane normals consistent with the visual selector (Three.js Y-up):
@@ -1443,6 +1491,33 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     get().setStatusMessage(`AutoConstrain: applied ${newConstraints.length} constraint${newConstraints.length === 1 ? '' : 's'}`);
   },
 
+  // D27: Solve constraints on the active sketch using Newton-Raphson
+  solveSketch: () => {
+    const { activeSketch } = get();
+    if (!activeSketch) return;
+
+    const result = solveConstraints(activeSketch.entities, activeSketch.constraints ?? []);
+    if (!result.solved) {
+      get().setStatusMessage(`Constraint solve failed (residual ${result.residual.toFixed(3)}) after ${result.iterations} iterations`);
+      return;
+    }
+
+    // Apply solved positions back to entities
+    const updatedEntities = activeSketch.entities.map((e) => {
+      const updated = { ...e, points: e.points.map((pt, pi) => {
+        const solvedPt = result.updatedPoints.get(`${e.id}-p${pi}`);
+        if (!solvedPt) return pt;
+        return { ...pt, x: solvedPt.x, y: solvedPt.y };
+      }) };
+      return updated;
+    });
+
+    set((s) => ({
+      activeSketch: s.activeSketch ? { ...s.activeSketch, entities: updatedEntities } : null,
+      statusMessage: `Constraints solved (${result.iterations} iteration${result.iterations === 1 ? '' : 's'})`,
+    }));
+  },
+
   // Conic curve rho (D11)
   conicRho: 0.5,
   setConicRho: (r) => set({ conicRho: Math.max(0.01, Math.min(0.99, r)) }),
@@ -2217,6 +2292,133 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     get().addFeature(feature);
     get().setStatusMessage(`Component pattern: ${n - 1} cop${n - 1 === 1 ? 'y' : 'ies'} created`);
   },
+
+  // ─── D12: Sketch Text ─────────────────────────────────────────────────────
+  sketchTextContent: 'Text',
+  sketchTextHeight: 5,
+  sketchTextFont: 'default',
+  setSketchTextContent: (v) => set({ sketchTextContent: v }),
+  setSketchTextHeight: (v) => set({ sketchTextHeight: v }),
+  setSketchTextFont: (v) => set({ sketchTextFont: v }),
+  startSketchTextTool: () => {
+    const { activeSketch } = get();
+    if (!activeSketch) {
+      set({ statusMessage: 'Open a sketch first before using Sketch Text' });
+      return;
+    }
+    set({ activeTool: 'sketch-text', statusMessage: 'Sketch Text — click on the sketch to place text' });
+  },
+  commitSketchTextEntities: (segments) => {
+    const { activeSketch } = get();
+    if (!activeSketch) return;
+    const newEntities = segments.map((seg) => ({
+      id: crypto.randomUUID(),
+      type: 'line' as const,
+      points: [
+        { id: crypto.randomUUID(), x: seg.x1, y: seg.y1, z: seg.z1 },
+        { id: crypto.randomUUID(), x: seg.x2, y: seg.y2, z: seg.z2 },
+      ],
+    }));
+    set({
+      activeSketch: {
+        ...activeSketch,
+        entities: [...activeSketch.entities, ...newEntities],
+      },
+      activeTool: 'select',
+      statusMessage: 'Text placed',
+    });
+  },
+  cancelSketchTextTool: () => set({ activeTool: 'select', statusMessage: 'Sketch Text cancelled' }),
+
+  // ─── D28: Dimension tool ──────────────────────────────────────────────────
+  activeDimensionType: 'linear',
+  dimensionOffset: 10,
+  pendingDimensionEntityIds: [],
+  setActiveDimensionType: (t) => set({ activeDimensionType: t }),
+  setDimensionOffset: (v) => set({ dimensionOffset: v }),
+  startDimensionTool: () => {
+    const { activeSketch } = get();
+    if (!activeSketch) {
+      set({ statusMessage: 'Open a sketch first before using the Dimension tool' });
+      return;
+    }
+    set({ activeTool: 'dimension', pendingDimensionEntityIds: [], statusMessage: 'Dimension — click entities to measure' });
+  },
+  cancelDimensionTool: () => set({ activeTool: 'select', pendingDimensionEntityIds: [], statusMessage: 'Dimension tool cancelled' }),
+  addPendingDimensionEntity: (id) => set((state) => ({
+    pendingDimensionEntityIds: state.pendingDimensionEntityIds.includes(id)
+      ? state.pendingDimensionEntityIds
+      : [...state.pendingDimensionEntityIds, id],
+  })),
+  addSketchDimension: (dim) => {
+    const { activeSketch } = get();
+    if (!activeSketch) return;
+    if ((activeSketch.dimensions ?? []).some((d) => d.id === dim.id)) return;
+    set({
+      sketches: get().sketches.map((s) =>
+        s.id === activeSketch.id
+          ? { ...s, dimensions: [...(s.dimensions ?? []), dim] }
+          : s
+      ),
+    });
+  },
+  removeDimension: (dimId) => {
+    const { activeSketch } = get();
+    if (!activeSketch) return;
+    set({
+      sketches: get().sketches.map((s) =>
+        s.id === activeSketch.id
+          ? { ...s, dimensions: (s.dimensions ?? []).filter((d) => d.id !== dimId) }
+          : s
+      ),
+    });
+  },
+
+  // ─── S10: Spline post-commit handle editing ───────────────────────────────
+  editingSplineEntityId: null,
+  hoveredSplinePointIndex: null,
+  draggingSplinePointIndex: null,
+  setEditingSplineEntityId: (id) => set({ editingSplineEntityId: id }),
+  setHoveredSplinePointIndex: (i) => set({ hoveredSplinePointIndex: i }),
+  setDraggingSplinePointIndex: (i) => set({ draggingSplinePointIndex: i }),
+  updateSplineControlPoint: (entityId, pointIndex, x, y, z) => {
+    const { activeSketch } = get();
+    if (!activeSketch) return;
+    const updatedEntities = activeSketch.entities.map((e) => {
+      if (e.id !== entityId) return e;
+      const updatedPoints = e.points.map((pt, i) => {
+        if (i !== pointIndex) return pt;
+        return { ...pt, x, y, z };
+      });
+      return { ...e, points: updatedPoints };
+    });
+    set({ activeSketch: { ...activeSketch, entities: updatedEntities } });
+  },
+
+  // ─── D45: Project / Include live-link toggle ──────────────────────────────
+  projectLiveLink: true,
+  setProjectLiveLink: (v) => set({ projectLiveLink: v }),
+  cancelSketchProjectTool: () => set({ activeTool: 'select', statusMessage: 'Project cancelled' }),
+
+  // S3 — Intersection Curve
+  startSketchIntersectTool: () => set({
+    activeTool: 'sketch-intersect',
+    statusMessage: 'Click a solid face to create intersection curve with sketch plane',
+  }),
+  cancelSketchIntersectTool: () => set({
+    activeTool: 'select',
+    statusMessage: 'Intersection curve cancelled',
+  }),
+
+  // D46 — Project to Surface
+  startSketchProjectSurfaceTool: () => set({
+    activeTool: 'sketch-project-surface',
+    statusMessage: 'Click a body face to project all sketch curves onto it',
+  }),
+  cancelSketchProjectSurfaceTool: () => set({
+    activeTool: 'select',
+    statusMessage: 'Project to surface cancelled',
+  }),
 }),
 {
   name: 'dzign3d-cad',

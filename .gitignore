@@ -36,3 +36,4 @@ memory/
 .env
 .env.*
 !.env.example
+/obj/Debug/package.g.props

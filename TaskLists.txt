@@ -23,16 +23,16 @@ DESIGN WORKSPACE — OPEN ITEMS
 [~] D171. Replace Face — blocked on face picker
 
 ── SKETCH CREATE ─────────────────────────────────────────────
-[ ] D12. Sketch Text — font triangulation (opentype.js), anchor + string + height
+[x] D12. Sketch Text — font triangulation (opentype.js), anchor + string + height
 [x] D14. Project / Include Geometry — face-boundary projection onto sketch plane (linked entities, uses computeCoplanarFaceBoundary)
 [ ] D15. Intersect — project 3D edge intersection with sketch plane into sketch
-[ ] D45. Include 3D Geometry (alias of D14 with live-link toggle)
-[ ] D46. Project to Surface — project sketch curves onto a curved 3D surface
+[x] D45. Include 3D Geometry (alias of D14 with live-link toggle)
+[x] D46. Project to Surface — project sketch curves onto a curved 3D surface
 
 ── SKETCH CONSTRAIN / DIMENSION ──────────────────────────────
 [ ] D27. Real constraint solver (geometric + dimensional, 2D DOF system)
 [ ] D28. Dimension tool full flow (place + drag label + lock value)
-[ ] D29. 12 geometric constraints UI (coincident, parallel, etc.)
+[x] D29. 12 geometric constraints UI (coincident, parallel, etc.) — toolbar UI scaffolding done; SketchInteraction wiring deferred
 [ ] D48. Arc Length dimension
 [ ] D49. Aligned (true-length) dimension
 [x] D50. AutoConstrain — detects horizontal/vertical/coincident/parallel/equal constraints and records them
@@ -54,24 +54,24 @@ DESIGN WORKSPACE — OPEN ITEMS
 
 ── FORM (T-SPLINE) ────────────────────────────────────────────
 [x] D146. T-Spline Pipe — sweeps ring cage along active path sketch (createPipeCageData, parallel-transport frames)
-[ ] D148. T-Spline Extrude — add cage faces along a vector from existing edge/face
-[ ] D149. T-Spline Revolve — revolve sketch/model geometry to form a cage
-[ ] D150. T-Spline Sweep — sweep cage edges along a path
-[ ] D151. T-Spline Loft — transition cage between profiles
+[x] D148. T-Spline Extrude — add cage faces along a vector from existing edge/face
+[x] D149. T-Spline Revolve — revolve sketch/model geometry to form a cage
+[x] D150. T-Spline Sweep — sweep cage edges along a path
+[x] D151. T-Spline Loft — transition cage between profiles
 
 ═══════════════════════════════════════════════════════════════
 SKETCH SECOND AUDIT GAPS
 ═══════════════════════════════════════════════════════════════
 [x] S1.  Three Point Arc Slot (slot-3point-arc: 4-click flow, circumcenter)
 [x] S2.  Center Point Arc Slot (slot-center-arc: 4-click flow)
-[ ] S3.  Intersection Curve — create curve from body/surface intersection
+[x] S3.  Intersection Curve — create curve from body/surface intersection
 [ ] S4.  Isoparametric Curve — UV-parameter curve on a NURBS surface (deferred)
 [x] S5.  Spun Profile — revolves profile around sketch centerline entity; 4th axis option in RevolvePanel
 [x] S6.  Break Link (linked flag on SketchEntity + breakProjectionLink action)
 [x] S7.  Per-sketch grid size (sketchGridSize in cadStore, SketchPalette input)
 [x] S8.  Intersection snap (line-line intersection added to findSnapCandidate)
 [x] S9.  Control Point Spline (spline-control tool, CatmullRom tension=0)
-[ ] S10. Spline post-commit handle editing (tangent/weight handle drag)
+[x] S10. Spline post-commit handle editing (tangent/weight handle drag)
 
 ═══════════════════════════════════════════════════════════════
 ASSEMBLY GAPS
@@ -84,7 +84,7 @@ ASSEMBLY GAPS
 ═══════════════════════════════════════════════════════════════
 3D PRINTER WORKSPACE
 ═══════════════════════════════════════════════════════════════
-[ ] 9.  Plugins page
+[x] 9.  Plugins page
 
 ═══════════════════════════════════════════════════════════════
 RECENTLY COMPLETED (last 3 sessions)

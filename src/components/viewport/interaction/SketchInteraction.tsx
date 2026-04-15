@@ -5,12 +5,14 @@ import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { useThemeStore } from '../../../store/themeStore';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
-import type { SketchPoint } from '../../../types/cad';
+import type { SketchPoint, SketchEntity } from '../../../types/cad';
 import { commitSketchTool } from './sketchInteraction/commitTool';
 import { renderSketchPreview } from './sketchInteraction/previewTool';
+import { loadDefaultFont, fontPathToSegments } from '../../../utils/sketchTextUtil';
+import { DimensionEngine } from '../../../engine/DimensionEngine';
 
 export default function SketchInteraction() {
-  const { camera, gl, raycaster } = useThree();
+  const { camera, gl, raycaster, scene } = useThree();
   const activeTool = useCADStore((s) => s.activeTool);
   const activeSketch = useCADStore((s) => s.activeSketch);
   const addSketchEntity = useCADStore((s) => s.addSketchEntity);
@@ -29,6 +31,21 @@ export default function SketchInteraction() {
   const conicRho = useCADStore((s) => s.conicRho);
   const blendCurveMode = useCADStore((s) => s.blendCurveMode);
   const themeColors = useThemeStore((s) => s.colors);
+  // D12: Sketch Text
+  const sketchTextContent = useCADStore((s) => s.sketchTextContent);
+  const sketchTextHeight = useCADStore((s) => s.sketchTextHeight);
+  const commitSketchTextEntities = useCADStore((s) => s.commitSketchTextEntities);
+  // D45: Project / Include live-link toggle
+  const projectLiveLink = useCADStore((s) => s.projectLiveLink);
+  // D46: Project to Surface
+  const cancelSketchProjectSurfaceTool = useCADStore((s) => s.cancelSketchProjectSurfaceTool);
+  // D28: Dimension tool
+  const activeDimensionType = useCADStore((s) => s.activeDimensionType);
+  const dimensionOffset = useCADStore((s) => s.dimensionOffset);
+  const pendingDimensionEntityIds = useCADStore((s) => s.pendingDimensionEntityIds);
+  const addPendingDimensionEntity = useCADStore((s) => s.addPendingDimensionEntity);
+  const addSketchDimension = useCADStore((s) => s.addSketchDimension);
+  const cancelDimensionTool = useCADStore((s) => s.cancelDimensionTool);
 
   const [drawingPoints, setDrawingPoints] = useState<SketchPoint[]>([]);
   const [mousePos, setMousePos] = useState<THREE.Vector3 | null>(null);
@@ -290,6 +307,31 @@ export default function SketchInteraction() {
         z: point.z,
       };
 
+      // D12: Sketch Text — resolve font async, then push entities
+      if (activeTool === 'sketch-text') {
+        const anchorPt = point;
+        const textStr = sketchTextContent;
+        const textH = sketchTextHeight;
+        setStatusMessage('Placing text…');
+        loadDefaultFont().then((font) => {
+          const segs2d = fontPathToSegments(font, textStr, 0, 0, textH);
+          // Transform 2D font segments to 3D world space using sketch axes
+          const seg3d = segs2d.map((s) => {
+            const p1 = anchorPt.clone()
+              .addScaledVector(t1, s.x1)
+              .addScaledVector(t2, s.y1);
+            const p2 = anchorPt.clone()
+              .addScaledVector(t1, s.x2)
+              .addScaledVector(t2, s.y2);
+            return { x1: p1.x, y1: p1.y, z1: p1.z, x2: p2.x, y2: p2.y, z2: p2.z };
+          });
+          commitSketchTextEntities(seg3d);
+        }).catch(() => {
+          setStatusMessage('Sketch Text: font failed to load — check /fonts/Roboto-Regular.ttf');
+        });
+        return;
+      }
+
       commitSketchTool({
         activeTool,
         activeSketch,
@@ -487,6 +529,270 @@ export default function SketchInteraction() {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [activeSketch, activeTool, drawingPoints, mousePos, getWorldPoint, findSnapCandidate, addSketchEntity, replaceSketchEntities, cycleEntityLinetype, setStatusMessage, polygonSides, filletRadius, chamferDist1, chamferDist2, chamferAngle, tangentCircleRadius, conicRho, blendCurveMode, camera, gl, raycaster]);
+
+  // D14: Project / Include Geometry — pick a solid face, project its boundary onto the sketch plane
+  useEffect(() => {
+    if (!activeSketch || activeTool !== 'sketch-project') return;
+    if (!gl || !camera || !raycaster) return;
+
+    const _mouse = new THREE.Vector2();
+
+    const collectMeshes = (): THREE.Mesh[] => {
+      const out: THREE.Mesh[] = [];
+      scene.traverse((obj) => {
+        const m = obj as THREE.Mesh;
+        if (m.isMesh && obj.userData?.pickable) out.push(m);
+      });
+      return out;
+    };
+
+    const handleMove = (e: PointerEvent) => {
+      const rect = gl.domElement.getBoundingClientRect();
+      _mouse.set(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(_mouse, camera);
+      const hits = raycaster.intersectObjects(collectMeshes(), false);
+      if (hits.length > 0 && hits[0].faceIndex !== undefined) {
+        setStatusMessage(projectLiveLink
+          ? 'Click a face to include geometry (live-linked)'
+          : 'Click a face to project geometry (one-time)');
+      } else {
+        setStatusMessage('Project: hover over a solid face to project its outline');
+      }
+    };
+
+    const handleClick = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      const rect = gl.domElement.getBoundingClientRect();
+      _mouse.set(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(_mouse, camera);
+      const hits = raycaster.intersectObjects(collectMeshes(), false);
+      if (!hits.length || hits[0].faceIndex === undefined) return;
+
+      const hit = hits[0];
+      const result = GeometryEngine.computeCoplanarFaceBoundary(hit.object as THREE.Mesh, hit.faceIndex!);
+      if (!result || result.boundary.length < 2) return;
+
+      // Project each boundary point onto the active sketch plane
+      const origin = activeSketch.planeOrigin;
+      const normal = activeSketch.planeNormal.clone().normalize();
+
+      const projectToSketchPlane = (pt: THREE.Vector3): THREE.Vector3 => {
+        // Remove the component along the plane normal (project onto plane)
+        const diff = pt.clone().sub(origin);
+        const dist = diff.dot(normal);
+        return pt.clone().sub(normal.clone().multiplyScalar(dist));
+      };
+
+      const projectedPts = result.boundary.map(projectToSketchPlane);
+
+      // Build line entities from consecutive projected points (closed loop)
+      const pts = [...projectedPts, projectedPts[0]]; // close the loop
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        if (a.distanceTo(b) < 0.001) continue; // skip degenerate segments
+        const entity: SketchEntity = {
+          id: crypto.randomUUID(),
+          type: 'line',
+          linked: projectLiveLink, // D45: true = Include (live-link), false = Project (one-time copy)
+          points: [
+            { id: crypto.randomUUID(), x: a.x, y: a.y, z: a.z },
+            { id: crypto.randomUUID(), x: b.x, y: b.y, z: b.z },
+          ],
+        };
+        addSketchEntity(entity);
+      }
+      setStatusMessage(`Projected ${projectedPts.length} points onto sketch — use Break Link to detach`);
+    };
+
+    const canvas = gl.domElement;
+    canvas.addEventListener('pointermove', handleMove);
+    canvas.addEventListener('click', handleClick);
+    return () => {
+      canvas.removeEventListener('pointermove', handleMove);
+      canvas.removeEventListener('click', handleClick);
+    };
+  }, [activeTool, activeSketch, gl, camera, raycaster, scene, addSketchEntity, setStatusMessage, projectLiveLink]);
+
+  // S3: Intersection Curve — click a solid face, compute the plane/mesh intersection, add as line entities
+  useEffect(() => {
+    if (!activeSketch || activeTool !== 'sketch-intersect') return;
+    if (!gl || !camera || !raycaster) return;
+
+    const _mouse = new THREE.Vector2();
+
+    const collectMeshes = (): THREE.Mesh[] => {
+      const out: THREE.Mesh[] = [];
+      scene.traverse((obj) => {
+        const m = obj as THREE.Mesh;
+        if (m.isMesh && obj.userData?.pickable) out.push(m);
+      });
+      return out;
+    };
+
+    const handleMove = (e: PointerEvent) => {
+      const rect = gl.domElement.getBoundingClientRect();
+      _mouse.set(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(_mouse, camera);
+      const hits = raycaster.intersectObjects(collectMeshes(), false);
+      if (hits.length > 0) {
+        setStatusMessage('Click to create intersection curve with sketch plane');
+      } else {
+        setStatusMessage('Intersect: hover over a solid face');
+      }
+    };
+
+    const handleClick = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      const rect = gl.domElement.getBoundingClientRect();
+      _mouse.set(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(_mouse, camera);
+      const hits = raycaster.intersectObjects(collectMeshes(), false);
+      if (!hits.length) return;
+
+      const mesh = hits[0].object as THREE.Mesh;
+      const normal = activeSketch.planeNormal.clone().normalize();
+      const origin = activeSketch.planeOrigin.clone();
+      const sketchPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, origin);
+
+      const polylines = GeometryEngine.computePlaneIntersectionCurve(mesh, sketchPlane);
+      if (!polylines.length) {
+        setStatusMessage('No intersection found with sketch plane');
+        return;
+      }
+
+      let segCount = 0;
+      for (const polyline of polylines) {
+        for (let i = 0; i < polyline.length - 1; i++) {
+          const a = polyline[i];
+          const b = polyline[i + 1];
+          if (a.distanceTo(b) < 0.001) continue;
+          const entity: SketchEntity = {
+            id: crypto.randomUUID(),
+            type: 'line',
+            points: [
+              { id: crypto.randomUUID(), x: a.x, y: a.y, z: a.z },
+              { id: crypto.randomUUID(), x: b.x, y: b.y, z: b.z },
+            ],
+          };
+          addSketchEntity(entity);
+          segCount++;
+        }
+      }
+      setStatusMessage(`Intersection curve added: ${segCount} segment${segCount !== 1 ? 's' : ''}`);
+    };
+
+    const canvas = gl.domElement;
+    canvas.addEventListener('pointermove', handleMove);
+    canvas.addEventListener('click', handleClick);
+    return () => {
+      canvas.removeEventListener('pointermove', handleMove);
+      canvas.removeEventListener('click', handleClick);
+    };
+  }, [activeTool, activeSketch, gl, camera, raycaster, scene, addSketchEntity, setStatusMessage]);
+
+  // D46: Project to Surface — click a body face, project all sketch line entities onto that mesh surface
+  useEffect(() => {
+    if (!activeSketch || activeTool !== 'sketch-project-surface') return;
+    if (!gl || !camera || !raycaster) return;
+
+    const _mouse = new THREE.Vector2();
+
+    const collectMeshes = (): THREE.Mesh[] => {
+      const out: THREE.Mesh[] = [];
+      scene.traverse((obj) => {
+        const m = obj as THREE.Mesh;
+        if (m.isMesh && obj.userData?.pickable) out.push(m);
+      });
+      return out;
+    };
+
+    const handleMove = (e: PointerEvent) => {
+      const rect = gl.domElement.getBoundingClientRect();
+      _mouse.set(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(_mouse, camera);
+      const hits = raycaster.intersectObjects(collectMeshes(), false);
+      if (hits.length > 0) {
+        setStatusMessage('Click to project sketch curves onto this surface');
+      } else {
+        setStatusMessage('Project to Surface: hover over a body face');
+      }
+    };
+
+    const handleClick = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      const rect = gl.domElement.getBoundingClientRect();
+      _mouse.set(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(_mouse, camera);
+      const hits = raycaster.intersectObjects(collectMeshes(), false);
+      if (!hits.length) return;
+
+      const mesh = hits[0].object as THREE.Mesh;
+
+      let segCount = 0;
+      for (const entity of activeSketch.entities) {
+        if (entity.type !== 'line') continue;
+        if (entity.points.length < 2) continue;
+
+        // Extract 3D endpoint positions
+        const pts3d = entity.points.map(
+          (p) => new THREE.Vector3(p.x, p.y, p.z),
+        );
+
+        // Project endpoints onto mesh surface
+        const projected = GeometryEngine.projectPointsOntoMesh(pts3d, mesh);
+
+        // Discretize along surface to follow curvature
+        const refined = GeometryEngine.discretizeCurveOnSurface(projected, mesh, 0.5, 3);
+
+        // Build line entities from the refined polyline
+        for (let i = 0; i < refined.length - 1; i++) {
+          const a = refined[i];
+          const b = refined[i + 1];
+          if (a.distanceTo(b) < 0.001) continue;
+          const newEntity: SketchEntity = {
+            id: crypto.randomUUID(),
+            type: 'line',
+            points: [
+              { id: crypto.randomUUID(), x: a.x, y: a.y, z: a.z },
+              { id: crypto.randomUUID(), x: b.x, y: b.y, z: b.z },
+            ],
+          };
+          addSketchEntity(newEntity);
+          segCount++;
+        }
+      }
+
+      setStatusMessage(`Projected ${segCount} segment${segCount !== 1 ? 's' : ''} onto surface`);
+      cancelSketchProjectSurfaceTool();
+    };
+
+    const canvas = gl.domElement;
+    canvas.addEventListener('pointermove', handleMove);
+    canvas.addEventListener('click', handleClick);
+    return () => {
+      canvas.removeEventListener('pointermove', handleMove);
+      canvas.removeEventListener('click', handleClick);
+    };
+  }, [activeTool, activeSketch, gl, camera, raycaster, scene, addSketchEntity, setStatusMessage, cancelSketchProjectSurfaceTool]);
 
   // Preview of current drawing operation
   useFrame(() => {

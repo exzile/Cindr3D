@@ -20,7 +20,8 @@ import {
   CornerDownRight, FlipHorizontal2, ChevronsRight,
   ArrowLeftRight, ArrowUpDown, Equal, Tangent,
   RefreshCw, Unlink, SplitSquareHorizontal, Link, ZoomOut,
-  GitMerge, Zap,
+  GitMerge, Zap, Type,
+  Lock, LocateFixed,
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore';
 import { useComponentStore } from '../../store/componentStore';
@@ -343,6 +344,8 @@ export default function Toolbar() {
   const addFeature = useCADStore((s) => s.addFeature);
 const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const autoConstrainSketch = useCADStore((s) => s.autoConstrainSketch);
+  const startSketchTextTool = useCADStore((s) => s.startSketchTextTool);
+  const startSketchProjectSurfaceTool = useCADStore((s) => s.startSketchProjectSurfaceTool);
   const sketches = useCADStore((s) => s.sketches);
   const setWorkspaceMode = useCADStore((s) => s.setWorkspaceMode);
   const setActiveTool = useCADStore((s) => s.setActiveTool);
@@ -683,7 +686,9 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
     { icon: <Waypoints size={MI} />, label: 'Conic Curve', onClick: () => { setActiveTool('conic' as Tool); setStatusMessage('Conic: click start, then end, then shoulder point — set ρ in palette'); } },
     { separator: true, icon: <CircleDot size={MI} />, label: 'Point', onClick: () => setActiveTool('point' as Tool) },
     { separator: true, icon: <ArrowUpFromLine size={MI} />, label: 'Project / Include', shortcut: 'P', onClick: () => { setActiveTool('sketch-project' as Tool); setStatusMessage('Project: click a solid face to project its boundary onto the sketch plane'); } },
-    { icon: <Scissors size={MI} />, label: 'Intersect', onClick: comingSoon('Intersect') },
+    { icon: <Scissors size={MI} />, label: 'Intersect', onClick: () => { setActiveTool('sketch-intersect' as Tool); setStatusMessage('Click a solid face to create intersection curve with sketch plane'); } },
+    { icon: <Download size={MI} />, label: 'Project to Surface', onClick: startSketchProjectSurfaceTool },
+    { separator: true, icon: <Type size={MI} />, label: 'Text', onClick: startSketchTextTool },
   ];
 
   const sketchModifyMenuItems: MenuItem[] = [
@@ -708,18 +713,18 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const sketchConstraintMenuItems: MenuItem[] = [
     { icon: <Ruler size={MI} />, label: 'Sketch Dimension', shortcut: 'D', onClick: () => setActiveTool('dimension' as Tool) },
-    { separator: true, icon: <AlignCenter size={MI} />, label: 'Coincident', onClick: comingSoon('Coincident Constraint') },
-    { icon: <Minus size={MI} />, label: 'Collinear', onClick: comingSoon('Collinear Constraint') },
-    { icon: <AlignCenter size={MI} />, label: 'Concentric', onClick: comingSoon('Concentric Constraint') },
-    { icon: <FlipHorizontal size={MI} />, label: 'Midpoint', onClick: comingSoon('Midpoint Constraint') },
-    { separator: true, icon: <Minus size={MI} />, label: 'Horizontal', onClick: comingSoon('Horizontal Constraint') },
-    { icon: <Minus size={MI} />, label: 'Vertical', onClick: comingSoon('Vertical Constraint') },
-    { icon: <Minus size={MI} />, label: 'Perpendicular', onClick: comingSoon('Perpendicular Constraint') },
-    { icon: <Minus size={MI} />, label: 'Parallel', onClick: comingSoon('Parallel Constraint') },
-    { icon: <Minus size={MI} />, label: 'Tangent', onClick: comingSoon('Tangent Constraint') },
-    { separator: true, icon: <Circle size={MI} />, label: 'Equal', onClick: comingSoon('Equal Constraint') },
-    { icon: <FlipHorizontal size={MI} />, label: 'Symmetric', onClick: comingSoon('Symmetric Constraint') },
-    { icon: <Target size={MI} />, label: 'Fix / Unfix', onClick: comingSoon('Fix/Unfix Constraint') },
+    { separator: true, icon: <AlignCenter size={MI} />, label: 'Coincident', onClick: () => { setActiveTool('constrain-coincident' as Tool); setStatusMessage('Coincident: click two entities to apply constraint'); } },
+    { icon: <Minus size={MI} />, label: 'Collinear', onClick: () => { setActiveTool('constrain-collinear' as Tool); setStatusMessage('Collinear: click two lines to apply constraint'); } },
+    { icon: <CircleDot size={MI} />, label: 'Concentric', onClick: () => { setActiveTool('constrain-concentric' as Tool); setStatusMessage('Concentric: click two circles/arcs to apply constraint'); } },
+    { icon: <LocateFixed size={MI} />, label: 'Midpoint', onClick: () => { setActiveTool('constrain-midpoint' as Tool); setStatusMessage('Midpoint: click a point and a line to apply constraint'); } },
+    { separator: true, icon: <ArrowLeftRight size={MI} />, label: 'Horizontal', onClick: () => { setActiveTool('constrain-horizontal' as Tool); setStatusMessage('Horizontal: click a line or two points to apply constraint'); } },
+    { icon: <ArrowUpDown size={MI} />, label: 'Vertical', onClick: () => { setActiveTool('constrain-vertical' as Tool); setStatusMessage('Vertical: click a line or two points to apply constraint'); } },
+    { icon: <CornerDownRight size={MI} />, label: 'Perpendicular', onClick: () => { setActiveTool('constrain-perpendicular' as Tool); setStatusMessage('Perpendicular: click two lines to apply constraint'); } },
+    { icon: <Minus size={MI} />, label: 'Parallel', onClick: () => { setActiveTool('constrain-parallel' as Tool); setStatusMessage('Parallel: click two lines to apply constraint'); } },
+    { icon: <Tangent size={MI} />, label: 'Tangent', onClick: () => { setActiveTool('constrain-tangent' as Tool); setStatusMessage('Tangent: click two curves to apply constraint'); } },
+    { separator: true, icon: <Equal size={MI} />, label: 'Equal', onClick: () => { setActiveTool('constrain-equal' as Tool); setStatusMessage('Equal: click two entities to apply constraint'); } },
+    { icon: <FlipHorizontal size={MI} />, label: 'Symmetric', onClick: () => { setActiveTool('constrain-symmetric' as Tool); setStatusMessage('Symmetric: click two entities and a symmetry line'); } },
+    { icon: <Lock size={MI} />, label: 'Fix / Unfix', onClick: () => { setActiveTool('constrain-fix' as Tool); setStatusMessage('Fix: click an entity to fix its position'); } },
     { separator: true, icon: <Zap size={MI} />, label: 'AutoConstrain', onClick: () => autoConstrainSketch() },
   ];
 
@@ -1215,6 +1220,9 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
                 ]}
               />
               <ToolButton icon={<ArrowUpFromLine size={20} />}    label="Project"   active={activeTool === 'sketch-project'} onClick={() => { setActiveTool('sketch-project' as Tool); setStatusMessage('Project: click a solid face to project its boundary onto the sketch plane'); }}  colorClass="icon-blue" />
+              <ToolButton icon={<Scissors size={20} />}           label="Intersect" active={activeTool === 'sketch-intersect'} onClick={() => { setActiveTool('sketch-intersect' as Tool); setStatusMessage('Click a solid face to create intersection curve with sketch plane'); }} colorClass="icon-blue" />
+              <ToolButton icon={<Download size={20} />}           label="Proj Surface" active={activeTool === 'sketch-project-surface'} onClick={startSketchProjectSurfaceTool} colorClass="icon-blue" />
+              <ToolButton icon={<Type size={20} />}               label="Text"      active={activeTool === 'sketch-text'} onClick={startSketchTextTool}  colorClass="icon-blue" />
             </RibbonSection>
 
             {/* ── MODIFY ─────────────────────────────────── */}
@@ -1230,13 +1238,20 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
             {/* ── CONSTRAINTS ────────────────────────────── */}
             <RibbonSection title="CONSTRAINTS" menuItems={sketchConstraintMenuItems} accentColor="#ff6b00">
-              <ToolButton icon={<Ruler size={20} />}             label="Dimension"  tool="dimension"                    colorClass="icon-orange" />
-              <ToolButton icon={<AlignCenter size={20} />}       label="Coincident" onClick={comingSoon('Coincident')}  colorClass="icon-orange" />
-              <ToolButton icon={<ArrowLeftRight size={20} />}    label="Horizontal" onClick={comingSoon('Horizontal')}  colorClass="icon-orange" />
-              <ToolButton icon={<ArrowUpDown size={20} />}       label="Vertical"   onClick={comingSoon('Vertical')}    colorClass="icon-orange" />
-              <ToolButton icon={<Tangent size={20} />}           label="Tangent"      onClick={comingSoon('Tangent')}         colorClass="icon-orange" />
-              <ToolButton icon={<Equal size={20} />}             label="Equal"        onClick={comingSoon('Equal')}           colorClass="icon-orange" />
-              <ToolButton icon={<Zap size={20} />}               label="AutoConstrain" onClick={() => autoConstrainSketch()}  colorClass="icon-orange" />
+              <ToolButton icon={<Ruler size={20} />}            label="Dimension"    tool="dimension"                                                                                                                                  colorClass="icon-orange" />
+              <ToolButton icon={<AlignCenter size={20} />}      label="Coincident"   active={activeTool === 'constrain-coincident'}   onClick={() => { setActiveTool('constrain-coincident' as Tool);   setStatusMessage('Coincident: click two entities to apply constraint'); }}   colorClass="icon-orange" />
+              <ToolButton icon={<Minus size={20} />}            label="Collinear"    active={activeTool === 'constrain-collinear'}    onClick={() => { setActiveTool('constrain-collinear' as Tool);    setStatusMessage('Collinear: click two lines to apply constraint'); }}         colorClass="icon-orange" />
+              <ToolButton icon={<CircleDot size={20} />}        label="Concentric"   active={activeTool === 'constrain-concentric'}   onClick={() => { setActiveTool('constrain-concentric' as Tool);   setStatusMessage('Concentric: click two circles/arcs to apply constraint'); }} colorClass="icon-orange" />
+              <ToolButton icon={<Lock size={20} />}             label="Fix"          active={activeTool === 'constrain-fix'}          onClick={() => { setActiveTool('constrain-fix' as Tool);          setStatusMessage('Fix: click an entity to fix its position'); }}              colorClass="icon-orange" />
+              <ToolButton icon={<Minus size={20} />}            label="Parallel"     active={activeTool === 'constrain-parallel'}     onClick={() => { setActiveTool('constrain-parallel' as Tool);     setStatusMessage('Parallel: click two lines to apply constraint'); }}         colorClass="icon-orange" />
+              <ToolButton icon={<CornerDownRight size={20} />}  label="Perpendicular" active={activeTool === 'constrain-perpendicular'} onClick={() => { setActiveTool('constrain-perpendicular' as Tool); setStatusMessage('Perpendicular: click two lines to apply constraint'); }} colorClass="icon-orange" />
+              <ToolButton icon={<ArrowLeftRight size={20} />}   label="Horizontal"   active={activeTool === 'constrain-horizontal'}   onClick={() => { setActiveTool('constrain-horizontal' as Tool);   setStatusMessage('Horizontal: click a line or two points to apply constraint'); }} colorClass="icon-orange" />
+              <ToolButton icon={<ArrowUpDown size={20} />}      label="Vertical"     active={activeTool === 'constrain-vertical'}     onClick={() => { setActiveTool('constrain-vertical' as Tool);     setStatusMessage('Vertical: click a line or two points to apply constraint'); }} colorClass="icon-orange" />
+              <ToolButton icon={<Tangent size={20} />}          label="Tangent"      active={activeTool === 'constrain-tangent'}      onClick={() => { setActiveTool('constrain-tangent' as Tool);      setStatusMessage('Tangent: click two curves to apply constraint'); }}          colorClass="icon-orange" />
+              <ToolButton icon={<Equal size={20} />}            label="Equal"        active={activeTool === 'constrain-equal'}        onClick={() => { setActiveTool('constrain-equal' as Tool);        setStatusMessage('Equal: click two entities to apply constraint'); }}          colorClass="icon-orange" />
+              <ToolButton icon={<LocateFixed size={20} />}      label="Midpoint"     active={activeTool === 'constrain-midpoint'}     onClick={() => { setActiveTool('constrain-midpoint' as Tool);     setStatusMessage('Midpoint: click a point and a line to apply constraint'); }}  colorClass="icon-orange" />
+              <ToolButton icon={<FlipHorizontal size={20} />}   label="Symmetric"    active={activeTool === 'constrain-symmetric'}    onClick={() => { setActiveTool('constrain-symmetric' as Tool);    setStatusMessage('Symmetric: click two entities and a symmetry line'); }}     colorClass="icon-orange" />
+              <ToolButton icon={<Zap size={20} />}              label="AutoConstrain" onClick={() => autoConstrainSketch()}                                                                                                             colorClass="icon-orange" />
             </RibbonSection>
 
             {/* ── CONFIGURE ──────────────────────────────── */}

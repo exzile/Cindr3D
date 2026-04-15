@@ -13,6 +13,9 @@ import ExtrudePanel from './ExtrudePanel';
 import RevolvePanel from './RevolvePanel';
 import SweepPanel from './SweepPanel';
 import LoftPanel from './LoftPanel';
+import SketchTextPanel from './SketchTextPanel';
+import SketchDimensionPanel from './SketchDimensionPanel';
+import SketchProjectPanel from './SketchProjectPanel';
 import PatchPanel from './PatchPanel';
 import RuledSurfacePanel from './RuledSurfacePanel';
 import RibPanel from './RibPanel';
@@ -23,6 +26,9 @@ import SketchMirrorPanel from './SketchMirrorPanel';
 import SceneTheme from './scene/SceneTheme';
 import SliceEffect from './scene/SliceEffect';
 import SketchRenderer from './scene/SketchRenderer';
+import SketchConstraintOverlay from './scene/SketchConstraintOverlay';
+import SketchDimensionAnnotations from './scene/SketchDimensionAnnotations';
+import SketchSplineHandles from './scene/SketchSplineHandles';
 import PrimitiveBodies from './scene/PrimitiveBodies';
 import ExtrudedBodies from './scene/ExtrudedBodies';
 import ImportedModels from './scene/ImportedModels';
@@ -149,6 +155,9 @@ export default function Viewport() {
 
         {/* CAD Content */}
         <SketchRenderer />
+        <SketchConstraintOverlay />
+        <SketchDimensionAnnotations />
+        <SketchSplineHandles />
         <ExtrudedBodies />
         <PrimitiveBodies />
         <ImportedModels />
@@ -210,6 +219,9 @@ export default function Viewport() {
       <SketchPatternPanel />
       <SketchTransformPanel />
       <SketchMirrorPanel />
+      <SketchTextPanel />
+      <SketchDimensionPanel />
+      <SketchProjectPanel />
     </div>
   );
 }

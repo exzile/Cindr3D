@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { PersistStorage } from 'zustand/middleware';
 import * as THREE from 'three';
 import type {
   PrinterProfile, MaterialProfile, PrintProfile, PlateObject,
@@ -691,10 +692,10 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
 }),
 {
   name: 'dzign3d-slicer-plate',
-  storage: idbStorage as unknown as typeof idbStorage,
+  storage: idbStorage as unknown as PersistStorage<SlicerStore, unknown>,
 
   // Only persist plate-related state — not ephemeral slice/preview/progress state
-  partialize: (state) => ({
+  partialize: ((state) => ({
     plateObjects: state.plateObjects.map((obj) => ({
       ...obj,
       // Serialize THREE.BufferGeometry to a plain JSON-safe object
@@ -702,17 +703,16 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
     })),
     selectedPlateObjectId: state.selectedPlateObjectId,
     transformMode: state.transformMode,
-  }),
+  }) as unknown as SlicerStore) as (state: SlicerStore) => SlicerStore,
 
   // After loading from IDB, reconstruct BufferGeometry objects
   onRehydrateStorage: () => (state) => {
     if (!state?.plateObjects) return;
-    const persistedState = state as unknown as {
-      plateObjects: Array<Omit<PlateObject, 'geometry'> & { geometry: SerializedGeom | null }>;
-    };
-    persistedState.plateObjects = persistedState.plateObjects.map((obj) => ({
+    state.plateObjects = state.plateObjects.map((obj) => ({
       ...obj,
-      geometry: obj.geometry ? deserializeGeom(obj.geometry) : null,
-    }));
+      geometry: obj.geometry && !(obj.geometry instanceof THREE.BufferGeometry)
+        ? deserializeGeom(obj.geometry as unknown as SerializedGeom)
+        : obj.geometry,
+    })) as PlateObject[];
   },
 }));

@@ -84,6 +84,7 @@ export default function FormInteraction() {
   const updateFormVertices       = useCADStore((s) => s.updateFormVertices);
   const setStatusMessage         = useCADStore((s) => s.setStatusMessage);
   const addFormBody              = useCADStore((s) => s.addFormBody);
+  const removeFormBody           = useCADStore((s) => s.removeFormBody);
   const setFormBodySubdivisionLevel = useCADStore((s) => s.setFormBodySubdivisionLevel);
   const setFormBodyCrease        = useCADStore((s) => s.setFormBodyCrease);
   const toggleFrozenFormVertex   = useCADStore((s) => s.toggleFrozenFormVertex);
@@ -361,6 +362,59 @@ export default function FormInteraction() {
         formMeshesRef.current = [];
         break;
       }
+      case 'form-extrude': {
+        // Find the active form body (first one, or the selected one if there's a selectedFormBodyId)
+        const activeBody = formBodies[0];
+        if (!activeBody) { setStatusMessage('No form body to extrude'); break; }
+
+        // Find the "top ring" — vertices with the maximum Y coordinate
+        const maxY = Math.max(...activeBody.vertices.map(v => v.position[1]));
+        const TOL = 0.1;
+        const topVerts = activeBody.vertices.filter(v => Math.abs(v.position[1] - maxY) < TOL);
+
+        if (topVerts.length < 3) { setStatusMessage('No ring found to extrude'); break; }
+
+        // Sort by angle around Y axis so they form an ordered ring
+        const cx = topVerts.reduce((s, v) => s + v.position[0], 0) / topVerts.length;
+        const cz = topVerts.reduce((s, v) => s + v.position[2], 0) / topVerts.length;
+        const sorted = [...topVerts].sort((a, b) =>
+          Math.atan2(a.position[2] - cz, a.position[0] - cx) -
+          Math.atan2(b.position[2] - cz, b.position[0] - cx)
+        );
+        const ringVerts = sorted.map(v => new THREE.Vector3(...v.position));
+        const oldRingIds = sorted.map(v => v.id);
+
+        const extPrefix = `ext-${Date.now()}-`;
+        const startVI = activeBody.vertices.length;
+        const startEI = activeBody.edges.length;
+        const startFI = activeBody.faces.length;
+
+        const { vertices: newVerts, edges: newEdges, faces: newFaces } =
+          SubdivisionEngine.createExtrudeCageData(
+            ringVerts,
+            new THREE.Vector3(0, 1, 0),  // extrude upward
+            10,                           // default 10 units
+            extPrefix,
+            startVI,
+            startEI,
+            startFI,
+            oldRingIds,
+          );
+
+        // Merge new geometry into the existing body:
+        // remove old body and add an updated copy with appended verts/edges/faces
+        const mergedBody = {
+          ...activeBody,
+          vertices: [...activeBody.vertices, ...newVerts],
+          edges:    [...activeBody.edges,    ...newEdges],
+          faces:    [...activeBody.faces,    ...newFaces],
+        };
+        removeFormBody(activeBody.id);
+        addFormBody(mergedBody);
+        formMeshesRef.current = [];
+        setStatusMessage('T-Spline Extrude: top ring extruded upward 10 units');
+        break;
+      }
       case 'form-edit': {
         const result = pickNearestVertex(e);
         if (result) {
@@ -399,25 +453,57 @@ export default function FormInteraction() {
         break;
       }
       case 'form-crease': {
-        // D160: mark all vertices of the active body as creased (crease=1)
+        // D160: mark all vertices and edges of the active body as creased (crease=1)
         const bodyId = useCADStore.getState().activeFormBodyId;
         if (!bodyId) {
           setStatusMessage('Crease: no active form body');
           break;
         }
+        // Update vertex crease via store action
         setFormBodyCrease(bodyId, 1);
-        setStatusMessage('Creased: all vertices marked sharp (crease=1)');
+        // Also update edge crease by rebuilding the body with crease=1 on all edges
+        {
+          const state = useCADStore.getState();
+          const body = state.formBodies.find((b) => b.id === bodyId);
+          if (body) {
+            const updatedBody = {
+              ...body,
+              edges: body.edges.map((ed) => ({ ...ed, crease: 1 })),
+            };
+            removeFormBody(bodyId);
+            addFormBody(updatedBody);
+            formMeshesRef.current = [];
+          }
+        }
+        setStatusMessage('Creased: all edges and vertices marked sharp (crease=1)');
         break;
       }
       case 'form-uncrease': {
-        // D160: clear crease on all vertices of the active body
+        // D160: clear crease on all vertices and edges of the active body
         const bodyId = useCADStore.getState().activeFormBodyId;
         if (!bodyId) {
           setStatusMessage('Uncrease: no active form body');
           break;
         }
+        // Clear vertex crease via store action
         setFormBodyCrease(bodyId, 0);
-        setStatusMessage('Uncreased: all vertex creases cleared (crease=0)');
+        // Also clear edge crease by rebuilding the body with crease=0 on all edges
+        {
+          const state = useCADStore.getState();
+          // After setFormBodyCrease the body is updated; re-read from fresh state
+          const updatedState = useCADStore.getState();
+          const body = updatedState.formBodies.find((b) => b.id === bodyId);
+          if (body) {
+            const clearedBody = {
+              ...body,
+              edges: body.edges.map((ed) => ({ ...ed, crease: 0 })),
+            };
+            removeFormBody(bodyId);
+            addFormBody(clearedBody);
+            formMeshesRef.current = [];
+          }
+        }
+        setStatusMessage('Uncreased: all edge and vertex creases cleared (crease=0)');
         break;
       }
       case 'form-freeze': {
@@ -435,10 +521,231 @@ export default function FormInteraction() {
         setStatusMessage(nowFrozen ? `Vertex frozen — drag is blocked` : `Vertex unfrozen — drag restored`);
         break;
       }
+      case 'form-revolve': {
+        // D149: T-Spline Revolve — revolve a sketch profile around the Y axis
+        const state = useCADStore.getState();
+        const profileSketch = state.sketches.find((s) => s.entities.length > 0);
+        if (!profileSketch) {
+          setStatusMessage('No sketch profile available — draw a profile sketch first');
+          break;
+        }
+
+        // Collect all unique points from sketch line entities
+        const rawPts: THREE.Vector3[] = [];
+        for (const ent of profileSketch.entities) {
+          for (const p of ent.points) rawPts.push(new THREE.Vector3(p.x, p.y, p.z));
+        }
+        // Deduplicate consecutive identical points
+        const pts: THREE.Vector3[] = [rawPts[0]];
+        for (let k = 1; k < rawPts.length; k++) {
+          if (rawPts[k].distanceTo(pts[pts.length - 1]) > 0.001) pts.push(rawPts[k]);
+        }
+
+        if (pts.length < 2) {
+          setStatusMessage('Profile must have at least 2 points');
+          break;
+        }
+
+        const revPrefix = `rev-${Date.now()}-`;
+        const { vertices, edges, faces } = SubdivisionEngine.createRevolveCageData(
+          pts,
+          new THREE.Vector3(0, 0, 0),  // revolve around origin
+          new THREE.Vector3(0, 1, 0),  // Y axis
+          360,                          // full revolve
+          8,                            // 8 segments
+          revPrefix,
+        );
+
+        addFormBody({
+          id: `fb-${Date.now()}`,
+          name: 'T-Spline Revolve',
+          vertices,
+          edges,
+          faces,
+          subdivisionLevel: 2,
+          visible: true,
+        });
+        formMeshesRef.current = [];
+        setStatusMessage('T-Spline Revolve created — use Edit Form to reshape it');
+        break;
+      }
+      case 'form-loft': {
+        // D151: T-Spline Loft — blend between N profile sketches
+        const loftState = useCADStore.getState();
+        const loftNonEmpty = loftState.sketches.filter((s) => s.entities.length > 0);
+        if (loftNonEmpty.length < 2) {
+          setStatusMessage('T-Spline Loft needs at least 2 profile sketches');
+          break;
+        }
+
+        // Extract 2D profile rings, world positions, and normals from each sketch
+        const loftProfiles: Array<Array<{ x: number; y: number }>> = [];
+        const loftPositions: THREE.Vector3[] = [];
+        const loftNormals: THREE.Vector3[] = [];
+
+        for (const sketch of loftNonEmpty) {
+          // Collect all unique world-space points from this sketch
+          const rawPts: THREE.Vector3[] = [];
+          for (const ent of sketch.entities) {
+            for (const p of ent.points) rawPts.push(new THREE.Vector3(p.x, p.y, p.z));
+          }
+          const profileWorld: THREE.Vector3[] = rawPts.length > 0 ? [rawPts[0]] : [];
+          for (let k = 1; k < rawPts.length; k++) {
+            if (rawPts[k].distanceTo(profileWorld[profileWorld.length - 1]) > 0.001) {
+              profileWorld.push(rawPts[k]);
+            }
+          }
+          if (profileWorld.length < 3) continue;
+
+          // Compute centroid as the profile's world position
+          const centroid = profileWorld.reduce(
+            (acc, p) => acc.add(p),
+            new THREE.Vector3(),
+          ).divideScalar(profileWorld.length);
+          loftPositions.push(centroid);
+
+          // Estimate the sketch plane normal from the first two edges
+          const profileDir = profileWorld[1].clone().sub(profileWorld[0]).normalize();
+          const upRef = Math.abs(profileDir.y) < 0.9
+            ? new THREE.Vector3(0, 1, 0)
+            : new THREE.Vector3(1, 0, 0);
+          const sketchNormal = profileDir.clone().cross(upRef).normalize();
+          loftNormals.push(sketchNormal);
+
+          // Build local frame t1/t2 matching createLoftCageData so projections align
+          const worldRef = Math.abs(sketchNormal.y) < 0.9
+            ? new THREE.Vector3(0, 1, 0)
+            : new THREE.Vector3(1, 0, 0);
+          const t1 = new THREE.Vector3().crossVectors(worldRef, sketchNormal).normalize();
+          const t2 = new THREE.Vector3().crossVectors(sketchNormal, t1).normalize();
+
+          // Project each profile point onto (t1, t2) to get local 2D coords
+          const ring = profileWorld.map((p) => {
+            const rel = p.clone().sub(centroid);
+            return { x: rel.dot(t1), y: rel.dot(t2) };
+          });
+          loftProfiles.push(ring);
+        }
+
+        if (loftProfiles.length < 2) {
+          setStatusMessage('T-Spline Loft: could not extract profiles — each sketch needs ≥ 3 points');
+          break;
+        }
+
+        // Ensure all profiles have the same point count (use minimum)
+        const loftS = Math.min(...loftProfiles.map((p) => p.length));
+        if (loftS < 3) {
+          setStatusMessage('Each loft profile needs at least 3 points');
+          break;
+        }
+        const normalizedLoftProfiles = loftProfiles.map((p) => p.slice(0, loftS));
+
+        const loftPrefix = `loft-${Date.now()}-`;
+        const { vertices: lv, edges: le, faces: lf } = SubdivisionEngine.createLoftCageData(
+          normalizedLoftProfiles,
+          loftPositions,
+          loftNormals,
+          loftPrefix,
+        );
+
+        addFormBody({
+          id: `fb-${Date.now()}`,
+          name: 'T-Spline Loft',
+          vertices: lv,
+          edges: le,
+          faces: lf,
+          subdivisionLevel: 2,
+          visible: true,
+        });
+        formMeshesRef.current = [];
+        setStatusMessage('T-Spline Loft created — use Edit Form to reshape it');
+        break;
+      }
+      case 'form-sweep': {
+        // D150: T-Spline Sweep — sweep a profile ring along a path
+        const sweepState = useCADStore.getState();
+        const nonEmpty = sweepState.sketches.filter((s) => s.entities.length > 0);
+        if (nonEmpty.length < 2) {
+          setStatusMessage('T-Spline Sweep needs two sketches: path (first) and profile (second)');
+          break;
+        }
+        const pathSketch = nonEmpty[0];
+        const profileSketch = nonEmpty[1];
+
+        // Extract path points from pathSketch (deduplicated ordered points)
+        const rawPathPts: THREE.Vector3[] = [];
+        for (const ent of pathSketch.entities) {
+          for (const p of ent.points) rawPathPts.push(new THREE.Vector3(p.x, p.y, p.z));
+        }
+        const pathPts: THREE.Vector3[] = rawPathPts.length > 0 ? [rawPathPts[0]] : [];
+        for (let k = 1; k < rawPathPts.length; k++) {
+          if (rawPathPts[k].distanceTo(pathPts[pathPts.length - 1]) > 0.001) pathPts.push(rawPathPts[k]);
+        }
+
+        // Extract profile points from profileSketch as 2D local coords
+        // Collect all unique world-space points from the profile sketch
+        const rawProfilePts: THREE.Vector3[] = [];
+        for (const ent of profileSketch.entities) {
+          for (const p of ent.points) rawProfilePts.push(new THREE.Vector3(p.x, p.y, p.z));
+        }
+        const profileWorld: THREE.Vector3[] = rawProfilePts.length > 0 ? [rawProfilePts[0]] : [];
+        for (let k = 1; k < rawProfilePts.length; k++) {
+          if (rawProfilePts[k].distanceTo(profileWorld[profileWorld.length - 1]) > 0.001) {
+            profileWorld.push(rawProfilePts[k]);
+          }
+        }
+
+        if (pathPts.length < 2 || profileWorld.length < 3) {
+          setStatusMessage('Path needs ≥ 2 points, profile needs ≥ 3');
+          break;
+        }
+
+        // Project profile points onto their sketch plane to get local 2D offsets.
+        // Use the centroid as the local origin and the sketch normal (cross of two edges)
+        // to define the local frame, then project onto normal and binormal axes.
+        const centroid = profileWorld.reduce(
+          (acc, p) => acc.add(p),
+          new THREE.Vector3(),
+        ).divideScalar(profileWorld.length);
+
+        // Estimate sketch plane normal from first two edges
+        const profileDir = profileWorld[1].clone().sub(profileWorld[0]).normalize();
+        const up = Math.abs(profileDir.y) < 0.9
+          ? new THREE.Vector3(0, 1, 0)
+          : new THREE.Vector3(1, 0, 0);
+        const profileNormal = profileDir.clone().cross(up).normalize();
+        const profileBinormal = profileDir.clone().cross(profileNormal).normalize();
+
+        const profileRing = profileWorld.map((p) => {
+          const rel = p.clone().sub(centroid);
+          return { x: rel.dot(profileNormal), y: rel.dot(profileBinormal) };
+        });
+
+        const sweepPrefix = `sweep-${Date.now()}-`;
+        const { vertices, edges, faces } = SubdivisionEngine.createSweepCageData(
+          pathPts,
+          profileRing,
+          sweepPrefix,
+        );
+
+        addFormBody({
+          id: `fb-${Date.now()}`,
+          name: 'T-Spline Sweep',
+          vertices,
+          edges,
+          faces,
+          subdivisionLevel: 2,
+          visible: true,
+        });
+        formMeshesRef.current = [];
+        setStatusMessage('T-Spline Sweep created — use Edit Form to reshape it');
+        break;
+      }
       default: break;
     }
-  }, [activeTool, addFormBody, pickNearestVertex, setActiveFormBody, setFormSelection, setStatusMessage,
-      setFormBodySubdivisionLevel, setFormBodyCrease, toggleFrozenFormVertex]);
+  }, [activeTool, addFormBody, removeFormBody, formBodies, pickNearestVertex, setActiveFormBody,
+      setFormSelection, setStatusMessage, setFormBodySubdivisionLevel, setFormBodyCrease,
+      toggleFrozenFormVertex]);
 
   // Register all canvas event listeners
   useEffect(() => {

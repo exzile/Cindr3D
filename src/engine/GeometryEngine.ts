@@ -1629,4 +1629,827 @@ export class GeometryEngine {
     const mirrored = new THREE.Mesh(geo, mat);
     return mirrored;
   }
+
+  // ---------------------------------------------------------------------------
+  // Surface intersection: mesh-mesh and plane-mesh
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Computes the intersection curve(s) between two triangle meshes.
+   *
+   * Algorithm: for each triangle pair (one from meshA, one from meshB),
+   * compute the triangle-triangle intersection segment. Collect all segments,
+   * then chain them into ordered polylines (closed loops where possible).
+   *
+   * @returns Array of polylines (each is an ordered array of world-space Vector3).
+   *          Empty array if meshes don't intersect.
+   */
+  static computeMeshIntersectionCurve(
+    meshA: THREE.Mesh,
+    meshB: THREE.Mesh,
+    tol = 1e-6,
+  ): THREE.Vector3[][] {
+    meshA.updateWorldMatrix(true, false);
+    meshB.updateWorldMatrix(true, false);
+
+    const trisA = GeometryEngine._extractWorldTriangles(meshA);
+    const trisB = GeometryEngine._extractWorldTriangles(meshB);
+
+    // Complexity guard: avoid O(n²) blowup on high-poly meshes
+    if (trisA.length * trisB.length > 50000) return [];
+
+    const segments: Array<[THREE.Vector3, THREE.Vector3]> = [];
+
+    for (const tA of trisA) {
+      for (const tB of trisB) {
+        // Quick AABB overlap check before the expensive intersection test
+        if (!GeometryEngine._triBoxesOverlap(tA, tB, tol)) continue;
+        const seg = GeometryEngine.triTriIntersectSegment(tA, tB, tol);
+        if (seg) segments.push(seg);
+      }
+    }
+
+    return GeometryEngine.chainSegments(segments, tol);
+  }
+
+  /**
+   * Intersects a mesh with a plane, returning the intersection polyline(s).
+   * More efficient than mesh-mesh intersection when one surface is planar.
+   *
+   * @param mesh    The mesh to slice
+   * @param plane   The cutting plane (THREE.Plane in world space)
+   * @returns       Array of polylines (world-space Vector3 arrays)
+   */
+  static computePlaneIntersectionCurve(
+    mesh: THREE.Mesh,
+    plane: THREE.Plane,
+    tol = 1e-6,
+  ): THREE.Vector3[][] {
+    mesh.updateWorldMatrix(true, false);
+    const tris = GeometryEngine._extractWorldTriangles(mesh);
+    const segments: Array<[THREE.Vector3, THREE.Vector3]> = [];
+
+    for (const [v0, v1, v2] of tris) {
+      const d0 = plane.distanceToPoint(v0);
+      const d1 = plane.distanceToPoint(v1);
+      const d2 = plane.distanceToPoint(v2);
+
+      // Skip if all on same side (no crossing)
+      const s0 = d0 > tol ? 1 : d0 < -tol ? -1 : 0;
+      const s1 = d1 > tol ? 1 : d1 < -tol ? -1 : 0;
+      const s2 = d2 > tol ? 1 : d2 < -tol ? -1 : 0;
+      if (s0 === s1 && s1 === s2) continue;
+
+      // Gather intersection points from each edge that straddles the plane
+      const pts: THREE.Vector3[] = [];
+      const edgeVerts: Array<[THREE.Vector3, number, THREE.Vector3, number]> = [
+        [v0, d0, v1, d1],
+        [v1, d1, v2, d2],
+        [v2, d2, v0, d0],
+      ];
+      for (const [va, da, vb, db] of edgeVerts) {
+        const sa = da > tol ? 1 : da < -tol ? -1 : 0;
+        const sb = db > tol ? 1 : db < -tol ? -1 : 0;
+        if (sa === 0) {
+          // vertex is exactly on plane — add once
+          if (pts.length === 0 || pts[pts.length - 1].distanceToSquared(va) > tol * tol) {
+            pts.push(va.clone());
+          }
+        } else if (sb === 0) {
+          // next vertex exactly on plane — will be caught as sa===0 on next edge
+        } else if (sa !== sb) {
+          // edge straddles the plane
+          const t = da / (da - db);
+          pts.push(new THREE.Vector3().lerpVectors(va, vb, t));
+        }
+      }
+
+      if (pts.length >= 2) {
+        segments.push([pts[0], pts[1]]);
+      }
+    }
+
+    return GeometryEngine.chainSegments(segments, tol);
+  }
+
+  /**
+   * Compute the triangle-triangle intersection segment in world space.
+   * Returns null if triangles don't intersect or the intersection is degenerate.
+   */
+  private static triTriIntersectSegment(
+    tA: [THREE.Vector3, THREE.Vector3, THREE.Vector3],
+    tB: [THREE.Vector3, THREE.Vector3, THREE.Vector3],
+    tol: number,
+  ): [THREE.Vector3, THREE.Vector3] | null {
+    const [a0, a1, a2] = tA;
+    const [b0, b1, b2] = tB;
+
+    // Normal and plane offset for tB
+    const ab = b1.clone().sub(b0);
+    const ac = b2.clone().sub(b0);
+    const nB = ab.cross(ac);
+    if (nB.lengthSq() < tol * tol) return null; // degenerate triangle
+    nB.normalize();
+    const dB = nB.dot(b0);
+
+    // Signed distances of tA vertices to plane B
+    const dA = [nB.dot(a0) - dB, nB.dot(a1) - dB, nB.dot(a2) - dB];
+    if (
+      (dA[0] > tol && dA[1] > tol && dA[2] > tol) ||
+      (dA[0] < -tol && dA[1] < -tol && dA[2] < -tol)
+    ) return null;
+
+    // Normal and plane offset for tA
+    const aa = a1.clone().sub(a0);
+    const ac2 = a2.clone().sub(a0);
+    const nA = aa.cross(ac2);
+    if (nA.lengthSq() < tol * tol) return null;
+    nA.normalize();
+    const dA_plane = nA.dot(a0);
+
+    // Signed distances of tB vertices to plane A
+    const dBdist = [nA.dot(b0) - dA_plane, nA.dot(b1) - dA_plane, nA.dot(b2) - dA_plane];
+    if (
+      (dBdist[0] > tol && dBdist[1] > tol && dBdist[2] > tol) ||
+      (dBdist[0] < -tol && dBdist[1] < -tol && dBdist[2] < -tol)
+    ) return null;
+
+    // Intersection line direction
+    const L = nA.clone().cross(nB);
+    const Llen = L.length();
+    if (Llen < tol) return null; // parallel planes
+    const Lnorm = L.clone().divideScalar(Llen);
+
+    // Find a point on the intersection line (plane-plane-plane with a helper coord plane)
+    // Use the axis with the largest component of L to anchor the third plane
+    const ax = Math.abs(Lnorm.x), ay = Math.abs(Lnorm.y), az = Math.abs(Lnorm.z);
+    let P: THREE.Vector3;
+    if (ax >= ay && ax >= az) {
+      // Set x = 0 and solve for y, z from nA and nB
+      const det = nA.y * nB.z - nA.z * nB.y;
+      if (Math.abs(det) < tol) return null;
+      const y = (dA_plane * nB.z - dB * nA.z) / det;
+      const z = (nA.y * dB - nB.y * dA_plane) / det;
+      P = new THREE.Vector3(0, y, z);
+    } else if (ay >= ax && ay >= az) {
+      const det = nA.x * nB.z - nA.z * nB.x;
+      if (Math.abs(det) < tol) return null;
+      const x = (dA_plane * nB.z - dB * nA.z) / det;
+      const z = (nA.x * dB - nB.x * dA_plane) / det;
+      P = new THREE.Vector3(x, 0, z);
+    } else {
+      const det = nA.x * nB.y - nA.y * nB.x;
+      if (Math.abs(det) < tol) return null;
+      const x = (dA_plane * nB.y - dB * nA.y) / det;
+      const y = (nA.x * dB - nB.x * dA_plane) / det;
+      P = new THREE.Vector3(x, y, 0);
+    }
+
+    // Project triangle vertices onto the intersection line to get scalar intervals
+    const projA = [
+      Lnorm.dot(a0) - Lnorm.dot(P),
+      Lnorm.dot(a1) - Lnorm.dot(P),
+      Lnorm.dot(a2) - Lnorm.dot(P),
+    ];
+    const projB = [
+      Lnorm.dot(b0) - Lnorm.dot(P),
+      Lnorm.dot(b1) - Lnorm.dot(P),
+      Lnorm.dot(b2) - Lnorm.dot(P),
+    ];
+
+    const intervalA = GeometryEngine._triInterval(projA, dA, tol);
+    const intervalB = GeometryEngine._triInterval(projB, dBdist, tol);
+    if (!intervalA || !intervalB) return null;
+
+    // Overlap of the two intervals
+    const ta = Math.max(intervalA[0], intervalB[0]);
+    const tb = Math.min(intervalA[1], intervalB[1]);
+    if (tb - ta < tol) return null; // no meaningful overlap
+
+    const p0 = P.clone().addScaledVector(Lnorm, ta);
+    const p1 = P.clone().addScaledVector(Lnorm, tb);
+    return [p0, p1];
+  }
+
+  /**
+   * Compute the scalar interval [t0, t1] where the given triangle overlaps
+   * the intersection line.
+   *
+   * projVerts: projections of triangle vertices onto the line.
+   * planeDist: signed distances of those vertices to the opposing plane.
+   */
+  private static _triInterval(
+    projVerts: number[],
+    planeDist: number[],
+    tol: number,
+  ): [number, number] | null {
+    // Find the vertex on the "opposite" side of the plane
+    // The two vertices on one side intersect two edges with the lone vertex.
+    let singleIdx = -1;
+    let singleSign = 0;
+    for (let i = 0; i < 3; i++) {
+      const sign = planeDist[i] > tol ? 1 : planeDist[i] < -tol ? -1 : 0;
+      if (sign === 0) continue;
+      const otherSigns = [0, 1, 2].filter((j) => j !== i).map((j) =>
+        planeDist[j] > tol ? 1 : planeDist[j] < -tol ? -1 : 0,
+      );
+      if (otherSigns[0] !== sign || otherSigns[1] !== sign) {
+        singleIdx = i;
+        singleSign = sign;
+        break;
+      }
+    }
+
+    if (singleIdx === -1) {
+      // All vertices on same side or coplanar — just use min/max of projections
+      // that belong to vertices touching the plane
+      const onPlane = [0, 1, 2].filter((i) => Math.abs(planeDist[i]) <= tol);
+      if (onPlane.length < 2) return null;
+      const t0 = Math.min(...onPlane.map((i) => projVerts[i]));
+      const t1 = Math.max(...onPlane.map((i) => projVerts[i]));
+      return t0 < t1 ? [t0, t1] : null;
+    }
+
+    const idx0 = (singleIdx + 1) % 3;
+    const idx1 = (singleIdx + 2) % 3;
+
+    const d_single = planeDist[singleIdx];
+    const d0 = planeDist[idx0];
+    const d1 = planeDist[idx1];
+
+    // Clamp to avoid division by near-zero
+    const denom0 = d_single - d0;
+    const denom1 = d_single - d1;
+
+    const t0 = Math.abs(denom0) > tol
+      ? projVerts[idx0] + (projVerts[singleIdx] - projVerts[idx0]) * (d0 / (d0 - d_single))
+      : projVerts[idx0];
+    const t1 = Math.abs(denom1) > tol
+      ? projVerts[idx1] + (projVerts[singleIdx] - projVerts[idx1]) * (d1 / (d1 - d_single))
+      : projVerts[idx1];
+
+    void singleSign; // used conceptually to identify the lone vertex
+    return [Math.min(t0, t1), Math.max(t0, t1)];
+  }
+
+  /**
+   * Chain a flat list of unordered segments into connected polylines.
+   * Endpoints that are within `tol` of each other are considered shared.
+   */
+  private static chainSegments(
+    segments: Array<[THREE.Vector3, THREE.Vector3]>,
+    tol: number,
+  ): THREE.Vector3[][] {
+    if (segments.length === 0) return [];
+
+    const tolSq = tol * tol;
+
+    // Build adjacency: for each segment endpoint, find adjacent segment indices
+    // We store: endpointList[i] = { pt, segIdx, endIdx (0 or 1) }
+    interface EP { pt: THREE.Vector3; segIdx: number; endIdx: 0 | 1 }
+    const endpoints: EP[] = [];
+    for (let i = 0; i < segments.length; i++) {
+      endpoints.push({ pt: segments[i][0], segIdx: i, endIdx: 0 });
+      endpoints.push({ pt: segments[i][1], segIdx: i, endIdx: 1 });
+    }
+
+    // For each endpoint, find its "partner" (another endpoint of a *different* segment
+    // that is within tol). Store as adjacency[epIdx] = epIdx of partner | -1.
+    const partner = new Array<number>(endpoints.length).fill(-1);
+    for (let i = 0; i < endpoints.length; i++) {
+      if (partner[i] !== -1) continue;
+      for (let j = i + 1; j < endpoints.length; j++) {
+        if (partner[j] !== -1) continue;
+        if (endpoints[i].segIdx === endpoints[j].segIdx) continue;
+        if (endpoints[i].pt.distanceToSquared(endpoints[j].pt) < tolSq) {
+          partner[i] = j;
+          partner[j] = i;
+          break;
+        }
+      }
+    }
+
+    const usedSegs = new Set<number>();
+    const polylines: THREE.Vector3[][] = [];
+
+    for (let startSeg = 0; startSeg < segments.length; startSeg++) {
+      if (usedSegs.has(startSeg)) continue;
+
+      // Walk the chain forward from endpoint 1 of startSeg
+      const chain: THREE.Vector3[] = [segments[startSeg][0].clone(), segments[startSeg][1].clone()];
+      usedSegs.add(startSeg);
+
+      // Try extending forward (from endpoint index 1 of current last segment)
+      let curSegIdx = startSeg;
+      let curEndIdx: 0 | 1 = 1;
+      for (;;) {
+        const epIdx = curSegIdx * 2 + curEndIdx;
+        const partnerId = partner[epIdx];
+        if (partnerId === -1) break;
+        const nextSeg = endpoints[partnerId].segIdx;
+        if (usedSegs.has(nextSeg)) break;
+        usedSegs.add(nextSeg);
+        const nextEnd = endpoints[partnerId].endIdx;
+        // The "other" end of nextSeg is the new tip
+        const otherEnd: 0 | 1 = nextEnd === 0 ? 1 : 0;
+        chain.push(segments[nextSeg][otherEnd].clone());
+        curSegIdx = nextSeg;
+        curEndIdx = otherEnd;
+      }
+
+      // Try extending backward (from endpoint index 0 of startSeg)
+      curSegIdx = startSeg;
+      curEndIdx = 0;
+      const prepend: THREE.Vector3[] = [];
+      for (;;) {
+        const epIdx = curSegIdx * 2 + curEndIdx;
+        const partnerId = partner[epIdx];
+        if (partnerId === -1) break;
+        const nextSeg = endpoints[partnerId].segIdx;
+        if (usedSegs.has(nextSeg)) break;
+        usedSegs.add(nextSeg);
+        const nextEnd = endpoints[partnerId].endIdx;
+        const otherEnd: 0 | 1 = nextEnd === 0 ? 1 : 0;
+        prepend.unshift(segments[nextSeg][otherEnd].clone());
+        curSegIdx = nextSeg;
+        curEndIdx = otherEnd;
+      }
+
+      const full = [...prepend, ...chain];
+      if (full.length >= 2) polylines.push(full);
+    }
+
+    return polylines;
+  }
+
+  /** Extract all triangles from a mesh as world-space vertex triples. */
+  private static _extractWorldTriangles(
+    mesh: THREE.Mesh,
+  ): Array<[THREE.Vector3, THREE.Vector3, THREE.Vector3]> {
+    const geom = mesh.geometry;
+    const posAttr = geom.attributes.position as THREE.BufferAttribute | undefined;
+    if (!posAttr) return [];
+
+    const m = mesh.matrixWorld;
+    const idxAttr = geom.index;
+    const triCount = idxAttr ? idxAttr.count / 3 : posAttr.count / 3;
+
+    const tris: Array<[THREE.Vector3, THREE.Vector3, THREE.Vector3]> = [];
+    for (let t = 0; t < triCount; t++) {
+      let i0: number, i1: number, i2: number;
+      if (idxAttr) {
+        i0 = idxAttr.getX(t * 3);
+        i1 = idxAttr.getX(t * 3 + 1);
+        i2 = idxAttr.getX(t * 3 + 2);
+      } else {
+        i0 = t * 3;
+        i1 = t * 3 + 1;
+        i2 = t * 3 + 2;
+      }
+      const v0 = new THREE.Vector3().fromBufferAttribute(posAttr, i0).applyMatrix4(m);
+      const v1 = new THREE.Vector3().fromBufferAttribute(posAttr, i1).applyMatrix4(m);
+      const v2 = new THREE.Vector3().fromBufferAttribute(posAttr, i2).applyMatrix4(m);
+      tris.push([v0, v1, v2]);
+    }
+    return tris;
+  }
+
+  /** Fast AABB overlap test for two triangles — prune pairs before full intersection. */
+  private static _triBoxesOverlap(
+    tA: [THREE.Vector3, THREE.Vector3, THREE.Vector3],
+    tB: [THREE.Vector3, THREE.Vector3, THREE.Vector3],
+    tol: number,
+  ): boolean {
+    for (let axis = 0; axis < 3; axis++) {
+      const k = axis as 0 | 1 | 2;
+      const aMin = Math.min(tA[0].getComponent(k), tA[1].getComponent(k), tA[2].getComponent(k)) - tol;
+      const aMax = Math.max(tA[0].getComponent(k), tA[1].getComponent(k), tA[2].getComponent(k)) + tol;
+      const bMin = Math.min(tB[0].getComponent(k), tB[1].getComponent(k), tB[2].getComponent(k)) - tol;
+      const bMax = Math.max(tB[0].getComponent(k), tB[1].getComponent(k), tB[2].getComponent(k)) + tol;
+      if (aMax < bMin || bMax < aMin) return false;
+    }
+    return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // D137 — Texture Extrude
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Bilinear sample of a height-map pixel array at normalized UV coordinates.
+   *
+   * @param heightData  Flat RGBA Uint8ClampedArray (from canvas.getImageData)
+   * @param w           Image width in pixels
+   * @param h           Image height in pixels
+   * @param u           Horizontal UV in [0, 1]
+   * @param v           Vertical UV in [0, 1]
+   * @param channel     Which channel to read: 'r' | 'g' | 'b' | 'luminance'
+   * @returns           Sampled height value in [0, 1]
+   */
+  private static sampleHeightBilinear(
+    heightData: Uint8ClampedArray,
+    w: number,
+    h: number,
+    u: number,
+    v: number,
+    channel: 'r' | 'g' | 'b' | 'luminance',
+  ): number {
+    // Bilinear sample at (u, v) in [0,1]x[0,1]; flip V since image Y is top-down
+    const x = u * (w - 1);
+    const y = (1 - v) * (h - 1);
+    const x0 = Math.floor(x);
+    const y0 = Math.floor(y);
+    const x1 = Math.min(x0 + 1, w - 1);
+    const y1 = Math.min(y0 + 1, h - 1);
+    const fx = x - x0;
+    const fy = y - y0;
+
+    const sample = (px: number, py: number): number => {
+      const i = (py * w + px) * 4;
+      if (channel === 'r') return heightData[i] / 255;
+      if (channel === 'g') return heightData[i + 1] / 255;
+      if (channel === 'b') return heightData[i + 2] / 255;
+      // luminance
+      return (0.299 * heightData[i] + 0.587 * heightData[i + 1] + 0.114 * heightData[i + 2]) / 255;
+    };
+
+    const v00 = sample(x0, y0);
+    const v10 = sample(x1, y0);
+    const v01 = sample(x0, y1);
+    const v11 = sample(x1, y1);
+    return v00 * (1 - fx) * (1 - fy) + v10 * fx * (1 - fy) + v01 * (1 - fx) * fy + v11 * fx * fy;
+  }
+
+  /**
+   * Applies a height-map-driven displacement to a mesh, pushing vertices
+   * along their normals by an amount proportional to the texture value at
+   * the corresponding UV coordinate.
+   *
+   * This is a CPU-side operation that produces a NEW BufferGeometry
+   * (does not mutate the input). For use with D137 Texture Extrude.
+   *
+   * @param geometry    Source geometry (must have position, normal, uv attributes)
+   * @param heightData  Flat RGBA pixel array (Uint8ClampedArray from canvas.getImageData)
+   * @param imageWidth  Width of the height map in pixels
+   * @param imageHeight Height of the height map in pixels
+   * @param strength    Max displacement distance in model units (positive = outward along normal)
+   * @param channel     Which channel to read height from: 'r' | 'g' | 'b' | 'luminance' (default: 'luminance')
+   * @returns           A NEW BufferGeometry with displaced positions (same topology as input)
+   */
+  static computeTextureExtrude(
+    geometry: THREE.BufferGeometry,
+    heightData: Uint8ClampedArray,
+    imageWidth: number,
+    imageHeight: number,
+    strength: number,
+    channel: 'r' | 'g' | 'b' | 'luminance' = 'luminance',
+  ): THREE.BufferGeometry {
+    const out = geometry.clone();
+
+    const posAttr = out.attributes.position as THREE.BufferAttribute | undefined;
+    const normAttr = out.attributes.normal as THREE.BufferAttribute | undefined;
+    const uvAttr = out.attributes.uv as THREE.BufferAttribute | undefined;
+
+    // If any required attribute is missing, return the clone unchanged
+    if (!posAttr || !normAttr || !uvAttr) return out;
+
+    const vertexCount = posAttr.count;
+
+    for (let i = 0; i < vertexCount; i++) {
+      // Read UV and clamp to [0, 1]
+      const u = Math.max(0, Math.min(1, uvAttr.getX(i)));
+      const v = Math.max(0, Math.min(1, uvAttr.getY(i)));
+
+      // Bilinear sample of the height map
+      const height = GeometryEngine.sampleHeightBilinear(
+        heightData, imageWidth, imageHeight, u, v, channel,
+      );
+
+      // Read normal components
+      const nx = normAttr.getX(i);
+      const ny = normAttr.getY(i);
+      const nz = normAttr.getZ(i);
+
+      // Displace position along normal
+      const px = posAttr.getX(i) + nx * height * strength;
+      const py = posAttr.getY(i) + ny * height * strength;
+      const pz = posAttr.getZ(i) + nz * height * strength;
+
+      posAttr.setXYZ(i, px, py, pz);
+    }
+
+    posAttr.needsUpdate = true;
+
+    // Recompute normals after displacement
+    out.computeVertexNormals();
+
+    return out;
+  }
+
+  /**
+   * Loads an image URL and returns its pixel data as a Uint8ClampedArray.
+   * Requires a browser environment (uses canvas).
+   *
+   * @returns Promise resolving to { data, width, height }
+   */
+  static async loadImageAsHeightData(
+    url: string,
+  ): Promise<{ data: Uint8ClampedArray; width: number; height: number }> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, img.width, img.height);
+        resolve({ data: imageData.data, width: img.width, height: img.height });
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // D46 Project to Surface — surface projection helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Projects an array of 3D world-space points onto the nearest surface of a mesh.
+   * Uses BVH-style ray casting: for each point, casts a ray toward the mesh center
+   * to find the closest intersection, then uses the hit face normal to find the
+   * true closest surface point.
+   *
+   * Practical use: D46 Project to Surface — projects sketch curve points onto
+   * a body surface to create a 3D curve on the surface.
+   *
+   * @param points    World-space source points to project
+   * @param mesh      Target surface mesh (must have matrixWorld applied)
+   * @param direction Optional projection direction (world-space unit vector).
+   *                  If omitted, projects along the closest surface normal.
+   * @returns         Projected points (same length as input). Points that miss the
+   *                  mesh are returned at the closest found position, or unchanged
+   *                  if no hit is possible.
+   */
+  static projectPointsOntoMesh(
+    points: THREE.Vector3[],
+    mesh: THREE.Mesh,
+    direction?: THREE.Vector3,
+  ): THREE.Vector3[] {
+    mesh.updateWorldMatrix(true, false);
+
+    // Precompute world-space bounding sphere for early-out checks
+    const geom = mesh.geometry;
+    if (!geom.boundingSphere) geom.computeBoundingSphere();
+    const localSphere = geom.boundingSphere!;
+    const worldCenter = localSphere.center.clone().applyMatrix4(mesh.matrixWorld);
+    // Scale the radius by the largest axis scale of matrixWorld
+    const scaleVec = new THREE.Vector3();
+    mesh.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), scaleVec);
+    const worldRadius = localSphere.radius * Math.max(Math.abs(scaleVec.x), Math.abs(scaleVec.y), Math.abs(scaleVec.z));
+
+    const raycaster = new THREE.Raycaster();
+    const result: THREE.Vector3[] = [];
+
+    const SIX_DIRS: THREE.Vector3[] = [
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(-1, 0, 0),
+      new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(0, -1, 0),
+      new THREE.Vector3(0, 0, 1),
+      new THREE.Vector3(0, 0, -1),
+    ];
+
+    for (const p of points) {
+      let bestHit: THREE.Vector3 | null = null;
+      let bestDist = Infinity;
+
+      if (direction) {
+        // Directional projection: cast from p - dir*1000 toward dir
+        const castDir = direction.clone().normalize();
+        const origin = p.clone().addScaledVector(castDir, -1000);
+        raycaster.set(origin, castDir);
+        raycaster.near = 0;
+        raycaster.far = Infinity;
+        const hits = raycaster.intersectObject(mesh, false);
+        for (const hit of hits) {
+          const d = hit.point.distanceTo(p);
+          if (d < bestDist) {
+            bestDist = d;
+            bestHit = hit.point.clone();
+          }
+        }
+      } else {
+        // Multi-direction sampling: cast 6 axis-aligned rays from p
+        for (const dir of SIX_DIRS) {
+          raycaster.set(p, dir);
+          raycaster.near = 0;
+          raycaster.far = Infinity;
+          const hits = raycaster.intersectObject(mesh, false);
+          for (const hit of hits) {
+            const d = hit.point.distanceTo(p);
+            if (d < bestDist) {
+              bestDist = d;
+              bestHit = hit.point.clone();
+            }
+          }
+        }
+      }
+
+      if (bestHit) {
+        result.push(bestHit);
+        continue;
+      }
+
+      // Fallback: cast from mesh bounding sphere center toward p (inward)
+      const fallbackDir = p.clone().sub(worldCenter);
+      const fallbackLen = fallbackDir.length();
+      if (fallbackLen > 1e-9) {
+        fallbackDir.normalize();
+        raycaster.set(worldCenter, fallbackDir);
+        raycaster.near = 0;
+        raycaster.far = fallbackLen + worldRadius * 2;
+        const hits = raycaster.intersectObject(mesh, false);
+        if (hits.length > 0) {
+          // Find hit closest to p
+          let closestHit = hits[0].point.clone();
+          let closestD = hits[0].point.distanceTo(p);
+          for (let i = 1; i < hits.length; i++) {
+            const d = hits[i].point.distanceTo(p);
+            if (d < closestD) { closestD = d; closestHit = hits[i].point.clone(); }
+          }
+          result.push(closestHit);
+          continue;
+        }
+      }
+
+      // No hit at all — return p unchanged
+      result.push(p.clone());
+    }
+
+    return result;
+  }
+
+  /**
+   * Gets the closest point on a mesh surface to a given world-space query point.
+   * Uses brute-force triangle iteration for small meshes (< 5000 triangles);
+   * falls back to 6-direction raycast for larger ones.
+   */
+  private static closestPointOnMesh(
+    query: THREE.Vector3,
+    mesh: THREE.Mesh,
+  ): THREE.Vector3 | null {
+    mesh.updateWorldMatrix(true, false);
+    const geom = mesh.geometry;
+    const posAttr = geom.attributes.position as THREE.BufferAttribute | undefined;
+    if (!posAttr) return null;
+
+    const idxAttr = geom.index;
+    const triCount = idxAttr ? idxAttr.count / 3 : posAttr.count / 3;
+    const m = mesh.matrixWorld;
+
+    if (triCount < 5000) {
+      // Brute-force triangle iteration
+      let bestDist = Infinity;
+      let bestPoint: THREE.Vector3 | null = null;
+
+      const va = new THREE.Vector3();
+      const vb = new THREE.Vector3();
+      const vc = new THREE.Vector3();
+
+      for (let t = 0; t < triCount; t++) {
+        let ia: number, ib: number, ic: number;
+        if (idxAttr) {
+          ia = idxAttr.getX(t * 3);
+          ib = idxAttr.getX(t * 3 + 1);
+          ic = idxAttr.getX(t * 3 + 2);
+        } else {
+          ia = t * 3; ib = t * 3 + 1; ic = t * 3 + 2;
+        }
+        va.fromBufferAttribute(posAttr, ia).applyMatrix4(m);
+        vb.fromBufferAttribute(posAttr, ib).applyMatrix4(m);
+        vc.fromBufferAttribute(posAttr, ic).applyMatrix4(m);
+
+        const cp = GeometryEngine.closestPointOnTriangle(query, va, vb, vc);
+        const d = cp.distanceToSquared(query);
+        if (d < bestDist) {
+          bestDist = d;
+          bestPoint = cp.clone();
+        }
+      }
+      return bestPoint;
+    }
+
+    // Fallback for large meshes: 6-direction raycast
+    const [hit] = GeometryEngine.projectPointsOntoMesh([query], mesh);
+    return hit ?? null;
+  }
+
+  /**
+   * Closest point on a triangle to a point (all world-space).
+   * Returns the barycentric-clamped nearest point.
+   *
+   * Reference: Real-Time Collision Detection, Ericson, §5.1.5
+   */
+  private static closestPointOnTriangle(
+    p: THREE.Vector3,
+    a: THREE.Vector3,
+    b: THREE.Vector3,
+    c: THREE.Vector3,
+  ): THREE.Vector3 {
+    const ab = b.clone().sub(a);
+    const ac = c.clone().sub(a);
+    const ap = p.clone().sub(a);
+    const d1 = ab.dot(ap);
+    const d2 = ac.dot(ap);
+    if (d1 <= 0 && d2 <= 0) return a.clone();
+
+    const bp = p.clone().sub(b);
+    const d3 = ab.dot(bp);
+    const d4 = ac.dot(bp);
+    if (d3 >= 0 && d4 <= d3) return b.clone();
+
+    const vc = d1 * d4 - d3 * d2;
+    if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+      const v = d1 / (d1 - d3);
+      return a.clone().addScaledVector(ab, v);
+    }
+
+    const cp = p.clone().sub(c);
+    const d5 = ab.dot(cp);
+    const d6 = ac.dot(cp);
+    if (d6 >= 0 && d5 <= d6) return c.clone();
+
+    const vb = d5 * d2 - d1 * d6;
+    if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+      const w = d2 / (d2 - d6);
+      return a.clone().addScaledVector(ac, w);
+    }
+
+    const va = d3 * d6 - d5 * d4;
+    if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0) {
+      const w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+      return b.clone().addScaledVector(c.clone().sub(b), w);
+    }
+
+    const denom = 1 / (va + vb + vc);
+    const vv = vb * denom;
+    const ww = vc * denom;
+    return a.clone().addScaledVector(ab, vv).addScaledVector(ac, ww);
+  }
+
+  /**
+   * Takes a projected polyline (from projectPointsOntoMesh) and smooths/re-samples
+   * it by recursively subdividing edges that deviate from the surface.
+   *
+   * @param polyline    World-space projected points
+   * @param mesh        The surface mesh
+   * @param maxError    Max deviation allowed (model units, default 0.1)
+   * @param maxDepth    Max recursion depth (default 4)
+   * @returns           Refined polyline that more closely follows the surface
+   */
+  static discretizeCurveOnSurface(
+    polyline: THREE.Vector3[],
+    mesh: THREE.Mesh,
+    maxError = 0.1,
+    maxDepth = 4,
+  ): THREE.Vector3[] {
+    if (polyline.length < 2) return polyline.map((p) => p.clone());
+
+    mesh.updateWorldMatrix(true, false);
+
+    const subdivide = (
+      a: THREE.Vector3,
+      b: THREE.Vector3,
+      depth: number,
+    ): THREE.Vector3[] => {
+      if (depth <= 0) return [b.clone()];
+
+      // Midpoint in straight-line space
+      const mid = new THREE.Vector3().lerpVectors(a, b, 0.5);
+      // Project midpoint onto the surface
+      const projected = GeometryEngine.projectPointsOntoMesh([mid], mesh)[0];
+
+      // Check deviation: distance from straight-line midpoint to projected midpoint
+      const deviation = projected.distanceTo(mid);
+      if (deviation <= maxError) {
+        return [b.clone()];
+      }
+
+      // Insert projected midpoint and recurse on both halves
+      return [
+        ...subdivide(a, projected, depth - 1),
+        ...subdivide(projected, b, depth - 1),
+      ];
+    };
+
+    const result: THREE.Vector3[] = [polyline[0].clone()];
+    for (let i = 0; i < polyline.length - 1; i++) {
+      const refined = subdivide(polyline[i], polyline[i + 1], maxDepth);
+      result.push(...refined);
+    }
+    return result;
+  }
 }
