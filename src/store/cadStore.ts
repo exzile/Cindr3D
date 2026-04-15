@@ -131,6 +131,10 @@ interface CADState {
   /** D57: toggle a single entity's linetype (line ↔ construction-line ↔ centerline) */
   cycleEntityLinetype: (entityId: string) => void;
   copySketch: (id: string) => void;
+  deleteSketch: (id: string) => void;
+  renameSketch: (id: string, name: string) => void;
+  /** D60: Redefine the plane of an existing sketch */
+  redefineSketchPlane: (id: string, plane: SketchPlane, normal: THREE.Vector3, origin: THREE.Vector3) => void;
 
   // Feature timeline
   features: Feature[];
@@ -138,6 +142,7 @@ interface CADState {
   addPrimitive: (kind: 'box' | 'cylinder' | 'sphere' | 'torus', params: Record<string, number>) => void;
   removeFeature: (id: string) => void;
   toggleFeatureVisibility: (id: string) => void;
+  toggleFeatureSuppressed: (id: string) => void;
   selectedFeatureId: string | null;
   setSelectedFeatureId: (id: string | null) => void;
 
@@ -207,6 +212,15 @@ interface CADState {
   // Slice toggle (D54)
   sliceEnabled: boolean;
   setSliceEnabled: (enabled: boolean) => void;
+  // Section Analysis (D38)
+  sectionEnabled: boolean;
+  sectionAxis: 'x' | 'y' | 'z';
+  sectionOffset: number;
+  sectionFlip: boolean;
+  setSectionEnabled: (enabled: boolean) => void;
+  setSectionAxis: (axis: 'x' | 'y' | 'z') => void;
+  setSectionOffset: (offset: number) => void;
+  setSectionFlip: (flip: boolean) => void;
   // Visibility toggles (D56)
   showSketchPoints: boolean;
   setShowSketchPoints: (v: boolean) => void;
@@ -260,6 +274,24 @@ interface CADState {
   startExtrudeFromFace: (boundary: THREE.Vector3[], normal: THREE.Vector3, centroid: THREE.Vector3) => void;
   cancelExtrudeTool: () => void;
   commitExtrude: () => void;
+  // Thin extrude (D66)
+  extrudeThinEnabled: boolean;
+  setExtrudeThinEnabled: (v: boolean) => void;
+  extrudeThinThickness: number;
+  setExtrudeThinThickness: (t: number) => void;
+  extrudeThinSide: 'inside' | 'outside' | 'center';
+  setExtrudeThinSide: (s: 'inside' | 'outside' | 'center') => void;
+  // Extrude start options (D67)
+  extrudeStartType: 'profile' | 'offset';
+  setExtrudeStartType: (t: 'profile' | 'offset') => void;
+  extrudeStartOffset: number;
+  setExtrudeStartOffset: (v: number) => void;
+  // Extrude extent types (D68)
+  extrudeExtentType: 'distance' | 'all';
+  setExtrudeExtentType: (t: 'distance' | 'all') => void;
+  // Extrude taper angle (D69)
+  extrudeTaperAngle: number;
+  setExtrudeTaperAngle: (a: number) => void;
 
   // Revolve tool
   revolveSelectedSketchId: string | null;
@@ -268,6 +300,11 @@ interface CADState {
   setRevolveAxis: (a: 'X' | 'Y' | 'Z') => void;
   revolveAngle: number;
   setRevolveAngle: (angle: number) => void;
+  // Revolve direction modes (D70)
+  revolveDirection: 'one-side' | 'symmetric' | 'two-sides';
+  setRevolveDirection: (d: 'one-side' | 'symmetric' | 'two-sides') => void;
+  revolveAngle2: number;
+  setRevolveAngle2: (a: number) => void;
   startRevolveTool: () => void;
   cancelRevolveTool: () => void;
   commitRevolve: () => void;
@@ -281,6 +318,19 @@ interface CADState {
   cancelSweepTool: () => void;
   commitSweep: () => void;
 
+  // Rib tool (D73)
+  ribSelectedSketchId: string | null;
+  setRibSelectedSketchId: (id: string | null) => void;
+  ribThickness: number;
+  setRibThickness: (t: number) => void;
+  ribHeight: number;
+  setRibHeight: (h: number) => void;
+  ribDirection: 'normal' | 'flip' | 'symmetric';
+  setRibDirection: (d: 'normal' | 'flip' | 'symmetric') => void;
+  startRibTool: () => void;
+  cancelRibTool: () => void;
+  commitRib: () => void;
+
   // Export dialog
   showExportDialog: boolean;
   setShowExportDialog: (show: boolean) => void;
@@ -288,6 +338,8 @@ interface CADState {
   // Active feature dialog
   activeDialog: string | null;
   setActiveDialog: (dialog: string | null) => void;
+  dialogPayload: string | null;
+  setDialogPayload: (payload: string | null) => void;
 
   // Measure
   measurePoints: { x: number; y: number; z: number }[];
@@ -301,6 +353,9 @@ interface CADState {
   // Units
   units: 'mm' | 'cm' | 'in';
   setUnits: (units: 'mm' | 'cm' | 'in') => void;
+  // D39 Selection Filter
+  selectionFilter: 'all' | 'bodies' | 'faces' | 'edges' | 'sketches';
+  setSelectionFilter: (filter: 'all' | 'bodies' | 'faces' | 'edges' | 'sketches') => void;
 
   // Camera
   cameraHomeCounter: number;
@@ -333,12 +388,25 @@ const EXTRUDE_DEFAULTS = {
   extrudeDistance: 10,
   extrudeDirection: 'normal' as ExtrudeDirection,
   extrudeOperation: 'new-body' as ExtrudeOperation,
+  extrudeThinEnabled: false,
+  extrudeThinThickness: 2,
+  extrudeThinSide: 'inside' as 'inside' | 'outside' | 'center',
+  // D67 start options
+  extrudeStartType: 'profile' as 'profile' | 'offset',
+  extrudeStartOffset: 0,
+  // D68 extent types
+  extrudeExtentType: 'distance' as 'distance' | 'all',
+  // D69 taper angle
+  extrudeTaperAngle: 0,
 };
 
 const REVOLVE_DEFAULTS = {
   revolveSelectedSketchId: null as string | null,
   revolveAxis: 'Y' as 'X' | 'Y' | 'Z',
   revolveAngle: 360,
+  // D70 direction modes
+  revolveDirection: 'one-side' as 'one-side' | 'symmetric' | 'two-sides',
+  revolveAngle2: 360,
 };
 
 export const useCADStore = create<CADState>()(persist((set, get) => ({
@@ -615,6 +683,29 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     };
   }),
 
+  deleteSketch: (id) => set((state) => {
+    const activeSketch = state.activeSketch?.id === id ? null : state.activeSketch;
+    return {
+      sketches: state.sketches.filter((s) => s.id !== id),
+      features: state.features.filter((f) => !(f.type === 'sketch' && f.sketchId === id)),
+      activeSketch,
+      statusMessage: 'Sketch deleted',
+    };
+  }),
+
+  renameSketch: (id, name) => set((state) => ({
+    sketches: state.sketches.map((s) => s.id !== id ? s : { ...s, name }),
+    features: state.features.map((f) => f.type === 'sketch' && f.sketchId === id ? { ...f, name } : f),
+    statusMessage: `Sketch renamed to "${name}"`,
+  })),
+
+  redefineSketchPlane: (id, plane, normal, origin) => set((state) => ({
+    sketches: state.sketches.map((s) =>
+      s.id !== id ? s : { ...s, plane, planeNormal: normal.clone(), planeOrigin: origin.clone() }
+    ),
+    statusMessage: `Sketch plane redefined`,
+  })),
+
   features: [],
   addFeature: (feature) => set((state) => ({
     features: [...state.features, feature],
@@ -639,12 +730,19 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       statusMessage: `${label} added`,
     };
   }),
-  removeFeature: (id) => set((state) => ({
-    features: state.features.filter((f) => f.id !== id),
-  })),
+  removeFeature: (id) => set((state) => {
+    const target = state.features.find((f) => f.id === id);
+    if (target?.mesh) target.mesh.geometry?.dispose();
+    return { features: state.features.filter((f) => f.id !== id) };
+  }),
   toggleFeatureVisibility: (id) => set((state) => ({
     features: state.features.map((f) =>
       f.id === id ? { ...f, visible: !f.visible } : f
+    ),
+  })),
+  toggleFeatureSuppressed: (id) => set((state) => ({
+    features: state.features.map((f) =>
+      f.id === id ? { ...f, suppressed: !f.suppressed } : f
     ),
   })),
   selectedFeatureId: null,
@@ -925,6 +1023,16 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   sliceEnabled: false,
   setSliceEnabled: (enabled) => set({ sliceEnabled: enabled }),
 
+  // Section Analysis (D38)
+  sectionEnabled: false,
+  sectionAxis: 'y',
+  sectionOffset: 0,
+  sectionFlip: false,
+  setSectionEnabled: (enabled) => set({ sectionEnabled: enabled }),
+  setSectionAxis: (axis) => set({ sectionAxis: axis }),
+  setSectionOffset: (offset) => set({ sectionOffset: offset }),
+  setSectionFlip: (flip) => set({ sectionFlip: flip }),
+
   // Visibility toggles (D56)
   showSketchPoints: true,
   setShowSketchPoints: (v) => set({ showSketchPoints: v }),
@@ -965,6 +1073,17 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   setExtrudeDistance: (distance) => set({ extrudeDistance: distance }),
   setExtrudeDirection: (d) => set({ extrudeDirection: d }),
   setExtrudeOperation: (o) => set({ extrudeOperation: o }),
+  // Thin extrude (D66)
+  setExtrudeThinEnabled: (v) => set({ extrudeThinEnabled: v }),
+  setExtrudeThinThickness: (t) => set({ extrudeThinThickness: Math.max(0.01, t) }),
+  setExtrudeThinSide: (s) => set({ extrudeThinSide: s }),
+  // D67 start options
+  setExtrudeStartType: (t) => set({ extrudeStartType: t }),
+  setExtrudeStartOffset: (v) => set({ extrudeStartOffset: v }),
+  // D68 extent types
+  setExtrudeExtentType: (t) => set({ extrudeExtentType: t }),
+  // D69 taper angle
+  setExtrudeTaperAngle: (a) => set({ extrudeTaperAngle: a }),
   startExtrudeTool: () => {
     set({
       activeTool: 'extrude',
@@ -1031,7 +1150,9 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   commitExtrude: () => {
     const {
       extrudeSelectedSketchId, extrudeDistance, extrudeDirection,
-      extrudeOperation, sketches, features, units,
+      extrudeOperation, extrudeThinEnabled, extrudeThinThickness, extrudeThinSide,
+      extrudeStartType, extrudeStartOffset, extrudeExtentType, extrudeTaperAngle,
+      sketches, features, units,
     } = get();
     if (!extrudeSelectedSketchId) {
       set({ statusMessage: 'No profile selected' });
@@ -1042,20 +1163,31 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       set({ statusMessage: 'Selected profile not found' });
       return;
     }
-    if (Math.abs(extrudeDistance) < 0.01) {
+    if (extrudeExtentType === 'distance' && Math.abs(extrudeDistance) < 0.01) {
       set({ statusMessage: 'Distance must be non-zero' });
       return;
     }
     // Signed distance: negative means press-pull INTO the body → cut.
-    // The feature always stores a positive depth and records direction +
-    // operation from the sign.
     const isCutDrag = extrudeDistance < 0;
-    const absDistance = Math.abs(extrudeDistance);
+    // 'all' extent uses a large through-all distance
+    const absDistance = extrudeExtentType === 'all' ? 10000 : Math.abs(extrudeDistance);
     const finalDirection = isCutDrag ? 'reverse' : extrudeDirection;
     const finalOperation = isCutDrag ? 'cut' : extrudeOperation;
+    // Generate mesh: prefer thin → taper → standard
+    let featureMesh: THREE.Mesh | undefined;
+    if (extrudeThinEnabled) {
+      featureMesh = GeometryEngine.extrudeThinSketch(sketch, absDistance, extrudeThinThickness, extrudeThinSide) ?? undefined;
+    } else if (Math.abs(extrudeTaperAngle) > 0.01) {
+      featureMesh = GeometryEngine.extrudeSketchWithTaper(sketch, absDistance, extrudeTaperAngle) ?? undefined;
+    }
+    // Apply start offset: shift the mesh along the extrude normal
+    if (featureMesh && extrudeStartType === 'offset' && Math.abs(extrudeStartOffset) > 0.001) {
+      const n = GeometryEngine.getSketchExtrudeNormal(sketch);
+      featureMesh.position.addScaledVector(n, extrudeStartOffset);
+    }
     const feature: Feature = {
       id: crypto.randomUUID(),
-      name: `${finalOperation === 'cut' ? 'Cut' : 'Extrude'} ${features.filter(f => f.type === 'extrude').length + 1}`,
+      name: `${extrudeThinEnabled ? 'Thin ' : ''}${finalOperation === 'cut' ? 'Cut' : 'Extrude'} ${features.filter(f => f.type === 'extrude').length + 1}`,
       type: 'extrude',
       sketchId: extrudeSelectedSketchId,
       params: {
@@ -1063,16 +1195,24 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
         distanceExpr: String(absDistance),
         direction: finalDirection,
         operation: finalOperation,
+        thin: extrudeThinEnabled,
+        thinThickness: extrudeThinThickness,
+        thinSide: extrudeThinSide,
+        startType: extrudeStartType,
+        startOffset: extrudeStartOffset,
+        extentType: extrudeExtentType,
+        taperAngle: extrudeTaperAngle,
       },
       visible: true,
       suppressed: false,
       timestamp: Date.now(),
+      mesh: featureMesh,
     };
     set({
       features: [...features, feature],
       activeTool: 'select',
       ...EXTRUDE_DEFAULTS,
-      statusMessage: `${finalOperation === 'cut' ? 'Cut' : 'Extruded'} ${sketch.name} by ${absDistance}${units}`,
+      statusMessage: `${extrudeThinEnabled ? 'Thin ' : ''}${finalOperation === 'cut' ? 'Cut' : 'Extruded'} ${sketch.name}${extrudeExtentType === 'all' ? ' (All)' : ` by ${absDistance}${units}`}`,
     });
   },
 
@@ -1081,6 +1221,9 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   setRevolveSelectedSketchId: (id) => set({ revolveSelectedSketchId: id }),
   setRevolveAxis: (a) => set({ revolveAxis: a }),
   setRevolveAngle: (angle) => set({ revolveAngle: angle }),
+  // D70 direction modes
+  setRevolveDirection: (d) => set({ revolveDirection: d }),
+  setRevolveAngle2: (a) => set({ revolveAngle2: a }),
   startRevolveTool: () => {
     const extrudable = get().sketches.filter((s) => s.entities.length > 0);
     if (extrudable.length === 0) {
@@ -1101,7 +1244,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     });
   },
   commitRevolve: () => {
-    const { revolveSelectedSketchId, revolveAxis, revolveAngle, sketches, features, units } = get();
+    const { revolveSelectedSketchId, revolveAxis, revolveAngle, revolveDirection, revolveAngle2, sketches, features, units } = get();
     if (!revolveSelectedSketchId) {
       set({ statusMessage: 'No profile selected for revolve' });
       return;
@@ -1111,7 +1254,10 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       set({ statusMessage: 'Selected profile not found' });
       return;
     }
-    if (Math.abs(revolveAngle) < 0.5) {
+    // For symmetric, each side gets angle/2; for two-sides, side1=revolveAngle, side2=revolveAngle2.
+    // The stored angle is always the primary (or full) angle — the renderer uses revolveDirection.
+    const primaryAngle = revolveDirection === 'symmetric' ? revolveAngle / 2 : revolveAngle;
+    if (Math.abs(primaryAngle) < 0.5) {
       set({ statusMessage: 'Angle must be greater than 0' });
       return;
     }
@@ -1123,16 +1269,23 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       params: {
         angle: revolveAngle,
         axis: revolveAxis,
+        direction: revolveDirection,
+        angle2: revolveAngle2,
       },
       visible: true,
       suppressed: false,
       timestamp: Date.now(),
     };
+    const angleDesc = revolveDirection === 'symmetric'
+      ? `±${revolveAngle / 2}°`
+      : revolveDirection === 'two-sides'
+        ? `${revolveAngle}°/${revolveAngle2}°`
+        : `${revolveAngle}°`;
     set({
       features: [...features, feature],
       activeTool: 'select',
       ...REVOLVE_DEFAULTS,
-      statusMessage: `Revolved ${sketch.name} by ${revolveAngle}° around ${revolveAxis} (${units})`,
+      statusMessage: `Revolved ${sketch.name} by ${angleDesc} around ${revolveAxis} (${units})`,
     });
   },
 
@@ -1183,11 +1336,65 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     });
   },
 
+  // ─── Rib tool (D73) ───────────────────────────────────────────────────
+  ribSelectedSketchId: null,
+  setRibSelectedSketchId: (id) => set({ ribSelectedSketchId: id }),
+  ribThickness: 2,
+  setRibThickness: (t) => set({ ribThickness: Math.max(0.01, t) }),
+  ribHeight: 10,
+  setRibHeight: (h) => set({ ribHeight: Math.max(0.01, h) }),
+  ribDirection: 'normal',
+  setRibDirection: (d) => set({ ribDirection: d }),
+  startRibTool: () => {
+    const sketches = get().sketches.filter((s) => s.entities.length > 0);
+    if (sketches.length === 0) {
+      set({ statusMessage: 'Create a sketch first before adding a rib' });
+      return;
+    }
+    set({ activeTool: 'rib' as Tool, ribSelectedSketchId: null, statusMessage: 'Rib — pick a profile sketch in the panel' });
+  },
+  cancelRibTool: () => set({ activeTool: 'select', ribSelectedSketchId: null, statusMessage: 'Rib cancelled' }),
+  commitRib: () => {
+    const { ribSelectedSketchId, ribThickness, ribHeight, ribDirection, sketches, features, units } = get();
+    if (!ribSelectedSketchId) {
+      set({ statusMessage: 'No profile selected for rib' });
+      return;
+    }
+    const sketch = sketches.find((s) => s.id === ribSelectedSketchId);
+    if (!sketch) {
+      set({ statusMessage: 'Selected sketch not found' });
+      return;
+    }
+    // Rib = thin extrude of open profile in center mode, height along sketch normal.
+    // For 'flip', pass height as negative (mirrors direction).
+    const signedHeight = ribDirection === 'flip' ? -ribHeight : ribHeight;
+    const ribMesh = GeometryEngine.extrudeThinSketch(sketch, Math.abs(signedHeight), ribThickness, 'center') ?? undefined;
+    const feature: Feature = {
+      id: crypto.randomUUID(),
+      name: `Rib ${features.filter((f) => f.type === 'rib').length + 1}`,
+      type: 'rib',
+      sketchId: ribSelectedSketchId,
+      params: { thickness: ribThickness, height: ribHeight, direction: ribDirection },
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+      mesh: ribMesh,
+    };
+    set({
+      features: [...features, feature],
+      activeTool: 'select',
+      ribSelectedSketchId: null,
+      statusMessage: `Rib created: ${ribThickness}mm thick, ${ribHeight}${units} tall`,
+    });
+  },
+
   showExportDialog: false,
   setShowExportDialog: (show) => set({ showExportDialog: show }),
 
   activeDialog: null,
   setActiveDialog: (dialog) => set({ activeDialog: dialog }),
+  dialogPayload: null,
+  setDialogPayload: (payload) => set({ dialogPayload: payload }),
 
   measurePoints: [],
   setMeasurePoints: (pts) => set({ measurePoints: pts }),
@@ -1198,6 +1405,8 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
 
   units: 'mm',
   setUnits: (units) => set({ units: units }),
+  selectionFilter: 'all',
+  setSelectionFilter: (filter) => set({ selectionFilter: filter }),
 
   cameraHomeCounter: 0,
   triggerCameraHome: () => set((state) => ({ cameraHomeCounter: state.cameraHomeCounter + 1 })),

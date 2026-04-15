@@ -371,22 +371,26 @@ interface SketchCtxMenu {
 
 function SketchContextMenu({ menu, onClose }: { menu: SketchCtxMenu; onClose: () => void }) {
   const editSketch = useCADStore((s) => s.editSketch);
-
+  const copySketch = useCADStore((s) => s.copySketch);
+  const deleteSketch = useCADStore((s) => s.deleteSketch);
+  const setActiveDialog = useCADStore((s) => s.setActiveDialog);
+  const setDialogPayload = useCADStore((s) => s.setDialogPayload);
 
   const cs = (label: string) => () => { alert(`${label} — coming soon`); onClose(); };
 
   const items: Array<{ label: string; shortcut?: string; icon?: React.ReactNode; danger?: boolean; separator?: boolean; onClick: () => void }> = [
     { label: 'Move to Group', icon: <FolderOpen size={13} />, onClick: cs('Move to Group') },
     { label: 'Create Selection Set', icon: <Layers size={13} />, onClick: cs('Create Selection Set') },
-    { label: 'Offset Plane', icon: <Layers size={13} />, onClick: cs('Offset Plane') },
+    { label: 'Offset Plane', icon: <Layers size={13} />, onClick: () => { setActiveDialog('construction-plane'); onClose(); } },
     { label: '', separator: true, onClick: () => {} },
     { label: 'Edit Sketch', icon: <PenTool size={13} />, onClick: () => { editSketch(menu.sketchId); onClose(); } },
-    { label: 'Redefine Sketch Plane', icon: <PenTool size={13} />, onClick: cs('Redefine Sketch Plane') },
+    { label: 'Copy Sketch', icon: <Copy size={13} />, onClick: () => { copySketch(menu.sketchId); onClose(); } },
+    { label: 'Redefine Sketch Plane', icon: <PenTool size={13} />, onClick: () => { setActiveDialog('redefine-sketch-plane'); onClose(); } },
     { label: 'Slice Sketch', icon: <Scissors size={13} />, onClick: cs('Slice Sketch') },
     { label: 'Configure', icon: <Settings size={13} />, onClick: cs('Configure') },
     { label: '', separator: true, onClick: () => {} },
-    { label: 'Delete', shortcut: 'Del', icon: <Trash2 size={13} />, danger: true, onClick: cs('Delete Sketch') },
-    { label: 'Rename', icon: <MoreHorizontal size={13} />, onClick: cs('Rename') },
+    { label: 'Delete', shortcut: 'Del', icon: <Trash2 size={13} />, danger: true, onClick: () => { deleteSketch(menu.sketchId); onClose(); } },
+    { label: 'Rename', icon: <MoreHorizontal size={13} />, onClick: () => { setDialogPayload(menu.sketchId); setActiveDialog('rename-sketch'); onClose(); } },
     { label: '', separator: true, onClick: () => {} },
     { label: 'Look At', icon: <Eye size={13} />, onClick: cs('Look At') },
     { label: 'Hide Profile', icon: <EyeOff size={13} />, onClick: cs('Hide Profile') },

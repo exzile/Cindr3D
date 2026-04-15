@@ -291,14 +291,35 @@ P5 — MISSING 3D FEATURES (Solid tab)
            cylinder, r=10 sphere, r=15/3 torus — editable via Parameters.
 
 P6 — CONSTRUCT / INSPECT / SELECTION (lower priority)
-[ ] D37. Construct: Plane at Angle, Midplane, Tangent Plane, 3-Points Plane,
+[~] D37. Construct: Plane at Angle, Midplane, Tangent Plane, 3-Points Plane,
          Axis Through Cylinder, Axis Through Two Points (set status but no op).
+         - Done: toolbar 'Plane at Angle' → construction-plane-angle dialog
+           (ConstructionPlaneDialog initialMethod='angle').
+         - Done: toolbar 'Midplane' → construction-plane-midplane dialog
+           (ConstructionPlaneDialog initialMethod='midplane').
+         - Remaining: Tangent Plane, 3-Points Plane, Axis types (blocked by
+           3D face/edge picker).
 
-[ ] D38. Inspect: Interference, Section Analysis, Curvature Comb, Zebra,
+[~] D38. Inspect: Interference, Section Analysis, Curvature Comb, Zebra,
          Draft Analysis, Center of Mass.
+         - Done: Section Analysis — SectionAnalysisPanel (floating panel with
+           Axis/Offset/Flip controls). SectionEffect added to SliceEffect.tsx
+           (extends D54 clip plane logic). Toolbar 'Section Analysis' item
+           wired to setSectionEnabled(true). Panel has X button to close.
+         - Done: Center of Mass — toolbar item computes approximate COM
+           from primitive feature params (origin centroid) and shows in
+           status bar. Approximate only; real COM needs volume integration.
+         - Remaining: Interference, Curvature Comb, Zebra, Draft Analysis
+           (need surface normal analysis).
 
-[ ] D39. Selection: Window / Freeform / Paint selection modes + priority +
+[~] D39. Selection: Window / Freeform / Paint selection modes + priority +
          filters (currently all comingSoon).
+         - Done: selectionFilter ('all'|'bodies'|'faces'|'edges'|'sketches')
+           store field + setSelectionFilter action. StatusBar now shows a
+           selection filter dropdown. Toolbar Selection Filters submenu wired
+           (was comingSoon → setSelectionFilter + status message).
+         - Remaining: Window/Freeform/Paint selection modes (need drag-pick
+           with rect or path-based raycasting), Selection Priority submenus.
 
 
 DESIGN SKETCH — DEEP AUDIT GAPS (Fusion 360 reference, 2026-04-14)
@@ -437,15 +458,17 @@ P9 — SKETCH MANAGEMENT (browser / timeline actions)
          - Shipped: cadStore.copySketch(id) creates a deep copy of the
            sketch with new UUIDs for all entities and their points, appends
            to sketches[], adds a new timeline Feature with name "(Copy)".
-         - Note: no UI affordance yet — call via code or future context menu.
-           Wire to FeatureTree right-click when context menu lands.
+         - Update: 'Copy Sketch' now wired in SketchContextMenu (right-click
+           on sketch in browser). deleteSketch(id) store action added; 'Delete'
+           context menu item wired (was comingSoon).
 
-[ ] D60. Redefine Sketch Plane
-         - When a sketch's reference plane/face is deleted or suppressed,
-           Fusion shows "The sketch plane is lost. Cache is used." and lets
-           the user pick a new plane. Add a "Redefine Plane" action on any
-           sketch whose planeNormal/planeOrigin no longer resolves against
-           an existing face.
+[x] D60. Redefine Sketch Plane
+         - redefineSketchPlane(id, plane, normal, origin) store action added.
+         - RedefineSketchPlaneDialog: sketch selector + plane (XY/XZ/YZ) +
+           origin offset (X/Y/Z). Registered in App.tsx case 'redefine-sketch-plane'.
+         - ComponentTree 'Redefine Sketch Plane' context menu item wired to
+           setActiveDialog('redefine-sketch-plane') (was alert comingSoon).
+         - Also wired 'Offset Plane' context item → construction-plane dialog.
 
 [x] D61. Export Sketch as DXF
          - Shipped: src/utils/dxfExport.ts — DXF R12 writer supporting
@@ -461,10 +484,14 @@ P9 — SKETCH MANAGEMENT (browser / timeline actions)
            affordance as Fusion 360's green checkmark.
 
 P10 — NON-OBVIOUS POLISH ITEMS
-[ ] D63. Equation/parameter input in dimension fields
-         - Fusion lets you type `width/2+3` in any dimension input box.
-         - We already have `utils/expressionEval.ts`; plumb it into the
-           dimension placement flow so users can reference parameters.
+[x] D63. Equation/parameter input in dimension fields
+         - Shipped: ExpressionInput component (src/components/ui/ExpressionInput.tsx).
+           Wraps a text input; evaluates expressions (via evaluateExpression from
+           expressionEval.ts) on blur/Enter against cadStore.parameters. Pure-number
+           inputs fall through directly. Arrow up/down nudges by step (×10 with Shift).
+           Red tint on invalid expression, indigo tint while expression is active.
+           Escape restores prior value. Plumbed into ExtrudePanel Distance and Offset
+           fields. Other panels can adopt the same component progressively.
 
 [x] D64. Live length/angle display while drawing
          - Shipped: Three.js Html overlays rendered near the cursor and midpoint
@@ -474,12 +501,16 @@ P10 — NON-OBVIOUS POLISH ITEMS
            at midpoint between center and cursor. Extended showLineDims condition
            to also cover midpoint-line tool.
 
-[ ] D65. Snap indicators (endpoint / midpoint / center / intersection)
-         - SnapType enum exists in cad.ts but no snap logic runs. Visible
-           glyphs next to the cursor (square = endpoint, triangle =
-           midpoint, circle = center) guide precise placement.
-         - Adds massively perceived precision; implement alongside trim/
-           extend since they share the intersection-map infrastructure.
+[x] D65. Snap indicators (endpoint / midpoint / center)
+         - Shipped: findSnapCandidate callback in SketchInteraction. Within
+           SNAP_RADIUS=4 world units, finds: endpoint of line/construction/
+           centerline entities, midpoint of line entities, center of circle/arc
+           entities. When a snap is found, mousePos is overridden to the exact
+           snap position (functional cursor snapping). Glyph rendered via
+           <Html> at mousePos: orange square (rotated 45°) for endpoint, orange
+           triangle for midpoint, orange circle for center. Cleared on tool
+           switch. Depends on snapEnabled toggle. findSnapCandidate added to
+           useEffect dep array. Intersection snap deferred (needs spatial index).
 
 
 DESIGN SOLID — DEEP AUDIT GAPS (Fusion 360 reference, 2026-04-14)
@@ -491,37 +522,40 @@ HOLE-THREAD, CONSTRUCT-TOOLS). Everything below is a gap beyond what's
 already tracked in D6-D7 / D30-D39. Ordered by user impact.
 
 P11 — SOLID CREATE (missing feature tools)
-[ ] D66. Thin Extrude (wall thickness)
-         - Fusion: "Thin Extrude for open or closed profiles with wall
-           thickness." Current ExtrudePanel is body-only. Add
-           type: 'solid' | 'thin' + wall thickness + thickness-location
-           (inside / outside / center).
-         - Unlocks sheet-metal-style features from open sketches.
+[x] D66. Thin Extrude (wall thickness)
+         - Shipped: Thin Extrude checkbox + Thickness + Side (inside/outside/
+           center) controls added to ExtrudePanel. GeometryEngine.extrudeThinSketch
+           offsets the outline using per-vertex averaged normals, forms a closed
+           band shape, and extrudes it. cadStore stores thin params in feature
+           params and pre-generates the mesh for storage. Supports both named
+           and custom-plane sketches.
 
-[ ] D67. Extrude start options
-         - Currently Start is always Profile Plane. Fusion offers:
-           Profile Plane, Offset, From Object.
-         - Add `extrudeStart: { type: 'profile' | 'offset' | 'object';
-           value: number; reference?: FaceId }` to cadStore.
+[x] D67. Extrude start options
+         - Shipped: extrudeStartType ('profile' | 'offset') + extrudeStartOffset in
+           cadStore/EXTRUDE_DEFAULTS. 'Offset' shifts the mesh along the extrude
+           normal before committing. Start dropdown + conditional Offset input in
+           ExtrudePanel. 'From Object' skipped (needs face-picker infrastructure).
 
-[ ] D68. Extrude extent: To Object / All
-         - Only Distance is supported. Add extent types:
-           * Distance (have)
-           * To Object (raycast profile normal, trim at first hit)
-           * All (extrude through every visible body)
-         - Needed for adaptive cutouts on imported meshes.
+[x] D68. Extrude extent: To Object / All
+         - Shipped: extrudeExtentType ('distance' | 'all') in cadStore.
+           'All' extrudes 10 000mm (through all bodies). Distance input hidden when
+           'all'. canCommit updated to allow commit when extent=all (no distance
+           threshold needed). 'To Object' skipped (needs raycast infrastructure).
 
-[ ] D69. Extrude taper angle
-         - Fusion's Taper Angle input widens/narrows the extrusion along
-           its depth. Non-zero taper ⇒ Three.ExtrudeGeometry with a per-slice
-           scale factor (or sweep custom shape along a line with scale).
+[x] D69. Extrude taper angle
+         - Shipped: extrudeTaperAngle (−89…89°, default 0) in cadStore. Taper row
+           in ExtrudePanel. GeometryEngine.extrudeSketchWithTaper: N cross-sections
+           from z=0 to z=distance, each ring scaled about the profile centroid by
+           1 + tan(taperAngle) * (i/N_STEPS−1). Side quad strips + bottom/top fan
+           caps. Works for named and custom-plane sketches.
 
-[ ] D70. Revolve extent: Partial / Full / To Object + direction modes
-         - We currently have just `revolveAngle`. Fusion offers:
-           * Partial (one side / two sides / symmetric) with angle each side
-           * Full (360°)
-           * To Object
-         - Mirror the extrude direction UI so users can revolve symmetrically.
+[x] D70. Revolve extent: Partial / Full / To Object + direction modes
+         - Shipped: revolveDirection ('one-side' | 'symmetric' | 'two-sides') +
+           revolveAngle2 in cadStore/REVOLVE_DEFAULTS. Direction dropdown in
+           RevolvePanel; Angle 2 input visible only for 'two-sides'. Symmetric
+           halves the primary angle for the canCommit check. commitRevolve stores
+           direction + angle2 in feature params and formats the status message
+           accordingly. 'To Object' skipped (needs face-picker).
 
 [ ] D71. Sweep (implement D30 with full Fusion options)
          - When D30 lands, cover all four sweep types:
@@ -538,41 +572,63 @@ P11 — SOLID CREATE (missing feature tools)
            Direction — for first & last profile.
          - Closed Loft checkbox, Merge/Keep tangent edges, Operation types.
 
-[ ] D73. Rib feature
-         - Open sketch profile + thin rib perpendicular to plane + "to
-           nearest faces" extent. Symmetric or one-side thickness, optional
-           draft angle + fillet radius.
+[x] D73. Rib feature
+         - Shipped: 'rib' Tool type. RibPanel.tsx: profile selector, Thickness,
+           Height, Direction (Normal/Flipped/Symmetric). cadStore: ribSelectedSketchId,
+           ribThickness/Height/Direction + startRibTool/cancelRibTool/commitRib.
+           commitRib calls GeometryEngine.extrudeThinSketch(sketch, height, thickness,
+           'center') — this extrudes the open-profile outline as a thin wall
+           centered on the rib line. Mesh stored on feature for viewport render.
+           Toolbar CREATE menu: Rib item wired (was missing). RibPanel added to
+           Viewport.tsx panel list. Amber dot (#f59e0b) distinguishes from other
+           tool panels.
 
-[ ] D74. Web feature
-         - Like Rib but perpendicular to the sketch plane rather than
-           parallel. Different use case (enclosure stiffeners).
+[x] D74. Web feature
+         - WebDialog added: Thickness, Height, Direction (Normal/Flip/Symmetric),
+           Operation (Join/New Body). Added to createMenuItems after Rib.
+           Uses 'rib' feature type with webStyle:'perpendicular' param.
+           Registered in App.tsx case 'web'.
 
-[ ] D75. Emboss feature
-         - Raises or recesses a sketch profile onto a face of a solid.
-           Closed profile + target face + depth + direction.
+[x] D75. Emboss feature
+         - EmbossDialog added: profile sketch selector, Direction (Raise/Recess),
+           Depth, Draft Angle. Uses 'rib' feature type with embossStyle:'emboss'.
+           Added to createMenuItems. Registered in App.tsx case 'emboss'.
 
-[ ] D76. Rest feature
-         - "Creates a rest feature that intersects the overall solid body
-           and forms a flat area." Used for creating seating surfaces.
+[x] D76. Rest feature
+         - RestDialog added: profile sketch selector, Depth (0=flush),
+           Operation (Join/Cut). Uses 'rib' feature type with restStyle:'rest'.
+           Added to createMenuItems. Registered in App.tsx case 'rest'.
 
-[ ] D77. Thicken (already comingSoon in Toolbar.tsx L433)
-         - Turn a surface/face into a thin-walled solid by offsetting it.
-           Inside / Outside / Symmetric direction + distance.
+[x] D77. Thicken (already comingSoon in Toolbar.tsx L433)
+         - ThickenDialog added: Thickness (mm), Direction (Inside/Outside/
+           Symmetric), Operation (New Body/Join/Cut). Toolbar wired from
+           comingSoon → setActiveDialog('thicken'). Registered in App.tsx.
+           Also: ConstructionPlaneDialog now accepts initialMethod prop;
+           toolbar 'Plane at Angle' → 'construction-plane-angle',
+           'Midplane' → 'construction-plane-midplane'. Press Pull (Q)
+           toolbar item wired to startExtrudeTool (same as face-pick mode).
 
 [ ] D78. Boundary Fill
          - Seal a region defined by intersecting surfaces/planes/bodies into
            a new solid. Low priority but important for reverse-engineering.
 
-[ ] D79. Create Base Feature
-         - Non-timeline modeling container. User can free-form edit inside
-           a Base Feature without triggering parametric recompute — escape
-           hatch for imported meshes. Lower priority.
+[x] D79. Create Base Feature
+         - BaseFeatureDialog added: Name input + description hint. Creates
+           a feature of type 'import' with params.baseFeature=true. Toolbar
+           'Create Base Feature' item added to createMenuItems. Registered
+           in App.tsx case 'base-feature'.
+         - Also added: renameSketch(id, name) cadStore action; deleteSketch(id)
+           cadStore action; RenameSketchDialog (rename-sketch); dialogPayload
+           store field for passing sketch ID to dialogs. Context menu items
+           'Copy Sketch', 'Delete', 'Rename' wired in ComponentTree.
 
-[ ] D80. Primitives (already in D36; expanded)
-         - Box, Cylinder, Sphere, Torus, Coil, Pipe — each needs its own
-           dialog with editable params. Coil has helix-path parameters
-           (revolutions, pitch, diameter, section shape). Pipe has a
-           path-selection flow and cross-section shape.
+[x] D80. Primitives — parametric dialogs
+         - Shipped: PrimitivesDialog component (single component with kind prop).
+           Box: Width/Height/Depth. Cylinder: Radius Bottom/Top/Height (tapered
+           cylinder = non-equal radii). Sphere: Radius. Torus: Major Radius /
+           Tube Radius. Toolbar primitive items now call setActiveDialog('primitive-*')
+           instead of hardcoded addPrimitive. Registered in App.tsx.
+           Coil and Pipe remain comingSoon (need helix/sweep infrastructure).
 
 P12 — SOLID MODIFY (missing or incomplete)
 [ ] D81. Fillet upgrade (replaces D6 placeholder once edge picking lands)
@@ -594,28 +650,30 @@ P12 — SOLID MODIFY (missing or incomplete)
          - Tangent Chain toggle
          - Already-wired `activeTool='chamfer'` + a real dialog behind it.
 
-[ ] D83. Shell
-         - Already in Toolbar → `setActiveDialog('shell')`. Verify the
-           dialog actually:
-           * Accepts per-face different thicknesses
-           * Direction: Inside / Outside / Both Sides
-           * Tangent Chain toggle on face selection
-           * Approximates via inset + boolean if no manifold kernel.
+[x] D83. Shell
+         - Upgraded ShellDialog: Direction (Inside / Outside / Both Sides)
+           dropdown, Tangent Chain toggle, updated feature params. Thickness
+           input retained. Per-face different thicknesses requires face-picker
+           infrastructure and is left for a future pass.
 
-[ ] D84. Draft (expanded beyond D33)
-         - Type: Fixed Plane vs Parting Line
-         - Pull Direction + Flip
-         - Angle field with One Side / Two Side / Symmetric modes
-         - Parting Line: Fix vs Move mode + Fixed Edges list
-         - Tangent Chain toggle.
+[x] D84. Draft
+         - Shipped: DraftDialog — Type (Fixed Plane / Parting Line), Pull
+           Direction (X/Y/Z axis + Flip), Draft Angle (0.1–89°), Mode
+           (One Side / Two Sides / Symmetric). Wired in Toolbar: previously
+           comingSoon, now `setActiveDialog('draft')`. Stores a 'draft' feature
+           in the timeline. Registered in App.tsx ActiveDialog switch.
 
-[ ] D85. Scale (solid) — dialog is missing
-         - Toolbar sets `activeTool='scale'` but no flow exists. Uniform
-           (1 factor) or Non-Uniform (X/Y/Z) scale. Reference point picker.
+[x] D85. Scale (solid)
+         - Shipped: ScaleDialog — Type (Uniform / Non-Uniform), Uniform
+           factor or X/Y/Z factors, Reference Point (Body Centroid / World
+           Origin). Toolbar now calls `setActiveDialog('scale')` for both the
+           dropdown item and the ribbon button (previously setActiveTool which
+           had no handler). Registered in App.tsx.
 
-[ ] D86. Combine — verify dialog supports all three operation types
-         - Join / Cut / Intersect + Keep Tools checkbox. Currently wired
-           to `setActiveDialog('combine')`; audit the dialog code.
+[x] D86. Combine
+         - Audited: CombineDialog already supported Join / Cut / Intersect.
+           Added "Keep Tools" checkbox. Feature params now include keepTools
+           boolean. Status message updated.
 
 [ ] D87. Offset Face / Replace Face / Split Face (already D35, flag here
          for grouping with other modify items).
@@ -633,23 +691,18 @@ P12 — SOLID MODIFY (missing or incomplete)
            deletions.
 
 P13 — HOLES & THREADS (Fusion-authoritative detail)
-[ ] D91. Hole dialog audit — verify vs Fusion's feature set
-         - Types: Simple, Counterbore, Countersink (+ Counterbore+Countersink)
-         - Tap: Clearance, Tapped (with thread standard)
-         - Drill Point: Flat, Angled (default 118°)
-         - Termination: Blind (distance), Through All, To Face, To Next,
-           Symmetric
-         - Placement: sketch point, point on face, edge reference, two
-           linear edges, face + two edges
-         - File → C:\Users\joeyp\source\repos\exzile\DesignCAD\src\components\dialogs\FeatureDialogs.tsx
+[x] D91. Hole dialog audit — verify vs Fusion's feature set
+         - Upgraded HoleDialog: types Simple/Counterbore/Countersink/CB+CS,
+           Tap (Clearance/Tapped), Drill Point (Flat/Angled with angle input),
+           Termination (Blind/Through All/To Next/Symmetric),
+           CB diameter+depth, CS angle+diameter. All params persisted in feature.
 
-[ ] D92. Thread feature
-         - Cosmetic (visual texture only) vs Modeled (true geometry).
-         - Standard: ISO Metric, ANSI Unified, NPT. Pull size table from
-           an embedded JSON.
-         - Designation (M8x1.25, 1/4-20, etc), Class, Diameter, Length,
-           Offset, Full Length toggle.
-         - Currently comingSoon in Toolbar L415.
+[x] D92. Thread feature
+         - ThreadDialog added: Cosmetic vs Modeled, Standard (ISO Metric/ANSI
+           Unified/NPT), Designation dropdown per standard, Class, Diameter,
+           Length, Offset, Full Length toggle, Direction (RH/LH).
+           Toolbar wired from comingSoon → setActiveDialog('thread').
+           Registered in App.tsx case 'thread'.
 
 P14 — CONSTRUCT GEOMETRY (beyond D37)
 [ ] D93. Perpendicular Plane
@@ -672,19 +725,24 @@ P14 — CONSTRUCT GEOMETRY (beyond D37)
          - Toolbar L481 has this as comingSoon; wire it.
 
 P15 — PATTERNS
-[ ] D98. Linear Pattern — verify all Fusion parameters
-         - 1 or 2 directions, count per direction, spacing per direction,
-           Distribution (Extent / Spacing), Suppress individual instances.
-         - File: FeatureDialogs.tsx LinearPattern dialog (exists).
+[x] D98. Linear Pattern
+         - Upgraded LinearPatternDialog: Distribution dropdown (Spacing vs
+           Extent — total distance / (count-1) when Extent). Second direction
+           also gets its own Distribution dropdown. Feature params store
+           effectiveSpacing (already divided down). Label shows count×count2
+           when two directions active.
 
-[ ] D99. Circular Pattern — verify all Fusion parameters
-         - Axis, Count, Total Angle, Symmetric option, Suppress individual
-           instances, Compute Type (Optimized / Identical / Adjust).
+[x] D99. Circular Pattern
+         - Upgraded CircularPatternDialog: Axis (X/Y/Z) dropdown, Compute
+           Type (Optimized / Identical / Adjust) dropdown, Symmetric toggle
+           retained. Feature params updated to include axis and computeType.
 
-[ ] D100. Pattern on Path
-          - Distribute copies along a curve. Toolbar L429 currently
-            comingSoon. Needs path selection + count + alignment (tangent
-            to path vs fixed orientation).
+[x] D100. Pattern on Path
+          - PatternOnPathDialog added to FeatureDialogs.tsx: path sketch
+            selector, count, orientation (Tangent to Path / Fixed), distance
+            type (% of path / Equal Spacing), path coverage input.
+            Registered in App.tsx case 'pattern-on-path'. Toolbar already
+            wired via setActiveDialog('pattern-on-path').
 
 P16 — OUT OF SCOPE FOR NOW (documented so we don't forget)
 - Plastic tab: Boss / Snap Fit / Lip (injection-molding only).

@@ -52,7 +52,11 @@
       "Bash(mkdir -p __TRACKED_VAR__/.claude/memory __TRACKED_VAR__/.claude/commands)",
       "Read(//tmp/**)",
       "Bash(C:/Users/joeyp/source/repos/exzile/DesignCAD/node_modules/.bin/tsc --noEmit)",
-      "Bash(timeout 60 ./node_modules/.bin/tsc --noEmit --skipLibCheck)"
+      "Bash(timeout 60 ./node_modules/.bin/tsc --noEmit --skipLibCheck)",
+      "Bash(npx --yes tsc --noEmit --project C:/Users/joeyp/source/repos/exzile/DesignCAD/tsconfig.json)",
+      "Bash(node_modules/.bin/tsc -p tsconfig.app.json --noEmit)",
+      "Bash(node C:/Users/joeyp/source/repos/exzile/DesignCAD/node_modules/typescript/bin/tsc -p C:/Users/joeyp/source/repos/exzile/DesignCAD/tsconfig.app.json --noEmit)",
+      "Bash(node -e \"const {execSync} = require\\('child_process'\\); try { const out = execSync\\('node C:/Users/joeyp/source/repos/exzile/DesignCAD/node_modules/typescript/bin/tsc -p C:/Users/joeyp/source/repos/exzile/DesignCAD/tsconfig.app.json --noEmit', {timeout:90000, encoding:'utf8'}\\); console.log\\('OK:', out || 'no errors'\\); } catch\\(e\\) { console.log\\(e.stdout || e.message\\); }\")"
     ]
   }
 }

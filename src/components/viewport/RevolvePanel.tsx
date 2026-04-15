@@ -10,13 +10,19 @@ export default function RevolvePanel() {
   const setAngle = useCADStore((s) => s.setRevolveAngle);
   const axis = useCADStore((s) => s.revolveAxis);
   const setAxis = useCADStore((s) => s.setRevolveAxis);
+  // D70 direction modes
+  const revolveDirection = useCADStore((s) => s.revolveDirection);
+  const setRevolveDirection = useCADStore((s) => s.setRevolveDirection);
+  const angle2 = useCADStore((s) => s.revolveAngle2);
+  const setAngle2 = useCADStore((s) => s.setRevolveAngle2);
   const commitRevolve = useCADStore((s) => s.commitRevolve);
   const cancelRevolveTool = useCADStore((s) => s.cancelRevolveTool);
 
   if (activeTool !== 'revolve') return null;
 
   const revolvable = sketches.filter((s) => s.entities.length > 0);
-  const canCommit = !!selectedId && Math.abs(angle) > 0.5;
+  const primaryAngle = revolveDirection === 'symmetric' ? angle / 2 : angle;
+  const canCommit = !!selectedId && Math.abs(primaryAngle) > 0.5;
 
   return (
     <div className="extrude-panel">
@@ -56,8 +62,22 @@ export default function RevolvePanel() {
           </select>
         </div>
 
+        {/* D70: Direction modes */}
         <div className="sketch-palette-row">
-          <span className="sketch-palette-label">Angle</span>
+          <span className="sketch-palette-label">Direction</span>
+          <select
+            className="measure-select"
+            value={revolveDirection}
+            onChange={(e) => setRevolveDirection(e.target.value as 'one-side' | 'symmetric' | 'two-sides')}
+          >
+            <option value="one-side">One Side</option>
+            <option value="symmetric">Symmetric</option>
+            <option value="two-sides">Two Sides</option>
+          </select>
+        </div>
+
+        <div className="sketch-palette-row">
+          <span className="sketch-palette-label">{revolveDirection === 'two-sides' ? 'Angle 1' : 'Angle'}</span>
           <div className="extrude-input">
             <input
               type="number"
@@ -71,6 +91,24 @@ export default function RevolvePanel() {
             <span className="extrude-unit">°</span>
           </div>
         </div>
+
+        {revolveDirection === 'two-sides' && (
+          <div className="sketch-palette-row">
+            <span className="sketch-palette-label">Angle 2</span>
+            <div className="extrude-input">
+              <input
+                type="number"
+                step="5"
+                value={angle2}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (!Number.isNaN(v)) setAngle2(v);
+                }}
+              />
+              <span className="extrude-unit">°</span>
+            </div>
+          </div>
+        )}
 
         <div className="extrude-panel-actions">
           <button className="btn btn-secondary" onClick={cancelRevolveTool}>

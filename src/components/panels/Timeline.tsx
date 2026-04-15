@@ -1,6 +1,6 @@
 import {
   Eye, EyeOff, Trash2, PenTool, ArrowUpFromLine,
-  RotateCcw, Blend, FileBox, ChevronDown
+  RotateCcw, Blend, FileBox, ChevronDown, PauseCircle, PlayCircle
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore';
 import type { Feature } from '../../types/cad';
@@ -19,6 +19,7 @@ function FeatureIcon({ type }: { type: Feature['type'] }) {
 
 function FeatureItem({ feature }: { feature: Feature }) {
   const toggleVisibility = useCADStore((s) => s.toggleFeatureVisibility);
+  const toggleSuppressed = useCADStore((s) => s.toggleFeatureSuppressed);
   const removeFeature = useCADStore((s) => s.removeFeature);
   const selectedFeatureId = useCADStore((s) => s.selectedFeatureId);
   const setSelectedFeatureId = useCADStore((s) => s.setSelectedFeatureId);
@@ -38,6 +39,16 @@ function FeatureItem({ feature }: { feature: Feature }) {
         <span className="timeline-item-type">{feature.type}</span>
       </div>
       <div className="timeline-item-actions">
+        <button
+          className={`timeline-action-btn ${feature.suppressed ? 'active' : ''}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleSuppressed(feature.id);
+          }}
+          title={feature.suppressed ? 'Unsuppress' : 'Suppress'}
+        >
+          {feature.suppressed ? <PlayCircle size={14} /> : <PauseCircle size={14} />}
+        </button>
         <button
           className="timeline-action-btn"
           onClick={(e) => {

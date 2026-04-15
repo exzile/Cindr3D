@@ -31,6 +31,7 @@ export type Tool =
   | 'extrude'
   | 'revolve'
   | 'sweep'
+  | 'rib'
   | 'fillet'
   | 'chamfer'
   | 'shell'
@@ -161,7 +162,12 @@ export type FeatureType =
   | 'construction-axis'
   | 'import'
   | 'primitive'
-  | 'sweep';
+  | 'sweep'
+  | 'thicken'
+  | 'rib'
+  | 'pattern-on-path'
+  | 'scale'
+  | 'draft';
 
 export type BooleanOperation = 'new-body' | 'join' | 'cut' | 'intersect';
 

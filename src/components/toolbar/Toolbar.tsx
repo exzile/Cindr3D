@@ -325,11 +325,15 @@ export default function Toolbar() {
   const startExtrudeTool = useCADStore((s) => s.startExtrudeTool);
   const startRevolveTool = useCADStore((s) => s.startRevolveTool);
   const startSweepTool = useCADStore((s) => s.startSweepTool);
+  const startRibTool = useCADStore((s) => s.startRibTool);
   const setShowExportDialog = useCADStore((s) => s.setShowExportDialog);
   const setActiveDialog = useCADStore((s) => s.setActiveDialog);
+  const setSectionEnabled = useCADStore((s) => s.setSectionEnabled);
+  const setSelectionFilter = useCADStore((s) => s.setSelectionFilter);
+  const selectedFeatureId = useCADStore((s) => s.selectedFeatureId);
+  const removeFeature = useCADStore((s) => s.removeFeature);
   const addFeature = useCADStore((s) => s.addFeature);
-  const addPrimitive = useCADStore((s) => s.addPrimitive);
-  const setStatusMessage = useCADStore((s) => s.setStatusMessage);
+const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const sketches = useCADStore((s) => s.sketches);
   const setWorkspaceMode = useCADStore((s) => s.setWorkspaceMode);
   const setActiveTool = useCADStore((s) => s.setActiveTool);
@@ -417,17 +421,22 @@ export default function Toolbar() {
 
   const createMenuItems: MenuItem[] = [
     { icon: <Package size={MI} />, label: 'New Component', onClick: comingSoon('New Component') },
+    { icon: <Package size={MI} />, label: 'Create Base Feature', onClick: () => setActiveDialog('base-feature') },
     { icon: <PenTool size={MI} />, label: 'Create Sketch', shortcut: 'S', onClick: beginSketchFlow },
     { separator: true, icon: <ArrowUpFromLine size={MI} />, label: 'Extrude', shortcut: 'E', onClick: handleExtrude },
     { icon: <RotateCcw size={MI} />, label: 'Revolve', onClick: handleRevolve },
     { icon: <Spline size={MI} />, label: 'Sweep', onClick: startSweepTool },
     { icon: <Layers size={MI} />, label: 'Loft', onClick: comingSoon('Loft') },
+    { icon: <Minus size={MI} />, label: 'Rib', onClick: startRibTool },
+    { icon: <Grid3X3 size={MI} />, label: 'Web', onClick: () => setActiveDialog('web') },
+    { icon: <ArrowUp size={MI} />, label: 'Emboss', onClick: () => setActiveDialog('emboss') },
+    { icon: <AlignCenter size={MI} />, label: 'Rest', onClick: () => setActiveDialog('rest') },
     { separator: true, icon: <CircleDot size={MI} />, label: 'Hole', shortcut: 'H', onClick: () => setActiveDialog('hole') },
-    { icon: <Wrench size={MI} />, label: 'Thread', onClick: comingSoon('Thread') },
-    { separator: true, icon: <Box size={MI} />, label: 'Box', onClick: () => { addPrimitive('box', { width: 20, height: 20, depth: 20 }); } },
-    { icon: <Circle size={MI} />, label: 'Cylinder', onClick: () => { addPrimitive('cylinder', { radius: 10, height: 20 }); } },
-    { icon: <Globe size={MI} />, label: 'Sphere', onClick: () => { addPrimitive('sphere', { radius: 10 }); } },
-    { icon: <CircleDot size={MI} />, label: 'Torus', onClick: () => { addPrimitive('torus', { radius: 15, tubeRadius: 3 }); } },
+    { icon: <Wrench size={MI} />, label: 'Thread', onClick: () => setActiveDialog('thread') },
+    { separator: true, icon: <Box size={MI} />, label: 'Box', onClick: () => setActiveDialog('primitive-box') },
+    { icon: <Circle size={MI} />, label: 'Cylinder', onClick: () => setActiveDialog('primitive-cylinder') },
+    { icon: <Globe size={MI} />, label: 'Sphere', onClick: () => setActiveDialog('primitive-sphere') },
+    { icon: <CircleDot size={MI} />, label: 'Torus', onClick: () => setActiveDialog('primitive-torus') },
     { icon: <Spline size={MI} />, label: 'Coil', onClick: comingSoon('Coil primitive') },
     { icon: <Minus size={MI} />, label: 'Pipe', onClick: comingSoon('Pipe primitive') },
     {
@@ -437,20 +446,20 @@ export default function Toolbar() {
       submenu: [
         { icon: <Repeat size={MI} />, label: 'Linear Pattern', onClick: () => setActiveDialog('linear-pattern') },
         { icon: <Repeat size={MI} />, label: 'Circular Pattern', onClick: () => setActiveDialog('circular-pattern') },
-        { icon: <Repeat size={MI} />, label: 'Pattern on Path', onClick: comingSoon('Pattern on Path') },
+        { icon: <Repeat size={MI} />, label: 'Pattern on Path', onClick: () => setActiveDialog('pattern-on-path') },
       ],
     },
     { icon: <FlipHorizontal size={MI} />, label: 'Mirror', onClick: () => setActiveDialog('mirror') },
-    { icon: <Layers size={MI} />, label: 'Thicken', onClick: comingSoon('Thicken') },
+    { icon: <Layers size={MI} />, label: 'Thicken', onClick: () => setActiveDialog('thicken') },
   ];
 
   const modifyMenuItems: MenuItem[] = [
-    { icon: <ArrowUpFromLine size={MI} />, label: 'Press Pull', shortcut: 'Q', onClick: comingSoon('Press Pull') },
+    { icon: <ArrowUpFromLine size={MI} />, label: 'Press Pull', shortcut: 'Q', onClick: startExtrudeTool },
     { icon: <Blend size={MI} />, label: 'Fillet', shortcut: 'F', onClick: () => setActiveTool('fillet' as Tool) },
     { icon: <Blend size={MI} />, label: 'Chamfer', onClick: () => setActiveTool('chamfer' as Tool) },
     { separator: true, icon: <Box size={MI} />, label: 'Shell', onClick: () => setActiveDialog('shell') },
-    { icon: <ArrowUp size={MI} />, label: 'Draft', onClick: comingSoon('Draft') },
-    { icon: <Maximize2 size={MI} />, label: 'Scale', onClick: () => setActiveTool('scale' as Tool) },
+    { icon: <ArrowUp size={MI} />, label: 'Draft', onClick: () => setActiveDialog('draft') },
+    { icon: <Maximize2 size={MI} />, label: 'Scale', onClick: () => setActiveDialog('scale') },
     { icon: <Combine size={MI} />, label: 'Combine', onClick: () => setActiveDialog('combine') },
     { separator: true, icon: <Square size={MI} />, label: 'Offset Face', onClick: comingSoon('Offset Face') },
     { icon: <Square size={MI} />, label: 'Replace Face', onClick: comingSoon('Replace Face') },
@@ -459,7 +468,10 @@ export default function Toolbar() {
     { icon: <Scissors size={MI} />, label: 'Silhouette Split', onClick: comingSoon('Silhouette Split') },
     { separator: true, icon: <Move size={MI} />, label: 'Move/Copy', shortcut: 'M', onClick: () => setActiveTool('move' as Tool) },
     { icon: <AlignCenter size={MI} />, label: 'Align', onClick: () => setActiveTool('align' as Tool) },
-    { icon: <Trash2 size={MI} />, label: 'Delete', shortcut: 'Del', onClick: comingSoon('Delete') },
+    { icon: <Trash2 size={MI} />, label: 'Delete', shortcut: 'Del', onClick: () => {
+      if (selectedFeatureId) { removeFeature(selectedFeatureId); setStatusMessage('Feature deleted'); }
+      else setStatusMessage('Select a feature to delete');
+    } },
     { icon: <X size={MI} />, label: 'Remove', onClick: comingSoon('Remove') },
     { separator: true, icon: <Diamond size={MI} />, label: 'Physical Material', onClick: comingSoon('Physical Material') },
     { icon: <Pipette size={MI} />, label: 'Appearance', shortcut: 'A', onClick: () => setStatusMessage('Select a body to change materials') },
@@ -481,9 +493,9 @@ export default function Toolbar() {
 
   const constructMenuItems: MenuItem[] = [
     { icon: <Layers size={MI} />, label: 'Offset Plane', onClick: () => setActiveDialog('construction-plane') },
-    { icon: <Layers size={MI} />, label: 'Plane at Angle', onClick: comingSoon('Plane at Angle') },
+    { icon: <Layers size={MI} />, label: 'Plane at Angle', onClick: () => setActiveDialog('construction-plane-angle') },
     { icon: <Layers size={MI} />, label: 'Tangent Plane', onClick: comingSoon('Tangent Plane') },
-    { icon: <Layers size={MI} />, label: 'Midplane', onClick: comingSoon('Midplane') },
+    { icon: <Layers size={MI} />, label: 'Midplane', onClick: () => setActiveDialog('construction-plane-midplane') },
     { separator: true, icon: <Layers size={MI} />, label: 'Plane Through Two Edges', onClick: comingSoon('Plane Through Two Edges') },
     { icon: <Layers size={MI} />, label: 'Plane Through Three Points', onClick: comingSoon('Plane Through Three Points') },
     { icon: <Layers size={MI} />, label: 'Plane Tangent to Face at Point', onClick: comingSoon('Plane Tangent to Face at Point') },
@@ -506,8 +518,18 @@ export default function Toolbar() {
     { icon: <Spline size={MI} />, label: 'Zebra Analysis', onClick: comingSoon('Zebra Analysis') },
     { icon: <ArrowUp size={MI} />, label: 'Draft Analysis', onClick: comingSoon('Draft Analysis') },
     { icon: <Spline size={MI} />, label: 'Curvature Map Analysis', onClick: comingSoon('Curvature Map Analysis') },
-    { icon: <Scissors size={MI} />, label: 'Section Analysis', onClick: comingSoon('Section Analysis') },
-    { icon: <Target size={MI} />, label: 'Center of Mass', onClick: comingSoon('Center of Mass') },
+    { icon: <Scissors size={MI} />, label: 'Section Analysis', onClick: () => setSectionEnabled(true) },
+    { icon: <Target size={MI} />, label: 'Center of Mass', onClick: () => {
+      const fs = useCADStore.getState().features.filter((f) => f.visible && f.type === 'primitive');
+      if (fs.length === 0) { setStatusMessage('No primitive bodies visible — Center of Mass: (0, 0, 0) mm'); return; }
+      const sum = fs.reduce((acc, f) => {
+        const p = f.params as Record<string, number>;
+        return { x: acc.x + (p.x ?? 0), y: acc.y + (p.y ?? 0), z: acc.z + (p.z ?? 0) };
+      }, { x: 0, y: 0, z: 0 });
+      const n = fs.length;
+      const cx = (sum.x / n).toFixed(2); const cy = (sum.y / n).toFixed(2); const cz = (sum.z / n).toFixed(2);
+      setStatusMessage(`Center of Mass (approx): X=${cx} Y=${cy} Z=${cz} mm`);
+    } },
     { separator: true, icon: <Pipette size={MI} />, label: 'Display Component Colors', shortcut: 'Shift+N', onClick: comingSoon('Display Component Colors') },
   ];
 
@@ -531,10 +553,11 @@ export default function Toolbar() {
       icon: <MousePointer2 size={MI} />,
       label: 'Selection Filters',
       submenu: [
-        { icon: <Box size={MI} />, label: 'Select Bodies', onClick: comingSoon('Select Bodies') },
-        { icon: <Square size={MI} />, label: 'Select Faces', onClick: comingSoon('Select Faces') },
-        { icon: <Minus size={MI} />, label: 'Select Edges', onClick: comingSoon('Select Edges') },
-        { icon: <CircleDot size={MI} />, label: 'Select Vertices', onClick: comingSoon('Select Vertices') },
+        { icon: <MousePointer2 size={MI} />, label: 'Select All', onClick: () => { setSelectionFilter('all'); setStatusMessage('Selection filter: All'); } },
+        { icon: <Box size={MI} />, label: 'Select Bodies', onClick: () => { setSelectionFilter('bodies'); setStatusMessage('Selection filter: Bodies only'); } },
+        { icon: <Square size={MI} />, label: 'Select Faces', onClick: () => { setSelectionFilter('faces'); setStatusMessage('Selection filter: Faces only'); } },
+        { icon: <Minus size={MI} />, label: 'Select Edges', onClick: () => { setSelectionFilter('edges'); setStatusMessage('Selection filter: Edges only'); } },
+        { icon: <PenTool size={MI} />, label: 'Select Sketches', onClick: () => { setSelectionFilter('sketches'); setStatusMessage('Selection filter: Sketches only'); } },
       ],
     },
   ];
@@ -920,7 +943,7 @@ export default function Toolbar() {
                 <ToolButton icon={<RotateCw size={ICON_SM} />} label="Rotate" tool="rotate" colorClass="icon-gray" />
               </div>
               <div className="ribbon-stack">
-                <ToolButton icon={<Maximize2 size={ICON_SM} />} label="Scale" tool="scale" colorClass="icon-gray" />
+                <ToolButton icon={<Maximize2 size={ICON_SM} />} label="Scale" onClick={() => setActiveDialog('scale')} colorClass="icon-gray" />
                 <ToolButton icon={<AlignCenter size={ICON_SM} />} label="Align" tool="align" colorClass="icon-gray" />
               </div>
             </RibbonSection>

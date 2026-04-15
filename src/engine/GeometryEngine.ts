@@ -532,6 +532,191 @@ export class GeometryEngine {
     return new THREE.Line(geometry, material);
   }
 
+  /**
+   * D66: Thin Extrude — creates a hollow wall by offsetting the profile and extruding
+   * the resulting closed band. Works for both open and closed profiles.
+   */
+  static extrudeThinSketch(
+    sketch: Sketch,
+    distance: number,
+    thickness: number,
+    side: 'inside' | 'outside' | 'center',
+  ): THREE.Mesh | null {
+    if (sketch.entities.length === 0) return null;
+    const projFn = sketch.plane === 'custom'
+      ? (p: SketchPoint) => {
+          const { t1, t2 } = this.getSketchAxes(sketch);
+          const d = new THREE.Vector3(p.x - sketch.planeOrigin.x, p.y - sketch.planeOrigin.y, p.z - sketch.planeOrigin.z);
+          return { u: d.dot(t1), v: d.dot(t2) };
+        }
+      : (p: SketchPoint) => ({ u: p.x, v: p.y });
+
+    // Collect outline 2D points from entities
+    const outline: THREE.Vector2[] = [];
+    for (const e of sketch.entities) {
+      if (e.type === 'line' && e.points.length >= 2) {
+        const { u, v } = projFn(e.points[0]);
+        if (outline.length === 0) outline.push(new THREE.Vector2(u, v));
+        const { u: u2, v: v2 } = projFn(e.points[1]);
+        outline.push(new THREE.Vector2(u2, v2));
+      }
+    }
+    if (outline.length < 2) {
+      // Fallback: use regular extrude shape
+      return this.extrudeSketch(sketch, distance);
+    }
+
+    // Build offset outlines
+    const offsetPts = (pts: THREE.Vector2[], d: number): THREE.Vector2[] => {
+      const n = pts.length;
+      const result: THREE.Vector2[] = [];
+      for (let i = 0; i < n; i++) {
+        const prev = pts[(i - 1 + n) % n];
+        const curr = pts[i];
+        const next = pts[(i + 1) % n];
+        // Segment normals (pointing outward = left of travel direction)
+        const seg1 = new THREE.Vector2(curr.x - prev.x, curr.y - prev.y).normalize();
+        const seg2 = new THREE.Vector2(next.x - curr.x, next.y - curr.y).normalize();
+        const n1 = new THREE.Vector2(-seg1.y, seg1.x);
+        const n2 = new THREE.Vector2(-seg2.y, seg2.x);
+        const avg = n1.clone().add(n2).normalize();
+        const dot = n1.dot(avg);
+        const scale = dot > 0.01 ? 1 / dot : 1;
+        result.push(new THREE.Vector2(curr.x + avg.x * d * scale, curr.y + avg.y * d * scale));
+      }
+      return result;
+    };
+
+    let outerOff = 0, innerOff = 0;
+    if (side === 'outside') { outerOff = thickness; innerOff = 0; }
+    else if (side === 'inside') { outerOff = 0; innerOff = -thickness; }
+    else { outerOff = thickness / 2; innerOff = -thickness / 2; } // center
+
+    const outer = offsetPts(outline, outerOff);
+    const inner = offsetPts(outline, innerOff);
+
+    // Build closed band shape: outer forward + inner reversed
+    const bandPts = [...outer, ...inner.slice().reverse()];
+    const shape = new THREE.Shape(bandPts);
+
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth: distance, bevelEnabled: false });
+    const mesh = new THREE.Mesh(geometry, EXTRUDE_MATERIAL);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    if (sketch.plane === 'custom') {
+      const { t1, t2 } = this.getSketchAxes(sketch);
+      const normal = sketch.planeNormal.clone().normalize();
+      const m = new THREE.Matrix4().makeBasis(t1, t2, normal);
+      mesh.quaternion.setFromRotationMatrix(m);
+      mesh.position.copy(sketch.planeOrigin);
+    } else {
+      const rot = this.getPlaneRotation(sketch.plane);
+      mesh.rotation.set(rot[0], rot[1], rot[2]);
+    }
+    return mesh;
+  }
+
+  /**
+   * Extrude with a taper angle (D69). Falls back to extrudeSketch when taperAngleDeg ≈ 0.
+   * Positive taper = walls lean outward (wider at the top).
+   * Negative taper = walls lean inward (narrower at the top).
+   */
+  static extrudeSketchWithTaper(sketch: Sketch, distance: number, taperAngleDeg: number): THREE.Mesh | null {
+    if (Math.abs(taperAngleDeg) < 0.01) return this.extrudeSketch(sketch, distance);
+    if (sketch.entities.length === 0) return null;
+
+    // Get 2D profile points in local sketch coords
+    const getPts2D = (): { u: number; v: number }[] => {
+      if (sketch.plane === 'custom') {
+        const { t1, t2 } = this.getSketchAxes(sketch);
+        const origin = sketch.planeOrigin;
+        const pts: { u: number; v: number }[] = [];
+        for (const e of sketch.entities) {
+          for (const p of e.points) {
+            const d = new THREE.Vector3(p.x - origin.x, p.y - origin.y, p.z - origin.z);
+            pts.push({ u: d.dot(t1), v: d.dot(t2) });
+          }
+        }
+        return pts;
+      }
+      const shape = this.sketchToShape(sketch);
+      if (!shape) return [];
+      return shape.getPoints(64).map((p) => ({ u: p.x, v: p.y }));
+    };
+
+    const shape = sketch.plane === 'custom' ? null : this.sketchToShape(sketch);
+    const rawPts = sketch.plane === 'custom' ? getPts2D() : (shape ? shape.getPoints(64).map((p) => ({ u: p.x, v: p.y })) : []);
+    if (rawPts.length < 3) return this.extrudeSketch(sketch, distance);
+
+    const cx = rawPts.reduce((s, p) => s + p.u, 0) / rawPts.length;
+    const cy = rawPts.reduce((s, p) => s + p.v, 0) / rawPts.length;
+    const taperRad = taperAngleDeg * Math.PI / 180;
+
+    // N_STEPS cross-sections evenly spaced from z=0 to z=distance
+    const N_STEPS = Math.max(3, Math.min(20, Math.ceil(Math.abs(distance) / 2) + 2));
+    const nPts = rawPts.length;
+    const positions: number[] = [];
+    const indices: number[] = [];
+
+    for (let i = 0; i < N_STEPS; i++) {
+      const z = distance * i / (N_STEPS - 1);
+      const scaleFactor = 1.0 + Math.tan(taperRad) * (i / (N_STEPS - 1));
+      for (const p of rawPts) {
+        positions.push(cx + (p.u - cx) * scaleFactor, cy + (p.v - cy) * scaleFactor, z);
+      }
+    }
+
+    // Side quad strips
+    for (let ring = 0; ring < N_STEPS - 1; ring++) {
+      const base0 = ring * nPts;
+      const base1 = (ring + 1) * nPts;
+      for (let j = 0; j < nPts; j++) {
+        const jn = (j + 1) % nPts;
+        indices.push(base0 + j, base1 + j, base0 + jn);
+        indices.push(base0 + jn, base1 + j, base1 + jn);
+      }
+    }
+
+    // Bottom cap (z=0) — fan from centroid
+    const bottomCenter = positions.length / 3;
+    positions.push(cx, cy, 0);
+    for (let j = 0; j < nPts; j++) {
+      indices.push(bottomCenter, (j + 1) % nPts, j);
+    }
+
+    // Top cap (z=distance)
+    const topRingBase = (N_STEPS - 1) * nPts;
+    const topScale = 1.0 + Math.tan(taperRad);
+    const topCenterU = cx; const topCenterV = cy;
+    const topCenter = positions.length / 3;
+    positions.push(topCenterU, topCenterV, distance);
+    for (let j = 0; j < nPts; j++) {
+      indices.push(topCenter, topRingBase + j, topRingBase + (j + 1) % nPts);
+    }
+    void topScale; // scale already applied per-ring above
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+
+    const mesh = new THREE.Mesh(geom, EXTRUDE_MATERIAL);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+
+    if (sketch.plane === 'custom') {
+      const { t1, t2 } = this.getSketchAxes(sketch);
+      const normal = sketch.planeNormal.clone().normalize();
+      const m = new THREE.Matrix4().makeBasis(t1, t2, normal);
+      mesh.quaternion.setFromRotationMatrix(m);
+      mesh.position.copy(sketch.planeOrigin);
+    } else {
+      const rot = this.getPlaneRotation(sketch.plane);
+      mesh.rotation.set(rot[0], rot[1], rot[2]);
+    }
+    return mesh;
+  }
+
   static extrudeSketch(sketch: Sketch, distance: number): THREE.Mesh | null {
     if (sketch.entities.length === 0) return null;
 

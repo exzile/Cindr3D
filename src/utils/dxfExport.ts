@@ -4,7 +4,7 @@
  * Used by D61: Export Sketch as DXF.
  */
 
-import type { Sketch, SketchEntity } from '../types/cad';
+import type { Sketch } from '../types/cad';
 import { GeometryEngine } from '../engine/GeometryEngine';
 import * as THREE from 'three';
 
