@@ -11,4 +11,7 @@
   <ItemGroup>
     <None Include=".github\copilot-instructions.md" />
   </ItemGroup>
+  <ItemGroup>
+    <Folder Include="src\components\slicer\workspace\modals\" />
+  </ItemGroup>
 </Project>

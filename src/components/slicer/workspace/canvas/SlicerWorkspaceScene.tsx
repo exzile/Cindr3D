@@ -1,10 +1,11 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
+import * as React from 'react';
 import { Line, OrbitControls, Text, TransformControls } from '@react-three/drei';
 import type { ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
-import { useSlicerStore } from '../../store/slicerStore';
-import type { PlateObject, SliceResult } from '../../types/slicer';
-import { normalizeRotationRadians, normalizeScale } from '../../utils/slicerTransforms';
+import { useSlicerStore } from '../../../../store/slicerStore';
+import type { PlateObject, SliceResult } from '../../../../types/slicer';
+import { normalizeRotationRadians, normalizeScale } from '../../../../utils/slicerTransforms';
 
 function BuildPlateGrid({ sizeX, sizeY }: { sizeX: number; sizeY: number }) {
   const linesX: [number, number, number][][] = [];
@@ -226,7 +227,7 @@ function InlineGCodePreview({
   );
 }
 
-export function SlicerScene() {
+export function SlicerWorkspaceScene() {
   const printerProfile = useSlicerStore((s) => s.getActivePrinterProfile());
   const materialProfile = useSlicerStore((s) => s.getActiveMaterialProfile());
   const plateObjects = useSlicerStore((s) => s.plateObjects);

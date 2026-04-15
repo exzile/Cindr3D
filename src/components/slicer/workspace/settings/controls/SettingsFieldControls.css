@@ -1,0 +1,72 @@
+.slicer-settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.slicer-settings-field__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.slicer-settings-field__input,
+.slicer-settings-field__select {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 12px;
+  outline: none;
+  width: 100%;
+}
+
+.slicer-settings-field__select {
+  cursor: pointer;
+}
+
+.slicer-settings-field__check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+
+.slicer-settings-field__check-input,
+.slicer-settings-field__range {
+  accent-color: var(--accent);
+}
+
+.slicer-settings-field__density-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.slicer-settings-field__range {
+  flex: 1;
+}
+
+.slicer-settings-field__input--density {
+  width: 48px;
+}
+
+.slicer-settings-field__divider {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 3px;
+  margin-bottom: 8px;
+  margin-top: 4px;
+}

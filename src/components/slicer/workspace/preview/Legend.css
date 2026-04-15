@@ -1,0 +1,70 @@
+.slicer-preview-legend-anchor {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.slicer-preview-legend {
+  background: rgba(30, 30, 30, 0.9);
+  border-radius: 8px;
+  padding: 12px 16px;
+  color: #e0e0e0;
+  font-family: monospace;
+  font-size: 12px;
+  min-width: 160px;
+  user-select: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.slicer-preview-legend__layer {
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  padding-bottom: 6px;
+}
+
+.slicer-preview-legend__layer-title,
+.slicer-preview-legend__mode-title {
+  font-weight: 700;
+}
+
+.slicer-preview-legend__layer-title,
+.slicer-preview-legend__mode-title {
+  margin-bottom: 2px;
+}
+
+.slicer-preview-legend__mode-title {
+  margin-bottom: 4px;
+}
+
+.slicer-preview-legend__row,
+.slicer-preview-legend__range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.slicer-preview-legend__row {
+  margin-bottom: 2px;
+}
+
+.slicer-preview-legend__swatch {
+  width: 12px;
+  height: 3px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.slicer-preview-legend__gradient {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(to right, #2196f3, #f44336);
+}
+
+.slicer-preview-legend__units {
+  text-align: center;
+  font-size: 10px;
+  opacity: 0.7;
+}

@@ -3,11 +3,7 @@ import {
   Search, Check, Download, Settings, Puzzle, Package,
   Cloud, Zap, FileOutput, Wrench,
 } from 'lucide-react';
-import { colors, sharedStyles } from '../../utils/theme';
-
-// =============================================================================
-// Types
-// =============================================================================
+import { colors, sharedStyles } from '../../../../utils/theme';
 
 type PluginCategory = 'All' | 'Slicers' | 'Exporters' | 'Post-Processing' | 'Cloud Services' | 'Utilities';
 
@@ -21,10 +17,6 @@ interface PluginEntry {
   installedInitially: boolean;
   icon: React.ReactNode;
 }
-
-// =============================================================================
-// Plugin data
-// =============================================================================
 
 const PLUGIN_DATA: PluginEntry[] = [
   {
@@ -92,10 +84,6 @@ const PLUGIN_DATA: PluginEntry[] = [
 const CATEGORIES: PluginCategory[] = [
   'All', 'Slicers', 'Exporters', 'Post-Processing', 'Cloud Services', 'Utilities',
 ];
-
-// =============================================================================
-// PluginCard
-// =============================================================================
 
 interface PluginCardProps {
   plugin: PluginEntry;
@@ -263,14 +251,9 @@ function PluginCard({ plugin, installed, installing, onInstall }: PluginCardProp
   );
 }
 
-// =============================================================================
-// PluginsPage
-// =============================================================================
-
-export default function PluginsPage() {
+export function SlicerWorkspacePluginsPage() {
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<PluginCategory>('All');
-  // Track which plugins are installed (start with initially-installed ones)
   const [installedIds, setInstalledIds] = useState<Set<string>>(
     () => new Set(PLUGIN_DATA.filter((p) => p.installedInitially).map((p) => p.id)),
   );
@@ -300,8 +283,6 @@ export default function PluginsPage() {
       return matchesCategory && matchesSearch;
     });
   }, [search, activeCategory]);
-
-  // ── Styles ────────────────────────────────────────────────────────────────
 
   const pageStyle: React.CSSProperties = {
     flex: 1,
@@ -405,7 +386,6 @@ export default function PluginsPage() {
 
   return (
     <div style={pageStyle}>
-      {/* Header */}
       <div style={headerStyle}>
         <div style={titleStyle}>
           <Puzzle size={22} color={colors.accent} />
@@ -414,7 +394,6 @@ export default function PluginsPage() {
         <div style={subtitleStyle}>Extend your 3D printing workflow</div>
       </div>
 
-      {/* Search + Category tabs */}
       <div style={controlsBarStyle}>
         <div style={searchWrapStyle}>
           <Search size={13} style={searchIconStyle} />
@@ -439,7 +418,6 @@ export default function PluginsPage() {
         </div>
       </div>
 
-      {/* Plugin grid / empty state */}
       {filteredPlugins.length > 0 ? (
         <div style={gridStyle}>
           {filteredPlugins.map((plugin) => (
@@ -462,3 +440,5 @@ export default function PluginsPage() {
     </div>
   );
 }
+
+export default SlicerWorkspacePluginsPage;

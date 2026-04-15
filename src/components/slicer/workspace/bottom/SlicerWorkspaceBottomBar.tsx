@@ -1,13 +1,14 @@
+import * as React from 'react';
 import { Eye, EyeOff, Download, Send, Play, X } from 'lucide-react';
-import { useSlicerStore } from '../../store/slicerStore';
-import { usePrinterStore } from '../../store/printerStore';
-import { colors, sharedStyles } from '../../utils/theme';
+import { useSlicerStore } from '../../../../store/slicerStore';
+import { usePrinterStore } from '../../../../store/printerStore';
+import { colors, sharedStyles } from '../../../../utils/theme';
 
 const btnBase = sharedStyles.btnBase;
 const btnAccent = sharedStyles.btnAccent;
 const btnDanger = sharedStyles.btnDanger;
 
-export function SlicerBottomBar() {
+export function SlicerWorkspaceBottomBar() {
   const sliceProgress = useSlicerStore((s) => s.sliceProgress);
   const sliceResult = useSlicerStore((s) => s.sliceResult);
   const plateObjects = useSlicerStore((s) => s.plateObjects);

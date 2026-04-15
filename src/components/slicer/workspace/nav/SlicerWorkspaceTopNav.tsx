@@ -1,8 +1,9 @@
+import * as React from 'react';
 import { Layers, Puzzle } from 'lucide-react';
 
 export type SlicerPage = 'prepare' | 'plugins';
 
-export function SlicerWorkspaceNavBar({
+export function SlicerWorkspaceTopNav({
   currentPage,
   onChangePage,
 }: {

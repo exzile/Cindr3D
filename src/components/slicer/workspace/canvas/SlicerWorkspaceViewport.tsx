@@ -1,5 +1,6 @@
+import * as React from 'react';
 import { Canvas } from '@react-three/fiber';
-import { SlicerScene } from '../../SlicerScene';
+import { SlicerWorkspaceScene } from './SlicerWorkspaceScene';
 import { SlicerViewportOverlays } from '../overlays/SlicerViewportOverlays';
 
 export function SlicerWorkspaceViewport() {
@@ -9,7 +10,7 @@ export function SlicerWorkspaceViewport() {
         className="slicer-workspace__canvas"
         camera={{ position: [300, -200, 250], fov: 45, near: 1, far: 10000, up: [0, 0, 1] }}
       >
-        <SlicerScene />
+        <SlicerWorkspaceScene />
       </Canvas>
       <SlicerViewportOverlays />
     </div>

@@ -1,0 +1,19 @@
+.slicer-section {
+  border-bottom: 1px solid var(--border);
+}
+
+.slicer-section__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  user-select: none;
+}
+
+.slicer-section__body {
+  padding: 0 10px 10px;
+}

@@ -1,5 +1,5 @@
 import type { PrintProfile } from '../../types/slicer';
-import { Num, Check, Sel, Density, SectionDivider } from './SettingsFieldControls';
+import { Num, Check, Sel, Density, SectionDivider } from './workspace/settings/controls/SettingsFieldControls';
 import { SlicerSection } from './SlicerSection';
 
 export function SlicerPrintProfileSettings({
