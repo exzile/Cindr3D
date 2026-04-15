@@ -4,7 +4,7 @@ import type { Parameter } from '../types/cad';
 export function evaluateExpression(expr: string, parameters: Parameter[]): number | null {
   if (!expr || expr.trim() === '') return null;
   try {
-    const scope: Record<string, number> = {};
+    const scope: Record<string, number> = { PI: Math.PI };
     for (const p of parameters) {
       if (isFinite(p.value)) scope[p.name] = p.value;
     }

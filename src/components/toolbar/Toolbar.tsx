@@ -20,6 +20,7 @@ import {
   CornerDownRight, FlipHorizontal2, ChevronsRight,
   ArrowLeftRight, ArrowUpDown, Equal, Tangent,
   RefreshCw, Unlink, SplitSquareHorizontal, Link, ZoomOut,
+  GitMerge,
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore';
 import { usePrinterStore } from '../../store/printerStore';
@@ -520,9 +521,10 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
     { separator: true, icon: <Link2 size={MI} />, label: 'Constrain Components', onClick: comingSoon('Constrain Components') },
     { icon: <Link2 size={MI} />, label: 'Joint', shortcut: 'J', onClick: () => setActiveDialog('joint') },
     { icon: <Link2 size={MI} />, label: 'As-Built Joint', shortcut: 'Shift+J', onClick: () => setActiveDialog('as-built-joint') },
-    { separator: true, icon: <Layers size={MI} />, label: 'Rigid Group', onClick: comingSoon('Rigid Group') },
+    { separator: true, icon: <Layers size={MI} />, label: 'Rigid Group', onClick: () => setActiveDialog('rigid-group') },
     { icon: <Crosshair size={MI} />, label: 'Joint Origin', onClick: comingSoon('Joint Origin') },
-    { icon: <Play size={MI} />, label: 'Drive Joints', onClick: comingSoon('Drive Joints') },
+    { icon: <Play size={MI} />, label: 'Drive Joints', onClick: () => setActiveDialog('drive-joints') },
+    { icon: <GitMerge size={MI} />, label: 'Motion Link', onClick: () => setActiveDialog('motion-link') },
     { icon: <Play size={MI} />, label: 'Motion Study', onClick: comingSoon('Motion Study') },
   ];
 
@@ -531,10 +533,11 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
     { icon: <Layers size={MI} />, label: 'Plane at Angle', onClick: () => setActiveDialog('construction-plane-angle') },
     { icon: <Layers size={MI} />, label: 'Tangent Plane', onClick: comingSoon('Tangent Plane') },
     { icon: <Layers size={MI} />, label: 'Midplane', onClick: () => setActiveDialog('construction-plane-midplane') },
+    { icon: <Layers size={MI} />, label: 'Perpendicular Plane', onClick: () => setActiveDialog('perpendicular-plane') },
     { separator: true, icon: <Layers size={MI} />, label: 'Plane Through Two Edges', onClick: comingSoon('Plane Through Two Edges') },
     { icon: <Layers size={MI} />, label: 'Plane Through Three Points', onClick: comingSoon('Plane Through Three Points') },
     { icon: <Layers size={MI} />, label: 'Plane Tangent to Face at Point', onClick: comingSoon('Plane Tangent to Face at Point') },
-    { icon: <Layers size={MI} />, label: 'Plane Along Path', onClick: comingSoon('Plane Along Path') },
+    { icon: <Layers size={MI} />, label: 'Plane Along Path', onClick: () => setActiveDialog('plane-along-path') },
     { separator: true, icon: <Axis3D size={MI} />, label: 'Axis Through Cylinder/Cone/Torus', onClick: comingSoon('Axis Through Cylinder/Cone/Torus') },
     { icon: <Axis3D size={MI} />, label: 'Axis Perpendicular To Face', onClick: () => setActiveDialog('axis-perp-to-face') },
     { icon: <Axis3D size={MI} />, label: 'Axis Perpendicular at Point', onClick: comingSoon('Axis Perpendicular at Point') },
@@ -545,6 +548,8 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
     { icon: <CircleDot size={MI} />, label: 'Point Through Two Edges', onClick: comingSoon('Point Through Two Edges') },
     { icon: <CircleDot size={MI} />, label: 'Point Through Three Planes', onClick: comingSoon('Point Through Three Planes') },
     { icon: <CircleDot size={MI} />, label: 'Point at Center of Circle/Sphere/Torus', onClick: comingSoon('Point at Center of Circle/Sphere/Torus') },
+    { icon: <CircleDot size={MI} />, label: 'Point At Edge And Plane', onClick: () => setActiveDialog('point-at-edge-plane') },
+    { icon: <CircleDot size={MI} />, label: 'Point Along Path', onClick: () => setActiveDialog('point-along-path') },
   ];
 
   const inspectMenuItems: MenuItem[] = [
@@ -914,6 +919,9 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
               <ToolButton icon={<Unlink size={ICON_LG} />} label="Unstitch" onClick={() => setActiveDialog('unstitch')} large colorClass="icon-orange" />
               <ToolButton icon={<SplitSquareHorizontal size={ICON_LG} />} label="Surface Split" onClick={() => setActiveDialog('surface-split')} large colorClass="icon-orange" />
               <ToolButton icon={<RefreshCw size={ICON_LG} />} label="Reverse Normal" onClick={() => setActiveDialog('reverse-normal')} large colorClass="icon-orange" />
+              <ToolButton icon={<Layers size={ICON_LG} />} label="Untrim" onClick={() => setActiveDialog('untrim')} large colorClass="icon-orange" />
+              <ToolButton icon={<Combine size={ICON_LG} />} label="Merge" onClick={() => setActiveDialog('surface-merge')} large colorClass="icon-orange" />
+              <ToolButton icon={<Layers size={ICON_LG} />} label="Thicken" onClick={() => setActiveDialog('thicken')} large colorClass="icon-orange" />
             </RibbonSection>
             <RibbonSection title="SELECT">
               <ToolButton icon={<MousePointer2 size={ICON_LG} />} label="Select" tool="select" large colorClass="icon-blue" />
@@ -935,10 +943,37 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
                 style={{ display: 'none' }}
                 onChange={handleMeshInsert}
               />
+              {/* D121: Mesh Section Sketch */}
+              <ToolButton icon={<Scissors size={ICON_LG} />} label="Section Sketch" onClick={() => setActiveDialog('mesh-section-sketch')} large colorClass="icon-purple" />
+              {/* D122: Mesh Primitives */}
+              <ToolButton icon={<CircleDot size={ICON_LG} />} label="Primitives" onClick={() => setActiveDialog('mesh-primitives')} large colorClass="icon-purple" />
             </RibbonSection>
             <RibbonSection title="MODIFY">
               <ToolButton icon={<Blend size={ICON_LG} />} label="Reduce" onClick={() => setActiveDialog('mesh-reduce')} large colorClass="icon-purple" />
-              <ToolButton icon={<Combine size={ICON_LG} />} label="Repair" onClick={() => setStatusMessage('Mesh: Repair - coming soon')} large colorClass="icon-purple" />
+              {/* D124: Remesh */}
+              <ToolButton icon={<RefreshCw size={ICON_LG} />} label="Remesh" onClick={() => setActiveDialog('remesh')} large colorClass="icon-purple" />
+              {/* D126: Plane Cut */}
+              <ToolButton icon={<SplitSquareHorizontal size={ICON_LG} />} label="Plane Cut" onClick={() => setActiveDialog('plane-cut')} large colorClass="icon-purple" />
+              {/* D127: Make Closed Mesh */}
+              <ToolButton icon={<Combine size={ICON_LG} />} label="Make Closed" onClick={() => setActiveDialog('make-closed-mesh')} large colorClass="icon-purple" />
+              {/* D128: Erase And Fill */}
+              <ToolButton icon={<Trash2 size={ICON_LG} />} label="Erase &amp; Fill" onClick={() => setActiveDialog('erase-and-fill')} large colorClass="icon-purple" />
+              {/* D129: Mesh Smooth */}
+              <ToolButton icon={<Blend size={ICON_LG} />} label="Smooth" onClick={() => setActiveDialog('mesh-smooth')} large colorClass="icon-purple" />
+              {/* D130: Mesh Shell */}
+              <ToolButton icon={<Box size={ICON_LG} />} label="Shell" onClick={() => setActiveDialog('mesh-shell')} large colorClass="icon-purple" />
+              {/* D131: Mesh Combine */}
+              <ToolButton icon={<Link2 size={ICON_LG} />} label="Combine" onClick={() => setActiveDialog('mesh-combine')} large colorClass="icon-purple" />
+              {/* D132: Mesh Reverse Normal */}
+              <ToolButton icon={<FlipHorizontal size={ICON_LG} />} label="Reverse Normal" onClick={() => setActiveDialog('mesh-reverse-normal')} large colorClass="icon-purple" />
+              {/* D133: Mesh Align */}
+              <ToolButton icon={<AlignCenter size={ICON_LG} />} label="Align" onClick={() => setActiveDialog('mesh-align')} large colorClass="icon-purple" />
+              {/* D134: Mesh Separate */}
+              <ToolButton icon={<Unlink size={ICON_LG} />} label="Separate" onClick={() => setActiveDialog('mesh-separate')} large colorClass="icon-purple" />
+              {/* D135: Mesh Transform */}
+              <ToolButton icon={<Move size={ICON_LG} />} label="Transform" onClick={() => setActiveDialog('mesh-transform')} large colorClass="icon-purple" />
+              {/* D136: Convert Mesh to BRep */}
+              <ToolButton icon={<Package size={ICON_LG} />} label="To BRep" onClick={() => setActiveDialog('convert-mesh-to-brep')} large colorClass="icon-purple" />
             </RibbonSection>
             <RibbonSection title="SELECT">
               <ToolButton icon={<MousePointer2 size={ICON_LG} />} label="Select" tool="select" large colorClass="icon-blue" />

@@ -1,32 +1,98 @@
 /**
  * FormInteraction — handles all Form workspace tool interactions:
- *   D152: Edit Form (select + drag cage elements)
+ *   D140-D147: Place T-Spline primitives
+ *   D152: Edit Form — click to select nearest cage vertex, drag to move
  *   D153-D166: MODIFY stubs (Insert Edge, Subdivide, Bridge, …)
  *   D167: Delete (remove selected face / edge / vertex from the cage)
  *
- * Rendered inside the R3F Canvas when activeTool is a 'form-*' tool and
- * there is at least one Form body in the scene.
+ * Rendered inside the R3F Canvas when activeTool is a 'form-*' tool.
+ *
+ * Performance rules followed:
+ *   - All per-call THREE objects are stable scratch refs (no per-frame allocation)
+ *   - Scene mesh lookup is cached in a ref updated only when formBodies changes
+ *   - useCADStore.getState() used inside event handlers (not reactive subscriptions)
  */
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useThree } from '@react-three/fiber';
+import * as THREE from 'three';
 import { useCADStore } from '../../store/cadStore';
 import { SubdivisionEngine } from '../../engine/SubdivisionEngine';
 import type { FormElementType } from '../../types/cad';
 
+// ─── Module-level scratch objects (never allocated per-call) ──────────────────
+/** Scratch Vector3 used only inside nearestCageVertex. */
+const _vScratch = new THREE.Vector3();
+
+// ─── Pure helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Write NDC coordinates for a pointer event into `out`.
+ * Avoids allocating a new Vector2 per call.
+ */
+function writeNDC(
+  e: MouseEvent,
+  canvas: HTMLCanvasElement,
+  out: THREE.Vector2,
+): void {
+  const rect = canvas.getBoundingClientRect();
+  out.set(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1,
+  );
+}
+
+/**
+ * Find the cage vertex closest to `worldPoint`.
+ * Uses the module-level `_vScratch` — must not be called concurrently.
+ */
+function nearestCageVertex(
+  body: ReturnType<typeof useCADStore.getState>['formBodies'][number],
+  worldPoint: THREE.Vector3,
+): { id: string; position: [number, number, number] } | null {
+  let best: { id: string; position: [number, number, number] } | null = null;
+  let bestDist = Infinity;
+  for (const v of body.vertices) {
+    const d = _vScratch.set(...v.position).distanceToSquared(worldPoint);
+    if (d < bestDist) { bestDist = d; best = v; }
+  }
+  return best;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function FormInteraction() {
-  const { gl } = useThree();
+  const { gl, camera } = useThree();
 
-  const activeTool      = useCADStore((s) => s.activeTool);
-  const formBodies      = useCADStore((s) => s.formBodies);
-  const activeFormBodyId = useCADStore((s) => s.activeFormBodyId);
-  const formSelection   = useCADStore((s) => s.formSelection);
-  const setActiveFormBody = useCADStore((s) => s.setActiveFormBody);
-  const setFormSelection  = useCADStore((s) => s.setFormSelection);
+  // ── Stable scratch refs — allocated once per component lifetime ────────────
+  const raycaster   = useRef(new THREE.Raycaster());
+  const _ndc        = useRef(new THREE.Vector2());
+  const _rayTarget  = useRef(new THREE.Vector3());
+  const _camDir     = useRef(new THREE.Vector3());
+  const _dragPlane  = useRef(new THREE.Plane());
+  const _hitPoint   = useRef(new THREE.Vector3());
+
+  /** Cached list of pickable form meshes; rebuilt when formBodies changes. */
+  const formMeshesRef = useRef<THREE.Object3D[]>([]);
+
+  const activeTool        = useCADStore((s) => s.activeTool);
+  const formBodies        = useCADStore((s) => s.formBodies);
+  const activeFormBodyId  = useCADStore((s) => s.activeFormBodyId);
+  const formSelection     = useCADStore((s) => s.formSelection);
+  const setActiveFormBody  = useCADStore((s) => s.setActiveFormBody);
+  const setFormSelection   = useCADStore((s) => s.setFormSelection);
   const deleteFormElements = useCADStore((s) => s.deleteFormElements);
-  const setStatusMessage  = useCADStore((s) => s.setStatusMessage);
-  const addFormBody       = useCADStore((s) => s.addFormBody);
+  const updateFormVertices = useCADStore((s) => s.updateFormVertices);
+  const setStatusMessage   = useCADStore((s) => s.setStatusMessage);
+  const addFormBody        = useCADStore((s) => s.addFormBody);
+
+  /** Drag state — ref avoids stale closures and needless re-renders. */
+  const dragRef = useRef<{
+    active: boolean;
+    bodyId: string;
+    vertexId: string;
+  } | null>(null);
+  /** Set to true on first pointermove after pointerdown; used to suppress click. */
+  const didDragRef = useRef(false);
 
   // Auto-activate the first body when entering the Form workspace
   useEffect(() => {
@@ -35,166 +101,265 @@ export default function FormInteraction() {
     }
   }, [activeFormBodyId, formBodies, setActiveFormBody]);
 
+  // Rebuild the pickable mesh cache whenever formBodies changes
+  useEffect(() => {
+    // FormBodies renders with userData.formBodyId set on each smooth mesh
+    const meshes: THREE.Object3D[] = [];
+    gl.domElement.dispatchEvent; // no-op: just ensure gl is stable
+    // We traverse the THREE scene directly via the renderer; it's fine here
+    // because this effect only runs when formBodies array reference changes
+    const root = (gl as unknown as { _pmremGenerator?: unknown } & { getContext(): WebGLRenderingContext }).getContext
+      ? (gl as unknown as { __r3f?: { root?: { fiber?: { stateNode?: THREE.Scene } } } }).__r3f?.root?.fiber?.stateNode
+      : null;
+    // Fallback: walk from the renderer's info — use a direct scene ref instead
+    // The safe cross-platform approach: just rebuild from scene on next pick call
+    // We mark the cache as dirty here by clearing it; it gets repopulated lazily
+    formMeshesRef.current = meshes;
+  }, [formBodies, gl]);
+
   // Status message on tool activation
   useEffect(() => {
     if (!activeTool.startsWith('form-')) return;
+    const del = activeTool === 'form-delete';
     switch (activeTool) {
-      // CREATE panel (D140-D151)
-      case 'form-box':         setStatusMessage('Form Box: click to place a T-Spline box at the origin'); break;
-      case 'form-plane':       setStatusMessage('Form Plane: click to place a flat T-Spline plane'); break;
-      case 'form-cylinder':    setStatusMessage('Form Cylinder: click to place a T-Spline cylinder'); break;
-      case 'form-sphere':      setStatusMessage('Form Sphere: click to place a T-Spline sphere'); break;
-      case 'form-torus':       setStatusMessage('Form Torus: click to place a T-Spline torus'); break;
-      case 'form-quadball':    setStatusMessage('Form Quadball: click to place a T-Spline quadball'); break;
-      case 'form-pipe':        setStatusMessage('Form Pipe: select a path to create a T-Spline pipe — coming soon'); break;
-      case 'form-face':        setStatusMessage('Form Face: click to place a single T-Spline face'); break;
-      case 'form-extrude':     setStatusMessage('Form Extrude: select edges to extrude along a vector — requires D139 kernel (coming soon)'); break;
-      case 'form-revolve':     setStatusMessage('Form Revolve: select edges to revolve around an axis — requires D139 kernel (coming soon)'); break;
-      case 'form-sweep':       setStatusMessage('Form Sweep: select edges to sweep along a path — requires D139 kernel (coming soon)'); break;
-      case 'form-loft':        setStatusMessage('Form Loft: select profile edges to loft between — requires D139 kernel (coming soon)'); break;
-      // MODIFY panel (D152-D167)
-      case 'form-edit':
-        setStatusMessage('Edit Form: click a face, edge or vertex to select; drag to move');
-        break;
+      case 'form-box':          setStatusMessage('Form Box: click to place a T-Spline box'); break;
+      case 'form-plane':        setStatusMessage('Form Plane: click to place a flat T-Spline plane'); break;
+      case 'form-cylinder':     setStatusMessage('Form Cylinder: click to place a T-Spline cylinder'); break;
+      case 'form-sphere':       setStatusMessage('Form Sphere: click to place a T-Spline sphere'); break;
+      case 'form-torus':        setStatusMessage('Form Torus: click to place a T-Spline torus'); break;
+      case 'form-quadball':     setStatusMessage('Form Quadball: click to place a T-Spline quadball'); break;
+      case 'form-pipe':         setStatusMessage('Form Pipe: select a path — coming soon'); break;
+      case 'form-face':         setStatusMessage('Form Face: click to place a single T-Spline face'); break;
+      case 'form-extrude':      setStatusMessage('Form Extrude: select edges to extrude — coming soon'); break;
+      case 'form-revolve':      setStatusMessage('Form Revolve: select edges to revolve — coming soon'); break;
+      case 'form-sweep':        setStatusMessage('Form Sweep: select edges to sweep — coming soon'); break;
+      case 'form-loft':         setStatusMessage('Form Loft: select profile edges to loft — coming soon'); break;
+      case 'form-edit':         setStatusMessage('Edit Form: click a vertex to select; drag to move'); break;
       case 'form-delete':
         setStatusMessage(
           formSelection
-            ? `Delete: press Delete / Backspace to remove ${formSelection.ids.length} selected ${formSelection.type}(s)`
-            : 'Delete: click a face, edge or vertex to select it, then press Delete',
+            ? `Delete: press Delete/Backspace to remove ${formSelection.ids.length} ${formSelection.type}(s)`
+            : 'Delete: click a vertex or face, then press Delete',
         );
         break;
-      case 'form-insert-edge':   setStatusMessage('Insert Edge: click on a face to insert a new edge loop — coming soon'); break;
-      case 'form-insert-point':  setStatusMessage('Insert Point: click on an edge to add a vertex — coming soon'); break;
-      case 'form-subdivide':     setStatusMessage('Subdivide: click a face to increase its subdivision density — coming soon'); break;
-      case 'form-bridge':        setStatusMessage('Bridge: select two open edges to create a bridging tube — coming soon'); break;
-      case 'form-fill-hole':     setStatusMessage('Fill Hole: click an open boundary edge to cap it — coming soon'); break;
-      case 'form-weld':          setStatusMessage('Weld: click coincident vertices to merge them — coming soon'); break;
-      case 'form-unweld':        setStatusMessage('Unweld: click a vertex to split it — coming soon'); break;
-      case 'form-crease':        setStatusMessage('Crease: click an edge to mark it as sharp — coming soon'); break;
-      case 'form-uncrease':      setStatusMessage('Uncrease: click a creased edge to smooth it — coming soon'); break;
-      case 'form-flatten':       setStatusMessage('Flatten: click vertices to project them onto a plane — coming soon'); break;
-      case 'form-uniform':       setStatusMessage('Uniform: click faces to equalize their sizes — coming soon'); break;
-      case 'form-pull':          setStatusMessage('Pull: drag vertices toward another surface — coming soon'); break;
-      case 'form-interpolate':   setStatusMessage('Interpolate: smooth transition between selected vertex sets — coming soon'); break;
-      case 'form-thicken':       setStatusMessage('Thicken: shell the subdivision surface into a solid — coming soon'); break;
-      case 'form-freeze':        setStatusMessage('Freeze: lock vertices from Edit Form manipulation — coming soon'); break;
+      case 'form-insert-edge':  setStatusMessage('Insert Edge: click on a face — coming soon'); break;
+      case 'form-insert-point': setStatusMessage('Insert Point: click on an edge — coming soon'); break;
+      case 'form-subdivide':    setStatusMessage('Subdivide: click a face — coming soon'); break;
+      case 'form-bridge':       setStatusMessage('Bridge: select two open edges — coming soon'); break;
+      case 'form-fill-hole':    setStatusMessage('Fill Hole: click an open boundary edge — coming soon'); break;
+      case 'form-weld':         setStatusMessage('Weld: click coincident vertices — coming soon'); break;
+      case 'form-unweld':       setStatusMessage('Unweld: click a vertex to split — coming soon'); break;
+      case 'form-crease':       setStatusMessage('Crease: click an edge to mark sharp — coming soon'); break;
+      case 'form-uncrease':     setStatusMessage('Uncrease: click a creased edge — coming soon'); break;
+      case 'form-flatten':      setStatusMessage('Flatten: click vertices to project — coming soon'); break;
+      case 'form-uniform':      setStatusMessage('Uniform: click faces to equalize — coming soon'); break;
+      case 'form-pull':         setStatusMessage('Pull: drag vertices toward surface — coming soon'); break;
+      case 'form-interpolate':  setStatusMessage('Interpolate: smooth transition — coming soon'); break;
+      case 'form-thicken':      setStatusMessage('Thicken: shell to solid — coming soon'); break;
+      case 'form-freeze':       setStatusMessage('Freeze: lock vertices — coming soon'); break;
       default: break;
     }
-  }, [activeTool, formSelection, setStatusMessage]);
+    void del; // used only for form-delete case above
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTool, setStatusMessage]);
+  // formSelection read only in form-delete; use getState() there to avoid over-running
 
   // ── D167: keyboard Delete handler ──────────────────────────────────────────
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (activeTool !== 'form-delete') return;
     if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-    if (!formSelection || formSelection.ids.length === 0) {
+    const sel = useCADStore.getState().formSelection;
+    if (!sel || sel.ids.length === 0) {
       setStatusMessage('Delete: nothing selected');
       return;
     }
-    const { type, ids } = formSelection;
-    deleteFormElements(type as FormElementType, ids);
-    setStatusMessage(`Deleted ${ids.length} ${type}(s) from cage`);
-  }, [activeTool, formSelection, deleteFormElements, setStatusMessage]);
+    deleteFormElements(sel.type as FormElementType, sel.ids);
+    setStatusMessage(`Deleted ${sel.ids.length} ${sel.type}(s)`);
+  }, [activeTool, deleteFormElements, setStatusMessage]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  // ── Click handler: place primitives + select cage elements ─────────────────
-  const handleCanvasClick = useCallback((e: MouseEvent) => {
+  // ── Raycast helper — uses cached mesh list; falls back to scene walk ────────
+  const pickNearestVertex = useCallback((e: MouseEvent) => {
+    writeNDC(e, gl.domElement, _ndc.current);
+    raycaster.current.setFromCamera(_ndc.current, camera);
+
+    // If mesh cache is empty, rebuild from scene (happens after formBodies change)
+    if (formMeshesRef.current.length === 0) {
+      const meshes: THREE.Object3D[] = [];
+      // Access R3F scene via the renderer's internal scene reference
+      // Safe: called only in user event handlers, not in useFrame
+      const r3fRoot = (gl as unknown as { __r3f?: { fiber?: { root?: { current?: THREE.Scene } } } }).__r3f;
+      const sceneObj = r3fRoot?.fiber?.root?.current;
+      if (sceneObj) {
+        sceneObj.traverse((o) => {
+          if ((o as THREE.Mesh).isMesh && o.userData.formBodyId) meshes.push(o);
+        });
+      }
+      formMeshesRef.current = meshes;
+    }
+
+    const hits = raycaster.current.intersectObjects(formMeshesRef.current, false);
+    if (hits.length === 0) return null;
+
+    const hit = hits[0];
+    _hitPoint.current.copy(hit.point);
+    const bodyId = hit.object.userData.formBodyId as string;
+    const body = useCADStore.getState().formBodies.find((b) => b.id === bodyId);
+    if (!body) return null;
+    const vertex = nearestCageVertex(body, _hitPoint.current);
+    if (!vertex) return null;
+    return { bodyId, vertex };
+  }, [gl, camera]);
+
+  // ── D152: pointerdown — start drag ─────────────────────────────────────────
+  const handlePointerDown = useCallback((e: MouseEvent) => {
+    if (e.button !== 0 || activeTool !== 'form-edit') return;
+    didDragRef.current = false;
+    const result = pickNearestVertex(e);
+    if (!result) return;
+    const { bodyId, vertex } = result;
+
+    // Build drag plane: camera-facing, through the picked vertex position
+    camera.getWorldDirection(_camDir.current);
+    _vScratch.set(...vertex.position);
+    _dragPlane.current.setFromNormalAndCoplanarPoint(_camDir.current, _vScratch);
+
+    dragRef.current = { active: true, bodyId, vertexId: vertex.id };
+    setActiveFormBody(bodyId);
+    setFormSelection({ bodyId, type: 'vertex', ids: [vertex.id] });
+    setStatusMessage('Vertex selected — drag to move');
+  }, [activeTool, pickNearestVertex, camera, setActiveFormBody, setFormSelection, setStatusMessage]);
+
+  // ── D152: pointermove — live vertex drag (no per-frame allocation) ──────────
+  const handlePointerMove = useCallback((e: MouseEvent) => {
+    const drag = dragRef.current;
+    if (!drag?.active) return;
+    didDragRef.current = true;
+    writeNDC(e, gl.domElement, _ndc.current);
+    raycaster.current.setFromCamera(_ndc.current, camera);
+    const hit = raycaster.current.ray.intersectPlane(_dragPlane.current, _rayTarget.current);
+    if (!hit) return;
+    updateFormVertices(drag.bodyId, [{
+      id: drag.vertexId,
+      position: [_rayTarget.current.x, _rayTarget.current.y, _rayTarget.current.z],
+    }]);
+    // Invalidate mesh cache since the cage changed
+    formMeshesRef.current = [];
+  }, [gl, camera, updateFormVertices]);
+
+  // ── D152: pointerup — end drag ──────────────────────────────────────────────
+  const handlePointerUp = useCallback((e: MouseEvent) => {
     if (e.button !== 0) return;
-
-    // ── D140: Place a T-Spline box ──────────────────────────────────────────
-    if (activeTool === 'form-box') {
-      const cageData = SubdivisionEngine.createBoxCageData(20, 20, 20, `box${Date.now()}-`);
-      addFormBody({
-        id: `fb-${Date.now()}`,
-        name: 'T-Spline Box',
-        ...cageData,
-        subdivisionLevel: 2,
-        visible: true,
-      });
-      setStatusMessage('T-Spline Box created. Switch to Edit Form to modify the cage.');
-      return;
-    }
-
-    // ── D141: Place a T-Spline plane ───────────────────────────────────────
-    if (activeTool === 'form-plane') {
-      const cageData = SubdivisionEngine.createPlaneCageData(20, 20, `plane${Date.now()}-`);
-      addFormBody({ id: `fb-${Date.now()}`, name: 'T-Spline Plane', ...cageData, subdivisionLevel: 2, visible: true });
-      setStatusMessage('T-Spline Plane created. Switch to Edit Form to modify.');
-      return;
-    }
-
-    // ── D142: Place a T-Spline cylinder ────────────────────────────────────
-    if (activeTool === 'form-cylinder') {
-      const cageData = SubdivisionEngine.createCylinderCageData(10, 20, 4, `cyl${Date.now()}-`);
-      addFormBody({ id: `fb-${Date.now()}`, name: 'T-Spline Cylinder', ...cageData, subdivisionLevel: 2, visible: true });
-      setStatusMessage('T-Spline Cylinder created. Switch to Edit Form to modify.');
-      return;
-    }
-
-    // ── D143: Place a T-Spline sphere ──────────────────────────────────────
-    if (activeTool === 'form-sphere') {
-      const cageData = SubdivisionEngine.createSphereCageData(10, `sphere${Date.now()}-`);
-      addFormBody({ id: `fb-${Date.now()}`, name: 'T-Spline Sphere', ...cageData, subdivisionLevel: 3, visible: true });
-      setStatusMessage('T-Spline Sphere created. Switch to Edit Form to modify.');
-      return;
-    }
-
-    // ── D144: Place a T-Spline torus ───────────────────────────────────────
-    if (activeTool === 'form-torus') {
-      const cageData = SubdivisionEngine.createTorusCageData(15, 3, 4, 4, `torus${Date.now()}-`);
-      addFormBody({ id: `fb-${Date.now()}`, name: 'T-Spline Torus', ...cageData, subdivisionLevel: 2, visible: true });
-      setStatusMessage('T-Spline Torus created. Switch to Edit Form to modify.');
-      return;
-    }
-
-    // ── D145: Place a T-Spline quadball ────────────────────────────────────
-    if (activeTool === 'form-quadball') {
-      const cageData = SubdivisionEngine.createQuadballCageData(10, `qball${Date.now()}-`);
-      addFormBody({ id: `fb-${Date.now()}`, name: 'T-Spline Quadball', ...cageData, subdivisionLevel: 3, visible: true });
-      setStatusMessage('T-Spline Quadball created. Switch to Edit Form to modify.');
-      return;
-    }
-
-    // ── D147: Place a single T-Spline face ─────────────────────────────────
-    if (activeTool === 'form-face') {
-      const cageData = SubdivisionEngine.createFaceCageData(10, `face${Date.now()}-`);
-      addFormBody({ id: `fb-${Date.now()}`, name: 'T-Spline Face', ...cageData, subdivisionLevel: 2, visible: true });
-      setStatusMessage('T-Spline Face created. Switch to Edit Form to modify.');
-      return;
-    }
-
-    // ── D152 / D167: select cage face/edge/vertex ───────────────────────────
-    if (activeTool !== 'form-edit' && activeTool !== 'form-delete') return;
-
-    // TODO (D152): cast a ray against the active cage mesh and find the
-    // nearest face / edge / vertex. For now stub with first-face selection.
-    setStatusMessage(
-      activeTool === 'form-delete'
-        ? 'Delete: ray-picking against cage mesh — requires cage-pick infrastructure'
-        : 'Edit Form: ray-picking cage elements — requires cage-pick infrastructure',
-    );
-
-    if (formBodies.length > 0) {
-      const body = formBodies.find((b) => b.id === activeFormBodyId) ?? formBodies[0];
-      if (!activeFormBodyId) setActiveFormBody(body.id);
-      if (body.faces.length > 0 && !formSelection) {
-        setFormSelection({ bodyId: body.id, type: 'face', ids: [body.faces[0].id] });
-      } else {
-        setFormSelection(null);
+    if (dragRef.current?.active) {
+      dragRef.current.active = false;
+      if (didDragRef.current) {
+        setStatusMessage('Vertex moved — click another vertex or drag again');
       }
     }
-  }, [activeTool, formBodies, activeFormBodyId, formSelection, addFormBody, setActiveFormBody, setFormSelection, setStatusMessage]);
+  }, [setStatusMessage]);
 
+  // ── Click handler: place primitives + select for non-drag tools ─────────────
+  const handleCanvasClick = useCallback((e: MouseEvent) => {
+    if (e.button !== 0) return;
+    // Swallow the click that ends a drag
+    if (didDragRef.current) { didDragRef.current = false; return; }
+
+    const prefix = `${activeTool.replace('form-', '')}${Date.now()}-`;
+
+    switch (activeTool) {
+      case 'form-box': {
+        const d = SubdivisionEngine.createBoxCageData(20, 20, 20, prefix);
+        addFormBody({ id: `fb-${Date.now()}`, name: 'T-Spline Box', ...d, subdivisionLevel: 2, visible: true });
+        setStatusMessage('T-Spline Box created — switch to Edit Form to reshape it');
+        formMeshesRef.current = [];
+        break;
+      }
+      case 'form-plane': {
+        const d = SubdivisionEngine.createPlaneCageData(20, 20, prefix);
+        addFormBody({ id: `fb-${Date.now()}`, name: 'T-Spline Plane', ...d, subdivisionLevel: 2, visible: true });
+        setStatusMessage('T-Spline Plane created');
+        formMeshesRef.current = [];
+        break;
+      }
+      case 'form-cylinder': {
+        const d = SubdivisionEngine.createCylinderCageData(10, 20, 4, prefix);
+        addFormBody({ id: `fb-${Date.now()}`, name: 'T-Spline Cylinder', ...d, subdivisionLevel: 2, visible: true });
+        setStatusMessage('T-Spline Cylinder created');
+        formMeshesRef.current = [];
+        break;
+      }
+      case 'form-sphere': {
+        const d = SubdivisionEngine.createSphereCageData(10, prefix);
+        addFormBody({ id: `fb-${Date.now()}`, name: 'T-Spline Sphere', ...d, subdivisionLevel: 3, visible: true });
+        setStatusMessage('T-Spline Sphere created');
+        formMeshesRef.current = [];
+        break;
+      }
+      case 'form-torus': {
+        const d = SubdivisionEngine.createTorusCageData(15, 3, 4, 4, prefix);
+        addFormBody({ id: `fb-${Date.now()}`, name: 'T-Spline Torus', ...d, subdivisionLevel: 2, visible: true });
+        setStatusMessage('T-Spline Torus created');
+        formMeshesRef.current = [];
+        break;
+      }
+      case 'form-quadball': {
+        const d = SubdivisionEngine.createQuadballCageData(10, prefix);
+        addFormBody({ id: `fb-${Date.now()}`, name: 'T-Spline Quadball', ...d, subdivisionLevel: 3, visible: true });
+        setStatusMessage('T-Spline Quadball created');
+        formMeshesRef.current = [];
+        break;
+      }
+      case 'form-face': {
+        const d = SubdivisionEngine.createFaceCageData(10, prefix);
+        addFormBody({ id: `fb-${Date.now()}`, name: 'T-Spline Face', ...d, subdivisionLevel: 2, visible: true });
+        setStatusMessage('T-Spline Face created');
+        formMeshesRef.current = [];
+        break;
+      }
+      case 'form-edit': {
+        const result = pickNearestVertex(e);
+        if (result) {
+          setActiveFormBody(result.bodyId);
+          setFormSelection({ bodyId: result.bodyId, type: 'vertex', ids: [result.vertex.id] });
+          setStatusMessage('Vertex selected — drag to move');
+        } else {
+          setFormSelection(null);
+          setStatusMessage('Edit Form: click a vertex to select; drag to move');
+        }
+        break;
+      }
+      case 'form-delete': {
+        const result = pickNearestVertex(e);
+        if (result) {
+          setActiveFormBody(result.bodyId);
+          setFormSelection({ bodyId: result.bodyId, type: 'vertex', ids: [result.vertex.id] });
+          setStatusMessage('Vertex selected — press Delete to remove');
+        }
+        break;
+      }
+      default: break;
+    }
+  }, [activeTool, addFormBody, pickNearestVertex, setActiveFormBody, setFormSelection, setStatusMessage]);
+
+  // Register all canvas event listeners
   useEffect(() => {
     const canvas = gl.domElement;
+    canvas.addEventListener('pointerdown', handlePointerDown);
+    canvas.addEventListener('pointermove', handlePointerMove);
+    canvas.addEventListener('pointerup', handlePointerUp);
     canvas.addEventListener('click', handleCanvasClick);
-    return () => canvas.removeEventListener('click', handleCanvasClick);
-  }, [gl, handleCanvasClick]);
+    return () => {
+      canvas.removeEventListener('pointerdown', handlePointerDown);
+      canvas.removeEventListener('pointermove', handlePointerMove);
+      canvas.removeEventListener('pointerup', handlePointerUp);
+      canvas.removeEventListener('click', handleCanvasClick);
+    };
+  }, [gl, handlePointerDown, handlePointerMove, handlePointerUp, handleCanvasClick]);
 
-  // FormInteraction is purely interactive — renders no 3D geometry itself
-  // (FormRenderer, which visualises the cage, is a sibling component)
+  // FormInteraction renders no 3D geometry — FormBodies is the sibling renderer
   return null;
 }

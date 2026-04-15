@@ -51,6 +51,20 @@ import {
   RigidGroupDialog,
   UntrimDialog,
   SurfaceMergeDialog,
+  MeshSectionSketchDialog,
+  MeshPrimitivesDialog,
+  RemeshDialog,
+  PlaneCutDialog,
+  MakeClosedMeshDialog,
+  EraseAndFillDialog,
+  MeshSmoothDialog,
+  MeshShellDialog,
+  MeshCombineDialog,
+  MeshReverseNormalDialog,
+  MeshAlignDialog,
+  MeshSeparateDialog,
+  MeshTransformDialog,
+  ConvertMeshToBRepDialog,
 } from './components/dialogs';
 import ParametersPanel from './components/panels/ParametersPanel';
 import { OffsetFaceDialog } from './components/dialogs/solid/OffsetFaceDialog';
@@ -117,6 +131,20 @@ function ActiveDialog() {
     case 'rigid-group': return <RigidGroupDialog onClose={close} />;
     case 'untrim': return <UntrimDialog onClose={close} />;
     case 'surface-merge': return <SurfaceMergeDialog onClose={close} />;
+    case 'mesh-section-sketch': return <MeshSectionSketchDialog onClose={close} />;
+    case 'mesh-primitives': return <MeshPrimitivesDialog onClose={close} />;
+    case 'remesh': return <RemeshDialog onClose={close} />;
+    case 'plane-cut': return <PlaneCutDialog onClose={close} />;
+    case 'make-closed-mesh': return <MakeClosedMeshDialog onClose={close} />;
+    case 'erase-and-fill': return <EraseAndFillDialog onClose={close} />;
+    case 'mesh-smooth': return <MeshSmoothDialog onClose={close} />;
+    case 'mesh-shell': return <MeshShellDialog onClose={close} />;
+    case 'mesh-combine': return <MeshCombineDialog onClose={close} />;
+    case 'mesh-reverse-normal': return <MeshReverseNormalDialog onClose={close} />;
+    case 'mesh-align': return <MeshAlignDialog onClose={close} />;
+    case 'mesh-separate': return <MeshSeparateDialog onClose={close} />;
+    case 'mesh-transform': return <MeshTransformDialog onClose={close} />;
+    case 'convert-mesh-to-brep': return <ConvertMeshToBRepDialog onClose={close} />;
     default: return null;
   }
 }
