@@ -131,6 +131,8 @@ export interface SketchEntity {
   endAngle?: number;
   sides?: number;           // for polygon
   isConstruction?: boolean; // construction geometry
+  /** S6: projected entities stay linked to their source until unlinked. */
+  linked?: boolean;
   constraints?: SketchConstraint[];
 }
 

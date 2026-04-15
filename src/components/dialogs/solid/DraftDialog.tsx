@@ -4,27 +4,38 @@ import { useCADStore } from '../../../store/cadStore';
 import type { Feature } from '../../../types/cad';
 
 export function DraftDialog({ onClose }: { onClose: () => void }) {
-  const [draftType, setDraftType] = useState<'fixed-plane' | 'parting-line'>('fixed-plane');
-  const [angle, setAngle] = useState(3);
-  const [mode, setMode] = useState<'one-side' | 'two-side' | 'symmetric'>('one-side');
-  const [pullAxis, setPullAxis] = useState<'X' | 'Y' | 'Z'>('Y');
-  const [flipPull, setFlipPull] = useState(false);
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
+  const features = useCADStore((s) => s.features);
+  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p = editing?.params ?? {};
+
+  const [draftType, setDraftType] = useState<'fixed-plane' | 'parting-line'>((p.draftType as 'fixed-plane' | 'parting-line') ?? 'fixed-plane');
+  const [angle, setAngle] = useState(Number(p.angle ?? 3));
+  const [mode, setMode] = useState<'one-side' | 'two-side' | 'symmetric'>((p.mode as 'one-side' | 'two-side' | 'symmetric') ?? 'one-side');
+  const [pullAxis, setPullAxis] = useState<'X' | 'Y' | 'Z'>((p.pullAxis as 'X' | 'Y' | 'Z') ?? 'Y');
+  const [flipPull, setFlipPull] = useState(p.flipPull !== false && !!p.flipPull);
 
   const addFeature = useCADStore((s) => s.addFeature);
+  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const handleApply = () => {
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Draft (${angle}°)`,
-      type: 'draft',
-      params: { draftType, angle, mode, pullAxis, flipPull },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    };
-    addFeature(feature);
-    setStatusMessage(`Draft applied: ${angle}° (${mode})`);
+    if (editing) {
+      updateFeatureParams(editing.id, { draftType, angle, mode, pullAxis, flipPull });
+      setStatusMessage(`Updated draft: ${angle}° (${mode})`);
+    } else {
+      const feature: Feature = {
+        id: crypto.randomUUID(),
+        name: `Draft (${angle}°)`,
+        type: 'draft',
+        params: { draftType, angle, mode, pullAxis, flipPull },
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+      };
+      addFeature(feature);
+      setStatusMessage(`Draft applied: ${angle}° (${mode})`);
+    }
     onClose();
   };
 
@@ -32,7 +43,7 @@ export function DraftDialog({ onClose }: { onClose: () => void }) {
     <div className="dialog-overlay">
       <div className="dialog dialog-sm">
         <div className="dialog-header">
-          <h3>Draft</h3>
+          <h3>{editing ? 'Edit Draft' : 'Draft'}</h3>
           <button className="dialog-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="dialog-body">

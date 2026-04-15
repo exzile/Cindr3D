@@ -4,27 +4,38 @@ import { useCADStore } from '../../../store/cadStore';
 import type { Feature, FeatureType } from '../../../types/cad';
 
 export function RestDialog({ onClose }: { onClose: () => void }) {
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
+  const features = useCADStore((s) => s.features);
+  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p = editing?.params ?? {};
+
   const sketches = useCADStore((s) => s.sketches);
   const addFeature = useCADStore((s) => s.addFeature);
+  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
-  const [profileId, setProfileId] = useState('');
-  const [depth, setDepth] = useState(0);
-  const [operation, setOperation] = useState<'join' | 'cut'>('join');
+  const [profileId, setProfileId] = useState(String(p.profileId ?? ''));
+  const [depth, setDepth] = useState(Number(p.depth ?? 0));
+  const [operation, setOperation] = useState<'join' | 'cut'>((p.operation as 'join' | 'cut') ?? 'join');
 
   const handleApply = () => {
     const sketch = sketches.find((s) => s.id === profileId);
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Rest (${sketch?.name ?? 'profile'})`,
-      type: 'rib' as FeatureType,
-      params: { profileId, profileName: sketch?.name ?? '', depth, operation, restStyle: 'rest' },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    };
-    addFeature(feature);
-    setStatusMessage(`Created rest feature from ${sketch?.name ?? 'profile'}`);
+    if (editing) {
+      updateFeatureParams(editing.id, { profileId, profileName: sketch?.name ?? '', depth, operation, restStyle: 'rest' });
+      setStatusMessage(`Updated rest feature from ${sketch?.name ?? 'profile'}`);
+    } else {
+      const feature: Feature = {
+        id: crypto.randomUUID(),
+        name: `Rest (${sketch?.name ?? 'profile'})`,
+        type: 'rib' as FeatureType,
+        params: { profileId, profileName: sketch?.name ?? '', depth, operation, restStyle: 'rest' },
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+      };
+      addFeature(feature);
+      setStatusMessage(`Created rest feature from ${sketch?.name ?? 'profile'}`);
+    }
     onClose();
   };
 
@@ -32,7 +43,7 @@ export function RestDialog({ onClose }: { onClose: () => void }) {
     <div className="dialog-overlay">
       <div className="dialog dialog-sm">
         <div className="dialog-header">
-          <h3>Rest</h3>
+          <h3>{editing ? 'Edit Rest' : 'Rest'}</h3>
           <button className="dialog-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="dialog-body">

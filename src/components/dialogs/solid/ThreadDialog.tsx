@@ -6,17 +6,23 @@ import type { Feature } from '../../../types/cad';
 type ThreadStandard = 'iso-metric' | 'ansi-unified' | 'npt';
 
 export function ThreadDialog({ onClose }: { onClose: () => void }) {
-  const [threadType, setThreadType] = useState<'cosmetic' | 'modeled'>('cosmetic');
-  const [standard, setStandard] = useState<ThreadStandard>('iso-metric');
-  const [designation, setDesignation] = useState('M6x1.0');
-  const [threadClass, setThreadClass] = useState('6H');
-  const [diameter, setDiameter] = useState(6);
-  const [length, setLength] = useState(15);
-  const [offset, setOffset] = useState(0);
-  const [fullLength, setFullLength] = useState(false);
-  const [direction, setDirection] = useState<'right-hand' | 'left-hand'>('right-hand');
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
+  const features = useCADStore((s) => s.features);
+  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p = editing?.params ?? {};
+
+  const [threadType, setThreadType] = useState<'cosmetic' | 'modeled'>((p.threadType as 'cosmetic' | 'modeled') ?? 'cosmetic');
+  const [standard, setStandard] = useState<ThreadStandard>((p.standard as ThreadStandard) ?? 'iso-metric');
+  const [designation, setDesignation] = useState(String(p.designation ?? 'M6x1.0'));
+  const [threadClass, setThreadClass] = useState(String(p.threadClass ?? '6H'));
+  const [diameter, setDiameter] = useState(Number(p.diameter ?? 6));
+  const [length, setLength] = useState(Number(p.length ?? 15));
+  const [offset, setOffset] = useState(Number(p.offset ?? 0));
+  const [fullLength, setFullLength] = useState(p.fullLength !== false && !!p.fullLength);
+  const [direction, setDirection] = useState<'right-hand' | 'left-hand'>((p.direction as 'right-hand' | 'left-hand') ?? 'right-hand');
 
   const addFeature = useCADStore((s) => s.addFeature);
+  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const ISO_DESIGNATIONS = ['M3x0.5', 'M4x0.7', 'M5x0.8', 'M6x1.0', 'M8x1.25', 'M10x1.5', 'M12x1.75', 'M16x2.0', 'M20x2.5', 'M24x3.0'];
@@ -25,21 +31,27 @@ export function ThreadDialog({ onClose }: { onClose: () => void }) {
   const designations = standard === 'iso-metric' ? ISO_DESIGNATIONS : standard === 'ansi-unified' ? ANSI_DESIGNATIONS : NPT_DESIGNATIONS;
 
   const handleApply = () => {
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Thread (${designation}, ${direction === 'left-hand' ? 'LH' : 'RH'})`,
-      type: 'thread',
-      params: {
-        threadType, standard, designation, threadClass,
-        diameter, length, offset, fullLength,
-        direction,
-      },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
+    const params = {
+      threadType, standard, designation, threadClass,
+      diameter, length, offset, fullLength,
+      direction,
     };
-    addFeature(feature);
-    setStatusMessage(`Created ${threadType} thread: ${designation}`);
+    if (editing) {
+      updateFeatureParams(editing.id, params);
+      setStatusMessage(`Updated ${threadType} thread: ${designation}`);
+    } else {
+      const feature: Feature = {
+        id: crypto.randomUUID(),
+        name: `Thread (${designation}, ${direction === 'left-hand' ? 'LH' : 'RH'})`,
+        type: 'thread',
+        params,
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+      };
+      addFeature(feature);
+      setStatusMessage(`Created ${threadType} thread: ${designation}`);
+    }
     onClose();
   };
 
@@ -47,7 +59,7 @@ export function ThreadDialog({ onClose }: { onClose: () => void }) {
     <div className="dialog-overlay">
       <div className="dialog dialog-sm">
         <div className="dialog-header">
-          <h3>Thread</h3>
+          <h3>{editing ? 'Edit Thread' : 'Thread'}</h3>
           <button className="dialog-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="dialog-body">

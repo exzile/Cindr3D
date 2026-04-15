@@ -79,6 +79,8 @@ interface CADState {
   replaceSketchEntities: (entities: SketchEntity[]) => void;
   /** D57: toggle a single entity's linetype (line ↔ construction-line ↔ centerline) */
   cycleEntityLinetype: (entityId: string) => void;
+  /** S6: remove the 'linked' flag on a projected entity so it becomes an independent editable entity */
+  breakProjectionLink: (entityId: string) => void;
   copySketch: (id: string) => void;
   deleteSketch: (id: string) => void;
   renameSketch: (id: string, name: string) => void;
@@ -124,6 +126,13 @@ interface CADState {
   deleteFormElements: (type: FormElementType, ids: string[]) => void;
   /** D152: Move one or more vertices in a cage by updating their positions. */
   updateFormVertices: (bodyId: string, updates: { id: string; position: [number, number, number] }[]) => void;
+  /** D155: Set the subdivision level (1–5) of a form body. */
+  setFormBodySubdivisionLevel: (id: string, level: number) => void;
+  /** D160: Set crease value on all vertices of a form body (0 = uncrease, 1 = crease). */
+  setFormBodyCrease: (id: string, crease: number) => void;
+  /** D166: Frozen vertices — dragging is blocked for these vertex ids. */
+  frozenFormVertices: string[];
+  toggleFrozenFormVertex: (id: string) => void;
 
   // Grid & snap
   gridSize: number;
@@ -723,6 +732,19 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     set({ activeSketch: { ...activeSketch, entities: updated } });
   },
 
+  // S6 Break Link — remove the 'linked' flag so a projected entity becomes editable
+  breakProjectionLink: (entityId) => {
+    const { activeSketch } = get();
+    if (!activeSketch) return;
+    const updated = activeSketch.entities.map((e) =>
+      e.id === entityId ? { ...e, linked: false } : e,
+    );
+    set({
+      activeSketch: { ...activeSketch, entities: updated },
+      statusMessage: 'Projection link broken — entity is now independent',
+    });
+  },
+
   copySketch: (id) => set((state) => {
     const src = state.sketches.find((s) => s.id === id);
     if (!src) return state;
@@ -1000,6 +1022,28 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       posMap.has(v.id) ? { ...v, position: posMap.get(v.id)! } : v
     );
     return { formBodies: state.formBodies.map((b) => b.id === bodyId ? { ...body, vertices: newVerts } : b) };
+  }),
+
+  setFormBodySubdivisionLevel: (id, level) => set((state) => ({
+    formBodies: state.formBodies.map((b) =>
+      b.id !== id ? b : { ...b, subdivisionLevel: Math.max(1, Math.min(5, level)) }
+    ),
+  })),
+
+  setFormBodyCrease: (id, crease) => set((state) => ({
+    formBodies: state.formBodies.map((b) =>
+      b.id !== id ? b : { ...b, vertices: b.vertices.map((v) => ({ ...v, crease })) }
+    ),
+  })),
+
+  frozenFormVertices: [],
+  toggleFrozenFormVertex: (id) => set((state) => {
+    const frozen = state.frozenFormVertices;
+    return {
+      frozenFormVertices: frozen.includes(id)
+        ? frozen.filter((v) => v !== id)
+        : [...frozen, id],
+    };
   }),
 
   gridSize: 10,
@@ -1971,6 +2015,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     sketches: state.sketches,
     features: state.features.map((f) => serializeFeature(f) as Feature),
     parameters: state.parameters,
+    frozenFormVertices: state.frozenFormVertices,
   }),
 
 }));

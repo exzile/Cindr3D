@@ -4,26 +4,37 @@ import { useCADStore } from '../../../store/cadStore';
 import type { Feature, FeatureType } from '../../../types/cad';
 
 export function WebDialog({ onClose }: { onClose: () => void }) {
-  const [thickness, setThickness] = useState(2);
-  const [height, setHeight] = useState(10);
-  const [direction, setDirection] = useState<'normal' | 'flip' | 'symmetric'>('normal');
-  const [operation, setOperation] = useState<'join' | 'new-body'>('join');
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
+  const features = useCADStore((s) => s.features);
+  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p = editing?.params ?? {};
+
+  const [thickness, setThickness] = useState(Number(p.thickness ?? 2));
+  const [height, setHeight] = useState(Number(p.height ?? 10));
+  const [direction, setDirection] = useState<'normal' | 'flip' | 'symmetric'>((p.direction as 'normal' | 'flip' | 'symmetric') ?? 'normal');
+  const [operation, setOperation] = useState<'join' | 'new-body'>((p.operation as 'join' | 'new-body') ?? 'join');
 
   const addFeature = useCADStore((s) => s.addFeature);
+  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const handleApply = () => {
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Web (${thickness}mm thick)`,
-      type: 'rib' as FeatureType,
-      params: { thickness, height, direction, operation, webStyle: 'perpendicular' },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    };
-    addFeature(feature);
-    setStatusMessage(`Created web: ${thickness}mm thick`);
+    if (editing) {
+      updateFeatureParams(editing.id, { thickness, height, direction, operation, webStyle: 'perpendicular' });
+      setStatusMessage(`Updated web: ${thickness}mm thick`);
+    } else {
+      const feature: Feature = {
+        id: crypto.randomUUID(),
+        name: `Web (${thickness}mm thick)`,
+        type: 'rib' as FeatureType,
+        params: { thickness, height, direction, operation, webStyle: 'perpendicular' },
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+      };
+      addFeature(feature);
+      setStatusMessage(`Created web: ${thickness}mm thick`);
+    }
     onClose();
   };
 
@@ -31,7 +42,7 @@ export function WebDialog({ onClose }: { onClose: () => void }) {
     <div className="dialog-overlay">
       <div className="dialog dialog-sm">
         <div className="dialog-header">
-          <h3>Web</h3>
+          <h3>{editing ? 'Edit Web' : 'Web'}</h3>
           <button className="dialog-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="dialog-body">

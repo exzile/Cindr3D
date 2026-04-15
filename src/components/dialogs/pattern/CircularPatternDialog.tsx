@@ -4,27 +4,38 @@ import { useCADStore } from '../../../store/cadStore';
 import type { Feature } from '../../../types/cad';
 
 export function CircularPatternDialog({ onClose }: { onClose: () => void }) {
-  const [count, setCount] = useState(6);
-  const [totalAngle, setTotalAngle] = useState(360);
-  const [symmetric, setSymmetric] = useState(false);
-  const [axis, setAxis] = useState<'X' | 'Y' | 'Z'>('Y');
-  const [computeType, setComputeType] = useState<'optimized' | 'identical' | 'adjust'>('optimized');
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
+  const features = useCADStore((s) => s.features);
+  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p = editing?.params ?? {};
+
+  const [count, setCount] = useState(Number(p.count ?? 6));
+  const [totalAngle, setTotalAngle] = useState(Number(p.totalAngle ?? 360));
+  const [symmetric, setSymmetric] = useState(p.symmetric !== false && !!p.symmetric);
+  const [axis, setAxis] = useState<'X' | 'Y' | 'Z'>((p.axis as 'X' | 'Y' | 'Z') ?? 'Y');
+  const [computeType, setComputeType] = useState<'optimized' | 'identical' | 'adjust'>((p.computeType as 'optimized' | 'identical' | 'adjust') ?? 'optimized');
 
   const addFeature = useCADStore((s) => s.addFeature);
+  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const handleApply = () => {
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Circular Pattern (${count}x)`,
-      type: 'circular-pattern',
-      params: { count, totalAngle, symmetric, axis, computeType },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    };
-    addFeature(feature);
-    setStatusMessage(`Created circular pattern: ${count} instances around ${axis}`);
+    if (editing) {
+      updateFeatureParams(editing.id, { count, totalAngle, symmetric, axis, computeType });
+      setStatusMessage(`Updated circular pattern: ${count} instances around ${axis}`);
+    } else {
+      const feature: Feature = {
+        id: crypto.randomUUID(),
+        name: `Circular Pattern (${count}x)`,
+        type: 'circular-pattern',
+        params: { count, totalAngle, symmetric, axis, computeType },
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+      };
+      addFeature(feature);
+      setStatusMessage(`Created circular pattern: ${count} instances around ${axis}`);
+    }
     onClose();
   };
 
@@ -32,7 +43,7 @@ export function CircularPatternDialog({ onClose }: { onClose: () => void }) {
     <div className="dialog-overlay">
       <div className="dialog dialog-sm">
         <div className="dialog-header">
-          <h3>Circular Pattern</h3>
+          <h3>{editing ? 'Edit Circular Pattern' : 'Circular Pattern'}</h3>
           <button className="dialog-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="dialog-body">

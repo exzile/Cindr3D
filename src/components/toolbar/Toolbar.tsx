@@ -23,6 +23,7 @@ import {
   GitMerge,
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore';
+import { useComponentStore } from '../../store/componentStore';
 import { usePrinterStore } from '../../store/printerStore';
 import { useSlicerStore } from '../../store/slicerStore';
 import { useThemeStore } from '../../store/themeStore';
@@ -346,6 +347,16 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const setActiveTool = useCADStore((s) => s.setActiveTool);
   const activeTool = useCADStore((s) => s.activeTool);
 
+  // Component store (D193)
+  const addComponent = useComponentStore((s) => s.addComponent);
+  const rootComponentId = useComponentStore((s) => s.rootComponentId);
+
+  // D193 New Component helper
+  const handleNewComponent = useCallback(() => {
+    const id = addComponent(rootComponentId);
+    setStatusMessage(`New component created (${id.slice(0, 8)})`);
+  }, [addComponent, rootComponentId, setStatusMessage]);
+
   // Printer store
   const showPrinter = usePrinterStore((s) => s.showPrinter);
   const setShowPrinter = usePrinterStore((s) => s.setShowPrinter);
@@ -454,7 +465,7 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   // ─── Flyout Menu Definitions for SOLID tab ────────────────────────────
 
   const createMenuItems: MenuItem[] = [
-    { icon: <Package size={MI} />, label: 'New Component', onClick: comingSoon('New Component') },
+    { icon: <Package size={MI} />, label: 'New Component', onClick: handleNewComponent },
     { icon: <Package size={MI} />, label: 'Create Base Feature', onClick: () => setActiveDialog('base-feature') },
     { icon: <PenTool size={MI} />, label: 'Create Sketch', shortcut: 'S', onClick: beginSketchFlow },
     { separator: true, icon: <ArrowUpFromLine size={MI} />, label: 'Extrude', shortcut: 'E', onClick: handleExtrude },
@@ -517,7 +528,7 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const assembleMenuItems: MenuItem[] = [
     { icon: <FolderOpen size={MI} />, label: 'Insert Component', onClick: comingSoon('Insert Component') },
-    { icon: <Package size={MI} />, label: 'New Component', onClick: comingSoon('New Component') },
+    { icon: <Package size={MI} />, label: 'New Component', onClick: handleNewComponent },
     { icon: <Copy size={MI} />, label: 'Duplicate With Joints', onClick: comingSoon('Duplicate With Joints') },
     { separator: true, icon: <Link2 size={MI} />, label: 'Constrain Components', onClick: comingSoon('Constrain Components') },
     { icon: <Link2 size={MI} />, label: 'Joint', shortcut: 'J', onClick: () => setActiveDialog('joint') },

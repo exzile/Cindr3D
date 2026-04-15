@@ -4,27 +4,37 @@ import { useCADStore } from '../../../store/cadStore';
 import type { Feature } from '../../../types/cad';
 
 export function BoundaryFillDialog({ onClose }: { onClose: () => void }) {
-  const [fillType, setFillType] = useState<'between-surfaces' | 'enclosed-volume'>('between-surfaces');
-  const [operation, setOperation] = useState<'new-body' | 'join' | 'cut'>('new-body');
-  const [target, setTarget] = useState('');
-  const addFeature = useCADStore((s) => s.addFeature);
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
   const features = useCADStore((s) => s.features);
+  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p = editing?.params ?? {};
+
+  const [fillType, setFillType] = useState<'between-surfaces' | 'enclosed-volume'>((p.fillType as 'between-surfaces' | 'enclosed-volume') ?? 'between-surfaces');
+  const [operation, setOperation] = useState<'new-body' | 'join' | 'cut'>((p.operation as 'new-body' | 'join' | 'cut') ?? 'new-body');
+  const [target, setTarget] = useState(String(p.target ?? ''));
+  const addFeature = useCADStore((s) => s.addFeature);
+  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const boundaryFillCount = features.filter((f) => f.params?.isBoundaryFill).length + 1;
 
   const handleApply = () => {
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Boundary Fill ${boundaryFillCount}`,
-      type: 'extrude',
-      params: { fillType, operation, isBoundaryFill: true, target },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    };
-    addFeature(feature);
-    setStatusMessage(`Created Boundary Fill ${boundaryFillCount} (${fillType}, ${operation})`);
+    if (editing) {
+      updateFeatureParams(editing.id, { fillType, operation, isBoundaryFill: true, target });
+      setStatusMessage(`Updated Boundary Fill (${fillType}, ${operation})`);
+    } else {
+      const feature: Feature = {
+        id: crypto.randomUUID(),
+        name: `Boundary Fill ${boundaryFillCount}`,
+        type: 'extrude',
+        params: { fillType, operation, isBoundaryFill: true, target },
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+      };
+      addFeature(feature);
+      setStatusMessage(`Created Boundary Fill ${boundaryFillCount} (${fillType}, ${operation})`);
+    }
     onClose();
   };
 
@@ -32,7 +42,7 @@ export function BoundaryFillDialog({ onClose }: { onClose: () => void }) {
     <div className="dialog-overlay">
       <div className="dialog dialog-sm">
         <div className="dialog-header">
-          <h3>Boundary Fill</h3>
+          <h3>{editing ? 'Edit Boundary Fill' : 'Boundary Fill'}</h3>
           <button className="dialog-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="dialog-body">

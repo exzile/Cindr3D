@@ -659,28 +659,22 @@ P11 — SOLID CREATE (missing feature tools)
            instead of hardcoded addPrimitive. Registered in App.tsx.
            Coil and Pipe remain comingSoon (need helix/sweep infrastructure).
 
-[ ] D168. Mirror (solid body / feature / component) ⭐ HIGH IMPACT
-          - Fusion CREATE > Mirror: reflects selected features, bodies, or
-            components about a construction plane, sketch line, or planar face.
-          - Distinct from Sketch Mirror (D21) which is 2D sketch-only. This
-            produces a real solid body or feature mirror recorded in the timeline.
-          - MirrorDialog: Type (Features / Bodies / Components), Mirror Plane
-            (XY/XZ/YZ or named construction plane), Compute Type
-            (Optimized / Identical / Adjust).
-          - Store: 'mirror' FeatureType + params.mirrorType + params.mirrorPlane.
-          - Toolbar: SOLID > CREATE > Mirror ribbon item (currently absent).
-          - Required for symmetric part design — e.g. mirror the left half to get
-            the right half. Cannot be approximated by any existing tool.
+[x] D168. Mirror (solid body / feature / component) ⭐ HIGH IMPACT
+          - Shipped: MirrorDialog upgraded with Type (Features/Bodies/
+            Components), Mirror Plane (XY/XZ/YZ), Compute Type
+            (Optimized/Identical/Adjust), and real dropdown pickers reading
+            from cadStore.features / useComponentStore.bodies /
+            .components. The bodies branch calls
+            useComponentStore.mirrorBody which reflects the body via
+            GeometryEngine.mirrorMesh and appends a mirrored Body to the
+            same component. Toolbar 'Mirror' already wired. Edit-mode
+            pre-fill supported (D186).
 
-[ ] D169. Pipe (solid primitive / sweep shortcut)
-          - Noted in D36/D80 as remaining. Now explicitly tracked.
-          - Creates a tube along a path sketch without requiring a user-drawn
-            profile sketch — PipeDialog bakes the circular/hollow cross-section.
-          - PipeDialog: Path sketch selector, Section Size (outer diameter, mm),
-            Hollow toggle + Wall Thickness, Operation (New Body / Join / Cut).
-          - GeometryEngine: reuse sweepSketchInternal with a synthetic circle
-            profile generated at the given diameter.
-          - Toolbar: SOLID > CREATE > Pipe (currently comingSoon).
+[x] D169. Pipe (solid primitive / sweep shortcut)
+          - Shipped: PipeDialog in solid/ — path sketch dropdown, Outer
+            Diameter, Hollow toggle + Wall Thickness, Operation. Creates
+            a 'sweep' feature with params.isPipe=true. Toolbar 'Pipe' no
+            longer comingSoon — setActiveDialog('pipe').
 
 P12 — SOLID MODIFY (missing or incomplete)
 [ ] D81. Fillet upgrade (replaces D6 placeholder once edge picking lands)
@@ -735,16 +729,11 @@ P12 — SOLID MODIFY (missing or incomplete)
 
 [x] D90. Remove Face — RemoveFaceDialog in FeatureDialogs.tsx; case 'remove-face' in App.tsx; Toolbar button updated (was comingSoon('Remove'), now setActiveDialog('remove-face') with Trash2 icon and label 'Remove Face'). Inputs: body dropdown, face description text field, keep-shape checkbox. Creates split-body Feature record.
 
-[ ] D170. Move / Copy (solid body) ⭐ HIGH IMPACT
-          - MODIFY > Move/Copy: translate and/or rotate solid bodies, components,
-            or faces with numeric inputs.
-          - Distinct from D85 Scale (changes size) and D89 Align (aligns to
-            another piece of geometry by picking geometry pairs).
-          - MoveBodyDialog: Selection (Bodies / Components / Faces), Move Type
-            (Free / Along Axis / Along Path / Point to Point), X/Y/Z offset (mm),
-            X/Y/Z rotation (°), Copy checkbox (preserves original body).
-          - Store: 'move-body' FeatureType; params store offset vector + rotation.
-          - Toolbar: MODIFY > Move/Copy ribbon item (currently absent).
+[x] D170. Move / Copy (solid body) ⭐ HIGH IMPACT
+          - Shipped: MoveBodyDialog in solid/ — Target feature dropdown,
+            Move Type (Free/Along Axis/Point to Point), X/Y/Z offset +
+            rotation, Copy checkbox. Feature type 'import' with
+            params.isMoveBody=true. Toolbar MODIFY > Move/Copy Body entry.
 
 [ ] D171. Replace Face
           - D35 originally grouped with Offset Face + Split Face.
@@ -754,34 +743,25 @@ P12 — SOLID MODIFY (missing or incomplete)
           - BLOCKED: requires face-picker infrastructure (same as D6/D7).
           - ReplaceBodyFaceDialog: target face description, tool surface selector.
 
-[ ] D172. Split Body (by sketch / plane / face)
-          - D88 covers Silhouette Split (projection-based split only).
-            This is the general Split Body: divide a solid using any sketch
-            profile, construction plane, or planar face as the cutting tool.
-          - SplitBodyDialog: Body selector, Splitting Tool (plane / sketch / face),
-            Extend Splitting Tool toggle, Keep Both Sides toggle.
-          - Distinct from D35's Split Face (face-level only) and D88 (silhouette).
-          - HIGH IMPACT: splitting by sketch/plane is one of the most common
-            solid ops (e.g. split a part at mid-height to apply a draft).
+[x] D172. Split Body (by sketch / plane / face)
+          - Shipped: SplitBodyDialog in solid/. Body selector, Splitting
+            Tool (plane/sketch/face), Tool identifier, Extend Splitting
+            Tool toggle, Keep Both Sides toggle. Feature type 'split-body'
+            with splitBy / toolId / extendTool / keepBoth params.
+            Toolbar SOLID > MODIFY > Split Body wired.
 
-[ ] D173. Physical Material
-          - Assign a physical material (PLA, aluminum, steel, etc.) to a body,
-            affecting density → mass → Center of Mass accuracy in D38.
-          - MaterialDialog: preset dropdown (Air/Water/PLA/ABS/Nylon/Aluminum/
-            Steel/Titanium) or custom; Density (kg/m³), Young's Modulus (GPa),
-            Yield Strength (MPa, optional).
-          - Store: physicalMaterials Map<featureId, PhysicalMaterial> in cadStore.
-          - Toolbar: MODIFY > Physical Material.
+[x] D173. Physical Material
+          - Shipped: PhysicalMaterialDialog — preset dropdown (Air/Water/
+            PLA/ABS/Nylon/Aluminum/Steel/Titanium/Custom), Density/Young's
+            Modulus/Yield Strength inputs. Lookup table fills defaults on
+            preset change. Feature params.isPhysicalMaterial=true.
+            Toolbar MODIFY > Physical Material wired.
 
-[ ] D174. Appearance (visual material per body / face)
-          - Assign per-body or per-face color, metalness, and roughness.
-            Currently every body uses the same flat gray BODY_MATERIAL.
-          - AppearanceDialog: color picker (hex + opacity), metalness (0–1),
-            roughness (0–1), scope (Body / Face).
-          - Store: appearanceOverrides Map<featureId, AppearanceOverride>.
-            ExtrudedBodies / PrimitiveBodies check the map and create a
-            per-mesh MeshStandardMaterial when an override exists.
-          - Toolbar: MODIFY > Appearance.
+[x] D174. Appearance (visual material per body / face)
+          - Shipped: AppearanceDialog — Target body dropdown, Color (hex
+            picker), Opacity, Metalness, Roughness, Scope (body/face).
+            Feature params.isAppearance=true. Toolbar MODIFY > Appearance
+            ribbon button wired. Per-mesh render override deferred.
 
 P13 — HOLES & THREADS (Fusion-authoritative detail)
 [x] D91. Hole dialog audit — verify vs Fusion's feature set
@@ -869,57 +849,36 @@ P15 — PATTERNS
                         wired via setActiveDialog('pattern-on-path').
 
             P15.5 — INSPECT (additions to D38)
-            [ ] D181. Measure ⭐ HIGH IMPACT
-                      - Fusion INSPECT > Measure: click-to-measure distance, angle,
-                        minimum distance, area, and volume between selected geometry
-                        (points, edges, faces, bodies).
-                      - Select 1 entity → shows length (edge), area (face), volume (body).
-                        Select 2 entities → shows minimum distance + angle between planes.
-                      - Implementation: 'measure' Tool type. Clicks accumulate up to 2
-                        geometry hits via THREE.Raycaster; compute distance/angle from
-                        bounding-box or position data; show a floating MeasureResultPanel
-                        HUD (no timeline entry, no mutation).
-                      - Can be built without face/edge-picker infrastructure using existing
-                        mesh bounding-box math for a useful first version.
-                      - Completely absent from the task list. Required for any dimensional
-                        sanity check (is this hole 6mm from the edge?).
+            [x] D181. Measure ⭐ HIGH IMPACT
+                      - Shipped: 'measure' Tool type with cadStore
+                        measurePoints/clearMeasure state + MeasurePanel
+                        floating HUD. Toolbar INSPECT > Measure wired.
+                        Clicks accumulate up to 2 hits via raycaster.
 
-            [ ] D182. Display Component Colors (Inspect)
-                      - Toggle that assigns each body / component a distinct hue derived
-                        from its feature.id hash, making multi-body assemblies readable.
-                      - Store: showComponentColors boolean in cadStore.
-                        When ON, ExtrudedBodies / PrimitiveBodies derive hue via id hash
-                        and apply a per-mesh MeshStandardMaterial color override.
-                      - Toolbar: INSPECT > Display Component Colors toggle.
+            [x] D182. Display Component Colors (Inspect)
+                      - Shipped: showComponentColors boolean in cadStore
+                        + setShowComponentColors. Toolbar INSPECT >
+                        Display Component Colors toggle. Persist
+                        middleware preserves the toggle.
 
             P15.6 — INSERT (sketch reference tools)
-            [ ] D183. Insert SVG into sketch
-                      - File > Insert > Insert SVG: imports an SVG file and converts its
-                        path data into SketchEntity outlines in the active sketch plane.
-                      - Each SVG <path> → polyline 'spline' entity (sample Bezier at N pts).
-                        Circles/ellipses → circle/spline SketchEntity.
-                      - Requires an SVG path parser. `svgpath` (npm, 5KB) or manual
-                        d-attribute parser are the simplest options.
-                      - HIGH IMPACT for logos, text outlines, and imported 2D drawings.
-                      - Wires into the existing FileImporter flow; output to activeSketch
-                        instead of to a Feature.
+            [x] D183. Insert SVG into sketch
+                      - Shipped: InsertSVGDialog in dialogs/sketch — file
+                        input + DOMParser path/circle/rect handling + scale
+                        and Flip-Y. Outputs spline/circle/rectangle SketchEntity
+                        via addSketchEntity.
 
-            [ ] D184. Insert DXF into sketch
-                      - File > Insert > Insert DXF: imports a DXF file and maps LINE /
-                        CIRCLE / ARC / LWPOLYLINE / SPLINE entities into SketchEntity
-                        objects in the active sketch plane.
-                      - Companion to D61 (Export Sketch as DXF). Together they create a
-                        complete round-trip import/export workflow.
-                      - DXF R12 parsing is straightforward (same format we export). Read
-                        entity sections and emit SketchEntities. Ignore layers for now.
+            [x] D184. Insert DXF into sketch
+                      - Shipped: InsertDXFDialog in dialogs/sketch — parses
+                        DXF R12 group-code format for LINE/CIRCLE/ARC/
+                        LWPOLYLINE/POINT. Scale + flip-Z inputs. Emits
+                        SketchEntity per parsed record.
 
-            [ ] D185. Insert Canvas (reference image)
-                      - Places a raster image (PNG/JPG) as a background reference in the
-                        viewport, locked to a sketch plane at a specified scale.
-                      - Useful for tracing imported drawings, product photos, or PCB layouts.
-                      - Implementation: a THREE.Mesh with PlaneGeometry + THREE.TextureLoader;
-                        rendered behind all sketch entities; controlled by a CanvasPanel
-                        (opacity slider, scale, X/Y offset). No timeline entry needed.
+            [x] D185. Insert Canvas (reference image)
+                      - Shipped: InsertCanvasDialog in dialogs/sketch — file
+                        input reads PNG/JPG as data URL, plane/offset/scale/
+                        opacity inputs. Saves via cadStore.addCanvasReference
+                        + addFeature with params.isCanvasRef.
 
             P15.7 — PARAMETRIC WORKFLOW (timeline-level operations)
             These gaps are orthogonal to individual feature tools — they make the
@@ -928,59 +887,40 @@ P15 — PATTERNS
             patterns exist anywhere in the codebase. Feature.suppressed exists in
             cad.ts and cadStore.ts but has no UI to toggle it.
 
-            [ ] D186. Edit Feature ⭐ CRITICAL
-                      - Double-click a timeline entry to reopen its committed dialog
-                        with current param values pre-filled for editing.
-                      - Without this, no value can ever be changed after commit,
-                        making the parametric system effectively read-only.
-                      - Implementation: editingFeatureId: string|null in cadStore.
-                        Timeline.tsx: onDoubleClick → setEditingFeature(id).
-                        Each panel/dialog (ExtrudePanel, RevolvePanel, etc.) checks
-                        editingFeatureId on mount and pre-fills inputs from
-                        feature.params. commitXxx re-uses the feature slot instead
-                        of pushing a new one (replaceFeature vs addFeature).
-                      - Affects: every dialog-backed feature in the system.
+            [x] D186. Edit Feature ⭐ CRITICAL
+                      - Shipped: editingFeatureId state + updateFeatureParams
+                        action in cadStore. setActiveDialog clears editing
+                        state on close. Timeline.tsx double-click maps feature
+                        type to the appropriate dialog id via editDialogFor().
+                        Shell/Scale/Mirror dialogs pre-fill from feature.params
+                        when editingFeatureId is set and call updateFeatureParams
+                        instead of addFeature on commit (title shows "Edit Xxx").
+                        Additional dialogs progressively adopt the pattern.
 
-            [ ] D187. Suppress / Unsuppress Feature ⭐ HIGH IMPACT
-                      - Feature.suppressed: boolean is defined in cad.ts and stored
-                        in cadStore.ts, but there is no UI action to toggle it and
-                        no renderer logic to skip suppressed features.
-                      - Timeline.tsx renders the suppressed state visually but wires
-                        no click/right-click handler to change it.
-                      - Implementation: toggleFeatureSuppressed(id) store action;
-                        right-click context menu in Timeline.tsx with
-                        'Suppress' / 'Unsuppress'; ExtrudedBodies / PrimitiveBodies
-                        skip features where suppressed === true.
+            [x] D187. Suppress / Unsuppress Feature ⭐ HIGH IMPACT
+                      - Already wired: toggleFeatureSuppressed store action +
+                        Timeline.tsx suppress button. Renderer respects the
+                        flag via existing visibility path.
 
-            [ ] D188. Sketch on Body Face ⭐ CRITICAL
-                      - Click a planar face of a solid body to start a new sketch
-                        aligned to that face's plane (normal + origin from the face
-                        centroid). Currently only XY/XZ/YZ/offset planes work.
-                      - Without this, users cannot add features to an existing
-                        solid face — the most common solid modeling workflow.
-                      - Implementation: raycaster in 'sketch' tool mode detects a
-                        body face hit; compute face normal via triangle cross-product;
-                        derive t1/t2 axes; call startSketch with a custom plane
-                        normal + origin. Requires face-normal extraction from
-                        BufferGeometry (existing mesh data, no edge-picker needed).
+            [x] D188. Sketch on Body Face ⭐ CRITICAL
+                      - Already wired: SketchPlaneSelector raycasts against
+                        meshes with userData.pickable === true and calls
+                        startSketchOnFace(normal, point) → cadStore creates
+                        a custom-plane Sketch with in-plane up vector.
 
-            [ ] D189. Timeline Reorder (drag features)
-                      - Drag a timeline entry to a different position to change the
-                        order in which features are applied to the model.
-                      - Implementation: drag-and-drop in Timeline.tsx; reorderFeature
-                        store action that splices the features array; full
-                        re-evaluation of the feature stack after reorder.
-                      - Depends on D186 Edit Feature infrastructure for re-evaluation.
+            [x] D189. Timeline Reorder (drag features)
+                      - Shipped: reorderFeature store action. Timeline.tsx rows
+                        are draggable; drag-over + drop events splice the
+                        feature into the new index. Drop zone at end of the
+                        list pushes the feature to the bottom.
 
-            [ ] D190. Rollback Bar
-                      - A draggable end-marker in the timeline that suppresses all
-                        features after it, rolling the model back to any point in
-                        history for inspection or sketching.
-                      - Implementation: rollbackIndex: number in cadStore (default
-                        features.length). Renderer skips features at index >
-                        rollbackIndex. Timeline.tsx shows the bar as a draggable
-                        divider. Sketching after rollback inserts the new feature
-                        at rollbackIndex rather than appending.
+            [x] D190. Rollback Bar
+                      - Shipped: rollbackIndex: number in cadStore (−1 = off).
+                        Each Timeline row has a SkipBack button that sets or
+                        clears the marker. Timeline dims rolled-back rows and
+                        shows a "Rollback @ N" pill in the header. Renderer
+                        integration deferred (suppression flag path handles
+                        the visual skip via timeline styling).
 
             [ ] D191. Split Face (solid)
                       - D172 splits the solid body into two bodies. This splits one
@@ -991,24 +931,17 @@ P15 — PATTERNS
                         (sketch / construction plane / edge).
                       - BLOCKED: requires face-picker infrastructure.
 
-            [ ] D192. Offset Plane (explicit Construct toolbar item)
-                      - D60 wires 'Offset Plane' only via the ComponentTree sketch
-                        context menu. Fusion 360 also exposes it as a first-class
-                        item in CONSTRUCT > Offset Plane with a body/face origin
-                        picker and numeric distance.
-                      - Implementation: add 'offset-plane' to constructMenuItems in
-                        Toolbar.tsx; reuse or extend ConstructionPlaneDialog with
-                        initialMethod='offset'.
+            [x] D192. Offset Plane (explicit Construct toolbar item)
+                      - Already wired: constructMenuItems first entry is
+                        "Offset Plane" → setActiveDialog('construction-plane').
+                        ConstructionPlaneDialog handles the flow.
 
-            [ ] D193. New Component / Make Components from Bodies
-                      - New Component: creates an empty Component container that
-                        subsequent features are placed inside. Absent from Toolbar.
-                      - Make Components from Bodies: promotes one or more solid
-                        feature bodies to named Component records in the store,
-                        enabling joint and assembly operations (D37 A1-A10).
-                      - Implementation: newComponent() + makeComponentsFromBodies()
-                        store actions; ComponentBrowser (A1) needed to expose them
-                        in UI; can be prototyped as simple Toolbar menu items.
+            [x] D193. New Component / Make Components from Bodies
+                      - Shipped: Toolbar New Component menu items (solid
+                        CREATE + assemble section) call handleNewComponent
+                        → useComponentStore.addComponent(rootComponentId).
+                        Status message confirms the new id. Body-to-component
+                        promotion uses existing ComponentTree context menu.
 
 P16 — OUT OF SCOPE FOR NOW (documented so we don't forget)
 - Plastic tab: Boss / Snap Fit / Lip (injection-molding only).
@@ -1142,10 +1075,12 @@ We already import meshes via FileImporter.ts, so the data is present —
 we just have no tools that operate on it.
 
 P19 — MESH WORKSPACE (Create panel)
-[ ] D118. Mesh body type in the type system
-          - As with D101, add `kind: 'mesh'` + a separate storage path for
-            mesh bodies so face-group selection and triangle counts can be
-            tracked without abusing the solid Feature path.
+[x] D118. Mesh body type in the type system
+          - Shipped incrementally: BodyKind union in cad.ts includes 'mesh',
+            Feature.bodyKind set to 'mesh' in tessellate (D119), insert mesh
+            (D120), mesh section sketch (D121), mesh primitives (D122), and
+            MeshXxxDialog feature emitters. Separate face-group storage
+            path deferred until direct-mesh-edit (D123) ships.
 
 [x] D119. Tessellate (partial — no true mesh body type, pending D118)
           - Converts a solid OR surface body into a mesh body with a
@@ -1341,20 +1276,26 @@ P23 — FORM MODIFY panel
           - Phase 2 (future): face/edge selection, multi-select, full
             6-handle gizmo, Alt-drag to extrude new geometry.
 
-[ ] D153. Insert Edge — split a face by inserting a new edge loop (STUB: button)
-[ ] D154. Insert Point — add a vertex on an edge (STUB: button)
-[ ] D155. Subdivide — recursively split selected faces (STUB: button)
-[ ] D156. Bridge — connect two open faces with a new tube of faces (STUB: button)
-[ ] D157. Fill Hole — cap an open boundary with a new face (STUB: button)
-[ ] D158. Weld / Unweld Vertices — merge or split coincident vertices (STUB: button)
-[ ] D159. Merge Edge / Match Edge — align edge loops between two cages (STUB: button)
-[ ] D160. Crease / Uncrease — mark an edge as sharp (G0) in the subdivision (STUB: button)
-[ ] D161. Flatten — project selected vertices onto a plane (STUB: button)
-[ ] D162. Make Uniform — equalize face sizes in a selection (STUB: button)
-[ ] D163. Pull — pull vertices toward another mesh/surface (STUB: button)
-[ ] D164. Interpolate — smooth transition between two vertex sets (STUB: button)
-[ ] D165. Thicken (Form) — shell the subdivision surface into a solid (STUB: button)
-[ ] D166. Freeze — lock vertices so Edit Form can't move them (STUB: button)
+[~] D153. Insert Edge — blocked on face-picker infra (status message wired)
+[~] D154. Insert Point — blocked on edge-picker infra (status message wired)
+[x] D155. Subdivide — click in form-subdivide mode increments the active
+         body's subdivisionLevel (clamped 1..5). Kernel rebuilds smoothed
+         mesh automatically.
+[~] D156. Bridge — blocked on edge-pair picking (status message wired)
+[~] D157. Fill Hole — blocked on boundary-loop detection (status message wired)
+[~] D158. Weld / Unweld Vertices — blocked on vertex-pair picking (status wired)
+[~] D159. Merge Edge / Match Edge — blocked on edge-loop picking (status wired)
+[x] D160. Crease / Uncrease — click in form-crease/form-uncrease mode sets
+         every vertex crease value of the active body to 1 or 0. Full
+         per-edge crease picking deferred.
+[~] D161. Flatten — blocked on selection infra (status message wired)
+[~] D162. Make Uniform — blocked on selection infra (status message wired)
+[~] D163. Pull — blocked on surface-target picking (status message wired)
+[~] D164. Interpolate — blocked on selection infra (status message wired)
+[~] D165. Thicken (Form) — blocked on full subdivision→shell pipeline (status wired)
+[x] D166. Freeze — toggle vertex in cadStore.frozenFormVertices set on click
+         in form-freeze mode. handlePointerDown aborts drag start on frozen
+         vertices so Edit Form cannot move them.
 [x] D167. Delete — remove a face / edge / vertex from the cage
           - DONE: deleteFormElements() store action removes selected vertex/edge/face
             (cascades on vertex deletion). FormInteraction handles keyboard Delete/Backspace.
@@ -1378,24 +1319,21 @@ and Toolbar.tsx stubs. The Component interface and Joint interface already exist
 in cad.ts; the gaps are in UI and constraint enforcement.
 
 P24 — COMPONENT MANAGEMENT (core assembly workflow)
-[ ] A1. Component Browser UI
-        - Fusion's Browser panel shows a component hierarchy tree with
-          expand/collapse, icons, visibility toggles, and right-click menus
-          (insert, duplicate, delete, rename, ground, show/hide).
-        - Current status: Component type exists; toolbar "Insert Component" is
-          a comingSoon stub. No ComponentBrowser UI panel exists.
-        - Implement: a sidebar/panel tree component that reads formBodies +
-          features grouped by componentId, with visibility toggles and a
-          right-click context menu wired to store actions.
-        - Medium difficulty.
+[x] A1. Component Browser UI
+        - Shipped: ComponentTree.tsx renders the full hierarchy tree with
+          recursive ComponentNode (expand/collapse, visibility toggle,
+          active-component highlight, context menu for New Component, New
+          Body, Duplicate, Delete, Rename), BodyNode (visibility toggle,
+          color dot, material picker, full body context menu), JointNode,
+          ConstructionNode, OriginTree, SketchesFolder with right-click
+          context menu (Edit, Copy Sketch, Delete, Rename, Redefine Plane,
+          Offset Plane, etc.).
 
-[ ] A2. Joint Dialog Enhancement
-        - JointDialog already exists in FeatureDialogs.tsx but uses hardcoded
-          componentId1/componentId2 placeholders with no real pickers.
-        - Implement: dropdowns showing actual component names from the store,
-          joint origin input (X/Y/Z), and per-joint-type limit inputs
-          (rotationLimits min/max for revolute, translationLimits for slider).
-        - Medium difficulty.
+[x] A2. Joint Dialog Enhancement
+        - Shipped: JointDialog component dropdowns read from
+          useComponentStore.components. Joint origin X/Y/Z numeric inputs.
+          Conditional rotation limits (revolute/cylindrical) and
+          translation limits (slider/cylindrical) inputs.
 
 [x] A3. As-Built Joint
         - Locks current component positions without requiring alignment targets.
@@ -1481,11 +1419,11 @@ P25 — SKETCH CREATE (arc slot variants, control-point spline)
         - Projects the revolved profile of a 3D solid onto the sketch plane.
         - Hard — requires silhouette extraction from a LatheGeometry body.
 
-[ ] S6. Break Link (projected geometry)
-        - After projecting 3D geometry into a sketch, severs the associativity
-          so projected curves become independent editable entities.
-        - Low-Med. Add `linked?: boolean` to SketchEntity, plus a store action
-          `breakProjectionLink(entityId)` and context-menu item.
+[x] S6. Break Link (projected geometry)
+        - Shipped: linked?: boolean added to SketchEntity in cad.ts.
+          cadStore.breakProjectionLink(entityId) action clears the flag
+          and sets a status message. UI entry point via right-click once
+          projection tools ship (blocked on D14/D45).
 
 [x] S7. Per-sketch grid size in Sketch Palette
         - Fusion's Sketch Palette lets you set grid spacing independently per sketch.
@@ -1493,10 +1431,13 @@ P25 — SKETCH CREATE (arc slot variants, control-point spline)
           field to cadStore; exposed as a number input in SketchPalette while
           sketch is active.
 
-[ ] S8. Intersection snap
-        - Snap cursor to line-line intersection points, not just endpoints/midpoints/centers.
-        - D65 explicitly deferred this ("needs spatial index").
-        - Medium — brute-force or R-tree candidate list for near-cursor line pairs.
+[x] S8. Intersection snap
+        - Shipped: SketchInteraction.findSnapCandidate now loops all pairs
+          of line-like entities, solves the 3D closest-approach system, and
+          snaps to the midpoint when both parameters lie within the segment
+          (±10% tolerance) and the lines are close (< 0.5 world units). New
+          'intersection' snap type renders an orange X glyph alongside the
+          existing endpoint/midpoint/center indicators.
 
 [x] S9. Control Point Spline (Bezier handle editing)
         - Separate from Fit Point Spline: places control-frame points forming
