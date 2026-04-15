@@ -50,6 +50,18 @@ function RevolveItem({ feature, sketch }: { feature: Feature; sketch: Sketch }) 
 export default function ExtrudedBodies() {
   const features = useCADStore((s) => s.features);
   const sketches = useCADStore((s) => s.sketches);
+  const rollbackIndex = useCADStore((s) => s.rollbackIndex);
+
+  // D187 + D190: a feature is skipped when it is suppressed, hidden, or
+  // rolled back past the marker.
+  const isActive = (f: Feature) => {
+    if (!f.visible || f.suppressed) return false;
+    if (rollbackIndex >= 0) {
+      const idx = features.indexOf(f);
+      if (idx > rollbackIndex) return false;
+    }
+    return true;
+  };
 
   const buildToolMesh = (feature: Feature, sketch: Sketch): THREE.Mesh | null => {
     const distance = (feature.params.distance as number) || 10;
@@ -60,7 +72,7 @@ export default function ExtrudedBodies() {
   const { bodies, featureIds } = useMemo(() => {
     // Features with a stored mesh (thin/taper extrude) are rendered directly — skip CSG.
     const extrudeFeatures = [...features]
-      .filter((f) => f.type === 'extrude' && f.visible && !f.mesh)
+      .filter((f) => f.type === 'extrude' && isActive(f) && !f.mesh)
       .sort((a, b) => a.timestamp - b.timestamp);
 
     const outBodies: THREE.BufferGeometry[] = [];
@@ -112,7 +124,8 @@ export default function ExtrudedBodies() {
     commitCurrent();
 
     return { bodies: outBodies, featureIds: outIds };
-  }, [features, sketches]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [features, sketches, rollbackIndex]);
 
   useEffect(() => {
     return () => {
@@ -135,14 +148,14 @@ export default function ExtrudedBodies() {
           }}
         />
       ))}
-      {features.filter((f) => f.type === 'revolve' && f.visible).map((feature) => {
+      {features.filter((f) => f.type === 'revolve' && isActive(f)).map((feature) => {
         const sketch = sketches.find((s) => s.id === feature.sketchId);
         if (!sketch) return null;
         return <RevolveItem key={feature.id} feature={feature} sketch={sketch} />;
       })}
       {/* Render features that have a pre-built stored mesh (D30 Sweep, D66 Thin Extrude,
           D69 Taper Extrude, D73 Rib). All these set feature.mesh at commit time. */}
-      {features.filter((f) => f.visible && f.mesh).map((feature) => (
+      {features.filter((f) => isActive(f) && f.mesh).map((feature) => (
         <primitive
           key={feature.id}
           object={feature.mesh!}

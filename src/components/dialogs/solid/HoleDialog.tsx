@@ -9,40 +9,52 @@ type DrillPoint = 'flat' | 'angled';
 type HoleTermination = 'blind' | 'through-all' | 'to-next' | 'symmetric';
 
 export function HoleDialog({ onClose }: { onClose: () => void }) {
-  const [holeType, setHoleType] = useState<HoleType>('simple');
-  const [tapType, setTapType] = useState<TapType>('clearance');
-  const [drillPoint, setDrillPoint] = useState<DrillPoint>('angled');
-  const [drillAngle, setDrillAngle] = useState(118);
-  const [termination, setTermination] = useState<HoleTermination>('blind');
-  const [diameter, setDiameter] = useState(5);
-  const [depth, setDepth] = useState(10);
-  const [cbDiameter, setCbDiameter] = useState(10);
-  const [cbDepth, setCbDepth] = useState(3);
-  const [csAngle, setCsAngle] = useState(90);
-  const [csDiameter, setCsDiameter] = useState(9);
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
+  const features = useCADStore((s) => s.features);
+  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p = editing?.params ?? {};
+
+  const [holeType, setHoleType] = useState<HoleType>((p.holeType as HoleType) ?? 'simple');
+  const [tapType, setTapType] = useState<TapType>((p.tapType as TapType) ?? 'clearance');
+  const [drillPoint, setDrillPoint] = useState<DrillPoint>((p.drillPoint as DrillPoint) ?? 'angled');
+  const [drillAngle, setDrillAngle] = useState(Number(p.drillAngle ?? 118));
+  const [termination, setTermination] = useState<HoleTermination>((p.termination as HoleTermination) ?? 'blind');
+  const [diameter, setDiameter] = useState(Number(p.diameter ?? 5));
+  const [depth, setDepth] = useState(Number(p.depth ?? 10));
+  const [cbDiameter, setCbDiameter] = useState(Number(p.cbDiameter ?? 10));
+  const [cbDepth, setCbDepth] = useState(Number(p.cbDepth ?? 3));
+  const [csAngle, setCsAngle] = useState(Number(p.csAngle ?? 90));
+  const [csDiameter, setCsDiameter] = useState(Number(p.csDiameter ?? 9));
 
   const addFeature = useCADStore((s) => s.addFeature);
+  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const through = termination === 'through-all' || termination === 'to-next';
 
   const handleApply = () => {
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Hole (${diameter}mm Ø, ${holeType})`,
-      type: 'hole',
-      params: {
-        holeType, tapType, drillPoint, drillAngle, termination,
-        diameter, depth,
-        cbDiameter, cbDepth,
-        csAngle, csDiameter,
-      },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
+    const params = {
+      holeType, tapType, drillPoint, drillAngle, termination,
+      diameter, depth,
+      cbDiameter, cbDepth,
+      csAngle, csDiameter,
     };
-    addFeature(feature);
-    setStatusMessage(`Created ${holeType} hole: ${diameter}mm ${tapType}`);
+    if (editing) {
+      updateFeatureParams(editing.id, params);
+      setStatusMessage(`Updated ${holeType} hole: ${diameter}mm ${tapType}`);
+    } else {
+      const feature: Feature = {
+        id: crypto.randomUUID(),
+        name: `Hole (${diameter}mm Ø, ${holeType})`,
+        type: 'hole',
+        params,
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+      };
+      addFeature(feature);
+      setStatusMessage(`Created ${holeType} hole: ${diameter}mm ${tapType}`);
+    }
     onClose();
   };
 
@@ -50,7 +62,7 @@ export function HoleDialog({ onClose }: { onClose: () => void }) {
     <div className="dialog-overlay">
       <div className="dialog">
         <div className="dialog-header">
-          <h3>Hole</h3>
+          <h3>{editing ? 'Edit Hole' : 'Hole'}</h3>
           <button className="dialog-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="dialog-body">

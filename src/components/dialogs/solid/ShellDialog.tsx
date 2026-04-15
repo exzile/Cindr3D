@@ -4,24 +4,36 @@ import { useCADStore } from '../../../store/cadStore';
 import type { Feature } from '../../../types/cad';
 
 export function ShellDialog({ onClose }: { onClose: () => void }) {
-  const [thickness, setThickness] = useState(2);
-  const [direction, setDirection] = useState<'inside' | 'outside' | 'both'>('inside');
-  const [tangentChain, setTangentChain] = useState(true);
+  // D186: pre-fill from feature being edited
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
+  const features = useCADStore((s) => s.features);
+  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p = editing?.params ?? {};
+
+  const [thickness, setThickness] = useState(Number(p.thickness ?? 2));
+  const [direction, setDirection] = useState<'inside' | 'outside' | 'both'>((p.direction as 'inside' | 'outside' | 'both') ?? 'inside');
+  const [tangentChain, setTangentChain] = useState(p.tangentChain !== false);
   const addFeature = useCADStore((s) => s.addFeature);
+  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const handleApply = () => {
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Shell (${thickness}mm ${direction})`,
-      type: 'shell',
-      params: { thickness, direction, tangentChain, removeFaces: '' },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    };
-    addFeature(feature);
-    setStatusMessage(`Created ${direction} shell with ${thickness}mm thickness`);
+    if (editing) {
+      updateFeatureParams(editing.id, { thickness, direction, tangentChain });
+      setStatusMessage(`Updated shell (${thickness}mm ${direction})`);
+    } else {
+      const feature: Feature = {
+        id: crypto.randomUUID(),
+        name: `Shell (${thickness}mm ${direction})`,
+        type: 'shell',
+        params: { thickness, direction, tangentChain, removeFaces: '' },
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+      };
+      addFeature(feature);
+      setStatusMessage(`Created ${direction} shell with ${thickness}mm thickness`);
+    }
     onClose();
   };
 
@@ -29,7 +41,7 @@ export function ShellDialog({ onClose }: { onClose: () => void }) {
     <div className="dialog-overlay">
       <div className="dialog dialog-sm">
         <div className="dialog-header">
-          <h3>Shell</h3>
+          <h3>{editing ? 'Edit Shell' : 'Shell'}</h3>
           <button className="dialog-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="dialog-body">

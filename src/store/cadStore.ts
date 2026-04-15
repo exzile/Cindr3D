@@ -79,6 +79,8 @@ interface CADState {
   replaceSketchEntities: (entities: SketchEntity[]) => void;
   /** D57: toggle a single entity's linetype (line ↔ construction-line ↔ centerline) */
   cycleEntityLinetype: (entityId: string) => void;
+  /** S6: remove the 'linked' flag on a projected entity so it becomes an independent editable entity */
+  breakProjectionLink: (entityId: string) => void;
   copySketch: (id: string) => void;
   deleteSketch: (id: string) => void;
   renameSketch: (id: string, name: string) => void;
@@ -94,6 +96,16 @@ interface CADState {
   removeFeature: (id: string) => void;
   toggleFeatureVisibility: (id: string) => void;
   toggleFeatureSuppressed: (id: string) => void;
+  /** D186: Feature currently being edited via a dialog (pre-fills dialog values). */
+  editingFeatureId: string | null;
+  setEditingFeatureId: (id: string | null) => void;
+  /** D186: Update params on an existing feature in-place. */
+  updateFeatureParams: (id: string, params: Record<string, number | string | boolean | number[]>) => void;
+  /** D189: Move a feature to a new position in the timeline. */
+  reorderFeature: (id: string, newIndex: number) => void;
+  /** D190: Rollback index — features at index >= this are skipped when rendering. */
+  rollbackIndex: number;
+  setRollbackIndex: (index: number) => void;
   selectedFeatureId: string | null;
   setSelectedFeatureId: (id: string | null) => void;
 
@@ -114,6 +126,13 @@ interface CADState {
   deleteFormElements: (type: FormElementType, ids: string[]) => void;
   /** D152: Move one or more vertices in a cage by updating their positions. */
   updateFormVertices: (bodyId: string, updates: { id: string; position: [number, number, number] }[]) => void;
+  /** D155: Set the subdivision level (1–5) of a form body. */
+  setFormBodySubdivisionLevel: (id: string, level: number) => void;
+  /** D160: Set crease value on all vertices of a form body (0 = uncrease, 1 = crease). */
+  setFormBodyCrease: (id: string, crease: number) => void;
+  /** D166: Frozen vertices — dragging is blocked for these vertex ids. */
+  frozenFormVertices: string[];
+  toggleFrozenFormVertex: (id: string) => void;
 
   // Grid & snap
   gridSize: number;
@@ -193,6 +212,15 @@ interface CADState {
   setSectionAxis: (axis: 'x' | 'y' | 'z') => void;
   setSectionOffset: (offset: number) => void;
   setSectionFlip: (flip: boolean) => void;
+  // D182 – Component color overlay
+  showComponentColors: boolean;
+  setShowComponentColors: (v: boolean) => void;
+
+  // D185 – Canvas reference images
+  canvasReferences: Array<{ id: string; dataUrl: string; plane: string; offsetX: number; offsetY: number; scale: number; opacity: number }>;
+  addCanvasReference: (ref: { id: string; dataUrl: string; plane: string; offsetX: number; offsetY: number; scale: number; opacity: number }) => void;
+  removeCanvasReference: (id: string) => void;
+
   // Visibility toggles (D56)
   showSketchPoints: boolean;
   setShowSketchPoints: (v: boolean) => void;
@@ -704,6 +732,19 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     set({ activeSketch: { ...activeSketch, entities: updated } });
   },
 
+  // S6 Break Link — remove the 'linked' flag so a projected entity becomes editable
+  breakProjectionLink: (entityId) => {
+    const { activeSketch } = get();
+    if (!activeSketch) return;
+    const updated = activeSketch.entities.map((e) =>
+      e.id === entityId ? { ...e, linked: false } : e,
+    );
+    set({
+      activeSketch: { ...activeSketch, entities: updated },
+      statusMessage: 'Projection link broken — entity is now independent',
+    });
+  },
+
   copySketch: (id) => set((state) => {
     const src = state.sketches.find((s) => s.id === id);
     if (!src) return state;
@@ -808,6 +849,28 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     if (target?.mesh) target.mesh.geometry?.dispose();
     return { features: state.features.filter((f) => f.id !== id) };
   }),
+  // D186 Edit Feature state
+  editingFeatureId: null,
+  setEditingFeatureId: (id) => set({ editingFeatureId: id }),
+  updateFeatureParams: (id, params) => set((state) => ({
+    features: state.features.map((f) =>
+      f.id === id ? { ...f, params: { ...f.params, ...params } } : f,
+    ),
+    statusMessage: 'Feature parameters updated',
+  })),
+  // D189 reorder feature
+  reorderFeature: (id, newIndex) => set((state) => {
+    const idx = state.features.findIndex((f) => f.id === id);
+    if (idx === -1) return {};
+    const next = [...state.features];
+    const [moved] = next.splice(idx, 1);
+    const clamped = Math.max(0, Math.min(newIndex, next.length));
+    next.splice(clamped, 0, moved);
+    return { features: next, statusMessage: `Moved ${moved.name}` };
+  }),
+  // D190 rollback bar
+  rollbackIndex: -1,
+  setRollbackIndex: (index) => set({ rollbackIndex: index }),
   // D119 Tessellate
   tessellateFeature: (featureId) => {
     const { features } = get();
@@ -856,13 +919,14 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       m.geometry = newGeom;
       oldGeom.dispose();
     };
-    if (feature.mesh instanceof THREE.Mesh) {
-      applyToMesh(feature.mesh).then(() => {
+    const featureMesh = feature.mesh as THREE.Object3D;
+    if (featureMesh instanceof THREE.Mesh) {
+      applyToMesh(featureMesh).then(() => {
         get().setStatusMessage(`Mesh reduced by ${reductionPercent}%`);
       });
-    } else if (feature.mesh instanceof THREE.Group) {
+    } else if (featureMesh instanceof THREE.Group) {
       const meshes: THREE.Mesh[] = [];
-      feature.mesh.traverse((child) => {
+      featureMesh.traverse((child) => {
         if (child instanceof THREE.Mesh) meshes.push(child);
       });
       Promise.all(meshes.map(applyToMesh)).then(() => {
@@ -880,10 +944,11 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Reverse Normal: selected feature has no mesh');
       return;
     }
-    if (feature.mesh instanceof THREE.Mesh) {
-      GeometryEngine.reverseNormals(feature.mesh.geometry);
-    } else if (feature.mesh instanceof THREE.Group) {
-      feature.mesh.traverse((child) => {
+    const featureMesh = feature.mesh as THREE.Object3D;
+    if (featureMesh instanceof THREE.Mesh) {
+      GeometryEngine.reverseNormals(featureMesh.geometry);
+    } else if (featureMesh instanceof THREE.Group) {
+      featureMesh.traverse((child) => {
         if (child instanceof THREE.Mesh) GeometryEngine.reverseNormals(child.geometry);
       });
     }
@@ -957,6 +1022,30 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       posMap.has(v.id) ? { ...v, position: posMap.get(v.id)! } : v
     );
     return { formBodies: state.formBodies.map((b) => b.id === bodyId ? { ...body, vertices: newVerts } : b) };
+  }),
+
+  setFormBodySubdivisionLevel: (id, level) => set((state) => ({
+    // Clamp at 3 — FormBodies renderer caps subdivision at 3 for performance;
+    // higher levels would be silently ignored and confuse the user.
+    formBodies: state.formBodies.map((b) =>
+      b.id !== id ? b : { ...b, subdivisionLevel: Math.max(1, Math.min(3, level)) }
+    ),
+  })),
+
+  setFormBodyCrease: (id, crease) => set((state) => ({
+    formBodies: state.formBodies.map((b) =>
+      b.id !== id ? b : { ...b, vertices: b.vertices.map((v) => ({ ...v, crease })) }
+    ),
+  })),
+
+  frozenFormVertices: [],
+  toggleFrozenFormVertex: (id) => set((state) => {
+    const frozen = state.frozenFormVertices;
+    return {
+      frozenFormVertices: frozen.includes(id)
+        ? frozen.filter((v) => v !== id)
+        : [...frozen, id],
+    };
   }),
 
   gridSize: 10,
@@ -1240,6 +1329,15 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   setSectionAxis: (axis) => set({ sectionAxis: axis }),
   setSectionOffset: (offset) => set({ sectionOffset: offset }),
   setSectionFlip: (flip) => set({ sectionFlip: flip }),
+
+  // D182 – Component color overlay
+  showComponentColors: false,
+  setShowComponentColors: (v) => set({ showComponentColors: v }),
+
+  // D185 – Canvas reference images
+  canvasReferences: [],
+  addCanvasReference: (ref) => set((state) => ({ canvasReferences: [...state.canvasReferences, ref] })),
+  removeCanvasReference: (id) => set((state) => ({ canvasReferences: state.canvasReferences.filter((r) => r.id !== id) })),
 
   // Visibility toggles (D56)
   showSketchPoints: true,
@@ -1818,7 +1916,11 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   setShowExportDialog: (show) => set({ showExportDialog: show }),
 
   activeDialog: null,
-  setActiveDialog: (dialog) => set({ activeDialog: dialog }),
+  setActiveDialog: (dialog) => set((state) => ({
+    activeDialog: dialog,
+    // D186: closing the dialog also clears editing state so the next one opens fresh
+    editingFeatureId: dialog === null ? null : state.editingFeatureId,
+  })),
   dialogPayload: null,
   setDialogPayload: (payload) => set({ dialogPayload: payload }),
 
@@ -1910,10 +2012,12 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     showEnvironment: state.showEnvironment,
     showShadows: state.showShadows,
     showGroundPlane: state.showGroundPlane,
+    showComponentColors: state.showComponentColors,
     // Model data
     sketches: state.sketches,
     features: state.features.map((f) => serializeFeature(f) as Feature),
     parameters: state.parameters,
+    frozenFormVertices: state.frozenFormVertices,
   }),
 
 }));

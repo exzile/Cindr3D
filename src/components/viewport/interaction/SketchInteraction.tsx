@@ -33,7 +33,7 @@ export default function SketchInteraction() {
   const [drawingPoints, setDrawingPoints] = useState<SketchPoint[]>([]);
   const [mousePos, setMousePos] = useState<THREE.Vector3 | null>(null);
   // D65: snap indicator target
-  const [snapTarget, setSnapTarget] = useState<{ worldPos: THREE.Vector3; type: 'endpoint' | 'midpoint' | 'center' } | null>(null);
+  const [snapTarget, setSnapTarget] = useState<{ worldPos: THREE.Vector3; type: 'endpoint' | 'midpoint' | 'center' | 'intersection' } | null>(null);
   const previewRef = useRef<THREE.Group>(null);
   // Stable preview materials — created once, never recreated per frame
   const previewMaterial = useRef(new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 2 }));
@@ -102,12 +102,20 @@ export default function SketchInteraction() {
     );
   }, [snapEnabled, gridSize]);
 
-  // D65: find nearest snap candidate (endpoint / midpoint / center) within snap radius
+  // D65 / S8: find nearest snap candidate (endpoint / midpoint / center / intersection) within snap radius
   const SNAP_RADIUS = 4;
   const findSnapCandidate = useCallback((worldPt: THREE.Vector3) => {
     if (!activeSketch || !snapEnabled) return null;
     let bestDist = SNAP_RADIUS;
-    let best: { worldPos: THREE.Vector3; type: 'endpoint' | 'midpoint' | 'center' } | null = null;
+    let best: { worldPos: THREE.Vector3; type: 'endpoint' | 'midpoint' | 'center' | 'intersection' } | null = null;
+
+    // Collect line-like entities for intersection testing (S8)
+    const lineEntities = activeSketch.entities.filter(
+      (e) =>
+        (e.type === 'line' || e.type === 'construction-line' || e.type === 'centerline') &&
+        e.points.length >= 2,
+    );
+
     for (const e of activeSketch.entities) {
       if ((e.type === 'line' || e.type === 'construction-line' || e.type === 'centerline') && e.points.length >= 2) {
         for (const idx of [0, e.points.length - 1]) {
@@ -126,6 +134,63 @@ export default function SketchInteraction() {
         if (d < bestDist) { bestDist = d; best = { worldPos: center, type: 'center' }; }
       }
     }
+
+    // S8: brute-force line-line intersection snap. For each pair of line-like
+    // entities, compute the 3D closest-approach point on the first segment and
+    // check if it's near the cursor. Uses infinite-line equations so the result
+    // works even when the segments don't strictly overlap — matching Fusion 360.
+    for (let i = 0; i < lineEntities.length; i++) {
+      const a = lineEntities[i];
+      const A0 = new THREE.Vector3(a.points[0].x, a.points[0].y, a.points[0].z);
+      const Ad = new THREE.Vector3(
+        a.points[a.points.length - 1].x - a.points[0].x,
+        a.points[a.points.length - 1].y - a.points[0].y,
+        a.points[a.points.length - 1].z - a.points[0].z,
+      );
+      const aLen = Ad.length();
+      if (aLen < 1e-6) continue;
+      Ad.divideScalar(aLen);
+
+      for (let j = i + 1; j < lineEntities.length; j++) {
+        const b = lineEntities[j];
+        const B0 = new THREE.Vector3(b.points[0].x, b.points[0].y, b.points[0].z);
+        const Bd = new THREE.Vector3(
+          b.points[b.points.length - 1].x - b.points[0].x,
+          b.points[b.points.length - 1].y - b.points[0].y,
+          b.points[b.points.length - 1].z - b.points[0].z,
+        );
+        const bLen = Bd.length();
+        if (bLen < 1e-6) continue;
+        Bd.divideScalar(bLen);
+
+        // Parametric closest-approach between infinite lines:
+        //   P1 = A0 + t*Ad    P2 = B0 + s*Bd
+        //   solve t, s = minimize |P1 - P2|
+        const w0 = new THREE.Vector3().subVectors(A0, B0);
+        const a11 = Ad.dot(Ad);
+        const a12 = -Ad.dot(Bd);
+        const a22 = Bd.dot(Bd);
+        const b1 = -Ad.dot(w0);
+        const b2 = Bd.dot(w0);
+        const det = a11 * a22 - a12 * a12;
+        if (Math.abs(det) < 1e-8) continue; // parallel — no unique intersection
+        const t = (a22 * b1 - a12 * b2) / det;
+        const s = (a11 * b2 - a12 * b1) / det;
+        // Keep snaps that lie on (or very near) both segments — within 10% tolerance
+        if (t < -0.1 * aLen || t > 1.1 * aLen) continue;
+        if (s < -0.1 * bLen || s > 1.1 * bLen) continue;
+
+        const P1 = A0.clone().add(Ad.clone().multiplyScalar(t));
+        const P2 = B0.clone().add(Bd.clone().multiplyScalar(s));
+        // Only accept if the closest-approach distance is small (i.e. actual intersection)
+        if (P1.distanceTo(P2) > 0.5) continue;
+
+        const mid = P1.clone().add(P2).multiplyScalar(0.5);
+        const d = worldPt.distanceTo(mid);
+        if (d < bestDist) { bestDist = d; best = { worldPos: mid, type: 'intersection' }; }
+      }
+    }
+
     return best;
   }, [activeSketch, snapEnabled]);
 
@@ -583,6 +648,12 @@ export default function SketchInteraction() {
           )}
           {snapTarget.type === 'center' && (
             <div style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid #f97316', pointerEvents: 'none' }} />
+          )}
+          {snapTarget.type === 'intersection' && (
+            <div style={{ width: 12, height: 12, position: 'relative', pointerEvents: 'none' }}>
+              <div style={{ position: 'absolute', top: 5, left: 0, width: 12, height: 2, background: '#f97316', transform: 'rotate(45deg)', transformOrigin: 'center' }} />
+              <div style={{ position: 'absolute', top: 5, left: 0, width: 12, height: 2, background: '#f97316', transform: 'rotate(-45deg)', transformOrigin: 'center' }} />
+            </div>
           )}
         </Html>
       )}

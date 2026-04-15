@@ -27,6 +27,7 @@ export default function SketchRenderer() {
   const sketches = useCADStore((s) => s.sketches);
   const showProfile = useCADStore((s) => s.showSketchProfile);
   const showSketchPoints = useCADStore((s) => s.showSketchPoints);
+  const rollbackIndex = useCADStore((s) => s.rollbackIndex);
 
   const profileMaterial = useMemo(() => new THREE.MeshBasicMaterial({
     color: 0x3a7fcc, opacity: 0.25, transparent: true, side: THREE.DoubleSide, depthWrite: false,
@@ -45,7 +46,12 @@ export default function SketchRenderer() {
 
   return (
     <>
-      {features.filter(f => f.type === 'sketch' && f.visible).map((feature) => {
+      {features.filter((f, i) => {
+        // D187 suppress + D190 rollback + visibility
+        if (f.type !== 'sketch' || !f.visible || f.suppressed) return false;
+        if (rollbackIndex >= 0 && i > rollbackIndex) return false;
+        return true;
+      }).map((feature) => {
         const sketch = sketches.find(s => s.id === feature.sketchId);
         if (!sketch) return null;
         return <SketchGeometry key={feature.id} sketch={sketch} />;

@@ -50,6 +50,9 @@ export { ConvertMeshToBRepDialog } from './mesh/ConvertMeshToBRepDialog';
 // sketch
 export { RenameSketchDialog } from './sketch/RenameSketchDialog';
 export { RedefineSketchPlaneDialog } from './sketch/RedefineSketchPlaneDialog';
+export { InsertSVGDialog } from './sketch/InsertSVGDialog';
+export { InsertDXFDialog } from './sketch/InsertDXFDialog';
+export { InsertCanvasDialog } from './sketch/InsertCanvasDialog';
 
 // construction
 export { ConstructionPlaneDialog } from './construction/ConstructionPlaneDialog';
@@ -72,6 +75,11 @@ export { RigidGroupDialog } from './assembly/RigidGroupDialog';
 // additional solid dialogs
 export { OffsetFaceDialog } from './solid/OffsetFaceDialog';
 export { AlignDialog } from './solid/AlignDialog';
+export { PipeDialog } from './solid/PipeDialog';
+export { MoveBodyDialog } from './solid/MoveBodyDialog';
+export { SplitBodyDialog } from './solid/SplitBodyDialog';
+export { PhysicalMaterialDialog } from './solid/PhysicalMaterialDialog';
+export { AppearanceDialog } from './solid/AppearanceDialog';
 
 // additional surface dialogs
 export { UntrimDialog } from './surface/UntrimDialog';

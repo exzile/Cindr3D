@@ -4,14 +4,21 @@ import { useCADStore } from '../../../store/cadStore';
 import type { Feature } from '../../../types/cad';
 
 export function ScaleDialog({ onClose }: { onClose: () => void }) {
-  const [scaleType, setScaleType] = useState<'uniform' | 'non-uniform'>('uniform');
-  const [factor, setFactor] = useState(1);
-  const [factorX, setFactorX] = useState(1);
-  const [factorY, setFactorY] = useState(1);
-  const [factorZ, setFactorZ] = useState(1);
-  const [refPoint, setRefPoint] = useState<'centroid' | 'origin'>('centroid');
+  // D186: pre-fill from feature being edited
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
+  const features = useCADStore((s) => s.features);
+  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p = editing?.params ?? {};
+
+  const [scaleType, setScaleType] = useState<'uniform' | 'non-uniform'>(((p.scaleType as 'uniform' | 'non-uniform') ?? 'uniform'));
+  const [factor, setFactor] = useState(Number(p.factor ?? 1));
+  const [factorX, setFactorX] = useState(Number(p.factorX ?? 1));
+  const [factorY, setFactorY] = useState(Number(p.factorY ?? 1));
+  const [factorZ, setFactorZ] = useState(Number(p.factorZ ?? 1));
+  const [refPoint, setRefPoint] = useState<'centroid' | 'origin'>(((p.refPoint as 'centroid' | 'origin') ?? 'centroid'));
 
   const addFeature = useCADStore((s) => s.addFeature);
+  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const handleApply = () => {
@@ -21,17 +28,22 @@ export function ScaleDialog({ onClose }: { onClose: () => void }) {
     const label = scaleType === 'uniform'
       ? `${factor}×`
       : `${factorX}×${factorY}×${factorZ}`;
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Scale (${label})`,
-      type: 'scale',
-      params,
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    };
-    addFeature(feature);
-    setStatusMessage(`Solid scaled ${label}`);
+    if (editing) {
+      updateFeatureParams(editing.id, params);
+      setStatusMessage(`Updated scale ${label}`);
+    } else {
+      const feature: Feature = {
+        id: crypto.randomUUID(),
+        name: `Scale (${label})`,
+        type: 'scale',
+        params,
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+      };
+      addFeature(feature);
+      setStatusMessage(`Solid scaled ${label}`);
+    }
     onClose();
   };
 
@@ -39,7 +51,7 @@ export function ScaleDialog({ onClose }: { onClose: () => void }) {
     <div className="dialog-overlay">
       <div className="dialog dialog-sm">
         <div className="dialog-header">
-          <h3>Scale</h3>
+          <h3>{editing ? 'Edit Scale' : 'Scale'}</h3>
           <button className="dialog-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="dialog-body">

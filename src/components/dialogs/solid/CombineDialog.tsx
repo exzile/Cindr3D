@@ -4,24 +4,35 @@ import { useCADStore } from '../../../store/cadStore';
 import type { Feature, BooleanOperation } from '../../../types/cad';
 
 export function CombineDialog({ onClose }: { onClose: () => void }) {
-  const [operation, setOperation] = useState<BooleanOperation>('join');
-  const [keepTools, setKeepTools] = useState(false);
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
+  const features = useCADStore((s) => s.features);
+  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p = editing?.params ?? {};
+
+  const [operation, setOperation] = useState<BooleanOperation>((p.operation as BooleanOperation) ?? 'join');
+  const [keepTools, setKeepTools] = useState(p.keepTools !== false && !!p.keepTools);
 
   const addFeature = useCADStore((s) => s.addFeature);
+  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const handleApply = () => {
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Combine (${operation})`,
-      type: 'combine',
-      params: { operation, keepTools },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    };
-    addFeature(feature);
-    setStatusMessage(`Created ${operation} operation${keepTools ? ' (keep tools)' : ''}`);
+    if (editing) {
+      updateFeatureParams(editing.id, { operation, keepTools });
+      setStatusMessage(`Updated ${operation} operation${keepTools ? ' (keep tools)' : ''}`);
+    } else {
+      const feature: Feature = {
+        id: crypto.randomUUID(),
+        name: `Combine (${operation})`,
+        type: 'combine',
+        params: { operation, keepTools },
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+      };
+      addFeature(feature);
+      setStatusMessage(`Created ${operation} operation${keepTools ? ' (keep tools)' : ''}`);
+    }
     onClose();
   };
 
@@ -29,7 +40,7 @@ export function CombineDialog({ onClose }: { onClose: () => void }) {
     <div className="dialog-overlay">
       <div className="dialog dialog-sm">
         <div className="dialog-header">
-          <h3>Combine Bodies</h3>
+          <h3>{editing ? 'Edit Combine Bodies' : 'Combine Bodies'}</h3>
           <button className="dialog-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="dialog-body">

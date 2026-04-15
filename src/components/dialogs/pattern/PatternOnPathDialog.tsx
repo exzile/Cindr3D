@@ -4,36 +4,48 @@ import { useCADStore } from '../../../store/cadStore';
 import type { Feature } from '../../../types/cad';
 
 export function PatternOnPathDialog({ onClose }: { onClose: () => void }) {
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
+  const features = useCADStore((s) => s.features);
+  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p = editing?.params ?? {};
+
   const sketches = useCADStore((s) => s.sketches);
   const addFeature = useCADStore((s) => s.addFeature);
+  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
-  const [pathSketchId, setPathSketchId] = useState<string>('');
-  const [count, setCount] = useState(4);
-  const [alignment, setAlignment] = useState<'tangent' | 'fixed'>('tangent');
-  const [distance, setDistance] = useState(100);
-  const [distanceType, setDistanceType] = useState<'percent' | 'spacing'>('percent');
+  const [pathSketchId, setPathSketchId] = useState<string>(String(p.pathSketchId ?? ''));
+  const [count, setCount] = useState(Number(p.count ?? 4));
+  const [alignment, setAlignment] = useState<'tangent' | 'fixed'>((p.alignment as 'tangent' | 'fixed') ?? 'tangent');
+  const [distance, setDistance] = useState(Number(p.distance ?? 100));
+  const [distanceType, setDistanceType] = useState<'percent' | 'spacing'>((p.distanceType as 'percent' | 'spacing') ?? 'percent');
 
   const handleApply = () => {
     const sketch = sketches.find((s) => s.id === pathSketchId);
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Pattern on Path (${count}×)`,
-      type: 'pattern-on-path',
-      params: {
-        pathSketchId,
-        pathSketchName: sketch?.name ?? '',
-        count,
-        alignment,
-        distance,
-        distanceType,
-      },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
+    const params = {
+      pathSketchId,
+      pathSketchName: sketch?.name ?? '',
+      count,
+      alignment,
+      distance,
+      distanceType,
     };
-    addFeature(feature);
-    setStatusMessage(`Created pattern on path: ${count} instances`);
+    if (editing) {
+      updateFeatureParams(editing.id, params);
+      setStatusMessage(`Updated pattern on path: ${count} instances`);
+    } else {
+      const feature: Feature = {
+        id: crypto.randomUUID(),
+        name: `Pattern on Path (${count}×)`,
+        type: 'pattern-on-path',
+        params,
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+      };
+      addFeature(feature);
+      setStatusMessage(`Created pattern on path: ${count} instances`);
+    }
     onClose();
   };
 
@@ -41,7 +53,7 @@ export function PatternOnPathDialog({ onClose }: { onClose: () => void }) {
     <div className="dialog-overlay">
       <div className="dialog dialog-sm">
         <div className="dialog-header">
-          <h3>Pattern on Path</h3>
+          <h3>{editing ? 'Edit Pattern on Path' : 'Pattern on Path'}</h3>
           <button className="dialog-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="dialog-body">

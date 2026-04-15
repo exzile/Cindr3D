@@ -8,7 +8,11 @@ const _objExporter = new OBJExporter();
 
 export class STLExporter {
   static exportBinary(object: THREE.Object3D): ArrayBuffer {
-    return (_stlExporter.parse(object, { binary: true }) as DataView).buffer;
+    const dv = _stlExporter.parse(object, { binary: true }) as DataView;
+    // Copy into a plain ArrayBuffer to avoid SharedArrayBuffer typing issues
+    const out = new ArrayBuffer(dv.byteLength);
+    new Uint8Array(out).set(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength));
+    return out;
   }
 
   static exportASCII(object: THREE.Object3D): string {
@@ -36,7 +40,10 @@ export class ThreeMFExporter {
       '3D/3dmodel.model':    enc.encode(this.buildModelXml(vertices, triangles, name)),
     });
 
-    return new Blob([zipped], { type: 'application/vnd.ms-package.3dmanufacturing-3dmodel+xml' });
+    // Copy zipped Uint8Array into a fresh ArrayBuffer to satisfy strict ArrayBuffer BlobPart typing
+    const copy = new Uint8Array(zipped.byteLength);
+    copy.set(zipped);
+    return new Blob([copy.buffer], { type: 'application/vnd.ms-package.3dmanufacturing-3dmodel+xml' });
   }
 
   private static collectMeshData(object: THREE.Object3D): {

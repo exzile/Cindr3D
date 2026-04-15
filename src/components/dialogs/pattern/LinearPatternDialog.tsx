@@ -4,44 +4,56 @@ import { useCADStore } from '../../../store/cadStore';
 import type { Feature } from '../../../types/cad';
 
 export function LinearPatternDialog({ onClose }: { onClose: () => void }) {
-  const [count, setCount] = useState(3);
-  const [spacing, setSpacing] = useState(20);
-  const [distribution, setDistribution] = useState<'spacing' | 'extent'>('spacing');
-  const [directionX, setDirectionX] = useState(1);
-  const [directionY, setDirectionY] = useState(0);
-  const [directionZ, setDirectionZ] = useState(0);
-  const [useSecond, setUseSecond] = useState(false);
-  const [count2, setCount2] = useState(2);
-  const [spacing2, setSpacing2] = useState(20);
-  const [distribution2, setDistribution2] = useState<'spacing' | 'extent'>('spacing');
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
+  const features = useCADStore((s) => s.features);
+  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p = editing?.params ?? {};
+
+  const [count, setCount] = useState(Number(p.count ?? 3));
+  const [spacing, setSpacing] = useState(Number(p.spacing ?? 20));
+  const [distribution, setDistribution] = useState<'spacing' | 'extent'>((p.distribution as 'spacing' | 'extent') ?? 'spacing');
+  const [directionX, setDirectionX] = useState(Number(p.directionX ?? 1));
+  const [directionY, setDirectionY] = useState(Number(p.directionY ?? 0));
+  const [directionZ, setDirectionZ] = useState(Number(p.directionZ ?? 0));
+  const [useSecond, setUseSecond] = useState(p.useSecondDirection !== false && !!p.useSecondDirection);
+  const [count2, setCount2] = useState(Number(p.count2 ?? 2));
+  const [spacing2, setSpacing2] = useState(Number(p.spacing2 ?? 20));
+  const [distribution2, setDistribution2] = useState<'spacing' | 'extent'>((p.distribution2 as 'spacing' | 'extent') ?? 'spacing');
 
   const addFeature = useCADStore((s) => s.addFeature);
+  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const effectiveSpacing = distribution === 'extent' ? spacing / Math.max(1, count - 1) : spacing;
   const effectiveSpacing2 = distribution2 === 'extent' ? spacing2 / Math.max(1, count2 - 1) : spacing2;
 
   const handleApply = () => {
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Linear Pattern (${count}${useSecond ? `×${count2}` : ''})`,
-      type: 'linear-pattern',
-      params: {
-        count,
-        spacing: effectiveSpacing,
-        distribution,
-        directionX, directionY, directionZ,
-        useSecondDirection: useSecond,
-        count2: useSecond ? count2 : 1,
-        spacing2: useSecond ? effectiveSpacing2 : 0,
-        distribution2: useSecond ? distribution2 : 'spacing',
-      },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
+    const params = {
+      count,
+      spacing: effectiveSpacing,
+      distribution,
+      directionX, directionY, directionZ,
+      useSecondDirection: useSecond,
+      count2: useSecond ? count2 : 1,
+      spacing2: useSecond ? effectiveSpacing2 : 0,
+      distribution2: useSecond ? distribution2 : 'spacing',
     };
-    addFeature(feature);
-    setStatusMessage(`Created linear pattern: ${count}${useSecond ? ` × ${count2}` : ''} instances`);
+    if (editing) {
+      updateFeatureParams(editing.id, params);
+      setStatusMessage(`Updated linear pattern: ${count}${useSecond ? ` × ${count2}` : ''} instances`);
+    } else {
+      const feature: Feature = {
+        id: crypto.randomUUID(),
+        name: `Linear Pattern (${count}${useSecond ? `×${count2}` : ''})`,
+        type: 'linear-pattern',
+        params,
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+      };
+      addFeature(feature);
+      setStatusMessage(`Created linear pattern: ${count}${useSecond ? ` × ${count2}` : ''} instances`);
+    }
     onClose();
   };
 
@@ -49,7 +61,7 @@ export function LinearPatternDialog({ onClose }: { onClose: () => void }) {
     <div className="dialog-overlay">
       <div className="dialog">
         <div className="dialog-header">
-          <h3>Linear Pattern</h3>
+          <h3>{editing ? 'Edit Linear Pattern' : 'Linear Pattern'}</h3>
           <button className="dialog-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="dialog-body">

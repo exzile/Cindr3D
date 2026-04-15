@@ -4,16 +4,27 @@ import { useCADStore } from '../../../store/cadStore';
 import type { Feature } from '../../../types/cad';
 
 export function SilhouetteSplitDialog({ onClose }: { onClose: () => void }) {
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
   const features = useCADStore((s) => s.features);
+  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p = editing?.params ?? {};
+
   const addFeature = useCADStore((s) => s.addFeature);
+  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const bodyFeatures = features.filter((f) => !!f.mesh);
   const splitCount = features.filter((f) => f.type === 'split-body' && f.name.startsWith('Silhouette Split')).length;
 
-  const [selectedId, setSelectedId] = useState<string>(bodyFeatures[0]?.id ?? '');
-  const [direction, setDirection] = useState<'x' | 'y' | 'z'>('z');
-  const [operation, setOperation] = useState<'split-bodies' | 'new-body'>('split-bodies');
+  // direction is stored as array [1,0,0] / [0,1,0] / [0,0,1]; decode it for the select
+  const storedDir = p.direction as number[] | undefined;
+  const decodedDir: 'x' | 'y' | 'z' =
+    storedDir && storedDir[0] === 1 ? 'x' :
+    storedDir && storedDir[1] === 1 ? 'y' : 'z';
+
+  const [selectedId, setSelectedId] = useState<string>(String(p.bodyId ?? bodyFeatures[0]?.id ?? ''));
+  const [direction, setDirection] = useState<'x' | 'y' | 'z'>(decodedDir);
+  const [operation, setOperation] = useState<'split-bodies' | 'new-body'>((p.operation as 'split-bodies' | 'new-body') ?? 'split-bodies');
 
   const handleApply = () => {
     if (!selectedId) {
@@ -21,17 +32,22 @@ export function SilhouetteSplitDialog({ onClose }: { onClose: () => void }) {
       return;
     }
     const dirVec = direction === 'x' ? [1, 0, 0] : direction === 'y' ? [0, 1, 0] : [0, 0, 1];
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Silhouette Split ${splitCount + 1}`,
-      type: 'split-body',
-      params: { bodyId: selectedId, direction: dirVec, operation },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    };
-    addFeature(feature);
-    setStatusMessage(`Silhouette Split created along ${direction.toUpperCase()} axis`);
+    if (editing) {
+      updateFeatureParams(editing.id, { bodyId: selectedId, direction: dirVec, operation });
+      setStatusMessage(`Updated Silhouette Split along ${direction.toUpperCase()} axis`);
+    } else {
+      const feature: Feature = {
+        id: crypto.randomUUID(),
+        name: `Silhouette Split ${splitCount + 1}`,
+        type: 'split-body',
+        params: { bodyId: selectedId, direction: dirVec, operation },
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+      };
+      addFeature(feature);
+      setStatusMessage(`Silhouette Split created along ${direction.toUpperCase()} axis`);
+    }
     onClose();
   };
 
@@ -39,7 +55,7 @@ export function SilhouetteSplitDialog({ onClose }: { onClose: () => void }) {
     <div className="dialog-overlay">
       <div className="dialog dialog-sm">
         <div className="dialog-header">
-          <h3>Silhouette Split</h3>
+          <h3>{editing ? 'Edit Silhouette Split' : 'Silhouette Split'}</h3>
           <button className="dialog-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="dialog-body">

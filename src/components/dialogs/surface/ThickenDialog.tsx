@@ -4,25 +4,36 @@ import { useCADStore } from '../../../store/cadStore';
 import type { Feature } from '../../../types/cad';
 
 export function ThickenDialog({ onClose }: { onClose: () => void }) {
-  const [thickness, setThickness] = useState(2);
-  const [direction, setDirection] = useState<'inside' | 'outside' | 'symmetric'>('inside');
-  const [operation, setOperation] = useState<'new-body' | 'join' | 'cut'>('new-body');
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
+  const features = useCADStore((s) => s.features);
+  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p = editing?.params ?? {};
+
+  const [thickness, setThickness] = useState(Number(p.thickness ?? 2));
+  const [direction, setDirection] = useState<'inside' | 'outside' | 'symmetric'>((p.direction as 'inside' | 'outside' | 'symmetric') ?? 'inside');
+  const [operation, setOperation] = useState<'new-body' | 'join' | 'cut'>((p.operation as 'new-body' | 'join' | 'cut') ?? 'new-body');
 
   const addFeature = useCADStore((s) => s.addFeature);
+  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const handleApply = () => {
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Thicken (${thickness}mm, ${direction})`,
-      type: 'thicken',
-      params: { thickness, direction, operation },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    };
-    addFeature(feature);
-    setStatusMessage(`Created thicken: ${thickness}mm ${direction}`);
+    if (editing) {
+      updateFeatureParams(editing.id, { thickness, direction, operation });
+      setStatusMessage(`Updated thicken: ${thickness}mm ${direction}`);
+    } else {
+      const feature: Feature = {
+        id: crypto.randomUUID(),
+        name: `Thicken (${thickness}mm, ${direction})`,
+        type: 'thicken',
+        params: { thickness, direction, operation },
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+      };
+      addFeature(feature);
+      setStatusMessage(`Created thicken: ${thickness}mm ${direction}`);
+    }
     onClose();
   };
 
@@ -30,7 +41,7 @@ export function ThickenDialog({ onClose }: { onClose: () => void }) {
     <div className="dialog-overlay">
       <div className="dialog dialog-sm">
         <div className="dialog-header">
-          <h3>Thicken</h3>
+          <h3>{editing ? 'Edit Thicken' : 'Thicken'}</h3>
           <button className="dialog-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="dialog-body">
