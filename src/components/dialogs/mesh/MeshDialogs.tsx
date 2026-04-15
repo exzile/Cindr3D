@@ -120,7 +120,7 @@ export function TessellateDialog({ onClose }: { onClose: () => void }) {
   const selectedFeature = meshFeatures.find((f) => f.id === selectedId);
   let vertexCount: number | null = null;
   if (selectedFeature?.mesh) {
-    const m = selectedFeature.mesh;
+    const m = selectedFeature.mesh as THREE.Object3D;
     if (m instanceof THREE.Mesh) {
       vertexCount = m.geometry.attributes.position?.count ?? null;
     } else {

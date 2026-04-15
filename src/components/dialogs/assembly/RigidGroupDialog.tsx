@@ -19,7 +19,7 @@ export function RigidGroupDialog({ onClose }: { onClose: () => void }) {
       id: crypto.randomUUID(),
       name: groupName || `Rigid Group ${n}`,
       type: 'import',
-      params: { isRigidGroup: true, components, groupName: groupName || `Rigid Group ${n}` },
+      params: { isRigidGroup: true, components: components.join(','), groupName: groupName || `Rigid Group ${n}` },
       visible: true,
       suppressed: false,
       timestamp: Date.now(),

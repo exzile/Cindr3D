@@ -473,7 +473,7 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
     { icon: <Globe size={MI} />, label: 'Sphere', onClick: () => setActiveDialog('primitive-sphere') },
     { icon: <CircleDot size={MI} />, label: 'Torus', onClick: () => setActiveDialog('primitive-torus') },
     { icon: <Spline size={MI} />, label: 'Coil', onClick: () => setActiveDialog('primitive-coil') },
-    { icon: <Minus size={MI} />, label: 'Pipe', onClick: comingSoon('Pipe primitive') },
+    { icon: <Minus size={MI} />, label: 'Pipe', onClick: () => setActiveDialog('pipe') },
     {
       separator: true,
       icon: <Repeat size={MI} />,
@@ -503,14 +503,15 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
     { icon: <Scissors size={MI} />, label: 'Split Body', onClick: () => setActiveDialog('split') },
     { icon: <Scissors size={MI} />, label: 'Silhouette Split', onClick: () => setActiveDialog('silhouette-split') },
     { separator: true, icon: <Move size={MI} />, label: 'Move/Copy', shortcut: 'M', onClick: () => setActiveTool('move' as Tool) },
+    { icon: <Move size={MI} />, label: 'Move/Copy Body', onClick: () => setActiveDialog('move-body') },
     { icon: <AlignCenter size={MI} />, label: 'Align', onClick: () => setActiveDialog('align-dialog') },
     { icon: <Trash2 size={MI} />, label: 'Delete', shortcut: 'Del', onClick: () => {
       if (selectedFeatureId) { removeFeature(selectedFeatureId); setStatusMessage('Feature deleted'); }
       else setStatusMessage('Select a feature to delete');
     } },
     { icon: <Trash2 size={MI} />, label: 'Remove Face', onClick: () => setActiveDialog('remove-face') },
-    { separator: true, icon: <Diamond size={MI} />, label: 'Physical Material', onClick: comingSoon('Physical Material') },
-    { icon: <Pipette size={MI} />, label: 'Appearance', shortcut: 'A', onClick: () => setStatusMessage('Select a body to change materials') },
+    { separator: true, icon: <Diamond size={MI} />, label: 'Physical Material', onClick: () => setActiveDialog('physical-material') },
+    { icon: <Pipette size={MI} />, label: 'Appearance', shortcut: 'A', onClick: () => setActiveDialog('appearance') },
     { icon: <Diamond size={MI} />, label: 'Change Parameters', shortcut: 'Ctrl+B', onClick: () => setActiveDialog('parameters') },
   ];
 
@@ -553,7 +554,7 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   ];
 
   const inspectMenuItems: MenuItem[] = [
-    { icon: <Ruler size={MI} />, label: 'Measure', shortcut: 'I', onClick: () => setActiveTool('measure' as Tool) },
+    { icon: <Ruler size={MI} />, label: 'Measure', shortcut: 'I', onClick: () => { setActiveTool('measure' as Tool); setStatusMessage('Measure: click two points or entities to measure distance'); } },
     { icon: <AlertTriangle size={MI} />, label: 'Interference', onClick: comingSoon('Interference') },
     { separator: true, icon: <Spline size={MI} />, label: 'Curvature Comb Analysis', onClick: comingSoon('Curvature Comb Analysis') },
     { icon: <Spline size={MI} />, label: 'Zebra Analysis', onClick: comingSoon('Zebra Analysis') },
@@ -571,7 +572,7 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
       const cx = (sum.x / n).toFixed(2); const cy = (sum.y / n).toFixed(2); const cz = (sum.z / n).toFixed(2);
       setStatusMessage(`Center of Mass (approx): X=${cx} Y=${cy} Z=${cz} mm`);
     } },
-    { separator: true, icon: <Pipette size={MI} />, label: 'Display Component Colors', shortcut: 'Shift+N', onClick: comingSoon('Display Component Colors') },
+    { separator: true, icon: <Pipette size={MI} />, label: 'Display Component Colors', shortcut: 'Shift+N', checked: useCADStore.getState().showComponentColors, onClick: () => { const s = useCADStore.getState(); s.setShowComponentColors(!s.showComponentColors); s.setStatusMessage(s.showComponentColors ? 'Component colors: OFF' : 'Component colors: ON'); } },
   ];
 
   const selectMenuItems: MenuItem[] = [
@@ -1240,7 +1241,9 @@ const setStatusMessage = useCADStore((s) => s.setStatusMessage);
             {/* ── INSERT ─────────────────────────────────── */}
             <RibbonSection title="INSERT" accentColor="#555">
               <div className="ribbon-stack">
-                <ToolButton icon={<FileUp size={ICON_SM} />} label="Insert DXF" onClick={comingSoon('Insert DXF')} colorClass="icon-gray" />
+                <ToolButton icon={<FileUp size={ICON_SM} />} label="Insert SVG" onClick={() => setActiveDialog('insert-svg')} colorClass="icon-gray" />
+                <ToolButton icon={<FileUp size={ICON_SM} />} label="Insert DXF" onClick={() => setActiveDialog('insert-dxf')} colorClass="icon-gray" />
+                <ToolButton icon={<FileUp size={ICON_SM} />} label="Insert Canvas" onClick={() => setActiveDialog('insert-canvas')} colorClass="icon-gray" />
               </div>
             </RibbonSection>
 

@@ -65,6 +65,14 @@ import {
   MeshSeparateDialog,
   MeshTransformDialog,
   ConvertMeshToBRepDialog,
+  PipeDialog,
+  MoveBodyDialog,
+  SplitBodyDialog,
+  PhysicalMaterialDialog,
+  AppearanceDialog,
+  InsertSVGDialog,
+  InsertDXFDialog,
+  InsertCanvasDialog,
 } from './components/dialogs';
 import ParametersPanel from './components/panels/ParametersPanel';
 import { OffsetFaceDialog } from './components/dialogs/solid/OffsetFaceDialog';
@@ -145,6 +153,14 @@ function ActiveDialog() {
     case 'mesh-separate': return <MeshSeparateDialog onClose={close} />;
     case 'mesh-transform': return <MeshTransformDialog onClose={close} />;
     case 'convert-mesh-to-brep': return <ConvertMeshToBRepDialog onClose={close} />;
+    case 'pipe': return <PipeDialog onClose={close} />;
+    case 'move-body': return <MoveBodyDialog onClose={close} />;
+    case 'split': return <SplitBodyDialog onClose={close} />;
+    case 'physical-material': return <PhysicalMaterialDialog onClose={close} />;
+    case 'appearance': return <AppearanceDialog onClose={close} />;
+    case 'insert-svg': return <InsertSVGDialog onClose={close} />;
+    case 'insert-dxf': return <InsertDXFDialog onClose={close} />;
+    case 'insert-canvas': return <InsertCanvasDialog onClose={close} />;
     default: return null;
   }
 }

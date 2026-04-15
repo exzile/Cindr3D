@@ -312,6 +312,51 @@ export const useComponentStore = create<ComponentStore>((set, get) => ({
     });
   },
 
+  // D168 Mirror a solid body through one of the three world planes.
+  // Adds the reflected body to the same component and returns its id.
+  mirrorBody: (bodyId, plane) => {
+    const { bodies, components } = get();
+    const body = bodies[bodyId];
+    if (!body) return null;
+
+    let mirroredMesh: THREE.Mesh | THREE.Group | null = null;
+    if (body.mesh instanceof THREE.Mesh) {
+      mirroredMesh = GeometryEngine.mirrorMesh(body.mesh, plane);
+    } else if (body.mesh instanceof THREE.Group) {
+      const group = new THREE.Group();
+      body.mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          group.add(GeometryEngine.mirrorMesh(child, plane));
+        }
+      });
+      mirroredMesh = group;
+    }
+
+    const id = crypto.randomUUID();
+    const mirrored: Body = {
+      id,
+      name: `${body.name} (Mirror ${plane})`,
+      componentId: body.componentId,
+      mesh: mirroredMesh,
+      visible: true,
+      material: { ...body.material },
+      featureIds: [],
+    };
+
+    const comp = components[body.componentId];
+    set({
+      bodies: { ...bodies, [id]: mirrored },
+      components: comp
+        ? {
+            ...components,
+            [body.componentId]: { ...comp, bodyIds: [...comp.bodyIds, id] },
+          }
+        : components,
+    });
+
+    return id;
+  },
+
   // ===== Construction Geometry =====
   addConstruction: (geometry) => {
     const { constructions, components } = get();

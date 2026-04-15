@@ -108,12 +108,9 @@ export default function FormInteraction() {
     gl.domElement.dispatchEvent; // no-op: just ensure gl is stable
     // We traverse the THREE scene directly via the renderer; it's fine here
     // because this effect only runs when formBodies array reference changes
-    const root = (gl as unknown as { _pmremGenerator?: unknown } & { getContext(): WebGLRenderingContext }).getContext
-      ? (gl as unknown as { __r3f?: { root?: { fiber?: { stateNode?: THREE.Scene } } } }).__r3f?.root?.fiber?.stateNode
-      : null;
-    // Fallback: walk from the renderer's info — use a direct scene ref instead
-    // The safe cross-platform approach: just rebuild from scene on next pick call
-    // We mark the cache as dirty here by clearing it; it gets repopulated lazily
+    // The safe cross-platform approach: rebuild from scene on next pick call.
+    // Mark the cache as dirty here by clearing it; it gets repopulated lazily.
+    void gl;
     formMeshesRef.current = meshes;
   }, [formBodies, gl]);
 

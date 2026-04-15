@@ -945,7 +945,6 @@ export function commitSketchTool(ctx: SketchCommitCtx): void {
             const cc = circumcenter2D(p0, pMid, p2, t1, t2);
             if (!cc) { setStatusMessage('Arc points are collinear — try again'); setDrawingPoints([]); break; }
             const { center: C, radius: R } = cc;
-            const cV = new THREE.Vector3(C.x, C.y, C.z);
             // half-width = distance from arc (at nearest point) to click4, via perp offset
             const toClick4 = new THREE.Vector3(sketchPoint.x - C.x, sketchPoint.y - C.y, sketchPoint.z - C.z);
             const distToC = toClick4.length();
