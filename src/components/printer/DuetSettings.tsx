@@ -6,11 +6,11 @@ import {
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { useThemeStore, type ThemeMode } from '../../store/themeStore';
-import { colors as COLORS } from '../../utils/theme';
 import {
   getDuetPrefs, updateDuetPrefs,
   type DuetPrefs, type Units, type NotifSeverity,
 } from '../../utils/duetPrefs';
+import './DuetSettings.css';
 
 // ---------------------------------------------------------------------------
 // Tabs
@@ -28,216 +28,16 @@ const TABS = [
 type TabKey = (typeof TABS)[number]['key'];
 
 // ---------------------------------------------------------------------------
-// Inline styles
-// ---------------------------------------------------------------------------
-const styles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(0,0,0,0.6)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 2000,
-    fontFamily: "'Inter', 'Segoe UI', sans-serif",
-    color: COLORS.text,
-    fontSize: 13,
-  },
-  dialog: {
-    background: COLORS.panel,
-    border: `1px solid ${COLORS.panelBorder}`,
-    borderRadius: 10,
-    width: 760,
-    maxWidth: '95vw',
-    height: 560,
-    maxHeight: '90vh',
-    display: 'flex',
-    flexDirection: 'column',
-    boxShadow: '0 16px 48px rgba(0,0,0,0.5)',
-    overflow: 'hidden',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '12px 18px',
-    borderBottom: `1px solid ${COLORS.panelBorder}`,
-    flexShrink: 0,
-  },
-  headerTitle: { fontWeight: 600, fontSize: 15 },
-  closeBtn: {
-    background: 'none',
-    border: 'none',
-    color: COLORS.textDim,
-    cursor: 'pointer',
-    padding: 4,
-    borderRadius: 4,
-    display: 'flex',
-    alignItems: 'center',
-  },
-  main: {
-    display: 'flex',
-    flex: 1,
-    minHeight: 0,
-  },
-  nav: {
-    width: 180,
-    borderRight: `1px solid ${COLORS.panelBorder}`,
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '8px 0',
-    background: COLORS.panel,
-    flexShrink: 0,
-    overflowY: 'auto',
-  },
-  navItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    padding: '9px 16px',
-    background: 'none',
-    border: 'none',
-    color: COLORS.textDim,
-    cursor: 'pointer',
-    textAlign: 'left' as const,
-    fontSize: 13,
-    borderLeftWidth: 3,
-    borderLeftStyle: 'solid',
-    borderLeftColor: 'transparent',
-  },
-  navItemActive: {
-    color: COLORS.text,
-    background: COLORS.surface,
-    borderLeftColor: COLORS.accent,
-    fontWeight: 600,
-  },
-  body: {
-    flex: 1,
-    padding: '16px 22px',
-    overflowY: 'auto',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 14,
-    minWidth: 0,
-  },
-  pageTitle: { fontWeight: 600, fontSize: 14, marginBottom: 4 },
-  formGroup: { display: 'flex', flexDirection: 'column', gap: 4 },
-  label: {
-    fontSize: 11,
-    fontWeight: 600,
-    color: COLORS.textDim,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
-  },
-  input: {
-    background: COLORS.inputBg,
-    border: `1px solid ${COLORS.inputBorder}`,
-    borderRadius: 6,
-    color: COLORS.text,
-    padding: '8px 12px',
-    fontSize: 13,
-    outline: 'none',
-    width: '100%',
-    boxSizing: 'border-box' as const,
-  },
-  select: {
-    background: COLORS.inputBg,
-    border: `1px solid ${COLORS.inputBorder}`,
-    borderRadius: 6,
-    color: COLORS.text,
-    padding: '8px 12px',
-    fontSize: 13,
-    outline: 'none',
-    width: '100%',
-    boxSizing: 'border-box' as const,
-    cursor: 'pointer',
-  },
-  hint: { fontSize: 11, color: COLORS.textDim, marginTop: 2 },
-  modeSelector: {
-    display: 'flex',
-    borderRadius: 6,
-    overflow: 'hidden',
-    border: `1px solid ${COLORS.inputBorder}`,
-  },
-  modeBtn: {
-    flex: 1,
-    padding: '8px 12px',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: 12,
-    fontWeight: 600,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  banner: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '10px 14px',
-    borderRadius: 6,
-    fontSize: 12,
-  },
-  bannerSuccess: { background: 'rgba(34,197,94,0.12)', color: COLORS.success },
-  bannerError:   { background: 'rgba(239,68,68,0.12)', color: COLORS.danger },
-  bannerInfo:    { background: 'rgba(80,120,255,0.1)', color: COLORS.accent },
-  checkboxRow: { display: 'flex', alignItems: 'center', gap: 10 },
-  checkbox: { accentColor: COLORS.accent, width: 16, height: 16, cursor: 'pointer' },
-  btnRow: { display: 'flex', gap: 8, flexWrap: 'wrap' as const },
-  btn: {
-    border: 'none',
-    borderRadius: 6,
-    padding: '8px 16px',
-    cursor: 'pointer',
-    fontWeight: 600,
-    fontSize: 13,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-  },
-  btnPrimary:   { background: COLORS.accent, color: '#fff' },
-  btnDanger:    { background: COLORS.danger, color: '#fff' },
-  btnSecondary: { background: COLORS.surface, color: COLORS.text, border: `1px solid ${COLORS.inputBorder}` },
-  btnDisabled:  { opacity: 0.5, cursor: 'not-allowed' },
-  section: {
-    background: COLORS.surface,
-    borderRadius: 8,
-    padding: '14px 16px',
-    border: `1px solid ${COLORS.panelBorder}`,
-  },
-  sectionTitle: { fontWeight: 600, fontSize: 13, marginBottom: 10, color: COLORS.text },
-  infoGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr auto',
-    gap: '6px 12px',
-    fontSize: 12,
-  },
-  dimText: { color: COLORS.textDim },
-  mono: { fontFamily: 'monospace', fontSize: 12, fontWeight: 600 },
-  aboutText: { color: COLORS.textDim, fontSize: 12, lineHeight: 1.6, margin: 0 },
-  footer: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 8,
-    padding: '12px 18px',
-    borderTop: `1px solid ${COLORS.panelBorder}`,
-    flexShrink: 0,
-  },
-};
-
-// ---------------------------------------------------------------------------
 // Row-based setting helper
 // ---------------------------------------------------------------------------
 function SettingRow({
   label, hint, control,
 }: { label: string; hint?: string; control: React.ReactNode }) {
   return (
-    <div style={styles.formGroup}>
-      <label style={styles.label}>{label}</label>
+    <div className="duet-settings__form-group">
+      <label className="duet-settings__label">{label}</label>
       {control}
-      {hint && <span style={styles.hint}>{hint}</span>}
+      {hint && <span className="duet-settings__hint">{hint}</span>}
     </div>
   );
 }
@@ -246,18 +46,18 @@ function ToggleRow({
   id, checked, onChange, label, hint,
 }: { id: string; checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
   return (
-    <div style={styles.formGroup}>
-      <div style={styles.checkboxRow}>
+    <div className="duet-settings__form-group">
+      <div className="duet-settings__checkbox-row">
         <input
           type="checkbox"
           id={id}
-          style={styles.checkbox}
+          className="duet-settings__checkbox"
           checked={checked}
           onChange={(e) => onChange(e.target.checked)}
         />
-        <label htmlFor={id} style={{ cursor: 'pointer', fontSize: 13 }}>{label}</label>
+        <label htmlFor={id} className="duet-settings__checkbox-label">{label}</label>
       </div>
-      {hint && <span style={{ ...styles.hint, marginLeft: 26 }}>{hint}</span>}
+      {hint && <span className="duet-settings__hint duet-settings__hint--indented">{hint}</span>}
     </div>
   );
 }
@@ -385,13 +185,13 @@ export default function DuetSettings() {
 
   const renderConnection = () => (
     <>
-      <div style={styles.pageTitle}>Connection</div>
+      <div className="duet-settings__page-title">Connection</div>
       {connected ? (
-        <div style={{ ...styles.banner, ...styles.bannerSuccess }}>
+        <div className="duet-settings__banner duet-settings__banner--success">
           <Wifi size={16} /> Connected to Duet3D board at {config.hostname}
         </div>
       ) : (
-        <div style={{ ...styles.banner, ...styles.bannerInfo }}>
+        <div className="duet-settings__banner duet-settings__banner--info">
           <Info size={16} /> Connect to your Duet3D board via its REST API
         </div>
       )}
@@ -401,7 +201,7 @@ export default function DuetSettings() {
         hint="Enter the IP address or hostname of your Duet3D board (without http://)"
         control={
           <input
-            style={styles.input}
+            className="duet-settings__input"
             type="text"
             value={hostname}
             onChange={(e) => setHostname(e.target.value)}
@@ -416,7 +216,7 @@ export default function DuetSettings() {
         hint="Only required if your board has a password set in config.g (M551)"
         control={
           <input
-            style={styles.input}
+            className="duet-settings__input"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -434,24 +234,16 @@ export default function DuetSettings() {
             : 'Connect via a Single Board Computer running DuetSoftwareFramework.'
         }
         control={
-          <div style={styles.modeSelector}>
+          <div className="duet-settings__mode-selector">
             <button
-              style={{
-                ...styles.modeBtn,
-                background: mode === 'standalone' ? COLORS.accent : COLORS.inputBg,
-                color: mode === 'standalone' ? '#fff' : COLORS.textDim,
-              }}
+              className={`duet-settings__mode-btn${mode === 'standalone' ? ' is-active' : ''}`}
               onClick={() => setMode('standalone')}
               disabled={connected}
             >
               Standalone
             </button>
             <button
-              style={{
-                ...styles.modeBtn,
-                background: mode === 'sbc' ? COLORS.accent : COLORS.inputBg,
-                color: mode === 'sbc' ? '#fff' : COLORS.textDim,
-              }}
+              className={`duet-settings__mode-btn${mode === 'sbc' ? ' is-active' : ''}`}
               onClick={() => setMode('sbc')}
               disabled={connected}
             >
@@ -461,13 +253,9 @@ export default function DuetSettings() {
         }
       />
 
-      <div style={styles.btnRow}>
+      <div className="duet-settings__btn-row">
         <button
-          style={{
-            ...styles.btn,
-            ...styles.btnSecondary,
-            ...(testing || connected ? styles.btnDisabled : {}),
-          }}
+          className={`duet-settings__btn duet-settings__btn--secondary${testing || connected ? ' duet-settings__btn--disabled' : ''}`}
           onClick={handleTest}
           disabled={testing || connected || !hostname.trim()}
         >
@@ -475,12 +263,12 @@ export default function DuetSettings() {
         </button>
 
         {connected ? (
-          <button style={{ ...styles.btn, ...styles.btnDanger }} onClick={handleDisconnect}>
+          <button className="duet-settings__btn duet-settings__btn--danger" onClick={handleDisconnect}>
             <WifiOff size={14} /> Disconnect
           </button>
         ) : (
           <button
-            style={{ ...styles.btn, ...styles.btnPrimary, ...(!canConnect ? styles.btnDisabled : {}) }}
+            className={`duet-settings__btn duet-settings__btn--primary${!canConnect ? ' duet-settings__btn--disabled' : ''}`}
             onClick={handleConnect}
             disabled={!canConnect}
           >
@@ -490,14 +278,14 @@ export default function DuetSettings() {
       </div>
 
       {testResult && (
-        <div style={{ ...styles.banner, ...(testResult.success ? styles.bannerSuccess : styles.bannerError) }}>
+        <div className={`duet-settings__banner ${testResult.success ? 'duet-settings__banner--success' : 'duet-settings__banner--error'}`}>
           {testResult.success ? (
             <>
               <CheckCircle size={16} />
               <div>
-                <div style={{ fontWeight: 600 }}>Connection successful</div>
+                <div className="duet-settings__banner-heading">Connection successful</div>
                 {testResult.firmwareVersion && (
-                  <div style={{ marginTop: 2, opacity: 0.85 }}>Firmware: {testResult.firmwareVersion}</div>
+                  <div className="duet-settings__banner-detail">Firmware: {testResult.firmwareVersion}</div>
                 )}
               </div>
             </>
@@ -505,8 +293,8 @@ export default function DuetSettings() {
             <>
               <AlertCircle size={16} />
               <div>
-                <div style={{ fontWeight: 600 }}>Connection failed</div>
-                {testResult.error && <div style={{ marginTop: 2, opacity: 0.85 }}>{testResult.error}</div>}
+                <div className="duet-settings__banner-heading">Connection failed</div>
+                {testResult.error && <div className="duet-settings__banner-detail">{testResult.error}</div>}
               </div>
             </>
           )}
@@ -514,7 +302,7 @@ export default function DuetSettings() {
       )}
 
       {error && !testResult && (
-        <div style={{ ...styles.banner, ...styles.bannerError }}>
+        <div className="duet-settings__banner duet-settings__banner--error">
           <AlertCircle size={16} /> {error}
         </div>
       )}
@@ -523,13 +311,13 @@ export default function DuetSettings() {
 
   const renderGeneral = () => (
     <>
-      <div style={styles.pageTitle}>General</div>
+      <div className="duet-settings__page-title">General</div>
       <SettingRow
         label="Units"
         hint="Preferred unit system for display. Individual panels may override."
         control={
           <select
-            style={styles.select}
+            className="duet-settings__select"
             value={prefs.units}
             onChange={(e) => patchPrefs({ units: e.target.value as Units })}
           >
@@ -542,7 +330,7 @@ export default function DuetSettings() {
         label="Language"
         hint="Additional languages are planned — English only today."
         control={
-          <select style={styles.select} value="en" disabled>
+          <select className="duet-settings__select" value="en" disabled>
             <option value="en">English</option>
           </select>
         }
@@ -552,30 +340,22 @@ export default function DuetSettings() {
 
   const renderAppearance = () => (
     <>
-      <div style={styles.pageTitle}>Appearance</div>
+      <div className="duet-settings__page-title">Appearance</div>
       <SettingRow
         label="Theme"
         hint="Switch between light and dark themes. Applies immediately."
         control={
-          <div style={styles.modeSelector}>
-            {(['light', 'dark'] as ThemeMode[]).map((t) => {
-              const active = theme === t;
-              return (
-                <button
-                  key={t}
-                  style={{
-                    ...styles.modeBtn,
-                    background: active ? COLORS.accent : COLORS.inputBg,
-                    color: active ? '#fff' : COLORS.textDim,
-                    textTransform: 'capitalize',
-                  }}
-                  onClick={() => setTheme(t)}
-                >
-                  {t === 'light' ? <Sun size={14} /> : <Moon size={14} />}
-                  {t}
-                </button>
-              );
-            })}
+          <div className="duet-settings__mode-selector">
+            {(['light', 'dark'] as ThemeMode[]).map((t) => (
+              <button
+                key={t}
+                className={`duet-settings__mode-btn${theme === t ? ' is-active' : ''}`}
+                onClick={() => setTheme(t)}
+              >
+                {t === 'light' ? <Sun size={14} /> : <Moon size={14} />}
+                {t}
+              </button>
+            ))}
           </div>
         }
       />
@@ -584,7 +364,7 @@ export default function DuetSettings() {
 
   const renderBehaviour = () => (
     <>
-      <div style={styles.pageTitle}>Behaviour</div>
+      <div className="duet-settings__page-title">Behaviour</div>
       <ToggleRow
         id="confirm-tool-change"
         checked={prefs.confirmToolChange}
@@ -611,13 +391,13 @@ export default function DuetSettings() {
 
   const renderNotifications = () => (
     <>
-      <div style={styles.pageTitle}>Notifications</div>
+      <div className="duet-settings__page-title">Notifications</div>
       <SettingRow
         label="Toast Duration"
         hint="How long notification toasts stay visible before auto-dismissing."
         control={
           <select
-            style={styles.select}
+            className="duet-settings__select"
             value={prefs.toastDurationMs}
             onChange={(e) => patchPrefs({ toastDurationMs: Number(e.target.value) })}
           >
@@ -640,7 +420,7 @@ export default function DuetSettings() {
         hint="Only show toasts at or above this severity level."
         control={
           <select
-            style={styles.select}
+            className="duet-settings__select"
             value={prefs.notifMinSeverity}
             onChange={(e) => patchPrefs({ notifMinSeverity: e.target.value as NotifSeverity })}
           >
@@ -655,23 +435,23 @@ export default function DuetSettings() {
 
   const renderMachine = () => (
     <>
-      <div style={styles.pageTitle}>Machine</div>
+      <div className="duet-settings__page-title">Machine</div>
       {!connected && (
-        <div style={{ ...styles.banner, ...styles.bannerInfo }}>
+        <div className="duet-settings__banner duet-settings__banner--info">
           <Info size={16} /> Connect to a Duet board to see live machine details.
         </div>
       )}
 
-      <div style={styles.section}>
-        <div style={styles.sectionTitle}>Axis Limits (read-only)</div>
+      <div className="duet-settings__section">
+        <div className="duet-settings__section-title">Axis Limits (read-only)</div>
         {axes.length === 0 ? (
-          <div style={styles.dimText}>No axes reported.</div>
+          <div className="duet-settings__dim-text">No axes reported.</div>
         ) : (
-          <div style={styles.infoGrid}>
+          <div className="duet-settings__info-grid">
             {axes.map((a, i) => (
               <React.Fragment key={i}>
                 <span>{a.letter ?? `#${i}`}</span>
-                <span style={styles.mono}>
+                <span className="duet-settings__mono">
                   {a.min?.toFixed(1) ?? '—'} → {a.max?.toFixed(1) ?? '—'} mm
                 </span>
               </React.Fragment>
@@ -680,44 +460,44 @@ export default function DuetSettings() {
         )}
       </div>
 
-      <div style={styles.section}>
-        <div style={styles.sectionTitle}>Motion Limits</div>
+      <div className="duet-settings__section">
+        <div className="duet-settings__section-title">Motion Limits</div>
         {axes.length === 0 ? (
-          <div style={styles.dimText}>No drivers reported.</div>
+          <div className="duet-settings__dim-text">No drivers reported.</div>
         ) : (
-          <div style={styles.infoGrid}>
+          <div className="duet-settings__info-grid">
             {axes.map((a, i) => (
               <React.Fragment key={i}>
                 <span>{a.letter ?? `#${i}`} max speed</span>
-                <span style={styles.mono}>{a.speed?.toFixed(0) ?? '—'} mm/s</span>
+                <span className="duet-settings__mono">{a.speed?.toFixed(0) ?? '—'} mm/s</span>
                 <span>{a.letter ?? `#${i}`} acceleration</span>
-                <span style={styles.mono}>{a.acceleration?.toFixed(0) ?? '—'} mm/s²</span>
+                <span className="duet-settings__mono">{a.acceleration?.toFixed(0) ?? '—'} mm/s²</span>
               </React.Fragment>
             ))}
           </div>
         )}
       </div>
 
-      <div style={styles.section}>
-        <div style={styles.sectionTitle}>Board Info</div>
+      <div className="duet-settings__section">
+        <div className="duet-settings__section-title">Board Info</div>
         {!board ? (
-          <div style={styles.dimText}>No board info reported.</div>
+          <div className="duet-settings__dim-text">No board info reported.</div>
         ) : (
-          <div style={styles.infoGrid}>
-            <span style={styles.dimText}>Name</span>
-            <span style={styles.mono}>{board.name ?? board.shortName ?? '—'}</span>
-            <span style={styles.dimText}>Firmware</span>
-            <span style={styles.mono}>{board.firmwareName} {board.firmwareVersion}</span>
+          <div className="duet-settings__info-grid">
+            <span className="duet-settings__dim-text">Name</span>
+            <span className="duet-settings__mono">{board.name ?? board.shortName ?? '—'}</span>
+            <span className="duet-settings__dim-text">Firmware</span>
+            <span className="duet-settings__mono">{board.firmwareName} {board.firmwareVersion}</span>
             {board.mcuTemp?.current !== undefined && (
               <>
-                <span style={styles.dimText}>MCU temp</span>
-                <span style={styles.mono}>{board.mcuTemp.current.toFixed(1)}°</span>
+                <span className="duet-settings__dim-text">MCU temp</span>
+                <span className="duet-settings__mono">{board.mcuTemp.current.toFixed(1)}°</span>
               </>
             )}
             {board.vIn?.current !== undefined && (
               <>
-                <span style={styles.dimText}>VIN</span>
-                <span style={styles.mono}>{board.vIn.current.toFixed(1)} V</span>
+                <span className="duet-settings__dim-text">VIN</span>
+                <span className="duet-settings__mono">{board.vIn.current.toFixed(1)} V</span>
               </>
             )}
           </div>
@@ -728,68 +508,60 @@ export default function DuetSettings() {
 
   const renderFirmware = () => (
     <>
-      <div style={styles.pageTitle}>Firmware</div>
+      <div className="duet-settings__page-title">Firmware</div>
 
       {!connected && (
-        <div style={{ ...styles.banner, ...styles.bannerInfo }}>
+        <div className="duet-settings__banner duet-settings__banner--info">
           <Info size={16} /> Connect to a Duet board to upload firmware.
         </div>
       )}
 
-      <div style={styles.section}>
-        <div style={styles.sectionTitle}>Current Firmware</div>
+      <div className="duet-settings__section">
+        <div className="duet-settings__section-title">Current Firmware</div>
         {board ? (
-          <div style={styles.infoGrid}>
-            <span style={styles.dimText}>Board</span>
-            <span style={styles.mono}>{board.name ?? board.shortName ?? '—'}</span>
-            <span style={styles.dimText}>Firmware</span>
-            <span style={styles.mono}>{board.firmwareName} {board.firmwareVersion}</span>
+          <div className="duet-settings__info-grid">
+            <span className="duet-settings__dim-text">Board</span>
+            <span className="duet-settings__mono">{board.name ?? board.shortName ?? '—'}</span>
+            <span className="duet-settings__dim-text">Firmware</span>
+            <span className="duet-settings__mono">{board.firmwareName} {board.firmwareVersion}</span>
             {board.firmwareDate && (
               <>
-                <span style={styles.dimText}>Build date</span>
-                <span style={styles.mono}>{board.firmwareDate}</span>
+                <span className="duet-settings__dim-text">Build date</span>
+                <span className="duet-settings__mono">{board.firmwareDate}</span>
               </>
             )}
           </div>
         ) : (
-          <div style={styles.dimText}>Not connected.</div>
+          <div className="duet-settings__dim-text">Not connected.</div>
         )}
       </div>
 
-      <div style={styles.section}>
-        <div style={styles.sectionTitle}>Upload Firmware</div>
-        <p style={{ ...styles.aboutText, marginBottom: 10 }}>
-          Select a RepRapFirmware <code style={{ color: COLORS.accent }}>.bin</code> or{' '}
-          <code style={{ color: COLORS.accent }}>.uf2</code> file. It will be uploaded to{' '}
-          <code style={{ color: COLORS.accent }}>0:/firmware/</code> on the board.
+      <div className="duet-settings__section">
+        <div className="duet-settings__section-title">Upload Firmware</div>
+        <p className="duet-settings__about-text duet-settings__about-text--mb">
+          Select a RepRapFirmware <code className="duet-settings__code-accent">.bin</code> or{' '}
+          <code className="duet-settings__code-accent">.uf2</code> file. It will be uploaded to{' '}
+          <code className="duet-settings__code-accent">0:/firmware/</code> on the board.
         </p>
 
         <input
           ref={firmwareInputRef}
           type="file"
           accept=".bin,.uf2"
-          style={{ display: 'none' }}
+          className="duet-settings__file-input-hidden"
           onChange={(e) => handleFirmwareSelect(e.target.files)}
         />
 
-        <div style={styles.btnRow}>
+        <div className="duet-settings__btn-row">
           <button
-            style={{
-              ...styles.btn,
-              ...styles.btnSecondary,
-              ...(!connected || uploading ? styles.btnDisabled : {}),
-            }}
+            className={`duet-settings__btn duet-settings__btn--secondary${!connected || uploading ? ' duet-settings__btn--disabled' : ''}`}
             onClick={() => firmwareInputRef.current?.click()}
             disabled={!connected || uploading}
           >
             <UploadCloud size={14} /> Choose File
           </button>
           <button
-            style={{
-              ...styles.btn,
-              ...styles.btnPrimary,
-              ...(!firmwareFile || uploading || !connected ? styles.btnDisabled : {}),
-            }}
+            className={`duet-settings__btn duet-settings__btn--primary${!firmwareFile || uploading || !connected ? ' duet-settings__btn--disabled' : ''}`}
             onClick={handleFirmwareUpload}
             disabled={!firmwareFile || uploading || !connected}
           >
@@ -800,11 +572,7 @@ export default function DuetSettings() {
             )}
           </button>
           <button
-            style={{
-              ...styles.btn,
-              ...styles.btnDanger,
-              ...(!connected ? styles.btnDisabled : {}),
-            }}
+            className={`duet-settings__btn duet-settings__btn--danger${!connected ? ' duet-settings__btn--disabled' : ''}`}
             onClick={handleFirmwareInstall}
             disabled={!connected}
           >
@@ -813,43 +581,25 @@ export default function DuetSettings() {
         </div>
 
         {firmwareFile && !uploading && (
-          <div style={{ ...styles.hint, marginTop: 8 }}>
-            Selected: <span style={styles.mono}>{firmwareFile.name}</span>{' '}
+          <div className="duet-settings__firmware-hint">
+            Selected: <span className="duet-settings__mono">{firmwareFile.name}</span>{' '}
             ({(firmwareFile.size / 1024).toFixed(1)} KB)
           </div>
         )}
 
         {uploading && (
-          <div style={{ marginTop: 10 }}>
-            <div
-              style={{
-                width: '100%',
-                height: 6,
-                background: COLORS.inputBg,
-                borderRadius: 3,
-                overflow: 'hidden',
-              }}
-            >
+          <div className="duet-settings__progress-wrapper">
+            <div className="duet-settings__progress-track">
               <div
-                style={{
-                  width: `${uploadProgress}%`,
-                  height: '100%',
-                  background: COLORS.accent,
-                  transition: 'width 0.2s ease',
-                }}
+                className="duet-settings__progress-fill"
+                style={{ width: `${uploadProgress}%` }}
               />
             </div>
           </div>
         )}
 
         {firmwareStatus && (
-          <div
-            style={{
-              ...styles.banner,
-              ...(firmwareStatus.type === 'success' ? styles.bannerSuccess : styles.bannerError),
-              marginTop: 10,
-            }}
-          >
+          <div className={`duet-settings__banner duet-settings__banner--mt ${firmwareStatus.type === 'success' ? 'duet-settings__banner--success' : 'duet-settings__banner--error'}`}>
             {firmwareStatus.type === 'success' ? (
               <CheckCircle size={16} />
             ) : (
@@ -864,33 +614,33 @@ export default function DuetSettings() {
 
   const renderAbout = () => (
     <>
-      <div style={styles.pageTitle}>About</div>
-      <div style={styles.section}>
-        <div style={styles.sectionTitle}>Dzign3D — Printer Panel</div>
-        <p style={styles.aboutText}>
+      <div className="duet-settings__page-title">About</div>
+      <div className="duet-settings__section">
+        <div className="duet-settings__section-title">Dzign3D — Printer Panel</div>
+        <p className="duet-settings__about-text">
           Communicates with Duet3D boards (Duet 2, Duet 3, and compatible) using the
           RepRapFirmware REST API. Compatible with RepRapFirmware 3.x and the DuetWebControl
           3.x protocol. Both standalone and SBC (DuetSoftwareFramework) modes are supported.
         </p>
       </div>
 
-      <div style={styles.section}>
-        <div style={styles.sectionTitle}>Firmware</div>
+      <div className="duet-settings__section">
+        <div className="duet-settings__section-title">Firmware</div>
         {board ? (
-          <div style={styles.infoGrid}>
-            <span style={styles.dimText}>Board</span>
-            <span style={styles.mono}>{board.name ?? board.shortName ?? '—'}</span>
-            <span style={styles.dimText}>Firmware</span>
-            <span style={styles.mono}>{board.firmwareName} {board.firmwareVersion}</span>
+          <div className="duet-settings__info-grid">
+            <span className="duet-settings__dim-text">Board</span>
+            <span className="duet-settings__mono">{board.name ?? board.shortName ?? '—'}</span>
+            <span className="duet-settings__dim-text">Firmware</span>
+            <span className="duet-settings__mono">{board.firmwareName} {board.firmwareVersion}</span>
             {board.firmwareDate && (
               <>
-                <span style={styles.dimText}>Build date</span>
-                <span style={styles.mono}>{board.firmwareDate}</span>
+                <span className="duet-settings__dim-text">Build date</span>
+                <span className="duet-settings__mono">{board.firmwareDate}</span>
               </>
             )}
           </div>
         ) : (
-          <div style={styles.dimText}>Not connected.</div>
+          <div className="duet-settings__dim-text">Not connected.</div>
         )}
       </div>
     </>
@@ -914,32 +664,27 @@ export default function DuetSettings() {
   if (!showSettings) return null;
 
   return (
-    <div style={styles.overlay} onClick={() => setShowSettings(false)}>
-      <div style={styles.dialog} onClick={(e) => e.stopPropagation()}>
+    <div className="duet-settings__overlay" onClick={() => setShowSettings(false)}>
+      <div className="duet-settings__dialog" onClick={(e) => e.stopPropagation()}>
         {/* ---- Header ---- */}
-        <div style={styles.header}>
-          <span style={styles.headerTitle}>Duet3D Settings</span>
+        <div className="duet-settings__header">
+          <span className="duet-settings__header-title">Duet3D Settings</span>
           <button
-            style={styles.closeBtn}
+            className="duet-settings__close-btn"
             onClick={() => setShowSettings(false)}
             title="Close"
-            onMouseEnter={(e) => (e.currentTarget.style.color = COLORS.text)}
-            onMouseLeave={(e) => (e.currentTarget.style.color = COLORS.textDim)}
           >
             <X size={18} />
           </button>
         </div>
 
         {/* ---- Main (nav + body) ---- */}
-        <div style={styles.main}>
-          <nav style={styles.nav}>
+        <div className="duet-settings__main">
+          <nav className="duet-settings__nav">
             {TABS.map(({ key, label, Icon }) => (
               <button
                 key={key}
-                style={{
-                  ...styles.navItem,
-                  ...(tab === key ? styles.navItemActive : {}),
-                }}
+                className={`duet-settings__nav-item${tab === key ? ' is-active' : ''}`}
                 onClick={() => setTab(key)}
               >
                 <Icon size={15} />
@@ -947,13 +692,13 @@ export default function DuetSettings() {
               </button>
             ))}
           </nav>
-          <div style={styles.body}>{pageContent}</div>
+          <div className="duet-settings__body">{pageContent}</div>
         </div>
 
         {/* ---- Footer ---- */}
-        <div style={styles.footer}>
+        <div className="duet-settings__footer">
           <button
-            style={{ ...styles.btn, ...styles.btnSecondary }}
+            className="duet-settings__btn duet-settings__btn--secondary"
             onClick={() => setShowSettings(false)}
           >
             Close

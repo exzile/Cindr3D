@@ -1,0 +1,390 @@
+/* =============================================================================
+   DuetSettings — BEM styles
+   All colour references use CSS custom properties set by themeStore.
+   ============================================================================= */
+
+/* ── Overlay ─────────────────────────────────────────────────────────────── */
+.duet-settings__overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+/* ── Dialog ──────────────────────────────────────────────────────────────── */
+.duet-settings__dialog {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 760px;
+  max-width: 95vw;
+  height: 560px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.duet-settings__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.duet-settings__header-title {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.duet-settings__close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.duet-settings__close-btn:hover {
+  color: var(--text-primary);
+}
+
+/* ── Main layout ─────────────────────────────────────────────────────────── */
+.duet-settings__main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Nav sidebar ─────────────────────────────────────────────────────────── */
+.duet-settings__nav {
+  width: 180px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0;
+  background: var(--bg-panel);
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.duet-settings__nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+  border-left: 3px solid transparent;
+}
+
+.duet-settings__nav-item.is-active {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border-left-color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── Body / content area ─────────────────────────────────────────────────── */
+.duet-settings__body {
+  flex: 1;
+  padding: 16px 22px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* ── Page title ──────────────────────────────────────────────────────────── */
+.duet-settings__page-title {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+/* ── Form group ──────────────────────────────────────────────────────────── */
+.duet-settings__form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.duet-settings__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.duet-settings__input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  padding: 8px 12px;
+  font-size: 13px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.duet-settings__select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  padding: 8px 12px;
+  font-size: 13px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.duet-settings__hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.duet-settings__hint--indented {
+  margin-left: 26px;
+}
+
+/* ── Mode selector (standalone/SBC, light/dark theme toggle) ─────────────── */
+.duet-settings__mode-selector {
+  display: flex;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.duet-settings__mode-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.duet-settings__mode-btn.is-active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ── Banners ─────────────────────────────────────────────────────────────── */
+.duet-settings__banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.duet-settings__banner--success {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--success);
+}
+
+.duet-settings__banner--error {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--error);
+}
+
+.duet-settings__banner--info {
+  background: rgba(80, 120, 255, 0.1);
+  color: var(--accent);
+}
+
+.duet-settings__banner--mt {
+  margin-top: 10px;
+}
+
+/* ── Banner inner content helpers ────────────────────────────────────────── */
+.duet-settings__banner-heading {
+  font-weight: 600;
+}
+
+.duet-settings__banner-detail {
+  margin-top: 2px;
+  opacity: 0.85;
+}
+
+/* ── Checkbox / toggle row ───────────────────────────────────────────────── */
+.duet-settings__checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.duet-settings__checkbox {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.duet-settings__checkbox-label {
+  cursor: pointer;
+  font-size: 13px;
+}
+
+/* ── Button row ──────────────────────────────────────────────────────────── */
+.duet-settings__btn-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.duet-settings__btn {
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.duet-settings__btn--primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.duet-settings__btn--danger {
+  background: var(--error);
+  color: #fff;
+}
+
+.duet-settings__btn--secondary {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+.duet-settings__btn--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Section card ────────────────────────────────────────────────────────── */
+.duet-settings__section {
+  background: var(--bg-elevated);
+  border-radius: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+}
+
+.duet-settings__section-title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 10px;
+  color: var(--text-primary);
+}
+
+/* ── Info grid ───────────────────────────────────────────────────────────── */
+.duet-settings__info-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  font-size: 12px;
+}
+
+/* ── Text utilities ──────────────────────────────────────────────────────── */
+.duet-settings__dim-text {
+  color: var(--text-muted);
+}
+
+.duet-settings__mono {
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.duet-settings__about-text {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.duet-settings__about-text--mb {
+  margin-bottom: 10px;
+}
+
+.duet-settings__code-accent {
+  color: var(--accent);
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+.duet-settings__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* ── Hidden file input ───────────────────────────────────────────────────── */
+.duet-settings__file-input-hidden {
+  display: none;
+}
+
+/* ── Firmware hint (selected file info) ──────────────────────────────────── */
+.duet-settings__firmware-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+/* ── Upload progress bar ─────────────────────────────────────────────────── */
+.duet-settings__progress-wrapper {
+  margin-top: 10px;
+}
+
+.duet-settings__progress-track {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-input);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.duet-settings__progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
