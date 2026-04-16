@@ -191,7 +191,7 @@ function InlineGCodePreview({
         const extrusions: [number, number, number][] = [];
         const travels: [number, number, number][] = [];
 
-        const extColors: string[] = [];
+        const extColors: THREE.Color[] = [];
         for (const move of layer.moves) {
           if (move.type === 'travel') {
             if (showTravel) {
@@ -206,15 +206,16 @@ function InlineGCodePreview({
               : colorMode === 'speed'
                 ? `hsl(${Math.max(0, 240 - move.speed * 2)}, 80%, 55%)`
                 : `hsl(${Math.max(0, 120 - move.extrusion * 100)}, 80%, 55%)`;
-            extColors.push(c);
-            extColors.push(c);
+            const col = new THREE.Color(c);
+            extColors.push(col);
+            extColors.push(col);
           }
         }
 
         return (
           <group key={layer.layerIndex}>
             {extrusions.length > 1 && (
-              <Line points={extrusions} vertexColors={extColors.map(c => new THREE.Color(c))} lineWidth={1.2} />
+              <Line points={extrusions} vertexColors={extColors} lineWidth={1.2} />
             )}
             {travels.length > 1 && (
               <Line points={travels} color="#333355" lineWidth={0.3} />

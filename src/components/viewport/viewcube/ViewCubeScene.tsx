@@ -22,9 +22,10 @@ function CubeBody({ hoveredZone }: { hoveredZone: string | null }) {
 
 /** Wireframe edges of the cube */
 function CubeEdges() {
+  const boxGeo = useMemo(() => new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), []);
   return (
     <lineSegments>
-      <edgesGeometry args={[new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE)]} />
+      <edgesGeometry args={[boxGeo]} />
       <lineBasicMaterial color="#999" />
     </lineSegments>
   );
