@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import './DuetFileManager.css';
 import {
   Folder,
   File,
@@ -104,333 +105,6 @@ function sortFiles(files: DuetFileInfo[], field: SortField, dir: SortDir): DuetF
   return sorted;
 }
 
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
-const styles = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    height: '100%',
-    backgroundColor: '#1e1e1e',
-    color: '#ccc',
-    fontSize: 13,
-    overflow: 'hidden',
-  },
-  tabBar: {
-    display: 'flex',
-    alignItems: 'stretch',
-    backgroundColor: '#252526',
-    borderBottom: '1px solid #333',
-    padding: 0,
-    gap: 0,
-  },
-  tab: {
-    padding: '8px 18px',
-    fontSize: 12,
-    fontWeight: 500,
-    color: '#999',
-    background: 'none',
-    border: 'none',
-    borderBottom: '2px solid transparent',
-    cursor: 'pointer',
-    transition: 'color 0.15s, border-color 0.15s',
-    whiteSpace: 'nowrap' as const,
-    fontFamily: 'inherit',
-  } as React.CSSProperties,
-  tabActive: {
-    color: '#e0e0e0',
-    borderBottomColor: '#0078d4',
-    fontWeight: 600,
-  },
-  warningBanner: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '6px 12px',
-    backgroundColor: 'rgba(255, 152, 0, 0.12)',
-    borderBottom: '1px solid rgba(255, 152, 0, 0.25)',
-    fontSize: 12,
-    color: '#ffab40',
-  },
-  breadcrumbs: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 2,
-    padding: '6px 10px',
-    backgroundColor: '#252526',
-    borderBottom: '1px solid #333',
-    fontSize: 12,
-    flexWrap: 'wrap' as const,
-    minHeight: 32,
-  },
-  breadcrumbItem: {
-    cursor: 'pointer',
-    color: '#4fc3f7',
-    padding: '2px 4px',
-    borderRadius: 3,
-    border: 'none',
-    background: 'none',
-    fontSize: 12,
-    fontFamily: 'inherit',
-  } as React.CSSProperties,
-  breadcrumbSep: {
-    color: '#666',
-    display: 'flex',
-    alignItems: 'center',
-  },
-  toolbar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '6px 10px',
-    backgroundColor: '#2d2d2d',
-    borderBottom: '1px solid #333',
-  },
-  toolbarBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '4px 10px',
-    fontSize: 12,
-    border: '1px solid #555',
-    borderRadius: 4,
-    background: '#353535',
-    color: '#ccc',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap' as const,
-  },
-  progressContainer: {
-    flex: 1,
-    marginLeft: 10,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-  },
-  progressBar: {
-    flex: 1,
-    height: 6,
-    backgroundColor: '#444',
-    borderRadius: 3,
-    overflow: 'hidden' as const,
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#4caf50',
-    borderRadius: 3,
-    transition: 'width 0.2s',
-  },
-  progressText: {
-    fontSize: 11,
-    color: '#aaa',
-    whiteSpace: 'nowrap' as const,
-  },
-  body: {
-    display: 'flex',
-    flex: 1,
-    overflow: 'hidden',
-  },
-  fileListContainer: {
-    flex: 1,
-    overflow: 'auto',
-    position: 'relative' as const,
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse' as const,
-  },
-  th: {
-    position: 'sticky' as const,
-    top: 0,
-    backgroundColor: '#2d2d2d',
-    textAlign: 'left' as const,
-    padding: '6px 10px',
-    fontSize: 11,
-    fontWeight: 600,
-    color: '#aaa',
-    borderBottom: '1px solid #444',
-    cursor: 'pointer',
-    userSelect: 'none' as const,
-    whiteSpace: 'nowrap' as const,
-  },
-  thContent: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-  },
-  td: {
-    padding: '5px 10px',
-    borderBottom: '1px solid #2a2a2a',
-    whiteSpace: 'nowrap' as const,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  } as React.CSSProperties,
-  row: {
-    cursor: 'pointer',
-    transition: 'background-color 0.1s',
-  },
-  rowHover: {
-    backgroundColor: '#2a2d30',
-  },
-  rowSelected: {
-    backgroundColor: '#264f78',
-  },
-  nameCell: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-  },
-  actionBtn: {
-    background: 'none',
-    border: 'none',
-    color: '#888',
-    cursor: 'pointer',
-    padding: '2px 4px',
-    borderRadius: 3,
-    display: 'inline-flex',
-    alignItems: 'center',
-  },
-  actions: {
-    display: 'flex',
-    gap: 2,
-    alignItems: 'center',
-  },
-  infoPanel: {
-    width: 280,
-    borderLeft: '1px solid #333',
-    backgroundColor: '#252526',
-    overflow: 'auto',
-    padding: 12,
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 8,
-    fontSize: 12,
-  },
-  infoPanelTitle: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: '#e0e0e0',
-    marginBottom: 4,
-    wordBreak: 'break-all' as const,
-  },
-  infoRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  infoLabel: {
-    color: '#888',
-    flexShrink: 0,
-  },
-  infoValue: {
-    color: '#ccc',
-    textAlign: 'right' as const,
-    wordBreak: 'break-all' as const,
-  },
-  thumbnail: {
-    width: '100%',
-    borderRadius: 4,
-    backgroundColor: '#1e1e1e',
-    border: '1px solid #333',
-  },
-  dropOverlay: {
-    position: 'absolute' as const,
-    inset: 0,
-    backgroundColor: 'rgba(33, 150, 243, 0.15)',
-    border: '2px dashed #2196f3',
-    borderRadius: 4,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: 16,
-    color: '#2196f3',
-    fontWeight: 600,
-    zIndex: 10,
-    pointerEvents: 'none' as const,
-  },
-  loading: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
-    color: '#888',
-    gap: 8,
-  },
-  empty: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
-    color: '#666',
-  },
-  closeInfoBtn: {
-    background: 'none',
-    border: 'none',
-    color: '#888',
-    cursor: 'pointer',
-    padding: 2,
-    display: 'flex',
-    alignSelf: 'flex-end',
-  },
-  dialogOverlay: {
-    position: 'fixed' as const,
-    inset: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  },
-  dialog: {
-    backgroundColor: '#2d2d2d',
-    border: '1px solid #555',
-    borderRadius: 6,
-    padding: 20,
-    minWidth: 320,
-    color: '#ccc',
-  },
-  dialogTitle: {
-    fontSize: 14,
-    fontWeight: 600,
-    marginBottom: 12,
-  },
-  dialogInput: {
-    width: '100%',
-    padding: '6px 8px',
-    fontSize: 13,
-    border: '1px solid #555',
-    borderRadius: 4,
-    backgroundColor: '#1e1e1e',
-    color: '#ccc',
-    outline: 'none',
-    boxSizing: 'border-box' as const,
-  },
-  dialogBtns: {
-    display: 'flex',
-    gap: 8,
-    justifyContent: 'flex-end',
-    marginTop: 14,
-  },
-  dialogBtn: {
-    padding: '5px 14px',
-    fontSize: 12,
-    border: '1px solid #555',
-    borderRadius: 4,
-    cursor: 'pointer',
-    background: '#353535',
-    color: '#ccc',
-  },
-  dialogBtnPrimary: {
-    padding: '5px 14px',
-    fontSize: 12,
-    border: 'none',
-    borderRadius: 4,
-    cursor: 'pointer',
-    background: '#0078d4',
-    color: '#fff',
-  },
-} as const;
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -450,11 +124,11 @@ interface RenameDialogProps {
 function RenameDialog({ currentName, onConfirm, onCancel }: RenameDialogProps) {
   const [value, setValue] = useState(currentName);
   return (
-    <div style={styles.dialogOverlay} onClick={onCancel}>
-      <div style={styles.dialog} onClick={(e) => e.stopPropagation()}>
-        <div style={styles.dialogTitle}>Rename</div>
+    <div className="duet-file-mgr__dialog-overlay" onClick={onCancel}>
+      <div className="duet-file-mgr__dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="duet-file-mgr__dialog-title">Rename</div>
         <input
-          style={styles.dialogInput}
+          className="duet-file-mgr__dialog-input"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
@@ -463,10 +137,10 @@ function RenameDialog({ currentName, onConfirm, onCancel }: RenameDialogProps) {
           }}
           autoFocus
         />
-        <div style={styles.dialogBtns}>
-          <button style={styles.dialogBtn} onClick={onCancel}>Cancel</button>
+        <div className="duet-file-mgr__dialog-btns">
+          <button className="duet-file-mgr__dialog-btn" onClick={onCancel}>Cancel</button>
           <button
-            style={styles.dialogBtnPrimary}
+            className="duet-file-mgr__dialog-btn--primary"
             onClick={() => value.trim() && onConfirm(value.trim())}
           >
             Rename
@@ -485,11 +159,11 @@ interface NewFolderDialogProps {
 function NewFolderDialog({ onConfirm, onCancel }: NewFolderDialogProps) {
   const [value, setValue] = useState('');
   return (
-    <div style={styles.dialogOverlay} onClick={onCancel}>
-      <div style={styles.dialog} onClick={(e) => e.stopPropagation()}>
-        <div style={styles.dialogTitle}>New Folder</div>
+    <div className="duet-file-mgr__dialog-overlay" onClick={onCancel}>
+      <div className="duet-file-mgr__dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="duet-file-mgr__dialog-title">New Folder</div>
         <input
-          style={styles.dialogInput}
+          className="duet-file-mgr__dialog-input"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="Folder name"
@@ -499,10 +173,10 @@ function NewFolderDialog({ onConfirm, onCancel }: NewFolderDialogProps) {
           }}
           autoFocus
         />
-        <div style={styles.dialogBtns}>
-          <button style={styles.dialogBtn} onClick={onCancel}>Cancel</button>
+        <div className="duet-file-mgr__dialog-btns">
+          <button className="duet-file-mgr__dialog-btn" onClick={onCancel}>Cancel</button>
           <button
-            style={styles.dialogBtnPrimary}
+            className="duet-file-mgr__dialog-btn--primary"
             onClick={() => value.trim() && onConfirm(value.trim())}
           >
             Create
@@ -574,25 +248,16 @@ function FileInfoPanel({
   }
 
   return (
-    <div style={styles.infoPanel}>
-      <button style={styles.closeInfoBtn} onClick={onClose} title="Close info panel">
+    <div className="duet-file-mgr__info-panel">
+      <button className="duet-file-mgr__close-info-btn" onClick={onClose} title="Close info panel">
         <X size={14} />
       </button>
 
       {/* Thumbnail display */}
       {fileInfo.thumbnails && fileInfo.thumbnails.length > 0 && (
-        <div style={{ textAlign: 'center', marginBottom: 4 }}>
+        <div className="duet-file-mgr__thumbnail-center">
           {thumbnailLoading ? (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: 120,
-                color: '#666',
-                gap: 6,
-              }}
-            >
+            <div className="duet-file-mgr__thumbnail-loading">
               <Loader2 size={16} className="spin" />
               Loading preview...
             </div>
@@ -600,12 +265,12 @@ function FileInfoPanel({
             <img
               src={thumbnailSrc}
               alt="G-code thumbnail"
-              style={styles.thumbnail}
+              className="duet-file-mgr__thumbnail"
             />
           ) : (
             <>
-              <Image size={48} style={{ color: '#555' }} />
-              <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+              <Image size={48} style={{ color: 'var(--border-strong)' }} />
+              <div className="duet-file-mgr__thumbnail-caption">
                 Thumbnail ({fileInfo.thumbnails[0].width}x{fileInfo.thumbnails[0].height})
               </div>
             </>
@@ -613,14 +278,14 @@ function FileInfoPanel({
         </div>
       )}
 
-      <div style={styles.infoPanelTitle}>
+      <div className="duet-file-mgr__info-panel-title">
         {fileInfo.fileName.split('/').pop() || fileInfo.fileName}
       </div>
 
       {rows.map(([label, value]) => (
-        <div key={label} style={styles.infoRow}>
-          <span style={styles.infoLabel}>{label}</span>
-          <span style={styles.infoValue}>{value}</span>
+        <div key={label} className="duet-file-mgr__info-row">
+          <span className="duet-file-mgr__info-label">{label}</span>
+          <span className="duet-file-mgr__info-value">{value}</span>
         </div>
       ))}
     </div>
@@ -916,16 +581,13 @@ export default function DuetFileManager() {
   );
 
   return (
-    <div style={styles.container}>
+    <div className="duet-file-mgr">
       {/* Tab bar */}
-      <div style={styles.tabBar}>
+      <div className="duet-file-mgr__tab-bar">
         {FILE_TABS.map((tab) => (
           <button
             key={tab.id}
-            style={{
-              ...styles.tab,
-              ...(activeFileTab === tab.id ? styles.tabActive : {}),
-            }}
+            className={`duet-file-mgr__tab${activeFileTab === tab.id ? ' is-active' : ''}`}
             onClick={() => handleTabSwitch(tab.id)}
           >
             {tab.label}
@@ -935,27 +597,23 @@ export default function DuetFileManager() {
 
       {/* System files warning */}
       {activeFileTab === 'sys' && (
-        <div style={styles.warningBanner}>
-          <span style={{ fontSize: 14 }}>&#9888;</span>
+        <div className="duet-file-mgr__warning-banner">
+          <span className="duet-file-mgr__warning-icon">&#9888;</span>
           Editing system files can affect printer behavior. Be careful.
         </div>
       )}
 
       {/* Breadcrumbs */}
-      <div style={styles.breadcrumbs}>
+      <div className="duet-file-mgr__breadcrumbs">
         {breadcrumbs.map((crumb, i) => (
-          <span key={crumb.path} style={{ display: 'flex', alignItems: 'center' }}>
+          <span key={crumb.path} className="duet-file-mgr__breadcrumb-wrap">
             {i > 0 && (
-              <span style={styles.breadcrumbSep}>
+              <span className="duet-file-mgr__breadcrumb-sep">
                 <ChevronRight size={12} />
               </span>
             )}
             <button
-              style={{
-                ...styles.breadcrumbItem,
-                color: i === breadcrumbs.length - 1 ? '#ccc' : '#4fc3f7',
-                fontWeight: i === breadcrumbs.length - 1 ? 600 : 400,
-              }}
+              className={`duet-file-mgr__breadcrumb-item${i === breadcrumbs.length - 1 ? ' is-current' : ''}`}
               onClick={() => handleNavigate(crumb.path)}
             >
               {crumb.label}
@@ -965,9 +623,9 @@ export default function DuetFileManager() {
       </div>
 
       {/* Toolbar */}
-      <div style={styles.toolbar}>
+      <div className="duet-file-mgr__toolbar">
         <button
-          style={styles.toolbarBtn}
+          className="duet-file-mgr__toolbar-btn"
           onClick={handleUploadClick}
           disabled={uploading}
           title="Upload file"
@@ -985,7 +643,7 @@ export default function DuetFileManager() {
         />
 
         <button
-          style={styles.toolbarBtn}
+          className="duet-file-mgr__toolbar-btn"
           onClick={() => setShowNewFolder(true)}
           title="New folder"
         >
@@ -994,7 +652,7 @@ export default function DuetFileManager() {
         </button>
 
         <button
-          style={styles.toolbarBtn}
+          className="duet-file-mgr__toolbar-btn"
           onClick={handleRefresh}
           disabled={loading}
           title="Refresh"
@@ -1004,59 +662,59 @@ export default function DuetFileManager() {
         </button>
 
         {uploading && (
-          <div style={styles.progressContainer}>
-            <div style={styles.progressBar}>
-              <div style={{ ...styles.progressFill, width: `${uploadProgress}%` }} />
+          <div className="duet-file-mgr__progress-container">
+            <div className="duet-file-mgr__progress-bar">
+              <div className="duet-file-mgr__progress-fill" style={{ width: `${uploadProgress}%` }} />
             </div>
-            <span style={styles.progressText}>{uploadProgress}%</span>
+            <span className="duet-file-mgr__progress-text">{uploadProgress}%</span>
           </div>
         )}
       </div>
 
       {/* Body: file list + optional info panel */}
-      <div style={styles.body}>
+      <div className="duet-file-mgr__body">
         {/* File list with drag and drop */}
         <div
-          style={styles.fileListContainer}
+          className="duet-file-mgr__file-list"
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
           {dragOver && (
-            <div style={styles.dropOverlay}>
-              <Upload size={32} style={{ marginRight: 8 }} />
+            <div className="duet-file-mgr__drop-overlay">
+              <Upload size={32} className="duet-file-mgr__drop-icon" />
               Drop files to upload
             </div>
           )}
 
           {loading ? (
-            <div style={styles.loading}>
+            <div className="duet-file-mgr__loading">
               <Loader2 size={18} className="spin" />
               Loading...
             </div>
           ) : sortedFiles.length === 0 ? (
-            <div style={styles.empty}>This folder is empty</div>
+            <div className="duet-file-mgr__empty">This folder is empty</div>
           ) : (
-            <table style={styles.table}>
+            <table className="duet-file-mgr__table">
               <thead>
                 <tr>
-                  <th style={{ ...styles.th, width: 30 }}></th>
-                  <th style={styles.th} onClick={() => handleSort('name')}>
-                    <div style={styles.thContent}>
+                  <th className="duet-file-mgr__th" style={{ width: 30 }}></th>
+                  <th className="duet-file-mgr__th" onClick={() => handleSort('name')}>
+                    <div className="duet-file-mgr__th-content">
                       Name <SortIcon field="name" current={sortField} dir={sortDir} />
                     </div>
                   </th>
-                  <th style={{ ...styles.th, width: 90 }} onClick={() => handleSort('size')}>
-                    <div style={styles.thContent}>
+                  <th className="duet-file-mgr__th" style={{ width: 90 }} onClick={() => handleSort('size')}>
+                    <div className="duet-file-mgr__th-content">
                       Size <SortIcon field="size" current={sortField} dir={sortDir} />
                     </div>
                   </th>
-                  <th style={{ ...styles.th, width: 160 }} onClick={() => handleSort('date')}>
-                    <div style={styles.thContent}>
+                  <th className="duet-file-mgr__th" style={{ width: 160 }} onClick={() => handleSort('date')}>
+                    <div className="duet-file-mgr__th-content">
                       Modified <SortIcon field="date" current={sortField} dir={sortDir} />
                     </div>
                   </th>
-                  <th style={{ ...styles.th, width: 150, cursor: 'default' }}>Actions</th>
+                  <th className="duet-file-mgr__th duet-file-mgr__th--no-sort" style={{ width: 150 }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1069,71 +727,66 @@ export default function DuetFileManager() {
                   return (
                     <tr
                       key={item.name}
-                      style={{
-                        ...styles.row,
-                        ...(isSelected ? styles.rowSelected : isHovered ? styles.rowHover : {}),
-                      }}
-                      onMouseEnter={() => setHoveredRow(item.name)}
-                      onMouseLeave={() => setHoveredRow(null)}
+                      className={`duet-file-mgr__row${isSelected ? ' is-selected' : ''}`}
                       onClick={() => handleRowClick(item)}
                     >
                       {/* Icon */}
-                      <td style={styles.td}>
+                      <td className="duet-file-mgr__td">
                         {isDir ? (
-                          <Folder size={16} style={{ color: '#e8a838' }} />
+                          <Folder size={16} className="duet-file-mgr__icon--dir" />
                         ) : (
-                          <File size={16} style={{ color: '#888' }} />
+                          <File size={16} className="duet-file-mgr__icon--file" />
                         )}
                       </td>
 
                       {/* Name */}
-                      <td style={styles.td}>
-                        <span style={{ color: isDir ? '#e8a838' : '#ccc' }}>{item.name}</span>
+                      <td className="duet-file-mgr__td">
+                        <span className={isDir ? 'duet-file-mgr__name--dir' : 'duet-file-mgr__name--file'}>{item.name}</span>
                       </td>
 
                       {/* Size */}
-                      <td style={{ ...styles.td, color: '#999' }}>
+                      <td className="duet-file-mgr__td duet-file-mgr__td--muted">
                         {isDir ? '--' : formatFileSize(item.size)}
                       </td>
 
                       {/* Modified */}
-                      <td style={{ ...styles.td, color: '#999', fontSize: 11 }}>
+                      <td className="duet-file-mgr__td duet-file-mgr__td--muted duet-file-mgr__td--small">
                         {formatDate(item.date)}
                       </td>
 
                       {/* Actions */}
-                      <td style={styles.td} onClick={(e) => e.stopPropagation()}>
-                        <div style={styles.actions}>
+                      <td className="duet-file-mgr__td" onClick={(e) => e.stopPropagation()}>
+                        <div className="duet-file-mgr__actions">
                           {isGCode && (
                             <>
                               <button
-                                style={styles.actionBtn}
+                                className="duet-file-mgr__action-btn"
                                 title="Start print"
                                 onClick={() => handlePrint(item)}
                               >
-                                <Play size={14} style={{ color: '#4caf50' }} />
+                                <Play size={14} className="duet-file-mgr__icon--play" />
                               </button>
                               <button
-                                style={styles.actionBtn}
+                                className="duet-file-mgr__action-btn"
                                 title="Simulate"
                                 onClick={() => handleSimulate(item)}
                               >
-                                <FlaskConical size={14} style={{ color: '#ab47bc' }} />
+                                <FlaskConical size={14} className="duet-file-mgr__icon--simulate" />
                               </button>
                             </>
                           )}
                           {!isDir && isEditableFile(item.name) && (
                             <button
-                              style={styles.actionBtn}
+                              className="duet-file-mgr__action-btn"
                               title="Edit file"
                               onClick={() => handleEditFile(item)}
                             >
-                              <FileCode size={14} style={{ color: '#66bb6a' }} />
+                              <FileCode size={14} className="duet-file-mgr__icon--edit" />
                             </button>
                           )}
                           {!isDir && (
                             <button
-                              style={styles.actionBtn}
+                              className="duet-file-mgr__action-btn"
                               title="Download"
                               onClick={() => handleDownload(item)}
                             >
@@ -1141,14 +794,14 @@ export default function DuetFileManager() {
                             </button>
                           )}
                           <button
-                            style={styles.actionBtn}
+                            className="duet-file-mgr__action-btn"
                             title="Rename"
                             onClick={() => setRenameTarget(item)}
                           >
                             <Pencil size={14} />
                           </button>
                           <button
-                            style={styles.actionBtn}
+                            className="duet-file-mgr__action-btn"
                             title="Delete"
                             onClick={() => handleDelete(item)}
                           >

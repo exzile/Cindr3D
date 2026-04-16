@@ -1,0 +1,16 @@
+/* =============================================================================
+   SystemInfoPanel — BEM styles
+   All colour references use CSS custom properties set by themeStore.
+   ============================================================================= */
+
+/* ── Storage bar progress fill ───────────────────────────────────────────── */
+/* The fill width is dynamic so width stays inline; only background is themed */
+.duet-sys-panel__storage-fill {
+  height: 100%;
+  border-radius: 2px;
+}
+
+/* Background colours for storage fill levels come from JS via inline style
+   so they can be conditional (usedPct > 90 ? danger : …). The bar track
+   background is already covered by duet-dash-sys-storage-bar in the shared
+   dashboard CSS, driven by COLORS.inputBg inline on the bar element itself. */

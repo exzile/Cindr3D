@@ -1,0 +1,137 @@
+/* =============================================================================
+   DuetObjectModelBrowser — BEM styles
+   All colour references use CSS custom properties set by themeStore.
+   ============================================================================= */
+
+/* ── Outer wrapper ───────────────────────────────────────────────────────── */
+.duet-obj-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+/* ── Panel card ──────────────────────────────────────────────────────────── */
+.duet-obj-browser__panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+/* ── Header row ──────────────────────────────────────────────────────────── */
+.duet-obj-browser__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.duet-obj-browser__header-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+/* ── Search wrapper ──────────────────────────────────────────────────────── */
+.duet-obj-browser__search-wrap {
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.duet-obj-browser__search-icon {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+}
+
+.duet-obj-browser__search-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  padding: 6px 8px 6px 28px;
+  font-size: 12px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.duet-obj-browser__search-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+}
+
+/* ── Tree view area ──────────────────────────────────────────────────────── */
+.duet-obj-browser__tree {
+  max-height: 560px;
+  overflow: auto;
+  background: var(--bg-primary);
+  border-radius: 4px;
+  padding: 8px 4px;
+  border: 1px solid var(--border);
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+.duet-obj-browser__empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+  padding: 16px;
+}
+
+/* ── Tree nodes ──────────────────────────────────────────────────────────── */
+.duet-obj-browser__node-leaf {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.duet-obj-browser__node-leaf.is-match {
+  background: rgba(80, 120, 255, 0.08);
+}
+
+.duet-obj-browser__node-spacer {
+  width: 14px;
+}
+
+.duet-obj-browser__node-container-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--text-primary);
+}
+
+.duet-obj-browser__node-container-row.is-match {
+  background: rgba(80, 120, 255, 0.08);
+}
+
+.duet-obj-browser__node-type {
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
+.duet-obj-browser__node-sep {
+  color: var(--text-muted);
+}

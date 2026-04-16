@@ -1,0 +1,474 @@
+/* =============================================================================
+   DuetFileManager — BEM styles
+   All colour references use CSS custom properties set by themeStore.
+   ============================================================================= */
+
+/* ── Container ───────────────────────────────────────────────────────────── */
+.duet-file-mgr {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
+  overflow: hidden;
+}
+
+/* ── Tab bar ─────────────────────────────────────────────────────────────── */
+.duet-file-mgr__tab-bar {
+  display: flex;
+  align-items: stretch;
+  background-color: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  padding: 0;
+  gap: 0;
+}
+
+.duet-file-mgr__tab {
+  padding: 8px 18px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.duet-file-mgr__tab.is-active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── Warning banner ──────────────────────────────────────────────────────── */
+.duet-file-mgr__warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background-color: rgba(255, 152, 0, 0.12);
+  border-bottom: 1px solid rgba(255, 152, 0, 0.25);
+  font-size: 12px;
+  color: var(--warning);
+}
+
+.duet-file-mgr__warning-icon {
+  font-size: 14px;
+}
+
+/* ── Breadcrumbs ─────────────────────────────────────────────────────────── */
+.duet-file-mgr__breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px;
+  background-color: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  flex-wrap: wrap;
+  min-height: 32px;
+}
+
+.duet-file-mgr__breadcrumb-wrap {
+  display: flex;
+  align-items: center;
+}
+
+.duet-file-mgr__breadcrumb-item {
+  cursor: pointer;
+  color: var(--info);
+  padding: 2px 4px;
+  border-radius: 3px;
+  border: none;
+  background: none;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.duet-file-mgr__breadcrumb-item.is-current {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.duet-file-mgr__breadcrumb-sep {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+.duet-file-mgr__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background-color: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.duet-file-mgr__toolbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+/* ── Upload progress ─────────────────────────────────────────────────────── */
+.duet-file-mgr__progress-container {
+  flex: 1;
+  margin-left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.duet-file-mgr__progress-bar {
+  flex: 1;
+  height: 6px;
+  background-color: var(--border-strong);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.duet-file-mgr__progress-fill {
+  height: 100%;
+  background-color: var(--success);
+  border-radius: 3px;
+  transition: width 0.2s;
+}
+
+.duet-file-mgr__progress-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* ── Body ────────────────────────────────────────────────────────────────── */
+.duet-file-mgr__body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── File list ───────────────────────────────────────────────────────────── */
+.duet-file-mgr__file-list {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.duet-file-mgr__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.duet-file-mgr__th {
+  position: sticky;
+  top: 0;
+  background-color: var(--bg-elevated);
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-strong);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.duet-file-mgr__th--no-sort {
+  cursor: default;
+}
+
+.duet-file-mgr__th-content {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.duet-file-mgr__td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--bg-elevated);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.duet-file-mgr__td--muted {
+  color: var(--text-secondary);
+}
+
+.duet-file-mgr__td--small {
+  font-size: 11px;
+}
+
+/* ── Rows ────────────────────────────────────────────────────────────────── */
+.duet-file-mgr__row {
+  cursor: pointer;
+  transition: background-color 0.1s;
+}
+
+.duet-file-mgr__row:hover {
+  background-color: var(--bg-hover);
+}
+
+.duet-file-mgr__row.is-selected {
+  background-color: var(--bg-active);
+}
+
+/* ── Name cell ───────────────────────────────────────────────────────────── */
+.duet-file-mgr__name-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.duet-file-mgr__name--dir {
+  color: var(--warning);
+}
+
+.duet-file-mgr__name--file {
+  color: var(--text-primary);
+}
+
+/* ── Icons ───────────────────────────────────────────────────────────────── */
+.duet-file-mgr__icon--dir {
+  color: var(--warning);
+}
+
+.duet-file-mgr__icon--file {
+  color: var(--text-muted);
+}
+
+.duet-file-mgr__icon--play {
+  color: var(--success);
+}
+
+.duet-file-mgr__icon--simulate {
+  color: var(--info);
+}
+
+.duet-file-mgr__icon--edit {
+  color: var(--success);
+}
+
+.duet-file-mgr__icon--download {
+  color: var(--accent);
+}
+
+.duet-file-mgr__icon--delete {
+  color: var(--error);
+}
+
+/* ── Action buttons ──────────────────────────────────────────────────────── */
+.duet-file-mgr__action-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.duet-file-mgr__actions {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+/* ── Info panel ──────────────────────────────────────────────────────────── */
+.duet-file-mgr__info-panel {
+  width: 280px;
+  border-left: 1px solid var(--border);
+  background-color: var(--bg-panel);
+  overflow: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.duet-file-mgr__info-panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+
+.duet-file-mgr__info-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.duet-file-mgr__info-label {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.duet-file-mgr__info-value {
+  color: var(--text-primary);
+  text-align: right;
+  word-break: break-all;
+}
+
+.duet-file-mgr__thumbnail {
+  width: 100%;
+  border-radius: 4px;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border);
+}
+
+.duet-file-mgr__thumbnail-center {
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.duet-file-mgr__thumbnail-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 120px;
+  color: var(--text-muted);
+  gap: 6px;
+}
+
+.duet-file-mgr__thumbnail-caption {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.duet-file-mgr__close-info-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-self: flex-end;
+}
+
+/* ── Drop overlay ────────────────────────────────────────────────────────── */
+.duet-file-mgr__drop-overlay {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(33, 150, 243, 0.15);
+  border: 2px dashed var(--accent);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--accent);
+  font-weight: 600;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.duet-file-mgr__drop-icon {
+  margin-right: 8px;
+}
+
+/* ── State messages ──────────────────────────────────────────────────────── */
+.duet-file-mgr__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--text-muted);
+  gap: 8px;
+}
+
+.duet-file-mgr__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--text-muted);
+}
+
+/* ── Dialogs ─────────────────────────────────────────────────────────────── */
+.duet-file-mgr__dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.duet-file-mgr__dialog {
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 20px;
+  min-width: 320px;
+  color: var(--text-primary);
+}
+
+.duet-file-mgr__dialog-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.duet-file-mgr__dialog-input {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.duet-file-mgr__dialog-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.duet-file-mgr__dialog-btn {
+  padding: 5px 14px;
+  font-size: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  cursor: pointer;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.duet-file-mgr__dialog-btn--primary {
+  padding: 5px 14px;
+  font-size: 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+  font-family: inherit;
+}

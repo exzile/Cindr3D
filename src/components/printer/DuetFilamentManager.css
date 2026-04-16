@@ -1,0 +1,272 @@
+/* =============================================================================
+   DuetFilamentManager — BEM styles
+   All colour references use CSS custom properties set by themeStore.
+   ============================================================================= */
+
+/* ── Container ───────────────────────────────────────────────────────────── */
+.duet-filament-mgr {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
+  overflow: hidden;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+.duet-filament-mgr__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background-color: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.duet-filament-mgr__toolbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.duet-filament-mgr__toolbar-btn--primary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.duet-filament-mgr__error {
+  color: var(--error);
+  font-size: 12px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Scroll area ─────────────────────────────────────────────────────────── */
+.duet-filament-mgr__scroll-area {
+  flex: 1;
+  overflow: auto;
+}
+
+/* ── Empty / loading states ──────────────────────────────────────────────── */
+.duet-filament-mgr__empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 24px;
+  color: var(--text-muted);
+}
+
+.duet-filament-mgr__empty-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.duet-filament-mgr__empty-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.duet-filament-mgr__loading-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+.duet-filament-mgr__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.duet-filament-mgr__thead {
+  background-color: var(--bg-panel);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.duet-filament-mgr__th {
+  padding: 7px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.duet-filament-mgr__th--center {
+  text-align: center;
+}
+
+.duet-filament-mgr__th--right {
+  text-align: right;
+}
+
+.duet-filament-mgr__tr {
+  border-bottom: 1px solid var(--bg-elevated);
+  transition: background 0.1s;
+}
+
+.duet-filament-mgr__tr:hover {
+  background-color: var(--bg-hover);
+}
+
+.duet-filament-mgr__td {
+  padding: 7px 12px;
+  vertical-align: middle;
+}
+
+.duet-filament-mgr__td--center {
+  text-align: center;
+}
+
+.duet-filament-mgr__td--right {
+  text-align: right;
+}
+
+/* ── Name cell ───────────────────────────────────────────────────────────── */
+.duet-filament-mgr__name-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* ── Rename form ─────────────────────────────────────────────────────────── */
+.duet-filament-mgr__rename-form {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.duet-filament-mgr__rename-input {
+  padding: 2px 6px;
+  font-size: 13px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+  width: 160px;
+  font-family: inherit;
+}
+
+/* ── Icon buttons ────────────────────────────────────────────────────────── */
+.duet-filament-mgr__icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 3px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.duet-filament-mgr__icon-btn--edit {
+  color: var(--info);
+}
+
+.duet-filament-mgr__icon-btn--danger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 3px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--error);
+}
+
+/* ── Actions group ───────────────────────────────────────────────────────── */
+.duet-filament-mgr__actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+/* ── Confirm / cancel buttons ────────────────────────────────────────────── */
+.duet-filament-mgr__confirm-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 10px;
+  font-size: 12px;
+  border: none;
+  border-radius: 4px;
+  background: var(--success);
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.duet-filament-mgr__cancel-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* ── New filament bar ────────────────────────────────────────────────────── */
+.duet-filament-mgr__new-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background-color: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.duet-filament-mgr__new-input {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+  font-family: inherit;
+}
