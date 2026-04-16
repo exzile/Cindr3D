@@ -22,7 +22,7 @@ export default function ShiftMiddlePan() {
         panning = true;
         lastX = e.clientX;
         lastY = e.clientY;
-        try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+        try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
         if (controls) controls.enabled = false;
       }
     };
@@ -60,7 +60,7 @@ export default function ShiftMiddlePan() {
     const onPointerUp = (e: PointerEvent) => {
       if (e.button === 1 && panning) {
         panning = false;
-        try { canvas.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+        try { canvas.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
         if (controls) controls.enabled = true;
       }
     };

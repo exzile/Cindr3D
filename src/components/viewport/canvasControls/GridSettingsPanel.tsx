@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useCADStore } from '../../../store/cadStore';
 
-export default function GridSettingsPanel({ onClose: _onClose }: { onClose: () => void }) {
+export default function GridSettingsPanel({ onClose }: { onClose: () => void }) {
+  void onClose;
   const gridSize = useCADStore((s) => s.gridSize);
   const setGridSize = useCADStore((s) => s.setGridSize);
   const [localSize, setLocalSize] = useState(String(gridSize));

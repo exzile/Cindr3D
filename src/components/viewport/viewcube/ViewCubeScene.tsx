@@ -8,7 +8,8 @@ import {
 } from './defs';
 
 /** The main textured cube body */
-function CubeBody({ hoveredZone: _hoveredZone }: { hoveredZone: string | null }) {
+function CubeBody({ hoveredZone }: { hoveredZone: string | null }) {
+  void hoveredZone; // reserved for future hover highlight effect
   const meshRef = useRef<THREE.Mesh>(null);
 
   return (

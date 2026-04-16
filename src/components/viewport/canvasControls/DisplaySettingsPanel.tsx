@@ -1,6 +1,7 @@
 import { useCADStore } from '../../../store/cadStore';
 
-export default function DisplaySettingsPanel({ onClose: _onClose }: { onClose: () => void }) {
+export default function DisplaySettingsPanel({ onClose }: { onClose: () => void }) {
+  void onClose; // available for future use (e.g. close-on-apply)
   const visualStyle = useCADStore((s) => s.visualStyle);
   const setVisualStyle = useCADStore((s) => s.setVisualStyle);
   const showEnvironment = useCADStore((s) => s.showEnvironment);

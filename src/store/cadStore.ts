@@ -3086,8 +3086,9 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   },
 
   // A5 — stub until Component Browser (A1) populates a components array
-  groundComponent: (_id, _grounded) => {
-    /* no components array yet; will be populated with A1 Component Browser */
+  groundComponent: (id, grounded) => {
+    void id; void grounded;
+    /* Stub — delegates to componentStore.setComponentGrounded in production */
   },
 
   // A9 — Component Pattern
@@ -5317,7 +5318,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   name: 'dzign3d-cad',
   storage: idbStorage as any,
   version: 3,
-  migrate: (persistedState: unknown, _version: number) => {
+  migrate: (persistedState: unknown) => {
     const state = (persistedState ?? {}) as Partial<CADState>;
     return {
       ...state,

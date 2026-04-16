@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useCADStore } from '../../../store/cadStore';
 
-export default function IncrementSettingsPanel({ onClose: _onClose }: { onClose: () => void }) {
+export default function IncrementSettingsPanel({ onClose }: { onClose: () => void }) {
+  void onClose;
   const moveIncrement = useCADStore((s) => s.moveIncrement);
   const setMoveIncrement = useCADStore((s) => s.setMoveIncrement);
   const rotateIncrement = useCADStore((s) => s.rotateIncrement);

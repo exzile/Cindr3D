@@ -120,7 +120,7 @@ export default function FormInteraction() {
   useEffect(() => {
     // FormBodies renders with userData.formBodyId set on each smooth mesh
     const meshes: THREE.Object3D[] = [];
-    gl.domElement.dispatchEvent; // no-op: just ensure gl is stable
+    void gl; // ensure gl is a stable dep for this effect
     // We traverse the THREE scene directly via the renderer; it's fine here
     // because this effect only runs when formBodies array reference changes
     // The safe cross-platform approach: rebuild from scene on next pick call.
