@@ -40,8 +40,6 @@ const TYPE_COLORS: Record<string, string> = {
   error: '#f87171',
 };
 
-const COMMAND_PREFIX_COLOR = '#3b82f6';
-
 // --- G-code autocomplete data ---
 const GCODE_SUGGESTIONS: { code: string; description: string }[] = [
   { code: 'G0', description: 'Rapid move' },
@@ -300,29 +298,26 @@ export default function DuetConsole() {
   );
 
   return (
-    <div style={styles.container}>
+    <div className="duet-console">
       {/* Quick command buttons */}
-      <div style={styles.toolbar}>
-        <div style={styles.quickButtons}>
+      <div className="duet-console__toolbar">
+        <div className="duet-console__quick-buttons">
           {QUICK_COMMANDS.map((cmd) => (
             <button
               key={cmd.gcode}
-              style={{
-                ...styles.quickBtn,
-                ...(cmd.variant === 'danger' ? styles.quickBtnDanger : {}),
-              }}
+              className={`duet-console__quick-btn${cmd.variant === 'danger' ? ' duet-console__quick-btn--danger' : ''}`}
               onClick={() => handleQuickCommand(cmd.gcode)}
               disabled={!connected}
               title={cmd.label}
             >
               {cmd.icon}
-              <span style={styles.quickBtnLabel}>{cmd.gcode}</span>
+              <span className="duet-console__quick-btn-label">{cmd.gcode}</span>
             </button>
           ))}
         </div>
-        <div style={styles.toolbarRight}>
+        <div className="duet-console__toolbar-right">
           <button
-            style={styles.clearBtn}
+            className="duet-console__clear-btn"
             onClick={handleCopyAll}
             title="Copy All to Clipboard"
           >
@@ -330,7 +325,7 @@ export default function DuetConsole() {
             <span>Copy</span>
           </button>
           <button
-            style={styles.clearBtn}
+            className="duet-console__clear-btn"
             onClick={handleClear}
             title="Clear Console"
           >
@@ -341,12 +336,9 @@ export default function DuetConsole() {
       </div>
 
       {/* Filter toolbar */}
-      <div style={styles.filterBar}>
+      <div className="duet-console__filter-bar">
         <button
-          style={{
-            ...styles.filterToggle,
-            ...(hideTemps ? styles.filterToggleActive : {}),
-          }}
+          className={`duet-console__filter-toggle${hideTemps ? ' is-active' : ''}`}
           onClick={() => setHideTemps((v) => !v)}
           title="Hide temperature reports (T:, B:, ok T:)"
         >
@@ -354,11 +346,11 @@ export default function DuetConsole() {
           <span>Hide Temps</span>
         </button>
 
-        <div style={styles.filterSelectWrap}>
+        <div className="duet-console__filter-select-wrap">
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value as FilterType)}
-            style={styles.filterSelect}
+            className="duet-console__filter-select"
           >
             <option value="all">All</option>
             <option value="command">Commands Only</option>
@@ -368,19 +360,19 @@ export default function DuetConsole() {
           </select>
         </div>
 
-        <div style={styles.filterSearchWrap}>
-          <Search size={12} style={{ color: '#52525b', flexShrink: 0 }} />
+        <div className="duet-console__filter-search-wrap">
+          <Search size={12} className="duet-console__filter-search-icon" />
           <input
             type="text"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             placeholder="Search output..."
-            style={styles.filterSearchInput}
+            className="duet-console__filter-search-input"
             spellCheck={false}
           />
           {searchText && (
             <button
-              style={styles.filterSearchClear}
+              className="duet-console__filter-search-clear"
               onClick={() => setSearchText('')}
               title="Clear search"
             >
@@ -389,36 +381,34 @@ export default function DuetConsole() {
           )}
         </div>
 
-        <span style={styles.filterCount}>
+        <span className="duet-console__filter-count">
           Showing {filteredEntries.length} of {consoleHistory.length} entries
         </span>
       </div>
 
       {/* Console output */}
-      <div ref={outputRef} style={styles.output} onScroll={handleScroll}>
+      <div ref={outputRef} className="duet-console__output" onScroll={handleScroll}>
         {filteredEntries.length === 0 && consoleHistory.length === 0 && (
-          <div style={styles.placeholder}>
+          <div className="duet-console__placeholder">
             Console output will appear here. Type a G-code command below or use
             the quick buttons above.
           </div>
         )}
         {filteredEntries.length === 0 && consoleHistory.length > 0 && (
-          <div style={styles.placeholder}>
+          <div className="duet-console__placeholder">
             No entries match the current filter.
           </div>
         )}
         {filteredEntries.map((entry, i) => (
-          <div key={i} style={styles.entry}>
-            <span style={styles.lineNumber}>{String(i + 1).padStart(4, '\u00A0')}</span>
-            <span style={styles.timestamp}>{formatTime(entry.timestamp)}</span>
+          <div key={i} className="duet-console__entry">
+            <span className="duet-console__line-number">{String(i + 1).padStart(4, '\u00A0')}</span>
+            <span className="duet-console__timestamp">{formatTime(entry.timestamp)}</span>
             <span
-              style={{
-                ...styles.entryContent,
-                color: TYPE_COLORS[entry.type] ?? '#d4d4d8',
-              }}
+              className="duet-console__entry-content"
+              style={{ color: TYPE_COLORS[entry.type] ?? '#d4d4d8' }}
             >
               {entry.type === 'command' && (
-                <span style={{ color: COMMAND_PREFIX_COLOR, fontWeight: 700 }}>{'> '}</span>
+                <span className="duet-console__cmd-prefix">{'> '}</span>
               )}
               {searchText ? highlightText(entry.content, searchText) : entry.content}
             </span>
@@ -429,7 +419,7 @@ export default function DuetConsole() {
       {/* Scroll to bottom button */}
       {!isAtBottom && (
         <button
-          style={styles.scrollBottomBtn}
+          className="duet-console__scroll-bottom-btn"
           onClick={scrollToBottom}
           title="Scroll to bottom"
         >
@@ -439,31 +429,28 @@ export default function DuetConsole() {
       )}
 
       {/* Command input with autocomplete */}
-      <div style={styles.inputArea}>
+      <div className="duet-console__input-area">
         {/* Autocomplete dropdown (rendered above input) */}
         {showSuggestions && suggestions.length > 0 && (
-          <div ref={suggestionsRef} style={styles.suggestionsDropdown}>
+          <div ref={suggestionsRef} className="duet-console__suggestions-dropdown">
             {suggestions.map((s, i) => (
               <div
                 key={s.code}
-                style={{
-                  ...styles.suggestionItem,
-                  ...(i === selectedSuggestion ? styles.suggestionItemSelected : {}),
-                }}
+                className={`duet-console__suggestion-item${i === selectedSuggestion ? ' is-selected' : ''}`}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   selectSuggestion(s.code);
                 }}
                 onMouseEnter={() => setSelectedSuggestion(i)}
               >
-                <span style={styles.suggestionCode}>{s.code}</span>
-                <span style={styles.suggestionDesc}>{s.description}</span>
+                <span className="duet-console__suggestion-code">{s.code}</span>
+                <span className="duet-console__suggestion-desc">{s.description}</span>
               </div>
             ))}
           </div>
         )}
 
-        <div style={styles.inputRow}>
+        <div className="duet-console__input-row">
           <input
             ref={inputRef}
             type="text"
@@ -484,15 +471,12 @@ export default function DuetConsole() {
             }}
             placeholder={connected ? 'Type G-code command...' : 'Not connected'}
             disabled={!connected}
-            style={styles.input}
+            className="duet-console__input"
             spellCheck={false}
             autoComplete="off"
           />
           <button
-            style={{
-              ...styles.sendBtn,
-              opacity: !connected || !input.trim() ? 0.4 : 1,
-            }}
+            className={`duet-console__send-btn${!connected || !input.trim() ? ' is-disabled' : ''}`}
             onClick={handleSend}
             disabled={!connected || !input.trim()}
             title="Send command"
@@ -504,298 +488,3 @@ export default function DuetConsole() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100%',
-    background: '#18181b',
-    color: '#d4d4d8',
-    fontFamily:
-      "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
-    fontSize: 13,
-    position: 'relative',
-  },
-
-  // Toolbar
-  toolbar: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    padding: '6px 8px',
-    borderBottom: '1px solid #27272a',
-    background: '#1c1c1f',
-    flexShrink: 0,
-    flexWrap: 'wrap' as const,
-  },
-  toolbarRight: {
-    display: 'flex',
-    gap: 4,
-    flexShrink: 0,
-  },
-  quickButtons: {
-    display: 'flex',
-    gap: 4,
-    flexWrap: 'wrap' as const,
-  },
-  quickBtn: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '4px 8px',
-    border: '1px solid #3f3f46',
-    borderRadius: 4,
-    background: '#27272a',
-    color: '#a1a1aa',
-    cursor: 'pointer',
-    fontSize: 12,
-    fontFamily: 'inherit',
-    transition: 'background 0.15s, color 0.15s',
-  },
-  quickBtnDanger: {
-    border: '1px solid #7f1d1d',
-    background: '#450a0a',
-    color: '#fca5a5',
-  },
-  quickBtnLabel: {
-    fontWeight: 600,
-  },
-  clearBtn: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '4px 10px',
-    border: '1px solid #3f3f46',
-    borderRadius: 4,
-    background: '#27272a',
-    color: '#a1a1aa',
-    cursor: 'pointer',
-    fontSize: 12,
-    fontFamily: 'inherit',
-    flexShrink: 0,
-  },
-
-  // Filter bar
-  filterBar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '4px 8px',
-    borderBottom: '1px solid #27272a',
-    background: '#1a1a1d',
-    flexShrink: 0,
-    flexWrap: 'wrap' as const,
-    fontSize: 12,
-  },
-  filterToggle: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '3px 8px',
-    border: '1px solid #3f3f46',
-    borderRadius: 4,
-    background: '#27272a',
-    color: '#71717a',
-    cursor: 'pointer',
-    fontSize: 11,
-    fontFamily: 'inherit',
-    transition: 'all 0.15s',
-    whiteSpace: 'nowrap' as const,
-  },
-  filterToggleActive: {
-    border: '1px solid #854d0e',
-    background: '#422006',
-    color: '#facc15',
-  },
-  filterSelectWrap: {
-    flexShrink: 0,
-  },
-  filterSelect: {
-    padding: '3px 6px',
-    border: '1px solid #3f3f46',
-    borderRadius: 4,
-    background: '#27272a',
-    color: '#a1a1aa',
-    fontSize: 11,
-    fontFamily: 'inherit',
-    outline: 'none',
-    cursor: 'pointer',
-  },
-  filterSearchWrap: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    flex: 1,
-    minWidth: 120,
-    padding: '2px 6px',
-    border: '1px solid #3f3f46',
-    borderRadius: 4,
-    background: '#09090b',
-  },
-  filterSearchInput: {
-    flex: 1,
-    border: 'none',
-    background: 'transparent',
-    color: '#e4e4e7',
-    fontSize: 11,
-    fontFamily: 'inherit',
-    outline: 'none',
-    padding: '2px 0',
-    minWidth: 0,
-  },
-  filterSearchClear: {
-    background: 'none',
-    border: 'none',
-    color: '#71717a',
-    cursor: 'pointer',
-    fontSize: 12,
-    fontFamily: 'inherit',
-    padding: '0 2px',
-    lineHeight: 1,
-  },
-  filterCount: {
-    color: '#52525b',
-    fontSize: 11,
-    whiteSpace: 'nowrap' as const,
-    marginLeft: 'auto',
-    flexShrink: 0,
-  },
-
-  // Output
-  output: {
-    flex: 1,
-    overflowY: 'auto' as const,
-    padding: '8px 10px',
-    lineHeight: 1.6,
-  },
-  placeholder: {
-    color: '#52525b',
-    fontStyle: 'italic',
-    padding: '16px 0',
-    textAlign: 'center' as const,
-  },
-  entry: {
-    display: 'flex',
-    gap: 10,
-    whiteSpace: 'pre-wrap' as const,
-    wordBreak: 'break-all' as const,
-  },
-  lineNumber: {
-    color: '#3f3f46',
-    flexShrink: 0,
-    userSelect: 'none' as const,
-    minWidth: 32,
-    textAlign: 'right' as const,
-  },
-  timestamp: {
-    color: '#52525b',
-    flexShrink: 0,
-    userSelect: 'none' as const,
-  },
-  entryContent: {
-    flex: 1,
-  },
-
-  // Scroll to bottom
-  scrollBottomBtn: {
-    position: 'absolute' as const,
-    bottom: 54,
-    left: '50%',
-    transform: 'translateX(-50%)',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '4px 12px',
-    border: '1px solid #3f3f46',
-    borderRadius: 16,
-    background: '#27272aee',
-    color: '#a1a1aa',
-    cursor: 'pointer',
-    fontSize: 11,
-    fontFamily: 'inherit',
-    zIndex: 10,
-    boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-    backdropFilter: 'blur(4px)',
-  },
-
-  // Input area (wraps suggestions + input row)
-  inputArea: {
-    position: 'relative' as const,
-    flexShrink: 0,
-  },
-
-  // Autocomplete
-  suggestionsDropdown: {
-    position: 'absolute' as const,
-    bottom: '100%',
-    left: 8,
-    right: 50,
-    background: '#27272a',
-    border: '1px solid #3f3f46',
-    borderRadius: 4,
-    maxHeight: 240,
-    overflowY: 'auto' as const,
-    zIndex: 20,
-    boxShadow: '0 -4px 16px rgba(0,0,0,0.5)',
-  },
-  suggestionItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    padding: '6px 10px',
-    cursor: 'pointer',
-    fontSize: 12,
-    transition: 'background 0.1s',
-  },
-  suggestionItemSelected: {
-    background: '#3f3f46',
-  },
-  suggestionCode: {
-    color: '#22d3ee',
-    fontWeight: 700,
-    minWidth: 40,
-    flexShrink: 0,
-  },
-  suggestionDesc: {
-    color: '#a1a1aa',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap' as const,
-  },
-
-  // Input
-  inputRow: {
-    display: 'flex',
-    gap: 6,
-    padding: '6px 8px',
-    borderTop: '1px solid #27272a',
-    background: '#1c1c1f',
-    flexShrink: 0,
-  },
-  input: {
-    flex: 1,
-    padding: '6px 10px',
-    border: '1px solid #3f3f46',
-    borderRadius: 4,
-    background: '#09090b',
-    color: '#e4e4e7',
-    fontFamily: 'inherit',
-    fontSize: 13,
-    outline: 'none',
-  },
-  sendBtn: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 36,
-    height: 36,
-    border: '1px solid #3b82f6',
-    borderRadius: 4,
-    background: '#1e3a5f',
-    color: '#60a5fa',
-    cursor: 'pointer',
-    flexShrink: 0,
-  },
-};

@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import { Cpu, Clock, Zap, Server, HardDrive, Wifi } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import { colors as COLORS } from '../../../utils/theme';
+import './SystemInfoPanel.css';
 import {
   panelStyle,
   sectionTitleStyle as labelStyle,
@@ -142,10 +143,13 @@ export default function SystemInfoPanel() {
                       {formatBytes(vol.freeSpace)} free / {formatBytes(vol.totalSpace)}
                     </div>
                     <div className="duet-dash-sys-storage-bar" style={{ background: COLORS.inputBg }}>
-                      <div style={{
-                        height: '100%', width: `${usedPct}%`, borderRadius: 2,
-                        background: usedPct > 90 ? COLORS.danger : usedPct > 75 ? COLORS.warning : COLORS.accent,
-                      }} />
+                      <div
+                        className="duet-sys-panel__storage-fill"
+                        style={{
+                          width: `${usedPct}%`,
+                          background: usedPct > 90 ? COLORS.danger : usedPct > 75 ? COLORS.warning : COLORS.accent,
+                        }}
+                      />
                     </div>
                   </div>
                 );

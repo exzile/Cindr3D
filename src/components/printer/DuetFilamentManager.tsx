@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import DuetFileEditor from './DuetFileEditor';
+import './DuetFilamentManager.css';
 
 // ---------------------------------------------------------------------------
 // Default macro templates
@@ -32,201 +33,6 @@ M82                 ; absolute extrusion
 M104 S0             ; cool down
 `;
 
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
-const S: Record<string, React.CSSProperties> = {
-  wrap: {
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100%',
-    backgroundColor: '#1e1e1e',
-    color: '#ccc',
-    fontSize: 13,
-    overflow: 'hidden',
-  },
-  toolbar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '8px 12px',
-    backgroundColor: '#252526',
-    borderBottom: '1px solid #333',
-    flexShrink: 0,
-  },
-  toolbarBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '4px 10px',
-    fontSize: 12,
-    border: '1px solid #555',
-    borderRadius: 4,
-    background: '#353535',
-    color: '#ccc',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap' as const,
-  },
-  toolbarBtnPrimary: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '4px 10px',
-    fontSize: 12,
-    border: 'none',
-    borderRadius: 4,
-    background: '#0078d4',
-    color: '#fff',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap' as const,
-  },
-  scrollArea: {
-    flex: 1,
-    overflow: 'auto',
-  },
-  emptyState: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    padding: '48px 24px',
-    color: '#666',
-  },
-  emptyText: {
-    margin: 0,
-    fontSize: 14,
-    color: '#888',
-  },
-  emptyHint: {
-    margin: 0,
-    fontSize: 12,
-    color: '#555',
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse' as const,
-  },
-  thead: {
-    backgroundColor: '#252526',
-    position: 'sticky' as const,
-    top: 0,
-    zIndex: 1,
-  },
-  th: {
-    padding: '7px 12px',
-    textAlign: 'left' as const,
-    fontSize: 11,
-    fontWeight: 600,
-    color: '#888',
-    borderBottom: '1px solid #333',
-    whiteSpace: 'nowrap' as const,
-  },
-  tr: {
-    borderBottom: '1px solid #2a2a2a',
-    transition: 'background 0.1s',
-  },
-  td: {
-    padding: '7px 12px',
-    verticalAlign: 'middle' as const,
-  },
-  filamentName: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    fontWeight: 500,
-    color: '#e0e0e0',
-  },
-  actions: {
-    display: 'flex',
-    gap: 4,
-    justifyContent: 'flex-end',
-  },
-  iconBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 4,
-    borderRadius: 3,
-    border: 'none',
-    background: 'none',
-    cursor: 'pointer',
-    color: '#888',
-  },
-  iconBtnDanger: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 4,
-    borderRadius: 3,
-    border: 'none',
-    background: 'none',
-    cursor: 'pointer',
-    color: '#e57373',
-  },
-  loadingRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '24px 12px',
-    color: '#666',
-    fontSize: 13,
-  },
-  newFilamentBar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '8px 12px',
-    backgroundColor: '#252526',
-    borderTop: '1px solid #333',
-    flexShrink: 0,
-  },
-  input: {
-    flex: 1,
-    padding: '4px 8px',
-    fontSize: 12,
-    border: '1px solid #555',
-    borderRadius: 4,
-    backgroundColor: '#1e1e1e',
-    color: '#ccc',
-    outline: 'none',
-  },
-  confirmBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 3,
-    padding: '4px 10px',
-    fontSize: 12,
-    border: 'none',
-    borderRadius: 4,
-    background: '#388e3c',
-    color: '#fff',
-    cursor: 'pointer',
-  },
-  cancelBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 3,
-    padding: '4px 10px',
-    fontSize: 12,
-    border: '1px solid #555',
-    borderRadius: 4,
-    background: '#353535',
-    color: '#aaa',
-    cursor: 'pointer',
-  },
-  renameInput: {
-    padding: '2px 6px',
-    fontSize: 13,
-    border: '1px solid #0078d4',
-    borderRadius: 3,
-    backgroundColor: '#1e1e1e',
-    color: '#e0e0e0',
-    outline: 'none',
-    width: 160,
-  },
-};
 
 // ---------------------------------------------------------------------------
 // Component
@@ -339,11 +145,11 @@ export default function DuetFilamentManager() {
   }, [service, refreshFilaments]);
 
   return (
-    <div style={S.wrap}>
+    <div className="duet-filament-mgr">
       {/* Toolbar */}
-      <div style={S.toolbar}>
+      <div className="duet-filament-mgr__toolbar">
         <button
-          style={S.toolbarBtnPrimary}
+          className="duet-filament-mgr__toolbar-btn--primary"
           onClick={() => { setShowNew(true); setNewName(''); }}
           disabled={!connected}
           title="Create new filament"
@@ -351,7 +157,7 @@ export default function DuetFilamentManager() {
           <Plus size={13} /> New Filament
         </button>
         <button
-          style={S.toolbarBtn}
+          className="duet-filament-mgr__toolbar-btn"
           onClick={handleRefresh}
           disabled={loading || !connected}
           title="Refresh filament list"
@@ -360,97 +166,93 @@ export default function DuetFilamentManager() {
           Refresh
         </button>
         {error && (
-          <span style={{ color: '#ef5350', fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {error}
-          </span>
+          <span className="duet-filament-mgr__error">{error}</span>
         )}
       </div>
 
       {/* Filament list */}
-      <div style={S.scrollArea}>
+      <div className="duet-filament-mgr__scroll-area">
         {!connected ? (
-          <div style={S.emptyState}>
-            <FlaskConical size={40} strokeWidth={1} color="#555" />
-            <p style={S.emptyText}>Not connected</p>
-            <p style={S.emptyHint}>Connect to a printer to manage filaments.</p>
+          <div className="duet-filament-mgr__empty-state">
+            <FlaskConical size={40} strokeWidth={1} color="var(--text-muted)" />
+            <p className="duet-filament-mgr__empty-text">Not connected</p>
+            <p className="duet-filament-mgr__empty-hint">Connect to a printer to manage filaments.</p>
           </div>
         ) : loading && filaments.length === 0 ? (
-          <div style={S.loadingRow}>
+          <div className="duet-filament-mgr__loading-row">
             <Loader2 size={16} className="spin" /> Loading filaments…
           </div>
         ) : filaments.length === 0 ? (
-          <div style={S.emptyState}>
-            <FlaskConical size={40} strokeWidth={1} color="#555" />
-            <p style={S.emptyText}>No filaments defined</p>
-            <p style={S.emptyHint}>Click "New Filament" to add one. Each filament gets load / unload G-code macros.</p>
+          <div className="duet-filament-mgr__empty-state">
+            <FlaskConical size={40} strokeWidth={1} color="var(--text-muted)" />
+            <p className="duet-filament-mgr__empty-text">No filaments defined</p>
+            <p className="duet-filament-mgr__empty-hint">Click "New Filament" to add one. Each filament gets load / unload G-code macros.</p>
           </div>
         ) : (
-          <table style={S.table}>
-            <thead style={S.thead}>
+          <table className="duet-filament-mgr__table">
+            <thead className="duet-filament-mgr__thead">
               <tr>
-                <th style={S.th}>Name</th>
-                <th style={{ ...S.th, textAlign: 'center' }}>Load Macro</th>
-                <th style={{ ...S.th, textAlign: 'center' }}>Unload Macro</th>
-                <th style={{ ...S.th, textAlign: 'right' }}>Actions</th>
+                <th className="duet-filament-mgr__th">Name</th>
+                <th className="duet-filament-mgr__th duet-filament-mgr__th--center">Load Macro</th>
+                <th className="duet-filament-mgr__th duet-filament-mgr__th--center">Unload Macro</th>
+                <th className="duet-filament-mgr__th duet-filament-mgr__th--right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filaments.map((name) => (
                 <tr
                   key={name}
-                  style={S.tr}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = '#2a2a2a'; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = ''; }}
+                  className="duet-filament-mgr__tr"
                 >
-                  <td style={S.td}>
+                  <td className="duet-filament-mgr__td">
                     {renamingName === name ? (
                       <form
-                        style={{ display: 'flex', gap: 4, alignItems: 'center' }}
+                        className="duet-filament-mgr__rename-form"
                         onSubmit={(e) => { e.preventDefault(); void handleRenameCommit(); }}
                       >
                         <input
-                          style={S.renameInput}
+                          className="duet-filament-mgr__rename-input"
                           value={renameValue}
                           onChange={(e) => setRenameValue(e.target.value)}
                           autoFocus
                           disabled={renaming}
                         />
-                        <button type="submit" style={S.confirmBtn} disabled={renaming}>
+                        <button type="submit" className="duet-filament-mgr__confirm-btn" disabled={renaming}>
                           {renaming ? <Loader2 size={12} className="spin" /> : <Check size={12} />}
                         </button>
-                        <button type="button" style={S.cancelBtn} onClick={() => setRenamingName(null)}>
+                        <button type="button" className="duet-filament-mgr__cancel-btn" onClick={() => setRenamingName(null)}>
                           <X size={12} />
                         </button>
                       </form>
                     ) : (
-                      <div style={S.filamentName}>
-                        <FlaskConical size={14} color="#90caf9" />
+                      <div className="duet-filament-mgr__name-cell">
+                        <FlaskConical size={14} color="var(--info)" />
                         {name}
                       </div>
                     )}
                   </td>
-                  <td style={{ ...S.td, textAlign: 'center' }}>
+                  <td className="duet-filament-mgr__td duet-filament-mgr__td--center">
                     <button
-                      style={{ ...S.iconBtn, color: '#80cbc4' }}
+                      className="duet-filament-mgr__icon-btn duet-filament-mgr__icon-btn--edit"
                       onClick={() => setEditingPath(`0:/filaments/${name}/config.g`)}
                       title="Edit load macro (config.g)"
                     >
                       <FileCode size={14} />
                     </button>
                   </td>
-                  <td style={{ ...S.td, textAlign: 'center' }}>
+                  <td className="duet-filament-mgr__td duet-filament-mgr__td--center">
                     <button
-                      style={{ ...S.iconBtn, color: '#80cbc4' }}
+                      className="duet-filament-mgr__icon-btn duet-filament-mgr__icon-btn--edit"
                       onClick={() => setEditingPath(`0:/filaments/${name}/unload.g`)}
                       title="Edit unload macro (unload.g)"
                     >
                       <FileCode size={14} />
                     </button>
                   </td>
-                  <td style={{ ...S.td, textAlign: 'right' }}>
-                    <div style={S.actions}>
+                  <td className="duet-filament-mgr__td duet-filament-mgr__td--right">
+                    <div className="duet-filament-mgr__actions">
                       <button
-                        style={S.iconBtn}
+                        className="duet-filament-mgr__icon-btn"
                         onClick={() => { setRenamingName(name); setRenameValue(name); }}
                         title="Rename filament"
                         disabled={renamingName !== null}
@@ -458,7 +260,7 @@ export default function DuetFilamentManager() {
                         <Pencil size={13} />
                       </button>
                       <button
-                        style={S.iconBtnDanger}
+                        className="duet-filament-mgr__icon-btn--danger"
                         onClick={() => void handleDelete(name)}
                         title="Delete filament"
                         disabled={deletingName === name}
@@ -479,10 +281,10 @@ export default function DuetFilamentManager() {
 
       {/* New filament bar */}
       {showNew && (
-        <div style={S.newFilamentBar}>
-          <FlaskConical size={14} color="#90caf9" />
+        <div className="duet-filament-mgr__new-bar">
+          <FlaskConical size={14} color="var(--info)" />
           <input
-            style={S.input}
+            className="duet-filament-mgr__new-input"
             placeholder="Filament name (e.g. PLA-White)"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
@@ -491,14 +293,14 @@ export default function DuetFilamentManager() {
             disabled={creating}
           />
           <button
-            style={S.confirmBtn}
+            className="duet-filament-mgr__confirm-btn"
             onClick={() => void handleCreate()}
             disabled={creating || !newName.trim()}
           >
             {creating ? <Loader2 size={12} className="spin" /> : <Check size={12} />}
             Create
           </button>
-          <button style={S.cancelBtn} onClick={() => setShowNew(false)} disabled={creating}>
+          <button className="duet-filament-mgr__cancel-btn" onClick={() => setShowNew(false)} disabled={creating}>
             <X size={12} /> Cancel
           </button>
         </div>

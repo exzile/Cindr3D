@@ -1,29 +1,8 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { ChevronRight, ChevronDown, Search, Braces, X } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { colors as COLORS } from '../../utils/theme';
-
-// ---------------------------------------------------------------------------
-// Style helpers — match the other Duet sub-panels
-// ---------------------------------------------------------------------------
-const panelStyle: React.CSSProperties = {
-  background: COLORS.panel,
-  border: `1px solid ${COLORS.panelBorder}`,
-  borderRadius: 8,
-  padding: 16,
-};
-
-const inputStyle: React.CSSProperties = {
-  background: COLORS.inputBg,
-  border: `1px solid ${COLORS.inputBorder}`,
-  borderRadius: 4,
-  color: COLORS.text,
-  padding: '6px 8px 6px 28px',
-  fontSize: 12,
-  outline: 'none',
-  width: '100%',
-  boxSizing: 'border-box',
-};
+import './DuetObjectModelBrowser.css';
 
 // ---------------------------------------------------------------------------
 // Tree rendering
@@ -78,20 +57,12 @@ function Node({ path, nodeKey, value, depth, search, expandedByDefault }: NodePr
   if (!isContainer) {
     return (
       <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          paddingLeft: depth * 14,
-          fontFamily: 'monospace',
-          fontSize: 12,
-          lineHeight: '20px',
-          background: matchesSearch ? 'rgba(80,120,255,0.08)' : 'transparent',
-        }}
+        className={`duet-obj-browser__node-leaf${matchesSearch ? ' is-match' : ''}`}
+        style={{ paddingLeft: depth * 14 }}
       >
-        <span style={{ width: 14 }} />
+        <span className="duet-obj-browser__node-spacer" />
         <span style={{ color: COLORS.text }}>{nodeKey}</span>
-        <span style={{ color: COLORS.textDim }}>:</span>
+        <span className="duet-obj-browser__node-sep">:</span>
         <span style={{ color: valueColor(value), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {formatPrimitive(value)}
         </span>
@@ -106,23 +77,13 @@ function Node({ path, nodeKey, value, depth, search, expandedByDefault }: NodePr
   return (
     <div>
       <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          paddingLeft: depth * 14,
-          cursor: 'pointer',
-          fontFamily: 'monospace',
-          fontSize: 12,
-          lineHeight: '20px',
-          color: COLORS.text,
-          background: matchesSearch ? 'rgba(80,120,255,0.08)' : 'transparent',
-        }}
+        className={`duet-obj-browser__node-container-row${matchesSearch ? ' is-match' : ''}`}
+        style={{ paddingLeft: depth * 14 }}
         onClick={() => setOpen((v) => !v)}
       >
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         <span>{nodeKey}</span>
-        <span style={{ color: COLORS.textDim, marginLeft: 6 }}>{typeLabel(value)}</span>
+        <span className="duet-obj-browser__node-type">{typeLabel(value)}</span>
       </div>
       {open && entries.map(([k, v]) => (
         <Node
@@ -195,22 +156,22 @@ export default function DuetObjectModelBrowser() {
   const handleClear = useCallback(() => setSearch(''), []);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 12 }}>
-      <div style={panelStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+    <div className="duet-obj-browser">
+      <div className="duet-obj-browser__panel">
+        <div className="duet-obj-browser__header">
           <Braces size={14} color={COLORS.textDim} />
-          <span style={{ fontSize: 11, color: COLORS.textDim, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+          <span className="duet-obj-browser__header-label">
             Object Model (read-only)
           </span>
         </div>
 
-        <div style={{ position: 'relative', marginBottom: 12 }}>
+        <div className="duet-obj-browser__search-wrap">
           <Search
             size={14}
-            style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: COLORS.textDim }}
+            className="duet-obj-browser__search-icon"
           />
           <input
-            style={inputStyle}
+            className="duet-obj-browser__search-input"
             type="text"
             placeholder="Search keys and values…"
             value={search}
@@ -218,11 +179,7 @@ export default function DuetObjectModelBrowser() {
           />
           {search && (
             <button
-              style={{
-                position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)',
-                background: 'none', border: 'none', color: COLORS.textDim, cursor: 'pointer',
-                padding: 4, display: 'flex', alignItems: 'center',
-              }}
+              className="duet-obj-browser__search-clear"
               onClick={handleClear}
               title="Clear search"
             >
@@ -231,16 +188,9 @@ export default function DuetObjectModelBrowser() {
           )}
         </div>
 
-        <div style={{
-          maxHeight: 560,
-          overflow: 'auto',
-          background: COLORS.bg,
-          borderRadius: 4,
-          padding: '8px 4px',
-          border: `1px solid ${COLORS.panelBorder}`,
-        }}>
+        <div className="duet-obj-browser__tree">
           {filtered === undefined || (isObject(filtered) && Object.keys(filtered).length === 0) ? (
-            <div style={{ color: COLORS.textDim, fontSize: 12, textAlign: 'center', padding: 16 }}>
+            <div className="duet-obj-browser__empty">
               No matches for "{search}".
             </div>
           ) : (
