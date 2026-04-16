@@ -1,0 +1,10 @@
+/* ─── Toolbar.css ─────────────────────────────────────────────────────────
+   Co-located styles for Toolbar and its subcomponents.
+   Plain CSS (no modules). All classes use kebab-case.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* Disabled state for quick-access undo / redo buttons */
+.ribbon-quick-btn-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
