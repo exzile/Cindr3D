@@ -10,6 +10,7 @@ import { useComponentStore } from '../../store/componentStore';
 import { RibbonSection } from './FlyoutMenu';
 import { ToolButton } from './ToolButton';
 import type { MenuItem } from './toolbar.types';
+import type { RefObject } from 'react';
 
 interface RibbonSolidTabProps {
   createMenuItems: MenuItem[];
@@ -21,7 +22,7 @@ interface RibbonSolidTabProps {
   beginSketchFlow: () => void;
   handleExtrude: () => void;
   handleRevolve: () => void;
-  fileInputRef: React.RefObject<HTMLInputElement>;
+  fileInputRef: RefObject<HTMLInputElement | null>;
 }
 
 const ICON_LG = 28;

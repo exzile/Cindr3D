@@ -1,0 +1,215 @@
+/* ===== Parameters Panel ===== */
+.dialog-lg {
+  min-width: 640px;
+  max-width: 800px;
+  width: 70vw;
+}
+
+.params-table-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 400px;
+  border-bottom: 1px solid var(--border);
+}
+
+.params-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.params-table thead th {
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  white-space: nowrap;
+}
+
+.params-table thead th:first-child { width: 140px; }
+.params-table thead th:nth-child(2) { width: 180px; }
+.params-table thead th:nth-child(3) { width: 90px; }
+.params-table thead th:last-child { width: 64px; }
+
+.params-row td,
+.params-row-editing td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-light);
+  vertical-align: middle;
+}
+
+.params-row:hover td {
+  background: var(--bg-hover);
+}
+
+.params-row-editing td {
+  background: var(--bg-active);
+}
+
+.params-name,
+.params-expr,
+.params-desc {
+  display: block;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  min-height: 22px;
+  color: var(--text-primary);
+}
+
+.params-name {
+  font-family: 'Consolas', 'Courier New', monospace;
+  color: var(--accent);
+}
+
+.params-expr {
+  font-family: 'Consolas', 'Courier New', monospace;
+  color: var(--text-primary);
+}
+
+.params-desc {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.params-name:hover,
+.params-expr:hover,
+.params-desc:hover {
+  background: var(--bg-hover);
+}
+
+.params-value {
+  font-family: 'Consolas', 'Courier New', monospace;
+  color: var(--success);
+  font-size: 12px;
+}
+
+.params-value-error {
+  color: var(--error);
+}
+
+.params-value-preview {
+  color: var(--text-muted);
+}
+
+.params-input {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.params-input:focus {
+  border-color: var(--accent);
+}
+
+.params-input-error {
+  border-color: var(--error) !important;
+}
+
+.params-input-desc {
+  font-family: inherit;
+  color: var(--text-muted);
+}
+
+.params-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.params-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.params-btn-delete {
+  color: var(--text-muted);
+}
+
+.params-btn-delete:hover {
+  color: var(--error);
+  background: rgba(244, 67, 54, 0.08);
+  border-color: rgba(244, 67, 54, 0.2);
+}
+
+.params-btn-ok {
+  color: var(--success);
+}
+
+.params-btn-ok:hover:not(:disabled) {
+  background: rgba(76, 175, 80, 0.08);
+  border-color: rgba(76, 175, 80, 0.2);
+}
+
+.params-btn-ok:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.params-btn-cancel {
+  color: var(--text-muted);
+}
+
+.params-btn-cancel:hover {
+  color: var(--error);
+  background: rgba(244, 67, 54, 0.08);
+}
+
+.params-empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.params-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: rgba(244, 67, 54, 0.06);
+  border-bottom: 1px solid rgba(244, 67, 54, 0.12);
+  color: var(--error);
+  font-size: 12px;
+}
+
+.params-footer {
+  padding: 10px 16px 6px;
+}
+
+.params-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.params-hint code {
+  font-family: 'Consolas', monospace;
+  color: var(--accent);
+  background: var(--bg-secondary);
+  padding: 1px 4px;
+  border-radius: 3px;
+}

@@ -1,5 +1,4 @@
 import { useState, type ReactNode } from 'react';
-import * as React from 'react';
 import * as THREE from 'three';
 import {
   Move, RotateCw, Maximize2, FlipHorizontal, SlidersHorizontal, RefreshCw,

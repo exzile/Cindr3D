@@ -1,4 +1,3 @@
-import * as React from 'react';
 import { Layers, Puzzle } from 'lucide-react';
 
 export type SlicerPage = 'prepare' | 'plugins';

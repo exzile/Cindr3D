@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import * as React from 'react';
+import type { CSSProperties } from 'react';
 import { X } from 'lucide-react';
-import { useSlicerStore } from '../../store/slicerStore';
-import type { PrinterProfile, MaterialProfile, PrintProfile } from '../../types/slicer';
-import { colors, sharedStyles } from '../../utils/theme';
+import { useSlicerStore } from '../../../../store/slicerStore';
+import type { PrinterProfile, MaterialProfile, PrintProfile } from '../../../../types/slicer';
+import { colors, sharedStyles } from '../../../../utils/theme';
 
 const btnAccent = sharedStyles.btnAccent;
 const inputStyle = sharedStyles.input;
@@ -30,7 +30,7 @@ export function SlicerProfileEditorModal({
 
   const [activeTab, setActiveTab] = useState(0);
 
-  const tabStyle = (active: boolean): React.CSSProperties => ({
+  const tabStyle = (active: boolean): CSSProperties => ({
     padding: '8px 16px',
     background: active ? colors.panelLight : 'transparent',
     color: active ? colors.text : colors.textDim,
@@ -41,7 +41,7 @@ export function SlicerProfileEditorModal({
     fontWeight: active ? 600 : 400,
   });
 
-  const fieldRow: React.CSSProperties = {
+  const fieldRow: CSSProperties = {
     display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 10,
   };
 

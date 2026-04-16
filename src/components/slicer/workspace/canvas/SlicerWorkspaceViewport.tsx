@@ -1,4 +1,3 @@
-import * as React from 'react';
 import { Canvas } from '@react-three/fiber';
 import { SlicerWorkspaceScene } from './SlicerWorkspaceScene';
 import { SlicerViewportOverlays } from '../overlays/SlicerViewportOverlays';

@@ -1630,7 +1630,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       id: crypto.randomUUID(),
       name: `Mesh Combine ${n}`,
       type: 'import',
-      params: { featureKind: 'mesh-combine', sourceIds: featureIds },
+      params: { featureKind: 'mesh-combine', sourceIds: featureIds.join(',') },
       visible: true,
       suppressed: false,
       timestamp: Date.now(),
@@ -3679,7 +3679,6 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   closeSnapFitDialog: () => set({ activeDialog: null, showSnapFitDialog: false, snapFitFaceId: null }),
   commitSnapFit: (params) => {
     const { features } = get();
-    const n = features.filter((f) => f.type === 'import' /* proxy */ || f.params?.featureKind === 'snap-fit').length + 1;
     const snapN = features.filter((f) => f.params?.featureKind === 'snap-fit').length + 1;
     const feature: Feature = {
       id: crypto.randomUUID(),
@@ -3772,7 +3771,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       id: crypto.randomUUID(),
       name: `Fill ${n}`,
       type: 'thicken',
-      params: { featureKind: 'fill', ...params },
+      params: { featureKind: 'fill', boundaryEdgeCount: params.boundaryEdgeCount, continuityPerEdge: params.continuityPerEdge.join(','), operation: params.operation },
       mesh,
       visible: true,
       suppressed: false,

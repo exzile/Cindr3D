@@ -7,12 +7,13 @@ import {
 import { useCADStore } from '../../store/cadStore';
 import { RibbonSection } from './FlyoutMenu';
 import { ToolButton } from './ToolButton';
+import type { RefObject, ChangeEvent } from 'react';
 
 const ICON_LG = 28;
 
 interface RibbonMeshTabProps {
-  meshInsertInputRef: React.RefObject<HTMLInputElement>;
-  onMeshInsert: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  meshInsertInputRef: RefObject<HTMLInputElement | null>;
+  onMeshInsert: (e: ChangeEvent<HTMLInputElement>) => void;
 }
 
 export function RibbonMeshTab({ meshInsertInputRef, onMeshInsert }: RibbonMeshTabProps) {

@@ -1,5 +1,4 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
-import * as React from 'react';
 import { Line, OrbitControls, Text, TransformControls } from '@react-three/drei';
 import type { ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';

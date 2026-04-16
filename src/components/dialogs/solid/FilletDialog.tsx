@@ -162,16 +162,17 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
   const p = editing?.params ?? {};
 
   const handleConfirm = (params: FilletParams) => {
-    const edgeIds = filletEdgeIds.length > 0 ? filletEdgeIds : (p.edgeIds as string[] | undefined ?? []);
+    const edgeIds = filletEdgeIds.length > 0 ? filletEdgeIds : (typeof p.edgeIds === 'string' ? p.edgeIds.split(',').filter(Boolean) : []);
+    const edgeIdsStr = edgeIds.join(',');
     if (editing) {
-      updateFeatureParams(editing.id, { ...params, edgeIds });
+      updateFeatureParams(editing.id, { ...params, edgeIds: edgeIdsStr });
       setStatusMessage(`Updated fillet: r=${params.radius}`);
     } else {
       const feature: Feature = {
         id: crypto.randomUUID(),
         name: `Fillet (r=${params.radius})`,
         type: 'fillet',
-        params: { ...params, edgeIds },
+        params: { ...params, edgeIds: edgeIdsStr },
         visible: true,
         suppressed: false,
         timestamp: Date.now(),

@@ -90,7 +90,7 @@ function ConstructionPlaneItem({ plane }: PlaneItemProps) {
         position={origin}
         renderOrder={50}
       />
-      <line
+      <lineSegments
         geometry={borderGeo}
         material={PLANE_EDGE_MAT}
         position={origin}
@@ -120,7 +120,7 @@ function ConstructionAxisItem({ axis }: AxisItemProps) {
   }, [geo]);
 
   return (
-    <line
+    <lineSegments
       geometry={geo}
       material={AXIS_MAT}
       renderOrder={50}

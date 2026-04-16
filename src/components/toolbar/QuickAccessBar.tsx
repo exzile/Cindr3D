@@ -6,10 +6,12 @@ import { useCADStore } from '../../store/cadStore';
 import { usePrinterStore } from '../../store/printerStore';
 import { useThemeStore } from '../../store/themeStore';
 
+import type { RefObject, ChangeEvent } from 'react';
+
 interface QuickAccessBarProps {
-  fileInputRef: React.RefObject<HTMLInputElement>;
-  loadFileInputRef: React.RefObject<HTMLInputElement>;
-  onImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  fileInputRef: RefObject<HTMLInputElement | null>;
+  loadFileInputRef: RefObject<HTMLInputElement | null>;
+  onImport: (e: ChangeEvent<HTMLInputElement>) => void;
 }
 
 export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: QuickAccessBarProps) {

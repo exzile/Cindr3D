@@ -152,16 +152,17 @@ export function ChamferDialog({ onClose }: { onClose: () => void }) {
   const p = editing?.params ?? {};
 
   const handleConfirm = (params: ChamferParams) => {
-    const edgeIds = chamferEdgeIds.length > 0 ? chamferEdgeIds : (p.edgeIds as string[] | undefined ?? []);
+    const edgeIds = chamferEdgeIds.length > 0 ? chamferEdgeIds : (typeof p.edgeIds === 'string' ? p.edgeIds.split(',').filter(Boolean) : []);
+    const edgeIdsStr = edgeIds.join(',');
     if (editing) {
-      updateFeatureParams(editing.id, { ...params, edgeIds });
+      updateFeatureParams(editing.id, { ...params, edgeIds: edgeIdsStr });
       setStatusMessage(`Updated chamfer: d=${params.distance}`);
     } else {
       const feature: Feature = {
         id: crypto.randomUUID(),
         name: `Chamfer (d=${params.distance})`,
         type: 'chamfer',
-        params: { ...params, edgeIds },
+        params: { ...params, edgeIds: edgeIdsStr },
         visible: true,
         suppressed: false,
         timestamp: Date.now(),

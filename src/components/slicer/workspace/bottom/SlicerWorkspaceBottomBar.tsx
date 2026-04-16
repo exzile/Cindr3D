@@ -1,4 +1,3 @@
-import * as React from 'react';
 import { Eye, EyeOff, Download, Send, Play, X } from 'lucide-react';
 import { useSlicerStore } from '../../../../store/slicerStore';
 import { usePrinterStore } from '../../../../store/printerStore';

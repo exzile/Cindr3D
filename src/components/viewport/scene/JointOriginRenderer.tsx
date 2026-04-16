@@ -45,9 +45,9 @@ function JointOriginTriad({ origin }: { origin: JointOriginRecord }) {
 
   return (
     <>
-      <line geometry={geoX} material={MAT_X} />
-      <line geometry={geoY} material={MAT_Y} />
-      <line geometry={geoZ} material={MAT_Z} />
+      <lineSegments geometry={geoX} material={MAT_X} />
+      <lineSegments geometry={geoY} material={MAT_Y} />
+      <lineSegments geometry={geoZ} material={MAT_Z} />
     </>
   );
 }
