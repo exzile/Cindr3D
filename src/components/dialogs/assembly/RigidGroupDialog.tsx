@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 import { useComponentStore } from '../../../store/componentStore';
 import { useCADStore } from '../../../store/cadStore';
+import './RigidGroupDialog.css';
 
 export function RigidGroupDialog({ onClose }: { onClose: () => void }) {
   const addRigidGroup    = useComponentStore((s) => s.addRigidGroup);
@@ -54,31 +55,22 @@ export function RigidGroupDialog({ onClose }: { onClose: () => void }) {
           </div>
           <div className="dialog-field">
             <label className="dialog-label">Components</label>
-            <div style={{ border: '1px solid var(--border)', borderRadius: 4, maxHeight: 180, overflowY: 'auto', padding: '4px 0' }}>
+            <div className="rigid-group__list">
               {componentList.length === 0 ? (
-                <p style={{ color: 'var(--text-muted)', fontSize: 12, padding: '4px 8px', margin: 0 }}>
+                <p className="rigid-group__empty">
                   No components available.
                 </p>
               ) : (
                 componentList.map((comp) => (
-                  <label
-                    key={comp.id}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 8px', cursor: 'pointer', fontSize: 13 }}
-                  >
+                  <label key={comp.id} className="rigid-group__item">
                     <input
                       type="checkbox"
                       checked={selectedIds.has(comp.id)}
                       onChange={() => toggleId(comp.id)}
                     />
                     <span
-                      style={{
-                        display: 'inline-block',
-                        width: 10,
-                        height: 10,
-                        borderRadius: 2,
-                        background: comp.color,
-                        flexShrink: 0,
-                      }}
+                      className="rigid-group__color-dot"
+                      style={{ background: comp.color }}
                     />
                     {comp.name}
                   </label>

@@ -1,0 +1,303 @@
+/* ===== DuetJobStatus ===== */
+
+/* --- Root container --- */
+.duet-job__root {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 12px 0;
+}
+
+/* --- No-job placeholder --- */
+.duet-job__no-job {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 24px;
+  color: var(--text-muted);
+}
+
+.duet-job__no-job-primary {
+  margin: 0;
+  font-size: 16px;
+}
+
+.duet-job__no-job-secondary {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* --- Print status header --- */
+.duet-job__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--canvas-bg);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.duet-job__header-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.duet-job__header-filename {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.duet-job__header-filename-icon {
+  margin-right: 6px;
+  vertical-align: -2px;
+}
+
+.duet-job__header-status {
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* statusColor is dynamic, applied inline */
+.duet-job__header-status-label {
+  font-weight: 500;
+}
+
+.duet-job__header-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+/* --- Progress section --- */
+.duet-job__progress-bar-wrap {
+  margin-bottom: 10px;
+}
+
+.duet-job__progress-bar-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.duet-job__progress-bar-pct {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.duet-job__progress-bar-track {
+  height: 10px;
+  background: var(--canvas-bg);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+/* width is dynamic — kept as inline style */
+.duet-job__progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--info), var(--success));
+  border-radius: 5px;
+  transition: width 0.5s ease;
+}
+
+/* --- Baby stepping --- */
+.duet-job__babystep-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.duet-job__babystep-btn {
+  width: 40px;
+  height: 40px;
+}
+
+.duet-job__babystep-display {
+  text-align: center;
+  min-width: 100px;
+}
+
+.duet-job__babystep-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.duet-job__babystep-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: monospace;
+}
+
+.duet-job__babystep-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* --- Speed/Flow override --- */
+.duet-job__slider-section {
+  padding: 4px 0;
+}
+
+/* --- Webcam --- */
+.duet-job__webcam-wrap {
+  border-radius: 6px;
+  overflow: hidden;
+  background: #000;
+  border: 1px solid var(--border);
+}
+
+.duet-job__webcam-img {
+  width: 100%;
+  display: block;
+}
+
+/* --- SVG charts (width/height 100% auto, display block) --- */
+.duet-job__svg-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* --- Object cancellation --- */
+.duet-job__obj-map-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+/* SVG inline styles retained for background/border (applied via style attr on svg) */
+
+.duet-job__obj-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Object row — background/border are dynamic based on isCurrent, kept inline */
+.duet-job__obj-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+.duet-job__obj-row-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.duet-job__obj-index {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: monospace;
+  flex-shrink: 0;
+}
+
+/* color/text-decoration/font-weight are dynamic, kept inline */
+.duet-job__obj-name {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* color/background are dynamic, kept inline */
+.duet-job__obj-badge {
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.duet-job__obj-actions {
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.duet-job__obj-confirm-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.duet-job__obj-confirm-label {
+  font-size: 10px;
+  color: var(--warning);
+}
+
+.duet-job__obj-confirm-btn {
+  width: 28px;
+  height: 28px;
+  font-size: 10px;
+}
+
+.duet-job__obj-cancel-btn {
+  width: 28px;
+  height: 28px;
+}
+
+/* --- JobDetailRow --- */
+.duet-job__detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.duet-job__detail-label {
+  color: var(--text-muted);
+}
+
+/* color/font-weight are dynamic for highlight, kept inline */
+.duet-job__detail-value {
+  font-family: monospace;
+}
+
+/* --- SliderRow --- */
+.duet-job__slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.duet-job__slider-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  width: 44px;
+  flex-shrink: 0;
+}
+
+.duet-job__slider-input {
+  flex: 1;
+  accent-color: var(--info);
+}
+
+.duet-job__slider-value {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: monospace;
+  width: 52px;
+  text-align: right;
+}
