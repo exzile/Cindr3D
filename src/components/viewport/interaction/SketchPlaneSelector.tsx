@@ -1,10 +1,35 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useMemo, useState } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 
-// Pre-built unit circle (radius 8) positions for the face-hover ring — module-level
-// so we don't rebuild a Float32Array on every pointermove that updates faceHit state.
+// ─── Module-level constants (built once, reused) ─────────────────────────────
+
+const PLANE_SIZE = 40;
+const HALF_PS = PLANE_SIZE / 2;
+const GRID_DIVISIONS = 10;
+
+/** LineSegments positions for a 10×10 grid on the Z=0 plane */
+const PLANE_GRID_POSITIONS = (() => {
+  const step = PLANE_SIZE / GRID_DIVISIONS;
+  const pts: number[] = [];
+  for (let i = 0; i <= GRID_DIVISIONS; i++) {
+    const t = -HALF_PS + i * step;
+    pts.push(-HALF_PS, t, 0,  HALF_PS, t, 0); // horizontal
+    pts.push(t, -HALF_PS, 0,  t, HALF_PS, 0); // vertical
+  }
+  return new Float32Array(pts);
+})();
+
+/** Border quad for the plane edge */
+const BORDER_POSITIONS = new Float32Array([
+  -HALF_PS, -HALF_PS, 0,
+   HALF_PS, -HALF_PS, 0,
+   HALF_PS,  HALF_PS, 0,
+  -HALF_PS,  HALF_PS, 0,
+]);
+
+/** Pre-built face-hover ring (radius 8, 64 segments) */
 const FACE_RING_POSITIONS = (() => {
   const pts: number[] = [];
   for (let i = 0; i <= 64; i++) {
@@ -14,46 +39,129 @@ const FACE_RING_POSITIONS = (() => {
   return new Float32Array(pts);
 })();
 
-// Plane dimensions — module-level so the grid geometry is built once
-const PLANE_SIZE = 40;
-const HALF_PS = PLANE_SIZE / 2;
-const GRID_DIVISIONS = 10; // squares per side
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-// Grid line positions (LineSegments, Z=0 plane) — reused across all 3 planes via rotation
-const PLANE_GRID_POSITIONS = (() => {
-  const step = PLANE_SIZE / GRID_DIVISIONS;
-  const pts: number[] = [];
-  for (let i = 0; i <= GRID_DIVISIONS; i++) {
-    const t = -HALF_PS + i * step;
-    // horizontal
-    pts.push(-HALF_PS, t, 0,  HALF_PS, t, 0);
-    // vertical
-    pts.push(t, -HALF_PS, 0,  t, HALF_PS, 0);
-  }
-  return new Float32Array(pts);
-})();
+interface PlaneConfig {
+  id: string;
+  plane: 'XY' | 'XZ' | 'YZ';
+  color: string;
+  gridColor: string;
+  hoverColor: string;
+  position: [number, number, number];
+  rotation: [number, number, number];
+}
 
-/** Interactive plane selection for "Create Sketch" — shows 3 origin planes the user can click */
+// ─── Sub-component: one glass plane with guaranteed grid lines ────────────────
+
+function PlaneGlassPanel({
+  plane: p,
+  isHovered,
+  onHoverIn,
+  onHoverOut,
+  onClick,
+}: {
+  plane: PlaneConfig;
+  isHovered: boolean;
+  onHoverIn: () => void;
+  onHoverOut: () => void;
+  onClick: () => void;
+}) {
+  // Build the THREE.LineSegments object once — imperative so it definitely renders
+  const gridLines = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute(
+      'position',
+      new THREE.BufferAttribute(PLANE_GRID_POSITIONS.slice(), 3),
+    );
+    const mat = new THREE.LineBasicMaterial({
+      color: new THREE.Color(p.gridColor),
+      transparent: true,
+      opacity: 0.70,
+      depthWrite: false,
+    });
+    return new THREE.LineSegments(geo, mat);
+  // Only rebuild when the plane changes (never in practice)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.id]);
+
+  // Reactively update color + opacity on hover without rebuilding geometry
+  useEffect(() => {
+    const mat = gridLines.material as THREE.LineBasicMaterial;
+    mat.color.set(isHovered ? p.hoverColor : p.gridColor);
+    mat.opacity = isHovered ? 0.95 : 0.70;
+    mat.needsUpdate = true;
+  }, [isHovered, gridLines, p.gridColor, p.hoverColor]);
+
+  // Dispose GPU resources when component unmounts
+  useEffect(() => {
+    return () => {
+      gridLines.geometry.dispose();
+      (gridLines.material as THREE.LineBasicMaterial).dispose();
+    };
+  }, [gridLines]);
+
+  return (
+    <group>
+      {/* Glass fill — phong so scene lights create a subtle sheen */}
+      <mesh
+        position={p.position}
+        rotation={p.rotation}
+        onPointerOver={(e) => { e.stopPropagation(); onHoverIn(); }}
+        onPointerOut={(e) => { e.stopPropagation(); onHoverOut(); }}
+        onClick={(e) => { e.stopPropagation(); onClick(); }}
+      >
+        <planeGeometry args={[PLANE_SIZE, PLANE_SIZE]} />
+        <meshPhongMaterial
+          color={isHovered ? p.hoverColor : p.gridColor}
+          emissive={p.color}
+          emissiveIntensity={isHovered ? 0.40 : 0.20}
+          transparent
+          opacity={isHovered ? 0.48 : 0.24}
+          shininess={160}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* Grid lines — rendered via primitive so THREE.LineSegments is used directly */}
+      <primitive object={gridLines} position={p.position} rotation={p.rotation} />
+
+      {/* Bright border */}
+      <lineLoop position={p.position} rotation={p.rotation}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[BORDER_POSITIONS, 3]} />
+        </bufferGeometry>
+        <lineBasicMaterial
+          color={isHovered ? '#ffffff' : p.hoverColor}
+          transparent
+          opacity={isHovered ? 1.0 : 0.90}
+        />
+      </lineLoop>
+    </group>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+/** Interactive plane selector for "Create Sketch" — shows 3 origin planes */
 export default function SketchPlaneSelector() {
   const selecting = useCADStore((s) => s.sketchPlaneSelecting);
   const startSketch = useCADStore((s) => s.startSketch);
   const startSketchOnFace = useCADStore((s) => s.startSketchOnFace);
   const setSketchPlaneSelecting = useCADStore((s) => s.setSketchPlaneSelecting);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
+
   const [hovered, setHovered] = useState<string | null>(null);
-  // Highlighted face hit (world-space normal + click point)
   const [faceHit, setFaceHit] = useState<{ point: THREE.Vector3; normal: THREE.Vector3 } | null>(null);
-  // Mirror faceHit into a ref so the pointermove handler can read it without
-  // becoming a useEffect dep (which would cause listener re-attachment on every hover).
   const faceHitRef = useRef(faceHit);
   useEffect(() => { faceHitRef.current = faceHit; }, [faceHit]);
-  // Stable scratch objects for the hot-path raycasting handlers
+
   const _mouse = useRef(new THREE.Vector2());
   const _normalMatrix = useRef(new THREE.Matrix3());
   const _pickableMeshes = useRef<THREE.Mesh[]>([]);
   const { gl, camera, raycaster, scene } = useThree();
 
-  // Change cursor when hovering a plane or a face
+  // Cursor
   useEffect(() => {
     if (!selecting) return;
     // eslint-disable-next-line react-hooks/immutability
@@ -71,7 +179,7 @@ export default function SketchPlaneSelector() {
     return () => window.removeEventListener('keydown', handleKey);
   }, [selecting, setSketchPlaneSelecting]);
 
-  // Face raycasting against pickable meshes
+  // Face raycasting
   useEffect(() => {
     if (!selecting) return;
 
@@ -95,16 +203,12 @@ export default function SketchPlaneSelector() {
     };
 
     const handlePointerMove = (event: PointerEvent) => {
-      if (_pickableMeshes.current.length === 0) {
-        refreshPickableMeshes();
-      }
-
+      if (_pickableMeshes.current.length === 0) refreshPickableMeshes();
       updateMouseFromEvent(event);
       raycaster.setFromCamera(_mouse.current, camera);
       const hits = raycaster.intersectObjects(_pickableMeshes.current, false);
       if (hits.length > 0 && hits[0].face) {
         const hit = hits[0];
-        // Transform face normal from local to world space (reusing scratch matrix)
         const normal = hit.face!.normal.clone()
           .applyMatrix3(_normalMatrix.current.getNormalMatrix(hit.object.matrixWorld))
           .normalize();
@@ -117,7 +221,6 @@ export default function SketchPlaneSelector() {
 
     const handleClick = (event: MouseEvent) => {
       if (event.button !== 0) return;
-      // Re-raycast on click (faceHit may be stale or null if pointer didn't move)
       refreshPickableMeshes();
       updateMouseFromEvent(event);
       raycaster.setFromCamera(_mouse.current, camera);
@@ -127,7 +230,6 @@ export default function SketchPlaneSelector() {
         const normal = hit.face!.normal.clone()
           .applyMatrix3(_normalMatrix.current.getNormalMatrix(hit.object.matrixWorld))
           .normalize();
-        // Stop event propagation so the origin-plane meshes don't also fire
         event.stopPropagation();
         startSketchOnFace(normal, hit.point.clone());
         setFaceHit(null);
@@ -136,7 +238,6 @@ export default function SketchPlaneSelector() {
 
     const canvas = gl.domElement;
     canvas.addEventListener('pointermove', handlePointerMove);
-    // Use capture phase so we run BEFORE R3F's onClick handlers on the origin planes
     canvas.addEventListener('click', handleClick, true);
     return () => {
       canvas.removeEventListener('pointermove', handlePointerMove);
@@ -148,116 +249,50 @@ export default function SketchPlaneSelector() {
 
   if (!selecting) return null;
 
-  const planes: { id: string; plane: 'XY' | 'XZ' | 'YZ'; color: string; gridColor: string; hoverColor: string; position: [number, number, number]; rotation: [number, number, number]; labelPos: [number, number, number]; }[] = [
+  const planes: PlaneConfig[] = [
     {
       id: 'xy', plane: 'XY',
-      color: '#3366dd', gridColor: '#5588ff', hoverColor: '#77aaff',
-      position: [0, 0, 0],
-      rotation: [-Math.PI / 2, 0, 0],
-      labelPos: [HALF_PS + 3, 0, HALF_PS + 3],
+      color: '#1144bb', gridColor: '#4477ff', hoverColor: '#88bbff',
+      position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0],
     },
     {
       id: 'xz', plane: 'XZ',
-      color: '#228822', gridColor: '#44cc44', hoverColor: '#66ee66',
-      position: [0, 0, 0],
-      rotation: [0, 0, 0],
-      labelPos: [HALF_PS + 3, HALF_PS + 3, 0],
+      color: '#0d6b0d', gridColor: '#22cc22', hoverColor: '#66ee66',
+      position: [0, 0, 0], rotation: [0, 0, 0],
     },
     {
       id: 'yz', plane: 'YZ',
-      color: '#cc2222', gridColor: '#ff4444', hoverColor: '#ff7777',
-      position: [0, 0, 0],
-      rotation: [0, Math.PI / 2, 0],
-      labelPos: [0, HALF_PS + 3, HALF_PS + 3],
+      color: '#991111', gridColor: '#ee2222', hoverColor: '#ff7777',
+      position: [0, 0, 0], rotation: [0, Math.PI / 2, 0],
     },
   ];
 
   return (
     <group>
-      {planes.map((p) => {
-        const isHovered = hovered === p.id;
-        return (
-          <group key={p.id}>
-            {/* Glass fill — tinted, semi-transparent */}
-            <mesh
-              position={p.position}
-              rotation={p.rotation}
-              onPointerOver={(e) => { e.stopPropagation(); setHovered(p.id); }}
-              onPointerOut={(e) => { e.stopPropagation(); setHovered(null); }}
-              onClick={(e) => { e.stopPropagation(); startSketch(p.plane); }}
-            >
-              <planeGeometry args={[PLANE_SIZE, PLANE_SIZE]} />
-              <meshPhongMaterial
-                color={isHovered ? p.hoverColor : p.gridColor}
-                emissive={isHovered ? p.hoverColor : p.color}
-                emissiveIntensity={isHovered ? 0.25 : 0.12}
-                transparent
-                opacity={isHovered ? 0.42 : 0.22}
-                shininess={120}
-                side={THREE.DoubleSide}
-                depthWrite={false}
-              />
-            </mesh>
+      {planes.map((p) => (
+        <PlaneGlassPanel
+          key={p.id}
+          plane={p}
+          isHovered={hovered === p.id}
+          onHoverIn={() => setHovered(p.id)}
+          onHoverOut={() => setHovered(null)}
+          onClick={() => startSketch(p.plane)}
+        />
+      ))}
 
-            {/* Interior grid lines — fully visible */}
-            <lineSegments position={p.position} rotation={p.rotation}>
-              <bufferGeometry>
-                <bufferAttribute attach="attributes-position" args={[PLANE_GRID_POSITIONS, 3]} />
-              </bufferGeometry>
-              <lineBasicMaterial
-                color={isHovered ? p.hoverColor : p.gridColor}
-                transparent
-                opacity={isHovered ? 0.95 : 0.65}
-                depthWrite={false}
-              />
-            </lineSegments>
-
-            {/* Bright border */}
-            <lineLoop position={p.position} rotation={p.rotation}>
-              <bufferGeometry>
-                <bufferAttribute
-                  attach="attributes-position"
-                  args={[new Float32Array([
-                    -HALF_PS, -HALF_PS, 0,
-                     HALF_PS, -HALF_PS, 0,
-                     HALF_PS,  HALF_PS, 0,
-                    -HALF_PS,  HALF_PS, 0,
-                  ]), 3]}
-                />
-              </bufferGeometry>
-              <lineBasicMaterial
-                color={isHovered ? '#ffffff' : p.hoverColor}
-                transparent
-                opacity={isHovered ? 1.0 : 0.85}
-              />
-            </lineLoop>
-          </group>
-        );
-      })}
-
-      {/* Face hover highlight — yellow translucent disc oriented to the face */}
+      {/* Face hover highlight */}
       {faceHit && (() => {
-        // Quaternion that rotates the disc's local +Z (its face normal) to the world face normal
         const q = new THREE.Quaternion().setFromUnitVectors(
           new THREE.Vector3(0, 0, 1),
           faceHit.normal,
         );
-        // Push the disc out slightly along the normal so it doesn't z-fight the face
-        const offset = faceHit.normal.clone().multiplyScalar(0.05);
-        const pos = faceHit.point.clone().add(offset);
+        const pos = faceHit.point.clone().add(faceHit.normal.clone().multiplyScalar(0.05));
         return (
           <group position={pos} quaternion={q}>
             <mesh>
               <circleGeometry args={[8, 32]} />
-              <meshBasicMaterial
-                color={0xffcc33}
-                transparent
-                opacity={0.45}
-                side={THREE.DoubleSide}
-                depthWrite={false}
-              />
+              <meshBasicMaterial color={0xffcc33} transparent opacity={0.45} side={THREE.DoubleSide} depthWrite={false} />
             </mesh>
-            {/* Border ring — uses pre-built positions hoisted at module scope */}
             <lineLoop>
               <bufferGeometry>
                 <bufferAttribute attach="attributes-position" args={[FACE_RING_POSITIONS, 3]} />

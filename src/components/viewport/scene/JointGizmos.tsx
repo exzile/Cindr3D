@@ -51,6 +51,14 @@ function JointGizmo() {
     []
   );
 
+  // Build the THREE.Line ONCE — the previous code allocated a fresh Line on every
+  // render, leaving the lineRef pointing at an orphaned object and leaking the
+  // discarded Line wrappers. Stable instance lets useFrame mutate it safely.
+  const lineObj = useMemo(
+    () => new THREE.Line(lineGeo, lineMat),
+    [lineGeo, lineMat]
+  );
+
   useEffect(() => {
     return () => {
       sphereGeo.dispose();
@@ -63,10 +71,7 @@ function JointGizmo() {
   return (
     <group>
       <mesh ref={sphereRef} geometry={sphereGeo} material={sphereMat} />
-      <primitive
-        ref={lineRef}
-        object={new THREE.Line(lineGeo, lineMat)}
-      />
+      <primitive ref={lineRef} object={lineObj} />
     </group>
   );
 }

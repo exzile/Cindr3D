@@ -76,6 +76,15 @@ export default function SketchRenderer() {
     };
   }, [profileMesh]);
 
+  // Dispose the per-component profileMaterial on unmount. Without this the
+  // MeshBasicMaterial leaks GPU state every time SketchRenderer remounts
+  // (e.g. after dialog open/close cycles that toggle the viewport tree).
+  useEffect(() => {
+    return () => {
+      profileMaterial.dispose();
+    };
+  }, [profileMaterial]);
+
   return (
     <>
       {entityVisSketchBodies && features.filter((f, i) => {

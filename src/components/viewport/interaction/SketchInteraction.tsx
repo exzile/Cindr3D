@@ -233,21 +233,28 @@ export default function SketchInteraction() {
         }
         // Tangent snap: when drawing a line (drawStart set), find tangent point on circle
         // where the line from drawStart to that point is tangent to the circle.
-        // Simplified: snap to point on circle rim closest to the infinite tangent direction.
-        if (snapToTangent && drawStart && e.points.length >= 2) {
+        // PLANE-AWARE: must use sketch t1/t2 axes, not world x/y, so this works on
+        // XZ / YZ / arbitrary construction-plane sketches — not just XY.
+        if (snapToTangent && drawStart && e.points.length >= 2 && activeSketch) {
           const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
           const radiusPt = new THREE.Vector3(e.points[1].x, e.points[1].y, e.points[1].z);
           const r = center.distanceTo(radiusPt);
           if (r > 1e-6) {
-            // Find the two tangent points from drawStart to the circle
+            const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
             const dVec = center.clone().sub(drawStart);
             const dist = dVec.length();
             if (dist > r) {
+              // Project dVec onto sketch UV to compute the base angle in sketch-plane space
+              const du = dVec.dot(t1);
+              const dv = dVec.dot(t2);
               const alpha = Math.asin(r / dist);
-              const baseAngle = Math.atan2(dVec.y, dVec.x);
+              const baseAngle = Math.atan2(dv, du);
               for (const sign of [-1, 1]) {
                 const angle = baseAngle + sign * (Math.PI / 2 - alpha);
-                const tp = center.clone().add(new THREE.Vector3(Math.cos(angle) * r, Math.sin(angle) * r, 0));
+                // Build tangent point in world space via t1*cos + t2*sin
+                const tp = center.clone()
+                  .addScaledVector(t1, Math.cos(angle) * r)
+                  .addScaledVector(t2, Math.sin(angle) * r);
                 const dt = worldPt.distanceTo(tp);
                 if (dt < bestDist) { bestDist = dt; best = { worldPos: tp, type: 'tangent' }; }
               }

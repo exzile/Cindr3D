@@ -58,6 +58,10 @@ export default function ExtrudeGizmo({ sketch }: { sketch: Sketch }) {
   }, [normal]);
 
   // ── useFrame: update arrow visuals every frame ──
+  // Scratch tip vector — reused across frames to comply with the no-alloc rule.
+  const tipScratch = useRef(new THREE.Vector3());
+  // Last applied isCut value so we only swap materials on transitions, not every frame.
+  const lastIsCutRef = useRef<boolean | null>(null);
   useFrame(() => {
     // During drag use liveDistRef; otherwise read fresh from store
     const dist = draggingRef.current && liveDistRef.current !== null
@@ -65,21 +69,26 @@ export default function ExtrudeGizmo({ sketch }: { sketch: Sketch }) {
       : useCADStore.getState().extrudeDistance;
     const isCut = dist < 0;
 
-    // Update line positions
+    // Update line positions — write tip into scratch instead of allocating
     const pos = lineObj.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const tip = tipScratch.current.copy(centroid).addScaledVector(normal, dist);
     pos.setXYZ(0, centroid.x, centroid.y, centroid.z);
-    const tip = centroid.clone().addScaledVector(normal, dist);
     pos.setXYZ(1, tip.x, tip.y, tip.z);
     pos.needsUpdate = true;
 
-    // Update line material
-    lineObj.material = isCut ? ARROW_LINE_MATERIAL_CUT : ARROW_LINE_MATERIAL;
+    // Only swap materials when the cut/non-cut state actually flips
+    if (lastIsCutRef.current !== isCut) {
+      lineObj.material = isCut ? ARROW_LINE_MATERIAL_CUT : ARROW_LINE_MATERIAL;
+      if (coneRef.current) {
+        (coneRef.current as THREE.Mesh).material = isCut ? ARROW_MATERIAL_CUT : ARROW_MATERIAL;
+      }
+      lastIsCutRef.current = isCut;
+    }
 
-    // Update cone position + orientation
+    // Update cone position + orientation (cheap, every frame)
     if (coneRef.current) {
       coneRef.current.position.copy(tip);
       coneRef.current.quaternion.copy(isCut ? reverseQuat : normalQuat);
-      (coneRef.current as THREE.Mesh).material = isCut ? ARROW_MATERIAL_CUT : ARROW_MATERIAL;
     }
   });
 

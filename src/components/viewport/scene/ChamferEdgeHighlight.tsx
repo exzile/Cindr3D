@@ -65,10 +65,21 @@ export default function ChamferEdgeHighlight() {
 
   useFrame(({ scene }) => {
     if (!enabled) {
+      // Tear down BOTH the hover preview AND every selected-edge highlight when
+      // the dialog closes. Previous code only disposed hoverLineRef, leaving the
+      // selected-edge geometries leaking and orphaned in the scene.
       if (hoverLineRef.current) {
         scene.remove(hoverLineRef.current);
         hoverLineRef.current.geometry.dispose();
         hoverLineRef.current = null;
+      }
+      if (selectedLinesRef.current.size > 0) {
+        selectedLinesRef.current.forEach((line) => {
+          scene.remove(line);
+          line.geometry.dispose();
+        });
+        selectedLinesRef.current.clear();
+        selectedEdgesDataRef.current.clear();
       }
       return;
     }

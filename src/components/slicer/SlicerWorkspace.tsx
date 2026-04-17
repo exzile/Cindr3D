@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import * as React from 'react';
+import './SlicerWorkspace.css';
 import { SlicerWorkspaceBottomBar } from './workspace/bottom/SlicerWorkspaceBottomBar';
 import { SlicerWorkspaceViewport } from './workspace/canvas/SlicerWorkspaceViewport';
 import { SlicerProfileEditorModal } from './workspace/modals/SlicerProfileEditorModal';

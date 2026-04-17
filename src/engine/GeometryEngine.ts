@@ -936,13 +936,15 @@ export class GeometryEngine {
     side: 'inside' | 'outside' | 'center',
   ): THREE.Mesh | null {
     if (sketch.entities.length === 0) return null;
-    const projFn = sketch.plane === 'custom'
-      ? (p: SketchPoint) => {
-          const { t1, t2 } = this.getSketchAxes(sketch);
-          const d = new THREE.Vector3(p.x - sketch.planeOrigin.x, p.y - sketch.planeOrigin.y, p.z - sketch.planeOrigin.z);
-          return { u: d.dot(t1), v: d.dot(t2) };
-        }
-      : (p: SketchPoint) => ({ u: p.x, v: p.y });
+    // Plane-aware projection works for ALL planes (XY/XZ/YZ/custom) — the prior
+    // `(p.x, p.y)` shortcut for named planes only worked for XY because XZ/YZ
+    // sketch points have one of x/y always zero in world space.
+    const { t1, t2 } = this.getSketchAxes(sketch);
+    const origin = sketch.planeOrigin;
+    const projFn = (p: SketchPoint) => {
+      const d = new THREE.Vector3(p.x - origin.x, p.y - origin.y, p.z - origin.z);
+      return { u: d.dot(t1), v: d.dot(t2) };
+    };
 
     // Collect outline 2D points from entities
     const outline: THREE.Vector2[] = [];

@@ -935,8 +935,10 @@ interface CADState {
   // ── SFC7 — Fill Surface ──────────────────────────────────────────────────
   showFillDialog: boolean;
   fillBoundaryEdgeIds: string[];
+  /** Per-edge endpoint data captured at pick time so commitFill can assemble a real boundary loop. */
+  fillBoundaryEdgeData: Array<{ id: string; a: [number, number, number]; b: [number, number, number] }>;
   openFillDialog(): void;
-  addFillBoundaryEdge(id: string): void;
+  addFillBoundaryEdge(id: string, a?: [number, number, number], b?: [number, number, number]): void;
   closeFillDialog(): void;
   commitFill(params: import('../components/dialogs/surface/FillDialog').FillParams): void;
 
@@ -1922,6 +1924,11 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
         if (child instanceof THREE.Mesh) GeometryEngine.reverseNormals(child.geometry);
       });
     }
+    // Mutating mesh.geometry in place doesn't notify Zustand subscribers — replace
+    // the features array reference so the timeline / re-renderers see the change.
+    set((state) => ({
+      features: state.features.map((f) => f.id === featureId ? { ...f } : f),
+    }));
     get().setStatusMessage('Normals reversed');
   },
   // UTL1 — Show All / Hide
@@ -3949,10 +3956,11 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     return evaluateExpression(expr, get().parameters);
   },
 
-  // A5 — stub until Component Browser (A1) populates a components array
+  // A5 — delegates to componentStore.setComponentGrounded so callers reaching
+  // for the cadStore facade still get a working ground/unground action.
+  // Previously this was a void-stub that silently did nothing.
   groundComponent: (id, grounded) => {
-    void id; void grounded;
-    /* Stub — delegates to componentStore.setComponentGrounded in production */
+    useComponentStore.getState().setComponentGrounded(id, grounded);
   },
 
   // A9 — Component Pattern
@@ -4707,30 +4715,57 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   // ── SFC7 — Fill Surface ──────────────────────────────────────────────────
   showFillDialog: false,
   fillBoundaryEdgeIds: [],
-  openFillDialog: () => set({ activeDialog: 'fill', showFillDialog: true, fillBoundaryEdgeIds: [] }),
-  addFillBoundaryEdge: (id) => set((s) => ({
-    fillBoundaryEdgeIds: s.fillBoundaryEdgeIds.includes(id) ? s.fillBoundaryEdgeIds : [...s.fillBoundaryEdgeIds, id],
-  })),
-  closeFillDialog: () => set({ activeDialog: null, showFillDialog: false, fillBoundaryEdgeIds: [] }),
+  fillBoundaryEdgeData: [],
+  openFillDialog: () => set({ activeDialog: 'fill', showFillDialog: true, fillBoundaryEdgeIds: [], fillBoundaryEdgeData: [] }),
+  addFillBoundaryEdge: (id, a, b) => set((s) => {
+    if (s.fillBoundaryEdgeIds.includes(id)) return s;
+    const data = a && b
+      ? [...s.fillBoundaryEdgeData, { id, a, b }]
+      : s.fillBoundaryEdgeData;
+    return {
+      fillBoundaryEdgeIds: [...s.fillBoundaryEdgeIds, id],
+      fillBoundaryEdgeData: data,
+    };
+  }),
+  closeFillDialog: () => set({ activeDialog: null, showFillDialog: false, fillBoundaryEdgeIds: [], fillBoundaryEdgeData: [] }),
   commitFill: (params) => {
-    const { features, fillBoundaryEdgeIds } = get();
+    const { features, fillBoundaryEdgeData } = get();
     const n = features.filter((f) => f.params?.featureKind === 'fill').length + 1;
 
-    // Build geometry from boundary edge IDs (stub: placeholder geometry)
-    const boundaryPoints: THREE.Vector3[][] = fillBoundaryEdgeIds.map(() => [
+    // Assemble a single boundary loop by chaining edges that share endpoints.
+    // Greedy walk: start at the first edge, then repeatedly find an edge whose
+    // 'a' or 'b' endpoint matches the current chain tail (within tolerance).
+    const TOL = 1e-4;
+    const eq = (p: [number, number, number], q: [number, number, number]) =>
+      Math.abs(p[0] - q[0]) < TOL && Math.abs(p[1] - q[1]) < TOL && Math.abs(p[2] - q[2]) < TOL;
+    const buildLoop = (edges: Array<{ id: string; a: [number, number, number]; b: [number, number, number] }>): THREE.Vector3[] => {
+      if (edges.length === 0) return [];
+      const remaining = [...edges];
+      const first = remaining.shift()!;
+      const chain: [number, number, number][] = [first.a, first.b];
+      while (remaining.length > 0) {
+        const tail = chain[chain.length - 1];
+        const idx = remaining.findIndex((e) => eq(e.a, tail) || eq(e.b, tail));
+        if (idx < 0) break; // chain broken — return what we have
+        const next = remaining.splice(idx, 1)[0];
+        chain.push(eq(next.a, tail) ? next.b : next.a);
+      }
+      return chain.map(([x, y, z]) => new THREE.Vector3(x, y, z));
+    };
+
+    const loop = buildLoop(fillBoundaryEdgeData);
+    // Fall back to placeholder ONLY when no real edge data was captured —
+    // then at least there's something visible to anchor the dialog flow.
+    const FALLBACK_LOOP: THREE.Vector3[] = [
       new THREE.Vector3(-5, 0, -5),
       new THREE.Vector3( 5, 0, -5),
       new THREE.Vector3( 5, 0,  5),
       new THREE.Vector3(-5, 0,  5),
-    ]);
+    ];
+    const boundaryPoints: THREE.Vector3[][] = [loop.length >= 3 ? loop : FALLBACK_LOOP];
     const continuity = params.continuityPerEdge;
     const geom = GeometryEngine.fillSurface(
-      boundaryPoints.length > 0 ? boundaryPoints : [[
-        new THREE.Vector3(-5, 0, -5),
-        new THREE.Vector3( 5, 0, -5),
-        new THREE.Vector3( 5, 0,  5),
-        new THREE.Vector3(-5, 0,  5),
-      ]],
+      boundaryPoints,
       continuity.length > 0 ? continuity : ['G0'],
     );
     const mat = new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide });
@@ -4750,7 +4785,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       bodyKind: 'surface',
     };
     get().addFeature(feature);
-    set({ activeDialog: null, showFillDialog: false, fillBoundaryEdgeIds: [] });
+    set({ activeDialog: null, showFillDialog: false, fillBoundaryEdgeIds: [], fillBoundaryEdgeData: [] });
     get().setStatusMessage(`Fill ${n} created`);
   },
 

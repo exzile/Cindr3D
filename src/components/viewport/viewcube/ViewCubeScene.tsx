@@ -23,6 +23,9 @@ function CubeBody({ hoveredZone }: { hoveredZone: string | null }) {
 /** Wireframe edges of the cube */
 function CubeEdges() {
   const boxGeo = useMemo(() => new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE), []);
+  // Dispose the BoxGeometry on unmount — edgesGeometry consumes it via args
+  // but the source geometry still holds GPU buffers that need cleanup.
+  useEffect(() => () => boxGeo.dispose(), [boxGeo]);
   return (
     <lineSegments>
       <edgesGeometry args={[boxGeo]} />
@@ -235,11 +238,13 @@ export default function ViewCubeScene({
   const [hoveredZone, setHoveredZone] = useState<string | null>(null);
   const groupRef = useRef<THREE.Group>(null);
 
-  // Sync mini-camera to mirror main camera rotation
+  // Sync mini-camera to mirror main camera rotation.
+  // Scratch vector — reused so we don't allocate a Vector3 every frame.
+  const dirScratch = useRef(new THREE.Vector3());
   useFrame(() => {
     // Position the mini camera to look at origin from the same orientation as the main camera
-    const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(mainCameraQuaternion);
-    camera.position.copy(dir.multiplyScalar(5));
+    const dir = dirScratch.current.set(0, 0, 1).applyQuaternion(mainCameraQuaternion);
+    camera.position.copy(dir).multiplyScalar(5);
     camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
   });

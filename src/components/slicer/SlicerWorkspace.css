@@ -1,0 +1,76 @@
+/* ===== Slicer Workspace Root ===== */
+.slicer-workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ===== Top Navigation Tabs ===== */
+.slicer-workspace-nav {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  background: var(--bg-toolbar);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  padding: 0 8px;
+  height: 34px;
+}
+
+.slicer-workspace-nav__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 14px;
+  height: 100%;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  user-select: none;
+}
+
+.slicer-workspace-nav__tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.slicer-workspace-nav__tab.is-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+/* ===== Prepare Page Layout ===== */
+.slicer-workspace__prepare {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.slicer-workspace__prepare.is-hidden {
+  display: none;
+}
+
+/* ===== Center Viewport ===== */
+.slicer-workspace__viewport {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  background: var(--bg-canvas);
+}
+
+.slicer-workspace__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

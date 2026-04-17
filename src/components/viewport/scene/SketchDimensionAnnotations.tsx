@@ -5,7 +5,7 @@
 // lives in sketch.dimensions (SketchDimension[]). This component is wired and
 // ready — it will populate automatically once D28 adds dimension records.
 
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { DimensionEngine } from '../../../engine/DimensionEngine';
@@ -161,6 +161,16 @@ export default function SketchDimensionAnnotations() {
 
     return result;
   }, [activeSketch]);
+
+  // Dispose each LineSegments' BufferGeometry when annotations are rebuilt or
+  // the component unmounts. The shared dashed material is a singleton — leave it.
+  useEffect(() => {
+    return () => {
+      for (const ann of annotations) {
+        ann.segments.geometry?.dispose?.();
+      }
+    };
+  }, [annotations]);
 
   if (!activeSketch || annotations.length === 0) return null;
 

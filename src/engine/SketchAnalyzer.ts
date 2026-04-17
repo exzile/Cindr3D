@@ -1,4 +1,5 @@
-import type { SketchEntity, Sketch, SketchConstraint } from '../types/cad';
+import * as THREE from 'three';
+import type { SketchEntity, SketchPoint, Sketch, SketchConstraint } from '../types/cad';
 
 /** A chain of connected entities forming a continuous path */
 export interface SketchLoop {
@@ -38,6 +39,38 @@ interface Pt2 {
   y: number;
 }
 
+/**
+ * Plane-aware projection helper. SketchPoints are stored in WORLD 3D
+ * coordinates, not 2D plane-local coords — see SketchInteraction.tsx:447
+ * where x/y/z are written from the world-space raycast hit. To do correct
+ * 2D analysis (chain detection, area, intersection) on a non-XY sketch
+ * (XZ, YZ, custom face plane), we must project each 3D point onto the
+ * sketch plane's t1/t2 axes.
+ *
+ * If `axes` is null we fall back to the legacy XY-only behavior — keeps
+ * the helpers usable for unit tests that pass synthetic 2D entities.
+ */
+type SketchAxes = { origin: THREE.Vector3; t1: THREE.Vector3; t2: THREE.Vector3 } | null;
+
+/** Build SketchAxes from a Sketch's plane definition. */
+function buildSketchAxes(sketch: Sketch): SketchAxes {
+  const n = sketch.planeNormal?.clone().normalize();
+  const o = sketch.planeOrigin?.clone();
+  if (!n || !o) return null;
+  // Choose a stable t1: world X if non-parallel to normal, else world Z
+  const ref = Math.abs(n.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1);
+  const t1 = ref.clone().sub(n.clone().multiplyScalar(ref.dot(n))).normalize();
+  const t2 = n.clone().cross(t1).normalize();
+  return { origin: o, t1, t2 };
+}
+
+/** Project a 3D SketchPoint onto sketch plane UV coords. */
+function projectPt(p: SketchPoint, axes: SketchAxes): Pt2 {
+  if (!axes) return { x: p.x, y: p.y };
+  const v = new THREE.Vector3(p.x, p.y, p.z).sub(axes.origin);
+  return { x: v.dot(axes.t1), y: v.dot(axes.t2) };
+}
+
 /** Round a coordinate to a grid bucket for tolerance-based grouping */
 function bucketKey(x: number, y: number, tol: number): string {
   const bx = Math.round(x / tol);
@@ -56,16 +89,13 @@ function dist2(a: Pt2, b: Pt2): number {
  * Circles have no open endpoints — returns null.
  * Polygons/rectangles/slots that are closed also return null.
  */
-function entityEndpoints(e: SketchEntity): [Pt2, Pt2] | null {
+function entityEndpoints(e: SketchEntity, axes: SketchAxes = null): [Pt2, Pt2] | null {
   switch (e.type) {
     case 'line':
     case 'construction-line':
     case 'centerline': {
       if (e.points.length < 2) return null;
-      return [
-        { x: e.points[0].x, y: e.points[0].y },
-        { x: e.points[1].x, y: e.points[1].y },
-      ];
+      return [projectPt(e.points[0], axes), projectPt(e.points[1], axes)];
     }
     case 'arc': {
       // Arc: points[0] is center, radius + startAngle + endAngle define geometry.
@@ -73,11 +103,16 @@ function entityEndpoints(e: SketchEntity): [Pt2, Pt2] | null {
       if (e.points.length < 1 || e.radius == null || e.startAngle == null || e.endAngle == null) {
         return null;
       }
-      const cx = e.points[0].x;
-      const cy = e.points[0].y;
+      const c2 = projectPt(e.points[0], axes);
+      const cx = c2.x;
+      const cy = c2.y;
       const r = e.radius;
-      const sa = (e.startAngle * Math.PI) / 180;
-      const ea = (e.endAngle * Math.PI) / 180;
+      // Arc angles are stored in RADIANS (set via Math.atan2 in commitTool.ts).
+      // The previous code multiplied by π/180 as if they were degrees, which
+      // produced wildly wrong endpoints — broke chain detection, closed-profile
+      // detection, and self-intersection tests for any sketch with an arc.
+      const sa = e.startAngle;
+      const ea = e.endAngle;
       return [
         { x: cx + r * Math.cos(sa), y: cy + r * Math.sin(sa) },
         { x: cx + r * Math.cos(ea), y: cy + r * Math.sin(ea) },
@@ -95,8 +130,9 @@ function entityEndpoints(e: SketchEntity): [Pt2, Pt2] | null {
       const rot = e.rotation ?? 0;
       const cosR = Math.cos(rot);
       const sinR = Math.sin(rot);
-      const cx = e.points[0].x;
-      const cy = e.points[0].y;
+      const c2 = projectPt(e.points[0], axes);
+      const cx = c2.x;
+      const cy = c2.y;
       const a = e.majorRadius;
       const b = e.minorRadius;
       const sxU = a * Math.cos(sa) * cosR - b * Math.sin(sa) * sinR;
@@ -110,13 +146,11 @@ function entityEndpoints(e: SketchEntity): [Pt2, Pt2] | null {
     }
     case 'spline': {
       if (e.points.length < 2) return null;
-      const first = e.points[0];
-      const last = e.points[e.points.length - 1];
       // Closed spline?
       if (e.closed) return null;
       return [
-        { x: first.x, y: first.y },
-        { x: last.x, y: last.y },
+        projectPt(e.points[0], axes),
+        projectPt(e.points[e.points.length - 1], axes),
       ];
     }
     case 'polygon':
@@ -137,26 +171,25 @@ function entityEndpoints(e: SketchEntity): [Pt2, Pt2] | null {
  * Lines: 2 points. Arcs: N samples. Circles: N samples.
  * Polygons/rectangles: their control points.
  */
-function sampleEntityPoints(e: SketchEntity, arcSamples = 8): Pt2[] {
+function sampleEntityPoints(e: SketchEntity, arcSamples = 8, axes: SketchAxes = null): Pt2[] {
   switch (e.type) {
     case 'line':
     case 'construction-line':
     case 'centerline': {
       if (e.points.length < 2) return [];
-      return [
-        { x: e.points[0].x, y: e.points[0].y },
-        { x: e.points[1].x, y: e.points[1].y },
-      ];
+      return [projectPt(e.points[0], axes), projectPt(e.points[1], axes)];
     }
     case 'arc': {
       if (e.points.length < 1 || e.radius == null || e.startAngle == null || e.endAngle == null) {
         return [];
       }
-      const cx = e.points[0].x;
-      const cy = e.points[0].y;
+      const c2 = projectPt(e.points[0], axes);
+      const cx = c2.x;
+      const cy = c2.y;
       const r = e.radius;
-      const sa = (e.startAngle * Math.PI) / 180;
-      let ea = (e.endAngle * Math.PI) / 180;
+      // Arc angles are stored in RADIANS — see entityEndpoints comment above.
+      const sa = e.startAngle;
+      let ea = e.endAngle;
       // Ensure we sweep in the correct direction (CCW)
       if (ea < sa) ea += 2 * Math.PI;
       const pts: Pt2[] = [];
@@ -168,8 +201,9 @@ function sampleEntityPoints(e: SketchEntity, arcSamples = 8): Pt2[] {
     }
     case 'circle': {
       if (e.points.length < 1 || e.radius == null) return [];
-      const cx = e.points[0].x;
-      const cy = e.points[0].y;
+      const c2 = projectPt(e.points[0], axes);
+      const cx = c2.x;
+      const cy = c2.y;
       const r = e.radius;
       const pts: Pt2[] = [];
       for (let i = 0; i < arcSamples; i++) {
@@ -180,8 +214,9 @@ function sampleEntityPoints(e: SketchEntity, arcSamples = 8): Pt2[] {
     }
     case 'ellipse': {
       if (e.points.length < 1 || e.majorRadius == null || e.minorRadius == null) return [];
-      const cx = e.points[0].x;
-      const cy = e.points[0].y;
+      const c2 = projectPt(e.points[0], axes);
+      const cx = c2.x;
+      const cy = c2.y;
       const a = e.majorRadius;
       const b = e.minorRadius;
       const rot = e.rotation ?? 0;
@@ -198,8 +233,9 @@ function sampleEntityPoints(e: SketchEntity, arcSamples = 8): Pt2[] {
     }
     case 'elliptical-arc': {
       if (e.points.length < 1 || e.majorRadius == null || e.minorRadius == null) return [];
-      const cx = e.points[0].x;
-      const cy = e.points[0].y;
+      const c2 = projectPt(e.points[0], axes);
+      const cx = c2.x;
+      const cy = c2.y;
       const a = e.majorRadius;
       const b = e.minorRadius;
       const rot = e.rotation ?? 0;
@@ -220,7 +256,7 @@ function sampleEntityPoints(e: SketchEntity, arcSamples = 8): Pt2[] {
     case 'polygon':
     case 'rectangle':
     case 'slot':
-      return e.points.map(p => ({ x: p.x, y: p.y }));
+      return e.points.map((p) => projectPt(p, axes));
     default:
       return e.points.map(p => ({ x: p.x, y: p.y }));
   }
@@ -237,13 +273,18 @@ export class SketchAnalyzer {
   static analyze(sketch: Sketch, tol = 0.1): SketchAnalysis {
     const { entities, constraints, dimensions } = sketch;
 
-    const loops = SketchAnalyzer.findLoops(entities, tol);
+    // Build plane-aware axes ONCE so every helper projects 3D points to the
+    // sketch plane's local UV. Without this, non-XY sketches (XZ, YZ, custom
+    // face planes) silently corrupt chain detection, area, and intersection.
+    const axes = buildSketchAxes(sketch);
+
+    const loops = SketchAnalyzer.findLoops(entities, tol, axes);
     const closedProfiles = loops.filter(l => l.closed);
     const openChains = loops.filter(l => !l.closed);
 
     // Attach area to closed loops
     for (const loop of closedProfiles) {
-      loop.area = SketchAnalyzer.computeLoopArea(loop, entities);
+      loop.area = SketchAnalyzer.computeLoopArea(loop, entities, axes);
     }
 
     // Isolated points: 'point' type entities, or line/arc stubs with no connections
@@ -258,8 +299,8 @@ export class SketchAnalyzer {
       }
     }
 
-    const selfIntersections = SketchAnalyzer.findSelfIntersections(entities, tol * 0.1);
-    const redundantEntities = SketchAnalyzer.findRedundantEntities(entities, tol * 0.1);
+    const selfIntersections = SketchAnalyzer.findSelfIntersections(entities, tol * 0.1, axes);
+    const redundantEntities = SketchAnalyzer.findRedundantEntities(entities, tol * 0.1, axes);
 
     const nonConstruction = entities.filter(e => !e.isConstruction);
     const stats = {
@@ -286,7 +327,7 @@ export class SketchAnalyzer {
   // -------------------------------------------------------------------------
   // findLoops
   // -------------------------------------------------------------------------
-  static findLoops(entities: SketchEntity[], tol = 0.1): SketchLoop[] {
+  static findLoops(entities: SketchEntity[], tol = 0.1, axes: SketchAxes = null): SketchLoop[] {
     // Filter to geometry that can form loops (skip isolated points, construction)
     const candidates = entities.filter(e =>
       e.type !== 'point' && !e.isConstruction
@@ -343,7 +384,7 @@ export class SketchAnalyzer {
     const endpointOf = new Map<string, [Pt2, Pt2] | null>();
 
     for (const e of openEntities) {
-      const eps = entityEndpoints(e);
+      const eps = entityEndpoints(e, axes);
       endpointOf.set(e.id, eps);
       if (!eps) continue;
       addEndpoint(eps[0], e.id, 0);
@@ -473,14 +514,14 @@ export class SketchAnalyzer {
   // -------------------------------------------------------------------------
   // computeLoopArea
   // -------------------------------------------------------------------------
-  static computeLoopArea(loop: SketchLoop, entities: SketchEntity[]): number {
+  static computeLoopArea(loop: SketchLoop, entities: SketchEntity[], axes: SketchAxes = null): number {
     const entityById = new Map(entities.map(e => [e.id, e]));
     const allPts: Pt2[] = [];
 
     for (const id of loop.entityIds) {
       const e = entityById.get(id);
       if (!e) continue;
-      const pts = sampleEntityPoints(e, 8);
+      const pts = sampleEntityPoints(e, 8, axes);
       // Avoid duplicating connection points between adjacent entities
       if (allPts.length > 0 && pts.length > 0) {
         const last = allPts[allPts.length - 1];
@@ -514,6 +555,7 @@ export class SketchAnalyzer {
   static findSelfIntersections(
     entities: SketchEntity[],
     tol = 0.01,
+    axes: SketchAxes = null,
   ): Array<{ entityIdA: string; entityIdB: string; point: { x: number; y: number } }> {
     const results: Array<{ entityIdA: string; entityIdB: string; point: { x: number; y: number } }> = [];
 
@@ -528,10 +570,10 @@ export class SketchAnalyzer {
         const a = lines[i];
         const b = lines[j];
 
-        const p = { x: a.points[0].x, y: a.points[0].y };
-        const q = { x: a.points[1].x, y: a.points[1].y };
-        const r = { x: b.points[0].x, y: b.points[0].y };
-        const s = { x: b.points[1].x, y: b.points[1].y };
+        const p = projectPt(a.points[0], axes);
+        const q = projectPt(a.points[1], axes);
+        const r = projectPt(b.points[0], axes);
+        const s = projectPt(b.points[1], axes);
 
         const inter = segmentIntersect(p, q, r, s, tol);
         if (inter) {
@@ -628,7 +670,7 @@ export class SketchAnalyzer {
   // -------------------------------------------------------------------------
   // findRedundantEntities
   // -------------------------------------------------------------------------
-  static findRedundantEntities(entities: SketchEntity[], tol = 0.01): string[] {
+  static findRedundantEntities(entities: SketchEntity[], tol = 0.01, axes: SketchAxes = null): string[] {
     const redundant = new Set<string>();
 
     for (let i = 0; i < entities.length; i++) {
@@ -640,10 +682,7 @@ export class SketchAnalyzer {
         (a.type === 'line' || a.type === 'construction-line' || a.type === 'centerline') &&
         a.points.length >= 2
       ) {
-        const d = dist2(
-          { x: a.points[0].x, y: a.points[0].y },
-          { x: a.points[1].x, y: a.points[1].y },
-        );
+        const d = dist2(projectPt(a.points[0], axes), projectPt(a.points[1], axes));
         if (d <= tol) {
           redundant.add(a.id);
           continue;
@@ -662,7 +701,7 @@ export class SketchAnalyzer {
         if (redundant.has(b.id)) continue;
         if (a.type !== b.type) continue;
 
-        if (entitiesAreDuplicate(a, b, tol)) {
+        if (entitiesAreDuplicate(a, b, tol, axes)) {
           redundant.add(b.id);
         }
       }
@@ -712,16 +751,16 @@ function segmentIntersect(
 /**
  * Determine if two entities of the same type are geometric duplicates.
  */
-function entitiesAreDuplicate(a: SketchEntity, b: SketchEntity, tol: number): boolean {
+function entitiesAreDuplicate(a: SketchEntity, b: SketchEntity, tol: number, axes: SketchAxes = null): boolean {
   switch (a.type) {
     case 'line':
     case 'construction-line':
     case 'centerline': {
       if (a.points.length < 2 || b.points.length < 2) return false;
-      const pa0: Pt2 = { x: a.points[0].x, y: a.points[0].y };
-      const pa1: Pt2 = { x: a.points[1].x, y: a.points[1].y };
-      const pb0: Pt2 = { x: b.points[0].x, y: b.points[0].y };
-      const pb1: Pt2 = { x: b.points[1].x, y: b.points[1].y };
+      const pa0 = projectPt(a.points[0], axes);
+      const pa1 = projectPt(a.points[1], axes);
+      const pb0 = projectPt(b.points[0], axes);
+      const pb1 = projectPt(b.points[1], axes);
       // Same direction or reversed
       return (
         (dist2(pa0, pb0) <= tol && dist2(pa1, pb1) <= tol) ||
@@ -730,14 +769,14 @@ function entitiesAreDuplicate(a: SketchEntity, b: SketchEntity, tol: number): bo
     }
     case 'circle': {
       if (a.points.length < 1 || b.points.length < 1) return false;
-      const ca: Pt2 = { x: a.points[0].x, y: a.points[0].y };
-      const cb: Pt2 = { x: b.points[0].x, y: b.points[0].y };
+      const ca = projectPt(a.points[0], axes);
+      const cb = projectPt(b.points[0], axes);
       return dist2(ca, cb) <= tol && Math.abs((a.radius ?? 0) - (b.radius ?? 0)) <= tol;
     }
     case 'arc': {
       if (a.points.length < 1 || b.points.length < 1) return false;
-      const ca: Pt2 = { x: a.points[0].x, y: a.points[0].y };
-      const cb: Pt2 = { x: b.points[0].x, y: b.points[0].y };
+      const ca = projectPt(a.points[0], axes);
+      const cb = projectPt(b.points[0], axes);
       return (
         dist2(ca, cb) <= tol &&
         Math.abs((a.radius ?? 0) - (b.radius ?? 0)) <= tol &&

@@ -643,7 +643,11 @@ export default function FormInteraction() {
         const activeBody = formBodies[0];
         if (!activeBody) { setStatusMessage('No form body to extrude'); break; }
 
-        // Find the "top ring" — vertices with the maximum Y coordinate
+        // Find the "top ring" — vertices with the maximum Y coordinate.
+        // NOTE: assumes the form body is Y-up. FormCage currently has no transform
+        // field (see types/cad.ts FormCage), so all forms live Y-up by convention.
+        // If forms gain rotation, this and the avgY-flatten path below must be
+        // generalized to use the form's local up-axis rather than world Y.
         const maxY = Math.max(...activeBody.vertices.map(v => v.position[1]));
         const TOL = 0.1;
         const topVerts = activeBody.vertices.filter(v => Math.abs(v.position[1] - maxY) < TOL);

@@ -13,6 +13,22 @@ const _blendTangentA = new THREE.Vector3();
 const _blendP3 = new THREE.Vector3();
 const _blendTangentB = new THREE.Vector3();
 
+/**
+ * Fingerprint cache keyed by previewGroup.uuid. The preview is skipped when
+ * the inputs haven't meaningfully changed since the last render (e.g. mouse
+ * paused mid-draw, no parameter change). Avoids dispose+realloc churn every
+ * frame just to redraw the same line.
+ */
+const PREVIEW_FINGERPRINT_CACHE = new Map<string, string>();
+function previewFingerprint(ctx: SketchPreviewCtx): string {
+  const m = ctx.mousePos;
+  const ms = m ? `${m.x.toFixed(4)}|${m.y.toFixed(4)}|${m.z.toFixed(4)}` : 'null';
+  const dp = ctx.drawingPoints
+    .map((p) => `${p.x.toFixed(4)},${p.y.toFixed(4)},${p.z.toFixed(4)}`)
+    .join(';');
+  return `${ctx.activeTool}|${ms}|${dp}|${ctx.isDraggingArc}|${ctx.conicRho}|${ctx.blendCurveMode}`;
+}
+
 export interface SketchPreviewCtx {
   previewGroup: THREE.Group;
   drawingPoints: SketchPoint[];
@@ -36,6 +52,13 @@ export function renderSketchPreview(ctx: SketchPreviewCtx): void {
   } = ctx;
 
     if (!previewGroup) return;
+
+    // Skip the dispose+realloc cycle if nothing relevant changed since last frame.
+    // For idle-during-draw frames this turns the work into a single Map lookup.
+    const fp = previewFingerprint(ctx);
+    if (PREVIEW_FINGERPRINT_CACHE.get(previewGroup.uuid) === fp) return;
+    PREVIEW_FINGERPRINT_CACHE.set(previewGroup.uuid, fp);
+
     clearGroupChildren(previewGroup);
 
     if (drawingPoints.length === 0 || !mousePos) return;

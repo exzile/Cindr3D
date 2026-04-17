@@ -85,9 +85,23 @@ import type { ViewportCtxState } from './ViewportContextMenu';
 import CameraProjectionSwitcher from './scene/CameraProjectionSwitcher';
 import LookAtInteraction from './scene/LookAtInteraction';
 import { EffectComposer, SSAO } from '@react-three/postprocessing';
-import MultiViewportLayout from './MultiViewportLayout';
+import MultiViewCanvas from './MultiViewCanvas';
 
 
+
+/** Standard ray-casting point-in-polygon test (screen-space pixels). */
+function pointInPolygon(p: { x: number; y: number }, poly: { x: number; y: number }[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const pi = poly[i];
+    const pj = poly[j];
+    const intersect =
+      pi.y > p.y !== pj.y > p.y &&
+      p.x < ((pj.x - pi.x) * (p.y - pi.y)) / (pj.y - pi.y + 1e-12) + pi.x;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
 
 export default function Viewport() {
   const viewMode = useCADStore((s) => s.viewMode);
@@ -116,6 +130,8 @@ export default function Viewport() {
   const features = useCADStore((s) => s.features);
   // D207
   const sketchGridEnabled = useCADStore((s) => s.sketchGridEnabled);
+  // NAV-19 multi-viewport layout
+  const viewportLayout = useCADStore((s) => s.viewportLayout);
 
   // Drag-state refs (avoid stale closures in pointer handlers)
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -123,6 +139,9 @@ export default function Viewport() {
   const isLassoRef = useRef(false);
   const lassoAccumRef = useRef<{ x: number; y: number }[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Window/lasso select needs the live camera for screen-space projection.
+  // Captured in Canvas.onCreated so it's available to pointerUp handlers.
+  const cameraRef = useRef<THREE.Camera | null>(null);
   const [viewportCtxMenu, setViewportCtxMenu] = useState<ViewportCtxState | null>(null);
 
   // Camera quaternion state shared between the main Canvas and the ViewCube overlay
@@ -200,35 +219,55 @@ export default function Viewport() {
     const p = { x: e.clientX - rect.left, y: e.clientY - rect.top };
 
     if (isDraggingRef.current) {
+      const camera = cameraRef.current;
+      // Project a world-space point to screen pixels using the live canvas camera.
+      // Returns null if the camera isn't ready or the point sits behind it.
+      const projectToScreen = (worldPos: THREE.Vector3): { x: number; y: number } | null => {
+        if (!camera) return null;
+        const ndc = worldPos.clone().project(camera);
+        // Behind camera (z > 1 in NDC) → reject
+        if (ndc.z > 1 || ndc.z < -1) return null;
+        return {
+          x: (ndc.x * 0.5 + 0.5) * rect.width,
+          y: (1 - (ndc.y * 0.5 + 0.5)) * rect.height,
+        };
+      };
+
+      // Featrue → screen-projected centroid (or null if not selectable)
+      const projectedFeatureCentroid = (f: typeof features[number]): { x: number; y: number } | null => {
+        if (!f.mesh || !f.visible) return null;
+        const box = new THREE.Box3().setFromObject(f.mesh);
+        if (box.isEmpty()) return null;
+        const centroid = new THREE.Vector3();
+        box.getCenter(centroid);
+        return projectToScreen(centroid);
+      };
+
       if (isLassoRef.current) {
-        // Lasso: point-in-polygon test on feature centroids
-        const matched = features.filter((f) => {
-          if (!f.mesh || !f.visible) return false;
-          const mesh = f.mesh;
-          const box = new THREE.Box3().setFromObject(mesh);
-          const centroid = new THREE.Vector3();
-          box.getCenter(centroid);
-          // Project centroid to screen — we don't have camera here so use stored centroid position
-          // Approximate: test if centroid bbox center in screen coords falls inside lasso polygon
-          // Since we don't have a camera ref here, we do a simple bounding-box overlap instead
-          // using the window rect approach
-          return false; // Geometric lasso test deferred — feature raycast happens in SketchInteraction
-        });
+        // Lasso: point-in-polygon test on each feature's projected centroid
+        const polygon = lassoAccumRef.current;
+        const matched = polygon.length >= 3
+          ? features.filter((f) => {
+              const sp = projectedFeatureCentroid(f);
+              return sp !== null && pointInPolygon(sp, polygon);
+            })
+          : [];
         setSelectedEntityIds(matched.map((f) => f.id));
         clearLasso();
       } else {
-        // Window select: collect feature IDs whose mesh bbox projects within the rect
+        // Window select: select features whose centroids fall inside the drag rect
         const store = useCADStore.getState();
         const start = store.windowSelectStart;
-        const end = { x: p.x, y: p.y };
         if (start) {
-          const minX = Math.min(start.x, end.x);
-          const maxX = Math.max(start.x, end.x);
-          const minY = Math.min(start.y, end.y);
-          const maxY = Math.max(start.y, end.y);
-          // Select features whose names match (simplified — full 3D frustum is in SketchInteraction)
-          // For now: select all visible features when drag rect is drawn (plug-in point for raycasting)
-          const _ = [minX, maxX, minY, maxY]; void _;
+          const minX = Math.min(start.x, p.x);
+          const maxX = Math.max(start.x, p.x);
+          const minY = Math.min(start.y, p.y);
+          const maxY = Math.max(start.y, p.y);
+          const matched = features.filter((f) => {
+            const sp = projectedFeatureCentroid(f);
+            return sp !== null && sp.x >= minX && sp.x <= maxX && sp.y >= minY && sp.y <= maxY;
+          });
+          setSelectedEntityIds(matched.map((f) => f.id));
         }
         clearWindowSelect();
       }
@@ -247,6 +286,7 @@ export default function Viewport() {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
+      <div style={{ width: '100%', height: '100%', display: viewportLayout === '1' ? 'block' : 'none' }}>
       <Canvas
         shadows={{ type: THREE.PCFShadowMap }}
         camera={{
@@ -256,10 +296,12 @@ export default function Viewport() {
           far: 10000,
         }}
         gl={{ antialias: true, alpha: false }}
-        onCreated={({ gl }) => {
+        onCreated={({ gl, camera }) => {
           gl.setClearColor(themeColors.canvasBg);
           gl.toneMapping = THREE.ACESFilmicToneMapping;
           gl.toneMappingExposure = 1.2;
+          // Expose camera to DOM-level pointer handlers for window/lasso selection
+          cameraRef.current = camera;
         }}
         onContextMenu={(e) => {
           e.preventDefault();
@@ -402,9 +444,14 @@ export default function Viewport() {
           </EffectComposer>
         )}
       </Canvas>
+      </div>
 
-      {/* NAV-19: Multi-viewport layout overlay */}
-      <MultiViewportLayout />
+      {/* NAV-19: Multi-viewport — replaces main Canvas when layout !== '1' */}
+      {viewportLayout !== '1' && (
+        <div style={{ position: 'absolute', inset: 0 }}>
+          <MultiViewCanvas layout={viewportLayout} />
+        </div>
+      )}
 
       {/* MM6/MM7 Finish Edit In Place banner */}
       <FinishEditInPlaceBar />

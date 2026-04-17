@@ -8,10 +8,15 @@ export function RenameSketchDialog({ sketchId, onClose }: { sketchId: string | n
   const sketch = sketches.find((s) => s.id === sketchId);
   const [name, setName] = useState(sketch?.name ?? '');
 
+  // Re-seed only when the user opens the dialog on a different sketch, NOT every
+  // time the parent's `sketches` array reference changes. Depending on `sketch`
+  // (a derived find() result) overwrote the user's in-progress edit on every
+  // unrelated sketch update.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setName(sketch?.name ?? '');
-  }, [sketch]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sketchId]);
 
   const handleApply = () => {
     if (!sketchId || !name.trim()) return;

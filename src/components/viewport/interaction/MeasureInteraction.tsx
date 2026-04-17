@@ -28,6 +28,10 @@ export default function MeasureInteraction() {
   // Reusable line object — avoids allocating new BufferGeometry per frame
   const lineRef = useRef<THREE.Line>(new THREE.Line());
   const lineGeoRef = useRef<THREE.BufferGeometry>(new THREE.BufferGeometry());
+  // Pre-allocated position buffer (2 vertices × xyz). Mutated in-place each frame
+  // so we don't allocate a fresh Float32Array + BufferAttribute on every tick.
+  const linePosArrayRef = useRef<Float32Array>(new Float32Array(6));
+  const linePosAttrRef = useRef<THREE.BufferAttribute | null>(null);
   // Scratch Vector3s for useFrame — avoids per-frame allocation
   const _p1Scratch = useRef(new THREE.Vector3());
   const _endScratch = useRef(new THREE.Vector3());
@@ -43,7 +47,13 @@ export default function MeasureInteraction() {
     dot2Ref.current.material = dotMatRef.current;
     dot2Ref.current.renderOrder = 999;
     dot2Ref.current.userData.measurePreview = true;
-    // Reusable line object for the measurement line between dots
+    // Reusable line object for the measurement line between dots.
+    // Bind the position attribute ONCE so useFrame can mutate the underlying array
+    // in-place — no Float32Array / BufferAttribute allocations per tick.
+    if (!linePosAttrRef.current) {
+      linePosAttrRef.current = new THREE.BufferAttribute(linePosArrayRef.current, 3);
+      lineGeoRef.current.setAttribute('position', linePosAttrRef.current);
+    }
     lineRef.current.geometry = lineGeoRef.current;
     lineRef.current.material = matRef.current;
     lineRef.current.userData.measurePreview = true;
@@ -175,13 +185,11 @@ export default function MeasureInteraction() {
         : mousePos;
 
       if (endPoint) {
-        // Update the reusable line geometry's positions in-place
-        const positions = new Float32Array([
-          p1v.x, p1v.y, p1v.z,
-          endPoint.x, endPoint.y, endPoint.z,
-        ]);
-        lineGeoRef.current.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        lineGeoRef.current.attributes.position.needsUpdate = true;
+        // Mutate the pre-allocated position buffer in-place — no per-frame allocation.
+        const arr = linePosArrayRef.current;
+        arr[0] = p1v.x; arr[1] = p1v.y; arr[2] = p1v.z;
+        arr[3] = endPoint.x; arr[4] = endPoint.y; arr[5] = endPoint.z;
+        if (linePosAttrRef.current) linePosAttrRef.current.needsUpdate = true;
         group.add(lineRef.current);
 
         if (pts.length >= 2) {

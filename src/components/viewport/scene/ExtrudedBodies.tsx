@@ -96,8 +96,11 @@ export default function ExtrudedBodies() {
       const m = body.material;
       // CTX-7: per-body display opacity (independent of material.opacity)
       const displayOpacity = body.opacity ?? 1;
-      // Skip override when body uses default aluminum + no display opacity override
-      if (m.id === 'aluminum' && m.color === '#B0B8C0' && m.opacity === 1 && displayOpacity === 1) return fallback;
+      // Skip override when body uses default aluminum + no display opacity override.
+      // Color compared case-insensitively so picker output (#b0b8c0) matches the
+      // canonical default (#B0B8C0) — otherwise we'd needlessly clone a fresh
+      // MeshStandardMaterial for every default-aluminum body just on a case mismatch.
+      if (m.id === 'aluminum' && m.color.toLowerCase() === '#b0b8c0' && m.opacity === 1 && displayOpacity === 1) return fallback;
       const finalOpacity = m.opacity * displayOpacity;
       const key = `${m.color}|${m.metalness}|${m.roughness}|${m.opacity}|${displayOpacity}`;
       const cached = materialCache.current.get(bodyId);

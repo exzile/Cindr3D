@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
@@ -416,6 +416,23 @@ export default function SketchConstraintOverlay() {
 
     return objs.length > 0 ? objs : null;
   }, [activeSketch]);
+
+  // Dispose every constraint glyph's geometry when `objects` is replaced
+  // (active sketch changed, constraints edited) or on unmount. Materials are
+  // module-level singletons and must NOT be disposed.
+  useEffect(() => {
+    return () => {
+      if (!objects) return;
+      for (const obj of objects) {
+        obj.traverse((child) => {
+          const line = child as THREE.Line;
+          if (line.isLine) line.geometry?.dispose?.();
+          const mesh = child as THREE.Mesh;
+          if (mesh.isMesh) mesh.geometry?.dispose?.();
+        });
+      }
+    };
+  }, [objects]);
 
   if (!objects) return null;
 
