@@ -10,6 +10,7 @@ import CanvasControls from './CanvasControls';
 import SketchPalette from './SketchPalette';
 import MeasurePanel from './MeasurePanel';
 import ExtrudeTool from './ExtrudeTool';
+import RevolveTool from './RevolveTool';
 import ExtrudePanel from './ExtrudePanel';
 import RevolvePanel from './RevolvePanel';
 import SweepPanel from './SweepPanel';
@@ -57,6 +58,7 @@ import DirectEditFacePicker from './scene/DirectEditFacePicker';
 import TextureExtrudeFacePicker from './scene/TextureExtrudeFacePicker';
 import DecalFacePicker from './scene/DecalFacePicker';
 import SplitFacePicker from './scene/SplitFacePicker';
+import HoleFacePicker from './scene/HoleFacePicker';
 import SnapFitFacePicker from './scene/SnapFitFacePicker';
 import LipGrooveEdgePicker from './scene/LipGrooveEdgePicker';
 import ConstructTwoPlanePanel from './ConstructTwoPlanePanel';
@@ -303,6 +305,7 @@ export default function Viewport() {
         <SketchInteraction />
         <MeasureInteraction />
         <ExtrudeTool />
+        <RevolveTool />
         <FormBodies />
         <FormInteraction />
         <JointGizmos />
@@ -318,6 +321,7 @@ export default function Viewport() {
         <TextureExtrudeFacePicker />
         <DecalFacePicker />
         <SplitFacePicker />
+        <HoleFacePicker />
         <SnapFitFacePicker />
         <LipGrooveEdgePicker />
         <JointOriginPicker />

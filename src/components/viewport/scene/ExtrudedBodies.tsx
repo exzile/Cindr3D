@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
@@ -6,10 +6,11 @@ import { GeometryEngine } from '../../../engine/GeometryEngine';
 import type { Feature, Sketch } from '../../../types/cad';
 import { BODY_MATERIAL, SURFACE_MATERIAL, DIM_MATERIAL } from './bodyMaterial';
 
-/** Revolve geometry item — memoized, disposes LatheGeometry on change/unmount. */
-function RevolveItem({ feature, sketch }: { feature: Feature; sketch: Sketch }) {
+/** Revolve geometry item — memoized, disposes geometry on change/unmount. */
+function RevolveItem({ feature, sketch }: { feature: Feature; sketch: Sketch | undefined }) {
   const angle = ((feature.params.angle as number) || 360) * (Math.PI / 180);
   const axisKey = (feature.params.axis as 'X' | 'Y' | 'Z') || 'Y';
+  const isFaceRevolve = !!feature.params.faceRevolve;
   const useCenterline = !!feature.params.useCenterline;
   const axis = useMemo(() => {
     if (useCenterline && feature.params.axisDirection) {
@@ -22,19 +23,26 @@ function RevolveItem({ feature, sketch }: { feature: Feature; sketch: Sketch }) 
   }, [axisKey, useCenterline, feature.params.axisDirection]);
   const isSurface = feature.bodyKind === 'surface';
   const mesh = useMemo(() => {
+    if (isFaceRevolve) {
+      const flat = feature.params.faceBoundary as number[];
+      if (!flat || flat.length < 9) return null;
+      const boundary: THREE.Vector3[] = [];
+      for (let i = 0; i < flat.length; i += 3) {
+        boundary.push(new THREE.Vector3(flat[i], flat[i + 1], flat[i + 2]));
+      }
+      return GeometryEngine.revolveFaceBoundary(boundary, axis, angle, isSurface);
+    }
+    if (!sketch) return null;
     const m = GeometryEngine.revolveSketch(sketch, angle, axis);
     if (!m) return null;
-    // LatheGeometry revolves around local +Y. Post-rotate so the mesh's
-    // lathe-Y aligns with the requested world axis.
+    // LatheGeometry revolves around local +Y. Post-rotate so lathe-Y aligns with world axis.
     if (axisKey === 'X') m.rotation.set(0, 0, -Math.PI / 2);
     else if (axisKey === 'Z') m.rotation.set(Math.PI / 2, 0, 0);
-    // Apply surface material for surface body kind
     m.material = isSurface ? SURFACE_MATERIAL : BODY_MATERIAL;
     return m;
-  }, [sketch, angle, axis, axisKey, isSurface]);
+  }, [isFaceRevolve, feature.params.faceBoundary, sketch, angle, axis, axisKey, isSurface]);
   useEffect(() => {
     if (mesh) {
-      // eslint-disable-next-line react-hooks/immutability
       mesh.userData.pickable = true;
       mesh.userData.featureId = feature.id;
     }
@@ -61,12 +69,50 @@ export default function ExtrudedBodies() {
   const activeComponentId = useComponentStore((s) => s.activeComponentId);
   const rootComponentId = useComponentStore((s) => s.rootComponentId);
 
+  const bodiesById = useComponentStore((s) => s.bodies);
+
   // When a non-root component is active, dim features that belong to other components.
   const editingInPlace = !!activeComponentId && activeComponentId !== rootComponentId;
-  const getMaterial = (featureComponentId: string | undefined, isSurface = false) => {
-    if (editingInPlace && featureComponentId !== activeComponentId) return DIM_MATERIAL;
-    return isSurface ? SURFACE_MATERIAL : BODY_MATERIAL;
-  };
+
+  // Per-body cloned MeshStandardMaterial cache. Cloned materials are disposed
+  // when the appearance changes or the component unmounts. Singletons
+  // (BODY_MATERIAL / SURFACE_MATERIAL / DIM_MATERIAL) are NEVER disposed.
+  const materialCache = useRef<Map<string, { mat: THREE.MeshStandardMaterial; key: string }>>(new Map());
+  useEffect(() => {
+    const cache = materialCache.current;
+    return () => {
+      cache.forEach(({ mat }) => mat.dispose());
+      cache.clear();
+    };
+  }, []);
+
+  const getMaterial = useCallback(
+    (featureComponentId: string | undefined, bodyId: string | undefined, isSurface = false): THREE.Material => {
+      if (editingInPlace && featureComponentId !== activeComponentId) return DIM_MATERIAL;
+      const fallback: THREE.Material = isSurface ? SURFACE_MATERIAL : BODY_MATERIAL;
+      if (!bodyId) return fallback;
+      const body = bodiesById[bodyId];
+      if (!body || !body.material) return fallback;
+      const m = body.material;
+      // Skip override when body still uses the default aluminum so we keep the
+      // singleton and don't allocate a clone for every untouched body.
+      if (m.id === 'aluminum' && m.color === '#B0B8C0' && m.opacity === 1) return fallback;
+      const key = `${m.color}|${m.metalness}|${m.roughness}|${m.opacity}`;
+      const cached = materialCache.current.get(bodyId);
+      if (cached && cached.key === key) return cached.mat;
+      if (cached) cached.mat.dispose();
+      const mat = new THREE.MeshStandardMaterial({
+        color: m.color,
+        metalness: m.metalness,
+        roughness: m.roughness,
+        opacity: m.opacity,
+        transparent: m.opacity < 1,
+      });
+      materialCache.current.set(bodyId, { mat, key });
+      return mat;
+    },
+    [editingInPlace, activeComponentId, bodiesById],
+  );
 
   // D187 + D190: a feature is skipped when it is suppressed, hidden, or
   // rolled back past the marker.
@@ -83,13 +129,15 @@ export default function ExtrudedBodies() {
     const distance = (feature.params.distance as number) || 10;
     const direction = ((feature.params.direction as 'normal' | 'reverse' | 'symmetric') ?? 'normal');
     const profileIndex = feature.params.profileIndex as number | undefined;
-    // If a specific profile was selected, build a profile-only sketch so we
-    // don't extrude every profile in the source sketch.
+    const taperAngle = (feature.params.taperAngle as number) ?? 0;
+    const startOffset = (feature.params.startType as string) === 'offset'
+      ? ((feature.params.startOffset as number) ?? 0)
+      : 0;
     const sketchForOp = profileIndex !== undefined
       ? GeometryEngine.createProfileSketch(sketch, profileIndex)
       : sketch;
     if (!sketchForOp) return null;
-    return GeometryEngine.buildExtrudeFeatureMesh(sketchForOp, distance, direction);
+    return GeometryEngine.buildExtrudeFeatureMesh(sketchForOp, distance, direction, taperAngle, startOffset);
   };
 
   const { bodies, featureIds, featureComponentIds } = useMemo(() => {
@@ -163,45 +211,43 @@ export default function ExtrudedBodies() {
     };
   }, [bodies]);
 
-  // Apply dim / restore materials on pre-built stored meshes in an effect,
+  // Apply dim / appearance materials on pre-built stored meshes in an effect,
   // never in render, so cleanup is guaranteed when Edit In Place exits.
   useEffect(() => {
     const storedMeshFeatures = features.filter((f) => isActive(f) && f.mesh);
     storedMeshFeatures.forEach((feature) => {
-      const dim = editingInPlace && feature.componentId !== activeComponentId;
       const mesh = feature.mesh!;
       const isSurface = feature.bodyKind === 'surface';
-      if (dim) {
-        if (!mesh.userData._origMaterial) mesh.userData._origMaterial = mesh.material;
-        mesh.material = DIM_MATERIAL;
-      } else {
-        if (mesh.userData._origMaterial) {
-          mesh.material = mesh.userData._origMaterial as THREE.Material;
-          mesh.userData._origMaterial = undefined;
-        } else {
-          mesh.material = isSurface ? SURFACE_MATERIAL : BODY_MATERIAL;
-        }
-      }
+      mesh.userData._origMaterial = undefined;
+      mesh.material = getMaterial(feature.componentId, feature.bodyId, isSurface);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [features, editingInPlace, activeComponentId, rollbackIndex]);
+  }, [features, editingInPlace, activeComponentId, rollbackIndex, bodiesById, getMaterial]);
 
   return (
     <>
-      {bodies.map((geom, i) => (
-        <mesh
-          key={featureIds[i] ?? i}
-          geometry={geom}
-          material={getMaterial(featureComponentIds[i])}
-          castShadow
-          receiveShadow
-          onUpdate={(m) => {
-            m.userData.pickable = true;
-            m.userData.featureId = featureIds[i];
-          }}
-        />
-      ))}
+      {bodies.map((geom, i) => {
+        const fId = featureIds[i];
+        const bodyId = fId ? features.find((f) => f.id === fId)?.bodyId : undefined;
+        return (
+          <mesh
+            key={fId ?? i}
+            geometry={geom}
+            material={getMaterial(featureComponentIds[i], bodyId)}
+            castShadow
+            receiveShadow
+            onUpdate={(m) => {
+              m.userData.pickable = true;
+              m.userData.featureId = fId;
+              m.userData.bodyId = bodyId;
+            }}
+          />
+        );
+      })}
       {features.filter((f) => f.type === 'revolve' && isActive(f)).map((feature) => {
+        if (feature.params.faceRevolve) {
+          return <RevolveItem key={feature.id} feature={feature} sketch={undefined} />;
+        }
         const sketch = sketches.find((s) => s.id === feature.sketchId);
         if (!sketch) return null;
         return <RevolveItem key={feature.id} feature={feature} sketch={sketch} />;

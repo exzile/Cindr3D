@@ -76,7 +76,7 @@ export function RibbonSolidTab({
         <ToolButton icon={<ArrowUpFromLine size={ICON_LG} />} label="Extrude" onClick={handleExtrude} active={activeTool === 'extrude'} large colorClass="icon-blue" />
         <ToolButton icon={<RotateCcw size={ICON_LG} />} label="Revolve" onClick={handleRevolve} active={activeTool === 'revolve'} large colorClass="icon-blue" />
         <div className="ribbon-stack">
-          <ToolButton icon={<CircleDot size={ICON_SM} />} label="Hole" onClick={() => setActiveDialog('hole')} colorClass="icon-blue" />
+          <ToolButton icon={<CircleDot size={ICON_SM} />} label="Hole" onClick={() => useCADStore.getState().openHoleDialog()} colorClass="icon-blue" />
           <ToolButton icon={<Box size={ICON_SM} />} label="Shell" onClick={() => setActiveDialog('shell')} colorClass="icon-blue" />
         </div>
       </RibbonSection>

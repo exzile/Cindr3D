@@ -155,3 +155,301 @@
 .dialog-field-col {
   flex: 1;
 }
+
+
+/* ===================================================================
+ * Fusion-style dialog primitives
+ * — collapsible section, horizontal row, segmented icon picker,
+ *   face-selector chip, inline units input, floating dim chip.
+ * =================================================================== */
+
+/* Horizontal label + control row (mirrors Fusion 360's property grid). */
+.dialog-row {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.dialog-row > label {
+  font-size: 12px;
+  color: var(--text-primary);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Collapsible section */
+.dialog-section {
+  border-top: 1px solid var(--border-light);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dialog-section:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.dialog-section__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.dialog-section__chevron {
+  transition: transform 0.12s ease;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.dialog-section__chevron.open {
+  transform: rotate(90deg);
+}
+
+.dialog-section__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 2px;
+}
+
+/* Segmented icon picker — the row of toggle icons for Hole Type / Tap Type / Drill Point */
+.seg-icons {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.seg-icons__btn {
+  width: 28px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.1s ease;
+}
+
+.seg-icons__btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.seg-icons__btn.active {
+  background: #0078d7;
+  border-color: #0078d7;
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+.seg-icons__btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Face-selector chip — "Select" placeholder → "1 selected" filled chip with × */
+.face-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+}
+
+.face-selector__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.face-selector__btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.face-selector__btn.active {
+  background: #0078d7;
+  border-color: #0078d7;
+  color: #fff;
+}
+
+.face-selector__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 10px;
+  background: #0078d7;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.face-selector__chip-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.9);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.face-selector__chip-clear:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* Distance / extents dropdown + inline units input  */
+.units-input {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.units-input select,
+.units-input input[type="number"] {
+  height: 26px;
+  padding: 2px 6px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.units-input input[type="number"] {
+  flex: 1;
+  min-width: 60px;
+}
+
+.units-input__ext {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.units-input__ext:hover {
+  background: var(--bg-hover);
+}
+
+/* Hole diagram — schematic depth/angle/diameter readout shown at the bottom
+   of Shape Settings, similar to Fusion 360's diagram. */
+.hole-diagram {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+
+.hole-diagram__svg {
+  grid-column: 1;
+  grid-row: 1 / span 3;
+  justify-self: center;
+  color: var(--text-secondary);
+}
+
+.hole-diagram__field {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hole-diagram__field input {
+  width: 110px;
+  height: 26px;
+  padding: 2px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* Floating 3D-anchored diameter chip (drei <Html> overlay). */
+.hole-dim-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  font-size: 12px;
+  color: var(--text-primary);
+  user-select: none;
+}
+
+.hole-dim-chip input {
+  width: 64px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  text-align: right;
+  padding: 0;
+}
+
+.hole-dim-chip input:focus {
+  background: var(--accent-light);
+  border-radius: 2px;
+}
+
+.hole-dim-chip__unit {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Non-modal overlay variant — used when the dialog needs to coexist with
+   viewport interaction (e.g. picking a face). Backdrop is transparent and
+   ignores pointer events; the dialog itself sits top-right like Fusion 360. */
+.dialog-overlay.dialog-overlay--passthrough {
+  background: transparent;
+  backdrop-filter: none;
+  pointer-events: none;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 56px 16px 16px;
+}
+
+.dialog-overlay.dialog-overlay--passthrough .dialog {
+  pointer-events: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}

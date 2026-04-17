@@ -1,0 +1,17 @@
+@import '../dialogs/common/ToolPanel.css';
+
+.tp-header-icon.revolve { background: #0d9488; }
+
+.revolve-face-prompt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--bg-elevated);
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: italic;
+  flex: 1;
+}

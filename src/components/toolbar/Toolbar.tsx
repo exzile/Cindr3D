@@ -240,7 +240,7 @@ export default function Toolbar() {
     { icon: <Move size={MI} />, label: 'Web', onClick: () => setActiveDialog('web') },
     { icon: <ArrowUp size={MI} />, label: 'Emboss', onClick: () => setActiveDialog('emboss') },
     { icon: <AlignCenter size={MI} />, label: 'Rest', onClick: () => setActiveDialog('rest') },
-    { separator: true, icon: <CircleDot size={MI} />, label: 'Hole', shortcut: 'H', onClick: () => setActiveDialog('hole') },
+    { separator: true, icon: <CircleDot size={MI} />, label: 'Hole', shortcut: 'H', onClick: () => useCADStore.getState().openHoleDialog() },
     { icon: <Wrench size={MI} />, label: 'Thread', onClick: () => setActiveDialog('thread') },
     { separator: true, icon: <Box size={MI} />, label: 'Box', onClick: () => setActiveDialog('primitive-box') },
     { icon: <Circle size={MI} />, label: 'Cylinder', onClick: () => setActiveDialog('primitive-cylinder') },

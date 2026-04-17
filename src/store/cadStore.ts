@@ -365,6 +365,11 @@ interface CADState {
   // Revolve body kind (D103)
   revolveBodyKind: 'solid' | 'surface';
   setRevolveBodyKind: (k: 'solid' | 'surface') => void;
+  revolveProfileMode: 'sketch' | 'face';
+  setRevolveProfileMode: (m: 'sketch' | 'face') => void;
+  revolveFaceBoundary: number[] | null;
+  revolveFaceNormal: [number, number, number] | null;
+  startRevolveFromFace: (boundary: THREE.Vector3[], normal: THREE.Vector3) => void;
   startRevolveTool: () => void;
   cancelRevolveTool: () => void;
   commitRevolve: () => void;
@@ -382,10 +387,14 @@ interface CADState {
   sweepTwistAngle: number;
   sweepTaperAngle: number;
   sweepGuideRailId: string | null;
+  sweepOperation: 'new-body' | 'join' | 'cut';
+  sweepDistance: 'entire' | 'distance';
   setSweepOrientation: (v: 'perpendicular' | 'parallel') => void;
   setSweepTwistAngle: (v: number) => void;
   setSweepTaperAngle: (v: number) => void;
   setSweepGuideRailId: (v: string | null) => void;
+  setSweepOperation: (v: 'new-body' | 'join' | 'cut') => void;
+  setSweepDistance: (v: 'entire' | 'distance') => void;
   startSweepTool: () => void;
   cancelSweepTool: () => void;
   commitSweep: () => void;
@@ -619,6 +628,25 @@ interface CADState {
   setSplitFace: (id: string) => void;
   closeSplitFaceDialog: () => void;
   commitSplitFace: (params: import('../components/dialogs/solid/SplitFaceDialog').SplitFaceParams) => void;
+
+  // ── Hole face placement ──────────────────────────────────────────────────
+  holeFaceId: string | null;
+  holeFaceNormal: [number, number, number] | null;
+  holeFaceCentroid: [number, number, number] | null;
+  /** Live diameter shared between the dialog and the in-viewport floating chip. */
+  holeDraftDiameter: number;
+  /** Live depth shared between the dialog and the cylindrical preview. */
+  holeDraftDepth: number;
+  openHoleDialog: () => void;
+  setHoleFace: (
+    id: string,
+    normal: [number, number, number],
+    centroid: [number, number, number],
+  ) => void;
+  clearHoleFace: () => void;
+  setHoleDraftDiameter: (d: number) => void;
+  setHoleDraftDepth: (d: number) => void;
+  closeHoleDialog: () => void;
 
   // ── D183 Bounding Solid ──────────────────────────────────────────────────
   openBoundingSolidDialog: () => void;
@@ -1024,6 +1052,10 @@ const REVOLVE_DEFAULTS = {
   revolveAngle2: 360,
   // D103 body kind
   revolveBodyKind: 'solid' as 'solid' | 'surface',
+  // Face-based revolve
+  revolveProfileMode: 'sketch' as 'sketch' | 'face',
+  revolveFaceBoundary: null as number[] | null, // flat [x0,y0,z0,x1,y1,z1,...]
+  revolveFaceNormal: null as [number, number, number] | null,
 };
 
 // ── MM2: snapshot helper ─────────────────────────────────────────────────
@@ -2582,27 +2614,28 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       const isClosedProfile = GeometryEngine.isSketchClosedProfile(sketchForOp);
       const resolvedBodyKind: 'solid' | 'surface' = (!isClosedProfile || extrudeBodyKind === 'surface') ? 'surface' : 'solid';
 
-      // Generate mesh: surface → thin → taper → standard solid
+      // Generate mesh: surface → thin → standard solid (taper is rebuilt by
+      // ExtrudedBodies via buildExtrudeFeatureMesh, so no stored mesh).
       let featureMesh: THREE.Mesh | undefined;
       if (resolvedBodyKind === 'surface') {
         featureMesh = GeometryEngine.extrudeSketchSurface(sketchForOp, absDistance) ?? undefined;
       } else if (extrudeThinEnabled) {
         featureMesh = GeometryEngine.extrudeThinSketch(sketchForOp, absDistance, extrudeThinThickness, extrudeThinSide) ?? undefined;
-      } else if (Math.abs(extrudeTaperAngle) > 0.01) {
-        featureMesh = GeometryEngine.extrudeSketchWithTaper(sketchForOp, absDistance, extrudeTaperAngle) ?? undefined;
       } else {
         featureMesh = GeometryEngine.extrudeSketch(sketchForOp, absDistance) ?? undefined;
       }
 
-      // Apply start offset: shift the mesh along the extrude normal
+      // Apply start offset to thin/surface stored meshes (standard solid +
+      // taper get the offset applied during the CSG rebuild instead).
       if (featureMesh && extrudeStartType === 'offset' && Math.abs(extrudeStartOffset) > 0.001) {
         const n = GeometryEngine.getSketchExtrudeNormal(sketchForOp);
         featureMesh.position.addScaledVector(n, extrudeStartOffset);
       }
 
-      // Standard solid extrudes are rebuilt by ExtrudedBodies CSG pipeline;
-      // only thin/taper/surface need a stored mesh.
-      const needsStoredMesh = resolvedBodyKind === 'surface' || extrudeThinEnabled || Math.abs(extrudeTaperAngle) > 0.01;
+      // Standard solid extrudes (with or without taper/offset) are rebuilt by
+      // the ExtrudedBodies CSG pipeline so they participate in join/cut. Only
+      // thin and surface extrudes need a stored mesh.
+      const needsStoredMesh = resolvedBodyKind === 'surface' || extrudeThinEnabled;
 
       const featureId = crypto.randomUUID();
       let componentId: string | undefined;
@@ -2686,16 +2719,22 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   setRevolveAngle2: (a) => set({ revolveAngle2: a }),
   // D103 body kind
   setRevolveBodyKind: (k) => set({ revolveBodyKind: k }),
+  // Face mode
+  setRevolveProfileMode: (m) => set({ revolveProfileMode: m }),
+  startRevolveFromFace: (boundary, normal) => {
+    if (boundary.length < 3) return;
+    const flat = boundary.flatMap((v) => [v.x, v.y, v.z]);
+    set({
+      revolveFaceBoundary: flat,
+      revolveFaceNormal: [normal.x, normal.y, normal.z],
+      statusMessage: 'Face selected — set axis and angle, then click OK',
+    });
+  },
   startRevolveTool: () => {
-    const extrudable = get().sketches.filter((s) => s.entities.length > 0);
-    if (extrudable.length === 0) {
-      set({ statusMessage: 'Create a sketch first before revolving' });
-      return;
-    }
     set({
       activeTool: 'revolve',
       ...REVOLVE_DEFAULTS,
-      statusMessage: 'Revolve — pick a profile from the panel',
+      statusMessage: 'Revolve — pick a sketch profile or use Face mode',
     });
   },
   cancelRevolveTool: () => {
@@ -2706,7 +2745,47 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     });
   },
   commitRevolve: () => {
-    const { revolveSelectedSketchId, revolveAxis, revolveAngle, revolveDirection, revolveAngle2, revolveBodyKind, sketches, features, units } = get();
+    const { revolveProfileMode, revolveSelectedSketchId, revolveFaceBoundary, revolveAxis, revolveAngle, revolveDirection, revolveAngle2, revolveBodyKind, sketches, features, units } = get();
+
+    // ── Face mode ──────────────────────────────────────────────────────────
+    if (revolveProfileMode === 'face') {
+      if (!revolveFaceBoundary || revolveFaceBoundary.length < 9) {
+        set({ statusMessage: 'Click a face in the viewport first' });
+        return;
+      }
+      const primaryAngle = revolveDirection === 'symmetric' ? revolveAngle / 2 : revolveAngle;
+      if (Math.abs(primaryAngle) < 0.5) {
+        set({ statusMessage: 'Angle must be greater than 0' });
+        return;
+      }
+      const feature: Feature = {
+        id: crypto.randomUUID(),
+        name: `${revolveBodyKind === 'surface' ? 'Surface ' : ''}Revolve ${features.filter((f) => f.type === 'revolve').length + 1}`,
+        type: 'revolve',
+        params: {
+          angle: revolveAngle,
+          axis: revolveAxis,
+          direction: revolveDirection,
+          angle2: revolveAngle2,
+          faceRevolve: true,
+          faceBoundary: revolveFaceBoundary,
+        },
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+        bodyKind: revolveBodyKind === 'surface' ? 'surface' : 'solid',
+      };
+      const angleDesc = revolveDirection === 'symmetric' ? `±${revolveAngle / 2}°` : `${revolveAngle}°`;
+      set({
+        features: [...features, feature],
+        activeTool: 'select',
+        ...REVOLVE_DEFAULTS,
+        statusMessage: `Revolved face by ${angleDesc} around ${revolveAxis} (${units})`,
+      });
+      return;
+    }
+
+    // ── Sketch mode ────────────────────────────────────────────────────────
     if (!revolveSelectedSketchId) {
       set({ statusMessage: 'No profile selected for revolve' });
       return;
@@ -2784,10 +2863,14 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   sweepTwistAngle: 0,
   sweepTaperAngle: 0,
   sweepGuideRailId: null,
+  sweepOperation: 'new-body' as 'new-body' | 'join' | 'cut',
+  sweepDistance: 'entire' as 'entire' | 'distance',
   setSweepOrientation: (v) => set({ sweepOrientation: v }),
   setSweepTwistAngle: (v) => set({ sweepTwistAngle: v }),
   setSweepTaperAngle: (v) => set({ sweepTaperAngle: v }),
   setSweepGuideRailId: (v) => set({ sweepGuideRailId: v }),
+  setSweepOperation: (v) => set({ sweepOperation: v }),
+  setSweepDistance: (v) => set({ sweepDistance: v }),
   startSweepTool: () => {
     const extrudable = get().sketches.filter((s) => s.entities.length > 0);
     if (extrudable.length < 2) {
@@ -3487,6 +3570,39 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     setActiveDialog(null);
     set({ splitFaceId: null });
   },
+
+  // ── Hole face placement ──────────────────────────────────────────────────
+  holeFaceId: null,
+  holeFaceNormal: null,
+  holeFaceCentroid: null,
+  holeDraftDiameter: 5,
+  holeDraftDepth: 10,
+  openHoleDialog: () => set({
+    activeDialog: 'hole',
+    holeFaceId: null,
+    holeFaceNormal: null,
+    holeFaceCentroid: null,
+    holeDraftDiameter: 5,
+    holeDraftDepth: 10,
+  }),
+  setHoleFace: (id, normal, centroid) => set({
+    holeFaceId: id,
+    holeFaceNormal: normal,
+    holeFaceCentroid: centroid,
+  }),
+  clearHoleFace: () => set({
+    holeFaceId: null,
+    holeFaceNormal: null,
+    holeFaceCentroid: null,
+  }),
+  setHoleDraftDiameter: (d) => set({ holeDraftDiameter: d }),
+  setHoleDraftDepth: (d) => set({ holeDraftDepth: d }),
+  closeHoleDialog: () => set({
+    activeDialog: null,
+    holeFaceId: null,
+    holeFaceNormal: null,
+    holeFaceCentroid: null,
+  }),
 
   // ── D183 Bounding Solid ──────────────────────────────────────────────────
   openBoundingSolidDialog: () => set({ activeDialog: 'bounding-solid' }),

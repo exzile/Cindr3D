@@ -28,6 +28,7 @@ export function BodyContextMenu({
   const renameBody = useComponentStore((s) => s.renameBody);
   const toggleVisibility = useComponentStore((s) => s.toggleBodyVisibility);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
+  const setActiveDialog = useCADStore((s) => s.setActiveDialog);
 
   const cs = (label: string) => () => {
     setStatusMessage(`${label} — coming soon`);
@@ -42,7 +43,7 @@ export function BodyContextMenu({
     { separator: true, label: 'Configure', icon: <Settings size={13} />, onClick: cs('Configure') },
     { label: 'Enable Contact Sets', icon: <Link2 size={13} />, onClick: cs('Enable Contact Sets') },
     { separator: true, label: 'Physical Material', icon: <CircleDot size={13} />, onClick: () => { onOpenMaterial(); onClose(); } },
-    { label: 'Appearance', shortcut: 'A', icon: <CircleDot size={13} />, onClick: () => { onOpenMaterial(); onClose(); } },
+    { label: 'Appearance', shortcut: 'A', icon: <CircleDot size={13} />, onClick: () => { setActiveDialog('appearance'); onClose(); } },
     { label: 'Texture Map Controls', icon: <Settings size={13} />, onClick: cs('Texture Map Controls') },
     { label: 'Properties', icon: <MoreHorizontal size={13} />, onClick: cs('Properties') },
     { separator: true, label: 'Save As Mesh', icon: <Download size={13} />, onClick: cs('Save As Mesh') },

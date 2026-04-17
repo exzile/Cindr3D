@@ -1290,15 +1290,23 @@ export class GeometryEngine {
     sketch: Sketch,
     distance: number,
     direction: 'normal' | 'reverse' | 'symmetric',
+    taperAngleDeg = 0,
+    startOffset = 0,
   ): THREE.Mesh | null {
     // Symmetric: extrude the full distance but shift half back so the body
     // is centred on the sketch plane. Reverse: shift the full distance back.
-    const mesh = this.extrudeSketch(sketch, distance);
+    const mesh = Math.abs(taperAngleDeg) > 0.01
+      ? this.extrudeSketchWithTaper(sketch, distance, taperAngleDeg)
+      : this.extrudeSketch(sketch, distance);
     if (!mesh) return null;
+    const normal = this.getSketchExtrudeNormal(sketch);
     if (direction === 'symmetric') {
-      mesh.position.sub(this.getSketchExtrudeNormal(sketch).multiplyScalar(distance / 2));
+      mesh.position.addScaledVector(normal, -distance / 2);
     } else if (direction === 'reverse') {
-      mesh.position.sub(this.getSketchExtrudeNormal(sketch).multiplyScalar(distance));
+      mesh.position.addScaledVector(normal, -distance);
+    }
+    if (Math.abs(startOffset) > 0.001) {
+      mesh.position.addScaledVector(normal, startOffset);
     }
     return mesh;
   }
@@ -1350,6 +1358,78 @@ export class GeometryEngine {
     brushB.updateMatrixWorld();
     const result = _csgEvaluator.evaluate(brushA, brushB, INTERSECTION);
     return result.geometry;
+  }
+
+  /**
+   * Revolve a face boundary (ordered world-space polygon) around an axis through
+   * the world origin. Each point is rotated 0..angle to build a swept surface.
+   */
+  static revolveFaceBoundary(
+    boundary: THREE.Vector3[],
+    axisDir: THREE.Vector3,
+    angle: number,
+    isSurface = false,
+  ): THREE.Mesh | null {
+    if (boundary.length < 3) return null;
+
+    const N_SEG = 64;
+    const nPts = boundary.length;
+    const positions: number[] = [];
+    const indices: number[] = [];
+    const _q = new THREE.Quaternion();
+    const _p = new THREE.Vector3();
+    const _ax = axisDir.clone().normalize();
+
+    for (let i = 0; i <= N_SEG; i++) {
+      const theta = (angle / N_SEG) * i;
+      _q.setFromAxisAngle(_ax, theta);
+      for (let j = 0; j < nPts; j++) {
+        _p.copy(boundary[j]).applyQuaternion(_q);
+        positions.push(_p.x, _p.y, _p.z);
+      }
+    }
+
+    for (let i = 0; i < N_SEG; i++) {
+      for (let j = 0; j < nPts; j++) {
+        const a = i * nPts + j;
+        const b = i * nPts + (j + 1) % nPts;
+        const c = (i + 1) * nPts + (j + 1) % nPts;
+        const d = (i + 1) * nPts + j;
+        indices.push(a, b, c, a, c, d);
+      }
+    }
+
+    // Flat end caps (fan from centroid) for partial solid revolves
+    if (!isSurface && angle < 2 * Math.PI - 0.01) {
+      let cx = 0, cy = 0, cz = 0;
+      for (const v of boundary) { cx += v.x; cy += v.y; cz += v.z; }
+      cx /= nPts; cy /= nPts; cz /= nPts;
+
+      const s0 = positions.length / 3;
+      positions.push(cx, cy, cz);
+      for (let j = 0; j < nPts; j++) positions.push(boundary[j].x, boundary[j].y, boundary[j].z);
+      for (let j = 0; j < nPts; j++) indices.push(s0, s0 + 1 + (j + 1) % nPts, s0 + 1 + j);
+
+      _q.setFromAxisAngle(_ax, angle);
+      _p.set(cx, cy, cz).applyQuaternion(_q);
+      const e0 = positions.length / 3;
+      positions.push(_p.x, _p.y, _p.z);
+      for (let j = 0; j < nPts; j++) {
+        _p.copy(boundary[j]).applyQuaternion(_q);
+        positions.push(_p.x, _p.y, _p.z);
+      }
+      for (let j = 0; j < nPts; j++) indices.push(e0, e0 + 1 + j, e0 + 1 + (j + 1) % nPts);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    const mat = isSurface ? SURFACE_MATERIAL : EXTRUDE_MATERIAL;
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

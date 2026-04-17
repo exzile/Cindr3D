@@ -1,0 +1,460 @@
+/* ===================================================================
+ * Tool panel — canonical look for ALL tool dialogs.
+ * Floating, non-modal, top-right. Modeled on the original Extrude panel.
+ *
+ * Use:  <div className="tool-panel"> ... </div>
+ *
+ * Per-tool color variants for .tp-header-icon (e.g. .tp-header-icon.cut)
+ * live in the tool's own CSS file, not here.
+ * =================================================================== */
+
+.tool-panel {
+  position: absolute;
+  right: 12px;
+  top: 80px;
+  z-index: 150;
+  width: 272px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.08);
+  font-size: 12px;
+  overflow: hidden;
+  backdrop-filter: blur(12px);
+}
+
+/* ── Header ── */
+.tp-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg-toolbar);
+  border-bottom: 1px solid var(--border-light);
+  user-select: none;
+}
+
+.tp-header-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+  background: #6b7280; /* default — tools override with a brand color */
+}
+
+.tp-header-title {
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.tp-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.tp-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Body ── */
+.tp-body {
+  padding: 6px 0;
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
+}
+
+.tp-section {
+  padding: 2px 12px;
+}
+
+.tp-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 6px 0 4px;
+}
+
+/* ── Row layout ── */
+.tp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+  min-height: 30px;
+  gap: 8px;
+}
+
+.tp-label {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  min-width: 60px;
+}
+
+/* ── Select ── */
+.tp-select {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  padding-right: 24px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 11px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.12s ease;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+
+.tp-select:hover {
+  border-color: var(--border);
+}
+
+.tp-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.tp-select[multiple] {
+  padding: 4px;
+  padding-right: 4px;
+  background-image: none;
+}
+
+.tp-select[multiple] option {
+  padding: 3px 6px;
+  border-radius: 3px;
+}
+
+.tp-select[multiple] option:checked {
+  background: var(--accent);
+  color: #fff;
+}
+
+.tp-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Number input with unit ── */
+.tp-input-group {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  overflow: hidden;
+  transition: border-color 0.12s ease;
+  flex: 1;
+  min-width: 0;
+}
+
+.tp-input-group:hover {
+  border-color: var(--border);
+}
+
+.tp-input-group:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.tp-input-group input {
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+  color: var(--text-primary);
+  border: none;
+  padding: 5px 8px;
+  font-size: 11px;
+  text-align: right;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.tp-input-group input:disabled {
+  opacity: 0.4;
+}
+
+.tp-unit {
+  color: var(--text-muted);
+  font-size: 10px;
+  padding: 0 8px 0 2px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* ── Toggle switch ── */
+.tp-toggle {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.tp-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.tp-toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+.tp-toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: all 0.15s ease;
+}
+
+.tp-toggle input:checked + .tp-toggle-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.tp-toggle input:checked + .tp-toggle-track::after {
+  left: 16px;
+  background: #fff;
+}
+
+/* ── Segmented icon button row (for type/style pickers) ── */
+.tp-seg-icons {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.tp-seg-icons__btn {
+  width: 26px;
+  height: 26px;
+  padding: 2px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.1s ease;
+}
+
+.tp-seg-icons__btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+
+.tp-seg-icons__btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.tp-seg-icons__btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── Collapsible section header ── */
+.tp-collapse {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 6px 0 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  text-align: left;
+}
+
+.tp-collapse:hover { color: var(--text-secondary); }
+
+.tp-collapse__chevron {
+  transition: transform 0.12s ease;
+  flex-shrink: 0;
+}
+
+.tp-collapse__chevron.open {
+  transform: rotate(90deg);
+}
+
+/* ── Distance / extents dropdown + flip arrow ── */
+.tp-units-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tp-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.tp-icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Selection chip (e.g. picked face/edge) ── */
+.tp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 8px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.tp-chip__clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.9);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.tp-chip__clear:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.tp-pick-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.tp-pick-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+
+.tp-pick-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* ── Divider ── */
+.tp-divider {
+  height: 1px;
+  background: var(--border-light);
+  margin: 4px 12px;
+}
+
+/* ── Actions footer ── */
+.tp-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--border-light);
+}
+
+.tp-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  border: 1px solid transparent;
+}
+
+.tp-btn-cancel {
+  background: var(--bg-elevated);
+  border-color: var(--border-light);
+  color: var(--text-secondary);
+}
+
+.tp-btn-cancel:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.tp-btn-ok {
+  background: var(--accent);
+  color: #fff;
+}
+
+.tp-btn-ok:hover {
+  background: var(--accent-hover);
+}
+
+.tp-btn-ok:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

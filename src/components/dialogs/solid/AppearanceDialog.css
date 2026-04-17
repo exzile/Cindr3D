@@ -1,0 +1,24 @@
+.appearance-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.tp-header-icon.appearance {
+  background: #8b5cf6;
+}
+
+.appearance-panel {
+  pointer-events: auto;
+}
+
+.appearance-color {
+  width: 100%;
+  height: 26px;
+  padding: 2px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: var(--bg-input);
+  cursor: pointer;
+}

@@ -1,0 +1,92 @@
+/* Hole tool — uses the canonical tool-panel look + small extras. */
+
+/* The panel needs a transparent overlay so the canvas stays interactive
+   for face picking. */
+.hole-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.hole-panel {
+  pointer-events: auto;
+}
+
+.tp-header-icon.hole { background: #3b82f6; }
+
+/* Schematic hole diagram (head depth / drill angle / diameter inputs). */
+.hole-diagram {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 10px;
+  align-items: center;
+  padding: 8px 10px;
+  margin: 4px 0;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+}
+
+.hole-diagram__svg {
+  grid-column: 1;
+  grid-row: 1 / span 3;
+  justify-self: center;
+  color: var(--text-secondary);
+}
+
+.hole-diagram__fields {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hole-diagram__field {
+  flex: 0 0 auto;
+}
+
+/* Floating 3D-anchored diameter chip (drei <Html> overlay). */
+.hole-dim-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  font-size: 11px;
+  color: var(--text-primary);
+  user-select: none;
+}
+
+.hole-dim-chip input {
+  width: 56px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+  text-align: right;
+  padding: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.hole-dim-chip input:focus {
+  background: var(--accent-light);
+  border-radius: 2px;
+}
+
+.hole-dim-chip__unit {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.tp-label--full {
+  min-width: 0;
+  white-space: normal;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}

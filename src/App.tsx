@@ -422,7 +422,7 @@ function ActiveDialog() {
     case 'circular-pattern': return <CircularPatternDialog onClose={close} />;
     case 'mirror': return <MirrorDialog onClose={close} />;
     case 'combine': return <CombineDialog onClose={close} />;
-    case 'hole': return <HoleDialog onClose={close} />;
+    case 'hole': return <HoleDialog onClose={() => useCADStore.getState().closeHoleDialog()} />;
     case 'construction-plane': return <ConstructionPlaneDialog onClose={close} />;
     case 'construction-plane-angle': return <ConstructionPlaneDialog onClose={close} initialMethod="angle" />;
     case 'construction-plane-midplane': return <ConstructionPlaneDialog onClose={close} initialMethod="midplane" />;

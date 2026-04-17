@@ -92,24 +92,24 @@ export default function ExtrudePanel() {
   if (activeTool !== 'extrude' || selectedIds.length === 0) return null;
 
   return (
-    <div className="extrude-panel">
+    <div className="tool-panel">
       {/* ── Header ── */}
-      <div className="ep-header">
-        <div className={`ep-header-icon ${isCutMode ? 'cut' : 'extrude'}`}>
+      <div className="tp-header">
+        <div className={`tp-header-icon ${isCutMode ? 'cut' : 'extrude'}`}>
           {isCutMode ? <Scissors size={12} /> : <ArrowUpFromLine size={12} />}
         </div>
-        <span className="ep-header-title">{isCutMode ? 'Press-Pull Cut' : 'Extrude'}</span>
-        <button className="ep-close" onClick={cancelExtrudeTool} title="Cancel (Esc)">
+        <span className="tp-header-title">{isCutMode ? 'Press-Pull Cut' : 'Extrude'}</span>
+        <button className="tp-close" onClick={cancelExtrudeTool} title="Cancel (Esc)">
           <X size={14} />
         </button>
       </div>
 
-      <div className="ep-body">
+      <div className="tp-body">
         {/* ── Profile section ── */}
-        <div className="ep-section">
-          <div className="ep-section-title">Profile</div>
+        <div className="tp-section">
+          <div className="tp-section-title">Profile</div>
           <select
-            className="ep-select"
+            className="tp-select"
             value={selectedIds}
             multiple
             size={Math.min(4, Math.max(2, profileOptions.length))}
@@ -124,16 +124,16 @@ export default function ExtrudePanel() {
           </select>
         </div>
 
-        <div className="ep-divider" />
+        <div className="tp-divider" />
 
         {/* ── Geometry section ── */}
-        <div className="ep-section">
-          <div className="ep-section-title">Geometry</div>
+        <div className="tp-section">
+          <div className="tp-section-title">Geometry</div>
 
-          <div className="ep-row">
-            <span className="ep-label">Direction</span>
+          <div className="tp-row">
+            <span className="tp-label">Direction</span>
             <select
-              className="ep-select"
+              className="tp-select"
               value={direction}
               onChange={(e) => setDirection(e.target.value as ExtrudeDirection)}
             >
@@ -143,10 +143,10 @@ export default function ExtrudePanel() {
             </select>
           </div>
 
-          <div className="ep-row">
-            <span className="ep-label">Extent</span>
+          <div className="tp-row">
+            <span className="tp-label">Extent</span>
             <select
-              className="ep-select"
+              className="tp-select"
               value={extentType}
               onChange={(e) => setExtentType(e.target.value as 'distance' | 'all')}
             >
@@ -156,19 +156,19 @@ export default function ExtrudePanel() {
           </div>
 
           {extentType === 'distance' && (
-            <div className="ep-row">
-              <span className="ep-label">Distance</span>
-              <div className="ep-input-group">
+            <div className="tp-row">
+              <span className="tp-label">Distance</span>
+              <div className="tp-input-group">
                 <ExpressionInput value={distance} onChange={setDistance} step={0.1} />
-                <span className="ep-unit">{units}</span>
+                <span className="tp-unit">{units}</span>
               </div>
             </div>
           )}
 
-          <div className="ep-row">
-            <span className="ep-label">Start</span>
+          <div className="tp-row">
+            <span className="tp-label">Start</span>
             <select
-              className="ep-select"
+              className="tp-select"
               value={startType}
               onChange={(e) => setStartType(e.target.value as 'profile' | 'offset')}
             >
@@ -178,19 +178,19 @@ export default function ExtrudePanel() {
           </div>
 
           {startType === 'offset' && (
-            <div className="ep-row">
-              <span className="ep-label">Offset</span>
-              <div className="ep-input-group">
+            <div className="tp-row">
+              <span className="tp-label">Offset</span>
+              <div className="tp-input-group">
                 <ExpressionInput value={startOffset} onChange={setStartOffset} step={0.1} />
-                <span className="ep-unit">{units}</span>
+                <span className="tp-unit">{units}</span>
               </div>
             </div>
           )}
 
           {effectiveBodyKind === 'solid' && (
-            <div className="ep-row">
-              <span className="ep-label">Taper</span>
-              <div className="ep-input-group">
+            <div className="tp-row">
+              <span className="tp-label">Taper</span>
+              <div className="tp-input-group">
                 <input
                   type="number"
                   step="0.5"
@@ -202,24 +202,24 @@ export default function ExtrudePanel() {
                     if (!Number.isNaN(v)) setTaperAngle(Math.max(-89, Math.min(89, v)));
                   }}
                 />
-                <span className="ep-unit">°</span>
+                <span className="tp-unit">°</span>
               </div>
             </div>
           )}
         </div>
 
-        <div className="ep-divider" />
+        <div className="tp-divider" />
 
         {/* ── Options section ── */}
-        <div className="ep-section">
-          <div className="ep-section-title">Options</div>
+        <div className="tp-section">
+          <div className="tp-section-title">Options</div>
 
           {effectiveBodyKind === 'solid' && (
             <>
-              <div className="ep-row">
-                <span className="ep-label">Operation</span>
+              <div className="tp-row">
+                <span className="tp-label">Operation</span>
                 <select
-                  className="ep-select"
+                  className="tp-select"
                   value={operation}
                   onChange={(e) => setOperation(e.target.value as ExtrudeOperation)}
                 >
@@ -229,23 +229,23 @@ export default function ExtrudePanel() {
                 </select>
               </div>
 
-              <div className="ep-row">
-                <span className="ep-label">Thin</span>
-                <label className="ep-toggle">
+              <div className="tp-row">
+                <span className="tp-label">Thin</span>
+                <label className="tp-toggle">
                   <input
                     type="checkbox"
                     checked={thinEnabled}
                     onChange={() => setThinEnabled(!thinEnabled)}
                   />
-                  <span className="ep-toggle-track" />
+                  <span className="tp-toggle-track" />
                 </label>
               </div>
 
               {thinEnabled && (
                 <>
-                  <div className="ep-row">
-                    <span className="ep-label">Thickness</span>
-                    <div className="ep-input-group">
+                  <div className="tp-row">
+                    <span className="tp-label">Thickness</span>
+                    <div className="tp-input-group">
                       <input
                         type="number"
                         step="0.1"
@@ -256,13 +256,13 @@ export default function ExtrudePanel() {
                           if (!Number.isNaN(v) && v > 0) setThinThickness(v);
                         }}
                       />
-                      <span className="ep-unit">{units}</span>
+                      <span className="tp-unit">{units}</span>
                     </div>
                   </div>
-                  <div className="ep-row">
-                    <span className="ep-label">Side</span>
+                  <div className="tp-row">
+                    <span className="tp-label">Side</span>
                     <select
-                      className="ep-select"
+                      className="tp-select"
                       value={thinSide}
                       onChange={(e) => setThinSide(e.target.value as 'inside' | 'outside' | 'center')}
                     >
@@ -276,10 +276,10 @@ export default function ExtrudePanel() {
             </>
           )}
 
-          <div className="ep-row">
-            <span className="ep-label">Output</span>
+          <div className="tp-row">
+            <span className="tp-label">Output</span>
             <select
-              className="ep-select"
+              className="tp-select"
               value={effectiveBodyKind}
               onChange={(e) => setBodyKind(e.target.value as 'solid' | 'surface')}
             >
@@ -290,12 +290,12 @@ export default function ExtrudePanel() {
         </div>
 
         {/* ── Actions ── */}
-        <div className="ep-actions">
-          <button className="ep-btn ep-btn-cancel" onClick={cancelExtrudeTool}>
+        <div className="tp-actions">
+          <button className="tp-btn tp-btn-cancel" onClick={cancelExtrudeTool}>
             <X size={13} /> Cancel
           </button>
           <button
-            className="ep-btn ep-btn-ok"
+            className="tp-btn tp-btn-ok"
             onClick={commitExtrude}
             disabled={!canCommit}
           >
