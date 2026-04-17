@@ -1284,12 +1284,12 @@ export class GeometryEngine {
    * returns it. Caller owns disposal of the geometry.
    *
    * `distance` here is always the absolute extrusion depth (>0). For press-pull
-   * inward / reverse, pass `direction: 'reverse'`.
+   * inward / reverse, pass `direction: 'negative'`.
    */
   static buildExtrudeFeatureMesh(
     sketch: Sketch,
     distance: number,
-    direction: 'normal' | 'reverse' | 'symmetric',
+    direction: 'positive' | 'negative' | 'symmetric',
     taperAngleDeg = 0,
     startOffset = 0,
   ): THREE.Mesh | null {
@@ -1302,7 +1302,7 @@ export class GeometryEngine {
     const normal = this.getSketchExtrudeNormal(sketch);
     if (direction === 'symmetric') {
       mesh.position.addScaledVector(normal, -distance / 2);
-    } else if (direction === 'reverse') {
+    } else if (direction === 'negative') {
       mesh.position.addScaledVector(normal, -distance);
     }
     if (Math.abs(startOffset) > 0.001) {

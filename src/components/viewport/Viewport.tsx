@@ -70,6 +70,8 @@ import JointOriginRenderer from './scene/JointOriginRenderer';
 import WindowSelectOverlay from './WindowSelectOverlay';
 import LassoSelectOverlay from './LassoSelectOverlay';
 import FinishEditInPlaceBar from './FinishEditInPlaceBar';
+import { ViewportContextMenu } from './ViewportContextMenu';
+import type { ViewportCtxState } from './ViewportContextMenu';
 
 
 
@@ -102,6 +104,7 @@ export default function Viewport() {
   const isLassoRef = useRef(false);
   const lassoAccumRef = useRef<{ x: number; y: number }[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [viewportCtxMenu, setViewportCtxMenu] = useState<ViewportCtxState | null>(null);
 
   // Camera quaternion state shared between the main Canvas and the ViewCube overlay
   const [camQuat, setCamQuat] = useState(() => new THREE.Quaternion());
@@ -239,7 +242,10 @@ export default function Viewport() {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
           gl.toneMappingExposure = 1.2;
         }}
-        onContextMenu={(e) => e.preventDefault()}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setViewportCtxMenu({ x: e.clientX, y: e.clientY });
+        }}
       >
         {/* Sync scene background with theme */}
         <SceneTheme />
@@ -350,6 +356,14 @@ export default function Viewport() {
 
       {/* MM6/MM7 Finish Edit In Place banner */}
       <FinishEditInPlaceBar />
+
+      {/* Viewport right-click context menu */}
+      {viewportCtxMenu && (
+        <ViewportContextMenu
+          menu={viewportCtxMenu}
+          onClose={() => setViewportCtxMenu(null)}
+        />
+      )}
 
       {/* D204 Window Select overlay */}
       <WindowSelectOverlay />

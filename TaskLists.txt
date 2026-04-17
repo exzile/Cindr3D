@@ -3,38 +3,378 @@ DZIGN3D — OPEN TASKS
 Completed tasks removed to save context. Full history: git log --oneline.
 
 STATUS KEY:  [ ] = open   [x] = done   [~] = deferred/blocked
- 
- 
-── INSERT ──────────────────────────────────────────────────── 
-[ ] D194. Insert Fastener — fastener library browser to insert bolts/screws as solid bodies (very hard — deferred)
-[ ] D195. Derive — pull bodies/sketches/params from another file with live parametric link (very hard — deferred)
 
- 
-  
+
+═══════════════════════════════════════════════════════════════
+SDK CORRECTNESS AUDIT — HIGH SEVERITY
+═══════════════════════════════════════════════════════════════
+These are correctness bugs: either DesignCAD stores data in a way that can't round-trip
+Fusion 360 semantics, or user-visible behavior differs from Fusion. Verified against SDK
+headers at C:\Users\joeyp\AppData\Local\Autodesk\webdeploy\production\ca305acf3852cfce8e837ee5435adf649bc398ca\CPP\include\Fusion\.
+
+[ ] CORR-1. Linear dimensions missing orientation type. Fusion SDK
+            `SketchLinearDimension.h` + `DimensionOrientations` enum defines
+            Aligned / Horizontal / Vertical orientations — these control dimension
+            placement rules. DesignCAD's `SketchDimension` (src/types/cad.ts:200-207)
+            only stores type='linear'; no orientation discriminator. A horizontal-only
+            dimension on an angled edge is currently indistinguishable from aligned.
+            FIX: add `orientation?: 'aligned' | 'horizontal' | 'vertical'` to SketchDimension
+            and update SketchDimensionPanel + solver to respect it. (medium effort)
+
+[ ] CORR-2. Extrude missing Two-Sides asymmetric extent. SDK
+            `ExtrudeFeatureInput.setTwoSidesExtent(distanceOne, distanceTwo, ...)` allows
+            different distances on each side of the profile. DesignCAD only has
+            'positive' | 'symmetric' | 'negative' — symmetric forces equal both sides.
+            FIX: add a `two-sided` direction option with distanceOne/distanceTwo fields.
+            Requires GeometryEngine.buildExtrudeFeatureMesh signature change. (medium)
+
+[ ] CORR-3. Fillet missing Variable-Radius and Chord-Length types as proper edge-sets.
+            SDK `FilletFeatureInput.h` distinguishes ConstantRadiusEdgeSet,
+            VariableRadiusEdgeSet, ChordLengthEdgeSet. DesignCAD's fillet dialog
+            has fields for startRadius/endRadius but treats them as a uniform
+            variable across all selected edges; each edge can't have its own radius
+            function. FIX: change fillet params to accept an array of edge-sets, each
+            with its own type. (hard — affects geometry engine)
+
+[ ] CORR-4. Component vs Occurrence distinction missing. SDK `Component.h` (definition)
+            and `Occurrence.h` (placed instance) are separate entities — one Component
+            can have many Occurrences at different transforms. DesignCAD's
+            `Component` type (src/types/cad.ts) is used for both. This means:
+            (a) inserting the same component twice copies all bodies instead of
+                instancing them.
+            (b) changes to an instance can't propagate back to the definition.
+            FIX: split into ComponentDefinition + ComponentOccurrence types; store
+            transform on the occurrence. (hard — assembly-wide refactor)
+
+[ ] CORR-5. `grounded` flag on wrong entity. SDK `Occurrence.isGrounded()` —
+            grounding is per-instance. DesignCAD's `component.grounded`
+            (cad.ts ~line 362) is on the definition, so grounding one instance
+            incorrectly grounds all copies. Fix is blocked by CORR-4.
+
+
+═══════════════════════════════════════════════════════════════
+SDK CORRECTNESS AUDIT — MEDIUM SEVERITY
+═══════════════════════════════════════════════════════════════
+
+[ ] CORR-6. Sketch display flags missing. SDK `Sketch.h` has
+            `arePointsShown`, `areProfilesShown`, `areDimensionsShown`,
+            `areConstraintsShown` as per-sketch properties. DesignCAD has
+            GLOBAL toggles in SketchPalette instead — every sketch shares the
+            same display settings. FIX: move these flags to the Sketch type so
+            settings persist per sketch.
+
+[ ] CORR-7. `Sketch.isComputeDeferred` missing. SDK flag suppresses automatic
+            re-solve while bulk-editing. DesignCAD always re-solves on every
+            change — expensive on large sketches. FIX: add a deferred flag
+            consulted by solveSketch().
+
+[ ] CORR-8. Extrude `StartExtent` variants incomplete. SDK supports
+            `ProfilePlaneStartDefinition`, `OffsetStartDefinition`,
+            `EntityStartDefinition` (start from a face/plane/sketch point).
+            DesignCAD supports only profile+offset; can't start from another
+            entity.
+
+[ ] CORR-9. Extrude `thinExtrudeWallLocation` enum. SDK values are
+            `Side1ThinWallLocation`, `Side2ThinWallLocation`,
+            `CenteredThinWallLocation` (which we just aligned). BUT SDK allows
+            different locations for side1 and side2 independently; DesignCAD
+            has a single `thinSide` value covering both. FIX: split into
+            thinSideOne / thinSideTwo when two-sided extrude is added (CORR-2).
+
+[ ] CORR-10. Revolve `isProjectAxis` missing. SDK flag controls whether the
+             rotation axis is projected to the profile plane or used at its
+             original 3D location. DesignCAD always uses the axis as-is.
+             Can produce wrong revolve center when axis is skew to the sketch.
+
+[ ] CORR-11. Fillet `isG2` (curvature continuity) not exposed. SDK
+             `FilletFeatureInput.isG2` toggles between G1 (tangent) and G2
+             (curvature-continuous) fillet blending. DesignCAD's fillet is
+             always G1. FIX: add a G1/G2 radio in FilletDialog.
+
+[ ] CORR-12. Fillet `isRollingBallCorner` missing. SDK flag for corner
+             setback solution method. Small niche but changes how fillets
+             meet at vertices.
+
+[ ] CORR-13. Hole `tipAngle` default not 118°. SDK default is 118° (standard
+             twist-drill cone). DesignCAD's HoleDialog uses 90° as a starting
+             value in some code paths. FIX: default drillAngle=118 everywhere
+             and clamp to [60, 150] as Fusion does.
+
+[ ] CORR-14. Hole `participantBodies` missing. SDK lets the hole feature
+             declare which bodies the cut applies to; others pass through.
+             DesignCAD cuts all visible bodies. FIX: add an optional
+             participantBodies selector; default keeps current behaviour.
+
+[ ] CORR-15. Component missing origin entities. SDK Component exposes
+             `originConstructionPoint`, `xConstructionAxis`, `yConstructionAxis`,
+             `zConstructionAxis` in addition to the three origin planes.
+             DesignCAD only renders an "Origin" folder label (ComponentNode.tsx
+             ~line 149-155) — no clickable origin point or axes. FIX: render
+             full origin tree (point + 3 axes + 3 planes) and allow selecting
+             them as references.
+
+[ ] CORR-16. Construction collections not exposed on Component. SDK Component
+             has `constructionPlanes`, `constructionAxes`, `constructionPoints`
+             as first-class collections. DesignCAD collapses these into one
+             `constructionIds` array — can't query "all construction points in
+             this component" cleanly. Cosmetic in UI, but limits future
+             reference-selector work.
+
+[ ] CORR-17. Timeline nested groups missing. SDK `TimelineGroup` inherits
+             from `TimelineObject`, so groups can contain other groups.
+             DesignCAD's `FeatureGroup` is flat — a group can only hold
+             features, not other groups. FIX: allow groupId on FeatureGroup,
+             render nested indentation in Timeline.tsx.
+
+[ ] CORR-18. No first-class MeshBody type. SDK `MeshBody.h` is a peer of
+             `BRepBody` with its own name/visibility/material/appearance.
+             DesignCAD treats mesh as a `BodyKind` string on Body; mesh bodies
+             can't carry mesh-specific properties (triangle count, repair
+             state, etc.) cleanly. FIX: add MeshBody type or mesh-specific
+             fields on Body.
+
+
+═══════════════════════════════════════════════════════════════
+MESH WORKSPACE — MISSING FEATURES
+═══════════════════════════════════════════════════════════════
+Fusion 360 has a full Mesh workspace (Prepare + Sculpt). DesignCAD currently only
+imports meshes and has the tessellate feature.
+
+[ ] MESH-1. Mesh section plane / mesh slice preview — view mesh cross sections.
+[ ] MESH-2. Reduce Mesh — triangle decimation with target count or percentage.
+[ ] MESH-3. Remesh — retopologize a mesh to uniform triangles.
+[ ] MESH-4. Smooth Mesh — Laplacian or Taubin smoothing.
+[ ] MESH-5. Make Closed Mesh — hole filling / watertight repair.
+[ ] MESH-6. Erase and Fill — delete triangles and rebuild.
+[ ] MESH-7. Mesh boolean (union/subtract/intersect between mesh bodies).
+[ ] MESH-8. Convert Mesh to BRep — for simple meshes, retopologize to faceted BRep.
+[ ] MESH-9. Separate Mesh — split disjoint mesh islands into individual bodies.
+[ ] MESH-10. Align Mesh — 3-point alignment between mesh and BRep / mesh-mesh.
+
+
+═══════════════════════════════════════════════════════════════
+TIMELINE — BEHAVIOR GAPS
+═══════════════════════════════════════════════════════════════
+[ ] TL-1. Timeline navigation buttons — add Previous / Next / Beginning / End
+          controls (Fusion: `Timeline.moveToNextStep()` etc.). Currently only
+          drag-reorder + alt-click rollback; no step-through playback.
+[ ] TL-2. Timeline play/record — animate feature creation chronologically.
+          (Fusion: `Timeline.playFromBeginning()`.) Low priority but useful
+          for design reviews.
+[ ] TL-3. Nested timeline groups (see CORR-17).
+
+
+═══════════════════════════════════════════════════════════════
+CONTEXT MENUS — COMPLETED ✓
+═══════════════════════════════════════════════════════════════
+[x] CTX-1. Viewport right-click context menu — Undo/Redo, Select, Measure, New Sketch,
+           Show All Bodies, Isolate, Look At. Sketch mode shows Finish Sketch.
+[x] CTX-2. Feature timeline context menu — Edit, Rename, Suppress/Unsuppress,
+           Roll Back To Here, Group Selected, Delete.
+[x] CTX-3. Body context menu — Isolate, Show All Bodies wired up (was coming-soon stubs).
+[x] CTX-4. Sketch context menu — Look At (orients camera to sketch plane normal).
+           alert() calls replaced with setStatusMessage throughout.
+[x] CTX-5. Added renameFeature() action to cadStore.
+[x] CTX-6. Added isolateBody() / showAllBodies() actions to componentStore.
+
+═══════════════════════════════════════════════════════════════
+CONTEXT MENUS — STILL COMING SOON (lower priority)
+═══════════════════════════════════════════════════════════════
+[ ] CTX-7. Body context menu — Opacity Control slider popup.
+[ ] CTX-8. Body context menu — Save As Mesh (export body to .glb/.stl).
+[ ] CTX-9. Body context menu — Selectable/Unselectable toggle.
+[ ] CTX-10. Sketch context menu — Show/Hide sketch visibility (add visible flag to Sketch type).
+[ ] CTX-11. Sketch context menu — Hide Profile / Hide Projected Geometries toggles.
+[ ] CTX-12. Feature timeline context menu — Move to Group (show group picker submenu).
+[ ] CTX-13. Viewport context menu — Look At Face (pick face in viewport and orient camera).
+
+═══════════════════════════════════════════════════════════════
+SDK AUDIT — FEATURE PARAMETER GAPS
+═══════════════════════════════════════════════════════════════
+[ ] SDK-1. Hole — edge-offset positioning (setPositionByPlaneAndOffsets, setPositionOnEdge).
+           Currently only supports face-pick placement; can't offset from reference edges.
+
+[ ] SDK-2. Hole — To Face termination (setToFaceExtent). Currently only blind / through-all /
+           to-object options.
+
+[ ] SDK-3. Sweep — guide rail support (SweepFeatureInput.guideRail). Currently single-path
+           only; add optional second rail for 3D guided sweeps.
+
+[ ] SDK-4. Sweep — orientation type (SweepOrientationTypes: perpendicular / parallel / default)
+           and profile scaling options (SweepProfileScalingOptions). Both missing from SweepPanel.
+
+[ ] SDK-5. Sweep — path parametric positioning (distanceOne / distanceTwo — where along the
+           path the profile starts/ends). Not exposed in SweepPanel.
+
+[ ] SDK-6. Loft — rail selection (LoftFeatureInput.centerLineOrRails). Currently only cross-
+           section profiles; rails and centerline guide not supported.
+
+[ ] SDK-7. Loft — edge alignment (LoftEdgeAlignments enum: Connected / Tangent / Curvature)
+           for start/end sections. Needed for G1/G2 loft tangency matching.
+
+[ ] SDK-8. Loft — closed loft (isClosed) and tangent edge merging (isTangentEdgesMerged).
+           Both exposed in SDK but absent from LoftPanel.
+
+[ ] SDK-9. Fillet — setback distance per edge and Face Setback mode (merge adjacent faces).
+           Currently only uniform radius supported.
+
+[ ] SDK-10. Construction geometry — most plane/axis definition variants missing:
+            Planes: Offset, OffsetThroughPoint, AtAngle, Tangent at Point, Midplane,
+                    DistanceOnPath, TwoEdges, ThreePoints (10+ missing types).
+            Axes: NormalToFaceAtPoint (missing dedicated tool).
+            Currently only ~3 plane tools and ~5 axis tools implemented vs 13/11 in SDK.
+
+[ ] SDK-11. Extrude — two-sided/asymmetric extent (different distances each direction).
+            SDK exposes setTwoDistancesExtent; DesignCAD only has symmetric (equal both sides).
+
+[ ] SDK-12. Extrude — confined faces mode (limit extrude to stay within bounding faces).
+
+═══════════════════════════════════════════════════════════════
+SOLID AUDIT — BUG FIXES
+═══════════════════════════════════════════════════════════════
+[ ] SOL-B1. Emboss/Deboss type mismatch — EmbossDialog stores feature as type 'rib' instead of
+            dedicated type 'emboss'. Fix: add 'emboss' to FeatureType union in cad.ts, update
+            EmbossDialog and rebuild pipeline. (easy)
+
+[ ] SOL-B2. Pipe type mismatch — PipeDialog stores feature as type 'sweep' instead of 'pipe'.
+            Fix: add 'pipe' to FeatureType, update dialog and rendering path. (easy)
+
+[ ] SOL-B3. Boundary Fill type mismatch — BoundaryFillDialog stores as type 'extrude'.
+            Fix: add 'boundary-fill' to FeatureType, update dialog and rendering path. (easy)
+
+
+═══════════════════════════════════════════════════════════════
+SOLID AUDIT — INCOMPLETE IMPLEMENTATIONS
+═══════════════════════════════════════════════════════════════
+[ ] SOL-I1. Fillet — add "Full Round" fillet mode (FullRoundFilletEdgeSet in SDK).
+            Variable-radius fillet currently only supports start/end radii; add per-edge
+            intermediate control points. (medium)
+
+[ ] SOL-I2. Shell — wire up face selection UI. Currently no way to specify which faces to remove
+            or set per-face thickness overrides. Need face picker integration similar to
+            HoleFacePicker. (medium)
+
+[ ] SOL-I3. Draft — Parting Line mode exists in dialog but viewport face picker is not connected.
+            Wire up the parting line edge/face picker. (medium)
+
+[ ] SOL-I4. Hole — integrate standard library lookup (ISO/ANSI/NPT sizes). Add a size preset
+            dropdown that populates diameter/pitch from a bundled lookup table. (medium)
+
+[ ] SOL-I5. Remove Face — replace hardcoded 6-direction list with a general face picker (same
+            pattern as HoleFacePicker). Currently only works on box faces. (easy)
+
+[ ] SOL-I6. Chamfer — add "Three Face" chamfer mode (ThreeEdgeChamferEdge in Fusion SDK).
+            (medium)
+
+[ ] SOL-I7. Shell — add "Individual Face Offsets" mode allowing per-face thickness override.
+            (medium)
+
+[ ] SOL-I8. Rib/Web — add "Fill All Enclosed Faces" and "Preserve Corners" toggles to match
+            Fusion's RibFeatureInput. (easy)
+
+[ ] SOL-I9. Thread — add pitch/class validation and standard library lookup (ISO/ANSI/NPT).
+            (medium)
+
+
+═══════════════════════════════════════════════════════════════
+SOLID AUDIT — MISSING FEATURES
+═══════════════════════════════════════════════════════════════
+[ ] SOL-M1. Rectangular Pattern (3D) — store wiring exists but no toolbar button or dialog.
+            Add RectangularPatternPanel + toolbar entry: count/spacing along X/Y/Z,
+            feature/body/face/component target. (medium)
+
+[ ] SOL-M2. Circular Pattern (3D) — store wiring exists but no toolbar button or dialog.
+            Add CircularPatternPanel + toolbar entry: count, angle, axis. (medium)
+
+[ ] SOL-M3. Mirror Feature (3D body mirror) — separate from sketch mirror. Add MirrorPanel:
+            select bodies + mirror plane (construction plane / face). (medium)
+
+[ ] SOL-M4. Move/Copy Body — add MoveBodyPanel with 6 definition types matching Fusion SDK:
+            free move, along axis, to point, along path, rotate about axis, translate XYZ.
+            (medium)
+
+[ ] SOL-M5. Coil — helix/coil generator (CoilFeatureInput in SDK). Parameters: pitch, height,
+            coil type (pitch-height / pitch-revolutions / height-revolutions / spiral),
+            coil section (circle / square / triangle / custom profile). (hard)
+
+[ ] SOL-M6. Thicken — convert surface body to solid. ThickenFeatureInput: face/body selector,
+            thickness, direction (one-side / both / symmetric). (medium)
+
+[ ] SOL-M7. Stitch — merge surface bodies into a single quilt or closed solid. (medium —
+            deferred until surface workflow is complete)
+
+[ ] SOL-M8. Unstitch — split a stitched surface back into individual faces. (medium — deferred)
+
+[ ] SOL-M9. Extend Surface — extend surface edges by distance or to another body. (medium)
+
+[ ] SOL-M10. Reverse Normal — flip surface normal direction. (easy)
+
+[ ] SOL-M11. Path Pattern — pattern features/bodies along a sketch path. (hard)
+
+
+═══════════════════════════════════════════════════════════════
+SOLID AUDIT — TOOLBAR GAPS
+═══════════════════════════════════════════════════════════════
+[ ] SOL-T1. Add toolbar buttons for features that exist but have no ribbon entry:
+            Draft, Scale, Mirror (3D), Rib/Web, Emboss, Offset Face, Thread,
+            Boundary Fill, Silhouette Split, Move Body, Align. (easy)
+
+
+═══════════════════════════════════════════════════════════════
+SKETCH AUDIT — GAPS
+═══════════════════════════════════════════════════════════════
+[ ] SK-A1. 3D Sketch Constraints — add surface-based constraints missing from 2D solver:
+           Coincident to Surface, Perpendicular to Surface, Line on Planar Surface,
+           Distance Between Point/Line and Surface. Required for real 3D sketch parity. (hard)
+
+[ ] SK-A2. Pattern on Path — sketch pattern along an arbitrary sketch curve (Fusion:
+           SketchPathPattern). Parameters: entities, path curve, count, spacing type. (medium)
+
+[ ] SK-A3. Reference Dimensions — add "driven" toggle in SketchDimensionPanel so a dimension
+           can be reference-only (displays value, does not constrain). Driven flag exists in the
+           data model; just needs UI. (easy)
+
+[ ] SK-A4. Over-Constraint / Redundant Constraint Visual Feedback — highlight conflicting
+           constraints red in SketchConstraintOverlay; show status badge in sketch palette
+           when over-constrained. (medium)
+
+[ ] SK-A5. Multi-line Sketch Text — SketchTextPanel currently single-line only. Add line-break
+           support and height-per-line parameter. (easy)
+
+[ ] SK-A6. Text Formatting — add font selector, bold/italic toggles to SketchTextPanel. (medium)
+
+[ ] SK-A7. Show/Hide Construction Geometry toggle — add a "Show Construction" visibility toggle
+           to the D56 section in SketchPalette. Construction lines currently always visible. (easy)
+
+[ ] SK-A8. Dimension Tolerance — add upper/lower tolerance inputs to SketchDimensionPanel
+           (±symmetric or +upper/−lower). Store on SketchDimension type. (medium)
+
+[ ] SK-A9. Offset Constraint — parametric offset between two parallel edges/curves as a
+           geometric constraint (separate from the offset-curves tool). (medium — deferred)
+
 
 ═══════════════════════════════════════════════════════════════
 SKETCH SECOND AUDIT GAPS
 ═══════════════════════════════════════════════════════════════
 [ ] S4.  Isoparametric Curve — UV-parameter curve on a NURBS surface (deferred)
-  
+
+
+── INSERT ────────────────────────────────────────────────────
+[ ] D194. Insert Fastener — fastener library browser to insert bolts/screws as solid bodies
+          (very hard — deferred)
+[ ] D195. Derive — pull bodies/sketches/params from another file with live parametric link
+          (very hard — deferred)
+
+
 ── ASSEMBLY — MISSING TOOLS ──────────────────────────────────
- 
+
 [ ] A24. Constrain Components — Fusion: Assemble > Constrain Components — Inventor-style
          mate/flush/angle/tangent constraints as an alternative positioning system to Joints.
          Currently comingSoon stub. Requires a constraint solver for rigid body placement.
          (hard — deferred)
- 
+
 [ ] A28. Make Independent — Fusion: right-click a linked/referenced component > Make
          Independent — breaks the live reference to an external design file so the component
          becomes a local copy. Related to D195 Derive (deferred) and A13 Insert Component.
-         isLinked:true flag exists on Component type but no Make Independent UI or action. (medium
-         — blocked until external reference loading is real)
- 
- 
- 
- 
-
- 
-
- 
-  
+         isLinked:true flag exists on Component type but no Make Independent UI or action.
+         (medium — blocked until external reference loading is real)

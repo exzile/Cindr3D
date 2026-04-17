@@ -9,8 +9,8 @@ import type { LipGrooveParams } from '../components/dialogs/solid/LipGrooveDialo
 import type { DirectEditParams } from '../components/dialogs/solid/DirectEditDialog';
 import type { TextureExtrudeParams } from '../components/dialogs/solid/TextureExtrudeDialog';
 
-export type ExtrudeDirection = 'normal' | 'symmetric' | 'reverse';
-export type ExtrudeOperation = Extract<BooleanOperation, 'new-body' | 'join' | 'cut'>;
+export type ExtrudeDirection = 'positive' | 'symmetric' | 'negative';
+export type ExtrudeOperation = 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component';
 import { evaluateExpression, resolveParameters } from '../utils/expressionEval';
 import { GeometryEngine } from '../engine/GeometryEngine';
 import { solveConstraints } from '../engine/ConstraintSolver';
@@ -112,6 +112,7 @@ interface CADState {
   /** D119: Clone a feature's geometry as a new mesh-body primitive. */
   tessellateFeature: (featureId: string) => void;
   removeFeature: (id: string) => void;
+  renameFeature: (id: string, name: string) => void;
   toggleFeatureVisibility: (id: string) => void;
   toggleFeatureSuppressed: (id: string) => void;
   /** D186: Feature currently being edited via a dialog (pre-fills dialog values). */
@@ -333,8 +334,8 @@ interface CADState {
   setExtrudeThinEnabled: (v: boolean) => void;
   extrudeThinThickness: number;
   setExtrudeThinThickness: (t: number) => void;
-  extrudeThinSide: 'inside' | 'outside' | 'center';
-  setExtrudeThinSide: (s: 'inside' | 'outside' | 'center') => void;
+  extrudeThinSide: 'side1' | 'side2' | 'center';
+  setExtrudeThinSide: (s: 'side1' | 'side2' | 'center') => void;
   // Extrude start options (D67)
   extrudeStartType: 'profile' | 'offset';
   setExtrudeStartType: (t: 'profile' | 'offset') => void;
@@ -1027,11 +1028,11 @@ const EXTRUDE_DEFAULTS = {
   extrudeSelectedSketchId: null,
   extrudeSelectedSketchIds: [] as string[],
   extrudeDistance: 10,
-  extrudeDirection: 'normal' as ExtrudeDirection,
+  extrudeDirection: 'positive' as ExtrudeDirection,
   extrudeOperation: 'new-body' as ExtrudeOperation,
   extrudeThinEnabled: false,
   extrudeThinThickness: 2,
-  extrudeThinSide: 'inside' as 'inside' | 'outside' | 'center',
+  extrudeThinSide: 'side1' as 'side1' | 'side2' | 'center',
   // D67 start options
   extrudeStartType: 'profile' as 'profile' | 'offset',
   extrudeStartOffset: 0,
@@ -1461,6 +1462,9 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       }
     }
   },
+  renameFeature: (id, name) => set((state) => ({
+    features: state.features.map((f) => f.id === id ? { ...f, name } : f),
+  })),
   // D186 Edit Feature state
   editingFeatureId: null,
   setEditingFeatureId: (id) => set({ editingFeatureId: id }),
@@ -2539,7 +2543,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       sketches: [...sketches, sketch],
       extrudeSelectedSketchId: sketch.id,
       extrudeSelectedSketchIds: [sketch.id],
-      extrudeDirection: 'normal',
+      extrudeDirection: 'positive',
       extrudeOperation: 'join',
       statusMessage: 'Press-pull profile selected — drag arrow or set distance, then OK',
     });
@@ -2601,7 +2605,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     // Use absolute distance — negative just means the user dragged in reverse
     const absDistance = extrudeExtentType === 'all' ? 10000 : Math.abs(extrudeDistance);
     // Direction follows the sign of the distance
-    const finalDirection = extrudeDistance < 0 ? 'reverse' : extrudeDirection;
+    const finalDirection = extrudeDistance < 0 ? 'negative' : extrudeDirection;
     // Operation is set explicitly by the user in the panel (new-body, join, cut)
     const finalOperation = extrudeOperation;
 

@@ -349,3 +349,10 @@
   background: var(--border-light, rgba(255, 255, 255, 0.07));
   margin: 3px 6px;
 }
+
+.sketch-ctx-item.disabled,
+.sketch-ctx-item:disabled {
+  opacity: 0.38;
+  cursor: default;
+  pointer-events: none;
+}

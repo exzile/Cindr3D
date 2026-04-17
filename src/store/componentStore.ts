@@ -49,6 +49,10 @@ interface ComponentStore {
   removeBody: (id: string) => void;
   renameBody: (id: string, name: string) => void;
   toggleBodyVisibility: (id: string) => void;
+  /** Isolate a body: hide all other bodies; if already isolated, restore all. */
+  isolateBody: (id: string) => void;
+  /** Show every body regardless of current visibility. */
+  showAllBodies: () => void;
   setBodyMaterial: (id: string, material: MaterialAppearance) => void;
   setBodyMesh: (id: string, mesh: THREE.Mesh | THREE.Group) => void;
   addFeatureToBody: (bodyId: string, featureId: string) => void;
@@ -434,6 +438,25 @@ export const useComponentStore = create<ComponentStore>((set, get) => ({
     const body = bodies[id];
     if (!body) return;
     set({ bodies: { ...bodies, [id]: { ...body, visible: !body.visible } } });
+  },
+
+  isolateBody: (id) => {
+    const { bodies } = get();
+    // If already isolated (only this body visible), restore all
+    const allIds = Object.keys(bodies);
+    const alreadyIsolated = allIds.every((bid) => bid === id ? bodies[bid].visible : !bodies[bid].visible);
+    const updated = Object.fromEntries(
+      allIds.map((bid) => [bid, { ...bodies[bid], visible: alreadyIsolated ? true : bid === id }])
+    );
+    set({ bodies: updated });
+  },
+
+  showAllBodies: () => {
+    const { bodies } = get();
+    const updated = Object.fromEntries(
+      Object.entries(bodies).map(([id, b]) => [id, { ...b, visible: true }])
+    );
+    set({ bodies: updated });
   },
 
   setBodyMaterial: (id, material) => {

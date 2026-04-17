@@ -2,7 +2,7 @@ import { createPortal } from 'react-dom';
 import {
   Move, FolderOpen, Box, Layers, Settings, Link2, CircleDot,
   Download, Copy, Scissors, Trash2, MoreHorizontal, Eye, EyeOff,
-  Search, MousePointer2,
+  Search, MousePointer2, ScanEye,
 } from 'lucide-react';
 import { useComponentStore } from '../../../store/componentStore';
 import { useCADStore } from '../../../store/cadStore';
@@ -27,6 +27,8 @@ export function BodyContextMenu({
   const removeBody = useComponentStore((s) => s.removeBody);
   const renameBody = useComponentStore((s) => s.renameBody);
   const toggleVisibility = useComponentStore((s) => s.toggleBodyVisibility);
+  const isolateBody = useComponentStore((s) => s.isolateBody);
+  const showAllBodies = useComponentStore((s) => s.showAllBodies);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const setActiveDialog = useCADStore((s) => s.setActiveDialog);
 
@@ -75,9 +77,10 @@ export function BodyContextMenu({
     },
     { separator: true, label: 'Display Detail Control', icon: <Settings size={13} />, onClick: cs('Display Detail Control') },
     { label: 'Show/Hide', shortcut: 'V', icon: <Eye size={13} />, onClick: () => { toggleVisibility(menu.bodyId); onClose(); } },
+    { label: 'Isolate', icon: <ScanEye size={13} />, onClick: () => { isolateBody(menu.bodyId); setStatusMessage(`Isolated: ${bodyName}`); onClose(); } },
+    { label: 'Show All Bodies', icon: <Eye size={13} />, onClick: () => { showAllBodies(); setStatusMessage('All bodies visible'); onClose(); } },
     { label: 'Selectable/Unselectable', icon: <MousePointer2 size={13} />, onClick: cs('Selectable/Unselectable') },
     { label: 'Opacity Control', icon: <CircleDot size={13} />, onClick: cs('Opacity Control') },
-    { label: 'Isolate', icon: <EyeOff size={13} />, onClick: cs('Isolate') },
     { separator: true, label: 'Find in Window', icon: <Search size={13} />, onClick: cs('Find in Window') },
   ];
 

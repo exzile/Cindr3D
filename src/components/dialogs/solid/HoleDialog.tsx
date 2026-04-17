@@ -9,7 +9,6 @@ import {
   SimpleHoleIcon,
   CounterboreIcon,
   CountersinkIcon,
-  CounterboreCountersinkIcon,
   TapSimpleIcon,
   TapClearanceIcon,
   TapTappedIcon,
@@ -20,17 +19,16 @@ import {
 import '../common/ToolPanel.css';
 import './HoleDialog.css';
 
-type HoleType = 'simple' | 'counterbore' | 'countersink' | 'counterbore-countersink';
+type HoleType = 'simple' | 'counterbore' | 'countersink';
 type TapType = 'simple' | 'clearance' | 'tapped' | 'taper-tapped';
 type DrillPoint = 'flat' | 'angled';
-type HoleTermination = 'blind' | 'through-all' | 'to-next' | 'symmetric';
+type HoleTermination = 'blind' | 'through-all' | 'to-object';
 type Placement = 'single' | 'multiple';
 
 const HOLE_TYPE_OPTIONS = [
   { value: 'simple' as const, icon: <SimpleHoleIcon />, title: 'Simple' },
   { value: 'counterbore' as const, icon: <CounterboreIcon />, title: 'Counterbore' },
   { value: 'countersink' as const, icon: <CountersinkIcon />, title: 'Countersink' },
-  { value: 'counterbore-countersink' as const, icon: <CounterboreCountersinkIcon />, title: 'Counterbore + Countersink' },
 ];
 
 const TAP_TYPE_OPTIONS = [
@@ -112,9 +110,9 @@ export function HoleDialog({ onClose }: { onClose: () => void }) {
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
-  const through = termination === 'through-all' || termination === 'to-next';
-  const showCB = holeType === 'counterbore' || holeType === 'counterbore-countersink';
-  const showCS = holeType === 'countersink' || holeType === 'counterbore-countersink';
+  const through = termination === 'through-all' || termination === 'to-object';
+  const showCB = holeType === 'counterbore';
+  const showCS = holeType === 'countersink';
 
   const handleApply = () => {
     const params = {
@@ -209,8 +207,7 @@ export function HoleDialog({ onClose }: { onClose: () => void }) {
                 >
                   <option value="blind">↔ Distance</option>
                   <option value="through-all">Through All</option>
-                  <option value="to-next">To Next</option>
-                  <option value="symmetric">Symmetric</option>
+                  <option value="to-object">To Object</option>
                 </select>
                 <button type="button" className="tp-icon-btn" title="Flip direction" aria-label="Flip direction">
                   <svg width={11} height={11} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.4}>

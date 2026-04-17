@@ -58,16 +58,6 @@ export function CountersinkIcon() {
   );
 }
 
-export function CounterboreCountersinkIcon() {
-  return (
-    <Frame>
-      <line x1={2} y1={2} x2={16} y2={2} />
-      <polyline points="3,2 3,5 5,7 5,16" />
-      <polyline points="15,2 15,5 13,7 13,16" />
-    </Frame>
-  );
-}
-
 // ── Hole Tap Type ────────────────────────────────────────────────────────────
 
 export function TapSimpleIcon() {

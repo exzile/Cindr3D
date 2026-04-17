@@ -219,6 +219,10 @@
   padding: 4px 0;
 }
 
+.timeline-context-menu {
+  min-width: 180px;
+}
+
 .timeline-context-menu__btn {
   display: flex;
   align-items: center;
@@ -227,10 +231,31 @@
   padding: 6px 12px;
   background: none;
   border: none;
+  border-radius: 3px;
   cursor: pointer;
-  color: inherit;
+  color: var(--text-secondary, #aaa);
   font-size: 12px;
   text-align: left;
+  transition: background 0.1s, color 0.1s;
+}
+
+.timeline-context-menu__btn:hover {
+  background: var(--bg-hover, rgba(255,255,255,0.07));
+  color: var(--text-primary, #fff);
+}
+
+.timeline-context-menu__btn.danger {
+  color: var(--error, #f44336);
+}
+
+.timeline-context-menu__btn.danger:hover {
+  background: rgba(244, 67, 54, 0.1);
+}
+
+.timeline-context-menu__sep {
+  height: 1px;
+  background: var(--border-light, rgba(255,255,255,0.07));
+  margin: 3px 8px;
 }
 
 .timeline-banner {

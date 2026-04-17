@@ -127,7 +127,7 @@ export default function ExtrudedBodies() {
 
   const buildToolMesh = (feature: Feature, sketch: Sketch): THREE.Mesh | null => {
     const distance = (feature.params.distance as number) || 10;
-    const direction = ((feature.params.direction as 'normal' | 'reverse' | 'symmetric') ?? 'normal');
+    const direction = ((feature.params.direction as 'positive' | 'negative' | 'symmetric') ?? 'positive');
     const profileIndex = feature.params.profileIndex as number | undefined;
     const taperAngle = (feature.params.taperAngle as number) ?? 0;
     const startOffset = (feature.params.startType as string) === 'offset'

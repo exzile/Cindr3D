@@ -139,6 +139,7 @@ function FeatureItem({ feature, index, indented }: { feature: Feature; index: nu
   const setEditingFeatureId = useCADStore((s) => s.setEditingFeatureId);
   const setActiveDialog = useCADStore((s) => s.setActiveDialog);
   const reorderFeature = useCADStore((s) => s.reorderFeature);
+  const renameFeature = useCADStore((s) => s.renameFeature);
   const rollbackIndex = useCADStore((s) => s.rollbackIndex);
   const setRollbackIndex = useCADStore((s) => s.setRollbackIndex);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
@@ -271,6 +272,70 @@ function FeatureItem({ feature, index, indented }: { feature: Feature; index: nu
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Edit */}
+          {editDialogFor(feature) && (
+            <button
+              className="timeline-context-menu__btn"
+              onClick={() => {
+                handleDoubleClick();
+                closeContextMenu();
+              }}
+            >
+              <Pencil size={12} />
+              Edit
+            </button>
+          )}
+          {/* Rename */}
+          <button
+            className="timeline-context-menu__btn"
+            onClick={() => {
+              const name = window.prompt('Rename feature', feature.name);
+              if (name?.trim()) {
+                renameFeature(feature.id, name.trim());
+                setStatusMessage(`Feature renamed to "${name.trim()}"`);
+              }
+              closeContextMenu();
+            }}
+          >
+            <Pencil size={12} />
+            Rename
+          </button>
+
+          <div className="timeline-context-menu__sep" />
+
+          {/* Suppress / Unsuppress */}
+          <button
+            className="timeline-context-menu__btn"
+            onClick={() => {
+              toggleSuppressed(feature.id);
+              closeContextMenu();
+            }}
+          >
+            {feature.suppressed ? <PlayCircle size={12} /> : <PauseCircle size={12} />}
+            {feature.suppressed ? 'Unsuppress' : 'Suppress'}
+          </button>
+
+          {/* Roll Back To Here */}
+          <button
+            className="timeline-context-menu__btn"
+            onClick={() => {
+              if (rollbackIndex === index) {
+                setRollbackIndex(-1);
+                setStatusMessage('Rollback cleared');
+              } else {
+                setRollbackIndex(index);
+                setStatusMessage(`Rolled back to "${feature.name}"`);
+              }
+              closeContextMenu();
+            }}
+          >
+            <SkipBack size={12} />
+            {rollbackIndex === index ? 'Clear Rollback' : 'Roll Back To Here'}
+          </button>
+
+          <div className="timeline-context-menu__sep" />
+
+          {/* Group */}
           <button
             className="timeline-context-menu__btn"
             onClick={() => {
@@ -280,6 +345,20 @@ function FeatureItem({ feature, index, indented }: { feature: Feature; index: nu
           >
             <Folder size={12} />
             Group Selected
+          </button>
+
+          <div className="timeline-context-menu__sep" />
+
+          {/* Delete */}
+          <button
+            className="timeline-context-menu__btn danger"
+            onClick={() => {
+              removeFeature(feature.id);
+              closeContextMenu();
+            }}
+          >
+            <Trash2 size={12} />
+            Delete
           </button>
         </div>
       </>

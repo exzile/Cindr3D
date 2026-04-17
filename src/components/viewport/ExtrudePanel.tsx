@@ -137,9 +137,9 @@ export default function ExtrudePanel() {
               value={direction}
               onChange={(e) => setDirection(e.target.value as ExtrudeDirection)}
             >
-              <option value="normal">One Side</option>
+              <option value="positive">One Side</option>
               <option value="symmetric">Symmetric</option>
-              <option value="reverse">Reversed</option>
+              <option value="negative">Reversed</option>
             </select>
           </div>
 
@@ -226,6 +226,8 @@ export default function ExtrudePanel() {
                   <option value="new-body">New Body</option>
                   <option value="join">Join</option>
                   <option value="cut">Cut</option>
+                  <option value="intersect">Intersect</option>
+                  <option value="new-component">New Component</option>
                 </select>
               </div>
 
@@ -264,10 +266,10 @@ export default function ExtrudePanel() {
                     <select
                       className="tp-select"
                       value={thinSide}
-                      onChange={(e) => setThinSide(e.target.value as 'inside' | 'outside' | 'center')}
+                      onChange={(e) => setThinSide(e.target.value as 'side1' | 'side2' | 'center')}
                     >
-                      <option value="inside">Inside</option>
-                      <option value="outside">Outside</option>
+                      <option value="side1">Side 1</option>
+                      <option value="side2">Side 2</option>
                       <option value="center">Center</option>
                     </select>
                   </div>
