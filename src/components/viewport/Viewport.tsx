@@ -82,6 +82,7 @@ import type { ViewportCtxState } from './ViewportContextMenu';
 
 export default function Viewport() {
   const viewMode = useCADStore((s) => s.viewMode);
+  const cameraNavMode = useCADStore((s) => s.cameraNavMode);
   const gridVisible = useCADStore((s) => s.gridVisible);
   const activeSketch = useCADStore((s) => s.activeSketch);
   const showEnvironment = useCADStore((s) => s.showEnvironment);
@@ -355,7 +356,10 @@ export default function Viewport() {
           dampingFactor={0.1}
           enabled={true}
           mouseButtons={{
-            LEFT: viewMode === 'sketch' ? undefined : THREE.MOUSE.ROTATE,
+            LEFT: cameraNavMode === 'pan' ? THREE.MOUSE.PAN
+                : cameraNavMode === 'zoom' ? THREE.MOUSE.DOLLY
+                : viewMode === 'sketch' ? undefined
+                : THREE.MOUSE.ROTATE,
             MIDDLE: THREE.MOUSE.DOLLY,
             RIGHT: THREE.MOUSE.PAN,
           }}

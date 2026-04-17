@@ -6,9 +6,7 @@ const designTabs: TabDef[] = [
   { id: 'surface', label: 'SURFACE', color: 'var(--tab-surface)' },
   { id: 'mesh', label: 'MESH', color: 'var(--tab-mesh)' },
   { id: 'form', label: 'FORM', color: 'var(--tab-form)' },
-  { id: 'sheet-metal', label: 'SHEET METAL', color: 'var(--tab-sheet-metal)' },
-  { id: 'plastic', label: 'PLASTIC', color: 'var(--tab-plastic)' },
-  { id: 'manage', label: 'MANAGE', color: 'var(--tab-manage)' },
+{ id: 'manage', label: 'MANAGE', color: 'var(--tab-manage)' },
   { id: 'utilities', label: 'UTILITIES', color: 'var(--tab-utilities)' },
 ];
 

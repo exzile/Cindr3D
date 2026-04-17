@@ -37,6 +37,8 @@ export default function ExtrudePanel() {
   const setExtentType = useCADStore((s) => s.setExtrudeExtentType);
   const taperAngle = useCADStore((s) => s.extrudeTaperAngle);
   const setTaperAngle = useCADStore((s) => s.setExtrudeTaperAngle);
+  const extrudeSymmetricFullLength = useCADStore((s) => s.extrudeSymmetricFullLength);
+  const setExtrudeSymmetricFullLength = useCADStore((s) => s.setExtrudeSymmetricFullLength);
   const bodyKind = useCADStore((s) => s.extrudeBodyKind);
   const setBodyKind = useCADStore((s) => s.setExtrudeBodyKind);
   const units = useCADStore((s) => s.units);
@@ -167,6 +169,15 @@ export default function ExtrudePanel() {
                   <span className="tp-unit">{units}</span>
                 </div>
               </div>
+              {direction === 'symmetric' && (
+                <div className="tp-row">
+                  <span className="tp-label">Full Length</span>
+                  <label className="tp-toggle">
+                    <input type="checkbox" checked={extrudeSymmetricFullLength} onChange={() => setExtrudeSymmetricFullLength(!extrudeSymmetricFullLength)} />
+                    <span className="tp-toggle-track" />
+                  </label>
+                </div>
+              )}
               {direction === 'two-sides' && (
                 <div className="tp-row">
                   <span className="tp-label">Side 2</span>

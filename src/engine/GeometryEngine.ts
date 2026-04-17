@@ -1087,6 +1087,9 @@ export class GeometryEngine {
     geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geom.setIndex(indices);
     geom.computeVertexNormals();
+    // Pad zero UVs so three-bvh-csg can process this geometry without error
+    const uvCount = positions.length / 3;
+    geom.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(uvCount * 2), 2));
 
     const mesh = new THREE.Mesh(geom, EXTRUDE_MATERIAL);
     mesh.castShadow = true;
@@ -1353,10 +1356,23 @@ export class GeometryEngine {
   }
 
   /**
+   * three-bvh-csg requires a `uv` attribute on every geometry it processes.
+   * Geometries built with manual vertex arrays (e.g. tapered extrusions) may
+   * omit UVs. This pads a zero-filled uv attribute in-place when missing.
+   */
+  private static _ensureUVs(g: THREE.BufferGeometry): void {
+    if (g.attributes.uv) return;
+    const count = (g.attributes.position as THREE.BufferAttribute).count;
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(count * 2), 2));
+  }
+
+  /**
    * Boolean A − B (subtract) on two world-space geometries. Returns a new
    * BufferGeometry. Disposes nothing — caller owns all inputs and the output.
    */
   static csgSubtract(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.BufferGeometry {
+    this._ensureUVs(a);
+    this._ensureUVs(b);
     const brushA = new Brush(a);
     const brushB = new Brush(b);
     brushA.updateMatrixWorld();
@@ -1369,6 +1385,8 @@ export class GeometryEngine {
    * Boolean A ∪ B (union) on two world-space geometries. See csgSubtract.
    */
   static csgUnion(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.BufferGeometry {
+    this._ensureUVs(a);
+    this._ensureUVs(b);
     const brushA = new Brush(a);
     const brushB = new Brush(b);
     brushA.updateMatrixWorld();
@@ -1381,6 +1399,8 @@ export class GeometryEngine {
    * Boolean A ∩ B (intersection) on two world-space geometries. See csgSubtract.
    */
   static csgIntersect(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.BufferGeometry {
+    this._ensureUVs(a);
+    this._ensureUVs(b);
     const brushA = new Brush(a);
     const brushB = new Brush(b);
     brushA.updateMatrixWorld();
@@ -4606,53 +4626,6 @@ export class GeometryEngine {
     return GeometryEngine.makeClosedMesh(tempMesh);
   }
 
-  static createBoss(diameter: number, height: number, wallThickness: number, draftAngle: number): THREE.Mesh {
-    const segments = 32;
-    const outerR = diameter / 2;
-    const innerR = outerR - wallThickness;
-    const taper = height * Math.tan(draftAngle * Math.PI / 180);
-    const verts: number[] = [];
-
-    for (let i = 0; i < segments; i++) {
-      const a0 = (i / segments) * Math.PI * 2;
-      const a1 = ((i + 1) / segments) * Math.PI * 2;
-
-      const bOuter0 = new THREE.Vector3(Math.cos(a0) * outerR, 0, Math.sin(a0) * outerR);
-      const bOuter1 = new THREE.Vector3(Math.cos(a1) * outerR, 0, Math.sin(a1) * outerR);
-      const bInner0 = new THREE.Vector3(Math.cos(a0) * innerR, 0, Math.sin(a0) * innerR);
-      const bInner1 = new THREE.Vector3(Math.cos(a1) * innerR, 0, Math.sin(a1) * innerR);
-
-      const tR = outerR - taper;
-      const tRi = Math.max(0.001, innerR - taper * 0.5);
-      const tOuter0 = new THREE.Vector3(Math.cos(a0) * tR, height, Math.sin(a0) * tR);
-      const tOuter1 = new THREE.Vector3(Math.cos(a1) * tR, height, Math.sin(a1) * tR);
-      const tInner0 = new THREE.Vector3(Math.cos(a0) * tRi, height, Math.sin(a0) * tRi);
-      const tInner1 = new THREE.Vector3(Math.cos(a1) * tRi, height, Math.sin(a1) * tRi);
-
-      // Outer wall
-      for (const [p0, p1, p2, p3] of [[bOuter0, bOuter1, tOuter1, tOuter0]] as [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3][]) {
-        verts.push(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
-        verts.push(p0.x, p0.y, p0.z, p2.x, p2.y, p2.z, p3.x, p3.y, p3.z);
-      }
-      // Inner wall
-      for (const [p0, p1, p2, p3] of [[bInner1, bInner0, tInner0, tInner1]] as [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3][]) {
-        verts.push(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
-        verts.push(p0.x, p0.y, p0.z, p2.x, p2.y, p2.z, p3.x, p3.y, p3.z);
-      }
-      // Bottom annular ring
-      verts.push(bOuter0.x, bOuter0.y, bOuter0.z, bInner0.x, bInner0.y, bInner0.z, bInner1.x, bInner1.y, bInner1.z);
-      verts.push(bOuter0.x, bOuter0.y, bOuter0.z, bInner1.x, bInner1.y, bInner1.z, bOuter1.x, bOuter1.y, bOuter1.z);
-      // Top annular ring
-      verts.push(tOuter0.x, tOuter0.y, tOuter0.z, tInner1.x, tInner1.y, tInner1.z, tInner0.x, tInner0.y, tInner0.z);
-      verts.push(tOuter0.x, tOuter0.y, tOuter0.z, tOuter1.x, tOuter1.y, tOuter1.z, tInner1.x, tInner1.y, tInner1.z);
-    }
-
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
-    geom.computeVertexNormals();
-    return new THREE.Mesh(geom, new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4 }));
-  }
-
   // ── MSH9 — Mesh Align ────────────────────────────────────────────────────
   static alignMeshToCentroid(sourceMesh: THREE.Mesh, targetMesh: THREE.Mesh): THREE.Mesh {
     const srcBox = new THREE.Box3().setFromObject(sourceMesh);
@@ -4671,104 +4644,4 @@ export class GeometryEngine {
     return result;
   }
 
-  // ── SM1 — Sheet Metal Flange ─────────────────────────────────────────────
-  static createFlange(
-    edgeStart: THREE.Vector3,
-    edgeEnd: THREE.Vector3,
-    faceNormal: THREE.Vector3,
-    thickness: number,
-    length: number,
-    bendAngle: number,
-  ): THREE.Mesh {
-    const edgeDir = edgeEnd.clone().sub(edgeStart).normalize();
-    const edgeLen = edgeEnd.distanceTo(edgeStart);
-
-    const bendRad = bendAngle * Math.PI / 180;
-    const inPlane = new THREE.Vector3().crossVectors(edgeDir, faceNormal).normalize();
-    const flangeDir = faceNormal.clone().multiplyScalar(Math.sin(bendRad))
-      .addScaledVector(inPlane, Math.cos(bendRad)).normalize();
-
-    const right = edgeDir.clone().multiplyScalar(edgeLen);
-    const thick = faceNormal.clone().multiplyScalar(thickness);
-    const ext   = flangeDir.clone().multiplyScalar(length);
-
-    const p0 = edgeStart.clone();
-    const p1 = edgeStart.clone().add(right);
-    const p2 = edgeStart.clone().add(right).add(ext);
-    const p3 = edgeStart.clone().add(ext);
-
-    const vertsArr = [
-      // Front face
-      p0, p1, p2, p0, p2, p3,
-      // Back face (flipped winding)
-      p0.clone().add(thick), p2.clone().add(thick), p1.clone().add(thick),
-      p0.clone().add(thick), p3.clone().add(thick), p2.clone().add(thick),
-      // Left cap
-      p0, p0.clone().add(thick), p1.clone().add(thick), p0, p1.clone().add(thick), p1,
-      // Right cap
-      p2, p3.clone().add(thick), p3, p2, p2.clone().add(thick), p3.clone().add(thick),
-      // Top cap
-      p1, p1.clone().add(thick), p2.clone().add(thick), p1, p2.clone().add(thick), p2,
-      // Bottom cap
-      p0, p3, p3.clone().add(thick), p0, p3.clone().add(thick), p0.clone().add(thick),
-    ];
-
-    const arr = new Float32Array(vertsArr.length * 3);
-    vertsArr.forEach((v, i) => { arr[i * 3] = v.x; arr[i * 3 + 1] = v.y; arr[i * 3 + 2] = v.z; });
-    const flangeGeom = new THREE.BufferGeometry();
-    flangeGeom.setAttribute('position', new THREE.BufferAttribute(arr, 3));
-    flangeGeom.computeVertexNormals();
-    return new THREE.Mesh(flangeGeom, new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4 }));
-  }
-
-  // ── SM2 — Sheet Metal Bend ───────────────────────────────────────────────
-  static createBend(
-    sheetMesh: THREE.Mesh,
-    bendLineStart: THREE.Vector3,
-    bendLineEnd: THREE.Vector3,
-    bendAngle: number,
-    kFactor = 0.5,
-  ): THREE.Mesh {
-    void kFactor; // reserved for future bend allowance calculation
-    const geom = sheetMesh.geometry.clone().toNonIndexed();
-    geom.applyMatrix4(sheetMesh.matrixWorld);
-    const pos = geom.attributes.position as THREE.BufferAttribute;
-
-    const bendDir = bendLineEnd.clone().sub(bendLineStart).normalize();
-    const planeNormal = bendDir.clone();
-    const planeOffset = planeNormal.dot(bendLineStart);
-
-    const q = new THREE.Quaternion().setFromAxisAngle(bendDir, bendAngle * Math.PI / 180);
-
-    for (let i = 0; i < pos.count; i++) {
-      const v = new THREE.Vector3().fromBufferAttribute(pos, i);
-      const dist = planeNormal.dot(v) - planeOffset;
-      if (dist > 0) {
-        const local = v.clone().sub(bendLineStart);
-        local.applyQuaternion(q);
-        const rotated = local.add(bendLineStart);
-        pos.setXYZ(i, rotated.x, rotated.y, rotated.z);
-      }
-    }
-    pos.needsUpdate = true;
-    geom.computeVertexNormals();
-    const result = new THREE.Mesh(geom, sheetMesh.material);
-    result.userData = { ...sheetMesh.userData };
-    return result;
-  }
-
-  // ── SM3 — Unfold Sheet Metal ─────────────────────────────────────────────
-  static unfoldSheetMetal(mesh: THREE.Mesh): THREE.Mesh {
-    const geom = mesh.geometry.clone().toNonIndexed();
-    geom.applyMatrix4(mesh.matrixWorld);
-    const pos = geom.attributes.position as THREE.BufferAttribute;
-    for (let i = 0; i < pos.count; i++) {
-      pos.setXYZ(i, pos.getX(i), 0, pos.getZ(i));
-    }
-    pos.needsUpdate = true;
-    geom.computeVertexNormals();
-    const result = new THREE.Mesh(geom, mesh.material);
-    result.userData = { ...mesh.userData };
-    return result;
-  }
 }

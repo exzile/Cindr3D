@@ -34,9 +34,7 @@ export interface ThemeColors {
   tabSurface: string;
   tabMesh: string;
   tabForm: string;
-  tabSheetMetal: string;
-  tabPlastic: string;
-  tabManage: string;
+tabManage: string;
   tabUtilities: string;
   tabPrepare: string;
   tabPrinter: string;
@@ -94,8 +92,6 @@ const lightColors: ThemeColors = {
   tabSurface: '#4caf50',
   tabMesh: '#7b1fa2',
   tabForm: '#e65100',
-  tabSheetMetal: '#00897b',
-  tabPlastic: '#1976d2',
   tabManage: '#757575',
   tabUtilities: '#546e7a',
   tabPrepare: '#0288d1',
@@ -145,8 +141,6 @@ const darkColors: ThemeColors = {
   tabSurface: '#66bb6a',
   tabMesh: '#ab47bc',
   tabForm: '#ff7043',
-  tabSheetMetal: '#26a69a',
-  tabPlastic: '#42a5f5',
   tabManage: '#9e9e9e',
   tabUtilities: '#78909c',
   tabPrepare: '#29b6f6',
@@ -198,9 +192,7 @@ function applyTheme(colors: ThemeColors, mode: ThemeMode) {
   root.style.setProperty('--tab-surface', colors.tabSurface);
   root.style.setProperty('--tab-mesh', colors.tabMesh);
   root.style.setProperty('--tab-form', colors.tabForm);
-  root.style.setProperty('--tab-sheet-metal', colors.tabSheetMetal);
-  root.style.setProperty('--tab-plastic', colors.tabPlastic);
-  root.style.setProperty('--tab-manage', colors.tabManage);
+root.style.setProperty('--tab-manage', colors.tabManage);
   root.style.setProperty('--tab-utilities', colors.tabUtilities);
   root.style.setProperty('--tab-prepare', colors.tabPrepare);
   root.style.setProperty('--tab-printer', colors.tabPrinter);

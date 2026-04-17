@@ -22,32 +22,7 @@ import DisplaySettingsPanel from './canvasControls/DisplaySettingsPanel';
 import GridSettingsPanel from './canvasControls/GridSettingsPanel';
 import IncrementSettingsPanel from './canvasControls/IncrementSettingsPanel';
 
-export interface CanvasControlsProps {
-  /** Trigger orbit mode in OrbitControls */
-  onOrbit?: () => void;
-  /** Trigger pan mode */
-  onPan?: () => void;
-  /** Trigger zoom mode */
-  onZoom?: () => void;
-  /** Zoom to fit the scene */
-  onZoomToFit?: () => void;
-  /** Zoom window (marquee zoom) */
-  onZoomWindow?: () => void;
-  /** Look-at mode */
-  onLookAt?: () => void;
-  /** Home view */
-  onHomeView?: () => void;
-}
-
-export default function CanvasControls({
-  onOrbit,
-  onPan,
-  onZoom,
-  onZoomToFit,
-  onZoomWindow,
-  onLookAt,
-  onHomeView,
-}: CanvasControlsProps) {
+export default function CanvasControls() {
   const gridVisible = useCADStore((s) => s.gridVisible);
   const setGridVisible = useCADStore((s) => s.setGridVisible);
   const gridLocked = useCADStore((s) => s.gridLocked);
@@ -57,6 +32,9 @@ export default function CanvasControls({
   const incrementalMove = useCADStore((s) => s.incrementalMove);
   const setIncrementalMove = useCADStore((s) => s.setIncrementalMove);
   const triggerCameraHome = useCADStore((s) => s.triggerCameraHome);
+  const cameraNavMode = useCADStore((s) => s.cameraNavMode);
+  const setCameraNavMode = useCADStore((s) => s.setCameraNavMode);
+  const triggerZoomToFit = useCADStore((s) => s.triggerZoomToFit);
 
   // Popover state
   const [openPopover, setOpenPopover] = useState<string | null>(null);
@@ -69,6 +47,10 @@ export default function CanvasControls({
   }, []);
 
   const closePopover = useCallback(() => setOpenPopover(null), []);
+
+  const handleNavMode = useCallback((mode: 'orbit' | 'pan' | 'zoom' | 'zoom-window' | 'look-at') => {
+    setCameraNavMode(cameraNavMode === mode ? null : mode);
+  }, [cameraNavMode, setCameraNavMode]);
 
   return (
     <div className="canvas-controls-bar">
@@ -164,31 +146,55 @@ export default function CanvasControls({
       <div className="cc-group">
         <div className="cc-divider" />
 
-        <button className="cc-btn" title="Orbit" onClick={onOrbit}>
+        <button
+          className={`cc-btn ${cameraNavMode === 'orbit' ? 'active' : ''}`}
+          title="Orbit"
+          onClick={() => handleNavMode('orbit')}
+        >
           <RotateCcw size={14} />
         </button>
-        <button className="cc-btn" title="Pan" onClick={onPan}>
+        <button
+          className={`cc-btn ${cameraNavMode === 'pan' ? 'active' : ''}`}
+          title="Pan"
+          onClick={() => handleNavMode('pan')}
+        >
           <Hand size={14} />
         </button>
-        <button className="cc-btn" title="Zoom" onClick={onZoom}>
+        <button
+          className={`cc-btn ${cameraNavMode === 'zoom' ? 'active' : ''}`}
+          title="Zoom"
+          onClick={() => handleNavMode('zoom')}
+        >
           <Search size={14} />
         </button>
-        <button className="cc-btn" title="Zoom to Fit" onClick={onZoomToFit}>
+        <button
+          className="cc-btn"
+          title="Zoom to Fit"
+          onClick={() => triggerZoomToFit()}
+        >
           <Maximize size={14} />
         </button>
-        <button className="cc-btn" title="Zoom Window" onClick={onZoomWindow}>
+        <button
+          className={`cc-btn ${cameraNavMode === 'zoom-window' ? 'active' : ''}`}
+          title="Zoom Window"
+          onClick={() => handleNavMode('zoom-window')}
+        >
           <ScanSearch size={14} />
         </button>
 
         <div className="cc-divider" />
 
-        <button className="cc-btn" title="Look At" onClick={onLookAt}>
+        <button
+          className={`cc-btn ${cameraNavMode === 'look-at' ? 'active' : ''}`}
+          title="Look At"
+          onClick={() => handleNavMode('look-at')}
+        >
           <Eye size={14} />
         </button>
         <button
           className="cc-btn"
           title="Home View"
-          onClick={() => { triggerCameraHome(); onHomeView?.(); }}
+          onClick={() => triggerCameraHome()}
         >
           <Home size={14} />
         </button>

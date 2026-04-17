@@ -2,7 +2,7 @@
 
 export type Workspace = 'design' | 'prepare' | 'printer';
 
-export type DesignTab = 'solid' | 'surface' | 'mesh' | 'form' | 'sheet-metal' | 'plastic' | 'manage' | 'utilities';
+export type DesignTab = 'solid' | 'surface' | 'mesh' | 'form' | 'manage' | 'utilities';
 export type PrepareTab = 'plate' | 'profiles' | 'slice' | 'export';
 export type SketchTab = 'sketch';
 

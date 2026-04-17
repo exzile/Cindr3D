@@ -38,8 +38,6 @@ import { RibbonSolidTab } from './RibbonSolidTab';
 import { RibbonSurfaceTab } from './RibbonSurfaceTab';
 import { RibbonMeshTab } from './RibbonMeshTab';
 import { RibbonFormTab } from './RibbonFormTab';
-import { RibbonSheetMetalTab } from './RibbonSheetMetalTab';
-import { RibbonPlasticTab } from './RibbonPlasticTab';
 import { RibbonManageTab } from './RibbonManageTab';
 import { RibbonUtilitiesTab } from './RibbonUtilitiesTab';
 import { RibbonSketchMode } from './RibbonSketchMode';
@@ -588,17 +586,7 @@ export default function Toolbar() {
           <RibbonFormTab />
         )}
 
-        {/* ═══════════════ DESIGN > SHEET METAL TAB ═══════════════ */}
-        {!inSketch && workspace === 'design' && designTab === 'sheet-metal' && (
-          <RibbonSheetMetalTab />
-        )}
-
-        {/* ═══════════════ DESIGN > PLASTIC TAB ═══════════════ */}
-        {!inSketch && workspace === 'design' && designTab === 'plastic' && (
-          <RibbonPlasticTab />
-        )}
-
-        {/* ═══════════════ DESIGN > MANAGE TAB ═══════════════ */}
+{/* ═══════════════ DESIGN > MANAGE TAB ═══════════════ */}
         {!inSketch && workspace === 'design' && designTab === 'manage' && (
           <RibbonManageTab />
         )}

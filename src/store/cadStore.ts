@@ -4,8 +4,6 @@ import type { PersistStorage } from 'zustand/middleware';
 import * as THREE from 'three';
 import type { Tool, ViewMode, SketchPlane, Sketch, SketchEntity, SketchPoint, SketchConstraint, SketchDimension, Feature, FeatureGroup, Parameter, BooleanOperation, FormCage, FormSelection, FormElementType, ConstructionPlane, ConstructionAxis, ConstructionPoint, JointOriginRecord, InterferenceResult, ContactSetEntry } from '../types/cad';
 import type { InsertComponentParams } from '../components/dialogs/assembly/InsertComponentDialog';
-import type { SnapFitParams } from '../components/dialogs/solid/SnapFitDialog';
-import type { LipGrooveParams } from '../components/dialogs/solid/LipGrooveDialog';
 import type { DirectEditParams } from '../components/dialogs/solid/DirectEditDialog';
 import type { TextureExtrudeParams } from '../components/dialogs/solid/TextureExtrudeDialog';
 
@@ -314,6 +312,12 @@ interface CADState {
   setShowReflections: (show: boolean) => void;
   showGroundPlane: boolean;
   setShowGroundPlane: (show: boolean) => void;
+  environmentPreset: string;
+  setEnvironmentPreset: (preset: string) => void;
+
+  // NAV-20: Camera projection
+  cameraProjection: 'perspective' | 'orthographic';
+  setCameraProjection: (p: 'perspective' | 'orthographic') => void;
 
   // Camera target orientation (for ViewCube animated transitions)
   cameraTargetQuaternion: THREE.Quaternion | null;
@@ -359,6 +363,9 @@ interface CADState {
   // Extrude taper angle (D69)
   extrudeTaperAngle: number;
   setExtrudeTaperAngle: (a: number) => void;
+  // Symmetric full-length toggle (EX-5)
+  extrudeSymmetricFullLength: boolean;
+  setExtrudeSymmetricFullLength: (v: boolean) => void;
   // Extrude body kind (D102)
   extrudeBodyKind: 'solid' | 'surface';
   setExtrudeBodyKind: (k: 'solid' | 'surface') => void;
@@ -540,6 +547,14 @@ interface CADState {
   // Camera
   cameraHomeCounter: number;
   triggerCameraHome: () => void;
+  cameraNavMode: 'orbit' | 'pan' | 'zoom' | 'zoom-window' | 'look-at' | null;
+  setCameraNavMode: (mode: 'orbit' | 'pan' | 'zoom' | 'zoom-window' | 'look-at' | null) => void;
+  zoomToFitCounter: number;
+  triggerZoomToFit: () => void;
+  // NAV-5: Zoom Window
+  zoomWindowTrigger: { x1: number; y1: number; x2: number; y2: number; vpW: number; vpH: number } | null;
+  triggerZoomWindow: (rect: { x1: number; y1: number; x2: number; y2: number; vpW: number; vpH: number }) => void;
+  clearZoomWindow: () => void;
 
   // Parameters
   parameters: Parameter[];
@@ -787,23 +802,7 @@ interface CADState {
   closeInsertComponentDialog(): void;
   commitInsertComponent(params: InsertComponentParams): void;
 
-  // ── D181 — Snap Fit ──────────────────────────────────────────────────────
-  showSnapFitDialog: boolean;
-  snapFitFaceId: string | null;
-  openSnapFitDialog(): void;
-  setSnapFitFace(id: string): void;
-  closeSnapFitDialog(): void;
-  commitSnapFit(params: SnapFitParams): void;
-
-  // ── D182 — Lip / Groove ──────────────────────────────────────────────────
-  showLipGrooveDialog: boolean;
-  lipGrooveEdgeId: string | null;
-  openLipGrooveDialog(): void;
-  setLipGrooveEdge(id: string): void;
-  closeLipGrooveDialog(): void;
-  commitLipGroove(params: LipGrooveParams): void;
-
-  // ── D197–D203 Surface & Body Analysis Overlays ──────────────────────────
+// ── D197–D203 Surface & Body Analysis Overlays ──────────────────────────
   activeAnalysis: 'zebra' | 'draft' | 'curvature-map' | 'isocurve' | 'accessibility' | 'min-radius' | 'curvature-comb' | null;
   setActiveAnalysis: (a: 'zebra' | 'draft' | 'curvature-map' | 'isocurve' | 'accessibility' | 'min-radius' | 'curvature-comb' | null) => void;
   analysisParams: {
@@ -973,13 +972,7 @@ interface CADState {
   // ── MSH1 — Remesh ────────────────────────────────────────────────────────
   commitRemesh(featureId: string, mode: 'refine' | 'coarsen', iterations: number): void;
 
-  // ── PL1 — Boss ───────────────────────────────────────────────────────────
-  showBossDialog: boolean;
-  openBossDialog(): void;
-  closeBossDialog(): void;
-  commitBoss(params: { diameter: number; height: number; wallThickness: number; draftAngle: number; headFillet: number }): void;
-
-  // ── SLD10 — Shell ────────────────────────────────────────────────────────
+// ── SLD10 — Shell ────────────────────────────────────────────────────────
   commitShell(featureId: string, thickness: number, direction: 'inward' | 'outward' | 'symmetric'): void;
 
   // ── SLD11 — Draft ────────────────────────────────────────────────────────
@@ -1012,39 +1005,6 @@ interface CADState {
   // ── MSH12 — Convert Mesh to BRep ─────────────────────────────────────────
   commitConvertMeshToBRep(featureId: string, mode: 'facet' | 'prismatic'): void;
 
-  // ── SM1 — Sheet Metal Flange ─────────────────────────────────────────────
-  showFlangeDialog: boolean;
-  openFlangeDialog(): void;
-  closeFlangeDialog(): void;
-  commitFlange(params: {
-    edgeStartX: number; edgeStartY: number; edgeStartZ: number;
-    edgeEndX: number; edgeEndY: number; edgeEndZ: number;
-    faceNormalX: number; faceNormalY: number; faceNormalZ: number;
-    thickness: number; length: number; bendAngle: number;
-  }): void;
-
-  // ── SM2 — Sheet Metal Bend ───────────────────────────────────────────────
-  showBendDialog: boolean;
-  openBendDialog(): void;
-  closeBendDialog(): void;
-  commitBend(params: {
-    featureId: string;
-    bendLineStartX: number; bendLineStartY: number; bendLineStartZ: number;
-    bendLineEndX: number; bendLineEndY: number; bendLineEndZ: number;
-    bendAngle: number; kFactor: number;
-  }): void;
-
-  // ── SM3 — Unfold ─────────────────────────────────────────────────────────
-  showUnfoldDialog: boolean;
-  openUnfoldDialog(): void;
-  closeUnfoldDialog(): void;
-  commitUnfold(featureId: string): void;
-
-  // ── SM4 — Flat Pattern ───────────────────────────────────────────────────
-  showFlatPatternDialog: boolean;
-  openFlatPatternDialog(): void;
-  closeFlatPatternDialog(): void;
-  commitFlatPattern(featureId: string): void;
 }
 
 // Plane normals consistent with the visual selector (Three.js Y-up):
@@ -1110,6 +1070,8 @@ const EXTRUDE_DEFAULTS = {
   extrudeExtentType: 'distance' as 'distance' | 'all',
   // D69 taper angle
   extrudeTaperAngle: 0,
+  // EX-5 symmetric full-length
+  extrudeSymmetricFullLength: false,
   // D102 body kind
   extrudeBodyKind: 'solid' as 'solid' | 'surface',
 };
@@ -2539,6 +2501,11 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   setShowReflections: (show) => set({ showReflections: show }),
   showGroundPlane: true,
   setShowGroundPlane: (show) => set({ showGroundPlane: show }),
+  environmentPreset: 'studio',
+  setEnvironmentPreset: (preset) => set({ environmentPreset: preset }),
+
+  cameraProjection: 'perspective',
+  setCameraProjection: (p) => set({ cameraProjection: p }),
 
   cameraTargetQuaternion: null,
   setCameraTargetQuaternion: (q) => set({ cameraTargetQuaternion: q }),
@@ -2569,6 +2536,8 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   setExtrudeExtentType: (t) => set({ extrudeExtentType: t }),
   // D69 taper angle
   setExtrudeTaperAngle: (a) => set({ extrudeTaperAngle: a }),
+  // EX-5 symmetric full-length
+  setExtrudeSymmetricFullLength: (v) => set({ extrudeSymmetricFullLength: v }),
   // D102 body kind
   setExtrudeBodyKind: (k) => set({ extrudeBodyKind: k }),
   startExtrudeTool: () => {
@@ -2650,7 +2619,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       extrudeSelectedSketchId, extrudeSelectedSketchIds, extrudeDistance, extrudeDistance2, extrudeDirection,
       extrudeOperation, extrudeThinEnabled, extrudeThinThickness, extrudeThinSide,
       extrudeStartType, extrudeStartOffset, extrudeExtentType, extrudeTaperAngle,
-      extrudeBodyKind,
+      extrudeBodyKind, extrudeSymmetricFullLength,
       sketches, features, units,
     } = get();
     const selectedSketchIds =
@@ -2725,10 +2694,67 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       // thin and surface extrudes need a stored mesh.
       const needsStoredMesh = resolvedBodyKind === 'surface' || extrudeThinEnabled;
 
+      // ── Fusion 360 parity: auto-promote 'join' → 'new-body' when detached ──
+      // If the user chose 'join' but the proposed geometry doesn't intersect any
+      // existing solid body (e.g. an offset extrusion floating in space), Fusion
+      // 360 automatically creates a new body. We replicate that here by doing a
+      // cheap bounding-box check against all currently committed solid extrudes.
+      let effectiveOperation = finalOperation;
+      if (finalOperation === 'join' && resolvedBodyKind === 'solid' && !extrudeThinEnabled) {
+        const existingSolids = nextFeatures.filter(
+          (f) => f.type === 'extrude' && !f.suppressed && f.visible &&
+                 f.bodyKind !== 'surface' &&
+                 (f.params.operation === 'new-body' || f.params.operation === 'join'),
+        );
+        if (existingSolids.length === 0) {
+          // No solid bodies yet — this must be the first one
+          effectiveOperation = 'new-body';
+        } else {
+          // Build bounding box of the proposed new extrusion
+          const proposedMesh = GeometryEngine.buildExtrudeFeatureMesh(
+            sketchForOp, absDistance, finalDirection, extrudeTaperAngle,
+            extrudeStartType === 'offset' ? extrudeStartOffset : 0,
+            absDistance2,
+          );
+          if (proposedMesh) {
+            proposedMesh.updateMatrixWorld(true);
+            const proposedBox = new THREE.Box3().setFromObject(proposedMesh);
+            proposedMesh.geometry.dispose();
+            let intersectsAny = false;
+            for (const ef of existingSolids) {
+              const efSk = sketches.find((s) => s.id === ef.sketchId);
+              if (!efSk) continue;
+              const efPI = ef.params.profileIndex as number | undefined;
+              const efSketchForOp = efPI !== undefined
+                ? GeometryEngine.createProfileSketch(efSk, efPI)
+                : efSk;
+              if (!efSketchForOp) continue;
+              const efMesh = GeometryEngine.buildExtrudeFeatureMesh(
+                efSketchForOp,
+                (ef.params.distance as number) ?? 10,
+                ((ef.params.direction as string) || 'positive') as 'positive' | 'negative' | 'symmetric' | 'two-sides',
+                (ef.params.taperAngle as number) ?? 0,
+                (ef.params.startType as string) === 'offset' ? ((ef.params.startOffset as number) ?? 0) : 0,
+                (ef.params.distance2 as number) ?? (ef.params.distance as number) ?? 10,
+              );
+              if (!efMesh) continue;
+              efMesh.updateMatrixWorld(true);
+              const efBox = new THREE.Box3().setFromObject(efMesh);
+              efMesh.geometry.dispose();
+              if (proposedBox.intersectsBox(efBox)) {
+                intersectsAny = true;
+                break;
+              }
+            }
+            if (!intersectsAny) effectiveOperation = 'new-body';
+          }
+        }
+      }
+
       const featureId = crypto.randomUUID();
       let componentId: string | undefined;
       let bodyId: string | undefined;
-      if (finalOperation === 'new-body') {
+      if (effectiveOperation === 'new-body') {
         const componentStore = useComponentStore.getState();
         componentId = componentStore.activeComponentId ?? componentStore.rootComponentId;
         const bodyCount = Object.keys(componentStore.bodies).length + 1;
@@ -2741,21 +2767,34 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
           // extrudes are rendered by the CSG pipeline in ExtrudedBodies.
           if (needsStoredMesh && featureMesh) componentStore.setBodyMesh(createdBodyId, featureMesh);
         }
+      } else if (effectiveOperation === 'new-component') {
+        const componentStore = useComponentStore.getState();
+        const parentId = componentStore.activeComponentId ?? componentStore.rootComponentId;
+        const newCompId = componentStore.addComponent(parentId, 'Component ' + (Object.keys(componentStore.components ?? {}).length + 1));
+        const createdBodyId = componentStore.addBody(newCompId, 'Body 1');
+        componentId = newCompId;
+        bodyId = createdBodyId;
+        if (createdBodyId) {
+          componentStore.addFeatureToBody(createdBodyId, featureId);
+          if (needsStoredMesh && featureMesh) componentStore.setBodyMesh(createdBodyId, featureMesh);
+        }
       }
 
       const feature: Feature = {
         id: featureId,
-        name: `${extrudeThinEnabled ? 'Thin ' : ''}${finalOperation === 'cut' ? 'Cut' : 'Extrude'} ${features.filter(f => f.type === 'extrude').length + createdCount + 1}`,
+        name: `${extrudeThinEnabled ? 'Thin ' : ''}${effectiveOperation === 'cut' ? 'Cut' : 'Extrude'} ${features.filter(f => f.type === 'extrude').length + createdCount + 1}`,
         type: 'extrude',
         sketchId: sourceSketch.id,
         bodyId,
         componentId,
         params: {
-          distance: finalDirection === 'symmetric' ? absDistance / 2 : absDistance,
+          distance: finalDirection === 'symmetric'
+            ? (extrudeSymmetricFullLength ? absDistance / 2 : absDistance)
+            : absDistance,
           distanceExpr: String(absDistance),
           ...(finalDirection === 'two-sides' ? { distance2: absDistance2 } : {}),
           direction: finalDirection,
-          operation: finalOperation,
+          operation: effectiveOperation,
           thin: extrudeThinEnabled,
           thinThickness: extrudeThinThickness,
           thinSide: extrudeThinSide,
@@ -3255,6 +3294,13 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
 
   cameraHomeCounter: 0,
   triggerCameraHome: () => set((state) => ({ cameraHomeCounter: state.cameraHomeCounter + 1 })),
+  cameraNavMode: null,
+  setCameraNavMode: (mode) => set({ cameraNavMode: mode }),
+  zoomToFitCounter: 0,
+  triggerZoomToFit: () => set((state) => ({ zoomToFitCounter: state.zoomToFitCounter + 1 })),
+  zoomWindowTrigger: null,
+  triggerZoomWindow: (rect) => set({ zoomWindowTrigger: rect }),
+  clearZoomWindow: () => set({ zoomWindowTrigger: null }),
 
   parameters: [],
   addParameter: (name, expression, description, group) => {
@@ -4024,51 +4070,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     get().setStatusMessage(`Inserted component: ${params.name} (mesh loading deferred)`);
   },
 
-  // ── D181 — Snap Fit ──────────────────────────────────────────────────────
-  showSnapFitDialog: false,
-  snapFitFaceId: null,
-  openSnapFitDialog: () => set({ activeDialog: 'snap-fit', showSnapFitDialog: true, snapFitFaceId: null }),
-  setSnapFitFace: (id) => set({ snapFitFaceId: id }),
-  closeSnapFitDialog: () => set({ activeDialog: null, showSnapFitDialog: false, snapFitFaceId: null }),
-  commitSnapFit: (params) => {
-    const { features } = get();
-    const snapN = features.filter((f) => f.params?.featureKind === 'snap-fit').length + 1;
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Snap Fit ${snapN}`,
-      type: 'import',
-      params: { featureKind: 'snap-fit', ...params, faceId: params.faceId ?? '' },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    };
-    get().addFeature(feature);
-    set({ activeDialog: null, showSnapFitDialog: false, snapFitFaceId: null });
-  },
-
-  // ── D182 — Lip / Groove ──────────────────────────────────────────────────
-  showLipGrooveDialog: false,
-  lipGrooveEdgeId: null,
-  openLipGrooveDialog: () => set({ activeDialog: 'lip-groove', showLipGrooveDialog: true, lipGrooveEdgeId: null }),
-  setLipGrooveEdge: (id) => set({ lipGrooveEdgeId: id }),
-  closeLipGrooveDialog: () => set({ activeDialog: null, showLipGrooveDialog: false, lipGrooveEdgeId: null }),
-  commitLipGroove: (params) => {
-    const { features } = get();
-    const n = features.filter((f) => f.params?.featureKind === 'lip-groove').length + 1;
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Lip/Groove ${n}`,
-      type: 'import',
-      params: { featureKind: 'lip-groove', ...params, edgeId: params.edgeId ?? '' },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    };
-    get().addFeature(feature);
-    set({ activeDialog: null, showLipGrooveDialog: false, lipGrooveEdgeId: null });
-  },
-
-  // ── D197–D203 Surface & Body Analysis Overlays ──────────────────────────
+// ── D197–D203 Surface & Body Analysis Overlays ──────────────────────────
   activeAnalysis: null,
   setActiveAnalysis: (a) => set((s) => ({
     activeAnalysis: s.activeAnalysis === a ? null : a,
@@ -5483,141 +5485,6 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     get().setStatusMessage(`Convert to BRep (${mode}): "${srcFeature.name}" is now a solid body`);
   },
 
-  // ── SM1 — Sheet Metal Flange ─────────────────────────────────────────────
-  showFlangeDialog: false,
-  openFlangeDialog: () => set({ activeDialog: 'sheet-flange', showFlangeDialog: true }),
-  closeFlangeDialog: () => set({ activeDialog: null, showFlangeDialog: false }),
-  commitFlange: (params) => {
-    const { features } = get();
-    const edgeStart = new THREE.Vector3(params.edgeStartX, params.edgeStartY, params.edgeStartZ);
-    const edgeEnd   = new THREE.Vector3(params.edgeEndX,   params.edgeEndY,   params.edgeEndZ);
-    const faceNormal = new THREE.Vector3(params.faceNormalX, params.faceNormalY, params.faceNormalZ);
-    const mesh = GeometryEngine.createFlange(edgeStart, edgeEnd, faceNormal, params.thickness, params.length, params.bendAngle);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    const n = features.filter((f) => f.params?.featureKind === 'sheet-flange').length + 1;
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Flange ${n}`,
-      type: 'extrude' as Feature['type'],
-      params: { featureKind: 'sheet-flange', ...params },
-      mesh,
-      bodyKind: 'solid',
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    };
-    get().addFeature(feature);
-    set({ activeDialog: null, showFlangeDialog: false });
-    get().setStatusMessage(`Flange ${n}: ${params.length}mm × ${params.thickness}mm at ${params.bendAngle}°`);
-  },
-
-  // ── SM2 — Sheet Metal Bend ───────────────────────────────────────────────
-  showBendDialog: false,
-  openBendDialog: () => set({ activeDialog: 'sheet-bend', showBendDialog: true }),
-  closeBendDialog: () => set({ activeDialog: null, showBendDialog: false }),
-  commitBend: (params) => {
-    const { features } = get();
-    const srcFeature = features.find((f) => f.id === params.featureId);
-    const srcMesh = srcFeature?.mesh as THREE.Mesh | undefined;
-    if (!srcFeature || !srcMesh?.isMesh) {
-      get().setStatusMessage('Bend: no mesh found for selected feature');
-      return;
-    }
-    const bendLineStart = new THREE.Vector3(params.bendLineStartX, params.bendLineStartY, params.bendLineStartZ);
-    const bendLineEnd   = new THREE.Vector3(params.bendLineEndX,   params.bendLineEndY,   params.bendLineEndZ);
-    const result = GeometryEngine.createBend(srcMesh, bendLineStart, bendLineEnd, params.bendAngle, params.kFactor);
-    result.castShadow = true;
-    result.receiveShadow = true;
-    const nextFeatures = features.map((f) =>
-      f.id === params.featureId
-        ? { ...f, mesh: result, params: { ...f.params, featureKind: 'sheet-bend', ...params } }
-        : f,
-    );
-    set({ features: nextFeatures, activeDialog: null, showBendDialog: false });
-    get().setStatusMessage(`Bend: ${params.bendAngle}° applied`);
-  },
-
-  // ── SM3 — Unfold ─────────────────────────────────────────────────────────
-  showUnfoldDialog: false,
-  openUnfoldDialog: () => set({ activeDialog: 'sheet-unfold', showUnfoldDialog: true }),
-  closeUnfoldDialog: () => set({ activeDialog: null, showUnfoldDialog: false }),
-  commitUnfold: (featureId) => {
-    const { features } = get();
-    const srcFeature = features.find((f) => f.id === featureId);
-    const srcMesh = srcFeature?.mesh as THREE.Mesh | undefined;
-    if (!srcFeature || !srcMesh?.isMesh) {
-      get().setStatusMessage('Unfold: no mesh found for selected feature');
-      return;
-    }
-    const result = GeometryEngine.unfoldSheetMetal(srcMesh);
-    result.castShadow = true;
-    result.receiveShadow = true;
-    const nextFeatures = features.map((f) =>
-      f.id === featureId
-        ? { ...f, mesh: result, params: { ...f.params, featureKind: 'sheet-unfold' } }
-        : f,
-    );
-    set({ features: nextFeatures, activeDialog: null, showUnfoldDialog: false });
-    get().setStatusMessage(`Unfold: "${srcFeature.name}" flattened`);
-  },
-
-  // ── SM4 — Flat Pattern ───────────────────────────────────────────────────
-  showFlatPatternDialog: false,
-  openFlatPatternDialog: () => set({ activeDialog: 'sheet-flat-pattern', showFlatPatternDialog: true }),
-  closeFlatPatternDialog: () => set({ activeDialog: null, showFlatPatternDialog: false }),
-  commitFlatPattern: (featureId) => {
-    const { features } = get();
-    const srcFeature = features.find((f) => f.id === featureId);
-    const srcMesh = srcFeature?.mesh as THREE.Mesh | undefined;
-    if (!srcFeature || !srcMesh?.isMesh) {
-      get().setStatusMessage('Flat Pattern: no mesh found for selected feature');
-      return;
-    }
-    const result = GeometryEngine.unfoldSheetMetal(srcMesh);
-    result.castShadow = true;
-    result.receiveShadow = true;
-    const n = features.filter((f) => f.params?.featureKind === 'sheet-flat-pattern').length + 1;
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Flat Pattern ${n} of ${srcFeature.name}`,
-      type: 'extrude' as Feature['type'],
-      params: { featureKind: 'sheet-flat-pattern', sourceFeatureId: featureId },
-      mesh: result,
-      bodyKind: 'solid',
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    };
-    get().addFeature(feature);
-    set({ activeDialog: null, showFlatPatternDialog: false });
-    get().setStatusMessage(`Flat Pattern ${n}: unfolded from "${srcFeature.name}"`);
-  },
-
-  // ── PL1 — Boss ───────────────────────────────────────────────────────────
-  showBossDialog: false,
-  openBossDialog: () => set({ activeDialog: 'boss', showBossDialog: true }),
-  closeBossDialog: () => set({ activeDialog: null, showBossDialog: false }),
-  commitBoss: (params) => {
-    const { features } = get();
-    const bossMesh = GeometryEngine.createBoss(params.diameter, params.height, params.wallThickness, params.draftAngle);
-    bossMesh.castShadow = true;
-    bossMesh.receiveShadow = true;
-    const n = features.filter((f) => f.params?.featureKind === 'boss').length + 1;
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Boss ${n}`,
-      type: 'import',
-      params: { featureKind: 'boss', ...params },
-      mesh: bossMesh,
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    };
-    get().addFeature(feature);
-    set({ activeDialog: null, showBossDialog: false });
-    get().setStatusMessage(`Boss ${n} created (Ø${params.diameter}mm × ${params.height}mm)`);
-  },
 }),
 {
   name: 'dzign3d-cad',

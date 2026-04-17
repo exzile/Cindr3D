@@ -100,13 +100,6 @@ import { SplitFaceDialog } from './components/dialogs/solid/SplitFaceDialog';
 import { BoundingSolidDialog } from './components/dialogs/solid/BoundingSolidDialog';
 import { ContactSetsDialog } from './components/dialogs/assembly/ContactSetsDialog';
 import { InsertComponentDialog } from './components/dialogs/assembly/InsertComponentDialog';
-import { SnapFitDialog } from './components/dialogs/solid/SnapFitDialog';
-import { LipGrooveDialog } from './components/dialogs/solid/LipGrooveDialog';
-import { BossDialog } from './components/dialogs/plastic/BossDialog';
-import { FlangeDialog } from './components/dialogs/sheet-metal/FlangeDialog';
-import { BendDialog } from './components/dialogs/sheet-metal/BendDialog';
-import { UnfoldDialog } from './components/dialogs/sheet-metal/UnfoldDialog';
-import { FlatPatternDialog } from './components/dialogs/sheet-metal/FlatPatternDialog';
 import { useCADStore } from './store/cadStore';
 import { useComponentStore } from './store/componentStore';
 import './App.css';
@@ -248,32 +241,6 @@ function InsertComponentDialogConnected({ onClose }: { onClose: () => void }) {
     <InsertComponentDialog
       open={true}
       onOk={commitInsertComponent}
-      onClose={onClose}
-    />
-  );
-}
-
-function SnapFitDialogConnected({ onClose }: { onClose: () => void }) {
-  const snapFitFaceId = useCADStore((s) => s.snapFitFaceId);
-  const commitSnapFit = useCADStore((s) => s.commitSnapFit);
-  return (
-    <SnapFitDialog
-      open={true}
-      faceId={snapFitFaceId}
-      onOk={commitSnapFit}
-      onClose={onClose}
-    />
-  );
-}
-
-function LipGrooveDialogConnected({ onClose }: { onClose: () => void }) {
-  const lipGrooveEdgeId = useCADStore((s) => s.lipGrooveEdgeId);
-  const commitLipGroove = useCADStore((s) => s.commitLipGroove);
-  return (
-    <LipGrooveDialog
-      open={true}
-      edgeId={lipGrooveEdgeId}
-      onOk={commitLipGroove}
       onClose={onClose}
     />
   );
@@ -512,17 +479,10 @@ function ActiveDialog() {
     case 'interference': return <InterferenceDialogConnected onClose={close} />;
     case 'contact-sets': return <ContactSetsDialogConnected onClose={close} />;
     case 'insert-component': return <InsertComponentDialogConnected onClose={close} />;
-    case 'snap-fit': return <SnapFitDialogConnected onClose={close} />;
-    case 'lip-groove': return <LipGrooveDialogConnected onClose={close} />;
-    case 'boss': return <BossDialog onClose={close} />;
     case 'mirror-component': return <MirrorComponentDialogConnected onClose={close} />;
     case 'duplicate-with-joints': return <DuplicateWithJointsDialogConnected onClose={close} />;
     case 'bom': return <BOMDialogConnected onClose={close} />;
-    case 'sheet-flange': return <FlangeDialog onClose={close} />;
-    case 'sheet-bend': return <BendDialog onClose={close} />;
-    case 'sheet-unfold': return <UnfoldDialog onClose={close} />;
-    case 'sheet-flat-pattern': return <FlatPatternDialog onClose={close} />;
-    default: return null;
+default: return null;
   }
 }
 

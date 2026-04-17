@@ -9,8 +9,11 @@ interface OrbitControlsLike {
 }
 
 export default function CameraController({ onQuaternionChange }: { onQuaternionChange: (q: THREE.Quaternion) => void }) {
-  const { camera, controls } = useThree();
+  const { camera, controls, scene } = useThree();
   const cameraHomeCounter = useCADStore((s) => s.cameraHomeCounter);
+  const zoomToFitCounter = useCADStore((s) => s.zoomToFitCounter);
+  const zoomWindowTrigger = useCADStore((s) => s.zoomWindowTrigger);
+  const clearZoomWindow = useCADStore((s) => s.clearZoomWindow);
   const cameraTargetQuaternion = useCADStore((s) => s.cameraTargetQuaternion);
   const setCameraTargetQuaternion = useCADStore((s) => s.setCameraTargetQuaternion);
   const cameraTargetOrbit = useCADStore((s) => s.cameraTargetOrbit);
@@ -41,6 +44,66 @@ export default function CameraController({ onQuaternionChange }: { onQuaternionC
       orbitControls.update?.();
     }
   }, [cameraHomeCounter, camera, controls]);
+
+  // Zoom to Fit
+  useEffect(() => {
+    if (zoomToFitCounter === 0) return;
+    const box = new THREE.Box3();
+    scene.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.isMesh && mesh.visible) {
+        box.expandByObject(mesh);
+      }
+    });
+    if (box.isEmpty()) return;
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    box.getCenter(center);
+    box.getSize(size);
+    const radius = Math.max(size.x, size.y, size.z) * 1.2;
+    const orbitControls = controls as OrbitControlsLike;
+    if (orbitControls?.target) {
+      orbitControls.target.copy(center);
+    }
+    const dir = camera.position.clone().sub(center).normalize();
+    camera.position.copy(center).addScaledVector(dir, radius * 2);
+    orbitControls?.update?.();
+  }, [zoomToFitCounter, scene, camera, controls]);
+
+  // Zoom Window (NAV-5): move camera to frame the chosen screen rect
+  useEffect(() => {
+    if (!zoomWindowTrigger) return;
+    clearZoomWindow();
+    const { x1, y1, x2, y2, vpW, vpH } = zoomWindowTrigger;
+    const rectW = x2 - x1;
+    const rectH = y2 - y1;
+    if (rectW < 5 || rectH < 5) return;
+
+    // How much to zoom: smaller dim of rect vs viewport drives zoom factor
+    const zoomFactor = Math.min(vpW / rectW, vpH / rectH);
+
+    // Rect center in NDC
+    const ndcX = ((x1 + x2) / 2 / vpW) * 2 - 1;
+    const ndcY = -((y1 + y2) / 2 / vpH) * 2 + 1;
+
+    const orbitControls = controls as OrbitControlsLike;
+    const currentTarget = (orbitControls?.target as THREE.Vector3 | undefined) ?? new THREE.Vector3();
+    const currentDistance = camera.position.distanceTo(currentTarget);
+
+    // Cast a ray through the rect center to find the new orbit target depth
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+    const newTarget = raycaster.ray.at(currentDistance, new THREE.Vector3());
+
+    // New camera distance: zoom in by factor
+    const newDistance = currentDistance / zoomFactor;
+    const dir = camera.position.clone().sub(currentTarget).normalize();
+    const newPos = newTarget.clone().addScaledVector(dir, newDistance);
+
+    camera.position.copy(newPos);
+    if (orbitControls?.target) orbitControls.target.copy(newTarget);
+    orbitControls?.update?.();
+  }, [zoomWindowTrigger, camera, controls, clearZoomWindow]);
 
   // Start animation when a target quaternion is set (ViewCube click / sketch entry)
   useEffect(() => {

@@ -10,24 +10,34 @@ export default function ExtrudePreview({ sketch, distance, direction }: {
   distance: number;
   direction: ExtrudeDirection;
 }) {
-  const operation = useCADStore((s) => s.extrudeOperation);
-  const absDistance = Math.abs(distance);
+  const operation  = useCADStore((s) => s.extrudeOperation);
+  const startType  = useCADStore((s) => s.extrudeStartType);
+  const startOffset = useCADStore((s) => s.extrudeStartOffset);
+  const taperAngle = useCADStore((s) => s.extrudeTaperAngle);
+  const distance2  = useCADStore((s) => s.extrudeDistance2);
+
   const isCut = operation === 'cut';
+  const absDistance = Math.abs(distance);
   // Negative distance = user dragged in reverse direction
-  const effectiveDirection: ExtrudeDirection = distance < 0 ? 'reverse' : direction;
+  const effectiveDirection: ExtrudeDirection =
+    direction === 'two-sides' ? 'two-sides' : (distance < 0 ? 'negative' : direction);
+  const effectiveOffset = startType === 'offset' ? startOffset : 0;
 
   const mesh = useMemo(() => {
     if (absDistance < 0.001) return null;
-    const m = GeometryEngine.extrudeSketch(sketch, absDistance);
+    // buildExtrudeFeatureMesh handles direction shifting, offset, and taper together
+    const m = GeometryEngine.buildExtrudeFeatureMesh(
+      sketch,
+      absDistance,
+      effectiveDirection,
+      taperAngle,
+      effectiveOffset,
+      Math.abs(distance2),
+    );
     if (!m) return null;
     m.material = isCut ? PREVIEW_MATERIAL_CUT : PREVIEW_MATERIAL;
-    if (effectiveDirection === 'symmetric') {
-      m.position.sub(GeometryEngine.getSketchExtrudeNormal(sketch).multiplyScalar(absDistance / 2));
-    } else if (effectiveDirection === 'reverse') {
-      m.position.sub(GeometryEngine.getSketchExtrudeNormal(sketch).multiplyScalar(absDistance));
-    }
     return m;
-  }, [sketch, absDistance, effectiveDirection, isCut]);
+  }, [sketch, absDistance, effectiveDirection, taperAngle, effectiveOffset, distance2, isCut]);
 
   useEffect(() => {
     return () => { mesh?.geometry.dispose(); };

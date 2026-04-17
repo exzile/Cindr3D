@@ -11,13 +11,7 @@ SDK CORRECTNESS AUDIT — HIGH SEVERITY
 These are correctness bugs: either DesignCAD stores data in a way that can't round-trip
 Fusion 360 semantics, or user-visible behavior differs from Fusion. Verified against SDK
 headers at C:\Users\joeyp\AppData\Local\Autodesk\webdeploy\production\ca305acf3852cfce8e837ee5435adf649bc398ca\CPP\include\Fusion\.
-
-[x] CORR-1. Linear dimensions missing orientation type. Fixed: DimensionOrientation type
-            added to SketchDimension, SketchDimensionPanel has orientation select, and
-            SketchDimensionAnnotations.tsx now passes dim.orientation to computeLinearDimension.
-
-[x] CORR-2. Extrude missing Two-Sides asymmetric extent. Fixed: 'two-sides' direction added
-            to ExtrudePanel with separate Side 1 / Side 2 distance inputs.
+ 
 
 [ ] CORR-3. Fillet missing Variable-Radius and Chord-Length types as proper edge-sets.
             SDK `FilletFeatureInput.h` distinguishes ConstantRadiusEdgeSet,
@@ -52,12 +46,7 @@ SDK CORRECTNESS AUDIT — MEDIUM SEVERITY
             `areConstraintsShown` as per-sketch properties. DesignCAD has
             GLOBAL toggles in SketchPalette instead — every sketch shares the
             same display settings. FIX: move these flags to the Sketch type so
-            settings persist per sketch.
-
-[x] CORR-7. `Sketch.isComputeDeferred` missing. Fixed: `sketchComputeDeferred` flag
-            added to cadStore; auto-solve calls in addSketchConstraint/addSketchDimension
-            check the flag; "Defer Solve" checkbox added to SketchPalette.
-
+            settings persist per sketch. 
 [ ] CORR-8. Extrude `StartExtent` variants incomplete. SDK supports
             `ProfilePlaneStartDefinition`, `OffsetStartDefinition`,
             `EntityStartDefinition` (start from a face/plane/sketch point).
@@ -74,26 +63,17 @@ SDK CORRECTNESS AUDIT — MEDIUM SEVERITY
 [ ] CORR-10. Revolve `isProjectAxis` missing. SDK flag controls whether the
              rotation axis is projected to the profile plane or used at its
              original 3D location. DesignCAD always uses the axis as-is.
-             Can produce wrong revolve center when axis is skew to the sketch.
-
-[x] CORR-11. Fillet `isG2` (curvature continuity) not exposed. Fixed: isG2 checkbox
-             added to FilletDialog; FilletParams.isG2 typed and passed through.
-
+             Can produce wrong revolve center when axis is skew to the sketch. 
 [ ] CORR-12. Fillet `isRollingBallCorner` missing. SDK flag for corner
              setback solution method. Small niche but changes how fillets
              meet at vertices.
-
-[x] CORR-13. Hole `tipAngle` default not 118°. Fixed: drillAngle defaults to 118 in
-             HoleDialog, clamped to [60, 150] on change.
+              
 
 [ ] CORR-14. Hole `participantBodies` missing. SDK lets the hole feature
              declare which bodies the cut applies to; others pass through.
              DesignCAD cuts all visible bodies. FIX: add an optional
              participantBodies selector; default keeps current behaviour.
-
-[x] CORR-15. Component missing origin entities. Fixed: OriginFolder sub-component
-             in ComponentNode.tsx now renders collapsible tree with origin point,
-             X/Y/Z axes (color-coded), and XY/XZ/YZ planes.
+              
 
 [ ] CORR-16. Construction collections not exposed on Component. SDK Component
              has `constructionPlanes`, `constructionAxes`, `constructionPoints`
@@ -136,9 +116,7 @@ imports meshes and has the tessellate feature.
 
 ═══════════════════════════════════════════════════════════════
 TIMELINE — BEHAVIOR GAPS
-═══════════════════════════════════════════════════════════════
-[x] TL-1. Timeline navigation buttons — Previous / Next / Beginning / End controls
-          added using rollbackIndex; chevron nav buttons in timeline header.
+═══════════════════════════════════════════════════════════════ 
 [ ] TL-2. Timeline play/record — animate feature creation chronologically.
           (Fusion: `Timeline.playFromBeginning()`.) Low priority but useful
           for design reviews.
@@ -147,29 +125,7 @@ TIMELINE — BEHAVIOR GAPS
 
 ═══════════════════════════════════════════════════════════════
 CONTEXT MENUS — COMPLETED ✓
-═══════════════════════════════════════════════════════════════
-[x] CTX-1. Viewport right-click context menu — Undo/Redo, Select, Measure, New Sketch,
-           Show All Bodies, Isolate, Look At. Sketch mode shows Finish Sketch.
-[x] CTX-2. Feature timeline context menu — Edit, Rename, Suppress/Unsuppress,
-           Roll Back To Here, Group Selected, Delete.
-[x] CTX-3. Body context menu — Isolate, Show All Bodies wired up (was coming-soon stubs).
-[x] CTX-4. Sketch context menu — Look At (orients camera to sketch plane normal).
-           alert() calls replaced with setStatusMessage throughout.
-[x] CTX-5. Added renameFeature() action to cadStore.
-[x] CTX-6. Added isolateBody() / showAllBodies() actions to componentStore.
-[x] CTX-7. Body context menu — Opacity Control: inline slider in context menu, expands
-           in-place; Body.opacity field; ExtrudedBodies applies display opacity multiplier.
-[x] CTX-8. Body context menu — Save As Mesh: MeshExporter R3F component watches store
-           trigger, exports to STL (sync) or GLB (async) via three.js exporters.
-[x] CTX-9. Body context menu — Selectable/Unselectable toggle: dynamic label shows
-           current state; ExtrudedBodies sets userData.pickable = false when unselectable.
-[x] CTX-10. Sketch context menu — Show/Hide wired to toggleFeatureVisibility on the
-            sketch's linked feature; label/icon dynamically reflect current state.
-[x] CTX-11. Sketch context menu — Hide Profile / Hide Projected Geometries / Hide
-            Construction Geometries now call global store setters (not stubs).
-[x] CTX-12. Feature timeline context menu — Move to Group: submenu lists existing groups;
-            moveFeatureToGroup action added to cadStore; Remove from Group option shown
-            when feature is already grouped.
+═══════════════════════════════════════════════════════════════ 
 [ ] CTX-13. Viewport context menu — Look At Face (pick face in viewport and orient camera).
 
 ═══════════════════════════════════════════════════════════════
@@ -207,94 +163,28 @@ SDK AUDIT — FEATURE PARAMETER GAPS
                     DistanceOnPath, TwoEdges, ThreePoints (10+ missing types).
             Axes: NormalToFaceAtPoint (missing dedicated tool).
             Currently only ~3 plane tools and ~5 axis tools implemented vs 13/11 in SDK.
-
-[x] SDK-11. Extrude — two-sided/asymmetric extent. Fixed via CORR-2: 'two-sides' direction
-            in ExtrudePanel with separate Side 1 / Side 2 distance inputs.
+             
 
 [ ] SDK-12. Extrude — confined faces mode (limit extrude to stay within bounding faces).
-
-═══════════════════════════════════════════════════════════════
-SOLID AUDIT — BUG FIXES
-═══════════════════════════════════════════════════════════════
-[x] SOL-B1. Emboss/Deboss type mismatch — Fixed: 'emboss' already in FeatureType union;
-            EmbossDialog stores type 'emboss'; Timeline icon case added.
-
-[x] SOL-B2. Pipe type mismatch — Fixed: 'pipe' already in FeatureType union;
-            PipeDialog stores type 'pipe'; Timeline icon case added.
-
-[x] SOL-B3. Boundary Fill type mismatch — Fixed: 'boundary-fill' already in FeatureType
-            union; BoundaryFillDialog stores type 'boundary-fill'; Timeline icon added.
-
-
-═══════════════════════════════════════════════════════════════
-SOLID AUDIT — INCOMPLETE IMPLEMENTATIONS
-═══════════════════════════════════════════════════════════════
-[x] SOL-I1. Fillet — "Full Round" mode added (FullRoundFilletEdgeSet). FilletMode type
-            ('constant' | 'variable' | 'full-round'); mode select replaces variable checkbox.
-
-[x] SOL-I2. Shell — face selection UI wired up via ShellFacePicker R3F component;
-            ShellDialog shows face chips with per-face remove buttons.
-
-[x] SOL-I3. Draft — Parting Line mode face picker wired via DraftPartingLinePicker R3F
-            component; DraftDialog shows face chip and uses face normal as pull axis.
-
-[x] SOL-I4. Hole — ISO/ANSI/NPT size preset lookup integrated via HoleSizePresets.ts;
-            Standard + Size dropdowns in HoleDialog auto-populate diameter and pitch.
-
-[x] SOL-I5. Remove Face — general face picker wired via RemoveFacePicker R3F component;
-            RemoveFaceDialog shows face chip; passthrough overlay for viewport picking.
-
-[x] SOL-I6. Chamfer — "Three Face" mode added (ThreeEdgeChamferEdge); ChamferMode union
-            extended; dialog hides distance inputs and shows hint in three-face mode.
-
-[x] SOL-I7. Shell — "Individual Face Offsets" mode added; shellFaceThicknesses store state;
-            FaceRow sub-component shows per-face thickness input when mode is active.
-
-[x] SOL-I8. Rib/Web — "Fill All Enclosed Faces" and "Preserve Corners" toggles added to
-            RibDialog; both stored in feature params.
-
-[x] SOL-I9. Thread — ThreadSizePresets.ts with ISO/ANSI/NPT tables; ThreadDialog auto-
-            populates diameter, pitch, class on standard/designation change; pitch validation.
-
-
+ 
+  
 ═══════════════════════════════════════════════════════════════
 SOLID AUDIT — MISSING FEATURES
-═══════════════════════════════════════════════════════════════
-[x] SOL-M1. Rectangular Pattern (3D) — RectangularPatternDialog added with dual-direction
-            axis presets and count/spacing grid; wired in App.tsx, Toolbar, RibbonManageTab.
-
-[x] SOL-M2. Circular Pattern (3D) — CircularPatternDialog exists; wired in App.tsx and
-            RibbonManageTab toolbar.
-
-[x] SOL-M3. Mirror Feature (3D) — MirrorDialog exists; wired in App.tsx and RibbonManageTab.
-
-[x] SOL-M4. Move/Copy Body — MoveBodyDialog exists; wired in App.tsx and RibbonSolidTab.
+═══════════════════════════════════════════════════════════════ 
 
 [ ] SOL-M5. Coil — helix/coil generator (CoilFeatureInput in SDK). Parameters: pitch, height,
             coil type (pitch-height / pitch-revolutions / height-revolutions / spiral),
             coil section (circle / square / triangle / custom profile). (hard)
-
-[x] SOL-M6. Thicken — ThickenDialog exists; wired in App.tsx and RibbonSurfaceTab.
-
+             
 [ ] SOL-M7. Stitch — merge surface bodies into a single quilt or closed solid. (medium —
             deferred until surface workflow is complete)
 
 [ ] SOL-M8. Unstitch — split a stitched surface back into individual faces. (medium — deferred)
 
 [ ] SOL-M9. Extend Surface — extend surface edges by distance or to another body. (medium)
-
-[x] SOL-M10. Reverse Normal — exists; wired in toolbar.
-
+ 
 [ ] SOL-M11. Path Pattern — pattern features/bodies along a sketch path. (hard)
-
-
-═══════════════════════════════════════════════════════════════
-SOLID AUDIT — TOOLBAR GAPS
-═══════════════════════════════════════════════════════════════
-[x] SOL-T1. Added ribbon buttons for: Draft, Rib, Thread, Emboss (RibbonSolidTab CREATE);
-            Offset Face, Move Body, Mirror, Pattern (RibbonSolidTab MODIFY).
-
-
+ 
 ═══════════════════════════════════════════════════════════════
 SKETCH AUDIT — GAPS
 ═══════════════════════════════════════════════════════════════
@@ -304,27 +194,12 @@ SKETCH AUDIT — GAPS
 
 [ ] SK-A2. Pattern on Path — sketch pattern along an arbitrary sketch curve (Fusion:
            SketchPathPattern). Parameters: entities, path curve, count, spacing type. (medium)
-
-[x] SK-A3. Reference Dimensions — "driven" toggle in SketchDimensionPanel; dimensionDrivenMode
-           store state; new dimensions created with driven flag when checked.
+            
 
 [ ] SK-A4. Over-Constraint / Redundant Constraint Visual Feedback — highlight conflicting
            constraints red in SketchConstraintOverlay; show status badge in sketch palette
            when over-constrained. (medium)
-
-[x] SK-A5. Multi-line Sketch Text — textarea with rows=3; lineCount display; uses
-           sketch-palette-row--col layout; sketch-palette-textarea CSS class.
-
-[x] SK-A6. Text Formatting — font family select (default/sans/serif/mono/cursive) and
-           Bold/Italic toggle buttons in SketchTextPanel; fontPathToSegments applies
-           italic shear transform; bold/italic stored and wired to SketchInteraction.
-
-[x] SK-A7. Show/Hide Construction Geometry toggle — "Construction Geom." checkbox in
-           SketchPalette; showConstructionGeometries store state.
-
-[x] SK-A8. Dimension Tolerance — tolerance mode select (None/Symmetric/Deviation) in
-           SketchDimensionPanel; toleranceUpper/toleranceLower stored on SketchDimension;
-           wired into SketchInteraction for all dimension placement calls.
+            
 
 [ ] SK-A9. Offset Constraint — parametric offset between two parallel edges/curves as a
            geometric constraint (separate from the offset-curves tool). (medium — deferred)
@@ -355,3 +230,159 @@ SKETCH SECOND AUDIT GAPS
          becomes a local copy. Related to D195 Derive (deferred) and A13 Insert Component.
          isLinked:true flag exists on Component type but no Make Independent UI or action.
          (medium — blocked until external reference loading is real)
+
+
+═══════════════════════════════════════════════════════════════
+EXTRUDE AUDIT — SDK GAPS (found 2026-04-17)
+═══════════════════════════════════════════════════════════════
+Findings from auditing ExtrudeFeatureInput.h, ExtentDefinition subclasses, and
+FusionTypeDefs.h against ExtrudePanel.tsx / commitExtrude / ExtrudedBodies CSG.
+
+─── CRITICAL (operations wired in UI but not handled) ──────────
+[x] EX-1. 'intersect' operation (IntersectFeatureOperation) — Fixed: added
+          csgIntersect branch in ExtrudedBodies CSG loop.
+
+[x] EX-2. 'new-component' operation (NewComponentFeatureOperation) — Fixed:
+          commitExtrude now creates child component + body via componentStore.
+
+─── HIGH (missing SDK features) ────────────────────────────────
+[ ] EX-3. To Object extent (ToEntityExtentDefinition) — terminate extrude at a
+          picked face / plane / vertex / body. SDK has matchShape (extends
+          to-entity to fully intersect) and isChained (follow chain of connected
+          faces). We only have 'distance' and 'all'. Reuse useFacePicker.
+
+[ ] EX-4. From Entity start (FromEntityStartDefinition) — start extrude from a
+          picked entity (face / plane / vertex), not just profile plane or
+          offset. Pairs with EX-3 picker infrastructure.
+
+[x] EX-5. Symmetric isFullLength toggle — Fixed: extrudeSymmetricFullLength
+          store flag + Full Length checkbox in ExtrudePanel; commitExtrude
+          halves the stored distance when the flag is set.
+
+[ ] EX-6. Independent taper per side (taperAngleOne / taperAngleTwo) — two-sided
+          extrude with different taper per side. Currently single taperAngle
+          applied identically to both sides in buildExtrudeFeatureMesh.
+
+[ ] EX-7. Thin extrude — independent wall location per side
+          (thinExtrudeWallLocationOne/Two). Different side location for each
+          side of two-sided thin extrude. (Already tracked as CORR-9.)
+
+[ ] EX-8. Thin extrude — independent thickness per side
+          (thinExtrudeWallThicknessOne/Two). Different thickness per side.
+
+[ ] EX-9. Extrude participantBodies — when cut/intersect, restrict which bodies
+          the boolean applies to; others pass through. Currently cut always
+          applies to everything upstream. Unify with CORR-14 (Hole) as one
+          shared ParticipantBodyPicker component.
+
+─── MEDIUM (missing runtime/UX) ────────────────────────────────
+[ ] EX-10. Two-sides with mixed extent types — setTwoSidesExtent takes two
+           independent ExtentDefinition objects. Fusion allows Side 1 = Distance
+           and Side 2 = To Face simultaneously. Ours is distance+distance only.
+
+[ ] EX-11. Mixed profile + planar face selection in one extrude — SDK accepts
+           an ObjectCollection containing both as long as co-planar. DesignCAD
+           has separate sketch-profile path and press-pull face path; they
+           can't be mixed within a single feature.
+
+[ ] EX-12. directionHint for setOneSideToExtent — disambiguates direction when
+           the "to" entity can be hit both ways (e.g. hole cylinder). Only
+           relevant once EX-3 is done.
+
+[ ] EX-13. Profile re-selection on committed extrude — ExtrudeFeature.profile()
+           setter in SDK. Edit flow should expose profile swap. Currently edit
+           lets you change numbers but not reselect sketches/profiles.
+
+[ ] EX-14. Taper angle geometric validation — Fusion validates that taper
+           doesn't collapse the profile at the far end and errors out.
+           DesignCAD silently produces self-intersecting geom at extreme angles.
+
+─── LOW ────────────────────────────────────────────────────────
+[ ] EX-15. creationOccurrence — SDK param for the occurrence context when the
+           profile lives in another component. Blocked behind CORR-4.
+
+[ ] EX-16. targetBaseFeature — direct-modeling edit mode. Niche.
+
+[ ] EX-17. startFaces / endFaces / sideFaces queries — post-creation API to
+           grab the BRep faces the extrude generated. Needed for downstream
+           face-reference tools. No face-query API on features today.
+
+
+═══════════════════════════════════════════════════════════════
+NAV BAR AUDIT — CANVAS CONTROLS (found 2026-04-17)
+═══════════════════════════════════════════════════════════════
+Findings from comparing Fusion 360's Navigation Bar against CanvasControls.tsx
+and DisplaySettingsPanel. <CanvasControls /> in Viewport.tsx:390 is mounted with
+NO props → every nav callback is undefined.
+
+─── TIER 0 — buttons render but do nothing ─────────────────────
+[x] NAV-1. Orbit button — Fixed: cameraNavMode store flag; CanvasControls
+           sets mode; OrbitControls LEFT button swaps accordingly.
+
+[x] NAV-2. Pan button — Fixed: cameraNavMode='pan' maps LEFT to MOUSE.PAN.
+
+[x] NAV-3. Zoom button — Fixed: cameraNavMode='zoom' maps LEFT to MOUSE.DOLLY.
+
+[x] NAV-4. Zoom to Fit button — Fixed: triggerZoomToFit counter; CameraController
+           traverses scene Box3 and repositions camera to frame bounding sphere.
+
+[ ] NAV-5. Zoom Window button — cameraNavMode='zoom-window' is stored but
+           the marquee-drag zoom behaviour is not yet implemented.
+
+[ ] NAV-6. Look At button — cameraNavMode='look-at' is stored but the
+           face-pick → camera reorient behaviour is not yet implemented.
+           Related to CTX-13.
+
+[x] NAV-10. Visual Style — Fixed: VisualStyleEffect R3F component applies
+            scene.overrideMaterial for wireframe / hiddenLines modes;
+            shaded / shadedEdges clear the override.
+
+─── TIER 1 — silently-broken (writes but not read) ─────────────
+[ ] NAV-7. Grid Lock — writes gridLocked, nothing reads it. Should prevent
+           sketch tools from snapping into/out of the grid.
+
+[ ] NAV-8. Incremental Move — writes incrementalMove, nothing reads it.
+           Move/Rotate gizmos should snap to discrete steps when enabled.
+
+[ ] NAV-9. Move/Rotate Increments popover — writes moveIncrement,
+           rotateIncrement, nothing reads them. Needed for NAV-8.
+
+[ ] NAV-11. Reflections checkbox — writes showReflections, nothing reads it.
+            No reflection pass exists. Either remove or implement.
+
+─── TIER 2 — missing Fusion features ───────────────────────────
+[ ] NAV-19. Viewports / multi-view split — Fusion nav bar has a "Viewports"
+            button to split canvas into 1/2/4 orthographic views. Single
+            viewport only today. (big effort, defer)
+
+[ ] NAV-20. Perspective / Orthographic / Perspective-with-Ortho-Faces camera
+            toggle — lives inside Display Settings in Fusion. Camera is
+            hardcoded in CameraController today. Easy win.
+
+[ ] NAV-21. Ambient Occlusion toggle — separate Effects checkbox in Fusion.
+            No SSAO pass in DesignCAD.
+
+[ ] NAV-22. Environment preset picker — Fusion lets you choose among ~12
+            HDRIs (Studio, Grey Room, Warm Light, etc.). Always 'studio'
+            today. Easy: expose the preset prop on <Environment>.
+
+[ ] NAV-23. Object Visibility submenu — Fusion toggles per-entity-type
+            visibility from the nav bar (Bodies / Components / Sketches /
+            Construction / Origins / Joints / Threads). Currently scattered
+            across ComponentTree + SketchPalette; no central display-filter.
+
+[ ] NAV-24. Object Snaps (endpoint / midpoint / center / intersection /
+            perpendicular / tangent) — separate snap category from grid snap,
+            each with its own toggle and visual snap indicators. We only have
+            grid snap; no geometric snap system. (medium — high user value)
+
+[ ] NAV-25. Effects → Ground Plane Offset — numeric offset to raise/lower
+            the shadow plane. Hardcoded Y=0 today.
+
+[ ] NAV-26. Display → Shadow Softness slider — penumbra width control.
+            Shadows are hardcoded today.
+
+[ ] NAV-27. Look At generalization — Fusion's Look At accepts any planar
+            entity (sketch / plane / edge / face). We have it only in the
+            sketch context menu + viewport context menu (CTX-13 open); nav
+            bar version is dead (see NAV-6).

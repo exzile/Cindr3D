@@ -176,7 +176,7 @@ export default function ExtrudedBodies() {
       const toolGeom = GeometryEngine.bakeMeshWorldGeometry(toolMesh);
       toolMesh.geometry.dispose();
 
-      const op = (feature.params.operation as 'new-body' | 'join' | 'cut') ?? 'new-body';
+      const op = (feature.params.operation as 'new-body' | 'join' | 'cut' | 'intersect') ?? 'new-body';
 
       if (!currentGeom || op === 'new-body') {
         commitCurrent();
@@ -193,13 +193,36 @@ export default function ExtrudedBodies() {
         currentGeom = next;
         currentFeatureId = feature.id;
         currentComponentId = feature.componentId;
-      } else if (op === 'join') {
-        const next = GeometryEngine.csgUnion(currentGeom, toolGeom);
+      } else if (op === 'intersect') {
+        const next = GeometryEngine.csgIntersect(currentGeom, toolGeom);
         currentGeom.dispose();
         toolGeom.dispose();
         currentGeom = next;
         currentFeatureId = feature.id;
         currentComponentId = feature.componentId;
+      } else if (op === 'join') {
+        // Fusion 360 parity: only merge bodies that actually overlap.
+        // If the join geometry doesn't intersect the current body (e.g. an
+        // offset extrusion floating in space), start a new separate body.
+        const boxCurrent = new THREE.Box3().setFromBufferAttribute(
+          currentGeom.attributes.position as THREE.BufferAttribute,
+        );
+        const boxTool = new THREE.Box3().setFromBufferAttribute(
+          toolGeom.attributes.position as THREE.BufferAttribute,
+        );
+        if (!boxCurrent.intersectsBox(boxTool)) {
+          commitCurrent();
+          currentGeom = toolGeom;
+          currentFeatureId = feature.id;
+          currentComponentId = feature.componentId;
+        } else {
+          const next = GeometryEngine.csgUnion(currentGeom, toolGeom);
+          currentGeom.dispose();
+          toolGeom.dispose();
+          currentGeom = next;
+          currentFeatureId = feature.id;
+          currentComponentId = feature.componentId;
+        }
       }
     }
     commitCurrent();
