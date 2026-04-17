@@ -26,6 +26,7 @@ import SketchPatternPanel from './SketchPatternPanel';
 import SketchTransformPanel from './SketchTransformPanel';
 import SketchMirrorPanel from './SketchMirrorPanel';
 import SceneTheme from './scene/SceneTheme';
+import VisualStyleEffect from './scene/VisualStyleEffect';
 import SliceEffect from './scene/SliceEffect';
 import SketchRenderer from './scene/SketchRenderer';
 import SketchConstraintOverlay from './scene/SketchConstraintOverlay';
@@ -253,6 +254,8 @@ export default function Viewport() {
       >
         {/* Sync scene background with theme */}
         <SceneTheme />
+        {/* NAV-10: visual style rendering override */}
+        <VisualStyleEffect />
         {/* D54 Slice clipping plane */}
         <SliceEffect />
 
