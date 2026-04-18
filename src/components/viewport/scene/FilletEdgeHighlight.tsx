@@ -4,9 +4,9 @@
  * edges on hover (blue) and add them to filletEdgeIds on click (orange).
  */
 
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import * as THREE from 'three';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { useCADStore } from '../../../store/cadStore';
 import { useEdgePicker, type EdgePickResult } from '../../../hooks/useEdgePicker';
 
@@ -49,6 +49,29 @@ export default function FilletEdgeHighlight() {
   // Selected edge lines: map from edgeId -> { line, edgeVertA, edgeVertB }
   const selectedLinesRef = useRef<Map<string, THREE.Line>>(new Map());
   const selectedEdgesDataRef = useRef<Map<string, { a: THREE.Vector3; b: THREE.Vector3 }>>(new Map());
+
+  // Unmount cleanup — see ChamferEdgeHighlight for the same pattern + reasoning.
+  // Round 3 fixed disabled-branch leaks; round 5 caught that unmount-while-
+  // enabled still strands the hover line + every selected-edge highlight.
+  const { scene: _scene } = useThree();
+  useEffect(() => {
+    const sceneRef = _scene;
+    return () => {
+      if (hoverLineRef.current) {
+        sceneRef.remove(hoverLineRef.current);
+        hoverLineRef.current.geometry.dispose();
+        hoverLineRef.current = null;
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      selectedLinesRef.current.forEach((line) => {
+        sceneRef.remove(line);
+        line.geometry.dispose();
+      });
+      selectedLinesRef.current.clear();
+      selectedEdgesDataRef.current.clear();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleHover = useCallback((result: EdgePickResult | null) => {
     hoverResultRef.current = result;

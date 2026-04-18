@@ -36,6 +36,9 @@ function BuildPlateGrid({ sizeX, sizeY }: { sizeX: number; sizeY: number }) {
 
 function BuildVolumeWireframe({ x, y, z }: { x: number; y: number; z: number }) {
   const geo = useMemo(() => new THREE.BoxGeometry(x, y, z), [x, y, z]);
+  // Dispose the prior BoxGeometry on volume resize / unmount. Without this
+  // every print-bed dimension change leaks one BoxGeometry to the GPU.
+  useEffect(() => () => { geo.dispose(); }, [geo]);
   return (
     <mesh position={[x / 2, y / 2, z / 2]}>
       <boxGeometry args={[x, y, z]} />

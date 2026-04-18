@@ -2057,6 +2057,16 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Mesh Transform: feature is not a mesh');
       return;
     }
+    // Validate inputs before mutating — scale=0 collapses the mesh permanently
+    // and there's no rollback path. NaN/Infinity rotations propagate into
+    // the geometry and corrupt every downstream raycast.
+    const finite = (v: number) => Number.isFinite(v);
+    if (!finite(params.tx) || !finite(params.ty) || !finite(params.tz) ||
+        !finite(params.rx) || !finite(params.ry) || !finite(params.rz) ||
+        !finite(params.scale) || params.scale === 0) {
+      get().setStatusMessage('Mesh Transform: invalid params (translate/rotate must be finite, scale != 0)');
+      return;
+    }
     const newMesh = GeometryEngine.transformMesh(srcMesh, params);
     newMesh.castShadow = true;
     newMesh.receiveShadow = true;
@@ -2080,6 +2090,12 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     const srcMesh = feature.mesh as THREE.Mesh;
     if (!(srcMesh instanceof THREE.Mesh)) {
       get().setStatusMessage('Scale: feature is not a mesh');
+      return;
+    }
+    // Validate before mutating — any zero axis flattens the mesh permanently.
+    if (!Number.isFinite(sx) || !Number.isFinite(sy) || !Number.isFinite(sz) ||
+        sx === 0 || sy === 0 || sz === 0) {
+      get().setStatusMessage('Scale: factors must be finite and non-zero');
       return;
     }
     const newMesh = GeometryEngine.scaleMesh(srcMesh, sx, sy, sz);
@@ -2107,12 +2123,20 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     const tgtMesh = targetFeature.mesh as THREE.Mesh;
     const toolMesh = toolFeature.mesh as THREE.Mesh;
     let resultGeom: THREE.BufferGeometry;
-    if (operation === 'join') {
-      resultGeom = GeometryEngine.csgUnion(tgtMesh.geometry, toolMesh.geometry);
-    } else if (operation === 'cut') {
-      resultGeom = GeometryEngine.csgSubtract(tgtMesh.geometry, toolMesh.geometry);
-    } else {
-      resultGeom = GeometryEngine.csgIntersect(tgtMesh.geometry, toolMesh.geometry);
+    // CSG can throw on degenerate / non-manifold inputs. Catch + report so
+    // the user gets a status message instead of a silent broken state, and
+    // the partially-built result (if any) doesn't end up in the scene.
+    try {
+      if (operation === 'join') {
+        resultGeom = GeometryEngine.csgUnion(tgtMesh.geometry, toolMesh.geometry);
+      } else if (operation === 'cut') {
+        resultGeom = GeometryEngine.csgSubtract(tgtMesh.geometry, toolMesh.geometry);
+      } else {
+        resultGeom = GeometryEngine.csgIntersect(tgtMesh.geometry, toolMesh.geometry);
+      }
+    } catch (err) {
+      get().setStatusMessage(`Combine (${operation}) failed: ${(err as Error)?.message ?? 'unknown CSG error'}`);
+      return;
     }
     const newMesh = new THREE.Mesh(resultGeom, tgtMesh.material);
     newMesh.castShadow = true;
@@ -5471,7 +5495,12 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
         featureGroups: parsed.featureGroups,
         statusMessage: 'Undo',
       });
-    } catch { /* malformed snapshot — silently skip */ }
+    } catch {
+      // Malformed snapshot — POP it so the next undo doesn't hit the same
+      // broken entry forever. Without `set({ undoStack: stack })` the failed
+      // pop above is undone for the next call.
+      set({ undoStack: stack, statusMessage: 'Undo: corrupted snapshot skipped' });
+    }
   },
 
   redo: () => {
@@ -5500,7 +5529,10 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
         featureGroups: parsed.featureGroups,
         statusMessage: 'Redo',
       });
-    } catch { /* malformed snapshot — silently skip */ }
+    } catch {
+      // Malformed snapshot — pop it so the user can keep redoing past it.
+      set({ redoStack: stack, statusMessage: 'Redo: corrupted snapshot skipped' });
+    }
   },
 
   // ── SLD7 — Linear Pattern ─────────────────────────────────────────────────
@@ -5863,6 +5895,14 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   // ── SLD5 — Thread (cosmetic helix) ───────────────────────────────────────
   commitThread: (featureId, radius, pitch, length) => {
     const { features } = get();
+    // Guard against degenerate inputs — pitch=0 spins forever in
+    // createCosmeticThread (the helix step depends on `length / pitch` turns),
+    // and non-finite/zero radius+length silently produce empty / NaN geometry.
+    if (!Number.isFinite(radius) || !Number.isFinite(pitch) || !Number.isFinite(length)
+        || radius <= 0 || pitch <= 0 || length <= 0) {
+      get().setStatusMessage(`Thread: radius / pitch / length must all be positive finite numbers`);
+      return;
+    }
     const helixGeom = GeometryEngine.createCosmeticThread(radius, pitch, length);
     const lineMesh = new THREE.Line(helixGeom, new THREE.LineBasicMaterial({ color: 0x888888 }));
     // Find existing feature and attach helix as overlay (new feature referencing it)
@@ -5947,6 +5987,10 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Shell: no mesh found for selected feature');
       return;
     }
+    if (!Number.isFinite(thickness) || thickness <= 0) {
+      get().setStatusMessage('Shell: thickness must be a positive finite number');
+      return;
+    }
     const result = GeometryEngine.shellMesh(srcMesh, thickness, direction);
     result.castShadow = true;
     result.receiveShadow = true;
@@ -5968,6 +6012,11 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Draft: no mesh found for selected feature');
       return;
     }
+    // 90° collapses the geometry; >=90° produces a degenerate mesh.
+    if (!Number.isFinite(draftAngle) || Math.abs(draftAngle) >= 90) {
+      get().setStatusMessage('Draft: angle must be finite and within (-90°, 90°)');
+      return;
+    }
     const result = GeometryEngine.draftMesh(srcMesh, pullAxisDir, draftAngle, fixedPlaneY);
     result.castShadow = true;
     result.receiveShadow = true;
@@ -5987,6 +6036,10 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     const srcMesh = srcFeature?.mesh as THREE.Mesh | undefined;
     if (!srcFeature || !srcMesh?.isMesh) {
       get().setStatusMessage('Offset Face: no mesh found for selected feature');
+      return;
+    }
+    if (!Number.isFinite(distance)) {
+      get().setStatusMessage('Offset Face: distance must be a finite number');
       return;
     }
     const offsetGeom = GeometryEngine.offsetSurface(srcMesh, distance);

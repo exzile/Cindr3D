@@ -4,9 +4,9 @@
  * edges on hover (blue) and add them to chamferEdgeIds on click (yellow-green).
  */
 
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import * as THREE from 'three';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { useCADStore } from '../../../store/cadStore';
 import { useEdgePicker, type EdgePickResult } from '../../../hooks/useEdgePicker';
 
@@ -47,6 +47,32 @@ export default function ChamferEdgeHighlight() {
 
   const selectedLinesRef = useRef<Map<string, THREE.Line>>(new Map());
   const selectedEdgesDataRef = useRef<Map<string, { a: THREE.Vector3; b: THREE.Vector3 }>>(new Map());
+
+  // Unmount cleanup — useFrame's `!enabled` branch only fires while the
+  // component is still mounted. If the parent dialog/route unmounts while
+  // enabled is still true (HMR, route swap, viewport teardown) the hover
+  // line + every selected-edge highlight stays orphaned in the scene with
+  // un-disposed BufferGeometries. usePickerSceneCleanup doesn't fit here
+  // because selectedLinesRef holds a Map, so do it inline.
+  const { scene: _scene } = useThree();
+  useEffect(() => {
+    const sceneRef = _scene;
+    return () => {
+      if (hoverLineRef.current) {
+        sceneRef.remove(hoverLineRef.current);
+        hoverLineRef.current.geometry.dispose();
+        hoverLineRef.current = null;
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      selectedLinesRef.current.forEach((line) => {
+        sceneRef.remove(line);
+        line.geometry.dispose();
+      });
+      selectedLinesRef.current.clear();
+      selectedEdgesDataRef.current.clear();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleHover = useCallback((result: EdgePickResult | null) => {
     hoverResultRef.current = result;

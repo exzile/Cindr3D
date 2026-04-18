@@ -35,12 +35,14 @@ function RevolveItem({ feature, sketch }: { feature: Feature; sketch: Sketch | u
     if (!sketch) return null;
     const m = GeometryEngine.revolveSketch(sketch, angle, axis);
     if (!m) return null;
-    // LatheGeometry revolves around local +Y. Post-rotate so lathe-Y aligns with world axis.
-    if (axisKey === 'X') m.rotation.set(0, 0, -Math.PI / 2);
-    else if (axisKey === 'Z') m.rotation.set(Math.PI / 2, 0, 0);
+    // NOTE: round-4 axis fix — `revolveSketch` now applies the lathe→axis
+    // rotation INTERNALLY (rotates the BufferGeometry so +Y aligns with `axis`).
+    // The previous post-rotate-the-mesh path here was correct only when the
+    // engine ignored the axis. Adding it now would compose with the engine's
+    // rotation and double-flip X/Z revolves — drop it entirely.
     m.material = isSurface ? SURFACE_MATERIAL : BODY_MATERIAL;
     return m;
-  }, [isFaceRevolve, feature.params.faceBoundary, sketch, angle, axis, axisKey, isSurface]);
+  }, [isFaceRevolve, feature.params.faceBoundary, sketch, angle, axis, isSurface]);
   useEffect(() => {
     /* eslint-disable react-hooks/immutability -- Three.js userData for raycasting */
     if (mesh) {

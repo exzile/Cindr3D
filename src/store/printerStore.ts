@@ -143,6 +143,7 @@ interface PrinterStore {
   // Speed/extrusion overrides
   setSpeedFactor: (percent: number) => Promise<void>;
   setExtrusionFactor: (extruder: number, percent: number) => Promise<void>;
+  setGlobalFlowFactor: (percent: number) => Promise<void>;
 
   // Fan
   setFanSpeed: (fan: number, speed: number) => Promise<void>;
@@ -537,6 +538,16 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
       await service.sendGCode(`M221 D${extruder} S${percent}`);
     } catch (err) {
       set({ error: `Failed to set extrusion factor: ${(err as Error).message}` });
+    }
+  },
+
+  setGlobalFlowFactor: async (percent) => {
+    const { service } = get();
+    if (!service) return;
+    try {
+      await service.sendGCode(`M221 D-1 S${percent}`);
+    } catch (err) {
+      set({ error: `Failed to set global flow factor: ${(err as Error).message}` });
     }
   },
 

@@ -12,14 +12,20 @@ export default function SpeedFlowPanel() {
   const model = usePrinterStore((s) => s.model);
   const setSpeedFactor = usePrinterStore((s) => s.setSpeedFactor);
   const setExtrusionFactor = usePrinterStore((s) => s.setExtrusionFactor);
+  const setGlobalFlowFactor = usePrinterStore((s) => s.setGlobalFlowFactor);
 
   const speedFactor = model.move?.speedFactor ?? 1;
   const extruders = model.move?.extruders ?? [];
 
+  // Use the first extruder's factor as the display value for global flow
+  const globalFlowFactor = extruders[0]?.factor ?? 1;
+
   const [speedInput, setSpeedInput] = useState<string>('');
+  const [flowInput, setFlowInput] = useState<string>('');
   const [extFactors, setExtFactors] = useState<Record<number, string>>({});
 
   const currentSpeedPct = Math.round(speedFactor * 100);
+  const currentFlowPct = Math.round(globalFlowFactor * 100);
 
   return (
     <div style={panelStyle()}>
@@ -47,6 +53,31 @@ export default function SpeedFlowPanel() {
             onChange={(e) => setSpeedInput(e.target.value)}
             onBlur={() => { if (speedInput !== '') { setSpeedFactor(Number(speedInput)); setSpeedInput(''); } }}
             onKeyDown={(e) => { if (e.key === 'Enter' && speedInput !== '') { setSpeedFactor(Number(speedInput)); setSpeedInput(''); } }}
+          />
+          <span className="duet-dash-slider-unit">%</span>
+        </div>
+      </div>
+
+      <div className="duet-dash-flow-block">
+        <div className="duet-dash-label-sm">Flow Factor</div>
+        <div className="duet-dash-slider-row">
+          <input
+            type="range"
+            min={50} max={150} step={1}
+            value={flowInput !== '' ? flowInput : currentFlowPct}
+            onChange={(e) => setFlowInput(e.target.value)}
+            onMouseUp={() => { if (flowInput !== '') { setGlobalFlowFactor(Number(flowInput)); setFlowInput(''); } }}
+            onTouchEnd={() => { if (flowInput !== '') { setGlobalFlowFactor(Number(flowInput)); setFlowInput(''); } }}
+            className="duet-dash-range"
+            style={{ accentColor: COLORS.accent }}
+          />
+          <input
+            type="number"
+            style={inputStyle(55)}
+            value={flowInput !== '' ? flowInput : currentFlowPct}
+            onChange={(e) => setFlowInput(e.target.value)}
+            onBlur={() => { if (flowInput !== '') { setGlobalFlowFactor(Number(flowInput)); setFlowInput(''); } }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && flowInput !== '') { setGlobalFlowFactor(Number(flowInput)); setFlowInput(''); } }}
           />
           <span className="duet-dash-slider-unit">%</span>
         </div>

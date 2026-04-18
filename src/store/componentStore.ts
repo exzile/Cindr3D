@@ -131,6 +131,14 @@ interface ComponentStore {
 
 const rootId = crypto.randomUUID();
 
+/**
+ * Snapshot of joint rotation/translation values captured at the moment
+ * animation playback starts. Restored on stop so the model returns to its
+ * pre-animation pose — without this, tickAnimation's per-frame writes leave
+ * the joints frozen at the last interpolated value.
+ */
+let _animationJointSnapshot: Record<string, { rotation?: number; translation?: number }> | null = null;
+
 const defaultMaterial: MaterialAppearance = {
   id: 'aluminum',
   name: 'Aluminum',
@@ -750,7 +758,39 @@ export const useComponentStore = create<ComponentStore>((set, get) => ({
 
   setAnimationTime: (t) => set({ animationTime: t }),
   setAnimationDuration: (d) => set({ animationDuration: d }),
-  setAnimationPlaying: (playing) => set({ animationPlaying: playing }),
+  setAnimationPlaying: (playing) => {
+    const state = get();
+    if (playing && !state.animationPlaying) {
+      // Starting playback — capture each tracked joint's current value so we
+      // can restore on stop without permanently mutating the model.
+      const snapshot: Record<string, { rotation?: number; translation?: number }> = {};
+      for (const track of state.animationTracks) {
+        const j = state.joints[track.jointId];
+        if (j) snapshot[track.jointId] = { rotation: j.rotationValue, translation: j.translationValue };
+      }
+      _animationJointSnapshot = snapshot;
+      set({ animationPlaying: true });
+    } else if (!playing && state.animationPlaying) {
+      // Stopping playback — restore the snapshot so the model returns to its
+      // pre-animation pose. Without this, the joints stay frozen at whatever
+      // interpolated value the last tick wrote.
+      const snap = _animationJointSnapshot;
+      if (snap) {
+        const restored = { ...state.joints };
+        for (const id of Object.keys(snap)) {
+          const j = restored[id];
+          const s = snap[id];
+          if (j && s) restored[id] = { ...j, rotationValue: s.rotation ?? j.rotationValue, translationValue: s.translation ?? j.translationValue };
+        }
+        set({ animationPlaying: false, animationTime: 0, joints: restored });
+        _animationJointSnapshot = null;
+      } else {
+        set({ animationPlaying: false });
+      }
+    } else {
+      set({ animationPlaying: playing });
+    }
+  },
   setAnimationLoop: (loop) => set({ animationLoop: loop }),
 
   setJointTrack: (jointId, track) => {
@@ -811,6 +851,19 @@ export const useComponentStore = create<ComponentStore>((set, get) => ({
       animationPlaying: playing,
       joints: updatedJoints,
     });
+    // If playback ended naturally (loop=false reached duration), restore the
+    // captured snapshot so the model isn't left frozen at the last frame.
+    if (!playing && _animationJointSnapshot) {
+      const snap = _animationJointSnapshot;
+      const restored = { ...get().joints };
+      for (const id of Object.keys(snap)) {
+        const j = restored[id];
+        const s = snap[id];
+        if (j && s) restored[id] = { ...j, rotationValue: s.rotation ?? j.rotationValue, translationValue: s.translation ?? j.translationValue };
+      }
+      set({ joints: restored, animationTime: 0 });
+      _animationJointSnapshot = null;
+    }
   },
 
   // ===== Exploded View (A27) =====
@@ -1035,10 +1088,21 @@ export const useComponentStore = create<ComponentStore>((set, get) => ({
   },
 
   solveAllComponentConstraints: () => {
-    const { componentConstraints } = get();
+    const { componentConstraints, components } = get();
+    // Prune stale constraints whose source or target component was deleted.
+    // Without this, the array grows forever with no-op entries that silently
+    // skip in solveComponentConstraint and clutter the dialog list.
+    const stale: string[] = [];
     const active = componentConstraints.filter(c => !c.suppressed);
     for (const c of active) {
+      if (!components[c.entityA.componentId] || !components[c.entityB.componentId]) {
+        stale.push(c.id);
+        continue;
+      }
       get().solveComponentConstraint(c.id);
+    }
+    if (stale.length > 0) {
+      set({ componentConstraints: get().componentConstraints.filter((c) => !stale.includes(c.id)) });
     }
   },
 }));
