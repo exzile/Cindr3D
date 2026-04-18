@@ -254,6 +254,22 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
   const theme = useThemeStore((s) => s.theme);
   const toggleTheme = useThemeStore((s) => s.toggleTheme);
 
+  // Narrow-mode detection via ResizeObserver
+  const panelRootRef = useRef<HTMLDivElement>(null);
+  const [isNarrow, setIsNarrow] = useState(false);
+
+  useEffect(() => {
+    const el = panelRootRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setIsNarrow(entry.contentRect.width < 480);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   // Global search state
   const [globalSearch, setGlobalSearch] = useState('');
   const [showSearchResults, setShowSearchResults] = useState(false);
@@ -431,7 +447,11 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
   const ActiveTabComponent = TAB_COMPONENTS[(activeTab as TabKey)] ?? DuetDashboard;
 
   return (
-    <div style={fullscreen ? styles.fullscreen : styles.overlay}>
+    <div
+      ref={panelRootRef}
+      style={fullscreen ? styles.fullscreen : styles.overlay}
+      className={isNarrow ? 'printer-panel--narrow' : undefined}
+    >
       {/* ---- Message Box Modal (M291 prompts) ---- */}
       {connected && <DuetMessageBox />}
 
@@ -589,7 +609,7 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
               title={label}
             >
               <Icon size={14} />
-              {label}
+              <span className="tab-label">{label}</span>
             </button>
           ))}
         </div>

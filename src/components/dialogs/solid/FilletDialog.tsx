@@ -24,8 +24,6 @@ export interface FilletEdgeSet {
 export interface FilletParams {
   radius: number;
   edgeIds: string[];
-  /** @deprecated use mode instead */
-  variable: boolean;
   /** SOL-I1: fillet mode */
   mode: FilletMode;
   startRadius?: number;
@@ -76,7 +74,6 @@ function FilletDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: FilletD
     const params: FilletParams = {
       radius,
       edgeIds: [],
-      variable: mode === 'variable',
       mode,
       setback,
       setbackDistance: setback ? setbackDistance : 0,

@@ -332,6 +332,49 @@
   line-height: 1.4;
 }
 
+/* ── G-code syntax highlight backdrop ──────────────────────────────────── */
+.duet-console__input-highlight-wrap {
+  position: relative;
+  flex: 1;
+}
+
+.duet-console__input-highlight-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 6px 10px;
+  border: 1px solid transparent; /* match textarea border width */
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: transparent; /* hide the text; only spans are visible */
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow: hidden;
+  pointer-events: none;
+  /* Prevent text selection on backdrop */
+  user-select: none;
+  /* spans inside have their own colours */
+}
+
+.duet-console__input-highlight-backdrop span {
+  /* Make the span text visible against the transparent base text */
+  color: inherit;
+}
+
+/* When highlighted, the textarea itself becomes transparent so the backdrop shows */
+.duet-console__input--highlighted {
+  background: transparent !important;
+  position: relative;
+  z-index: 1;
+  color: transparent;
+  caret-color: var(--text-primary);
+}
+
 .duet-console__send-btn {
   display: inline-flex;
   align-items: center;

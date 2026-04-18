@@ -2067,6 +2067,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Mesh Transform: invalid params (translate/rotate must be finite, scale != 0)');
       return;
     }
+    get().pushUndo();
     const newMesh = GeometryEngine.transformMesh(srcMesh, params);
     newMesh.castShadow = true;
     newMesh.receiveShadow = true;
@@ -2102,6 +2103,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Scale: factors must be finite and non-zero');
       return;
     }
+    get().pushUndo();
     const newMesh = GeometryEngine.scaleMesh(srcMesh, sx, sy, sz);
     newMesh.castShadow = true;
     newMesh.receiveShadow = true;
@@ -2124,6 +2126,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Combine: tool has no mesh');
       return;
     }
+    get().pushUndo();
     const tgtMesh = targetFeature.mesh as THREE.Mesh;
     const toolMesh = toolFeature.mesh as THREE.Mesh;
     let resultGeom: THREE.BufferGeometry;
@@ -2169,6 +2172,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Mirror Feature: feature is not a mesh');
       return;
     }
+    get().pushUndo();
     const mirrored = GeometryEngine.mirrorMesh(srcMesh, plane);
     mirrored.castShadow = true;
     mirrored.receiveShadow = true;
@@ -3286,6 +3290,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       set({ statusMessage: 'Distance must be non-zero' });
       return;
     }
+    get().pushUndo();
     // EX-3: for to-object extent, derive distance from profile plane → face centroid projection
     const { extrudeToEntityFaceCentroid, extrudeToObjectFlipDirection } = get();
     const computeToObjectDistance = (profileSketch: Sketch): number => {
@@ -3605,6 +3610,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
         bodyKind: revolveBodyKind === 'surface' ? 'surface' : 'solid',
       };
       const angleDesc = revolveDirection === 'symmetric' ? `±${revolveAngle / 2}°` : `${revolveAngle}°`;
+      get().pushUndo();
       set({
         features: [...features, feature],
         activeTool: 'select',
@@ -3650,6 +3656,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       const ax = Math.abs(dir.x), ay = Math.abs(dir.y), az = Math.abs(dir.z);
       resolvedAxisKey = ax >= ay && ax >= az ? 'X' : ay >= ax && ay >= az ? 'Y' : 'Z';
     }
+    get().pushUndo();
     const feature: Feature = {
       id: crypto.randomUUID(),
       name: `${revolveBodyKind === 'surface' ? 'Surface ' : ''}Revolve ${features.filter((f) => f.type === 'revolve').length + 1}`,
@@ -3729,6 +3736,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       set({ statusMessage: 'Selected sketch(es) not found' });
       return;
     }
+    get().pushUndo();
     const mesh = GeometryEngine.sweepSketchInternal(profileSketch, pathSketch, sweepBodyKind === 'surface');
     const feature: Feature = {
       id: crypto.randomUUID(),
@@ -3799,6 +3807,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       set({ statusMessage: 'One or more selected profiles not found' });
       return;
     }
+    get().pushUndo();
     const mesh = GeometryEngine.loftSketches(profileSketches, loftBodyKind === 'surface');
     const feature: Feature = {
       id: crypto.randomUUID(),
@@ -3941,6 +3950,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       set({ statusMessage: 'Selected sketch not found' });
       return;
     }
+    get().pushUndo();
     // Rib = thin extrude of open profile in center mode, height along sketch normal.
     // For 'flip', pass height as negative (mirrors direction).
     const signedHeight = ribDirection === 'flip' ? -ribHeight : ribHeight;
@@ -6386,12 +6396,20 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     showShadows: state.showShadows,
     showGroundPlane: state.showGroundPlane,
     showComponentColors: state.showComponentColors,
+    viewportLayout: state.viewportLayout,
+    ambientOcclusionEnabled: state.ambientOcclusionEnabled,
+    dimensionToleranceMode: state.dimensionToleranceMode,
+    dimensionToleranceUpper: state.dimensionToleranceUpper,
+    dimensionToleranceLower: state.dimensionToleranceLower,
     // Model data
     sketches: state.sketches,
     features: state.features.map((f) => serializeFeature(f) as Feature),
     parameters: state.parameters,
     frozenFormVertices: state.frozenFormVertices,
     featureGroups: state.featureGroups,
+    canvasReferences: state.canvasReferences,
+    jointOrigins: state.jointOrigins,
+    formBodies: state.formBodies,
   }),
 
 }));

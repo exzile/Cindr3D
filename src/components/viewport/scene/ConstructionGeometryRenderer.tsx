@@ -35,6 +35,13 @@ const POINT_MAT = new THREE.MeshBasicMaterial({
   depthTest: false,
 });
 
+/**
+ * AUDIT-18: Module-level geometry singleton for construction points.
+ * Shared across all ConstructionPointItem instances — do NOT dispose this
+ * geometry in any per-instance cleanup, as it is reused by all instances.
+ */
+const POINT_GEO = new THREE.SphereGeometry(0.2, 8, 6);
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 interface PlaneItemProps {
@@ -133,14 +140,7 @@ interface PointItemProps {
 }
 
 function ConstructionPointItem({ point }: PointItemProps) {
-  const geo = useMemo(() => new THREE.SphereGeometry(0.2, 8, 6), []);
-
-  useEffect(() => {
-    return () => {
-      geo.dispose();
-    };
-  }, [geo]);
-
+  // AUDIT-18: use module-level POINT_GEO singleton — no per-instance allocation or disposal.
   const position = useMemo(
     () => new THREE.Vector3(...point.position),
     [point.position],
@@ -148,7 +148,7 @@ function ConstructionPointItem({ point }: PointItemProps) {
 
   return (
     <mesh
-      geometry={geo}
+      geometry={POINT_GEO}
       material={POINT_MAT}
       position={position}
       renderOrder={50}

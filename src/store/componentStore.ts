@@ -278,12 +278,44 @@ export const useComponentStore = create<ComponentStore>((set, get) => ({
   },
 
   duplicateComponent: (id) => {
-    const { components } = get();
+    const { components, bodies } = get();
     const comp = components[id];
     if (!comp || !comp.parentId) return id;
 
     const newId = get().addComponent(comp.parentId, `${comp.name} (Copy)`);
-    // TODO: deep copy bodies and features
+
+    // Deep-copy each body so the duplicate gets independent geometry and does
+    // not share array refs with the source component. The mesh is cloned via
+    // THREE.Object3D.clone() so each component has its own scene object.
+    const newBodies: Record<string, Body> = {};
+    const newBodyIds: string[] = [];
+
+    for (const bodyId of comp.bodyIds) {
+      const body = bodies[bodyId];
+      if (!body) continue;
+      const newBodyId = crypto.randomUUID();
+      newBodies[newBodyId] = {
+        ...body,
+        id: newBodyId,
+        componentId: newId,
+        // Clone the Three.js scene object so edits to one don't affect the other.
+        mesh: body.mesh ? body.mesh.clone() : null,
+        // Each body starts with its own empty feature list; the source feature
+        // history is not transferred because features reference the original body.
+        featureIds: [],
+        material: { ...body.material },
+      };
+      newBodyIds.push(newBodyId);
+    }
+
+    const updatedComponents = { ...get().components };
+    updatedComponents[newId] = { ...updatedComponents[newId], bodyIds: newBodyIds };
+
+    set({
+      bodies: { ...get().bodies, ...newBodies },
+      components: updatedComponents,
+    });
+
     return newId;
   },
 

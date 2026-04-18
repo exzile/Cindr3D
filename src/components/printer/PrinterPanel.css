@@ -1804,3 +1804,28 @@
   gap: 2px;
 }
 
+/* ===== Narrow / side-panel mode (width < 480px) ===== */
+
+/* Hide tab label text, keep only icons */
+.printer-panel--narrow .tab-label {
+  display: none;
+}
+
+/* Prevent horizontal overflow in the content area */
+.printer-panel--narrow .printer-panel__content,
+.printer-panel--narrow > div {
+  overflow-x: hidden;
+}
+
+/* Reduce horizontal padding in reconnecting/disconnect banners */
+.printer-panel--narrow .printer-panel__banner {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+/* Reduce padding in the footer bar */
+.printer-panel--narrow .printer-panel__footer {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
