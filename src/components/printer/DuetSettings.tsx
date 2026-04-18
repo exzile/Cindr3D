@@ -327,6 +327,19 @@ export default function DuetSettings() {
         }
       />
       <SettingRow
+        label="Webcam URL"
+        hint="URL for the printer webcam stream. Leave blank to use the default (hostname/webcam/?action=stream)."
+        control={
+          <input
+            className="duet-settings__input"
+            type="text"
+            value={prefs.webcamUrl}
+            onChange={(e) => patchPrefs({ webcamUrl: e.target.value })}
+            placeholder="e.g. http://192.168.1.100:8080/?action=stream"
+          />
+        }
+      />
+      <SettingRow
         label="Language"
         hint="Additional languages are planned — English only today."
         control={

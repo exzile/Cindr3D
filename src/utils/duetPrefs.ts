@@ -20,6 +20,7 @@ export interface CustomButton {
 export interface DuetPrefs {
   // General
   units: Units;
+  webcamUrl: string;
   // Behaviour
   confirmToolChange: boolean;
   silentPrompts: boolean;
@@ -34,6 +35,7 @@ export interface DuetPrefs {
 
 export const DEFAULT_PREFS: DuetPrefs = {
   units: 'metric',
+  webcamUrl: '',
   confirmToolChange: true,
   silentPrompts: false,
   autoReconnect: false,
