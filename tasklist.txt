@@ -231,11 +231,13 @@ GENERAL / CROSS-CUTTING
 --------------------------------------------------------------------------------
 ARCHITECTURAL — large refactors, need their own scope
 --------------------------------------------------------------------------------
-[-] AUDIT-1. pushUndo() missing from ~50 commit actions in cadStore.ts.
-             Added to: commitDirectEdit, commitFill, commitLinearPattern,
-             commitCircularPattern, commitPlaneCut, commitRib. Remaining:
-             commitExtrude/Revolve/Sweep/Loft/Combine/Mirror/MeshTransform/
-             Scale/Remesh/Shell/OffsetFace/Boss/Web/Thread/Chamfer/Draft/Hole.
+[x] AUDIT-1. pushUndo() added to all 24 feature commit actions: commitExtrude,
+             commitRevolve, commitSweep, commitLoft, commitRib, commitRibFromDialog,
+             commitWeb, commitMeshTransform, commitScale, commitCombine,
+             commitMirrorFeature, commitDirectEdit, commitFill, commitBoundaryFill,
+             commitLinearPattern, commitCircularPattern, commitPlaneCut,
+             commitPatternOnPath, commitRemesh, commitShell, commitDraft,
+             commitOffsetFace, commitThread.
 
 [ ] AUDIT-2. componentStore has NO persist middleware. joints, components,
              bodies, componentConstraints, animationTracks, explodedOffsets,
