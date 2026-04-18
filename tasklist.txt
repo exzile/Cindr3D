@@ -185,7 +185,7 @@ SETTINGS (MODAL DIALOG)
 
 [x] Webcam URL configuration (used by Job tab WebcamView)
 [x] Auto-reconnect settings (interval, max retries)
-[x] Theme selector (light / dark) — themeStore exists, no UI in settings
+[x] Theme selector (light / dark)
 [x] Notification sound toggle
 [x] Temperature unit toggle (°C / °F)
 [x] Date/time format preference
