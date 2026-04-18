@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import type { LayerGeometryData } from './types';
 
@@ -37,6 +37,13 @@ export const LayerMesh = React.memo(function LayerMesh({
     geo.setAttribute('position', new THREE.BufferAttribute(data.retractionPoints, 3));
     return geo;
   }, [data.retractionPoints]);
+
+  // Dispose previously-built geometries when the source data changes (layer
+  // scrub) or the component unmounts. Without this, scrubbing through a
+  // 200-layer print preview leaks ~600 BufferGeometries (3 per layer step).
+  useEffect(() => () => { extGeo?.dispose(); }, [extGeo]);
+  useEffect(() => () => { travGeo?.dispose(); }, [travGeo]);
+  useEffect(() => () => { retGeo?.dispose(); }, [retGeo]);
 
   return (
     <group>

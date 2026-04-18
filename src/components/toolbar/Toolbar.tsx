@@ -42,6 +42,7 @@ import { RibbonManageTab } from './RibbonManageTab';
 import { RibbonUtilitiesTab } from './RibbonUtilitiesTab';
 import { RibbonSketchMode } from './RibbonSketchMode';
 import { RibbonPrepareTab } from './RibbonPrepareTab';
+import { RibbonPrinterTab } from './RibbonPrinterTab';
 import type { Workspace, DesignTab, PrepareTab, RibbonTab, MenuItem } from './toolbar.types';
 
 // ─── Main Toolbar ──────────────────────────────────────────────────────────
@@ -212,7 +213,11 @@ export default function Toolbar() {
     setWorkspaceMode(ws);
   };
 
-  const activeTab: RibbonTab = inSketch ? 'sketch' : (workspace === 'design' ? designTab : prepareTab);
+  const activeTab: RibbonTab = inSketch
+    ? 'sketch'
+    : workspace === 'design'
+    ? designTab
+    : prepareTab;
 
   const handleTabClick = (tabId: RibbonTab) => {
     if (inSketch) return;
@@ -608,6 +613,11 @@ export default function Toolbar() {
         {/* ═══════════════ PREPARE WORKSPACE ═══════════════ */}
         {!inSketch && workspace === 'prepare' && (
           <RibbonPrepareTab prepareTab={prepareTab} />
+        )}
+
+        {/* ═══════════════ PRINTER WORKSPACE ═══════════════ */}
+        {!inSketch && workspace === 'printer' && (
+          <RibbonPrinterTab />
         )}
 
       </div>

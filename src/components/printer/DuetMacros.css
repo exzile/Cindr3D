@@ -1,0 +1,233 @@
+/* =============================================================================
+   DuetMacros — styles for the macros browser page
+   All colour references use CSS custom properties set by themeStore.
+   ============================================================================= */
+
+/* ── Root ─────────────────────────────────────────────────────────────────── */
+.duet-macros {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-primary);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+.duet-macros-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* ── Breadcrumb ──────────────────────────────────────────────────────────── */
+.duet-macros-breadcrumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 6px 12px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+  min-height: 32px;
+}
+
+.breadcrumb-segment {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.breadcrumb-sep {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.breadcrumb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.breadcrumb-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.breadcrumb-btn.active,
+.breadcrumb-btn:disabled {
+  color: var(--text-primary);
+  font-weight: 600;
+  cursor: default;
+  background: transparent;
+}
+
+/* ── Quick actions strip ─────────────────────────────────────────────────── */
+.duet-macros-quick {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.quick-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.quick-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.quick-macro-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+
+.quick-macro-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.quick-macro-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── Macro list ──────────────────────────────────────────────────────────── */
+.duet-macros-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.duet-macros-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* ── Macro item (folder + file) ──────────────────────────────────────────── */
+.macro-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border-light);
+  transition: background 0.1s;
+  min-height: 0;
+}
+
+.macro-item:last-child {
+  border-bottom: none;
+}
+
+.macro-item.folder {
+  cursor: pointer;
+}
+
+.macro-item.folder:hover {
+  background: var(--bg-hover);
+}
+
+.macro-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.macro-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.macro-item.folder .macro-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.macro-chevron {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.macro-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.macro-item:hover .macro-actions {
+  opacity: 1;
+}
+
+/* ── Running indicator ───────────────────────────────────────────────────── */
+.duet-macros-running {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: rgba(59, 130, 246, 0.08);
+  border-top: 1px solid rgba(59, 130, 246, 0.2);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+/* ── Spin animation ──────────────────────────────────────────────────────── */
+@keyframes macros-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.duet-macros .spin {
+  animation: macros-spin 0.8s linear infinite;
+}

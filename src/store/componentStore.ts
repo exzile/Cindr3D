@@ -1004,6 +1004,16 @@ export const useComponentStore = create<ComponentStore>((set, get) => ({
     const rotation = new THREE.Matrix4();
     if (rotAxis.lengthSq() > 1e-10 && Math.abs(rotAngle) > 1e-6) {
       rotation.makeRotationAxis(rotAxis.normalize(), rotAngle);
+    } else if (rotAngle > Math.PI - 1e-6) {
+      // Antiparallel case: nB is exactly opposite targetNormal so the cross
+      // product collapses to zero and the previous branch silently skipped
+      // the rotation, leaving the constraint mis-oriented. Pick any axis
+      // perpendicular to nB and rotate by π to flip it.
+      const perp = Math.abs(nB.x) < 0.9
+        ? new THREE.Vector3(1, 0, 0)
+        : new THREE.Vector3(0, 1, 0);
+      const flipAxis = new THREE.Vector3().crossVectors(nB, perp).normalize();
+      rotation.makeRotationAxis(flipAxis, Math.PI);
     }
 
     // Apply rotation to compB transform
@@ -1015,7 +1025,11 @@ export const useComponentStore = create<ComponentStore>((set, get) => ({
     if (c.type === 'mate' && c.offset) {
       translationOffset.addScaledVector(nA, c.offset);
     }
-    newTransform.setPosition(newTransform.getPosition(new THREE.Vector3()).add(translationOffset));
+    // Matrix4 has no .getPosition() — extract the existing translation column
+    // via setFromMatrixPosition, then write the offset back via setPosition.
+    // Original A24 implementation crashed at runtime with TypeError.
+    const currentPos = new THREE.Vector3().setFromMatrixPosition(newTransform);
+    newTransform.setPosition(currentPos.add(translationOffset));
 
     set({ components: { ...components, [c.entityB.componentId]: { ...compB, transform: newTransform } } });
   },

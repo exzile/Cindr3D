@@ -1,0 +1,240 @@
+/* =============================================================================
+   DuetHeightMap — styles for the bed height map visualisation page
+   All colour references use CSS custom properties set by themeStore.
+   ============================================================================= */
+
+/* ── Root ─────────────────────────────────────────────────────────────────── */
+.duet-heightmap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-primary);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+/* ── Controls bar ─────────────────────────────────────────────────────────── */
+.heightmap-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.heightmap-controls .btn.btn-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+.heightmap-controls .btn.btn-sm:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.heightmap-controls .btn.btn-sm:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── View toggle (3D / 2D) ─────────────────────────────────────────────────── */
+.heightmap-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-left: auto;
+}
+
+.toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.toggle-btn:not(:last-child) {
+  border-right: 1px solid var(--border);
+}
+
+.toggle-btn:hover:not(.active) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.toggle-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ── Empty state ──────────────────────────────────────────────────────────── */
+.duet-heightmap-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 40px 24px;
+}
+
+.duet-heightmap-empty p {
+  max-width: 320px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── Main content layout ─────────────────────────────────────────────────── */
+.heightmap-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Visualisation area ──────────────────────────────────────────────────── */
+.heightmap-viz {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background: var(--bg-primary);
+}
+
+.heightmap-3d {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+}
+
+/* 2D heatmap SVG fills width and keeps aspect */
+.heatmap-2d-container {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 16px;
+  height: 100%;
+  overflow: auto;
+  box-sizing: border-box;
+}
+
+.heatmap-2d-container svg {
+  max-height: 100%;
+  flex-shrink: 0;
+}
+
+/* ── Color scale legend ──────────────────────────────────────────────────── */
+.heightmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.legend-bar {
+  display: flex;
+  flex: 1;
+  height: 12px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+}
+
+.legend-segment {
+  flex: 1;
+}
+
+.legend-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.legend-unit {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: 2px;
+}
+
+/* ── Stats panel ─────────────────────────────────────────────────────────── */
+.heightmap-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--border-light);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.stat-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 14px;
+  background: var(--bg-panel);
+}
+
+.stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Probing indicator ───────────────────────────────────────────────────── */
+.heightmap-probing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: rgba(59, 130, 246, 0.08);
+  border-top: 1px solid rgba(59, 130, 246, 0.2);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+/* ── Spin animation ──────────────────────────────────────────────────────── */
+@keyframes heightmap-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: heightmap-spin 0.8s linear infinite;
+}

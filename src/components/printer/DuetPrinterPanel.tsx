@@ -144,6 +144,20 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 4,
     letterSpacing: 0.5,
   },
+  connectBtn: {
+    background: 'none',
+    border: `1px solid ${COLORS.success}`,
+    color: COLORS.success,
+    cursor: 'pointer',
+    padding: '2px 8px',
+    borderRadius: 4,
+    fontWeight: 600,
+    fontSize: 11,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: 6,
+  },
   tabBar: {
     display: 'flex',
     gap: 0,
@@ -261,45 +275,54 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
       {/* ---- Notification toasts ---- */}
       <DuetNotifications />
 
-      {/* ---- Header ---- */}
-      <div style={styles.header}>
-        <div
-          style={{
-            ...styles.statusDot,
-            background: connected ? COLORS.success : COLORS.danger,
-          }}
-          title={connected ? 'Connected' : 'Disconnected'}
-        />
-        <span style={styles.headerTitle}>Duet3D Control</span>
-        {connected && config.hostname && (
-          <span style={styles.hostname} title={config.hostname}>
-            {config.hostname}
-          </span>
-        )}
-        <div style={styles.spacer} />
+      {/* ---- Header (overlay/side-panel mode only — fullscreen uses the ribbon) ---- */}
+      {!fullscreen && (
+        <div style={styles.header}>
+          <div
+            style={{
+              ...styles.statusDot,
+              background: connected ? COLORS.success : COLORS.danger,
+            }}
+            title={connected ? 'Connected' : 'Disconnected'}
+          />
+          {!connected && (
+            <button
+              style={styles.connectBtn}
+              onClick={() => setShowSettings(true)}
+              title="Connect to printer"
+            >
+              <Wifi size={12} /> Connect
+            </button>
+          )}
+          <span style={styles.headerTitle}>Duet3D Control</span>
+          {connected && config.hostname && (
+            <span style={styles.hostname} title={config.hostname}>
+              {config.hostname}
+            </span>
+          )}
+          <div style={styles.spacer} />
 
-        {/* Emergency Stop */}
-        <button
-          style={styles.emergencyBtn}
-          onClick={handleEmergencyStop}
-          title="Emergency Stop (M112)"
-        >
-          <OctagonAlert size={14} /> E-STOP
-        </button>
+          {/* Emergency Stop */}
+          <button
+            style={styles.emergencyBtn}
+            onClick={handleEmergencyStop}
+            title="Emergency Stop (M112)"
+          >
+            <OctagonAlert size={14} /> E-STOP
+          </button>
 
-        {/* Settings */}
-        <button
-          style={styles.headerBtn}
-          onClick={() => setShowSettings(true)}
-          title="Settings"
-          onMouseEnter={(e) => (e.currentTarget.style.color = COLORS.text)}
-          onMouseLeave={(e) => (e.currentTarget.style.color = COLORS.textDim)}
-        >
-          <Settings size={16} />
-        </button>
+          {/* Settings */}
+          <button
+            style={styles.headerBtn}
+            onClick={() => setShowSettings(true)}
+            title="Settings"
+            onMouseEnter={(e) => (e.currentTarget.style.color = COLORS.text)}
+            onMouseLeave={(e) => (e.currentTarget.style.color = COLORS.textDim)}
+          >
+            <Settings size={16} />
+          </button>
 
-        {/* Close (overlay only) */}
-        {!fullscreen && (
+          {/* Close */}
           <button
             style={styles.headerBtn}
             onClick={() => setShowPrinter(false)}
@@ -309,8 +332,8 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
           >
             <X size={16} />
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ---- Error Banner ---- */}
       {error && (
@@ -327,23 +350,25 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
         </div>
       )}
 
-      {/* ---- Tab Bar ---- */}
-      <div style={styles.tabBar}>
-        {TABS.map(({ key, label, Icon }) => (
-          <button
-            key={key}
-            style={{
-              ...styles.tab,
-              ...(activeTab === key ? styles.tabActive : {}),
-            }}
-            onClick={() => setActiveTab(key)}
-            title={label}
-          >
-            <Icon size={14} />
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* ---- Tab Bar (overlay/side-panel mode only — fullscreen uses the ribbon) ---- */}
+      {!fullscreen && (
+        <div style={styles.tabBar}>
+          {TABS.map(({ key, label, Icon }) => (
+            <button
+              key={key}
+              style={{
+                ...styles.tab,
+                ...(activeTab === key ? styles.tabActive : {}),
+              }}
+              onClick={() => setActiveTab(key)}
+              title={label}
+            >
+              <Icon size={14} />
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ---- Disconnect banner (non-blocking — tabs still render) ---- */}
       {!connected && (

@@ -199,9 +199,15 @@ const idbStorage = {
   removeItem: async (name: string): Promise<void> => {
     try {
       const db = await openSlicerDB();
-      const tx = db.transaction('kv', 'readwrite');
-      tx.objectStore('kv').delete(name);
-      db.close();
+      // Wait for the delete transaction to commit before closing the db —
+      // synchronous close after .delete() can abort the tx so the value
+      // silently persists.
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction('kv', 'readwrite');
+        tx.objectStore('kv').delete(name);
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror    = () => { db.close(); reject(tx.error); };
+      });
     } catch { /* ignore */ }
   },
 };
@@ -550,6 +556,11 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
   startSlice: async () => {
     const state = get();
     if (state.plateObjects.length === 0) return;
+
+    // Re-entrancy guard — second click while a slice is in flight would otherwise
+    // overwrite the active slicer reference, breaking cancelSlice for the first
+    // run and racing two sliceProgress streams into the store.
+    if (activeSlicer) return;
 
     const printerProfile = state.getActivePrinterProfile();
     const materialProfile = state.getActiveMaterialProfile();

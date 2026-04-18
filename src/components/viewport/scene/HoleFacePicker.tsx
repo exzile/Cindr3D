@@ -17,6 +17,7 @@ import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import { useCADStore } from '../../../store/cadStore';
 import { useFacePicker, type FacePickResult } from '../../../hooks/useFacePicker';
+import { usePickerSceneCleanup } from '../../../hooks/usePickerSceneCleanup';
 
 // ── Module-level material singletons ─────────────────────────────────────────
 const HOVER_MAT = new THREE.MeshBasicMaterial({
@@ -81,6 +82,9 @@ export default function HoleFacePicker() {
   const hoverMeshRef = useRef<THREE.Mesh | null>(null);
   const selectedMeshRef = useRef<THREE.Mesh | null>(null);
   const previewMeshRef = useRef<THREE.Mesh | null>(null);
+  // Cached cylinder dimensions — only rebuild when dia/depth actually change.
+  const previewSigRef = useRef<{ dia: number; depth: number }>({ dia: -1, depth: -1 });
+  usePickerSceneCleanup([hoverMeshRef, selectedMeshRef, previewMeshRef]);
 
   const handleHover = useCallback((result: FacePickResult | null) => {
     hoverResultRef.current = result;
@@ -170,19 +174,29 @@ export default function HoleFacePicker() {
       _drillDir.copy(_normal).multiplyScalar(-1);
       _quat.setFromUnitVectors(_up, _drillDir);
 
+      // Only rebuild the cylinder when dia/depth actually change. Previously
+      // the else branch ran every frame and re-allocated a 32-segment
+      // CylinderGeometry on every tick — a continuous GPU + GC churn for as
+      // long as the dialog stayed open with a face selected.
+      const sigDia = previewSigRef.current.dia;
+      const sigDepth = previewSigRef.current.depth;
+      const dirty = sigDia !== dia || sigDepth !== depth;
       if (!previewMeshRef.current) {
         const geom = new THREE.CylinderGeometry(dia / 2, dia / 2, depth, 32, 1, true);
-        // Translate so cylinder top sits flush with the face and extends along -normal.
         geom.translate(0, -depth / 2, 0);
         const mesh = new THREE.Mesh(geom, PREVIEW_MAT);
         mesh.renderOrder = 95;
         scene.add(mesh);
         previewMeshRef.current = mesh;
-      } else {
+        previewSigRef.current.dia = dia;
+        previewSigRef.current.depth = depth;
+      } else if (dirty) {
         previewMeshRef.current.geometry.dispose();
         const geom = new THREE.CylinderGeometry(dia / 2, dia / 2, depth, 32, 1, true);
         geom.translate(0, -depth / 2, 0);
         previewMeshRef.current.geometry = geom;
+        previewSigRef.current.dia = dia;
+        previewSigRef.current.depth = depth;
       }
       previewMeshRef.current.position.copy(_centroid);
       previewMeshRef.current.quaternion.copy(_quat);
@@ -190,6 +204,8 @@ export default function HoleFacePicker() {
       scene.remove(previewMeshRef.current);
       previewMeshRef.current.geometry.dispose();
       previewMeshRef.current = null;
+      previewSigRef.current.dia = -1;
+      previewSigRef.current.depth = -1;
     }
   });
 

@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import './DuetHeightMap.css';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Text } from '@react-three/drei';
 import {
@@ -155,6 +156,10 @@ function HeightMapMesh({ heightMap }: { heightMap: HeightMapData }) {
     return { geometry: geo, stats: s };
   }, [heightMap]);
 
+  // Dispose previous BufferGeometry when heightMap data changes (re-upload) or
+  // when the component unmounts. Without this each re-bed-mesh leaks one geo.
+  useEffect(() => () => { geometry.dispose(); }, [geometry]);
+
   return (
     <mesh geometry={geometry}>
       <meshStandardMaterial vertexColors side={THREE.DoubleSide} flatShading />
@@ -197,6 +202,10 @@ function GridOverlay({ heightMap }: { heightMap: HeightMapData }) {
     const geo = new THREE.BufferGeometry().setFromPoints(pts);
     return geo;
   }, [heightMap]);
+
+  // Same disposal contract as HeightMapMesh — drop the prior grid geometry
+  // when heightMap reloads or the component unmounts.
+  useEffect(() => () => { lines.dispose(); }, [lines]);
 
   return (
     <lineSegments geometry={lines}>

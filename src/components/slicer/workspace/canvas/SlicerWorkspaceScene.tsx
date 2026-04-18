@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Line, OrbitControls, Text, TransformControls } from '@react-three/drei';
 import type { ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -122,6 +122,17 @@ function PlateObjectMesh({
     isFinite(rawZ) && rawZ > 0 ? rawZ : 10,
   ];
 
+  // Cache the placeholder BoxGeometry used for selection edges when there's no
+  // real geometry. Previous code did `new THREE.BoxGeometry(...)` inline in JSX
+  // every render, which `<edgesGeometry>` cloned internally, leaking the
+  // un-disposed source BoxGeometry on every render of any selected plate object.
+  const placeholderBoxGeo = useMemo(
+    () => (hasGeometry ? null : new THREE.BoxGeometry(boxArgs[0], boxArgs[1], boxArgs[2])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hasGeometry, boxArgs[0], boxArgs[1], boxArgs[2]],
+  );
+  useEffect(() => () => { placeholderBoxGeo?.dispose(); }, [placeholderBoxGeo]);
+
   return (
     <>
       <mesh
@@ -140,11 +151,7 @@ function PlateObjectMesh({
         />
         {isSelected && (
           <lineSegments>
-            <edgesGeometry args={[
-              hasGeometry
-                ? obj.geometry
-                : new THREE.BoxGeometry(...boxArgs),
-            ]} />
+            <edgesGeometry args={[hasGeometry ? obj.geometry : placeholderBoxGeo!]} />
             <lineBasicMaterial color="#ffaa00" linewidth={2} />
           </lineSegments>
         )}

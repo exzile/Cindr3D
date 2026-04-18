@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { useCADStore } from '../../../store/cadStore';
 import { useFacePicker, type FacePickResult } from '../../../hooks/useFacePicker';
+import { usePickerSceneCleanup } from '../../../hooks/usePickerSceneCleanup';
 
 // ── Module-level material singletons ─────────────────────────────────────────
 const HOVER_MAT = new THREE.MeshBasicMaterial({
@@ -57,6 +58,7 @@ export default function SplitFacePicker() {
 
   const hoverMeshRef = useRef<THREE.Mesh | null>(null);
   const selectedMeshRef = useRef<THREE.Mesh | null>(null);
+  usePickerSceneCleanup([hoverMeshRef, selectedMeshRef]);
 
   const handleHover = useCallback((result: FacePickResult | null) => {
     hoverResultRef.current = result;

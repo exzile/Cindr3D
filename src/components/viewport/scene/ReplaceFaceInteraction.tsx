@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { useCADStore } from '../../../store/cadStore';
 import { useFacePicker, type FacePickResult } from '../../../hooks/useFacePicker';
+import { usePickerSceneCleanup } from '../../../hooks/usePickerSceneCleanup';
 
 // ── Module-level material singletons ─────────────────────────────────────────
 const HOVER_SOURCE_MAT = new THREE.MeshBasicMaterial({
@@ -80,6 +81,7 @@ export default function ReplaceFaceInteraction() {
   const hoverMeshRef = useRef<THREE.Mesh | null>(null);
   const sourceMeshRef = useRef<THREE.Mesh | null>(null);
   const targetMeshRef = useRef<THREE.Mesh | null>(null);
+  usePickerSceneCleanup([hoverMeshRef, sourceMeshRef, targetMeshRef]);
 
   const handleHover = useCallback((result: FacePickResult | null) => {
     hoverResultRef.current = result;

@@ -8,25 +8,35 @@ const _csgEvaluator = new Evaluator();
 _csgEvaluator.useGroups = false;
 
 // Shared materials — created once, never duplicated per-entity
-const SKETCH_MATERIAL = new THREE.LineBasicMaterial({ color: 0x00aaff, linewidth: 2 });
+/**
+ * Tag a module-level singleton material so disposal logic in stores can
+ * recognise it and SKIP `.dispose()` — disposing a singleton turns every
+ * other feature using it into a black/broken material instance.
+ */
+function tagShared<T extends THREE.Material>(m: T): T {
+  m.userData.shared = true;
+  return m;
+}
+
+const SKETCH_MATERIAL = tagShared(new THREE.LineBasicMaterial({ color: 0x00aaff, linewidth: 2 }));
 // Construction lines: orange, short dash — reference geometry, not part of profile
-const CONSTRUCTION_MATERIAL = new THREE.LineDashedMaterial({
+const CONSTRUCTION_MATERIAL = tagShared(new THREE.LineDashedMaterial({
   color: 0xff8800, linewidth: 1, dashSize: 0.3, gapSize: 0.18,
-});
+}));
 // Centerlines: dark green/teal, long dash + small gap — used for symmetry/revolve axes
-const CENTERLINE_MATERIAL = new THREE.LineDashedMaterial({
+const CENTERLINE_MATERIAL = tagShared(new THREE.LineDashedMaterial({
   color: 0x00aa55, linewidth: 1, dashSize: 0.7, gapSize: 0.2,
-});
+}));
 // S4: Isoparametric curves: magenta, medium dash — UV-parameter construction line on a surface
-const ISOPARAMETRIC_MATERIAL = new THREE.LineDashedMaterial({
+const ISOPARAMETRIC_MATERIAL = tagShared(new THREE.LineDashedMaterial({
   color: 0xcc44ff, linewidth: 1, dashSize: 0.5, gapSize: 0.25,
-});
-const EXTRUDE_MATERIAL = new THREE.MeshPhysicalMaterial({
+}));
+const EXTRUDE_MATERIAL = tagShared(new THREE.MeshPhysicalMaterial({
   color: 0x8899aa,
   metalness: 0.3,
   roughness: 0.4,
   side: THREE.DoubleSide,
-});
+}));
 
 export class GeometryEngine {
   /**
@@ -1485,8 +1495,7 @@ export class GeometryEngine {
     return mesh;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  static revolveSketch(sketch: Sketch, angle: number, _axis: THREE.Vector3): THREE.Mesh | null {
+  static revolveSketch(sketch: Sketch, angle: number, axis: THREE.Vector3): THREE.Mesh | null {
     if (sketch.entities.length === 0) return null;
 
     const shape = this.sketchToShape(sketch);
@@ -1495,12 +1504,25 @@ export class GeometryEngine {
     const points = shape.getPoints(64);
     const lathePoints = points.map(p => new THREE.Vector2(Math.abs(p.x), p.y));
 
-    const geometry = new THREE.LatheGeometry(
-      lathePoints,
-      64,
-      0,
-      angle
-    );
+    // LatheGeometry always revolves around world +Y. To honor the caller's
+    // axis (X/Z/centerline/arbitrary), build the lathe in its local frame and
+    // then rotate the geometry so +Y aligns with the requested axis.
+    // Previously `_axis` was ignored — non-Y axes were silently swapped to Y.
+    const geometry = new THREE.LatheGeometry(lathePoints, 64, 0, angle);
+    const targetAxis = axis.clone().normalize();
+    const yAxis = new THREE.Vector3(0, 1, 0);
+    const cosAng = yAxis.dot(targetAxis);
+    if (cosAng < 0.9999) {
+      const rotAxis = new THREE.Vector3().crossVectors(yAxis, targetAxis);
+      if (rotAxis.lengthSq() > 1e-10) {
+        const rotAngle = Math.acos(Math.max(-1, Math.min(1, cosAng)));
+        const m = new THREE.Matrix4().makeRotationAxis(rotAxis.normalize(), rotAngle);
+        geometry.applyMatrix4(m);
+      } else if (cosAng < -0.9999) {
+        // 180° flip — pick any perpendicular axis
+        geometry.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI));
+      }
+    }
 
     const mesh = new THREE.Mesh(geometry, EXTRUDE_MATERIAL);
     mesh.castShadow = true;
@@ -1795,13 +1817,26 @@ export class GeometryEngine {
       positions.push(b.x, b.y, b.z);
     }
 
-    // Build quad strips: each pair of consecutive cross-segments forms a quad
-    for (let i = 0; i < len - 1; i++) {
+    // Build quad strips: each pair of consecutive cross-segments forms a quad.
+    // Detect closed loops (start ≈ end within tol) — if closed, add the seam
+    // facet bridging vertex[len-1] back to vertex[0] so the surface is watertight.
+    const TOL = 1e-4;
+    const aStart = ringA[0];
+    const aEnd = ringA[len - 1];
+    const bStart = ringB[0];
+    const bEnd = ringB[len - 1];
+    const closed =
+      aStart.distanceTo(aEnd) < TOL &&
+      bStart.distanceTo(bEnd) < TOL;
+    const stripEnd = closed ? len : len - 1;
+    for (let i = 0; i < stripEnd; i++) {
       // vertex layout: row i → [2i, 2i+1], row i+1 → [2i+2, 2i+3]
+      // For the seam (i === len-1 when closed), wrap row i+1 back to row 0.
       const a = 2 * i;
       const b = 2 * i + 1;
-      const c = 2 * i + 2;
-      const d = 2 * i + 3;
+      const next = (i + 1) % len;
+      const c = 2 * next;
+      const d = 2 * next + 1;
       indices.push(a, c, b);
       indices.push(b, c, d);
     }
@@ -4475,7 +4510,9 @@ export class GeometryEngine {
     const total = arcLens[arcLens.length - 1];
 
     for (let k = 0; k < count; k++) {
-      const targetLen = (k / (count - 1)) * total;
+      // Guard against count === 1 → division by zero → NaN positions
+      // (one copy lands at the path start).
+      const targetLen = count > 1 ? (k / (count - 1)) * total : 0;
       let seg = 0;
       for (let i = 1; i < arcLens.length; i++) {
         if (arcLens[i] >= targetLen) { seg = i - 1; break; }

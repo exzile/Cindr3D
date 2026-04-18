@@ -89,6 +89,9 @@ import MultiViewCanvas from './MultiViewCanvas';
 
 
 
+/** Module-level singleton — passed to SSAO to avoid per-render Color allocation. */
+const SSAO_COLOR = new THREE.Color('black');
+
 /** Standard ray-casting point-in-polygon test (screen-space pixels). */
 function pointInPolygon(p: { x: number; y: number }, poly: { x: number; y: number }[]): boolean {
   let inside = false;
@@ -432,14 +435,16 @@ export default function Viewport() {
         {/* Shift + Middle-click pan (in addition to right-click pan) */}
         <ShiftMiddlePan />
 
-        {/* NAV-21: Ambient Occlusion — SSAO via @react-three/postprocessing */}
+        {/* NAV-21: Ambient Occlusion — SSAO via @react-three/postprocessing.
+            SSAO_COLOR is a module-level singleton so we don't allocate a fresh
+            THREE.Color on every Viewport render. */}
         {ambientOcclusionEnabled && (
           <EffectComposer>
             <SSAO
               radius={0.1}
               intensity={20}
               luminanceInfluence={0.6}
-              color={new THREE.Color('black')}
+              color={SSAO_COLOR}
             />
           </EffectComposer>
         )}

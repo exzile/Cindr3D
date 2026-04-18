@@ -4,9 +4,10 @@ export type Workspace = 'design' | 'prepare' | 'printer';
 
 export type DesignTab = 'solid' | 'surface' | 'mesh' | 'form' | 'manage' | 'utilities';
 export type PrepareTab = 'plate' | 'profiles' | 'slice' | 'export';
+export type PrinterTab = 'dashboard' | 'status' | 'console' | 'job' | 'history' | 'files' | 'filaments' | 'macros' | 'heightmap' | 'model';
 export type SketchTab = 'sketch';
 
-export type RibbonTab = DesignTab | PrepareTab | SketchTab;
+export type RibbonTab = DesignTab | PrepareTab | PrinterTab | SketchTab;
 
 export interface TabDef {
   id: RibbonTab;

@@ -17,6 +17,10 @@ export function BuildVolume({ volumeX, volumeY, volumeZ, originCenter }: BuildPl
     () => new THREE.BoxGeometry(volumeX, volumeY, volumeZ),
     [volumeX, volumeY, volumeZ],
   );
+  // Dispose the previous BoxGeometry whenever volume dims change or the
+  // component unmounts. Without this, every build-volume resize leaks one
+  // BoxGeometry to the GPU.
+  React.useEffect(() => () => { boxGeo.dispose(); }, [boxGeo]);
 
   return (
     <group position={[offsetX, offsetY, 0]}>

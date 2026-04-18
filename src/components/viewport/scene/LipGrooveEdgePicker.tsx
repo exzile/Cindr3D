@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { useCADStore } from '../../../store/cadStore';
 import { useEdgePicker, type EdgePickResult } from '../../../hooks/useEdgePicker';
+import { usePickerSceneCleanup } from '../../../hooks/usePickerSceneCleanup';
 
 // ── Module-level material singletons ─────────────────────────────────────────
 const HOVER_MAT = new THREE.LineBasicMaterial({
@@ -42,8 +43,13 @@ export default function LipGrooveEdgePicker() {
   const overlayEnabled = activeDialog === 'lip-groove';
 
   const hoverLineRef = useRef<THREE.Line | null>(null);
+  // Note: also typed in usePickerSceneCleanup as Object3D — Line satisfies that.
   const hoverResultRef = useRef<EdgePickResult | null>(null);
   const selectedLineRef = useRef<THREE.Line | null>(null);
+  usePickerSceneCleanup([
+    hoverLineRef as React.MutableRefObject<THREE.Object3D | null>,
+    selectedLineRef as React.MutableRefObject<THREE.Object3D | null>,
+  ]);
   const selectedEdgeDataRef = useRef<{ a: THREE.Vector3; b: THREE.Vector3 } | null>(null);
 
   const handleHover = useCallback((result: EdgePickResult | null) => {

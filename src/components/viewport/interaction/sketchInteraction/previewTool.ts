@@ -18,8 +18,22 @@ const _blendTangentB = new THREE.Vector3();
  * the inputs haven't meaningfully changed since the last render (e.g. mouse
  * paused mid-draw, no parameter change). Avoids dispose+realloc churn every
  * frame just to redraw the same line.
+ *
+ * Bounded LRU-ish: when the map exceeds CACHE_MAX, drop the oldest entry.
+ * Each sketch enter→exit creates a new previewGroup with a new uuid, so
+ * without this guard the map grows unbounded over a long session.
  */
 const PREVIEW_FINGERPRINT_CACHE = new Map<string, string>();
+const CACHE_MAX = 32;
+function setFingerprint(key: string, value: string): void {
+  if (PREVIEW_FINGERPRINT_CACHE.has(key)) {
+    PREVIEW_FINGERPRINT_CACHE.delete(key); // re-insert at end for LRU order
+  } else if (PREVIEW_FINGERPRINT_CACHE.size >= CACHE_MAX) {
+    const oldest = PREVIEW_FINGERPRINT_CACHE.keys().next().value;
+    if (oldest !== undefined) PREVIEW_FINGERPRINT_CACHE.delete(oldest);
+  }
+  PREVIEW_FINGERPRINT_CACHE.set(key, value);
+}
 function previewFingerprint(ctx: SketchPreviewCtx): string {
   const m = ctx.mousePos;
   const ms = m ? `${m.x.toFixed(4)}|${m.y.toFixed(4)}|${m.z.toFixed(4)}` : 'null';
@@ -57,7 +71,7 @@ export function renderSketchPreview(ctx: SketchPreviewCtx): void {
     // For idle-during-draw frames this turns the work into a single Map lookup.
     const fp = previewFingerprint(ctx);
     if (PREVIEW_FINGERPRINT_CACHE.get(previewGroup.uuid) === fp) return;
-    PREVIEW_FINGERPRINT_CACHE.set(previewGroup.uuid, fp);
+    setFingerprint(previewGroup.uuid, fp);
 
     clearGroupChildren(previewGroup);
 

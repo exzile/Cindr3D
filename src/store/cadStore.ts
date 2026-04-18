@@ -51,9 +51,15 @@ const idbStorage = {
   removeItem: async (name: string): Promise<void> => {
     try {
       const db = await openCadDB();
-      const tx = db.transaction('kv', 'readwrite');
-      tx.objectStore('kv').delete(name);
-      db.close();
+      // Wait for the delete transaction to commit before closing the db.
+      // Calling db.close() synchronously after .delete() can abort the
+      // transaction so the remove never actually persists.
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction('kv', 'readwrite');
+        tx.objectStore('kv').delete(name);
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror    = () => { db.close(); reject(tx.error); };
+      });
     } catch { /* ignore */ }
   },
 };
@@ -1688,17 +1694,30 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     // the feature is out of state (prevents renderer accessing disposed GPU resources).
     const target = get().features.find((f) => f.id === id);
     set((state) => ({ features: state.features.filter((f) => f.id !== id) }));
-    // Now safe to dispose — feature is no longer in state
+    // Now safe to dispose — feature is no longer in state.
+    //
+    // CRITICAL: skip materials tagged `userData.shared = true` — those are
+    // module-level singletons (EXTRUDE_MATERIAL, SKETCH_MATERIAL, etc. in
+    // GeometryEngine.ts). Disposing them turns every other feature still
+    // using them into a black/broken material instance.
+    const disposeMat = (mat: THREE.Material | THREE.Material[] | null | undefined) => {
+      if (!mat) return;
+      const arr = Array.isArray(mat) ? mat : [mat];
+      for (const m of arr) {
+        if (m?.userData?.shared) continue;
+        m?.dispose?.();
+      }
+    };
     if (target?.mesh) {
       const m = target.mesh as THREE.Object3D;
       if (m instanceof THREE.Mesh) {
         m.geometry?.dispose();
-        if (m.material && !Array.isArray(m.material)) (m.material as THREE.Material).dispose();
+        disposeMat(m.material);
       } else if (m instanceof THREE.Group) {
         m.traverse((child) => {
           if (child instanceof THREE.Mesh) {
             child.geometry?.dispose();
-            if (child.material && !Array.isArray(child.material)) (child.material as THREE.Material).dispose();
+            disposeMat(child.material);
           }
         });
       }
@@ -1873,8 +1892,25 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       return clone;
     };
     const featureMesh = feature.mesh as THREE.Object3D;
+    // Re-validate the feature/mesh AFTER the await — by the time the simplify
+    // promise resolves, the user could have deleted the feature, replaced its
+    // mesh, or kicked off another reduce. Without this guard the post-await
+    // set() would write the new mesh into whatever feature row currently has
+    // the matching id, and dispose a mesh that's already been replaced.
+    const stillValid = (currentMesh: THREE.Object3D | null | undefined): boolean => {
+      const live = get().features.find((f) => f.id === featureId);
+      return !!live && live.mesh === currentMesh;
+    };
+    const onErr = (err: unknown) => {
+      get().setStatusMessage(`Mesh Reduce failed: ${(err as Error)?.message ?? 'unknown error'}`);
+    };
     if (featureMesh instanceof THREE.Mesh) {
       applyToMesh(featureMesh).then((newMesh) => {
+        if (!stillValid(featureMesh)) {
+          // Stale — drop the freshly built mesh so we don't leak it
+          newMesh.geometry.dispose();
+          return;
+        }
         const oldMesh = feature.mesh;
         set((state) => ({
           features: state.features.map((f) =>
@@ -1884,13 +1920,18 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
         // Dispose old geometry AFTER removing from state
         if (oldMesh instanceof THREE.Mesh) oldMesh.geometry.dispose();
         get().setStatusMessage(`Mesh reduced by ${reductionPercent}%`);
-      });
+      }).catch(onErr);
     } else if (featureMesh instanceof THREE.Group) {
       const meshes: THREE.Mesh[] = [];
       featureMesh.traverse((child) => {
         if (child instanceof THREE.Mesh) meshes.push(child);
       });
       Promise.all(meshes.map(applyToMesh)).then((newMeshes) => {
+        if (!stillValid(featureMesh)) {
+          // Stale — drop all freshly built meshes' geometries
+          for (const m of newMeshes) m.geometry.dispose();
+          return;
+        }
         const oldGroup = feature.mesh;
         const newGroup = new THREE.Group();
         newMeshes.forEach((m) => newGroup.add(m));
@@ -1906,7 +1947,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
           });
         }
         get().setStatusMessage(`Mesh reduced by ${reductionPercent}%`);
-      });
+      }).catch(onErr);
     } else {
       get().setStatusMessage('Mesh Reduce: feature is not simplifiable');
     }
@@ -1960,10 +2001,14 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     const newMesh = GeometryEngine.reverseMeshNormals(srcMesh);
     newMesh.castShadow = true;
     newMesh.receiveShadow = true;
+    // Dispose the previous geometry — reverseMeshNormals returns a fresh
+    // mesh with cloned geometry, so the source's BufferGeometry is now orphan.
+    const oldMesh = feature.mesh;
     set((state) => ({
       features: state.features.map((f) => f.id === featureId ? { ...f, mesh: newMesh } : f),
       statusMessage: 'Mesh normals reversed',
     }));
+    if (oldMesh instanceof THREE.Mesh) oldMesh.geometry.dispose();
   },
 
   // MSH7 — commitMeshCombine: merge all listed feature meshes into one
@@ -2015,10 +2060,13 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     const newMesh = GeometryEngine.transformMesh(srcMesh, params);
     newMesh.castShadow = true;
     newMesh.receiveShadow = true;
+    const oldMesh = feature.mesh;
     set((state) => ({
       features: state.features.map((f) => f.id === featureId ? { ...f, mesh: newMesh } : f),
       statusMessage: 'Mesh transformed',
     }));
+    // Dispose the previous geometry — transformMesh returned a fresh mesh.
+    if (oldMesh instanceof THREE.Mesh) oldMesh.geometry.dispose();
   },
 
   // SLD13 — commitScale: scale a feature mesh by sx/sy/sz
@@ -2724,7 +2772,23 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     const { activeSketch } = get();
     if (!activeSketch) return;
 
-    const result = solveConstraints(activeSketch.entities, activeSketch.constraints ?? []);
+    // PLANE-AWARE SOLVE: SketchPoints are stored in WORLD 3D coords. The 2D
+    // solver expects plane-local UV coords. Without projecting, an XZ/YZ/custom
+    // sketch would feed (x, y=0) — silently mangling geometry on solve.
+    // Round trip: project 3D → 2D, solve, unproject 2D → 3D.
+    const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+    const origin = activeSketch.planeOrigin;
+    const projectedEntities = activeSketch.entities.map((e) => ({
+      ...e,
+      points: e.points.map((pt) => {
+        const dx = pt.x - origin.x, dy = pt.y - origin.y, dz = pt.z - origin.z;
+        const u = dx * t1.x + dy * t1.y + dz * t1.z;
+        const v = dx * t2.x + dy * t2.y + dz * t2.z;
+        return { ...pt, x: u, y: v, z: 0 };
+      }),
+    }));
+
+    const result = solveConstraints(projectedEntities, activeSketch.constraints ?? []);
     if (!result.solved) {
       set((s) => ({
         activeSketch: s.activeSketch ? { ...s.activeSketch, overConstrained: true } : null,
@@ -2733,12 +2797,18 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       return;
     }
 
-    // Apply solved positions back to entities
+    // Apply solved positions back to entities — UNPROJECT 2D UV → 3D world.
     const updatedEntities = activeSketch.entities.map((e) => {
       const updated = { ...e, points: e.points.map((pt, pi) => {
         const solvedPt = result.updatedPoints.get(`${e.id}-p${pi}`);
         if (!solvedPt) return pt;
-        return { ...pt, x: solvedPt.x, y: solvedPt.y };
+        // Unproject (u, v) back to world via origin + u*t1 + v*t2
+        return {
+          ...pt,
+          x: origin.x + solvedPt.x * t1.x + solvedPt.y * t2.x,
+          y: origin.y + solvedPt.x * t1.y + solvedPt.y * t2.y,
+          z: origin.z + solvedPt.x * t1.z + solvedPt.y * t2.z,
+        };
       }) };
       return updated;
     });
@@ -5381,10 +5451,22 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
         sketches: Array<Sketch & { planeNormal: [number, number, number] | null; planeOrigin: [number, number, number] | null }>;
         featureGroups: FeatureGroup[];
       };
+      // Carry over the live mesh from the current state when the same feature
+      // id is being restored. Parametric features (extrude/revolve) rebuild
+      // from sketch+params downstream, but mesh-op / import features have NO
+      // source data — without this lookup, undo permanently destroys their
+      // geometry. Map lookup keeps undo→redo round-trips loss-free as long as
+      // the original mesh is still alive somewhere in the live state.
+      const liveMeshById = new Map<string, Feature['mesh']>();
+      for (const f of state.features) if (f.mesh) liveMeshById.set(f.id, f.mesh);
       set({
         undoStack: stack,
         redoStack: [...state.redoStack, currentSnapshot],
-        features: parsed.features.map((f) => deserializeFeature(f as Feature)),
+        features: parsed.features.map((f) => {
+          const restored = deserializeFeature(f as Feature);
+          const live = liveMeshById.get(restored.id);
+          return live ? { ...restored, mesh: live } : restored;
+        }),
         sketches: parsed.sketches.map((s) => deserializeSketch(s as unknown as Sketch)),
         featureGroups: parsed.featureGroups,
         statusMessage: 'Undo',
@@ -5404,10 +5486,16 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
         sketches: Array<Sketch & { planeNormal: [number, number, number] | null; planeOrigin: [number, number, number] | null }>;
         featureGroups: FeatureGroup[];
       };
+      const liveMeshById = new Map<string, Feature['mesh']>();
+      for (const f of state.features) if (f.mesh) liveMeshById.set(f.id, f.mesh);
       set({
         redoStack: stack,
         undoStack: [...state.undoStack, currentSnapshot],
-        features: parsed.features.map((f) => deserializeFeature(f as Feature)),
+        features: parsed.features.map((f) => {
+          const restored = deserializeFeature(f as Feature);
+          const live = liveMeshById.get(restored.id);
+          return live ? { ...restored, mesh: live } : restored;
+        }),
         sketches: parsed.sketches.map((s) => deserializeSketch(s as unknown as Sketch)),
         featureGroups: parsed.featureGroups,
         statusMessage: 'Redo',
@@ -5590,6 +5678,16 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       .filter((f) => f.id !== featureId)
       .concat(newFeatures);
     set({ features: nextFeatures });
+    // Dispose the source mesh's geometry — unstitchSurface produced fresh
+    // BufferGeometries for each part, so the source is now an orphan.
+    // Skip materials tagged userData.shared (singletons from GeometryEngine).
+    if (srcMesh.geometry) srcMesh.geometry.dispose();
+    const srcMat = srcMesh.material;
+    const matArr = Array.isArray(srcMat) ? srcMat : [srcMat];
+    for (const mm of matArr) {
+      if (mm?.userData?.shared) continue;
+      mm?.dispose?.();
+    }
     get().setStatusMessage(`Mesh Separate: split into ${newFeatures.length} parts`);
   },
 

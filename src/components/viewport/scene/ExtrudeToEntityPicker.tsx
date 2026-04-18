@@ -16,6 +16,7 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { useCADStore } from '../../../store/cadStore';
 import { useFacePicker, type FacePickResult } from '../../../hooks/useFacePicker';
+import { usePickerSceneCleanup } from '../../../hooks/usePickerSceneCleanup';
 
 // ── Material singletons ───────────────────────────────────────────────────────
 const HOVER_MAT = new THREE.MeshBasicMaterial({
@@ -63,6 +64,7 @@ export default function ExtrudeToEntityPicker() {
 
   const hoverMeshRef = useRef<THREE.Mesh | null>(null);
   const selMeshRef   = useRef<THREE.Mesh | null>(null);
+  usePickerSceneCleanup([hoverMeshRef, selMeshRef]);
 
   const handleHover  = useCallback((r: FacePickResult | null) => { hoverRef.current = r; }, []);
 

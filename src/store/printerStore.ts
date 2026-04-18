@@ -268,11 +268,17 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
   },
 
   connect: async () => {
-    const { config, service: existingService } = get();
+    const { config, service: existingService, connecting } = get();
     if (!config.hostname) {
       set({ error: 'No hostname configured' });
       return;
     }
+
+    // Re-entrancy guard — second click while a connection is in flight would
+    // otherwise spawn a parallel DuetService whose model-update callback keeps
+    // firing alongside the first. Drop subsequent calls until the first either
+    // resolves or fails.
+    if (connecting) return;
 
     // Clean up existing service if any
     if (existingService) {
@@ -291,6 +297,9 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
 
       // Set up model update listener that records temperature samples
       service.onModelUpdate((model: Partial<DuetObjectModel>) => {
+        // Drop callbacks from a stale service that was replaced/disconnected
+        // mid-flight (e.g. user clicked disconnect before initial fetch landed).
+        if (get().service !== service) return;
         const state = get();
         const now = Date.now();
 
@@ -322,6 +331,13 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
       const macros = await service.listFiles('0:/macros').catch(() => [] as DuetFileInfo[]);
       const filamentEntries = await service.listFiles('0:/filaments').catch(() => [] as DuetFileInfo[]);
       const filaments = filamentEntries.filter((e) => e.type === 'd').map((e) => e.name).sort();
+
+      // If user disconnected while we were awaiting, don't clobber the cleared
+      // state with `connected: true` and a service they thought was dropped.
+      if (!get().connecting) {
+        try { await service.disconnect(); } catch { /* ignore */ }
+        return;
+      }
 
       saveConfig(config);
 
@@ -637,9 +653,12 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
       );
       set({ uploading: false, uploadProgress: 100 });
 
-      // Refresh file list after upload
+      // Refresh file list after upload — but only if the user is still
+      // viewing the directory we uploaded into. Otherwise the listing for
+      // the OLD directory would clobber the listing of wherever they
+      // navigated to during the upload.
       const files = await service.listFiles(currentDirectory);
-      set({ files });
+      if (get().currentDirectory === currentDirectory) set({ files });
     } catch (err) {
       set({
         uploading: false,
@@ -654,9 +673,9 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
     if (!service) return;
     try {
       await service.deleteFile(path);
-      // Refresh file list after deletion
+      // Refresh file list after deletion — bail if user navigated away.
       const files = await service.listFiles(currentDirectory);
-      set({ files });
+      if (get().currentDirectory === currentDirectory) set({ files });
     } catch (err) {
       set({ error: `Failed to delete file: ${(err as Error).message}` });
     }

@@ -1,4 +1,5 @@
 import './ExtrudePanel.css';
+import { useMemo } from 'react';
 import { X, Check, ArrowUpFromLine, Scissors } from 'lucide-react';
 import {
   useCADStore,
@@ -97,28 +98,36 @@ export default function ExtrudePanel() {
     ...extrudable,
     ...sketches.filter((s) => activeSketchIds.has(s.id) && !extrudable.includes(s)),
   ];
-  const profileOptions = allRelevant.flatMap((sketch) => {
-    const count = GeometryEngine.sketchToShapes(sketch).length;
-    return Array.from({ length: count }, (_, index) => ({
-      id: `${sketch.id}::${index}`,
-      label: `${sketch.name} • Profile ${index + 1}`,
-      sketchId: sketch.id,
-    })).filter(({ sketchId, id }) => {
-      const source = allRelevant.find((s) => s.id === sketchId);
-      if (!source) return false;
-      const profileIndex = Number(id.split('::')[1]);
-      return Number.isFinite(profileIndex) && GeometryEngine.createProfileSketch(source, profileIndex) !== null;
+  // Memoize the profile-options derivation. sketchToShapes + createProfileSketch
+  // are non-trivial — without this they'd re-run on every render of the panel
+  // (every cursor move during extrude drag, every store update, etc.). Deps:
+  // the underlying sketch list and the selectedIds (for Press-Pull pass-through).
+  const profileOptions = useMemo(() => {
+    const opts = allRelevant.flatMap((sketch) => {
+      const count = GeometryEngine.sketchToShapes(sketch).length;
+      return Array.from({ length: count }, (_, index) => ({
+        id: `${sketch.id}::${index}`,
+        label: `${sketch.name} • Profile ${index + 1}`,
+        sketchId: sketch.id,
+      })).filter(({ sketchId, id }) => {
+        const source = allRelevant.find((s) => s.id === sketchId);
+        if (!source) return false;
+        const profileIndex = Number(id.split('::')[1]);
+        return Number.isFinite(profileIndex) && GeometryEngine.createProfileSketch(source, profileIndex) !== null;
+      });
     });
-  });
 
-  // Press Pull profiles are selected by their raw sketch ID (no ::index).
-  // Add them to profileOptions if they're currently selected but not already listed.
-  for (const id of selectedIds) {
-    if (id.includes('::')) continue; // already handled above
-    if (profileOptions.some((o) => o.id === id)) continue;
-    const sk = sketches.find((s) => s.id === id);
-    if (sk) profileOptions.push({ id, label: sk.name, sketchId: id });
-  }
+    // Press Pull profiles are selected by their raw sketch ID (no ::index).
+    // Add them to profileOptions if they're currently selected but not already listed.
+    for (const id of selectedIds) {
+      if (id.includes('::')) continue; // already handled above
+      if (opts.some((o) => o.id === id)) continue;
+      const sk = sketches.find((s) => s.id === id);
+      if (sk) opts.push({ id, label: sk.name, sketchId: id });
+    }
+    return opts;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allRelevant, selectedIds, sketches]);
 
   const selectedSketches = selectedIds
     .map((id) => {

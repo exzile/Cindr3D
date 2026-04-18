@@ -5,37 +5,6 @@ Completed tasks removed to save context. Full history: git log --oneline.
 STATUS KEY:  [ ] = open   [x] = done   [~] = deferred/blocked
 
 
-
-
-═══════════════════════════════════════════════════════════════
-SKETCH SECOND AUDIT GAPS
-═══════════════════════════════════════════════════════════════
-[x] S4.  Isoparametric Curve — added 'isoparametric' to SketchEntity.type + Tool union;
-         isoParamDir/isoParamValue/isoParamBodyId optional fields; SketchInteraction
-         generates ±500mm spanning line on click (Shift = V dir); magenta dashed
-         LineDashedMaterial via ISOPARAMETRIC_MATERIAL in GeometryEngine; "Iso Curve"
-         ToolButton in RibbonSketchMode.
-
-
-── INSERT ────────────────────────────────────────────────────
-[x] D194. Insert Fastener — src/data/FastenerLibrary.ts (33 metric specs: hex bolt,
-          socket cap, flat head, button head, hex nut, washer M3–M16); FastenerDialog.tsx
-          tp-* layout with standard/type/size/length/XYZ inputs; insertFastener action
-          builds THREE.Group (shank + head, 6-seg for hex) + body + feature; FastenerBodies
-          scene component; "Insert Fastener" in RibbonSolidTab INSERT section.
-
-[x] D195. Derive — DeriveDialog.tsx file picker parses .json features+sketches arrays,
-          checkbox selector with All/None shortcuts; deriveFromDesign action creates
-          'derive' stub features with derivedFrom + sourceItemId params as timeline
-          markers; "Derive" in RibbonSolidTab INSERT section.
-
-
-── ASSEMBLY — MISSING TOOLS ──────────────────────────────────
-
-[x] A24. Constrain Components — ComponentConstraintType/Entity/Constraint interfaces
-         in cad.ts; componentConstraints[] + addComponentConstraint, removeComponentConstraint,
-         suppressComponentConstraint, solveComponentConstraint, solveAllComponentConstraints
-         in componentStore; ConstrainComponentsDialog.tsx (list + add form + Solve All);
-         comingSoon stub replaced with setActiveDialog('constrain-components') in Toolbar.
+ 
 
 

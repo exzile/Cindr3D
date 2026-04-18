@@ -9,11 +9,12 @@
  * before being replaced to prevent GPU memory leaks.
  */
 
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import * as THREE from 'three';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { useCADStore } from '../../../store/cadStore';
 import { useFacePicker, type FacePickResult } from '../../../hooks/useFacePicker';
+import { usePickerSceneCleanup } from '../../../hooks/usePickerSceneCleanup';
 
 // ── Module-level material singletons ─────────────────────────────────────────
 const HOVER_MAT = new THREE.MeshBasicMaterial({
@@ -59,6 +60,22 @@ export default function ShellFacePicker() {
   const selectedBoundariesRef = useRef<Map<string, THREE.Vector3[]>>(new Map());
 
   const hoverMeshRef = useRef<THREE.Mesh | null>(null);
+  usePickerSceneCleanup([hoverMeshRef]);
+  // The Map of selected per-face meshes also needs unmount cleanup so HMR /
+  // viewport teardown doesn't strand them in the scene with leaked geometries.
+  const { scene: _scene } = useThree();
+  useEffect(() => {
+    const sceneRef = _scene;
+    return () => {
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      selectedMeshesRef.current.forEach((mesh) => {
+        sceneRef.remove(mesh);
+        mesh.geometry?.dispose?.();
+      });
+      selectedMeshesRef.current.clear();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Map from face ID to overlay mesh
   const selectedMeshesRef = useRef<Map<string, THREE.Mesh>>(new Map());
 

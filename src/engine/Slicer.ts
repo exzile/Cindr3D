@@ -1069,7 +1069,9 @@ export class Slicer {
 
     for (let y = bbox.minY; y <= bbox.maxY; y += spacing) {
       const linePoints: THREE.Vector2[] = [];
-      const steps = Math.ceil((bbox.maxX - bbox.minX) / 0.5);
+      // Guard against degenerate (single-X-coordinate) bbox slices — without
+      // this, steps=0 and `s/steps = 0/0 = NaN` corrupts the infill polyline.
+      const steps = Math.max(1, Math.ceil((bbox.maxX - bbox.minX) / 0.5));
       for (let s = 0; s <= steps; s++) {
         const x = bbox.minX + (s / steps) * (bbox.maxX - bbox.minX);
         const yOff = y + amplitude * Math.sin((2 * Math.PI * x) / period + phaseShift);
@@ -1231,9 +1233,12 @@ export class Slicer {
     const overhangRegions: THREE.Vector2[][] = [];
 
     for (const tri of triangles) {
-      // Check if triangle faces downward beyond the support angle
+      // Check if triangle faces downward beyond the support angle.
+      // Clamp dotUp to [-1, 1] before acos — FP drift can push it slightly
+      // outside that range, producing NaN that silently breaks the comparison
+      // below for what should be exactly-vertical faces.
       const dotUp = tri.normal.z; // dot with (0,0,1)
-      const faceAngle = Math.acos(Math.abs(dotUp));
+      const faceAngle = Math.acos(Math.min(1, Math.abs(dotUp)));
 
       if (dotUp < 0 && faceAngle > overhangAngleRad) {
         // Check if triangle overlaps with this layer
