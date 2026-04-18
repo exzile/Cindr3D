@@ -1,5 +1,5 @@
-import { useMemo, useState, useCallback } from 'react';
-import { ChevronRight, ChevronDown, Search, Braces, X } from 'lucide-react';
+import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import { ChevronRight, ChevronDown, Search, Braces, X, Check } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { colors as COLORS } from '../../utils/theme';
 import './DuetObjectModelBrowser.css';
@@ -46,13 +46,42 @@ interface NodeProps {
   depth: number;
   search: string;
   expandedByDefault: boolean;
+  onEdit?: (path: string, newValue: string) => void;
 }
 
-function Node({ path, nodeKey, value, depth, search, expandedByDefault }: NodeProps) {
+function Node({ path, nodeKey, value, depth, search, expandedByDefault, onEdit }: NodeProps) {
   const [open, setOpen] = useState(expandedByDefault || depth < 1);
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
 
   const isContainer = isObject(value) || Array.isArray(value);
   const matchesSearch = search.length > 0 && path.toLowerCase().includes(search.toLowerCase());
+
+  const handleDoubleClick = useCallback(() => {
+    if (!onEdit) return;
+    const raw = value === null ? 'null' : value === undefined ? '' : String(value);
+    setEditValue(raw);
+    setEditing(true);
+  }, [onEdit, value]);
+
+  const handleConfirm = useCallback(() => {
+    if (onEdit && editValue !== formatPrimitive(value)) {
+      onEdit(path, editValue);
+    }
+    setEditing(false);
+  }, [onEdit, editValue, value, path]);
+
+  const handleCancel = useCallback(() => {
+    setEditing(false);
+  }, []);
 
   if (!isContainer) {
     return (
@@ -63,9 +92,45 @@ function Node({ path, nodeKey, value, depth, search, expandedByDefault }: NodePr
         <span className="duet-obj-browser__node-spacer" />
         <span style={{ color: COLORS.text }}>{nodeKey}</span>
         <span className="duet-obj-browser__node-sep">:</span>
-        <span style={{ color: valueColor(value), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {formatPrimitive(value)}
-        </span>
+        {editing ? (
+          <span className="duet-obj-browser__edit-wrap">
+            <input
+              ref={inputRef}
+              className="duet-obj-browser__edit-input"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleConfirm();
+                if (e.key === 'Escape') handleCancel();
+              }}
+              onBlur={handleCancel}
+            />
+            <button
+              className="duet-obj-browser__edit-confirm"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={handleConfirm}
+              title="Confirm edit"
+            >
+              <Check size={10} />
+            </button>
+            <button
+              className="duet-obj-browser__edit-cancel"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={handleCancel}
+              title="Cancel"
+            >
+              <X size={10} />
+            </button>
+          </span>
+        ) : (
+          <span
+            style={{ color: valueColor(value), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: onEdit ? 'pointer' : undefined }}
+            onDoubleClick={handleDoubleClick}
+            title={onEdit ? 'Double-click to edit' : undefined}
+          >
+            {formatPrimitive(value)}
+          </span>
+        )}
       </div>
     );
   }
@@ -94,6 +159,7 @@ function Node({ path, nodeKey, value, depth, search, expandedByDefault }: NodePr
           depth={depth + 1}
           search={search}
           expandedByDefault={expandedByDefault}
+          onEdit={onEdit}
         />
       ))}
     </div>
@@ -141,12 +207,45 @@ function filterTree(value: JsonValue, search: string, path = ''): JsonValue | un
 }
 
 // ---------------------------------------------------------------------------
+// Path-to-G-code mapping for known writable paths
+// ---------------------------------------------------------------------------
+function gcodeForPath(path: string, newValue: string): string | null {
+  // move.speedFactor -> M220 S<percent>
+  if (path === 'move.speedFactor') {
+    const pct = Math.round(parseFloat(newValue) * 100);
+    return `M220 S${pct}`;
+  }
+  // move.extruders[n].factor -> M221 D<n> S<percent>
+  const extFactorMatch = path.match(/^move\.extruders\.(\d+)\.factor$/);
+  if (extFactorMatch) {
+    const pct = Math.round(parseFloat(newValue) * 100);
+    return `M221 D${extFactorMatch[1]} S${pct}`;
+  }
+  // fans[n].requestedValue -> M106 P<n> S<0-255>
+  const fanMatch = path.match(/^fans\.(\d+)\.requestedValue$/);
+  if (fanMatch) {
+    const v = Math.round(parseFloat(newValue) * 255);
+    return `M106 P${fanMatch[1]} S${v}`;
+  }
+  // heat.heaters[n].active -> M104 or G10 for tool heaters
+  const heaterActiveMatch = path.match(/^heat\.heaters\.(\d+)\.active$/);
+  if (heaterActiveMatch) {
+    return `M568 P${heaterActiveMatch[1]} S${newValue}`;
+  }
+  // For other leaf values, send as raw M409 K"<path>" V<value> (RRF 3.3+)
+  return `M409 K"${path}" V${newValue}`;
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 export default function DuetObjectModelBrowser() {
   const model = usePrinterStore((s) => s.model);
+  const sendGCode = usePrinterStore((s) => s.sendGCode);
+  const connected = usePrinterStore((s) => s.connected);
 
   const [search, setSearch] = useState('');
+  const [editStatus, setEditStatus] = useState<string | null>(null);
 
   const filtered = useMemo(
     () => filterTree(model as JsonObject, search),
@@ -155,15 +254,37 @@ export default function DuetObjectModelBrowser() {
 
   const handleClear = useCallback(() => setSearch(''), []);
 
+  const handleEdit = useCallback(async (path: string, newValue: string) => {
+    if (!connected) {
+      setEditStatus('Not connected');
+      return;
+    }
+    const gcode = gcodeForPath(path, newValue);
+    if (!gcode) return;
+    try {
+      setEditStatus(`Sending: ${gcode}`);
+      await sendGCode(gcode);
+      setEditStatus(`Sent: ${gcode}`);
+      setTimeout(() => setEditStatus(null), 3000);
+    } catch (err) {
+      setEditStatus(`Error: ${(err as Error).message}`);
+      setTimeout(() => setEditStatus(null), 5000);
+    }
+  }, [connected, sendGCode]);
+
   return (
     <div className="duet-obj-browser">
       <div className="duet-obj-browser__panel">
         <div className="duet-obj-browser__header">
           <Braces size={14} color={COLORS.textDim} />
           <span className="duet-obj-browser__header-label">
-            Object Model (read-only)
+            Object Model {connected ? '(double-click values to edit)' : '(read-only)'}
           </span>
         </div>
+
+        {editStatus && (
+          <div className="duet-obj-browser__edit-status">{editStatus}</div>
+        )}
 
         <div className="duet-obj-browser__search-wrap">
           <Search
@@ -191,7 +312,7 @@ export default function DuetObjectModelBrowser() {
         <div className="duet-obj-browser__tree">
           {filtered === undefined || (isObject(filtered) && Object.keys(filtered).length === 0) ? (
             <div className="duet-obj-browser__empty">
-              No matches for "{search}".
+              No matches for &quot;{search}&quot;.
             </div>
           ) : (
             <Node
@@ -201,6 +322,7 @@ export default function DuetObjectModelBrowser() {
               depth={0}
               search={search}
               expandedByDefault={search.length > 0}
+              onEdit={connected ? handleEdit : undefined}
             />
           )}
         </div>
