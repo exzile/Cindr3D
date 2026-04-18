@@ -129,16 +129,6 @@
   border: 2px solid var(--bg-primary);
 }
 
-.btn {
-  padding: 8px 20px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
 .settings-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -408,80 +398,6 @@
 
 .units-input__ext:hover {
   background: var(--bg-hover);
-}
-
-/* Hole diagram — schematic depth/angle/diameter readout shown at the bottom
-   of Shape Settings, similar to Fusion 360's diagram. */
-.hole-diagram {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px 12px;
-  align-items: center;
-  padding: 12px;
-  border: 1px solid var(--border-light);
-  border-radius: 6px;
-  background: var(--bg-secondary);
-}
-
-.hole-diagram__svg {
-  grid-column: 1;
-  grid-row: 1 / span 3;
-  justify-self: center;
-  color: var(--text-secondary);
-}
-
-.hole-diagram__field {
-  grid-column: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.hole-diagram__field input {
-  width: 110px;
-  height: 26px;
-  padding: 2px 8px;
-  font-size: 12px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-}
-
-/* Floating 3D-anchored diameter chip (drei <Html> overlay). */
-.hole-dim-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 2px 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
-  font-size: 12px;
-  color: var(--text-primary);
-  user-select: none;
-}
-
-.hole-dim-chip input {
-  width: 64px;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: inherit;
-  font-size: 12px;
-  text-align: right;
-  padding: 0;
-}
-
-.hole-dim-chip input:focus {
-  background: var(--accent-light);
-  border-radius: 2px;
-}
-
-.hole-dim-chip__unit {
-  color: var(--text-muted);
-  font-size: 11px;
 }
 
 /* Non-modal overlay variant — used when the dialog needs to coexist with

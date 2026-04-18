@@ -33,10 +33,6 @@ const SELECTED_MAT = new THREE.MeshBasicMaterial({
   depthTest: false,
 });
 
-// Scratch — no per-frame alloc
-const _v = new THREE.Vector3();
-void _v;
-
 function buildFaceGeom(boundary: THREE.Vector3[]): THREE.BufferGeometry {
   const geom = new THREE.BufferGeometry();
   const n = boundary.length;

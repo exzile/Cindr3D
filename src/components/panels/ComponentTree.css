@@ -347,3 +347,6 @@
   background: rgba(41, 121, 255, 0.2);
 }
 .browser-sketch-active-label {
+  color: var(--accent);
+  font-weight: 600;
+}
