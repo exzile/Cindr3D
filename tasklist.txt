@@ -82,10 +82,10 @@ JOB / PRINT TAB
 [x] Speed / flow override sliders
 [x] Webcam view (configurable URL)
 
-[ ] Print thumbnail preview (embedded base64 thumbnail from slicer gcode)
+[x] Print thumbnail preview (embedded base64 thumbnail from slicer gcode)
 [ ] Simulated print time vs actual comparison
 [ ] Pause at layer / height trigger configuration
-[ ] First layer inspection mode (pause after layer 1)
+[x] First layer inspection mode (pause after layer 1)
 [ ] Print queue (queue multiple files for sequential printing)
 
 --------------------------------------------------------------------------------
@@ -110,12 +110,12 @@ FILES TAB
 
 [x] File sorting (by name / size / date modified)
 [x] File search / filter by name
-[ ] GCode file thumbnail preview (thumbnail embedded in file by slicer)
+[x] GCode file thumbnail preview (thumbnail embedded in file by slicer)
 [x] File rename / move
-[ ] Multi-file select and batch delete
+[x] Multi-file select and batch delete
 [x] Create directory
 [x] Drag-and-drop upload
-[ ] File info panel (layer count, print time estimate, filament from gcode header)
+[x] File info panel (layer count, print time estimate, filament from gcode header)
 
 --------------------------------------------------------------------------------
 FILAMENTS TAB
@@ -129,7 +129,7 @@ FILAMENTS TAB
 [x] Unload filament from tool (M702)
 [x] Change filament (unload then load)
 
-[ ] Per-tool filament assignment display (show which filament is loaded per tool)
+[x] Per-tool filament assignment display (show which filament is loaded per tool)
 [ ] Filament color swatch (store/display color with each filament)
 [ ] Filament diameter / material properties storage
 [ ] Spool weight / remaining filament tracking
@@ -170,7 +170,7 @@ HEIGHT MAP TAB
 MODEL (OBJECT MODEL BROWSER) TAB
 --------------------------------------------------------------------------------
 [x] Raw JSON object model explorer (DuetObjectModelBrowser)
-[ ] Search / filter keys in object model
+[x] Search / filter keys in object model
 [ ] Editable fields (write supported model keys via G-code)
 
 --------------------------------------------------------------------------------
