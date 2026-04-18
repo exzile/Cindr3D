@@ -10,6 +10,7 @@ import { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import type { ConstructionPlane, ConstructionAxis, ConstructionPoint } from '../../../types/cad';
+import { tagShared } from '../../../engine/GeometryEngine';
 
 // ── Module-level material singletons ─────────────────────────────────────────
 const PLANE_MAT = new THREE.MeshBasicMaterial({
@@ -39,8 +40,9 @@ const POINT_MAT = new THREE.MeshBasicMaterial({
  * AUDIT-18: Module-level geometry singleton for construction points.
  * Shared across all ConstructionPointItem instances — do NOT dispose this
  * geometry in any per-instance cleanup, as it is reused by all instances.
+ * AUDIT-19: tagShared marks it so disposal logic skips it.
  */
-const POINT_GEO = new THREE.SphereGeometry(0.2, 8, 6);
+const POINT_GEO = tagShared(new THREE.SphereGeometry(0.2, 8, 6));
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 

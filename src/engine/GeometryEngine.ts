@@ -9,13 +9,19 @@ _csgEvaluator.useGroups = false;
 
 // Shared materials — created once, never duplicated per-entity
 /**
- * Tag a module-level singleton material so disposal logic in stores can
- * recognise it and SKIP `.dispose()` — disposing a singleton turns every
- * other feature using it into a black/broken material instance.
+ * Tag a module-level singleton material or geometry so disposal logic in stores
+ * can recognise it and SKIP `.dispose()` — disposing a singleton turns every
+ * other feature using it into a black/broken material or missing geometry.
+ *
+ * Materials: sets `userData.shared = true` (checked in cadStore dispose helpers).
+ * Geometries: sets `_sharedResource = true` (AUDIT-19 extension).
  */
-function tagShared<T extends THREE.Material>(m: T): T {
-  m.userData.shared = true;
-  return m;
+export function tagShared<T extends THREE.Material | THREE.BufferGeometry>(obj: T): T {
+  (obj as { _sharedResource?: boolean })._sharedResource = true;
+  if (obj instanceof THREE.Material) {
+    obj.userData.shared = true;
+  }
+  return obj;
 }
 
 const SKETCH_MATERIAL = tagShared(new THREE.LineBasicMaterial({ color: 0x00aaff, linewidth: 2 }));

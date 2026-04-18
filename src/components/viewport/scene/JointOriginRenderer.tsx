@@ -7,6 +7,7 @@ import { useMemo } from 'react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import type { JointOriginRecord } from '../../../types/cad';
+import { tagShared } from '../../../engine/GeometryEngine';
 
 // ── Module-level material singletons ─────────────────────────────────────────
 const MAT_X = new THREE.LineBasicMaterial({ color: 0xff2222, depthTest: false });
@@ -20,19 +21,20 @@ const AXIS_LEN = 15;
  * Each is a unit-length line from the origin (0,0,0) along its respective axis.
  * All JointOriginTriad instances share these geometries — position is applied via
  * the `position` prop on the containing group. Do NOT dispose these geometries.
+ * AUDIT-19: tagShared marks each so disposal logic skips them.
  */
-const GEO_X = new THREE.BufferGeometry().setFromPoints([
+const GEO_X = tagShared(new THREE.BufferGeometry().setFromPoints([
   new THREE.Vector3(0, 0, 0),
   new THREE.Vector3(AXIS_LEN, 0, 0),
-]);
-const GEO_Y = new THREE.BufferGeometry().setFromPoints([
+]));
+const GEO_Y = tagShared(new THREE.BufferGeometry().setFromPoints([
   new THREE.Vector3(0, 0, 0),
   new THREE.Vector3(0, AXIS_LEN, 0),
-]);
-const GEO_Z = new THREE.BufferGeometry().setFromPoints([
+]));
+const GEO_Z = tagShared(new THREE.BufferGeometry().setFromPoints([
   new THREE.Vector3(0, 0, 0),
   new THREE.Vector3(0, 0, AXIS_LEN),
-]);
+]));
 
 // ── Per-origin triad ──────────────────────────────────────────────────────────
 

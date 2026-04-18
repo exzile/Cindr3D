@@ -451,9 +451,13 @@ export default function Viewport() {
         {/* Shift + Middle-click pan (in addition to right-click pan) */}
         <ShiftMiddlePan />
 
-        {/* NAV-21: Ambient Occlusion — SSAO via @react-three/postprocessing.
+        {/* NAV-21 / AUDIT-21: Ambient Occlusion — SSAO via @react-three/postprocessing.
             SSAO_COLOR is a module-level singleton so we don't allocate a fresh
-            THREE.Color on every Viewport render. */}
+            THREE.Color on every Viewport render.
+            AUDIT-21: EffectComposer cleanup is handled by @react-three/postprocessing
+            on unmount — no manual dispose needed. Package version ^3.0.4 (v3+)
+            performs render-target and pass cleanup automatically via React's
+            unmount lifecycle. */}
         {ambientOcclusionEnabled && (
           <EffectComposer>
             <SSAO
