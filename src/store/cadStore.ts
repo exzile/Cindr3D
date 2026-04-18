@@ -6074,6 +6074,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Draft: angle must be finite and within (-90°, 90°)');
       return;
     }
+    get().pushUndo();
     const result = GeometryEngine.draftMesh(srcMesh, pullAxisDir, draftAngle, fixedPlaneY);
     result.castShadow = true;
     result.receiveShadow = true;
@@ -6099,6 +6100,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Offset Face: distance must be a finite number');
       return;
     }
+    get().pushUndo();
     const offsetGeom = GeometryEngine.offsetSurface(srcMesh, distance);
     const mat = srcMesh.material as THREE.Material;
     const result = new THREE.Mesh(offsetGeom, mat);
@@ -6176,6 +6178,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Boundary Fill: no valid tool bodies selected');
       return;
     }
+    get().pushUndo();
     // Compute combined bounding box
     const box = new THREE.Box3();
     for (const m of toolMeshes) {
