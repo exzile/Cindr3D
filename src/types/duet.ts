@@ -135,20 +135,27 @@ export interface DuetBoard {
 }
 
 // Network info
+export interface DuetNetworkInterface {
+  type: string;
+  actualIP: string;
+  subnet: string;
+  gateway: string;
+  firmwareVersion: string;
+  mac: string;
+  speed: number;
+  state: string;
+  activeProtocols: string[];
+  // WiFi-specific fields (present when interface type is "wifi")
+  ssid?: string;
+  signal?: number;
+  // DNS server(s)
+  dnsServer?: string;
+}
+
 export interface DuetNetwork {
   name: string;
   hostname: string;
-  interfaces: Array<{
-    type: string;
-    actualIP: string;
-    subnet: string;
-    gateway: string;
-    firmwareVersion: string;
-    mac: string;
-    speed: number;
-    state: string;
-    activeProtocols: string[];
-  }>;
+  interfaces: DuetNetworkInterface[];
 }
 
 // Job info

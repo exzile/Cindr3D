@@ -9,6 +9,8 @@ import { usePrinterStore } from '../../store/printerStore';
 interface DuetFileEditorProps {
   filePath: string;
   onClose: () => void;
+  /** When true, start with an empty editor instead of loading from disk. */
+  isNew?: boolean;
 }
 
 // ---------------------------------------------------------------------------
