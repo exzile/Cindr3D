@@ -36,6 +36,8 @@ export interface DuetAxis {
   visible: boolean;
   minEndstop?: number;
   maxEndstop?: number;
+  /** Workplace coordinate offsets (indexed 0-5 for G54-G59) */
+  workplaceOffsets?: number[];
 }
 
 // Extruder
@@ -118,6 +120,18 @@ export interface DuetProbe {
   deployedByUser: boolean;
 }
 
+// Spindle
+export interface DuetSpindle {
+  active: number;
+  canReverse: boolean;
+  current: number;
+  frequency: number;
+  max: number;
+  min: number;
+  state: 'unconfigured' | 'stopped' | 'forward' | 'reverse';
+  tool: number;
+}
+
 // Board info
 export interface DuetBoard {
   firmwareName: string;
@@ -132,23 +146,31 @@ export interface DuetBoard {
   shortName: string;
   vIn?: { current: number; min: number; max: number };
   v12?: { current: number; min: number; max: number };
+  canAddress?: number;
 }
 
 // Network info
+export interface DuetNetworkInterface {
+  type: string;
+  actualIP: string;
+  subnet: string;
+  gateway: string;
+  firmwareVersion: string;
+  mac: string;
+  speed: number;
+  state: string;
+  activeProtocols: string[];
+  // WiFi-specific fields (present when interface type is "wifi")
+  ssid?: string;
+  signal?: number;
+  // DNS server(s)
+  dnsServer?: string;
+}
+
 export interface DuetNetwork {
   name: string;
   hostname: string;
-  interfaces: Array<{
-    type: string;
-    actualIP: string;
-    subnet: string;
-    gateway: string;
-    firmwareVersion: string;
-    mac: string;
-    speed: number;
-    state: string;
-    activeProtocols: string[];
-  }>;
+  interfaces: DuetNetworkInterface[];
 }
 
 // Job info
@@ -232,6 +254,7 @@ export interface DuetState {
   beep?: { duration: number; frequency: number };
   upTime: number;
   machineMode: string;
+  laserPwm?: number;
   logFile: string | null;
   messageBox?: {
     mode: number;
@@ -255,6 +278,7 @@ export interface DuetObjectModel {
     endstops: Array<{ triggered: boolean; type: string }>;
     probes: DuetProbe[];
   };
+  spindles: DuetSpindle[];
   state: DuetState;
   tools: DuetTool[];
   directories: {

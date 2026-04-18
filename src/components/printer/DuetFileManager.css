@@ -125,6 +125,71 @@
   font-family: inherit;
 }
 
+.duet-file-mgr__toolbar-btn--danger {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.duet-file-mgr__toolbar-btn--danger:hover:not(:disabled) {
+  background: var(--error);
+  color: #fff;
+}
+
+.duet-file-mgr__checkbox {
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+/* ── Search / filter bar ─────────────────────────────────────────────────── */
+.duet-file-mgr__search-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background-color: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.duet-file-mgr__search-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.duet-file-mgr__search-input {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+  font-family: inherit;
+}
+
+.duet-file-mgr__search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.duet-file-mgr__search-input:focus {
+  border-color: var(--accent);
+}
+
+.duet-file-mgr__search-clear {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  border-radius: 3px;
+}
+
+.duet-file-mgr__search-clear:hover {
+  color: var(--text-primary);
+}
+
 /* ── Upload progress ─────────────────────────────────────────────────────── */
 .duet-file-mgr__progress-container {
   flex: 1;

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist, type PersistStorage } from 'zustand/middleware';
 import * as THREE from 'three';
 import type {
   Component, Body, ConstructionGeometry, Joint,
@@ -7,6 +8,52 @@ import type {
 } from '../types/cad';
 import { GeometryEngine } from '../engine/GeometryEngine';
 import type { MirrorComponentParams } from '../components/dialogs/assembly/MirrorComponentDialog';
+
+// ── IndexedDB storage adapter (mirrors cadStore pattern) ─────────────────────
+function openComponentDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('dzign3d-component-store', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('kv');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+const idbStorage: PersistStorage<unknown> = {
+  getItem: async (name: string): Promise<string | null> => {
+    try {
+      const db = await openComponentDB();
+      return new Promise((resolve) => {
+        const tx  = db.transaction('kv', 'readonly');
+        const req = tx.objectStore('kv').get(name);
+        req.onsuccess = () => { db.close(); resolve(req.result ?? null); };
+        req.onerror   = () => { db.close(); resolve(null); };
+      });
+    } catch { return null; }
+  },
+  setItem: async (name: string, value: string): Promise<void> => {
+    try {
+      const db = await openComponentDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('kv', 'readwrite');
+        tx.objectStore('kv').put(value, name);
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror    = () => { db.close(); reject(tx.error); };
+      });
+    } catch { /* storage unavailable — silently skip */ }
+  },
+  removeItem: async (name: string): Promise<void> => {
+    try {
+      const db = await openComponentDB();
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction('kv', 'readwrite');
+        tx.objectStore('kv').delete(name);
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror    = () => { db.close(); reject(tx.error); };
+      });
+    } catch { /* ignore */ }
+  },
+};
 
 interface ComponentStore {
   // Root assembly
@@ -139,6 +186,16 @@ const rootId = crypto.randomUUID();
  */
 let _animationJointSnapshot: Record<string, { rotation?: number; translation?: number }> | null = null;
 
+/**
+ * Mutable per-frame joint rotation values — updated by tickAnimation WITHOUT
+ * triggering Zustand re-renders (60Hz). Scene consumers (JointAnimationPlayer)
+ * read this directly via getState() or this export and apply transforms to
+ * body meshes imperatively, bypassing React's render cycle entirely.
+ *
+ * Values are cleared when animation stops and Zustand joints are synced back.
+ */
+export const _liveJointValues: Record<string, { rotationValue: number; translationValue?: number }> = {};
+
 const defaultMaterial: MaterialAppearance = {
   id: 'aluminum',
   name: 'Aluminum',
@@ -149,7 +206,7 @@ const defaultMaterial: MaterialAppearance = {
   category: 'metal',
 };
 
-export const useComponentStore = create<ComponentStore>((set, get) => ({
+export const useComponentStore = create<ComponentStore>()(persist((set, get) => ({
   rootComponentId: rootId,
 
   components: {
@@ -278,12 +335,44 @@ export const useComponentStore = create<ComponentStore>((set, get) => ({
   },
 
   duplicateComponent: (id) => {
-    const { components } = get();
+    const { components, bodies } = get();
     const comp = components[id];
     if (!comp || !comp.parentId) return id;
 
     const newId = get().addComponent(comp.parentId, `${comp.name} (Copy)`);
-    // TODO: deep copy bodies and features
+
+    // Deep-copy each body so the duplicate gets independent geometry and does
+    // not share array refs with the source component. The mesh is cloned via
+    // THREE.Object3D.clone() so each component has its own scene object.
+    const newBodies: Record<string, Body> = {};
+    const newBodyIds: string[] = [];
+
+    for (const bodyId of comp.bodyIds) {
+      const body = bodies[bodyId];
+      if (!body) continue;
+      const newBodyId = crypto.randomUUID();
+      newBodies[newBodyId] = {
+        ...body,
+        id: newBodyId,
+        componentId: newId,
+        // Clone the Three.js scene object so edits to one don't affect the other.
+        mesh: body.mesh ? body.mesh.clone() : null,
+        // Each body starts with its own empty feature list; the source feature
+        // history is not transferred because features reference the original body.
+        featureIds: [],
+        material: { ...body.material },
+      };
+      newBodyIds.push(newBodyId);
+    }
+
+    const updatedComponents = { ...get().components };
+    updatedComponents[newId] = { ...updatedComponents[newId], bodyIds: newBodyIds };
+
+    set({
+      bodies: { ...get().bodies, ...newBodies },
+      components: updatedComponents,
+    });
+
     return newId;
   },
 
@@ -827,10 +916,13 @@ export const useComponentStore = create<ComponentStore>((set, get) => ({
       }
     }
 
-    // Batch all joint value updates into a single set() call to avoid
-    // N+1 separate state updates and re-renders per animation frame.
+    // Compute per-track values and write them into the module-level
+    // _liveJointValues map WITHOUT touching Zustand joints. This avoids
+    // triggering a React re-render on every frame (60Hz) for all components
+    // subscribed to `joints` — those components are only needed at rest pose,
+    // not during playback. JointAnimationPlayer reads _liveJointValues and
+    // applies transforms directly to body meshes each frame.
     const t = animationDuration > 0 ? newTime / animationDuration : 0;
-    const updatedJoints = { ...joints };
     for (const track of animationTracks) {
       let easedT: number;
       switch (track.easing) {
@@ -840,29 +932,33 @@ export const useComponentStore = create<ComponentStore>((set, get) => ({
         default: easedT = t;
       }
       const value = track.startValue + (track.endValue - track.startValue) * easedT;
-      const joint = updatedJoints[track.jointId];
-      if (joint) {
-        updatedJoints[track.jointId] = { ...joint, rotationValue: value };
-      }
+      _liveJointValues[track.jointId] = { rotationValue: value };
     }
 
-    set({
-      animationTime: newTime,
-      animationPlaying: playing,
-      joints: updatedJoints,
-    });
-    // If playback ended naturally (loop=false reached duration), restore the
-    // captured snapshot so the model isn't left frozen at the last frame.
-    if (!playing && _animationJointSnapshot) {
-      const snap = _animationJointSnapshot;
-      const restored = { ...get().joints };
-      for (const id of Object.keys(snap)) {
-        const j = restored[id];
-        const s = snap[id];
-        if (j && s) restored[id] = { ...j, rotationValue: s.rotation ?? j.rotationValue, translationValue: s.translation ?? j.translationValue };
+    if (playing) {
+      // During playback only update time/playing — NOT joints — to avoid
+      // 60Hz Zustand re-renders across every joint subscriber.
+      set({ animationTime: newTime, animationPlaying: true });
+    } else {
+      // Playback ended naturally (loop=false reached duration).
+      // Restore the pre-animation snapshot so the model returns to its rest pose,
+      // clear _liveJointValues, and perform a single Zustand joints sync.
+      if (_animationJointSnapshot) {
+        const snap = _animationJointSnapshot;
+        const restored = { ...joints };
+        for (const id of Object.keys(snap)) {
+          const j = restored[id];
+          const s = snap[id];
+          if (j && s) restored[id] = { ...j, rotationValue: s.rotation ?? j.rotationValue, translationValue: s.translation ?? j.translationValue };
+        }
+        // Clear live values
+        for (const id of Object.keys(_liveJointValues)) delete _liveJointValues[id];
+        set({ joints: restored, animationTime: 0, animationPlaying: false });
+        _animationJointSnapshot = null;
+      } else {
+        for (const id of Object.keys(_liveJointValues)) delete _liveJointValues[id];
+        set({ animationTime: 0, animationPlaying: false });
       }
-      set({ joints: restored, animationTime: 0 });
-      _animationJointSnapshot = null;
     }
   },
 
@@ -1041,6 +1137,9 @@ export const useComponentStore = create<ComponentStore>((set, get) => ({
     const c = componentConstraints.find(cc => cc.id === constraintId);
     if (!c || c.suppressed) return;
 
+    const compA = components[c.entityA.componentId];
+    if (!compA) return;
+
     const compB = components[c.entityB.componentId];
     if (!compB) return;
 
@@ -1105,4 +1204,125 @@ export const useComponentStore = create<ComponentStore>((set, get) => ({
       set({ componentConstraints: get().componentConstraints.filter((c) => !stale.includes(c.id)) });
     }
   },
+}),
+{
+  name: 'dzign3d-component-store',
+  storage: idbStorage as unknown as PersistStorage<unknown>,
+
+  onRehydrateStorage: () => (state) => {
+    if (!state) return;
+    // Reconstruct THREE.Matrix4 from serialized number[] for components
+    for (const comp of Object.values(state.components ?? {})) {
+      if (Array.isArray((comp as unknown as { transform: unknown }).transform)) {
+        comp.transform = new THREE.Matrix4().fromArray(
+          (comp as unknown as { transform: number[] }).transform,
+        );
+      }
+    }
+    // Reconstruct THREE.Matrix4 from serialized number[] for occurrences
+    for (const occ of Object.values(state.occurrences ?? {})) {
+      if (Array.isArray((occ as unknown as { transform: unknown }).transform)) {
+        occ.transform = new THREE.Matrix4().fromArray(
+          (occ as unknown as { transform: number[] }).transform,
+        );
+      }
+    }
+    // Reconstruct THREE.Vector3 for Joint origin / axis
+    for (const joint of Object.values(state.joints ?? {})) {
+      const j = joint as unknown as { origin: unknown; axis?: unknown };
+      if (j.origin && !((j.origin) instanceof THREE.Vector3)) {
+        const o = j.origin as { x?: number; y?: number; z?: number } | number[];
+        if (Array.isArray(o)) {
+          joint.origin = new THREE.Vector3(o[0] ?? 0, o[1] ?? 0, o[2] ?? 0);
+        } else {
+          joint.origin = new THREE.Vector3(o.x ?? 0, o.y ?? 0, o.z ?? 0);
+        }
+      }
+      if (j.axis && !((j.axis) instanceof THREE.Vector3)) {
+        const a = j.axis as { x?: number; y?: number; z?: number } | number[];
+        if (Array.isArray(a)) {
+          joint.axis = new THREE.Vector3(a[0] ?? 0, a[1] ?? 0, a[2] ?? 0);
+        } else {
+          joint.axis = new THREE.Vector3(a.x ?? 0, a.y ?? 0, a.z ?? 0);
+        }
+      }
+    }
+    // Reconstruct THREE.Vector3 for explodedOffsets
+    for (const [key, val] of Object.entries(state.explodedOffsets ?? {})) {
+      if (!(val instanceof THREE.Vector3)) {
+        const v = val as unknown as { x?: number; y?: number; z?: number } | number[];
+        if (Array.isArray(v)) {
+          state.explodedOffsets[key] = new THREE.Vector3(v[0] ?? 0, v[1] ?? 0, v[2] ?? 0);
+        } else {
+          state.explodedOffsets[key] = new THREE.Vector3(v.x ?? 0, v.y ?? 0, v.z ?? 0);
+        }
+      }
+    }
+  },
+
+  partialize: (state) => ({
+    rootComponentId: state.rootComponentId,
+    // Serialize THREE.Matrix4 as number[] (16 elements)
+    components: Object.fromEntries(
+      Object.entries(state.components).map(([id, comp]) => [
+        id,
+        {
+          ...comp,
+          transform: comp.transform instanceof THREE.Matrix4
+            ? comp.transform.toArray()
+            : comp.transform,
+        },
+      ]),
+    ),
+    // Exclude mesh (THREE.Object3D) from bodies
+    bodies: Object.fromEntries(
+      Object.entries(state.bodies).map(([id, body]) => [
+        id,
+        { ...body, mesh: null },
+      ]),
+    ),
+    // Serialize Joint: origin and axis as plain objects
+    joints: Object.fromEntries(
+      Object.entries(state.joints).map(([id, joint]) => [
+        id,
+        {
+          ...joint,
+          origin: joint.origin instanceof THREE.Vector3
+            ? { x: joint.origin.x, y: joint.origin.y, z: joint.origin.z }
+            : joint.origin,
+          axis: joint.axis instanceof THREE.Vector3
+            ? { x: joint.axis.x, y: joint.axis.y, z: joint.axis.z }
+            : joint.axis,
+        },
+      ]),
+    ),
+    rigidGroups: state.rigidGroups,
+    motionLinks: state.motionLinks,
+    animationTracks: state.animationTracks,
+    animationDuration: state.animationDuration,
+    animationLoop: state.animationLoop,
+    // Serialize occurrences: THREE.Matrix4 as number[]
+    occurrences: Object.fromEntries(
+      Object.entries(state.occurrences).map(([id, occ]) => [
+        id,
+        {
+          ...occ,
+          transform: occ.transform instanceof THREE.Matrix4
+            ? occ.transform.toArray()
+            : occ.transform,
+        },
+      ]),
+    ),
+    definitions: state.definitions,
+    componentConstraints: state.componentConstraints,
+    // Serialize explodedOffsets: THREE.Vector3 as plain objects
+    explodedOffsets: Object.fromEntries(
+      Object.entries(state.explodedOffsets).map(([id, v]) => [
+        id,
+        v instanceof THREE.Vector3
+          ? { x: v.x, y: v.y, z: v.z }
+          : v,
+      ]),
+    ),
+  }),
 }));

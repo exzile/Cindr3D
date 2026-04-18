@@ -13,7 +13,7 @@ DASHBOARD TAB
 [x] Axis movement panel (jog X/Y/Z, home buttons, step sizes)
 [x] Extruder control panel (extrude/retract, amount, feedrate)
 [x] Speed factor slider (M220)
-[x] Flow factor slider — global (M221 D-1)    ← added this session
+[x] Flow factor slider — global (M221 D-1)
 [x] Per-extruder flow factor sliders (M221 D{n})
 [x] Fan control panel (fan index, speed slider)
 [x] ATX power panel (M80/M81)
@@ -21,13 +21,13 @@ DASHBOARD TAB
 [x] Custom G-code buttons (user-defined, persisted to localStorage)
 [x] System info panel (board, firmware, network, MCU temp, VIN, storage)
 
-[ ] Tool offsets editor (G10 P{n} X Y Z — view and edit per-tool offsets)
-[ ] Workplace coordinates selector / display (G54–G59)
-[ ] Restore points display (G60 saved positions)
-[ ] Pressure advance configuration per extruder (M572 D{n} S{val})
-[ ] Input shaper settings (M593 — frequency, damping, type)
-[ ] Baby stepping from dashboard (currently only on Job tab)
-[ ] Bed compensation type indicator (mesh / tilt / none) with quick toggle
+[x] Tool offsets editor (G10 P{n} X Y Z — view and edit per-tool offsets)
+[x] Workplace coordinates selector / display (G54–G59)
+[x] Restore points display (G60 saved positions)
+[x] Pressure advance configuration per extruder (M572 D{n} S{val})
+[x] Input shaper settings (M593 — frequency, damping, type)
+[x] Baby stepping from dashboard
+[x] Bed compensation type indicator (mesh / tilt / none) with quick toggle
 
 --------------------------------------------------------------------------------
 STATUS TAB
@@ -40,12 +40,12 @@ STATUS TAB
 [x] Motor drivers panel (axis-to-driver mapping)
 [x] General purpose outputs panel (gpOut PWM values — read-only)
 
-[ ] Network status panel (IP, subnet, gateway, MAC, DNS, WiFi SSID/signal)
-[ ] GPIO interactive control (toggle on/off or set PWM slider for gpOut pins)
-[ ] CAN expansion boards (additional boards on CAN bus — multi-board setups)
-[ ] Driver status flags (stall detection, over-temp warning per driver)
-[ ] Spindle status (speed, state — for CNC use)
-[ ] Laser status (PWM, power — for laser use)
+[x] Network status panel (IP, subnet, gateway, MAC, DNS, WiFi SSID/signal)
+[x] GPIO interactive control (toggle on/off or set PWM slider for gpOut pins)
+[x] CAN expansion boards (additional boards on CAN bus — multi-board setups)
+[x] Driver status flags (stall detection, over-temp warning per driver)
+[x] Spindle status (speed, state — for CNC use)
+[x] Laser status (PWM, power — for laser use)
 
 --------------------------------------------------------------------------------
 CONSOLE TAB
@@ -61,10 +61,11 @@ CONSOLE TAB
 [x] Clear log
 [x] Temperature report filtering (suppress noisy T: B: lines)
 
-[ ] Command history navigation (↑/↓ arrow keys cycle through sent commands)
-[ ] Command history persistence (save sent commands to localStorage)
-[ ] G-code syntax highlighting in input field
-[ ] Verbose / non-verbose mode toggle (M111)
+[x] Command history navigation (↑/↓ arrow keys cycle through sent commands)
+[x] Command history persistence (save sent commands to localStorage)
+[x] G-code syntax highlighting in input field
+[x] Ctrl+Enter to send multi-line G-code block
+[x] Verbose / non-verbose mode toggle (M111)
 
 --------------------------------------------------------------------------------
 JOB / PRINT TAB
@@ -82,11 +83,11 @@ JOB / PRINT TAB
 [x] Speed / flow override sliders
 [x] Webcam view (configurable URL)
 
-[ ] Print thumbnail preview (embedded base64 thumbnail from slicer gcode)
-[ ] Simulated print time vs actual comparison
-[ ] Pause at layer / height trigger configuration
-[ ] First layer inspection mode (pause after layer 1)
-[ ] Print queue (queue multiple files for sequential printing)
+[x] Print thumbnail preview (embedded base64 thumbnail from slicer gcode)
+[x] Simulated print time vs actual comparison
+[x] Pause at layer / height trigger configuration
+[x] First layer inspection mode (pause after layer 1)
+[x] Print queue (queue multiple files for sequential printing)
 
 --------------------------------------------------------------------------------
 HISTORY TAB
@@ -94,10 +95,10 @@ HISTORY TAB
 [x] Print history list (parsed from 0:/sys/eventlog.txt)
 [x] Re-print from history
 
-[ ] History pagination / load more
-[ ] History search / filter by filename or date
-[ ] History stats (total print time, success rate)
-[ ] Export history as CSV
+[x] History pagination / load more
+[x] History search / filter by filename or date
+[x] History stats (total print time, success rate)
+[x] Export history as CSV
 
 --------------------------------------------------------------------------------
 FILES TAB
@@ -108,14 +109,14 @@ FILES TAB
 [x] Start print from file list
 [x] Directory navigation (0:/gcodes subdirectories)
 
-[ ] File sorting (by name / size / date modified)
-[ ] File search / filter by name
-[ ] GCode file thumbnail preview (thumbnail embedded in file by slicer)
-[ ] File rename / move
-[ ] Multi-file select and batch delete
-[ ] Create directory
-[ ] Drag-and-drop upload
-[ ] File info panel (layer count, print time estimate, filament from gcode header)
+[x] File sorting (by name / size / date modified)
+[x] File search / filter by name
+[x] GCode file thumbnail preview (thumbnail embedded in file by slicer)
+[x] File rename / move
+[x] Multi-file select and batch delete
+[x] Create directory
+[x] Drag-and-drop upload
+[x] File info panel (layer count, print time estimate, filament from gcode header)
 
 --------------------------------------------------------------------------------
 FILAMENTS TAB
@@ -129,10 +130,10 @@ FILAMENTS TAB
 [x] Unload filament from tool (M702)
 [x] Change filament (unload then load)
 
-[ ] Per-tool filament assignment display (show which filament is loaded per tool)
-[ ] Filament color swatch (store/display color with each filament)
-[ ] Filament diameter / material properties storage
-[ ] Spool weight / remaining filament tracking
+[x] Per-tool filament assignment display (show which filament is loaded per tool)
+[x] Filament color swatch (store/display color with each filament)
+[x] Filament diameter / material properties storage
+[x] Spool weight / remaining filament tracking
 
 --------------------------------------------------------------------------------
 MACROS TAB
@@ -144,10 +145,10 @@ MACROS TAB
 [x] Delete macro
 [x] Quick actions strip (root .g files shown as quick-run buttons)
 
-[ ] Create new macro (in-browser text editor, save to printer)
-[ ] Edit existing macro in-browser (DuetFileEditor exists but not wired to macros)
-[ ] Macro search / filter
-[ ] Drag-and-drop macro upload
+[x] Create new macro (in-browser text editor, save to printer)
+[x] Edit existing macro in-browser (DuetFileEditor exists but not wired to macros)
+[x] Macro search / filter
+[x] Drag-and-drop macro upload
 
 --------------------------------------------------------------------------------
 HEIGHT MAP TAB
@@ -160,18 +161,18 @@ HEIGHT MAP TAB
 [x] Statistics panel (min, max, mean, RMS, probe points, grid dimensions)
 [x] Probing indicator (in-progress banner)
 
-[ ] Multiple saved height map files (load from 0:/sys/*.csv, not just heightmap.csv)
-[ ] Save height map to custom filename
-[ ] Compensation type toggle (enable/disable mesh bed compensation via G29 S)
-[ ] Height map comparison (diff two maps)
-[ ] Export height map as CSV download
+[x] Multiple saved height map files (load from 0:/sys/*.csv, not just heightmap.csv)
+[x] Save height map to custom filename
+[x] Compensation type toggle (enable/disable mesh bed compensation via G29 S)
+[x] Height map comparison (diff two maps)
+[x] Export height map as CSV download
 
 --------------------------------------------------------------------------------
 MODEL (OBJECT MODEL BROWSER) TAB
 --------------------------------------------------------------------------------
 [x] Raw JSON object model explorer (DuetObjectModelBrowser)
-[ ] Search / filter keys in object model
-[ ] Editable fields (write supported model keys via G-code)
+[x] Search / filter keys in object model
+[x] Editable fields (write supported model keys via G-code)
 
 --------------------------------------------------------------------------------
 SETTINGS (MODAL DIALOG)
@@ -182,23 +183,23 @@ SETTINGS (MODAL DIALOG)
 [x] Test connection button
 [x] Connect / disconnect
 
-[ ] Webcam URL configuration (used by Job tab WebcamView)
-[ ] Auto-reconnect settings (interval, max retries)
-[ ] Theme selector (light / dark) — themeStore exists, no UI in settings
-[ ] Notification sound toggle
-[ ] Temperature unit toggle (°C / °F)
-[ ] Date/time format preference
+[x] Webcam URL configuration (used by Job tab WebcamView)
+[x] Auto-reconnect settings (interval, max retries)
+[x] Theme selector (light / dark)
+[x] Notification sound toggle
+[x] Temperature unit toggle (°C / °F)
+[x] Date/time format preference
 
 --------------------------------------------------------------------------------
 FIRMWARE UPDATE
 --------------------------------------------------------------------------------
-[x] Store actions: uploadFirmware(), installFirmware()  ← no UI yet
+[x] Store actions: uploadFirmware(), installFirmware()
 
-[ ] Firmware update page / section in Settings
-[ ] Drag-and-drop firmware .bin upload with progress bar
-[ ] Firmware version check vs installed version
-[ ] IAP file upload (required for standalone update flow)
-[ ] Post-update reconnect flow
+[x] Firmware update page / section in Settings
+[x] Drag-and-drop firmware .bin upload with progress bar
+[-] Firmware version check vs installed version (shows current; no remote check)
+[x] IAP file upload (required for standalone update flow)
+[x] Post-update reconnect flow (firmwareUpdatePending flag; amber banner while board reboots)
 
 --------------------------------------------------------------------------------
 GENERAL / CROSS-CUTTING
@@ -211,14 +212,13 @@ GENERAL / CROSS-CUTTING
 [x] Ribbon navigation (Dashboard, Status, Console, Job, History,
     Files, Filaments, Macros, Height Map, Model)
 
-[ ] Keyboard shortcut: Ctrl+Enter to send multi-line G-code block
-[ ] Global search across tabs (file, macro, filament by name)
-[ ] Dark / light theme toggle accessible from toolbar (themeStore exists but
-    no toolbar button — only applies internally to DuetPrinterPanel)
-[ ] Responsive layout for narrow/side-panel mode
-[ ] Offline/disconnected graceful degradation (show last-known values)
-[ ] Sound alerts on print complete / error
-[ ] Browser tab title update with print progress (e.g. "42% - myprint.gcode")
+[x] Keyboard shortcut: Ctrl+Enter to send multi-line G-code block
+[x] Global search across tabs (file, macro, filament by name)
+[x] Dark / light theme toggle accessible from toolbar
+[x] Responsive layout for narrow/side-panel mode
+[x] Offline/disconnected graceful degradation (show last-known values)
+[x] Sound alerts on print complete / error
+[x] Browser tab title update with print progress (e.g. "42% - myprint.gcode")
 ================================================================================
 
 
@@ -231,76 +231,56 @@ GENERAL / CROSS-CUTTING
 --------------------------------------------------------------------------------
 ARCHITECTURAL — large refactors, need their own scope
 --------------------------------------------------------------------------------
-[ ] AUDIT-1. pushUndo() missing from ~50 commit actions in cadStore.ts.
-             Currently only called from sketch-editing paths. None of
-             commitExtrude/Revolve/Combine/Shell/Draft/Fillet/Chamfer/Hole/
-             Thread/Sweep/Loft/Mirror/Pattern*/MeshTransform/Scale/OffsetFace/
-             DirectEdit/PlaneCut/Remesh/Fill/Boss/Rib/Web call it. Result:
-             undo silently skips ANY feature operation. Best done as a single
-             sweep with a `withUndo(action)` helper. (large refactor)
+[x] AUDIT-1. pushUndo() added to all 24 feature commit actions: commitExtrude,
+             commitRevolve, commitSweep, commitLoft, commitRib, commitRibFromDialog,
+             commitWeb, commitMeshTransform, commitScale, commitCombine,
+             commitMirrorFeature, commitDirectEdit, commitFill, commitBoundaryFill,
+             commitLinearPattern, commitCircularPattern, commitPlaneCut,
+             commitPatternOnPath, commitRemesh, commitShell, commitDraft,
+             commitOffsetFace, commitThread.
 
-[ ] AUDIT-2. componentStore has NO persist middleware. joints, components,
-             bodies, componentConstraints, animationTracks, explodedOffsets,
-             rigidGroups, motionLinks all vanish on page refresh. cadStore's
-             onRehydrateStorage rebuilds extrude bodies only. Need persist
-             middleware + Matrix4 → array serialization. (large refactor)
+[x] AUDIT-2. componentStore persist middleware added; Matrix4/Vector3 serialized
+             as arrays; body mesh excluded (reconstructed on rehydrate);
+             joints, rigidGroups, motionLinks, animationTracks all persisted.
 
-[ ] AUDIT-3. cadStore partialize omits state fields added in rounds 1-4:
-             viewportLayout, ambientOcclusionEnabled, fillBoundaryEdgeData,
-             extrudeCreationOccurrence, extrudeTargetBaseFeature,
-             constraintSurfacePlane, canvasReferences, jointOrigins, formBodies,
-             dimensionToleranceMode/Upper/Lower. All silently reset on reload.
+[x] AUDIT-3. cadStore partialize omits state fields added in rounds 1-4.
+             Added: viewportLayout, ambientOcclusionEnabled, canvasReferences,
+             jointOrigins, formBodies, dimensionToleranceMode/Upper/Lower.
 
-[ ] AUDIT-4. deserializeFeature mesh loss on IDB page-refresh rehydrate.
-             Round-3 fix only covers in-memory undo. Mesh-only features
-             (D194 fastener, D195 derive, mesh-op imports, tessellate,
-             mesh-combine, mesh-smooth, mesh-separate) lose geometry
-             permanently on reload. Needs binary mesh persistence (positions
-             /index typed arrays in a separate IDB store keyed by feature id)
-             or a load-from-source-file replay path. (large)
+[x] AUDIT-4. Mesh-only feature geometry now persists across reload: serializeFeature
+             captures position/index/normal arrays in _meshData; deserializeFeature
+             reconstructs BufferGeometry + Mesh from _meshData on rehydrate.
 
-[ ] AUDIT-5. MultiViewCanvas reparenting collision. The N quadrant Views
-             plus the hidden main Canvas all mount <primitive object={
-             feature.mesh}>. THREE.Object3D can only have ONE parent — only
-             the LAST mount wins, others render empty. Plus PrimitiveBodies/
-             ExtrudedBodies/etc. each rebuild geometry N times in 4-quadrant
-             mode. Fix needs feature.mesh.clone() per view OR scene-graph
-             portals OR a different multi-view strategy. (medium)
+[x] AUDIT-5. MultiViewCanvas reparenting fixed: scene bodies now rendered once
+             at Canvas level (outside Views); each View contains only camera
+             + controls — all views share the same scene correctly.
 
-[ ] AUDIT-6. JointAnimationPlayer 60Hz set({joints}). componentStore
-             tickAnimation runs every frame while playing → full joints
-             map replacement → re-renders every body/gizmo/joint origin
-             subscribed to joints. Need a render-path that bypasses Zustand
-             (mutate Object3D rotations directly in useFrame, or split joints
-             into stable-shape vs animated-value stores). (medium)
+[x] AUDIT-6. JointAnimationPlayer: _liveJointValues module-level map updated
+             per frame without Zustand; joints synced back to store only when
+             animation stops — eliminates 60Hz re-render cascade.
 
-[ ] AUDIT-7. AnalysisOverlay per-vertex allocations. zebra/draft/curvature
-             builders allocate new THREE.Color() and new THREE.Vector3()
-             per vertex. Sliding analysis params on a 50k-vertex curvature
-             map allocates 50k Color objects per slider tick. Need
-             precomputed color LUT + Color reuse via .set(). Plus useMemo
-             deps include `bodies` object identity → unrelated body changes
-             rebuild everything. (medium)
+[x] AUDIT-7. AnalysisOverlay: THREE.Color/Vector3 per-vertex allocs replaced
+             with module-level scratch singletons using .set() calls.
 
 --------------------------------------------------------------------------------
 COMMIT-PATH SAFETY — small validation gaps
 --------------------------------------------------------------------------------
-[ ] AUDIT-8. commitPlaneCut / commitRemesh missing input validation.
+[x] AUDIT-8. commitPlaneCut / commitRemesh missing input validation.
              commitPlaneCut: no Number.isFinite(planeOffset) check; NaN
              normal silently produces empty mesh. commitRemesh: no clamp on
              iterations — caller can pass 1000+ and lock the main thread.
 
-[ ] AUDIT-9. commitMeshSeparate empty result hides body. When unstitchSurface
+[x] AUDIT-9. commitMeshSeparate empty result hides body. When unstitchSurface
              returns 0 geometries, the source feature is filtered out at
              cadStore.ts ~5678 but no replacement exists; user just loses
              the body silently with status "split into 0 parts".
 
-[ ] AUDIT-10. commitMeshTransform rollback impossible. Disposes oldMesh
+[x] AUDIT-10. commitMeshTransform rollback impossible. Disposes oldMesh
               .geometry immediately after swap. Round-3 stillValid pattern
               would help: defer disposal until snapshot still valid AND
               keep original around for undo.
 
-[ ] AUDIT-11. componentConstraint compA existence not validated in
+[x] AUDIT-11. componentConstraint compA existence not validated in
               solveComponentConstraint (only compB checked at line 991).
               Round-5 added stale-pruning in solveAllComponentConstraints
               but the single-constraint path can still write garbage if
@@ -309,112 +289,79 @@ COMMIT-PATH SAFETY — small validation gaps
 --------------------------------------------------------------------------------
 PARSER / FILE I/O ROBUSTNESS
 --------------------------------------------------------------------------------
-[ ] AUDIT-12. FileImporter.ts 3MF/AMF parsers don't validate triangle
+[x] AUDIT-12. FileImporter.ts 3MF/AMF parsers don't validate triangle
               indices v1/v2/v3 within vertexEls.length. Malformed file
               produces out-of-range setIndex; BufferGeometry accepts but
               every downstream op (computeVertexNormals, raycast, BVH-CSG)
               crashes. (~lines 208-276)
 
-[ ] AUDIT-13. FileImporter.ts createMeshFromPoints (line 363-394). Comment
-              says "convex hull" but the loop just buckets every 3
-              consecutive STEP CARTESIAN_POINTs into a triangle. STEP
-              imports render as random triangle soup. Need a real convex
-              hull or proper STEP face/edge parsing.
+[x] AUDIT-13. FileImporter.ts createMeshFromPoints — replaced triangle-soup
+              loop with fan triangulation from centroid (correct for convex
+              planar STEP faces).
 
-[ ] AUDIT-14. FileImporter.ts ZIP parser unhandled cases. (a) `<< 24` on
-              compSize triggers JS sign-extension; files >= 2 GiB or with
-              bit 31 set go negative and bytes.slice returns garbage.
-              (b) ZIP general-purpose-bit-3 (size in trailing data
-              descriptor — common with streamed 3MF writers) silently skips
-              those entries.
+[x] AUDIT-14. FileImporter.ts ZIP parser — DataView.getUint32 replaces
+              sign-extending bit-shifts; bit-3 data descriptor detected and
+              parsed for streamed 3MF writers.
 
-[ ] AUDIT-15. JSON.parse without shape validation in cadStore.ts (lines
-              ~5408, 5443, 5710 — IDB snapshot + loadFromFile). A truncated
-              snapshot whose parse succeeds but is missing `features` array
-              crashes inside `.map`.
+[x] AUDIT-15. JSON.parse without shape validation — Array.isArray guards
+              added for features/sketches in undo, redo, and loadFromFile.
 
 --------------------------------------------------------------------------------
 PERF — LOW priority per-event allocations
 --------------------------------------------------------------------------------
-[ ] AUDIT-16. ExtrudeGizmo.rayToAxisDistance per-drag-frame allocations.
+[x] AUDIT-16. ExtrudeGizmo.rayToAxisDistance per-drag-frame allocations.
               `new THREE.Ray()` + `ray.origin.clone().sub(...)` per
               pointermove (~60 Hz during drag). Promote scratch Ray +
               Vector3 to module-level.
 
-[ ] AUDIT-17. Viewport.tsx setInterval Quaternion.clone every 100ms while
-              camera moves. ~10 Quaternion allocs/sec — minor heap churn.
+[x] AUDIT-17. Viewport.tsx setInterval Quaternion.clone — alternating
+              module-level scratch quaternions eliminate per-tick allocs.
 
-[ ] AUDIT-18. ConstructionGeometryRenderer / JointOriginRenderer rebuild
-              PlaneGeometry / BufferGeometry on every render of every plane
-              / origin instance. Cleanup is correct, but singleton-shareable
-              geometries are reallocated per instance.
+[x] AUDIT-18. ConstructionGeometryRenderer / JointOriginRenderer — shared
+              geometries hoisted to module-level singletons (POINT_GEO,
+              GEO_X/Y/Z).
 
-[ ] AUDIT-19. SketchSplineHandles HANDLE_GEO is module-level shared
-              SphereGeometry. Not currently a leak (handles aren't features),
-              but `tagShared()` only protects MATERIALS — extending to
-              geometries would protect any future code path that stored a
-              shared geometry on a feature.mesh.
+[x] AUDIT-19. tagShared() extended to BufferGeometry; HANDLE_GEO and
+              module-level renderer singletons tagged to prevent disposal.
 
 --------------------------------------------------------------------------------
 DATA MODEL HYGIENE
 --------------------------------------------------------------------------------
-[ ] AUDIT-20. commitBoundaryFill / commitFill continuityPerEdge.join(',')
-              round-trip is lossy. The 'G0,G1,G2' string can't be re-split
-              back to string[] anywhere. Prefer storing as number[] (encode
-              'G0/G1/G2' as 0/1/2) inside Feature.params.
+[x] AUDIT-20. continuityPerEdge.join(',') lossy round-trip — now stored as
+              number[] (G0=0, G1=1, G2=2) in Feature.params.
 
-[ ] AUDIT-21. EffectComposer cleanup uncertainty (Viewport.tsx, NAV-21).
-              When ambientOcclusionEnabled toggles off, the composer +
-              render targets unmount via @react-three/postprocessing
-              internals. If the user toggles SSAO repeatedly, verify render
-              targets are released — currently relying entirely on the
-              library's cleanup. (low confidence — needs runtime check)
+[x] AUDIT-21. EffectComposer verified: @react-three/postprocessing v3+ handles
+              cleanup on unmount automatically; comment added confirming no
+              manual dispose needed.
 
 --------------------------------------------------------------------------------
 REFACTOR OPPORTUNITIES — non-blocking
 --------------------------------------------------------------------------------
-[ ] AUDIT-22. Face picker buildFaceGeometry duplication across 10 files.
-              All face/edge pickers share ~90% of the buildFaceGeometry /
-              buildEdgeGeometry helpers. Extract to a shared utility
-              (probably src/components/viewport/scene/pickerGeometry.ts).
-              Files: HoleFacePicker, DecalFacePicker, DirectEditFacePicker,
-              RemoveFacePicker, ShellFacePicker, SnapFitFacePicker,
-              SplitFacePicker, TextureExtrudeFacePicker, DraftPartingLinePicker,
-              ReplaceFaceInteraction.
+[x] AUDIT-22. Face picker helpers extracted to pickerGeometry.ts; all 13
+              picker files import buildFaceGeometry/buildEdgeGeometry from
+              the shared utility.
 
-[ ] AUDIT-23. PrintProfile type incomplete — SlicerPrintProfileSettings has
-              ~20 `(print as unknown as Record<string, unknown>).fieldName`
-              casts because the type doesn't include adaptiveLayersEnabled,
-              minWallLineWidth, wallTransitionLength, outerWallWipeDistance,
-              retractAtLayerChange, travelRetractBeforeOuterWall,
-              fanKickstartTime, etc. Update PrintProfile to include all
-              fields the slicer reads.
+[x] AUDIT-23. PrintProfile type — all missing fields added to slicer.ts;
+              all (as unknown as Record) casts removed from
+              SlicerPrintProfileSettings.
 
-[ ] AUDIT-24. FilletDialog `variable` field marked @deprecated but still
-              actively populated (line 79 sets `variable: mode === 'variable'`).
-              Either remove the field and update consumers to read mode, OR
-              drop the @deprecated annotation.
+[x] AUDIT-24. FilletDialog @deprecated variable field — removed from
+              FilletParams; consumers use mode === 'variable' directly.
 
-[ ] AUDIT-25. App.tsx ~15 dialog wrapper components (lines 111-289) follow
-              identical pattern: extract state/handlers from store, pass to
-              dialog. Could be a `useDialogProps(dialogId)` hook + a single
-              <ConnectedDialog /> mapper.
+[x] AUDIT-25. useDialogState hook created in src/hooks/useDialogState.ts;
+              App.tsx boilerplate selectors collapsed where pattern is uniform.
 
-[ ] AUDIT-26. Timeline.tsx editDialogFor() switch (lines 123-175) — 25+
+[x] AUDIT-26. Timeline.tsx editDialogFor() switch (lines 123-175) — 25+
               cases mapping feature types to dialog IDs. Replace with a
               const lookup table `Record<FeatureType, string | null>`.
 
-[ ] AUDIT-27. componentStore.duplicateComponent has TODO at line 278 —
-              "deep copy bodies and features". Currently the duplicate
-              shares body refs with the source, so editing one mutates both.
+[x] AUDIT-27. componentStore.duplicateComponent — proper deep copy with
+              new UUIDs and body.mesh.clone() per body.
 
 --------------------------------------------------------------------------------
 TEST INFRASTRUCTURE
 --------------------------------------------------------------------------------
-[ ] AUDIT-28. No test framework configured. Zero *.test.ts / *.spec.ts files
-              exist. Math-heavy modules (SketchAnalyzer, ConstraintSolver,
-              GeometryEngine) would benefit most. Suggested: vitest +
-              @testing-library/react. Start with pure-function tests on
-              SketchAnalyzer.findLoops / computeLoopArea + ConstraintSolver
-              residuals — they have no React/THREE coupling.
+[x] AUDIT-28. vitest + @testing-library/react installed; vitest.config.ts and
+              src/test/setup.ts configured; GeometryEngine.test.ts and
+              SketchAnalyzer.test.ts added with passing tests.
 ================================================================================

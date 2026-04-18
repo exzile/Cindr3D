@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { DuetService } from '../services/DuetService';
+import { getDuetPrefs } from '../utils/duetPrefs';
 import type {
   DuetConfig,
   DuetObjectModel,
@@ -13,6 +14,10 @@ import type {
 const MAX_TEMPERATURE_HISTORY = 200;
 const MAX_CONSOLE_HISTORY = 500;
 const STORAGE_KEY = 'dzign3d-duet-config';
+
+// Auto-reconnect state (kept outside the store to avoid re-renders)
+let autoReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let autoReconnectAttempts = 0;
 
 export interface PrintHistoryEntry {
   timestamp: string;       // ISO-ish "YYYY-MM-DD HH:MM:SS" from eventlog
@@ -78,11 +83,16 @@ interface PrinterStore {
   // Connection
   connected: boolean;
   connecting: boolean;
+  reconnecting: boolean;
+  firmwareUpdatePending: boolean;
   config: DuetConfig;
   service: DuetService | null;
 
   // Object model (from Duet)
   model: Partial<DuetObjectModel>;
+
+  // Timestamp of last model update (epoch ms) — survives non-user disconnects
+  lastModelUpdate: number | null;
 
   // Temperature history for charts
   temperatureHistory: TemperatureSample[];
@@ -123,7 +133,7 @@ interface PrinterStore {
   // Actions
   setConfig: (config: Partial<DuetConfig>) => void;
   connect: () => Promise<void>;
-  disconnect: () => Promise<void>;
+  disconnect: (userInitiated?: boolean) => Promise<void>;
   testConnection: () => Promise<{ success: boolean; firmwareVersion?: string; error?: string }>;
 
   // G-code
@@ -182,8 +192,12 @@ interface PrinterStore {
   refreshPrintHistory: () => Promise<void>;
 
   // Height map
-  loadHeightMap: () => Promise<void>;
+  loadHeightMap: (path?: string) => Promise<void>;
   probeGrid: () => Promise<void>;
+
+  // Auto-reconnect
+  startAutoReconnect: () => void;
+  stopAutoReconnect: () => void;
 
   // UI
   setShowPrinter: (show: boolean) => void;
@@ -217,11 +231,16 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
   // Connection
   connected: false,
   connecting: false,
+  reconnecting: false,
+  firmwareUpdatePending: false,
   config: loadSavedConfig(),
   service: null,
 
   // Object model
   model: {},
+
+  // Last model update timestamp
+  lastModelUpdate: null,
 
   // Temperature history
   temperatureHistory: [],
@@ -296,6 +315,16 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
         throw new Error('Connection refused');
       }
 
+      // Set up disconnection detection for auto-reconnect
+      service.on('disconnected', () => {
+        // Only trigger if the store still thinks it's connected (i.e., not
+        // a user-initiated disconnect which already cleared the state).
+        const state = get();
+        if (state.connected && state.service === service) {
+          get().disconnect(false);
+        }
+      });
+
       // Set up model update listener that records temperature samples
       service.onModelUpdate((model: Partial<DuetObjectModel>) => {
         // Drop callbacks from a stale service that was replaced/disconnected
@@ -324,7 +353,7 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
           history.splice(0, history.length - MAX_TEMPERATURE_HISTORY);
         }
 
-        set({ model, temperatureHistory: history });
+        set({ model, temperatureHistory: history, lastModelUpdate: now });
       });
 
       // Load initial file list
@@ -345,6 +374,7 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
       set({
         connected: true,
         connecting: false,
+        firmwareUpdatePending: false,
         service,
         files,
         macros,
@@ -360,25 +390,53 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
     }
   },
 
-  disconnect: async () => {
+  /**
+   * Disconnect from the printer.
+   * @param userInitiated - When true (default), auto-reconnect is stopped.
+   *   Pass false when the disconnect is due to a detected connection loss
+   *   so that auto-reconnect can kick in.
+   */
+  disconnect: async (userInitiated = true) => {
+    if (userInitiated) {
+      get().stopAutoReconnect();
+    }
+
     const { service } = get();
     if (service) {
       try { await service.disconnect(); } catch { /* ignore */ }
     }
 
-    set({
-      connected: false,
-      connecting: false,
-      service: null,
-      model: {},
-      temperatureHistory: [],
-      files: [],
-      selectedFile: null,
-      macros: [],
-      filaments: [],
-      heightMap: null,
-      error: null,
-    });
+    if (userInitiated) {
+      // User explicitly disconnected — clear everything
+      set({
+        connected: false,
+        connecting: false,
+        reconnecting: false,
+        service: null,
+        model: {},
+        lastModelUpdate: null,
+        temperatureHistory: [],
+        files: [],
+        selectedFile: null,
+        macros: [],
+        filaments: [],
+        heightMap: null,
+        error: null,
+      });
+    } else {
+      // Connection lost — preserve model / files for graceful degradation
+      set({
+        connected: false,
+        connecting: false,
+        service: null,
+        error: 'Connection lost',
+      });
+    }
+
+    // If the disconnect was not user-initiated, try to auto-reconnect
+    if (!userInitiated) {
+      get().startAutoReconnect();
+    }
   },
 
   testConnection: async () => {
@@ -817,6 +875,7 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
     if (!service) return;
     try {
       await service.sendGCode('M997');
+      set({ firmwareUpdatePending: true });
     } catch (err) {
       set({ error: `Failed to trigger firmware install: ${(err as Error).message}` });
     }
@@ -844,11 +903,11 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
 
   // --- Height map ---
 
-  loadHeightMap: async () => {
+  loadHeightMap: async (path?: string) => {
     const { service } = get();
     if (!service) return;
     try {
-      const heightMap = await service.getHeightMap();
+      const heightMap = await service.getHeightMap(path);
       set({ heightMap });
     } catch (err) {
       set({ error: `Failed to load height map: ${(err as Error).message}` });
@@ -866,6 +925,68 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
     } catch (err) {
       set({ error: `Failed to probe grid: ${(err as Error).message}` });
     }
+  },
+
+  // --- Auto-reconnect ---
+
+  startAutoReconnect: () => {
+    const prefs = getDuetPrefs();
+    if (!prefs.autoReconnect) return;
+    if (autoReconnectTimer) return; // already running
+
+    const { config } = get();
+    if (!config.hostname) return;
+
+    autoReconnectAttempts = 0;
+    set({ reconnecting: true });
+    const interval = prefs.reconnectInterval || 5000;
+    const maxRetries = prefs.maxRetries || 10;
+
+    const attempt = () => {
+      const state = get();
+      // Stop if already connected or user cleared hostname
+      if (state.connected || !state.config.hostname) {
+        autoReconnectTimer = null;
+        autoReconnectAttempts = 0;
+        set({ reconnecting: false });
+        return;
+      }
+
+      autoReconnectAttempts++;
+      if (autoReconnectAttempts > maxRetries) {
+        set({ error: `Auto-reconnect failed after ${maxRetries} attempts`, reconnecting: false });
+        autoReconnectTimer = null;
+        autoReconnectAttempts = 0;
+        return;
+      }
+
+      set({ error: `Reconnecting... attempt ${autoReconnectAttempts}/${maxRetries}` });
+
+      state.connect().then(() => {
+        if (get().connected) {
+          autoReconnectTimer = null;
+          autoReconnectAttempts = 0;
+          set({ error: null, reconnecting: false });
+        } else {
+          // Schedule next attempt
+          autoReconnectTimer = setTimeout(attempt, interval);
+        }
+      }).catch(() => {
+        autoReconnectTimer = setTimeout(attempt, interval);
+      });
+    };
+
+    // Start with a delay
+    autoReconnectTimer = setTimeout(attempt, interval);
+  },
+
+  stopAutoReconnect: () => {
+    if (autoReconnectTimer) {
+      clearTimeout(autoReconnectTimer);
+      autoReconnectTimer = null;
+    }
+    autoReconnectAttempts = 0;
+    set({ reconnecting: false });
   },
 
   // --- UI ---

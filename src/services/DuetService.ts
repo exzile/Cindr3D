@@ -733,9 +733,9 @@ export class DuetService {
   // Height Map
   // ---------------------------------------------------------------------------
 
-  async getHeightMap(): Promise<DuetHeightMap | null> {
+  async getHeightMap(path = '0:/sys/heightmap.csv'): Promise<DuetHeightMap | null> {
     try {
-      const blob = await this.downloadFile('0:/sys/heightmap.csv');
+      const blob = await this.downloadFile(path);
       const text = await blob.text();
       return this.parseHeightMapCsv(text);
     } catch {

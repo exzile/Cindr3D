@@ -18,6 +18,7 @@ import { Html } from '@react-three/drei';
 import { useCADStore } from '../../../store/cadStore';
 import { useFacePicker, type FacePickResult } from '../../../hooks/useFacePicker';
 import { usePickerSceneCleanup } from '../../../hooks/usePickerSceneCleanup';
+import { buildFaceGeometry } from './pickerGeometry';
 
 // ── Module-level material singletons ─────────────────────────────────────────
 const HOVER_MAT = new THREE.MeshBasicMaterial({
@@ -50,20 +51,6 @@ const _centroid = new THREE.Vector3();
 const _drillDir = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 const _quat = new THREE.Quaternion();
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-function buildFaceGeometry(boundary: THREE.Vector3[]): THREE.BufferGeometry {
-  const geom = new THREE.BufferGeometry();
-  const n = boundary.length;
-  if (n < 3) return geom;
-  const positions: number[] = [];
-  for (let i = 1; i < n - 1; i++) {
-    positions.push(...boundary[0].toArray(), ...boundary[i].toArray(), ...boundary[i + 1].toArray());
-  }
-  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geom.computeVertexNormals();
-  return geom;
-}
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function HoleFacePicker() {

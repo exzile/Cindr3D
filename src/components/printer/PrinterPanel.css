@@ -139,6 +139,138 @@
   color: var(--text-muted);
 }
 
+.duet-history-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.duet-history-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  margin-bottom: 8px;
+}
+
+.duet-history-search-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.duet-history-search-input {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+  font-family: inherit;
+}
+
+.duet-history-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.duet-history-search-input:focus {
+  border-color: var(--accent);
+}
+
+.duet-history-search-clear {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  border-radius: 3px;
+}
+
+.duet-history-search-clear:hover {
+  color: var(--text-primary);
+}
+
+/* --- History Stats --- */
+.duet-history-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.duet-history-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-primary);
+  padding: 4px 10px;
+  background: var(--bg-elevated);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.duet-history-stat-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.duet-history-stat--success .duet-history-stat-icon,
+.duet-history-stat--success .duet-history-stat-value {
+  color: var(--success);
+}
+
+.duet-history-stat--fail .duet-history-stat-icon,
+.duet-history-stat--fail .duet-history-stat-value {
+  color: var(--error);
+}
+
+.duet-history-stat--rate .duet-history-stat-icon,
+.duet-history-stat--rate .duet-history-stat-value {
+  color: var(--accent);
+}
+
+.duet-history-stat-value {
+  font-weight: 700;
+}
+
+.duet-history-stat-label {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* --- Load More --- */
+.duet-history-load-more-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--border);
+}
+
+.duet-history-load-more-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.duet-history-load-more-btn:hover {
+  background: var(--bg-panel);
+  border-color: var(--accent);
+}
+
 /* ===== Duet Notifications ===== */
 .duet-toast-stack {
   position: fixed;
@@ -1670,5 +1802,30 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* ===== Narrow / side-panel mode (width < 480px) ===== */
+
+/* Hide tab label text, keep only icons */
+.printer-panel--narrow .tab-label {
+  display: none;
+}
+
+/* Prevent horizontal overflow in the content area */
+.printer-panel--narrow .printer-panel__content,
+.printer-panel--narrow > div {
+  overflow-x: hidden;
+}
+
+/* Reduce horizontal padding in reconnecting/disconnect banners */
+.printer-panel--narrow .printer-panel__banner {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+/* Reduce padding in the footer bar */
+.printer-panel--narrow .printer-panel__footer {
+  padding-left: 8px;
+  padding-right: 8px;
 }
 

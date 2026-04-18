@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useCADStore } from '../../../store/cadStore';
 import { useEdgePicker, type EdgePickResult } from '../../../hooks/useEdgePicker';
+import { buildEdgeGeometry } from './pickerGeometry';
 
 // ── Module-level material singletons ────────────────────────────────────────
 const HOVER_MAT = new THREE.LineBasicMaterial({
@@ -24,12 +25,6 @@ const SELECTED_MAT = new THREE.LineBasicMaterial({
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-function buildEdgeGeometry(a: THREE.Vector3, b: THREE.Vector3): THREE.BufferGeometry {
-  const geom = new THREE.BufferGeometry();
-  geom.setFromPoints([a, b]);
-  return geom;
-}
-
 function edgeId(result: EdgePickResult): string {
   return `${result.mesh.uuid}:${result.edgeVertexA.toArray().join(',')}:${result.edgeVertexB.toArray().join(',')}`;
 }

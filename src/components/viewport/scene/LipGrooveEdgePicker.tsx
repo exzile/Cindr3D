@@ -12,6 +12,7 @@ import { useFrame } from '@react-three/fiber';
 import { useCADStore } from '../../../store/cadStore';
 import { useEdgePicker, type EdgePickResult } from '../../../hooks/useEdgePicker';
 import { usePickerSceneCleanup } from '../../../hooks/usePickerSceneCleanup';
+import { buildEdgeGeometry } from './pickerGeometry';
 
 // ── Module-level material singletons ─────────────────────────────────────────
 const HOVER_MAT = new THREE.LineBasicMaterial({
@@ -25,13 +26,6 @@ const SELECTED_MAT = new THREE.LineBasicMaterial({
   linewidth: 2,
   depthTest: false,
 });
-
-// ── Helper ────────────────────────────────────────────────────────────────────
-function buildEdgeGeometry(a: THREE.Vector3, b: THREE.Vector3): THREE.BufferGeometry {
-  const geom = new THREE.BufferGeometry();
-  geom.setFromPoints([a, b]);
-  return geom;
-}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function LipGrooveEdgePicker() {

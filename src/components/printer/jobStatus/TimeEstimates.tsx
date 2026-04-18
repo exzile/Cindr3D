@@ -22,6 +22,9 @@ export function TimeEstimates() {
     ? (tl.file > 0 ? tl.file : tl.slicer > 0 ? tl.slicer : tl.filament > 0 ? tl.filament : tl.layer > 0 ? tl.layer : 0)
     : 0;
 
+  // Simulated vs actual comparison
+  const simTime = job.file?.simulatedTime ?? 0;
+
   return (
     <div className="job-section">
       <div className="job-section-title">
@@ -57,6 +60,74 @@ export function TimeEstimates() {
         {warmUp > 0 && (
           <JobDetailRow label="Warm-up duration" value={formatTime(warmUp)} />
         )}
+      </div>
+
+      {/* Simulated vs Actual comparison */}
+      {simTime > 0 && elapsed > 0 && (
+        <SimulatedVsActual simulatedTime={simTime} elapsedTime={elapsed} />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Simulated vs Actual sub-component
+// ---------------------------------------------------------------------------
+
+function SimulatedVsActual({ simulatedTime, elapsedTime }: { simulatedTime: number; elapsedTime: number }) {
+  // Accuracy: how close is the simulation to the actual elapsed time so far
+  // 100% = perfect match. >100% means print is going faster than predicted.
+  const accuracyPct = Math.round((simulatedTime / elapsedTime) * 100);
+  const delta = elapsedTime - simulatedTime;
+  const isSlower = delta > 0;
+  const absDelta = Math.abs(delta);
+
+  return (
+    <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+      <div style={{
+        fontSize: 11, fontWeight: 600, color: '#888899',
+        textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6,
+      }}>
+        Simulated vs Actual
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+        <span style={{ color: '#888899' }}>Simulated</span>
+        <span style={{ color: '#e0e0ff', fontFamily: 'monospace' }}>{formatTime(simulatedTime)}</span>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+        <span style={{ color: '#888899' }}>Elapsed</span>
+        <span style={{ color: '#e0e0ff', fontFamily: 'monospace' }}>{formatTime(elapsedTime)}</span>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
+        <span style={{ color: '#888899' }}>Difference</span>
+        <span style={{
+          fontFamily: 'monospace',
+          color: isSlower ? '#ff8866' : '#44cc88',
+        }}>
+          {isSlower ? '+' : '-'}{formatTime(absDelta)} ({isSlower ? 'slower' : 'faster'})
+        </span>
+      </div>
+      {/* Accuracy bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 11, color: '#888899', flexShrink: 0 }}>Accuracy</span>
+        <div style={{
+          flex: 1, height: 6, background: 'var(--bg-elevated, #333)',
+          borderRadius: 3, overflow: 'hidden',
+        }}>
+          <div style={{
+            height: '100%', borderRadius: 3, transition: 'width 0.3s ease',
+            width: `${Math.min(100, accuracyPct)}%`,
+            background: accuracyPct > 85 && accuracyPct < 115 ? '#44cc88'
+              : accuracyPct > 70 && accuracyPct < 130 ? '#ffaa44' : '#ff6644',
+          }} />
+        </div>
+        <span style={{
+          fontSize: 12, fontFamily: 'monospace', fontWeight: 600, flexShrink: 0,
+          color: accuracyPct > 85 && accuracyPct < 115 ? '#44cc88'
+            : accuracyPct > 70 && accuracyPct < 130 ? '#ffaa44' : '#ff6644',
+        }}>
+          {accuracyPct}%
+        </span>
       </div>
     </div>
   );

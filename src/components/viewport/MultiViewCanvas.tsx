@@ -32,8 +32,14 @@ const QUADRANTS: Record<QuadrantKey, QuadrantDef> = {
   perspective: { key: 'perspective', label: 'Perspective', color: '#555'    },
 };
 
-function MultiViewScene({ kind }: { kind: QuadrantKey }) {
-  const isOrtho = kind !== 'perspective';
+/**
+ * SharedScene renders scene objects ONCE at the Canvas level (outside any View).
+ * Because each <View> uses scissoring over the same root Canvas scene, these
+ * objects are visible in every viewport without needing to be mounted per-View.
+ * Mounting them inside each <View> would cause THREE.Object3D reparenting
+ * collisions (a mesh can only have one parent — the last View's mount wins).
+ */
+function SharedScene() {
   return (
     <>
       <ambientLight intensity={0.6} />
@@ -45,6 +51,14 @@ function MultiViewScene({ kind }: { kind: QuadrantKey }) {
       <FastenerBodies />
       <WorldAxes />
       <GroundPlaneGrid />
+    </>
+  );
+}
+
+function MultiViewScene({ kind }: { kind: QuadrantKey }) {
+  const isOrtho = kind !== 'perspective';
+  return (
+    <>
       {/* Perspective gets full 3D orbit. Top/Front/Right lock rotation —
           directional pan + zoom only (2D navigation within the view plane). */}
       <OrbitControls
@@ -211,6 +225,14 @@ export default function MultiViewCanvas({ layout }: { layout: Layout }) {
         style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
         gl={{ antialias: true, alpha: false }}
       >
+        {/*
+          SharedScene is rendered ONCE here at the Canvas root level, outside any
+          <View>. All Views scissor over the same underlying Canvas/scene, so these
+          objects are visible in every viewport. This avoids the THREE.Object3D
+          single-parent constraint: mounting the same mesh inside multiple <View>
+          portals would reparent it, leaving only the last View populated.
+        */}
+        <SharedScene />
         <View.Port />
         {/* eslint-disable react-hooks/refs -- refs passed to track prop */}
         {quadrantList.map((q, i) => (

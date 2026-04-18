@@ -12,6 +12,10 @@ import {
   SpeedFlowOverride,
   WebcamView,
   ObjectCancellation,
+  ThumbnailPreview,
+  FirstLayerInspection,
+  PauseAtTrigger,
+  PrintQueue,
 } from './jobStatus';
 
 export default function DuetJobStatus() {
@@ -22,13 +26,22 @@ export default function DuetJobStatus() {
     || status === 'resuming' || status === 'simulating' || status === 'cancelling';
 
   if (!hasJob) {
-    return <NoJobMessage />;
+    return (
+      <>
+        <NoJobMessage />
+        <PrintQueue />
+      </>
+    );
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0, padding: '12px 0' }}>
+      <PrintQueue />
       <PrintStatusHeader />
+      <ThumbnailPreview />
       <ProgressSection />
+      <FirstLayerInspection />
+      <PauseAtTrigger />
       <ObjectCancellation />
       <JobInfo />
       <TimeEstimates />

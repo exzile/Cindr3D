@@ -20,10 +20,10 @@ export function SlicerPrintProfileSettings({
         <Num label="Top/Bottom Line Width" unit="mm" value={print.topBottomLineWidth ?? 0.4} step={0.01} min={0.1} max={2.0} onChange={(v) => upd({ topBottomLineWidth: v })} />
         <Num label="Initial Layer Width Factor" unit="%" value={print.initialLayerLineWidthFactor ?? 120} step={5} min={50} max={200} onChange={(v) => upd({ initialLayerLineWidthFactor: v })} />
         <SectionDivider label="Adaptive Layers" />
-        <Check label="Enable Adaptive Layers" value={(print as unknown as Record<string, unknown>).adaptiveLayersEnabled as boolean ?? false} onChange={(v) => upd({ adaptiveLayersEnabled: v })} />
-        {((print as unknown as Record<string, unknown>).adaptiveLayersEnabled as boolean ?? false) && (<>
-          <Num label="Max Variation" unit="mm" value={(print as unknown as Record<string, unknown>).adaptiveLayersMaxVariation as number ?? 0.1} step={0.01} min={0.01} max={0.5} onChange={(v) => upd({ adaptiveLayersMaxVariation: v })} />
-          <Num label="Variation Step" unit="mm" value={(print as unknown as Record<string, unknown>).adaptiveLayersVariationStep as number ?? 0.05} step={0.01} min={0.01} max={0.2} onChange={(v) => upd({ adaptiveLayersVariationStep: v })} />
+        <Check label="Enable Adaptive Layers" value={print.adaptiveLayersEnabled ?? false} onChange={(v) => upd({ adaptiveLayersEnabled: v })} />
+        {(print.adaptiveLayersEnabled ?? false) && (<>
+          <Num label="Max Variation" unit="mm" value={print.adaptiveLayersMaxVariation ?? 0.1} step={0.01} min={0.01} max={0.5} onChange={(v) => upd({ adaptiveLayersMaxVariation: v })} />
+          <Num label="Variation Step" unit="mm" value={print.adaptiveLayersVariationStep ?? 0.05} step={0.01} min={0.01} max={0.2} onChange={(v) => upd({ adaptiveLayersVariationStep: v })} />
         </>)}
       </SlicerSection>
 
@@ -42,9 +42,9 @@ export function SlicerPrintProfileSettings({
           ]} />
         <Check label="Thin Wall Detection" value={print.thinWallDetection} onChange={(v) => upd({ thinWallDetection: v })} />
         <SectionDivider label="Advanced" />
-        <Num label="Min Wall Line Width" unit="mm" value={(print as unknown as Record<string, unknown>).minWallLineWidth as number ?? 0.2} step={0.01} min={0.05} max={1} onChange={(v) => upd({ minWallLineWidth: v })} />
-        <Num label="Wall Transition Length" unit="mm" value={(print as unknown as Record<string, unknown>).wallTransitionLength as number ?? 1.0} step={0.1} min={0.1} max={10} onChange={(v) => upd({ wallTransitionLength: v })} />
-        <Num label="Outer Wall Wipe Distance" unit="mm" value={(print as unknown as Record<string, unknown>).outerWallWipeDistance as number ?? 0} step={0.1} min={0} max={5} onChange={(v) => upd({ outerWallWipeDistance: v })} />
+        <Num label="Min Wall Line Width" unit="mm" value={print.minWallLineWidth ?? 0.2} step={0.01} min={0.05} max={1} onChange={(v) => upd({ minWallLineWidth: v })} />
+        <Num label="Wall Transition Length" unit="mm" value={print.wallTransitionLength ?? 1.0} step={0.1} min={0.1} max={10} onChange={(v) => upd({ wallTransitionLength: v })} />
+        <Num label="Outer Wall Wipe Distance" unit="mm" value={print.outerWallWipeDistance ?? 0} step={0.1} min={0} max={5} onChange={(v) => upd({ outerWallWipeDistance: v })} />
       </SlicerSection>
 
       <SlicerSection title="Top / Bottom" defaultOpen={false}>
@@ -116,12 +116,12 @@ export function SlicerPrintProfileSettings({
           ]} />
         <Check label="Avoid Crossing Perimeters" value={print.avoidCrossingPerimeters} onChange={(v) => upd({ avoidCrossingPerimeters: v })} />
         <Num label="Min Travel Before Retract" unit="mm" value={print.retractionMinTravel ?? 1.5} step={0.1} min={0} max={20} onChange={(v) => upd({ retractionMinTravel: v })} />
-        <Check label="Retract at Layer Change" value={(print as unknown as Record<string, unknown>).retractAtLayerChange as boolean ?? true} onChange={(v) => upd({ retractAtLayerChange: v })} />
-        <Check label="Retract Before Outer Wall" value={(print as unknown as Record<string, unknown>).travelRetractBeforeOuterWall as boolean ?? false} onChange={(v) => upd({ travelRetractBeforeOuterWall: v })} />
-        <Check label="Combing Avoids Supports" value={(print as unknown as Record<string, unknown>).combingAvoidsSupports as boolean ?? false} onChange={(v) => upd({ combingAvoidsSupports: v })} />
+        <Check label="Retract at Layer Change" value={print.retractAtLayerChange ?? true} onChange={(v) => upd({ retractAtLayerChange: v })} />
+        <Check label="Retract Before Outer Wall" value={print.travelRetractBeforeOuterWall ?? false} onChange={(v) => upd({ travelRetractBeforeOuterWall: v })} />
+        <Check label="Combing Avoids Supports" value={print.combingAvoidsSupports ?? false} onChange={(v) => upd({ combingAvoidsSupports: v })} />
         <SectionDivider label="Retraction Limits" />
-        <Num label="Max Retraction Count" value={(print as unknown as Record<string, unknown>).maxRetractionCount as number ?? 90} min={1} max={300} onChange={(v) => upd({ maxRetractionCount: v })} />
-        <Num label="Extra Prime Amount" unit="mm³" value={(print as unknown as Record<string, unknown>).retractionExtraPrimeAmount as number ?? 0} step={0.01} min={0} max={1} onChange={(v) => upd({ retractionExtraPrimeAmount: v })} />
+        <Num label="Max Retraction Count" value={print.maxRetractionCount ?? 90} min={1} max={300} onChange={(v) => upd({ maxRetractionCount: v })} />
+        <Num label="Extra Prime Amount" unit="mm³" value={print.retractionExtraPrimeAmount ?? 0} step={0.01} min={0} max={1} onChange={(v) => upd({ retractionExtraPrimeAmount: v })} />
       </SlicerSection>
 
       <SlicerSection title="Cooling" defaultOpen={false}>
@@ -134,8 +134,8 @@ export function SlicerPrintProfileSettings({
           <Num label="Bridge Fan Speed" unit="%" value={print.bridgeFanSpeed} min={0} max={100} onChange={(v) => upd({ bridgeFanSpeed: v })} />
         )}
         <SectionDivider label="Fan Ramp-up" />
-        <Num label="Regular Fan Speed at Layer" value={(print as unknown as Record<string, unknown>).regularFanSpeedLayer as number ?? 1} min={0} max={100} onChange={(v) => upd({ regularFanSpeedLayer: v })} />
-        <Num label="Fan Kickstart Time" unit="ms" value={(print as unknown as Record<string, unknown>).fanKickstartTime as number ?? 100} step={10} min={0} max={5000} onChange={(v) => upd({ fanKickstartTime: v })} />
+        <Num label="Regular Fan Speed at Layer" value={print.regularFanSpeedLayer ?? 1} min={0} max={100} onChange={(v) => upd({ regularFanSpeedLayer: v })} />
+        <Num label="Fan Kickstart Time" unit="ms" value={print.fanKickstartTime ?? 100} step={10} min={0} max={5000} onChange={(v) => upd({ fanKickstartTime: v })} />
       </SlicerSection>
 
       <SlicerSection title="Support" defaultOpen={print.supportEnabled}>
@@ -171,14 +171,14 @@ export function SlicerPrintProfileSettings({
             <Num label="Branch Diameter" unit="mm" value={print.supportTreeBranchDiameter ?? 5} step={0.5} min={1} max={20} onChange={(v) => upd({ supportTreeBranchDiameter: v })} />
           </>)}
           <SectionDivider label="Placement" />
-          <Check label="Build Plate Only" value={(print as unknown as Record<string, unknown>).supportBuildplateOnly as boolean ?? false} onChange={(v) => upd({ supportBuildplateOnly: v })} />
-          <Num label="Support Wall Count" value={(print as unknown as Record<string, unknown>).supportWallCount as number ?? 0} min={0} max={5} onChange={(v) => upd({ supportWallCount: v })} />
-          <Num label="Bottom Support Distance" unit="mm" value={(print as unknown as Record<string, unknown>).supportBottomDistance as number ?? 0.2} step={0.05} min={0} max={5} onChange={(v) => upd({ supportBottomDistance: v })} />
+          <Check label="Build Plate Only" value={print.supportBuildplateOnly ?? false} onChange={(v) => upd({ supportBuildplateOnly: v })} />
+          <Num label="Support Wall Count" value={print.supportWallCount ?? 0} min={0} max={5} onChange={(v) => upd({ supportWallCount: v })} />
+          <Num label="Bottom Support Distance" unit="mm" value={print.supportBottomDistance ?? 0.2} step={0.05} min={0} max={5} onChange={(v) => upd({ supportBottomDistance: v })} />
           <SectionDivider label="Roof / Floor" />
-          <Check label="Support Roof" value={(print as unknown as Record<string, unknown>).supportRoofEnable as boolean ?? false} onChange={(v) => upd({ supportRoofEnable: v })} />
-          <Check label="Support Floor" value={(print as unknown as Record<string, unknown>).supportFloorEnable as boolean ?? false} onChange={(v) => upd({ supportFloorEnable: v })} />
-          {(((print as unknown as Record<string, unknown>).supportRoofEnable as boolean ?? false) || ((print as unknown as Record<string, unknown>).supportFloorEnable as boolean ?? false)) && (<>
-            <Sel label="Interface Pattern" value={(print as unknown as Record<string, unknown>).supportInterfacePattern as 'lines' | 'grid' | 'concentric' | 'zigzag' ?? 'lines'}
+          <Check label="Support Roof" value={print.supportRoofEnable ?? false} onChange={(v) => upd({ supportRoofEnable: v })} />
+          <Check label="Support Floor" value={print.supportFloorEnable ?? false} onChange={(v) => upd({ supportFloorEnable: v })} />
+          {((print.supportRoofEnable ?? false) || (print.supportFloorEnable ?? false)) && (<>
+            <Sel label="Interface Pattern" value={print.supportInterfacePattern ?? 'lines'}
               onChange={(v) => upd({ supportInterfacePattern: v })}
               options={[
                 { value: 'lines', label: 'Lines' },
@@ -186,7 +186,7 @@ export function SlicerPrintProfileSettings({
                 { value: 'concentric', label: 'Concentric' },
                 { value: 'zigzag', label: 'Zigzag' },
               ]} />
-            <Num label="Interface Density" unit="%" value={(print as unknown as Record<string, unknown>).supportInterfaceDensity as number ?? 100} min={0} max={100} onChange={(v) => upd({ supportInterfaceDensity: v })} />
+            <Num label="Interface Density" unit="%" value={print.supportInterfaceDensity ?? 100} min={0} max={100} onChange={(v) => upd({ supportInterfaceDensity: v })} />
           </>)}
         </>)}
       </SlicerSection>
@@ -219,20 +219,20 @@ export function SlicerPrintProfileSettings({
           <Num label="Raft Layers" value={print.raftLayers} min={1} max={10} onChange={(v) => upd({ raftLayers: v })} />
           <Num label="Raft Margin" unit="mm" value={print.raftMargin ?? 5} step={0.5} min={0} max={30} onChange={(v) => upd({ raftMargin: v })} />
           <SectionDivider label="Raft Layers (Advanced)" />
-          <Num label="Base Thickness" unit="mm" value={(print as unknown as Record<string, unknown>).raftBaseThickness as number ?? 0.3} step={0.05} min={0.1} max={2} onChange={(v) => upd({ raftBaseThickness: v })} />
-          <Num label="Base Line Width" unit="mm" value={(print as unknown as Record<string, unknown>).raftBaseLineWidth as number ?? 0.8} step={0.05} min={0.1} max={3} onChange={(v) => upd({ raftBaseLineWidth: v })} />
-          <Num label="Base Speed" unit="mm/s" value={(print as unknown as Record<string, unknown>).raftBaseSpeed as number ?? 20} min={1} max={200} onChange={(v) => upd({ raftBaseSpeed: v })} />
-          <Num label="Interface Thickness" unit="mm" value={(print as unknown as Record<string, unknown>).raftInterfaceThickness as number ?? 0.27} step={0.05} min={0.1} max={2} onChange={(v) => upd({ raftInterfaceThickness: v })} />
-          <Num label="Surface Air Gap" unit="mm" value={(print as unknown as Record<string, unknown>).raftAirGap as number ?? 0.3} step={0.05} min={0} max={2} onChange={(v) => upd({ raftAirGap: v })} />
+          <Num label="Base Thickness" unit="mm" value={print.raftBaseThickness ?? 0.3} step={0.05} min={0.1} max={2} onChange={(v) => upd({ raftBaseThickness: v })} />
+          <Num label="Base Line Width" unit="mm" value={print.raftBaseLineWidth ?? 0.8} step={0.05} min={0.1} max={3} onChange={(v) => upd({ raftBaseLineWidth: v })} />
+          <Num label="Base Speed" unit="mm/s" value={print.raftBaseSpeed ?? 20} min={1} max={200} onChange={(v) => upd({ raftBaseSpeed: v })} />
+          <Num label="Interface Thickness" unit="mm" value={print.raftInterfaceThickness ?? 0.27} step={0.05} min={0.1} max={2} onChange={(v) => upd({ raftInterfaceThickness: v })} />
+          <Num label="Surface Air Gap" unit="mm" value={print.raftAirGap ?? 0.3} step={0.05} min={0} max={2} onChange={(v) => upd({ raftAirGap: v })} />
         </>)}
         {print.adhesionType === 'skirt' && (
-          <Num label="Skirt Height (layers)" value={(print as unknown as Record<string, unknown>).skirtHeight as number ?? 1} min={1} max={10} onChange={(v) => upd({ skirtHeight: v })} />
+          <Num label="Skirt Height (layers)" value={print.skirtHeight ?? 1} min={1} max={10} onChange={(v) => upd({ skirtHeight: v })} />
         )}
       </SlicerSection>
 
       <SlicerSection title="Special Modes" defaultOpen={false}>
         <Check label="Vase Mode (Spiralize Contour)" value={print.spiralizeContour ?? false} onChange={(v) => upd({ spiralizeContour: v })} />
-        <Sel label="Surface Mode" value={(print as unknown as Record<string, unknown>).surfaceMode as 'normal' | 'surface' | 'both' ?? 'normal'}
+        <Sel label="Surface Mode" value={print.surfaceMode ?? 'normal'}
           onChange={(v) => upd({ surfaceMode: v })}
           options={[
             { value: 'normal', label: 'Normal — solid model' },
@@ -246,10 +246,10 @@ export function SlicerPrintProfileSettings({
             { value: 'one_at_a_time', label: 'One at a Time' },
           ]} />
         <SectionDivider label="Mold" />
-        <Check label="Enable Mold Mode" value={(print as unknown as Record<string, unknown>).moldEnabled as boolean ?? false} onChange={(v) => upd({ moldEnabled: v })} />
-        {((print as unknown as Record<string, unknown>).moldEnabled as boolean ?? false) && (<>
-          <Num label="Mold Draft Angle" unit="°" value={(print as unknown as Record<string, unknown>).moldAngle as number ?? 40} min={0} max={89} onChange={(v) => upd({ moldAngle: v })} />
-          <Num label="Mold Roof Height" unit="mm" value={(print as unknown as Record<string, unknown>).moldRoofHeight as number ?? 0.5} step={0.1} min={0} max={10} onChange={(v) => upd({ moldRoofHeight: v })} />
+        <Check label="Enable Mold Mode" value={print.moldEnabled ?? false} onChange={(v) => upd({ moldEnabled: v })} />
+        {(print.moldEnabled ?? false) && (<>
+          <Num label="Mold Draft Angle" unit="°" value={print.moldAngle ?? 40} min={0} max={89} onChange={(v) => upd({ moldAngle: v })} />
+          <Num label="Mold Roof Height" unit="mm" value={print.moldRoofHeight ?? 0.5} step={0.1} min={0} max={10} onChange={(v) => upd({ moldRoofHeight: v })} />
         </>)}
       </SlicerSection>
 
@@ -263,59 +263,59 @@ export function SlicerPrintProfileSettings({
           <Num label="Coasting Volume" unit="mm³" value={print.coastingVolume ?? 0.064} step={0.001} min={0} max={1} onChange={(v) => upd({ coastingVolume: v })} />
         )}
         <SectionDivider label="Fuzzy Skin" />
-        <Check label="Enable Fuzzy Skin" value={(print as unknown as Record<string, unknown>).fuzzySkinsEnabled as boolean ?? false} onChange={(v) => upd({ fuzzySkinsEnabled: v })} />
-        {((print as unknown as Record<string, unknown>).fuzzySkinsEnabled as boolean ?? false) && (<>
-          <Num label="Fuzzy Thickness" unit="mm" value={(print as unknown as Record<string, unknown>).fuzzySkinThickness as number ?? 0.3} step={0.05} min={0.01} max={2} onChange={(v) => upd({ fuzzySkinThickness: v })} />
-          <Num label="Fuzzy Point Distance" unit="mm" value={(print as unknown as Record<string, unknown>).fuzzySkinPointDist as number ?? 0.8} step={0.05} min={0.1} max={5} onChange={(v) => upd({ fuzzySkinPointDist: v })} />
+        <Check label="Enable Fuzzy Skin" value={print.fuzzySkinsEnabled ?? false} onChange={(v) => upd({ fuzzySkinsEnabled: v })} />
+        {(print.fuzzySkinsEnabled ?? false) && (<>
+          <Num label="Fuzzy Thickness" unit="mm" value={print.fuzzySkinThickness ?? 0.3} step={0.05} min={0.01} max={2} onChange={(v) => upd({ fuzzySkinThickness: v })} />
+          <Num label="Fuzzy Point Distance" unit="mm" value={print.fuzzySkinPointDist ?? 0.8} step={0.05} min={0.1} max={5} onChange={(v) => upd({ fuzzySkinPointDist: v })} />
         </>)}
         <SectionDivider label="Overhang" />
-        <Check label="Make Overhang Printable" value={(print as unknown as Record<string, unknown>).makeOverhangPrintable as boolean ?? false} onChange={(v) => upd({ makeOverhangPrintable: v })} />
-        {((print as unknown as Record<string, unknown>).makeOverhangPrintable as boolean ?? false) && (
-          <Num label="Max Overhang Angle" unit="°" value={(print as unknown as Record<string, unknown>).makeOverhangPrintableMaxAngle as number ?? 50} min={0} max={89} onChange={(v) => upd({ makeOverhangPrintableMaxAngle: v })} />
+        <Check label="Make Overhang Printable" value={print.makeOverhangPrintable ?? false} onChange={(v) => upd({ makeOverhangPrintable: v })} />
+        {(print.makeOverhangPrintable ?? false) && (
+          <Num label="Max Overhang Angle" unit="°" value={print.makeOverhangPrintableMaxAngle ?? 50} min={0} max={89} onChange={(v) => upd({ makeOverhangPrintableMaxAngle: v })} />
         )}
         <SectionDivider label="Slicing" />
-        <Sel label="Slicing Tolerance" value={(print as unknown as Record<string, unknown>).slicingTolerance as 'middle' | 'inclusive' | 'exclusive' ?? 'middle'}
+        <Sel label="Slicing Tolerance" value={print.slicingTolerance ?? 'middle'}
           onChange={(v) => upd({ slicingTolerance: v })}
           options={[
             { value: 'middle', label: 'Middle — balanced' },
             { value: 'inclusive', label: 'Inclusive — thicker' },
             { value: 'exclusive', label: 'Exclusive — thinner' },
           ]} />
-        <Num label="Min Polygon Circumference" unit="mm" value={(print as unknown as Record<string, unknown>).minimumPolygonCircumference as number ?? 1.0} step={0.1} min={0.1} max={10} onChange={(v) => upd({ minimumPolygonCircumference: v })} />
-        <Num label="Small Hole Max Size" unit="mm" value={(print as unknown as Record<string, unknown>).smallHoleMaxSize as number ?? 0} step={0.1} min={0} max={10} onChange={(v) => upd({ smallHoleMaxSize: v })} />
+        <Num label="Min Polygon Circumference" unit="mm" value={print.minimumPolygonCircumference ?? 1.0} step={0.1} min={0.1} max={10} onChange={(v) => upd({ minimumPolygonCircumference: v })} />
+        <Num label="Small Hole Max Size" unit="mm" value={print.smallHoleMaxSize ?? 0} step={0.1} min={0} max={10} onChange={(v) => upd({ smallHoleMaxSize: v })} />
       </SlicerSection>
 
       <SlicerSection title="Acceleration & Jerk" defaultOpen={false}>
-        <Check label="Enable Acceleration Control" value={(print as unknown as Record<string, unknown>).accelerationEnabled as boolean ?? false} onChange={(v) => upd({ accelerationEnabled: v })} />
-        {((print as unknown as Record<string, unknown>).accelerationEnabled as boolean ?? false) && (<>
+        <Check label="Enable Acceleration Control" value={print.accelerationEnabled ?? false} onChange={(v) => upd({ accelerationEnabled: v })} />
+        {(print.accelerationEnabled ?? false) && (<>
           <SectionDivider label="Acceleration (mm/s²)" />
-          <Num label="Print" unit="mm/s²" value={(print as unknown as Record<string, unknown>).accelerationPrint as number ?? 3000} min={100} max={20000} onChange={(v) => upd({ accelerationPrint: v })} />
-          <Num label="Travel" unit="mm/s²" value={(print as unknown as Record<string, unknown>).accelerationTravel as number ?? 3000} min={100} max={20000} onChange={(v) => upd({ accelerationTravel: v })} />
-          <Num label="Outer Wall" unit="mm/s²" value={(print as unknown as Record<string, unknown>).accelerationWall as number ?? 1000} min={100} max={20000} onChange={(v) => upd({ accelerationWall: v })} />
-          <Num label="Infill" unit="mm/s²" value={(print as unknown as Record<string, unknown>).accelerationInfill as number ?? 3000} min={100} max={20000} onChange={(v) => upd({ accelerationInfill: v })} />
-          <Num label="Top/Bottom" unit="mm/s²" value={(print as unknown as Record<string, unknown>).accelerationTopBottom as number ?? 1000} min={100} max={20000} onChange={(v) => upd({ accelerationTopBottom: v })} />
-          <Num label="Support" unit="mm/s²" value={(print as unknown as Record<string, unknown>).accelerationSupport as number ?? 2000} min={100} max={20000} onChange={(v) => upd({ accelerationSupport: v })} />
+          <Num label="Print" unit="mm/s²" value={print.accelerationPrint ?? 3000} min={100} max={20000} onChange={(v) => upd({ accelerationPrint: v })} />
+          <Num label="Travel" unit="mm/s²" value={print.accelerationTravel ?? 3000} min={100} max={20000} onChange={(v) => upd({ accelerationTravel: v })} />
+          <Num label="Outer Wall" unit="mm/s²" value={print.accelerationWall ?? 1000} min={100} max={20000} onChange={(v) => upd({ accelerationWall: v })} />
+          <Num label="Infill" unit="mm/s²" value={print.accelerationInfill ?? 3000} min={100} max={20000} onChange={(v) => upd({ accelerationInfill: v })} />
+          <Num label="Top/Bottom" unit="mm/s²" value={print.accelerationTopBottom ?? 1000} min={100} max={20000} onChange={(v) => upd({ accelerationTopBottom: v })} />
+          <Num label="Support" unit="mm/s²" value={print.accelerationSupport ?? 2000} min={100} max={20000} onChange={(v) => upd({ accelerationSupport: v })} />
         </>)}
-        <Check label="Enable Jerk Control" value={(print as unknown as Record<string, unknown>).jerkEnabled as boolean ?? false} onChange={(v) => upd({ jerkEnabled: v })} />
-        {((print as unknown as Record<string, unknown>).jerkEnabled as boolean ?? false) && (<>
+        <Check label="Enable Jerk Control" value={print.jerkEnabled ?? false} onChange={(v) => upd({ jerkEnabled: v })} />
+        {(print.jerkEnabled ?? false) && (<>
           <SectionDivider label="Jerk (mm/s)" />
-          <Num label="Print Jerk" unit="mm/s" value={(print as unknown as Record<string, unknown>).jerkPrint as number ?? 10} min={1} max={30} onChange={(v) => upd({ jerkPrint: v })} />
-          <Num label="Travel Jerk" unit="mm/s" value={(print as unknown as Record<string, unknown>).jerkTravel as number ?? 10} min={1} max={30} onChange={(v) => upd({ jerkTravel: v })} />
-          <Num label="Wall Jerk" unit="mm/s" value={(print as unknown as Record<string, unknown>).jerkWall as number ?? 8} min={1} max={30} onChange={(v) => upd({ jerkWall: v })} />
-          <Num label="Infill Jerk" unit="mm/s" value={(print as unknown as Record<string, unknown>).jerkInfill as number ?? 10} min={1} max={30} onChange={(v) => upd({ jerkInfill: v })} />
-          <Num label="Top/Bottom Jerk" unit="mm/s" value={(print as unknown as Record<string, unknown>).jerkTopBottom as number ?? 8} min={1} max={30} onChange={(v) => upd({ jerkTopBottom: v })} />
+          <Num label="Print Jerk" unit="mm/s" value={print.jerkPrint ?? 10} min={1} max={30} onChange={(v) => upd({ jerkPrint: v })} />
+          <Num label="Travel Jerk" unit="mm/s" value={print.jerkTravel ?? 10} min={1} max={30} onChange={(v) => upd({ jerkTravel: v })} />
+          <Num label="Wall Jerk" unit="mm/s" value={print.jerkWall ?? 8} min={1} max={30} onChange={(v) => upd({ jerkWall: v })} />
+          <Num label="Infill Jerk" unit="mm/s" value={print.jerkInfill ?? 10} min={1} max={30} onChange={(v) => upd({ jerkInfill: v })} />
+          <Num label="Top/Bottom Jerk" unit="mm/s" value={print.jerkTopBottom ?? 8} min={1} max={30} onChange={(v) => upd({ jerkTopBottom: v })} />
         </>)}
       </SlicerSection>
 
       <SlicerSection title="Mesh Fixes" defaultOpen={false}>
-        <Check label="Union Overlapping Volumes" value={(print as unknown as Record<string, unknown>).unionOverlappingVolumes as boolean ?? true} onChange={(v) => upd({ unionOverlappingVolumes: v })} />
-        <Check label="Remove All Holes" value={(print as unknown as Record<string, unknown>).removeAllHoles as boolean ?? false} onChange={(v) => upd({ removeAllHoles: v })} />
-        <Check label="Extensive Stitching" value={(print as unknown as Record<string, unknown>).extensiveStitching as boolean ?? false} onChange={(v) => upd({ extensiveStitching: v })} />
-        <Check label="Keep Disconnected Faces" value={(print as unknown as Record<string, unknown>).keepDisconnectedFaces as boolean ?? false} onChange={(v) => upd({ keepDisconnectedFaces: v })} />
+        <Check label="Union Overlapping Volumes" value={print.unionOverlappingVolumes ?? true} onChange={(v) => upd({ unionOverlappingVolumes: v })} />
+        <Check label="Remove All Holes" value={print.removeAllHoles ?? false} onChange={(v) => upd({ removeAllHoles: v })} />
+        <Check label="Extensive Stitching" value={print.extensiveStitching ?? false} onChange={(v) => upd({ extensiveStitching: v })} />
+        <Check label="Keep Disconnected Faces" value={print.keepDisconnectedFaces ?? false} onChange={(v) => upd({ keepDisconnectedFaces: v })} />
         <SectionDivider label="Precision" />
-        <Num label="Maximum Resolution" unit="mm" value={(print as unknown as Record<string, unknown>).maxResolution as number ?? 0.5} step={0.01} min={0.01} max={2} onChange={(v) => upd({ maxResolution: v })} />
-        <Num label="Maximum Deviation" unit="mm" value={(print as unknown as Record<string, unknown>).maxDeviation as number ?? 0.025} step={0.005} min={0.001} max={1} onChange={(v) => upd({ maxDeviation: v })} />
-        <Num label="Max Travel Resolution" unit="mm" value={(print as unknown as Record<string, unknown>).maxTravelResolution as number ?? 0.8} step={0.1} min={0.1} max={5} onChange={(v) => upd({ maxTravelResolution: v })} />
+        <Num label="Maximum Resolution" unit="mm" value={print.maxResolution ?? 0.5} step={0.01} min={0.01} max={2} onChange={(v) => upd({ maxResolution: v })} />
+        <Num label="Maximum Deviation" unit="mm" value={print.maxDeviation ?? 0.025} step={0.005} min={0.001} max={1} onChange={(v) => upd({ maxDeviation: v })} />
+        <Num label="Max Travel Resolution" unit="mm" value={print.maxTravelResolution ?? 0.8} step={0.1} min={0.1} max={5} onChange={(v) => upd({ maxTravelResolution: v })} />
       </SlicerSection>
     </>
   );

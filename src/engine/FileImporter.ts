@@ -221,14 +221,16 @@ export class FileImporter {
       );
     }
 
+    const vertexCount = vertexEls.length;
     for (const t of triangleEls) {
-      indices.push(
-        parseInt(t.getAttribute('v1') ?? '0', 10),
-        parseInt(t.getAttribute('v2') ?? '0', 10),
-        parseInt(t.getAttribute('v3') ?? '0', 10),
-      );
+      const v1 = parseInt(t.getAttribute('v1') ?? '0', 10);
+      const v2 = parseInt(t.getAttribute('v2') ?? '0', 10);
+      const v3 = parseInt(t.getAttribute('v3') ?? '0', 10);
+      if (v1 < 0 || v1 >= vertexCount || v2 < 0 || v2 >= vertexCount || v3 < 0 || v3 >= vertexCount) continue;
+      indices.push(v1, v2, v3);
     }
 
+    if (indices.length === 0) return null;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geo.setIndex(indices);
@@ -255,16 +257,14 @@ export class FileImporter {
       );
     }
 
+    const vertexCount = vertexEls.length;
     for (const vol of volumeEls) {
       for (const tri of vol.querySelectorAll('triangle')) {
-        const v1 = tri.querySelector('v1');
-        const v2 = tri.querySelector('v2');
-        const v3 = tri.querySelector('v3');
-        indices.push(
-          parseInt(v1?.textContent ?? '0', 10),
-          parseInt(v2?.textContent ?? '0', 10),
-          parseInt(v3?.textContent ?? '0', 10),
-        );
+        const i1 = parseInt(tri.querySelector('v1')?.textContent ?? '0', 10);
+        const i2 = parseInt(tri.querySelector('v2')?.textContent ?? '0', 10);
+        const i3 = parseInt(tri.querySelector('v3')?.textContent ?? '0', 10);
+        if (i1 < 0 || i1 >= vertexCount || i2 < 0 || i2 >= vertexCount || i3 < 0 || i3 >= vertexCount) continue;
+        indices.push(i1, i2, i3);
       }
     }
 
@@ -283,6 +283,8 @@ export class FileImporter {
 
   private static async extractZipEntry(bytes: Uint8Array, targetSuffix: string): Promise<string | null> {
     let offset = 0;
+    // Use a DataView for 32-bit reads to avoid sign-extension from `<< 24`.
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
     while (offset + 30 < bytes.length) {
       // Local file header signature: PK\x03\x04
@@ -291,13 +293,49 @@ export class FileImporter {
         break;
       }
 
+      const generalPurposeBitFlag = bytes[offset + 6] | (bytes[offset + 7] << 8);
       const compression  = bytes[offset + 8]  | (bytes[offset + 9]  << 8);
-      const compSize     = bytes[offset + 18] | (bytes[offset + 19] << 8) | (bytes[offset + 20] << 16) | (bytes[offset + 21] << 24);
+      // Use DataView.getUint32 (little-endian) to avoid sign-extension of bit 31.
+      let compSize     = dv.getUint32(offset + 18, true);
       const nameLen      = bytes[offset + 26] | (bytes[offset + 27] << 8);
       const extraLen     = bytes[offset + 28] | (bytes[offset + 29] << 8);
 
       const name = new TextDecoder().decode(bytes.slice(offset + 30, offset + 30 + nameLen));
       const dataStart = offset + 30 + nameLen + extraLen;
+
+      // ZIP general purpose bit 3: CRC-32 and sizes are in a data descriptor
+      // *after* the compressed data instead of in the local file header.
+      // When set, the header fields are 0 — we must locate the descriptor to
+      // get the real compSize before we can slice the data correctly.
+      if ((generalPurposeBitFlag & 0x0008) !== 0) {
+        // Scan forward for the data descriptor signature 0x08074b50 or,
+        // if absent, fall back to scanning for the next local file header.
+        // The data descriptor is: [optional sig 4B] crc32 4B compSize 4B uncompSize 4B
+        let ddOffset = dataStart;
+        let found = false;
+        while (ddOffset + 4 <= bytes.length) {
+          if (bytes[ddOffset] === 0x50 && bytes[ddOffset + 1] === 0x4B &&
+              bytes[ddOffset + 2] === 0x07 && bytes[ddOffset + 3] === 0x08) {
+            // Signature present: crc32 at +4, compSize at +8
+            compSize = dv.getUint32(ddOffset + 8, true);
+            found = true;
+            break;
+          }
+          // No signature variant: next entry header gives us the boundary
+          if (bytes[ddOffset] === 0x50 && bytes[ddOffset + 1] === 0x4B &&
+              bytes[ddOffset + 2] === 0x03 && bytes[ddOffset + 3] === 0x04) {
+            compSize = ddOffset - dataStart;
+            found = true;
+            break;
+          }
+          ddOffset++;
+        }
+        if (!found) {
+          // Could not determine size — skip this entry
+          break;
+        }
+      }
+
       const data = bytes.slice(dataStart, dataStart + compSize);
 
       if (name.endsWith(targetSuffix)) {
@@ -361,17 +399,23 @@ export class FileImporter {
   }
 
   private static createMeshFromPoints(points: THREE.Vector3[], name: string): THREE.Mesh {
-    // Create a convex hull approximation from the extracted points
+    // Fan-triangulate from centroid: for each consecutive pair of points emit
+    // a triangle (centroid, p[i], p[i+1]).  This is a correct triangulation
+    // for convex planar faces, which covers the vast majority of STEP faces.
     const geometry = new THREE.BufferGeometry();
     const vertices: number[] = [];
 
-    // Create triangulated mesh from point cloud using simple convex hull
     if (points.length >= 3) {
-      // Use ConvexGeometry approach - create triangles from point cloud
-      for (let i = 0; i < points.length - 2; i += 3) {
-        const p0 = points[i];
-        const p1 = points[Math.min(i + 1, points.length - 1)];
-        const p2 = points[Math.min(i + 2, points.length - 1)];
+      // Compute centroid
+      const centroid = new THREE.Vector3();
+      for (const p of points) centroid.add(p);
+      centroid.divideScalar(points.length);
+
+      // Emit one triangle per consecutive edge of the boundary loop
+      for (let i = 0; i < points.length; i++) {
+        const p0 = centroid;
+        const p1 = points[i];
+        const p2 = points[(i + 1) % points.length];
         vertices.push(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
       }
     }
@@ -413,6 +457,8 @@ export class FileImporter {
     // Simple ZIP local file header parsing
     let offset = 0;
     const meshVertices: number[] = [];
+    // Use DataView for 32-bit reads to avoid sign-extension from `<< 24`.
+    const dv = new DataView(zipBytes.buffer, zipBytes.byteOffset, zipBytes.byteLength);
 
     while (offset < zipBytes.length - 4) {
       // Local file header signature
@@ -421,8 +467,7 @@ export class FileImporter {
 
         const nameLen = zipBytes[offset + 26] | (zipBytes[offset + 27] << 8);
         const extraLen = zipBytes[offset + 28] | (zipBytes[offset + 29] << 8);
-        const compSize = zipBytes[offset + 18] | (zipBytes[offset + 19] << 8) |
-                        (zipBytes[offset + 20] << 16) | (zipBytes[offset + 21] << 24);
+        const compSize = dv.getUint32(offset + 18, true);
 
         const nameBytes = zipBytes.slice(offset + 30, offset + 30 + nameLen);
         const fileName = new TextDecoder().decode(nameBytes);

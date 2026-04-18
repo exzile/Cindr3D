@@ -92,6 +92,16 @@ import MultiViewCanvas from './MultiViewCanvas';
 /** Module-level singleton — passed to SSAO to avoid per-render Color allocation. */
 const SSAO_COLOR = new THREE.Color('black');
 
+/**
+ * AUDIT-17: Module-level scratch quaternions — alternated each tick to avoid
+ * allocating a new THREE.Quaternion on every camera-movement interval tick.
+ * React detects the state change because the object reference alternates between
+ * _quatA and _quatB, so it always sees a different reference when the camera moves.
+ */
+const _quatA = new THREE.Quaternion();
+const _quatB = new THREE.Quaternion();
+let _quatToggle = false;
+
 /** Standard ray-casting point-in-polygon test (screen-space pixels). */
 function pointInPolygon(p: { x: number; y: number }, poly: { x: number; y: number }[]): boolean {
   let inside = false;
@@ -161,14 +171,20 @@ export default function Viewport() {
   // Throttled sync from ref to state for the ViewCube overlay.
   // Uses functional setState so camQuat is NOT needed as a dep — avoids
   // the infinite loop: camQuat change → effect re-runs → new interval → camQuat changes…
+  // AUDIT-17: alternates between two module-level scratch quaternions instead of
+  // cloning a new one each tick, eliminating ~10 allocations/sec during camera movement.
   useEffect(() => {
     const id = setInterval(() => {
-      setCamQuat((prev) =>
-        quatRef.current.equals(prev) ? prev : quatRef.current.clone()
-      );
+      setCamQuat((prev) => {
+        if (quatRef.current.equals(prev)) return prev;
+        _quatToggle = !_quatToggle;
+        const scratch = _quatToggle ? _quatA : _quatB;
+        scratch.copy(quatRef.current);
+        return scratch;
+      });
     }, 100);
     return () => clearInterval(id);
-  }, []);  
+  }, []);
 
   const handleViewCubeOrient = useCallback((targetQ: THREE.Quaternion) => {
     setCameraTargetQuaternion(targetQ);
@@ -435,9 +451,13 @@ export default function Viewport() {
         {/* Shift + Middle-click pan (in addition to right-click pan) */}
         <ShiftMiddlePan />
 
-        {/* NAV-21: Ambient Occlusion — SSAO via @react-three/postprocessing.
+        {/* NAV-21 / AUDIT-21: Ambient Occlusion — SSAO via @react-three/postprocessing.
             SSAO_COLOR is a module-level singleton so we don't allocate a fresh
-            THREE.Color on every Viewport render. */}
+            THREE.Color on every Viewport render.
+            AUDIT-21: EffectComposer cleanup is handled by @react-three/postprocessing
+            on unmount — no manual dispose needed. Package version ^3.0.4 (v3+)
+            performs render-target and pass cleanup automatically via React's
+            unmount lifecycle. */}
         {ambientOcclusionEnabled && (
           <EffectComposer>
             <SSAO

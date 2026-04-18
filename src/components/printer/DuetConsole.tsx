@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
 import './DuetConsole.css';
 import {
   Send,
@@ -14,6 +14,7 @@ import {
   ArrowDown,
   Filter,
   Search,
+  MessageSquare,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { formatTimeOfDay } from '../../utils/printerFormat';
@@ -77,6 +78,9 @@ const GCODE_SUGGESTIONS: { code: string; description: string }[] = [
   { code: 'M999', description: 'Reset controller' },
 ];
 
+const COMMAND_HISTORY_KEY = 'duet-console-command-history';
+const MAX_HISTORY = 100;
+
 type FilterType = 'all' | 'command' | 'response' | 'warning' | 'error';
 
 const TEMP_REPORT_PATTERN = /\b(ok\s+)?(T\d*:\s*[\d.]+|B:\s*[\d.]+)/i;
@@ -110,14 +114,75 @@ function highlightText(text: string, search: string): React.ReactNode {
   );
 }
 
+/**
+ * Apply lightweight G-code syntax highlighting to a plain-text string.
+ * Returns an HTML string suitable for use as `innerHTML` in the backdrop div.
+ * Order matters: comments first (greedy), then G/M commands, then axis letters.
+ */
+function highlightGCode(text: string): string {
+  // Escape HTML entities to prevent XSS via arbitrary user input
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // We process line by line so comment highlighting stays correct
+  return escaped
+    .split('\n')
+    .map((line) => {
+      // Find the comment start (;)
+      const commentIdx = line.indexOf(';');
+      const codePart = commentIdx === -1 ? line : line.slice(0, commentIdx);
+      const commentPart = commentIdx === -1 ? '' : line.slice(commentIdx);
+
+      // Highlight G/M commands in the code portion
+      let highlighted = codePart
+        // G/M commands: bold cyan
+        .replace(
+          /\b([GM]\d+(?:\.\d+)?)\b/g,
+          '<span style="color:#7ec8e3;font-weight:bold">$1</span>',
+        )
+        // Axis letters + value: green
+        .replace(
+          /\b([XYZEFRSPT]-?\d+(?:\.\d+)?)\b/g,
+          '<span style="color:#c3e88d">$1</span>',
+        );
+
+      // Append comment in grey italic
+      if (commentPart) {
+        highlighted += `<span style="color:#555;font-style:italic">${commentPart}</span>`;
+      }
+
+      return highlighted;
+    })
+    .join('\n');
+}
+
 export default function DuetConsole() {
   const consoleHistory = usePrinterStore((s) => s.consoleHistory);
   const sendGCode = usePrinterStore((s) => s.sendGCode);
   const connected = usePrinterStore((s) => s.connected);
 
   const [input, setInput] = useState('');
-  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [commandHistory, setCommandHistory] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem(COMMAND_HISTORY_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) return parsed.slice(-MAX_HISTORY);
+      }
+    } catch {
+      // ignore corrupt data
+    }
+    return [];
+  });
   const [historyIndex, setHistoryIndex] = useState(-1);
+
+  // Verbose mode toggle
+  const [verbose, setVerbose] = useState(false);
+
+  // Holds the in-progress typed text so we can restore it after history navigation
+  const draftInputRef = useRef('');
 
   // Filter state
   const [hideTemps, setHideTemps] = useState(false);
@@ -131,9 +196,14 @@ export default function DuetConsole() {
   // Scroll state
   const [isAtBottom, setIsAtBottom] = useState(true);
 
+  // Multi-line mode
+  const isMultiLine = input.includes('\n');
+
   const outputRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
+  const highlightBackdropRef = useRef<HTMLDivElement>(null);
 
   // Filtered console entries
   const filteredEntries = useMemo(() => {
@@ -175,6 +245,13 @@ export default function DuetConsole() {
     inputRef.current?.focus();
   }, []);
 
+  // Update highlight backdrop whenever the input text changes (multi-line mode)
+  useLayoutEffect(() => {
+    const backdrop = highlightBackdropRef.current;
+    if (!backdrop) return;
+    backdrop.innerHTML = highlightGCode(input) + '\n'; // trailing newline preserves last-line height
+  }, [input]);
+
   // Show/hide suggestions when input changes
   useEffect(() => {
     if (suggestions.length > 0 && input.trim().length > 0) {
@@ -198,12 +275,25 @@ export default function DuetConsole() {
     const cmd = input.trim();
     if (!cmd) return;
 
-    sendGCode(cmd);
+    // Split by newlines and send each line sequentially
+    const lines = cmd.split('\n').map((l) => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      sendGCode(line);
+    }
+
+    // Store the full block as a single history entry
     setCommandHistory((prev) => {
       const filtered = prev.filter((c) => c !== cmd);
-      return [...filtered, cmd];
+      const updated = [...filtered, cmd].slice(-MAX_HISTORY);
+      try {
+        localStorage.setItem(COMMAND_HISTORY_KEY, JSON.stringify(updated));
+      } catch {
+        // localStorage full or unavailable — ignore
+      }
+      return updated;
     });
     setHistoryIndex(-1);
+    draftInputRef.current = '';
     setInput('');
     setShowSuggestions(false);
   }, [input, sendGCode]);
@@ -218,7 +308,7 @@ export default function DuetConsole() {
   );
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
+    (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       // Autocomplete navigation
       if (showSuggestions && suggestions.length > 0) {
         if (e.key === 'ArrowDown') {
@@ -231,7 +321,7 @@ export default function DuetConsole() {
           setSelectedSuggestion((prev) => Math.max(prev - 1, 0));
           return;
         }
-        if (e.key === 'Tab' || (e.key === 'Enter' && suggestions.length > 0)) {
+        if (e.key === 'Tab' || (e.key === 'Enter' && suggestions.length > 0 && !e.shiftKey && !e.ctrlKey)) {
           e.preventDefault();
           selectSuggestion(suggestions[selectedSuggestion].code);
           return;
@@ -243,15 +333,34 @@ export default function DuetConsole() {
         }
       }
 
-      if (e.key === 'Enter') {
+      // Shift+Enter: insert newline (switch to multi-line mode)
+      if (e.key === 'Enter' && e.shiftKey) {
+        e.preventDefault();
+        setInput((prev) => prev + '\n');
+        return;
+      }
+
+      // Ctrl+Enter: send multi-line block (or single line)
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         handleSend();
         return;
       }
 
-      if (e.key === 'ArrowUp') {
+      // Plain Enter: send (only in single-line mode)
+      if (e.key === 'Enter' && !isMultiLine) {
+        e.preventDefault();
+        handleSend();
+        return;
+      }
+
+      if (e.key === 'ArrowUp' && !isMultiLine) {
         e.preventDefault();
         if (commandHistory.length === 0) return;
+        // Save current typed text when first entering history navigation
+        if (historyIndex === -1) {
+          draftInputRef.current = input;
+        }
         const nextIndex =
           historyIndex === -1
             ? commandHistory.length - 1
@@ -261,20 +370,20 @@ export default function DuetConsole() {
         return;
       }
 
-      if (e.key === 'ArrowDown') {
+      if (e.key === 'ArrowDown' && !isMultiLine) {
         e.preventDefault();
         if (historyIndex === -1) return;
         const nextIndex = historyIndex + 1;
         if (nextIndex >= commandHistory.length) {
           setHistoryIndex(-1);
-          setInput('');
+          setInput(draftInputRef.current);
         } else {
           setHistoryIndex(nextIndex);
           setInput(commandHistory[nextIndex]);
         }
       }
     },
-    [handleSend, commandHistory, historyIndex, showSuggestions, suggestions, selectedSuggestion, selectSuggestion],
+    [handleSend, commandHistory, historyIndex, showSuggestions, suggestions, selectedSuggestion, selectSuggestion, input, isMultiLine],
   );
 
   const handleClear = useCallback(() => {
@@ -298,6 +407,12 @@ export default function DuetConsole() {
     [sendGCode],
   );
 
+  const handleToggleVerbose = useCallback(() => {
+    const nextVerbose = !verbose;
+    sendGCode(nextVerbose ? 'M111 S1' : 'M111 S0');
+    setVerbose(nextVerbose);
+  }, [verbose, sendGCode]);
+
   return (
     <div className="duet-console">
       {/* Quick command buttons */}
@@ -317,6 +432,15 @@ export default function DuetConsole() {
           ))}
         </div>
         <div className="duet-console__toolbar-right">
+          <button
+            className={`duet-console__filter-toggle${verbose ? ' is-active' : ''}`}
+            onClick={handleToggleVerbose}
+            disabled={!connected}
+            title={verbose ? 'Verbose mode ON — click to send M111 S0' : 'Verbose mode OFF — click to send M111 S1'}
+          >
+            <MessageSquare size={12} />
+            <span>{verbose ? 'Verbose' : 'Quiet'}</span>
+          </button>
           <button
             className="duet-console__clear-btn"
             onClick={handleCopyAll}
@@ -452,35 +576,73 @@ export default function DuetConsole() {
         )}
 
         <div className="duet-console__input-row">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              setHistoryIndex(-1);
-            }}
-            onKeyDown={handleKeyDown}
-            onBlur={() => {
-              // Delay hiding so mouseDown on suggestion can fire
-              setTimeout(() => setShowSuggestions(false), 150);
-            }}
-            onFocus={() => {
-              if (suggestions.length > 0 && input.trim().length > 0) {
-                setShowSuggestions(true);
-              }
-            }}
-            placeholder={connected ? 'Type G-code command...' : 'Not connected'}
-            disabled={!connected}
-            className="duet-console__input"
-            spellCheck={false}
-            autoComplete="off"
-          />
+          {isMultiLine ? (
+            <div className="duet-console__input-highlight-wrap">
+              {/* Backdrop layer for syntax highlighting */}
+              <div
+                ref={highlightBackdropRef}
+                className="duet-console__input-highlight-backdrop"
+                aria-hidden="true"
+              />
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  setHistoryIndex(-1);
+                }}
+                onKeyDown={handleKeyDown}
+                onBlur={() => {
+                  setTimeout(() => setShowSuggestions(false), 150);
+                }}
+                onScroll={() => {
+                  // Keep backdrop scroll in sync with textarea
+                  const ta = textareaRef.current;
+                  const bd = highlightBackdropRef.current;
+                  if (ta && bd) {
+                    bd.scrollTop = ta.scrollTop;
+                    bd.scrollLeft = ta.scrollLeft;
+                  }
+                }}
+                placeholder={connected ? 'Multi-line G-code (Ctrl+Enter to send)' : 'Not connected'}
+                disabled={!connected}
+                className="duet-console__input duet-console__input--multiline duet-console__input--highlighted"
+                spellCheck={false}
+                autoComplete="off"
+                rows={3}
+              />
+            </div>
+          ) : (
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                setHistoryIndex(-1);
+              }}
+              onKeyDown={handleKeyDown}
+              onBlur={() => {
+                // Delay hiding so mouseDown on suggestion can fire
+                setTimeout(() => setShowSuggestions(false), 150);
+              }}
+              onFocus={() => {
+                if (suggestions.length > 0 && input.trim().length > 0) {
+                  setShowSuggestions(true);
+                }
+              }}
+              placeholder={connected ? 'Type G-code... (Shift+Enter for multi-line)' : 'Not connected'}
+              disabled={!connected}
+              className="duet-console__input"
+              spellCheck={false}
+              autoComplete="off"
+            />
+          )}
           <button
             className={`duet-console__send-btn${!connected || !input.trim() ? ' is-disabled' : ''}`}
             onClick={handleSend}
             disabled={!connected || !input.trim()}
-            title="Send command"
+            title={isMultiLine ? 'Send all lines (Ctrl+Enter)' : 'Send command'}
           >
             <Send size={16} />
           </button>

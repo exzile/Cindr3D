@@ -10,6 +10,7 @@ import { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import type { ConstructionPlane, ConstructionAxis, ConstructionPoint } from '../../../types/cad';
+import { tagShared } from '../../../engine/GeometryEngine';
 
 // ── Module-level material singletons ─────────────────────────────────────────
 const PLANE_MAT = new THREE.MeshBasicMaterial({
@@ -34,6 +35,14 @@ const POINT_MAT = new THREE.MeshBasicMaterial({
   color: 0x22c55e,
   depthTest: false,
 });
+
+/**
+ * AUDIT-18: Module-level geometry singleton for construction points.
+ * Shared across all ConstructionPointItem instances — do NOT dispose this
+ * geometry in any per-instance cleanup, as it is reused by all instances.
+ * AUDIT-19: tagShared marks it so disposal logic skips it.
+ */
+const POINT_GEO = tagShared(new THREE.SphereGeometry(0.2, 8, 6));
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -133,14 +142,7 @@ interface PointItemProps {
 }
 
 function ConstructionPointItem({ point }: PointItemProps) {
-  const geo = useMemo(() => new THREE.SphereGeometry(0.2, 8, 6), []);
-
-  useEffect(() => {
-    return () => {
-      geo.dispose();
-    };
-  }, [geo]);
-
+  // AUDIT-18: use module-level POINT_GEO singleton — no per-instance allocation or disposal.
   const position = useMemo(
     () => new THREE.Vector3(...point.position),
     [point.position],
@@ -148,7 +150,7 @@ function ConstructionPointItem({ point }: PointItemProps) {
 
   return (
     <mesh
-      geometry={geo}
+      geometry={POINT_GEO}
       material={POINT_MAT}
       position={position}
       renderOrder={50}

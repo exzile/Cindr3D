@@ -15,13 +15,15 @@ import React, { useRef, useMemo, useEffect } from 'react';
 import { useThree, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
+import { tagShared } from '../../../engine/GeometryEngine';
 
 // ── Module-level scratch variables — never allocate inside handlers ──────────
 const _scratchVec   = new THREE.Vector3();
 const _scratchMouse = new THREE.Vector2();
 
 // ── Shared handle geometry — one BufferGeometry reused by all spheres ────────
-const HANDLE_GEO = new THREE.SphereGeometry(0.3, 10, 10);
+// AUDIT-19: tagShared marks this geometry so disposal logic skips it.
+const HANDLE_GEO = tagShared(new THREE.SphereGeometry(0.3, 10, 10));
 
 // ── Materials keyed by visual state ─────────────────────────────────────────
 const MAT_NORMAL   = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false });

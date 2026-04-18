@@ -37,37 +37,52 @@ const LINE_MAT = new THREE.LineBasicMaterial({
 const COMB_RED_MAT = new THREE.LineBasicMaterial({ color: 0xff3333, depthTest: false });
 const COMB_BLUE_MAT = new THREE.LineBasicMaterial({ color: 0x3399ff, depthTest: false });
 
+// ── Module-level scratch singletons — avoid per-vertex allocations ────────────
+/** Scratch Color reused by heatColour / draftColour — never hold across calls */
+const _color = new THREE.Color();
+/** Scratch Vector3 reused in per-vertex loops — never hold two uses simultaneously */
+const _vec = new THREE.Vector3();
+/** Separate scratch for direction vectors returned by dirVec() so that _vec is
+ *  free for per-vertex use inside the same loop body. */
+const _dir = new THREE.Vector3();
+/** Scratch vectors for buildCurvatureComb's edge-iteration loop. */
+const _combPA   = new THREE.Vector3();
+const _combPB   = new THREE.Vector3();
+const _combMid  = new THREE.Vector3();
+const _combNorm = new THREE.Vector3();
+const _combCross = new THREE.Vector3();
+const _combEdge  = new THREE.Vector3();
+const _combTip   = new THREE.Vector3();
+
 // ── Colour helpers ──────────────────────────────────────────────────────────
 
 /** Map t ∈ [0,1] to blue→green→yellow→red */
 function heatColour(t: number): THREE.Color {
-  const c = new THREE.Color();
   if (t < 0.25) {
-    c.setRGB(0, t * 4, 1);
+    _color.setRGB(0, t * 4, 1);
   } else if (t < 0.5) {
-    c.setRGB(0, 1, 1 - (t - 0.25) * 4);
+    _color.setRGB(0, 1, 1 - (t - 0.25) * 4);
   } else if (t < 0.75) {
-    c.setRGB((t - 0.5) * 4, 1, 0);
+    _color.setRGB((t - 0.5) * 4, 1, 0);
   } else {
-    c.setRGB(1, 1 - (t - 0.75) * 4, 0);
+    _color.setRGB(1, 1 - (t - 0.75) * 4, 0);
   }
-  return c;
+  return _color;
 }
 
 /** Map angle (radians) ∈ [-π/2, +π/2] to red→white→blue */
 function draftColour(angle: number): THREE.Color {
-  const c = new THREE.Color();
   const t = (angle + Math.PI / 2) / Math.PI; // 0..1
   if (t < 0.5) {
     // red → white
     const f = t * 2;
-    c.setRGB(1, f, f);
+    _color.setRGB(1, f, f);
   } else {
     // white → blue
     const f = (t - 0.5) * 2;
-    c.setRGB(1 - f, 1 - f, 1);
+    _color.setRGB(1 - f, 1 - f, 1);
   }
-  return c;
+  return _color;
 }
 
 // ── Per-analysis geometry builders ─────────────────────────────────────────
@@ -85,9 +100,9 @@ interface AnalysisParams {
 }
 
 function dirVec(d: 'x' | 'y' | 'z'): THREE.Vector3 {
-  if (d === 'x') return new THREE.Vector3(1, 0, 0);
-  if (d === 'z') return new THREE.Vector3(0, 0, 1);
-  return new THREE.Vector3(0, 1, 0);
+  if (d === 'x') return _dir.set(1, 0, 0);
+  if (d === 'z') return _dir.set(0, 0, 1);
+  return _dir.set(0, 1, 0);
 }
 
 /** Zebra uses a ShaderMaterial — one shared shader, per-call material with uniforms */
@@ -199,7 +214,9 @@ function buildDraft(meshes: THREE.Mesh[], params: AnalysisParams): { objects: TH
       const nx = normAttr.getX(i);
       const ny = normAttr.getY(i);
       const nz = normAttr.getZ(i);
-      const n = new THREE.Vector3(nx, ny, nz).normalize();
+      // _vec is safe here: dir points to _dir (set by dirVec), so _vec is free
+      // for per-vertex use.  Both are alive simultaneously without aliasing.
+      const n = _vec.set(nx, ny, nz).normalize();
       const angle = Math.asin(Math.max(-1, Math.min(1, n.dot(dir))));
       const col = draftColour(angle);
       colors[i * 3] = col.r;
@@ -267,7 +284,7 @@ function buildCurvatureMap(meshes: THREE.Mesh[]): { objects: THREE.Object3D[]; d
       _faceNorm.crossVectors(_edge1, _edge2).normalize();
 
       for (const vi of [ia, ib, ic]) {
-        const vn = new THREE.Vector3(normAttr.getX(vi), normAttr.getY(vi), normAttr.getZ(vi)).normalize();
+        const vn = _vec.set(normAttr.getX(vi), normAttr.getY(vi), normAttr.getZ(vi)).normalize();
         const angle = Math.acos(Math.max(-1, Math.min(1, _faceNorm.dot(vn))));
         curvature[vi] += angle;
       }
@@ -448,7 +465,7 @@ function buildMinRadius(meshes: THREE.Mesh[], params: AnalysisParams): { objects
       _faceNorm.crossVectors(_edge1, _edge2).normalize();
 
       for (const vi of [ia, ib, ic]) {
-        const vn = new THREE.Vector3(normAttr.getX(vi), normAttr.getY(vi), normAttr.getZ(vi)).normalize();
+        const vn = _vec.set(normAttr.getX(vi), normAttr.getY(vi), normAttr.getZ(vi)).normalize();
         curvature[vi] += Math.acos(Math.max(-1, Math.min(1, _faceNorm.dot(vn))));
       }
     }
@@ -550,9 +567,9 @@ function buildCurvatureComb(meshes: THREE.Mesh[], params: AnalysisParams): { obj
       const nB = faceNormals[fb];
 
       const [sA, sB] = key.split('_').map(Number);
-      const pA = new THREE.Vector3().fromBufferAttribute(posAttr, sA);
-      const pB = new THREE.Vector3().fromBufferAttribute(posAttr, sB);
-      const edgeLen = pA.distanceTo(pB);
+      _combPA.fromBufferAttribute(posAttr, sA);
+      _combPB.fromBufferAttribute(posAttr, sB);
+      const edgeLen = _combPA.distanceTo(_combPB);
 
       if (edgeLen < 0.0001) continue;
 
@@ -562,17 +579,17 @@ function buildCurvatureComb(meshes: THREE.Mesh[], params: AnalysisParams): { obj
 
       if (spineLen < 0.001) continue;
 
-      const mid = new THREE.Vector3().addVectors(pA, pB).multiplyScalar(0.5);
-      const avgNorm = new THREE.Vector3().addVectors(nA, nB).normalize();
+      _combMid.addVectors(_combPA, _combPB).multiplyScalar(0.5);
+      _combNorm.addVectors(nA, nB).normalize();
 
       // Concave if normals point outward from each other (cross product heuristic)
-      const cross = new THREE.Vector3().crossVectors(nA, nB);
-      const edgeDir = new THREE.Vector3().subVectors(pB, pA).normalize();
-      const convex = cross.dot(edgeDir) > 0;
+      _combCross.crossVectors(nA, nB);
+      _combEdge.subVectors(_combPB, _combPA).normalize();
+      const convex = _combCross.dot(_combEdge) > 0;
 
-      const tip = new THREE.Vector3().copy(mid).addScaledVector(avgNorm, spineLen);
+      _combTip.copy(_combMid).addScaledVector(_combNorm, spineLen);
       const pts = convex ? redPts : bluePts;
-      pts.push(mid.x, mid.y, mid.z, tip.x, tip.y, tip.z);
+      pts.push(_combMid.x, _combMid.y, _combMid.z, _combTip.x, _combTip.y, _combTip.z);
     }
 
     if (redPts.length > 0) {

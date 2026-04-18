@@ -135,3 +135,59 @@
 .duet-obj-browser__node-sep {
   color: var(--text-muted);
 }
+
+/* ── Inline edit controls ───────────────────────────────────────────────── */
+.duet-obj-browser__edit-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.duet-obj-browser__edit-input {
+  background: var(--bg-input, var(--bg-primary));
+  border: 1px solid var(--accent, #44aaff);
+  border-radius: 3px;
+  color: var(--text-primary);
+  padding: 1px 4px;
+  font-size: 12px;
+  font-family: monospace;
+  outline: none;
+  min-width: 80px;
+}
+
+.duet-obj-browser__edit-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  border-radius: 3px;
+  background: var(--success, #44cc88);
+  color: #fff;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.duet-obj-browser__edit-cancel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  border-radius: 3px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1;
+}
+
+/* ── Edit status bar ────────────────────────────────────────────────────── */
+.duet-obj-browser__edit-status {
+  font-size: 11px;
+  padding: 4px 8px;
+  margin-bottom: 8px;
+  border-radius: 4px;
+  background: rgba(68, 170, 255, 0.1);
+  color: var(--info, #44aaff);
+  font-family: monospace;
+}

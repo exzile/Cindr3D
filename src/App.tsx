@@ -108,6 +108,22 @@ import { useCADStore } from './store/cadStore';
 import { useComponentStore } from './store/componentStore';
 import './App.css';
 
+// These three dialogs only need a single store selector each. They are kept as
+// named sub-components (rather than inlined in the switch) because React hooks
+// cannot be called inside a switch branch.
+function TextureExtrudeDialogConnected({ onClose }: { onClose: () => void }) {
+  const commitTextureExtrude = useCADStore((s) => s.commitTextureExtrude);
+  return <TextureExtrudeDialog open={true} onClose={onClose} onConfirm={commitTextureExtrude} />;
+}
+function BoundingSolidDialogConnected({ onClose }: { onClose: () => void }) {
+  const commitBoundingSolid = useCADStore((s) => s.commitBoundingSolid);
+  return <BoundingSolidDialog open={true} onOk={commitBoundingSolid} onClose={onClose} />;
+}
+function InsertComponentDialogConnected({ onClose }: { onClose: () => void }) {
+  const commitInsertComponent = useCADStore((s) => s.commitInsertComponent);
+  return <InsertComponentDialog open={true} onOk={commitInsertComponent} onClose={onClose} />;
+}
+
 function DirectEditDialogConnected({ onClose }: { onClose: () => void }) {
   const commitDirectEdit = useCADStore((s) => s.commitDirectEdit);
   const directEditFaceId = useCADStore((s) => s.directEditFaceId);
@@ -121,16 +137,6 @@ function DirectEditDialogConnected({ onClose }: { onClose: () => void }) {
   );
 }
 
-function TextureExtrudeDialogConnected({ onClose }: { onClose: () => void }) {
-  const commitTextureExtrude = useCADStore((s) => s.commitTextureExtrude);
-  return (
-    <TextureExtrudeDialog
-      open={true}
-      onClose={onClose}
-      onConfirm={commitTextureExtrude}
-    />
-  );
-}
 
 function DecalDialogConnected({ onClose }: { onClose: () => void }) {
   const decalFaceId = useCADStore((s) => s.decalFaceId);
@@ -204,16 +210,6 @@ function InterferenceDialogConnected({ onClose }: { onClose: () => void }) {
   );
 }
 
-function BoundingSolidDialogConnected({ onClose }: { onClose: () => void }) {
-  const commitBoundingSolid = useCADStore((s) => s.commitBoundingSolid);
-  return (
-    <BoundingSolidDialog
-      open={true}
-      onOk={commitBoundingSolid}
-      onClose={onClose}
-    />
-  );
-}
 
 function ContactSetsDialogConnected({ onClose }: { onClose: () => void }) {
   const componentMap       = useComponentStore((s) => s.components);
@@ -239,16 +235,6 @@ function ContactSetsDialogConnected({ onClose }: { onClose: () => void }) {
   );
 }
 
-function InsertComponentDialogConnected({ onClose }: { onClose: () => void }) {
-  const commitInsertComponent = useCADStore((s) => s.commitInsertComponent);
-  return (
-    <InsertComponentDialog
-      open={true}
-      onOk={commitInsertComponent}
-      onClose={onClose}
-    />
-  );
-}
 
 function MirrorComponentDialogConnected({ onClose }: { onClose: () => void }) {
   const componentMap = useComponentStore((s) => s.components);

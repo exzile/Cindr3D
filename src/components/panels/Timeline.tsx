@@ -120,57 +120,67 @@ function GroupHeader({ group, depth = 0 }: { group: FeatureGroup; depth?: number
 
 // D186: Open the dialog that originally committed this feature, pre-filled.
 // Maps feature type/params to a dialog id in App.tsx's ActiveDialog switch.
+const FEATURE_DIALOG_MAP: Record<string, string | null> = {
+  'shell': 'shell',
+  'draft': 'draft',
+  'scale': 'scale',
+  'combine': 'combine',
+  'hole': 'hole',
+  'thread': 'thread',
+  'thicken': 'thicken',
+  'linear-pattern': 'linear-pattern',
+  'circular-pattern': 'circular-pattern',
+  'rectangular-pattern': 'rectangular-pattern',
+  'pattern-on-path': 'pattern-on-path',
+  'mirror': 'mirror',
+  'offset-face': 'offset-face',
+  'emboss': 'emboss',
+  'pipe': 'pipe',
+  'coil': 'coil',
+  'boundary-fill': 'boundary-fill',
+  'construction-plane': 'construction-plane',
+  'construction-axis': 'axis-perp-to-face',
+};
+
 function editDialogFor(feature: Feature): string | null {
   const p = feature.params ?? {};
+
+  // Simple 1:1 mappings
+  const direct = FEATURE_DIALOG_MAP[feature.type];
+  if (direct !== undefined) return direct;
+
+  // Types that need param-based disambiguation
   switch (feature.type) {
-    case 'shell':           return 'shell';
-    case 'draft':           return 'draft';
-    case 'scale':           return 'scale';
-    case 'combine':         return 'combine';
-    case 'hole':            return 'hole';
-    case 'thread':          return 'thread';
-    case 'thicken':         return 'thicken';
-    case 'linear-pattern':  return 'linear-pattern';
-    case 'circular-pattern':return 'circular-pattern';
-    case 'rectangular-pattern': return 'rectangular-pattern';
-    case 'pattern-on-path': return 'pattern-on-path';
-    case 'mirror':          return 'mirror';
-    case 'offset-face':     return 'offset-face';
     case 'split-body':
-      if (p.isSurfaceTrim)   return 'surface-trim';
-      if (p.isSurfaceSplit)  return 'surface-split';
-      if (p.unstitch)        return 'unstitch';
+      if (p.isSurfaceTrim)  return 'surface-trim';
+      if (p.isSurfaceSplit) return 'surface-split';
+      if (p.unstitch)       return 'unstitch';
       return 'split';
-    case 'emboss':       return 'emboss';
-    case 'pipe':         return 'pipe';
-    case 'coil':         return 'coil';
-    case 'boundary-fill': return 'boundary-fill';
     case 'rib':
       if (p.webStyle === 'perpendicular') return 'web';
       if (p.restStyle === 'rest')         return 'rest';
       return null;
-    case 'construction-plane': return 'construction-plane';
-    case 'construction-axis':  return 'axis-perp-to-face';
     case 'primitive': {
       const kind = String(p.kind ?? '');
-      if (kind && ['box','cylinder','sphere','torus','coil'].includes(kind)) {
+      if (kind && ['box', 'cylinder', 'sphere', 'torus', 'coil'].includes(kind)) {
         return `primitive-${kind}`;
       }
       return null;
     }
     case 'import':
-      if (p.isRigidGroup)        return 'rigid-group';
-      if (p.isPhysicalMaterial)  return 'physical-material';
-      if (p.isAppearance)        return 'appearance';
-      if (p.isMoveBody)          return 'move-body';
-      if (p.baseFeature)         return 'base-feature';
-      if (p.isCanvasRef)         return 'insert-canvas';
+      if (p.isRigidGroup)       return 'rigid-group';
+      if (p.isPhysicalMaterial) return 'physical-material';
+      if (p.isAppearance)       return 'appearance';
+      if (p.isMoveBody)         return 'move-body';
+      if (p.baseFeature)        return 'base-feature';
+      if (p.isCanvasRef)        return 'insert-canvas';
       return null;
     case 'sweep':
-      if (p.isSurfaceOffset)     return 'offset-surface';
-      if (p.isSurfaceExtend)     return 'surface-extend';
+      if (p.isSurfaceOffset) return 'offset-surface';
+      if (p.isSurfaceExtend) return 'surface-extend';
       return 'sweep';
-    default:                    return null;
+    default:
+      return null;
   }
 }
 

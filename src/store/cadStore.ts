@@ -1165,16 +1165,57 @@ const deserializeSketch = (sketch: Sketch): Sketch => ({
   planeOrigin: toVector3((sketch as unknown as { planeOrigin: unknown }).planeOrigin, [0, 0, 0]),
 });
 
-const serializeFeature = (feature: Feature) => {
+/** Mesh-only feature types: they carry no parametric source, so geometry must be serialized. */
+const MESH_ONLY_TYPES = new Set([
+  'fastener', 'derive', 'mesh-import', 'tessellate',
+  'mesh-combine', 'mesh-smooth', 'mesh-separate', 'import', 'primitive',
+]);
+
+/** On-disk shape of a feature — same as Feature but mesh is dropped and _meshData is added. */
+interface SerializedFeature extends Omit<Feature, 'mesh'> {
+  _meshData?: {
+    position: number[] | null;
+    index: number[] | null;
+    normal: number[] | null;
+  };
+}
+
+const serializeFeature = (feature: Feature): SerializedFeature => {
   const { mesh, ...rest } = feature;
-  void mesh;
-  return rest;
+  const serialized: SerializedFeature = { ...rest };
+  if (MESH_ONLY_TYPES.has(feature.type) && mesh) {
+    const geo = (mesh as THREE.Mesh).geometry;
+    if (geo) {
+      const pos = geo.attributes.position?.array;
+      const idx = geo.index?.array;
+      const nor = geo.attributes.normal?.array;
+      serialized._meshData = {
+        position: pos ? Array.from(pos) : null,
+        index: idx ? Array.from(idx) : null,
+        normal: nor ? Array.from(nor) : null,
+      };
+    }
+  }
+  return serialized;
 };
 
-const deserializeFeature = (feature: Feature): Feature => ({
-  ...feature,
-  mesh: undefined,
-});
+const deserializeFeature = (feature: Feature): Feature => {
+  const sf = feature as unknown as SerializedFeature;
+  if (MESH_ONLY_TYPES.has(feature.type) && sf._meshData) {
+    const { position, index, normal } = sf._meshData;
+    const geo = new THREE.BufferGeometry();
+    if (position) geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(position), 3));
+    if (index) geo.setIndex(new THREE.BufferAttribute(new Uint32Array(index), 1));
+    if (normal) geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normal), 3));
+    else if (position) geo.computeVertexNormals();
+    const mat = new THREE.MeshPhysicalMaterial({ color: 0x888888, roughness: 0.4, metalness: 0.2 });
+    const mesh = new THREE.Mesh(geo, mat);
+    const { _meshData: _md, ...rest } = sf;
+    void _md;
+    return { ...(rest as unknown as Feature), mesh };
+  }
+  return { ...feature, mesh: undefined };
+};
 
 // Default values shared between startExtrudeTool and resetExtrudeState
 const EXTRUDE_DEFAULTS = {
@@ -2067,6 +2108,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Mesh Transform: invalid params (translate/rotate must be finite, scale != 0)');
       return;
     }
+    get().pushUndo();
     const newMesh = GeometryEngine.transformMesh(srcMesh, params);
     newMesh.castShadow = true;
     newMesh.receiveShadow = true;
@@ -2075,8 +2117,12 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       features: state.features.map((f) => f.id === featureId ? { ...f, mesh: newMesh } : f),
       statusMessage: 'Mesh transformed',
     }));
-    // Dispose the previous geometry — transformMesh returned a fresh mesh.
-    if (oldMesh instanceof THREE.Mesh) oldMesh.geometry.dispose();
+    // Defer disposal so undo can still reference the old geometry.
+    // setTimeout(0) ensures the set() completes and state is stable first.
+    if (oldMesh instanceof THREE.Mesh) {
+      const geo = oldMesh.geometry;
+      setTimeout(() => geo.dispose(), 0);
+    }
   },
 
   // SLD13 — commitScale: scale a feature mesh by sx/sy/sz
@@ -2098,6 +2144,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Scale: factors must be finite and non-zero');
       return;
     }
+    get().pushUndo();
     const newMesh = GeometryEngine.scaleMesh(srcMesh, sx, sy, sz);
     newMesh.castShadow = true;
     newMesh.receiveShadow = true;
@@ -2120,6 +2167,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Combine: tool has no mesh');
       return;
     }
+    get().pushUndo();
     const tgtMesh = targetFeature.mesh as THREE.Mesh;
     const toolMesh = toolFeature.mesh as THREE.Mesh;
     let resultGeom: THREE.BufferGeometry;
@@ -2165,6 +2213,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Mirror Feature: feature is not a mesh');
       return;
     }
+    get().pushUndo();
     const mirrored = GeometryEngine.mirrorMesh(srcMesh, plane);
     mirrored.castShadow = true;
     mirrored.receiveShadow = true;
@@ -3282,6 +3331,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       set({ statusMessage: 'Distance must be non-zero' });
       return;
     }
+    get().pushUndo();
     // EX-3: for to-object extent, derive distance from profile plane → face centroid projection
     const { extrudeToEntityFaceCentroid, extrudeToObjectFlipDirection } = get();
     const computeToObjectDistance = (profileSketch: Sketch): number => {
@@ -3601,6 +3651,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
         bodyKind: revolveBodyKind === 'surface' ? 'surface' : 'solid',
       };
       const angleDesc = revolveDirection === 'symmetric' ? `±${revolveAngle / 2}°` : `${revolveAngle}°`;
+      get().pushUndo();
       set({
         features: [...features, feature],
         activeTool: 'select',
@@ -3646,6 +3697,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       const ax = Math.abs(dir.x), ay = Math.abs(dir.y), az = Math.abs(dir.z);
       resolvedAxisKey = ax >= ay && ax >= az ? 'X' : ay >= ax && ay >= az ? 'Y' : 'Z';
     }
+    get().pushUndo();
     const feature: Feature = {
       id: crypto.randomUUID(),
       name: `${revolveBodyKind === 'surface' ? 'Surface ' : ''}Revolve ${features.filter((f) => f.type === 'revolve').length + 1}`,
@@ -3725,6 +3777,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       set({ statusMessage: 'Selected sketch(es) not found' });
       return;
     }
+    get().pushUndo();
     const mesh = GeometryEngine.sweepSketchInternal(profileSketch, pathSketch, sweepBodyKind === 'surface');
     const feature: Feature = {
       id: crypto.randomUUID(),
@@ -3795,6 +3848,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       set({ statusMessage: 'One or more selected profiles not found' });
       return;
     }
+    get().pushUndo();
     const mesh = GeometryEngine.loftSketches(profileSketches, loftBodyKind === 'surface');
     const feature: Feature = {
       id: crypto.randomUUID(),
@@ -3937,6 +3991,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       set({ statusMessage: 'Selected sketch not found' });
       return;
     }
+    get().pushUndo();
     // Rib = thin extrude of open profile in center mode, height along sketch normal.
     // For 'flip', pass height as negative (mirrors direction).
     const signedHeight = ribDirection === 'flip' ? -ribHeight : ribHeight;
@@ -4331,6 +4386,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   setDirectEditFace: (id) => set({ directEditFaceId: id }),
   commitDirectEdit: (params) => {
     const { directEditFaceId, features, setActiveDialog } = get();
+    get().pushUndo();
     const n = features.filter((f) => f.type === 'direct-edit').length + 1;
     const feature: Feature = {
       id: crypto.randomUUID(),
@@ -4826,6 +4882,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   }),
   closeFillDialog: () => set({ activeDialog: null, showFillDialog: false, fillBoundaryEdgeIds: [], fillBoundaryEdgeData: [] }),
   commitFill: (params) => {
+    get().pushUndo();
     const { features, fillBoundaryEdgeData } = get();
     const n = features.filter((f) => f.params?.featureKind === 'fill').length + 1;
 
@@ -4874,7 +4931,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       id: crypto.randomUUID(),
       name: `Fill ${n}`,
       type: 'thicken',
-      params: { featureKind: 'fill', boundaryEdgeCount: params.boundaryEdgeCount, continuityPerEdge: params.continuityPerEdge.join(','), operation: params.operation },
+      params: { featureKind: 'fill', boundaryEdgeCount: params.boundaryEdgeCount, continuityPerEdge: params.continuityPerEdge.map((s) => ({ G0: 0, G1: 1, G2: 2 }[s] ?? 0)), operation: params.operation },
       mesh,
       visible: true,
       suppressed: false,
@@ -5475,6 +5532,12 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
         sketches: Array<Sketch & { planeNormal: [number, number, number] | null; planeOrigin: [number, number, number] | null }>;
         featureGroups: FeatureGroup[];
       };
+      if (!parsed || !Array.isArray(parsed.features)) {
+        throw new Error('Invalid snapshot: missing features array');
+      }
+      if (!Array.isArray(parsed.sketches)) {
+        throw new Error('Invalid snapshot: missing sketches array');
+      }
       // Carry over the live mesh from the current state when the same feature
       // id is being restored. Parametric features (extrude/revolve) rebuild
       // from sketch+params downstream, but mesh-op / import features have NO
@@ -5515,6 +5578,12 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
         sketches: Array<Sketch & { planeNormal: [number, number, number] | null; planeOrigin: [number, number, number] | null }>;
         featureGroups: FeatureGroup[];
       };
+      if (!parsed || !Array.isArray(parsed.features)) {
+        throw new Error('Invalid snapshot: missing features array');
+      }
+      if (!Array.isArray(parsed.sketches)) {
+        throw new Error('Invalid snapshot: missing sketches array');
+      }
       const liveMeshById = new Map<string, Feature['mesh']>();
       for (const f of state.features) if (f.mesh) liveMeshById.set(f.id, f.mesh);
       set({
@@ -5544,6 +5613,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Linear Pattern: no mesh found for selected feature');
       return;
     }
+    get().pushUndo();
     const copies = GeometryEngine.linearPattern(srcMesh, params);
     const newFeatures: Feature[] = copies.map((copy, idx) => ({
       id: crypto.randomUUID(),
@@ -5569,6 +5639,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Circular Pattern: no mesh found for selected feature');
       return;
     }
+    get().pushUndo();
     const copies = GeometryEngine.circularPattern(srcMesh, params);
     const newFeatures: Feature[] = copies.map((copy, idx) => ({
       id: crypto.randomUUID(),
@@ -5587,6 +5658,15 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
 
   // ── MSH2 — Plane Cut ─────────────────────────────────────────────────────
   commitPlaneCut: (featureId, planeNormal, planeOffset, keepSide) => {
+    if (
+      !Number.isFinite(planeOffset) ||
+      !Number.isFinite(planeNormal.x) ||
+      !Number.isFinite(planeNormal.y) ||
+      !Number.isFinite(planeNormal.z)
+    ) {
+      get().setStatusMessage('Plane Cut: invalid plane parameters (non-finite values)');
+      return;
+    }
     const { features } = get();
     const srcFeature = features.find((f) => f.id === featureId);
     const srcMesh = srcFeature?.mesh as THREE.Mesh | undefined;
@@ -5594,6 +5674,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Plane Cut: no mesh found for selected feature');
       return;
     }
+    get().pushUndo();
     const result = GeometryEngine.planeCutMesh(srcMesh, planeNormal, planeOffset, keepSide);
     const n = features.filter((f) => f.params?.featureKind === 'plane-cut').length + 1;
     const newFeature: Feature = {
@@ -5687,6 +5768,10 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       return;
     }
     const geos = GeometryEngine.unstitchSurface(srcMesh);
+    if (geos.length === 0) {
+      get().setStatusMessage('Mesh separate failed: no parts produced');
+      return;
+    }
     const newFeatures: Feature[] = geos.map((geo, idx) => {
       const mat = new THREE.MeshPhysicalMaterial({
         color: 0x8899aa, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide,
@@ -5791,6 +5876,12 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
         featureGroups: FeatureGroup[];
         historyEnabled?: boolean;
       };
+      if (!parsed || !Array.isArray(parsed.features)) {
+        throw new Error('Invalid snapshot: missing features array');
+      }
+      if (!Array.isArray(parsed.sketches)) {
+        throw new Error('Invalid snapshot: missing sketches array');
+      }
       set({
         features: (parsed.features ?? []).map((f) => deserializeFeature(f)),
         sketches: (parsed.sketches ?? []).map((s) => deserializeSketch(s as unknown as Sketch)),
@@ -5808,6 +5899,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     const { features, sketches } = get();
     const sketch = sketches.find((s) => s.id === sketchId);
     if (!sketch) { get().setStatusMessage('Rib: sketch not found'); return; }
+    get().pushUndo();
     const pts: THREE.Vector3[] = [];
     for (const e of sketch.entities) {
       if (e.type === 'line' && e.points.length >= 2) {
@@ -5840,6 +5932,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     const { features, sketches } = get();
     const sketch = sketches.find((s) => s.id === sketchId);
     if (!sketch) { get().setStatusMessage('Web: sketch not found'); return; }
+    get().pushUndo();
     const entityPoints: THREE.Vector3[][] = [];
     for (const e of sketch.entities) {
       if (e.type === 'line' && e.points.length >= 2) {
@@ -5903,6 +5996,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage(`Thread: radius / pitch / length must all be positive finite numbers`);
       return;
     }
+    get().pushUndo();
     const helixGeom = GeometryEngine.createCosmeticThread(radius, pitch, length);
     const lineMesh = new THREE.Line(helixGeom, new THREE.LineBasicMaterial({ color: 0x888888 }));
     // Find existing feature and attach helix as overlay (new feature referencing it)
@@ -5935,6 +6029,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Pattern on Path: feature has no mesh');
       return;
     }
+    get().pushUndo();
     const pathPoints: THREE.Vector3[] = [];
     for (const e of sketch.entities) {
       if (e.type === 'line' && e.points.length >= 2) {
@@ -5961,6 +6056,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
 
   // ── MSH1 — Remesh ────────────────────────────────────────────────────────
   commitRemesh: (featureId, mode, iterations) => {
+    iterations = Math.min(Math.max(1, Math.round(iterations)), 10);
     const { features } = get();
     const srcFeature = features.find((f) => f.id === featureId);
     const srcMesh = srcFeature?.mesh as THREE.Mesh | undefined;
@@ -5968,6 +6064,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Remesh: feature not found or has no mesh');
       return;
     }
+    get().pushUndo();
     const remeshed = GeometryEngine.remesh(srcMesh, mode, iterations);
     remeshed.castShadow = true;
     remeshed.receiveShadow = true;
@@ -5991,6 +6088,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Shell: thickness must be a positive finite number');
       return;
     }
+    get().pushUndo();
     const result = GeometryEngine.shellMesh(srcMesh, thickness, direction);
     result.castShadow = true;
     result.receiveShadow = true;
@@ -6017,6 +6115,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Draft: angle must be finite and within (-90°, 90°)');
       return;
     }
+    get().pushUndo();
     const result = GeometryEngine.draftMesh(srcMesh, pullAxisDir, draftAngle, fixedPlaneY);
     result.castShadow = true;
     result.receiveShadow = true;
@@ -6042,6 +6141,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Offset Face: distance must be a finite number');
       return;
     }
+    get().pushUndo();
     const offsetGeom = GeometryEngine.offsetSurface(srcMesh, distance);
     const mat = srcMesh.material as THREE.Material;
     const result = new THREE.Mesh(offsetGeom, mat);
@@ -6119,6 +6219,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Boundary Fill: no valid tool bodies selected');
       return;
     }
+    get().pushUndo();
     // Compute combined bounding box
     const box = new THREE.Box3();
     for (const m of toolMeshes) {
@@ -6350,12 +6451,20 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
     showShadows: state.showShadows,
     showGroundPlane: state.showGroundPlane,
     showComponentColors: state.showComponentColors,
+    viewportLayout: state.viewportLayout,
+    ambientOcclusionEnabled: state.ambientOcclusionEnabled,
+    dimensionToleranceMode: state.dimensionToleranceMode,
+    dimensionToleranceUpper: state.dimensionToleranceUpper,
+    dimensionToleranceLower: state.dimensionToleranceLower,
     // Model data
     sketches: state.sketches,
     features: state.features.map((f) => serializeFeature(f) as Feature),
     parameters: state.parameters,
     frozenFormVertices: state.frozenFormVertices,
     featureGroups: state.featureGroups,
+    canvasReferences: state.canvasReferences,
+    jointOrigins: state.jointOrigins,
+    formBodies: state.formBodies,
   }),
 
 }));

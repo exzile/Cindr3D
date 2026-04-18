@@ -9,6 +9,7 @@ import { useThemeStore, type ThemeMode } from '../../store/themeStore';
 import {
   getDuetPrefs, updateDuetPrefs,
   type DuetPrefs, type Units, type NotifSeverity,
+  type TemperatureUnit, type DateFormat,
 } from '../../utils/duetPrefs';
 import './DuetSettings.css';
 
@@ -81,6 +82,7 @@ export default function DuetSettings() {
   const uploadProgress = usePrinterStore((s) => s.uploadProgress);
   const uploadFirmware = usePrinterStore((s) => s.uploadFirmware);
   const installFirmware = usePrinterStore((s) => s.installFirmware);
+  const firmwareUpdatePending = usePrinterStore((s) => s.firmwareUpdatePending);
 
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
@@ -99,6 +101,13 @@ export default function DuetSettings() {
     { type: 'success' | 'error'; message: string } | null
   >(null);
   const firmwareInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // IAP file state
+  const [iapFile, setIapFile] = useState<File | null>(null);
+  const [iapStatus, setIapStatus] = useState<
+    { type: 'success' | 'error'; message: string } | null
+  >(null);
+  const iapInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const handleFirmwareSelect = useCallback((files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -128,6 +137,34 @@ export default function DuetSettings() {
       });
     }
   }, [firmwareFile, uploadFirmware]);
+
+  const handleIapSelect = useCallback((files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    if (!file.name.toLowerCase().endsWith('.bin')) {
+      setIapStatus({ type: 'error', message: 'IAP file must be a .bin file.' });
+      return;
+    }
+    setIapStatus(null);
+    setIapFile(file);
+  }, []);
+
+  const handleIapUpload = useCallback(async () => {
+    if (!iapFile) return;
+    setIapStatus(null);
+    try {
+      await uploadFirmware(iapFile);
+      setIapStatus({
+        type: 'success',
+        message: `${iapFile.name} uploaded to 0:/firmware/`,
+      });
+    } catch (err) {
+      setIapStatus({
+        type: 'error',
+        message: (err as Error).message,
+      });
+    }
+  }, [iapFile, uploadFirmware]);
 
   const handleFirmwareInstall = useCallback(async () => {
     const ok = confirm(
@@ -306,6 +343,56 @@ export default function DuetSettings() {
           <AlertCircle size={16} /> {error}
         </div>
       )}
+
+      {/* Auto-reconnect settings */}
+      <div className="duet-settings__section" style={{ marginTop: 16 }}>
+        <div className="duet-settings__section-title">Auto-Reconnect</div>
+        <ToggleRow
+          id="auto-reconnect-conn"
+          checked={prefs.autoReconnect}
+          onChange={(v) => patchPrefs({ autoReconnect: v })}
+          label="Enable auto-reconnect"
+          hint="Automatically attempt to reconnect when the connection drops."
+        />
+        {prefs.autoReconnect && (
+          <>
+            <SettingRow
+              label="Reconnect Interval"
+              hint="Time between reconnect attempts."
+              control={
+                <select
+                  className="duet-settings__select"
+                  value={prefs.reconnectInterval}
+                  onChange={(e) => patchPrefs({ reconnectInterval: Number(e.target.value) })}
+                >
+                  <option value={2000}>2 seconds</option>
+                  <option value={5000}>5 seconds</option>
+                  <option value={10000}>10 seconds</option>
+                  <option value={30000}>30 seconds</option>
+                  <option value={60000}>60 seconds</option>
+                </select>
+              }
+            />
+            <SettingRow
+              label="Max Retries"
+              hint="Maximum number of reconnect attempts before giving up."
+              control={
+                <select
+                  className="duet-settings__select"
+                  value={prefs.maxRetries}
+                  onChange={(e) => patchPrefs({ maxRetries: Number(e.target.value) })}
+                >
+                  <option value={3}>3</option>
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={0}>Unlimited</option>
+                </select>
+              }
+            />
+          </>
+        )}
+      </div>
     </>
   );
 
@@ -323,6 +410,47 @@ export default function DuetSettings() {
           >
             <option value="metric">Metric (mm)</option>
             <option value="imperial">Imperial (in)</option>
+          </select>
+        }
+      />
+      <SettingRow
+        label="Webcam URL"
+        hint="URL for the printer webcam stream. Leave blank to use the default (hostname/webcam/?action=stream)."
+        control={
+          <input
+            className="duet-settings__input"
+            type="text"
+            value={prefs.webcamUrl}
+            onChange={(e) => patchPrefs({ webcamUrl: e.target.value })}
+            placeholder="e.g. http://192.168.1.100:8080/?action=stream"
+          />
+        }
+      />
+      <SettingRow
+        label="Temperature Unit"
+        hint="Display temperatures in Celsius or Fahrenheit."
+        control={
+          <select
+            className="duet-settings__select"
+            value={prefs.temperatureUnit}
+            onChange={(e) => patchPrefs({ temperatureUnit: e.target.value as TemperatureUnit })}
+          >
+            <option value="C">Celsius (°C)</option>
+            <option value="F">Fahrenheit (°F)</option>
+          </select>
+        }
+      />
+      <SettingRow
+        label="Date Format"
+        hint="Show dates as relative (e.g. '2 hours ago') or absolute (e.g. '2026-04-18 14:30')."
+        control={
+          <select
+            className="duet-settings__select"
+            value={prefs.dateFormat}
+            onChange={(e) => patchPrefs({ dateFormat: e.target.value as DateFormat })}
+          >
+            <option value="relative">Relative</option>
+            <option value="absolute">Absolute</option>
           </select>
         }
       />
@@ -383,8 +511,8 @@ export default function DuetSettings() {
         id="auto-reconnect"
         checked={prefs.autoReconnect}
         onChange={(v) => patchPrefs({ autoReconnect: v })}
-        label="Auto-reconnect on startup"
-        hint="Attempt to reconnect to the last-used Duet board when Dzign3D loads."
+        label="Auto-reconnect"
+        hint="Automatically reconnect on startup and when the connection drops. Configure interval and retries in the Connection tab."
       />
     </>
   );
@@ -414,6 +542,13 @@ export default function DuetSettings() {
         onChange={(v) => patchPrefs({ notificationsSound: v })}
         label="Play sound on beep events"
         hint="Trigger a short tone when the firmware emits an M300 beep."
+      />
+      <ToggleRow
+        id="sound-alert-complete"
+        checked={prefs.soundAlertOnComplete}
+        onChange={(v) => patchPrefs({ soundAlertOnComplete: v })}
+        label="Sound alert on print complete/error"
+        hint="Play a notification sound when a print finishes or encounters an error."
       />
       <SettingRow
         label="Minimum Severity"
@@ -608,6 +743,73 @@ export default function DuetSettings() {
             <span>{firmwareStatus.message}</span>
           </div>
         )}
+
+        {firmwareUpdatePending && (
+          <div className="duet-settings__banner duet-settings__banner--mt duet-settings__banner--warning">
+            <Loader2 size={16} className="spin" />
+            <span>Board is rebooting — waiting for reconnect...</span>
+          </div>
+        )}
+      </div>
+
+      <div className="duet-settings__section">
+        <div className="duet-settings__section-title">IAP File (standalone boards)</div>
+        <p className="duet-settings__about-text duet-settings__about-text--mb">
+          Select an IAP <code className="duet-settings__code-accent">.bin</code> file (e.g.{' '}
+          <code className="duet-settings__code-accent">IAP4E.bin</code> or{' '}
+          <code className="duet-settings__code-accent">Duet3_SBC.bin</code>). It will be uploaded to{' '}
+          <code className="duet-settings__code-accent">0:/firmware/</code> on the board.
+        </p>
+        <p className="duet-settings__hint">
+          Required for standalone (non-SBC) boards before firmware install.
+        </p>
+
+        <input
+          ref={iapInputRef}
+          type="file"
+          accept=".bin"
+          className="duet-settings__file-input-hidden"
+          onChange={(e) => handleIapSelect(e.target.files)}
+        />
+
+        <div className="duet-settings__btn-row">
+          <button
+            className={`duet-settings__btn duet-settings__btn--secondary${!connected || uploading ? ' duet-settings__btn--disabled' : ''}`}
+            onClick={() => iapInputRef.current?.click()}
+            disabled={!connected || uploading}
+          >
+            <UploadCloud size={14} /> Choose IAP File
+          </button>
+          <button
+            className={`duet-settings__btn duet-settings__btn--primary${!iapFile || uploading || !connected ? ' duet-settings__btn--disabled' : ''}`}
+            onClick={handleIapUpload}
+            disabled={!iapFile || uploading || !connected}
+          >
+            {uploading ? (
+              <><Loader2 size={14} className="spin" /> Uploading {uploadProgress}%</>
+            ) : (
+              'Upload IAP'
+            )}
+          </button>
+        </div>
+
+        {iapFile && !uploading && (
+          <div className="duet-settings__firmware-hint">
+            Selected: <span className="duet-settings__mono">{iapFile.name}</span>{' '}
+            ({(iapFile.size / 1024).toFixed(1)} KB)
+          </div>
+        )}
+
+        {iapStatus && (
+          <div className={`duet-settings__banner duet-settings__banner--mt ${iapStatus.type === 'success' ? 'duet-settings__banner--success' : 'duet-settings__banner--error'}`}>
+            {iapStatus.type === 'success' ? (
+              <CheckCircle size={16} />
+            ) : (
+              <AlertCircle size={16} />
+            )}
+            <span>{iapStatus.message}</span>
+          </div>
+        )}
       </div>
     </>
   );
@@ -659,7 +861,7 @@ export default function DuetSettings() {
       default:              return null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, prefs, theme, hostname, password, mode, testing, testResult, error, connected, connecting, axes, board, firmwareFile, firmwareStatus, uploading, uploadProgress]);
+  }, [tab, prefs, theme, hostname, password, mode, testing, testResult, error, connected, connecting, axes, board, firmwareFile, firmwareStatus, uploading, uploadProgress, iapFile, iapStatus, firmwareUpdatePending]);
 
   if (!showSettings) return null;
 

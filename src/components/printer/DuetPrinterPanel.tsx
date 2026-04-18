@@ -1,10 +1,13 @@
-import React, { useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import './PrinterPanel.css';
 import {
   LayoutDashboard, Activity, Terminal, Play, FolderOpen, FileCode, Grid3x3,
   History, Braces, Settings, X, OctagonAlert, Wifi, WifiOff, FlaskConical,
+  Sun, Moon, Search, Loader2,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
+import { useThemeStore } from '../../store/themeStore';
+import { getDuetPrefs } from '../../utils/duetPrefs';
 import DuetDashboard from './DuetDashboard';
 import DuetStatus from './DuetStatus';
 import DuetConsole from './DuetConsole';
@@ -241,12 +244,188 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
   const setShowSettings = usePrinterStore((s) => s.setShowSettings);
   const emergencyStop = usePrinterStore((s) => s.emergencyStop);
   const error = usePrinterStore((s) => s.error);
+  const reconnecting = usePrinterStore((s) => s.reconnecting);
+  const lastModelUpdate = usePrinterStore((s) => s.lastModelUpdate);
+  const files = usePrinterStore((s) => s.files);
+  const macros = usePrinterStore((s) => s.macros);
+  const filaments = usePrinterStore((s) => s.filaments);
+  const printHistory = usePrinterStore((s) => s.printHistory);
+
+  const theme = useThemeStore((s) => s.theme);
+  const toggleTheme = useThemeStore((s) => s.toggleTheme);
+
+  // Narrow-mode detection via ResizeObserver
+  const panelRootRef = useRef<HTMLDivElement>(null);
+  const [isNarrow, setIsNarrow] = useState(false);
+
+  useEffect(() => {
+    const el = panelRootRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setIsNarrow(entry.contentRect.width < 480);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Global search state
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const searchResults = useMemo(() => {
+    const q = globalSearch.trim().toLowerCase();
+    if (!q) return [];
+    const results: { label: string; tab: TabKey; type: string }[] = [];
+    // Search files
+    for (const f of files) {
+      if (f.name.toLowerCase().includes(q)) {
+        results.push({ label: f.name, tab: 'files', type: 'File' });
+      }
+      if (results.length >= 20) break;
+    }
+    // Search macros
+    for (const m of macros) {
+      if (m.name.toLowerCase().includes(q)) {
+        results.push({ label: m.name, tab: 'macros', type: 'Macro' });
+      }
+      if (results.length >= 20) break;
+    }
+    // Search filaments
+    for (const f of filaments) {
+      if (f.toLowerCase().includes(q)) {
+        results.push({ label: f, tab: 'filaments', type: 'Filament' });
+      }
+      if (results.length >= 20) break;
+    }
+    // Search history
+    for (const h of printHistory) {
+      if (h.message.toLowerCase().includes(q) || (h.file && h.file.toLowerCase().includes(q))) {
+        results.push({ label: h.file ?? h.message.slice(0, 60), tab: 'history', type: 'History' });
+      }
+      if (results.length >= 20) break;
+    }
+    return results.slice(0, 20);
+  }, [globalSearch, files, macros, filaments, printHistory]);
+
+  // -----------------------------------------------------------------------
+  // "Last updated" ticker — re-render every 15s while disconnected so the
+  // relative timestamp stays fresh.
+  // -----------------------------------------------------------------------
+  const [now, setNow] = useState(Date.now);
+  const hasStaleModel = !connected && lastModelUpdate !== null && Object.keys(model).length > 0;
+
+  useEffect(() => {
+    if (!hasStaleModel) return;
+    const id = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(id);
+  }, [hasStaleModel]);
+
+  const lastUpdatedText = useMemo(() => {
+    if (!lastModelUpdate) return null;
+    const diffMs = now - lastModelUpdate;
+    const secs = Math.floor(diffMs / 1000);
+    if (secs < 10) return 'just now';
+    if (secs < 60) return `${secs}s ago`;
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    return `${hrs}h ${mins % 60}m ago`;
+  }, [lastModelUpdate, now]);
 
   const handleEmergencyStop = useCallback(() => {
     if (confirm('Send emergency stop (M112)? This will immediately halt the machine.')) {
       emergencyStop();
     }
   }, [emergencyStop]);
+
+  // -----------------------------------------------------------------------
+  // Task 1: Update browser tab title with print progress
+  // -----------------------------------------------------------------------
+  const originalTitleRef = useRef(document.title);
+
+  useEffect(() => {
+    const status = model.state?.status;
+    const isPrinting = status === 'processing' || status === 'simulating';
+    if (!isPrinting) {
+      // Reset title when not printing
+      document.title = originalTitleRef.current;
+      return;
+    }
+    const fileName = model.job?.file?.fileName ?? 'print';
+    const fileSize = model.job?.file?.size ?? 0;
+    const filePos = model.job?.filePosition ?? 0;
+    const pct = fileSize > 0 ? Math.min(100, (filePos / fileSize) * 100) : 0;
+    document.title = `${Math.round(pct)}% - ${fileName}`;
+
+    return () => {
+      document.title = originalTitleRef.current;
+    };
+  }, [model.state?.status, model.job?.file?.fileName, model.job?.file?.size, model.job?.filePosition]);
+
+  // -----------------------------------------------------------------------
+  // Task 2: Sound alert when print completes or errors
+  // -----------------------------------------------------------------------
+  const prevStatusRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    const status = model.state?.status;
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = status;
+
+    // Only fire on transitions from an active print state to idle/halted
+    if (prev === undefined) return;
+    const wasActive = prev === 'processing' || prev === 'simulating'
+      || prev === 'pausing' || prev === 'paused' || prev === 'resuming'
+      || prev === 'cancelling';
+    if (!wasActive) return;
+
+    const isComplete = status === 'idle';
+    const isError = status === 'halted';
+    if (!isComplete && !isError) return;
+
+    const prefs = getDuetPrefs();
+    if (!prefs.soundAlertOnComplete) return;
+
+    // Play a short beep via the Web Audio API
+    try {
+      const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.type = 'sine';
+      oscillator.frequency.value = isError ? 440 : 880;
+      gain.gain.value = 0.3;
+      oscillator.start();
+      // Play two short beeps for completion, one longer for error
+      if (isError) {
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+        oscillator.stop(ctx.currentTime + 0.6);
+      } else {
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+        // Second beep
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.type = 'sine';
+        osc2.frequency.value = 1100;
+        gain2.gain.setValueAtTime(0.001, ctx.currentTime + 0.2);
+        gain2.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.22);
+        gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+        osc2.start(ctx.currentTime + 0.2);
+        osc2.stop(ctx.currentTime + 0.4);
+        oscillator.stop(ctx.currentTime + 0.15);
+      }
+    } catch {
+      // Audio not available — silently ignore
+    }
+  }, [model.state?.status]);
 
   if (!fullscreen && !showPrinter) return null;
 
@@ -268,7 +447,11 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
   const ActiveTabComponent = TAB_COMPONENTS[(activeTab as TabKey)] ?? DuetDashboard;
 
   return (
-    <div style={fullscreen ? styles.fullscreen : styles.overlay}>
+    <div
+      ref={panelRootRef}
+      style={fullscreen ? styles.fullscreen : styles.overlay}
+      className={isNarrow ? 'printer-panel--narrow' : undefined}
+    >
       {/* ---- Message Box Modal (M291 prompts) ---- */}
       {connected && <DuetMessageBox />}
 
@@ -301,6 +484,68 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
             </span>
           )}
           <div style={styles.spacer} />
+
+          {/* Global Search */}
+          <div style={{ position: 'relative' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: COLORS.inputBg, border: `1px solid ${COLORS.panelBorder}`, borderRadius: 4, padding: '2px 6px' }}>
+              <Search size={12} style={{ color: COLORS.textDim, flexShrink: 0 }} />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={globalSearch}
+                onChange={(e) => { setGlobalSearch(e.target.value); setShowSearchResults(true); }}
+                onFocus={() => { if (globalSearch.trim()) setShowSearchResults(true); }}
+                onBlur={() => { setTimeout(() => setShowSearchResults(false), 200); }}
+                placeholder="Search..."
+                style={{
+                  border: 'none', background: 'transparent', color: COLORS.text,
+                  fontSize: 11, outline: 'none', width: 100, padding: '2px 0',
+                  fontFamily: 'inherit',
+                }}
+              />
+            </div>
+            {showSearchResults && searchResults.length > 0 && (
+              <div style={{
+                position: 'absolute', top: '100%', right: 0, marginTop: 4,
+                background: COLORS.panel, border: `1px solid ${COLORS.panelBorder}`,
+                borderRadius: 4, maxHeight: 240, overflowY: 'auto', zIndex: 1100,
+                minWidth: 220, boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+              }}>
+                {searchResults.map((r, i) => (
+                  <div
+                    key={`${r.tab}-${r.label}-${i}`}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      padding: '6px 10px', cursor: 'pointer', fontSize: 12,
+                      borderBottom: `1px solid ${COLORS.panelBorder}`,
+                    }}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setActiveTab(r.tab);
+                      setGlobalSearch('');
+                      setShowSearchResults(false);
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = COLORS.inputBg; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <span style={{ color: COLORS.accent, fontWeight: 600, fontSize: 10, minWidth: 50 }}>{r.type}</span>
+                    <span style={{ color: COLORS.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Theme Toggle */}
+          <button
+            style={styles.headerBtn}
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            onMouseEnter={(e) => (e.currentTarget.style.color = COLORS.text)}
+            onMouseLeave={(e) => (e.currentTarget.style.color = COLORS.textDim)}
+          >
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
 
           {/* Emergency Stop */}
           <button
@@ -364,9 +609,29 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
               title={label}
             >
               <Icon size={14} />
-              {label}
+              <span className="tab-label">{label}</span>
             </button>
           ))}
+        </div>
+      )}
+
+      {/* ---- Reconnecting banner ---- */}
+      {!connected && reconnecting && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '6px 14px',
+            background: 'rgba(234,179,8,0.12)',
+            borderBottom: `1px solid ${COLORS.panelBorder}`,
+            color: COLORS.warning,
+            fontSize: 12,
+            flexShrink: 0,
+          }}
+        >
+          <Loader2 size={14} className="spin" />
+          <span>Reconnecting to printer...</span>
         </div>
       )}
 
@@ -386,7 +651,11 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
           }}
         >
           <WifiOff size={14} color={COLORS.danger} />
-          <span>Not connected to a Duet3D board — showing empty state.</span>
+          <span>
+            {hasStaleModel
+              ? `Disconnected — showing last known values (updated ${lastUpdatedText}).`
+              : 'Not connected to a Duet3D board.'}
+          </span>
           <div style={{ flex: 1 }} />
           <button
             style={{
@@ -410,7 +679,12 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
       )}
 
       {/* ---- Content ---- */}
-      <div style={styles.content}><ActiveTabComponent /></div>
+      <div style={{
+        ...styles.content,
+        ...(hasStaleModel ? { opacity: 0.55, pointerEvents: 'none' as const } : {}),
+      }}>
+        <ActiveTabComponent />
+      </div>
 
       {/* ---- Status Footer ---- */}
       <div style={styles.footer}>
