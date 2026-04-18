@@ -139,6 +139,60 @@
   color: var(--text-muted);
 }
 
+.duet-history-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.duet-history-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  margin-bottom: 8px;
+}
+
+.duet-history-search-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.duet-history-search-input {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+  font-family: inherit;
+}
+
+.duet-history-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.duet-history-search-input:focus {
+  border-color: var(--accent);
+}
+
+.duet-history-search-clear {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  border-radius: 3px;
+}
+
+.duet-history-search-clear:hover {
+  color: var(--text-primary);
+}
+
 /* ===== Duet Notifications ===== */
 .duet-toast-stack {
   position: fixed;
