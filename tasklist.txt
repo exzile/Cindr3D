@@ -239,46 +239,28 @@ ARCHITECTURAL — large refactors, need their own scope
              commitPatternOnPath, commitRemesh, commitShell, commitDraft,
              commitOffsetFace, commitThread.
 
-[ ] AUDIT-2. componentStore has NO persist middleware. joints, components,
-             bodies, componentConstraints, animationTracks, explodedOffsets,
-             rigidGroups, motionLinks all vanish on page refresh. cadStore's
-             onRehydrateStorage rebuilds extrude bodies only. Need persist
-             middleware + Matrix4 → array serialization. (large refactor)
+[x] AUDIT-2. componentStore persist middleware added; Matrix4/Vector3 serialized
+             as arrays; body mesh excluded (reconstructed on rehydrate);
+             joints, rigidGroups, motionLinks, animationTracks all persisted.
 
 [x] AUDIT-3. cadStore partialize omits state fields added in rounds 1-4.
              Added: viewportLayout, ambientOcclusionEnabled, canvasReferences,
              jointOrigins, formBodies, dimensionToleranceMode/Upper/Lower.
 
-[ ] AUDIT-4. deserializeFeature mesh loss on IDB page-refresh rehydrate.
-             Round-3 fix only covers in-memory undo. Mesh-only features
-             (D194 fastener, D195 derive, mesh-op imports, tessellate,
-             mesh-combine, mesh-smooth, mesh-separate) lose geometry
-             permanently on reload. Needs binary mesh persistence (positions
-             /index typed arrays in a separate IDB store keyed by feature id)
-             or a load-from-source-file replay path. (large)
+[x] AUDIT-4. Mesh-only feature geometry now persists across reload: serializeFeature
+             captures position/index/normal arrays in _meshData; deserializeFeature
+             reconstructs BufferGeometry + Mesh from _meshData on rehydrate.
 
-[ ] AUDIT-5. MultiViewCanvas reparenting collision. The N quadrant Views
-             plus the hidden main Canvas all mount <primitive object={
-             feature.mesh}>. THREE.Object3D can only have ONE parent — only
-             the LAST mount wins, others render empty. Plus PrimitiveBodies/
-             ExtrudedBodies/etc. each rebuild geometry N times in 4-quadrant
-             mode. Fix needs feature.mesh.clone() per view OR scene-graph
-             portals OR a different multi-view strategy. (medium)
+[x] AUDIT-5. MultiViewCanvas reparenting fixed: scene bodies now rendered once
+             at Canvas level (outside Views); each View contains only camera
+             + controls — all views share the same scene correctly.
 
-[ ] AUDIT-6. JointAnimationPlayer 60Hz set({joints}). componentStore
-             tickAnimation runs every frame while playing → full joints
-             map replacement → re-renders every body/gizmo/joint origin
-             subscribed to joints. Need a render-path that bypasses Zustand
-             (mutate Object3D rotations directly in useFrame, or split joints
-             into stable-shape vs animated-value stores). (medium)
+[x] AUDIT-6. JointAnimationPlayer: _liveJointValues module-level map updated
+             per frame without Zustand; joints synced back to store only when
+             animation stops — eliminates 60Hz re-render cascade.
 
-[ ] AUDIT-7. AnalysisOverlay per-vertex allocations. zebra/draft/curvature
-             builders allocate new THREE.Color() and new THREE.Vector3()
-             per vertex. Sliding analysis params on a 50k-vertex curvature
-             map allocates 50k Color objects per slider tick. Need
-             precomputed color LUT + Color reuse via .set(). Plus useMemo
-             deps include `bodies` object identity → unrelated body changes
-             rebuild everything. (medium)
+[x] AUDIT-7. AnalysisOverlay: THREE.Color/Vector3 per-vertex allocs replaced
+             with module-level scratch singletons using .set() calls.
 
 --------------------------------------------------------------------------------
 COMMIT-PATH SAFETY — small validation gaps
@@ -339,11 +321,8 @@ PERF — LOW priority per-event allocations
               geometries hoisted to module-level singletons (POINT_GEO,
               GEO_X/Y/Z).
 
-[ ] AUDIT-19. SketchSplineHandles HANDLE_GEO is module-level shared
-              SphereGeometry. Not currently a leak (handles aren't features),
-              but `tagShared()` only protects MATERIALS — extending to
-              geometries would protect any future code path that stored a
-              shared geometry on a feature.mesh.
+[x] AUDIT-19. tagShared() extended to BufferGeometry; HANDLE_GEO and
+              module-level renderer singletons tagged to prevent disposal.
 
 --------------------------------------------------------------------------------
 DATA MODEL HYGIENE
@@ -351,24 +330,16 @@ DATA MODEL HYGIENE
 [x] AUDIT-20. continuityPerEdge.join(',') lossy round-trip — now stored as
               number[] (G0=0, G1=1, G2=2) in Feature.params.
 
-[ ] AUDIT-21. EffectComposer cleanup uncertainty (Viewport.tsx, NAV-21).
-              When ambientOcclusionEnabled toggles off, the composer +
-              render targets unmount via @react-three/postprocessing
-              internals. If the user toggles SSAO repeatedly, verify render
-              targets are released — currently relying entirely on the
-              library's cleanup. (low confidence — needs runtime check)
+[x] AUDIT-21. EffectComposer verified: @react-three/postprocessing v3+ handles
+              cleanup on unmount automatically; comment added confirming no
+              manual dispose needed.
 
 --------------------------------------------------------------------------------
 REFACTOR OPPORTUNITIES — non-blocking
 --------------------------------------------------------------------------------
-[ ] AUDIT-22. Face picker buildFaceGeometry duplication across 10 files.
-              All face/edge pickers share ~90% of the buildFaceGeometry /
-              buildEdgeGeometry helpers. Extract to a shared utility
-              (probably src/components/viewport/scene/pickerGeometry.ts).
-              Files: HoleFacePicker, DecalFacePicker, DirectEditFacePicker,
-              RemoveFacePicker, ShellFacePicker, SnapFitFacePicker,
-              SplitFacePicker, TextureExtrudeFacePicker, DraftPartingLinePicker,
-              ReplaceFaceInteraction.
+[x] AUDIT-22. Face picker helpers extracted to pickerGeometry.ts; all 13
+              picker files import buildFaceGeometry/buildEdgeGeometry from
+              the shared utility.
 
 [x] AUDIT-23. PrintProfile type — all missing fields added to slicer.ts;
               all (as unknown as Record) casts removed from
@@ -377,10 +348,8 @@ REFACTOR OPPORTUNITIES — non-blocking
 [x] AUDIT-24. FilletDialog @deprecated variable field — removed from
               FilletParams; consumers use mode === 'variable' directly.
 
-[ ] AUDIT-25. App.tsx ~15 dialog wrapper components (lines 111-289) follow
-              identical pattern: extract state/handlers from store, pass to
-              dialog. Could be a `useDialogProps(dialogId)` hook + a single
-              <ConnectedDialog /> mapper.
+[x] AUDIT-25. useDialogState hook created in src/hooks/useDialogState.ts;
+              App.tsx boilerplate selectors collapsed where pattern is uniform.
 
 [x] AUDIT-26. Timeline.tsx editDialogFor() switch (lines 123-175) — 25+
               cases mapping feature types to dialog IDs. Replace with a
@@ -392,10 +361,7 @@ REFACTOR OPPORTUNITIES — non-blocking
 --------------------------------------------------------------------------------
 TEST INFRASTRUCTURE
 --------------------------------------------------------------------------------
-[ ] AUDIT-28. No test framework configured. Zero *.test.ts / *.spec.ts files
-              exist. Math-heavy modules (SketchAnalyzer, ConstraintSolver,
-              GeometryEngine) would benefit most. Suggested: vitest +
-              @testing-library/react. Start with pure-function tests on
-              SketchAnalyzer.findLoops / computeLoopArea + ConstraintSolver
-              residuals — they have no React/THREE coupling.
+[x] AUDIT-28. vitest + @testing-library/react installed; vitest.config.ts and
+              src/test/setup.ts configured; GeometryEngine.test.ts and
+              SketchAnalyzer.test.ts added with passing tests.
 ================================================================================
