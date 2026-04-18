@@ -1041,6 +1041,9 @@ export const useComponentStore = create<ComponentStore>((set, get) => ({
     const c = componentConstraints.find(cc => cc.id === constraintId);
     if (!c || c.suppressed) return;
 
+    const compA = components[c.entityA.componentId];
+    if (!compA) return;
+
     const compB = components[c.entityB.componentId];
     if (!compB) return;
 

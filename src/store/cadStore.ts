@@ -5587,6 +5587,15 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
 
   // ── MSH2 — Plane Cut ─────────────────────────────────────────────────────
   commitPlaneCut: (featureId, planeNormal, planeOffset, keepSide) => {
+    if (
+      !Number.isFinite(planeOffset) ||
+      !Number.isFinite(planeNormal.x) ||
+      !Number.isFinite(planeNormal.y) ||
+      !Number.isFinite(planeNormal.z)
+    ) {
+      get().setStatusMessage('Plane Cut: invalid plane parameters (non-finite values)');
+      return;
+    }
     const { features } = get();
     const srcFeature = features.find((f) => f.id === featureId);
     const srcMesh = srcFeature?.mesh as THREE.Mesh | undefined;
@@ -5687,6 +5696,10 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       return;
     }
     const geos = GeometryEngine.unstitchSurface(srcMesh);
+    if (geos.length === 0) {
+      get().setStatusMessage('Mesh separate failed: no parts produced');
+      return;
+    }
     const newFeatures: Feature[] = geos.map((geo, idx) => {
       const mat = new THREE.MeshPhysicalMaterial({
         color: 0x8899aa, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide,
@@ -5961,6 +5974,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
 
   // ── MSH1 — Remesh ────────────────────────────────────────────────────────
   commitRemesh: (featureId, mode, iterations) => {
+    iterations = Math.min(Math.max(1, Math.round(iterations)), 10);
     const { features } = get();
     const srcFeature = features.find((f) => f.id === featureId);
     const srcMesh = srcFeature?.mesh as THREE.Mesh | undefined;

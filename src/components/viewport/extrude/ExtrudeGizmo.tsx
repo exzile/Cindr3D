@@ -12,6 +12,9 @@ import {
   ARROW_LINE_MATERIAL_CUT,
 } from './materials';
 
+const _scratchRay = new THREE.Ray();
+const _scratchW0 = new THREE.Vector3();
+
 export default function ExtrudeGizmo({ sketch }: { sketch: Sketch }) {
   const camera = useThree((s) => s.camera);
   const gl = useThree((s) => s.gl);
@@ -96,12 +99,11 @@ export default function ExtrudeGizmo({ sketch }: { sketch: Sketch }) {
 
   // ── Raycast: project pointer onto (centroid, normal) axis ──
   const rayToAxisDistance = useCallback((ndc: THREE.Vector2): number | null => {
-    const ray = new THREE.Ray();
-    ray.origin.setFromMatrixPosition(camera.matrixWorld);
-    ray.direction.set(ndc.x, ndc.y, 0.5).unproject(camera).sub(ray.origin).normalize();
-    const w0 = ray.origin.clone().sub(centroid);
-    const b = ray.direction.dot(normal);
-    const d = ray.direction.dot(w0);
+    _scratchRay.origin.setFromMatrixPosition(camera.matrixWorld);
+    _scratchRay.direction.set(ndc.x, ndc.y, 0.5).unproject(camera).sub(_scratchRay.origin).normalize();
+    const w0 = _scratchW0.copy(_scratchRay.origin).sub(centroid);
+    const b = _scratchRay.direction.dot(normal);
+    const d = _scratchRay.direction.dot(w0);
     const e = normal.dot(w0);
     const denom = 1 - b * b;
     if (Math.abs(denom) < 1e-4) return null;
