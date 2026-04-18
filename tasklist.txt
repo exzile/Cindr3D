@@ -22,12 +22,12 @@ DASHBOARD TAB
 [x] System info panel (board, firmware, network, MCU temp, VIN, storage)
 
 [x] Tool offsets editor (G10 P{n} X Y Z — view and edit per-tool offsets)
-[ ] Workplace coordinates selector / display (G54–G59)
+[x] Workplace coordinates selector / display (G54–G59)
 [ ] Restore points display (G60 saved positions)
 [x] Pressure advance configuration per extruder (M572 D{n} S{val})
 [x] Input shaper settings (M593 — frequency, damping, type)
 [x] Baby stepping from dashboard (currently only on Job tab)
-[ ] Bed compensation type indicator (mesh / tilt / none) with quick toggle
+[x] Bed compensation type indicator (mesh / tilt / none) with quick toggle
 
 --------------------------------------------------------------------------------
 STATUS TAB
@@ -41,7 +41,7 @@ STATUS TAB
 [x] General purpose outputs panel (gpOut PWM values — read-only)
 
 [x] Network status panel (IP, subnet, gateway, MAC, DNS, WiFi SSID/signal)
-[ ] GPIO interactive control (toggle on/off or set PWM slider for gpOut pins)
+[x] GPIO interactive control (toggle on/off or set PWM slider for gpOut pins)
 [ ] CAN expansion boards (additional boards on CAN bus — multi-board setups)
 [ ] Driver status flags (stall detection, over-temp warning per driver)
 [ ] Spindle status (speed, state — for CNC use)
@@ -94,9 +94,9 @@ HISTORY TAB
 [x] Print history list (parsed from 0:/sys/eventlog.txt)
 [x] Re-print from history
 
-[ ] History pagination / load more
+[x] History pagination / load more
 [x] History search / filter by filename or date
-[ ] History stats (total print time, success rate)
+[x] History stats (total print time, success rate)
 [x] Export history as CSV
 
 --------------------------------------------------------------------------------
