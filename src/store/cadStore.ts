@@ -5988,6 +5988,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Pattern on Path: feature has no mesh');
       return;
     }
+    get().pushUndo();
     const pathPoints: THREE.Vector3[] = [];
     for (const e of sketch.entities) {
       if (e.type === 'line' && e.points.length >= 2) {
@@ -6022,6 +6023,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Remesh: feature not found or has no mesh');
       return;
     }
+    get().pushUndo();
     const remeshed = GeometryEngine.remesh(srcMesh, mode, iterations);
     remeshed.castShadow = true;
     remeshed.receiveShadow = true;
@@ -6045,6 +6047,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       get().setStatusMessage('Shell: thickness must be a positive finite number');
       return;
     }
+    get().pushUndo();
     const result = GeometryEngine.shellMesh(srcMesh, thickness, direction);
     result.castShadow = true;
     result.receiveShadow = true;
