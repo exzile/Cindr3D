@@ -1,10 +1,12 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import './PrinterPanel.css';
 import {
   LayoutDashboard, Activity, Terminal, Play, FolderOpen, FileCode, Grid3x3,
   History, Braces, Settings, X, OctagonAlert, Wifi, WifiOff, FlaskConical,
+  Sun, Moon, Search,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
+import { useThemeStore } from '../../store/themeStore';
 import { getDuetPrefs } from '../../utils/duetPrefs';
 import DuetDashboard from './DuetDashboard';
 import DuetStatus from './DuetStatus';
@@ -242,6 +244,53 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
   const setShowSettings = usePrinterStore((s) => s.setShowSettings);
   const emergencyStop = usePrinterStore((s) => s.emergencyStop);
   const error = usePrinterStore((s) => s.error);
+  const files = usePrinterStore((s) => s.files);
+  const macros = usePrinterStore((s) => s.macros);
+  const filaments = usePrinterStore((s) => s.filaments);
+  const printHistory = usePrinterStore((s) => s.printHistory);
+
+  const theme = useThemeStore((s) => s.theme);
+  const toggleTheme = useThemeStore((s) => s.toggleTheme);
+
+  // Global search state
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const searchResults = useMemo(() => {
+    const q = globalSearch.trim().toLowerCase();
+    if (!q) return [];
+    const results: { label: string; tab: TabKey; type: string }[] = [];
+    // Search files
+    for (const f of files) {
+      if (f.name.toLowerCase().includes(q)) {
+        results.push({ label: f.name, tab: 'files', type: 'File' });
+      }
+      if (results.length >= 20) break;
+    }
+    // Search macros
+    for (const m of macros) {
+      if (m.name.toLowerCase().includes(q)) {
+        results.push({ label: m.name, tab: 'macros', type: 'Macro' });
+      }
+      if (results.length >= 20) break;
+    }
+    // Search filaments
+    for (const f of filaments) {
+      if (f.toLowerCase().includes(q)) {
+        results.push({ label: f, tab: 'filaments', type: 'Filament' });
+      }
+      if (results.length >= 20) break;
+    }
+    // Search history
+    for (const h of printHistory) {
+      if (h.message.toLowerCase().includes(q) || (h.file && h.file.toLowerCase().includes(q))) {
+        results.push({ label: h.file ?? h.message.slice(0, 60), tab: 'history', type: 'History' });
+      }
+      if (results.length >= 20) break;
+    }
+    return results.slice(0, 20);
+  }, [globalSearch, files, macros, filaments, printHistory]);
 
   const handleEmergencyStop = useCallback(() => {
     if (confirm('Send emergency stop (M112)? This will immediately halt the machine.')) {
@@ -388,6 +437,68 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
             </span>
           )}
           <div style={styles.spacer} />
+
+          {/* Global Search */}
+          <div style={{ position: 'relative' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: COLORS.inputBg, border: `1px solid ${COLORS.panelBorder}`, borderRadius: 4, padding: '2px 6px' }}>
+              <Search size={12} style={{ color: COLORS.textDim, flexShrink: 0 }} />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={globalSearch}
+                onChange={(e) => { setGlobalSearch(e.target.value); setShowSearchResults(true); }}
+                onFocus={() => { if (globalSearch.trim()) setShowSearchResults(true); }}
+                onBlur={() => { setTimeout(() => setShowSearchResults(false), 200); }}
+                placeholder="Search..."
+                style={{
+                  border: 'none', background: 'transparent', color: COLORS.text,
+                  fontSize: 11, outline: 'none', width: 100, padding: '2px 0',
+                  fontFamily: 'inherit',
+                }}
+              />
+            </div>
+            {showSearchResults && searchResults.length > 0 && (
+              <div style={{
+                position: 'absolute', top: '100%', right: 0, marginTop: 4,
+                background: COLORS.panel, border: `1px solid ${COLORS.panelBorder}`,
+                borderRadius: 4, maxHeight: 240, overflowY: 'auto', zIndex: 1100,
+                minWidth: 220, boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+              }}>
+                {searchResults.map((r, i) => (
+                  <div
+                    key={`${r.tab}-${r.label}-${i}`}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      padding: '6px 10px', cursor: 'pointer', fontSize: 12,
+                      borderBottom: `1px solid ${COLORS.panelBorder}`,
+                    }}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setActiveTab(r.tab);
+                      setGlobalSearch('');
+                      setShowSearchResults(false);
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = COLORS.inputBg; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <span style={{ color: COLORS.accent, fontWeight: 600, fontSize: 10, minWidth: 50 }}>{r.type}</span>
+                    <span style={{ color: COLORS.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Theme Toggle */}
+          <button
+            style={styles.headerBtn}
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            onMouseEnter={(e) => (e.currentTarget.style.color = COLORS.text)}
+            onMouseLeave={(e) => (e.currentTarget.style.color = COLORS.textDim)}
+          >
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
 
           {/* Emergency Stop */}
           <button

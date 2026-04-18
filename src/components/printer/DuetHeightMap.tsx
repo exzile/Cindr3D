@@ -9,6 +9,7 @@ import {
   BarChart3,
   Grid3x3,
   Download,
+  Save,
   ToggleLeft,
   ToggleRight,
   FolderOpen,
@@ -584,6 +585,14 @@ export default function DuetHeightMap() {
     }
   }, [heightMap]);
 
+  const handleSaveAs = useCallback(async () => {
+    const filename = prompt('Save height map as (filename without path/extension):', 'heightmap_backup');
+    if (!filename) return;
+    const sanitized = filename.replace(/[^a-zA-Z0-9_\-]/g, '_');
+    await sendGCode(`M374 P"0:/sys/${sanitized}.csv"`);
+    void refreshCsvList();
+  }, [sendGCode, refreshCsvList]);
+
   const handleToggleCompensation = useCallback(() => {
     sendGCode(isCompensationEnabled ? 'G29 S2' : 'G29 S1');
   }, [sendGCode, isCompensationEnabled]);
@@ -650,6 +659,15 @@ export default function DuetHeightMap() {
         >
           <Download size={14} />
           <span>Export CSV</span>
+        </button>
+        <button
+          className="btn btn-sm"
+          onClick={() => void handleSaveAs()}
+          disabled={!heightMap || !connected}
+          title="Save height map to a custom filename on the printer"
+        >
+          <Save size={14} />
+          <span>Save As</span>
         </button>
         <button
           className="btn btn-sm"

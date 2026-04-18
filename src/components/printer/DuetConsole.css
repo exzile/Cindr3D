@@ -325,6 +325,13 @@
   outline: none;
 }
 
+.duet-console__input--multiline {
+  resize: vertical;
+  min-height: 60px;
+  max-height: 150px;
+  line-height: 1.4;
+}
+
 .duet-console__send-btn {
   display: inline-flex;
   align-items: center;

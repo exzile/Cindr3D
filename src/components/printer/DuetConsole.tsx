@@ -152,8 +152,12 @@ export default function DuetConsole() {
   // Scroll state
   const [isAtBottom, setIsAtBottom] = useState(true);
 
+  // Multi-line mode
+  const isMultiLine = input.includes('\n');
+
   const outputRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
   // Filtered console entries
@@ -219,7 +223,13 @@ export default function DuetConsole() {
     const cmd = input.trim();
     if (!cmd) return;
 
-    sendGCode(cmd);
+    // Split by newlines and send each line sequentially
+    const lines = cmd.split('\n').map((l) => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      sendGCode(line);
+    }
+
+    // Store the full block as a single history entry
     setCommandHistory((prev) => {
       const filtered = prev.filter((c) => c !== cmd);
       const updated = [...filtered, cmd].slice(-MAX_HISTORY);
@@ -246,7 +256,7 @@ export default function DuetConsole() {
   );
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
+    (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       // Autocomplete navigation
       if (showSuggestions && suggestions.length > 0) {
         if (e.key === 'ArrowDown') {
@@ -259,7 +269,7 @@ export default function DuetConsole() {
           setSelectedSuggestion((prev) => Math.max(prev - 1, 0));
           return;
         }
-        if (e.key === 'Tab' || (e.key === 'Enter' && suggestions.length > 0)) {
+        if (e.key === 'Tab' || (e.key === 'Enter' && suggestions.length > 0 && !e.shiftKey && !e.ctrlKey)) {
           e.preventDefault();
           selectSuggestion(suggestions[selectedSuggestion].code);
           return;
@@ -271,13 +281,28 @@ export default function DuetConsole() {
         }
       }
 
-      if (e.key === 'Enter') {
+      // Shift+Enter: insert newline (switch to multi-line mode)
+      if (e.key === 'Enter' && e.shiftKey) {
+        e.preventDefault();
+        setInput((prev) => prev + '\n');
+        return;
+      }
+
+      // Ctrl+Enter: send multi-line block (or single line)
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         handleSend();
         return;
       }
 
-      if (e.key === 'ArrowUp') {
+      // Plain Enter: send (only in single-line mode)
+      if (e.key === 'Enter' && !isMultiLine) {
+        e.preventDefault();
+        handleSend();
+        return;
+      }
+
+      if (e.key === 'ArrowUp' && !isMultiLine) {
         e.preventDefault();
         if (commandHistory.length === 0) return;
         // Save current typed text when first entering history navigation
@@ -293,7 +318,7 @@ export default function DuetConsole() {
         return;
       }
 
-      if (e.key === 'ArrowDown') {
+      if (e.key === 'ArrowDown' && !isMultiLine) {
         e.preventDefault();
         if (historyIndex === -1) return;
         const nextIndex = historyIndex + 1;
@@ -306,7 +331,7 @@ export default function DuetConsole() {
         }
       }
     },
-    [handleSend, commandHistory, historyIndex, showSuggestions, suggestions, selectedSuggestion, selectSuggestion, input],
+    [handleSend, commandHistory, historyIndex, showSuggestions, suggestions, selectedSuggestion, selectSuggestion, input, isMultiLine],
   );
 
   const handleClear = useCallback(() => {
@@ -499,35 +524,56 @@ export default function DuetConsole() {
         )}
 
         <div className="duet-console__input-row">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              setHistoryIndex(-1);
-            }}
-            onKeyDown={handleKeyDown}
-            onBlur={() => {
-              // Delay hiding so mouseDown on suggestion can fire
-              setTimeout(() => setShowSuggestions(false), 150);
-            }}
-            onFocus={() => {
-              if (suggestions.length > 0 && input.trim().length > 0) {
-                setShowSuggestions(true);
-              }
-            }}
-            placeholder={connected ? 'Type G-code command...' : 'Not connected'}
-            disabled={!connected}
-            className="duet-console__input"
-            spellCheck={false}
-            autoComplete="off"
-          />
+          {isMultiLine ? (
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                setHistoryIndex(-1);
+              }}
+              onKeyDown={handleKeyDown}
+              onBlur={() => {
+                setTimeout(() => setShowSuggestions(false), 150);
+              }}
+              placeholder={connected ? 'Multi-line G-code (Ctrl+Enter to send)' : 'Not connected'}
+              disabled={!connected}
+              className="duet-console__input duet-console__input--multiline"
+              spellCheck={false}
+              autoComplete="off"
+              rows={3}
+            />
+          ) : (
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                setHistoryIndex(-1);
+              }}
+              onKeyDown={handleKeyDown}
+              onBlur={() => {
+                // Delay hiding so mouseDown on suggestion can fire
+                setTimeout(() => setShowSuggestions(false), 150);
+              }}
+              onFocus={() => {
+                if (suggestions.length > 0 && input.trim().length > 0) {
+                  setShowSuggestions(true);
+                }
+              }}
+              placeholder={connected ? 'Type G-code... (Shift+Enter for multi-line)' : 'Not connected'}
+              disabled={!connected}
+              className="duet-console__input"
+              spellCheck={false}
+              autoComplete="off"
+            />
+          )}
           <button
             className={`duet-console__send-btn${!connected || !input.trim() ? ' is-disabled' : ''}`}
             onClick={handleSend}
             disabled={!connected || !input.trim()}
-            title="Send command"
+            title={isMultiLine ? 'Send all lines (Ctrl+Enter)' : 'Send command'}
           >
             <Send size={16} />
           </button>
