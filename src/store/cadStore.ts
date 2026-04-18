@@ -1265,8 +1265,11 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
   viewMode: '3d',
   setViewMode: (mode) => set({ viewMode: mode }),
 
-  workspaceMode: 'design',
-  setWorkspaceMode: (mode) => set({ workspaceMode: mode }),
+  workspaceMode: (localStorage.getItem('dzign3d-workspace-mode') as 'design' | 'prepare' | 'printer') ?? 'design',
+  setWorkspaceMode: (mode) => {
+    localStorage.setItem('dzign3d-workspace-mode', mode);
+    set({ workspaceMode: mode });
+  },
 
   activeSketch: null,
   sketches: [],

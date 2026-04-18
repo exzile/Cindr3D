@@ -369,8 +369,13 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
       }
     }
 
-    const size = new THREE.Vector3();
-    bbox.getSize(size);
+    // Guard: if bbox is still the empty default (Infinity / -Infinity) because
+    // no geometry was provided, fall back to a neutral 10×10×10 placeholder so
+    // BoxGeometry never receives Infinity/NaN args and loses the WebGL context.
+    const isEmptyBbox = !isFinite(bbox.min.x) || !isFinite(bbox.max.x);
+    const safeBbox = isEmptyBbox
+      ? { min: { x: 0, y: 0, z: 0 }, max: { x: 10, y: 10, z: 10 } }
+      : { min: { x: bbox.min.x, y: bbox.min.y, z: bbox.min.z }, max: { x: bbox.max.x, y: bbox.max.y, z: bbox.max.z } };
 
     const plateObject: PlateObject = {
       id: crypto.randomUUID(),
@@ -380,10 +385,7 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
       position: { x: 0, y: 0, z: 0 },
       rotation: { x: 0, y: 0, z: 0 },
       scale: { x: 1, y: 1, z: 1 },
-      boundingBox: {
-        min: { x: bbox.min.x, y: bbox.min.y, z: bbox.min.z },
-        max: { x: bbox.max.x, y: bbox.max.y, z: bbox.max.z },
-      },
+      boundingBox: safeBbox,
     };
 
     set((state) => ({

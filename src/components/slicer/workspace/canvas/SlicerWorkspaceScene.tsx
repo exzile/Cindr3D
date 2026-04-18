@@ -113,10 +113,13 @@ function PlateObjectMesh({
     );
   }, [obj.id, onTransformCommit]);
 
+  const rawX = obj.boundingBox.max.x - obj.boundingBox.min.x;
+  const rawY = obj.boundingBox.max.y - obj.boundingBox.min.y;
+  const rawZ = obj.boundingBox.max.z - obj.boundingBox.min.z;
   const boxArgs: [number, number, number] = [
-    obj.boundingBox.max.x - obj.boundingBox.min.x || 10,
-    obj.boundingBox.max.y - obj.boundingBox.min.y || 10,
-    obj.boundingBox.max.z - obj.boundingBox.min.z || 10,
+    isFinite(rawX) && rawX > 0 ? rawX : 10,
+    isFinite(rawY) && rawY > 0 ? rawY : 10,
+    isFinite(rawZ) && rawZ > 0 ? rawZ : 10,
   ];
 
   return (

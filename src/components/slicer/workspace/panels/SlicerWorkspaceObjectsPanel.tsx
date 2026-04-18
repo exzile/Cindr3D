@@ -7,6 +7,22 @@ import type { PlateObject } from '../../../../types/slicer';
 import { normalizeRotationRadians, normalizeScale } from '../../../../utils/slicerTransforms';
 import './SlicerWorkspaceObjectsPanel.css';
 
+// Feature types that don't produce physical bodies and should not appear in
+// the "Add from CAD" menu inside the slicer workspace.
+const NON_BODY_FEATURE_TYPES = new Set([
+  'sketch',
+  'construction-plane',
+  'construction-axis',
+  'isoparametric',
+  'decal',
+  'thread',
+  'joint',
+  'joint-origin',
+  'contact-set',
+  'rigid-group',
+  'motion-link',
+]);
+
 export function SlicerWorkspaceObjectsPanel() {
   const plateObjects = useSlicerStore((s) => s.plateObjects);
   const selectedId = useSlicerStore((s) => s.selectedPlateObjectId);
@@ -201,7 +217,7 @@ export function SlicerWorkspaceObjectsPanel() {
                   No CAD features available.
                 </div>
               )}
-              {features.filter(f => f.type !== 'sketch').map((f) => (
+              {features.filter(f => !NON_BODY_FEATURE_TYPES.has(f.type) && !f.suppressed).map((f) => (
                 <div key={f.id} onClick={() => handleAddModel(f)} className="slicer-workspace-objects-panel__menu-item">
                   <Box size={12} className="slicer-workspace-objects-panel__menu-item-icon" />
                   {f.name}

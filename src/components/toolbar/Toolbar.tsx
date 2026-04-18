@@ -50,7 +50,6 @@ export default function Toolbar() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const meshInsertInputRef = useRef<HTMLInputElement>(null);
   const loadFileInputRef = useRef<HTMLInputElement>(null);
-  const [workspace, setWorkspace] = useState<Workspace>('design');
   const [wsDropdownOpen, setWsDropdownOpen] = useState(false);
   const [designTab, setDesignTab] = useState<DesignTab>('solid');
   const [prepareTab, setPrepareTab] = useState<PrepareTab>('plate');
@@ -81,6 +80,7 @@ export default function Toolbar() {
   const startSketchProjectSurfaceTool = useCADStore((s) => s.startSketchProjectSurfaceTool);
   const sketches = useCADStore((s) => s.sketches);
   const setWorkspaceMode = useCADStore((s) => s.setWorkspaceMode);
+  const workspace = useCADStore((s) => s.workspaceMode) as Workspace;
   const setActiveTool = useCADStore((s) => s.setActiveTool);
   const openReplaceFaceDialog = useCADStore((s) => s.openReplaceFaceDialog);
   const openDirectEditDialog = useCADStore((s) => s.openDirectEditDialog);
@@ -208,7 +208,6 @@ export default function Toolbar() {
   };
 
   const handleWorkspaceSwitch = (ws: Workspace) => {
-    setWorkspace(ws);
     setWsDropdownOpen(false);
     setWorkspaceMode(ws);
   };
