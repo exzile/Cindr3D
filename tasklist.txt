@@ -24,9 +24,9 @@ DASHBOARD TAB
 [x] Tool offsets editor (G10 P{n} X Y Z — view and edit per-tool offsets)
 [ ] Workplace coordinates selector / display (G54–G59)
 [ ] Restore points display (G60 saved positions)
-[ ] Pressure advance configuration per extruder (M572 D{n} S{val})
-[ ] Input shaper settings (M593 — frequency, damping, type)
-[ ] Baby stepping from dashboard (currently only on Job tab)
+[x] Pressure advance configuration per extruder (M572 D{n} S{val})
+[x] Input shaper settings (M593 — frequency, damping, type)
+[x] Baby stepping from dashboard (currently only on Job tab)
 [ ] Bed compensation type indicator (mesh / tilt / none) with quick toggle
 
 --------------------------------------------------------------------------------
@@ -40,7 +40,7 @@ STATUS TAB
 [x] Motor drivers panel (axis-to-driver mapping)
 [x] General purpose outputs panel (gpOut PWM values — read-only)
 
-[ ] Network status panel (IP, subnet, gateway, MAC, DNS, WiFi SSID/signal)
+[x] Network status panel (IP, subnet, gateway, MAC, DNS, WiFi SSID/signal)
 [ ] GPIO interactive control (toggle on/off or set PWM slider for gpOut pins)
 [ ] CAN expansion boards (additional boards on CAN bus — multi-board setups)
 [ ] Driver status flags (stall detection, over-temp warning per driver)
@@ -144,8 +144,8 @@ MACROS TAB
 [x] Delete macro
 [x] Quick actions strip (root .g files shown as quick-run buttons)
 
-[ ] Create new macro (in-browser text editor, save to printer)
-[ ] Edit existing macro in-browser (DuetFileEditor exists but not wired to macros)
+[x] Create new macro (in-browser text editor, save to printer)
+[x] Edit existing macro in-browser (DuetFileEditor exists but not wired to macros)
 [ ] Macro search / filter
 [ ] Drag-and-drop macro upload
 
