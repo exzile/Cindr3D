@@ -87,7 +87,7 @@ JOB / PRINT TAB
 [x] Simulated print time vs actual comparison
 [x] Pause at layer / height trigger configuration
 [x] First layer inspection mode (pause after layer 1)
-[ ] Print queue (queue multiple files for sequential printing)
+[x] Print queue (queue multiple files for sequential printing)
 
 --------------------------------------------------------------------------------
 HISTORY TAB
@@ -164,7 +164,7 @@ HEIGHT MAP TAB
 [x] Multiple saved height map files (load from 0:/sys/*.csv, not just heightmap.csv)
 [x] Save height map to custom filename
 [x] Compensation type toggle (enable/disable mesh bed compensation via G29 S)
-[ ] Height map comparison (diff two maps)
+[x] Height map comparison (diff two maps)
 [x] Export height map as CSV download
 
 --------------------------------------------------------------------------------
@@ -195,9 +195,9 @@ FIRMWARE UPDATE
 --------------------------------------------------------------------------------
 [x] Store actions: uploadFirmware(), installFirmware()  ← no UI yet
 
-[ ] Firmware update page / section in Settings
-[ ] Drag-and-drop firmware .bin upload with progress bar
-[ ] Firmware version check vs installed version
+[x] Firmware update page / section in Settings
+[x] Drag-and-drop firmware .bin upload with progress bar
+[-] Firmware version check vs installed version (shows current; no remote check)
 [ ] IAP file upload (required for standalone update flow)
 [ ] Post-update reconnect flow
 
@@ -217,7 +217,7 @@ GENERAL / CROSS-CUTTING
 [x] Dark / light theme toggle accessible from toolbar (themeStore exists but
     no toolbar button — only applies internally to DuetPrinterPanel)
 [ ] Responsive layout for narrow/side-panel mode
-[ ] Offline/disconnected graceful degradation (show last-known values)
+[x] Offline/disconnected graceful degradation (show last-known values)
 [x] Sound alerts on print complete / error
 [x] Browser tab title update with print progress (e.g. "42% - myprint.gcode")
 ================================================================================
