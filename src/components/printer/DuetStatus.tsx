@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import { Fragment, useState, useCallback } from 'react';
 import {
   Activity, CircuitBoard, Crosshair, Cpu, Zap, Radar, Gauge, Network,
+  Disc, Focus,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { colors as COLORS } from '../../utils/theme';
@@ -137,6 +138,68 @@ function AnalogSensorsPanel() {
   );
 }
 
+function SpindlePanel() {
+  const spindles = usePrinterStore((s) => s.model.spindles ?? EMPTY_ARRAY);
+
+  const populated = spindles
+    .map((sp, i) => ({ sp, i }))
+    .filter(({ sp }) => sp != null && sp.state !== 'unconfigured');
+
+  if (populated.length === 0) return null;
+
+  return (
+    <div style={panelStyle()}>
+      <div style={sectionTitle()}><Disc size={14} /> Spindles</div>
+      {populated.map(({ sp, i }, idx) => {
+        const stateLabel = sp.state === 'forward' ? 'FORWARD' : sp.state === 'reverse' ? 'REVERSE' : 'IDLE';
+        const stateClass = sp.state === 'stopped' ? '' : 'success';
+        return (
+          <div key={i} className={idx < populated.length - 1 ? 'duet-status-block' : undefined}>
+            <div className="duet-status-board-title">Spindle {i}</div>
+            <div style={rowGrid()}>
+              <span className="duet-status-dim">State</span>
+              <span className={`duet-status-flag ${stateClass}`}>{stateLabel}</span>
+              <span className="duet-status-dim">Current RPM</span>
+              <span className="duet-status-mono">{sp.current ?? 0}</span>
+              <span className="duet-status-dim">Active speed</span>
+              <span className="duet-status-mono">{sp.active ?? 0} RPM</span>
+              <span className="duet-status-dim">Range</span>
+              <span className="duet-status-mono">{sp.min ?? 0} – {sp.max ?? 0} RPM</span>
+              {sp.tool >= 0 && (
+                <>
+                  <span className="duet-status-dim">Tool</span>
+                  <span className="duet-status-mono">T{sp.tool}</span>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function LaserPanel() {
+  const state = usePrinterStore((s) => s.model.state);
+  const laserPwm = (state as Record<string, unknown> | undefined)?.laserPwm;
+
+  if (typeof laserPwm !== 'number') return null;
+
+  const pct = (laserPwm * 100).toFixed(1);
+
+  return (
+    <div style={panelStyle()}>
+      <div style={sectionTitle()}><Focus size={14} /> Laser</div>
+      <div style={rowGrid()}>
+        <span className="duet-status-dim">PWM</span>
+        <span className="duet-status-mono">{laserPwm.toFixed(3)}</span>
+        <span className="duet-status-dim">Power</span>
+        <span className="duet-status-mono">{pct}%</span>
+      </div>
+    </div>
+  );
+}
+
 function BoardsPanel() {
   const rawBoards = usePrinterStore((s) => s.model.boards ?? EMPTY_ARRAY);
   const boards = rawBoards.filter((b): b is NonNullable<typeof b> => b != null);
@@ -157,8 +220,19 @@ function BoardsPanel() {
         <div key={i} className={i < boards.length - 1 ? 'duet-status-block' : undefined}>
           <div className="duet-status-board-title">
             {b.name || b.shortName || `Board ${i}`}
+            {i > 0 && (b as Record<string, unknown>).canAddress != null && (
+              <span className="duet-status-dim" style={{ fontWeight: 400, marginLeft: 6 }}>
+                (CAN {String((b as Record<string, unknown>).canAddress)})
+              </span>
+            )}
           </div>
           <div style={rowGrid()}>
+            {i > 0 && (b as Record<string, unknown>).canAddress != null && (
+              <>
+                <span className="duet-status-dim">CAN address</span>
+                <span className="duet-status-mono">{String((b as Record<string, unknown>).canAddress)}</span>
+              </>
+            )}
             <span className="duet-status-dim">Firmware</span>
             <span className="duet-status-mono">{b.firmwareName} {b.firmwareVersion}</span>
             {b.firmwareDate && (
@@ -528,6 +602,8 @@ export default function DuetStatus() {
       <EndstopsPanel />
       <ProbesPanel />
       <AnalogSensorsPanel />
+      <SpindlePanel />
+      <LaserPanel />
       <BoardsPanel />
       <NetworkPanel />
       <DriversPanel />

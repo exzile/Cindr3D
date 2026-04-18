@@ -9,6 +9,7 @@ import { useThemeStore, type ThemeMode } from '../../store/themeStore';
 import {
   getDuetPrefs, updateDuetPrefs,
   type DuetPrefs, type Units, type NotifSeverity,
+  type TemperatureUnit, type DateFormat,
 } from '../../utils/duetPrefs';
 import './DuetSettings.css';
 
@@ -387,6 +388,34 @@ export default function DuetSettings() {
             onChange={(e) => patchPrefs({ webcamUrl: e.target.value })}
             placeholder="e.g. http://192.168.1.100:8080/?action=stream"
           />
+        }
+      />
+      <SettingRow
+        label="Temperature Unit"
+        hint="Display temperatures in Celsius or Fahrenheit."
+        control={
+          <select
+            className="duet-settings__select"
+            value={prefs.temperatureUnit}
+            onChange={(e) => patchPrefs({ temperatureUnit: e.target.value as TemperatureUnit })}
+          >
+            <option value="C">Celsius (°C)</option>
+            <option value="F">Fahrenheit (°F)</option>
+          </select>
+        }
+      />
+      <SettingRow
+        label="Date Format"
+        hint="Show dates as relative (e.g. '2 hours ago') or absolute (e.g. '2026-04-18 14:30')."
+        control={
+          <select
+            className="duet-settings__select"
+            value={prefs.dateFormat}
+            onChange={(e) => patchPrefs({ dateFormat: e.target.value as DateFormat })}
+          >
+            <option value="relative">Relative</option>
+            <option value="absolute">Absolute</option>
+          </select>
         }
       />
       <SettingRow

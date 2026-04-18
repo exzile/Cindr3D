@@ -10,6 +10,8 @@ const LEGACY_AUTO_RECONNECT_KEY = 'dzign3d-duet-autoreconnect';
 
 export type Units = 'metric' | 'imperial';
 export type NotifSeverity = 'info' | 'warning' | 'error';
+export type TemperatureUnit = 'C' | 'F';
+export type DateFormat = 'relative' | 'absolute';
 
 export interface CustomButton {
   id: string;
@@ -33,6 +35,10 @@ export interface DuetPrefs {
   notifMinSeverity: NotifSeverity;
   // Sound alerts
   soundAlertOnComplete: boolean;
+  // Temperature display
+  temperatureUnit: TemperatureUnit;
+  // Date display
+  dateFormat: DateFormat;
   // Custom dashboard buttons
   customButtons: CustomButton[];
 }
@@ -49,6 +55,8 @@ export const DEFAULT_PREFS: DuetPrefs = {
   notificationsSound: true,
   notifMinSeverity: 'info',
   soundAlertOnComplete: true,
+  temperatureUnit: 'C',
+  dateFormat: 'relative',
   customButtons: [],
 };
 

@@ -120,6 +120,18 @@ export interface DuetProbe {
   deployedByUser: boolean;
 }
 
+// Spindle
+export interface DuetSpindle {
+  active: number;
+  canReverse: boolean;
+  current: number;
+  frequency: number;
+  max: number;
+  min: number;
+  state: 'unconfigured' | 'stopped' | 'forward' | 'reverse';
+  tool: number;
+}
+
 // Board info
 export interface DuetBoard {
   firmwareName: string;
@@ -134,6 +146,7 @@ export interface DuetBoard {
   shortName: string;
   vIn?: { current: number; min: number; max: number };
   v12?: { current: number; min: number; max: number };
+  canAddress?: number;
 }
 
 // Network info
@@ -241,6 +254,7 @@ export interface DuetState {
   beep?: { duration: number; frequency: number };
   upTime: number;
   machineMode: string;
+  laserPwm?: number;
   logFile: string | null;
   messageBox?: {
     mode: number;
@@ -264,6 +278,7 @@ export interface DuetObjectModel {
     endstops: Array<{ triggered: boolean; type: string }>;
     probes: DuetProbe[];
   };
+  spindles: DuetSpindle[];
   state: DuetState;
   tools: DuetTool[];
   directories: {
