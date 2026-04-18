@@ -111,7 +111,7 @@ export class Slicer {
     let z = pp.firstLayerHeight;
     while (z <= modelHeight + 0.0001) {
       layerZs.push(z);
-      z += layerZs.length === 1 ? pp.layerHeight : pp.layerHeight;
+      z += pp.layerHeight;
     }
     const totalLayers = layerZs.length;
     if (totalLayers === 0) {

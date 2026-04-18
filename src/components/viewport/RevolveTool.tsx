@@ -38,7 +38,7 @@ export default function RevolveTool() {
 
   // Clear selBoundary when the panel X chip clears the store boundary
   useEffect(() => {
-    if (!faceBoundary) setSelBoundary(null);
+    if (!faceBoundary) setSelBoundary(null); // eslint-disable-line react-hooks/set-state-in-effect -- sync local state with store
   }, [faceBoundary]);
 
   // Face picker — active only while waiting for face selection

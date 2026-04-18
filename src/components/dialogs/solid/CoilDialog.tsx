@@ -11,6 +11,8 @@ import { useCADStore } from '../../../store/cadStore';
 import type { Feature } from '../../../types/cad';
 import '../common/ToolPanel.css';
 
+const COIL_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x8899aa, roughness: 0.5, metalness: 0.3 });
+
 type CoilType = 'pitch-height' | 'pitch-revolutions' | 'height-revolutions';
 type CoilSection = 'circle' | 'square' | 'triangle';
 type CoilDirection = 'cw' | 'ccw';
@@ -143,8 +145,7 @@ export function CoilDialog({ onClose }: { onClose: () => void }) {
 
   const handleApply = () => {
     const geo = buildCoilGeometry(coilDiameter, pitch, effectiveHeight, effectiveRevolutions, sectionDiameter, section, direction);
-    const mat = new THREE.MeshStandardMaterial({ color: 0x8899aa, roughness: 0.5, metalness: 0.3 });
-    const mesh = geo ? new THREE.Mesh(geo, mat) : undefined;
+    const mesh = geo ? new THREE.Mesh(geo, COIL_MATERIAL) : undefined;
 
     const params: Record<string, number | string | boolean> = {
       coilType, section, direction,

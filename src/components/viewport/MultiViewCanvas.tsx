@@ -187,6 +187,7 @@ export default function MultiViewCanvas({ layout }: { layout: Layout }) {
           gridTemplate,
         }}
       >
+        {/* eslint-disable react-hooks/refs -- refs passed as prop, not read during render */}
         {quadrantList.map((q) => (
           <div
             key={q.def.key}
@@ -200,6 +201,7 @@ export default function MultiViewCanvas({ layout }: { layout: Layout }) {
             <QuadrantLabel label={q.def.label} color={q.def.color} />
           </div>
         ))}
+        {/* eslint-enable react-hooks/refs */}
       </div>
 
       {/* Single Canvas overlays the grid; drei scissors into each tracked div */}
@@ -210,12 +212,14 @@ export default function MultiViewCanvas({ layout }: { layout: Layout }) {
         gl={{ antialias: true, alpha: false }}
       >
         <View.Port />
+        {/* eslint-disable react-hooks/refs -- refs passed to track prop */}
         {quadrantList.map((q, i) => (
           <View key={q.def.key} index={i + 1} track={q.ref}>
             <QuadrantCamera kind={q.def.key} />
             <MultiViewScene kind={q.def.key} />
           </View>
         ))}
+        {/* eslint-enable react-hooks/refs */}
       </Canvas>
     </div>
   );

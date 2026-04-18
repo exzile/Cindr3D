@@ -42,10 +42,12 @@ function RevolveItem({ feature, sketch }: { feature: Feature; sketch: Sketch | u
     return m;
   }, [isFaceRevolve, feature.params.faceBoundary, sketch, angle, axis, axisKey, isSurface]);
   useEffect(() => {
+    /* eslint-disable react-hooks/immutability -- Three.js userData for raycasting */
     if (mesh) {
       mesh.userData.pickable = true;
       mesh.userData.featureId = feature.id;
     }
+    /* eslint-enable react-hooks/immutability */
     return () => { mesh?.geometry.dispose(); };
   }, [mesh, feature.id]);
   if (!mesh) return null;

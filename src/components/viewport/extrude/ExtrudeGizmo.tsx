@@ -77,6 +77,7 @@ export default function ExtrudeGizmo({ sketch }: { sketch: Sketch }) {
     pos.needsUpdate = true;
 
     // Only swap materials when the cut/non-cut state actually flips
+    /* eslint-disable react-hooks/immutability -- Three.js object mutations in useFrame */
     if (lastIsCutRef.current !== isCut) {
       lineObj.material = isCut ? ARROW_LINE_MATERIAL_CUT : ARROW_LINE_MATERIAL;
       if (coneRef.current) {
@@ -84,6 +85,7 @@ export default function ExtrudeGizmo({ sketch }: { sketch: Sketch }) {
       }
       lastIsCutRef.current = isCut;
     }
+    /* eslint-enable react-hooks/immutability */
 
     // Update cone position + orientation (cheap, every frame)
     if (coneRef.current) {
@@ -120,8 +122,10 @@ export default function ExtrudeGizmo({ sketch }: { sketch: Sketch }) {
     const currentDist = useCADStore.getState().extrudeDistance;
     dragOffsetRef.current = currentDist - sAtPointer;
     liveDistRef.current = currentDist;
+    /* eslint-disable react-hooks/immutability -- DOM/Three.js side-effects in drag handler */
     if (controls) controls.enabled = false;
     gl.domElement.style.cursor = 'ns-resize';
+    /* eslint-enable react-hooks/immutability */
   }, [gl, rayToAxisDistance, controls]);
 
   // Track mounted state
@@ -214,7 +218,9 @@ export default function ExtrudeGizmo({ sketch }: { sketch: Sketch }) {
       <mesh
         ref={coneRef}
         onPointerDown={onPointerDown}
+        // eslint-disable-next-line react-hooks/immutability
         onPointerOver={() => { gl.domElement.style.cursor = 'ns-resize'; }}
+        // eslint-disable-next-line react-hooks/immutability
         onPointerOut={() => { if (!draggingRef.current) gl.domElement.style.cursor = ''; }}
       >
         <coneGeometry args={[1.2, 4, 16]} />

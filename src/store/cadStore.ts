@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { PersistStorage } from 'zustand/middleware';
 import * as THREE from 'three';
-import type { Tool, ViewMode, SketchPlane, Sketch, SketchEntity, SketchPoint, SketchConstraint, SketchDimension, Feature, FeatureGroup, Parameter, BooleanOperation, FormCage, FormSelection, FormElementType, ConstructionPlane, ConstructionAxis, ConstructionPoint, JointOriginRecord, InterferenceResult, ContactSetEntry } from '../types/cad';
+import type { Tool, ViewMode, SketchPlane, Sketch, SketchEntity, SketchPoint, SketchConstraint, SketchDimension, Feature, FeatureGroup, Parameter, FormCage, FormSelection, FormElementType, ConstructionPlane, ConstructionAxis, ConstructionPoint, JointOriginRecord, InterferenceResult, ContactSetEntry } from '../types/cad';
 import type { InsertComponentParams } from '../components/dialogs/assembly/InsertComponentDialog';
 import type { DirectEditParams } from '../components/dialogs/solid/DirectEditDialog';
 import type { TextureExtrudeParams } from '../components/dialogs/solid/TextureExtrudeDialog';

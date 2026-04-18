@@ -20,6 +20,7 @@ const _mouse = new THREE.Vector2();
  * toggling (deselecting) the profile when the user releases a gizmo drag.
  */
 export let _gizmoDragActive = false;
+// eslint-disable-next-line react-refresh/only-export-components
 export function setGizmoDragActive(v: boolean) { _gizmoDragActive = v; }
 
 function parseSelectionId(id: string): { sketchId: string; profileIndex: number | null } {

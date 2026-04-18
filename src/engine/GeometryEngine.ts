@@ -152,12 +152,9 @@ export class GeometryEngine {
     // first vertex encountered at each grid cell.
     const MERGE_RADIUS = 0.05;
     const CELL = MERGE_RADIUS * 2;
-    const posKey = (v: THREE.Vector3) =>
-      `${Math.round(v.x / CELL)}|${Math.round(v.y / CELL)}|${Math.round(v.z / CELL)}`;
     // Map: canonical key → position. A vertex matches an existing one if it's
     // within MERGE_RADIUS of any previously seen vertex in its cell or 26 neighbors.
     const canonicalPos = new Map<string, THREE.Vector3>();
-    const vertexKeyCache = new Map<string, string>(); // posKey(v) → canonical key (perf cache)
 
     const keyFor = (v: THREE.Vector3): string => {
       // Check current cell + neighbors for a close-enough existing vertex
@@ -232,7 +229,6 @@ export class GeometryEngine {
           needsSplit = true;
           // Sort midpoints along the edge
           const ab = b.clone().sub(a);
-          const lenSq = ab.lengthSq();
           mids.sort((m1, m2) => m1.clone().sub(a).dot(ab) - m2.clone().sub(a).dot(ab));
           edgeMidpoints.set(eKey, mids);
         }

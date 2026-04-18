@@ -17,6 +17,7 @@ export default function VisualStyleEffect() {
   const visualStyle = useCADStore((s) => s.visualStyle);
 
   useEffect(() => {
+    /* eslint-disable react-hooks/immutability -- Three.js scene property, not React state */
     switch (visualStyle) {
       case 'wireframe':
         scene.overrideMaterial = WIREFRAME_MAT;
@@ -29,6 +30,7 @@ export default function VisualStyleEffect() {
         break;
     }
     return () => { scene.overrideMaterial = null; };
+    /* eslint-enable react-hooks/immutability */
   }, [scene, visualStyle]);
 
   return null;
