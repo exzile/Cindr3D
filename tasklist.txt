@@ -64,7 +64,7 @@ CONSOLE TAB
 [x] Command history navigation (↑/↓ arrow keys cycle through sent commands)
 [x] Command history persistence (save sent commands to localStorage)
 [ ] G-code syntax highlighting in input field
-[ ] Verbose / non-verbose mode toggle (M111)
+[x] Verbose / non-verbose mode toggle (M111)
 
 --------------------------------------------------------------------------------
 JOB / PRINT TAB
@@ -146,7 +146,7 @@ MACROS TAB
 
 [x] Create new macro (in-browser text editor, save to printer)
 [x] Edit existing macro in-browser (DuetFileEditor exists but not wired to macros)
-[ ] Macro search / filter
+[x] Macro search / filter
 [ ] Drag-and-drop macro upload
 
 --------------------------------------------------------------------------------
@@ -162,9 +162,9 @@ HEIGHT MAP TAB
 
 [ ] Multiple saved height map files (load from 0:/sys/*.csv, not just heightmap.csv)
 [ ] Save height map to custom filename
-[ ] Compensation type toggle (enable/disable mesh bed compensation via G29 S)
+[x] Compensation type toggle (enable/disable mesh bed compensation via G29 S)
 [ ] Height map comparison (diff two maps)
-[ ] Export height map as CSV download
+[x] Export height map as CSV download
 
 --------------------------------------------------------------------------------
 MODEL (OBJECT MODEL BROWSER) TAB
@@ -182,9 +182,9 @@ SETTINGS (MODAL DIALOG)
 [x] Test connection button
 [x] Connect / disconnect
 
-[ ] Webcam URL configuration (used by Job tab WebcamView)
+[x] Webcam URL configuration (used by Job tab WebcamView)
 [ ] Auto-reconnect settings (interval, max retries)
-[ ] Theme selector (light / dark) — themeStore exists, no UI in settings
+[x] Theme selector (light / dark) — themeStore exists, no UI in settings
 [ ] Notification sound toggle
 [ ] Temperature unit toggle (°C / °F)
 [ ] Date/time format preference
