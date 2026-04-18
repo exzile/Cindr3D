@@ -300,7 +300,7 @@ const editorStyles = {
 // Component
 // ---------------------------------------------------------------------------
 
-export default function DuetFileEditor({ filePath, onClose }: DuetFileEditorProps) {
+export default function DuetFileEditor({ filePath, onClose, isNew = false }: DuetFileEditorProps) {
   const service = usePrinterStore((s) => s.service);
   const setError = usePrinterStore((s) => s.setError);
 
@@ -324,8 +324,14 @@ export default function DuetFileEditor({ filePath, onClose }: DuetFileEditorProp
   // Highlighted HTML
   const highlightedHtml = useMemo(() => highlightGCode(escapeHtml(content)), [content]);
 
-  // Fetch file contents on mount
+  // Fetch file contents on mount (skip when creating a new file)
   useEffect(() => {
+    if (isNew) {
+      setContent('');
+      setOriginalContent('');
+      setLoading(false);
+      return;
+    }
     if (!service) return;
     let cancelled = false;
 
@@ -352,7 +358,7 @@ export default function DuetFileEditor({ filePath, onClose }: DuetFileEditorProp
     return () => {
       cancelled = true;
     };
-  }, [service, filePath]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [service, filePath, isNew]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync scroll between textarea, line numbers, and highlight overlay
   const handleScroll = useCallback(() => {

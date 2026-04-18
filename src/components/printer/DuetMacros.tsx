@@ -10,8 +10,11 @@ import {
   Loader2,
   Home,
   Zap,
+  FilePlus,
+  Pencil,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
+import DuetFileEditor from './DuetFileEditor';
 
 export default function DuetMacros() {
   const macros = usePrinterStore((s) => s.macros);
@@ -24,6 +27,8 @@ export default function DuetMacros() {
 
   const [runningMacro, setRunningMacro] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [editingPath, setEditingPath] = useState<string | null>(null);
+  const [creatingNew, setCreatingNew] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const ROOT_PATH = '0:/macros';
@@ -117,12 +122,38 @@ export default function DuetMacros() {
     [macroPath, service, refreshMacros, setError],
   );
 
+  const handleNewMacro = useCallback(() => {
+    const name = window.prompt('Enter new macro filename (e.g. my_macro.g):');
+    if (!name || !name.trim()) return;
+    const trimmed = name.trim();
+    const fileName = trimmed.includes('.') ? trimmed : trimmed + '.g';
+    setEditingPath(`${macroPath}/${fileName}`);
+    setCreatingNew(true);
+  }, [macroPath]);
+
+  const handleEditMacro = useCallback(
+    (filename: string) => {
+      setEditingPath(`${macroPath}/${filename}`);
+      setCreatingNew(false);
+    },
+    [macroPath],
+  );
+
+  const handleEditorClose = useCallback(() => {
+    setEditingPath(null);
+    setCreatingNew(false);
+    refreshMacros();
+  }, [refreshMacros]);
+
   return (
     <div className="duet-macros">
       {/* Toolbar */}
       <div className="duet-macros-toolbar">
         <button className="icon-btn" onClick={refreshMacros} title="Refresh macros">
           <RefreshCw size={14} />
+        </button>
+        <button className="icon-btn" onClick={handleNewMacro} title="New macro">
+          <FilePlus size={14} />
         </button>
         <button
           className="icon-btn"
@@ -212,6 +243,13 @@ export default function DuetMacros() {
             <div className="macro-actions">
               <button
                 className="icon-btn"
+                onClick={() => handleEditMacro(file.name)}
+                title={`Edit ${file.name}`}
+              >
+                <Pencil size={14} />
+              </button>
+              <button
+                className="icon-btn"
                 onClick={() => handleRunMacro(file.name)}
                 disabled={runningMacro !== null}
                 title={`Run ${file.name}`}
@@ -245,6 +283,15 @@ export default function DuetMacros() {
           <Loader2 size={14} className="spin" />
           <span>Running: {runningMacro}</span>
         </div>
+      )}
+
+      {/* File editor modal */}
+      {editingPath && (
+        <DuetFileEditor
+          filePath={editingPath}
+          onClose={handleEditorClose}
+          isNew={creatingNew}
+        />
       )}
     </div>
   );
