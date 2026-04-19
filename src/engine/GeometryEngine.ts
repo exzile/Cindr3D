@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { Brush, Evaluator, ADDITION, SUBTRACTION, INTERSECTION } from 'three-bvh-csg';
+import { toCreasedNormals, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import polygonClipping, { type MultiPolygon as PCMultiPolygon, type Ring as PCRing } from 'polygon-clipping';
 import type { Sketch, SketchEntity, SketchPoint, SketchPlane } from '../types/cad';
 import { BODY_MATERIAL, SURFACE_MATERIAL } from '../components/viewport/scene/bodyMaterial';
 
@@ -439,19 +441,53 @@ export class GeometryEngine {
     const { t1, t2 } = this.getSketchAxes(sketch);
     const normal = sketch.planeNormal.clone().normalize();
     const origin = sketch.planeOrigin;
-    const allShapes = this.entitiesToShapes(sketch.entities, (p) => {
+    const proj = (p: SketchPoint) => {
       const d = new THREE.Vector3(p.x - origin.x, p.y - origin.y, p.z - origin.z);
       return { u: d.dot(t1), v: d.dot(t2) };
-    });
-    const shapes = profileIndex === undefined
-      ? allShapes
-      : (allShapes[profileIndex] ? [allShapes[profileIndex]] : []);
+    };
+
+    let shapes: THREE.Shape[];
+    if (profileIndex === undefined) {
+      // Full sketch render — hole detection ON so each region looks correct.
+      shapes = this.entitiesToShapes(sketch.entities, proj);
+    } else {
+      // Single profile render — use the SAME list ExtrudeTool enumerates from,
+      // which includes atomic intersection regions (lenses, crescents, etc.)
+      // in addition to the original shapes. If we only pulled from
+      // entitiesToShapes here, atomic-region profile indices would return
+      // null → no mesh → no raycaster hit → user cannot click those regions.
+      const flat = this.sketchToProfileShapesFlat(sketch);
+      const outer = flat[profileIndex];
+      if (!outer) return null;
+      shapes = [outer];
+    }
     if (shapes.length === 0) return null;
+    // 2D profile fill — ShapeGeometry + degenerate/sliver filter. Unlike the
+    // 3D extrude case we don't need CSG here: ShapeGeometry produces ONLY cap
+    // triangles (no side walls), so we can strip earcut keyhole slivers without
+    // risk of eating legitimate thin side-wall triangles. BUT the threshold
+    // must be gentle — an aggressive cut-off destroys naturally-thin atomic
+    // regions like the lens between two overlapping circles (their tip
+    // triangles are slivers, and filtering them all away leaves an empty mesh
+    // that the picker then sees as having an infinite bounding box and
+    // skips). 0.002 keeps the real bridge slivers out while preserving the
+    // triangulation of thin-but-legitimate profile shapes.
     const rawGeom = new THREE.ShapeGeometry(shapes);
     const nonIndexed = rawGeom.toNonIndexed();
     rawGeom.dispose();
-    const geom = this.removeDegenerateTriangles(nonIndexed);
+    const filtered = this.removeSliverTriangles2D(nonIndexed, 0.002);
     nonIndexed.dispose();
+    // Safety net: if the filter wiped out everything (can still happen for
+    // pathologically thin shapes), fall back to a freshly triangulated mesh
+    // so the profile is at least pickable.
+    const posCount = (filtered.attributes.position as THREE.BufferAttribute).count;
+    let geom = filtered;
+    if (posCount < 3) {
+      filtered.dispose();
+      const retry = new THREE.ShapeGeometry(shapes);
+      geom = retry.toNonIndexed();
+      retry.dispose();
+    }
     const mesh = new THREE.Mesh(geom, material);
     const m = new THREE.Matrix4().makeBasis(t1, t2, normal);
     mesh.quaternion.setFromRotationMatrix(m);
@@ -460,39 +496,101 @@ export class GeometryEngine {
   }
 
   static createProfileSketch(sketch: Sketch, profileIndex: number): Sketch | null {
-    const shapes = this.sketchToShapes(sketch);
-    const shape = shapes[profileIndex];
+    // Use the FLAT shape list (no hole nesting) so profileIndex maps 1:1 to
+    // every clickable region in the Extrude tool's profile list.
+    const flatShapes = this.sketchToProfileShapesFlat(sketch);
+    const shape = flatShapes[profileIndex];
     if (!shape) return null;
 
     const { t1, t2 } = this.getSketchAxes(sketch);
     const origin = sketch.planeOrigin;
-    const raw = shape.getPoints(64);
-    if (raw.length < 3) return null;
 
-    const points2d = [...raw];
-    const first = points2d[0];
-    const last = points2d[points2d.length - 1];
-    // `Shape.getPoints()` may or may not repeat the first point at the end,
-    // even for closed shapes. Remove only a duplicated closing point.
-    if (last.distanceTo(first) <= 1e-5) points2d.pop();
-    if (points2d.length < 3) return null;
+    // Convert a 2D point list (u,v on the sketch plane) back to world-space
+    // SketchPoints, dropping any duplicated closing vertex the Shape emitted.
+    const toSketchPoints = (raw: THREE.Vector2[]): SketchPoint[] | null => {
+      const pts = [...raw];
+      if (pts.length >= 2 && pts[pts.length - 1].distanceTo(pts[0]) <= 1e-5) pts.pop();
+      if (pts.length < 3) return null;
+      return pts.map((p) => ({
+        id: crypto.randomUUID(),
+        x: origin.x + t1.x * p.x + t2.x * p.y,
+        y: origin.y + t1.y * p.x + t2.y * p.y,
+        z: origin.z + t1.z * p.x + t2.z * p.y,
+      }));
+    };
 
-    const pts3d = points2d.map((p) => ({
-      id: crypto.randomUUID(),
-      x: origin.x + t1.x * p.x + t2.x * p.y,
-      y: origin.y + t1.y * p.x + t2.y * p.y,
-      z: origin.z + t1.z * p.x + t2.z * p.y,
-    }));
+    const outerPts = toSketchPoints(shape.getPoints(64));
+    if (!outerPts) return null;
+
+    const holeEntities: SketchEntity[] = [];
+    const appendHole = (holePts2D: THREE.Vector2[]) => {
+      const sketchPts = toSketchPoints(holePts2D);
+      if (!sketchPts) return;
+      for (let k = 0; k < sketchPts.length; k++) {
+        const next = (k + 1) % sketchPts.length;
+        holeEntities.push({
+          id: crypto.randomUUID(),
+          type: 'line',
+          points: [sketchPts[k], sketchPts[next]],
+        });
+      }
+    };
+
+    if (shape.holes.length > 0) {
+      // Atomic regions from polygon-clipping already carry the correct hole
+      // rings. Use them directly — do NOT also run containment detection, or
+      // we'd double-add every nested atomic profile as an extra hole and
+      // produce conflicting boundaries that CSG triangulates with visible
+      // artifacts.
+      for (const hole of shape.holes) appendHole(hole.getPoints(64));
+    } else {
+      // No explicit holes — fall back to the legacy containment check so the
+      // original "rectangle profile has inner circles nested as holes" case
+      // still works when the shape is a plain original (no intersections).
+      const pointInPoly = (p: THREE.Vector2, poly: THREE.Vector2[]): boolean => {
+        let inside = false;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+          const xi = poly[i].x, yi = poly[i].y;
+          const xj = poly[j].x, yj = poly[j].y;
+          if (((yi > p.y) !== (yj > p.y)) &&
+              (p.x < ((xj - xi) * (p.y - yi)) / (yj - yi) + xi)) {
+            inside = !inside;
+          }
+        }
+        return inside;
+      };
+      const outerPoly2D = shape.getPoints(64);
+      const polyArea = (pts: THREE.Vector2[]): number => {
+        let a = 0;
+        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+          a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+        }
+        return Math.abs(a) * 0.5;
+      };
+      const outerArea = polyArea(outerPoly2D);
+      for (let i = 0; i < flatShapes.length; i++) {
+        if (i === profileIndex) continue;
+        const other = flatShapes[i];
+        if (other.holes.length > 0) continue; // atomic-with-holes never a hole of a plain shape
+        const otherPts = other.getPoints(64);
+        if (polyArea(otherPts) >= outerArea) continue;
+        const cx = otherPts.reduce((s, p) => s + p.x, 0) / otherPts.length;
+        const cy = otherPts.reduce((s, p) => s + p.y, 0) / otherPts.length;
+        if (!pointInPoly(new THREE.Vector2(cx, cy), outerPoly2D)) continue;
+        appendHole(otherPts);
+      }
+    }
 
     const entities: SketchEntity[] = [];
-    for (let i = 0; i < pts3d.length; i++) {
-      const next = (i + 1) % pts3d.length;
+    for (let i = 0; i < outerPts.length; i++) {
+      const next = (i + 1) % outerPts.length;
       entities.push({
         id: crypto.randomUUID(),
         type: 'line',
-        points: [pts3d[i], pts3d[next]],
+        points: [outerPts[i], outerPts[next]],
       });
     }
+    entities.push(...holeEntities);
 
     return {
       ...sketch,
@@ -512,6 +610,199 @@ export class GeometryEngine {
       const d = new THREE.Vector3(p.x - origin.x, p.y - origin.y, p.z - origin.z);
       return { u: d.dot(t1), v: d.dot(t2) };
     });
+  }
+
+  /**
+   * Like sketchToShapes but returns every closed region as a separate THREE.Shape
+   * WITHOUT nesting inner loops as holes. This is what the Extrude tool uses
+   * when building its clickable profile list, so a rectangle with three circles
+   * inside shows up as 4 independent profiles (the rectangle region and each
+   * circle) — matching Fusion 360's behaviour. The full-sketch extrude path
+   * still uses sketchToShapes, so holes are correctly nested for boolean
+   * operations at build time.
+   */
+  static sketchToProfileShapesFlat(sketch: Sketch): THREE.Shape[] {
+    const { t1, t2 } = this.getSketchAxes(sketch);
+    const origin = sketch.planeOrigin;
+    const rawShapes = this.entitiesToShapes(
+      sketch.entities,
+      (p) => {
+        const d = new THREE.Vector3(p.x - origin.x, p.y - origin.y, p.z - origin.z);
+        return { u: d.dot(t1), v: d.dot(t2) };
+      },
+      { nestHoles: false },
+    );
+    // Fusion-360 parity: selectable profiles = original closed shapes
+    // PLUS the 2D planar-arrangement atomic regions formed by intersecting
+    // curves. That way the user can pick the whole rectangle, a lens where
+    // two curves cross, OR the part of a circle outside the rectangle — all
+    // from the same sketch. Duplicates (an atomic region geometrically
+    // identical to an original) are removed so the list stays tidy.
+    const atomic = this.computeAtomicRegions(rawShapes);
+    if (atomic.length === 0) return rawShapes;
+
+    const sig = (s: THREE.Shape) => {
+      const pts = s.getPoints(48);
+      let area = 0, cx = 0, cy = 0;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        area += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+      }
+      area = Math.abs(area) * 0.5;
+      for (const p of pts) { cx += p.x; cy += p.y; }
+      cx /= pts.length; cy /= pts.length;
+      return { area, cx, cy };
+    };
+    const same = (a: ReturnType<typeof sig>, b: ReturnType<typeof sig>): boolean => {
+      const scale = Math.max(a.area, b.area, 1e-6);
+      // 1% area delta and centroid within 1% of sqrt(area)
+      if (Math.abs(a.area - b.area) / scale > 0.01) return false;
+      const dist = Math.hypot(a.cx - b.cx, a.cy - b.cy);
+      return dist < 0.01 * Math.sqrt(scale);
+    };
+
+    const origSigs = rawShapes.map(sig);
+    const combined: THREE.Shape[] = [...rawShapes];
+    for (const atom of atomic) {
+      const atomSig = sig(atom);
+      if (origSigs.some((o) => same(o, atomSig))) continue;
+      combined.push(atom);
+    }
+    return combined;
+  }
+
+  /**
+   * Compute the 2D planar arrangement of a list of closed shapes. Returns
+   * every atomic bounded region formed by their intersections as a separate
+   * THREE.Shape. Disjoint shapes are returned unchanged.
+   *
+   * Uses polygon-clipping for boolean ops. Curves are first sampled into
+   * dense polylines (arcs/circles at 64 segments) — boolean ops on the
+   * polylines give a tight approximation of the true curve arrangement.
+   *
+   * Algorithm (incremental split):
+   *   atoms = [P_0]
+   *   for each remaining polygon P_i:
+   *     for each atom A in atoms:
+   *       split A into (A ∩ P_i) and (A − P_i), keep the non-empty pieces
+   *     add (P_i − union(previous atoms))
+   *
+   * For N input shapes with up to m vertices each this runs roughly in
+   * O(N · atoms · m log m) — fine for typical sketches (< 10 shapes).
+   */
+  private static computeAtomicRegions(shapes: THREE.Shape[]): THREE.Shape[] {
+    if (shapes.length <= 1) return shapes;
+
+    const SEGS = 64;
+    const TOL = 1e-6;
+
+    const shapeToMP = (shape: THREE.Shape): PCMultiPolygon => {
+      const pts = shape.getPoints(SEGS);
+      if (pts.length < 3) return [];
+      const ring: PCRing = pts.map((p) => [p.x, p.y] as [number, number]);
+      // Close the ring if not already closed
+      const first = ring[0];
+      const last = ring[ring.length - 1];
+      if (Math.abs(first[0] - last[0]) > TOL || Math.abs(first[1] - last[1]) > TOL) {
+        ring.push([first[0], first[1]]);
+      }
+      return [[ring]];
+    };
+
+    const polys = shapes.map(shapeToMP).filter((mp) => mp.length > 0);
+    if (polys.length <= 1) return shapes;
+
+    let atoms: PCMultiPolygon[] = [polys[0]];
+
+    for (let i = 1; i < polys.length; i++) {
+      const P = polys[i];
+      const newAtoms: PCMultiPolygon[] = [];
+
+      for (const A of atoms) {
+        try {
+          const inter = polygonClipping.intersection(A, P);
+          if (inter.length > 0) newAtoms.push(inter);
+        } catch { /* malformed polygon — skip */ }
+        try {
+          const diff = polygonClipping.difference(A, P);
+          if (diff.length > 0) newAtoms.push(diff);
+        } catch { /* skip */ }
+      }
+
+      // Piece of P that's outside every previous atom
+      try {
+        const prevUnion = polygonClipping.union(atoms[0], ...atoms.slice(1));
+        const onlyP = polygonClipping.difference(P, prevUnion);
+        if (onlyP.length > 0) newAtoms.push(onlyP);
+      } catch { /* skip */ }
+
+      if (newAtoms.length > 0) atoms = newAtoms;
+    }
+
+    // Remove near-collinear and duplicate vertices — polygon-clipping often
+    // emits a redundant vertex on each of the original polygon's straight
+    // edges and a coincident vertex at every intersection. Both cause sliver
+    // triangles when earcut/CSG later triangulates the shape, which is the
+    // primary source of visible cap-face artifacts on atomic-region extrudes.
+    const simplifyRing = (ring: PCRing): THREE.Vector2[] => {
+      const n = ring.length;
+      const endDupe =
+        n >= 2 &&
+        Math.abs(ring[0][0] - ring[n - 1][0]) <= TOL &&
+        Math.abs(ring[0][1] - ring[n - 1][1]) <= TOL;
+      const raw = endDupe ? ring.slice(0, -1) : ring;
+      if (raw.length < 3) return [];
+
+      // Drop exact duplicates
+      const deduped: [number, number][] = [];
+      for (const p of raw) {
+        const last = deduped[deduped.length - 1];
+        if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) > 1e-5) {
+          deduped.push([p[0], p[1]]);
+        }
+      }
+      if (deduped.length < 3) return [];
+
+      // Drop vertices where the turn is basically straight (collinear run).
+      // |cross(prev→curr, curr→next)| / (|prev→curr| * |curr→next|) ≈ sin(θ).
+      // Threshold ≈ sin(0.5°) keeps real corners while dropping subdivision
+      // noise from the polygon-clipping boolean operation.
+      const SIN_MIN = Math.sin(0.5 * Math.PI / 180);
+      const keep: THREE.Vector2[] = [];
+      for (let i = 0; i < deduped.length; i++) {
+        const prev = deduped[(i - 1 + deduped.length) % deduped.length];
+        const curr = deduped[i];
+        const next = deduped[(i + 1) % deduped.length];
+        const ax = curr[0] - prev[0], ay = curr[1] - prev[1];
+        const bx = next[0] - curr[0], by = next[1] - curr[1];
+        const la = Math.hypot(ax, ay);
+        const lb = Math.hypot(bx, by);
+        if (la < 1e-9 || lb < 1e-9) continue;
+        const sinT = Math.abs(ax * by - ay * bx) / (la * lb);
+        if (sinT > SIN_MIN) keep.push(new THREE.Vector2(curr[0], curr[1]));
+      }
+      return keep.length >= 3 ? keep : [];
+    };
+
+    // Convert atomic multi-polygons back to THREE.Shape objects
+    const result: THREE.Shape[] = [];
+    for (const atom of atoms) {
+      for (const poly of atom) {
+        if (!poly.length) continue;
+        const outerPts = simplifyRing(poly[0]);
+        if (outerPts.length < 3) continue;
+        const shape = new THREE.Shape(outerPts);
+        for (let k = 1; k < poly.length; k++) {
+          const holePts = simplifyRing(poly[k]);
+          if (holePts.length < 3) continue;
+          shape.holes.push(new THREE.Path(holePts));
+        }
+        result.push(shape);
+      }
+    }
+
+    // If the arrangement produced nothing (e.g. all inputs malformed) fall
+    // back to the original shapes so the user still sees something clickable.
+    return result.length > 0 ? result : shapes;
   }
 
   /**
@@ -656,7 +947,9 @@ export class GeometryEngine {
   private static entitiesToShapes(
     entities: SketchEntity[],
     proj: (p: SketchPoint) => { u: number; v: number },
+    opts: { nestHoles?: boolean } = {},
   ): THREE.Shape[] {
+    const { nestHoles = true } = opts;
     const shapes: THREE.Shape[] = [];
     const TOL = 1e-3;
 
@@ -766,7 +1059,7 @@ export class GeometryEngine {
     //   3. Push it onto parent.holes and mark it as absorbed.
     //   4. Return only top-level (non-hole) shapes — holes are embedded in their
     //      parent and must NOT appear as independent shapes in the output array.
-    if (shapes.length >= 2) {
+    if (nestHoles && shapes.length >= 2) {
       // Shoelace signed area (positive = CCW, negative = CW — sign not needed here)
       const shapeArea = (pts: THREE.Vector2[]): number => {
         let a = 0;
@@ -1250,14 +1543,11 @@ export class GeometryEngine {
       bevelEnabled: false,
     };
 
-    const rawGeom = new THREE.ExtrudeGeometry(shapes, extrudeSettings);
-    // toNonIndexed → removeDegenerateTriangles strips the earcut keyhole-bridge
-    // triangles that would otherwise appear as a visible seam on transparent or
-    // CSG-processed geometry.
-    const nonIndexed = rawGeom.toNonIndexed();
-    rawGeom.dispose();
-    const geometry = this.removeDegenerateTriangles(nonIndexed);
-    nonIndexed.dispose();
+    // Holes-aware build: shapes with holes go through CSG subtraction instead
+    // of ExtrudeGeometry's earcut-with-bridges, eliminating the visible wedge
+    // seam on the cap face. Shapes without holes stay on the fast ExtrudeGeometry
+    // path with only the area-based degenerate-triangle safety net.
+    const geometry = this.buildExtrudeGeomHolesAware(shapes, extrudeSettings);
     const mesh = new THREE.Mesh(geometry, EXTRUDE_MATERIAL);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -1291,11 +1581,7 @@ export class GeometryEngine {
       : (allShapes[profileIndex] ? [allShapes[profileIndex]] : []);
     if (shapes.length === 0) return null;
 
-    const rawGeom = new THREE.ExtrudeGeometry(shapes, { depth: distance, bevelEnabled: false });
-    const nonIndexed2 = rawGeom.toNonIndexed();
-    rawGeom.dispose();
-    const geometry = this.removeDegenerateTriangles(nonIndexed2);
-    nonIndexed2.dispose();
+    const geometry = this.buildExtrudeGeomHolesAware(shapes, { depth: distance, bevelEnabled: false });
     const mesh = new THREE.Mesh(geometry, EXTRUDE_MATERIAL);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -1471,6 +1757,90 @@ export class GeometryEngine {
   }
 
   /**
+   * Build clean edge geometry for a sketch extrude, going directly from the
+   * sketch curves (outer loops + holes) instead of extracting edges from the
+   * triangulated mesh. Avoids the fan-of-lines artifacts you get from CSG
+   * triangulation seams on the top/bottom caps, because we never look at
+   * triangles — just the curve silhouettes.
+   *
+   * Returned geometry is in LOCAL plane space with z ∈ [0, distance] so it
+   * aligns 1:1 with the mesh produced by extrudeSketch(): the caller should
+   * copy the mesh's position/quaternion/scale onto the LineSegments.
+   *
+   * Only covers the common direction cases (positive/negative/symmetric); the
+   * two-sides CSG-union path bakes transforms into world space and should
+   * stay on EdgesGeometry.
+   */
+  static buildExtrudeFeatureEdges(sketch: Sketch, distance: number): THREE.BufferGeometry | null {
+    if (sketch.entities.length === 0 || Math.abs(distance) < 0.001) return null;
+
+    const { t1, t2 } = this.getSketchAxes(sketch);
+    const origin = sketch.planeOrigin;
+    const proj = (p: SketchPoint): { u: number; v: number } => {
+      const d = new THREE.Vector3(p.x - origin.x, p.y - origin.y, p.z - origin.z);
+      return { u: d.dot(t1), v: d.dot(t2) };
+    };
+    const shapes = this.entitiesToShapes(sketch.entities, proj);
+    if (shapes.length === 0) return null;
+
+    const positions: number[] = [];
+    const z0 = 0;
+    const z1 = distance;
+    const SEGS = 64;
+    const SHARP_COS = Math.cos(Math.PI / 12); // 15° corner threshold for vertical edges
+
+    const stripClosing = (pts: THREE.Vector2[]): THREE.Vector2[] =>
+      pts.length >= 2 && pts[pts.length - 1].distanceTo(pts[0]) < 1e-6 ? pts.slice(0, -1) : pts;
+
+    const addLoop = (pts: THREE.Vector2[], z: number) => {
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % pts.length];
+        positions.push(a.x, a.y, z, b.x, b.y, z);
+      }
+    };
+
+    const _d1 = new THREE.Vector2();
+    const _d2 = new THREE.Vector2();
+    const addSharpVerticals = (pts: THREE.Vector2[]) => {
+      const n = pts.length;
+      for (let i = 0; i < n; i++) {
+        const prev = pts[(i - 1 + n) % n];
+        const curr = pts[i];
+        const next = pts[(i + 1) % n];
+        _d1.subVectors(curr, prev);
+        _d2.subVectors(next, curr);
+        if (_d1.lengthSq() < 1e-12 || _d2.lengthSq() < 1e-12) continue;
+        _d1.normalize();
+        _d2.normalize();
+        if (_d1.dot(_d2) < SHARP_COS) {
+          positions.push(curr.x, curr.y, z0, curr.x, curr.y, z1);
+        }
+      }
+    };
+
+    for (const shape of shapes) {
+      const outer = stripClosing(shape.getPoints(SEGS));
+      if (outer.length >= 2) {
+        addLoop(outer, z0);
+        addLoop(outer, z1);
+        addSharpVerticals(outer);
+      }
+      for (const hole of shape.holes) {
+        const holePts = stripClosing(hole.getPoints(SEGS));
+        if (holePts.length < 2) continue;
+        addLoop(holePts, z0);
+        addLoop(holePts, z1);
+        addSharpVerticals(holePts);
+      }
+    }
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    return geom;
+  }
+
+  /**
    * Bake a mesh's position/rotation/scale into its BufferGeometry, returning a
    * new world-space geometry. Leaves the input mesh untouched (clones geometry
    * first). Needed for CSG, which operates in the brush's local space.
@@ -1483,31 +1853,24 @@ export class GeometryEngine {
   }
 
   /**
-   * Remove near-degenerate triangles from a non-indexed BufferGeometry.
-   *
-   * earcut's "keyhole bridge" — the corridor it cuts from the outer polygon
-   * boundary to each hole — produces one or two triangles whose area is many
-   * orders of magnitude smaller than any real face triangle. These degenerate
-   * triangles are invisible on an opaque mesh but become a visible seam on
-   * transparent preview geometry. Removing them eliminates the artifact without
-   * affecting any real geometry.
-   *
-   * Threshold: any triangle whose area < (relThreshold × median triangle area)
-   * is considered degenerate and is dropped.
+   * Remove near-zero-area triangles from a non-indexed BufferGeometry.
+   * Used as a safety net for earcut keyhole bridges in single-hole cases.
+   * Shapes with many holes take a different path (CSG) to avoid bridges
+   * entirely — see extrudeShapesHolesAware below.
    */
   private static removeDegenerateTriangles(
     geom: THREE.BufferGeometry,
-    relThreshold = 0.01,
+    relAreaThreshold = 0.01,
   ): THREE.BufferGeometry {
     const pos = geom.attributes.position as THREE.BufferAttribute;
-    const count = pos.count; // non-indexed: count is always divisible by 3
+    const count = pos.count;
     const _a = new THREE.Vector3();
     const _b = new THREE.Vector3();
     const _c = new THREE.Vector3();
     const _ab = new THREE.Vector3();
     const _ac = new THREE.Vector3();
+    const _cross = new THREE.Vector3();
 
-    // Pass 1: collect all triangle areas
     const areas: number[] = [];
     for (let i = 0; i < count; i += 3) {
       _a.fromBufferAttribute(pos, i);
@@ -1515,29 +1878,148 @@ export class GeometryEngine {
       _c.fromBufferAttribute(pos, i + 2);
       _ab.subVectors(_b, _a);
       _ac.subVectors(_c, _a);
-      areas.push(_ab.cross(_ac).length() * 0.5);
+      _cross.crossVectors(_ab, _ac);
+      areas.push(_cross.length() * 0.5);
     }
+    const sortedA = [...areas].sort((a, b) => a - b);
+    const medianArea = sortedA[Math.floor(sortedA.length / 2)] ?? 0;
+    const areaCutoff = medianArea * relAreaThreshold;
 
-    // Median area (robust threshold anchor — avoids being fooled by a few huge triangles)
-    const sorted = [...areas].sort((a, b) => a - b);
-    const median = sorted[Math.floor(sorted.length / 2)] ?? 0;
-    const threshold = median * relThreshold;
-
-    // Pass 2: copy only non-degenerate triangles
     const newPos: number[] = [];
     for (let i = 0; i < count; i += 3) {
-      if (areas[i / 3] >= threshold) {
-        for (let k = 0; k < 3; k++) {
-          _a.fromBufferAttribute(pos, i + k);
-          newPos.push(_a.x, _a.y, _a.z);
-        }
+      if (areas[i / 3] < areaCutoff) continue;
+      for (let k = 0; k < 3; k++) {
+        _a.fromBufferAttribute(pos, i + k);
+        newPos.push(_a.x, _a.y, _a.z);
       }
     }
-
     const result = new THREE.BufferGeometry();
     result.setAttribute('position', new THREE.Float32BufferAttribute(newPos, 3));
     result.computeVertexNormals();
     return result;
+  }
+
+  /**
+   * Aggressive sliver/degenerate-triangle filter for flat 2D meshes.
+   *
+   * Safe to use on ShapeGeometry output because every triangle is a cap-face
+   * triangle — there are no legitimate thin side-wall triangles to preserve.
+   * Uses triangle quality q = 4√3·area / (a²+b²+c²) which is 1 for an
+   * equilateral triangle and → 0 for a sliver (earcut keyhole bridge).
+   */
+  private static removeSliverTriangles2D(
+    geom: THREE.BufferGeometry,
+    qualityThreshold = 0.02,
+  ): THREE.BufferGeometry {
+    const pos = geom.attributes.position as THREE.BufferAttribute;
+    const count = pos.count;
+    const _a = new THREE.Vector3();
+    const _b = new THREE.Vector3();
+    const _c = new THREE.Vector3();
+    const _ab = new THREE.Vector3();
+    const _ac = new THREE.Vector3();
+    const _bc = new THREE.Vector3();
+    const _cross = new THREE.Vector3();
+    const _normN = 4 * Math.sqrt(3);
+
+    const newPos: number[] = [];
+    for (let i = 0; i < count; i += 3) {
+      _a.fromBufferAttribute(pos, i);
+      _b.fromBufferAttribute(pos, i + 1);
+      _c.fromBufferAttribute(pos, i + 2);
+      _ab.subVectors(_b, _a);
+      _ac.subVectors(_c, _a);
+      _bc.subVectors(_c, _b);
+      // Use crossVectors into a separate scratch — Vector3.cross mutates the
+      // caller, which would clobber _ab and throw off the ss sum below.
+      _cross.crossVectors(_ab, _ac);
+      const area = _cross.length() * 0.5;
+      const ss = _ab.lengthSq() + _ac.lengthSq() + _bc.lengthSq();
+      const q = ss > 1e-12 ? (_normN * area) / ss : 0;
+      if (q < qualityThreshold) continue;
+      for (let k = 0; k < 3; k++) {
+        _a.fromBufferAttribute(pos, i + k);
+        newPos.push(_a.x, _a.y, _a.z);
+      }
+    }
+    const result = new THREE.BufferGeometry();
+    result.setAttribute('position', new THREE.Float32BufferAttribute(newPos, 3));
+    result.computeVertexNormals();
+    return result;
+  }
+
+  /**
+   * Build an extruded BufferGeometry for one or more shapes, avoiding earcut
+   * keyhole-bridge artifacts when any shape has holes. When a shape has ≥1
+   * holes, we extrude the outer boundary as a solid and CSG-subtract each
+   * hole's solid extrusion — three-bvh-csg produces a clean result with no
+   * bridge seams. Shapes without holes go through ExtrudeGeometry directly.
+   */
+  private static buildExtrudeGeomHolesAware(
+    shapes: THREE.Shape[],
+    extrudeSettings: THREE.ExtrudeGeometryOptions,
+  ): THREE.BufferGeometry {
+    const parts: THREE.BufferGeometry[] = [];
+    for (const shape of shapes) {
+      if (shape.holes.length === 0) {
+        const g = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+        const ni = g.toNonIndexed();
+        g.dispose();
+        parts.push(this.removeDegenerateTriangles(ni));
+        ni.dispose();
+        continue;
+      }
+      // Outer-only extrude as solid
+      const outerShape = new THREE.Shape(shape.getPoints(64));
+      const outerRaw = new THREE.ExtrudeGeometry(outerShape, extrudeSettings);
+      const outerNI = outerRaw.toNonIndexed();
+      outerRaw.dispose();
+      let solid = this.removeDegenerateTriangles(outerNI);
+      outerNI.dispose();
+      for (const holePath of shape.holes) {
+        const holeShape = new THREE.Shape(holePath.getPoints(64));
+        const holeSettings: THREE.ExtrudeGeometryOptions = {
+          ...extrudeSettings,
+          depth: (extrudeSettings.depth ?? 1) + 2,
+        };
+        const holeRaw = new THREE.ExtrudeGeometry(holeShape, holeSettings);
+        const holeNI = holeRaw.toNonIndexed();
+        holeRaw.dispose();
+        const holeGeom = this.removeDegenerateTriangles(holeNI);
+        holeNI.dispose();
+        holeGeom.translate(0, 0, -1);
+        const subtracted = this.csgSubtract(solid, holeGeom);
+        solid.dispose();
+        holeGeom.dispose();
+        solid = subtracted;
+      }
+      parts.push(solid);
+    }
+    let combined: THREE.BufferGeometry;
+    if (parts.length === 1) {
+      combined = parts[0];
+    } else {
+      const totalCount = parts.reduce((s, g) => s + g.attributes.position.count, 0);
+      const mergedPos = new Float32Array(totalCount * 3);
+      let off = 0;
+      for (const g of parts) {
+        const arr = (g.attributes.position as THREE.BufferAttribute).array as Float32Array;
+        mergedPos.set(arr, off);
+        off += arr.length;
+        g.dispose();
+      }
+      combined = new THREE.BufferGeometry();
+      combined.setAttribute('position', new THREE.Float32BufferAttribute(mergedPos, 3));
+    }
+    // Smooth normals across soft edges (cylinder walls stay smooth) but keep
+    // sharp normals across hard edges (box corners, cap/wall seams). Without
+    // this the per-triangle flat normals make cylindrical surfaces look
+    // faceted, and with DoubleSide transparent rendering you see every
+    // triangle edge. Merging coincident vertices first lets toCreasedNormals
+    // see which triangles actually share an edge.
+    const merged = mergeVertices(combined, 1e-4);
+    combined.dispose();
+    return toCreasedNormals(merged, Math.PI / 6); // 30° crease threshold
   }
 
   /**

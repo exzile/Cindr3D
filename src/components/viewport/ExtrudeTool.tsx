@@ -79,8 +79,10 @@ export default function ExtrudeTool() {
   }, [sketches, features]);
 
   const profileEntries = useMemo(() => {
+    // Use the FLAT shape list so every closed region is a selectable profile
+    // (rectangle + each inner circle are all clickable, Fusion 360 parity).
     return extrudable.flatMap((sketch) => {
-      const count = GeometryEngine.sketchToShapes(sketch).length;
+      const count = GeometryEngine.sketchToProfileShapesFlat(sketch).length;
       return Array.from({ length: count }, (_, profileIndex) => ({
         sketch,
         profileIndex,
@@ -177,17 +179,65 @@ export default function ExtrudeTool() {
       );
     };
 
+    // Profile meshes are all coplanar on the sketch plane, so raycaster hits
+    // come back with near-identical distances and the array order is unreliable.
+    // Pick the hit whose mesh has the SMALLEST world-space bounding-box area —
+    // that way clicking inside a small atomic region (lens, crescent) picks
+    // that region and NOT the enclosing original shape. Each click independently
+    // toggles exactly the region directly under the cursor.
+    //
+    // To select a larger containing shape (e.g. the whole rectangle rather
+    // than the atomic rect-minus-circles), Alt+click to pick the LARGEST
+    // profile under the cursor.
+    const _boxTmp = new THREE.Box3();
+    const _sz = new THREE.Vector3();
+    // Returns NaN for meshes with empty/invalid bounding boxes so the picker
+    // knows to skip them — a degenerate mesh (e.g. an overly-filtered thin
+    // shape) otherwise reports an infinite area and mis-sorts the picker.
+    const meshArea = (mesh: THREE.Mesh): number => {
+      _boxTmp.setFromObject(mesh);
+      if (_boxTmp.isEmpty()) return NaN;
+      _boxTmp.getSize(_sz);
+      if (!isFinite(_sz.x) || !isFinite(_sz.y) || !isFinite(_sz.z)) return NaN;
+      const dims = [_sz.x, _sz.y, _sz.z].sort((a, b) => b - a);
+      return dims[0] * dims[1];
+    };
+    const resolveHit = (
+      hits: THREE.Intersection[],
+      mode: 'smallest' | 'largest' = 'smallest',
+    ): THREE.Mesh | null => {
+      let best: THREE.Mesh | null = null;
+      let bestArea = mode === 'smallest' ? Infinity : -Infinity;
+      for (const hit of hits) {
+        const mesh = hit.object as THREE.Mesh;
+        const key = mesh.userData?.profileKey as string | undefined;
+        if (!key) continue;
+        const area = meshArea(mesh);
+        if (!isFinite(area)) continue; // skip degenerate / empty meshes
+        if (mode === 'smallest' ? area < bestArea : area > bestArea) {
+          bestArea = area;
+          best = mesh;
+        }
+      }
+      return best;
+    };
+
     const handlePointerMove = (event: PointerEvent) => {
       updateMouse(event);
       raycaster.setFromCamera(_mouse, camera);
       const hits = raycaster.intersectObjects(collectProfileMeshes(), false);
-      if (hits.length > 0) {
-        const mesh = hits[0].object as THREE.Mesh;
+      // Hover tracks the SAME mode the click would use (Alt = largest).
+      const mesh = resolveHit(hits, event.altKey ? 'largest' : 'smallest');
+      if (mesh) {
         const key = mesh.userData.profileKey as string;
         if (hoveredIdRef.current !== key) {
           hoveredIdRef.current = key;
           setHoveredIdRef.current(key);
-          setStatusMessageRef.current(`Click to select profile — hold to add multiple`);
+          setStatusMessageRef.current(
+            event.altKey
+              ? 'Alt+click to select containing shape'
+              : 'Click to select profile — Alt+click for containing shape',
+          );
         }
       } else if (hoveredIdRef.current !== null) {
         hoveredIdRef.current = null;
@@ -195,25 +245,49 @@ export default function ExtrudeTool() {
       }
     };
 
+    // Track where the primary button was pressed so we can distinguish a
+    // genuine click from a click-and-drag (which the user uses to orbit/pan
+    // the camera). The browser fires `click` for any mousedown→mouseup on the
+    // same element, even with lots of movement in between, so we have to
+    // discriminate manually. 5px matches the "drag threshold" most UI libs use.
+    const DRAG_THRESHOLD_PX = 5;
+    let downX = 0;
+    let downY = 0;
+    let downValid = false;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      downX = event.clientX;
+      downY = event.clientY;
+      downValid = true;
+    };
+
     const handleClick = (event: MouseEvent) => {
       if (event.button !== 0) return;
-      // Skip if the user just finished dragging the extrude gizmo —
-      // the click event fires after pointerup and would deselect the profile.
-      if (_gizmoDragActive) { _gizmoDragActive = false; return; }
+      if (_gizmoDragActive) { _gizmoDragActive = false; downValid = false; return; }
+      // Skip clicks that came after a drag — the user was orbiting/panning.
+      if (downValid) {
+        const dx = event.clientX - downX;
+        const dy = event.clientY - downY;
+        downValid = false;
+        if (Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) return;
+      }
       updateMouse(event);
       raycaster.setFromCamera(_mouse, camera);
       const hits = raycaster.intersectObjects(collectProfileMeshes(), false);
-      if (hits.length > 0) {
-        const mesh = hits[0].object as THREE.Mesh;
+      const mesh = resolveHit(hits, event.altKey ? 'largest' : 'smallest');
+      if (mesh) {
         const key = mesh.userData.profileKey as string;
         toggleSelectionRef.current(key);
       }
     };
 
     const canvas = gl.domElement;
+    canvas.addEventListener('pointerdown', handlePointerDown);
     canvas.addEventListener('pointermove', handlePointerMove);
     canvas.addEventListener('click', handleClick, true);
     return () => {
+      canvas.removeEventListener('pointerdown', handlePointerDown);
       canvas.removeEventListener('pointermove', handlePointerMove);
       canvas.removeEventListener('click', handleClick, true);
       if (hoveredIdRef.current !== null) {
@@ -246,19 +320,30 @@ export default function ExtrudeTool() {
 
   if (activeTool !== 'extrude') return null;
 
+  // Once a preview is active, hide the SELECTED profile overlays visually —
+  // they would ghost through the solid preview fill. But keep the meshes
+  // IN THE SCENE (hidden via opacity 0, not unmounted) so the DOM profile
+  // picker can still raycast them for deselect/toggle clicks. Idle and hover
+  // overlays always stay visible so the user can add more profiles.
+  const previewActive = Math.abs(distance) >= 0.001;
+
   return (
     <group>
-      {profileEntries.map(({ sketch, profileIndex, selectionId }) => (
-        <SketchProfile
-          key={selectionId}
-          sketch={sketch}
-          profileIndex={profileIndex}
-          state={
-            selectedIds.includes(selectionId) ? 'selected' :
-            selectionId === hoveredId ? 'hover' : 'idle'
-          }
-        />
-      ))}
+      {profileEntries.map(({ sketch, profileIndex, selectionId }) => {
+        const isSelected = selectedIds.includes(selectionId);
+        return (
+          <SketchProfile
+            key={selectionId}
+            sketch={sketch}
+            profileIndex={profileIndex}
+            state={
+              isSelected ? 'selected' :
+              selectionId === hoveredId ? 'hover' : 'idle'
+            }
+            hidden={previewActive && isSelected}
+          />
+        );
+      })}
       {selectedIds.length === 0 && faceHit && <FaceHighlight boundary={faceHit.boundary} />}
       {selectedSketches.map(({ id, sketch }) => (
         <ExtrudePreview key={id} sketch={sketch} distance={distance} direction={direction} />

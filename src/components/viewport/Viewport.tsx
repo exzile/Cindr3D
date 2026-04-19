@@ -164,6 +164,10 @@ export default function Viewport() {
   const isLassoRef = useRef(false);
   const lassoAccumRef = useRef<{ x: number; y: number }[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Tracks where the right mouse button was pressed so onContextMenu can
+  // distinguish "click to open menu" from "drag to pan" — we only want the
+  // context menu on a stationary right-click, not after a right-drag pan.
+  const rightDownRef = useRef<{ x: number; y: number } | null>(null);
   // Window/lasso select needs the live camera for screen-space projection.
   // Captured in Canvas.onCreated so it's available to pointerUp handlers.
   const cameraRef = useRef<THREE.Camera | null>(null);
@@ -204,6 +208,11 @@ export default function Viewport() {
 
   // ── D204/D205 pointer handlers ─────────────��──────────────────────────────
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    // Track right-button position regardless of tool so the context-menu
+    // suppression below works the same way in every mode.
+    if (e.button === 2) {
+      rightDownRef.current = { x: e.clientX, y: e.clientY };
+    }
     if (activeTool !== 'select') return;
     if (e.button !== 0) return; // left button only
     const rect = containerRef.current?.getBoundingClientRect();
@@ -338,7 +347,16 @@ export default function Viewport() {
           cameraRef.current = camera;
         }}
         onContextMenu={(e) => {
+          // Always suppress the native browser context menu.
           e.preventDefault();
+          // If the right button was dragged (used to pan the camera), do NOT
+          // open our custom context menu — the user was just panning.
+          const down = rightDownRef.current;
+          rightDownRef.current = null;
+          if (down) {
+            const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+            if (moved > 5) return;
+          }
           setViewportCtxMenu({ x: e.clientX, y: e.clientY });
         }}
       >

@@ -65,7 +65,11 @@
       "Bash(node -e ' *)",
       "Bash(kill 2720)",
       "Bash(dir \"C:\\\\Users\\\\joeyp\\\\source\\\\repos\\\\exzile\\\\DesignCAD\\\\public\")",
-      "Bash(findstr \":5173 :5174 :3000 :4173 LISTENING\")"
+      "Bash(findstr \":5173 :5174 :3000 :4173 LISTENING\")",
+      "Bash(findstr \"LISTENING\")",
+      "Bash(findstr \"5173 5174 5175 3000 4173 8080\")",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "mcp__Claude_in_Chrome__navigate"
     ]
   }
 }

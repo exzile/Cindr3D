@@ -14,11 +14,17 @@ import { PROFILE_MATERIAL, PROFILE_HOVER_MATERIAL, PROFILE_SELECTED_MATERIAL } f
  * based on state, and sets userData.profileKey for the DOM raycaster to find.
  */
 export default function SketchProfile({
-  sketch, profileIndex, state,
+  sketch, profileIndex, state, hidden = false,
 }: {
   sketch: Sketch;
   profileIndex?: number;
   state: 'idle' | 'hover' | 'selected';
+  /**
+   * When true the mesh renders with opacity 0 but stays in the scene so the
+   * DOM profile picker can still raycast it for toggle/deselect clicks. Used
+   * by ExtrudeTool to hide selected overlays while the solid preview is up.
+   */
+  hidden?: boolean;
 }) {
   const material =
     state === 'selected' ? PROFILE_SELECTED_MATERIAL :
@@ -42,6 +48,10 @@ export default function SketchProfile({
   useFrame(({ clock, invalidate }) => {
     const m = meshRef.current?.material;
     if (!(m instanceof THREE.MeshBasicMaterial)) return;
+    if (hidden) {
+      m.opacity = 0; // fully transparent but still pickable
+      return;
+    }
     if (state === 'hover') {
       const pulse = 0.5 + 0.5 * Math.sin(clock.elapsedTime * 6);
       m.opacity = 0.24 + pulse * 0.22;
@@ -62,11 +72,19 @@ export default function SketchProfile({
 
   if (!mesh) return null;
 
+  // Selected/hovered profiles render ON TOP of idle ones so that clicking a
+  // large profile (like the outer rectangle containing circles) shows the
+  // entire selection — not a bunch of circle-shaped holes where the smaller
+  // idle profiles overdraw it. Idle profiles also draw in area-descending
+  // order (larger first) so the smaller profile fills appear on top when
+  // everything is idle.
+  const ro = state === 'selected' ? 1200 : state === 'hover' ? 1100 : 1000;
+
   return (
     <primitive
       ref={meshRef}
       object={mesh}
-      renderOrder={1000}
+      renderOrder={ro}
     />
   );
 }

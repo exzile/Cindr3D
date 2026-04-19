@@ -24,25 +24,20 @@ export const PROFILE_SELECTED_MATERIAL = new THREE.MeshBasicMaterial({
   depthWrite: false,
 });
 
-export const PREVIEW_MATERIAL = new THREE.MeshPhysicalMaterial({
+export const PREVIEW_MATERIAL = new THREE.MeshStandardMaterial({
   color: 0x3b82f6,
-  metalness: 0.15,
-  roughness: 0.35,
-  transparent: true,
-  opacity: 0.55,
-  side: THREE.DoubleSide,
-  depthWrite: false,
+  roughness: 0.6,
+  side: THREE.FrontSide,
 });
 // Red preview used when press-pulling INTO a body (cut mode)
-export const PREVIEW_MATERIAL_CUT = new THREE.MeshPhysicalMaterial({
+export const PREVIEW_MATERIAL_CUT = new THREE.MeshStandardMaterial({
   color: 0xef4444,
-  metalness: 0.15,
-  roughness: 0.35,
-  transparent: true,
-  opacity: 0.55,
-  side: THREE.DoubleSide,
-  depthWrite: false,
+  roughness: 0.6,
+  side: THREE.FrontSide,
 });
+
+export const PREVIEW_EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: 0x1d4ed8 });
+export const PREVIEW_EDGE_MATERIAL_CUT = new THREE.LineBasicMaterial({ color: 0x991b1b });
 
 export const ARROW_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
 export const ARROW_MATERIAL_CUT = new THREE.MeshBasicMaterial({ color: 0xef4444 });
