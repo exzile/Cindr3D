@@ -151,7 +151,7 @@ export default function ExtrudedBodies() {
     return GeometryEngine.buildExtrudeFeatureMesh(sketchForOp, distance, direction, taperAngle, startOffset, distance2, taperAngle2);
   };
 
-  const { bodies, featureIds, featureComponentIds } = useMemo(() => {
+  const { bodies, featureIds, featureComponentIds, featureBodyIds } = useMemo(() => {
     // Features with a stored mesh (thin/taper extrude) are rendered directly — skip CSG.
     const extrudeFeatures = [...features]
       .filter((f) => f.type === 'extrude' && isActive(f) && !f.mesh)
@@ -160,19 +160,23 @@ export default function ExtrudedBodies() {
     const outBodies: THREE.BufferGeometry[] = [];
     const outIds: string[] = [];
     const outComponentIds: (string | undefined)[] = [];
+    const outBodyIds: (string | undefined)[] = [];
     let currentGeom: THREE.BufferGeometry | null = null;
     let currentFeatureId: string | null = null;
     let currentComponentId: string | undefined;
+    let currentBodyId: string | undefined;
 
     const commitCurrent = () => {
       if (currentGeom && currentFeatureId) {
         outBodies.push(currentGeom);
         outIds.push(currentFeatureId);
         outComponentIds.push(currentComponentId);
+        outBodyIds.push(currentBodyId);
       }
       currentGeom = null;
       currentFeatureId = null;
       currentComponentId = undefined;
+      currentBodyId = undefined;
     };
 
     for (const feature of extrudeFeatures) {
@@ -191,6 +195,7 @@ export default function ExtrudedBodies() {
         currentGeom = toolGeom;
         currentFeatureId = feature.id;
         currentComponentId = feature.componentId;
+        currentBodyId = feature.bodyId;
         continue;
       }
 
@@ -200,14 +205,14 @@ export default function ExtrudedBodies() {
         toolGeom.dispose();
         currentGeom = next;
         currentFeatureId = feature.id;
-        currentComponentId = feature.componentId;
+        // Keep the original body's component/body association — cut features
+        // have no componentId/bodyId of their own.
       } else if (op === 'intersect') {
         const next = GeometryEngine.csgIntersect(currentGeom, toolGeom);
         currentGeom.dispose();
         toolGeom.dispose();
         currentGeom = next;
         currentFeatureId = feature.id;
-        currentComponentId = feature.componentId;
       } else if (op === 'join') {
         // Fusion 360 parity: only merge bodies that actually overlap.
         // If the join geometry doesn't intersect the current body (e.g. an
@@ -223,19 +228,20 @@ export default function ExtrudedBodies() {
           currentGeom = toolGeom;
           currentFeatureId = feature.id;
           currentComponentId = feature.componentId;
+          currentBodyId = feature.bodyId;
         } else {
           const next = GeometryEngine.csgUnion(currentGeom, toolGeom);
           currentGeom.dispose();
           toolGeom.dispose();
           currentGeom = next;
           currentFeatureId = feature.id;
-          currentComponentId = feature.componentId;
+          // Keep the original body's component/body association for joined bodies.
         }
       }
     }
     commitCurrent();
 
-    return { bodies: outBodies, featureIds: outIds, featureComponentIds: outComponentIds };
+    return { bodies: outBodies, featureIds: outIds, featureComponentIds: outComponentIds, featureBodyIds: outBodyIds };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [features, sketches, rollbackIndex]);
 
@@ -262,7 +268,7 @@ export default function ExtrudedBodies() {
     <>
       {bodies.map((geom, i) => {
         const fId = featureIds[i];
-        const bodyId = fId ? features.find((f) => f.id === fId)?.bodyId : undefined;
+        const bodyId = featureBodyIds[i];
         return (
           <mesh
             key={fId ?? i}

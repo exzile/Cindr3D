@@ -6,8 +6,14 @@ export default function PrinterMonitor() {
   const model = usePrinterStore((s) => s.model);
   const error = usePrinterStore((s) => s.error);
   const showPrinter = usePrinterStore((s) => s.showPrinter);
-  const setShowSettings = usePrinterStore((s) => s.setShowSettings);
+  const setShowPrinter = usePrinterStore((s) => s.setShowPrinter);
+  const setActiveTab = usePrinterStore((s) => s.setActiveTab);
   const stateLabel = model.state?.status ?? 'disconnected';
+
+  const openSettings = () => {
+    setShowPrinter(true);
+    setActiveTab('settings');
+  };
 
   if (!showPrinter) return null;
 
@@ -18,7 +24,7 @@ export default function PrinterMonitor() {
           {connected ? <Wifi size={14} className="connected" /> : <WifiOff size={14} className="disconnected" />}
           <h3>3D Printer</h3>
         </div>
-        <button className="icon-btn" onClick={() => setShowSettings(true)} title="Settings">
+        <button className="icon-btn" onClick={openSettings} title="Settings">
           <Settings size={14} />
         </button>
       </div>
@@ -31,7 +37,7 @@ export default function PrinterMonitor() {
         <div className="printer-disconnected">
           <WifiOff size={32} />
           <p>Not connected to printer</p>
-          <button className="btn btn-primary btn-sm" onClick={() => setShowSettings(true)}>
+          <button className="btn btn-primary btn-sm" onClick={openSettings}>
             Connect
           </button>
         </div>

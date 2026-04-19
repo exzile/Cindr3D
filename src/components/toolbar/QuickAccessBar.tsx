@@ -29,7 +29,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
 
   const showPrinter = usePrinterStore((s) => s.showPrinter);
   const setShowPrinter = usePrinterStore((s) => s.setShowPrinter);
-  const setShowSettings = usePrinterStore((s) => s.setShowSettings);
+  const setActiveTab = usePrinterStore((s) => s.setActiveTab);
   const printerConnected = usePrinterStore((s) => s.connected);
 
   return (
@@ -103,7 +103,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
         <button
           className={`ribbon-quick-btn ${printerConnected ? 'connected' : ''}`}
           title={printerConnected ? 'Printer Monitor' : 'Printer Setup'}
-          onClick={() => printerConnected ? setShowPrinter(!showPrinter) : setShowSettings(true)}
+          onClick={() => printerConnected ? setShowPrinter(!showPrinter) : (setShowPrinter(true), setActiveTab('settings'))}
         >
           <Printer size={14} />
         </button>

@@ -5,7 +5,6 @@ import ComponentTree from './components/panels/ComponentTree';
 import StatusBar from './components/panels/StatusBar';
 import ExportDialog from './components/dialogs/ExportDialog';
 import DuetPrinterPanel from './components/printer/DuetPrinterPanel';
-import DuetSettings from './components/printer/DuetSettings';
 import SlicerWorkspace from './components/slicer/SlicerWorkspace';
 import { MirrorComponentDialog } from './components/dialogs/assembly/MirrorComponentDialog';
 import { DuplicateWithJointsDialog } from './components/dialogs/assembly/DuplicateWithJointsDialog';
@@ -502,7 +501,6 @@ function App() {
       )}
       <StatusBar />
       <ExportDialog />
-      <DuetSettings />
       <ActiveDialog />
     </div>
   );

@@ -20,6 +20,7 @@ import DuetHeightMap from './DuetHeightMap';
 import DuetObjectModelBrowser from './DuetObjectModelBrowser';
 import DuetMessageBox from './DuetMessageBox';
 import DuetNotifications from './DuetNotifications';
+import DuetSettings from './DuetSettings';
 
 // ---------------------------------------------------------------------------
 // Theme — shared CSS-var tokens so all pages follow the active theme
@@ -40,6 +41,7 @@ const TABS = [
   { key: 'macros' as const, label: 'Macros', Icon: FileCode },
   { key: 'heightmap' as const, label: 'Height Map', Icon: Grid3x3 },
   { key: 'model' as const, label: 'Model', Icon: Braces },
+  { key: 'settings' as const, label: 'Settings', Icon: Settings },
 ];
 
 type TabKey = (typeof TABS)[number]['key'];
@@ -55,6 +57,7 @@ const TAB_COMPONENTS: Record<TabKey, React.ComponentType> = {
   macros: DuetMacros,
   heightmap: DuetHeightMap,
   model: DuetObjectModelBrowser,
+  settings: DuetSettings,
 };
 
 // ---------------------------------------------------------------------------
@@ -241,7 +244,6 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
   const activeTab = usePrinterStore((s) => s.activeTab);
   const setActiveTab = usePrinterStore((s) => s.setActiveTab);
   const setShowPrinter = usePrinterStore((s) => s.setShowPrinter);
-  const setShowSettings = usePrinterStore((s) => s.setShowSettings);
   const emergencyStop = usePrinterStore((s) => s.emergencyStop);
   const error = usePrinterStore((s) => s.error);
   const reconnecting = usePrinterStore((s) => s.reconnecting);
@@ -471,7 +473,7 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
           {!connected && (
             <button
               style={styles.connectBtn}
-              onClick={() => setShowSettings(true)}
+              onClick={() => setActiveTab('settings')}
               title="Connect to printer"
             >
               <Wifi size={12} /> Connect
@@ -559,7 +561,7 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
           {/* Settings */}
           <button
             style={styles.headerBtn}
-            onClick={() => setShowSettings(true)}
+            onClick={() => setActiveTab('settings')}
             title="Settings"
             onMouseEnter={(e) => (e.currentTarget.style.color = COLORS.text)}
             onMouseLeave={(e) => (e.currentTarget.style.color = COLORS.textDim)}
@@ -671,7 +673,7 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
               alignItems: 'center',
               gap: 4,
             }}
-            onClick={() => setShowSettings(true)}
+            onClick={() => setActiveTab('settings')}
           >
             <Wifi size={12} /> Connect
           </button>

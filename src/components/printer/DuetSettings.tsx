@@ -1,9 +1,10 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
-  X, Wifi, WifiOff, Loader2, CheckCircle, AlertCircle, Info,
+  Wifi, WifiOff, Loader2, CheckCircle, AlertCircle, Info,
   Plug, Settings as SettingsIcon, Palette, ToggleLeft, Bell, Cpu, BadgeInfo,
-  Sun, Moon, UploadCloud, Zap,
+  Sun, Moon, UploadCloud, Zap, Download, FolderOpen,
 } from 'lucide-react';
+import { downloadSettings, importSettingsFromFile, type ImportResult } from '../../utils/settingsExport';
 import { usePrinterStore } from '../../store/printerStore';
 import { useThemeStore, type ThemeMode } from '../../store/themeStore';
 import {
@@ -24,6 +25,7 @@ const TABS = [
   { key: 'notifications' as const, label: 'Notifications', Icon: Bell },
   { key: 'machine'       as const, label: 'Machine',       Icon: Cpu },
   { key: 'firmware'      as const, label: 'Firmware',      Icon: Zap },
+  { key: 'backup'        as const, label: 'Backup',        Icon: Download },
   { key: 'about'         as const, label: 'About',         Icon: BadgeInfo },
 ];
 type TabKey = (typeof TABS)[number]['key'];
@@ -67,8 +69,6 @@ function ToggleRow({
 // Component
 // ---------------------------------------------------------------------------
 export default function DuetSettings() {
-  const showSettings = usePrinterStore((s) => s.showSettings);
-  const setShowSettings = usePrinterStore((s) => s.setShowSettings);
   const connected = usePrinterStore((s) => s.connected);
   const connecting = usePrinterStore((s) => s.connecting);
   const config = usePrinterStore((s) => s.config);
@@ -108,6 +108,22 @@ export default function DuetSettings() {
     { type: 'success' | 'error'; message: string } | null
   >(null);
   const iapInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Backup / restore state
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importing, setImporting] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    const result = await importSettingsFromFile(file);
+    setImportResult(result);
+    setImporting(false);
+    if (importInputRef.current) importInputRef.current.value = '';
+  };
 
   const handleFirmwareSelect = useCallback((files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -814,6 +830,86 @@ export default function DuetSettings() {
     </>
   );
 
+  const renderBackup = () => (
+    <>
+      <div className="duet-settings__page-title">Backup &amp; Restore</div>
+      <p className="duet-settings__about-text">
+        Export all your workspace preferences to a <code>.json</code> file and
+        import them on any device or browser — even after clearing site data.
+        Model geometry and plate objects are <strong>not</strong> included; use
+        the <em>Save (.dzn)</em> button for those.
+      </p>
+
+      <div className="duet-settings__section">
+        <div className="duet-settings__section-title">What is exported</div>
+        <ul className="duet-settings__about-text" style={{ paddingLeft: 18, margin: 0 }}>
+          <li>Design workspace — grid, units, visual style, viewport layout, tolerances</li>
+          <li>Prepare workspace — all slicer profiles (printer, material, print) &amp; active selections</li>
+          <li>3D Print workspace — printer connection config &amp; all UI preferences</li>
+          <li>Theme (light / dark)</li>
+        </ul>
+      </div>
+
+      <div className="duet-settings__section">
+        <div className="duet-settings__section-title">Export</div>
+        <button
+          className="duet-settings__btn duet-settings__btn--primary"
+          onClick={downloadSettings}
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+        >
+          <Download size={14} /> Download settings file
+        </button>
+      </div>
+
+      <div className="duet-settings__section">
+        <div className="duet-settings__section-title">Import</div>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".json,application/json"
+          hidden
+          onChange={handleImport}
+        />
+        <button
+          className="duet-settings__btn duet-settings__btn--secondary"
+          onClick={() => importInputRef.current?.click()}
+          disabled={importing}
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+        >
+          {importing ? <Loader2 size={14} className="spin" /> : <FolderOpen size={14} />}
+          {importing ? 'Importing…' : 'Choose settings file…'}
+        </button>
+
+        {importResult && (
+          <div
+            className={`duet-settings__banner duet-settings__banner--${importResult.ok ? 'success' : 'error'}`}
+            style={{ marginTop: 12 }}
+          >
+            {importResult.ok ? (
+              <>
+                <CheckCircle size={14} style={{ flexShrink: 0 }} />
+                <div>
+                  <strong>Import successful</strong>
+                  <div style={{ marginTop: 4, fontSize: 12 }}>
+                    Applied: {importResult.appliedSections.join(', ')}
+                  </div>
+                  {importResult.warnings.map((w, i) => (
+                    <div key={i} style={{ marginTop: 4, fontSize: 12, opacity: 0.8 }}>{w}</div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <AlertCircle size={14} style={{ flexShrink: 0 }} />
+                <div><strong>Import failed</strong> — {importResult.error}</div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  );
+
   const renderAbout = () => (
     <>
       <div className="duet-settings__page-title">About</div>
@@ -857,56 +953,28 @@ export default function DuetSettings() {
       case 'notifications': return renderNotifications();
       case 'machine':       return renderMachine();
       case 'firmware':      return renderFirmware();
+      case 'backup':        return renderBackup();
       case 'about':         return renderAbout();
       default:              return null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, prefs, theme, hostname, password, mode, testing, testResult, error, connected, connecting, axes, board, firmwareFile, firmwareStatus, uploading, uploadProgress, iapFile, iapStatus, firmwareUpdatePending]);
-
-  if (!showSettings) return null;
+  }, [tab, prefs, theme, hostname, password, mode, testing, testResult, error, connected, connecting, axes, board, firmwareFile, firmwareStatus, uploading, uploadProgress, iapFile, iapStatus, firmwareUpdatePending, importing, importResult]);
 
   return (
-    <div className="duet-settings__overlay" onClick={() => setShowSettings(false)}>
-      <div className="duet-settings__dialog" onClick={(e) => e.stopPropagation()}>
-        {/* ---- Header ---- */}
-        <div className="duet-settings__header">
-          <span className="duet-settings__header-title">Duet3D Settings</span>
+    <div className="duet-settings__page">
+      <nav className="duet-settings__nav">
+        {TABS.map(({ key, label, Icon }) => (
           <button
-            className="duet-settings__close-btn"
-            onClick={() => setShowSettings(false)}
-            title="Close"
+            key={key}
+            className={`duet-settings__nav-item${tab === key ? ' is-active' : ''}`}
+            onClick={() => setTab(key)}
           >
-            <X size={18} />
+            <Icon size={15} />
+            {label}
           </button>
-        </div>
-
-        {/* ---- Main (nav + body) ---- */}
-        <div className="duet-settings__main">
-          <nav className="duet-settings__nav">
-            {TABS.map(({ key, label, Icon }) => (
-              <button
-                key={key}
-                className={`duet-settings__nav-item${tab === key ? ' is-active' : ''}`}
-                onClick={() => setTab(key)}
-              >
-                <Icon size={15} />
-                {label}
-              </button>
-            ))}
-          </nav>
-          <div className="duet-settings__body">{pageContent}</div>
-        </div>
-
-        {/* ---- Footer ---- */}
-        <div className="duet-settings__footer">
-          <button
-            className="duet-settings__btn duet-settings__btn--secondary"
-            onClick={() => setShowSettings(false)}
-          >
-            Close
-          </button>
-        </div>
-      </div>
+        ))}
+      </nav>
+      <div className="duet-settings__body">{pageContent}</div>
     </div>
   );
 }

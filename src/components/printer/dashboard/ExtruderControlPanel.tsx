@@ -1,97 +1,122 @@
 import { useState } from 'react';
-import { Droplets, ArrowUp, ArrowDown } from 'lucide-react';
+import { Droplets, ArrowDown, ArrowUp } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
-import {
-  compactPanelInputStyle as inputStyle,
-  dashboardButtonStyle as btnStyle,
-  panelStyle,
-  sectionTitleStyle as labelStyle,
-} from '../../../utils/printerPanelStyles';
+import { panelStyle, sectionTitleStyle as labelStyle } from '../../../utils/printerPanelStyles';
+
+const AMOUNTS = [1, 5, 10, 25, 50, 100];
 
 export default function ExtruderControlPanel() {
-  const model = usePrinterStore((s) => s.model);
+  const model         = usePrinterStore((s) => s.model);
+  const connected     = usePrinterStore((s) => s.connected);
   const extrudeAction = usePrinterStore((s) => s.extrude);
-  const sendGCode = usePrinterStore((s) => s.sendGCode);
-  const extrudeAmount = usePrinterStore((s) => s.extrudeAmount);
+  const sendGCode     = usePrinterStore((s) => s.sendGCode);
+  const extrudeAmount   = usePrinterStore((s) => s.extrudeAmount);
   const extrudeFeedrate = usePrinterStore((s) => s.extrudeFeedrate);
-  const tools = model.tools ?? [];
+
+  const tools       = model.tools ?? [];
   const currentTool = model.state?.currentTool ?? -1;
 
-  const [amount, setAmount] = useState(extrudeAmount);
-  const [feedrate, setFeedrate] = useState(extrudeFeedrate);
+  const [amount, setAmount]             = useState(extrudeAmount);
+  const [feedrate, setFeedrate]         = useState(extrudeFeedrate);
   const [selectedTool, setSelectedTool] = useState(currentTool);
+  const [custom, setCustom]             = useState('');
 
-  const amounts = [5, 10, 20, 50, 100];
+  const activeAmount = custom !== '' ? Number(custom) : amount;
 
-  const handleExtrude = (direction: number) => {
-    if (selectedTool >= 0 && selectedTool !== currentTool) {
-      sendGCode(`T${selectedTool}`);
-    }
-    extrudeAction(amount * direction, feedrate);
+  const handleExtrude = (dir: number) => {
+    if (selectedTool >= 0 && selectedTool !== currentTool) sendGCode(`T${selectedTool}`);
+    extrudeAction(activeAmount * dir, feedrate);
   };
 
   return (
     <div style={panelStyle()}>
+
+      {/* Section header */}
       <div style={labelStyle()} className="duet-dash-section-title-row">
         <Droplets size={14} /> Extruder
       </div>
 
+      {/* Tool selector (only when multiple tools exist) */}
       {tools.length > 1 && (
-        <div className="duet-dash-extruder-tool-row">
-          <span className="duet-dash-label-sm">Tool:</span>
+        <div className="ex-card ex-card--tool">
+          <div className="ex-label">Tool</div>
           <select
-            style={{ ...inputStyle(120), cursor: 'pointer' }}
+            className="ex-select"
             value={selectedTool}
             onChange={(e) => setSelectedTool(Number(e.target.value))}
           >
             {tools.map((t) => (
-              <option key={t.number} value={t.number}>{t.name || `Tool ${t.number}`}</option>
+              <option key={t.number} value={t.number}>
+                {t.name || `Tool ${t.number}`}
+              </option>
             ))}
           </select>
         </div>
       )}
 
-      <div className="duet-dash-extruder-block">
-        <div className="duet-dash-label-xs">Amount (mm)</div>
-        <div className="duet-dash-extruder-row">
-          {amounts.map((a) => (
+      {/* Amount presets + custom */}
+      <div className="ex-card ex-card--amount">
+        <div className="ex-label">Amount &mdash; mm</div>
+        <div className="ex-pill-row">
+          {AMOUNTS.map((a) => (
             <button
               key={a}
-              style={btnStyle(a === amount ? 'accent' : 'default', true)}
-              onClick={() => setAmount(a)}
+              className={`ex-pill${a === amount && custom === '' ? ' is-active' : ''}`}
+              onClick={() => { setAmount(a); setCustom(''); }}
             >
               {a}
             </button>
           ))}
+        </div>
+        <div className="ex-custom-row">
+          <span className="ex-sublabel">Custom</span>
           <input
             type="number"
-            style={inputStyle(60)}
-            value={amount}
-            onChange={(e) => setAmount(Number(e.target.value))}
-            min={0}
+            className={`ex-input${custom !== '' ? ' is-active' : ''}`}
+            value={custom}
+            placeholder={String(amount)}
+            onChange={(e) => setCustom(e.target.value)}
+            min={0.1}
+            step={0.1}
           />
+          <span className="ex-unit">mm</span>
         </div>
       </div>
 
-      <div className="duet-dash-extruder-tool-row duet-dash-extruder-feed-row">
-        <span className="duet-dash-label-xs">Feedrate (mm/min):</span>
+      {/* Feedrate */}
+      <div className="ex-card ex-card--feed">
+        <div className="ex-label">Feedrate &mdash; mm/min</div>
         <input
           type="number"
-          style={inputStyle(80)}
+          className="ex-input ex-input--full"
           value={feedrate}
           onChange={(e) => setFeedrate(Number(e.target.value))}
           min={1}
         />
       </div>
 
-      <div className="duet-dash-extruder-actions">
-        <button style={btnStyle('success')} onClick={() => handleExtrude(1)}>
-          <ArrowDown size={13} /> Extrude
+      {/* Action buttons */}
+      <div className="ex-actions">
+        <button
+          className="ex-action-btn ex-action-btn--extrude"
+          disabled={!connected}
+          onClick={() => handleExtrude(1)}
+        >
+          <ArrowDown size={16} />
+          <span>Extrude</span>
+          <span className="ex-action-amt">{activeAmount} mm</span>
         </button>
-        <button style={btnStyle('danger')} onClick={() => handleExtrude(-1)}>
-          <ArrowUp size={13} /> Retract
+        <button
+          className="ex-action-btn ex-action-btn--retract"
+          disabled={!connected}
+          onClick={() => handleExtrude(-1)}
+        >
+          <ArrowUp size={16} />
+          <span>Retract</span>
+          <span className="ex-action-amt">{activeAmount} mm</span>
         </button>
       </div>
+
     </div>
   );
 }

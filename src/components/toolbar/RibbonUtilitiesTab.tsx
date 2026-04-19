@@ -20,7 +20,7 @@ export function RibbonUtilitiesTab() {
 
   const showPrinter = usePrinterStore((s) => s.showPrinter);
   const setShowPrinter = usePrinterStore((s) => s.setShowPrinter);
-  const setShowSettings = usePrinterStore((s) => s.setShowSettings);
+  const setActiveTab = usePrinterStore((s) => s.setActiveTab);
   const printerConnected = usePrinterStore((s) => s.connected);
 
   return (
@@ -52,7 +52,7 @@ export function RibbonUtilitiesTab() {
           icon={printerConnected ? <PlugZap size={ICON_LG} /> : <Plug size={ICON_LG} />}
           label={printerConnected ? 'Connected' : 'Connect'}
           active={printerConnected}
-          onClick={() => setShowSettings(true)}
+          onClick={() => { setShowPrinter(true); setActiveTab('settings'); }}
           large
           colorClass="icon-green"
         />

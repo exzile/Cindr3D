@@ -138,7 +138,9 @@ function TemperatureChart({
 }) {
   const W = 600;
   const H = 160;
-  const PAD = { top: 10, right: 10, bottom: 20, left: 40 };
+  // Reserve right space for the legend when heaters exist
+  const LEGEND_W = rows.length > 0 ? 130 : 0;
+  const PAD = { top: 10, right: LEGEND_W + 10, bottom: 20, left: 40 };
   const plotW = W - PAD.left - PAD.right;
   const plotH = H - PAD.top - PAD.bottom;
 
@@ -185,8 +187,13 @@ function TemperatureChart({
     return ticks;
   }, [maxTemp]);
 
+  // Legend positioned in right margin: line swatch + label + current temp
+  const legendX = W - LEGEND_W + 4;
+  const legendRowH = 15;
+
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="duet-dash-tempchart">
+      {/* y-axis grid lines */}
       {yTicks.map((v) => (
         <g key={v}>
           <line x1={PAD.left} y1={yScale(v)} x2={W - PAD.right} y2={yScale(v)} stroke={COLORS.panelBorder} strokeWidth={0.5} />
@@ -194,11 +201,31 @@ function TemperatureChart({
         </g>
       ))}
 
+      {/* data lines */}
       {lines.map((line) => (
         <polyline key={line.index} fill="none" stroke={line.color} strokeWidth={1.5} points={line.points} strokeLinejoin="round" />
       ))}
 
-      <text x={W / 2} y={H - 2} fill={COLORS.textDim} fontSize={9} textAnchor="middle">Samples (last 200)</text>
+      {/* legend — always rendered inside the SVG when heaters are present */}
+      {rows.map((row, i) => {
+        const color = HEATER_CHART_COLORS[row.index % HEATER_CHART_COLORS.length];
+        const current = heaters[row.index]?.current;
+        const ly = PAD.top + 4 + i * legendRowH;
+        return (
+          <g key={row.index}>
+            {/* colored line swatch */}
+            <line x1={legendX} y1={ly + 4} x2={legendX + 14} y2={ly + 4} stroke={color} strokeWidth={2.5} strokeLinecap="round" />
+            {/* label */}
+            <text x={legendX + 18} y={ly + 8} fill={COLORS.textDim} fontSize={9}>{row.label}</text>
+            {/* current temperature */}
+            {current !== undefined && (
+              <text x={W - 4} y={ly + 8} fill={color} fontSize={9} textAnchor="end" fontWeight="700">
+                {current.toFixed(1)}°
+              </text>
+            )}
+          </g>
+        );
+      })}
     </svg>
   );
 }

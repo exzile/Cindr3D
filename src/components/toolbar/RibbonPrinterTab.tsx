@@ -8,7 +8,7 @@ import { usePrinterStore } from '../../store/printerStore';
 
 type PrinterTabKey =
   | 'dashboard' | 'status' | 'console' | 'job' | 'history'
-  | 'files' | 'filaments' | 'macros' | 'heightmap' | 'model';
+  | 'files' | 'filaments' | 'macros' | 'heightmap' | 'model' | 'settings';
 
 const PRINTER_TABS: { key: PrinterTabKey; label: string; Icon: React.ComponentType<{ size?: number }> }[] = [
   { key: 'dashboard', label: 'Dashboard',  Icon: LayoutDashboard },
@@ -21,14 +21,20 @@ const PRINTER_TABS: { key: PrinterTabKey; label: string; Icon: React.ComponentTy
   { key: 'macros',    label: 'Macros',     Icon: FileCode },
   { key: 'heightmap', label: 'Height Map', Icon: Grid3x3 },
   { key: 'model',     label: 'Model',      Icon: Braces },
+  { key: 'settings',  label: 'Settings',   Icon: Settings },
 ];
 
 export function RibbonPrinterTab() {
   const activeTab    = usePrinterStore((s) => s.activeTab);
   const setActiveTab = usePrinterStore((s) => s.setActiveTab);
+  const setShowPrinter = usePrinterStore((s) => s.setShowPrinter);
   const connected    = usePrinterStore((s) => s.connected);
-  const setShowSettings = usePrinterStore((s) => s.setShowSettings);
   const emergencyStop   = usePrinterStore((s) => s.emergencyStop);
+
+  const navigate = (key: Parameters<typeof setActiveTab>[0]) => {
+    setShowPrinter(true);
+    setActiveTab(key);
+  };
 
   const handleEmergencyStop = () => {
     if (confirm('Send emergency stop (M112)? This will immediately halt the machine.')) {
@@ -44,7 +50,7 @@ export function RibbonPrinterTab() {
             <button
               key={key}
               className={`ribbon-button large ${activeTab === key ? 'active' : ''}`}
-              onClick={() => setActiveTab(key as Parameters<typeof setActiveTab>[0])}
+              onClick={() => navigate(key as Parameters<typeof setActiveTab>[0])}
               title={label}
             >
               <div className="ribbon-button-icon">
@@ -59,21 +65,11 @@ export function RibbonPrinterTab() {
 
       <div className="ribbon-section">
         <div className="ribbon-section-content">
-          <button
-            className="ribbon-button large"
-            title="Printer Settings"
-            onClick={() => setShowSettings(true)}
-          >
-            <div className="ribbon-button-icon">
-              <Settings size={22} />
-            </div>
-            <span className="ribbon-button-label">Settings</span>
-          </button>
           {!connected && (
             <button
               className="ribbon-button large"
               title="Connect to printer"
-              onClick={() => setShowSettings(true)}
+              onClick={() => navigate('settings')}  
             >
               <div className="ribbon-button-icon icon-green">
                 <Wifi size={22} />

@@ -61,7 +61,9 @@
       "Bash(node C:/Users/joeyp/source/repos/exzile/DesignCAD/node_modules/.bin/tsc --project C:/Users/joeyp/source/repos/exzile/DesignCAD/tsconfig.json --noEmit)",
       "Bash(Write-Output 'Push-Location '\\\\''C:\\\\Users\\\\joeyp\\\\source\\\\repos\\\\exzile\\\\DesignCAD'\\\\'':*)",
       "Bash(node -e \"const l = require\\('lucide-react'\\); console.log\\(['Stamp','Pipe','BoxSelect','Layers','Pentagon'].filter\\(n => !!l[n]\\)\\)\")",
-      "Bash(node -e \"const p = require\\('@react-three/postprocessing'\\); console.log\\(Object.keys\\(p\\).filter\\(k => k.toLowerCase\\(\\).includes\\('ssao'\\) || k.toLowerCase\\(\\).includes\\('ao'\\) || k === 'EffectComposer'\\).join\\(', '\\)\\)\")"
+      "Bash(node -e \"const p = require\\('@react-three/postprocessing'\\); console.log\\(Object.keys\\(p\\).filter\\(k => k.toLowerCase\\(\\).includes\\('ssao'\\) || k.toLowerCase\\(\\).includes\\('ao'\\) || k === 'EffectComposer'\\).join\\(', '\\)\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(kill 2720)"
     ]
   }
 }

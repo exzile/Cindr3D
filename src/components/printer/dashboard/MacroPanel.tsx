@@ -1,48 +1,53 @@
-import { FileText, Play } from 'lucide-react';
+import { FileText, Play, Folder } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import {
-  dashboardButtonStyle as btnStyle,
   panelStyle,
   sectionTitleStyle as labelStyle,
 } from '../../../utils/printerPanelStyles';
 
 export default function MacroPanel() {
-  const macros = usePrinterStore((s) => s.macros);
+  const macros  = usePrinterStore((s) => s.macros);
   const runMacro = usePrinterStore((s) => s.runMacro);
 
-  if (macros.length === 0) return null;
+  const files = macros.filter((m) => m.type === 'f');
+  const dirs  = macros.filter((m) => m.type === 'd');
 
   return (
     <div style={panelStyle()}>
       <div style={labelStyle()} className="duet-dash-section-title-row">
         <FileText size={14} /> Macros
       </div>
-      <div className="duet-dash-macro-list">
-        {macros
-          .filter((m) => m.type === 'f')
-          .map((macro) => (
+
+      {macros.length === 0 && (
+        <div className="mc-empty">No macros found</div>
+      )}
+
+      {dirs.length > 0 && (
+        <div className="mc-grid" style={{ marginBottom: 8 }}>
+          {dirs.map((dir) => (
+            <button key={dir.name} className="mc-btn mc-btn--dir" disabled title={`Folder: ${dir.name}`}>
+              <Folder size={11} />
+              <span className="mc-btn-name">{dir.name}/</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {files.length > 0 && (
+        <div className="mc-grid">
+          {files.map((macro) => (
             <button
               key={macro.name}
-              style={btnStyle()}
+              className="mc-btn"
               onClick={() => runMacro(macro.name)}
               title={macro.name}
             >
-              <Play size={11} /> {macro.name.replace(/\.g$/i, '')}
+              <Play size={10} />
+              <span className="mc-btn-name">{macro.name.replace(/\.g$/i, '')}</span>
             </button>
           ))}
-        {macros
-          .filter((m) => m.type === 'd')
-          .map((dir) => (
-            <button
-              key={dir.name}
-              style={{ ...btnStyle(), opacity: 0.7 }}
-              title={`Folder: ${dir.name}`}
-              disabled
-            >
-              {dir.name}/
-            </button>
-          ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
