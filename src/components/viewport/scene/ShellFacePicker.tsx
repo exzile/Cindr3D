@@ -54,16 +54,15 @@ export default function ShellFacePicker() {
   const { scene: _scene } = useThree();
   useEffect(() => {
     const sceneRef = _scene;
+    const selectedMeshes = selectedMeshesRef.current;
     return () => {
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      selectedMeshesRef.current.forEach((mesh) => {
+      selectedMeshes.forEach((mesh) => {
         sceneRef.remove(mesh);
         mesh.geometry?.dispose?.();
       });
-      selectedMeshesRef.current.clear();
+      selectedMeshes.clear();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [_scene]);
   // Map from face ID to overlay mesh
   const selectedMeshesRef = useRef<Map<string, THREE.Mesh>>(new Map());
 

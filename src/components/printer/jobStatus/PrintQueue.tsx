@@ -10,7 +10,7 @@ export function PrintQueue() {
   const model = usePrinterStore((s) => s.model);
 
   useEffect(() => {
-    const handler = () => setQueue(loadQueue()); // eslint-disable-line react-hooks/set-state-in-effect -- sync with external localStorage/event
+    const handler = () => setQueue(loadQueue());
     window.addEventListener('print-queue-changed', handler);
     window.addEventListener('storage', handler);
     return () => {

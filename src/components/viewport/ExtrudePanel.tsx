@@ -126,7 +126,6 @@ export default function ExtrudePanel() {
       if (sk) opts.push({ id, label: sk.name, sketchId: id });
     }
     return opts;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allRelevant, selectedIds, sketches]);
 
   const selectedSketches = selectedIds

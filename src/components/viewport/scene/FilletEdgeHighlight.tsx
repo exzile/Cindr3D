@@ -51,22 +51,22 @@ export default function FilletEdgeHighlight() {
   const { scene: _scene } = useThree();
   useEffect(() => {
     const sceneRef = _scene;
+    const selectedLines = selectedLinesRef.current;
+    const selectedEdges = selectedEdgesDataRef.current;
     return () => {
       if (hoverLineRef.current) {
         sceneRef.remove(hoverLineRef.current);
         hoverLineRef.current.geometry.dispose();
         hoverLineRef.current = null;
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      selectedLinesRef.current.forEach((line) => {
+      selectedLines.forEach((line) => {
         sceneRef.remove(line);
         line.geometry.dispose();
       });
-      selectedLinesRef.current.clear();
-      selectedEdgesDataRef.current.clear();
+      selectedLines.clear();
+      selectedEdges.clear();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [_scene]);
 
   const handleHover = useCallback((result: EdgePickResult | null) => {
     hoverResultRef.current = result;
