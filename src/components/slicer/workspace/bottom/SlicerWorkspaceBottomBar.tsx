@@ -1,7 +1,13 @@
-import { Eye, EyeOff, Download, Send, Play, X } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import {
+  Eye, EyeOff, Download, Send, Play, Pause, X, Clapperboard,
+  SkipBack, RotateCcw, Gauge,
+} from 'lucide-react';
 import { useSlicerStore } from '../../../../store/slicerStore';
 import { usePrinterStore } from '../../../../store/printerStore';
 import './SlicerWorkspaceBottomBar.css';
+
+const SIM_SPEEDS = [1, 2, 5, 10, 25, 50, 100];
 
 export function SlicerWorkspaceBottomBar() {
   const sliceProgress = useSlicerStore((s) => s.sliceProgress);
@@ -9,29 +15,78 @@ export function SlicerWorkspaceBottomBar() {
   const plateObjects = useSlicerStore((s) => s.plateObjects);
   const previewMode = useSlicerStore((s) => s.previewMode);
   const previewLayer = useSlicerStore((s) => s.previewLayer);
+  const previewLayerStart = useSlicerStore((s) => s.previewLayerStart);
   const previewLayerMax = useSlicerStore((s) => s.previewLayerMax);
   const startSlice = useSlicerStore((s) => s.startSlice);
   const cancelSlice = useSlicerStore((s) => s.cancelSlice);
   const setPreviewMode = useSlicerStore((s) => s.setPreviewMode);
   const setPreviewLayer = useSlicerStore((s) => s.setPreviewLayer);
+  const setPreviewLayerStart = useSlicerStore((s) => s.setPreviewLayerStart);
+  const setPreviewLayerRange = useSlicerStore((s) => s.setPreviewLayerRange);
   const downloadGCode = useSlicerStore((s) => s.downloadGCode);
   const sendToPrinter = useSlicerStore((s) => s.sendToPrinter);
   const connected = usePrinterStore((s) => s.connected);
 
+  // Simulation
+  const simEnabled = useSlicerStore((s) => s.previewSimEnabled);
+  const simPlaying = useSlicerStore((s) => s.previewSimPlaying);
+  const simSpeed = useSlicerStore((s) => s.previewSimSpeed);
+  const simTime = useSlicerStore((s) => s.previewSimTime);
+  const setSimEnabled = useSlicerStore((s) => s.setPreviewSimEnabled);
+  const setSimPlaying = useSlicerStore((s) => s.setPreviewSimPlaying);
+  const setSimSpeed = useSlicerStore((s) => s.setPreviewSimSpeed);
+  const setSimTime = useSlicerStore((s) => s.setPreviewSimTime);
+  const resetSim = useSlicerStore((s) => s.resetPreviewSim);
+
+  const [sending, setSending] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [sendError, setSendError] = useState<string | null>(null);
+
   const isSlicing = sliceProgress.stage === 'preparing' || sliceProgress.stage === 'slicing' || sliceProgress.stage === 'generating';
   const hasResult = sliceResult !== null;
+  const totalPrintTime = sliceResult?.printTime ?? 0;
+
+  const handleSend = async () => {
+    setSending('sending');
+    setSendError(null);
+    try {
+      await sendToPrinter();
+      setSending('sent');
+      window.setTimeout(() => setSending('idle'), 2500);
+    } catch (err) {
+      setSending('error');
+      setSendError(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   const formatTime = (seconds: number) => {
+    if (!isFinite(seconds) || seconds < 0) seconds = 0;
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
     if (h > 0) return `${h}h ${m}m`;
-    return `${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
   };
 
   const formatLength = (mm: number) => {
     if (mm > 1000) return `${(mm / 1000).toFixed(2)}m`;
     return `${mm.toFixed(0)}mm`;
   };
+
+  // Dual-range slider: two overlapping range inputs, store enforces clamping.
+  const handleRangeMin = useCallback((v: number) => {
+    if (v > previewLayer) setPreviewLayerRange(previewLayer, previewLayer);
+    else setPreviewLayerStart(v);
+  }, [previewLayer, setPreviewLayerStart, setPreviewLayerRange]);
+
+  const handleRangeMax = useCallback((v: number) => {
+    if (v < previewLayerStart) setPreviewLayerRange(previewLayerStart, previewLayerStart);
+    else setPreviewLayer(v);
+  }, [previewLayerStart, setPreviewLayer, setPreviewLayerRange]);
+
+  // Percentage fill for the dual-range track.
+  const rangeLo = previewLayerMax > 0 ? (previewLayerStart / previewLayerMax) * 100 : 0;
+  const rangeHi = previewLayerMax > 0 ? (previewLayer / previewLayerMax) * 100 : 100;
 
   return (
     <div className="slicer-bottom-bar">
@@ -85,6 +140,7 @@ export function SlicerWorkspaceBottomBar() {
         <button
           className={`slicer-bottom-bar__preview-btn${previewMode === 'preview' ? ' is-active' : ''}`}
           onClick={() => setPreviewMode(previewMode === 'model' ? 'preview' : 'model')}
+          title="Toggle G-code layer preview"
         >
           {previewMode === 'preview' ? <Eye size={14} /> : <EyeOff size={14} />}
           Preview
@@ -92,19 +148,103 @@ export function SlicerWorkspaceBottomBar() {
       )}
 
       {previewMode === 'preview' && hasResult && (
-        <div className="slicer-bottom-bar__layer-slider">
-          <span className="slicer-bottom-bar__layer-label">Layer:</span>
-          <input
-            type="range"
-            min={0}
-            max={previewLayerMax}
-            value={previewLayer}
-            onChange={(e) => setPreviewLayer(parseInt(e.target.value))}
-            className="slicer-bottom-bar__layer-input"
-          />
+        <div
+          className="slicer-bottom-bar__layer-slider slicer-bottom-bar__layer-slider--range"
+          title="Drag handles to set start and end layer"
+        >
+          <span className="slicer-bottom-bar__layer-label">Layers:</span>
+          <div
+            className="slicer-bottom-bar__dualrange"
+            style={{
+              ['--lo' as string]: `${rangeLo}%`,
+              ['--hi' as string]: `${rangeHi}%`,
+            }}
+          >
+            <input
+              type="range"
+              min={0}
+              max={previewLayerMax}
+              value={previewLayerStart}
+              onChange={(e) => handleRangeMin(parseInt(e.target.value))}
+              aria-label="Start layer"
+            />
+            <input
+              type="range"
+              min={0}
+              max={previewLayerMax}
+              value={previewLayer}
+              onChange={(e) => handleRangeMax(parseInt(e.target.value))}
+              aria-label="End layer"
+            />
+          </div>
           <span className="slicer-bottom-bar__layer-count">
-            {previewLayer}/{previewLayerMax}
+            {previewLayerStart}–{previewLayer}/{previewLayerMax}
           </span>
+        </div>
+      )}
+
+      {previewMode === 'preview' && hasResult && (
+        <button
+          className={`slicer-bottom-bar__sim-btn${simEnabled ? ' is-active' : ''}`}
+          onClick={() => setSimEnabled(!simEnabled)}
+          title="Toggle nozzle simulation"
+        >
+          <Clapperboard size={14} /> Simulate
+        </button>
+      )}
+
+      {previewMode === 'preview' && hasResult && simEnabled && (
+        <div className="slicer-bottom-bar__sim-controls">
+          <button
+            className="slicer-bottom-bar__sim-ctrl"
+            onClick={() => { resetSim(); }}
+            title="Reset simulation (0:00)"
+          >
+            <SkipBack size={13} />
+          </button>
+          <button
+            className="slicer-bottom-bar__sim-ctrl is-primary"
+            onClick={() => setSimPlaying(!simPlaying)}
+            title={simPlaying ? 'Pause simulation' : 'Play simulation'}
+          >
+            {simPlaying ? <Pause size={13} /> : <Play size={13} />}
+          </button>
+          <label className="slicer-bottom-bar__sim-speed" title="Playback speed multiplier">
+            <Gauge size={12} />
+            <select
+              value={simSpeed}
+              onChange={(e) => setSimSpeed(Number(e.target.value))}
+            >
+              {SIM_SPEEDS.map((sp) => (
+                <option key={sp} value={sp}>{sp}×</option>
+              ))}
+            </select>
+          </label>
+          <div
+            className="slicer-bottom-bar__sim-scrub"
+            title="Drag to scrub through the print"
+          >
+            <input
+              type="range"
+              min={0}
+              max={totalPrintTime > 0 ? totalPrintTime : 1}
+              step={totalPrintTime > 0 ? totalPrintTime / 1000 : 0.001}
+              value={Math.min(simTime, totalPrintTime || 0)}
+              onChange={(e) => setSimTime(Number(e.target.value))}
+            />
+          </div>
+          <span className="slicer-bottom-bar__sim-time">
+            {formatTime(simTime)} / {formatTime(totalPrintTime)}
+          </span>
+          {simTime >= totalPrintTime && totalPrintTime > 0 && (
+            <button
+              className="slicer-bottom-bar__sim-ctrl"
+              onClick={() => { resetSim(); setSimPlaying(true); }}
+              title="Restart simulation"
+            >
+              <RotateCcw size={13} />
+            </button>
+          )}
         </div>
       )}
 
@@ -114,8 +254,17 @@ export function SlicerWorkspaceBottomBar() {
             <Download size={14} /> Export G-code
           </button>
           {connected && (
-            <button className="slicer-bottom-bar__btn slicer-bottom-bar__btn--accent" onClick={() => sendToPrinter()}>
-              <Send size={14} /> Send to Printer
+            <button
+              className={`slicer-bottom-bar__btn slicer-bottom-bar__btn--accent${sending === 'sending' ? ' is-sending' : ''}${sending === 'sent' ? ' is-sent' : ''}${sending === 'error' ? ' is-error' : ''}`}
+              onClick={handleSend}
+              disabled={sending === 'sending'}
+              title={sendError ?? undefined}
+            >
+              <Send size={14} />{' '}
+              {sending === 'sending' ? 'Sending…'
+                : sending === 'sent' ? 'Sent ✓'
+                : sending === 'error' ? 'Send failed'
+                : 'Send to Printer'}
             </button>
           )}
         </>

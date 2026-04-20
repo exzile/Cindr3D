@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { X, Save, RotateCcw, SaveAll, Loader2 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
+import { DuetInsertCommandMenu } from './config/DuetInsertCommandMenu';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -11,6 +12,10 @@ interface DuetFileEditorProps {
   onClose: () => void;
   /** When true, start with an empty editor instead of loading from disk. */
   isNew?: boolean;
+  /** When true, render inline (no modal overlay) filling its parent. */
+  inline?: boolean;
+  /** Notify the parent whenever the dirty state changes. */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -300,7 +305,7 @@ const editorStyles = {
 // Component
 // ---------------------------------------------------------------------------
 
-export default function DuetFileEditor({ filePath, onClose, isNew = false }: DuetFileEditorProps) {
+export default function DuetFileEditor({ filePath, onClose, isNew = false, inline = false, onDirtyChange }: DuetFileEditorProps) {
   const service = usePrinterStore((s) => s.service);
   const setError = usePrinterStore((s) => s.setError);
 
@@ -317,6 +322,41 @@ export default function DuetFileEditor({ filePath, onClose, isNew = false }: Due
 
   const fileName = filePath.split('/').pop() || filePath;
   const hasChanges = content !== originalContent;
+
+  // Notify parent of dirty-state changes (used to render unsaved dots in
+  // the adjacent file list).
+  useEffect(() => {
+    onDirtyChange?.(hasChanges);
+  }, [hasChanges, onDirtyChange]);
+
+  // Insert a G-code snippet at the current cursor location (or selection).
+  const insertSnippet = useCallback((snippet: string) => {
+    const ta = textareaRef.current;
+    if (!ta) {
+      // Fall back to appending if the textarea isn't mounted yet.
+      setContent((prev) => prev + (prev.endsWith('\n') || prev.length === 0 ? '' : '\n') + snippet + '\n');
+      return;
+    }
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    // Start a snippet on its own line for readability.
+    const before = content.substring(0, start);
+    const after = content.substring(end);
+    const needsLeadingNewline = before.length > 0 && !before.endsWith('\n');
+    const needsTrailingNewline = !after.startsWith('\n');
+    const inserted =
+      (needsLeadingNewline ? '\n' : '') +
+      snippet +
+      (needsTrailingNewline ? '\n' : '');
+    const next = before + inserted + after;
+    setContent(next);
+    // Place the cursor at the end of the inserted snippet.
+    const caret = start + inserted.length;
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = caret;
+    });
+  }, [content]);
 
   // Line count
   const lineCount = useMemo(() => content.split('\n').length, [content]);
@@ -458,113 +498,168 @@ export default function DuetFileEditor({ filePath, onClose, isNew = false }: Due
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  return (
-    <div style={editorStyles.overlay} onClick={handleClose}>
-      <div style={editorStyles.modal} onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div style={editorStyles.header}>
-          <div style={{ display: 'flex', alignItems: 'center', flex: 1, overflow: 'hidden' }}>
-            <span style={editorStyles.headerTitle}>
-              {fileName}
-              {hasChanges && <span style={editorStyles.unsavedDot} title="Unsaved changes" />}
-            </span>
-            <span style={editorStyles.headerPath}>{filePath}</span>
-          </div>
-          <div style={editorStyles.headerBtns}>
-            <button
-              style={editorStyles.btnPrimary}
-              onClick={handleSave}
-              disabled={saving || !hasChanges}
-              title="Save (Ctrl+S)"
-            >
-              {saving ? <Loader2 size={13} className="spin" /> : <Save size={13} />}
-              Save
-            </button>
-            <button
-              style={editorStyles.btn}
-              onClick={() => {
-                setShowSaveAs(true);
-                setSaveAsPath(filePath);
-              }}
-              disabled={saving}
-              title="Save As (Ctrl+Shift+S)"
-            >
-              <SaveAll size={13} />
-              Save As
-            </button>
-            <button
-              style={editorStyles.btn}
-              onClick={handleRevert}
-              disabled={!hasChanges}
-              title="Revert to original"
-            >
-              <RotateCcw size={13} />
-              Revert
-            </button>
-            <button style={editorStyles.btnDanger} onClick={handleClose} title="Close">
-              <X size={13} />
-              Close
-            </button>
-          </div>
+  const editorBody = (
+    <>
+      {/* Header */}
+      <div style={editorStyles.header}>
+        <div style={{ display: 'flex', alignItems: 'center', flex: 1, overflow: 'hidden', minWidth: 0 }}>
+          <span style={editorStyles.headerTitle}>
+            {fileName}
+            {hasChanges && <span style={editorStyles.unsavedDot} title="Unsaved changes" />}
+          </span>
+          <span style={editorStyles.headerPath}>{filePath}</span>
         </div>
-
-        {/* Editor body */}
-        {loading ? (
-          <div style={editorStyles.loading}>
-            <Loader2 size={18} className="spin" />
-            Loading file...
-          </div>
-        ) : (
-          <div style={editorStyles.editorContainer}>
-            {/* Line numbers */}
-            <div ref={lineNumbersRef} style={editorStyles.lineNumbers}>
-              {Array.from({ length: lineCount }, (_, i) => (
-                <div key={i} style={editorStyles.lineNumber}>
-                  {i + 1}
-                </div>
-              ))}
-            </div>
-
-            {/* Textarea with syntax highlighting overlay */}
-            <div style={editorStyles.textareaWrapper}>
-              <pre
-                ref={highlightRef}
-                style={editorStyles.highlightPre}
-                dangerouslySetInnerHTML={{ __html: highlightedHtml + '\n' }}
-                aria-hidden
-              />
-              <textarea
-                ref={textareaRef}
-                style={{
-                  ...editorStyles.textarea,
-                  color: 'transparent',
-                  WebkitTextFillColor: 'transparent',
-                }}
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                onScroll={handleScroll}
-                onKeyDown={handleKeyDown}
-                spellCheck={false}
-                autoCapitalize="off"
-                autoCorrect="off"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Footer */}
-        <div style={editorStyles.footer}>
-          <span>
-            {lineCount} lines &middot; {charCount.toLocaleString()} chars &middot;{' '}
-            {formatSize(fileSize)}
-          </span>
-          <span>
-            {hasChanges ? 'Modified' : 'Saved'} &middot; {fileName}
-          </span>
+        <div style={editorStyles.headerBtns}>
+          <DuetInsertCommandMenu filePath={filePath} onInsert={insertSnippet} />
+          <button
+            style={editorStyles.btnPrimary}
+            onClick={handleSave}
+            disabled={saving || !hasChanges}
+            title="Save (Ctrl+S)"
+          >
+            {saving ? <Loader2 size={13} className="spin" /> : <Save size={13} />}
+            Save
+          </button>
+          <button
+            style={editorStyles.btn}
+            onClick={() => {
+              setShowSaveAs(true);
+              setSaveAsPath(filePath);
+            }}
+            disabled={saving}
+            title="Save As (Ctrl+Shift+S)"
+          >
+            <SaveAll size={13} />
+            Save As
+          </button>
+          <button
+            style={editorStyles.btn}
+            onClick={handleRevert}
+            disabled={!hasChanges}
+            title="Revert to original"
+          >
+            <RotateCcw size={13} />
+            Revert
+          </button>
+          <button style={editorStyles.btnDanger} onClick={handleClose} title={inline ? 'Close file' : 'Close'}>
+            <X size={13} />
+            Close
+          </button>
         </div>
       </div>
 
-      {/* Save As dialog */}
+      {/* Editor body */}
+      {loading ? (
+        <div style={editorStyles.loading}>
+          <Loader2 size={18} className="spin" />
+          Loading file...
+        </div>
+      ) : (
+        <div style={editorStyles.editorContainer}>
+          {/* Line numbers */}
+          <div ref={lineNumbersRef} style={editorStyles.lineNumbers}>
+            {Array.from({ length: lineCount }, (_, i) => (
+              <div key={i} style={editorStyles.lineNumber}>
+                {i + 1}
+              </div>
+            ))}
+          </div>
+
+          {/* Textarea with syntax highlighting overlay */}
+          <div style={editorStyles.textareaWrapper}>
+            <pre
+              ref={highlightRef}
+              style={editorStyles.highlightPre}
+              dangerouslySetInnerHTML={{ __html: highlightedHtml + '\n' }}
+              aria-hidden
+            />
+            <textarea
+              ref={textareaRef}
+              style={{
+                ...editorStyles.textarea,
+                color: 'transparent',
+                WebkitTextFillColor: 'transparent',
+              }}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              onScroll={handleScroll}
+              onKeyDown={handleKeyDown}
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
+      <div style={editorStyles.footer}>
+        <span>
+          {lineCount} lines &middot; {charCount.toLocaleString()} chars &middot;{' '}
+          {formatSize(fileSize)}
+        </span>
+        <span>
+          {hasChanges ? 'Modified' : 'Saved'} &middot; {fileName}
+        </span>
+      </div>
+    </>
+  );
+
+  const saveAsDialog = showSaveAs && (
+    <div style={editorStyles.saveAsOverlay} onClick={() => setShowSaveAs(false)}>
+      <div style={editorStyles.saveAsDialog} onClick={(e) => e.stopPropagation()}>
+        <div style={editorStyles.saveAsTitle}>Save As</div>
+        <input
+          style={editorStyles.saveAsInput}
+          value={saveAsPath}
+          onChange={(e) => setSaveAsPath(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && saveAsPath.trim()) handleSaveAs(saveAsPath.trim());
+            if (e.key === 'Escape') setShowSaveAs(false);
+          }}
+          autoFocus
+          placeholder="Full file path (e.g. 0:/sys/config.g)"
+        />
+        <div style={editorStyles.saveAsBtns}>
+          <button style={editorStyles.btn} onClick={() => setShowSaveAs(false)}>
+            Cancel
+          </button>
+          <button
+            style={editorStyles.btnPrimary}
+            onClick={() => saveAsPath.trim() && handleSaveAs(saveAsPath.trim())}
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (inline) {
+    const inlineStyle: React.CSSProperties = {
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      width: '100%',
+      overflow: 'hidden',
+      backgroundColor: '#1e1e1e',
+      color: '#d4d4d4',
+    };
+    return (
+      <div style={inlineStyle}>
+        {editorBody}
+        {saveAsDialog}
+      </div>
+    );
+  }
+
+  return (
+    <div style={editorStyles.overlay} onClick={handleClose}>
+      <div style={editorStyles.modal} onClick={(e) => e.stopPropagation()}>
+        {editorBody}
+      </div>
+
+      {/* Save As dialog (modal mode) */}
       {showSaveAs && (
         <div style={editorStyles.saveAsOverlay} onClick={() => setShowSaveAs(false)}>
           <div style={editorStyles.saveAsDialog} onClick={(e) => e.stopPropagation()}>

@@ -248,7 +248,7 @@ export class DuetService {
 
   private startPolling(): void {
     if (this.pollTimer) return;
-    console.log('[DuetService] startPolling()');
+    if (import.meta.env.DEV) console.log('[DuetService] startPolling()');
     this.pollTimer = setInterval(async () => {
       if (!this.connected) {
         this.stopPolling();
@@ -262,7 +262,7 @@ export class DuetService {
         this.applyModelPatch(patch as Record<string, unknown>);
         this.emit('modelUpdate', this.objectModel);
       } catch (err) {
-        console.error('[DuetService] poll error', err);
+        if (import.meta.env.DEV) console.error('[DuetService] poll error', err);
         this.emit('error', err);
       } finally {
         this.pollInFlight = false;

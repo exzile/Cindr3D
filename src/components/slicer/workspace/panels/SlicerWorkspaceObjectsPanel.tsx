@@ -5,23 +5,8 @@ import { useSlicerStore } from '../../../../store/slicerStore';
 import { useCADStore } from '../../../../store/cadStore';
 import type { PlateObject } from '../../../../types/slicer';
 import { normalizeRotationRadians, normalizeScale } from '../../../../utils/slicerTransforms';
+import { NON_BODY_FEATURE_TYPES } from '../../slicerFeatureTypes';
 import './SlicerWorkspaceObjectsPanel.css';
-
-// Feature types that don't produce physical bodies and should not appear in
-// the "Add from CAD" menu inside the slicer workspace.
-const NON_BODY_FEATURE_TYPES = new Set([
-  'sketch',
-  'construction-plane',
-  'construction-axis',
-  'isoparametric',
-  'decal',
-  'thread',
-  'joint',
-  'joint-origin',
-  'contact-set',
-  'rigid-group',
-  'motion-link',
-]);
 
 export function SlicerWorkspaceObjectsPanel() {
   const plateObjects = useSlicerStore((s) => s.plateObjects);
@@ -145,10 +130,10 @@ export function SlicerWorkspaceObjectsPanel() {
         {plateObjects.map((obj) => (
           <div key={obj.id} onClick={() => selectPlateObject(obj.id)} className={`slicer-workspace-objects-panel__row ${obj.id === selectedId ? 'is-selected' : ''}`}>
             <div>
-              <div className="slicer-workspace-objects-panel__name">{obj.name}</div>
+              <div className="slicer-workspace-objects-panel__name" title={obj.name}>{obj.name}</div>
               <div className="slicer-workspace-objects-panel__size">{sizeStr(obj)}</div>
             </div>
-            <button title="Remove" className="slicer-workspace-objects-panel__remove" onClick={(e) => { e.stopPropagation(); removeFromPlate(obj.id); }}>
+            <button title={`Remove ${obj.name}`} className="slicer-workspace-objects-panel__remove" onClick={(e) => { e.stopPropagation(); removeFromPlate(obj.id); }}>
               <Trash2 size={14} />
             </button>
           </div>

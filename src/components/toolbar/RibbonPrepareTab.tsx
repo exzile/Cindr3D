@@ -5,6 +5,7 @@ import {
 import { useCADStore } from '../../store/cadStore';
 import { useSlicerStore } from '../../store/slicerStore';
 import { usePrinterStore } from '../../store/printerStore';
+import { NON_BODY_FEATURE_TYPES } from '../slicer/slicerFeatureTypes';
 import { RibbonSection } from './FlyoutMenu';
 import { ToolButton } from './ToolButton';
 import type { PrepareTab } from './toolbar.types';
@@ -18,28 +19,43 @@ interface RibbonPrepareTabProps {
 
 export function RibbonPrepareTab({ prepareTab }: RibbonPrepareTabProps) {
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
+  const features         = useCADStore((s) => s.features);
+  const selectedFeatureId = useCADStore((s) => s.selectedFeatureId);
   const printerConnected = usePrinterStore((s) => s.connected);
   const sliceProgress    = useSlicerStore((s) => s.sliceProgress);
   const sliceResult      = useSlicerStore((s) => s.sliceResult);
   const previewMode      = useSlicerStore((s) => s.previewMode);
 
   if (prepareTab === 'plate') {
+    const addableFeatures = features.filter((f) =>
+      !NON_BODY_FEATURE_TYPES.has(f.type) && !f.suppressed
+    );
+
+    const handleAddModel = (id?: string) => {
+      const target = (id && addableFeatures.find((f) => f.id === id))
+        ?? (selectedFeatureId && addableFeatures.find((f) => f.id === selectedFeatureId))
+        ?? addableFeatures[0];
+      if (!target) {
+        setStatusMessage('No models to add. Create a design first.');
+        return;
+      }
+      useSlicerStore.getState().addToPlate(target.id, target.name, (target as { mesh?: unknown }).mesh);
+      setStatusMessage(`Added "${target.name}" to build plate`);
+    };
+
     return (
       <>
         <RibbonSection title="BUILD PLATE">
           <ToolButton
             icon={<Box size={ICON_LG} />}
             label="Add Model"
-            onClick={() => {
-              const features = useCADStore.getState().features;
-              if (features.length === 0) {
-                setStatusMessage('No models to add. Create a design first.');
-              } else {
-                const f = features[0];
-                useSlicerStore.getState().addToPlate(f.id, f.name, f.mesh);
-                setStatusMessage(`Added "${f.name}" to build plate`);
-              }
-            }}
+            onClick={() => handleAddModel()}
+            disabled={addableFeatures.length === 0}
+            dropdown={addableFeatures.length > 0 ? addableFeatures.map((f) => ({
+              label: f.name,
+              icon: <Box size={12} />,
+              onClick: () => handleAddModel(f.id),
+            })) : undefined}
             large
             colorClass="icon-blue"
           />
@@ -144,15 +160,23 @@ export function RibbonPrepareTab({ prepareTab }: RibbonPrepareTabProps) {
             icon={<Download size={ICON_LG} />}
             label="Save G-code"
             onClick={() => useSlicerStore.getState().downloadGCode()}
-            disabled={!useSlicerStore.getState().sliceResult}
+            disabled={!sliceResult}
             large
             colorClass="icon-blue"
           />
           <ToolButton
             icon={<Printer size={ICON_LG} />}
             label="Send to Printer"
-            onClick={() => useSlicerStore.getState().sendToPrinter()}
-            disabled={!useSlicerStore.getState().sliceResult || !printerConnected}
+            onClick={() => {
+              setStatusMessage('Sending G-code to printer…');
+              useSlicerStore.getState().sendToPrinter()
+                .then(() => setStatusMessage('G-code sent to printer'))
+                .catch((err: unknown) => {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  setStatusMessage(`Send to printer failed: ${msg}`);
+                });
+            }}
+            disabled={!sliceResult || !printerConnected}
             large
             colorClass="icon-green"
           />

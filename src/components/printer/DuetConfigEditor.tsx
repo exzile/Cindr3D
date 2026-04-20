@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import {
   FileCode2, FolderOpen, ChevronRight, Settings2,
-  Home, Layers, Play, Zap, Wrench, Plus,
+  Home, Layers, Play, Zap, Wrench, Plus, FileText,
 } from 'lucide-react';
 import DuetFileEditor from './DuetFileEditor';
 import { usePrinterStore } from '../../store/printerStore';
-import { colors as COLORS } from '../../utils/theme';
+import './config/DuetConfigEditor.css';
 
 // ---------------------------------------------------------------------------
 // Config file catalogue
@@ -89,121 +89,6 @@ const CONFIG_GROUPS: ConfigGroup[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
-const s = {
-  root: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    height: '100%',
-    overflow: 'hidden',
-    backgroundColor: COLORS.bg,
-    color: COLORS.text,
-    fontFamily: "'Inter', 'Segoe UI', sans-serif",
-  },
-  toolbar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '10px 16px',
-    borderBottom: `1px solid ${COLORS.panelBorder}`,
-    flexShrink: 0,
-  },
-  toolbarTitle: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: COLORS.text,
-    flex: 1,
-  },
-  browseBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 5,
-    padding: '5px 10px',
-    fontSize: 12,
-    border: `1px solid ${COLORS.panelBorder}`,
-    borderRadius: 4,
-    background: COLORS.surface,
-    color: COLORS.text,
-    cursor: 'pointer',
-  },
-  scroll: {
-    flex: 1,
-    overflowY: 'auto' as const,
-    padding: '12px 16px',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 20,
-  },
-  group: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 2,
-  },
-  groupHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    fontSize: 10,
-    fontWeight: 700,
-    color: COLORS.textDim,
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.07em',
-    marginBottom: 4,
-    userSelect: 'none' as const,
-  },
-  fileRow: (active: boolean, connected: boolean): React.CSSProperties => ({
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    padding: '7px 10px',
-    borderRadius: 6,
-    cursor: connected ? 'pointer' : 'not-allowed',
-    background: active ? `${COLORS.accent}18` : 'transparent',
-    border: `1px solid ${active ? COLORS.accent : 'transparent'}`,
-    transition: 'background 0.1s, border-color 0.1s',
-    opacity: connected ? 1 : 0.5,
-  }),
-  fileIcon: {
-    color: COLORS.textDim,
-    flexShrink: 0,
-  },
-  fileInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-  fileName: {
-    fontSize: 12,
-    fontWeight: 500,
-    color: COLORS.text,
-    fontFamily: "'Consolas', 'JetBrains Mono', monospace",
-  },
-  fileDesc: {
-    fontSize: 11,
-    color: COLORS.textDim,
-    marginTop: 1,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap' as const,
-  },
-  chevron: {
-    color: COLORS.textDim,
-    flexShrink: 0,
-  },
-  notConnected: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    flex: 1,
-    color: COLORS.textDim,
-    fontSize: 13,
-  },
-};
-
-// ---------------------------------------------------------------------------
 // Browse modal — lets the user type an arbitrary path
 // ---------------------------------------------------------------------------
 
@@ -215,7 +100,7 @@ function BrowseModal({ onOpen, onClose }: { onOpen: (path: string) => void; onCl
       onClick={onClose}
     >
       <div
-        style={{ background: '#2d2d2d', border: '1px solid #555', borderRadius: 6, padding: 20, minWidth: 420, color: '#ccc' }}
+        style={{ background: '#2d2d2d', border: '1px solid #555', borderRadius: 8, padding: 20, minWidth: 420, color: '#ccc', boxShadow: '0 12px 40px rgba(0,0,0,0.5)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Open file</div>
@@ -252,64 +137,106 @@ export default function DuetConfigEditor() {
   const connected = usePrinterStore((s) => s.connected);
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [showBrowse, setShowBrowse] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
   const handleOpen = (path: string) => {
     if (!connected) return;
+    if (dirty && openPath !== path && !confirm('You have unsaved changes. Switch files anyway?')) return;
     setShowBrowse(false);
     setOpenPath(path);
+    setDirty(false);
   };
 
   return (
-    <div style={s.root}>
+    <div className="duet-config-editor">
       {/* Toolbar */}
-      <div style={s.toolbar}>
-        <FileCode2 size={15} style={{ color: COLORS.textDim }} />
-        <span style={s.toolbarTitle}>Configuration Files</span>
-        <button style={s.browseBtn} onClick={() => setShowBrowse(true)} disabled={!connected} title="Open any file by path">
+      <div className="duet-config-editor__toolbar">
+        <div className="duet-config-editor__toolbar-title">
+          <FileCode2 size={15} />
+          Configuration Files
+        </div>
+        <button
+          className="duet-config-editor__browse-btn"
+          onClick={() => setShowBrowse(true)}
+          disabled={!connected}
+          title="Open any file by path"
+        >
           <Plus size={13} /> Browse&hellip;
         </button>
       </div>
 
       {!connected ? (
-        <div style={s.notConnected}>
+        <div className="duet-config-editor__not-connected">
           <FolderOpen size={32} />
           <span>Connect to a Duet board to edit configuration files</span>
         </div>
       ) : (
-        <div style={s.scroll}>
-          {CONFIG_GROUPS.map((group) => (
-            <div key={group.id} style={s.group}>
-              <div style={s.groupHeader}>
-                <group.Icon size={11} />
-                {group.label}
-              </div>
-              {group.files.map((file) => (
-                <div
-                  key={file.path}
-                  style={s.fileRow(openPath === file.path, connected)}
-                  onClick={() => handleOpen(file.path)}
-                  role="button"
-                  tabIndex={connected ? 0 : -1}
-                  onKeyDown={(e) => e.key === 'Enter' && handleOpen(file.path)}
-                >
-                  <FileCode2 size={14} style={s.fileIcon} />
-                  <div style={s.fileInfo}>
-                    <div style={s.fileName}>{file.label}</div>
-                    <div style={s.fileDesc}>{file.desc}</div>
-                  </div>
-                  <ChevronRight size={13} style={s.chevron} />
+        <div className="duet-config-editor__body">
+          {/* File bar */}
+          <div className="duet-config-editor__files">
+            {CONFIG_GROUPS.map((group) => (
+              <div key={group.id} className="duet-config-editor__group">
+                <div className="duet-config-editor__group-header">
+                  <group.Icon size={11} />
+                  {group.label}
                 </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
+                {group.files.map((file) => {
+                  const active = openPath === file.path;
+                  return (
+                    <div
+                      key={file.path}
+                      className={
+                        'duet-config-editor__file-row' +
+                        (active ? ' is-active' : '') +
+                        (active && dirty ? ' is-dirty' : '')
+                      }
+                      onClick={() => handleOpen(file.path)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleOpen(file.path); }}
+                    >
+                      <FileCode2 size={14} className="duet-config-editor__file-icon" />
+                      <div className="duet-config-editor__file-info">
+                        <div className="duet-config-editor__file-name">{file.label}</div>
+                        <div className="duet-config-editor__file-desc">{file.desc}</div>
+                      </div>
+                      {!active && (
+                        <ChevronRight size={13} className="duet-config-editor__chevron" />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
 
-      {openPath && (
-        <DuetFileEditor
-          filePath={openPath}
-          onClose={() => setOpenPath(null)}
-        />
+          {/* Editor pane */}
+          <div className="duet-config-editor__editor-pane">
+            {openPath ? (
+              <DuetFileEditor
+                key={openPath}
+                filePath={openPath}
+                inline
+                onClose={() => {
+                  if (dirty && !confirm('You have unsaved changes. Close anyway?')) return;
+                  setOpenPath(null);
+                  setDirty(false);
+                }}
+                onDirtyChange={setDirty}
+              />
+            ) : (
+              <div className="duet-config-editor__placeholder">
+                <FileText size={36} className="duet-config-editor__placeholder-icon" />
+                <div>Select a file on the left to start editing.</div>
+                <div style={{ fontSize: 11, opacity: 0.75, maxWidth: 360, lineHeight: 1.5 }}>
+                  Use <strong>Insert</strong> inside the editor to add commands
+                  tailored to the active file — e.g. probing for <code>bed.g</code>,
+                  kinematics for <code>config.g</code>.
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {showBrowse && (
