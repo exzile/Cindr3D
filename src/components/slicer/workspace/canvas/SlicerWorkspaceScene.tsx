@@ -1,35 +1,49 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Line, OrbitControls, Text, TransformControls } from '@react-three/drei';
-import type { ThreeEvent } from '@react-three/fiber';
+import { useThree, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useSlicerStore } from '../../../../store/slicerStore';
 import type { PlateObject, SliceResult } from '../../../../types/slicer';
 import { normalizeRotationRadians, normalizeScale } from '../../../../utils/slicerTransforms';
 
 function BuildPlateGrid({ sizeX, sizeY }: { sizeX: number; sizeY: number }) {
-  const linesX: [number, number, number][][] = [];
-  const linesY: [number, number, number][][] = [];
+  // Pack all grid lines into a single BufferGeometry so the GPU draws them
+  // in one call instead of one draw call per line (which was 60+ on a 300mm bed).
+  const gridGeo = useMemo(() => {
+    const verts: number[] = [];
+    for (let x = 0; x <= sizeX; x += 10) {
+      verts.push(x, 0, 0, x, sizeY, 0);
+    }
+    for (let y = 0; y <= sizeY; y += 10) {
+      verts.push(0, y, 0, sizeX, y, 0);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    return geo;
+  }, [sizeX, sizeY]);
+  useEffect(() => () => { gridGeo.dispose(); }, [gridGeo]);
 
-  for (let x = 0; x <= sizeX; x += 10) {
-    linesX.push([[x, 0, 0], [x, sizeY, 0]]);
-  }
-  for (let y = 0; y <= sizeY; y += 10) {
-    linesY.push([[0, y, 0], [sizeY > 0 ? sizeX : 0, y, 0]]);
-  }
+  const borderGeo = useMemo(() => {
+    const pts = [
+      0, 0, 0, sizeX, 0, 0,
+      sizeX, 0, 0, sizeX, sizeY, 0,
+      sizeX, sizeY, 0, 0, sizeY, 0,
+      0, sizeY, 0, 0, 0, 0,
+    ];
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    return geo;
+  }, [sizeX, sizeY]);
+  useEffect(() => () => { borderGeo.dispose(); }, [borderGeo]);
 
   return (
     <group>
-      {linesX.map((pts, i) => (
-        <Line key={`gx${i}`} points={pts} color="#2a2a4a" lineWidth={0.5} />
-      ))}
-      {linesY.map((pts, i) => (
-        <Line key={`gy${i}`} points={pts} color="#2a2a4a" lineWidth={0.5} />
-      ))}
-      <Line
-        points={[[0, 0, 0], [sizeX, 0, 0], [sizeX, sizeY, 0], [0, sizeY, 0], [0, 0, 0]]}
-        color="#4a4a6a"
-        lineWidth={1.5}
-      />
+      <lineSegments geometry={gridGeo}>
+        <lineBasicMaterial color="#2a2a4a" />
+      </lineSegments>
+      <lineSegments geometry={borderGeo}>
+        <lineBasicMaterial color="#4a4a6a" />
+      </lineSegments>
     </group>
   );
 }
@@ -171,6 +185,21 @@ function PlateObjectMesh({
   );
 }
 
+const MOVE_TYPE_COLORS: Record<string, THREE.Color> = {
+  'wall-outer': new THREE.Color('#ff8844'),
+  'wall-inner': new THREE.Color('#ffbb66'),
+  infill:       new THREE.Color('#44aaff'),
+  'top-bottom': new THREE.Color('#44ff88'),
+  support:      new THREE.Color('#ff44ff'),
+  skirt:        new THREE.Color('#aaaaaa'),
+  brim:         new THREE.Color('#aaaaaa'),
+  raft:         new THREE.Color('#888888'),
+  bridge:       new THREE.Color('#ff4444'),
+  ironing:      new THREE.Color('#88ff88'),
+  travel:       new THREE.Color('#666666'),
+};
+const FALLBACK_COLOR = new THREE.Color('#ffffff');
+
 function InlineGCodePreview({
   sliceResult,
   currentLayer,
@@ -182,29 +211,15 @@ function InlineGCodePreview({
   showTravel: boolean;
   colorMode: 'type' | 'speed' | 'flow';
 }) {
-  const moveTypeColors: Record<string, string> = {
-    'wall-outer': '#ff8844',
-    'wall-inner': '#ffbb66',
-    infill: '#44aaff',
-    'top-bottom': '#44ff88',
-    support: '#ff44ff',
-    skirt: '#aaaaaa',
-    brim: '#aaaaaa',
-    raft: '#888888',
-    bridge: '#ff4444',
-    ironing: '#88ff88',
-    travel: '#666666',
-  };
-
-  const visibleLayers = sliceResult.layers.filter((l) => l.layerIndex <= currentLayer);
-
-  return (
-    <group>
-      {visibleLayers.map((layer) => {
+  // Recompute layer geometry only when the relevant inputs actually change.
+  const layerData = useMemo(() => {
+    return sliceResult.layers
+      .filter((l) => l.layerIndex <= currentLayer)
+      .map((layer) => {
         const extrusions: [number, number, number][] = [];
         const travels: [number, number, number][] = [];
-
         const extColors: THREE.Color[] = [];
+
         for (const move of layer.moves) {
           if (move.type === 'travel') {
             if (showTravel) {
@@ -214,33 +229,41 @@ function InlineGCodePreview({
           } else {
             extrusions.push([move.from.x, move.from.y, layer.z]);
             extrusions.push([move.to.x, move.to.y, layer.z]);
-            const c = colorMode === 'type'
-              ? moveTypeColors[move.type] || '#ffffff'
-              : colorMode === 'speed'
-                ? `hsl(${Math.max(0, 240 - move.speed * 2)}, 80%, 55%)`
-                : `hsl(${Math.max(0, 120 - move.extrusion * 100)}, 80%, 55%)`;
-            const col = new THREE.Color(c);
-            extColors.push(col);
-            extColors.push(col);
+            let col: THREE.Color;
+            if (colorMode === 'type') {
+              col = MOVE_TYPE_COLORS[move.type] ?? FALLBACK_COLOR;
+            } else if (colorMode === 'speed') {
+              col = new THREE.Color(`hsl(${Math.max(0, 240 - move.speed * 2)}, 80%, 55%)`);
+            } else {
+              col = new THREE.Color(`hsl(${Math.max(0, 120 - move.extrusion * 100)}, 80%, 55%)`);
+            }
+            extColors.push(col, col);
           }
         }
 
-        return (
-          <group key={layer.layerIndex}>
-            {extrusions.length > 1 && (
-              <Line points={extrusions} vertexColors={extColors} lineWidth={1.2} />
-            )}
-            {travels.length > 1 && (
-              <Line points={travels} color="#333355" lineWidth={0.3} />
-            )}
-          </group>
-        );
-      })}
+        return { layerIndex: layer.layerIndex, extrusions, travels, extColors };
+      });
+  }, [sliceResult, currentLayer, showTravel, colorMode]);
+
+  return (
+    <group>
+      {layerData.map(({ layerIndex, extrusions, travels, extColors }) => (
+        <group key={layerIndex}>
+          {extrusions.length > 1 && (
+            <Line points={extrusions} vertexColors={extColors} lineWidth={1.2} />
+          )}
+          {travels.length > 1 && (
+            <Line points={travels} color="#333355" lineWidth={0.3} />
+          )}
+        </group>
+      ))}
     </group>
   );
 }
 
 export function SlicerWorkspaceScene() {
+  const { invalidate } = useThree();
+
   const printerProfile = useSlicerStore((s) => s.getActivePrinterProfile());
   const materialProfile = useSlicerStore((s) => s.getActiveMaterialProfile());
   const plateObjects = useSlicerStore((s) => s.plateObjects);
@@ -253,6 +276,13 @@ export function SlicerWorkspaceScene() {
   const previewLayer = useSlicerStore((s) => s.previewLayer);
   const previewShowTravel = useSlicerStore((s) => s.previewShowTravel);
   const previewColorMode = useSlicerStore((s) => s.previewColorMode);
+
+  // When any visible state changes, ask R3F to render one new frame.
+  // Without this, frameloop="demand" would never repaint after store updates.
+  useEffect(() => { invalidate(); }, [
+    invalidate, plateObjects, selectedId, previewMode, sliceResult,
+    previewLayer, previewShowTravel, previewColorMode, transformMode,
+  ]);
 
   const bv = printerProfile?.buildVolume ?? { x: 220, y: 220, z: 250 };
 

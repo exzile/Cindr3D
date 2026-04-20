@@ -492,7 +492,6 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
         // mid-flight (e.g. user clicked disconnect before initial fetch landed).
         const currentService = get().service;
         if (currentService !== null && currentService !== service) return;
-        console.log('[printerStore] modelUpdate received', { tools: model.tools?.length, heaters: model.heat?.heaters?.length });
         const state = get();
         const now = Date.now();
 

@@ -249,10 +249,7 @@ export class Slicer {
 
       this.reportProgress('slicing', (li / totalLayers) * 80, li, totalLayers, `Slicing layer ${li + 1}/${totalLayers}...`);
 
-      // Yield to UI periodically
-      if (li % 10 === 0) {
-        await this.yieldToUI();
-      }
+      await this.yieldToUI();
 
       // ----- 4a. Compute contours via triangle-plane intersection -----
       const segments = this.sliceTrianglesAtZ(triangles, sliceZ, offsetX, offsetY, offsetZ);
@@ -694,43 +691,65 @@ export class Slicer {
   private connectSegments(segments: Segment[]): THREE.Vector2[][] {
     if (segments.length === 0) return [];
 
-    const contours: THREE.Vector2[][] = [];
+    // O(n) connection via hash map: quantize each endpoint to a grid key so
+    // we can find the next connecting segment in O(1) instead of scanning all
+    // remaining segments on every step (the old O(n²) approach stalled on
+    // complex cross-sections with thousands of segments).
+    const GRID = 0.01; // quantisation cell size (same as old epsilon)
+    const key = (p: THREE.Vector2) =>
+      `${Math.round(p.x / GRID)},${Math.round(p.y / GRID)}`;
+
+    // adjacencyMap: endpoint-key → list of { segIndex, isA }
+    // isA=true means this segment's 'a' endpoint hashes to this key
+    const adjacency = new Map<string, Array<{ idx: number; isA: boolean }>>();
+    const addEndpoint = (p: THREE.Vector2, idx: number, isA: boolean) => {
+      const k = key(p);
+      let list = adjacency.get(k);
+      if (!list) { list = []; adjacency.set(k, list); }
+      list.push({ idx, isA });
+    };
+
+    for (let i = 0; i < segments.length; i++) {
+      addEndpoint(segments[i].a, i, true);
+      addEndpoint(segments[i].b, i, false);
+    }
+
     const used = new Set<number>();
-    const epsilon = 0.01; // tolerance for connecting endpoints
+    const contours: THREE.Vector2[][] = [];
+
+    const removeFromMap = (p: THREE.Vector2, idx: number) => {
+      const k = key(p);
+      const list = adjacency.get(k);
+      if (!list) return;
+      const pos = list.findIndex((e) => e.idx === idx);
+      if (pos !== -1) list.splice(pos, 1);
+    };
 
     for (let i = 0; i < segments.length; i++) {
       if (used.has(i)) continue;
 
       const contour: THREE.Vector2[] = [segments[i].a.clone(), segments[i].b.clone()];
       used.add(i);
+      removeFromMap(segments[i].a, i);
+      removeFromMap(segments[i].b, i);
 
-      let changed = true;
-      while (changed) {
-        changed = false;
-        for (let j = 0; j < segments.length; j++) {
-          if (used.has(j)) continue;
-          const last = contour[contour.length - 1];
-          const first = contour[0];
-
-          // Try to extend from the end
-          if (last.distanceTo(segments[j].a) < epsilon) {
-            contour.push(segments[j].b.clone());
-            used.add(j);
-            changed = true;
-          } else if (last.distanceTo(segments[j].b) < epsilon) {
-            contour.push(segments[j].a.clone());
-            used.add(j);
-            changed = true;
-          }
-          // Try to extend from the beginning
-          else if (first.distanceTo(segments[j].b) < epsilon) {
-            contour.unshift(segments[j].a.clone());
-            used.add(j);
-            changed = true;
-          } else if (first.distanceTo(segments[j].a) < epsilon) {
-            contour.unshift(segments[j].b.clone());
-            used.add(j);
-            changed = true;
+      // Grow contour tail
+      let growing = true;
+      while (growing) {
+        growing = false;
+        const tail = contour[contour.length - 1];
+        const candidates = adjacency.get(key(tail));
+        if (candidates && candidates.length > 0) {
+          const { idx, isA } = candidates[0];
+          if (!used.has(idx)) {
+            used.add(idx);
+            const seg = segments[idx];
+            const next = isA ? seg.b : seg.a;
+            const prev = isA ? seg.a : seg.b;
+            removeFromMap(prev, idx);
+            removeFromMap(next, idx);
+            contour.push(next.clone());
+            growing = true;
           }
         }
       }
@@ -1482,42 +1501,13 @@ export class Slicer {
   ): { from: THREE.Vector2; to: THREE.Vector2 }[] {
     if (lines.length <= 1) return lines;
 
-    // Greedy nearest-neighbor ordering
-    const sorted: { from: THREE.Vector2; to: THREE.Vector2 }[] = [];
-    const remaining = [...lines];
-    let currentPos = remaining[0].from;
-
-    while (remaining.length > 0) {
-      let bestIdx = 0;
-      let bestDist = Infinity;
-      let reverse = false;
-
-      for (let i = 0; i < remaining.length; i++) {
-        const dFrom = currentPos.distanceTo(remaining[i].from);
-        const dTo = currentPos.distanceTo(remaining[i].to);
-        if (dFrom < bestDist) {
-          bestDist = dFrom;
-          bestIdx = i;
-          reverse = false;
-        }
-        if (dTo < bestDist) {
-          bestDist = dTo;
-          bestIdx = i;
-          reverse = true;
-        }
-      }
-
-      const picked = remaining.splice(bestIdx, 1)[0];
-      if (reverse) {
-        sorted.push({ from: picked.to, to: picked.from });
-        currentPos = picked.from;
-      } else {
-        sorted.push(picked);
-        currentPos = picked.to;
-      }
-    }
-
-    return sorted;
+    // Boustrophedon (snake) ordering: scan lines from generateScanLines already
+    // arrive sorted by position. Reverse every other line so the nozzle travels
+    // one line end-to-start across to the next, minimising travel with O(n) work
+    // instead of the O(n²) nearest-neighbour search that stalled on solid layers.
+    return lines.map((line, i) =>
+      i % 2 === 0 ? line : { from: line.to, to: line.from },
+    );
   }
 
   // =========================================================================

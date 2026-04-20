@@ -19,6 +19,9 @@ interface RibbonPrepareTabProps {
 export function RibbonPrepareTab({ prepareTab }: RibbonPrepareTabProps) {
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const printerConnected = usePrinterStore((s) => s.connected);
+  const sliceProgress    = useSlicerStore((s) => s.sliceProgress);
+  const sliceResult      = useSlicerStore((s) => s.sliceResult);
+  const previewMode      = useSlicerStore((s) => s.previewMode);
 
   if (prepareTab === 'plate') {
     return (
@@ -93,27 +96,39 @@ export function RibbonPrepareTab({ prepareTab }: RibbonPrepareTabProps) {
   }
 
   if (prepareTab === 'slice') {
+    const isSlicing = sliceProgress.stage === 'preparing' || sliceProgress.stage === 'slicing' || sliceProgress.stage === 'generating';
+
     return (
       <>
         <RibbonSection title="SLICE">
           <ToolButton
             icon={<Layers size={ICON_LG} />}
-            label="Slice"
+            label={isSlicing ? `${sliceProgress.percent}%` : 'Slice'}
             onClick={() => useSlicerStore.getState().startSlice()}
-            active={useSlicerStore.getState().sliceProgress.stage === 'slicing'}
+            active={isSlicing}
+            disabled={isSlicing}
             large
             colorClass="icon-blue"
           />
+          {isSlicing && (
+            <ToolButton
+              icon={<X size={ICON_LG} />}
+              label="Cancel"
+              onClick={() => useSlicerStore.getState().cancelSlice()}
+              large
+              colorClass="icon-red"
+            />
+          )}
           <ToolButton
             icon={<Eye size={ICON_LG} />}
             label="Preview"
-            active={useSlicerStore.getState().previewMode === 'preview'}
+            active={previewMode === 'preview'}
             onClick={() => {
               const store = useSlicerStore.getState();
               store.setPreviewMode(store.previewMode === 'preview' ? 'model' : 'preview');
             }}
             large
-            disabled={!useSlicerStore.getState().sliceResult}
+            disabled={!sliceResult}
             colorClass="icon-green"
           />
         </RibbonSection>

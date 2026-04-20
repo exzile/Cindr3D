@@ -9,7 +9,6 @@ import type {
 import {
   DEFAULT_PRINTER_PROFILES, DEFAULT_MATERIAL_PROFILES, DEFAULT_PRINT_PROFILES,
 } from '../types/slicer';
-import { Slicer } from '../engine/Slicer';
 import { normalizeRotationDegreesToRadians, normalizeScale } from '../utils/slicerTransforms';
 import { usePrinterStore } from './printerStore';
 
@@ -101,7 +100,7 @@ interface SlicerStore {
   importFileToPlate: (file: File) => Promise<void>;
 
   // Slicing
-  startSlice: () => Promise<void>;
+  startSlice: () => void;
   cancelSlice: () => void;
   setSliceProgress: (progress: SliceProgress) => void;
 
@@ -213,9 +212,26 @@ const idbStorage = {
 };
 
 // =============================================================================
-// Internal ref to active slicer instance for cancellation
+// Persistent Web Worker — created once, reused across slice operations
 // =============================================================================
-let activeSlicer: Slicer | null = null;
+
+// Lazily created on the first startSlice call.
+let slicerWorker: Worker | null = null;
+
+function getSlicerWorker(onMessage: (e: MessageEvent) => void): Worker {
+  if (!slicerWorker) {
+    slicerWorker = new Worker(
+      new URL('../workers/SlicerWorker.ts', import.meta.url),
+      { type: 'module' },
+    );
+  }
+  // Re-attach the handler each time so the latest `set` closure is captured.
+  slicerWorker.onmessage = onMessage;
+  return slicerWorker;
+}
+
+// Kept so cancelSlice can forward the signal to the worker.
+let workerBusy = false;
 
 const savedSelections = loadSavedSelections();
 
@@ -553,103 +569,116 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
 
   // --- Slicing ---
 
-  startSlice: async () => {
+  startSlice: () => {
     const state = get();
     if (state.plateObjects.length === 0) return;
-
-    // Re-entrancy guard — second click while a slice is in flight would otherwise
-    // overwrite the active slicer reference, breaking cancelSlice for the first
-    // run and racing two sliceProgress streams into the store.
-    if (activeSlicer) return;
+    if (workerBusy) return; // re-entrancy guard
 
     const printerProfile = state.getActivePrinterProfile();
     const materialProfile = state.getActiveMaterialProfile();
     const printProfile = state.getActivePrintProfile();
 
-    // Reset progress
+    // Serialize geometry data on the main thread (THREE.BufferGeometry can't
+    // cross the worker boundary directly). Typed arrays are copied, not
+    // transferred, so the original geometries remain intact for rendering.
+    const geometryData: {
+      positions: Float32Array;
+      index: Uint32Array | null;
+      transformElements: Float32Array;
+    }[] = [];
+
+    for (const obj of state.plateObjects) {
+      if (!obj.geometry) continue;
+      const geo = obj.geometry as THREE.BufferGeometry;
+      const posAttr = geo.getAttribute('position');
+      if (!posAttr) continue;
+
+      const pos = (obj.position as { x: number; y: number; z?: number });
+      const rot = normalizeRotationDegreesToRadians((obj as { rotation?: unknown }).rotation);
+      const scl = normalizeScale((obj as { scale?: unknown }).scale);
+      const transform = new THREE.Matrix4().compose(
+        new THREE.Vector3(pos.x, pos.y, pos.z ?? 0),
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(rot.x, rot.y, rot.z)),
+        new THREE.Vector3(scl.x, scl.y, scl.z),
+      );
+
+      const indexAttr = geo.getIndex();
+      geometryData.push({
+        positions: new Float32Array(posAttr.array),
+        index: indexAttr ? new Uint32Array(indexAttr.array) : null,
+        transformElements: new Float32Array(transform.elements),
+      });
+    }
+
+    if (geometryData.length === 0) {
+      set({
+        sliceProgress: {
+          stage: 'error', percent: 0, currentLayer: 0, totalLayers: 0,
+          message: 'No objects with geometry on the build plate.',
+        },
+      });
+      return;
+    }
+
     set({
       sliceProgress: {
-        stage: 'preparing',
-        percent: 0,
-        currentLayer: 0,
-        totalLayers: 0,
-        message: 'Preparing geometries...',
+        stage: 'preparing', percent: 0, currentLayer: 0, totalLayers: 0,
+        message: 'Sending geometry to slicer...',
       },
       sliceResult: null,
     });
+    workerBusy = true;
 
-    try {
-      // FIXED: pass profiles to constructor
-      const slicer = new Slicer(printerProfile, materialProfile, printProfile);
-      activeSlicer = slicer;
-
-      // FIXED: correct method name
-      slicer.setProgressCallback((progress: SliceProgress) => {
-        set({ sliceProgress: progress });
-      });
-
-      // FIXED: convert plate objects to { geometry, transform } format
-      const geometries = state.plateObjects
-        .filter((obj) => obj.geometry)
-        .map((obj) => {
-          const pos = (obj.position as { x: number; y: number; z?: number });
-          const rot = normalizeRotationDegreesToRadians((obj as { rotation?: unknown }).rotation);
-          const scl = normalizeScale((obj as { scale?: unknown }).scale);
-
-          const transform = new THREE.Matrix4();
-          transform.compose(
-            new THREE.Vector3(pos.x, pos.y, pos.z ?? 0),
-            new THREE.Quaternion().setFromEuler(new THREE.Euler(rot.x, rot.y, rot.z)),
-            new THREE.Vector3(scl.x, scl.y, scl.z),
-          );
-          return { geometry: obj.geometry as THREE.BufferGeometry, transform };
+    const worker = getSlicerWorker((e: MessageEvent) => {
+      const { type } = e.data;
+      if (type === 'progress') {
+        set({ sliceProgress: e.data.progress as SliceProgress });
+      } else if (type === 'complete') {
+        workerBusy = false;
+        const result = e.data.result;
+        set({
+          sliceResult: result,
+          sliceProgress: {
+            stage: 'complete', percent: 100,
+            currentLayer: result.layerCount, totalLayers: result.layerCount,
+            message: `Slicing complete — ${result.layerCount} layers`,
+          },
+          previewMode: 'preview',
+          previewLayer: result.layerCount - 1,
+          previewLayerMax: result.layerCount - 1,
         });
-
-      if (geometries.length === 0) {
-        throw new Error('No objects with geometry on the build plate.');
+      } else if (type === 'error') {
+        workerBusy = false;
+        set({
+          sliceProgress: {
+            stage: 'error', percent: 0, currentLayer: 0, totalLayers: 0,
+            message: `Slicing failed: ${e.data.message}`,
+          },
+        });
       }
+    });
 
-      const result = await slicer.slice(geometries);
-      activeSlicer = null;
+    // Transfer typed arrays so the worker receives them without copying.
+    const transferables: Transferable[] = geometryData.flatMap((g) => {
+      const list: Transferable[] = [g.positions.buffer, g.transformElements.buffer];
+      if (g.index) list.push(g.index.buffer);
+      return list;
+    });
 
-      set({
-        sliceResult: result,
-        sliceProgress: {
-          stage: 'complete',
-          percent: 100,
-          currentLayer: result.layerCount,
-          totalLayers: result.layerCount,
-          message: `Slicing complete — ${result.layerCount} layers`,
-        },
-        previewMode: 'preview',
-        previewLayer: result.layerCount - 1,
-        previewLayerMax: result.layerCount - 1,
-      });
-    } catch (err) {
-      activeSlicer = null;
-      set({
-        sliceProgress: {
-          stage: 'error',
-          percent: 0,
-          currentLayer: 0,
-          totalLayers: 0,
-          message: `Slicing failed: ${(err as Error).message}`,
-        },
-      });
-    }
+    worker.postMessage(
+      { type: 'slice', payload: { geometryData, printerProfile, materialProfile, printProfile } },
+      transferables,
+    );
   },
 
   cancelSlice: () => {
-    if (activeSlicer) {
-      try { (activeSlicer as { cancel?: () => void }).cancel?.(); } catch { /* ignore cancellation errors */ }
-      activeSlicer = null;
+    if (workerBusy && slicerWorker) {
+      slicerWorker.postMessage({ type: 'cancel' });
+      workerBusy = false;
     }
     set({
       sliceProgress: {
-        stage: 'idle',
-        percent: 0,
-        currentLayer: 0,
-        totalLayers: 0,
+        stage: 'idle', percent: 0, currentLayer: 0, totalLayers: 0,
         message: 'Slicing cancelled',
       },
     });
