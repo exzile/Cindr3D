@@ -1,0 +1,373 @@
+/* ============================================================ */
+/* Duet Config Editor — split layout (file list | inline editor) */
+/* ============================================================ */
+
+.duet-config-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg, #1e1e1e);
+  color: var(--text, #d4d4d4);
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+}
+
+.duet-config-editor__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--panelBorder, #333);
+  flex-shrink: 0;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--accent, #0078d4) 6%, var(--surface, #252526)),
+    var(--surface, #252526));
+}
+
+.duet-config-editor__toolbar-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.duet-config-editor__browse-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  font-size: 12px;
+  border: 1px solid var(--panelBorder, #444);
+  border-radius: 6px;
+  background: var(--surface, #353535);
+  color: var(--text, #ccc);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.08s ease;
+}
+
+.duet-config-editor__browse-btn:not(:disabled):hover {
+  border-color: var(--accent, #0078d4);
+  color: var(--accent, #0078d4);
+  background: color-mix(in srgb, var(--accent, #0078d4) 10%, var(--surface, #353535));
+}
+
+.duet-config-editor__browse-btn:active { transform: translateY(1px); }
+
+.duet-config-editor__browse-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.duet-config-editor__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.duet-config-editor__files {
+  width: 260px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 10px 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-right: 1px solid var(--panelBorder, #333);
+  background: color-mix(in srgb, var(--surface, #252526) 50%, var(--bg, #1e1e1e));
+}
+
+.duet-config-editor__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.duet-config-editor__group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--textDim, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 2px 4px 4px;
+  user-select: none;
+}
+
+.duet-config-editor__file-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  color: var(--text, #d4d4d4);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.06s ease;
+}
+
+.duet-config-editor__file-row:hover {
+  background: color-mix(in srgb, var(--accent, #0078d4) 8%, transparent);
+}
+
+.duet-config-editor__file-row.is-active {
+  background: color-mix(in srgb, var(--accent, #0078d4) 15%, transparent);
+  border-color: var(--accent, #0078d4);
+  color: var(--text, #fff);
+}
+
+.duet-config-editor__file-row.is-dirty::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ffab40;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.duet-config-editor__file-row.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.duet-config-editor__file-icon {
+  flex: 0 0 auto;
+  color: var(--textDim, #888);
+}
+
+.duet-config-editor__file-row.is-active .duet-config-editor__file-icon { color: var(--accent, #4fc3f7); }
+
+.duet-config-editor__file-info { flex: 1; min-width: 0; }
+
+.duet-config-editor__file-name {
+  font-size: 12px;
+  font-weight: 500;
+  font-family: 'Consolas', 'JetBrains Mono', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.duet-config-editor__file-desc {
+  font-size: 11px;
+  color: var(--textDim, #888);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.duet-config-editor__chevron {
+  flex: 0 0 auto;
+  color: var(--textDim, #666);
+  opacity: 0.8;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.duet-config-editor__file-row:hover .duet-config-editor__chevron {
+  transform: translateX(2px);
+  opacity: 1;
+}
+
+.duet-config-editor__editor-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg, #1e1e1e);
+}
+
+.duet-config-editor__placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px;
+  gap: 10px;
+  color: var(--textDim, #888);
+  font-size: 13px;
+}
+
+.duet-config-editor__placeholder-icon {
+  opacity: 0.5;
+  margin-bottom: 6px;
+}
+
+.duet-config-editor__not-connected {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--textDim, #888);
+  font-size: 13px;
+}
+
+/* ============================================================ */
+/* Insert Command dropdown                                      */
+/* ============================================================ */
+
+.duet-insert-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 9px;
+  font-size: 12px;
+  border: 1px solid var(--panelBorder, #555);
+  border-radius: 6px;
+  background: var(--surface, #353535);
+  color: var(--text, #ccc);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.duet-insert-btn:hover,
+.duet-insert-btn.is-open {
+  border-color: var(--accent, #0078d4);
+  color: var(--accent, #0078d4);
+  background: color-mix(in srgb, var(--accent, #0078d4) 10%, var(--surface, #353535));
+}
+
+.duet-insert-menu {
+  z-index: 3100;
+  background: #252526;
+  border: 1px solid #444;
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: duet-insert-pop 0.15s cubic-bezier(0.2, 1.0, 0.3, 1.0);
+}
+
+@keyframes duet-insert-pop {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.duet-insert-menu__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-bottom: 1px solid #333;
+  background: #2a2a2b;
+}
+
+.duet-insert-menu__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.duet-insert-menu__count {
+  font-size: 11px;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+}
+
+.duet-insert-menu__search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #333;
+  background: #222;
+}
+
+.duet-insert-menu__search input {
+  flex: 1;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.duet-insert-menu__search input:focus {
+  border-color: var(--accent, #0078d4);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #0078d4) 28%, transparent);
+}
+
+.duet-insert-menu__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.duet-insert-menu__empty {
+  padding: 30px 12px;
+  text-align: center;
+  color: #888;
+  font-size: 12px;
+}
+
+.duet-insert-menu__group {
+  padding: 6px 6px;
+}
+
+.duet-insert-menu__group-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 4px 8px;
+}
+
+.duet-insert-menu__item {
+  width: 100%;
+  text-align: left;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 7px 9px;
+  margin: 3px 0;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.08s ease;
+}
+
+.duet-insert-menu__item:hover {
+  border-color: var(--accent, #0078d4);
+  background: color-mix(in srgb, var(--accent, #0078d4) 10%, #1e1e1e);
+}
+
+.duet-insert-menu__item:active { transform: translateY(1px); }
+
+.duet-insert-menu__item-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.duet-insert-menu__item-desc {
+  font-size: 11px;
+  color: #888;
+  margin-top: 2px;
+}
+
+.duet-insert-menu__item-snippet {
+  margin: 4px 0 0;
+  padding: 4px 6px;
+  font-family: 'Consolas', 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #9cdcfe;
+  background: #111;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 68px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

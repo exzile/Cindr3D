@@ -99,6 +99,52 @@
   font-size: 11px;
   color: var(--text-muted);
   margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.4;
+}
+
+.slicer-overlay-settings-pill {
+  margin-left: auto;
+  display: inline-block;
+  padding: 1px 7px;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.slicer-overlay-row--tristate {
+  justify-content: space-between;
+}
+
+.slicer-overlay-tristate {
+  background: var(--bg-input);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  min-width: 64px;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.slicer-overlay-tristate--default { color: var(--text-muted); }
+.slicer-overlay-tristate--on {
+  background: color-mix(in srgb, var(--accent) 25%, var(--bg-input));
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.slicer-overlay-tristate--off {
+  background: color-mix(in srgb, #d94545 20%, var(--bg-input));
+  color: #ff8080;
+  border-color: #d94545;
 }
 
 .slicer-overlay-settings-label {

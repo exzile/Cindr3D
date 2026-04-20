@@ -153,7 +153,7 @@ interface PrinterStore {
   // UI state
   showPrinter: boolean;
   showSettings: boolean;
-  activeTab: 'dashboard' | 'status' | 'console' | 'job' | 'history' | 'files' | 'filaments' | 'macros' | 'settings' | 'heightmap' | 'model' | 'config';
+  activeTab: 'dashboard' | 'status' | 'console' | 'job' | 'history' | 'files' | 'filaments' | 'macros' | 'settings' | 'heightmap' | 'model' | 'config' | 'analytics' | 'network';
   error: string | null;
   jogDistance: number;
   extrudeAmount: number;

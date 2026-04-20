@@ -68,13 +68,24 @@
 }
 
 .slicer-workspace-objects-panel__row {
-  padding: 5px 10px;
+  padding: 6px 8px 6px 10px;
   border-left: 3px solid transparent;
   background: transparent;
   cursor: pointer;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
+  transition: background 0.15s ease, border-left-color 0.15s ease;
+  animation: objects-row-in 0.18s ease both;
+}
+
+.slicer-workspace-objects-panel__row > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0; /* allow text to truncate so the trash icon never gets pushed off */
+}
+
+.slicer-workspace-objects-panel__row:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.04));
 }
 
 .slicer-workspace-objects-panel__row.is-selected {
@@ -85,20 +96,42 @@
 .slicer-workspace-objects-panel__name {
   color: var(--text-primary);
   font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .slicer-workspace-objects-panel__size {
   color: var(--text-muted);
   font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .slicer-workspace-objects-panel__remove {
+  flex: 0 0 auto;
   background: transparent;
   border: none;
   color: var(--error);
   cursor: pointer;
-  padding: 2px;
+  padding: 4px;
+  border-radius: 4px;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.slicer-workspace-objects-panel__remove:hover {
+  background: color-mix(in srgb, var(--error) 16%, transparent);
+  transform: scale(1.08);
+}
+
+@keyframes objects-row-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .slicer-workspace-objects-panel__transform {

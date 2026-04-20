@@ -16,6 +16,7 @@ import {
   FirstLayerInspection,
   PauseAtTrigger,
   PrintQueue,
+  FilamentChange,
 } from './jobStatus';
 
 export default function DuetJobStatus() {
@@ -38,6 +39,7 @@ export default function DuetJobStatus() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0, padding: '12px 0' }}>
       <PrintQueue />
       <PrintStatusHeader />
+      <FilamentChange />
       <ThumbnailPreview />
       <ProgressSection />
       <FirstLayerInspection />

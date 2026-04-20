@@ -61,11 +61,22 @@ interface SlicerStore {
 
   // Preview state
   previewMode: 'model' | 'preview';
-  previewLayer: number;
+  previewLayer: number;            // end layer (inclusive) — highest visible layer
+  previewLayerStart: number;       // start layer (inclusive) — lowest visible layer
   previewLayerMax: number;
   previewShowTravel: boolean;
   previewShowRetractions: boolean;
   previewColorMode: 'type' | 'speed' | 'flow';
+
+  // Simulation (nozzle playback) state
+  previewSimEnabled: boolean;      // show the virtual nozzle marker
+  previewSimPlaying: boolean;
+  previewSimSpeed: number;         // multiplier (1x, 2x, 5x, 10x, 25x)
+  previewSimTime: number;          // seconds advanced through the toolpath
+
+  // Printability analysis
+  printabilityReport: import('../engine/PrintabilityCheck').PrintabilityReport | null;
+  printabilityHighlight: boolean;
 
   // UI state
   settingsPanel: 'printer' | 'material' | 'print' | null;
@@ -107,9 +118,24 @@ interface SlicerStore {
   // Preview
   setPreviewMode: (mode: 'model' | 'preview') => void;
   setPreviewLayer: (layer: number) => void;
+  setPreviewLayerStart: (layer: number) => void;
+  setPreviewLayerRange: (start: number, end: number) => void;
   setPreviewShowTravel: (show: boolean) => void;
   setPreviewShowRetractions: (show: boolean) => void;
   setPreviewColorMode: (mode: 'type' | 'speed' | 'flow') => void;
+
+  // Simulation
+  setPreviewSimEnabled: (on: boolean) => void;
+  setPreviewSimPlaying: (playing: boolean) => void;
+  setPreviewSimSpeed: (speed: number) => void;
+  setPreviewSimTime: (t: number) => void;
+  advancePreviewSimTime: (deltaSeconds: number) => void;
+  resetPreviewSim: () => void;
+
+  // Printability
+  runPrintabilityCheck: () => void;
+  clearPrintabilityReport: () => void;
+  setPrintabilityHighlight: (on: boolean) => void;
 
   // Export
   downloadGCode: () => void;
@@ -263,10 +289,21 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
   // Preview state
   previewMode: 'model',
   previewLayer: 0,
+  previewLayerStart: 0,
   previewLayerMax: 0,
   previewShowTravel: false,
   previewShowRetractions: true,
   previewColorMode: 'type',
+
+  // Simulation
+  previewSimEnabled: false,
+  previewSimPlaying: false,
+  previewSimSpeed: 5,
+  previewSimTime: 0,
+
+  // Printability
+  printabilityReport: null,
+  printabilityHighlight: true,
 
   // UI state
   settingsPanel: null,
@@ -515,7 +552,11 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
     sliceResult: null,
     previewMode: 'model',
     previewLayer: 0,
+    previewLayerStart: 0,
     previewLayerMax: 0,
+    previewSimEnabled: false,
+    previewSimPlaying: false,
+    previewSimTime: 0,
   }),
 
   importFileToPlate: async (file: File) => {
@@ -581,10 +622,14 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
     // Serialize geometry data on the main thread (THREE.BufferGeometry can't
     // cross the worker boundary directly). Typed arrays are copied, not
     // transferred, so the original geometries remain intact for rendering.
+    // Per-object overrides ride alongside each geometry so the worker can
+    // partition the plate into groups that share an effective profile.
     const geometryData: {
       positions: Float32Array;
       index: Uint32Array | null;
       transformElements: Float32Array;
+      overrides?: Record<string, unknown>;
+      objectName?: string;
     }[] = [];
 
     for (const obj of state.plateObjects) {
@@ -603,10 +648,18 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
       );
 
       const indexAttr = geo.getIndex();
+      const per = (obj as { perObjectSettings?: Record<string, unknown> }).perObjectSettings;
+      const filteredOverrides = per && Object.keys(per).length > 0
+        // Drop undefined entries — those represent "inherit global" and should
+        // not override the profile.
+        ? Object.fromEntries(Object.entries(per).filter(([, v]) => v !== undefined))
+        : undefined;
       geometryData.push({
         positions: new Float32Array(posAttr.array),
         index: indexAttr ? new Uint32Array(indexAttr.array) : null,
         transformElements: new Float32Array(transform.elements),
+        overrides: filteredOverrides && Object.keys(filteredOverrides).length > 0 ? filteredOverrides : undefined,
+        objectName: obj.name,
       });
     }
 
@@ -645,7 +698,10 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
           },
           previewMode: 'preview',
           previewLayer: result.layerCount - 1,
+          previewLayerStart: 0,
           previewLayerMax: result.layerCount - 1,
+          previewSimTime: 0,
+          previewSimPlaying: false,
         });
       } else if (type === 'error') {
         workerBusy = false;
@@ -689,10 +745,57 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
   // --- Preview ---
 
   setPreviewMode: (mode) => set({ previewMode: mode }),
-  setPreviewLayer: (layer) => set({ previewLayer: layer }),
+  setPreviewLayer: (layer) => set((s) => ({
+    previewLayer: Math.max(s.previewLayerStart, Math.min(layer, s.previewLayerMax)),
+  })),
+  setPreviewLayerStart: (layer) => set((s) => ({
+    previewLayerStart: Math.max(0, Math.min(layer, s.previewLayer)),
+  })),
+  setPreviewLayerRange: (start, end) => set((s) => {
+    const clampedStart = Math.max(0, Math.min(start, s.previewLayerMax));
+    const clampedEnd = Math.max(clampedStart, Math.min(end, s.previewLayerMax));
+    return { previewLayerStart: clampedStart, previewLayer: clampedEnd };
+  }),
   setPreviewShowTravel: (show) => set({ previewShowTravel: show }),
   setPreviewShowRetractions: (show) => set({ previewShowRetractions: show }),
   setPreviewColorMode: (mode) => set({ previewColorMode: mode }),
+
+  // --- Simulation ---
+
+  setPreviewSimEnabled: (on) => set((s) => ({
+    previewSimEnabled: on,
+    // Auto-pause when simulation is disabled.
+    previewSimPlaying: on ? s.previewSimPlaying : false,
+  })),
+  setPreviewSimPlaying: (playing) => set({ previewSimPlaying: playing }),
+  setPreviewSimSpeed: (speed) => set({ previewSimSpeed: Math.max(0.1, speed) }),
+  setPreviewSimTime: (t) => set((s) => {
+    const total = s.sliceResult?.printTime ?? 0;
+    return { previewSimTime: Math.max(0, total > 0 ? Math.min(t, total) : t) };
+  }),
+  advancePreviewSimTime: (delta) => set((s) => {
+    const total = s.sliceResult?.printTime ?? 0;
+    let next = s.previewSimTime + delta;
+    let playing = s.previewSimPlaying;
+    if (total > 0 && next >= total) { next = total; playing = false; }
+    return { previewSimTime: next, previewSimPlaying: playing };
+  }),
+  resetPreviewSim: () => set({ previewSimTime: 0, previewSimPlaying: false }),
+
+  // --- Printability ---
+
+  runPrintabilityCheck: async () => {
+    const { checkPrintability } = await import('../engine/PrintabilityCheck');
+    const s = get();
+    const printer = s.getActivePrinterProfile();
+    const print = s.getActivePrintProfile();
+    if (!printer || !print) return;
+    const report = checkPrintability(s.plateObjects, printer, print);
+    set({ printabilityReport: report });
+  },
+
+  clearPrintabilityReport: () => set({ printabilityReport: null }),
+  setPrintabilityHighlight: (on) => set({ printabilityHighlight: on }),
 
   // --- Export ---
 

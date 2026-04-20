@@ -8,6 +8,8 @@ import { useSlicerStore } from '../../../../store/slicerStore';
 import type { PlateObject } from '../../../../types/slicer';
 import { colors } from '../../../../utils/theme';
 import { normalizeRotationRadians, normalizeScale } from '../../../../utils/slicerTransforms';
+import { SlicerCostBreakdown } from './SlicerCostBreakdown';
+import { SlicerPrintabilityPanel } from './SlicerPrintabilityPanel';
 import './SlicerViewportOverlays.css';
 
 type TransformMode = 'move' | 'scale' | 'rotate' | 'mirror' | 'settings';
@@ -81,7 +83,13 @@ export function SlicerViewportOverlays() {
     </div>
   );
 
-  if (!obj) return toolbar;
+  if (!obj) return (
+    <>
+      {toolbar}
+      <SlicerPrintabilityPanel />
+      <SlicerCostBreakdown />
+    </>
+  );
 
   const pos = obj.position as { x: number; y: number; z: number };
   const rot = normalizeRotationRadians((obj as { rotation?: unknown }).rotation);
@@ -372,41 +380,88 @@ export function SlicerViewportOverlays() {
     </div>
   );
 
+  const perObj = (obj as { perObjectSettings?: Record<string, number | boolean | undefined> }).perObjectSettings ?? {};
+  const overrideCount = Object.values(perObj).filter((v) => v !== undefined).length;
+  const setOverride = (key: string, v: number | boolean | undefined) => {
+    const next = { ...perObj };
+    if (v === undefined) delete next[key]; else next[key] = v;
+    upd({ perObjectSettings: next });
+  };
+
+  const numericOverride = (
+    key: string, label: string, unit: string, min: number, max: number, step?: number,
+  ) => {
+    const val = perObj[key] as number | undefined;
+    return (
+      <div key={key} className="slicer-overlay-row">
+        <span className="slicer-overlay-settings-label">{label}</span>
+        <input
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+          placeholder="(global)"
+          disabled={locked}
+          className="slicer-overlay-settings-input"
+          value={val ?? ''}
+          onChange={(e) => setOverride(key, e.target.value === '' ? undefined : parseFloat(e.target.value))}
+        />
+        {unit && <span className="slicer-overlay-settings-unit">{unit}</span>}
+      </div>
+    );
+  };
+
+  const triState = (key: string, label: string) => {
+    const val = perObj[key] as boolean | undefined;
+    const state = val === undefined ? 'default' : val ? 'on' : 'off';
+    const cycle = () => {
+      const next = val === undefined ? true : val ? false : undefined;
+      setOverride(key, next);
+    };
+    return (
+      <div key={key} className="slicer-overlay-row slicer-overlay-row--tristate">
+        <span className="slicer-overlay-settings-label">{label}</span>
+        <button
+          type="button"
+          disabled={locked}
+          onClick={cycle}
+          className={`slicer-overlay-tristate slicer-overlay-tristate--${state}`}
+          title="Click to cycle: inherit → on → off → inherit"
+        >
+          {state === 'default' ? 'inherit' : state === 'on' ? 'ON' : 'OFF'}
+        </button>
+      </div>
+    );
+  };
+
   const settingsPanel = (
     <div className="slicer-overlay-panel">
       {header}
       <div className="slicer-overlay-settings-intro">
         Override global print settings for this object only.
+        {overrideCount > 0 && (
+          <span className="slicer-overlay-settings-pill">{overrideCount} active</span>
+        )}
       </div>
-      {([
-        ['infillDensity', 'Infill Density', '%', 0, 100],
-        ['wallCount', 'Wall Count', '', 1, 20],
-        ['layerHeight', 'Layer Height', 'mm', 0.05, 1],
-      ] as [string, string, string, number, number][]).map(([key, label, unit, min, max]) => {
-        const perObj = (obj as { perObjectSettings?: Record<string, number | undefined> }).perObjectSettings ?? {};
-        const val = perObj[key] ?? '';
-        return (
-          <div key={key} className="slicer-overlay-row">
-            <span className="slicer-overlay-settings-label">{label}</span>
-            <input
-              type="number"
-              min={min}
-              max={max}
-              placeholder="(global)"
-              disabled={locked}
-              className="slicer-overlay-settings-input"
-              value={val}
-              onChange={(e) => {
-                const v = e.target.value === '' ? undefined : parseFloat(e.target.value);
-                const next = { ...perObj };
-                if (v === undefined) delete next[key]; else next[key] = v;
-                upd({ perObjectSettings: next });
-              }}
-            />
-            {unit && <span className="slicer-overlay-settings-unit">{unit}</span>}
-          </div>
-        );
-      })}
+      {numericOverride('infillDensity', 'Infill', '%', 0, 100, 5)}
+      {numericOverride('wallCount', 'Walls', '', 1, 20, 1)}
+      {numericOverride('topLayers', 'Top layers', '', 0, 50, 1)}
+      {numericOverride('bottomLayers', 'Bottom layers', '', 0, 50, 1)}
+      {numericOverride('layerHeight', 'Layer height', 'mm', 0.05, 1, 0.05)}
+      {numericOverride('supportAngle', 'Overhang angle', '°', 0, 89, 1)}
+      {triState('supportEnabled', 'Supports')}
+      {triState('spiralizeContour', 'Vase mode')}
+      {overrideCount > 0 && (
+        <button
+          type="button"
+          disabled={locked}
+          className="slicer-overlay-full-btn"
+          onClick={() => upd({ perObjectSettings: {} })}
+          title="Revert all overrides back to the global profile"
+        >
+          <RefreshCw size={11} /> Reset to global
+        </button>
+      )}
     </div>
   );
 
@@ -422,6 +477,8 @@ export function SlicerViewportOverlays() {
     <>
       {toolbar}
       {panels[mode]}
+      <SlicerPrintabilityPanel />
+      <SlicerCostBreakdown />
     </>
   );
 }

@@ -3,6 +3,7 @@ import './PrinterPanel.css';
 import {
   LayoutDashboard, Activity, Terminal, Play, FolderOpen, FileCode, Grid3x3,
   History, Braces, Settings, X, OctagonAlert, Wifi, WifiOff, FlaskConical,
+  TrendingUp, Router,
   Sun, Moon, Search, Loader2, Clock, Cpu,
 } from 'lucide-react';
 import { formatUptime } from './dashboard/helpers';
@@ -23,6 +24,9 @@ import DuetMessageBox from './DuetMessageBox';
 import DuetNotifications from './DuetNotifications';
 import DuetSettings from './DuetSettings';
 import DuetConfigEditor from './DuetConfigEditor';
+import DuetAnalytics from './DuetAnalytics';
+import DuetNetworkAndFirmware from './DuetNetworkAndFirmware';
+import './DuetAnalytics.css';
 
 // ---------------------------------------------------------------------------
 // Theme — shared CSS-var tokens so all pages follow the active theme
@@ -38,12 +42,14 @@ const TABS = [
   { key: 'console' as const, label: 'Console', Icon: Terminal },
   { key: 'job' as const, label: 'Job', Icon: Play },
   { key: 'history' as const, label: 'History', Icon: History },
+  { key: 'analytics' as const, label: 'Analytics', Icon: TrendingUp },
   { key: 'files' as const, label: 'Files', Icon: FolderOpen },
   { key: 'filaments' as const, label: 'Filaments', Icon: FlaskConical },
   { key: 'macros' as const, label: 'Macros', Icon: FileCode },
   { key: 'heightmap' as const, label: 'Height Map', Icon: Grid3x3 },
   { key: 'model' as const, label: 'Model', Icon: Braces },
   { key: 'config' as const, label: 'Config', Icon: FileCode },
+  { key: 'network' as const, label: 'Network', Icon: Router },
   { key: 'settings' as const, label: 'Settings', Icon: Settings },
 ];
 
@@ -55,12 +61,14 @@ const TAB_COMPONENTS: Record<TabKey, React.ComponentType> = {
   console: DuetConsole,
   job: DuetJobStatus,
   history: DuetPrintHistory,
+  analytics: DuetAnalytics,
   files: DuetFileManager,
   filaments: DuetFilamentManager,
   macros: DuetMacros,
   heightmap: DuetHeightMap,
   model: DuetObjectModelBrowser,
   config: DuetConfigEditor,
+  network: DuetNetworkAndFirmware,
   settings: DuetSettings,
 };
 

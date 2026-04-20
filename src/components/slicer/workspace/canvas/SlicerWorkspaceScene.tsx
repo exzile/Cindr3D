@@ -1,9 +1,9 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Line, OrbitControls, Text, TransformControls } from '@react-three/drei';
-import { useThree, type ThreeEvent } from '@react-three/fiber';
+import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useSlicerStore } from '../../../../store/slicerStore';
-import type { PlateObject, SliceResult } from '../../../../types/slicer';
+import type { PlateObject, SliceResult, SliceMove } from '../../../../types/slicer';
 import { normalizeRotationRadians, normalizeScale } from '../../../../utils/slicerTransforms';
 
 function BuildPlateGrid({ sizeX, sizeY }: { sizeX: number; sizeY: number }) {
@@ -86,6 +86,7 @@ function PlateObjectMesh({
   onClick,
   transformMode,
   onTransformCommit,
+  highlightedTriangles,
 }: {
   obj: PlateObject;
   isSelected: boolean;
@@ -93,6 +94,7 @@ function PlateObjectMesh({
   onClick: () => void;
   transformMode: 'move' | 'scale' | 'rotate' | 'mirror' | 'settings';
   onTransformCommit: (id: string, pos: { x: number; y: number; z: number }, rot: { x: number; y: number; z: number }, scl: { x: number; y: number; z: number }) => void;
+  highlightedTriangles?: Set<number>;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const [meshInstance, setMeshInstance] = useState<THREE.Mesh | null>(null);
@@ -150,6 +152,37 @@ function PlateObjectMesh({
   );
   useEffect(() => () => { placeholderBoxGeo?.dispose(); }, [placeholderBoxGeo]);
 
+  // Build a secondary geometry containing ONLY the overhang-problem triangles
+  // so we can render them in red on top of the main mesh. This is built
+  // lazily from the highlight set so we pay for it only when the check runs.
+  const overhangGeom = useMemo(() => {
+    if (!highlightedTriangles || highlightedTriangles.size === 0 || !hasGeometry) return null;
+    const src = obj.geometry as THREE.BufferGeometry;
+    const posAttr = src.getAttribute('position');
+    const indexAttr = src.getIndex();
+    if (!posAttr) return null;
+    const triCount = indexAttr ? indexAttr.count / 3 : posAttr.count / 3;
+    const out = new Float32Array(highlightedTriangles.size * 9);
+    let w = 0;
+    for (let t = 0; t < triCount; t++) {
+      if (!highlightedTriangles.has(t)) continue;
+      const i0 = indexAttr ? indexAttr.getX(t * 3) : t * 3;
+      const i1 = indexAttr ? indexAttr.getX(t * 3 + 1) : t * 3 + 1;
+      const i2 = indexAttr ? indexAttr.getX(t * 3 + 2) : t * 3 + 2;
+      const ids = [i0, i1, i2];
+      for (const i of ids) {
+        out[w++] = posAttr.getX(i);
+        out[w++] = posAttr.getY(i);
+        out[w++] = posAttr.getZ(i);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(out, 3));
+    geo.computeVertexNormals();
+    return geo;
+  }, [highlightedTriangles, hasGeometry, obj.geometry]);
+  useEffect(() => () => { overhangGeom?.dispose(); }, [overhangGeom]);
+
   return (
     <>
       <mesh
@@ -173,6 +206,26 @@ function PlateObjectMesh({
           </lineSegments>
         )}
       </mesh>
+
+      {overhangGeom && (
+        <mesh
+          position={[pos.x, pos.y, pos.z ?? 0]}
+          rotation={[rot.x, rot.y, rot.z]}
+          scale={[scl.x, scl.y, scl.z]}
+          geometry={overhangGeom}
+          renderOrder={5}
+        >
+          <meshBasicMaterial
+            color="#ff3344"
+            transparent
+            opacity={0.75}
+            depthWrite={false}
+            polygonOffset
+            polygonOffsetFactor={-1}
+            polygonOffsetUnits={-1}
+          />
+        </mesh>
+      )}
 
       {showGizmo && meshInstance && (
         <TransformControls
@@ -202,11 +255,13 @@ const FALLBACK_COLOR = new THREE.Color('#ffffff');
 
 function InlineGCodePreview({
   sliceResult,
+  startLayer,
   currentLayer,
   showTravel,
   colorMode,
 }: {
   sliceResult: SliceResult;
+  startLayer: number;
   currentLayer: number;
   showTravel: boolean;
   colorMode: 'type' | 'speed' | 'flow';
@@ -214,7 +269,7 @@ function InlineGCodePreview({
   // Recompute layer geometry only when the relevant inputs actually change.
   const layerData = useMemo(() => {
     return sliceResult.layers
-      .filter((l) => l.layerIndex <= currentLayer)
+      .filter((l) => l.layerIndex >= startLayer && l.layerIndex <= currentLayer)
       .map((layer) => {
         const extrusions: [number, number, number][] = [];
         const travels: [number, number, number][] = [];
@@ -243,7 +298,7 @@ function InlineGCodePreview({
 
         return { layerIndex: layer.layerIndex, extrusions, travels, extColors };
       });
-  }, [sliceResult, currentLayer, showTravel, colorMode]);
+  }, [sliceResult, startLayer, currentLayer, showTravel, colorMode]);
 
   return (
     <group>
@@ -261,6 +316,110 @@ function InlineGCodePreview({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Nozzle Simulation
+// ---------------------------------------------------------------------------
+
+interface MoveTimeline {
+  /** For each move, the cumulative print time at the END of that move (s). */
+  cumulative: Float32Array;
+  /** Flat moves across all layers (references into sliceResult.layers). */
+  moves: Array<{ move: SliceMove; z: number }>;
+  total: number;
+}
+
+function buildMoveTimeline(sliceResult: SliceResult): MoveTimeline {
+  const flat: Array<{ move: SliceMove; z: number }> = [];
+  let totalMoves = 0;
+  for (const layer of sliceResult.layers) totalMoves += layer.moves.length;
+  const cumulative = new Float32Array(totalMoves);
+
+  let t = 0;
+  let i = 0;
+  for (const layer of sliceResult.layers) {
+    for (const move of layer.moves) {
+      const dx = move.to.x - move.from.x;
+      const dy = move.to.y - move.from.y;
+      const dist = Math.hypot(dx, dy);
+      // Move time = dist / speed (mm / (mm/s)). Guard zero-speed travel moves.
+      const dt = move.speed > 0 ? dist / move.speed : 0;
+      t += dt;
+      cumulative[i] = t;
+      flat.push({ move, z: layer.z });
+      i++;
+    }
+  }
+  return { cumulative, moves: flat, total: t };
+}
+
+function NozzleSimulator({
+  sliceResult,
+  simTime,
+  playing,
+  speed,
+  onAdvance,
+}: {
+  sliceResult: SliceResult;
+  simTime: number;
+  playing: boolean;
+  speed: number;
+  onAdvance: (deltaSeconds: number) => void;
+}) {
+  const { invalidate } = useThree();
+  // Build timeline once per slice result.
+  const timeline = useMemo(() => buildMoveTimeline(sliceResult), [sliceResult]);
+
+  // Playback loop — delegates clamping/pausing to the store setter.
+  useFrame((_, delta) => {
+    if (!playing) return;
+    onAdvance(delta * speed);
+    invalidate();
+  });
+
+  // Find the current move using binary search over cumulative times.
+  const pos = useMemo(() => {
+    if (timeline.moves.length === 0) return new THREE.Vector3();
+    const cum = timeline.cumulative;
+    const clampedT = Math.max(0, Math.min(simTime, timeline.total));
+    // Binary search for the first cumulative >= clampedT.
+    let lo = 0, hi = cum.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cum[mid] < clampedT) lo = mid + 1;
+      else hi = mid;
+    }
+    const { move, z } = timeline.moves[lo];
+    const prevCum = lo > 0 ? cum[lo - 1] : 0;
+    const moveDur = Math.max(1e-6, cum[lo] - prevCum);
+    const alpha = Math.max(0, Math.min(1, (clampedT - prevCum) / moveDur));
+    const x = move.from.x + (move.to.x - move.from.x) * alpha;
+    const y = move.from.y + (move.to.y - move.from.y) * alpha;
+    return new THREE.Vector3(x, y, z + 0.2);
+  }, [timeline, simTime]);
+
+  return (
+    <group>
+      {/* Nozzle marker */}
+      <mesh position={pos}>
+        <sphereGeometry args={[1.2, 16, 16]} />
+        <meshStandardMaterial
+          color="#ffcc00"
+          emissive="#ff8800"
+          emissiveIntensity={0.8}
+        />
+      </mesh>
+      {/* Guide line to bed */}
+      <Line
+        points={[[pos.x, pos.y, 0], [pos.x, pos.y, pos.z]]}
+        color="#ffcc00"
+        lineWidth={0.5}
+        transparent
+        opacity={0.35}
+      />
+    </group>
+  );
+}
+
 export function SlicerWorkspaceScene() {
   const { invalidate } = useThree();
 
@@ -274,14 +433,33 @@ export function SlicerWorkspaceScene() {
   const previewMode = useSlicerStore((s) => s.previewMode);
   const sliceResult = useSlicerStore((s) => s.sliceResult);
   const previewLayer = useSlicerStore((s) => s.previewLayer);
+  const previewLayerStart = useSlicerStore((s) => s.previewLayerStart);
   const previewShowTravel = useSlicerStore((s) => s.previewShowTravel);
   const previewColorMode = useSlicerStore((s) => s.previewColorMode);
+  const previewSimEnabled = useSlicerStore((s) => s.previewSimEnabled);
+  const previewSimPlaying = useSlicerStore((s) => s.previewSimPlaying);
+  const previewSimSpeed = useSlicerStore((s) => s.previewSimSpeed);
+  const previewSimTime = useSlicerStore((s) => s.previewSimTime);
+  const advancePreviewSimTime = useSlicerStore((s) => s.advancePreviewSimTime);
+  const printabilityReport = useSlicerStore((s) => s.printabilityReport);
+  const printabilityHighlight = useSlicerStore((s) => s.printabilityHighlight);
+
+  const highlightByObject = useMemo(() => {
+    const map = new Map<string, Set<number>>();
+    if (!printabilityReport || !printabilityHighlight) return map;
+    for (const o of printabilityReport.objects) {
+      if (o.highlightedTriangles.size > 0) map.set(o.objectId, o.highlightedTriangles);
+    }
+    return map;
+  }, [printabilityReport, printabilityHighlight]);
 
   // When any visible state changes, ask R3F to render one new frame.
   // Without this, frameloop="demand" would never repaint after store updates.
   useEffect(() => { invalidate(); }, [
     invalidate, plateObjects, selectedId, previewMode, sliceResult,
-    previewLayer, previewShowTravel, previewColorMode, transformMode,
+    previewLayer, previewLayerStart, previewShowTravel, previewColorMode,
+    transformMode, previewSimEnabled, previewSimPlaying, previewSimTime,
+    printabilityReport, printabilityHighlight,
   ]);
 
   const bv = printerProfile?.buildVolume ?? { x: 220, y: 220, z: 250 };
@@ -315,6 +493,7 @@ export function SlicerWorkspaceScene() {
           obj={obj}
           isSelected={obj.id === selectedId}
           materialColor={materialProfile?.color ?? '#4fc3f7'}
+          highlightedTriangles={highlightByObject.get(obj.id)}
           onClick={() => selectPlateObject(obj.id)}
           transformMode={transformMode}
           onTransformCommit={handleTransformCommit}
@@ -324,9 +503,20 @@ export function SlicerWorkspaceScene() {
       {previewMode === 'preview' && sliceResult && (
         <InlineGCodePreview
           sliceResult={sliceResult}
+          startLayer={previewLayerStart}
           currentLayer={previewLayer}
           showTravel={previewShowTravel}
           colorMode={previewColorMode}
+        />
+      )}
+
+      {previewMode === 'preview' && sliceResult && previewSimEnabled && (
+        <NozzleSimulator
+          sliceResult={sliceResult}
+          simTime={previewSimTime}
+          playing={previewSimPlaying}
+          speed={previewSimSpeed}
+          onAdvance={advancePreviewSimTime}
         />
       )}
 
