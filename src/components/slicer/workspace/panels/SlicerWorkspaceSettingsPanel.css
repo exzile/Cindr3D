@@ -24,11 +24,11 @@
 }
 
 .slicer-workspace-settings-panel__header {
-  padding: 12px 12px 12px 14px;
+  padding: 10px 12px 10px 14px;
   border-bottom: 1px solid var(--border);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   color: var(--text-primary);
   font-size: 13px;
@@ -196,6 +196,8 @@
 .slicer-workspace-settings-panel__profile-row {
   display: flex;
   gap: 6px;
+  width: 100%;
+  flex-basis: 100%;
 }
 
 .slicer-workspace-settings-panel__profile-select {

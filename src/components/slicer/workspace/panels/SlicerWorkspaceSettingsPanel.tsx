@@ -1,9 +1,8 @@
 import { useState, useCallback } from 'react';
-import { Edit3, Settings, SlidersHorizontal, Search, Sliders } from 'lucide-react';
+import { Edit3, Settings, Search, Sliders } from 'lucide-react';
 import { useSlicerStore } from '../../../../store/slicerStore';
 import { useSlicerVisibilityStore } from '../../../../store/slicerVisibilityStore';
 import type { PrintProfile } from '../../../../types/slicer';
-import { SlicerSection } from '../../SlicerSection';
 import { SlicerPrintProfileSettings } from '../../SlicerPrintProfileSettings';
 import { SlicerSettingsVisibilityModal } from '../modals/SlicerSettingsVisibilityModal';
 import './SlicerWorkspaceSettingsPanel.css';
@@ -48,6 +47,20 @@ export function SlicerWorkspaceSettingsPanel({ onEditProfile }: { onEditProfile:
         >
           <Sliders size={14} />
         </button>
+        {isVisible('printProfile') && (
+          <div className="slicer-workspace-settings-panel__profile-row">
+            <select
+              className="slicer-workspace-settings-panel__profile-select"
+              value={activePrintId}
+              onChange={(e) => setActivePrint(e.target.value)}
+            >
+              {printProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <button className="slicer-workspace-settings-panel__compact-button" onClick={() => onEditProfile('print')}>
+              <Edit3 size={12} />
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="slicer-workspace-settings-panel__search-shell">
@@ -64,21 +77,6 @@ export function SlicerWorkspaceSettingsPanel({ onEditProfile }: { onEditProfile:
       </div>
 
       <div className="slicer-workspace-settings-panel__content">
-        {/* Printer + Material pickers moved to the ribbon — see
-            components/toolbar/RibbonPrepareTab.tsx. */}
-        {isVisible('printProfile') && (
-          <SlicerSection title="Print Profile" color="#4a9eff" icon={<SlidersHorizontal size={14} />}>
-            <div className="slicer-workspace-settings-panel__profile-row">
-              <select className="slicer-workspace-settings-panel__profile-select" value={activePrintId} onChange={(e) => setActivePrint(e.target.value)}>
-                {printProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-              <button className="slicer-workspace-settings-panel__compact-button" onClick={() => onEditProfile('print')}>
-                <Edit3 size={12} />
-              </button>
-            </div>
-          </SlicerSection>
-        )}
-
         {print && <SlicerPrintProfileSettings print={print} upd={upd} />}
       </div>
 

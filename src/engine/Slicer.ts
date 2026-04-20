@@ -1513,16 +1513,21 @@ export class Slicer {
 
     if (offsetEdges.length < 3) return [];
 
-    // Compute intersection of consecutive offset edges
+    // Compute intersection of consecutive offset edges.
+    // At very acute/reflex vertices the intersection can be arbitrarily far
+    // away — clamp it so degenerate points don't produce spike lines in the
+    // preview or brim/skin geometry.
+    const maxReach = Math.abs(offset) * 10 + 1; // generous but finite
     for (let i = 0; i < offsetEdges.length; i++) {
       const e1 = offsetEdges[i];
       const e2 = offsetEdges[(i + 1) % offsetEdges.length];
 
+      const refPt = e1.b; // original vertex after offset
       const pt = this.lineLineIntersection2D(e1.a, e1.b, e2.a, e2.b);
-      if (pt) {
+      if (pt && pt.distanceTo(refPt) <= maxReach) {
         result.push(pt);
       } else {
-        // Parallel edges, use midpoint
+        // Parallel edges or degenerate intersection — use midpoint fallback
         result.push(
           new THREE.Vector2(
             (e1.b.x + e2.a.x) / 2,
@@ -1781,7 +1786,19 @@ export class Slicer {
     const centerX = (bbox.minX + bbox.maxX) / 2 + offX;
     const centerY = (bbox.minY + bbox.maxY) / 2 + offY;
 
+    // Defensive: spacing must be a positive finite number. If it's NaN/0/-0,
+    // the loop below would either run zero times or spin forever. Zero-
+    // density was already short-circuited up-callers but an explicit guard
+    // here protects this hot path regardless.
+    if (!(spacing > 0) || !isFinite(spacing)) return results;
+    // Belt-and-suspenders iteration cap. Even on absurd bboxes a scan-line
+    // pass shouldn't emit more than a few thousand lines; 50k is well past
+    // any legitimate case.
+    const MAX_SCAN_LINES = 50000;
+    let scanCount = 0;
+
     for (let d = -maxDim / 2; d <= maxDim / 2; d += spacing) {
+      if (++scanCount > MAX_SCAN_LINES) break;
       // Rotated scan line endpoints
       const p1 = new THREE.Vector2(
         centerX + cos * (-maxDim) - sin * d,
@@ -2163,7 +2180,14 @@ export class Slicer {
     // XY distance offset from model
     const xyDist = pp.supportXYDistance;
 
+    // Defensive: same scan-line safety as generateScanLines. Bail on bad
+    // spacing and cap total iterations.
+    if (!(spacing > 0) || !isFinite(spacing)) return moves;
+    const SUPPORT_MAX_SCAN = 50000;
+    let supScanCount = 0;
+
     for (let d = -maxDim / 2; d <= maxDim / 2; d += spacing) {
+      if (++supScanCount > SUPPORT_MAX_SCAN) break;
       const p1x = centerX + cos * (-maxDim) - sin * d;
       const p1y = centerY + sin * (-maxDim) + cos * d;
       const p2x = centerX + cos * maxDim - sin * d;

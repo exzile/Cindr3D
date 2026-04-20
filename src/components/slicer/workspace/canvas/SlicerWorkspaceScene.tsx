@@ -3,7 +3,7 @@ import { Line, OrbitControls, Text, TransformControls } from '@react-three/drei'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useSlicerStore } from '../../../../store/slicerStore';
-import type { PlateObject, SliceResult, SliceMove } from '../../../../types/slicer';
+import type { PlateObject, SliceResult, SliceMove, SliceLayer } from '../../../../types/slicer';
 import { normalizeRotationRadians, normalizeScale } from '../../../../utils/slicerTransforms';
 
 function BuildPlateGrid({ sizeX, sizeY }: { sizeX: number; sizeY: number }) {
@@ -276,64 +276,111 @@ const MOVE_TYPE_COLORS: Record<string, THREE.Color> = {
 };
 const FALLBACK_COLOR = new THREE.Color('#ffffff');
 
+// One layer's worth of line-segment geometry. Uses <lineSegments> so each
+// from/to pair is drawn independently — no stray connector lines between
+// moves the way a continuous <Line> polyline would produce.
+function LayerLines({
+  layer,
+  isCurrentLayer,
+  currentLayerMoveCount,
+  showTravel,
+  colorMode,
+}: {
+  layer: SliceLayer;
+  isCurrentLayer: boolean;
+  currentLayerMoveCount: number | undefined;
+  showTravel: boolean;
+  colorMode: 'type' | 'speed' | 'flow';
+}) {
+  const { extGeo, travelGeo } = useMemo(() => {
+    const moves = (isCurrentLayer && currentLayerMoveCount !== undefined)
+      ? layer.moves.slice(0, currentLayerMoveCount)
+      : layer.moves;
+
+    const extPos: number[] = [];
+    const extCol: number[] = [];
+    const travPos: number[] = [];
+
+    for (const move of moves) {
+      if (move.type === 'travel') {
+        if (showTravel) {
+          travPos.push(move.from.x, move.from.y, layer.z, move.to.x, move.to.y, layer.z);
+        }
+      } else {
+        extPos.push(move.from.x, move.from.y, layer.z, move.to.x, move.to.y, layer.z);
+        let col: THREE.Color;
+        if (colorMode === 'type') {
+          col = MOVE_TYPE_COLORS[move.type] ?? FALLBACK_COLOR;
+        } else if (colorMode === 'speed') {
+          col = new THREE.Color().setHSL(Math.max(0, (240 - move.speed * 2) / 360), 0.8, 0.55);
+        } else {
+          col = new THREE.Color().setHSL(Math.max(0, (120 - move.extrusion * 100) / 360), 0.8, 0.55);
+        }
+        extCol.push(col.r, col.g, col.b, col.r, col.g, col.b);
+      }
+    }
+
+    const eg = new THREE.BufferGeometry();
+    if (extPos.length > 0) {
+      eg.setAttribute('position', new THREE.Float32BufferAttribute(extPos, 3));
+      eg.setAttribute('color',    new THREE.Float32BufferAttribute(extCol, 3));
+    }
+
+    const tg = travPos.length > 0 ? new THREE.BufferGeometry() : null;
+    if (tg) tg.setAttribute('position', new THREE.Float32BufferAttribute(travPos, 3));
+
+    return { extGeo: eg, travelGeo: tg };
+  }, [layer, isCurrentLayer, currentLayerMoveCount, showTravel, colorMode]);
+
+  useEffect(() => () => { extGeo.dispose(); travelGeo?.dispose(); }, [extGeo, travelGeo]);
+
+  return (
+    <>
+      {extGeo.attributes.position && (
+        <lineSegments geometry={extGeo}>
+          <lineBasicMaterial vertexColors />
+        </lineSegments>
+      )}
+      {travelGeo && (
+        <lineSegments geometry={travelGeo}>
+          <lineBasicMaterial color="#333355" transparent opacity={0.4} />
+        </lineSegments>
+      )}
+    </>
+  );
+}
+
 function InlineGCodePreview({
   sliceResult,
   startLayer,
   currentLayer,
+  currentLayerMoveCount,
   showTravel,
   colorMode,
 }: {
   sliceResult: SliceResult;
   startLayer: number;
   currentLayer: number;
+  currentLayerMoveCount?: number;
   showTravel: boolean;
   colorMode: 'type' | 'speed' | 'flow';
 }) {
-  // Recompute layer geometry only when the relevant inputs actually change.
-  const layerData = useMemo(() => {
-    return sliceResult.layers
-      .filter((l) => l.layerIndex >= startLayer && l.layerIndex <= currentLayer)
-      .map((layer) => {
-        const extrusions: [number, number, number][] = [];
-        const travels: [number, number, number][] = [];
-        const extColors: THREE.Color[] = [];
-
-        for (const move of layer.moves) {
-          if (move.type === 'travel') {
-            if (showTravel) {
-              travels.push([move.from.x, move.from.y, layer.z]);
-              travels.push([move.to.x, move.to.y, layer.z]);
-            }
-          } else {
-            extrusions.push([move.from.x, move.from.y, layer.z]);
-            extrusions.push([move.to.x, move.to.y, layer.z]);
-            let col: THREE.Color;
-            if (colorMode === 'type') {
-              col = MOVE_TYPE_COLORS[move.type] ?? FALLBACK_COLOR;
-            } else if (colorMode === 'speed') {
-              col = new THREE.Color(`hsl(${Math.max(0, 240 - move.speed * 2)}, 80%, 55%)`);
-            } else {
-              col = new THREE.Color(`hsl(${Math.max(0, 120 - move.extrusion * 100)}, 80%, 55%)`);
-            }
-            extColors.push(col, col);
-          }
-        }
-
-        return { layerIndex: layer.layerIndex, extrusions, travels, extColors };
-      });
-  }, [sliceResult, startLayer, currentLayer, showTravel, colorMode]);
+  const layers = useMemo(
+    () => sliceResult.layers.filter((l) => l.layerIndex >= startLayer && l.layerIndex <= currentLayer),
+    [sliceResult, startLayer, currentLayer],
+  );
 
   return (
     <group>
-      {layerData.map(({ layerIndex, extrusions, travels, extColors }) => (
-        <group key={layerIndex}>
-          {extrusions.length > 1 && (
-            <Line points={extrusions} vertexColors={extColors} lineWidth={1.2} />
-          )}
-          {travels.length > 1 && (
-            <Line points={travels} color="#333355" lineWidth={0.3} />
-          )}
-        </group>
+      {layers.map((layer) => (
+        <LayerLines
+          key={layer.layerIndex}
+          layer={layer}
+          isCurrentLayer={layer.layerIndex === currentLayer}
+          currentLayerMoveCount={currentLayerMoveCount}
+          showTravel={showTravel}
+          colorMode={colorMode}
+        />
       ))}
     </group>
   );
@@ -344,10 +391,12 @@ function InlineGCodePreview({
 // ---------------------------------------------------------------------------
 
 interface MoveTimeline {
-  /** For each move, the cumulative print time at the END of that move (s). */
   cumulative: Float32Array;
-  /** Flat moves across all layers (references into sliceResult.layers). */
   moves: Array<{ move: SliceMove; z: number }>;
+  /** layer.layerIndex for each flat move entry */
+  layerIndices: Int32Array;
+  /** move index within its layer for each flat move entry */
+  moveWithinLayer: Int32Array;
   total: number;
 }
 
@@ -356,41 +405,42 @@ function buildMoveTimeline(sliceResult: SliceResult): MoveTimeline {
   let totalMoves = 0;
   for (const layer of sliceResult.layers) totalMoves += layer.moves.length;
   const cumulative = new Float32Array(totalMoves);
+  const layerIndices = new Int32Array(totalMoves);
+  const moveWithinLayer = new Int32Array(totalMoves);
 
   let t = 0;
   let i = 0;
   for (const layer of sliceResult.layers) {
-    for (const move of layer.moves) {
+    for (let mi = 0; mi < layer.moves.length; mi++) {
+      const move = layer.moves[mi];
       const dx = move.to.x - move.from.x;
       const dy = move.to.y - move.from.y;
       const dist = Math.hypot(dx, dy);
-      // Move time = dist / speed (mm / (mm/s)). Guard zero-speed travel moves.
-      const dt = move.speed > 0 ? dist / move.speed : 0;
-      t += dt;
+      t += move.speed > 0 ? dist / move.speed : 0;
       cumulative[i] = t;
+      layerIndices[i] = layer.layerIndex;
+      moveWithinLayer[i] = mi;
       flat.push({ move, z: layer.z });
       i++;
     }
   }
-  return { cumulative, moves: flat, total: t };
+  return { cumulative, moves: flat, layerIndices, moveWithinLayer, total: t };
 }
 
 function NozzleSimulator({
-  sliceResult,
+  timeline,
   simTime,
   playing,
   speed,
   onAdvance,
 }: {
-  sliceResult: SliceResult;
+  timeline: MoveTimeline;
   simTime: number;
   playing: boolean;
   speed: number;
   onAdvance: (deltaSeconds: number) => void;
 }) {
   const { invalidate } = useThree();
-  // Build timeline once per slice result.
-  const timeline = useMemo(() => buildMoveTimeline(sliceResult), [sliceResult]);
 
   // Playback loop — delegates clamping/pausing to the store setter.
   useFrame((_, delta) => {
@@ -487,6 +537,33 @@ export function SlicerWorkspaceScene() {
 
   const bv = printerProfile?.buildVolume ?? { x: 220, y: 220, z: 250 };
 
+  // Build the full move timeline once per slice result. Shared by NozzleSimulator
+  // and the sim-state lookup below so we pay the O(n) build cost only once.
+  const moveTimeline = useMemo(
+    () => (sliceResult ? buildMoveTimeline(sliceResult) : null),
+    [sliceResult],
+  );
+
+  // Map simTime → { layerIndex, moveCount } so InlineGCodePreview reveals
+  // moves one at a time instead of entire layers at once.
+  const simState = useMemo(() => {
+    if (!previewSimEnabled || !moveTimeline || moveTimeline.moves.length === 0) {
+      return { layerIndex: previewLayer, moveCount: undefined as number | undefined };
+    }
+    const cum = moveTimeline.cumulative;
+    const clampedT = Math.max(0, Math.min(previewSimTime, moveTimeline.total));
+    let lo = 0, hi = cum.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cum[mid] < clampedT) lo = mid + 1;
+      else hi = mid;
+    }
+    return {
+      layerIndex: moveTimeline.layerIndices[lo],
+      moveCount: moveTimeline.moveWithinLayer[lo] + 1,
+    };
+  }, [previewSimEnabled, moveTimeline, previewSimTime, previewLayer]);
+
   const handleMiss = useCallback(() => {
     selectPlateObject(null);
   }, [selectPlateObject]);
@@ -527,15 +604,16 @@ export function SlicerWorkspaceScene() {
         <InlineGCodePreview
           sliceResult={sliceResult}
           startLayer={previewLayerStart}
-          currentLayer={previewLayer}
+          currentLayer={simState.layerIndex}
+          currentLayerMoveCount={simState.moveCount}
           showTravel={previewShowTravel}
           colorMode={previewColorMode}
         />
       )}
 
-      {previewMode === 'preview' && sliceResult && previewSimEnabled && (
+      {previewMode === 'preview' && sliceResult && previewSimEnabled && moveTimeline && (
         <NozzleSimulator
-          sliceResult={sliceResult}
+          timeline={moveTimeline}
           simTime={previewSimTime}
           playing={previewSimPlaying}
           speed={previewSimSpeed}

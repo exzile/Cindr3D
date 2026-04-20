@@ -149,24 +149,41 @@ interface SlicerStore {
 // =============================================================================
 // Geometry serialization — THREE.BufferGeometry <-> plain JSON-safe object
 // =============================================================================
+// Only position and index are serialized — normals are recomputed on load,
+// and UVs are not used by the slicer. This avoids 2–3× large Array.from
+// copies that caused GC pauses and near-OOM on big meshes.
+//
+// partialize() runs on every zustand state update, so we cache the result in
+// a WeakMap keyed on the geometry object. Array.from is only called once per
+// geometry; subsequent calls are O(1) map lookups. The WeakMap entry is
+// automatically collected when the geometry is GC'd.
+const MAX_PERSIST_VERTS = 500_000;
+const geomSerializeCache = new WeakMap<THREE.BufferGeometry, SerializedGeom | null>();
+
 interface SerializedGeom {
   position: number[];
-  normal?: number[];
-  uv?: number[];
   index?: number[];
 }
 
 function serializeGeom(geom: THREE.BufferGeometry | null | undefined): SerializedGeom | null {
   if (!geom?.attributes?.position) return null;
+  if (geomSerializeCache.has(geom)) return geomSerializeCache.get(geom)!;
+  const posArray = geom.attributes.position.array as Float32Array;
+  if (posArray.length / 3 > MAX_PERSIST_VERTS) {
+    geomSerializeCache.set(geom, null);
+    return null;
+  }
   try {
     const out: SerializedGeom = {
-      position: Array.from(geom.attributes.position.array as Float32Array),
+      position: Array.from(posArray),
     };
-    if (geom.attributes.normal) out.normal = Array.from(geom.attributes.normal.array as Float32Array);
-    if (geom.attributes.uv)     out.uv     = Array.from(geom.attributes.uv.array as Float32Array);
-    if (geom.index)              out.index  = Array.from(geom.index.array as Uint16Array | Uint32Array);
+    if (geom.index) out.index = Array.from(geom.index.array as Uint16Array | Uint32Array);
+    geomSerializeCache.set(geom, out);
     return out;
-  } catch { return null; }
+  } catch {
+    geomSerializeCache.set(geom, null);
+    return null;
+  }
 }
 
 function isBufferGeometry(geometry: unknown): geometry is THREE.BufferGeometry {
@@ -179,9 +196,8 @@ function isBufferGeometry(geometry: unknown): geometry is THREE.BufferGeometry {
 function deserializeGeom(data: SerializedGeom): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(data.position, 3));
-  if (data.normal) g.setAttribute('normal', new THREE.Float32BufferAttribute(data.normal, 3));
-  if (data.uv)     g.setAttribute('uv',     new THREE.Float32BufferAttribute(data.uv, 2));
-  if (data.index)  g.setIndex(new THREE.BufferAttribute(new Uint32Array(data.index), 1));
+  if (data.index) g.setIndex(new THREE.BufferAttribute(new Uint32Array(data.index), 1));
+  g.computeVertexNormals();
   g.computeBoundingBox();
   return g;
 }
