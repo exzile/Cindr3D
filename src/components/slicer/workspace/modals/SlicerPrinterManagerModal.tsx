@@ -264,6 +264,7 @@ export function SlicerPrinterManagerModal({ onClose }: { onClose: () => void }) 
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [syncing, setSyncing]         = useState(false);
   const [syncError, setSyncError]     = useState<string | null>(null);
+  const [syncStatus, setSyncStatus]   = useState<string | null>(null);
   const [selectedDuetId, setSelectedDuetId] = useState(activeDuetId);
 
   const selectedPrinter = printerProfiles.find((p) => p.id === selectedId) ?? printerProfiles[0];
@@ -358,6 +359,83 @@ export function SlicerPrinterManagerModal({ onClose }: { onClose: () => void }) 
     }
   }
 
+  // Re-sync the currently selected (already-added) printer from the connected
+  // Duet board. Unlike handleSyncFromDuet which creates a new profile, this
+  // updates the existing printer profile plus its bound material and print
+  // profiles in place — pulling fresh acceleration (M204/M201) and jerk (M566)
+  // values into the print profile so the slicer matches the board.
+  async function handleSyncSelected() {
+    if (!selectedPrinter) return;
+    const service = printerService ?? usePrinterStore.getState().service;
+    if (!service) { setSyncError('No connected Duet printer'); setSyncStatus(null); return; }
+    setSyncing(true);
+    setSyncError(null);
+    setSyncStatus(null);
+    try {
+      const readFile = async (path: string) => {
+        try { return await (await service.downloadFile(path)).text(); }
+        catch { return ''; }
+      };
+      const [configG, startG, stopG, overrideG, tool0G, tpre0G, tfree0G] = await Promise.all([
+        readFile('0:/sys/config.g'),
+        readFile('0:/sys/start.g'),
+        readFile('0:/sys/stop.g'),
+        readFile('0:/sys/config-override.g'),
+        readFile('0:/sys/tool0.g'),
+        readFile('0:/sys/tpre0.g'),
+        readFile('0:/sys/tfree0.g'),
+      ]);
+      if (!configG.trim()) {
+        throw new Error('config.g is empty or missing on the board');
+      }
+      const { profile, startGCode, endGCode, extruderStartGCode, extruderEndGCode, extruderPrestartGCode, materialPatch, printPatch } =
+        parseDuetConfig(configG, startG, stopG, overrideG, tool0G, tpre0G, tfree0G);
+
+      updatePrinter(selectedPrinter.id, {
+        ...profile,
+        gcodeFlavorType: 'duet',
+        ...(startGCode ? { startGCode } : {}),
+        ...(endGCode   ? { endGCode }   : {}),
+        ...(extruderStartGCode    ? { extruderStartGCode }    : {}),
+        ...(extruderEndGCode      ? { extruderEndGCode }      : {}),
+        ...(extruderPrestartGCode ? { extruderPrestartGCode } : {}),
+      });
+
+      const state = useSlicerStore.getState();
+
+      if (Object.keys(materialPatch.fields).length > 0) {
+        const materialId = state.printerLastMaterial[selectedPrinter.id]
+          ?? state.materialProfiles.find((m) => m.printerId === selectedPrinter.id)?.id;
+        if (materialId) {
+          updateMaterialProfile(materialId, {
+            ...materialPatch.fields,
+            machineSourcedFields: materialPatch.machineSourcedFields,
+          });
+        }
+      }
+
+      if (Object.keys(printPatch.fields).length > 0) {
+        const printId = state.printerLastPrint[selectedPrinter.id]
+          ?? state.printProfiles.find((p) => p.printerId === selectedPrinter.id)?.id;
+        if (printId) {
+          updatePrintProfile(printId, {
+            ...printPatch.fields,
+            machineSourcedFields: printPatch.machineSourcedFields,
+          });
+        }
+      }
+
+      const printerFieldCount    = Object.keys(profile).length;
+      const materialFieldCount   = Object.keys(materialPatch.fields).length;
+      const printFieldCount      = Object.keys(printPatch.fields).length;
+      setSyncStatus(`Synced ${printerFieldCount} printer, ${materialFieldCount} material, ${printFieldCount} print fields from Duet`);
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   function handleDelete(id: string) {
     if (printerProfiles.length <= 1) return;
     deletePrinter(id);
@@ -370,6 +448,8 @@ export function SlicerPrinterManagerModal({ onClose }: { onClose: () => void }) 
     setSelectedId(id);
     setActivePrinter(id);
     setConfirmDelete(null);
+    setSyncError(null);
+    setSyncStatus(null);
   }
 
   return (
@@ -590,8 +670,39 @@ export function SlicerPrinterManagerModal({ onClose }: { onClose: () => void }) 
         {/* Footer */}
         <div style={{
           padding: '10px 18px', borderTop: `1px solid ${colors.panelBorder}`,
-          display: 'flex', justifyContent: 'flex-end', flexShrink: 0,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          gap: 12, flexShrink: 0,
         }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+            {printerConnected && selectedPrinter && (
+              <button
+                onClick={handleSyncSelected}
+                disabled={syncing}
+                title="Re-read config.g from the connected Duet and update this printer + its material and print profiles (acceleration, jerk, retraction, pressure advance)."
+                style={{
+                  ...sharedStyles.btnBase,
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  fontSize: 12,
+                  opacity: syncing ? 0.6 : 1,
+                  cursor: syncing ? 'wait' : 'pointer',
+                  color: colors.accent, borderColor: colors.accent,
+                }}
+              >
+                <RefreshCw size={12} className={syncing ? 'spin' : undefined} />
+                {syncing ? 'Syncing…' : 'Sync from Duet'}
+              </button>
+            )}
+            {syncError && (
+              <div style={{ fontSize: 11, color: '#ef4444', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {syncError}
+              </div>
+            )}
+            {!syncError && syncStatus && (
+              <div style={{ fontSize: 11, color: colors.textDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {syncStatus}
+              </div>
+            )}
+          </div>
           <button style={sharedStyles.btnAccent} onClick={onClose}>Close</button>
         </div>
       </div>
