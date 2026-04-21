@@ -36,9 +36,14 @@
   color: var(--sc);
 }
 
-.slicer-section__header svg {
+.slicer-section__chevron {
   opacity: 0.7;
   flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.slicer-section__chevron--closed {
+  transform: rotate(-90deg);
 }
 
 /* Row hover tint inherits the section color */
@@ -58,6 +63,21 @@
 .slicer-section__body .slicer-settings-field__range,
 .slicer-section__body .slicer-settings-field__check-input {
   accent-color: var(--sc);
+}
+
+/* ── Animated collapse/expand wrapper ─────────────────────────────────────── */
+.slicer-section__body-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slicer-section__body-wrap.is-open {
+  grid-template-rows: 1fr;
+}
+
+.slicer-section__body-inner {
+  overflow: hidden;
 }
 
 .slicer-section__body {

@@ -1,4 +1,4 @@
-import { Cpu } from 'lucide-react';
+import { Cpu, AlertCircle, HelpCircle } from 'lucide-react';
 import { clamp, parseIntOr, parseNumberOr } from '../helpers/numberParsing';
 import './SettingsFieldControls.css';
 
@@ -15,6 +15,34 @@ function MachineLock() {
   );
 }
 
+function FirmwareIncompatible({ reason }: { reason: string }) {
+  return (
+    <span className="slicer-settings-field__firmware-incompatible" title={reason}>
+      <AlertCircle size={10} />
+    </span>
+  );
+}
+
+function HelpIcon({
+  brief,
+  onClick,
+}: {
+  brief: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className="slicer-settings-field__help-icon"
+      title={brief}
+      onClick={onClick}
+      type="button"
+      aria-label="Show help"
+    >
+      <HelpCircle size={10} />
+    </button>
+  );
+}
+
 export function Num({
   label,
   value,
@@ -24,6 +52,9 @@ export function Num({
   max = 9999,
   unit,
   machineSourced,
+  firmwareUnsupported,
+  helpBrief,
+  onShowHelp,
 }: {
   label: string;
   value: number;
@@ -33,10 +64,26 @@ export function Num({
   max?: number;
   unit?: string;
   machineSourced?: boolean;
+  firmwareUnsupported?: string;
+  helpBrief?: string;
+  onShowHelp?: () => void;
 }) {
+  const disabled = machineSourced || !!firmwareUnsupported;
+  const title = firmwareUnsupported ?? (machineSourced ? LOCK_TOOLTIP : undefined);
+  const classes = [
+    'slicer-settings-field',
+    machineSourced && 'slicer-settings-field--locked',
+    firmwareUnsupported && 'slicer-settings-field--firmware-unsupported',
+  ].filter(Boolean).join(' ');
+
   return (
-    <div className={`slicer-settings-field${machineSourced ? ' slicer-settings-field--locked' : ''}`} title={machineSourced ? LOCK_TOOLTIP : undefined}>
-      <div className="slicer-settings-field__label">{label}{machineSourced && <MachineLock />}</div>
+    <div className={classes} title={title}>
+      <div className="slicer-settings-field__label">
+        {helpBrief && onShowHelp && <HelpIcon brief={helpBrief} onClick={onShowHelp} />}
+        {label}
+        {machineSourced && <MachineLock />}
+        {firmwareUnsupported && <FirmwareIncompatible reason={firmwareUnsupported} />}
+      </div>
       <div className="slicer-settings-field__input-wrap">
         <input
           type="number"
@@ -45,9 +92,9 @@ export function Num({
           step={step}
           min={min}
           max={max}
-          disabled={machineSourced}
-          readOnly={machineSourced}
-          onChange={(e) => { if (machineSourced) return; onChange(clamp(parseNumberOr(e.target.value, min), min, max)); }}
+          disabled={disabled}
+          readOnly={disabled}
+          onChange={(e) => { if (disabled) return; onChange(clamp(parseNumberOr(e.target.value, min), min, max)); }}
         />
         <span className="slicer-settings-field__unit">{unit ?? ''}</span>
       </div>
@@ -55,11 +102,44 @@ export function Num({
   );
 }
 
-export function Check({ label, value, onChange, machineSourced }: { label: string; value: boolean; onChange: (v: boolean) => void; machineSourced?: boolean }) {
+export function Check({
+  label,
+  value,
+  onChange,
+  machineSourced,
+  firmwareUnsupported,
+  helpBrief,
+  onShowHelp,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+  machineSourced?: boolean;
+  firmwareUnsupported?: string;
+  helpBrief?: string;
+  onShowHelp?: () => void;
+}) {
+  const disabled = machineSourced || !!firmwareUnsupported;
+  const title = firmwareUnsupported ?? (machineSourced ? LOCK_TOOLTIP : undefined);
+  const classes = [
+    'slicer-settings-field__check',
+    machineSourced && 'slicer-settings-field__check--locked',
+    firmwareUnsupported && 'slicer-settings-field__check--firmware-unsupported',
+  ].filter(Boolean).join(' ');
+
   return (
-    <label className={`slicer-settings-field__check${machineSourced ? ' slicer-settings-field__check--locked' : ''}`} title={machineSourced ? LOCK_TOOLTIP : undefined}>
-      <input className="slicer-settings-field__check-input" type="checkbox" checked={value} disabled={machineSourced} onChange={(e) => { if (machineSourced) return; onChange(e.target.checked); }} />
-      {label}{machineSourced && <MachineLock />}
+    <label className={classes} title={title}>
+      {helpBrief && onShowHelp && <HelpIcon brief={helpBrief} onClick={onShowHelp} />}
+      <input
+        className="slicer-settings-field__check-input"
+        type="checkbox"
+        checked={value}
+        disabled={disabled}
+        onChange={(e) => { if (disabled) return; onChange(e.target.checked); }}
+      />
+      {label}
+      {machineSourced && <MachineLock />}
+      {firmwareUnsupported && <FirmwareIncompatible reason={firmwareUnsupported} />}
     </label>
   );
 }
@@ -69,16 +149,36 @@ export function Sel<T extends string>({
   value,
   onChange,
   options,
+  firmwareUnsupported,
+  helpBrief,
+  onShowHelp,
 }: {
   label: string;
   value: T;
   onChange: (v: T) => void;
   options: { value: T; label: string }[];
+  firmwareUnsupported?: string;
+  helpBrief?: string;
+  onShowHelp?: () => void;
 }) {
+  const classes = [
+    'slicer-settings-field',
+    firmwareUnsupported && 'slicer-settings-field--firmware-unsupported',
+  ].filter(Boolean).join(' ');
+
   return (
-    <div className="slicer-settings-field">
-      <div className="slicer-settings-field__label">{label}</div>
-      <select className="slicer-settings-field__select" value={value} onChange={(e) => onChange(e.target.value as T)}>
+    <div className={classes} title={firmwareUnsupported}>
+      <div className="slicer-settings-field__label">
+        {helpBrief && onShowHelp && <HelpIcon brief={helpBrief} onClick={onShowHelp} />}
+        {label}
+        {firmwareUnsupported && <FirmwareIncompatible reason={firmwareUnsupported} />}
+      </div>
+      <select
+        className="slicer-settings-field__select"
+        value={value}
+        disabled={!!firmwareUnsupported}
+        onChange={(e) => { if (firmwareUnsupported) return; onChange(e.target.value as T); }}
+      >
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </div>

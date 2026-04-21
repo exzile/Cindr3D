@@ -127,17 +127,33 @@ export function SlicerWorkspaceObjectsPanel() {
             No objects on the build plate.
           </div>
         )}
-        {plateObjects.map((obj) => (
-          <div key={obj.id} onClick={() => selectPlateObject(obj.id)} className={`slicer-workspace-objects-panel__row ${obj.id === selectedId ? 'is-selected' : ''}`}>
-            <div>
-              <div className="slicer-workspace-objects-panel__name" title={obj.name}>{obj.name}</div>
-              <div className="slicer-workspace-objects-panel__size">{sizeStr(obj)}</div>
+        {plateObjects.map((obj) => {
+          const w = obj.boundingBox.max.x - obj.boundingBox.min.x;
+          const d = obj.boundingBox.max.y - obj.boundingBox.min.y;
+          const h = obj.boundingBox.max.z - obj.boundingBox.min.z;
+          const initials = obj.name.slice(0, 2).toUpperCase();
+          return (
+            <div key={obj.id} onClick={() => selectPlateObject(obj.id)} className={`slicer-workspace-objects-panel__row ${obj.id === selectedId ? 'is-selected' : ''}`}>
+              <div className="slicer-workspace-objects-panel__thumb" aria-hidden>
+                <svg viewBox="0 0 28 28" width="28" height="28" className="slicer-workspace-objects-panel__thumb-svg">
+                  {/* isometric box silhouette */}
+                  <polygon points="14,4 24,9 24,19 14,24 4,19 4,9" className="slicer-workspace-objects-panel__thumb-hex" />
+                  <polyline points="14,4 14,14" className="slicer-workspace-objects-panel__thumb-edge" />
+                  <polyline points="14,14 24,9" className="slicer-workspace-objects-panel__thumb-edge" />
+                  <polyline points="14,14 4,9" className="slicer-workspace-objects-panel__thumb-edge" />
+                  <text x="14" y="17" textAnchor="middle" className="slicer-workspace-objects-panel__thumb-text">{initials}</text>
+                </svg>
+              </div>
+              <div className="slicer-workspace-objects-panel__row-info">
+                <div className="slicer-workspace-objects-panel__name" title={obj.name}>{obj.name}</div>
+                <div className="slicer-workspace-objects-panel__size">{w.toFixed(1)} × {d.toFixed(1)} × {h.toFixed(1)} mm</div>
+              </div>
+              <button title={`Remove ${obj.name}`} className="slicer-workspace-objects-panel__remove" onClick={(e) => { e.stopPropagation(); removeFromPlate(obj.id); }}>
+                <Trash2 size={13} />
+              </button>
             </div>
-            <button title={`Remove ${obj.name}`} className="slicer-workspace-objects-panel__remove" onClick={(e) => { e.stopPropagation(); removeFromPlate(obj.id); }}>
-              <Trash2 size={14} />
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {selectedObj && pos && rot && scl && (

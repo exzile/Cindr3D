@@ -192,3 +192,57 @@
 .slicer-settings-field__check--locked {
   color: var(--text-muted);
 }
+
+/* ── firmware unsupported state: disabled with red warning ────────────────── */
+.slicer-settings-field--firmware-unsupported .slicer-settings-field__input,
+.slicer-settings-field--firmware-unsupported .slicer-settings-field__select,
+.slicer-settings-field__check--firmware-unsupported .slicer-settings-field__check-input {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: color-mix(in srgb, #dc263580, var(--bg-input));
+  border-color: #dc2635;
+}
+
+.slicer-settings-field--firmware-unsupported .slicer-settings-field__label,
+.slicer-settings-field__check--firmware-unsupported {
+  color: #dc2635;
+}
+
+/* Firmware incompatibility icon */
+.slicer-settings-field__firmware-incompatible {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 5px;
+  color: #dc2635;
+  opacity: 0.9;
+  vertical-align: middle;
+  flex-shrink: 0;
+  cursor: help;
+}
+
+/* ── Help icon ───────────────────────────────────────────────────────────── */
+.slicer-settings-field__help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin-right: 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: help;
+  transition: color 0.15s ease;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.slicer-settings-field__help-icon:hover {
+  color: var(--accent);
+}
+
+.slicer-settings-field__help-icon:active {
+  color: color-mix(in srgb, var(--accent) 80%, transparent);
+}

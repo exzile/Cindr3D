@@ -68,46 +68,104 @@
 }
 
 .slicer-workspace-objects-panel__row {
-  padding: 6px 8px 6px 10px;
+  padding: 7px 8px 7px 10px;
   border-left: 3px solid transparent;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
   background: transparent;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   transition: background 0.15s ease, border-left-color 0.15s ease;
   animation: objects-row-in 0.18s ease both;
-}
-
-.slicer-workspace-objects-panel__row > div:first-child {
-  flex: 1 1 auto;
-  min-width: 0; /* allow text to truncate so the trash icon never gets pushed off */
+  position: relative;
+  overflow: hidden;
 }
 
 .slicer-workspace-objects-panel__row:hover {
-  background: var(--bg-hover, rgba(255, 255, 255, 0.04));
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
 .slicer-workspace-objects-panel__row.is-selected {
-  background: var(--bg-toolbar);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-toolbar));
   border-left-color: var(--accent);
+  animation: objects-row-in 0.18s ease both, objects-select-flash 0.35s ease;
+}
+
+.slicer-workspace-objects-panel__row-info {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .slicer-workspace-objects-panel__name {
   color: var(--text-primary);
   font-size: 12px;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
 }
 
+.slicer-workspace-objects-panel__row.is-selected .slicer-workspace-objects-panel__name {
+  color: var(--accent);
+}
+
 .slicer-workspace-objects-panel__size {
   color: var(--text-muted);
   font-size: 10px;
+  margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ── Object thumbnail ─────────────────────────────────────────────────────── */
+.slicer-workspace-objects-panel__thumb {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-toolbar));
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.slicer-workspace-objects-panel__row.is-selected .slicer-workspace-objects-panel__thumb {
+  background: color-mix(in srgb, var(--accent) 20%, var(--bg-toolbar));
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.slicer-workspace-objects-panel__thumb-svg {
+  overflow: visible;
+}
+
+.slicer-workspace-objects-panel__thumb-hex {
+  fill: color-mix(in srgb, var(--accent) 18%, transparent);
+  stroke: color-mix(in srgb, var(--accent) 55%, transparent);
+  stroke-width: 1.2;
+}
+
+.slicer-workspace-objects-panel__thumb-edge {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 40%, transparent);
+  stroke-width: 0.8;
+}
+
+.slicer-workspace-objects-panel__thumb-text {
+  fill: var(--accent);
+  font-size: 7px;
+  font-weight: 700;
+  font-family: inherit;
+  opacity: 0.9;
+}
+
+@keyframes objects-select-flash {
+  0%   { background: color-mix(in srgb, var(--accent) 28%, var(--bg-toolbar)); }
+  100% { background: color-mix(in srgb, var(--accent) 10%, var(--bg-toolbar)); }
 }
 
 .slicer-workspace-objects-panel__remove {
