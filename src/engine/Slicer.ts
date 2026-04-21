@@ -86,6 +86,14 @@ export class Slicer {
     const mat = this.materialProfile;
     const printer = this.printerProfile;
 
+    // Firmware dialect. 'duet' and 'reprap' share RepRap Firmware syntax
+    // (pressure advance via M572, instantaneous-speed-change "jerk" via
+    // M566 in mm/min). 'marlin' uses classic M205 jerk / M900 K linear
+    // advance. 'klipper' ignores M205 / M900 and wants macro commands.
+    const flavor: 'marlin' | 'reprap' | 'duet' | 'klipper' = printer.gcodeFlavorType ?? 'marlin';
+    const isRRF = flavor === 'duet' || flavor === 'reprap';
+    const isKlipper = flavor === 'klipper';
+
     // ----- 1. Prepare triangles -----
     this.reportProgress('preparing', 0, 0, 0, 'Extracting triangles...');
     const triangles = this.extractTriangles(geometries);
@@ -172,7 +180,16 @@ export class Slicer {
       if (!pp.jerkEnabled) return;
       const v = Number((val ?? fallback).toFixed(2));
       if (v === _currentJerk) return;
-      gcode.push(`M205 X${v} Y${v} ; Jerk`);
+      if (isRRF) {
+        // RRF "allowable instantaneous speed change" — M566, in mm/min.
+        const mmPerMin = Math.round(v * 60);
+        gcode.push(`M566 X${mmPerMin} Y${mmPerMin} ; Jerk (RRF instantaneous speed change)`);
+      } else if (isKlipper) {
+        // Klipper has no classical jerk; it uses square corner velocity.
+        gcode.push(`SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=${v} ; Jerk (Klipper SCV)`);
+      } else {
+        gcode.push(`M205 X${v} Y${v} ; Jerk`);
+      }
       _currentJerk = v;
     };
 
@@ -433,17 +450,31 @@ export class Slicer {
     const nozzleWaitCmd = (printer.waitForNozzle ?? true) ? 'M109' : 'M104';
     gcode.push(`${nozzleWaitCmd} S${mat.nozzleTempFirstLayer} ; ${(printer.waitForNozzle ?? true) ? 'Wait for' : 'Set'} nozzle temp`);
     if (mat.linearAdvanceEnabled && (mat.linearAdvanceFactor ?? 0) >= 0) {
-      gcode.push(`M900 K${(mat.linearAdvanceFactor ?? 0).toFixed(3)} ; Linear advance`);
+      // "Linear advance" (Marlin) / "pressure advance" (RRF & Klipper) —
+      // same concept, different command per firmware.
+      const k = (mat.linearAdvanceFactor ?? 0).toFixed(3);
+      if (isRRF) {
+        gcode.push(`M572 D0 S${k} ; Pressure advance`);
+      } else if (isKlipper) {
+        gcode.push(`SET_PRESSURE_ADVANCE ADVANCE=${k} ; Pressure advance`);
+      } else {
+        gcode.push(`M900 K${k} ; Linear advance`);
+      }
     }
     // Per-axis machine limits (Cura: machine_max_feedrate_*/machine_max_acceleration_*).
     // Only emit when the user has explicitly set a value — leave firmware defaults otherwise.
     const hasM203 = [printer.maxSpeedX, printer.maxSpeedY, printer.maxSpeedZ, printer.maxSpeedE].some(v => v !== undefined);
     if (hasM203) {
-      const x = printer.maxSpeedX != null ? ` X${printer.maxSpeedX}` : '';
-      const y = printer.maxSpeedY != null ? ` Y${printer.maxSpeedY}` : '';
-      const z = printer.maxSpeedZ != null ? ` Z${printer.maxSpeedZ}` : '';
-      const e = printer.maxSpeedE != null ? ` E${printer.maxSpeedE}` : '';
-      gcode.push(`M203${x}${y}${z}${e} ; Max axis speeds`);
+      // Storage is mm/s. Marlin's M203 expects mm/s. RRF's M203 expects mm/min.
+      // Klipper ignores M203 (uses printer.cfg max_velocity instead) but
+      // tolerates it, so we still emit in mm/s there.
+      const scale = isRRF ? 60 : 1;
+      const fmt = (v: number) => (isRRF ? Math.round(v * scale).toString() : v.toString());
+      const x = printer.maxSpeedX != null ? ` X${fmt(printer.maxSpeedX)}` : '';
+      const y = printer.maxSpeedY != null ? ` Y${fmt(printer.maxSpeedY)}` : '';
+      const z = printer.maxSpeedZ != null ? ` Z${fmt(printer.maxSpeedZ)}` : '';
+      const e = printer.maxSpeedE != null ? ` E${fmt(printer.maxSpeedE)}` : '';
+      gcode.push(`M203${x}${y}${z}${e} ; Max axis speeds${isRRF ? ' (mm/min)' : ' (mm/s)'}`);
     }
     const hasM201 = [printer.maxAccelX, printer.maxAccelY, printer.maxAccelZ, printer.maxAccelE].some(v => v !== undefined);
     if (hasM201) {
@@ -457,7 +488,14 @@ export class Slicer {
       gcode.push(`M204 S${printer.defaultAcceleration} ; Default acceleration`);
     }
     if (printer.defaultJerk != null) {
-      gcode.push(`M205 X${printer.defaultJerk} Y${printer.defaultJerk} ; Default jerk`);
+      if (isRRF) {
+        const mmPerMin = Math.round(printer.defaultJerk * 60);
+        gcode.push(`M566 X${mmPerMin} Y${mmPerMin} ; Default jerk (RRF instantaneous speed change)`);
+      } else if (isKlipper) {
+        gcode.push(`SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=${printer.defaultJerk} ; Default jerk (Klipper SCV)`);
+      } else {
+        gcode.push(`M205 X${printer.defaultJerk} Y${printer.defaultJerk} ; Default jerk`);
+      }
     }
     gcode.push(startGCode.trim());
     gcode.push('G92 E0 ; Reset extruder');
