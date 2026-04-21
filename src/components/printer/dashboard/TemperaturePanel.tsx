@@ -148,10 +148,7 @@ function TemperatureChart({
   const plotH = H - padTop - padBottom;
 
   const allTemps: number[] = [];
-  const history = useMemo(
-    () => temperatureHistory as Array<{ timestamp: number; bed?: { current: number }; tools?: { current: number }[] }>,
-    [temperatureHistory],
-  );
+  const history = temperatureHistory as Array<{ timestamp: number; bed?: { current: number }; tools?: { current: number }[] }>;
   history.forEach((s) => {
     if (s.bed) allTemps.push(s.bed.current);
     s.tools?.forEach((t) => allTemps.push(t.current));
