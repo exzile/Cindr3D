@@ -12,7 +12,7 @@ const RESTORE_POINT_LABELS = ['S0', 'S1', 'S2'] as const;
 export default function RestorePointsPanel() {
   const model = usePrinterStore((s) => s.model);
   const axes = model.move?.axes ?? [];
-  const restorePoints = (model.move as Record<string, unknown>)?.restorePoints as
+  const restorePoints = (model.move as unknown as Record<string, unknown>)?.restorePoints as
     | Array<{ coords: number[]; feedRate?: number; extruderPos?: number }> | undefined;
 
   // Collect visible axis letters for column headers

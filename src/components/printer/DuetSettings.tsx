@@ -656,7 +656,7 @@ export default function DuetSettings() {
           }
         }
       }
-      binFile = new Blob(chunks, { type: 'application/octet-stream' });
+      binFile = new Blob(chunks as BlobPart[], { type: 'application/octet-stream' });
     } catch (err) {
       setPanelDueUpdate({ step: 'error', progress: 0, assetName: asset.name, error: `Download failed: ${(err as Error).message}` });
       return;
@@ -915,7 +915,7 @@ export default function DuetSettings() {
         }
       }
     }
-    return new File(chunks, asset.name, { type: 'application/octet-stream' });
+    return new File(chunks as BlobPart[], asset.name, { type: 'application/octet-stream' });
   }, []);
 
   // Upload a DuetWebControl zip to 0:/www/ — RRF auto-extracts it in place.

@@ -164,7 +164,6 @@ function AxisArrow({ dir, color, label }: { dir: [number, number, number]; color
   const len = 1.8;
   const coneLen = 0.3;
   const coneRadius = 0.1;
-  const end: [number, number, number] = [dir[0] * len, dir[1] * len, dir[2] * len];
   const conePos: [number, number, number] = [dir[0] * (len - coneLen / 2), dir[1] * (len - coneLen / 2), dir[2] * (len - coneLen / 2)];
   const labelPos: [number, number, number] = [dir[0] * (len + 0.45), dir[1] * (len + 0.45), dir[2] * (len + 0.45)];
 
@@ -184,22 +183,24 @@ function AxisArrow({ dir, color, label }: { dir: [number, number, number]; color
   // on dir's components (not the `end` array, which is a fresh literal each
   // render) so the geometry is stable across re-renders.
   const [dx, dy, dz] = dir;
-  const shaftGeom = useMemo(() => {
+  const shaft = useMemo(() => {
     const g = new THREE.BufferGeometry();
     g.setAttribute(
       'position',
       new THREE.Float32BufferAttribute([0, 0, 0, dx * len, dy * len, dz * len], 3),
     );
-    return g;
-  }, [dx, dy, dz, len]);
-  useEffect(() => () => { shaftGeom.dispose(); }, [shaftGeom]);
+    const mat = new THREE.LineBasicMaterial({ color });
+    return new THREE.Line(g, mat);
+  }, [dx, dy, dz, len, color]);
+  useEffect(() => () => {
+    shaft.geometry.dispose();
+    (shaft.material as THREE.Material).dispose();
+  }, [shaft]);
 
   return (
     <group>
       {/* Line shaft */}
-      <line geometry={shaftGeom}>
-        <lineBasicMaterial color={color} linewidth={2} />
-      </line>
+      <primitive object={shaft} />
       {/* Cone arrowhead */}
       <mesh position={conePos} quaternion={coneQuat}>
         <coneGeometry args={[coneRadius, coneLen, 8]} />

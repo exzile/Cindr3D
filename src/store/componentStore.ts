@@ -19,7 +19,10 @@ function openComponentDB(): Promise<IDBDatabase> {
   });
 }
 
-const idbStorage: PersistStorage<unknown> = {
+// Plain string-keyed IndexedDB adapter. The concrete shape matches Zustand's
+// string-based storage contract; we cast to PersistStorage<unknown> where the
+// persist middleware expects the typed form (cadStore uses the same pattern).
+const idbStorage = {
   getItem: async (name: string): Promise<string | null> => {
     try {
       const db = await openComponentDB();

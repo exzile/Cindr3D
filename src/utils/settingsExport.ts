@@ -10,7 +10,7 @@
 //                        saved via .dzn / export flows).
 // =============================================================================
 
-import { getDuetPrefs, updateDuetPrefs, type DuetPrefs } from './duetPrefs';
+import { updateDuetPrefs, type DuetPrefs } from './duetPrefs';
 import { useCADStore } from '../store/cadStore';
 import { usePrinterStore } from '../store/printerStore';
 import { useSlicerStore } from '../store/slicerStore';

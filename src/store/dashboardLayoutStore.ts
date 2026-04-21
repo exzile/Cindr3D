@@ -106,7 +106,7 @@ interface DashboardLayoutState {
   colSpans: Record<string, ColSpan>;
   rowSpans: Record<string, number>;
   hidden: Record<string, boolean>;
-  setOrder: (order: LayoutItem[]) => void;
+  setOrder: (order: LayoutItem[] | ((prev: LayoutItem[]) => LayoutItem[])) => void;
   setColSpan: (id: string, span: ColSpan) => void;
   setRowSpan: (id: string, rows: number) => void;
   toggleHidden: (id: string) => void;
@@ -120,7 +120,9 @@ export const useDashboardLayout = create<DashboardLayoutState>()(
       colSpans: { ...DEFAULT_COLSPANS },
       rowSpans: { ...DEFAULT_ROWSPANS },
       hidden: {},
-      setOrder: (order) => set({ order }),
+      setOrder: (order) => set((state) => ({
+        order: typeof order === 'function' ? order(state.order) : order,
+      })),
       setColSpan: (id, span) =>
         set((state) => ({ colSpans: { ...state.colSpans, [id]: span } })),
       setRowSpan: (id, rows) =>

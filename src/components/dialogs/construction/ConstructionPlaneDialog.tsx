@@ -61,7 +61,8 @@ export function ConstructionPlaneDialog({ onClose, initialMethod }: { onClose: (
     const normal = new THREE.Vector3(0, 0, 1);
     const origin = new THREE.Vector3(0, 0, 0);
     let name = 'Plane';
-    let definition: Record<string, unknown> = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let definition: any = {};
 
     if (method === 'offset') {
       switch (referencePlane) {

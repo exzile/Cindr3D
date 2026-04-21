@@ -1,8 +1,9 @@
 import type { ReactNode, DragEvent, MouseEvent } from 'react';
 import { GripVertical, ChevronLeft, ChevronRight } from 'lucide-react';
+import type { PanelId } from '../../../store/dashboardLayoutStore';
 
 interface Props {
-  id: string;
+  id: PanelId;
   title: string;
   icon: ReactNode;
   children: ReactNode;
@@ -13,15 +14,15 @@ interface Props {
   isDragging: boolean;
   canShiftLeft: boolean;
   canShiftRight: boolean;
-  onDragStart: (id: string) => void;
-  onDragOver: (e: DragEvent, id: string) => void;
-  onDrop: (id: string) => void;
+  onDragStart: (id: PanelId) => void;
+  onDragOver: (e: DragEvent, id: PanelId) => void;
+  onDrop: (id: PanelId) => void;
   onDragEnd: () => void;
-  onResizeStart: (id: string, e: MouseEvent) => void;
-  onResizeStartY: (id: string, e: MouseEvent) => void;
-  onResizeStartCorner: (id: string, e: MouseEvent) => void;
-  onShiftLeft: (id: string) => void;
-  onShiftRight: (id: string) => void;
+  onResizeStart: (id: PanelId, e: MouseEvent) => void;
+  onResizeStartY: (id: PanelId, e: MouseEvent) => void;
+  onResizeStartCorner: (id: PanelId, e: MouseEvent) => void;
+  onShiftLeft: (id: PanelId) => void;
+  onShiftRight: (id: PanelId) => void;
 }
 
 export default function DashboardCard({

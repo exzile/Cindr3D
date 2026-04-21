@@ -43,7 +43,7 @@ import { RibbonUtilitiesTab } from './RibbonUtilitiesTab';
 import { RibbonSketchMode } from './RibbonSketchMode';
 import { RibbonPrepareTab } from './RibbonPrepareTab';
 import { RibbonPrinterTab } from './RibbonPrinterTab';
-import type { Workspace, DesignTab, PrepareTab, RibbonTab, MenuItem } from './toolbar.types';
+import type { Workspace, DesignTab, RibbonTab, MenuItem } from './toolbar.types';
 
 // ─── Main Toolbar ──────────────────────────────────────────────────────────
 

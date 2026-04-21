@@ -1225,7 +1225,7 @@ export class Slicer {
         // ----- Infill / solid fill -----
         const innermostWall = wallSets.length > 0 ? wallSets[wallSets.length - 1] : contour.points;
         if (innermostWall.length >= 3) {
-          let infillLines: { from: THREE.Vector2; to: THREE.Vector2 }[];
+          let infillLines: { from: THREE.Vector2; to: THREE.Vector2 }[] = [];
           let infillMoveType: SliceMove['type'];
           let speed: number;
           let lineWidth: number;

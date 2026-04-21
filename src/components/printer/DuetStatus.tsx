@@ -220,17 +220,17 @@ function BoardsPanel() {
         <div key={i} className={i < boards.length - 1 ? 'duet-status-block' : undefined}>
           <div className="duet-status-board-title">
             {b.name || b.shortName || `Board ${i}`}
-            {i > 0 && (b as Record<string, unknown>).canAddress != null && (
+            {i > 0 && (b as unknown as Record<string, unknown>).canAddress != null && (
               <span className="duet-status-dim" style={{ fontWeight: 400, marginLeft: 6 }}>
-                (CAN {String((b as Record<string, unknown>).canAddress)})
+                (CAN {String((b as unknown as Record<string, unknown>).canAddress)})
               </span>
             )}
           </div>
           <div style={rowGrid()}>
-            {i > 0 && (b as Record<string, unknown>).canAddress != null && (
+            {i > 0 && (b as unknown as Record<string, unknown>).canAddress != null && (
               <>
                 <span className="duet-status-dim">CAN address</span>
-                <span className="duet-status-mono">{String((b as Record<string, unknown>).canAddress)}</span>
+                <span className="duet-status-mono">{String((b as unknown as Record<string, unknown>).canAddress)}</span>
               </>
             )}
             <span className="duet-status-dim">Firmware</span>
@@ -309,14 +309,14 @@ function DriversPanel() {
     if (!a.letter) continue;
     // Axis driver IDs come from the drives array; status may be present
     // on the axis object itself (firmware-dependent).
-    const axisAny = a as Record<string, unknown>;
+    const axisAny = a as unknown as Record<string, unknown>;
     const driverIds = Array.isArray(a.drives) ? a.drives.map(String).join(', ') : '';
     const status = typeof axisAny.status === 'string' ? axisAny.status : undefined;
     rows.push({ label: a.letter, driver: driverIds, status });
   }
   for (let i = 0; i < extruders.length; i++) {
     const ext = extruders[i];
-    const extAny = ext as Record<string, unknown> | undefined;
+    const extAny = ext as unknown as Record<string, unknown> | undefined;
     const status = typeof extAny?.status === 'string' ? extAny.status : undefined;
     rows.push({ label: `E${i}`, driver: ext?.driver ?? '', status });
   }

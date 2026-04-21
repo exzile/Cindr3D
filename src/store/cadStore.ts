@@ -141,7 +141,7 @@ interface CADState {
   editingFeatureId: string | null;
   setEditingFeatureId: (id: string | null) => void;
   /** D186: Update params on an existing feature in-place. */
-  updateFeatureParams: (id: string, params: Record<string, number | string | boolean | number[]>) => void;
+  updateFeatureParams: (id: string, params: Feature['params']) => void;
   /** D189: Move a feature to a new position in the timeline. */
   reorderFeature: (id: string, newIndex: number) => void;
   /** D190: Rollback index — features at index >= this are skipped when rendering. */
@@ -789,6 +789,14 @@ interface CADState {
   openAttachedCanvasDialog: (canvasId?: string) => void;
   closeAttachedCanvasDialog: () => void;
   updateCanvas: (id: string, changes: Partial<{ dataUrl: string; plane: string; offsetX: number; offsetY: number; scale: number; opacity: number }>) => void;
+
+  // ── D182 Lip/Groove edge picker ──────────────────────────────────────────
+  lipGrooveEdgeId: string | null;
+  setLipGrooveEdge: (id: string | null) => void;
+
+  // ── D183 Snap-Fit face picker ────────────────────────────────────────────
+  snapFitFaceId: string | null;
+  setSnapFitFace: (id: string | null) => void;
 
   // ── D185 Split Face ──────────────────────────────────────────────────────
   splitFaceId: string | null;
@@ -3364,7 +3372,7 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
         if (!profileSketch) return null;
         return { sourceSketch, sketchForOp: profileSketch, selectionId: id, profileIndex: parsed };
       })
-      .filter(Boolean) as { sourceSketch: Sketch; sketchForOp: Sketch; selectionId: string }[];
+      .filter(Boolean) as { sourceSketch: Sketch; sketchForOp: Sketch; selectionId: string; profileIndex: number | undefined }[];
 
     if (selectedProfiles.length === 0) {
       set({ statusMessage: 'Selected profile not found' });
@@ -3430,7 +3438,8 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       if (resolvedBodyKind === 'surface') {
         featureMesh = GeometryEngine.extrudeSketchSurface(sketchForOp, absDistance) ?? undefined;
       } else if (extrudeThinEnabled) {
-        featureMesh = GeometryEngine.extrudeThinSketch(sketchForOp, absDistance, extrudeThinThickness, extrudeThinSide) ?? undefined;
+        const thinSide: 'inside' | 'outside' | 'center' = extrudeThinSide === 'side1' ? 'inside' : extrudeThinSide === 'side2' ? 'outside' : 'center';
+        featureMesh = GeometryEngine.extrudeThinSketch(sketchForOp, absDistance, extrudeThinThickness, thinSide) ?? undefined;
       } else {
         featureMesh = GeometryEngine.extrudeSketch(sketchForOp, absDistance) ?? undefined;
       }
@@ -4602,6 +4611,12 @@ export const useCADStore = create<CADState>()(persist((set, get) => ({
       return { ...f, params: { ...f.params, ...changes } };
     }),
   })),
+
+  // ── D182/D183 picker slices ──────────────────────────────────────────────
+  lipGrooveEdgeId: null,
+  setLipGrooveEdge: (id) => set({ lipGrooveEdgeId: id }),
+  snapFitFaceId: null,
+  setSnapFitFace: (id) => set({ snapFitFaceId: id }),
 
   // ── D185 Split Face ──────────────────────────────────────────────────────
   splitFaceId: null,

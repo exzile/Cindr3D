@@ -513,7 +513,8 @@ export interface PrintProfile {
   zHopHeight?: number;                 // wired — mm
   zHopSpeed?: number;                  // wired — mm/s
   zHopOnlyOverPrinted?: boolean;       // storage-only — only hop over printed parts
-  retractionExtraPrimeAmount?: number; // wired — mm³ extra extrusion after retract
+  // retractionExtraPrimeAmount declared as a required field in the Travel
+  // section above — reused here, don't redeclare.
   wipeRetractionDistance?: number;     // storage-only — mm — wipe-while-retracting
   wipeRetractionExtraPrime?: number;   // storage-only — mm³ prime after wipe retract
 
@@ -576,7 +577,7 @@ export interface PrintProfile {
 
   // ─── Experimental ──────────────────────────────────────────────────────
   smoothSpiralizedContours?: boolean;  // storage-only — round corners in vase mode
-  flowEqualizationRatio?: number;      // storage-only — % adjust speed to equalize flow volume
+  flowEqualizationRatio?: number;      // storage-only — 0.0–1.0 adjust speed to equalize flow volume
   flowRateCompensationFactor?: number; // wired — multiplier on all extrusion E values
   primeBlobEnable?: boolean;           // wired — deposit purge blob before print starts
   primeBlobSize?: number;              // wired — mm³ of material to purge
@@ -593,7 +594,7 @@ export interface PrintProfile {
   minLayerTimeWithOverhang?: number;   // storage-only — seconds
   keepRetractingDuringTravel?: boolean; // storage-only
   primeDuringTravel?: boolean;         // storage-only
-  smallHoleMaxSize?: number;           // wired — mm — holes ≤ this use smallFeatureSpeed
+  // smallHoleMaxSize already declared as required above — don't redeclare.
   brimAvoidMargin?: number;            // wired — mm — keep brim this far from other parts
   smartBrim?: boolean;                 // storage-only — only generate brim where needed
   initialLayerZOverlap?: number;       // wired — mm — first-layer over-extrusion to improve adhesion
@@ -662,15 +663,13 @@ export interface PrintProfile {
   supportRoofFlow?: number;            // storage-only — %
   supportFloorFlow?: number;           // storage-only — %
 
-  // ─── Flow Equalization ────────────────────────────────────────────────
-  flowEqualizationRatio?: number;      // storage-only — 0.0–1.0
+  // flowEqualizationRatio declared above in Experimental section.
+  // bridgeFanSpeed2 / bridgeFanSpeed3 declared above in Bridging section.
 
   // ─── Bridge Extras ────────────────────────────────────────────────────
   bridgeSkinDensity?: number;          // storage-only — %
   interlaceBridgeLines?: boolean;      // storage-only
   bridgeHasMultipleLayers?: boolean;   // storage-only
-  bridgeFanSpeed2?: number;            // storage-only — % for 2nd bridge layer
-  bridgeFanSpeed3?: number;            // storage-only — % for 3rd bridge layer
 
   // ─── Support Interface Wall Count ─────────────────────────────────────
   supportInterfaceWallCount?: number;  // storage-only

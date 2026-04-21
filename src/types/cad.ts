@@ -68,6 +68,8 @@ export type Tool =
   | 'sketch-rotate'
   | 'sketch-offset'
   | 'sketch-mirror'
+  | 'constrain-offset'
+  | 'sketch-plane'
   | 'extend'
   | 'sketch-chamfer-equal'
   | 'sketch-chamfer-two-dist'
@@ -303,7 +305,7 @@ export type FeatureType =
 export type BooleanOperation = 'new-body' | 'join' | 'cut' | 'intersect';
 
 /** Discriminates the kind of body produced by a feature. Defaults to 'solid'. */
-export type BodyKind = 'solid' | 'surface' | 'mesh';
+export type BodyKind = 'solid' | 'surface' | 'mesh' | 'brep';
 
 export interface Feature {
   id: string;
@@ -312,7 +314,7 @@ export interface Feature {
   sketchId?: string;
   bodyId?: string;
   componentId?: string;
-  params: Record<string, number | string | boolean | number[]>;
+  params: Record<string, unknown>;
   mesh?: THREE.Mesh;
   /** Kind of body produced — solid (default), surface, or mesh. */
   bodyKind?: BodyKind;

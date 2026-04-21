@@ -27,9 +27,9 @@ export function useDialogState<K extends string>(
   confirmKey: string,
   closeKey: string,
 ) {
-  const show = useCADStore(s => (s as Record<string, unknown>)[showKey] as boolean);
-  const params = useCADStore(s => (s as Record<string, unknown>)[paramsKey]);
-  const confirm = useCADStore(s => (s as Record<string, unknown>)[confirmKey] as (...args: unknown[]) => void);
-  const close = useCADStore(s => (s as Record<string, unknown>)[closeKey] as () => void);
+  const show = useCADStore(s => (s as unknown as Record<string, unknown>)[showKey] as boolean);
+  const params = useCADStore(s => (s as unknown as Record<string, unknown>)[paramsKey]);
+  const confirm = useCADStore(s => (s as unknown as Record<string, unknown>)[confirmKey] as (...args: unknown[]) => void);
+  const close = useCADStore(s => (s as unknown as Record<string, unknown>)[closeKey] as () => void);
   return { show, params, confirm, close };
 }

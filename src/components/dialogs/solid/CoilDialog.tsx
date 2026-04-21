@@ -19,12 +19,18 @@ type CoilDirection = 'cw' | 'ccw';
 
 /** Parametric helix curve (Y-up, right-handed by default). */
 class HelixCurve extends THREE.Curve<THREE.Vector3> {
-  constructor(
-    private readonly radius: number,
-    private readonly height: number,
-    private readonly revolutions: number,
-    private readonly ccw: boolean,
-  ) { super(); }
+  private readonly radius: number;
+  private readonly height: number;
+  private readonly revolutions: number;
+  private readonly ccw: boolean;
+
+  constructor(radius: number, height: number, revolutions: number, ccw: boolean) {
+    super();
+    this.radius = radius;
+    this.height = height;
+    this.revolutions = revolutions;
+    this.ccw = ccw;
+  }
 
   getPoint(t: number, target = new THREE.Vector3()): THREE.Vector3 {
     const angle = t * this.revolutions * 2 * Math.PI * (this.ccw ? -1 : 1);
@@ -39,7 +45,7 @@ class HelixCurve extends THREE.Curve<THREE.Vector3> {
 /** Build a THREE.BufferGeometry for the coil. Returns null if params are degenerate. */
 function buildCoilGeometry(
   coilDiameter: number,
-  pitch: number,
+  _pitch: number,
   height: number,
   revolutions: number,
   sectionDiameter: number,
