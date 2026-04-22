@@ -262,10 +262,10 @@ function PlateObjectMesh({
 }
 
 const MOVE_TYPE_COLORS: Record<string, THREE.Color> = {
-  'wall-outer': new THREE.Color('#ff8844'),
-  'wall-inner': new THREE.Color('#ffbb66'),
-  infill:       new THREE.Color('#44aaff'),
-  'top-bottom': new THREE.Color('#44ff88'),
+  'wall-outer': new THREE.Color('#aa1111'),
+  'wall-inner': new THREE.Color('#33dd55'),
+  infill:       new THREE.Color('#cc5500'),
+  'top-bottom': new THREE.Color('#1144bb'),
   support:      new THREE.Color('#ff44ff'),
   skirt:        new THREE.Color('#aaaaaa'),
   brim:         new THREE.Color('#aaaaaa'),
@@ -276,29 +276,54 @@ const MOVE_TYPE_COLORS: Record<string, THREE.Color> = {
 };
 const FALLBACK_COLOR = new THREE.Color('#ffffff');
 
-// One layer's worth of line-segment geometry. Uses <lineSegments> so each
-// from/to pair is drawn independently — no stray connector lines between
-// moves the way a continuous <Line> polyline would produce.
+// Shared unit extrusion-bead geometry used by every LayerLines InstancedMesh.
+// A cylinder of length=1, diameter=1, axis aligned to +X so per-instance scale
+// (length, width, height) maps cleanly. 12 radial segments keeps the bead round
+// without wrecking draw-call cost. Created once at module load; never disposed.
+const UNIT_BOX_GEO = (() => {
+  const g = new THREE.CylinderGeometry(0.5, 0.5, 1, 12, 1, false);
+  g.rotateZ(Math.PI / 2);
+  return g;
+})();
+
+// Reusable scratch objects to avoid per-frame allocations inside useMemo.
+const _mat4 = new THREE.Matrix4();
+const _quat = new THREE.Quaternion();
+const _zAxis = new THREE.Vector3(0, 0, 1);
+const _pos3 = new THREE.Vector3();
+const _scl3 = new THREE.Vector3();
+
+// Visual exaggeration factor for line width. 1.0 = physical width; raising this
+// makes walls overlap and blend together, obscuring individual line segments.
+const PREVIEW_LINE_SCALE = 1.0;
+
+// Each extrusion move is rendered as a physical box (lineWidth × layerHeight ×
+// segmentLength), matching Cura's geometry-shader technique. Adjacent layers
+// share the same Z range so they appear visually connected from the side.
 function LayerLines({
   layer,
+  layerHeight,
   isCurrentLayer,
   currentLayerMoveCount,
   showTravel,
   colorMode,
+  hiddenTypes,
 }: {
   layer: SliceLayer;
+  layerHeight: number;
   isCurrentLayer: boolean;
   currentLayerMoveCount: number | undefined;
   showTravel: boolean;
   colorMode: 'type' | 'speed' | 'flow';
+  hiddenTypes: ReadonlySet<string>;
 }) {
-  const { extGeo, travelGeo } = useMemo(() => {
+  const { meshes, travelGeo } = useMemo(() => {
     const moves = (isCurrentLayer && currentLayerMoveCount !== undefined)
       ? layer.moves.slice(0, currentLayerMoveCount)
       : layer.moves;
 
-    const extPos: number[] = [];
-    const extCol: number[] = [];
+    type Bucket = { mids: number[]; dirs: number[]; lens: number[]; lws: number[]; cols: number[] };
+    const byType = new Map<string, Bucket>();
     const travPos: number[] = [];
 
     for (const move of moves) {
@@ -306,43 +331,80 @@ function LayerLines({
         if (showTravel) {
           travPos.push(move.from.x, move.from.y, layer.z, move.to.x, move.to.y, layer.z);
         }
-      } else {
-        extPos.push(move.from.x, move.from.y, layer.z, move.to.x, move.to.y, layer.z);
-        let col: THREE.Color;
-        if (colorMode === 'type') {
-          col = MOVE_TYPE_COLORS[move.type] ?? FALLBACK_COLOR;
-        } else if (colorMode === 'speed') {
-          col = new THREE.Color().setHSL(Math.max(0, (240 - move.speed * 2) / 360), 0.8, 0.55);
-        } else {
-          col = new THREE.Color().setHSL(Math.max(0, (120 - move.extrusion * 100) / 360), 0.8, 0.55);
-        }
-        extCol.push(col.r, col.g, col.b, col.r, col.g, col.b);
+        continue;
       }
+      if (hiddenTypes.has(move.type)) continue;
+
+      const dx = move.to.x - move.from.x;
+      const dy = move.to.y - move.from.y;
+      const len = Math.hypot(dx, dy);
+      if (len < 1e-6) continue;
+
+      if (!byType.has(move.type)) byType.set(move.type, { mids: [], dirs: [], lens: [], lws: [], cols: [] });
+      const b = byType.get(move.type)!;
+      b.mids.push((move.from.x + move.to.x) / 2, (move.from.y + move.to.y) / 2, layer.z - layerHeight / 2);
+      b.dirs.push(dx / len, dy / len);
+      b.lens.push(len);
+      b.lws.push(move.lineWidth ?? 0.4);
+
+      let col: THREE.Color;
+      if (colorMode === 'type') {
+        col = MOVE_TYPE_COLORS[move.type] ?? FALLBACK_COLOR;
+      } else if (colorMode === 'speed') {
+        col = new THREE.Color().setHSL(Math.max(0, (240 - move.speed * 2) / 360), 0.8, 0.55);
+      } else {
+        col = new THREE.Color().setHSL(Math.max(0, (120 - move.extrusion * 100) / 360), 0.8, 0.55);
+      }
+      b.cols.push(col.r, col.g, col.b);
     }
 
-    const eg = new THREE.BufferGeometry();
-    if (extPos.length > 0) {
-      eg.setAttribute('position', new THREE.Float32BufferAttribute(extPos, 3));
-      eg.setAttribute('color',    new THREE.Float32BufferAttribute(extCol, 3));
+    const meshList: Array<{ mesh: THREE.InstancedMesh; type: string }> = [];
+    for (const [type, { mids, dirs, lens, lws, cols }] of byType) {
+      const count = lens.length;
+      if (count === 0) continue;
+      // Lambert gives each bead visible top/side shading under the scene's
+      // directional + ambient lights — critical for distinguishing stacked
+      // walls on sloped surfaces that would otherwise blend into a solid mass.
+      const mat = new THREE.MeshLambertMaterial();
+      const mesh = new THREE.InstancedMesh(UNIT_BOX_GEO, mat, count);
+      const col3 = new THREE.Color();
+      for (let i = 0; i < count; i++) {
+        const angle = Math.atan2(dirs[i * 2 + 1], dirs[i * 2]);
+        _quat.setFromAxisAngle(_zAxis, angle);
+        _pos3.set(mids[i * 3], mids[i * 3 + 1], mids[i * 3 + 2]);
+        _scl3.set(lens[i], lws[i] * PREVIEW_LINE_SCALE, layerHeight);
+        _mat4.compose(_pos3, _quat, _scl3);
+        mesh.setMatrixAt(i, _mat4);
+        col3.setRGB(cols[i * 3], cols[i * 3 + 1], cols[i * 3 + 2]);
+        mesh.setColorAt(i, col3);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      meshList.push({ mesh, type });
     }
 
     const tg = travPos.length > 0 ? new THREE.BufferGeometry() : null;
     if (tg) tg.setAttribute('position', new THREE.Float32BufferAttribute(travPos, 3));
 
-    return { extGeo: eg, travelGeo: tg };
-  }, [layer, isCurrentLayer, currentLayerMoveCount, showTravel, colorMode]);
+    return { meshes: meshList, travelGeo: tg };
+  }, [layer, layerHeight, isCurrentLayer, currentLayerMoveCount, showTravel, colorMode, hiddenTypes]);
 
-  useEffect(() => () => { extGeo.dispose(); travelGeo?.dispose(); }, [extGeo, travelGeo]);
+  useEffect(() => () => {
+    for (const { mesh } of meshes) {
+      // Don't dispose mesh.geometry — it's UNIT_BOX_GEO, shared across all instances.
+      (mesh.material as THREE.Material).dispose();
+      mesh.dispose();
+    }
+    travelGeo?.dispose();
+  }, [meshes, travelGeo]);
 
   return (
     <>
-      {extGeo.attributes.position && (
-        <lineSegments geometry={extGeo}>
-          <lineBasicMaterial vertexColors />
-        </lineSegments>
-      )}
+      {meshes.map(({ mesh, type }) => (
+        <primitive key={`${layer.layerIndex}-${type}`} object={mesh} />
+      ))}
       {travelGeo && (
-        <lineSegments geometry={travelGeo}>
+        <lineSegments key={`${layer.layerIndex}-travel`} geometry={travelGeo}>
           <lineBasicMaterial color="#333355" transparent opacity={0.4} />
         </lineSegments>
       )}
@@ -357,6 +419,7 @@ function InlineGCodePreview({
   currentLayerMoveCount,
   showTravel,
   colorMode,
+  hiddenTypes,
 }: {
   sliceResult: SliceResult;
   startLayer: number;
@@ -364,6 +427,7 @@ function InlineGCodePreview({
   currentLayerMoveCount?: number;
   showTravel: boolean;
   colorMode: 'type' | 'speed' | 'flow';
+  hiddenTypes: ReadonlySet<string>;
 }) {
   const layers = useMemo(
     () => sliceResult.layers.filter((l) => l.layerIndex >= startLayer && l.layerIndex <= currentLayer),
@@ -372,16 +436,24 @@ function InlineGCodePreview({
 
   return (
     <group>
-      {layers.map((layer) => (
-        <LayerLines
-          key={layer.layerIndex}
-          layer={layer}
-          isCurrentLayer={layer.layerIndex === currentLayer}
-          currentLayerMoveCount={currentLayerMoveCount}
-          showTravel={showTravel}
-          colorMode={colorMode}
-        />
-      ))}
+      {layers.map((layer) => {
+        const prevZ = layer.layerIndex > 0
+          ? (sliceResult.layers[layer.layerIndex - 1]?.z ?? 0)
+          : 0;
+        const layerH = Math.max(0.05, layer.z - prevZ);
+        return (
+          <LayerLines
+            key={layer.layerIndex}
+            layer={layer}
+            layerHeight={layerH}
+            isCurrentLayer={layer.layerIndex === currentLayer}
+            currentLayerMoveCount={currentLayerMoveCount}
+            showTravel={showTravel}
+            colorMode={colorMode}
+            hiddenTypes={hiddenTypes}
+          />
+        );
+      })}
     </group>
   );
 }
@@ -400,7 +472,25 @@ interface MoveTimeline {
   total: number;
 }
 
-function buildMoveTimeline(sliceResult: SliceResult): MoveTimeline {
+function estimateMoveDistance(
+  move: SliceMove,
+  fallbackLayerHeight: number,
+  filamentDiameter: number,
+): number {
+  const dx = move.to.x - move.from.x;
+  const dy = move.to.y - move.from.y;
+  const xyDistance = Math.hypot(dx, dy);
+  if (xyDistance > 1e-6) return xyDistance;
+
+  if (move.extrusion <= 1e-9) return 0;
+
+  const layerHeight = Math.max(move.layerHeight ?? fallbackLayerHeight, 1e-6);
+  const lineWidth = Math.max(move.lineWidth ?? 0.4, 1e-6);
+  const filamentArea = Math.PI * Math.pow(Math.max(filamentDiameter, 0.1) / 2, 2);
+  return (move.extrusion * filamentArea) / (lineWidth * layerHeight);
+}
+
+function buildMoveTimeline(sliceResult: SliceResult, filamentDiameter: number): MoveTimeline {
   const flat: Array<{ move: SliceMove; z: number }> = [];
   let totalMoves = 0;
   for (const layer of sliceResult.layers) totalMoves += layer.moves.length;
@@ -410,19 +500,20 @@ function buildMoveTimeline(sliceResult: SliceResult): MoveTimeline {
 
   let t = 0;
   let i = 0;
+  let prevLayerZ = 0;
   for (const layer of sliceResult.layers) {
+    const fallbackLayerHeight = Math.max(layer.z - prevLayerZ, 0.001);
     for (let mi = 0; mi < layer.moves.length; mi++) {
       const move = layer.moves[mi];
-      const dx = move.to.x - move.from.x;
-      const dy = move.to.y - move.from.y;
-      const dist = Math.hypot(dx, dy);
-      t += move.speed > 0 ? dist / move.speed : 0;
+      const distance = estimateMoveDistance(move, fallbackLayerHeight, filamentDiameter);
+      t += move.speed > 0 ? distance / move.speed : 0;
       cumulative[i] = t;
       layerIndices[i] = layer.layerIndex;
       moveWithinLayer[i] = mi;
       flat.push({ move, z: layer.z });
       i++;
     }
+    prevLayerZ = layer.z;
   }
   return { cumulative, moves: flat, layerIndices, moveWithinLayer, total: t };
 }
@@ -509,6 +600,12 @@ export function SlicerWorkspaceScene() {
   const previewLayerStart = useSlicerStore((s) => s.previewLayerStart);
   const previewShowTravel = useSlicerStore((s) => s.previewShowTravel);
   const previewColorMode = useSlicerStore((s) => s.previewColorMode);
+  const previewHiddenTypesArr = useSlicerStore((s) => s.previewHiddenTypes);
+  const previewHiddenTypesKey = useMemo(
+    () => previewHiddenTypesArr.join('|'),
+    [previewHiddenTypesArr],
+  );
+  const hiddenTypes = useMemo(() => new Set(previewHiddenTypesArr), [previewHiddenTypesKey]);
   const previewSimEnabled = useSlicerStore((s) => s.previewSimEnabled);
   const previewSimPlaying = useSlicerStore((s) => s.previewSimPlaying);
   const previewSimSpeed = useSlicerStore((s) => s.previewSimSpeed);
@@ -528,11 +625,18 @@ export function SlicerWorkspaceScene() {
 
   // When any visible state changes, ask R3F to render one new frame.
   // Without this, frameloop="demand" would never repaint after store updates.
+  useEffect(() => { invalidate(); }, [invalidate, plateObjects, selectedId, transformMode]);
   useEffect(() => { invalidate(); }, [
-    invalidate, plateObjects, selectedId, previewMode, sliceResult,
-    previewLayer, previewLayerStart, previewShowTravel, previewColorMode,
-    transformMode, previewSimEnabled, previewSimPlaying, previewSimTime,
-    printabilityReport, printabilityHighlight,
+    invalidate, previewMode, sliceResult, previewLayer, previewLayerStart,
+  ]);
+  useEffect(() => { invalidate(); }, [
+    invalidate, previewShowTravel, previewColorMode, previewHiddenTypesKey,
+  ]);
+  useEffect(() => { invalidate(); }, [
+    invalidate, previewSimEnabled, previewSimPlaying, previewSimTime,
+  ]);
+  useEffect(() => { invalidate(); }, [
+    invalidate, printabilityReport, printabilityHighlight,
   ]);
 
   const bv = printerProfile?.buildVolume ?? { x: 220, y: 220, z: 250 };
@@ -540,8 +644,8 @@ export function SlicerWorkspaceScene() {
   // Build the full move timeline once per slice result. Shared by NozzleSimulator
   // and the sim-state lookup below so we pay the O(n) build cost only once.
   const moveTimeline = useMemo(
-    () => (sliceResult ? buildMoveTimeline(sliceResult) : null),
-    [sliceResult],
+    () => (sliceResult ? buildMoveTimeline(sliceResult, printerProfile?.filamentDiameter ?? 1.75) : null),
+    [sliceResult, printerProfile?.filamentDiameter],
   );
 
   // Map simTime → { layerIndex, moveCount } so InlineGCodePreview reveals
@@ -608,6 +712,7 @@ export function SlicerWorkspaceScene() {
           currentLayerMoveCount={simState.moveCount}
           showTravel={previewShowTravel}
           colorMode={previewColorMode}
+          hiddenTypes={hiddenTypes}
         />
       )}
 

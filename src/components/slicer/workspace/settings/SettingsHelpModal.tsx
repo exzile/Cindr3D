@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { X, HelpCircle } from 'lucide-react';
-import type { SettingHelp } from '../../utils/settingsHelpContent';
+import type { SettingHelp } from '../../../../utils/settingsHelpContent';
 import './SettingsHelpModal.css';
 
 export function SettingsHelpModal({

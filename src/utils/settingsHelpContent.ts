@@ -191,20 +191,6 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
       'First layer height is often slightly larger (0.2-0.3mm) to accommodate bed leveling tolerances and improve adhesion. A thicker first layer is more forgiving of bed leveling issues and helps the print stick to the bed. Usually set 0.5-1.5x the normal layer height.',
   },
 
-  // Retraction Distance
-  retractionDistance: {
-    brief: 'Filament pulled back to prevent stringing',
-    detailed:
-      'Retraction pulls the filament back when moving between unconnected areas. 0.8-1.0mm is typical for direct drive extruders, 4-6mm for Bowden tube systems. Too much retraction causes under-extrusion; too little causes stringing. Calibrate per-material.',
-  },
-
-  // Infill Density
-  infillDensity: {
-    brief: 'Percentage of internal material fill',
-    detailed:
-      'Controls how hollow or solid the interior is: 0% = hollow shell (light, fast), 15-20% = typical (strength/weight balance), 50% = strong, 100% = solid. Higher density uses more material and time but increases strength. Choose based on part function.',
-  },
-
   // Infill Pattern
   infillPattern: {
     brief: 'Structure pattern for internal fill',
@@ -212,81 +198,11 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
       'Different patterns offer different benefits: Grid (2D crosshatch, good for speed), Gyroid (TPMS, isotropic strength all directions), Cubic (3D grid, lightweight), Honeycomb (exceptional strength, 20-40% density), Lines (simple, fast), Triangles (diagonal bracing), Lightning (optimal branching). Gyroid and Cubic are strongest for weight.',
   },
 
-  // Nozzle Temperature
-  nozzleTemp: {
-    brief: 'Hotend temperature in degrees Celsius',
-    detailed:
-      'Too low: filament won\'t flow, under-extrusion, weak prints. Too high: filament degrades, stringing, heat creep. Typical ranges: PLA 200-210°C, PETG 230-250°C, ABS 240-260°C. Start at material midpoint and adjust ±5°C. Higher temps for faster extrusion, lower for cooler cooling.',
-  },
-
   // Support Type (Tree vs Normal)
   supportType: {
     brief: 'Structure type: Normal columns or Tree branches',
     detailed:
       'Normal supports use vertical columns (stable, more material). Tree/Organic supports branch like a tree (minimal material, faster print, cleaner removal, 30-50% material savings). Tree is better for complex overhangs; Normal for larger contact areas. Tree may struggle with extreme overhangs.',
-  },
-
-  // Support Density
-  supportDensity: {
-    brief: 'Percentage of support structure fill',
-    detailed:
-      'Controls how solid vs. sparse the supports are: 15-20% typical (good strength-to-material), 10% uses less material but risks collapse, 25-30% is stronger but harder to remove. Higher density = more support material = longer print but more reliable.',
-  },
-
-  // Min Layer Time
-  minLayerTime: {
-    brief: 'Minimum time allowed per layer',
-    detailed:
-      'Prevents very thin layers from printing too fast. If a layer finishes sooner, the printer slows down automatically. Typical 10-20 seconds. Small or thin layers need this slowdown to cool properly and avoid melting. Set higher for materials sensitive to cooling like ABS.',
-  },
-
-  // Retraction Z-Hop
-  retractionZHop: {
-    brief: 'Lift nozzle during retraction to avoid surface scars',
-    detailed:
-      'Lifts the nozzle vertically by a small amount (typically 0.2-0.4mm) during retraction to prevent dragging across the print surface. Prevents surface marks and scars. Higher values reduce drag but may increase stringing if retraction is insufficient.',
-  },
-
-  // Combing Mode
-  combingMode: {
-    brief: 'Travel path strategy to reduce stringing',
-    detailed:
-      'Controls whether the nozzle combs (travels without retracting): "All" combs everywhere (fastest, risky), "No Skin" avoids top/bottom surfaces, "Infill Only" combs through infill, "Off" retracts every move (safest). Less retraction is faster but risks stringing. Choose based on material stringiness.',
-  },
-
-  // Z Seam Alignment
-  zSeamAlignment: {
-    brief: 'Where the layer start/end point appears',
-    detailed:
-      'Determines where the seam (line where layer ends/starts) appears: "Sharpest Corner" hides it in corners (best), "Aligned" places it consistently (useful for small objects), "Random" varies position (reduces visible lines), "Shortest" minimizes travel. Sharpest corner is usually best for quality.',
-  },
-
-  // Adhesion Type
-  adhesionType: {
-    brief: 'Method for sticking first layer to bed',
-    detailed:
-      'Different methods for better adhesion: "None" for textured beds, "Skirt" (outline loop) for bed leveling check only, "Brim" (border around model) for better adhesion, "Raft" (sacrificial base) for difficult materials. Raft and brim add material but dramatically improve success rate on tricky materials.',
-  },
-
-  // Coasting
-  coastingEnabled: {
-    brief: 'Stop extrusion before end of move to reduce ooze',
-    detailed:
-      'Stops extrusion 0.5-2mm before the endpoint, letting momentum carry the nozzle. Reduces pressure in the nozzle preventing oozing at line endpoints. Only supported on Marlin and Klipper firmware. Slight loss of material at endpoint but better surface quality.',
-  },
-
-  // Ironing
-  ironingEnabled: {
-    brief: 'Smooth top surface by re-tracing with hot nozzle',
-    detailed:
-      'Traces over the top surface with reduced extrusion, smoothing it like ironing fabric. Creates glossy, smooth finish. Slightly increases print time but dramatically improves surface appearance on top surfaces.',
-  },
-
-  // Adaptive Layers
-  adaptiveLayersEnabled: {
-    brief: 'Automatically vary layer height to match model',
-    detailed:
-      'Varies layer thickness based on geometry: steep slopes get thinner layers for detail, flat areas get thicker layers for speed. Results in better quality and faster prints than fixed layer heights. More CPU intensive but produces better results.',
   },
 
   // Fuzzy Skins
@@ -381,6 +297,7 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
   wallTransitionFilterMargin: { brief: 'Margin for filtering wall width transitions', detailed: 'Extra margin added when deciding whether to filter a wall transition. Slightly larger values remove more minor transitions for cleaner paths.' },
   outerWallWipeDistance: { brief: 'Extra wipe distance after outer wall', detailed: 'After finishing the outer wall, the nozzle continues a short distance to wipe away any ooze. Helps reduce seam artifacts. 0.1–0.2mm typical.' },
   holeHorizontalExpansionMaxDiameter: { brief: 'Maximum hole diameter affected by expansion', detailed: 'Limits hole expansion compensation to holes smaller than this diameter. Larger holes are usually accurate enough and don\'t need compensation.' },
+  slicingClosingRadius: { brief: 'Seal tiny contour gaps before toolpath generation', detailed: 'Inflates contours by a tiny radius, merges close edges, then shrinks them back before slicing. Useful for imperfect STL exports with hairline gaps or nearly-touching walls. Keep it small so clean geometry is not rounded off unnecessarily.' },
   printThinWalls: { brief: 'Print features that are thinner than one extrusion', detailed: 'Enables printing of features too thin for a full extrusion width by using reduced-width lines. Allows very fine details to be printed that would otherwise be omitted.' },
   minFeatureSize: { brief: 'Minimum feature size to attempt printing', detailed: 'Features smaller than this are skipped entirely. Set slightly above your nozzle diameter for reliable results. Larger values skip more tiny features.' },
   minThinWallLineWidth: { brief: 'Minimum line width when printing thin walls', detailed: 'The narrowest line width allowed when the thin-wall feature is active. Must be achievable by the printer — typically 50% of nozzle diameter minimum.' },
@@ -487,7 +404,6 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
 
   // ── Experimental ────────────────────────────────────────────────────────────
   makeOverhangPrintable: { brief: 'Trim model geometry to make overhangs printable', detailed: 'Modifies the model to clip steep overhangs to the maximum printable angle. The printed model will differ slightly from the original — an alternative to generating support.' },
-  slicingTolerance: { brief: 'Precision at model surface boundaries', detailed: '"Middle" balances accuracy. "Inclusive" keeps more material (features appear slightly thicker). "Exclusive" removes more (features appear slightly thinner). Use Inclusive for looser fits.' },
   enableBridgeSettings: { brief: 'Override speed/flow/fan specifically for bridges', detailed: 'Enables separate settings for unsupported spans. Tuning bridge settings independently can dramatically improve bridge quality without affecting the rest of the print.' },
   bridgeWallSpeed: { brief: 'Speed for wall lines crossing bridge spans', detailed: 'Printing bridge walls slower (20–30 mm/s) allows better cooling and prevents drooping. Faster bridges tend to sag more.' },
   bridgeSkinSpeed: { brief: 'Speed for skin over bridge spans', detailed: 'Speed for flat surface sections crossing bridges. Slower gives more cooling time. 20–30 mm/s typical for good bridge quality.' },

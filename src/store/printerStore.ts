@@ -104,6 +104,12 @@ function parseEventLog(text: string): PrintHistoryEntry[] {
   return out.reverse();
 }
 
+function errorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message.trim()) return err.message;
+  if (typeof err === 'string' && err.trim()) return err;
+  return fallback;
+}
+
 interface PrinterStore {
   // Multi-printer registry
   printers: SavedPrinter[];
@@ -492,6 +498,12 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
         throw new Error('Connection refused');
       }
 
+      service.on('error', (err) => {
+        const state = get();
+        if (state.service !== null && state.service !== service) return;
+        set({ error: `Printer connection issue: ${errorMessage(err, 'Unknown transport error')}` });
+      });
+
       // Set up disconnection detection for auto-reconnect
       service.on('disconnected', () => {
         // Only trigger if the store still thinks it's connected (i.e., not
@@ -507,7 +519,7 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
         // Drop callbacks from a stale service that was replaced/disconnected
         // mid-flight (e.g. user clicked disconnect before initial fetch landed).
         const currentService = get().service;
-        if (currentService !== null && currentService !== service) return;
+        if (currentService !== service) return;
         const state = get();
         const now = Date.now();
 
@@ -565,7 +577,7 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
     } catch (err) {
       set({
         connecting: false,
-        error: `Connection failed: ${(err as Error).message}`,
+        error: `Connection failed: ${errorMessage(err, 'Unknown connection error')}`,
       });
     }
   },
@@ -891,9 +903,9 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
 
   uploadFile: async (file) => {
     const { service, currentDirectory } = get();
-    if (!service) return;
+    if (!service) throw new Error('Printer not connected');
 
-    set({ uploading: true, uploadProgress: 0 });
+    set({ uploading: true, uploadProgress: 0, error: null });
     try {
       await service.uploadFile(
         `${currentDirectory}/${file.name}`,
@@ -906,14 +918,21 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
       // viewing the directory we uploaded into. Otherwise the listing for
       // the OLD directory would clobber the listing of wherever they
       // navigated to during the upload.
-      const files = await service.listFiles(currentDirectory);
-      if (get().currentDirectory === currentDirectory) set({ files });
+      const state = get();
+      if (state.service === service && state.currentDirectory === currentDirectory) {
+        const files = await service.listFiles(currentDirectory);
+        if (get().service === service && get().currentDirectory === currentDirectory) {
+          set({ files });
+        }
+      }
     } catch (err) {
+      const message = errorMessage(err, 'Upload failed');
       set({
         uploading: false,
         uploadProgress: 0,
-        error: `Upload failed: ${(err as Error).message}`,
+        error: `Upload failed: ${message}`,
       });
+      throw err instanceof Error ? err : new Error(message);
     }
   },
 

@@ -44,6 +44,8 @@ interface SlicerStore {
   previewShowTravel: boolean;
   previewShowRetractions: boolean;
   previewColorMode: 'type' | 'speed' | 'flow';
+  previewHiddenTypes: string[];
+  previewColorSchemeOpen: boolean;
 
   // Simulation (nozzle playback) state
   previewSimEnabled: boolean;      // show the virtual nozzle marker
@@ -101,6 +103,8 @@ interface SlicerStore {
   setPreviewShowTravel: (show: boolean) => void;
   setPreviewShowRetractions: (show: boolean) => void;
   setPreviewColorMode: (mode: 'type' | 'speed' | 'flow') => void;
+  togglePreviewType: (type: string) => void;
+  setPreviewColorSchemeOpen: (open: boolean) => void;
 
   // Simulation
   setPreviewSimEnabled: (on: boolean) => void;
@@ -237,6 +241,7 @@ const idbStorage = {
 
 // Lazily created on the first startSlice call.
 let slicerWorker: Worker | null = null;
+let activeSliceRequestId = 0;
 
 function getSlicerWorker(onMessage: (e: MessageEvent) => void): Worker {
   if (!slicerWorker) {
@@ -289,6 +294,8 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
   previewShowTravel: false,
   previewShowRetractions: true,
   previewColorMode: 'type',
+  previewHiddenTypes: [],
+  previewColorSchemeOpen: false,
 
   // Simulation
   previewSimEnabled: false,
@@ -795,6 +802,8 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
       return;
     }
 
+    const requestId = ++activeSliceRequestId;
+
     set({
       sliceProgress: {
         stage: 'preparing', percent: 0, currentLayer: 0, totalLayers: 0,
@@ -805,9 +814,12 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
     workerBusy = true;
 
     const worker = getSlicerWorker((e: MessageEvent) => {
-      const { type } = e.data;
+      const { type, requestId: messageRequestId } = e.data as { type?: string; requestId?: number };
+      if (messageRequestId !== requestId || requestId !== activeSliceRequestId) return;
       if (type === 'progress') {
         set({ sliceProgress: e.data.progress as SliceProgress });
+      } else if (type === 'cancelled') {
+        workerBusy = false;
       } else if (type === 'complete') {
         workerBusy = false;
         const result = e.data.result;
@@ -844,15 +856,19 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
     });
 
     worker.postMessage(
-      { type: 'slice', payload: { geometryData, printerProfile, materialProfile, printProfile } },
+      {
+        type: 'slice',
+        requestId,
+        payload: { geometryData, printerProfile, materialProfile, printProfile },
+      },
       transferables,
     );
   },
 
   cancelSlice: () => {
+    const requestId = activeSliceRequestId;
     if (workerBusy && slicerWorker) {
-      slicerWorker.postMessage({ type: 'cancel' });
-      workerBusy = false;
+      slicerWorker.postMessage({ type: 'cancel', requestId });
     }
     set({
       sliceProgress: {
@@ -881,6 +897,12 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
   setPreviewShowTravel: (show) => set({ previewShowTravel: show }),
   setPreviewShowRetractions: (show) => set({ previewShowRetractions: show }),
   setPreviewColorMode: (mode) => set({ previewColorMode: mode }),
+  togglePreviewType: (type) => set((s) => ({
+    previewHiddenTypes: s.previewHiddenTypes.includes(type)
+      ? s.previewHiddenTypes.filter((t) => t !== type)
+      : [...s.previewHiddenTypes, type],
+  })),
+  setPreviewColorSchemeOpen: (open) => set({ previewColorSchemeOpen: open }),
 
   // --- Simulation ---
 

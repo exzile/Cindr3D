@@ -4,6 +4,7 @@
 // =============================================================================
 
 import * as THREE from 'three';
+import polygonClipping, { type MultiPolygon as PCMultiPolygon, type Ring as PCRing } from 'polygon-clipping';
 import type {
   PrinterProfile,
   MaterialProfile,
@@ -23,11 +24,26 @@ interface Triangle {
   v1: THREE.Vector3;
   v2: THREE.Vector3;
   normal: THREE.Vector3;
+  // Edge-identity keys (sorted pair of vertex positions). Assigned after
+  // welding so adjacent triangles sharing a mesh edge get IDENTICAL strings
+  // here — this is what lets connectSegments chain loops by exact topology
+  // instead of fuzzy positional hashing. Mirrors OrcaSlicer's edge-id tracking
+  // in slice_facet + chain_lines_by_triangle_connectivity.
+  edgeKey01: string;
+  edgeKey12: string;
+  edgeKey20: string;
 }
 
 interface Segment {
   a: THREE.Vector2;
   b: THREE.Vector2;
+  // Edge key of the mesh edge that produced each endpoint's intersection.
+  // Same key on two different segments means they came from adjacent triangles
+  // sharing that edge — i.e., they MUST chain in the contour. Empty string
+  // means the endpoint didn't come from a straddling edge (e.g. vertex-on-plane
+  // cases before the perturbation fix), and we fall back to positional matching.
+  edgeKeyA: string;
+  edgeKeyB: string;
 }
 
 interface Contour {
@@ -41,6 +57,16 @@ interface BBox2 {
   minY: number;
   maxX: number;
   maxY: number;
+}
+
+interface GeneratedPerimeters {
+  walls: THREE.Vector2[][];
+  lineWidths: number[];
+  outerCount: number;
+  /** Innermost hole wall loops (one per original contained hole) — passed
+   *  into the infill pipeline so scan lines pair intersections across holes
+   *  correctly and don't fill across open cavities. */
+  innermostHoles: THREE.Vector2[][];
 }
 
 // ---------------------------------------------------------------------------
@@ -119,11 +145,24 @@ export class Slicer {
     // printed part ends at the correct height after the material cools and
     // shrinks vertically. e.g., 0.3% → multiply every layerZ by 1.003.
     const zScale = 1 + (mat.shrinkageCompensationZ ?? 0) / 100;
-    const layerZs: number[] = [];
-    let z = pp.firstLayerHeight;
-    while (z <= modelHeight + 0.0001) {
-      layerZs.push(z * zScale);
-      z += pp.layerHeight;
+    let layerZs: number[];
+    if (pp.adaptiveLayersEnabled) {
+      layerZs = this.computeAdaptiveLayerZs(
+        triangles,
+        modelHeight,
+        pp.firstLayerHeight,
+        pp.layerHeight,
+        pp.adaptiveLayersMaxVariation,
+        pp.adaptiveLayersVariationStep,
+        zScale,
+      );
+    } else {
+      layerZs = [];
+      let z = pp.firstLayerHeight;
+      while (z <= modelHeight + 0.0001) {
+        layerZs.push(z * zScale);
+        z += pp.layerHeight;
+      }
     }
     const totalLayers = layerZs.length;
     if (totalLayers === 0) {
@@ -209,6 +248,151 @@ export class Slicer {
     const fanSArg = (pct: number): string => printer.scaleFanSpeedTo01
       ? (pct / 100).toFixed(3)
       : Math.round((pct / 100) * 255).toString();
+
+    // Track the modal state that arbitrary printer start G-code may change so
+    // we can cheaply resync the slicer's internal XYZE state afterward.
+    let templateUsesAbsolutePositioning = true;
+    let templateUsesAbsoluteExtrusion = !relativeE;
+    const syncStateFromGCode = (block: string): void => {
+      const lines = block.split(/\r?\n/);
+      for (const rawLine of lines) {
+        const stripped = rawLine.split(';', 1)[0].trim();
+        if (!stripped) continue;
+        const tokens = stripped.split(/\s+/);
+        if (tokens.length === 0) continue;
+        const command = tokens[0].toUpperCase();
+        if (command === 'G90') {
+          templateUsesAbsolutePositioning = true;
+          continue;
+        }
+        if (command === 'G91') {
+          templateUsesAbsolutePositioning = false;
+          continue;
+        }
+        if (command === 'M82') {
+          templateUsesAbsoluteExtrusion = true;
+          continue;
+        }
+        if (command === 'M83') {
+          templateUsesAbsoluteExtrusion = false;
+          continue;
+        }
+
+        let nextX: number | undefined;
+        let nextY: number | undefined;
+        let nextZ: number | undefined;
+        let nextE: number | undefined;
+        for (const token of tokens.slice(1)) {
+          if (token.length < 2) continue;
+          const axis = token[0].toUpperCase();
+          const value = Number.parseFloat(token.slice(1));
+          if (!Number.isFinite(value)) continue;
+          if (axis === 'X') nextX = value;
+          else if (axis === 'Y') nextY = value;
+          else if (axis === 'Z') nextZ = value;
+          else if (axis === 'E') nextE = value;
+        }
+
+        if (command === 'G92') {
+          if (nextX !== undefined) currentX = nextX;
+          if (nextY !== undefined) currentY = nextY;
+          if (nextZ !== undefined) currentZ = nextZ;
+          if (nextE !== undefined) currentE = nextE;
+          continue;
+        }
+        if (command !== 'G0' && command !== 'G1') continue;
+
+        if (nextX !== undefined) currentX = templateUsesAbsolutePositioning ? nextX : currentX + nextX;
+        if (nextY !== undefined) currentY = templateUsesAbsolutePositioning ? nextY : currentY + nextY;
+        if (nextZ !== undefined) currentZ = templateUsesAbsolutePositioning ? nextZ : currentZ + nextZ;
+        if (nextE !== undefined) currentE = templateUsesAbsoluteExtrusion ? nextE : currentE + nextE;
+      }
+    };
+    const restorePostStartModes = (): void => {
+      gcode.push('G90 ; Restore absolute positioning after start G-code');
+      gcode.push(relativeE ? 'M83 ; Restore relative extrusion after start G-code' : 'M82 ; Restore absolute extrusion after start G-code');
+      gcode.push('G92 E0 ; Reset extruder after start G-code');
+      currentE = 0;
+      isRetracted = false;
+      extrudedSinceRetract = 0;
+      templateUsesAbsolutePositioning = true;
+      templateUsesAbsoluteExtrusion = !relativeE;
+    };
+    const dedupeStartGCode = (
+      block: string,
+      opts: {
+        preheatTemp: number;
+        nozzleFirstLayerTemp: number;
+        bedFirstLayerTemp: number;
+        relativeExtrusion: boolean;
+        hasHeatedBed: boolean;
+        waitForNozzle: boolean;
+        waitForBuildPlate: boolean;
+      },
+    ): string => {
+      const lines = block.split(/\r?\n/);
+      const filtered: string[] = [];
+      for (const line of lines) {
+        const stripped = line.split(';', 1)[0].trim();
+        if (!stripped) {
+          filtered.push(line);
+          continue;
+        }
+
+        const tokens = stripped.split(/\s+/);
+        const command = tokens[0]?.toUpperCase() ?? '';
+        const sval = tokens
+          .map((t) => t.trim())
+          .find((t) => t[0]?.toUpperCase() === 'S');
+        const eToken = tokens
+          .map((t) => t.trim())
+          .find((t) => t[0]?.toUpperCase() === 'E');
+        const sNum = sval != null ? Number.parseFloat(sval.slice(1)) : undefined;
+        const eNum = eToken != null ? Number.parseFloat(eToken.slice(1)) : undefined;
+
+        if (command === 'G90') continue;
+        if (!opts.relativeExtrusion && command === 'M82') continue;
+        if (opts.relativeExtrusion && command === 'M83') continue;
+        if (command === 'G92' && eNum === 0 && tokens.every((t, i) => i === 0 || t[0]?.toUpperCase() === 'E')) continue;
+        if (command === 'M104' && sNum !== undefined && (Math.abs(sNum - opts.preheatTemp) < 0.0001 || Math.abs(sNum - opts.nozzleFirstLayerTemp) < 0.0001)) continue;
+        if (command === 'M109' && opts.waitForNozzle && sNum !== undefined && Math.abs(sNum - opts.nozzleFirstLayerTemp) < 0.0001) continue;
+        if (command === 'M140' && opts.hasHeatedBed && sNum !== undefined && Math.abs(sNum - opts.bedFirstLayerTemp) < 0.0001) continue;
+        if (command === 'M190' && opts.hasHeatedBed && opts.waitForBuildPlate && sNum !== undefined && Math.abs(sNum - opts.bedFirstLayerTemp) < 0.0001) continue;
+
+        filtered.push(line);
+      }
+      return filtered.join('\n').trim();
+    };
+    const dedupeEndGCode = (
+      block: string,
+      opts: {
+        slicerTurnsFanOff: boolean;
+        slicerSetsFinalNozzleTemp: boolean;
+      },
+    ): string => {
+      const lines = block.split(/\r?\n/);
+      const filtered: string[] = [];
+      for (const line of lines) {
+        const stripped = line.split(';', 1)[0].trim();
+        if (!stripped) {
+          filtered.push(line);
+          continue;
+        }
+        const tokens = stripped.split(/\s+/);
+        const command = tokens[0]?.toUpperCase() ?? '';
+        const sval = tokens
+          .map((t) => t.trim())
+          .find((t) => t[0]?.toUpperCase() === 'S');
+        const sNum = sval != null ? Number.parseFloat(sval.slice(1)) : undefined;
+
+        if (opts.slicerTurnsFanOff && command === 'M107') continue;
+        if (opts.slicerTurnsFanOff && command === 'M106' && sNum !== undefined && Math.abs(sNum) < 0.0001) continue;
+        if (opts.slicerSetsFinalNozzleTemp && command === 'M104' && sNum !== undefined) continue;
+
+        filtered.push(line);
+      }
+      return filtered.join('\n').trim();
+    };
 
     // Helper: retract
     //
@@ -405,14 +589,22 @@ export class Slicer {
 
     // ----- Start G-code -----
     const startGCode = this.resolveGCodeTemplate(printer.startGCode, {
-      nozzleTemp: mat.nozzleTemp,
+      nozzleTemp: mat.nozzleTempFirstLayer,
       nozzleTempFirstLayer: mat.nozzleTempFirstLayer,
-      bedTemp: mat.bedTemp,
+      bedTemp: mat.bedTempFirstLayer,
       bedTempFirstLayer: mat.bedTempFirstLayer,
     });
+    const startTemplateHasPrintMacro = /^\s*START_PRINT\b/m.test(startGCode);
+    const startTemplateOwnsHeatup = printer.startGCodeMustBeFirst && startTemplateHasPrintMacro;
     gcode.push('; ----- Start G-code -----');
-    gcode.push('G90 ; Absolute positioning');
-    gcode.push(relativeE ? 'M83 ; Relative extrusion' : 'M82 ; Absolute extrusion');
+    if (printer.startGCodeMustBeFirst && startGCode.trim()) {
+      gcode.push(startGCode.trim());
+      syncStateFromGCode(startGCode);
+    }
+    if (!startTemplateOwnsHeatup) {
+      gcode.push('G90 ; Absolute positioning');
+      gcode.push(relativeE ? 'M83 ; Relative extrusion' : 'M82 ; Absolute extrusion');
+    }
     // Preheat sequence (Cura-parity):
     //   If initialPrintingTemperature is set, heat to that lower temp first
     //   (non-blocking) while the bed heats — avoids ooze during bed warmup.
@@ -421,6 +613,18 @@ export class Slicer {
     const hasInitTemp = mat.initialPrintingTemperature !== undefined
       && mat.initialPrintingTemperature !== mat.nozzleTempFirstLayer;
     const preheatTemp = hasInitTemp ? mat.initialPrintingTemperature! : mat.nozzleTempFirstLayer;
+    const normalizedStartGCode = printer.startGCodeMustBeFirst
+      ? startGCode.trim()
+      : dedupeStartGCode(startGCode, {
+        preheatTemp,
+        nozzleFirstLayerTemp: mat.nozzleTempFirstLayer,
+        bedFirstLayerTemp: mat.bedTempFirstLayer,
+        relativeExtrusion: relativeE,
+        hasHeatedBed: printer.hasHeatedBed,
+        waitForNozzle: printer.waitForNozzle ?? true,
+        waitForBuildPlate: printer.waitForBuildPlate ?? true,
+      });
+    if (!startTemplateOwnsHeatup) {
     gcode.push(`M104 S${preheatTemp} ; Preheat nozzle`);
     if (printer.hasHeatedBed) {
       gcode.push(`M140 S${mat.bedTempFirstLayer} ; Set bed temp`);
@@ -449,6 +653,7 @@ export class Slicer {
     // waitForNozzle defaults true — use M109 (blocking). Setting false uses M104.
     const nozzleWaitCmd = (printer.waitForNozzle ?? true) ? 'M109' : 'M104';
     gcode.push(`${nozzleWaitCmd} S${mat.nozzleTempFirstLayer} ; ${(printer.waitForNozzle ?? true) ? 'Wait for' : 'Set'} nozzle temp`);
+    }
     if (mat.linearAdvanceEnabled && (mat.linearAdvanceFactor ?? 0) >= 0) {
       // "Linear advance" (Marlin) / "pressure advance" (RRF & Klipper) —
       // same concept, different command per firmware.
@@ -497,8 +702,11 @@ export class Slicer {
         gcode.push(`M205 X${printer.defaultJerk} Y${printer.defaultJerk} ; Default jerk`);
       }
     }
-    gcode.push(startGCode.trim());
-    gcode.push('G92 E0 ; Reset extruder');
+    if (!printer.startGCodeMustBeFirst && normalizedStartGCode) {
+      gcode.push(normalizedStartGCode);
+      syncStateFromGCode(normalizedStartGCode);
+    }
+    restorePostStartModes();
     // Cura-parity: primeBlobEnable deposits a blob of material at the print
     // origin before the print starts, priming the nozzle and wiping ooze.
     // We approximate as an extrude-in-place move of primeBlobSize mm³.
@@ -519,6 +727,17 @@ export class Slicer {
     let regularFanHeightFired = false;
     let buildVolumeFanHeightFired = false;
 
+    // Track the previous layer's material footprint as a MultiPolygon so we
+    // can detect BRIDGE regions: any material in the current layer that has
+    // nothing supporting it below (current − previous). Extrusion paths whose
+    // midpoints fall inside the bridge region get labelled 'bridge' with
+    // `bridgeSkinSpeed` / `bridgeSkinFlow` and `bridgeFanSpeed` overrides.
+    let prevLayerMaterial: PCMultiPolygon = [];
+    // Bridge fan state — emit M106 S{bridgeFanSpeed} before bridge moves,
+    // restore to the regular cooling target after. Tracking avoids redundant
+    // fan commands in dense multi-region layers.
+    let bridgeFanActive = false;
+
     // ----- Process each layer -----
     for (let li = 0; li < totalLayers; li++) {
       if (this.cancelled) {
@@ -532,7 +751,15 @@ export class Slicer {
       // The slicing plane is in model space at layerZ relative to model bottom
       const sliceZ = modelBBox.min.z + layerZ;
       const isFirstLayer = li === 0;
-      const layerH = (isFirstLayer ? pp.firstLayerHeight : pp.layerHeight) * zScale;
+      // Derive the ACTUAL height of this layer from the layerZs array rather
+      // than using the nominal `pp.layerHeight`. Adaptive-layer mode produces
+      // variable spacing; using the nominal here would miscalculate extrusion
+      // volume on every non-nominal layer. For the fixed-height path this is
+      // equivalent to the old formula since layerZs[i] - layerZs[i-1] ==
+      // pp.layerHeight * zScale for every i > 0.
+      const layerH = li === 0
+        ? layerZs[0]
+        : layerZs[li] - layerZs[li - 1];
       // initialLayerFlow: override global flow% on first layer only (Cura-parity).
       currentLayerFlow = (isFirstLayer && (pp.initialLayerFlow ?? 0) > 0)
         ? (pp.initialLayerFlow! / 100)
@@ -548,7 +775,21 @@ export class Slicer {
       if (rawContours.length === 0) continue;
 
       // Process contours: compute areas, classify inner/outer
-      const allContours = this.classifyContours(rawContours);
+      let allContours = this.classifyContours(rawContours);
+
+      // Cura/Orca-parity: closing_radius (offset2_ex(+r, -r)) seals sub-
+      // millimetre gaps left by imperfect STLs (sculpting tools, CSG exports)
+      // BEFORE we filter / generate walls. Without this pass, a mesh with
+      // near-coincident but non-welded edges produces near-coincident open
+      // polylines that drop out of connectSegments → lost geometry. With it,
+      // growing every boundary by r merges anything within 2r of another
+      // boundary, then shrinking by r snaps it back to the original size —
+      // minus the gaps. `slicingClosingRadius` is a print-profile setting
+      // (default 0.049 ≈ one nozzle-diameter step, same default as Orca).
+      const closingR = this.printProfile.slicingClosingRadius ?? 0;
+      if (closingR > 0 && allContours.length > 0) {
+        allContours = this.closeContourGaps(allContours, closingR);
+      }
       // Cura-parity: minimumPolygonCircumference drops contours whose perimeter
       // is below the threshold — typically stray loop artifacts from messy meshes.
       const minCirc = pp.minimumPolygonCircumference ?? 0;
@@ -870,32 +1111,115 @@ export class Slicer {
       // on multi-contour layers). We pre-compute the wall sets once and
       // dispatch the emission into two phases keyed by this flag.
       const groupOW = pp.groupOuterWalls ?? false;
-      const perContour: Array<{ contour: Contour; wallSets: THREE.Vector2[][] }> = [];
+      const perContour: Array<{
+        contour: Contour;
+        wallSets: THREE.Vector2[][];
+        wallLineWidths: number[];
+      }> = [];
+      // Precompute hole→parent-outer mapping once per layer so both the
+      // groupOW pre-pass and the main loop can feed generatePerimetersEx
+      // the correct set of contained holes.
+      const holesByOuterIdx = new Map<Contour, THREE.Vector2[][]>();
+      for (const c of workContours) {
+        if (!c.isOuter) continue;
+        const hs: THREE.Vector2[][] = [];
+        for (const hc of contours) {
+          if (hc.isOuter) continue;
+          if (hc.points.length < 3) continue;
+          if (this.pointInContour(hc.points[0], c.points)) hs.push(hc.points);
+        }
+        holesByOuterIdx.set(c, hs);
+      }
+
+      // Build the current layer's material footprint as a MultiPolygon: every
+      // outer contour becomes a polygon whose first ring is the outer and
+      // subsequent rings are its contained holes. Used to detect bridges
+      // (current material NOT covered by previous) and stashed into
+      // `prevLayerMaterial` at the end of this iteration for the next one.
+      const currentLayerMaterial: PCMultiPolygon = [];
+      for (const c of workContours) {
+        if (!c.isOuter || c.points.length < 3) continue;
+        const poly: THREE.Vector2[][] = [c.points];
+        const contHoles = holesByOuterIdx.get(c) ?? [];
+        for (const h of contHoles) poly.push(h);
+        const pcPoly = poly.map((ring): PCRing => {
+          const r: PCRing = ring.map((p) => [p.x, p.y] as [number, number]);
+          if (r.length > 0) {
+            const f = r[0]; const l = r[r.length - 1];
+            if (f[0] !== l[0] || f[1] !== l[1]) r.push([f[0], f[1]]);
+          }
+          return r;
+        });
+        currentLayerMaterial.push(pcPoly);
+      }
+
+      // Bridge region = areas of this layer's material with NOTHING directly
+      // below (current minus previous). For the first layer it's the entire
+      // layer's footprint because nothing supports the first layer — we
+      // suppress bridge detection there via the isFirstLayer guard.
+      let bridgeMP: PCMultiPolygon = [];
+      if (!isFirstLayer && currentLayerMaterial.length > 0 && prevLayerMaterial.length > 0) {
+        try {
+          bridgeMP = polygonClipping.difference(currentLayerMaterial, prevLayerMaterial);
+        } catch { bridgeMP = []; }
+      }
+
+      // Fast point-in-bridge-region test for per-move classification. Walks
+      // every polygon + every ring in the bridge MultiPolygon. Quick-rejects
+      // via bounding-box. Used by the skin-emission loop below.
+      const bridgeBBoxes: Array<{ minX: number; maxX: number; minY: number; maxY: number; poly: PCMultiPolygon[number] }> = [];
+      for (const poly of bridgeMP) {
+        let miX = Infinity, maX = -Infinity, miY = Infinity, maY = -Infinity;
+        for (const ring of poly) for (const p of ring) {
+          if (p[0] < miX) miX = p[0]; if (p[0] > maX) maX = p[0];
+          if (p[1] < miY) miY = p[1]; if (p[1] > maY) maY = p[1];
+        }
+        bridgeBBoxes.push({ minX: miX, maxX: maX, minY: miY, maxY: maY, poly });
+      }
+      const isInBridgeRegion = (x: number, y: number): boolean => {
+        for (const b of bridgeBBoxes) {
+          if (x < b.minX || x > b.maxX || y < b.minY || y > b.maxY) continue;
+          // First ring = outer (CCW), subsequent rings = holes (CW). Point is
+          // inside the polygon if inside the outer AND outside every hole.
+          const outer = b.poly[0];
+          if (!this.pointInRing(x, y, outer)) continue;
+          let inHole = false;
+          for (let i = 1; i < b.poly.length; i++) {
+            if (this.pointInRing(x, y, b.poly[i])) { inHole = true; break; }
+          }
+          if (!inHole) return true;
+        }
+        return false;
+      };
+
       if (groupOW) {
         for (const contour of workContours) {
           if (!contour.isOuter) continue;
-          let wallSets = this.generatePerimeters(contour.points, pp.wallCount, pp.wallLineWidth, pp.outerWallInset ?? 0);
-          const minOdd = pp.minOddWallLineWidth ?? 0;
-          if (minOdd > 0) {
-            wallSets = wallSets.filter((w) => {
-              if (w.length < 3) return false;
-              let miX = Infinity, maX = -Infinity, miY = Infinity, maY = -Infinity;
-              for (const p of w) {
-                if (p.x < miX) miX = p.x; if (p.x > maX) maX = p.x;
-                if (p.y < miY) miY = p.y; if (p.y > maY) maY = p.y;
-              }
-              return Math.min(maX - miX, maY - miY) >= 2 * minOdd;
-            });
-          }
-          perContour.push({ contour, wallSets });
+          const containedHoles = holesByOuterIdx.get(contour) ?? [];
+          const perimeters = this.filterPerimetersByMinOdd(
+            this.generatePerimetersEx(
+              contour.points,
+              containedHoles,
+              pp.wallCount,
+              pp.wallLineWidth,
+              pp.outerWallInset ?? 0,
+            ),
+            pp.minOddWallLineWidth ?? 0,
+          );
+          perContour.push({
+            contour,
+            wallSets: perimeters.walls,
+            wallLineWidths: perimeters.lineWidths,
+          });
         }
         // Pass 1: emit all outer walls across all contours using the same
         // seam/scarf/fluid-motion logic as the inline path. We reuse the
         // helper below and emit only outer walls here.
-        for (const { wallSets } of perContour) {
+        for (const { wallSets, wallLineWidths } of perContour) {
           if (wallSets.length === 0) continue;
           const outerWall = wallSets[0];
           if (outerWall.length < 2) continue;
+          const outerWallLineWidth = wallLineWidths[0] ?? pp.wallLineWidth;
           const seamIdx = this.findSeamPosition(outerWall, pp, li);
           let reordered = this.reorderFromIndex(outerWall, seamIdx);
           if (pp.fluidMotionEnable && reordered.length >= 3) {
@@ -939,13 +1263,13 @@ export class Slicer {
           for (let pi = 1; pi < reordered.length; pi++) {
             const from = reordered[pi - 1];
             const to = reordered[pi];
-            let segLW = pp.wallLineWidth;
+            let segLW = outerWallLineWidth;
             let segSpeed = outerWallSpeed;
             if (scarfRemaining > 0) {
               const done = scarfLen - scarfRemaining;
               const tRaw = done / scarfLen;
               const t = Math.min(1, scarfStepLen > 0 ? Math.floor(done / scarfStepLen) * scarfStepLen / scarfLen : tRaw);
-              segLW = pp.wallLineWidth * t;
+              segLW = outerWallLineWidth * t;
               const speedRatio = pp.scarfSeamStartSpeedRatio ?? 1.0;
               segSpeed = outerWallSpeed * (speedRatio + (1.0 - speedRatio) * t);
               scarfRemaining = Math.max(0, scarfRemaining - from.distanceTo(to));
@@ -964,14 +1288,14 @@ export class Slicer {
           if (reordered.length > 2) {
             const lastPt = reordered[reordered.length - 1];
             const firstPt = reordered[0];
-            layerTime += extrudeTo(firstPt.x, firstPt.y, outerWallSpeed, pp.wallLineWidth, layerH);
+            layerTime += extrudeTo(firstPt.x, firstPt.y, outerWallSpeed, outerWallLineWidth, layerH);
             moves.push({
               type: 'wall-outer',
               from: { x: lastPt.x, y: lastPt.y },
               to: { x: firstPt.x, y: firstPt.y },
               speed: outerWallSpeed,
-              extrusion: calcExtrusion(lastPt.distanceTo(firstPt), pp.wallLineWidth, layerH),
-              lineWidth: pp.wallLineWidth,
+              extrusion: calcExtrusion(lastPt.distanceTo(firstPt), outerWallLineWidth, layerH),
+              lineWidth: outerWallLineWidth,
             });
           }
         }
@@ -981,25 +1305,32 @@ export class Slicer {
       for (const contour of workContours) {
         if (!contour.isOuter) continue; // process outer contours only; inner holes handled during offset
 
-        // Generate perimeters (walls)
-        let wallSets = this.generatePerimeters(contour.points, pp.wallCount, pp.wallLineWidth, pp.outerWallInset ?? 0);
-        // Cura-parity: `minOddWallLineWidth` drops walls whose bounding box
-        // is too small to fit the requested line width (approximation: if
-        // the wall's min bbox dimension < 2 × threshold, skip it). Prevents
-        // sub-nozzle "odd walls" from being emitted as a no-op loop in
-        // narrow internal regions.
-        const minOdd = pp.minOddWallLineWidth ?? 0;
-        if (minOdd > 0) {
-          wallSets = wallSets.filter((w) => {
-            if (w.length < 3) return false;
-            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-            for (const p of w) {
-              if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
-              if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
-            }
-            return Math.min(maxX - minX, maxY - minY) >= 2 * minOdd;
-          });
-        }
+        // Generate perimeters (walls). Hole-aware: generatePerimetersEx
+        // computes wall loops for both the outer contour AND every contained
+        // hole simultaneously, using polygon-clipping's difference to clip
+        // against collisions in thin-wall regions. The emission order keeps
+        // outer loops first (so wallSets[0] is still the outermost outer
+        // wall, preserving seam/flow/fluidMotion logic) and appends hole
+        // loops after. `outerCount` marks the boundary — wallSets[outerCount-1]
+        // is the innermost OUTER wall, which is the infill boundary.
+        const containedHoles = holesByOuterIdx.get(contour) ?? [];
+        const exWalls = this.filterPerimetersByMinOdd(
+          this.generatePerimetersEx(
+            contour.points,
+            containedHoles,
+            pp.wallCount,
+            pp.wallLineWidth,
+            pp.outerWallInset ?? 0,
+          ),
+          pp.minOddWallLineWidth ?? 0,
+        );
+        const wallSets = exWalls.walls;
+        const wallLineWidths = exWalls.lineWidths;
+        const outerWallCount = exWalls.outerCount;
+        // Innermost hole boundaries from the wall pass. Fed to scan-line infill
+        // so pairings treat cavities as obstacles and material never extrudes
+        // across a hole.
+        const infillHoles = exWalls.innermostHoles;
 
         // Outer wall — skipped here when `groupOuterWalls` already emitted
         // them in the layer-wide pre-pass above.
@@ -1010,6 +1341,7 @@ export class Slicer {
           }
           const outerWall = wallSets[0];
           if (outerWall.length >= 2) {
+            const outerWallLineWidth = wallLineWidths[0] ?? pp.wallLineWidth;
             // Find seam position. The Cura-parity `zSeamPosition` field
             // takes precedence over our legacy `zSeamAlignment` when set
             // and unlocks 'user_specified' (X/Y) + 'back' which pp.zSeamX/Y
@@ -1077,7 +1409,7 @@ export class Slicer {
             for (let pi = 1; pi < reordered.length; pi++) {
               const from = reordered[pi - 1];
               const to = reordered[pi];
-              let segLW = pp.wallLineWidth;
+              let segLW = outerWallLineWidth;
               let segSpeed = outerWallSpeed;
               if (scarfRemaining > 0) {
                 // Ramp: completed distance into scarf / total scarf length.
@@ -1086,7 +1418,7 @@ export class Slicer {
                 const done = scarfLen - scarfRemaining;
                 const tRaw = done / scarfLen;
                 const t = Math.min(1, scarfStepLen2 > 0 ? Math.floor(done / scarfStepLen2) * scarfStepLen2 / scarfLen : tRaw);
-                segLW = pp.wallLineWidth * t;
+                segLW = outerWallLineWidth * t;
                 // scarfSeamStartSpeedRatio: ramp speed from ratio→1.0 over scarf length
                 const speedRatio = pp.scarfSeamStartSpeedRatio ?? 1.0;
                 segSpeed = outerWallSpeed * (speedRatio + (1.0 - speedRatio) * t);
@@ -1133,21 +1465,21 @@ export class Slicer {
                   })()
                 : Infinity;
               const coastDist = coastVol > 0 && loopVol >= minCoastVol
-                ? coastVol / (pp.wallLineWidth * layerH)
+                ? coastVol / (outerWallLineWidth * layerH)
                 : 0;
               if (coastDist > 0 && segLen > coastDist + 1e-3) {
                 // Extrude up to the coast-start point, then travel the rest.
                 const t = 1 - coastDist / segLen;
                 const midX = lastPt.x + (firstPt.x - lastPt.x) * t;
                 const midY = lastPt.y + (firstPt.y - lastPt.y) * t;
-                layerTime += extrudeTo(midX, midY, outerWallSpeed, pp.wallLineWidth, layerH);
+                layerTime += extrudeTo(midX, midY, outerWallSpeed, outerWallLineWidth, layerH);
                 moves.push({
                   type: 'wall-outer',
                   from: { x: lastPt.x, y: lastPt.y },
                   to: { x: midX, y: midY },
                   speed: outerWallSpeed,
-                  extrusion: calcExtrusion(segLen * t, pp.wallLineWidth, layerH),
-                  lineWidth: pp.wallLineWidth,
+                  extrusion: calcExtrusion(segLen * t, outerWallLineWidth, layerH),
+                  lineWidth: outerWallLineWidth,
                 });
                 // Coast — unextruded travel at (optionally) reduced speed.
                 const coastSpeed = outerWallSpeed * ((pp.coastingSpeed ?? 90) / 100);
@@ -1155,14 +1487,14 @@ export class Slicer {
                 currentX = firstPt.x;
                 currentY = firstPt.y;
               } else {
-                layerTime += extrudeTo(firstPt.x, firstPt.y, outerWallSpeed, pp.wallLineWidth, layerH);
+                layerTime += extrudeTo(firstPt.x, firstPt.y, outerWallSpeed, outerWallLineWidth, layerH);
                 moves.push({
                   type: 'wall-outer',
                   from: { x: lastPt.x, y: lastPt.y },
                   to: { x: firstPt.x, y: firstPt.y },
                   speed: outerWallSpeed,
-                  extrusion: calcExtrusion(segLen, pp.wallLineWidth, layerH),
-                  lineWidth: pp.wallLineWidth,
+                  extrusion: calcExtrusion(segLen, outerWallLineWidth, layerH),
+                  lineWidth: outerWallLineWidth,
                 });
               }
             }
@@ -1185,6 +1517,7 @@ export class Slicer {
         for (let wi = 1; wi < wallSets.length; wi++) {
           const innerWall = wallSets[wi];
           if (innerWall.length < 2) continue;
+          const innerWallLineWidth = wallLineWidths[wi] ?? innerLW;
           setAccel(isFirstLayer ? pp.accelerationInitialLayer : (pp.accelerationInnerWall ?? pp.accelerationWall), pp.accelerationPrint);
           setJerk(isFirstLayer ? pp.jerkInitialLayer : (pp.jerkInnerWall ?? pp.jerkWall), pp.jerkPrint);
           travelTo(innerWall[0].x, innerWall[0].y);
@@ -1192,28 +1525,28 @@ export class Slicer {
           for (let pi = 1; pi < innerWall.length; pi++) {
             const from = innerWall[pi - 1];
             const to = innerWall[pi];
-            layerTime += extrudeTo(to.x, to.y, innerWallSpeed, innerLW, layerH);
+            layerTime += extrudeTo(to.x, to.y, innerWallSpeed, innerWallLineWidth, layerH);
             moves.push({
               type: 'wall-inner',
               from: { x: from.x, y: from.y },
               to: { x: to.x, y: to.y },
               speed: innerWallSpeed,
-              extrusion: calcExtrusion(from.distanceTo(to), innerLW, layerH),
-              lineWidth: innerLW,
+              extrusion: calcExtrusion(from.distanceTo(to), innerWallLineWidth, layerH),
+              lineWidth: innerWallLineWidth,
             });
           }
           // Close loop
           if (innerWall.length > 2) {
             const lastPt = innerWall[innerWall.length - 1];
             const firstPt = innerWall[0];
-            layerTime += extrudeTo(firstPt.x, firstPt.y, innerWallSpeed, innerLW, layerH);
+            layerTime += extrudeTo(firstPt.x, firstPt.y, innerWallSpeed, innerWallLineWidth, layerH);
             moves.push({
               type: 'wall-inner',
               from: { x: lastPt.x, y: lastPt.y },
               to: { x: firstPt.x, y: firstPt.y },
               speed: innerWallSpeed,
-              extrusion: calcExtrusion(lastPt.distanceTo(firstPt), innerLW, layerH),
-              lineWidth: innerLW,
+              extrusion: calcExtrusion(lastPt.distanceTo(firstPt), innerWallLineWidth, layerH),
+              lineWidth: innerWallLineWidth,
             });
           }
         }
@@ -1223,7 +1556,14 @@ export class Slicer {
           ? (pp.initialLayerFlow! / 100) : 1.0;
 
         // ----- Infill / solid fill -----
-        const innermostWall = wallSets.length > 0 ? wallSets[wallSets.length - 1] : contour.points;
+        // Infill boundary is the innermost OUTER wall (wallSets slice
+        // [0..outerCount)), NOT any hole wall. Using a hole wall here would
+        // tell the infill to fill *inside* the cavity, which is backwards.
+        const adaptiveOuterFilled = outerWallCount === 1
+          && (wallLineWidths[0] ?? pp.wallLineWidth) > pp.wallLineWidth + 1e-6;
+        const innermostWall = adaptiveOuterFilled
+          ? []
+          : outerWallCount > 0 ? wallSets[outerWallCount - 1] : contour.points;
         if (innermostWall.length >= 3) {
           let infillLines: { from: THREE.Vector2; to: THREE.Vector2 }[] = [];
           let infillMoveType: SliceMove['type'];
@@ -1281,9 +1621,9 @@ export class Slicer {
             // with an explicit list of angles (degrees), cycled per layer.
             if (pp.topBottomLineDirections && pp.topBottomLineDirections.length > 0) {
               const angleDeg = pp.topBottomLineDirections[li % pp.topBottomLineDirections.length];
-              infillLines = this.generateScanLines(skinInput, 100, pp.infillLineWidth, (angleDeg * Math.PI) / 180);
+              infillLines = this.generateScanLines(skinInput, 100, pp.infillLineWidth, (angleDeg * Math.PI) / 180, 0, infillHoles);
             } else {
-              infillLines = this.generateLinearInfill(skinInput, 100, pp.infillLineWidth, li, skinPattern);
+              infillLines = this.generateLinearInfill(skinInput, 100, pp.infillLineWidth, li, skinPattern, infillHoles);
             }
             infillMoveType = 'top-bottom';
             speed = topBottomSpeed;
@@ -1319,24 +1659,41 @@ export class Slicer {
                 }
               }
             }
-            // Cura-parity: `infillOverhangAngle`. If this layer contains a
-            // triangle facing down steeper than the threshold, overhanging
-            // walls will need denser infill underneath for support. We boost
-            // infill density ×1.5 (capped at 100%) for the whole layer. True
-            // Cura does per-region detection; ours is layer-level.
+            // Cura-parity: `infillOverhangAngle` — PER-REGION density boost.
+            // Triangles facing down steeper than the threshold project an XY
+            // shadow; the infill directly under that shadow gets denser
+            // support while the rest of the layer stays at base density.
+            // The shadow is a union MultiPolygon used below to split the
+            // infill scan into two density passes.
+            let overhangShadowMP: PCMultiPolygon = [];
             if ((pp.infillOverhangAngle ?? 0) > 0 && !isSolid) {
               const thr = (pp.infillOverhangAngle! * Math.PI) / 180;
+              const shadowTris: PCMultiPolygon = [];
               for (const tri of triangles) {
                 const dotUp = tri.normal.z;
                 if (dotUp >= 0) continue;
                 const a = Math.acos(Math.max(0, Math.min(1, Math.abs(dotUp))));
-                const tMinZ = Math.min(tri.v0.z, tri.v1.z, tri.v2.z);
+                if (a <= thr) continue;
                 const tMaxZ = Math.max(tri.v0.z, tri.v1.z, tri.v2.z);
-                if (sliceZ < tMinZ || sliceZ > tMaxZ + pp.layerHeight) continue;
-                if (a > thr) {
-                  effectiveDensity = Math.min(100, effectiveDensity * 1.5);
-                  break;
-                }
+                // Consider triangles at or above this layer. Their XY
+                // footprint below them needs denser infill. We include
+                // triangles overlapping the current slice Z so the layer's
+                // own walls get the boost too.
+                if (tMaxZ < sliceZ - pp.layerHeight) continue;
+                const ring: PCRing = [
+                  [tri.v0.x + offsetX, tri.v0.y + offsetY],
+                  [tri.v1.x + offsetX, tri.v1.y + offsetY],
+                  [tri.v2.x + offsetX, tri.v2.y + offsetY],
+                  [tri.v0.x + offsetX, tri.v0.y + offsetY],
+                ];
+                shadowTris.push([ring]);
+              }
+              if (shadowTris.length > 0) {
+                try {
+                  overhangShadowMP = shadowTris.length === 1
+                    ? shadowTris
+                    : polygonClipping.union(shadowTris[0], ...shadowTris.slice(1));
+                } catch { overhangShadowMP = []; }
               }
             }
             const infillOverlapMm = ((pp.infillOverlap ?? 10) / 100) * pp.infillLineWidth;
@@ -1357,18 +1714,60 @@ export class Slicer {
               // with an explicit list of angles (degrees), cycled per layer.
               // When set, all infill on this layer uses a single scan pass at
               // the specified angle instead of the pattern's built-in rotation.
-              if (pp.infillLineDirections && pp.infillLineDirections.length > 0) {
-                const angleDeg = pp.infillLineDirections[li % pp.infillLineDirections.length];
-                const spacing = pp.infillLineWidth / (effectiveDensity / 100);
-                const phase = pp.randomInfillStart
-                  ? Math.abs(Math.sin(li * 127.1 + 43.7)) * spacing
-                  : 0;
-                infillLines = this.generateScanLines(
-                  infillRegion, effectiveDensity, pp.infillLineWidth,
-                  (angleDeg * Math.PI) / 180, phase,
-                );
+              const genPattern = (region: THREE.Vector2[], density: number) => {
+                if (pp.infillLineDirections && pp.infillLineDirections.length > 0) {
+                  const angleDeg = pp.infillLineDirections[li % pp.infillLineDirections.length];
+                  const spacing = pp.infillLineWidth / (density / 100);
+                  const phase = pp.randomInfillStart
+                    ? Math.abs(Math.sin(li * 127.1 + 43.7)) * spacing
+                    : 0;
+                  return this.generateScanLines(
+                    region, density, pp.infillLineWidth,
+                    (angleDeg * Math.PI) / 180, phase, infillHoles,
+                  );
+                }
+                return this.generateLinearInfill(region, density, pp.infillLineWidth, li, pp.infillPattern, infillHoles);
+              };
+
+              if (overhangShadowMP.length === 0) {
+                // No overhang on this layer — single infill pass at baseline.
+                infillLines = genPattern(infillRegion, effectiveDensity);
               } else {
-                infillLines = this.generateLinearInfill(infillRegion, effectiveDensity, pp.infillLineWidth, li, pp.infillPattern);
+                // Per-region boost: split the infill region into the shadow
+                // portion (1.5× density) and the rest (baseline). Each gets
+                // its own scan pass; the final line list is their union.
+                const infillRegionMP: PCMultiPolygon = [[
+                  infillRegion.map((p) => [p.x, p.y] as [number, number]).concat(
+                    infillRegion.length > 0
+                      ? [[infillRegion[0].x, infillRegion[0].y] as [number, number]]
+                      : [],
+                  ),
+                ]];
+                let boostedMP: PCMultiPolygon = [];
+                let normalMP: PCMultiPolygon = infillRegionMP;
+                try {
+                  boostedMP = polygonClipping.intersection(infillRegionMP, overhangShadowMP);
+                  normalMP = polygonClipping.difference(infillRegionMP, overhangShadowMP);
+                } catch { boostedMP = []; normalMP = infillRegionMP; }
+
+                const ringToV2 = (ring: PCRing): THREE.Vector2[] => {
+                  const pts: THREE.Vector2[] = [];
+                  for (let i = 0; i < ring.length - 1; i++) {
+                    pts.push(new THREE.Vector2(ring[i][0], ring[i][1]));
+                  }
+                  return pts;
+                };
+
+                const boostedDensity = Math.min(100, effectiveDensity * 1.5);
+                infillLines = [];
+                for (const poly of boostedMP) {
+                  if (poly.length === 0) continue;
+                  infillLines.push(...genPattern(ringToV2(poly[0]), boostedDensity));
+                }
+                for (const poly of normalMP) {
+                  if (poly.length === 0) continue;
+                  infillLines.push(...genPattern(ringToV2(poly[0]), effectiveDensity));
+                }
               }
             }
             // Cura-parity: multiplyInfill repeats each scan line N times to build
@@ -1410,12 +1809,12 @@ export class Slicer {
               // Successive skin walls step inward (toward the center) from
               // the innermost model wall. Positive offset = inward under
               // offsetContour's convention. ew=0 sits at innermostWall.
+              // Extra skin walls step inward from the innermost OUTER wall,
+              // not from hole walls — matches the infill-boundary semantics.
+              const baseLoop = outerWallCount > 0 ? wallSets[outerWallCount - 1] : contour.points;
               const loop = ew === 0
-                ? (wallSets.length > 0 ? wallSets[wallSets.length - 1] : contour.points)
-                : this.offsetContour(
-                    wallSets.length > 0 ? wallSets[wallSets.length - 1] : contour.points,
-                    ew * pp.infillLineWidth,
-                  );
+                ? baseLoop
+                : this.offsetContour(baseLoop, ew * pp.infillLineWidth);
               if (loop.length < 3) break;
               travelTo(loop[0].x, loop[0].y);
               for (let pi = 1; pi < loop.length; pi++) {
@@ -1491,27 +1890,63 @@ export class Slicer {
               const effTo = endExt > 0 && len > 0
                 ? new THREE.Vector2(line.to.x + ux * endExt, line.to.y + uy * endExt)
                 : line.to;
+
+              // Bridge classification: only applies to top-bottom skin lines.
+              // A line is a bridge if its midpoint falls in the bridgeMP (
+              // current-layer material not supported by previous layer). On
+              // entry/exit of a bridge run we emit a fan override (M106) so
+              // unsupported skin gets maximum cooling.
+              let thisMoveType: SliceMove['type'] = infillMoveType;
+              let thisSpeed = speed;
+              let thisLineWidth = lineWidth;
+              let thisFlowScale = 1.0;
+              if (bridgeMP.length > 0 && infillMoveType === 'top-bottom') {
+                const midX = (effFrom.x + effTo.x) / 2;
+                const midY = (effFrom.y + effTo.y) / 2;
+                if (isInBridgeRegion(midX, midY)) {
+                  thisMoveType = 'bridge';
+                  thisSpeed = pp.bridgeSkinSpeed ?? speed;
+                  thisFlowScale = (pp.bridgeSkinFlow ?? 100) / 100;
+                }
+              }
+              const needBridgeFan = pp.enableBridgeFan && thisMoveType === 'bridge' && !bridgeFanActive;
+              const needFanRestore = !needBridgeFan && thisMoveType !== 'bridge' && bridgeFanActive;
+              if (needBridgeFan) {
+                gcode.push(`M106 S${fanSArg(pp.bridgeFanSpeed ?? 100)} ; Bridge fan`);
+                bridgeFanActive = true;
+              } else if (needFanRestore) {
+                gcode.push(`M106 S${fanSArg(mat.fanSpeedMin ?? 100)} ; Restore fan after bridge`);
+                bridgeFanActive = false;
+              }
+
               const fromDist = Math.hypot(effFrom.x - currentX, effFrom.y - currentY);
               if (connect && idx > 0 && fromDist < connectTol) {
                 // Close enough to the previous segment's end — extrude the
                 // bridge instead of traveling.
-                layerTime += extrudeTo(effFrom.x, effFrom.y, speed, lineWidth, layerH);
+                layerTime += extrudeTo(effFrom.x, effFrom.y, thisSpeed, thisLineWidth, layerH);
               } else {
                 travelTo(effFrom.x, effFrom.y);
               }
-              layerTime += extrudeTo(effTo.x, effTo.y, speed, lineWidth, layerH);
+              // Apply per-move flow scale (bridge skin flow) by temporarily
+              // adjusting currentLayerFlow around the extrusion + extrusion
+              // bookkeeping. Restored immediately to avoid leaking into the
+              // next move.
+              const flowSaved = currentLayerFlow;
+              currentLayerFlow = flowSaved * thisFlowScale;
+              layerTime += extrudeTo(effTo.x, effTo.y, thisSpeed, thisLineWidth, layerH);
               moves.push({
-                type: infillMoveType,
+                type: thisMoveType,
                 from: { x: effFrom.x, y: effFrom.y },
                 to: { x: effTo.x, y: effTo.y },
-                speed,
+                speed: thisSpeed,
                 extrusion: calcExtrusion(
                   effFrom.distanceTo(effTo),
-                  lineWidth,
+                  thisLineWidth,
                   layerH,
                 ),
-                lineWidth,
+                lineWidth: thisLineWidth,
               });
+              currentLayerFlow = flowSaved;
               // Cura-parity: `infillWipeDistance` — after extruding each scan
               // line, continue moving in the same direction without extruding.
               // This wipes residual pressure off the tip and reduces stringing
@@ -1530,6 +1965,14 @@ export class Slicer {
       // Restore per-layer flow after contour loop (may have been overridden per feature).
       currentLayerFlow = (isFirstLayer && (pp.initialLayerFlow ?? 0) > 0)
         ? (pp.initialLayerFlow! / 100) : 1.0;
+
+      // Restore fan if bridge emission left it spinning up. Prevents the high
+      // bridge fan from leaking into subsequent layers' walls/infill where it
+      // would hurt adhesion on vertical surfaces.
+      if (bridgeFanActive) {
+        gcode.push(`M106 S${fanSArg(mat.fanSpeedMin ?? 100)} ; Restore fan after bridge (layer end)`);
+        bridgeFanActive = false;
+      }
 
       // ----- Support brim (layer 0 only) -----
       // Support generation skips layer 0 intentionally (see `li > 0` gate
@@ -1759,22 +2202,34 @@ export class Slicer {
         moves,
         layerTime,
       });
+
+      // Stash this layer's material footprint for the NEXT layer's bridge
+      // detection pass. Overhangs show up as the difference between the next
+      // layer's material and this one.
+      prevLayerMaterial = currentLayerMaterial;
     }
 
     // ----- End G-code -----
     this.reportProgress('generating', 95, totalLayers, totalLayers, 'Writing end G-code...');
     gcode.push('');
     gcode.push('; ----- End G-code -----');
-    gcode.push('M73 P100 ; Print complete');
-    gcode.push('M107 ; Fan off');
-    if (mat.finalPrintingTemperature !== undefined) {
-      gcode.push(`M104 S${mat.finalPrintingTemperature} ; Cooldown nozzle`);
-    }
-    const endGCode = this.resolveGCodeTemplate(printer.endGCode, {
+    const rawEndGCode = this.resolveGCodeTemplate(printer.endGCode, {
       nozzleTemp: mat.nozzleTemp,
       bedTemp: mat.bedTemp,
     });
-    gcode.push(endGCode.trim());
+    const endTemplateHasPrintMacro = /^\s*END_PRINT\b/m.test(rawEndGCode);
+    if (!endTemplateHasPrintMacro) {
+      gcode.push('M73 P100 ; Print complete');
+      gcode.push('M107 ; Fan off');
+      if (mat.finalPrintingTemperature !== undefined) {
+        gcode.push(`M104 S${mat.finalPrintingTemperature} ; Cooldown nozzle`);
+      }
+    }
+    const endGCode = dedupeEndGCode(rawEndGCode, {
+      slicerTurnsFanOff: !endTemplateHasPrintMacro,
+      slicerSetsFinalNozzleTemp: !endTemplateHasPrintMacro && mat.finalPrintingTemperature !== undefined,
+    });
+    if (endGCode) gcode.push(endGCode);
 
     // ----- Compute statistics -----
     const filamentCrossSection = Math.PI * (printer.filamentDiameter / 2) ** 2;
@@ -1807,6 +2262,59 @@ export class Slicer {
   // MESH PREPARATION
   // =========================================================================
 
+  /**
+   * Collapse triangle vertices that are coincident within a sub-micron tolerance
+   * to identical coordinates. CAD-exported meshes routinely produce per-face
+   * duplicated vertices that differ by floating-point noise (~1e-7). Without
+   * welding, neighbouring triangles don't share vertex identity, so the
+   * triangle-plane slice produces endpoint pairs like (10.000, 5.000) and
+   * (10.00000008, 5.00000003) — close but not equal. The downstream
+   * contour-chaining pass has to heal the gap via a coarse positional hash
+   * (`connectSegments` GRID=0.01) instead of exact matching.
+   *
+   * This is an in-place mutation of the input Triangles' `Vector3` fields.
+   * Mirrors OrcaSlicer's `its_merge_vertices` in spirit, but runs on the
+   * already-transformed triangle array so we don't have to rebuild indices.
+   */
+  private weldTriangleVertices(triangles: Triangle[]): void {
+    // 1 micrometre grid. Any two vertex positions within 1µm collapse to the
+    // same canonical Vector3. Picked well below typical printer resolution
+    // (~50µm) so genuine geometry never collapses.
+    const GRID = 1e-3; // 1µm in mm
+    const canon = new Map<string, THREE.Vector3>();
+    const snap = (v: THREE.Vector3): THREE.Vector3 => {
+      const kx = Math.round(v.x / GRID);
+      const ky = Math.round(v.y / GRID);
+      const kz = Math.round(v.z / GRID);
+      const key = `${kx},${ky},${kz}`;
+      let c = canon.get(key);
+      if (!c) {
+        c = new THREE.Vector3(kx * GRID, ky * GRID, kz * GRID);
+        canon.set(key, c);
+      }
+      return c;
+    };
+    // After snapping, each vertex position is deterministic to 1µm, so two
+    // triangles that share a mesh edge now expose the same canonical Vector3
+    // instances. We also precompute per-triangle edge keys here: the sorted
+    // coordinate-string pair of the two endpoints uniquely identifies a mesh
+    // edge. These keys let connectSegments chain loops via exact topology.
+    const vkey = (v: THREE.Vector3) => `${v.x.toFixed(4)},${v.y.toFixed(4)},${v.z.toFixed(4)}`;
+    const edgeKey = (a: THREE.Vector3, b: THREE.Vector3): string => {
+      const ka = vkey(a);
+      const kb = vkey(b);
+      return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+    };
+    for (const t of triangles) {
+      t.v0 = snap(t.v0);
+      t.v1 = snap(t.v1);
+      t.v2 = snap(t.v2);
+      t.edgeKey01 = edgeKey(t.v0, t.v1);
+      t.edgeKey12 = edgeKey(t.v1, t.v2);
+      t.edgeKey20 = edgeKey(t.v2, t.v0);
+    }
+  }
+
   private extractTriangles(
     geometries: { geometry: THREE.BufferGeometry; transform: THREE.Matrix4 }[],
   ): Triangle[] {
@@ -1838,7 +2346,7 @@ export class Slicer {
           // which would produce NaN after normalize()).
           if (cross.lengthSq() < 1e-12) continue;
           const normal = cross.normalize();
-          triangles.push({ v0, v1, v2, normal });
+          triangles.push({ v0, v1, v2, normal, edgeKey01: '', edgeKey12: '', edgeKey20: '' });
         }
       } else {
         for (let i = 0; i < posAttr.count; i += 3) {
@@ -1850,12 +2358,115 @@ export class Slicer {
           const cross = new THREE.Vector3().crossVectors(edge1, edge2);
           if (cross.lengthSq() < 1e-12) continue;
           const normal = cross.normalize();
-          triangles.push({ v0, v1, v2, normal });
+          triangles.push({ v0, v1, v2, normal, edgeKey01: '', edgeKey12: '', edgeKey20: '' });
         }
       }
     }
 
+    this.weldTriangleVertices(triangles);
+    this.repairTriangleNormals(triangles);
     return triangles;
+  }
+
+  /**
+   * Propagate consistent winding order across the mesh so every triangle's
+   * normal points OUTWARD. CAD/sculpting exports sometimes produce meshes
+   * with mixed or fully-inverted normals; our polygon-clipping ops are
+   * winding-agnostic (Clipper normalises), but overhang detection, support
+   * generation, bridge detection, and the adaptive layer-height penalty
+   * all read `tri.normal.z` directly and break silently on inverted
+   * meshes — "my supports won't generate" bugs trace back here.
+   *
+   * Algorithm (admesh `stl_fix_normal_directions` in spirit):
+   *   1. Build edge → neighbour-triangle adjacency using the canonical
+   *      Vector3 instances left by weldTriangleVertices.
+   *   2. BFS from each unvisited seed. A consistent manifold traverses any
+   *      shared edge in OPPOSITE directions on either side; a neighbour
+   *      that traverses it in the SAME direction gets its winding swapped
+   *      and its normal negated.
+   *   3. After BFS, the topmost triangle's normal.z tells us whether the
+   *      component settled outward or inside-out. If inverted, flip every
+   *      triangle in one pass.
+   */
+  private repairTriangleNormals(triangles: Triangle[]): void {
+    if (triangles.length === 0) return;
+
+    const vkey = (v: THREE.Vector3) => `${v.x},${v.y},${v.z}`;
+    type EdgeRef = { tri: number; dir: 1 | -1 };
+    const edgeMap = new Map<string, EdgeRef[]>();
+    const edgeKey = (a: THREE.Vector3, b: THREE.Vector3): { key: string; dir: 1 | -1 } => {
+      const ka = vkey(a); const kb = vkey(b);
+      if (ka < kb) return { key: `${ka}|${kb}`, dir: 1 };
+      return { key: `${kb}|${ka}`, dir: -1 };
+    };
+    const addEdge = (a: THREE.Vector3, b: THREE.Vector3, triIdx: number) => {
+      const { key, dir } = edgeKey(a, b);
+      let list = edgeMap.get(key);
+      if (!list) { list = []; edgeMap.set(key, list); }
+      list.push({ tri: triIdx, dir });
+    };
+    for (let i = 0; i < triangles.length; i++) {
+      const t = triangles[i];
+      addEdge(t.v0, t.v1, i);
+      addEdge(t.v1, t.v2, i);
+      addEdge(t.v2, t.v0, i);
+    }
+
+    const visited = new Uint8Array(triangles.length);
+    const flip = (ti: number) => {
+      const t = triangles[ti];
+      const tmp = t.v1; t.v1 = t.v2; t.v2 = tmp;
+      t.normal.multiplyScalar(-1);
+      // Update this triangle's entries in the edge map to reflect its new
+      // vertex order — otherwise subsequent neighbours see stale dirs.
+      const newEdges: Array<[THREE.Vector3, THREE.Vector3]> = [
+        [t.v0, t.v1], [t.v1, t.v2], [t.v2, t.v0],
+      ];
+      for (const [a, b] of newEdges) {
+        const { key, dir } = edgeKey(a, b);
+        const list = edgeMap.get(key);
+        if (!list) continue;
+        for (const e of list) if (e.tri === ti) e.dir = dir;
+      }
+    };
+
+    for (let seed = 0; seed < triangles.length; seed++) {
+      if (visited[seed]) continue;
+      visited[seed] = 1;
+      const queue: number[] = [seed];
+      while (queue.length > 0) {
+        const curIdx = queue.shift()!;
+        const cur = triangles[curIdx];
+        const edges: Array<[THREE.Vector3, THREE.Vector3]> = [
+          [cur.v0, cur.v1], [cur.v1, cur.v2], [cur.v2, cur.v0],
+        ];
+        for (const [a, b] of edges) {
+          const { key, dir: curDir } = edgeKey(a, b);
+          const list = edgeMap.get(key);
+          if (!list) continue;
+          for (const c of list) {
+            if (c.tri === curIdx) continue;
+            if (visited[c.tri]) continue;
+            if (c.dir === curDir) flip(c.tri); // same dir → inconsistent
+            visited[c.tri] = 1;
+            queue.push(c.tri);
+          }
+        }
+      }
+    }
+
+    // Global orientation check. The triangle with the highest centroid Z
+    // must face upward (normal.z > 0) on a correctly-oriented mesh. If it's
+    // below, the whole component settled inside-out — flip everything.
+    let topIdx = 0;
+    let topZ = -Infinity;
+    for (let i = 0; i < triangles.length; i++) {
+      const cz = (triangles[i].v0.z + triangles[i].v1.z + triangles[i].v2.z) / 3;
+      if (cz > topZ) { topZ = cz; topIdx = i; }
+    }
+    if (triangles[topIdx].normal.z < 0) {
+      for (let i = 0; i < triangles.length; i++) flip(i);
+    }
   }
 
   private computeBBox(triangles: Triangle[]): THREE.Box3 {
@@ -1883,11 +2494,13 @@ export class Slicer {
     const segments: Segment[] = [];
 
     for (const tri of triangles) {
-      const pts = this.trianglePlaneIntersection(tri.v0, tri.v1, tri.v2, z);
+      const pts = this.trianglePlaneIntersection(tri, z);
       if (pts) {
         segments.push({
-          a: new THREE.Vector2(pts[0].x + offsetX, pts[0].y + offsetY),
-          b: new THREE.Vector2(pts[1].x + offsetX, pts[1].y + offsetY),
+          a: new THREE.Vector2(pts[0].pt.x + offsetX, pts[0].pt.y + offsetY),
+          b: new THREE.Vector2(pts[1].pt.x + offsetX, pts[1].pt.y + offsetY),
+          edgeKeyA: pts[0].edgeKey,
+          edgeKeyB: pts[1].edgeKey,
         });
       }
     }
@@ -1896,32 +2509,44 @@ export class Slicer {
   }
 
   private trianglePlaneIntersection(
-    v0: THREE.Vector3,
-    v1: THREE.Vector3,
-    v2: THREE.Vector3,
+    tri: Triangle,
     z: number,
-  ): [THREE.Vector3, THREE.Vector3] | null {
-    const points: THREE.Vector3[] = [];
-    const edges: [THREE.Vector3, THREE.Vector3][] = [
-      [v0, v1],
-      [v1, v2],
-      [v2, v0],
+  ): [{ pt: THREE.Vector3; edgeKey: string }, { pt: THREE.Vector3; edgeKey: string }] | null {
+    // Perturb vertices that lie exactly on the slice plane slightly above it.
+    // This is the Cura/Orca robustness trick: without it, a triangle whose
+    // edge sits coplanar with Z and whose third vertex is below the plane
+    // produces NO intersection segment, and entire horizontal faces
+    // (gussets, flat-topped features) silently vanish from the slice. By
+    // nudging on-plane vertices up by a sub-micron epsilon we guarantee
+    // every triangle reports the correct [0 or 2] straddling edges.
+    const EPS = 1e-7;
+    const { v0, v1, v2 } = tri;
+    const z0 = v0.z === z ? z + EPS : v0.z;
+    const z1 = v1.z === z ? z + EPS : v1.z;
+    const z2 = v2.z === z ? z + EPS : v2.z;
+
+    const hits: Array<{ pt: THREE.Vector3; edgeKey: string }> = [];
+    const edges: Array<[THREE.Vector3, number, THREE.Vector3, number, string]> = [
+      [v0, z0, v1, z1, tri.edgeKey01],
+      [v1, z1, v2, z2, tri.edgeKey12],
+      [v2, z2, v0, z0, tri.edgeKey20],
     ];
 
-    for (const [a, b] of edges) {
-      if ((a.z <= z && b.z > z) || (b.z <= z && a.z > z)) {
-        const t = (z - a.z) / (b.z - a.z);
-        points.push(
-          new THREE.Vector3(
+    for (const [a, az, b, bz, key] of edges) {
+      if ((az < z && bz > z) || (bz < z && az > z)) {
+        const t = (z - az) / (bz - az);
+        hits.push({
+          pt: new THREE.Vector3(
             a.x + t * (b.x - a.x),
             a.y + t * (b.y - a.y),
             z,
           ),
-        );
+          edgeKey: key,
+        });
       }
     }
 
-    if (points.length >= 2) return [points[0], points[1]];
+    if (hits.length >= 2) return [hits[0], hits[1]];
     return null;
   }
 
@@ -1932,72 +2557,101 @@ export class Slicer {
   private connectSegments(segments: Segment[]): THREE.Vector2[][] {
     if (segments.length === 0) return [];
 
-    // O(n) connection via hash map: quantize each endpoint to a grid key so
-    // we can find the next connecting segment in O(1) instead of scanning all
-    // remaining segments on every step (the old O(n²) approach stalled on
-    // complex cross-sections with thousands of segments).
-    const GRID = 0.01; // quantisation cell size (same as old epsilon)
-    const key = (p: THREE.Vector2) =>
-      `${Math.round(p.x / GRID)},${Math.round(p.y / GRID)}`;
+    // Two-tier chain building:
+    //
+    //   1. EDGE-KEY INDEX (exact, topological). Each intersection point knows
+    //      which mesh edge produced it — adjacent triangles that share a mesh
+    //      edge produce TWO segments whose endpoints carry the same edgeKey.
+    //      Looking up by that key chains exact neighbours, no float fuzz.
+    //
+    //   2. POSITIONAL GRID (fallback, fuzzy). For endpoints whose edgeKey is
+    //      missing (shouldn't happen after the perturbation fix, but kept for
+    //      safety) or whose exact-key neighbour was already consumed in a
+    //      different loop, we fall back to the old 0.01mm quantised hash.
+    //
+    // Mirrors OrcaSlicer's chain_lines_by_triangle_connectivity (edge-id pass)
+    // followed by chain_open_polylines_by_position (positional pass).
 
-    // adjacencyMap: endpoint-key → list of { segIndex, isA }
-    // isA=true means this segment's 'a' endpoint hashes to this key
-    const adjacency = new Map<string, Array<{ idx: number; isA: boolean }>>();
-    const addEndpoint = (p: THREE.Vector2, idx: number, isA: boolean) => {
-      const k = key(p);
-      let list = adjacency.get(k);
-      if (!list) { list = []; adjacency.set(k, list); }
+    // Edge-key index: edgeKey → list of endpoint refs carrying that key.
+    const byEdge = new Map<string, Array<{ idx: number; isA: boolean }>>();
+    const addEdgeRef = (key: string, idx: number, isA: boolean) => {
+      if (!key) return;
+      let list = byEdge.get(key);
+      if (!list) { list = []; byEdge.set(key, list); }
+      list.push({ idx, isA });
+    };
+
+    // Positional fallback grid.
+    const GRID = 0.01;
+    const posKey = (p: THREE.Vector2) =>
+      `${Math.round(p.x / GRID)},${Math.round(p.y / GRID)}`;
+    const byPos = new Map<string, Array<{ idx: number; isA: boolean }>>();
+    const addPosRef = (p: THREE.Vector2, idx: number, isA: boolean) => {
+      const k = posKey(p);
+      let list = byPos.get(k);
+      if (!list) { list = []; byPos.set(k, list); }
       list.push({ idx, isA });
     };
 
     for (let i = 0; i < segments.length; i++) {
-      addEndpoint(segments[i].a, i, true);
-      addEndpoint(segments[i].b, i, false);
+      const s = segments[i];
+      addEdgeRef(s.edgeKeyA, i, true);
+      addEdgeRef(s.edgeKeyB, i, false);
+      addPosRef(s.a, i, true);
+      addPosRef(s.b, i, false);
     }
 
-    const used = new Set<number>();
-    const contours: THREE.Vector2[][] = [];
+    const used = new Uint8Array(segments.length);
 
-    const removeFromMap = (p: THREE.Vector2, idx: number) => {
-      const k = key(p);
-      const list = adjacency.get(k);
-      if (!list) return;
-      const pos = list.findIndex((e) => e.idx === idx);
-      if (pos !== -1) list.splice(pos, 1);
-    };
-
-    for (let i = 0; i < segments.length; i++) {
-      if (used.has(i)) continue;
-
-      const contour: THREE.Vector2[] = [segments[i].a.clone(), segments[i].b.clone()];
-      used.add(i);
-      removeFromMap(segments[i].a, i);
-      removeFromMap(segments[i].b, i);
-
-      // Grow contour tail
-      let growing = true;
-      while (growing) {
-        growing = false;
-        const tail = contour[contour.length - 1];
-        const candidates = adjacency.get(key(tail));
-        if (candidates && candidates.length > 0) {
-          const { idx, isA } = candidates[0];
-          if (!used.has(idx)) {
-            used.add(idx);
-            const seg = segments[idx];
-            const next = isA ? seg.b : seg.a;
-            const prev = isA ? seg.a : seg.b;
-            removeFromMap(prev, idx);
-            removeFromMap(next, idx);
-            contour.push(next.clone());
-            growing = true;
+    // Find the next-segment candidate for an endpoint currently at the tail.
+    // Prefers exact edge-key match; falls back to positional hash.
+    const findNext = (endpointEdgeKey: string, endpointPos: THREE.Vector2): { idx: number; isA: boolean } | null => {
+      if (endpointEdgeKey) {
+        const list = byEdge.get(endpointEdgeKey);
+        if (list) {
+          for (const cand of list) {
+            if (!used[cand.idx]) return cand;
           }
         }
       }
-
-      if (contour.length >= 3) {
-        contours.push(contour);
+      const plist = byPos.get(posKey(endpointPos));
+      if (plist) {
+        for (const cand of plist) {
+          if (!used[cand.idx]) return cand;
+        }
       }
+      return null;
+    };
+
+    const contours: THREE.Vector2[][] = [];
+
+    for (let i = 0; i < segments.length; i++) {
+      if (used[i]) continue;
+
+      const s0 = segments[i];
+      const contour: THREE.Vector2[] = [s0.a.clone(), s0.b.clone()];
+      used[i] = 1;
+      // After consuming segment i, the "tail" is at endpoint b — which came
+      // from mesh-edge edgeKeyB, so the next segment must carry that key too.
+      let tailEdgeKey = s0.edgeKeyB;
+      let tailPos = s0.b;
+
+      // Cap loop length to avoid runaway on pathological geometry.
+      let guard = segments.length + 4;
+      while (guard-- > 0) {
+        const next = findNext(tailEdgeKey, tailPos);
+        if (!next) break;
+        used[next.idx] = 1;
+        const seg = segments[next.idx];
+        // If we matched via the `a` endpoint, the segment's OTHER end is `b`.
+        const otherPt = next.isA ? seg.b : seg.a;
+        const otherEdgeKey = next.isA ? seg.edgeKeyB : seg.edgeKeyA;
+        contour.push(otherPt.clone());
+        tailPos = otherPt;
+        tailEdgeKey = otherEdgeKey;
+      }
+
+      if (contour.length >= 3) contours.push(contour);
     }
 
     return contours;
@@ -2029,25 +2683,356 @@ export class Slicer {
   // PERIMETER GENERATION (polygon offsetting)
   // =========================================================================
 
-  private generatePerimeters(
-    outerContour: THREE.Vector2[],
-    wallCount: number,
-    lineWidth: number,
-    outerWallInset = 0,
-  ): THREE.Vector2[][] {
-    const walls: THREE.Vector2[][] = [];
+  /**
+   * Adaptive layer height — thinner layers on steep curves, thicker on flat
+   * regions. Mirrors Cura's `AdaptiveLayerHeights` + Orca's `LayerHeight
+   * ProfileSmoothing`:
+   *
+   *   1. For each Z bin, find the steepest surface (smallest |normal.z|)
+   *      among triangles that span that bin. Steep = needs thin layers to
+   *      keep the staircase error small.
+   *   2. Blend between `minH` (steep slopes) and `maxH` (flat) using the
+   *      surface angle as a weight.
+   *   3. Smooth neighbour-to-neighbour so the profile respects
+   *      `variationStep` — adjacent layers never differ by more than that.
+   *   4. Walk up from `firstLayerHeight`, picking the local height from the
+   *      smoothed profile.
+   *
+   * On a mostly-flat model this returns roughly the same layer count as the
+   * fixed path; on a mostly-curved model it produces fewer layers overall
+   * but concentrates thin layers where the staircase would be most visible.
+   */
+  private computeAdaptiveLayerZs(
+    triangles: Triangle[],
+    modelHeight: number,
+    firstLayerHeight: number,
+    baseLayerHeight: number,
+    maxVariation: number,
+    variationStep: number,
+    zScale: number,
+  ): number[] {
+    const minH = Math.max(0.04, baseLayerHeight - maxVariation);
+    const maxH = Math.max(minH + 0.01, baseLayerHeight + maxVariation);
 
-    for (let w = 0; w < wallCount; w++) {
-      const offset = -(w * lineWidth + lineWidth / 2 + (w === 0 ? outerWallInset : 0));
-      const wall = this.offsetContour(outerContour, offset);
-      if (wall.length >= 3) {
-        walls.push(wall);
-      } else {
-        break; // contour collapsed, stop adding walls
+    // Model Z range (we offset triangles to start at 0 via offsetZ at slice
+    // time, but triangles here still carry their raw Z). Compute a baseline
+    // min so binning is relative.
+    let modelMinZ = Infinity;
+    for (const tri of triangles) {
+      const z = Math.min(tri.v0.z, tri.v1.z, tri.v2.z);
+      if (z < modelMinZ) modelMinZ = z;
+    }
+    if (!isFinite(modelMinZ)) modelMinZ = 0;
+
+    // Bin the Z range into fine slots so we have enough resolution to
+    // represent the thinnest possible layer.
+    const binSize = Math.max(0.025, minH / 2);
+    const numBins = Math.max(1, Math.ceil(modelHeight / binSize) + 2);
+
+    // `penalty` is a non-monotonic function of the triangle's normal.z that
+    // peaks at ~45° slopes (nz ≈ 0.707) and falls to 0 at both extremes:
+    //   • |nz| = 1 (horizontal top/bottom) — surface IS the layer, no
+    //     staircase, no benefit from thin layers → penalty 0.
+    //   • |nz| = 0 (vertical wall) — perfectly resolved at ANY layer height,
+    //     staircase error is strictly zero → penalty 0.
+    //   • |nz| ≈ 0.707 (45° slope) — horizontal staircase step == layer
+    //     height, most visible aliasing → penalty 1.
+    // Per-bin we take the MAXIMUM penalty of any triangle touching the bin
+    // (the thinnest layer required to satisfy the WORST surface detail).
+    const maxPenalty = new Float32Array(numBins); // default 0
+
+    for (const tri of triangles) {
+      const nz = Math.abs(tri.normal.z);
+      // 2·|nz|·√(1-nz²) peaks at 1.0 when nz = √½, and is 0 at nz=0 or nz=1.
+      const penalty = 2 * nz * Math.sqrt(Math.max(0, 1 - nz * nz));
+      if (penalty <= 0) continue;
+      const zMinT = Math.min(tri.v0.z, tri.v1.z, tri.v2.z) - modelMinZ;
+      const zMaxT = Math.max(tri.v0.z, tri.v1.z, tri.v2.z) - modelMinZ;
+      const bStart = Math.max(0, Math.floor(zMinT / binSize));
+      const bEnd = Math.min(numBins - 1, Math.ceil(zMaxT / binSize));
+      for (let b = bStart; b <= bEnd; b++) {
+        if (penalty > maxPenalty[b]) maxPenalty[b] = penalty;
       }
     }
 
-    return walls;
+    // Convert penalty → layer height. 0 penalty = maxH (coarse), 1 penalty =
+    // minH (fine). Linear blend.
+    const idealH = new Float32Array(numBins);
+    for (let b = 0; b < numBins; b++) {
+      idealH[b] = maxH - (maxH - minH) * Math.min(1, maxPenalty[b]);
+    }
+
+    // Smooth: neighbouring bins cannot differ by more than variationStep.
+    // Two passes (forward then backward) propagate the min constraint.
+    for (let b = 1; b < numBins; b++) {
+      if (idealH[b] > idealH[b - 1] + variationStep) {
+        idealH[b] = idealH[b - 1] + variationStep;
+      }
+    }
+    for (let b = numBins - 2; b >= 0; b--) {
+      if (idealH[b] > idealH[b + 1] + variationStep) {
+        idealH[b] = idealH[b + 1] + variationStep;
+      }
+    }
+
+    // Walk up, stepping by the local ideal height. The first layer is always
+    // printed at `firstLayerHeight` — adhesion depends on this and we don't
+    // want adaptive to shrink it.
+    const layerZs: number[] = [];
+    let z = firstLayerHeight;
+    layerZs.push(z * zScale);
+    while (z < modelHeight - 1e-4) {
+      const bin = Math.min(numBins - 1, Math.max(0, Math.floor(z / binSize)));
+      const h = Math.max(minH, Math.min(maxH, idealH[bin]));
+      z = Math.min(modelHeight, z + h);
+      layerZs.push(z * zScale);
+    }
+    return layerZs;
+  }
+
+  /**
+   * Cura/Orca-parity closing-radius ("slicing closing radius") gap-sealer.
+   * Grows every contour boundary outward into the material by `r`, unions all
+   * grown regions, then shrinks back by the same amount. This seals tiny
+   * near-coincident gaps without materially changing larger features.
+   */
+  private closeContourGaps(contours: Contour[], r: number): Contour[] {
+    if (r <= 0 || contours.length === 0) return contours;
+
+    const toRing = (pts: THREE.Vector2[]): PCRing => {
+      const ring: PCRing = pts.map((p) => [p.x, p.y] as [number, number]);
+      if (ring.length > 0) {
+        const f = ring[0];
+        const l = ring[ring.length - 1];
+        if (f[0] !== l[0] || f[1] !== l[1]) ring.push([f[0], f[1]]);
+      }
+      return ring;
+    };
+    const fromRing = (ring: PCRing): THREE.Vector2[] => {
+      const pts: THREE.Vector2[] = [];
+      for (let i = 0; i < ring.length - 1; i++) {
+        pts.push(new THREE.Vector2(ring[i][0], ring[i][1]));
+      }
+      return pts;
+    };
+
+    const inflated: PCMultiPolygon = [];
+    for (const c of contours) {
+      const grown = this.offsetContour(c.points, c.isOuter ? -r : +r);
+      if (grown.length >= 3) inflated.push([toRing(grown)]);
+    }
+    if (inflated.length === 0) return contours;
+
+    let unioned: PCMultiPolygon;
+    try {
+      unioned = inflated.length === 1
+        ? inflated
+        : polygonClipping.union(inflated[0], ...inflated.slice(1));
+    } catch {
+      return contours;
+    }
+    if (unioned.length === 0) return contours;
+
+    const result: Contour[] = [];
+    for (const poly of unioned) {
+      for (let i = 0; i < poly.length; i++) {
+        const isOuter = i === 0;
+        const ringPts = fromRing(poly[i]);
+        const shrunk = this.offsetContour(ringPts, isOuter ? +r : -r);
+        if (shrunk.length >= 3) {
+          result.push({
+            points: shrunk,
+            area: this.signedArea(shrunk),
+            isOuter,
+          });
+        }
+      }
+    }
+    return result.length > 0 ? result : contours;
+  }
+
+  /**
+   * Cura-parity `minOddWallLineWidth` filter. Drops wall loops whose bounding
+   * box min dimension is smaller than `2 × minOdd`, keeping the
+   * corresponding entries in all parallel arrays (`lineWidths`,
+   * `innermostHoles`) aligned. `outerCount` is adjusted to reflect how many
+   * outer walls survived so infill-boundary logic still points to the right
+   * index after filtering. Passing `minOdd ≤ 0` is a no-op pass-through.
+   */
+  private filterPerimetersByMinOdd(
+    p: GeneratedPerimeters,
+    minOdd: number,
+  ): GeneratedPerimeters {
+    if (minOdd <= 0) return p;
+    const keep: boolean[] = p.walls.map((w) => {
+      if (w.length < 3) return false;
+      let miX = Infinity, maX = -Infinity, miY = Infinity, maY = -Infinity;
+      for (const pt of w) {
+        if (pt.x < miX) miX = pt.x; if (pt.x > maX) maX = pt.x;
+        if (pt.y < miY) miY = pt.y; if (pt.y > maY) maY = pt.y;
+      }
+      return Math.min(maX - miX, maY - miY) >= 2 * minOdd;
+    });
+    const walls: THREE.Vector2[][] = [];
+    const lineWidths: number[] = [];
+    let outerCount = 0;
+    for (let i = 0; i < p.walls.length; i++) {
+      if (!keep[i]) continue;
+      walls.push(p.walls[i]);
+      lineWidths.push(p.lineWidths[i] ?? this.printProfile.wallLineWidth);
+      if (i < p.outerCount) outerCount++;
+    }
+    return { walls, lineWidths, outerCount, innermostHoles: p.innermostHoles };
+  }
+
+  /**
+   * Hole-aware perimeter generator. Equivalent of OrcaSlicer's
+   * `offset_ex(expolygon, -distance)` — for each wall depth, shrinks the outer
+   * contour inward AND expands each hole contour outward, then uses Clipper
+   * (via polygon-clipping) to compute the resulting ExPolygon region. Every
+   * ring of the result (outer boundary + hole boundaries) is emitted as a
+   * wall loop, so a single call produces walls around BOTH the outer surface
+   * AND each cavity.
+   *
+   * When walls collide (thin-ring case where `wallCount × lineWidth >
+   * ringThickness/2`), the boolean difference naturally returns an empty
+   * region — we stop emitting at that depth rather than double-extruding.
+   *
+   * Returns { walls, outerCount, innermostHoles } where `walls` is a flat
+   * array with outer loops first. `outerCount` marks where outer ends;
+   * wallSets[outerCount-1] is the innermost outer wall (infill boundary's
+   * outer ring). `innermostHoles` carries the innermost hole wall loops so
+   * the infill pipeline can subtract them and avoid filling across cavities.
+   */
+  private generatePerimetersEx(
+    outerContour: THREE.Vector2[],
+    holeContours: THREE.Vector2[][],
+    wallCount: number,
+    lineWidth: number,
+    outerWallInset = 0,
+  ): GeneratedPerimeters {
+
+    const toRing = (pts: THREE.Vector2[]): PCRing => {
+      const ring: PCRing = pts.map((p) => [p.x, p.y] as [number, number]);
+      if (ring.length > 0) {
+        const f = ring[0];
+        const l = ring[ring.length - 1];
+        if (f[0] !== l[0] || f[1] !== l[1]) ring.push([f[0], f[1]]);
+      }
+      return ring;
+    };
+    const fromRing = (ring: PCRing): THREE.Vector2[] => {
+      const pts: THREE.Vector2[] = [];
+      for (let i = 0; i < ring.length - 1; i++) {
+        pts.push(new THREE.Vector2(ring[i][0], ring[i][1]));
+      }
+      return pts;
+    };
+
+    const computeDepth = (offset: number): {
+      result: PCMultiPolygon;
+      holesAtDepth: THREE.Vector2[][];
+    } | null => {
+      const outerShrunk = this.offsetContour(outerContour, offset);
+      if (outerShrunk.length < 3) return null;
+
+      const holesExpanded = holeContours
+        .map((h) => this.offsetContour(h, offset))
+        .filter((h) => h.length >= 3);
+
+      let result: PCMultiPolygon = [[toRing(outerShrunk)]];
+      if (holesExpanded.length > 0) {
+        const holeMPs: PCMultiPolygon[] = holesExpanded.map((h) => [[toRing([...h].reverse())]]);
+        try {
+          result = polygonClipping.difference(result, ...holeMPs);
+        } catch {
+          result = [[toRing(outerShrunk)]];
+        }
+      }
+
+      if (result.length === 0) return null;
+
+      const holesAtDepth: THREE.Vector2[][] = [];
+      for (const poly of result) {
+        for (let i = 1; i < poly.length; i++) {
+          const loop = fromRing(poly[i]);
+          if (loop.length >= 3) holesAtDepth.push(loop);
+        }
+      }
+
+      return { result, holesAtDepth };
+    };
+
+    const outerLoops: THREE.Vector2[][] = [];
+    const holeLoops: THREE.Vector2[][] = [];
+    const outerLineWidths: number[] = [];
+    const holeLineWidths: number[] = [];
+    let lastInnermostHoles: THREE.Vector2[][] = [];
+
+    for (let w = 0; w < wallCount; w++) {
+      const nominalOffset = w * lineWidth + lineWidth / 2 + (w === 0 ? outerWallInset : 0);
+      const nominalDepth = computeDepth(nominalOffset);
+      if (!nominalDepth) break;
+
+      let result = nominalDepth.result;
+      let thisDepthHoles = nominalDepth.holesAtDepth;
+      let depthLineWidth = lineWidth;
+
+      const nextOffset = (w + 1) * lineWidth + lineWidth / 2 + (w === 0 ? outerWallInset : 0);
+      const nextDepth = computeDepth(nextOffset);
+
+      if ((this.printProfile.thinWallDetection ?? false) && nextDepth === null) {
+        let lo = nominalOffset;
+        let hi = nextOffset;
+        let best = nominalDepth;
+        for (let iter = 0; iter < 18; iter++) {
+          const mid = (lo + hi) / 2;
+          const trial = computeDepth(mid);
+          if (trial) {
+            lo = mid;
+            best = trial;
+          } else {
+            hi = mid;
+          }
+        }
+
+        const previousMaterialEdge = outerWallInset + w * lineWidth;
+        const widened = Math.max(
+          this.printProfile.minWallLineWidth ?? lineWidth * 0.5,
+          2 * Math.max(0, lo - previousMaterialEdge),
+        );
+        if (widened > depthLineWidth + 1e-6) {
+          depthLineWidth = widened;
+          result = best.result;
+          thisDepthHoles = best.holesAtDepth;
+        }
+      }
+
+      for (const poly of result) {
+        if (poly.length > 0) {
+          const loop = fromRing(poly[0]);
+          if (loop.length >= 3) {
+            outerLoops.push(loop);
+            outerLineWidths.push(depthLineWidth);
+          }
+        }
+        for (let i = 1; i < poly.length; i++) {
+          const loop = fromRing(poly[i]);
+          if (loop.length >= 3) {
+            holeLoops.push(loop);
+            holeLineWidths.push(depthLineWidth);
+          }
+        }
+      }
+      if (thisDepthHoles.length > 0) lastInnermostHoles = thisDepthHoles;
+    }
+
+    return {
+      walls: [...outerLoops, ...holeLoops],
+      lineWidths: [...outerLineWidths, ...holeLineWidths],
+      outerCount: outerLoops.length,
+      innermostHoles: lastInnermostHoles,
+    };
   }
 
   private offsetContour(contour: THREE.Vector2[], offset: number): THREE.Vector2[] {
@@ -2273,6 +3258,7 @@ export class Slicer {
     lineWidth: number,
     layerIndex: number,
     pattern: string,
+    holes: THREE.Vector2[][] = [],
   ): { from: THREE.Vector2; to: THREE.Vector2 }[] {
     if (contour.length < 3 || density <= 0) return [];
 
@@ -2287,8 +3273,8 @@ export class Slicer {
       case 'grid': {
         const gridAngle = layerIndex % 2 === 0 ? 0 : Math.PI / 4;
         return [
-          ...this.generateScanLines(contour, density, lineWidth, gridAngle, phase),
-          ...this.generateScanLines(contour, density, lineWidth, gridAngle + Math.PI / 2, phase),
+          ...this.generateScanLines(contour, density, lineWidth, gridAngle, phase, holes),
+          ...this.generateScanLines(contour, density, lineWidth, gridAngle + Math.PI / 2, phase, holes),
         ];
       }
       case 'lines':
@@ -2298,23 +3284,24 @@ export class Slicer {
           lineWidth,
           layerIndex % 2 === 0 ? Math.PI / 4 : -Math.PI / 4,
           phase,
+          holes,
         );
       case 'triangles': {
         const triAngle = ((layerIndex % 3) * Math.PI) / 3;
         return [
-          ...this.generateScanLines(contour, density, lineWidth, triAngle, phase),
-          ...this.generateScanLines(contour, density, lineWidth, triAngle + Math.PI / 3, phase),
-          ...this.generateScanLines(contour, density, lineWidth, triAngle + (2 * Math.PI) / 3, phase),
+          ...this.generateScanLines(contour, density, lineWidth, triAngle, phase, holes),
+          ...this.generateScanLines(contour, density, lineWidth, triAngle + Math.PI / 3, phase, holes),
+          ...this.generateScanLines(contour, density, lineWidth, triAngle + (2 * Math.PI) / 3, phase, holes),
         ];
       }
       case 'gyroid':
-        return this.generateGyroidInfill(contour, density, lineWidth, layerIndex);
+        return this.generateGyroidInfill(contour, density, lineWidth, layerIndex, holes);
       case 'honeycomb':
-        return this.generateHoneycombInfill(contour, density, lineWidth, layerIndex);
+        return this.generateHoneycombInfill(contour, density, lineWidth, layerIndex, holes);
       case 'concentric':
-        return this.generateConcentricInfill(contour, lineWidth);
+        return this.generateConcentricInfill(contour, lineWidth, holes);
       case 'cubic':
-        return this.generateCubicInfill(contour, density, lineWidth, layerIndex);
+        return this.generateCubicInfill(contour, density, lineWidth, layerIndex, holes);
       case 'lightning': {
         // Lightning infill is complex tree-based; approximate with sparse lines.
         // Cura-parity: `lightningPruneAngle` and `lightningStraighteningAngle`
@@ -2353,6 +3340,7 @@ export class Slicer {
     lineWidth: number,
     angle: number,
     phaseOffset = 0,
+    holes: THREE.Vector2[][] = [],
   ): { from: THREE.Vector2; to: THREE.Vector2 }[] {
     const results: { from: THREE.Vector2; to: THREE.Vector2 }[] = [];
     const bbox = this.contourBBox(contour);
@@ -2393,8 +3381,17 @@ export class Slicer {
         centerY + sin * maxDim + cos * d,
       );
 
-      // Find intersections with contour
+      // Find intersections with the outer contour AND every hole. Pairing
+      // intersections even/odd across this combined sorted list gives correct
+      // "inside material, outside material, inside..." segmentation for
+      // ExPolygons: a scan line entering the outer then crossing a hole
+      // exits material when it enters the hole and re-enters on the far side.
       const intersections = this.lineContourIntersections(p1, p2, contour);
+      for (const h of holes) {
+        if (h.length < 3) continue;
+        const hi = this.lineContourIntersections(p1, p2, h);
+        for (const t of hi) intersections.push(t);
+      }
       intersections.sort((a, b) => a - b);
 
       // Precompute direction once per scan line — avoids allocating 4 Vector2
@@ -2425,6 +3422,7 @@ export class Slicer {
     density: number,
     lineWidth: number,
     layerIndex: number,
+    holes: THREE.Vector2[][] = [],
   ): { from: THREE.Vector2; to: THREE.Vector2 }[] {
     // Approximate gyroid with sinusoidal scan lines
     const results: { from: THREE.Vector2; to: THREE.Vector2 }[] = [];
@@ -2434,6 +3432,17 @@ export class Slicer {
     const period = spacing * 2;
 
     const phaseShift = (layerIndex * Math.PI) / 3;
+
+    // A point is inside the printable region when it's inside the outer
+    // contour AND outside every hole. Used to clip every sampled gyroid
+    // sub-segment so curves never cross cavities.
+    const inMaterial = (p: THREE.Vector2): boolean => {
+      if (!this.pointInContour(p, contour)) return false;
+      for (const h of holes) {
+        if (h.length >= 3 && this.pointInContour(p, h)) return false;
+      }
+      return true;
+    };
 
     for (let y = bbox.minY; y <= bbox.maxY; y += spacing) {
       const linePoints: THREE.Vector2[] = [];
@@ -2446,11 +3455,11 @@ export class Slicer {
         linePoints.push(new THREE.Vector2(x, yOff));
       }
 
-      // Clip to contour
+      // Clip to contour + holes
       for (let i = 0; i + 1 < linePoints.length; i++) {
         const a = linePoints[i];
         const b = linePoints[i + 1];
-        if (this.pointInContour(a, contour) && this.pointInContour(b, contour)) {
+        if (inMaterial(a) && inMaterial(b)) {
           results.push({ from: a, to: b });
         }
       }
@@ -2465,6 +3474,7 @@ export class Slicer {
     lineWidth: number,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _layerIndex: number,
+    holes: THREE.Vector2[][] = [],
   ): { from: THREE.Vector2; to: THREE.Vector2 }[] {
     // Hexagonal pattern: rows of zigzag offset every other row
     const results: { from: THREE.Vector2; to: THREE.Vector2 }[] = [];
@@ -2472,6 +3482,14 @@ export class Slicer {
     const spacing = lineWidth / (density / 100);
     const hexHeight = spacing * Math.sqrt(3);
     const hexWidth = spacing * 2;
+
+    const inMaterial = (p: THREE.Vector2): boolean => {
+      if (!this.pointInContour(p, contour)) return false;
+      for (const h of holes) {
+        if (h.length >= 3 && this.pointInContour(p, h)) return false;
+      }
+      return true;
+    };
 
     for (let row = bbox.minY - hexHeight; row <= bbox.maxY + hexHeight; row += hexHeight) {
       const isOddRow = Math.round((row - bbox.minY) / hexHeight) % 2 !== 0;
@@ -2492,11 +3510,11 @@ export class Slicer {
           );
         }
 
-        // Draw hex edges clipped to contour
+        // Draw hex edges clipped to material (contour minus holes)
         for (let i = 0; i < hexPts.length; i++) {
           const from = hexPts[i];
           const to = hexPts[(i + 1) % hexPts.length];
-          if (this.pointInContour(from, contour) && this.pointInContour(to, contour)) {
+          if (inMaterial(from) && inMaterial(to)) {
             results.push({ from, to });
           }
         }
@@ -2509,39 +3527,74 @@ export class Slicer {
   private generateConcentricInfill(
     contour: THREE.Vector2[],
     lineWidth: number,
+    holes: THREE.Vector2[][] = [],
   ): { from: THREE.Vector2; to: THREE.Vector2 }[] {
     const results: { from: THREE.Vector2; to: THREE.Vector2 }[] = [];
-    let current = contour;
-    const offsetDist = -lineWidth;
-    // Safety caps: the inner `while` relied on `offsetContour` eventually
-    // shrinking the polygon to fewer than 3 points. On certain pathological
-    // inputs (self-intersecting cleaned contours, near-parallel edges) the
-    // output can stay at the same bbox size indefinitely. Two guards:
-    //   • absolute iteration cap so we can never spin forever
-    //   • "no-progress" bbox check that bails when shrinking stalls
     const MAX_ITER = 500;
-    let iter = 0;
-    let prevBbox = this.contourBBox(current);
 
-    while (current.length >= 3 && iter++ < MAX_ITER) {
-      const next = this.offsetContour(current, offsetDist);
-      if (next.length < 3) break;
+    // No holes = legacy inward-offset loop. The hole-aware path below pays
+    // polygon-clipping overhead per iteration; skip it when we know there's
+    // nothing to subtract.
+    if (holes.length === 0) {
+      let current = contour;
+      let iter = 0;
+      let prevBbox = this.contourBBox(current);
+      while (current.length >= 3 && iter++ < MAX_ITER) {
+        const next = this.offsetContour(current, -lineWidth);
+        if (next.length < 3) break;
+        const nextBbox = this.contourBBox(next);
+        const shrinkX = Math.abs((prevBbox.maxX - prevBbox.minX) - (nextBbox.maxX - nextBbox.minX));
+        const shrinkY = Math.abs((prevBbox.maxY - prevBbox.minY) - (nextBbox.maxY - nextBbox.minY));
+        if (shrinkX < 0.01 && shrinkY < 0.01) break;
+        prevBbox = nextBbox;
+        for (let i = 0; i < next.length; i++) {
+          results.push({ from: next[i], to: next[(i + 1) % next.length] });
+        }
+        current = next;
+      }
+      return results;
+    }
 
-      const nextBbox = this.contourBBox(next);
-      const shrinkX = Math.abs((prevBbox.maxX - prevBbox.minX) - (nextBbox.maxX - nextBbox.minX));
-      const shrinkY = Math.abs((prevBbox.maxY - prevBbox.minY) - (nextBbox.maxY - nextBbox.minY));
-      if (shrinkX < 0.01 && shrinkY < 0.01) break;
-      prevBbox = nextBbox;
-
-      // Convert closed contour to line segments
-      for (let i = 0; i < next.length; i++) {
+    // Hole-aware path: at each depth, compute the material region as an
+    // ExPolygon via polygon-clipping difference, then emit every ring as a
+    // concentric loop. When the region pinches off (e.g. outer shrinks past
+    // a hole), polygon-clipping returns multiple sub-polygons or an empty
+    // MultiPolygon — we stop cleanly in either case.
+    const toRing = (pts: THREE.Vector2[]): PCRing => {
+      const r: PCRing = pts.map((p) => [p.x, p.y] as [number, number]);
+      if (r.length > 0) {
+        const f = r[0]; const l = r[r.length - 1];
+        if (f[0] !== l[0] || f[1] !== l[1]) r.push([f[0], f[1]]);
+      }
+      return r;
+    };
+    const ringToSegs = (ring: PCRing) => {
+      for (let i = 0; i < ring.length - 1; i++) {
         results.push({
-          from: next[i],
-          to: next[(i + 1) % next.length],
+          from: new THREE.Vector2(ring[i][0], ring[i][1]),
+          to: new THREE.Vector2(ring[i + 1][0], ring[i + 1][1]),
         });
       }
+    };
 
-      current = next;
+    for (let step = 1; step < MAX_ITER; step++) {
+      const depth = step * lineWidth;
+      const outerShrunk = this.offsetContour(contour, depth);
+      if (outerShrunk.length < 3) break;
+      const holesExpanded = holes
+        .map((h) => this.offsetContour(h, depth))
+        .filter((h) => h.length >= 3);
+      let region: PCMultiPolygon = [[toRing(outerShrunk)]];
+      if (holesExpanded.length > 0) {
+        const holeMPs: PCMultiPolygon[] = holesExpanded.map((h) => [[toRing([...h].reverse())]]);
+        try {
+          region = polygonClipping.difference(region, ...holeMPs);
+        } catch { break; }
+      }
+      if (region.length === 0) break;
+      for (const poly of region) {
+        for (const ring of poly) ringToSegs(ring);
+      }
     }
 
     return results;
@@ -2552,13 +3605,14 @@ export class Slicer {
     density: number,
     lineWidth: number,
     layerIndex: number,
+    holes: THREE.Vector2[][] = [],
   ): { from: THREE.Vector2; to: THREE.Vector2 }[] {
     // Cubic infill: three interlocked diagonal sets, each layer rotated 60° in the cycle
     const angleOffset = ((layerIndex % 3) * Math.PI) / 3;
     return [
-      ...this.generateScanLines(contour, density, lineWidth, angleOffset),
-      ...this.generateScanLines(contour, density, lineWidth, angleOffset + Math.PI / 3),
-      ...this.generateScanLines(contour, density, lineWidth, angleOffset + (2 * Math.PI) / 3),
+      ...this.generateScanLines(contour, density, lineWidth, angleOffset, 0, holes),
+      ...this.generateScanLines(contour, density, lineWidth, angleOffset + Math.PI / 3, 0, holes),
+      ...this.generateScanLines(contour, density, lineWidth, angleOffset + (2 * Math.PI) / 3, 0, holes),
     ];
   }
 
@@ -3474,6 +4528,25 @@ export class Slicer {
       if (
         yi > pt.y !== yj > pt.y &&
         pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi) + xi
+      ) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  /** Ray-casting point-in-polygon test against a polygon-clipping ring
+   *  (`[number, number][]` with closing duplicate). Cheaper than converting
+   *  to Vector2[] just to call pointInContour — used hot in bridge detection. */
+  private pointInRing(x: number, y: number, ring: PCRing): boolean {
+    let inside = false;
+    const n = ring.length;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const xi = ring[i][0], yi = ring[i][1];
+      const xj = ring[j][0], yj = ring[j][1];
+      if (
+        yi > y !== yj > y &&
+        x < ((xj - xi) * (y - yi)) / (yj - yi) + xi
       ) {
         inside = !inside;
       }

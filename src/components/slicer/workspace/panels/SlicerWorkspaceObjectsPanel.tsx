@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import * as React from 'react';
 import { Plus, Trash2, LayoutGrid, XCircle, Upload, Box, FlipHorizontal, RefreshCw, Layers } from 'lucide-react';
 import { useSlicerStore } from '../../../../store/slicerStore';
@@ -26,18 +26,34 @@ export function SlicerWorkspaceObjectsPanel() {
   const [importError, setImportError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isMountedRef = useRef(true);
 
-  const selectedObj = plateObjects.find((o) => o.id === selectedId) ?? null;
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const selectedObj = useMemo(
+    () => plateObjects.find((o) => o.id === selectedId) ?? null,
+    [plateObjects, selectedId],
+  );
 
   const handleImportFile = useCallback(async (file: File) => {
-    setImporting(true);
-    setImportError(null);
+    if (isMountedRef.current) {
+      setImporting(true);
+      setImportError(null);
+    }
     try {
       await importFileToPlate(file);
     } catch (err) {
-      setImportError((err as Error).message);
+      if (isMountedRef.current) {
+        setImportError((err as Error).message);
+      }
     } finally {
-      setImporting(false);
+      if (isMountedRef.current) {
+        setImporting(false);
+      }
     }
   }, [importFileToPlate]);
 
@@ -57,14 +73,17 @@ export function SlicerWorkspaceObjectsPanel() {
   const handleAddModel = useCallback((feature: typeof features[0]) => {
     addToPlate(feature.id, feature.name, null);
     setShowAddMenu(false);
-  }, [addToPlate, features]);
+  }, [addToPlate]);
 
-  const sizeStr = (obj: PlateObject) => {
-    const sx = (obj.boundingBox.max.x - obj.boundingBox.min.x).toFixed(1);
-    const sy = (obj.boundingBox.max.y - obj.boundingBox.min.y).toFixed(1);
-    const sz = (obj.boundingBox.max.z - obj.boundingBox.min.z).toFixed(1);
-    return `${sx} × ${sy} × ${sz} mm`;
-  };
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    if (!isDragging) setIsDragging(true);
+  }, [isDragging]);
+
+  const addableFeatures = useMemo(
+    () => features.filter((f) => !NON_BODY_FEATURE_TYPES.has(f.type) && !f.suppressed),
+    [features],
+  );
 
   const updObj = useCallback((updates: Record<string, unknown>) => {
     if (!selectedId) return;
@@ -108,7 +127,7 @@ export function SlicerWorkspaceObjectsPanel() {
 
       <div className="slicer-workspace-objects-panel__list">
         <div
-          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+          onDragOver={handleDragOver}
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
           className={`slicer-workspace-objects-panel__dropzone ${isDragging ? 'is-dragging' : ''}`}
@@ -208,17 +227,17 @@ export function SlicerWorkspaceObjectsPanel() {
 
       <div className="slicer-workspace-objects-panel__actions">
         <div className="slicer-workspace-objects-panel__add-wrap">
-          <button className="slicer-workspace-objects-panel__action-button" onClick={() => setShowAddMenu(!showAddMenu)}>
+          <button className="slicer-workspace-objects-panel__action-button" onClick={() => setShowAddMenu((prev) => !prev)}>
             <Plus size={14} /> Add from CAD
           </button>
           {showAddMenu && (
             <div className="slicer-workspace-objects-panel__menu">
-              {features.length === 0 && (
+              {addableFeatures.length === 0 && (
                 <div className="slicer-workspace-objects-panel__menu-empty">
                   No CAD features available.
                 </div>
               )}
-              {features.filter(f => !NON_BODY_FEATURE_TYPES.has(f.type) && !f.suppressed).map((f) => (
+              {addableFeatures.map((f) => (
                 <div key={f.id} onClick={() => handleAddModel(f)} className="slicer-workspace-objects-panel__menu-item">
                   <Box size={12} className="slicer-workspace-objects-panel__menu-item-icon" />
                   {f.name}

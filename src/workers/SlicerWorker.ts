@@ -18,6 +18,7 @@ interface RawGeometry {
 
 interface SliceMessage {
   type: 'slice';
+  requestId: number;
   payload: {
     geometryData: RawGeometry[];
     printerProfile: object;
@@ -28,12 +29,14 @@ interface SliceMessage {
 
 interface CancelMessage {
   type: 'cancel';
+  requestId: number;
 }
 
 type WorkerMessage = SliceMessage | CancelMessage;
 
 let activeSlicer: Slicer | null = null;
 let cancelRequested = false;
+let activeRequestId = 0;
 
 function mergeSliceResults(results: SliceResult[]): SliceResult {
   if (results.length === 1) return results[0];
@@ -94,13 +97,16 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
   const msg = e.data;
 
   if (msg.type === 'cancel') {
+    if (msg.requestId !== activeRequestId) return;
     cancelRequested = true;
     activeSlicer?.cancel();
     return;
   }
 
   if (msg.type === 'slice') {
+    activeRequestId = msg.requestId;
     cancelRequested = false;
+    const { requestId } = msg;
     const { geometryData, printerProfile, materialProfile, printProfile } = msg.payload;
 
     // Reconstruct THREE.js geometry objects from transferred typed arrays.
@@ -130,12 +136,9 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
 
     // Token used to detect re-entry from a fresh slice starting while this
     // one is still completing — each message posted back checks it.
-    const myToken = {};
-    const myTokenRef: { current: object } = { current: myToken };
-
     const postProgressSafely = (progress: SliceProgress) => {
-      if (cancelRequested || myTokenRef.current !== myToken) return;
-      self.postMessage({ type: 'progress', progress });
+      if (cancelRequested || activeRequestId !== requestId) return;
+      self.postMessage({ type: 'progress', requestId, progress });
     };
 
     try {
@@ -181,22 +184,24 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
       }
 
       if (cancelRequested) {
+        if (activeRequestId === requestId) self.postMessage({ type: 'cancelled', requestId });
         for (const g of geometries) g.geometry.dispose();
         return;
       }
       const merged = mergeSliceResults(results);
       activeSlicer = null;
-      self.postMessage({ type: 'complete', result: merged });
+      if (activeRequestId === requestId) self.postMessage({ type: 'complete', requestId, result: merged });
       for (const g of geometries) g.geometry.dispose();
     } catch (err) {
       // Suppress errors from cancelled runs or from a stale worker state.
-      if (cancelRequested) {
+      if (cancelRequested || activeRequestId !== requestId) {
+        if (cancelRequested && activeRequestId === requestId) self.postMessage({ type: 'cancelled', requestId });
         for (const g of geometries) g.geometry.dispose();
         return;
       }
       activeSlicer = null;
       const message = err instanceof Error ? err.message : String(err);
-      self.postMessage({ type: 'error', message });
+      self.postMessage({ type: 'error', requestId, message });
       for (const g of geometries) g.geometry.dispose();
     }
   }

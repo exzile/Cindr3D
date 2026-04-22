@@ -139,6 +139,11 @@
   gap: 4px;
 }
 
+.slicer-bottom-bar__btn.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .slicer-bottom-bar__btn--accent {
   background: var(--accent);
   color: #fff;
@@ -149,6 +154,40 @@
 .slicer-bottom-bar__btn--accent.is-sending { opacity: 0.8; cursor: wait; }
 .slicer-bottom-bar__btn--accent.is-sent    { background: #4caf50; border-color: #4caf50; }
 .slicer-bottom-bar__btn--accent.is-error   { background: #d94545; border-color: #d94545; }
+
+.slicer-bottom-bar__calibration {
+  position: relative;
+}
+
+.slicer-bottom-bar__calibration-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  min-width: 190px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.25);
+  padding: 6px;
+  display: grid;
+  gap: 4px;
+  z-index: 10;
+}
+
+.slicer-bottom-bar__calibration-item {
+  background: transparent;
+  color: var(--text-primary);
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.slicer-bottom-bar__calibration-item:hover {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-toolbar));
+}
 
 /* -------- Dual-range layer slider -------- */
 

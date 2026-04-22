@@ -1,10 +1,15 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Eye, EyeOff, Download, Send, Play, Pause, X, Clapperboard,
-  SkipBack, RotateCcw, Gauge,
+  SkipBack, RotateCcw, Gauge, Palette, FlaskConical,
 } from 'lucide-react';
 import { useSlicerStore } from '../../../../store/slicerStore';
 import { usePrinterStore } from '../../../../store/printerStore';
+import {
+  generateFlowTowerGCode,
+  generateRetractionTowerGCode,
+  generateTemperatureTowerGCode,
+} from '../../../../engine/calibration';
 import './SlicerWorkspaceBottomBar.css';
 
 const SIM_SPEEDS = [1, 2, 5, 10, 25, 50, 100];
@@ -25,7 +30,14 @@ export function SlicerWorkspaceBottomBar() {
   const setPreviewLayerRange = useSlicerStore((s) => s.setPreviewLayerRange);
   const downloadGCode = useSlicerStore((s) => s.downloadGCode);
   const sendToPrinter = useSlicerStore((s) => s.sendToPrinter);
+  const activePrinter = useSlicerStore((s) => s.getActivePrinterProfile());
+  const activeMaterial = useSlicerStore((s) => s.getActiveMaterialProfile());
+  const activePrint = useSlicerStore((s) => s.getActivePrintProfile());
   const connected = usePrinterStore((s) => s.connected);
+  const uploading = usePrinterStore((s) => s.uploading);
+  const uploadProgress = usePrinterStore((s) => s.uploadProgress);
+  const colorSchemeOpen = useSlicerStore((s) => s.previewColorSchemeOpen);
+  const setColorSchemeOpen = useSlicerStore((s) => s.setPreviewColorSchemeOpen);
 
   // Simulation
   const simEnabled = useSlicerStore((s) => s.previewSimEnabled);
@@ -40,23 +52,50 @@ export function SlicerWorkspaceBottomBar() {
 
   const [sending, setSending] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [sendError, setSendError] = useState<string | null>(null);
+  const [calibrationMenuOpen, setCalibrationMenuOpen] = useState(false);
+  const sendResetTimerRef = useRef<number | null>(null);
+  const calibrationMenuRef = useRef<HTMLDivElement | null>(null);
 
   const isSlicing = sliceProgress.stage === 'preparing' || sliceProgress.stage === 'slicing' || sliceProgress.stage === 'generating';
   const hasResult = sliceResult !== null;
   const totalPrintTime = sliceResult?.printTime ?? 0;
 
   const handleSend = async () => {
+    if (sendResetTimerRef.current !== null) {
+      window.clearTimeout(sendResetTimerRef.current);
+      sendResetTimerRef.current = null;
+    }
     setSending('sending');
     setSendError(null);
     try {
       await sendToPrinter();
       setSending('sent');
-      window.setTimeout(() => setSending('idle'), 2500);
+      sendResetTimerRef.current = window.setTimeout(() => {
+        sendResetTimerRef.current = null;
+        setSending('idle');
+      }, 2500);
     } catch (err) {
       setSending('error');
       setSendError(err instanceof Error ? err.message : String(err));
     }
   };
+
+  useEffect(() => () => {
+    if (sendResetTimerRef.current !== null) {
+      window.clearTimeout(sendResetTimerRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!calibrationMenuOpen) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!calibrationMenuRef.current?.contains(event.target as Node)) {
+        setCalibrationMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [calibrationMenuOpen]);
 
   const formatTime = (seconds: number) => {
     if (!isFinite(seconds) || seconds < 0) seconds = 0;
@@ -72,6 +111,19 @@ export function SlicerWorkspaceBottomBar() {
     if (mm > 1000) return `${(mm / 1000).toFixed(2)}m`;
     return `${mm.toFixed(0)}mm`;
   };
+
+  const downloadCalibration = useCallback((filename: string, gcode: string) => {
+    const blob = new Blob([gcode], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setCalibrationMenuOpen(false);
+  }, []);
 
   // Dual-range slider: two overlapping range inputs, store enforces clamping.
   const handleRangeMin = useCallback((v: number) => {
@@ -136,6 +188,47 @@ export function SlicerWorkspaceBottomBar() {
 
       <div className="slicer-bottom-bar__spacer" />
 
+      <div className="slicer-bottom-bar__calibration" ref={calibrationMenuRef}>
+        <button
+          className={`slicer-bottom-bar__btn${calibrationMenuOpen ? ' is-active' : ''}`}
+          onClick={() => setCalibrationMenuOpen((open) => !open)}
+          title="Generate calibration G-code"
+        >
+          <FlaskConical size={14} /> Calibration
+        </button>
+        {calibrationMenuOpen && (
+          <div className="slicer-bottom-bar__calibration-menu">
+            <button
+              className="slicer-bottom-bar__calibration-item"
+              onClick={() => downloadCalibration(
+                'calibration-retraction-tower.gcode',
+                generateRetractionTowerGCode(activePrinter, activeMaterial, activePrint),
+              )}
+            >
+              Retraction tower
+            </button>
+            <button
+              className="slicer-bottom-bar__calibration-item"
+              onClick={() => downloadCalibration(
+                'calibration-temperature-tower.gcode',
+                generateTemperatureTowerGCode(activePrinter, activeMaterial, activePrint),
+              )}
+            >
+              Temperature tower
+            </button>
+            <button
+              className="slicer-bottom-bar__calibration-item"
+              onClick={() => downloadCalibration(
+                'calibration-flow-tower.gcode',
+                generateFlowTowerGCode(activePrinter, activeMaterial, activePrint),
+              )}
+            >
+              Flow tower
+            </button>
+          </div>
+        )}
+      </div>
+
       {hasResult && (
         <button
           className={`slicer-bottom-bar__preview-btn${previewMode === 'preview' ? ' is-active' : ''}`}
@@ -144,6 +237,16 @@ export function SlicerWorkspaceBottomBar() {
         >
           {previewMode === 'preview' ? <Eye size={14} /> : <EyeOff size={14} />}
           Preview
+        </button>
+      )}
+
+      {previewMode === 'preview' && hasResult && (
+        <button
+          className={`slicer-bottom-bar__preview-btn${colorSchemeOpen ? ' is-active' : ''}`}
+          onClick={() => setColorSchemeOpen(!colorSchemeOpen)}
+          title="Color scheme"
+        >
+          <Palette size={14} />
         </button>
       )}
 
@@ -257,11 +360,11 @@ export function SlicerWorkspaceBottomBar() {
             <button
               className={`slicer-bottom-bar__btn slicer-bottom-bar__btn--accent${sending === 'sending' ? ' is-sending' : ''}${sending === 'sent' ? ' is-sent' : ''}${sending === 'error' ? ' is-error' : ''}`}
               onClick={handleSend}
-              disabled={sending === 'sending'}
+              disabled={sending === 'sending' || uploading}
               title={sendError ?? undefined}
             >
               <Send size={14} />{' '}
-              {sending === 'sending' ? 'Sending…'
+              {(sending === 'sending' || uploading) ? `Uploading ${Math.round(uploadProgress)}%`
                 : sending === 'sent' ? 'Sent ✓'
                 : sending === 'error' ? 'Send failed'
                 : 'Send to Printer'}

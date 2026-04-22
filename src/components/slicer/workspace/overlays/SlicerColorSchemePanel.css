@@ -1,0 +1,170 @@
+.slicer-cs-panel {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  width: 210px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.12), 0 12px 32px rgba(0,0,0,0.3);
+  overflow: hidden;
+  z-index: 10;
+  animation: cs-panel-in 0.18s cubic-bezier(0.34, 1.3, 0.64, 1) both;
+}
+
+@keyframes cs-panel-in {
+  from { opacity: 0; transform: scale(0.94) translateY(6px); transform-origin: bottom right; }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.slicer-cs-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 10px 9px 12px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-toolbar) 80%, var(--bg-panel));
+}
+
+.slicer-cs-panel__title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.slicer-cs-panel__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.slicer-cs-panel__close:hover {
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  color: var(--text-primary);
+}
+
+/* ── Color mode row ─────────────────────────────────────────────────────── */
+.slicer-cs-panel__mode-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.slicer-cs-panel__mode-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.slicer-cs-panel__mode-select {
+  flex: 1;
+  font-size: 11px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 3px 6px;
+  outline: none;
+  cursor: pointer;
+}
+.slicer-cs-panel__mode-select:focus {
+  border-color: var(--accent);
+}
+
+/* ── Divider ────────────────────────────────────────────────────────────── */
+.slicer-cs-panel__divider {
+  height: 1px;
+  background: var(--border);
+  margin: 2px 0;
+}
+
+/* ── Line type list ─────────────────────────────────────────────────────── */
+.slicer-cs-panel__list {
+  padding: 4px 0 6px;
+}
+
+.slicer-cs-panel__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+  border-radius: 0;
+  transition: background 0.1s;
+}
+.slicer-cs-panel__row:hover {
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+}
+
+.slicer-cs-panel__check {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.slicer-cs-panel__label {
+  flex: 1;
+  font-size: 11.5px;
+  color: var(--text-primary);
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slicer-cs-panel__swatch {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(0,0,0,0.2);
+}
+
+.slicer-cs-panel__swatch--travel {
+  background: repeating-linear-gradient(
+    45deg,
+    #556 0px, #556 3px,
+    transparent 3px, transparent 6px
+  );
+  border-color: #556;
+}
+
+.slicer-cs-panel__swatch--retraction {
+  background: #f44336;
+  border-radius: 50%;
+  border-color: transparent;
+}
+
+/* ── Speed / Flow gradient legend ───────────────────────────────────────── */
+.slicer-cs-panel__gradient-legend {
+  padding: 8px 12px 4px;
+}
+
+.slicer-cs-panel__gradient-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(to right, #2196f3, #f44336);
+  border: 1px solid rgba(0,0,0,0.15);
+  margin-bottom: 4px;
+}
+
+.slicer-cs-panel__gradient-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-muted);
+}

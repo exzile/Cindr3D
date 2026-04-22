@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { Check, Box, Loader2, Layers } from 'lucide-react';
 import { SlicerWorkspaceScene } from './SlicerWorkspaceScene';
 import { SlicerViewportOverlays } from '../overlays/SlicerViewportOverlays';
+import { SlicerColorSchemePanel } from '../overlays/SlicerColorSchemePanel';
 import { useSlicerStore } from '../../../../store/slicerStore';
 
 // Granular boot steps shown in the viewport loading overlay.
@@ -18,6 +19,8 @@ export function SlicerWorkspaceViewport() {
   // (WebGL context failure, silent error inside the scene, etc.).
   const [dismissed, setDismissed] = useState(false);
   const plateObjects = useSlicerStore((s) => s.plateObjects);
+  const previewMode = useSlicerStore((s) => s.previewMode);
+  const colorSchemeOpen = useSlicerStore((s) => s.previewColorSchemeOpen);
 
   // Listen for zustand persist finishing IDB rehydration.
   useEffect(() => {
@@ -128,6 +131,7 @@ export function SlicerWorkspaceViewport() {
         <SlicerWorkspaceScene />
       </Canvas>
       <SlicerViewportOverlays />
+      {previewMode === 'preview' && colorSchemeOpen && <SlicerColorSchemePanel />}
     </div>
   );
 }

@@ -34,7 +34,11 @@ function HelpIcon({
     <button
       className="slicer-settings-field__help-icon"
       title={brief}
-      onClick={onClick}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onClick();
+      }}
       type="button"
       aria-label="Show help"
     >
@@ -64,7 +68,7 @@ export function Num({
   max?: number;
   unit?: string;
   machineSourced?: boolean;
-  firmwareUnsupported?: string;
+  firmwareUnsupported?: string | null;
   helpBrief?: string;
   onShowHelp?: () => void;
 }) {
@@ -94,7 +98,11 @@ export function Num({
           max={max}
           disabled={disabled}
           readOnly={disabled}
-          onChange={(e) => { if (disabled) return; onChange(clamp(parseNumberOr(e.target.value, min), min, max)); }}
+          onChange={(e) => {
+            if (disabled) return;
+            const next = clamp(parseNumberOr(e.target.value, min), min, max);
+            if (next !== value) onChange(next);
+          }}
         />
         <span className="slicer-settings-field__unit">{unit ?? ''}</span>
       </div>
@@ -115,7 +123,7 @@ export function Check({
   value: boolean;
   onChange: (v: boolean) => void;
   machineSourced?: boolean;
-  firmwareUnsupported?: string;
+  firmwareUnsupported?: string | null;
   helpBrief?: string;
   onShowHelp?: () => void;
 }) {
@@ -135,7 +143,11 @@ export function Check({
         type="checkbox"
         checked={value}
         disabled={disabled}
-        onChange={(e) => { if (disabled) return; onChange(e.target.checked); }}
+        onChange={(e) => {
+          if (disabled) return;
+          const next = e.target.checked;
+          if (next !== value) onChange(next);
+        }}
       />
       {label}
       {machineSourced && <MachineLock />}
@@ -157,7 +169,7 @@ export function Sel<T extends string>({
   value: T;
   onChange: (v: T) => void;
   options: { value: T; label: string }[];
-  firmwareUnsupported?: string;
+  firmwareUnsupported?: string | null;
   helpBrief?: string;
   onShowHelp?: () => void;
 }) {
@@ -167,7 +179,7 @@ export function Sel<T extends string>({
   ].filter(Boolean).join(' ');
 
   return (
-    <div className={classes} title={firmwareUnsupported}>
+    <div className={classes} title={firmwareUnsupported ?? undefined}>
       <div className="slicer-settings-field__label">
         {helpBrief && onShowHelp && <HelpIcon brief={helpBrief} onClick={onShowHelp} />}
         {label}
@@ -177,7 +189,11 @@ export function Sel<T extends string>({
         className="slicer-settings-field__select"
         value={value}
         disabled={!!firmwareUnsupported}
-        onChange={(e) => { if (firmwareUnsupported) return; onChange(e.target.value as T); }}
+        onChange={(e) => {
+          if (firmwareUnsupported) return;
+          const next = e.target.value as T;
+          if (next !== value) onChange(next);
+        }}
       >
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
@@ -196,7 +212,10 @@ export function Density({ value, onChange }: { value: number; onChange: (v: numb
           min={0}
           max={100}
           value={value}
-          onChange={(e) => onChange(clamp(parseIntOr(e.target.value, 0), 0, 100))}
+          onChange={(e) => {
+            const next = clamp(parseIntOr(e.target.value, 0), 0, 100);
+            if (next !== value) onChange(next);
+          }}
         />
         <input
           type="number"
@@ -204,7 +223,10 @@ export function Density({ value, onChange }: { value: number; onChange: (v: numb
           value={value}
           min={0}
           max={100}
-          onChange={(e) => onChange(clamp(parseIntOr(e.target.value, 0), 0, 100))}
+          onChange={(e) => {
+            const next = clamp(parseIntOr(e.target.value, 0), 0, 100);
+            if (next !== value) onChange(next);
+          }}
         />
         <span className="slicer-settings-field__unit">%</span>
       </div>

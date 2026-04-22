@@ -1,6 +1,6 @@
-# Cura-Parity Slicer Settings — COMPLETE (baseline)
+# Cura-Parity Slicer Settings - COMPLETE (baseline)
 # ============================================================================
-# Original effort complete. Every setting on the Prepare → Slicer Settings
+# Original effort complete. Every setting on the Prepare -> Slicer Settings
 # panel is either wired (63 fields) or documented as intentional no-op (4).
 # Post-completion: bugs fixed and additional gaps catalogued below.
 # ============================================================================
@@ -8,88 +8,110 @@
 
 
 # ============================================================================
-# MISSING SETTINGS — full Cura gap analysis (all sections)
+# MISSING SETTINGS - full Cura gap analysis (all sections)
 # ============================================================================
 # Legend:
 #   [ ] = missing entirely (needs type + UI + engine)
 #   [u] = type exists but no UI control
 #   [s] = type + UI exist but engine ignores (storage-only)
-#   [skip] = multi-extruder or irrelevant for single-nozzle — intentionally omitted
+#   [skip] = multi-extruder or irrelevant for single-nozzle - intentionally omitted
 # ============================================================================
 
 
 ## WALLS
-- [s] Print Thin Walls (`printThinWalls`) — bool; type + UI ✓; engine too complex
-- [s] Minimum Feature Size (`minFeatureSize`) — mm; type + UI ✓; engine too complex
-- [s] Minimum Thin Wall Line Width (`minThinWallLineWidth`) — mm; type + UI ✓; engine too complex
-- [s] Minimum Even Wall Line Width (`minEvenWallLineWidth`) — type + UI ✓; engine deferred
- - [s] Wall Distribution Count (`wallDistributionCount`) — type + UI ✓; engine too complex
-- [s] Wall Transitioning Filter Distance (`wallTransitionFilterDistance`) — type + UI ✓; engine deferred
-- [s] Wall Transitioning Filter Margin (`wallTransitionFilterMargin`) — type + UI ✓; engine deferred
-- [s] wallTransitionLength, wallTransitionAngle — stored, engine wiring deferred
+- [s] Print Thin Walls (`printThinWalls`) - bool; type + UI exists; engine too complex
+- [s] Minimum Feature Size (`minFeatureSize`) - mm; type + UI exists; engine too complex
+- [s] Minimum Thin Wall Line Width (`minThinWallLineWidth`) - mm; type + UI exists; engine too complex
+- [s] Minimum Even Wall Line Width (`minEvenWallLineWidth`) - type + UI exists; engine deferred
+ - [s] Wall Distribution Count (`wallDistributionCount`) - type + UI exists; engine too complex
+- [s] Wall Transitioning Filter Distance (`wallTransitionFilterDistance`) - type + UI exists; engine deferred
+- [s] Wall Transitioning Filter Margin (`wallTransitionFilterMargin`) - type + UI exists; engine deferred
+- [s] wallTransitionLength, wallTransitionAngle - stored, engine wiring deferred
 
 
 ## TOP / BOTTOM
-- [s] Top Surface Skin Layers (`topSurfaceSkinLayers`) — type + UI ✓; engine too complex
-- [s] Top Surface Skin Line Width / Pattern / Expansion / Flow — type + UI ✓; engine deferred
-- [s] Bottom Surface Skin Layers (`bottomSurfaceSkinLayers`) — type + UI ✓; engine too complex
-- [s] Connect Top/Bottom Polygons (`connectTopBottomPolygons`) — type + UI ✓; engine too complex
-- [s] Small Top/Bottom Width (`smallTopBottomWidth`) — type + UI ✓; engine deferred
-- [s] Monotonic Ironing Order (`monotonicIroningOrder`) — type + UI ✓; engine deferred
-- [s] Top Skin Removal Width (`topSkinRemovalWidth`) — type + UI ✓; engine deferred
-- [s] Bottom Skin Removal Width (`bottomSkinRemovalWidth`) — type + UI ✓; engine deferred
-- [s] Maximum Skin Angle for Expansion (`maxSkinAngleForExpansion`) — type only (deferred)
-- [s] Minimum Skin Width for Expansion (`minSkinWidthForExpansion`) — type only (deferred)
-- [s] noSkinInZGaps — intentional no-op (inherent behavior)
+- [s] Top Surface Skin Layers (`topSurfaceSkinLayers`) - type + UI exists; engine too complex
+- [s] Top Surface Skin Line Width / Pattern / Expansion / Flow - type + UI exists; engine deferred
+- [s] Bottom Surface Skin Layers (`bottomSurfaceSkinLayers`) - type + UI exists; engine too complex
+- [s] Connect Top/Bottom Polygons (`connectTopBottomPolygons`) - type + UI exists; engine too complex
+- [s] Small Top/Bottom Width (`smallTopBottomWidth`) - type + UI exists; engine deferred
+- [s] Monotonic Ironing Order (`monotonicIroningOrder`) - type + UI exists; engine deferred
+- [s] Top Skin Removal Width (`topSkinRemovalWidth`) - type + UI exists; engine deferred
+- [s] Bottom Skin Removal Width (`bottomSkinRemovalWidth`) - type + UI exists; engine deferred
+- [s] Maximum Skin Angle for Expansion (`maxSkinAngleForExpansion`) - type only (deferred)
+- [s] Minimum Skin Width for Expansion (`minSkinWidthForExpansion`) - type only (deferred)
+- [s] noSkinInZGaps - intentional no-op (inherent behavior)
 
 ## INFILL
-- [skip] Infill Support (`infillSupport`) — major feature; deferred
+- [skip] Infill Support (`infillSupport`) - major feature; deferred
 
 ## MATERIAL
-- [s] Top Surface Skin Flow (`topSurfaceSkinFlow`) — type + UI ✓; top-surface engine deferred
+- [s] Top Surface Skin Flow (`topSurfaceSkinFlow`) - type + UI exists; top-surface engine deferred
 
 ## SPEED
-- [s] Flow Equalization Ratio (`flowEqualizationRatio`) — type + UI ✓; engine deferred
- 
+- [s] Flow Equalization Ratio (`flowEqualizationRatio`) - type + UI exists; engine deferred
+
 
 ## SUPPORT
- - [s] Support Infill Density Multiplier Initial Layer — storage-only; deferred
-- [s] Support Distance Priority (`supportDistancePriority`) — type + UI ✓; engine deferred
- - [s] Minimum Support Interface Area / Roof Area / Floor Area — storage-only; deferred
- - [s] Use Towers (`useTowers`) — type + UI ✓; engine deferred
-- [s] Tower Diameter / Tower Roof Angle — type + UI ✓; engine deferred
+ - [s] Support Infill Density Multiplier Initial Layer - storage-only; deferred
+- [s] Support Distance Priority (`supportDistancePriority`) - type + UI exists; engine deferred
+ - [s] Minimum Support Interface Area / Roof Area / Floor Area - storage-only; deferred
+ - [s] Use Towers (`useTowers`) - type + UI exists; engine deferred
+- [s] Tower Diameter / Tower Roof Angle - type + UI exists; engine deferred
 
- 
 
 ## MESH FIXES
-- [s] Remove All Holes (`removeAllHoles`) — type + UI exist; engine (mesh repair) deferred
-- [s] Extensive Stitching (`extensiveStitching`) — type + UI exist; engine (mesh repair) deferred
-- [s] Merged Meshes Overlap (`mergedMeshesOverlap`) — storage-only (mesh pre-processing deferred)
-- [s] Remove Mesh Intersection (`removeMeshIntersection`) — storage-only (mesh pre-processing deferred)
-- [s] Alternate Mesh Removal (`alternateMeshRemoval`) — storage-only (mesh pre-processing deferred)
+- [s] Remove All Holes (`removeAllHoles`) - type + UI exist; engine (mesh repair) deferred
+- [s] Extensive Stitching (`extensiveStitching`) - type + UI exist; engine (mesh repair) deferred
+- [s] Merged Meshes Overlap (`mergedMeshesOverlap`) - storage-only (mesh pre-processing deferred)
+- [s] Remove Mesh Intersection (`removeMeshIntersection`) - storage-only (mesh pre-processing deferred)
+- [s] Alternate Mesh Removal (`alternateMeshRemoval`) - storage-only (mesh pre-processing deferred)
 
 ## SPECIAL MODES
-- [s] Smooth Spiralized Contours (`smoothSpiralizedContours`) — type + UI ✓; vase mode engine deferred
-- [s] Minimal Mold Width (`minMoldWidth`) — type + UI ✓; engine deferred
-- [s] Infill Mesh / Cutting Mesh / Support Mesh / Anti-Overhang Mesh — type scaffold + UI ✓; engine wiring deferred (per-object override system)
+- [s] Smooth Spiralized Contours (`smoothSpiralizedContours`) - type + UI exists; vase mode engine deferred
+- [s] Minimal Mold Width (`minMoldWidth`) - type + UI exists; engine deferred
+- [s] Infill Mesh / Cutting Mesh / Support Mesh / Anti-Overhang Mesh - type scaffold + UI exists; engine wiring deferred (per-object override system)
 
 ## EXPERIMENTAL
-- [s] Break Up Support In Chunks (`breakUpSupportInChunks`) + Chunk Size + Chunk Line Count — type + UI ✓; engine deferred
-- [s] Fuzzy Skin Outside Only (`fuzzySkinOutsideOnly`) — type + UI ✓; engine deferred (fuzzySkinsEnabled itself not yet wired)
-- [s] Adaptive Layers Topography Size (`adaptiveLayersTopographySize`) — type + UI ✓; engine deferred
-- [s] Minimum Layer Time with Overhang (`minLayerTimeWithOverhang`) — type + UI ✓; engine deferred
-- [s] Enable Bridge Settings (`bridgeSettingsEnabled`) — type + UI ✓; engine deferred
-- [s] Bridge Skin Density (`bridgeSkinDensity`) — type + UI ✓; engine deferred
-- [s] Interlace Bridge Lines (`interlaceBridgeLines`) — type + UI ✓; engine deferred
-- [s] Bridge Has Multiple Layers (`bridgeHasMultipleLayers`) — type + UI ✓; engine deferred
-- [s] Bridge 2nd/3rd Skin Fan Speed (`bridgeFanSpeed2/3`) — type + UI ✓; engine deferred
+- [s] Break Up Support In Chunks (`breakUpSupportInChunks`) + Chunk Size + Chunk Line Count - type + UI exists; engine deferred
+- [s] Fuzzy Skin Outside Only (`fuzzySkinOutsideOnly`) - type + UI exists; engine deferred (fuzzySkinsEnabled itself not yet wired)
+- [s] Adaptive Layers Topography Size (`adaptiveLayersTopographySize`) - type + UI exists; engine deferred
+- [s] Minimum Layer Time with Overhang (`minLayerTimeWithOverhang`) - type + UI exists; engine deferred
+- [s] Enable Bridge Settings (`bridgeSettingsEnabled`) - type + UI exists; engine deferred
+- [s] Bridge Skin Density (`bridgeSkinDensity`) - type + UI exists; engine deferred
+- [s] Interlace Bridge Lines (`interlaceBridgeLines`) - type + UI exists; engine deferred
+- [s] Bridge Has Multiple Layers (`bridgeHasMultipleLayers`) - type + UI exists; engine deferred
+- [s] Bridge 2nd/3rd Skin Fan Speed (`bridgeFanSpeed2/3`) - type + UI exists; engine deferred
 
-- [skip] Wipe Nozzle Between Layers and all Wipe sub-params — multi-extruder feature
-- [skip] Flow Temperature Graph, Cross Infill Density Image — hardware/image-based; not applicable
+- [skip] Wipe Nozzle Between Layers and all Wipe sub-params - multi-extruder feature
+- [skip] Flow Temperature Graph, Cross Infill Density Image - hardware/image-based; not applicable
 
 ## PRINTER SETTINGS
-- [skip] Machine Type, Material Type/Brand, Nozzle geometry, Steps/mm, Endstops, Extruder-sharing params — hardware-only fields stored in firmware, not relevant to G-code output
+- [skip] Machine Type, Material Type/Brand, Nozzle geometry, Steps/mm, Endstops, Extruder-sharing params - hardware-only fields stored in firmware, not relevant to G-code output
 
 ## DUAL EXTRUSION
 - [skip] All prime tower, ooze shield, nozzle-switch, interlocking structure settings
-         — single-extruder architecture; not applicable
+         - single-extruder architecture; not applicable
+
+
+# ============================================================================
+# ADDITIONAL CURA PARITY GAPS (audit follow-up)
+# ============================================================================
+- [s] Support Interface Enable / Layers (`supportInterface`, `supportInterfaceLayers`) - UI exists, but support interface generation is not actually gated/thickness-driven from these settings
+- [s] Horizontal Expansion (`horizontalExpansion`) - UI exists; general XY compensation is not applied in engine
+- [s] Initial Layer Horizontal Expansion (`initialLayerHorizontalExpansion`) - UI exists; first-layer-specific XY compensation is not applied
+- [s] Elephant Foot Compensation (`elephantFootCompensation`) - UI exists; dedicated first-layer compensation logic is not wired
+- [s] Adaptive Layers core wiring (`adaptiveLayersEnabled`, `adaptiveLayersMaxVariation`, `adaptiveLayersVariationStep`) - UI exists; engine still uses uniform layer heights
+- [s] Spiralize / Vase Mode (`spiralizeContour`) - UI exists; engine still slices as standard layered toolpaths
+- [s] Master/per-feature line width wiring (`lineWidth`, `outerWallLineWidth`, `topBottomLineWidth`) - UI exists, but engine semantics do not yet match Cura
+- [s] Outer Wall First (`outerWallFirst`) - type + UI exist; wall ordering logic not wired in engine
+- [s] Support Roof / Floor toggles (`supportRoofEnable`, `supportFloorEnable`) - UI exists; engine does not honor enable/disable state
+
+
+# ============================================================================
+# G-CODE STARTUP AUDIT
+# ============================================================================
+- [s] First-layer temperature variables in printer start templates - bundled start G-code must not cool layer 0 back to regular print temps
+- [s] Post-template mode restoration - arbitrary printer start G-code can leave motion/extrusion modes dirty unless the slicer reasserts them
+- [s] `startGCodeMustBeFirst` contract - printer profiles that require the template first need explicit ordering support in the emitter
+- [s] Start G-code XYZE state sync - slicer travel/retract bookkeeping should follow explicit moves/resets performed by printer start G-code

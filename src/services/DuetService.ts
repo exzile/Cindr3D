@@ -304,7 +304,8 @@ export class DuetService {
 
       xhr.onload = () => {
         if (xhr.status < 200 || xhr.status >= 300) {
-          reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`));
+          const detail = xhr.responseText?.trim();
+          reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}${detail ? ` - ${detail}` : ''}`));
           return;
         }
 
@@ -317,6 +318,7 @@ export class DuetService {
       };
 
       xhr.onerror = () => reject(new Error('Upload network error'));
+      xhr.onabort = () => reject(new Error('Upload canceled'));
       xhr.send(content);
     });
   }

@@ -392,6 +392,12 @@ export interface PrintProfile {
   flowRateCompensationMaxExtrusion: number; // mm — max extra extrusion for flow compensation
   smallHoleMaxSize: number;       // mm — holes smaller than this are considered small
   minimumPolygonCircumference: number; // mm — ignore polygons smaller than this
+  // Cura/Orca-parity "slicing closing radius". Before classifying contours,
+  // each boundary is inflated by r, unioned with its neighbours (merging
+  // anything within 2r), then shrunk back. This seals sub-millimetre gaps
+  // in imperfect STL exports (sculpting tools, CSG outputs) without
+  // distorting clean meshes. 0 = disabled. Default ~0.049 matches Orca.
+  slicingClosingRadius?: number; // mm
 
   // ─── Dimensional Compensation (Cura: Shell) ─────────────────────────────
   // Match Cura's horizontal expansion / elephant-foot controls so parts
@@ -929,6 +935,7 @@ export const DEFAULT_PRINTER_PROFILES: PrinterProfile[] = [
     maxAcceleration: 5000,
     originCenter: false,
     gcodeFlavorType: 'klipper',
+    startGCodeMustBeFirst: true,
     startGCode:
       '; Start G-code for Klipper\n' +
       'START_PRINT BED_TEMP={bedTemp} EXTRUDER_TEMP={nozzleTemp}\n',
@@ -1287,6 +1294,7 @@ export const DEFAULT_PRINT_PROFILES: PrintProfile[] = [
     flowRateCompensationMaxExtrusion: 0.0,
     smallHoleMaxSize: 0.0,
     minimumPolygonCircumference: 1.0,
+    slicingClosingRadius: 0.049,
   },
   {
     id: 'draft-quality',
@@ -1453,6 +1461,7 @@ export const DEFAULT_PRINT_PROFILES: PrintProfile[] = [
     flowRateCompensationMaxExtrusion: 0.0,
     smallHoleMaxSize: 0.0,
     minimumPolygonCircumference: 1.0,
+    slicingClosingRadius: 0.049,
   },
   {
     id: 'fine-quality',
@@ -1619,5 +1628,6 @@ export const DEFAULT_PRINT_PROFILES: PrintProfile[] = [
     flowRateCompensationMaxExtrusion: 0.0,
     smallHoleMaxSize: 0.0,
     minimumPolygonCircumference: 1.0,
+    slicingClosingRadius: 0.049,
   },
 ];

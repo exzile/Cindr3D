@@ -2,10 +2,10 @@ import * as THREE from 'three';
 import type { SliceMove } from '../../../../types/slicer';
 
 export const MOVE_TYPE_COLORS: Record<SliceMove['type'], string> = {
-  'wall-outer': '#4fc3f7',
-  'wall-inner': '#29b6f6',
-  infill: '#ff9800',
-  'top-bottom': '#ffeb3b',
+  'wall-outer': '#aa1111',
+  'wall-inner': '#33dd55',
+  infill: '#cc5500',
+  'top-bottom': '#1144bb',
   support: '#4caf50',
   skirt: '#9c27b0',
   brim: '#9c27b0',
