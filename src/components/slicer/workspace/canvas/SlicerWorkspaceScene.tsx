@@ -3,8 +3,9 @@ import { Line, OrbitControls, Text, TransformControls } from '@react-three/drei'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useSlicerStore } from '../../../../store/slicerStore';
-import type { PlateObject, SliceResult, SliceMove, SliceLayer } from '../../../../types/slicer';
+import type { PlateObject, SliceResult, SliceLayer } from '../../../../types/slicer';
 import { normalizeRotationRadians, normalizeScale } from '../../../../utils/slicerTransforms';
+import { buildMoveTimeline, type MoveTimeline } from './previewTimeline';
 
 function BuildPlateGrid({ sizeX, sizeY }: { sizeX: number; sizeY: number }) {
   // Pack all grid lines into a single BufferGeometry so the GPU draws them
@@ -495,120 +496,6 @@ function InlineGCodePreview({
 // Nozzle Simulation
 // ---------------------------------------------------------------------------
 
-interface MoveTimeline {
-  cumulative: Float32Array;
-  moves: Array<{ move: SliceMove; z: number }>;
-  /** layer.layerIndex for each flat move entry */
-  layerIndices: Int32Array;
-  /** move index within its layer for each flat move entry */
-  moveWithinLayer: Int32Array;
-  total: number;
-}
-
-function estimateMoveDistance(
-  move: SliceMove,
-  fallbackLayerHeight: number,
-  filamentDiameter: number,
-): number {
-  const dx = move.to.x - move.from.x;
-  const dy = move.to.y - move.from.y;
-  const xyDistance = Math.hypot(dx, dy);
-  if (xyDistance > 1e-6) return xyDistance;
-
-  if (move.extrusion <= 1e-9) return 0;
-
-  const layerHeight = Math.max(move.layerHeight ?? fallbackLayerHeight, 1e-6);
-  const lineWidth = Math.max(move.lineWidth ?? 0.4, 1e-6);
-  const filamentArea = Math.PI * Math.pow(Math.max(filamentDiameter, 0.1) / 2, 2);
-  return (move.extrusion * filamentArea) / (lineWidth * layerHeight);
-}
-
-function buildMoveTimeline(
-  sliceResult: SliceResult,
-  filamentDiameter: number,
-  travelSpeed: number,
-  initialLayerTravelSpeed?: number,
-  retractionDistance = 0,
-  retractionSpeed = 0,
-  retractionRetractSpeed?: number,
-  retractionPrimeSpeed?: number,
-  retractionMinTravel = 0,
-  minimumExtrusionDistanceWindow = 0,
-  maxCombDistanceNoRetract = 0,
-  travelAvoidDistance = 0,
-  insideTravelAvoidDistance = 0,
-  avoidPrintedParts = false,
-  avoidSupports = false,
-  zHopWhenRetracted = false,
-  zHopHeight = 0,
-  zHopSpeed?: number,
-): MoveTimeline {
-  const flat: Array<{ move: SliceMove; z: number }> = [];
-  let totalMoves = 0;
-  for (const layer of sliceResult.layers) totalMoves += layer.moves.length;
-  const cumulative = new Float32Array(totalMoves);
-  const layerIndices = new Int32Array(totalMoves);
-  const moveWithinLayer = new Int32Array(totalMoves);
-
-  let t = 0;
-  let i = 0;
-  let prevLayerZ = 0;
-  let isRetracted = false;
-  let extrudedSinceRetract = 0;
-  const retractSpeedMm = Math.max(retractionRetractSpeed ?? retractionSpeed, 1e-6);
-  const primeSpeedMm = Math.max(retractionPrimeSpeed ?? retractionSpeed, 1e-6);
-  const hopSpeedMm = Math.max(zHopSpeed ?? travelSpeed, 1e-6);
-  const hopEnabled = zHopWhenRetracted && zHopHeight > 0;
-  for (const layer of sliceResult.layers) {
-    const fallbackLayerHeight = Math.max(layer.z - prevLayerZ, 0.001);
-    const layerTravelSpeed = layer.layerIndex === 0
-      ? Math.max(initialLayerTravelSpeed ?? travelSpeed, 1e-6)
-      : Math.max(travelSpeed, 1e-6);
-    const zDistance = Math.abs(layer.z - prevLayerZ);
-    if (zDistance > 1e-6) t += zDistance / layerTravelSpeed;
-    for (let mi = 0; mi < layer.moves.length; mi++) {
-      const move = layer.moves[mi];
-      if (move.type === 'travel') {
-        const distance = estimateMoveDistance(move, fallbackLayerHeight, filamentDiameter);
-        const forceRetract = avoidPrintedParts || avoidSupports;
-        let effectiveMaxComb = maxCombDistanceNoRetract;
-        const avoidPad = travelAvoidDistance + insideTravelAvoidDistance;
-        if (avoidPad > 0) effectiveMaxComb = Math.max(0, effectiveMaxComb - avoidPad);
-        const shortTravel = !forceRetract && (
-          (effectiveMaxComb > 0 && distance < effectiveMaxComb) ||
-          (retractionMinTravel > 0 && distance < retractionMinTravel) ||
-          (minimumExtrusionDistanceWindow > 0 && extrudedSinceRetract < minimumExtrusionDistanceWindow)
-        );
-        if (!shortTravel && !isRetracted && retractionDistance > 0) {
-          t += retractionDistance / retractSpeedMm;
-          if (hopEnabled) t += zHopHeight / hopSpeedMm;
-          isRetracted = true;
-          extrudedSinceRetract = 0;
-        }
-      } else if (move.extrusion > 1e-9) {
-        if (isRetracted && retractionDistance > 0) {
-          if (hopEnabled) t += zHopHeight / hopSpeedMm;
-          t += retractionDistance / primeSpeedMm;
-          isRetracted = false;
-        }
-        extrudedSinceRetract += move.extrusion;
-      }
-      const distance = estimateMoveDistance(move, fallbackLayerHeight, filamentDiameter);
-      t += move.speed > 0 ? distance / move.speed : 0;
-      cumulative[i] = t;
-      layerIndices[i] = layer.layerIndex;
-      moveWithinLayer[i] = mi;
-      const moveZ = move.type === 'travel' && isRetracted && hopEnabled
-        ? layer.z + zHopHeight
-        : layer.z;
-      flat.push({ move, z: moveZ });
-      i++;
-    }
-    prevLayerZ = layer.z;
-  }
-  return { cumulative, moves: flat, layerIndices, moveWithinLayer, total: t };
-}
-
 function NozzleSimulator({
   timeline,
   simTime,
@@ -739,23 +626,25 @@ export function SlicerWorkspaceScene() {
     () => (sliceResult
       ? buildMoveTimeline(
         sliceResult,
-        printerProfile?.filamentDiameter ?? 1.75,
-        printProfile?.travelSpeed ?? 150,
-        printProfile?.initialLayerTravelSpeed,
-        materialProfile?.retractionDistance ?? 0,
-        materialProfile?.retractionSpeed ?? 0,
-        materialProfile?.retractionRetractSpeed,
-        materialProfile?.retractionPrimeSpeed,
-        printProfile?.retractionMinTravel ?? 0,
-        printProfile?.minimumExtrusionDistanceWindow ?? 0,
-        printProfile?.maxCombDistanceNoRetract ?? 0,
-        printProfile?.travelAvoidDistance ?? 0,
-        printProfile?.insideTravelAvoidDistance ?? 0,
-        printProfile?.avoidPrintedParts ?? false,
-        printProfile?.avoidSupports ?? false,
-        printProfile?.zHopWhenRetracted ?? ((materialProfile?.retractionZHop ?? 0) > 0),
-        printProfile?.zHopWhenRetracted ? (printProfile?.zHopHeight ?? 0.4) : (materialProfile?.retractionZHop ?? 0),
-        printProfile?.zHopSpeed,
+        {
+          filamentDiameter: printerProfile?.filamentDiameter ?? 1.75,
+          travelSpeed: printProfile?.travelSpeed ?? 150,
+          initialLayerTravelSpeed: printProfile?.initialLayerTravelSpeed,
+          retractionDistance: materialProfile?.retractionDistance ?? 0,
+          retractionSpeed: materialProfile?.retractionSpeed ?? 0,
+          retractionRetractSpeed: materialProfile?.retractionRetractSpeed,
+          retractionPrimeSpeed: materialProfile?.retractionPrimeSpeed,
+          retractionMinTravel: printProfile?.retractionMinTravel ?? 0,
+          minimumExtrusionDistanceWindow: printProfile?.minimumExtrusionDistanceWindow ?? 0,
+          maxCombDistanceNoRetract: printProfile?.maxCombDistanceNoRetract ?? 0,
+          travelAvoidDistance: printProfile?.travelAvoidDistance ?? 0,
+          insideTravelAvoidDistance: printProfile?.insideTravelAvoidDistance ?? 0,
+          avoidPrintedParts: printProfile?.avoidPrintedParts ?? false,
+          avoidSupports: printProfile?.avoidSupports ?? false,
+          zHopWhenRetracted: printProfile?.zHopWhenRetracted ?? ((materialProfile?.retractionZHop ?? 0) > 0),
+          zHopHeight: printProfile?.zHopWhenRetracted ? (printProfile?.zHopHeight ?? 0.4) : (materialProfile?.retractionZHop ?? 0),
+          zHopSpeed: printProfile?.zHopSpeed,
+        },
       )
       : null),
     [

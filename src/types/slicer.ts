@@ -466,14 +466,14 @@ export interface PrintProfile {
   printThinWalls?: boolean;            // storage-only — detect and print narrow gaps
   minFeatureSize?: number;             // storage-only — mm; skip contours narrower than this
   minThinWallLineWidth?: number;       // storage-only — mm; extrusion floor for thin walls
-  alternateWallDirections?: boolean;   // storage-only — flip wall direction per layer
+  alternateWallDirections?: boolean;   // wired — flip wall direction per layer
   overhangingWallAngle?: number;       // storage-only — degrees
   overhangingWallSpeed?: number;       // storage-only — % of wall speed
-  minOddWallLineWidth?: number;        // storage-only — mm
-  zSeamPosition?: 'shortest' | 'user_specified' | 'random' | 'sharpest_corner' | 'back'; // storage-only
-  zSeamRelative?: boolean;             // storage-only — z seam X/Y relative to model
+  minOddWallLineWidth?: number;        // wired — mm
+  zSeamPosition?: 'shortest' | 'user_specified' | 'random' | 'sharpest_corner' | 'back'; // wired
+  zSeamRelative?: boolean;             // wired — z seam X/Y relative to model
   zSeamOnVertex?: boolean;             // storage-only — snap seam to nearest vertex
-  seamCornerPreference?: 'none' | 'hide_seam' | 'expose_seam' | 'hide_or_expose' | 'smart_hide'; // storage-only
+  seamCornerPreference?: 'none' | 'hide_seam' | 'expose_seam' | 'hide_or_expose' | 'smart_hide'; // wired
 
   // ─── Top/Bottom (Cura: Top/Bottom) ──────────────────────────────────────
   initialBottomLayers?: number;        // wired — extra solid bottom layers on the very first solid bottom
@@ -487,29 +487,29 @@ export interface PrintProfile {
   maxSkinAngleForExpansion?: number;   // storage-only — deg
   minSkinWidthForExpansion?: number;   // storage-only — mm
   layerStartAtSeam?: boolean;          // storage-only — start each layer at the seam
-  minimumExtrusionDistanceWindow?: number; // storage-only — mm window for maxRetractionCount
+  minimumExtrusionDistanceWindow?: number; // wired — mm window for maxRetractionCount
   topThickness?: number;               // wired — mm; overrides topLayers when set
   bottomThickness?: number;            // wired — mm; overrides bottomLayers when set
   skinOverlapPercent?: number;         // wired — % overlap between skin and walls
   topSkinExpandDistance?: number;      // wired — mm — grow top skin outward
   bottomSkinExpandDistance?: number;   // wired — mm — grow bottom skin outward
-  skinRemovalWidth?: number;           // storage-only — mm — shrink skin then regrow (fills noise)
+  skinRemovalWidth?: number;           // wired — mm — shrink skin then regrow (fills noise)
   extraSkinWallCount?: number;         // wired — extra perimeter loops around skin
   noSkinInZGaps?: boolean;             // storage-only — skip skin when model has z-gaps
-  bottomPatternInitialLayer?: 'lines' | 'concentric' | 'zigzag' | 'monotonic'; // storage-only
+  bottomPatternInitialLayer?: 'lines' | 'concentric' | 'zigzag' | 'monotonic'; // wired
   ironOnlyHighestLayer?: boolean;      // storage-only — only iron last top-surface layer
 
   // ─── Infill ────────────────────────────────────────────────────────────
   infillLineDistance?: number;         // wired — mm — when set, overrides density-derived spacing
-  infillLineDirections?: number[];     // storage-only — degrees; list cycled per layer
-  infillLayerThickness?: number;       // storage-only — print infill every N layers thick
+  infillLineDirections?: number[];     // wired — degrees; list cycled per layer
+  infillLayerThickness?: number;       // wired — print infill every N layers thick
   connectInfillLines?: boolean;        // wired — chain infill polylines
   connectInfillPolygons?: boolean;     // wired — chain infill polygons
   infillWipeDistance?: number;         // storage-only — mm — wipe after infill pass
-  infillOverhangAngle?: number;        // storage-only — degrees
+  infillOverhangAngle?: number;        // wired — degrees
   gradualInfillStepHeight?: number;    // storage-only — mm per gradual step
-  lightningPruneAngle?: number;        // storage-only — degrees
-  lightningStraighteningAngle?: number;// storage-only — degrees
+  lightningPruneAngle?: number;        // wired — degrees
+  lightningStraighteningAngle?: number;// wired — degrees
   lightningInfillOverhangAngle?: number; // wired — deg — overhang angle for lightning infill (separate from supportAngle)
   infillXOffset?: number;              // wired — mm — shift infill pattern origin
   infillYOffset?: number;              // wired — mm — shift infill pattern origin
@@ -521,8 +521,8 @@ export interface PrintProfile {
   zHopOnlyOverPrinted?: boolean;       // storage-only — only hop over printed parts
   // retractionExtraPrimeAmount declared as a required field in the Travel
   // section above — reused here, don't redeclare.
-  wipeRetractionDistance?: number;     // storage-only — mm — wipe-while-retracting
-  wipeRetractionExtraPrime?: number;   // storage-only — mm³ prime after wipe retract
+  wipeRetractionDistance?: number;     // wired — mm — wipe-while-retracting
+  wipeRetractionExtraPrime?: number;   // wired — mm³ prime after wipe retract
 
   // ─── Cooling ───────────────────────────────────────────────────────────
   buildVolumeFanSpeedAtHeight?: number; // wired — mm — switch build vol fan at this Z
@@ -578,8 +578,8 @@ export interface PrintProfile {
   avoidPrintedParts?: boolean;         // wired — travel reroutes around printed regions
   avoidSupports?: boolean;             // wired — travel reroutes around support regions
   maxCombDistanceNoRetract?: number;   // wired — mm — comb up to this before forcing a retract
-  travelAvoidDistance?: number;        // storage-only — mm — buffer around parts
-  insideTravelAvoidDistance?: number;  // storage-only — mm — buffer for inside-part travel
+  travelAvoidDistance?: number;        // wired — mm — buffer around parts
+  insideTravelAvoidDistance?: number;  // wired — mm — buffer for inside-part travel
 
   // ─── Experimental ──────────────────────────────────────────────────────
   smoothSpiralizedContours?: boolean;  // storage-only — round corners in vase mode
