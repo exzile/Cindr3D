@@ -277,14 +277,10 @@ const MOVE_TYPE_COLORS: Record<string, THREE.Color> = {
 const FALLBACK_COLOR = new THREE.Color('#ffffff');
 
 // Shared unit extrusion-bead geometry used by every LayerLines InstancedMesh.
-// A cylinder of length=1, diameter=1, axis aligned to +X so per-instance scale
-// (length, width, height) maps cleanly. 12 radial segments keeps the bead round
-// without wrecking draw-call cost. Created once at module load; never disposed.
-const UNIT_BOX_GEO = (() => {
-  const g = new THREE.CylinderGeometry(0.5, 0.5, 1, 12, 1, false);
-  g.rotateZ(Math.PI / 2);
-  return g;
-})();
+// A flat-ended unit box better matches Cura's preview and avoids rounded-cap
+// bulges on tight circular hole walls. Axis aligned to +X so per-instance
+// scale (length, width, height) maps cleanly. Created once at module load.
+const UNIT_BOX_GEO = (() => new THREE.BoxGeometry(1, 1, 1))();
 
 // Reusable scratch objects to avoid per-frame allocations inside useMemo.
 const _mat4 = new THREE.Matrix4();
@@ -296,6 +292,7 @@ const _scl3 = new THREE.Vector3();
 // Visual exaggeration factor for line width. 1.0 = physical width; raising this
 // makes walls overlap and blend together, obscuring individual line segments.
 const PREVIEW_LINE_SCALE = 1.0;
+const PREVIEW_JOIN_EPSILON = 1e-4;
 
 // Each extrusion move is rendered as a physical box (lineWidth × layerHeight ×
 // segmentLength), matching Cura's geometry-shader technique. Adjacent layers
@@ -326,7 +323,13 @@ function LayerLines({
     const byType = new Map<string, Bucket>();
     const travPos: number[] = [];
 
-    for (const move of moves) {
+    const samePoint = (
+      a: { x: number; y: number },
+      b: { x: number; y: number },
+    ): boolean => Math.abs(a.x - b.x) <= PREVIEW_JOIN_EPSILON && Math.abs(a.y - b.y) <= PREVIEW_JOIN_EPSILON;
+
+    for (let moveIndex = 0; moveIndex < moves.length; moveIndex++) {
+      const move = moves[moveIndex];
       if (move.type === 'travel') {
         if (showTravel) {
           travPos.push(move.from.x, move.from.y, layer.z, move.to.x, move.to.y, layer.z);
@@ -340,11 +343,35 @@ function LayerLines({
       const len = Math.hypot(dx, dy);
       if (len < 1e-6) continue;
 
+      const prev = moveIndex > 0 ? moves[moveIndex - 1] : null;
+      const next = moveIndex + 1 < moves.length ? moves[moveIndex + 1] : null;
+      const connectsToPrev = prev !== null
+        && prev.type === move.type
+        && prev.extrusion > 0
+        && samePoint(prev.to, move.from);
+      const connectsToNext = next !== null
+        && next.type === move.type
+        && next.extrusion > 0
+        && samePoint(move.to, next.from);
+
+      const renderRadius = ((move.lineWidth ?? 0.4) * PREVIEW_LINE_SCALE) / 2;
+      const trimStart = connectsToPrev ? Math.min(renderRadius, len * 0.45) : 0;
+      const trimEnd = connectsToNext ? Math.min(renderRadius, len * 0.45) : 0;
+      const renderLen = len - trimStart - trimEnd;
+      if (renderLen < 1e-6) continue;
+
+      const dirX = dx / len;
+      const dirY = dy / len;
+      const renderFromX = move.from.x + dirX * trimStart;
+      const renderFromY = move.from.y + dirY * trimStart;
+      const renderToX = move.to.x - dirX * trimEnd;
+      const renderToY = move.to.y - dirY * trimEnd;
+
       if (!byType.has(move.type)) byType.set(move.type, { mids: [], dirs: [], lens: [], lws: [], cols: [] });
       const b = byType.get(move.type)!;
-      b.mids.push((move.from.x + move.to.x) / 2, (move.from.y + move.to.y) / 2, layer.z - layerHeight / 2);
-      b.dirs.push(dx / len, dy / len);
-      b.lens.push(len);
+      b.mids.push((renderFromX + renderToX) / 2, (renderFromY + renderToY) / 2, layer.z - layerHeight / 2);
+      b.dirs.push(dirX, dirY);
+      b.lens.push(renderLen);
       b.lws.push(move.lineWidth ?? 0.4);
 
       let col: THREE.Color;
@@ -380,6 +407,12 @@ function LayerLines({
       }
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      // InstancedMesh frustum culling does not reliably account for all
+      // per-instance transforms here, which can drop dense curved / slanted
+      // wall beads from the preview even though the G-code exists. Keep the
+      // full layer bucket visible and let OrbitControls camera movement drive
+      // the redraw instead of relying on instance-derived bounds.
+      mesh.frustumCulled = false;
       meshList.push({ mesh, type });
     }
 
@@ -490,7 +523,26 @@ function estimateMoveDistance(
   return (move.extrusion * filamentArea) / (lineWidth * layerHeight);
 }
 
-function buildMoveTimeline(sliceResult: SliceResult, filamentDiameter: number): MoveTimeline {
+function buildMoveTimeline(
+  sliceResult: SliceResult,
+  filamentDiameter: number,
+  travelSpeed: number,
+  initialLayerTravelSpeed?: number,
+  retractionDistance = 0,
+  retractionSpeed = 0,
+  retractionRetractSpeed?: number,
+  retractionPrimeSpeed?: number,
+  retractionMinTravel = 0,
+  minimumExtrusionDistanceWindow = 0,
+  maxCombDistanceNoRetract = 0,
+  travelAvoidDistance = 0,
+  insideTravelAvoidDistance = 0,
+  avoidPrintedParts = false,
+  avoidSupports = false,
+  zHopWhenRetracted = false,
+  zHopHeight = 0,
+  zHopSpeed?: number,
+): MoveTimeline {
   const flat: Array<{ move: SliceMove; z: number }> = [];
   let totalMoves = 0;
   for (const layer of sliceResult.layers) totalMoves += layer.moves.length;
@@ -501,16 +553,55 @@ function buildMoveTimeline(sliceResult: SliceResult, filamentDiameter: number): 
   let t = 0;
   let i = 0;
   let prevLayerZ = 0;
+  let isRetracted = false;
+  let extrudedSinceRetract = 0;
+  const retractSpeedMm = Math.max(retractionRetractSpeed ?? retractionSpeed, 1e-6);
+  const primeSpeedMm = Math.max(retractionPrimeSpeed ?? retractionSpeed, 1e-6);
+  const hopSpeedMm = Math.max(zHopSpeed ?? travelSpeed, 1e-6);
+  const hopEnabled = zHopWhenRetracted && zHopHeight > 0;
   for (const layer of sliceResult.layers) {
     const fallbackLayerHeight = Math.max(layer.z - prevLayerZ, 0.001);
+    const layerTravelSpeed = layer.layerIndex === 0
+      ? Math.max(initialLayerTravelSpeed ?? travelSpeed, 1e-6)
+      : Math.max(travelSpeed, 1e-6);
+    const zDistance = Math.abs(layer.z - prevLayerZ);
+    if (zDistance > 1e-6) t += zDistance / layerTravelSpeed;
     for (let mi = 0; mi < layer.moves.length; mi++) {
       const move = layer.moves[mi];
+      if (move.type === 'travel') {
+        const distance = estimateMoveDistance(move, fallbackLayerHeight, filamentDiameter);
+        const forceRetract = avoidPrintedParts || avoidSupports;
+        let effectiveMaxComb = maxCombDistanceNoRetract;
+        const avoidPad = travelAvoidDistance + insideTravelAvoidDistance;
+        if (avoidPad > 0) effectiveMaxComb = Math.max(0, effectiveMaxComb - avoidPad);
+        const shortTravel = !forceRetract && (
+          (effectiveMaxComb > 0 && distance < effectiveMaxComb) ||
+          (retractionMinTravel > 0 && distance < retractionMinTravel) ||
+          (minimumExtrusionDistanceWindow > 0 && extrudedSinceRetract < minimumExtrusionDistanceWindow)
+        );
+        if (!shortTravel && !isRetracted && retractionDistance > 0) {
+          t += retractionDistance / retractSpeedMm;
+          if (hopEnabled) t += zHopHeight / hopSpeedMm;
+          isRetracted = true;
+          extrudedSinceRetract = 0;
+        }
+      } else if (move.extrusion > 1e-9) {
+        if (isRetracted && retractionDistance > 0) {
+          if (hopEnabled) t += zHopHeight / hopSpeedMm;
+          t += retractionDistance / primeSpeedMm;
+          isRetracted = false;
+        }
+        extrudedSinceRetract += move.extrusion;
+      }
       const distance = estimateMoveDistance(move, fallbackLayerHeight, filamentDiameter);
       t += move.speed > 0 ? distance / move.speed : 0;
       cumulative[i] = t;
       layerIndices[i] = layer.layerIndex;
       moveWithinLayer[i] = mi;
-      flat.push({ move, z: layer.z });
+      const moveZ = move.type === 'travel' && isRetracted && hopEnabled
+        ? layer.z + zHopHeight
+        : layer.z;
+      flat.push({ move, z: moveZ });
       i++;
     }
     prevLayerZ = layer.z;
@@ -589,6 +680,7 @@ export function SlicerWorkspaceScene() {
 
   const printerProfile = useSlicerStore((s) => s.getActivePrinterProfile());
   const materialProfile = useSlicerStore((s) => s.getActiveMaterialProfile());
+  const printProfile = useSlicerStore((s) => s.getActivePrintProfile());
   const plateObjects = useSlicerStore((s) => s.plateObjects);
   const selectedId = useSlicerStore((s) => s.selectedPlateObjectId);
   const selectPlateObject = useSlicerStore((s) => s.selectPlateObject);
@@ -644,8 +736,49 @@ export function SlicerWorkspaceScene() {
   // Build the full move timeline once per slice result. Shared by NozzleSimulator
   // and the sim-state lookup below so we pay the O(n) build cost only once.
   const moveTimeline = useMemo(
-    () => (sliceResult ? buildMoveTimeline(sliceResult, printerProfile?.filamentDiameter ?? 1.75) : null),
-    [sliceResult, printerProfile?.filamentDiameter],
+    () => (sliceResult
+      ? buildMoveTimeline(
+        sliceResult,
+        printerProfile?.filamentDiameter ?? 1.75,
+        printProfile?.travelSpeed ?? 150,
+        printProfile?.initialLayerTravelSpeed,
+        materialProfile?.retractionDistance ?? 0,
+        materialProfile?.retractionSpeed ?? 0,
+        materialProfile?.retractionRetractSpeed,
+        materialProfile?.retractionPrimeSpeed,
+        printProfile?.retractionMinTravel ?? 0,
+        printProfile?.minimumExtrusionDistanceWindow ?? 0,
+        printProfile?.maxCombDistanceNoRetract ?? 0,
+        printProfile?.travelAvoidDistance ?? 0,
+        printProfile?.insideTravelAvoidDistance ?? 0,
+        printProfile?.avoidPrintedParts ?? false,
+        printProfile?.avoidSupports ?? false,
+        printProfile?.zHopWhenRetracted ?? ((materialProfile?.retractionZHop ?? 0) > 0),
+        printProfile?.zHopWhenRetracted ? (printProfile?.zHopHeight ?? 0.4) : (materialProfile?.retractionZHop ?? 0),
+        printProfile?.zHopSpeed,
+      )
+      : null),
+    [
+      sliceResult,
+      printerProfile?.filamentDiameter,
+      materialProfile?.retractionDistance,
+      materialProfile?.retractionSpeed,
+      materialProfile?.retractionRetractSpeed,
+      materialProfile?.retractionPrimeSpeed,
+      materialProfile?.retractionZHop,
+      printProfile?.travelSpeed,
+      printProfile?.initialLayerTravelSpeed,
+      printProfile?.retractionMinTravel,
+      printProfile?.minimumExtrusionDistanceWindow,
+      printProfile?.maxCombDistanceNoRetract,
+      printProfile?.travelAvoidDistance,
+      printProfile?.insideTravelAvoidDistance,
+      printProfile?.avoidPrintedParts,
+      printProfile?.avoidSupports,
+      printProfile?.zHopWhenRetracted,
+      printProfile?.zHopHeight,
+      printProfile?.zHopSpeed,
+    ],
   );
 
   // Map simTime → { layerIndex, moveCount } so InlineGCodePreview reveals
@@ -656,6 +789,12 @@ export function SlicerWorkspaceScene() {
     }
     const cum = moveTimeline.cumulative;
     const clampedT = Math.max(0, Math.min(previewSimTime, moveTimeline.total));
+    if (clampedT <= 0) {
+      return {
+        layerIndex: moveTimeline.layerIndices[0] ?? previewLayer,
+        moveCount: 0,
+      };
+    }
     let lo = 0, hi = cum.length - 1;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;

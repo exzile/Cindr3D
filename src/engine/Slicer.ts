@@ -839,8 +839,8 @@ export class Slicer {
             const approxDiam = 2 * Math.sqrt(Math.abs(c.area) / Math.PI);
             if (approxDiam > maxD) continue;
           }
-          // For CCW-wound holes, positive offset = inward (tightens) via offsetContour.
-          // hhe > 0 means tighten (shrink hole) → positive inward offset.
+          // Holes are normalized to CW winding, so positive offset expands the
+          // cavity outward and negative offset tightens it.
           const expanded = this.offsetContour(c.points, hhe);
           if (expanded.length >= 3) c.points = expanded;
         }
@@ -1715,7 +1715,11 @@ export class Slicer {
               // with an explicit list of angles (degrees), cycled per layer.
               // When set, all infill on this layer uses a single scan pass at
               // the specified angle instead of the pattern's built-in rotation.
-              const genPattern = (region: THREE.Vector2[], density: number) => {
+              const genPattern = (
+                region: THREE.Vector2[],
+                density: number,
+                holes: THREE.Vector2[][] = infillHoles,
+              ) => {
                 if (pp.infillLineDirections && pp.infillLineDirections.length > 0) {
                   const angleDeg = pp.infillLineDirections[li % pp.infillLineDirections.length];
                   const spacing = pp.infillLineWidth / (density / 100);
@@ -1724,10 +1728,10 @@ export class Slicer {
                     : 0;
                   return this.generateScanLines(
                     region, density, pp.infillLineWidth,
-                    (angleDeg * Math.PI) / 180, phase, infillHoles,
+                    (angleDeg * Math.PI) / 180, phase, holes,
                   );
                 }
-                return this.generateLinearInfill(region, density, pp.infillLineWidth, li, pp.infillPattern, infillHoles);
+                return this.generateLinearInfill(region, density, pp.infillLineWidth, li, pp.infillPattern, holes);
               };
 
               if (overhangShadowMP.length === 0) {
@@ -1738,11 +1742,8 @@ export class Slicer {
                 // portion (1.5× density) and the rest (baseline). Each gets
                 // its own scan pass; the final line list is their union.
                 const infillRegionMP: PCMultiPolygon = [[
-                  infillRegion.map((p) => [p.x, p.y] as [number, number]).concat(
-                    infillRegion.length > 0
-                      ? [[infillRegion[0].x, infillRegion[0].y] as [number, number]]
-                      : [],
-                  ),
+                  this.contourToClosedPCRing(infillRegion),
+                  ...infillHoles.map((hole) => this.contourToClosedPCRing(hole)),
                 ]];
                 let boostedMP: PCMultiPolygon = [];
                 let normalMP: PCMultiPolygon = infillRegionMP;
@@ -1751,23 +1752,13 @@ export class Slicer {
                   normalMP = polygonClipping.difference(infillRegionMP, overhangShadowMP);
                 } catch { boostedMP = []; normalMP = infillRegionMP; }
 
-                const ringToV2 = (ring: PCRing): THREE.Vector2[] => {
-                  const pts: THREE.Vector2[] = [];
-                  for (let i = 0; i < ring.length - 1; i++) {
-                    pts.push(new THREE.Vector2(ring[i][0], ring[i][1]));
-                  }
-                  return pts;
-                };
-
                 const boostedDensity = Math.min(100, effectiveDensity * 1.5);
                 infillLines = [];
-                for (const poly of boostedMP) {
-                  if (poly.length === 0) continue;
-                  infillLines.push(...genPattern(ringToV2(poly[0]), boostedDensity));
+                for (const region of this.multiPolygonToRegions(boostedMP)) {
+                  infillLines.push(...genPattern(region.contour, boostedDensity, region.holes));
                 }
-                for (const poly of normalMP) {
-                  if (poly.length === 0) continue;
-                  infillLines.push(...genPattern(ringToV2(poly[0]), effectiveDensity));
+                for (const region of this.multiPolygonToRegions(normalMP)) {
+                  infillLines.push(...genPattern(region.contour, effectiveDensity, region.holes));
                 }
               }
             }
@@ -2659,14 +2650,61 @@ export class Slicer {
   }
 
   private classifyContours(rawContours: THREE.Vector2[][]): Contour[] {
-    return rawContours.map((points) => {
+    const contours = rawContours.map((points) => {
       const area = this.signedArea(points);
       return {
         points,
         area,
-        isOuter: area >= 0, // CCW = outer, CW = hole
+        isOuter: true,
       };
     });
+
+    // Determine outer/hole by containment depth (even=outer, odd=hole)
+    // instead of relying on raw winding sign. Segment chaining can return
+    // loops in either direction on some layers, which would misclassify
+    // valid outer loops as holes and drop those layers entirely.
+    const bboxes = contours.map((c) => this.contourBBox(c.points));
+    for (let i = 0; i < contours.length; i++) {
+      const pts = contours[i].points;
+      if (pts.length < 3) {
+        contours[i].isOuter = false;
+        continue;
+      }
+
+      const centroid = pts.reduce(
+        (acc, p) => {
+          acc.x += p.x;
+          acc.y += p.y;
+          return acc;
+        },
+        { x: 0, y: 0 },
+      );
+      centroid.x /= pts.length;
+      centroid.y /= pts.length;
+      const sample = pts[0].clone().lerp(new THREE.Vector2(centroid.x, centroid.y), 1e-4);
+
+      let depth = 0;
+      for (let j = 0; j < contours.length; j++) {
+        if (i === j) continue;
+        const bb = bboxes[j];
+        if (sample.x < bb.minX || sample.x > bb.maxX || sample.y < bb.minY || sample.y > bb.maxY) continue;
+        if (this.pointInContour(sample, contours[j].points)) depth++;
+      }
+
+      const isOuter = depth % 2 === 0;
+      contours[i].isOuter = isOuter;
+
+      // Normalize winding so downstream offset logic keeps its expected
+      // convention: outer loops CCW, hole loops CW.
+      const isCCW = contours[i].area >= 0;
+      const shouldBeCCW = isOuter;
+      if (isCCW !== shouldBeCCW) {
+        contours[i].points.reverse();
+        contours[i].area = -contours[i].area;
+      }
+    }
+
+    return contours;
   }
 
   private signedArea(points: THREE.Vector2[]): number {
@@ -3402,6 +3440,42 @@ export class Slicer {
       default:
         return this.generateScanLines(contour, density, lineWidth, layerIndex % 2 === 0 ? 0 : Math.PI / 2);
     }
+  }
+
+  private pcRingToV2(ring: PCRing): THREE.Vector2[] {
+    const pts: THREE.Vector2[] = [];
+    for (let i = 0; i < ring.length - 1; i++) {
+      pts.push(new THREE.Vector2(ring[i][0], ring[i][1]));
+    }
+    return pts;
+  }
+
+  private contourToClosedPCRing(contour: THREE.Vector2[]): PCRing {
+    const ring: PCRing = contour.map((p) => [p.x, p.y] as [number, number]);
+    if (ring.length > 0) {
+      const first = ring[0];
+      const last = ring[ring.length - 1];
+      if (first[0] !== last[0] || first[1] !== last[1]) ring.push([first[0], first[1]]);
+    }
+    return ring;
+  }
+
+  private multiPolygonToRegions(mp: PCMultiPolygon): Array<{
+    contour: THREE.Vector2[];
+    holes: THREE.Vector2[][];
+  }> {
+    const regions: Array<{ contour: THREE.Vector2[]; holes: THREE.Vector2[][] }> = [];
+    for (const poly of mp) {
+      if (poly.length === 0) continue;
+      const contour = this.pcRingToV2(poly[0]);
+      if (contour.length < 3) continue;
+      const holes = poly
+        .slice(1)
+        .map((ring) => this.pcRingToV2(ring))
+        .filter((ring) => ring.length >= 3);
+      regions.push({ contour, holes });
+    }
+    return regions;
   }
 
   private generateScanLines(

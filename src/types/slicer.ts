@@ -404,7 +404,7 @@ export interface PrintProfile {
   // print dimensionally accurate without post-processing.
   horizontalExpansion?: number;      // mm — shrink/expand XY contours (+ grows, - shrinks)
   initialLayerHorizontalExpansion?: number; // mm — separate value for first layer
-  holeHorizontalExpansion?: number;  // mm — only applied to holes (negative tightens)
+  holeHorizontalExpansion?: number;  // mm — only applied to holes (positive enlarges, negative tightens)
   elephantFootCompensation?: number; // mm — shrink first few layers to undo squish
 
   // ─── Per-feature Flow (Cura: Material) ──────────────────────────────────
@@ -456,7 +456,7 @@ export interface PrintProfile {
   // ─── Walls (Cura: Shell) ────────────────────────────────────────────────
   wallLineCount?: number;              // wired — alias for wallCount
   minEvenWallLineWidth?: number;       // storage-only — mm; min width for even-count walls
-  holeHorizontalExpansionMaxDiameter?: number; // storage-only — mm; holes > this skip HE
+  holeHorizontalExpansionMaxDiameter?: number; // wired — mm; holes > this skip hole expansion
   wallDistributionCount?: number;      // storage-only — Cura adaptive-width algorithm
   wallTransitionFilterDistance?: number; // storage-only — mm
   wallTransitionFilterMargin?: number;   // storage-only — mm

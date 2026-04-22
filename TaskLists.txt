@@ -191,3 +191,11 @@
 - [ ] Multi-material / multi-extruder support - currently single-nozzle
       only. Would require tool-change G-code, prime tower, ooze shield.
 - [ ] Non-planar slicing - print on curved beds or 5-axis surfaces.
+
+## PREVIEW / DIAGNOSTICS
+- [s] Tight curved wall preview joins - dense circular hole walls can look like
+      inner-wall beads protrude past neighboring walls unless connected segment
+      caps are trimmed/merged in the preview renderer
+- [s] Nozzle simulation layer-change timing - current move timeline does not
+      account for explicit Z-only layer-change motion, so preview playback can
+      run faster than emitted G-code on tall / many-layer parts
