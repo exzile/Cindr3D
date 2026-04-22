@@ -5,47 +5,32 @@ import polygonClipping, { type MultiPolygon as PCMultiPolygon, type Ring as PCRi
 import { SimplifyModifier } from 'three/examples/jsm/modifiers/SimplifyModifier.js';
 import type { Sketch, SketchEntity, SketchPoint, SketchPlane } from '../types/cad';
 import { BODY_MATERIAL, SURFACE_MATERIAL } from '../components/viewport/scene/bodyMaterial';
+import {
+  CONSTRUCTION_MATERIAL,
+  CENTERLINE_MATERIAL,
+  EXTRUDE_MATERIAL,
+  ISOPARAMETRIC_MATERIAL,
+  SKETCH_MATERIAL,
+} from './geometryEngine/materials';
+import {
+  computePlaneAxesFromNormal as computePlaneAxesFromNormalUtil,
+  getPlaneAxes as getPlaneAxesUtil,
+  getPlaneRotation as getPlaneRotationUtil,
+  getSketchAxes as getSketchAxesUtil,
+  getSketchExtrudeNormal as getSketchExtrudeNormalUtil,
+} from './geometryEngine/planeUtils';
+import { computeCoplanarFaceBoundary as computeCoplanarFaceBoundaryUtil } from './geometryEngine/coplanarBoundary';
+import {
+  computeMeshIntersectionCurve as computeMeshIntersectionCurveUtil,
+  computePlaneIntersectionCurve as computePlaneIntersectionCurveUtil,
+  extractWorldTriangles as extractWorldTrianglesUtil,
+} from './geometryEngine/intersectionUtils';
+
+export { tagShared } from './geometryEngine/materials';
 
 // Single shared CSG evaluator — constructing one is cheap but reusing is free
 const _csgEvaluator = new Evaluator();
 _csgEvaluator.useGroups = false;
-
-// Shared materials — created once, never duplicated per-entity
-/**
- * Tag a module-level singleton material or geometry so disposal logic in stores
- * can recognise it and SKIP `.dispose()` — disposing a singleton turns every
- * other feature using it into a black/broken material or missing geometry.
- *
- * Materials: sets `userData.shared = true` (checked in cadStore dispose helpers).
- * Geometries: sets `_sharedResource = true` (AUDIT-19 extension).
- */
-export function tagShared<T extends THREE.Material | THREE.BufferGeometry>(obj: T): T {
-  (obj as { _sharedResource?: boolean })._sharedResource = true;
-  if (obj instanceof THREE.Material) {
-    obj.userData.shared = true;
-  }
-  return obj;
-}
-
-const SKETCH_MATERIAL = tagShared(new THREE.LineBasicMaterial({ color: 0x00aaff, linewidth: 2 }));
-// Construction lines: orange, short dash — reference geometry, not part of profile
-const CONSTRUCTION_MATERIAL = tagShared(new THREE.LineDashedMaterial({
-  color: 0xff8800, linewidth: 1, dashSize: 0.3, gapSize: 0.18,
-}));
-// Centerlines: dark green/teal, long dash + small gap — used for symmetry/revolve axes
-const CENTERLINE_MATERIAL = tagShared(new THREE.LineDashedMaterial({
-  color: 0x00aa55, linewidth: 1, dashSize: 0.7, gapSize: 0.2,
-}));
-// S4: Isoparametric curves: magenta, medium dash — UV-parameter construction line on a surface
-const ISOPARAMETRIC_MATERIAL = tagShared(new THREE.LineDashedMaterial({
-  color: 0xcc44ff, linewidth: 1, dashSize: 0.5, gapSize: 0.25,
-}));
-const EXTRUDE_MATERIAL = tagShared(new THREE.MeshPhysicalMaterial({
-  color: 0x8899aa,
-  metalness: 0.3,
-  roughness: 0.4,
-  side: THREE.DoubleSide,
-}));
 
 export class GeometryEngine {
   /**
@@ -57,12 +42,7 @@ export class GeometryEngine {
    *   YZ  (vertical side, X-normal)  → draws in Y–Z world plane
    */
   static getPlaneAxes(plane: SketchPlane): { t1: THREE.Vector3; t2: THREE.Vector3 } {
-    switch (plane) {
-      case 'XY': return { t1: new THREE.Vector3(1, 0, 0), t2: new THREE.Vector3(0, 0, 1) };
-      case 'YZ': return { t1: new THREE.Vector3(0, 1, 0), t2: new THREE.Vector3(0, 0, 1) };
-      case 'XZ': // fall-through to default
-      default:   return { t1: new THREE.Vector3(1, 0, 0), t2: new THREE.Vector3(0, 1, 0) };
-    }
+    return getPlaneAxesUtil(plane);
   }
 
   /**
@@ -71,15 +51,7 @@ export class GeometryEngine {
    * normal to avoid degenerate cross products.
    */
   static computePlaneAxesFromNormal(normal: THREE.Vector3): { t1: THREE.Vector3; t2: THREE.Vector3 } {
-    const n = normal.clone().normalize();
-    // Pick a temp up that's least aligned with n
-    const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
-    const tempUp = ay <= ax && ay <= az
-      ? new THREE.Vector3(0, 1, 0)
-      : (ax <= az ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1));
-    const t1 = new THREE.Vector3().crossVectors(tempUp, n).normalize();
-    const t2 = new THREE.Vector3().crossVectors(n, t1).normalize();
-    return { t1, t2 };
+    return computePlaneAxesFromNormalUtil(normal);
   }
 
   /**
@@ -95,311 +67,7 @@ export class GeometryEngine {
     faceIndex: number,
     tol = 1e-3,
   ): { boundary: THREE.Vector3[]; normal: THREE.Vector3; centroid: THREE.Vector3 } | null {
-    const geom = mesh.geometry;
-    const posAttr = geom.attributes.position as THREE.BufferAttribute | undefined;
-    if (!posAttr) return null;
-
-    mesh.updateWorldMatrix(true, false);
-    const m = mesh.matrixWorld;
-    const normalMatrix = new THREE.Matrix3().getNormalMatrix(m);
-
-    // Read all triangles as triples of world-space vertex indices.
-    // Use the index buffer if present, otherwise treat positions as flat triangles.
-    const idxAttr = geom.index;
-    const triCount = idxAttr ? idxAttr.count / 3 : posAttr.count / 3;
-    const getTriIndices = (i: number): [number, number, number] => {
-      if (idxAttr) {
-        return [idxAttr.getX(i * 3), idxAttr.getX(i * 3 + 1), idxAttr.getX(i * 3 + 2)];
-      }
-      return [i * 3, i * 3 + 1, i * 3 + 2];
-    };
-
-    if (faceIndex < 0 || faceIndex >= triCount) return null;
-
-    // World-space vertex cache (we'll only fill what we touch)
-    const worldVerts = new Map<number, THREE.Vector3>();
-    const getWorldVert = (vi: number): THREE.Vector3 => {
-      let v = worldVerts.get(vi);
-      if (!v) {
-        v = new THREE.Vector3().fromBufferAttribute(posAttr, vi).applyMatrix4(m);
-        worldVerts.set(vi, v);
-      }
-      return v;
-    };
-
-    // Compute the world-space normal + plane offset for the hit triangle
-    const triNormal = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3): THREE.Vector3 => {
-      const ab = b.clone().sub(a);
-      const ac = c.clone().sub(a);
-      return ab.cross(ac).normalize();
-    };
-
-    const [hi0, hi1, hi2] = getTriIndices(faceIndex);
-    const hv0 = getWorldVert(hi0), hv1 = getWorldVert(hi1), hv2 = getWorldVert(hi2);
-    const hitNormal = triNormal(hv0, hv1, hv2);
-    if (hitNormal.lengthSq() < 0.5) return null; // degenerate
-    const hitOffset = hitNormal.dot(hv0); // plane equation: n·p = offset
-
-    // Bounding radius for plane-distance tolerance scaling.
-    // CSG boolean results can have slight floating-point drift between triangles
-    // that should be coplanar, so we use generous tolerances.
-    if (!geom.boundingSphere) geom.computeBoundingSphere();
-    const radius = geom.boundingSphere?.radius ?? 1;
-    const planeTol = Math.max(0.01, tol * radius);
-
-    // Find every coplanar triangle (same orientation + same plane).
-    // Store triangles as triples of world-space vertex POSITIONS (not indices)
-    // so geometries that duplicate verts at face boundaries still get their
-    // shared edges detected correctly via position hashing below.
-    const coplanarTris: Array<[THREE.Vector3, THREE.Vector3, THREE.Vector3]> = [];
-    for (let t = 0; t < triCount; t++) {
-      const [a, b, c] = getTriIndices(t);
-      const va = getWorldVert(a), vb = getWorldVert(b), vc = getWorldVert(c);
-      const n = triNormal(va, vb, vc);
-      if (n.lengthSq() < 0.5) continue;
-      // Normal tolerance: cos(~10°) ≈ 0.985 — generous enough for CSG output
-      if (n.dot(hitNormal) < 0.985) continue;
-      const off = n.dot(va);
-      if (Math.abs(off - hitOffset) > planeTol) continue;
-      coplanarTris.push([va, vb, vc]);
-    }
-    if (coplanarTris.length === 0) return null;
-
-    // Reject single-triangle "faces". A truly flat face on a CAD body is
-    // always at least 2 triangles (a quad is the minimum). A single isolated
-    // coplanar triangle on a curved surface would otherwise produce a valid
-    // 3-point boundary.
-    if (coplanarTris.length < 2) return null;
-
-    // Reject curved-surface fragments. On a tessellated cylinder the two
-    // triangles of a single side-quad are PERFECTLY coplanar with each other
-    // (same flat-shaded face normal) and pass the length >= 2 check — so we
-    // also count triangles in a WIDER cone (cos 45°). If the wider set is
-    // strictly larger than the tight set, the coplanar region has soft-angle
-    // neighbors (adjacent cylinder-side quads, 11.25° away for 32 segments),
-    // meaning the face is a strip of a curved surface rather than a real
-    // flat face. A genuine flat face's neighbors meet at a HARD edge (> 45°
-    // typically 90°), so the wider count equals the tight count.
-    const SOFT_COS = 0.707; // cos(45°)
-    let softCount = 0;
-    for (let t = 0; t < triCount; t++) {
-      const [a, b, c] = getTriIndices(t);
-      const va = getWorldVert(a), vb = getWorldVert(b), vc = getWorldVert(c);
-      const n = triNormal(va, vb, vc);
-      if (n.lengthSq() < 0.5) continue;
-      if (n.dot(hitNormal) < SOFT_COS) continue;
-      // Use a looser plane-distance bound too — adjacent quad triangles on a
-      // cylinder may sit slightly off the hit triangle's plane.
-      const off = n.dot(va);
-      if (Math.abs(off - hitOffset) > planeTol * 4) continue;
-      softCount++;
-    }
-    if (softCount > coplanarTris.length) return null;
-
-    // Merge vertices at the same world position so CSG seam duplicates are
-    // treated as the same vertex. Uses spatial hashing with a merge radius
-    // that handles rounding-boundary ambiguity by checking distance to the
-    // first vertex encountered at each grid cell.
-    const MERGE_RADIUS = 0.05;
-    const CELL = MERGE_RADIUS * 2;
-    // Map: canonical key → position. A vertex matches an existing one if it's
-    // within MERGE_RADIUS of any previously seen vertex in its cell or 26 neighbors.
-    const canonicalPos = new Map<string, THREE.Vector3>();
-
-    const keyFor = (v: THREE.Vector3): string => {
-      // Check current cell + neighbors for a close-enough existing vertex
-      const cx = Math.round(v.x / CELL), cy = Math.round(v.y / CELL), cz = Math.round(v.z / CELL);
-      for (let dx = -1; dx <= 1; dx++) {
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dz = -1; dz <= 1; dz++) {
-            const nk = `${cx + dx}|${cy + dy}|${cz + dz}`;
-            const existing = canonicalPos.get(nk);
-            if (existing && existing.distanceTo(v) <= MERGE_RADIUS) {
-              return nk;
-            }
-          }
-        }
-      }
-      // New vertex — register at its cell
-      const k = `${cx}|${cy}|${cz}`;
-      canonicalPos.set(k, v.clone());
-      return k;
-    };
-
-    // ── Fix T-junctions ──
-    // CSG results can have T-junctions where a long edge A→B from one triangle
-    // group passes through a vertex C used by an adjacent triangle group but
-    // the edge isn't split at C. This prevents proper edge-sharing detection.
-    // Solution: for each triangle edge, check if any coplanar vertex lies ON
-    // the edge segment and split it. We rebuild coplanarTris with split edges.
-    const allCoplanarKeys = new Set<string>();
-    const keyToPos = new Map<string, THREE.Vector3>();
-    for (const [va, vb, vc] of coplanarTris) {
-      for (const v of [va, vb, vc]) {
-        const k = keyFor(v);
-        allCoplanarKeys.add(k);
-        if (!keyToPos.has(k)) keyToPos.set(k, canonicalPos.get(k) ?? v.clone());
-      }
-    }
-
-    // For a triangle [A, B, C], split any edge that has an intermediate coplanar
-    // vertex, producing sub-triangles. We do this by replacing each triangle
-    // with a fan of sub-triangles if needed.
-    const splitTris: Array<[THREE.Vector3, THREE.Vector3, THREE.Vector3]> = [];
-    const EDGE_TOL = 0.06; // slightly larger than MERGE_RADIUS
-
-    const pointOnSegment = (p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): boolean => {
-      const ab = b.clone().sub(a);
-      const ap = p.clone().sub(a);
-      const lenSq = ab.lengthSq();
-      if (lenSq < 1e-8) return false;
-      const t = ap.dot(ab) / lenSq;
-      if (t <= EDGE_TOL / Math.sqrt(lenSq) || t >= 1 - EDGE_TOL / Math.sqrt(lenSq)) return false;
-      const proj = a.clone().add(ab.multiplyScalar(t));
-      return proj.distanceTo(p) < EDGE_TOL;
-    };
-
-    for (const tri of coplanarTris) {
-      // Check each edge for intermediate vertices
-      const triKeys = [keyFor(tri[0]), keyFor(tri[1]), keyFor(tri[2])];
-      let needsSplit = false;
-      const edgeMidpoints: Map<string, THREE.Vector3[]> = new Map();
-
-      for (let ei = 0; ei < 3; ei++) {
-        const a = tri[ei], b = tri[(ei + 1) % 3];
-        const eKey = `${ei}`;
-        const mids: THREE.Vector3[] = [];
-        for (const [k, pos] of keyToPos) {
-          if (triKeys.includes(k)) continue;
-          if (pointOnSegment(pos, a, b)) {
-            mids.push(pos);
-          }
-        }
-        if (mids.length > 0) {
-          needsSplit = true;
-          // Sort midpoints along the edge
-          const ab = b.clone().sub(a);
-          mids.sort((m1, m2) => m1.clone().sub(a).dot(ab) - m2.clone().sub(a).dot(ab));
-          edgeMidpoints.set(eKey, mids);
-        }
-      }
-
-      if (!needsSplit) {
-        splitTris.push(tri);
-        continue;
-      }
-
-      // Fan triangulate: for each edge with midpoints, create sub-triangles
-      // using the opposite vertex as the fan center
-      // Collect all edge vertices in order around the triangle
-      const perimeterPts: THREE.Vector3[] = [];
-      for (let ei = 0; ei < 3; ei++) {
-        perimeterPts.push(tri[ei]);
-        const mids = edgeMidpoints.get(`${ei}`);
-        if (mids) perimeterPts.push(...mids);
-      }
-      // Fan from first vertex (simple triangulation)
-      for (let pi = 1; pi < perimeterPts.length - 1; pi++) {
-        splitTris.push([perimeterPts[0], perimeterPts[pi], perimeterPts[pi + 1]]);
-      }
-    }
-
-    // Build undirected edge counts from the split triangles
-    const undirectedKey = (a: string, b: string) => (a < b ? `${a}#${b}` : `${b}#${a}`);
-    const edgeCount = new Map<string, number>();
-    for (const [va, vb, vc] of splitTris) {
-      const ka = keyFor(va), kb = keyFor(vb), kc = keyFor(vc);
-      for (const [e0, e1] of [[ka, kb], [kb, kc], [kc, ka]] as const) {
-        const k = undirectedKey(e0, e1);
-        edgeCount.set(k, (edgeCount.get(k) ?? 0) + 1);
-      }
-    }
-
-    // Directed adjacency for boundary edges (preserves CCW around each triangle)
-    const adjacency = new Map<string, string[]>();
-    for (const [va, vb, vc] of splitTris) {
-      const ka = keyFor(va), kb = keyFor(vb), kc = keyFor(vc);
-      for (const [e0, e1] of [[ka, kb], [kb, kc], [kc, ka]] as const) {
-        if (edgeCount.get(undirectedKey(e0, e1)) === 1) {
-          if (!adjacency.has(e0)) adjacency.set(e0, []);
-          adjacency.get(e0)!.push(e1);
-        }
-      }
-    }
-    if (adjacency.size < 3) return null;
-
-    // Walk every closed loop in the directed boundary, return the LARGEST
-    // (the outer face boundary; smaller loops are holes). For typical extrude
-    // bodies there's a single loop.
-    const visitedEdges = new Set<string>();
-    const loops: string[][] = [];
-    for (const [startKey, _] of adjacency.entries()) {
-      void _;
-      // Try to start a loop at any unvisited outgoing edge from this vertex
-      const outEdges = adjacency.get(startKey) ?? [];
-      for (const firstNext of outEdges) {
-        const firstEdgeKey = `${startKey}->${firstNext}`;
-        if (visitedEdges.has(firstEdgeKey)) continue;
-        const loop: string[] = [startKey];
-        visitedEdges.add(firstEdgeKey);
-        let cur: string = firstNext;
-        const safety = adjacency.size + 2;
-        let closed = false;
-        for (let i = 0; i < safety; i++) {
-          loop.push(cur);
-          if (cur === startKey) { closed = true; break; }
-          const next = (adjacency.get(cur) ?? []).find((n) => !visitedEdges.has(`${cur}->${n}`));
-          if (next === undefined) break;
-          visitedEdges.add(`${cur}->${next}`);
-          cur = next;
-        }
-        if (closed && loop.length >= 4) {
-          // loop ends with a duplicate of the start — drop it
-          loop.pop();
-          loops.push(loop);
-        }
-      }
-    }
-    if (loops.length === 0) return null;
-
-    // Pick the loop with the LARGEST AREA as the outer boundary. Point count is
-    // a bad proxy: a sampled circle hole (~64 pts) beats a rectangle (4 pts)
-    // even though the rectangle is the outer boundary. Using signed area (via
-    // 2D projection to the face plane) reliably picks the enclosing loop.
-    const _planeAxes = this.computePlaneAxesFromNormal(hitNormal);
-    const _pa = _planeAxes.t1;
-    const _pb = _planeAxes.t2;
-    const loopArea2D = (loopKeys: string[]): number => {
-      // Shoelace in plane-local 2D coords
-      let a = 0;
-      const n = loopKeys.length;
-      for (let i = 0, j = n - 1; i < n; j = i++) {
-        const pi = canonicalPos.get(loopKeys[i])!;
-        const pj = canonicalPos.get(loopKeys[j])!;
-        const xi = pi.dot(_pa), yi = pi.dot(_pb);
-        const xj = pj.dot(_pa), yj = pj.dot(_pb);
-        a += xi * yj - xj * yi;
-      }
-      return Math.abs(a) * 0.5;
-    };
-    loops.sort((a, b) => loopArea2D(b) - loopArea2D(a));
-    const outer = loops[0];
-    if (outer.length < 3) return null;
-
-    const boundary: THREE.Vector3[] = outer.map((k) => canonicalPos.get(k)!.clone());
-
-    // Centroid: mean of boundary points
-    const centroid = new THREE.Vector3();
-    for (const p of boundary) centroid.add(p);
-    centroid.multiplyScalar(1 / boundary.length);
-
-    // Re-orient the normal using the normalMatrix to be consistent with how
-    // R3F's onClick reports face.normal (although we already used worldspace
-    // vertices, this guards against negative-scale meshes).
-    const finalNormal = hitNormal.clone();
-    void normalMatrix; // noted but the world-space cross product already handles this
-
-    return { boundary, normal: finalNormal, centroid };
+    return computeCoplanarFaceBoundaryUtil(mesh, faceIndex, tol);
   }
 
   /**
@@ -408,10 +76,7 @@ export class GeometryEngine {
    * Prefer this over getPlaneAxes when you have access to the full Sketch.
    */
   static getSketchAxes(sketch: Sketch): { t1: THREE.Vector3; t2: THREE.Vector3 } {
-    if (sketch.plane === 'custom') {
-      return this.computePlaneAxesFromNormal(sketch.planeNormal);
-    }
-    return this.getPlaneAxes(sketch.plane);
+    return getSketchAxesUtil(sketch);
   }
 
   /**
@@ -420,11 +85,7 @@ export class GeometryEngine {
    * extruded body for the same sketch.
    */
   static getPlaneRotation(plane: 'XY' | 'XZ' | 'YZ'): [number, number, number] {
-    switch (plane) {
-      case 'XZ': return [-Math.PI / 2, 0, 0];
-      case 'YZ': return [0, Math.PI / 2, 0];
-      default:   return [0, 0, 0];
-    }
+    return getPlaneRotationUtil(plane);
   }
 
   /**
@@ -433,7 +94,7 @@ export class GeometryEngine {
    * aligns to `planeNormal` via `makeBasis(t1, t2, normal)`.
    */
   static getSketchExtrudeNormal(sketch: Sketch): THREE.Vector3 {
-    return sketch.planeNormal.clone().normalize();
+    return getSketchExtrudeNormalUtil(sketch);
   }
 
   /**
@@ -3041,27 +2702,7 @@ export class GeometryEngine {
     meshB: THREE.Mesh,
     tol = 1e-6,
   ): THREE.Vector3[][] {
-    meshA.updateWorldMatrix(true, false);
-    meshB.updateWorldMatrix(true, false);
-
-    const trisA = GeometryEngine._extractWorldTriangles(meshA);
-    const trisB = GeometryEngine._extractWorldTriangles(meshB);
-
-    // Complexity guard: avoid O(n²) blowup on high-poly meshes
-    if (trisA.length * trisB.length > 50000) return [];
-
-    const segments: Array<[THREE.Vector3, THREE.Vector3]> = [];
-
-    for (const tA of trisA) {
-      for (const tB of trisB) {
-        // Quick AABB overlap check before the expensive intersection test
-        if (!GeometryEngine._triBoxesOverlap(tA, tB, tol)) continue;
-        const seg = GeometryEngine.triTriIntersectSegment(tA, tB, tol);
-        if (seg) segments.push(seg);
-      }
-    }
-
-    return GeometryEngine.chainSegments(segments, tol);
+    return computeMeshIntersectionCurveUtil(meshA, meshB, tol);
   }
 
   /**
@@ -3077,381 +2718,7 @@ export class GeometryEngine {
     plane: THREE.Plane,
     tol = 1e-6,
   ): THREE.Vector3[][] {
-    mesh.updateWorldMatrix(true, false);
-    const tris = GeometryEngine._extractWorldTriangles(mesh);
-    const segments: Array<[THREE.Vector3, THREE.Vector3]> = [];
-
-    for (const [v0, v1, v2] of tris) {
-      const d0 = plane.distanceToPoint(v0);
-      const d1 = plane.distanceToPoint(v1);
-      const d2 = plane.distanceToPoint(v2);
-
-      // Skip if all on same side (no crossing)
-      const s0 = d0 > tol ? 1 : d0 < -tol ? -1 : 0;
-      const s1 = d1 > tol ? 1 : d1 < -tol ? -1 : 0;
-      const s2 = d2 > tol ? 1 : d2 < -tol ? -1 : 0;
-      if (s0 === s1 && s1 === s2) continue;
-
-      // Gather intersection points from each edge that straddles the plane
-      const pts: THREE.Vector3[] = [];
-      const edgeVerts: Array<[THREE.Vector3, number, THREE.Vector3, number]> = [
-        [v0, d0, v1, d1],
-        [v1, d1, v2, d2],
-        [v2, d2, v0, d0],
-      ];
-      for (const [va, da, vb, db] of edgeVerts) {
-        const sa = da > tol ? 1 : da < -tol ? -1 : 0;
-        const sb = db > tol ? 1 : db < -tol ? -1 : 0;
-        if (sa === 0) {
-          // vertex is exactly on plane — add once
-          if (pts.length === 0 || pts[pts.length - 1].distanceToSquared(va) > tol * tol) {
-            pts.push(va.clone());
-          }
-        } else if (sb === 0) {
-          // next vertex exactly on plane — will be caught as sa===0 on next edge
-        } else if (sa !== sb) {
-          // edge straddles the plane
-          const t = da / (da - db);
-          pts.push(new THREE.Vector3().lerpVectors(va, vb, t));
-        }
-      }
-
-      if (pts.length >= 2) {
-        segments.push([pts[0], pts[1]]);
-      }
-    }
-
-    return GeometryEngine.chainSegments(segments, tol);
-  }
-
-  /**
-   * Compute the triangle-triangle intersection segment in world space.
-   * Returns null if triangles don't intersect or the intersection is degenerate.
-   */
-  private static triTriIntersectSegment(
-    tA: [THREE.Vector3, THREE.Vector3, THREE.Vector3],
-    tB: [THREE.Vector3, THREE.Vector3, THREE.Vector3],
-    tol: number,
-  ): [THREE.Vector3, THREE.Vector3] | null {
-    const [a0, a1, a2] = tA;
-    const [b0, b1, b2] = tB;
-
-    // Normal and plane offset for tB
-    const ab = b1.clone().sub(b0);
-    const ac = b2.clone().sub(b0);
-    const nB = ab.cross(ac);
-    if (nB.lengthSq() < tol * tol) return null; // degenerate triangle
-    nB.normalize();
-    const dB = nB.dot(b0);
-
-    // Signed distances of tA vertices to plane B
-    const dA = [nB.dot(a0) - dB, nB.dot(a1) - dB, nB.dot(a2) - dB];
-    if (
-      (dA[0] > tol && dA[1] > tol && dA[2] > tol) ||
-      (dA[0] < -tol && dA[1] < -tol && dA[2] < -tol)
-    ) return null;
-
-    // Normal and plane offset for tA
-    const aa = a1.clone().sub(a0);
-    const ac2 = a2.clone().sub(a0);
-    const nA = aa.cross(ac2);
-    if (nA.lengthSq() < tol * tol) return null;
-    nA.normalize();
-    const dA_plane = nA.dot(a0);
-
-    // Signed distances of tB vertices to plane A
-    const dBdist = [nA.dot(b0) - dA_plane, nA.dot(b1) - dA_plane, nA.dot(b2) - dA_plane];
-    if (
-      (dBdist[0] > tol && dBdist[1] > tol && dBdist[2] > tol) ||
-      (dBdist[0] < -tol && dBdist[1] < -tol && dBdist[2] < -tol)
-    ) return null;
-
-    // Intersection line direction
-    const L = nA.clone().cross(nB);
-    const Llen = L.length();
-    if (Llen < tol) return null; // parallel planes
-    const Lnorm = L.clone().divideScalar(Llen);
-
-    // Find a point on the intersection line (plane-plane-plane with a helper coord plane)
-    // Use the axis with the largest component of L to anchor the third plane
-    const ax = Math.abs(Lnorm.x), ay = Math.abs(Lnorm.y), az = Math.abs(Lnorm.z);
-    let P: THREE.Vector3;
-    if (ax >= ay && ax >= az) {
-      // Set x = 0 and solve for y, z from nA and nB
-      const det = nA.y * nB.z - nA.z * nB.y;
-      if (Math.abs(det) < tol) return null;
-      const y = (dA_plane * nB.z - dB * nA.z) / det;
-      const z = (nA.y * dB - nB.y * dA_plane) / det;
-      P = new THREE.Vector3(0, y, z);
-    } else if (ay >= ax && ay >= az) {
-      const det = nA.x * nB.z - nA.z * nB.x;
-      if (Math.abs(det) < tol) return null;
-      const x = (dA_plane * nB.z - dB * nA.z) / det;
-      const z = (nA.x * dB - nB.x * dA_plane) / det;
-      P = new THREE.Vector3(x, 0, z);
-    } else {
-      const det = nA.x * nB.y - nA.y * nB.x;
-      if (Math.abs(det) < tol) return null;
-      const x = (dA_plane * nB.y - dB * nA.y) / det;
-      const y = (nA.x * dB - nB.x * dA_plane) / det;
-      P = new THREE.Vector3(x, y, 0);
-    }
-
-    // Project triangle vertices onto the intersection line to get scalar intervals
-    const projA = [
-      Lnorm.dot(a0) - Lnorm.dot(P),
-      Lnorm.dot(a1) - Lnorm.dot(P),
-      Lnorm.dot(a2) - Lnorm.dot(P),
-    ];
-    const projB = [
-      Lnorm.dot(b0) - Lnorm.dot(P),
-      Lnorm.dot(b1) - Lnorm.dot(P),
-      Lnorm.dot(b2) - Lnorm.dot(P),
-    ];
-
-    const intervalA = GeometryEngine._triInterval(projA, dA, tol);
-    const intervalB = GeometryEngine._triInterval(projB, dBdist, tol);
-    if (!intervalA || !intervalB) return null;
-
-    // Overlap of the two intervals
-    const ta = Math.max(intervalA[0], intervalB[0]);
-    const tb = Math.min(intervalA[1], intervalB[1]);
-    if (tb - ta < tol) return null; // no meaningful overlap
-
-    const p0 = P.clone().addScaledVector(Lnorm, ta);
-    const p1 = P.clone().addScaledVector(Lnorm, tb);
-    return [p0, p1];
-  }
-
-  /**
-   * Compute the scalar interval [t0, t1] where the given triangle overlaps
-   * the intersection line.
-   *
-   * projVerts: projections of triangle vertices onto the line.
-   * planeDist: signed distances of those vertices to the opposing plane.
-   */
-  private static _triInterval(
-    projVerts: number[],
-    planeDist: number[],
-    tol: number,
-  ): [number, number] | null {
-    // Find the vertex on the "opposite" side of the plane
-    // The two vertices on one side intersect two edges with the lone vertex.
-    let singleIdx = -1;
-    let singleSign = 0;
-    for (let i = 0; i < 3; i++) {
-      const sign = planeDist[i] > tol ? 1 : planeDist[i] < -tol ? -1 : 0;
-      if (sign === 0) continue;
-      const otherSigns = [0, 1, 2].filter((j) => j !== i).map((j) =>
-        planeDist[j] > tol ? 1 : planeDist[j] < -tol ? -1 : 0,
-      );
-      if (otherSigns[0] !== sign || otherSigns[1] !== sign) {
-        singleIdx = i;
-        singleSign = sign;
-        break;
-      }
-    }
-
-    if (singleIdx === -1) {
-      // All vertices on same side or coplanar — just use min/max of projections
-      // that belong to vertices touching the plane
-      const onPlane = [0, 1, 2].filter((i) => Math.abs(planeDist[i]) <= tol);
-      if (onPlane.length < 2) return null;
-      const t0 = Math.min(...onPlane.map((i) => projVerts[i]));
-      const t1 = Math.max(...onPlane.map((i) => projVerts[i]));
-      return t0 < t1 ? [t0, t1] : null;
-    }
-
-    const idx0 = (singleIdx + 1) % 3;
-    const idx1 = (singleIdx + 2) % 3;
-
-    const d_single = planeDist[singleIdx];
-    const d0 = planeDist[idx0];
-    const d1 = planeDist[idx1];
-
-    // Clamp to avoid division by near-zero
-    const denom0 = d_single - d0;
-    const denom1 = d_single - d1;
-
-    const t0 = Math.abs(denom0) > tol
-      ? projVerts[idx0] + (projVerts[singleIdx] - projVerts[idx0]) * (d0 / (d0 - d_single))
-      : projVerts[idx0];
-    const t1 = Math.abs(denom1) > tol
-      ? projVerts[idx1] + (projVerts[singleIdx] - projVerts[idx1]) * (d1 / (d1 - d_single))
-      : projVerts[idx1];
-
-    void singleSign; // used conceptually to identify the lone vertex
-    return [Math.min(t0, t1), Math.max(t0, t1)];
-  }
-
-  /**
-   * Chain a flat list of unordered segments into connected polylines.
-   * Endpoints that are within `tol` of each other are considered shared.
-   */
-  private static chainSegments(
-    segments: Array<[THREE.Vector3, THREE.Vector3]>,
-    tol: number,
-  ): THREE.Vector3[][] {
-    if (segments.length === 0) return [];
-
-    // Bucket every endpoint into a spatial grid so we can pair coincident
-    // points in O(n) rather than O(n²). The previous implementation used a
-    // "first match wins + break" pairing which silently orphaned the third
-    // endpoint at a T-junction (three edges meeting at one point), so
-    // section sketches / CSG intersection curves randomly split at shared
-    // vertices. The fix is to group ALL coincident endpoints at each
-    // location and walk via an adjacency list (any unused neighbor can
-    // continue the chain), rather than a unique-partner scheme.
-
-    const cell = Math.max(tol * 2, 1e-6);
-    const keyFor = (p: THREE.Vector3): string => {
-      return `${Math.round(p.x / cell)}|${Math.round(p.y / cell)}|${Math.round(p.z / cell)}`;
-    };
-
-    // For each segment endpoint, the node id is a canonical bucket key.
-    // node[segIdx*2 + endIdx] = bucket key
-    const nodeOf: string[] = new Array(segments.length * 2);
-    // bucketToSegEnds[key] = list of {segIdx, endIdx} — every endpoint that
-    // lands in that bucket.
-    const bucketToSegEnds = new Map<string, Array<{ segIdx: number; endIdx: 0 | 1 }>>();
-
-    const addEndpoint = (p: THREE.Vector3, segIdx: number, endIdx: 0 | 1) => {
-      // Check the 3×3×3 neighborhood for an existing bucket close enough —
-      // handles the "vertex sits right on a grid boundary" case so two
-      // points within `tol` always map to the same node.
-      const cx = Math.round(p.x / cell), cy = Math.round(p.y / cell), cz = Math.round(p.z / cell);
-      for (let dx = -1; dx <= 1; dx++)
-        for (let dy = -1; dy <= 1; dy++)
-          for (let dz = -1; dz <= 1; dz++) {
-            const k = `${cx + dx}|${cy + dy}|${cz + dz}`;
-            const group = bucketToSegEnds.get(k);
-            if (!group) continue;
-            // Compare to any existing member — they all share a bucket so
-            // any is a representative.
-            const probe = segments[group[0].segIdx][group[0].endIdx];
-            if (probe.distanceToSquared(p) <= tol * tol) {
-              group.push({ segIdx, endIdx });
-              nodeOf[segIdx * 2 + endIdx] = k;
-              return;
-            }
-          }
-      const k = keyFor(p);
-      bucketToSegEnds.set(k, [{ segIdx, endIdx }]);
-      nodeOf[segIdx * 2 + endIdx] = k;
-    };
-
-    for (let i = 0; i < segments.length; i++) {
-      addEndpoint(segments[i][0], i, 0);
-      addEndpoint(segments[i][1], i, 1);
-    }
-
-    const usedSegs = new Set<number>();
-    const polylines: THREE.Vector3[][] = [];
-
-    // Pick an unused edge at `endpointKey` that's not segIgnore.
-    const nextUnusedAt = (
-      endpointKey: string,
-      segIgnore: number,
-    ): { segIdx: number; endIdx: 0 | 1 } | null => {
-      const group = bucketToSegEnds.get(endpointKey);
-      if (!group) return null;
-      for (const g of group) {
-        if (g.segIdx === segIgnore) continue;
-        if (usedSegs.has(g.segIdx)) continue;
-        return g;
-      }
-      return null;
-    };
-
-    for (let startSeg = 0; startSeg < segments.length; startSeg++) {
-      if (usedSegs.has(startSeg)) continue;
-
-      const chain: THREE.Vector3[] = [segments[startSeg][0].clone(), segments[startSeg][1].clone()];
-      usedSegs.add(startSeg);
-
-      // Extend forward from endpoint 1
-      let curSeg = startSeg;
-      let curEnd: 0 | 1 = 1;
-      for (;;) {
-        const nodeKey = nodeOf[curSeg * 2 + curEnd];
-        const nxt = nextUnusedAt(nodeKey, curSeg);
-        if (!nxt) break;
-        usedSegs.add(nxt.segIdx);
-        const otherEnd: 0 | 1 = nxt.endIdx === 0 ? 1 : 0;
-        chain.push(segments[nxt.segIdx][otherEnd].clone());
-        curSeg = nxt.segIdx;
-        curEnd = otherEnd;
-      }
-
-      // Extend backward from endpoint 0
-      curSeg = startSeg;
-      curEnd = 0;
-      const prepend: THREE.Vector3[] = [];
-      for (;;) {
-        const nodeKey = nodeOf[curSeg * 2 + curEnd];
-        const nxt = nextUnusedAt(nodeKey, curSeg);
-        if (!nxt) break;
-        usedSegs.add(nxt.segIdx);
-        const otherEnd: 0 | 1 = nxt.endIdx === 0 ? 1 : 0;
-        prepend.unshift(segments[nxt.segIdx][otherEnd].clone());
-        curSeg = nxt.segIdx;
-        curEnd = otherEnd;
-      }
-
-      const full = [...prepend, ...chain];
-      if (full.length >= 2) polylines.push(full);
-    }
-
-    return polylines;
-  }
-
-  /** Extract all triangles from a mesh as world-space vertex triples. */
-  private static _extractWorldTriangles(
-    mesh: THREE.Mesh,
-  ): Array<[THREE.Vector3, THREE.Vector3, THREE.Vector3]> {
-    const geom = mesh.geometry;
-    const posAttr = geom.attributes.position as THREE.BufferAttribute | undefined;
-    if (!posAttr) return [];
-
-    const m = mesh.matrixWorld;
-    const idxAttr = geom.index;
-    const triCount = idxAttr ? idxAttr.count / 3 : posAttr.count / 3;
-
-    const tris: Array<[THREE.Vector3, THREE.Vector3, THREE.Vector3]> = [];
-    for (let t = 0; t < triCount; t++) {
-      let i0: number, i1: number, i2: number;
-      if (idxAttr) {
-        i0 = idxAttr.getX(t * 3);
-        i1 = idxAttr.getX(t * 3 + 1);
-        i2 = idxAttr.getX(t * 3 + 2);
-      } else {
-        i0 = t * 3;
-        i1 = t * 3 + 1;
-        i2 = t * 3 + 2;
-      }
-      const v0 = new THREE.Vector3().fromBufferAttribute(posAttr, i0).applyMatrix4(m);
-      const v1 = new THREE.Vector3().fromBufferAttribute(posAttr, i1).applyMatrix4(m);
-      const v2 = new THREE.Vector3().fromBufferAttribute(posAttr, i2).applyMatrix4(m);
-      tris.push([v0, v1, v2]);
-    }
-    return tris;
-  }
-
-  /** Fast AABB overlap test for two triangles — prune pairs before full intersection. */
-  private static _triBoxesOverlap(
-    tA: [THREE.Vector3, THREE.Vector3, THREE.Vector3],
-    tB: [THREE.Vector3, THREE.Vector3, THREE.Vector3],
-    tol: number,
-  ): boolean {
-    for (let axis = 0; axis < 3; axis++) {
-      const k = axis as 0 | 1 | 2;
-      const aMin = Math.min(tA[0].getComponent(k), tA[1].getComponent(k), tA[2].getComponent(k)) - tol;
-      const aMax = Math.max(tA[0].getComponent(k), tA[1].getComponent(k), tA[2].getComponent(k)) + tol;
-      const bMin = Math.min(tB[0].getComponent(k), tB[1].getComponent(k), tB[2].getComponent(k)) - tol;
-      const bMax = Math.max(tB[0].getComponent(k), tB[1].getComponent(k), tB[2].getComponent(k)) + tol;
-      if (aMax < bMin || bMax < aMin) return false;
-    }
-    return true;
+    return computePlaneIntersectionCurveUtil(mesh, plane, tol);
   }
 
   // ---------------------------------------------------------------------------
@@ -4626,7 +3893,7 @@ export class GeometryEngine {
   ): THREE.BufferGeometry {
     // ── Derive a cutting plane from the trimmer's first triangle ─────────────
     trimmerMesh.updateWorldMatrix(true, false);
-    const trimmerTris = GeometryEngine._extractWorldTriangles(trimmerMesh);
+    const trimmerTris = extractWorldTrianglesUtil(trimmerMesh);
     if (trimmerTris.length === 0) {
       // Nothing to trim against — return a clone of the original geometry
       return mesh.geometry.clone();
@@ -4709,7 +3976,7 @@ export class GeometryEngine {
       plane = splitter;
     } else {
       (splitter as THREE.Mesh).updateWorldMatrix(true, false);
-      const tris = GeometryEngine._extractWorldTriangles(splitter as THREE.Mesh);
+      const tris = extractWorldTrianglesUtil(splitter as THREE.Mesh);
       if (tris.length === 0) {
         return [mesh.geometry.clone(), new THREE.BufferGeometry()];
       }

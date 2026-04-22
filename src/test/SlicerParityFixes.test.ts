@@ -165,4 +165,40 @@ describe('Slicer parity fixes', () => {
 
     expect(crossing).toBe(false);
   });
+
+  it('closing radius does not collapse large functional holes', () => {
+    const printer = DEFAULT_PRINTER_PROFILES[0];
+    const material = DEFAULT_MATERIAL_PROFILES[0];
+    const print = {
+      ...DEFAULT_PRINT_PROFILES[0],
+      slicingClosingRadius: 0.049,
+    };
+    const slicer = new Slicer(printer, material, print) as unknown as {
+      closeContourGaps: (
+        contours: Array<{ points: THREE.Vector2[]; area: number; isOuter: boolean }>,
+        r: number,
+      ) => Array<{ points: THREE.Vector2[]; area: number; isOuter: boolean }>;
+      signedArea: (points: THREE.Vector2[]) => number;
+    };
+
+    const outer = [
+      new THREE.Vector2(0, 0),
+      new THREE.Vector2(40, 0),
+      new THREE.Vector2(40, 40),
+      new THREE.Vector2(0, 40),
+    ];
+    const hole = [
+      new THREE.Vector2(10, 10),
+      new THREE.Vector2(30, 10),
+      new THREE.Vector2(30, 30),
+      new THREE.Vector2(10, 30),
+    ].reverse();
+
+    const closed = slicer.closeContourGaps([
+      { points: outer, area: slicer.signedArea(outer), isOuter: true },
+      { points: hole, area: slicer.signedArea(hole), isOuter: false },
+    ], print.slicingClosingRadius);
+
+    expect(closed.some((contour) => !contour.isOuter)).toBe(true);
+  });
 });
