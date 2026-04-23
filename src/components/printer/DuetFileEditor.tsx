@@ -2,6 +2,9 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { X, Save, RotateCcw, SaveAll, Loader2 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { DuetInsertCommandMenu } from './config/DuetInsertCommandMenu';
+import { highlightGCode, escapeHtml, formatSize } from './duetFileEditor/helpers';
+import { editorStyles } from './duetFileEditor/styles';
+import { SaveAsDialog } from './duetFileEditor/SaveAsDialog';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -17,289 +20,6 @@ interface DuetFileEditorProps {
   /** Notify the parent whenever the dirty state changes. */
   onDirtyChange?: (dirty: boolean) => void;
 }
-
-// ---------------------------------------------------------------------------
-// Syntax highlighting for G-code
-// ---------------------------------------------------------------------------
-
-function highlightGCode(text: string): string {
-  // Process line by line so comments take priority
-  return text
-    .split('\n')
-    .map((line) => {
-      // Check for full-line comment
-      const commentIdx = line.indexOf(';');
-      let code = line;
-      let comment = '';
-      if (commentIdx >= 0) {
-        code = line.substring(0, commentIdx);
-        comment = line.substring(commentIdx);
-      }
-
-      // Highlight code portion
-      let highlighted = code
-        // G-codes: G followed by digits (possibly with decimal)
-        .replace(/\b(G\d+(\.\d+)?)\b/gi, '<span style="color:#4dd0e1">$1</span>')
-        // M-codes: M followed by digits
-        .replace(/\b(M\d+(\.\d+)?)\b/gi, '<span style="color:#ffd54f">$1</span>')
-        // Parameters: letter followed by number (S100, F6000, X10.5, etc.)
-        .replace(/\b([SFXYZEPRT])(-?\d+(\.\d+)?)\b/gi, '<span style="color:#ffab40">$1$2</span>')
-        // Standalone numbers (not already colored)
-        .replace(/(?<!<[^>]*)(?<![a-zA-Z"])(-?\d+\.?\d*)/g, '<span style="color:#81d4fa">$1</span>');
-
-      // Highlight comment portion
-      if (comment) {
-        highlighted += `<span style="color:#66bb6a">${escapeHtml(comment)}</span>`;
-      }
-
-      return highlighted;
-    })
-    .join('\n');
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
-const editorStyles = {
-  overlay: {
-    position: 'fixed' as const,
-    inset: 0,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 2000,
-  },
-  modal: {
-    backgroundColor: '#1e1e1e',
-    border: '1px solid #444',
-    borderRadius: 8,
-    display: 'flex',
-    flexDirection: 'column' as const,
-    width: '85vw',
-    height: '80vh',
-    maxWidth: 1100,
-    maxHeight: 800,
-    overflow: 'hidden',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '10px 16px',
-    backgroundColor: '#252526',
-    borderBottom: '1px solid #333',
-    gap: 12,
-  },
-  headerTitle: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: '#e0e0e0',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap' as const,
-    flex: 1,
-  },
-  headerPath: {
-    fontSize: 11,
-    color: '#888',
-    marginLeft: 8,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap' as const,
-  },
-  headerBtns: {
-    display: 'flex',
-    gap: 6,
-    alignItems: 'center',
-    flexShrink: 0,
-  },
-  btn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '5px 12px',
-    fontSize: 12,
-    border: '1px solid #555',
-    borderRadius: 4,
-    background: '#353535',
-    color: '#ccc',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap' as const,
-  },
-  btnPrimary: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '5px 12px',
-    fontSize: 12,
-    border: 'none',
-    borderRadius: 4,
-    background: '#0078d4',
-    color: '#fff',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap' as const,
-  },
-  btnDanger: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '5px 12px',
-    fontSize: 12,
-    border: '1px solid #555',
-    borderRadius: 4,
-    background: '#353535',
-    color: '#ef5350',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap' as const,
-  },
-  editorContainer: {
-    flex: 1,
-    display: 'flex',
-    overflow: 'hidden',
-    position: 'relative' as const,
-  },
-  lineNumbers: {
-    width: 50,
-    backgroundColor: '#1a1a1a',
-    borderRight: '1px solid #333',
-    overflow: 'hidden',
-    padding: '10px 0',
-    fontFamily: "'Consolas', 'Monaco', 'Courier New', monospace",
-    fontSize: 13,
-    lineHeight: '20px',
-    color: '#555',
-    textAlign: 'right' as const,
-    userSelect: 'none' as const,
-    flexShrink: 0,
-  },
-  lineNumber: {
-    paddingRight: 8,
-    paddingLeft: 4,
-    height: 20,
-    lineHeight: '20px',
-  },
-  textareaWrapper: {
-    flex: 1,
-    position: 'relative' as const,
-    overflow: 'hidden',
-  },
-  textarea: {
-    position: 'absolute' as const,
-    inset: 0,
-    width: '100%',
-    height: '100%',
-    padding: '10px 12px',
-    fontFamily: "'Consolas', 'Monaco', 'Courier New', monospace",
-    fontSize: 13,
-    lineHeight: '20px',
-    backgroundColor: 'transparent',
-    color: '#d4d4d4',
-    border: 'none',
-    outline: 'none',
-    resize: 'none' as const,
-    whiteSpace: 'pre' as const,
-    overflowWrap: 'normal' as const,
-    overflow: 'auto',
-    zIndex: 2,
-    caretColor: '#fff',
-    boxSizing: 'border-box' as const,
-    tabSize: 4,
-  },
-  highlightPre: {
-    position: 'absolute' as const,
-    inset: 0,
-    padding: '10px 12px',
-    fontFamily: "'Consolas', 'Monaco', 'Courier New', monospace",
-    fontSize: 13,
-    lineHeight: '20px',
-    color: 'transparent',
-    whiteSpace: 'pre' as const,
-    overflowWrap: 'normal' as const,
-    overflow: 'auto',
-    pointerEvents: 'none' as const,
-    zIndex: 1,
-    boxSizing: 'border-box' as const,
-    tabSize: 4,
-    margin: 0,
-  },
-  footer: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '6px 16px',
-    backgroundColor: '#252526',
-    borderTop: '1px solid #333',
-    fontSize: 11,
-    color: '#888',
-  },
-  loading: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    color: '#888',
-    gap: 8,
-    fontSize: 14,
-  },
-  saveAsOverlay: {
-    position: 'fixed' as const,
-    inset: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 3000,
-  },
-  saveAsDialog: {
-    backgroundColor: '#2d2d2d',
-    border: '1px solid #555',
-    borderRadius: 6,
-    padding: 20,
-    minWidth: 400,
-    color: '#ccc',
-  },
-  saveAsTitle: {
-    fontSize: 14,
-    fontWeight: 600,
-    marginBottom: 12,
-  },
-  saveAsInput: {
-    width: '100%',
-    padding: '6px 8px',
-    fontSize: 13,
-    border: '1px solid #555',
-    borderRadius: 4,
-    backgroundColor: '#1e1e1e',
-    color: '#ccc',
-    outline: 'none',
-    boxSizing: 'border-box' as const,
-  },
-  saveAsBtns: {
-    display: 'flex',
-    gap: 8,
-    justifyContent: 'flex-end',
-    marginTop: 14,
-  },
-  unsavedDot: {
-    display: 'inline-block',
-    width: 8,
-    height: 8,
-    borderRadius: '50%',
-    backgroundColor: '#ffab40',
-    marginLeft: 8,
-    verticalAlign: 'middle',
-  },
-};
 
 // ---------------------------------------------------------------------------
 // Component
@@ -492,12 +212,6 @@ export default function DuetFileEditor({ filePath, onClose, isNew = false, inlin
   const fileSize = useMemo(() => new Blob([content]).size, [content]);
   const charCount = content.length;
 
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
   const editorBody = (
     <>
       {/* Header */}
@@ -606,33 +320,12 @@ export default function DuetFileEditor({ filePath, onClose, isNew = false, inlin
   );
 
   const saveAsDialog = showSaveAs && (
-    <div style={editorStyles.saveAsOverlay} onClick={() => setShowSaveAs(false)}>
-      <div style={editorStyles.saveAsDialog} onClick={(e) => e.stopPropagation()}>
-        <div style={editorStyles.saveAsTitle}>Save As</div>
-        <input
-          style={editorStyles.saveAsInput}
-          value={saveAsPath}
-          onChange={(e) => setSaveAsPath(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && saveAsPath.trim()) handleSaveAs(saveAsPath.trim());
-            if (e.key === 'Escape') setShowSaveAs(false);
-          }}
-          autoFocus
-          placeholder="Full file path (e.g. 0:/sys/config.g)"
-        />
-        <div style={editorStyles.saveAsBtns}>
-          <button style={editorStyles.btn} onClick={() => setShowSaveAs(false)}>
-            Cancel
-          </button>
-          <button
-            style={editorStyles.btnPrimary}
-            onClick={() => saveAsPath.trim() && handleSaveAs(saveAsPath.trim())}
-          >
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
+    <SaveAsDialog
+      onCancel={() => setShowSaveAs(false)}
+      onConfirm={(path) => void handleSaveAs(path)}
+      saveAsPath={saveAsPath}
+      setSaveAsPath={setSaveAsPath}
+    />
   );
 
   if (inline) {
@@ -659,36 +352,7 @@ export default function DuetFileEditor({ filePath, onClose, isNew = false, inlin
         {editorBody}
       </div>
 
-      {/* Save As dialog (modal mode) */}
-      {showSaveAs && (
-        <div style={editorStyles.saveAsOverlay} onClick={() => setShowSaveAs(false)}>
-          <div style={editorStyles.saveAsDialog} onClick={(e) => e.stopPropagation()}>
-            <div style={editorStyles.saveAsTitle}>Save As</div>
-            <input
-              style={editorStyles.saveAsInput}
-              value={saveAsPath}
-              onChange={(e) => setSaveAsPath(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && saveAsPath.trim()) handleSaveAs(saveAsPath.trim());
-                if (e.key === 'Escape') setShowSaveAs(false);
-              }}
-              autoFocus
-              placeholder="Full file path (e.g. 0:/sys/config.g)"
-            />
-            <div style={editorStyles.saveAsBtns}>
-              <button style={editorStyles.btn} onClick={() => setShowSaveAs(false)}>
-                Cancel
-              </button>
-              <button
-                style={editorStyles.btnPrimary}
-                onClick={() => saveAsPath.trim() && handleSaveAs(saveAsPath.trim())}
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {saveAsDialog}
     </div>
   );
 }

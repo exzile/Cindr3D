@@ -14,9 +14,40 @@ import {
   moveFile as moveFileRequest,
   uploadFile as uploadFileRequest,
 } from './duet/fileApi';
+import {
+  emergencyStopCommand,
+  extrudeCommand,
+  homeAxesCommand,
+  moveAxisCommand,
+  runMacroCommand,
+} from './duet/controls';
 import { fetchOrThrow, requestJsonOrText } from './httpRequest';
-import { parseHeightMapCsv } from './duet/heightMap';
-import { deepMerge } from './duet/modelMerge';
+import {
+  getHeightMapData,
+  getSnapshotImageUrl,
+  getThumbnailData,
+  getWebcamStreamUrl,
+} from './duet/mediaApi';
+import { DuetEventBus } from './duet/eventBus';
+import {
+  applyModelPatch as applyObjectModelPatch,
+  fetchConfigSnapshot as fetchObjectModelSnapshot,
+  getObjectModelRequest,
+} from './duet/modelApi';
+import {
+  cancelObjectCommand,
+  cancelPrintCommand,
+  deselectToolCommand,
+  pausePrintCommand,
+  resumePrintCommand,
+  selectToolCommand,
+  setBedTemperatureCommand,
+  setChamberTemperatureCommand,
+  setFanSpeedCommand,
+  setToolTemperatureCommand,
+  simulateFileCommand,
+  startPrintCommand,
+} from './duet/machineControls';
 
 /**
  * Comprehensive Duet3D API service supporting both standalone (RepRapFirmware)
@@ -28,7 +59,7 @@ export class DuetService {
   private ws: WebSocket | null = null;
   private connected = false;
   private objectModel: Partial<DuetObjectModel> = {};
-  private listeners: Map<string, Set<(data: unknown) => void>> = new Map();
+  private eventBus = new DuetEventBus();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private pollInFlight = false;
@@ -43,9 +74,6 @@ export class DuetService {
     return this.on('modelUpdate', (data) => callback(data as Partial<DuetObjectModel>));
   }
 
-  // ---------------------------------------------------------------------------
-  // Internal helpers
-  // ---------------------------------------------------------------------------
 
   private get baseUrl(): string {
     let host = this.config.hostname.replace(/\/+$/, '').replace(/^https?:\/\//, '');
@@ -79,9 +107,6 @@ export class DuetService {
     };
   }
 
-  // ---------------------------------------------------------------------------
-  // Connection
-  // ---------------------------------------------------------------------------
 
   async connect(): Promise<boolean> {
     try {
@@ -185,9 +210,6 @@ export class DuetService {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // WebSocket
-  // ---------------------------------------------------------------------------
 
   private connectWebSocket(): void {
     if (this.ws) {
@@ -261,9 +283,6 @@ export class DuetService {
     }, DuetService.RECONNECT_DELAY);
   }
 
-  // ---------------------------------------------------------------------------
-  // Polling fallback
-  // ---------------------------------------------------------------------------
 
   private startPolling(): void {
     if (this.pollTimer) return;
@@ -301,89 +320,53 @@ export class DuetService {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Object Model
-  // ---------------------------------------------------------------------------
 
   /**
    * Deep-merge a partial patch into the cached object model.
    * Handles both full replacement objects and incremental patches from the WS.
    */
+  /**
+   * Deep-merge a partial patch into the cached object model.
+   * Handles both full replacement objects and incremental patches from the WS.
+   */
   private applyModelPatch(patch: Record<string, unknown>): void {
-    this.objectModel = deepMerge(
-      this.objectModel as Record<string, unknown>,
-      patch
-    ) as Partial<DuetObjectModel>;
+    this.objectModel = applyObjectModelPatch(this.objectModel, patch);
   }
 
   /** Fetch static config sections (tool defs, fan names, etc.) and merge into objectModel. */
   private async fetchConfigSnapshot(): Promise<void> {
-    const sections = ['tools', 'heat', 'fans', 'move', 'boards', 'sensors', 'state'] as const;
-    const results = await Promise.allSettled(
-      sections.map((k) => this.getObjectModel(k, 'd99vn'))
+    await fetchObjectModelSnapshot(
+      this.getObjectModel.bind(this),
+      this.applyModelPatch.bind(this),
     );
-    for (let i = 0; i < sections.length; i++) {
-      const r = results[i];
-      if (r.status === 'fulfilled') {
-        this.applyModelPatch({ [sections[i]]: r.value });
-      }
-    }
   }
 
   async getObjectModel(
     key?: string,
     flags?: string
   ): Promise<Partial<DuetObjectModel>> {
-    if (this.config.mode === 'sbc') {
-      const url = key
-        ? `${this.baseUrl}/machine/model/${encodeURIComponent(key)}`
-        : `${this.baseUrl}/machine/model`;
-      return this.request<Partial<DuetObjectModel>>(url);
-    }
-
-    // Standalone – /rr_model; default to full depth so nested objects aren't empty
-    const params = new URLSearchParams();
-    if (key) params.set('key', key);
-    params.set('flags', flags ?? 'd99fn');
-    const url = `${this.baseUrl}/rr_model?${params.toString()}`;
-    const res = await this.request<{ key: string; result: Partial<DuetObjectModel> }>(url);
-    return res.result ?? res as unknown as Partial<DuetObjectModel>;
+    return getObjectModelRequest(
+      this.config,
+      this.baseUrl,
+      this.request.bind(this),
+      key,
+      flags,
+    );
   }
 
   getModel(): Partial<DuetObjectModel> {
     return this.objectModel;
   }
 
-  // ---------------------------------------------------------------------------
-  // Event system
-  // ---------------------------------------------------------------------------
 
   on(event: string, callback: (data: unknown) => void): () => void {
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, new Set());
-    }
-    this.listeners.get(event)!.add(callback);
-    return () => {
-      this.listeners.get(event)?.delete(callback);
-    };
+    return this.eventBus.on(event, callback);
   }
 
   private emit(event: string, data: unknown): void {
-    const cbs = this.listeners.get(event);
-    if (cbs) {
-      for (const cb of cbs) {
-        try {
-          cb(data);
-        } catch {
-          // Listener errors must not break the service
-        }
-      }
-    }
+    this.eventBus.emit(event, data);
   }
-
-  // ---------------------------------------------------------------------------
   // G-Code execution
-  // ---------------------------------------------------------------------------
 
   async sendGCode(code: string): Promise<string> {
     if (this.config.mode === 'sbc') {
@@ -427,9 +410,6 @@ export class DuetService {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Temperature Control
-  // ---------------------------------------------------------------------------
 
   async setToolTemperature(
     toolIndex: number,
@@ -437,40 +417,19 @@ export class DuetService {
     temp: number,
     standby = false
   ): Promise<void> {
-    const letter = standby ? 'R' : 'S';
-    // Build a temperature string for the tool – only set the specific heater
-    // G10 P<tool> S<temp> sets active temps, R<temp> sets standby
-    // For tools with multiple heaters we need to provide all values.
-    const tool = this.objectModel.tools?.find((t) => t.number === toolIndex);
-    if (tool) {
-      const temps = standby ? [...tool.standby] : [...tool.active];
-      temps[heaterIndex] = temp;
-      const tempStr = temps.join(':');
-      await this.sendGCode(`G10 P${toolIndex} ${letter}${tempStr}`);
-    } else {
-      await this.sendGCode(`G10 P${toolIndex} ${letter}${temp}`);
-    }
+    await setToolTemperatureCommand(this.sendGCode.bind(this), this.objectModel, toolIndex, heaterIndex, temp, standby);
   }
 
   async setBedTemperature(temp: number): Promise<void> {
-    await this.sendGCode(`M140 S${temp}`);
+    await setBedTemperatureCommand(this.sendGCode.bind(this), temp);
   }
 
   async setChamberTemperature(temp: number): Promise<void> {
-    await this.sendGCode(`M141 S${temp}`);
+    await setChamberTemperatureCommand(this.sendGCode.bind(this), temp);
   }
 
-  // ---------------------------------------------------------------------------
-  // Movement
-  // ---------------------------------------------------------------------------
-
   async homeAxes(axes?: string[]): Promise<void> {
-    if (!axes || axes.length === 0) {
-      await this.sendGCode('G28');
-    } else {
-      const axisStr = axes.map((a) => a.toUpperCase()).join(' ');
-      await this.sendGCode(`G28 ${axisStr}`);
-    }
+    await homeAxesCommand(this.sendGCode.bind(this), axes);
   }
 
   async moveAxis(
@@ -479,9 +438,7 @@ export class DuetService {
     feedrate?: number,
     relative = true
   ): Promise<void> {
-    const modeCmd = relative ? 'G91' : 'G90';
-    const feedStr = feedrate != null ? ` F${feedrate}` : '';
-    await this.sendGCode(`${modeCmd}\nG1 ${axis.toUpperCase()}${distance}${feedStr}\nG90`);
+    await moveAxisCommand(this.sendGCode.bind(this), axis, distance, feedrate, relative);
   }
 
   async setSpeedFactor(percent: number): Promise<void> {
@@ -493,7 +450,7 @@ export class DuetService {
   }
 
   async extrude(amount: number, feedrate: number): Promise<void> {
-    await this.sendGCode(`M83\nG1 E${amount} F${feedrate}\nM82`);
+    await extrudeCommand(this.sendGCode.bind(this), amount, feedrate);
   }
 
   async retract(amount: number, feedrate: number): Promise<void> {
@@ -504,78 +461,46 @@ export class DuetService {
     await this.sendGCode(`M290 S${offset}`);
   }
 
-  // ---------------------------------------------------------------------------
-  // Fan Control
-  // ---------------------------------------------------------------------------
-
   async setFanSpeed(fanIndex: number, speed: number): Promise<void> {
-    // Duet firmware expects 0-1 for S parameter
-    const clamped = Math.max(0, Math.min(1, speed));
-    await this.sendGCode(`M106 P${fanIndex} S${clamped}`);
+    await setFanSpeedCommand(this.sendGCode.bind(this), fanIndex, speed);
   }
 
-  // ---------------------------------------------------------------------------
-  // Print Control
-  // ---------------------------------------------------------------------------
-
   async startPrint(filename: string): Promise<void> {
-    await this.sendGCode(`M32 "${filename}"`);
+    await startPrintCommand(this.sendGCode.bind(this), filename);
   }
 
   async pausePrint(): Promise<void> {
-    await this.sendGCode('M25');
+    await pausePrintCommand(this.sendGCode.bind(this));
   }
 
   async resumePrint(): Promise<void> {
-    await this.sendGCode('M24');
+    await resumePrintCommand(this.sendGCode.bind(this));
   }
 
   async cancelPrint(): Promise<void> {
-    await this.sendGCode('M0');
+    await cancelPrintCommand(this.sendGCode.bind(this));
   }
 
   async cancelObject(objectIndex: number): Promise<void> {
-    await this.sendGCode(`M486 P${objectIndex}`);
+    await cancelObjectCommand(this.sendGCode.bind(this), objectIndex);
   }
 
   async simulateFile(filename: string): Promise<void> {
-    await this.sendGCode(`M37 S"${filename}"`);
+    await simulateFileCommand(this.sendGCode.bind(this), filename);
   }
-
-  // ---------------------------------------------------------------------------
-  // Emergency Stop
-  // ---------------------------------------------------------------------------
 
   async emergencyStop(): Promise<void> {
-    try {
-      await this.sendGCode('M112');
-    } catch {
-      // M112 may kill the connection before we get a reply
-    }
-    // Give the board a moment then reset
-    await new Promise((r) => setTimeout(r, 1000));
-    try {
-      await this.sendGCode('M999');
-    } catch {
-      // Board may not respond yet
-    }
+    await emergencyStopCommand(this.sendGCode.bind(this));
   }
 
-  // ---------------------------------------------------------------------------
-  // Tool Management
-  // ---------------------------------------------------------------------------
-
   async selectTool(toolIndex: number): Promise<void> {
-    await this.sendGCode(`T${toolIndex}`);
+    await selectToolCommand(this.sendGCode.bind(this), toolIndex);
   }
 
   async deselectTool(): Promise<void> {
-    await this.sendGCode('T-1');
+    await deselectToolCommand(this.sendGCode.bind(this));
   }
 
-  // ---------------------------------------------------------------------------
-  // File Management
-  // ---------------------------------------------------------------------------
 
   async listFiles(directory: string): Promise<DuetFileInfo[]> {
     return listFilesRequest(this.fileApiContext, directory);
@@ -609,117 +534,45 @@ export class DuetService {
     return createDirectoryRequest(this.fileApiContext, path);
   }
 
-  // ---------------------------------------------------------------------------
-  // Macros
-  // ---------------------------------------------------------------------------
 
   async listMacros(): Promise<DuetFileInfo[]> {
     return this.listFiles('0:/macros');
   }
 
   async runMacro(filename: string): Promise<string> {
-    return this.sendGCode(`M98 P"${filename}"`);
+    return runMacroCommand(this.sendGCode.bind(this), filename);
   }
 
-  // ---------------------------------------------------------------------------
-  // Height Map
-  // ---------------------------------------------------------------------------
 
   async getHeightMap(path = '0:/sys/heightmap.csv'): Promise<DuetHeightMap | null> {
-    try {
-      const blob = await this.downloadFile(path);
-      const text = await blob.text();
-      return parseHeightMapCsv(text);
-    } catch {
-      return null;
-    }
+    return getHeightMapData(this.downloadFile.bind(this), path);
   }
   async probeGrid(): Promise<void> {
     await this.sendGCode('G29 S0');
   }
 
-  // ---------------------------------------------------------------------------
-  // ATX Power
-  // ---------------------------------------------------------------------------
 
   async setAtxPower(on: boolean): Promise<void> {
     await this.sendGCode(on ? 'M80' : 'M81');
   }
 
-  // ---------------------------------------------------------------------------
-  // Webcam
-  // ---------------------------------------------------------------------------
 
   getWebcamUrl(): string {
-    return `${this.baseUrl}/webcam/?action=stream`;
+    return getWebcamStreamUrl(this.baseUrl);
   }
 
   getSnapshotUrl(): string {
-    return `${this.baseUrl}/webcam/?action=snapshot`;
+    return getSnapshotImageUrl(this.baseUrl);
   }
 
-  // ---------------------------------------------------------------------------
-  // Thumbnail
-  // ---------------------------------------------------------------------------
 
   async getThumbnail(
     filename: string,
     offset: number
   ): Promise<string | null> {
-    try {
-      if (this.config.mode === 'sbc') {
-        // DSF exposes thumbnails via the fileinfo endpoint; the data is
-        // embedded in the response. Fetch it as a blob from the dedicated
-        // thumbnail route if available, otherwise fall back to inline data.
-        const url = `${this.baseUrl}/machine/thumbnail/${encodeURIComponent(filename)}?offset=${offset}`;
-        const res = await fetch(url);
-        if (!res.ok) return null;
-        const blob = await res.blob();
-        return new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-      }
-
-      // Standalone: /rr_thumbnail?name=XXX&offset=NNN
-      // The response contains { fileName, offset, data, next, err }
-      // Data is base64 encoded and may be split across multiple requests.
-      let fullData = '';
-      let currentOffset = offset;
-
-      while (true) {
-        const url = `${this.baseUrl}/rr_thumbnail?name=${encodeURIComponent(filename)}&offset=${currentOffset}`;
-        const res = await this.request<{
-          fileName: string;
-          offset: number;
-          data: string;
-          next: number;
-          err: number;
-        }>(url);
-
-        if (res.err !== 0) return null;
-
-        fullData += res.data;
-
-        if (res.next === 0) break;
-        currentOffset = res.next;
-      }
-
-      if (!fullData) return null;
-
-      // Determine format from the file info thumbnails metadata
-      // Default to PNG if we can't determine
-      return `data:image/png;base64,${fullData}`;
-    } catch {
-      return null;
-    }
+    return getThumbnailData(this.config, this.baseUrl, filename, offset, this.request.bind(this));
   }
 
-  // ---------------------------------------------------------------------------
-  // Connection state accessors
-  // ---------------------------------------------------------------------------
 
   isConnected(): boolean {
     return this.connected;

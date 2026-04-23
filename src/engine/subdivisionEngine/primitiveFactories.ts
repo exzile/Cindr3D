@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { FormCage } from '../../types/cad';
+import { buildGridEdgesAndFaces, buildIndexedCage, computePathFrames } from './cageUtils';
 
 type CageData = {
   vertices: FormCage['vertices'];
@@ -19,12 +20,6 @@ export function createBoxCageData(
     [-hw, -hh, -hd], [hw, -hh, -hd], [hw, hh, -hd], [-hw, hh, -hd],
     [-hw, -hh, hd], [hw, -hh, hd], [hw, hh, hd], [-hw, hh, hd],
   ];
-  const vertices = rawVerts.map((position, i) => ({
-    id: `${idPrefix}v${i}`,
-    position,
-    crease: 0,
-  }));
-
   const faceVIs: number[][] = [
     [0, 3, 2, 1],
     [4, 5, 6, 7],
@@ -34,26 +29,7 @@ export function createBoxCageData(
     [3, 7, 6, 2],
   ];
 
-  const edgeSet = new Set<string>();
-  const edges: FormCage['edges'] = [];
-  let eid = 0;
-  for (const fvi of faceVIs) {
-    for (let i = 0; i < fvi.length; i++) {
-      const a = fvi[i]; const b = fvi[(i + 1) % fvi.length];
-      const key = a < b ? `${a}_${b}` : `${b}_${a}`;
-      if (!edgeSet.has(key)) {
-        edgeSet.add(key);
-        edges.push({ id: `${idPrefix}e${eid++}`, vertexIds: [`${idPrefix}v${a}`, `${idPrefix}v${b}`], crease: 0 });
-      }
-    }
-  }
-
-  const faces = faceVIs.map((vi, fi) => ({
-    id: `${idPrefix}f${fi}`,
-    vertexIds: vi.map((i) => `${idPrefix}v${i}`),
-  }));
-
-  return { vertices, edges, faces };
+  return buildIndexedCage(rawVerts, faceVIs, idPrefix);
 }
 
 /** Create a single quad face (plane) in the XZ plane (Y=0). */
@@ -65,34 +41,8 @@ export function createPlaneCageData(width = 20, height = 20, idPrefix = ''): Cag
     [hw, 0, hh],
     [-hw, 0, hh],
   ];
-  const vertices = rawVerts.map((position, i) => ({
-    id: `${idPrefix}v${i}`,
-    position,
-    crease: 0,
-  }));
-
   const faceVIs: number[][] = [[0, 1, 2, 3]];
-
-  const edgeSet = new Set<string>();
-  const edges: FormCage['edges'] = [];
-  let eid = 0;
-  for (const fvi of faceVIs) {
-    for (let i = 0; i < fvi.length; i++) {
-      const a = fvi[i]; const b = fvi[(i + 1) % fvi.length];
-      const key = a < b ? `${a}_${b}` : `${b}_${a}`;
-      if (!edgeSet.has(key)) {
-        edgeSet.add(key);
-        edges.push({ id: `${idPrefix}e${eid++}`, vertexIds: [`${idPrefix}v${a}`, `${idPrefix}v${b}`], crease: 0 });
-      }
-    }
-  }
-
-  const faces = faceVIs.map((vi, fi) => ({
-    id: `${idPrefix}f${fi}`,
-    vertexIds: vi.map((i) => `${idPrefix}v${i}`),
-  }));
-
-  return { vertices, edges, faces };
+  return buildIndexedCage(rawVerts, faceVIs, idPrefix);
 }
 
 /** Create a cylinder cage with quad sides and n-gon caps. */
@@ -109,8 +59,6 @@ export function createCylinderCageData(radius = 10, height = 20, segments = 4, i
     rawVerts.push([radius * Math.cos(angle), hh, radius * Math.sin(angle)]);
   }
 
-  const vertices = rawVerts.map((position, i) => ({ id: `${idPrefix}v${i}`, position, crease: 0 }));
-
   const faceVIs: number[][] = [];
   for (let i = 0; i < segments; i++) {
     const b0 = i;
@@ -122,22 +70,7 @@ export function createCylinderCageData(radius = 10, height = 20, segments = 4, i
   faceVIs.push(Array.from({ length: segments }, (_, i) => i + segments));
   faceVIs.push(Array.from({ length: segments }, (_, i) => segments - 1 - i));
 
-  const edgeSet = new Set<string>();
-  const edges: FormCage['edges'] = [];
-  let eid = 0;
-  for (const fvi of faceVIs) {
-    for (let i = 0; i < fvi.length; i++) {
-      const a = fvi[i]; const b = fvi[(i + 1) % fvi.length];
-      const key = a < b ? `${a}_${b}` : `${b}_${a}`;
-      if (!edgeSet.has(key)) {
-        edgeSet.add(key);
-        edges.push({ id: `${idPrefix}e${eid++}`, vertexIds: [`${idPrefix}v${a}`, `${idPrefix}v${b}`], crease: 0 });
-      }
-    }
-  }
-
-  const faces = faceVIs.map((vi, fi) => ({ id: `${idPrefix}f${fi}`, vertexIds: vi.map((i) => `${idPrefix}v${i}`) }));
-  return { vertices, edges, faces };
+  return buildIndexedCage(rawVerts, faceVIs, idPrefix);
 }
 
 /** Build a T-Spline tube cage by sweeping a ring of vertices along a path. */
@@ -146,28 +79,7 @@ export function createPipeCageData(pathPoints: THREE.Vector3[], radius: number, 
   const N = pathPoints.length;
   const S = segments;
 
-  const tangents = pathPoints.map((_, i) => {
-    if (i === 0) return pathPoints[1].clone().sub(pathPoints[0]).normalize();
-    if (i === N - 1) return pathPoints[N - 1].clone().sub(pathPoints[N - 2]).normalize();
-    return pathPoints[i + 1].clone().sub(pathPoints[i - 1]).normalize();
-  });
-
-  const normals: THREE.Vector3[] = new Array(N);
-  const binormals: THREE.Vector3[] = new Array(N);
-  const initUp = Math.abs(tangents[0].y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-  normals[0] = initUp.clone().sub(tangents[0].clone().multiplyScalar(initUp.dot(tangents[0]))).normalize();
-  binormals[0] = tangents[0].clone().cross(normals[0]).normalize();
-  for (let i = 1; i < N; i++) {
-    const b = tangents[i - 1].clone().cross(tangents[i]);
-    if (b.length() < 1e-6) {
-      normals[i] = normals[i - 1].clone();
-    } else {
-      b.normalize();
-      const angle = Math.acos(Math.max(-1, Math.min(1, tangents[i - 1].dot(tangents[i]))));
-      normals[i] = normals[i - 1].clone().applyMatrix4(new THREE.Matrix4().makeRotationAxis(b, angle)).normalize();
-    }
-    binormals[i] = tangents[i].clone().cross(normals[i]).normalize();
-  }
+  const { normals, binormals } = computePathFrames(pathPoints);
 
   const vid = (ring: number, seg: number) => `${idPrefix}v${ring}_${seg}`;
   const vertices: FormCage['vertices'] = [];
@@ -181,26 +93,7 @@ export function createPipeCageData(pathPoints: THREE.Vector3[], radius: number, 
     }
   }
 
-  const edges: FormCage['edges'] = [];
-  const faces: FormCage['faces'] = [];
-  const eid = (a: string, b: string) => `${idPrefix}e_${a}_${b}`;
-
-  for (let i = 0; i < N; i++) {
-    for (let j = 0; j < S; j++) {
-      edges.push({ id: eid(vid(i, j), vid(i, (j + 1) % S)), vertexIds: [vid(i, j), vid(i, (j + 1) % S)], crease: 0 });
-    }
-  }
-  for (let i = 0; i < N - 1; i++) {
-    for (let j = 0; j < S; j++) {
-      edges.push({ id: eid(vid(i, j), vid(i + 1, j)), vertexIds: [vid(i, j), vid(i + 1, j)], crease: 0 });
-    }
-  }
-  for (let i = 0; i < N - 1; i++) {
-    for (let j = 0; j < S; j++) {
-      const jn = (j + 1) % S;
-      faces.push({ id: `${idPrefix}f${i}_${j}`, vertexIds: [vid(i, j), vid(i, jn), vid(i + 1, jn), vid(i + 1, j)] });
-    }
-  }
+  const { edges, faces } = buildGridEdgesAndFaces(N, S, idPrefix);
 
   return { vertices, edges, faces };
 }
@@ -214,8 +107,6 @@ export function createSphereCageData(radius = 10, idPrefix = ''): CageData {
   ];
   const scaledVerts: [number, number, number][] = rawVerts.map(([x, y, z]) => [x * radius, y * radius, z * radius]);
 
-  const vertices = scaledVerts.map((position, i) => ({ id: `${idPrefix}v${i}`, position, crease: 0 }));
-
   const faceVIs: number[][] = [
     [0, 3, 2, 1],
     [4, 5, 6, 7],
@@ -225,22 +116,7 @@ export function createSphereCageData(radius = 10, idPrefix = ''): CageData {
     [3, 7, 6, 2],
   ];
 
-  const edgeSet = new Set<string>();
-  const edges: FormCage['edges'] = [];
-  let eid = 0;
-  for (const fvi of faceVIs) {
-    for (let i = 0; i < fvi.length; i++) {
-      const a = fvi[i]; const b = fvi[(i + 1) % fvi.length];
-      const key = a < b ? `${a}_${b}` : `${b}_${a}`;
-      if (!edgeSet.has(key)) {
-        edgeSet.add(key);
-        edges.push({ id: `${idPrefix}e${eid++}`, vertexIds: [`${idPrefix}v${a}`, `${idPrefix}v${b}`], crease: 0 });
-      }
-    }
-  }
-
-  const faces = faceVIs.map((vi, fi) => ({ id: `${idPrefix}f${fi}`, vertexIds: vi.map((i) => `${idPrefix}v${i}`) }));
-  return { vertices, edges, faces };
+  return buildIndexedCage(scaledVerts, faceVIs, idPrefix);
 }
 
 /** Create a torus cage. */
@@ -266,8 +142,6 @@ export function createTorusCageData(
     }
   }
 
-  const vertices = rawVerts.map((position, i) => ({ id: `${idPrefix}v${i}`, position, crease: 0 }));
-
   const faceVIs: number[][] = [];
   for (let i = 0; i < majorSegs; i++) {
     for (let j = 0; j < minorSegs; j++) {
@@ -282,22 +156,7 @@ export function createTorusCageData(
     }
   }
 
-  const edgeSet = new Set<string>();
-  const edges: FormCage['edges'] = [];
-  let eid = 0;
-  for (const fvi of faceVIs) {
-    for (let i = 0; i < fvi.length; i++) {
-      const a = fvi[i]; const b = fvi[(i + 1) % fvi.length];
-      const key = a < b ? `${a}_${b}` : `${b}_${a}`;
-      if (!edgeSet.has(key)) {
-        edgeSet.add(key);
-        edges.push({ id: `${idPrefix}e${eid++}`, vertexIds: [`${idPrefix}v${a}`, `${idPrefix}v${b}`], crease: 0 });
-      }
-    }
-  }
-
-  const faces = faceVIs.map((vi, fi) => ({ id: `${idPrefix}f${fi}`, vertexIds: vi.map((i) => `${idPrefix}v${i}`) }));
-  return { vertices, edges, faces };
+  return buildIndexedCage(rawVerts, faceVIs, idPrefix);
 }
 
 /** Creates cage data for a T-Spline Extrude. */
@@ -466,31 +325,7 @@ export function createLoftCageData(
     }
   }
 
-  const edges: FormCage['edges'] = [];
-  const faces: FormCage['faces'] = [];
-  const eid = (a: string, b: string) => `${idPrefix}e_${a}_${b}`;
-
-  for (let i = 0; i < P; i++) {
-    for (let j = 0; j < S; j++) {
-      edges.push({ id: eid(vid(i, j), vid(i, (j + 1) % S)), vertexIds: [vid(i, j), vid(i, (j + 1) % S)], crease: 0 });
-    }
-  }
-
-  for (let i = 0; i < P - 1; i++) {
-    for (let j = 0; j < S; j++) {
-      edges.push({ id: eid(vid(i, j), vid(i + 1, j)), vertexIds: [vid(i, j), vid(i + 1, j)], crease: 0 });
-    }
-  }
-
-  for (let i = 0; i < P - 1; i++) {
-    for (let j = 0; j < S; j++) {
-      const jn = (j + 1) % S;
-      faces.push({
-        id: `${idPrefix}f${i}_${j}`,
-        vertexIds: [vid(i, j), vid(i, jn), vid(i + 1, jn), vid(i + 1, j)],
-      });
-    }
-  }
+  const { edges, faces } = buildGridEdgesAndFaces(P, S, idPrefix);
 
   return { vertices, edges, faces };
 }
@@ -515,28 +350,7 @@ export function createSweepCageData(
   const S = profileRing.length;
   if (N < 2 || S < 3) return { vertices: [], edges: [], faces: [] };
 
-  const tangents = pathPoints.map((_, i) => {
-    if (i === 0) return pathPoints[1].clone().sub(pathPoints[0]).normalize();
-    if (i === N - 1) return pathPoints[N - 1].clone().sub(pathPoints[N - 2]).normalize();
-    return pathPoints[i + 1].clone().sub(pathPoints[i - 1]).normalize();
-  });
-
-  const normals: THREE.Vector3[] = new Array(N);
-  const binormals: THREE.Vector3[] = new Array(N);
-  const initUp = Math.abs(tangents[0].y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-  normals[0] = initUp.clone().sub(tangents[0].clone().multiplyScalar(initUp.dot(tangents[0]))).normalize();
-  binormals[0] = tangents[0].clone().cross(normals[0]).normalize();
-  for (let i = 1; i < N; i++) {
-    const b = tangents[i - 1].clone().cross(tangents[i]);
-    if (b.length() < 1e-6) {
-      normals[i] = normals[i - 1].clone();
-    } else {
-      b.normalize();
-      const angle = Math.acos(Math.max(-1, Math.min(1, tangents[i - 1].dot(tangents[i]))));
-      normals[i] = normals[i - 1].clone().applyMatrix4(new THREE.Matrix4().makeRotationAxis(b, angle)).normalize();
-    }
-    binormals[i] = tangents[i].clone().cross(normals[i]).normalize();
-  }
+  const { normals, binormals } = computePathFrames(pathPoints);
 
   const vid = (i: number, j: number) => `${idPrefix}v${i * S + j}`;
   const vertices: FormCage['vertices'] = [];
@@ -549,31 +363,7 @@ export function createSweepCageData(
     }
   }
 
-  const edges: FormCage['edges'] = [];
-  const faces: FormCage['faces'] = [];
-  const eid = (a: string, b: string) => `${idPrefix}e_${a}_${b}`;
-
-  for (let i = 0; i < N; i++) {
-    for (let j = 0; j < S; j++) {
-      edges.push({ id: eid(vid(i, j), vid(i, (j + 1) % S)), vertexIds: [vid(i, j), vid(i, (j + 1) % S)], crease: 0 });
-    }
-  }
-
-  for (let i = 0; i < N - 1; i++) {
-    for (let j = 0; j < S; j++) {
-      edges.push({ id: eid(vid(i, j), vid(i + 1, j)), vertexIds: [vid(i, j), vid(i + 1, j)], crease: 0 });
-    }
-  }
-
-  for (let i = 0; i < N - 1; i++) {
-    for (let j = 0; j < S; j++) {
-      const jn = (j + 1) % S;
-      faces.push({
-        id: `${idPrefix}f${i}_${j}`,
-        vertexIds: [vid(i, j), vid(i, jn), vid(i + 1, jn), vid(i + 1, j)],
-      });
-    }
-  }
+  const { edges, faces } = buildGridEdgesAndFaces(N, S, idPrefix);
 
   return { vertices, edges, faces };
 }

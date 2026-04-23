@@ -1,0 +1,213 @@
+/* =============================================================================
+   DuetFileManager shell, navigation, and toolbar
+   ============================================================================= */
+
+.duet-file-mgr {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
+  overflow: hidden;
+}
+
+.duet-file-mgr__tab-bar {
+  display: flex;
+  align-items: stretch;
+  background-color: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  padding: 0;
+  gap: 0;
+}
+
+.duet-file-mgr__tab {
+  padding: 8px 18px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.duet-file-mgr__tab.is-active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.duet-file-mgr__warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background-color: rgba(255, 152, 0, 0.12);
+  border-bottom: 1px solid rgba(255, 152, 0, 0.25);
+  font-size: 12px;
+  color: var(--warning);
+}
+
+.duet-file-mgr__warning-icon {
+  font-size: 14px;
+}
+
+.duet-file-mgr__breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px;
+  background-color: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  flex-wrap: wrap;
+  min-height: 32px;
+}
+
+.duet-file-mgr__breadcrumb-wrap {
+  display: flex;
+  align-items: center;
+}
+
+.duet-file-mgr__breadcrumb-item {
+  cursor: pointer;
+  color: var(--info);
+  padding: 2px 4px;
+  border-radius: 3px;
+  border: none;
+  background: none;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.duet-file-mgr__breadcrumb-item.is-current {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.duet-file-mgr__breadcrumb-sep {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+}
+
+.duet-file-mgr__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background-color: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.duet-file-mgr__toolbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.duet-file-mgr__toolbar-btn--danger {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.duet-file-mgr__toolbar-btn--danger:hover:not(:disabled) {
+  background: var(--error);
+  color: #fff;
+}
+
+.duet-file-mgr__checkbox {
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.duet-file-mgr__search-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background-color: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.duet-file-mgr__search-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.duet-file-mgr__search-input {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+  font-family: inherit;
+}
+
+.duet-file-mgr__search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.duet-file-mgr__search-input:focus {
+  border-color: var(--accent);
+}
+
+.duet-file-mgr__search-clear {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  border-radius: 3px;
+}
+
+.duet-file-mgr__search-clear:hover {
+  color: var(--text-primary);
+}
+
+.duet-file-mgr__progress-container {
+  flex: 1;
+  margin-left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.duet-file-mgr__progress-bar {
+  flex: 1;
+  height: 6px;
+  background-color: var(--border-strong);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.duet-file-mgr__progress-fill {
+  height: 100%;
+  background-color: var(--success);
+  border-radius: 3px;
+  transition: width 0.2s;
+}
+
+.duet-file-mgr__progress-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}

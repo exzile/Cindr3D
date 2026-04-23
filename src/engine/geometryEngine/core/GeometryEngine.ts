@@ -111,35 +111,14 @@ import {
 export { tagShared } from '../materials';
 
 export class GeometryEngine {
-  /**
-   * Returns the two in-plane tangent vectors for the given sketch plane.
-   * These define the 2-D coordinate system used for circles, rectangles, etc.
-   *
-   *   XY  (horizontal, Y-normal)  → draws in X–Z world plane
-   *   XZ  (vertical front, Z-normal) → draws in X–Y world plane
-   *   YZ  (vertical side, X-normal)  → draws in Y–Z world plane
-   */
   static getPlaneAxes(plane: SketchPlane): { t1: THREE.Vector3; t2: THREE.Vector3 } {
     return getPlaneAxesUtil(plane);
   }
 
-  /**
-   * Compute two orthonormal in-plane tangent vectors (t1, t2) for an arbitrary
-   * plane normal. Picks a temporary "up" vector that is least aligned with the
-   * normal to avoid degenerate cross products.
-   */
   static computePlaneAxesFromNormal(normal: THREE.Vector3): { t1: THREE.Vector3; t2: THREE.Vector3 } {
     return computePlaneAxesFromNormalUtil(normal);
   }
 
-  /**
-   * Press-Pull boundary detection: given a hit triangle on a mesh, find every
-   * coplanar triangle (same world normal + same plane offset within tolerance),
-   * walk the outer edge loop, and return the boundary as ordered world points.
-   *
-   * Returns null if no clean closed loop can be formed (curved surfaces, faces
-   * with holes, degenerate hits, etc.).
-   */
   static computeCoplanarFaceBoundary(
     mesh: THREE.Mesh,
     faceIndex: number,
@@ -148,38 +127,18 @@ export class GeometryEngine {
     return computeCoplanarFaceBoundaryUtil(mesh, faceIndex, tol);
   }
 
-  /**
-   * Returns the in-plane tangent vectors for any sketch — uses named-plane
-   * axes for XY/XZ/YZ and computes from the stored normal for 'custom'.
-   * Prefer this over getPlaneAxes when you have access to the full Sketch.
-   */
   static getSketchAxes(sketch: Sketch): { t1: THREE.Vector3; t2: THREE.Vector3 } {
     return getSketchAxesUtil(sketch);
   }
 
-  /**
-   * Mesh rotation applied by extrudeSketch for named planes. Use this when
-   * building any geometry (e.g. flat profile mesh) that must align with the
-   * extruded body for the same sketch.
-   */
   static getPlaneRotation(plane: 'XY' | 'XZ' | 'YZ'): [number, number, number] {
     return getPlaneRotationUtil(plane);
   }
 
-  /**
-   * World direction the extrusion grows along. This is the sketch plane's
-   * normal — ExtrudeGeometry depth maps to local Z, which `extrudeSketch`
-   * aligns to `planeNormal` via `makeBasis(t1, t2, normal)`.
-   */
   static getSketchExtrudeNormal(sketch: Sketch): THREE.Vector3 {
     return getSketchExtrudeNormalUtil(sketch);
   }
 
-  /**
-   * World-space centroid of the sketch's profile shape, computed from its 2D
-   * bounding-box center. Returns null for empty sketches. Handles both named
-   * and custom (face-based) planes.
-   */
   static getSketchProfileCentroid(sketch: Sketch, profileIndex?: number): THREE.Vector3 | null {
     return getSketchProfileCentroidImpl(sketch, profileIndex);
   }
@@ -279,21 +238,10 @@ export class GeometryEngine {
     return splitByConnectedComponentsImpl(geom, tolerance);
   }
 
-  /**
-   * Bake a mesh's position/rotation/scale into its BufferGeometry, returning a
-   * new world-space geometry. Leaves the input mesh untouched (clones geometry
-   * first). Needed for CSG, which operates in the brush's local space.
-   */
   static bakeMeshWorldGeometry(mesh: THREE.Mesh): THREE.BufferGeometry {
     return bakeMeshWorldGeometryImpl(mesh);
   }
 
-  /**
-   * Remove near-zero-area triangles from a non-indexed BufferGeometry.
-   * Used as a safety net for earcut keyhole bridges in single-hole cases.
-   * Shapes with many holes take a different path (CSG) to avoid bridges
-   * entirely — see extrudeShapesHolesAware below.
-   */
   static csgSubtract(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.BufferGeometry {
     return csgSubtractImpl(a, b);
   }
@@ -340,16 +288,6 @@ export class GeometryEngine {
     return extractMeshGeometryImpl(mesh);
   }
 
-  // ── D36 Coil — helix sweep primitive ──────────────────────────────────────
-  /**
-   * Build a coil (spring/helix) geometry by sweeping a circular wire profile
-   * along a helix path using Frenet frames.
-   *
-   * @param outerRadius  - radius from helix axis to wire centre
-   * @param wireRadius   - radius of the circular wire cross-section
-   * @param pitch        - height gained per full turn
-   * @param turns        - number of full turns
-   */
   static coilGeometry(
     outerRadius: number,
     wireRadius: number,
@@ -359,7 +297,6 @@ export class GeometryEngine {
     return coilGeometryImpl(outerRadius, wireRadius, pitch, turns);
   }
 
-  // ── D125 Mesh Reduce ───────────────────────────────────────────────────────
   static async simplifyGeometry(
     geom: THREE.BufferGeometry,
     reductionPercent: number,
@@ -383,71 +320,31 @@ export class GeometryEngine {
     return simplified;
   }
 
-  // ── D115 Reverse Normal ────────────────────────────────────────────────────
   static reverseNormals(geom: THREE.BufferGeometry): void {
     reverseNormalsOp(geom);
   }
 
-  // ── D168 Mirror Mesh ───────────────────────────────────────────────────────
-  /**
-   * Reflect a mesh through a named plane (XY, XZ, YZ).
-   * Returns a new THREE.Mesh with cloned + reflected geometry and flipped face normals.
-   * Caller owns the returned mesh (must dispose when done).
-   */
   static mirrorMesh(source: THREE.Mesh, plane: 'XY' | 'XZ' | 'YZ'): THREE.Mesh {
     return mirrorMeshOp(source, plane);
   }
 
-  // ── MSH8 — Reverse Mesh Normals ────────────────────────────────────────────
-  /**
-   * Clone the geometry of a mesh and flip its face winding (reverses normals).
-   * Returns a new THREE.Mesh; caller owns it (must dispose when done).
-   */
   static reverseMeshNormals(mesh: THREE.Mesh): THREE.Mesh {
     return reverseMeshNormalsOp(mesh);
   }
 
-  // ── MSH7 — Combine Meshes ─────────────────────────────────────────────────
-  /**
-   * Merge all provided meshes into a single geometry (concatenation, no CSG).
-   * Each mesh's world transform is baked in.
-   */
   static combineMeshes(meshes: THREE.Mesh[]): THREE.Mesh {
     return combineMeshesOp(meshes);
   }
 
-  // ── MSH11 — Transform Mesh ────────────────────────────────────────────────
-  /**
-   * Apply a translate/rotate/uniform-scale transform to a cloned mesh geometry.
-   * Angles are in radians. Returns a new THREE.Mesh; caller owns it.
-   */
   static transformMesh(mesh: THREE.Mesh, params: { tx: number; ty: number; tz: number; rx: number; ry: number; rz: number; scale: number }): THREE.Mesh {
     return transformMeshOp(mesh, params);
   }
 
-  // ── SLD13 — Scale Mesh ────────────────────────────────────────────────────
-  /**
-   * Scale a cloned mesh geometry by independent X/Y/Z factors.
-   * Returns a new THREE.Mesh; caller owns it.
-   */
   static scaleMesh(mesh: THREE.Mesh, sx: number, sy: number, sz: number): THREE.Mesh {
     return scaleMeshOp(mesh, sx, sy, sz);
   }
 
-  // ---------------------------------------------------------------------------
-  // Surface intersection: mesh-mesh and plane-mesh
-  // ---------------------------------------------------------------------------
 
-  /**
-   * Computes the intersection curve(s) between two triangle meshes.
-   *
-   * Algorithm: for each triangle pair (one from meshA, one from meshB),
-   * compute the triangle-triangle intersection segment. Collect all segments,
-   * then chain them into ordered polylines (closed loops where possible).
-   *
-   * @returns Array of polylines (each is an ordered array of world-space Vector3).
-   *          Empty array if meshes don't intersect.
-   */
   static computeMeshIntersectionCurve(
     meshA: THREE.Mesh,
     meshB: THREE.Mesh,
@@ -456,14 +353,6 @@ export class GeometryEngine {
     return computeMeshIntersectionCurveUtil(meshA, meshB, tol);
   }
 
-  /**
-   * Intersects a mesh with a plane, returning the intersection polyline(s).
-   * More efficient than mesh-mesh intersection when one surface is planar.
-   *
-   * @param mesh    The mesh to slice
-   * @param plane   The cutting plane (THREE.Plane in world space)
-   * @returns       Array of polylines (world-space Vector3 arrays)
-   */
   static computePlaneIntersectionCurve(
     mesh: THREE.Mesh,
     plane: THREE.Plane,
@@ -472,38 +361,8 @@ export class GeometryEngine {
     return computePlaneIntersectionCurveUtil(mesh, plane, tol);
   }
 
-  // ---------------------------------------------------------------------------
-  // D137 — Texture Extrude
-  // ---------------------------------------------------------------------------
 
-  /**
-   * Bilinear sample of a height-map pixel array at normalized UV coordinates.
-   *
-   * @param heightData  Flat RGBA Uint8ClampedArray (from canvas.getImageData)
-   * @param w           Image width in pixels
-   * @param h           Image height in pixels
-   * @param u           Horizontal UV in [0, 1]
-   * @param v           Vertical UV in [0, 1]
-   * @param channel     Which channel to read: 'r' | 'g' | 'b' | 'luminance'
-   * @returns           Sampled height value in [0, 1]
-   */
   
-  /**
-   * Applies a height-map-driven displacement to a mesh, pushing vertices
-   * along their normals by an amount proportional to the texture value at
-   * the corresponding UV coordinate.
-   *
-   * This is a CPU-side operation that produces a NEW BufferGeometry
-   * (does not mutate the input). For use with D137 Texture Extrude.
-   *
-   * @param geometry    Source geometry (must have position, normal, uv attributes)
-   * @param heightData  Flat RGBA pixel array (Uint8ClampedArray from canvas.getImageData)
-   * @param imageWidth  Width of the height map in pixels
-   * @param imageHeight Height of the height map in pixels
-   * @param strength    Max displacement distance in model units (positive = outward along normal)
-   * @param channel     Which channel to read height from: 'r' | 'g' | 'b' | 'luminance' (default: 'luminance')
-   * @returns           A NEW BufferGeometry with displaced positions (same topology as input)
-   */
   static computeTextureExtrude(
     geometry: THREE.BufferGeometry,
     heightData: Uint8ClampedArray,
@@ -515,39 +374,13 @@ export class GeometryEngine {
     return computeTextureExtrudeImpl(geometry, heightData, imageWidth, imageHeight, strength, channel);
   }
 
-  /**
-   * Loads an image URL and returns its pixel data as a Uint8ClampedArray.
-   * Requires a browser environment (uses canvas).
-   *
-   * @returns Promise resolving to { data, width, height }
-   */
   static async loadImageAsHeightData(
     url: string,
   ): Promise<{ data: Uint8ClampedArray; width: number; height: number }> {
     return loadImageAsHeightDataImpl(url);
   }
 
-  // ---------------------------------------------------------------------------
-  // D46 Project to Surface — surface projection helpers
-  // ---------------------------------------------------------------------------
 
-  /**
-   * Projects an array of 3D world-space points onto the nearest surface of a mesh.
-   * Uses BVH-style ray casting: for each point, casts a ray toward the mesh center
-   * to find the closest intersection, then uses the hit face normal to find the
-   * true closest surface point.
-   *
-   * Practical use: D46 Project to Surface — projects sketch curve points onto
-   * a body surface to create a 3D curve on the surface.
-   *
-   * @param points    World-space source points to project
-   * @param mesh      Target surface mesh (must have matrixWorld applied)
-   * @param direction Optional projection direction (world-space unit vector).
-   *                  If omitted, projects along the closest surface normal.
-   * @returns         Projected points (same length as input). Points that miss the
-   *                  mesh are returned at the closest found position, or unchanged
-   *                  if no hit is possible.
-   */
   static projectPointsOntoMesh(
     points: THREE.Vector3[],
     mesh: THREE.Mesh,
@@ -556,16 +389,6 @@ export class GeometryEngine {
     return projectPointsOntoMeshImpl(points, mesh, direction);
   }
 
-  /**
-   * Takes a projected polyline (from projectPointsOntoMesh) and smooths/re-samples
-   * it by recursively subdividing edges that deviate from the surface.
-   *
-   * @param polyline    World-space projected points
-   * @param mesh        The surface mesh
-   * @param maxError    Max deviation allowed (model units, default 0.1)
-   * @param maxDepth    Max recursion depth (default 4)
-   * @returns           Refined polyline that more closely follows the surface
-   */
   static discretizeCurveOnSurface(
     polyline: THREE.Vector3[],
     mesh: THREE.Mesh,
@@ -575,12 +398,6 @@ export class GeometryEngine {
     return discretizeCurveOnSurfaceImpl(polyline, mesh, maxError, maxDepth);
   }
 
-  // ── SFC7: Fill Surface ─────────────────────────────────────────────────────
-  /**
-   * Creates a planar or blended patch from boundary polylines.
-   * - G0: fan triangulation from centroid
-   * - G1/G2: blend boundary points toward centroid for a smoother interior
-   */
   static fillSurface(
     boundaryPoints: THREE.Vector3[][],
     continuity: ('G0' | 'G1' | 'G2')[],
@@ -634,33 +451,10 @@ export class GeometryEngine {
     return stitchSurfacesImpl(meshes, tolerance);
   }
 
-  // ── SFC13 — Unstitch ─────────────────────────────────────────────────────────
-  /**
-   * Split a stitched quilt back into its component face groups.
-   *
-   * Algorithm:
-   * 1. Build a face-adjacency graph: two triangles are adjacent if they share an
-   *    edge (by index).
-   * 2. Find connected components of triangles via BFS.
-   * 3. Extract each component into its own BufferGeometry with re-indexed verts.
-   *
-   * Returns one geometry per connected component. If there is only one component
-   * the original geometry is returned in a single-element array (no copy).
-   */
   static unstitchSurface(mesh: THREE.Mesh): THREE.BufferGeometry[] {
     return unstitchSurfaceImpl(mesh);
   }
 
-  // ── SFC10 — Surface Trim ──────────────────────────────────────────────────
-  /**
-   * Trims `mesh` against `trimmerMesh` (or a plane derived from it).
-   *
-   * Strategy: extract the first-triangle plane of the trimmer, then keep only
-   * the triangles on the `keepSide` of that plane.  Open-boundary — no cap is
-   * added (surface trim, not solid).
-   *
-   * @returns New BufferGeometry containing only the kept triangles.
-   */
   static trimSurface(
     mesh: THREE.Mesh,
     trimmerMesh: THREE.Mesh,
@@ -669,14 +463,6 @@ export class GeometryEngine {
     return trimSurfaceImpl(mesh, trimmerMesh, keepSide);
   }
 
-  // ── SFC14 — Surface Split ─────────────────────────────────────────────────
-  /**
-   * Splits `mesh` by a plane (or by a plane derived from the first triangle of
-   * a splitter mesh).  Triangles straddling the plane are cut at the plane edge.
-   *
-   * @returns Tuple [sideA geometry (positive half), sideB geometry (negative half)].
-   *          Either may be empty if the plane misses the mesh entirely.
-   */
   static splitSurface(
     mesh: THREE.Mesh,
     splitter: THREE.Mesh | THREE.Plane,
@@ -684,28 +470,10 @@ export class GeometryEngine {
     return splitSurfaceImpl(mesh, splitter);
   }
 
-  // ── SFC15 — Untrim ────────────────────────────────────────────────────────
-  /**
-   * Restores trimmed boundary edges by extruding them outward to an expanded
-   * bounding box.  This approximates Fusion 360's "Untrim" which extends a
-   * surface to its natural (untrimmed) boundary.
-   *
-   * Algorithm:
-   * 1. Compute expanded Box3 of the mesh.
-   * 2. Find boundary edges (edges referenced by exactly one triangle).
-   * 3. For each boundary edge, project both vertices outward along the surface
-   *    normal until they touch the expanded bounds, forming a quad patch.
-   * 4. Merge original geometry + all patches into one BufferGeometry.
-   *
-   * @param mesh         Source surface mesh.
-   * @param expandFactor How much to expand the bounding box (default 1.5×).
-   * @returns New BufferGeometry with boundary extended.
-   */
   static untrimSurface(mesh: THREE.Mesh, expandFactor = 1.5): THREE.BufferGeometry {
     return untrimSurfaceImpl(mesh, expandFactor);
   }
 
-  // ── SLD7 — Linear Pattern ─────────────────────────────────────────────────
   static linearPattern(mesh: THREE.Mesh, params: {
     dirX: number; dirY: number; dirZ: number;
     spacing: number; count: number;
@@ -715,7 +483,6 @@ export class GeometryEngine {
     return linearPatternOp(mesh, params);
   }
 
-  // ── SLD8 — Circular Pattern ───────────────────────────────────────────────
   static circularPattern(mesh: THREE.Mesh, params: {
     axisX: number; axisY: number; axisZ: number;
     originX: number; originY: number; originZ: number;
@@ -724,37 +491,30 @@ export class GeometryEngine {
     return circularPatternOp(mesh, params);
   }
 
-  // ── MSH2 — Plane Cut ─────────────────────────────────────────────────────
   static planeCutMesh(mesh: THREE.Mesh, planeNormal: THREE.Vector3, planeOffset: number, keepSide: 'positive' | 'negative'): THREE.Mesh {
     return planeCutMeshOp(mesh, planeNormal, planeOffset, keepSide);
   }
 
-  // ── MSH3 — Make Closed Mesh ──────────────────────────────────────────────
   static makeClosedMesh(mesh: THREE.Mesh): THREE.Mesh {
     return makeClosedMeshOp(mesh);
   }
 
-  // ── MSH5 — Mesh Smooth ───────────────────────────────────────────────────
   static smoothMesh(mesh: THREE.Mesh, iterations: number, factor: number = 0.5): THREE.Mesh {
     return smoothMeshOp(mesh, iterations, factor);
   }
 
-  // ── MSH13 — Mesh Section Sketch ──────────────────────────────────────────
   static meshSectionSketch(mesh: THREE.Mesh, plane: THREE.Plane): THREE.Vector3[][] {
     return meshSectionSketchOp(mesh, plane);
   }
 
-  // ── SLD1 — Rib ───────────────────────────────────────────────────────────
   static createRib(profilePoints: THREE.Vector3[], thickness: number, height: number, normal: THREE.Vector3): THREE.Mesh {
     return createRibOp(profilePoints, thickness, height, normal);
   }
 
-  // ── SLD2 — Web ───────────────────────────────────────────────────────────
   static createWeb(entityPoints: THREE.Vector3[][], thickness: number, height: number, normal: THREE.Vector3): THREE.Mesh {
     return createWebOp(entityPoints, thickness, height, normal);
   }
 
-  // ── SLD4 — Rest ──────────────────────────────────────────────────────────
   static createRest(
     centerX: number, centerY: number, centerZ: number,
     normalX: number, normalY: number, normalZ: number,
@@ -763,33 +523,26 @@ export class GeometryEngine {
     return createRestOp(centerX, centerY, centerZ, normalX, normalY, normalZ, width, depth, thickness);
   }
 
-  // ── SLD5 — Cosmetic Thread helix ─────────────────────────────────────────
   static createCosmeticThread(radius: number, pitch: number, length: number, turns?: number): THREE.BufferGeometry {
     return createCosmeticThreadOp(radius, pitch, length, turns);
   }
 
-  // ── SLD9 — Pattern on Path ───────────────────────────────────────────────
   static patternOnPath(mesh: THREE.Mesh, pathPoints: THREE.Vector3[], count: number): THREE.Mesh[] {
     return patternOnPathOp(mesh, pathPoints, count);
   }
 
-  // ── MSH1 — Remesh ────────────────────────────────────────────────────────
   static remesh(mesh: THREE.Mesh, mode: 'refine' | 'coarsen', iterations: number): THREE.Mesh {
     return remeshImpl(mesh, mode, iterations);
   }
 
-  // ── PL1 — Boss ───────────────────────────────────────────────────────────
-  // ── SLD10 — Shell ────────────────────────────────────────────────────────
   static shellMesh(mesh: THREE.Mesh, thickness: number, direction: 'inward' | 'outward' | 'symmetric'): THREE.Mesh {
     return shellMeshImpl(mesh, thickness, direction);
   }
 
-  // ── SLD11 — Draft ────────────────────────────────────────────────────────
   static draftMesh(mesh: THREE.Mesh, pullAxisDir: THREE.Vector3, draftAngle: number, fixedPlaneY: number = 0): THREE.Mesh {
     return draftMeshOp(mesh, pullAxisDir, draftAngle, fixedPlaneY);
   }
 
-  // ── SLD16 — Remove Face and Heal ─────────────────────────────────────────
   static removeFaceAndHeal(
     mesh: THREE.Mesh,
     faceNormal: THREE.Vector3,
@@ -799,7 +552,6 @@ export class GeometryEngine {
     return removeFaceAndHealImpl(mesh, faceNormal, faceCentroid, normalTolRad);
   }
 
-  // ── MSH9 — Mesh Align ────────────────────────────────────────────────────
   static alignMeshToCentroid(sourceMesh: THREE.Mesh, targetMesh: THREE.Mesh): THREE.Mesh {
     return alignMeshToCentroidOp(sourceMesh, targetMesh);
   }

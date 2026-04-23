@@ -1,0 +1,234 @@
+/* =================================================================
+   Axes & Movement panel cards, positions, and step controls
+   ================================================================= */
+
+.ax-card {
+  background: transparent;
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--card-accent, rgba(155,155,200,0.4));
+  border-radius: 0 6px 6px 0;
+  padding: 9px 12px 9px 11px;
+  margin-bottom: 8px;
+}
+
+.ax-card--step  { --card-accent: rgba(155,143,232,0.8); }
+.ax-card--jog   { --card-accent: rgba(100,160,255,0.7); }
+.ax-card--qm    { --card-accent: rgba(86,201,138,0.75); }
+.ax-card--baby  { --card-accent: rgba(232,184,75,0.8);  }
+
+.ax-card-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 9px;
+}
+
+.ax-card-label::before { display: none; }
+
+.ax-pos-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.ax-pos-card {
+  flex: 1;
+  min-width: 0;
+  border-radius: 8px;
+  padding: 8px 10px 7px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--ax, #888);
+}
+
+.ax-pos-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.ax-pos-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--ax, #aaa);
+  text-transform: uppercase;
+}
+
+.ax-pos-indicators {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ax-unhomed {
+  font-size: 9px;
+  font-weight: 700;
+  color: #e0a84a;
+}
+
+.ax-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ax-pos-value {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: monospace;
+  letter-spacing: -0.5px;
+  line-height: 1;
+}
+
+.ax-pos-unit {
+  font-size: 9px;
+  color: var(--text-muted, #666);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+.ax-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.ax-mesh-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(136,136,170,0.2);
+  background: rgba(136,136,170,0.1);
+  color: var(--text-muted, #666);
+  white-space: nowrap;
+}
+
+.ax-mesh-badge--on {
+  border-color: rgba(86,201,138,0.35);
+  background: rgba(86,201,138,0.1);
+  color: #56c98a;
+}
+
+.ax-home-row {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.ax-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-muted, #888);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.07s;
+}
+
+.ax-btn:not(:disabled):hover {
+  background: var(--bg-elevated-hover);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.ax-btn:not(:disabled):active { transform: scale(0.94); }
+
+.ax-btn:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+}
+
+.ax-btn--home-all {
+  border-color: rgba(232,184,75,0.35);
+  background: rgba(232,184,75,0.08);
+  color: #e8b84b;
+}
+
+.ax-btn--home-all:not(:disabled):hover {
+  background: rgba(232,184,75,0.18);
+  border-color: rgba(232,184,75,0.55);
+}
+
+.ax-btn--home {
+  border-color: var(--border-light);
+  background: var(--bg-elevated);
+  color: var(--ax, #aaa);
+}
+
+.ax-btn--home:not(:disabled):hover {
+  background: var(--bg-elevated-hover);
+  color: var(--text-primary);
+}
+
+.ax-btn--baby {
+  font-family: monospace;
+  font-size: 11px;
+  padding: 0 12px;
+}
+
+.ax-btn--jog-neg { color: #9999cc; }
+.ax-btn--jog-pos { color: #66bb80; }
+
+.ax-step-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.ax-step-btn {
+  flex: 1;
+  min-width: 44px;
+  max-width: 64px;
+  height: 30px;
+  padding: 0 4px;
+  border-radius: 6px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-elevated);
+  color: var(--text-muted, #888);
+  font-size: 11px;
+  font-family: monospace;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.07s;
+}
+
+.ax-step-btn:not(:disabled):hover {
+  background: rgba(155,143,232,0.12);
+  border-color: rgba(155,143,232,0.3);
+  color: var(--text-primary);
+}
+
+.ax-step-btn:not(:disabled):active { transform: scale(0.93); }
+
+.ax-step-btn.is-active {
+  background: rgba(155,143,232,0.22);
+  border-color: rgba(155,143,232,0.6);
+  color: #c4bbf5;
+  font-weight: 700;
+  box-shadow: 0 0 0 1px rgba(155,143,232,0.25);
+}

@@ -1,39 +1,14 @@
 import "./overlays/ViewportOverlay.css";
-import { useRef, useCallback, useState, useEffect, Component } from 'react';
-import type { ReactNode } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
-
-/** Silently catches HDR/network fetch failures so they don't crash the canvas. */
-class EnvErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false };
-  static getDerivedStateFromError() { return { failed: true }; }
-  render() { return this.state.failed ? null : this.props.children; }
-}
 import type { PresetsType } from '@react-three/drei/helpers/environment-assets';
 import * as THREE from 'three';
 import { useCADStore } from '../../store/cadStore';
 import { useThemeStore } from '../../store/themeStore';
-import ViewCube from './viewcube/ViewCube';
-import CanvasControls from './canvasControls/CanvasControls';
-import SketchPalette from './sketch/SketchPalette';
-import MeasurePanel from './panels/MeasurePanel';
+import { EnvErrorBoundary } from './EnvErrorBoundary';
 import ExtrudeTool from './tools/ExtrudeTool';
 import RevolveTool from './tools/RevolveTool';
-import ExtrudePanel from './panels/ExtrudePanel';
-import RevolvePanel from './panels/RevolvePanel';
-import SweepPanel from './panels/SweepPanel';
-import LoftPanel from './panels/LoftPanel';
-import SketchTextPanel from './sketch/SketchTextPanel';
-import SketchDimensionPanel from './sketch/SketchDimensionPanel';
-import SketchProjectPanel from './sketch/SketchProjectPanel';
-import PatchPanel from './panels/PatchPanel';
-import RuledSurfacePanel from './panels/RuledSurfacePanel';
-import RibPanel from './panels/RibPanel';
-import SectionAnalysisPanel from './panels/SectionAnalysisPanel';
-import SketchPatternPanel from './sketch/SketchPatternPanel';
-import SketchTransformPanel from './sketch/SketchTransformPanel';
-import SketchMirrorPanel from './sketch/SketchMirrorPanel';
 import SceneTheme from './scene/SceneTheme';
 import SceneInvalidator from './scene/SceneInvalidator';
 import VisualStyleEffect from './scene/VisualStyleEffect';
@@ -58,7 +33,6 @@ import FormInteraction from './interaction/FormInteraction';
 import FormBodies from './scene/FormBodies';
 import JointGizmos from './scene/JointGizmos';
 import JointAnimationPlayer from './scene/JointAnimationPlayer';
-import ExplodedViewPanel from './panels/ExplodedViewPanel';
 import SketchPlaneDragger from './sketch/SketchPlaneDragger';
 import Sketch3DPlaneIndicator from './sketch/Sketch3DPlaneIndicator';
 import FilletEdgeHighlight from './scene/FilletEdgeHighlight';
@@ -79,22 +53,16 @@ import SnapFitFacePicker from './scene/SnapFitFacePicker';
 import LipGrooveEdgePicker from './scene/LipGrooveEdgePicker';
 import ExtrudeToEntityPicker from './scene/ExtrudeToEntityPicker';
 import ExtrudeStartEntityPicker from './scene/ExtrudeStartEntityPicker';
-import ConstructTwoPlanePanel from './panels/ConstructTwoPlanePanel';
-import ConstructThreePlanePanel from './panels/ConstructThreePlanePanel';
 import AnalysisOverlay from './scene/AnalysisOverlay';
-import AnalysisPanel from './panels/AnalysisPanel';
 import JointOriginPicker from './scene/JointOriginPicker';
 import JointOriginRenderer from './scene/JointOriginRenderer';
-import WindowSelectOverlay from './overlays/WindowSelectOverlay';
-import LassoSelectOverlay from './overlays/LassoSelectOverlay';
-import ZoomWindowOverlay from './overlays/ZoomWindowOverlay';
-import FinishEditInPlaceBar from './overlays/FinishEditInPlaceBar';
-import { ViewportContextMenu } from './overlays/ViewportContextMenu';
 import type { ViewportCtxState } from '../../types/viewport-context-menu.types';
 import CameraProjectionSwitcher from './scene/CameraProjectionSwitcher';
 import LookAtInteraction from './scene/LookAtInteraction';
 import { EffectComposer, SSAO } from '@react-three/postprocessing';
 import MultiViewCanvas from './multiview/MultiViewCanvas';
+import { ViewportPanels } from './ViewportPanels';
+import { ViewportOverlays } from './ViewportOverlays';
 
 
 
@@ -515,63 +483,14 @@ export default function Viewport() {
         </div>
       )}
 
-      {/* MM6/MM7 Finish Edit In Place banner */}
-      <FinishEditInPlaceBar />
-
-      {/* Viewport right-click context menu */}
-      {viewportCtxMenu && (
-        <ViewportContextMenu
-          menu={viewportCtxMenu}
-          onClose={() => setViewportCtxMenu(null)}
-        />
-      )}
-
-      {/* D204 Window Select overlay */}
-      <WindowSelectOverlay />
-
-      {/* D205 Lasso Select overlay */}
-      <LassoSelectOverlay />
-
-      {/* NAV-5: Zoom Window overlay */}
-      <ZoomWindowOverlay />
-
-      {/* ViewCube overlay (top-right) */}
-      <ViewCube
-        mainCameraQuaternion={camQuat}
-        onOrient={handleViewCubeOrient}
-        onHome={() => useCADStore.getState().triggerCameraHome()}
+      <ViewportOverlays
+        camQuat={camQuat}
+        viewportCtxMenu={viewportCtxMenu}
+        onCloseContextMenu={() => setViewportCtxMenu(null)}
+        onOrientViewCube={handleViewCubeOrient}
+        onHomeViewCube={() => useCADStore.getState().triggerCameraHome()}
       />
-
-      {/* Canvas Controls bar (bottom-right, Fusion 360 style) */}
-      <CanvasControls />
-
-      {/* ToolPanel removed — sketch options handled by SketchPalette */}
-
-      {/* Sketch Palette (Fusion 360 style options panel) */}
-      <SketchPalette />
-
-      {/* Measure Panel (Fusion 360 style results panel) */}
-      <MeasurePanel />
-
-      {/* Extrude Panel (Fusion 360 style properties panel) */}
-      <ExtrudePanel />
-      <RevolvePanel />
-      <SweepPanel />
-      <LoftPanel />
-      <PatchPanel />
-      <RuledSurfacePanel />
-      <RibPanel />
-      <SectionAnalysisPanel />
-      <SketchPatternPanel />
-      <SketchTransformPanel />
-      <SketchMirrorPanel />
-      <SketchTextPanel />
-      <SketchDimensionPanel />
-      <SketchProjectPanel />
-      <ConstructTwoPlanePanel />
-      <ConstructThreePlanePanel />
-      <AnalysisPanel />
-      <ExplodedViewPanel />
+      <ViewportPanels />
     </div>
   );
 }

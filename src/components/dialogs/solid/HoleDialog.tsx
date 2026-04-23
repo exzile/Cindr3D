@@ -8,96 +8,18 @@ import {
 } from './HoleSizePresets';
 import type { Feature } from '../../../types/cad';
 import { CollapsibleSection } from '../common/CollapsibleSection';
-import { SegmentedIconGroup } from '../common/SegmentedIconGroup';
-import { FaceSelector } from '../common/FaceSelector';
-import {
-  SimpleHoleIcon,
-  CounterboreIcon,
-  CountersinkIcon,
-  TapSimpleIcon,
-  TapClearanceIcon,
-  TapTappedIcon,
-  TapTaperTappedIcon,
-  DrillFlatIcon,
-  DrillAngledIcon,
-} from './HoleIcons';
 import '../common/ToolPanel.css';
 import { ParticipantBodyPicker } from '../../ui/ParticipantBodyPicker';
+import { PlacementSection } from './holeDialog/PlacementSection';
+import { ShapeSettingsSection } from './holeDialog/ShapeSettingsSection';
+import {
+  type DrillPoint,
+  type HoleTermination,
+  type HoleType,
+  type Placement,
+  type TapType,
+} from './holeDialog/types';
 import './HoleDialog.css';
-
-type HoleType = 'simple' | 'counterbore' | 'countersink';
-type TapType = 'simple' | 'clearance' | 'tapped' | 'taper-tapped';
-type DrillPoint = 'flat' | 'angled';
-type HoleTermination = 'blind' | 'through-all' | 'to-object' | 'to-face';
-type Placement = 'single' | 'multiple' | 'plane-offsets' | 'on-edge';
-
-const HOLE_TYPE_OPTIONS = [
-  { value: 'simple' as const, icon: <SimpleHoleIcon />, title: 'Simple' },
-  { value: 'counterbore' as const, icon: <CounterboreIcon />, title: 'Counterbore' },
-  { value: 'countersink' as const, icon: <CountersinkIcon />, title: 'Countersink' },
-];
-
-const TAP_TYPE_OPTIONS = [
-  { value: 'simple' as const, icon: <TapSimpleIcon />, title: 'Simple' },
-  { value: 'clearance' as const, icon: <TapClearanceIcon />, title: 'Clearance' },
-  { value: 'tapped' as const, icon: <TapTappedIcon />, title: 'Tapped' },
-  { value: 'taper-tapped' as const, icon: <TapTaperTappedIcon />, title: 'Taper Tapped' },
-];
-
-const DRILL_POINT_OPTIONS = [
-  { value: 'flat' as const, icon: <DrillFlatIcon />, title: 'Flat' },
-  { value: 'angled' as const, icon: <DrillAngledIcon />, title: 'Angled' },
-];
-
-const PLACEMENT_OPTIONS = [
-  {
-    value: 'single' as const,
-    title: 'Single Hole',
-    icon: (
-      <svg width={14} height={14} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.2}>
-        <rect x={2} y={2} width={14} height={14} />
-        <circle cx={9} cy={9} r={2.5} />
-      </svg>
-    ),
-  },
-  {
-    value: 'multiple' as const,
-    title: 'Multiple Holes',
-    icon: (
-      <svg width={14} height={14} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.2}>
-        <rect x={2} y={2} width={14} height={14} />
-        <circle cx={6} cy={6} r={1.5} />
-        <circle cx={12} cy={6} r={1.5} />
-        <circle cx={6} cy={12} r={1.5} />
-        <circle cx={12} cy={12} r={1.5} />
-      </svg>
-    ),
-  },
-  {
-    value: 'plane-offsets' as const,
-    title: 'By Plane Offsets',
-    icon: (
-      <svg width={14} height={14} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.2}>
-        <rect x={2} y={2} width={14} height={14} />
-        <line x1={7} y1={2} x2={7} y2={16} strokeDasharray="2,1.5" />
-        <line x1={2} y1={7} x2={16} y2={7} strokeDasharray="2,1.5" />
-        <circle cx={10} cy={10} r={2} />
-      </svg>
-    ),
-  },
-  {
-    value: 'on-edge' as const,
-    title: 'On Edge',
-    icon: (
-      <svg width={14} height={14} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.2}>
-        <line x1={2} y1={9} x2={16} y2={9} />
-        <circle cx={9} cy={9} r={2.5} />
-        <line x1={2} y1={6} x2={2} y2={12} />
-        <line x1={16} y1={6} x2={16} y2={12} />
-      </svg>
-    ),
-  },
-];
 
 export function HoleDialog({ onClose }: { onClose: () => void }) {
   const editingFeatureId = useCADStore((s) => s.editingFeatureId);
@@ -223,355 +145,59 @@ export function HoleDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="tp-body">
-          {/* ── Placement ─────────────────────────────────────────────── */}
-          <CollapsibleSection title="Placement">
-            <div className="tp-row">
-              <span className="tp-label">Placement</span>
-              <SegmentedIconGroup
-                value={placement}
-                onChange={setPlacement}
-                options={PLACEMENT_OPTIONS}
-                ariaLabel="Placement"
-              />
-            </div>
-            <div className="tp-row">
-              <span className="tp-label">Face</span>
-              <FaceSelector
-                selected={!!holeFaceId}
-                pickActive={!holeFaceId}
-                onClear={clearHoleFace}
-                selectedLabel="1 selected"
-                emptyLabel="Select"
-              />
-            </div>
-
-            {/* SDK-1: plane-offsets — two offset distances from reference planes */}
-            {placement === 'plane-offsets' && (
-              <>
-                <div className="tp-row">
-                  <span className="tp-label">Ref 1</span>
-                  <FaceSelector selected={false} pickActive={false} onClear={() => {}} emptyLabel="Select edge/face" />
-                </div>
-                <div className="tp-row">
-                  <span className="tp-label">Offset 1</span>
-                  <div className="tp-input-group">
-                    <input
-                      type="number"
-                      value={offsetDist1}
-                      step={0.5}
-                      min={0}
-                      onChange={(e) => setOffsetDist1(parseFloat(e.target.value) || 0)}
-                      aria-label="Offset from reference 1 (mm)"
-                    />
-                    <span className="tp-unit">mm</span>
-                  </div>
-                </div>
-                <div className="tp-row">
-                  <span className="tp-label">Ref 2</span>
-                  <FaceSelector selected={false} pickActive={false} onClear={() => {}} emptyLabel="Select edge/face" />
-                </div>
-                <div className="tp-row">
-                  <span className="tp-label">Offset 2</span>
-                  <div className="tp-input-group">
-                    <input
-                      type="number"
-                      value={offsetDist2}
-                      step={0.5}
-                      min={0}
-                      onChange={(e) => setOffsetDist2(parseFloat(e.target.value) || 0)}
-                      aria-label="Offset from reference 2 (mm)"
-                    />
-                    <span className="tp-unit">mm</span>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* SDK-1: on-edge — edge reference + parameter distance along edge */}
-            {placement === 'on-edge' && (
-              <>
-                <div className="tp-row">
-                  <span className="tp-label">Edge</span>
-                  <FaceSelector selected={false} pickActive={false} onClear={() => {}} emptyLabel="Select edge" />
-                </div>
-                <div className="tp-row">
-                  <span className="tp-label">Position</span>
-                  <div className="tp-input-group">
-                    <input
-                      type="number"
-                      value={edgeParam}
-                      step={0.01}
-                      min={0}
-                      max={1}
-                      onChange={(e) => {
-                        const n = parseFloat(e.target.value);
-                        if (Number.isFinite(n)) setEdgeParam(Math.max(0, Math.min(1, n)));
-                      }}
-                      aria-label="Position along edge (0-1)"
-                    />
-                    <span className="tp-unit">t</span>
-                  </div>
-                </div>
-                <div style={{ fontSize: 10, color: '#888', padding: '0 6px 4px' }}>
-                  t = 0 → start of edge, t = 1 → end of edge
-                </div>
-              </>
-            )}
-
-            {/* Default reference rows for single / multiple placement */}
-            {(placement === 'single' || placement === 'multiple') && (
-              <>
-                <div className="tp-row">
-                  <span className="tp-label">Reference</span>
-                  <FaceSelector selected={false} pickActive={false} onClear={() => {}} emptyLabel="Select" />
-                </div>
-                <div className="tp-row">
-                  <span className="tp-label">Reference</span>
-                  <FaceSelector selected={false} pickActive={false} onClear={() => {}} emptyLabel="Select" />
-                </div>
-              </>
-            )}
-          </CollapsibleSection>
+          <PlacementSection
+            placement={placement}
+            setPlacement={setPlacement}
+            holeFaceId={holeFaceId}
+            clearHoleFace={clearHoleFace}
+            offsetDist1={offsetDist1}
+            setOffsetDist1={setOffsetDist1}
+            offsetDist2={offsetDist2}
+            setOffsetDist2={setOffsetDist2}
+            edgeParam={edgeParam}
+            setEdgeParam={setEdgeParam}
+          />
 
           <div className="tp-divider" />
 
-          {/* ── Shape Settings ────────────────────────────────────────── */}
-          <CollapsibleSection title="Shape Settings">
-            <div className="tp-row">
-              <span className="tp-label">Extents</span>
-              <div className="tp-units-row">
-                <select
-                  className="tp-select"
-                  value={termination}
-                  onChange={(e) => setTermination(e.target.value as HoleTermination)}
-                >
-                  <option value="blind">↔ Distance</option>
-                  <option value="through-all">Through All</option>
-                  <option value="to-object">To Object</option>
-                  <option value="to-face">To Face</option>
-                </select>
-                <button type="button" className="tp-icon-btn" title="Flip direction" aria-label="Flip direction">
-                  <svg width={11} height={11} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.4}>
-                    <path d="M2 6 L10 6 M7 3 L10 6 L7 9" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            {/* SDK-2: To-Face — face selector for termination face */}
-            {termination === 'to-face' && (
-              <div className="tp-row">
-                <span className="tp-label">To Face</span>
-                <FaceSelector selected={false} pickActive={false} onClear={() => {}} emptyLabel="Select face" />
-              </div>
-            )}
-            <div className="tp-row">
-              <span className="tp-label">Hole Type</span>
-              <SegmentedIconGroup
-                value={holeType}
-                onChange={setHoleType}
-                options={HOLE_TYPE_OPTIONS}
-                ariaLabel="Hole Type"
-              />
-            </div>
-            <div className="tp-row">
-              <span className="tp-label">Tap Type</span>
-              <SegmentedIconGroup
-                value={tapType}
-                onChange={setTapType}
-                options={TAP_TYPE_OPTIONS}
-                ariaLabel="Hole Tap Type"
-              />
-            </div>
-            <div className="tp-row">
-              <span className="tp-label">Drill Point</span>
-              <SegmentedIconGroup
-                value={drillPoint}
-                onChange={setDrillPoint}
-                options={DRILL_POINT_OPTIONS}
-                ariaLabel="Drill Point"
-              />
-            </div>
-
-            {/* SOL-I4: Standard size lookup */}
-            <div className="tp-row">
-              <span className="tp-label">Standard</span>
-              <select
-                className="tp-select"
-                value={standard}
-                onChange={(e) => {
-                  setStandard(e.target.value as HoleStandard);
-                  setSelectedPreset(null);
-                }}
-              >
-                <option value="custom">Custom</option>
-                <option value="ISO">ISO Metric</option>
-                <option value="ANSI">ANSI Inch</option>
-                <option value="NPT">NPT Pipe</option>
-              </select>
-            </div>
-            {standard !== 'custom' && (
-              <div className="tp-row">
-                <span className="tp-label">Size</span>
-                <select
-                  className="tp-select"
-                  value={selectedPreset?.label ?? ''}
-                  onChange={(e) => handleApplyPreset(e.target.value)}
-                >
-                  <option value="">— select —</option>
-                  {STANDARD_SIZES[standard].map((entry) => (
-                    <option key={entry.label} value={entry.label}>{entry.label}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Schematic readout — head depth, drill angle, diameter */}
-            <div className="hole-diagram">
-              <svg
-                className="hole-diagram__svg"
-                width={56}
-                height={92}
-                viewBox="0 0 64 110"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.1}
-              >
-                <line x1={20} y1={6} x2={44} y2={6} />
-                <line x1={20} y1={6} x2={20} y2={84} />
-                <line x1={44} y1={6} x2={44} y2={84} />
-                {drillPoint === 'angled' ? (
-                  <polyline points="20,84 32,98 44,84" />
-                ) : (
-                  <line x1={20} y1={84} x2={44} y2={84} />
-                )}
-                <line x1={6} y1={6} x2={6} y2={84} strokeDasharray="2,2" />
-              </svg>
-              <div className="hole-diagram__fields">
-                <div className="tp-input-group hole-diagram__field">
-                  <input
-                    type="number"
-                    value={headDepth}
-                    step={0.5}
-                    min={0}
-                    onChange={(e) => setHeadDepth(parseFloat(e.target.value) || 0)}
-                    aria-label="Head depth (mm)"
-                  />
-                  <span className="tp-unit">mm</span>
-                </div>
-                {drillPoint === 'angled' && (
-                  <div className="tp-input-group hole-diagram__field">
-                    <input
-                      type="number"
-                      value={drillAngle}
-                      min={60}
-                      max={150}
-                      step={1}
-                      onChange={(e) => setDrillAngle(parseFloat(e.target.value) || 118)}
-                      aria-label="Drill angle (deg)"
-                    />
-                    <span className="tp-unit">°</span>
-                  </div>
-                )}
-                <div className="tp-input-group hole-diagram__field">
-                  <input
-                    type="number"
-                    value={draftDiameter}
-                    step={0.5}
-                    min={0.1}
-                    onChange={(e) => {
-                      const n = parseFloat(e.target.value);
-                      if (Number.isFinite(n) && n > 0) setDraftDiameter(n);
-                    }}
-                    aria-label="Diameter (mm)"
-                  />
-                  <span className="tp-unit">mm</span>
-                </div>
-              </div>
-            </div>
-
-            {!through && (
-              <div className="tp-row">
-                <span className="tp-label">Depth</span>
-                <div className="tp-input-group">
-                  <input
-                    type="number"
-                    value={draftDepth}
-                    step={0.5}
-                    min={0.1}
-                    onChange={(e) => {
-                      const n = parseFloat(e.target.value);
-                      if (Number.isFinite(n) && n > 0) setDraftDepth(n);
-                    }}
-                  />
-                  <span className="tp-unit">mm</span>
-                </div>
-              </div>
-            )}
-            {showCB && (
-              <>
-                <div className="tp-row">
-                  <span className="tp-label">CB Ø</span>
-                  <div className="tp-input-group">
-                    <input
-                      type="number"
-                      value={cbDiameter}
-                      step={0.5}
-                      min={0.1}
-                      onChange={(e) => setCbDiameter(parseFloat(e.target.value) || 10)}
-                    />
-                    <span className="tp-unit">mm</span>
-                  </div>
-                </div>
-                <div className="tp-row">
-                  <span className="tp-label">CB Depth</span>
-                  <div className="tp-input-group">
-                    <input
-                      type="number"
-                      value={cbDepth}
-                      step={0.5}
-                      min={0.1}
-                      onChange={(e) => setCbDepth(parseFloat(e.target.value) || 3)}
-                    />
-                    <span className="tp-unit">mm</span>
-                  </div>
-                </div>
-              </>
-            )}
-            {showCS && (
-              <>
-                <div className="tp-row">
-                  <span className="tp-label">CS Ø</span>
-                  <div className="tp-input-group">
-                    <input
-                      type="number"
-                      value={csDiameter}
-                      step={0.5}
-                      min={0.1}
-                      onChange={(e) => setCsDiameter(parseFloat(e.target.value) || 9)}
-                    />
-                    <span className="tp-unit">mm</span>
-                  </div>
-                </div>
-                <div className="tp-row">
-                  <span className="tp-label">CS Angle</span>
-                  <div className="tp-input-group">
-                    <input
-                      type="number"
-                      value={csAngle}
-                      min={60}
-                      max={120}
-                      step={5}
-                      onChange={(e) => setCsAngle(parseFloat(e.target.value) || 90)}
-                    />
-                    <span className="tp-unit">°</span>
-                  </div>
-                </div>
-              </>
-            )}
-          </CollapsibleSection>
+          <ShapeSettingsSection
+            termination={termination}
+            setTermination={setTermination}
+            holeType={holeType}
+            setHoleType={setHoleType}
+            tapType={tapType}
+            setTapType={setTapType}
+            drillPoint={drillPoint}
+            setDrillPoint={setDrillPoint}
+            standard={standard}
+            setStandard={(value) => {
+              setStandard(value);
+              setSelectedPreset(null);
+            }}
+            selectedPreset={selectedPreset}
+            handleApplyPreset={handleApplyPreset}
+            headDepth={headDepth}
+            setHeadDepth={setHeadDepth}
+            drillAngle={drillAngle}
+            setDrillAngle={setDrillAngle}
+            draftDiameter={draftDiameter}
+            setDraftDiameter={setDraftDiameter}
+            through={through}
+            draftDepth={draftDepth}
+            setDraftDepth={setDraftDepth}
+            showCB={showCB}
+            cbDiameter={cbDiameter}
+            setCbDiameter={setCbDiameter}
+            cbDepth={cbDepth}
+            setCbDepth={setCbDepth}
+            showCS={showCS}
+            csDiameter={csDiameter}
+            setCsDiameter={setCsDiameter}
+            csAngle={csAngle}
+            setCsAngle={setCsAngle}
+          />
 
           <div className="tp-divider" />
-
           {/* ── Objects To Cut (CORR-14) ───────────────────────────────── */}
           <CollapsibleSection title="Objects To Cut" defaultOpen={false}>
             <ParticipantBodyPicker

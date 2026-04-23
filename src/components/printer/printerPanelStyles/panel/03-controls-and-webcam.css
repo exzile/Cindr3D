@@ -1,0 +1,118 @@
+.print-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.control-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.control-btn:hover {
+  background: var(--accent-light);
+  border-color: var(--accent);
+}
+
+.control-btn.success {
+  color: var(--success);
+  border-color: rgba(76, 175, 80, 0.3);
+}
+
+.control-btn.success:hover {
+  background: rgba(76, 175, 80, 0.08);
+}
+
+.control-btn.danger {
+  color: var(--error);
+  border-color: rgba(244, 67, 54, 0.3);
+}
+
+.control-btn.danger:hover {
+  background: rgba(244, 67, 54, 0.08);
+}
+
+/* Jog Controls */
+.jog-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.jog-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.jog-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+  max-width: 150px;
+  margin: 0 auto;
+}
+
+.jog-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 10px;
+  transition: all 0.15s ease;
+}
+
+.jog-btn:hover {
+  background: var(--accent-light);
+  border-color: var(--accent);
+}
+
+.jog-btn.home {
+  background: var(--accent-light);
+}
+
+.jog-z {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+
+/* Webcam */
+.webcam-container {
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.webcam-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.webcam-feed {
+  width: 100%;
+  display: block;
+  background: #000;
+}
+

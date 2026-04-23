@@ -1,7 +1,13 @@
 import * as THREE from 'three';
-import polygonClipping, { type MultiPolygon as PCMultiPolygon, type Ring as PCRing } from 'polygon-clipping';
 import type { Sketch, SketchEntity, SketchPoint } from '../../../../types/cad';
 import { getSketchAxes as getSketchAxesUtil } from '../../planeUtils';
+import {
+  computeAtomicRegions,
+  getEntityEndpoints,
+  pointInPoly,
+  polygonArea,
+  removeSliverTriangles2D,
+} from './profileGeometry';
 
 const BOUNDARY_TYPES = new Set([
   'line', 'arc', 'spline', 'ellipse', 'elliptical-arc', 'polygon',
@@ -119,37 +125,14 @@ export function createProfileSketch(sketch: Sketch, profileIndex: number): Sketc
   if (shape.holes.length > 0) {
     for (const hole of shape.holes) appendHole(hole.getPoints(64));
   } else {
-    const pointInPoly = (point: THREE.Vector2, poly: THREE.Vector2[]): boolean => {
-      let inside = false;
-      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-        const xi = poly[i].x;
-        const yi = poly[i].y;
-        const xj = poly[j].x;
-        const yj = poly[j].y;
-        if (((yi > point.y) !== (yj > point.y)) &&
-            (point.x < ((xj - xi) * (point.y - yi)) / (yj - yi) + xi)) {
-          inside = !inside;
-        }
-      }
-      return inside;
-    };
-
-    const polyArea = (points: THREE.Vector2[]): number => {
-      let area = 0;
-      for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-        area += points[i].x * points[j].y - points[j].x * points[i].y;
-      }
-      return Math.abs(area) * 0.5;
-    };
-
     const outerPoly2D = shape.getPoints(64);
-    const outerArea = polyArea(outerPoly2D);
+    const outerArea = polygonArea(outerPoly2D);
     for (let i = 0; i < flatShapes.length; i++) {
       if (i === profileIndex) continue;
       const other = flatShapes[i];
       if (other.holes.length > 0) continue;
       const otherPoints = other.getPoints(64);
-      if (polyArea(otherPoints) >= outerArea) continue;
+      if (polygonArea(otherPoints) >= outerArea) continue;
       const cx = otherPoints.reduce((sum, point) => sum + point.x, 0) / otherPoints.length;
       const cy = otherPoints.reduce((sum, point) => sum + point.y, 0) / otherPoints.length;
       if (!pointInPoly(new THREE.Vector2(cx, cy), outerPoly2D)) continue;
@@ -269,44 +252,6 @@ export function entitiesToShapes(
   const shapes: THREE.Shape[] = [];
   const tolerance = 1e-3;
 
-  const getEntityEndpoints = (entity: SketchEntity): [{ u: number; v: number }, { u: number; v: number }] | null => {
-    if (entity.type === 'line' || entity.type === 'spline') {
-      if (entity.points.length < 2) return null;
-      return [project(entity.points[0]), project(entity.points[entity.points.length - 1])];
-    }
-    if (entity.type === 'arc') {
-      if (entity.points.length < 1 || !entity.radius) return null;
-      const c = project(entity.points[0]);
-      const sa = entity.startAngle ?? 0;
-      const ea = entity.endAngle ?? Math.PI;
-      return [
-        { u: c.u + Math.cos(sa) * entity.radius, v: c.v + Math.sin(sa) * entity.radius },
-        { u: c.u + Math.cos(ea) * entity.radius, v: c.v + Math.sin(ea) * entity.radius },
-      ];
-    }
-    if (entity.type === 'elliptical-arc') {
-      if (entity.points.length < 1 || !entity.majorRadius || !entity.minorRadius) return null;
-      const c = project(entity.points[0]);
-      const rot = entity.rotation ?? 0;
-      const sa = entity.startAngle ?? 0;
-      const ea = entity.endAngle ?? Math.PI;
-      const cos = Math.cos(rot);
-      const sin = Math.sin(rot);
-      const start = () => {
-        const sx = entity.majorRadius! * Math.cos(sa);
-        const sy = entity.minorRadius! * Math.sin(sa);
-        return { u: c.u + cos * sx - sin * sy, v: c.v + sin * sx + cos * sy };
-      };
-      const end = () => {
-        const ex = entity.majorRadius! * Math.cos(ea);
-        const ey = entity.minorRadius! * Math.sin(ea);
-        return { u: c.u + cos * ex - sin * ey, v: c.v + sin * ex + cos * ey };
-      };
-      return [start(), end()];
-    }
-    return null;
-  };
-
   const chainable: { entity: SketchEntity; endpoints: [{ u: number; v: number }, { u: number; v: number }] }[] = [];
 
   for (const entity of entities) {
@@ -314,7 +259,7 @@ export function entitiesToShapes(
       const shape = entitiesToShape([entity], project);
       if (shape) shapes.push(shape);
     } else if (BOUNDARY_TYPES.has(entity.type)) {
-      const endpoints = getEntityEndpoints(entity);
+      const endpoints = getEntityEndpoints(entity, project);
       if (endpoints) chainable.push({ entity, endpoints });
     }
   }
@@ -412,114 +357,6 @@ export function entitiesToShapes(
 
   return data.filter((_, i) => !absorbed[i]).map((item) => item.shape);
 }
-
-function computeAtomicRegions(shapes: THREE.Shape[]): THREE.Shape[] {
-  if (shapes.length <= 1) return shapes;
-
-  const segments = 64;
-  const tolerance = 1e-6;
-
-  const shapeToMultiPolygon = (shape: THREE.Shape): PCMultiPolygon => {
-    const points = shape.getPoints(segments);
-    if (points.length < 3) return [];
-    const ring: PCRing = points.map((point) => [point.x, point.y] as [number, number]);
-    const first = ring[0];
-    const last = ring[ring.length - 1];
-    if (Math.abs(first[0] - last[0]) > tolerance || Math.abs(first[1] - last[1]) > tolerance) {
-      ring.push([first[0], first[1]]);
-    }
-    return [[ring]];
-  };
-
-  const polygons = shapes.map(shapeToMultiPolygon).filter((mp) => mp.length > 0);
-  if (polygons.length <= 1) return shapes;
-
-  let atoms: PCMultiPolygon[] = [polygons[0]];
-  let runningUnion: PCMultiPolygon = polygons[0];
-
-  for (let i = 1; i < polygons.length; i++) {
-    const polygon = polygons[i];
-    const newAtoms: PCMultiPolygon[] = [];
-
-    for (const atom of atoms) {
-      try {
-        const inter = polygonClipping.intersection(atom, polygon);
-        if (inter.length > 0) newAtoms.push(inter);
-      } catch {}
-      try {
-        const diff = polygonClipping.difference(atom, polygon);
-        if (diff.length > 0) newAtoms.push(diff);
-      } catch {}
-    }
-
-    try {
-      const onlyPolygon = polygonClipping.difference(polygon, runningUnion);
-      if (onlyPolygon.length > 0) newAtoms.push(onlyPolygon);
-    } catch {}
-
-    try {
-      runningUnion = polygonClipping.union(runningUnion, polygon);
-    } catch {}
-
-    if (newAtoms.length > 0) atoms = newAtoms;
-  }
-
-  const simplifyRing = (ring: PCRing): THREE.Vector2[] => {
-    const n = ring.length;
-    const endDupe =
-      n >= 2 &&
-      Math.abs(ring[0][0] - ring[n - 1][0]) <= tolerance &&
-      Math.abs(ring[0][1] - ring[n - 1][1]) <= tolerance;
-    const raw = endDupe ? ring.slice(0, -1) : ring;
-    if (raw.length < 3) return [];
-
-    const deduped: [number, number][] = [];
-    for (const point of raw) {
-      const last = deduped[deduped.length - 1];
-      if (!last || Math.hypot(point[0] - last[0], point[1] - last[1]) > 1e-5) {
-        deduped.push([point[0], point[1]]);
-      }
-    }
-    if (deduped.length < 3) return [];
-
-    const minTurn = Math.sin(0.5 * Math.PI / 180);
-    const keep: THREE.Vector2[] = [];
-    for (let i = 0; i < deduped.length; i++) {
-      const prev = deduped[(i - 1 + deduped.length) % deduped.length];
-      const curr = deduped[i];
-      const next = deduped[(i + 1) % deduped.length];
-      const ax = curr[0] - prev[0];
-      const ay = curr[1] - prev[1];
-      const bx = next[0] - curr[0];
-      const by = next[1] - curr[1];
-      const la = Math.hypot(ax, ay);
-      const lb = Math.hypot(bx, by);
-      if (la < 1e-9 || lb < 1e-9) continue;
-      const sinTheta = Math.abs(ax * by - ay * bx) / (la * lb);
-      if (sinTheta > minTurn) keep.push(new THREE.Vector2(curr[0], curr[1]));
-    }
-    return keep.length >= 3 ? keep : [];
-  };
-
-  const result: THREE.Shape[] = [];
-  for (const atom of atoms) {
-    for (const poly of atom) {
-      if (!poly.length) continue;
-      const outerPoints = simplifyRing(poly[0]);
-      if (outerPoints.length < 3) continue;
-      const shape = new THREE.Shape(outerPoints);
-      for (let i = 1; i < poly.length; i++) {
-        const holePoints = simplifyRing(poly[i]);
-        if (holePoints.length < 3) continue;
-        shape.holes.push(new THREE.Path(holePoints));
-      }
-      result.push(shape);
-    }
-  }
-
-  return result.length > 0 ? result : shapes;
-}
-
 export function entitiesToShape(
   entities: SketchEntity[],
   project: (p: SketchPoint) => { u: number; v: number },
@@ -640,44 +477,4 @@ export function entitiesToShape(
   }
 
   return hasContent ? shape : null;
-}
-
-function removeSliverTriangles2D(
-  geometry: THREE.BufferGeometry,
-  qualityThreshold = 0.02,
-): THREE.BufferGeometry {
-  const pos = geometry.attributes.position as THREE.BufferAttribute;
-  const count = pos.count;
-  const a = new THREE.Vector3();
-  const b = new THREE.Vector3();
-  const c = new THREE.Vector3();
-  const ab = new THREE.Vector3();
-  const ac = new THREE.Vector3();
-  const bc = new THREE.Vector3();
-  const cross = new THREE.Vector3();
-  const normalizer = 4 * Math.sqrt(3);
-
-  const nextPositions: number[] = [];
-  for (let i = 0; i < count; i += 3) {
-    a.fromBufferAttribute(pos, i);
-    b.fromBufferAttribute(pos, i + 1);
-    c.fromBufferAttribute(pos, i + 2);
-    ab.subVectors(b, a);
-    ac.subVectors(c, a);
-    bc.subVectors(c, b);
-    cross.crossVectors(ab, ac);
-    const area = cross.length() * 0.5;
-    const ss = ab.lengthSq() + ac.lengthSq() + bc.lengthSq();
-    const q = ss > 1e-12 ? (normalizer * area) / ss : 0;
-    if (q < qualityThreshold) continue;
-    for (let k = 0; k < 3; k++) {
-      a.fromBufferAttribute(pos, i + k);
-      nextPositions.push(a.x, a.y, a.z);
-    }
-  }
-
-  const result = new THREE.BufferGeometry();
-  result.setAttribute('position', new THREE.Float32BufferAttribute(nextPositions, 3));
-  result.computeVertexNormals();
-  return result;
 }

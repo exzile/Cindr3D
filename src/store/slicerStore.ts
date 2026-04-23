@@ -1,136 +1,21 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { PersistStorage } from 'zustand/middleware';
 import * as THREE from 'three';
 import type {
-  PrinterProfile, MaterialProfile, PrintProfile, PlateObject,
-  SliceProgress, SliceResult,
+  PrinterProfile, MaterialProfile, PrintProfile,
+  SliceProgress,
 } from '../types/slicer';
 import {
   DEFAULT_PRINTER_PROFILES, DEFAULT_MATERIAL_PROFILES, DEFAULT_PRINT_PROFILES,
 } from '../types/slicer';
 import { normalizeRotationDegreesToRadians, normalizeScale } from '../utils/slicerTransforms';
 import { createPreviewActions } from './slicer/actions/preview';
+import { slicerPersistConfig } from './slicer/persistConfig';
 import { createPlateActions } from './slicer/plateActions';
-import { deserializeGeom, idbStorage, serializeGeom, type SerializedGeom } from './slicer/persistence';
+import type { SlicerStore } from './slicer/types';
 import { getActiveSliceRequestId, getCurrentSlicerWorker, getSlicerWorker, isWorkerBusy, nextSliceRequestId, setWorkerBusy } from './slicer/worker';
 
-
-export interface SlicerStore {
-  // Profiles
-  printerProfiles: PrinterProfile[];
-  materialProfiles: MaterialProfile[];
-  printProfiles: PrintProfile[];
-
-  // Active selections
-  activePrinterProfileId: string;
-  activeMaterialProfileId: string;
-  activePrintProfileId: string;
-
-  // Per-printer last-used profile IDs (so switching printers restores context)
-  printerLastMaterial: Record<string, string>;
-  printerLastPrint: Record<string, string>;
-
-  // Plate objects (models on build plate)
-  plateObjects: PlateObject[];
-  selectedPlateObjectId: string | null;
-
-  // Slice state
-  sliceProgress: SliceProgress;
-  sliceResult: SliceResult | null;
-
-  // Preview state
-  previewMode: 'model' | 'preview';
-  previewLayer: number;            // end layer (inclusive) — highest visible layer
-  previewLayerStart: number;       // start layer (inclusive) — lowest visible layer
-  previewLayerMax: number;
-  previewShowTravel: boolean;
-  previewShowRetractions: boolean;
-  previewColorMode: 'type' | 'speed' | 'flow';
-  previewHiddenTypes: string[];
-  previewColorSchemeOpen: boolean;
-
-  // Simulation (nozzle playback) state
-  previewSimEnabled: boolean;      // show the virtual nozzle marker
-  previewSimPlaying: boolean;
-  previewSimSpeed: number;         // multiplier (1x, 2x, 5x, 10x, 25x)
-  previewSimTime: number;          // seconds advanced through the toolpath
-
-  // Printability analysis
-  printabilityReport: import('../engine/PrintabilityCheck').PrintabilityReport | null;
-  printabilityHighlight: boolean;
-
-  // UI state
-  settingsPanel: 'printer' | 'material' | 'print' | null;
-  transformMode: 'move' | 'scale' | 'rotate' | 'mirror' | 'settings';
-
-  // Getters (computed)
-  getActivePrinterProfile: () => PrinterProfile;
-  getActiveMaterialProfile: () => MaterialProfile;
-  getActivePrintProfile: () => PrintProfile;
-
-  // Profile management
-  setActivePrinterProfile: (id: string) => void;
-  setActiveMaterialProfile: (id: string) => void;
-  setActivePrintProfile: (id: string) => void;
-  addPrinterProfile: (profile: PrinterProfile) => void;
-  updatePrinterProfile: (id: string, updates: Partial<PrinterProfile>) => void;
-  deletePrinterProfile: (id: string) => void;
-  createPrinterWithDefaults: (name: string) => void;
-  addMaterialProfile: (profile: MaterialProfile) => void;
-  updateMaterialProfile: (id: string, updates: Partial<MaterialProfile>) => void;
-  deleteMaterialProfile: (id: string) => void;
-  addPrintProfile: (profile: PrintProfile) => void;
-  updatePrintProfile: (id: string, updates: Partial<PrintProfile>) => void;
-  deletePrintProfile: (id: string) => void;
-
-  // Plate management
-  addToPlate: (featureId: string, name: string, geometry: THREE.BufferGeometry | null | unknown) => void;
-  removeFromPlate: (id: string) => void;
-  selectPlateObject: (id: string | null) => void;
-  updatePlateObject: (id: string, updates: Partial<PlateObject>) => void;
-  autoArrange: () => void;
-  clearPlate: () => void;
-  importFileToPlate: (file: File) => Promise<void>;
-
-  // Slicing
-  startSlice: () => void;
-  cancelSlice: () => void;
-  setSliceProgress: (progress: SliceProgress) => void;
-
-  // Preview
-  setPreviewMode: (mode: 'model' | 'preview') => void;
-  setPreviewLayer: (layer: number) => void;
-  setPreviewLayerStart: (layer: number) => void;
-  setPreviewLayerRange: (start: number, end: number) => void;
-  setPreviewShowTravel: (show: boolean) => void;
-  setPreviewShowRetractions: (show: boolean) => void;
-  setPreviewColorMode: (mode: 'type' | 'speed' | 'flow') => void;
-  togglePreviewType: (type: string) => void;
-  setPreviewColorSchemeOpen: (open: boolean) => void;
-
-  // Simulation
-  setPreviewSimEnabled: (on: boolean) => void;
-  setPreviewSimPlaying: (playing: boolean) => void;
-  setPreviewSimSpeed: (speed: number) => void;
-  setPreviewSimTime: (t: number) => void;
-  advancePreviewSimTime: (deltaSeconds: number) => void;
-  resetPreviewSim: () => void;
-
-  // Printability
-  runPrintabilityCheck: () => void;
-  clearPrintabilityReport: () => void;
-  setPrintabilityHighlight: (on: boolean) => void;
-
-  // Export
-  downloadGCode: () => void;
-  sendToPrinter: () => Promise<void>;
-
-  // UI
-  setSettingsPanel: (panel: 'printer' | 'material' | 'print' | null) => void;
-  setTransformMode: (mode: 'move' | 'scale' | 'rotate' | 'mirror' | 'settings') => void;
-}
-
+export type { SlicerStore } from './slicer/types';
 
 export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
   // Profiles — rehydrated from IDB on load; defaults used only on fresh install
@@ -559,61 +444,4 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
   setSliceProgress: (progress) => set({ sliceProgress: progress }),
 
   ...createPreviewActions({ set, get }),
-}),
-{
-  name: 'dzign3d-slicer-plate',
-  storage: idbStorage as unknown as PersistStorage<SlicerStore, unknown>,
-
-  partialize: ((state) => ({
-    // Profiles — user-managed, must survive page reload
-    printerProfiles: state.printerProfiles,
-    materialProfiles: state.materialProfiles,
-    printProfiles: state.printProfiles,
-
-    // Active selections
-    activePrinterProfileId: state.activePrinterProfileId,
-    activeMaterialProfileId: state.activeMaterialProfileId,
-    activePrintProfileId: state.activePrintProfileId,
-
-    // Per-printer last-used profile memory
-    printerLastMaterial: state.printerLastMaterial,
-    printerLastPrint: state.printerLastPrint,
-
-    // Plate objects (geometry serialized to plain JSON)
-    plateObjects: state.plateObjects.map((obj) => ({
-      ...obj,
-      geometry: serializeGeom(obj.geometry),
-    })),
-    selectedPlateObjectId: state.selectedPlateObjectId,
-    transformMode: state.transformMode,
-  }) as unknown as SlicerStore) as (state: SlicerStore) => SlicerStore,
-
-  onRehydrateStorage: () => (state) => {
-    if (!state) return;
-
-    // Restore plate geometry
-    if (state.plateObjects) {
-      state.plateObjects = state.plateObjects.map((obj) => ({
-        ...obj,
-        geometry: obj.geometry && !(obj.geometry instanceof THREE.BufferGeometry)
-          ? deserializeGeom(obj.geometry as unknown as SerializedGeom)
-          : obj.geometry,
-      })) as PlateObject[];
-    }
-
-    // If IDB had no profiles (fresh install or cleared storage), fall back to
-    // built-in defaults so the app is never left with an empty profile list.
-    if (!state.printerProfiles?.length)  state.printerProfiles  = DEFAULT_PRINTER_PROFILES;
-    if (!state.materialProfiles?.length) state.materialProfiles = DEFAULT_MATERIAL_PROFILES;
-    if (!state.printProfiles?.length)    state.printProfiles    = DEFAULT_PRINT_PROFILES;
-
-    // Ensure active IDs still point to existing profiles (they may have been
-    // deleted in another session or the saved ID may predate a default-reset).
-    const hasPrinter  = state.printerProfiles.some((p) => p.id === state.activePrinterProfileId);
-    const hasMaterial = state.materialProfiles.some((m) => m.id === state.activeMaterialProfileId);
-    const hasPrint    = state.printProfiles.some((p)    => p.id === state.activePrintProfileId);
-    if (!hasPrinter)  state.activePrinterProfileId  = state.printerProfiles[0]?.id  ?? '';
-    if (!hasMaterial) state.activeMaterialProfileId = state.materialProfiles[0]?.id ?? '';
-    if (!hasPrint)    state.activePrintProfileId    = state.printProfiles[0]?.id    ?? '';
-  },
-}));
+}), slicerPersistConfig));

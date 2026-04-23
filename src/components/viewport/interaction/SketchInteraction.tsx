@@ -5,12 +5,11 @@ import { useCADStore } from '../../../store/cadStore';
 import { useThemeStore } from '../../../store/themeStore';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
 import type { SketchPoint } from '../../../types/cad';
-import { commitSketchTool } from './sketchInteraction/commitTool';
 import { renderSketchPreview } from './sketchInteraction/previewTool';
-import { loadDefaultFont, fontPathToSegments } from '../../../utils/sketchTextUtil';
 import { useSketchProjectionTools } from './sketchInteraction/hooks/useSketchProjectionTools';
 import { useSketchDimensionTool } from './sketchInteraction/hooks/useSketchDimensionTool';
 import { useSketchConstraintTool } from './sketchInteraction/hooks/useSketchConstraintTool';
+import { useSketchInteractionEvents } from './sketchInteraction/hooks/useSketchInteractionEvents';
 import { SketchInteractionHud } from './sketchInteraction/SketchInteractionHud';
 
 export default function SketchInteraction() {
@@ -382,509 +381,49 @@ export default function SketchInteraction() {
     gl,
   });
 
-  useEffect(() => {
-    if (!activeSketch || activeTool === 'select') return;
+  useSketchInteractionEvents({
+    activeSketch,
+    activeTool,
+    getWorldPoint,
+    findSnapCandidate,
+    addSketchEntity,
+    replaceSketchEntities,
+    cycleEntityLinetype,
+    setStatusMessage,
+    polygonSides,
+    filletRadius,
+    chamferDist1,
+    chamferDist2,
+    chamferAngle,
+    tangentCircleRadius,
+    conicRho,
+    blendCurveMode,
+    sketchTextContent,
+    sketchTextHeight,
+    sketchTextBold,
+    sketchTextItalic,
+    commitSketchTextEntities,
+    projectLiveLink,
+    cancelSketchProjectSurfaceTool,
+    sketch3DMode,
+    setSketch3DActivePlane,
+    camera,
+    gl,
+    raycaster,
+    scene,
+    drawingPointsRef,
+    mousePosRef,
+    setDrawingPoints,
+    setMousePos,
+    setSnapTarget,
+    lineArcModeRef,
+    drawingConstructionRef,
+    planePickPendingRef,
+    dragScreenStartRef,
+    isDraggingArcRef,
+    dragJustFinishedRef,
+  });
 
-    // Plane-aware tangent axes — works for named planes AND custom face planes
-    const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
-
-    // Project a 3-D point difference onto the plane's 2-D local axes
-    const projectToPlane = (pt: SketchPoint, origin: SketchPoint) => {
-      const d = new THREE.Vector3(pt.x - origin.x, pt.y - origin.y, pt.z - origin.z);
-      return { u: d.dot(t1), v: d.dot(t2) };
-    };
-
-    const handleMouseMove = (event: MouseEvent) => {
-      // Read the latest state via refs so this handler doesn't need to live in
-      // the master effect's dep list — see drawingPointsRef/mousePosRef note
-      // at the top of the component for why.
-      const drawingPoints = drawingPointsRef.current;
-      const mousePos = mousePosRef.current;
-      void mousePos; // consulted below by the shared helpers via closure
-      const point = getWorldPoint(event);
-      if (point) {
-        // D65 / NAV-24: entity snap — pass drawStart for tangent computation
-        const drawStart = drawingPoints.length > 0
-          ? new THREE.Vector3(drawingPoints[0].x, drawingPoints[0].y, drawingPoints[0].z)
-          : null;
-        const snapCandidate = findSnapCandidate(point, drawStart);
-        if (snapCandidate) {
-          setMousePos(snapCandidate.worldPos.clone());
-          setSnapTarget(snapCandidate);
-        } else {
-          setMousePos(point);
-          setSnapTarget(null);
-        }
-        if (drawingPoints.length > 0) {
-          const start = drawingPoints[0];
-          if (activeTool === 'circle' || activeTool === 'polygon' || activeTool === 'polygon-inscribed') {
-            const radius = point.distanceTo(new THREE.Vector3(start.x, start.y, start.z));
-            setStatusMessage(`Radius: ${radius.toFixed(2)} — click to place`);
-          } else if (activeTool === 'arc') {
-            if (drawingPoints.length === 1) {
-              const r = point.distanceTo(new THREE.Vector3(start.x, start.y, start.z));
-              setStatusMessage(`Arc radius: ${r.toFixed(2)} — click to set start angle`);
-            } else {
-              setStatusMessage('Click to set end angle');
-            }
-          } else if (activeTool === 'circle-2point') {
-            const radius = point.distanceTo(new THREE.Vector3(start.x, start.y, start.z)) / 2;
-            setStatusMessage(`Diameter: ${(radius*2).toFixed(2)}, r=${radius.toFixed(2)}`);
-          } else if (activeTool === 'circle-3point') {
-            if (drawingPoints.length === 1) setStatusMessage('Click second point on circle');
-            else setStatusMessage('Click third point to complete circle');
-          } else if (activeTool === 'arc-3point') {
-            if (drawingPoints.length === 1) setStatusMessage('Click a point on the arc');
-            else setStatusMessage('Click end point to complete arc');
-          } else if (activeTool === 'rectangle-center') {
-            const sketchPt: SketchPoint = { id: '', x: point.x, y: point.y, z: point.z };
-            const { u: du, v: dv } = projectToPlane(sketchPt, start);
-            setStatusMessage(`Width: ${(Math.abs(du)*2).toFixed(2)}, Height: ${(Math.abs(dv)*2).toFixed(2)}`);
-          } else if (activeTool === 'polygon-edge') {
-            setStatusMessage(`Edge length: ${point.distanceTo(new THREE.Vector3(start.x, start.y, start.z)).toFixed(2)}`);
-          } else if (activeTool === 'polygon-circumscribed') {
-            const apothem = point.distanceTo(new THREE.Vector3(start.x, start.y, start.z));
-            setStatusMessage(`Apothem: ${apothem.toFixed(2)} — click to place`);
-          } else {
-            const dx = point.x - start.x;
-            const dy = point.y - start.y;
-            const dz = point.z - start.z;
-            setStatusMessage(`Δ: ${dx.toFixed(2)}, ${dy.toFixed(2)}, ${dz.toFixed(2)}`);
-          }
-        } else {
-          setStatusMessage(`Click to start ${activeTool.replace(/-/g, ' ')} — ${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)}`);
-        }
-      }
-    };
-
-    const handleClick = (event: MouseEvent) => {
-      // Snapshot latest state via refs (see note at top of component).
-      const drawingPoints = drawingPointsRef.current;
-      const mousePos = mousePosRef.current;
-      void mousePos;
-      if (event.button !== 0) return;
-      // Suppress the click that follows a drag-arc completion
-      if (dragJustFinishedRef.current) { dragJustFinishedRef.current = false; return; }
-
-      // S7: plane-pick mode — intercept click to redirect the active draw plane
-      if (planePickPendingRef.current && sketch3DMode) {
-        const rect = gl.domElement.getBoundingClientRect();
-        const mouse = new THREE.Vector2(
-          ((event.clientX - rect.left) / rect.width) * 2 - 1,
-          -((event.clientY - rect.top) / rect.height) * 2 + 1,
-        );
-        raycaster.setFromCamera(mouse, camera);
-        const pickable: THREE.Mesh[] = [];
-        scene.traverse((obj) => {
-          const m = obj as THREE.Mesh;
-          if (m.isMesh && obj.userData?.pickable) pickable.push(m);
-        });
-        const hits = raycaster.intersectObjects(pickable, false);
-        if (hits.length > 0 && hits[0].faceIndex !== undefined && hits[0].face) {
-          const hit = hits[0];
-          // Compute face normal in world space
-          const normalLocal = hit.face!.normal.clone();
-          const normalMatrix = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
-          const worldNormal = normalLocal.applyMatrix3(normalMatrix).normalize();
-          // Use the hit point as origin on that plane
-          const worldOrigin = hit.point.clone();
-          setSketch3DActivePlane({
-            normal: [worldNormal.x, worldNormal.y, worldNormal.z],
-            origin: [worldOrigin.x, worldOrigin.y, worldOrigin.z],
-          });
-          planePickPendingRef.current = false;
-          setStatusMessage(`Draw plane switched to face — Tab to change again`);
-        } else {
-          setStatusMessage('No face hit — click a solid face to switch plane');
-        }
-        return;
-      }
-
-      const point = getWorldPoint(event);
-      if (!point) return;
-
-      const sketchPoint: SketchPoint = {
-        id: crypto.randomUUID(),
-        x: point.x,
-        y: point.y,
-        z: point.z,
-      };
-
-      // D12: Sketch Text — resolve font async, then push entities
-      if (activeTool === 'sketch-text') {
-        const anchorPt = point;
-        const textStr    = sketchTextContent;
-        const textH      = sketchTextHeight;
-        const textFormat = { bold: sketchTextBold, italic: sketchTextItalic };
-        setStatusMessage('Placing text…');
-        loadDefaultFont().then((font) => {
-          const segs2d = fontPathToSegments(font, textStr, 0, 0, textH, 8, textFormat);
-          // Transform 2D font segments to 3D world space using sketch axes
-          const seg3d = segs2d.map((s) => {
-            const p1 = anchorPt.clone()
-              .addScaledVector(t1, s.x1)
-              .addScaledVector(t2, s.y1);
-            const p2 = anchorPt.clone()
-              .addScaledVector(t1, s.x2)
-              .addScaledVector(t2, s.y2);
-            return { x1: p1.x, y1: p1.y, z1: p1.z, x2: p2.x, y2: p2.y, z2: p2.z };
-          });
-          commitSketchTextEntities(seg3d);
-        }).catch(() => {
-          setStatusMessage('Sketch Text: font failed to load — check /fonts/Roboto-Regular.ttf');
-        });
-        return;
-      }
-
-      // S9: inline arc toggle — when lineArcMode is active and line tool has a chain start,
-      // add a tangent arc from the last point to the new point instead of a straight line.
-      const isLineToolActive = activeTool === 'line' || activeTool === 'construction-line' || activeTool === 'centerline';
-      if (isLineToolActive && lineArcModeRef.current && drawingPoints.length >= 1) {
-        const startPt = drawingPoints[0];
-        const endPtWorld = point;
-        // Compute tangent direction from last entity or fallback to chord direction
-        const sk9 = useCADStore.getState().activeSketch;
-        const lastEnt9 = sk9?.entities[sk9.entities.length - 1];
-        let tangentDir9: THREE.Vector3;
-        if (lastEnt9 && (lastEnt9.type === 'line' || lastEnt9.type === 'construction-line' || lastEnt9.type === 'centerline') && lastEnt9.points.length >= 2) {
-          const a9 = lastEnt9.points[0];
-          const b9 = lastEnt9.points[lastEnt9.points.length - 1];
-          tangentDir9 = new THREE.Vector3(b9.x - a9.x, b9.y - a9.y, b9.z - a9.z).normalize();
-        } else if (lastEnt9 && lastEnt9.type === 'arc') {
-          const c9 = lastEnt9.points[0];
-          const r9 = lastEnt9.radius || 1;
-          const ea9 = lastEnt9.endAngle ?? Math.PI;
-          const radial9 = new THREE.Vector3(
-            t1.x * Math.cos(ea9) + t2.x * Math.sin(ea9),
-            t1.y * Math.cos(ea9) + t2.y * Math.sin(ea9),
-            t1.z * Math.cos(ea9) + t2.z * Math.sin(ea9),
-          );
-          const endPtArc9 = { x: c9.x + radial9.x * r9, y: c9.y + radial9.y * r9, z: c9.z + radial9.z * r9 };
-          const distToEnd9 = new THREE.Vector3(endPtArc9.x - startPt.x, endPtArc9.y - startPt.y, endPtArc9.z - startPt.z).length();
-          if (distToEnd9 < 1) {
-            const planeNorm9 = t1.clone().cross(t2).normalize();
-            tangentDir9 = radial9.clone().cross(planeNorm9).normalize();
-          } else {
-            tangentDir9 = endPtWorld.clone().sub(new THREE.Vector3(startPt.x, startPt.y, startPt.z)).normalize();
-          }
-        } else {
-          tangentDir9 = endPtWorld.clone().sub(new THREE.Vector3(startPt.x, startPt.y, startPt.z)).normalize();
-        }
-        const planeNormal9 = t1.clone().cross(t2).normalize();
-        const normalInPlane9 = tangentDir9.clone().cross(planeNormal9).normalize();
-        const chord9 = new THREE.Vector3(endPtWorld.x - startPt.x, endPtWorld.y - startPt.y, endPtWorld.z - startPt.z);
-        const chordLenSq9 = chord9.lengthSq();
-        const projOnNormal9 = chord9.dot(normalInPlane9);
-        if (Math.abs(projOnNormal9) < 1e-5 || chordLenSq9 < 0.001) {
-          setStatusMessage('Tangent arc too short — click further away');
-        } else {
-          const d9 = chordLenSq9 / (2 * projOnNormal9);
-          const cx9 = startPt.x + normalInPlane9.x * d9;
-          const cy9 = startPt.y + normalInPlane9.y * d9;
-          const cz9 = startPt.z + normalInPlane9.z * d9;
-          const arcRadius9 = Math.abs(d9);
-          const toStart9 = new THREE.Vector3(startPt.x - cx9, startPt.y - cy9, startPt.z - cz9);
-          const toEnd9 = new THREE.Vector3(endPtWorld.x - cx9, endPtWorld.y - cy9, endPtWorld.z - cz9);
-          const startAngle9 = Math.atan2(toStart9.dot(t2), toStart9.dot(t1));
-          const endAngle9 = Math.atan2(toEnd9.dot(t2), toEnd9.dot(t1));
-          const arcCenter9: SketchPoint = { id: crypto.randomUUID(), x: cx9, y: cy9, z: cz9 };
-          const arcEnd9: SketchPoint = { id: crypto.randomUUID(), x: endPtWorld.x, y: endPtWorld.y, z: endPtWorld.z };
-          addSketchEntity({
-            id: crypto.randomUUID(),
-            type: 'arc',
-            points: [arcCenter9],
-            radius: arcRadius9,
-            startAngle: startAngle9,
-            endAngle: endAngle9,
-            isConstruction: drawingConstructionRef.current || undefined,
-          });
-          setDrawingPoints([arcEnd9]);
-          const arcSuffix = ' [ARC]';
-          const constrSuffix = drawingConstructionRef.current ? ' [CONSTRUCTION]' : '';
-          setStatusMessage(`Tangent arc added (r=${arcRadius9.toFixed(2)})${arcSuffix}${constrSuffix} — click next point`);
-        }
-        return;
-      }
-
-      // S4: Isoparametric Curve — handled here to access the MouseEvent shiftKey.
-      if (activeTool === 'isoparametric') {
-        const dir: 'u' | 'v' = event.shiftKey ? 'v' : 'u';
-        const clickWorld = point;
-        const isoValue = dir === 'u' ? clickWorld.dot(t1) : clickWorld.dot(t2);
-        const SPAN = 500;
-        const along = dir === 'u' ? t2 : t1;
-        const fixed  = dir === 'u' ? t1 : t2;
-        const base = fixed.clone().multiplyScalar(isoValue);
-        const p1World = base.clone().addScaledVector(along, -SPAN);
-        const p2World = base.clone().addScaledVector(along,  SPAN);
-        const startPt: SketchPoint = { id: crypto.randomUUID(), x: p1World.x, y: p1World.y, z: p1World.z };
-        const endPt: SketchPoint   = { id: crypto.randomUUID(), x: p2World.x, y: p2World.y, z: p2World.z };
-        addSketchEntity({
-          id: crypto.randomUUID(),
-          type: 'isoparametric',
-          points: [startPt, endPt],
-          isConstruction: true,
-          isoParamDir: dir,
-          isoParamValue: isoValue,
-        });
-        setStatusMessage(`Iso Curve (${dir.toUpperCase()}) placed at ${isoValue.toFixed(2)} — click again for another, Shift+click for V direction`);
-        return;
-      }
-
-      // S10: construction-mode toggle — wrap addSketchEntity to inject isConstruction flag
-      const addSketchEntityWrapped: typeof addSketchEntity = drawingConstructionRef.current
-        ? (entity) => addSketchEntity({ ...entity, isConstruction: true })
-        : addSketchEntity;
-
-      commitSketchTool({
-        activeTool,
-        activeSketch,
-        sketchPoint,
-        drawingPoints,
-        setDrawingPoints,
-        t1,
-        t2,
-        projectToPlane,
-        addSketchEntity: addSketchEntityWrapped,
-        replaceSketchEntities,
-        cycleEntityLinetype,
-        setStatusMessage,
-        polygonSides,
-        filletRadius,
-        chamferDist1,
-        chamferDist2,
-        chamferAngle,
-        tangentCircleRadius,
-        conicRho,
-        blendCurveMode,
-      });
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // Snapshot latest state via refs (see note at top of component).
-      const drawingPoints = drawingPointsRef.current;
-      void drawingPoints;
-      if (event.key === 'Escape') {
-        // S7: if in plane-pick mode, cancel it first
-        if (planePickPendingRef.current) {
-          planePickPendingRef.current = false;
-          setStatusMessage('Plane pick cancelled');
-          return;
-        }
-        setDrawingPoints([]);
-        setStatusMessage('Drawing cancelled');
-        return;
-      }
-      // S7: Tab key — enter plane-pick mode (3D sketch only)
-      if (event.key === 'Tab' && sketch3DMode) {
-        event.preventDefault();
-        planePickPendingRef.current = !planePickPendingRef.current;
-        if (planePickPendingRef.current) {
-          setStatusMessage('Click a face or construction plane to switch draw plane [Tab to cancel]');
-        } else {
-          setStatusMessage('Plane pick cancelled');
-        }
-        return;
-      }
-      // S9: 'A' key — toggle inline arc mode during line tool
-      if ((event.key === 'a' || event.key === 'A') && (activeTool === 'line' || activeTool === 'construction-line' || activeTool === 'centerline')) {
-        lineArcModeRef.current = !lineArcModeRef.current;
-        const base = `Click to place — ${drawingPoints.length === 0 ? 'start point' : 'next point'}`;
-        const arcSuffix = lineArcModeRef.current ? ' [ARC]' : '';
-        const constrSuffix = drawingConstructionRef.current ? ' [CONSTRUCTION]' : '';
-        setStatusMessage(base + arcSuffix + constrSuffix);
-        return;
-      }
-      // S10: 'X' key — toggle construction mode for any sketch drawing tool
-      if (event.key === 'x' || event.key === 'X') {
-        drawingConstructionRef.current = !drawingConstructionRef.current;
-        const arcSuffix = lineArcModeRef.current ? ' [ARC]' : '';
-        const constrSuffix = drawingConstructionRef.current ? ' [CONSTRUCTION]' : '';
-        setStatusMessage(`${activeTool.replace(/-/g, ' ')}${arcSuffix}${constrSuffix}`);
-        return;
-      }
-    };
-
-    // Right-click stops the current drawing operation at the last placed point;
-    // for spline/spline-control tools it commits the curve if ≥2 points are placed.
-    const handleContextMenu = (event: MouseEvent) => {
-      // Snapshot latest state via refs (see note at top of component).
-      const drawingPoints = drawingPointsRef.current;
-      if (activeTool === 'spline' && drawingPoints.length >= 2) {
-        event.preventDefault();
-        event.stopPropagation();
-        const curve = new THREE.CatmullRomCurve3(
-          drawingPoints.map((p) => new THREE.Vector3(p.x, p.y, p.z)),
-        );
-        const sampledPts = curve.getPoints(Math.max(50, drawingPoints.length * 8));
-        const splinePts: typeof drawingPoints = sampledPts.map((p) => ({
-          id: crypto.randomUUID(), x: p.x, y: p.y, z: p.z,
-        }));
-        addSketchEntity({ id: crypto.randomUUID(), type: 'spline', points: splinePts });
-        setDrawingPoints([]);
-        setStatusMessage(`Spline added (${drawingPoints.length} fit points)`);
-        return;
-      }
-      if (activeTool === 'spline-control' && drawingPoints.length >= 2) {
-        event.preventDefault();
-        event.stopPropagation();
-        // B-spline-like curve: CatmullRom with tension=0 approximates uniform B-spline
-        const curve = new THREE.CatmullRomCurve3(
-          drawingPoints.map((p) => new THREE.Vector3(p.x, p.y, p.z)),
-          false,
-          'catmullrom',
-          0,
-        );
-        const sampledPts = curve.getPoints(Math.max(50, drawingPoints.length * 16));
-        const splinePts: typeof drawingPoints = sampledPts.map((p) => ({
-          id: crypto.randomUUID(), x: p.x, y: p.y, z: p.z,
-        }));
-        addSketchEntity({ id: crypto.randomUUID(), type: 'spline', points: splinePts });
-        setDrawingPoints([]);
-        setStatusMessage(`Control Point Spline added (${drawingPoints.length} control points)`);
-        return;
-      }
-      if (drawingPoints.length > 0) {
-        event.preventDefault();
-        event.stopPropagation();
-        setDrawingPoints([]);
-        setStatusMessage('');
-      }
-    };
-
-    // D42: line-tool click-drag → tangent arc
-    const DRAG_THRESHOLD_PX = 8;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (event.button !== 0) return;
-      isDraggingArcRef.current = false;
-      dragJustFinishedRef.current = false;
-      dragScreenStartRef.current = { x: event.clientX, y: event.clientY };
-    };
-
-    const handlePointerMove = (event: PointerEvent) => {
-      // Snapshot latest state via refs (see note at top of component).
-      const drawingPoints = drawingPointsRef.current;
-      if (event.buttons !== 1) return; // only while left button held
-      const start = dragScreenStartRef.current;
-      if (!start) return;
-      const isLineMode = activeTool === 'line' || activeTool === 'construction-line' || activeTool === 'centerline';
-      if (!isLineMode) return;
-      if (drawingPoints.length === 0) return; // need a chain anchor
-      const dx = event.clientX - start.x;
-      const dy = event.clientY - start.y;
-      if (!isDraggingArcRef.current && Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD_PX) {
-        isDraggingArcRef.current = true;
-        setStatusMessage('Drag: tangent arc — release to place');
-      }
-    };
-
-    const handlePointerUp = (event: PointerEvent) => {
-      // Snapshot latest state via refs (see note at top of component).
-      const drawingPoints = drawingPointsRef.current;
-      const mousePos = mousePosRef.current;
-      if (event.button !== 0) return;
-      if (!isDraggingArcRef.current) return;
-      isDraggingArcRef.current = false;
-      dragJustFinishedRef.current = true;
-      dragScreenStartRef.current = null;
-
-      if (drawingPoints.length === 0 || !mousePos) return;
-      const isLineMode = activeTool === 'line' || activeTool === 'construction-line' || activeTool === 'centerline';
-      if (!isLineMode || !activeSketch) return;
-
-      // Get tangent direction from the last committed entity or the drawingPoints direction
-      const sk = useCADStore.getState().activeSketch;
-      const { t1: _t1, t2: _t2 } = GeometryEngine.getSketchAxes(activeSketch);
-      const lastEntity = sk?.entities[sk.entities.length - 1];
-      const chainPt = drawingPoints[0];
-      let tangentDir: THREE.Vector3;
-
-      if (lastEntity && (lastEntity.type === 'line' || lastEntity.type === 'construction-line' || lastEntity.type === 'centerline')) {
-        const a = lastEntity.points[0];
-        const b = lastEntity.points[lastEntity.points.length - 1];
-        tangentDir = new THREE.Vector3(b.x - a.x, b.y - a.y, b.z - a.z).normalize();
-      } else if (lastEntity && lastEntity.type === 'arc') {
-        const c = lastEntity.points[0];
-        const r = lastEntity.radius || 1;
-        const ea = lastEntity.endAngle ?? Math.PI;
-        const radial = new THREE.Vector3(
-          _t1.x * Math.cos(ea) + _t2.x * Math.sin(ea),
-          _t1.y * Math.cos(ea) + _t2.y * Math.sin(ea),
-          _t1.z * Math.cos(ea) + _t2.z * Math.sin(ea),
-        );
-        const endPtArc = { x: c.x + radial.x * r, y: c.y + radial.y * r, z: c.z + radial.z * r };
-        const distToEnd = new THREE.Vector3(endPtArc.x - chainPt.x, endPtArc.y - chainPt.y, endPtArc.z - chainPt.z).length();
-        if (distToEnd < 1) {
-          const planeNorm = _t1.clone().cross(_t2).normalize();
-          tangentDir = radial.clone().cross(planeNorm).normalize();
-        } else {
-          tangentDir = mousePos.clone().sub(new THREE.Vector3(chainPt.x, chainPt.y, chainPt.z)).normalize();
-        }
-      } else {
-        tangentDir = mousePos.clone().sub(new THREE.Vector3(chainPt.x, chainPt.y, chainPt.z)).normalize();
-      }
-
-      const startPt = chainPt;
-      const endPtWorld = mousePos;
-      const planeNormal2 = _t1.clone().cross(_t2).normalize();
-      const normalInPlane = tangentDir.clone().cross(planeNormal2).normalize();
-      const chord = new THREE.Vector3(endPtWorld.x - startPt.x, endPtWorld.y - startPt.y, endPtWorld.z - startPt.z);
-      const chordLenSq = chord.lengthSq();
-      const projOnNormal = chord.dot(normalInPlane);
-      if (Math.abs(projOnNormal) < 1e-5 || chordLenSq < 0.001) {
-        setStatusMessage('Tangent arc too short — skipped');
-        return;
-      }
-      const d = chordLenSq / (2 * projOnNormal);
-      const cx = startPt.x + normalInPlane.x * d;
-      const cy = startPt.y + normalInPlane.y * d;
-      const cz = startPt.z + normalInPlane.z * d;
-      const arcRadius = Math.abs(d);
-      const toStart = new THREE.Vector3(startPt.x - cx, startPt.y - cy, startPt.z - cz);
-      const toEnd = new THREE.Vector3(endPtWorld.x - cx, endPtWorld.y - cy, endPtWorld.z - cz);
-      const startAngle = Math.atan2(toStart.dot(_t2), toStart.dot(_t1));
-      const endAngle = Math.atan2(toEnd.dot(_t2), toEnd.dot(_t1));
-      const arcCenter: SketchPoint = { id: crypto.randomUUID(), x: cx, y: cy, z: cz };
-      const arcEnd: SketchPoint = { id: crypto.randomUUID(), x: endPtWorld.x, y: endPtWorld.y, z: endPtWorld.z };
-      addSketchEntity({
-        id: crypto.randomUUID(),
-        type: 'arc',
-        points: [arcCenter],
-        radius: arcRadius,
-        startAngle,
-        endAngle,
-      });
-      setDrawingPoints([arcEnd]);
-      setStatusMessage(`Tangent arc added (r=${arcRadius.toFixed(2)}) — click to continue line`);
-    };
-
-    const canvas = gl.domElement;
-    canvas.addEventListener('pointerdown', handlePointerDown);
-    canvas.addEventListener('pointermove', handlePointerMove);
-    canvas.addEventListener('pointerup', handlePointerUp);
-    canvas.addEventListener('mousemove', handleMouseMove);
-    canvas.addEventListener('click', handleClick);
-    canvas.addEventListener('contextmenu', handleContextMenu);
-    window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      canvas.removeEventListener('pointerdown', handlePointerDown);
-      canvas.removeEventListener('pointermove', handlePointerMove);
-      canvas.removeEventListener('pointerup', handlePointerUp);
-      canvas.removeEventListener('mousemove', handleMouseMove);
-      canvas.removeEventListener('click', handleClick);
-      canvas.removeEventListener('contextmenu', handleContextMenu);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-    // NOTE: `drawingPoints` and `mousePos` are intentionally NOT in this dep
-    // list even though they're closed over. Handlers read them via the refs
-    // (`drawingPointsRef` / `mousePosRef`) declared at the top of the
-    // component, which are kept in sync every render. Including them in deps
-    // would re-attach all 6 DOM listeners on every single pointermove
-    // (setMousePos fires constantly) — the original pre-fix behaviour that
-    // burned CPU and silently dropped events arriving mid-teardown.
-  }, [activeSketch, activeTool, getWorldPoint, findSnapCandidate, addSketchEntity, replaceSketchEntities, cycleEntityLinetype, setStatusMessage, polygonSides, filletRadius, chamferDist1, chamferDist2, chamferAngle, tangentCircleRadius, conicRho, blendCurveMode, camera, gl, raycaster, sketch3DMode, setSketch3DActivePlane, scene]);
 
   // Preview of current drawing operation
   useFrame(({ invalidate }) => {
