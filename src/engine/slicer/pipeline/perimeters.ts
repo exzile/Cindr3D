@@ -191,11 +191,15 @@ export function generatePerimetersEx(
   const computeDepth = (offset: number): {
     result: PCMultiPolygon;
     holesAtDepth: THREE.Vector2[][];
-    /** Outer wall loop at this depth — always the offset outer contour, never
-     *  the merged polygon's outer ring. Means the outer wall stays a clean
-     *  ring even when holes have broken through it (those holes simply get
-     *  filtered out of validHoles below). */
-    cleanOuter: THREE.Vector2[];
+    /** Outer wall loops at this depth — derived from the offset outer
+     *  contour after running it through polygonClipping.union, which splits
+     *  self-intersecting offsets into multiple disjoint polygons. Each
+     *  polygon is emitted as its own clean wall ring. This is critical at
+     *  layers where the offset has pinched the outer through a "neck"
+     *  (typical when a hole has broken through the outer at this depth) —
+     *  unioning produces multiple separate regions that each get their
+     *  own clean wall, instead of one giant snake of a perimeter. */
+    cleanOuters: THREE.Vector2[][];
     /** Holes that are still fully contained inside cleanOuter at this depth,
      *  i.e. the wall material between them and the outer is still thick
      *  enough to hold a wall loop. Each is emitted as an INDEPENDENT closed
@@ -203,8 +207,36 @@ export function generatePerimetersEx(
      *  instead of one giant notched chain. */
     validHoles: THREE.Vector2[][];
   } | null => {
-    const outerShrunk = deps.offsetContour(outerContour, offset);
-    if (outerShrunk.length < 3) return null;
+    const outerShrunkRaw = deps.offsetContour(outerContour, offset);
+    if (outerShrunkRaw.length < 3) return null;
+
+    // The custom offsetContour does NOT split a polygon when its inward
+    // offset would pinch off through a thin neck — it just returns one
+    // self-intersecting polyline. polygonClipping.union resolves the
+    // self-intersections and SPLITS the polygon into multiple disjoint
+    // regions when needed. That's exactly what we want for layers where a
+    // hole has broken through the outer: the offset outer pinches through
+    // the breakthrough point, and union breaks it into "the main outer
+    // perimeter" + "a tiny region around the leftover hole material" (or
+    // just removes that region if it's below minPolyArea).
+    const cleanOuters: THREE.Vector2[][] = [];
+    try {
+      const unioned = polygonClipping.union([[toRing(outerShrunkRaw)]]);
+      const filtered = dropTinyPolygons(unioned);
+      for (const poly of filtered) {
+        if (poly.length === 0) continue;
+        const ring = fromRing(poly[0]);
+        if (ring.length >= 3) cleanOuters.push(ring);
+      }
+    } catch {
+      // Fallback to the raw offset if union failed.
+      cleanOuters.push(outerShrunkRaw);
+    }
+    if (cleanOuters.length === 0) return null;
+    // For backwards-compat with the rest of computeDepth, pick the largest
+    // cleanOuter as "the" outerShrunk used for hole validation.
+    const outerShrunk = cleanOuters.reduce((a, b) =>
+      ringArea(toRing(a)) >= ringArea(toRing(b)) ? a : b);
 
     const holesExpanded = holeContours
       .map((h) => deps.offsetContour(h, offset))
@@ -281,7 +313,7 @@ export function generatePerimetersEx(
       }
     }
 
-    return { result, holesAtDepth, cleanOuter: outerShrunk, validHoles };
+    return { result, holesAtDepth, cleanOuters, validHoles };
   };
 
   const outerLoops: THREE.Vector2[][] = [];
@@ -313,13 +345,15 @@ export function generatePerimetersEx(
               if (trial) { lo = mid; best = trial; } else { hi = mid; }
             }
             const widened = Math.max(minLW, 2 * Math.max(0, lo - outerWallInset));
-            // Emit each feature (outer + each valid hole) as its own clean
-            // closed loop, NOT the merged polygon's rings — that prevents
-            // the wall from "hugging" around any hole that has broken
-            // through the outer at this depth.
-            if (best.cleanOuter.length >= 3) {
-              outerLoops.push(best.cleanOuter);
-              outerLineWidths.push(widened);
+            // Emit each feature (outer regions + each valid hole) as its own
+            // clean closed loop, NOT the merged polygon's rings — that
+            // prevents the wall from "hugging" around any hole that has
+            // broken through the outer at this depth.
+            for (const ring of best.cleanOuters) {
+              if (ring.length >= 3) {
+                outerLoops.push(ring);
+                outerLineWidths.push(widened);
+              }
             }
             for (const hole of best.validHoles) {
               if (hole.length >= 3) {
@@ -337,7 +371,7 @@ export function generatePerimetersEx(
 
     let result = nominalDepth.result;
     let thisDepthHoles = nominalDepth.holesAtDepth;
-    let cleanOuter = nominalDepth.cleanOuter;
+    let cleanOuters = nominalDepth.cleanOuters;
     let validHoles = nominalDepth.validHoles;
     let depthLineWidth = lineWidth;
 
@@ -368,19 +402,21 @@ export function generatePerimetersEx(
         depthLineWidth = widened;
         result = best.result;
         thisDepthHoles = best.holesAtDepth;
-        cleanOuter = best.cleanOuter;
+        cleanOuters = best.cleanOuters;
         validHoles = best.validHoles;
       }
     }
 
     // Emit each feature as its own clean closed loop. The merged polygon
     // (`result`) is still used below for infill region computation, but the
-    // wall loops themselves come from cleanOuter + validHoles so each
+    // wall loops themselves come from cleanOuters + validHoles so each
     // feature gets a topologically clean wall ring even when neighbouring
     // features have broken through each other at this depth.
-    if (cleanOuter.length >= 3) {
-      outerLoops.push(cleanOuter);
-      outerLineWidths.push(depthLineWidth);
+    for (const ring of cleanOuters) {
+      if (ring.length >= 3) {
+        outerLoops.push(ring);
+        outerLineWidths.push(depthLineWidth);
+      }
     }
     for (const hole of validHoles) {
       if (hole.length >= 3) {

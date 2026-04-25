@@ -278,159 +278,155 @@ export const DEFAULT_PRINT_PROFILES: PrintProfile[] = [
     id: 'standard-quality',
     name: 'Standard Quality (0.2mm)',
     layerHeight: 0.2,
-    firstLayerHeight: 0.3,
-    wallCount: 3,
-    wallSpeed: 45,
-    outerWallSpeed: 30,
-    wallLineWidth: 0.45,
-    topLayers: 4,
-    bottomLayers: 4,
-    topBottomPattern: 'lines',
-    topSpeed: 40,
-    infillDensity: 20,
-    infillPattern: 'grid',
-    infillSpeed: 60,
-    infillLineWidth: 0.45,
-    infillOverlap: 10,
-    printSpeed: 50,
-    travelSpeed: 150,
-    firstLayerSpeed: 25,
-    supportEnabled: false,
-    supportType: 'normal',
-    supportAngle: 50,
-    supportDensity: 15,
-    supportPattern: 'zigzag',
-    supportZDistance: 0.2,
-    supportXYDistance: 0.7,
-    supportInterface: true,
-    supportInterfaceLayers: 2,
-    adhesionType: 'skirt',
-    skirtLines: 3,
-    skirtDistance: 5,
-    brimWidth: 8,
-    raftLayers: 3,
-    enableBridgeFan: true,
-    bridgeFanSpeed: 100,
-    minLayerTime: 10,
-    lineWidth: 0.4,
-    outerWallLineWidth: 0.4,
-    topBottomLineWidth: 0.4,
-    initialLayerLineWidthFactor: 120,
+    firstLayerHeight: 0.3,        // layer_height_0 = 0.3
+    wallCount: 2,                  // wall_line_count = 2
+    wallSpeed: 30,                 // speed_wall = 30
+    outerWallSpeed: 30,            // speed_wall_0 = 30
+    wallLineWidth: 0.4,            // wall_line_width = 0.4
+    topLayers: 8,                  // top_layers = 8
+    bottomLayers: 6,               // bottom_layers = 6
+    topBottomPattern: 'lines',     // top_bottom_pattern = 'lines'
+    topSpeed: 30,                  // speed_topbottom = 30
+    infillDensity: 20,             // infill_sparse_density = 20
+    infillPattern: 'grid',         // infill_pattern = 'grid'
+    infillSpeed: 60,               // speed_infill = 60
+    infillLineWidth: 0.4,          // infill_line_width = 0.4
+    infillOverlap: 10,             // infill_overlap = 10
+    printSpeed: 60,                // speed_print = 60
+    travelSpeed: 120,              // speed_travel = 120
+    firstLayerSpeed: 30,           // speed_print_layer_0 = 30
+    supportEnabled: false,         // support_enable = false
+    supportType: 'normal',         // support_structure = 'normal'
+    supportAngle: 50,              // support_angle = 50
+    supportDensity: 15,            // support_infill_rate = 15
+    supportPattern: 'zigzag',      // support_pattern = 'zigzag'
+    supportZDistance: 0.1,         // support_z_distance = 0.1
+    supportXYDistance: 0.7,        // support_xy_distance = 0.7
+    supportInterface: false,       // support_interface_enable = false
+    supportInterfaceLayers: 5,     // support_interface_height = 1mm / 0.2mm
+    adhesionType: 'brim',          // adhesion_type = 'brim'
+    skirtLines: 1,                 // skirt_line_count = 1
+    skirtDistance: 3,              // skirt_gap = 3
+    brimWidth: 8,                  // brim_width = 8
+    raftLayers: 0,
+    enableBridgeFan: true,         // bridge_fan_speed > 0
+    bridgeFanSpeed: 100,           // bridge_fan_speed = 100
+    minLayerTime: 5,               // cool_min_layer_time = 5
+    lineWidth: 0.4,                // line_width = 0.4
+    outerWallLineWidth: 0.4,       // wall_line_width_0 = 0.4
+    topBottomLineWidth: 0.4,       // skin_line_width = 0.4
+    initialLayerLineWidthFactor: 100, // initial_layer_line_width_factor = 100
     outerWallFirst: false,
     alternateExtraWall: false,
-    infillWallCount: 0,
-    gradualInfillSteps: 0,
-    supportSpeed: 40,
-    smallAreaSpeed: 20,
-    retractionMinTravel: 1.5,
-    minPrintSpeed: 10,
-    fanFullLayer: 4,
-    liftHeadEnabled: false,
-    supportTreeAngle: 60,
-    supportTreeBranchDiameter: 5,
-    brimGap: 0,
-    brimLocation: 'outside',
-    raftMargin: 5,
-    zSeamAlignment: 'sharpest_corner',
-    combingMode: 'noskin',
-    avoidCrossingPerimeters: false,
-    thinWallDetection: true,
-    ironingEnabled: false,
+    infillWallCount: 0,            // infill_wall_line_count = 0
+    gradualInfillSteps: 0,         // gradual_infill_steps = 0
+    supportSpeed: 60,              // speed_support = 60
+    smallAreaSpeed: 30,            // small_feature_speed_factor = 50% of 60
+    retractionMinTravel: 1.5,      // retraction_min_travel = 1.5
+    minPrintSpeed: 10,             // cool_min_speed = 10
+    fanFullLayer: 2,               // cool_fan_full_layer = 2
+    liftHeadEnabled: false,        // cool_lift_head = false
+    supportTreeAngle: 60,          // support_tree_angle = 60
+    supportTreeBranchDiameter: 5,  // support_tree_branch_diameter = 5
+    brimGap: 0,                    // brim_gap = 0
+    brimLocation: 'outside',       // brim_location = 'outside'
+    raftMargin: 15,                // raft_margin = 15
+    zSeamAlignment: 'sharpest_corner', // z_seam_type = 'sharpest_corner'
+    combingMode: 'all',            // retraction_combing = 'all'
+    avoidCrossingPerimeters: true, // travel_avoid_other_parts = true
+    thinWallDetection: true,       // fill_outline_gaps = true
+    ironingEnabled: false,         // ironing_enabled = false
     ironingSpeed: 15,
-    ironingFlow: 10,
-    ironingSpacing: 0.1,
-    spiralizeContour: false,
-    printSequence: 'all_at_once',
-    draftShieldEnabled: false,
-    draftShieldDistance: 10,
-    coastingEnabled: false,
-    coastingVolume: 0.064,
-    adaptiveLayersEnabled: false,
-    adaptiveLayersMaxVariation: 0.1,
-    adaptiveLayersVariationStep: 0.05,
-    wallTransitionLength: 1.0,
-    wallTransitionAngle: 10,
-    minWallLineWidth: 0.2,
+    ironingFlow: 10.0,             // ironing_flow = 10
+    ironingSpacing: 0.1,           // ironing_line_spacing = 0.1
+    spiralizeContour: false,       // magic_spiralize = false
+    printSequence: 'all_at_once',  // print_sequence = 'all_at_once'
+    draftShieldEnabled: false,     // draft_shield_enabled = false
+    draftShieldDistance: 10,       // draft_shield_dist = 10
+    coastingEnabled: false,        // coasting_enable = false
+    coastingVolume: 0.064,         // coasting_volume = 0.064
+    adaptiveLayersEnabled: false,  // adaptive_layer_height_enabled = false
+    adaptiveLayersMaxVariation: 0.1,   // adaptive_layer_height_variation = 0.1
+    adaptiveLayersVariationStep: 0.01, // adaptive_layer_height_variation_step = 0.01
+    wallTransitionLength: 0.4,     // wall_transition_length = 0.4
+    wallTransitionAngle: 10,       // wall_transition_angle = 10
+    minWallLineWidth: 0.3,         // min_wall_line_width = 0.3
     outerWallWipeDistance: 0.0,
     zSeamX: null,
     zSeamY: null,
-    roofingLayers: 0,
-    roofingPattern: 'lines',
-    monotonicTopBottomOrder: false,
-    bridgeSkinSpeed: 25,
-    bridgeSkinFlow: 60,
+    roofingLayers: 0,              // roofing_layer_count = 0
+    roofingPattern: 'lines',       // roofing_pattern = 'lines'
+    monotonicTopBottomOrder: false, // skin_monotonic = false
+    bridgeSkinSpeed: 15,           // bridge_skin_speed = 15
+    bridgeSkinFlow: 60,            // bridge_skin_material_flow = 60
     bridgeAngle: 0,
-    bridgeWallSpeed: 25,
+    bridgeWallSpeed: 15,           // bridge_wall_speed = 15
     skinEdgeSupportLayers: 0,
-    infillBeforeWalls: false,
+    infillBeforeWalls: true,       // infill_before_walls = true
     multiplyInfill: 1,
-    randomInfillStart: false,
-    lightningInfillSupportAngle: 40,
-    accelerationEnabled: false,
-    jerkEnabled: false,
-    accelerationPrint: 3000,
-    accelerationTravel: 3000,
-    accelerationWall: 1000,
-    accelerationInfill: 3000,
-    accelerationTopBottom: 1000,
-    accelerationSupport: 2000,
-    jerkPrint: 10,
-    jerkTravel: 10,
-    jerkWall: 8,
-    jerkInfill: 10,
-    jerkTopBottom: 8,
-    skirtBrimSpeed: 30,
-    retractAtLayerChange: true,
-    maxRetractionCount: 90,
+    randomInfillStart: false,      // random_infill_start = false
+    lightningInfillSupportAngle: 40, // lightning_infill_support_angle = 40
+    accelerationEnabled: false,    // acceleration_enabled = false
+    jerkEnabled: false,            // jerk_enabled = false
+    accelerationPrint: 3000,       // acceleration_print = 3000
+    accelerationTravel: 5000,      // acceleration_travel = 5000
+    accelerationWall: 3000,        // acceleration_wall = 3000
+    accelerationInfill: 3000,      // acceleration_infill = 3000
+    accelerationTopBottom: 3000,   // acceleration_topbottom = 3000
+    accelerationSupport: 3000,     // acceleration_support = 3000
+    jerkPrint: 20,                 // jerk_print = 20
+    jerkTravel: 30,                // jerk_travel = 30
+    jerkWall: 20,                  // jerk_wall = 20
+    jerkInfill: 20,                // jerk_infill = 20
+    jerkTopBottom: 20,             // jerk_topbottom = 20
+    skirtBrimSpeed: 30,            // skirt_brim_speed = 30
+    retractAtLayerChange: false,   // retract_at_layer_change = false
+    maxRetractionCount: 90,        // retraction_count_max = 90
     retractionExtraPrimeAmount: 0,
     combingAvoidsSupports: false,
-    travelRetractBeforeOuterWall: false,
-    coolingFanEnabled: true,
-    regularFanSpeedLayer: 1,
+    travelRetractBeforeOuterWall: false, // travel_retract_before_outer_wall = false
+    coolingFanEnabled: true,       // cool_fan_enabled = true
+    regularFanSpeedLayer: 2,       // cool_fan_full_layer = 2
     fanKickstartTime: 100,
-    supportBuildplateOnly: false,
-    supportRoofEnable: false,
-    supportFloorEnable: false,
-    supportBottomDistance: 0.2,
-    supportWallCount: 0,
-    supportInterfacePattern: 'lines',
-    supportInterfaceDensity: 100,
-    skirtHeight: 1,
-    brimReplacesSupportEnabled: false,
-    raftBaseThickness: 0.3,
-    raftBaseLineWidth: 0.8,
-    raftBaseSpeed: 20,
-    raftInterfaceThickness: 0.27,
-    raftInterfaceLineWidth: 0.4,
-    raftInterfaceSpeed: 40,
-    raftSurfaceThickness: 0.27,
-    raftSurfaceLineWidth: 0.4,
-    raftSurfaceSpeed: 40,
-    raftAirGap: 0.3,
-    unionOverlappingVolumes: true,
+    supportBuildplateOnly: false,  // support_type = 'everywhere'
+    supportRoofEnable: false,      // support_roof_enable = false
+    supportFloorEnable: false,     // support_bottom_enable = false
+    supportBottomDistance: 0.1,    // support_bottom_distance = 0.1
+    supportWallCount: 1,           // support_wall_count = 1
+    supportInterfacePattern: 'concentric', // support_interface_pattern = 'concentric'
+    supportInterfaceDensity: 100,  // support_interface_density = 100
+    skirtHeight: 3,                // skirt_height = 3
+    brimReplacesSupportEnabled: true, // brim_replaces_support = true
+    raftBaseThickness: 0.3,        // raft_base_thickness = 0.3
+    raftBaseLineWidth: 0.8,        // raft_base_line_width = 0.8
+    raftBaseSpeed: 15,             // raft_base_speed = 15
+    raftInterfaceThickness: 0.15,  // raft_interface_thickness = 0.15
+    raftInterfaceLineWidth: 0.7,   // raft_interface_line_width = 0.7
+    raftInterfaceSpeed: 15,        // raft_interface_speed = 15
+    raftSurfaceThickness: 0.1,     // raft_surface_thickness = 0.1
+    raftSurfaceLineWidth: 0.4,     // raft_surface_line_width = 0.4
+    raftSurfaceSpeed: 20,          // raft_surface_speed = 20
+    raftAirGap: 0.3,               // raft_airgap = 0.3
+    unionOverlappingVolumes: true, // union_overlapping_volumes = true
     removeAllHoles: false,
-    extensiveStitching: false,
-    keepDisconnectedFaces: false,
-    maxResolution: 0.5,
-    maxDeviation: 0.025,
-    maxTravelResolution: 0.8,
-    surfaceMode: 'normal',
-    moldEnabled: false,
-    moldAngle: 40,
-    moldRoofHeight: 0.5,
-    fuzzySkinsEnabled: false,
-    fuzzySkinThickness: 0.3,
-    fuzzySkinPointDist: 0.8,
-    makeOverhangPrintable: false,
-    makeOverhangPrintableMaxAngle: 50,
-    slicingTolerance: 'middle',
-    flowRateCompensationMaxExtrusion: 0.0,
-    smallHoleMaxSize: 0.0,
-    minimumPolygonCircumference: 1.0,
-    // polygonClipping.union inside closeContourGaps collapses colinear points,
-    // so enabling this even at 0.05mm drops well-tessellated circles from
-    // 30+ points down to ~8-sided polygons. Keep it off by default — users
-    // with non-manifold STLs can re-enable in settings.
+    extensiveStitching: false,     // meshfix_extensive_stitching = false
+    keepDisconnectedFaces: false,  // meshfix_keep_open_polygons = false
+    maxResolution: 0.5,            // meshfix_maximum_resolution = 0.5
+    maxDeviation: 0.025,           // meshfix_maximum_deviation = 0.025
+    maxTravelResolution: 1.0,      // meshfix_maximum_travel_resolution = 1.0
+    surfaceMode: 'normal',         // magic_mesh_surface_mode = 'normal'
+    moldEnabled: false,            // mold_enabled = false
+    moldAngle: 40,                 // mold_angle = 40
+    moldRoofHeight: 0.5,           // mold_roof_height = 0.5
+    fuzzySkinsEnabled: false,      // magic_fuzzy_skin_enabled = false
+    fuzzySkinThickness: 0.3,       // magic_fuzzy_skin_thickness = 0.3
+    fuzzySkinPointDist: 0.8,       // magic_fuzzy_skin_point_dist = 0.8
+    makeOverhangPrintable: false,  // make_overhang_printable = false
+    makeOverhangPrintableMaxAngle: 50, // make_overhang_printable_angle = 50
+    slicingTolerance: 'middle',    // slicing_tolerance = 'middle'
+    flowRateCompensationMaxExtrusion: 0.0, // flow_rate_max_extrusion_offset = 0
+    smallHoleMaxSize: 0.0,         // small_hole_max_size = 0
+    minimumPolygonCircumference: 1.0, // minimum_polygon_circumference = 1.0
     slicingClosingRadius: 0,
   },
 ];
