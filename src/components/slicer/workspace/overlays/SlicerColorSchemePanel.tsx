@@ -3,6 +3,20 @@ import { useSlicerStore } from '../../../../store/slicerStore';
 import { MOVE_TYPE_COLORS, MOVE_TYPE_LABELS } from '../preview/constants';
 import './SlicerColorSchemePanel.css';
 
+// Per-mode gradient bar backgrounds (inline style overrides the CSS default).
+const GRADIENT_BARS: Record<string, string> = {
+  speed:       'linear-gradient(to right, #2255cc, #cc2222)',
+  flow:        'linear-gradient(to right, #22bb44, #cc2222)',
+  width:       'linear-gradient(to right, #2255cc, #cc6600)',
+  'layer-time':'linear-gradient(to right, #22bb44, #cc2222)',
+};
+const GRADIENT_LOW_LABEL: Record<string, string> = {
+  speed: 'Slow', flow: 'Low', width: 'Thin', 'layer-time': 'Fast',
+};
+const GRADIENT_HIGH_LABEL: Record<string, string> = {
+  speed: 'Fast', flow: 'High', width: 'Thick', 'layer-time': 'Slow',
+};
+
 const ALL_TYPES = Object.keys(MOVE_TYPE_LABELS) as (keyof typeof MOVE_TYPE_LABELS)[];
 
 // Types grouped into the extrusion rows (travel + retractions are separate toggles)
@@ -35,11 +49,13 @@ export function SlicerColorSchemePanel() {
         <select
           className="slicer-cs-panel__mode-select"
           value={colorMode}
-          onChange={(e) => setColorMode(e.target.value as 'type' | 'speed' | 'flow')}
+          onChange={(e) => setColorMode(e.target.value as 'type' | 'speed' | 'flow' | 'width' | 'layer-time')}
         >
           <option value="type">Line Type</option>
           <option value="speed">Speed</option>
           <option value="flow">Flow Rate</option>
+          <option value="width">Line Width</option>
+          <option value="layer-time">Layer Time</option>
         </select>
       </div>
 
@@ -69,10 +85,13 @@ export function SlicerColorSchemePanel() {
           </>
         ) : (
           <div className="slicer-cs-panel__gradient-legend">
-            <div className="slicer-cs-panel__gradient-bar" />
+            <div
+              className="slicer-cs-panel__gradient-bar"
+              style={{ background: GRADIENT_BARS[colorMode] ?? GRADIENT_BARS.speed }}
+            />
             <div className="slicer-cs-panel__gradient-labels">
-              <span>{colorMode === 'speed' ? 'Slow' : 'Low'}</span>
-              <span>{colorMode === 'speed' ? 'Fast' : 'High'}</span>
+              <span>{GRADIENT_LOW_LABEL[colorMode] ?? 'Low'}</span>
+              <span>{GRADIENT_HIGH_LABEL[colorMode] ?? 'High'}</span>
             </div>
           </div>
         )}

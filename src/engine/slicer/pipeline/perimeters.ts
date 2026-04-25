@@ -146,13 +146,83 @@ export function generatePerimetersEx(
     return { minX, maxX, minY, maxY };
   };
 
-  const computeDepth = (offset: number): { result: PCMultiPolygon; holesAtDepth: THREE.Vector2[][] } | null => {
+  // Containment check: returns true if `hole` is fully inside `outer`. Used to
+  // decide whether each per-hole wall loop should still be generated at this
+  // depth. When a hole's offset has expanded enough to break through the
+  // outer's offset boundary, there is no longer printable wall material between
+  // them, and emitting a wall-inner around the hole would force the slicer
+  // path to "hug" the outer wall around that hole — visually reading as the
+  // green inner-wall going around the red outer-wall in the preview.
+  const holeContainedInOuter = (
+    hole: THREE.Vector2[],
+    outer: THREE.Vector2[],
+  ): boolean => {
+    const holeMP: PCMultiPolygon = [[toRing(hole)]];
+    const outerMP: PCMultiPolygon = [[toRing(outer)]];
+    try {
+      const intersection = polygonClipping.intersection(outerMP, holeMP);
+      let intArea = 0;
+      for (const poly of intersection) {
+        if (poly.length > 0) intArea += ringArea(poly[0]);
+      }
+      const holeRingArea = ringArea(toRing(hole));
+      // ≥ 99% of the hole is inside the outer → still a valid hole at this depth
+      return holeRingArea > 1e-9 && intArea >= holeRingArea * 0.99;
+    } catch {
+      return false;
+    }
+  };
+
+  // Pairwise overlap check between two holes — both expanded at this depth.
+  const holesOverlap = (a: THREE.Vector2[], b: THREE.Vector2[]): boolean => {
+    const aMP: PCMultiPolygon = [[toRing(a)]];
+    const bMP: PCMultiPolygon = [[toRing(b)]];
+    try {
+      const intersection = polygonClipping.intersection(aMP, bMP);
+      for (const poly of intersection) {
+        if (poly.length > 0 && ringArea(poly[0]) > 1e-6) return true;
+      }
+      return false;
+    } catch {
+      return true;
+    }
+  };
+
+  const computeDepth = (offset: number): {
+    result: PCMultiPolygon;
+    holesAtDepth: THREE.Vector2[][];
+    /** Outer wall loop at this depth — always the offset outer contour, never
+     *  the merged polygon's outer ring. Means the outer wall stays a clean
+     *  ring even when holes have broken through it (those holes simply get
+     *  filtered out of validHoles below). */
+    cleanOuter: THREE.Vector2[];
+    /** Holes that are still fully contained inside cleanOuter at this depth,
+     *  i.e. the wall material between them and the outer is still thick
+     *  enough to hold a wall loop. Each is emitted as an INDEPENDENT closed
+     *  loop, which is what makes the preview show one clean ring per feature
+     *  instead of one giant notched chain. */
+    validHoles: THREE.Vector2[][];
+  } | null => {
     const outerShrunk = deps.offsetContour(outerContour, offset);
     if (outerShrunk.length < 3) return null;
 
     const holesExpanded = holeContours
       .map((h) => deps.offsetContour(h, offset))
       .filter((h) => h.length >= 3);
+
+    // Validate each hole: must be fully inside outerShrunk AND not overlap
+    // any already-validated hole at this depth. Holes that fail validation
+    // are skipped — there's no printable material between them and the
+    // outer (or another hole) to support a wall loop.
+    const validHoles: THREE.Vector2[][] = [];
+    for (const hole of holesExpanded) {
+      if (!holeContainedInOuter(hole, outerShrunk)) continue;
+      let overlaps = false;
+      for (const v of validHoles) {
+        if (holesOverlap(hole, v)) { overlaps = true; break; }
+      }
+      if (!overlaps) validHoles.push(hole);
+    }
 
     let result: PCMultiPolygon = [[toRing(outerShrunk)]];
     if (holesExpanded.length > 0) {
@@ -211,7 +281,7 @@ export function generatePerimetersEx(
       }
     }
 
-    return { result, holesAtDepth };
+    return { result, holesAtDepth, cleanOuter: outerShrunk, validHoles };
   };
 
   const outerLoops: THREE.Vector2[][] = [];
@@ -243,20 +313,18 @@ export function generatePerimetersEx(
               if (trial) { lo = mid; best = trial; } else { hi = mid; }
             }
             const widened = Math.max(minLW, 2 * Math.max(0, lo - outerWallInset));
-            for (const poly of best.result) {
-              if (poly.length > 0) {
-                const loop = fromRing(poly[0]);
-                if (loop.length >= 3) {
-                  outerLoops.push(loop);
-                  outerLineWidths.push(widened);
-                }
-              }
-              for (let i = 1; i < poly.length; i++) {
-                const loop = fromRing(poly[i]);
-                if (loop.length >= 3) {
-                  holeLoops.push(loop);
-                  holeLineWidths.push(widened);
-                }
+            // Emit each feature (outer + each valid hole) as its own clean
+            // closed loop, NOT the merged polygon's rings — that prevents
+            // the wall from "hugging" around any hole that has broken
+            // through the outer at this depth.
+            if (best.cleanOuter.length >= 3) {
+              outerLoops.push(best.cleanOuter);
+              outerLineWidths.push(widened);
+            }
+            for (const hole of best.validHoles) {
+              if (hole.length >= 3) {
+                holeLoops.push(hole);
+                holeLineWidths.push(widened);
               }
             }
             if (best.holesAtDepth.length > 0) lastInnermostHoles = best.holesAtDepth;
@@ -269,6 +337,8 @@ export function generatePerimetersEx(
 
     let result = nominalDepth.result;
     let thisDepthHoles = nominalDepth.holesAtDepth;
+    let cleanOuter = nominalDepth.cleanOuter;
+    let validHoles = nominalDepth.validHoles;
     let depthLineWidth = lineWidth;
 
     const nextOffset = (w + 1) * lineWidth + lineWidth / 2 + (w === 0 ? outerWallInset : 0);
@@ -298,23 +368,24 @@ export function generatePerimetersEx(
         depthLineWidth = widened;
         result = best.result;
         thisDepthHoles = best.holesAtDepth;
+        cleanOuter = best.cleanOuter;
+        validHoles = best.validHoles;
       }
     }
 
-    for (const poly of result) {
-      if (poly.length > 0) {
-        const loop = fromRing(poly[0]);
-        if (loop.length >= 3) {
-          outerLoops.push(loop);
-          outerLineWidths.push(depthLineWidth);
-        }
-      }
-      for (let i = 1; i < poly.length; i++) {
-        const loop = fromRing(poly[i]);
-        if (loop.length >= 3) {
-          holeLoops.push(loop);
-          holeLineWidths.push(depthLineWidth);
-        }
+    // Emit each feature as its own clean closed loop. The merged polygon
+    // (`result`) is still used below for infill region computation, but the
+    // wall loops themselves come from cleanOuter + validHoles so each
+    // feature gets a topologically clean wall ring even when neighbouring
+    // features have broken through each other at this depth.
+    if (cleanOuter.length >= 3) {
+      outerLoops.push(cleanOuter);
+      outerLineWidths.push(depthLineWidth);
+    }
+    for (const hole of validHoles) {
+      if (hole.length >= 3) {
+        holeLoops.push(hole);
+        holeLineWidths.push(depthLineWidth);
       }
     }
     const regionsAtDepth = deps.multiPolygonToRegions(result);

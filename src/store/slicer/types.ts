@@ -28,7 +28,9 @@ export interface SlicerStore {
   previewLayerMax: number;
   previewShowTravel: boolean;
   previewShowRetractions: boolean;
-  previewColorMode: 'type' | 'speed' | 'flow';
+  previewSectionEnabled: boolean;
+  previewSectionZ: number;
+  previewColorMode: 'type' | 'speed' | 'flow' | 'width' | 'layer-time';
   previewHiddenTypes: string[];
   previewColorSchemeOpen: boolean;
   previewSimEnabled: boolean;
@@ -71,7 +73,9 @@ export interface SlicerStore {
   setPreviewLayerRange: (start: number, end: number) => void;
   setPreviewShowTravel: (show: boolean) => void;
   setPreviewShowRetractions: (show: boolean) => void;
-  setPreviewColorMode: (mode: 'type' | 'speed' | 'flow') => void;
+  setPreviewSectionEnabled: (on: boolean) => void;
+  setPreviewSectionZ: (z: number) => void;
+  setPreviewColorMode: (mode: 'type' | 'speed' | 'flow' | 'width' | 'layer-time') => void;
   togglePreviewType: (type: string) => void;
   setPreviewColorSchemeOpen: (open: boolean) => void;
   setPreviewSimEnabled: (on: boolean) => void;

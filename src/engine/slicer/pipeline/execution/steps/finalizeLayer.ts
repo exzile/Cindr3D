@@ -30,7 +30,7 @@ export function finalizeLayer(pipeline: any, run: any, layer: any): void {
       for (let bl = 0; bl < brimCount; bl++) {
         const pad = (bl + 1) * pp.wallLineWidth;
         const pts = [new THREE.Vector2(bMinX - pad, bMinY - pad), new THREE.Vector2(bMaxX + pad, bMinY - pad), new THREE.Vector2(bMaxX + pad, bMaxY + pad), new THREE.Vector2(bMinX - pad, bMaxY + pad)];
-        emitter.travelTo(pts[0].x, pts[0].y);
+        emitter.travelTo(pts[0].x, pts[0].y, moves);
         for (let pi = 1; pi < pts.length; pi++) {
           const from = pts[pi - 1], to = pts[pi];
           const brimSpeed = pp.skirtBrimSpeed ?? pp.firstLayerSpeed;
@@ -58,7 +58,7 @@ export function finalizeLayer(pipeline: any, run: any, layer: any): void {
         const sm = support.moves[si];
         const fromDist = Math.hypot(sm.from.x - emitter.currentX, sm.from.y - emitter.currentY);
         if (connectSup && si > 0 && fromDist < connectTol) layerTime += emitter.extrudeTo(sm.from.x, sm.from.y, sm.speed, sm.lineWidth, layerH).time;
-        else emitter.travelTo(sm.from.x, sm.from.y);
+        else emitter.travelTo(sm.from.x, sm.from.y, moves);
         layerTime += emitter.extrudeTo(sm.to.x, sm.to.y, sm.speed, sm.lineWidth, layerH).time;
         moves.push(sm);
       }
@@ -83,7 +83,7 @@ export function finalizeLayer(pipeline: any, run: any, layer: any): void {
       const d = pp.oozeShieldDistance ?? 2;
       const shield = [new THREE.Vector2(oMinX - d, oMinY - d), new THREE.Vector2(oMaxX + d, oMinY - d), new THREE.Vector2(oMaxX + d, oMaxY + d), new THREE.Vector2(oMinX - d, oMaxY + d)];
       gcode.push('; Ooze shield');
-      emitter.travelTo(shield[0].x, shield[0].y);
+      emitter.travelTo(shield[0].x, shield[0].y, moves);
       for (let pi = 1; pi < shield.length; pi++) {
         const from = shield[pi - 1], to = shield[pi];
         layerTime += emitter.extrudeTo(to.x, to.y, pp.wallSpeed, pp.wallLineWidth, layerH).time;
@@ -104,7 +104,7 @@ export function finalizeLayer(pipeline: any, run: any, layer: any): void {
       if (innermost.length < 3) continue;
       const ironLines = pipeline.generateLinearInfill(innermost, 100, pp.ironingSpacing, li, pp.ironingPattern ?? 'lines');
       for (const line of ironLines) {
-        emitter.travelTo(line.from.x, line.from.y);
+        emitter.travelTo(line.from.x, line.from.y, moves);
         emitter.unretract();
         const dist = Math.hypot(line.to.x - emitter.currentX, line.to.y - emitter.currentY);
         const e = emitter.calculateExtrusion(dist, pp.ironingSpacing, layerH) * ironingFlowFactor;

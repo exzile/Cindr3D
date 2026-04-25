@@ -268,6 +268,63 @@
 .slicer-bottom-bar__dualrange input[type="range"]::-webkit-slider-runnable-track { background: transparent; border: none; }
 .slicer-bottom-bar__dualrange input[type="range"]::-moz-range-track { background: transparent; border: none; }
 
+/* -------- Layer step buttons -------- */
+
+.slicer-bottom-bar__layer-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* -------- Section plane -------- */
+
+.slicer-bottom-bar__section {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.slicer-bottom-bar__section input[type="range"] {
+  width: 80px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.slicer-bottom-bar__section-val {
+  color: var(--text-primary);
+  min-width: 46px;
+  font-variant-numeric: tabular-nums;
+}
+
+.slicer-bottom-bar__section-snap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: var(--bg-toolbar);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.12s, border-color 0.12s;
+  flex-shrink: 0;
+}
+
+.slicer-bottom-bar__section-snap.is-active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.slicer-bottom-bar__section-snap:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
 /* -------- Simulation controls -------- */
 
 .slicer-bottom-bar__sim-btn {

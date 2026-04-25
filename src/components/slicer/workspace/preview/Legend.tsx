@@ -5,12 +5,20 @@ import { MOVE_TYPE_COLORS, MOVE_TYPE_LABELS } from './constants';
 import './Legend.css';
 
 interface LegendProps {
-  colorMode: 'type' | 'speed' | 'flow';
+  colorMode: 'type' | 'speed' | 'flow' | 'width' | 'layer-time';
   currentLayer: number;
   currentZ: number;
   layerTime: number;
   range: [number, number];
 }
+
+// Per-mode gradient colours for the legend bar (must match constants.ts ramps).
+const LEGEND_GRADIENT: Record<string, string> = {
+  speed:        'linear-gradient(to right, #2255cc, #cc2222)',
+  flow:         'linear-gradient(to right, #22bb44, #cc2222)',
+  width:        'linear-gradient(to right, #2255cc, #cc6600)',
+  'layer-time': 'linear-gradient(to right, #22bb44, #cc2222)',
+};
 
 export function Legend({ colorMode, currentLayer, currentZ, layerTime, range }: LegendProps) {
   const formatTime = (seconds: number) => {
@@ -19,6 +27,8 @@ export function Legend({ colorMode, currentLayer, currentZ, layerTime, range }: 
     const secs = Math.round(seconds % 60);
     return `${mins}m ${secs}s`;
   };
+
+  const gradientStyle = LEGEND_GRADIENT[colorMode];
 
   return (
     <React.Fragment>
@@ -53,7 +63,7 @@ export function Legend({ colorMode, currentLayer, currentZ, layerTime, range }: 
                 <div className="slicer-preview-legend__mode-title">Speed</div>
                 <div className="slicer-preview-legend__range">
                   <span>{range[0].toFixed(0)}</span>
-                  <div className="slicer-preview-legend__gradient" />
+                  <div className="slicer-preview-legend__gradient" style={{ background: gradientStyle }} />
                   <span>{range[1].toFixed(0)}</span>
                 </div>
                 <div className="slicer-preview-legend__units">mm/s</div>
@@ -65,10 +75,34 @@ export function Legend({ colorMode, currentLayer, currentZ, layerTime, range }: 
                 <div className="slicer-preview-legend__mode-title">Flow (extrusion)</div>
                 <div className="slicer-preview-legend__range">
                   <span>{range[0].toFixed(3)}</span>
-                  <div className="slicer-preview-legend__gradient" />
+                  <div className="slicer-preview-legend__gradient" style={{ background: gradientStyle }} />
                   <span>{range[1].toFixed(3)}</span>
                 </div>
                 <div className="slicer-preview-legend__units">mm</div>
+              </div>
+            )}
+
+            {colorMode === 'width' && (
+              <div>
+                <div className="slicer-preview-legend__mode-title">Line Width</div>
+                <div className="slicer-preview-legend__range">
+                  <span>{range[0].toFixed(2)}</span>
+                  <div className="slicer-preview-legend__gradient" style={{ background: gradientStyle }} />
+                  <span>{range[1].toFixed(2)}</span>
+                </div>
+                <div className="slicer-preview-legend__units">mm · thin → thick</div>
+              </div>
+            )}
+
+            {colorMode === 'layer-time' && (
+              <div>
+                <div className="slicer-preview-legend__mode-title">Layer Time</div>
+                <div className="slicer-preview-legend__range">
+                  <span>{formatTime(range[0])}</span>
+                  <div className="slicer-preview-legend__gradient" style={{ background: gradientStyle }} />
+                  <span>{formatTime(range[1])}</span>
+                </div>
+                <div className="slicer-preview-legend__units">fast → slow</div>
               </div>
             )}
           </div>

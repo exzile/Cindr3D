@@ -1,19 +1,26 @@
 import * as THREE from 'three';
 import type { SliceMove } from '../../../../types/slicer';
 
+// Hex strings — used by the HTML legend / color-scheme panel.
 export const MOVE_TYPE_COLORS: Record<SliceMove['type'], string> = {
-  'wall-outer': '#aa1111',
-  'wall-inner': '#33dd55',
-  infill: '#cc5500',
-  'top-bottom': '#1144bb',
-  support: '#4caf50',
-  skirt: '#9c27b0',
-  brim: '#9c27b0',
-  raft: '#795548',
-  bridge: '#f44336',
-  travel: '#444444',
-  ironing: '#e91e63',
+  'wall-outer': '#cc2222',
+  'wall-inner': '#22bb44',
+  infill:       '#cc6600',
+  'top-bottom': '#2255cc',
+  support:      '#cc44bb',
+  skirt:        '#999999',
+  brim:         '#999999',
+  raft:         '#777777',
+  bridge:       '#ff2020',
+  travel:       '#555555',
+  ironing:      '#55cc88',
 };
+
+// THREE.Color singletons — used by the 3D scene renderer. Derived from the hex
+// map above so the legend and the 3D preview always agree on colors.
+export const MOVE_TYPE_THREE_COLORS: Record<SliceMove['type'], THREE.Color> = Object.fromEntries(
+  Object.entries(MOVE_TYPE_COLORS).map(([k, v]) => [k, new THREE.Color(v)]),
+) as Record<SliceMove['type'], THREE.Color>;
 
 export const MOVE_TYPE_LABELS: Record<SliceMove['type'], string> = {
   'wall-outer': 'Outer Wall',
@@ -29,7 +36,15 @@ export const MOVE_TYPE_LABELS: Record<SliceMove['type'], string> = {
   ironing: 'Ironing',
 };
 
-export const SPEED_LOW_COLOR = new THREE.Color('#2196f3');
-export const SPEED_HIGH_COLOR = new THREE.Color('#f44336');
-export const FLOW_LOW_COLOR = new THREE.Color('#2196f3');
-export const FLOW_HIGH_COLOR = new THREE.Color('#f44336');
+// Speed ramp: blue (slow) → red (fast).
+export const SPEED_LOW_COLOR  = new THREE.Color('#2255cc');
+export const SPEED_HIGH_COLOR = new THREE.Color('#cc2222');
+// Flow ramp: green (low extrusion) → red (high extrusion).
+export const FLOW_LOW_COLOR   = new THREE.Color('#22bb44');
+export const FLOW_HIGH_COLOR  = new THREE.Color('#cc2222');
+// Width ramp: blue (thin/Arachne inner) → orange (thick outer wall).
+export const WIDTH_LOW_COLOR  = new THREE.Color('#2255cc');
+export const WIDTH_HIGH_COLOR = new THREE.Color('#cc6600');
+// Layer-time ramp: green (fast layer) → red (slow/cooling layer).
+export const LAYER_TIME_LOW_COLOR  = new THREE.Color('#22bb44');
+export const LAYER_TIME_HIGH_COLOR = new THREE.Color('#cc2222');

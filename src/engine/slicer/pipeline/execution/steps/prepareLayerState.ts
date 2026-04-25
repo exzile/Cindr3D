@@ -102,7 +102,7 @@ export async function prepareLayerState(pipeline: any, run: any, li: number) {
   gcode.push(`G1 Z${printZ.toFixed(3)} F${(pp.travelSpeed * 60).toFixed(0)}`);
   emitter.currentZ = printZ;
   if ((pp.layerStartX != null || pp.layerStartY != null) && !isFirstLayer) {
-    emitter.travelTo(pp.layerStartX ?? emitter.currentX, pp.layerStartY ?? emitter.currentY);
+    emitter.travelTo(pp.layerStartX ?? emitter.currentX, pp.layerStartY ?? emitter.currentY, moves);
   }
 
   applyLayerStartControls({
@@ -127,7 +127,7 @@ export async function prepareLayerState(pipeline: any, run: any, li: number) {
     }
     const adhesionMoves = pipeline.generateAdhesion(contours, pp, layerH, offsetX, offsetY);
     for (const am of adhesionMoves) {
-      emitter.travelTo(am.from.x, am.from.y);
+      emitter.travelTo(am.from.x, am.from.y, moves);
       layerTime += emitter.extrudeTo(am.to.x, am.to.y, am.speed, am.lineWidth, am.layerHeight ?? layerH).time;
       moves.push(am);
     }
@@ -153,7 +153,7 @@ export async function prepareLayerState(pipeline: any, run: any, li: number) {
         { x: dsMinX - sd - slw / 2, y: dsMinY - sd - slw / 2 },
       ];
       const shieldSpeed = pp.skirtBrimSpeed ?? pp.travelSpeed;
-      emitter.travelTo(shieldPts[0].x, shieldPts[0].y);
+      emitter.travelTo(shieldPts[0].x, shieldPts[0].y, moves);
       gcode.push('; Draft shield');
       for (let si = 1; si < shieldPts.length; si++) layerTime += emitter.extrudeTo(shieldPts[si].x, shieldPts[si].y, shieldSpeed, slw, layerH).time;
     }

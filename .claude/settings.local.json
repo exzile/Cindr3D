@@ -74,7 +74,9 @@
       "Bash(npx eslint *)",
       "Read(//mnt/c/Program Files/**)",
       "Read(//c/Program Files/UltiMaker Cura 5.12.0/**)",
-      "Bash(node -e \"require\\('three/examples/jsm/lines/LineSegments2.js'\\)\")"
+      "Bash(node -e \"require\\('three/examples/jsm/lines/LineSegments2.js'\\)\")",
+      "mcp__Kapture_Browser_Automation__list_tabs",
+      "mcp__Kapture_Browser_Automation__new_tab"
     ]
   }
 }

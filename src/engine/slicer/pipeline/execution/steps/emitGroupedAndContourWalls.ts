@@ -34,7 +34,7 @@ function emitOuterLoop(params: any) {
   if (reordered.length < 2) return 0;
   emitter.setAccel(isFirstLayer ? pp.accelerationInitialLayer : (pp.accelerationOuterWall ?? pp.accelerationWall), pp.accelerationPrint);
   emitter.setJerk(isFirstLayer ? pp.jerkInitialLayer : (pp.jerkOuterWall ?? pp.jerkWall), pp.jerkPrint);
-  emitter.travelTo(reordered[0].x, reordered[0].y);
+  emitter.travelTo(reordered[0].x, reordered[0].y, moves);
   gcode.push(`; ${params.comment ?? 'Outer wall'}`);
   const scarfLen = pp.scarfSeamLength ?? 0;
   const scarfActive = scarfLen > 0 && (pp.scarfSeamStartHeight === undefined || layerZ >= pp.scarfSeamStartHeight);
@@ -133,7 +133,7 @@ export function emitGroupedAndContourWalls(pipeline: any, run: any, layer: any) 
       if (innerWall.length < 2) continue;
       emitter.setAccel(isFirstLayer ? pp.accelerationInitialLayer : (pp.accelerationInnerWall ?? pp.accelerationWall), pp.accelerationPrint);
       emitter.setJerk(isFirstLayer ? pp.jerkInitialLayer : (pp.jerkInnerWall ?? pp.jerkWall), pp.jerkPrint);
-      emitter.travelTo(innerWall[0].x, innerWall[0].y);
+      emitter.travelTo(innerWall[0].x, innerWall[0].y, moves);
       gcode.push(`; Inner wall ${wi}`);
       for (let pi = 1; pi < innerWall.length; pi++) {
         const from = innerWall[pi - 1], to = innerWall[pi];

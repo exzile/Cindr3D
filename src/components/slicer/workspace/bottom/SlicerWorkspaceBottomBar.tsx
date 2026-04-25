@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Eye, EyeOff, Download, Send, Play, Pause, X, Clapperboard,
-  SkipBack, RotateCcw, Gauge, Palette, FlaskConical,
+  SkipBack, RotateCcw, Gauge, Palette, FlaskConical, Scissors,
+  ChevronLeft, ChevronRight, Magnet,
 } from 'lucide-react';
 import { useSlicerStore } from '../../../../store/slicerStore';
 import { usePrinterStore } from '../../../../store/printerStore';
@@ -38,6 +39,10 @@ export function SlicerWorkspaceBottomBar() {
   const uploadProgress = usePrinterStore((s) => s.uploadProgress);
   const colorSchemeOpen = useSlicerStore((s) => s.previewColorSchemeOpen);
   const setColorSchemeOpen = useSlicerStore((s) => s.setPreviewColorSchemeOpen);
+  const sectionEnabled = useSlicerStore((s) => s.previewSectionEnabled);
+  const sectionZ = useSlicerStore((s) => s.previewSectionZ);
+  const setSectionEnabled = useSlicerStore((s) => s.setPreviewSectionEnabled);
+  const setSectionZ = useSlicerStore((s) => s.setPreviewSectionZ);
 
   // Simulation
   const simEnabled = useSlicerStore((s) => s.previewSimEnabled);
@@ -53,6 +58,7 @@ export function SlicerWorkspaceBottomBar() {
   const [sending, setSending] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [sendError, setSendError] = useState<string | null>(null);
   const [calibrationMenuOpen, setCalibrationMenuOpen] = useState(false);
+  const [sectionSnap, setSectionSnap] = useState(true);
   const sendResetTimerRef = useRef<number | null>(null);
   const calibrationMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -139,6 +145,22 @@ export function SlicerWorkspaceBottomBar() {
   // Percentage fill for the dual-range track.
   const rangeLo = previewLayerMax > 0 ? (previewLayerStart / previewLayerMax) * 100 : 0;
   const rangeHi = previewLayerMax > 0 ? (previewLayer / previewLayerMax) * 100 : 100;
+
+  // Binary search: find the layer Z closest to rawZ among the sorted layer list.
+  const snapToLayerZ = useCallback((rawZ: number): number => {
+    const layers = sliceResult?.layers;
+    if (!layers || layers.length === 0) return rawZ;
+    let lo = 0, hi = layers.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (layers[mid].z <= rawZ) lo = mid;
+      else hi = mid - 1;
+    }
+    const a = layers[lo];
+    const b = layers[lo + 1];
+    if (!b) return a.z;
+    return Math.abs(a.z - rawZ) <= Math.abs(b.z - rawZ) ? a.z : b.z;
+  }, [sliceResult]);
 
   return (
     <div className="slicer-bottom-bar">
@@ -251,6 +273,47 @@ export function SlicerWorkspaceBottomBar() {
       )}
 
       {previewMode === 'preview' && hasResult && (
+        <button
+          className={`slicer-bottom-bar__btn${sectionEnabled ? ' is-active' : ''}`}
+          title="Toggle section plane — clips everything above the slider Z"
+          onClick={() => {
+            if (!sectionEnabled && sliceResult) {
+              // Snap to the current layer Z so the user immediately sees a cut.
+              const snap = sliceResult.layers[previewLayer]?.z ?? sectionZ;
+              setSectionZ(snap);
+            }
+            setSectionEnabled(!sectionEnabled);
+          }}
+        >
+          <Scissors size={14} /> Section
+        </button>
+      )}
+
+      {previewMode === 'preview' && hasResult && sectionEnabled && (
+        <label className="slicer-bottom-bar__section" title="Section plane Z height">
+          <button
+            className={`slicer-bottom-bar__section-snap${sectionSnap ? ' is-active' : ''}`}
+            title={sectionSnap ? 'Snapping to layer boundaries (click to go continuous)' : 'Continuous Z (click to snap to layers)'}
+            onClick={() => setSectionSnap((v) => !v)}
+          >
+            <Magnet size={12} />
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={activePrinter?.buildVolume?.z ?? 250}
+            step={sectionSnap ? 0.01 : 0.5}
+            value={sectionZ}
+            onChange={(e) => {
+              const raw = Number(e.target.value);
+              setSectionZ(sectionSnap ? snapToLayerZ(raw) : raw);
+            }}
+          />
+          <span className="slicer-bottom-bar__section-val">{sectionZ.toFixed(1)} mm</span>
+        </label>
+      )}
+
+      {previewMode === 'preview' && hasResult && (
         <div
           className="slicer-bottom-bar__layer-slider slicer-bottom-bar__layer-slider--range"
           title="Drag handles to set start and end layer"
@@ -283,6 +346,28 @@ export function SlicerWorkspaceBottomBar() {
           <span className="slicer-bottom-bar__layer-count">
             {previewLayerStart}–{previewLayer}/{previewLayerMax}
           </span>
+        </div>
+      )}
+
+      {/* Step-by-layer buttons — quick ±1 navigation without touching the slider */}
+      {previewMode === 'preview' && hasResult && (
+        <div className="slicer-bottom-bar__layer-step">
+          <button
+            className="slicer-bottom-bar__sim-ctrl"
+            title="Previous layer (−1)"
+            disabled={previewLayer <= previewLayerStart}
+            onClick={() => setPreviewLayer(previewLayer - 1)}
+          >
+            <ChevronLeft size={13} />
+          </button>
+          <button
+            className="slicer-bottom-bar__sim-ctrl"
+            title="Next layer (+1)"
+            disabled={previewLayer >= previewLayerMax}
+            onClick={() => setPreviewLayer(previewLayer + 1)}
+          >
+            <ChevronRight size={13} />
+          </button>
         </div>
       )}
 

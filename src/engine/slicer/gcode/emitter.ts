@@ -2,6 +2,7 @@ import type {
   MaterialProfile,
   PrinterProfile,
   PrintProfile,
+  SliceMove,
 } from '../../../types/slicer';
 import type { GCodeEmitterOptions, ExtrusionMoveResult } from '../../../types/slicer-gcode-emitter.types';
 import type { StartEndMachineState } from '../../../types/slicer-gcode.types';
@@ -199,11 +200,29 @@ export class GCodeEmitter {
     this.currentY = y;
   }
 
-  travelTo(x: number, y: number): void {
+  /**
+   * Travel (non-extruding) move to (x, y).
+   *
+   * If `moves` is provided, a corresponding `travel` SliceMove is pushed onto
+   * it so the preview can:
+   *   (a) correctly split extrusion chains at wall-loop boundaries (otherwise
+   *       the preview's chain detection sees consecutive wall-inner moves
+   *       from *different* loops and strings them into one tube, creating
+   *       radial-connector "teeth" at the loop boundaries);
+   *   (b) optionally render the travel line and any retraction dot that the
+   *       travel triggered.
+   *
+   * Callers emitting extrusion features should pass their layer's `moves`
+   * array so loop boundaries round-trip through the preview correctly.
+   */
+  travelTo(x: number, y: number, moves?: SliceMove[]): void {
     const dx = x - this.currentX;
     const dy = y - this.currentY;
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist < 1e-4) return;
+    const fromX = this.currentX;
+    const fromY = this.currentY;
+    const wasRetracted = this.isRetracted;
     if (shouldRetractOnTravel(dist, this.extrudedSinceRetract, this.print)) {
       this.retract();
     }
@@ -214,6 +233,22 @@ export class GCodeEmitter {
       this.setJerk(this.print.jerkTravel, this.print.jerkPrint);
     }
     this.rawTravelTo(x, y, this.currentLayerTravelSpeed);
+    if (moves) {
+      // A travel that triggered a retraction carries the retraction distance
+      // as a negative `extrusion` value — the preview renders those as
+      // retraction dots.
+      const retractExtrusion = (!wasRetracted && this.isRetracted)
+        ? -(this.material.retractionDistance ?? 0)
+        : 0;
+      moves.push({
+        type: 'travel',
+        from: { x: fromX, y: fromY },
+        to: { x, y },
+        speed: this.currentLayerTravelSpeed,
+        extrusion: retractExtrusion,
+        lineWidth: 0,
+      });
+    }
   }
 
   extrudeTo(

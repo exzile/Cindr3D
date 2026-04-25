@@ -123,7 +123,7 @@ export function emitContourInfill(pipeline: any, run: any, layer: any, contoursD
         const baseLoop = (item.outerWallCount > 0 ? item.wallSets[item.outerWallCount - 1] : contour.points);
         const loop = ew === 0 ? baseLoop : pipeline.offsetContour(baseLoop, ew * pp.infillLineWidth);
         if (loop.length < 3) break;
-        emitter.travelTo(loop[0].x, loop[0].y);
+        emitter.travelTo(loop[0].x, loop[0].y, moves);
         for (let pi = 1; pi < loop.length; pi++) {
           const from = loop[pi - 1], to = loop[pi];
           layer.layerTime += emitter.extrudeTo(to.x, to.y, topBottomSpeed, pp.infillLineWidth, layerH).time;
@@ -173,7 +173,7 @@ export function emitContourInfill(pipeline: any, run: any, layer: any, contoursD
       const fromDist = Math.hypot(effFrom.x - emitter.currentX, effFrom.y - emitter.currentY);
       const canConnectInfill = connect && idx > 0 && fromDist < connectTol && pipeline.segmentInsideMaterial(new THREE.Vector2(emitter.currentX, emitter.currentY), effFrom, innermostWall, infillHoles);
       if (canConnectInfill) layer.layerTime += emitter.extrudeTo(effFrom.x, effFrom.y, thisSpeed, thisLineWidth, layerH).time;
-      else emitter.travelTo(effFrom.x, effFrom.y);
+      else emitter.travelTo(effFrom.x, effFrom.y, moves);
       const flowSaved = emitter.currentLayerFlow;
       emitter.currentLayerFlow = flowSaved * thisFlowScale;
       layer.layerTime += emitter.extrudeTo(effTo.x, effTo.y, thisSpeed, thisLineWidth, layerH).time;

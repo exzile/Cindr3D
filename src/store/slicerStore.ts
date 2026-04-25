@@ -52,6 +52,8 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
   previewLayerMax: 0,
   previewShowTravel: false,
   previewShowRetractions: true,
+  previewSectionEnabled: false,
+  previewSectionZ: 250,
   previewColorMode: 'type',
   previewHiddenTypes: [],
   previewColorSchemeOpen: false,
