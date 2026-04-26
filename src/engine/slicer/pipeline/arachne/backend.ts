@@ -3,6 +3,7 @@ import { extractBeadPaths } from './pathExtraction';
 import { buildSkeletalTrapezoidation } from './trapezoidation';
 import type { ArachneBackend, ArachneBackendName } from './types';
 import { buildEdgeVoronoi } from './voronoi';
+import { arachneWasmBackend } from './arachneWasm';
 
 export const arachneJsBackend: ArachneBackend = {
   name: 'js',
@@ -14,6 +15,7 @@ export const arachneJsBackend: ArachneBackend = {
 
 const registeredBackends = new Map<ArachneBackendName, ArachneBackend>([
   [arachneJsBackend.name, arachneJsBackend],
+  [arachneWasmBackend.name, arachneWasmBackend],
 ]);
 
 export function registerArachneBackend(backend: ArachneBackend): void {

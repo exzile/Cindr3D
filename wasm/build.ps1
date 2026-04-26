@@ -154,5 +154,70 @@ export default function createClipper2Module(
     Write-Host "[build.ps1] Clipper2 source not found at $Clipper2; skipping Clipper2 module."
 }
 
+$LibArachneInc = Join-Path $Root 'vendor\libArachne\include'
+$LibArachneSrc = Join-Path $Root 'vendor\libArachne\src'
+$StubInc = Join-Path $Root 'vendor\stubs'
+
+if (Test-Path $LibArachneSrc) {
+    $arachneSources = @((Join-Path $SrcDir 'arachne.cpp')) + @(
+        Get-ChildItem -Path $LibArachneSrc -Recurse -File -Include *.cpp |
+            ForEach-Object { $_.FullName }
+    ) + @(
+        (Join-Path $Clipper2Src 'clipper.engine.cpp'),
+        (Join-Path $Clipper2Src 'clipper.offset.cpp'),
+        (Join-Path $Clipper2Src 'clipper.rectclip.cpp')
+    )
+    $arachneFlags = @(
+        $flags,
+        '-std=c++20',
+        '-fexceptions',
+        '-I', $SrcDir,
+        '-I', $LibArachneInc,
+        '-I', $StubInc,
+        '-I', $BoostInc,
+        '-I', $Clipper2Inc,
+        '-s', 'EXPORT_NAME=createArachneModule',
+        '-s', "EXPORTED_FUNCTIONS=['_arachneAnswer','_arachneConfigValueCount','_generateArachnePaths','_getArachneCounts','_emitArachnePathCounts','_emitArachnePathMeta','_emitArachnePoints','_resetArachnePaths','_malloc','_free']",
+        '-s', "EXPORTED_RUNTIME_METHODS=['HEAPF64','HEAP32']"
+    )
+
+    Write-Host "[build.ps1] Building Arachne module..."
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $emcc @arachneFlags @arachneSources -o (Join-Path $OutDir 'arachne.js')
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
+    if ($LASTEXITCODE -ne 0) { throw "em++ failed with exit code $LASTEXITCODE" }
+
+    Write-Host "[build.ps1] Generating arachne.d.ts..."
+    $arachneDts = @'
+export interface ArachneModule {
+  HEAPF64: Float64Array;
+  HEAP32: Int32Array;
+  _malloc(size: number): number;
+  _free(ptr: number): void;
+
+  _arachneAnswer(): number;
+  _arachneConfigValueCount(): number;
+  _generateArachnePaths(pointsPtr: number, pathCountsPtr: number, pathCount: number,
+                        configValuesPtr: number, configValueCount: number): number;
+  _getArachneCounts(outPtr: number): void;
+  _emitArachnePathCounts(outPtr: number, capacityInts: number): number;
+  _emitArachnePathMeta(outPtr: number, capacityInts: number): number;
+  _emitArachnePoints(outPtr: number, capacityDoubles: number): number;
+  _resetArachnePaths(): void;
+}
+
+export default function createArachneModule(
+  options?: { locateFile?(path: string): string }
+): Promise<ArachneModule>;
+'@
+    Set-Content -Encoding utf8 -Path (Join-Path $OutDir 'arachne.d.ts') -Value $arachneDts
+} else {
+    Write-Host "[build.ps1] libArachne source not found at $LibArachneSrc; skipping Arachne module."
+}
+
 Write-Host "[build.ps1] Done."
 Get-ChildItem $OutDir | Format-Table Name, Length

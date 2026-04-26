@@ -6,8 +6,8 @@
 
 #include <memory>
 
+#include "arachne_config.h"
 #include "BeadingStrategy/BeadingStrategyFactory.h"
-#include "settings/Settings.h"
 #include "utils/ExtrusionLine.h"
 #include "utils/polygon.h"
 #include "utils/section_type.h"
@@ -23,9 +23,9 @@ public:
      * \param nominal_bead_width The nominal bead width used in the generation of the toolpaths
      * \param inset_count The maximum number of parallel extrusion lines that make up the wall
      * \param wall_0_inset How far to inset the outer wall, to make it adhere better to other walls.
-     * \param settings The settings as provided by the user
+     * \param config Flat Arachne settings supplied by the WASM wrapper
      */
-    WallToolPaths(const Polygons& outline, const coord_t nominal_bead_width, const size_t inset_count, const coord_t wall_0_inset, const Settings& settings, const int layer_idx, SectionType section_type);
+    WallToolPaths(const Polygons& outline, const coord_t nominal_bead_width, const size_t inset_count, const coord_t wall_0_inset, const ArachneConfig& config, const int layer_idx, SectionType section_type);
 
     /*!
      * A class that creates the toolpaths given an outline, nominal bead width and maximum amount of walls
@@ -34,9 +34,9 @@ public:
      * \param bead_width_x The bead width of the inner walls used in the generation of the toolpaths
      * \param inset_count The maximum number of parallel extrusion lines that make up the wall
      * \param wall_0_inset How far to inset the outer wall, to make it adhere better to other walls.
-     * \param settings The settings as provided by the user
+     * \param config Flat Arachne settings supplied by the WASM wrapper
      */
-    WallToolPaths(const Polygons& outline, const coord_t bead_width_0, const coord_t bead_width_x, const size_t inset_count, const coord_t wall_0_inset, const Settings& settings, const int layer_idx, SectionType section_type);
+    WallToolPaths(const Polygons& outline, const coord_t bead_width_0, const coord_t bead_width_x, const size_t inset_count, const coord_t wall_0_inset, const ArachneConfig& config, const int layer_idx, SectionType section_type);
 
     /*!
      * Generates the Toolpaths
@@ -90,9 +90,9 @@ protected:
      * 
      * Works on both toolpaths and inner contours simultaneously.
      * 
-     * \param settings The settings as provided by the user
+     * \param config Flat Arachne settings supplied by the WASM wrapper
      */
-    static void stitchToolPaths(std::vector<VariableWidthLines>& toolpaths, const Settings& settings);
+    static void stitchToolPaths(std::vector<VariableWidthLines>& toolpaths, const ArachneConfig& config);
 
     /*!
      * Remove polylines shorter than half the smallest line width along that polyline.
@@ -101,10 +101,10 @@ protected:
 
     /*!
      * Simplifies the variable-width toolpaths by calling the simplify on every line in the toolpath using the provided
-     * settings.
-     * \param settings The settings as provided by the user
+     * config.
+     * \param config Flat Arachne settings supplied by the WASM wrapper
      */
-    static void simplifyToolPaths(std::vector<VariableWidthLines>& toolpaths, const Settings& settings);
+    static void simplifyToolPaths(std::vector<VariableWidthLines>& toolpaths, const ArachneConfig& config);
 
 private:
     const Polygons& outline; //<! A reference to the outline polygon that is the designated area
@@ -120,7 +120,7 @@ private:
     bool toolpaths_generated; //<! Are the toolpaths generated
     std::vector<VariableWidthLines> toolpaths; //<! The generated toolpaths binned by inset_idx.
     Polygons inner_contour;  //<! The inner contour of the generated toolpaths
-    const Settings& settings;
+    const ArachneConfig& config;
     int layer_idx;
     SectionType section_type;
 };

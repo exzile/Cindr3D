@@ -7,9 +7,8 @@
 #include "utils/types/generic.h"
 #include "utils/types/geometry.h"
 
-#include <range/v3/range/concepts.hpp>
-
 #include <concepts>
+#include <ranges>
 #include <string>
 #include <type_traits>
 
@@ -53,17 +52,17 @@ concept st_edge = requires(T val)
 template<class T>
 concept st_edges = requires(T edges)
 {
-    requires ranges::range<T>;
-    requires st_edge<decltype(*ranges::begin(edges))>;
-    requires st_storable_data<decltype(*ranges::begin(edges))>;
+    requires std::ranges::range<T>;
+    requires st_edge<decltype(*std::ranges::begin(edges))>;
+    requires st_storable_data<decltype(*std::ranges::begin(edges))>;
 };
 
 template<class T>
 concept st_nodes = requires(T nodes)
 {
-    requires ranges::range<T>;
-    requires st_node<decltype(*ranges::begin(nodes))>;
-    requires st_storable_data<decltype(*ranges::begin(nodes))>;
+    requires std::ranges::range<T>;
+    requires st_node<decltype(*std::ranges::begin(nodes))>;
+    requires st_storable_data<decltype(*std::ranges::begin(nodes))>;
 };
 
 /*!
@@ -98,8 +97,8 @@ concept junction = requires(T val)
 template<class T>
 concept junctions = requires(T val)
 {
-    requires ranges::range<T>;
-    requires junction<decltype(*ranges::begin(val))>;
+    requires std::ranges::range<T>;
+    requires junction<decltype(*std::ranges::begin(val))>;
 };
 
 /*!
@@ -125,8 +124,8 @@ concept extrusion_line = requires(T val)
 template<class T>
 concept toolpath = requires(T tp)
 {
-    requires ranges::range<T>;
-    requires extrusion_line<decltype(*ranges::begin(tp))>;
+    requires std::ranges::range<T>;
+    requires extrusion_line<decltype(*std::ranges::begin(tp))>;
 };
 
 /*!
@@ -137,8 +136,8 @@ concept toolpath = requires(T tp)
 template<class T>
 concept toolpaths = requires(T tp)
 {
-    requires ranges::range<T>;
-    requires toolpath<decltype(*ranges::begin(tp))>;
+    requires std::ranges::range<T>;
+    requires toolpath<decltype(*std::ranges::begin(tp))>;
 };
 // clang-format on
 } // namespace cura::utils

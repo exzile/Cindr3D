@@ -130,6 +130,17 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    watch: {
+      // wasm/.toolchain/ holds emsdk + Boost + Clipper2 + CuraEngine
+      // sources (~1.5GB total, gitignored). Rolldown's file watcher
+      // would otherwise enumerate them on every dev start, blowing
+      // memory and triggering needless HMR cycles. Exclude here and
+      // the .toolchain churn stops mattering.
+      ignored: [
+        '**/wasm/.toolchain/**',
+        '**/wasm/.toolchain',
+      ],
+    },
   },
   preview: {
     port: 4173,

@@ -2,6 +2,15 @@ import * as THREE from 'three';
 import polygonClipping, { type MultiPolygon as PCMultiPolygon, type Ring as PCRing } from 'polygon-clipping';
 import type { SketchEntity, SketchPoint } from '../../../../types/cad';
 import { booleanMultiPolygonClipper2Sync } from '../../../slicer/geometry/clipper2Boolean';
+import { loadClipper2Module } from '../../../slicer/geometry/clipper2Wasm';
+
+// Fire-and-forget warm-up for the Clipper2 WASM module so the synchronous
+// fast path in `computeAtomicRegions` resolves on first sketch interaction
+// rather than falling back to `polygon-clipping`. The user typically takes
+// at least a few hundred ms between opening a sketch and committing the
+// first overlap-resolving extrude — plenty of headroom for the ~30-50ms
+// instantiate cost. Falls through to the JS fallback if loading fails.
+void loadClipper2Module().catch(() => { /* fallback path stays available */ });
 
 export function getEntityEndpoints(
   entity: SketchEntity,
@@ -79,13 +88,6 @@ export function computeAtomicRegions(shapes: THREE.Shape[]): THREE.Shape[] {
   const polygons = shapes.map(shapeToMultiPolygon).filter((multiPolygon) => multiPolygon.length > 0);
   if (polygons.length <= 1) return shapes;
 
-  const intersectMultiPolygon = (a: PCMultiPolygon, b: PCMultiPolygon): PCMultiPolygon =>
-    booleanMultiPolygonClipper2Sync(a, b, 'intersection') ?? polygonClipping.intersection(a, b);
-  const differenceMultiPolygon = (a: PCMultiPolygon, b: PCMultiPolygon): PCMultiPolygon =>
-    booleanMultiPolygonClipper2Sync(a, b, 'difference') ?? polygonClipping.difference(a, b);
-  const unionMultiPolygon = (a: PCMultiPolygon, b: PCMultiPolygon): PCMultiPolygon =>
-    booleanMultiPolygonClipper2Sync([...a, ...b], [], 'union') ?? polygonClipping.union(a, b);
-
   let atoms: PCMultiPolygon[] = [polygons[0]];
   let runningUnion: PCMultiPolygon = polygons[0];
   for (let index = 1; index < polygons.length; index += 1) {
@@ -94,22 +96,26 @@ export function computeAtomicRegions(shapes: THREE.Shape[]): THREE.Shape[] {
 
     for (const atom of atoms) {
       try {
-        const intersection = intersectMultiPolygon(atom, polygon);
+        const intersection = booleanMultiPolygonClipper2Sync(atom, polygon, 'intersection')
+          ?? polygonClipping.intersection(atom, polygon);
         if (intersection.length > 0) nextAtoms.push(intersection);
       } catch {}
       try {
-        const difference = differenceMultiPolygon(atom, polygon);
+        const difference = booleanMultiPolygonClipper2Sync(atom, polygon, 'difference')
+          ?? polygonClipping.difference(atom, polygon);
         if (difference.length > 0) nextAtoms.push(difference);
       } catch {}
     }
 
     try {
-      const onlyPolygon = differenceMultiPolygon(polygon, runningUnion);
+      const onlyPolygon = booleanMultiPolygonClipper2Sync(polygon, runningUnion, 'difference')
+        ?? polygonClipping.difference(polygon, runningUnion);
       if (onlyPolygon.length > 0) nextAtoms.push(onlyPolygon);
     } catch {}
 
     try {
-      runningUnion = unionMultiPolygon(runningUnion, polygon);
+      runningUnion = booleanMultiPolygonClipper2Sync(runningUnion, polygon, 'union')
+        ?? polygonClipping.union(runningUnion, polygon);
     } catch {}
 
     if (nextAtoms.length > 0) atoms = nextAtoms;

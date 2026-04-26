@@ -7,6 +7,7 @@ import { emitLayerStartState, prepareLayerState } from './prepareLayerState';
 import { emitGroupedAndContourWalls } from './emitGroupedAndContourWalls';
 import { emitContourInfill } from './emitContourInfill';
 import { finalizeLayer } from './finalizeLayer';
+import { loadArachneModule, setArachneStatsLayer } from '../../arachne';
 
 interface RawWorkerGeometry {
   positions: Float32Array;
@@ -167,6 +168,13 @@ export async function runSlicePipeline(
   }
   const run = prepareSliceRun(pipeline, geometries);
   await pipeline.prepareClipper2Offsets?.();
+  if (run.pp.arachneBackend === 'wasm') {
+    try {
+      await loadArachneModule();
+    } catch (err) {
+      console.warn('Arachne WASM backend unavailable; falling back to JS/classic Arachne paths.', err);
+    }
+  }
   let preparedLayers: Array<any | null> | null = null;
 
   if (shouldUseLayerWorkerPool(run)) {
@@ -182,6 +190,7 @@ export async function runSlicePipeline(
   for (let li = 0; li < run.totalLayers; li++) {
     if (pipeline.cancelled) throw new Error('Slicing cancelled by user.');
     pipeline.reportProgress('slicing', (li / run.totalLayers) * 80, li, run.totalLayers, `Emitting layer ${li + 1}/${run.totalLayers}...`);
+    setArachneStatsLayer(li);
     let layer: any | null;
     if (preparedLayers) {
       const geometryState = preparedLayers[li];

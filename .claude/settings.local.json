@@ -85,7 +85,11 @@
       "PowerShell($ErrorActionPreference='SilentlyContinue'; @\\('docker','docker-desktop','emcc','em++','emsdk','clang','cl','g++','python','python3','node','npm'\\) | ForEach-Object { $cmd = Get-Command $_ -ErrorAction SilentlyContinue; if \\($cmd\\) { \"$_ -> $\\($cmd.Source\\)\" } else { \"$_ -> \\(missing\\)\" } })",
       "PowerShell($emsdk = \"C:\\\\Users\\\\joeyp\\\\source\\\\repos\\\\exzile\\\\DesignCAD\\\\wasm\\\\.toolchain\\\\emsdk\\\\emsdk.bat\"; & $emsdk install 3.1.74 2>&1 | Select-Object -Last 40)",
       "PowerShell($ProgressPreference='SilentlyContinue'; $boostUrl = \"https://archives.boost.io/release/1.84.0/source/boost_1_84_0.tar.bz2\"; $dest = \"C:\\\\Users\\\\joeyp\\\\source\\\\repos\\\\exzile\\\\DesignCAD\\\\wasm\\\\.toolchain\\\\boost.tar.bz2\"; if \\(-not \\(Test-Path $dest\\)\\) { Invoke-WebRequest -Uri $boostUrl -OutFile $dest }; \\(Get-Item $dest\\).Length)",
-      "PowerShell($tcDir = \"C:\\\\Users\\\\joeyp\\\\source\\\\repos\\\\exzile\\\\DesignCAD\\\\wasm\\\\.toolchain\"; Rename-Item -Path \"$tcDir\\\\Clipper2-Clipper2_1.5.4\" -NewName \"clipper2\"; Test-Path \"$tcDir\\\\clipper2\\\\CPP\\\\Clipper2Lib\\\\include\\\\clipper2\\\\clipper.h\")"
+      "PowerShell($tcDir = \"C:\\\\Users\\\\joeyp\\\\source\\\\repos\\\\exzile\\\\DesignCAD\\\\wasm\\\\.toolchain\"; Rename-Item -Path \"$tcDir\\\\Clipper2-Clipper2_1.5.4\" -NewName \"clipper2\"; Test-Path \"$tcDir\\\\clipper2\\\\CPP\\\\Clipper2Lib\\\\include\\\\clipper2\\\\clipper.h\")",
+      "PowerShell($env:ARACHNE_BENCH = '1'; try { npx --prefix \"C:\\\\Users\\\\joeyp\\\\source\\\\repos\\\\exzile\\\\DesignCAD\\\\\" vitest --root \"C:\\\\Users\\\\joeyp\\\\source\\\\repos\\\\exzile\\\\DesignCAD\" run src/engine/slicer/pipeline/arachne/voronoiBench.test.ts 2>&1 | Select-String -Pattern 'bench|passed|failed|Test Files' | Select-Object -Last 10 } finally { Remove-Item Env:ARACHNE_BENCH })",
+      "Bash(npx --prefix \"C:\\\\Users\\\\joeyp\\\\source\\\\repos\\\\exzile\\\\DesignCAD\" vitest --root \"C:\\\\Users\\\\joeyp\\\\source\\\\repos\\\\exzile\\\\DesignCAD\" run --reporter=verbose)",
+      "Read(//c/Users/joeyp/.claude/memory//**)",
+      "Read(//c/Users/joeyp/.claude/projects/C--Users-joeyp-source-repos-exzile-DesignCAD/memory//**)"
     ]
   }
 }

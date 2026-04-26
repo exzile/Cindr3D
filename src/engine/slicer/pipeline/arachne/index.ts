@@ -21,6 +21,12 @@ function toRing(pts: THREE.Vector2[]): PCRing {
 export type { VariableWidthPath } from './types';
 export type { ArachneBackend, ArachneBackendName } from './types';
 export { arachneJsBackend, getArachneBackend, registerArachneBackend, resolveArachneBackend } from './backend';
+export {
+  arachneWasmBackend,
+  generateArachnePathsWasm,
+  generateArachnePathsWasmSync,
+  loadArachneModule,
+} from './arachneWasm';
 export { buildEdgeVoronoi } from './voronoi';
 export type { VoronoiEdge, VoronoiGraph, VoronoiSourceEdge, VoronoiVertex } from './voronoi';
 export { buildSkeletalTrapezoidation } from './trapezoidation';
@@ -129,7 +135,7 @@ export function generatePerimetersArachne(
   const totalEdges = outerContour.length + holeContours.reduce((s, h) => s + h.length, 0);
   const selectedBackend = resolveArachneBackend(printProfile.arachneBackend ?? 'js');
 
-  if (totalEdges > ARACHNE_MAX_EDGES) {
+  if (!selectedBackend.generatePaths && totalEdges > ARACHNE_MAX_EDGES) {
     if (statsBag) {
       statsBag.entries.push({
         layerIndex: statsBag.layerIndex,
@@ -146,6 +152,52 @@ export function generatePerimetersArachne(
 
   try {
     const t0 = debug ? performance.now() : 0;
+    if (selectedBackend.generatePaths) {
+      const paths = selectedBackend.generatePaths(
+        outerContour,
+        holeContours,
+        wallCount,
+        lineWidth,
+        outerWallInset,
+        printProfile,
+      ).filter((path) =>
+        path.points.length >= 2 && path.depth < wallCount && path.widths.length === path.points.length,
+      );
+      const t1 = debug ? performance.now() : 0;
+
+      if (paths.length === 0) {
+        if (statsBag) statsBag.entries.push({
+          layerIndex: statsBag.layerIndex,
+          outcome: 'classic-fallback-no-paths',
+          backend: selectedBackend.name,
+          totalEdges,
+          paths: 0,
+          pathMs: t1 - t0,
+        });
+        return generatePerimetersEx(
+          outerContour, holeContours, wallCount, lineWidth, outerWallInset,
+          printProfile, deps,
+        );
+      }
+
+      if (statsBag) statsBag.entries.push({
+        layerIndex: statsBag.layerIndex, outcome: 'arachne',
+        backend: selectedBackend.name,
+        totalEdges, paths: paths.length,
+        pathMs: t1 - t0,
+      });
+
+      const insetDistance = outerWallInset + wallCount * lineWidth;
+      const { innermostHoles, infillRegions } = computeArachneInfillGeometry(
+        outerContour, holeContours, insetDistance, deps,
+      );
+      return {
+        ...variableWidthPathsToPerimeters(paths),
+        innermostHoles,
+        infillRegions,
+      };
+    }
+
     const voronoi = selectedBackend.buildVoronoi(outerContour, holeContours);
     const t1 = debug ? performance.now() : 0;
     const trapezoids = selectedBackend.buildTrapezoidation(voronoi, { outerContour, holeContours });
@@ -242,9 +294,13 @@ function computeArachneInfillGeometry(
 
   try {
     const holesMP: PCMultiPolygon = innermostHoles.map((hole) => [toRing(hole)]);
+    const allHolePolygons = holesMP.reduce<PCMultiPolygon>((acc, polygon) => {
+      acc.push(polygon);
+      return acc;
+    }, []);
     const mergedHoles: PCMultiPolygon = holesMP.length === 1
-      ? holesMP[0]
-      : (booleanMultiPolygonClipper2Sync(holesMP.flat(), [], 'union')
+      ? [holesMP[0]]
+      : (booleanMultiPolygonClipper2Sync(allHolePolygons, [], 'union')
         ?? polygonClipping.union(holesMP[0], ...holesMP.slice(1)));
     const diff = booleanMultiPolygonClipper2Sync(outerMP, mergedHoles, 'difference')
       ?? polygonClipping.difference(outerMP, ...holesMP);

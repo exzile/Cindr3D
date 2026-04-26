@@ -73,6 +73,26 @@ describe('Clipper2 WASM adapter', () => {
     expect(result?.[0].length).toBe(2);
   });
 
+  it('xors two overlapping squares into the symmetric difference', async () => {
+    const a = [v(0, 0), v(10, 0), v(10, 10), v(0, 10)];
+    const b = [v(5, 5), v(15, 5), v(15, 15), v(5, 15)];
+    const result = await booleanPathsClipper2([a], [b], 'xor');
+    // Symmetric difference of two overlapping squares is two L-shapes —
+    // Clipper2 typically returns them as one polygon with a hole or two
+    // separate rings depending on topology. Either way, the area should
+    // equal sum(areas) - 2 × intersection = 100 + 100 - 2 × 25 = 150.
+    expect(result.length).toBeGreaterThanOrEqual(1);
+    let totalSignedArea = 0;
+    for (const ring of result) {
+      let area = 0;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        area += ring[j].x * ring[i].y - ring[i].x * ring[j].y;
+      }
+      totalSignedArea += Math.abs(area) / 2;
+    }
+    expect(totalSignedArea).toBeCloseTo(150, 1);
+  });
+
   it('intersects to a 5x5 overlap', async () => {
     const a = [v(0, 0), v(10, 0), v(10, 10), v(0, 10)];
     const b = [v(5, 5), v(15, 5), v(15, 15), v(5, 15)];

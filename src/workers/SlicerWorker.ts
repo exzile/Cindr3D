@@ -6,7 +6,18 @@
 
 import * as THREE from 'three';
 import { Slicer } from '../engine/slicer/Slicer';
+import { loadClipper2Module } from '../engine/slicer/geometry/clipper2Wasm';
+import { loadArachneModule } from '../engine/slicer/pipeline/arachne/arachneWasm';
 import type { SliceProgress, SliceResult } from '../types/slicer';
+
+// Warm up WASM modules as soon as this worker starts so by the time
+// the first layer's perimeter/infill ops fire, both the Clipper2 sync
+// fast path and the Arachne backend are ready. Fire-and-forget — each
+// adapter's load is memoised, so the await inside the actual call
+// chain becomes a no-op once warm-up resolves. Pre-warming saves
+// ~30-50ms per module across the first few layers.
+void loadClipper2Module().catch(() => { /* fallback path stays available */ });
+void loadArachneModule().catch(() => { /* arachne dispatcher falls back to classic walls */ });
 
 interface RawGeometry {
   positions: Float32Array;          // BufferAttribute position data

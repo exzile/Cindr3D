@@ -4,8 +4,6 @@
 #ifndef CURAENGINE_GENERIC_H
 #define CURAENGINE_GENERIC_H
 
-#include <range/v3/range/concepts.hpp>
-
 #include <concepts>
 #include <functional>
 #include <type_traits>
@@ -22,9 +20,9 @@ concept hashable = requires(T value)
 template<typename T>
 concept grpc_convertable = requires(T value)
 {
-    requires ranges::semiregular<T>;
-    requires ranges::semiregular<typename T::value_type>;
-    requires ranges::semiregular<typename T::native_value_type>;
+    requires std::semiregular<T>;
+    requires std::semiregular<typename T::value_type>;
+    requires std::semiregular<typename T::native_value_type>;
 };
 
 #ifdef OLDER_APPLE_CLANG

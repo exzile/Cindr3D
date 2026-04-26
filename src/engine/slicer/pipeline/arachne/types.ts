@@ -1,4 +1,5 @@
 import type * as THREE from 'three';
+import type { PrintProfile } from '../../../../types/slicer';
 import type { BeadGraph } from './beadStrategy';
 import type { ArachnePolygon, TrapezoidGraph } from './trapezoidation';
 import type { VoronoiGraph } from './voronoi';
@@ -16,6 +17,14 @@ export interface ArachneBackend {
     maxWidth: number,
   ): BeadGraph;
   extractPaths(beadGraph: BeadGraph): VariableWidthPath[];
+  generatePaths?(
+    outerContour: THREE.Vector2[],
+    holeContours: THREE.Vector2[][],
+    wallCount: number,
+    lineWidth: number,
+    outerWallInset: number,
+    printProfile: PrintProfile,
+  ): VariableWidthPath[];
 }
 
 /**

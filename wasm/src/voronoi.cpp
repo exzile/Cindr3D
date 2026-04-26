@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <vector>
 #include <cmath>
+#include <unordered_map>
 
 #include <boost/polygon/voronoi.hpp>
 
@@ -168,14 +169,19 @@ void buildEmitCaches() {
     g_state.vertexSourceIds.clear();
     g_state.vertexSourceCsr.push_back(0);
 
-    // Map vertex pointer → index for edge emit.
-    // Boost gives stable addresses inside the vertex container.
-    std::vector<const bp::voronoi_diagram<double>::vertex_type*> vertIndex;
-    vertIndex.reserve(verts.size());
+    // Map vertex pointer → index for edge emit. Boost gives stable
+    // addresses inside the vertex container, so a pointer-keyed hash is
+    // safe across the Voronoi's lifetime. Built during the vertex pass
+    // below, queried per-edge during the edge pass — replaces the
+    // earlier O(V) linear search with O(1) average.
+    using VertexPtr = const bp::voronoi_diagram<double>::vertex_type*;
+    std::unordered_map<VertexPtr, int32_t> vertIndex;
+    vertIndex.reserve(verts.size() * 2);
 
+    int32_t vertIdx = 0;
     for (auto it = verts.begin(); it != verts.end(); ++it) {
         const auto& v = *it;
-        vertIndex.push_back(&v);
+        vertIndex.emplace(&v, vertIdx++);
         g_state.vertexData.push_back(unscale(v.x()));
         g_state.vertexData.push_back(unscale(v.y()));
         g_state.vertexData.push_back(computeRadiusAt(v));
@@ -216,19 +222,10 @@ void buildEmitCaches() {
     g_state.edgePoints.clear();
     g_state.edgePointCsr.push_back(0);
 
-    auto vertIndexOf = [&](const bp::voronoi_diagram<double>::vertex_type* v) -> int32_t {
+    auto vertIndexOf = [&](VertexPtr v) -> int32_t {
         if (!v) return -1;
-        // Linear search would be O(V) per edge; instead, exploit that
-        // verts.begin() is an iterator and pointers are contiguous in
-        // libboost's vertex storage.
-        // Boost stores vertices in a std::list — pointers are stable but
-        // not contiguous. Fall back to a hash via std::vector<bool>
-        // marker built once. Since we already populated vertIndex in
-        // order above, build an inverse map keyed by pointer hash.
-        for (size_t i = 0; i < vertIndex.size(); ++i) {
-            if (vertIndex[i] == v) return static_cast<int32_t>(i);
-        }
-        return -1;
+        auto it = vertIndex.find(v);
+        return it == vertIndex.end() ? -1 : it->second;
     };
 
     for (auto it = diag.edges().begin(); it != diag.edges().end(); ++it) {

@@ -12,13 +12,12 @@
   _emitOffsetPathCounts(outPtr: number, capacityInts: number): number;
   _emitOffsetPoints(outPtr: number, capacityDoubles: number): number;
   _resetOffsetPaths(): void;
-  _booleanPaths(
-    subjPointsPtr: number, subjCountsPtr: number, subjCount: number,
-    clipPointsPtr: number, clipCountsPtr: number, clipCount: number,
-    op: number, fillRule: number, precision: number,
-  ): number;
+
+  _booleanPaths(subjPointsPtr: number, subjCountsPtr: number, subjCount: number,
+                clipPointsPtr: number, clipCountsPtr: number, clipCount: number,
+                op: number, fillRule: number, precision: number): number;
 }
 
 export default function createClipper2Module(
-  options?: { wasmBinary?: ArrayBuffer; locateFile?(path: string): string }
+  options?: { locateFile?(path: string): string }
 ): Promise<Clipper2Module>;

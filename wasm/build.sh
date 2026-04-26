@@ -18,6 +18,9 @@ mkdir -p "$OUT_DIR"
 BOOST_INC="${BOOST_INCLUDE:-/opt/boost/include}"
 CLIPPER2_INC="${CLIPPER2_INCLUDE:-/opt/clipper2/include}"
 CLIPPER2_SRC="${CLIPPER2_SRC:-/opt/clipper2/src}"
+LIB_ARACHNE_INC="$(dirname "$0")/vendor/libArachne/include"
+LIB_ARACHNE_SRC="$(dirname "$0")/vendor/libArachne/src"
+STUB_INC="$(dirname "$0")/vendor/stubs"
 
 # Common flags. -Oz prioritises bundle size over speed; the polygon code
 # is short enough that the speed delta vs -O3 is negligible at the sizes
@@ -121,6 +124,50 @@ export interface Clipper2Module {
 export default function createClipper2Module(
   options?: { wasmBinary?: ArrayBuffer; locateFile?(path: string): string }
 ): Promise<Clipper2Module>;
+EOF
+
+echo "[build.sh] Building Arachne module..."
+mapfile -t ARACHNE_SOURCES < <(find "$LIB_ARACHNE_SRC" -name '*.cpp' -print | sort)
+em++ "${COMMON_FLAGS[@]}" \
+  -std=c++20 \
+  -fexceptions \
+  -I "$SRC_DIR" \
+  -I "$LIB_ARACHNE_INC" \
+  -I "$STUB_INC" \
+  -I "$BOOST_INC" \
+  -I "$CLIPPER2_INC" \
+  -s EXPORT_NAME=createArachneModule \
+  -s "EXPORTED_FUNCTIONS=['_arachneAnswer','_arachneConfigValueCount','_generateArachnePaths','_getArachneCounts','_emitArachnePathCounts','_emitArachnePathMeta','_emitArachnePoints','_resetArachnePaths','_malloc','_free']" \
+  -s "EXPORTED_RUNTIME_METHODS=['HEAPF64','HEAP32']" \
+  "$SRC_DIR/arachne.cpp" \
+  "${ARACHNE_SOURCES[@]}" \
+  "$CLIPPER2_SRC/clipper.engine.cpp" \
+  "$CLIPPER2_SRC/clipper.offset.cpp" \
+  "$CLIPPER2_SRC/clipper.rectclip.cpp" \
+  -o "$OUT_DIR/arachne.js"
+
+echo "[build.sh] Generating arachne.d.ts..."
+cat > "$OUT_DIR/arachne.d.ts" <<'EOF'
+export interface ArachneModule {
+  HEAPF64: Float64Array;
+  HEAP32: Int32Array;
+  _malloc(size: number): number;
+  _free(ptr: number): void;
+
+  _arachneAnswer(): number;
+  _arachneConfigValueCount(): number;
+  _generateArachnePaths(pointsPtr: number, pathCountsPtr: number, pathCount: number,
+                        configValuesPtr: number, configValueCount: number): number;
+  _getArachneCounts(outPtr: number): void;
+  _emitArachnePathCounts(outPtr: number, capacityInts: number): number;
+  _emitArachnePathMeta(outPtr: number, capacityInts: number): number;
+  _emitArachnePoints(outPtr: number, capacityDoubles: number): number;
+  _resetArachnePaths(): void;
+}
+
+export default function createArachneModule(
+  options?: { wasmBinary?: ArrayBuffer; locateFile?(path: string): string }
+): Promise<ArachneModule>;
 EOF
 
 echo "[build.sh] Done. Artifacts in $OUT_DIR:"

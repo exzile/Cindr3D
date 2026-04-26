@@ -10,10 +10,8 @@
 
 #include "utils/types/generic.h"
 
-#include <range/v3/range/concepts.hpp>
-#include <range/v3/range/operations.hpp>
-
 #include <concepts>
+#include <ranges>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -40,10 +38,10 @@ concept point2d_tuple = requires(T t)
  * @tparam T The type to check
  */
 template<class T>
-concept point2d_ranged = ranges::range<T> && requires(T point)
+concept point2d_ranged = std::ranges::range<T> && requires(T point)
 {
-    requires ranges::size(point) == 2;
-    requires utils::numeric<ranges::range_value_t<T>>;
+    requires std::ranges::size(point) == 2;
+    requires utils::numeric<std::ranges::range_value_t<T>>;
 };
 
 
@@ -85,10 +83,10 @@ concept point3d_tuple = requires(T t)
  * @tparam T The type to check
  */
 template<class T>
-concept point3d_ranged = ranges::range<T> && requires(T point)
+concept point3d_ranged = std::ranges::range<T> && requires(T point)
 {
-    requires ranges::size(point) == 3;
-    requires utils::numeric<ranges::range_value_t<T>>;
+    requires std::ranges::size(point) == 3;
+    requires utils::numeric<std::ranges::range_value_t<T>>;
 };
 
 /*!
@@ -146,9 +144,9 @@ concept segment = requires(T segment)
  * @tparam T The type to check
  */
 template<class T>
-concept segment_range = ranges::range<T> && requires(T segment_range)
+concept segment_range = std::ranges::range<T> && requires(T segment_range)
 {
-    requires segment<decltype(ranges::front(segment_range))>;
+    requires segment<decltype(*std::ranges::begin(segment_range))>;
 };
 // clang-format on
 } // namespace cura::utils
