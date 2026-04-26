@@ -57,16 +57,29 @@ function makePipeline(triangles: unknown[]): TestPipeline {
     connectSegments: (_: unknown[]) => [],
     classifyContours: (_: unknown[]) => [] as Contour[],
     closeContourGaps: (c: Contour[]) => c,
-    /** Axis-aligned-rectangle stub: shift each point by `offset` outward
-     *  along x AND y. Mirrors the canonical "uniform parallel offset"
-     *  semantics that real `offsetContour` produces on a square. */
+    /** Axis-aligned-rectangle stub matching the real `offsetContour`
+     *  convention: positive offset shifts each edge along its (-dy, dx)
+     *  inward normal. For a CCW outer that pulls vertices TOWARD the
+     *  centroid (shrink); for a CW hole it pushes them AWAY from the
+     *  centroid (grow). The stub detects winding via signed area and
+     *  picks the direction accordingly so test fixtures using natural
+     *  CCW/CW conventions produce intuitive results. */
     offsetContour(points: THREE.Vector2[], offset: number): THREE.Vector2[] {
       let cx = 0, cy = 0;
       for (const p of points) { cx += p.x; cy += p.y; }
       cx /= points.length; cy /= points.length;
+      let area = 0;
+      for (let i = 0; i < points.length; i++) {
+        const a = points[i];
+        const b = points[(i + 1) % points.length];
+        area += a.x * b.y - b.x * a.y;
+      }
+      // CCW (area > 0): positive offset = shrink; sign factor = -1.
+      // CW  (area < 0): positive offset = grow;   sign factor = +1.
+      const dir = area > 0 ? -1 : +1;
       return points.map((p) => new THREE.Vector2(
-        p.x + Math.sign(p.x - cx) * offset,
-        p.y + Math.sign(p.y - cy) * offset,
+        p.x + dir * Math.sign(p.x - cx) * offset,
+        p.y + dir * Math.sign(p.y - cy) * offset,
       ));
     },
   };

@@ -79,7 +79,7 @@ function flattenContours(
  *  `wasm/src/arachne_config.h`. Settings missing from the profile fall
  *  back to the libArachne defaults Cura ships with `wall_line_width = 0.4`
  *  for a typical 0.4mm nozzle. */
-function configValues(
+export function configValues(
   wallCount: number,
   lineWidth: number,
   outerWallInset: number,

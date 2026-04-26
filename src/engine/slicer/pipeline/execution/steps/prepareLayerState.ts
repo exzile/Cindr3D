@@ -72,12 +72,21 @@ export async function prepareLayerGeometryState(pipeline: any, run: any, li: num
   // is negative space, so shrinking it equals growing the surrounding
   // material). `initialLayerHorizontalExpansion` overrides on layer 0;
   // `elephantFootCompensation` further shrinks the outer on layer 0 only.
+  //
+  // SIGN CONVENTION (matches `offsetContour` in `geometry/pathGeometry.ts`):
+  // a positive offset shifts each edge along its (-dy, dx) inward normal.
+  // For a CCW outer that direction points TOWARD the polygon interior
+  // (positive offset shrinks the outer); for a CW hole it points INTO the
+  // surrounding material (positive offset grows the hole). To grow material
+  // everywhere we therefore pass `-xyOffset` to BOTH outer and hole. The
+  // (positive) elephant-foot value is added to `outerOffset` so it shrinks
+  // the first-layer outer.
   const baseXY = pp.horizontalExpansion ?? 0;
   const xyOffset = isFirstLayer
     ? (pp.initialLayerHorizontalExpansion ?? baseXY)
     : baseXY;
   const elephantFoot = isFirstLayer ? (pp.elephantFootCompensation ?? 0) : 0;
-  const outerOffset = xyOffset - elephantFoot;
+  const outerOffset = -xyOffset + elephantFoot;
   const holeOffset = -xyOffset;
   if (outerOffset !== 0 || holeOffset !== 0) {
     for (const c of contours) {

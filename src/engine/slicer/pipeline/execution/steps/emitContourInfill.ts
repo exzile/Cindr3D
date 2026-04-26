@@ -30,6 +30,40 @@ function differenceMultiPolygon(a: PCMultiPolygon, b: PCMultiPolygon): PCMultiPo
   return booleanMultiPolygonClipper2Sync(a, b, 'difference') ?? polygonClipping.difference(a, b);
 }
 
+/** Profile fields read by `pickBridgeFanSpeed` — typed locally so the
+ *  helper has zero dependency on the full `PrintProfile` shape. */
+export interface BridgeFanProfile {
+  bridgeFanSpeed?: number;
+  bridgeFanSpeed2?: number;
+  bridgeFanSpeed3?: number;
+  bridgeEnableMoreLayers?: boolean;
+}
+
+/**
+ * Pick the fan speed % for a bridge move based on how many consecutive
+ * layers (incl. this one) have had bridges so far. Mirrors Cura's
+ * `bridge_fan_speed` / `bridge_fan_speed_2` / `bridge_fan_speed_3`
+ * cascade gated by `bridge_enable_more_layers`.
+ *
+ * `priorConsecutive` is the value of `run.consecutiveBridgeLayers` BEFORE
+ * `finalizeLayer` runs for the current layer — i.e. the count of bridge
+ * layers that have already finished. The current layer is `priorConsecutive + 1`.
+ *
+ * Default fan speed (100 %) is returned when nothing in the profile says
+ * otherwise. Each tier falls back through `bridgeFanSpeed2 → bridgeFanSpeed`
+ * etc. so partially-configured profiles still produce a sane value.
+ */
+export function pickBridgeFanSpeed(
+  pp: BridgeFanProfile,
+  priorConsecutive: number,
+): number {
+  const moreLayers = pp.bridgeEnableMoreLayers ?? false;
+  const consecutive = (priorConsecutive ?? 0) + 1;
+  if (!moreLayers || consecutive <= 1) return pp.bridgeFanSpeed ?? 100;
+  if (consecutive === 2) return pp.bridgeFanSpeed2 ?? pp.bridgeFanSpeed ?? 100;
+  return pp.bridgeFanSpeed3 ?? pp.bridgeFanSpeed2 ?? pp.bridgeFanSpeed ?? 100;
+}
+
 export function emitContourInfill(pipeline: any, run: any, layer: any, contoursData: any[]) {
   const { pp, mat, triangles, offsetX, offsetY, emitter, gcode } = run;
   const { li, layerH, isFirstLayer, isSolid, isSolidBottom, isSolidTop, infillSpeed, topBottomSpeed, hasBridgeRegions, isInBridgeRegion, moves } = layer;
@@ -192,20 +226,7 @@ export function emitContourInfill(pipeline: any, run: any, layer: any, contoursD
           run.layerHadBridge = true;
         }
       }
-      // Pick the fan speed for *this* bridge move based on how many
-      // consecutive layers have had bridges (Cura's bridge_fan_speed_2 /
-      // bridge_fan_speed_3 land here when bridge_enable_more_layers is on).
-      // `consecutiveBridgeLayers` is incremented by `finalizeLayer` AFTER
-      // this emit step finishes, so during emit it still reflects the
-      // count up to the previous layer. Adding 1 yields this layer's
-      // 1-indexed position in the bridge-layer streak.
-      const moreLayers = pp.bridgeEnableMoreLayers ?? false;
-      const consecutive = (run.consecutiveBridgeLayers ?? 0) + 1;
-      const bridgeFanSpeed = !moreLayers || consecutive <= 1
-        ? (pp.bridgeFanSpeed ?? 100)
-        : consecutive === 2
-        ? (pp.bridgeFanSpeed2 ?? pp.bridgeFanSpeed ?? 100)
-        : (pp.bridgeFanSpeed3 ?? pp.bridgeFanSpeed2 ?? pp.bridgeFanSpeed ?? 100);
+      const bridgeFanSpeed = pickBridgeFanSpeed(pp, run.consecutiveBridgeLayers ?? 0);
       const needBridgeFan = pp.enableBridgeFan && thisMoveType === 'bridge' && !run.bridgeFanActive;
       const needFanRestore = !needBridgeFan && thisMoveType !== 'bridge' && run.bridgeFanActive;
       if (needBridgeFan) {
