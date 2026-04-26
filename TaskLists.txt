@@ -19,14 +19,17 @@
 
 
 ## WALLS
-- [s] Print Thin Walls (`printThinWalls`) - bool; type + UI exists; engine too complex
-- [s] Minimum Feature Size (`minFeatureSize`) - mm; type + UI exists; engine too complex
-- [s] Minimum Thin Wall Line Width (`minThinWallLineWidth`) - mm; type + UI exists; engine too complex
-- [s] Minimum Even Wall Line Width (`minEvenWallLineWidth`) - type + UI exists; engine deferred
- - [s] Wall Distribution Count (`wallDistributionCount`) - type + UI exists; engine too complex
-- [s] Wall Transitioning Filter Distance (`wallTransitionFilterDistance`) - type + UI exists; engine deferred
-- [s] Wall Transitioning Filter Margin (`wallTransitionFilterMargin`) - type + UI exists; engine deferred
-- [s] wallTransitionLength, wallTransitionAngle - stored, engine wiring deferred
+# All wired 2026-04-26 via libArachne `ArachneConfig` in `arachneWasm.configValues`.
+# Values fall back to Cura's libArachne defaults (e.g. `min_feature_size = minWallLW/2`,
+# `wall_transition_length = lineWidth`) when the profile field is undefined.
+- [x] Print Thin Walls (`printThinWalls`) - WIRED via `enableThinWalls` (`printThinWalls ?? thinWallDetection`) → ArachneConfig field 20
+- [x] Minimum Feature Size (`minFeatureSize`) - WIRED → ArachneConfig field 8
+- [x] Minimum Thin Wall Line Width (`minThinWallLineWidth`) - WIRED as Cura's `min_odd_wall_line_width` → ArachneConfig field 15
+- [x] Minimum Even Wall Line Width (`minEvenWallLineWidth`) - WIRED → ArachneConfig field 14
+- [x] Wall Distribution Count (`wallDistributionCount`) - WIRED → ArachneConfig field 10
+- [x] Wall Transitioning Filter Distance (`wallTransitionFilterDistance`) - WIRED → ArachneConfig field 6
+- [x] Wall Transitioning Filter Margin (`wallTransitionFilterMargin`) - WIRED → ArachneConfig field 7
+- [x] wallTransitionLength, wallTransitionAngle - WIRED → ArachneConfig fields 4 + 5
 
 
 ## TOP / BOTTOM
