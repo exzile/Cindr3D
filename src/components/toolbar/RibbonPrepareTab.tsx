@@ -144,7 +144,7 @@ export function RibbonPrepareTab() {
       <RibbonSection title="SLICE">
         <ToolButton
           icon={<Layers size={ICON_LG} />}
-          label={isSlicing ? `${sliceProgress.percent}%` : 'Slice'}
+          label={isSlicing ? `${Math.round(sliceProgress.percent)}%` : 'Slice'}
           onClick={() => useSlicerStore.getState().startSlice()}
           active={isSlicing}
           disabled={isSlicing}

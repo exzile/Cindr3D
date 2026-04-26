@@ -1,17 +1,32 @@
+import type * as THREE from 'three';
+import type { Ring as PCRing } from 'polygon-clipping';
+import type { SliceMove } from '../../../../../types/slicer';
 import { applyLayerStartControls } from '../../layerControls';
 import { buildLayerTopology } from '../layerTopology';
+import type {
+  SlicerExecutionPipeline,
+  SliceGeometryRun,
+  SliceLayerGeometryState,
+  SliceLayerState,
+  SliceRun,
+} from './types';
 
-export async function prepareLayerGeometryState(pipeline: any, run: any, li: number) {
+export async function prepareLayerGeometryState(
+  pipeline: unknown,
+  run: SliceGeometryRun,
+  li: number,
+): Promise<SliceLayerGeometryState | null> {
+  const slicer = pipeline as SlicerExecutionPipeline;
   const { pp, mat, triangles, modelBBox, offsetX, offsetY, offsetZ, layerZs, totalLayers, solidBottom, solidTop } = run;
-  if (pipeline.cancelled) throw new Error('Slicing cancelled by user.');
+  if (slicer.cancelled) throw new Error('Slicing cancelled by user.');
 
   const layerZ = layerZs[li];
   const sliceZ = modelBBox.min.z + layerZ;
   const isFirstLayer = li === 0;
   const layerH = li === 0 ? layerZs[0] : layerZs[li] - layerZs[li - 1];
 
-  pipeline.reportProgress('slicing', (li / totalLayers) * 80, li, totalLayers, `Slicing layer ${li + 1}/${totalLayers}...`);
-  await pipeline.yieldToUI();
+  slicer.reportProgress('slicing', (li / totalLayers) * 80, li, totalLayers, `Slicing layer ${li + 1}/${totalLayers}...`);
+  await slicer.yieldToUI();
 
   // Reset the per-layer bridge flag at the start of every layer so the
   // counter logic in finalizeLayer sees a clean slate. emitContourInfill
@@ -20,17 +35,17 @@ export async function prepareLayerGeometryState(pipeline: any, run: any, li: num
   // paths that bail between emit and finalize.
   run.layerHadBridge = false;
 
-  const segments = pipeline.sliceTrianglesAtZ(triangles, sliceZ, offsetX, offsetY, offsetZ);
-  const rawContours = pipeline.connectSegments(segments);
+  const segments = slicer.sliceTrianglesAtZ(triangles, sliceZ, offsetX, offsetY, offsetZ);
+  const rawContours = slicer.connectSegments(segments);
   if (rawContours.length === 0) return null;
 
-  let allContours = pipeline.classifyContours(rawContours);
+  let allContours = slicer.classifyContours(rawContours);
   const closingR = pp.slicingClosingRadius ?? 0;
-  if (closingR > 0 && allContours.length > 0) allContours = pipeline.closeContourGaps(allContours, closingR);
+  if (closingR > 0 && allContours.length > 0) allContours = slicer.closeContourGaps(allContours, closingR);
 
   const minCirc = pp.minimumPolygonCircumference ?? 0;
   const smallHoleThresh = pp.smallHoleMaxSize ?? 0;
-  const contours = allContours.filter((c: any) => {
+  const contours = allContours.filter((c) => {
     if (minCirc > 0) {
       let perim = 0;
       for (let i = 0; i < c.points.length; i++) perim += c.points[i].distanceTo(c.points[(i + 1) % c.points.length]);
@@ -62,7 +77,7 @@ export async function prepareLayerGeometryState(pipeline: any, run: any, li: num
         const approxDiam = 2 * Math.sqrt(Math.abs(c.area) / Math.PI);
         if (approxDiam > maxD) continue;
       }
-      const expanded = pipeline.offsetContour(c.points, hhe);
+      const expanded = slicer.offsetContour(c.points, hhe);
       if (expanded.length >= 3) c.points = expanded;
     }
   }
@@ -92,7 +107,7 @@ export async function prepareLayerGeometryState(pipeline: any, run: any, li: num
     for (const c of contours) {
       const offset = c.isOuter ? outerOffset : holeOffset;
       if (offset === 0) continue;
-      const expanded = pipeline.offsetContour(c.points, offset);
+      const expanded = slicer.offsetContour(c.points, offset);
       if (expanded.length >= 3) c.points = expanded;
     }
   }
@@ -144,20 +159,26 @@ export async function prepareLayerGeometryState(pipeline: any, run: any, li: num
   };
 }
 
-export function emitLayerStartState(pipeline: any, run: any, geometryState: any) {
+export function emitLayerStartState(
+  pipeline: unknown,
+  run: SliceRun,
+  geometryState: SliceLayerGeometryState,
+): SliceLayerState {
+  const slicer = pipeline as SlicerExecutionPipeline;
   const { pp, mat, printer, emitter, gcode, sliceLayers } = run;
   const { li, layerZ, layerH, isFirstLayer, contours, printZ } = geometryState;
-  const moves: any[] = [];
+  const moves: SliceMove[] = [];
   let layerTime = 0;
 
   emitter.currentLayerTravelSpeed = (li === 0 && (pp.initialLayerTravelSpeed ?? 0) > 0) ? pp.initialLayerTravelSpeed! : pp.travelSpeed;
-  emitter.currentLayerFlow = isFirstLayer && (pp.initialLayerFlow ?? 0) > 0 ? pp.initialLayerFlow / 100 : 1.0;
+  const initialLayerFlow = pp.initialLayerFlow ?? 0;
+  emitter.currentLayerFlow = isFirstLayer && initialLayerFlow > 0 ? initialLayerFlow / 100 : 1.0;
 
   // Pass this layer's hole contours to the emitter for avoidCrossingPerimeters
   // routing. Each hole becomes an obstacle that travel moves detour around
   // instead of cutting straight through (which previously made infill→infill
   // travels appear as long lines crossing wall geometry in the preview).
-  const layerHoles = contours.filter((c: any) => !c.isOuter).map((c: any) => c.points);
+  const layerHoles = contours.filter((c) => !c.isOuter).map((c) => c.points);
   emitter.setLayerObstacles(layerHoles);
 
   gcode.push('');
@@ -188,7 +209,7 @@ export function emitLayerStartState(pipeline: any, run: any, geometryState: any)
       emitter.setJerk(pp.raftPrintJerk ?? pp.jerkSkirtBrim ?? pp.jerkInitialLayer, pp.jerkPrint);
       if ((pp.raftFanSpeed ?? 0) > 0) gcode.push(`M106 S${emitter.fanSpeedArg(pp.raftFanSpeed!)} ; Raft fan`);
     }
-    const adhesionMoves = pipeline.generateAdhesion(contours, pp, layerH, run.offsetX, run.offsetY);
+    const adhesionMoves = slicer.generateAdhesion(contours, pp, layerH, run.offsetX, run.offsetY);
     for (const am of adhesionMoves) {
       emitter.travelTo(am.from.x, am.from.y, moves);
       layerTime += emitter.extrudeTo(am.to.x, am.to.y, am.speed, am.lineWidth, am.layerHeight ?? layerH).time;
@@ -229,8 +250,8 @@ export function emitLayerStartState(pipeline: any, run: any, geometryState: any)
     currentY: emitter.currentY,
     previousLayerMaterial: run.prevLayerMaterial,
     isFirstLayer,
-    pointInContour: (point: any, contour: any) => pipeline.pointInContour(point, contour),
-    pointInRing: (x: number, y: number, ring: any) => pipeline.pointInRing(x, y, ring),
+    pointInContour: (point: THREE.Vector2, contour: THREE.Vector2[]) => slicer.pointInContour(point, contour),
+    pointInRing: (x: number, y: number, ring: PCRing) => slicer.pointInRing(x, y, ring),
   });
 
   return {
@@ -241,7 +262,11 @@ export function emitLayerStartState(pipeline: any, run: any, geometryState: any)
   };
 }
 
-export async function prepareLayerState(pipeline: any, run: any, li: number) {
+export async function prepareLayerState(
+  pipeline: unknown,
+  run: SliceRun,
+  li: number,
+): Promise<SliceLayerState | null> {
   const geometryState = await prepareLayerGeometryState(pipeline, run, li);
   if (!geometryState) return null;
   return emitLayerStartState(pipeline, run, geometryState);

@@ -18,6 +18,68 @@ function toRing(pts: THREE.Vector2[]): PCRing {
   return ring;
 }
 
+/** Squared distance from a point to a line segment (or to the segment's
+ *  closest endpoint when the foot of perpendicular falls outside).
+ *  Returns squared distance to avoid sqrt in the inner loop. */
+function pointToSegSqDist(px: number, py: number,
+                          ax: number, ay: number,
+                          bx: number, by: number): number {
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 > 1e-12 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+  if (t < 0) t = 0; else if (t > 1) t = 1;
+  const cx = ax + t * dx, cy = ay + t * dy;
+  const ex = px - cx, ey = py - cy;
+  return ex * ex + ey * ey;
+}
+
+/** For each point on each Arachne wall path, find the distance to the
+ *  nearest segment of the input boundary (outer + holes), then add
+ *  half the local wall width. The MAX over all points is the real
+ *  inward extent of the wall coverage — what the infill region must
+ *  stay clear of. */
+export function computeMaxPathInset(
+  paths: VariableWidthPath[],
+  outer: THREE.Vector2[],
+  holes: THREE.Vector2[][],
+): number {
+  // Pre-flatten boundary segments into a flat double[] for cache-locality
+  // in the O(P×B) inner loop. P = path points, B = boundary segments.
+  const segs: number[] = [];
+  const pushRing = (ring: THREE.Vector2[]) => {
+    const n = ring.length;
+    if (n < 2) return;
+    for (let i = 0; i < n; i++) {
+      const a = ring[i];
+      const b = ring[(i + 1) % n];
+      segs.push(a.x, a.y, b.x, b.y);
+    }
+  };
+  pushRing(outer);
+  for (const hole of holes) pushRing(hole);
+  const segCount = segs.length / 4;
+  if (segCount === 0) return 0;
+
+  let maxInset = 0;
+  for (const path of paths) {
+    const pts = path.points;
+    const widths = path.widths;
+    for (let i = 0; i < pts.length; i++) {
+      const px = pts[i].x, py = pts[i].y;
+      const halfW = (widths[i] ?? 0) * 0.5;
+      let bestSq = Infinity;
+      for (let s = 0; s < segCount; s++) {
+        const sq = pointToSegSqDist(px, py,
+          segs[s * 4], segs[s * 4 + 1], segs[s * 4 + 2], segs[s * 4 + 3]);
+        if (sq < bestSq) bestSq = sq;
+      }
+      const inset = Math.sqrt(bestSq) + halfW;
+      if (inset > maxInset) maxInset = inset;
+    }
+  }
+  return maxInset;
+}
+
 export type { VariableWidthPath } from './types';
 export type { ArachneBackend, ArachneBackendName } from './types';
 export { getArachneBackend, registerArachneBackend, resolveArachneBackend, arachneWasmBackend } from './backend';
@@ -133,7 +195,22 @@ export function generatePerimetersArachne(
       pathMs: t1 - t0,
     });
 
-    const insetDistance = outerWallInset + wallCount * lineWidth;
+    // Arachne emits variable-width walls placed by libArachne's
+    // skeletal-trapezoidation, NOT at fixed `depth × lineWidth` offsets.
+    // For example a depth-2 wall in a thin section can sit further from
+    // the boundary than a depth-2 wall in a wide section. So the only
+    // reliable measure of the wall envelope is the actual emitted-path
+    // geometry: for each point on each path, distance from that point
+    // to the nearest input-boundary segment, plus half the local wall
+    // width at that point.
+    //
+    // We compute that envelope and inset the body geometry by it. Falls
+    // back to `(wallCount + 0.5) × lineWidth` if no usable points.
+    const measuredCoverage = computeMaxPathInset(paths, outerContour, holeContours);
+    const fallbackCoverage = (wallCount + 0.5) * lineWidth;
+    const insetDistance = outerWallInset
+      + Math.max(measuredCoverage, fallbackCoverage)
+      + lineWidth * 0.05; // small safety pad to avoid touching the wall
     const { innermostHoles, infillRegions } = computeArachneInfillGeometry(
       outerContour, holeContours, insetDistance, deps,
     );
@@ -170,13 +247,22 @@ export function generatePerimetersArachne(
  * Equivalent to a single `(outer ⊖ insetDistance) − ⋃(hole ⊕ insetDistance)`
  * — the polygon's interior at the innermost wall depth.
  */
-function computeArachneInfillGeometry(
+export function computeArachneInfillGeometry(
   outerContour: THREE.Vector2[],
   holeContours: THREE.Vector2[][],
   insetDistance: number,
   deps: PerimeterDeps,
 ): { innermostHoles: THREE.Vector2[][]; infillRegions: InfillRegion[] } {
-  const insetOuter = deps.offsetContour(outerContour, -insetDistance);
+  // offsetContour convention (matches `perimeters.ts:241`):
+  //   positive offset = inset toward solid material
+  //     - on a CCW outer ring, that SHRINKS the outer (good for infill)
+  //     - on a CW hole ring, that EXPANDS the hole boundary into solid
+  //
+  // The previous `-insetDistance` here EXPANDED the outer outward —
+  // making `insetOuter` bigger than the body. The bug got proportionally
+  // worse when the inset grew (which is how the user's "infill in walls"
+  // got more visible after we tightened the envelope calc above).
+  const insetOuter = deps.offsetContour(outerContour, insetDistance);
   if (insetOuter.length < 3) {
     return { innermostHoles: [], infillRegions: [] };
   }
@@ -203,7 +289,7 @@ function computeArachneInfillGeometry(
     // ARACHNE-9.4A.4: worker pre-awaits Clipper2 load. Throw on null
     // (caught by outer try/catch which falls back to insetOuter).
     const mergedHolesResult: PCMultiPolygon | null = holesMP.length === 1
-      ? holesMP[0]
+      ? holesMP
       : booleanMultiPolygonClipper2Sync(allHolePolygons, [], 'union');
     if (mergedHolesResult === null) throw new Error('arachne: Clipper2 union not loaded');
     const mergedHoles = mergedHolesResult;

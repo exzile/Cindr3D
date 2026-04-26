@@ -51,7 +51,6 @@ describe('Voronoi backend perf bench', () => {
 
     expect(wasmGraph.vertices.length).toBeGreaterThan(50);
 
-    // eslint-disable-next-line no-console
     console.log(
       `[voronoi bench] WASM=${wasmMs.toFixed(1)}ms ` +
       `(verts=${wasmGraph.vertices.length}, edges=${wasmGraph.edges.length})`,

@@ -98,7 +98,7 @@ export function createControlActions(
     },
     startPrint: async (filename) => {
       const { service } = get(); if (!service) return;
-      try { await service.sendGCode(`M32 \"${filename}\"`); }
+      try { await service.sendGCode(`M32 "${filename}"`); }
       catch (err) { set({ error: `Failed to start print: ${(err as Error).message}` }); }
     },
     pausePrint: async () => {
@@ -137,7 +137,7 @@ export function createControlActions(
       const { service } = get(); if (!service) return;
       try {
         await service.sendGCode(`T${toolNumber}`);
-        await service.sendGCode(`M701 S\"${name}\"`);
+        await service.sendGCode(`M701 S"${name}"`);
       } catch (err) { set({ error: `Failed to load filament: ${(err as Error).message}` }); }
     },
     unloadFilament: async (toolNumber) => {
@@ -152,7 +152,7 @@ export function createControlActions(
       try {
         await service.sendGCode(`T${toolNumber}`);
         await service.sendGCode('M702');
-        await service.sendGCode(`M701 S\"${name}\"`);
+        await service.sendGCode(`M701 S"${name}"`);
       } catch (err) { set({ error: `Failed to change filament: ${(err as Error).message}` }); }
     },
     uploadFirmware: async (file) => {

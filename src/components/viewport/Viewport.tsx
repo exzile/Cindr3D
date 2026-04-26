@@ -1,5 +1,5 @@
 import "./overlays/ViewportOverlay.css";
-import { useRef, useCallback, useState, useEffect } from 'react';
+import { useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
 import type { PresetsType } from '@react-three/drei/helpers/environment-assets';
@@ -56,13 +56,14 @@ import ExtrudeStartEntityPicker from './scene/ExtrudeStartEntityPicker';
 import AnalysisOverlay from './scene/AnalysisOverlay';
 import JointOriginPicker from './scene/JointOriginPicker';
 import JointOriginRenderer from './scene/JointOriginRenderer';
-import type { ViewportCtxState } from '../../types/viewport-context-menu.types';
 import CameraProjectionSwitcher from './scene/CameraProjectionSwitcher';
 import LookAtInteraction from './scene/LookAtInteraction';
 import { EffectComposer, SSAO } from '@react-three/postprocessing';
 import MultiViewCanvas from './multiview/MultiViewCanvas';
 import { ViewportPanels } from './ViewportPanels';
 import { ViewportOverlays } from './ViewportOverlays';
+import { useViewCubeQuaternion } from './hooks/useViewCubeQuaternion';
+import { useWindowLassoSelection } from './hooks/useWindowLassoSelection';
 
 
 
@@ -70,8 +71,6 @@ import { ViewportOverlays } from './ViewportOverlays';
 const SSAO_COLOR = new THREE.Color('black');
 
 /** Scratch objects for window/lasso selection — avoids per-feature allocations on pointer-up. */
-const _selBox3 = new THREE.Box3();
-const _selVec3 = new THREE.Vector3();
 
 /**
  * AUDIT-17: Module-level scratch quaternions — alternated each tick to avoid
@@ -79,24 +78,8 @@ const _selVec3 = new THREE.Vector3();
  * React detects the state change because the object reference alternates between
  * _quatA and _quatB, so it always sees a different reference when the camera moves.
  */
-const _quatA = new THREE.Quaternion();
-const _quatB = new THREE.Quaternion();
-let _quatToggle = false;
 
 /** Standard ray-casting point-in-polygon test (screen-space pixels). */
-function pointInPolygon(p: { x: number; y: number }, poly: { x: number; y: number }[]): boolean {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const pi = poly[i];
-    const pj = poly[j];
-    const intersect =
-      pi.y > p.y !== pj.y > p.y &&
-      p.x < ((pj.x - pi.x) * (p.y - pi.y)) / (pj.y - pi.y + 1e-12) + pi.x;
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-
 export default function Viewport() {
   const viewMode = useCADStore((s) => s.viewMode);
   const cameraNavMode = useCADStore((s) => s.cameraNavMode);
@@ -113,181 +96,40 @@ export default function Viewport() {
   const themeColors = useThemeStore((s) => s.colors);
 
   // D204/D205 — Window & Lasso selection
-  const activeTool = useCADStore((s) => s.activeTool);
-  const setWindowSelectStart = useCADStore((s) => s.setWindowSelectStart);
-  const setWindowSelectEnd = useCADStore((s) => s.setWindowSelectEnd);
-  const clearWindowSelect = useCADStore((s) => s.clearWindowSelect);
-  const setSelectedEntityIds = useCADStore((s) => s.setSelectedEntityIds);
-  const setLassoSelecting = useCADStore((s) => s.setLassoSelecting);
-  const setLassoPoints = useCADStore((s) => s.setLassoPoints);
-  const clearLasso = useCADStore((s) => s.clearLasso);
   // D207
   const sketchGridEnabled = useCADStore((s) => s.sketchGridEnabled);
   // NAV-19 multi-viewport layout
   const viewportLayout = useCADStore((s) => s.viewportLayout);
 
   // Drag-state refs (avoid stale closures in pointer handlers)
-  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
-  const isDraggingRef = useRef(false);
-  const isLassoRef = useRef(false);
-  const lassoAccumRef = useRef<{ x: number; y: number }[]>([]);
-  const containerRef = useRef<HTMLDivElement>(null);
   // Tracks where the right mouse button was pressed so onContextMenu can
   // distinguish "click to open menu" from "drag to pan" — we only want the
   // context menu on a stationary right-click, not after a right-drag pan.
-  const rightDownRef = useRef<{ x: number; y: number } | null>(null);
   // Window/lasso select needs the live camera for screen-space projection.
   // Captured in Canvas.onCreated so it's available to pointerUp handlers.
-  const cameraRef = useRef<THREE.Camera | null>(null);
-  const [viewportCtxMenu, setViewportCtxMenu] = useState<ViewportCtxState | null>(null);
+  const { camQuat, handleQuaternionChange } = useViewCubeQuaternion();
+  const {
+    cameraRef,
+    containerRef,
+    handleContextMenu,
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
+    setViewportCtxMenu,
+    viewportCtxMenu,
+  } = useWindowLassoSelection();
 
-  // Camera quaternion state shared between the main Canvas and the ViewCube overlay
-  const [camQuat, setCamQuat] = useState(() => new THREE.Quaternion());
-  const quatRef = useRef(new THREE.Quaternion());
-
-  const handleQuaternionChange = useCallback((q: THREE.Quaternion) => {
     // Only trigger a React re-render ~10 times per second to avoid excessive updates
-    if (!quatRef.current.equals(q)) {
-      quatRef.current.copy(q);
-    }
-  }, []);
 
   // Throttled sync from ref to state for the ViewCube overlay.
   // Uses functional setState so camQuat is NOT needed as a dep — avoids
   // the infinite loop: camQuat change → effect re-runs → new interval → camQuat changes…
   // AUDIT-17: alternates between two module-level scratch quaternions instead of
   // cloning a new one each tick, eliminating ~10 allocations/sec during camera movement.
-  useEffect(() => {
-    const id = setInterval(() => {
-      setCamQuat((prev) => {
-        if (quatRef.current.equals(prev)) return prev;
-        _quatToggle = !_quatToggle;
-        const scratch = _quatToggle ? _quatA : _quatB;
-        scratch.copy(quatRef.current);
-        return scratch;
-      });
-    }, 100);
-    return () => clearInterval(id);
-  }, []);
 
   const handleViewCubeOrient = useCallback((targetQ: THREE.Quaternion) => {
     setCameraTargetQuaternion(targetQ);
   }, [setCameraTargetQuaternion]);
-
-  // ── D204/D205 pointer handlers ─────────────��──────────────────────────────
-  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    // Track right-button position regardless of tool so the context-menu
-    // suppression below works the same way in every mode.
-    if (e.button === 2) {
-      rightDownRef.current = { x: e.clientX, y: e.clientY };
-    }
-    if (activeTool !== 'select') return;
-    if (e.button !== 0) return; // left button only
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const p = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    dragStartRef.current = p;
-    isDraggingRef.current = false;
-    isLassoRef.current = e.shiftKey;
-    lassoAccumRef.current = [p];
-  }, [activeTool]);
-
-  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragStartRef.current) return;
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const p = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    const dx = p.x - dragStartRef.current.x;
-    const dy = p.y - dragStartRef.current.y;
-
-    if (!isDraggingRef.current) {
-      if (Math.sqrt(dx * dx + dy * dy) < 5) return; // threshold
-      isDraggingRef.current = true;
-      if (isLassoRef.current) {
-        setLassoSelecting(true);
-        setLassoPoints([dragStartRef.current, p]);
-        lassoAccumRef.current = [dragStartRef.current, p];
-      } else {
-        setWindowSelectStart(dragStartRef.current);
-      }
-    } else {
-      if (isLassoRef.current) {
-        lassoAccumRef.current = [...lassoAccumRef.current, p];
-        setLassoPoints(lassoAccumRef.current);
-      } else {
-        setWindowSelectEnd(p);
-      }
-    }
-  }, [setWindowSelectStart, setWindowSelectEnd, setLassoSelecting, setLassoPoints]);
-
-  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragStartRef.current) return;
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const p = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-
-    if (isDraggingRef.current) {
-      const camera = cameraRef.current;
-      // Project a world-space point to screen pixels using the live canvas camera.
-      // Returns null if the camera isn't ready or the point sits behind it.
-      const projectToScreen = (worldPos: THREE.Vector3): { x: number; y: number } | null => {
-        if (!camera) return null;
-        // Reuse scratch vec — project() mutates in place
-        _selVec3.copy(worldPos).project(camera);
-        if (_selVec3.z > 1 || _selVec3.z < -1) return null;
-        return {
-          x: (_selVec3.x * 0.5 + 0.5) * rect.width,
-          y: (1 - (_selVec3.y * 0.5 + 0.5)) * rect.height,
-        };
-      };
-
-      // Feature → screen-projected centroid (or null if not selectable).
-      // Uses module-level scratch Box3/Vector3 — no allocation per feature.
-      type AnyFeature = ReturnType<typeof useCADStore.getState>['features'][number];
-      const projectedFeatureCentroid = (f: AnyFeature): { x: number; y: number } | null => {
-        if (!f.mesh || !f.visible) return null;
-        _selBox3.setFromObject(f.mesh);
-        if (_selBox3.isEmpty()) return null;
-        _selBox3.getCenter(_selVec3);
-        return projectToScreen(_selVec3);
-      };
-
-      // Read features directly from store — no React subscription needed here
-      const { features, windowSelectStart } = useCADStore.getState();
-
-      if (isLassoRef.current) {
-        // Lasso: point-in-polygon test on each feature's projected centroid
-        const polygon = lassoAccumRef.current;
-        const matched = polygon.length >= 3
-          ? features.filter((f) => {
-              const sp = projectedFeatureCentroid(f);
-              return sp !== null && pointInPolygon(sp, polygon);
-            })
-          : [];
-        setSelectedEntityIds(matched.map((f) => f.id));
-        clearLasso();
-      } else {
-        // Window select: select features whose centroids fall inside the drag rect
-        if (windowSelectStart) {
-          const minX = Math.min(windowSelectStart.x, p.x);
-          const maxX = Math.max(windowSelectStart.x, p.x);
-          const minY = Math.min(windowSelectStart.y, p.y);
-          const maxY = Math.max(windowSelectStart.y, p.y);
-          const matched = features.filter((f) => {
-            const sp = projectedFeatureCentroid(f);
-            return sp !== null && sp.x >= minX && sp.x <= maxX && sp.y >= minY && sp.y <= maxY;
-          });
-          setSelectedEntityIds(matched.map((f) => f.id));
-        }
-        clearWindowSelect();
-      }
-    }
-
-    dragStartRef.current = null;
-    isDraggingRef.current = false;
-    lassoAccumRef.current = [];
-  }, [setSelectedEntityIds, clearWindowSelect, clearLasso]);
-
   return (
     <div
       ref={containerRef}
@@ -314,19 +156,7 @@ export default function Viewport() {
           // Expose camera to DOM-level pointer handlers for window/lasso selection
           cameraRef.current = camera;
         }}
-        onContextMenu={(e) => {
-          // Always suppress the native browser context menu.
-          e.preventDefault();
-          // If the right button was dragged (used to pan the camera), do NOT
-          // open our custom context menu — the user was just panning.
-          const down = rightDownRef.current;
-          rightDownRef.current = null;
-          if (down) {
-            const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
-            if (moved > 5) return;
-          }
-          setViewportCtxMenu({ x: e.clientX, y: e.clientY });
-        }}
+        onContextMenu={handleContextMenu}
       >
         {/* Sync scene background with theme */}
         <SceneTheme />

@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import type { CSSProperties, InputHTMLAttributes, ReactNode } from 'react';
 import { Cpu } from 'lucide-react';
 import { colors, sharedStyles } from '../../../../../utils/theme';

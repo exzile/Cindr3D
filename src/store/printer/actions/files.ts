@@ -77,7 +77,7 @@ export function createFileActions(
     },
     runMacro: async (filename) => {
       const { service, macroPath } = get(); if (!service) return;
-      try { await service.sendGCode(`M98 P\"${macroPath}/${filename}\"`); }
+      try { await service.sendGCode(`M98 P"${macroPath}/${filename}"`); }
       catch (err) { set({ error: `Failed to run macro: ${(err as Error).message}` }); }
     },
     createMacro: async (filename, contents) => {
@@ -131,28 +131,28 @@ export function createFileActions(
       const { service } = get(); if (!service) return;
       try {
         await service.uploadFile(`0:/sys/${file.name}`, file);
-        await service.sendGCode(`M750 P\"${file.name}\"`);
+        await service.sendGCode(`M750 P"${file.name}"`);
         await get().refreshPlugins();
       } catch (err) { set({ error: `Failed to install plugin: ${(err as Error).message}` }); }
     },
     startPlugin: async (id) => {
       const { service } = get(); if (!service) return;
       try {
-        await service.sendGCode(`M751 P\"${id}\"`);
+        await service.sendGCode(`M751 P"${id}"`);
         await get().refreshPlugins();
       } catch (err) { set({ error: `Failed to start plugin: ${(err as Error).message}` }); }
     },
     stopPlugin: async (id) => {
       const { service } = get(); if (!service) return;
       try {
-        await service.sendGCode(`M752 P\"${id}\"`);
+        await service.sendGCode(`M752 P"${id}"`);
         await get().refreshPlugins();
       } catch (err) { set({ error: `Failed to stop plugin: ${(err as Error).message}` }); }
     },
     uninstallPlugin: async (id) => {
       const { service } = get(); if (!service) return;
       try {
-        await service.sendGCode(`M753 P\"${id}\"`);
+        await service.sendGCode(`M753 P"${id}"`);
         await get().refreshPlugins();
       } catch (err) { set({ error: `Failed to uninstall plugin: ${(err as Error).message}` }); }
     },

@@ -237,13 +237,14 @@ export default function SketchPlaneSelector() {
     };
 
     const canvas = gl.domElement;
+    const pickableMeshes = _pickableMeshes.current;
     canvas.addEventListener('pointermove', handlePointerMove);
     canvas.addEventListener('click', handleClick, true);
     return () => {
       canvas.removeEventListener('pointermove', handlePointerMove);
       canvas.removeEventListener('click', handleClick, true);
       setFaceHit(null);
-      _pickableMeshes.current.length = 0;
+      pickableMeshes.length = 0;
     };
   }, [selecting, gl, camera, raycaster, scene, startSketchOnFace, setStatusMessage]);
 

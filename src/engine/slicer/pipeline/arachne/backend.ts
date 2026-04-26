@@ -21,7 +21,6 @@ export function resolveArachneBackend(name: ArachneBackendName = 'wasm'): Arachn
   const found = getArachneBackend(name);
   if (found) return found;
   if (name !== 'wasm') {
-    // eslint-disable-next-line no-console
     console.warn(`arachneBackend "${name}" is not registered; falling back to "wasm".`);
   }
   return arachneWasmBackend;

@@ -41,7 +41,9 @@ export function loadFilamentColors(): Record<string, string> {
   try {
     const raw = localStorage.getItem(FILAMENT_COLORS_KEY);
     if (raw) return JSON.parse(raw);
-  } catch {}
+  } catch {
+    // Storage may be unavailable in private browsing or test environments.
+  }
   return {};
 }
 
@@ -50,14 +52,18 @@ export function saveFilamentColor(name: string, color: string) {
   colors[name] = color;
   try {
     localStorage.setItem(FILAMENT_COLORS_KEY, JSON.stringify(colors));
-  } catch {}
+  } catch {
+    // Best-effort preference persistence.
+  }
 }
 
 export function loadFilamentProps(): Record<string, FilamentProps> {
   try {
     const raw = localStorage.getItem(FILAMENT_PROPS_KEY);
     if (raw) return JSON.parse(raw);
-  } catch {}
+  } catch {
+    // Storage may be unavailable in private browsing or test environments.
+  }
   return {};
 }
 
@@ -66,14 +72,18 @@ export function saveFilamentProps(name: string, props: FilamentProps) {
   all[name] = props;
   try {
     localStorage.setItem(FILAMENT_PROPS_KEY, JSON.stringify(all));
-  } catch {}
+  } catch {
+    // Best-effort preference persistence.
+  }
 }
 
 export function loadSpoolData(): Record<string, SpoolData> {
   try {
     const raw = localStorage.getItem(FILAMENT_SPOOLS_KEY);
     if (raw) return JSON.parse(raw);
-  } catch {}
+  } catch {
+    // Storage may be unavailable in private browsing or test environments.
+  }
   return {};
 }
 
@@ -82,5 +92,7 @@ export function saveSpoolEntry(name: string, data: SpoolData) {
   all[name] = data;
   try {
     localStorage.setItem(FILAMENT_SPOOLS_KEY, JSON.stringify(all));
-  } catch {}
+  } catch {
+    // Best-effort preference persistence.
+  }
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { OrbitControls } from '@react-three/drei';
 import { useThree } from '@react-three/fiber';
 import { useSlicerStore } from '../../../../store/slicerStore';
@@ -34,11 +34,7 @@ export function SlicerWorkspaceScene() {
   const previewSectionZ = useSlicerStore((s) => s.previewSectionZ);
   const previewColorMode = useSlicerStore((s) => s.previewColorMode);
   const previewHiddenTypesArr = useSlicerStore((s) => s.previewHiddenTypes);
-  const previewHiddenTypesKey = useMemo(
-    () => previewHiddenTypesArr.join('|'),
-    [previewHiddenTypesArr],
-  );
-  const hiddenTypes = useMemo(() => new Set(previewHiddenTypesArr), [previewHiddenTypesKey]);
+  const hiddenTypes = useMemo(() => new Set(previewHiddenTypesArr), [previewHiddenTypesArr]);
   const previewSimEnabled = useSlicerStore((s) => s.previewSimEnabled);
   const previewSimPlaying = useSlicerStore((s) => s.previewSimPlaying);
   const previewSimSpeed = useSlicerStore((s) => s.previewSimSpeed);
@@ -49,10 +45,25 @@ export function SlicerWorkspaceScene() {
 
   // Hover inspect state — set by LayerLines pointer events.
   const [hoverInfo, setHoverInfo] = useState<MoveHoverInfo | null>(null);
+  // Track whether the user is actively dragging the camera (orbit/pan/zoom).
+  // While dragging we suppress hover events: each pointermove on a tube
+  // mesh would otherwise allocate a Vector3, set state, and trigger a
+  // full R3F re-render — so panning a dense G-code preview pegged the
+  // frame budget. The OrbitControls fires `start` on drag begin and
+  // `end` on release; we flip a ref-flag in between.
+  const cameraDraggingRef = useRef(false);
   const handleHoverMove = useCallback((info: MoveHoverInfo | null) => {
+    if (cameraDraggingRef.current) return;
     setHoverInfo(info);
     invalidate();
   }, [invalidate]);
+  const handleControlsStart = useCallback(() => {
+    cameraDraggingRef.current = true;
+    if (hoverInfo !== null) setHoverInfo(null);
+  }, [hoverInfo]);
+  const handleControlsEnd = useCallback(() => {
+    cameraDraggingRef.current = false;
+  }, []);
 
   const highlightByObject = useMemo(() => {
     const map = new Map<string, Set<number>>();
@@ -70,7 +81,7 @@ export function SlicerWorkspaceScene() {
     invalidate, previewMode, sliceResult, previewLayer, previewLayerStart,
   ]);
   useEffect(() => { invalidate(); }, [
-    invalidate, previewShowTravel, previewColorMode, previewHiddenTypesKey,
+    invalidate, previewShowTravel, previewColorMode, previewHiddenTypesArr,
   ]);
   useEffect(() => { invalidate(); }, [
     invalidate, previewSimEnabled, previewSimPlaying, previewSimTime,
@@ -247,7 +258,23 @@ export function SlicerWorkspaceScene() {
             layerTime={currentLayerData?.layerTime ?? 0}
             range={legendRange}
           />
-          {hoverInfo && <HoverTooltip info={hoverInfo} />}
+          {hoverInfo && (
+            <HoverTooltip
+              info={hoverInfo}
+              filamentDiameter={printerProfile?.filamentDiameter ?? 1.75}
+              layerHeight={(() => {
+                // Adaptive layers vary per layer — compute from z-diff
+                // when neighbouring layers exist, else fall back to the
+                // profile default. The flow% is approximate either way
+                // (it's a hover-debug aid, not metrology).
+                const layerIdx = simState.layerIndex;
+                const cur = sliceResult?.layers[layerIdx];
+                const prev = layerIdx > 0 ? sliceResult?.layers[layerIdx - 1] : null;
+                if (cur && prev) return Math.max(0.02, cur.z - prev.z);
+                return printProfile?.layerHeight ?? 0.2;
+              })()}
+            />
+          )}
         </>
       )}
 
@@ -275,6 +302,8 @@ export function SlicerWorkspaceScene() {
         minDistance={50}
         maxDistance={bv.x * 4}
         enableDamping
+        onStart={handleControlsStart}
+        onEnd={handleControlsEnd}
       />
     </>
   );

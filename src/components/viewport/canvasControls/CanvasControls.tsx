@@ -24,6 +24,8 @@ import GridSettingsPanel from './GridSettingsPanel';
 import IncrementSettingsPanel from './IncrementSettingsPanel';
 import ObjectSnapPanel from './ObjectSnapPanel';
 
+const LAYOUT_CYCLE = ['1', '2h', '2v', '4'] as const;
+
 export default function CanvasControls() {
   const gridVisible = useCADStore((s) => s.gridVisible);
   const setGridVisible = useCADStore((s) => s.setGridVisible);
@@ -58,7 +60,6 @@ export default function CanvasControls() {
     setCameraNavMode(cameraNavMode === mode ? null : mode);
   }, [cameraNavMode, setCameraNavMode]);
 
-  const LAYOUT_CYCLE = ['1', '2h', '2v', '4'] as const;
   const handleCycleViewportLayout = useCallback(() => {
     const idx = LAYOUT_CYCLE.indexOf(viewportLayout);
     const next = LAYOUT_CYCLE[(idx + 1) % LAYOUT_CYCLE.length];

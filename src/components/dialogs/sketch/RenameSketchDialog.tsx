@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 
@@ -6,17 +6,8 @@ export function RenameSketchDialog({ sketchId, onClose }: { sketchId: string | n
   const sketches = useCADStore((s) => s.sketches);
   const renameSketch = useCADStore((s) => s.renameSketch);
   const sketch = sketches.find((s) => s.id === sketchId);
-  const [name, setName] = useState(sketch?.name ?? '');
-
-  // Re-seed only when the user opens the dialog on a different sketch, NOT every
-  // time the parent's `sketches` array reference changes. Depending on `sketch`
-  // (a derived find() result) overwrote the user's in-progress edit on every
-  // unrelated sketch update.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setName(sketch?.name ?? '');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sketchId]);
+  const [draft, setDraft] = useState({ sketchId, name: sketch?.name ?? '' });
+  const name = draft.sketchId === sketchId ? draft.name : sketch?.name ?? '';
 
   const handleApply = () => {
     if (!sketchId || !name.trim()) return;
@@ -36,7 +27,7 @@ export function RenameSketchDialog({ sketchId, onClose }: { sketchId: string | n
         <div className="dialog-body">
           <div className="form-group">
             <label>Name</label>
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)}
+            <input type="text" value={name} onChange={(e) => setDraft({ sketchId, name: e.target.value })}
               onKeyDown={(e) => { if (e.key === 'Enter') handleApply(); }} autoFocus />
           </div>
         </div>

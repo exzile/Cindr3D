@@ -1,17 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Eye, EyeOff, Download, Send, Play, Pause, X, Clapperboard,
-  SkipBack, RotateCcw, Gauge, Palette, FlaskConical, Scissors,
+  SkipBack, RotateCcw, Gauge, Palette, Scissors,
   ChevronLeft, ChevronRight, Magnet,
 } from 'lucide-react';
 import { useSlicerStore } from '../../../../store/slicerStore';
 import { usePrinterStore } from '../../../../store/printerStore';
-import {
-  generateFlowTowerGCode,
-  generatePressureAdvancePatternGCode,
-  generateRetractionTowerGCode,
-  generateTemperatureTowerGCode,
-} from '../../../../engine/calibration';
+import { CalibrationMenu } from './CalibrationMenu';
+import { formatSlicerLength, formatSlicerTime } from './format';
 import './SlicerWorkspaceBottomBar.css';
 
 const SIM_SPEEDS = [1, 2, 5, 10, 25, 50, 100];
@@ -58,10 +54,8 @@ export function SlicerWorkspaceBottomBar() {
 
   const [sending, setSending] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [sendError, setSendError] = useState<string | null>(null);
-  const [calibrationMenuOpen, setCalibrationMenuOpen] = useState(false);
   const [sectionSnap, setSectionSnap] = useState(true);
   const sendResetTimerRef = useRef<number | null>(null);
-  const calibrationMenuRef = useRef<HTMLDivElement | null>(null);
 
   const isSlicing = sliceProgress.stage === 'preparing' || sliceProgress.stage === 'slicing' || sliceProgress.stage === 'generating';
   const hasResult = sliceResult !== null;
@@ -91,45 +85,6 @@ export function SlicerWorkspaceBottomBar() {
     if (sendResetTimerRef.current !== null) {
       window.clearTimeout(sendResetTimerRef.current);
     }
-  }, []);
-
-  useEffect(() => {
-    if (!calibrationMenuOpen) return;
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!calibrationMenuRef.current?.contains(event.target as Node)) {
-        setCalibrationMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [calibrationMenuOpen]);
-
-  const formatTime = (seconds: number) => {
-    if (!isFinite(seconds) || seconds < 0) seconds = 0;
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    if (h > 0) return `${h}h ${m}m`;
-    if (m > 0) return `${m}m ${s}s`;
-    return `${s}s`;
-  };
-
-  const formatLength = (mm: number) => {
-    if (mm > 1000) return `${(mm / 1000).toFixed(2)}m`;
-    return `${mm.toFixed(0)}mm`;
-  };
-
-  const downloadCalibration = useCallback((filename: string, gcode: string) => {
-    const blob = new Blob([gcode], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    setCalibrationMenuOpen(false);
   }, []);
 
   // Dual-range slider: two overlapping range inputs, store enforces clamping.
@@ -195,8 +150,8 @@ export function SlicerWorkspaceBottomBar() {
 
       {hasResult && !isSlicing && (
         <div className="slicer-bottom-bar__stats">
-          <span>Time: <span className="slicer-bottom-bar__stat-value">{formatTime(sliceResult!.printTime)}</span></span>
-          <span>Filament: <span className="slicer-bottom-bar__stat-value">{formatLength(sliceResult!.filamentUsed)}</span></span>
+          <span>Time: <span className="slicer-bottom-bar__stat-value">{formatSlicerTime(sliceResult!.printTime)}</span></span>
+          <span>Filament: <span className="slicer-bottom-bar__stat-value">{formatSlicerLength(sliceResult!.filamentUsed)}</span></span>
           <span>Weight: <span className="slicer-bottom-bar__stat-value">{sliceResult!.filamentWeight.toFixed(1)}g</span></span>
           <span>Cost: <span className="slicer-bottom-bar__stat-value">${sliceResult!.filamentCost.toFixed(2)}</span></span>
           <span>Layers: <span className="slicer-bottom-bar__stat-value">{sliceResult!.layerCount}</span></span>
@@ -211,55 +166,11 @@ export function SlicerWorkspaceBottomBar() {
 
       <div className="slicer-bottom-bar__spacer" />
 
-      <div className="slicer-bottom-bar__calibration" ref={calibrationMenuRef}>
-        <button
-          className={`slicer-bottom-bar__btn${calibrationMenuOpen ? ' is-active' : ''}`}
-          onClick={() => setCalibrationMenuOpen((open) => !open)}
-          title="Generate calibration G-code"
-        >
-          <FlaskConical size={14} /> Calibration
-        </button>
-        {calibrationMenuOpen && (
-          <div className="slicer-bottom-bar__calibration-menu">
-            <button
-              className="slicer-bottom-bar__calibration-item"
-              onClick={() => downloadCalibration(
-                'calibration-retraction-tower.gcode',
-                generateRetractionTowerGCode(activePrinter, activeMaterial, activePrint),
-              )}
-            >
-              Retraction tower
-            </button>
-            <button
-              className="slicer-bottom-bar__calibration-item"
-              onClick={() => downloadCalibration(
-                'calibration-temperature-tower.gcode',
-                generateTemperatureTowerGCode(activePrinter, activeMaterial, activePrint),
-              )}
-            >
-              Temperature tower
-            </button>
-            <button
-              className="slicer-bottom-bar__calibration-item"
-              onClick={() => downloadCalibration(
-                'calibration-flow-tower.gcode',
-                generateFlowTowerGCode(activePrinter, activeMaterial, activePrint),
-              )}
-            >
-              Flow tower
-            </button>
-            <button
-              className="slicer-bottom-bar__calibration-item"
-              onClick={() => downloadCalibration(
-                'calibration-pressure-advance-pattern.gcode',
-                generatePressureAdvancePatternGCode(activePrinter, activeMaterial, activePrint),
-              )}
-            >
-              Pressure advance pattern
-            </button>
-          </div>
-        )}
-      </div>
+      <CalibrationMenu
+        activePrinter={activePrinter}
+        activeMaterial={activeMaterial}
+        activePrint={activePrint}
+      />
 
       {hasResult && (
         <button
@@ -432,7 +343,7 @@ export function SlicerWorkspaceBottomBar() {
             />
           </div>
           <span className="slicer-bottom-bar__sim-time">
-            {formatTime(simTime)} / {formatTime(totalPrintTime)}
+            {formatSlicerTime(simTime)} / {formatSlicerTime(totalPrintTime)}
           </span>
           {simTime >= totalPrintTime && totalPrintTime > 0 && (
             <button

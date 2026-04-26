@@ -58,6 +58,8 @@ export class SlicePipelineGeometry {
     offsetY: number,
     _offsetZ: number,
   ): Segment[] {
+    void _offsetZ;
+
     return sliceTriangleSegmentsAtZ(triangles, z, offsetX, offsetY);
   }
 
@@ -267,10 +269,12 @@ export class SlicePipelineGeometry {
   }
 
   public contourToClosedPCRing(_contour: THREE.Vector2[]): PCMultiPolygon[0][0] {
+    void _contour;
     throw new Error('Implemented in SlicePipelineFill');
   }
 
   public multiPolygonToRegions(_mp: PCMultiPolygon): Array<{ contour: THREE.Vector2[]; holes: THREE.Vector2[][] }> {
+    void _mp;
     throw new Error('Implemented in SlicePipelineFill');
   }
 }

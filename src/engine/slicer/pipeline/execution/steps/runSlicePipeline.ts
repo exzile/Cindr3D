@@ -8,6 +8,12 @@ import { emitGroupedAndContourWalls } from './emitGroupedAndContourWalls';
 import { emitContourInfill } from './emitContourInfill';
 import { finalizeLayer } from './finalizeLayer';
 import { loadArachneModule, setArachneStatsLayer } from '../../arachne';
+import type {
+  SlicerExecutionPipeline,
+  SliceLayerGeometryState,
+  SliceLayerState,
+  SliceRun,
+} from './types';
 
 interface RawWorkerGeometry {
   positions: Float32Array;
@@ -15,14 +21,13 @@ interface RawWorkerGeometry {
   transformElements: Float32Array;
 }
 
-type SerializedLayerGeometry = {
-  li: number;
+type SerializedLayerGeometry = Omit<SliceLayerGeometryState, 'contours'> & {
   contours: Array<{
     area: number;
     isOuter: boolean;
     points: Array<[number, number]>;
   }>;
-} & Record<string, unknown>;
+};
 
 type LayerWorkerMessage =
   | { type: 'complete'; requestId: number; layers: Array<{ layerIndex: number; layer: SerializedLayerGeometry | null }> }
@@ -66,7 +71,7 @@ function transferList(data: RawWorkerGeometry[]): Transferable[] {
   return list;
 }
 
-function hydrateLayerGeometry(layer: SerializedLayerGeometry | null): any | null {
+function hydrateLayerGeometry(layer: SerializedLayerGeometry | null): SliceLayerGeometryState | null {
   if (!layer) return null;
   return {
     ...layer,
@@ -78,17 +83,19 @@ function hydrateLayerGeometry(layer: SerializedLayerGeometry | null): any | null
   };
 }
 
-function shouldUseLayerWorkerPool(run: any): boolean {
+function shouldUseLayerWorkerPool(run: SliceRun): boolean {
   if (run.totalLayers < 48) return false;
   if (hardwareConcurrency() < 2) return false;
-  return run.pp.parallelLayerPreparation !== false;
+  const print = run.pp as SliceRun['pp'] & { parallelLayerPreparation?: boolean };
+  return print.parallelLayerPreparation !== false;
 }
 
 async function prepareLayersInWorkerPool(
-  pipeline: any,
-  run: any,
+  pipeline: unknown,
+  run: SliceRun,
   geometries: { geometry: THREE.BufferGeometry; transform: THREE.Matrix4 }[],
-): Promise<Array<any | null>> {
+): Promise<Array<SliceLayerGeometryState | null>> {
+  const slicer = pipeline as SlicerExecutionPipeline;
   const workerCount = Math.min(hardwareConcurrency(), run.totalLayers, 6);
   const layerBatches = Array.from({ length: workerCount }, () => [] as number[]);
   for (let li = 0; li < run.totalLayers; li++) layerBatches[li % workerCount].push(li);
@@ -96,7 +103,7 @@ async function prepareLayersInWorkerPool(
   const requestId = Math.floor(Math.random() * 1_000_000_000);
   const workers: Worker[] = [];
   const rejectors: Array<(error: Error) => void> = [];
-  const results = new Array<any | null>(run.totalLayers).fill(null);
+  const results = new Array<SliceLayerGeometryState | null>(run.totalLayers).fill(null);
 
   const runWorker = (layerIndices: number[]): Promise<void> => new Promise((resolve, reject) => {
     const worker = createLayerWorker();
@@ -141,7 +148,7 @@ async function prepareLayersInWorkerPool(
   });
 
   const cancelTimer = setInterval(() => {
-    if (!pipeline.cancelled) return;
+    if (!slicer.cancelled) return;
     for (const worker of workers) {
       worker.postMessage({ type: 'cancel', requestId });
       worker.terminate();
@@ -150,7 +157,7 @@ async function prepareLayersInWorkerPool(
   }, 50);
 
   try {
-    pipeline.reportProgress('slicing', 0, 0, run.totalLayers, `Preparing ${run.totalLayers} layers on ${workerCount} workers...`);
+    slicer.reportProgress('slicing', 0, 0, run.totalLayers, `Preparing ${run.totalLayers} layers on ${workerCount} workers...`);
     await Promise.all(layerBatches.filter((batch) => batch.length > 0).map(runWorker));
     return results;
   } finally {
@@ -160,14 +167,17 @@ async function prepareLayersInWorkerPool(
 }
 
 export async function runSlicePipeline(
-  pipeline: any,
+  pipeline: unknown,
   geometries: { geometry: THREE.BufferGeometry; transform: THREE.Matrix4 }[],
 ): Promise<SliceResult> {
-  if (pipeline.printProfile?.nonPlanarSlicingEnabled) {
+  const slicer = pipeline as SlicerExecutionPipeline & {
+    prepareClipper2Offsets?: () => Promise<void>;
+  };
+  if (slicer.printProfile?.nonPlanarSlicingEnabled) {
     throw new Error('Non-planar slicing is not supported by the current planar G-code pipeline.');
   }
   const run = prepareSliceRun(pipeline, geometries);
-  await pipeline.prepareClipper2Offsets?.();
+  await slicer.prepareClipper2Offsets?.();
   if (run.pp.arachneBackend === 'wasm') {
     try {
       await loadArachneModule();
@@ -175,23 +185,23 @@ export async function runSlicePipeline(
       console.warn('Arachne WASM backend unavailable; falling back to JS/classic Arachne paths.', err);
     }
   }
-  let preparedLayers: Array<any | null> | null = null;
+  let preparedLayers: Array<SliceLayerGeometryState | null> | null = null;
 
   if (shouldUseLayerWorkerPool(run)) {
     try {
       preparedLayers = await prepareLayersInWorkerPool(pipeline, run, geometries);
     } catch (err) {
-      if (pipeline.cancelled) throw err;
+      if (slicer.cancelled) throw err;
       console.warn('Falling back to sequential layer preparation after worker-pool failure', err);
       preparedLayers = null;
     }
   }
 
   for (let li = 0; li < run.totalLayers; li++) {
-    if (pipeline.cancelled) throw new Error('Slicing cancelled by user.');
-    pipeline.reportProgress('slicing', (li / run.totalLayers) * 80, li, run.totalLayers, `Emitting layer ${li + 1}/${run.totalLayers}...`);
+    if (slicer.cancelled) throw new Error('Slicing cancelled by user.');
+    slicer.reportProgress('slicing', (li / run.totalLayers) * 80, li, run.totalLayers, `Emitting layer ${li + 1}/${run.totalLayers}...`);
     setArachneStatsLayer(li);
-    let layer: any | null;
+    let layer: SliceLayerState | null;
     if (preparedLayers) {
       const geometryState = preparedLayers[li];
       if (!geometryState) continue;
@@ -205,7 +215,7 @@ export async function runSlicePipeline(
     finalizeLayer(pipeline, run, layer);
   }
 
-  pipeline.reportProgress('generating', 95, run.totalLayers, run.totalLayers, 'Writing end G-code...');
+  slicer.reportProgress('generating', 95, run.totalLayers, run.totalLayers, 'Writing end G-code...');
   appendEndGCode(run.gcode, run.printer, run.mat);
   const stats = finalizeGCodeStats(
     run.gcode,
@@ -214,7 +224,7 @@ export async function runSlicePipeline(
     run.printer,
     run.mat,
   );
-  pipeline.reportProgress('complete', 100, run.totalLayers, run.totalLayers, 'Slicing complete.');
+  slicer.reportProgress('complete', 100, run.totalLayers, run.totalLayers, 'Slicing complete.');
 
   const gcode = applyPostProcessingScripts(run.gcode.join('\n'), run.pp);
 

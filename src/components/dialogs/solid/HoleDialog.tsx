@@ -82,7 +82,7 @@ export function HoleDialog({ onClose }: { onClose: () => void }) {
       if (typeof p.depth === 'number') setDraftDepth(p.depth);
     }
 
-  }, [editing?.id]);
+  }, [editing, p.depth, p.diameter, setDraftDepth, setDraftDiameter]);
 
   const addFeature = useCADStore((s) => s.addFeature);
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);

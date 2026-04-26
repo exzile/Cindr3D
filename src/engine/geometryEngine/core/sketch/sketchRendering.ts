@@ -44,6 +44,8 @@ export function createEntityGeometry(
 }
 
 export function createFilletGeometry(mesh: THREE.Mesh, _radius: number): THREE.Mesh {
+  void _radius;
+
   const geometry = mesh.geometry.clone();
   const material = (mesh.material as THREE.Material).clone();
   return new THREE.Mesh(geometry, material);

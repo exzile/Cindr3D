@@ -76,7 +76,7 @@ export class DuetService {
 
 
   private get baseUrl(): string {
-    let host = this.config.hostname.replace(/\/+$/, '').replace(/^https?:\/\//, '');
+    const host = this.config.hostname.replace(/\/+$/, '').replace(/^https?:\/\//, '');
     if (import.meta.env.DEV) {
       return `/duet-proxy/${host}`;
     }

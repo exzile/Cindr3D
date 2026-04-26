@@ -155,7 +155,7 @@ export const handleCornerEditingCommit: SketchCommitHandler = (ctx) => {
       const dir0 = new THREE.Vector3(otherPt0.x - corner.x, otherPt0.y - corner.y, otherPt0.z - corner.z).normalize();
       const dir1 = new THREE.Vector3(otherPt1.x - corner.x, otherPt1.y - corner.y, otherPt1.z - corner.z).normalize();
 
-      let sb0 = chamferDist1;
+      const sb0 = chamferDist1;
       let sb1 = chamferDist1;
       if (activeTool === 'sketch-chamfer-two-dist') {
         sb1 = chamferDist2;

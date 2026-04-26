@@ -1,5 +1,6 @@
 ﻿import { Fragment, useState, useCallback } from 'react';
 import type { CSSProperties } from 'react';
+import { useMemo } from 'react';
 import { Wrench, XCircle, Droplets, Fan, Package, Snowflake, Flame } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import { panelStyle, sectionTitleStyle as labelStyle } from '../../../utils/printerPanelStyles';
@@ -42,7 +43,7 @@ export default function ToolSelectorPanel() {
   const unloadFilament = usePrinterStore((s) => s.unloadFilament);
   const changeFilament = usePrinterStore((s) => s.changeFilament);
 
-  const tools         = model.tools ?? [];
+  const tools         = useMemo(() => model.tools ?? [], [model.tools]);
   const heaters       = model.heat?.heaters ?? [];
   const fans          = model.fans ?? [];
   const extrudersModel = model.move?.extruders ?? [];

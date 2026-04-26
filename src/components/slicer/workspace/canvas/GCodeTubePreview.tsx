@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react';
+import { type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { SliceLayer, SliceMove, SliceResult } from '../../../../types/slicer';
 import type { MoveHoverInfo, ShaftMoveData, TubeChain } from '../../../../types/slicer-preview.types';
@@ -12,6 +13,10 @@ import { buildChainTube, TUBE_MATERIAL, TUBE_RADIAL_SEGMENTS } from './tubeGeome
 // Single source of truth for bead colours — shared with the HTML legend panel.
 const MOVE_TYPE_COLORS = MOVE_TYPE_THREE_COLORS;
 const FALLBACK_COLOR = new THREE.Color('#ffffff');
+
+// Module-scoped scratch Vector3 reused by the pointermove hover handler
+// to avoid per-frame allocation on the 60 Hz hot path.
+const HOVER_WORLD_POS = new THREE.Vector3();
 
 // Visual exaggeration factor for line width. 1.0 = physical width.
 const PREVIEW_LINE_SCALE = 1.0;
@@ -289,17 +294,23 @@ export function LayerLines({
           geometry={t.geometry}
           material={TUBE_MATERIAL}
           frustumCulled={false}
-          onPointerMove={onHoverMove ? (e: any) => {
+          onPointerMove={onHoverMove ? (e: ThreeEvent<PointerEvent>) => {
             // Hover inspect: each segment owns RADIAL × 2 triangles
             // (RADIAL quads × 2 tri). Face index → segment index.
-            const faceIdx: number | undefined = e.faceIndex;
+            const faceIdx = e.faceIndex ?? undefined;
             if (faceIdx === undefined) return;
             const segIdx = Math.floor(faceIdx / (TUBE_RADIAL_SEGMENTS * 2));
             if (segIdx < 0 || segIdx >= t.moveRefs.length) return;
             e.stopPropagation();
+            // r3f_critical_patterns: don't `new THREE.Vector3()` on the
+            // pointermove hot path. Reuse a module-scoped scratch Vector3
+            // — the hover handler debounces via the React state setter
+            // anyway, and downstream consumers (HoverTooltip's <Html>)
+            // copy this position into their own coords.
+            HOVER_WORLD_POS.copy(e.point);
             onHoverMove({
               ...t.moveRefs[segIdx],
-              worldPos: new THREE.Vector3().copy(e.point),
+              worldPos: HOVER_WORLD_POS,
             });
           } : undefined}
           onPointerLeave={onHoverMove ? () => onHoverMove(null) : undefined}

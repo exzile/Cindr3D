@@ -1,5 +1,5 @@
 import "./ExportDialog.css";
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { X, Download } from 'lucide-react';
 import { Vector3 } from 'three';
 import type { Mesh, Object3D } from 'three';
@@ -54,7 +54,7 @@ export default function ExportDialog() {
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  const getMeshForExport = (): { mesh: Object3D; disposable: boolean } | null => {
+  const getMeshForExport = useCallback((): { mesh: Object3D; disposable: boolean } | null => {
     // Collect all visible extruded/revolved bodies
     for (const feature of features) {
       if (!feature.visible) continue;
@@ -81,7 +81,7 @@ export default function ExportDialog() {
       }
     }
     return null;
-  };
+  }, [features, sketches]);
 
   const handleExport = async () => {
     const source = getMeshForExport();
@@ -178,7 +178,7 @@ export default function ExportDialog() {
     disposeTransientMesh(mesh, disposable);
 
     return result;
-  }, [showExportDialog, format, settings, features, sketches]);
+  }, [showExportDialog, format, settings, getMeshForExport]);
 
   if (!showExportDialog) return null;
 

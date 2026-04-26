@@ -1,6 +1,11 @@
+import type { ReactNode } from 'react';
 import type { MaterialProfile } from '../../../../../types/slicer';
 import { colors } from '../../../../../utils/theme';
 import { fieldRow, inputStyle, labelStyle, lockedInputProps, LOCK_TITLE, MachineLockBadge, SectionBody, selectStyle, TabBar } from './shared';
+
+function renderFieldLabel(children: ReactNode, isLocked: boolean): ReactNode {
+  return <div style={labelStyle}>{children}{isLocked && <MachineLockBadge />}</div>;
+}
 
 export function MaterialProfileEditor({
   activeTab,
@@ -16,9 +21,6 @@ export function MaterialProfileEditor({
   const tabs = ['General', 'Temperature', 'Retraction', 'Flow & Cost'];
   const machineFields = new Set(material.machineSourcedFields ?? []);
   const locked = (field: string) => machineFields.has(field);
-  const FieldLabel = ({ field, children }: { field: string; children: React.ReactNode }) => (
-    <div style={labelStyle}>{children}{locked(field) && <MachineLockBadge />}</div>
-  );
 
   return (
     <>
@@ -68,11 +70,11 @@ export function MaterialProfileEditor({
         )}
         {activeTab === 2 && (
           <>
-            <div style={fieldRow}><FieldLabel field="retractionDistance">Retraction Distance (mm)</FieldLabel><input type="number" style={inputStyle} value={material.retractionDistance} step={0.1} {...lockedInputProps(locked('retractionDistance'))} onChange={(e) => updateMaterialProfile(material.id, { retractionDistance: parseFloat(e.target.value) || 0.8 })} /></div>
-            <div style={fieldRow}><FieldLabel field="retractionSpeed">Retraction Speed (mm/s) - fallback</FieldLabel><input type="number" style={inputStyle} value={material.retractionSpeed} {...lockedInputProps(locked('retractionSpeed'))} onChange={(e) => updateMaterialProfile(material.id, { retractionSpeed: parseInt(e.target.value) || 45 })} /></div>
-            <div style={fieldRow}><FieldLabel field="retractionRetractSpeed">Retract Speed (mm/s)</FieldLabel><input type="number" style={inputStyle} value={material.retractionRetractSpeed ?? material.retractionSpeed} {...lockedInputProps(locked('retractionRetractSpeed'))} onChange={(e) => updateMaterialProfile(material.id, { retractionRetractSpeed: parseInt(e.target.value) || 45 })} /></div>
-            <div style={fieldRow}><FieldLabel field="retractionPrimeSpeed">Prime Speed (mm/s)</FieldLabel><input type="number" style={inputStyle} value={material.retractionPrimeSpeed ?? material.retractionSpeed} {...lockedInputProps(locked('retractionPrimeSpeed'))} onChange={(e) => updateMaterialProfile(material.id, { retractionPrimeSpeed: parseInt(e.target.value) || 45 })} /></div>
-            <div style={fieldRow}><FieldLabel field="retractionZHop">Retraction Z Hop (mm)</FieldLabel><input type="number" style={inputStyle} value={material.retractionZHop} step={0.05} {...lockedInputProps(locked('retractionZHop'))} onChange={(e) => updateMaterialProfile(material.id, { retractionZHop: parseFloat(e.target.value) || 0 })} /></div>
+            <div style={fieldRow}>{renderFieldLabel('Retraction Distance (mm)', locked('retractionDistance'))}<input type="number" style={inputStyle} value={material.retractionDistance} step={0.1} {...lockedInputProps(locked('retractionDistance'))} onChange={(e) => updateMaterialProfile(material.id, { retractionDistance: parseFloat(e.target.value) || 0.8 })} /></div>
+            <div style={fieldRow}>{renderFieldLabel('Retraction Speed (mm/s) - fallback', locked('retractionSpeed'))}<input type="number" style={inputStyle} value={material.retractionSpeed} {...lockedInputProps(locked('retractionSpeed'))} onChange={(e) => updateMaterialProfile(material.id, { retractionSpeed: parseInt(e.target.value) || 45 })} /></div>
+            <div style={fieldRow}>{renderFieldLabel('Retract Speed (mm/s)', locked('retractionRetractSpeed'))}<input type="number" style={inputStyle} value={material.retractionRetractSpeed ?? material.retractionSpeed} {...lockedInputProps(locked('retractionRetractSpeed'))} onChange={(e) => updateMaterialProfile(material.id, { retractionRetractSpeed: parseInt(e.target.value) || 45 })} /></div>
+            <div style={fieldRow}>{renderFieldLabel('Prime Speed (mm/s)', locked('retractionPrimeSpeed'))}<input type="number" style={inputStyle} value={material.retractionPrimeSpeed ?? material.retractionSpeed} {...lockedInputProps(locked('retractionPrimeSpeed'))} onChange={(e) => updateMaterialProfile(material.id, { retractionPrimeSpeed: parseInt(e.target.value) || 45 })} /></div>
+            <div style={fieldRow}>{renderFieldLabel('Retraction Z Hop (mm)', locked('retractionZHop'))}<input type="number" style={inputStyle} value={material.retractionZHop} step={0.05} {...lockedInputProps(locked('retractionZHop'))} onChange={(e) => updateMaterialProfile(material.id, { retractionZHop: parseFloat(e.target.value) || 0 })} /></div>
             <div style={{ borderTop: `1px solid ${colors.panelBorder}`, margin: '8px 0' }} />
             <div style={{ color: colors.textDim, fontSize: 11, marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Linear / Pressure Advance{machineFields.has('linearAdvanceEnabled') && <MachineLockBadge title="Pressure advance value read from machine (M572) - edit on the Duet and resync." />}
@@ -85,7 +87,7 @@ export function MaterialProfileEditor({
             </label>
             {(material.linearAdvanceEnabled ?? false) && (
               <div style={fieldRow}>
-                <FieldLabel field="linearAdvanceFactor">K Factor</FieldLabel>
+                {renderFieldLabel('K Factor', locked('linearAdvanceFactor'))}
                 <input type="number" style={inputStyle} value={material.linearAdvanceFactor ?? 0} step={0.01} min={0} max={2} {...lockedInputProps(locked('linearAdvanceFactor'))}
                   onChange={(e) => updateMaterialProfile(material.id, { linearAdvanceFactor: parseFloat(e.target.value) || 0 })} />
               </div>

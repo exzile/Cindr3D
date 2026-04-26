@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { SimplifyModifier } from 'three/examples/jsm/modifiers/SimplifyModifier.js';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Sketch, SketchEntity, SketchPlane } from '../../../types/cad';
 import {
   computePlaneAxesFromNormal as computePlaneAxesFromNormalUtil,
@@ -301,13 +303,6 @@ export class GeometryEngine {
     geom: THREE.BufferGeometry,
     reductionPercent: number,
   ): Promise<THREE.BufferGeometry> {
-    const { SimplifyModifier } = await import(
-      'three/examples/jsm/modifiers/SimplifyModifier.js'
-    );
-    const { mergeVertices } = await import(
-      'three/examples/jsm/utils/BufferGeometryUtils.js'
-    );
-
     // SimplifyModifier requires an indexed geometry
     const indexed = geom.index ? geom : mergeVertices(geom);
 

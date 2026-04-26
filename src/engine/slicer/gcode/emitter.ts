@@ -9,6 +9,28 @@ import type { StartEndMachineState } from '../../../types/slicer-gcode.types';
 import { fanSpeedToCommandArg } from './startEnd';
 import { shouldRetractOnTravel } from './travel';
 
+function createStartEndState(
+  stateOwner: GCodeEmitter,
+  relativeExtrusion: boolean,
+): StartEndMachineState {
+  return {
+    get currentX(): number { return stateOwner.currentX; },
+    set currentX(value: number) { stateOwner.currentX = value; },
+    get currentY(): number { return stateOwner.currentY; },
+    set currentY(value: number) { stateOwner.currentY = value; },
+    get currentZ(): number { return stateOwner.currentZ; },
+    set currentZ(value: number) { stateOwner.currentZ = value; },
+    get currentE(): number { return stateOwner.currentE; },
+    set currentE(value: number) { stateOwner.currentE = value; },
+    get isRetracted(): boolean { return stateOwner.isRetracted; },
+    set isRetracted(value: boolean) { stateOwner.isRetracted = value; },
+    get extrudedSinceRetract(): number { return stateOwner.extrudedSinceRetract; },
+    set extrudedSinceRetract(value: number) { stateOwner.extrudedSinceRetract = value; },
+    templateUsesAbsolutePositioning: true,
+    templateUsesAbsoluteExtrusion: !relativeExtrusion,
+  };
+}
+
 export class GCodeEmitter {
   readonly gcode: string[];
   readonly printer: PrinterProfile;
@@ -72,23 +94,7 @@ export class GCodeEmitter {
     this.extraPrime = print.retractionExtraPrimeAmount ?? 0;
     this.wipeDist = print.wipeRetractionDistance ?? 0;
     this.wipeExtraPrime = print.wipeRetractionExtraPrime ?? 0;
-    const emitter = this;
-    this.machineState = {
-      get currentX(): number { return emitter.currentX; },
-      set currentX(value: number) { emitter.currentX = value; },
-      get currentY(): number { return emitter.currentY; },
-      set currentY(value: number) { emitter.currentY = value; },
-      get currentZ(): number { return emitter.currentZ; },
-      set currentZ(value: number) { emitter.currentZ = value; },
-      get currentE(): number { return emitter.currentE; },
-      set currentE(value: number) { emitter.currentE = value; },
-      get isRetracted(): boolean { return emitter.isRetracted; },
-      set isRetracted(value: boolean) { emitter.isRetracted = value; },
-      get extrudedSinceRetract(): number { return emitter.extrudedSinceRetract; },
-      set extrudedSinceRetract(value: number) { emitter.extrudedSinceRetract = value; },
-      templateUsesAbsolutePositioning: true,
-      templateUsesAbsoluteExtrusion: !relativeExtrusion,
-    };
+    this.machineState = createStartEndState(this, relativeExtrusion);
   }
 
   get startEndState(): StartEndMachineState {

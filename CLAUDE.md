@@ -1,9 +1,9 @@
 <!-- gitnexus:start -->
-# GitNexus - Code Intelligence
+# GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **DesignCAD** (16,872 symbols, 24,261 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **DesignCAD** (16982 symbols, 24434 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
-> If any GitNexus tool warns the index is stale, run `npm run graph:analyze` from the repo root first.
+> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
 ## Always Do
 
@@ -11,13 +11,13 @@ This project is indexed by GitNexus as **DesignCAD** (16,872 symbols, 24,261 rel
 - **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
 - **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
 - When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol - callers, callees, and execution flows - use `gitnexus_context({name: "symbolName"})`.
+- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
 
 ## Never Do
 
 - NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
 - NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
-- NEVER rename symbols with find-and-replace; use `gitnexus_rename` so the call graph is respected.
+- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
 - NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
 
 ## Resources
@@ -31,12 +31,8 @@ This project is indexed by GitNexus as **DesignCAD** (16,872 symbols, 24,261 rel
 
 ## CLI
 
-| Task | Command or skill |
-|------|------------------|
-| Refresh the graph | `npm run graph:analyze` |
-| List indexed repos | `npm run graph:list` |
-| Start GitNexus MCP | `npm run graph:mcp` |
-| Start GitNexus local bridge/web backend | `npm run graph:serve` |
+| Task | Read this skill file |
+|------|---------------------|
 | Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
 | Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
 | Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |

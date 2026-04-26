@@ -111,6 +111,10 @@ export class SlicePipelineFill extends SlicePipelineGeometry {
     _offsetX: number,
     _offsetY: number,
   ): SliceMove[] {
+    void _layerH;
+    void _offsetX;
+    void _offsetY;
+
     return generateAdhesionFromModule(contours, pp, {
       simplifyClosedContour: (points, tolerance) => this.simplifyClosedContour(points, tolerance),
       offsetContour: (contour, offset) => this.offsetContour(contour, offset),

@@ -21,7 +21,9 @@ export function createLifecycleActions(
       if (connecting) return;
 
       if (existingService) {
-        try { await existingService.disconnect(); } catch { }
+        try { await existingService.disconnect(); } catch {
+          // Replacing the service should proceed even if the stale connection is already gone.
+        }
       }
 
       set({ connecting: true, error: null });
@@ -78,7 +80,9 @@ export function createLifecycleActions(
         const filaments = filamentEntries.filter((entry) => entry.type === 'd').map((entry) => entry.name).sort();
 
         if (!get().connecting) {
-          try { await service.disconnect(); } catch { }
+          try { await service.disconnect(); } catch {
+            // Connection was cancelled; cleanup is best-effort.
+          }
           return;
         }
 
@@ -110,7 +114,9 @@ export function createLifecycleActions(
 
       const { service } = get();
       if (service) {
-        try { await service.disconnect(); } catch { }
+        try { await service.disconnect(); } catch {
+          // Disconnect should leave local state clean even if the transport is already closed.
+        }
       }
 
       if (userInitiated) {

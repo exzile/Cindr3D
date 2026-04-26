@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import type { SlicerGCodeFlavor, StartEndMachineState } from '../../../../../types/slicer-gcode.types';
 import { GCodeEmitter } from '../../../gcode/emitter';
 import { appendHeaderPlaceholders, appendStartGCode } from '../../../gcode/startup';
+import type { SlicerExecutionPipeline, SliceRun } from './types';
 
-function appendToolSelection(gcode: string[], printer: any, pp: any): void {
+function appendToolSelection(gcode: string[], printer: SliceRun['printer'], pp: SliceRun['pp']): void {
   const extruderIndex = Math.max(0, Math.floor(pp.extruderIndex ?? 0));
   if (extruderIndex <= 0) return;
 
@@ -18,19 +19,23 @@ function appendToolSelection(gcode: string[], printer: any, pp: any): void {
   }
 }
 
-export function prepareSliceRun(pipeline: any, geometries: { geometry: THREE.BufferGeometry; transform: THREE.Matrix4 }[]) {
-  const pp = pipeline.printProfile;
-  const mat = pipeline.materialProfile;
-  const printer = pipeline.printerProfile;
+export function prepareSliceRun(
+  pipeline: unknown,
+  geometries: { geometry: THREE.BufferGeometry; transform: THREE.Matrix4 }[],
+): SliceRun {
+  const slicer = pipeline as SlicerExecutionPipeline;
+  const pp = slicer.printProfile;
+  const mat = slicer.materialProfile;
+  const printer = slicer.printerProfile;
   const flavor: SlicerGCodeFlavor = printer.gcodeFlavorType ?? 'marlin';
 
-  pipeline.cancelled = false;
-  pipeline.reportProgress('preparing', 0, 0, 0, 'Extracting triangles...');
+  slicer.cancelled = false;
+  slicer.reportProgress('preparing', 0, 0, 0, 'Extracting triangles...');
 
-  const triangles = pipeline.extractTriangles(geometries);
+  const triangles = slicer.extractTriangles(geometries);
   if (triangles.length === 0) throw new Error('No triangles found in provided geometry.');
 
-  const modelBBox = pipeline.computeBBox(triangles);
+  const modelBBox = slicer.computeBBox(triangles);
   const modelHeight = modelBBox.max.z - modelBBox.min.z;
   const bedCenterX = printer.originCenter ? 0 : printer.buildVolume.x / 2;
   const bedCenterY = printer.originCenter ? 0 : printer.buildVolume.y / 2;
@@ -43,7 +48,7 @@ export function prepareSliceRun(pipeline: any, geometries: { geometry: THREE.Buf
 
   let layerZs: number[];
   if (pp.adaptiveLayersEnabled) {
-    layerZs = pipeline.computeAdaptiveLayerZs(
+    layerZs = slicer.computeAdaptiveLayerZs(
       triangles,
       modelHeight,
       pp.firstLayerHeight,
@@ -124,7 +129,7 @@ export function prepareSliceRun(pipeline: any, geometries: { geometry: THREE.Buf
       regularFanHeightFired: false,
       buildVolumeFanHeightFired: false,
     },
-    prevLayerMaterial: [] as any[],
+    prevLayerMaterial: [],
     previousSeamPoints: [] as THREE.Vector2[],
     currentSeamPoints: [] as THREE.Vector2[],
     seamMemoryLayer: undefined as number | undefined,
@@ -137,7 +142,7 @@ export function prepareSliceRun(pipeline: any, geometries: { geometry: THREE.Buf
     /** True if the current layer has emitted at least one bridge move.
      *  Reset to false at layer start; checked in finalizeLayer. */
     layerHadBridge: false,
-    sliceLayers: [] as any[],
+    sliceLayers: [],
     totalTime: 0,
   };
 }

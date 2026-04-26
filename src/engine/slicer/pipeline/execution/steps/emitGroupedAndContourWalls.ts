@@ -1,6 +1,28 @@
 import * as THREE from 'three';
+import type { SliceMove } from '../../../../../types/slicer';
+import type { ContourWallData, SlicerExecutionPipeline, SliceLayerState, SliceRun } from './types';
 
 type WallLineWidthSpec = number | number[];
+
+interface EmitOuterLoopParams {
+  pipeline: SlicerExecutionPipeline;
+  run: SliceRun;
+  layer: SliceLayerState;
+  pp: SliceRun['pp'];
+  li: number;
+  layerZ: number;
+  layerH: number;
+  isFirstLayer: boolean;
+  outerWallSpeed: number;
+  gcode: string[];
+  emitter: SliceRun['emitter'];
+  moves: SliceMove[];
+  loop: THREE.Vector2[];
+  lineWidth: WallLineWidthSpec;
+  isClosed?: boolean;
+  comment?: string;
+  allowCoasting?: boolean;
+}
 
 function representativeLineWidth(lineWidth: WallLineWidthSpec | undefined, fallback: number): number {
   if (Array.isArray(lineWidth)) {
@@ -23,14 +45,14 @@ function centroid(points: THREE.Vector2[]): THREE.Vector2 {
   return center.multiplyScalar(1 / Math.max(1, points.length));
 }
 
-function beginSeamLayer(run: any, li: number) {
+function beginSeamLayer(run: SliceRun, li: number) {
   if (run.seamMemoryLayer === li) return;
   if (run.seamMemoryLayer !== undefined) run.previousSeamPoints = run.currentSeamPoints ?? [];
   run.currentSeamPoints = [];
   run.seamMemoryLayer = li;
 }
 
-function nearestPreviousSeam(run: any, loop: THREE.Vector2[], tolerance: number): THREE.Vector2 | null {
+function nearestPreviousSeam(run: SliceRun, loop: THREE.Vector2[], tolerance: number): THREE.Vector2 | null {
   const previous: THREE.Vector2[] = run.previousSeamPoints ?? [];
   if (previous.length === 0 || loop.length === 0) return null;
   const center = centroid(loop);
@@ -46,7 +68,16 @@ function nearestPreviousSeam(run: any, loop: THREE.Vector2[], tolerance: number)
   return bestDistance <= Math.max(tolerance * 8, 10) ? best : null;
 }
 
-function reorderOuterLoop(pp: any, pipeline: any, run: any, layer: any, emitter: any, loop: any[], lineWidth: number, li: number) {
+function reorderOuterLoop(
+  pp: SliceRun['pp'],
+  pipeline: SlicerExecutionPipeline,
+  run: SliceRun,
+  layer: SliceLayerState,
+  emitter: SliceRun['emitter'],
+  loop: THREE.Vector2[],
+  lineWidth: number,
+  li: number,
+): THREE.Vector2[] {
   const continuityTolerance = pp.zSeamContinuityDistance ?? 2;
   const seamIdx = pipeline.findSeamPosition(loop, pp, li, emitter.currentX, emitter.currentY, {
     previousSeam: nearestPreviousSeam(run, loop, continuityTolerance),
@@ -80,13 +111,17 @@ function reorderOuterLoop(pp: any, pipeline: any, run: any, layer: any, emitter:
     reordered = smoothed;
   }
   if ((pp.alternateWallDirections ?? false) && li % 2 === 1) reordered = [reordered[0], ...reordered.slice(1).reverse()];
-  // Same Arachne-lite simplification as inner walls: collapse narrow
-  // perimeter "fingers" so the wall doesn't snake into broken-through hole
-  // notches at problem layers.
-  return pipeline.simplifyClosedContour(reordered, Math.max(0.015, lineWidth * 0.5));
+  // Microscopic-noise simplification only — collapse vertices within a
+  // tight chord tolerance (matches the extrude-time `circleSegments`
+  // chord tolerance of ~20 µm). The old `lineWidth * 0.5` tolerance was
+  // a pre-libArachne workaround for narrow-finger collapse; libArachne
+  // now handles those via transition zones, and an aggressive RDP here
+  // turns smooth circles (with our adaptive curveSegments) into visibly
+  // polygonal walls.
+  return pipeline.simplifyClosedContour(reordered, Math.max(0.005, lineWidth * 0.05));
 }
 
-function emitOuterLoop(params: any) {
+function emitOuterLoop(params: EmitOuterLoopParams): number {
   const { pp, li, layerZ, layerH, isFirstLayer, outerWallSpeed, gcode, emitter, moves } = params;
   const variableLineWidth = Array.isArray(params.lineWidth);
   const isClosed = params.isClosed ?? true;
@@ -148,19 +183,24 @@ function emitOuterLoop(params: any) {
   return layerTime;
 }
 
-export function emitGroupedAndContourWalls(pipeline: any, run: any, layer: any) {
+export function emitGroupedAndContourWalls(
+  pipeline: unknown,
+  run: SliceRun,
+  layer: SliceLayerState,
+): ContourWallData[] {
+  const slicer = pipeline as SlicerExecutionPipeline;
   const { pp, emitter, gcode } = run;
   const { li, layerZ, layerH, isFirstLayer, outerWallSpeed, innerWallSpeed, workContours, holesByOuterContour, moves } = layer;
   const groupOW = pp.groupOuterWalls ?? false;
-  const perContour: any[] = [];
+  const perContour: ContourWallData[] = [];
   beginSeamLayer(run, li);
 
   if (groupOW) {
     for (const contour of workContours) {
       if (!contour.isOuter) continue;
       const containedHoles = holesByOuterContour.get(contour) ?? [];
-      const perimeters = pipeline.filterPerimetersByMinOdd(
-        pipeline.generatePerimeters(contour.points, containedHoles, pp.wallCount, pp.wallLineWidth, pp.outerWallInset ?? 0),
+      const perimeters = slicer.filterPerimetersByMinOdd(
+        slicer.generatePerimeters(contour.points, containedHoles, pp.wallCount, pp.wallLineWidth, pp.outerWallInset ?? 0),
         pp.minOddWallLineWidth ?? 0,
       );
       perContour.push({ contour, exWalls: perimeters, wallSets: perimeters.walls, wallLineWidths: perimeters.lineWidths, wallClosed: perimeters.wallClosed, outerWallCount: perimeters.outerCount, infillHoles: perimeters.innermostHoles });
@@ -168,15 +208,15 @@ export function emitGroupedAndContourWalls(pipeline: any, run: any, layer: any) 
     for (const item of perContour) {
       const outerWall = item.wallSets[0];
       if (!outerWall || outerWall.length < 2) continue;
-      layer.layerTime += emitOuterLoop({ pipeline, run, layer, pp, li, layerZ, layerH, isFirstLayer, outerWallSpeed, gcode, emitter, moves, loop: outerWall, lineWidth: item.wallLineWidths[0] ?? pp.wallLineWidth, isClosed: item.wallClosed?.[0] ?? true, comment: 'Outer wall (grouped)', allowCoasting: false });
+      layer.layerTime += emitOuterLoop({ pipeline: slicer, run, layer, pp, li, layerZ, layerH, isFirstLayer, outerWallSpeed, gcode, emitter, moves, loop: outerWall, lineWidth: item.wallLineWidths[0] ?? pp.wallLineWidth, isClosed: item.wallClosed?.[0] ?? true, comment: 'Outer wall (grouped)', allowCoasting: false });
     }
   }
 
   for (const contour of workContours) {
     if (!contour.isOuter) continue;
     const containedHoles = holesByOuterContour.get(contour) ?? [];
-    const exWalls = pipeline.filterPerimetersByMinOdd(
-      pipeline.generatePerimeters(contour.points, containedHoles, pp.wallCount, pp.wallLineWidth, pp.outerWallInset ?? 0),
+    const exWalls = slicer.filterPerimetersByMinOdd(
+      slicer.generatePerimeters(contour.points, containedHoles, pp.wallCount, pp.wallLineWidth, pp.outerWallInset ?? 0),
       pp.minOddWallLineWidth ?? 0,
     );
     const wallSets = exWalls.walls;
@@ -189,10 +229,11 @@ export function emitGroupedAndContourWalls(pipeline: any, run: any, layer: any) 
 
     if (!groupOW && wallSets.length > 0 && pp.outerWallFirst) {
       if (isFirstLayer && pp.initialLayerOuterWallFlow != null) emitter.currentLayerFlow = pp.initialLayerOuterWallFlow / 100;
-      layer.layerTime += emitOuterLoop({ pipeline, run, layer, pp, li, layerZ, layerH, isFirstLayer, outerWallSpeed, gcode, emitter, moves, loop: wallSets[0], lineWidth: wallLineWidths[0] ?? pp.wallLineWidth, isClosed: wallClosed?.[0] ?? true, allowCoasting: true });
+      layer.layerTime += emitOuterLoop({ pipeline: slicer, run, layer, pp, li, layerZ, layerH, isFirstLayer, outerWallSpeed, gcode, emitter, moves, loop: wallSets[0], lineWidth: wallLineWidths[0] ?? pp.wallLineWidth, isClosed: wallClosed?.[0] ?? true, allowCoasting: true });
     }
 
-    emitter.currentLayerFlow = isFirstLayer && (pp.initialLayerFlow ?? 0) > 0 ? (pp.initialLayerFlow / 100) : 1.0;
+    const initialLayerFlow = pp.initialLayerFlow ?? 0;
+    emitter.currentLayerFlow = isFirstLayer && initialLayerFlow > 0 ? (initialLayerFlow / 100) : 1.0;
     const innerLW = pp.innerWallLineWidth ?? pp.wallLineWidth;
     if (isFirstLayer && pp.initialLayerInnerWallFlow != null) emitter.currentLayerFlow = pp.initialLayerInnerWallFlow / 100;
     const wallDepths: number[] = exWalls.wallDepths ?? [];
@@ -223,8 +264,11 @@ export function emitGroupedAndContourWalls(pipeline: any, run: any, layer: any) 
       // region. If walls are smoothed more aggressively than the infill
       // region, infill lines extend into the zigzag corners where walls
       // no longer go — visible as "infill crossing walls" in the preview.
-      const simplifyTol = Math.max(0.015, wallLW * 0.5);
-      const wallLoop = Array.isArray(wallLWSpec) || !isClosed ? wallSets[wi] : pipeline.simplifyClosedContour(wallSets[wi], simplifyTol);
+      // See note on outer-wall simplification — tight chord tolerance to
+      // preserve design curves; libArachne handles narrow-finger
+      // collapse separately via transition zones.
+      const simplifyTol = Math.max(0.005, wallLW * 0.05);
+      const wallLoop = Array.isArray(wallLWSpec) || !isClosed ? wallSets[wi] : slicer.simplifyClosedContour(wallSets[wi], simplifyTol);
       if (wallLoop.length < 2) continue;
       emitter.setAccel(
         isFirstLayer ? pp.accelerationInitialLayer
@@ -254,11 +298,11 @@ export function emitGroupedAndContourWalls(pipeline: any, run: any, layer: any) 
       }
     }
 
-    emitter.currentLayerFlow = isFirstLayer && (pp.initialLayerFlow ?? 0) > 0 ? (pp.initialLayerFlow / 100) : 1.0;
+    emitter.currentLayerFlow = isFirstLayer && initialLayerFlow > 0 ? (initialLayerFlow / 100) : 1.0;
     if (!groupOW && wallSets.length > 0 && !pp.outerWallFirst) {
       if (isFirstLayer && pp.initialLayerOuterWallFlow != null) emitter.currentLayerFlow = pp.initialLayerOuterWallFlow / 100;
-      layer.layerTime += emitOuterLoop({ pipeline, run, layer, pp, li, layerZ, layerH, isFirstLayer, outerWallSpeed, gcode, emitter, moves, loop: wallSets[0], lineWidth: wallLineWidths[0] ?? pp.wallLineWidth, isClosed: wallClosed?.[0] ?? true, allowCoasting: true });
-      emitter.currentLayerFlow = isFirstLayer && (pp.initialLayerFlow ?? 0) > 0 ? (pp.initialLayerFlow / 100) : 1.0;
+      layer.layerTime += emitOuterLoop({ pipeline: slicer, run, layer, pp, li, layerZ, layerH, isFirstLayer, outerWallSpeed, gcode, emitter, moves, loop: wallSets[0], lineWidth: wallLineWidths[0] ?? pp.wallLineWidth, isClosed: wallClosed?.[0] ?? true, allowCoasting: true });
+      emitter.currentLayerFlow = isFirstLayer && initialLayerFlow > 0 ? (initialLayerFlow / 100) : 1.0;
     }
   }
 

@@ -32,7 +32,9 @@ const stringStorage = {
         tx.oncomplete = () => { db.close(); resolve(); };
         tx.onerror = () => { db.close(); reject(tx.error); };
       });
-    } catch {}
+    } catch {
+      // Persist middleware tolerates unavailable IndexedDB by dropping writes.
+    }
   },
   removeItem: async (name: string): Promise<void> => {
     try {
@@ -43,7 +45,9 @@ const stringStorage = {
         tx.oncomplete = () => { db.close(); resolve(); };
         tx.onerror = () => { db.close(); reject(tx.error); };
       });
-    } catch {}
+    } catch {
+      // Persist middleware tolerates unavailable IndexedDB by dropping deletes.
+    }
   },
 };
 

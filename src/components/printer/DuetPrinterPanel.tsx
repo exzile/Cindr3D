@@ -112,10 +112,11 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
   const originalTitleRef = useRef(document.title);
 
   useEffect(() => {
+    const originalTitle = originalTitleRef.current;
     const status = model.state?.status;
     const isPrinting = status === 'processing' || status === 'simulating';
     if (!isPrinting) {
-      document.title = originalTitleRef.current;
+      document.title = originalTitle;
       return;
     }
     const fileName = model.job?.file?.fileName ?? 'print';
@@ -125,7 +126,7 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
     document.title = `${Math.round(pct)}% - ${fileName}`;
 
     return () => {
-      document.title = originalTitleRef.current;
+      document.title = originalTitle;
     };
   }, [model.state?.status, model.job?.file?.fileName, model.job?.file?.size, model.job?.filePosition]);
 

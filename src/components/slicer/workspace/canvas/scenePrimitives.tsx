@@ -132,11 +132,11 @@ export function PlateObjectMesh({
   const rawX = obj.boundingBox.max.x - obj.boundingBox.min.x;
   const rawY = obj.boundingBox.max.y - obj.boundingBox.min.y;
   const rawZ = obj.boundingBox.max.z - obj.boundingBox.min.z;
-  const boxArgs: [number, number, number] = [
+  const boxArgs = useMemo<[number, number, number]>(() => [
     isFinite(rawX) && rawX > 0 ? rawX : 10,
     isFinite(rawY) && rawY > 0 ? rawY : 10,
     isFinite(rawZ) && rawZ > 0 ? rawZ : 10,
-  ];
+  ], [rawX, rawY, rawZ]);
 
   const placeholderBoxGeo = useMemo(
     () => (hasGeometry ? null : new THREE.BoxGeometry(boxArgs[0], boxArgs[1], boxArgs[2])),

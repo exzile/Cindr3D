@@ -16,13 +16,17 @@ export function SectionPlaneController({
 }) {
   const { gl } = useThree();
   useEffect(() => {
+    const clippingPlanes = enabled
+      ? [new THREE.Plane(new THREE.Vector3(0, 0, -1), z)]
+      : [];
+
     if (enabled) {
       // Plane equation: normal·point + constant ≥ 0 → shows point_z ≤ z.
-      gl.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, 0, -1), z)];
-    } else {
-      gl.clippingPlanes = [];
+      Reflect.set(gl, 'clippingPlanes', clippingPlanes);
     }
-    return () => { gl.clippingPlanes = []; };
+    if (!enabled) Reflect.set(gl, 'clippingPlanes', clippingPlanes);
+
+    return () => { Reflect.set(gl, 'clippingPlanes', []); };
   }, [gl, enabled, z]);
   return null;
 }

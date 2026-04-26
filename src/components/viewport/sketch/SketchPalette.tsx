@@ -1,5 +1,5 @@
 import './SketchPalette.css';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { SketchPaletteDisplaySection } from './sketchPalette/SketchPaletteDisplaySection';
 import { SketchPaletteHeader } from './sketchPalette/SketchPaletteHeader';
 import { SketchPaletteOptionsSection } from './sketchPalette/SketchPaletteOptionsSection';
@@ -7,13 +7,16 @@ import { useSketchPaletteState } from './sketchPalette/useSketchPaletteState';
 
 export default function SketchPalette() {
   const state = useSketchPaletteState();
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissedSketchId, setDismissedSketchId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [lineType, setLineType] = useState<'normal' | 'construction'>('normal');
+  const activeSketchId = state.activeSketch?.id ?? null;
+  const dismissed = activeSketchId !== null && dismissedSketchId === activeSketchId;
 
-  useEffect(() => {
-    if (state.activeSketch) setDismissed(false);
-  }, [state.activeSketch?.id]);
+  const setDismissed = (value: boolean | ((previous: boolean) => boolean)) => {
+    const next = typeof value === 'function' ? value(dismissed) : value;
+    setDismissedSketchId(next ? activeSketchId : null);
+  };
 
   if (!state.activeSketch || dismissed) return null;
 

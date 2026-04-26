@@ -105,24 +105,32 @@ export function computeAtomicRegions(shapes: THREE.Shape[]): THREE.Shape[] {
         const intersection = requireMP(
           booleanMultiPolygonClipper2Sync(atom, polygon, 'intersection'), 'intersection');
         if (intersection.length > 0) nextAtoms.push(intersection);
-      } catch {}
+      } catch {
+        // Degenerate geometry is skipped; fallback returns the original shapes if no atoms survive.
+      }
       try {
         const difference = requireMP(
           booleanMultiPolygonClipper2Sync(atom, polygon, 'difference'), 'difference');
         if (difference.length > 0) nextAtoms.push(difference);
-      } catch {}
+      } catch {
+        // Degenerate geometry is skipped; fallback returns the original shapes if no atoms survive.
+      }
     }
 
     try {
       const onlyPolygon = requireMP(
         booleanMultiPolygonClipper2Sync(polygon, runningUnion, 'difference'), 'difference');
       if (onlyPolygon.length > 0) nextAtoms.push(onlyPolygon);
-    } catch {}
+    } catch {
+      // Degenerate geometry is skipped; fallback returns the original shapes if no atoms survive.
+    }
 
     try {
       runningUnion = requireMP(
         booleanMultiPolygonClipper2Sync(runningUnion, polygon, 'union'), 'union');
-    } catch {}
+    } catch {
+      // Keep the previous union; fallback below preserves original shapes if atomization fails.
+    }
 
     if (nextAtoms.length > 0) atoms = nextAtoms;
   }

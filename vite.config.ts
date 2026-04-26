@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import wasm from 'vite-plugin-wasm'
 import http from 'node:http'
 import https from 'node:https'
+import { fileURLToPath } from 'node:url'
 
 // Proxies /duet-proxy/<host>/path → http://<host>/path, bypassing browser CORS.
 function duetProxyPlugin(): Plugin {
@@ -10,7 +11,7 @@ function duetProxyPlugin(): Plugin {
     name: 'duet-proxy',
     configureServer(server) {
       server.middlewares.use('/duet-proxy', (req, res) => {
-        const match = req.url?.match(/^\/([^/?]+)([\/?].*)?$/);
+        const match = req.url?.match(/^\/([^/?]+)([/?].*)?$/);
         if (!match) { res.statusCode = 400; res.end('Bad proxy URL'); return; }
         const [, host, rest = '/'] = match;
         const targetUrl = `http://${host}${rest}`;
@@ -113,10 +114,16 @@ function githubProxyPlugin(): Plugin {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), wasm(), duetProxyPlugin(), githubProxyPlugin()],
+  resolve: {
+    alias: {
+      module: fileURLToPath(new URL('./src/shims/nodeModule.ts', import.meta.url)),
+    },
+  },
   build: {
     // Disable CSS minification — lightningcss crashes on @keyframes in
     // some versions of the Vite 8 / rolldown stack.
     cssMinify: false,
+    chunkSizeWarningLimit: 4096,
     assetsInlineLimit: (filePath) => filePath.endsWith('.wasm') ? false : undefined,
     rollupOptions: {
       output: {

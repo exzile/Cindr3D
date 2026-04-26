@@ -13,11 +13,19 @@ export function FileInfoPanel({
   onClose: () => void;
 }) {
   const service = usePrinterStore((s) => s.service);
-  const [thumbnailSrc, setThumbnailSrc] = useState<string | null>(null);
-  const [thumbnailLoading, setThumbnailLoading] = useState(false);
+  const thumbnailKey = fileInfo.fileName;
+  const [thumbnailState, setThumbnailState] = useState<{ key: string; src: string | null; status: 'loading' | 'ready' }>({
+    key: thumbnailKey,
+    src: null,
+    status: 'loading',
+  });
+  const thumbnailSrc = thumbnailState.key === thumbnailKey ? thumbnailState.src : null;
+  const hasThumbnail = Boolean(fileInfo.thumbnails && fileInfo.thumbnails.length > 0);
+  const thumbnailLoading = Boolean(
+    service && hasThumbnail && (thumbnailState.key !== thumbnailKey || thumbnailState.status === 'loading'),
+  );
 
   useEffect(() => {
-    setThumbnailSrc(null);
     if (!service || !fileInfo.thumbnails || fileInfo.thumbnails.length === 0) return;
 
     const largest = [...fileInfo.thumbnails].sort(
@@ -25,16 +33,18 @@ export function FileInfoPanel({
     )[0];
 
     let cancelled = false;
-    setThumbnailLoading(true);
 
     service
       .getThumbnail(fileInfo.fileName, largest.offset)
       .then((dataUrl) => {
-        if (!cancelled && dataUrl) setThumbnailSrc(dataUrl);
+        if (!cancelled) {
+          setThumbnailState({ key: fileInfo.fileName, src: dataUrl || null, status: 'ready' });
+        }
       })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setThumbnailLoading(false);
+      .catch(() => {
+        if (!cancelled) {
+          setThumbnailState({ key: fileInfo.fileName, src: null, status: 'ready' });
+        }
       });
 
     return () => {

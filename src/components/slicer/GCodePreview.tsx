@@ -23,7 +23,7 @@ export function GCodePreview() {
   const buildZ = printer?.buildVolume?.z ?? 250;
   const originCenter = printer?.originCenter ?? false;
 
-  const layers = sliceResult?.layers ?? [];
+  const layers = React.useMemo(() => sliceResult?.layers ?? [], [sliceResult?.layers]);
 
   // Compute range for speed/flow color modes across all visible layers
   const colorRange = React.useMemo<[number, number]>(() => {

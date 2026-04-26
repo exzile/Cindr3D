@@ -1,8 +1,10 @@
 import type { PrinterProfile } from '../types/slicer';
 
+type FirmwareFlavor = PrinterProfile['gcodeFlavorType'];
+
 // Map of setting keys to supported firmware types
 // If a setting is not in this map, it's assumed to be universally supported
-const FIRMWARE_INCOMPATIBILITIES: Record<string, Set<'marlin' | 'reprap' | 'duet' | 'klipper'>> = {
+const FIRMWARE_INCOMPATIBILITIES: Record<string, Set<FirmwareFlavor>> = {
   // Travel acceleration — Marlin only (M204 P/T)
   travelAccelerationEnabled: new Set(['reprap', 'duet']),
   travelJerkEnabled: new Set(['reprap', 'duet']),
@@ -34,10 +36,18 @@ const FIRMWARE_INCOMPATIBILITIES: Record<string, Set<'marlin' | 'reprap' | 'duet
   draftShieldHeight: new Set(['reprap', 'duet']),
 };
 
+const KNOWN_FIRMWARE_FLAVORS = new Set<string>(['marlin', 'reprap', 'duet', 'klipper']);
+
+function isFirmwareFlavor(firmware: string): firmware is FirmwareFlavor {
+  return KNOWN_FIRMWARE_FLAVORS.has(firmware);
+}
+
 export function getFirmwareIncompatibilities(firmware: string): Set<string> {
   const incompatible = new Set<string>();
+  if (!isFirmwareFlavor(firmware)) return incompatible;
+
   for (const [setting, unsupported] of Object.entries(FIRMWARE_INCOMPATIBILITIES)) {
-    if (unsupported.has(firmware as any)) {
+    if (unsupported.has(firmware)) {
       incompatible.add(setting);
     }
   }

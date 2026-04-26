@@ -186,7 +186,7 @@ export default function DuetSettings() {
     await disconnect();
   }, [disconnect]);
 
-  const axes = model.move?.axes ?? [];
+  const axes = useMemo(() => model.move?.axes ?? [], [model.move?.axes]);
   const board = model.boards?.[0];
   const canConnect = hostname.trim().length > 0 && !connecting;
 
@@ -288,7 +288,7 @@ export default function DuetSettings() {
       uploadProgress={uploadProgress}
       uploading={uploading}
     />
-  ), [activePrinterId, autoUpdate, axes, board, canConnect, config, connected, connecting, error, firmwareFile, firmwareStatus, firmwareUpdatePending, handleAddPrinter, handleAutoUpdate, handleCheckForUpdate, handleCheckPanelDueUpdate, handleConnect, handleDisconnect, handleFirmwareInstall, handleFirmwareSelect, handleFirmwareUpload, handleIapSelect, handleIapUpload, handlePanelDueInstall, handleRemovePrinter, handleRenamePrinter, handleTest, handleUpdateDwcOnly, hostname, iapFile, iapStatus, importResult, importing, loadPanelDueInfo, mode, panelDueAsset, panelDueCheck, panelDueFlashed, panelDueInfo, panelDueUpdate, password, patchPrefs, prefs, printers, selectPrinter, setTheme, showPanelDueNotes, showReleaseNotes, tab, testResult, testing, theme, updateCheck, uploadProgress, uploading]);
+  ), [activePrinterId, autoUpdate, axes, board, canConnect, config, connected, connecting, error, firmwareFile, firmwareStatus, firmwareUpdatePending, handleAddPrinter, handleAutoUpdate, handleCheckForUpdate, handleCheckPanelDueUpdate, handleConnect, handleDisconnect, handleFirmwareInstall, handleFirmwareSelect, handleFirmwareUpload, handleIapSelect, handleIapUpload, handlePanelDueInstall, handleRemovePrinter, handleRenamePrinter, handleTest, handleUpdateDwcOnly, hostname, iapFile, iapInputRef, iapStatus, importInputRef, importResult, importing, loadPanelDueInfo, mode, panelDueAsset, panelDueCheck, panelDueFlashed, panelDueInfo, panelDueLogRef, panelDueUpdate, password, patchPrefs, prefs, printers, selectPrinter, setAutoUpdate, setHostname, setMode, setPanelDueAsset, setPanelDueUpdate, setPassword, setShowPanelDueNotes, setShowReleaseNotes, setTheme, showPanelDueNotes, showReleaseNotes, tab, testResult, testing, theme, updateCheck, uploadProgress, uploading]);
 
   return (
     <div className="duet-settings__page">

@@ -4,6 +4,11 @@ import { finalizeGCodeStats } from '../footer';
 import { syncStateFromGCode } from '../startEnd';
 import { appendHeaderPlaceholders, appendStartGCode } from '../startup';
 import type { StartEndMachineState } from '../../../../types/slicer-gcode.types';
+import type {
+  MaterialProfile,
+  PrinterProfile,
+  PrintProfile,
+} from '../../../../types/slicer';
 
 function state(): StartEndMachineState {
   return {
@@ -29,7 +34,7 @@ const printer = {
   waitForNozzle: true,
   startGCode: '',
   endGCode: '',
-};
+} as unknown as PrinterProfile;
 
 const material = {
   name: 'PLA',
@@ -43,7 +48,7 @@ const material = {
   flowRate: 1,
   density: 1.24,
   costPerKg: 20,
-};
+} as unknown as MaterialProfile;
 
 const print = {
   layerHeight: 0.2,
@@ -54,7 +59,7 @@ const print = {
   initialLayersBuildVolumeFanSpeed: 0,
   primeBlobEnable: false,
   firstLayerSpeed: 30,
-};
+} as unknown as PrintProfile;
 
 describe('G-code startup', () => {
   it('keeps startGCodeMustBeFirst templates as the first emitted line', () => {
@@ -65,9 +70,9 @@ describe('G-code startup', () => {
         ...printer,
         startGCodeMustBeFirst: true,
         startGCode: 'START_PRINT BED_TEMP={bedTemp} EXTRUDER_TEMP={nozzleTemp}',
-      } as any,
-      material: material as any,
-      print: print as any,
+      },
+      material,
+      print,
       relativeExtrusion: false,
       flavor: 'klipper',
       startEndState: state(),
@@ -81,9 +86,9 @@ describe('G-code startup', () => {
     const gcode: string[] = [];
     appendStartGCode({
       gcode,
-      printer: { ...printer, startGCode: 'M104 S{nozzleTemp}\nM140 S{bedTemp}' } as any,
-      material: material as any,
-      print: print as any,
+      printer: { ...printer, startGCode: 'M104 S{nozzleTemp}\nM140 S{bedTemp}' },
+      material,
+      print,
       relativeExtrusion: false,
       flavor: 'marlin',
       startEndState: state(),
@@ -118,8 +123,14 @@ describe('G-code startup', () => {
 
   it('replaces stats placeholders wherever the header is emitted', () => {
     const gcode = ['START_PRINT'];
-    appendHeaderPlaceholders(gcode, printer as any, material as any, print as any);
-    finalizeGCodeStats(gcode, 3600, 100, { filamentDiameter: 1.75, printTimeEstimationFactor: 1 } as any, material as any);
+    appendHeaderPlaceholders(gcode, printer, material, print);
+    finalizeGCodeStats(
+      gcode,
+      3600,
+      100,
+      { filamentDiameter: 1.75, printTimeEstimationFactor: 1 } as PrinterProfile,
+      material,
+    );
 
     expect(gcode[0]).toBe('START_PRINT');
     expect(gcode.some((line) => line.includes('PRINT_TIME_PLACEHOLDER'))).toBe(false);

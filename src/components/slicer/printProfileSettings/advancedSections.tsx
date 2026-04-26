@@ -172,6 +172,8 @@ export function PrimeTowerSection({ print, upd, isVisible }: PrintSettingsSectio
 
 export function ModifierMeshesSection({ print, isVisible }: PrintSettingsSectionProps) {
   if (!isVisible('modifierMeshes')) return null;
+  const modifierMeshRole = (print as typeof print & { _modifierMeshRole?: string })._modifierMeshRole ?? 'normal';
+
   return (
     <SlicerSection title="Modifier Meshes" color="#f59e0b" defaultOpen={false}>
       <p style={{ fontSize: '0.78rem', color: 'var(--text-muted, #999)', margin: '4px 0 8px' }}>
@@ -179,7 +181,7 @@ export function ModifierMeshesSection({ print, isVisible }: PrintSettingsSection
       </p>
       <Sel
         label="Role"
-        value={(print as any)._modifierMeshRole ?? 'normal'}
+        value={modifierMeshRole}
         options={[
           { value: 'normal', label: 'Normal (no modifier)' },
           { value: 'infill_mesh', label: 'Infill Mesh' },

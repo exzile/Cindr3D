@@ -81,13 +81,12 @@ export default function ExtrudePanel() {
   const extrudable = sketches.filter(
     (sketch) => sketch.entities.length > 0 && !usedSketchIds.has(sketch.id) && !sketch.name.startsWith('Press Pull Profile'),
   );
-  const activeSketchIds = new Set(selectedIds.map((id) => id.split('::')[0]));
-  const allRelevant = [
-    ...extrudable,
-    ...sketches.filter((sketch) => activeSketchIds.has(sketch.id) && !extrudable.includes(sketch)),
-  ];
-
   const profileOptions = useMemo(() => {
+    const activeSketchIds = new Set(selectedIds.map((id) => id.split('::')[0]));
+    const allRelevant = [
+      ...extrudable,
+      ...sketches.filter((sketch) => activeSketchIds.has(sketch.id) && !extrudable.includes(sketch)),
+    ];
     const options = allRelevant.flatMap((sketch) => {
       const count = GeometryEngine.sketchToShapes(sketch).length;
       return Array.from({ length: count }, (_, index) => ({
@@ -110,7 +109,7 @@ export default function ExtrudePanel() {
     }
 
     return options;
-  }, [allRelevant, selectedIds, sketches]);
+  }, [extrudable, selectedIds, sketches]);
 
   const selectedSketches = selectedIds
     .map((id) => sketches.find((sketch) => sketch.id === id.split('::')[0]))

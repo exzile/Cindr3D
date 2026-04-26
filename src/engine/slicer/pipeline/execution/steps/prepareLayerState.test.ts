@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 
 import { prepareLayerGeometryState } from './prepareLayerState';
+import type { SliceGeometryRun } from './types';
 
 interface Contour {
   points: THREE.Vector2[];
@@ -42,8 +43,8 @@ interface TestPipeline {
   yieldToUI(): Promise<void>;
   reportProgress(): void;
   sliceTrianglesAtZ(): unknown[];
-  connectSegments(_: unknown[]): unknown[];
-  classifyContours(_: unknown[]): Contour[];
+  connectSegments(segments: unknown[]): unknown[];
+  classifyContours(contours: unknown[]): Contour[];
   closeContourGaps(c: Contour[]): Contour[];
   offsetContour(points: THREE.Vector2[], offset: number): THREE.Vector2[];
 }
@@ -54,8 +55,8 @@ function makePipeline(triangles: unknown[]): TestPipeline {
     yieldToUI: async () => {},
     reportProgress: () => {},
     sliceTrianglesAtZ: () => triangles,
-    connectSegments: (_: unknown[]) => [],
-    classifyContours: (_: unknown[]) => [] as Contour[],
+    connectSegments: () => [],
+    classifyContours: () => [] as Contour[],
     closeContourGaps: (c: Contour[]) => c,
     /** Axis-aligned-rectangle stub matching the real `offsetContour`
      *  convention: positive offset shifts each edge along its (-dy, dx)
@@ -114,7 +115,7 @@ async function runPrep(li: number, pp: Record<string, unknown>, contours: Contou
   // don't bail at the rawContours check.
   pipeline.connectSegments = () => [{}];
   const run = makeRun(pp, contours);
-  const result = await prepareLayerGeometryState(pipeline, run, li);
+  const result = await prepareLayerGeometryState(pipeline, run as unknown as SliceGeometryRun, li);
   return result?.contours as Contour[] | undefined;
 }
 

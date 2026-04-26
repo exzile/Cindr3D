@@ -4,6 +4,9 @@ import * as THREE from 'three';
 import { Slicer } from '../engine/slicer/Slicer';
 import { prepareSliceRun } from '../engine/slicer/pipeline/execution/steps/prepareSliceRun';
 import { prepareLayerGeometryState } from '../engine/slicer/pipeline/execution/steps/prepareLayerState';
+import type { SliceLayerGeometryState } from '../engine/slicer/pipeline/execution/steps/types';
+import type { Contour } from '../types/slicer-pipeline.types';
+import type { MaterialProfile, PrinterProfile, PrintProfile } from '../types/slicer';
 
 interface RawGeometry {
   positions: Float32Array;
@@ -16,9 +19,9 @@ interface LayerPrepMessage {
   requestId: number;
   payload: {
     geometryData: RawGeometry[];
-    printerProfile: object;
-    materialProfile: object;
-    printProfile: object;
+    printerProfile: PrinterProfile;
+    materialProfile: MaterialProfile;
+    printProfile: PrintProfile;
     layerIndices: number[];
   };
 }
@@ -29,6 +32,10 @@ interface CancelMessage {
 }
 
 type WorkerMessage = LayerPrepMessage | CancelMessage;
+type SerializedContour = Omit<Contour, 'points'> & { points: Array<[number, number]> };
+type SerializedLayerGeometry = Omit<SliceLayerGeometryState, 'contours'> & {
+  contours: SerializedContour[];
+};
 
 let activeRequestId = 0;
 let cancelRequested = false;
@@ -45,11 +52,11 @@ function reconstructGeometries(geometryData: RawGeometry[]) {
   });
 }
 
-function serializeLayerGeometry(layer: any) {
+function serializeLayerGeometry(layer: SliceLayerGeometryState | null): SerializedLayerGeometry | null {
   if (!layer) return null;
   return {
     ...layer,
-    contours: layer.contours.map((contour: any) => ({
+    contours: layer.contours.map((contour) => ({
       area: contour.area,
       isOuter: contour.isOuter,
       points: contour.points.map((point: THREE.Vector2) => [point.x, point.y] as [number, number]),
@@ -74,11 +81,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   const geometries = reconstructGeometries(geometryData);
 
   try {
-    const slicer = new Slicer(
-      printerProfile as never,
-      materialProfile as never,
-      printProfile as never,
-    );
+    const slicer = new Slicer(printerProfile, materialProfile, printProfile);
     activeSlicer = slicer;
     const run = prepareSliceRun(slicer, geometries);
     const layers: Array<{ layerIndex: number; layer: ReturnType<typeof serializeLayerGeometry> }> = [];

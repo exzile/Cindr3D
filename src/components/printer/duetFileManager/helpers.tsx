@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { ArrowUp, ArrowUpDown, ArrowDown } from 'lucide-react';
 import type { DuetFileInfo } from '../../../types/duet';
 import { formatDurationWords, formatFilamentLength } from '../../../utils/printerFormat';

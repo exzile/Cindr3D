@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { SlicerExecutionPipeline, SliceLayerState, SliceRun } from './types';
 
 /**
  * State machine helper: returns the new `consecutiveBridgeLayers` value
@@ -17,12 +18,18 @@ export function nextConsecutiveBridgeLayers(
   return (prior ?? 0) + 1;
 }
 
-export function finalizeLayer(pipeline: any, run: any, layer: any): void {
+export function finalizeLayer(
+  pipeline: unknown,
+  run: SliceRun,
+  layer: SliceLayerState,
+): void {
+  const slicer = pipeline as SlicerExecutionPipeline;
   const { pp, mat, triangles, offsetX, offsetY, emitter, gcode } = run;
   const { li, layerZ, layerH, contours, moves, sliceZ, isSolidTop } = layer;
   let { layerTime } = layer;
 
-  emitter.currentLayerFlow = layer.isFirstLayer && (pp.initialLayerFlow ?? 0) > 0 ? (pp.initialLayerFlow / 100) : 1.0;
+  const initialLayerFlow = pp.initialLayerFlow ?? 0;
+  emitter.currentLayerFlow = layer.isFirstLayer && initialLayerFlow > 0 ? (initialLayerFlow / 100) : 1.0;
   if (run.bridgeFanActive) {
     gcode.push(`M106 S${emitter.fanSpeedArg(mat.fanSpeedMin ?? 100)} ; Restore fan after bridge (layer end)`);
     run.bridgeFanActive = false;
@@ -72,7 +79,7 @@ export function finalizeLayer(pipeline: any, run: any, layer: any): void {
 
   const supThickMul = (pp.supportInfillLayerThickness ?? 0) > 0 ? Math.max(1, Math.round((pp.supportInfillLayerThickness ?? 0) / pp.layerHeight)) : 1;
   if (pp.supportEnabled && li > 0 && li % supThickMul === 0) {
-    const support = pipeline.generateSupportForLayer(triangles, sliceZ, layerZ, li, offsetX, offsetY, run.offsetZ, run.modelHeight, contours);
+    const support = slicer.generateSupportForLayer(triangles, sliceZ, layerZ, li, offsetX, offsetY, run.offsetZ, run.modelHeight, contours);
     if (support.moves.length > 0) {
       emitter.setAccel(pp.accelerationSupport, pp.accelerationPrint);
       emitter.setJerk(pp.jerkSupport, pp.jerkPrint);
@@ -128,9 +135,17 @@ export function finalizeLayer(pipeline: any, run: any, layer: any): void {
     const ironingFlowFactor = pp.ironingFlow / 100;
     for (const contour of contours) {
       if (!contour.isOuter) continue;
-      const innermost = pipeline.offsetContour(contour.points, -(pp.wallCount * pp.wallLineWidth + (pp.ironingInset ?? 0.35)));
+      // Match the Arachne-aware coverage envelope used in
+      // `generatePerimetersArachne`: walls can extend up to ~0.5 ×
+      // wallLineWidth past the nominal `wallCount × wallLineWidth`
+      // depth at variable-width transition zones. Ironing must stay
+      // INSIDE the innermost wall to avoid printing on top of it —
+      // include the same +0.5 buffer so ironing tracks the real wall
+      // boundary (plus the explicit `ironingInset` clearance on top).
+      const wallCoverage = (pp.wallCount + 0.5) * pp.wallLineWidth;
+      const innermost = slicer.offsetContour(contour.points, -(wallCoverage + (pp.ironingInset ?? 0.35)));
       if (innermost.length < 3) continue;
-      const ironLines = pipeline.generateLinearInfill(innermost, 100, pp.ironingSpacing, li, pp.ironingPattern ?? 'lines');
+      const ironLines = slicer.generateLinearInfill(innermost, 100, pp.ironingSpacing, li, pp.ironingPattern ?? 'lines');
       for (const line of ironLines) {
         emitter.travelTo(line.from.x, line.from.y, moves);
         emitter.unretract();
