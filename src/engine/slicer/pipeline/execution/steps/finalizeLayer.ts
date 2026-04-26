@@ -1,5 +1,22 @@
 import * as THREE from 'three';
 
+/**
+ * State machine helper: returns the new `consecutiveBridgeLayers` value
+ * based on whether *this* layer emitted a bridge move.
+ *
+ * Encapsulates the contract between `prepareLayerGeometryState`
+ * (defensively resets `layerHadBridge=false` at layer start),
+ * `emitContourInfill` (sets `layerHadBridge=true` on bridge moves),
+ * and `finalizeLayer` (calls this helper).
+ */
+export function nextConsecutiveBridgeLayers(
+  prior: number,
+  layerHadBridge: boolean,
+): number {
+  if (!layerHadBridge) return 0;
+  return (prior ?? 0) + 1;
+}
+
 export function finalizeLayer(pipeline: any, run: any, layer: any): void {
   const { pp, mat, triangles, offsetX, offsetY, emitter, gcode } = run;
   const { li, layerZ, layerH, contours, moves, sliceZ, isSolidTop } = layer;
@@ -10,6 +27,17 @@ export function finalizeLayer(pipeline: any, run: any, layer: any): void {
     gcode.push(`M106 S${emitter.fanSpeedArg(mat.fanSpeedMin ?? 100)} ; Restore fan after bridge (layer end)`);
     run.bridgeFanActive = false;
   }
+
+  // Update the consecutive-bridge-layer counter so the next layer's
+  // fan speed can pick `bridgeFanSpeed2` or `bridgeFanSpeed3`.
+  // `layerHadBridge` is set inside `emitContourInfill` whenever a
+  // bridge move is emitted, and is cleared at the start of every layer
+  // by `prepareLayerGeometryState` so this branch only sees this
+  // layer's value.
+  run.consecutiveBridgeLayers = nextConsecutiveBridgeLayers(
+    run.consecutiveBridgeLayers ?? 0,
+    run.layerHadBridge ?? false,
+  );
 
   if (li === 0 && pp.supportEnabled && (pp.enableSupportBrim ?? false)) {
     const overhangAngleRad = (pp.supportAngle * Math.PI) / 180;

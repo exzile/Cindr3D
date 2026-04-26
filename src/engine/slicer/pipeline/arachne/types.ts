@@ -1,23 +1,14 @@
 import type * as THREE from 'three';
 import type { PrintProfile } from '../../../../types/slicer';
-import type { BeadGraph } from './beadStrategy';
-import type { ArachnePolygon, TrapezoidGraph } from './trapezoidation';
-import type { VoronoiGraph } from './voronoi';
 
-export type ArachneBackendName = 'js' | 'wasm';
+/** Backend identifier. Profiles may legacy-store `'js'`; the resolver
+ *  coerces it to the WASM backend (the JS staged backend was removed
+ *  in 9.3D). */
+export type ArachneBackendName = 'wasm' | 'js';
 
 export interface ArachneBackend {
   readonly name: ArachneBackendName;
-  buildVoronoi(outerContour: THREE.Vector2[], holeContours: THREE.Vector2[][]): VoronoiGraph;
-  buildTrapezoidation(voronoiGraph: VoronoiGraph, polygon: ArachnePolygon): TrapezoidGraph;
-  distributeBeads(
-    trapezoidGraph: TrapezoidGraph,
-    lineWidth: number,
-    minWidth: number,
-    maxWidth: number,
-  ): BeadGraph;
-  extractPaths(beadGraph: BeadGraph): VariableWidthPath[];
-  generatePaths?(
+  generatePaths(
     outerContour: THREE.Vector2[],
     holeContours: THREE.Vector2[][],
     wallCount: number,

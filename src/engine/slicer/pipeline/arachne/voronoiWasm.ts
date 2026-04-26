@@ -13,7 +13,36 @@
 import * as THREE from 'three';
 
 import { signedArea } from '../../geometry/contourUtils';
-import type { VoronoiEdge, VoronoiGraph, VoronoiSourceEdge, VoronoiVertex } from './voronoi';
+
+export interface VoronoiSourceEdge {
+  id: number;
+  contourIndex: number;
+  edgeIndex: number;
+  isHole: boolean;
+  a: THREE.Vector2;
+  b: THREE.Vector2;
+}
+
+export interface VoronoiVertex {
+  id: number;
+  point: THREE.Vector2;
+  radius: number;
+  sourceEdgeIds: number[];
+}
+
+export interface VoronoiEdge {
+  id: number;
+  from: number;
+  to: number;
+  sourceEdgeIds: [number, number];
+  points: THREE.Vector2[];
+}
+
+export interface VoronoiGraph {
+  sourceEdges: VoronoiSourceEdge[];
+  vertices: VoronoiVertex[];
+  edges: VoronoiEdge[];
+}
 
 // The dist module is an ES6 default export: `createVoronoiModule(opts) =>
 // Promise<VoronoiModule>`. Built by wasm/build.sh, checked into
@@ -86,24 +115,26 @@ async function loadModule(): Promise<VoronoiModule> {
   return modulePromise;
 }
 
-let inFlight: Promise<VoronoiGraph> | null = null;
+let inFlight: Promise<unknown> | null = null;
 
-/** Drop-in replacement for `buildEdgeVoronoi` from voronoi.ts. */
+/** Drop-in replacement for `buildEdgeVoronoi` from voronoi.ts.
+ *  The C++ side keeps one diagram in static state, so we serialise
+ *  every call behind the previous one's settle (success or failure). */
 export async function buildEdgeVoronoiWasm(
   outerContour: THREE.Vector2[],
   holeContours: THREE.Vector2[][] = [],
 ): Promise<VoronoiGraph> {
-  // Serialise — the C++ side keeps one diagram in static state.
   const prev = inFlight;
-  let release!: () => void;
-  inFlight = new Promise<VoronoiGraph>((resolve, reject) => {
-    release = () => { /* resolved at the end */ };
-    runOnce(outerContour, holeContours)
-      .then((graph) => { resolve(graph); release(); })
-      .catch((err) => { reject(err); release(); });
-  });
-  if (prev) { try { await prev; } catch { /* prior call's failure is its own caller's problem */ } }
-  return inFlight;
+  const next = (async () => {
+    if (prev) { try { await prev; } catch { /* prior caller owns its error */ } }
+    return runOnce(outerContour, holeContours);
+  })();
+  inFlight = next;
+  try {
+    return await next;
+  } finally {
+    if (inFlight === next) inFlight = null;
+  }
 }
 
 async function runOnce(

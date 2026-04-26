@@ -129,6 +129,14 @@ export function prepareSliceRun(pipeline: any, geometries: { geometry: THREE.Buf
     currentSeamPoints: [] as THREE.Vector2[],
     seamMemoryLayer: undefined as number | undefined,
     bridgeFanActive: false,
+    /** Consecutive layers (incl. current) that have emitted bridge moves.
+     *  Reset to 0 by finalizeLayer when no bridge moves were seen.
+     *  Drives `bridgeFanSpeed2` / `bridgeFanSpeed3` when
+     *  `bridgeEnableMoreLayers` is enabled. */
+    consecutiveBridgeLayers: 0,
+    /** True if the current layer has emitted at least one bridge move.
+     *  Reset to false at layer start; checked in finalizeLayer. */
+    layerHadBridge: false,
     sliceLayers: [] as any[],
     totalTime: 0,
   };

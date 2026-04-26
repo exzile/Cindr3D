@@ -13,6 +13,13 @@ export async function prepareLayerGeometryState(pipeline: any, run: any, li: num
   pipeline.reportProgress('slicing', (li / totalLayers) * 80, li, totalLayers, `Slicing layer ${li + 1}/${totalLayers}...`);
   await pipeline.yieldToUI();
 
+  // Reset the per-layer bridge flag at the start of every layer so the
+  // counter logic in finalizeLayer sees a clean slate. emitContourInfill
+  // sets it back to true if it actually emits a bridge move. Resetting
+  // here (rather than in finalizeLayer) protects against future code
+  // paths that bail between emit and finalize.
+  run.layerHadBridge = false;
+
   const segments = pipeline.sliceTrianglesAtZ(triangles, sliceZ, offsetX, offsetY, offsetZ);
   const rawContours = pipeline.connectSegments(segments);
   if (rawContours.length === 0) return null;
@@ -56,6 +63,36 @@ export async function prepareLayerGeometryState(pipeline: any, run: any, li: num
         if (approxDiam > maxD) continue;
       }
       const expanded = pipeline.offsetContour(c.points, hhe);
+      if (expanded.length >= 3) c.points = expanded;
+    }
+  }
+
+  // Horizontal expansion (Cura's `xy_offset`) — grows or shrinks the material
+  // uniformly. Positive values inflate outers and contract holes (the hole
+  // is negative space, so shrinking it equals growing the surrounding
+  // material). `initialLayerHorizontalExpansion` overrides on layer 0;
+  // `elephantFootCompensation` further shrinks the outer on layer 0 only.
+  //
+  // SIGN CONVENTION (matches `offsetContour` in `geometry/pathGeometry.ts`):
+  // a positive offset shifts each edge along its (-dy, dx) inward normal.
+  // For a CCW outer that direction points TOWARD the polygon interior
+  // (positive offset shrinks the outer); for a CW hole it points INTO the
+  // surrounding material (positive offset grows the hole). To grow material
+  // everywhere we therefore pass `-xyOffset` to BOTH outer and hole. The
+  // (positive) elephant-foot value is added to `outerOffset` so it shrinks
+  // the first-layer outer.
+  const baseXY = pp.horizontalExpansion ?? 0;
+  const xyOffset = isFirstLayer
+    ? (pp.initialLayerHorizontalExpansion ?? baseXY)
+    : baseXY;
+  const elephantFoot = isFirstLayer ? (pp.elephantFootCompensation ?? 0) : 0;
+  const outerOffset = -xyOffset + elephantFoot;
+  const holeOffset = -xyOffset;
+  if (outerOffset !== 0 || holeOffset !== 0) {
+    for (const c of contours) {
+      const offset = c.isOuter ? outerOffset : holeOffset;
+      if (offset === 0) continue;
+      const expanded = pipeline.offsetContour(c.points, offset);
       if (expanded.length >= 3) c.points = expanded;
     }
   }

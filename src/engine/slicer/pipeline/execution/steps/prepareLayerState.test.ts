@@ -1,0 +1,179 @@
+import { describe, expect, it } from 'vitest';
+import * as THREE from 'three';
+
+import { prepareLayerGeometryState } from './prepareLayerState';
+
+interface Contour {
+  points: THREE.Vector2[];
+  isOuter: boolean;
+  area: number;
+}
+
+function makeSquare(size: number, isOuter: boolean): Contour {
+  const half = size / 2;
+  const pts = isOuter
+    ? [
+      new THREE.Vector2(-half, -half),
+      new THREE.Vector2(half, -half),
+      new THREE.Vector2(half, half),
+      new THREE.Vector2(-half, half),
+    ]
+    : [
+      // CW for hole.
+      new THREE.Vector2(-half, -half),
+      new THREE.Vector2(-half, half),
+      new THREE.Vector2(half, half),
+      new THREE.Vector2(half, -half),
+    ];
+  return { points: pts, isOuter, area: isOuter ? size * size : -size * size };
+}
+
+function bboxRange(points: THREE.Vector2[]): { width: number; height: number } {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of points) {
+    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+  }
+  return { width: maxX - minX, height: maxY - minY };
+}
+
+interface TestPipeline {
+  cancelled: boolean;
+  yieldToUI(): Promise<void>;
+  reportProgress(): void;
+  sliceTrianglesAtZ(): unknown[];
+  connectSegments(_: unknown[]): unknown[];
+  classifyContours(_: unknown[]): Contour[];
+  closeContourGaps(c: Contour[]): Contour[];
+  offsetContour(points: THREE.Vector2[], offset: number): THREE.Vector2[];
+}
+
+function makePipeline(triangles: unknown[]): TestPipeline {
+  return {
+    cancelled: false,
+    yieldToUI: async () => {},
+    reportProgress: () => {},
+    sliceTrianglesAtZ: () => triangles,
+    connectSegments: (_: unknown[]) => [],
+    classifyContours: (_: unknown[]) => [] as Contour[],
+    closeContourGaps: (c: Contour[]) => c,
+    /** Axis-aligned-rectangle stub matching the real `offsetContour`
+     *  convention: positive offset shifts each edge along its (-dy, dx)
+     *  inward normal. For a CCW outer that pulls vertices TOWARD the
+     *  centroid (shrink); for a CW hole it pushes them AWAY from the
+     *  centroid (grow). The stub detects winding via signed area and
+     *  picks the direction accordingly so test fixtures using natural
+     *  CCW/CW conventions produce intuitive results. */
+    offsetContour(points: THREE.Vector2[], offset: number): THREE.Vector2[] {
+      let cx = 0, cy = 0;
+      for (const p of points) { cx += p.x; cy += p.y; }
+      cx /= points.length; cy /= points.length;
+      let area = 0;
+      for (let i = 0; i < points.length; i++) {
+        const a = points[i];
+        const b = points[(i + 1) % points.length];
+        area += a.x * b.y - b.x * a.y;
+      }
+      // CCW (area > 0): positive offset = shrink; sign factor = -1.
+      // CW  (area < 0): positive offset = grow;   sign factor = +1.
+      const dir = area > 0 ? -1 : +1;
+      return points.map((p) => new THREE.Vector2(
+        p.x + dir * Math.sign(p.x - cx) * offset,
+        p.y + dir * Math.sign(p.y - cy) * offset,
+      ));
+    },
+  };
+}
+
+function makeRun(pp: Record<string, unknown>, contours: Contour[]) {
+  // Inject the prepared contours directly via the classifyContours hook.
+  return {
+    pp: { layerHeight: 0.2, ...pp },
+    mat: {},
+    triangles: [],
+    modelBBox: { min: { z: 0 }, max: { z: 1 } },
+    offsetX: 0,
+    offsetY: 0,
+    offsetZ: 0,
+    layerZs: [0.2, 0.4],
+    totalLayers: 2,
+    solidBottom: 0,
+    solidTop: 0,
+    bedCenterX: 0,
+    bedCenterY: 0,
+    contours,
+  };
+}
+
+async function runPrep(li: number, pp: Record<string, unknown>, contours: Contour[]) {
+  const pipeline = makePipeline([]);
+  // Override classifyContours to return our fixture contours so the
+  // step under test sees them.
+  pipeline.classifyContours = () => contours;
+  // sliceTrianglesAtZ + connectSegments must produce non-empty so we
+  // don't bail at the rawContours check.
+  pipeline.connectSegments = () => [{}];
+  const run = makeRun(pp, contours);
+  const result = await prepareLayerGeometryState(pipeline, run, li);
+  return result?.contours as Contour[] | undefined;
+}
+
+describe('prepareLayerGeometryState — XY compensation', () => {
+  it('grows outer + shrinks holes when horizontalExpansion > 0', async () => {
+    const outer = makeSquare(10, true);
+    const hole = makeSquare(4, false);
+    const result = await runPrep(1, { horizontalExpansion: 0.1 }, [outer, hole]);
+    expect(result).toBeDefined();
+    const outerSize = bboxRange(result![0].points);
+    const holeSize = bboxRange(result![1].points);
+    // Outer: 10 → 10 + 2*0.1 = 10.2
+    expect(outerSize.width).toBeCloseTo(10.2, 4);
+    // Hole: 4 → 4 - 2*0.1 = 3.8 (negative offset shrinks)
+    expect(holeSize.width).toBeCloseTo(3.8, 4);
+  });
+
+  it('no-op when horizontalExpansion is 0', async () => {
+    const outer = makeSquare(10, true);
+    const result = await runPrep(1, {}, [outer]);
+    expect(bboxRange(result![0].points).width).toBeCloseTo(10, 6);
+  });
+
+  it('replaces baseline on first layer with initialLayerHorizontalExpansion', async () => {
+    const outer = makeSquare(10, true);
+    const result = await runPrep(0, {
+      horizontalExpansion: 0.1,
+      initialLayerHorizontalExpansion: 0.3,
+    }, [outer]);
+    // Layer 0 uses 0.3 (override), not 0.1
+    expect(bboxRange(result![0].points).width).toBeCloseTo(10.6, 4);
+  });
+
+  it('falls back to horizontalExpansion on first layer when override is undefined', async () => {
+    const outer = makeSquare(10, true);
+    const result = await runPrep(0, { horizontalExpansion: 0.05 }, [outer]);
+    expect(bboxRange(result![0].points).width).toBeCloseTo(10.1, 4);
+  });
+
+  it('shrinks first-layer outer by elephantFootCompensation', async () => {
+    const outer = makeSquare(10, true);
+    const result = await runPrep(0, { elephantFootCompensation: 0.2 }, [outer]);
+    // Layer 0 outer: 10 → 10 - 2*0.2 = 9.6
+    expect(bboxRange(result![0].points).width).toBeCloseTo(9.6, 4);
+  });
+
+  it('does NOT apply elephantFootCompensation past layer 0', async () => {
+    const outer = makeSquare(10, true);
+    const result = await runPrep(1, { elephantFootCompensation: 0.2 }, [outer]);
+    expect(bboxRange(result![0].points).width).toBeCloseTo(10, 6);
+  });
+
+  it('combines initial-layer horizontal expansion with elephant-foot shrink', async () => {
+    const outer = makeSquare(10, true);
+    const result = await runPrep(0, {
+      initialLayerHorizontalExpansion: 0.1,
+      elephantFootCompensation: 0.05,
+    }, [outer]);
+    // Layer 0 outer: 10 + 2*(0.1 - 0.05) = 10.1
+    expect(bboxRange(result![0].points).width).toBeCloseTo(10.1, 4);
+  });
+});

@@ -20,33 +20,13 @@ function toRing(pts: THREE.Vector2[]): PCRing {
 
 export type { VariableWidthPath } from './types';
 export type { ArachneBackend, ArachneBackendName } from './types';
-export { arachneJsBackend, getArachneBackend, registerArachneBackend, resolveArachneBackend } from './backend';
+export { getArachneBackend, registerArachneBackend, resolveArachneBackend, arachneWasmBackend } from './backend';
 export {
-  arachneWasmBackend,
   generateArachnePathsWasm,
   generateArachnePathsWasmSync,
   loadArachneModule,
 } from './arachneWasm';
-export { buildEdgeVoronoi } from './voronoi';
-export type { VoronoiEdge, VoronoiGraph, VoronoiSourceEdge, VoronoiVertex } from './voronoi';
-export { buildSkeletalTrapezoidation } from './trapezoidation';
-export type {
-  ArachnePolygon,
-  SkeletalTrapezoid,
-  TrapezoidGraph,
-  TrapezoidNode,
-  TrapezoidSample,
-} from './trapezoidation';
-export { distributeBeads } from './beadStrategy';
-export type { Bead, BeadGraph, BeadTrapezoid } from './beadStrategy';
-export { extractBeadPaths } from './pathExtraction';
-export {
-  beadsToDebugSummary,
-  pathsToDebugLines,
-  trapezoidsToDebugLines,
-  voronoiToDebugLines,
-} from './voronoiDebug';
-export type { VoronoiDebugLines } from './voronoiDebug';
+export type { VoronoiEdge, VoronoiGraph, VoronoiSourceEdge, VoronoiVertex } from './voronoiWasm';
 
 /**
  * Top-level Arachne wall generator entry point.
@@ -68,15 +48,10 @@ const ARACHNE_DEBUG_GLOBAL_KEY = '__arachneDebug';
  *  back to the main thread on slice completion for inspection. */
 export interface ArachneRegionStat {
   layerIndex: number;
-  outcome: 'arachne' | 'classic-fallback-no-paths' | 'classic-fallback-error' | 'classic-cap';
+  outcome: 'arachne' | 'classic-fallback-no-paths' | 'classic-fallback-error';
   totalEdges: number;
   backend?: ArachneBackendName;
-  voronoiVertices?: number;
-  trapezoids?: number;
   paths?: number;
-  voronoiMs?: number;
-  trapMs?: number;
-  beadMs?: number;
   pathMs?: number;
 }
 
@@ -108,14 +83,6 @@ export function drainArachneStats(): ArachneRegionStat[] {
   return out;
 }
 
-/** Edge-count cap before falling back to classic. The pure-JS indexed
- *  Voronoi handles ~50-300 edges per region in milliseconds; above ~500
- *  it scales superlinearly and a high-resolution STL import (1500+
- *  edges per region) takes minutes per layer. Default cap stays at 400
- *  so dense geometries silently fall to classic; users with simpler CAD
- *  geometry get Arachne's transition-zone smoothing automatically. */
-const ARACHNE_MAX_EDGES = 400;
-
 export function generatePerimetersArachne(
   outerContour: THREE.Vector2[],
   holeContours: THREE.Vector2[][],
@@ -125,98 +92,33 @@ export function generatePerimetersArachne(
   printProfile: PrintProfile,
   deps: PerimeterDeps,
 ): GeneratedPerimeters {
-  // PERF: Arachne is significantly more expensive than classic on dense
-  // polygons (`O(N · K²)` triples + `O(K)` per-candidate work, vs. classic's
-  // single Clipper pass per wall depth which is effectively `O(N log N)`
-  // via wasm). For very dense regions we'd just be paying the Arachne cost
-  // and then falling back to classic anyway when it fails. Bail early.
   const debug = (globalThis as Record<string, unknown>)[ARACHNE_DEBUG_GLOBAL_KEY] === true;
   const statsBag = debug ? getStats() : null;
   const totalEdges = outerContour.length + holeContours.reduce((s, h) => s + h.length, 0);
-  const selectedBackend = resolveArachneBackend(printProfile.arachneBackend ?? 'js');
-
-  if (!selectedBackend.generatePaths && totalEdges > ARACHNE_MAX_EDGES) {
-    if (statsBag) {
-      statsBag.entries.push({
-        layerIndex: statsBag.layerIndex,
-        outcome: 'classic-cap',
-        totalEdges,
-        backend: selectedBackend.name,
-      });
-    }
-    return generatePerimetersEx(
-      outerContour, holeContours, wallCount, lineWidth, outerWallInset,
-      printProfile, deps,
-    );
-  }
+  const selectedBackend = resolveArachneBackend(printProfile.arachneBackend ?? 'wasm');
 
   try {
     const t0 = debug ? performance.now() : 0;
-    if (selectedBackend.generatePaths) {
-      const paths = selectedBackend.generatePaths(
-        outerContour,
-        holeContours,
-        wallCount,
-        lineWidth,
-        outerWallInset,
-        printProfile,
-      ).filter((path) =>
-        path.points.length >= 2 && path.depth < wallCount && path.widths.length === path.points.length,
-      );
-      const t1 = debug ? performance.now() : 0;
-
-      if (paths.length === 0) {
-        if (statsBag) statsBag.entries.push({
-          layerIndex: statsBag.layerIndex,
-          outcome: 'classic-fallback-no-paths',
-          backend: selectedBackend.name,
-          totalEdges,
-          paths: 0,
-          pathMs: t1 - t0,
-        });
-        return generatePerimetersEx(
-          outerContour, holeContours, wallCount, lineWidth, outerWallInset,
-          printProfile, deps,
-        );
-      }
-
-      if (statsBag) statsBag.entries.push({
-        layerIndex: statsBag.layerIndex, outcome: 'arachne',
-        backend: selectedBackend.name,
-        totalEdges, paths: paths.length,
-        pathMs: t1 - t0,
-      });
-
-      const insetDistance = outerWallInset + wallCount * lineWidth;
-      const { innermostHoles, infillRegions } = computeArachneInfillGeometry(
-        outerContour, holeContours, insetDistance, deps,
-      );
-      return {
-        ...variableWidthPathsToPerimeters(paths),
-        innermostHoles,
-        infillRegions,
-      };
-    }
-
-    const voronoi = selectedBackend.buildVoronoi(outerContour, holeContours);
-    const t1 = debug ? performance.now() : 0;
-    const trapezoids = selectedBackend.buildTrapezoidation(voronoi, { outerContour, holeContours });
-    const t2 = debug ? performance.now() : 0;
-    const minWidth = printProfile.minWallLineWidth ?? lineWidth * 0.5;
-    const maxWidth = lineWidth * 2;
-    const beads = selectedBackend.distributeBeads(trapezoids, lineWidth, minWidth, maxWidth);
-    const t3 = debug ? performance.now() : 0;
-    const paths = selectedBackend.extractPaths(beads).filter((path) =>
+    const paths = selectedBackend.generatePaths(
+      outerContour,
+      holeContours,
+      wallCount,
+      lineWidth,
+      outerWallInset,
+      printProfile,
+    ).filter((path) =>
       path.points.length >= 2 && path.depth < wallCount && path.widths.length === path.points.length,
     );
-    const t4 = debug ? performance.now() : 0;
+    const t1 = debug ? performance.now() : 0;
 
     if (paths.length === 0) {
       if (statsBag) statsBag.entries.push({
-        layerIndex: statsBag.layerIndex, outcome: 'classic-fallback-no-paths',
+        layerIndex: statsBag.layerIndex,
+        outcome: 'classic-fallback-no-paths',
         backend: selectedBackend.name,
-        totalEdges, voronoiVertices: voronoi.vertices.length, trapezoids: trapezoids.trapezoids.length, paths: 0,
-        voronoiMs: t1 - t0, trapMs: t2 - t1, beadMs: t3 - t2, pathMs: t4 - t3,
+        totalEdges,
+        paths: 0,
+        pathMs: t1 - t0,
       });
       return generatePerimetersEx(
         outerContour, holeContours, wallCount, lineWidth, outerWallInset,
@@ -227,8 +129,8 @@ export function generatePerimetersArachne(
     if (statsBag) statsBag.entries.push({
       layerIndex: statsBag.layerIndex, outcome: 'arachne',
       backend: selectedBackend.name,
-      totalEdges, voronoiVertices: voronoi.vertices.length, trapezoids: trapezoids.trapezoids.length, paths: paths.length,
-      voronoiMs: t1 - t0, trapMs: t2 - t1, beadMs: t3 - t2, pathMs: t4 - t3,
+      totalEdges, paths: paths.length,
+      pathMs: t1 - t0,
     });
 
     const insetDistance = outerWallInset + wallCount * lineWidth;

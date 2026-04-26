@@ -30,6 +30,40 @@ function differenceMultiPolygon(a: PCMultiPolygon, b: PCMultiPolygon): PCMultiPo
   return booleanMultiPolygonClipper2Sync(a, b, 'difference') ?? polygonClipping.difference(a, b);
 }
 
+/** Profile fields read by `pickBridgeFanSpeed` — typed locally so the
+ *  helper has zero dependency on the full `PrintProfile` shape. */
+export interface BridgeFanProfile {
+  bridgeFanSpeed?: number;
+  bridgeFanSpeed2?: number;
+  bridgeFanSpeed3?: number;
+  bridgeEnableMoreLayers?: boolean;
+}
+
+/**
+ * Pick the fan speed % for a bridge move based on how many consecutive
+ * layers (incl. this one) have had bridges so far. Mirrors Cura's
+ * `bridge_fan_speed` / `bridge_fan_speed_2` / `bridge_fan_speed_3`
+ * cascade gated by `bridge_enable_more_layers`.
+ *
+ * `priorConsecutive` is the value of `run.consecutiveBridgeLayers` BEFORE
+ * `finalizeLayer` runs for the current layer — i.e. the count of bridge
+ * layers that have already finished. The current layer is `priorConsecutive + 1`.
+ *
+ * Default fan speed (100 %) is returned when nothing in the profile says
+ * otherwise. Each tier falls back through `bridgeFanSpeed2 → bridgeFanSpeed`
+ * etc. so partially-configured profiles still produce a sane value.
+ */
+export function pickBridgeFanSpeed(
+  pp: BridgeFanProfile,
+  priorConsecutive: number,
+): number {
+  const moreLayers = pp.bridgeEnableMoreLayers ?? false;
+  const consecutive = (priorConsecutive ?? 0) + 1;
+  if (!moreLayers || consecutive <= 1) return pp.bridgeFanSpeed ?? 100;
+  if (consecutive === 2) return pp.bridgeFanSpeed2 ?? pp.bridgeFanSpeed ?? 100;
+  return pp.bridgeFanSpeed3 ?? pp.bridgeFanSpeed2 ?? pp.bridgeFanSpeed ?? 100;
+}
+
 export function emitContourInfill(pipeline: any, run: any, layer: any, contoursData: any[]) {
   const { pp, mat, triangles, offsetX, offsetY, emitter, gcode } = run;
   const { li, layerH, isFirstLayer, isSolid, isSolidBottom, isSolidTop, infillSpeed, topBottomSpeed, hasBridgeRegions, isInBridgeRegion, moves } = layer;
@@ -182,18 +216,21 @@ export function emitContourInfill(pipeline: any, run: any, layer: any, contoursD
       const effFrom = startExt > 0 && len > 0 ? new THREE.Vector2(line.from.x - ux * startExt, line.from.y - uy * startExt) : line.from;
       const effTo = endExt > 0 && len > 0 ? new THREE.Vector2(line.to.x + ux * endExt, line.to.y + uy * endExt) : line.to;
       let thisMoveType: any = infillMoveType, thisSpeed = speed, thisLineWidth = lineWidth, thisFlowScale = 1.0;
-      if (hasBridgeRegions && infillMoveType === 'top-bottom') {
+      const bridgeSettingsOn = pp.enableBridgeSettings !== false;
+      if (hasBridgeRegions && bridgeSettingsOn && infillMoveType === 'top-bottom') {
         const midX = (effFrom.x + effTo.x) / 2, midY = (effFrom.y + effTo.y) / 2;
         if (isInBridgeRegion(midX, midY)) {
           thisMoveType = 'bridge';
           thisSpeed = pp.bridgeSkinSpeed ?? speed;
           thisFlowScale = (pp.bridgeSkinFlow ?? 100) / 100;
+          run.layerHadBridge = true;
         }
       }
+      const bridgeFanSpeed = pickBridgeFanSpeed(pp, run.consecutiveBridgeLayers ?? 0);
       const needBridgeFan = pp.enableBridgeFan && thisMoveType === 'bridge' && !run.bridgeFanActive;
       const needFanRestore = !needBridgeFan && thisMoveType !== 'bridge' && run.bridgeFanActive;
       if (needBridgeFan) {
-        gcode.push(`M106 S${emitter.fanSpeedArg(pp.bridgeFanSpeed ?? 100)} ; Bridge fan`);
+        gcode.push(`M106 S${emitter.fanSpeedArg(bridgeFanSpeed)} ; Bridge fan`);
         run.bridgeFanActive = true;
       } else if (needFanRestore) {
         gcode.push(`M106 S${emitter.fanSpeedArg(mat.fanSpeedMin ?? 100)} ; Restore fan after bridge`);

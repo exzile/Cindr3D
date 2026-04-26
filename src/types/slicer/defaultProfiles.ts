@@ -335,8 +335,8 @@ export const DEFAULT_PRINT_PROFILES: PrintProfile[] = [
     combingMode: 'all',            // retraction_combing = 'all'
     avoidCrossingPerimeters: true, // travel_avoid_other_parts = true
     thinWallDetection: true,       // fill_outline_gaps = true
-    wallGenerator: 'classic',      // Arachne with transition zones is opt-in pending real-world validation
-    arachneBackend: 'js',          // WASM backend can be selected once libArachne is available
+    wallGenerator: 'arachne',      // libArachne (WASM) variable-width walls with transition zones
+    arachneBackend: 'wasm',        // libArachne via WASM is the production backend post ARACHNE-9
     ironingEnabled: false,         // ironing_enabled = false
     ironingSpeed: 15,
     ironingFlow: 10.0,             // ironing_flow = 10

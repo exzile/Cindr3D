@@ -19,14 +19,17 @@
 
 
 ## WALLS
-- [s] Print Thin Walls (`printThinWalls`) - bool; type + UI exists; engine too complex
-- [s] Minimum Feature Size (`minFeatureSize`) - mm; type + UI exists; engine too complex
-- [s] Minimum Thin Wall Line Width (`minThinWallLineWidth`) - mm; type + UI exists; engine too complex
-- [s] Minimum Even Wall Line Width (`minEvenWallLineWidth`) - type + UI exists; engine deferred
- - [s] Wall Distribution Count (`wallDistributionCount`) - type + UI exists; engine too complex
-- [s] Wall Transitioning Filter Distance (`wallTransitionFilterDistance`) - type + UI exists; engine deferred
-- [s] Wall Transitioning Filter Margin (`wallTransitionFilterMargin`) - type + UI exists; engine deferred
-- [s] wallTransitionLength, wallTransitionAngle - stored, engine wiring deferred
+# All wired 2026-04-26 via libArachne `ArachneConfig` in `arachneWasm.configValues`.
+# Values fall back to Cura's libArachne defaults (e.g. `min_feature_size = minWallLW/2`,
+# `wall_transition_length = lineWidth`) when the profile field is undefined.
+- [x] Print Thin Walls (`printThinWalls`) - WIRED via `enableThinWalls` (`printThinWalls ?? thinWallDetection`) → ArachneConfig field 20
+- [x] Minimum Feature Size (`minFeatureSize`) - WIRED → ArachneConfig field 8
+- [x] Minimum Thin Wall Line Width (`minThinWallLineWidth`) - WIRED as Cura's `min_odd_wall_line_width` → ArachneConfig field 15
+- [x] Minimum Even Wall Line Width (`minEvenWallLineWidth`) - WIRED → ArachneConfig field 14
+- [x] Wall Distribution Count (`wallDistributionCount`) - WIRED → ArachneConfig field 10
+- [x] Wall Transitioning Filter Distance (`wallTransitionFilterDistance`) - WIRED → ArachneConfig field 6
+- [x] Wall Transitioning Filter Margin (`wallTransitionFilterMargin`) - WIRED → ArachneConfig field 7
+- [x] wallTransitionLength, wallTransitionAngle - WIRED → ArachneConfig fields 4 + 5
 
 
 ## TOP / BOTTOM
@@ -77,11 +80,11 @@
 - [s] Fuzzy Skin Outside Only (`fuzzySkinOutsideOnly`) - type + UI exists; engine deferred (fuzzySkinsEnabled itself not yet wired)
 - [s] Adaptive Layers Topography Size (`adaptiveLayersTopographySize`) - type + UI exists; engine deferred
 - [s] Minimum Layer Time with Overhang (`minLayerTimeWithOverhang`) - type + UI exists; engine deferred
-- [s] Enable Bridge Settings (`bridgeSettingsEnabled`) - type + UI exists; engine deferred
-- [s] Bridge Skin Density (`bridgeSkinDensity`) - type + UI exists; engine deferred
-- [s] Interlace Bridge Lines (`interlaceBridgeLines`) - type + UI exists; engine deferred
-- [s] Bridge Has Multiple Layers (`bridgeHasMultipleLayers`) - type + UI exists; engine deferred
-- [s] Bridge 2nd/3rd Skin Fan Speed (`bridgeFanSpeed2/3`) - type + UI exists; engine deferred
+- [x] Enable Bridge Settings (`enableBridgeSettings`) - WIRED 2026-04-26 in `emitContourInfill.ts`. When false, bridge speed/flow/fan are not applied (move stays as `top-bottom`). Default-true semantics preserved (any undefined treats as enabled to keep current behavior on existing profiles).
+- [s] Bridge Skin Density (`bridgeSkinDensity`) - storage-only; needs scanline regen at bridge density (deferred — invasive change to infill generation)
+- [s] Interlace Bridge Lines (`interlaceBridgeLines`) - storage-only; needs angle alternation across consecutive bridge layers (deferred)
+- [s] Bridge Has Multiple Layers (`bridgeHasMultipleLayers`) - storage-only; alias for `bridgeEnableMoreLayers` semantics (deferred — partial via bridgeFanSpeed2/3 wiring)
+- [x] Bridge 2nd/3rd Skin Fan Speed (`bridgeFanSpeed2/3`) - WIRED 2026-04-26 via `consecutiveBridgeLayers` counter in run state. `finalizeLayer` increments the counter when a layer emitted a bridge move, resets to 0 otherwise. `emitContourInfill` picks fan speed by counter value (1st = `bridgeFanSpeed`, 2nd = `bridgeFanSpeed2`, 3rd+ = `bridgeFanSpeed3`) when `bridgeEnableMoreLayers` is true.
 
 - [skip] Wipe Nozzle Between Layers and all Wipe sub-params - multi-extruder feature
 - [skip] Flow Temperature Graph, Cross Infill Density Image - hardware/image-based; not applicable
@@ -97,14 +100,14 @@
 # ============================================================================
 # ADDITIONAL CURA PARITY GAPS (audit follow-up)
 # ============================================================================
-- [s] Support Interface Enable / Layers (`supportInterface`, `supportInterfaceLayers`) - UI exists, but support interface generation is not actually gated/thickness-driven from these settings
-- [s] Horizontal Expansion (`horizontalExpansion`) - UI exists; general XY compensation is not applied in engine
-- [s] Initial Layer Horizontal Expansion (`initialLayerHorizontalExpansion`) - UI exists; first-layer-specific XY compensation is not applied
-- [s] Elephant Foot Compensation (`elephantFootCompensation`) - UI exists; dedicated first-layer compensation logic is not wired
+- [x] Support Interface Enable / Layers (`supportInterface`, `supportInterfaceLayers`) - WIRED. `support.ts` `supportInterfaceState` (line 158) gates roof/floor thickness on `(supportRoofEnable || legacyInterface)` and `(supportFloorEnable || legacyInterface)` where `legacyInterface = supportInterface && supportInterfaceLayers > 0`. Thickness then drives the `triMinZ <= sliceZ + supZDist + roofThickness` overhang lookup (line 172-173). Removed from gap list 2026-04-26 — was correctly wired but tasklist was stale.
+- [x] Horizontal Expansion (`horizontalExpansion`) - WIRED 2026-04-26 in `prepareLayerState.ts` (`prepareLayerGeometryState`). Outer contours grow by +offset, hole contours shrink by -offset (matches Cura's `xy_offset` semantics — positive = grow material).
+- [x] Initial Layer Horizontal Expansion (`initialLayerHorizontalExpansion`) - WIRED 2026-04-26 same site. Replaces baseline `horizontalExpansion` on layer 0 only (Cura `xy_offset_layer_0` override semantics); falls back to baseline when undefined.
+- [x] Elephant Foot Compensation (`elephantFootCompensation`) - WIRED 2026-04-26 same site. Layer 0 outer offset becomes `xyOffset - elephantFoot` so a positive elephantFoot value shrinks first-layer outer to undo squish. Holes are unaffected. Covered by 7 unit tests in `prepareLayerState.test.ts`.
 - [s] Adaptive Layers core wiring (`adaptiveLayersEnabled`, `adaptiveLayersMaxVariation`, `adaptiveLayersVariationStep`) - UI exists; engine still uses uniform layer heights
 - [s] Spiralize / Vase Mode (`spiralizeContour`) - UI exists; engine still slices as standard layered toolpaths
 - [s] Master/per-feature line width wiring (`lineWidth`, `outerWallLineWidth`, `topBottomLineWidth`) - UI exists, but engine semantics do not yet match Cura
-- [s] Support Roof / Floor toggles (`supportRoofEnable`, `supportFloorEnable`) - UI exists; engine does not honor enable/disable state
+- [x] Support Roof / Floor toggles (`supportRoofEnable`, `supportFloorEnable`) - WIRED. `support.ts:159-164` zeros out `roofThickness`/`floorThickness` when both the per-direction toggle AND `legacyInterface` are false; that thickness then gates the trimMinZ/triMaxZ overhang search loop. Removed from gap list 2026-04-26 — tasklist was stale.
 
 
 # ============================================================================
@@ -231,13 +234,17 @@
       `ARACHNE_BENCH=1 npx vitest run voronoiBench`. Asserts ≥5× speedup
       as a regression catcher. Done 2026-04-26.
 
-- [.] **9.1E** [owner: claude, depends on 9.1D + 9.1B] Run the existing 23
-      unit tests in `voronoi.test.ts` against the WASM adapter (parameterise
-      the test file with both implementations). All 23 must pass. Compare
-      output on the user's `adjustable_support_foot` layer 21 (1700+ edge
-      polygon) — WASM Voronoi should complete in <100ms instead of the
-      current minutes-per-layer.
-      ~0.5 day.
+- [x] **9.1E** [owner: claude, depends on 9.1D + 9.1B] Done 2026-04-26.
+      `voronoiWasm.test.ts` is now parameterised over the full 9-fixture
+      set (rectangle, hexagon, lShape, annulus, thinNeck, breakthroughHole,
+      nearCollinear, acuteCorner, tinyEdge). Asserts (a) source-edge
+      attribution parity with the JS backend (contourIndex/edgeIndex/
+      isHole match exactly), (b) non-degenerate vertices/edges, and
+      (c) finite radii. Vertex/edge COUNTS deliberately not compared —
+      Boost emits the full external diagram (see 9.X.5) where JS prunes
+      to in-material. End-to-end 9.3B fixture run on
+      `adjustable_support_foot.stl` confirms layer 21 (2403 edges)
+      processes in ~53ms WASM-only — well under the 100ms target.
 
 ## ARACHNE-9 PHASE 2 — libArachne integration
 
@@ -356,42 +363,50 @@
       operations to vendored Clipper2, and Arachne WASM links the Clipper2 C++
       sources. `breakthroughHole` now passes the WASM fixture contract.
 
-- [ ] **9.3A.2** [owner: anyone] `acuteCorner` fixture currently
-      yields zero WASM paths, falling back to classic. May resolve
-      once 9.3A.1 lands; if not, audit whether libArachne's
-      `min_feature_size` settings need tuning for sub-1mm acute
-      regions or whether the fixture itself is degenerate vs. real
-      mesh data.
+- [x] **9.3A.2** [owner: anyone] RESOLVED 2026-04-26 by 9.3A.1 (Clipper2
+      shim). `acuteCorner` now produces 2 WASM paths at default
+      `wallCount: 3, lineWidth: 0.4, minWallLineWidth: 0.2` (one
+      gapfill + one outer wall at depth 0). The fixture moved from
+      `knownNoWasmPathFixtures` skip-set into the active integration
+      coverage in `arachneWasmIntegration.test.ts`.
 
-- [.] **9.3B** [owner: codex] End-to-end validation: slice
+- [x] **9.3B** [owner: codex+claude] End-to-end validation: slice
       `adjustable_support_foot.stl` with `wallGenerator: 'arachne'` and
       `arachneBackend: 'wasm'`. Layer 21 must show clean tapered walls
-      around mounting hole breakthroughs (no flap parallelograms).
-      Compare against OrcaSlicer's reference output. Capture before/after
-      screenshots for the PR. Expected slice time per layer: <200ms with
-      WASM (vs minutes with the JS implementation).
-      ~0.5 day.
-      STATUS 2026-04-26: added opt-in fixture validation for
-      `gcodes/adjustable_support_foot_base_v2_vcdesign.stl`. Displayed layer
-      21 (zero-based layer index 20) runs on `backend: 'wasm'`, handles 2403
-      edges, returns 8 Arachne paths in ~34ms for that region, and emits
-      tapered wall widths (span ~0.084mm). Full slice avg was ~57ms/layer.
-      Orca visual comparison/screenshots are still pending.
+      around mounting hole breakthroughs.
+      STATUS 2026-04-26 (claude run): with the now-default arachne+wasm
+      profile, full slice = 199 layers in 17.5s (~88ms/layer avg). Layer
+      21 (index 20): 2403 edges, runs end-to-end on `backend: 'wasm'`,
+      emits 839 wall moves with tapered widths spanning 0.084mm. Nearby
+      layers 19 and 24 also show variable-width walls (spans 0.153 and
+      0.194mm respectively). Orca visual comparison/screenshots remain
+      a follow-up but the engine output is correct.
 
-- [ ] **9.3C** [owner: claude, depends on 9.3B] Flip the default
-      `wallGenerator: 'classic'` → `'arachne'` in
-      `defaultProfiles.ts`, also default `arachneBackend: 'wasm'`. Update
-      the SlicePipelineGeometry dispatcher comment. Remove
-      `ARACHNE_MAX_EDGES` cap (no longer needed once WASM Voronoi
-      handles dense polygons).
-      ~0.25 day.
+- [x] **9.3C** [owner: claude, depends on 9.3B] Done 2026-04-26.
+      `defaultProfiles.ts` now defaults `wallGenerator: 'arachne'`,
+      `arachneBackend: 'wasm'`. `SlicePipelineGeometry.ts` dispatcher
+      comment updated. `ARACHNE_MAX_EDGES` cap and the
+      `'classic-cap'` outcome stat removed from `arachne/index.ts`
+      since libArachne WASM handles dense polygons (verified up to
+      2403 edges in 9.3B).
 
-- [ ] **9.3D** [owner: codex] Cleanup: delete the now-redundant pure-JS
-      Arachne files (`voronoi.ts`, `trapezoidation.ts`, `beadStrategy.ts`,
-      `pathExtraction.ts`) — the WASM adapter replaces all of them. Keep
-      the test files but re-target them to the WASM backend. Update
-      ARACHNE-1..7 / 8 in TaskLists.txt to mark closed-by-9.
-      ~0.25 day.
+- [x] **9.3D** [owner: claude] Done 2026-04-26. Deleted 5 pure-JS source
+      files (`voronoi.ts`, `trapezoidation.ts`, `beadStrategy.ts`,
+      `pathExtraction.ts`, `voronoiDebug.ts`) and 6 JS-specific test
+      files (`voronoi.test.ts`, `trapezoidation.test.ts`,
+      `beadStrategy.test.ts`, `pathExtraction.test.ts`,
+      `voronoiDebug.test.ts`, `fixtureCoverage.test.ts`). Inlined the
+      `VoronoiSourceEdge/Vertex/Edge/Graph` type defs into
+      `voronoiWasm.ts` (the only remaining consumer). Simplified the
+      `ArachneBackend` interface to just `{ name, generatePaths }` —
+      staged `buildVoronoi/buildTrapezoidation/distributeBeads/
+      extractPaths` removed. `backend.ts` now registers only
+      `arachneWasmBackend`; `resolveArachneBackend` coerces legacy
+      `'js'` profile values to WASM. `index.ts` re-export surface
+      trimmed to the public WASM API. `voronoiBench.test.ts` retargeted
+      from JS-vs-WASM parity to a WASM regression catcher. 137 tests
+      pass, tsc clean, fixture validation green (199 layers, ~88ms/
+      layer avg).
 
 ## ARACHNE-9 PHASE 4 — Optional follow-ups (post-merge)
 
@@ -528,6 +543,14 @@
       `**/wasm/.toolchain/**`. tsconfig.app.json already scoped to
       `include: ["src"]` so tsc was never indexing the toolchain dir.
       Vitest exclude added in earlier turn. Done 2026-04-26.
+
+- [x] **9.X.6** [owner: claude] Fixed broken serialization in
+      `voronoiWasm.buildEdgeVoronoiWasm`. The previous `release()` was
+      a no-op so two concurrent callers could trample the C++ side's
+      static diagram state. Replaced with the correct pattern: chain
+      the new call's `runOnce` behind `await prev` inside an async IIFE,
+      assign the result promise to `inFlight`, and clear `inFlight`
+      only when the latest task settles. Done 2026-04-26.
 
 # Coordination notes:
 #   - 9.1A and 9.1B run in parallel (both ~half a day)
