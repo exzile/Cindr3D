@@ -104,7 +104,7 @@ if (Test-Path $Clipper2) {
         '-fexceptions',
         '-I', $Clipper2Inc,
         '-s', 'EXPORT_NAME=createClipper2Module',
-        '-s', "EXPORTED_FUNCTIONS=['_clipperAnswer','_offsetPaths','_getOffsetCounts','_emitOffsetPathCounts','_emitOffsetPoints','_resetOffsetPaths','_malloc','_free']",
+        '-s', "EXPORTED_FUNCTIONS=['_clipperAnswer','_offsetPaths','_booleanPaths','_getOffsetCounts','_emitOffsetPathCounts','_emitOffsetPoints','_resetOffsetPaths','_malloc','_free']",
         '-s', "EXPORTED_RUNTIME_METHODS=['HEAPF64','HEAP32']"
     )
 
@@ -139,6 +139,10 @@ export interface Clipper2Module {
   _emitOffsetPathCounts(outPtr: number, capacityInts: number): number;
   _emitOffsetPoints(outPtr: number, capacityDoubles: number): number;
   _resetOffsetPaths(): void;
+
+  _booleanPaths(subjPointsPtr: number, subjCountsPtr: number, subjCount: number,
+                clipPointsPtr: number, clipCountsPtr: number, clipCount: number,
+                op: number, fillRule: number, precision: number): number;
 }
 
 export default function createClipper2Module(

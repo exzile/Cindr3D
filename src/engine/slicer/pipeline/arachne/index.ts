@@ -3,6 +3,7 @@ import polygonClipping, { type MultiPolygon as PCMultiPolygon, type Ring as PCRi
 import type { PrintProfile } from '../../../../types/slicer';
 import type { PerimeterDeps } from '../../../../types/slicer-pipeline-deps.types';
 import type { GeneratedPerimeters, InfillRegion } from '../../../../types/slicer-pipeline.types';
+import { booleanMultiPolygonClipper2Sync } from '../../geometry/clipper2Boolean';
 import { generatePerimetersEx } from '../perimeters';
 import { resolveArachneBackend } from './backend';
 import type { ArachneBackendName, VariableWidthPath } from './types';
@@ -241,7 +242,12 @@ function computeArachneInfillGeometry(
 
   try {
     const holesMP: PCMultiPolygon = innermostHoles.map((hole) => [toRing(hole)]);
-    const diff = polygonClipping.difference(outerMP, ...holesMP);
+    const mergedHoles: PCMultiPolygon = holesMP.length === 1
+      ? holesMP[0]
+      : (booleanMultiPolygonClipper2Sync(holesMP.flat(), [], 'union')
+        ?? polygonClipping.union(holesMP[0], ...holesMP.slice(1)));
+    const diff = booleanMultiPolygonClipper2Sync(outerMP, mergedHoles, 'difference')
+      ?? polygonClipping.difference(outerMP, ...holesMP);
     return { innermostHoles, infillRegions: deps.multiPolygonToRegions(diff) };
   } catch {
     // Degenerate input — fall back to the simple representation. Worst

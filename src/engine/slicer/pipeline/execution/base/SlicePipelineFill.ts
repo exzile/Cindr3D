@@ -36,7 +36,7 @@ export class SlicePipelineFill extends SlicePipelineGeometry {
         contourBBox: (pts) => this.contourBBox(pts),
         pointInContour: (point, pts) => this.pointInContour(point, pts),
         lineContourIntersections: (from, to, pts) => this.lineContourIntersections(from, to, pts),
-        offsetContour: (pts, offset) => this.offsetContour(pts, offset),
+        offsetContour: (pts, offset) => this.offsetContourFast(pts, offset),
       },
     );
   }
@@ -69,7 +69,7 @@ export class SlicePipelineFill extends SlicePipelineGeometry {
         contourBBox: (pts) => this.contourBBox(pts),
         pointInContour: (point, pts) => this.pointInContour(point, pts),
         lineContourIntersections: (from, to, pts) => this.lineContourIntersections(from, to, pts),
-        offsetContour: (pts, offset) => this.offsetContour(pts, offset),
+        offsetContour: (pts, offset) => this.offsetContourFast(pts, offset),
       },
     );
   }

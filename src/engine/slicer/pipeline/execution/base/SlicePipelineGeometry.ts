@@ -25,6 +25,10 @@ import {
   offsetContour as offsetContourFromModule,
   simplifyClosedContour as simplifyClosedContourFromModule,
 } from '../../../geometry/pathGeometry';
+import {
+  loadClipper2Module,
+  offsetPathsClipper2Sync,
+} from '../../../geometry/clipper2Wasm';
 import { findSeamPosition as findSeamPositionFromModule } from '../../../geometry/seams';
 import {
   pointInRing as pointInRingFromModule,
@@ -35,6 +39,7 @@ import type { BBox2, Contour, GeneratedPerimeters, Segment, Triangle } from '../
 
 export class SlicePipelineGeometry {
   protected printProfile!: PrintProfile;
+  private clipper2OffsetWarningShown = false;
 
   protected extractTriangles(
     geometries: { geometry: THREE.BufferGeometry; transform: THREE.Matrix4 }[],
@@ -122,7 +127,7 @@ export class SlicePipelineGeometry {
       outerWallInset,
       this.printProfile,
       {
-        offsetContour: (contour, offset) => this.offsetContour(contour, offset),
+        offsetContour: (contour, offset) => this.offsetContourFast(contour, offset),
         signedArea: (points) => this.signedArea(points),
         multiPolygonToRegions: (mp) => this.multiPolygonToRegions(mp),
       },
@@ -147,7 +152,7 @@ export class SlicePipelineGeometry {
     outerWallInset = 0,
   ): GeneratedPerimeters {
     const deps = {
-      offsetContour: (contour: THREE.Vector2[], offset: number) => this.offsetContour(contour, offset),
+      offsetContour: (contour: THREE.Vector2[], offset: number) => this.offsetContourFast(contour, offset),
       signedArea: (points: THREE.Vector2[]) => this.signedArea(points),
       multiPolygonToRegions: (mp: PCMultiPolygon) => this.multiPolygonToRegions(mp),
     };
@@ -171,6 +176,40 @@ export class SlicePipelineGeometry {
 
   protected offsetContour(contour: THREE.Vector2[], offset: number): THREE.Vector2[] {
     return offsetContourFromModule(contour, offset, (points) => this.signedArea(points));
+  }
+
+  public async prepareClipper2Offsets(): Promise<void> {
+    try {
+      await loadClipper2Module();
+    } catch (err) {
+      if (!this.clipper2OffsetWarningShown) {
+        console.warn('Clipper2 WASM offsets unavailable; falling back to JS offsets.', err);
+        this.clipper2OffsetWarningShown = true;
+      }
+    }
+  }
+
+  public offsetContourFast(contour: THREE.Vector2[], offset: number): THREE.Vector2[] {
+    const clipperContour = this.tryOffsetContourClipper2(contour, offset);
+    return clipperContour ?? this.offsetContour(contour, offset);
+  }
+
+  private tryOffsetContourClipper2(contour: THREE.Vector2[], offset: number): THREE.Vector2[] | null {
+    if (contour.length < 3) return null;
+    const windingDelta = this.signedArea(contour) >= 0 ? -offset : offset;
+    try {
+      const paths = offsetPathsClipper2Sync([contour], windingDelta, { joinType: 'miter' });
+      if (!paths || paths.length === 0) return null;
+      return paths
+        .filter((path) => path.length >= 3)
+        .sort((a, b) => Math.abs(this.signedArea(b)) - Math.abs(this.signedArea(a)))[0] ?? null;
+    } catch (err) {
+      if (!this.clipper2OffsetWarningShown) {
+        console.warn('Clipper2 WASM offset failed; falling back to JS offsets.', err);
+        this.clipper2OffsetWarningShown = true;
+      }
+      return null;
+    }
   }
 
   public simplifyClosedContour(points: THREE.Vector2[], tolerance: number): THREE.Vector2[] {

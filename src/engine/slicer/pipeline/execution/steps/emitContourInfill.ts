@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import polygonClipping, { type MultiPolygon as PCMultiPolygon, type Ring as PCRing } from 'polygon-clipping';
+import { booleanMultiPolygonClipper2Sync } from '../../../geometry/clipper2Boolean';
 
 function representativeLineWidth(lineWidth: number | number[] | undefined, fallback: number): number {
   if (Array.isArray(lineWidth)) {
@@ -7,6 +8,26 @@ function representativeLineWidth(lineWidth: number | number[] | undefined, fallb
     return lineWidth.reduce((sum, width) => sum + width, 0) / lineWidth.length;
   }
   return lineWidth ?? fallback;
+}
+
+function offsetContourFast(pipeline: any, contour: THREE.Vector2[], offset: number): THREE.Vector2[] {
+  return typeof pipeline.offsetContourFast === 'function'
+    ? pipeline.offsetContourFast(contour, offset)
+    : pipeline.offsetContour(contour, offset);
+}
+
+function unionMultiPolygon(mp: PCMultiPolygon): PCMultiPolygon {
+  const clipperResult = booleanMultiPolygonClipper2Sync(mp, [], 'union');
+  if (clipperResult) return clipperResult;
+  return mp.length === 1 ? mp : polygonClipping.union(mp[0], ...mp.slice(1));
+}
+
+function intersectMultiPolygon(a: PCMultiPolygon, b: PCMultiPolygon): PCMultiPolygon {
+  return booleanMultiPolygonClipper2Sync(a, b, 'intersection') ?? polygonClipping.intersection(a, b);
+}
+
+function differenceMultiPolygon(a: PCMultiPolygon, b: PCMultiPolygon): PCMultiPolygon {
+  return booleanMultiPolygonClipper2Sync(a, b, 'difference') ?? polygonClipping.difference(a, b);
 }
 
 export function emitContourInfill(pipeline: any, run: any, layer: any, contoursData: any[]) {
@@ -31,12 +52,12 @@ export function emitContourInfill(pipeline: any, run: any, layer: any, contoursD
       const skinOverlap = ((pp.skinOverlapPercent ?? 0) / 100) * pp.infillLineWidth;
       const totalExpand = skinOverlap + (isSolidTop ? (pp.topSkinExpandDistance ?? 0) : 0) + (isSolidBottom ? (pp.bottomSkinExpandDistance ?? 0) : 0);
       for (const region of infillRegions) {
-        let skinContour = totalExpand > 0 ? pipeline.offsetContour(region.contour, -totalExpand) : region.contour;
+        let skinContour = totalExpand > 0 ? offsetContourFast(pipeline, region.contour, -totalExpand) : region.contour;
         const srw = pp.skinRemovalWidth ?? 0;
         if (srw > 0 && skinContour.length >= 3) {
-          const eroded = pipeline.offsetContour(skinContour, srw);
+          const eroded = offsetContourFast(pipeline, skinContour, srw);
           if (eroded.length >= 3) {
-            const dilated = pipeline.offsetContour(eroded, -srw);
+            const dilated = offsetContourFast(pipeline, eroded, -srw);
             if (dilated.length >= 3) skinContour = dilated;
           } else skinContour = [];
         }
@@ -80,12 +101,12 @@ export function emitContourInfill(pipeline: any, run: any, layer: any, contoursD
           shadowTris.push([ring]);
         }
         if (shadowTris.length > 0) {
-          try { overhangShadowMP = shadowTris.length === 1 ? shadowTris : polygonClipping.union(shadowTris[0], ...shadowTris.slice(1)); } catch { overhangShadowMP = []; }
+          try { overhangShadowMP = unionMultiPolygon(shadowTris); } catch { overhangShadowMP = []; }
         }
       }
       const infillOverlapMm = ((pp.infillOverlap ?? 10) / 100) * pp.infillLineWidth;
       for (const baseRegion of infillRegions) {
-        const infillRegion = infillOverlapMm > 0 ? pipeline.offsetContour(baseRegion.contour, -infillOverlapMm) : baseRegion.contour;
+        const infillRegion = infillOverlapMm > 0 ? offsetContourFast(pipeline, baseRegion.contour, -infillOverlapMm) : baseRegion.contour;
         const minInfFill = pp.minInfillArea ?? 0;
         const infillRegionOk = minInfFill <= 0 || (() => { const b = pipeline.contourBBox(infillRegion); return (b.maxX - b.minX) * (b.maxY - b.minY) >= minInfFill; })();
         if (!infillRegionOk) continue;
@@ -105,8 +126,8 @@ export function emitContourInfill(pipeline: any, run: any, layer: any, contoursD
           let boostedMP: PCMultiPolygon = [];
           let normalMP: PCMultiPolygon = infillRegionMP;
           try {
-            boostedMP = polygonClipping.intersection(infillRegionMP, overhangShadowMP);
-            normalMP = polygonClipping.difference(infillRegionMP, overhangShadowMP);
+            boostedMP = intersectMultiPolygon(infillRegionMP, overhangShadowMP);
+            normalMP = differenceMultiPolygon(infillRegionMP, overhangShadowMP);
           } catch { boostedMP = []; normalMP = infillRegionMP; }
           const boostedDensity = Math.min(100, effectiveDensity * 1.5);
           for (const region of pipeline.multiPolygonToRegions(boostedMP)) infillLines.push(...genPattern(region.contour, boostedDensity, region.holes));
@@ -129,7 +150,7 @@ export function emitContourInfill(pipeline: any, run: any, layer: any, contoursD
       gcode.push(`; Extra skin walls (${pp.extraSkinWallCount})`);
       for (let ew = 0; ew < (pp.extraSkinWallCount ?? 0); ew++) {
         const baseLoop = (item.outerWallCount > 0 ? item.wallSets[item.outerWallCount - 1] : contour.points);
-        const loop = ew === 0 ? baseLoop : pipeline.offsetContour(baseLoop, ew * pp.infillLineWidth);
+        const loop = ew === 0 ? baseLoop : offsetContourFast(pipeline, baseLoop, ew * pp.infillLineWidth);
         if (loop.length < 3) break;
         emitter.travelTo(loop[0].x, loop[0].y, moves);
         for (let pi = 1; pi < loop.length; pi++) {

@@ -166,6 +166,7 @@ export async function runSlicePipeline(
     throw new Error('Non-planar slicing is not supported by the current planar G-code pipeline.');
   }
   const run = prepareSliceRun(pipeline, geometries);
+  await pipeline.prepareClipper2Offsets?.();
   let preparedLayers: Array<any | null> | null = null;
 
   if (shouldUseLayerWorkerPool(run)) {

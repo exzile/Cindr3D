@@ -234,7 +234,7 @@
 
 ## ARACHNE-9 PHASE 2 — libArachne integration
 
-- [ ] **9.2A** [owner: claude, depends on 9.1E] Vendor libArachne source
+- [.] **9.2A** [owner: claude, depends on 9.1E] Vendor libArachne source
       from Cura into `wasm/vendor/libArachne/`. The library has Cura-
       specific dependencies on `cura/utils/Polygons.h` etc. — replace
       those with the same flat-array marshaling pattern from 9.1C so
@@ -242,6 +242,35 @@
       types. This decoupling is the bulk of the work; budget 1.5 days.
       Reference: Cura commit `5.6.0` is known-good for stable libArachne
       API surface.
+
+- [x] **9.2A.1** [owner: claude] Copy 22 libArachne sources
+      (BeadingStrategy/*, SkeletalTrapezoidation*, WallToolPaths*) into
+      `wasm/vendor/libArachne/{include,src}/`. Inventory + dep map +
+      decoupling plan written to `wasm/vendor/libArachne/INVENTORY.md`.
+      Done 2026-04-25.
+
+- [ ] **9.2A.2** [owner: claude or codex] Vendor utils/* dep tree
+      (~1500 LOC: IntPoint, polygon, ExtrusionLine/Junction,
+      HalfEdgeGraph, SparsePointGrid, linearAlg2D, VoronoiUtils,
+      Simplify, PolylineStitcher, polygonUtils, section_type,
+      BoostInterface), plus stub `spdlog/spdlog.h` and
+      `scripta/logger.h` to no-ops, plus replace 3 range-v3 sites with
+      imperative loops in WallToolPaths/SkeletalTrapezoidation/
+      BeadingStrategyFactory. Header-only edits, no compilation yet.
+      ~0.5 day. See INVENTORY.md for the full table.
+
+- [ ] **9.2A.3** [owner: claude] Replace `Cura::Settings&` constructor
+      arg in `WallToolPaths` and `BeadingStrategyFactory::makeStrategy`
+      with a flat `ArachneConfig` C struct (12 fields — see
+      INVENTORY.md). Audit `settings.get<...>()` callsites and rewrite
+      each to read the struct field. ~0.5 day.
+
+- [ ] **9.2A.4** [owner: claude, depends on 9.2A.3] Compile
+      BeadingStrategy/*.cpp + WallToolPaths.cpp + SkeletalTrapezoidation.cpp
+      under em++ with `-I wasm/vendor/libArachne/include
+      -I wasm/vendor/stubs -I wasm/.toolchain/boost_1_84_0`. Iterate
+      on linker / include errors. Reuse `wasm/src/voronoi.cpp`'s Boost
+      binding for the trapezoidation step. ~0.5 day.
 
 - [x] **9.2B** [owner: codex, can start when 9.2A starts] In parallel
       with 9.2A's C++ work, plumb the existing TS pipeline so the
@@ -320,7 +349,7 @@
       `src/engine/slicer/geometry/clipper2Wasm.ts` exposes
       `offsetPathsClipper2(paths, delta, opts)` and is unit-tested. Done.
 
-- [ ] **9.4A.2** [owner: codex] Replace `polygonClipping`-based offset
+- [x] **9.4A.2** [owner: codex] Replace `polygonClipping`-based offset
       callsites with `offsetPathsClipper2`. Hot ones first:
       `src/engine/slicer/pipeline/perimeters.ts`,
       `src/engine/slicer/pipeline/infill.ts`,
@@ -329,13 +358,21 @@
       pipeline so the await is ergonomically free. Verify against
       `adjustable_support_foot.stl` slice that walls are byte-equivalent
       to the JS path before deletion.
+      STATUS 2026-04-25: hot offset callsites now route through
+      `offsetContourFast`, which uses prewarmed Clipper2 WASM and falls
+      back to the existing JS offset path. Added parity coverage around
+      legacy offset direction. Full local test suite and production build
+      pass; fixture slice byte-equivalence remains a follow-up because the
+      STL fixture is not present locally.
       ~0.5 day.
 
-- [ ] **9.4A.3** [owner: claude] Extend `wasm/src/clipper2.cpp` with
-      `_unionPaths / _intersectPaths / _differencePaths / _xorPaths`
-      using the same flat path-counts + interleaved double-points ABI
-      as `_offsetPaths`. ClipperD already exposes `Union/Intersect/
-      Difference/Xor`. ~0.5 day.
+- [x] **9.4A.3** [owner: claude] Extended `wasm/src/clipper2.cpp` with
+      `_booleanPaths(subj*, clip*, op, fillRule, precision)` (single
+      entry, op selector) reusing the existing offset emit pipeline. TS
+      adapter exposes `booleanPathsClipper2(subjects, clips, op, opts)`
+      with op ∈ {union, intersection, difference, xor}, fill rules
+      {evenodd, nonzero, positive, negative}. 4 wasm tests pass
+      (offset, union, difference, intersection). Done 2026-04-25.
 
 - [ ] **9.4A.4** [owner: codex, depends on 9.4A.3] Replace remaining
       `polygonClipping.{union,intersection,difference}` callsites
@@ -352,13 +389,49 @@
       (vendoring Boost + Clipper2); the GitHub Actions YAML that runs
       `docker build && diff against checked-in dist/` is still pending.
 
-- [.] **9.4C** [owner: anyone] Bundle-size budget: add a check that the
-      WASM artifact stays under 500KB compressed. Today libArachne +
-      Boost is ~300KB compressed; future additions could blow this if
-      not monitored. ~0.25 day.
-      STATUS 2026-04-25: current sizes well under budget (voronoi.wasm
-      50KB + clipper2.wasm 76KB = 126KB raw, ~40KB gzipped). Programmatic
-      budget check in CI still pending.
+- [x] **9.4C** [owner: claude] Bundle-size budget enforced via vitest
+      test at `wasm/test/bundleBudget.test.ts`. Per-module budgets:
+      voronoi 60KB, clipper2 200KB, arachne 350KB; total cap 500KB raw.
+      Test gracefully skips not-yet-built modules (ENOENT) so it works
+      pre-9.2C. Done 2026-04-25.
+
+## ARACHNE-9 KNOWN ISSUES (live)
+# Captured 2026-04-25 during the Phase-1 + 9.4A push.
+
+- [x] **9.X.1** [owner: codex+claude] RESOLVED 2026-04-25. The working
+      pattern in both adapters is now:
+          const fsSpec = 'node:fs/promises';
+          const fs = await import(/* @vite-ignore */ fsSpec);
+      Or codex's equivalent template-literal form
+          await import(`${nodePrefix}:fs/promises`)
+      — both bypass Vite's static analysis (dynamic specifier) AND
+      satisfy Vitest's evaluator. The broken pattern to NEVER reintroduce
+      is `new Function('specifier', 'return import(specifier)')` — it
+      trips Vitest with "A dynamic import callback was not specified".
+      Captured in memory file `wasm_patterns.md`.
+
+- [ ] **9.X.2** [owner: anyone] Voronoi WASM `is_curved()` parabolic
+      edges currently emit only endpoints (linear approximation). For
+      thin-neck regions in real meshes this loses the parabolic shape
+      that makes the medial axis smooth. Port `boost::polygon::discretize`
+      or sample JS-side in 9.1D follow-up. Not blocking — JS path
+      already gets these exactly right; the WASM path will be a hair
+      coarser until fixed. Caught by `adjustable_support_foot.stl` if
+      flap walls reappear after 9.3 default flip.
+
+- [ ] **9.X.3** [owner: anyone] Voronoi WASM `vertIndexOf` is O(V)
+      linear search in `wasm/src/voronoi.cpp`. Fine at N≤2000 (per-edge
+      lookup, total O(V·E) is still well under the boost sweep cost),
+      but if 9.1E perf comparison shows it's hot, swap to
+      `unordered_map<const vertex_type*, int>` built once during the
+      vertex pass.
+
+- [ ] **9.X.4** [owner: codex] `wasm/.toolchain/` contains ~1.5GB of
+      vendored CuraEngine + emsdk + Boost + Clipper2 sources. Already
+      .gitignored. Should also be excluded from any tsconfig project
+      references and from `npm pack`/Vite's file-watcher to avoid IDE
+      indexing churn. Vitest exclude already added; tsconfig + Vite
+      watch config still pending.
 
 # Coordination notes:
 #   - 9.1A and 9.1B run in parallel (both ~half a day)

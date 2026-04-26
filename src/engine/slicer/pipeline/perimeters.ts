@@ -4,6 +4,7 @@ import polygonClipping, { type MultiPolygon as PCMultiPolygon, type Ring as PCRi
 import type { PrintProfile } from '../../../types/slicer';
 import type { PerimeterDeps } from '../../../types/slicer-pipeline-deps.types';
 import type { Contour, GeneratedPerimeters, InfillRegion, WallLineWidth } from '../../../types/slicer-pipeline.types';
+import { booleanMultiPolygonClipper2Sync } from '../geometry/clipper2Boolean';
 
 function toRing(pts: THREE.Vector2[]): PCRing {
   const ring: PCRing = pts.map((p) => [p.x, p.y] as [number, number]);
@@ -23,6 +24,22 @@ function fromRing(ring: PCRing): THREE.Vector2[] {
   return pts;
 }
 
+function unionMultiPolygon(mp: PCMultiPolygon): PCMultiPolygon {
+  const clipperResult = booleanMultiPolygonClipper2Sync(mp, [], 'union');
+  if (clipperResult) return clipperResult;
+  return mp.length === 1 ? mp : polygonClipping.union(mp[0], ...mp.slice(1));
+}
+
+function intersectMultiPolygon(a: PCMultiPolygon, b: PCMultiPolygon): PCMultiPolygon {
+  return booleanMultiPolygonClipper2Sync(a, b, 'intersection') ?? polygonClipping.intersection(a, b);
+}
+
+function differenceMultiPolygon(a: PCMultiPolygon, clips: PCMultiPolygon[]): PCMultiPolygon {
+  if (clips.length === 0) return a;
+  const mergedClips = clips.length === 1 ? clips[0] : unionMultiPolygon(clips.flat());
+  return booleanMultiPolygonClipper2Sync(a, mergedClips, 'difference') ?? polygonClipping.difference(a, ...clips);
+}
+
 export function closeContourGaps(
   contours: Contour[],
   r: number,
@@ -40,7 +57,7 @@ export function closeContourGaps(
 
   let unioned: PCMultiPolygon;
   try {
-    unioned = inflated.length === 1 ? inflated : polygonClipping.union(inflated[0], ...inflated.slice(1));
+    unioned = unionMultiPolygon(inflated);
   } catch {
     return contours;
   }
@@ -164,7 +181,7 @@ export function generatePerimetersEx(
     const holeMP: PCMultiPolygon = [[toRing(hole)]];
     const outerMP: PCMultiPolygon = [[toRing(outer)]];
     try {
-      const intersection = polygonClipping.intersection(outerMP, holeMP);
+      const intersection = intersectMultiPolygon(outerMP, holeMP);
       let intArea = 0;
       for (const poly of intersection) {
         if (poly.length > 0) intArea += ringArea(poly[0]);
@@ -182,7 +199,7 @@ export function generatePerimetersEx(
     const aMP: PCMultiPolygon = [[toRing(a)]];
     const bMP: PCMultiPolygon = [[toRing(b)]];
     try {
-      const intersection = polygonClipping.intersection(aMP, bMP);
+      const intersection = intersectMultiPolygon(aMP, bMP);
       for (const poly of intersection) {
         if (poly.length > 0 && ringArea(poly[0]) > 1e-6) return true;
       }
@@ -271,7 +288,7 @@ export function generatePerimetersEx(
       } else {
         const holeMPs: PCMultiPolygon[] = holesExpanded.map((h) => [[toRing([...h].reverse())]]);
         try {
-          result = polygonClipping.difference(result, ...holeMPs);
+          result = differenceMultiPolygon(result, holeMPs);
         } catch {
           result = [[toRing(outerShrunk)]];
         }

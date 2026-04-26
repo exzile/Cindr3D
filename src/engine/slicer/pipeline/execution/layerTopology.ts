@@ -5,6 +5,7 @@ import type {
   LayerTopologyOptions,
 } from '../../../../types/slicer-pipeline-layer-topology.types';
 
+import { booleanMultiPolygonClipper2Sync } from '../../geometry/clipper2Boolean';
 import type { Contour } from '../../../../types/slicer-pipeline.types';
 
 function optimizeContourOrder(
@@ -96,7 +97,11 @@ function buildBridgeRegionChecker(
   let bridgeMultiPolygon: PCMultiPolygon = [];
   if (!isFirstLayer && currentLayerMaterial.length > 0 && previousLayerMaterial.length > 0) {
     try {
-      bridgeMultiPolygon = polygonClipping.difference(currentLayerMaterial, previousLayerMaterial);
+      bridgeMultiPolygon = booleanMultiPolygonClipper2Sync(
+        currentLayerMaterial,
+        previousLayerMaterial,
+        'difference',
+      ) ?? polygonClipping.difference(currentLayerMaterial, previousLayerMaterial);
     } catch {
       bridgeMultiPolygon = [];
     }

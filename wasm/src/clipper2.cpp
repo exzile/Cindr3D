@@ -4,17 +4,17 @@
 #include <clipper2/clipper.h>
 
 using Clipper2Lib::ClipType;
-using Clipper2Lib::DifferenceD;
+using Clipper2Lib::Difference;
 using Clipper2Lib::EndType;
 using Clipper2Lib::FillRule;
 using Clipper2Lib::InflatePaths;
-using Clipper2Lib::IntersectD;
+using Clipper2Lib::Intersect;
 using Clipper2Lib::JoinType;
 using Clipper2Lib::PathD;
 using Clipper2Lib::PathsD;
 using Clipper2Lib::PointD;
-using Clipper2Lib::UnionD;
-using Clipper2Lib::XorD;
+using Clipper2Lib::Union;
+using Clipper2Lib::Xor;
 
 namespace {
 // Single result buffer shared across offset and boolean ops — both
@@ -155,6 +155,51 @@ int32_t emitOffsetPoints(double* out, int32_t capacity_doubles) {
 
 void resetOffsetPaths() {
   g_offset_paths.clear();
+}
+
+// Boolean op selector (matches the JS adapter's enum):
+//   0 = union, 1 = intersection, 2 = difference, 3 = xor.
+//
+// Subject and clip share the offset emit pipeline (`_getOffsetCounts`,
+// `_emitOffsetPathCounts`, `_emitOffsetPoints`, `_resetOffsetPaths`)
+// because both produce a PathsD result. Single shared `g_result_paths`
+// — caller treats this module as single-instance like the Voronoi one.
+//
+// Returns 0 on success, -1 on degenerate input, -2 on internal failure.
+int32_t booleanPaths(
+  const double* subj_points,
+  const int32_t* subj_counts,
+  int32_t subj_count,
+  const double* clip_points,
+  const int32_t* clip_counts,
+  int32_t clip_count,
+  int32_t op,
+  int32_t fill_rule_id,
+  int32_t precision
+) {
+  g_result_paths.clear();
+  PathsD subjects;
+  PathsD clips;
+  if (!decode_paths(subj_points, subj_counts, subj_count, subjects)) return -1;
+  if (!decode_paths(clip_points, clip_counts, clip_count, clips)) return -1;
+
+  const FillRule fr = fill_rule_from_int(fill_rule_id);
+  // Clipper2's UnionD/IntersectD/DifferenceD take precision as digits.
+  const int dec = precision;
+
+  try {
+    switch (op) {
+      case 0: g_result_paths = Union(subjects, clips, fr, dec); break;
+      case 1: g_result_paths = Intersect(subjects, clips, fr, dec); break;
+      case 2: g_result_paths = Difference(subjects, clips, fr, dec); break;
+      case 3: g_result_paths = Xor(subjects, clips, fr, dec); break;
+      default: return -1;
+    }
+    return 0;
+  } catch (...) {
+    g_result_paths.clear();
+    return -2;
+  }
 }
 
 }

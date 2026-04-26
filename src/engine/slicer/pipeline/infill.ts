@@ -4,6 +4,7 @@ import type { PrintProfile } from '../../../types/slicer';
 import type { InfillDeps } from '../../../types/slicer-pipeline-deps.types';
 import type { InfillLine } from '../../../types/slicer-pipeline-infill.types';
 import type { InfillRegion } from '../../../types/slicer-pipeline.types';
+import { booleanMultiPolygonClipper2Sync } from '../geometry/clipper2Boolean';
 
 function pcRingToV2(ring: PCRing): THREE.Vector2[] {
   const pts: THREE.Vector2[] = [];
@@ -34,6 +35,18 @@ export function multiPolygonToRegions(mp: PCMultiPolygon): InfillRegion[] {
     regions.push({ contour, holes });
   }
   return regions;
+}
+
+function unionMultiPolygon(mp: PCMultiPolygon): PCMultiPolygon {
+  const clipperResult = booleanMultiPolygonClipper2Sync(mp, [], 'union');
+  if (clipperResult) return clipperResult;
+  return mp.length === 1 ? mp : polygonClipping.union(mp[0], ...mp.slice(1));
+}
+
+function differenceMultiPolygon(a: PCMultiPolygon, clips: PCMultiPolygon[]): PCMultiPolygon {
+  if (clips.length === 0) return a;
+  const mergedClips = clips.length === 1 ? clips[0] : unionMultiPolygon(clips.flat());
+  return booleanMultiPolygonClipper2Sync(a, mergedClips, 'difference') ?? polygonClipping.difference(a, ...clips);
 }
 
 export function generateScanLines(
@@ -229,7 +242,7 @@ function generateConcentricInfill(
     if (holesExpanded.length > 0) {
       const holeMPs: PCMultiPolygon[] = holesExpanded.map((h) => [[contourToClosedPCRing([...h].reverse())]]);
       try {
-        region = polygonClipping.difference(region, ...holeMPs);
+        region = differenceMultiPolygon(region, holeMPs);
       } catch {
         break;
       }
