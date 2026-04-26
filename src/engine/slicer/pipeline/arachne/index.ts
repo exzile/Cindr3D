@@ -68,7 +68,7 @@ const ARACHNE_DEBUG_GLOBAL_KEY = '__arachneDebug';
  *  back to the main thread on slice completion for inspection. */
 export interface ArachneRegionStat {
   layerIndex: number;
-  outcome: 'arachne' | 'classic-fallback-no-paths' | 'classic-fallback-error' | 'classic-cap';
+  outcome: 'arachne' | 'classic-fallback-no-paths' | 'classic-fallback-error';
   totalEdges: number;
   backend?: ArachneBackendName;
   voronoiVertices?: number;
@@ -108,14 +108,6 @@ export function drainArachneStats(): ArachneRegionStat[] {
   return out;
 }
 
-/** Edge-count cap before falling back to classic. The pure-JS indexed
- *  Voronoi handles ~50-300 edges per region in milliseconds; above ~500
- *  it scales superlinearly and a high-resolution STL import (1500+
- *  edges per region) takes minutes per layer. Default cap stays at 400
- *  so dense geometries silently fall to classic; users with simpler CAD
- *  geometry get Arachne's transition-zone smoothing automatically. */
-const ARACHNE_MAX_EDGES = 400;
-
 export function generatePerimetersArachne(
   outerContour: THREE.Vector2[],
   holeContours: THREE.Vector2[][],
@@ -125,30 +117,10 @@ export function generatePerimetersArachne(
   printProfile: PrintProfile,
   deps: PerimeterDeps,
 ): GeneratedPerimeters {
-  // PERF: Arachne is significantly more expensive than classic on dense
-  // polygons (`O(N · K²)` triples + `O(K)` per-candidate work, vs. classic's
-  // single Clipper pass per wall depth which is effectively `O(N log N)`
-  // via wasm). For very dense regions we'd just be paying the Arachne cost
-  // and then falling back to classic anyway when it fails. Bail early.
   const debug = (globalThis as Record<string, unknown>)[ARACHNE_DEBUG_GLOBAL_KEY] === true;
   const statsBag = debug ? getStats() : null;
   const totalEdges = outerContour.length + holeContours.reduce((s, h) => s + h.length, 0);
-  const selectedBackend = resolveArachneBackend(printProfile.arachneBackend ?? 'js');
-
-  if (!selectedBackend.generatePaths && totalEdges > ARACHNE_MAX_EDGES) {
-    if (statsBag) {
-      statsBag.entries.push({
-        layerIndex: statsBag.layerIndex,
-        outcome: 'classic-cap',
-        totalEdges,
-        backend: selectedBackend.name,
-      });
-    }
-    return generatePerimetersEx(
-      outerContour, holeContours, wallCount, lineWidth, outerWallInset,
-      printProfile, deps,
-    );
-  }
+  const selectedBackend = resolveArachneBackend(printProfile.arachneBackend ?? 'wasm');
 
   try {
     const t0 = debug ? performance.now() : 0;

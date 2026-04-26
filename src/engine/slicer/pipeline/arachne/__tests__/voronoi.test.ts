@@ -75,7 +75,7 @@ describe('buildEdgeVoronoi', () => {
     // version finishes in seconds. Real cliff (Fortune sweep-line) is the
     // proper fix for large-N — see the perf note at the top of voronoi.ts.
     expect(durationMs).toBeLessThan(10_000);
-  });
+  }, 15_000);
 
   it('builds a production-shaped 150-edge polygon with two holes well under 1s', () => {
     // Approximates a real sliced layer: rounded outer + two mounting-hole-

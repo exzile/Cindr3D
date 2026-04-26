@@ -156,12 +156,8 @@ export class SlicePipelineGeometry {
       signedArea: (points: THREE.Vector2[]) => this.signedArea(points),
       multiPolygonToRegions: (mp: PCMultiPolygon) => this.multiPolygonToRegions(mp),
     };
-    // Default to classic. The Arachne implementation here is correct on
-    // simple geometries (23 unit tests) but incomplete: it lacks proper
-    // bead-to-bead transition zones and graph traversal at branch points,
-    // which means dense / non-convex polygons produce visible wall
-    // artifacts. Opt in per-profile via `wallGenerator: 'arachne'` until
-    // the remaining work is done — see TaskLists.txt § ARACHNE-8.
+    // Default is Arachne via libArachne WASM (ARACHNE-9). Profile can opt
+    // back to `wallGenerator: 'classic'` for fixed-width walls.
     if (this.printProfile.wallGenerator === 'arachne') {
       return generatePerimetersArachne(
         outerContour, holeContours, wallCount, lineWidth, outerWallInset,

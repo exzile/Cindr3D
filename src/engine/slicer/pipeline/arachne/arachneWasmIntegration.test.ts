@@ -57,12 +57,10 @@ const wasmProfile = {
   arachneBackend: 'wasm',
 } as unknown as PrintProfile;
 
-// 9.3A known gaps with the current temporary Clipper compatibility shim:
-// acuteCorner currently produces no WASM paths, so the slicer falls back to
-// classic fixed-width walls.
-const knownNoWasmPathFixtures = new Set(['acuteCorner']);
+// All fixtures (including acuteCorner) now flow through the WASM backend
+// after 9.3A.1 wired Clipper2 boolean operations into the libArachne shim.
 const knownWasmAbortFixtures = new Set<string>();
-const wasmPathFixtures = allFixtures.filter((fixture) => !knownNoWasmPathFixtures.has(fixture.name));
+const wasmPathFixtures = allFixtures;
 const perimeterFixtures = allFixtures.filter((fixture) => !knownWasmAbortFixtures.has(fixture.name));
 
 describe('Arachne WASM backend integration', () => {
