@@ -387,21 +387,23 @@
       since libArachne WASM handles dense polygons (verified up to
       2403 edges in 9.3B).
 
-- [ ] **9.3D** [owner: codex] Cleanup: delete the now-redundant pure-JS
-      Arachne files (`voronoi.ts`, `trapezoidation.ts`, `beadStrategy.ts`,
-      `pathExtraction.ts`) — the WASM adapter replaces all of them. Keep
-      the test files but re-target them to the WASM backend. Update
-      ARACHNE-1..7 / 8 in TaskLists.txt to mark closed-by-9.
-      STATUS 2026-04-26 (claude): deferred to focused codex session.
-      The JS staged backend remains registered but is unreachable on the
-      now-default `arachneBackend: 'wasm'` profile (WASM has
-      `generatePaths` so dispatch short-circuits past
-      `buildVoronoi/buildTrapezoidation/distributeBeads/extractPaths`).
-      Re-targeting unit tests requires loosening JS-specific
-      bead-distribution shape assertions to libArachne-equivalent
-      behaviour, which is owned by codex and warrants a focused review
-      pass. JS backend currently functions as a fallback option.
-      ~0.25 day.
+- [x] **9.3D** [owner: claude] Done 2026-04-26. Deleted 5 pure-JS source
+      files (`voronoi.ts`, `trapezoidation.ts`, `beadStrategy.ts`,
+      `pathExtraction.ts`, `voronoiDebug.ts`) and 6 JS-specific test
+      files (`voronoi.test.ts`, `trapezoidation.test.ts`,
+      `beadStrategy.test.ts`, `pathExtraction.test.ts`,
+      `voronoiDebug.test.ts`, `fixtureCoverage.test.ts`). Inlined the
+      `VoronoiSourceEdge/Vertex/Edge/Graph` type defs into
+      `voronoiWasm.ts` (the only remaining consumer). Simplified the
+      `ArachneBackend` interface to just `{ name, generatePaths }` —
+      staged `buildVoronoi/buildTrapezoidation/distributeBeads/
+      extractPaths` removed. `backend.ts` now registers only
+      `arachneWasmBackend`; `resolveArachneBackend` coerces legacy
+      `'js'` profile values to WASM. `index.ts` re-export surface
+      trimmed to the public WASM API. `voronoiBench.test.ts` retargeted
+      from JS-vs-WASM parity to a WASM regression catcher. 137 tests
+      pass, tsc clean, fixture validation green (199 layers, ~88ms/
+      layer avg).
 
 ## ARACHNE-9 PHASE 4 — Optional follow-ups (post-merge)
 

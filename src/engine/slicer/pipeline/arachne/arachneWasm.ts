@@ -262,16 +262,8 @@ export function generateArachnePathsWasmSync(
   return generatePathsWithModule(mod, outerContour, holeContours, wallCount, lineWidth, outerWallInset, printProfile);
 }
 
-function unavailable(): never {
-  throw new Error('arachneWasm: staged JS methods are replaced by generatePaths()');
-}
-
 export const arachneWasmBackend: ArachneBackend = {
   name: 'wasm',
-  buildVoronoi: unavailable as unknown as ArachneBackend['buildVoronoi'],
-  buildTrapezoidation: unavailable as unknown as ArachneBackend['buildTrapezoidation'],
-  distributeBeads: unavailable as unknown as ArachneBackend['distributeBeads'],
-  extractPaths: unavailable as unknown as ArachneBackend['extractPaths'],
   generatePaths: (
     outerContour: THREE.Vector2[],
     holeContours: THREE.Vector2[][],

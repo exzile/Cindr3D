@@ -13,7 +13,36 @@
 import * as THREE from 'three';
 
 import { signedArea } from '../../geometry/contourUtils';
-import type { VoronoiEdge, VoronoiGraph, VoronoiSourceEdge, VoronoiVertex } from './voronoi';
+
+export interface VoronoiSourceEdge {
+  id: number;
+  contourIndex: number;
+  edgeIndex: number;
+  isHole: boolean;
+  a: THREE.Vector2;
+  b: THREE.Vector2;
+}
+
+export interface VoronoiVertex {
+  id: number;
+  point: THREE.Vector2;
+  radius: number;
+  sourceEdgeIds: number[];
+}
+
+export interface VoronoiEdge {
+  id: number;
+  from: number;
+  to: number;
+  sourceEdgeIds: [number, number];
+  points: THREE.Vector2[];
+}
+
+export interface VoronoiGraph {
+  sourceEdges: VoronoiSourceEdge[];
+  vertices: VoronoiVertex[];
+  edges: VoronoiEdge[];
+}
 
 // The dist module is an ES6 default export: `createVoronoiModule(opts) =>
 // Promise<VoronoiModule>`. Built by wasm/build.sh, checked into
