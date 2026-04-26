@@ -94,9 +94,9 @@ async function loadModule(): Promise<VoronoiModule> {
     const maybeProcess = (globalThis as { process?: { versions?: { node?: string } } }).process;
     if (maybeProcess?.versions?.node) {
       const nodePrefix = 'node';
-      const fs = await import(`${nodePrefix}:fs/promises`);
-      const url = await import(`${nodePrefix}:url`);
-      const path = await import(`${nodePrefix}:path`);
+      const fs = await import(/* @vite-ignore */ `${nodePrefix}:fs/promises`);
+      const url = await import(/* @vite-ignore */ `${nodePrefix}:url`);
+      const path = await import(/* @vite-ignore */ `${nodePrefix}:path`);
       const here = path.dirname(url.fileURLToPath(import.meta.url));
       const wasmPath = path.resolve(here, '../../../../../wasm/dist/voronoi.wasm');
       const buf = await fs.readFile(wasmPath);

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import polygonClipping, { type MultiPolygon as PCMultiPolygon, type Ring as PCRing } from 'polygon-clipping';
+import type { MultiPolygon as PCMultiPolygon, Ring as PCRing } from 'polygon-clipping';
 import type {
   LayerTopology,
   LayerTopologyOptions,
@@ -97,11 +97,14 @@ function buildBridgeRegionChecker(
   let bridgeMultiPolygon: PCMultiPolygon = [];
   if (!isFirstLayer && currentLayerMaterial.length > 0 && previousLayerMaterial.length > 0) {
     try {
-      bridgeMultiPolygon = booleanMultiPolygonClipper2Sync(
-        currentLayerMaterial,
-        previousLayerMaterial,
-        'difference',
-      ) ?? polygonClipping.difference(currentLayerMaterial, previousLayerMaterial);
+      // ARACHNE-9.4A.4: worker awaits Clipper2 load — null here means a
+      // contract violation, not a transient miss. Catch handles it as
+      // empty bridge region (degenerate layer).
+      const result = booleanMultiPolygonClipper2Sync(
+        currentLayerMaterial, previousLayerMaterial, 'difference',
+      );
+      if (result === null) throw new Error('layerTopology: Clipper2 WASM not loaded');
+      bridgeMultiPolygon = result;
     } catch {
       bridgeMultiPolygon = [];
     }

@@ -1,5 +1,5 @@
 import type * as THREE from 'three';
-import polygonClipping, { type MultiPolygon as PCMultiPolygon, type Ring as PCRing } from 'polygon-clipping';
+import type { MultiPolygon as PCMultiPolygon, Ring as PCRing } from 'polygon-clipping';
 import type { PrintProfile } from '../../../../types/slicer';
 import type { PerimeterDeps } from '../../../../types/slicer-pipeline-deps.types';
 import type { GeneratedPerimeters, InfillRegion } from '../../../../types/slicer-pipeline.types';
@@ -200,12 +200,15 @@ function computeArachneInfillGeometry(
       acc.push(polygon);
       return acc;
     }, []);
-    const mergedHoles: PCMultiPolygon = holesMP.length === 1
-      ? [holesMP[0]]
-      : (booleanMultiPolygonClipper2Sync(allHolePolygons, [], 'union')
-        ?? polygonClipping.union(holesMP[0], ...holesMP.slice(1)));
-    const diff = booleanMultiPolygonClipper2Sync(outerMP, mergedHoles, 'difference')
-      ?? polygonClipping.difference(outerMP, ...holesMP);
+    // ARACHNE-9.4A.4: worker pre-awaits Clipper2 load. Throw on null
+    // (caught by outer try/catch which falls back to insetOuter).
+    const mergedHolesResult: PCMultiPolygon | null = holesMP.length === 1
+      ? holesMP[0]
+      : booleanMultiPolygonClipper2Sync(allHolePolygons, [], 'union');
+    if (mergedHolesResult === null) throw new Error('arachne: Clipper2 union not loaded');
+    const mergedHoles = mergedHolesResult;
+    const diff = booleanMultiPolygonClipper2Sync(outerMP, mergedHoles, 'difference');
+    if (diff === null) throw new Error('arachne: Clipper2 difference not loaded');
     return { innermostHoles, infillRegions: deps.multiPolygonToRegions(diff) };
   } catch {
     // Degenerate input — fall back to the simple representation. Worst

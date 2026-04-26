@@ -148,6 +148,71 @@ double computeRadiusAt(const bp::voronoi_diagram<double>::vertex_type& v) {
     }
 }
 
+// 9.X.2 — sample a parabolic Voronoi edge between a point cell and a
+// segment cell. Adapted from Cura's `VoronoiUtils::discretizeParabola`
+// (libArachne) and the boost example. The parabola has the cell-point
+// as focus and the cell-segment line as directrix. We sample uniformly
+// in the segment's tangent direction so chord-arc deviation stays
+// bounded by ~`approxStepMm`.
+//
+// Inputs in mm coords (already unscaled). Endpoints `s`/`e` are the
+// edge's two Voronoi vertices; intermediate samples are appended to
+// `out` (caller must push `s` first; this fn pushes interior samples
+// AND the final `e`).
+static void sampleParabola(
+    double px, double py,         // focus point (cell-point source)
+    double ax, double ay, double bx, double by,  // directrix segment endpoints
+    double sx_world, double sy_world,             // edge endpoint 0
+    double ex_world, double ey_world,             // edge endpoint 1
+    double approxStepMm,
+    std::vector<double>& out) {
+    const double abx = bx - ax, aby = by - ay;
+    const double abLen = std::sqrt(abx * abx + aby * aby);
+    if (abLen < 1e-12) {
+        // Degenerate segment — emit endpoint only.
+        out.push_back(ex_world);
+        out.push_back(ey_world);
+        return;
+    }
+    const double tx = abx / abLen, ty = aby / abLen;  // segment tangent (unit)
+    // Project p onto line(a,b). Distance d = |p - foot|. Sign uses
+    // segment-normal (CCW-90 of tangent).
+    const double apx = px - ax, apy = py - ay;
+    const double t_p = apx * tx + apy * ty;            // tangential coord of p
+    const double footX = ax + t_p * tx, footY = ay + t_p * ty;
+    const double dx = px - footX, dy = py - footY;
+    const double d = std::sqrt(dx * dx + dy * dy);
+    if (d < 1e-9) {
+        // Focus on directrix — degenerate parabola.
+        out.push_back(ex_world);
+        out.push_back(ey_world);
+        return;
+    }
+    // Normal pointing from foot toward focus.
+    const double nx = dx / d, ny = dy / d;
+    // Project edge endpoints onto segment line: tangential coord (sx/ex
+    // relative to a). px is t_p (focus's tangent coord).
+    const double sx = (sx_world - ax) * tx + (sy_world - ay) * ty;
+    const double ex = (ex_world - ax) * tx + (ey_world - ay) * ty;
+    const int32_t stepCount = std::max<int32_t>(2,
+        static_cast<int32_t>(std::abs(ex - sx) / approxStepMm + 0.5));
+    // Parabola in (t, h) frame relative to focus (t = tangent - t_p):
+    //   h = t² / (2d) + d/2  (height above directrix line)
+    // World pos = foot_at_tangent_t + h * normal
+    for (int32_t step = 1; step < stepCount; ++step) {
+        const double frac = static_cast<double>(step) / stepCount;
+        const double t_world = sx + (ex - sx) * frac;       // tangent coord on segment line
+        const double t = t_world - t_p;                      // relative to focus
+        const double h = t * t / (2.0 * d) + d * 0.5;
+        const double sxw = ax + t_world * tx + h * nx;
+        const double syw = ay + t_world * ty + h * ny;
+        out.push_back(sxw);
+        out.push_back(syw);
+    }
+    out.push_back(ex_world);
+    out.push_back(ey_world);
+}
+
 int32_t cellSourceSegmentId(const bp::voronoi_diagram<double>::cell_type* cell) {
     if (!cell) return -1;
     std::size_t idx = cell->source_index();
@@ -246,17 +311,52 @@ void buildEmitCaches() {
         g_state.edgeData.push_back(srcA);
         g_state.edgeData.push_back(srcB);
 
-        // Sample points: linear edges contribute just the two endpoints;
-        // curved (parabolic) edges need to be discretised. We emit
-        // endpoints only here — JS-side discretisation matches the
-        // existing pure-JS pipeline's behaviour and lets 9.1D ship
-        // without the parabola sampler. 9.1C-followup TODO: port
-        // boost::polygon's `discretize` helper to populate intermediate
-        // points for is_curved() edges.
-        g_state.edgePoints.push_back(unscale(edge.vertex0()->x()));
-        g_state.edgePoints.push_back(unscale(edge.vertex0()->y()));
-        g_state.edgePoints.push_back(unscale(edge.vertex1()->x()));
-        g_state.edgePoints.push_back(unscale(edge.vertex1()->y()));
+        // 9.X.2: linear edges emit endpoints only; curved (parabolic)
+        // edges sample along the parabola so downstream skeletal
+        // trapezoidation sees the actual medial-axis curve, not a
+        // chord. is_curved() is true exactly when one cell is a
+        // point-source and the other a segment-source.
+        const double v0x = unscale(edge.vertex0()->x());
+        const double v0y = unscale(edge.vertex0()->y());
+        const double v1x = unscale(edge.vertex1()->x());
+        const double v1y = unscale(edge.vertex1()->y());
+        g_state.edgePoints.push_back(v0x);
+        g_state.edgePoints.push_back(v0y);
+        if (edge.is_curved() && edge.twin()) {
+            const auto* cell0 = edge.cell();
+            const auto* cell1 = edge.twin()->cell();
+            const auto* pointCell = cell0->contains_point() ? cell0 : cell1;
+            const auto* segCell = cell0->contains_point() ? cell1 : cell0;
+            if (pointCell && segCell && segCell->source_index() < g_state.segments.size()) {
+                std::size_t pIdx = pointCell->source_index();
+                std::size_t segIdx = pIdx / 2;
+                bool isB = (pIdx & 1u) != 0;
+                if (segIdx < g_state.segments.size()) {
+                    const Segment& fs = g_state.segments[segIdx];
+                    const Point& fp = isB ? fs.b : fs.a;
+                    const Segment& ds = g_state.segments[segCell->source_index()];
+                    const double pxw = fp.x * INV_COORD_SCALE;
+                    const double pyw = fp.y * INV_COORD_SCALE;
+                    const double axw = ds.a.x * INV_COORD_SCALE;
+                    const double ayw = ds.a.y * INV_COORD_SCALE;
+                    const double bxw = ds.b.x * INV_COORD_SCALE;
+                    const double byw = ds.b.y * INV_COORD_SCALE;
+                    // Approx 0.05mm chord step — fine enough for medial
+                    // axis, coarse enough not to inflate path counts.
+                    sampleParabola(pxw, pyw, axw, ayw, bxw, byw,
+                                   v0x, v0y, v1x, v1y, 0.05, g_state.edgePoints);
+                } else {
+                    g_state.edgePoints.push_back(v1x);
+                    g_state.edgePoints.push_back(v1y);
+                }
+            } else {
+                g_state.edgePoints.push_back(v1x);
+                g_state.edgePoints.push_back(v1y);
+            }
+        } else {
+            g_state.edgePoints.push_back(v1x);
+            g_state.edgePoints.push_back(v1y);
+        }
         g_state.edgePointCsr.push_back(
             static_cast<int32_t>(g_state.edgePoints.size() / 2));
     }

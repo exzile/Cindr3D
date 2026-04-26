@@ -34,6 +34,9 @@ dist-ssr
 .claude/
 memory/
 
+# GitNexus local code graph cache
+.gitnexus/
+
 # Environment / secrets
 .env
 .env.*

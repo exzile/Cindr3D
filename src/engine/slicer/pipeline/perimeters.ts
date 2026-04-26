@@ -1,10 +1,21 @@
 import * as THREE from 'three';
-import polygonClipping, { type MultiPolygon as PCMultiPolygon, type Ring as PCRing } from 'polygon-clipping';
+import type { MultiPolygon as PCMultiPolygon, Ring as PCRing } from 'polygon-clipping';
 
 import type { PrintProfile } from '../../../types/slicer';
 import type { PerimeterDeps } from '../../../types/slicer-pipeline-deps.types';
 import type { Contour, GeneratedPerimeters, InfillRegion, WallLineWidth } from '../../../types/slicer-pipeline.types';
 import { booleanMultiPolygonClipper2Sync } from '../geometry/clipper2Boolean';
+
+// ARACHNE-9.4A.4: slicer worker awaits `loadClipper2Module()` before the
+// first slice fires (see `src/workers/SlicerWorker.ts`), so the sync
+// boolean adapters always return a real result. Throw if not — that
+// indicates the worker contract was violated, not a transient miss.
+function requireMP(result: PCMultiPolygon | null, op: string): PCMultiPolygon {
+  if (result === null) {
+    throw new Error(`perimeters.${op}: Clipper2 WASM not loaded — slicer worker must await loadClipper2Module() before slicing`);
+  }
+  return result;
+}
 
 function toRing(pts: THREE.Vector2[]): PCRing {
   const ring: PCRing = pts.map((p) => [p.x, p.y] as [number, number]);
@@ -25,19 +36,18 @@ function fromRing(ring: PCRing): THREE.Vector2[] {
 }
 
 function unionMultiPolygon(mp: PCMultiPolygon): PCMultiPolygon {
-  const clipperResult = booleanMultiPolygonClipper2Sync(mp, [], 'union');
-  if (clipperResult) return clipperResult;
-  return mp.length === 1 ? mp : polygonClipping.union(mp[0], ...mp.slice(1));
+  if (mp.length <= 1) return mp;
+  return requireMP(booleanMultiPolygonClipper2Sync(mp, [], 'union'), 'union');
 }
 
 function intersectMultiPolygon(a: PCMultiPolygon, b: PCMultiPolygon): PCMultiPolygon {
-  return booleanMultiPolygonClipper2Sync(a, b, 'intersection') ?? polygonClipping.intersection(a, b);
+  return requireMP(booleanMultiPolygonClipper2Sync(a, b, 'intersection'), 'intersection');
 }
 
 function differenceMultiPolygon(a: PCMultiPolygon, clips: PCMultiPolygon[]): PCMultiPolygon {
   if (clips.length === 0) return a;
   const mergedClips = clips.length === 1 ? clips[0] : unionMultiPolygon(clips.flat());
-  return booleanMultiPolygonClipper2Sync(a, mergedClips, 'difference') ?? polygonClipping.difference(a, ...clips);
+  return requireMP(booleanMultiPolygonClipper2Sync(a, mergedClips, 'difference'), 'difference');
 }
 
 export function closeContourGaps(

@@ -17,6 +17,25 @@ const CLOSED_PRIMITIVE_TYPES = new Set([
   'rectangle', 'circle', 'ellipse', 'polygon',
 ]);
 
+/**
+ * Adaptive segment count for a circular arc / full circle so chord-arc
+ * deviation stays bounded. For an inscribed N-gon at radius `r`,
+ * deviation = r·(1 − cos(π/N·angleFrac)). Solve for N at `chordTolMm`:
+ *   N = (angleFrac·π) / acos(1 − chordTolMm / r)
+ *
+ * Default `chordTolMm = 0.02` keeps a 50 mm hole within ±20 µm of a
+ * true circle (well below print resolution). Capped at 32 minimum so
+ * tiny sketches still get reasonable sampling, and 256 maximum so
+ * we don't blow up vertex counts on huge meshes.
+ */
+export function circleSegments(radius: number, angleFrac = 1, chordTolMm = 0.02): number {
+  if (!Number.isFinite(radius) || radius <= 0) return 32;
+  const ratio = Math.max(1e-9, Math.min(1, 1 - chordTolMm / radius));
+  const fullCircleN = Math.PI / Math.acos(ratio);
+  const n = Math.ceil(fullCircleN * 2 * Math.max(1e-3, Math.min(1, angleFrac)));
+  return Math.max(32, Math.min(256, n));
+}
+
 export function getSketchProfileCentroid(sketch: Sketch, profileIndex?: number): THREE.Vector3 | null {
   const { t1, t2 } = getSketchAxesUtil(sketch);
   const origin = sketch.planeOrigin;
@@ -396,7 +415,7 @@ export function entitiesToShape(
           const c = project(entity.points[0]);
           const path = new THREE.Path();
           path.absarc(c.u, c.v, entity.radius, 0, Math.PI * 2, false);
-          shape.setFromPoints(path.getPoints(64));
+          shape.setFromPoints(path.getPoints(circleSegments(entity.radius)));
           hasContent = true;
         }
         break;
@@ -433,7 +452,10 @@ export function entitiesToShape(
           const rot = entity.rotation ?? 0;
           const path = new THREE.Path();
           path.absellipse(c.u, c.v, entity.majorRadius, entity.minorRadius, 0, Math.PI * 2, false, rot);
-          shape.setFromPoints(path.getPoints(64));
+          // Use the major radius for chord-tolerance sampling — covers
+          // the worst-case curvature on the ellipse.
+          const segs = circleSegments(Math.max(entity.majorRadius, entity.minorRadius));
+          shape.setFromPoints(path.getPoints(segs));
           hasContent = true;
         }
         break;

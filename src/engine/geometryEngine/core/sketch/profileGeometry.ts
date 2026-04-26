@@ -1,16 +1,22 @@
 import * as THREE from 'three';
-import polygonClipping, { type MultiPolygon as PCMultiPolygon, type Ring as PCRing } from 'polygon-clipping';
+import type { MultiPolygon as PCMultiPolygon, Ring as PCRing } from 'polygon-clipping';
 import type { SketchEntity, SketchPoint } from '../../../../types/cad';
 import { booleanMultiPolygonClipper2Sync } from '../../../slicer/geometry/clipper2Boolean';
 import { loadClipper2Module } from '../../../slicer/geometry/clipper2Wasm';
 
-// Fire-and-forget warm-up for the Clipper2 WASM module so the synchronous
-// fast path in `computeAtomicRegions` resolves on first sketch interaction
-// rather than falling back to `polygon-clipping`. The user typically takes
-// at least a few hundred ms between opening a sketch and committing the
-// first overlap-resolving extrude — plenty of headroom for the ~30-50ms
-// instantiate cost. Falls through to the JS fallback if loading fails.
-void loadClipper2Module().catch(() => { /* fallback path stays available */ });
+// ARACHNE-9.4A.4: fire-and-forget warm-up at module-init so the sync
+// fast path in `computeAtomicRegions` resolves by the time the user
+// commits an overlap-resolving extrude. The polygon-clipping fallback
+// has been retired — see `requireMP` below; if WASM isn't loaded the
+// caller gets a clear error instead of silent JS-fallback drift.
+void loadClipper2Module().catch(() => { /* error surfaces via requireMP */ });
+
+function requireMP(result: PCMultiPolygon | null, op: string): PCMultiPolygon {
+  if (result === null) {
+    throw new Error(`profileGeometry.${op}: Clipper2 WASM not loaded — ensure loadClipper2Module() has resolved before calling computeAtomicRegions`);
+  }
+  return result;
+}
 
 export function getEntityEndpoints(
   entity: SketchEntity,
@@ -96,26 +102,26 @@ export function computeAtomicRegions(shapes: THREE.Shape[]): THREE.Shape[] {
 
     for (const atom of atoms) {
       try {
-        const intersection = booleanMultiPolygonClipper2Sync(atom, polygon, 'intersection')
-          ?? polygonClipping.intersection(atom, polygon);
+        const intersection = requireMP(
+          booleanMultiPolygonClipper2Sync(atom, polygon, 'intersection'), 'intersection');
         if (intersection.length > 0) nextAtoms.push(intersection);
       } catch {}
       try {
-        const difference = booleanMultiPolygonClipper2Sync(atom, polygon, 'difference')
-          ?? polygonClipping.difference(atom, polygon);
+        const difference = requireMP(
+          booleanMultiPolygonClipper2Sync(atom, polygon, 'difference'), 'difference');
         if (difference.length > 0) nextAtoms.push(difference);
       } catch {}
     }
 
     try {
-      const onlyPolygon = booleanMultiPolygonClipper2Sync(polygon, runningUnion, 'difference')
-        ?? polygonClipping.difference(polygon, runningUnion);
+      const onlyPolygon = requireMP(
+        booleanMultiPolygonClipper2Sync(polygon, runningUnion, 'difference'), 'difference');
       if (onlyPolygon.length > 0) nextAtoms.push(onlyPolygon);
     } catch {}
 
     try {
-      runningUnion = booleanMultiPolygonClipper2Sync(runningUnion, polygon, 'union')
-        ?? polygonClipping.union(runningUnion, polygon);
+      runningUnion = requireMP(
+        booleanMultiPolygonClipper2Sync(runningUnion, polygon, 'union'), 'union');
     } catch {}
 
     if (nextAtoms.length > 0) atoms = nextAtoms;

@@ -1,6 +1,12 @@
 import * as THREE from 'three';
-import polygonClipping, { type MultiPolygon as PCMultiPolygon, type Ring as PCRing } from 'polygon-clipping';
+import type { MultiPolygon as PCMultiPolygon, Ring as PCRing } from 'polygon-clipping';
 import { booleanMultiPolygonClipper2Sync } from '../../../geometry/clipper2Boolean';
+
+// ARACHNE-9.4A.4: worker awaits Clipper2 load before slicing — see SlicerWorker.ts.
+function requireMP(result: PCMultiPolygon | null, op: string): PCMultiPolygon {
+  if (result === null) throw new Error(`emitContourInfill.${op}: Clipper2 WASM not loaded`);
+  return result;
+}
 
 function representativeLineWidth(lineWidth: number | number[] | undefined, fallback: number): number {
   if (Array.isArray(lineWidth)) {
@@ -17,17 +23,16 @@ function offsetContourFast(pipeline: any, contour: THREE.Vector2[], offset: numb
 }
 
 function unionMultiPolygon(mp: PCMultiPolygon): PCMultiPolygon {
-  const clipperResult = booleanMultiPolygonClipper2Sync(mp, [], 'union');
-  if (clipperResult) return clipperResult;
-  return mp.length === 1 ? mp : polygonClipping.union(mp[0], ...mp.slice(1));
+  if (mp.length <= 1) return mp;
+  return requireMP(booleanMultiPolygonClipper2Sync(mp, [], 'union'), 'union');
 }
 
 function intersectMultiPolygon(a: PCMultiPolygon, b: PCMultiPolygon): PCMultiPolygon {
-  return booleanMultiPolygonClipper2Sync(a, b, 'intersection') ?? polygonClipping.intersection(a, b);
+  return requireMP(booleanMultiPolygonClipper2Sync(a, b, 'intersection'), 'intersection');
 }
 
 function differenceMultiPolygon(a: PCMultiPolygon, b: PCMultiPolygon): PCMultiPolygon {
-  return booleanMultiPolygonClipper2Sync(a, b, 'difference') ?? polygonClipping.difference(a, b);
+  return requireMP(booleanMultiPolygonClipper2Sync(a, b, 'difference'), 'difference');
 }
 
 /** Profile fields read by `pickBridgeFanSpeed` — typed locally so the

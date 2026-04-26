@@ -17,9 +17,9 @@ const DISPLAY_LAYER_21_INDEX = 20;
 
 async function loadFixtureGeometry(): Promise<THREE.BufferGeometry> {
   const nodePrefix = 'node';
-  const fs = await import(`${nodePrefix}:fs/promises`);
-  const path = await import(`${nodePrefix}:path`);
-  const url = await import(`${nodePrefix}:url`);
+  const fs = await import(/* @vite-ignore */ `${nodePrefix}:fs/promises`);
+  const path = await import(/* @vite-ignore */ `${nodePrefix}:path`);
+  const url = await import(/* @vite-ignore */ `${nodePrefix}:url`);
   const here = path.dirname(url.fileURLToPath(import.meta.url));
   const fixturePath = path.resolve(here, '../../gcodes/adjustable_support_foot_base_v2_vcdesign.stl');
   const bytes = await fs.readFile(fixturePath);

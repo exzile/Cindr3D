@@ -1,6 +1,35 @@
 import * as THREE from 'three';
 import { mergeVertices, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { csgSubtract } from './csg';
+import { circleSegments } from '../sketch/sketchProfiles';
+
+/**
+ * Walk a Shape's underlying curves (outer ring + hole rings) and return
+ * the curveSegments value that keeps every arc/ellipse within a small
+ * chord-arc tolerance. THREE.ExtrudeGeometry defaults to `curveSegments:
+ * 12` which renders a 50 mm hole as a dodecagon — the visible facets
+ * the user complained about. By probing each `EllipseCurve` and using
+ * `circleSegments(maxRadius)` we get true round circles in the slicer
+ * mesh + downstream toolpath preview. Falls back to 64 for non-arc
+ * shapes (rectangles, polygons, splines) which already have explicit
+ * vertices.
+ */
+export function adaptiveCurveSegments(shape: THREE.Shape): number {
+  let maxR = 0;
+  const probe = (path: THREE.Path) => {
+    for (const curve of path.curves) {
+      // EllipseCurve covers both circles (xRadius == yRadius) and
+      // proper ellipses. Use the larger axis for the worst-case arc.
+      if (curve instanceof THREE.EllipseCurve) {
+        const r = Math.max(curve.xRadius, curve.yRadius);
+        if (r > maxR) maxR = r;
+      }
+    }
+  };
+  probe(shape);
+  for (const hole of shape.holes) probe(hole);
+  return maxR > 0 ? circleSegments(maxR) : 64;
+}
 
 function removeDegenerateTriangles(
   geometry: THREE.BufferGeometry,
@@ -52,8 +81,14 @@ export function buildExtrudeGeomHolesAware(
   const parts: THREE.BufferGeometry[] = [];
 
   for (const shape of shapes) {
+    // ExtrudeGeometry's default curveSegments=12 makes circles look
+    // polygonal in the slice. Override per-shape to keep arcs round.
+    const shapeSettings: THREE.ExtrudeGeometryOptions = {
+      curveSegments: adaptiveCurveSegments(shape),
+      ...extrudeSettings,
+    };
     if (shape.holes.length === 0) {
-      const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+      const geometry = new THREE.ExtrudeGeometry(shape, shapeSettings);
       const nonIndexed = geometry.toNonIndexed();
       geometry.dispose();
       parts.push(removeDegenerateTriangles(nonIndexed));
@@ -61,18 +96,33 @@ export function buildExtrudeGeomHolesAware(
       continue;
     }
 
-    const outerShape = new THREE.Shape(shape.getPoints(64));
-    const outerRaw = new THREE.ExtrudeGeometry(outerShape, extrudeSettings);
+    // Resample the outer ring (with its arcs) at the same adaptive
+    // density as the original — keeps holes-aware extrudes (circles
+    // with circular holes) looking round.
+    const outerSegs = adaptiveCurveSegments(shape);
+    const outerShape = new THREE.Shape(shape.getPoints(outerSegs));
+    const outerRaw = new THREE.ExtrudeGeometry(outerShape, shapeSettings);
     const outerNonIndexed = outerRaw.toNonIndexed();
     outerRaw.dispose();
     let solid = removeDegenerateTriangles(outerNonIndexed);
     outerNonIndexed.dispose();
 
     for (const holePath of shape.holes) {
-      const holeShape = new THREE.Shape(holePath.getPoints(64));
+      // Sample each hole's curves at an adaptive density driven by the
+      // largest arc in that hole — circular holes stay round.
+      let holeMaxR = 0;
+      for (const c of holePath.curves) {
+        if (c instanceof THREE.EllipseCurve) {
+          const r = Math.max(c.xRadius, c.yRadius);
+          if (r > holeMaxR) holeMaxR = r;
+        }
+      }
+      const holeSegs = holeMaxR > 0 ? circleSegments(holeMaxR) : 64;
+      const holeShape = new THREE.Shape(holePath.getPoints(holeSegs));
       const holeSettings: THREE.ExtrudeGeometryOptions = {
         ...extrudeSettings,
         depth: (extrudeSettings.depth ?? 1) + 2,
+        curveSegments: holeSegs,
       };
       const holeRaw = new THREE.ExtrudeGeometry(holeShape, holeSettings);
       const holeNonIndexed = holeRaw.toNonIndexed();

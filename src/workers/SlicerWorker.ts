@@ -341,6 +341,25 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
     const { requestId } = msg;
     const { geometryData, printerProfile, materialProfile, printProfile, disableGroupPool } = msg.payload;
 
+    // ARACHNE-9.4A.4: ensure Clipper2 WASM is fully instantiated before any
+    // boolean op fires inside the slicer pipeline. The fire-and-forget
+    // warm-up at module-init usually resolves first, but on a fresh worker
+    // boot the slice request can race the loader. Awaiting here guarantees
+    // every `booleanPathsClipper2Sync` / `booleanMultiPolygonClipper2Sync`
+    // call below returns a real result rather than null — so the slicer
+    // paths no longer need a polygon-clipping fallback chain.
+    try {
+      await loadClipper2Module();
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      const message: { type: 'error'; requestId: number; error: string } = {
+        type: 'error', requestId, error: `Clipper2 WASM failed to load: ${error.message}`,
+      };
+      self.postMessage(message);
+      return;
+    }
+    try { await loadArachneModule(); } catch { /* arachne is optional — backend dispatcher falls back */ }
+
     // Reconstruct THREE.js geometry objects from transferred typed arrays.
     // We reference the typed arrays directly instead of copying via Array.from
     // — the main thread transferred ownership so they're ours to use.
