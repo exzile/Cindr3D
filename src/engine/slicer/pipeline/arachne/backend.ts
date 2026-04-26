@@ -18,5 +18,11 @@ export function getArachneBackend(name: ArachneBackendName = 'wasm'): ArachneBac
 /** `'js'` legacy profiles transparently coerce to the WASM backend
  *  since 9.3D removed the staged-JS implementation. */
 export function resolveArachneBackend(name: ArachneBackendName = 'wasm'): ArachneBackend {
-  return getArachneBackend(name) ?? arachneWasmBackend;
+  const found = getArachneBackend(name);
+  if (found) return found;
+  if (name !== 'wasm') {
+    // eslint-disable-next-line no-console
+    console.warn(`arachneBackend "${name}" is not registered; falling back to "wasm".`);
+  }
+  return arachneWasmBackend;
 }

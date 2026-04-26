@@ -13,6 +13,13 @@ export async function prepareLayerGeometryState(pipeline: any, run: any, li: num
   pipeline.reportProgress('slicing', (li / totalLayers) * 80, li, totalLayers, `Slicing layer ${li + 1}/${totalLayers}...`);
   await pipeline.yieldToUI();
 
+  // Reset the per-layer bridge flag at the start of every layer so the
+  // counter logic in finalizeLayer sees a clean slate. emitContourInfill
+  // sets it back to true if it actually emits a bridge move. Resetting
+  // here (rather than in finalizeLayer) protects against future code
+  // paths that bail between emit and finalize.
+  run.layerHadBridge = false;
+
   const segments = pipeline.sliceTrianglesAtZ(triangles, sliceZ, offsetX, offsetY, offsetZ);
   const rawContours = pipeline.connectSegments(segments);
   if (rawContours.length === 0) return null;

@@ -14,13 +14,14 @@ export function finalizeLayer(pipeline: any, run: any, layer: any): void {
   // Update the consecutive-bridge-layer counter so the next layer's
   // fan speed can pick `bridgeFanSpeed2` or `bridgeFanSpeed3`.
   // `layerHadBridge` is set inside `emitContourInfill` whenever a
-  // bridge move is emitted; reset here for the next layer.
+  // bridge move is emitted, and is cleared at the start of every layer
+  // by `prepareLayerGeometryState` so this branch only sees this
+  // layer's value.
   if (run.layerHadBridge) {
     run.consecutiveBridgeLayers = (run.consecutiveBridgeLayers ?? 0) + 1;
   } else {
     run.consecutiveBridgeLayers = 0;
   }
-  run.layerHadBridge = false;
 
   if (li === 0 && pp.supportEnabled && (pp.enableSupportBrim ?? false)) {
     const overhangAngleRad = (pp.supportAngle * Math.PI) / 180;

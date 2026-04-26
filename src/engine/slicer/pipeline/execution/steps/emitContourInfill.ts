@@ -195,10 +195,12 @@ export function emitContourInfill(pipeline: any, run: any, layer: any, contoursD
       // Pick the fan speed for *this* bridge move based on how many
       // consecutive layers have had bridges (Cura's bridge_fan_speed_2 /
       // bridge_fan_speed_3 land here when bridge_enable_more_layers is on).
-      // `consecutiveBridgeLayers` is 0 before the first bridge in a new
-      // run; the first bridge layer uses `bridgeFanSpeed`.
+      // `consecutiveBridgeLayers` is incremented by `finalizeLayer` AFTER
+      // this emit step finishes, so during emit it still reflects the
+      // count up to the previous layer. Adding 1 yields this layer's
+      // 1-indexed position in the bridge-layer streak.
       const moreLayers = pp.bridgeEnableMoreLayers ?? false;
-      const consecutive = (run.consecutiveBridgeLayers ?? 0) + 1; // +1 = "this" layer
+      const consecutive = (run.consecutiveBridgeLayers ?? 0) + 1;
       const bridgeFanSpeed = !moreLayers || consecutive <= 1
         ? (pp.bridgeFanSpeed ?? 100)
         : consecutive === 2

@@ -143,6 +143,9 @@ function generatePathsWithModule(
   const pointsPtr = mod._malloc(pointCount * 2 * 8);
   const countsPtr = mod._malloc(paths.length * 4);
   const config = configValues(wallCount, lineWidth, outerWallInset, printProfile);
+  if (config.length !== mod._arachneConfigValueCount()) {
+    throw new Error(`arachneWasm: configValues length ${config.length} != module ABI ${mod._arachneConfigValueCount()}`);
+  }
   const configPtr = mod._malloc(config.byteLength);
   if (!pointsPtr || !countsPtr || !configPtr) {
     if (pointsPtr) mod._free(pointsPtr);
