@@ -182,18 +182,32 @@ export function emitContourInfill(pipeline: any, run: any, layer: any, contoursD
       const effFrom = startExt > 0 && len > 0 ? new THREE.Vector2(line.from.x - ux * startExt, line.from.y - uy * startExt) : line.from;
       const effTo = endExt > 0 && len > 0 ? new THREE.Vector2(line.to.x + ux * endExt, line.to.y + uy * endExt) : line.to;
       let thisMoveType: any = infillMoveType, thisSpeed = speed, thisLineWidth = lineWidth, thisFlowScale = 1.0;
-      if (hasBridgeRegions && infillMoveType === 'top-bottom') {
+      const bridgeSettingsOn = pp.enableBridgeSettings !== false;
+      if (hasBridgeRegions && bridgeSettingsOn && infillMoveType === 'top-bottom') {
         const midX = (effFrom.x + effTo.x) / 2, midY = (effFrom.y + effTo.y) / 2;
         if (isInBridgeRegion(midX, midY)) {
           thisMoveType = 'bridge';
           thisSpeed = pp.bridgeSkinSpeed ?? speed;
           thisFlowScale = (pp.bridgeSkinFlow ?? 100) / 100;
+          run.layerHadBridge = true;
         }
       }
+      // Pick the fan speed for *this* bridge move based on how many
+      // consecutive layers have had bridges (Cura's bridge_fan_speed_2 /
+      // bridge_fan_speed_3 land here when bridge_enable_more_layers is on).
+      // `consecutiveBridgeLayers` is 0 before the first bridge in a new
+      // run; the first bridge layer uses `bridgeFanSpeed`.
+      const moreLayers = pp.bridgeEnableMoreLayers ?? false;
+      const consecutive = (run.consecutiveBridgeLayers ?? 0) + 1; // +1 = "this" layer
+      const bridgeFanSpeed = !moreLayers || consecutive <= 1
+        ? (pp.bridgeFanSpeed ?? 100)
+        : consecutive === 2
+        ? (pp.bridgeFanSpeed2 ?? pp.bridgeFanSpeed ?? 100)
+        : (pp.bridgeFanSpeed3 ?? pp.bridgeFanSpeed2 ?? pp.bridgeFanSpeed ?? 100);
       const needBridgeFan = pp.enableBridgeFan && thisMoveType === 'bridge' && !run.bridgeFanActive;
       const needFanRestore = !needBridgeFan && thisMoveType !== 'bridge' && run.bridgeFanActive;
       if (needBridgeFan) {
-        gcode.push(`M106 S${emitter.fanSpeedArg(pp.bridgeFanSpeed ?? 100)} ; Bridge fan`);
+        gcode.push(`M106 S${emitter.fanSpeedArg(bridgeFanSpeed)} ; Bridge fan`);
         run.bridgeFanActive = true;
       } else if (needFanRestore) {
         gcode.push(`M106 S${emitter.fanSpeedArg(mat.fanSpeedMin ?? 100)} ; Restore fan after bridge`);

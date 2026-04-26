@@ -80,11 +80,11 @@
 - [s] Fuzzy Skin Outside Only (`fuzzySkinOutsideOnly`) - type + UI exists; engine deferred (fuzzySkinsEnabled itself not yet wired)
 - [s] Adaptive Layers Topography Size (`adaptiveLayersTopographySize`) - type + UI exists; engine deferred
 - [s] Minimum Layer Time with Overhang (`minLayerTimeWithOverhang`) - type + UI exists; engine deferred
-- [s] Enable Bridge Settings (`bridgeSettingsEnabled`) - type + UI exists; engine deferred
-- [s] Bridge Skin Density (`bridgeSkinDensity`) - type + UI exists; engine deferred
-- [s] Interlace Bridge Lines (`interlaceBridgeLines`) - type + UI exists; engine deferred
-- [s] Bridge Has Multiple Layers (`bridgeHasMultipleLayers`) - type + UI exists; engine deferred
-- [s] Bridge 2nd/3rd Skin Fan Speed (`bridgeFanSpeed2/3`) - type + UI exists; engine deferred
+- [x] Enable Bridge Settings (`enableBridgeSettings`) - WIRED 2026-04-26 in `emitContourInfill.ts`. When false, bridge speed/flow/fan are not applied (move stays as `top-bottom`). Default-true semantics preserved (any undefined treats as enabled to keep current behavior on existing profiles).
+- [s] Bridge Skin Density (`bridgeSkinDensity`) - storage-only; needs scanline regen at bridge density (deferred — invasive change to infill generation)
+- [s] Interlace Bridge Lines (`interlaceBridgeLines`) - storage-only; needs angle alternation across consecutive bridge layers (deferred)
+- [s] Bridge Has Multiple Layers (`bridgeHasMultipleLayers`) - storage-only; alias for `bridgeEnableMoreLayers` semantics (deferred — partial via bridgeFanSpeed2/3 wiring)
+- [x] Bridge 2nd/3rd Skin Fan Speed (`bridgeFanSpeed2/3`) - WIRED 2026-04-26 via `consecutiveBridgeLayers` counter in run state. `finalizeLayer` increments the counter when a layer emitted a bridge move, resets to 0 otherwise. `emitContourInfill` picks fan speed by counter value (1st = `bridgeFanSpeed`, 2nd = `bridgeFanSpeed2`, 3rd+ = `bridgeFanSpeed3`) when `bridgeEnableMoreLayers` is true.
 
 - [skip] Wipe Nozzle Between Layers and all Wipe sub-params - multi-extruder feature
 - [skip] Flow Temperature Graph, Cross Infill Density Image - hardware/image-based; not applicable
