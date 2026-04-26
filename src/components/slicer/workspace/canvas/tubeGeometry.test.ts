@@ -241,6 +241,104 @@ describe('buildChainTube — geometric contract', () => {
   });
 });
 
+describe('buildChainTube — special path shapes', () => {
+  it('handles a 180° U-turn (in-dir exactly opposite out-dir) without producing NaNs', () => {
+    // Three colinear points where the middle one reverses direction.
+    const chain = makeChain([[0, 0], [10, 0], [0, 0]], 0.4, false, 'support');
+    const geo = buildChainTube(chain, 0.2, 0.2);
+    expect(geo).not.toBeNull();
+    const positions = geo!.getAttribute('position').array as Float32Array;
+    for (let i = 0; i < positions.length; i++) {
+      expect(Number.isFinite(positions[i])).toBe(true);
+    }
+  });
+
+  it('handles a 90° corner with miter clamped at 1.0 (no over-stretch)', () => {
+    const chain = makeChain([[0, 0], [10, 0], [10, 10]], 0.4, false, 'support');
+    const geo = buildChainTube(chain, 0.2, 0.2);
+    const positions = geo!.getAttribute('position').array as Float32Array;
+    // Middle ring at the corner: span perpendicular to bisector (45°).
+    // With MITER_MAX = 1.0 the bead width perpendicular to the bisector
+    // stays equal to lw = 0.4 — no stretching past it.
+    const span = ringSpan(positions, 1, 0); // X span at corner
+    expect(span).toBeGreaterThan(0.2);
+    expect(span).toBeLessThan(0.5);
+  });
+
+  it('subdivides a dense circular polygon (smooths out per-vertex tabs)', () => {
+    // Build a 12-vertex circle approximation. Average segment length:
+    //   2π × radius / 12 with radius = 0.6mm → ~0.314mm avg
+    //   lw = 0.4mm → segment/lw = 0.79 < TUBE_SUBDIVISION_LW_RATIO (3)
+    //   so subdivision should kick in.
+    const radius = 0.6;
+    const N = 12;
+    const points: Array<[number, number]> = [];
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      points.push([Math.cos(a) * radius, Math.sin(a) * radius]);
+    }
+    const chain = makeChain(points, 0.4, true, 'support');
+    const geo = buildChainTube(chain, 0.2, 0.2);
+    const positions = geo!.getAttribute('position').array as Float32Array;
+    // After subdivision the ring count should be a multiple of N (from
+    // SUBDIVISION_FACTOR=3 → 36 sample points). Without subdivision it
+    // would be exactly N (12) rings.
+    const rings = positions.length / 3 / ringSize;
+    expect(rings).toBeGreaterThan(N);
+  });
+
+  it('does NOT subdivide a sparse polygon (rectangle / sharp corners preserved)', () => {
+    // A 4-point rectangle with 10mm sides. avgLen = 10mm, lw = 0.4mm,
+    // ratio = 25 — far above the subdivision threshold of 3.
+    const chain = makeChain([[0, 0], [10, 0], [10, 5], [0, 5]], 0.4, true, 'support');
+    const geo = buildChainTube(chain, 0.2, 0.2);
+    const positions = geo!.getAttribute('position').array as Float32Array;
+    const rings = positions.length / 3 / ringSize;
+    expect(rings).toBe(4);
+  });
+
+  it('skips zero-length segments at the chain start (degenerate polyline)', () => {
+    // First two points coincide. Real `dir` returns null and the tangent
+    // falls back to the next valid direction; output must not have NaNs.
+    const chain = makeChain([[5, 5], [5, 5], [10, 5]], 0.4, false, 'support');
+    const geo = buildChainTube(chain, 0.2, 0.2);
+    expect(geo).not.toBeNull();
+    const positions = geo!.getAttribute('position').array as Float32Array;
+    for (let i = 0; i < positions.length; i++) {
+      expect(Number.isFinite(positions[i])).toBe(true);
+    }
+  });
+
+  it('returns a non-null geometry for a closed triangle (smallest possible loop)', () => {
+    const chain = makeChain([[0, 0], [10, 0], [5, 8.66]], 0.4, true, 'support');
+    const geo = buildChainTube(chain, 0.2, 0.2);
+    expect(geo).not.toBeNull();
+    const indices = geo!.getIndex();
+    // Closed → loopCount = 3, RADIAL × 6 indices per loop
+    expect(indices!.count).toBe(3 * RADIAL * 6);
+  });
+
+  it('layerHeight scales the Z extent linearly', () => {
+    const chain = makeChain([[0, 0], [10, 0]], 0.4, false, 'support');
+    const thin = buildChainTube(chain, 0.1, 0.5)!;
+    const thick = buildChainTube(chain, 0.4, 0.5)!;
+    const thinSpan = ringSpan(thin.getAttribute('position').array as Float32Array, 0, 2);
+    const thickSpan = ringSpan(thick.getAttribute('position').array as Float32Array, 0, 2);
+    expect(thickSpan).toBeCloseTo(thinSpan * 4, 4);
+  });
+
+  it('baseZ shifts the entire tube up/down without changing its shape', () => {
+    const chain = makeChain([[0, 0], [10, 0]], 0.4, false, 'support');
+    const z1 = buildChainTube(chain, 0.2, 0.5)!;
+    const z2 = buildChainTube(chain, 0.2, 1.5)!;
+    const center1 = getRingCenter(z1.getAttribute('position').array as Float32Array, 0);
+    const center2 = getRingCenter(z2.getAttribute('position').array as Float32Array, 0);
+    expect(center2.z - center1.z).toBeCloseTo(1.0, 4);
+    expect(center2.x).toBeCloseTo(center1.x, 4);
+    expect(center2.y).toBeCloseTo(center1.y, 4);
+  });
+});
+
 describe('buildChainTube — color attribution', () => {
   it('sets a color attribute with one color triple per vertex', () => {
     const chain = makeChain([[0, 0], [10, 0]], 0.4, false);
