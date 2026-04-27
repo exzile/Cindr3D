@@ -360,11 +360,11 @@ export interface PrintProfile {
   // --- Top/Bottom (Cura: Top/Bottom) --------------------------------------
   initialBottomLayers?: number;        // wired — extra solid bottom layers on the very first solid bottom
   connectTopBottomPolygons?: boolean;  // storage-only — connect top/bottom fill polygons
-  monotonicIroningOrder?: boolean;     // storage-only — monotonic order for ironing passes
+  monotonicIroningOrder?: boolean;     // wired — monotonic order for ironing passes
   topSurfaceSkinLayers?: number;       // storage-only — extra ultra-quality top layers
   bottomSurfaceSkinLayers?: number;    // storage-only — extra ultra-quality bottom layers
-  topSkinRemovalWidth?: number;        // storage-only — mm; separate top skin removal width
-  bottomSkinRemovalWidth?: number;     // storage-only — mm; separate bottom skin removal width
+  topSkinRemovalWidth?: number;        // wired — mm; separate top skin removal width
+  bottomSkinRemovalWidth?: number;     // wired — mm; separate bottom skin removal width
   smallTopBottomWidth?: number;        // storage-only — mm; min width to generate skin
   maxSkinAngleForExpansion?: number;   // storage-only — deg
   minSkinWidthForExpansion?: number;   // storage-only — mm
@@ -379,7 +379,7 @@ export interface PrintProfile {
   extraSkinWallCount?: number;         // wired — extra perimeter loops around skin
   noSkinInZGaps?: boolean;             // storage-only — skip skin when model has z-gaps
   bottomPatternInitialLayer?: 'lines' | 'concentric' | 'zigzag' | 'monotonic'; // wired
-  ironOnlyHighestLayer?: boolean;      // storage-only — only iron last top-surface layer
+  ironOnlyHighestLayer?: boolean;      // wired — only iron last top-surface layer
 
   // --- Infill ------------------------------------------------------------
   infillLineDistance?: number;         // wired — mm — when set, overrides density-derived spacing
@@ -420,6 +420,7 @@ export interface PrintProfile {
   supportFanSpeedOverride?: number;    // wired — % — fan speed during support printing (0 = disabled)
   supportInfillLineDirections?: number[]; // wired — degrees list cycled per layer for support scan angle
   initialLayerSupportLineDistance?: number; // wired — mm — override support spacing on layer 0
+  supportInfillDensityMultiplierInitialLayer?: number; // wired — % multiplier for support density on layer 0
   gradualSupportSteps?: number;        // wired — reduce support density every N layers from the top
   gradualSupportStepHeight?: number;   // wired — mm — height of each gradual support step
   minSupportXYDistance?: number;       // wired — mm — hard minimum XY gap (on top of supportXYDistance)
@@ -479,7 +480,7 @@ export interface PrintProfile {
   breakUpSupportChunkLineCount?: number; // storage-only
   conicalSupportMinWidth?: number;     // storage-only — mm (companion to conicalSupportAngle)
   adaptiveLayersTopographySize?: number; // storage-only — mm
-  minLayerTimeWithOverhang?: number;   // storage-only — seconds
+  minLayerTimeWithOverhang?: number;   // wired — seconds
   keepRetractingDuringTravel?: boolean; // storage-only
   primeDuringTravel?: boolean;         // storage-only
   // smallHoleMaxSize already declared as required above — don't redeclare.

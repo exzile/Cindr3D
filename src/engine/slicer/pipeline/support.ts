@@ -176,11 +176,22 @@ function supportInterfaceState(triangles: Triangle[], sliceZ: number, pp: PrintP
   return { roof, floor };
 }
 
+export function supportDensityForLayer(
+  pp: Pick<PrintProfile, 'supportDensity' | 'supportInfillDensityMultiplierInitialLayer'>,
+  layerIndex: number,
+): number {
+  const baseDensity = Math.max(0, pp.supportDensity ?? 0);
+  if (layerIndex !== 0) return baseDensity;
+  const multiplier = pp.supportInfillDensityMultiplierInitialLayer ?? 100;
+  return Math.min(100, Math.max(0, baseDensity * (multiplier / 100)));
+}
+
 function supportLineSettings(pp: PrintProfile, layerIndex: number, isRoof: boolean, isFloor: boolean) {
   const supLW = pp.supportLineWidth ?? pp.wallLineWidth;
+  const supportDensity = supportDensityForLayer(pp, layerIndex);
   const baseSpacing = (pp.supportLineDistance ?? 0) > 0
     ? pp.supportLineDistance ?? 1
-    : supLW / Math.max(0.01, pp.supportDensity / 100);
+    : supLW / Math.max(0.01, supportDensity / 100);
   let spacing = layerIndex === 0 && (pp.initialLayerSupportLineDistance ?? 0) > 0
     ? pp.initialLayerSupportLineDistance!
     : baseSpacing;
@@ -403,7 +414,7 @@ function generateTreeSupportForLayer(
     for (let i = 0; i < segs; i++) {
       moves.push({ type: 'support', from: contour[i], to: contour[(i + 1) % segs], speed: supportSpeed, extrusion: 0, lineWidth: supLW });
     }
-    const lines = deps.generateScanLines(contour, pp.supportDensity, supLW, layerIndex % 2 === 0 ? 0 : Math.PI / 2);
+    const lines = deps.generateScanLines(contour, supportDensityForLayer(pp, layerIndex), supLW, layerIndex % 2 === 0 ? 0 : Math.PI / 2);
     for (const line of lines) {
       const mid = new THREE.Vector2((line.from.x + line.to.x) / 2, (line.from.y + line.to.y) / 2);
       if (pointInsideMaterial(mid, modelContours, deps)) continue;

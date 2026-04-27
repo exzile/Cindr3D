@@ -26,9 +26,6 @@
 - [s] Bottom Surface Skin Layers (`bottomSurfaceSkinLayers`) - type + UI exists; engine too complex
 - [s] Connect Top/Bottom Polygons (`connectTopBottomPolygons`) - type + UI exists; engine too complex
 - [s] Small Top/Bottom Width (`smallTopBottomWidth`) - type + UI exists; engine deferred
-- [s] Monotonic Ironing Order (`monotonicIroningOrder`) - type + UI exists; engine deferred
-- [s] Top Skin Removal Width (`topSkinRemovalWidth`) - type + UI exists; engine deferred
-- [s] Bottom Skin Removal Width (`bottomSkinRemovalWidth`) - type + UI exists; engine deferred
 - [s] Maximum Skin Angle for Expansion (`maxSkinAngleForExpansion`) - type only (deferred)
 - [s] Minimum Skin Width for Expansion (`minSkinWidthForExpansion`) - type only (deferred)
 - [s] noSkinInZGaps - intentional no-op (inherent behavior)
@@ -38,7 +35,6 @@
 
 
 ## SUPPORT
-- [s] Support Infill Density Multiplier Initial Layer - storage-only; deferred
 - [s] Support Distance Priority (`supportDistancePriority`) - type + UI exists; engine deferred
 - [s] Minimum Support Interface Area / Roof Area / Floor Area - storage-only; deferred
 - [s] Use Towers (`useTowers`) - type + UI exists; engine deferred
@@ -61,7 +57,6 @@
 - [s] Break Up Support In Chunks (`breakUpSupportInChunks`) + Chunk Size + Chunk Line Count - type + UI exists; engine deferred
 - [s] Fuzzy Skin Outside Only (`fuzzySkinOutsideOnly`) - type + UI exists; engine deferred (fuzzySkinsEnabled itself not yet wired)
 - [s] Adaptive Layers Topography Size (`adaptiveLayersTopographySize`) - type + UI exists; engine deferred
-- [s] Minimum Layer Time with Overhang (`minLayerTimeWithOverhang`) - type + UI exists; engine deferred
 - [s] Bridge Skin Density (`bridgeSkinDensity`) - storage-only; needs scanline regen at bridge density (deferred - invasive change to infill generation)
 - [s] Interlace Bridge Lines (`interlaceBridgeLines`) - storage-only; needs angle alternation across consecutive bridge layers (deferred)
 
@@ -79,7 +74,6 @@
 # ============================================================================
 # ADDITIONAL CURA PARITY GAPS (audit follow-up)
 # ============================================================================
-- [s] Adaptive Layers core wiring (`adaptiveLayersEnabled`, `adaptiveLayersMaxVariation`, `adaptiveLayersVariationStep`) - UI exists; engine still uses uniform layer heights
 - [s] Spiralize / Vase Mode (`spiralizeContour`) - UI exists; engine still slices as standard layered toolpaths
 - [s] Master/per-feature line width wiring (`lineWidth`, `outerWallLineWidth`, `topBottomLineWidth`) - UI exists, but engine semantics do not yet match Cura
 

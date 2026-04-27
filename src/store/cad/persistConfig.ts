@@ -32,7 +32,10 @@ export function createCADPersistConfig(): PersistOptions<CADState, Partial<CADSt
   return {
     name: 'dzign3d-cad',
     storage: idbStorage as unknown as PersistStorage<unknown>,
-    version: 3,
+    // Bump on every rehydration-time sanity-clamp expansion (see the
+    // ARRAY_FIELDS list in onRehydrateStorage) so existing IndexedDB
+    // blobs go through migrate again and pick up the latest defaults.
+    version: 4,
     migrate: (persistedState: unknown) => {
       const state = (persistedState ?? {}) as Partial<CADState>;
       return {
@@ -53,6 +56,25 @@ export function createCADPersistConfig(): PersistOptions<CADState, Partial<CADSt
     },
     onRehydrateStorage: () => (state: CADState | undefined) => {
       if (!state) return;
+
+      // Sanity-clamp array-typed fields that the merge step can leave
+      // as `undefined` if a persisted blob explicitly stored undefined
+      // (e.g. older code persisted these and Zustand's spread merge
+      // overrode currentState's default). Each crash we've debugged
+      // here was the same shape — a `.length` or `.map` on undefined
+      // — so the cheapest durable fix is to guarantee these fields
+      // are always arrays regardless of what storage produced.
+      const ARRAY_FIELDS: Array<keyof CADState> = [
+        'extrudeSelectedSketchIds',
+        'features',
+        'sketches',
+      ];
+      const s = state as unknown as Record<string, unknown>;
+      for (const key of ARRAY_FIELDS) {
+        if (!Array.isArray(s[key as string])) {
+          s[key as string] = [];
+        }
+      }
 
       const compPersist = (useComponentStore as unknown as {
         persist?: {

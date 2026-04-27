@@ -17,7 +17,12 @@ export default function ExtrudePanel() {
   const activeTool = useCADStore((s) => s.activeTool);
   const sketches = useCADStore((s) => s.sketches);
   const features = useCADStore((s) => s.features);
-  const selectedIds = useCADStore((s) => s.extrudeSelectedSketchIds);
+  // Defensive fallback to []: persisted CAD state from before
+  // `extrudeSelectedSketchIds` was added (or from a `merge` path that
+  // overwrote currentState's default []) can leave this undefined,
+  // which crashed the panel at `.map()` below. Worth keeping as a
+  // belt-and-suspenders guard even after the persist version bump.
+  const selectedIds = useCADStore((s) => s.extrudeSelectedSketchIds) ?? [];
   const setSelectedIds = useCADStore((s) => s.setExtrudeSelectedSketchIds);
   const distance = useCADStore((s) => s.extrudeDistance);
   const setDistance = useCADStore((s) => s.setExtrudeDistance);

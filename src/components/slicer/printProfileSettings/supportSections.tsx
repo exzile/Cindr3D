@@ -45,6 +45,7 @@ export function SupportSection({ print, upd, isVisible, showHelp }: PrintSetting
             <Num label="Min Support XY Distance" unit="mm" value={print.minSupportXYDistance ?? 0} step={0.05} min={0} max={5} onChange={(v) => upd({ minSupportXYDistance: v })} />
             <Num label="Support Wall Count" value={print.supportWallLineCount ?? 0} min={0} max={5} onChange={(v) => upd({ supportWallLineCount: v })} />
             <Num label="Initial Layer Support Line Distance" unit="mm" value={print.initialLayerSupportLineDistance ?? 0} step={0.1} min={0} max={20} onChange={(v) => upd({ initialLayerSupportLineDistance: v })} />
+            <Num label="Initial Layer Support Density Multiplier" unit="%" value={print.supportInfillDensityMultiplierInitialLayer ?? 100} step={5} min={0} max={500} onChange={(v) => upd({ supportInfillDensityMultiplierInitialLayer: v })} />
             <Num label="Fan Speed Override" unit="%" value={print.supportFanSpeedOverride ?? 0} step={1} min={0} max={100} onChange={(v) => upd({ supportFanSpeedOverride: v })} />
             <SectionDivider label="Gradual Support" />
             <Num label="Gradual Support Steps" value={print.gradualSupportSteps ?? 0} min={0} max={10} onChange={(v) => upd({ gradualSupportSteps: v })} />

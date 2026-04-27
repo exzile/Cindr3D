@@ -37,28 +37,48 @@ function differenceMultiPolygon(a: PCMultiPolygon, b: PCMultiPolygon): PCMultiPo
   return requireMP(booleanMultiPolygonClipper2Sync(a, b, 'difference'), 'difference');
 }
 
-function contourAreaAbs(contour: THREE.Vector2[]): number {
-  let area2 = 0;
-  for (let i = 0; i < contour.length; i++) {
-    const a = contour[i];
-    const b = contour[(i + 1) % contour.length];
-    area2 += a.x * b.y - b.x * a.y;
-  }
-  return Math.abs(area2) * 0.5;
-}
-
 function offsetByAreaIntent(
   pipeline: SlicerExecutionPipeline,
   contour: THREE.Vector2[],
   distance: number,
   intent: 'shrink' | 'grow',
 ): THREE.Vector2[] {
-  const a = offsetContourFast(pipeline, contour, distance);
-  const b = offsetContourFast(pipeline, contour, -distance);
-  const areaA = a.length >= 3 ? contourAreaAbs(a) : intent === 'shrink' ? -Infinity : Infinity;
-  const areaB = b.length >= 3 ? contourAreaAbs(b) : intent === 'shrink' ? -Infinity : Infinity;
-  if (intent === 'shrink') return areaA <= areaB ? a : b;
-  return areaA >= areaB ? a : b;
+  // Hot path: this fires for every infill region's outer + every hole
+  // on every solid layer, so an extra Clipper2 round-trip per call
+  // multiplies into hundreds of WASM crossings on a typical print.
+  // Previous implementation tried BOTH `+distance` and `-distance` and
+  // picked the result by area afterward, paying for two offset ops to
+  // resolve a single sign question.
+  //
+  // We can derive the correct sign deterministically from the contour's
+  // winding. `pipeline.offsetContourFast` already does winding-aware
+  // sign-flipping internally so that `+distance` always means "inset
+  // toward solid" — a CCW outer shrinks (smaller |area|), a CW hole
+  // expands its enclosed-area magnitude (visually shrinks the hole).
+  // So:
+  //   intent=shrink (smaller |area| wanted) → call(+distance) on CCW,
+  //                                            call(-distance) on CW.
+  //   intent=grow                            → opposite sign per case.
+  //
+  // Encoding both axes: dirSign = signedAreaPos ? +1 : -1, and
+  //   shrink → +dirSign * distance
+  //   grow   → -dirSign * distance.
+  // One WASM call. If the result degenerates (length < 3) we fall back
+  // to the other direction — same edge-case behaviour as before, just
+  // without paying for both calls in the common path.
+  let signed2 = 0;
+  for (let i = 0; i < contour.length; i++) {
+    const a = contour[i];
+    const b = contour[(i + 1) % contour.length];
+    signed2 += a.x * b.y - b.x * a.y;
+  }
+  const dirSign = signed2 >= 0 ? 1 : -1;
+  const primarySign = intent === 'shrink' ? dirSign : -dirSign;
+  const primary = offsetContourFast(pipeline, contour, primarySign * distance);
+  if (primary.length >= 3) return primary;
+  // Rare degenerate fallback: original tried both directions, so do
+  // the same here to preserve behaviour parity for the test suite.
+  return offsetContourFast(pipeline, contour, -primarySign * distance);
 }
 
 function insetFillCenterlineRegion(
@@ -113,6 +133,16 @@ export function pickBridgeFanSpeed(
 
 type InfillMoveType = Extract<SliceMove['type'], 'infill' | 'top-bottom' | 'bridge'>;
 
+export function skinRemovalWidthForLayer(
+  pp: Pick<SliceRun['pp'], 'skinRemovalWidth' | 'topSkinRemovalWidth' | 'bottomSkinRemovalWidth'>,
+  isSolidTop: boolean,
+  isSolidBottom: boolean,
+): number {
+  if (isSolidTop) return pp.topSkinRemovalWidth ?? pp.skinRemovalWidth ?? 0;
+  if (isSolidBottom) return pp.bottomSkinRemovalWidth ?? pp.skinRemovalWidth ?? 0;
+  return pp.skinRemovalWidth ?? 0;
+}
+
 export function emitContourInfill(
   pipeline: unknown,
   run: SliceRun,
@@ -163,7 +193,7 @@ export function emitContourInfill(
       const totalExpand = skinOverlap + (isSolidTop ? topSurfaceExpand : 0) + (isSolidBottom ? (pp.bottomSkinExpandDistance ?? 0) : 0);
       for (const region of infillRegions) {
         let skinContour = totalExpand > 0 ? offsetContourFast(slicer, region.contour, -totalExpand) : region.contour;
-        const srw = pp.skinRemovalWidth ?? 0;
+        const srw = skinRemovalWidthForLayer(pp, isSolidTop, isSolidBottom);
         if (srw > 0 && skinContour.length >= 3) {
           const eroded = offsetContourFast(slicer, skinContour, srw);
           if (eroded.length >= 3) {

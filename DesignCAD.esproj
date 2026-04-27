@@ -1,23 +1,14 @@
 <Project Sdk="Microsoft.VisualStudio.JavaScript.Sdk/1.0.4338480">
   <PropertyGroup>
-    <!-- Bypass npm.cmd entirely — Visual Studio's .esproj launcher
-         calls CreateProcess on the StartupCommand's first token, which
-         can't execute .cmd batch files (you'd see "unable to start
-         program C:\nvm4w\nodejs\npm.cmd"). Invoking node directly with
-         vite's CLI script is what `npm run dev` resolves to anyway,
-         minus the shell hop, and it works on every Node install
-         regardless of how npm's path is exposed. -->
+    <!-- Day-to-day workflow runs Vite from the VS integrated terminal
+         (`Ctrl+\``  → `npm run dev`) — F5/.esproj launching kept opening
+         a duplicate browser tab in VS 2026 that the JS SDK doesn't
+         expose a clean XML knob to suppress. We leave a working
+         StartupCommand here so accidental F5s still spawn Vite (just
+         with the duplicate-tab quirk) rather than erroring out. We
+         invoke node directly because npm.cmd doesn't run via the
+         SDK's CreateProcess path on NVM-for-Windows installs. -->
     <StartupCommand>node node_modules\vite\bin\vite.js</StartupCommand>
-    <!-- Suppress the JavaScript SDK's auto-launch-browser behaviour.
-         By default, F5 / Ctrl+F5 on a Microsoft.VisualStudio.JavaScript
-         project opens TWO browser sessions: a debug-attached one for
-         JS breakpoint support, plus a separate "navigate to startup
-         URL" one — visible to the user as two tabs / two windows.
-         Setting this to None makes the SDK skip both launches. The
-         dev server still starts fine; you click the `Local:` URL in
-         the terminal panel (Ctrl+click in the VS terminal opens it
-         in your default browser, exactly once). -->
-    <JavaScriptStartupBrowser>None</JavaScriptStartupBrowser>
     <JavaScriptTestRoot>src\</JavaScriptTestRoot>
     <JavaScriptTestFramework>Vitest</JavaScriptTestFramework>
     <!-- Allows the build (or compile) script located on package.json to run on Build -->

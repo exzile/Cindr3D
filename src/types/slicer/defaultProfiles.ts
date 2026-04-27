@@ -419,6 +419,7 @@ export const DEFAULT_PRINT_PROFILES: PrintProfile[] = [
     supportWallCount: 1,           // support_wall_count = 1
     supportInterfacePattern: 'concentric', // support_interface_pattern = 'concentric'
     supportInterfaceDensity: 100,  // support_interface_density = 100
+    supportInfillDensityMultiplierInitialLayer: 100,
     skirtHeight: 3,                // skirt_height = 3
     brimReplacesSupportEnabled: true, // brim_replaces_support = true
     raftBaseThickness: 0.3,        // raft_base_thickness = 0.3

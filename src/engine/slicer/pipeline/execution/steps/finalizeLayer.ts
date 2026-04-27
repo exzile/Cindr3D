@@ -18,6 +18,32 @@ export function nextConsecutiveBridgeLayers(
   return (prior ?? 0) + 1;
 }
 
+type IroningLine = { from: THREE.Vector2; to: THREE.Vector2 };
+
+export function sortIroningLinesMonotonic(lines: IroningLine[]): IroningLine[] {
+  return lines
+    .map((line) => {
+      const forward = line.from.x < line.to.x || (line.from.x === line.to.x && line.from.y <= line.to.y);
+      return forward ? line : { from: line.to, to: line.from };
+    })
+    .sort((a, b) => {
+      const ay = (a.from.y + a.to.y) * 0.5;
+      const by = (b.from.y + b.to.y) * 0.5;
+      if (ay !== by) return ay - by;
+      const ax = Math.min(a.from.x, a.to.x);
+      const bx = Math.min(b.from.x, b.to.x);
+      return ax - bx;
+    });
+}
+
+export function minimumLayerTimeForLayer(
+  pp: Pick<SliceRun['pp'], 'minLayerTime' | 'minLayerTimeWithOverhang'>,
+  hasOverhang: boolean,
+): number {
+  if (!hasOverhang) return pp.minLayerTime;
+  return Math.max(pp.minLayerTime, pp.minLayerTimeWithOverhang ?? 0);
+}
+
 export function finalizeLayer(
   pipeline: unknown,
   run: SliceRun,
@@ -145,7 +171,10 @@ export function finalizeLayer(
       const wallCoverage = (pp.wallCount + 0.5) * pp.wallLineWidth;
       const innermost = slicer.offsetContour(contour.points, -(wallCoverage + (pp.ironingInset ?? 0.35)));
       if (innermost.length < 3) continue;
-      const ironLines = slicer.generateLinearInfill(innermost, 100, pp.ironingSpacing, li, pp.ironingPattern ?? 'lines');
+      const generatedIronLines = slicer.generateLinearInfill(innermost, 100, pp.ironingSpacing, li, pp.ironingPattern ?? 'lines');
+      const ironLines = pp.monotonicIroningOrder
+        ? sortIroningLinesMonotonic(generatedIronLines)
+        : generatedIronLines;
       for (const line of ironLines) {
         emitter.travelTo(line.from.x, line.from.y, moves);
         emitter.unretract();
@@ -160,10 +189,11 @@ export function finalizeLayer(
     }
   }
 
-  if (layerTime < pp.minLayerTime && layerTime > 0) {
-    const dwellTime = pp.minLayerTime - layerTime;
+  const minLayerTime = minimumLayerTimeForLayer(pp, layer.hasBridgeRegions || (run.layerHadBridge ?? false));
+  if (layerTime < minLayerTime && layerTime > 0) {
+    const dwellTime = minLayerTime - layerTime;
     if (dwellTime > 0.5) gcode.push(`G4 P${Math.round(dwellTime * 1000)} ; Min layer time dwell`);
-    layerTime = pp.minLayerTime;
+    layerTime = minLayerTime;
   }
 
   run.totalTime += layerTime;
