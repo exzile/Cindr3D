@@ -70,7 +70,7 @@ export function computeLayerTimeRange(
  */
 export function getMoveColor(
   move: SliceMove,
-  colorMode: 'type' | 'speed' | 'flow' | 'width' | 'layer-time',
+  colorMode: 'type' | 'speed' | 'flow' | 'width' | 'layer-time' | 'wall-quality',
   range: [number, number],
   layerTimeT = 0,
 ): THREE.Color {
@@ -99,7 +99,7 @@ export function getMoveColor(
 
 export function buildLayerGeometry(
   layer: SliceLayer,
-  colorMode: 'type' | 'speed' | 'flow' | 'width' | 'layer-time',
+  colorMode: 'type' | 'speed' | 'flow' | 'width' | 'layer-time' | 'wall-quality',
   range: [number, number],
   layerTimeT = 0,
 ): LayerGeometryData {

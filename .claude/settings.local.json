@@ -91,7 +91,16 @@
       "Read(//c/Users/joeyp/.claude/memory//**)",
       "Read(//c/Users/joeyp/.claude/projects/C--Users-joeyp-source-repos-exzile-DesignCAD/memory//**)",
       "PowerShell(powershell -ExecutionPolicy Bypass -File wasm\\\\build.ps1)",
-      "Bash(npx tsx *)"
+      "Bash(npx tsx *)",
+      "Read(//c/Users/joeyp/.claude/**)",
+      "Bash(claude mcp *)",
+      "Bash(npx --yes gitnexus --help)",
+      "Bash(timeout 30 npx --yes gitnexus --version)",
+      "Bash(timeout 15 npx --yes gitnexus mcp --help)",
+      "Bash(timeout 30 npx --yes gitnexus status)",
+      "Bash(timeout 180 npx --yes gitnexus analyze)",
+      "Bash(rm C:/Users/joeyp/source/repos/exzile/DesignCAD/.vscode/launch.json C:/Users/joeyp/source/repos/exzile/DesignCAD/.vscode/tasks.json)",
+      "Bash(rmdir C:/Users/joeyp/source/repos/exzile/DesignCAD/.vscode)"
     ]
   }
 }

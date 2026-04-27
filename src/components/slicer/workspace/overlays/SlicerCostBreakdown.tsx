@@ -20,6 +20,7 @@ import './SlicerCostBreakdown.css';
 const CATEGORY_LABEL: Record<SliceMove['type'], { label: string; cat: string; color: string }> = {
   'wall-outer':  { label: 'Outer Wall', cat: 'Walls',     color: '#ff8844' },
   'wall-inner':  { label: 'Inner Wall', cat: 'Walls',     color: '#ffbb66' },
+  'gap-fill':    { label: 'Gap Fill',   cat: 'Walls',     color: '#bbcc22' },
   'top-bottom':  { label: 'Top/Bottom', cat: 'Skin',      color: '#44ff88' },
   'ironing':     { label: 'Ironing',    cat: 'Skin',      color: '#88ff88' },
   infill:        { label: 'Infill',     cat: 'Infill',    color: '#44aaff' },

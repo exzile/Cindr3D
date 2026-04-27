@@ -12,6 +12,16 @@ import type { SlicerStore } from './types';
 export const slicerPersistConfig = {
   name: 'dzign3d-slicer-plate',
   storage: idbStorage as unknown as PersistStorage<SlicerStore, unknown>,
+  // Bump whenever a default-profile field changes value or new
+  // sanity-clamps land in `onRehydrateStorage`. Zustand compares the
+  // persisted version against this number and runs the legacy-state
+  // pass before `onRehydrateStorage` fires, so users with stale
+  // localStorage get migrated even if `onRehydrateStorage` somehow
+  // doesn't pick them up. The actual migration logic lives in the
+  // hydrate hook below — `migrate` just hands the data through (we
+  // don't strip fields, we clamp them).
+  version: 2,
+  migrate: (persisted: unknown, _from: number) => persisted,
   partialize: ((state) => ({
     printerProfiles: state.printerProfiles,
     materialProfiles: state.materialProfiles,

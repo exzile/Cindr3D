@@ -111,21 +111,36 @@ function githubProxyPlugin(): Plugin {
   };
 }
 
-// Send `Cache-Control: no-cache` for .wasm files served by the dev
-// server. Without it the browser caches the binary by URL — and since
-// our wasm/dist/clipper2.wasm path is stable, rebuilding the binary is
-// invisible to a running tab until you hard-reload. Setting `no-cache`
-// (NOT `no-store` — we still want the disk cache + ETag revalidation)
-// makes every fetch validate against the server, so a rebuilt .wasm
-// arrives within the next slice. Only applies to the dev middleware;
-// production assets are content-hashed by `rollupOptions.output` above.
-function noCacheWasmPlugin(): Plugin {
+// Send `Cache-Control: no-cache` for dev-mode static assets that the
+// browser would otherwise hold onto across reloads — `.wasm`, `.js`,
+// `.ts`, `.tsx`, `.css`, and the bare `/` HTML entry. `no-cache`
+// (NOT `no-store` — we want disk cache + ETag revalidation) makes
+// every fetch validate against the server. Effects:
+//
+//   • Rebuilt `.wasm` (after `wasm/build.ps1`) arrives within the
+//     next slice, no hard-reload needed.
+//   • Edits to source `.ts`/`.tsx` always reach the running tab —
+//     the long-tail cache-stale problems we kept hitting (purple
+//     colour, profile migration, etc.) become impossible because
+//     the browser cannot serve stale source from disk.
+//
+// Only applies to the dev middleware (`apply: 'serve'`); production
+// assets are content-hashed by `rollupOptions.output` and need
+// long cache headers, so we don't touch them.
+function noCacheDevAssetsPlugin(): Plugin {
   return {
-    name: 'no-cache-wasm-dev',
+    name: 'no-cache-dev-assets',
     apply: 'serve',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        if (req.url && /\.wasm(\?|$)/.test(req.url)) {
+        if (!req.url) { next(); return; }
+        const url = req.url;
+        const noCache =
+          /\.(wasm|js|mjs|cjs|ts|tsx|jsx|css)(\?|$)/.test(url)
+          || url === '/'
+          || url === '/index.html'
+          || url.startsWith('/@');  // Vite virtual modules
+        if (noCache) {
           res.setHeader('Cache-Control', 'no-cache, must-revalidate');
         }
         next();
@@ -136,7 +151,7 @@ function noCacheWasmPlugin(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), wasm(), duetProxyPlugin(), githubProxyPlugin(), noCacheWasmPlugin()],
+  plugins: [react(), wasm(), duetProxyPlugin(), githubProxyPlugin(), noCacheDevAssetsPlugin()],
   resolve: {
     alias: {
       module: fileURLToPath(new URL('./src/shims/nodeModule.ts', import.meta.url)),

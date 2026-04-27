@@ -518,4 +518,4 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
   setSliceProgress: (progress) => set({ sliceProgress: progress }),
 
   ...createPreviewActions({ set, get }),
-}), slicerPersistConfig));
+}), slicerPersistConfig as Parameters<typeof persist<SlicerStore>>[1]));

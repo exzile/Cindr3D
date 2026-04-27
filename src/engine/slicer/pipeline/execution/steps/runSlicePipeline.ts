@@ -34,6 +34,12 @@ type LayerWorkerMessage =
   | { type: 'cancelled'; requestId: number }
   | { type: 'error'; requestId: number; message: string };
 
+const MIN_LAYER_WORKER_POOL_LAYERS = 48;
+const MAX_LAYER_PREP_WORKERS = 6;
+const SMALL_MESH_LAYER_PREP_TRIANGLES = 20_000;
+const MEDIUM_MESH_LAYER_PREP_TRIANGLES = 40_000;
+const LARGE_MESH_LAYER_PREP_TRIANGLES = 80_000;
+
 function hardwareConcurrency(): number {
   const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : undefined;
   return Math.max(1, Math.floor(cores || 1));
@@ -83,11 +89,26 @@ function hydrateLayerGeometry(layer: SerializedLayerGeometry | null): SliceLayer
   };
 }
 
-function shouldUseLayerWorkerPool(run: SliceRun): boolean {
-  if (run.totalLayers < 48) return false;
-  if (hardwareConcurrency() < 2) return false;
+export function chooseLayerPrepWorkerCount(
+  run: Pick<SliceRun, 'totalLayers' | 'triangles' | 'pp'>,
+  cores = hardwareConcurrency(),
+): number {
+  if (run.totalLayers < MIN_LAYER_WORKER_POOL_LAYERS) return 0;
+  const availableCores = Math.max(1, Math.floor(cores || 1));
+  if (availableCores < 2) return 0;
+
   const print = run.pp as SliceRun['pp'] & { parallelLayerPreparation?: boolean };
-  return print.parallelLayerPreparation !== false;
+  if (print.parallelLayerPreparation === false) return 0;
+
+  const triangleCount = run.triangles.length;
+  if (triangleCount >= LARGE_MESH_LAYER_PREP_TRIANGLES) return 0;
+  if (triangleCount >= MEDIUM_MESH_LAYER_PREP_TRIANGLES) return Math.min(2, availableCores, run.totalLayers);
+  if (triangleCount >= SMALL_MESH_LAYER_PREP_TRIANGLES) return Math.min(3, availableCores, run.totalLayers);
+  return Math.min(availableCores, run.totalLayers, MAX_LAYER_PREP_WORKERS);
+}
+
+function shouldUseLayerWorkerPool(run: SliceRun): boolean {
+  return chooseLayerPrepWorkerCount(run) > 1;
 }
 
 async function prepareLayersInWorkerPool(
@@ -96,7 +117,7 @@ async function prepareLayersInWorkerPool(
   geometries: { geometry: THREE.BufferGeometry; transform: THREE.Matrix4 }[],
 ): Promise<Array<SliceLayerGeometryState | null>> {
   const slicer = pipeline as SlicerExecutionPipeline;
-  const workerCount = Math.min(hardwareConcurrency(), run.totalLayers, 6);
+  const workerCount = chooseLayerPrepWorkerCount(run);
   const layerBatches = Array.from({ length: workerCount }, () => [] as number[]);
   for (let li = 0; li < run.totalLayers; li++) layerBatches[li % workerCount].push(li);
 

@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **DesignCAD** (17172 symbols, 24733 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **DesignCAD** (17427 symbols, 25115 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -41,3 +41,26 @@ This project is indexed by GitNexus as **DesignCAD** (17172 symbols, 24733 relat
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+# Verification & Debug Hygiene
+
+## Always Do
+
+- **MUST run `npm run verify` before claiming a change is safe to ship.** Plain `tsc --noEmit` skips files that only the composite build (`tsc -b`) checks — every project-references error caught by `npm run build` would slip through. `verify` runs `tsc -b && vitest run`. Use it instead of `tsc --noEmit` or `vitest run` alone.
+- **MUST use `npm run dev:fresh` when starting a debug session after profile-default changes, WASM rebuilds, or anything that touches persisted state** (`src/types/slicer/defaultProfiles.ts`, `src/store/slicer/persistConfig.ts`, anything in `wasm/dist/`). Plain `npm run dev` reuses Vite's optimized-deps cache (`node_modules/.vite/`) which holds onto pre-bundled npm dep snapshots — `dev:fresh` wipes that cache before starting so the first page load runs against everything we just wrote.
+- **MUST run `npx tsc -b` (NOT `npx tsc --noEmit`) for any standalone typecheck.** Same reason: composite mode catches what plain mode misses.
+
+## Never Do
+
+- NEVER claim "typecheck clean" or "tests pass" based on `tsc --noEmit` alone — it lies about errors in test-only configs and project-reference subprojects.
+- NEVER tell the user "hard reload should fix it" before checking that the dev server is actually serving fresh source. Use `curl http://localhost:5173/src/<path-to-file>` to verify; the dev server now sends `Cache-Control: no-cache` for all source assets so every reload validates against the server.
+
+## Cache layers a debug session has to clear
+
+| Layer | When stale | How to clear |
+|---|---|---|
+| Vite optimized-deps (`node_modules/.vite/`) | After dependency changes, sometimes after large refactors | `npm run dev:fresh` |
+| Browser HTTP cache for `.ts/.js/.css/.wasm` | Should never be stale anymore | Vite plugin sends `Cache-Control: no-cache` on every dev asset |
+| Slicer-worker bundled code | When `src/workers/SlicerWorker.ts` or its imports change | Auto: URL-mismatch check in `getSlicerWorker` terminates stale workers |
+| WASM binary (`wasm/dist/*.wasm`) | After `wasm/build.ps1` rebuild | Auto: `Cache-Control: no-cache` from the dev plugin |
+| IndexedDB persisted profile | When `defaultProfiles.ts` or migration logic changes | Bump `slicerPersistConfig.version`; or DevTools → Application → IndexedDB → delete `dzign3d-slicer-plate` |
