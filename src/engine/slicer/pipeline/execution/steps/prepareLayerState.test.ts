@@ -3,6 +3,7 @@ import * as THREE from 'three';
 
 import { prepareLayerGeometryState } from './prepareLayerState';
 import type { SliceGeometryRun } from './types';
+import type { Triangle } from '../../../../../types/slicer-pipeline.types';
 
 interface Contour {
   points: THREE.Vector2[];
@@ -38,11 +39,23 @@ function bboxRange(points: THREE.Vector2[]): { width: number; height: number } {
   return { width: maxX - minX, height: maxY - minY };
 }
 
+function makeTriangle(z0: number, z1: number, z2: number): Triangle {
+  return {
+    v0: new THREE.Vector3(0, 0, z0),
+    v1: new THREE.Vector3(1, 0, z1),
+    v2: new THREE.Vector3(0, 1, z2),
+    normal: new THREE.Vector3(0, 0, 1),
+    edgeKey01: '01',
+    edgeKey12: '12',
+    edgeKey20: '20',
+  };
+}
+
 interface TestPipeline {
   cancelled: boolean;
   yieldToUI(): Promise<void>;
   reportProgress(): void;
-  sliceTrianglesAtZ(): unknown[];
+  sliceTrianglesAtZ(triangles?: unknown[]): unknown[];
   connectSegments(segments: unknown[]): unknown[];
   classifyContours(contours: unknown[]): Contour[];
   closeContourGaps(c: Contour[]): Contour[];
@@ -176,5 +189,88 @@ describe('prepareLayerGeometryState — XY compensation', () => {
     }, [outer]);
     // Layer 0 outer: 10 + 2*(0.1 - 0.05) = 10.1
     expect(bboxRange(result![0].points).width).toBeCloseTo(10.1, 4);
+  });
+
+  it('can defer per-layer progress and yield cadence to the outer slice loop', async () => {
+    let progressReports = 0;
+    let yields = 0;
+    const pipeline = makePipeline([]);
+    pipeline.reportProgress = () => { progressReports += 1; };
+    pipeline.yieldToUI = async () => { yields += 1; };
+    pipeline.connectSegments = () => [{}];
+    pipeline.classifyContours = () => [makeSquare(10, true)];
+
+    const run = makeRun({}, []);
+    const result = await prepareLayerGeometryState(
+      pipeline,
+      run as unknown as SliceGeometryRun,
+      0,
+      { reportProgress: false, yieldToUI: false },
+    );
+
+    expect(result).toBeDefined();
+    expect(progressReports).toBe(0);
+    expect(yields).toBe(0);
+  });
+
+  it('passes only layer-active triangles to the slicer', async () => {
+    let slicedTriangleCount = -1;
+    const pipeline = makePipeline([]);
+    pipeline.sliceTrianglesAtZ = (triangles: unknown[]) => {
+      slicedTriangleCount = triangles.length;
+      return [{}];
+    };
+    pipeline.connectSegments = () => [{}];
+    pipeline.classifyContours = () => [makeSquare(10, true)];
+
+    const run = makeRun({}, []) as unknown as SliceGeometryRun;
+    run.triangles = [
+      makeTriangle(0, 0.5, 1),
+      makeTriangle(4, 4.5, 5),
+    ];
+    run.layerZs = [0.5, 4.5];
+    run.totalLayers = 2;
+    run.modelBBox = {
+      min: new THREE.Vector3(0, 0, 0),
+      max: new THREE.Vector3(0, 0, 5),
+    };
+
+    await prepareLayerGeometryState(pipeline, run, 0, {
+      reportProgress: false,
+      yieldToUI: false,
+    });
+
+    expect(slicedTriangleCount).toBe(1);
+  });
+
+  it('indexes only the assigned layer subset when provided by a worker', async () => {
+    let slicedTriangleCount = -1;
+    const pipeline = makePipeline([]);
+    pipeline.sliceTrianglesAtZ = (triangles: unknown[]) => {
+      slicedTriangleCount = triangles.length;
+      return [{}];
+    };
+    pipeline.connectSegments = () => [{}];
+    pipeline.classifyContours = () => [makeSquare(10, true)];
+
+    const run = makeRun({}, []) as unknown as SliceGeometryRun & { activeLayerIndices?: number[] };
+    run.triangles = [
+      makeTriangle(0, 0.5, 1),
+      makeTriangle(4, 4.5, 5),
+    ];
+    run.layerZs = [0.5, 4.5];
+    run.totalLayers = 2;
+    run.modelBBox = {
+      min: new THREE.Vector3(0, 0, 0),
+      max: new THREE.Vector3(0, 0, 5),
+    };
+    run.activeLayerIndices = [1];
+
+    await prepareLayerGeometryState(pipeline, run, 1, {
+      reportProgress: false,
+      yieldToUI: false,
+    });
+
+    expect(slicedTriangleCount).toBe(1);
   });
 });

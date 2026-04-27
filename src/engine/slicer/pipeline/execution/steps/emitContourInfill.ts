@@ -86,12 +86,13 @@ function insetFillCenterlineRegion(
   contour: THREE.Vector2[],
   holes: THREE.Vector2[][],
   lineWidth: number,
+  centerlineInset = lineWidth * 0.5,
 ): { contour: THREE.Vector2[]; holes: THREE.Vector2[][] } | null {
-  const inset = lineWidth * 0.5;
-  const safeContour = offsetByAreaIntent(pipeline, contour, inset, 'shrink');
+  const inset = Math.max(0, centerlineInset);
+  const safeContour = inset > 0 ? offsetByAreaIntent(pipeline, contour, inset, 'shrink') : contour;
   if (safeContour.length < 3) return null;
   const safeHoles = holes
-    .map((hole) => offsetByAreaIntent(pipeline, hole, inset, 'grow'))
+    .map((hole) => (inset > 0 ? offsetByAreaIntent(pipeline, hole, inset, 'grow') : hole))
     .filter((hole) => hole.length >= 3);
   return { contour: safeContour, holes: safeHoles };
 }
@@ -132,6 +133,10 @@ export function pickBridgeFanSpeed(
 }
 
 type InfillMoveType = Extract<SliceMove['type'], 'infill' | 'top-bottom' | 'bridge'>;
+
+export function solidSkinCenterlineInset(lineWidth: number, skinOverlap: number): number {
+  return Math.max(0, lineWidth * 0.5 - skinOverlap);
+}
 
 export function skinRemovalWidthForLayer(
   pp: Pick<SliceRun['pp'], 'skinRemovalWidth' | 'topSkinRemovalWidth' | 'bottomSkinRemovalWidth'>,
@@ -203,7 +208,13 @@ export function emitContourInfill(
         }
         const skinInput = skinContour.length >= 3 ? skinContour : region.contour;
         if (skinInput.length < 3) continue;
-        const safeSkinInput = insetFillCenterlineRegion(slicer, skinInput, region.holes, lineWidth);
+        const safeSkinInput = insetFillCenterlineRegion(
+          slicer,
+          skinInput,
+          region.holes,
+          lineWidth,
+          solidSkinCenterlineInset(lineWidth, skinOverlap),
+        );
         if (!safeSkinInput) continue;
         const skinPattern = isSolidTop
           ? (pp.topSurfaceSkinPattern ?? pp.topBottomPattern ?? 'lines')
@@ -356,8 +367,26 @@ export function emitContourInfill(
       }
       const fromDist = Math.hypot(effFrom.x - emitter.currentX, effFrom.y - emitter.currentY);
       const canConnectInfill = connect && idx > 0 && fromDist < connectTol && slicer.segmentInsideMaterial(new THREE.Vector2(emitter.currentX, emitter.currentY), effFrom, innermostWall, infillHoles);
-      if (canConnectInfill) layer.layerTime += emitter.extrudeTo(effFrom.x, effFrom.y, thisSpeed, thisLineWidth, layerH).time;
-      else emitter.travelTo(effFrom.x, effFrom.y, moves);
+      if (canConnectInfill) {
+        // Boustrophedon connector hop — extrude a short bead at the
+        // wall instead of travelling, then push it as a move so the
+        // preview tube renderer shows the continuous zigzag (Cura /
+        // Orca style) and the per-move extrusion total matches
+        // `emitter.totalExtruded`. Without this push, the hop's
+        // extrusion vanished from the SliceMove[] stream.
+        const hopFromX = emitter.currentX, hopFromY = emitter.currentY;
+        layer.layerTime += emitter.extrudeTo(effFrom.x, effFrom.y, thisSpeed, thisLineWidth, layerH).time;
+        moves.push({
+          type: thisMoveType,
+          from: { x: hopFromX, y: hopFromY },
+          to: { x: effFrom.x, y: effFrom.y },
+          speed: thisSpeed,
+          extrusion: emitter.calculateExtrusion(fromDist, thisLineWidth, layerH),
+          lineWidth: thisLineWidth,
+        });
+      } else {
+        emitter.travelTo(effFrom.x, effFrom.y, moves);
+      }
       const flowSaved = emitter.currentLayerFlow;
       emitter.currentLayerFlow = flowSaved * thisFlowScale;
       layer.layerTime += emitter.extrudeTo(effTo.x, effTo.y, thisSpeed, thisLineWidth, layerH).time;

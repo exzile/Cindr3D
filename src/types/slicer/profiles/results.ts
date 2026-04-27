@@ -76,6 +76,25 @@ export interface SliceResult {
   filamentCost: number; // $
   // Per-layer data for preview
   layers: SliceLayer[];
+  // Wall-clock slicer timings, used to find real bottlenecks without
+  // changing geometry accuracy.
+  slicingPerformance?: SlicePerformanceProfile;
+}
+
+export interface SlicePerformanceProfile {
+  totalMs: number;
+  layerPrepMode: 'sequential' | 'parallel' | 'merged';
+  workerCount: number;
+  triangleCount: number;
+  layerCount: number;
+  buckets: SliceTimingBucket[];
+}
+
+export interface SliceTimingBucket {
+  key: string;
+  label: string;
+  ms: number;
+  count: number;
 }
 
 // -----------------------------------------------------------------------------

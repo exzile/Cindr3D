@@ -109,6 +109,36 @@ describe('Preview tube — chain length preservation', () => {
   });
 });
 
+describe('Preview tube — Orca-style solid skin ends', () => {
+  it('does not trim open top-bottom tube ring centers before adding point caps', () => {
+    const chain = makeChain([[0, 0], [10, 0]], 0.4, false, 'top-bottom');
+    const geo = buildChainTube(chain, 0.2, 0.2);
+    const positions = geo!.getAttribute('position').array as Float32Array;
+    const start = getRingCenter(positions, 0);
+    const end = getRingCenter(positions, 1);
+
+    expect(start.x).toBeCloseTo(0, 5);
+    expect(start.y).toBeCloseTo(0, 5);
+    expect(end.x).toBeCloseTo(10, 5);
+    expect(end.y).toBeCloseTo(0, 5);
+  });
+
+  it('renders sparse infill tube ring centers at exact gcode endpoints (no trim)', () => {
+    // We removed the previous trim hack — every fill-type tube now
+    // ends at the gcode coordinate, matching OrcaSlicer / PrusaSlicer.
+    // The deliberate skin/infill overlap into walls is therefore
+    // visually accurate (matches what's actually printed).
+    const chain = makeChain([[0, 0], [10, 0]], 0.4, false, 'infill');
+    const geo = buildChainTube(chain, 0.2, 0.2);
+    const positions = geo!.getAttribute('position').array as Float32Array;
+    const start = getRingCenter(positions, 0);
+    const end = getRingCenter(positions, 1);
+
+    expect(start.x).toBeCloseTo(0, 5);
+    expect(end.x).toBeCloseTo(10, 5);
+  });
+});
+
 describe('Preview tube — Z position precision', () => {
   const BASE_ZS = [0.2, 0.5, 1.0, 2.5, 10.0] as const;
   it.each(BASE_ZS)('ring centerline Z = baseZ - layerHeight/2 for baseZ=%fmm', (baseZ) => {

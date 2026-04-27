@@ -4,7 +4,7 @@ import type { PrintProfile } from '../../../../types/slicer';
 import type { PerimeterDeps } from '../../../../types/slicer-pipeline-deps.types';
 import type { GeneratedPerimeters, InfillRegion } from '../../../../types/slicer-pipeline.types';
 import { booleanMultiPolygonClipper2Sync } from '../../geometry/clipper2Boolean';
-import { strokeOpenPathsClipper2Sync, offsetPathsClipper2Sync } from '../../geometry/clipper2Wasm';
+import { strokeOpenPathsClipper2Sync } from '../../geometry/clipper2Wasm';
 import { generatePerimetersEx } from '../perimeters';
 import { resolveArachneBackend } from './backend';
 import type { ArachneBackendName, ArachneGenerationContext, VariableWidthPath } from './types';
@@ -371,56 +371,32 @@ export function computeArachneInfillFromStroke(
       widths: [...widths, widths[0]],
     };
   });
-  let coverage: THREE.Vector2[][] | null;
+  // Coverage = stroked walls + a uniform safety pad to absorb libArachne's
+  // non-uniform bead placement (geometrically-identical features can have
+  // ~30µm radial drift between them, plus per-segment width variance can
+  // leave the stroke 100-200µm short in sectors). We fold the pad into
+  // each segment's delta inside the stroke itself (the C++ `pad` param)
+  // so we don't pay for a separate post-stroke `InflatePaths` pass —
+  // saves one Clipper2 round-trip per layer at zero geometric cost.
+  // Pad is 25% of lineWidth: enough to cover Arachne variance, small
+  // enough that narrow features still get legitimate infill area.
+  const coverageSafetyPad = lineWidth * 0.25;
+  let safeCoverage: THREE.Vector2[][] | null;
   try {
     // Tight `arcTolerance` (sub-micron) so the polygonal approximation
     // of round caps doesn't underestimate the bead radius. With the
     // default tolerance, disk approximations can be ~20µm short of the
     // true radius, leaving a sliver of infill inside the bead.
-    coverage = strokeOpenPathsClipper2Sync(strokeInput, {
+    safeCoverage = strokeOpenPathsClipper2Sync(strokeInput, {
+      pad: coverageSafetyPad,
       precision: 4,
       arcTolerance: 1e-4,
     });
   } catch {
     return null;
   }
-  if (coverage === null) return null;  // Clipper2 not loaded yet
-  if (coverage.length === 0) return null;  // degenerate — let scalar path handle it
-
-  // Coverage safety inflation. libArachne's bead placement is NOT
-  // perfectly symmetric across geometrically-identical features — for a
-  // disc with four matching mounting holes, the avg-radius of the
-  // inner walls around each hole varies by ~30µm between holes
-  // (skeletal trapezoidation produces asymmetric output for small
-  // closed boundaries). The bead also has variable width along a
-  // single path. Both mean the stroke envelope can fall short of
-  // covering the full "bead presence" zone in some sectors by
-  // 100-200µm, leaving infill that creeps INTO the wall band.
-  //
-  // Cura/Orca handle this by inflating the wall-coverage polygon
-  // outward post-union — a uniform safety margin pushes the coverage
-  // boundary past where any libArachne placement variance could put a
-  // bead. We use 25% of the line width: small enough not to bite into
-  // legitimate infill area in narrow features, big enough to absorb
-  // libArachne's typical non-uniformity.
-  const coverageSafetyPad = lineWidth * 0.25;
-  // Clipper2 raw `+delta` inflates each ring outward along its winding
-  // normal — CCW outers grow bigger (the wall band's body-side edge
-  // pushes deeper into body) and CW holes shrink visually (the wall
-  // band's empty-feature-side edge pushes into the empty space). Both
-  // are what we want: extra coverage on the body side prevents infill
-  // bleed; extra coverage into empty mounting holes is harmless because
-  // those areas are already non-printing. We bypass `deps.offsetContour`
-  // here on purpose — that helper applies winding-aware sign-flipping
-  // to keep the slicer's "+offset means inset toward solid" convention,
-  // which is the wrong semantics for a coverage union.
-  const inflatedCoverage = offsetPathsClipper2Sync(coverage, coverageSafetyPad, {
-    joinType: 'round',
-    arcTolerance: 1e-4,
-  });
-  const safeCoverage = (inflatedCoverage && inflatedCoverage.length > 0)
-    ? inflatedCoverage
-    : coverage;
+  if (safeCoverage === null) return null;  // Clipper2 not loaded yet
+  if (safeCoverage.length === 0) return null;  // degenerate — let scalar path handle it
 
   // Inset the BODY by `lineWidth/2` before subtracting coverage. This
   // mirrors CuraEngine's `outline.offset(-outermost_wall_inset_distance)`

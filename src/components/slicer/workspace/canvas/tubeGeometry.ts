@@ -19,10 +19,38 @@ import type { TubeChain } from '../../../../types/slicer-preview.types';
 // and there is NO visible discontinuity. This matches how Cura, OrcaSlicer,
 // and PrusaSlicer render their g-code preview.
 
-/** Cross-section resolution for each chain tube. 8 radial segments gives a
- *  smooth elliptical tube without exploding triangle count (RADIAL × 2
- *  triangles per segment; typical layer ~1000 segments → ~16k triangles). */
+/** Cross-section resolution for each chain tube. 8 ring vertices placed
+ *  on the rectangle perimeter (4 corner verts + 4 face-midpoint verts),
+ *  matching OrcaSlicer / PrusaSlicer / Cura's preview style. The
+ *  rectangular cross-section makes adjacent fill scanlines render
+ *  perfectly flush (an elliptical cross-section's curved top would leave
+ *  a visible inter-line gap from any angled camera view, even when the
+ *  scanlines are spaced exactly one lineWidth apart in the gcode).
+ *  Triangle count: RADIAL × 2 per segment, ~16k triangles for a typical
+ *  1000-segment layer. */
 export const TUBE_RADIAL_SEGMENTS = 8;
+
+/** Per-ring vertex layout for a rectangular tube cross-section. Each
+ *  entry maps a ring-vertex index to:
+ *    perpF: factor in the perpendicular (line-width) axis (-1, 0, +1)
+ *    vertF: factor in the vertical (Z, layer-height) axis (-1, 0, +1)
+ *    nPerpF/nZF: outward face normal at this vertex. Corner verts
+ *                use the average of the two adjacent face normals
+ *                (1/√2 each) to give a smooth highlight roll-off
+ *                instead of a hard edge. Phong shading then renders
+ *                the rectangle with subtle corner rounding — visually
+ *                identical to OrcaSlicer's bead at typical zoom.
+ *  Indexed clockwise starting at the right-side face midpoint. */
+const TUBE_RECT_LAYOUT = [
+  { perpF:  1, vertF:  0, nPerpF:  1,           nZF:  0           },
+  { perpF:  1, vertF:  1, nPerpF:  Math.SQRT1_2, nZF:  Math.SQRT1_2 },
+  { perpF:  0, vertF:  1, nPerpF:  0,           nZF:  1           },
+  { perpF: -1, vertF:  1, nPerpF: -Math.SQRT1_2, nZF:  Math.SQRT1_2 },
+  { perpF: -1, vertF:  0, nPerpF: -1,           nZF:  0           },
+  { perpF: -1, vertF: -1, nPerpF: -Math.SQRT1_2, nZF: -Math.SQRT1_2 },
+  { perpF:  0, vertF: -1, nPerpF:  0,           nZF: -1           },
+  { perpF:  1, vertF: -1, nPerpF:  Math.SQRT1_2, nZF: -Math.SQRT1_2 },
+] as const;
 
 /** Polygon-to-curve subdivision factor for the chain tube. Each polygon
  *  segment is sampled at this many additional points using a centripetal
@@ -66,17 +94,18 @@ const TUBE_SUBDIVISION_LW_RATIO = 3;
  *  GCodeTubePreview, so they never enter the miter path at all. */
 const MITER_MAX = 1.0;
 
-/** Visual end-trim for fill-type tubes. The slicer intentionally extends
- *  infill and top-bottom lines slightly into the inner wall
- *  (infillWallOverlap) so the real print bonds well — but in the preview
- *  those stubs poke past the green wall and read as fill bleeding through.
- *  Trimming each *un-shared* fill endpoint by a fraction of the bead width
- *  pulls the tube end back to the wall's inner edge without affecting the
- *  stored g-code. Only types in this set are trimmed; walls keep their full
- *  g-code length so the visible wall ring stays exact. */
+/** Whether a chain type is fill (infill / skin / bridge / ironing) for
+ *  the purposes of apex-cap rendering. Trim factors below default to
+ *  ZERO across the board now: OrcaSlicer / PrusaSlicer render every
+ *  extrusion tube at its actual gcode endpoint, with no visual fudge,
+ *  and that's what "mimic our gcode precisely" means. The deliberate
+ *  skin/infill overlap into walls (skinOverlapPercent, infillOverlap)
+ *  is then visually accurate — you SEE the bead crossing into the
+ *  wall band exactly like Orca's preview shows. */
 export const TRIMMED_FILL_TYPES = new Set(['infill', 'top-bottom', 'bridge', 'ironing']);
-const FILL_END_TRIM_FACTOR = 0.5;
-const OPEN_WALL_END_TRIM_FACTOR = 0.18;
+const FILL_END_TRIM_FACTOR = 0;
+const SOLID_SKIN_END_TRIM_FACTOR = 0;
+const OPEN_WALL_END_TRIM_FACTOR = 0;
 
 /** Shared material for the extrusion-tube meshes. `vertexColors: true` lets
  *  each chain carry per-point colours via its BufferGeometry's colour
@@ -191,6 +220,11 @@ function isWallType(type: string): boolean {
   return type === 'wall-outer' || type === 'wall-inner';
 }
 
+function endTrimFactorForType(type: string): number {
+  if (type === 'top-bottom') return SOLID_SKIN_END_TRIM_FACTOR;
+  return TRIMMED_FILL_TYPES.has(type) ? FILL_END_TRIM_FACTOR : OPEN_WALL_END_TRIM_FACTOR;
+}
+
 export function buildChainTube(
   chain: TubeChain,
   layerHeight: number,
@@ -264,7 +298,7 @@ export function buildChainTube(
 
   // Step 2: apply fill-end trim on open chain ends for fill-type chains.
   const trim = !sourceChain.isClosed && (TRIMMED_FILL_TYPES.has(sourceChain.type) || isWallType(sourceChain.type));
-  const trimFactor = TRIMMED_FILL_TYPES.has(sourceChain.type) ? FILL_END_TRIM_FACTOR : OPEN_WALL_END_TRIM_FACTOR;
+  const trimFactor = endTrimFactorForType(sourceChain.type);
   const pts = sourceChain.points.map((p) => ({ x: p.x, y: p.y, lw: p.lw }));
   if (trim && n >= 2) {
     const d0 = dir(sourceChain.points[0], sourceChain.points[1]);
@@ -320,16 +354,15 @@ export function buildChainTube(
     const [cr, cg, cb] = ringColor(i);
 
     for (let r = 0; r <= RADIAL; r++) {
-      const angle = (r / RADIAL) * Math.PI * 2;
-      const cosA = Math.cos(angle);
-      const sinA = Math.sin(angle);
+      const layout = TUBE_RECT_LAYOUT[r % RADIAL];
       positions.push(
-        p.x + cosA * perp.x * hExt,
-        p.y + cosA * perp.y * hExt,
-        centerZ + sinA * vExt,
+        p.x + layout.perpF * perp.x * hExt,
+        p.y + layout.perpF * perp.y * hExt,
+        centerZ + layout.vertF * vExt,
       );
-      // Outward radial normal (not miter-scaled — lighting stays round).
-      normals.push(cosA * perp.x, cosA * perp.y, sinA);
+      // Outward face normal (corners use averaged adjacent-face normals
+      // for a soft Phong roll-off, not a hard discontinuity).
+      normals.push(layout.nPerpF * perp.x, layout.nPerpF * perp.y, layout.nZF);
       colors.push(cr, cg, cb);
     }
   }

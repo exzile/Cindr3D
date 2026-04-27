@@ -11,10 +11,76 @@ import type {
   SliceRun,
 } from './types';
 
+interface PrepareLayerGeometryOptions {
+  reportProgress?: boolean;
+  yieldToUI?: boolean;
+}
+
+const ACTIVE_TRIANGLE_Z_EPSILON = 1e-7;
+const activeTrianglesByRun = new WeakMap<SliceGeometryRun, SliceGeometryRun['triangles'][]>();
+type ActiveLayerSubsetRun = SliceGeometryRun & { activeLayerIndices?: number[] };
+
+function lowerBound(values: number[], target: number): number {
+  let lo = 0;
+  let hi = values.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (values[mid] < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function upperBound(values: number[], target: number): number {
+  let lo = 0;
+  let hi = values.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (values[mid] <= target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function activeTrianglesForLayer(run: SliceGeometryRun, li: number): SliceGeometryRun['triangles'] {
+  let layers = activeTrianglesByRun.get(run);
+  if (!layers) {
+    layers = Array.from({ length: run.totalLayers }, () => [] as SliceGeometryRun['triangles']);
+    const modelMinZ = run.modelBBox.min.z;
+    const activeLayerIndices = (run as ActiveLayerSubsetRun).activeLayerIndices
+      ?.filter((layerIndex) => layerIndex >= 0 && layerIndex < run.totalLayers);
+
+    if (activeLayerIndices && activeLayerIndices.length > 0) {
+      for (const tri of run.triangles) {
+        const minZ = Math.min(tri.v0.z, tri.v1.z, tri.v2.z) - modelMinZ;
+        const maxZ = Math.max(tri.v0.z, tri.v1.z, tri.v2.z) - modelMinZ;
+        for (const layerIndex of activeLayerIndices) {
+          const layerZ = run.layerZs[layerIndex];
+          if (layerZ < minZ - ACTIVE_TRIANGLE_Z_EPSILON || layerZ > maxZ + ACTIVE_TRIANGLE_Z_EPSILON) continue;
+          layers[layerIndex].push(tri);
+        }
+      }
+    } else {
+      for (const tri of run.triangles) {
+        const minZ = Math.min(tri.v0.z, tri.v1.z, tri.v2.z) - modelMinZ;
+        const maxZ = Math.max(tri.v0.z, tri.v1.z, tri.v2.z) - modelMinZ;
+        const firstLayer = lowerBound(run.layerZs, minZ - ACTIVE_TRIANGLE_Z_EPSILON);
+        const lastLayer = upperBound(run.layerZs, maxZ + ACTIVE_TRIANGLE_Z_EPSILON);
+        for (let layerIndex = firstLayer; layerIndex < lastLayer; layerIndex++) {
+          layers[layerIndex].push(tri);
+        }
+      }
+    }
+    activeTrianglesByRun.set(run, layers);
+  }
+  return layers[li] ?? [];
+}
+
 export async function prepareLayerGeometryState(
   pipeline: unknown,
   run: SliceGeometryRun,
   li: number,
+  options: PrepareLayerGeometryOptions = {},
 ): Promise<SliceLayerGeometryState | null> {
   const slicer = pipeline as SlicerExecutionPipeline;
   const { pp, mat, triangles, modelBBox, offsetX, offsetY, offsetZ, layerZs, totalLayers, solidBottom, solidTop } = run;
@@ -25,8 +91,10 @@ export async function prepareLayerGeometryState(
   const isFirstLayer = li === 0;
   const layerH = li === 0 ? layerZs[0] : layerZs[li] - layerZs[li - 1];
 
-  slicer.reportProgress('slicing', (li / totalLayers) * 80, li, totalLayers, `Slicing layer ${li + 1}/${totalLayers}...`);
-  await slicer.yieldToUI();
+  if (options.reportProgress ?? true) {
+    slicer.reportProgress('slicing', (li / totalLayers) * 80, li, totalLayers, `Slicing layer ${li + 1}/${totalLayers}...`);
+  }
+  if (options.yieldToUI ?? true) await slicer.yieldToUI();
 
   // Reset the per-layer bridge flag at the start of every layer so the
   // counter logic in finalizeLayer sees a clean slate. emitContourInfill
@@ -35,7 +103,8 @@ export async function prepareLayerGeometryState(
   // paths that bail between emit and finalize.
   run.layerHadBridge = false;
 
-  const segments = slicer.sliceTrianglesAtZ(triangles, sliceZ, offsetX, offsetY, offsetZ);
+  const layerTriangles = activeTrianglesForLayer(run, li);
+  const segments = slicer.sliceTrianglesAtZ(layerTriangles, sliceZ, offsetX, offsetY, offsetZ);
   const rawContours = slicer.connectSegments(segments);
   if (rawContours.length === 0) return null;
 
@@ -266,8 +335,9 @@ export async function prepareLayerState(
   pipeline: unknown,
   run: SliceRun,
   li: number,
+  options: PrepareLayerGeometryOptions = {},
 ): Promise<SliceLayerState | null> {
-  const geometryState = await prepareLayerGeometryState(pipeline, run, li);
+  const geometryState = await prepareLayerGeometryState(pipeline, run, li, options);
   if (!geometryState) return null;
   return emitLayerStartState(pipeline, run, geometryState);
 }

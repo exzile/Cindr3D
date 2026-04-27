@@ -85,6 +85,10 @@ function mergeSliceResults(results: SliceResultWithTool[]): SliceResult {
     filamentCost: 0,
     layers: [],
   };
+  const timingBuckets = new Map<string, { label: string; ms: number; count: number }>();
+  let timingTotalMs = 0;
+  let timingWorkerCount = 0;
+  let timingTriangleCount = 0;
 
   // Concatenate G-code with a banner between groups. We don't attempt
   // layer interleaving across groups — sequential prints execute one object
@@ -104,6 +108,24 @@ function mergeSliceResults(results: SliceResultWithTool[]): SliceResult {
     merged.filamentUsed += r.filamentUsed;
     merged.filamentWeight += r.filamentWeight;
     merged.filamentCost += r.filamentCost;
+    if (r.slicingPerformance) {
+      timingTotalMs += r.slicingPerformance.totalMs;
+      timingWorkerCount += r.slicingPerformance.workerCount;
+      timingTriangleCount += r.slicingPerformance.triangleCount;
+      for (const bucket of r.slicingPerformance.buckets) {
+        const current = timingBuckets.get(bucket.key);
+        if (current) {
+          current.ms += bucket.ms;
+          current.count += bucket.count;
+        } else {
+          timingBuckets.set(bucket.key, {
+            label: bucket.label,
+            ms: bucket.ms,
+            count: bucket.count,
+          });
+        }
+      }
+    }
   }
 
   // Preview: merge layer arrays by Z so the layer slider still works
@@ -127,6 +149,18 @@ function mergeSliceResults(results: SliceResultWithTool[]): SliceResult {
     z: b.z, layerIndex: i, moves: b.moves, layerTime: b.layerTime,
   }));
   merged.layerCount = merged.layers.length;
+  if (timingBuckets.size > 0) {
+    merged.slicingPerformance = {
+      totalMs: timingTotalMs,
+      layerPrepMode: 'merged',
+      workerCount: timingWorkerCount,
+      triangleCount: timingTriangleCount,
+      layerCount: merged.layerCount,
+      buckets: [...timingBuckets.entries()]
+        .map(([key, value]) => ({ key, ...value }))
+        .sort((a, b) => b.ms - a.ms),
+    };
+  }
   return merged;
 }
 

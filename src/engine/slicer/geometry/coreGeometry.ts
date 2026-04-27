@@ -2,6 +2,28 @@ import * as THREE from 'three';
 import type { Box3 } from 'three';
 import type { Contour, Segment, Triangle } from '../../../types/slicer-pipeline.types';
 
+const TRIANGLE_Z_EPSILON = 1e-7;
+const triangleZBounds = new WeakMap<Triangle, { minZ: number; maxZ: number }>();
+
+function updateTriangleZBounds(tri: Triangle): void {
+  triangleZBounds.set(tri, {
+    minZ: Math.min(tri.v0.z, tri.v1.z, tri.v2.z),
+    maxZ: Math.max(tri.v0.z, tri.v1.z, tri.v2.z),
+  });
+}
+
+function getTriangleZBounds(tri: Triangle): { minZ: number; maxZ: number } {
+  let bounds = triangleZBounds.get(tri);
+  if (!bounds) {
+    bounds = {
+      minZ: Math.min(tri.v0.z, tri.v1.z, tri.v2.z),
+      maxZ: Math.max(tri.v0.z, tri.v1.z, tri.v2.z),
+    };
+    triangleZBounds.set(tri, bounds);
+  }
+  return bounds;
+}
+
 function weldTriangleVertices(triangles: Triangle[]): void {
   const GRID = 1e-3;
   const canon = new Map<string, THREE.Vector3>();
@@ -30,6 +52,7 @@ function weldTriangleVertices(triangles: Triangle[]): void {
     t.edgeKey01 = edgeKey(t.v0, t.v1);
     t.edgeKey12 = edgeKey(t.v1, t.v2);
     t.edgeKey20 = edgeKey(t.v2, t.v0);
+    updateTriangleZBounds(t);
   }
 }
 
@@ -169,7 +192,9 @@ export function extractTriangles(
         const cross = new THREE.Vector3().crossVectors(edge1, edge2);
         if (cross.lengthSq() < 1e-12) continue;
         const normal = cross.normalize();
-        triangles.push({ v0, v1, v2, normal, edgeKey01: '', edgeKey12: '', edgeKey20: '' });
+        const tri = { v0, v1, v2, normal, edgeKey01: '', edgeKey12: '', edgeKey20: '' };
+        updateTriangleZBounds(tri);
+        triangles.push(tri);
       }
     } else {
       for (let i = 0; i < posAttr.count; i += 3) {
@@ -181,7 +206,9 @@ export function extractTriangles(
         const cross = new THREE.Vector3().crossVectors(edge1, edge2);
         if (cross.lengthSq() < 1e-12) continue;
         const normal = cross.normalize();
-        triangles.push({ v0, v1, v2, normal, edgeKey01: '', edgeKey12: '', edgeKey20: '' });
+        const tri = { v0, v1, v2, normal, edgeKey01: '', edgeKey12: '', edgeKey20: '' };
+        updateTriangleZBounds(tri);
+        triangles.push(tri);
       }
     }
   }
@@ -209,6 +236,8 @@ export function sliceTrianglesAtZ(
 ): Segment[] {
   const segments: Segment[] = [];
   for (const tri of triangles) {
+    const { minZ, maxZ } = getTriangleZBounds(tri);
+    if (z < minZ - TRIANGLE_Z_EPSILON || z > maxZ + TRIANGLE_Z_EPSILON) continue;
     const pts = trianglePlaneIntersection(tri, z);
     if (!pts) continue;
     segments.push({

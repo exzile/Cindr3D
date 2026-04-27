@@ -100,26 +100,29 @@ describe('buildChainTube — geometric contract', () => {
     expect(ringN.y).toBeCloseTo(5, 5);
   });
 
-  it('open wall chains have their ends trimmed by OPEN_WALL_END_TRIM_FACTOR × lw', () => {
-    // Wall type, 10mm segment, 0.4mm lw → trim = 0.18 × 0.4 = 0.072 each end.
+  it('open wall chains render at their exact gcode endpoints (no trim)', () => {
+    // OrcaSlicer / PrusaSlicer / Cura all show every extrusion tube
+    // ending at the gcode coordinate. We dropped the previous trim hack
+    // (0.18 × lw on walls, 0.5 × lw on infill) so the preview is
+    // gcode-precise. The slicer's deliberate skin/infill overlap into
+    // walls is therefore visually accurate — you SEE what's printed.
     const chain = makeChain([[5, 5], [15, 5]], 0.4, false, 'wall-outer');
     const geo = buildChainTube(chain, 0.2, 0.2);
     const positions = geo!.getAttribute('position').array as Float32Array;
     const ring0 = getRingCenter(positions, 0);
     const ringN = getRingCenter(positions, 1);
-    expect(ring0.x).toBeCloseTo(5 + 0.072, 4);
-    expect(ringN.x).toBeCloseTo(15 - 0.072, 4);
+    expect(ring0.x).toBeCloseTo(5, 5);
+    expect(ringN.x).toBeCloseTo(15, 5);
   });
 
-  it('fill chains have their ends trimmed by FILL_END_TRIM_FACTOR × lw', () => {
-    // Infill type, 10mm segment, 0.4mm lw → trim = 0.5 × 0.4 = 0.2 each end.
+  it('fill chains render at their exact gcode endpoints (no trim)', () => {
     const chain = makeChain([[5, 5], [15, 5]], 0.4, false, 'infill');
     const geo = buildChainTube(chain, 0.2, 0.2);
     const positions = geo!.getAttribute('position').array as Float32Array;
     const ring0 = getRingCenter(positions, 0);
     const ringN = getRingCenter(positions, 1);
-    expect(ring0.x).toBeCloseTo(5 + 0.2, 4);
-    expect(ringN.x).toBeCloseTo(15 - 0.2, 4);
+    expect(ring0.x).toBeCloseTo(5, 5);
+    expect(ringN.x).toBeCloseTo(15, 5);
   });
 
   it('a 4-segment open INFILL polyline produces 5 main-tube rings + 2 apex caps', () => {
@@ -192,10 +195,9 @@ describe('buildChainTube — geometric contract', () => {
     expect(ringSpan(positions, 1, 1)).toBeCloseTo(0.6, 4);
   });
 
-  it('total chain length (sum of ring-to-ring distances on XY) matches the input polyline within trim tolerance', () => {
-    // Use an infill move type so end-trim is the FILL trim (0.5 × lw) =
-    // 0.5 × 0.4 = 0.2mm per end. Total trim = 0.4. Polyline length 30mm
-    // → expected tube XY length 29.6mm.
+  it('total chain length (sum of ring-to-ring distances on XY) matches the input polyline exactly (no trim)', () => {
+    // Now that we render gcode-precise endpoints, the tube length
+    // equals the input polyline length exactly (30mm = 10 + 20).
     const chain = makeChain([[0, 0], [10, 0], [10, 20]], 0.4, false, 'infill');
     const geo = buildChainTube(chain, 0.2, 0.2);
     const positions = geo!.getAttribute('position').array as Float32Array;
@@ -203,7 +205,7 @@ describe('buildChainTube — geometric contract', () => {
     const r1 = getRingCenter(positions, 1);
     const r2 = getRingCenter(positions, 2);
     const totalXY = r0.distanceTo(r1) + r1.distanceTo(r2);
-    expect(totalXY).toBeCloseTo(29.6, 1);
+    expect(totalXY).toBeCloseTo(30, 4);
   });
 
   it('untrimmed move types (e.g. travel never reaches here) have no end shrink for non-fill non-wall types', () => {

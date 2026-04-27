@@ -29,7 +29,7 @@ import type { SliceLayer, SliceMove } from '../../../../types/slicer';
  *
  * Cura/Orca visual convention:
  *   - Outer Wall: red          - Inner Wall: green
- *   - Infill: orange/brown     - Top/Bottom: blue
+ *   - Infill: orange/brown     - Top/Bottom: Orca-style purple
  *   - Support: magenta         - Skirt/Brim: gray
  *   - Bridge: bright red       - Travel: dark gray (dashed)
  *   - Ironing: light green
@@ -78,10 +78,11 @@ describe('Preview color palette — Cura/OrcaSlicer parity', () => {
     expect(c.g).toBeGreaterThan(c.b);
   });
 
-  it('top-bottom (skin) is blue (Cura/Orca convention)', () => {
+  it('top-bottom (skin) is Orca-style purple', () => {
     const c = MOVE_TYPE_THREE_COLORS['top-bottom'];
-    expect(c.b).toBeGreaterThan(0.5);
-    expect(c.r).toBeLessThan(0.4);
+    expect(MOVE_TYPE_COLORS['top-bottom']).toBe('#5f56c8');
+    expect(c.b).toBeGreaterThan(c.g);
+    expect(c.r).toBeGreaterThan(c.g);
   });
 
   it('infill is orange/brown (red-dominant, low blue — Cura/Orca convention)', () => {

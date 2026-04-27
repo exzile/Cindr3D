@@ -381,6 +381,14 @@ export const DEFAULT_PRINT_PROFILES: PrintProfile[] = [
     roofingPattern: 'lines',       // roofing_pattern = 'lines'
     skinOverlapPercent: 23,         // infill_wall_overlap = 23% (Orca std)
     monotonicTopBottomOrder: true,  // top_surface_pattern = 'monotonic'
+    // Connect adjacent skin/infill scanlines with a short extrusion
+    // hop at the wall instead of travelling — matches Cura's
+    // `connect_skin_polygons` and Orca's monotonic boustrophedon.
+    // Visible as a continuous zigzag in the preview (the nozzle never
+    // retracts between adjacent scanlines), and on the printer it
+    // eliminates the dozens of micro-retracts that previously fired
+    // between every pair of solid-skin lines.
+    connectInfillLines: true,
     bridgeSkinSpeed: 25,            // bridge_speed = 25 (Orca PETG)
     bridgeSkinFlow: 100,            // bridge_flow = 1.0
     bridgeAngle: 0,

@@ -14,7 +14,7 @@ export const MOVE_TYPE_COLORS: Record<SliceMove['type'], string> = {
   // (resources/profiles/.../colors). The previous dark blue read as
   // "another infill type" in the preview; OrcaSlicer's distinct purple
   // visually separates the skin shells from sparse infill underneath.
-  'top-bottom': '#7878c8',
+  'top-bottom': '#5f56c8',
   support:      '#cc44bb',
   skirt:        '#999999',
   brim:         '#999999',

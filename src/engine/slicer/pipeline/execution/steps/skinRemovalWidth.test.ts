@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { skinRemovalWidthForLayer } from './emitContourInfill';
+import { skinRemovalWidthForLayer, solidSkinCenterlineInset } from './emitContourInfill';
 
 describe('skinRemovalWidthForLayer', () => {
   it('uses the generic skin removal width by default', () => {
@@ -23,5 +23,15 @@ describe('skinRemovalWidthForLayer', () => {
 
   it('falls back to zero when no skin removal width is configured', () => {
     expect(skinRemovalWidthForLayer({}, true, false)).toBe(0);
+  });
+});
+
+describe('solidSkinCenterlineInset', () => {
+  it('subtracts Orca-style skin overlap from the half-width centerline inset', () => {
+    expect(solidSkinCenterlineInset(0.45, 0.1035)).toBeCloseTo(0.1215, 6);
+  });
+
+  it('does not allow overlap to push the centerline inset negative', () => {
+    expect(solidSkinCenterlineInset(0.45, 0.4)).toBe(0);
   });
 });

@@ -21,7 +21,7 @@ const CATEGORY_LABEL: Record<SliceMove['type'], { label: string; cat: string; co
   'wall-outer':  { label: 'Outer Wall', cat: 'Walls',     color: '#ff8844' },
   'wall-inner':  { label: 'Inner Wall', cat: 'Walls',     color: '#ffbb66' },
   'gap-fill':    { label: 'Gap Fill',   cat: 'Walls',     color: '#bbcc22' },
-  'top-bottom':  { label: 'Top/Bottom', cat: 'Skin',      color: '#44ff88' },
+  'top-bottom':  { label: 'Top/Bottom', cat: 'Skin',      color: '#5f56c8' },
   'ironing':     { label: 'Ironing',    cat: 'Skin',      color: '#88ff88' },
   infill:        { label: 'Infill',     cat: 'Infill',    color: '#44aaff' },
   support:       { label: 'Support',    cat: 'Support',   color: '#ff44ff' },
@@ -71,6 +71,12 @@ function formatTime(seconds: number): string {
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
+}
+
+function formatMs(ms: number): string {
+  if (!isFinite(ms) || ms < 0) ms = 0;
+  if (ms >= 1000) return `${(ms / 1000).toFixed(ms >= 10_000 ? 1 : 2)}s`;
+  return `${Math.round(ms)}ms`;
 }
 
 type IssueGroup = {
@@ -126,6 +132,15 @@ export function SlicerCostBreakdown() {
   const breakdown = useMemo(
     () => (sliceResult ? computeTimeBreakdown(sliceResult.layers) : []),
     [sliceResult],
+  );
+  const slicingPerformance = sliceResult?.slicingPerformance;
+  const timingBuckets = useMemo(
+    () => (slicingPerformance?.buckets ?? [])
+      .filter((bucket) => bucket.ms >= 0.5)
+      .slice()
+      .sort((a, b) => b.ms - a.ms)
+      .slice(0, 8),
+    [slicingPerformance],
   );
 
   const totalSeconds = breakdown.reduce((n, b) => n + b.seconds, 0);
@@ -252,6 +267,32 @@ export function SlicerCostBreakdown() {
                     <span className="slicer-cost-breakdown__legend-swatch" style={{ background: b.color }} />
                     <span>{b.category}</span>
                     <span className="slicer-cost-breakdown__legend-value">{formatTime(b.seconds)}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {slicingPerformance && timingBuckets.length > 0 && (
+            <>
+              <div className="slicer-cost-breakdown__section-title">Slicing performance</div>
+              <div className="slicer-cost-breakdown__perf-meta">
+                {formatMs(slicingPerformance.totalMs)}
+                {' total · '}
+                {slicingPerformance.layerPrepMode === 'parallel'
+                  ? `${slicingPerformance.workerCount} layer workers`
+                  : slicingPerformance.layerPrepMode}
+                {' · '}
+                {slicingPerformance.triangleCount.toLocaleString()} tris
+              </div>
+              <div className="slicer-cost-breakdown__perf-list">
+                {timingBuckets.map((bucket) => (
+                  <div key={bucket.key} className="slicer-cost-breakdown__perf-row">
+                    <span className="slicer-cost-breakdown__perf-label">{bucket.label}</span>
+                    <span className="slicer-cost-breakdown__perf-count">
+                      {bucket.count > 1 ? `x${bucket.count}` : ''}
+                    </span>
+                    <span className="slicer-cost-breakdown__perf-value">{formatMs(bucket.ms)}</span>
                   </div>
                 ))}
               </div>

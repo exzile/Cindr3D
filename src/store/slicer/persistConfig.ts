@@ -20,7 +20,7 @@ export const slicerPersistConfig = {
   // doesn't pick them up. The actual migration logic lives in the
   // hydrate hook below — `migrate` just hands the data through (we
   // don't strip fields, we clamp them).
-  version: 2,
+  version: 3,
   migrate: (persisted: unknown, _from: number) => persisted,
   partialize: ((state) => ({
     printerProfiles: state.printerProfiles,
@@ -51,6 +51,26 @@ export const slicerPersistConfig = {
     if (!state.printerProfiles?.length) state.printerProfiles = DEFAULT_PRINTER_PROFILES;
     if (!state.materialProfiles?.length) state.materialProfiles = DEFAULT_MATERIAL_PROFILES;
     if (!state.printProfiles?.length) state.printProfiles = DEFAULT_PRINT_PROFILES;
+
+    // Backfill new default fields onto persisted profiles. When we add
+    // a field to DEFAULT_PRINT_PROFILES (e.g. `connectInfillLines`),
+    // existing IndexedDB profiles don't have it — reading them yields
+    // `undefined`, which the slicer treats as off-by-default. The user
+    // never sees the new behaviour without manually re-creating the
+    // profile. Walk every persisted profile that matches a default by
+    // ID and copy in any missing keys from the default, leaving
+    // user-edited values intact. Bump `version` above whenever you
+    // ship a new default field that should propagate this way.
+    const defaultsById = new Map(DEFAULT_PRINT_PROFILES.map((d) => [d.id, d]));
+    for (const profile of state.printProfiles) {
+      const def = defaultsById.get(profile.id);
+      if (!def) continue;
+      const p = profile as unknown as Record<string, unknown>;
+      const d = def as unknown as Record<string, unknown>;
+      for (const key of Object.keys(d)) {
+        if (p[key] === undefined) p[key] = d[key];
+      }
+    }
 
     // First-layer flow sanity migration. Older builds shipped Cura-style
     // first-layer flow boosts in the 130-150% range; under our current

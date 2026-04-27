@@ -42,7 +42,7 @@ export interface Clipper2Module {
   // infill must stay clear of.
   _strokeOpenPaths(
     pointsPtr: number, pathCountsPtr: number, pathCount: number,
-    widthsPtr: number, arcTolerance: number, precision: number,
+    widthsPtr: number, pad: number, arcTolerance: number, precision: number,
   ): number;
 }
 
@@ -343,6 +343,11 @@ export function booleanPathsClipper2Sync(
 }
 
 export type Clipper2StrokeOptions = {
+  /** Extra outward margin added to every per-segment delta. Used to
+   *  fold what was previously a separate post-stroke `InflatePaths`
+   *  call directly into the stroke, saving a Clipper2 round-trip per
+   *  layer. Default 0 (unpadded). */
+  pad?: number;
   arcTolerance?: number;
   precision?: number;
 };
@@ -389,6 +394,7 @@ function strokeOpenPathsWithModule(
       countsPtr,
       validPaths.length,
       widthsPtr,
+      options.pad ?? 0,
       options.arcTolerance ?? 0,
       options.precision ?? 3,
     );

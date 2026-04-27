@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import type { SlicerGCodeFlavor, StartEndMachineState } from '../../../../../types/slicer-gcode.types';
 import { GCodeEmitter } from '../../../gcode/emitter';
 import { appendHeaderPlaceholders, appendStartGCode } from '../../../gcode/startup';
-import type { SlicerExecutionPipeline, SliceRun } from './types';
+import type { SlicerExecutionPipeline, SliceGeometryRun, SliceRun } from './types';
+
+export type PreparedSliceGeometryRun = SliceGeometryRun & Pick<SliceRun, 'printer' | 'modelHeight'>;
 
 function appendToolSelection(gcode: string[], printer: SliceRun['printer'], pp: SliceRun['pp']): void {
   const extruderIndex = Math.max(0, Math.floor(pp.extruderIndex ?? 0));
@@ -23,11 +25,75 @@ export function prepareSliceRun(
   pipeline: unknown,
   geometries: { geometry: THREE.BufferGeometry; transform: THREE.Matrix4 }[],
 ): SliceRun {
+  const geometryRun = prepareSliceGeometryRun(pipeline, geometries);
+  const { pp, mat, printer } = geometryRun;
+  const flavor: SlicerGCodeFlavor = printer.gcodeFlavorType ?? 'marlin';
+
+  const gcode: string[] = [];
+  const relativeE = pp.relativeExtrusion ?? false;
+  const emitter = new GCodeEmitter({
+    gcode,
+    printer,
+    material: mat,
+    print: pp,
+    flavor,
+    relativeExtrusion: relativeE,
+  });
+
+  if (!printer.startGCodeMustBeFirst) {
+    appendHeaderPlaceholders(gcode, printer, mat, pp);
+    appendToolSelection(gcode, printer, pp);
+  }
+  appendStartGCode({
+    gcode,
+    printer,
+    material: mat,
+    print: pp,
+    relativeExtrusion: relativeE,
+    flavor,
+    startEndState: emitter.startEndState as StartEndMachineState,
+  });
+  if (printer.startGCodeMustBeFirst) {
+    appendHeaderPlaceholders(gcode, printer, mat, pp);
+    appendToolSelection(gcode, printer, pp);
+  }
+
+  return {
+    ...geometryRun,
+    flavor,
+    gcode,
+    emitter,
+    relativeE,
+    layerControlFlags: {
+      regularFanHeightFired: false,
+      buildVolumeFanHeightFired: false,
+    },
+    prevLayerMaterial: [],
+    previousSeamPoints: [] as THREE.Vector2[],
+    currentSeamPoints: [] as THREE.Vector2[],
+    seamMemoryLayer: undefined as number | undefined,
+    bridgeFanActive: false,
+    /** Consecutive layers (incl. current) that have emitted bridge moves.
+     *  Reset to 0 by finalizeLayer when no bridge moves were seen.
+     *  Drives `bridgeFanSpeed2` / `bridgeFanSpeed3` when
+     *  `bridgeEnableMoreLayers` is enabled. */
+    consecutiveBridgeLayers: 0,
+    /** True if the current layer has emitted at least one bridge move.
+     *  Reset to false at layer start; checked in finalizeLayer. */
+    layerHadBridge: false,
+    sliceLayers: [],
+    totalTime: 0,
+  };
+}
+
+export function prepareSliceGeometryRun(
+  pipeline: unknown,
+  geometries: { geometry: THREE.BufferGeometry; transform: THREE.Matrix4 }[],
+): PreparedSliceGeometryRun {
   const slicer = pipeline as SlicerExecutionPipeline;
   const pp = slicer.printProfile;
   const mat = slicer.materialProfile;
   const printer = slicer.printerProfile;
-  const flavor: SlicerGCodeFlavor = printer.gcodeFlavorType ?? 'marlin';
 
   slicer.cancelled = false;
   slicer.reportProgress('preparing', 0, 0, 0, 'Extracting triangles...');
@@ -76,40 +142,10 @@ export function prepareSliceRun(
     ? Math.max(1, Math.ceil(pp.topThickness / pp.layerHeight))
     : pp.topLayers;
 
-  const gcode: string[] = [];
-  const relativeE = pp.relativeExtrusion ?? false;
-  const emitter = new GCodeEmitter({
-    gcode,
-    printer,
-    material: mat,
-    print: pp,
-    flavor,
-    relativeExtrusion: relativeE,
-  });
-
-  if (!printer.startGCodeMustBeFirst) {
-    appendHeaderPlaceholders(gcode, printer, mat, pp);
-    appendToolSelection(gcode, printer, pp);
-  }
-  appendStartGCode({
-    gcode,
-    printer,
-    material: mat,
-    print: pp,
-    relativeExtrusion: relativeE,
-    flavor,
-    startEndState: emitter.startEndState as StartEndMachineState,
-  });
-  if (printer.startGCodeMustBeFirst) {
-    appendHeaderPlaceholders(gcode, printer, mat, pp);
-    appendToolSelection(gcode, printer, pp);
-  }
-
   return {
     pp,
     mat,
     printer,
-    flavor,
     triangles,
     modelBBox,
     modelHeight,
@@ -122,27 +158,5 @@ export function prepareSliceRun(
     totalLayers,
     solidBottom,
     solidTop,
-    gcode,
-    emitter,
-    relativeE,
-    layerControlFlags: {
-      regularFanHeightFired: false,
-      buildVolumeFanHeightFired: false,
-    },
-    prevLayerMaterial: [],
-    previousSeamPoints: [] as THREE.Vector2[],
-    currentSeamPoints: [] as THREE.Vector2[],
-    seamMemoryLayer: undefined as number | undefined,
-    bridgeFanActive: false,
-    /** Consecutive layers (incl. current) that have emitted bridge moves.
-     *  Reset to 0 by finalizeLayer when no bridge moves were seen.
-     *  Drives `bridgeFanSpeed2` / `bridgeFanSpeed3` when
-     *  `bridgeEnableMoreLayers` is enabled. */
-    consecutiveBridgeLayers: 0,
-    /** True if the current layer has emitted at least one bridge move.
-     *  Reset to false at layer start; checked in finalizeLayer. */
-    layerHadBridge: false,
-    sliceLayers: [],
-    totalTime: 0,
   };
 }

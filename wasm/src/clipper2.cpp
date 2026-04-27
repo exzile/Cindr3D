@@ -1,4 +1,6 @@
+#include <cmath>
 #include <cstdint>
+#include <map>
 #include <vector>
 
 #include <clipper2/clipper.h>
@@ -161,14 +163,31 @@ void resetOffsetPaths() {
 // union them. This is what CuraEngine's `WallToolPaths::computeInner
 // Contour()` does to determine actual wall coverage from variable-width
 // toolpaths. Each segment between vertices i and i+1 is inflated with
-// `EndType::Round` and `delta = avg(widths[i], widths[i+1]) * 0.5`, so
-// the per-vertex bead width tapers segment-by-segment.
+// `EndType::Round` and `delta = avg(widths[i], widths[i+1]) * 0.5 + pad`,
+// so the per-vertex bead width tapers segment-by-segment plus a uniform
+// safety pad to absorb libArachne's non-uniform bead-placement variance.
+//
+// Performance: segments with the SAME delta (within a 1µm bucket) are
+// batched into a single `InflatePaths` call. For uniform-width walls
+// (the common case — wallLineWidth applies to every vertex), this
+// collapses N per-path stroke calls plus N per-vertex disk calls down
+// to a single call covering every segment of every path. On a 4-hole
+// disc with 3 walls each, this drops from ~1300 Clipper2 calls per
+// layer to ~2.
+//
+// The `pad` parameter folds in what was previously a separate post-
+// stroke `InflatePaths(coverage, +pad)` call from JavaScript. Folding
+// it into each segment's delta saves one whole Clipper2 round-trip
+// per layer at zero geometric cost (the safety margin is identical
+// either way).
 //
 // Inputs:
 //   points        — flat (x,y) doubles, all vertices of all paths
 //   path_counts   — int32 length of each path (>= 2 for a stroked path)
 //   path_count    — number of paths
 //   widths        — per-vertex widths, parallel to `points`
+//   pad           — extra outward margin added to every delta (mm).
+//                   Pass 0 for an unpadded stroke.
 //   arc_tolerance — Clipper2 round-cap tolerance (mm); 0 = default
 //   precision     — decimal digits Clipper retains internally
 //
@@ -181,6 +200,7 @@ int32_t strokeOpenPaths(
   const int32_t* path_counts,
   int32_t path_count,
   const double* widths,
+  double pad,
   double arc_tolerance,
   int32_t precision
 ) {
@@ -188,12 +208,17 @@ int32_t strokeOpenPaths(
   if (path_count <= 0) return 0;
   if (!points || !path_counts || !widths) return -1;
 
-  // Accumulate every segment-stroke footprint here; final pass unions
-  // the lot into `g_result_paths`. We call InflatePaths once per
-  // segment because each delta differs (variable width) and Clipper's
-  // single-call API takes only one delta. Per-segment cost is
-  // negligible (2-point path) and the final Union dominates.
-  PathsD accum;
+  // Quantize delta to 1µm buckets. Bead widths from libArachne are
+  // typically in units of 0.05mm or finer, so 1µm quantization
+  // collapses identical-width segments into one bucket without
+  // measurably distorting the stroke.
+  static constexpr double DELTA_QUANTUM = 1e-3;
+  auto quantize = [](double v) -> int32_t {
+    return static_cast<int32_t>(std::lround(v / DELTA_QUANTUM));
+  };
+
+  std::map<int32_t, PathsD> segments_by_delta;
+  std::map<int32_t, PathsD> disks_by_delta;
 
   try {
     int32_t voff = 0;
@@ -202,72 +227,97 @@ int32_t strokeOpenPaths(
       if (n < 0) return -1;
       if (n < 2) { voff += n; continue; }
 
-      // For each consecutive vertex pair: stroke a 2-point open path
-      // by half the average bead width with round caps.
-      for (int32_t i = 0; i < n - 1; ++i) {
-        const double w0 = widths[voff + i];
-        const double w1 = widths[voff + i + 1];
-        const double delta = (w0 + w1) * 0.25;  // avg(w)/2
-        if (delta <= 0.0) continue;
-
-        PathsD segment_in;
-        segment_in.emplace_back();
-        segment_in[0].emplace_back(points[(voff + i)     * 2],
-                                   points[(voff + i)     * 2 + 1]);
-        segment_in[0].emplace_back(points[(voff + i + 1) * 2],
-                                   points[(voff + i + 1) * 2 + 1]);
-
-        PathsD stroked = InflatePaths(
-          segment_in,
-          delta,
-          JoinType::Round,
-          EndType::Round,
-          2.0,
-          precision,
-          arc_tolerance >= 0 ? arc_tolerance : 0.0
-        );
-        for (auto& p : stroked) accum.push_back(std::move(p));
+      // Detect uniform-width path: if every vertex has the same width,
+      // round-cap segment ends from adjacent segments already cover
+      // the joints (their caps share the same radius and overlap), so
+      // we don't need separate per-vertex disks. This is the common
+      // case — most slicer profiles use a single lineWidth across the
+      // whole part — and it halves the work.
+      bool uniform_width = true;
+      const double w0 = widths[voff];
+      for (int32_t i = 1; i < n; ++i) {
+        if (widths[voff + i] != w0) { uniform_width = false; break; }
       }
 
-      // Also union a disk at every vertex with radius = widths[i]/2.
-      // The per-segment EndType::Round caps cover most of the joint
-      // area, but at convex corners (especially 90° or sharper) the
-      // two adjacent caps cover only ~75% of the full disk around
-      // the joint, leaving a sliver of body uncovered diagonally
-      // OUTSIDE the corner. A vertex disk fills that consistently
-      // for every join angle.
-      //
-      // We synthesize the disk via InflatePaths on a single zero-
-      // length 2-point path. Clipper2 produces a circle of radius
-      // delta with EndType::Round.
-      for (int32_t i = 0; i < n; ++i) {
-        const double w = widths[voff + i];
-        const double delta = w * 0.5;
+      // Bucket each segment by its avg-of-endpoint-widths delta plus
+      // the uniform safety pad. For uniform-width paths this is one
+      // bucket per path; for variable-width Arachne output it's
+      // typically a handful (libArachne's bead allocator tends to
+      // converge on a small set of widths). The pad is added to each
+      // delta so we don't need a second InflatePaths pass to widen
+      // the union after the fact.
+      const double pad_clamped = pad > 0.0 ? pad : 0.0;
+      for (int32_t i = 0; i < n - 1; ++i) {
+        const double wA = widths[voff + i];
+        const double wB = widths[voff + i + 1];
+        const double delta = (wA + wB) * 0.25 + pad_clamped;  // avg(w)/2 + pad
         if (delta <= 0.0) continue;
+        const int32_t key = quantize(delta);
+        PathsD& bucket = segments_by_delta[key];
+        bucket.emplace_back();
+        bucket.back().emplace_back(points[(voff + i)     * 2],
+                                   points[(voff + i)     * 2 + 1]);
+        bucket.back().emplace_back(points[(voff + i + 1) * 2],
+                                   points[(voff + i + 1) * 2 + 1]);
+      }
 
-        const double vx = points[(voff + i) * 2];
-        const double vy = points[(voff + i) * 2 + 1];
-
-        PathsD disk_in;
-        disk_in.emplace_back();
-        disk_in[0].emplace_back(vx, vy);
-        // Tiny offset so the path has nonzero length — Clipper2
-        // skips zero-length paths. The offset is well below `precision`
-        // so it has no observable effect on the disk shape.
-        disk_in[0].emplace_back(vx + 1e-9, vy);
-
-        PathsD stroked = InflatePaths(
-          disk_in,
-          delta,
-          JoinType::Round,
-          EndType::Round,
-          2.0,
-          precision,
-          arc_tolerance >= 0 ? arc_tolerance : 0.0
-        );
-        for (auto& p : stroked) accum.push_back(std::move(p));
+      // Per-vertex disks ONLY for variable-width paths. Adjacent
+      // round-end caps cover joints fully when both segments have the
+      // same delta; when they differ, the smaller-delta cap leaves
+      // a sliver outside the joint that the disk fills. The same pad
+      // applies so disk radius matches segment cap radius at the joint.
+      if (!uniform_width) {
+        for (int32_t i = 0; i < n; ++i) {
+          const double w = widths[voff + i];
+          const double delta = w * 0.5 + pad_clamped;
+          if (delta <= 0.0) continue;
+          const int32_t key = quantize(delta);
+          const double vx = points[(voff + i) * 2];
+          const double vy = points[(voff + i) * 2 + 1];
+          PathsD& bucket = disks_by_delta[key];
+          bucket.emplace_back();
+          bucket.back().emplace_back(vx, vy);
+          // Tiny offset so the path has nonzero length — Clipper2
+          // skips zero-length paths. Offset stays well below
+          // `precision` so it has no observable shape effect.
+          bucket.back().emplace_back(vx + 1e-9, vy);
+        }
       }
       voff += n;
+    }
+
+    PathsD accum;
+    // One InflatePaths per delta bucket — the heart of the batching.
+    // For uniform-width walls, this is exactly one call covering every
+    // segment of every input path. Each call's output gets folded into
+    // `accum` for the final union pass.
+    for (auto& kv : segments_by_delta) {
+      const double delta = static_cast<double>(kv.first) * DELTA_QUANTUM;
+      if (delta <= 0.0) continue;
+      PathsD stroked = InflatePaths(
+        kv.second,
+        delta,
+        JoinType::Round,
+        EndType::Round,
+        2.0,
+        precision,
+        arc_tolerance >= 0 ? arc_tolerance : 0.0
+      );
+      for (auto& p : stroked) accum.push_back(std::move(p));
+    }
+    for (auto& kv : disks_by_delta) {
+      const double delta = static_cast<double>(kv.first) * DELTA_QUANTUM;
+      if (delta <= 0.0) continue;
+      PathsD stroked = InflatePaths(
+        kv.second,
+        delta,
+        JoinType::Round,
+        EndType::Round,
+        2.0,
+        precision,
+        arc_tolerance >= 0 ? arc_tolerance : 0.0
+      );
+      for (auto& p : stroked) accum.push_back(std::move(p));
     }
 
     if (accum.empty()) return 0;

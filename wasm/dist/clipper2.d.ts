@@ -18,7 +18,7 @@
                 op: number, fillRule: number, precision: number): number;
 
   _strokeOpenPaths(pointsPtr: number, pathCountsPtr: number, pathCount: number,
-                   widthsPtr: number, arcTolerance: number, precision: number): number;
+                   widthsPtr: number, pad: number, arcTolerance: number, precision: number): number;
 }
 
 export default function createClipper2Module(
