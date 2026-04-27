@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 import type { PrintProfile } from '../../../../types/slicer';
-import type { ArachneBackend, ArachneGenerationContext, ArachneSectionType, VariableWidthPath } from './types';
+import type { ArachneBackend, ArachneGenerationContext, ArachnePathResult, ArachneSectionType, VariableWidthPath } from './types';
 
 interface ArachneModule {
   HEAPF64: Float64Array;
@@ -21,6 +21,9 @@ interface ArachneModule {
   _emitArachnePathCounts(outPtr: number, capacityInts: number): number;
   _emitArachnePathMeta(outPtr: number, capacityInts: number): number;
   _emitArachnePoints(outPtr: number, capacityDoubles: number): number;
+  _getArachneInnerContourCounts(outPtr: number): void;
+  _emitArachneInnerContourPathCounts(outPtr: number, capacityInts: number): number;
+  _emitArachneInnerContourPoints(outPtr: number, capacityDoubles: number): number;
   _resetArachnePaths(): void;
 }
 
@@ -148,6 +151,56 @@ export function configValues(
   ]);
 }
 
+function emitInnerContoursWithModule(mod: ArachneModule): THREE.Vector2[][] {
+  const countsPtr = mod._malloc(2 * 4);
+  if (!countsPtr) throw new Error('arachneWasm: malloc failed for inner contour counts');
+  let contourCount = 0;
+  let pointCount = 0;
+  try {
+    mod._getArachneInnerContourCounts(countsPtr);
+    const counts = new Int32Array(mod.HEAP32.buffer, countsPtr, 2);
+    contourCount = counts[0];
+    pointCount = counts[1];
+  } finally {
+    mod._free(countsPtr);
+  }
+  if (contourCount === 0 || pointCount === 0) return [];
+
+  const pathCountsPtr = mod._malloc(contourCount * 4);
+  const pointsPtr = mod._malloc(pointCount * 2 * 8);
+  if (!pathCountsPtr || !pointsPtr) {
+    if (pathCountsPtr) mod._free(pathCountsPtr);
+    if (pointsPtr) mod._free(pointsPtr);
+    throw new Error('arachneWasm: malloc failed for inner contour output');
+  }
+
+  try {
+    if (mod._emitArachneInnerContourPathCounts(pathCountsPtr, contourCount) < 0) {
+      throw new Error('arachneWasm: _emitArachneInnerContourPathCounts capacity mismatch');
+    }
+    if (mod._emitArachneInnerContourPoints(pointsPtr, pointCount * 2) < 0) {
+      throw new Error('arachneWasm: _emitArachneInnerContourPoints capacity mismatch');
+    }
+
+    const pathCounts = new Int32Array(mod.HEAP32.buffer, pathCountsPtr, contourCount);
+    const points = new Float64Array(mod.HEAPF64.buffer, pointsPtr, pointCount * 2);
+    const contours: THREE.Vector2[][] = [];
+    let pointOffset = 0;
+    for (let contourIndex = 0; contourIndex < contourCount; contourIndex++) {
+      const count = pathCounts[contourIndex];
+      const contour: THREE.Vector2[] = [];
+      for (let i = 0; i < count; i++) {
+        contour.push(new THREE.Vector2(points[pointOffset++], points[pointOffset++]));
+      }
+      if (contour.length >= 3) contours.push(contour);
+    }
+    return contours;
+  } finally {
+    mod._free(pathCountsPtr);
+    mod._free(pointsPtr);
+  }
+}
+
 function generatePathsWithModule(
   mod: ArachneModule,
   outerContour: THREE.Vector2[],
@@ -157,9 +210,9 @@ function generatePathsWithModule(
   outerWallInset: number,
   printProfile: PrintProfile,
   context: ArachneGenerationContext = {},
-): VariableWidthPath[] {
+): ArachnePathResult {
   const { paths, pointCount } = flattenContours(outerContour, holeContours);
-  if (paths.length === 0 || pointCount === 0) return [];
+  if (paths.length === 0 || pointCount === 0) return { paths: [], innerContours: [] };
 
   const pointsPtr = mod._malloc(pointCount * 2 * 8);
   const countsPtr = mod._malloc(paths.length * 4);
@@ -209,7 +262,9 @@ function generatePathsWithModule(
     } finally {
       mod._free(outCountsPtr);
     }
-    if (outputPathCount === 0 || outputPointCount === 0) return [];
+    if (outputPathCount === 0 || outputPointCount === 0) {
+      return { paths: [], innerContours: emitInnerContoursWithModule(mod) };
+    }
 
     const outputCountsPtr = mod._malloc(outputPathCount * 4);
     const outputMetaPtr = mod._malloc(outputPathCount * 3 * 4);
@@ -260,7 +315,7 @@ function generatePathsWithModule(
           });
         }
       }
-      return result;
+      return { paths: result, innerContours: emitInnerContoursWithModule(mod) };
     } finally {
       mod._free(outputCountsPtr);
       mod._free(outputMetaPtr);
@@ -292,7 +347,7 @@ export async function generateArachnePathsWasm(
     outerWallInset,
     printProfile,
     context,
-  );
+  ).paths;
 }
 
 export function generateArachnePathsWasmSync(
@@ -304,6 +359,20 @@ export function generateArachnePathsWasmSync(
   printProfile: PrintProfile,
   context?: ArachneGenerationContext,
 ): VariableWidthPath[] | null {
+  const mod = getLoadedArachneModule();
+  if (!mod) return null;
+  return generatePathsWithModule(mod, outerContour, holeContours, wallCount, lineWidth, outerWallInset, printProfile, context).paths;
+}
+
+export function generateArachnePathsWithInnerContoursWasmSync(
+  outerContour: THREE.Vector2[],
+  holeContours: THREE.Vector2[][],
+  wallCount: number,
+  lineWidth: number,
+  outerWallInset: number,
+  printProfile: PrintProfile,
+  context?: ArachneGenerationContext,
+): ArachnePathResult | null {
   const mod = getLoadedArachneModule();
   if (!mod) return null;
   return generatePathsWithModule(mod, outerContour, holeContours, wallCount, lineWidth, outerWallInset, printProfile, context);
@@ -331,5 +400,26 @@ export const arachneWasmBackend: ArachneBackend = {
     );
     if (!paths) throw new Error('arachneWasm: module not loaded');
     return paths;
+  },
+  generatePathsWithInnerContours: (
+    outerContour: THREE.Vector2[],
+    holeContours: THREE.Vector2[][],
+    wallCount: number,
+    lineWidth: number,
+    outerWallInset: number,
+    printProfile: PrintProfile,
+    context?: ArachneGenerationContext,
+  ) => {
+    const result = generateArachnePathsWithInnerContoursWasmSync(
+      outerContour,
+      holeContours,
+      wallCount,
+      lineWidth,
+      outerWallInset,
+      printProfile,
+      context,
+    );
+    if (!result) throw new Error('arachneWasm: module not loaded');
+    return result;
   },
 };

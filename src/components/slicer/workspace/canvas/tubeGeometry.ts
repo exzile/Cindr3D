@@ -19,38 +19,40 @@ import type { TubeChain } from '../../../../types/slicer-preview.types';
 // and there is NO visible discontinuity. This matches how Cura, OrcaSlicer,
 // and PrusaSlicer render their g-code preview.
 
-/** Cross-section resolution for each chain tube. 8 ring vertices placed
- *  on the rectangle perimeter (4 corner verts + 4 face-midpoint verts),
- *  matching OrcaSlicer / PrusaSlicer / Cura's preview style. The
- *  rectangular cross-section makes adjacent fill scanlines render
- *  perfectly flush (an elliptical cross-section's curved top would leave
- *  a visible inter-line gap from any angled camera view, even when the
- *  scanlines are spaced exactly one lineWidth apart in the gcode).
- *  Triangle count: RADIAL × 2 per segment, ~16k triangles for a typical
+/** Cross-section resolution for each chain tube. 12 ring vertices placed
+ *  evenly on an ellipse — matches OrcaSlicer's libvgcode preview style,
+ *  which renders extrusion lines as smooth round tubes with a soft
+ *  central highlight ridge. We previously used an 8-vertex rectangle
+ *  so adjacent infill scanlines could meet flush, but on circular wall
+ *  features the rectangular silhouette produced visible per-vertex
+ *  facets (each polygon corner showed the rectangle's edges as a
+ *  "tooth" against the next ring's rotated rectangle). Orca itself
+ *  uses a round cross-section and accepts the small inter-line gap on
+ *  angled infill views; that reads as accurate, not buggy.
+ *
+ *  Triangle count: RADIAL × 2 per segment, ~24k triangles for a typical
  *  1000-segment layer. */
-export const TUBE_RADIAL_SEGMENTS = 8;
+export const TUBE_RADIAL_SEGMENTS = 12;
 
-/** Per-ring vertex layout for a rectangular tube cross-section. Each
+/** Per-ring vertex layout for an elliptical tube cross-section. Each
  *  entry maps a ring-vertex index to:
- *    perpF: factor in the perpendicular (line-width) axis (-1, 0, +1)
- *    vertF: factor in the vertical (Z, layer-height) axis (-1, 0, +1)
- *    nPerpF/nZF: outward face normal at this vertex. Corner verts
- *                use the average of the two adjacent face normals
- *                (1/√2 each) to give a smooth highlight roll-off
- *                instead of a hard edge. Phong shading then renders
- *                the rectangle with subtle corner rounding — visually
- *                identical to OrcaSlicer's bead at typical zoom.
- *  Indexed clockwise starting at the right-side face midpoint. */
-const TUBE_RECT_LAYOUT = [
-  { perpF:  1, vertF:  0, nPerpF:  1,           nZF:  0           },
-  { perpF:  1, vertF:  1, nPerpF:  Math.SQRT1_2, nZF:  Math.SQRT1_2 },
-  { perpF:  0, vertF:  1, nPerpF:  0,           nZF:  1           },
-  { perpF: -1, vertF:  1, nPerpF: -Math.SQRT1_2, nZF:  Math.SQRT1_2 },
-  { perpF: -1, vertF:  0, nPerpF: -1,           nZF:  0           },
-  { perpF: -1, vertF: -1, nPerpF: -Math.SQRT1_2, nZF: -Math.SQRT1_2 },
-  { perpF:  0, vertF: -1, nPerpF:  0,           nZF: -1           },
-  { perpF:  1, vertF: -1, nPerpF:  Math.SQRT1_2, nZF: -Math.SQRT1_2 },
-] as const;
+ *    perpF: factor in the perpendicular (line-width) axis (-1..+1)
+ *    vertF: factor in the vertical (Z, layer-height) axis (-1..+1)
+ *    nPerpF/nZF: outward unit normal at this vertex (used for Phong
+ *                shading). We use the parametric circle direction
+ *                (cos θ, sin θ) rather than the true ellipse normal —
+ *                the position is elliptical (so the bead has a flat-
+ *                ish profile that sits naturally on the previous
+ *                layer) but the shading rolls off symmetrically, which
+ *                matches Orca's visual signature.
+ *  Indexed counter-clockwise starting at the +perp side (θ = 0). */
+const TUBE_RING_LAYOUT: ReadonlyArray<{ perpF: number; vertF: number; nPerpF: number; nZF: number }> =
+  Array.from({ length: TUBE_RADIAL_SEGMENTS }, (_, i) => {
+    const theta = (i / TUBE_RADIAL_SEGMENTS) * Math.PI * 2;
+    const c = Math.cos(theta);
+    const s = Math.sin(theta);
+    return { perpF: c, vertF: s, nPerpF: c, nZF: s };
+  });
 
 /** Polygon-to-curve subdivision factor for the chain tube. Each polygon
  *  segment is sampled at this many additional points using a centripetal
@@ -354,7 +356,7 @@ export function buildChainTube(
     const [cr, cg, cb] = ringColor(i);
 
     for (let r = 0; r <= RADIAL; r++) {
-      const layout = TUBE_RECT_LAYOUT[r % RADIAL];
+      const layout = TUBE_RING_LAYOUT[r % RADIAL];
       positions.push(
         p.x + layout.perpF * perp.x * hExt,
         p.y + layout.perpF * perp.y * hExt,

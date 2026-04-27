@@ -20,7 +20,7 @@ export const slicerPersistConfig = {
   // doesn't pick them up. The actual migration logic lives in the
   // hydrate hook below — `migrate` just hands the data through (we
   // don't strip fields, we clamp them).
-  version: 3,
+  version: 4,
   migrate: (persisted: unknown, _from: number) => persisted,
   partialize: ((state) => ({
     printerProfiles: state.printerProfiles,
@@ -69,6 +69,28 @@ export const slicerPersistConfig = {
       const d = def as unknown as Record<string, unknown>;
       for (const key of Object.keys(d)) {
         if (p[key] === undefined) p[key] = d[key];
+      }
+    }
+
+    // Sanity clamp: a number of fields we now ship enabled-by-default
+    // were previously zero in older profile schemas. Persisted-as-zero
+    // values survive the undefined-only backfill above, leaving the
+    // visible behaviour broken (skin doesn't meet walls, infill doesn't
+    // connect, etc.). Promote stuck-at-zero values to the OrcaSlicer-
+    // matching defaults so users on stale profiles get the right look
+    // without manually re-creating their profile.
+    const ZERO_TO_DEFAULT_KEYS = ['skinOverlapPercent'] as const;
+    for (const profile of state.printProfiles) {
+      const def = defaultsById.get(profile.id);
+      if (!def) continue;
+      const p = profile as unknown as Record<string, unknown>;
+      const d = def as unknown as Record<string, unknown>;
+      for (const key of ZERO_TO_DEFAULT_KEYS) {
+        const v = p[key];
+        const dv = d[key];
+        if (typeof v === 'number' && v === 0 && typeof dv === 'number' && dv > 0) {
+          p[key] = dv;
+        }
       }
     }
 

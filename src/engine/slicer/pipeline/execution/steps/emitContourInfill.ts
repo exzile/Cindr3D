@@ -366,7 +366,17 @@ export function emitContourInfill(
         run.bridgeFanActive = false;
       }
       const fromDist = Math.hypot(effFrom.x - emitter.currentX, effFrom.y - emitter.currentY);
-      const canConnectInfill = connect && idx > 0 && fromDist < connectTol && slicer.segmentInsideMaterial(new THREE.Vector2(emitter.currentX, emitter.currentY), effFrom, innermostWall, infillHoles);
+      // Boundary used for the connector "stays inside material" check.
+      // `innermostWall` is too tight when `skinOverlapPercent > 0` —
+      // skin scanline endpoints deliberately overshoot it into the
+      // wall band, so the segment-inside test would reject every
+      // connector even though the hop itself stays inside the body
+      // outline. Using `contour.points` (the layer outline) gives the
+      // hop the wall band's full thickness to live in. Fixes the
+      // "no boustrophedon zigzag visible" symptom on solid-skin
+      // layers with the OrcaSlicer-default 23% skin overlap.
+      const connectBoundary = isSolid ? contour.points : innermostWall;
+      const canConnectInfill = connect && idx > 0 && fromDist < connectTol && slicer.segmentInsideMaterial(new THREE.Vector2(emitter.currentX, emitter.currentY), effFrom, connectBoundary, infillHoles);
       if (canConnectInfill) {
         // Boustrophedon connector hop — extrude a short bead at the
         // wall instead of travelling, then push it as a move so the

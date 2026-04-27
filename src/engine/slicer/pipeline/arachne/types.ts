@@ -33,6 +33,20 @@ export interface ArachneBackend {
     printProfile: PrintProfile,
     context?: ArachneGenerationContext,
   ): VariableWidthPath[];
+  generatePathsWithInnerContours?(
+    outerContour: THREE.Vector2[],
+    holeContours: THREE.Vector2[][],
+    wallCount: number,
+    lineWidth: number,
+    outerWallInset: number,
+    printProfile: PrintProfile,
+    context?: ArachneGenerationContext,
+  ): ArachnePathResult;
+}
+
+export interface ArachnePathResult {
+  paths: VariableWidthPath[];
+  innerContours: THREE.Vector2[][];
 }
 
 /**

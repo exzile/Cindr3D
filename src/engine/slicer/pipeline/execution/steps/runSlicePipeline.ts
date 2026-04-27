@@ -15,6 +15,7 @@ import type {
   SliceLayerState,
   SliceRun,
 } from './types';
+import type { GeneratedPerimeters } from '../../../../../types/slicer-pipeline.types';
 
 interface SerializedVector3 {
   x: number;
@@ -40,11 +41,24 @@ type SerializedGeometryRun = Omit<SliceGeometryRun, 'triangles' | 'modelBBox'> &
   };
 };
 
-type SerializedLayerGeometry = Omit<SliceLayerGeometryState, 'contours'> & {
+type SerializedLayerGeometry = Omit<SliceLayerGeometryState, 'contours' | 'precomputedContourWalls'> & {
   contours: Array<{
     area: number;
     isOuter: boolean;
     points: Array<[number, number]>;
+  }>;
+  precomputedContourWalls?: Array<{
+    contourIndex: number;
+    perimeters: SerializedGeneratedPerimeters;
+  }>;
+};
+
+type SerializedGeneratedPerimeters = Omit<GeneratedPerimeters, 'walls' | 'innermostHoles' | 'infillRegions'> & {
+  walls: Array<Array<[number, number]>>;
+  innermostHoles: Array<Array<[number, number]>>;
+  infillRegions: Array<{
+    contour: Array<[number, number]>;
+    holes: Array<Array<[number, number]>>;
   }>;
 };
 
@@ -154,12 +168,25 @@ function serializeGeometryRun(run: SliceRun, layerIndices?: readonly number[]): 
 
 function hydrateLayerGeometry(layer: SerializedLayerGeometry | null): SliceLayerGeometryState | null {
   if (!layer) return null;
+  const toVectors = (points: Array<[number, number]>) => points.map(([x, y]) => new THREE.Vector2(x, y));
   return {
     ...layer,
     contours: layer.contours.map((contour) => ({
       area: contour.area,
       isOuter: contour.isOuter,
-      points: contour.points.map(([x, y]) => new THREE.Vector2(x, y)),
+      points: toVectors(contour.points),
+    })),
+    precomputedContourWalls: layer.precomputedContourWalls?.map((item) => ({
+      contourIndex: item.contourIndex,
+      perimeters: {
+        ...item.perimeters,
+        walls: item.perimeters.walls.map(toVectors),
+        innermostHoles: item.perimeters.innermostHoles.map(toVectors),
+        infillRegions: item.perimeters.infillRegions.map((region) => ({
+          contour: toVectors(region.contour),
+          holes: region.holes.map(toVectors),
+        })),
+      },
     })),
   };
 }
@@ -199,14 +226,35 @@ export function layerProgressReportStride(totalLayers: number): number {
   return Math.max(1, Math.ceil(totalLayers / MAX_LAYER_PROGRESS_UPDATES));
 }
 
+export function buildContiguousLayerBatches(totalLayers: number, workerCount: number): number[][] {
+  if (totalLayers <= 0 || workerCount <= 0) return [];
+  const batchCount = Math.min(totalLayers, Math.floor(workerCount));
+  return Array.from({ length: batchCount }, (_, batchIndex) => {
+    const start = Math.floor((batchIndex * totalLayers) / batchCount);
+    const end = Math.floor(((batchIndex + 1) * totalLayers) / batchCount);
+    const layers: number[] = [];
+    for (let li = start; li < end; li++) layers.push(li);
+    return layers;
+  }).filter((batch) => batch.length > 0);
+}
+
+export function buildInterleavedLayerBatches(totalLayers: number, workerCount: number): number[][] {
+  if (totalLayers <= 0 || workerCount <= 0) return [];
+  const batchCount = Math.min(totalLayers, Math.floor(workerCount));
+  const batches = Array.from({ length: batchCount }, () => [] as number[]);
+  for (let li = 0; li < totalLayers; li++) {
+    batches[li % batchCount].push(li);
+  }
+  return batches.filter((batch) => batch.length > 0);
+}
+
 function startLayerPrepWorkerPool(
   pipeline: unknown,
   run: SliceRun,
 ): LayerPrepPool {
   const slicer = pipeline as SlicerExecutionPipeline;
   const workerCount = chooseLayerPrepWorkerCount(run);
-  const layerBatches = Array.from({ length: workerCount }, () => [] as number[]);
-  for (let li = 0; li < run.totalLayers; li++) layerBatches[li % workerCount].push(li);
+  const layerBatches = buildInterleavedLayerBatches(run.totalLayers, workerCount);
 
   const requestId = Math.floor(Math.random() * 1_000_000_000);
   const workers: Worker[] = [];
@@ -290,7 +338,7 @@ function startLayerPrepWorkerPool(
   }, 50);
 
   slicer.reportProgress('slicing', 0, 0, run.totalLayers, `Preparing ${run.totalLayers} layers on ${workerCount} workers...`);
-  const done = Promise.all(layerBatches.filter((batch) => batch.length > 0).map(runWorker))
+  const done = Promise.all(layerBatches.map(runWorker))
     .then(() => undefined)
     .finally(() => {
       if (!stopped) stop();

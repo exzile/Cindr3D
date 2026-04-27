@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { chooseLayerPrepWorkerCount, triangleIntersectsLayerBatch } from './runSlicePipeline';
+import {
+  buildContiguousLayerBatches,
+  chooseLayerPrepWorkerCount,
+  triangleIntersectsLayerBatch,
+} from './runSlicePipeline';
 import type { SliceRun } from './types';
 
 function makeRun(
@@ -68,5 +72,19 @@ describe('triangleIntersectsLayerBatch', () => {
 
   it('filters triangles outside the assigned worker layer batch', () => {
     expect(triangleIntersectsLayerBatch(run, triangle(0.7, 0.9), [0, 1])).toBe(false);
+  });
+});
+
+describe('buildContiguousLayerBatches', () => {
+  it('splits layers into contiguous worker-owned z bands', () => {
+    expect(buildContiguousLayerBatches(10, 3)).toEqual([
+      [0, 1, 2],
+      [3, 4, 5],
+      [6, 7, 8, 9],
+    ]);
+  });
+
+  it('does not create empty batches when there are more workers than layers', () => {
+    expect(buildContiguousLayerBatches(3, 8)).toEqual([[0], [1], [2]]);
   });
 });

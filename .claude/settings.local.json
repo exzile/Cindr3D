@@ -100,7 +100,10 @@
       "Bash(timeout 30 npx --yes gitnexus status)",
       "Bash(timeout 180 npx --yes gitnexus analyze)",
       "Bash(rm C:/Users/joeyp/source/repos/exzile/DesignCAD/.vscode/launch.json C:/Users/joeyp/source/repos/exzile/DesignCAD/.vscode/tasks.json)",
-      "Bash(rmdir C:/Users/joeyp/source/repos/exzile/DesignCAD/.vscode)"
+      "Bash(rmdir C:/Users/joeyp/source/repos/exzile/DesignCAD/.vscode)",
+      "mcp__gitnexus__query",
+      "mcp__gitnexus__impact",
+      "mcp__gitnexus__detect_changes"
     ]
   }
 }

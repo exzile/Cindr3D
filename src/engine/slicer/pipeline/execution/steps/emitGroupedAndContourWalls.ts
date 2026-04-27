@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { SliceMove } from '../../../../../types/slicer';
+import type { GeneratedPerimeters } from '../../../../../types/slicer-pipeline.types';
 import type { ContourWallData, SlicerExecutionPipeline, SliceLayerState, SliceRun } from './types';
 
 type WallLineWidthSpec = number | number[];
@@ -183,6 +184,25 @@ function emitOuterLoop(params: EmitOuterLoopParams): number {
   return layerTime;
 }
 
+function generatedPerimetersForContour(
+  slicer: SlicerExecutionPipeline,
+  pp: SliceRun['pp'],
+  layer: SliceLayerState,
+  contour: SliceLayerState['contours'][number],
+  containedHoles: THREE.Vector2[][],
+  arachneContext: { sectionType: 'wall'; isTopOrBottomLayer: boolean },
+): GeneratedPerimeters {
+  const contourIndex = layer.contours?.indexOf(contour) ?? -1;
+  const precomputed = contourIndex >= 0
+    ? layer.precomputedContourWalls?.find((item) => item.contourIndex === contourIndex)
+    : undefined;
+  if (precomputed) return precomputed.perimeters;
+  return slicer.filterPerimetersByMinOdd(
+    slicer.generatePerimeters(contour.points, containedHoles, pp.wallCount, pp.wallLineWidth, pp.outerWallInset ?? 0, arachneContext),
+    pp.minOddWallLineWidth ?? 0,
+  );
+}
+
 export function emitGroupedAndContourWalls(
   pipeline: unknown,
   run: SliceRun,
@@ -203,10 +223,7 @@ export function emitGroupedAndContourWalls(
     for (const contour of workContours) {
       if (!contour.isOuter) continue;
       const containedHoles = holesByOuterContour.get(contour) ?? [];
-      const perimeters = slicer.filterPerimetersByMinOdd(
-        slicer.generatePerimeters(contour.points, containedHoles, pp.wallCount, pp.wallLineWidth, pp.outerWallInset ?? 0, arachneContext),
-        pp.minOddWallLineWidth ?? 0,
-      );
+      const perimeters = generatedPerimetersForContour(slicer, pp, layer, contour, containedHoles, arachneContext);
       perContour.push({ contour, exWalls: perimeters, wallSets: perimeters.walls, wallLineWidths: perimeters.lineWidths, wallClosed: perimeters.wallClosed, outerWallCount: perimeters.outerCount, infillHoles: perimeters.innermostHoles });
     }
     for (const item of perContour) {
@@ -216,20 +233,25 @@ export function emitGroupedAndContourWalls(
     }
   }
 
-  for (const contour of workContours) {
-    if (!contour.isOuter) continue;
-    const containedHoles = holesByOuterContour.get(contour) ?? [];
-    const exWalls = slicer.filterPerimetersByMinOdd(
-      slicer.generatePerimeters(contour.points, containedHoles, pp.wallCount, pp.wallLineWidth, pp.outerWallInset ?? 0, arachneContext),
-      pp.minOddWallLineWidth ?? 0,
-    );
-    const wallSets = exWalls.walls;
-    const wallLineWidths = exWalls.lineWidths;
-    const wallClosed = exWalls.wallClosed;
-    const outerWallCount = exWalls.outerCount;
-    const infillHoles = exWalls.innermostHoles;
-    const contourData = { contour, exWalls, wallSets, wallLineWidths, wallClosed, outerWallCount, infillHoles };
-    perContour.push(contourData);
+  const contourWallData = groupOW ? perContour : workContours
+    .filter((contour) => contour.isOuter)
+    .map((contour): ContourWallData => {
+      const containedHoles = holesByOuterContour.get(contour) ?? [];
+      const exWalls = generatedPerimetersForContour(slicer, pp, layer, contour, containedHoles, arachneContext);
+      return {
+        contour,
+        exWalls,
+        wallSets: exWalls.walls,
+        wallLineWidths: exWalls.lineWidths,
+        wallClosed: exWalls.wallClosed,
+        outerWallCount: exWalls.outerCount,
+        infillHoles: exWalls.innermostHoles,
+      };
+    });
+
+  for (const contourData of contourWallData) {
+    const { exWalls, wallSets, wallLineWidths, wallClosed } = contourData;
+    if (!groupOW) perContour.push(contourData);
 
     if (!groupOW && wallSets.length > 0 && pp.outerWallFirst) {
       if (isFirstLayer && pp.initialLayerOuterWallFlow != null) emitter.currentLayerFlow = pp.initialLayerOuterWallFlow / 100;

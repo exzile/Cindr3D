@@ -4,8 +4,11 @@ import * as THREE from 'three';
 import { Slicer } from '../engine/slicer/Slicer';
 import { prepareSliceGeometryRun } from '../engine/slicer/pipeline/execution/steps/prepareSliceRun';
 import { prepareLayerGeometryState } from '../engine/slicer/pipeline/execution/steps/prepareLayerState';
+import { loadArachneModule } from '../engine/slicer/pipeline/arachne';
+import { buildLayerStaticTopology } from '../engine/slicer/pipeline/execution/layerTopology';
 import type { SliceGeometryRun, SliceLayerGeometryState } from '../engine/slicer/pipeline/execution/steps/types';
 import type { Contour, Triangle } from '../types/slicer-pipeline.types';
+import type { GeneratedPerimeters } from '../types/slicer-pipeline.types';
 import type { MaterialProfile, PrinterProfile, PrintProfile } from '../types/slicer';
 
 interface RawGeometry {
@@ -58,8 +61,20 @@ interface CancelMessage {
 
 type WorkerMessage = LayerPrepMessage | CancelMessage;
 type SerializedContour = Omit<Contour, 'points'> & { points: Array<[number, number]> };
-type SerializedLayerGeometry = Omit<SliceLayerGeometryState, 'contours'> & {
+type SerializedLayerGeometry = Omit<SliceLayerGeometryState, 'contours' | 'precomputedContourWalls'> & {
   contours: SerializedContour[];
+  precomputedContourWalls?: Array<{
+    contourIndex: number;
+    perimeters: SerializedGeneratedPerimeters;
+  }>;
+};
+type SerializedGeneratedPerimeters = Omit<GeneratedPerimeters, 'walls' | 'innermostHoles' | 'infillRegions'> & {
+  walls: Array<Array<[number, number]>>;
+  innermostHoles: Array<Array<[number, number]>>;
+  infillRegions: Array<{
+    contour: Array<[number, number]>;
+    holes: Array<Array<[number, number]>>;
+  }>;
 };
 
 let activeRequestId = 0;
@@ -102,14 +117,68 @@ function hydrateGeometryRun(run: SerializedGeometryRun): SliceGeometryRun {
 
 function serializeLayerGeometry(layer: SliceLayerGeometryState | null): SerializedLayerGeometry | null {
   if (!layer) return null;
+  const serializePoints = (points: THREE.Vector2[]) => points.map((point) => [point.x, point.y] as [number, number]);
   return {
     ...layer,
     contours: layer.contours.map((contour) => ({
       area: contour.area,
       isOuter: contour.isOuter,
-      points: contour.points.map((point: THREE.Vector2) => [point.x, point.y] as [number, number]),
+      points: serializePoints(contour.points),
+    })),
+    precomputedContourWalls: layer.precomputedContourWalls?.map((item) => ({
+      contourIndex: item.contourIndex,
+      perimeters: {
+        ...item.perimeters,
+        walls: item.perimeters.walls.map(serializePoints),
+        innermostHoles: item.perimeters.innermostHoles.map(serializePoints),
+        infillRegions: item.perimeters.infillRegions.map((region) => ({
+          contour: serializePoints(region.contour),
+          holes: region.holes.map(serializePoints),
+        })),
+      },
     })),
   };
+}
+
+function containedHolesForContour(slicer: Slicer, contours: Contour[], contour: Contour): THREE.Vector2[][] {
+  const holes: THREE.Vector2[][] = [];
+  for (const holeContour of contours) {
+    if (holeContour.isOuter || holeContour.points.length < 3) continue;
+    if (slicer.pointInContour(holeContour.points[0], contour.points)) holes.push(holeContour.points);
+  }
+  return holes;
+}
+
+function precomputeContourWalls(slicer: Slicer, layer: SliceLayerGeometryState): void {
+  const pp = slicer.printProfile;
+  if (pp.wallGenerator !== 'arachne') return;
+  const arachneContext = {
+    sectionType: 'wall' as const,
+    isTopOrBottomLayer: layer.isSolidTop || layer.isSolidBottom,
+  };
+  const precomputed = [];
+  for (let contourIndex = 0; contourIndex < layer.contours.length; contourIndex++) {
+    const contour = layer.contours[contourIndex];
+    if (!contour.isOuter) continue;
+    const containedHoles = containedHolesForContour(slicer, layer.contours, contour);
+    const perimeters = slicer.filterPerimetersByMinOdd(
+      slicer.generatePerimeters(contour.points, containedHoles, pp.wallCount, pp.wallLineWidth, pp.outerWallInset ?? 0, arachneContext),
+      pp.minOddWallLineWidth ?? 0,
+    );
+    precomputed.push({ contourIndex, perimeters });
+  }
+  if (precomputed.length > 0) layer.precomputedContourWalls = precomputed;
+}
+
+function precomputeLayerTopology(slicer: Slicer, layer: SliceLayerGeometryState): void {
+  if (slicer.printProfile.optimizeWallOrder) return;
+  layer.precomputedTopology = buildLayerStaticTopology({
+    contours: layer.contours,
+    optimizeWallOrder: false,
+    currentX: 0,
+    currentY: 0,
+    pointInContour: (point, contour) => slicer.pointInContour(point, contour),
+  });
 }
 
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
@@ -131,6 +200,15 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   try {
     const slicer = new Slicer(printerProfile, materialProfile, printProfile);
     activeSlicer = slicer;
+    let canPrecomputeArachne = printProfile.arachneBackend === 'wasm';
+    if (canPrecomputeArachne) {
+      try {
+        await loadArachneModule();
+      } catch (err) {
+        canPrecomputeArachne = false;
+        console.warn('Arachne WASM backend unavailable in layer worker; skipping parallel wall precompute.', err);
+      }
+    }
     const run = geometryRun
       ? hydrateGeometryRun(geometryRun)
       : prepareSliceGeometryRun(slicer, geometries);
@@ -143,6 +221,10 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         reportProgress: false,
         yieldToUI: false,
       });
+      if (layer) {
+        precomputeLayerTopology(slicer, layer);
+        if (canPrecomputeArachne) precomputeContourWalls(slicer, layer);
+      }
       const serializedLayer = serializeLayerGeometry(layer);
       layers.push({ layerIndex, layer: serializedLayer });
       self.postMessage({

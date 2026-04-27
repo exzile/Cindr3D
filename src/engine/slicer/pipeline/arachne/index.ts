@@ -7,7 +7,7 @@ import { booleanMultiPolygonClipper2Sync } from '../../geometry/clipper2Boolean'
 import { strokeOpenPathsClipper2Sync } from '../../geometry/clipper2Wasm';
 import { generatePerimetersEx } from '../perimeters';
 import { resolveArachneBackend } from './backend';
-import type { ArachneBackendName, ArachneGenerationContext, VariableWidthPath } from './types';
+import type { ArachneBackendName, ArachneGenerationContext, ArachnePathResult, VariableWidthPath } from './types';
 
 function toRing(pts: THREE.Vector2[]): PCRing {
   const ring: PCRing = pts.map((p) => [p.x, p.y] as [number, number]);
@@ -17,6 +17,52 @@ function toRing(pts: THREE.Vector2[]): PCRing {
     if (f[0] !== l[0] || f[1] !== l[1]) ring.push([f[0], f[1]]);
   }
   return ring;
+}
+
+function pointInPolygon(point: THREE.Vector2, polygon: THREE.Vector2[]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[i];
+    const b = polygon[j];
+    if (((a.y > point.y) !== (b.y > point.y))
+      && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+export function innerContoursToInfillRegions(
+  innerContours: THREE.Vector2[][],
+  deps: Pick<PerimeterDeps, 'signedArea'>,
+): { innermostHoles: THREE.Vector2[][]; infillRegions: InfillRegion[] } | null {
+  const rings = innerContours.filter((ring) => ring.length >= 3);
+  if (rings.length === 0) return null;
+
+  const outers = rings
+    .map((contour) => ({ contour, area: deps.signedArea(contour), holes: [] as THREE.Vector2[][] }))
+    .filter((ring) => ring.area > 0);
+  if (outers.length === 0) return null;
+
+  const holes = rings.filter((ring) => deps.signedArea(ring) < 0);
+  for (const hole of holes) {
+    const probe = hole[0];
+    let owner: typeof outers[number] | null = null;
+    for (const outer of outers) {
+      if (!pointInPolygon(probe, outer.contour)) continue;
+      if (!owner || Math.abs(outer.area) < Math.abs(owner.area)) owner = outer;
+    }
+    owner?.holes.push(hole);
+  }
+
+  const infillRegions = outers
+    .map(({ contour, holes: contourHoles }) => ({ contour, holes: contourHoles }))
+    .filter((region) => region.contour.length >= 3);
+  if (infillRegions.length === 0) return null;
+  return {
+    innermostHoles: infillRegions.flatMap((region) => region.holes),
+    infillRegions,
+  };
 }
 
 /** Squared distance from a point to a line segment (or to the segment's
@@ -163,15 +209,29 @@ export function generatePerimetersArachne(
 
   try {
     const t0 = debug ? performance.now() : 0;
-    const paths = selectedBackend.generatePaths(
-      outerContour,
-      holeContours,
-      wallCount,
-      lineWidth,
-      outerWallInset,
-      printProfile,
-      context,
-    ).filter((path) =>
+    const generated: ArachnePathResult = selectedBackend.generatePathsWithInnerContours
+      ? selectedBackend.generatePathsWithInnerContours(
+        outerContour,
+        holeContours,
+        wallCount,
+        lineWidth,
+        outerWallInset,
+        printProfile,
+        context,
+      )
+      : {
+        paths: selectedBackend.generatePaths(
+          outerContour,
+          holeContours,
+          wallCount,
+          lineWidth,
+          outerWallInset,
+          printProfile,
+          context,
+        ),
+        innerContours: [],
+      };
+    const paths = generated.paths.filter((path) =>
       path.points.length >= 2 && path.depth < wallCount && path.widths.length === path.points.length,
     );
     const t1 = debug ? performance.now() : 0;
@@ -212,7 +272,8 @@ export function generatePerimetersArachne(
     // `computeMaxPathInset` approach with a generous safety pad.
     let innermostHoles: THREE.Vector2[][];
     let infillRegions: InfillRegion[];
-    const stroked = computeArachneInfillFromStroke(
+    const nativeInner = innerContoursToInfillRegions(generated.innerContours, deps);
+    const stroked = nativeInner ?? computeArachneInfillFromStroke(
       paths, outerContour, holeContours, lineWidth, deps,
     );
     if (stroked) {

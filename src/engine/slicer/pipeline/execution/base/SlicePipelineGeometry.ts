@@ -42,6 +42,8 @@ export class SlicePipelineGeometry {
   protected printProfile!: PrintProfile;
   private clipper2OffsetWarningShown = false;
   private spiralizeArachneWarningShown = false;
+  private perimeterCache = new Map<string, GeneratedPerimeters>();
+  private static readonly MAX_PERIMETER_CACHE_ENTRIES = 512;
 
   protected extractTriangles(
     geometries: { geometry: THREE.BufferGeometry; transform: THREE.Matrix4 }[],
@@ -138,6 +140,67 @@ export class SlicePipelineGeometry {
     );
   }
 
+  private static quantizedPointKey(point: THREE.Vector2): string {
+    return `${Math.round(point.x * 1000)},${Math.round(point.y * 1000)}`;
+  }
+
+  private static contourKey(contour: THREE.Vector2[]): string {
+    return contour.map((point) => SlicePipelineGeometry.quantizedPointKey(point)).join(';');
+  }
+
+  private arachneProfileKey(): string {
+    const pp = this.printProfile;
+    return [
+      pp.arachneBackend ?? 'wasm',
+      pp.outerWallLineWidth ?? '',
+      pp.innerWallLineWidth ?? '',
+      pp.minWallLineWidth ?? '',
+      pp.minEvenWallLineWidth ?? '',
+      pp.minThinWallLineWidth ?? '',
+      pp.minFeatureSize ?? '',
+      pp.wallTransitionLength ?? '',
+      pp.wallTransitionAngle ?? '',
+      pp.wallTransitionFilterDistance ?? '',
+      pp.wallTransitionFilterMargin ?? '',
+      pp.wallDistributionCount ?? '',
+      pp.minWallLengthFactor ?? '',
+      pp.printThinWalls ?? '',
+      pp.thinWallDetection ?? '',
+      pp.fluidMotionEnable ?? '',
+      pp.preciseOuterWall ?? '',
+      pp.minOddWallLineWidth ?? '',
+    ].join('|');
+  }
+
+  private perimeterCacheKey(
+    outerContour: THREE.Vector2[],
+    holeContours: THREE.Vector2[][],
+    wallCount: number,
+    lineWidth: number,
+    outerWallInset: number,
+    context: ArachneGenerationContext,
+  ): string {
+    return [
+      wallCount,
+      lineWidth,
+      outerWallInset,
+      context.sectionType ?? 'wall',
+      context.isTopOrBottomLayer ? 1 : 0,
+      this.arachneProfileKey(),
+      SlicePipelineGeometry.contourKey(outerContour),
+      ...holeContours.map((hole) => SlicePipelineGeometry.contourKey(hole)),
+    ].join('#');
+  }
+
+  private rememberPerimeters(cacheKey: string, perimeters: GeneratedPerimeters): GeneratedPerimeters {
+    if (this.perimeterCache.size >= SlicePipelineGeometry.MAX_PERIMETER_CACHE_ENTRIES) {
+      const oldestKey = this.perimeterCache.keys().next().value;
+      if (oldestKey) this.perimeterCache.delete(oldestKey);
+    }
+    this.perimeterCache.set(cacheKey, perimeters);
+    return perimeters;
+  }
+
   /**
    * Wall generator dispatcher — picks classic fixed-width offset (legacy)
    * or Arachne variable-width walls based on `printProfile.wallGenerator`.
@@ -178,10 +241,20 @@ export class SlicePipelineGeometry {
         this.spiralizeArachneWarningShown = true;
       }
     } else if (this.printProfile.wallGenerator === 'arachne') {
-      return generatePerimetersArachne(
+      const cacheKey = this.perimeterCacheKey(
+        outerContour,
+        holeContours,
+        wallCount,
+        lineWidth,
+        outerWallInset,
+        context,
+      );
+      const cached = this.perimeterCache.get(cacheKey);
+      if (cached) return cached;
+      return this.rememberPerimeters(cacheKey, generatePerimetersArachne(
         outerContour, holeContours, wallCount, lineWidth, outerWallInset,
         this.printProfile, deps, context,
-      );
+      ));
     }
     return generatePerimetersExFromModule(
       outerContour, holeContours, wallCount, lineWidth, outerWallInset,

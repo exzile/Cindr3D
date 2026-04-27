@@ -144,7 +144,7 @@ em++ "${COMMON_FLAGS[@]}" \
   -I "$BOOST_INC" \
   -I "$CLIPPER2_INC" \
   -s EXPORT_NAME=createArachneModule \
-  -s "EXPORTED_FUNCTIONS=['_arachneAnswer','_arachneConfigValueCount','_generateArachnePaths','_getArachneCounts','_emitArachnePathCounts','_emitArachnePathMeta','_emitArachnePoints','_resetArachnePaths','_malloc','_free']" \
+  -s "EXPORTED_FUNCTIONS=['_arachneAnswer','_arachneConfigValueCount','_generateArachnePaths','_getArachneCounts','_emitArachnePathCounts','_emitArachnePathMeta','_emitArachnePoints','_getArachneInnerContourCounts','_emitArachneInnerContourPathCounts','_emitArachneInnerContourPoints','_resetArachnePaths','_malloc','_free']" \
   -s "EXPORTED_RUNTIME_METHODS=['HEAPF64','HEAP32']" \
   "$SRC_DIR/arachne.cpp" \
   "${ARACHNE_SOURCES[@]}" \
@@ -169,6 +169,9 @@ export interface ArachneModule {
   _emitArachnePathCounts(outPtr: number, capacityInts: number): number;
   _emitArachnePathMeta(outPtr: number, capacityInts: number): number;
   _emitArachnePoints(outPtr: number, capacityDoubles: number): number;
+  _getArachneInnerContourCounts(outPtr: number): void;
+  _emitArachneInnerContourPathCounts(outPtr: number, capacityInts: number): number;
+  _emitArachneInnerContourPoints(outPtr: number, capacityDoubles: number): number;
   _resetArachnePaths(): void;
 }
 

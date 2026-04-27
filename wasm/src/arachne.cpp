@@ -14,6 +14,7 @@ namespace {
 constexpr int32_t kConfigValueCount = 25;
 
 std::vector<cura::ExtrusionLine> g_result_paths;
+cura::Polygons g_inner_contour;
 
 inline cura::coord_t mm_to_coord(double value) {
   return static_cast<cura::coord_t>(value * 1000.0 + 0.5 * ((value > 0.0) - (value < 0.0)));
@@ -86,6 +87,14 @@ void flatten_toolpaths(const std::vector<cura::VariableWidthLines>& toolpaths) {
   }
 }
 
+int32_t polygon_point_count(const cura::Polygons& polygons) {
+  int32_t point_count = 0;
+  for (const cura::ConstPolygonRef polygon : polygons) {
+    point_count += static_cast<int32_t>(polygon.size());
+  }
+  return point_count;
+}
+
 }  // namespace
 
 extern "C" {
@@ -114,6 +123,7 @@ int32_t generateArachnePaths(
   int32_t config_value_count
 ) {
   g_result_paths.clear();
+  g_inner_contour.clear();
 
   cura::Polygons outline;
   if (!decode_polygons(points, path_counts, path_count, outline)) return -1;
@@ -136,9 +146,11 @@ int32_t generateArachnePaths(
       0,
       section_type);
     flatten_toolpaths(generator.generate());
+    g_inner_contour = generator.getInnerContour();
     return 0;
   } catch (...) {
     g_result_paths.clear();
+    g_inner_contour.clear();
     return -2;
   }
 }
@@ -195,8 +207,40 @@ int32_t emitArachnePoints(double* out, int32_t capacity_doubles) {
   return needed;
 }
 
+void getArachneInnerContourCounts(int32_t* out) {
+  if (!out) return;
+  out[0] = static_cast<int32_t>(g_inner_contour.size());
+  out[1] = polygon_point_count(g_inner_contour);
+}
+
+int32_t emitArachneInnerContourPathCounts(int32_t* out, int32_t capacity) {
+  const int32_t needed = static_cast<int32_t>(g_inner_contour.size());
+  if (!out || capacity < needed) return -1;
+  int32_t offset = 0;
+  for (const cura::ConstPolygonRef polygon : g_inner_contour) {
+    out[offset++] = static_cast<int32_t>(polygon.size());
+  }
+  return needed;
+}
+
+// Emits double[x, y] in mm for every inner-contour vertex in path-count order.
+int32_t emitArachneInnerContourPoints(double* out, int32_t capacity_doubles) {
+  const int32_t needed = polygon_point_count(g_inner_contour) * 2;
+  if (!out || capacity_doubles < needed) return -1;
+
+  int32_t offset = 0;
+  for (const cura::ConstPolygonRef polygon : g_inner_contour) {
+    for (const cura::Point& point : polygon) {
+      out[offset++] = INT2MM(point.X);
+      out[offset++] = INT2MM(point.Y);
+    }
+  }
+  return needed;
+}
+
 void resetArachnePaths() {
   g_result_paths.clear();
+  g_inner_contour.clear();
 }
 
 }  // extern "C"

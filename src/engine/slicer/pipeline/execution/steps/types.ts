@@ -197,6 +197,7 @@ export interface SliceLayerGeometryState {
   topBottomSpeed: number;
   contours: Contour[];
   printZ: number;
+  precomputedContourWalls?: PrecomputedContourWall[];
 }
 
 export interface SliceLayerState extends SliceLayerGeometryState, LayerTopology {
@@ -212,4 +213,9 @@ export interface ContourWallData {
   wallClosed?: boolean[];
   outerWallCount: number;
   infillHoles: THREE.Vector2[][];
+}
+
+export interface PrecomputedContourWall {
+  contourIndex: number;
+  perimeters: GeneratedPerimeters;
 }
