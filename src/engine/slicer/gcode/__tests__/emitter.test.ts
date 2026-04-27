@@ -257,6 +257,28 @@ describe('GCodeEmitter — extrudeTo', () => {
     const result = emitter.extrudeTo(10, 0, 250, 0.4, 0.2);
     expect(result.speed).toBe(250);
   });
+
+  it('reduces speed for wide lines when flowEqualizationRatio is enabled', () => {
+    const { emitter } = makeEmitter({
+      print: {
+        flowEqualizationRatio: 1,
+        wallLineWidth: 0.4,
+      },
+    });
+    const result = emitter.extrudeTo(10, 0, 100, 0.8, 0.2);
+    expect(result.speed).toBeCloseTo(50, 4);
+  });
+
+  it('blends flow-equalized speed with the requested speed', () => {
+    const { emitter } = makeEmitter({
+      print: {
+        flowEqualizationRatio: 0.5,
+        wallLineWidth: 0.4,
+      },
+    });
+    const result = emitter.extrudeTo(10, 0, 100, 0.8, 0.2);
+    expect(result.speed).toBeCloseTo(75, 4);
+  });
 });
 
 describe('GCodeEmitter — retract / unretract round-trip', () => {

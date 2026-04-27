@@ -43,6 +43,20 @@ describe('pickBridgeFanSpeed', () => {
     )).toBe(80);
   });
 
+  it('uses bridgeHasMultipleLayers as the legacy alias for multi-layer bridge settings', () => {
+    expect(pickBridgeFanSpeed(
+      { bridgeFanSpeed: 80, bridgeFanSpeed2: 60, bridgeFanSpeed3: 40, bridgeHasMultipleLayers: true },
+      1,
+    )).toBe(60);
+  });
+
+  it('lets bridgeEnableMoreLayers override the legacy bridgeHasMultipleLayers alias', () => {
+    expect(pickBridgeFanSpeed(
+      { bridgeFanSpeed: 80, bridgeFanSpeed2: 60, bridgeHasMultipleLayers: true, bridgeEnableMoreLayers: false },
+      1,
+    )).toBe(80);
+  });
+
   it('ignores bridgeFanSpeed2/3 when bridgeEnableMoreLayers is explicitly false', () => {
     expect(pickBridgeFanSpeed(
       { bridgeFanSpeed: 80, bridgeFanSpeed2: 60, bridgeFanSpeed3: 40, bridgeEnableMoreLayers: false },

@@ -336,45 +336,47 @@ export function buildChainTube(
     }
   }
 
-  // Step 6: rounded end caps for OPEN chains. Without these, an open
-  // tube (infill scanline, top/bottom skin line, gap-fill bead, bridge)
-  // ends in a FLAT disk that visually "pokes" past adjacent walls when
-  // the slicer applies infill/skin overlap (the deliberate few-tens-of-
-  // microns of bonding between fill and walls). Cura/Orca hide that
-  // overlap by capping fill-line ends with a hemisphere matching the
-  // bead's elliptical cross-section. We do the same.
+  // Step 6: pointed pyramid end caps for OPEN chains. Without these,
+  // an open tube (infill scanline, top/bottom skin line, gap-fill bead,
+  // bridge) ends in a FLAT disk that visually "pokes" past adjacent
+  // walls when the slicer applies infill/skin overlap (the deliberate
+  // few-tens-of-microns of bonding between fill and walls).
+  //
+  // Cura, OrcaSlicer, and PrusaSlicer all cap their open extrusion tube
+  // ends with a SINGLE forward-displaced apex vertex fanned to the
+  // cross-section ring (a flat-sided pyramid) — see
+  //   • Cura `plugins/SimulationView/layers3d.shader` (geometry41core)
+  //   • OrcaSlicer `src/libvgcode/src/SegmentTemplate.cpp` (vertices
+  //     2 and 7 are the "POINTY_CAPS" apexes)
+  //   • PrusaSlicer `src/slic3r/GUI/LibVGCode/` (vendored libvgcode).
+  //
+  // The apex sits one halfWidth past the tube end along the line's own
+  // direction. This costs RADIAL triangles per cap (8 with our default)
+  // — much cheaper than a hemisphere and visually identical at preview
+  // scale because the cap is only ever ~halfWidth long.
   //
   // Closed chains never need caps (they wrap onto themselves). Walls
-  // are already trimmed back via OPEN_WALL_END_TRIM_FACTOR and would
-  // benefit only marginally — but adding caps to all open chains is
-  // cheap (each cap is K_CAP × RADIAL extra triangles) and keeps the
-  // visual style consistent across move types.
+  // are already trimmed back via OPEN_WALL_END_TRIM_FACTOR.
   if (!sourceChain.isClosed && n >= 2) {
-    appendRoundCap(positions, normals, colors, indices, {
+    appendApexCap(positions, normals, colors, indices, {
       isStart: true,
       anchorRingStart: 0,
       tipPoint: pts[0],
       tangent: dir(pts[0], pts[1]),
-      perp: perps[0],
       lw: pts[0].lw * miterX[0],
-      vExt,
-      centerZ,
-      ringSize,
       radial: RADIAL,
       ringColor: ringColor(0),
+      centerZ,
     });
-    appendRoundCap(positions, normals, colors, indices, {
+    appendApexCap(positions, normals, colors, indices, {
       isStart: false,
       anchorRingStart: (n - 1) * ringSize,
       tipPoint: pts[n - 1],
       tangent: dir(pts[n - 2], pts[n - 1]),
-      perp: perps[n - 1],
       lw: pts[n - 1].lw * miterX[n - 1],
-      vExt,
-      centerZ,
-      ringSize,
       radial: RADIAL,
       ringColor: ringColor(n - 1),
+      centerZ,
     });
   }
 
@@ -386,125 +388,79 @@ export function buildChainTube(
   return geo;
 }
 
-/** Number of latitudinal rings used for each rounded end cap. The cap
- *  is a quarter-ellipsoid swept from the tube's last ring to a single
- *  point at the tip. Each ring is one latitude line.
- *
- *  4 gives a smooth dome at typical preview scale (each step is
- *  22.5°). The triangle cost is K_CAP × RADIAL × 2 — at K_CAP=4 and
- *  RADIAL=8, that's 64 triangles per open end.
- */
-const K_CAP = 4;
-
-interface RoundCapParams {
-  /** True for the start of the chain (cap extends in -tangent direction);
-   *  false for the end (cap extends in +tangent direction). */
+interface ApexCapParams {
+  /** True for the start of the chain (cap extends in -tangent direction
+   *  away from the chain interior); false for the end (cap extends in
+   *  +tangent direction). */
   isStart: boolean;
-  /** Index of the first vertex of the anchor ring in the global `positions`
-   *  buffer (i.e. ringStart * 1, not / 3). */
+  /** Index of the first vertex of the anchor ring in the global
+   *  `positions` buffer. */
   anchorRingStart: number;
   tipPoint: { x: number; y: number };
   tangent: { x: number; y: number } | null;
-  perp: { x: number; y: number };
+  /** Effective half-bead-width at this end (already miter-scaled). */
   lw: number;
-  vExt: number;
-  centerZ: number;
-  ringSize: number;
   radial: number;
   ringColor: [number, number, number];
+  centerZ: number;
 }
 
-function appendRoundCap(
+/**
+ * Append a Cura/Orca/Prusa-style pointed pyramid cap to the tube
+ * geometry. One apex vertex sits `halfWidth` past the tube's open end
+ * along the line's own direction; `radial` triangles fan from the apex
+ * to consecutive cross-section ring vertices.
+ *
+ * Mirrors:
+ *   • Cura layers3d geometry shader's apex displacement
+ *     (`g_vertex_offset_horz_head`, single point, RADIAL=4 base).
+ *   • OrcaSlicer SegmentTemplate vertices 2 and 7 (POINTY_CAPS).
+ *   • PrusaSlicer libvgcode (vendored).
+ *
+ * Looks identical at preview scale to a hemisphere but with an order
+ * of magnitude fewer triangles — and matches the visual language users
+ * expect from Cura/Orca/Prusa.
+ */
+function appendApexCap(
   positions: number[],
   normals: number[],
   colors: number[],
   indices: number[],
-  p: RoundCapParams,
+  p: ApexCapParams,
 ): void {
   if (!p.tangent) return;
   const hExt = p.lw / 2;
-  // Direction the cap extends from the anchor ring. Start caps reach
-  // BACKWARD past `tipPoint` (opposite the chain's flow); end caps
-  // reach forward.
+  // Direction the apex displaces from the anchor-ring centre. Start
+  // caps reach BACKWARD past the chain's first point; end caps reach
+  // forward past the last point.
   const sgn = p.isStart ? -1 : +1;
   const tx = p.tangent.x * sgn;
   const ty = p.tangent.y * sgn;
 
-  const baseVertexBeforeCap = positions.length / 3;
+  const apexIndex = positions.length / 3;
+  const ax = p.tipPoint.x + tx * hExt;
+  const ay = p.tipPoint.y + ty * hExt;
+  const az = p.centerZ;
+  positions.push(ax, ay, az);
+  // Apex normal points along the tangent axis — gives the cap a soft
+  // shaded tip when lit from above.
+  normals.push(tx, ty, 0);
+  colors.push(p.ringColor[0], p.ringColor[1], p.ringColor[2]);
 
-  // Generate K_CAP - 1 intermediate rings + 1 degenerate tip ring.
-  // Theta steps from a small offset (just past 0°) to π/2 (tip). At
-  // each θ:
-  //   • axial offset along tangent = hExt × sin(θ)
-  //   • horizontal radius (perp axis) = hExt × cos(θ)
-  //   • vertical radius (Z axis) = vExt × cos(θ)
-  // This is a half-ellipsoid with horizontal semi-axis hExt and
-  // vertical semi-axis vExt — matching the tube's elliptical cross-
-  // section. Cura uses the same construction.
-  const ringPositions: number[] = [];
-  for (let k = 1; k <= K_CAP; k++) {
-    const theta = (k / K_CAP) * (Math.PI / 2);
-    const sinT = Math.sin(theta);
-    const cosT = Math.cos(theta);
-    const cx = p.tipPoint.x + tx * hExt * sinT;
-    const cy = p.tipPoint.y + ty * hExt * sinT;
-    const ringRadialH = hExt * cosT;
-    const ringRadialV = p.vExt * cosT;
-    for (let r = 0; r <= p.radial; r++) {
-      const a = (r / p.radial) * Math.PI * 2;
-      const cosA = Math.cos(a);
-      const sinA = Math.sin(a);
-      const px = cx + cosA * p.perp.x * ringRadialH;
-      const py = cy + cosA * p.perp.y * ringRadialH;
-      const pz = p.centerZ + sinA * ringRadialV;
-      ringPositions.push(px, py, pz);
-      // Outward-pointing normal: blend cap-axis component (sin θ along
-      // tangent, ramping up toward tip) with cross-section radial
-      // component (cos θ in the perpendicular ring direction). At the
-      // anchor ring (θ→0) the normal is purely radial; at the tip
-      // (θ=π/2) it's purely tangent — so lighting transitions smoothly
-      // from the tube body into the dome.
-      const nRad = cosT;
-      const nAxial = sinT;
-      const nx = (cosA * p.perp.x) * nRad + tx * nAxial;
-      const ny = (cosA * p.perp.y) * nRad + ty * nAxial;
-      const nz = sinA * nRad;
-      const nl = Math.hypot(nx, ny, nz) || 1;
-      normals.push(nx / nl, ny / nl, nz / nl);
-      colors.push(p.ringColor[0], p.ringColor[1], p.ringColor[2]);
-    }
-  }
-  positions.push(...ringPositions);
-
-  // Index triangles connecting ring k → ring k+1 (cap rings only),
-  // plus the seam triangles connecting the anchor ring → cap ring 0.
-  // Anchor ring is the existing tube endpoint ring — already in
-  // `positions`. Cap rings start at `baseVertexBeforeCap`.
-  //
-  // Winding: we want outward-facing triangles. For end caps the
-  // natural winding mirrors the main-tube loop; for start caps it
-  // reverses (the cap protrudes the OTHER direction so the same
-  // winding would point the triangles inward).
-  const ringStarts: number[] = [p.anchorRingStart];
-  for (let k = 0; k < K_CAP; k++) {
-    ringStarts.push(baseVertexBeforeCap + k * p.ringSize);
-  }
-  for (let k = 0; k < K_CAP; k++) {
-    const ringA = ringStarts[k];
-    const ringB = ringStarts[k + 1];
-    for (let r = 0; r < p.radial; r++) {
-      const a = ringA + r;
-      const b = ringA + r + 1;
-      const c = ringB + r;
-      const d = ringB + r + 1;
-      if (p.isStart) {
-        // Reversed winding for start caps so normals point outward.
-        indices.push(a, b, c);
-        indices.push(b, d, c);
-      } else {
-        indices.push(a, c, b);
-        indices.push(b, c, d);
-      }
+  // Fan triangles from the apex to each consecutive pair of ring
+  // vertices. ringSize includes a duplicate seam vertex (r = 0 and
+  // r = RADIAL coincide), so we iterate r in [0, RADIAL) and connect
+  // (r, r+1) which covers the full circumference.
+  for (let r = 0; r < p.radial; r++) {
+    const a = p.anchorRingStart + r;
+    const b = p.anchorRingStart + r + 1;
+    if (p.isStart) {
+      // Start cap: apex is BEFORE the anchor ring along the chain
+      // direction, so reverse winding to keep the cap normals facing
+      // outward.
+      indices.push(apexIndex, a, b);
+    } else {
+      indices.push(apexIndex, b, a);
     }
   }
 }

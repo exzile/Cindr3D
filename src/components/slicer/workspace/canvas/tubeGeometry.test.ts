@@ -122,18 +122,18 @@ describe('buildChainTube — geometric contract', () => {
     expect(ringN.x).toBeCloseTo(15 - 0.2, 4);
   });
 
-  it('a 4-segment open polyline produces 5 main-tube rings (one per vertex) plus rounded end caps', () => {
+  it('a 4-segment open polyline produces 5 main-tube rings (one per vertex) plus 2 apex caps', () => {
     const chain = makeChain(
       [[0, 0], [10, 0], [10, 10], [0, 10], [0, 5]],
       0.4, false,
     );
     const geo = buildChainTube(chain, 0.2, 0.2);
     const positions = geo!.getAttribute('position').array as Float32Array;
-    // Main tube body: 5 rings × ringSize vertices.
-    // Each open end gets a hemispherical cap of K_CAP=4 latitude
-    // rings, each with ringSize vertices. Two caps for an open chain.
-    const K_CAP = 4;
-    const expectedVertices = 5 * ringSize + 2 * K_CAP * ringSize;
+    // Main tube body: 5 rings × ringSize vertices, plus 2 apex
+    // vertices for the open-end pyramidal caps (Cura/Orca/Prusa style:
+    // each cap is a single forward-displaced apex fanned to the
+    // anchor ring).
+    const expectedVertices = 5 * ringSize + 2;
     expect(positions.length).toBe(expectedVertices * 3);
   });
 
@@ -221,20 +221,18 @@ describe('buildChainTube — geometric contract', () => {
     expect(indexAttr!.count).toBe(4 * RADIAL * 6);
   });
 
-  it('open chains generate one fewer body loop than closed (n-1 segments) plus cap loops', () => {
+  it('open chains generate one fewer body loop than closed (n-1 segments) plus 2 apex caps', () => {
     const open = buildChainTube(
       makeChain([[0, 0], [10, 0], [10, 10], [0, 10]], 0.4, false),
       0.2, 0.2,
     )!;
     const indices = open.getIndex();
-    // Body: (n-1) = 3 loops, each loop = RADIAL × 2 triangles × 3 indices.
-    // Plus two K_CAP-step rounded end caps; each cap has K_CAP loops, each
-    // loop with RADIAL × 2 triangles × 3 indices. Same per-loop cost as
-    // the body — caps just add 2 × K_CAP loops to the index count.
-    const K_CAP = 4;
-    const bodyLoops = 3;
-    const capLoops = 2 * K_CAP;
-    expect(indices!.count).toBe((bodyLoops + capLoops) * RADIAL * 6);
+    // Body: (n-1) = 3 loops × RADIAL × 6 indices (2 triangles per
+    // segment-radial face). Each pyramidal cap is a single fan of
+    // RADIAL triangles × 3 indices = RADIAL × 3 indices per cap.
+    const bodyIndices = 3 * RADIAL * 6;
+    const capIndices = 2 * RADIAL * 3;
+    expect(indices!.count).toBe(bodyIndices + capIndices);
   });
 
   it('rings stay perpendicular to the chain direction (no twist)', () => {

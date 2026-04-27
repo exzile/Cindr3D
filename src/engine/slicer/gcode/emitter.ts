@@ -479,6 +479,13 @@ export class GCodeEmitter {
       const flowSpeedCap = this.maxFlowRate / (lineWidth * layerHeight);
       if (clampedSpeed > flowSpeedCap) clampedSpeed = flowSpeedCap;
     }
+    const flowEqualizationRatio = Math.max(0, Math.min(1, this.print.flowEqualizationRatio ?? 0));
+    const nominalLineWidth = this.print.wallLineWidth > 0 ? this.print.wallLineWidth : lineWidth;
+    if (flowEqualizationRatio > 0 && lineWidth > nominalLineWidth && nominalLineWidth > 0) {
+      const equalizedSpeed = speed * (nominalLineWidth / lineWidth);
+      const blendedSpeed = speed + (equalizedSpeed - speed) * flowEqualizationRatio;
+      if (clampedSpeed > blendedSpeed) clampedSpeed = blendedSpeed;
+    }
     this.gcode.push(
       `G1 X${x.toFixed(3)} Y${y.toFixed(3)} E${this.relativeExtrusion ? extrusion.toFixed(5) : this.currentE.toFixed(5)} F${(clampedSpeed * 60).toFixed(0)}`,
     );

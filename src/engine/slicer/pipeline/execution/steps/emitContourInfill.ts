@@ -83,6 +83,7 @@ export interface BridgeFanProfile {
   bridgeFanSpeed2?: number;
   bridgeFanSpeed3?: number;
   bridgeEnableMoreLayers?: boolean;
+  bridgeHasMultipleLayers?: boolean;
 }
 
 /**
@@ -103,7 +104,7 @@ export function pickBridgeFanSpeed(
   pp: BridgeFanProfile,
   priorConsecutive: number,
 ): number {
-  const moreLayers = pp.bridgeEnableMoreLayers ?? false;
+  const moreLayers = pp.bridgeEnableMoreLayers ?? pp.bridgeHasMultipleLayers ?? false;
   const consecutive = (priorConsecutive ?? 0) + 1;
   if (!moreLayers || consecutive <= 1) return pp.bridgeFanSpeed ?? 100;
   if (consecutive === 2) return pp.bridgeFanSpeed2 ?? pp.bridgeFanSpeed ?? 100;
@@ -132,7 +133,9 @@ export function emitContourInfill(
     let infillLines: { from: THREE.Vector2; to: THREE.Vector2 }[] = [];
     let infillMoveType: InfillMoveType = 'infill';
     let speed = infillSpeed;
-    const lineWidth = pp.infillLineWidth;
+    const lineWidth = isSolidTop
+      ? (pp.topSurfaceSkinLineWidth ?? pp.topBottomLineWidth ?? pp.infillLineWidth)
+      : pp.infillLineWidth;
 
     if (isFirstLayer && isSolid && pp.initialLayerBottomFlow != null) emitter.currentLayerFlow = pp.initialLayerBottomFlow / 100;
 
@@ -142,8 +145,9 @@ export function emitContourInfill(
       // centerlines need an extra half-line inset because the actual bead has
       // width. Keep first-layer skin overlap at zero; it was the blue fill
       // extending into red/green wall strokes in preview.
-      const skinOverlap = isFirstLayer ? 0 : ((pp.skinOverlapPercent ?? 0) / 100) * pp.infillLineWidth;
-      const totalExpand = skinOverlap + (isSolidTop ? (pp.topSkinExpandDistance ?? 0) : 0) + (isSolidBottom ? (pp.bottomSkinExpandDistance ?? 0) : 0);
+      const skinOverlap = isFirstLayer ? 0 : ((pp.skinOverlapPercent ?? 0) / 100) * lineWidth;
+      const topSurfaceExpand = pp.topSurfaceSkinExpansion ?? pp.topSkinExpandDistance ?? 0;
+      const totalExpand = skinOverlap + (isSolidTop ? topSurfaceExpand : 0) + (isSolidBottom ? (pp.bottomSkinExpandDistance ?? 0) : 0);
       for (const region of infillRegions) {
         let skinContour = totalExpand > 0 ? offsetContourFast(slicer, region.contour, -totalExpand) : region.contour;
         const srw = pp.skinRemovalWidth ?? 0;
@@ -156,14 +160,18 @@ export function emitContourInfill(
         }
         const skinInput = skinContour.length >= 3 ? skinContour : region.contour;
         if (skinInput.length < 3) continue;
-        const safeSkinInput = insetFillCenterlineRegion(slicer, skinInput, region.holes, pp.infillLineWidth);
+        const safeSkinInput = insetFillCenterlineRegion(slicer, skinInput, region.holes, lineWidth);
         if (!safeSkinInput) continue;
-        const skinPattern = (li === 0 && pp.bottomPatternInitialLayer) ? pp.bottomPatternInitialLayer : (pp.topBottomPattern === 'concentric' ? 'concentric' : 'lines');
+        const skinPattern = isSolidTop
+          ? (pp.topSurfaceSkinPattern ?? pp.topBottomPattern ?? 'lines')
+          : (li === 0 && pp.bottomPatternInitialLayer)
+            ? pp.bottomPatternInitialLayer
+            : (pp.topBottomPattern === 'concentric' ? 'concentric' : 'lines');
         if (pp.topBottomLineDirections && pp.topBottomLineDirections.length > 0) {
           const angleDeg = pp.topBottomLineDirections[li % pp.topBottomLineDirections.length];
-          infillLines.push(...slicer.generateScanLines(safeSkinInput.contour, 100, pp.infillLineWidth, (angleDeg * Math.PI) / 180, 0, safeSkinInput.holes));
+          infillLines.push(...slicer.generateScanLines(safeSkinInput.contour, 100, lineWidth, (angleDeg * Math.PI) / 180, 0, safeSkinInput.holes));
         } else {
-          infillLines.push(...slicer.generateLinearInfill(safeSkinInput.contour, 100, pp.infillLineWidth, li, skinPattern, safeSkinInput.holes));
+          infillLines.push(...slicer.generateLinearInfill(safeSkinInput.contour, 100, lineWidth, li, skinPattern, safeSkinInput.holes));
         }
       }
       infillMoveType = 'top-bottom';
@@ -200,10 +208,10 @@ export function emitContourInfill(
           try { overhangShadowMP = unionMultiPolygon(shadowTris); } catch { overhangShadowMP = []; }
         }
       }
-      const infillOverlapMm = ((pp.infillOverlap ?? 10) / 100) * pp.infillLineWidth;
+      const infillOverlapMm = ((pp.infillOverlap ?? 10) / 100) * lineWidth;
       for (const baseRegion of infillRegions) {
         const infillRegion = infillOverlapMm > 0 ? offsetContourFast(slicer, baseRegion.contour, -infillOverlapMm) : baseRegion.contour;
-        const safeInfillRegion = insetFillCenterlineRegion(slicer, infillRegion, baseRegion.holes, pp.infillLineWidth);
+        const safeInfillRegion = insetFillCenterlineRegion(slicer, infillRegion, baseRegion.holes, lineWidth);
         if (!safeInfillRegion) continue;
         const minInfFill = pp.minInfillArea ?? 0;
         const infillRegionOk = minInfFill <= 0 || (() => { const b = slicer.contourBBox(safeInfillRegion.contour); return (b.maxX - b.minX) * (b.maxY - b.minY) >= minInfFill; })();
@@ -211,11 +219,11 @@ export function emitContourInfill(
         const genPattern = (region: THREE.Vector2[], density: number, holes: THREE.Vector2[][]) => {
           if (pp.infillLineDirections && pp.infillLineDirections.length > 0) {
             const angleDeg = pp.infillLineDirections[li % pp.infillLineDirections.length];
-            const spacing = pp.infillLineWidth / (density / 100);
+            const spacing = lineWidth / (density / 100);
             const phase = pp.randomInfillStart ? Math.abs(Math.sin(li * 127.1 + 43.7)) * spacing : 0;
-            return slicer.generateScanLines(region, density, pp.infillLineWidth, (angleDeg * Math.PI) / 180, phase, holes);
+            return slicer.generateScanLines(region, density, lineWidth, (angleDeg * Math.PI) / 180, phase, holes);
           }
-          return slicer.generateLinearInfill(region, density, pp.infillLineWidth, li, pp.infillPattern, holes);
+          return slicer.generateLinearInfill(region, density, lineWidth, li, pp.infillPattern, holes);
         };
         if (overhangShadowMP.length === 0) {
           infillLines.push(...genPattern(safeInfillRegion.contour, effectiveDensity, safeInfillRegion.holes));
@@ -253,8 +261,8 @@ export function emitContourInfill(
         emitter.travelTo(loop[0].x, loop[0].y, moves);
         for (let pi = 1; pi < loop.length; pi++) {
           const from = loop[pi - 1], to = loop[pi];
-          layer.layerTime += emitter.extrudeTo(to.x, to.y, topBottomSpeed, pp.infillLineWidth, layerH).time;
-          moves.push({ type: 'top-bottom', from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, speed: topBottomSpeed, extrusion: emitter.calculateExtrusion(from.distanceTo(to), pp.infillLineWidth, layerH), lineWidth: pp.infillLineWidth });
+          layer.layerTime += emitter.extrudeTo(to.x, to.y, topBottomSpeed, lineWidth, layerH).time;
+          moves.push({ type: 'top-bottom', from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, speed: topBottomSpeed, extrusion: emitter.calculateExtrusion(from.distanceTo(to), lineWidth, layerH), lineWidth });
         }
       }
     }
@@ -282,7 +290,7 @@ export function emitContourInfill(
       let thisMoveType: InfillMoveType = infillMoveType;
       let thisSpeed = speed;
       const thisLineWidth = lineWidth;
-      let thisFlowScale = 1.0;
+      let thisFlowScale = isSolidTop ? (pp.topSurfaceSkinFlow ?? 100) / 100 : 1.0;
       const bridgeSettingsOn = pp.enableBridgeSettings !== false;
       if (hasBridgeRegions && bridgeSettingsOn && infillMoveType === 'top-bottom') {
         const midX = (effFrom.x + effTo.x) / 2, midY = (effFrom.y + effTo.y) / 2;

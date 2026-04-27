@@ -204,41 +204,39 @@ describe('Preview tube — closed-loop precision', () => {
   });
 });
 
-// Open chains get rounded hemisphere caps at each end. The cap adds
-// K_CAP latitude rings per cap (each `ringSize` verts / `RADIAL × 2`
-// triangles) on top of the main-tube body. Closed chains have NO caps.
-const K_CAP = 4;
+// Open chains get a Cura/Orca-style apex cap at each end: one extra
+// vertex displaced one halfWidth past the tube end along the line's
+// own direction, fanned to the anchor ring with RADIAL triangles.
+// Closed chains have NO caps.
 
 describe('Preview tube — vertex count consistency', () => {
-  it('vertex count = (body + caps) × ringSize × 3 floats', () => {
+  it('vertex count = body rings × ringSize + 2 apex verts (open chain)', () => {
     const chain = makeChain([[0, 0], [10, 0], [20, 5]], 0.4, false, 'support');
     const geo = buildChainTube(chain, 0.2, 0.2);
     const positions = geo!.getAttribute('position').array as Float32Array;
-    // 3 body rings + 2 × K_CAP cap rings.
-    const expectedRings = 3 + 2 * K_CAP;
-    expect(positions.length).toBe(expectedRings * ringSize * 3);
+    // 3 body rings × ringSize verts + 2 cap apex verts.
+    expect(positions.length).toBe((3 * ringSize + 2) * 3);
   });
 
-  it.each([2, 3, 4, 5, 8, 16] as const)('chain of %d points produces N body rings + 2×K_CAP cap rings', (n) => {
+  it.each([2, 3, 4, 5, 8, 16] as const)('chain of %d points produces N×ringSize body verts + 2 cap apex verts', (n) => {
     const points: Array<[number, number]> = Array.from({ length: n }, (_, i) => [i * 5, 0] as [number, number]);
     const chain = makeChain(points, 0.4, false, 'support');
     const geo = buildChainTube(chain, 0.2, 0.2);
     const positions = geo!.getAttribute('position').array as Float32Array;
-    const expectedRings = n + 2 * K_CAP;
-    expect(positions.length).toBe(expectedRings * ringSize * 3);
+    expect(positions.length).toBe((n * ringSize + 2) * 3);
   });
 });
 
 describe('Preview tube — index buffer correctness', () => {
-  it('index buffer has 6 indices per (segment × radial) for the body, plus 2 × K_CAP × RADIAL × 6 for the caps', () => {
+  it('index buffer = body loops × RADIAL × 6 + 2 × cap fans (RADIAL triangles each)', () => {
     const chain = makeChain([[0, 0], [10, 0], [20, 0]], 0.4, false);
     const geo = buildChainTube(chain, 0.2, 0.2);
     const indices = geo!.getIndex();
-    // 2 body segments + 2 × K_CAP cap loops. Each loop = RADIAL × 2
-    // triangles × 3 indices = RADIAL × 6.
-    const bodyLoops = 2;
-    const capLoops = 2 * K_CAP;
-    expect(indices!.count).toBe((bodyLoops + capLoops) * RADIAL * 6);
+    // 2 body segments × RADIAL × 6 indices.
+    // 2 caps × RADIAL triangles × 3 indices.
+    const bodyIndices = 2 * RADIAL * 6;
+    const capIndices = 2 * RADIAL * 3;
+    expect(indices!.count).toBe(bodyIndices + capIndices);
   });
 
   it('index buffer has 6 × N × RADIAL for closed N-point chains', () => {

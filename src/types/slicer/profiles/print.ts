@@ -465,7 +465,7 @@ export interface PrintProfile {
 
   // --- Experimental ------------------------------------------------------
   smoothSpiralizedContours?: boolean;  // storage-only — round corners in vase mode
-  flowEqualizationRatio?: number;      // storage-only — 0.0–1.0 adjust speed to equalize flow volume
+  flowEqualizationRatio?: number;      // wired — 0.0–1.0 adjust speed to equalize flow volume
   flowRateCompensationFactor?: number; // wired — multiplier on all extrusion E values
   primeBlobEnable?: boolean;           // wired — deposit purge blob before print starts
   primeBlobSize?: number;              // wired — mm³ of material to purge
@@ -522,10 +522,10 @@ export interface PrintProfile {
   raftWallCount?: number;              // storage-only
 
   // --- Top Surface Skin -------------------------------------------------
-  topSurfaceSkinLineWidth?: number;    // storage-only — mm
-  topSurfaceSkinPattern?: 'lines' | 'concentric' | 'zigzag'; // storage-only
-  topSurfaceSkinExpansion?: number;    // storage-only — mm
-  topSurfaceSkinFlow?: number;         // storage-only — %
+  topSurfaceSkinLineWidth?: number;    // wired — mm
+  topSurfaceSkinPattern?: 'lines' | 'concentric' | 'zigzag'; // wired
+  topSurfaceSkinExpansion?: number;    // wired — mm
+  topSurfaceSkinFlow?: number;         // wired — %
 
   // --- Initial Layer Per-Feature Flow Overrides -------------------------
   initialLayerOuterWallFlow?: number;  // wired — % override for first layer outer wall
@@ -557,7 +557,7 @@ export interface PrintProfile {
   // --- Bridge Extras ----------------------------------------------------
   bridgeSkinDensity?: number;          // storage-only — %
   interlaceBridgeLines?: boolean;      // storage-only
-  bridgeHasMultipleLayers?: boolean;   // storage-only
+  bridgeHasMultipleLayers?: boolean;   // wired — legacy alias for bridgeEnableMoreLayers
 
   // --- Support Interface Wall Count -------------------------------------
   supportInterfaceWallCount?: number;  // storage-only

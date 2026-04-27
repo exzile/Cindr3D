@@ -10,7 +10,6 @@
 # ============================================================================
 
 
-
 # ============================================================================
 # MISSING SETTINGS - full Cura gap analysis (all sections)
 # ============================================================================
@@ -24,7 +23,6 @@
 
 ## TOP / BOTTOM
 - [s] Top Surface Skin Layers (`topSurfaceSkinLayers`) - type + UI exists; engine too complex
-- [s] Top Surface Skin Line Width / Pattern / Expansion / Flow - type + UI exists; engine deferred
 - [s] Bottom Surface Skin Layers (`bottomSurfaceSkinLayers`) - type + UI exists; engine too complex
 - [s] Connect Top/Bottom Polygons (`connectTopBottomPolygons`) - type + UI exists; engine too complex
 - [s] Small Top/Bottom Width (`smallTopBottomWidth`) - type + UI exists; engine deferred
@@ -37,12 +35,6 @@
 
 ## INFILL
 - [skip] Infill Support (`infillSupport`) - major feature; deferred
-
-## MATERIAL
-- [s] Top Surface Skin Flow (`topSurfaceSkinFlow`) - type + UI exists; top-surface engine deferred
-
-## SPEED
-- [s] Flow Equalization Ratio (`flowEqualizationRatio`) - type + UI exists; engine deferred
 
 
 ## SUPPORT
@@ -70,19 +62,11 @@
 - [s] Fuzzy Skin Outside Only (`fuzzySkinOutsideOnly`) - type + UI exists; engine deferred (fuzzySkinsEnabled itself not yet wired)
 - [s] Adaptive Layers Topography Size (`adaptiveLayersTopographySize`) - type + UI exists; engine deferred
 - [s] Minimum Layer Time with Overhang (`minLayerTimeWithOverhang`) - type + UI exists; engine deferred
-- [s] Bridge Skin Density (`bridgeSkinDensity`) - storage-only; needs scanline regen at bridge density (deferred — invasive change to infill generation)
+- [s] Bridge Skin Density (`bridgeSkinDensity`) - storage-only; needs scanline regen at bridge density (deferred - invasive change to infill generation)
 - [s] Interlace Bridge Lines (`interlaceBridgeLines`) - storage-only; needs angle alternation across consecutive bridge layers (deferred)
-- [s] Bridge Has Multiple Layers (`bridgeHasMultipleLayers`) - storage-only; alias for `bridgeEnableMoreLayers` semantics (deferred — partial via bridgeFanSpeed2/3 wiring)
 
 - [skip] Wipe Nozzle Between Layers and all Wipe sub-params - multi-extruder feature
 - [skip] Flow Temperature Graph, Cross Infill Density Image - hardware/image-based; not applicable
-
-## ARACHNE PARITY FOLLOW-UP
-- [x] Region-aware Arachne invocation - bridge now passes section_type through the Arachne context (walls today, extensible to skin/support/infill callers).
-- [x] Orca min wall length factor - `minWallLengthFactor` now reaches libArachne and drives tiny odd open-line filtering.
-- [x] Top/bottom Arachne semantics - solid top/bottom layers now pass `is_top_or_bottom_layer` so short-line filtering uses Orca's top-surface-safe threshold.
-- [x] Precise-wall style spacing/compensation - `preciseOuterWall` now reaches libArachne and disables extra outer-wall inset compensation for dimensional walls.
-- [x] Fluid Motion Arachne smoothing - `fluidMotionEnable` now reaches the libArachne WASM config.
 
 ## PRINTER SETTINGS
 - [skip] Machine Type, Material Type/Brand, Nozzle geometry, Steps/mm, Endstops, Extruder-sharing params - hardware-only fields stored in firmware, not relevant to G-code output
@@ -100,8 +84,3 @@
 - [s] Master/per-feature line width wiring (`lineWidth`, `outerWallLineWidth`, `topBottomLineWidth`) - UI exists, but engine semantics do not yet match Cura
 
 
-# ============================================================================
-# PREVIEW / DIAGNOSTICS
-# ============================================================================
-- [x] Nozzle simulation layer-change timing - move timeline now models
-      explicit Z-only layer-change motion as first-class preview entries
