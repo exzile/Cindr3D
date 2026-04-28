@@ -1,4 +1,37 @@
 import type * as THREE from 'three';
+import type { MultiPolygon as PCMultiPolygon } from 'polygon-clipping';
+import type { ModifierMeshRole, ModifierMeshSettings } from './slicer/profiles/results';
+
+/**
+ * A modifier mesh is a per-object volume that adjusts how OTHER meshes
+ * are sliced, rather than being printed itself. Cura/Orca call these
+ * "Infill Mesh", "Cutting Mesh", "Support Mesh", and "Anti-Overhang
+ * Mesh". The slicer keeps modifier meshes separate from printable
+ * meshes; per-layer composition is what makes them affect the print.
+ */
+export interface ModifierMesh {
+  role: ModifierMeshRole;
+  triangles: Triangle[];
+  settings?: ModifierMeshSettings;
+  /** Index of this modifier in the SliceRun.modifierMeshes array. */
+  meshIndex: number;
+}
+
+/**
+ * Per-layer 2D regions contributed by modifier meshes. Computed in
+ * `prepareLayerGeometryState` after the printable contours are built;
+ * consumed downstream by walls/infill/support emission.
+ */
+export interface LayerModifierRegions {
+  /** Multi-polygon to subtract from printable contours (cutting_mesh). */
+  cuttingMP?: PCMultiPolygon;
+  /** Forced support volume (support_mesh) — union over all support meshes. */
+  forcedSupportMP?: PCMultiPolygon;
+  /** Anti-overhang region (anti_overhang_mesh) — subtracted from support. */
+  blockedSupportMP?: PCMultiPolygon;
+  /** Per infill_mesh region with its overrides. Higher infillMeshOrder wins. */
+  infillOverrides?: Array<{ region: PCMultiPolygon; settings: ModifierMeshSettings; meshIndex: number }>;
+}
 
 export interface Triangle {
   v0: THREE.Vector3;

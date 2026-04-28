@@ -1,8 +1,20 @@
 import * as THREE from 'three';
+import type { MultiPolygon as PCMultiPolygon } from 'polygon-clipping';
 
 import type { PrintProfile, SliceMove } from '../../../types/slicer';
 import type { SupportDeps } from '../../../types/slicer-pipeline-deps.types';
 import type { BBox2, Contour, Triangle } from '../../../types/slicer-pipeline.types';
+
+/**
+ * Optional per-layer modifier-mesh regions consumed by the support
+ * generator: `forcedSupportMP` adds support inside arbitrary volumes
+ * (Cura's "Support Mesh"); `blockedSupportMP` suppresses support inside
+ * arbitrary volumes (Cura's "Anti-Overhang Mesh").
+ */
+export interface SupportModifierRegions {
+  forcedSupportMP?: PCMultiPolygon;
+  blockedSupportMP?: PCMultiPolygon;
+}
 
 interface SupportIsland {
   points: THREE.Vector2[];
@@ -699,6 +711,94 @@ function emitTowerSupport(
   }
 }
 
+/**
+ * Synthesize support islands from a forced-support MultiPolygon (used
+ * by Cura's "Support Mesh" feature). One island per outer ring; the
+ * island carries the bbox of that ring as both `points` (for downstream
+ * `rawIslandBBox`) and as a centroid/area pair so the generator can
+ * apply the same conical/stair-step/horizontal-expansion logic as
+ * triangle-derived overhang islands.
+ */
+export function forcedSupportIslandsFromMP(mp: PCMultiPolygon, sliceZ: number, layerH: number): SupportIsland[] {
+  const islands: SupportIsland[] = [];
+  for (const polygon of mp) {
+    if (polygon.length === 0) continue;
+    const outerRing = polygon[0];
+    if (outerRing.length < 4) continue;
+    const points: THREE.Vector2[] = [];
+    let cx = 0; let cy = 0;
+    for (let i = 0; i < outerRing.length - 1; i++) {
+      const [x, y] = outerRing[i];
+      points.push(new THREE.Vector2(x, y));
+      cx += x;
+      cy += y;
+    }
+    if (points.length < 3) continue;
+    const inv = 1 / points.length;
+    const centroid = new THREE.Vector2(cx * inv, cy * inv);
+    let area = 0;
+    for (let i = 0; i < points.length; i++) {
+      const j = (i + 1) % points.length;
+      area += points[i].x * points[j].y - points[j].x * points[i].y;
+    }
+    islands.push({
+      points,
+      centroid,
+      area: Math.abs(area / 2),
+      // Forced-support volume reaches up to (and beyond) sliceZ. The body
+      // doesn't drive interface detection — that comes from triangles.
+      maxZ: sliceZ + layerH,
+      minZ: sliceZ,
+    });
+  }
+  return islands;
+}
+
+function pointInPCMultiPolygon(x: number, y: number, mp: PCMultiPolygon): boolean {
+  for (const polygon of mp) {
+    if (polygon.length === 0) continue;
+    const outerRing = polygon[0];
+    if (!pointInRingPC(x, y, outerRing)) continue;
+    let insideHole = false;
+    for (let i = 1; i < polygon.length; i++) {
+      if (pointInRingPC(x, y, polygon[i])) { insideHole = true; break; }
+    }
+    if (!insideHole) return true;
+  }
+  return false;
+}
+
+function pointInRingPC(x: number, y: number, ring: ReadonlyArray<readonly [number, number]>): boolean {
+  // Ray-cast point-in-polygon. Ring is closed (last point == first); we
+  // iterate edges between consecutive points up to length-1.
+  let inside = false;
+  const n = ring.length - 1;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = ring[i][0]; const yi = ring[i][1];
+    const xj = ring[j][0]; const yj = ring[j][1];
+    if (((yi > y) !== (yj > y)) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-12) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+export function filterMovesByBlockedMP(moves: SliceMove[], blocked: PCMultiPolygon): SliceMove[] {
+  if (blocked.length === 0 || moves.length === 0) return moves;
+  const out: SliceMove[] = [];
+  for (const move of moves) {
+    if (move.type !== 'support') {
+      out.push(move);
+      continue;
+    }
+    const midX = (move.from.x + move.to.x) * 0.5;
+    const midY = (move.from.y + move.to.y) * 0.5;
+    if (pointInPCMultiPolygon(midX, midY, blocked)) continue;
+    out.push(move);
+  }
+  return out;
+}
+
 export function generateSupportForLayer(
   triangles: Triangle[],
   sliceZ: number,
@@ -710,18 +810,29 @@ export function generateSupportForLayer(
   modelContours: Contour[],
   pp: PrintProfile,
   deps: SupportDeps,
+  modifierRegions?: SupportModifierRegions,
 ): { moves: SliceMove[]; flowOverride?: number } {
   if (pp.supportType === 'tree' || pp.supportType === 'organic') {
-    return { moves: generateTreeSupportForLayer(triangles, sliceZ, layerIndex, offsetX, offsetY, modelContours, pp, deps) };
+    let moves = generateTreeSupportForLayer(triangles, sliceZ, layerIndex, offsetX, offsetY, modelContours, pp, deps);
+    if (modifierRegions?.blockedSupportMP) moves = filterMovesByBlockedMP(moves, modifierRegions.blockedSupportMP);
+    return { moves };
   }
 
   const moves: SliceMove[] = [];
-  const islands = overhangIslands(triangles, sliceZ, offsetX, offsetY, pp);
-  if (islands.length === 0) return { moves };
+  const triangleIslands = overhangIslands(triangles, sliceZ, offsetX, offsetY, pp);
+  // Cura's "Support Mesh" — append synthetic islands for forced-support
+  // volumes so the generator covers them regardless of triangle overhang.
+  // Forced islands skip the tower path (their shape is user-defined) and
+  // route straight through the bbox-scanline body emitter so they get
+  // the standard conical / stair-step / horizontal-expansion modifiers.
+  const forcedIslands = modifierRegions?.forcedSupportMP
+    ? forcedSupportIslandsFromMP(modifierRegions.forcedSupportMP, sliceZ, pp.layerHeight)
+    : [];
+  if (triangleIslands.length === 0 && forcedIslands.length === 0) return { moves };
 
   const { roof, floor } = supportInterfaceState(triangles, sliceZ, pp);
   let flowOverride: number | undefined;
-  for (const island of islands) {
+  for (const island of triangleIslands) {
     // Tower path: small islands print as circular columns with a flared
     // roof instead of bbox-scanline support. Bypasses the conical /
     // stair-step / horizontal-expansion modifiers — those don't apply
@@ -736,6 +847,18 @@ export function generateSupportForLayer(
     const islandFlow = emitSupportIsland(moves, bbox, layerIndex, pp, modelContours, deps, roof, floor);
     if (islandFlow !== undefined) flowOverride = islandFlow;
   }
+  for (const island of forcedIslands) {
+    const bbox = islandBBox(island, pp, layerZ, layerIndex, modelHeight);
+    if (!bbox) continue;
+    // Forced-support volumes are body-mode only — they don't define a
+    // floor or roof of their own (the roof/floor concept is tied to the
+    // model's overhang triangles, not to user-painted support volumes).
+    const islandFlow = emitSupportIsland(moves, bbox, layerIndex, pp, modelContours, deps, false, false);
+    if (islandFlow !== undefined) flowOverride = islandFlow;
+  }
 
-  return { moves, flowOverride };
+  const finalMoves = modifierRegions?.blockedSupportMP
+    ? filterMovesByBlockedMP(moves, modifierRegions.blockedSupportMP)
+    : moves;
+  return { moves: finalMoves, flowOverride };
 }

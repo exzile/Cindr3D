@@ -10,22 +10,55 @@
 # to half-wire them under a single PR.
 # ============================================================================
 
-## Per-object mesh override system  (architectural)
+## Per-object mesh override system  (architectural — partially wired)
 # Cura's "Infill Mesh", "Cutting Mesh", "Support Mesh", and "Anti-Overhang
 # Mesh" features all depend on a per-object override resolution layer
 # (per-object > profile > default) and boolean operations between object
-# pairs feeding the slice run. The type scaffolding and UI for individual
-# meshes already exist; the engine wiring is the missing piece.
+# pairs feeding the slice run.
 #
-# Affected:
-#   - infillMesh / infillMeshOrder
-#   - cuttingMesh
-#   - supportMesh / supportMeshDropDown
-#   - antiOverhangMesh
+# WIRED in this pass:
+#   [x] Type scaffolding: ModifierMesh, LayerModifierRegions in
+#       types/slicer-pipeline.types.ts; settings extended in
+#       types/slicer/profiles/results.ts.
+#   [x] Per-object override resolver — pure module with three-tier
+#       precedence (profile < per-object < modifier), see
+#       src/engine/slicer/pipeline/perObjectOverrides.ts.
+#   [x] End-to-end plumbing: modifier meshes flow from slicerStore →
+#       SlicerWorker → Slicer.slice() → SliceRun.modifierMeshes →
+#       per-layer composition. The old AABB-overlap hack in slicerStore
+#       is gone.
+#   [x] cuttingMesh — at every layer, the cutting mesh's cross-section
+#       is subtracted from the printable contours via Clipper2 difference
+#       (src/engine/slicer/pipeline/modifierMeshes.ts).
+#   [x] supportMesh — forced-support region; slices its volume per layer
+#       and feeds the support generator as synthetic islands so support
+#       prints inside the volume regardless of overhang.
+#   [x] antiOverhangMesh — blocked-support region; support moves whose
+#       midpoint falls inside the volume are filtered out post-emit.
+#   [s] infillMesh / infillMeshOrder — region MultiPolygons are computed
+#       and stored on SliceLayerGeometryState.modifierRegions.infillOverrides
+#       (sorted by infillMeshOrder). Per-region wall/infill setting
+#       overrides at emit time are NOT yet wired — that requires
+#       region-aware perimeter generation and infill emission, which
+#       is a separate, larger pipeline change.
+#   [x] supportMeshDropDown is an alias for the supportMesh role — a
+#       support_mesh's volume is treated as a column of forced support
+#       at every layer the volume occupies, which is the dropdown
+#       behavior. (Cura's "Drop Down Support Mesh" toggle controls
+#       whether the volume drops, but the geometry alone is enough
+#       for the typical user-painted-pillar case our wiring handles.)
 #
-# Estimated scope: needs a new per-object override resolver, mesh-pair
-# boolean ops in the slice run, and override pass-through into the
-# pipeline. Touches ~8-10 files in src/engine/slicer/.
+# DEFERRED (next session):
+#   [ ] infill_mesh per-region overrides at emit time — needs the wall
+#       generator and infill emitter to consult the per-layer
+#       `infillOverrides` regions and apply the modifier's
+#       wallCount / infillDensity / infillPattern / topLayers /
+#       bottomLayers within those regions.
+#   [ ] Layer-prep parallelism for runs with modifier meshes — currently
+#       falls back to sequential prep when modifier meshes are present.
+#       Re-enabling parallelism needs the SerializedGeometryRun ↔
+#       SlicerLayerWorker path to serialize per-mesh triangles + role
+#       + settings.
 
 ## Multi-mesh repair  (depends on per-object framework)
 # Extends beyond the single-mesh removeAllHoles already wired. Requires

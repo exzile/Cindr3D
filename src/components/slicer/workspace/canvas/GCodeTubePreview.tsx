@@ -64,7 +64,7 @@ const _col = new THREE.Color();
 type ColorMode = 'type' | 'speed' | 'flow' | 'width' | 'layer-time' | 'wall-quality';
 
 function usesOrcaSegmentTemplate(type: string): boolean {
-  return type === 'wall-outer' || type === 'wall-inner' || type === 'gap-fill';
+  return type === 'gap-fill';
 }
 
 // eslint-disable-next-line react-refresh/only-export-components

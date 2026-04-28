@@ -25,6 +25,12 @@ interface RawGeometry {
   transformElements: Float32Array;  // 16-element column-major Matrix4
   overrides?: Record<string, unknown>;
   objectName?: string;
+  // Modifier-mesh role + settings. Default `'normal'` (= a regular
+  // printable). Modifier meshes are partitioned out before grouping so
+  // they don't form their own profile-override group; they ride
+  // alongside the printables they modify.
+  modifierMeshRole?: 'normal' | 'infill_mesh' | 'cutting_mesh' | 'support_mesh' | 'anti_overhang_mesh';
+  modifierMeshSettings?: Record<string, unknown>;
 }
 
 interface SliceMessage {
@@ -58,6 +64,8 @@ type ReconstructedGeometry = {
   transform: THREE.Matrix4;
   overrides?: Record<string, unknown>;
   objectName?: string;
+  modifierMeshRole?: RawGeometry['modifierMeshRole'];
+  modifierMeshSettings?: RawGeometry['modifierMeshSettings'];
 };
 
 type ChildWorkerMessage =
@@ -261,6 +269,7 @@ async function runSliceGroupInChildWorker(
 async function runSliceGroupsInWorkerPool(
   requestId: number,
   groupList: Array<[string, ReconstructedGeometry[]]>,
+  modifiers: ReconstructedGeometry[],
   printerProfile: object,
   materialProfile: object,
   printProfile: object,
@@ -280,11 +289,19 @@ async function runSliceGroupsInWorkerPool(
     const overrides = geos[0].overrides;
     if (overrides) Object.assign(effectivePrintProfile, overrides);
 
+    // Modifier meshes ride alongside every printable group — each
+    // child worker reconstitutes them from the RawGeometry stream
+    // and partitions on `modifierMeshRole` again. Order matters
+    // (printables first so a child slice without modifiers still
+    // works), but the partitioning is role-based rather than
+    // position-based so the order is informational.
+    const groupRaws = [...geos.map((g) => g.raw), ...modifiers.map((m) => m.raw)];
+
     results[index] = await runSliceGroupInChildWorker(
       requestId,
       index,
       groupList.length,
-      geos.map((g) => g.raw),
+      groupRaws,
       printerProfile,
       materialProfile,
       effectivePrintProfile,
@@ -302,6 +319,7 @@ async function runSliceGroupsInWorkerPool(
 
 async function runSliceGroupsSequentially(
   groupList: Array<[string, ReconstructedGeometry[]]>,
+  modifiers: ReconstructedGeometry[],
   printerProfile: object,
   materialProfile: object,
   printProfile: object,
@@ -345,7 +363,13 @@ async function runSliceGroupsSequentially(
     });
 
     const geosForSlice = geos.map(({ geometry, transform }) => ({ geometry, transform }));
-    const result = await slicer.slice(geosForSlice) as SliceResultWithTool;
+    const modifierMeshesForSlice = modifiers.map((m) => ({
+      geometry: m.geometry,
+      transform: m.transform,
+      role: m.modifierMeshRole as Exclude<RawGeometry['modifierMeshRole'], undefined>,
+      settings: m.modifierMeshSettings as never,
+    }));
+    const result = await slicer.slice(geosForSlice, modifierMeshesForSlice) as SliceResultWithTool;
     const extruderIndex = effectivePrintProfile.extruderIndex;
     if (typeof extruderIndex === 'number') result.extruderIndex = extruderIndex;
     if (cancelRequested) throw new Error('Slicing cancelled');
@@ -398,24 +422,48 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
     // We reference the typed arrays directly instead of copying via Array.from
     // — the main thread transferred ownership so they're ours to use.
     const geometries: ReconstructedGeometry[] = geometryData.map((raw) => {
-      const { positions, index, transformElements, overrides, objectName } = raw;
+      const { positions, index, transformElements, overrides, objectName, modifierMeshRole, modifierMeshSettings } = raw;
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
       if (index) geometry.setIndex(new THREE.BufferAttribute(index, 1));
       const transform = new THREE.Matrix4();
       transform.fromArray(transformElements);
-      return { raw, geometry, transform, overrides, objectName };
+      return { raw, geometry, transform, overrides, objectName, modifierMeshRole, modifierMeshSettings };
     });
 
-    // Partition geometries by their override signature. Each partition runs
-    // its own slice pass so the profile overrides (infill, walls, supports,
-    // etc.) genuinely apply to that subset of plate objects.
-    const groups = new Map<string, ReconstructedGeometry[]>();
+    // Split modifier meshes from printable meshes. Modifier meshes never
+    // form their own group (they aren't printed); they ride alongside
+    // every printable group so each group's slice pass sees the full
+    // modifier set. This is how Cura/Orca handle support/cutting/infill
+    // meshes whose volume crosses multiple printable objects.
+    const printables: ReconstructedGeometry[] = [];
+    const modifiers: ReconstructedGeometry[] = [];
     for (const g of geometries) {
+      if (g.modifierMeshRole && g.modifierMeshRole !== 'normal') modifiers.push(g);
+      else printables.push(g);
+    }
+
+    // Partition printable geometries by their override signature. Each
+    // partition runs its own slice pass so the profile overrides (infill,
+    // walls, supports, etc.) genuinely apply to that subset of plate
+    // objects.
+    const groups = new Map<string, ReconstructedGeometry[]>();
+    for (const g of printables) {
       const key = g.overrides ? JSON.stringify(g.overrides) : '__default__';
       const bucket = groups.get(key) ?? [];
       bucket.push(g);
       groups.set(key, bucket);
+    }
+    if (groups.size === 0) {
+      // No printables — nothing to slice. (A plate with only modifier
+      // meshes is a user error; surface a clear message.)
+      self.postMessage({
+        type: 'error',
+        requestId,
+        message: 'No printable meshes on the plate — modifier meshes (cutting / infill / support / anti-overhang) need at least one normal mesh to modify.',
+      });
+      disposeGeometries(geometries);
+      return;
     }
     const groupList = [...groups.entries()];
     const multi = groupList.length > 1;
@@ -435,6 +483,7 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
           results = await runSliceGroupsInWorkerPool(
             requestId,
             groupList,
+            modifiers,
             printerProfile,
             materialProfile,
             printProfile,
@@ -445,6 +494,7 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
           console.warn('Falling back to sequential slicing after worker-pool failure', err);
           results = await runSliceGroupsSequentially(
             groupList,
+            modifiers,
             printerProfile,
             materialProfile,
             printProfile,
@@ -488,7 +538,13 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
         });
 
         const geosForSlice = geos.map(({ geometry, transform }) => ({ geometry, transform }));
-        const result = await slicer.slice(geosForSlice) as SliceResultWithTool;
+        const modifierMeshesForSlice = modifiers.map((m) => ({
+          geometry: m.geometry,
+          transform: m.transform,
+          role: m.modifierMeshRole as Exclude<RawGeometry['modifierMeshRole'], undefined>,
+          settings: m.modifierMeshSettings as never,
+        }));
+        const result = await slicer.slice(geosForSlice, modifierMeshesForSlice) as SliceResultWithTool;
         const extruderIndex = effectivePrintProfile.extruderIndex;
         if (typeof extruderIndex === 'number') result.extruderIndex = extruderIndex;
         if (cancelRequested) throw new Error('Slicing cancelled');

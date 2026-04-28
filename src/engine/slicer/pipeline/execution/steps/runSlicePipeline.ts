@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { SliceResult } from '../../../../../types/slicer';
 import { finalizeGCodeStats, appendEndGCode } from '../../../gcode/footer';
 import { applyPostProcessingScripts } from '../../../gcode/postProcessing';
-import { prepareSliceRun } from './prepareSliceRun';
+import { prepareSliceRun, type ModifierMeshInput } from './prepareSliceRun';
 import { emitLayerStartState, prepareLayerState } from './prepareLayerState';
 import { emitGroupedAndContourWalls } from './emitGroupedAndContourWalls';
 import { emitContourInfill } from './emitContourInfill';
@@ -33,7 +33,7 @@ interface SerializedTriangle {
   edgeKey20: string;
 }
 
-type SerializedGeometryRun = Omit<SliceGeometryRun, 'triangles' | 'modelBBox'> & {
+type SerializedGeometryRun = Omit<SliceGeometryRun, 'triangles' | 'modelBBox' | 'modifierMeshes'> & {
   triangles: SerializedTriangle[];
   modelBBox: {
     min: SerializedVector3;
@@ -212,6 +212,13 @@ export function chooseLayerPrepWorkerCount(
 }
 
 function shouldUseLayerWorkerPool(run: SliceRun): boolean {
+  // Parallel layer prep does not currently serialize modifier-mesh
+  // triangles to the layer worker, so any run with active modifiers
+  // (cutting / support / anti-overhang / infill meshes) must take the
+  // sequential path. Skipping the pool here keeps the boolean
+  // composition self-contained on the main slicer thread until the
+  // serialization path is extended.
+  if (run.modifierMeshes.length > 0) return false;
   return chooseLayerPrepWorkerCount(run) > 1;
 }
 
@@ -355,6 +362,7 @@ function startLayerPrepWorkerPool(
 export async function runSlicePipeline(
   pipeline: unknown,
   geometries: { geometry: THREE.BufferGeometry; transform: THREE.Matrix4 }[],
+  modifierMeshes: ModifierMeshInput[] = [],
 ): Promise<SliceResult> {
   const totalStartMs = nowMs();
   const timings = new Map<string, { ms: number; count: number }>();
@@ -375,7 +383,7 @@ export async function runSlicePipeline(
     throw new Error('Non-planar slicing is not supported by the current planar G-code pipeline.');
   }
   let timingStartMs = nowMs();
-  const run = prepareSliceRun(pipeline, geometries);
+  const run = prepareSliceRun(pipeline, geometries, modifierMeshes);
   addTiming('prepare-run', nowMs() - timingStartMs);
 
   timingStartMs = nowMs();

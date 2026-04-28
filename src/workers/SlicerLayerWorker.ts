@@ -33,7 +33,7 @@ interface SerializedTriangle {
   edgeKey20: string;
 }
 
-type SerializedGeometryRun = Omit<SliceGeometryRun, 'triangles' | 'modelBBox'> & {
+type SerializedGeometryRun = Omit<SliceGeometryRun, 'triangles' | 'modelBBox' | 'modifierMeshes'> & {
   triangles: SerializedTriangle[];
   modelBBox: {
     min: SerializedVector3;
@@ -108,6 +108,11 @@ function hydrateGeometryRun(run: SerializedGeometryRun): SliceGeometryRun {
       edgeKey12: tri.edgeKey12,
       edgeKey20: tri.edgeKey20,
     })),
+    // Modifier meshes are not serialized into the layer worker — the
+    // top-level slicer disables parallel layer prep when modifiers are
+    // present (see shouldUseLayerWorkerPool), so this list is always
+    // empty in the worker path.
+    modifierMeshes: [],
     modelBBox: {
       min: hydrateVector3(run.modelBBox.min),
       max: hydrateVector3(run.modelBBox.max),

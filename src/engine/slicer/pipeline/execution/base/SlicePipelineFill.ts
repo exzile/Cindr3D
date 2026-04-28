@@ -10,7 +10,10 @@ import {
   sortInfillLines as sortInfillLinesFromModule,
   sortInfillLinesNN as sortInfillLinesNNFromModule,
 } from '../../infill';
-import { generateSupportForLayer as generateSupportForLayerFromModule } from '../../support';
+import {
+  generateSupportForLayer as generateSupportForLayerFromModule,
+  type SupportModifierRegions,
+} from '../../support';
 import { generateAdhesion as generateAdhesionFromModule } from '../../adhesion';
 import type { Triangle } from '../../../../../types/slicer-pipeline.types';
 import { SlicePipelineGeometry } from './SlicePipelineGeometry';
@@ -84,6 +87,7 @@ export class SlicePipelineFill extends SlicePipelineGeometry {
     _offsetZ: number,
     modelHeight: number,
     modelContours: Contour[],
+    modifierRegions?: SupportModifierRegions,
   ): { moves: SliceMove[]; flowOverride?: number } {
     return generateSupportForLayerFromModule(
       triangles,
@@ -101,6 +105,7 @@ export class SlicePipelineFill extends SlicePipelineGeometry {
         generateScanLines: (contour, density, lineWidth, angle, phaseOffset, holes) =>
           this.generateScanLines(contour, density, lineWidth, angle, phaseOffset, holes),
       },
+      modifierRegions,
     );
   }
 

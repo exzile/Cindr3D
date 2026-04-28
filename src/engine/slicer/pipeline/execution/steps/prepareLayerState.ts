@@ -3,6 +3,10 @@ import type { Ring as PCRing } from 'polygon-clipping';
 import type { SliceMove } from '../../../../../types/slicer';
 import { applyLayerStartControls } from '../../layerControls';
 import { buildLayerTopology } from '../layerTopology';
+import {
+  applyCuttingMeshSubtraction,
+  buildModifierRegionsForLayer,
+} from '../../modifierMeshes';
 import type {
   SlicerExecutionPipeline,
   SliceGeometryRun,
@@ -146,7 +150,7 @@ export async function prepareLayerGeometryState(
 
   const minCirc = pp.minimumPolygonCircumference ?? 0;
   const smallHoleThresh = pp.smallHoleMaxSize ?? 0;
-  const contours = allContours.filter((c) => {
+  let contours = allContours.filter((c) => {
     if (minCirc > 0) {
       let perim = 0;
       for (let i = 0; i < c.points.length; i++) perim += c.points[i].distanceTo(c.points[(i + 1) % c.points.length]);
@@ -158,6 +162,27 @@ export async function prepareLayerGeometryState(
     }
     return true;
   });
+
+  // Modifier-mesh composition. Slice every modifier mesh at this layer
+  // and apply role-specific 2D booleans:
+  //   • cutting_mesh subtracts its cross-section from printable contours.
+  //   • support_mesh / anti_overhang_mesh / infill_mesh contribute
+  //     regions consumed by downstream support emission and (eventually)
+  //     per-region infill overrides.
+  // The result is stored on the layer state so finalizeLayer's support
+  // step and emitContourInfill can read it.
+  const modifierRegions = buildModifierRegionsForLayer(
+    slicer,
+    run.modifierMeshes,
+    sliceZ,
+    offsetX,
+    offsetY,
+    offsetZ,
+  );
+  if (modifierRegions?.cuttingMP) {
+    contours = applyCuttingMeshSubtraction(contours, modifierRegions.cuttingMP, slicer);
+    if (contours.length === 0) return null;
+  }
 
   if ((mat.shrinkageCompensationXY ?? 0) !== 0) {
     const scale = 1 + (mat.shrinkageCompensationXY ?? 0) / 100;
@@ -300,6 +325,7 @@ export async function prepareLayerGeometryState(
     topBottomSpeed: isFirstLayer ? pp.firstLayerSpeed : isSolidBottom ? ramp(pp.bottomSpeed ?? pp.topSpeed) : ramp(pp.topSpeed),
     contours,
     printZ: layerZ - zOverlap,
+    modifierRegions,
   };
 }
 

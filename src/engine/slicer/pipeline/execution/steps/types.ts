@@ -4,6 +4,8 @@ import type { GCodeEmitter } from '../../../gcode/emitter';
 import type {
   Contour,
   GeneratedPerimeters,
+  LayerModifierRegions,
+  ModifierMesh,
   Segment,
   Triangle,
 } from '../../../../../types/slicer-pipeline.types';
@@ -98,6 +100,7 @@ export interface SlicerExecutionPipeline {
     offsetZ: number,
     modelHeight: number,
     contours: Contour[],
+    modifierRegions?: import('../../support').SupportModifierRegions,
   ): { moves: SliceMove[]; flowOverride?: number };
   generateLinearInfill(
     contour: THREE.Vector2[],
@@ -139,6 +142,12 @@ export interface SliceRun {
   printer: PrinterProfile;
   flavor: SlicerGCodeFlavor;
   triangles: Triangle[];
+  /**
+   * Modifier meshes — per-object cutting/infill/support/anti-overhang
+   * volumes that adjust slicing of the printable triangles but are not
+   * themselves printed. Empty for typical (single-printable-mesh) slices.
+   */
+  modifierMeshes: ModifierMesh[];
   modelBBox: SlicerModelBBox;
   modelHeight: number;
   bedCenterX: number;
@@ -174,6 +183,7 @@ export type SliceGeometryRun = Pick<
   | 'pp'
   | 'mat'
   | 'triangles'
+  | 'modifierMeshes'
   | 'modelBBox'
   | 'offsetX'
   | 'offsetY'
@@ -214,6 +224,13 @@ export interface SliceLayerGeometryState {
   contours: Contour[];
   printZ: number;
   precomputedContourWalls?: PrecomputedContourWall[];
+  /**
+   * 2D regions contributed by modifier meshes (cutting_mesh subtraction
+   * already applied to `contours`; the rest are stored for downstream
+   * support/infill emission). Undefined when the run has no modifier
+   * meshes — most slices.
+   */
+  modifierRegions?: LayerModifierRegions;
 }
 
 export interface SliceLayerState extends SliceLayerGeometryState, LayerTopology {

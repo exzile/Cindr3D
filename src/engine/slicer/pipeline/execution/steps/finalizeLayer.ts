@@ -109,7 +109,24 @@ export function finalizeLayer(
   // gate: when spiralize is on, support is unconditionally suppressed.
   const supThickMul = (pp.supportInfillLayerThickness ?? 0) > 0 ? Math.max(1, Math.round((pp.supportInfillLayerThickness ?? 0) / pp.layerHeight)) : 1;
   if (pp.supportEnabled && !pp.spiralizeContour && li > 0 && li % supThickMul === 0) {
-    const support = slicer.generateSupportForLayer(triangles, sliceZ, layerZ, li, offsetX, offsetY, run.offsetZ, run.modelHeight, contours);
+    const supportRegions = layer.modifierRegions
+      ? {
+        forcedSupportMP: layer.modifierRegions.forcedSupportMP,
+        blockedSupportMP: layer.modifierRegions.blockedSupportMP,
+      }
+      : undefined;
+    const support = slicer.generateSupportForLayer(
+      triangles,
+      sliceZ,
+      layerZ,
+      li,
+      offsetX,
+      offsetY,
+      run.offsetZ,
+      run.modelHeight,
+      contours,
+      supportRegions,
+    );
     if (support.moves.length > 0) {
       emitter.setAccel(pp.accelerationSupport, pp.accelerationPrint);
       emitter.setJerk(pp.jerkSupport, pp.jerkPrint);

@@ -103,7 +103,9 @@
       "Bash(rmdir C:/Users/joeyp/source/repos/exzile/DesignCAD/.vscode)",
       "mcp__gitnexus__query",
       "mcp__gitnexus__impact",
-      "mcp__gitnexus__detect_changes"
+      "mcp__gitnexus__detect_changes",
+      "mcp__gitnexus__context",
+      "Bash(tee /tmp/tsc.log)"
     ]
   }
 }

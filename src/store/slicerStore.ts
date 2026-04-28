@@ -264,29 +264,21 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
     // transferred, so the original geometries remain intact for rendering.
     // Per-object overrides ride alongside each geometry so the worker can
     // partition the plate into groups that share an effective profile.
+    // Modifier meshes (cutting / infill / support / anti-overhang) carry
+    // their `modifierMeshRole` / `modifierMeshSettings` through to the
+    // worker, where the slicer applies their volume per-layer via 2D
+    // boolean ops — no AABB heuristics here.
     const geometryData: {
       positions: Float32Array;
       index: Uint32Array | null;
       transformElements: Float32Array;
       overrides?: Record<string, unknown>;
       objectName?: string;
+      modifierMeshRole?: typeof state.plateObjects[number]['modifierMeshRole'];
+      modifierMeshSettings?: Record<string, unknown>;
     }[] = [];
-    const modifierObjects = state.plateObjects.filter((obj) => obj.modifierMeshRole && obj.modifierMeshRole !== 'normal');
-    const printableObjects = state.plateObjects.filter((obj) => !obj.modifierMeshRole || obj.modifierMeshRole === 'normal');
-    const worldBox = (obj: typeof state.plateObjects[number]) => ({
-      minX: obj.boundingBox.min.x + obj.position.x,
-      maxX: obj.boundingBox.max.x + obj.position.x,
-      minY: obj.boundingBox.min.y + obj.position.y,
-      maxY: obj.boundingBox.max.y + obj.position.y,
-      minZ: obj.boundingBox.min.z + obj.position.z,
-      maxZ: obj.boundingBox.max.z + obj.position.z,
-    });
-    const boxesOverlap = (a: ReturnType<typeof worldBox>, b: ReturnType<typeof worldBox>) =>
-      a.minX <= b.maxX && a.maxX >= b.minX
-      && a.minY <= b.maxY && a.maxY >= b.minY
-      && a.minZ <= b.maxZ && a.maxZ >= b.minZ;
 
-    for (const obj of printableObjects) {
+    for (const obj of state.plateObjects) {
       if (!obj.geometry) continue;
       const geo = obj.geometry as THREE.BufferGeometry;
       const posAttr = geo.getAttribute('position');
@@ -360,34 +352,30 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
         indexForWorker = indexAttr ? new Uint32Array(indexAttr.array) : null;
       }
 
+      const isModifier = !!obj.modifierMeshRole && obj.modifierMeshRole !== 'normal';
+      // Per-object overrides apply only to printable meshes. Modifier
+      // meshes carry their role-specific settings via `modifierMeshSettings`
+      // instead — those are NOT profile-level overrides; they're consumed
+      // when the slicer processes the modifier's volume per-layer.
       const per = (obj as { perObjectSettings?: Record<string, unknown> }).perObjectSettings;
-      let filteredOverrides = per && Object.keys(per).length > 0
+      const filteredOverrides = !isModifier && per && Object.keys(per).length > 0
         // Drop undefined entries — those represent "inherit global" and should
         // not override the profile.
         ? Object.fromEntries(Object.entries(per).filter(([, v]) => v !== undefined))
         : undefined;
-      const modifierOverrides: Record<string, unknown> = {};
-      const objBox = worldBox(obj);
-      for (const modifier of modifierObjects) {
-        if (!boxesOverlap(objBox, worldBox(modifier))) continue;
-        if (modifier.modifierMeshRole === 'infill_mesh') {
-          if (modifier.modifierMeshSettings?.infillDensity !== undefined) modifierOverrides.infillDensity = modifier.modifierMeshSettings.infillDensity;
-          if (modifier.modifierMeshSettings?.infillPattern !== undefined) modifierOverrides.infillPattern = modifier.modifierMeshSettings.infillPattern;
-        } else if (modifier.modifierMeshRole === 'support_mesh') {
-          modifierOverrides.supportEnabled = modifier.modifierMeshSettings?.supportEnabled ?? true;
-        } else if (modifier.modifierMeshRole === 'anti_overhang_mesh') {
-          modifierOverrides.supportEnabled = false;
-        }
-      }
-      if (Object.keys(modifierOverrides).length > 0) {
-        filteredOverrides = { ...modifierOverrides, ...(filteredOverrides ?? {}) };
-      }
+
+      const modifierMeshSettings = isModifier && obj.modifierMeshSettings
+        ? Object.fromEntries(Object.entries(obj.modifierMeshSettings).filter(([, v]) => v !== undefined))
+        : undefined;
+
       geometryData.push({
         positions: positionsForWorker,
         index: indexForWorker,
         transformElements: new Float32Array(transform.elements),
         overrides: filteredOverrides && Object.keys(filteredOverrides).length > 0 ? filteredOverrides : undefined,
         objectName: obj.name,
+        modifierMeshRole: obj.modifierMeshRole,
+        modifierMeshSettings: modifierMeshSettings && Object.keys(modifierMeshSettings).length > 0 ? modifierMeshSettings : undefined,
       });
     }
 
@@ -396,6 +384,15 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
         sliceProgress: {
           stage: 'error', percent: 0, currentLayer: 0, totalLayers: 0,
           message: 'No objects with geometry on the build plate.',
+        },
+      });
+      return;
+    }
+    if (!geometryData.some((g) => !g.modifierMeshRole || g.modifierMeshRole === 'normal')) {
+      set({
+        sliceProgress: {
+          stage: 'error', percent: 0, currentLayer: 0, totalLayers: 0,
+          message: 'No printable meshes on the plate — modifier meshes need a printable to modify.',
         },
       });
       return;

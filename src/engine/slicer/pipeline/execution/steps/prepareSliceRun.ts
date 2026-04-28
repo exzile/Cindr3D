@@ -3,7 +3,16 @@ import type { SlicerGCodeFlavor, StartEndMachineState } from '../../../../../typ
 import { GCodeEmitter } from '../../../gcode/emitter';
 import { appendHeaderPlaceholders, appendStartGCode } from '../../../gcode/startup';
 import { removeAllHoles as repairRemoveAllHoles } from '../../../geometry/coreGeometry';
+import type { ModifierMeshRole, ModifierMeshSettings } from '../../../../../types/slicer';
+import type { ModifierMesh } from '../../../../../types/slicer-pipeline.types';
 import type { SlicerExecutionPipeline, SliceGeometryRun, SliceRun } from './types';
+
+export interface ModifierMeshInput {
+  geometry: THREE.BufferGeometry;
+  transform: THREE.Matrix4;
+  role: ModifierMeshRole;
+  settings?: ModifierMeshSettings;
+}
 
 export type PreparedSliceGeometryRun = SliceGeometryRun & Pick<SliceRun, 'printer' | 'modelHeight'>;
 
@@ -102,8 +111,9 @@ function prepareMeshGeometry(
 export function prepareSliceRun(
   pipeline: unknown,
   geometries: { geometry: THREE.BufferGeometry; transform: THREE.Matrix4 }[],
+  modifierMeshes: ModifierMeshInput[] = [],
 ): SliceRun {
-  const geometryRun = prepareSliceGeometryRun(pipeline, geometries);
+  const geometryRun = prepareSliceGeometryRun(pipeline, geometries, modifierMeshes);
   const { pp, mat, printer } = geometryRun;
   const flavor: SlicerGCodeFlavor = printer.gcodeFlavorType ?? 'marlin';
 
@@ -167,6 +177,7 @@ export function prepareSliceRun(
 export function prepareSliceGeometryRun(
   pipeline: unknown,
   geometries: { geometry: THREE.BufferGeometry; transform: THREE.Matrix4 }[],
+  modifierMeshes: ModifierMeshInput[] = [],
 ): PreparedSliceGeometryRun {
   const slicer = pipeline as SlicerExecutionPipeline;
   const pp = slicer.printProfile;
@@ -177,6 +188,24 @@ export function prepareSliceGeometryRun(
   slicer.reportProgress('preparing', 0, 0, 0, 'Extracting triangles...');
 
   const { triangles, modelBBox, modelHeight } = prepareMeshGeometry(slicer, geometries, pp);
+  // Modifier meshes — each gets its triangles extracted independently so
+  // per-layer slicing can produce a separate cross-section per role.
+  // We do NOT run mesh-repair on modifiers (their boundary geometry is
+  // user-painted; repair could erase the very volume the user chose to
+  // mark as a cutting/infill/support volume).
+  const preparedModifiers: ModifierMesh[] = [];
+  for (let i = 0; i < modifierMeshes.length; i++) {
+    const mod = modifierMeshes[i];
+    if (mod.role === 'normal') continue;
+    const modTris = slicer.extractTriangles([{ geometry: mod.geometry, transform: mod.transform }]);
+    if (modTris.length === 0) continue;
+    preparedModifiers.push({
+      role: mod.role,
+      triangles: modTris,
+      settings: mod.settings,
+      meshIndex: preparedModifiers.length,
+    });
+  }
   const bedCenterX = printer.originCenter ? 0 : printer.buildVolume.x / 2;
   const bedCenterY = printer.originCenter ? 0 : printer.buildVolume.y / 2;
   const modelCenterX = (modelBBox.min.x + modelBBox.max.x) / 2;
@@ -222,6 +251,7 @@ export function prepareSliceGeometryRun(
     mat,
     printer,
     triangles,
+    modifierMeshes: preparedModifiers,
     modelBBox,
     modelHeight,
     bedCenterX,

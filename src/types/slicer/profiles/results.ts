@@ -45,9 +45,19 @@ export interface ModifierMeshSettings {
   // Infill mesh overrides (active when role === 'infill_mesh')
   infillDensity?: number;
   infillPattern?: PrintProfile['infillPattern'];
+  // Wall and skin overrides — apply inside an infill_mesh region.
+  wallCount?: number;
+  topLayers?: number;
+  bottomLayers?: number;
+  // Print-priority order for overlapping infill_mesh volumes.
+  // Cura's `infillMeshOrder`: higher value wins on overlap. Defaults to 0
+  // (matches Cura) so unset modifier meshes overlap deterministically by
+  // declaration order.
+  infillMeshOrder?: number;
   // Support mesh overrides (active when role === 'support_mesh')
   supportEnabled?: boolean;
-  // Anti-overhang: no additional settings needed — volume defines blocked region
+  // Cutting mesh: no additional settings — volume defines subtraction region
+  // Anti-overhang: no additional settings — volume defines blocked region
 }
 
 // -----------------------------------------------------------------------------
