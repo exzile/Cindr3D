@@ -4,6 +4,7 @@ import { booleanMultiPolygonClipper2Sync } from '../../../geometry/clipper2Boole
 import type { ContourWallData, SlicerExecutionPipeline, SliceLayerState, SliceRun } from './types';
 import type { SliceMove } from '../../../../../types/slicer';
 import { lineWidthForLayer } from './lineWidths';
+import { flipLine } from '../../infill';
 
 // ARACHNE-9.4A.4: worker awaits Clipper2 load before slicing — see SlicerWorker.ts.
 function requireMP(result: PCMultiPolygon | null, op: string): PCMultiPolygon {
@@ -256,7 +257,7 @@ export function sortSolidSkinLinesForEmission(
       const start = projectedStart(line);
       const end = projectedEnd(line);
       const isForward = start <= end;
-      sorted.push(forward === isForward ? line : { ...line, from: line.to, to: line.from });
+      sorted.push(forward === isForward ? line : flipLine(line));
     }
   });
 

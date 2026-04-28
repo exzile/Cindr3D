@@ -19,100 +19,20 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 
-import { Slicer } from '../engine/slicer/Slicer';
-import {
-  DEFAULT_MATERIAL_PROFILES,
-  DEFAULT_PRINTER_PROFILES,
-  DEFAULT_PRINT_PROFILES,
-} from '../types/slicer';
 import type { SliceMove } from '../types/slicer';
-
-// ---------- mesh builders -------------------------------------------------
-
-function buildBoxGeometry(sx: number, sy: number, sz: number): THREE.BufferGeometry {
-  const hx = sx / 2, hy = sy / 2;
-  const positions: number[] = [];
-  const v = (x: number, y: number, z: number) => [x, y, z];
-  const push = (a: number[], b: number[], c: number[]) => positions.push(...a, ...b, ...c);
-  const p000 = v(-hx, -hy, 0), p100 = v(hx, -hy, 0), p110 = v(hx, hy, 0), p010 = v(-hx, hy, 0);
-  const p001 = v(-hx, -hy, sz), p101 = v(hx, -hy, sz), p111 = v(hx, hy, sz), p011 = v(-hx, hy, sz);
-  push(p000, p110, p100); push(p000, p010, p110);
-  push(p001, p101, p111); push(p001, p111, p011);
-  push(p000, p100, p101); push(p000, p101, p001);
-  push(p010, p011, p111); push(p010, p111, p110);
-  push(p000, p001, p011); push(p000, p011, p010);
-  push(p100, p110, p111); push(p100, p111, p101);
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  g.computeVertexNormals();
-  return g;
-}
-
-/**
- * Cylinder with optional axial hole — used for "infill doesn't cross
- * walls around small holes" tests. Triangulated as a fan so we don't
- * need an indexed geometry. radius/holeRadius in mm.
- */
-function buildCylinderGeometry(
-  radius: number, height: number, segments = 32,
-  holeRadius = 0,
-): THREE.BufferGeometry {
-  const positions: number[] = [];
-  for (let i = 0; i < segments; i++) {
-    const t0 = (i / segments) * Math.PI * 2;
-    const t1 = ((i + 1) / segments) * Math.PI * 2;
-    const x0 = radius * Math.cos(t0), y0 = radius * Math.sin(t0);
-    const x1 = radius * Math.cos(t1), y1 = radius * Math.sin(t1);
-    // outer wall
-    positions.push(x0, y0, 0,  x1, y1, 0,  x1, y1, height);
-    positions.push(x0, y0, 0,  x1, y1, height,  x0, y0, height);
-    if (holeRadius <= 0) {
-      // top + bottom caps as triangle fans through origin
-      positions.push(0, 0, 0,  x1, y1, 0,  x0, y0, 0);                 // bottom (CW from above → outward normal -z)
-      positions.push(0, 0, height,  x0, y0, height,  x1, y1, height);  // top (CCW)
-    } else {
-      const hx0 = holeRadius * Math.cos(t0), hy0 = holeRadius * Math.sin(t0);
-      const hx1 = holeRadius * Math.cos(t1), hy1 = holeRadius * Math.sin(t1);
-      // inner wall (hole), normals point inward
-      positions.push(hx0, hy0, 0,  hx1, hy1, height,  hx1, hy1, 0);
-      positions.push(hx0, hy0, 0,  hx0, hy0, height,  hx1, hy1, height);
-      // bottom annulus
-      positions.push(x0, y0, 0,  hx1, hy1, 0,  x1, y1, 0);
-      positions.push(x0, y0, 0,  hx0, hy0, 0,  hx1, hy1, 0);
-      // top annulus
-      positions.push(x0, y0, height,  x1, y1, height,  hx1, hy1, height);
-      positions.push(x0, y0, height,  hx1, hy1, height,  hx0, hy0, height);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  g.computeVertexNormals();
-  return g;
-}
+import {
+  buildBox as buildBoxGeometry,
+  buildCylinder as buildCylinderGeometry,
+  makeSlicer as makeBaseSlicer,
+} from './_helpers/slicerSystemHelpers';
 
 // ---------- slicer factory -----------------------------------------------
 
+// This suite asserts move-level invariants on multi-wall, infill-bearing
+// prints, so it overrides the shared helper's defaults (wallCount=1,
+// no infill).
 function makeSlicer(overrides: Record<string, unknown> = {}) {
-  const printer = {
-    ...DEFAULT_PRINTER_PROFILES.find((p) => p.id === 'marlin-generic')!,
-    buildVolume: { x: 200, y: 200, z: 200 },
-  };
-  const material = DEFAULT_MATERIAL_PROFILES[0];
-  const print = {
-    ...DEFAULT_PRINT_PROFILES[0],
-    adhesionType: 'none' as const,
-    parallelLayerPreparation: false,
-    wallGenerator: 'classic' as const,
-    wallCount: 2,
-    wallLineWidth: 0.4,
-    layerHeight: 0.2,
-    horizontalExpansion: 0,
-    initialLayerHorizontalExpansion: 0,
-    elephantFootCompensation: 0,
-    infillDensity: 30,
-    ...overrides,
-  };
-  return new Slicer(printer, material, print);
+  return makeBaseSlicer({ wallCount: 2, infillDensity: 30, ...overrides });
 }
 
 // ---------- geometry helpers ---------------------------------------------

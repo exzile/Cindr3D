@@ -293,7 +293,7 @@ function generateZigzagLines(
   const results: InfillLine[] = [];
   for (let i = 0; i < scanLines.length; i++) {
     const line = scanLines[i];
-    results.push(i % 2 === 0 ? line : { from: line.to, to: line.from });
+    results.push(i % 2 === 0 ? line : flipLine(line));
     if (i + 1 < scanLines.length) {
       const nextLine = scanLines[i + 1];
       const currentEnd = i % 2 === 0 ? line.to : line.from;
@@ -368,9 +368,17 @@ export function generateLinearInfill(
   }
 }
 
+/**
+ * Reverse the direction of an infill segment, preserving any extra
+ * fields (boundary references, etc.) that subtypes carry.
+ */
+export function flipLine<T extends InfillLine>(line: T): T {
+  return { ...line, from: line.to, to: line.from };
+}
+
 export function sortInfillLines<T extends InfillLine>(lines: T[]): T[] {
   if (lines.length <= 1) return lines;
-  return lines.map((line, i) => (i % 2 === 0 ? line : { ...line, from: line.to, to: line.from }));
+  return lines.map((line, i) => (i % 2 === 0 ? line : flipLine(line)));
 }
 
 export function sortInfillLinesNN<T extends InfillLine>(
@@ -394,7 +402,7 @@ export function sortInfillLinesNN<T extends InfillLine>(
       if (dt < bestDist) { bestDist = dt; bestIdx = i; bestFlip = true; }
     }
     const line = remaining.splice(bestIdx, 1)[0];
-    const ordered: T = bestFlip ? { ...line, from: line.to, to: line.from } : line;
+    const ordered = bestFlip ? flipLine(line) : line;
     result.push(ordered);
     rx = ordered.to.x;
     ry = ordered.to.y;

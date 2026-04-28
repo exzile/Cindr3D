@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { SlicerExecutionPipeline, SliceLayerState, SliceRun } from './types';
+import { flipLine } from '../../infill';
 
 /**
  * State machine helper: returns the new `consecutiveBridgeLayers` value
@@ -24,7 +25,7 @@ export function sortIroningLinesMonotonic(lines: IroningLine[]): IroningLine[] {
   return lines
     .map((line) => {
       const forward = line.from.x < line.to.x || (line.from.x === line.to.x && line.from.y <= line.to.y);
-      return forward ? line : { from: line.to, to: line.from };
+      return forward ? line : flipLine(line);
     })
     .sort((a, b) => {
       const ay = (a.from.y + a.to.y) * 0.5;

@@ -16,7 +16,7 @@ import {
 export type Geometry = THREE.BufferGeometry;
 export type SliceResult = Awaited<ReturnType<Slicer['slice']>>;
 
-interface MoveLike {
+export interface MoveLike {
   type: string;
   from: { x: number; y: number };
   to: { x: number; y: number };
@@ -57,8 +57,16 @@ export function buildBox(sx: number, sy: number, sz: number): Geometry {
  * Build a synthetic cylinder of given radius and height as a triangle
  * mesh. The walls are vertical (no overhangs), the top + bottom faces
  * are fan-triangulated. `segments` controls the polygon resolution.
+ * `holeRadius > 0` produces an annular cylinder (cylinder with a
+ * vertical through-hole) — top + bottom become annuli and the inner
+ * wall is added with inward-facing normals.
  */
-export function buildCylinder(radius: number, height: number, segments = 64): Geometry {
+export function buildCylinder(
+  radius: number,
+  height: number,
+  segments = 64,
+  holeRadius = 0,
+): Geometry {
   const positions: number[] = [];
   const push = (...pts: Array<[number, number, number]>) => {
     for (const p of pts) positions.push(...p);
@@ -76,13 +84,29 @@ export function buildCylinder(radius: number, height: number, segments = 64): Ge
     const x1 = Math.cos(a1) * radius;
     const y1 = Math.sin(a1) * radius;
 
-    // Bottom face (normal -Z, CW so it points down)
-    push(bc, [x1, y1, 0], [x0, y0, 0]);
-    // Top face (normal +Z)
-    push(tc, [x0, y0, height], [x1, y1, height]);
     // Side wall — two triangles per quad.
     push([x0, y0, 0], [x1, y1, 0], [x1, y1, height]);
     push([x0, y0, 0], [x1, y1, height], [x0, y0, height]);
+
+    if (holeRadius <= 0) {
+      // Solid cylinder: fan-triangulate caps from origin.
+      push(bc, [x1, y1, 0], [x0, y0, 0]);
+      push(tc, [x0, y0, height], [x1, y1, height]);
+    } else {
+      const hx0 = Math.cos(a0) * holeRadius;
+      const hy0 = Math.sin(a0) * holeRadius;
+      const hx1 = Math.cos(a1) * holeRadius;
+      const hy1 = Math.sin(a1) * holeRadius;
+      // Inner wall — normals point inward.
+      push([hx0, hy0, 0], [hx1, hy1, height], [hx1, hy1, 0]);
+      push([hx0, hy0, 0], [hx0, hy0, height], [hx1, hy1, height]);
+      // Bottom annulus (outer ring – hole).
+      push([x0, y0, 0], [hx1, hy1, 0], [x1, y1, 0]);
+      push([x0, y0, 0], [hx0, hy0, 0], [hx1, hy1, 0]);
+      // Top annulus.
+      push([x0, y0, height], [x1, y1, height], [hx1, hy1, height]);
+      push([x0, y0, height], [hx1, hy1, height], [hx0, hy0, height]);
+    }
   }
 
   const geom = new THREE.BufferGeometry();

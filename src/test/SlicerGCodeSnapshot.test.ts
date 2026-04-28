@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 
-import { Slicer } from '../engine/slicer/Slicer';
-import {
-  DEFAULT_MATERIAL_PROFILES,
-  DEFAULT_PRINTER_PROFILES,
-  DEFAULT_PRINT_PROFILES,
-} from '../types/slicer';
+import { buildBox, makeSlicer } from './_helpers/slicerSystemHelpers';
 
 /**
  * Snapshot-style tests over canonical slicer output for fixed inputs.
@@ -17,47 +12,6 @@ import {
  * regressions where the slicer accidentally drops/duplicates an entire
  * category of moves while letting cosmetic changes pass.
  */
-
-function buildBox(sx: number, sy: number, sz: number): THREE.BufferGeometry {
-  const hx = sx / 2, hy = sy / 2;
-  const positions: number[] = [];
-  const v = (x: number, y: number, z: number) => [x, y, z];
-  const push = (a: number[], b: number[], c: number[]) => positions.push(...a, ...b, ...c);
-  const p000 = v(-hx, -hy, 0), p100 = v(hx, -hy, 0), p110 = v(hx, hy, 0), p010 = v(-hx, hy, 0);
-  const p001 = v(-hx, -hy, sz), p101 = v(hx, -hy, sz), p111 = v(hx, hy, sz), p011 = v(-hx, hy, sz);
-  push(p000, p110, p100); push(p000, p010, p110);
-  push(p001, p101, p111); push(p001, p111, p011);
-  push(p000, p100, p101); push(p000, p101, p001);
-  push(p010, p011, p111); push(p010, p111, p110);
-  push(p000, p001, p011); push(p000, p011, p010);
-  push(p100, p110, p111); push(p100, p111, p101);
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geom.computeVertexNormals();
-  return geom;
-}
-
-function makeSlicer(overrides: Record<string, unknown> = {}) {
-  const printer = {
-    ...DEFAULT_PRINTER_PROFILES.find((p) => p.id === 'marlin-generic')!,
-    buildVolume: { x: 200, y: 200, z: 200 },
-  };
-  const material = DEFAULT_MATERIAL_PROFILES[0];
-  const print = {
-    ...DEFAULT_PRINT_PROFILES[0],
-    adhesionType: 'none' as const,
-    parallelLayerPreparation: false,
-    wallGenerator: 'classic' as const,
-    wallCount: 1,
-    wallLineWidth: 0.4,
-    layerHeight: 0.2,
-    horizontalExpansion: 0,
-    initialLayerHorizontalExpansion: 0,
-    elephantFootCompensation: 0,
-    ...overrides,
-  };
-  return new Slicer(printer, material, print);
-}
 
 async function sliceBoxGCode(overrides: Record<string, unknown> = {}, sx = 10, sy = 10, sz = 1) {
   const slicer = makeSlicer(overrides);

@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 
-import { Slicer } from '../engine/slicer/Slicer';
-import {
-  DEFAULT_MATERIAL_PROFILES,
-  DEFAULT_PRINTER_PROFILES,
-  DEFAULT_PRINT_PROFILES,
-} from '../types/slicer';
 import { buildChainTube, TUBE_RADIAL_SEGMENTS } from '../components/slicer/workspace/canvas/tubeGeometry';
 import type { TubeChain } from '../types/slicer-preview.types';
+import {
+  bboxFromMoves,
+  buildBox as buildBoxGeometry,
+  makeSlicer,
+} from './_helpers/slicerSystemHelpers';
 
 /**
  * System-level slicer geometry tests.
@@ -28,71 +27,6 @@ import type { TubeChain } from '../types/slicer-preview.types';
 
 const RADIAL = TUBE_RADIAL_SEGMENTS;
 const ringSize = RADIAL + 1;
-
-function buildBoxGeometry(sizeX: number, sizeY: number, sizeZ: number): THREE.BufferGeometry {
-  const hx = sizeX / 2;
-  const hy = sizeY / 2;
-  const positions: number[] = [];
-  const v = (x: number, y: number, z: number) => [x, y, z];
-  const push = (a: number[], b: number[], c: number[]) => positions.push(...a, ...b, ...c);
-
-  const p000 = v(-hx, -hy, 0);
-  const p100 = v(hx, -hy, 0);
-  const p110 = v(hx, hy, 0);
-  const p010 = v(-hx, hy, 0);
-  const p001 = v(-hx, -hy, sizeZ);
-  const p101 = v(hx, -hy, sizeZ);
-  const p111 = v(hx, hy, sizeZ);
-  const p011 = v(-hx, hy, sizeZ);
-
-  push(p000, p110, p100); push(p000, p010, p110);    // bottom
-  push(p001, p101, p111); push(p001, p111, p011);    // top
-  push(p000, p100, p101); push(p000, p101, p001);    // front
-  push(p010, p011, p111); push(p010, p111, p110);    // back
-  push(p000, p001, p011); push(p000, p011, p010);    // left
-  push(p100, p110, p111); push(p100, p111, p101);    // right
-
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geom.computeVertexNormals();
-  return geom;
-}
-
-function makeSlicer(overrides: Record<string, unknown> = {}) {
-  const printer = {
-    ...DEFAULT_PRINTER_PROFILES.find((p) => p.id === 'marlin-generic')!,
-    buildVolume: { x: 200, y: 200, z: 200 },
-  };
-  const material = DEFAULT_MATERIAL_PROFILES[0];
-  const print = {
-    ...DEFAULT_PRINT_PROFILES[0],
-    adhesionType: 'none' as const,
-    parallelLayerPreparation: false,
-    wallGenerator: 'classic' as const,
-    wallCount: 1,
-    wallLineWidth: 0.4,
-    layerHeight: 0.2,
-    horizontalExpansion: 0,
-    initialLayerHorizontalExpansion: 0,
-    elephantFootCompensation: 0,
-    ...overrides,
-  };
-  return new Slicer(printer, material, print);
-}
-
-interface BBox { minX: number; maxX: number; minY: number; maxY: number; width: number; height: number }
-function bboxFromMoves(
-  moves: { from: { x: number; y: number }; to: { x: number; y: number } }[],
-): BBox {
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  for (const move of moves) {
-    minX = Math.min(minX, move.from.x, move.to.x);
-    maxX = Math.max(maxX, move.from.x, move.to.x);
-    minY = Math.min(minY, move.from.y, move.to.y);
-    maxY = Math.max(maxY, move.from.y, move.to.y);
-  }
-  return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
-}
 
 describe('Slicer geometric system tests — wall placement', () => {
   it('produces walls inside the model footprint for a 20mm cube', async () => {

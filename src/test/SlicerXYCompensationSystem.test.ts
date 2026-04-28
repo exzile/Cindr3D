@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 
-import { Slicer } from '../engine/slicer/Slicer';
-import {
-  DEFAULT_MATERIAL_PROFILES,
-  DEFAULT_PRINTER_PROFILES,
-  DEFAULT_PRINT_PROFILES,
-} from '../types/slicer';
+import { bboxFromMoves, buildBox, makeSlicer } from './_helpers/slicerSystemHelpers';
 
 /**
  * System-level test: slice a small box end-to-end and verify that the
@@ -18,90 +13,12 @@ import {
  * G-code) with the new settings.
  */
 
-function buildBoxGeometry(size: number): THREE.BufferGeometry {
-  const half = size / 2;
-  // Centered box; 12 triangles (2 per face × 6 faces).
-  const v = (x: number, y: number, z: number) => [x, y, z];
-  const positions: number[] = [];
-  const push = (a: number[], b: number[], c: number[]) => {
-    positions.push(...a, ...b, ...c);
-  };
-
-  const p000 = v(-half, -half, 0);
-  const p100 = v(half, -half, 0);
-  const p110 = v(half, half, 0);
-  const p010 = v(-half, half, 0);
-  const p001 = v(-half, -half, size);
-  const p101 = v(half, -half, size);
-  const p111 = v(half, half, size);
-  const p011 = v(-half, half, size);
-
-  // Bottom face (z=0): outward normal -z, CW when viewed from below.
-  push(p000, p110, p100); push(p000, p010, p110);
-  // Top face (z=size): outward normal +z.
-  push(p001, p101, p111); push(p001, p111, p011);
-  // Front (y=-half).
-  push(p000, p100, p101); push(p000, p101, p001);
-  // Back (y=+half).
-  push(p010, p011, p111); push(p010, p111, p110);
-  // Left (x=-half).
-  push(p000, p001, p011); push(p000, p011, p010);
-  // Right (x=+half).
-  push(p100, p110, p111); push(p100, p111, p101);
-
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geom.computeVertexNormals();
-  return geom;
-}
-
-function buildPrinterAndMaterial() {
-  return {
-    printer: {
-      ...DEFAULT_PRINTER_PROFILES.find((p) => p.id === 'marlin-generic')!,
-      buildVolume: { x: 200, y: 200, z: 200 },
-    },
-    material: DEFAULT_MATERIAL_PROFILES[0],
-  };
-}
-
-function basePrint() {
-  return {
-    ...DEFAULT_PRINT_PROFILES[0],
-    adhesionType: 'none' as const,
-    parallelLayerPreparation: false,
-    // Use classic walls for these tests so the contour bbox math is
-    // independent of libArachne's bead distribution noise.
-    wallGenerator: 'classic' as const,
-    wallCount: 1,
-    wallLineWidth: 0.4,
-    layerHeight: 0.2,
-    horizontalExpansion: 0,
-    initialLayerHorizontalExpansion: 0,
-    elephantFootCompensation: 0,
-  };
-}
-
-function bboxFromMoves(moves: { from: { x: number; y: number }; to: { x: number; y: number } }[]) {
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  for (const move of moves) {
-    minX = Math.min(minX, move.from.x, move.to.x);
-    maxX = Math.max(maxX, move.from.x, move.to.x);
-    minY = Math.min(minY, move.from.y, move.to.y);
-    maxY = Math.max(maxY, move.from.y, move.to.y);
-  }
-  return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
-}
-
-async function sliceBox(
-  size: number,
-  printOverrides: Partial<ReturnType<typeof basePrint>>,
-) {
-  const { printer, material } = buildPrinterAndMaterial();
-  const print = { ...basePrint(), ...printOverrides };
-  const slicer = new Slicer(printer, material, print);
-  const geometry = buildBoxGeometry(size);
-  return slicer.slice([{ geometry, transform: new THREE.Matrix4() }]);
+async function sliceBox(size: number, printOverrides: Record<string, unknown>) {
+  const slicer = makeSlicer(printOverrides);
+  return slicer.slice([{
+    geometry: buildBox(size, size, size),
+    transform: new THREE.Matrix4(),
+  }]);
 }
 
 describe('Slicer end-to-end — XY compensation', () => {
