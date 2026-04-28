@@ -7,6 +7,7 @@ import {
   DEFAULT_PRINT_PROFILES,
 } from '../types/slicer';
 import {
+  findSolidSkinContourAnchorPath,
   findSolidSkinContourConnectorPath,
   shouldConnectInfillLinesForEmission,
   solidSkinConnectorLinkLimit,
@@ -33,6 +34,32 @@ describe('Slicer parity fixes', () => {
     expect(sorted[2].to.x).toBe(6);
     expect(sorted[3].from.x).toBe(4);
     expect(sorted[3].to.x).toBe(0);
+  });
+
+  it('keeps solid-skin boundary ownership when rows are reversed for emission', () => {
+    const boundary = [
+      new THREE.Vector2(0, 0),
+      new THREE.Vector2(10, 0),
+      new THREE.Vector2(10, 10),
+      new THREE.Vector2(0, 10),
+    ];
+    const hole = [
+      new THREE.Vector2(4, 4),
+      new THREE.Vector2(6, 4),
+      new THREE.Vector2(6, 6),
+      new THREE.Vector2(4, 6),
+    ];
+    const lines = [
+      { from: new THREE.Vector2(0, 0), to: new THREE.Vector2(10, 0), boundaryContour: boundary, boundaryHoles: [hole] },
+      { from: new THREE.Vector2(0, 0.5), to: new THREE.Vector2(10, 0.5), boundaryContour: boundary, boundaryHoles: [hole] },
+    ];
+
+    const sorted = sortSolidSkinLinesForEmission(lines, 0.5);
+
+    expect(sorted[1].from.x).toBe(10);
+    expect(sorted[1].to.x).toBe(0);
+    expect(sorted[1].boundaryContour).toBe(boundary);
+    expect(sorted[1].boundaryHoles).toEqual([hole]);
   });
 
   it('keeps solid-skin connector hops enabled across multiple clipped regions', () => {
@@ -99,6 +126,33 @@ describe('Slicer parity fixes', () => {
     const pathLen = path!.slice(1).reduce((sum, p, i) => sum + p.distanceTo(path![i]), 0);
     expect(pathLen).toBeGreaterThan(1.2);
     expect(pathLen).toBeLessThan(2.2);
+  });
+
+  it('adds Orca-style limited anchors for solid-skin ends on hole boundaries', () => {
+    const outer = [
+      new THREE.Vector2(0, 0),
+      new THREE.Vector2(20, 0),
+      new THREE.Vector2(20, 20),
+      new THREE.Vector2(0, 20),
+    ];
+    const hole = Array.from({ length: 32 }, (_, i) => {
+      const a = (i / 32) * Math.PI * 2;
+      return new THREE.Vector2(10 + Math.cos(a) * 3, 10 + Math.sin(a) * 3);
+    });
+
+    const path = findSolidSkinContourAnchorPath(
+      new THREE.Vector2(7.05, 10),
+      new THREE.Vector2(-1, 0),
+      outer,
+      [hole],
+      0.5,
+    );
+
+    expect(path).not.toBeNull();
+    const pathLen = path!.slice(1).reduce((sum, p, i) => sum + p.distanceTo(path![i]), 0);
+    expect(pathLen).toBeGreaterThan(0.5);
+    expect(pathLen).toBeLessThan(0.57);
+    expect(path!.slice(1).every((p) => Math.abs(p.distanceTo(new THREE.Vector2(10, 10)) - 3) < 0.04)).toBe(true);
   });
 
   it('does not invent long solid-skin contour links across unrelated hole sides', () => {

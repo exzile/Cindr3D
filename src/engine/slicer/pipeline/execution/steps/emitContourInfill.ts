@@ -134,7 +134,12 @@ export function pickBridgeFanSpeed(
 }
 
 type InfillMoveType = Extract<SliceMove['type'], 'infill' | 'top-bottom' | 'bridge'>;
-type InfillLineSegment = { from: THREE.Vector2; to: THREE.Vector2 };
+type InfillLineSegment = {
+  from: THREE.Vector2;
+  to: THREE.Vector2;
+  boundaryContour?: THREE.Vector2[];
+  boundaryHoles?: THREE.Vector2[][];
+};
 type RingProjection = { ring: THREE.Vector2[]; seg: number; t: number; point: THREE.Vector2; distSq: number };
 
 export function solidSkinCenterlineInset(lineWidth: number, skinOverlap: number): number {
@@ -251,7 +256,7 @@ export function sortSolidSkinLinesForEmission(
       const start = projectedStart(line);
       const end = projectedEnd(line);
       const isForward = start <= end;
-      sorted.push(forward === isForward ? line : { from: line.to, to: line.from });
+      sorted.push(forward === isForward ? line : { ...line, from: line.to, to: line.from });
     }
   });
 
@@ -313,6 +318,18 @@ function removeNearDuplicateConnectorPoints(points: THREE.Vector2[]): THREE.Vect
   return out;
 }
 
+function attachSkinBoundary(
+  lines: InfillLineSegment[],
+  contour: THREE.Vector2[],
+  holes: THREE.Vector2[][],
+): InfillLineSegment[] {
+  return lines.map((line) => ({
+    ...line,
+    boundaryContour: contour,
+    boundaryHoles: holes,
+  }));
+}
+
 function ringPathForward(from: RingProjection, to: RingProjection): THREE.Vector2[] {
   const ring = from.ring;
   const n = ring.length;
@@ -336,6 +353,51 @@ function polylineLength(points: THREE.Vector2[]): number {
   let length = 0;
   for (let i = 1; i < points.length; i++) length += points[i - 1].distanceTo(points[i]);
   return length;
+}
+
+function ringPointAtDistance(
+  from: RingProjection,
+  distance: number,
+  clockwise: boolean,
+): THREE.Vector2[] {
+  const ring = from.ring;
+  const n = ring.length;
+  const points = [from.point.clone()];
+  let remaining = distance;
+  let seg = from.seg;
+  let t = from.t;
+  let guard = 0;
+
+  while (remaining > 1e-6 && guard++ <= n + 1) {
+    const a = ring[seg];
+    const b = ring[(seg + 1) % n];
+    const segLen = a.distanceTo(b);
+    if (segLen <= 1e-9) break;
+
+    const available = clockwise ? t * segLen : (1 - t) * segLen;
+    if (available >= remaining) {
+      const nextT = clockwise
+        ? t - remaining / segLen
+        : t + remaining / segLen;
+      points.push(new THREE.Vector2(
+        a.x + (b.x - a.x) * nextT,
+        a.y + (b.y - a.y) * nextT,
+      ));
+      break;
+    }
+
+    points.push((clockwise ? a : b).clone());
+    remaining -= available;
+    if (clockwise) {
+      seg = (seg - 1 + n) % n;
+      t = 1;
+    } else {
+      seg = (seg + 1) % n;
+      t = 0;
+    }
+  }
+
+  return removeNearDuplicateConnectorPoints(points);
 }
 
 function shortestRingPath(from: RingProjection, to: RingProjection): THREE.Vector2[] {
@@ -372,6 +434,43 @@ export function findSolidSkinContourConnectorPath(
   }
 
   return bestPath && bestPath.length >= 2 ? bestPath : null;
+}
+
+export function findSolidSkinContourAnchorPath(
+  from: THREE.Vector2,
+  incomingDir: THREE.Vector2,
+  outer: THREE.Vector2[],
+  holes: THREE.Vector2[][],
+  lineWidth: number,
+): THREE.Vector2[] | null {
+  const maxProjectionDistSq = (lineWidth * 0.8) ** 2;
+  let best: RingProjection | null = null;
+  for (const ring of [outer, ...holes]) {
+    const projection = closestPointOnRing(from, ring);
+    if (!projection || projection.distSq > maxProjectionDistSq) continue;
+    if (!best || projection.distSq < best.distSq) best = projection;
+  }
+  if (!best) return null;
+
+  const ring = best.ring;
+  const a = ring[best.seg];
+  const b = ring[(best.seg + 1) % ring.length];
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len <= 1e-9) return null;
+
+  const inLen = incomingDir.length();
+  const ix = inLen > 1e-9 ? incomingDir.x / inLen : 0;
+  const iy = inLen > 1e-9 ? incomingDir.y / inLen : 0;
+  const forwardDot = ix * (dx / len) + iy * (dy / len);
+  const clockwise = forwardDot < 0;
+  const anchorLength = Math.max(lineWidth, lineWidth * 0.5);
+  const path = removeNearDuplicateConnectorPoints([
+    from.clone(),
+    ...ringPointAtDistance(best, anchorLength, clockwise),
+  ]);
+  return path.length >= 2 && polylineLength(path) > 1e-6 ? path : null;
 }
 
 export function emitContourInfill(
@@ -478,9 +577,17 @@ export function emitContourInfill(
               : (pp.topBottomPattern === 'concentric' ? 'concentric' : 'lines');
         if (pp.topBottomLineDirections && pp.topBottomLineDirections.length > 0) {
           const angleDeg = pp.topBottomLineDirections[li % pp.topBottomLineDirections.length];
-          infillLines.push(...slicer.generateScanLines(safeSkinInput.contour, 100, lineWidth, (angleDeg * Math.PI) / 180, 0, safeSkinInput.holes));
+          infillLines.push(...attachSkinBoundary(
+            slicer.generateScanLines(safeSkinInput.contour, 100, lineWidth, (angleDeg * Math.PI) / 180, 0, safeSkinInput.holes),
+            safeSkinInput.contour,
+            safeSkinInput.holes,
+          ));
         } else {
-          infillLines.push(...slicer.generateLinearInfill(safeSkinInput.contour, 100, lineWidth, li, skinPattern, safeSkinInput.holes));
+          infillLines.push(...attachSkinBoundary(
+            slicer.generateLinearInfill(safeSkinInput.contour, 100, lineWidth, li, skinPattern, safeSkinInput.holes),
+            safeSkinInput.contour,
+            safeSkinInput.holes,
+          ));
         }
       }
       infillMoveType = 'top-bottom';
@@ -641,10 +748,37 @@ export function emitContourInfill(
       // hop the wall band's full thickness to live in. Fixes the
       // "no boustrophedon zigzag visible" symptom on solid-skin
       // layers with the OrcaSlicer-default 23% skin overlap.
-      const connectBoundary = isSolid ? contour.points : innermostWall;
+      const prevLine = idx > 0 ? sorted[idx - 1] : undefined;
+      const canUseSkinBoundary = isSolid
+        && prevLine?.boundaryContour !== undefined
+        && prevLine.boundaryContour === line.boundaryContour;
+      const contourConnectBoundary = canUseSkinBoundary ? line.boundaryContour! : contour.points;
+      const contourConnectHoles = canUseSkinBoundary ? (line.boundaryHoles ?? []) : infillHoles;
+      const connectBoundary = isSolid ? contourConnectBoundary : innermostWall;
       const connectorFrom = new THREE.Vector2(emitter.currentX, emitter.currentY);
-      const canConnectInfill = connect && idx > 0 && fromDist < connectTol && slicer.segmentInsideMaterial(connectorFrom, effFrom, connectBoundary, infillHoles);
-      if (canConnectInfill) {
+      const contourPath = connect && isSolid && idx > 0
+        ? findSolidSkinContourConnectorPath(connectorFrom, effFrom, contourConnectBoundary, contourConnectHoles, thisLineWidth)
+        : null;
+      const emitContourPath = (path: THREE.Vector2[]) => {
+        for (let ci = 1; ci < path.length; ci++) {
+          const hopFrom = path[ci - 1];
+          const hopTo = path[ci];
+          const hopLen = hopFrom.distanceTo(hopTo);
+          if (hopLen <= 1e-6) continue;
+          layer.layerTime += emitter.extrudeTo(hopTo.x, hopTo.y, thisSpeed, thisLineWidth, layerH).time;
+          moves.push({
+            type: thisMoveType,
+            from: { x: hopFrom.x, y: hopFrom.y },
+            to: { x: hopTo.x, y: hopTo.y },
+            speed: thisSpeed,
+            extrusion: emitter.calculateExtrusion(hopLen, thisLineWidth, layerH),
+            lineWidth: thisLineWidth,
+          });
+        }
+      };
+      if (contourPath) {
+        emitContourPath(contourPath);
+      } else if (connect && idx > 0 && fromDist < connectTol && slicer.segmentInsideMaterial(connectorFrom, effFrom, connectBoundary, contourConnectHoles)) {
         // Boustrophedon connector hop — extrude a short bead at the
         // wall instead of travelling, then push it as a move so the
         // preview tube renderer shows the continuous zigzag (Cura /
@@ -661,34 +795,19 @@ export function emitContourInfill(
           extrusion: emitter.calculateExtrusion(fromDist, thisLineWidth, layerH),
           lineWidth: thisLineWidth,
         });
-      } else if (connect && isSolid && idx > 0) {
-        const contourPath = findSolidSkinContourConnectorPath(
-          connectorFrom,
-          effFrom,
-          contour.points,
-          infillHoles,
-          thisLineWidth,
-        );
-        if (contourPath) {
-          for (let ci = 1; ci < contourPath.length; ci++) {
-            const hopFrom = contourPath[ci - 1];
-            const hopTo = contourPath[ci];
-            const hopLen = hopFrom.distanceTo(hopTo);
-            if (hopLen <= 1e-6) continue;
-            layer.layerTime += emitter.extrudeTo(hopTo.x, hopTo.y, thisSpeed, thisLineWidth, layerH).time;
-            moves.push({
-              type: thisMoveType,
-              from: { x: hopFrom.x, y: hopFrom.y },
-              to: { x: hopTo.x, y: hopTo.y },
-              speed: thisSpeed,
-              extrusion: emitter.calculateExtrusion(hopLen, thisLineWidth, layerH),
-              lineWidth: thisLineWidth,
-            });
-          }
-        } else {
-          emitter.travelTo(effFrom.x, effFrom.y, moves);
-        }
       } else {
+        if (connect && isSolid && idx > 0 && prevLine) {
+          const prevDx = prevLine.to.x - prevLine.from.x;
+          const prevDy = prevLine.to.y - prevLine.from.y;
+          const anchorPath = findSolidSkinContourAnchorPath(
+            connectorFrom,
+            new THREE.Vector2(prevDx, prevDy),
+            prevLine.boundaryContour ?? contour.points,
+            prevLine.boundaryHoles ?? infillHoles,
+            thisLineWidth,
+          );
+          if (anchorPath) emitContourPath(anchorPath);
+        }
         emitter.travelTo(effFrom.x, effFrom.y, moves);
       }
       const flowSaved = emitter.currentLayerFlow;
@@ -696,6 +815,16 @@ export function emitContourInfill(
       layer.layerTime += emitter.extrudeTo(effTo.x, effTo.y, thisSpeed, thisLineWidth, layerH).time;
       moves.push({ type: thisMoveType, from: { x: effFrom.x, y: effFrom.y }, to: { x: effTo.x, y: effTo.y }, speed: thisSpeed, extrusion: emitter.calculateExtrusion(effFrom.distanceTo(effTo), thisLineWidth, layerH), lineWidth: thisLineWidth });
       emitter.currentLayerFlow = flowSaved;
+      if (connect && isSolid && idx === sorted.length - 1) {
+        const finalAnchorPath = findSolidSkinContourAnchorPath(
+          effTo,
+          new THREE.Vector2(effTo.x - effFrom.x, effTo.y - effFrom.y),
+          line.boundaryContour ?? contour.points,
+          line.boundaryHoles ?? infillHoles,
+          thisLineWidth,
+        );
+        if (finalAnchorPath) emitContourPath(finalAnchorPath);
+      }
       const infillWipeDistance = pp.infillWipeDistance ?? 0;
       if (infillWipeDistance > 0 && len > 0) {
         const wx = effTo.x + ux * infillWipeDistance, wy = effTo.y + uy * infillWipeDistance;
