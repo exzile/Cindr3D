@@ -155,4 +155,83 @@ describe('emitGroupedAndContourWalls', () => {
     expect(result).toHaveLength(1);
     expect(result[0].exWalls).toBe(generated);
   });
+
+  it('orders inner walls with Orca-style depth constraints and nearest available path', () => {
+    const outer = square(40);
+    const farDeep = square(4).map((point) => point.add(new THREE.Vector2(30, 30)));
+    const nearDeep = square(4).map((point) => point.add(new THREE.Vector2(2, 2)));
+    const shallow = square(10).map((point) => point.add(new THREE.Vector2(15, 15)));
+    const contour = { points: outer, area: 1600, isOuter: true };
+    const generated: GeneratedPerimeters = {
+      walls: [outer, farDeep, nearDeep, shallow],
+      lineWidths: [0.45, 0.45, 0.45, 0.45],
+      wallClosed: [true, true, true, true],
+      wallDepths: [0, 2, 2, 1],
+      wallSources: ['outer', 'outer', 'outer', 'outer'],
+      outerCount: 1,
+      innermostHoles: [],
+      infillRegions: [],
+    };
+    const pipeline = {
+      findSeamPosition: () => 0,
+      reorderFromIndex: (points: THREE.Vector2[], index: number) => [
+        ...points.slice(index),
+        ...points.slice(0, index),
+      ],
+      simplifyClosedContour: (points: THREE.Vector2[]) => points,
+      filterPerimetersByMinOdd: (perimeters: GeneratedPerimeters) => perimeters,
+      generatePerimeters: () => generated,
+    };
+    const run = {
+      pp: {
+        groupOuterWalls: false,
+        wallCount: 4,
+        wallLineWidth: 0.45,
+        outerWallFirst: false,
+      },
+      emitter: {
+        currentX: 0,
+        currentY: 0,
+        currentLayerFlow: 1,
+        setAccel: () => undefined,
+        setJerk: () => undefined,
+        travelTo(x: number, y: number) {
+          this.currentX = x;
+          this.currentY = y;
+        },
+        extrudeTo(x: number, y: number) {
+          this.currentX = x;
+          this.currentY = y;
+          return { time: 0 };
+        },
+        calculateExtrusion: () => 0,
+      },
+      gcode: [],
+      previousSeamPoints: [],
+      currentSeamPoints: [],
+    } as unknown as SliceRun;
+    const layer = {
+      li: 0,
+      layerZ: 0.2,
+      layerH: 0.2,
+      isFirstLayer: true,
+      isSolidTop: false,
+      isSolidBottom: false,
+      outerWallSpeed: 20,
+      innerWallSpeed: 30,
+      workContours: [contour],
+      holesByOuterContour: new Map(),
+      moves: [],
+      layerTime: 0,
+      hasBridgeRegions: false,
+    } as unknown as SliceLayerState;
+
+    emitGroupedAndContourWalls(pipeline, run, layer);
+
+    expect(run.gcode.filter((line) => line.startsWith('; Inner wall'))).toEqual([
+      '; Inner wall 2',
+      '; Inner wall 1',
+      '; Inner wall 3',
+    ]);
+  });
 });

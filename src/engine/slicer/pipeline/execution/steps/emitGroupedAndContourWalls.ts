@@ -47,6 +47,104 @@ function centroid(points: THREE.Vector2[]): THREE.Vector2 {
   return center.multiplyScalar(1 / Math.max(1, points.length));
 }
 
+function distanceSq(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
+
+function orcaOrderedWallIndices(
+  wallSets: THREE.Vector2[][],
+  wallDepths: number[],
+  wallSources: Array<'outer' | 'hole' | 'gapfill'> | undefined,
+  wallClosed: boolean[] | undefined,
+  startPosition: { x: number; y: number },
+  outerWallFirst: boolean,
+): number[] {
+  const sourceWeight = (s?: 'outer' | 'hole' | 'gapfill') =>
+    s === 'gapfill' ? 2 : s === 'hole' ? 1 : 0;
+  const indices = Array.from({ length: wallSets.length - 1 }, (_, i) => i + 1);
+  const gapFill = indices.filter((idx) => wallSources?.[idx] === 'gapfill');
+  const walls = indices.filter((idx) => wallSources?.[idx] !== 'gapfill');
+  const blocked = new Map<number, number>();
+  const blocking = new Map<number, number[]>();
+  for (const idx of walls) {
+    blocked.set(idx, 0);
+    blocking.set(idx, []);
+  }
+
+  // Orca asks Arachne for region-order constraints, then repeatedly picks
+  // the nearest unblocked extrusion from the current nozzle position. We
+  // mirror that scheduler using the wall depth metadata exported by our
+  // Arachne backend: outer-first blocks deeper walls behind shallower
+  // walls; inner-first blocks shallower walls behind deeper walls.
+  for (const before of walls) {
+    for (const after of walls) {
+      if (before === after) continue;
+      const beforeDepth = wallDepths[before] ?? 1;
+      const afterDepth = wallDepths[after] ?? 1;
+      if (beforeDepth === afterDepth) continue;
+      const mustPrecede = outerWallFirst
+        ? beforeDepth < afterDepth
+        : beforeDepth > afterDepth;
+      if (!mustPrecede) continue;
+      blocking.get(before)?.push(after);
+      blocked.set(after, (blocked.get(after) ?? 0) + 1);
+    }
+  }
+
+  const ordered: number[] = [];
+  const processed = new Set<number>();
+  let current = startPosition;
+  while (ordered.length < walls.length) {
+    const available = walls
+      .filter((idx) => !processed.has(idx) && (blocked.get(idx) ?? 0) === 0)
+      .sort((a, b) => Number(wallClosed?.[a] ?? true) - Number(wallClosed?.[b] ?? true));
+    if (available.length === 0) {
+      const remaining = walls.filter((idx) => !processed.has(idx));
+      remaining.sort((a, b) => {
+        const da = wallDepths[a] ?? 1;
+        const db = wallDepths[b] ?? 1;
+        if (da !== db) return outerWallFirst ? da - db : db - da;
+        return sourceWeight(wallSources?.[a]) - sourceWeight(wallSources?.[b]);
+      });
+      available.push(...remaining);
+    }
+
+    let best = available[0];
+    let bestDist = Infinity;
+    let bestClosed = false;
+    for (const candidate of available) {
+      const loop = wallSets[candidate];
+      if (!loop || loop.length === 0) continue;
+      const closed = wallClosed?.[candidate] ?? true;
+      const d = distanceSq(current, loop[0]);
+      if (d < bestDist && (closed || bestDist !== Infinity || !bestClosed)) {
+        best = candidate;
+        bestDist = d;
+        bestClosed = closed;
+      }
+    }
+
+    ordered.push(best);
+    processed.add(best);
+    for (const unlocked of blocking.get(best) ?? []) {
+      blocked.set(unlocked, Math.max(0, (blocked.get(unlocked) ?? 0) - 1));
+    }
+    const loop = wallSets[best];
+    if (loop && loop.length > 0) {
+      current = (wallClosed?.[best] ?? true) ? loop[0] : loop[loop.length - 1];
+    }
+  }
+
+  gapFill.sort((a, b) => {
+    const da = distanceSq(current, wallSets[a]?.[0] ?? current);
+    const db = distanceSq(current, wallSets[b]?.[0] ?? current);
+    return da - db;
+  });
+  return [...ordered, ...gapFill];
+}
+
 function beginSeamLayer(run: SliceRun, li: number) {
   if (run.seamMemoryLayer === li) return;
   if (run.seamMemoryLayer !== undefined) run.previousSeamPoints = run.currentSeamPoints ?? [];
@@ -430,10 +528,10 @@ export function emitGroupedAndContourWalls(
     //     thing extruded against still-loose plastic — same trade-off
     //     Cura/Orca document under "Outside Before Inside Walls".
     //
-    // Within each depth level, hole walls follow outer-contour walls
-    // (preserves the existing convention) and gap-fill paths run last
-    // (after all real walls, since their open-ended tip would otherwise
-    // interrupt the seam-aware ordering between adjacent walls).
+    // Orca-style region scheduling: depth constraints decide which walls
+    // are currently unblocked, then the next path is the nearest available
+    // start point from the nozzle. Gap-fill remains last so its tapered
+    // open tips don't interrupt closed wall-loop ordering.
     // Spiralize / vase mode: above the solid bottom layers, emit only the
     // outer wall — no inner walls, no gap-fill, no hole-outer walls. This
     // is what produces the single-pass hollow shell. The bottom layers
@@ -448,21 +546,14 @@ export function emitGroupedAndContourWalls(
       }
       continue;
     }
-    const sourceWeight = (s?: 'outer' | 'hole' | 'gapfill') =>
-      s === 'gapfill' ? 2 : s === 'hole' ? 1 : 0;
-    const ascending = pp.outerWallFirst !== false;
-    const innerOrder = Array.from({ length: wallSets.length - 1 }, (_, i) => i + 1);
-    innerOrder.sort((a, b) => {
-      const sa = sourceWeight(wallSources?.[a]);
-      const sb = sourceWeight(wallSources?.[b]);
-      // Gap-fill always last regardless of depth ordering.
-      if ((sa === 2) !== (sb === 2)) return sa === 2 ? 1 : -1;
-      const da = wallDepths[a] ?? 1;
-      const db = wallDepths[b] ?? 1;
-      if (da !== db) return ascending ? da - db : db - da;
-      // Same depth: outer-source before hole-source (stable convention).
-      return sa - sb;
-    });
+    const innerOrder = orcaOrderedWallIndices(
+      wallSets,
+      wallDepths,
+      wallSources,
+      wallClosed,
+      { x: emitter.currentX, y: emitter.currentY },
+      pp.outerWallFirst !== false,
+    );
 
     for (const wi of innerOrder) {
       // wallDepths[wi] === 0 means this is the outermost wall of its
