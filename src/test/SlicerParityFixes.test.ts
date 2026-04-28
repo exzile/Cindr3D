@@ -7,8 +7,11 @@ import {
   DEFAULT_PRINT_PROFILES,
 } from '../types/slicer';
 import {
+  findSolidSkinContourConnectorPath,
   shouldConnectInfillLinesForEmission,
+  solidSkinConnectorLinkLimit,
   sortSolidSkinLinesForEmission,
+  sparseInfillConnectorLinkLimit,
 } from '../engine/slicer/pipeline/execution/steps/emitContourInfill';
 
 describe('Slicer parity fixes', () => {
@@ -37,6 +40,62 @@ describe('Slicer parity fixes', () => {
     expect(shouldConnectInfillLinesForEmission(true, undefined, true, 3)).toBe(true);
     expect(shouldConnectInfillLinesForEmission(false, true, true, 3)).toBe(false);
     expect(shouldConnectInfillLinesForEmission(false, true, true, 1)).toBe(true);
+  });
+
+  it('keeps direct solid-skin connector links limited until contour-walk linking is implemented', () => {
+    expect(solidSkinConnectorLinkLimit(0.5)).toBeCloseTo(1.05, 5);
+    expect(sparseInfillConnectorLinkLimit(0.5)).toBeCloseTo(0.75, 5);
+  });
+
+  it('routes solid-skin end transitions along a nearby contour instead of a hole-crossing chord', () => {
+    const outer = [
+      new THREE.Vector2(0, 0),
+      new THREE.Vector2(20, 0),
+      new THREE.Vector2(20, 20),
+      new THREE.Vector2(0, 20),
+    ];
+    const hole = [
+      new THREE.Vector2(8, 8),
+      new THREE.Vector2(12, 8),
+      new THREE.Vector2(12, 12),
+      new THREE.Vector2(8, 12),
+    ];
+
+    const path = findSolidSkinContourConnectorPath(
+      new THREE.Vector2(8.1, 9),
+      new THREE.Vector2(8.1, 11),
+      outer,
+      [hole],
+      0.5,
+    );
+
+    expect(path).not.toBeNull();
+    expect(path!.every((p) => Math.abs(p.x - 8) < 0.11)).toBe(true);
+    const pathLen = path!.slice(1).reduce((sum, p, i) => sum + p.distanceTo(path![i]), 0);
+    expect(pathLen).toBeLessThan(2.3);
+  });
+
+  it('does not invent long solid-skin contour links across unrelated hole sides', () => {
+    const outer = [
+      new THREE.Vector2(0, 0),
+      new THREE.Vector2(30, 0),
+      new THREE.Vector2(30, 30),
+      new THREE.Vector2(0, 30),
+    ];
+    const hole = Array.from({ length: 24 }, (_, i) => {
+      const a = (i / 24) * Math.PI * 2;
+      return new THREE.Vector2(15 + Math.cos(a) * 5, 15 + Math.sin(a) * 5);
+    });
+
+    const path = findSolidSkinContourConnectorPath(
+      new THREE.Vector2(10, 15),
+      new THREE.Vector2(20, 15),
+      outer,
+      [hole],
+      0.5,
+    );
+
+    expect(path).toBeNull();
   });
 
   it('retracts on long travel even when extrusion window is not yet met', () => {

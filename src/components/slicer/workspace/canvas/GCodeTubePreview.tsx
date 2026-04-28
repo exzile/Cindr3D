@@ -455,7 +455,7 @@ export function LayerLines({
           key={`${layer.layerIndex}-${t.type}-${i}`}
           geometry={t.geometry}
           material={TRIMMED_FILL_TYPES.has(t.type) ? DENSE_FILL_TUBE_MATERIAL : TUBE_MATERIAL}
-          renderOrder={TRIMMED_FILL_TYPES.has(t.type) ? 1 : 0}
+          renderOrder={TRIMMED_FILL_TYPES.has(t.type) ? 0 : 2}
           frustumCulled={false}
           onPointerMove={onHoverMove ? (e: ThreeEvent<PointerEvent>) => {
             // Hover inspect: each segment owns RADIAL × 2 triangles

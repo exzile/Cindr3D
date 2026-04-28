@@ -135,6 +135,7 @@ export function pickBridgeFanSpeed(
 
 type InfillMoveType = Extract<SliceMove['type'], 'infill' | 'top-bottom' | 'bridge'>;
 type InfillLineSegment = { from: THREE.Vector2; to: THREE.Vector2 };
+type RingProjection = { ring: THREE.Vector2[]; seg: number; t: number; point: THREE.Vector2; distSq: number };
 
 export function solidSkinCenterlineInset(lineWidth: number, skinOverlap: number): number {
   return Math.max(0, lineWidth * 0.5 - skinOverlap);
@@ -224,6 +225,107 @@ export function shouldConnectInfillLinesForEmission(
   return isSolid
     ? (connectTopBottomPolygons ?? connectInfillLines ?? false)
     : (connectInfillLines ?? false) && infillRegionCount <= 1;
+}
+
+export function solidSkinConnectorLinkLimit(lineWidth: number): number {
+  // Orca's rectilinear/monotonic fill can accept long links because
+  // `polylines_from_paths()` emits the connector along validated
+  // contour/perimeter segments. Our current connector is a direct
+  // straight extrusion between scanline endpoints, so it must stay
+  // limited to neighboring rows; otherwise a valid Orca contour-walk
+  // turns into a wrong chord across holes.
+  return lineWidth * 2.1;
+}
+
+export function sparseInfillConnectorLinkLimit(lineWidth: number): number {
+  return lineWidth * 1.5;
+}
+
+function closestPointOnRing(point: THREE.Vector2, ring: THREE.Vector2[]): RingProjection | null {
+  if (ring.length < 3) return null;
+  let best: RingProjection | null = null;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq <= 1e-12) continue;
+    const rawT = ((point.x - a.x) * dx + (point.y - a.y) * dy) / lenSq;
+    const t = Math.max(0, Math.min(1, rawT));
+    const projected = new THREE.Vector2(a.x + dx * t, a.y + dy * t);
+    const distSq = projected.distanceToSquared(point);
+    if (!best || distSq < best.distSq) {
+      best = { ring, seg: i, t, point: projected, distSq };
+    }
+  }
+  return best;
+}
+
+function removeNearDuplicateConnectorPoints(points: THREE.Vector2[]): THREE.Vector2[] {
+  const out: THREE.Vector2[] = [];
+  for (const point of points) {
+    const prev = out[out.length - 1];
+    if (!prev || prev.distanceToSquared(point) > 1e-8) out.push(point);
+  }
+  return out;
+}
+
+function ringPathForward(from: RingProjection, to: RingProjection): THREE.Vector2[] {
+  const ring = from.ring;
+  const n = ring.length;
+  const points = [from.point.clone()];
+  if (from.seg === to.seg && to.t >= from.t) {
+    points.push(to.point.clone());
+    return removeNearDuplicateConnectorPoints(points);
+  }
+  let idx = (from.seg + 1) % n;
+  let guard = 0;
+  while (guard++ <= n) {
+    points.push(ring[idx].clone());
+    if (idx === to.seg) break;
+    idx = (idx + 1) % n;
+  }
+  points.push(to.point.clone());
+  return removeNearDuplicateConnectorPoints(points);
+}
+
+function polylineLength(points: THREE.Vector2[]): number {
+  let length = 0;
+  for (let i = 1; i < points.length; i++) length += points[i - 1].distanceTo(points[i]);
+  return length;
+}
+
+function shortestRingPath(from: RingProjection, to: RingProjection): THREE.Vector2[] {
+  const forward = ringPathForward(from, to);
+  const backward = ringPathForward(to, from).reverse();
+  return polylineLength(forward) <= polylineLength(backward) ? forward : backward;
+}
+
+export function findSolidSkinContourConnectorPath(
+  from: THREE.Vector2,
+  to: THREE.Vector2,
+  outer: THREE.Vector2[],
+  holes: THREE.Vector2[][],
+  lineWidth: number,
+): THREE.Vector2[] | null {
+  const maxProjectionDistSq = (lineWidth * 0.8) ** 2;
+  const maxWalkLength = lineWidth * 8;
+  let bestPath: THREE.Vector2[] | null = null;
+  let bestLength = Infinity;
+
+  for (const ring of [outer, ...holes]) {
+    const a = closestPointOnRing(from, ring);
+    const b = closestPointOnRing(to, ring);
+    if (!a || !b || a.distSq > maxProjectionDistSq || b.distSq > maxProjectionDistSq) continue;
+    const path = shortestRingPath(a, b);
+    const length = polylineLength(path);
+    if (length > maxWalkLength || length >= bestLength) continue;
+    bestPath = removeNearDuplicateConnectorPoints([from.clone(), ...path, to.clone()]);
+    bestLength = length;
+  }
+
+  return bestPath && bestPath.length >= 2 ? bestPath : null;
 }
 
 export function emitContourInfill(
@@ -421,7 +523,9 @@ export function emitContourInfill(
       pp.connectInfillLines,
       infillRegions.length,
     );
-    const connectTol = lineWidth * (isSolid ? 2.1 : 1.5);
+    const connectTol = isSolid
+      ? solidSkinConnectorLinkLimit(lineWidth)
+      : sparseInfillConnectorLinkLimit(lineWidth);
     const startExt = pp.infillStartMoveInwardsLength ?? 0;
     const endExt = pp.infillEndMoveInwardsLength ?? 0;
     for (let idx = 0; idx < sorted.length; idx++) {
@@ -465,7 +569,8 @@ export function emitContourInfill(
       // "no boustrophedon zigzag visible" symptom on solid-skin
       // layers with the OrcaSlicer-default 23% skin overlap.
       const connectBoundary = isSolid ? contour.points : innermostWall;
-      const canConnectInfill = connect && idx > 0 && fromDist < connectTol && slicer.segmentInsideMaterial(new THREE.Vector2(emitter.currentX, emitter.currentY), effFrom, connectBoundary, infillHoles);
+      const connectorFrom = new THREE.Vector2(emitter.currentX, emitter.currentY);
+      const canConnectInfill = connect && idx > 0 && fromDist < connectTol && slicer.segmentInsideMaterial(connectorFrom, effFrom, connectBoundary, infillHoles);
       if (canConnectInfill) {
         // Boustrophedon connector hop — extrude a short bead at the
         // wall instead of travelling, then push it as a move so the
@@ -483,6 +588,33 @@ export function emitContourInfill(
           extrusion: emitter.calculateExtrusion(fromDist, thisLineWidth, layerH),
           lineWidth: thisLineWidth,
         });
+      } else if (connect && isSolid && idx > 0) {
+        const contourPath = findSolidSkinContourConnectorPath(
+          connectorFrom,
+          effFrom,
+          contour.points,
+          infillHoles,
+          thisLineWidth,
+        );
+        if (contourPath) {
+          for (let ci = 1; ci < contourPath.length; ci++) {
+            const hopFrom = contourPath[ci - 1];
+            const hopTo = contourPath[ci];
+            const hopLen = hopFrom.distanceTo(hopTo);
+            if (hopLen <= 1e-6) continue;
+            layer.layerTime += emitter.extrudeTo(hopTo.x, hopTo.y, thisSpeed, thisLineWidth, layerH).time;
+            moves.push({
+              type: thisMoveType,
+              from: { x: hopFrom.x, y: hopFrom.y },
+              to: { x: hopTo.x, y: hopTo.y },
+              speed: thisSpeed,
+              extrusion: emitter.calculateExtrusion(hopLen, thisLineWidth, layerH),
+              lineWidth: thisLineWidth,
+            });
+          }
+        } else {
+          emitter.travelTo(effFrom.x, effFrom.y, moves);
+        }
       } else {
         emitter.travelTo(effFrom.x, effFrom.y, moves);
       }
