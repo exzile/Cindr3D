@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 
+import { signedArea as signedArea2D } from '../engine/slicer/geometry/contourUtils';
 import {
   bboxFromMoves,
   buildBox,
@@ -8,27 +9,10 @@ import {
   outerWallMoves,
   sliceGeometry,
   wallMoves,
+  type MoveLike,
 } from './_helpers/slicerSystemHelpers';
 
 const LAYER = 3;
-
-interface MoveLike {
-  type: string;
-  from: { x: number; y: number };
-  to: { x: number; y: number };
-  speed: number;
-  lineWidth: number;
-  extrusion: number;
-}
-
-function signedArea2D(points: Array<{ x: number; y: number }>): number {
-  let a = 0;
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i], q = points[(i + 1) % points.length];
-    a += p.x * q.y - q.x * p.y;
-  }
-  return a / 2;
-}
 
 /**
  * Group consecutive same-type moves whose endpoints chain together into

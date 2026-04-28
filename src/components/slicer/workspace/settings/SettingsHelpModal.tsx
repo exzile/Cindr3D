@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
 import { X, HelpCircle } from 'lucide-react';
 import type { SettingHelp } from '../../../../utils/settingsHelpContent';
+import { useEscapeKey } from '../../../../hooks/useEscapeKey';
 import './SettingsHelpModal.css';
 
 export function SettingsHelpModal({
@@ -12,11 +12,7 @@ export function SettingsHelpModal({
   help: SettingHelp;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useEscapeKey(onClose);
 
   return (
     <>

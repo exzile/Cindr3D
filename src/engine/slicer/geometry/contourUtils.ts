@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 import type { BBox2 } from '../../../types/slicer-pipeline.types';
 
-export function signedArea(points: THREE.Vector2[]): number {
+export function signedArea(points: ReadonlyArray<{ x: number; y: number }>): number {
   let area = 0;
   const n = points.length;
   for (let i = 0; i < n; i++) {

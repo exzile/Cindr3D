@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 
+import { signedArea as signedArea2D } from '../engine/slicer/geometry/contourUtils';
 import {
   bboxFromMoves,
   buildBox,
@@ -17,16 +18,6 @@ import {
  * geometry's topology, winding, and feature count through to the
  * emitted moves.
  */
-
-function signedArea2D(points: Array<{ x: number; y: number }>): number {
-  let a = 0;
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i];
-    const q = points[(i + 1) % points.length];
-    a += p.x * q.y - q.x * p.y;
-  }
-  return a / 2;
-}
 
 /** Walk move endpoints to reconstruct a polyline. Walls are emitted as
  *  consecutive segments where each move's `to` matches the next's `from`. */

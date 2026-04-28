@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { X, RotateCcw, Check, Square, Search } from 'lucide-react';
 import {
   SETTINGS_SECTIONS,
   useSlicerVisibilityStore,
 } from '../../../../store/slicerVisibilityStore';
+import { useEscapeKey } from '../../../../hooks/useEscapeKey';
 import './SlicerSettingsVisibilityModal.css';
 
 interface Props {
@@ -17,12 +18,7 @@ export function SlicerSettingsVisibilityModal({ onClose }: Props) {
   const resetDefaults = useSlicerVisibilityStore((s) => s.resetDefaults);
   const [query, setQuery] = useState('');
 
-  // Esc closes the modal.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useEscapeKey(onClose);
 
   const grouped = useMemo(() => {
     const q = query.trim().toLowerCase();

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { MultiPolygon as PCMultiPolygon, Ring as PCRing } from 'polygon-clipping';
 
 import { booleanPathsClipper2Sync } from './clipper2Wasm';
+import { signedArea } from './contourUtils';
 
 type BooleanOp = 'union' | 'intersection' | 'difference' | 'xor';
 
@@ -24,14 +25,6 @@ function pathToRing(path: THREE.Vector2[]): PCRing {
     if (first[0] !== last[0] || first[1] !== last[1]) ring.push([first[0], first[1]]);
   }
   return ring;
-}
-
-function signedArea(path: THREE.Vector2[]): number {
-  let area = 0;
-  for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
-    area += path[j].x * path[i].y - path[i].x * path[j].y;
-  }
-  return area / 2;
 }
 
 function pointInPath(point: THREE.Vector2, path: THREE.Vector2[]): boolean {

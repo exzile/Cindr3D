@@ -1,7 +1,8 @@
-import { useEffect, useRef, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useMemo, useState } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
+import { useEscapeKey } from '../../../hooks/useEscapeKey';
 
 // ─── Module-level constants (built once, reused) ─────────────────────────────
 
@@ -169,15 +170,11 @@ export default function SketchPlaneSelector() {
     return () => { gl.domElement.style.cursor = 'auto'; };
   }, [selecting, hovered, faceHit, gl]);
 
-  // Escape to cancel
-  useEffect(() => {
-    if (!selecting) return;
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSketchPlaneSelecting(false);
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [selecting, setSketchPlaneSelecting]);
+  const cancelSketchPlaneSelection = useCallback(
+    () => setSketchPlaneSelecting(false),
+    [setSketchPlaneSelecting],
+  );
+  useEscapeKey(cancelSketchPlaneSelection, selecting);
 
   // Face raycasting
   useEffect(() => {

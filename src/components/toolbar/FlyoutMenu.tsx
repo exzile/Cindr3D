@@ -1,7 +1,8 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronRight, Check } from 'lucide-react';
 import type { MenuItem } from '../../types/toolbar.types';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 
 // ─── Flyout Sub-Menu Item ─────────────────────────────────────────────────
 
@@ -90,15 +91,8 @@ export function RibbonSection({ title, children, menuItems, accentColor }: {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [menuOpen]);
 
-  // Close on Escape
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenuOpen(false);
-    };
-    document.addEventListener('keydown', handleEsc);
-    return () => document.removeEventListener('keydown', handleEsc);
-  }, [menuOpen]);
+  const handleEscape = useCallback(() => setMenuOpen(false), []);
+  useEscapeKey(handleEscape, menuOpen);
 
   return (
     <div className="ribbon-section" ref={sectionRef}>
