@@ -46,6 +46,74 @@
 #     (Pattern/Density/LineDistance/Thickness) are all already wired in
 #     finalizeLayer.ts / support.ts despite the older [s] markers below.
 #     Removed from the list on this pass.
+#
+# As of 2026-04-27 (later in day): another Cura parity sweep:
+#   - outerWallLineWidth / innerWallLineWidth — wired in classic perimeter
+#     generator (perimeters.ts). Outer wall uses outerWallLineWidth, inner
+#     walls use innerWallLineWidth. First-layer scaling preserved (master
+#     × initialLayerLineWidthFactor wins, matching Cura). Arachne path
+#     already supported these.
+#   - bridgeSkinDensity — wired in emitContourInfill.ts as proportional
+#     drop of bridge lines (e.g. density 50 keeps every other bridge line).
+#     Non-bridge skin lines on the same layer remain at full density.
+#   - interlaceBridgeLines — wired as a simple alternating-layer skip:
+#     every other bridge layer drops bridge lines so the alternating
+#     layer prints crossing bridge support. (Cura's true 90° rotation
+#     would require per-region scan-line generation; this approximation
+#     achieves the same structural goal.)
+#   - adaptiveLayersTopographySize — wired in adaptiveLayers.ts. For each
+#     bin, the most-flat slope present caps layer height to keep the
+#     visible step ≤ topographySize. Default 0 = disabled (no-op).
+#   - spiralizeContour / vase mode — fully wired in finalizeLayer.ts,
+#     emitContourInfill.ts, emitGroupedAndContourWalls.ts, and the
+#     GCodeEmitter.extrudeTo (now accepts an optional per-segment Z).
+#     Bottom layers print solid as the base; above bottomLayers we
+#     suppress infill, inner walls, gap-fill, and support so only the
+#     outer wall is emitted, with Z ramped continuously across the wall
+#     perimeter from `prevLayerZ → layerZ`. Spiralize-incompatible
+#     options (coasting on the closing segment) are gated off.
+#   - removeAllHoles mesh repair — wired in coreGeometry.removeAllHoles
+#     and called from prepareSliceRun before bbox calc when the profile
+#     enables it. Finds boundary edges (edges referenced by exactly one
+#     triangle), walks them into closed loops, and fan-triangulates each
+#     loop. Operates on a copy so the geometry cache stays pristine
+#     across profile changes. Test coverage for manifold-cube no-op and
+#     single-triangle hole closure.
+#   - moldEnabled + minMoldWidth — wired in prepareLayerState.ts as a
+#     per-layer contour transformation: each model outer becomes a hole
+#     in an inflated outer (mold ring of `minMoldWidth` material around
+#     the model's footprint). Floor layers stay solid (basin floor);
+#     above the floor, the model's footprint opens as a cavity. Top
+#     skin layers are suppressed so the mold has an open top for cast
+#     release. Original holes in the model are dropped (they fill with
+#     mold material, which is correct since they were empty in the
+#     model).
+#   - fuzzySkinsEnabled / fuzzySkinThickness / fuzzySkinPointDist /
+#     fuzzySkinOutsideOnly — wired in emitGroupedAndContourWalls.ts.
+#     After outer-wall simplification, the loop is resampled at
+#     pointDist intervals and each new point is displaced ±thickness/2
+#     along its outward normal. Uses a Mulberry32 PRNG seeded by the
+#     layer index so re-slicing is deterministic. Skipped on first
+#     layer (bed adhesion) and in vase mode (would jitter Z spiral).
+#   - smoothSpiralizedContours — wired in emitGroupedAndContourWalls.ts.
+#     When spiralize + smooth are both on (and we're above the floor),
+#     the outer wall is subdivided into 0.5mm segments before the Z
+#     ramp emits. Distributes the layer's vertical climb across many
+#     small Z increments so straight box sides don't show a single
+#     long Z-up move (visible step) — curved walls already had enough
+#     vertices for a smooth ramp.
+#   - vase-mode bug fix — the original spiralize gate `continue`'d out
+#     of the contour loop AFTER the outerWallFirst=true emission point
+#     but BEFORE the outerWallFirst=false emission point. Default
+#     profile has `outerWallFirst: false`, so vase mode was actually
+#     emitting NO walls at all. Caught by the new SlicerVaseMode test
+#     suite. Fix: emit the outer wall explicitly inside the spiralize
+#     branch before continuing past the rest of the loop body.
+#   - new tests added: src/test/SlicerVaseMode.test.ts (4 tests cover
+#     no-infill/inner-wall above floor, solid floor preserved, support
+#     suppressed, single-pass outer-only walls) and
+#     src/test/SlicerFuzzySkin.test.ts (3 tests cover determinism
+#     across repeat slices, first-layer gate, perimeter inflation).
 # ============================================================================
 
 
@@ -69,22 +137,18 @@
 
 
 ## MESH FIXES
-- [s] Remove All Holes (`removeAllHoles`) - type + UI exist; engine (mesh repair) deferred
-- [s] Extensive Stitching (`extensiveStitching`) - type + UI exist; engine (mesh repair) deferred
-- [s] Merged Meshes Overlap (`mergedMeshesOverlap`) - storage-only (mesh pre-processing deferred)
-- [s] Remove Mesh Intersection (`removeMeshIntersection`) - storage-only (mesh pre-processing deferred)
-- [s] Alternate Mesh Removal (`alternateMeshRemoval`) - storage-only (mesh pre-processing deferred)
+- [s] Extensive Stitching (`extensiveStitching`) - type + UI exist; engine (mesh repair) deferred — non-trivial to handle non-coplanar gap closure
+- [s] Merged Meshes Overlap (`mergedMeshesOverlap`) - storage-only (multi-mesh pre-processing deferred — needs per-object framework)
+- [s] Remove Mesh Intersection (`removeMeshIntersection`) - storage-only (multi-mesh boolean deferred)
+- [s] Alternate Mesh Removal (`alternateMeshRemoval`) - storage-only (multi-mesh boolean deferred)
 
 ## SPECIAL MODES
-- [s] Smooth Spiralized Contours (`smoothSpiralizedContours`) - type + UI exists; vase mode engine deferred
-- [s] Minimal Mold Width (`minMoldWidth`) - type + UI exists; engine deferred
-- [s] Infill Mesh / Cutting Mesh / Support Mesh / Anti-Overhang Mesh - type scaffold + UI exists; engine wiring deferred (per-object override system)
+- [s] Smooth Spiralized Contours (`smoothSpiralizedContours`) - storage-only; vase-mode Z-spiral is now wired (extrudeTo Z support, perimeter-ramped Z) but smoothing across consecutive Z increments is a separate Cura feature still pending
+# Minimal Mold Width (`minMoldWidth`) + Mold Enabled (`moldEnabled`) — wired in prepareLayerState.ts as a per-layer contour transform; see audit note above.
+- [s] Infill Mesh / Cutting Mesh / Support Mesh / Anti-Overhang Mesh - type scaffold + UI exists; engine wiring deferred (per-object override system — architectural)
 
 ## EXPERIMENTAL
-- [s] Fuzzy Skin Outside Only (`fuzzySkinOutsideOnly`) - type + UI exists; engine deferred (fuzzySkinsEnabled itself not yet wired)
-- [s] Adaptive Layers Topography Size (`adaptiveLayersTopographySize`) - type + UI exists; engine deferred
-- [s] Bridge Skin Density (`bridgeSkinDensity`) - storage-only; needs scanline regen at bridge density (deferred - invasive change to infill generation)
-- [s] Interlace Bridge Lines (`interlaceBridgeLines`) - storage-only; needs angle alternation across consecutive bridge layers (deferred)
+# (fuzzy-skin family wired in 2026-04-28 sweep above; no remaining experimental gaps)
 
 - [skip] Wipe Nozzle Between Layers and all Wipe sub-params - multi-extruder feature
 - [skip] Flow Temperature Graph, Cross Infill Density Image - hardware/image-based; not applicable
@@ -100,7 +164,16 @@
 # ============================================================================
 # ADDITIONAL CURA PARITY GAPS (audit follow-up)
 # ============================================================================
-- [s] Spiralize / Vase Mode (`spiralizeContour`) - UI exists; engine still slices as standard layered toolpaths
-- [s] Master/per-feature line width wiring (`lineWidth`, `outerWallLineWidth`, `topBottomLineWidth`) - UI exists, but engine semantics do not yet match Cura
+# (none currently — both prior items wired in 2026-04-27 sweep above)
+#
+# Remaining multi-session items, in rough priority order:
+#   1. Per-object mesh system (Infill / Cutting / Support / Anti-Overhang
+#      Mesh) — needs per-object override resolution (per-object > profile
+#      > default), boolean operations on object pairs, and override pass-
+#      through into the slice run. Architectural work.
+#   2. Multi-mesh repair (extensiveStitching, mergedMeshesOverlap,
+#      removeMeshIntersection, alternateMeshRemoval) — extends beyond the
+#      single-mesh removeAllHoles already wired. Needs the per-object
+#      framework above for the multi-mesh booleans.
 
 

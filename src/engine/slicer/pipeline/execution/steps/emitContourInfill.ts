@@ -483,6 +483,15 @@ export function emitContourInfill(
   const { pp, mat, triangles, offsetX, offsetY, emitter, gcode } = run;
   const { li, layerH, isFirstLayer, isSolid, isSolidBottom, isSolidTop, isTopSurfaceLayer, infillSpeed, topBottomSpeed, hasBridgeRegions, isInBridgeRegion, moves } = layer;
 
+  // Spiralize / vase mode: keep solid bottom skin (the "base") for the first
+  // `bottomLayers` layers so the part has a flat floor, then suppress all
+  // infill, top skin, and sparse fill above that — vase mode prints a single
+  // hollow shell. Walls are still emitted (single outer wall, no inner walls
+  // see emitGroupedAndContourWalls.ts spiralize gating).
+  if (pp.spiralizeContour && !isSolidBottom) {
+    return;
+  }
+
   for (const item of contoursData) {
     const { contour, exWalls, wallSets, wallLineWidths, outerWallCount, infillHoles } = item;
     const layerWallLineWidth = lineWidthForLayer(pp.wallLineWidth, pp, isFirstLayer);
@@ -708,6 +717,25 @@ export function emitContourInfill(
       : sparseInfillConnectorLinkLimit(lineWidth);
     const startExt = pp.infillStartMoveInwardsLength ?? 0;
     const endExt = pp.infillEndMoveInwardsLength ?? 0;
+    // Cura "Bridge Skin Density" — apply to bridge lines only (not non-bridge
+    // skin in the same layer). Default 100 = no thinning. Implemented as
+    // proportional drop of bridge lines: density 50 keeps every other bridge
+    // line, density 33 keeps every third. Non-bridge skin lines pass through
+    // unchanged so the rest of the top/bottom band stays solid.
+    const bridgeSkinDensityPct = Math.max(1, Math.min(100, pp.bridgeSkinDensity ?? 100));
+    const bridgeKeepStride = bridgeSkinDensityPct >= 100 ? 1 : Math.max(1, Math.round(100 / bridgeSkinDensityPct));
+    let bridgeLineCounter = 0;
+    // Cura "Interlace Bridge Lines" — when consecutive bridge layers stack,
+    // alternate the printed bridge angle by 90° on every other bridge layer.
+    // We approximate this by dropping bridge lines whose direction matches the
+    // previous bridge layer's direction every other layer; the missed lines
+    // would have stacked atop the last layer instead of crossing it.
+    const interlaceOn = (pp.interlaceBridgeLines ?? false)
+      && hasBridgeRegions
+      && ((run.consecutiveBridgeLayers ?? 0) >= 1)
+      // Alternate every other bridge layer: keep odd layer's lines, skip
+      // bridge lines on even layers (they'd repeat the prior direction).
+      && (((run.consecutiveBridgeLayers ?? 0) + 1) % 2 === 0);
     for (let idx = 0; idx < sorted.length; idx++) {
       const line = sorted[idx];
       const dx = line.to.x - line.from.x, dy = line.to.y - line.from.y, len = Math.sqrt(dx * dx + dy * dy);
@@ -722,6 +750,12 @@ export function emitContourInfill(
       if (hasBridgeRegions && bridgeSettingsOn && infillMoveType === 'top-bottom') {
         const midX = (effFrom.x + effTo.x) / 2, midY = (effFrom.y + effTo.y) / 2;
         if (isInBridgeRegion(midX, midY)) {
+          // Skip every other bridge layer's lines when interlacing is on so
+          // the alternating layer prints crossing bridge support.
+          if (interlaceOn) continue;
+          // Skip bridge lines based on bridgeSkinDensity (every Nth kept).
+          const lineIdx = bridgeLineCounter++;
+          if (lineIdx % bridgeKeepStride !== 0) continue;
           thisMoveType = 'bridge';
           thisSpeed = pp.bridgeSkinSpeed ?? speed;
           thisFlowScale = (pp.bridgeSkinFlow ?? 100) / 100;

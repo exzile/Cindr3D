@@ -41,6 +41,7 @@ export interface SlicerExecutionPipeline {
     maxVariation: number,
     variationStep: number,
     zScale: number,
+    topographySize?: number,
   ): number[];
   sliceTrianglesAtZ(
     triangles: Triangle[],
@@ -159,6 +160,10 @@ export interface SliceRun {
   bridgeFanActive: boolean;
   consecutiveBridgeLayers: number;
   layerHadBridge: boolean;
+  /** Vase / spiralize mode: the Z reached at the end of the previous
+   *  layer's outer-wall ramp. Used as the start Z for the next layer's
+   *  spiral so the climb is continuous across layer boundaries. */
+  spiralPrevLayerZ?: number;
   sliceLayers: SliceLayer[];
   totalTime: number;
 }

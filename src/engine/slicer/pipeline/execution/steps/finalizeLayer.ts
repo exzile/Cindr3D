@@ -72,7 +72,7 @@ export function finalizeLayer(
     run.layerHadBridge ?? false,
   );
 
-  if (li === 0 && pp.supportEnabled && (pp.enableSupportBrim ?? false)) {
+  if (li === 0 && pp.supportEnabled && !pp.spiralizeContour && (pp.enableSupportBrim ?? false)) {
     const overhangAngleRad = (pp.supportAngle * Math.PI) / 180;
     let bMinX = Infinity, bMaxX = -Infinity, bMinY = Infinity, bMaxY = -Infinity;
     for (const tri of triangles) {
@@ -103,8 +103,11 @@ export function finalizeLayer(
     }
   }
 
+  // Spiralize / vase mode is incompatible with support (a continuous spiral
+  // shell can't pause to print support structures). Cura/Orca apply the same
+  // gate: when spiralize is on, support is unconditionally suppressed.
   const supThickMul = (pp.supportInfillLayerThickness ?? 0) > 0 ? Math.max(1, Math.round((pp.supportInfillLayerThickness ?? 0) / pp.layerHeight)) : 1;
-  if (pp.supportEnabled && li > 0 && li % supThickMul === 0) {
+  if (pp.supportEnabled && !pp.spiralizeContour && li > 0 && li % supThickMul === 0) {
     const support = slicer.generateSupportForLayer(triangles, sliceZ, layerZ, li, offsetX, offsetY, run.offsetZ, run.modelHeight, contours);
     if (support.moves.length > 0) {
       emitter.setAccel(pp.accelerationSupport, pp.accelerationPrint);

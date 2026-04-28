@@ -214,8 +214,47 @@ export async function prepareLayerGeometryState(
   }
 
   const isSolidBottom = li < Math.max(solidBottom, pp.initialBottomLayers ?? 0);
-  const isSolidTop = li >= totalLayers - solidTop;
-  const isSolid = isSolidBottom || isSolidTop;
+  let isSolidTop = li >= totalLayers - solidTop;
+  let isSolid = isSolidBottom || isSolidTop;
+
+  // Cura "Mold Mode" — print a mold around the model instead of the model
+  // itself. For each outer contour:
+  //   • Mold's outer boundary = original outer expanded outward by mold
+  //     width (`minMoldWidth`).
+  //   • Above the basin floor, the original outer becomes a HOLE in the
+  //     mold so the model's footprint stays empty (the cavity for casting).
+  //   • The basin floor (the solid-bottom layers) keeps the mold filled
+  //     across the model's footprint so the cast has a solid base.
+  //   • Original holes in the model are dropped — they become solid mold
+  //     material since they were empty inside the model.
+  // After replacement, the layer prints as the mold, so all subsequent
+  // logic (skin, infill, walls) operates on the mold geometry.
+  if ((pp.moldEnabled ?? false) && contours.length > 0) {
+    const moldWidth = Math.max(0.5, pp.minMoldWidth ?? 5);
+    const moldContours: typeof contours = [];
+    for (const c of contours) {
+      if (!c.isOuter) continue;
+      // Negative offset = grow outer outward (see SIGN CONVENTION above).
+      const inflated = slicer.offsetContour(c.points, -moldWidth);
+      if (inflated.length < 3) continue;
+      moldContours.push({ points: inflated, area: slicer.signedArea(inflated), isOuter: true });
+      if (!isSolidBottom) {
+        // Above the floor, model footprint becomes a hole in the mold so
+        // the cavity opens upward. Reverse winding so it's a proper hole
+        // (CW inside the CCW outer).
+        const holePoints = [...c.points].reverse();
+        moldContours.push({ points: holePoints, area: -Math.abs(c.area), isOuter: false });
+      }
+    }
+    contours.length = 0;
+    contours.push(...moldContours);
+    // The mold is open at the top — suppress the solid-top skin band
+    // (would otherwise close the mold roof and trap the cast inside).
+    if (isSolidTop) {
+      isSolidTop = false;
+      isSolid = isSolidBottom;
+    }
+  }
   const isTopSurfaceLayer = isTopSurfaceLayerForCounts(li, totalLayers, pp.topSurfaceSkinLayers);
   const isBottomSurfaceLayer = isBottomSurfaceLayerForCounts(li, pp.bottomSurfaceSkinLayers);
 

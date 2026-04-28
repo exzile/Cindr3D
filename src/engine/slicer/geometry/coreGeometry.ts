@@ -218,6 +218,122 @@ export function extractTriangles(
   return triangles;
 }
 
+/**
+ * Cura "Remove All Holes" mesh repair: find boundary edges (edges referenced
+ * by exactly one triangle, indicating a hole or non-manifold gap), walk them
+ * into closed boundary loops, and fan-triangulate each loop to seal the
+ * hole. After this pass every edge is shared by 2 triangles (fully manifold).
+ *
+ * Returns a NEW array (the original is not mutated, so the geometry cache
+ * can hand the same pristine list to multiple consumers). The returned
+ * array contains the original triangles + the fan-fill triangles. The fan
+ * triangles inherit orientation from the boundary edge direction, so a
+ * subsequent normal-repair pass keeps the body's outside-facing convention.
+ */
+export function removeAllHoles(triangles: Triangle[]): { triangles: Triangle[]; added: number } {
+  if (triangles.length === 0) return { triangles, added: 0 };
+  const vkey = (v: THREE.Vector3) => `${v.x.toFixed(4)},${v.y.toFixed(4)},${v.z.toFixed(4)}`;
+  const edgeKey = (a: THREE.Vector3, b: THREE.Vector3): string => {
+    const ka = vkey(a); const kb = vkey(b);
+    return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+  };
+
+  // Build edge → triangle reference count on the input list.
+  const edgeCount = new Map<string, number>();
+  for (const t of triangles) {
+    for (const [a, b] of [[t.v0, t.v1], [t.v1, t.v2], [t.v2, t.v0]] as const) {
+      const k = edgeKey(a, b);
+      edgeCount.set(k, (edgeCount.get(k) ?? 0) + 1);
+    }
+  }
+  // Early exit: if every edge is already shared (manifold), skip.
+  let hasBoundary = false;
+  for (const c of edgeCount.values()) { if (c === 1) { hasBoundary = true; break; } }
+  if (!hasBoundary) return { triangles, added: 0 };
+
+  // Boundary edges have count === 1. Build directed adjacency: vertexKey →
+  // [next vertex with the boundary edge in the orientation seen on its
+  // owning triangle]. Using the triangle's edge winding direction gives the
+  // "outside" boundary normal, so the fan-fill triangles inherit a
+  // consistent orientation for repairTriangleNormals to flip if needed.
+  type VertexInfo = { v: THREE.Vector3; outgoing: Map<string, THREE.Vector3> };
+  const vertexInfo = new Map<string, VertexInfo>();
+  const ensure = (v: THREE.Vector3): VertexInfo => {
+    const k = vkey(v);
+    let info = vertexInfo.get(k);
+    if (!info) {
+      info = { v, outgoing: new Map() };
+      vertexInfo.set(k, info);
+    }
+    return info;
+  };
+  for (const t of triangles) {
+    for (const [a, b] of [[t.v0, t.v1], [t.v1, t.v2], [t.v2, t.v0]] as const) {
+      const k = edgeKey(a, b);
+      if (edgeCount.get(k) === 1) {
+        const fromInfo = ensure(a);
+        const toKey = vkey(b);
+        if (!fromInfo.outgoing.has(toKey)) fromInfo.outgoing.set(toKey, b);
+      }
+    }
+  }
+
+  if (vertexInfo.size === 0) return { triangles, added: 0 };
+
+  // Walk loops by following outgoing boundary edges. Append new fill
+  // triangles to a fresh result array so the input stays untouched.
+  const result: Triangle[] = triangles.slice();
+  const visited = new Set<string>();
+  let added = 0;
+  for (const [startKey, startInfo] of vertexInfo) {
+    if (visited.has(startKey)) continue;
+    if (startInfo.outgoing.size === 0) continue;
+    const loop: THREE.Vector3[] = [];
+    let cur = startInfo;
+    let curKey = startKey;
+    while (cur && !visited.has(curKey)) {
+      visited.add(curKey);
+      loop.push(cur.v);
+      const nextEntry = cur.outgoing.entries().next();
+      if (nextEntry.done) break;
+      const [nextKey] = nextEntry.value;
+      cur.outgoing.delete(nextKey);
+      const nextInfo = vertexInfo.get(nextKey);
+      if (!nextInfo) break;
+      cur = nextInfo;
+      curKey = nextKey;
+      if (curKey === startKey) break; // closed loop
+    }
+    if (loop.length < 3) continue;
+    if (curKey !== startKey) continue; // open path — not a closed hole
+
+    // Fan-triangulate from loop[0]. Robust enough for small/convex holes;
+    // larger non-convex loops would need ear-clipping but are outside the
+    // intended scope of "Remove All Holes" (which targets small defects).
+    const v0 = loop[0];
+    for (let i = 1; i < loop.length - 1; i++) {
+      const v1 = loop[i];
+      const v2 = loop[i + 1];
+      const e1 = new THREE.Vector3().subVectors(v1, v0);
+      const e2 = new THREE.Vector3().subVectors(v2, v0);
+      const cross = new THREE.Vector3().crossVectors(e1, e2);
+      if (cross.lengthSq() < 1e-12) continue;
+      const normal = cross.normalize();
+      const tri: Triangle = {
+        v0, v1, v2, normal,
+        edgeKey01: edgeKey(v0, v1),
+        edgeKey12: edgeKey(v1, v2),
+        edgeKey20: edgeKey(v2, v0),
+      };
+      updateTriangleZBounds(tri);
+      result.push(tri);
+      added++;
+    }
+  }
+  if (added > 0) repairTriangleNormals(result);
+  return { triangles: result, added };
+}
+
 export function computeBBox(triangles: Triangle[]): Box3 {
   const box = new THREE.Box3();
   for (const tri of triangles) {

@@ -366,7 +366,7 @@ export interface PrintProfile {
   topSkinRemovalWidth?: number;        // wired — mm; separate top skin removal width
   bottomSkinRemovalWidth?: number;     // wired — mm; separate bottom skin removal width
   smallTopBottomWidth?: number;        // wired — mm; skip skin on regions narrower than this
-  maxSkinAngleForExpansion?: number;   // storage-only — deg
+  maxSkinAngleForExpansion?: number;   // storage-only — deg (deferred — needs surrounding-overhang slope detection)
   minSkinWidthForExpansion?: number;   // wired — mm; suppress skin expansion for regions narrower than this
   layerStartAtSeam?: boolean;          // storage-only — start each layer at the seam
   minimumExtrusionDistanceWindow?: number; // wired — mm window for maxRetractionCount
@@ -465,12 +465,12 @@ export interface PrintProfile {
   insideTravelAvoidDistance?: number;  // wired — mm — buffer for inside-part travel
 
   // --- Experimental ------------------------------------------------------
-  smoothSpiralizedContours?: boolean;  // storage-only — round corners in vase mode
+  smoothSpiralizedContours?: boolean;  // wired — subdivide outer-wall segments to smooth Z ramp
   flowEqualizationRatio?: number;      // wired — 0.0–1.0 adjust speed to equalize flow volume
   flowRateCompensationFactor?: number; // wired — multiplier on all extrusion E values
   primeBlobEnable?: boolean;           // wired — deposit purge blob before print starts
   primeBlobSize?: number;              // wired — mm³ of material to purge
-  fuzzySkinOutsideOnly?: boolean;      // storage-only — only apply fuzzy skin to outer walls
+  fuzzySkinOutsideOnly?: boolean;      // wired — only outer walls fuzzed (current implementation is outer-only by default)
   minVolumeBeforeCoasting?: number;    // wired — mm³ — don't coast if total wall extrusion < this
   draftShieldLimitation?: 'full' | 'limited'; // wired — cap draft shield height
   draftShieldHeight?: number;          // wired — mm — max Z for draft shield when limitation = limited
@@ -479,7 +479,7 @@ export interface PrintProfile {
   breakUpSupportChunkSize?: number;    // wired — mm — gap inserted between chunks
   breakUpSupportChunkLineCount?: number; // wired — number of consecutive scanlines per chunk before the gap
   conicalSupportMinWidth?: number;     // storage-only — mm (companion to conicalSupportAngle)
-  adaptiveLayersTopographySize?: number; // storage-only — mm
+  adaptiveLayersTopographySize?: number; // wired — mm; caps layer height to keep visible step ≤ this on slopes
   minLayerTimeWithOverhang?: number;   // wired — seconds
   keepRetractingDuringTravel?: boolean; // storage-only
   primeDuringTravel?: boolean;         // storage-only
@@ -487,7 +487,7 @@ export interface PrintProfile {
   brimAvoidMargin?: number;            // wired — mm — keep brim this far from other parts
   smartBrim?: boolean;                 // storage-only — only generate brim where needed
   initialLayerZOverlap?: number;       // wired — mm — first-layer over-extrusion to improve adhesion
-  minMoldWidth?: number;               // storage-only — mm
+  minMoldWidth?: number;               // wired — mm; mold ring thickness around model footprint
   fluidMotionEnable?: boolean;         // storage-only
   fluidMotionAngle?: number;           // storage-only — degrees
   fluidMotionSmallDistance?: number;   // storage-only — mm
@@ -556,8 +556,8 @@ export interface PrintProfile {
   // bridgeFanSpeed2 / bridgeFanSpeed3 declared above in Bridging section.
 
   // --- Bridge Extras ----------------------------------------------------
-  bridgeSkinDensity?: number;          // storage-only — %
-  interlaceBridgeLines?: boolean;      // storage-only
+  bridgeSkinDensity?: number;          // wired — %; proportionally drops bridge lines (50 = every other)
+  interlaceBridgeLines?: boolean;      // wired — alternates bridge layers to cross prior bridge direction
   bridgeHasMultipleLayers?: boolean;   // wired — legacy alias for bridgeEnableMoreLayers
 
   // --- Support Interface Wall Count -------------------------------------

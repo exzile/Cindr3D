@@ -151,6 +151,33 @@ export function generatePerimetersEx(
   printProfile: PrintProfile,
   deps: PerimeterDeps,
 ): GeneratedPerimeters {
+  // Per-depth line widths: outermost wall (depth 0) uses outerWallLineWidth,
+  // inner walls (depth >= 1) use innerWallLineWidth. Both default to the
+  // master `lineWidth` argument, so when no overrides are set the output is
+  // identical to the legacy single-width behavior. This matches Cura's
+  // `wall_line_width_0` (outer) / `wall_line_width_x` (inner) semantics.
+  //
+  // First-layer special case: callers replace the passed `lineWidth` with
+  // `printProfile.lineWidth * initialLayerLineWidthFactor` on layer 0
+  // (lineWidthSpecForLayer in steps/lineWidths.ts). When that scaling is
+  // active, ALL features collapse to that single first-layer width — Cura
+  // applies `initial_layer_line_width_factor` globally, ignoring per-
+  // feature widths. We detect this by comparing the passed lineWidth to
+  // `wallLineWidth`: when they differ we know first-layer scaling is in
+  // effect and use lineWidth for both depths.
+  const onFirstLayerScaled = Math.abs(lineWidth - printProfile.wallLineWidth) > 1e-6;
+  const outerLW = onFirstLayerScaled ? lineWidth : (printProfile.outerWallLineWidth ?? lineWidth);
+  const innerLW = onFirstLayerScaled ? lineWidth : (printProfile.innerWallLineWidth ?? lineWidth);
+  const lwForDepth = (depth: number): number => (depth === 0 ? outerLW : innerLW);
+  const offsetForDepth = (depth: number): number => {
+    const lwAtDepth = lwForDepth(depth);
+    const priorOffset = depth === 0 ? 0 : outerLW + (depth - 1) * innerLW;
+    // Legacy: outerWallInset only applies at depth 0 (preserved from
+    // single-width behavior; outer-only inset is the documented Cura semantic).
+    const inset = depth === 0 ? outerWallInset : 0;
+    return priorOffset + lwAtDepth / 2 + inset;
+  };
+
   // polygonClipping.difference on dense tessellated outer + hole contours
   // frequently produces hundreds of sub-mm sliver polygons at the shared
   // edges. Those slivers (a) emit degenerate-wall gcode no printer can follow
@@ -344,7 +371,7 @@ export function generatePerimetersEx(
   let lastInfillRegions: InfillRegion[] = [];
 
   for (let w = 0; w < wallCount; w++) {
-    const nominalOffset = w * lineWidth + lineWidth / 2 + (w === 0 ? outerWallInset : 0);
+    const nominalOffset = offsetForDepth(w);
     const nominalDepth = computeDepth(nominalOffset);
 
     if (!nominalDepth) {
@@ -398,9 +425,9 @@ export function generatePerimetersEx(
     let thisDepthHoles = nominalDepth.holesAtDepth;
     let cleanOuters = nominalDepth.cleanOuters;
     let validHoles = nominalDepth.validHoles;
-    let depthLineWidth = lineWidth;
+    let depthLineWidth = lwForDepth(w);
 
-    const nextOffset = (w + 1) * lineWidth + lineWidth / 2 + (w === 0 ? outerWallInset : 0);
+    const nextOffset = offsetForDepth(w + 1);
     const nextDepth = computeDepth(nextOffset);
 
     if ((printProfile.thinWallDetection ?? false) && nextDepth === null) {
@@ -418,7 +445,13 @@ export function generatePerimetersEx(
         }
       }
 
-      const previousMaterialEdge = outerWallInset + w * lineWidth;
+      // Distance from the original contour to the inside edge of the
+      // already-emitted walls: outerWallInset + outerLW + (w-1)*innerLW for
+      // w>=1, outerWallInset for w=0. Falls back to legacy single-width math
+      // when overrides match `lineWidth`.
+      const previousMaterialEdge = w === 0
+        ? outerWallInset
+        : outerWallInset + outerLW + (w - 1) * innerLW;
       const widened = Math.max(
         printProfile.minWallLineWidth ?? lineWidth * 0.5,
         2 * Math.max(0, lo - previousMaterialEdge),

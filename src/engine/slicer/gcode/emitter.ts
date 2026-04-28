@@ -463,6 +463,7 @@ export class GCodeEmitter {
     speed: number,
     lineWidth: number,
     layerHeight: number,
+    z?: number,
   ): ExtrusionMoveResult {
     this.unretract();
     const fromX = this.currentX;
@@ -486,9 +487,21 @@ export class GCodeEmitter {
       const blendedSpeed = speed + (equalizedSpeed - speed) * flowEqualizationRatio;
       if (clampedSpeed > blendedSpeed) clampedSpeed = blendedSpeed;
     }
-    this.gcode.push(
-      `G1 X${x.toFixed(3)} Y${y.toFixed(3)} E${this.relativeExtrusion ? extrusion.toFixed(5) : this.currentE.toFixed(5)} F${(clampedSpeed * 60).toFixed(0)}`,
-    );
+    // Vase / spiralize mode passes a per-segment Z so the outer wall climbs
+    // continuously instead of stepping per-layer. Emit Z only when the
+    // requested Z differs from the current Z (avoids spurious Z words on
+    // every regular move).
+    const zChanged = z !== undefined && Math.abs(z - this.currentZ) > 1e-4;
+    if (zChanged) {
+      this.gcode.push(
+        `G1 X${x.toFixed(3)} Y${y.toFixed(3)} Z${z!.toFixed(3)} E${this.relativeExtrusion ? extrusion.toFixed(5) : this.currentE.toFixed(5)} F${(clampedSpeed * 60).toFixed(0)}`,
+      );
+      this.currentZ = z!;
+    } else {
+      this.gcode.push(
+        `G1 X${x.toFixed(3)} Y${y.toFixed(3)} E${this.relativeExtrusion ? extrusion.toFixed(5) : this.currentE.toFixed(5)} F${(clampedSpeed * 60).toFixed(0)}`,
+      );
+    }
     if (dist > 1e-6) {
       this.lastExtrudeDx = dx;
       this.lastExtrudeDy = dy;

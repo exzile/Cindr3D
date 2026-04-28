@@ -70,6 +70,60 @@ function nearestPreviousSeam(run: SliceRun, loop: THREE.Vector2[], tolerance: nu
   return bestDistance <= Math.max(tolerance * 8, 10) ? best : null;
 }
 
+/**
+ * Cura "Fuzzy Skin" — resample the wall at `pointDist` intervals and
+ * displace each point by a random offset (±thickness/2) along its outward
+ * normal. Result is a roughened wall surface (Cura's textured/matte effect).
+ *
+ * Uses a per-layer deterministic seed so re-slicing the same model produces
+ * the same fuzzy pattern (otherwise cache hits would visibly change every
+ * preview render). Mulberry32 PRNG seeded with the layer index.
+ */
+function applyFuzzySkin(
+  loop: THREE.Vector2[],
+  thickness: number,
+  pointDist: number,
+  isCCW: boolean,
+  layerIndex: number,
+): THREE.Vector2[] {
+  if (loop.length < 3 || thickness <= 0 || pointDist <= 0) return loop;
+  // Mulberry32 — small fast deterministic PRNG. Seed is the layer index
+  // so the same layer always rolls the same fuzz pattern.
+  let seed = (layerIndex * 0x9E3779B1) >>> 0;
+  const rand = (): number => {
+    seed = (seed + 0x6D2B79F5) >>> 0;
+    let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return (((t ^ (t >>> 14)) >>> 0) % 100000) / 100000;
+  };
+  const result: THREE.Vector2[] = [];
+  let leftover = 0;
+  const half = thickness / 2;
+  for (let i = 0; i < loop.length; i++) {
+    const curr = loop[i];
+    const next = loop[(i + 1) % loop.length];
+    const dx = next.x - curr.x;
+    const dy = next.y - curr.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1e-9) continue;
+    const ux = dx / len;
+    const uy = dy / len;
+    // Outward normal: for a CCW polygon the outward direction is the edge
+    // tangent rotated 90° clockwise, i.e. (uy, -ux). For CW it's flipped.
+    const nx = isCCW ? uy : -uy;
+    const ny = isCCW ? -ux : ux;
+    let pos = pointDist - leftover;
+    while (pos < len) {
+      const r = (rand() * 2 - 1) * half;
+      result.push(new THREE.Vector2(curr.x + ux * pos + nx * r, curr.y + uy * pos + ny * r));
+      pos += pointDist;
+    }
+    leftover = len - (pos - pointDist);
+  }
+  return result.length >= 3 ? result : loop;
+}
+
 function reorderOuterLoop(
   pp: SliceRun['pp'],
   pipeline: SlicerExecutionPipeline,
@@ -120,7 +174,55 @@ function reorderOuterLoop(
   // now handles those via transition zones, and an aggressive RDP here
   // turns smooth circles (with our adaptive curveSegments) into visibly
   // polygonal walls.
-  return pipeline.simplifyClosedContour(reordered, Math.max(0.005, lineWidth * 0.05));
+  let simplified = pipeline.simplifyClosedContour(reordered, Math.max(0.005, lineWidth * 0.05));
+  // Cura "Fuzzy Skin" — applied AFTER simplification so the random offsets
+  // aren't smoothed back out. Skipped on first layer (would compromise bed
+  // adhesion) and in vase mode (would jitter the spiral Z ramp). Also
+  // skipped when `fuzzySkinOutsideOnly` is true and this is being called
+  // from an inner-wall path — the param controls whether the outer-only
+  // restriction applies, but reorderOuterLoop is only invoked for outer
+  // walls today, so the flag is informational here. Inner-wall fuzzy
+  // would need a parallel hook in the inner-wall emission loop.
+  if (
+    (pp.fuzzySkinsEnabled ?? false)
+    && !layer.isFirstLayer
+    && !(pp.spiralizeContour ?? false)
+    && simplified.length >= 3
+  ) {
+    const isCCW = pipeline.signedArea(simplified) > 0;
+    simplified = applyFuzzySkin(
+      simplified,
+      pp.fuzzySkinThickness ?? 0.3,
+      pp.fuzzySkinPointDist ?? 0.8,
+      isCCW,
+      li,
+    );
+  }
+  return simplified;
+}
+
+/**
+ * Subdivide loop segments longer than `maxSegLen` mm into smaller pieces.
+ * Used by spiralize + smoothSpiralizedContours so the Z ramp updates more
+ * frequently across each long segment, avoiding visible step-bands on
+ * coarse-tessellated walls (e.g. straight box sides).
+ */
+function subdivideLoop(loop: THREE.Vector2[], maxSegLen: number): THREE.Vector2[] {
+  if (loop.length < 2 || maxSegLen <= 0) return loop;
+  const out: THREE.Vector2[] = [];
+  for (let i = 0; i < loop.length; i++) {
+    const a = loop[i];
+    const b = loop[(i + 1) % loop.length];
+    out.push(a);
+    const len = a.distanceTo(b);
+    if (len <= maxSegLen) continue;
+    const n = Math.ceil(len / maxSegLen);
+    for (let s = 1; s < n; s++) {
+      const t = s / n;
+      out.push(new THREE.Vector2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t));
+    }
+  }
+  return out;
 }
 
 function emitOuterLoop(params: EmitOuterLoopParams): number {
@@ -128,14 +230,43 @@ function emitOuterLoop(params: EmitOuterLoopParams): number {
   const variableLineWidth = Array.isArray(params.lineWidth);
   const isClosed = params.isClosed ?? true;
   const fallbackLineWidth = representativeLineWidth(params.lineWidth, pp.wallLineWidth);
-  const reordered = variableLineWidth
+  let reordered = variableLineWidth
     ? params.loop
     : reorderOuterLoop(pp, params.pipeline, params.run, params.layer, emitter, params.loop, fallbackLineWidth, li);
+  // Cura "Smooth Spiralized Contours" — subdivide long edges before the
+  // spiral Z ramp so the layer's vertical climb is distributed across many
+  // small Z increments instead of being concentrated at long-segment ends.
+  // Without this, a 20mm flat side gets only one big Z-up move (visible
+  // step), while a curved side with many short edges stays smooth.
+  if (
+    (pp.spiralizeContour ?? false)
+    && (pp.smoothSpiralizedContours ?? false)
+    && !params.layer.isSolidBottom
+    && reordered.length >= 3
+  ) {
+    reordered = subdivideLoop(reordered, 0.5);
+  }
   if (reordered.length < 2) return 0;
   emitter.setAccel(isFirstLayer ? pp.accelerationInitialLayer : (pp.accelerationOuterWall ?? pp.accelerationWall), pp.accelerationPrint);
   emitter.setJerk(isFirstLayer ? pp.jerkInitialLayer : (pp.jerkOuterWall ?? pp.jerkWall), pp.jerkPrint);
   emitter.travelTo(reordered[0].x, reordered[0].y, moves);
   gcode.push(`; ${params.comment ?? 'Outer wall'}`);
+  // Spiralize / vase-mode Z ramp: ramp Z from prevLayerZ → layerZ smoothly
+  // across the outer-wall perimeter so the head climbs continuously instead
+  // of stepping at the layer change. The ramp is active only ABOVE the
+  // solid-bottom band — below that we still print flat layers as the base
+  // floor (matches Cura: solid base, then spiral above). isClosed is
+  // required because an open path can't carry a continuous spiral.
+  const spiralActive = (pp.spiralizeContour ?? false) && !params.layer.isSolidBottom && isClosed && reordered.length >= 3;
+  let perimeter = 0;
+  if (spiralActive) {
+    for (let pi = 1; pi < reordered.length; pi++) perimeter += reordered[pi - 1].distanceTo(reordered[pi]);
+    perimeter += reordered[reordered.length - 1].distanceTo(reordered[0]);
+  }
+  const prevLayerZ = (params.run.spiralPrevLayerZ ?? layerZ - layerH);
+  const spiralStartZ = prevLayerZ;
+  const spiralEndZ = layerZ;
+  let traveled = 0;
   const scarfLen = pp.scarfSeamLength ?? 0;
   const scarfActive = scarfLen > 0 && (pp.scarfSeamStartHeight === undefined || layerZ >= pp.scarfSeamStartHeight);
   const scarfStepLen = pp.scarfSeamStepLength ?? 0;
@@ -143,6 +274,7 @@ function emitOuterLoop(params: EmitOuterLoopParams): number {
   let layerTime = 0;
   for (let pi = 1; pi < reordered.length; pi++) {
     const from = reordered[pi - 1], to = reordered[pi];
+    const segLen = from.distanceTo(to);
     let segLW = variableLineWidth ? segmentLineWidth(params.lineWidth, pi - 1, pi) : fallbackLineWidth;
     const baseSegLW = segLW;
     let segSpeed = outerWallSpeed;
@@ -153,10 +285,16 @@ function emitOuterLoop(params: EmitOuterLoopParams): number {
       segLW = baseSegLW * t;
       const speedRatio = pp.scarfSeamStartSpeedRatio ?? 1.0;
       segSpeed = outerWallSpeed * (speedRatio + (1.0 - speedRatio) * t);
-      scarfRemaining = Math.max(0, scarfRemaining - from.distanceTo(to));
+      scarfRemaining = Math.max(0, scarfRemaining - segLen);
     }
-    layerTime += emitter.extrudeTo(to.x, to.y, segSpeed, segLW, layerH).time;
-    moves.push({ type: 'wall-outer', from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, speed: segSpeed, extrusion: emitter.calculateExtrusion(from.distanceTo(to), segLW, layerH), lineWidth: segLW });
+    let segZ: number | undefined;
+    if (spiralActive && perimeter > 0) {
+      traveled += segLen;
+      const t = Math.min(1, traveled / perimeter);
+      segZ = spiralStartZ + (spiralEndZ - spiralStartZ) * t;
+    }
+    layerTime += emitter.extrudeTo(to.x, to.y, segSpeed, segLW, layerH, segZ).time;
+    moves.push({ type: 'wall-outer', from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, speed: segSpeed, extrusion: emitter.calculateExtrusion(segLen, segLW, layerH), lineWidth: segLW });
   }
   if (isClosed && reordered.length > 2) {
     const lastPt = reordered[reordered.length - 1], firstPt = reordered[0], segLen = lastPt.distanceTo(firstPt);
@@ -168,7 +306,10 @@ function emitOuterLoop(params: EmitOuterLoopParams): number {
       return perim * fallbackLineWidth * layerH;
     })() : Infinity;
     const closingLineWidth = variableLineWidth ? segmentLineWidth(params.lineWidth, reordered.length - 1, 0) : fallbackLineWidth;
-    const coastDist = coastVol > 0 && loopVol >= minCoastVol ? coastVol / (closingLineWidth * layerH) : 0;
+    // Spiralize disables coasting on the closing segment — a coast move
+    // would leave the head dwelling at varying Z mid-ramp and skip the
+    // final Z increment. Force a clean Z-up close instead.
+    const coastDist = (!spiralActive && coastVol > 0 && loopVol >= minCoastVol) ? coastVol / (closingLineWidth * layerH) : 0;
     if (coastDist > 0 && segLen > coastDist + 1e-3) {
       const t = 1 - coastDist / segLen;
       const midX = lastPt.x + (firstPt.x - lastPt.x) * t, midY = lastPt.y + (firstPt.y - lastPt.y) * t;
@@ -178,10 +319,17 @@ function emitOuterLoop(params: EmitOuterLoopParams): number {
       gcode.push(`G0 X${firstPt.x.toFixed(3)} Y${firstPt.y.toFixed(3)} F${(coastSpeed * 60).toFixed(0)} ; Coast`);
       emitter.currentX = firstPt.x; emitter.currentY = firstPt.y;
     } else {
-      layerTime += emitter.extrudeTo(firstPt.x, firstPt.y, outerWallSpeed, closingLineWidth, layerH).time;
+      let closeZ: number | undefined;
+      if (spiralActive && perimeter > 0) {
+        traveled += segLen;
+        const t = Math.min(1, traveled / perimeter);
+        closeZ = spiralStartZ + (spiralEndZ - spiralStartZ) * t;
+      }
+      layerTime += emitter.extrudeTo(firstPt.x, firstPt.y, outerWallSpeed, closingLineWidth, layerH, closeZ).time;
       moves.push({ type: 'wall-outer', from: { x: lastPt.x, y: lastPt.y }, to: { x: firstPt.x, y: firstPt.y }, speed: outerWallSpeed, extrusion: emitter.calculateExtrusion(segLen, closingLineWidth, layerH), lineWidth: closingLineWidth });
     }
   }
+  if (spiralActive) params.run.spiralPrevLayerZ = spiralEndZ;
   return layerTime;
 }
 
@@ -286,6 +434,20 @@ export function emitGroupedAndContourWalls(
     // (preserves the existing convention) and gap-fill paths run last
     // (after all real walls, since their open-ended tip would otherwise
     // interrupt the seam-aware ordering between adjacent walls).
+    // Spiralize / vase mode: above the solid bottom layers, emit only the
+    // outer wall — no inner walls, no gap-fill, no hole-outer walls. This
+    // is what produces the single-pass hollow shell. The bottom layers
+    // (li < bottomLayers, marked isSolidBottom) still get full wall stacks
+    // so the base prints as a normal solid floor. Emit the outer wall
+    // unconditionally for spiralize layers (ignoring `outerWallFirst`
+    // since there are no inner walls to sequence with), then skip the
+    // inner-wall block + outer-wall-after block by `continue`-ing.
+    if (pp.spiralizeContour && !layer.isSolidBottom) {
+      if (!groupOW && wallSets.length > 0) {
+        layer.layerTime += emitOuterLoop({ pipeline: slicer, run, layer, pp, li, layerZ, layerH, isFirstLayer, outerWallSpeed, gcode, emitter, moves, loop: wallSets[0], lineWidth: wallLineWidths[0] ?? pp.wallLineWidth, isClosed: wallClosed?.[0] ?? true, allowCoasting: false });
+      }
+      continue;
+    }
     const sourceWeight = (s?: 'outer' | 'hole' | 'gapfill') =>
       s === 'gapfill' ? 2 : s === 'hole' ? 1 : 0;
     const ascending = pp.outerWallFirst !== false;

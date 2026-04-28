@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { SlicerGCodeFlavor, StartEndMachineState } from '../../../../../types/slicer-gcode.types';
 import { GCodeEmitter } from '../../../gcode/emitter';
 import { appendHeaderPlaceholders, appendStartGCode } from '../../../gcode/startup';
+import { removeAllHoles as repairRemoveAllHoles } from '../../../geometry/coreGeometry';
 import type { SlicerExecutionPipeline, SliceGeometryRun, SliceRun } from './types';
 
 export type PreparedSliceGeometryRun = SliceGeometryRun & Pick<SliceRun, 'printer' | 'modelHeight'>;
@@ -70,17 +71,32 @@ function rememberMeshGeometry(cacheKey: string, value: CachedMeshGeometry): Cach
 function prepareMeshGeometry(
   slicer: SlicerExecutionPipeline,
   geometries: { geometry: THREE.BufferGeometry; transform: THREE.Matrix4 }[],
+  pp: SliceRun['pp'],
 ): CachedMeshGeometry {
+  // Cache pristine extracted triangles (without per-profile repairs) so the
+  // same geometry can serve multiple profiles. Per-profile repair passes
+  // run AFTER the cache lookup on a copy.
   const cacheKey = geometryCacheKey(geometries);
-  const cached = meshGeometryCache.get(cacheKey);
-  if (cached) return cached;
+  let cached = meshGeometryCache.get(cacheKey);
+  if (!cached) {
+    const triangles = slicer.extractTriangles(geometries);
+    if (triangles.length === 0) throw new Error('No triangles found in provided geometry.');
+    const modelBBox = slicer.computeBBox(triangles);
+    const modelHeight = modelBBox.max.z - modelBBox.min.z;
+    cached = rememberMeshGeometry(cacheKey, { triangles, modelBBox, modelHeight });
+  }
 
-  const triangles = slicer.extractTriangles(geometries);
-  if (triangles.length === 0) throw new Error('No triangles found in provided geometry.');
-
-  const modelBBox = slicer.computeBBox(triangles);
-  const modelHeight = modelBBox.max.z - modelBBox.min.z;
-  return rememberMeshGeometry(cacheKey, { triangles, modelBBox, modelHeight });
+  // Apply mesh-repair passes per profile setting. Each pass returns a new
+  // triangle list so the cached pristine list stays untouched.
+  if (pp.removeAllHoles) {
+    const repaired = repairRemoveAllHoles(cached.triangles);
+    if (repaired.added > 0) {
+      const modelBBox = slicer.computeBBox(repaired.triangles);
+      const modelHeight = modelBBox.max.z - modelBBox.min.z;
+      return { triangles: repaired.triangles, modelBBox, modelHeight };
+    }
+  }
+  return cached;
 }
 
 export function prepareSliceRun(
@@ -160,7 +176,7 @@ export function prepareSliceGeometryRun(
   slicer.cancelled = false;
   slicer.reportProgress('preparing', 0, 0, 0, 'Extracting triangles...');
 
-  const { triangles, modelBBox, modelHeight } = prepareMeshGeometry(slicer, geometries);
+  const { triangles, modelBBox, modelHeight } = prepareMeshGeometry(slicer, geometries, pp);
   const bedCenterX = printer.originCenter ? 0 : printer.buildVolume.x / 2;
   const bedCenterY = printer.originCenter ? 0 : printer.buildVolume.y / 2;
   const modelCenterX = (modelBBox.min.x + modelBBox.max.x) / 2;
@@ -180,6 +196,7 @@ export function prepareSliceGeometryRun(
       pp.adaptiveLayersMaxVariation,
       pp.adaptiveLayersVariationStep,
       zScale,
+      pp.adaptiveLayersTopographySize ?? 0,
     );
   } else {
     layerZs = [];
