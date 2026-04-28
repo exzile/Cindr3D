@@ -124,17 +124,17 @@ export class SlicePipelineFill extends SlicePipelineGeometry {
     });
   }
 
-  protected sortInfillLines(
-    lines: { from: THREE.Vector2; to: THREE.Vector2 }[],
-  ): { from: THREE.Vector2; to: THREE.Vector2 }[] {
+  protected sortInfillLines<T extends { from: THREE.Vector2; to: THREE.Vector2 }>(
+    lines: T[],
+  ): T[] {
     return sortInfillLinesFromModule(lines);
   }
 
-  protected sortInfillLinesNN(
-    lines: { from: THREE.Vector2; to: THREE.Vector2 }[],
+  protected sortInfillLinesNN<T extends { from: THREE.Vector2; to: THREE.Vector2 }>(
+    lines: T[],
     startX: number,
     startY: number,
-  ): { from: THREE.Vector2; to: THREE.Vector2 }[] {
+  ): T[] {
     return sortInfillLinesNNFromModule(lines, startX, startY);
   }
 }

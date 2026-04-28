@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SliceMove } from '../../../../types/slicer';
 import { inferDenseSkinPitchWidths } from './GCodeTubePreview';
 
-function topBottomMove(index: number, x: number, width = 0.5): SliceMove {
+function topBottomMove(_index: number, x: number, width = 0.5): SliceMove {
   return {
     type: 'top-bottom',
     from: { x, y: 0 },

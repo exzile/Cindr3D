@@ -337,7 +337,7 @@ function buildOrcaSegmentTemplateGeometry(
 
       let x = endpoint.x + horizontalSign * rx * halfW;
       let y = endpoint.y + horizontalSign * ry * halfW;
-      let z = centerZ + verticalSign * halfH;
+      const z = centerZ + verticalSign * halfH;
 
       if (vertexId === 2 || vertexId === 7) {
         if (Math.abs(angle) < 1e-6) {

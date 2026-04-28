@@ -13,7 +13,7 @@ import { SlicePipelineFill } from './base/SlicePipelineFill';
 export class SlicePipelineBase extends SlicePipelineFill {
   protected printerProfile: PrinterProfile;
   protected materialProfile: MaterialProfile;
-  protected printProfile: PrintProfile;
+  public printProfile: PrintProfile;
   protected onProgress?: (progress: SliceProgress) => void;
   protected cancelled = false;
 

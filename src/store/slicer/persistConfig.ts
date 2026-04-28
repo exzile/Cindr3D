@@ -21,7 +21,7 @@ export const slicerPersistConfig = {
   // hydrate hook below — `migrate` just hands the data through (we
   // don't strip fields, we clamp them).
   version: 5,
-  migrate: (persisted: unknown, _from: number) => persisted,
+  migrate: (persisted: unknown) => persisted,
   partialize: ((state) => ({
     printerProfiles: state.printerProfiles,
     materialProfiles: state.materialProfiles,

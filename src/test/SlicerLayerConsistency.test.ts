@@ -104,9 +104,11 @@ describe('Slicer layer consistency — line width', () => {
     for (const layer of result.layers) {
       const moves = wallMoves(layer);
       for (const move of moves) {
-        // Allow ±0.05 tolerance for adaptive-width walls (Arachne paths).
+        // Allow tolerance for adaptive-width walls (Arachne paths) and the
+        // first-layer scaling (initialLayerLineWidthFactor=125% → 0.5mm at
+        // wallLineWidth=0.4mm).
         expect(move.lineWidth).toBeGreaterThan(0.3);
-        expect(move.lineWidth).toBeLessThan(0.5);
+        expect(move.lineWidth).toBeLessThanOrEqual(0.5);
       }
     }
   });

@@ -148,8 +148,14 @@ describe('Slicer G-code snapshot — structural invariants', () => {
     const lines = gcode.split('\n');
     let prevE = 0;
     let unexplainedBigDrops = 0;
+    let relativePositioning = false;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      // G91 puts axes in relative mode; G90 returns to absolute. End-
+      // G-code commonly switches to G91 for the final retract/lift, and
+      // those E values are deltas (not absolute positions).
+      if (/^G91\b/.test(line)) { relativePositioning = true; continue; }
+      if (/^G90\b/.test(line)) { relativePositioning = false; continue; }
       // G92 E0 resets the counter — accept whatever follows.
       if (/^G92\b.*E0/.test(line)) {
         prevE = 0;
@@ -157,6 +163,7 @@ describe('Slicer G-code snapshot — structural invariants', () => {
       }
       const m = line.match(/^G1.*\bE(-?\d+\.?\d*)/);
       if (!m) continue;
+      if (relativePositioning) continue;
       const e = parseFloat(m[1]);
       if (!Number.isFinite(e)) continue;
       // Allow up to 50mm drops (covers worst-case wipe + retract). Bigger

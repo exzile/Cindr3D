@@ -500,7 +500,7 @@ export function emitContourInfill(
     const infillRegions = adaptiveOuterFilled ? [] : (exWalls.infillRegions.length > 0 ? exWalls.infillRegions : (innermostWall.length >= 3 ? [{ contour: innermostWall, holes: infillHoles }] : []));
     if (infillRegions.length === 0) continue;
 
-    let infillLines: { from: THREE.Vector2; to: THREE.Vector2 }[] = [];
+    let infillLines: InfillLineSegment[] = [];
     let infillMoveType: InfillMoveType = 'infill';
     let speed = infillSpeed;
     // Top-surface ultra-quality overrides apply ONLY to the topmost

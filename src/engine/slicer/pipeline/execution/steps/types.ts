@@ -54,6 +54,7 @@ export interface SlicerExecutionPipeline {
   classifyContours(contours: THREE.Vector2[][]): Contour[];
   closeContourGaps(contours: Contour[], radius: number): Contour[];
   offsetContour(contour: THREE.Vector2[], offset: number): THREE.Vector2[];
+  signedArea(points: THREE.Vector2[]): number;
   generateAdhesion(
     contours: Contour[],
     print: PrintProfile,
@@ -117,12 +118,12 @@ export interface SlicerExecutionPipeline {
   contourBBox(contour: THREE.Vector2[]): { minX: number; minY: number; maxX: number; maxY: number };
   contourToClosedPCRing(contour: THREE.Vector2[]): PCRing;
   multiPolygonToRegions(mp: PCMultiPolygon): Array<{ contour: THREE.Vector2[]; holes: THREE.Vector2[][] }>;
-  sortInfillLines(lines: Array<{ from: THREE.Vector2; to: THREE.Vector2 }>): Array<{ from: THREE.Vector2; to: THREE.Vector2 }>;
-  sortInfillLinesNN(
-    lines: Array<{ from: THREE.Vector2; to: THREE.Vector2 }>,
+  sortInfillLines<T extends { from: THREE.Vector2; to: THREE.Vector2 }>(lines: T[]): T[];
+  sortInfillLinesNN<T extends { from: THREE.Vector2; to: THREE.Vector2 }>(
+    lines: T[],
     currentX: number,
     currentY: number,
-  ): Array<{ from: THREE.Vector2; to: THREE.Vector2 }>;
+  ): T[];
   segmentInsideMaterial(
     from: THREE.Vector2,
     to: THREE.Vector2,

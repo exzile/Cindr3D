@@ -39,7 +39,7 @@ import type { BBox2, Contour, GeneratedPerimeters, Segment, Triangle } from '../
 import type { ArachneGenerationContext } from '../../arachne/types';
 
 export class SlicePipelineGeometry {
-  protected printProfile!: PrintProfile;
+  public printProfile!: PrintProfile;
   private clipper2OffsetWarningShown = false;
   private spiralizeArachneWarningShown = false;
   private perimeterCache = new Map<string, GeneratedPerimeters>();
@@ -113,7 +113,7 @@ export class SlicePipelineGeometry {
     });
   }
 
-  protected filterPerimetersByMinOdd(
+  public filterPerimetersByMinOdd(
     p: GeneratedPerimeters,
     minOdd: number,
   ): GeneratedPerimeters {
@@ -330,7 +330,7 @@ export class SlicePipelineGeometry {
     return lineContourIntersectionsFromUtils(p1, p2, contour);
   }
 
-  protected pointInContour(pt: THREE.Vector2, contour: THREE.Vector2[]): boolean {
+  public pointInContour(pt: THREE.Vector2, contour: THREE.Vector2[]): boolean {
     return pointInContourFromUtils(pt, contour);
   }
 

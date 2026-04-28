@@ -63,6 +63,7 @@ const _col = new THREE.Color();
 
 type ColorMode = 'type' | 'speed' | 'flow' | 'width' | 'layer-time' | 'wall-quality';
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function inferDenseSkinPitchWidths(
   moves: readonly SliceMove[],
 ): Map<number, number> {

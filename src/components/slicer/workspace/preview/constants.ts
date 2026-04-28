@@ -4,7 +4,7 @@ import type { SliceMove } from '../../../../types/slicer';
 // Hex strings — used by the HTML legend / color-scheme panel.
 export const MOVE_TYPE_COLORS: Record<SliceMove['type'], string> = {
   'wall-outer': '#df7a2d',
-  'wall-inner': '#d8c937',
+  'wall-inner': '#22bb44',
   // Gap-fill: medial-axis bead in narrow regions where no full wall fits.
   // Cura uses a yellow-green to flag these (visually distinct from
   // wall-inner so the user can spot quality concerns).
@@ -14,7 +14,7 @@ export const MOVE_TYPE_COLORS: Record<SliceMove['type'], string> = {
   // (resources/profiles/.../colors). The previous dark blue read as
   // "another infill type" in the preview; OrcaSlicer's distinct purple
   // visually separates the skin shells from sparse infill underneath.
-  'top-bottom': '#7b63d8',
+  'top-bottom': '#5f56c8',
   support:      '#cc44bb',
   skirt:        '#999999',
   brim:         '#999999',

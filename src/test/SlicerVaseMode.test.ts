@@ -63,9 +63,7 @@ describe('Vase mode (spiralizeContour)', () => {
       supportAngle: 30,
     });
     for (const layer of result.layers) {
-      const supportMoves = layer.moves.filter((m) =>
-        m.type === 'support-line' || m.type === 'support-interface' || m.type === 'support'
-      );
+      const supportMoves = layer.moves.filter((m) => m.type === 'support');
       expect(supportMoves).toHaveLength(0);
     }
   }, 60_000);

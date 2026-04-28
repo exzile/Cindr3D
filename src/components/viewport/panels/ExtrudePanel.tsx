@@ -13,16 +13,19 @@ import { GeometrySection } from './extrudePanel/GeometrySection';
 import { OptionsSection } from './extrudePanel/OptionsSection';
 import { ActionRow } from './extrudePanel/ActionRow';
 
+const EMPTY_SELECTED_IDS: string[] = [];
+
 export default function ExtrudePanel() {
   const activeTool = useCADStore((s) => s.activeTool);
   const sketches = useCADStore((s) => s.sketches);
   const features = useCADStore((s) => s.features);
-  // Defensive fallback to []: persisted CAD state from before
-  // `extrudeSelectedSketchIds` was added (or from a `merge` path that
-  // overwrote currentState's default []) can leave this undefined,
-  // which crashed the panel at `.map()` below. Worth keeping as a
-  // belt-and-suspenders guard even after the persist version bump.
-  const selectedIds = useCADStore((s) => s.extrudeSelectedSketchIds) ?? [];
+  // Defensive fallback to a stable empty array reference: persisted CAD
+  // state from before `extrudeSelectedSketchIds` was added (or from a
+  // `merge` path that overwrote currentState's default []) can leave
+  // this undefined, which crashed the panel at `.map()` below. Using a
+  // module-scoped constant keeps the reference stable so memoized hooks
+  // (e.g. profileOptions below) don't re-run on every render.
+  const selectedIds = useCADStore((s) => s.extrudeSelectedSketchIds) ?? EMPTY_SELECTED_IDS;
   const setSelectedIds = useCADStore((s) => s.setExtrudeSelectedSketchIds);
   const distance = useCADStore((s) => s.extrudeDistance);
   const setDistance = useCADStore((s) => s.setExtrudeDistance);
