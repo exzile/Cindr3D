@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { SliceMove } from '../../../../../types/slicer';
 import type { GeneratedPerimeters } from '../../../../../types/slicer-pipeline.types';
 import type { ContourWallData, SlicerExecutionPipeline, SliceLayerState, SliceRun } from './types';
+import { lineWidthSpecForLayer } from './lineWidths';
 
 type WallLineWidthSpec = number | number[];
 
@@ -197,8 +198,9 @@ function generatedPerimetersForContour(
     ? layer.precomputedContourWalls?.find((item) => item.contourIndex === contourIndex)
     : undefined;
   if (precomputed) return precomputed.perimeters;
+  const wallLineWidth = lineWidthSpecForLayer(pp.wallLineWidth, pp, layer.isFirstLayer) as number;
   return slicer.filterPerimetersByMinOdd(
-    slicer.generatePerimeters(contour.points, containedHoles, pp.wallCount, pp.wallLineWidth, pp.outerWallInset ?? 0, arachneContext),
+    slicer.generatePerimeters(contour.points, containedHoles, pp.wallCount, wallLineWidth, pp.outerWallInset ?? 0, arachneContext),
     pp.minOddWallLineWidth ?? 0,
   );
 }
@@ -216,6 +218,7 @@ export function emitGroupedAndContourWalls(
   const arachneContext = {
     sectionType: 'wall' as const,
     isTopOrBottomLayer: layer.isSolidTop || layer.isSolidBottom,
+    isFirstLayer: layer.isFirstLayer,
   };
   beginSeamLayer(run, li);
 

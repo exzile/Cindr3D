@@ -3,6 +3,7 @@ import type { MultiPolygon as PCMultiPolygon, Ring as PCRing } from 'polygon-cli
 import { booleanMultiPolygonClipper2Sync } from '../../../geometry/clipper2Boolean';
 import type { ContourWallData, SlicerExecutionPipeline, SliceLayerState, SliceRun } from './types';
 import type { SliceMove } from '../../../../../types/slicer';
+import { lineWidthForLayer } from './lineWidths';
 
 // ARACHNE-9.4A.4: worker awaits Clipper2 load before slicing — see SlicerWorker.ts.
 function requireMP(result: PCMultiPolygon | null, op: string): PCMultiPolygon {
@@ -133,6 +134,7 @@ export function pickBridgeFanSpeed(
 }
 
 type InfillMoveType = Extract<SliceMove['type'], 'infill' | 'top-bottom' | 'bridge'>;
+type InfillLineSegment = { from: THREE.Vector2; to: THREE.Vector2 };
 
 export function solidSkinCenterlineInset(lineWidth: number, skinOverlap: number): number {
   return Math.max(0, lineWidth * 0.5 - skinOverlap);
@@ -148,6 +150,82 @@ export function skinRemovalWidthForLayer(
   return pp.skinRemovalWidth ?? 0;
 }
 
+export function sortSolidSkinLinesForEmission(
+  lines: InfillLineSegment[],
+  lineWidth: number,
+): InfillLineSegment[] {
+  if (lines.length <= 1) return lines;
+
+  let longest = lines[0];
+  let longestLenSq = -1;
+  for (const line of lines) {
+    const dx = line.to.x - line.from.x;
+    const dy = line.to.y - line.from.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq > longestLenSq) {
+      longest = line;
+      longestLenSq = lenSq;
+    }
+  }
+  if (longestLenSq <= 1e-9) return lines;
+
+  const len = Math.sqrt(longestLenSq);
+  const ux = (longest.to.x - longest.from.x) / len;
+  const uy = (longest.to.y - longest.from.y) / len;
+  const nx = -uy;
+  const ny = ux;
+  const rowTolerance = Math.max(1e-4, lineWidth * 0.35);
+
+  const rows: Array<{ coord: number; lines: InfillLineSegment[] }> = [];
+  for (const line of lines) {
+    const mx = (line.from.x + line.to.x) * 0.5;
+    const my = (line.from.y + line.to.y) * 0.5;
+    const rowCoord = mx * nx + my * ny;
+    let row = rows.find((candidate) => Math.abs(candidate.coord - rowCoord) <= rowTolerance);
+    if (!row) {
+      row = { coord: rowCoord, lines: [] };
+      rows.push(row);
+    }
+    row.coord = (row.coord * row.lines.length + rowCoord) / (row.lines.length + 1);
+    row.lines.push(line);
+  }
+
+  rows.sort((a, b) => a.coord - b.coord);
+
+  const sorted: InfillLineSegment[] = [];
+  const projectedStart = (line: InfillLineSegment) => line.from.x * ux + line.from.y * uy;
+  const projectedEnd = (line: InfillLineSegment) => line.to.x * ux + line.to.y * uy;
+  const projectedMin = (line: InfillLineSegment) => Math.min(projectedStart(line), projectedEnd(line));
+  const projectedMax = (line: InfillLineSegment) => Math.max(projectedStart(line), projectedEnd(line));
+
+  rows.forEach((row, rowIndex) => {
+    const forward = rowIndex % 2 === 0;
+    row.lines.sort((a, b) => forward
+      ? projectedMin(a) - projectedMin(b)
+      : projectedMax(b) - projectedMax(a));
+
+    for (const line of row.lines) {
+      const start = projectedStart(line);
+      const end = projectedEnd(line);
+      const isForward = start <= end;
+      sorted.push(forward === isForward ? line : { from: line.to, to: line.from });
+    }
+  });
+
+  return sorted;
+}
+
+export function shouldConnectInfillLinesForEmission(
+  isSolid: boolean,
+  connectTopBottomPolygons: boolean | undefined,
+  connectInfillLines: boolean | undefined,
+  infillRegionCount: number,
+): boolean {
+  return isSolid
+    ? (connectTopBottomPolygons ?? connectInfillLines ?? false)
+    : (connectInfillLines ?? false) && infillRegionCount <= 1;
+}
+
 export function emitContourInfill(
   pipeline: unknown,
   run: SliceRun,
@@ -160,7 +238,8 @@ export function emitContourInfill(
 
   for (const item of contoursData) {
     const { contour, exWalls, wallSets, wallLineWidths, outerWallCount, infillHoles } = item;
-    const adaptiveOuterFilled = outerWallCount === 1 && representativeLineWidth(wallLineWidths[0], pp.wallLineWidth) > pp.wallLineWidth + 1e-6;
+    const layerWallLineWidth = lineWidthForLayer(pp.wallLineWidth, pp, isFirstLayer);
+    const adaptiveOuterFilled = outerWallCount === 1 && representativeLineWidth(wallLineWidths[0], layerWallLineWidth) > layerWallLineWidth + 1e-6;
     const innermostWall = adaptiveOuterFilled ? [] : outerWallCount > 0 ? wallSets[outerWallCount - 1] : contour.points;
     const infillRegions = adaptiveOuterFilled ? [] : (exWalls.infillRegions.length > 0 ? exWalls.infillRegions : (innermostWall.length >= 3 ? [{ contour: innermostWall, holes: infillHoles }] : []));
     if (infillRegions.length === 0) continue;
@@ -168,9 +247,10 @@ export function emitContourInfill(
     let infillLines: { from: THREE.Vector2; to: THREE.Vector2 }[] = [];
     let infillMoveType: InfillMoveType = 'infill';
     let speed = infillSpeed;
-    const lineWidth = isSolidTop
+    const baseLineWidth = isSolidTop
       ? (pp.topSurfaceSkinLineWidth ?? pp.topBottomLineWidth ?? pp.infillLineWidth)
       : pp.infillLineWidth;
+    const lineWidth = lineWidthForLayer(baseLineWidth, pp, isFirstLayer);
 
     if (isFirstLayer && isSolid && pp.initialLayerBottomFlow != null) emitter.currentLayerFlow = pp.initialLayerBottomFlow / 100;
 
@@ -330,9 +410,18 @@ export function emitContourInfill(
       emitter.setJerk(isFirstLayer ? pp.jerkInitialLayer : pp.jerkInfill, pp.jerkPrint);
     }
     gcode.push(`; ${isSolid ? 'Solid fill' : 'Infill'}`);
-    const sorted = (!isSolid && (pp.infillTravelOptimization ?? false)) ? slicer.sortInfillLinesNN(infillLines, emitter.currentX, emitter.currentY) : slicer.sortInfillLines(infillLines);
-    const connect = (pp.connectInfillLines ?? false) && infillRegions.length <= 1;
-    const connectTol = lineWidth * 1.5;
+    const sorted = isSolid
+      ? sortSolidSkinLinesForEmission(infillLines, lineWidth)
+      : (pp.infillTravelOptimization ?? false)
+        ? slicer.sortInfillLinesNN(infillLines, emitter.currentX, emitter.currentY)
+        : slicer.sortInfillLines(infillLines);
+    const connect = shouldConnectInfillLinesForEmission(
+      isSolid,
+      pp.connectTopBottomPolygons,
+      pp.connectInfillLines,
+      infillRegions.length,
+    );
+    const connectTol = lineWidth * (isSolid ? 2.1 : 1.5);
     const startExt = pp.infillStartMoveInwardsLength ?? 0;
     const endExt = pp.infillEndMoveInwardsLength ?? 0;
     for (let idx = 0; idx < sorted.length; idx++) {

@@ -110,17 +110,19 @@ describe('Preview tube — chain length preservation', () => {
 });
 
 describe('Preview tube — Orca-style solid skin ends', () => {
-  it('does not trim open top-bottom tube ring centers before adding point caps', () => {
+  it('renders top-bottom as Orca-style fixed-width segment templates with point caps', () => {
     const chain = makeChain([[0, 0], [10, 0]], 0.4, false, 'top-bottom');
     const geo = buildChainTube(chain, 0.2, 0.2);
     const positions = geo!.getAttribute('position').array as Float32Array;
-    const start = getRingCenter(positions, 0);
-    const end = getRingCenter(positions, 1);
+    const box = new THREE.Box3().setFromBufferAttribute(
+      geo!.getAttribute('position') as THREE.BufferAttribute,
+    );
 
-    expect(start.x).toBeCloseTo(0, 5);
-    expect(start.y).toBeCloseTo(0, 5);
-    expect(end.x).toBeCloseTo(10, 5);
-    expect(end.y).toBeCloseTo(0, 5);
+    expect(box.min.x).toBeCloseTo(-0.2, 5);
+    expect(box.max.x).toBeCloseTo(10.2, 5);
+    expect(box.max.y - box.min.y).toBeCloseTo(0.4, 5);
+    expect(box.max.z - box.min.z).toBeCloseTo(0.2, 5);
+    expect(positions.length).toBe(16 * 3 * 3);
   });
 
   it('renders sparse infill tube ring centers at exact gcode endpoints (no trim)', () => {

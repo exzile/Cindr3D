@@ -186,6 +186,7 @@ export class SlicePipelineGeometry {
       outerWallInset,
       context.sectionType ?? 'wall',
       context.isTopOrBottomLayer ? 1 : 0,
+      context.isFirstLayer ? 1 : 0,
       this.arachneProfileKey(),
       SlicePipelineGeometry.contourKey(outerContour),
       ...holeContours.map((hole) => SlicePipelineGeometry.contourKey(hole)),

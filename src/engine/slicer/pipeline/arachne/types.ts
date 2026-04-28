@@ -20,6 +20,7 @@ export type ArachneSectionType =
 export interface ArachneGenerationContext {
   sectionType?: ArachneSectionType;
   isTopOrBottomLayer?: boolean;
+  isFirstLayer?: boolean;
 }
 
 export interface ArachneBackend {

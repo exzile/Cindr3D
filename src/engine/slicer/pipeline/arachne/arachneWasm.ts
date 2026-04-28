@@ -101,8 +101,8 @@ export function configValues(
   printProfile: PrintProfile,
   context: ArachneGenerationContext = {},
 ): Float64Array {
-  const outerWidth = printProfile.outerWallLineWidth ?? lineWidth;
-  const innerWidth = printProfile.innerWallLineWidth ?? lineWidth;
+  const outerWidth = context.isFirstLayer ? lineWidth : (printProfile.outerWallLineWidth ?? lineWidth);
+  const innerWidth = context.isFirstLayer ? lineWidth : (printProfile.innerWallLineWidth ?? lineWidth);
   const minWallLW = printProfile.minWallLineWidth ?? lineWidth * 0.5;
   const minEvenLW = printProfile.minEvenWallLineWidth ?? minWallLW;
   // Cura calls this `min_odd_wall_line_width` (the min for the odd

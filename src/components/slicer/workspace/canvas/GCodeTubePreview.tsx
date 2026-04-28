@@ -34,6 +34,13 @@ const PREVIEW_LOOP_CLOSE_MAX_MM = 0.08;
 const DEFAULT_FILAMENT_DIAMETER_MM = 1.75;
 const MIN_PREVIEW_LINE_WIDTH_MM = 0.02;
 const MAX_PREVIEW_LINE_WIDTH_FACTOR = 3;
+// Keep solid-skin roads faithful to the G-code width while matching Orca's
+// dense-skin preview behavior. If neighboring centerlines are actually spaced
+// at about one line width, the roads should visually meet. If the pitch is
+// meaningfully larger than the move width, keep that real gap visible.
+const SOLID_SKIN_CONTACT_ALLOWANCE = 1.015;
+const SOLID_SKIN_PITCH_TOLERANCE = 1.12;
+const SOLID_SKIN_MIN_PITCH_FACTOR = 0.72;
 
 // cos(threshold) for chain-splitting. Chain breaks are only for extreme
 // bends (> 135°, i.e. near-U-turns) where the miter math fundamentally
@@ -51,11 +58,58 @@ const MAX_PREVIEW_LINE_WIDTH_FACTOR = 3;
 //
 // cos(135°) = -0.707 — only near-U-turns split.
 const CHAIN_BREAK_DOT_THRESHOLD = -0.707;
-
 // Scratch colour reused during colour computation inside the tube builder.
 const _col = new THREE.Color();
 
 type ColorMode = 'type' | 'speed' | 'flow' | 'width' | 'layer-time' | 'wall-quality';
+
+export function inferDenseSkinPitchWidths(
+  moves: readonly SliceMove[],
+): Map<number, number> {
+  const groups = new Map<string, Array<{ index: number; offset: number; width: number }>>();
+  for (let i = 0; i < moves.length; i++) {
+    const move = moves[i];
+    if (move.type !== 'top-bottom' || move.extrusion <= 0) continue;
+    const dx = move.to.x - move.from.x;
+    const dy = move.to.y - move.from.y;
+    const len = Math.hypot(dx, dy);
+    const width = Math.max(MIN_PREVIEW_LINE_WIDTH_MM, move.lineWidth ?? 0.4);
+    if (len < width * 2) continue;
+
+    let angle = Math.atan2(dy, dx);
+    if (angle < 0) angle += Math.PI;
+    if (angle >= Math.PI) angle -= Math.PI;
+    const angleKey = (Math.round(angle * 1000) / 1000).toFixed(3);
+    const mx = (move.from.x + move.to.x) * 0.5;
+    const my = (move.from.y + move.to.y) * 0.5;
+    const nx = -Math.sin(angle);
+    const ny = Math.cos(angle);
+    const offset = mx * nx + my * ny;
+    const list = groups.get(angleKey) ?? [];
+    list.push({ index: i, offset, width });
+    groups.set(angleKey, list);
+  }
+
+  const pitchWidths = new Map<number, number>();
+  for (const list of groups.values()) {
+    if (list.length < 3) continue;
+    list.sort((a, b) => a.offset - b.offset);
+    for (let i = 0; i < list.length; i++) {
+      const prev = i > 0 ? Math.abs(list[i].offset - list[i - 1].offset) : Infinity;
+      const next = i + 1 < list.length ? Math.abs(list[i + 1].offset - list[i].offset) : Infinity;
+      const pitch = Math.min(prev, next);
+      const width = list[i].width;
+      if (
+        Number.isFinite(pitch)
+        && pitch >= width * SOLID_SKIN_MIN_PITCH_FACTOR
+        && pitch <= width * SOLID_SKIN_PITCH_TOLERANCE
+      ) {
+        pitchWidths.set(list[i].index, Math.max(width * SOLID_SKIN_CONTACT_ALLOWANCE, pitch * SOLID_SKIN_CONTACT_ALLOWANCE));
+      }
+    }
+  }
+  return pitchWidths;
+}
 
 // ---------------------------------------------------------------------------
 // LayerLines — chain-based tube rendering for a single layer
@@ -193,6 +247,7 @@ export function LayerLines({
     const retractPos: number[] = [];
     const chains: TubeChain[] = [];
     let current: TubeChain | null = null;
+    const denseSkinPitchWidths = inferDenseSkinPitchWidths(moves);
 
     const samePoint = (a: { x: number; y: number }, b: { x: number; y: number }) =>
       Math.abs(a.x - b.x) <= PREVIEW_JOIN_EPSILON
@@ -200,6 +255,9 @@ export function LayerLines({
 
     const lineWidthFromGCode = (move: SliceMove, segmentLength: number): number => {
       const nominal = Math.max(MIN_PREVIEW_LINE_WIDTH_MM, move.lineWidth ?? 0.4);
+      if (move.type === 'top-bottom') {
+        return nominal * PREVIEW_LINE_SCALE;
+      }
       const beadHeight = Math.max(0.02, move.layerHeight ?? layerHeight);
       if (move.extrusion <= 0 || segmentLength <= 1e-6 || beadHeight <= 0) {
         return nominal * PREVIEW_LINE_SCALE;
@@ -237,6 +295,9 @@ export function LayerLines({
       if (segLen < 1e-6) continue;
 
       const lw = lineWidthFromGCode(move, segLen);
+      const renderLw = move.type === 'top-bottom'
+        ? (denseSkinPitchWidths.get(i) ?? (lw * SOLID_SKIN_CONTACT_ALLOWANCE))
+        : lw;
       const col = colorOf(move);
       const ref: ShaftMoveData = {
         type: move.type,
@@ -255,7 +316,7 @@ export function LayerLines({
         && current.type === move.type
         && samePoint(current.points[current.points.length - 1], move.from);
 
-      if (extendable && current!.points.length >= 2) {
+      if (extendable && current!.points.length >= 2 && !TRIMMED_FILL_TYPES.has(current!.type)) {
         const lastIdx = current!.points.length - 1;
         const prev = current!.points[lastIdx - 1];
         const here = current!.points[lastIdx];
@@ -276,15 +337,15 @@ export function LayerLines({
       }
 
       if (extendable && current) {
-        current.points.push({ x: move.to.x, y: move.to.y, lw });
+        current.points.push({ x: move.to.x, y: move.to.y, lw: renderLw });
         current.segColors.push(col);
         current.moveRefs.push(ref);
       } else {
         current = {
           type: move.type,
           points: [
-            { x: move.from.x, y: move.from.y, lw },
-            { x: move.to.x,   y: move.to.y,   lw },
+            { x: move.from.x, y: move.from.y, lw: renderLw },
+            { x: move.to.x,   y: move.to.y,   lw: renderLw },
           ],
           segColors: [col],
           moveRefs: [ref],

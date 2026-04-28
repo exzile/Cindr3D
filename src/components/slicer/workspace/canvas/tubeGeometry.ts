@@ -54,6 +54,21 @@ const TUBE_RING_LAYOUT: ReadonlyArray<{ perpF: number; vertF: number; nPerpF: nu
     return { perpF: c, vertF: s, nPerpF: c, nZF: s };
   });
 
+const PRESSED_ROAD_RING_LAYOUT: ReadonlyArray<{ perpF: number; vertF: number; nPerpF: number; nZF: number }> = [
+  { perpF: 1, vertF: -0.12, nPerpF: 1, nZF: -0.12 },
+  { perpF: 1, vertF: 0.42, nPerpF: 0.86, nZF: 0.5 },
+  { perpF: 0.78, vertF: 0.94, nPerpF: 0.3, nZF: 0.95 },
+  { perpF: 0.35, vertF: 1, nPerpF: 0, nZF: 1 },
+  { perpF: -0.35, vertF: 1, nPerpF: 0, nZF: 1 },
+  { perpF: -0.78, vertF: 0.94, nPerpF: -0.3, nZF: 0.95 },
+  { perpF: -1, vertF: 0.42, nPerpF: -0.86, nZF: 0.5 },
+  { perpF: -1, vertF: -0.65, nPerpF: -0.78, nZF: -0.62 },
+  { perpF: -0.92, vertF: -1, nPerpF: -0.35, nZF: -0.94 },
+  { perpF: -0.35, vertF: -1, nPerpF: 0, nZF: -1 },
+  { perpF: 0.35, vertF: -1, nPerpF: 0, nZF: -1 },
+  { perpF: 0.92, vertF: -1, nPerpF: 0.35, nZF: -0.94 },
+];
+
 /** Polygon-to-curve subdivision factor for the chain tube. Each polygon
  *  segment is sampled at this many additional points using a centripetal
  *  Catmull-Rom curve through the polygon vertices. Higher = smoother tubes
@@ -108,6 +123,7 @@ export const TRIMMED_FILL_TYPES = new Set(['infill', 'top-bottom', 'bridge', 'ir
 const FILL_END_TRIM_FACTOR = 0;
 const SOLID_SKIN_END_TRIM_FACTOR = 0;
 const OPEN_WALL_END_TRIM_FACTOR = 0;
+const POINTY_CAP_EXTENSION_FACTOR = 1;
 
 /** Shared material for the extrusion-tube meshes. `vertexColors: true` lets
  *  each chain carry per-point colours via its BufferGeometry's colour
@@ -234,11 +250,137 @@ function endTrimFactorForType(type: string): number {
   return TRIMMED_FILL_TYPES.has(type) ? FILL_END_TRIM_FACTOR : OPEN_WALL_END_TRIM_FACTOR;
 }
 
+function ringLayoutForType(type: string) {
+  return type === 'top-bottom' ? PRESSED_ROAD_RING_LAYOUT : TUBE_RING_LAYOUT;
+}
+
+function roadShadeForLayout(type: string, layout: { vertF: number }): number {
+  if (type !== 'top-bottom') return 1;
+  if (layout.vertF > 0.9) return 0.96;
+  if (layout.vertF > 0) return 0.68;
+  return 0.42;
+}
+
+function buildOrcaSegmentTemplateGeometry(
+  chain: TubeChain,
+  layerHeight: number,
+  baseZ: number,
+): THREE.BufferGeometry | null {
+  const n = chain.points.length;
+  if (n < 2) return null;
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const colors: number[] = [];
+  const indices: number[] = [];
+  const topZ = baseZ;
+  const bottomZ = baseZ - layerHeight;
+  const midZ = baseZ - layerHeight / 2;
+
+  const pushTri = (
+    a: THREE.Vector3,
+    b: THREE.Vector3,
+    c: THREE.Vector3,
+    normal: THREE.Vector3,
+    color: [number, number, number],
+    shade: number,
+  ) => {
+    const start = positions.length / 3;
+    positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+    normals.push(
+      normal.x, normal.y, normal.z,
+      normal.x, normal.y, normal.z,
+      normal.x, normal.y, normal.z,
+    );
+    colors.push(
+      color[0] * shade, color[1] * shade, color[2] * shade,
+      color[0] * shade, color[1] * shade, color[2] * shade,
+      color[0] * shade, color[1] * shade, color[2] * shade,
+    );
+    indices.push(start, start + 1, start + 2);
+  };
+
+  const pushQuad = (
+    a: THREE.Vector3,
+    b: THREE.Vector3,
+    c: THREE.Vector3,
+    d: THREE.Vector3,
+    normal: THREE.Vector3,
+    color: [number, number, number],
+    shade: number,
+  ) => {
+    pushTri(a, b, c, normal, color, shade);
+    pushTri(a, c, d, normal, color, shade);
+  };
+
+  const segCount = chain.isClosed ? n : n - 1;
+  for (let i = 0; i < segCount; i++) {
+    const a = chain.points[i];
+    const b = chain.points[(i + 1) % n];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-6) continue;
+
+    const tx = dx / len;
+    const ty = dy / len;
+    const px = -ty;
+    const py = tx;
+    const width = Math.max(0.01, ((a.lw + b.lw) * 0.5));
+    const halfW = width / 2;
+    const color = chain.segColors[i] ?? chain.segColors[chain.segColors.length - 1] ?? [1, 1, 1];
+
+    const startLeftTop = new THREE.Vector3(a.x + px * halfW, a.y + py * halfW, topZ);
+    const startRightTop = new THREE.Vector3(a.x - px * halfW, a.y - py * halfW, topZ);
+    const endLeftTop = new THREE.Vector3(b.x + px * halfW, b.y + py * halfW, topZ);
+    const endRightTop = new THREE.Vector3(b.x - px * halfW, b.y - py * halfW, topZ);
+    const startLeftBottom = new THREE.Vector3(a.x + px * halfW, a.y + py * halfW, bottomZ);
+    const startRightBottom = new THREE.Vector3(a.x - px * halfW, a.y - py * halfW, bottomZ);
+    const endLeftBottom = new THREE.Vector3(b.x + px * halfW, b.y + py * halfW, bottomZ);
+    const endRightBottom = new THREE.Vector3(b.x - px * halfW, b.y - py * halfW, bottomZ);
+    const startApex = new THREE.Vector3(a.x - tx * halfW, a.y - ty * halfW, midZ);
+    const endApex = new THREE.Vector3(b.x + tx * halfW, b.y + ty * halfW, midZ);
+
+    const topN = new THREE.Vector3(0, 0, 1);
+    const bottomN = new THREE.Vector3(0, 0, -1);
+    const leftN = new THREE.Vector3(px, py, 0);
+    const rightN = new THREE.Vector3(-px, -py, 0);
+    const startN = new THREE.Vector3(-tx, -ty, 0);
+    const endN = new THREE.Vector3(tx, ty, 0);
+
+    pushQuad(startLeftTop, endLeftTop, endRightTop, startRightTop, topN, color, 1.0);
+    pushQuad(startRightBottom, endRightBottom, endLeftBottom, startLeftBottom, bottomN, color, 0.45);
+    pushQuad(startLeftBottom, endLeftBottom, endLeftTop, startLeftTop, leftN, color, 0.72);
+    pushQuad(startRightTop, endRightTop, endRightBottom, startRightBottom, rightN, color, 0.72);
+
+    pushTri(startApex, startLeftTop, startLeftBottom, startN, color, 0.82);
+    pushTri(startApex, startRightBottom, startRightTop, startN, color, 0.82);
+    pushTri(startApex, startRightTop, startLeftTop, startN, color, 0.94);
+    pushTri(startApex, startLeftBottom, startRightBottom, startN, color, 0.58);
+    pushTri(endApex, endLeftBottom, endLeftTop, endN, color, 0.82);
+    pushTri(endApex, endRightTop, endRightBottom, endN, color, 0.82);
+    pushTri(endApex, endLeftTop, endRightTop, endN, color, 0.94);
+    pushTri(endApex, endRightBottom, endLeftBottom, endN, color, 0.58);
+  }
+
+  if (positions.length === 0) return null;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geo.setIndex(indices);
+  return geo;
+}
+
 export function buildChainTube(
   chain: TubeChain,
   layerHeight: number,
   baseZ: number,
 ): THREE.BufferGeometry | null {
+  if (chain.type === 'top-bottom') {
+    return buildOrcaSegmentTemplateGeometry(chain, layerHeight, baseZ);
+  }
+
   // Smooth circular-feature chains via Catmull-Rom subdivision before
   // building the tube. This removes the per-vertex "tab" pattern caused by
   // abrupt tangent changes at polygon corners — the issue OrcaSlicer hides
@@ -249,6 +391,7 @@ export function buildChainTube(
   if (n < 2) return null;
 
   const RADIAL = TUBE_RADIAL_SEGMENTS;
+  const ringLayout = ringLayoutForType(chain.type);
   const ringSize = RADIAL + 1;         // duplicate vertex to avoid seam artefacts
   const vExt = layerHeight / 2;
   const centerZ = baseZ - vExt;
@@ -363,7 +506,7 @@ export function buildChainTube(
     const [cr, cg, cb] = ringColor(i);
 
     for (let r = 0; r <= RADIAL; r++) {
-      const layout = TUBE_RING_LAYOUT[r % RADIAL];
+      const layout = ringLayout[r % RADIAL];
       positions.push(
         p.x + layout.perpF * perp.x * hExt,
         p.y + layout.perpF * perp.y * hExt,
@@ -372,7 +515,8 @@ export function buildChainTube(
       // Outward face normal (corners use averaged adjacent-face normals
       // for a soft Phong roll-off, not a hard discontinuity).
       normals.push(layout.nPerpF * perp.x, layout.nPerpF * perp.y, layout.nZF);
-      colors.push(cr, cg, cb);
+      const shade = roadShadeForLayout(sourceChain.type, layout);
+      colors.push(cr * shade, cg * shade, cb * shade);
     }
   }
 
@@ -492,8 +636,8 @@ function appendApexCap(
   const ty = p.tangent.y * sgn;
 
   const apexIndex = positions.length / 3;
-  const ax = p.tipPoint.x + tx * hExt;
-  const ay = p.tipPoint.y + ty * hExt;
+  const ax = p.tipPoint.x + tx * hExt * POINTY_CAP_EXTENSION_FACTOR;
+  const ay = p.tipPoint.y + ty * hExt * POINTY_CAP_EXTENSION_FACTOR;
   const az = p.centerZ;
   positions.push(ax, ay, az);
   // Apex normal points along the tangent axis — gives the cap a soft

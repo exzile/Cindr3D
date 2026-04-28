@@ -27,26 +27,30 @@ describe('Slicer → preview pipeline — type mode', () => {
     const data = buildLayerGeometry(layer, 'type', [0, 1]);
     expect(data.extrusionPositions.length).toBeGreaterThan(0);
     expect(data.extrusionColors.length).toBe(data.extrusionPositions.length);
-    // At least one of the colors should match wall-outer (red-dominant).
-    let foundOuterRed = false;
+    const outer = MOVE_TYPE_THREE_COLORS['wall-outer'];
+    let foundOuter = false;
     for (let i = 0; i < data.extrusionColors.length; i += 3) {
       const r = data.extrusionColors[i], g = data.extrusionColors[i + 1], b = data.extrusionColors[i + 2];
-      if (r > g && r > b && r > 0.4) { foundOuterRed = true; break; }
+      if (Math.abs(r - outer.r) < 1e-6 && Math.abs(g - outer.g) < 1e-6 && Math.abs(b - outer.b) < 1e-6) {
+        foundOuter = true;
+        break;
+      }
     }
-    expect(foundOuterRed).toBe(true);
+    expect(foundOuter).toBe(true);
   }, 60_000);
 
-  it('multi-wall slice produces both wall-outer (red) AND wall-inner (green) colors', async () => {
+  it('multi-wall slice produces both wall-outer and wall-inner colors', async () => {
     const result = await sliceGeometry(buildBox(20, 20, 1), { wallCount: 3 });
     const layer = result.layers[2];
     const data = buildLayerGeometry(layer, 'type', [0, 1]);
+    const outer = MOVE_TYPE_THREE_COLORS['wall-outer'];
+    const inner = MOVE_TYPE_THREE_COLORS['wall-inner'];
     let outerCount = 0;
     let innerCount = 0;
-    for (let i = 0; i < data.extrusionColors.length; i += 6) {
-      const r = data.extrusionColors[i];
-      const g = data.extrusionColors[i + 1];
-      if (r > g) outerCount++;
-      else if (g > r) innerCount++;
+    for (let i = 0; i < data.extrusionColors.length; i += 3) {
+      const r = data.extrusionColors[i], g = data.extrusionColors[i + 1], b = data.extrusionColors[i + 2];
+      if (Math.abs(r - outer.r) < 1e-6 && Math.abs(g - outer.g) < 1e-6 && Math.abs(b - outer.b) < 1e-6) outerCount++;
+      if (Math.abs(r - inner.r) < 1e-6 && Math.abs(g - inner.g) < 1e-6 && Math.abs(b - inner.b) < 1e-6) innerCount++;
     }
     expect(outerCount).toBeGreaterThan(0);
     expect(innerCount).toBeGreaterThan(0);
@@ -127,6 +131,25 @@ describe('Slicer → preview pipeline — flow mode', () => {
 });
 
 describe('Slicer → preview pipeline — width mode', () => {
+  it('applies initial-layer line width factor to first-layer skin and walls', async () => {
+    const result = await sliceGeometry(buildBox(20, 20, 1), {
+      wallGenerator: 'classic',
+      lineWidth: 0.4,
+      wallLineWidth: 0.4,
+      outerWallLineWidth: 0.4,
+      innerWallLineWidth: 0.45,
+      topBottomLineWidth: 0.4,
+      infillLineWidth: 0.45,
+      initialLayerLineWidthFactor: 125,
+    });
+    const firstLayer = result.layers[0];
+    const topBottom = firstLayer.moves.find((move) => move.type === 'top-bottom');
+    const wall = firstLayer.moves.find((move) => move.type === 'wall-outer' || move.type === 'wall-inner');
+
+    expect(topBottom?.lineWidth).toBeCloseTo(0.5, 3);
+    expect(wall?.lineWidth).toBeCloseTo(0.5, 3);
+  }, 60_000);
+
   it('width range across an Arachne slice covers the full bead-width spectrum', async () => {
     const result = await sliceGeometry(buildBox(20, 20, 2), {
       wallGenerator: 'arachne',
@@ -145,7 +168,7 @@ describe('Slicer → preview pipeline — width mode', () => {
     // fixed-width generator with all line widths pinned to a single
     // value, so opt out of Arachne and pin every per-feature line
     // width explicitly.
-    const result = await sliceGeometry(buildBox(20, 20, 1), {
+    const result = await sliceGeometry(buildBox(20, 20, 3), {
       wallGenerator: 'classic',
       lineWidth: 0.45,
       wallLineWidth: 0.45,
@@ -155,7 +178,7 @@ describe('Slicer → preview pipeline — width mode', () => {
       topBottomLineWidth: 0.45,
       initialLayerLineWidthFactor: 100,
     });
-    const layer = result.layers[2];
+    const layer = result.layers[Math.min(8, result.layers.length - 1)];
     const range = computeRange([layer], 0, 'width');
     const data = buildLayerGeometry(layer, 'width', range);
     // Classic uses uniform lineWidth → all colors should be (very) similar.

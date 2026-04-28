@@ -6,6 +6,7 @@ import { prepareSliceGeometryRun } from '../engine/slicer/pipeline/execution/ste
 import { prepareLayerGeometryState } from '../engine/slicer/pipeline/execution/steps/prepareLayerState';
 import { loadArachneModule } from '../engine/slicer/pipeline/arachne';
 import type { SliceGeometryRun, SliceLayerGeometryState } from '../engine/slicer/pipeline/execution/steps/types';
+import { lineWidthForLayer } from '../engine/slicer/pipeline/execution/steps/lineWidths';
 import type { Contour, Triangle } from '../types/slicer-pipeline.types';
 import type { GeneratedPerimeters } from '../types/slicer-pipeline.types';
 import type { MaterialProfile, PrinterProfile, PrintProfile } from '../types/slicer';
@@ -154,14 +155,16 @@ function precomputeContourWalls(slicer: Slicer, layer: SliceLayerGeometryState):
   const arachneContext = {
     sectionType: 'wall' as const,
     isTopOrBottomLayer: layer.isSolidTop || layer.isSolidBottom,
+    isFirstLayer: layer.isFirstLayer,
   };
   const precomputed = [];
   for (let contourIndex = 0; contourIndex < layer.contours.length; contourIndex++) {
     const contour = layer.contours[contourIndex];
     if (!contour.isOuter) continue;
     const containedHoles = containedHolesForContour(slicer, layer.contours, contour);
+    const wallLineWidth = lineWidthForLayer(pp.wallLineWidth, pp, layer.isFirstLayer);
     const perimeters = slicer.filterPerimetersByMinOdd(
-      slicer.generatePerimeters(contour.points, containedHoles, pp.wallCount, pp.wallLineWidth, pp.outerWallInset ?? 0, arachneContext),
+      slicer.generatePerimeters(contour.points, containedHoles, pp.wallCount, wallLineWidth, pp.outerWallInset ?? 0, arachneContext),
       pp.minOddWallLineWidth ?? 0,
     );
     precomputed.push({ contourIndex, perimeters });

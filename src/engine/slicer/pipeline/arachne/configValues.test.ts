@@ -65,6 +65,15 @@ describe('arachneWasm configValues — field mapping', () => {
     expect(buf[FIELD.bead_width_x]).toBe(0.48);
   });
 
+  it('uses the first-layer absolute line width for both outer and inner walls', () => {
+    const buf = configValues(baseWallCount, 0.5, baseInset, {
+      outerWallLineWidth: 0.4,
+      innerWallLineWidth: 0.45,
+    } as PrintProfile, { isFirstLayer: true });
+    expect(buf[FIELD.bead_width_0]).toBe(0.5);
+    expect(buf[FIELD.bead_width_x]).toBe(0.5);
+  });
+
   it('routes minWallLineWidth → min_bead_width AND min_wall_line_width', () => {
     const buf = build({ minWallLineWidth: 0.18 });
     expect(buf[FIELD.min_bead_width]).toBe(0.18);

@@ -283,13 +283,10 @@ export const DEFAULT_MATERIAL_PROFILES: MaterialProfile[] = [
 
 export const DEFAULT_PRINT_PROFILES: PrintProfile[] = [
   {
-    // Matches OrcaSlicer 'Generic PETG' + '0.20mm Standard @ 0.4 nozzle'
-    // process defaults. Where OrcaSlicer uses a thickness-based field
-    // (top_shell_thickness 1.0 mm, bottom_shell_thickness 0.6 mm) we
-    // translate to layer counts at 0.20 mm: 1.0/0.2=5 top, 0.6/0.2=3
-    // bottom. Speeds reflect the PETG ceiling — PETG strings at the
-    // PLA-grade 100-150 mm/s sparse infill rates, so the OrcaSlicer
-    // PETG profile lowers them.
+    // Matches OrcaSlicer's Generic RRF Printer + Generic PETG +
+    // "0.20mm Standard @MyRRF" geometry defaults. Orca stores first-layer
+    // line width as absolute 0.50 mm; we expose it as 125% of 0.40 mm.
+    // 0.20mm Standard @MyRRF uses 4 top layers and 3 bottom layers.
     id: 'standard-quality',
     name: 'Standard Quality (0.2mm)',
     layerHeight: 0.2,
@@ -297,8 +294,8 @@ export const DEFAULT_PRINT_PROFILES: PrintProfile[] = [
     wallCount: 3,                  // wall_loops = 3 (Orca PETG default)
     wallSpeed: 60,                 // inner_wall_speed = 60 (PETG ceiling)
     outerWallSpeed: 30,            // outer_wall_speed = 30
-    wallLineWidth: 0.45,           // line_width = 0.45 (PETG nominal)
-    topLayers: 5,                  // top_shell_thickness 1.0 / 0.2 = 5
+    wallLineWidth: 0.4,            // line_width = 0.4 (Orca Generic RRF)
+    topLayers: 4,                  // 0.20mm Standard @MyRRF top_shell_layers = 4
     bottomLayers: 3,               // bottom_shell_thickness 0.6 / 0.2 = 3
     topBottomPattern: 'lines',     // top_surface_pattern = 'monotonic'
     // monotonicTopBottomOrder set below — Orca defaults monotonic ON.
@@ -307,7 +304,7 @@ export const DEFAULT_PRINT_PROFILES: PrintProfile[] = [
     infillPattern: 'grid',         // sparse_infill_pattern = 'grid'
     infillSpeed: 80,               // sparse_infill_speed = 80 (PETG)
     infillLineWidth: 0.45,         // matches wall to keep flow uniform
-    infillOverlap: 15,             // infill_wall_overlap = 15 (Orca std)
+    infillOverlap: 25,             // infill_wall_overlap = 25%
     printSpeed: 80,                // default print speed (PETG ceiling)
     travelSpeed: 150,              // travel_speed = 150 (PETG conservative)
     firstLayerSpeed: 30,           // initial_layer_speed = 30
@@ -328,10 +325,12 @@ export const DEFAULT_PRINT_PROFILES: PrintProfile[] = [
     enableBridgeFan: true,
     bridgeFanSpeed: 100,           // bridge_fan_speed = 100
     minLayerTime: 6,               // slow_down_layer_time = 6 (Orca)
-    lineWidth: 0.45,               // line_width = 0.45
-    outerWallLineWidth: 0.45,      // outer_wall_line_width = 0.45
-    topBottomLineWidth: 0.45,      // top_surface_line_width = 0.45
-    initialLayerLineWidthFactor: 100,
+    lineWidth: 0.4,                // line_width = 0.4
+    outerWallLineWidth: 0.4,       // outer_wall_line_width = 0.4
+    innerWallLineWidth: 0.45,      // inner_wall_line_width = 0.45
+    topBottomLineWidth: 0.4,       // internal_solid_infill_line_width = 0.4
+    topSurfaceSkinLineWidth: 0.4,  // top_surface_line_width = 0.4
+    initialLayerLineWidthFactor: 125,
     outerWallFirst: false,         // wall_sequence = inner-outer (Orca std)
     alternateExtraWall: false,
     infillWallCount: 0,
@@ -379,7 +378,7 @@ export const DEFAULT_PRINT_PROFILES: PrintProfile[] = [
     zSeamContinuityDistance: 2,
     roofingLayers: 0,              // roofing_layer_count = 0
     roofingPattern: 'lines',       // roofing_pattern = 'lines'
-    skinOverlapPercent: 23,         // infill_wall_overlap = 23% (Orca std)
+    skinOverlapPercent: 25,         // infill_wall_overlap = 25%
     monotonicTopBottomOrder: true,  // top_surface_pattern = 'monotonic'
     // Connect adjacent skin/infill scanlines with a short extrusion
     // hop at the wall instead of travelling — matches Cura's
@@ -460,7 +459,7 @@ export const DEFAULT_PRINT_PROFILES: PrintProfile[] = [
     flowRateCompensationMaxExtrusion: 0.0, // flow_rate_max_extrusion_offset = 0
     smallHoleMaxSize: 0.0,         // small_hole_max_size = 0
     minimumPolygonCircumference: 1.0, // minimum_polygon_circumference = 1.0
-    slicingClosingRadius: 0,
+    slicingClosingRadius: 0.049,
     extruderIndex: 0,
     postProcessingScripts: [],
     nonPlanarSlicingEnabled: false,

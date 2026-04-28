@@ -20,7 +20,7 @@ export const slicerPersistConfig = {
   // doesn't pick them up. The actual migration logic lives in the
   // hydrate hook below — `migrate` just hands the data through (we
   // don't strip fields, we clamp them).
-  version: 4,
+  version: 5,
   migrate: (persisted: unknown, _from: number) => persisted,
   partialize: ((state) => ({
     printerProfiles: state.printerProfiles,
@@ -69,6 +69,50 @@ export const slicerPersistConfig = {
       const d = def as unknown as Record<string, unknown>;
       for (const key of Object.keys(d)) {
         if (p[key] === undefined) p[key] = d[key];
+      }
+    }
+
+    // Promote persisted copies of the stock profile from the old
+    // 0.45mm-ish defaults to Orca's Generic RRF geometry defaults. This
+    // only touches values that are still exactly on known old defaults;
+    // custom user edits stay custom.
+    const ORCA_RRF_GEOMETRY_DEFAULT_KEYS = [
+      'wallLineWidth',
+      'topLayers',
+      'infillOverlap',
+      'lineWidth',
+      'outerWallLineWidth',
+      'innerWallLineWidth',
+      'topBottomLineWidth',
+      'topSurfaceSkinLineWidth',
+      'initialLayerLineWidthFactor',
+      'skinOverlapPercent',
+      'slicingClosingRadius',
+    ] as const;
+    const ORCA_RRF_STALE_VALUES: Record<string, readonly unknown[]> = {
+      wallLineWidth: [0.45],
+      topLayers: [5],
+      infillOverlap: [15],
+      lineWidth: [0.45],
+      outerWallLineWidth: [0.45],
+      innerWallLineWidth: [undefined],
+      topBottomLineWidth: [0.45],
+      topSurfaceSkinLineWidth: [undefined],
+      initialLayerLineWidthFactor: [100, 111.111],
+      skinOverlapPercent: [0, 23],
+      slicingClosingRadius: [0, undefined],
+    };
+    for (const profile of state.printProfiles) {
+      const isStockStandard = profile.id === 'standard-quality'
+        || profile.name === 'Standard Quality (0.2mm)';
+      if (!isStockStandard) continue;
+      const def = defaultsById.get('standard-quality');
+      if (!def) continue;
+      const p = profile as unknown as Record<string, unknown>;
+      const d = def as unknown as Record<string, unknown>;
+      for (const key of ORCA_RRF_GEOMETRY_DEFAULT_KEYS) {
+        const staleValues = ORCA_RRF_STALE_VALUES[key];
+        if (staleValues.some((value) => p[key] === value)) p[key] = d[key];
       }
     }
 

@@ -6,8 +6,39 @@ import {
   DEFAULT_PRINTER_PROFILES,
   DEFAULT_PRINT_PROFILES,
 } from '../types/slicer';
+import {
+  shouldConnectInfillLinesForEmission,
+  sortSolidSkinLinesForEmission,
+} from '../engine/slicer/pipeline/execution/steps/emitContourInfill';
 
 describe('Slicer parity fixes', () => {
+  it('orders split solid-skin scanlines row-by-row around holes', () => {
+    const lines = [
+      { from: new THREE.Vector2(0, 0), to: new THREE.Vector2(4, 0) },
+      { from: new THREE.Vector2(6, 0), to: new THREE.Vector2(10, 0) },
+      { from: new THREE.Vector2(0, 0.45), to: new THREE.Vector2(4, 0.45) },
+      { from: new THREE.Vector2(6, 0.45), to: new THREE.Vector2(10, 0.45) },
+    ];
+
+    const sorted = sortSolidSkinLinesForEmission(lines, 0.45);
+
+    expect(sorted[0].from.x).toBe(0);
+    expect(sorted[0].to.x).toBe(4);
+    expect(sorted[1].from.x).toBe(6);
+    expect(sorted[1].to.x).toBe(10);
+    expect(sorted[2].from.x).toBe(10);
+    expect(sorted[2].to.x).toBe(6);
+    expect(sorted[3].from.x).toBe(4);
+    expect(sorted[3].to.x).toBe(0);
+  });
+
+  it('keeps solid-skin connector hops enabled across multiple clipped regions', () => {
+    expect(shouldConnectInfillLinesForEmission(true, true, false, 3)).toBe(true);
+    expect(shouldConnectInfillLinesForEmission(true, undefined, true, 3)).toBe(true);
+    expect(shouldConnectInfillLinesForEmission(false, true, true, 3)).toBe(false);
+    expect(shouldConnectInfillLinesForEmission(false, true, true, 1)).toBe(true);
+  });
+
   it('retracts on long travel even when extrusion window is not yet met', () => {
     const printer = DEFAULT_PRINTER_PROFILES[0];
     const material = DEFAULT_MATERIAL_PROFILES[0];
