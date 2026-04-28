@@ -1,179 +1,91 @@
 # Cura-Parity Slicer Settings
 # ============================================================================
-# Original effort complete. Every setting on the Prepare -> Slicer Settings
-# panel is either wired or documented as intentional no-op. Below: the
-# remaining gaps and deferred multi-session investments.
+# Original effort complete. Every setting on the Prepare → Slicer Settings
+# panel is either wired or documented as intentional no-op.
 #
-# As of 2026-04-26: ARACHNE-9 (libArachne + Boost.Voronoi WASM) is fully
-# closed. wallGenerator: arachne + arachneBackend: wasm is the production
-# default. polygon-clipping is no longer in the production bundle.
+# Historical notes (audits and parity sweeps that landed on master) are
+# kept in git log; the previous narrative-style summary lived in the
+# commits themselves. This file now tracks ONLY what remains open.
+# ============================================================================
+
+
+# ============================================================================
+# REMAINING WORK — multi-session architectural items
+# ============================================================================
+# These are not single-pass tasks. Each requires a distinct architectural
+# investment that affects multiple subsystems. Keep them on this list
+# until someone schedules a focused multi-session pass; resist the urge
+# to half-wire them under a single PR.
+# ============================================================================
+
+## Per-object mesh override system  (architectural)
+# Cura's "Infill Mesh", "Cutting Mesh", "Support Mesh", and "Anti-Overhang
+# Mesh" features all depend on a per-object override resolution layer
+# (per-object > profile > default) and boolean operations between object
+# pairs feeding the slice run. The type scaffolding and UI for individual
+# meshes already exist; the engine wiring is the missing piece.
 #
-# As of 2026-04-27: current slicer performance pass is stopped in a good
-# state. 200-layer / 135k-triangle test dropped from ~53s to ~3.0s on the
-# Prepare path. Completed items: native libArachne inner contours for infill
-# regions, per-run Arachne wall cache, worker-side precomputed contour walls,
-# interleaved worker batches, 6-worker cap for large meshes, extracted mesh
-# cache for repeated unchanged slices, print summary/performance panel merge,
-# deeper preview zoom, and targeted unit coverage for the touched pipeline.
-# Tried and reverted: worker topology precompute, skipping per-batch triangle
-# prefiltering, and 7-worker large-mesh cap.
+# Affected:
+#   - infillMesh / infillMeshOrder
+#   - cuttingMesh
+#   - supportMesh / supportMeshDropDown
+#   - antiOverhangMesh
 #
-# As of 2026-04-27: small-quality pass on Cura parity gaps:
-#   - smallTopBottomWidth — wired (skin emission skips narrow regions)
-#   - minSupportInterfaceArea — wired (demotes tiny interface to body)
-#   - topSurfaceSkinLayers — wired (top-surface overrides for the topmost
-#     N solid layers only, matching Cura semantics; default 0 = no special
-#     treatment for any layer)
-#   - bottomSurfaceSkinLayers — wired (symmetric flag exposed on the
-#     LayerState, ready for future bottom-surface override fields)
-#   - useTowers / towerDiameter / towerRoofAngle — wired (small overhang
-#     islands now print as a circular tower with a flared roof governed
-#     by the roof angle; bypasses the conical / stair-step / horizontal-
-#     expansion modifiers since towers are user-controlled column width)
-#   - breakUpSupportInChunks / breakUpSupportChunkSize /
-#     breakUpSupportChunkLineCount — wired (body-only scanline emitter
-#     jumps a chunk-size-mm gap every chunk-line-count lines; interface
-#     bands stay continuous so the supported model surface keeps a solid
-#     bed of support beneath it)
-#   - minSkinWidthForExpansion — wired (per-region check; tiny regions
-#     keep the skin overlap but skip the top/bottom expansion offset)
-#   - supportDistancePriority — wired (z_overrides_xy relaxes XY clearance
-#     to 0 in roof/floor interface bands so support fully covers tight
-#     overhangs; xy_overrides_z keeps the existing behavior)
-#   - Audited the [s] list: connectTopBottomPolygons, enableSupportBrim /
-#     supportBrimLineCount, supportInfillLayerThickness, connectSupportLines /
-#     connectSupportZigZags, and the supportRoof*/supportFloor* family
-#     (Pattern/Density/LineDistance/Thickness) are all already wired in
-#     finalizeLayer.ts / support.ts despite the older [s] markers below.
-#     Removed from the list on this pass.
+# Estimated scope: needs a new per-object override resolver, mesh-pair
+# boolean ops in the slice run, and override pass-through into the
+# pipeline. Touches ~8-10 files in src/engine/slicer/.
+
+## Multi-mesh repair  (depends on per-object framework)
+# Extends beyond the single-mesh removeAllHoles already wired. Requires
+# the per-object framework above to express which meshes participate.
 #
-# As of 2026-04-27 (later in day): another Cura parity sweep:
-#   - outerWallLineWidth / innerWallLineWidth — wired in classic perimeter
-#     generator (perimeters.ts). Outer wall uses outerWallLineWidth, inner
-#     walls use innerWallLineWidth. First-layer scaling preserved (master
-#     × initialLayerLineWidthFactor wins, matching Cura). Arachne path
-#     already supported these.
-#   - bridgeSkinDensity — wired in emitContourInfill.ts as proportional
-#     drop of bridge lines (e.g. density 50 keeps every other bridge line).
-#     Non-bridge skin lines on the same layer remain at full density.
-#   - interlaceBridgeLines — wired as a simple alternating-layer skip:
-#     every other bridge layer drops bridge lines so the alternating
-#     layer prints crossing bridge support. (Cura's true 90° rotation
-#     would require per-region scan-line generation; this approximation
-#     achieves the same structural goal.)
-#   - adaptiveLayersTopographySize — wired in adaptiveLayers.ts. For each
-#     bin, the most-flat slope present caps layer height to keep the
-#     visible step ≤ topographySize. Default 0 = disabled (no-op).
-#   - spiralizeContour / vase mode — fully wired in finalizeLayer.ts,
-#     emitContourInfill.ts, emitGroupedAndContourWalls.ts, and the
-#     GCodeEmitter.extrudeTo (now accepts an optional per-segment Z).
-#     Bottom layers print solid as the base; above bottomLayers we
-#     suppress infill, inner walls, gap-fill, and support so only the
-#     outer wall is emitted, with Z ramped continuously across the wall
-#     perimeter from `prevLayerZ → layerZ`. Spiralize-incompatible
-#     options (coasting on the closing segment) are gated off.
-#   - removeAllHoles mesh repair — wired in coreGeometry.removeAllHoles
-#     and called from prepareSliceRun before bbox calc when the profile
-#     enables it. Finds boundary edges (edges referenced by exactly one
-#     triangle), walks them into closed loops, and fan-triangulates each
-#     loop. Operates on a copy so the geometry cache stays pristine
-#     across profile changes. Test coverage for manifold-cube no-op and
-#     single-triangle hole closure.
-#   - moldEnabled + minMoldWidth — wired in prepareLayerState.ts as a
-#     per-layer contour transformation: each model outer becomes a hole
-#     in an inflated outer (mold ring of `minMoldWidth` material around
-#     the model's footprint). Floor layers stay solid (basin floor);
-#     above the floor, the model's footprint opens as a cavity. Top
-#     skin layers are suppressed so the mold has an open top for cast
-#     release. Original holes in the model are dropped (they fill with
-#     mold material, which is correct since they were empty in the
-#     model).
-#   - fuzzySkinsEnabled / fuzzySkinThickness / fuzzySkinPointDist /
-#     fuzzySkinOutsideOnly — wired in emitGroupedAndContourWalls.ts.
-#     After outer-wall simplification, the loop is resampled at
-#     pointDist intervals and each new point is displaced ±thickness/2
-#     along its outward normal. Uses a Mulberry32 PRNG seeded by the
-#     layer index so re-slicing is deterministic. Skipped on first
-#     layer (bed adhesion) and in vase mode (would jitter Z spiral).
-#   - smoothSpiralizedContours — wired in emitGroupedAndContourWalls.ts.
-#     When spiralize + smooth are both on (and we're above the floor),
-#     the outer wall is subdivided into 0.5mm segments before the Z
-#     ramp emits. Distributes the layer's vertical climb across many
-#     small Z increments so straight box sides don't show a single
-#     long Z-up move (visible step) — curved walls already had enough
-#     vertices for a smooth ramp.
-#   - vase-mode bug fix — the original spiralize gate `continue`'d out
-#     of the contour loop AFTER the outerWallFirst=true emission point
-#     but BEFORE the outerWallFirst=false emission point. Default
-#     profile has `outerWallFirst: false`, so vase mode was actually
-#     emitting NO walls at all. Caught by the new SlicerVaseMode test
-#     suite. Fix: emit the outer wall explicitly inside the spiralize
-#     branch before continuing past the rest of the loop body.
-#   - new tests added: src/test/SlicerVaseMode.test.ts (4 tests cover
-#     no-infill/inner-wall above floor, solid floor preserved, support
-#     suppressed, single-pass outer-only walls) and
-#     src/test/SlicerFuzzySkin.test.ts (3 tests cover determinism
-#     across repeat slices, first-layer gate, perimeter inflation).
-# ============================================================================
+# Affected:
+#   - extensiveStitching      (non-coplanar gap closure across meshes)
+#   - mergedMeshesOverlap     (multi-mesh pre-processing)
+#   - removeMeshIntersection  (boolean cleanup between meshes)
+#   - alternateMeshRemoval    (sequenced multi-mesh boolean)
 
 
 # ============================================================================
-# MISSING SETTINGS - full Cura gap analysis (all sections)
-# ============================================================================
-# Legend:
-#   [ ] = missing entirely (needs type + UI + engine)
-#   [u] = type exists but no UI control
-#   [s] = type + UI exist but engine ignores (storage-only)
-#   [skip] = multi-extruder or irrelevant for single-nozzle - intentionally omitted
+# REMAINING WORK — single-feature items, deferred for stated reasons
 # ============================================================================
 
-
-## TOP / BOTTOM
-- [s] Maximum Skin Angle for Expansion (`maxSkinAngleForExpansion`) - type only (deferred — needs surrounding-overhang slope detection)
-- [s] noSkinInZGaps - intentional no-op (inherent behavior)
-
-## INFILL
-- [skip] Infill Support (`infillSupport`) - major feature; deferred
-
-
-## MESH FIXES
-- [s] Extensive Stitching (`extensiveStitching`) - type + UI exist; engine (mesh repair) deferred — non-trivial to handle non-coplanar gap closure
-- [s] Merged Meshes Overlap (`mergedMeshesOverlap`) - storage-only (multi-mesh pre-processing deferred — needs per-object framework)
-- [s] Remove Mesh Intersection (`removeMeshIntersection`) - storage-only (multi-mesh boolean deferred)
-- [s] Alternate Mesh Removal (`alternateMeshRemoval`) - storage-only (multi-mesh boolean deferred)
-
-## SPECIAL MODES
-- [s] Smooth Spiralized Contours (`smoothSpiralizedContours`) - storage-only; vase-mode Z-spiral is now wired (extrudeTo Z support, perimeter-ramped Z) but smoothing across consecutive Z increments is a separate Cura feature still pending
-# Minimal Mold Width (`minMoldWidth`) + Mold Enabled (`moldEnabled`) — wired in prepareLayerState.ts as a per-layer contour transform; see audit note above.
-- [s] Infill Mesh / Cutting Mesh / Support Mesh / Anti-Overhang Mesh - type scaffold + UI exists; engine wiring deferred (per-object override system — architectural)
-
-## EXPERIMENTAL
-# (fuzzy-skin family wired in 2026-04-28 sweep above; no remaining experimental gaps)
-
-- [skip] Wipe Nozzle Between Layers and all Wipe sub-params - multi-extruder feature
-- [skip] Flow Temperature Graph, Cross Infill Density Image - hardware/image-based; not applicable
-
-## PRINTER SETTINGS
-- [skip] Machine Type, Material Type/Brand, Nozzle geometry, Steps/mm, Endstops, Extruder-sharing params - hardware-only fields stored in firmware, not relevant to G-code output
-
-## DUAL EXTRUSION
-- [skip] All prime tower, ooze shield, nozzle-switch, interlocking structure settings
-         - single-extruder architecture; not applicable
-
-
-# ============================================================================
-# ADDITIONAL CURA PARITY GAPS (audit follow-up)
-# ============================================================================
-# (none currently — both prior items wired in 2026-04-27 sweep above)
+## Maximum Skin Angle for Expansion  (`maxSkinAngleForExpansion`)
+# Cura's setting (default 90°, i.e. effectively off in default profiles).
+# When lowered, top/bottom skin expansion is skipped in regions whose
+# underlying surface slope exceeds the threshold — protects narrow skin
+# slivers near near-vertical walls from being expanded into nothing.
 #
-# Remaining multi-session items, in rough priority order:
-#   1. Per-object mesh system (Infill / Cutting / Support / Anti-Overhang
-#      Mesh) — needs per-object override resolution (per-object > profile
-#      > default), boolean operations on object pairs, and override pass-
-#      through into the slice run. Architectural work.
-#   2. Multi-mesh repair (extensiveStitching, mergedMeshesOverlap,
-#      removeMeshIntersection, alternateMeshRemoval) — extends beyond the
-#      single-mesh removeAllHoles already wired. Needs the per-object
-#      framework above for the multi-mesh booleans.
+# Why deferred: requires per-skin-region slope detection. The existing
+# overhang-shadow MP (used by infillOverhangAngle) is the right starting
+# point — we'd compute an analogous "steep upward-facing" or "steep
+# downward-facing" shadow per top/bottom skin layer and subtract that
+# region from the skin contour before applying expansion. Implementable
+# in 1–2 hours plus tests, but very low-ROI given the default is 90°.
 
 
+# ============================================================================
+# INTENTIONALLY NOT IMPLEMENTED — documented for completeness
+# ============================================================================
+# These entries record settings that appear in Cura's UI but that we will
+# never wire up. They live here so that "did you forget X?" audits resolve
+# quickly without re-walking the same ground.
+#
+# Multi-extruder
+#   - Wipe Nozzle Between Layers and all Wipe sub-params
+#   - All prime tower / ooze shield / nozzle-switch / interlocking structure
+#
+# Hardware-only (firmware fields, not G-code)
+#   - Machine Type, Material Type/Brand, Nozzle geometry, Steps/mm,
+#     Endstops, Extruder-sharing params
+#
+# Hardware/image-based
+#   - Flow Temperature Graph, Cross Infill Density Image
+#
+# Major feature deferred
+#   - Infill Support (`infillSupport`)
+#
+# Inherent behavior — already correct without explicit wiring
+#   - noSkinInZGaps   (our slicer already skips skin in Z gaps; the storage
+#                     flag has no effect to wire because the behavior is
+#                     inherent to the layer-classification logic)
