@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 
-import { prepareLayerGeometryState } from './prepareLayerState';
+import {
+  isBottomSurfaceLayerForCounts,
+  isTopSurfaceLayerForCounts,
+  prepareLayerGeometryState,
+} from './prepareLayerState';
 import type { SliceGeometryRun } from './types';
 import type { Triangle } from '../../../../../types/slicer-pipeline.types';
 
@@ -274,3 +278,57 @@ describe('prepareLayerGeometryState — XY compensation', () => {
     expect(slicedTriangleCount).toBe(1);
   });
 });
+
+describe('isTopSurfaceLayerForCounts (Cura: Top Surface Skin Layers)', () => {
+  it('returns false when count is undefined', () => {
+    expect(isTopSurfaceLayerForCounts(99, 100, undefined)).toBe(false);
+  });
+
+  it('returns false when count is zero (Cura default)', () => {
+    expect(isTopSurfaceLayerForCounts(99, 100, 0)).toBe(false);
+  });
+
+  it('flags only the topmost layer when count is 1', () => {
+    expect(isTopSurfaceLayerForCounts(99, 100, 1)).toBe(true);
+    expect(isTopSurfaceLayerForCounts(98, 100, 1)).toBe(false);
+  });
+
+  it('flags the topmost N layers when count is N', () => {
+    expect(isTopSurfaceLayerForCounts(99, 100, 3)).toBe(true);
+    expect(isTopSurfaceLayerForCounts(98, 100, 3)).toBe(true);
+    expect(isTopSurfaceLayerForCounts(97, 100, 3)).toBe(true);
+    expect(isTopSurfaceLayerForCounts(96, 100, 3)).toBe(false);
+  });
+
+  it('handles count >= totalLayers without underflow', () => {
+    expect(isTopSurfaceLayerForCounts(0, 5, 10)).toBe(true);
+    expect(isTopSurfaceLayerForCounts(4, 5, 10)).toBe(true);
+  });
+
+  it('returns false when totalLayers is zero (defensive)', () => {
+    expect(isTopSurfaceLayerForCounts(0, 0, 1)).toBe(false);
+  });
+});
+
+describe('isBottomSurfaceLayerForCounts (Cura: Bottom Surface Skin Layers)', () => {
+  it('returns false when count is undefined', () => {
+    expect(isBottomSurfaceLayerForCounts(0, undefined)).toBe(false);
+  });
+
+  it('returns false when count is zero', () => {
+    expect(isBottomSurfaceLayerForCounts(0, 0)).toBe(false);
+  });
+
+  it('flags only the bottommost layer when count is 1', () => {
+    expect(isBottomSurfaceLayerForCounts(0, 1)).toBe(true);
+    expect(isBottomSurfaceLayerForCounts(1, 1)).toBe(false);
+  });
+
+  it('flags the bottommost N layers when count is N', () => {
+    expect(isBottomSurfaceLayerForCounts(0, 3)).toBe(true);
+    expect(isBottomSurfaceLayerForCounts(1, 3)).toBe(true);
+    expect(isBottomSurfaceLayerForCounts(2, 3)).toBe(true);
+    expect(isBottomSurfaceLayerForCounts(3, 3)).toBe(false);
+  });
+});
+

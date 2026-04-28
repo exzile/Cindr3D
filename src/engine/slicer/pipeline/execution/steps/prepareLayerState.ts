@@ -20,6 +20,38 @@ const ACTIVE_TRIANGLE_Z_EPSILON = 1e-7;
 const activeTrianglesByRun = new WeakMap<SliceGeometryRun, SliceGeometryRun['triangles'][]>();
 type ActiveLayerSubsetRun = SliceGeometryRun & { activeLayerIndices?: number[] };
 
+/**
+ * Cura's "Top Surface Skin Layers" / "Bottom Surface Skin Layers": when
+ * `topSurfaceSkinLayers > 0`, only the topmost N solid layers receive
+ * the ultra-quality top-surface treatment (special line width, pattern,
+ * expansion, flow). Solid-top layers below those still emit as solid
+ * skin but use the regular top/bottom settings.
+ *
+ * Default (count = 0 or undefined) returns `false` for every layer —
+ * matching Cura's default of "no special top-surface treatment."
+ *
+ * The bottom-surface counterpart is symmetric: when `count > 0` only
+ * the bottommost N layers are flagged.
+ */
+export function isTopSurfaceLayerForCounts(
+  li: number,
+  totalLayers: number,
+  topSurfaceSkinLayers: number | undefined,
+): boolean {
+  const n = topSurfaceSkinLayers ?? 0;
+  if (n <= 0 || totalLayers <= 0) return false;
+  return li >= totalLayers - n;
+}
+
+export function isBottomSurfaceLayerForCounts(
+  li: number,
+  bottomSurfaceSkinLayers: number | undefined,
+): boolean {
+  const n = bottomSurfaceSkinLayers ?? 0;
+  if (n <= 0) return false;
+  return li < n;
+}
+
 function lowerBound(values: number[], target: number): number {
   let lo = 0;
   let hi = values.length;
@@ -184,6 +216,8 @@ export async function prepareLayerGeometryState(
   const isSolidBottom = li < Math.max(solidBottom, pp.initialBottomLayers ?? 0);
   const isSolidTop = li >= totalLayers - solidTop;
   const isSolid = isSolidBottom || isSolidTop;
+  const isTopSurfaceLayer = isTopSurfaceLayerForCounts(li, totalLayers, pp.topSurfaceSkinLayers);
+  const isBottomSurfaceLayer = isBottomSurfaceLayerForCounts(li, pp.bottomSurfaceSkinLayers);
 
   const slowerLayers = pp.numberOfSlowerLayers ?? 0;
   const ramp = (base: number): number => {
@@ -219,6 +253,8 @@ export async function prepareLayerGeometryState(
     isSolidBottom,
     isSolidTop,
     isSolid,
+    isTopSurfaceLayer,
+    isBottomSurfaceLayer,
     outerWallSpeed,
     innerWallSpeed: ramp(pp.wallSpeed),
     infillSpeed: ramp(pp.infillSpeed),

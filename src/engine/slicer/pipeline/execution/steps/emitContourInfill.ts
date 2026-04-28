@@ -359,7 +359,7 @@ export function emitContourInfill(
 ): void {
   const slicer = pipeline as SlicerExecutionPipeline;
   const { pp, mat, triangles, offsetX, offsetY, emitter, gcode } = run;
-  const { li, layerH, isFirstLayer, isSolid, isSolidBottom, isSolidTop, infillSpeed, topBottomSpeed, hasBridgeRegions, isInBridgeRegion, moves } = layer;
+  const { li, layerH, isFirstLayer, isSolid, isSolidBottom, isSolidTop, isTopSurfaceLayer, infillSpeed, topBottomSpeed, hasBridgeRegions, isInBridgeRegion, moves } = layer;
 
   for (const item of contoursData) {
     const { contour, exWalls, wallSets, wallLineWidths, outerWallCount, infillHoles } = item;
@@ -372,9 +372,17 @@ export function emitContourInfill(
     let infillLines: { from: THREE.Vector2; to: THREE.Vector2 }[] = [];
     let infillMoveType: InfillMoveType = 'infill';
     let speed = infillSpeed;
-    const baseLineWidth = isSolidTop
+    // Top-surface ultra-quality overrides apply ONLY to the topmost
+    // `topSurfaceSkinLayers` layers (Cura's semantics). Solid-top layers
+    // below that band still get solid skin, but use regular topBottom
+    // settings — which fall through to infillLineWidth via the normal
+    // skin pipeline. When `topSurfaceSkinLayers` is 0 (default), no
+    // layer is flagged as a top-surface layer.
+    const baseLineWidth = isTopSurfaceLayer
       ? (pp.topSurfaceSkinLineWidth ?? pp.topBottomLineWidth ?? pp.infillLineWidth)
-      : pp.infillLineWidth;
+      : isSolidTop
+        ? (pp.topBottomLineWidth ?? pp.infillLineWidth)
+        : pp.infillLineWidth;
     const lineWidth = lineWidthForLayer(baseLineWidth, pp, isFirstLayer);
 
     if (isFirstLayer && isSolid && pp.initialLayerBottomFlow != null) emitter.currentLayerFlow = pp.initialLayerBottomFlow / 100;
@@ -400,7 +408,10 @@ export function emitContourInfill(
       // 0.45 mm — enough to bond, not enough to print past the wall.
       const skinOverlap = ((pp.skinOverlapPercent ?? 23) / 100) * lineWidth;
       const topSurfaceExpand = pp.topSurfaceSkinExpansion ?? pp.topSkinExpandDistance ?? 0;
-      const totalExpand = skinOverlap + (isSolidTop ? topSurfaceExpand : 0) + (isSolidBottom ? (pp.bottomSkinExpandDistance ?? 0) : 0);
+      // `topSurfaceSkinExpansion` only grows the topmost-N "top-surface"
+      // layers; lower solid-top layers fall back to `topSkinExpandDistance`
+      // via the same field (already merged above).
+      const totalExpand = skinOverlap + (isTopSurfaceLayer ? topSurfaceExpand : 0) + (isSolidBottom ? (pp.bottomSkinExpandDistance ?? 0) : 0);
       // Cura's "Small Top/Bottom Width" — when the smaller bbox dimension
       // of a skin region is below this threshold, the region is too narrow
       // to print a clean solid skin (would just be a single short line),
@@ -427,11 +438,13 @@ export function emitContourInfill(
           solidSkinCenterlineInset(lineWidth, skinOverlap),
         );
         if (!safeSkinInput) continue;
-        const skinPattern = isSolidTop
+        const skinPattern = isTopSurfaceLayer
           ? (pp.topSurfaceSkinPattern ?? pp.topBottomPattern ?? 'lines')
-          : (li === 0 && pp.bottomPatternInitialLayer)
-            ? pp.bottomPatternInitialLayer
-            : (pp.topBottomPattern === 'concentric' ? 'concentric' : 'lines');
+          : isSolidTop
+            ? (pp.topBottomPattern === 'concentric' ? 'concentric' : 'lines')
+            : (li === 0 && pp.bottomPatternInitialLayer)
+              ? pp.bottomPatternInitialLayer
+              : (pp.topBottomPattern === 'concentric' ? 'concentric' : 'lines');
         if (pp.topBottomLineDirections && pp.topBottomLineDirections.length > 0) {
           const angleDeg = pp.topBottomLineDirections[li % pp.topBottomLineDirections.length];
           infillLines.push(...slicer.generateScanLines(safeSkinInput.contour, 100, lineWidth, (angleDeg * Math.PI) / 180, 0, safeSkinInput.holes));
@@ -566,7 +579,7 @@ export function emitContourInfill(
       let thisMoveType: InfillMoveType = infillMoveType;
       let thisSpeed = speed;
       const thisLineWidth = lineWidth;
-      let thisFlowScale = isSolidTop ? (pp.topSurfaceSkinFlow ?? 100) / 100 : 1.0;
+      let thisFlowScale = isTopSurfaceLayer ? (pp.topSurfaceSkinFlow ?? 100) / 100 : 1.0;
       const bridgeSettingsOn = pp.enableBridgeSettings !== false;
       if (hasBridgeRegions && bridgeSettingsOn && infillMoveType === 'top-bottom') {
         const midX = (effFrom.x + effTo.x) / 2, midY = (effFrom.y + effTo.y) / 2;

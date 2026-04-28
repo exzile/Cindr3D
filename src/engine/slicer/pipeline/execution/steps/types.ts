@@ -191,6 +191,16 @@ export interface SliceLayerGeometryState {
   isSolidBottom: boolean;
   isSolidTop: boolean;
   isSolid: boolean;
+  /**
+   * True only for the topmost `topSurfaceSkinLayers` solid layers (subset
+   * of `isSolidTop`). When false on a solid-top layer, the layer should
+   * use regular topBottom settings rather than the ultra-quality top-
+   * surface overrides (`topSurfaceSkinLineWidth`, `topSurfaceSkinPattern`,
+   * `topSurfaceSkinExpansion`, `topSurfaceSkinFlow`).
+   */
+  isTopSurfaceLayer: boolean;
+  /** Same as `isTopSurfaceLayer`, but for the bottommost N layers. */
+  isBottomSurfaceLayer: boolean;
   outerWallSpeed: number;
   innerWallSpeed: number;
   infillSpeed: number;

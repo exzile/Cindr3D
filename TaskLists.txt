@@ -17,6 +17,21 @@
 # deeper preview zoom, and targeted unit coverage for the touched pipeline.
 # Tried and reverted: worker topology precompute, skipping per-batch triangle
 # prefiltering, and 7-worker large-mesh cap.
+#
+# As of 2026-04-27: small-quality pass on Cura parity gaps:
+#   - smallTopBottomWidth — wired (skin emission skips narrow regions)
+#   - minSupportInterfaceArea — wired (demotes tiny interface to body)
+#   - topSurfaceSkinLayers — wired (top-surface overrides for the topmost
+#     N solid layers only, matching Cura semantics; default 0 = no special
+#     treatment for any layer)
+#   - bottomSurfaceSkinLayers — wired (symmetric flag exposed on the
+#     LayerState, ready for future bottom-surface override fields)
+#   - Audited the [s] list: connectTopBottomPolygons, enableSupportBrim /
+#     supportBrimLineCount, supportInfillLayerThickness, connectSupportLines /
+#     connectSupportZigZags, and the supportRoof*/supportFloor* family
+#     (Pattern/Density/LineDistance/Thickness) are all already wired in
+#     finalizeLayer.ts / support.ts despite the older [s] markers below.
+#     Removed from the list on this pass.
 # ============================================================================
 
 
@@ -32,10 +47,6 @@
 
 
 ## TOP / BOTTOM
-- [s] Top Surface Skin Layers (`topSurfaceSkinLayers`) - type + UI exists; engine too complex
-- [s] Bottom Surface Skin Layers (`bottomSurfaceSkinLayers`) - type + UI exists; engine too complex
-- [s] Connect Top/Bottom Polygons (`connectTopBottomPolygons`) - type + UI exists; engine too complex
-- [s] Small Top/Bottom Width (`smallTopBottomWidth`) - type + UI exists; engine deferred
 - [s] Maximum Skin Angle for Expansion (`maxSkinAngleForExpansion`) - type only (deferred)
 - [s] Minimum Skin Width for Expansion (`minSkinWidthForExpansion`) - type only (deferred)
 - [s] noSkinInZGaps - intentional no-op (inherent behavior)
@@ -46,7 +57,6 @@
 
 ## SUPPORT
 - [s] Support Distance Priority (`supportDistancePriority`) - type + UI exists; engine deferred
-- [s] Minimum Support Interface Area / Roof Area / Floor Area - storage-only; deferred
 - [s] Use Towers (`useTowers`) - type + UI exists; engine deferred
 - [s] Tower Diameter / Tower Roof Angle - type + UI exists; engine deferred
 

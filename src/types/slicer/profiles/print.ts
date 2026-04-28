@@ -361,8 +361,8 @@ export interface PrintProfile {
   initialBottomLayers?: number;        // wired — extra solid bottom layers on the very first solid bottom
   connectTopBottomPolygons?: boolean;  // storage-only — connect top/bottom fill polygons
   monotonicIroningOrder?: boolean;     // wired — monotonic order for ironing passes
-  topSurfaceSkinLayers?: number;       // storage-only — extra ultra-quality top layers
-  bottomSurfaceSkinLayers?: number;    // storage-only — extra ultra-quality bottom layers
+  topSurfaceSkinLayers?: number;       // wired — number of topmost solid layers that use topSurfaceSkin* overrides
+  bottomSurfaceSkinLayers?: number;    // wired — symmetric flag for bottommost N layers (currently exposed via isBottomSurfaceLayer)
   topSkinRemovalWidth?: number;        // wired — mm; separate top skin removal width
   bottomSkinRemovalWidth?: number;     // wired — mm; separate bottom skin removal width
   smallTopBottomWidth?: number;        // wired — mm; skip skin on regions narrower than this

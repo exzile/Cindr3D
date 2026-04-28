@@ -122,7 +122,19 @@ describe('Preview tube — Orca-style solid skin ends', () => {
     expect(box.max.x).toBeCloseTo(10.2, 5);
     expect(box.max.y - box.min.y).toBeCloseTo(0.4, 5);
     expect(box.max.z - box.min.z).toBeCloseTo(0.2, 5);
-    expect(positions.length).toBe(16 * 3 * 3);
+    expect(positions.length).toBe(20 * 3 * 3);
+  });
+
+  it('uses Orca-style endpoint turn angles for top-bottom connector caps', () => {
+    const chain = makeChain([[0, 0], [10, 0], [10, 1]], 0.4, false, 'top-bottom');
+    const geo = buildChainTube(chain, 0.2, 0.2);
+    const box = new THREE.Box3().setFromBufferAttribute(
+      geo!.getAttribute('position') as THREE.BufferAttribute,
+    );
+
+    expect(box.min.x).toBeCloseTo(-0.2, 5);
+    expect(box.max.x).toBeLessThan(10.25);
+    expect(box.max.y).toBeCloseTo(1.2, 5);
   });
 
   it('renders sparse infill tube ring centers at exact gcode endpoints (no trim)', () => {

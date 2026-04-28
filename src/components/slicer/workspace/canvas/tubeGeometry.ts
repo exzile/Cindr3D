@@ -275,7 +275,26 @@ function buildOrcaSegmentTemplateGeometry(
   const indices: number[] = [];
   const topZ = baseZ;
   const bottomZ = baseZ - layerHeight;
-  const midZ = baseZ - layerHeight / 2;
+
+  const endpointAngle = (pointIndex: number): number => {
+    const prevIndex = pointIndex > 0 ? pointIndex - 1 : (chain.isClosed ? n - 1 : -1);
+    const nextIndex = pointIndex < n - 1 ? pointIndex + 1 : (chain.isClosed ? 0 : -1);
+    if (prevIndex < 0 || nextIndex < 0 || prevIndex === nextIndex) return 0;
+    const prev = chain.points[prevIndex];
+    const here = chain.points[pointIndex];
+    const next = chain.points[nextIndex];
+    const prevLineX = here.x - prev.x;
+    const prevLineY = here.y - prev.y;
+    const thisLineX = next.x - here.x;
+    const thisLineY = next.y - here.y;
+    const prevLen = Math.hypot(prevLineX, prevLineY);
+    const thisLen = Math.hypot(thisLineX, thisLineY);
+    if (prevLen < 1e-6 || thisLen < 1e-6) return 0;
+    return Math.atan2(
+      prevLineX * thisLineY - prevLineY * thisLineX,
+      prevLineX * thisLineX + prevLineY * thisLineY,
+    );
+  };
 
   const pushTri = (
     a: THREE.Vector3,
@@ -326,6 +345,8 @@ function buildOrcaSegmentTemplateGeometry(
     const ty = dy / len;
     const px = -ty;
     const py = tx;
+    const rx = ty;
+    const ry = -tx;
     const width = Math.max(0.01, ((a.lw + b.lw) * 0.5));
     const halfW = width / 2;
     const color = chain.segColors[i] ?? chain.segColors[chain.segColors.length - 1] ?? [1, 1, 1];
@@ -338,8 +359,29 @@ function buildOrcaSegmentTemplateGeometry(
     const startRightBottom = new THREE.Vector3(a.x - px * halfW, a.y - py * halfW, bottomZ);
     const endLeftBottom = new THREE.Vector3(b.x + px * halfW, b.y + py * halfW, bottomZ);
     const endRightBottom = new THREE.Vector3(b.x - px * halfW, b.y - py * halfW, bottomZ);
-    const startApex = new THREE.Vector3(a.x - tx * halfW, a.y - ty * halfW, midZ);
-    const endApex = new THREE.Vector3(b.x + tx * halfW, b.y + ty * halfW, midZ);
+    const startAngle = endpointAngle(i);
+    const endAngle = endpointAngle((i + 1) % n);
+    const capPoint = (
+      endpoint: { x: number; y: number },
+      angle: number,
+      lineDirSign: -1 | 1,
+    ) => {
+      if (Math.abs(angle) < 1e-6) {
+        return new THREE.Vector3(endpoint.x + lineDirSign * tx * halfW, endpoint.y + lineDirSign * ty * halfW, topZ);
+      }
+      const s = Math.sin(Math.abs(angle) * 0.5);
+      const c = Math.cos(Math.abs(angle) * 0.5);
+      const turnSign = Math.sign(angle);
+      return new THREE.Vector3(
+        endpoint.x + lineDirSign * tx * halfW * s + turnSign * rx * halfW * c,
+        endpoint.y + lineDirSign * ty * halfW * s + turnSign * ry * halfW * c,
+        topZ,
+      );
+    };
+    const startApex = capPoint(a, startAngle, -1);
+    const endApex = capPoint(b, endAngle, 1);
+    const startApexBottom = new THREE.Vector3(startApex.x, startApex.y, bottomZ);
+    const endApexBottom = new THREE.Vector3(endApex.x, endApex.y, bottomZ);
 
     const topN = new THREE.Vector3(0, 0, 1);
     const bottomN = new THREE.Vector3(0, 0, -1);
@@ -353,14 +395,14 @@ function buildOrcaSegmentTemplateGeometry(
     pushQuad(startLeftBottom, endLeftBottom, endLeftTop, startLeftTop, leftN, color, 0.72);
     pushQuad(startRightTop, endRightTop, endRightBottom, startRightBottom, rightN, color, 0.72);
 
-    pushTri(startApex, startLeftTop, startLeftBottom, startN, color, 0.82);
-    pushTri(startApex, startRightBottom, startRightTop, startN, color, 0.82);
-    pushTri(startApex, startRightTop, startLeftTop, startN, color, 0.94);
-    pushTri(startApex, startLeftBottom, startRightBottom, startN, color, 0.58);
-    pushTri(endApex, endLeftBottom, endLeftTop, endN, color, 0.82);
-    pushTri(endApex, endRightTop, endRightBottom, endN, color, 0.82);
-    pushTri(endApex, endLeftTop, endRightTop, endN, color, 0.94);
-    pushTri(endApex, endRightBottom, endLeftBottom, endN, color, 0.58);
+    pushTri(startApex, startRightTop, startLeftTop, topN, color, 1.0);
+    pushTri(startApexBottom, startLeftBottom, startRightBottom, bottomN, color, 0.45);
+    pushQuad(startApex, startLeftTop, startLeftBottom, startApexBottom, startN, color, 0.72);
+    pushQuad(startApexBottom, startRightBottom, startRightTop, startApex, startN, color, 0.72);
+    pushTri(endApex, endLeftTop, endRightTop, topN, color, 1.0);
+    pushTri(endApexBottom, endRightBottom, endLeftBottom, bottomN, color, 0.45);
+    pushQuad(endApexBottom, endLeftBottom, endLeftTop, endApex, endN, color, 0.72);
+    pushQuad(endApex, endRightTop, endRightBottom, endApexBottom, endN, color, 0.72);
   }
 
   if (positions.length === 0) return null;
