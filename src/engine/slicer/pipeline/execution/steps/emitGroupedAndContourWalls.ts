@@ -441,6 +441,8 @@ function emitOuterLoop(params: EmitOuterLoopParams): number {
   emitter.setAccel(isFirstLayer ? pp.accelerationInitialLayer : (pp.accelerationOuterWall ?? pp.accelerationWall), pp.accelerationPrint);
   emitter.setJerk(isFirstLayer ? pp.jerkInitialLayer : (pp.jerkOuterWall ?? pp.jerkWall), pp.jerkPrint);
   emitter.travelTo(reordered[0].x, reordered[0].y, moves);
+  gcode.push(`;TYPE:Outer wall`);
+  emitter.resetEmittedLineWidth?.();
   gcode.push(`; ${params.comment ?? 'Outer wall'}`);
   // Spiralize / vase-mode Z ramp: ramp Z from prevLayerZ → layerZ smoothly
   // across the outer-wall perimeter so the head climbs continuously instead
@@ -602,6 +604,21 @@ export function emitGroupedAndContourWalls(
     const externalBoundaries = [contourData.contour.points, ...(contourData.containedHoles ?? [])];
     if (!groupOW) perContour.push(contourData);
 
+    // Per-contour diagnostic: surface whether libArachne actually produced
+    // variable-width walls or fell back to constant-width offsets. Reading
+    // this is the fastest way to tell why a thin annular ring is missing
+    // its inner wall — `gen=arachne variable=N` means widths are flowing,
+    // `gen=classic-fallback` means Arachne dispatched but `paths.length===0`
+    // (or threw) and the constant-width perimeters ran instead.
+    let variableWallCount = 0;
+    for (const lw of wallLineWidths) {
+      if (Array.isArray(lw)) variableWallCount += 1;
+    }
+    const generatorTag = pp.wallGenerator === 'arachne'
+      ? (variableWallCount > 0 ? 'arachne' : 'arachne-fallback-constant')
+      : 'classic';
+    gcode.push(`;dzign.wall-gen:${generatorTag} walls=${wallSets.length} variable=${variableWallCount}`);
+
     if (!groupOW && wallSets.length > 0 && pp.outerWallFirst) {
       if (isFirstLayer && pp.initialLayerOuterWallFlow != null) emitter.currentLayerFlow = pp.initialLayerOuterWallFlow / 100;
       layer.layerTime += emitOuterLoop({ pipeline: slicer, run, layer, pp, li, layerZ, layerH, isFirstLayer, outerWallSpeed, gcode, emitter, moves, loop: wallSets[0], lineWidth: wallLineWidths[0] ?? pp.wallLineWidth, isClosed: wallClosed?.[0] ?? true, allowCoasting: true });
@@ -728,6 +745,12 @@ export function emitGroupedAndContourWalls(
         pp.jerkPrint,
       );
       emitter.travelTo(wallLoop[0].x, wallLoop[0].y, moves);
+      // `;TYPE:` markers match Cura/Orca/PrusaSlicer convention so external
+      // gcode previews can colour walls correctly. Re-asserting the width
+      // at each TYPE boundary makes it obvious in the gcode whether the
+      // following segments are running constant or variable width.
+      gcode.push(`;TYPE:${isExternalWall ? 'Outer wall' : 'Inner wall'}`);
+      emitter.resetEmittedLineWidth?.();
       gcode.push(`; ${isExternalWall ? 'Outer wall' : 'Inner wall'} ${wi}`);
       for (let pi = 1; pi < wallLoop.length; pi++) {
         const from = wallLoop[pi - 1], to = wallLoop[pi];
