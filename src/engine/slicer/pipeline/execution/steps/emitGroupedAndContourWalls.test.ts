@@ -316,7 +316,7 @@ describe('emitGroupedAndContourWalls', () => {
     expect(layer.moves.some((move) => move.type === 'wall-inner')).toBe(true);
   });
 
-  it('emits closed wall loops at nominal width while preserving odd transition bead widths', () => {
+  it('uses nominal widths for closed regular walls and preserves odd transition beads', () => {
     const outer = square(20);
     const inner = square(12).map((point) => point.add(new THREE.Vector2(4, 4)));
     const odd = [
@@ -405,7 +405,7 @@ describe('emitGroupedAndContourWalls', () => {
       .map((move) => move.lineWidth);
 
     expect(new Set(outerWallWidths)).toEqual(new Set([0.4]));
-    expect(innerWidths).toContain(0.45);
+    expect(innerWidths.some((width) => Math.abs(width - 0.515) < 1e-9)).toBe(false);
     expect(innerWidths).toContain(0.26);
     expect(innerWidths).toContain(0.27);
   });

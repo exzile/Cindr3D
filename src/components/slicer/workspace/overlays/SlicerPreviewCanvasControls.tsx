@@ -62,6 +62,14 @@ export function SlicerPreviewCanvasControls() {
         >
           <span className="slicer-preview-layer-control__rail" />
           <span className="slicer-preview-layer-control__fill" />
+          <span
+            className="slicer-preview-layer-control__handle slicer-preview-layer-control__handle--start"
+            aria-hidden="true"
+          />
+          <span
+            className="slicer-preview-layer-control__handle slicer-preview-layer-control__handle--end"
+            aria-hidden="true"
+          />
           <input
             type="range"
             min={0}

@@ -192,9 +192,10 @@ export function SlicerWorkspaceScene() {
   }, [sliceResult, sliceStats]);
 
   const seamPointsAtCurrentLayer = useMemo(() => {
+    if (previewColorMode !== 'seam') return [];
     const layer = sliceResult?.layers[simState.layerIndex];
     return layer ? extractZSeamPoints(layer) : [];
-  }, [sliceResult, simState.layerIndex]);
+  }, [previewColorMode, sliceResult, simState.layerIndex]);
 
   // Legend props — computed once per layer scrub, not per frame.
   const currentLayerData = sliceResult?.layers[simState.layerIndex] ?? null;

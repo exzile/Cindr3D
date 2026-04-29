@@ -139,6 +139,7 @@ export type { VoronoiEdge, VoronoiGraph, VoronoiSourceEdge, VoronoiVertex } from
  *  to log per-stage timing on every region. Off by default so production
  *  slicing doesn't spam the console. */
 const ARACHNE_DEBUG_GLOBAL_KEY = '__arachneDebug';
+const CLOSED_PATH_ENDPOINT_EPSILON = 1e-6;
 
 /** Worker-side accumulator for layer-by-layer Arachne diagnostics. Populated
  *  whenever `__arachneDebug` is on. The slicer worker can postMessage this
@@ -526,9 +527,10 @@ export function variableWidthPathsToPerimeters(
   });
 
   for (const path of sorted) {
-    if (path.points.length < 2) continue;
-    walls.push(path.points);
-    lineWidths.push(path.widths);
+    const normalized = normalizeClosedArachnePath(path);
+    if (normalized.points.length < 2) continue;
+    walls.push(normalized.points);
+    lineWidths.push(normalized.widths);
     wallClosed.push(path.isClosed);
     wallDepths.push(path.depth);
     wallSources.push(path.source);
@@ -544,5 +546,24 @@ export function variableWidthPathsToPerimeters(
     outerCount,
     innermostHoles: [],
     infillRegions: [],
+  };
+}
+
+function normalizeClosedArachnePath(path: VariableWidthPath): Pick<VariableWidthPath, 'points' | 'widths'> {
+  if (!path.isClosed || path.points.length < 3) {
+    return { points: path.points, widths: path.widths };
+  }
+
+  const first = path.points[0];
+  const last = path.points[path.points.length - 1];
+  const dx = first.x - last.x;
+  const dy = first.y - last.y;
+  if ((dx * dx + dy * dy) > CLOSED_PATH_ENDPOINT_EPSILON * CLOSED_PATH_ENDPOINT_EPSILON) {
+    return { points: path.points, widths: path.widths };
+  }
+
+  return {
+    points: path.points.slice(0, -1),
+    widths: path.widths.slice(0, -1),
   };
 }

@@ -2,15 +2,23 @@ import { useEffect, useMemo } from 'react';
 import { type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { SliceLayer, SliceMove, SliceResult } from '../../../../types/slicer';
-import type { MoveHoverInfo, ShaftMoveData, TubeChain } from '../../../../types/slicer-preview.types';
+import type {
+  MoveHoverInfo,
+  PreviewColorMode,
+  ShaftMoveData,
+  TubeChain,
+} from '../../../../types/slicer-preview.types';
 import {
   MOVE_TYPE_THREE_COLORS,
   WIDTH_LOW_COLOR, WIDTH_HIGH_COLOR,
   LAYER_TIME_LOW_COLOR, LAYER_TIME_HIGH_COLOR,
+  Z_SEAM_DIM_THREE_COLOR,
 } from '../preview/constants';
 import {
   buildChainTube,
   DENSE_FILL_TUBE_MATERIAL,
+  ORCA_SEGMENT_TEMPLATE_MATERIAL,
+  ORCA_SEGMENT_TEMPLATE_TRIANGLES,
   TUBE_MATERIAL,
   TUBE_RADIAL_SEGMENTS,
   TRIMMED_FILL_TYPES,
@@ -29,8 +37,6 @@ const PREVIEW_LINE_SCALE = 1.0;
 
 // Endpoint match tolerance for chain detection.
 const PREVIEW_JOIN_EPSILON = 5e-4;
-const PREVIEW_LOOP_CLOSE_LW_FACTOR = 0.2;
-const PREVIEW_LOOP_CLOSE_MAX_MM = 0.08;
 const DEFAULT_FILAMENT_DIAMETER_MM = 1.75;
 const MIN_PREVIEW_LINE_WIDTH_MM = 0.02;
 const MAX_PREVIEW_LINE_WIDTH_FACTOR = 3;
@@ -60,12 +66,6 @@ const SOLID_SKIN_MIN_PITCH_FACTOR = 0.72;
 const CHAIN_BREAK_DOT_THRESHOLD = -0.707;
 // Scratch colour reused during colour computation inside the tube builder.
 const _col = new THREE.Color();
-
-type ColorMode = 'type' | 'speed' | 'flow' | 'width' | 'layer-time' | 'wall-quality';
-
-function usesOrcaSegmentTemplate(type: string): boolean {
-  return type === 'gap-fill';
-}
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function inferDenseSkinPitchWidths(
@@ -116,12 +116,84 @@ export function inferDenseSkinPitchWidths(
   return pitchWidths;
 }
 
+function usesNominalPreviewWidth(move: SliceMove): boolean {
+  return move.type === 'wall-outer' || move.type === 'wall-inner';
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function previewLineWidthFromMove(
+  move: SliceMove,
+  segmentLength: number,
+  layerHeight: number,
+  filamentDiameter: number,
+): number {
+  const nominal = Math.max(MIN_PREVIEW_LINE_WIDTH_MM, move.lineWidth ?? 0.4);
+  if (usesNominalPreviewWidth(move) || move.type === 'top-bottom') {
+    return nominal * PREVIEW_LINE_SCALE;
+  }
+  const beadHeight = Math.max(0.02, move.layerHeight ?? layerHeight);
+  if (move.extrusion <= 0 || segmentLength <= 1e-6 || beadHeight <= 0) {
+    return nominal * PREVIEW_LINE_SCALE;
+  }
+  const filamentRadius = Math.max(0.1, filamentDiameter || DEFAULT_FILAMENT_DIAMETER_MM) * 0.5;
+  const filamentArea = Math.PI * filamentRadius * filamentRadius;
+  const volumeWidth = (move.extrusion * filamentArea) / (segmentLength * beadHeight);
+  if (!Number.isFinite(volumeWidth) || volumeWidth <= 0) {
+    return nominal * PREVIEW_LINE_SCALE;
+  }
+  const capped = Math.min(
+    Math.max(volumeWidth, MIN_PREVIEW_LINE_WIDTH_MM),
+    nominal * MAX_PREVIEW_LINE_WIDTH_FACTOR,
+  );
+  return capped * PREVIEW_LINE_SCALE;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function appendJoinedPreviewPoint(
+  chain: TubeChain,
+  point: { x: number; y: number },
+  lineWidth: number,
+  color: [number, number, number],
+  moveRef: ShaftMoveData,
+): void {
+  chain.points.push({ x: point.x, y: point.y, lw: lineWidth });
+  chain.segColors.push(color);
+  chain.moveRefs.push(moveRef);
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function canContinuePreviewChain(
+  chain: TubeChain | null,
+  move: SliceMove,
+): boolean {
+  if (!chain || chain.points.length === 0) return false;
+  const last = chain.points[chain.points.length - 1];
+  return Math.abs(last.x - move.from.x) <= PREVIEW_JOIN_EPSILON
+    && Math.abs(last.y - move.from.y) <= PREVIEW_JOIN_EPSILON;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function closePreviewChainIfLoop(chain: TubeChain): void {
+  if (chain.isClosed || chain.points.length < 4) return;
+  const first = chain.points[0];
+  const last = chain.points[chain.points.length - 1];
+  if (
+    Math.abs(first.x - last.x) > PREVIEW_JOIN_EPSILON
+    || Math.abs(first.y - last.y) > PREVIEW_JOIN_EPSILON
+  ) {
+    return;
+  }
+
+  chain.points.pop();
+  chain.isClosed = true;
+}
+
 // ---------------------------------------------------------------------------
 // LayerLines — chain-based tube rendering for a single layer
 // ---------------------------------------------------------------------------
 //
-// Walks the layer's moves once, groups consecutive extrusion moves of the
-// same type whose endpoints chain together into a polyline, then builds one
+// Walks the layer's moves once, groups consecutive extrusion moves whose
+// endpoints chain together into a polyline, then builds one
 // tube BufferGeometry per chain (see tubeGeometry.ts for the tube builder
 // and the rationale for why this matches real print geometry).
 
@@ -145,7 +217,7 @@ export function LayerLines({
   currentLayerMoveCount: number | undefined;
   showTravel: boolean;
   showRetractions: boolean;
-  colorMode: ColorMode;
+  colorMode: PreviewColorMode;
   hiddenTypes: ReadonlySet<string>;
   /** Normalised 0-1 position on the layer-time ramp (0 = fast, 1 = slow). */
   layerTimeT?: number;
@@ -209,6 +281,8 @@ export function LayerLines({
       } else if (colorMode === 'width') {
         const t = Math.max(0, Math.min(1, (move.lineWidth - minWidth) / widthRange));
         _col.copy(WIDTH_LOW_COLOR).lerp(WIDTH_HIGH_COLOR, t);
+      } else if (colorMode === 'seam') {
+        _col.copy(Z_SEAM_DIM_THREE_COLOR);
       } else if (colorMode === 'wall-quality') {
         // For walls only: paint by deviation from median wall width.
         // - At target (±5%): bright green (good extrusion).
@@ -244,41 +318,19 @@ export function LayerLines({
       return [_col.r, _col.g, _col.b];
     };
 
-    // Chain detection: walk moves in order. A new chain starts on any of:
-    //   • travel / retraction move (chain break, travel line recorded)
-    //   • hidden type                     • zero-length segment
-    //   • type change vs current chain    • from point doesn't match last to
+    // Chain detection: walk moves in order. Orca/libvgcode keeps consecutive
+    // Extrude vertices continuous even when the extrusion role/color changes
+    // (outer wall -> inner wall -> skin, etc.). Role changes should not add
+    // endpoint caps; only real motion discontinuities should break a bead.
+    // A new chain starts on any of:
+    //   - travel / retraction move (chain break, travel line recorded)
+    //   - hidden type                     - zero-length segment
+    //   - from point doesn't match last to
     const travPos: number[] = [];
     const retractPos: number[] = [];
     const chains: TubeChain[] = [];
     let current: TubeChain | null = null;
     const denseSkinPitchWidths = inferDenseSkinPitchWidths(moves);
-
-    const samePoint = (a: { x: number; y: number }, b: { x: number; y: number }) =>
-      Math.abs(a.x - b.x) <= PREVIEW_JOIN_EPSILON
-      && Math.abs(a.y - b.y) <= PREVIEW_JOIN_EPSILON;
-
-    const lineWidthFromGCode = (move: SliceMove, segmentLength: number): number => {
-      const nominal = Math.max(MIN_PREVIEW_LINE_WIDTH_MM, move.lineWidth ?? 0.4);
-      if (move.type === 'top-bottom') {
-        return nominal * PREVIEW_LINE_SCALE;
-      }
-      const beadHeight = Math.max(0.02, move.layerHeight ?? layerHeight);
-      if (move.extrusion <= 0 || segmentLength <= 1e-6 || beadHeight <= 0) {
-        return nominal * PREVIEW_LINE_SCALE;
-      }
-      const filamentRadius = Math.max(0.1, filamentDiameter || DEFAULT_FILAMENT_DIAMETER_MM) * 0.5;
-      const filamentArea = Math.PI * filamentRadius * filamentRadius;
-      const volumeWidth = (move.extrusion * filamentArea) / (segmentLength * beadHeight);
-      if (!Number.isFinite(volumeWidth) || volumeWidth <= 0) {
-        return nominal * PREVIEW_LINE_SCALE;
-      }
-      const capped = Math.min(
-        Math.max(volumeWidth, MIN_PREVIEW_LINE_WIDTH_MM),
-        nominal * MAX_PREVIEW_LINE_WIDTH_FACTOR,
-      );
-      return capped * PREVIEW_LINE_SCALE;
-    };
 
     for (let i = 0; i < moves.length; i++) {
       const move = moves[i];
@@ -299,7 +351,7 @@ export function LayerLines({
       const segLen = Math.hypot(move.to.x - move.from.x, move.to.y - move.from.y);
       if (segLen < 1e-6) continue;
 
-      const lw = lineWidthFromGCode(move, segLen);
+      const lw = previewLineWidthFromMove(move, segLen, layerHeight, filamentDiameter);
       const renderLw = move.type === 'top-bottom'
         ? (denseSkinPitchWidths.get(i) ?? (lw * SOLID_SKIN_CONTACT_ALLOWANCE))
         : lw;
@@ -314,14 +366,11 @@ export function LayerLines({
       };
 
       // Decide whether to extend the current chain, or break it and start
-      // fresh. A chain is "extendable" only when the new segment matches the
-      // previous segment's type/endpoint AND the bend at the shared vertex
-      // is gentle enough to miter without spike artefacts.
-      let extendable = current !== null
-        && current.type === move.type
-        && samePoint(current.points[current.points.length - 1], move.from);
+      // fresh. Orca keeps consecutive Extrude vertices continuous across
+      // extrusion roles/colors; only real motion discontinuities should cap.
+      let extendable = canContinuePreviewChain(current, move);
 
-      if (extendable && current!.points.length >= 2 && !TRIMMED_FILL_TYPES.has(current!.type)) {
+      if (extendable && current!.points.length >= 2 && !TRIMMED_FILL_TYPES.has(move.type)) {
         const lastIdx = current!.points.length - 1;
         const prev = current!.points[lastIdx - 1];
         const here = current!.points[lastIdx];
@@ -342,9 +391,8 @@ export function LayerLines({
       }
 
       if (extendable && current) {
-        current.points.push({ x: move.to.x, y: move.to.y, lw: renderLw });
-        current.segColors.push(col);
-        current.moveRefs.push(ref);
+        if (current.type !== move.type) current.type = 'mixed';
+        appendJoinedPreviewPoint(current, move.to, renderLw, col, ref);
       } else {
         current = {
           type: move.type,
@@ -360,42 +408,13 @@ export function LayerLines({
       }
     }
 
-    // Detect loop closure: first point matches last point (or is visually
-    // within a small fraction of bead width) -> closed chain.
-    // But ONLY close the loop if the bend at the closure vertex is also
-    // gentle enough to miter — otherwise the closure produces the same spike
-    // artefact we fought off elsewhere. For sharp closure bends, leave the
-    // chain open (the first-point and last-point bevel rings will sit flush
-    // against each other, no miter spike).
-    for (const c of chains) {
-      if (c.points.length < 3) continue;
-      const first = c.points[0];
-      const last = c.points[c.points.length - 1];
-      const closeTol = Math.max(
-        PREVIEW_JOIN_EPSILON,
-        Math.min(PREVIEW_LOOP_CLOSE_MAX_MM, Math.min(first.lw, last.lw) * PREVIEW_LOOP_CLOSE_LW_FACTOR),
-      );
-      if (Math.hypot(first.x - last.x, first.y - last.y) > closeTol) continue;
-
-      // Closure bend: in_dir = last segment (points[n-2] → points[n-1]),
-      // out_dir = first segment (points[0] → points[1]). Both evaluated at
-      // the shared closure vertex.
-      const n = c.points.length;
-      const inDx = last.x - c.points[n - 2].x;
-      const inDy = last.y - c.points[n - 2].y;
-      const inLen = Math.hypot(inDx, inDy);
-      const outDx = c.points[1].x - first.x;
-      const outDy = c.points[1].y - first.y;
-      const outLen = Math.hypot(outDx, outDy);
-      if (inLen > 1e-6 && outLen > 1e-6) {
-        const dotInOut = (inDx * outDx + inDy * outDy) / (inLen * outLen);
-        if (dotInOut < CHAIN_BREAK_DOT_THRESHOLD) continue; // too sharp — stay open
-      }
-      first.x = (first.x + last.x) * 0.5;
-      first.y = (first.y + last.y) * 0.5;
-      c.points.pop();
-      c.isClosed = true;
-    }
+    // Orca's segment shader expects closed loops to use the neighboring
+    // segments for endpoint angles. The G-code move stream closes a wall by
+    // extruding back to the first point, so the chain arrives here with a
+    // duplicate final endpoint. Collapse that duplicate into an implicit loop;
+    // otherwise the shader treats the seam as two open endpoints and draws
+    // point caps, which stack into visible zipper dents on round outer walls.
+    for (const chain of chains) closePreviewChainIfLoop(chain);
 
     // Build a tube for each chain.
     const beadHeight = Math.max(0.02, layerHeight);
@@ -406,7 +425,7 @@ export function LayerLines({
     }> = [];
     for (const chain of chains) {
       const geo = buildChainTube(chain, beadHeight, layer.z, {
-        useSegmentTemplate: usesOrcaSegmentTemplate(chain.type),
+        useSegmentTemplate: true,
         usePressedRoadTemplate: layer.layerIndex === 0,
       });
       if (!geo) continue;
@@ -434,7 +453,9 @@ export function LayerLines({
         <mesh
           key={`${layer.layerIndex}-${t.type}-${i}`}
           geometry={t.geometry}
-          material={TRIMMED_FILL_TYPES.has(t.type) ? DENSE_FILL_TUBE_MATERIAL : TUBE_MATERIAL}
+          material={t.geometry.getAttribute('vertexId')
+            ? ORCA_SEGMENT_TEMPLATE_MATERIAL
+            : (TRIMMED_FILL_TYPES.has(t.type) ? DENSE_FILL_TUBE_MATERIAL : TUBE_MATERIAL)}
           renderOrder={TRIMMED_FILL_TYPES.has(t.type) ? 0 : 2}
           frustumCulled={false}
           onPointerMove={onHoverMove ? (e: ThreeEvent<PointerEvent>) => {
@@ -442,7 +463,10 @@ export function LayerLines({
             // (RADIAL quads × 2 tri). Face index → segment index.
             const faceIdx = e.faceIndex ?? undefined;
             if (faceIdx === undefined) return;
-            const segIdx = Math.floor(faceIdx / (TUBE_RADIAL_SEGMENTS * 2));
+            const trianglesPerMove = t.geometry.getAttribute('vertexId')
+              ? ORCA_SEGMENT_TEMPLATE_TRIANGLES
+              : TUBE_RADIAL_SEGMENTS * 2;
+            const segIdx = Math.floor(faceIdx / trianglesPerMove);
             if (segIdx < 0 || segIdx >= t.moveRefs.length) return;
             e.stopPropagation();
             // r3f_critical_patterns: don't `new THREE.Vector3()` on the
@@ -503,7 +527,7 @@ export function InlineGCodePreview({
   currentLayerMoveCount?: number;
   showTravel: boolean;
   showRetractions: boolean;
-  colorMode: ColorMode;
+  colorMode: PreviewColorMode;
   hiddenTypes: ReadonlySet<string>;
   /** [min, max] layer-time across the visible window — only used in layer-time mode. */
   layerTimeRange: [number, number];

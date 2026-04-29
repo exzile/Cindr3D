@@ -1,19 +1,20 @@
 import { X } from 'lucide-react';
 import { useSlicerStore } from '../../../../store/slicerStore';
-import { MOVE_TYPE_COLORS, MOVE_TYPE_LABELS } from '../preview/constants';
+import type { PreviewColorMode } from '../../../../types/slicer-preview.types';
+import { MOVE_TYPE_COLORS, MOVE_TYPE_LABELS, Z_SEAM_COLOR } from '../preview/constants';
 import './SlicerColorSchemePanel.css';
 
 // Per-mode gradient bar backgrounds (inline style overrides the CSS default).
-const GRADIENT_BARS: Record<string, string> = {
+const GRADIENT_BARS: Partial<Record<PreviewColorMode, string>> = {
   speed:       'linear-gradient(to right, #2255cc, #cc2222)',
   flow:        'linear-gradient(to right, #22bb44, #cc2222)',
   width:       'linear-gradient(to right, #2255cc, #cc6600)',
   'layer-time':'linear-gradient(to right, #22bb44, #cc2222)',
 };
-const GRADIENT_LOW_LABEL: Record<string, string> = {
+const GRADIENT_LOW_LABEL: Partial<Record<PreviewColorMode, string>> = {
   speed: 'Slow', flow: 'Low', width: 'Thin', 'layer-time': 'Fast',
 };
-const GRADIENT_HIGH_LABEL: Record<string, string> = {
+const GRADIENT_HIGH_LABEL: Partial<Record<PreviewColorMode, string>> = {
   speed: 'Fast', flow: 'High', width: 'Thick', 'layer-time': 'Slow',
 };
 
@@ -49,7 +50,7 @@ export function SlicerColorSchemePanel() {
         <select
           className="slicer-cs-panel__mode-select"
           value={colorMode}
-          onChange={(e) => setColorMode(e.target.value as 'type' | 'speed' | 'flow' | 'width' | 'layer-time' | 'wall-quality')}
+          onChange={(e) => setColorMode(e.target.value as PreviewColorMode)}
         >
           <option value="type">Line Type</option>
           <option value="speed">Speed</option>
@@ -57,6 +58,7 @@ export function SlicerColorSchemePanel() {
           <option value="width">Line Width</option>
           <option value="layer-time">Layer Time</option>
           <option value="wall-quality">Wall Quality</option>
+          <option value="seam">Seam</option>
         </select>
       </div>
 
@@ -84,6 +86,16 @@ export function SlicerColorSchemePanel() {
               );
             })}
           </>
+        ) : colorMode === 'seam' ? (
+          <div className="slicer-cs-panel__seam-legend">
+            <div className="slicer-cs-panel__row slicer-cs-panel__row--static">
+              <span className="slicer-cs-panel__label">Z Seam Starts</span>
+              <span
+                className="slicer-cs-panel__swatch slicer-cs-panel__swatch--seam"
+                style={{ background: Z_SEAM_COLOR }}
+              />
+            </div>
+          </div>
         ) : (
           <div className="slicer-cs-panel__gradient-legend">
             <div

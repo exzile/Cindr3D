@@ -7,9 +7,9 @@ import { prepareLayerGeometryState } from '../engine/slicer/pipeline/execution/s
 import { loadArachneModule } from '../engine/slicer/pipeline/arachne';
 import type { SliceGeometryRun, SliceLayerGeometryState } from '../engine/slicer/pipeline/execution/steps/types';
 import { lineWidthForLayer } from '../engine/slicer/pipeline/execution/steps/lineWidths';
-import type { Contour, Triangle } from '../types/slicer-pipeline.types';
+import type { Contour, ModifierMesh, Triangle } from '../types/slicer-pipeline.types';
 import type { GeneratedPerimeters } from '../types/slicer-pipeline.types';
-import type { MaterialProfile, PrinterProfile, PrintProfile } from '../types/slicer';
+import type { MaterialProfile, PrinterProfile, PrintProfile, ModifierMeshSettings } from '../types/slicer';
 
 interface RawGeometry {
   positions: Float32Array;
@@ -33,8 +33,16 @@ interface SerializedTriangle {
   edgeKey20: string;
 }
 
+interface SerializedModifierMesh {
+  role: ModifierMesh['role'];
+  meshIndex: number;
+  triangles: SerializedTriangle[];
+  settings?: ModifierMeshSettings;
+}
+
 type SerializedGeometryRun = Omit<SliceGeometryRun, 'triangles' | 'modelBBox' | 'modifierMeshes'> & {
   triangles: SerializedTriangle[];
+  modifierMeshes: SerializedModifierMesh[];
   modelBBox: {
     min: SerializedVector3;
     max: SerializedVector3;
@@ -96,23 +104,28 @@ function hydrateVector3(v: SerializedVector3): THREE.Vector3 {
   return new THREE.Vector3(v.x, v.y, v.z);
 }
 
+function hydrateTriangle(tri: SerializedTriangle): Triangle {
+  return {
+    v0: hydrateVector3(tri.v0),
+    v1: hydrateVector3(tri.v1),
+    v2: hydrateVector3(tri.v2),
+    normal: hydrateVector3(tri.normal),
+    edgeKey01: tri.edgeKey01,
+    edgeKey12: tri.edgeKey12,
+    edgeKey20: tri.edgeKey20,
+  };
+}
+
 function hydrateGeometryRun(run: SerializedGeometryRun): SliceGeometryRun {
   return {
     ...run,
-    triangles: run.triangles.map((tri): Triangle => ({
-      v0: hydrateVector3(tri.v0),
-      v1: hydrateVector3(tri.v1),
-      v2: hydrateVector3(tri.v2),
-      normal: hydrateVector3(tri.normal),
-      edgeKey01: tri.edgeKey01,
-      edgeKey12: tri.edgeKey12,
-      edgeKey20: tri.edgeKey20,
+    triangles: run.triangles.map(hydrateTriangle),
+    modifierMeshes: (run.modifierMeshes ?? []).map((mesh): ModifierMesh => ({
+      role: mesh.role,
+      meshIndex: mesh.meshIndex,
+      settings: mesh.settings,
+      triangles: mesh.triangles.map(hydrateTriangle),
     })),
-    // Modifier meshes are not serialized into the layer worker — the
-    // top-level slicer disables parallel layer prep when modifiers are
-    // present (see shouldUseLayerWorkerPool), so this list is always
-    // empty in the worker path.
-    modifierMeshes: [],
     modelBBox: {
       min: hydrateVector3(run.modelBBox.min),
       max: hydrateVector3(run.modelBBox.max),

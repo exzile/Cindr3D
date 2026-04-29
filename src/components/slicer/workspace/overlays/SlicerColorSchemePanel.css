@@ -108,6 +108,14 @@
   background: color-mix(in srgb, var(--text-primary) 5%, transparent);
 }
 
+.slicer-cs-panel__row--static {
+  cursor: default;
+}
+
+.slicer-cs-panel__row--static:hover {
+  background: transparent;
+}
+
 .slicer-cs-panel__check {
   width: 13px;
   height: 13px;
@@ -147,6 +155,15 @@
   background: #f44336;
   border-radius: 50%;
   border-color: transparent;
+}
+
+.slicer-cs-panel__swatch--seam {
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+
+.slicer-cs-panel__seam-legend {
+  padding: 5px 0 6px;
 }
 
 /* ── Speed / Flow gradient legend ───────────────────────────────────────── */

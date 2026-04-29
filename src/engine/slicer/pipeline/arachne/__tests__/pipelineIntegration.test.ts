@@ -32,4 +32,22 @@ describe('Arachne pipeline integration', () => {
     expect(perimeters.wallClosed).toEqual([false, false]);
     expect(perimeters.wallDepths).toEqual([0, 1]);
   });
+
+  it('removes Arachne duplicate closing points before emitting closed perimeters', () => {
+    const perimeters = variableWidthPathsToPerimeters([
+      {
+        points: [v(0, 0), v(10, 0), v(10, 10), v(0, 0)],
+        widths: [0.42, 0.43, 0.44, 0.45],
+        depth: 0,
+        isClosed: true,
+        source: 'outer',
+      },
+    ]);
+
+    expect(perimeters.walls[0]).toHaveLength(3);
+    expect(perimeters.walls[0][0]).toEqual(v(0, 0));
+    expect(perimeters.walls[0][2]).toEqual(v(10, 10));
+    expect(perimeters.lineWidths[0]).toEqual([0.42, 0.43, 0.44]);
+    expect(perimeters.wallClosed).toEqual([true]);
+  });
 });

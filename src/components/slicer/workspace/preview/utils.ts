@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { SliceLayer, SliceMove } from '../../../../types/slicer';
+import type { LayerGeometryData, PreviewColorMode } from '../../../../types/slicer-preview.types';
 import {
   MOVE_TYPE_THREE_COLORS,
   SPEED_LOW_COLOR,
@@ -10,8 +11,8 @@ import {
   WIDTH_HIGH_COLOR,
   LAYER_TIME_LOW_COLOR,
   LAYER_TIME_HIGH_COLOR,
+  Z_SEAM_DIM_THREE_COLOR,
 } from './constants';
-import type { LayerGeometryData } from '../../../../types/slicer-preview.types';
 
 // Scratch color — reused across getMoveColor calls to avoid per-move allocation.
 const _scratchColor = new THREE.Color();
@@ -70,7 +71,7 @@ export function computeLayerTimeRange(
  */
 export function getMoveColor(
   move: SliceMove,
-  colorMode: 'type' | 'speed' | 'flow' | 'width' | 'layer-time' | 'wall-quality',
+  colorMode: PreviewColorMode,
   range: [number, number],
   layerTimeT = 0,
 ): THREE.Color {
@@ -80,6 +81,10 @@ export function getMoveColor(
 
   if (colorMode === 'layer-time') {
     return _scratchColor.copy(LAYER_TIME_LOW_COLOR).lerp(LAYER_TIME_HIGH_COLOR, Math.max(0, Math.min(1, layerTimeT)));
+  }
+
+  if (colorMode === 'seam') {
+    return _scratchColor.copy(Z_SEAM_DIM_THREE_COLOR);
   }
 
   if (colorMode === 'speed') {
@@ -99,7 +104,7 @@ export function getMoveColor(
 
 export function buildLayerGeometry(
   layer: SliceLayer,
-  colorMode: 'type' | 'speed' | 'flow' | 'width' | 'layer-time' | 'wall-quality',
+  colorMode: PreviewColorMode,
   range: [number, number],
   layerTimeT = 0,
 ): LayerGeometryData {

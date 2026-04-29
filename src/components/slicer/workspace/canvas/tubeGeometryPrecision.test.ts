@@ -113,28 +113,29 @@ describe('Preview tube — Orca-style solid skin ends', () => {
   it('renders top-bottom as Orca-style fixed-width segment templates with point caps', () => {
     const chain = makeChain([[0, 0], [10, 0]], 0.4, false, 'top-bottom');
     const geo = buildChainTube(chain, 0.2, 0.2);
-    const positions = geo!.getAttribute('position').array as Float32Array;
-    const box = new THREE.Box3().setFromBufferAttribute(
-      geo!.getAttribute('position') as THREE.BufferAttribute,
-    );
+    const positionsA = geo!.getAttribute('segmentPositionA').array as Float32Array;
+    const positionsB = geo!.getAttribute('segmentPositionB').array as Float32Array;
+    const hwaA = geo!.getAttribute('segmentHwaA').array as Float32Array;
+    const hwaB = geo!.getAttribute('segmentHwaB').array as Float32Array;
 
-    expect(box.min.x).toBeCloseTo(-0.2, 5);
-    expect(box.max.x).toBeCloseTo(10.2, 5);
-    expect(box.max.y - box.min.y).toBeCloseTo(0.4, 5);
-    expect(box.max.z - box.min.z).toBeCloseTo(0.1, 5);
-    expect(positions.length).toBe(8 * 3);
+    expect(geo!.getAttribute('vertexId').count).toBe(24);
+    expect(positionsA[0]).toBeCloseTo(0, 5);
+    expect(positionsB[0]).toBeCloseTo(10, 5);
+    expect(hwaA[0]).toBeCloseTo(0.2, 5);
+    expect(hwaA[1]).toBeCloseTo(0.4, 5);
+    expect(hwaA[2]).toBeCloseTo(0, 5);
+    expect(hwaB[0]).toBeCloseTo(0.2, 5);
+    expect(hwaB[1]).toBeCloseTo(0.4, 5);
+    expect(hwaB[2]).toBeCloseTo(0, 5);
   });
 
   it('uses Orca-style endpoint turn angles for top-bottom connector caps', () => {
     const chain = makeChain([[0, 0], [10, 0], [10, 1]], 0.4, false, 'top-bottom');
     const geo = buildChainTube(chain, 0.2, 0.2);
-    const box = new THREE.Box3().setFromBufferAttribute(
-      geo!.getAttribute('position') as THREE.BufferAttribute,
-    );
+    const hwaB = geo!.getAttribute('segmentHwaB').array as Float32Array;
 
-    expect(box.min.x).toBeCloseTo(-0.2, 5);
-    expect(box.max.x).toBeLessThan(10.25);
-    expect(box.max.y).toBeCloseTo(1.2, 5);
+    expect(geo!.getAttribute('vertexId').count).toBe(48);
+    expect(hwaB[2]).toBeCloseTo(Math.PI / 2, 5);
   });
 
   it('renders sparse infill tube ring centers at exact gcode endpoints (no trim)', () => {
@@ -261,7 +262,7 @@ describe('Preview tube — vertex count consistency', () => {
     const chain = makeChain([[0, 0], [10, 0], [20, 5]], 0.4, false, 'infill');
     const geo = buildChainTube(chain, 0.2, 0.2);
     const positions = geo!.getAttribute('position').array as Float32Array;
-    expect(positions.length).toBe((3 * ringSize + 2) * 3);
+    expect(positions.length).toBe(3 * ringSize * 3);
   });
 
   it('open SUPPORT chain has no apex caps (caps gated to fill types only)', () => {
@@ -276,7 +277,7 @@ describe('Preview tube — vertex count consistency', () => {
     const chain = makeChain(points, 0.4, false, 'infill');
     const geo = buildChainTube(chain, 0.2, 0.2);
     const positions = geo!.getAttribute('position').array as Float32Array;
-    expect(positions.length).toBe((n * ringSize + 2) * 3);
+    expect(positions.length).toBe(n * ringSize * 3);
   });
 });
 
@@ -286,8 +287,7 @@ describe('Preview tube — index buffer correctness', () => {
     const geo = buildChainTube(chain, 0.2, 0.2);
     const indices = geo!.getIndex();
     const bodyIndices = 2 * RADIAL * 6;
-    const capIndices = 2 * RADIAL * 3;
-    expect(indices!.count).toBe(bodyIndices + capIndices);
+    expect(indices!.count).toBe(bodyIndices);
   });
 
   it('index buffer has 6 × N × RADIAL for closed N-point chains', () => {

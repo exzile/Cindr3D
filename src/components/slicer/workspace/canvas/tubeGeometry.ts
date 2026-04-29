@@ -11,8 +11,8 @@ import type { TubeChain } from '../../../../types/slicer-preview.types';
 // interior form visible discontinuities, and across many layers those
 // discontinuities stack into bead-column patterns on cylindrical features.
 //
-// Instead we group consecutive extrusion moves of the same type whose
-// endpoints chain together into a "chain" (a continuous polyline) and build
+// Instead we group consecutive extrusion moves whose endpoints chain together
+// into a "chain" (a continuous polyline) and build
 // a single tube BufferGeometry per chain with MITERED joints — at every
 // interior vertex the tube's cross-section rotates into the bisector of the
 // incoming and outgoing segments, so adjacent segments share one vertex ring
@@ -33,6 +33,17 @@ import type { TubeChain } from '../../../../types/slicer-preview.types';
  *  Triangle count: RADIAL × 2 per segment, ~24k triangles for a typical
  *  1000-segment layer. */
 export const TUBE_RADIAL_SEGMENTS = 12;
+export const ORCA_SEGMENT_TEMPLATE_TRIANGLES = 8;
+const ORCA_SEGMENT_TEMPLATE_VERTEX_IDS = [
+  0, 1, 2,
+  0, 2, 3,
+  0, 3, 4,
+  0, 4, 5,
+  0, 5, 6,
+  0, 6, 1,
+  5, 4, 7,
+  5, 7, 6,
+] as const;
 
 /** Per-ring vertex layout for an elliptical tube cross-section. Each
  *  entry maps a ring-vertex index to:
@@ -123,7 +134,7 @@ export const TRIMMED_FILL_TYPES = new Set(['infill', 'top-bottom', 'bridge', 'ir
 const FILL_END_TRIM_FACTOR = 0;
 const SOLID_SKIN_END_TRIM_FACTOR = 0;
 const OPEN_WALL_END_TRIM_FACTOR = 0;
-const POINTY_CAP_EXTENSION_FACTOR = 1;
+const OPEN_WALL_END_TAPER_FACTOR = 0.12;
 
 /** Shared material for the extrusion-tube meshes. `vertexColors: true` lets
  *  each chain carry per-point colours via its BufferGeometry's colour
@@ -154,6 +165,128 @@ export const DENSE_FILL_TUBE_MATERIAL = Object.assign(
   { userData: { shared: true } },
 );
 
+export const ORCA_SEGMENT_TEMPLATE_MATERIAL = Object.assign(
+  new THREE.ShaderMaterial({
+    vertexShader: `
+      const vec3 LIGHT_TOP_DIR = normalize(vec3(-0.4574957, 0.4574957, 0.7624929));
+      const float LIGHT_TOP_DIFFUSE = 0.6 * 0.8;
+      const float LIGHT_TOP_SPECULAR = 0.6 * 0.125;
+      const float LIGHT_TOP_SHININESS = 20.0;
+      const vec3 LIGHT_FRONT_DIR = normalize(vec3(0.6985074, 0.1397015, 0.6985074));
+      const float LIGHT_FRONT_DIFFUSE = 0.6 * 0.2;
+      const float AMBIENT = 0.2;
+      const float EMISSION = 0.15;
+      const vec3 UP = vec3(0.0, 0.0, 1.0);
+
+      attribute float vertexId;
+      attribute vec3 segmentPositionA;
+      attribute vec3 segmentPositionB;
+      attribute vec4 segmentHwaA;
+      attribute vec4 segmentHwaB;
+      attribute vec3 segmentColorA;
+      attribute vec3 segmentColorB;
+
+      varying vec3 vColor;
+
+      float lighting(vec3 eyePosition, vec3 eyeNormal) {
+        float topDiffuse = LIGHT_TOP_DIFFUSE * max(dot(eyeNormal, LIGHT_TOP_DIR), 0.0);
+        float frontDiffuse = LIGHT_FRONT_DIFFUSE * max(dot(eyeNormal, LIGHT_FRONT_DIR), 0.0);
+        float topSpecular = LIGHT_TOP_SPECULAR * pow(
+          max(dot(-normalize(eyePosition), reflect(-LIGHT_TOP_DIR, eyeNormal)), 0.0),
+          LIGHT_TOP_SHININESS
+        );
+        return AMBIENT + topDiffuse + frontDiffuse + topSpecular + EMISSION;
+      }
+
+      vec2 signsForVertex(float id, bool verticalView) {
+        vec2 result = vec2(0.0, 0.0);
+        if (verticalView) {
+          if (id < 0.5) result = vec2(0.0, 1.0);
+          else if (id < 1.5) result = vec2(-1.0, 0.0);
+          else if (id < 2.5) result = vec2(0.0, 0.0);
+          else if (id < 3.5) result = vec2(1.0, 0.0);
+          else if (id < 4.5) result = vec2(1.0, 0.0);
+          else if (id < 5.5) result = vec2(0.0, 1.0);
+          else if (id < 6.5) result = vec2(-1.0, 0.0);
+        } else {
+          if (id < 0.5) result = vec2(1.0, 0.0);
+          else if (id < 1.5) result = vec2(0.0, 1.0);
+          else if (id < 2.5) result = vec2(0.0, 0.0);
+          else if (id < 3.5) result = vec2(0.0, -1.0);
+          else if (id < 4.5) result = vec2(0.0, -1.0);
+          else if (id < 5.5) result = vec2(1.0, 0.0);
+          else if (id < 6.5) result = vec2(0.0, 1.0);
+        }
+        return result;
+      }
+
+      void main() {
+        float id = vertexId;
+        bool useA = id < 3.5;
+        vec3 endpointPos = useA ? segmentPositionA : segmentPositionB;
+        vec4 hwa = useA ? segmentHwaA : segmentHwaB;
+        vec3 colorBase = useA ? segmentColorA : segmentColorB;
+
+        vec3 line = segmentPositionB - segmentPositionA;
+        float lineLen = length(line);
+        vec3 lineDir = lineLen < 1e-4 ? vec3(1.0, 0.0, 0.0) : line / lineLen;
+        vec3 lineRightDir;
+        if (abs(dot(lineDir, UP)) > 0.9) {
+          lineRightDir = normalize(cross(vec3(1.0, 0.0, 0.0), lineDir));
+        } else {
+          lineRightDir = normalize(cross(lineDir, UP));
+        }
+        vec3 lineUpDir = normalize(cross(lineRightDir, lineDir));
+
+        vec3 cameraViewDir = normalize((distance(cameraPosition, segmentPositionA) < distance(cameraPosition, segmentPositionB))
+          ? segmentPositionA - cameraPosition
+          : segmentPositionB - cameraPosition);
+        vec4 closerHwa = distance(cameraPosition, segmentPositionA) < distance(cameraPosition, segmentPositionB)
+          ? segmentHwaA
+          : segmentHwaB;
+        vec3 diagonalDirBorder = normalize(closerHwa.x * lineUpDir + closerHwa.y * lineRightDir);
+        bool isVerticalView = abs(dot(cameraViewDir, lineUpDir)) / abs(dot(diagonalDirBorder, lineUpDir))
+          > abs(dot(cameraViewDir, lineRightDir)) / abs(dot(diagonalDirBorder, lineRightDir));
+        vec2 signs = signsForVertex(id, isVerticalView);
+        float viewRightSign = sign(dot(-cameraViewDir, lineRightDir));
+        float viewTopSign = sign(dot(-cameraViewDir, lineUpDir));
+        float halfHeight = 0.5 * hwa.x;
+        float halfWidth = 0.5 * hwa.y;
+        vec3 horizontalDir = halfWidth * lineRightDir;
+        vec3 verticalDir = halfHeight * lineUpDir;
+        float horizontalSign = signs.x * viewRightSign;
+        float verticalSign = signs.y * viewTopSign;
+        vec3 pos = endpointPos + horizontalSign * horizontalDir + verticalSign * verticalDir;
+
+        if ((id > 1.5 && id < 2.5) || (id > 6.5 && id < 7.5)) {
+          float lineDirSign = (id < 2.5) ? -1.0 : 1.0;
+          if (abs(hwa.z) < 1e-6) {
+            pos += lineDirSign * lineDir * halfWidth;
+          } else {
+            pos += lineDirSign * lineDir * halfWidth * sin(abs(hwa.z) * 0.5);
+            pos += sign(hwa.z) * horizontalDir * cos(abs(hwa.z) * 0.5);
+          }
+        }
+
+        vec4 eyePosition4 = modelViewMatrix * vec4(pos, 1.0);
+        eyePosition4.z += hwa.w;
+        vec3 normalWorld = normalize(pos - endpointPos);
+        vec3 eyeNormal = normalize(mat3(viewMatrix) * normalWorld);
+        vColor = colorBase * lighting(eyePosition4.xyz, eyeNormal);
+        gl_Position = projectionMatrix * eyePosition4;
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vColor;
+      void main() {
+        gl_FragColor = vec4(vColor, 1.0);
+      }
+    `,
+    side: THREE.DoubleSide,
+  }),
+  { userData: { shared: true } },
+);
+
 /**
  * Build an elliptical-cross-section mitered tube BufferGeometry for a chain.
  * `layerHeight` is the vertical extent of the bead (Z). `baseZ` is the layer
@@ -164,6 +297,7 @@ export const DENSE_FILL_TUBE_MATERIAL = Object.assign(
  *  corners. We only subdivide chains that look like curve approximations:
  *  enough points AND short average segment relative to lineWidth. */
 function shouldSubdivide(chain: TubeChain): boolean {
+  if (chain.type === 'gap-fill') return false;
   if (chain.points.length < TUBE_SUBDIVISION_MIN_POINTS) return false;
   let totalLen = 0;
   let count = 0;
@@ -270,12 +404,14 @@ function buildOrcaSegmentTemplateGeometry(
   if (n < 2) return null;
 
   const positions: number[] = [];
-  const normals: number[] = [];
-  const colors: number[] = [];
-  const indices: number[] = [];
+  const vertexIds: number[] = [];
+  const segmentPositionA: number[] = [];
+  const segmentPositionB: number[] = [];
+  const segmentHwaA: number[] = [];
+  const segmentHwaB: number[] = [];
+  const segmentColorA: number[] = [];
+  const segmentColorB: number[] = [];
   const centerZ = baseZ - layerHeight * 0.5;
-  const halfH = layerHeight * 0.5;
-  const vertexTemplate = [0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 6, 1, 5, 4, 7, 5, 7, 6];
 
   const endpointAngle = (pointIndex: number): number => {
     const prevIndex = pointIndex > 0 ? pointIndex - 1 : (chain.isClosed ? n - 1 : -1);
@@ -306,78 +442,32 @@ function buildOrcaSegmentTemplateGeometry(
     const len = Math.hypot(dx, dy);
     if (len < 1e-6) continue;
 
-    const tx = dx / len;
-    const ty = dy / len;
-    const rx = ty;
-    const ry = -tx;
-    const width = Math.max(0.01, ((a.lw + b.lw) * 0.5));
-    const halfW = width / 2;
     const color = chain.segColors[i] ?? chain.segColors[chain.segColors.length - 1] ?? [1, 1, 1];
     const startAngle = endpointAngle(i);
     const endAngle = endpointAngle((i + 1) % n);
-
-    const pushVertex = (
-      endpoint: { x: number; y: number },
-      vertexId: number,
-      angle: number,
-      lineDirSign: -1 | 1,
-    ) => {
-      let horizontalSign = 0;
-      let verticalSign = 0;
-      switch (vertexId) {
-        case 0: verticalSign = 1; break;
-        case 1: horizontalSign = -1; break;
-        case 2: break;
-        case 3: horizontalSign = 1; break;
-        case 4: horizontalSign = 1; break;
-        case 5: verticalSign = 1; break;
-        case 6: horizontalSign = -1; break;
-        case 7: break;
-      }
-
-      let x = endpoint.x + horizontalSign * rx * halfW;
-      let y = endpoint.y + horizontalSign * ry * halfW;
-      const z = centerZ + verticalSign * halfH;
-
-      if (vertexId === 2 || vertexId === 7) {
-        if (Math.abs(angle) < 1e-6) {
-          x += lineDirSign * tx * halfW;
-          y += lineDirSign * ty * halfW;
-        } else {
-          const s = Math.sin(Math.abs(angle) * 0.5);
-          const c = Math.cos(Math.abs(angle) * 0.5);
-          const turnSign = Math.sign(angle);
-          x += lineDirSign * tx * halfW * s + turnSign * rx * halfW * c;
-          y += lineDirSign * ty * halfW * s + turnSign * ry * halfW * c;
-        }
-      }
-
-      positions.push(x, y, z);
-      const nx = x - endpoint.x;
-      const ny = y - endpoint.y;
-      const nz = z - centerZ;
-      const nl = Math.hypot(nx, ny, nz) || 1;
-      normals.push(nx / nl, ny / nl, nz / nl);
-      const shade = verticalSign > 0 ? 1 : 0.68;
-      colors.push(color[0] * shade, color[1] * shade, color[2] * shade);
-    };
-
-    const baseIndex = positions.length / 3;
-    for (let vertexId = 0; vertexId < 4; vertexId++) {
-      pushVertex(a, vertexId, startAngle, -1);
+    for (const vertexId of ORCA_SEGMENT_TEMPLATE_VERTEX_IDS) {
+      positions.push(0, 0, 0);
+      vertexIds.push(vertexId);
+      segmentPositionA.push(a.x, a.y, centerZ);
+      segmentPositionB.push(b.x, b.y, centerZ);
+      segmentHwaA.push(layerHeight, Math.max(0.01, a.lw), startAngle, 0);
+      segmentHwaB.push(layerHeight, Math.max(0.01, b.lw), endAngle, 0);
+      segmentColorA.push(color[0], color[1], color[2]);
+      segmentColorB.push(color[0], color[1], color[2]);
     }
-    for (let vertexId = 4; vertexId < 8; vertexId++) {
-      pushVertex(b, vertexId, endAngle, 1);
-    }
-    for (const idx of vertexTemplate) indices.push(baseIndex + idx);
   }
 
   if (positions.length === 0) return null;
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  geo.setIndex(indices);
+  geo.setAttribute('vertexId', new THREE.Float32BufferAttribute(vertexIds, 1));
+  geo.setAttribute('segmentPositionA', new THREE.Float32BufferAttribute(segmentPositionA, 3));
+  geo.setAttribute('segmentPositionB', new THREE.Float32BufferAttribute(segmentPositionB, 3));
+  geo.setAttribute('segmentHwaA', new THREE.Float32BufferAttribute(segmentHwaA, 4));
+  geo.setAttribute('segmentHwaB', new THREE.Float32BufferAttribute(segmentHwaB, 4));
+  geo.setAttribute('segmentColorA', new THREE.Float32BufferAttribute(segmentColorA, 3));
+  geo.setAttribute('segmentColorB', new THREE.Float32BufferAttribute(segmentColorB, 3));
+  geo.computeBoundingSphere();
   return geo;
 }
 
@@ -461,7 +551,9 @@ export function buildChainTube(
     miterX[i] = miter;
   }
 
-  // Step 2: apply fill-end trim on open chain ends for fill-type chains.
+  // Step 2: keep open endpoints faithful to the G-code coordinate. Open wall
+  // fragments get a small terminal taper so their ends don't stack into
+  // visible perimeter notches in the preview.
   const trim = !sourceChain.isClosed && (TRIMMED_FILL_TYPES.has(sourceChain.type) || isWallType(sourceChain.type));
   const trimFactor = endTrimFactorForType(sourceChain.type);
   const pts = sourceChain.points.map((p) => ({ x: p.x, y: p.y, lw: p.lw }));
@@ -469,25 +561,19 @@ export function buildChainTube(
     const d0 = dir(sourceChain.points[0], sourceChain.points[1]);
     if (d0) {
       const req = sourceChain.points[0].lw * trimFactor;
-      const segLen = Math.hypot(
-        sourceChain.points[1].x - sourceChain.points[0].x,
-        sourceChain.points[1].y - sourceChain.points[0].y,
-      );
-      const t = Math.min(req, segLen * 0.4);
-      pts[0].x = sourceChain.points[0].x + d0.x * t;
-      pts[0].y = sourceChain.points[0].y + d0.y * t;
+      pts[0].x = sourceChain.points[0].x + d0.x * req;
+      pts[0].y = sourceChain.points[0].y + d0.y * req;
     }
     const dn = dir(sourceChain.points[n - 2], sourceChain.points[n - 1]);
     if (dn) {
       const req = sourceChain.points[n - 1].lw * trimFactor;
-      const segLen = Math.hypot(
-        sourceChain.points[n - 1].x - sourceChain.points[n - 2].x,
-        sourceChain.points[n - 1].y - sourceChain.points[n - 2].y,
-      );
-      const t = Math.min(req, segLen * 0.4);
-      pts[n - 1].x = sourceChain.points[n - 1].x - dn.x * t;
-      pts[n - 1].y = sourceChain.points[n - 1].y - dn.y * t;
+      pts[n - 1].x = sourceChain.points[n - 1].x - dn.x * req;
+      pts[n - 1].y = sourceChain.points[n - 1].y - dn.y * req;
     }
+  }
+  if (!sourceChain.isClosed && isWallType(sourceChain.type) && n >= 2) {
+    pts[0].lw *= OPEN_WALL_END_TAPER_FACTOR;
+    pts[n - 1].lw *= OPEN_WALL_END_TAPER_FACTOR;
   }
 
   // Step 3: per-RING colour = avg of adjacent segment colours for smooth
@@ -548,14 +634,14 @@ export function buildChainTube(
     }
   }
 
-  // Step 6: pointed pyramid end caps for OPEN non-solid fill chains.
-  // Without these, open infill/gap-fill/bridge tubes end in a FLAT disk that
-  // visually "pokes" past adjacent walls when the slicer applies overlap.
+  // Step 6: no baked point caps on open preview chains.
   //
-  // Do NOT apex-cap top/bottom skin. Orca's solid-skin preview renders those
-  // roads as continuous flattened beads; its shader hides the per-segment cap
-  // at connected transitions. Baking a point cap into each open solid-skin
-  // chain creates the chunky connector blocks visible at line ends.
+  // Orca's libvgcode caps are produced in a camera-aware shader. Baking a
+  // fixed pyramid cap into our CPU mesh makes top-layer line endpoints near
+  // walls look like white chevrons or shifted blobs, especially where chain
+  // breaks happen along an outer wall. Flat tube endpoints are less fancy,
+  // but they keep the preview faithful to the actual G-code centerline and
+  // avoid inventing visible plastic that is not present in the path.
   //
   // We deliberately do NOT cap open WALL chains. Real Arachne emits
   // closed wall loops, but the chain assembler in `GCodeTubePreview`
@@ -565,121 +651,13 @@ export function buildChainTube(
   // unclosed wall chain dots the entire perimeter with apex pyramids
   // that look like bright per-segment markers in the preview at
   // certain zoom levels — the bug we hit on a 60 mm disc with mounting
-  // holes. Walls are already trimmed back via OPEN_WALL_END_TRIM_FACTOR
-  // and look correct without an apex tip.
+  // holes. Open walls use a terminal taper instead, which keeps the seam
+  // readable without inventing a full-width end blob.
   //
-  // Cura/Orca cap shape we mirror for non-solid fill: single forward-displaced apex vertex
-  // fanned to the cross-section ring (one apex + RADIAL triangles).
-  // See `Cura plugins/SimulationView/layers3d.shader` (geometry41core)
-  // and `OrcaSlicer src/libvgcode/src/SegmentTemplate.cpp` (POINTY_CAPS).
-  const shouldApexCap = !sourceChain.isClosed
-    && n >= 2
-    && TRIMMED_FILL_TYPES.has(sourceChain.type)
-    && sourceChain.type !== 'top-bottom';
-  if (shouldApexCap) {
-    appendApexCap(positions, normals, colors, indices, {
-      isStart: true,
-      anchorRingStart: 0,
-      tipPoint: pts[0],
-      tangent: dir(pts[0], pts[1]),
-      lw: pts[0].lw * miterX[0],
-      radial: RADIAL,
-      ringColor: ringColor(0),
-      centerZ,
-    });
-    appendApexCap(positions, normals, colors, indices, {
-      isStart: false,
-      anchorRingStart: (n - 1) * ringSize,
-      tipPoint: pts[n - 1],
-      tangent: dir(pts[n - 2], pts[n - 1]),
-      lw: pts[n - 1].lw * miterX[n - 1],
-      radial: RADIAL,
-      ringColor: ringColor(n - 1),
-      centerZ,
-    });
-  }
-
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   geo.setIndex(indices);
   return geo;
-}
-
-interface ApexCapParams {
-  /** True for the start of the chain (cap extends in -tangent direction
-   *  away from the chain interior); false for the end (cap extends in
-   *  +tangent direction). */
-  isStart: boolean;
-  /** Index of the first vertex of the anchor ring in the global
-   *  `positions` buffer. */
-  anchorRingStart: number;
-  tipPoint: { x: number; y: number };
-  tangent: { x: number; y: number } | null;
-  /** Effective half-bead-width at this end (already miter-scaled). */
-  lw: number;
-  radial: number;
-  ringColor: [number, number, number];
-  centerZ: number;
-}
-
-/**
- * Append a Cura/Orca/Prusa-style pointed pyramid cap to the tube
- * geometry. One apex vertex sits `halfWidth` past the tube's open end
- * along the line's own direction; `radial` triangles fan from the apex
- * to consecutive cross-section ring vertices.
- *
- * Mirrors:
- *   • Cura layers3d geometry shader's apex displacement
- *     (`g_vertex_offset_horz_head`, single point, RADIAL=4 base).
- *   • OrcaSlicer SegmentTemplate vertices 2 and 7 (POINTY_CAPS).
- *   • PrusaSlicer libvgcode (vendored).
- *
- * Looks identical at preview scale to a hemisphere but with an order
- * of magnitude fewer triangles — and matches the visual language users
- * expect from Cura/Orca/Prusa.
- */
-function appendApexCap(
-  positions: number[],
-  normals: number[],
-  colors: number[],
-  indices: number[],
-  p: ApexCapParams,
-): void {
-  if (!p.tangent) return;
-  const hExt = p.lw / 2;
-  // Direction the apex displaces from the anchor-ring centre. Start
-  // caps reach BACKWARD past the chain's first point; end caps reach
-  // forward past the last point.
-  const sgn = p.isStart ? -1 : +1;
-  const tx = p.tangent.x * sgn;
-  const ty = p.tangent.y * sgn;
-
-  const apexIndex = positions.length / 3;
-  const ax = p.tipPoint.x + tx * hExt * POINTY_CAP_EXTENSION_FACTOR;
-  const ay = p.tipPoint.y + ty * hExt * POINTY_CAP_EXTENSION_FACTOR;
-  const az = p.centerZ;
-  positions.push(ax, ay, az);
-  // Apex normal points along the tangent axis — gives the cap a soft
-  // shaded tip when lit from above.
-  normals.push(tx, ty, 0);
-  colors.push(p.ringColor[0], p.ringColor[1], p.ringColor[2]);
-
-  // Fan triangles from the apex to each consecutive pair of ring
-  // vertices. ringSize includes a duplicate seam vertex (r = 0 and
-  // r = RADIAL coincide), so we iterate r in [0, RADIAL) and connect
-  // (r, r+1) which covers the full circumference.
-  for (let r = 0; r < p.radial; r++) {
-    const a = p.anchorRingStart + r;
-    const b = p.anchorRingStart + r + 1;
-    if (p.isStart) {
-      // Start cap: apex is BEFORE the anchor ring along the chain
-      // direction, so reverse winding to keep the cap normals facing
-      // outward.
-      indices.push(apexIndex, a, b);
-    } else {
-      indices.push(apexIndex, b, a);
-    }
-  }
 }

@@ -5,19 +5,19 @@
 
 import { useMemo } from 'react';
 import * as THREE from 'three';
+import { Z_SEAM_THREE_COLOR } from './constants';
 
 interface ZSeamMarkersProps {
   points: Array<{ x: number; y: number }>;
   z: number;
 }
 
-const SEAM_COLOR = new THREE.Color('#ffaa44');
 const MARKER_RADIUS_MM = 0.35;
 const MARKER_SEGMENTS = 12;
 
 const SEAM_GEOMETRY = new THREE.SphereGeometry(MARKER_RADIUS_MM, MARKER_SEGMENTS, MARKER_SEGMENTS);
 SEAM_GEOMETRY.userData.shared = true;
-const SEAM_MATERIAL = new THREE.MeshBasicMaterial({ color: SEAM_COLOR });
+const SEAM_MATERIAL = new THREE.MeshBasicMaterial({ color: Z_SEAM_THREE_COLOR });
 SEAM_MATERIAL.userData.shared = true;
 
 export function ZSeamMarkers({ points, z }: ZSeamMarkersProps) {

@@ -27,8 +27,19 @@ export function GCodePreview() {
 
   // Compute range for speed/flow color modes across all visible layers
   const colorRange = React.useMemo<[number, number]>(() => {
-    if (colorMode === 'type') return [0, 1];
-    const field = colorMode === 'speed' ? 'speed' : 'extrusion';
+    if (
+      colorMode === 'type'
+      || colorMode === 'layer-time'
+      || colorMode === 'wall-quality'
+      || colorMode === 'seam'
+    ) {
+      return [0, 1];
+    }
+    const field = colorMode === 'speed'
+      ? 'speed'
+      : colorMode === 'width'
+        ? 'width'
+        : 'extrusion';
     return computeRange(layers, previewLayer, field);
   }, [layers, previewLayer, colorMode]);
 

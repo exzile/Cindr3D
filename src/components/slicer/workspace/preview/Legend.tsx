@@ -1,11 +1,12 @@
 import * as React from 'react';
 import { Html } from '@react-three/drei';
 import type { SliceMove } from '../../../../types/slicer';
-import { MOVE_TYPE_COLORS, MOVE_TYPE_LABELS } from './constants';
+import type { PreviewColorMode } from '../../../../types/slicer-preview.types';
+import { MOVE_TYPE_COLORS, MOVE_TYPE_LABELS, Z_SEAM_COLOR } from './constants';
 import './Legend.css';
 
 interface LegendProps {
-  colorMode: 'type' | 'speed' | 'flow' | 'width' | 'layer-time' | 'wall-quality';
+  colorMode: PreviewColorMode;
   currentLayer: number;
   currentZ: number;
   layerTime: number;
@@ -174,6 +175,19 @@ export function Legend({
                   <div><span style={{ display: 'inline-block', width: 10, height: 10, background: 'rgb(76,217,102)', marginRight: 4, verticalAlign: 'middle' }} /> At target (±5%)</div>
                   <div><span style={{ display: 'inline-block', width: 10, height: 10, background: 'rgb(242,140,51)', marginRight: 4, verticalAlign: 'middle' }} /> Over-extrusion (wider)</div>
                   <div style={{ marginTop: 3, opacity: 0.6 }}>Reference: layer median wall width</div>
+                </div>
+              </div>
+            )}
+
+            {colorMode === 'seam' && (
+              <div>
+                <div className="slicer-preview-legend__mode-title">Seam</div>
+                <div className="slicer-preview-legend__row">
+                  <div
+                    className="slicer-preview-legend__swatch"
+                    style={{ backgroundColor: Z_SEAM_COLOR, borderRadius: '50%' }}
+                  />
+                  <span>Z seam starts</span>
                 </div>
               </div>
             )}

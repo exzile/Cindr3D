@@ -5,6 +5,7 @@ import type { ContourWallData, SlicerExecutionPipeline, SliceLayerState, SliceRu
 import type { SliceMove } from '../../../../../types/slicer';
 import { lineWidthForLayer } from './lineWidths';
 import { flipLine } from '../../infill';
+import { subdivideInfillRegionByOverrides } from '../../modifierMeshes';
 
 // ARACHNE-9.4A.4: worker awaits Clipper2 load before slicing — see SlicerWorker.ts.
 function requireMP(result: PCMultiPolygon | null, op: string): PCMultiPolygon {
@@ -687,35 +688,55 @@ export function emitContourInfill(
         }
       }
       const infillOverlapMm = ((pp.infillOverlap ?? 10) / 100) * lineWidth;
+      // Cura's "Infill Mesh" — each baseRegion is split by the layer's
+      // `infillOverrides` list (already sorted by `infillMeshOrder`).
+      // Each sub-region picks up the override's density/pattern; the
+      // leftover (no override applies) emits at the profile's defaults.
+      // When no infill_mesh overlaps this layer, `subdivideInfillRegionByOverrides`
+      // returns the baseRegion unchanged with the default settings — fast path.
+      const infillOverrides = layer.modifierRegions?.infillOverrides;
       for (const baseRegion of infillRegions) {
-        const infillRegion = infillOverlapMm > 0 ? offsetContourFast(slicer, baseRegion.contour, -infillOverlapMm) : baseRegion.contour;
-        const safeInfillRegion = insetFillCenterlineRegion(slicer, infillRegion, baseRegion.holes, lineWidth);
-        if (!safeInfillRegion) continue;
-        const minInfFill = pp.minInfillArea ?? 0;
-        const infillRegionOk = minInfFill <= 0 || (() => { const b = slicer.contourBBox(safeInfillRegion.contour); return (b.maxX - b.minX) * (b.maxY - b.minY) >= minInfFill; })();
-        if (!infillRegionOk) continue;
-        const genPattern = (region: THREE.Vector2[], density: number, holes: THREE.Vector2[][]) => {
-          if (pp.infillLineDirections && pp.infillLineDirections.length > 0) {
-            const angleDeg = pp.infillLineDirections[li % pp.infillLineDirections.length];
-            const spacing = lineWidth / (density / 100);
-            const phase = pp.randomInfillStart ? Math.abs(Math.sin(li * 127.1 + 43.7)) * spacing : 0;
-            return slicer.generateScanLines(region, density, lineWidth, (angleDeg * Math.PI) / 180, phase, holes);
+        const subRegions = subdivideInfillRegionByOverrides(
+          baseRegion,
+          infillOverrides,
+          effectiveDensity,
+          pp.infillPattern,
+          slicer,
+        );
+        for (const sub of subRegions) {
+          const subPattern = sub.pattern;
+          const subDensity = sub.density;
+          for (const subRegion of sub.regions) {
+            const infillRegion = infillOverlapMm > 0 ? offsetContourFast(slicer, subRegion.contour, -infillOverlapMm) : subRegion.contour;
+            const safeInfillRegion = insetFillCenterlineRegion(slicer, infillRegion, subRegion.holes, lineWidth);
+            if (!safeInfillRegion) continue;
+            const minInfFill = pp.minInfillArea ?? 0;
+            const infillRegionOk = minInfFill <= 0 || (() => { const b = slicer.contourBBox(safeInfillRegion.contour); return (b.maxX - b.minX) * (b.maxY - b.minY) >= minInfFill; })();
+            if (!infillRegionOk) continue;
+            const genPattern = (region: THREE.Vector2[], density: number, holes: THREE.Vector2[][]) => {
+              if (pp.infillLineDirections && pp.infillLineDirections.length > 0) {
+                const angleDeg = pp.infillLineDirections[li % pp.infillLineDirections.length];
+                const spacing = lineWidth / (density / 100);
+                const phase = pp.randomInfillStart ? Math.abs(Math.sin(li * 127.1 + 43.7)) * spacing : 0;
+                return slicer.generateScanLines(region, density, lineWidth, (angleDeg * Math.PI) / 180, phase, holes);
+              }
+              return slicer.generateLinearInfill(region, density, lineWidth, li, subPattern, holes);
+            };
+            if (overhangShadowMP.length === 0) {
+              infillLines.push(...genPattern(safeInfillRegion.contour, subDensity, safeInfillRegion.holes));
+            } else {
+              const infillRegionMP: PCMultiPolygon = [[slicer.contourToClosedPCRing(safeInfillRegion.contour), ...safeInfillRegion.holes.map((hole) => slicer.contourToClosedPCRing(hole))]];
+              let boostedMP: PCMultiPolygon = [];
+              let normalMP: PCMultiPolygon = infillRegionMP;
+              try {
+                boostedMP = intersectMultiPolygon(infillRegionMP, overhangShadowMP);
+                normalMP = differenceMultiPolygon(infillRegionMP, overhangShadowMP);
+              } catch { boostedMP = []; normalMP = infillRegionMP; }
+              const boostedDensity = Math.min(100, subDensity * 1.5);
+              for (const region of slicer.multiPolygonToRegions(boostedMP)) infillLines.push(...genPattern(region.contour, boostedDensity, region.holes));
+              for (const region of slicer.multiPolygonToRegions(normalMP)) infillLines.push(...genPattern(region.contour, subDensity, region.holes));
+            }
           }
-          return slicer.generateLinearInfill(region, density, lineWidth, li, pp.infillPattern, holes);
-        };
-        if (overhangShadowMP.length === 0) {
-          infillLines.push(...genPattern(safeInfillRegion.contour, effectiveDensity, safeInfillRegion.holes));
-        } else {
-          const infillRegionMP: PCMultiPolygon = [[slicer.contourToClosedPCRing(safeInfillRegion.contour), ...safeInfillRegion.holes.map((hole) => slicer.contourToClosedPCRing(hole))]];
-          let boostedMP: PCMultiPolygon = [];
-          let normalMP: PCMultiPolygon = infillRegionMP;
-          try {
-            boostedMP = intersectMultiPolygon(infillRegionMP, overhangShadowMP);
-            normalMP = differenceMultiPolygon(infillRegionMP, overhangShadowMP);
-          } catch { boostedMP = []; normalMP = infillRegionMP; }
-          const boostedDensity = Math.min(100, effectiveDensity * 1.5);
-          for (const region of slicer.multiPolygonToRegions(boostedMP)) infillLines.push(...genPattern(region.contour, boostedDensity, region.holes));
-          for (const region of slicer.multiPolygonToRegions(normalMP)) infillLines.push(...genPattern(region.contour, effectiveDensity, region.holes));
         }
       }
       const infillMult = Math.max(1, Math.round(pp.multiplyInfill ?? 1));

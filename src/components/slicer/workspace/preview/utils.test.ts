@@ -19,6 +19,8 @@ import {
   SPEED_LOW_COLOR,
   WIDTH_HIGH_COLOR,
   WIDTH_LOW_COLOR,
+  Z_SEAM_COLOR,
+  Z_SEAM_DIM_THREE_COLOR,
 } from './constants';
 import type { SliceLayer, SliceMove } from '../../../../types/slicer';
 
@@ -142,6 +144,10 @@ describe('Preview color palette — Cura/OrcaSlicer parity', () => {
       const fromHex = new THREE.Color(MOVE_TYPE_COLORS[t]);
       expect(MOVE_TYPE_THREE_COLORS[t].getHexString()).toBe(fromHex.getHexString());
     }
+  });
+
+  it('z-seam marker color is a valid preview color', () => {
+    expect(Z_SEAM_COLOR).toMatch(/^#[0-9a-fA-F]{6}$/);
   });
 });
 
@@ -300,6 +306,24 @@ describe('getMoveColor — layer-time mode', () => {
     expect(a.r).toBeCloseTo(b.r, 5);
     expect(a.g).toBeCloseTo(b.g, 5);
     expect(a.b).toBeCloseTo(b.b, 5);
+  });
+});
+
+describe('getMoveColor — seam mode', () => {
+  it('dims extrusion paths so seam markers remain the focus', () => {
+    const c = getMoveColor(makeMove({ type: 'wall-outer', speed: 30 }), 'seam', [0, 1]);
+    expect(c.r).toBeCloseTo(Z_SEAM_DIM_THREE_COLOR.r, 4);
+    expect(c.g).toBeCloseTo(Z_SEAM_DIM_THREE_COLOR.g, 4);
+    expect(c.b).toBeCloseTo(Z_SEAM_DIM_THREE_COLOR.b, 4);
+  });
+
+  it('does not vary seam-mode path color by move type or speed', () => {
+    const a = getMoveColor(makeMove({ type: 'wall-outer', speed: 30 }), 'seam', [0, 1]);
+    const ar = a.r, ag = a.g, ab = a.b;
+    const b = getMoveColor(makeMove({ type: 'infill', speed: 120 }), 'seam', [0, 1]);
+    expect(b.r).toBeCloseTo(ar, 5);
+    expect(b.g).toBeCloseTo(ag, 5);
+    expect(b.b).toBeCloseTo(ab, 5);
   });
 });
 
@@ -513,6 +537,18 @@ describe('buildLayerGeometry — color attribution per mode', () => {
     const data = buildLayerGeometry(layer, 'layer-time', [0, 1], 0.5);
     expect(data.extrusionColors[0]).toBeCloseTo(data.extrusionColors[6], 5);
     expect(data.extrusionColors[1]).toBeCloseTo(data.extrusionColors[7], 5);
+  });
+
+  it('"seam" mode dims every extrusion segment consistently', () => {
+    const layer = makeLayer([
+      makeMove({ type: 'wall-outer' }),
+      makeMove({ type: 'infill' }),
+    ]);
+    const data = buildLayerGeometry(layer, 'seam', [0, 1]);
+    expect(data.extrusionColors[0]).toBeCloseTo(Z_SEAM_DIM_THREE_COLOR.r, 4);
+    expect(data.extrusionColors[1]).toBeCloseTo(Z_SEAM_DIM_THREE_COLOR.g, 4);
+    expect(data.extrusionColors[2]).toBeCloseTo(Z_SEAM_DIM_THREE_COLOR.b, 4);
+    expect(data.extrusionColors[6]).toBeCloseTo(data.extrusionColors[0], 5);
   });
 });
 

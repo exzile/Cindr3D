@@ -1,5 +1,14 @@
 import type * as THREE from 'three';
 
+export type PreviewColorMode =
+  | 'type'
+  | 'speed'
+  | 'flow'
+  | 'width'
+  | 'layer-time'
+  | 'wall-quality'
+  | 'seam';
+
 export interface LayerGeometryData {
   extrusionPositions: Float32Array;
   extrusionColors: Float32Array;

@@ -7,6 +7,7 @@ import type {
   SliceProgress,
   SliceResult,
 } from '../../types/slicer';
+import type { PreviewColorMode } from '../../types/slicer-preview.types';
 import type { PrintabilityReport } from '../../engine/PrintabilityCheck';
 
 export interface SlicerStore {
@@ -30,7 +31,7 @@ export interface SlicerStore {
   previewShowRetractions: boolean;
   previewSectionEnabled: boolean;
   previewSectionZ: number;
-  previewColorMode: 'type' | 'speed' | 'flow' | 'width' | 'layer-time' | 'wall-quality';
+  previewColorMode: PreviewColorMode;
   previewHiddenTypes: string[];
   previewColorSchemeOpen: boolean;
   previewGCodeOpen: boolean;
@@ -79,7 +80,7 @@ export interface SlicerStore {
   setPreviewShowRetractions: (show: boolean) => void;
   setPreviewSectionEnabled: (on: boolean) => void;
   setPreviewSectionZ: (z: number) => void;
-  setPreviewColorMode: (mode: 'type' | 'speed' | 'flow' | 'width' | 'layer-time' | 'wall-quality') => void;
+  setPreviewColorMode: (mode: PreviewColorMode) => void;
   togglePreviewType: (type: string) => void;
   setPreviewColorSchemeOpen: (open: boolean) => void;
   setPreviewGCodeOpen: (open: boolean) => void;

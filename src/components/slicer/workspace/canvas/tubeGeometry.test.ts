@@ -100,12 +100,10 @@ describe('buildChainTube — geometric contract', () => {
     expect(ringN.y).toBeCloseTo(5, 5);
   });
 
-  it('open wall chains render at their exact gcode endpoints (no trim)', () => {
-    // OrcaSlicer / PrusaSlicer / Cura all show every extrusion tube
-    // ending at the gcode coordinate. We dropped the previous trim hack
-    // (0.18 × lw on walls, 0.5 × lw on infill) so the preview is
-    // gcode-precise. The slicer's deliberate skin/infill overlap into
-    // walls is therefore visually accurate — you SEE what's printed.
+  it('open wall chains keep endpoint centers exact but taper terminal rings', () => {
+    // Keep the centerline faithful to the G-code endpoint, but taper the
+    // terminal ring so split wall fragments don't render as full-width
+    // notches when many layers stack in the preview.
     const chain = makeChain([[5, 5], [15, 5]], 0.4, false, 'wall-outer');
     const geo = buildChainTube(chain, 0.2, 0.2);
     const positions = geo!.getAttribute('position').array as Float32Array;
@@ -113,6 +111,8 @@ describe('buildChainTube — geometric contract', () => {
     const ringN = getRingCenter(positions, 1);
     expect(ring0.x).toBeCloseTo(5, 5);
     expect(ringN.x).toBeCloseTo(15, 5);
+    expect(ringSpan(positions, 0, 1)).toBeLessThan(0.08);
+    expect(ringSpan(positions, 1, 1)).toBeLessThan(0.08);
   });
 
   it('fill chains render at their exact gcode endpoints (no trim)', () => {
@@ -125,7 +125,7 @@ describe('buildChainTube — geometric contract', () => {
     expect(ringN.x).toBeCloseTo(15, 5);
   });
 
-  it('a 4-segment open INFILL polyline produces 5 main-tube rings + 2 apex caps', () => {
+  it('a 4-segment open INFILL polyline produces only continuous tube rings', () => {
     // Use 'infill' so the apex-cap path applies — caps are gated to
     // fill-type chains only (skin / infill / gap-fill / bridge), not
     // walls, to avoid sprinkling apex pyramids along the perimeter
@@ -136,7 +136,7 @@ describe('buildChainTube — geometric contract', () => {
     );
     const geo = buildChainTube(chain, 0.2, 0.2);
     const positions = geo!.getAttribute('position').array as Float32Array;
-    const expectedVertices = 5 * ringSize + 2;
+    const expectedVertices = 5 * ringSize;
     expect(positions.length).toBe(expectedVertices * 3);
   });
 
@@ -159,21 +159,47 @@ describe('buildChainTube — geometric contract', () => {
     const chain = makeChain([[0, 0], [10, 0], [10, 10]], 0.4, false, 'top-bottom');
     const geo = buildChainTube(chain, 0.2, 0.2, { usePressedRoadTemplate: true });
     const positions = geo!.getAttribute('position').array as Float32Array;
-    expect(positions.length).toBe(16 * 3);
+    expect(positions.length).toBe(48 * 3);
+    expect(geo!.getAttribute('vertexId').count).toBe(48);
   });
 
   it('can render wall chains through the Orca-style segment template', () => {
     const chain = makeChain([[0, 0], [10, 0], [10, 10]], 0.4, false, 'wall-inner');
     const geo = buildChainTube(chain, 0.2, 0.2, { useSegmentTemplate: true });
     const positions = geo!.getAttribute('position').array as Float32Array;
-    expect(positions.length).toBe(16 * 3);
+    expect(positions.length).toBe(48 * 3);
+    expect(geo!.getAttribute('segmentHwaA').itemSize).toBe(4);
+  });
+
+  it('keeps Orca segment-template angles through mixed role chains', () => {
+    const chain = makeChain([[0, 0], [10, 0], [10, 10]], 0.4, false, 'mixed');
+    chain.moveRefs[0].type = 'wall-outer';
+    chain.moveRefs[1].type = 'wall-inner';
+    chain.segColors[0] = [1, 0.25, 0];
+    chain.segColors[1] = [0, 0.6, 0.1];
+
+    const geo = buildChainTube(chain, 0.2, 0.2, { useSegmentTemplate: true });
+    const hwaB = geo!.getAttribute('segmentHwaB').array as Float32Array;
+
+    expect(hwaB[2]).toBeCloseTo(Math.PI / 2, 4);
+  });
+
+  it('places Orca segment-template positions at the bead center Z', () => {
+    const chain = makeChain([[0, 0], [10, 0]], 0.4, false, 'wall-inner');
+    const geo = buildChainTube(chain, 0.2, 1.0, { useSegmentTemplate: true });
+    const positionsA = geo!.getAttribute('segmentPositionA').array as Float32Array;
+    const positionsB = geo!.getAttribute('segmentPositionB').array as Float32Array;
+
+    expect(positionsA[2]).toBeCloseTo(0.9, 5);
+    expect(positionsB[2]).toBeCloseTo(0.9, 5);
   });
 
   it('can render gap-fill chains through the Orca-style segment template', () => {
     const chain = makeChain([[0, 0], [1, 0], [1.5, 0.25]], 0.25, false, 'gap-fill');
     const geo = buildChainTube(chain, 0.2, 0.2, { useSegmentTemplate: true });
     const positions = geo!.getAttribute('position').array as Float32Array;
-    expect(positions.length).toBe(16 * 3);
+    expect(positions.length).toBe(48 * 3);
+    expect(geo!.getAttribute('segmentPositionA').itemSize).toBe(3);
   });
 
   it('center-Z of each ring equals the bead center (baseZ - layerHeight/2)', () => {
@@ -197,7 +223,7 @@ describe('buildChainTube — geometric contract', () => {
 
   it('ring horizontal extent (perpendicular to chain) equals lineWidth', () => {
     // Chain along +X; perpendicular extent = Y span of the ring = lw.
-    const chain = makeChain([[0, 0], [10, 0]], 0.45, false);
+    const chain = makeChain([[0, 0], [10, 0]], 0.45, false, 'support');
     const geo = buildChainTube(chain, 0.2, 0.2);
     const positions = geo!.getAttribute('position').array as Float32Array;
     expect(ringSpan(positions, 0, 1)).toBeCloseTo(0.45, 4);
@@ -211,10 +237,10 @@ describe('buildChainTube — geometric contract', () => {
       { x: 10, y: 0, lw: 0.6 },
     ];
     const chain: TubeChain = {
-      type: 'wall-outer',
+      type: 'support',
       points,
       segColors: [[1, 1, 1]],
-      moveRefs: [{ type: 'wall-outer', speed: 60, extrusion: 0.001, lineWidth: 0.3, length: 10 }],
+      moveRefs: [{ type: 'support', speed: 60, extrusion: 0.001, lineWidth: 0.3, length: 10 }],
       isClosed: false,
     };
     const geo = buildChainTube(chain, 0.2, 0.2);
@@ -259,22 +285,21 @@ describe('buildChainTube — geometric contract', () => {
     expect(indexAttr!.count).toBe(4 * RADIAL * 6);
   });
 
-  it('open INFILL chains generate one fewer body loop than closed (n-1 segments) plus 2 apex caps', () => {
+  it('open INFILL chains generate one fewer body loop than closed (n-1 segments)', () => {
     const open = buildChainTube(
       makeChain([[0, 0], [10, 0], [10, 10], [0, 10]], 0.4, false, 'infill'),
       0.2, 0.2,
     )!;
     const indices = open.getIndex();
     const bodyIndices = 3 * RADIAL * 6;
-    const capIndices = 2 * RADIAL * 3;
-    expect(indices!.count).toBe(bodyIndices + capIndices);
+    expect(indices!.count).toBe(bodyIndices);
   });
 
   it('rings stay perpendicular to the chain direction (no twist)', () => {
     // Right-angle bend at (10,0). The ring at the corner uses the bisector
     // of in/out directions, but the ring at (0,0) should be perpendicular
     // to the +X chain direction → ring spans along Y.
-    const chain = makeChain([[0, 0], [10, 0], [10, 10]], 0.4, false);
+    const chain = makeChain([[0, 0], [10, 0], [10, 10]], 0.4, false, 'support');
     const geo = buildChainTube(chain, 0.2, 0.2);
     const positions = geo!.getAttribute('position').array as Float32Array;
     // Ring 0 (at (0,0)): chain goes +X, perpendicular = Y.
@@ -328,6 +353,21 @@ describe('buildChainTube — special path shapes', () => {
     // After subdivision the ring count should be a multiple of N (from
     // SUBDIVISION_FACTOR=3 → 36 sample points). Without subdivision it
     // would be exactly N (12) rings.
+    const rings = positions.length / 3 / ringSize;
+    expect(rings).toBeGreaterThan(N);
+  });
+
+  it('subdivides dense circular wall paths so outer walls preview round', () => {
+    const radius = 0.6;
+    const N = 12;
+    const points: Array<[number, number]> = [];
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      points.push([Math.cos(a) * radius, Math.sin(a) * radius]);
+    }
+    const chain = makeChain(points, 0.4, true, 'wall-outer');
+    const geo = buildChainTube(chain, 0.2, 0.2);
+    const positions = geo!.getAttribute('position').array as Float32Array;
     const rings = positions.length / 3 / ringSize;
     expect(rings).toBeGreaterThan(N);
   });

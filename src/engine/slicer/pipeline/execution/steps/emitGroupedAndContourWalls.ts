@@ -638,11 +638,12 @@ export function emitGroupedAndContourWalls(
       const isClosed = wallClosed?.[wi] ?? true;
       const nominalWallLW = isHoleOuterWall ? (pp.outerWallLineWidth ?? pp.wallLineWidth) : innerLW;
       const rawWallLWSpec: WallLineWidthSpec = wallLineWidths[wi] ?? nominalWallLW;
-      // libArachne emits per-vertex widths for all walls, but Orca's normal
-      // wall bands stay visually/physically uniform while the odd/open
-      // transition beads carry the variable width. Keep the variable widths
-      // where they matter (first layer and odd/open Arachne paths), and emit
-      // closed regular wall loops at their configured nominal width.
+      // Orca converts regular closed Arachne walls into stable wall paths
+      // before preview/G-code, while odd/open transition beads keep their
+      // variable width. If we emit every closed wall vertex/width directly,
+      // tiny Arachne jogs become visible dents on round outer walls. Preserve
+      // variable widths for first-layer squish and true odd/open beads; route
+      // regular closed walls through the nominal-width simplification path.
       const wallLWSpec: WallLineWidthSpec = shouldPreserveVariableWallWidth(
         rawWallLWSpec,
         isFirstLayer,

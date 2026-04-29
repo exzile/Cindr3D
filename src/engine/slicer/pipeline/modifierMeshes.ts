@@ -225,3 +225,91 @@ export function applyCuttingMeshSubtraction(
   if (!result) return contours;
   return multiPolygonToContours(result);
 }
+
+/**
+ * One sub-region produced by `subdivideInfillRegionByOverrides`. Each
+ * carries an effective infill density and pattern resolved from a
+ * specific infill_mesh override (or the default profile when no
+ * override applies).
+ */
+export interface InfillSubRegion {
+  /** `{contour, holes}` regions ready to feed `generateLinearInfill` /
+   *  `generateScanLines`. Empty list = nothing to emit for this entry. */
+  regions: Array<{ contour: import('three').Vector2[]; holes: import('three').Vector2[][] }>;
+  /** Effective infill density (0–100) for this sub-region. */
+  density: number;
+  /** Effective infill pattern for this sub-region. */
+  pattern: string;
+  /** True when this sub-region came from an infill_mesh override (rather
+   *  than the leftover default region). Useful for downstream
+   *  diagnostics — emission paths don't need to branch on it. */
+  fromOverride: boolean;
+}
+
+/**
+ * Subdivide a single sparse-infill region by the layer's
+ * `infillOverrides` list (already sorted by `infillMeshOrder`,
+ * highest-priority first). Each override carves out an intersection
+ * sub-region with the override's effective density/pattern; the
+ * leftover after all overrides have been peeled off is emitted with
+ * the default density/pattern.
+ *
+ * Returns `[{ regions: [baseRegion], density: defaultDensity, pattern:
+ * defaultPattern, fromOverride: false }]` when no overrides apply —
+ * the no-op fast path.
+ */
+export function subdivideInfillRegionByOverrides(
+  baseRegion: { contour: import('three').Vector2[]; holes: import('three').Vector2[][] },
+  overrides: LayerModifierRegions['infillOverrides'] | undefined,
+  defaultDensity: number,
+  defaultPattern: string,
+  slicer: SlicerExecutionPipeline,
+): InfillSubRegion[] {
+  if (!overrides || overrides.length === 0) {
+    return [{ regions: [baseRegion], density: defaultDensity, pattern: defaultPattern, fromOverride: false }];
+  }
+
+  // Convert the base region (outer contour + holes) into MP form so
+  // Clipper2 can intersect/difference it against each override volume.
+  const baseMP: PCMultiPolygon = [[
+    slicer.contourToClosedPCRing(baseRegion.contour),
+    ...baseRegion.holes.map((hole) => slicer.contourToClosedPCRing(hole)),
+  ]];
+
+  const out: InfillSubRegion[] = [];
+  let remainingMP: PCMultiPolygon = baseMP;
+
+  for (const override of overrides) {
+    if (remainingMP.length === 0) break;
+    const overrideMP = booleanMultiPolygonClipper2Sync(remainingMP, override.region, 'intersection');
+    if (!overrideMP || overrideMP.length === 0) continue;
+    const density = override.settings.infillDensity ?? defaultDensity;
+    const pattern = (override.settings.infillPattern as string | undefined) ?? defaultPattern;
+    out.push({
+      regions: slicer.multiPolygonToRegions(overrideMP),
+      density,
+      pattern,
+      fromOverride: true,
+    });
+    const nextRemaining = booleanMultiPolygonClipper2Sync(remainingMP, override.region, 'difference');
+    remainingMP = nextRemaining ?? remainingMP;
+  }
+
+  if (remainingMP.length > 0) {
+    const remainingRegions = slicer.multiPolygonToRegions(remainingMP);
+    if (remainingRegions.length > 0) {
+      out.push({
+        regions: remainingRegions,
+        density: defaultDensity,
+        pattern: defaultPattern,
+        fromOverride: false,
+      });
+    }
+  }
+
+  // Defensive: if every overrideMP miscomputed, fall back to the input.
+  if (out.length === 0) {
+    return [{ regions: [baseRegion], density: defaultDensity, pattern: defaultPattern, fromOverride: false }];
+  }
+  return out;
+}

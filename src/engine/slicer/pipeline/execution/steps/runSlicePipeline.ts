@@ -33,8 +33,16 @@ interface SerializedTriangle {
   edgeKey20: string;
 }
 
+interface SerializedModifierMesh {
+  role: SliceRun['modifierMeshes'][number]['role'];
+  meshIndex: number;
+  triangles: SerializedTriangle[];
+  settings?: SliceRun['modifierMeshes'][number]['settings'];
+}
+
 type SerializedGeometryRun = Omit<SliceGeometryRun, 'triangles' | 'modelBBox' | 'modifierMeshes'> & {
   triangles: SerializedTriangle[];
+  modifierMeshes: SerializedModifierMesh[];
   modelBBox: {
     min: SerializedVector3;
     max: SerializedVector3;
@@ -133,23 +141,45 @@ export function triangleIntersectsLayerBatch(
   return false;
 }
 
-function serializeGeometryRun(run: SliceRun, layerIndices?: readonly number[]): SerializedGeometryRun {
-  const triangles = layerIndices && layerIndices.length > 0
+function serializeTriangle(tri: SliceRun['triangles'][number]): SerializedTriangle {
+  return {
+    v0: serializeVector3(tri.v0),
+    v1: serializeVector3(tri.v1),
+    v2: serializeVector3(tri.v2),
+    normal: serializeVector3(tri.normal),
+    edgeKey01: tri.edgeKey01,
+    edgeKey12: tri.edgeKey12,
+    edgeKey20: tri.edgeKey20,
+  };
+}
+
+export function serializeGeometryRun(run: SliceRun, layerIndices?: readonly number[]): SerializedGeometryRun {
+  const filterByLayer = layerIndices && layerIndices.length > 0;
+  const triangles = filterByLayer
     ? run.triangles.filter((tri) => triangleIntersectsLayerBatch(run, tri, layerIndices))
     : run.triangles;
+
+  // Modifier meshes apply the same layer-batch filter so each child
+  // worker only receives the modifier triangles relevant to its slice
+  // of layers. Empty meshes (no triangles intersect this batch) still
+  // ride through with role+settings — the layer worker re-filters per
+  // layer anyway, and dropping a mesh entirely would change meshIndex
+  // semantics across workers.
+  const modifierMeshes: SerializedModifierMesh[] = run.modifierMeshes.map((mesh) => ({
+    role: mesh.role,
+    meshIndex: mesh.meshIndex,
+    settings: mesh.settings,
+    triangles: (filterByLayer
+      ? mesh.triangles.filter((tri) => triangleIntersectsLayerBatch(run, tri, layerIndices))
+      : mesh.triangles
+    ).map(serializeTriangle),
+  }));
 
   return {
     pp: run.pp,
     mat: run.mat,
-    triangles: triangles.map((tri) => ({
-      v0: serializeVector3(tri.v0),
-      v1: serializeVector3(tri.v1),
-      v2: serializeVector3(tri.v2),
-      normal: serializeVector3(tri.normal),
-      edgeKey01: tri.edgeKey01,
-      edgeKey12: tri.edgeKey12,
-      edgeKey20: tri.edgeKey20,
-    })),
+    triangles: triangles.map(serializeTriangle),
+    modifierMeshes,
     modelBBox: {
       min: serializeVector3(run.modelBBox.min),
       max: serializeVector3(run.modelBBox.max),
@@ -212,13 +242,6 @@ export function chooseLayerPrepWorkerCount(
 }
 
 function shouldUseLayerWorkerPool(run: SliceRun): boolean {
-  // Parallel layer prep does not currently serialize modifier-mesh
-  // triangles to the layer worker, so any run with active modifiers
-  // (cutting / support / anti-overhang / infill meshes) must take the
-  // sequential path. Skipping the pool here keeps the boolean
-  // composition self-contained on the main slicer thread until the
-  // serialization path is extended.
-  if (run.modifierMeshes.length > 0) return false;
   return chooseLayerPrepWorkerCount(run) > 1;
 }
 
