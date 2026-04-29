@@ -53,12 +53,12 @@ export class GCodeEmitter {
   isRetracted = false;
   extrudedSinceRetract = 0;
   currentLayerFlow = 1.0;
-  currentLayerTravelSpeed: number;
-  totalExtruded = 0;
   /** Last `;WIDTH:` value emitted to gcode. Used to dedupe repeated
    *  width comments across same-width segments. -1 forces emission on
    *  the first extrude after a layer/feature change. */
   private currentEmittedLineWidth = -1;
+  currentLayerTravelSpeed: number;
+  totalExtruded = 0;
 
   private readonly isRRF: boolean;
   private readonly isKlipper: boolean;

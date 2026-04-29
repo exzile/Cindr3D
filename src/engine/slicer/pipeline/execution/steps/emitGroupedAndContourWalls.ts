@@ -45,6 +45,47 @@ function shouldPreserveVariableWallWidth(lineWidth: WallLineWidthSpec): boolean 
   return Array.isArray(lineWidth);
 }
 
+/** Compute the teleport threshold for a wall path. Used to detect
+ *  segments that libArachne occasionally splices into a single
+ *  `ExtrusionLine` as branch round-trips: the path jumps several mm to
+ *  a thin-feature branch tip, traces it, then jumps back. Extruding
+ *  across these jumps deposits free-floating noodles across hole
+ *  interiors (the "outer wall has bumps, inner wall doesn't close"
+ *  symptom).
+ *
+ *  Uses the MIN segment length as the scale anchor (not median) so the
+ *  test still fires on short branched paths where most segments ARE
+ *  the teleports — e.g. a 4-point libArachne wall with segments
+ *  `[0.18, 4.17, 4.17]` would have median 4.17 (threshold 20mm, missing
+ *  the bug); min 0.18 puts the threshold at 2mm and flags both jumps.
+ *
+ *  Returns Infinity (= no segment is an outlier) when the path is
+ *  uniform: max ≤ 5×min OR max ≤ 2mm absolute. This protects square
+ *  walls and any other wall whose segments are intentionally all the
+ *  same scale. */
+function teleportThresholdForLoop(loop: THREE.Vector2[]): number {
+  if (loop.length < 3) return Infinity;
+  let minDist = Infinity;
+  let maxDist = 0;
+  for (let i = 1; i < loop.length; i++) {
+    const d = loop[i - 1].distanceTo(loop[i]);
+    if (d < minDist) minDist = d;
+    if (d > maxDist) maxDist = d;
+  }
+  if (maxDist <= 2.0 || maxDist <= minDist * 5) return Infinity;
+  return Math.max(2.0, minDist * 5);
+}
+
+function detectTeleportSegmentIndices(loop: THREE.Vector2[]): Set<number> {
+  const threshold = teleportThresholdForLoop(loop);
+  const out = new Set<number>();
+  if (!Number.isFinite(threshold)) return out;
+  for (let i = 1; i < loop.length; i++) {
+    if (loop[i - 1].distanceTo(loop[i]) > threshold) out.add(i);
+  }
+  return out;
+}
+
 function centroid(points: THREE.Vector2[]): THREE.Vector2 {
   const center = new THREE.Vector2();
   for (const point of points) center.add(point);
@@ -465,9 +506,18 @@ function emitOuterLoop(params: EmitOuterLoopParams): number {
   const scarfStepLen = pp.scarfSeamStepLength ?? 0;
   let scarfRemaining = scarfActive ? scarfLen : 0;
   let layerTime = 0;
+  const teleports = detectTeleportSegmentIndices(reordered);
+  const teleportThreshold = teleportThresholdForLoop(reordered);
   for (let pi = 1; pi < reordered.length; pi++) {
     const from = reordered[pi - 1], to = reordered[pi];
     const segLen = from.distanceTo(to);
+    if (teleports.has(pi)) {
+      // libArachne emitted a branch round-trip teleport (mm-scale jump
+      // in a path of sub-mm segments). Travel across instead of
+      // extruding so we don't lay a free-floating noodle.
+      emitter.travelTo(to.x, to.y, moves);
+      continue;
+    }
     let segLW = variableLineWidth ? segmentLineWidth(params.lineWidth, pi - 1, pi) : fallbackLineWidth;
     const baseSegLW = segLW;
     let segSpeed = outerWallSpeed;
@@ -491,6 +541,12 @@ function emitOuterLoop(params: EmitOuterLoopParams): number {
   }
   if (isClosed && reordered.length > 2) {
     const lastPt = reordered[reordered.length - 1], firstPt = reordered[0], segLen = lastPt.distanceTo(firstPt);
+    if (segLen > teleportThreshold) {
+      // Closing segment is itself a teleport. Travel to close instead.
+      emitter.travelTo(firstPt.x, firstPt.y, moves);
+      if (spiralActive) params.run.spiralPrevLayerZ = spiralEndZ;
+      return layerTime;
+    }
     const coastVol = params.allowCoasting ? (pp.coastingEnabled ? (pp.coastingVolume ?? 0) : 0) : 0;
     const minCoastVol = pp.minVolumeBeforeCoasting ?? 0;
     const loopVol = minCoastVol > 0 ? (() => {
@@ -608,8 +664,9 @@ export function emitGroupedAndContourWalls(
     // variable-width walls or fell back to constant-width offsets. Reading
     // this is the fastest way to tell why a thin annular ring is missing
     // its inner wall — `gen=arachne variable=N` means widths are flowing,
-    // `gen=classic-fallback` means Arachne dispatched but `paths.length===0`
-    // (or threw) and the constant-width perimeters ran instead.
+    // `gen=arachne-fallback-constant` means Arachne dispatched but
+    // `paths.length===0` (or threw) and the constant-width perimeters ran
+    // instead.
     let variableWallCount = 0;
     for (const lw of wallLineWidths) {
       if (Array.isArray(lw)) variableWallCount += 1;
@@ -752,17 +809,31 @@ export function emitGroupedAndContourWalls(
       gcode.push(`;TYPE:${isExternalWall ? 'Outer wall' : 'Inner wall'}`);
       emitter.resetEmittedLineWidth?.();
       gcode.push(`; ${isExternalWall ? 'Outer wall' : 'Inner wall'} ${wi}`);
+      const innerTeleports = detectTeleportSegmentIndices(wallLoop);
+      const innerTeleportThreshold = teleportThresholdForLoop(wallLoop);
       for (let pi = 1; pi < wallLoop.length; pi++) {
         const from = wallLoop[pi - 1], to = wallLoop[pi];
+        if (innerTeleports.has(pi)) {
+          // libArachne emitted a branch round-trip teleport. Travel
+          // across so we don't extrude a noodle through the void.
+          emitter.travelTo(to.x, to.y, moves);
+          continue;
+        }
         const segLW = segmentLineWidth(wallLWSpec, pi - 1, pi);
         layer.layerTime += emitter.extrudeTo(to.x, to.y, wallSpeed, segLW, layerH).time;
         moves.push({ type: moveType, from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, speed: wallSpeed, extrusion: emitter.calculateExtrusion(from.distanceTo(to), segLW, layerH), lineWidth: segLW });
       }
       if (isClosed && wallLoop.length > 2) {
         const lastPt = wallLoop[wallLoop.length - 1], firstPt = wallLoop[0];
-        const segLW = segmentLineWidth(wallLWSpec, wallLoop.length - 1, 0);
-        layer.layerTime += emitter.extrudeTo(firstPt.x, firstPt.y, wallSpeed, segLW, layerH).time;
-        moves.push({ type: moveType, from: { x: lastPt.x, y: lastPt.y }, to: { x: firstPt.x, y: firstPt.y }, speed: wallSpeed, extrusion: emitter.calculateExtrusion(lastPt.distanceTo(firstPt), segLW, layerH), lineWidth: segLW });
+        const segLen = lastPt.distanceTo(firstPt);
+        if (segLen > innerTeleportThreshold) {
+          // Closing segment is itself a teleport — travel to close.
+          emitter.travelTo(firstPt.x, firstPt.y, moves);
+        } else {
+          const segLW = segmentLineWidth(wallLWSpec, wallLoop.length - 1, 0);
+          layer.layerTime += emitter.extrudeTo(firstPt.x, firstPt.y, wallSpeed, segLW, layerH).time;
+          moves.push({ type: moveType, from: { x: lastPt.x, y: lastPt.y }, to: { x: firstPt.x, y: firstPt.y }, speed: wallSpeed, extrusion: emitter.calculateExtrusion(segLen, segLW, layerH), lineWidth: segLW });
+        }
       }
     }
 
