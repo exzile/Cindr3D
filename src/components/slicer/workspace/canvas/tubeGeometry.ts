@@ -297,6 +297,7 @@ export const ORCA_SEGMENT_TEMPLATE_MATERIAL = Object.assign(
  *  enough points AND short average segment relative to lineWidth. */
 function shouldSubdivide(chain: TubeChain): boolean {
   if (chain.type === 'gap-fill') return false;
+  if (isWallType(chain.type)) return false;
   if (chain.points.length < TUBE_SUBDIVISION_MIN_POINTS) return false;
   let totalLen = 0;
   let count = 0;
@@ -411,6 +412,7 @@ function buildOrcaSegmentTemplateGeometry(
   const segmentColorA: number[] = [];
   const segmentColorB: number[] = [];
   const centerZ = baseZ - layerHeight * 0.5;
+  const fallbackColor = chain.segColors[chain.segColors.length - 1] ?? ([1, 1, 1] as [number, number, number]);
 
   const endpointAngle = (pointIndex: number): number => {
     const prevIndex = pointIndex > 0 ? pointIndex - 1 : (chain.isClosed ? n - 1 : -1);
@@ -432,6 +434,16 @@ function buildOrcaSegmentTemplateGeometry(
     );
   };
 
+  const endpointColor = (pointIndex: number): [number, number, number] => {
+    // libvgcode colors vertices, not whole CPU-built chains. The inserted
+    // start vertex receives the first segment color; subsequent vertices
+    // receive the color of the segment that ended at that point. At role
+    // boundaries this lets the color transition happen at the shared
+    // endpoint like OrcaSlicer's preview.
+    if (pointIndex <= 0) return chain.segColors[0] ?? fallbackColor;
+    return chain.segColors[pointIndex - 1] ?? fallbackColor;
+  };
+
   const segCount = chain.isClosed ? n : n - 1;
   for (let i = 0; i < segCount; i++) {
     const a = chain.points[i];
@@ -441,7 +453,8 @@ function buildOrcaSegmentTemplateGeometry(
     const len = Math.hypot(dx, dy);
     if (len < 1e-6) continue;
 
-    const color = chain.segColors[i] ?? chain.segColors[chain.segColors.length - 1] ?? [1, 1, 1];
+    const colorA = endpointColor(i);
+    const colorB = endpointColor((i + 1) % n);
     const startAngle = endpointAngle(i);
     const endAngle = endpointAngle((i + 1) % n);
     for (const vertexId of ORCA_SEGMENT_TEMPLATE_VERTEX_IDS) {
@@ -451,8 +464,8 @@ function buildOrcaSegmentTemplateGeometry(
       segmentPositionB.push(b.x, b.y, centerZ);
       segmentHwaA.push(layerHeight, Math.max(0.01, a.lw), startAngle, 0);
       segmentHwaB.push(layerHeight, Math.max(0.01, b.lw), endAngle, 0);
-      segmentColorA.push(color[0], color[1], color[2]);
-      segmentColorB.push(color[0], color[1], color[2]);
+      segmentColorA.push(colorA[0], colorA[1], colorA[2]);
+      segmentColorB.push(colorB[0], colorB[1], colorB[2]);
     }
   }
 
