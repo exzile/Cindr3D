@@ -246,6 +246,7 @@ export interface ContourWallData {
   wallClosed?: boolean[];
   outerWallCount: number;
   infillHoles: THREE.Vector2[][];
+  containedHoles?: THREE.Vector2[][];
 }
 
 export interface PrecomputedContourWall {
