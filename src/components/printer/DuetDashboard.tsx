@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Eye, PencilRuler, RotateCcw } from 'lucide-react';
+import { Eye, FileCode, FolderOpen, PencilRuler, PlugZap, RotateCcw, Settings, Wifi } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import {
   DEFAULT_COLSPANS,
@@ -15,6 +15,14 @@ import { PANEL_DEFS, PANEL_MAP, SpacerBlock } from './duetDashboard/config';
 import { useDashboardEditor } from './duetDashboard/useDashboardEditor';
 
 export default function DuetDashboard() {
+  const connected = usePrinterStore((s) => s.connected);
+  const connecting = usePrinterStore((s) => s.connecting);
+  const reconnecting = usePrinterStore((s) => s.reconnecting);
+  const config = usePrinterStore((s) => s.config);
+  const printers = usePrinterStore((s) => s.printers);
+  const activePrinterId = usePrinterStore((s) => s.activePrinterId);
+  const connect = usePrinterStore((s) => s.connect);
+  const setActiveTab = usePrinterStore((s) => s.setActiveTab);
   const error = usePrinterStore((s) => s.error);
   const setError = usePrinterStore((s) => s.setError);
   const order = useDashboardLayout((s) => s.order);
@@ -64,6 +72,77 @@ export default function DuetDashboard() {
   });
 
   const hiddenCount = Object.values(hidden).filter(Boolean).length;
+  const activePrinter = printers.find((printer) => printer.id === activePrinterId);
+
+  if (!connected) {
+    return (
+      <div className="duet-dash-root" style={{ background: COLORS.bg }}>
+        {error && (
+          <div className="duet-dash-error-banner" style={{ borderColor: COLORS.danger, color: COLORS.danger }}>
+            <span>{error}</span>
+            <button
+              className="duet-dash-error-dismiss"
+              style={{ color: COLORS.danger }}
+              onClick={() => setError(null)}
+            >
+              &times;
+            </button>
+          </div>
+        )}
+
+        <div className="duet-dash-offline">
+          <div className="duet-dash-offline__hero">
+            <div className="duet-dash-offline__icon">
+              <PlugZap size={28} />
+            </div>
+            <div>
+              <h2>Connect a Duet printer</h2>
+              <p>
+                {reconnecting
+                  ? 'Reconnecting to the last printer. You can still open settings to adjust the target.'
+                  : 'Set up a Duet board to unlock live controls, file management, print monitoring, and machine diagnostics.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="duet-dash-offline__summary">
+            <div>
+              <span>Active printer</span>
+              <strong>{activePrinter?.name ?? 'Printer 1'}</strong>
+            </div>
+            <div>
+              <span>Host</span>
+              <strong>{config.hostname || 'Not configured'}</strong>
+            </div>
+            <div>
+              <span>Mode</span>
+              <strong>{config.mode === 'sbc' ? 'SBC' : 'Standalone'}</strong>
+            </div>
+          </div>
+
+          <div className="duet-dash-offline__actions">
+            <button
+              className="duet-dash-offline__primary"
+              disabled={connecting || !config.hostname}
+              onClick={() => { void connect(); }}
+              title={config.hostname ? 'Connect to printer' : 'Add a hostname in settings first'}
+            >
+              <Wifi size={16} /> {connecting ? 'Connecting...' : 'Connect'}
+            </button>
+            <button onClick={() => setActiveTab('settings')}>
+              <Settings size={16} /> Connection Settings
+            </button>
+            <button onClick={() => setActiveTab('files')}>
+              <FolderOpen size={16} /> Files
+            </button>
+            <button onClick={() => setActiveTab('config')}>
+              <FileCode size={16} /> Config
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="duet-dash-root" style={{ background: COLORS.bg }}>

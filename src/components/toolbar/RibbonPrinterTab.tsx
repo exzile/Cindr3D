@@ -3,13 +3,14 @@ import {
   LayoutDashboard, Activity, Terminal, Play,
   History, FolderOpen, FlaskConical, FileCode,
   Grid3x3, Braces, Settings, Wifi, OctagonAlert, FileCode2, Plug,
+  Router, TrendingUp,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 
 type PrinterTabKey =
   | 'dashboard' | 'status' | 'console' | 'job' | 'history'
-  | 'files' | 'filaments' | 'macros' | 'heightmap' | 'model' | 'config'
-  | 'plugins' | 'settings';
+  | 'analytics' | 'files' | 'filaments' | 'macros' | 'heightmap'
+  | 'model' | 'config' | 'network' | 'plugins' | 'settings';
 
 const PRINTER_TABS: { key: PrinterTabKey; label: string; Icon: React.ComponentType<{ size?: number }> }[] = [
   { key: 'dashboard', label: 'Dashboard',  Icon: LayoutDashboard },
@@ -17,12 +18,14 @@ const PRINTER_TABS: { key: PrinterTabKey; label: string; Icon: React.ComponentTy
   { key: 'console',   label: 'Console',    Icon: Terminal },
   { key: 'job',       label: 'Job',        Icon: Play },
   { key: 'history',   label: 'History',    Icon: History },
+  { key: 'analytics', label: 'Analytics',  Icon: TrendingUp },
   { key: 'files',     label: 'Files',      Icon: FolderOpen },
   { key: 'filaments', label: 'Filaments',  Icon: FlaskConical },
   { key: 'macros',    label: 'Macros',     Icon: FileCode },
   { key: 'heightmap', label: 'Height Map', Icon: Grid3x3 },
   { key: 'model',     label: 'Model',      Icon: Braces },
   { key: 'config',    label: 'Config',     Icon: FileCode2 },
+  { key: 'network',   label: 'Network',    Icon: Router },
   { key: 'plugins',   label: 'Plugins',    Icon: Plug },
   { key: 'settings',  label: 'Settings',   Icon: Settings },
 ];
@@ -82,8 +85,9 @@ export function RibbonPrinterTab() {
           )}
           <button
             className="ribbon-button large"
-            title="Emergency Stop (M112)"
+            title={connected ? 'Emergency Stop (M112)' : 'Connect to a printer before using E-stop'}
             onClick={handleEmergencyStop}
+            disabled={!connected}
           >
             <div className="ribbon-button-icon icon-red">
               <OctagonAlert size={22} />

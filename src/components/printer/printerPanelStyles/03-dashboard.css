@@ -1,3 +1,128 @@
 @import './dashboard/01-status.css';
 @import './dashboard/02-temperature.css';
 
+.duet-dash-offline {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 920px;
+  margin: 48px auto 0;
+  padding: 0 20px;
+}
+
+.duet-dash-offline__hero {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.duet-dash-offline__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  color: var(--accent);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+}
+
+.duet-dash-offline h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.duet-dash-offline p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.duet-dash-offline__summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.duet-dash-offline__summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+}
+
+.duet-dash-offline__summary span {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.duet-dash-offline__summary strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.duet-dash-offline__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.duet-dash-offline__actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.duet-dash-offline__actions button:hover:not(:disabled) {
+  background: var(--bg-elevated-hover);
+}
+
+.duet-dash-offline__actions button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.duet-dash-offline__actions .duet-dash-offline__primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+@media (max-width: 720px) {
+  .duet-dash-offline {
+    margin-top: 24px;
+  }
+
+  .duet-dash-offline__hero,
+  .duet-dash-offline__summary {
+    grid-template-columns: 1fr;
+  }
+}
+
