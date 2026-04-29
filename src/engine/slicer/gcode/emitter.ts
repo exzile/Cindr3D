@@ -55,6 +55,10 @@ export class GCodeEmitter {
   currentLayerFlow = 1.0;
   currentLayerTravelSpeed: number;
   totalExtruded = 0;
+  /** Last `;WIDTH:` value emitted to gcode. Used to dedupe repeated
+   *  width comments across same-width segments. -1 forces emission on
+   *  the first extrude after a layer/feature change. */
+  private currentEmittedLineWidth = -1;
 
   private readonly isRRF: boolean;
   private readonly isKlipper: boolean;
@@ -460,6 +464,14 @@ export class GCodeEmitter {
     return { t: Math.sqrt(uu) * s, point: { x: ox, y: oy } };
   }
 
+  /** Reset the cached `;WIDTH:` value so the next `extrudeTo` re-emits
+   *  the width comment. Call when a new feature/section starts so the
+   *  width is asserted into the gcode even if it matches the previous
+   *  feature's last width. */
+  resetEmittedLineWidth(): void {
+    this.currentEmittedLineWidth = -1;
+  }
+
   extrudeTo(
     x: number,
     y: number,
@@ -469,6 +481,10 @@ export class GCodeEmitter {
     z?: number,
   ): ExtrusionMoveResult {
     this.unretract();
+    if (lineWidth > 0 && Math.abs(lineWidth - this.currentEmittedLineWidth) > 1e-4) {
+      this.gcode.push(`;WIDTH:${lineWidth.toFixed(6)}`);
+      this.currentEmittedLineWidth = lineWidth;
+    }
     const fromX = this.currentX;
     const fromY = this.currentY;
     const dx = x - this.currentX;
