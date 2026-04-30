@@ -3,7 +3,6 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 repo="${DESIGNCAD_REPO:-exzile/DesignCAD}"
-branch="${DESIGNCAD_BRANCH:-master}"
 port="${DESIGNCAD_UPDATER_PORT:-8787}"
 
 if [[ $EUID -ne 0 ]]; then
@@ -12,7 +11,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 apt-get update
-apt-get install -y ca-certificates curl git nginx rsync unzip
+apt-get install -y ca-certificates curl nginx rsync unzip
 
 if ! command -v node >/dev/null 2>&1 || ! node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 22 ? 0 : 1)" >/dev/null 2>&1; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
@@ -32,15 +31,11 @@ fi
 
 cat > /etc/designcad-updater/updater.env <<ENV
 DESIGNCAD_REPO=$repo
-DESIGNCAD_BRANCH=$branch
 DESIGNCAD_UPDATER_HOST=127.0.0.1
 DESIGNCAD_UPDATER_PORT=$port
 DESIGNCAD_WEB_ROOT=/var/www/designcad
-DESIGNCAD_SOURCE_DIR=/opt/designcad/source
 DESIGNCAD_STATE_FILE=/var/lib/designcad-updater/state.json
 DESIGNCAD_TOKEN_FILE=/etc/designcad-updater/token
-# Optional, needed for private repos. Use a fine-grained read-only GitHub token.
-DESIGNCAD_GITHUB_TOKEN=${DESIGNCAD_GITHUB_TOKEN:-}
 ENV
 chmod 600 /etc/designcad-updater/updater.env
 

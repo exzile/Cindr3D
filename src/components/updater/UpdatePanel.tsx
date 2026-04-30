@@ -2,24 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DownloadCloud, RefreshCw, X } from 'lucide-react';
 import './UpdatePanel.css';
 
-type UpdateChannel = 'branch' | 'release';
-
 interface UpdateStatus {
   ok: boolean;
   repo?: string;
-  branch?: string;
   installed?: {
     channel?: string;
-    sha?: string;
     releaseTag?: string;
     installedAt?: string;
-  };
-  branchUpdate?: {
-    sha: string;
-    shortSha: string;
-    message: string;
-    date: string;
-    available: boolean;
   };
   releaseUpdate?: {
     tag: string;
@@ -40,10 +29,6 @@ interface ApplyResult {
 
 const tokenStorageKey = 'designcad.updaterToken';
 
-function shortSha(sha?: string) {
-  return sha ? sha.slice(0, 7) : 'unknown';
-}
-
 async function readJson<T>(response: Response): Promise<T> {
   const text = await response.text();
   if (!text) return {} as T;
@@ -57,10 +42,8 @@ export default function UpdatePanel() {
   const [busy, setBusy] = useState(false);
   const [token, setToken] = useState(() => localStorage.getItem(tokenStorageKey) ?? '');
 
-  const availableChannel = useMemo<UpdateChannel | null>(() => {
-    if (status?.releaseUpdate?.available && status.releaseUpdate.hasInstallableAsset) return 'release';
-    if (status?.branchUpdate?.available) return 'branch';
-    return null;
+  const releaseAvailable = useMemo(() => {
+    return Boolean(status?.releaseUpdate?.available && status.releaseUpdate.hasInstallableAsset);
   }, [status]);
 
   const loadStatus = useCallback(async () => {
@@ -85,9 +68,9 @@ export default function UpdatePanel() {
     else localStorage.removeItem(tokenStorageKey);
   }, [token]);
 
-  const applyUpdate = async (channel: UpdateChannel) => {
+  const applyUpdate = async () => {
     setBusy(true);
-    setMessage(channel === 'release' ? 'Installing latest release...' : 'Installing latest master...');
+    setMessage('Installing latest release...');
     try {
       const response = await fetch('/api/update/apply', {
         method: 'POST',
@@ -95,7 +78,7 @@ export default function UpdatePanel() {
           'Content-Type': 'application/json',
           ...(token ? { 'X-DesignCAD-Updater-Key': token } : {}),
         },
-        body: JSON.stringify({ channel }),
+        body: JSON.stringify({ channel: 'release' }),
       });
       const result = await readJson<ApplyResult>(response);
       if (!response.ok || !result.ok) {
@@ -115,12 +98,12 @@ export default function UpdatePanel() {
   return (
     <div className="update-panel">
       <button
-        className={`update-panel-toggle${availableChannel ? ' update-available' : ''}`}
+        className={`update-panel-toggle${releaseAvailable ? ' update-available' : ''}`}
         onClick={() => setOpen((value) => !value)}
         title="Site updates"
       >
         <DownloadCloud size={15} />
-        <span>{availableChannel ? 'Update available' : 'Updates'}</span>
+        <span>{releaseAvailable ? 'Release available' : 'Updates'}</span>
       </button>
 
       {open && (
@@ -138,15 +121,7 @@ export default function UpdatePanel() {
           <div className="update-panel-row">
             <span className="update-panel-label">Installed</span>
             <span className="update-panel-value strong">
-              {status?.installed?.releaseTag ?? shortSha(status?.installed?.sha)}
-            </span>
-          </div>
-          <div className="update-panel-row">
-            <span className="update-panel-label">Master</span>
-            <span className="update-panel-value">
-              {status?.branchUpdate
-                ? `${status.branchUpdate.shortSha} ${status.branchUpdate.available ? 'available' : 'current'}`
-                : 'unknown'}
+              {status?.installed?.releaseTag ?? 'manual install'}
             </span>
           </div>
           <div className="update-panel-row">
@@ -175,8 +150,8 @@ export default function UpdatePanel() {
             </button>
             <button
               className="primary"
-              onClick={() => applyUpdate(availableChannel ?? 'branch')}
-              disabled={busy || !availableChannel}
+              onClick={applyUpdate}
+              disabled={busy || !releaseAvailable}
             >
               <DownloadCloud size={14} />
               <span>Install</span>

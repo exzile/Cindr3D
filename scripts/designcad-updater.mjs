@@ -8,14 +8,11 @@ import { spawn } from 'node:child_process';
 
 const config = {
   repo: process.env.DESIGNCAD_REPO ?? 'exzile/DesignCAD',
-  branch: process.env.DESIGNCAD_BRANCH ?? 'master',
   port: Number(process.env.DESIGNCAD_UPDATER_PORT ?? 8787),
   host: process.env.DESIGNCAD_UPDATER_HOST ?? '127.0.0.1',
   webRoot: process.env.DESIGNCAD_WEB_ROOT ?? '/var/www/designcad',
-  sourceDir: process.env.DESIGNCAD_SOURCE_DIR ?? '/opt/designcad/source',
   stateFile: process.env.DESIGNCAD_STATE_FILE ?? '/var/lib/designcad-updater/state.json',
   tokenFile: process.env.DESIGNCAD_TOKEN_FILE ?? '/etc/designcad-updater/token',
-  githubToken: process.env.DESIGNCAD_GITHUB_TOKEN ?? '',
 };
 
 let installRunning = false;
@@ -48,28 +45,14 @@ async function github(path, headers = {}) {
     headers: {
       Accept: 'application/vnd.github+json',
       'User-Agent': 'DesignCAD-Updater',
-      ...(config.githubToken ? { Authorization: `Bearer ${config.githubToken}` } : {}),
       ...headers,
     },
   });
   if (!response.ok) {
     const detail = await response.text();
-    const authHint = response.status === 404 && !config.githubToken
-      ? ' GitHub may be hiding a private repo; set DESIGNCAD_GITHUB_TOKEN in /etc/designcad-updater/updater.env.'
-      : '';
-    throw new Error(`GitHub ${response.status}: ${detail}${authHint}`);
+    throw new Error(`GitHub ${response.status}: ${detail}`);
   }
   return response.json();
-}
-
-async function latestBranchCommit() {
-  const data = await github(`/repos/${config.repo}/commits/${encodeURIComponent(config.branch)}`);
-  return {
-    sha: data.sha,
-    shortSha: data.sha.slice(0, 7),
-    message: data.commit?.message?.split('\n')[0] ?? '',
-    date: data.commit?.committer?.date ?? data.commit?.author?.date ?? '',
-  };
 }
 
 async function latestRelease() {
@@ -96,16 +79,11 @@ async function latestRelease() {
 
 async function updateStatus() {
   const installed = await readJsonFile(config.stateFile, {});
-  const [branch, release] = await Promise.all([latestBranchCommit(), latestRelease()]);
+  const release = await latestRelease();
   return {
     ok: true,
     repo: config.repo,
-    branch: config.branch,
     installed,
-    branchUpdate: {
-      ...branch,
-      available: installed.sha !== branch.sha,
-    },
     releaseUpdate: release ? {
       tag: release.tag,
       name: release.name,
@@ -134,21 +112,6 @@ function run(command, args, options = {}) {
   });
 }
 
-function gitOptions(options = {}) {
-  if (!config.githubToken) return options;
-  return {
-    ...options,
-    env: {
-      ...process.env,
-      ...options.env,
-      GIT_TERMINAL_PROMPT: '0',
-      GIT_CONFIG_COUNT: '1',
-      GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
-      GIT_CONFIG_VALUE_0: `AUTHORIZATION: Bearer ${config.githubToken}`,
-    },
-  };
-}
-
 async function syncDist(distDir, installed) {
   if (!existsSync(join(distDir, 'index.html'))) {
     throw new Error(`No index.html found in ${distDir}`);
@@ -165,40 +128,10 @@ async function syncDist(distDir, installed) {
   return version;
 }
 
-async function installBranch() {
-  const commit = await latestBranchCommit();
-  await mkdir(config.sourceDir, { recursive: true });
-  if (existsSync(join(config.sourceDir, '.git'))) {
-    await run('git', ['fetch', '--depth', '1', 'origin', config.branch], gitOptions({ cwd: config.sourceDir }));
-    await run('git', ['checkout', '--force', 'FETCH_HEAD'], gitOptions({ cwd: config.sourceDir }));
-    await run('git', ['clean', '-fdx'], gitOptions({ cwd: config.sourceDir }));
-  } else {
-    await rm(config.sourceDir, { recursive: true, force: true });
-    await run('git', [
-      'clone',
-      '--depth',
-      '1',
-      '--branch',
-      config.branch,
-      `https://github.com/${config.repo}.git`,
-      config.sourceDir,
-    ], gitOptions());
-  }
-  await run('npm', ['ci'], { cwd: config.sourceDir });
-  await run('npm', ['run', 'build'], { cwd: config.sourceDir });
-  const installed = await syncDist(join(config.sourceDir, 'dist'), {
-    channel: 'branch',
-    branch: config.branch,
-    sha: commit.sha,
-  });
-  return { ok: true, message: `Installed ${config.branch} ${commit.shortSha}`, installed };
-}
-
 async function download(url, destination) {
   const response = await fetch(url, {
     headers: {
       'User-Agent': 'DesignCAD-Updater',
-      ...(config.githubToken ? { Authorization: `Bearer ${config.githubToken}` } : {}),
     },
     redirect: 'follow',
   });
@@ -272,8 +205,11 @@ const server = createServer(async (req, res) => {
       installRunning = true;
       try {
         const body = await readBody(req);
-        const channel = body.channel === 'release' ? 'release' : 'branch';
-        json(res, 200, channel === 'release' ? await installRelease() : await installBranch());
+        if (body.channel && body.channel !== 'release') {
+          json(res, 400, { ok: false, error: 'Only release updates are supported.' });
+          return;
+        }
+        json(res, 200, await installRelease());
       } finally {
         installRunning = false;
       }

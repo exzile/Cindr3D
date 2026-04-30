@@ -248,8 +248,8 @@ The service exposes local endpoints through Nginx:
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /api/update/status` | Check the installed version against GitHub. |
-| `POST /api/update/apply` | Install the selected branch or release update. |
+| `GET /api/update/status` | Check the installed version against the latest GitHub release. |
+| `POST /api/update/apply` | Install the latest release asset. |
 
 The web app includes an **Updates** panel that can talk to this local service.
 
@@ -273,10 +273,7 @@ Updater environment variables are documented in `.env.example`. The browser upda
 
 ## Release Assets
 
-The updater can install either:
-
-- the latest configured branch, normally `master`, by cloning and building on the Pi
-- the latest GitHub release asset
+The updater installs only the latest GitHub release asset. It does not update from `master`.
 
 For faster and more reliable device updates, publish a release asset named like:
 
@@ -298,7 +295,7 @@ dist/index.html
 dist/assets/
 ```
 
-Branch updates run `npm ci && npm run build` on the device, which is slower and uses more disk space. Release updates only download and install already-built static files.
+Release updates download and install already-built static files, avoiding a full `npm ci && npm run build` on the device.
 
 ## Quality And Testing
 
