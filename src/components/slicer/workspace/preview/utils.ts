@@ -1,21 +1,8 @@
-import * as THREE from 'three';
-import type { SliceLayer, SliceMove } from '../../../../types/slicer';
-import type { LayerGeometryData, PreviewColorMode } from '../../../../types/slicer-preview.types';
-import {
-  MOVE_TYPE_THREE_COLORS,
-  SPEED_LOW_COLOR,
-  SPEED_HIGH_COLOR,
-  FLOW_LOW_COLOR,
-  FLOW_HIGH_COLOR,
-  WIDTH_LOW_COLOR,
-  WIDTH_HIGH_COLOR,
-  LAYER_TIME_LOW_COLOR,
-  LAYER_TIME_HIGH_COLOR,
-  Z_SEAM_DIM_THREE_COLOR,
-} from './constants';
+import type { SliceLayer } from '../../../../types/slicer';
 
-// Scratch color — reused across getMoveColor calls to avoid per-move allocation.
-const _scratchColor = new THREE.Color();
+// Per-move scalar range helpers, used by the legend and the per-layer color
+// context builder in extrusionInstances.ts. The actual move-to-color mapping
+// and per-layer instance buffer construction live next to the renderer.
 
 /**
  * Returns the [min, max] value range for a per-move scalar field across all
@@ -61,77 +48,4 @@ export function computeLayerTimeRange(
   if (!isFinite(min)) return [0, 1];
   if (min === max) return [min, min + 1];
   return [min, max];
-}
-
-/**
- * Returns a reference to _scratchColor — callers must copy .r/.g/.b immediately.
- *
- * @param layerTimeT  Normalised layer-time position (0 = fast, 1 = slow).
- *                    Required when colorMode === 'layer-time'; ignored otherwise.
- */
-export function getMoveColor(
-  move: SliceMove,
-  colorMode: PreviewColorMode,
-  range: [number, number],
-  layerTimeT = 0,
-): THREE.Color {
-  if (colorMode === 'type') {
-    return _scratchColor.copy(MOVE_TYPE_THREE_COLORS[move.type] ?? _scratchColor.set('#888888'));
-  }
-
-  if (colorMode === 'layer-time') {
-    return _scratchColor.copy(LAYER_TIME_LOW_COLOR).lerp(LAYER_TIME_HIGH_COLOR, Math.max(0, Math.min(1, layerTimeT)));
-  }
-
-  if (colorMode === 'seam') {
-    return _scratchColor.copy(Z_SEAM_DIM_THREE_COLOR);
-  }
-
-  if (colorMode === 'speed') {
-    const t = Math.max(0, Math.min(1, (move.speed - range[0]) / (range[1] - range[0])));
-    return _scratchColor.copy(SPEED_LOW_COLOR).lerp(SPEED_HIGH_COLOR, t);
-  }
-
-  if (colorMode === 'width') {
-    const t = Math.max(0, Math.min(1, (move.lineWidth - range[0]) / (range[1] - range[0])));
-    return _scratchColor.copy(WIDTH_LOW_COLOR).lerp(WIDTH_HIGH_COLOR, t);
-  }
-
-  // flow
-  const t = Math.max(0, Math.min(1, (move.extrusion - range[0]) / (range[1] - range[0])));
-  return _scratchColor.copy(FLOW_LOW_COLOR).lerp(FLOW_HIGH_COLOR, t);
-}
-
-export function buildLayerGeometry(
-  layer: SliceLayer,
-  colorMode: PreviewColorMode,
-  range: [number, number],
-  layerTimeT = 0,
-): LayerGeometryData {
-  const extPosArr: number[] = [];
-  const extColArr: number[] = [];
-  const travPosArr: number[] = [];
-  const retractPts: number[] = [];
-
-  const z = layer.z;
-
-  for (const move of layer.moves) {
-    if (move.type === 'travel') {
-      travPosArr.push(move.from.x, move.from.y, z, move.to.x, move.to.y, z);
-      if (move.extrusion < 0) {
-        retractPts.push(move.from.x, move.from.y, z);
-      }
-    } else {
-      const color = getMoveColor(move, colorMode, range, layerTimeT);
-      extPosArr.push(move.from.x, move.from.y, z, move.to.x, move.to.y, z);
-      extColArr.push(color.r, color.g, color.b, color.r, color.g, color.b);
-    }
-  }
-
-  return {
-    extrusionPositions: new Float32Array(extPosArr),
-    extrusionColors: new Float32Array(extColArr),
-    travelPositions: new Float32Array(travPosArr),
-    retractionPoints: new Float32Array(retractPts),
-  };
 }
