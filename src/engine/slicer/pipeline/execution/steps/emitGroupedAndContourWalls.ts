@@ -45,6 +45,94 @@ function shouldPreserveVariableWallWidth(lineWidth: WallLineWidthSpec): boolean 
   return Array.isArray(lineWidth);
 }
 
+/** Compute the "teleport" threshold for a wall path. A segment is a
+ *  teleport only if the path has at least one segment of normal scale
+ *  (so the long segment is an outlier). Anchors on the path's MIN
+ *  segment length so the test still fires on short branched paths
+ *  where most segments ARE the teleports — e.g. a 4-point libArachne
+ *  wall with segments `[0.18, 4.17, 4.17]` would have median 4.17
+ *  (threshold 20mm, missing the bug); min 0.18 puts the threshold at
+ *  2mm and flags both jumps.
+ *
+ *  Returns Infinity (= no segment is an outlier) when the path is
+ *  uniform-scale: max ≤ 5×min OR max ≤ 2mm. This protects square
+ *  walls and other paths whose segments are intentionally all the
+ *  same scale. */
+function teleportThresholdForLoop(loop: THREE.Vector2[]): number {
+  if (loop.length < 3) return Infinity;
+  let minDist = Infinity;
+  let maxDist = 0;
+  for (let i = 1; i < loop.length; i++) {
+    const d = loop[i - 1].distanceTo(loop[i]);
+    if (d < minDist) minDist = d;
+    if (d > maxDist) maxDist = d;
+  }
+  if (maxDist <= 2.0 || maxDist <= minDist * 5) return Infinity;
+  return Math.max(2.0, minDist * 5);
+}
+
+function detectTeleportSegmentIndices(loop: THREE.Vector2[]): Set<number> {
+  const threshold = teleportThresholdForLoop(loop);
+  const out = new Set<number>();
+  if (!Number.isFinite(threshold)) return out;
+  for (let i = 1; i < loop.length; i++) {
+    if (loop[i - 1].distanceTo(loop[i]) > threshold) out.add(i);
+  }
+  return out;
+}
+
+/** Detect libArachne branch round-trips in a wall path: an OUT
+ *  teleport at index `i` paired with a BACK teleport at index `j`
+ *  whose endpoint sits near `loop[i-1]`. The emit step bridges
+ *  `loop[i-1] → loop[j]` with one normal extrude segment and skips
+ *  everything in between (the unprintable branch tip).
+ *
+ *  Two constraints prevent the bridge from cutting visibly across
+ *  the main loop's curvature:
+ *
+ *    1. Lookahead is short (8 indices). Real branch round-trips are
+ *       a handful of junctions long; a wider window risks pairing
+ *       two unrelated adjacent spurs together, which produces a
+ *       chord that cuts inward of the main loop arc and surfaces as
+ *       a triangular bump on the outer wall preview.
+ *    2. The candidate BACK jump must be the FIRST teleport-sized
+ *       segment we encounter — pairing the closest-by-position
+ *       back-jump anywhere in the window also caused incorrect
+ *       multi-spur pairings.
+ *
+ *  Round-trips that don't fit these constraints fall through to the
+ *  per-segment unmatched-teleport handler (travel-across or sub-2.5mm
+ *  in-band bridge). */
+function detectTeleportRoundTrips(loop: THREE.Vector2[]): Array<[number, number]> {
+  const threshold = teleportThresholdForLoop(loop);
+  if (!Number.isFinite(threshold) || loop.length < 4) return [];
+  const ranges: Array<[number, number]> = [];
+  const lookahead = 8;
+  let i = 1;
+  while (i < loop.length) {
+    if (loop[i - 1].distanceTo(loop[i]) > threshold) {
+      const preOut = loop[i - 1];
+      let backJ = -1;
+      for (let j = i + 1; j < Math.min(loop.length, i + lookahead); j++) {
+        const segLen = loop[j - 1].distanceTo(loop[j]);
+        if (segLen <= threshold) continue;
+        // First teleport-sized segment we encounter is the candidate
+        // back-jump. If its endpoint is near pre-out, it's a pair.
+        if (loop[j].distanceTo(preOut) < threshold) backJ = j;
+        break; // either way, stop looking — only the immediate next
+               // teleport can be a true paired back-jump.
+      }
+      if (backJ > 0) {
+        ranges.push([i, backJ]);
+        i = backJ + 1;
+        continue;
+      }
+    }
+    i++;
+  }
+  return ranges;
+}
+
 function centroid(points: THREE.Vector2[]): THREE.Vector2 {
   const center = new THREE.Vector2();
   for (const point of points) center.add(point);
@@ -465,9 +553,34 @@ function emitOuterLoop(params: EmitOuterLoopParams): number {
   const scarfStepLen = pp.scarfSeamStepLength ?? 0;
   let scarfRemaining = scarfActive ? scarfLen : 0;
   let layerTime = 0;
+  const teleports = detectTeleportSegmentIndices(reordered);
+  const teleportThreshold = teleportThresholdForLoop(reordered);
+  const roundTrips = new Map<number, number>();
+  for (const [start, end] of detectTeleportRoundTrips(reordered)) {
+    roundTrips.set(start, end);
+  }
   for (let pi = 1; pi < reordered.length; pi++) {
+    const rtEnd = roundTrips.get(pi);
+    if (rtEnd != null) {
+      // Bridge a libArachne branch round-trip with one normal extrude
+      // segment so the main outer-wall loop appears continuous.
+      const from = reordered[pi - 1], to = reordered[rtEnd];
+      const bridgeLen = from.distanceTo(to);
+      const segLW = variableLineWidth ? segmentLineWidth(params.lineWidth, pi - 1, rtEnd) : fallbackLineWidth;
+      layerTime += emitter.extrudeTo(to.x, to.y, outerWallSpeed, segLW, layerH).time;
+      moves.push({ type: 'wall-outer', from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, speed: outerWallSpeed, extrusion: emitter.calculateExtrusion(bridgeLen, segLW, layerH), lineWidth: segLW });
+      pi = rtEnd;
+      continue;
+    }
     const from = reordered[pi - 1], to = reordered[pi];
     const segLen = from.distanceTo(to);
+    if (teleports.has(pi)) {
+      // Outer walls touch the part boundary, so an unmatched teleport
+      // could deposit material across a hole's empty space if we
+      // bridged it. Travel across instead.
+      emitter.travelTo(to.x, to.y, moves);
+      continue;
+    }
     let segLW = variableLineWidth ? segmentLineWidth(params.lineWidth, pi - 1, pi) : fallbackLineWidth;
     const baseSegLW = segLW;
     let segSpeed = outerWallSpeed;
@@ -491,6 +604,13 @@ function emitOuterLoop(params: EmitOuterLoopParams): number {
   }
   if (isClosed && reordered.length > 2) {
     const lastPt = reordered[reordered.length - 1], firstPt = reordered[0], segLen = lastPt.distanceTo(firstPt);
+    if (segLen > teleportThreshold) {
+      // Closing segment is itself a teleport — travel to close instead
+      // of laying a noodle across the gap.
+      emitter.travelTo(firstPt.x, firstPt.y, moves);
+      if (spiralActive) params.run.spiralPrevLayerZ = spiralEndZ;
+      return layerTime;
+    }
     const coastVol = params.allowCoasting ? (pp.coastingEnabled ? (pp.coastingVolume ?? 0) : 0) : 0;
     const minCoastVol = pp.minVolumeBeforeCoasting ?? 0;
     const loopVol = minCoastVol > 0 ? (() => {
@@ -560,6 +680,7 @@ export function emitGroupedAndContourWalls(
     sectionType: 'wall' as const,
     isTopOrBottomLayer: layer.isSolidTop || layer.isSolidBottom,
     isFirstLayer: layer.isFirstLayer,
+    nozzleDiameter: run.printer?.nozzleDiameter,
   };
   beginSeamLayer(run, li);
 
@@ -773,8 +894,43 @@ export function emitGroupedAndContourWalls(
       gcode.push(`;TYPE:${isExternalWall ? 'Outer wall' : 'Inner wall'}`);
       emitter.resetEmittedLineWidth?.();
       gcode.push(`; ${isExternalWall ? 'Outer wall' : 'Inner wall'} ${wi}`);
+      const innerTeleports = detectTeleportSegmentIndices(wallLoop);
+      const innerTeleportThreshold = teleportThresholdForLoop(wallLoop);
+      const innerRoundTrips = new Map<number, number>();
+      for (const [start, end] of detectTeleportRoundTrips(wallLoop)) {
+        innerRoundTrips.set(start, end);
+      }
       for (let pi = 1; pi < wallLoop.length; pi++) {
+        const rtEnd = innerRoundTrips.get(pi);
+        if (rtEnd != null) {
+          // Bridge a libArachne branch round-trip with one normal extrude
+          // so the main inner-wall loop appears continuous; drops the
+          // unprintable branch tip in the middle.
+          const from = wallLoop[pi - 1], to = wallLoop[rtEnd];
+          const bridgeLen = from.distanceTo(to);
+          const segLW = segmentLineWidth(wallLWSpec, pi - 1, rtEnd);
+          layer.layerTime += emitter.extrudeTo(to.x, to.y, wallSpeed, segLW, layerH).time;
+          moves.push({ type: moveType, from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, speed: wallSpeed, extrusion: emitter.calculateExtrusion(bridgeLen, segLW, layerH), lineWidth: segLW });
+          pi = rtEnd;
+          continue;
+        }
         const from = wallLoop[pi - 1], to = wallLoop[pi];
+        if (innerTeleports.has(pi)) {
+          const segLen = from.distanceTo(to);
+          // Interior (non-external) inner walls bridge sub-2.5mm
+          // unmatched teleports — the bridge stays in the wall band.
+          // External walls (depth-0 walls tracking a hole boundary or
+          // the outer perimeter) travel across so we don't deposit
+          // material into a hole's empty space.
+          if (!isExternalWall && segLen <= 2.5) {
+            const segLW = segmentLineWidth(wallLWSpec, pi - 1, pi);
+            layer.layerTime += emitter.extrudeTo(to.x, to.y, wallSpeed, segLW, layerH).time;
+            moves.push({ type: moveType, from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, speed: wallSpeed, extrusion: emitter.calculateExtrusion(segLen, segLW, layerH), lineWidth: segLW });
+          } else {
+            emitter.travelTo(to.x, to.y, moves);
+          }
+          continue;
+        }
         const segLW = segmentLineWidth(wallLWSpec, pi - 1, pi);
         layer.layerTime += emitter.extrudeTo(to.x, to.y, wallSpeed, segLW, layerH).time;
         moves.push({ type: moveType, from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, speed: wallSpeed, extrusion: emitter.calculateExtrusion(from.distanceTo(to), segLW, layerH), lineWidth: segLW });
@@ -782,9 +938,14 @@ export function emitGroupedAndContourWalls(
       if (isClosed && wallLoop.length > 2) {
         const lastPt = wallLoop[wallLoop.length - 1], firstPt = wallLoop[0];
         const segLen = lastPt.distanceTo(firstPt);
-        const segLW = segmentLineWidth(wallLWSpec, wallLoop.length - 1, 0);
-        layer.layerTime += emitter.extrudeTo(firstPt.x, firstPt.y, wallSpeed, segLW, layerH).time;
-        moves.push({ type: moveType, from: { x: lastPt.x, y: lastPt.y }, to: { x: firstPt.x, y: firstPt.y }, speed: wallSpeed, extrusion: emitter.calculateExtrusion(segLen, segLW, layerH), lineWidth: segLW });
+        if (segLen > innerTeleportThreshold) {
+          // Closing segment is itself a teleport — travel to close.
+          emitter.travelTo(firstPt.x, firstPt.y, moves);
+        } else {
+          const segLW = segmentLineWidth(wallLWSpec, wallLoop.length - 1, 0);
+          layer.layerTime += emitter.extrudeTo(firstPt.x, firstPt.y, wallSpeed, segLW, layerH).time;
+          moves.push({ type: moveType, from: { x: lastPt.x, y: lastPt.y }, to: { x: firstPt.x, y: firstPt.y }, speed: wallSpeed, extrusion: emitter.calculateExtrusion(segLen, segLW, layerH), lineWidth: segLW });
+        }
       }
     }
 

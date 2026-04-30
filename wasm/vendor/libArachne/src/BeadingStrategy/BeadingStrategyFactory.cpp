@@ -32,8 +32,15 @@ BeadingStrategyPtr BeadingStrategyFactory::makeStrategy(const coord_t preferred_
 {
     using std::make_unique;
     using std::move;
+    // For thin features that only fit one or two walls, use the outer-wall
+    // width as the target bead size. Otherwise the inner-wall width drives
+    // the DistributedBeadingStrategy and the resulting bead-width
+    // transitions surface as inward spurs on the outer wall preview
+    // (visible as triangular bumps that pinch the inner-wall band shut).
+    // Mirrors OrcaSlicer's behaviour for the same input geometry.
+    const coord_t optimal_width = max_bead_count <= 2 ? preferred_bead_width_outer : preferred_bead_width_inner;
     BeadingStrategyPtr ret =
-        make_unique<DistributedBeadingStrategy>(preferred_bead_width_inner, preferred_transition_length, transitioning_angle, wall_split_middle_threshold, wall_add_middle_threshold, inward_distributed_center_wall_count);
+        make_unique<DistributedBeadingStrategy>(optimal_width, preferred_transition_length, transitioning_angle, wall_split_middle_threshold, wall_add_middle_threshold, inward_distributed_center_wall_count);
     spdlog::debug("Applying the Redistribute meta-strategy with outer-wall width = {}, inner-wall width = {}", preferred_bead_width_outer, preferred_bead_width_inner);
     ret = make_unique<RedistributeBeadingStrategy>(preferred_bead_width_outer, minimum_variable_line_ratio, move(ret));
 

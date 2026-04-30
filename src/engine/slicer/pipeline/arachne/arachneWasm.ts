@@ -103,16 +103,41 @@ export function configValues(
 ): Float64Array {
   const outerWidth = context.isFirstLayer ? lineWidth : (printProfile.outerWallLineWidth ?? lineWidth);
   const innerWidth = context.isFirstLayer ? lineWidth : (printProfile.innerWallLineWidth ?? lineWidth);
-  const minWallLW = printProfile.minWallLineWidth ?? lineWidth * 0.5;
+  // OrcaSlicer's `make_paths_params` (libslic3r/Arachne/WallToolPaths.cpp)
+  // computes each libArachne threshold as `% × nozzle_diameter`.
+  // We mirror that exactly when `context.nozzleDiameter` is plumbed
+  // through, so behavior matches Orca on profiles where line width
+  // and nozzle diameter differ (e.g. 0.45mm line on a 0.6mm nozzle).
+  // Falls back to lineWidth when nozzle is unknown — equivalent to the
+  // common case where line width and nozzle match.
+  const nozzleRef = context.nozzleDiameter && context.nozzleDiameter > 0
+    ? context.nozzleDiameter
+    : lineWidth;
+  const minWallLW = printProfile.minWallLineWidth ?? nozzleRef * 0.85;        // Orca: 85% of nozzle
   const minEvenLW = printProfile.minEvenWallLineWidth ?? minWallLW;
   // Cura calls this `min_odd_wall_line_width` (the min for the odd
   // gapfill bead). Profile aliases it as `minThinWallLineWidth`.
   const minOddLW = printProfile.minThinWallLineWidth ?? minWallLW;
-  const minFeature = printProfile.minFeatureSize ?? minWallLW * 0.5;
-  const transitionLength = printProfile.wallTransitionLength ?? lineWidth;
+  const minFeature = printProfile.minFeatureSize ?? nozzleRef * 0.25;          // Orca: 25% of nozzle
+  const transitionLength = printProfile.wallTransitionLength ?? nozzleRef;     // Orca: 100% of nozzle
   const transitionAngle = printProfile.wallTransitionAngle ?? 10;
-  const transitionFilterDist = printProfile.wallTransitionFilterDistance ?? lineWidth * 0.25;
-  const transitionFilterMargin = printProfile.wallTransitionFilterMargin ?? lineWidth * 0.0625;
+  // OrcaSlicer hardcodes `transition_filter_dist = 100mm` in their
+  // libArachne fork (`Arachne/WallToolPaths.cpp:541`). It tells
+  // SkeletalTrapezoidation how far apart two width-transitions need
+  // to be before they're considered distinct — at 100mm any thin
+  // ring's transitions get merged into one, eliminating the
+  // medial-axis spurs that surface as inward triangular bumps on the
+  // outer wall preview. Our previous default (`lineWidth × 0.25` ≈
+  // 0.11mm) was ~900× tighter, which is why spurs survived even
+  // after matching every other Orca config value.
+  const transitionFilterDist = printProfile.wallTransitionFilterDistance ?? 100;
+  // `wall_transition_filter_deviation` — Orca's default is 25% of
+  // nozzle. Larger margin = wider hysteresis band around the wall-
+  // count transition threshold = libArachne stays on the same wall
+  // count across small width changes instead of emitting a medial-axis
+  // transition spur. The spurs are exactly what was producing the
+  // inward triangular bumps on the outer wall preview.
+  const transitionFilterMargin = printProfile.wallTransitionFilterMargin ?? nozzleRef * 0.25;
   const wallDistribution = printProfile.wallDistributionCount ?? 1;
   const sectionType = SECTION_TYPE_ID[context.sectionType ?? 'wall'];
   const minWallLengthFactor = printProfile.minWallLengthFactor ?? 0.5;

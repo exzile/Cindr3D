@@ -21,6 +21,17 @@ export interface ArachneGenerationContext {
   sectionType?: ArachneSectionType;
   isTopOrBottomLayer?: boolean;
   isFirstLayer?: boolean;
+  /** Printer's nozzle diameter in mm. OrcaSlicer's libArachne config
+   *  reads several thresholds (`min_bead_width`, `min_feature_size`,
+   *  `wall_transition_filter_deviation`, `wall_transition_length`) as
+   *  percentages of nozzle diameter — NOT as percentages of the line
+   *  width. When line width and nozzle diameter differ (e.g. 0.45mm
+   *  line on a 0.6mm nozzle) using line width as the reference produces
+   *  noticeably tighter thresholds than Orca, which surfaces as
+   *  medial-axis spurs surviving simplification and showing as inward
+   *  bumps on the outer wall. Plumbed through the slicer so we can
+   *  match Orca's behavior exactly. */
+  nozzleDiameter?: number;
 }
 
 export interface ArachneBackend {

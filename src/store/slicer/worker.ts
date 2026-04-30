@@ -5,13 +5,23 @@ let slicerWorkerUrl: string | null = null;
 let activeSliceRequestId = 0;
 let workerBusy = false;
 
+/** Debug toggle. `VITE_SLICER_DISABLE_CACHE=1` forces a fresh worker
+ *  spawn on every `getSlicerWorker` call so iterating on slicer code
+ *  can never silently hit a long-lived worker still running the
+ *  previous bundle. Off by default (worker reuse is faster). */
+const ALWAYS_FRESH_WORKER = (() => {
+  const env = (typeof import.meta !== 'undefined' && (import.meta as { env?: Record<string, unknown> }).env) || {};
+  const raw = env.VITE_SLICER_DISABLE_CACHE;
+  return raw === '1' || raw === 'true' || raw === true;
+})();
+
 export function getSlicerWorker(onMessage: (e: MessageEvent) => void): Worker {
   // The URL is cache-busted with a per-page-load nonce so a fresh
   // page load always fetches a fresh worker bundle instead of
   // re-using the browser-cached one. See `freshWorkerUrl` for how
   // and why the nonce works.
   const currentUrl = freshWorkerUrl(new URL('../../workers/SlicerWorker.ts', import.meta.url));
-  if (slicerWorker && slicerWorkerUrl !== currentUrl) {
+  if (slicerWorker && (ALWAYS_FRESH_WORKER || slicerWorkerUrl !== currentUrl)) {
     slicerWorker.terminate();
     slicerWorker = null;
     slicerWorkerUrl = null;

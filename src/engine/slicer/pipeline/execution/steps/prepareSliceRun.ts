@@ -25,6 +25,17 @@ interface CachedMeshGeometry {
 const MAX_MESH_GEOMETRY_CACHE_ENTRIES = 8;
 const meshGeometryCache = new Map<string, CachedMeshGeometry>();
 
+/** Debug toggle. Set `VITE_SLICER_DISABLE_CACHE=1` to bypass every
+ *  in-process slicer cache (mesh geometry triangles, Arachne perimeter
+ *  results) and force every slice to recompute from scratch. Useful
+ *  when iterating on slicer code so you don't accidentally see cached
+ *  results from a previous slice run. */
+const SLICER_DISABLE_CACHE = (() => {
+  const env = (typeof import.meta !== 'undefined' && (import.meta as { env?: Record<string, unknown> }).env) || {};
+  const raw = env.VITE_SLICER_DISABLE_CACHE;
+  return raw === '1' || raw === 'true' || raw === true;
+})();
+
 function appendToolSelection(gcode: string[], printer: SliceRun['printer'], pp: SliceRun['pp']): void {
   const extruderIndex = Math.max(0, Math.floor(pp.extruderIndex ?? 0));
   if (extruderIndex <= 0) return;
@@ -86,7 +97,7 @@ function prepareMeshGeometry(
   // same geometry can serve multiple profiles. Per-profile repair passes
   // run AFTER the cache lookup on a copy.
   const cacheKey = geometryCacheKey(geometries);
-  let cached = meshGeometryCache.get(cacheKey);
+  let cached = SLICER_DISABLE_CACHE ? undefined : meshGeometryCache.get(cacheKey);
   if (!cached) {
     const triangles = slicer.extractTriangles(geometries);
     if (triangles.length === 0) throw new Error('No triangles found in provided geometry.');

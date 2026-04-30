@@ -44,6 +44,15 @@ export class SlicePipelineGeometry {
   private spiralizeArachneWarningShown = false;
   private perimeterCache = new Map<string, GeneratedPerimeters>();
   private static readonly MAX_PERIMETER_CACHE_ENTRIES = 512;
+  /** Debug toggle. `VITE_SLICER_DISABLE_CACHE=1` bypasses the per-slice
+   *  Arachne perimeter cache so every contour is recomputed from
+   *  scratch — useful when iterating on wall code so cached results
+   *  from a previous slice run can't hide a code change. */
+  private static readonly DISABLE_PERIMETER_CACHE = (() => {
+    const env = (typeof import.meta !== 'undefined' && (import.meta as { env?: Record<string, unknown> }).env) || {};
+    const raw = env.VITE_SLICER_DISABLE_CACHE;
+    return raw === '1' || raw === 'true' || raw === true;
+  })();
 
   protected extractTriangles(
     geometries: { geometry: THREE.BufferGeometry; transform: THREE.Matrix4 }[],
@@ -252,7 +261,7 @@ export class SlicePipelineGeometry {
         outerWallInset,
         context,
       );
-      const cached = this.perimeterCache.get(cacheKey);
+      const cached = SlicePipelineGeometry.DISABLE_PERIMETER_CACHE ? undefined : this.perimeterCache.get(cacheKey);
       if (cached) return cached;
       return this.rememberPerimeters(cacheKey, generatePerimetersArachne(
         outerContour, holeContours, wallCount, lineWidth, outerWallInset,

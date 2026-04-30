@@ -174,6 +174,7 @@ function precomputeContourWalls(slicer: Slicer, layer: SliceLayerGeometryState):
     sectionType: 'wall' as const,
     isTopOrBottomLayer: layer.isSolidTop || layer.isSolidBottom,
     isFirstLayer: layer.isFirstLayer,
+    nozzleDiameter: (slicer as unknown as { printerProfile: { nozzleDiameter: number } }).printerProfile.nozzleDiameter,
   };
   const precomputed = [];
   for (let contourIndex = 0; contourIndex < layer.contours.length; contourIndex++) {

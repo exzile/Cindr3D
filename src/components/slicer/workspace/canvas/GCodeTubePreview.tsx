@@ -338,19 +338,30 @@ export function LayerLines({
         if (move.extrusion < 0) {
           retractPos.push(move.from.x, move.from.y, layer.z);
         }
-        // Travels INSIDE a wall chain (between fragments at the same depth)
-        // shouldn't break the visible tube — libArachne emits the inner wall
-        // as one closed loop plus several short medial-axis fragments at the
-        // same depth, and the slicer schedules a travel between them. Orca's
-        // preview hides those travels so the wall reads as a single ring;
-        // breaking the chain there leaves visible gaps that DON'T exist
-        // physically (gap-fill + main wall together cover the band). Cap
-        // the bridge at 8 mm so cross-plate travels still break the chain.
+        // Travels INSIDE a same-type wall chain (between fragments at the
+        // same depth) shouldn't break the visible tube — libArachne emits
+        // the inner wall as one closed loop plus several short medial-axis
+        // fragments at the same depth, and the slicer schedules a travel
+        // between them. Orca's preview hides those travels so the wall
+        // reads as a single ring.
+        //
+        // CRITICAL: the next move's type must match the current chain's
+        // type. Without this check, a short travel between a wall-outer
+        // ending and a wall-inner starting kept the chain alive, and the
+        // renderer drew a tube from the outer's end straight to the
+        // inner's start — that tube cut inward across the wall band and
+        // surfaced as the inward triangular "bumps" we kept seeing on the
+        // outer red wall. Type matching restricts the bridge to legitimate
+        // intra-feature gaps.
         const insideWallChain = current !== null
           && (current.type === 'wall-inner' || current.type === 'wall-outer'
               || current.type === 'gap-fill' || current.type === 'mixed');
         const travelLen = Math.hypot(move.to.x - move.from.x, move.to.y - move.from.y);
-        if (insideWallChain && travelLen <= 8) continue;
+        const nextMove = i + 1 < moves.length ? moves[i + 1] : null;
+        const nextMatchesChain = insideWallChain
+          && nextMove !== null
+          && nextMove.type === current!.type;
+        if (insideWallChain && nextMatchesChain && travelLen <= 8) continue;
         current = null;
         continue;
       }
