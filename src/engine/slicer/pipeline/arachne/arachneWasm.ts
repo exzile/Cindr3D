@@ -140,8 +140,15 @@ export function configValues(
     minEvenLW,                     // 14 min_even_wall_line_width
     minOddLW,                      // 15 min_odd_wall_line_width
     0.5,                           // 16 min_variable_line_ratio
-    0.01,                          // 17 simplify_max_resolution
-    0.01,                          // 18 simplify_max_deviation
+    // Match OrcaSlicer's wall-simplifier defaults so libArachne's
+    // medial-axis paths get collapsed at the same scale theirs do. Our
+    // previous 0.01 values were 50× tighter than Orca's 0.5/0.025,
+    // which preserved branch-tip side-trips inside individual
+    // ExtrusionLines. Diagnostic confirmed Orca's gcode for the same
+    // STL has internal teleports max ~1.6mm vs ours at ~6.7mm — the
+    // simplifier is the only difference.
+    printProfile.wallMaximumResolution ?? 0.5,  // 17 simplify_max_resolution
+    printProfile.wallMaximumDeviation ?? 0.025, // 18 simplify_max_deviation
     0.01,                          // 19 simplify_max_area_deviation
     enableThinWalls ? 1 : 0,       // 20 print_thin_walls
     fluidMotionEnabled ? 1 : 0,    // 21 fluid_motion_enabled

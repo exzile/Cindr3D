@@ -338,6 +338,19 @@ export function LayerLines({
         if (move.extrusion < 0) {
           retractPos.push(move.from.x, move.from.y, layer.z);
         }
+        // Travels INSIDE a wall chain (between fragments at the same depth)
+        // shouldn't break the visible tube — libArachne emits the inner wall
+        // as one closed loop plus several short medial-axis fragments at the
+        // same depth, and the slicer schedules a travel between them. Orca's
+        // preview hides those travels so the wall reads as a single ring;
+        // breaking the chain there leaves visible gaps that DON'T exist
+        // physically (gap-fill + main wall together cover the band). Cap
+        // the bridge at 8 mm so cross-plate travels still break the chain.
+        const insideWallChain = current !== null
+          && (current.type === 'wall-inner' || current.type === 'wall-outer'
+              || current.type === 'gap-fill' || current.type === 'mixed');
+        const travelLen = Math.hypot(move.to.x - move.from.x, move.to.y - move.from.y);
+        if (insideWallChain && travelLen <= 8) continue;
         current = null;
         continue;
       }

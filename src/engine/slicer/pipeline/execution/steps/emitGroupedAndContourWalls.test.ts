@@ -497,7 +497,7 @@ describe('emitGroupedAndContourWalls', () => {
     ]);
   });
 
-  it('emits Arachne odd paths as Orca-style inner walls instead of separate gap fill', () => {
+  it('tags Arachne odd/gapfill paths as gap-fill so the inner wall reads as one continuous loop', () => {
     const outer = square(20);
     const inner = square(12).map((point) => point.add(new THREE.Vector2(4, 4)));
     const odd = [
@@ -574,8 +574,12 @@ describe('emitGroupedAndContourWalls', () => {
 
     expect(run.gcode.some((line) => line.startsWith('; Gap fill'))).toBe(false);
     expect(run.gcode.filter((line) => line.startsWith('; Inner wall'))).toContain('; Inner wall 2');
-    expect(layer.moves.map((move) => move.type)).not.toContain('gap-fill');
+    // The closed inner wall (wallSets[1]) emits as wall-inner.
     expect(layer.moves.some((move) => move.type === 'wall-inner')).toBe(true);
+    // The odd/gapfill open path (wallSets[2]) gets tagged gap-fill so the
+    // preview can colour it separately — coloring it wall-inner makes the
+    // surrounding closed inner wall *look* like it has gaps.
+    expect(layer.moves.some((move) => move.type === 'gap-fill')).toBe(true);
   });
 
   it('preserves variable widths for closed Arachne walls and odd transition beads', () => {
@@ -665,12 +669,18 @@ describe('emitGroupedAndContourWalls', () => {
     const innerWidths = layer.moves
       .filter((move) => move.type === 'wall-inner')
       .map((move) => move.lineWidth);
+    const gapFillWidths = layer.moves
+      .filter((move) => move.type === 'gap-fill')
+      .map((move) => move.lineWidth);
 
     expect(outerWallWidths.some((width) => Math.abs(width - 0.46) < 1e-9)).toBe(true);
     expect(outerWallWidths.some((width) => Math.abs(width - 0.55) < 1e-9)).toBe(true);
     expect(innerWidths.some((width) => Math.abs(width - 0.515) < 1e-9)).toBe(true);
-    expect(innerWidths).toContain(0.26);
-    expect(innerWidths).toContain(0.27);
+    // 0.26, 0.27 are the per-segment averages of the odd/gapfill bead widths
+    // (0.22 → 0.30 → 0.24). They land on `gap-fill` moves now that gapfill is
+    // tagged separately from wall-inner.
+    expect(gapFillWidths).toContain(0.26);
+    expect(gapFillWidths).toContain(0.27);
   });
 
   it('orders separate contours by nearest reachable wall start', () => {

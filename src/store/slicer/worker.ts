@@ -1,13 +1,16 @@
+import { freshWorkerUrl } from '../../workers/freshWorkerUrl';
+
 let slicerWorker: Worker | null = null;
 let slicerWorkerUrl: string | null = null;
 let activeSliceRequestId = 0;
 let workerBusy = false;
 
 export function getSlicerWorker(onMessage: (e: MessageEvent) => void): Worker {
-  // In production builds this URL is content-hashed. In Vite dev it remains
-  // the source URL, so transitive worker edits are handled by the HMR reset
-  // hooks below instead of relying on a URL mismatch.
-  const currentUrl = new URL('../../workers/SlicerWorker.ts', import.meta.url).href;
+  // The URL is cache-busted with a per-page-load nonce so a fresh
+  // page load always fetches a fresh worker bundle instead of
+  // re-using the browser-cached one. See `freshWorkerUrl` for how
+  // and why the nonce works.
+  const currentUrl = freshWorkerUrl(new URL('../../workers/SlicerWorker.ts', import.meta.url));
   if (slicerWorker && slicerWorkerUrl !== currentUrl) {
     slicerWorker.terminate();
     slicerWorker = null;
