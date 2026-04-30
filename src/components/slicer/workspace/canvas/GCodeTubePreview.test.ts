@@ -209,7 +209,7 @@ describe('closePreviewChainIfLoop', () => {
     expect(chain.moveRefs).toHaveLength(3);
   });
 
-  it('leaves near-loop wall chains open so preview matches Orca path vertices exactly', () => {
+  it('closes near-loop wall chains so seam endpoints do not dent round walls', () => {
     const ref: ShaftMoveData = {
       type: 'wall-outer',
       speed: 30,
@@ -233,7 +233,7 @@ describe('closePreviewChainIfLoop', () => {
 
     closePreviewChainIfLoop(chain);
 
-    expect(chain.isClosed).toBe(false);
+    expect(chain.isClosed).toBe(true);
     expect(chain.points).toHaveLength(4);
   });
 

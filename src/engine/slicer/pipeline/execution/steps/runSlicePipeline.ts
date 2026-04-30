@@ -8,7 +8,6 @@ import { emitGroupedAndContourWalls } from './emitGroupedAndContourWalls';
 import { emitContourInfill } from './emitContourInfill';
 import { finalizeLayer } from './finalizeLayer';
 import { loadArachneModule, setArachneStatsLayer } from '../../arachne';
-import { freshWorkerUrl } from '../../../../../workers/freshWorkerUrl';
 import type {
   SlicerExecutionPipeline,
   SliceGeometryRun,
@@ -118,10 +117,7 @@ function nowMs(): number {
 }
 
 function createLayerWorker(): Worker {
-  return new Worker(
-    freshWorkerUrl(new URL('../../../../../workers/SlicerLayerWorker.ts', import.meta.url)),
-    { type: 'module' },
-  );
+  return new Worker(new URL('../../../../../workers/SlicerLayerWorker.ts', import.meta.url), { type: 'module' });
 }
 
 function serializeVector3(v: { x: number; y: number; z: number }): SerializedVector3 {

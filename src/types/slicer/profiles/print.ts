@@ -338,16 +338,6 @@ export interface PrintProfile {
   wallDistributionCount?: number;      // wired to Arachne WASM — Cura adaptive-width algorithm
   wallTransitionFilterDistance?: number; // wired to Arachne WASM — mm
   wallTransitionFilterMargin?: number;   // wired to Arachne WASM — mm
-  /** Smallest segment libArachne's wall simplifier preserves. In mm.
-   *  Default 0.5 — matches OrcaSlicer's permissive setting that
-   *  collapses sub-mm medial-axis branches at this scale, eliminating
-   *  the visible inner-wall gaps thinner annular features otherwise
-   *  show. Lower values preserve more detail at the cost of branch
-   *  artifacts in narrow regions. */
-  wallMaximumResolution?: number;
-  /** Maximum deviation the wall simplifier may introduce. In mm.
-   *  Default 0.025. */
-  wallMaximumDeviation?: number;
   innerWallLineWidth?: number;         // wired — inner perimeter line width
   groupOuterWalls?: boolean;           // wired — emit all outer walls together
   outerWallInset?: number;             // wired — mm; shift outer wall inward from contour

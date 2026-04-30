@@ -37,6 +37,9 @@ const PREVIEW_LINE_SCALE = 1.0;
 
 // Endpoint match tolerance for chain detection.
 const PREVIEW_JOIN_EPSILON = 5e-4;
+const WALL_LOOP_CLOSE_LINE_WIDTH_FACTOR = 1.75;
+const WALL_LOOP_CLOSE_MAX_MM = 0.75;
+const WALL_LOOP_MIN_LENGTH_FACTOR = 8;
 const DEFAULT_FILAMENT_DIAMETER_MM = 1.75;
 const MIN_PREVIEW_LINE_WIDTH_MM = 0.02;
 const MAX_PREVIEW_LINE_WIDTH_FACTOR = 3;
@@ -172,6 +175,22 @@ export function canContinuePreviewChain(
     && Math.abs(last.y - move.from.y) <= PREVIEW_JOIN_EPSILON;
 }
 
+function isWallLikePreviewChain(chain: TubeChain): boolean {
+  return chain.type === 'wall-outer'
+    || chain.type === 'wall-inner'
+    || chain.moveRefs.some((move) => move.type === 'wall-outer' || move.type === 'wall-inner');
+}
+
+function previewChainLength(chain: TubeChain): number {
+  let length = 0;
+  for (let i = 0; i < chain.points.length - 1; i++) {
+    const a = chain.points[i];
+    const b = chain.points[i + 1];
+    length += Math.hypot(b.x - a.x, b.y - a.y);
+  }
+  return length;
+}
+
 // eslint-disable-next-line react-refresh/only-export-components
 export function closePreviewChainIfLoop(chain: TubeChain): void {
   if (chain.isClosed || chain.points.length < 4) return;
@@ -180,6 +199,20 @@ export function closePreviewChainIfLoop(chain: TubeChain): void {
   const closeGap = Math.hypot(first.x - last.x, first.y - last.y);
   if (closeGap <= PREVIEW_JOIN_EPSILON) {
     chain.points.pop();
+    chain.isClosed = true;
+    return;
+  }
+
+  if (!isWallLikePreviewChain(chain)) return;
+  const endpointLineWidth = Math.max(0.01, (first.lw + last.lw) * 0.5);
+  const closeThreshold = Math.min(
+    WALL_LOOP_CLOSE_MAX_MM,
+    endpointLineWidth * WALL_LOOP_CLOSE_LINE_WIDTH_FACTOR,
+  );
+  if (
+    closeGap <= closeThreshold
+    && previewChainLength(chain) >= endpointLineWidth * WALL_LOOP_MIN_LENGTH_FACTOR
+  ) {
     chain.isClosed = true;
   }
 }
@@ -338,19 +371,6 @@ export function LayerLines({
         if (move.extrusion < 0) {
           retractPos.push(move.from.x, move.from.y, layer.z);
         }
-        // Travels INSIDE a wall chain (between fragments at the same depth)
-        // shouldn't break the visible tube — libArachne emits the inner wall
-        // as one closed loop plus several short medial-axis fragments at the
-        // same depth, and the slicer schedules a travel between them. Orca's
-        // preview hides those travels so the wall reads as a single ring;
-        // breaking the chain there leaves visible gaps that DON'T exist
-        // physically (gap-fill + main wall together cover the band). Cap
-        // the bridge at 8 mm so cross-plate travels still break the chain.
-        const insideWallChain = current !== null
-          && (current.type === 'wall-inner' || current.type === 'wall-outer'
-              || current.type === 'gap-fill' || current.type === 'mixed');
-        const travelLen = Math.hypot(move.to.x - move.from.x, move.to.y - move.from.y);
-        if (insideWallChain && travelLen <= 8) continue;
         current = null;
         continue;
       }
@@ -434,11 +454,9 @@ export function LayerLines({
     }> = [];
     for (const chain of chains) {
       const geo = buildChainTube(chain, beadHeight, layer.z, {
-        // OrcaSlicer renders G-code preview through libvgcode's instanced
-        // segment template. Use the same path here instead of the older
-        // continuous swept-tube fallback so wall roles, widths, and seam
-        // endpoint angles stay faithful to the move stream.
-        useSegmentTemplate: true,
+        // Keep curved wall chains on the continuous tube builder. The
+        // per-segment template shows its segment joins as dents on round walls.
+        usePressedRoadTemplate: layer.layerIndex === 0,
       });
       if (!geo) continue;
       tubeList.push({ geometry: geo, type: chain.type, moveRefs: chain.moveRefs });

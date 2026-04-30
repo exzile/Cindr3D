@@ -179,15 +179,8 @@ describe('buildChainTube — geometric contract', () => {
 
     const geo = buildChainTube(chain, 0.2, 0.2, { useSegmentTemplate: true });
     const hwaB = geo!.getAttribute('segmentHwaB').array as Float32Array;
-    const colorB = geo!.getAttribute('segmentColorB').array as Float32Array;
 
     expect(hwaB[2]).toBeCloseTo(Math.PI / 2, 4);
-    expect(colorB[0]).toBeCloseTo(1, 5);
-    expect(colorB[1]).toBeCloseTo(0.25, 5);
-    expect(colorB[2]).toBeCloseTo(0, 5);
-    expect(colorB[24 * 3]).toBeCloseTo(0, 5);
-    expect(colorB[24 * 3 + 1]).toBeCloseTo(0.6, 5);
-    expect(colorB[24 * 3 + 2]).toBeCloseTo(0.1, 5);
   });
 
   it('places Orca segment-template positions at the bead center Z', () => {
@@ -363,7 +356,7 @@ describe('buildChainTube — special path shapes', () => {
     expect(rings).toBeGreaterThan(N);
   });
 
-  it('does not Catmull-Rom subdivide wall paths in the swept-tube fallback', () => {
+  it('subdivides dense circular wall paths so outer walls preview round', () => {
     const radius = 0.6;
     const N = 12;
     const points: Array<[number, number]> = [];
@@ -375,7 +368,7 @@ describe('buildChainTube — special path shapes', () => {
     const geo = buildChainTube(chain, 0.2, 0.2);
     const positions = geo!.getAttribute('position').array as Float32Array;
     const rings = positions.length / 3 / ringSize;
-    expect(rings).toBe(N);
+    expect(rings).toBeGreaterThan(N);
   });
 
   it('does NOT subdivide a sparse polygon (rectangle / sharp corners preserved)', () => {

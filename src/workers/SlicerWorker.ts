@@ -9,7 +9,6 @@ import { Slicer } from '../engine/slicer/Slicer';
 import { loadClipper2Module } from '../engine/slicer/geometry/clipper2Wasm';
 import { loadArachneModule } from '../engine/slicer/pipeline/arachne/arachneWasm';
 import type { SliceProgress, SliceResult } from '../types/slicer';
-import { freshWorkerUrl } from './freshWorkerUrl';
 
 // Warm up WASM modules as soon as this worker starts so by the time
 // the first layer's perimeter/infill ops fire, both the Clipper2 sync
@@ -189,10 +188,7 @@ function getTransferList(geometryData: RawGeometry[]): Transferable[] {
 }
 
 function createSliceWorker(): Worker {
-  return new Worker(
-    freshWorkerUrl(new URL('./SlicerWorker.ts', import.meta.url)),
-    { type: 'module' },
-  );
+  return new Worker(new URL('./SlicerWorker.ts', import.meta.url), { type: 'module' });
 }
 
 function disposeGeometries(geometries: ReconstructedGeometry[]): void {

@@ -41,8 +41,13 @@ function segmentLineWidth(lineWidth: WallLineWidthSpec, fromIndex: number, toInd
   return (from + to) / 2;
 }
 
-function shouldPreserveVariableWallWidth(lineWidth: WallLineWidthSpec): boolean {
-  return Array.isArray(lineWidth);
+function shouldPreserveVariableWallWidth(
+  lineWidth: WallLineWidthSpec,
+  isFirstLayer: boolean,
+  isClosed: boolean,
+  isArachneOddPath = false,
+): boolean {
+  return Array.isArray(lineWidth) && (isFirstLayer || !isClosed || isArachneOddPath);
 }
 
 function centroid(points: THREE.Vector2[]): THREE.Vector2 {
@@ -55,47 +60,6 @@ function distanceSq(a: { x: number; y: number }, b: { x: number; y: number }): n
   const dx = a.x - b.x;
   const dy = a.y - b.y;
   return dx * dx + dy * dy;
-}
-
-function pointToSegmentDistance(point: THREE.Vector2, a: THREE.Vector2, b: THREE.Vector2): number {
-  const abx = b.x - a.x;
-  const aby = b.y - a.y;
-  const lenSq = abx * abx + aby * aby;
-  if (lenSq <= 1e-12) return point.distanceTo(a);
-  const t = Math.max(0, Math.min(1, ((point.x - a.x) * abx + (point.y - a.y) * aby) / lenSq));
-  return Math.hypot(point.x - (a.x + abx * t), point.y - (a.y + aby * t));
-}
-
-function pointToClosedLoopDistance(point: THREE.Vector2, loop: THREE.Vector2[]): number {
-  if (loop.length === 0) return Infinity;
-  if (loop.length === 1) return point.distanceTo(loop[0]);
-  let best = Infinity;
-  for (let i = 0; i < loop.length; i++) {
-    const a = loop[i];
-    const b = loop[(i + 1) % loop.length];
-    best = Math.min(best, pointToSegmentDistance(point, a, b));
-  }
-  return best;
-}
-
-function wallTracksBoundary(
-  wall: THREE.Vector2[],
-  boundaries: THREE.Vector2[][],
-  threshold: number,
-): boolean {
-  if (wall.length === 0 || boundaries.length === 0 || threshold <= 0) return false;
-  const step = Math.max(1, Math.floor(wall.length / 80));
-  let close = 0;
-  let total = 0;
-  for (let i = 0; i < wall.length; i += step) {
-    total++;
-    let distance = Infinity;
-    for (const boundary of boundaries) {
-      distance = Math.min(distance, pointToClosedLoopDistance(wall[i], boundary));
-    }
-    if (distance <= threshold) close++;
-  }
-  return total > 0 && close / total >= 0.65;
 }
 
 function orcaOrderedWallIndices(
@@ -417,7 +381,7 @@ function emitOuterLoop(params: EmitOuterLoopParams): number {
   const outerNominalLineWidth = isFirstLayer
     ? representativeLineWidth(params.lineWidth, pp.wallLineWidth)
     : (pp.outerWallLineWidth ?? pp.wallLineWidth);
-  const variableLineWidth = shouldPreserveVariableWallWidth(params.lineWidth);
+  const variableLineWidth = shouldPreserveVariableWallWidth(params.lineWidth, isFirstLayer, isClosed);
   const fallbackLineWidth = variableLineWidth
     ? representativeLineWidth(params.lineWidth, outerNominalLineWidth)
     : outerNominalLineWidth;
@@ -441,8 +405,6 @@ function emitOuterLoop(params: EmitOuterLoopParams): number {
   emitter.setAccel(isFirstLayer ? pp.accelerationInitialLayer : (pp.accelerationOuterWall ?? pp.accelerationWall), pp.accelerationPrint);
   emitter.setJerk(isFirstLayer ? pp.jerkInitialLayer : (pp.jerkOuterWall ?? pp.jerkWall), pp.jerkPrint);
   emitter.travelTo(reordered[0].x, reordered[0].y, moves);
-  gcode.push(`;TYPE:Outer wall`);
-  emitter.resetEmittedLineWidth?.();
   gcode.push(`; ${params.comment ?? 'Outer wall'}`);
   // Spiralize / vase-mode Z ramp: ramp Z from prevLayerZ → layerZ smoothly
   // across the outer-wall perimeter so the head climbs continuously instead
@@ -568,7 +530,7 @@ export function emitGroupedAndContourWalls(
       if (!contour.isOuter) continue;
       const containedHoles = holesByOuterContour.get(contour) ?? [];
       const perimeters = generatedPerimetersForContour(slicer, pp, layer, contour, containedHoles, arachneContext);
-      perContour.push({ contour, exWalls: perimeters, wallSets: perimeters.walls, wallLineWidths: perimeters.lineWidths, wallClosed: perimeters.wallClosed, outerWallCount: perimeters.outerCount, infillHoles: perimeters.innermostHoles, containedHoles });
+      perContour.push({ contour, exWalls: perimeters, wallSets: perimeters.walls, wallLineWidths: perimeters.lineWidths, wallClosed: perimeters.wallClosed, outerWallCount: perimeters.outerCount, infillHoles: perimeters.innermostHoles });
     }
     for (const item of perContour) {
       const outerWall = item.wallSets[0];
@@ -590,7 +552,6 @@ export function emitGroupedAndContourWalls(
         wallClosed: exWalls.wallClosed,
         outerWallCount: exWalls.outerCount,
         infillHoles: exWalls.innermostHoles,
-        containedHoles,
       };
     });
 
@@ -601,24 +562,7 @@ export function emitGroupedAndContourWalls(
 
   for (const contourData of orderedContourWallData) {
     const { exWalls, wallSets, wallLineWidths, wallClosed } = contourData;
-    const externalBoundaries = [contourData.contour.points, ...(contourData.containedHoles ?? [])];
     if (!groupOW) perContour.push(contourData);
-
-    // Per-contour diagnostic: surface whether libArachne actually produced
-    // variable-width walls or fell back to constant-width offsets. Reading
-    // this is the fastest way to tell why a thin annular ring is missing
-    // its inner wall — `gen=arachne variable=N` means widths are flowing,
-    // `gen=arachne-fallback-constant` means Arachne dispatched but
-    // `paths.length===0` (or threw) and the constant-width perimeters ran
-    // instead.
-    let variableWallCount = 0;
-    for (const lw of wallLineWidths) {
-      if (Array.isArray(lw)) variableWallCount += 1;
-    }
-    const generatorTag = pp.wallGenerator === 'arachne'
-      ? (variableWallCount > 0 ? 'arachne' : 'arachne-fallback-constant')
-      : 'classic';
-    gcode.push(`;dzign.wall-gen:${generatorTag} walls=${wallSets.length} variable=${variableWallCount}`);
 
     if (!groupOW && wallSets.length > 0 && pp.outerWallFirst) {
       if (isFirstLayer && pp.initialLayerOuterWallFlow != null) emitter.currentLayerFlow = pp.initialLayerOuterWallFlow / 100;
@@ -674,61 +618,38 @@ export function emitGroupedAndContourWalls(
       pp.outerWallFirst !== false,
     );
 
-    // Whether THIS contour has at least one non-gapfill (closed/main) wall
-    // anywhere in the inset cascade. When it does, gapfill paths are
-    // medial-axis side beads that fill narrow lobes the main walls
-    // can't reach — tag them all 'gap-fill' so the preview renders them
-    // in the dedicated gap-fill colour and the main inner wall reads as
-    // a continuous loop. When it doesn't (tiny features where Arachne
-    // can't fit any regular bead at any depth), the gapfill paths ARE
-    // the walls — keep them as wall-outer/wall-inner so they show up
-    // in the wall colour at all.
-    const contourHasMainWall = wallSets.some(
-      (_w, i) => wallSources?.[i] !== 'gapfill',
-    );
-
     for (const wi of innerOrder) {
       // wallDepths[wi] === 0 means this is the outermost wall of its
       // contour — for hole loops, this is the wall closest to the hole's
       // empty space, which is topologically the wall-OUTER of that hole.
       // Tag it accordingly so the preview renders it in the outer colour
       // (red) next to the empty hole, matching how OrcaSlicer / Cura render.
-      const wallSource = wallSources?.[wi];
-      const isGapFill = wallSource === 'gapfill';
-      const isDepthZeroWall = (wallDepths[wi] ?? 1) === 0;
-      const rawWallLWSpec: WallLineWidthSpec = wallLineWidths[wi] ?? pp.wallLineWidth;
-      const rawWallLW = representativeLineWidth(rawWallLWSpec, pp.wallLineWidth);
-      const boundaryThreshold = Math.max(0.08, rawWallLW * 0.9 + Math.abs(pp.outerWallInset ?? 0));
-      const isBoundaryExternalWall = isDepthZeroWall
-        && wallTracksBoundary(wallSets[wi], externalBoundaries, boundaryThreshold);
-      const isExternalWall = !isGapFill
-        && isDepthZeroWall
-        && (wallSource === 'hole' || isBoundaryExternalWall);
-      // Tag gapfill (Arachne odd/open medial-axis beads) as `'gap-fill'`
-      // whenever the contour has at least one main wall — gap-fill is then a
-      // side bead, not the main loop, and colouring it as wall-inner makes
-      // the surrounding closed walls *look* like they have gaps even when
-      // they don't (the gap-fill path's start/end produce visible breaks in
-      // the inner-wall tube chain). When the contour has NO main wall at
-      // all, gap-fill IS the wall — keep it wall-outer/wall-inner so it
-      // still shows up in the wall colour.
-      const moveType: 'wall-outer' | 'wall-inner' | 'gap-fill' =
-        isGapFill && contourHasMainWall ? 'gap-fill'
-          : isExternalWall ? 'wall-outer' : 'wall-inner';
+      const isGapFill = wallSources?.[wi] === 'gapfill';
+      const isHoleOuterWall = !isGapFill && (wallDepths[wi] ?? 1) === 0;
+      // Orca labels Arachne odd/open paths as inner-wall extrusion in G-code.
+      // Keeping that classification prevents a separate visible "gap-fill"
+      // path from being appended over the wall band in preview/simulation.
+      const moveType: 'wall-outer' | 'wall-inner' = isHoleOuterWall ? 'wall-outer' : 'wall-inner';
       // Arachne odd/open paths print at inner-wall speed; they're short,
       // narrow variable-width wall beads and pushing them at outer-wall
       // speed risks under-extrusion at the medial-axis tips.
       const wallSpeed = isGapFill ? innerWallSpeed
-        : isExternalWall ? outerWallSpeed : innerWallSpeed;
+        : isHoleOuterWall ? outerWallSpeed : innerWallSpeed;
       const isClosed = wallClosed?.[wi] ?? true;
-      const nominalWallLW = isExternalWall ? (pp.outerWallLineWidth ?? pp.wallLineWidth) : innerLW;
+      const nominalWallLW = isHoleOuterWall ? (pp.outerWallLineWidth ?? pp.wallLineWidth) : innerLW;
+      const rawWallLWSpec: WallLineWidthSpec = wallLineWidths[wi] ?? nominalWallLW;
       // Orca converts regular closed Arachne walls into stable wall paths
       // before preview/G-code, while odd/open transition beads keep their
       // variable width. If we emit every closed wall vertex/width directly,
       // tiny Arachne jogs become visible dents on round outer walls. Preserve
       // variable widths for first-layer squish and true odd/open beads; route
       // regular closed walls through the nominal-width simplification path.
-      const wallLWSpec: WallLineWidthSpec = shouldPreserveVariableWallWidth(rawWallLWSpec)
+      const wallLWSpec: WallLineWidthSpec = shouldPreserveVariableWallWidth(
+        rawWallLWSpec,
+        isFirstLayer,
+        isClosed,
+        isGapFill,
+      )
         ? rawWallLWSpec
         : nominalWallLW;
       const wallLW = representativeLineWidth(wallLWSpec, nominalWallLW);
@@ -755,24 +676,18 @@ export function emitGroupedAndContourWalls(
       if (wallLoop.length < 2) continue;
       emitter.setAccel(
         isFirstLayer ? pp.accelerationInitialLayer
-          : isExternalWall ? (pp.accelerationOuterWall ?? pp.accelerationWall)
+          : isHoleOuterWall ? (pp.accelerationOuterWall ?? pp.accelerationWall)
           : (pp.accelerationInnerWall ?? pp.accelerationWall),
         pp.accelerationPrint,
       );
       emitter.setJerk(
         isFirstLayer ? pp.jerkInitialLayer
-          : isExternalWall ? (pp.jerkOuterWall ?? pp.jerkWall)
+          : isHoleOuterWall ? (pp.jerkOuterWall ?? pp.jerkWall)
           : (pp.jerkInnerWall ?? pp.jerkWall),
         pp.jerkPrint,
       );
       emitter.travelTo(wallLoop[0].x, wallLoop[0].y, moves);
-      // `;TYPE:` markers match Cura/Orca/PrusaSlicer convention so external
-      // gcode previews can colour walls correctly. Re-asserting the width
-      // at each TYPE boundary makes it obvious in the gcode whether the
-      // following segments are running constant or variable width.
-      gcode.push(`;TYPE:${isExternalWall ? 'Outer wall' : 'Inner wall'}`);
-      emitter.resetEmittedLineWidth?.();
-      gcode.push(`; ${isExternalWall ? 'Outer wall' : 'Inner wall'} ${wi}`);
+      gcode.push(`; ${isHoleOuterWall ? 'Hole outer wall' : 'Inner wall'} ${wi}`);
       for (let pi = 1; pi < wallLoop.length; pi++) {
         const from = wallLoop[pi - 1], to = wallLoop[pi];
         const segLW = segmentLineWidth(wallLWSpec, pi - 1, pi);
@@ -781,10 +696,9 @@ export function emitGroupedAndContourWalls(
       }
       if (isClosed && wallLoop.length > 2) {
         const lastPt = wallLoop[wallLoop.length - 1], firstPt = wallLoop[0];
-        const segLen = lastPt.distanceTo(firstPt);
         const segLW = segmentLineWidth(wallLWSpec, wallLoop.length - 1, 0);
         layer.layerTime += emitter.extrudeTo(firstPt.x, firstPt.y, wallSpeed, segLW, layerH).time;
-        moves.push({ type: moveType, from: { x: lastPt.x, y: lastPt.y }, to: { x: firstPt.x, y: firstPt.y }, speed: wallSpeed, extrusion: emitter.calculateExtrusion(segLen, segLW, layerH), lineWidth: segLW });
+        moves.push({ type: moveType, from: { x: lastPt.x, y: lastPt.y }, to: { x: firstPt.x, y: firstPt.y }, speed: wallSpeed, extrusion: emitter.calculateExtrusion(lastPt.distanceTo(firstPt), segLW, layerH), lineWidth: segLW });
       }
     }
 

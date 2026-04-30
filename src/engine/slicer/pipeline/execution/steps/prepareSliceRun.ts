@@ -206,22 +206,12 @@ export function prepareSliceGeometryRun(
       meshIndex: preparedModifiers.length,
     });
   }
-  // Bed center is still computed for downstream consumers (skirt/brim
-  // placement, default seam-X/Y position, etc.) but we no longer use it
-  // to translate the model. The user's positioning in Prepare mode is
-  // already baked into the `transform` matrix on each geometry, so the
-  // triangles arrive here at their world-space X/Y. Auto-centering at
-  // slice time was overriding that placement and causing the Preview
-  // to show every model snapped to the build-plate centre — a real
-  // bug for multi-object plates and any user who'd intentionally
-  // moved their model. Set offsetX/Y to 0 so X/Y is preserved as-is.
-  // Z still gets lifted so the bottom touches z=0; users almost never
-  // intentionally float a model, and the previous behaviour was also
-  // to lift, so keeping it avoids print-in-air regressions.
   const bedCenterX = printer.originCenter ? 0 : printer.buildVolume.x / 2;
   const bedCenterY = printer.originCenter ? 0 : printer.buildVolume.y / 2;
-  const offsetX = 0;
-  const offsetY = 0;
+  const modelCenterX = (modelBBox.min.x + modelBBox.max.x) / 2;
+  const modelCenterY = (modelBBox.min.y + modelBBox.max.y) / 2;
+  const offsetX = bedCenterX - modelCenterX;
+  const offsetY = bedCenterY - modelCenterY;
   const offsetZ = -modelBBox.min.z;
   const zScale = 1 + (mat.shrinkageCompensationZ ?? 0) / 100;
 
