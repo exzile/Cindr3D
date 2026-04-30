@@ -269,15 +269,7 @@ The installer creates:
 designcad-updater.service
 ```
 
-Updater environment variables are documented in `.env.example`.
-
-For public repositories, GitHub reads do not require a token. For private forks or private deployments, set:
-
-```bash
-DESIGNCAD_GITHUB_TOKEN=your_read_only_token
-```
-
-Do not put GitHub tokens in the browser. The browser update panel uses the local updater key from `/etc/designcad-updater/token`.
+Updater environment variables are documented in `.env.example`. The browser update panel uses the local updater key from `/etc/designcad-updater/token`.
 
 ## Release Assets
 
