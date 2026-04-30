@@ -171,6 +171,11 @@ export interface LayerInstanceData {
   iB: Float32Array;        // end xyz
   iRadius: Float32Array;   // (rStart, rEnd) — half the bead width
   iColor: Float32Array;    // rgb
+  // (capStart, capEnd) — 1 = render hemisphere cap, 0 = suppress (cap fragments
+  // are discarded in the shader). Internal junctions in a continuous wall path
+  // suppress both sides so the bead reads as one tube instead of a chain of
+  // sausage links; free path ends keep their hemispheres.
+  iCap: Float32Array;
   // Travel + retraction (rendered as line segments / points outside the capsule pipeline).
   travelPositions: Float32Array;
   retractPositions: Float32Array;
@@ -232,14 +237,32 @@ export function buildLayerInstances(opts: BuildLayerInstancesOptions): LayerInst
   const iB = new Float32Array(extrusionCount * 3);
   const iRadius = new Float32Array(extrusionCount * 2);
   const iColor = new Float32Array(extrusionCount * 3);
+  // Default both endpoint caps to "free end with hemisphere"; the junction
+  // pass below flips this to 0 wherever two capsules meet inside one wall.
+  const iCap = new Float32Array(extrusionCount * 2).fill(1);
   const travelPositions = new Float32Array(travelCount * 6);
   const retractPositions = new Float32Array(retractCount * 3);
   const moveRefs: ShaftMoveData[] = new Array(extrusionCount);
 
   // Variable extrusion across a single move: gcode segments don't ramp width
-  // mid-segment (E is per-segment), so radiusStart === radiusEnd here. We
-  // still set both so a future "smooth between adjacent segments" pass can
-  // taper across joints by averaging neighbours.
+  // mid-segment (E is per-segment), so we initialise rStart === rEnd here.
+  // After the main pass we walk consecutive instances and, where a move's
+  // `from` matches the previous move's `to` AND both are wall-ish types,
+  // overwrite the shared end-radii with their average. The shader takes
+  // those per-instance start/end radii and lerps along the capsule axis
+  // (`mix(iRadius.x, iRadius.y, aSide)`), so averaging at junctions turns
+  // each capsule into a tapered cone whose ends meet the neighbouring
+  // capsule at the same diameter — kills the "sausage links" you otherwise
+  // see when Arachne hands us variable line widths around a wall ring.
+  const JOIN_EPSILON = 5e-4;
+  // Same set the old chain renderer used for intra-wall continuity. Skin /
+  // infill / bridge / support keep their hard endpoint diameters because
+  // adjacent segments there are independent passes, not one continuous bead.
+  const SMOOTHABLE_TYPES = new Set(['wall-outer', 'wall-inner', 'gap-fill']);
+  let prevExt = -1;
+  let prevTo: { x: number; y: number } | null = null;
+  let prevType = '';
+  let prevRadius = 0;
   let ext = 0, trv = 0, ret = 0;
   let minX = Infinity, minY = Infinity, minZ = Infinity;
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
@@ -296,6 +319,32 @@ export function buildLayerInstances(opts: BuildLayerInstancesOptions): LayerInst
     iRadius[rOff    ] = radius;
     iRadius[rOff + 1] = radius;
 
+    // Junction smoothing. If the previous rendered instance ended at this
+    // one's start XY AND both are wall-ish types, this is an internal joint
+    // in a continuous wall — average the two radii so the capsule body
+    // tapers smoothly across the joint, AND suppress the hemisphere caps on
+    // both sides of the joint so we don't paint two overlapping balls there.
+    // The result: one continuous tube whose diameter at every point matches
+    // the gcode line width along the path.
+    if (
+      prevExt >= 0
+      && prevTo !== null
+      && SMOOTHABLE_TYPES.has(m.type)
+      && SMOOTHABLE_TYPES.has(prevType)
+      && Math.abs(prevTo.x - m.from.x) < JOIN_EPSILON
+      && Math.abs(prevTo.y - m.from.y) < JOIN_EPSILON
+    ) {
+      const avg = (prevRadius + radius) * 0.5;
+      iRadius[prevExt * 2 + 1] = avg;  // previous capsule's end-radius
+      iRadius[rOff]            = avg;  // this capsule's start-radius
+      iCap[prevExt * 2 + 1] = 0;       // suppress prev's end hemisphere
+      iCap[ext * 2]         = 0;       // suppress current's start hemisphere
+    }
+    prevExt = ext;
+    prevTo = m.to;
+    prevType = m.type;
+    prevRadius = radius;
+
     const [r, g, b] = colorForMove(m, colorContext);
     const cOff = ext * 3;
     iColor[cOff    ] = r;
@@ -343,7 +392,7 @@ export function buildLayerInstances(opts: BuildLayerInstancesOptions): LayerInst
 
   return {
     count: extrusionCount,
-    iA, iB, iRadius, iColor,
+    iA, iB, iRadius, iColor, iCap,
     travelPositions,
     retractPositions,
     moveRefs,

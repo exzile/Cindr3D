@@ -43,10 +43,12 @@ export function ExtrusionInstancedMesh({ data, onHoverMove }: Props) {
     const iBAttr      = new THREE.InstancedBufferAttribute(data.iB, 3);
     const iRadiusAttr = new THREE.InstancedBufferAttribute(data.iRadius, 2);
     const iColorAttr  = new THREE.InstancedBufferAttribute(data.iColor, 3);
+    const iCapAttr    = new THREE.InstancedBufferAttribute(data.iCap, 2);
     inst.setAttribute('iA',      iAAttr);
     inst.setAttribute('iB',      iBAttr);
     inst.setAttribute('iRadius', iRadiusAttr);
     inst.setAttribute('iColor',  iColorAttr);
+    inst.setAttribute('iCap',    iCapAttr);
     inst.instanceCount = data.count;
 
     // Instance-aware bounding sphere — required for picking. The template's
@@ -75,11 +77,13 @@ export function ExtrusionInstancedMesh({ data, onHoverMove }: Props) {
     const iB      = geometry.getAttribute('iB');
     const iRadius = geometry.getAttribute('iRadius');
     const iColor  = geometry.getAttribute('iColor');
+    const iCap    = geometry.getAttribute('iCap');
     type Disposable = { dispose?: () => void };
     (iA      as unknown as Disposable | undefined)?.dispose?.();
     (iB      as unknown as Disposable | undefined)?.dispose?.();
     (iRadius as unknown as Disposable | undefined)?.dispose?.();
     (iColor  as unknown as Disposable | undefined)?.dispose?.();
+    (iCap    as unknown as Disposable | undefined)?.dispose?.();
     geometry.dispose();
   }, [geometry]);
 

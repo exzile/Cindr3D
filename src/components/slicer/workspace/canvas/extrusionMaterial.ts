@@ -13,6 +13,10 @@ import * as THREE from 'three';
 // the per-side endpoint and radius (`aSide` selects which end). Hemisphere
 // caps overlap into adjacent segments which is what makes joints look
 // seamless without any CPU stitching — the depth buffer handles the rest.
+// (Pairing this with junction-radius smoothing in `extrusionInstances.ts`
+// keeps both hemispheres at the same radius at internal joints, so they
+// merge into one sphere at the cylinder diameter instead of stacking into
+// a sausage-link bulge.)
 //
 // Lighting: world-space Blinn-Phong with two directional lights + ambient.
 // Matches the look of OrcaSlicer/PrusaSlicer previews — bead reads as a
@@ -25,10 +29,17 @@ const VERTEX_SHADER = /* glsl */ `
   attribute vec3  iB;
   attribute vec2  iRadius;
   attribute vec3  iColor;
+  attribute vec2  iCap;
 
-  varying vec3 vWorldNormal;
-  varying vec3 vWorldPos;
-  varying vec3 vColor;
+  varying vec3  vWorldNormal;
+  varying vec3  vWorldPos;
+  varying vec3  vColor;
+  // vCapAxial < 0 / > 0 marks fragments inside a hemisphere cap (cylinder
+  // body has aLocal.x = 0). vCapFlag carries the per-end suppression flag
+  // for the *active* end picked via aSide. Together they let the fragment
+  // shader discard cap fragments at internal junctions.
+  varying float vCapAxial;
+  varying float vCapFlag;
 
   void main() {
     vec3 axis = iB - iA;
@@ -69,14 +80,18 @@ const VERTEX_SHADER = /* glsl */ `
     vWorldNormal = normalize((modelMatrix * vec4(localNormal, 0.0)).xyz);
     vWorldPos = worldPos4.xyz;
     vColor = iColor;
+    vCapAxial = aLocal.x;
+    vCapFlag = mix(iCap.x, iCap.y, aSide);
     gl_Position = projectionMatrix * viewMatrix * worldPos4;
   }
 `;
 
 const FRAGMENT_SHADER = /* glsl */ `
-  varying vec3 vWorldNormal;
-  varying vec3 vWorldPos;
-  varying vec3 vColor;
+  varying vec3  vWorldNormal;
+  varying vec3  vWorldPos;
+  varying vec3  vColor;
+  varying float vCapAxial;
+  varying float vCapFlag;
 
   // Two directional lights + ambient — same character as the rest of the
   // scene's directionalLights so bead shading matches plate object shading.
@@ -92,6 +107,13 @@ const FRAGMENT_SHADER = /* glsl */ `
   const float SHININESS = 14.0;
 
   void main() {
+    // Internal-junction cap suppression. The cylinder body has aLocal.x = 0
+    // so vCapAxial interpolates to ~0 inside it; cap interior fragments have
+    // |vCapAxial| > 0 and get discarded when their end's iCap was set to 0.
+    // The 0.02 threshold leaves the equator stitch intact (avoids hairline
+    // gaps at the cylinder–cap boundary).
+    if (vCapFlag < 0.5 && abs(vCapAxial) > 0.02) discard;
+
     vec3 n = normalize(vWorldNormal);
     vec3 keyDir  = normalize(LIGHT_KEY_DIR);
     vec3 fillDir = normalize(LIGHT_FILL_DIR);
