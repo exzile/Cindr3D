@@ -25,7 +25,10 @@ import { MOVE_TYPE_THREE_COLORS } from '../components/slicer/workspace/preview/c
 
 const HIDDEN: ReadonlySet<string> = new Set();
 
-function buildInstances(layer: ReturnType<typeof sliceGeometry> extends Promise<infer R> ? R extends { layers: infer L } ? L extends Array<infer Item> ? Item : never : never : never, mode: 'type' | 'speed' | 'flow' | 'width' | 'layer-time' | 'wall-quality' | 'seam', layerTimeT?: number) {
+type SliceLayer = Awaited<ReturnType<typeof sliceGeometry>>['layers'][number];
+type ColorMode = 'type' | 'speed' | 'flow' | 'width' | 'layer-time' | 'wall-quality' | 'seam';
+
+function buildInstances(layer: SliceLayer, mode: ColorMode, layerTimeT?: number) {
   const ctx = buildColorContext(layer, mode, layerTimeT);
   return buildLayerInstances({
     layer,

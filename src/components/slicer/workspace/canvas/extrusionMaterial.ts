@@ -3,10 +3,11 @@ import * as THREE from 'three';
 // Shared shader material for the instanced extrusion preview.
 //
 // Per-instance attributes (uploaded by ExtrusionInstancedMesh):
-//   iA:        vec3   start endpoint in world space
-//   iB:        vec3   end endpoint in world space
-//   iRadius:   vec2   (start radius, end radius) — half the extrusion width
-//   iColor:    vec3   bead color (already gamma-correct, used directly)
+//   iA:          vec3   start endpoint in world space
+//   iB:          vec3   end endpoint in world space
+//   iRadius:     vec2   (start, end) half-WIDTH (= line width / 2)
+//   iHalfHeight: float  half the bead Z thickness (= layer height / 2)
+//   iColor:      vec3   bead color (already gamma-correct, used directly)
 //
 // The vertex shader builds an orthonormal frame from `iB - iA`, then places
 // each template vertex by combining its local-frame position (`aLocal`) with
@@ -24,6 +25,7 @@ const VERTEX_SHADER = /* glsl */ `
   attribute vec3  iA;
   attribute vec3  iB;
   attribute vec2  iRadius;
+  attribute float iHalfHeight;
   attribute vec3  iColor;
 
   varying vec3 vWorldNormal;
@@ -45,26 +47,32 @@ const VERTEX_SHADER = /* glsl */ `
     vec3 up    = cross(right, forward);
 
     vec3 anchor = mix(iA, iB, aSide);
-    float radius = mix(iRadius.x, iRadius.y, aSide);
+    float halfWidth = mix(iRadius.x, iRadius.y, aSide);
 
+    // Bead cross-section is ELLIPTICAL: line width along the right axis,
+    // layer height along the up axis. Scaling both by the same radius would
+    // make a 0.45 by 0.20 mm bead render as a 0.45 radius cylinder, too
+    // tall by 2x and detached from the previous layers top surface. The
+    // forward axis uses halfWidth so the hemisphere caps stay round in the
+    // line plane and only the up axis takes the smaller halfHeight.
     vec3 worldOffset =
-        forward * (aLocal.x * radius)
-      + right   * (aLocal.y * radius)
-      + up      * (aLocal.z * radius);
+        forward * (aLocal.x * halfWidth)
+      + right   * (aLocal.y * halfWidth)
+      + up      * (aLocal.z * iHalfHeight);
 
     // Instance positions are baked in world space, so transform by the
     // mesh's modelMatrix (typically identity in our scene tree) to allow
     // for any future repositioning of the preview group.
     vec4 worldPos4 = modelMatrix * vec4(anchor + worldOffset, 1.0);
 
-    // Normal: aLocal is unit-length on the capsule surface so its rotation
-    // into the world frame is the surface normal. Tapered cones get a tiny
-    // axial bias on the cylinder body — ignored, the visual difference is
-    // sub-pixel at slicer-preview line-width ratios.
+    // Normal: rebuild as a unit vector in the (forward, right, up) basis
+    // matching the offset components above so lighting rolls off correctly
+    // along the elliptical cross-section. We project aLocal back through
+    // the same anisotropic scale and renormalise.
     vec3 localNormal = normalize(
         forward * aLocal.x
       + right   * aLocal.y
-      + up      * aLocal.z
+      + up      * aLocal.z * (halfWidth / max(iHalfHeight, 1e-4))
     );
     vWorldNormal = normalize((modelMatrix * vec4(localNormal, 0.0)).xyz);
     vWorldPos = worldPos4.xyz;

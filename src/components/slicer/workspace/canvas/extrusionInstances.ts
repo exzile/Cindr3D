@@ -3,6 +3,8 @@ import type { SliceLayer, SliceMove } from '../../../../types/slicer';
 import type { PreviewColorMode, ShaftMoveData } from '../../../../types/slicer-preview.types';
 import {
   MOVE_TYPE_THREE_COLORS,
+  SPEED_LOW_COLOR, SPEED_HIGH_COLOR,
+  FLOW_LOW_COLOR, FLOW_HIGH_COLOR,
   WIDTH_LOW_COLOR, WIDTH_HIGH_COLOR,
   LAYER_TIME_LOW_COLOR, LAYER_TIME_HIGH_COLOR,
   Z_SEAM_DIM_THREE_COLOR,
@@ -121,13 +123,18 @@ export function colorForMove(move: SliceMove, ctx: ColorContext): [number, numbe
   if (mode === 'type') {
     _scratch.copy(MOVE_TYPE_THREE_COLORS[move.type] ?? FALLBACK_COLOR);
   } else if (mode === 'speed') {
+    // Speed/flow/width/layer-time all lerp the same constants the Legend
+    // draws its CSS gradient from — see workspace/preview/constants.ts.
+    // Keeping the math here in sync with the legend's gradient endpoints
+    // is the "legend and 3D preview always agree" guarantee that file
+    // documents.
     const span = Math.max(0.01, ctx.speedRange[1] - ctx.speedRange[0]);
     const t = Math.max(0, Math.min(1, (move.speed - ctx.speedRange[0]) / span));
-    _scratch.setHSL((1 - t) * 0.66, 0.85, 0.52);
+    _scratch.copy(SPEED_LOW_COLOR).lerp(SPEED_HIGH_COLOR, t);
   } else if (mode === 'flow') {
     const span = Math.max(1e-9, ctx.flowRange[1] - ctx.flowRange[0]);
     const t = Math.max(0, Math.min(1, (move.extrusion - ctx.flowRange[0]) / span));
-    _scratch.setHSL((1 - t) * 0.38, 0.85, 0.52);
+    _scratch.copy(FLOW_LOW_COLOR).lerp(FLOW_HIGH_COLOR, t);
   } else if (mode === 'width') {
     const span = Math.max(0.001, ctx.widthRange[1] - ctx.widthRange[0]);
     const t = Math.max(0, Math.min(1, (move.lineWidth - ctx.widthRange[0]) / span));
@@ -170,6 +177,7 @@ export interface LayerInstanceData {
   iA: Float32Array;        // start xyz
   iB: Float32Array;        // end xyz
   iRadius: Float32Array;   // (rStart, rEnd) — half the bead width
+  iHalfHeight: Float32Array; // half the bead Z thickness (= layer height / 2)
   iColor: Float32Array;    // rgb
   // Travel + retraction (rendered as line segments / points outside the capsule pipeline).
   travelPositions: Float32Array;
@@ -231,6 +239,7 @@ export function buildLayerInstances(opts: BuildLayerInstancesOptions): LayerInst
   const iA = new Float32Array(extrusionCount * 3);
   const iB = new Float32Array(extrusionCount * 3);
   const iRadius = new Float32Array(extrusionCount * 2);
+  const iHalfHeight = new Float32Array(extrusionCount);
   const iColor = new Float32Array(extrusionCount * 3);
   const travelPositions = new Float32Array(travelCount * 6);
   const retractPositions = new Float32Array(retractCount * 3);
@@ -295,6 +304,12 @@ export function buildLayerInstances(opts: BuildLayerInstancesOptions): LayerInst
     const rOff = ext * 2;
     iRadius[rOff    ] = radius;
     iRadius[rOff + 1] = radius;
+    // Bead Z thickness is independent of line width — a 0.45 mm wide bead
+    // at 0.20 mm layer height should render as an ELLIPTICAL cross-section,
+    // not a circle of width-radius. The shader scales `up` by halfHeight
+    // (this) and `right` by radius (above) so the bead reads correctly when
+    // the print is flat-on-bed.
+    iHalfHeight[ext] = Math.max(0.01, (m.layerHeight ?? layerHeight) * 0.5);
 
     const [r, g, b] = colorForMove(m, colorContext);
     const cOff = ext * 3;
@@ -343,7 +358,7 @@ export function buildLayerInstances(opts: BuildLayerInstancesOptions): LayerInst
 
   return {
     count: extrusionCount,
-    iA, iB, iRadius, iColor,
+    iA, iB, iRadius, iHalfHeight, iColor,
     travelPositions,
     retractPositions,
     moveRefs,

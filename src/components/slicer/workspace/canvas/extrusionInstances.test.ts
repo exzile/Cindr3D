@@ -3,9 +3,16 @@ import type { SliceLayer, SliceMove } from '../../../../types/slicer';
 import {
   buildColorContext,
   buildLayerInstances,
+  colorForMove,
   inferDenseSkinWidths,
   lineWidthForMove,
 } from './extrusionInstances';
+import {
+  FLOW_HIGH_COLOR,
+  FLOW_LOW_COLOR,
+  SPEED_HIGH_COLOR,
+  SPEED_LOW_COLOR,
+} from '../preview/constants';
 
 function move(overrides: Partial<SliceMove> = {}): SliceMove {
   return {
@@ -202,6 +209,34 @@ describe('buildLayerInstances', () => {
     expect(data.iRadius[1]).toBeCloseTo(0.225, 5);
   });
 
+  it('encodes iHalfHeight as half the layer height (independent of line width)', () => {
+    const l = layer([
+      move({ type: 'wall-outer', lineWidth: 0.45, from: { x: 0, y: 0 }, to: { x: 5, y: 0 } }),
+    ]);
+    const ctx = buildColorContext(l, 'type', undefined);
+    const data = buildLayerInstances({
+      layer: l, layerHeight: 0.2, filamentDiameter: 1.75,
+      isCurrentLayer: false, currentLayerMoveCount: undefined,
+      showTravel: false, hiddenTypes: HIDDEN, colorContext: ctx,
+    });
+    // 0.20 mm layer height → 0.10 mm half-height. Distinct from line-width
+    // half-radius of 0.225 — confirms width and height scale independently.
+    expect(data.iHalfHeight[0]).toBeCloseTo(0.1, 5);
+  });
+
+  it('uses move.layerHeight override for iHalfHeight when present (raft sub-layers)', () => {
+    const l = layer([
+      move({ type: 'wall-outer', lineWidth: 0.4, from: { x: 0, y: 0 }, to: { x: 5, y: 0 }, layerHeight: 0.3 }),
+    ]);
+    const ctx = buildColorContext(l, 'type', undefined);
+    const data = buildLayerInstances({
+      layer: l, layerHeight: 0.2, filamentDiameter: 1.75,
+      isCurrentLayer: false, currentLayerMoveCount: undefined,
+      showTravel: false, hiddenTypes: HIDDEN, colorContext: ctx,
+    });
+    expect(data.iHalfHeight[0]).toBeCloseTo(0.15, 5);
+  });
+
   it('skips zero-length non-travel moves entirely', () => {
     const l = layer([
       move({ type: 'wall-outer', from: { x: 5, y: 5 }, to: { x: 5, y: 5 } }),
@@ -268,5 +303,52 @@ describe('buildLayerInstances', () => {
     expect(data.retractPositions.length).toBe(3);
     expect(data.retractPositions[0]).toBe(5);
     expect(data.retractPositions[1]).toBe(5);
+  });
+});
+
+describe('colorForMove ramp parity with the legend', () => {
+  // The legend renders speed/flow/width gradients via CSS using the
+  // SPEED_LOW/HIGH and FLOW_LOW/HIGH constants. The 3D preview must lerp
+  // those same constants — otherwise the gradient swatch in the legend
+  // doesn't match the bead colors on the build plate.
+  const ctxFor = (mode: 'speed' | 'flow') => ({
+    mode,
+    speedRange: [30, 90] as [number, number],
+    flowRange:  [0.02, 0.08] as [number, number],
+    widthRange: [0, 1] as [number, number],
+    layerTimeT: 0,
+    medianWallWidth: 0,
+  });
+
+  it('speed mode at the low end of range matches SPEED_LOW_COLOR exactly', () => {
+    const m = move({ type: 'wall-outer', speed: 30 });
+    const [r, g, b] = colorForMove(m, ctxFor('speed'));
+    expect(r).toBeCloseTo(SPEED_LOW_COLOR.r, 4);
+    expect(g).toBeCloseTo(SPEED_LOW_COLOR.g, 4);
+    expect(b).toBeCloseTo(SPEED_LOW_COLOR.b, 4);
+  });
+
+  it('speed mode at the high end of range matches SPEED_HIGH_COLOR exactly', () => {
+    const m = move({ type: 'wall-outer', speed: 90 });
+    const [r, g, b] = colorForMove(m, ctxFor('speed'));
+    expect(r).toBeCloseTo(SPEED_HIGH_COLOR.r, 4);
+    expect(g).toBeCloseTo(SPEED_HIGH_COLOR.g, 4);
+    expect(b).toBeCloseTo(SPEED_HIGH_COLOR.b, 4);
+  });
+
+  it('flow mode at the low end of range matches FLOW_LOW_COLOR exactly', () => {
+    const m = move({ type: 'infill', extrusion: 0.02 });
+    const [r, g, b] = colorForMove(m, ctxFor('flow'));
+    expect(r).toBeCloseTo(FLOW_LOW_COLOR.r, 4);
+    expect(g).toBeCloseTo(FLOW_LOW_COLOR.g, 4);
+    expect(b).toBeCloseTo(FLOW_LOW_COLOR.b, 4);
+  });
+
+  it('flow mode at the high end of range matches FLOW_HIGH_COLOR exactly', () => {
+    const m = move({ type: 'infill', extrusion: 0.08 });
+    const [r, g, b] = colorForMove(m, ctxFor('flow'));
+    expect(r).toBeCloseTo(FLOW_HIGH_COLOR.r, 4);
+    expect(g).toBeCloseTo(FLOW_HIGH_COLOR.g, 4);
+    expect(b).toBeCloseTo(FLOW_HIGH_COLOR.b, 4);
   });
 });
