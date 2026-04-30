@@ -13,6 +13,7 @@ dist
 !wasm/dist/**
 dist-ssr
 obj/
+gcodes/
 *.local
 
 # Editor directories and files
