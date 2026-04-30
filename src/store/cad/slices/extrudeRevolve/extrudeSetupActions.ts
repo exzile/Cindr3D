@@ -73,6 +73,8 @@ export function createExtrudeSetupActions({ set, get }: CADSliceContext): Partia
   setExtrudeCreationOccurrence: (id) => set({ extrudeCreationOccurrence: id }),
   setExtrudeTargetBaseFeature: (id) => set({ extrudeTargetBaseFeature: id }),
   startExtrudeTool: () => {
+    if (get().activeSketch) get().finishSketch();
+
     // Clean up orphaned Press Pull profiles from previous sessions
     const { sketches, features } = get();
     const usedSketchIds = new Set(features.map((f) => f.sketchId).filter(Boolean));
@@ -121,12 +123,13 @@ export function createExtrudeSetupActions({ set, get }: CADSliceContext): Partia
       dimensions: [],
       fullyConstrained: false,
     };
+    const selectionId = `${sketch.id}::0`;
     // Press-pull defaults to Join (adding material to the existing body).
     // The user can switch to Cut or New Body in the panel dropdown.
     set({
       sketches: [...sketches, sketch],
-      extrudeSelectedSketchId: sketch.id,
-      extrudeSelectedSketchIds: [sketch.id],
+      extrudeSelectedSketchId: selectionId,
+      extrudeSelectedSketchIds: [selectionId],
       extrudeDirection: 'positive',
       extrudeOperation: 'join',
       statusMessage: 'Press-pull profile selected â€” drag arrow or set distance, then OK',
@@ -166,10 +169,11 @@ export function createExtrudeSetupActions({ set, get }: CADSliceContext): Partia
       dimensions: [],
       fullyConstrained: false,
     };
-    const newIds = [...extrudeSelectedSketchIds, sketch.id];
+    const selectionId = `${sketch.id}::0`;
+    const newIds = [...extrudeSelectedSketchIds, selectionId];
     set({
       sketches: [...sketches, sketch],
-      extrudeSelectedSketchId: sketch.id,
+      extrudeSelectedSketchId: selectionId,
       extrudeSelectedSketchIds: newIds,
       statusMessage: `${newIds.length} profiles selected â€” drag arrow or set distance, then OK`,
     });

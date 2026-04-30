@@ -9,6 +9,7 @@ import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
 import type { Feature, Sketch } from '../../../types/cad';
+import { boxesHaveJoinableContact } from '../../../utils/geometry/boundsContact';
 import { BODY_MATERIAL, SURFACE_MATERIAL, DIM_MATERIAL } from './bodyMaterial';
 
 /**
@@ -370,11 +371,11 @@ export default function ExtrudedBodies() {
         currentFeatureId = feature.id;
       } else if (op === 'join') {
         // Fusion 360 parity: only merge bodies that actually overlap.
-        // If the join geometry doesn't intersect the current body (e.g. an
-        // offset extrusion floating in space), start a new separate body.
+        // If the join geometry doesn't contact the current body through volume
+        // or a shared face, start a new separate body.
         _boxCurrent.setFromBufferAttribute(currentGeom.attributes.position as THREE.BufferAttribute);
         _boxTool.setFromBufferAttribute(toolGeom.attributes.position as THREE.BufferAttribute);
-        if (!_boxCurrent.intersectsBox(_boxTool)) {
+        if (!boxesHaveJoinableContact(_boxCurrent, _boxTool)) {
           commitCurrent();
           currentGeom = toolGeom;
           currentFeatureId = feature.id;

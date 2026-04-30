@@ -3,6 +3,7 @@ import type { Feature, Sketch } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import { useComponentStore } from '../../../componentStore';
 import { EXTRUDE_DEFAULTS } from '../../defaults';
+import { boxesHaveJoinableContact, boxesShareFaceContact } from '../../../../utils/geometry/boundsContact';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
 
@@ -200,24 +201,30 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
               if (!efMesh) continue;
               efMesh.updateMatrixWorld(true);
               const efBox = new THREE.Box3().setFromObject(efMesh);
-              // Cheap bbox pre-filter. If the boxes don't even touch we can
-              // skip the expensive CSG work entirely.
-              if (!proposedBox.intersectsBox(efBox)) {
+              // Cheap bbox pre-filter. If the boxes don't even touch or share
+              // a real face/volume contact, we can skip the expensive CSG work.
+              // Face-touching solids are valid join candidates; edge/corner
+              // contact stays detached.
+              const hasJoinableContact = boxesHaveJoinableContact(proposedBox, efBox);
+              const hasSharedFaceContact = boxesShareFaceContact(proposedBox, efBox);
+              if (!hasJoinableContact) {
                 efMesh.geometry.dispose();
                 continue;
               }
               // Accurate test: do the two solids truly overlap in volume,
-              // or do they just touch at a corner/edge? CSG intersection
-              // produces an empty (or near-empty) geometry for the latter.
+              // or do they just touch? CSG intersection produces an empty
+              // (or near-empty) geometry for coplanar face contact.
               // Threshold 6 = 2 triangles; anything less is degenerate
-              // coplanar contact (touching face), not volumetric overlap.
+              // coplanar contact. Because hasJoinableContact already rejected
+              // edge/corner-only contact, a degenerate result here still means
+              // face contact and should remain a join.
               const efGeomW = GeometryEngine.bakeMeshWorldGeometry(efMesh);
               efMesh.geometry.dispose();
               try {
                 const inter = GeometryEngine.csgIntersect(proposedGeomW, efGeomW);
                 const triVerts = (inter.attributes.position as THREE.BufferAttribute | undefined)?.count ?? 0;
                 inter.dispose();
-                if (triVerts > 6) {
+                if (triVerts > 6 || hasSharedFaceContact) {
                   intersectsAny = true;
                   efGeomW.dispose();
                   break;

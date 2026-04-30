@@ -11,6 +11,14 @@ import { entitiesToShapes, sketchToShape } from '../sketch/sketchProfiles';
 import { csgUnion } from './csg';
 import { buildExtrudeGeomHolesAware } from './extrusionInternals';
 
+function getRightHandedFrame(sketch: Sketch): { t1: THREE.Vector3; t2: THREE.Vector3; normal: THREE.Vector3 } {
+  const { t1, t2 } = getSketchAxesUtil(sketch);
+  const normal = sketch.planeNormal.clone().normalize();
+  const frameT2 = t2.clone();
+  if (new THREE.Vector3().crossVectors(t1, frameT2).dot(normal) < 0) frameT2.negate();
+  return { t1, t2: frameT2, normal };
+}
+
 export function extrudeThinSketch(
   sketch: Sketch,
   distance: number,
@@ -159,9 +167,8 @@ export function extrudeSketch(sketch: Sketch, distance: number, profileIndex?: n
     return extrudeCustomPlaneSketch(sketch, distance, profileIndex);
   }
 
-  const { t1, t2 } = getSketchAxesUtil(sketch);
+  const { t1, t2, normal } = getRightHandedFrame(sketch);
   const origin = sketch.planeOrigin;
-  const normal = sketch.planeNormal.clone().normalize();
   const project = (p: SketchPoint): { u: number; v: number } => {
     const d = new THREE.Vector3(p.x - origin.x, p.y - origin.y, p.z - origin.z);
     return { u: d.dot(t1), v: d.dot(t2) };
@@ -296,7 +303,7 @@ export function buildExtrudeFeatureMesh(
 export function buildExtrudeFeatureEdges(sketch: Sketch, distance: number): THREE.BufferGeometry | null {
   if (sketch.entities.length === 0 || Math.abs(distance) < 0.001) return null;
 
-  const { t1, t2 } = getSketchAxesUtil(sketch);
+  const { t1, t2 } = getRightHandedFrame(sketch);
   const origin = sketch.planeOrigin;
   const project = (p: SketchPoint): { u: number; v: number } => {
     const d = new THREE.Vector3(p.x - origin.x, p.y - origin.y, p.z - origin.z);
@@ -361,9 +368,8 @@ export function buildExtrudeFeatureEdges(sketch: Sketch, distance: number): THRE
 }
 
 function extrudeCustomPlaneSketch(sketch: Sketch, distance: number, profileIndex?: number): THREE.Mesh | null {
-  const { t1, t2 } = getSketchAxesUtil(sketch);
+  const { t1, t2, normal } = getRightHandedFrame(sketch);
   const origin = sketch.planeOrigin;
-  const normal = sketch.planeNormal.clone().normalize();
   const project = (p: SketchPoint): { u: number; v: number } => {
     const d = new THREE.Vector3(p.x - origin.x, p.y - origin.y, p.z - origin.z);
     return { u: d.dot(t1), v: d.dot(t2) };
@@ -384,8 +390,7 @@ function extrudeCustomPlaneSketch(sketch: Sketch, distance: number, profileIndex
 
 function orientExtrudedMesh(mesh: THREE.Mesh, sketch: Sketch): void {
   if (sketch.plane === 'custom') {
-    const { t1, t2 } = getSketchAxesUtil(sketch);
-    const normal = sketch.planeNormal.clone().normalize();
+    const { t1, t2, normal } = getRightHandedFrame(sketch);
     const basis = new THREE.Matrix4().makeBasis(t1, t2, normal);
     mesh.quaternion.setFromRotationMatrix(basis);
     mesh.position.copy(sketch.planeOrigin);

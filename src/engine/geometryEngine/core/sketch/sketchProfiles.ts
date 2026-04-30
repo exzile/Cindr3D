@@ -64,7 +64,6 @@ export function createSketchProfileMesh(
   profileIndex?: number,
 ): THREE.Mesh | null {
   const { t1, t2 } = getSketchAxesUtil(sketch);
-  const normal = sketch.planeNormal.clone().normalize();
   const origin = sketch.planeOrigin;
   const project = (p: SketchPoint) => {
     const d = new THREE.Vector3(p.x - origin.x, p.y - origin.y, p.z - origin.z);
@@ -98,7 +97,8 @@ export function createSketchProfileMesh(
   }
 
   const mesh = new THREE.Mesh(geometry, material);
-  const basis = new THREE.Matrix4().makeBasis(t1, t2, normal);
+  const meshNormal = new THREE.Vector3().crossVectors(t1, t2).normalize();
+  const basis = new THREE.Matrix4().makeBasis(t1, t2, meshNormal);
   mesh.quaternion.setFromRotationMatrix(basis);
   mesh.position.copy(origin);
   return mesh;

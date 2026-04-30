@@ -42,6 +42,13 @@ const mkRect = (x1: number, y1: number, x2: number, y2: number): SketchEntity[] 
   ];
 };
 
+const mkRectPrimitive = (x1: number, y1: number, x2: number, y2: number): SketchEntity => ({
+  id: `e${++eid}`,
+  type: 'rectangle',
+  points: [mkPoint(x1, y1), mkPoint(x2, y2)],
+  closed: true,
+});
+
 // ─── splitByConnectedComponents ─────────────────────────────────────────────
 
 describe('GeometryEngine.splitByConnectedComponents', () => {
@@ -279,6 +286,37 @@ describe('GeometryEngine.sketchToProfileShapesFlat', () => {
     expect(shapes).toHaveLength(1);
   });
 
+  it('returns a selectable profile for a rectangle primitive', () => {
+    const sketch = mkSketch([{
+      ...mkRectPrimitive(0, 0, 2, 0),
+      points: [mkPoint(0, 0, 0), mkPoint(2, 0, 1)],
+    }]);
+    const shapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
+    expect(shapes).toHaveLength(1);
+    expect(GeometryEngine.createProfileSketch(sketch, 0)).not.toBeNull();
+  });
+
+  it('places rectangle primitive profile meshes on the sketch plane', () => {
+    const sketch = mkSketch([{
+      ...mkRectPrimitive(0, 0, 2, 0),
+      points: [mkPoint(0, 0, 0), mkPoint(2, 0, 1)],
+    }]);
+    const material = new THREE.MeshBasicMaterial();
+    const mesh = GeometryEngine.createSketchProfileMesh(sketch, material, 0);
+    expect(mesh).not.toBeNull();
+
+    const box = new THREE.Box3().setFromObject(mesh!);
+    expect(box.min.x).toBeCloseTo(0, 5);
+    expect(box.max.x).toBeCloseTo(2, 5);
+    expect(box.min.y).toBeCloseTo(0, 5);
+    expect(box.max.y).toBeCloseTo(0, 5);
+    expect(box.min.z).toBeCloseTo(0, 5);
+    expect(box.max.z).toBeCloseTo(1, 5);
+
+    mesh!.geometry.dispose();
+    material.dispose();
+  });
+
   it('returns originals + atomic regions when two circles overlap', () => {
     // Two overlapping circles — atomic regions should include lens, and
     // each circle-minus-lens (crescent). Plus the two original circles.
@@ -346,6 +384,70 @@ describe('GeometryEngine.buildExtrudeFeatureEdges', () => {
     }
     expect(minZ).toBeCloseTo(0, 5);
     expect(maxZ).toBeCloseTo(3, 5);
+    edges!.dispose();
+  });
+
+  it('extrudes a rectangle primitive into solid geometry', () => {
+    const sketch = mkSketch([{
+      ...mkRectPrimitive(0, 0, 2, 0),
+      points: [mkPoint(0, 0, 0), mkPoint(2, 0, 1)],
+    }]);
+    const mesh = GeometryEngine.extrudeSketch(sketch, 3);
+    expect(mesh).not.toBeNull();
+    expect(mesh!.geometry.attributes.position.count).toBeGreaterThan(0);
+    mesh!.geometry.dispose();
+  });
+
+  it('keeps XY rectangle primitive extrusions anchored to the sketch profile', () => {
+    const sketch: Sketch = {
+      ...mkSketch([{
+        ...mkRectPrimitive(0, 0, 2, 0),
+        points: [mkPoint(0, 0, 0), mkPoint(2, 0, 1)],
+      }]),
+      planeNormal: new THREE.Vector3(0, 1, 0),
+    };
+    const mesh = GeometryEngine.extrudeSketch(sketch, 3);
+    expect(mesh).not.toBeNull();
+
+    const box = new THREE.Box3().setFromObject(mesh!);
+    expect(box.min.x).toBeCloseTo(0, 5);
+    expect(box.max.x).toBeCloseTo(2, 5);
+    expect(box.min.y).toBeCloseTo(0, 5);
+    expect(box.max.y).toBeCloseTo(3, 5);
+    expect(box.min.z).toBeCloseTo(0, 5);
+    expect(box.max.z).toBeCloseTo(1, 5);
+
+    mesh!.geometry.dispose();
+  });
+
+  it('keeps XY rectangle primitive preview edges aligned with the extrusion', () => {
+    const sketch: Sketch = {
+      ...mkSketch([{
+        ...mkRectPrimitive(0, 0, 2, 0),
+        points: [mkPoint(0, 0, 0), mkPoint(2, 0, 1)],
+      }]),
+      planeNormal: new THREE.Vector3(0, 1, 0),
+    };
+    const mesh = GeometryEngine.extrudeSketch(sketch, 3);
+    const edges = GeometryEngine.buildExtrudeFeatureEdges(sketch, 3);
+    expect(mesh).not.toBeNull();
+    expect(edges).not.toBeNull();
+
+    const edgeMesh = new THREE.LineSegments(edges!);
+    edgeMesh.position.copy(mesh!.position);
+    edgeMesh.quaternion.copy(mesh!.quaternion);
+    edgeMesh.scale.copy(mesh!.scale);
+
+    const meshBox = new THREE.Box3().setFromObject(mesh!);
+    const edgeBox = new THREE.Box3().setFromObject(edgeMesh);
+    expect(edgeBox.min.x).toBeCloseTo(meshBox.min.x, 5);
+    expect(edgeBox.max.x).toBeCloseTo(meshBox.max.x, 5);
+    expect(edgeBox.min.y).toBeCloseTo(meshBox.min.y, 5);
+    expect(edgeBox.max.y).toBeCloseTo(meshBox.max.y, 5);
+    expect(edgeBox.min.z).toBeCloseTo(meshBox.min.z, 5);
+    expect(edgeBox.max.z).toBeCloseTo(meshBox.max.z, 5);
+
+    mesh!.geometry.dispose();
     edges!.dispose();
   });
 });

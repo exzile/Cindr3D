@@ -68,15 +68,12 @@ export default function ExtrudeTool() {
     },
   });
 
-  const features = useCADStore((s) => s.features);
-
-  // Only show profiles for sketches NOT already consumed by an extrude feature
+  // Visible user sketches stay selectable, even if a previous feature used
+  // them. Internal press-pull profiles are generated from picked faces and
+  // should not become standalone click targets on later extrude sessions.
   const extrudable = useMemo(() => {
-    const usedSketchIds = new Set(
-      features.filter((f) => f.type === 'extrude').map((f) => f.sketchId),
-    );
-    return sketches.filter((s) => s.entities.length > 0 && !usedSketchIds.has(s.id));
-  }, [sketches, features]);
+    return sketches.filter((s) => s.entities.length > 0 && !s.name.startsWith('Press Pull Profile'));
+  }, [sketches]);
 
   const profileEntries = useMemo(() => {
     // Use the FLAT shape list so every closed region is a selectable profile
@@ -167,16 +164,17 @@ export default function ExtrudeTool() {
     // larger scenes. The effect is rerun (via the profileEntriesKey dep below)
     // whenever the set of profiles actually changes, so each run starts with
     // a fresh cache and holds it for the lifetime of that listener binding.
+    const expectedProfileCount = profileEntries.length;
     let cachedMeshes: THREE.Mesh[] | null = null;
     const collectProfileMeshes = (): THREE.Mesh[] => {
-      if (cachedMeshes) return cachedMeshes;
+      if (cachedMeshes && cachedMeshes.length >= expectedProfileCount) return cachedMeshes;
       const fresh: THREE.Mesh[] = [];
       scene.traverse((obj) => {
         const m = obj as THREE.Mesh;
         if (m.isMesh && m.userData?.profileKey) fresh.push(m);
       });
-      cachedMeshes = fresh;
-      return cachedMeshes;
+      cachedMeshes = fresh.length > 0 || expectedProfileCount === 0 ? fresh : null;
+      return fresh;
     };
 
     const updateMouse = (event: { clientX: number; clientY: number }) => {

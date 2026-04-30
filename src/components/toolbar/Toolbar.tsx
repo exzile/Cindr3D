@@ -153,12 +153,12 @@ export default function Toolbar() {
   };
 
   const handleExtrude = useCallback(() => {
-    if (sketches.length === 0) {
+    if (sketches.length === 0 && !activeSketch) {
       setStatusMessage('Create a sketch first before extruding');
       return;
     }
     startExtrudeTool();
-  }, [sketches.length, setStatusMessage, startExtrudeTool]);
+  }, [activeSketch, sketches.length, setStatusMessage, startExtrudeTool]);
 
   const handleRevolve = useCallback(() => {
     if (sketches.length === 0) {
