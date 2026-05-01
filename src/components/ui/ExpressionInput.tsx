@@ -77,10 +77,11 @@ export default function ExpressionInput({
     if (trimmed === '') return;
 
     const asNum = Number(trimmed);
-    if (!Number.isFinite(asNum)) return;
+    const evaluated = Number.isFinite(asNum) ? asNum : evaluateExpression(trimmed, parameters);
+    if (evaluated === null || !Number.isFinite(evaluated)) return;
 
-    const clamped = min !== undefined ? Math.max(min, max !== undefined ? Math.min(max, asNum) : asNum)
-      : max !== undefined ? Math.min(max, asNum) : asNum;
+    const clamped = min !== undefined ? Math.max(min, max !== undefined ? Math.min(max, evaluated) : evaluated)
+      : max !== undefined ? Math.min(max, evaluated) : evaluated;
     setIsExpr(false);
     setIsInvalid(false);
     if (clamped !== value) onChange(clamped);

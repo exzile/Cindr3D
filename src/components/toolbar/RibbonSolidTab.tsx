@@ -40,6 +40,7 @@ export function RibbonSolidTab({
   fileInputRef,
 }: RibbonSolidTabProps) {
   const activeTool = useCADStore((s) => s.activeTool);
+  const activeDialog = useCADStore((s) => s.activeDialog);
   const setActiveDialog = useCADStore((s) => s.setActiveDialog);
   const sketchPlaneSelecting = useCADStore((s) => s.sketchPlaneSelecting);
   const startSketch = useCADStore((s) => s.startSketch);
@@ -70,8 +71,8 @@ export function RibbonSolidTab({
       </RibbonSection>
 
       <RibbonSection title="MODIFY" menuItems={modifyMenuItems} accentColor="#ff6b00">
-        <ToolButton icon={<Blend size={ICON_LG} />} label="Fillet" tool="fillet" large colorClass="icon-orange" />
-        <ToolButton icon={<Blend size={ICON_LG} />} label="Chamfer" tool="chamfer" large colorClass="icon-orange" />
+        <ToolButton icon={<Blend size={ICON_LG} />} label="Fillet" onClick={() => setActiveDialog('fillet')} active={activeDialog === 'fillet'} large colorClass="icon-orange" />
+        <ToolButton icon={<Blend size={ICON_LG} />} label="Chamfer" onClick={() => setActiveDialog('chamfer')} active={activeDialog === 'chamfer'} large colorClass="icon-orange" />
       </RibbonSection>
 
       <RibbonSection title="ASSEMBLE" menuItems={assembleMenuItems} accentColor="#4caf50">

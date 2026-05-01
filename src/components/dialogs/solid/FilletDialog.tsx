@@ -108,7 +108,7 @@ function FilletDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: FilletD
     Math.max(min, Math.min(max, val));
 
   return (
-    <div className="dialog-overlay">
+    <div className="dialog-overlay edge-pick-dialog">
       <div className="dialog dialog-sm">
         <div className="dialog-header">
           <h3>Fillet</h3>

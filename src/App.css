@@ -71,6 +71,16 @@
   backdrop-filter: blur(4px);
 }
 
+.dialog-overlay.edge-pick-dialog {
+  background: transparent;
+  backdrop-filter: none;
+  pointer-events: none;
+}
+
+.dialog-overlay.edge-pick-dialog .dialog {
+  pointer-events: auto;
+}
+
 .dialog {
   background: var(--bg-primary);
   border: 1px solid var(--border);

@@ -186,13 +186,19 @@ export default function SketchInteraction() {
   const snapToGrid = useCallback((point: THREE.Vector3): THREE.Vector3 => {
     // D207: sketchSnapEnabled controls snap-to-grid; snapEnabled is global geometry snap
     if (!snapEnabled && !sketchSnapEnabled) return point;
+    if (!activeSketch) return point;
+
     const snap = gridSize / 10;
-    return new THREE.Vector3(
-      Math.round(point.x / snap) * snap,
-      Math.round(point.y / snap) * snap,
-      Math.round(point.z / snap) * snap
-    );
-  }, [snapEnabled, sketchSnapEnabled, gridSize]);
+    const origin = activeSketch.planeOrigin ?? new THREE.Vector3(0, 0, 0);
+    const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+    const fromOrigin = point.clone().sub(origin);
+    const u = Math.round(fromOrigin.dot(t1) / snap) * snap;
+    const v = Math.round(fromOrigin.dot(t2) / snap) * snap;
+
+    return origin.clone()
+      .addScaledVector(t1, u)
+      .addScaledVector(t2, v);
+  }, [snapEnabled, sketchSnapEnabled, gridSize, activeSketch]);
 
   // D65 / S8 / NAV-24: find nearest snap candidate within snap radius.
   // Supports endpoint, midpoint, center, intersection (existing) +

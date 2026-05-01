@@ -20,6 +20,7 @@
     <None Include=".github\copilot-instructions.md" />
   </ItemGroup>
   <ItemGroup>
+    <Folder Include="gcodes\" />
     <Folder Include="src\components\slicer\workspace\modals\" />
   </ItemGroup>
 </Project>

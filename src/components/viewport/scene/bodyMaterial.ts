@@ -20,8 +20,8 @@ export const SURFACE_MATERIAL = new THREE.MeshPhysicalMaterial({
 
 /** Dim material for context meshes — used when another component is being edited in-place. Never dispose. */
 export const DIM_MATERIAL = new THREE.MeshBasicMaterial({
-  color: 0x8899aa,
+  color: 0xf2a23a,
   transparent: true,
-  opacity: 0.12,
+  opacity: 0.42,
   side: THREE.DoubleSide,
 });
