@@ -1,4 +1,53 @@
 /* ===== Viewport overlays ===== */
+.finish-edit-in-place-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 120;
+  min-height: 34px;
+  background: #b45309;
+  color: #fff;
+  padding: 6px 12px 6px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 13px;
+  font-weight: 500;
+  box-sizing: border-box;
+}
+
+.finish-edit-in-place-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finish-edit-in-place-button {
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 4px;
+  background: #92400e;
+  color: #fff;
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.finish-edit-in-place-button:hover {
+  background: #78350f;
+}
+
+.cad-editing-in-place .viewcube-wrapper {
+  top: 42px;
+}
+
+.cad-editing-in-place .viewport-home-btn {
+  top: 208px;
+}
+
 .viewport-home-btn {
   position: absolute;
   top: 170px;

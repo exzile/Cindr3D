@@ -214,11 +214,16 @@ function generateConcentricInfill(
   const MAX_ITER = 500;
 
   if (holes.length === 0) {
+    // Sign convention: positive offset on a CCW outer = INWARD = shrinks
+    // (see pathGeometry.ts). Concentric infill wants successive rings to
+    // shrink toward the polygon centroid, so we use +lineWidth here.
+    // (Previously this used -lineWidth, which grew the polygon each
+    // iteration and hit MAX_ITER=500 on every call — hanging the slicer.)
     let current = contour;
     let iter = 0;
     let prevBbox = deps.contourBBox(current);
     while (current.length >= 3 && iter++ < MAX_ITER) {
-      const next = deps.offsetContour(current, -lineWidth);
+      const next = deps.offsetContour(current, lineWidth);
       if (next.length < 3) break;
       const nextBbox = deps.contourBBox(next);
       const shrinkX = Math.abs((prevBbox.maxX - prevBbox.minX) - (nextBbox.maxX - nextBbox.minX));

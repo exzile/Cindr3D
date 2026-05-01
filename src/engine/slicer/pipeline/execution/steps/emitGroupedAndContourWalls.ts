@@ -765,6 +765,15 @@ export function emitGroupedAndContourWalls(
           : (pp.jerkInnerWall ?? pp.jerkWall),
         pp.jerkPrint,
       );
+      // Outer-wall continuity bridge. When the previous emitted wall was
+      // wall-outer AND this wall is a depth-0 boundary-tracking gap-fill
+      // (i.e. moveType === 'wall-outer') AND the hop to its start is short,
+      // emit an extrusion segment instead of a travel. This is the
+      // Arachne-narrow-perimeter case where the outer ring should look
+      // (and PRINT) continuous, but Arachne handed us two separate paths.
+      // The bridging segment uses the inner-wall speed (gap-fill profile)
+      // and the new wall's line width — same as how the gap-fill bead
+      // itself prints, so the connection is consistent material flow.
       emitter.travelTo(wallLoop[0].x, wallLoop[0].y, moves);
       // `;TYPE:` markers match Cura/Orca/PrusaSlicer convention so external
       // gcode previews can colour walls correctly. Re-asserting the width

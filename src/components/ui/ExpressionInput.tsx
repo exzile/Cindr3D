@@ -70,6 +70,22 @@ export default function ExpressionInput({
     }
   };
 
+  const handleTextChange = (nextText: string) => {
+    setText(nextText);
+
+    const trimmed = nextText.trim();
+    if (trimmed === '') return;
+
+    const asNum = Number(trimmed);
+    if (!Number.isFinite(asNum)) return;
+
+    const clamped = min !== undefined ? Math.max(min, max !== undefined ? Math.min(max, asNum) : asNum)
+      : max !== undefined ? Math.min(max, asNum) : asNum;
+    setIsExpr(false);
+    setIsInvalid(false);
+    if (clamped !== value) onChange(clamped);
+  };
+
   return (
     <input
       ref={inputRef}
@@ -85,7 +101,7 @@ export default function ExpressionInput({
         background: isInvalid ? 'rgba(239,68,68,0.15)' : isExpr ? 'rgba(99,102,241,0.12)' : undefined,
         outline: isInvalid ? '1px solid #ef4444' : undefined,
       }}
-      onChange={(e) => setText(e.target.value)}
+      onChange={(e) => handleTextChange(e.target.value)}
       onBlur={(e) => {
         commit(e.target.value);
         // After blur, show the resolved numeric value

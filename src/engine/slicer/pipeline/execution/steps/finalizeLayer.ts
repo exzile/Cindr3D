@@ -219,5 +219,4 @@ export function finalizeLayer(
 
   run.totalTime += layerTime;
   run.sliceLayers.push({ z: layerZ, layerIndex: li, moves, layerTime });
-  run.prevLayerMaterial = layer.currentLayerMaterial;
 }

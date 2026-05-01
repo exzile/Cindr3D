@@ -1,8 +1,14 @@
 import type { Sketch, SketchEntity, SketchPoint } from '../../../../types/cad';
 import { EXTRUDE_DEFAULTS } from '../../defaults';
 import type { ExtrudeDirection, ExtrudeOperation } from '../../../../types/cad-extrude.types';
+import { useComponentStore } from '../../../componentStore';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
+
+function getActiveComponentId(): string | undefined {
+  const componentStore = useComponentStore.getState();
+  return componentStore.activeComponentId ?? componentStore.rootComponentId;
+}
 
 export function createExtrudeSetupActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -111,6 +117,7 @@ export function createExtrudeSetupActions({ set, get }: CADSliceContext): Partia
       });
     }
     const { sketches } = get();
+    const componentId = getActiveComponentId();
     const pressPullCount = sketches.filter((s) => s.name.startsWith('Press Pull Profile')).length;
     const sketch: Sketch = {
       id: crypto.randomUUID(),
@@ -118,6 +125,7 @@ export function createExtrudeSetupActions({ set, get }: CADSliceContext): Partia
       plane: 'custom',
       planeNormal: normal.clone().normalize(),
       planeOrigin: centroid.clone(),
+      componentId,
       entities,
       constraints: [],
       dimensions: [],
@@ -157,6 +165,7 @@ export function createExtrudeSetupActions({ set, get }: CADSliceContext): Partia
       });
     }
     const { sketches, extrudeSelectedSketchIds } = get();
+    const componentId = getActiveComponentId();
     const pressPullCount = sketches.filter((s) => s.name.startsWith('Press Pull Profile')).length;
     const sketch: Sketch = {
       id: crypto.randomUUID(),
@@ -164,6 +173,7 @@ export function createExtrudeSetupActions({ set, get }: CADSliceContext): Partia
       plane: 'custom',
       planeNormal: normal.clone().normalize(),
       planeOrigin: centroid.clone(),
+      componentId,
       entities,
       constraints: [],
       dimensions: [],
@@ -184,11 +194,17 @@ export function createExtrudeSetupActions({ set, get }: CADSliceContext): Partia
     if (!feature || feature.type !== 'extrude') return;
     const p = feature.params;
     const sketchId = feature.sketchId ?? null;
+    const profileIndices = Array.isArray(p.profileIndices) ? (p.profileIndices as number[]) : null;
+    const selectedSketchIds = sketchId
+      ? profileIndices?.length
+        ? profileIndices.map((index) => `${sketchId}::${index}`)
+        : [sketchId]
+      : [];
     set({
       activeTool: 'extrude',
       editingFeatureId: featureId,
       extrudeSelectedSketchId: sketchId,
-      extrudeSelectedSketchIds: sketchId ? [sketchId] : [],
+      extrudeSelectedSketchIds: selectedSketchIds,
       extrudeDistance: typeof p.distance === 'number' ? p.distance : 10,
       extrudeDistance2: typeof p.distance2 === 'number' ? p.distance2 : 10,
       extrudeDirection: (p.direction as ExtrudeDirection) ?? 'positive',

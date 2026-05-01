@@ -7,6 +7,65 @@ import { boxesHaveJoinableContact, boxesShareFaceContact } from '../../../../uti
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
 
+type SelectedExtrudeProfile = {
+  sourceSketch: Sketch;
+  sketchForOp: Sketch;
+  selectionId: string;
+  profileIndex: number | undefined;
+  profileIndices?: number[];
+};
+
+function buildExtrudeMeshForProfileSelection(
+  selected: SelectedExtrudeProfile,
+  distance: number,
+  direction: 'positive' | 'negative' | 'symmetric' | 'two-sides',
+  taperAngle: number,
+  startOffset: number,
+  distance2: number,
+  taperAngle2: number,
+): THREE.Mesh | null {
+  const profileIndices = selected.profileIndices;
+  if (!profileIndices || profileIndices.length <= 1) {
+    return GeometryEngine.buildExtrudeFeatureMesh(
+      selected.sketchForOp,
+      distance,
+      direction,
+      taperAngle,
+      startOffset,
+      distance2,
+      taperAngle2,
+    );
+  }
+
+  let merged: THREE.BufferGeometry | null = null;
+  for (const profileIndex of profileIndices) {
+    const profileSketch = GeometryEngine.createProfileSketch(selected.sourceSketch, profileIndex);
+    if (!profileSketch) continue;
+    const mesh = GeometryEngine.buildExtrudeFeatureMesh(
+      profileSketch,
+      distance,
+      direction,
+      taperAngle,
+      startOffset,
+      distance2,
+      taperAngle2,
+    );
+    if (!mesh) continue;
+    const geom = GeometryEngine.bakeMeshWorldGeometry(mesh);
+    mesh.geometry.dispose();
+    if (!merged) {
+      merged = geom;
+    } else {
+      const next = GeometryEngine.csgUnion(merged, geom);
+      merged.dispose();
+      geom.dispose();
+      merged = next;
+    }
+  }
+
+  return merged ? new THREE.Mesh(merged) : null;
+}
+
 export function createExtrudeCommitActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
   commitExtrude: () => {
@@ -52,12 +111,29 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
         if (!profileSketch) return null;
         return { sourceSketch, sketchForOp: profileSketch, selectionId: id, profileIndex: parsed };
       })
-      .filter(Boolean) as { sourceSketch: Sketch; sketchForOp: Sketch; selectionId: string; profileIndex: number | undefined }[];
+      .filter(Boolean) as SelectedExtrudeProfile[];
 
     if (selectedProfiles.length === 0) {
       set({ statusMessage: 'Selected profile not found' });
       return;
     }
+    const firstProfile = selectedProfiles[0];
+    const shouldCollapseSameSketchProfiles =
+      selectedProfiles.length > 1 &&
+      selectedProfiles.every(
+        (profile) =>
+          profile.sourceSketch.id === firstProfile.sourceSketch.id &&
+          profile.profileIndex !== undefined,
+      );
+    const profilesToCommit: SelectedExtrudeProfile[] = shouldCollapseSameSketchProfiles
+      ? [{
+          sourceSketch: firstProfile.sourceSketch,
+          sketchForOp: firstProfile.sourceSketch,
+          selectionId: firstProfile.sourceSketch.id,
+          profileIndex: undefined,
+          profileIndices: selectedProfiles.map((profile) => profile.profileIndex as number),
+        }]
+      : selectedProfiles;
     if (extrudeExtentType === 'distance' && Math.abs(extrudeDistance) < 0.01) {
       set({ statusMessage: 'Distance must be non-zero' });
       return;
@@ -84,7 +160,7 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
       ? 10000
       : extrudeExtentType === 'to-object'
         ? computeToObjectDistance(
-            (selectedProfiles[0]?.sketchForOp) ?? (selectedProfiles[0]?.sourceSketch)
+            (profilesToCommit[0]?.sketchForOp) ?? (profilesToCommit[0]?.sourceSketch)
           )
         : Math.abs(extrudeDistance);
     // EX-10: side 2 uses its own independent extent type
@@ -92,7 +168,7 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
       ? 10000
       : extrudeExtentType2 === 'to-object'
         ? computeToObjectDistance(
-            (selectedProfiles[0]?.sketchForOp) ?? (selectedProfiles[0]?.sourceSketch)
+            (profilesToCommit[0]?.sketchForOp) ?? (profilesToCommit[0]?.sourceSketch)
           )
         : Math.abs(extrudeDistance2);
     // Direction follows the sign of the distance (two-sides never flips)
@@ -107,8 +183,8 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
     let createdCount = 0;
     let firstCreatedSketchName: string | null = null;
 
-    for (const selected of selectedProfiles) {
-      const { sourceSketch, sketchForOp, profileIndex } = selected;
+    for (const selected of profilesToCommit) {
+      const { sourceSketch, sketchForOp, profileIndex, profileIndices } = selected;
       const isClosedProfile = GeometryEngine.isSketchClosedProfile(sketchForOp);
       const resolvedBodyKind: 'solid' | 'surface' = (!isClosedProfile || extrudeBodyKind === 'surface') ? 'surface' : 'solid';
 
@@ -146,7 +222,7 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
       let effectiveOperation = finalOperation;
       const isMultiProfileSubsequent =
         finalOperation === 'new-body' &&
-        selectedProfiles.length > 1 &&
+        profilesToCommit.length > 1 &&
         createdCount > 0 &&
         resolvedBodyKind === 'solid' &&
         !extrudeThinEnabled;
@@ -169,8 +245,8 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
           // Build the proposed geometry once. We need its bbox for cheap
           // pre-filtering AND the baked world-space geometry for the exact
           // CSG-intersection test that determines real overlap.
-          const proposedMesh = GeometryEngine.buildExtrudeFeatureMesh(
-            sketchForOp, absDistance, finalDirection, extrudeTaperAngle,
+          const proposedMesh = buildExtrudeMeshForProfileSelection(
+            selected, absDistance, finalDirection, extrudeTaperAngle,
             extrudeStartType === 'offset' ? extrudeStartOffset : 0,
             absDistance2,
             extrudeTaperAngle2,
@@ -254,7 +330,7 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
       const extraBodyIds: string[] = [];
       if (effectiveOperation === 'new-body') {
         const componentStore = useComponentStore.getState();
-        componentId = componentStore.activeComponentId ?? componentStore.rootComponentId;
+        componentId = sourceSketch.componentId ?? componentStore.activeComponentId ?? componentStore.rootComponentId;
         const bodyCount = Object.keys(componentStore.bodies).length + 1;
         const bodyLabel = `${resolvedBodyKind === 'surface' ? 'Surface' : 'Body'} ${bodyCount}`;
         const createdBodyId = componentStore.addBody(componentId, bodyLabel);
@@ -268,8 +344,8 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
         // Detect disconnected pieces â€” only for standard (CSG-pipeline) solids.
         if (!needsStoredMesh && createdBodyId) {
           try {
-            const probe = GeometryEngine.buildExtrudeFeatureMesh(
-              sketchForOp,
+            const probe = buildExtrudeMeshForProfileSelection(
+              selected,
               absDistance,
               finalDirection,
               extrudeTaperAngle,
@@ -359,6 +435,7 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
           taperAngle: extrudeTaperAngle,
           ...(finalDirection === 'two-sides' ? { taperAngle2: extrudeTaperAngle2 } : {}),
           profileIndex,
+          ...(profileIndices ? { profileIndices } : {}),
         },
         visible: true,
         suppressed: false,

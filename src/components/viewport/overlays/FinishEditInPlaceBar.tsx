@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { useComponentStore } from '../../../store/componentStore';
 
+const editingInPlaceClass = 'cad-editing-in-place';
+
 export default function FinishEditInPlaceBar() {
   const activeComponentId = useComponentStore((s) => s.activeComponentId);
   const setActiveComponentId = useComponentStore((s) => s.setActiveComponentId);
@@ -15,19 +17,22 @@ export default function FinishEditInPlaceBar() {
     if (isStale) setActiveComponentId(null);
   }, [isStale, setActiveComponentId]);
 
+  useEffect(() => {
+    const active = !!activeComponentId && activeComponentId !== rootComponentId && !!comp;
+    document.documentElement.classList.toggle(editingInPlaceClass, active);
+    return () => {
+      document.documentElement.classList.remove(editingInPlaceClass);
+    };
+  }, [activeComponentId, comp, rootComponentId]);
+
   if (!activeComponentId || activeComponentId === rootComponentId || !comp) return null;
 
   return (
-    <div style={{
-      position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100,
-      background: '#b45309', color: '#fff', padding: '6px 16px',
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      fontSize: 13, fontWeight: 500,
-    }}>
-      <span>Editing in context: <strong>{comp?.name || 'Untitled Component'}</strong></span>
+    <div className="finish-edit-in-place-bar">
+      <span className="finish-edit-in-place-title">Editing in context: <strong>{comp?.name || 'Untitled Component'}</strong></span>
       <button
         onClick={() => setActiveComponentId(null)}
-        style={{ background: '#92400e', border: 'none', color: '#fff', borderRadius: 4, padding: '3px 10px', cursor: 'pointer' }}
+        className="finish-edit-in-place-button"
       >
         ✓ Finish Edit In Place
       </button>

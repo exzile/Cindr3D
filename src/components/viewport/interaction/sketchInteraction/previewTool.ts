@@ -6,6 +6,7 @@ import { renderBasicShapePreview } from './previews/basicShapePreviews';
 import { renderCurveAndPolygonPreview } from './previews/curveAndPolygonPreviews';
 import { renderEllipsePreview } from './previews/ellipsePreviews';
 
+const SKETCH_PREVIEW_RENDER_ORDER = 1001;
 const PREVIEW_FINGERPRINT_CACHE = new Map<string, string>();
 const CACHE_MAX = 32;
 
@@ -68,6 +69,7 @@ export function renderSketchPreview(ctx: SketchPreviewCtx): void {
     const material = mat ?? lineMat;
     const geom = new THREE.BufferGeometry().setFromPoints(pts);
     const line = new THREE.Line(geom, material);
+    line.renderOrder = SKETCH_PREVIEW_RENDER_ORDER;
     if ((material as THREE.LineDashedMaterial).isLineDashedMaterial) {
       line.computeLineDistances();
     }

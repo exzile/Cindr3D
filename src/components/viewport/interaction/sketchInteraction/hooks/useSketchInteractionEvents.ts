@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../../../store/cadStore';
@@ -7,6 +7,45 @@ import { commitSketchTool } from '../commitTool';
 import type { SketchPoint } from '../../../../../types/cad';
 import { commitDraggedTangentArc, finalizeSplineFromContextMenu } from './sketchEventHelpers';
 import { handleSpecialSketchClick } from './specialSketchClickHandlers';
+
+const focusSketchEvent = 'cad:focus-sketch';
+const EDGE_ON_VIEW_DOT = 0.45;
+const SELECT_DRAG_PICK_RADIUS = 3;
+
+interface SketchPointDragTarget {
+  entityId: string;
+  pointIndex: number;
+}
+
+function getSketchFocusCenter(activeSketch: NonNullable<ReturnType<typeof useCADStore.getState>['activeSketch']>): [number, number, number] {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let minZ = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let maxZ = Number.NEGATIVE_INFINITY;
+
+  const include = (point: SketchPoint, radius = 0) => {
+    minX = Math.min(minX, point.x - radius);
+    minY = Math.min(minY, point.y - radius);
+    minZ = Math.min(minZ, point.z - radius);
+    maxX = Math.max(maxX, point.x + radius);
+    maxY = Math.max(maxY, point.y + radius);
+    maxZ = Math.max(maxZ, point.z + radius);
+  };
+
+  activeSketch.entities.forEach((entity) => {
+    const radius = entity.type === 'circle' || entity.type === 'arc' ? entity.radius ?? 0 : 0;
+    entity.points.forEach((point) => include(point, radius));
+  });
+
+  if (!Number.isFinite(minX)) {
+    const origin = activeSketch.planeOrigin;
+    return [origin.x, origin.y, origin.z];
+  }
+
+  return [(minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2];
+}
 
 interface UseSketchInteractionEventsParams {
   activeSketch: ReturnType<typeof useCADStore.getState>['activeSketch'];
@@ -23,6 +62,7 @@ interface UseSketchInteractionEventsParams {
   replaceSketchEntities: ReturnType<typeof useCADStore.getState>['replaceSketchEntities'];
   cycleEntityLinetype: ReturnType<typeof useCADStore.getState>['cycleEntityLinetype'];
   setStatusMessage: ReturnType<typeof useCADStore.getState>['setStatusMessage'];
+  setActiveTool: ReturnType<typeof useCADStore.getState>['setActiveTool'];
   polygonSides: number;
   filletRadius: number;
   chamferDist1: number;
@@ -73,6 +113,7 @@ export function useSketchInteractionEvents({
   replaceSketchEntities,
   cycleEntityLinetype,
   setStatusMessage,
+  setActiveTool,
   polygonSides,
   filletRadius,
   chamferDist1,
@@ -106,18 +147,68 @@ export function useSketchInteractionEvents({
   isDraggingArcRef,
   dragJustFinishedRef,
 }: UseSketchInteractionEventsParams) {
+  const pointDragRef = useRef<SketchPointDragTarget | null>(null);
+
   useEffect(() => {
-    if (!activeSketch || activeTool === 'select') return;
+    if (!activeSketch) return;
     void projectLiveLink;
     void cancelSketchProjectSurfaceTool;
 
     const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+    const viewDir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
+    const sketchNormal = activeSketch.planeNormal.clone().normalize();
+    if (Math.abs(viewDir.dot(sketchNormal)) < EDGE_ON_VIEW_DOT) {
+      window.dispatchEvent(new CustomEvent(focusSketchEvent, {
+        detail: {
+          center: getSketchFocusCenter(activeSketch),
+          normal: [sketchNormal.x, sketchNormal.y, sketchNormal.z],
+        },
+      }));
+    }
+
     const projectToPlane = (pt: SketchPoint, origin: SketchPoint) => {
       const d = new THREE.Vector3(pt.x - origin.x, pt.y - origin.y, pt.z - origin.z);
       return { u: d.dot(t1), v: d.dot(t2) };
     };
 
+    const findNearestEditablePoint = (worldPoint: THREE.Vector3): SketchPointDragTarget | null => {
+      let best: SketchPointDragTarget | null = null;
+      let bestDist = SELECT_DRAG_PICK_RADIUS;
+
+      for (const entity of activeSketch.entities) {
+        if (!['line', 'construction-line', 'centerline', 'rectangle', 'circle', 'arc'].includes(entity.type)) continue;
+        entity.points.forEach((point, pointIndex) => {
+          const distance = worldPoint.distanceTo(new THREE.Vector3(point.x, point.y, point.z));
+          if (distance < bestDist) {
+            bestDist = distance;
+            best = { entityId: entity.id, pointIndex };
+          }
+        });
+      }
+
+      return best;
+    };
+
+    const updateDraggedPoint = (target: SketchPointDragTarget, point: THREE.Vector3) => {
+      const latestSketch = useCADStore.getState().activeSketch;
+      if (!latestSketch) return;
+      replaceSketchEntities(
+        latestSketch.entities.map((entity) => {
+          if (entity.id !== target.entityId) return entity;
+          return {
+            ...entity,
+            points: entity.points.map((existingPoint, pointIndex) => (
+              pointIndex === target.pointIndex
+                ? { ...existingPoint, x: point.x, y: point.y, z: point.z }
+                : existingPoint
+            )),
+          };
+        }),
+      );
+    };
+
     const handleMouseMove = (event: MouseEvent) => {
+      if (activeTool === 'select') return;
       const drawingPoints = drawingPointsRef.current;
       const point = getWorldPoint(event);
       if (!point) return;
@@ -173,6 +264,7 @@ export function useSketchInteractionEvents({
     };
 
     const handleClick = (event: MouseEvent) => {
+      if (activeTool === 'select') return;
       const drawingPoints = drawingPointsRef.current;
       if (event.button !== 0) return;
       if (dragJustFinishedRef.current) {
@@ -213,11 +305,27 @@ export function useSketchInteractionEvents({
 
       const point = getWorldPoint(event);
       if (!point) return;
-      const sketchPoint: SketchPoint = { id: crypto.randomUUID(), x: point.x, y: point.y, z: point.z };
+      const drawStart =
+        drawingPoints.length > 0
+          ? new THREE.Vector3(drawingPoints[0].x, drawingPoints[0].y, drawingPoints[0].z)
+          : null;
+      const snapCandidate = findSnapCandidate(point, drawStart);
+      const commitPoint = snapCandidate?.worldPos.clone() ?? point.clone();
+      const planeNormal = activeSketch.planeNormal.clone().normalize();
+      const planeOrigin = activeSketch.planeOrigin;
+      commitPoint.addScaledVector(
+        planeNormal,
+        -planeNormal.dot(commitPoint.clone().sub(planeOrigin)),
+      );
+      if (snapCandidate) {
+        setMousePos(commitPoint.clone());
+        setSnapTarget(snapCandidate);
+      }
+      const sketchPoint: SketchPoint = { id: crypto.randomUUID(), x: commitPoint.x, y: commitPoint.y, z: commitPoint.z };
 
       if (handleSpecialSketchClick({
         activeTool,
-        point,
+        point: commitPoint,
         shiftKey: event.shiftKey,
         drawingPoints,
         t1,
@@ -272,6 +380,11 @@ export function useSketchInteractionEvents({
           setStatusMessage('Plane pick cancelled');
           return;
         }
+        if (drawingPoints.length === 0 && activeTool !== 'select') {
+          setActiveTool('select');
+          setStatusMessage('Select: drag a sketch corner or endpoint to adjust it');
+          return;
+        }
         setDrawingPoints([]);
         setStatusMessage('Drawing cancelled');
         return;
@@ -321,12 +434,38 @@ export function useSketchInteractionEvents({
 
     const handlePointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return;
+      if (activeTool === 'select') {
+        const point = getWorldPoint(event);
+        if (!point) return;
+        const target = findNearestEditablePoint(point);
+        if (!target) {
+          setStatusMessage('Select: drag a sketch corner or endpoint to adjust it');
+          return;
+        }
+        useCADStore.getState().pushUndo();
+        pointDragRef.current = target;
+        setStatusMessage('Dragging sketch point');
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       isDraggingArcRef.current = false;
       dragJustFinishedRef.current = false;
       dragScreenStartRef.current = { x: event.clientX, y: event.clientY };
     };
 
     const handlePointerMove = (event: PointerEvent) => {
+      if (activeTool === 'select') {
+        const target = pointDragRef.current;
+        if (!target || event.buttons !== 1) return;
+        const point = getWorldPoint(event);
+        if (!point) return;
+        updateDraggedPoint(target, point);
+        setStatusMessage('Adjusting sketch point');
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       const drawingPoints = drawingPointsRef.current;
       if (event.buttons !== 1) return;
       const start = dragScreenStartRef.current;
@@ -342,6 +481,14 @@ export function useSketchInteractionEvents({
     };
 
     const handlePointerUp = (event: PointerEvent) => {
+      if (activeTool === 'select') {
+        if (!pointDragRef.current) return;
+        pointDragRef.current = null;
+        setStatusMessage('Sketch point adjusted');
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       const drawingPoints = drawingPointsRef.current;
       const mousePos = mousePosRef.current;
       if (event.button !== 0 || !isDraggingArcRef.current) return;
@@ -386,6 +533,7 @@ export function useSketchInteractionEvents({
     replaceSketchEntities,
     cycleEntityLinetype,
     setStatusMessage,
+    setActiveTool,
     polygonSides,
     filletRadius,
     chamferDist1,

@@ -4,7 +4,7 @@ import { useCADStore } from '../../../store/cadStore';
 import { SketchContextMenu } from './SketchContextMenu';
 import type { SketchCtxMenu } from './SketchContextMenu';
 
-export function SketchesFolder() {
+export function SketchesFolder({ componentId }: { componentId?: string }) {
   // Use `sketches` (completed) + `activeSketch` (currently editing) as source of truth.
   // Previously used features.filter('sketch') which is a secondary index and can lag.
   const activeSketch = useCADStore((s) => s.activeSketch);
@@ -15,10 +15,15 @@ export function SketchesFolder() {
   const [ctxMenu, setCtxMenu] = useState<SketchCtxMenu | null>(null);
 
   const visibleSketches = useMemo(
-    () => sketches.filter((s) => !s.name.startsWith('Press Pull Profile')),
-    [sketches],
+    () => sketches.filter((s) => (
+      !s.name.startsWith('Press Pull Profile') && (!componentId || s.componentId === componentId)
+    )),
+    [componentId, sketches],
   );
-  const hasAny = visibleSketches.length > 0 || (!!activeSketch && !activeSketch.name.startsWith('Press Pull Profile'));
+  const showActiveSketch = !!activeSketch
+    && !activeSketch.name.startsWith('Press Pull Profile')
+    && (!componentId || activeSketch.componentId === componentId);
+  const hasAny = visibleSketches.length > 0 || showActiveSketch;
   if (!hasAny) return null;
 
   const isVisible = (id: string) => sketchVis[id] !== false;
@@ -27,13 +32,13 @@ export function SketchesFolder() {
     setSketchVis((prev) => ({ ...prev, [id]: !isVisible(id) }));
   };
 
-  const allVisible = visibleSketches.every((sk) => isVisible(sk.id)) && (!activeSketch || activeSketch.name.startsWith('Press Pull Profile') || isVisible('active'));
+  const allVisible = visibleSketches.every((sk) => isVisible(sk.id)) && (!showActiveSketch || isVisible('active'));
   const toggleFolderVis = (e: React.MouseEvent) => {
     e.stopPropagation();
     const next = !allVisible;
     const newVis: Record<string, boolean> = {};
     visibleSketches.forEach((sk) => { newVis[sk.id] = next; });
-    if (activeSketch && !activeSketch.name.startsWith('Press Pull Profile')) newVis['active'] = next;
+    if (showActiveSketch) newVis['active'] = next;
     setSketchVis(newVis);
   };
 
@@ -96,7 +101,7 @@ export function SketchesFolder() {
           ))}
 
           {/* Currently editing sketch */}
-          {activeSketch && !activeSketch.name.startsWith('Press Pull Profile') && (
+          {showActiveSketch && activeSketch && (
             <div
               className="browser-row browser-row-child browser-row-active-sketch"
               onContextMenu={(e) => openCtx(e, 'active', activeSketch.name)}

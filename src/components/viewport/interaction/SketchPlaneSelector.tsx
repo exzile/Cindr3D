@@ -228,7 +228,10 @@ export default function SketchPlaneSelector() {
           .applyMatrix3(_normalMatrix.current.getNormalMatrix(hit.object.matrixWorld))
           .normalize();
         event.stopPropagation();
-        startSketchOnFace(normal, hit.point.clone());
+        event.stopImmediatePropagation();
+        event.preventDefault();
+        const point = hit.point.clone();
+        window.setTimeout(() => startSketchOnFace(normal, point), 0);
         setFaceHit(null);
       }
     };

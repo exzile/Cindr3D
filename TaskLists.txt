@@ -42,6 +42,118 @@
 # REMAINING WORK — single-feature items, deferred for stated reasons
 # ============================================================================
 
+## Layer-material cache pre-pass  (architectural — unlocks per-region top-skin + multi-layer thickening)
+# The current top-skin detection uses a lightweight 1-layer lookahead in
+# `emitLayerStartState` (slice + classify + buildMaterial only). The
+# current-layer material goes through full prep (modifier meshes,
+# horizontal expansion, hole horizontal expansion, mold mode, shrinkage
+# compensation, elephant-foot compensation). The boolean
+# `currentLayerMaterial − nextLayerMaterial` therefore picks up
+# systematic differences from those transforms as spurious top-skin
+# regions. Layer-wide solid promotion works around this but is
+# approximate. Fixing it requires a pre-pass that builds every layer's
+# material with the full transform pipeline and caches it, so the
+# lookahead reads consistent data.
+#
+# STATUS: layer-wide top-skin promotion is the working baseline. All
+# items below are needed to unlock per-region splitting and multi-layer
+# thickening (topLayers band).
+#
+# --- Step 1: Add `layerMaterialCache` to SliceRun ---
+#   File: src/engine/slicer/pipeline/execution/steps/types.ts
+#   [x] Add `layerMaterialCache: PCMultiPolygon[]` field to `SliceRun`
+#   [x] Add it to `SliceGeometryRun` Pick list (parallel workers need it)
+#   [x] Initialize to `[]` in `prepareSliceRun.ts`
+#
+# --- Step 2: Build the cache pre-pass ---
+#   File: src/engine/slicer/pipeline/execution/steps/runSlicePipeline.ts
+#   File: src/engine/slicer/pipeline/execution/steps/prepareLayerState.ts
+#   [x] Extract the geometry-prep transforms from `prepareLayerGeometryState`
+#       into a reusable helper (or call `prepareLayerGeometryState` directly
+#       with `{ reportProgress: false, yieldToUI: false }` and stash its
+#       material). The key transforms that must run:
+#         - sliceTrianglesAtZ + connectSegments + classifyContours
+#         - closeContourGaps (slicingClosingRadius)
+#         - small-feature filtering (minimumPolygonCircumference, smallHoleMaxSize)
+#         - modifier-mesh composition (buildModifierRegionsForLayer + cutting_mesh)
+#         - shrinkage compensation (shrinkageCompensationXY)
+#         - hole horizontal expansion (holeHorizontalExpansion)
+#         - horizontal expansion (xy_offset + elephantFootCompensation)
+#         - mold mode (moldEnabled)
+#         - buildHoleMap + buildLayerMaterial
+#   [x] In `runSlicePipeline`, add a loop BEFORE the main emit loop:
+#         run.layerMaterialCache = new Array(run.totalLayers);
+#         for (let li = 0; li < run.totalLayers; li++) {
+#           const geo = await prepareLayerGeometryState(pipeline, run, li, opts);
+#           if (!geo) { run.layerMaterialCache[li] = []; continue; }
+#           const holeMap = buildHoleMap(geo.contours, geo.contours, ...);
+#           run.layerMaterialCache[li] = buildLayerMaterial(
+#             geo.contours.filter(c => c.isOuter), holeMap);
+#         }
+#       Consider parallel layer-prep workers for this pre-pass too (the
+#       existing worker pool already runs prepareLayerGeometryState).
+#   [x] Add a timing bucket `'material-cache'` for the pre-pass
+#   [x] Report progress during pre-pass (`Caching material ${li}/${total}...`)
+#
+# --- Step 3: Replace inline lookahead with cache reads ---
+#   File: src/engine/slicer/pipeline/execution/steps/prepareLayerState.ts
+#   [x] Remove the ~30-line inline lookahead block in `emitLayerStartState`
+#       (lines 441-468 that re-slice at layer N+1's Z)
+#   [x] Replace with: `const nextLayerMaterial = run.layerMaterialCache?.[li + 1];`
+#   [x] Also replace `run.prevLayerMaterial` usage with cache read:
+#       `previousLayerMaterial: run.layerMaterialCache?.[li - 1] ?? []`
+#       This makes bridge detection consistent too (currently uses the
+#       stale `run.prevLayerMaterial` field set by finalizeLayer).
+#   [x] Remove `prevLayerMaterial` field from SliceRun (dead after cache)
+#   [x] Remove `run.prevLayerMaterial = layer.currentLayerMaterial` from
+#       finalizeLayer.ts
+#
+# --- Step 4: Multi-layer top-skin thickening ---
+#   File: src/engine/slicer/pipeline/execution/layerTopology.ts
+#   [x] Accept new option `topLayers: number` (default 1) and the full
+#       `layerMaterialCache` array
+#   [x] Compute thickened topSkinRegion:
+#         topSkinRegion = ∅
+#         for k in 0..(topLayers-1):
+#           if cache[N+k] exists and cache[N+k+1] exists:
+#             band_k = cache[N+k] − cache[N+k+1]
+#           elif cache[N+k] exists:
+#             band_k = cache[N+k]  (last layer → entire material is top)
+#           else: continue
+#           topSkinRegion = union(topSkinRegion, band_k)
+#         topSkinRegion = intersect(topSkinRegion, currentLayerMaterial)
+#       This gives a 4-layer thick solid band (matching Cura/Orca topLayers=4)
+#   [x] Update LayerTopologyOptions type to accept the new fields
+#   [x] Update callers in prepareLayerState.ts
+#
+# --- Step 5: Per-region splitting in emitContourInfill ---
+#   File: src/engine/slicer/pipeline/execution/steps/emitContourInfill.ts
+#   [x] Replace the layer-wide `isSolid = layer.isSolid || layer.hasTopSkinRegion`
+#       with per-region splitting:
+#         for each infillRegion:
+#           solidPart = intersect(infillRegion, topSkinRegion)
+#           sparsePart = difference(infillRegion, topSkinRegion)
+#           emit solidPart with solid-skin settings
+#           emit sparsePart with sparse-infill settings
+#   [x] Guard: only do per-region splitting when `layerMaterialCache` is
+#       populated; fall back to layer-wide promotion otherwise (safety net
+#       for parallel-worker path where cache might not be ready)
+#
+# --- Step 6: Verification ---
+#   [x] Run `npm run verify` (tsc -b && vitest run) — all 451 slicer tests pass
+#   [ ] Slice the user's counterbore model — verify:
+#       - Baseplate top (layer ~21) gets solid skin band 4 layers thick
+#       - Middle layers of cylinder DON'T get spurious solid skin
+#       - Total move count is comparable to pre-cache baseline (~156k, not 326k)
+#   [ ] Run `npx gitnexus detect_changes` before committing
+#   [ ] gcode/SliceMove parity check — preview matches gcode exactly
+#
+# CODEX-FRIENDLY SUBTASKS (can be parallelized):
+#   Step 1 is pure type changes — safe for Codex.
+#   Step 3 (cache reads replacing inline lookahead) is safe for Codex once
+#   Step 2 lands the cache field population.
+#   Steps 4-5 depend on each other and on Steps 1-3; keep sequential.
+
 ## Maximum Skin Angle for Expansion  (`maxSkinAngleForExpansion`)
 # Cura's setting (default 90°, i.e. effectively off in default profiles).
 # When lowered, top/bottom skin expansion is skipped in regions whose

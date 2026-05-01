@@ -13,6 +13,11 @@ import * as THREE from 'three';
 // the per-side endpoint and radius (`aSide` selects which end). Hemisphere
 // caps overlap into adjacent segments which is what makes joints look
 // seamless without any CPU stitching — the depth buffer handles the rest.
+// Lighting deliberately uses very low specular: the previous setting
+// produced a visible bright spot at every internal junction (sphere-vs-
+// cylinder Blinn-Phong difference), reading as a string of bumps along
+// the tube. With matte-looking shading, paired with the radius averaging
+// in `extrusionInstances.ts`, the bead reads as one continuous tube.
 //
 // Lighting: world-space Blinn-Phong with two directional lights + ambient.
 // Matches the look of OrcaSlicer/PrusaSlicer previews — bead reads as a
@@ -88,7 +93,11 @@ const FRAGMENT_SHADER = /* glsl */ `
   const float AMBIENT = 0.42;
   const float KEY_INT = 0.55;
   const float FILL_INT = 0.18;
-  const float SPEC_INT = 0.14;
+  // Keep specular *very* low. Hemisphere caps overlap at every internal
+  // junction; any noticeable spec produces a bright spot at the joint that
+  // reads as a "bump" along the tube. With matte-ish shading the join
+  // disappears into the cylinder body's diffuse term.
+  const float SPEC_INT = 0.0;
   const float SHININESS = 14.0;
 
   void main() {

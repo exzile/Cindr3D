@@ -1,6 +1,6 @@
 ---
 name: Slicer Engine Architecture
-description: Slicer invariants — pipeline contracts, two-emission-site rule, calcExtrusion-as-method, layer-height contract, scarf seam duality
+description: Slicer invariants — pipeline contracts, two-emission-site rule, calcExtrusion-as-method, layer-height contract, scarf seam duality, layerMaterialCache pre-pass + per-region top-skin splitting
 type: project
 originSessionId: 768c4a3e-fc4c-4a2b-ba31-60db44f6dc31
 ---
@@ -25,6 +25,20 @@ originSessionId: 768c4a3e-fc4c-4a2b-ba31-60db44f6dc31
 ## calcExtrusion is a METHOD, not a free function
 
 `gcode/emitter.ts` `Emitter` class holds `currentLayerFlow` + `flowCompFactor` as fields. Always call `emitter.calculateExtrusion(distance, lineWidth, layerHeight)`. The flow save/override/restore pattern mutates the emitter field.
+
+## Layer-material cache pre-pass
+
+`run.layerMaterialCache: PCMultiPolygon[]` — populated by a sequential pre-pass in `runSlicePipeline.ts` before the main emit loop. Each entry is the fully-transformed material polygon for that layer (including modifier meshes, horizontal expansion, mold mode, shrinkage compensation, elephant-foot). Replaces the old `prevLayerMaterial` field (removed).
+
+**Cache reads** in `prepareLayerState.ts`:
+- `previousLayerMaterial = run.layerMaterialCache[li - 1] ?? []` (bridge detection)
+- `nextLayerMaterial = run.layerMaterialCache[li + 1]` (top-skin detection)
+
+**Multi-layer top-skin thickening** (`layerTopology.ts`): `topSkinRegion = ∪_{k=0..topLayers-1} (cache[N+k] − cache[N+k+1])` intersected with `currentLayerMaterial`. Controlled by `pp.topLayers` (default 4 in Orca profile). Falls back to single-layer comparison when cache is absent.
+
+**Per-region splitting** (`emitContourInfill.ts`): when `layerMaterialCache` is populated and `topSkinRegion` is non-empty, each infill region is split into `solidPart = intersect(region, topSkinRegion)` and `sparsePart = difference(region, topSkinRegion)`. Solid parts emit as skin, sparse parts as infill. Falls back to layer-wide solid promotion when cache is absent (parallel-worker safety net).
+
+Workers don't receive the cache (`layerMaterialCache: []` in `serializeGeometryRun`). Progress: 0-30% pre-pass, 30-80% emit loop.
 
 ## Bridge detection
 

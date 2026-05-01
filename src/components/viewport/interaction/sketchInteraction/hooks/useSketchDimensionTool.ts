@@ -33,10 +33,43 @@ interface DimensionToolContext {
   gl: { domElement: HTMLCanvasElement };
 }
 
-function createNearestEntityFinder(entities: SketchEntity[]) {
+interface PickedDimensionEntity {
+  entity: SketchEntity;
+  start?: THREE.Vector3;
+  end?: THREE.Vector3;
+}
+
+function createNearestEntityFinder(entities: SketchEntity[], origin: THREE.Vector3, t1: THREE.Vector3, t2: THREE.Vector3) {
   const entityPickRadius = 2;
-  return (worldPoint: THREE.Vector3): SketchEntity | null => {
-    let best: SketchEntity | null = null;
+  const considerSegment = (
+    worldPoint: THREE.Vector3,
+    entity: SketchEntity,
+    start: THREE.Vector3,
+    end: THREE.Vector3,
+    best: { pick: PickedDimensionEntity | null; distance: number },
+  ) => {
+    const delta = end.clone().sub(start);
+    const deltaLength = delta.length();
+    if (deltaLength < 1e-8) {
+      return;
+    }
+    const projection = Math.max(
+      0,
+      Math.min(1, worldPoint.clone().sub(start).dot(delta) / (deltaLength * deltaLength)),
+    );
+    const closest = start.clone().add(delta.multiplyScalar(projection));
+    const distance = worldPoint.distanceTo(closest);
+    if (distance < best.distance) {
+      best.distance = distance;
+      best.pick = { entity, start, end };
+    }
+  };
+
+  return (worldPoint: THREE.Vector3): PickedDimensionEntity | null => {
+    const best: { pick: PickedDimensionEntity | null; distance: number } = {
+      pick: null,
+      distance: entityPickRadius,
+    };
     let bestDistance = entityPickRadius;
     for (const entity of entities) {
       if (
@@ -49,21 +82,31 @@ function createNearestEntityFinder(entities: SketchEntity[]) {
           entity.points[entity.points.length - 1].y,
           entity.points[entity.points.length - 1].z,
         );
-        const delta = end.clone().sub(start);
-        const deltaLength = delta.length();
-        if (deltaLength < 1e-8) {
-          continue;
+        considerSegment(worldPoint, entity, start, end, best);
+        bestDistance = best.distance;
+        continue;
+      }
+
+      if (entity.type === 'rectangle' && entity.points.length >= 2) {
+        const p1 = new THREE.Vector3(entity.points[0].x, entity.points[0].y, entity.points[0].z);
+        const p2 = new THREE.Vector3(entity.points[1].x, entity.points[1].y, entity.points[1].z);
+        const d1 = p1.clone().sub(origin);
+        const d2 = p2.clone().sub(origin);
+        const p1u = d1.dot(t1);
+        const p1v = d1.dot(t2);
+        const p2u = d2.dot(t1);
+        const p2v = d2.dot(t2);
+        const toWorld = (u: number, v: number) => origin.clone().addScaledVector(t1, u).addScaledVector(t2, v);
+        const corners = [
+          toWorld(p1u, p1v),
+          toWorld(p2u, p1v),
+          toWorld(p2u, p2v),
+          toWorld(p1u, p2v),
+        ];
+        for (let i = 0; i < corners.length; i += 1) {
+          considerSegment(worldPoint, entity, corners[i], corners[(i + 1) % corners.length], best);
         }
-        const projection = Math.max(
-          0,
-          Math.min(1, worldPoint.clone().sub(start).dot(delta) / (deltaLength * deltaLength)),
-        );
-        const closest = start.clone().add(delta.multiplyScalar(projection));
-        const distance = worldPoint.distanceTo(closest);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          best = entity;
-        }
+        bestDistance = best.distance;
         continue;
       }
 
@@ -72,11 +115,11 @@ function createNearestEntityFinder(entities: SketchEntity[]) {
         const distance = Math.abs(worldPoint.distanceTo(center) - entity.radius);
         if (distance < bestDistance) {
           bestDistance = distance;
-          best = entity;
+          best.pick = { entity };
         }
       }
     }
-    return best;
+    return best.pick;
   };
 }
 
@@ -108,7 +151,7 @@ export function useSketchDimensionTool({
       const delta = worldPoint.clone().sub(origin);
       return { x: delta.dot(t1), y: delta.dot(t2) };
     };
-    const findNearestEntity = createNearestEntityFinder(activeSketch.entities);
+    const findNearestEntity = createNearestEntityFinder(activeSketch.entities, origin, t1, t2);
 
     const buildToleranceFields = () =>
       dimensionToleranceMode !== 'none'
@@ -130,7 +173,8 @@ export function useSketchDimensionTool({
         return;
       }
 
-      const entity = findNearestEntity(worldPoint);
+      const pick = findNearestEntity(worldPoint);
+      const entity = pick?.entity ?? null;
 
       if (activeDimensionType === 'linear' || activeDimensionType === 'aligned') {
         if (!entity) {
@@ -143,6 +187,30 @@ export function useSketchDimensionTool({
         }
 
         const currentPending = useCADStore.getState().pendingDimensionEntityIds;
+        if (currentPending.length === 0 && pick?.start && pick.end) {
+          const start = to2D(pick.start);
+          const end = to2D(pick.end);
+          const dimension =
+            activeDimensionType === 'linear'
+              ? DimensionEngine.computeLinearDimension(start, end, dimensionOffset)
+              : DimensionEngine.computeAlignedDimension(start, end, dimensionOffset);
+
+          addSketchDimension({
+            id: crypto.randomUUID(),
+            type: activeDimensionType,
+            entityIds: [entity.id],
+            value: dimension.value,
+            position: dimension.textPosition,
+            driven: dimensionDrivenMode,
+            ...(activeDimensionType === 'linear' ? { orientation: dimensionOrientation } : {}),
+            ...buildToleranceFields(),
+          });
+          setStatusMessage(
+            `${activeDimensionType === 'linear' ? 'Linear' : 'Aligned'} dimension added: ${dimension.value.toFixed(2)}`,
+          );
+          return;
+        }
+
         if (currentPending.length === 0) {
           addPendingDimensionEntity(entity.id);
           setStatusMessage(

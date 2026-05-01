@@ -9,6 +9,7 @@ import SlicerWorkspace from './components/slicer/SlicerWorkspace';
 import UpdatePanel from './components/updater/UpdatePanel';
 import { useCADStore } from './store/cadStore';
 import ActiveDialog from './app/ActiveDialog';
+import { DevFixtureLoader } from './devFixtures/orangePi3LtsCase';
 import './App.css';
 
 function WorkspaceContent() {
@@ -34,6 +35,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <DevFixtureLoader />
       <Toolbar />
       <WorkspaceContent />
       {workspaceMode === 'design' && <StatusBar />}

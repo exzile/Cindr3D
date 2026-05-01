@@ -90,12 +90,14 @@ export default function SketchInteraction() {
   const [snapTarget, setSnapTarget] = useState<{ worldPos: THREE.Vector3; type: 'endpoint' | 'midpoint' | 'center' | 'intersection' | 'perpendicular' | 'tangent' } | null>(null);
   const previewRef = useRef<THREE.Group>(null);
   // Stable preview materials — created once, never recreated per frame
-  const previewMaterial = useRef(new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 2 }));
+  const previewMaterial = useRef(new THREE.LineBasicMaterial({
+    color: 0xffaa00, linewidth: 2, depthTest: false, depthWrite: false,
+  }));
   const constructionPreviewMaterial = useRef(new THREE.LineDashedMaterial({
-    color: 0xff8800, linewidth: 1, dashSize: 0.3, gapSize: 0.18,
+    color: 0xff8800, linewidth: 1, dashSize: 0.3, gapSize: 0.18, depthTest: false, depthWrite: false,
   }));
   const centerlinePreviewMaterial = useRef(new THREE.LineDashedMaterial({
-    color: 0x00aa55, linewidth: 1, dashSize: 0.7, gapSize: 0.2,
+    color: 0x00aa55, linewidth: 1, dashSize: 0.7, gapSize: 0.2, depthTest: false, depthWrite: false,
   }));
 
   // Scratch Vector3 for useFrame — avoids per-frame allocation
@@ -109,7 +111,7 @@ export default function SketchInteraction() {
   const drawingConstructionRef = useRef(false);
   // S10: construction-mode preview material (cyan dashed)
   const constructionModePreviewMaterial = useRef(new THREE.LineDashedMaterial({
-    color: 0x00ccff, linewidth: 1, dashSize: 0.4, gapSize: 0.2,
+    color: 0x00ccff, linewidth: 1, dashSize: 0.4, gapSize: 0.2, depthTest: false, depthWrite: false,
   }));
 
   // S7: plane-pick pending — set true when Tab is pressed to redirect draw plane
@@ -150,20 +152,34 @@ export default function SketchInteraction() {
       return new THREE.Plane(n, -n.dot(o));
     }
 
+    const origin = activeSketch.planeOrigin ?? new THREE.Vector3(0, 0, 0);
+
     // Normals must match getPlaneNormal() in cadStore and the visual plane selector:
     //   XY = horizontal ground   → Y-normal  (0, 1, 0)
     //   XZ = vertical front wall → Z-normal  (0, 0, 1)
     //   YZ = vertical side wall  → X-normal  (1, 0, 0)
     //   custom = face plane → use stored planeNormal & planeOrigin
     switch (activeSketch.plane) {
-      case 'XY': return new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-      case 'XZ': return new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-      case 'YZ': return new THREE.Plane(new THREE.Vector3(1, 0, 0), 0);
+      case 'XY': {
+        const n = new THREE.Vector3(0, 1, 0);
+        return new THREE.Plane(n, -n.dot(origin));
+      }
+      case 'XZ': {
+        const n = new THREE.Vector3(0, 0, 1);
+        return new THREE.Plane(n, -n.dot(origin));
+      }
+      case 'YZ': {
+        const n = new THREE.Vector3(1, 0, 0);
+        return new THREE.Plane(n, -n.dot(origin));
+      }
       case 'custom': {
         const n = activeSketch.planeNormal.clone().normalize();
         return new THREE.Plane(n, -n.dot(activeSketch.planeOrigin));
       }
-      default:   return new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      default: {
+        const n = new THREE.Vector3(0, 1, 0);
+        return new THREE.Plane(n, -n.dot(origin));
+      }
     }
   }, [activeSketch, sketch3DActivePlane]);
 
@@ -182,12 +198,23 @@ export default function SketchInteraction() {
   // Supports endpoint, midpoint, center, intersection (existing) +
   // perpendicular and tangent (NAV-24).
   const SNAP_RADIUS = 4;
+  const SKETCH_PLANE_SNAP_TOLERANCE = 0.05;
   const findSnapCandidate = useCallback((worldPt: THREE.Vector3, drawStart?: THREE.Vector3 | null) => {
     if (!activeSketch || !snapEnabled) return null;
     // NAV-24: master object-snap gate
     if (!objectSnapEnabled) return null;
     let bestDist = SNAP_RADIUS;
     let best: { worldPos: THREE.Vector3; type: 'endpoint' | 'midpoint' | 'center' | 'intersection' | 'perpendicular' | 'tangent' } | null = null;
+    const considerCandidate = (
+      worldPos: THREE.Vector3,
+      type: 'endpoint' | 'midpoint' | 'center' | 'intersection' | 'perpendicular' | 'tangent',
+    ) => {
+      const d = worldPt.distanceTo(worldPos);
+      if (d < bestDist) {
+        bestDist = d;
+        best = { worldPos: worldPos.clone(), type };
+      }
+    };
 
     // Collect line-like entities for intersection / perpendicular testing
     const lineEntities = activeSketch.entities.filter(
@@ -203,16 +230,14 @@ export default function SketchInteraction() {
           for (const idx of [0, e.points.length - 1]) {
             const p = e.points[idx];
             const wp = new THREE.Vector3(p.x, p.y, p.z);
-            const d = worldPt.distanceTo(wp);
-            if (d < bestDist) { bestDist = d; best = { worldPos: wp, type: 'endpoint' }; }
+            considerCandidate(wp, 'endpoint');
           }
         }
         // Midpoint snap
         if (snapToMidpoint) {
           const p0 = e.points[0], p1 = e.points[e.points.length - 1];
           const mid = new THREE.Vector3((p0.x + p1.x) / 2, (p0.y + p1.y) / 2, (p0.z + p1.z) / 2);
-          const dm = worldPt.distanceTo(mid);
-          if (dm < bestDist) { bestDist = dm; best = { worldPos: mid, type: 'midpoint' }; }
+          considerCandidate(mid, 'midpoint');
         }
         // Perpendicular snap: foot of perpendicular from worldPt to segment
         if (snapToPerpendicular) {
@@ -224,8 +249,7 @@ export default function SketchInteraction() {
             const t = worldPt.clone().sub(P0).dot(seg) / segLen2;
             if (t >= 0 && t <= 1) {
               const foot = P0.clone().addScaledVector(seg, t);
-              const df = worldPt.distanceTo(foot);
-              if (df < bestDist) { bestDist = df; best = { worldPos: foot, type: 'perpendicular' }; }
+              considerCandidate(foot, 'perpendicular');
             }
           }
         }
@@ -233,8 +257,7 @@ export default function SketchInteraction() {
         // Center snap
         if (snapToCenter) {
           const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
-          const d = worldPt.distanceTo(center);
-          if (d < bestDist) { bestDist = d; best = { worldPos: center, type: 'center' }; }
+          considerCandidate(center, 'center');
         }
         // Tangent snap: when drawing a line (drawStart set), find tangent point on circle
         // where the line from drawStart to that point is tangent to the circle.
@@ -260,13 +283,36 @@ export default function SketchInteraction() {
                 const tp = center.clone()
                   .addScaledVector(t1, Math.cos(angle) * r)
                   .addScaledVector(t2, Math.sin(angle) * r);
-                const dt = worldPt.distanceTo(tp);
-                if (dt < bestDist) { bestDist = dt; best = { worldPos: tp, type: 'tangent' }; }
+                considerCandidate(tp, 'tangent');
               }
             }
           }
         }
       }
+    }
+
+    if (snapToEndpoint) {
+      const plane = getSketchPlane();
+      const worldVertex = new THREE.Vector3();
+      const seen = new Set<string>();
+
+      scene.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.visible || !mesh.geometry) return;
+        const geometry = mesh.geometry as THREE.BufferGeometry;
+        const positions = geometry.getAttribute('position');
+        if (!positions) return;
+
+        for (let index = 0; index < positions.count; index += 1) {
+          worldVertex.fromBufferAttribute(positions, index).applyMatrix4(mesh.matrixWorld);
+          if (Math.abs(plane.distanceToPoint(worldVertex)) > SKETCH_PLANE_SNAP_TOLERANCE) continue;
+
+          const key = `${worldVertex.x.toFixed(3)},${worldVertex.y.toFixed(3)},${worldVertex.z.toFixed(3)}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          considerCandidate(worldVertex, 'endpoint');
+        }
+      });
     }
 
     // S8 / NAV-24: brute-force line-line intersection snap
@@ -313,14 +359,13 @@ export default function SketchInteraction() {
           if (P1.distanceTo(P2) > 0.5) continue;
 
           const mid = P1.clone().add(P2).multiplyScalar(0.5);
-          const d = worldPt.distanceTo(mid);
-          if (d < bestDist) { bestDist = d; best = { worldPos: mid, type: 'intersection' }; }
+          considerCandidate(mid, 'intersection');
         }
       }
     }
 
     return best;
-  }, [activeSketch, snapEnabled, objectSnapEnabled, snapToEndpoint, snapToMidpoint, snapToCenter, snapToIntersection, snapToPerpendicular, snapToTangent]);
+  }, [activeSketch, snapEnabled, objectSnapEnabled, snapToEndpoint, snapToMidpoint, snapToCenter, snapToIntersection, snapToPerpendicular, snapToTangent, getSketchPlane, scene]);
 
   const getWorldPoint = useCallback((event: MouseEvent): THREE.Vector3 | null => {
     const rect = gl.domElement.getBoundingClientRect();
@@ -390,6 +435,7 @@ export default function SketchInteraction() {
     replaceSketchEntities,
     cycleEntityLinetype,
     setStatusMessage,
+    setActiveTool,
     polygonSides,
     filletRadius,
     chamferDist1,

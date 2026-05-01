@@ -13,25 +13,33 @@ export function ProfileSection({
   selectedIds: string[];
   setSelectedIds: (ids: string[]) => void;
 }) {
+  const selectedSet = new Set(selectedIds);
+  const toggleProfile = (id: string) => {
+    setSelectedIds(
+      selectedSet.has(id)
+        ? selectedIds.filter((selectedId) => selectedId !== id)
+        : [...selectedIds, id],
+    );
+  };
+
   return (
     <div className="tp-section">
       <div className="tp-section-title">Profile</div>
-      <select
-        className="tp-select"
-        value={selectedIds}
-        multiple
-        size={Math.min(4, Math.max(2, profileOptions.length))}
-        onChange={(event) => {
-          const ids = Array.from(event.currentTarget.selectedOptions).map((option) => option.value);
-          setSelectedIds(ids);
-        }}
-      >
+      <div className="tp-profile-list" role="listbox" aria-label="Extrude profiles" aria-multiselectable="true">
         {profileOptions.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
+          <label
+            key={option.id}
+            className={`tp-profile-row ${selectedSet.has(option.id) ? 'selected' : ''}`}
+          >
+            <input
+              type="checkbox"
+              checked={selectedSet.has(option.id)}
+              onChange={() => toggleProfile(option.id)}
+            />
+            <span>{option.label}</span>
+          </label>
         ))}
-      </select>
+      </div>
     </div>
   );
 }

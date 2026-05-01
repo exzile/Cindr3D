@@ -46,6 +46,7 @@ export default function ExtrudeTool() {
   const addFaceToExtrude = useCADStore((s) => s.addFaceToExtrude);
   const distance = useCADStore((s) => s.extrudeDistance);
   const direction = useCADStore((s) => s.extrudeDirection);
+  const selectedFeatureId = useCADStore((s) => s.selectedFeatureId);
 
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [faceHit, setFaceHit] = useState<FacePickResult | null>(null);
@@ -68,12 +69,74 @@ export default function ExtrudeTool() {
     },
   });
 
-  // Visible user sketches stay selectable, even if a previous feature used
-  // them. Internal press-pull profiles are generated from picked faces and
-  // should not become standalone click targets on later extrude sessions.
+  const features = useCADStore((s) => s.features);
+
+  const focusedSketchId = useMemo(() => {
+    const selectedFeature = features.find((f) => f.id === selectedFeatureId);
+    return selectedFeature?.type === 'sketch' ? selectedFeature.sketchId : null;
+  }, [features, selectedFeatureId]);
+
+  // Only hide profiles that are already consumed by an extrude feature.
   const extrudable = useMemo(() => {
-    return sketches.filter((s) => s.entities.length > 0 && !s.name.startsWith('Press Pull Profile'));
-  }, [sketches]);
+    const timelineSketchIds = new Set(
+      features
+        .filter((feature) => feature.type === 'sketch' && feature.sketchId)
+        .map((feature) => feature.sketchId),
+    );
+    const fullyUsedSketchIds = new Set<string>();
+    for (const feature of features.filter((f) => f.type === 'extrude' && !f.suppressed)) {
+      const sketchId = feature.sketchId?.split('::')[0];
+      if (!sketchId) continue;
+      const profileIndex = feature.params.profileIndex;
+      if (!(typeof profileIndex === 'number' && Number.isFinite(profileIndex))) {
+        fullyUsedSketchIds.add(sketchId);
+      }
+    }
+    const candidates = sketches.filter((s) =>
+      s.entities.length > 0 &&
+      timelineSketchIds.has(s.id) &&
+      !fullyUsedSketchIds.has(s.id) &&
+      (!focusedSketchId || s.id === focusedSketchId)
+    );
+    const sketchTimelineIndex = new Map<string, number>();
+    features.forEach((feature, index) => {
+      if (feature.type === 'sketch' && feature.sketchId) {
+        sketchTimelineIndex.set(feature.sketchId, index);
+      }
+    });
+    const sameSketchPlane = (a: Sketch, b: Sketch) => {
+      const aN = a.planeNormal.clone().normalize();
+      const bN = b.planeNormal.clone().normalize();
+      const dot = aN.dot(bN);
+      if (Math.abs(Math.abs(dot) - 1) > 1e-3) return false;
+      const aD = aN.dot(a.planeOrigin);
+      const bD = dot >= 0 ? aN.dot(b.planeOrigin) : -aN.dot(b.planeOrigin);
+      return Math.abs(aD - bD) <= 1e-2;
+    };
+    return candidates.filter((sketch, index) =>
+      !candidates.some((other, otherIndex) => {
+        if (otherIndex === index || !sameSketchPlane(sketch, other)) return false;
+        const sketchIndex = sketchTimelineIndex.get(sketch.id) ?? index;
+        const otherFeatureIndex = sketchTimelineIndex.get(other.id) ?? otherIndex;
+        return otherFeatureIndex > sketchIndex;
+      })
+    );
+  }, [sketches, features, focusedSketchId]);
+
+  const consumedProfileIds = useMemo(() => new Set(
+      features
+        .filter((f) => f.type === 'extrude' && !f.suppressed)
+        .map((f) => {
+          const sketchId = f.sketchId?.split('::')[0];
+          const profileIndex = f.params.profileIndex;
+          return sketchId && typeof profileIndex === 'number' && Number.isFinite(profileIndex)
+            ? buildSelectionId(sketchId, profileIndex)
+            : null;
+        })
+        .filter((id): id is string => !!id),
+    ),
+    [features],
+  );
 
   const profileEntries = useMemo(() => {
     // Use the FLAT shape list so every closed region is a selectable profile
@@ -84,9 +147,25 @@ export default function ExtrudeTool() {
         sketch,
         profileIndex,
         selectionId: buildSelectionId(sketch.id, profileIndex),
-      })).filter(({ profileIndex }) => GeometryEngine.createProfileSketch(sketch, profileIndex) !== null);
+      })).filter(({ selectionId, profileIndex }) =>
+        !consumedProfileIds.has(selectionId) &&
+        GeometryEngine.createProfileSketch(sketch, profileIndex) !== null
+      );
     });
-  }, [extrudable]);
+  }, [extrudable, consumedProfileIds]);
+
+  const availableProfileIds = useMemo(
+    () => new Set(profileEntries.map((entry) => entry.selectionId)),
+    [profileEntries],
+  );
+
+  useEffect(() => {
+    if (activeTool !== 'extrude') return;
+    const next = selectedIds.filter((id) => availableProfileIds.has(id));
+    if (next.length !== selectedIds.length) {
+      setSelectedIds(next);
+    }
+  }, [activeTool, availableProfileIds, selectedIds, setSelectedIds]);
 
   const getSketchForSelection = (selectionId: string): Sketch | null => {
     const { sketchId, profileIndex } = parseSelectionId(selectionId);
@@ -106,7 +185,7 @@ export default function ExtrudeTool() {
     return Math.abs(aD - bD) <= 1e-2;
   };
 
-  const toggleSelection = (selectionId: string) => {
+  const toggleSelection = (selectionId: string, additive = false) => {
     if (selectedIds.includes(selectionId)) {
       const next = selectedIds.filter((id) => id !== selectionId);
       setSelectedIds(next);
@@ -120,10 +199,22 @@ export default function ExtrudeTool() {
     if (!incoming) return;
     if (selectedIds.length > 0) {
       const first = getSketchForSelection(selectedIds[0]);
+      const incomingBaseSketchId = parseSelectionId(selectionId).sketchId;
+      const sameSourceSketch = selectedIds.every((id) => parseSelectionId(id).sketchId === incomingBaseSketchId);
       if (first && !isSamePlane(first, incoming)) {
-        setStatusMessage('Additional profiles must be on the same plane');
+        setSelectedIds([selectionId]);
+        setStatusMessage('Profile selection moved to the clicked sketch plane');
         return;
       }
+      if (!additive && !sameSourceSketch) {
+        setSelectedIds([selectionId]);
+        setStatusMessage('1 profile selected — drag arrow or set distance, then OK');
+        return;
+      }
+    } else if (!additive) {
+      setSelectedIds([selectionId]);
+      setStatusMessage('1 profile selected — drag arrow or set distance, then OK');
+      return;
     }
 
     const next = [...selectedIds, selectionId];
@@ -242,7 +333,7 @@ export default function ExtrudeTool() {
           setStatusMessageRef.current(
             event.altKey
               ? 'Alt+click to select containing shape'
-              : 'Click to select profile — Alt+click for containing shape',
+              : 'Click to select profile — Shift/Ctrl+click to add more',
           );
         }
       } else if (hoveredIdRef.current !== null) {
@@ -284,7 +375,7 @@ export default function ExtrudeTool() {
       const mesh = resolveHit(hits, event.altKey ? 'largest' : 'smallest');
       if (mesh) {
         const key = mesh.userData.profileKey as string;
-        toggleSelectionRef.current(key);
+        toggleSelectionRef.current(key, event.shiftKey || event.ctrlKey || event.metaKey);
       }
     };
 

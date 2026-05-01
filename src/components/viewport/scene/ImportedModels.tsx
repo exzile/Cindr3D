@@ -3,12 +3,14 @@ import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
 import { DIM_MATERIAL } from './bodyMaterial';
+import { isComponentVisible } from './componentVisibility';
 
 export default function ImportedModels() {
   const features = useCADStore((s) => s.features);
   const rollbackIndex = useCADStore((s) => s.rollbackIndex);
   const activeComponentId = useComponentStore((s) => s.activeComponentId);
   const rootComponentId = useComponentStore((s) => s.rootComponentId);
+  const components = useComponentStore((s) => s.components);
 
   const editingInPlace = !!activeComponentId && activeComponentId !== rootComponentId;
 
@@ -30,7 +32,13 @@ export default function ImportedModels() {
   // Apply / restore dim material in an effect — never in render to avoid side effects
   // and ensure cleanup when Edit In Place mode exits.
   useEffect(() => {
-    const visible = features.filter(f => f.type === 'import' && f.mesh && f.visible && !f.suppressed);
+    const visible = features.filter(f => (
+      f.type === 'import'
+      && f.mesh
+      && f.visible
+      && !f.suppressed
+      && isComponentVisible(components, f.componentId)
+    ));
     visible.forEach((feature) => {
       const dim = editingInPlace && feature.componentId !== activeComponentId;
       feature.mesh!.traverse((obj) => {
@@ -49,13 +57,14 @@ export default function ImportedModels() {
         }
       });
     });
-  }, [features, editingInPlace, activeComponentId]);
+  }, [features, editingInPlace, activeComponentId, components]);
 
   return (
     <>
       {features.filter((f, i) => {
         // D187 suppress + D190 rollback + visibility
         if (f.type !== 'import' || !f.visible || f.suppressed || !f.mesh) return false;
+        if (!isComponentVisible(components, f.componentId)) return false;
         if (rollbackIndex >= 0 && i > rollbackIndex) return false;
         return true;
       }).map((feature) => (

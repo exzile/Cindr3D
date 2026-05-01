@@ -1,9 +1,11 @@
 import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
+import { useComponentStore } from '../../../store/componentStore';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
 import { disposeLineGeometries } from '../../../utils/threeDisposal';
 import type { Sketch } from '../../../types/cad';
+import { isComponentVisible } from './componentVisibility';
 
 /**
  * Renders one sketch's wire geometry. Caches the Three.js Group via useMemo so it is
@@ -60,15 +62,17 @@ export default function SketchRenderer() {
   const showConstructionGeometries = useCADStore((s) => s.showConstructionGeometries);
   const entityVisSketchBodies = useCADStore((s) => s.entityVisSketchBodies);
   const rollbackIndex = useCADStore((s) => s.rollbackIndex);
+  const components = useComponentStore((s) => s.components);
+  const activeSketchComponentVisible = !activeSketch || isComponentVisible(components, activeSketch.componentId);
 
   const profileMaterial = useMemo(() => new THREE.MeshBasicMaterial({
     color: 0x3a7fcc, opacity: 0.25, transparent: true, side: THREE.DoubleSide, depthWrite: false,
   }), []);
 
   const profileMesh = useMemo(() => {
-    if (!showProfile || !activeSketch) return null;
+    if (!showProfile || !activeSketch || !activeSketchComponentVisible) return null;
     return GeometryEngine.createSketchProfileMesh(activeSketch, profileMaterial);
-  }, [showProfile, activeSketch, profileMaterial]);
+  }, [showProfile, activeSketch, activeSketchComponentVisible, profileMaterial]);
 
   useEffect(() => {
     return () => {
@@ -95,9 +99,10 @@ export default function SketchRenderer() {
       }).map((feature) => {
         const sketch = sketches.find(s => s.id === feature.sketchId);
         if (!sketch) return null;
+        if (!isComponentVisible(components, sketch.componentId ?? feature.componentId)) return null;
         return <SketchGeometry key={feature.id} sketch={sketch} />;
       })}
-      {activeSketch && activeSketch.entities.length > 0 && (
+      {activeSketch && activeSketchComponentVisible && activeSketch.entities.length > 0 && (
         <ActiveSketchGeometry
           sketch={activeSketch}
           showSketchPoints={showSketchPoints}

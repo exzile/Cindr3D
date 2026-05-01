@@ -207,7 +207,8 @@ export default function ExtrudedBodies() {
 
   const getMaterial = useCallback(
     (featureComponentId: string | undefined, bodyId: string | undefined, isSurface = false): THREE.Material => {
-      if (editingInPlace && featureComponentId !== activeComponentId) return DIM_MATERIAL;
+      const effectiveComponentId = featureComponentId ?? (bodyId ? bodiesById[bodyId]?.componentId : undefined);
+      if (editingInPlace && effectiveComponentId !== activeComponentId) return DIM_MATERIAL;
       const fallback: THREE.Material = isSurface ? SURFACE_MATERIAL : BODY_MATERIAL;
       if (!bodyId) return fallback;
       const body = bodiesById[bodyId];
@@ -349,7 +350,7 @@ export default function ExtrudedBodies() {
         commitCurrent();
         currentGeom = toolGeom;
         currentFeatureId = feature.id;
-        currentComponentId = feature.componentId;
+        currentComponentId = feature.componentId ?? (feature.bodyId ? bodiesById[feature.bodyId]?.componentId : undefined);
         currentBodyId = feature.bodyId;
         currentExtraBodyIds = (feature.params.extraBodyIds as string[] | undefined) ?? [];
         continue;
@@ -379,7 +380,7 @@ export default function ExtrudedBodies() {
           commitCurrent();
           currentGeom = toolGeom;
           currentFeatureId = feature.id;
-          currentComponentId = feature.componentId;
+          currentComponentId = feature.componentId ?? (feature.bodyId ? bodiesById[feature.bodyId]?.componentId : undefined);
           currentBodyId = feature.bodyId;
           currentExtraBodyIds = (feature.params.extraBodyIds as string[] | undefined) ?? [];
         } else {
@@ -400,7 +401,7 @@ export default function ExtrudedBodies() {
   // (renaming a measurement sketch, drawing in a non-extrude sketch, etc.)
   // leave this stable and do not rebuild every body.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [features, relevantSketchesSig, rollbackIndex]);
+  }, [features, relevantSketchesSig, rollbackIndex, bodiesById]);
 
   useEffect(() => {
     return () => {

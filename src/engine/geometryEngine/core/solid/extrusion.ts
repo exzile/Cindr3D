@@ -3,7 +3,6 @@ import type { Sketch, SketchPoint } from '../../../../types/cad';
 import { BODY_MATERIAL, SURFACE_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
 import { EXTRUDE_MATERIAL } from '../../materials';
 import {
-  getPlaneRotation as getPlaneRotationUtil,
   getSketchAxes as getSketchAxesUtil,
   getSketchExtrudeNormal as getSketchExtrudeNormalUtil,
 } from '../../planeUtils';
@@ -389,14 +388,9 @@ function extrudeCustomPlaneSketch(sketch: Sketch, distance: number, profileIndex
 }
 
 function orientExtrudedMesh(mesh: THREE.Mesh, sketch: Sketch): void {
-  if (sketch.plane === 'custom') {
-    const { t1, t2, normal } = getRightHandedFrame(sketch);
-    const basis = new THREE.Matrix4().makeBasis(t1, t2, normal);
-    mesh.quaternion.setFromRotationMatrix(basis);
-    mesh.position.copy(sketch.planeOrigin);
-    return;
-  }
-
-  const rotation = getPlaneRotationUtil(sketch.plane);
-  mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
+  const { t1, t2 } = getSketchAxesUtil(sketch);
+  const normal = sketch.planeNormal.clone().normalize();
+  const basis = new THREE.Matrix4().makeBasis(t1, t2, normal);
+  mesh.quaternion.setFromRotationMatrix(basis);
+  mesh.position.copy(sketch.planeOrigin);
 }

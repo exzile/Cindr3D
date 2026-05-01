@@ -9,9 +9,17 @@ import {
 } from '../../materials';
 import { getPlaneAxes as getPlaneAxesUtil, getSketchAxes as getSketchAxesUtil } from '../../planeUtils';
 
+const SKETCH_RENDER_ORDER = 1000;
+
+function setSketchRenderOrder<T extends THREE.Object3D>(object: T): T {
+  object.renderOrder = SKETCH_RENDER_ORDER;
+  return object;
+}
+
 export function createSketchGeometry(sketch: Sketch): THREE.Group {
   const group = new THREE.Group();
   group.name = sketch.name;
+  group.renderOrder = SKETCH_RENDER_ORDER;
   const axes = getSketchAxesUtil(sketch);
   for (const entity of sketch.entities) {
     const obj = createEntityGeometry(entity, sketch.plane, axes);
@@ -66,14 +74,14 @@ function createPointMarker(
   ]);
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  return new THREE.LineSegments(geometry, SKETCH_MATERIAL);
+  return setSketchRenderOrder(new THREE.LineSegments(geometry, SKETCH_MATERIAL));
 }
 
 function createLine(points: SketchPoint[], material: THREE.LineBasicMaterial): THREE.Line {
   const geometry = new THREE.BufferGeometry();
   const vertices = new Float32Array(points.flatMap((p) => [p.x, p.y, p.z]));
   geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-  return new THREE.Line(geometry, material);
+  return setSketchRenderOrder(new THREE.Line(geometry, material));
 }
 
 function createDashedLine(points: SketchPoint[], material: THREE.LineDashedMaterial): THREE.Line {
@@ -81,6 +89,7 @@ function createDashedLine(points: SketchPoint[], material: THREE.LineDashedMater
   const vertices = new Float32Array(points.flatMap((p) => [p.x, p.y, p.z]));
   geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
   const line = new THREE.Line(geometry, material);
+  line.renderOrder = SKETCH_RENDER_ORDER;
   line.computeLineDistances();
   return line;
 }
@@ -107,7 +116,7 @@ function createCircle(
   }
 
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  return new THREE.Line(geometry, material);
+  return setSketchRenderOrder(new THREE.Line(geometry, material));
 }
 
 function createRectangle(
@@ -130,7 +139,7 @@ function createRectangle(
     v1.clone(),
   ];
   const geometry = new THREE.BufferGeometry().setFromPoints(corners);
-  return new THREE.Line(geometry, material);
+  return setSketchRenderOrder(new THREE.Line(geometry, material));
 }
 
 function createArc(
@@ -157,7 +166,7 @@ function createArc(
   }
 
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  return new THREE.Line(geometry, material);
+  return setSketchRenderOrder(new THREE.Line(geometry, material));
 }
 
 function createEllipse(
@@ -189,7 +198,7 @@ function createEllipse(
   }
 
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  return new THREE.Line(geometry, material);
+  return setSketchRenderOrder(new THREE.Line(geometry, material));
 }
 
 function createEllipticalArc(
@@ -219,7 +228,7 @@ function createEllipticalArc(
   }
 
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  return new THREE.Line(geometry, material);
+  return setSketchRenderOrder(new THREE.Line(geometry, material));
 }
 
 export { BODY_MATERIAL, SURFACE_MATERIAL };

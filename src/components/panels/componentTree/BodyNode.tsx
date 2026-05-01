@@ -5,7 +5,7 @@ import { BodyContextMenu } from './BodyContextMenu';
 import type { BodyCtxMenu } from './BodyContextMenu';
 import { MaterialPicker } from './MaterialPicker';
 
-export function BodyNode({ bodyId }: { bodyId: string }) {
+export function BodyNode({ bodyId, inheritedVisible = true }: { bodyId: string; inheritedVisible?: boolean }) {
   const body = useComponentStore((s) => s.bodies[bodyId]);
   const toggleVisibility = useComponentStore((s) => s.toggleBodyVisibility);
   const selectedBodyId = useComponentStore((s) => s.selectedBodyId);
@@ -14,11 +14,12 @@ export function BodyNode({ bodyId }: { bodyId: string }) {
   const [ctxMenu, setCtxMenu] = useState<BodyCtxMenu | null>(null);
 
   if (!body) return null;
+  const effectiveVisible = inheritedVisible && body.visible !== false;
 
   return (
     <div className="tree-leaf">
       <div
-        className={`tree-item body-item ${selectedBodyId === bodyId ? 'selected' : ''}`}
+        className={`browser-row browser-row-child body-item ${selectedBodyId === bodyId ? 'selected' : ''}`}
         onClick={() => setSelectedBodyId(selectedBodyId === bodyId ? null : bodyId)}
         onContextMenu={(e) => {
           e.preventDefault();
@@ -27,8 +28,21 @@ export function BodyNode({ bodyId }: { bodyId: string }) {
           setCtxMenu({ bodyId, x: e.clientX, y: e.clientY });
         }}
       >
-        <Box size={12} className="tree-icon body-icon" />
-        <span className="tree-name">{body.name}</span>
+        <button
+          className="browser-vis-btn"
+          title={!inheritedVisible ? 'Hidden by Component' : body.visible ? 'Hide Body' : 'Show Body'}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (inheritedVisible) toggleVisibility(bodyId);
+          }}
+        >
+          {effectiveVisible ? <Eye size={11} /> : <EyeOff size={11} />}
+        </button>
+        <span className="browser-chevron" />
+        <span className="browser-item-icon body-icon" style={{ opacity: effectiveVisible ? 1 : 0.5 }}>
+          <Box size={12} />
+        </span>
+        <span className="browser-item-label" style={{ opacity: effectiveVisible ? 1 : 0.5 }}>{body.name}</span>
         {/* background is dynamic (per-body material color) — must stay inline */}
         <div
           className="body-color-dot"
@@ -36,12 +50,6 @@ export function BodyNode({ bodyId }: { bodyId: string }) {
           title={body.material.name}
           onClick={(e) => { e.stopPropagation(); setShowMaterial(!showMaterial); }}
         />
-        <button
-          className="tree-action"
-          onClick={(e) => { e.stopPropagation(); toggleVisibility(bodyId); }}
-        >
-          {body.visible ? <Eye size={11} /> : <EyeOff size={11} />}
-        </button>
       </div>
       {showMaterial && (
         <MaterialPicker bodyId={bodyId} onClose={() => setShowMaterial(false)} />

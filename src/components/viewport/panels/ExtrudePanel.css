@@ -4,3 +4,37 @@
 
 .tp-header-icon.extrude { background: #3b82f6; }
 .tp-header-icon.cut     { background: #ef4444; }
+
+.tp-profile-list {
+  max-height: 128px;
+  overflow-y: auto;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 4px;
+  background: var(--panel-bg, #fff);
+  padding: 3px;
+}
+
+.tp-profile-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tp-profile-row.selected {
+  background: rgba(59, 130, 246, 0.14);
+}
+
+.tp-profile-row input {
+  margin: 0;
+}
+
+.tp-profile-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

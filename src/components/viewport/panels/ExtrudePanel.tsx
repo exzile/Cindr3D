@@ -83,11 +83,24 @@ export default function ExtrudePanel() {
   const occurrences = useComponentStore((s) => s.occurrences);
   const occurrenceList = Object.values(occurrences);
 
+  const timelineSketchNames = useMemo(() => new Map(
+    features
+      .filter((feature) => feature.type === 'sketch' && feature.sketchId)
+      .map((feature) => [feature.sketchId as string, feature.name]),
+  ), [features]);
+
   const usedSketchIds = new Set(
-    features.filter((f) => f.type === 'extrude' && f.id !== editingFeatureId).map((f) => f.sketchId),
+    features
+      .filter((f) => f.type === 'extrude' && f.id !== editingFeatureId)
+      .map((f) => f.sketchId?.split('::')[0])
+      .filter((id): id is string => !!id),
   );
   const extrudable = sketches.filter(
-    (sketch) => sketch.entities.length > 0 && !usedSketchIds.has(sketch.id) && !sketch.name.startsWith('Press Pull Profile'),
+    (sketch) =>
+      sketch.entities.length > 0 &&
+      timelineSketchNames.has(sketch.id) &&
+      !usedSketchIds.has(sketch.id) &&
+      !sketch.name.startsWith('Press Pull Profile'),
   );
   const profileOptions = useMemo(() => {
     const activeSketchIds = new Set(selectedIds.map((id) => id.split('::')[0]));
@@ -99,7 +112,7 @@ export default function ExtrudePanel() {
       const count = GeometryEngine.sketchToShapes(sketch).length;
       return Array.from({ length: count }, (_, index) => ({
         id: `${sketch.id}::${index}`,
-        label: `${sketch.name} • Profile ${index + 1}`,
+        label: `${timelineSketchNames.get(sketch.id) ?? sketch.name} • Profile ${index + 1}`,
         sketchId: sketch.id,
       })).filter(({ sketchId, id }) => {
         const source = allRelevant.find((item) => item.id === sketchId);
@@ -113,11 +126,13 @@ export default function ExtrudePanel() {
       if (id.includes('::')) continue;
       if (options.some((option) => option.id === id)) continue;
       const sketch = sketches.find((item) => item.id === id);
-      if (sketch) options.push({ id, label: sketch.name, sketchId: id });
+      if (sketch && timelineSketchNames.has(sketch.id)) {
+        options.push({ id, label: timelineSketchNames.get(sketch.id) ?? sketch.name, sketchId: id });
+      }
     }
 
     return options;
-  }, [extrudable, selectedIds, sketches]);
+  }, [extrudable, selectedIds, sketches, timelineSketchNames]);
 
   const selectedSketches = selectedIds
     .map((id) => sketches.find((sketch) => sketch.id === id.split('::')[0]))

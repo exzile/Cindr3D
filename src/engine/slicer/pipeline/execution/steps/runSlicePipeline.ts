@@ -3,7 +3,8 @@ import type { SliceResult } from '../../../../../types/slicer';
 import { finalizeGCodeStats, appendEndGCode } from '../../../gcode/footer';
 import { applyPostProcessingScripts } from '../../../gcode/postProcessing';
 import { prepareSliceRun, type ModifierMeshInput } from './prepareSliceRun';
-import { emitLayerStartState, prepareLayerState } from './prepareLayerState';
+import { emitLayerStartState, prepareLayerGeometryState, prepareLayerState } from './prepareLayerState';
+import { buildLayerMaterialFromContours } from '../layerTopology';
 import { emitGroupedAndContourWalls } from './emitGroupedAndContourWalls';
 import { emitContourInfill } from './emitContourInfill';
 import { finalizeLayer } from './finalizeLayer';
@@ -440,6 +441,51 @@ export async function runSlicePipeline(
 
   const progressStride = layerProgressReportStride(run.totalLayers);
   let previousLayerMs = Infinity;
+
+  // ============================================================
+  // Per-feature top-skin pre-pass.
+  //
+  // Build `run.layerMaterialCache[li] = layer-material multipolygon`
+  // for every layer BEFORE the emit loop runs. The emit loop then
+  // looks up `cache[li + 1]` to flag per-feature top-skin regions
+  // (boss tops, mid-model feature caps) — Cura/OrcaSlicer's
+  // `top_surfaces = current_material − next_material` behaviour.
+  //
+  // We piggy-back on whatever path the pool-or-fallback uses to
+  // get layer geometry; the pool returns pre-resolved promises so
+  // calling `getLayer(li)` in the pre-pass is essentially free —
+  // results are reused by the emit loop below.
+  // ============================================================
+  timingStartMs = nowMs();
+  const cacheBuildErrors: number[] = [];
+  for (let li = 0; li < run.totalLayers; li++) {
+    if (slicer.cancelled) throw new Error('Slicing cancelled by user.');
+    let geometryState: SliceLayerGeometryState | null = null;
+    try {
+      geometryState = layerPrepPool
+        ? await layerPrepPool.getLayer(li)
+        : await prepareLayerGeometryState(pipeline, run, li, { reportProgress: false, yieldToUI: false });
+    } catch (err) {
+      cacheBuildErrors.push(li);
+      if (slicer.cancelled) throw err;
+      // Non-fatal: leave cache[li] as undefined; topology will fall
+      // back to the no-next-layer behaviour for this slot.
+      continue;
+    }
+    if (!geometryState) continue;
+    try {
+      run.layerMaterialCache[li] = buildLayerMaterialFromContours(
+        geometryState.contours,
+        (point, contour) => slicer.pointInContour(point, contour),
+      );
+    } catch {
+      cacheBuildErrors.push(li);
+    }
+  }
+  addTiming('top-skin-prepass', nowMs() - timingStartMs);
+  if (cacheBuildErrors.length > 0) {
+    console.warn(`top-skin pre-pass: ${cacheBuildErrors.length} layer(s) skipped`);
+  }
 
   for (let li = 0; li < run.totalLayers; li++) {
     // Per-layer cancellation responsiveness:

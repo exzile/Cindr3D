@@ -237,9 +237,39 @@ export function buildLayerInstances(opts: BuildLayerInstancesOptions): LayerInst
   const moveRefs: ShaftMoveData[] = new Array(extrusionCount);
 
   // Variable extrusion across a single move: gcode segments don't ramp width
-  // mid-segment (E is per-segment), so radiusStart === radiusEnd here. We
-  // still set both so a future "smooth between adjacent segments" pass can
-  // taper across joints by averaging neighbours.
+  // mid-segment (E is per-segment), so we initialise rStart === rEnd here.
+  // After the main pass we walk consecutive instances and, where a move's
+  // `from` matches the previous move's `to` AND both are wall-ish types,
+  // overwrite the shared end-radii with their average. The shader takes
+  // those per-instance start/end radii and lerps along the capsule axis
+  // (`mix(iRadius.x, iRadius.y, aSide)`), so averaging at junctions turns
+  // each capsule into a tapered cone whose ends meet the neighbouring
+  // capsule at the same diameter — kills the "sausage links" you otherwise
+  // see when Arachne hands us variable line widths around a wall ring.
+  // Tight epsilon: prev's `to` matches curr's `from` to float precision —
+  // i.e. they're the same point in the wallLoop array.
+  const JOIN_EPSILON = 5e-4;
+  // Smoothing happens within type families only — walls smooth with walls,
+  // skin smooths with skin. The original wall family covered wall-outer /
+  // wall-inner / gap-fill (one continuous bead from Arachne). The skin
+  // family covers 'top-bottom': concentric-pattern skin emits a chain of
+  // polygon edges that share endpoints, and without junction smoothing each
+  // capsule's rounded cap renders as a visible bump at every shared vertex
+  // — the "blue dot" artifact users see on cone-top thin rings. Crucially
+  // we don't cross the wall↔skin boundary: the wall ends at its full
+  // diameter and the skin starts at its narrower diameter. JOIN_EPSILON
+  // also gates this, so line-pattern scanlines (whose endpoints don't
+  // match exactly) aren't smoothed.
+  const WALL_FAMILY = new Set(['wall-outer', 'wall-inner', 'gap-fill']);
+  const SKIN_FAMILY = new Set(['top-bottom']);
+  const isSameFamily = (a: string, b: string): boolean => {
+    return (WALL_FAMILY.has(a) && WALL_FAMILY.has(b))
+      || (SKIN_FAMILY.has(a) && SKIN_FAMILY.has(b));
+  };
+  let prevExt = -1;
+  let prevTo: { x: number; y: number } | null = null;
+  let prevType = '';
+  let prevRadius = 0;
   let ext = 0, trv = 0, ret = 0;
   let minX = Infinity, minY = Infinity, minZ = Infinity;
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
@@ -295,6 +325,28 @@ export function buildLayerInstances(opts: BuildLayerInstancesOptions): LayerInst
     const rOff = ext * 2;
     iRadius[rOff    ] = radius;
     iRadius[rOff + 1] = radius;
+
+    // Same-vertex junction smoothing only — average radii where prev's `to`
+    // exactly matches this `from` (consecutive vertices in one wall loop).
+    // Spatial gap-bridging across separate Arachne paths happens in the
+    // post-pass below, since those paths can be far apart in emission order
+    // (e.g. a gap-fill bead emitted after several inner walls but spatially
+    // adjacent to a break in the main outer wall).
+    if (
+      prevExt >= 0
+      && prevTo !== null
+      && isSameFamily(m.type, prevType)
+      && Math.abs(prevTo.x - m.from.x) < JOIN_EPSILON
+      && Math.abs(prevTo.y - m.from.y) < JOIN_EPSILON
+    ) {
+      const avg = (prevRadius + radius) * 0.5;
+      iRadius[prevExt * 2 + 1] = avg;
+      iRadius[rOff]            = avg;
+    }
+    prevExt = ext;
+    prevTo = m.to;
+    prevType = m.type;
+    prevRadius = radius;
 
     const [r, g, b] = colorForMove(m, colorContext);
     const cOff = ext * 3;

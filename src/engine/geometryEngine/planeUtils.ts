@@ -3,7 +3,7 @@ import type { Sketch, SketchPlane } from '../../types/cad';
 
 export function getPlaneAxes(plane: SketchPlane): { t1: THREE.Vector3; t2: THREE.Vector3 } {
   switch (plane) {
-    case 'XY': return { t1: new THREE.Vector3(1, 0, 0), t2: new THREE.Vector3(0, 0, 1) };
+    case 'XY': return { t1: new THREE.Vector3(1, 0, 0), t2: new THREE.Vector3(0, 0, -1) };
     case 'YZ': return { t1: new THREE.Vector3(0, 1, 0), t2: new THREE.Vector3(0, 0, 1) };
     case 'XZ':
     default: return { t1: new THREE.Vector3(1, 0, 0), t2: new THREE.Vector3(0, 1, 0) };
@@ -30,8 +30,9 @@ export function getSketchAxes(sketch: Sketch): { t1: THREE.Vector3; t2: THREE.Ve
 
 export function getPlaneRotation(plane: 'XY' | 'XZ' | 'YZ'): [number, number, number] {
   switch (plane) {
-    case 'XZ': return [-Math.PI / 2, 0, 0];
+    case 'XY': return [-Math.PI / 2, 0, 0];
     case 'YZ': return [0, Math.PI / 2, 0];
+    case 'XZ':
     default: return [0, 0, 0];
   }
 }

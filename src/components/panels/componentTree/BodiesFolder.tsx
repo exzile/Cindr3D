@@ -7,12 +7,12 @@ import { BodyNode } from './BodyNode';
  * Collapsible "Bodies" folder in the component tree — mirrors SketchesFolder.
  * Renders all bodies from all components in a single folder at the tree root.
  */
-export function BodiesFolder() {
+export function BodiesFolder({ componentId }: { componentId?: string }) {
   const bodies = useComponentStore((s) => s.bodies);
   const toggleVis = useComponentStore((s) => s.toggleBodyVisibility);
   const [expanded, setExpanded] = useState(true);
 
-  const bodyIds = Object.keys(bodies);
+  const bodyIds = Object.keys(bodies).filter((id) => !componentId || bodies[id]?.componentId === componentId);
   if (bodyIds.length === 0) return null;
 
   const allVisible = bodyIds.every((id) => bodies[id]?.visible !== false);

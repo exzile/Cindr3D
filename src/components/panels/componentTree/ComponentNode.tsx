@@ -7,6 +7,8 @@ import { useComponentStore } from '../../../store/componentStore';
 import { useCADStore } from '../../../store/cadStore';
 import { ConstructionNode } from './ConstructionNode';
 import { JointNode } from './JointNode';
+import { BodiesFolder } from './BodiesFolder';
+import { SketchesFolder } from './SketchesFolder';
 
 // ── CORR-15: Full origin entities folder ─────────────────────────────────────
 // Shows origin point, X/Y/Z axes, and XY/XZ/YZ planes — matching Fusion SDK
@@ -76,6 +78,7 @@ export function ComponentNode({ componentId, depth = 0 }: { componentId: string;
   const toggleExpanded = useComponentStore((s) => s.toggleExpanded);
   const toggleVisibility = useComponentStore((s) => s.toggleComponentVisibility);
   const activeComponentId = useComponentStore((s) => s.activeComponentId);
+  const rootComponentId = useComponentStore((s) => s.rootComponentId);
   const setActiveComponentId = useComponentStore((s) => s.setActiveComponentId);
   const addComponent = useComponentStore((s) => s.addComponent);
   const removeComponent = useComponentStore((s) => s.removeComponent);
@@ -125,6 +128,19 @@ export function ComponentNode({ componentId, depth = 0 }: { componentId: string;
         }}
       >
         <button
+          className="browser-vis-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (component.visible && isActive) setActiveComponentId(rootComponentId);
+            toggleVisibility(componentId);
+          }}
+          title={component.visible ? `Hide ${component.name}` : `Show ${component.name}`}
+          aria-label={component.visible ? `Hide ${component.name}` : `Show ${component.name}`}
+        >
+          {component.visible ? <Eye size={11} /> : <EyeOff size={11} />}
+        </button>
+
+        <button
           className="tree-expand"
           onClick={(e) => { e.stopPropagation(); toggleExpanded(componentId); }}
         >
@@ -151,12 +167,6 @@ export function ComponentNode({ componentId, depth = 0 }: { componentId: string;
         {component.grounded && <Anchor size={10} className="grounded-icon" />}
 
         <div className="tree-item-actions">
-          <button
-            className="tree-action"
-            onClick={(e) => { e.stopPropagation(); toggleVisibility(componentId); }}
-          >
-            {component.visible ? <Eye size={11} /> : <EyeOff size={11} />}
-          </button>
           <button
             className="tree-action"
             onClick={(e) => { e.stopPropagation(); setShowContextMenu(!showContextMenu); }}
@@ -225,7 +235,8 @@ export function ComponentNode({ componentId, depth = 0 }: { componentId: string;
             <ConstructionNode key={id} id={id} />
           ))}
 
-          {/* Bodies are rendered in the BodiesFolder at tree root */}
+          <BodiesFolder componentId={componentId} />
+          <SketchesFolder componentId={componentId} />
 
           {/* Joints */}
           {component.jointIds.map((id) => (

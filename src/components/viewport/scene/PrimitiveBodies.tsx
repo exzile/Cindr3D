@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
 import { BODY_MATERIAL, DIM_MATERIAL } from './bodyMaterial';
+import { isComponentVisible } from './componentVisibility';
 
 /** Primitive solid bodies — Box / Cylinder / Sphere / Torus */
 export default function PrimitiveBodies() {
@@ -10,6 +11,7 @@ export default function PrimitiveBodies() {
   const rollbackIndex = useCADStore((s) => s.rollbackIndex);
   const activeComponentId = useComponentStore((s) => s.activeComponentId);
   const rootComponentId = useComponentStore((s) => s.rootComponentId);
+  const components = useComponentStore((s) => s.components);
 
   const editingInPlace = !!activeComponentId && activeComponentId !== rootComponentId;
 
@@ -19,6 +21,7 @@ export default function PrimitiveBodies() {
       if (f.type !== 'primitive') continue;
       // D187 suppress + D190 rollback + visibility
       if (!f.visible || f.suppressed) continue;
+      if (!isComponentVisible(components, f.componentId)) continue;
       if (rollbackIndex >= 0) {
         const idx = features.indexOf(f);
         if (idx > rollbackIndex) continue;
@@ -51,7 +54,7 @@ export default function PrimitiveBodies() {
       if (geom) out.push({ id: f.id, geom, componentId: f.componentId });
     }
     return out;
-  }, [features, rollbackIndex]);
+  }, [features, rollbackIndex, components]);
 
   useEffect(() => {
     return () => { for (const b of bodies) b.geom.dispose(); };

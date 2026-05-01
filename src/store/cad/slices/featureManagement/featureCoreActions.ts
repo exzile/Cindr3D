@@ -117,7 +117,23 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
     // Capture the mesh reference before removal so we can dispose AFTER
     // the feature is out of state (prevents renderer accessing disposed GPU resources).
     const target = get().features.find((f) => f.id === id);
-    set((state) => ({ features: state.features.filter((f) => f.id !== id) }));
+    const removedSketchId = target?.type === 'sketch' ? target.sketchId : null;
+    set((state) => ({
+      features: state.features.filter((f) => f.id !== id),
+      ...(removedSketchId
+        ? {
+            sketches: state.sketches.filter((sketch) => sketch.id !== removedSketchId),
+            activeSketch: state.activeSketch?.id === removedSketchId ? null : state.activeSketch,
+            extrudeSelectedSketchId:
+              state.extrudeSelectedSketchId?.split('::')[0] === removedSketchId ? null : state.extrudeSelectedSketchId,
+            extrudeSelectedSketchIds: state.extrudeSelectedSketchIds.filter(
+              (selectionId) => selectionId.split('::')[0] !== removedSketchId,
+            ),
+            revolveSelectedSketchId:
+              state.revolveSelectedSketchId?.split('::')[0] === removedSketchId ? null : state.revolveSelectedSketchId,
+          }
+        : {}),
+    }));
     // Now safe to dispose â€” feature is no longer in state.
     //
     // CRITICAL: skip materials tagged `userData.shared = true` â€” those are

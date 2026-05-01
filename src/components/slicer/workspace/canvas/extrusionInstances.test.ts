@@ -254,6 +254,70 @@ describe('buildLayerInstances', () => {
     expect(data.boundsRadius).toBe(0);
   });
 
+  it('averages radii at wall-to-wall junctions so capsules taper across joints', () => {
+    // Two consecutive wall segments meeting at (5,0). Their widths differ
+    // (0.5 mm and 0.3 mm) — the shared end should land halfway, killing the
+    // visible step that would otherwise show as a sausage-link bulge.
+    const l = layer([
+      move({ type: 'wall-inner', lineWidth: 0.5, from: { x: 0, y: 0 }, to: { x: 5, y: 0 } }),
+      move({ type: 'wall-inner', lineWidth: 0.3, from: { x: 5, y: 0 }, to: { x: 5, y: 5 } }),
+    ]);
+    const ctx = buildColorContext(l, 'type', undefined);
+    const data = buildLayerInstances({
+      layer: l, layerHeight: 0.2, filamentDiameter: 1.75,
+      isCurrentLayer: false, currentLayerMoveCount: undefined,
+      showTravel: false, hiddenTypes: HIDDEN, colorContext: ctx,
+    });
+    // Capsule 0: rStart = 0.25 (own), rEnd = average = 0.20.
+    expect(data.iRadius[0]).toBeCloseTo(0.25, 5);
+    expect(data.iRadius[1]).toBeCloseTo(0.20, 5);
+    // Capsule 1: rStart = average = 0.20, rEnd = 0.15 (own).
+    expect(data.iRadius[2]).toBeCloseTo(0.20, 5);
+    expect(data.iRadius[3]).toBeCloseTo(0.15, 5);
+  });
+
+  it('does not bridge radii across a position discontinuity', () => {
+    // Two wall segments that don't share an endpoint — the second starts far
+    // from where the first ended. Each capsule must keep its own diameter at
+    // both ends so there's no phantom taper across a real path break.
+    const l = layer([
+      move({ type: 'wall-inner', lineWidth: 0.5, from: { x: 0, y: 0 }, to: { x: 5, y: 0 } }),
+      move({ type: 'wall-inner', lineWidth: 0.3, from: { x: 50, y: 50 }, to: { x: 55, y: 50 } }),
+    ]);
+    const ctx = buildColorContext(l, 'type', undefined);
+    const data = buildLayerInstances({
+      layer: l, layerHeight: 0.2, filamentDiameter: 1.75,
+      isCurrentLayer: false, currentLayerMoveCount: undefined,
+      showTravel: false, hiddenTypes: HIDDEN, colorContext: ctx,
+    });
+    expect(data.iRadius[0]).toBeCloseTo(0.25, 5);
+    expect(data.iRadius[1]).toBeCloseTo(0.25, 5);
+    expect(data.iRadius[2]).toBeCloseTo(0.15, 5);
+    expect(data.iRadius[3]).toBeCloseTo(0.15, 5);
+  });
+
+
+  it('does not smooth across feature-type boundaries (e.g. wall → top-bottom)', () => {
+    // wall-inner meeting top-bottom at the same point — these are independent
+    // beads, not one continuous extrusion, so each keeps its own diameter.
+    // Use top-bottom (which also uses nominal line width) so the test asserts
+    // the smoothing-gate without depending on volumetric-width arithmetic.
+    const l = layer([
+      move({ type: 'wall-inner', lineWidth: 0.5, from: { x: 0, y: 0 }, to: { x: 5, y: 0 } }),
+      move({ type: 'top-bottom', lineWidth: 0.4, from: { x: 5, y: 0 }, to: { x: 5, y: 5 } }),
+    ]);
+    const ctx = buildColorContext(l, 'type', undefined);
+    const data = buildLayerInstances({
+      layer: l, layerHeight: 0.2, filamentDiameter: 1.75,
+      isCurrentLayer: false, currentLayerMoveCount: undefined,
+      showTravel: false, hiddenTypes: HIDDEN, colorContext: ctx,
+    });
+    // Wall capsule keeps its 0.25 mm radius at both ends — not pulled toward
+    // the skin's narrower 0.20 mm because the type boundary blocks smoothing.
+    expect(data.iRadius[0]).toBeCloseTo(0.25, 5);
+    expect(data.iRadius[1]).toBeCloseTo(0.25, 5);
+  });
+
   it('captures retractions (travel moves with extrusion < 0)', () => {
     const l = layer([
       move({ type: 'travel', from: { x: 5, y: 5 }, to: { x: 5, y: 5 }, extrusion: -0.5 }),

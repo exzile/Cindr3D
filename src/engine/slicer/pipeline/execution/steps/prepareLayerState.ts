@@ -419,6 +419,17 @@ export function emitLayerStartState(
     currentX: emitter.currentX,
     currentY: emitter.currentY,
     previousLayerMaterial: run.prevLayerMaterial,
+    // Lookup the next layer's material from the cache populated by the
+    // pre-pass in `runSlicePipeline.ts`. Empty for the topmost layer or
+    // when the cache isn't populated (worker contexts, fallback paths).
+    nextLayerMaterial: run.layerMaterialCache[geometryState.li + 1],
+    // Filter out tessellation-noise slivers from `topSkinRegion`. Curved
+    // walls (cones, spheres) produce thin shaving-like differences along
+    // the wall in `current − next` even when no real feature-top exists
+    // there; without this filter those slivers become spurious solid-skin
+    // bumps on the wall. Threshold = 1.5 × nominal infill line width
+    // (matches the same metric used elsewhere in the skin pipeline).
+    topSkinSliverThickness: pp.infillLineWidth * 1.5,
     isFirstLayer,
     pointInContour: (point: THREE.Vector2, contour: THREE.Vector2[]) => slicer.pointInContour(point, contour),
     pointInRing: (x: number, y: number, ring: PCRing) => slicer.pointInRing(x, y, ring),

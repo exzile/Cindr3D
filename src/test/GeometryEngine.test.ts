@@ -3,14 +3,18 @@ import * as THREE from 'three';
 import { GeometryEngine } from '../engine/GeometryEngine';
 
 describe('GeometryEngine.getPlaneAxes', () => {
-  it('returns orthogonal X and Z vectors for XY plane', () => {
+  it('returns a right-handed horizontal basis for XY plane', () => {
     const { t1, t2 } = GeometryEngine.getPlaneAxes('XY');
     expect(t1.x).toBe(1);
     expect(t1.y).toBe(0);
     expect(t1.z).toBe(0);
     expect(t2.x).toBe(0);
     expect(t2.y).toBe(0);
-    expect(t2.z).toBe(1);
+    expect(t2.z).toBe(-1);
+    const normal = new THREE.Vector3().crossVectors(t1, t2);
+    expect(normal.x).toBeCloseTo(0, 10);
+    expect(normal.y).toBeCloseTo(1, 10);
+    expect(normal.z).toBeCloseTo(0, 10);
   });
 
   it('returns orthogonal vectors for YZ plane', () => {
@@ -71,16 +75,16 @@ describe('GeometryEngine.computePlaneAxesFromNormal', () => {
 });
 
 describe('GeometryEngine.getPlaneRotation', () => {
-  it('returns no rotation for XY plane', () => {
+  it('returns -90 degrees around X for XY plane', () => {
     const rot = GeometryEngine.getPlaneRotation('XY');
-    expect(rot).toEqual([0, 0, 0]);
-  });
-
-  it('returns -90 degrees around X for XZ plane', () => {
-    const rot = GeometryEngine.getPlaneRotation('XZ');
     expect(rot[0]).toBeCloseTo(-Math.PI / 2, 10);
     expect(rot[1]).toBe(0);
     expect(rot[2]).toBe(0);
+  });
+
+  it('returns no rotation for XZ plane', () => {
+    const rot = GeometryEngine.getPlaneRotation('XZ');
+    expect(rot).toEqual([0, 0, 0]);
   });
 
   it('returns 90 degrees around Y for YZ plane', () => {

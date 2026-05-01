@@ -8,18 +8,23 @@ export function tagShared<T extends THREE.Material | THREE.BufferGeometry>(obj: 
   return obj;
 }
 
-export const SKETCH_MATERIAL = tagShared(new THREE.LineBasicMaterial({ color: 0x00aaff, linewidth: 2 }));
+export const SKETCH_MATERIAL = tagShared(new THREE.LineBasicMaterial({
+  color: 0x00aaff,
+  linewidth: 2,
+  depthTest: false,
+  depthWrite: false,
+}));
 
 export const CONSTRUCTION_MATERIAL = tagShared(new THREE.LineDashedMaterial({
-  color: 0xff8800, linewidth: 1, dashSize: 0.3, gapSize: 0.18,
+  color: 0xff8800, linewidth: 1, dashSize: 0.3, gapSize: 0.18, depthTest: false, depthWrite: false,
 }));
 
 export const CENTERLINE_MATERIAL = tagShared(new THREE.LineDashedMaterial({
-  color: 0x00aa55, linewidth: 1, dashSize: 0.7, gapSize: 0.2,
+  color: 0x00aa55, linewidth: 1, dashSize: 0.7, gapSize: 0.2, depthTest: false, depthWrite: false,
 }));
 
 export const ISOPARAMETRIC_MATERIAL = tagShared(new THREE.LineDashedMaterial({
-  color: 0xcc44ff, linewidth: 1, dashSize: 0.5, gapSize: 0.25,
+  color: 0xcc44ff, linewidth: 1, dashSize: 0.5, gapSize: 0.25, depthTest: false, depthWrite: false,
 }));
 
 export const EXTRUDE_MATERIAL = tagShared(new THREE.MeshPhysicalMaterial({
