@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ChevronRight, ChevronDown, Eye, EyeOff, Box, Layers,
   Plus, Trash2, Copy, Anchor, MoreHorizontal, Circle, Minus, Unlink,
@@ -90,6 +90,7 @@ export function ComponentNode({ componentId, depth = 0 }: { componentId: string;
   const toggleHistoryMode = useCADStore((s) => s.toggleHistoryMode);
 
   const [showContextMenu, setShowContextMenu] = useState(false);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState('');
   const renameComponent = useComponentStore((s) => s.renameComponent);
@@ -116,6 +117,23 @@ export function ComponentNode({ componentId, depth = 0 }: { componentId: string;
     setNewName(component.name);
     setRenaming(true);
   };
+
+  useEffect(() => {
+    if (!showContextMenu) return;
+    const closeIfOutside = (event: PointerEvent) => {
+      if (contextMenuRef.current?.contains(event.target as Node)) return;
+      setShowContextMenu(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowContextMenu(false);
+    };
+    document.addEventListener('pointerdown', closeIfOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeIfOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [showContextMenu]);
 
   return (
     /* --depth is a dynamic CSS custom property for indent — must stay inline */
@@ -185,7 +203,7 @@ export function ComponentNode({ componentId, depth = 0 }: { componentId: string;
 
       {/* Context menu */}
       {showContextMenu && (
-        <div className="tree-context-menu" onMouseLeave={() => setShowContextMenu(false)}>
+        <div ref={contextMenuRef} className="tree-context-menu" onMouseLeave={() => setShowContextMenu(false)}>
           <button onClick={() => { addComponent(componentId); setShowContextMenu(false); }}>
             <Plus size={12} /> New Component
           </button>

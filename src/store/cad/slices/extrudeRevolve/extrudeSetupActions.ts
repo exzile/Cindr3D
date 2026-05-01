@@ -180,11 +180,17 @@ export function createExtrudeSetupActions({ set, get }: CADSliceContext): Partia
     if (!feature || feature.type !== 'extrude') return;
     const p = feature.params;
     const sketchId = feature.sketchId ?? null;
+    const profileIndices = Array.isArray(p.profileIndices) ? (p.profileIndices as number[]) : null;
+    const selectedSketchIds = sketchId
+      ? profileIndices?.length
+        ? profileIndices.map((index) => `${sketchId}::${index}`)
+        : [sketchId]
+      : [];
     set({
       activeTool: 'extrude',
       editingFeatureId: featureId,
       extrudeSelectedSketchId: sketchId,
-      extrudeSelectedSketchIds: sketchId ? [sketchId] : [],
+      extrudeSelectedSketchIds: selectedSketchIds,
       extrudeDistance: typeof p.distance === 'number' ? p.distance : 10,
       extrudeDistance2: typeof p.distance2 === 'number' ? p.distance2 : 10,
       extrudeDirection: (p.direction as ExtrudeDirection) ?? 'positive',

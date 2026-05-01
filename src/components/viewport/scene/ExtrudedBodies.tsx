@@ -226,11 +226,16 @@ export default function ExtrudedBodies() {
       const m = body.material;
       // CTX-7: per-body display opacity (independent of material.opacity)
       const displayOpacity = body.opacity ?? 1;
-      // Skip override when body uses default aluminum + no display opacity override.
+      // Skip override when body uses a built-in default + no display opacity override.
       // Color compared case-insensitively so picker output (#b0b8c0) matches the
       // canonical default (#B0B8C0) — otherwise we'd needlessly clone a fresh
       // MeshStandardMaterial for every default-aluminum body just on a case mismatch.
-      if (m.id === 'aluminum' && m.color.toLowerCase() === '#b0b8c0' && m.opacity === 1 && displayOpacity === 1) return fallback;
+      const materialColor = m.color.toLowerCase();
+      const isBuiltInDefault =
+        (m.id === 'aluminum' && materialColor === '#b0b8c0') ||
+        (m.id === 'default-blue' && materialColor === '#4f8fd8') ||
+        (m.id === 'warm-plastic' && materialColor === '#f2a23a');
+      if (isBuiltInDefault && m.opacity === 1 && displayOpacity === 1) return fallback;
       const finalOpacity = m.opacity * displayOpacity;
       const key = `${m.color}|${m.metalness}|${m.roughness}|${m.opacity}|${displayOpacity}`;
       const cached = materialCache.current.get(bodyId);
@@ -265,15 +270,44 @@ export default function ExtrudedBodies() {
     const distance2 = (feature.params.distance2 as number) || distance;
     const direction = ((feature.params.direction as 'positive' | 'negative' | 'symmetric' | 'two-sides') ?? 'positive');
     const profileIndex = feature.params.profileIndex as number | undefined;
+    const profileIndices = feature.params.profileIndices as number[] | undefined;
     const taperAngle = (feature.params.taperAngle as number) ?? 0;
     const startOffset = (feature.params.startType as string) === 'offset'
       ? ((feature.params.startOffset as number) ?? 0)
       : 0;
+    const taperAngle2 = (feature.params.taperAngle2 as number) ?? taperAngle;
+    if (profileIndices && profileIndices.length > 1) {
+      let merged: THREE.BufferGeometry | null = null;
+      for (const index of profileIndices) {
+        const profileSketch = GeometryEngine.createProfileSketch(sketch, index);
+        if (!profileSketch) continue;
+        const mesh = GeometryEngine.buildExtrudeFeatureMesh(
+          profileSketch,
+          distance,
+          direction,
+          taperAngle,
+          startOffset,
+          distance2,
+          taperAngle2,
+        );
+        if (!mesh) continue;
+        const geom = GeometryEngine.bakeMeshWorldGeometry(mesh);
+        mesh.geometry.dispose();
+        if (!merged) {
+          merged = geom;
+        } else {
+          const next = GeometryEngine.csgUnion(merged, geom);
+          merged.dispose();
+          geom.dispose();
+          merged = next;
+        }
+      }
+      return merged ? new THREE.Mesh(merged) : null;
+    }
     const sketchForOp = profileIndex !== undefined
       ? GeometryEngine.createProfileSketch(sketch, profileIndex)
       : sketch;
     if (!sketchForOp) return null;
-    const taperAngle2 = (feature.params.taperAngle2 as number) ?? taperAngle;
     return GeometryEngine.buildExtrudeFeatureMesh(sketchForOp, distance, direction, taperAngle, startOffset, distance2, taperAngle2);
   };
 
