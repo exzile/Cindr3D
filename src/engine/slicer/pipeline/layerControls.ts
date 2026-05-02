@@ -18,7 +18,12 @@ export function applyLayerStartControls({
 
   if (totalLayers > 0) {
     const pctDone = Math.round((li / totalLayers) * 100);
-    gcode.push(`M73 P${pctDone} ; Progress`);
+    // R = remaining minutes. Marlin / Klipper firmware show this on the
+    // printer LCD as ETA. We don't know the total print time at emit
+    // time, so we emit a per-layer placeholder and patch it in
+    // `finalizeGCodeStats` once `totalTime` is known. Token format
+    // matches the regex used by the patcher.
+    gcode.push(`M73 P${pctDone} R{M73_REMAINING_MIN_PLACEHOLDER_${li}} ; Progress`);
   }
 
   if ((pp.smallLayerPrintingTemperature ?? 0) > 0 && li > mat.fanDisableFirstLayers) {

@@ -29,7 +29,14 @@ export function appendEndGCode(
     slicerTurnsFanOff: !endTemplateHasPrintMacro,
     slicerSetsFinalNozzleTemp: !endTemplateHasPrintMacro && material.finalPrintingTemperature !== undefined,
   });
-  if (endGCode) gcode.push(endGCode);
+  if (endGCode) {
+    // OrcaSlicer ;TYPE:Custom marker on the user's custom end-gcode
+    // block, paralleling the startup-side wrap. Lets external preview
+    // tools skip / classify cooldown + park moves separately from
+    // print body extrusions.
+    gcode.push(';TYPE:Custom');
+    gcode.push(endGCode);
+  }
 }
 
 export function finalizeGCodeStats(
@@ -38,6 +45,8 @@ export function finalizeGCodeStats(
   totalExtruded: number,
   printer: PrinterProfile,
   material: MaterialProfile,
+  layerTimes?: number[],
+  modelHeight?: number,
 ): FinalizedGCodeStats {
   const filamentCrossSection = Math.PI * (printer.filamentDiameter / 2) ** 2;
   const filamentVolumeMm3 = totalExtruded * filamentCrossSection;
@@ -45,7 +54,8 @@ export function finalizeGCodeStats(
   const filamentWeight = filamentVolumeCm3 * material.density;
   const filamentCost = (filamentWeight / 1000) * material.costPerKg;
 
-  const estimatedTime = totalTime * (printer.printTimeEstimationFactor ?? 1.0);
+  const timeFactor = printer.printTimeEstimationFactor ?? 1.0;
+  const estimatedTime = totalTime * timeFactor;
   const hours = Math.floor(estimatedTime / 3600);
   const minutes = Math.floor((estimatedTime % 3600) / 60);
   const timeIndex = gcode.findIndex((line) => line.includes('PRINT_TIME_PLACEHOLDER'));
@@ -55,6 +65,46 @@ export function finalizeGCodeStats(
   }
   if (filamentIndex >= 0) {
     gcode[filamentIndex] = `; Filament used: ${totalExtruded.toFixed(1)}mm (${filamentWeight.toFixed(1)}g)`;
+  }
+  // Patch HEADER_BLOCK metadata placeholders. Each fires once at
+  // header emit time and gets resolved here once layer count + model
+  // dimensions are known.
+  if (layerTimes && layerTimes.length > 0) {
+    const totalLayersIndex = gcode.findIndex((line) => line.includes('TOTAL_LAYERS_PLACEHOLDER'));
+    if (totalLayersIndex >= 0) {
+      gcode[totalLayersIndex] = `; total layer number: ${layerTimes.length}`;
+    }
+  }
+  if (modelHeight !== undefined) {
+    const maxZIndex = gcode.findIndex((line) => line.includes('MAX_Z_HEIGHT_PLACEHOLDER'));
+    if (maxZIndex >= 0) {
+      gcode[maxZIndex] = `; max_z_height: ${modelHeight.toFixed(2)}`;
+    }
+  }
+
+  // Patch M73 ETA placeholders. Each layer's M73 has a unique
+  // `R{M73_REMAINING_MIN_PLACEHOLDER_<li>}` token; we resolve it from
+  // the cumulative layer-time table, then rewrite the line. Patcher
+  // is a no-op when `layerTimes` is missing (e.g. legacy callers /
+  // tests that don't track per-layer time).
+  if (layerTimes && layerTimes.length > 0) {
+    const cumulative: number[] = new Array(layerTimes.length);
+    let acc = 0;
+    for (let i = 0; i < layerTimes.length; i++) {
+      acc += layerTimes[i];
+      cumulative[i] = acc;
+    }
+    const totalEstimatedSec = estimatedTime;
+    const placeholderRe = /R\{M73_REMAINING_MIN_PLACEHOLDER_(\d+)\}/;
+    for (let i = 0; i < gcode.length; i++) {
+      const match = gcode[i].match(placeholderRe);
+      if (!match) continue;
+      const li = Number(match[1]);
+      const elapsed = (cumulative[li - 1] ?? 0) * timeFactor;
+      const remainingSec = Math.max(0, totalEstimatedSec - elapsed);
+      const remainingMin = Math.ceil(remainingSec / 60);
+      gcode[i] = gcode[i].replace(placeholderRe, `R${remainingMin}`);
+    }
   }
 
   return {

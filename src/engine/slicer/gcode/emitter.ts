@@ -163,7 +163,14 @@ export class GCodeEmitter {
         const uy = this.lastExtrudeDy / dirLen;
         const wx = this.currentX + ux * this.wipeDist;
         const wy = this.currentY + uy * this.wipeDist;
+        // OrcaSlicer/PrusaSlicer ;WIPE_START / ;WIPE_END markers wrap
+        // the wipe-before-retract block. External preview tools and
+        // post-processors use this to differentiate the wipe travel
+        // from regular travels (e.g. for highlighting in Klipper
+        // preview or skipping in print-time estimators).
+        this.gcode.push(';WIPE_START');
         this.gcode.push(`G0 X${wx.toFixed(3)} Y${wy.toFixed(3)} F${(this.print.travelSpeed * 60).toFixed(0)} ; Wipe`);
+        this.gcode.push(';WIPE_END');
         this.currentX = wx;
         this.currentY = wy;
       }

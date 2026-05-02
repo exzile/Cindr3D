@@ -624,7 +624,7 @@ export function emitContourInfill(
 ): void {
   const slicer = pipeline as SlicerExecutionPipeline;
   const { pp, mat, triangles, offsetX, offsetY, emitter, gcode } = run;
-  const { li, layerH, isFirstLayer, isSolid: layerIsSolid, isSolidBottom, isSolidTop, isTopSurfaceLayer, infillSpeed, topBottomSpeed, hasBridgeRegions, isInBridgeRegion, moves, topSkinRegion } = layer;
+  const { li, layerH, isFirstLayer, isSolid: layerIsSolid, isSolidBottom, isSolidTop, isTopSurfaceLayer, isBottomSurfaceLayer, infillSpeed, topBottomSpeed, hasBridgeRegions, isInBridgeRegion, moves, topSkinRegion } = layer;
 
   // Spiralize / vase mode: keep solid bottom skin (the "base") for the first
   // `bottomLayers` layers so the part has a flat floor, then suppress all
@@ -880,6 +880,14 @@ export function emitContourInfill(
     }
 
     if (isSolid && (pp.extraSkinWallCount ?? 0) > 0) {
+      // ;TYPE: marker for the extra-skin-wall block — same classification
+      // as the pass-level marker we'll emit below for the scanlines.
+      const extraType = isTopSurfaceLayer
+        ? 'Top surface'
+        : isBottomSurfaceLayer
+          ? 'Bottom surface'
+          : 'Internal solid infill';
+      gcode.push(`;TYPE:${extraType}`);
       gcode.push(`; Extra skin walls (${pp.extraSkinWallCount})`);
       for (let ew = 0; ew < (pp.extraSkinWallCount ?? 0); ew++) {
         const baseLoop = (item.outerWallCount > 0 ? item.wallSets[item.outerWallCount - 1] : contour.points);
@@ -902,6 +910,18 @@ export function emitContourInfill(
       emitter.setAccel(isFirstLayer ? pp.accelerationInitialLayer : pp.accelerationInfill, pp.accelerationPrint);
       emitter.setJerk(isFirstLayer ? pp.jerkInitialLayer : pp.jerkInfill, pp.jerkPrint);
     }
+    // OrcaSlicer/Cura ;TYPE: marker — third-party preview tools and
+    // gcode post-processors discriminate move classes by these. Emitted
+    // once per pass; bridge moves below switch to ;TYPE:Internal Bridge
+    // inline when they fire.
+    const passTypeMarker = isSolid
+      ? (isTopSurfaceLayer
+        ? 'Top surface'
+        : isBottomSurfaceLayer
+          ? 'Bottom surface'
+          : 'Internal solid infill')
+      : 'Sparse infill';
+    gcode.push(`;TYPE:${passTypeMarker}`);
     gcode.push(`; ${isSolid ? 'Solid fill' : 'Infill'}`);
     const connect = shouldConnectInfillLinesForEmission(
       isSolid,
@@ -949,6 +969,10 @@ export function emitContourInfill(
       // Alternate every other bridge layer: keep odd layer's lines, skip
       // bridge lines on even layers (they'd repeat the prior direction).
       && (((run.consecutiveBridgeLayers ?? 0) + 1) % 2 === 0);
+    // ;TYPE:Internal Bridge tracker, scoped to this pass. Toggles when
+    // a bridge run starts/ends; emits the marker only on transitions
+    // so consecutive bridge moves don't repeat it.
+    let bridgeMarkerActive = false;
     for (let idx = 0; idx < sorted.length; idx++) {
       const line = sorted[idx];
       const dx = line.to.x - line.from.x, dy = line.to.y - line.from.y, len = Math.sqrt(dx * dx + dy * dy);
@@ -984,6 +1008,14 @@ export function emitContourInfill(
       } else if (needFanRestore) {
         gcode.push(`M106 S${emitter.fanSpeedArg(mat.fanSpeedMin ?? 100)} ; Restore fan after bridge`);
         run.bridgeFanActive = false;
+      }
+      // ;TYPE marker transitions for bridge moves. Switch in on entry,
+      // back to the pass marker on exit. Tracker is local to the pass
+      // so consecutive passes always re-emit their pass marker.
+      const wantBridgeMarker = thisMoveType === 'bridge';
+      if (wantBridgeMarker !== bridgeMarkerActive) {
+        gcode.push(wantBridgeMarker ? ';TYPE:Internal Bridge' : `;TYPE:${passTypeMarker}`);
+        bridgeMarkerActive = wantBridgeMarker;
       }
       const fromDist = Math.hypot(effFrom.x - emitter.currentX, effFrom.y - emitter.currentY);
       // Boundary used for the connector "stays inside material" check.

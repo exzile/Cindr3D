@@ -595,6 +595,8 @@ export async function runSlicePipeline(
     run.emitter.totalExtruded,
     run.printer,
     run.mat,
+    run.sliceLayers.map((l) => l.layerTime),
+    run.modelHeight,
   );
   addTiming('footer', nowMs() - timingStartMs);
   slicer.reportProgress('complete', 100, run.totalLayers, run.totalLayers, 'Slicing complete.');

@@ -217,6 +217,11 @@ export function finalizeLayer(
     layerTime = minLayerTime;
   }
 
+  // Closes the object boundary opened in `prepareLayerState`. Paired
+  // with `; printing object …` so Klipper `[exclude_object]` (and
+  // OrcaSlicer-aware previews) see a balanced wrap per layer.
+  gcode.push('; stop printing object object 0 id:0 copy 0');
+
   run.totalTime += layerTime;
   run.sliceLayers.push({ z: layerZ, layerIndex: li, moves, layerTime });
 }

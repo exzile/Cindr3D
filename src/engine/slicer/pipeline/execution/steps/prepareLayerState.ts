@@ -352,8 +352,36 @@ export function emitLayerStartState(
   emitter.setLayerObstacles(layerHoles);
 
   gcode.push('');
-  gcode.push(`; ----- Layer ${li}, Z=${printZ.toFixed(3)} -----`);
-  gcode.push(`G1 Z${printZ.toFixed(3)} F${(pp.travelSpeed * 60).toFixed(0)}`);
+  // OrcaSlicer/PrusaSlicer-style layer-change marker family. Klipper
+  // preview, OctoPrint plugins, and gcode post-processors parse these
+  // as the canonical layer-boundary signal. Order matches Orca:
+  //   ;LAYER_CHANGE — first line of the new layer's block
+  //   ;Z:<z>        — target Z this layer will print at
+  //   ;BEFORE_LAYER_CHANGE — about to do the Z-up move
+  //   ;<z>          — Z value (as a bare comment, Orca tradition)
+  // The matching `;AFTER_LAYER_CHANGE` is emitted after the Z-up and
+  // layer prep finishes (just below).
+  const printZStr = printZ.toFixed(3);
+  gcode.push(';LAYER_CHANGE');
+  gcode.push(`;Z:${printZStr}`);
+  // ;HEIGHT: — layer thickness in mm. With adaptive layers this varies
+  // per layer; without, it's the constant `pp.layerHeight`. OrcaSlicer
+  // emits this so external preview tools can render the bead with the
+  // correct extrusion volume per layer.
+  gcode.push(`;HEIGHT:${layerH.toFixed(3)}`);
+  gcode.push(';BEFORE_LAYER_CHANGE');
+  gcode.push(`;${printZStr}`);
+  // Reset the absolute extruder accumulator at every layer boundary
+  // (skip on layer 0 since startup already issues `G92 E0` after the
+  // start gcode, and skip in relative mode where it's a no-op). On a
+  // long print this keeps `currentE` from drifting past the precision
+  // of float32 firmware reps — Marlin / Klipper / RRF all do this.
+  if (!isFirstLayer && !run.relativeE) {
+    gcode.push('G92 E0');
+    emitter.currentE = 0;
+  }
+  gcode.push(`; ----- Layer ${li}, Z=${printZStr} -----`);
+  gcode.push(`G1 Z${printZStr} F${(pp.travelSpeed * 60).toFixed(0)}`);
   emitter.currentZ = printZ;
   if ((pp.layerStartX != null || pp.layerStartY != null) && !isFirstLayer) {
     emitter.travelTo(pp.layerStartX ?? emitter.currentX, pp.layerStartY ?? emitter.currentY, moves);
@@ -370,6 +398,17 @@ export function emitLayerStartState(
     print: pp,
     flags: run.layerControlFlags,
   });
+  // Closes the LAYER_CHANGE block opened above. After this point any
+  // gcode emitted is the actual layer body (adhesion, walls, infill...).
+  gcode.push(';AFTER_LAYER_CHANGE');
+  // OrcaSlicer / Klipper `[exclude_object]` object boundary markers.
+  // Klipper's plugin scans for these to allow cancelling individual
+  // objects mid-print. We emit a single `object 0` for the whole plate
+  // since model filename / per-object plumbing isn't wired through the
+  // slicer yet — Klipper still uses the bracketed name to match, so a
+  // stable identifier is enough for the cancellation flow to work.
+  // Matching `; stop printing object` is emitted in finalizeLayer.
+  gcode.push('; printing object object 0 id:0 copy 0');
 
   if (li === 0) {
     emitter.setAccel(pp.accelerationSkirtBrim ?? pp.accelerationInitialLayer, pp.accelerationPrint);
