@@ -74,6 +74,10 @@ function removeDegenerateTriangles(
   return result;
 }
 
+function toNonIndexedGeometry(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
+  return geometry.index ? geometry.toNonIndexed() : geometry.clone();
+}
+
 export function buildExtrudeGeomHolesAware(
   shapes: THREE.Shape[],
   extrudeSettings: THREE.ExtrudeGeometryOptions,
@@ -89,7 +93,7 @@ export function buildExtrudeGeomHolesAware(
     };
     if (shape.holes.length === 0) {
       const geometry = new THREE.ExtrudeGeometry(shape, shapeSettings);
-      const nonIndexed = geometry.toNonIndexed();
+      const nonIndexed = toNonIndexedGeometry(geometry);
       geometry.dispose();
       parts.push(removeDegenerateTriangles(nonIndexed));
       nonIndexed.dispose();
@@ -102,7 +106,7 @@ export function buildExtrudeGeomHolesAware(
     const outerSegs = adaptiveCurveSegments(shape);
     const outerShape = new THREE.Shape(shape.getPoints(outerSegs));
     const outerRaw = new THREE.ExtrudeGeometry(outerShape, shapeSettings);
-    const outerNonIndexed = outerRaw.toNonIndexed();
+    const outerNonIndexed = toNonIndexedGeometry(outerRaw);
     outerRaw.dispose();
     let solid = removeDegenerateTriangles(outerNonIndexed);
     outerNonIndexed.dispose();
@@ -125,7 +129,7 @@ export function buildExtrudeGeomHolesAware(
         curveSegments: holeSegs,
       };
       const holeRaw = new THREE.ExtrudeGeometry(holeShape, holeSettings);
-      const holeNonIndexed = holeRaw.toNonIndexed();
+      const holeNonIndexed = toNonIndexedGeometry(holeRaw);
       holeRaw.dispose();
       const holeGeom = removeDegenerateTriangles(holeNonIndexed);
       holeNonIndexed.dispose();

@@ -18,6 +18,9 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
   const [coilWireRadius, setCoilWireRadius] = useState(2);
   const [coilPitch, setCoilPitch] = useState(10);
   const [coilTurns, setCoilTurns] = useState(5);
+  const [x, setX] = useState(0);
+  const [y, setY] = useState(0);
+  const [z, setZ] = useState(0);
 
   const addPrimitive = useCADStore((s) => s.addPrimitive);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
@@ -32,7 +35,7 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
           : kind === 'coil'
             ? { outerRadius: coilOuterRadius, wireRadius: coilWireRadius, pitch: coilPitch, turns: coilTurns }
             : { radius: torRadius, tubeRadius: torTube };
-    addPrimitive(kind, params);
+    addPrimitive(kind, { ...params, x, y, z });
     setStatusMessage(`Created ${kind}`);
     onClose();
   };
@@ -123,6 +126,20 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
               </div>
             </div>
           )}
+          <div className="settings-grid">
+            <div className="form-group">
+              <label>X Position (mm)</label>
+              <input type="number" value={x} onChange={(e) => setX(parseFloat(e.target.value) || 0)} step={1} />
+            </div>
+            <div className="form-group">
+              <label>Y Position (mm)</label>
+              <input type="number" value={y} onChange={(e) => setY(parseFloat(e.target.value) || 0)} step={1} />
+            </div>
+            <div className="form-group">
+              <label>Z Position (mm)</label>
+              <input type="number" value={z} onChange={(e) => setZ(parseFloat(e.target.value) || 0)} step={1} />
+            </div>
+          </div>
         </div>
         <div className="dialog-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>

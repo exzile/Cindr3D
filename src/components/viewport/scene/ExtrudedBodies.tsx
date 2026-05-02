@@ -208,11 +208,11 @@ export default function ExtrudedBodies() {
   const getMaterial = useCallback(
     (featureComponentId: string | undefined, bodyId: string | undefined, isSurface = false): THREE.Material => {
       const effectiveComponentId = featureComponentId ?? (bodyId ? bodiesById[bodyId]?.componentId : undefined);
-      if (editingInPlace && effectiveComponentId !== activeComponentId) return DIM_MATERIAL;
       const fallback: THREE.Material = isSurface ? SURFACE_MATERIAL : BODY_MATERIAL;
-      if (!bodyId) return fallback;
+      const shouldDim = editingInPlace && effectiveComponentId !== activeComponentId;
+      if (!bodyId) return shouldDim ? DIM_MATERIAL : fallback;
       const body = bodiesById[bodyId];
-      if (!body || !body.material) return fallback;
+      if (!body || !body.material) return shouldDim ? DIM_MATERIAL : fallback;
       const m = body.material;
       // CTX-7: per-body display opacity (independent of material.opacity)
       const displayOpacity = body.opacity ?? 1;
@@ -220,9 +220,9 @@ export default function ExtrudedBodies() {
       // Color compared case-insensitively so picker output (#b0b8c0) matches the
       // canonical default (#B0B8C0) — otherwise we'd needlessly clone a fresh
       // MeshStandardMaterial for every default-aluminum body just on a case mismatch.
-      if (m.id === 'aluminum' && m.color.toLowerCase() === '#b0b8c0' && m.opacity === 1 && displayOpacity === 1) return fallback;
-      const finalOpacity = m.opacity * displayOpacity;
-      const key = `${m.color}|${m.metalness}|${m.roughness}|${m.opacity}|${displayOpacity}`;
+      if (!shouldDim && m.id === 'aluminum' && m.color.toLowerCase() === '#b0b8c0' && m.opacity === 1 && displayOpacity === 1) return fallback;
+      const finalOpacity = m.opacity * displayOpacity * (shouldDim ? DIM_MATERIAL.opacity : 1);
+      const key = `${m.color}|${m.metalness}|${m.roughness}|${m.opacity}|${displayOpacity}|${shouldDim ? 'dim' : 'normal'}`;
       const cached = materialCache.current.get(bodyId);
       if (cached && cached.key === key) return cached.mat;
       if (cached) cached.mat.dispose();
@@ -237,6 +237,17 @@ export default function ExtrudedBodies() {
       return mat;
     },
     [editingInPlace, activeComponentId, bodiesById],
+  );
+
+  const resolveBodyId = useCallback(
+    (featureId: string | undefined, bodyId: string | undefined): string | undefined => {
+      if (bodyId && bodiesById[bodyId]) return bodyId;
+      if (!featureId) return undefined;
+      const bodies = Object.values(bodiesById);
+      return bodies.find((body) => body.featureIds.includes(featureId))?.id
+        ?? (bodies.length === 1 ? bodies[0].id : undefined);
+    },
+    [bodiesById],
   );
 
   // D187 + D190: a feature is skipped when it is suppressed, hidden, or
@@ -325,7 +336,7 @@ export default function ExtrudedBodies() {
           // When there are more parts than stored bodyIds (e.g. a CSG cut
           // later split a single body) fall back to the primary bodyId so
           // nothing becomes un-pickable.
-          outBodyIds.push(bodyIdsForParts[i] ?? currentBodyId);
+          outBodyIds.push(resolveBodyId(currentFeatureId, bodyIdsForParts[i] ?? currentBodyId));
         }
       }
       currentGeom = null;
@@ -416,11 +427,13 @@ export default function ExtrudedBodies() {
     storedMeshFeatures.forEach((feature) => {
       const mesh = feature.mesh!;
       const isSurface = feature.bodyKind === 'surface';
+      const bodyId = resolveBodyId(feature.id, feature.bodyId);
       mesh.userData._origMaterial = undefined;
-      mesh.material = getMaterial(feature.componentId, feature.bodyId, isSurface);
+      mesh.userData.bodyId = bodyId;
+      mesh.material = getMaterial(feature.componentId, bodyId, isSurface);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [features, editingInPlace, activeComponentId, rollbackIndex, bodiesById, getMaterial]);
+  }, [features, editingInPlace, activeComponentId, rollbackIndex, bodiesById, getMaterial, resolveBodyId]);
 
   return (
     <>
@@ -460,7 +473,9 @@ export default function ExtrudedBodies() {
           object={feature.mesh!}
           onUpdate={(m: THREE.Object3D) => {
             m.userData.pickable = true;
+            const bodyId = resolveBodyId(feature.id, feature.bodyId);
             m.userData.featureId = feature.id;
+            m.userData.bodyId = bodyId;
           }}
         />
       ))}

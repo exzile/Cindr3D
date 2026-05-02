@@ -79,10 +79,12 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
     if (!activeSketch) return;
     if ((activeSketch.dimensions ?? []).some((d) => d.id === dim.id)) return;
     get().pushUndo();
+    const nextActiveSketch = { ...activeSketch, dimensions: [...(activeSketch.dimensions ?? []), dim] };
     set({
+      activeSketch: nextActiveSketch,
       sketches: get().sketches.map((s) =>
         s.id === activeSketch.id
-          ? { ...s, dimensions: [...(s.dimensions ?? []), dim] }
+          ? nextActiveSketch
           : s
       ),
     });

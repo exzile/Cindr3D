@@ -14,6 +14,68 @@
   overflow: hidden;
 }
 
+.sketch-palette--dimension {
+  right: 264px;
+}
+
+.sketch-inline-dimension-editor {
+  position: fixed;
+  z-index: 260;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg-input);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+
+.sketch-inline-dimension-input {
+  width: 76px;
+  padding: 5px 6px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-primary);
+  font: 600 12px/1.2 inherit;
+  text-align: center;
+}
+
+.sketch-inline-dimension-input:focus {
+  outline: none;
+}
+
+.sketch-inline-dimension-action {
+  min-width: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--border-light);
+  border-radius: 3px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sketch-inline-dimension-action:hover {
+  border-color: var(--accent);
+}
+
+.sketch-inline-dimension-action--confirm {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+@media (max-width: 820px) {
+  .sketch-palette--dimension {
+    right: 12px;
+    top: 12px;
+    transform: none;
+  }
+}
+
 .sketch-palette-header {
   display: flex;
   align-items: center;

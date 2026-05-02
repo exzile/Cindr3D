@@ -32,7 +32,7 @@ export default function SketchDimensionPanel() {
   };
 
   return (
-    <div className="sketch-palette">
+    <div className="sketch-palette sketch-palette--dimension">
       <div className="sketch-palette-header">
         <span className="sketch-palette-dot" />
         <span className="sketch-palette-title">DIMENSION</span>

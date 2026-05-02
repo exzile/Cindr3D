@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type FocusEvent, type MouseEvent } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import type { Feature } from '../../../types/cad';
@@ -106,6 +106,9 @@ function FilletDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: FilletD
 
   const clamp = (val: number, min: number, max: number) =>
     Math.max(min, Math.min(max, val));
+  const selectNumberText = (e: FocusEvent<HTMLInputElement> | MouseEvent<HTMLInputElement>) => {
+    e.currentTarget.select();
+  };
 
   return (
     <div className="dialog-overlay edge-pick-dialog">
@@ -136,6 +139,8 @@ function FilletDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: FilletD
               <input
                 type="number"
                 value={radius}
+                onFocus={selectNumberText}
+                onClick={selectNumberText}
                 onChange={(e) => setRadius(clamp(parseFloat(e.target.value) || 2, 0.01, 500))}
                 min={0.01}
                 max={500}
@@ -152,6 +157,8 @@ function FilletDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: FilletD
                   <input
                     type="number"
                     value={startRadius}
+                    onFocus={selectNumberText}
+                    onClick={selectNumberText}
                     onChange={(e) => setStartRadius(clamp(parseFloat(e.target.value) || 1, 0.01, 500))}
                     min={0.01}
                     max={500}
@@ -163,6 +170,8 @@ function FilletDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: FilletD
                   <input
                     type="number"
                     value={endRadius}
+                    onFocus={selectNumberText}
+                    onClick={selectNumberText}
                     onChange={(e) => setEndRadius(clamp(parseFloat(e.target.value) || 4, 0.01, 500))}
                     min={0.01}
                     max={500}
@@ -180,6 +189,8 @@ function FilletDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: FilletD
               <input
                 type="number"
                 value={chordLength}
+                onFocus={selectNumberText}
+                onClick={selectNumberText}
                 onChange={(e) => setChordLength(clamp(parseFloat(e.target.value) || 5, 0.01, 1000))}
                 min={0.01}
                 max={1000}
@@ -243,6 +254,8 @@ function FilletDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: FilletD
                     <div className="form-group" style={{ marginBottom: 4 }}>
                       <label style={{ fontSize: 11 }}>Radius (mm)</label>
                       <input type="number" style={{ fontSize: 11 }} value={set.radius ?? 2} min={0.01} step={0.5}
+                        onFocus={selectNumberText}
+                        onClick={selectNumberText}
                         onChange={(e) => updateEdgeSet(i, { radius: Math.max(0.01, parseFloat(e.target.value) || 2) })} />
                     </div>
                   )}
@@ -251,11 +264,15 @@ function FilletDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: FilletD
                       <div className="form-group" style={{ marginBottom: 4 }}>
                         <label style={{ fontSize: 11 }}>Start R (mm)</label>
                         <input type="number" style={{ fontSize: 11 }} value={set.radius ?? 1} min={0.01} step={0.5}
+                          onFocus={selectNumberText}
+                          onClick={selectNumberText}
                           onChange={(e) => updateEdgeSet(i, { radius: Math.max(0.01, parseFloat(e.target.value) || 1) })} />
                       </div>
                       <div className="form-group" style={{ marginBottom: 4 }}>
                         <label style={{ fontSize: 11 }}>End R (mm)</label>
                         <input type="number" style={{ fontSize: 11 }} value={set.endRadius ?? 4} min={0.01} step={0.5}
+                          onFocus={selectNumberText}
+                          onClick={selectNumberText}
                           onChange={(e) => updateEdgeSet(i, { endRadius: Math.max(0.01, parseFloat(e.target.value) || 4) })} />
                       </div>
                     </>
@@ -264,6 +281,8 @@ function FilletDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: FilletD
                     <div className="form-group" style={{ marginBottom: 4 }}>
                       <label style={{ fontSize: 11 }}>Chord Len (mm)</label>
                       <input type="number" style={{ fontSize: 11 }} value={set.chordLength ?? 5} min={0.01} step={0.5}
+                        onFocus={selectNumberText}
+                        onClick={selectNumberText}
                         onChange={(e) => updateEdgeSet(i, { chordLength: Math.max(0.01, parseFloat(e.target.value) || 5) })} />
                     </div>
                   )}
@@ -303,6 +322,8 @@ function FilletDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: FilletD
                 <input
                   type="number"
                   value={setbackDistance}
+                  onFocus={selectNumberText}
+                  onClick={selectNumberText}
                   onChange={(e) => setSetbackDistance(Math.max(0, parseFloat(e.target.value) || 0))}
                   min={0}
                   max={500}
@@ -355,16 +376,19 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
   const editingFeatureId = useCADStore((s) => s.editingFeatureId);
   const features = useCADStore((s) => s.features);
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
+  const renameFeature = useCADStore((s) => s.renameFeature);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
   const p = editing?.params ?? {};
+  const existingEdgeIds = typeof p.edgeIds === 'string' ? p.edgeIds.split(',').filter(Boolean) : [];
 
   const handleConfirm = (params: FilletParams) => {
-    const edgeIds = filletEdgeIds.length > 0 ? filletEdgeIds : (typeof p.edgeIds === 'string' ? p.edgeIds.split(',').filter(Boolean) : []);
+    const edgeIds = filletEdgeIds.length > 0 ? filletEdgeIds : existingEdgeIds;
     const edgeIdsStr = edgeIds.join(',');
     if (editing) {
       updateFeatureParams(editing.id, { ...params, edgeIds: edgeIdsStr });
+      renameFeature(editing.id, `Fillet (r=${params.radius})`);
       setStatusMessage(`Updated fillet: r=${params.radius}`);
     } else {
       const feature: Feature = {
@@ -385,7 +409,7 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
   return (
     <FilletDialogUI
       open={true}
-      selectedEdgeCount={filletEdgeIds.length}
+      selectedEdgeCount={filletEdgeIds.length || existingEdgeIds.length}
       onClose={onClose}
       onConfirm={handleConfirm}
     />

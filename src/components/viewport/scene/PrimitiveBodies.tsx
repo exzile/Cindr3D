@@ -16,7 +16,13 @@ export default function PrimitiveBodies() {
   const editingInPlace = !!activeComponentId && activeComponentId !== rootComponentId;
 
   const bodies = useMemo(() => {
-    const out: { id: string; geom: THREE.BufferGeometry; componentId?: string }[] = [];
+    const out: {
+      id: string;
+      geom: THREE.BufferGeometry;
+      componentId?: string;
+      position: [number, number, number];
+      rotation: [number, number, number];
+    }[] = [];
     for (const f of features) {
       if (f.type !== 'primitive') continue;
       // D187 suppress + D190 rollback + visibility
@@ -37,7 +43,7 @@ export default function PrimitiveBodies() {
       } else if (kind === 'cylinder') {
         geom = new THREE.CylinderGeometry(
           (f.params.radius as number) || 10,
-          (f.params.radius as number) || 10,
+          (f.params.radiusTop as number) ?? ((f.params.radius as number) || 10),
           (f.params.height as number) || 20,
           48,
         );
@@ -51,7 +57,23 @@ export default function PrimitiveBodies() {
           48,
         );
       }
-      if (geom) out.push({ id: f.id, geom, componentId: f.componentId });
+      if (geom) {
+        out.push({
+          id: f.id,
+          geom,
+          componentId: f.componentId,
+          position: [
+            (f.params.x as number) || 0,
+            (f.params.y as number) || 0,
+            (f.params.z as number) || 0,
+          ],
+          rotation: [
+            THREE.MathUtils.degToRad((f.params.rx as number) || 0),
+            THREE.MathUtils.degToRad((f.params.ry as number) || 0),
+            THREE.MathUtils.degToRad((f.params.rz as number) || 0),
+          ],
+        });
+      }
     }
     return out;
   }, [features, rollbackIndex, components]);
@@ -69,6 +91,8 @@ export default function PrimitiveBodies() {
             key={b.id}
             geometry={b.geom}
             material={dim ? DIM_MATERIAL : BODY_MATERIAL}
+            position={b.position}
+            rotation={b.rotation}
             castShadow
             receiveShadow
             onUpdate={(m) => { m.userData.pickable = true; m.userData.featureId = b.id; }}

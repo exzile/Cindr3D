@@ -40,7 +40,7 @@ interface PickedDimensionEntity {
 }
 
 function createNearestEntityFinder(entities: SketchEntity[], origin: THREE.Vector3, t1: THREE.Vector3, t2: THREE.Vector3) {
-  const entityPickRadius = 2;
+  const entityPickRadius = 5;
   const considerSegment = (
     worldPoint: THREE.Vector3,
     entity: SketchEntity,
@@ -123,6 +123,103 @@ function createNearestEntityFinder(entities: SketchEntity[], origin: THREE.Vecto
   };
 }
 
+function updateCircleRadius(activeSketchId: string, entityId: string, radius: number) {
+  const state = useCADStore.getState();
+  const updateSketch = (sketch: Sketch): Sketch => ({
+    ...sketch,
+    entities: sketch.entities.map((entity) =>
+      entity.id === entityId && (entity.type === 'circle' || entity.type === 'arc')
+        ? { ...entity, radius }
+        : entity,
+    ),
+  });
+
+  useCADStore.setState({
+    activeSketch: state.activeSketch?.id === activeSketchId ? updateSketch(state.activeSketch) : state.activeSketch,
+    sketches: state.sketches.map((sketch) => (sketch.id === activeSketchId ? updateSketch(sketch) : sketch)),
+  });
+}
+
+function promptForCircleDimension(
+  event: MouseEvent,
+  initialValue: number,
+  onCommit: (value: number) => void,
+) {
+  document.querySelectorAll('.sketch-inline-dimension-input').forEach((node) => node.remove());
+  document.querySelectorAll('.sketch-inline-dimension-editor').forEach((node) => node.remove());
+
+  const editor = document.createElement('div');
+  editor.className = 'sketch-inline-dimension-editor';
+  editor.style.left = `${event.clientX + 10}px`;
+  editor.style.top = `${event.clientY - 16}px`;
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.step = '0.1';
+  input.min = '0.001';
+  input.value = initialValue.toFixed(2);
+  input.className = 'sketch-inline-dimension-input';
+  const confirmButton = document.createElement('button');
+  confirmButton.type = 'button';
+  confirmButton.className = 'sketch-inline-dimension-action sketch-inline-dimension-action--confirm';
+  confirmButton.title = 'Apply dimension';
+  confirmButton.textContent = 'OK';
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.className = 'sketch-inline-dimension-action';
+  cancelButton.title = 'Cancel dimension';
+  cancelButton.textContent = 'X';
+
+  let committed = false;
+  const cleanup = () => {
+    input.removeEventListener('keydown', handleKeyDown);
+    confirmButton.removeEventListener('pointerdown', preventFocusLoss);
+    cancelButton.removeEventListener('pointerdown', preventFocusLoss);
+    confirmButton.removeEventListener('click', handleConfirmClick);
+    cancelButton.removeEventListener('click', handleCancelClick);
+    editor.remove();
+  };
+  const finish = (shouldCommit: boolean) => {
+    if (committed) {
+      return;
+    }
+    committed = true;
+    const value = Number.parseFloat(input.value);
+    cleanup();
+    if (shouldCommit && Number.isFinite(value) && value > 0) {
+      onCommit(value);
+    }
+  };
+  function preventFocusLoss(pointerEvent: PointerEvent) {
+    pointerEvent.preventDefault();
+  }
+  function handleKeyDown(keyEvent: KeyboardEvent) {
+    keyEvent.stopPropagation();
+    if (keyEvent.key === 'Enter') {
+      keyEvent.preventDefault();
+      finish(true);
+    } else if (keyEvent.key === 'Escape') {
+      keyEvent.preventDefault();
+      finish(false);
+    }
+  }
+  function handleConfirmClick() {
+    finish(true);
+  }
+  function handleCancelClick() {
+    finish(false);
+  }
+
+  editor.append(input, confirmButton, cancelButton);
+  document.body.appendChild(editor);
+  input.addEventListener('keydown', handleKeyDown);
+  confirmButton.addEventListener('pointerdown', preventFocusLoss);
+  cancelButton.addEventListener('pointerdown', preventFocusLoss);
+  confirmButton.addEventListener('click', handleConfirmClick);
+  cancelButton.addEventListener('click', handleCancelClick);
+  input.focus();
+  input.select();
+}
+
 export function useSketchDimensionTool({
   activeTool,
   activeSketch,
@@ -157,6 +254,45 @@ export function useSketchDimensionTool({
       dimensionToleranceMode !== 'none'
         ? { toleranceUpper: dimensionToleranceUpper, toleranceLower: dimensionToleranceLower }
         : {};
+
+    const commitCircleDimension = (entity: SketchEntity, type: 'radial' | 'diameter', value: number) => {
+      if (!entity.radius) {
+        return;
+      }
+      const nextRadius = type === 'diameter' ? value / 2 : value;
+      const center = entity.points[0];
+      const center2d = to2D(new THREE.Vector3(center.x, center.y, center.z));
+      const dimension =
+        type === 'diameter'
+          ? DimensionEngine.computeDiameterDimension(center2d.x, center2d.y, nextRadius, 0)
+          : DimensionEngine.computeArcLengthDimension(
+              center2d.x,
+              center2d.y,
+              nextRadius,
+              entity.startAngle ?? 0,
+              entity.endAngle ?? (2 * Math.PI),
+              dimensionOffset,
+            );
+
+      if (!dimensionDrivenMode) {
+        updateCircleRadius(activeSketch.id, entity.id, nextRadius);
+      }
+
+      addSketchDimension({
+        id: crypto.randomUUID(),
+        type,
+        entityIds: [entity.id],
+        value: type === 'diameter' ? nextRadius * 2 : nextRadius,
+        position: dimension.textPosition,
+        driven: dimensionDrivenMode,
+        ...buildToleranceFields(),
+      });
+      setStatusMessage(
+        type === 'diameter'
+          ? `Diameter dimension added: DIA ${(nextRadius * 2).toFixed(2)}`
+          : `Radial dimension added: r=${nextRadius.toFixed(2)}`,
+      );
+    };
 
     const handleClick = (event: MouseEvent) => {
       if (event.button !== 0) {
@@ -267,26 +403,7 @@ export function useSketchDimensionTool({
           setStatusMessage('Dimension: click on a circle or arc');
           return;
         }
-        const center = entity.points[0];
-        const center2d = to2D(new THREE.Vector3(center.x, center.y, center.z));
-        const dimension = DimensionEngine.computeArcLengthDimension(
-          center2d.x,
-          center2d.y,
-          entity.radius,
-          entity.startAngle ?? 0,
-          entity.endAngle ?? (2 * Math.PI),
-          dimensionOffset,
-        );
-        addSketchDimension({
-          id: crypto.randomUUID(),
-          type: 'radial',
-          entityIds: [entity.id],
-          value: entity.radius,
-          position: dimension.textPosition,
-          driven: dimensionDrivenMode,
-          ...buildToleranceFields(),
-        });
-        setStatusMessage(`Radial dimension added: r=${entity.radius.toFixed(2)}`);
+        promptForCircleDimension(event, entity.radius, (value) => commitCircleDimension(entity, 'radial', value));
         return;
       }
 
@@ -295,19 +412,7 @@ export function useSketchDimensionTool({
           setStatusMessage('Dimension: click on a circle');
           return;
         }
-        const center = entity.points[0];
-        const center2d = to2D(new THREE.Vector3(center.x, center.y, center.z));
-        const dimension = DimensionEngine.computeDiameterDimension(center2d.x, center2d.y, entity.radius, 0);
-        addSketchDimension({
-          id: crypto.randomUUID(),
-          type: 'diameter',
-          entityIds: [entity.id],
-          value: dimension.value,
-          position: dimension.textPosition,
-          driven: dimensionDrivenMode,
-          ...buildToleranceFields(),
-        });
-        setStatusMessage(`Diameter dimension added: DIA ${dimension.value.toFixed(2)}`);
+        promptForCircleDimension(event, entity.radius * 2, (value) => commitCircleDimension(entity, 'diameter', value));
         return;
       }
 
@@ -351,6 +456,8 @@ export function useSketchDimensionTool({
     return () => {
       canvas.removeEventListener('click', handleClick);
       window.removeEventListener('keydown', handleKeyDown);
+      document.querySelectorAll('.sketch-inline-dimension-input').forEach((node) => node.remove());
+      document.querySelectorAll('.sketch-inline-dimension-editor').forEach((node) => node.remove());
     };
   }, [
     activeDimensionType,

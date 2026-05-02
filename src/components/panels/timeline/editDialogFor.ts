@@ -5,6 +5,7 @@ const FEATURE_DIALOG_MAP: Record<string, string | null> = {
   draft: 'draft',
   scale: 'scale',
   combine: 'combine',
+  fillet: 'fillet',
   hole: 'hole',
   thread: 'thread',
   thicken: 'thicken',

@@ -6,6 +6,7 @@ import type { Feature } from '../../../types/cad';
 export function MoveBodyDialog({ onClose }: { onClose: () => void }) {
   const features = useCADStore((s) => s.features);
   const addFeature = useCADStore((s) => s.addFeature);
+  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   // NAV-8/NAV-9: incremental move/rotate snapping
   const incrementalMove = useCADStore((s) => s.incrementalMove);
@@ -29,6 +30,35 @@ export function MoveBodyDialog({ onClose }: { onClose: () => void }) {
   const [copy, setCopy] = useState(false);
 
   const handleApply = () => {
+    const target = features.find((f) => f.id === targetFeatureId);
+    if (target?.type === 'primitive') {
+      const nextParams = {
+        ...target.params,
+        x: ((target.params.x as number) || 0) + dx,
+        y: ((target.params.y as number) || 0) + dy,
+        z: ((target.params.z as number) || 0) + dz,
+        rx: ((target.params.rx as number) || 0) + rx,
+        ry: ((target.params.ry as number) || 0) + ry,
+        rz: ((target.params.rz as number) || 0) + rz,
+      };
+      if (copy) {
+        const feature: Feature = {
+          ...target,
+          id: crypto.randomUUID(),
+          name: `${target.name} Copy`,
+          params: nextParams,
+          timestamp: Date.now(),
+        };
+        addFeature(feature);
+        setStatusMessage(`Copied ${target.name}`);
+      } else {
+        updateFeatureParams(target.id, nextParams);
+        setStatusMessage(`Moved ${target.name}`);
+      }
+      onClose();
+      return;
+    }
+
     const label = copy ? 'Copy Body' : 'Move Body';
     const feature: Feature = {
       id: crypto.randomUUID(),

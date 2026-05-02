@@ -6,6 +6,7 @@
 // ready — it will populate automatically once D28 adds dimension records.
 
 import { useMemo, useEffect } from 'react';
+import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { DimensionEngine } from '../../../engine/DimensionEngine';
@@ -13,7 +14,24 @@ import { GeometryEngine } from '../../../engine/GeometryEngine';
 import type { SketchEntity } from '../../../types/cad';
 
 // ── Module-level material singletons ──────────────────────────────────────────
-const lineMat = new THREE.LineBasicMaterial({ color: '#60a5fa', depthTest: false, transparent: true, opacity: 0.85 });
+const lineMat = new THREE.LineBasicMaterial({
+  color: '#2563eb',
+  depthTest: false,
+  depthWrite: false,
+  transparent: true,
+  opacity: 0.95,
+});
+const labelStyle: React.CSSProperties = {
+  background: 'rgba(255, 255, 255, 0.94)',
+  border: '1px solid rgba(96, 165, 250, 0.65)',
+  borderRadius: 4,
+  color: '#1e3a8a',
+  fontSize: 11,
+  fontWeight: 700,
+  lineHeight: '14px',
+  padding: '1px 5px',
+  whiteSpace: 'nowrap',
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -133,13 +151,24 @@ export default function SketchDimensionAnnotations() {
           const r = circEnt.radius ?? dim.value / (dim.type === 'diameter' ? 2 : 1);
 
           if (dim.type === 'diameter') {
-            const ann = DimensionEngine.computeDiameterDimension(cx, cy, r, 0);
-            const segs = makeSegments([ann.dimensionLine], origin, t1, t2);
+            const tick = Math.max(0.8, r * 0.08);
+            const start = { x: cx - r, y: cy };
+            const end = { x: cx + r, y: cy };
+            const segs = makeSegments(
+              [
+                [start, end],
+                [{ x: start.x, y: cy - tick }, { x: start.x, y: cy + tick }],
+                [{ x: end.x, y: cy - tick }, { x: end.x, y: cy + tick }],
+              ],
+              origin, t1, t2,
+            );
+            const ann = { value: dim.value, textPosition: dim.position };
             result.push({
               segments: segs,
               textPos: toWorld(ann.textPosition, origin, t1, t2),
               label: `⌀${DimensionEngine.formatDimensionValue(ann.value, 'mm', 2)}`,
             });
+            result[result.length - 1].label = `DIA ${DimensionEngine.formatDimensionValue(dim.value, 'mm', 2)}`;
           } else {
             // radial — show a line from center to edge
             const edgePt: Vec2 = { x: cx + r, y: cy };
@@ -177,7 +206,12 @@ export default function SketchDimensionAnnotations() {
   return (
     <group renderOrder={999}>
       {annotations.map((ann, i) => (
-        <primitive key={i} object={ann.segments} />
+        <group key={i}>
+          <primitive object={ann.segments} />
+          <Html position={ann.textPos} center style={{ pointerEvents: 'none' }}>
+            <div style={labelStyle}>{ann.label}</div>
+          </Html>
+        </group>
       ))}
     </group>
   );

@@ -23,6 +23,7 @@ export function FeatureItem({ feature, index, indented }: { feature: Feature; in
   const setSelectedFeatureId = useCADStore((s) => s.setSelectedFeatureId);
   const setEditingFeatureId = useCADStore((s) => s.setEditingFeatureId);
   const loadExtrudeForEdit = useCADStore((s) => s.loadExtrudeForEdit);
+  const editSketch = useCADStore((s) => s.editSketch);
   const setActiveDialog = useCADStore((s) => s.setActiveDialog);
   const reorderFeature = useCADStore((s) => s.reorderFeature);
   const renameFeature = useCADStore((s) => s.renameFeature);
@@ -39,6 +40,10 @@ export function FeatureItem({ feature, index, indented }: { feature: Feature; in
   const isRolledBack = rollbackIndex >= 0 && index > rollbackIndex;
 
   const handleDoubleClick = () => {
+    if (feature.type === 'sketch' && feature.sketchId) {
+      editSketch(feature.sketchId);
+      return;
+    }
     if (feature.type === 'extrude') {
       loadExtrudeForEdit(feature.id);
       return;
