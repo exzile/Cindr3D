@@ -118,7 +118,9 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
       return;
     }
     const firstProfile = selectedProfiles[0];
+    const requestedBooleanOperation = extrudeOperation === 'cut' || extrudeOperation === 'intersect';
     const shouldCollapseSameSketchProfiles =
+      !requestedBooleanOperation &&
       selectedProfiles.length > 1 &&
       selectedProfiles.every(
         (profile) =>
@@ -185,8 +187,17 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
 
     for (const selected of profilesToCommit) {
       const { sourceSketch, sketchForOp, profileIndex, profileIndices } = selected;
-      const isClosedProfile = GeometryEngine.isSketchClosedProfile(sketchForOp);
-      const resolvedBodyKind: 'solid' | 'surface' = (!isClosedProfile || extrudeBodyKind === 'surface') ? 'surface' : 'solid';
+      const requestedBoolean = finalOperation === 'cut' || finalOperation === 'intersect';
+      const isClosedProfile = profileIndices?.length
+        ? profileIndices.every((index) => GeometryEngine.createProfileSketch(sourceSketch, index) !== null)
+        : requestedBoolean && selected.profileIndex !== undefined
+          ? true
+          : GeometryEngine.isSketchClosedProfile(sketchForOp);
+      const resolvedBodyKind: 'solid' | 'surface' = !isClosedProfile
+        ? 'surface'
+        : requestedBoolean
+          ? 'solid'
+          : extrudeBodyKind === 'surface' ? 'surface' : 'solid';
 
       // Generate mesh: surface â†’ thin â†’ standard solid (taper is rebuilt by
       // ExtrudedBodies via buildExtrudeFeatureMesh, so no stored mesh).
@@ -319,6 +330,9 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
       }
 
       const featureId = crypto.randomUUID();
+      const featureName = editingExtrude && profilesToCommit.length === 1
+        ? editingExtrude.name
+        : `${extrudeThinEnabled ? 'Thin ' : ''}${effectiveOperation === 'cut' ? 'Cut' : 'Extrude'} ${nextFeatures.filter(f => f.type === 'extrude').length + createdCount + 1}`;
       let componentId: string | undefined;
       let bodyId: string | undefined;
       // When an extrude produces geometrically disconnected pieces (two
@@ -390,7 +404,7 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
 
       const feature: Feature = {
         id: featureId,
-        name: `${extrudeThinEnabled ? 'Thin ' : ''}${effectiveOperation === 'cut' ? 'Cut' : 'Extrude'} ${features.filter(f => f.type === 'extrude').length + createdCount + 1}`,
+        name: featureName,
         type: 'extrude',
         sketchId: sourceSketch.id,
         bodyId,

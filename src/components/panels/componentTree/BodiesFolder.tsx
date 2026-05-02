@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronRight, ChevronDown, Eye, EyeOff, FolderOpen } from 'lucide-react';
+import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
 import { BodyNode } from './BodyNode';
+
+const EMPTY_IDS: string[] = [];
 
 /**
  * Collapsible "Bodies" folder in the component tree — mirrors SketchesFolder.
@@ -9,13 +12,68 @@ import { BodyNode } from './BodyNode';
  */
 export function BodiesFolder({ componentId }: { componentId?: string }) {
   const bodies = useComponentStore((s) => s.bodies);
+  const components = useComponentStore((s) => s.components);
+  const activeComponentId = useComponentStore((s) => s.activeComponentId);
+  const features = useCADStore((s) => s.features);
+  const addBody = useComponentStore((s) => s.addBody);
+  const addFeatureToBody = useComponentStore((s) => s.addFeatureToBody);
+  const componentBodyIds = useComponentStore((s) => (
+    componentId ? (s.components[componentId]?.bodyIds ?? EMPTY_IDS) : EMPTY_IDS
+  ));
   const toggleVis = useComponentStore((s) => s.toggleBodyVisibility);
   const [expanded, setExpanded] = useState(true);
 
-  const bodyIds = Object.keys(bodies).filter((id) => !componentId || bodies[id]?.componentId === componentId);
+  useEffect(() => {
+    if (!componentId || !components[componentId]) return;
+
+    let recoveredCount = 0;
+    for (const feature of features) {
+      if (feature.type !== 'extrude') continue;
+      if ((feature.params?.operation as string | undefined) !== 'new-body') continue;
+      if (feature.suppressed || feature.visible === false) continue;
+
+      const featureComponentId = feature.componentId;
+      const belongsHere =
+        featureComponentId === componentId ||
+        (componentId === activeComponentId && (!featureComponentId || !components[featureComponentId]));
+      if (!belongsHere) continue;
+
+      const alreadyIndexed = Object.values(bodies).some((body) => body.featureIds.includes(feature.id));
+      if (alreadyIndexed) continue;
+
+      const bodyName = feature.bodyKind === 'surface'
+        ? `Surface ${Object.keys(bodies).length + recoveredCount + 1}`
+        : `Body ${Object.keys(bodies).length + recoveredCount + 1}`;
+      const bodyId = addBody(componentId, bodyName);
+      if (bodyId) {
+        addFeatureToBody(bodyId, feature.id);
+        recoveredCount += 1;
+      }
+    }
+  }, [activeComponentId, addBody, addFeatureToBody, bodies, componentId, components, features]);
+
+  const bodyIds = Object.keys(bodies).filter((id) => (
+    !componentId ||
+    bodies[id]?.componentId === componentId ||
+    componentBodyIds.includes(id) ||
+    (componentId === activeComponentId && (
+      !bodies[id]?.componentId || !components[bodies[id]?.componentId]
+    ))
+  ));
   if (bodyIds.length === 0) return null;
 
   const allVisible = bodyIds.every((id) => bodies[id]?.visible !== false);
+
+  const getBodyDisplayName = (id: string, index: number) => {
+    const body = bodies[id];
+    if (!body) return '';
+    const hasDuplicateName = bodyIds.some((otherId) => otherId !== id && bodies[otherId]?.name === body.name);
+    if (!hasDuplicateName) return body.name;
+
+    const generatedName = /^(Body|Surface)\s+\d+$/.exec(body.name);
+    if (generatedName) return `${generatedName[1]} ${index + 1}`;
+    return `${body.name} (${index + 1})`;
+  };
 
   const handleToggleAll = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -49,8 +107,8 @@ export function BodiesFolder({ componentId }: { componentId?: string }) {
       </div>
 
       {/* Body rows */}
-      {expanded && bodyIds.map((id) => (
-        <BodyNode key={id} bodyId={id} />
+      {expanded && bodyIds.map((id, index) => (
+        <BodyNode key={id} bodyId={id} displayName={getBodyDisplayName(id, index)} />
       ))}
     </div>
   );

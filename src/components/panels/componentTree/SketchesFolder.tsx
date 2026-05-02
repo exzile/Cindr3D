@@ -1,8 +1,11 @@
 import { useState, useMemo } from 'react';
 import { ChevronRight, ChevronDown, Eye, EyeOff, FolderOpen, PenTool } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { useComponentStore } from '../../../store/componentStore';
 import { SketchContextMenu } from './SketchContextMenu';
 import type { SketchCtxMenu } from './SketchContextMenu';
+
+const EMPTY_IDS: string[] = [];
 
 export function SketchesFolder({ componentId }: { componentId?: string }) {
   // Use `sketches` (completed) + `activeSketch` (currently editing) as source of truth.
@@ -10,19 +13,35 @@ export function SketchesFolder({ componentId }: { componentId?: string }) {
   const activeSketch = useCADStore((s) => s.activeSketch);
   const sketches = useCADStore((s) => s.sketches);
   const editSketch = useCADStore((s) => s.editSketch); // must be before any early return
+  const components = useComponentStore((s) => s.components);
+  const activeComponentId = useComponentStore((s) => s.activeComponentId);
+  const componentSketchIds = useComponentStore((s) => (
+    componentId ? (s.components[componentId]?.sketchIds ?? EMPTY_IDS) : EMPTY_IDS
+  ));
   const [expanded, setExpanded] = useState(true);
   const [sketchVis, setSketchVis] = useState<Record<string, boolean>>({});
   const [ctxMenu, setCtxMenu] = useState<SketchCtxMenu | null>(null);
 
   const visibleSketches = useMemo(
     () => sketches.filter((s) => (
-      !s.name.startsWith('Press Pull Profile') && (!componentId || s.componentId === componentId)
+      !s.name.startsWith('Press Pull Profile') &&
+      (
+        !componentId ||
+        s.componentId === componentId ||
+        componentSketchIds.includes(s.id) ||
+        (componentId === activeComponentId && (!s.componentId || !components[s.componentId]))
+      )
     )),
-    [componentId, sketches],
+    [activeComponentId, componentId, componentSketchIds, components, sketches],
   );
   const showActiveSketch = !!activeSketch
     && !activeSketch.name.startsWith('Press Pull Profile')
-    && (!componentId || activeSketch.componentId === componentId);
+    && (
+      !componentId ||
+      activeSketch.componentId === componentId ||
+      componentSketchIds.includes(activeSketch.id) ||
+      (componentId === activeComponentId && (!activeSketch.componentId || !components[activeSketch.componentId]))
+    );
   const hasAny = visibleSketches.length > 0 || showActiveSketch;
   if (!hasAny) return null;
 

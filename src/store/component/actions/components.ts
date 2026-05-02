@@ -53,7 +53,7 @@ export function createComponentActions(
     },
 
     addComponent: (parentId, name) => {
-      const { components } = get();
+      const { components, expandedIds } = get();
       const parent = components[parentId];
       if (!parent) return parentId;
 
@@ -77,7 +77,13 @@ export function createComponentActions(
         color: COMPONENT_COLORS[parent.childIds.length % COMPONENT_COLORS.length],
       };
 
+      const nextExpandedIds = new Set(expandedIds);
+      nextExpandedIds.add(parentId);
+      nextExpandedIds.add(id);
+
       set({
+        activeComponentId: id,
+        expandedIds: nextExpandedIds,
         components: {
           ...components,
           [id]: component,

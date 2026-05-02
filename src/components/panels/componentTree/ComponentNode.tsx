@@ -102,6 +102,7 @@ export function ComponentNode({ componentId, depth = 0 }: { componentId: string;
   const isRoot = component.parentId === null;
   const hasChildren = component.childIds.length > 0 ||
                       component.bodyIds.length > 0 ||
+                      component.sketchIds.length > 0 ||
                       component.constructionIds.length > 0 ||
                       component.jointIds.length > 0;
 
@@ -112,12 +113,83 @@ export function ComponentNode({ componentId, depth = 0 }: { componentId: string;
     setRenaming(false);
   };
 
+  const adoptAssemblyContents = () => {
+    if (isRoot) return false;
+
+    const componentStore = useComponentStore.getState();
+    const cadStore = useCADStore.getState();
+    const target = componentStore.components[componentId];
+    const root = componentStore.components[rootComponentId];
+    if (!target || !root || target.parentId !== rootComponentId) return false;
+
+    const assemblyBodyIds = Object.keys(componentStore.bodies).filter((id) => {
+      const bodyComponentId = componentStore.bodies[id]?.componentId;
+      return bodyComponentId === rootComponentId ||
+        !bodyComponentId ||
+        !componentStore.components[bodyComponentId] ||
+        root.bodyIds.includes(id);
+    });
+    const assemblySketchIds = cadStore.sketches
+      .filter((sketch) => (
+        (sketch.componentId ?? rootComponentId) === rootComponentId ||
+        !sketch.componentId ||
+        !componentStore.components[sketch.componentId] ||
+        root.sketchIds.includes(sketch.id)
+      ))
+      .map((sketch) => sketch.id);
+    if (assemblyBodyIds.length === 0 && assemblySketchIds.length === 0) return false;
+
+    const nextComponents = {
+      ...componentStore.components,
+      [rootComponentId]: {
+        ...root,
+        bodyIds: root.bodyIds.filter((id) => !assemblyBodyIds.includes(id)),
+        sketchIds: root.sketchIds.filter((id) => !assemblySketchIds.includes(id)),
+      },
+      [componentId]: {
+        ...target,
+        bodyIds: [...target.bodyIds, ...assemblyBodyIds.filter((id) => !target.bodyIds.includes(id))],
+        sketchIds: [...target.sketchIds, ...assemblySketchIds.filter((id) => !target.sketchIds.includes(id))],
+      },
+    };
+
+    useComponentStore.setState({
+      components: nextComponents,
+      bodies: Object.fromEntries(Object.entries(componentStore.bodies).map(([id, body]) => [
+        id,
+        assemblyBodyIds.includes(id) ? { ...body, componentId } : body,
+      ])),
+    });
+    useCADStore.setState((state) => ({
+      sketches: state.sketches.map((sketch) => (
+        assemblySketchIds.includes(sketch.id) ? { ...sketch, componentId } : sketch
+      )),
+      features: state.features.map((feature) => (
+        (
+          feature.componentId === rootComponentId ||
+          !feature.componentId ||
+          !componentStore.components[feature.componentId] ||
+          (feature.sketchId && assemblySketchIds.includes(feature.sketchId))
+        )
+          ? { ...feature, componentId }
+          : feature
+      )),
+      statusMessage: `Moved assembly sketches and bodies into ${target.name}`,
+    }));
+
+    return true;
+  };
+
   return (
     /* --depth is a dynamic CSS custom property for indent — must stay inline */
     <div className="tree-node" style={{ '--depth': depth } as React.CSSProperties}>
       <div
         className={`tree-item component-item ${isActive ? 'active' : ''}`}
-        onClick={() => setActiveComponentId(componentId)}
+        onClick={() => {
+          const adopted = adoptAssemblyContents();
+          setActiveComponentId(componentId);
+          if ((hasChildren || adopted) && !isExpanded) toggleExpanded(componentId);
+        }}
         onDoubleClick={() => {
           if (isRoot) {
             setRenaming(true);

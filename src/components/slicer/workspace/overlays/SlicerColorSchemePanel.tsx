@@ -28,6 +28,8 @@ export function SlicerColorSchemePanel() {
   const setColorMode = useSlicerStore((s) => s.setPreviewColorMode);
   const hiddenTypes = useSlicerStore((s) => s.previewHiddenTypes);
   const toggleType = useSlicerStore((s) => s.togglePreviewType);
+  const renderMode = useSlicerStore((s) => s.previewRenderMode);
+  const setRenderMode = useSlicerStore((s) => s.setPreviewRenderMode);
   const showTravel = useSlicerStore((s) => s.previewShowTravel);
   const setShowTravel = useSlicerStore((s) => s.setPreviewShowTravel);
   const showRetractions = useSlicerStore((s) => s.previewShowRetractions);
@@ -59,6 +61,18 @@ export function SlicerColorSchemePanel() {
           <option value="layer-time">Layer Time</option>
           <option value="wall-quality">Wall Quality</option>
           <option value="seam">Seam</option>
+        </select>
+      </div>
+
+      <div className="slicer-cs-panel__mode-row">
+        <span className="slicer-cs-panel__mode-label">View</span>
+        <select
+          className="slicer-cs-panel__mode-select"
+          value={renderMode}
+          onChange={(e) => setRenderMode(e.target.value as 'solid' | 'wireframe')}
+        >
+          <option value="solid">Solid</option>
+          <option value="wireframe">Wireframe</option>
         </select>
       </div>
 

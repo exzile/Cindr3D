@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 // Module-level scratch objects — avoids per-feature heap allocations in the CSG loop.
 const _boxCurrent = new THREE.Box3();
@@ -266,10 +267,27 @@ export default function ExtrudedBodies() {
     const distance2 = (feature.params.distance2 as number) || distance;
     const direction = ((feature.params.direction as 'positive' | 'negative' | 'symmetric' | 'two-sides') ?? 'positive');
     const profileIndex = feature.params.profileIndex as number | undefined;
+    const profileIndices = Array.isArray(feature.params.profileIndices)
+      ? feature.params.profileIndices as number[]
+      : null;
     const taperAngle = (feature.params.taperAngle as number) ?? 0;
     const startOffset = (feature.params.startType as string) === 'offset'
       ? ((feature.params.startOffset as number) ?? 0)
       : 0;
+    if (profileIndices && profileIndices.length > 1) {
+      const geometries: THREE.BufferGeometry[] = [];
+      for (const index of profileIndices) {
+        const profileSketch = GeometryEngine.createProfileSketch(sketch, index);
+        if (!profileSketch) continue;
+        const mesh = GeometryEngine.buildExtrudeFeatureMesh(profileSketch, distance, direction, taperAngle, startOffset, distance2, (feature.params.taperAngle2 as number) ?? taperAngle);
+        if (!mesh) continue;
+        geometries.push(GeometryEngine.bakeMeshWorldGeometry(mesh));
+        mesh.geometry.dispose();
+      }
+      const merged = geometries.length > 0 ? mergeGeometries(geometries, false) : null;
+      geometries.forEach((geometry) => geometry.dispose());
+      return merged ? new THREE.Mesh(merged) : null;
+    }
     const sketchForOp = profileIndex !== undefined
       ? GeometryEngine.createProfileSketch(sketch, profileIndex)
       : sketch;
@@ -314,6 +332,34 @@ export default function ExtrudedBodies() {
     let currentComponentId: string | undefined;
     let currentBodyId: string | undefined;
     let currentExtraBodyIds: string[] = [];
+
+    const targetsBody = (feature: Feature, bodyId: string | undefined): boolean => {
+      const participants = Array.isArray(feature.params.participantBodyIds)
+        ? feature.params.participantBodyIds as string[]
+        : [];
+      return participants.length === 0 || (!!bodyId && participants.includes(bodyId));
+    };
+
+    const applyBooleanToCommittedBodies = (
+      feature: Feature,
+      toolGeom: THREE.BufferGeometry,
+      operation: 'cut' | 'intersect',
+    ): number => {
+      let changed = 0;
+      for (let i = 0; i < outBodies.length; i++) {
+        if (!targetsBody(feature, outBodyIds[i])) continue;
+        const toolForBody = toolGeom.clone();
+        const next = operation === 'cut'
+          ? GeometryEngine.csgSubtract(outBodies[i], toolForBody)
+          : GeometryEngine.csgIntersect(outBodies[i], toolForBody);
+        outBodies[i].dispose();
+        toolForBody.dispose();
+        outBodies[i] = next;
+        outIds[i] = feature.id;
+        changed += 1;
+      }
+      return changed;
+    };
 
     const commitCurrent = () => {
       if (currentGeom && currentFeatureId) {
@@ -368,6 +414,11 @@ export default function ExtrudedBodies() {
       }
 
       if (op === 'cut') {
+        const committedTargets = applyBooleanToCommittedBodies(feature, toolGeom, 'cut');
+        if (!targetsBody(feature, currentBodyId) && committedTargets > 0) {
+          toolGeom.dispose();
+          continue;
+        }
         const next = GeometryEngine.csgSubtract(currentGeom, toolGeom);
         currentGeom.dispose();
         toolGeom.dispose();
@@ -376,6 +427,11 @@ export default function ExtrudedBodies() {
         // Keep the original body's component/body association — cut features
         // have no componentId/bodyId of their own.
       } else if (op === 'intersect') {
+        const committedTargets = applyBooleanToCommittedBodies(feature, toolGeom, 'intersect');
+        if (!targetsBody(feature, currentBodyId) && committedTargets > 0) {
+          toolGeom.dispose();
+          continue;
+        }
         const next = GeometryEngine.csgIntersect(currentGeom, toolGeom);
         currentGeom.dispose();
         toolGeom.dispose();

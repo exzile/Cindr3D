@@ -1,10 +1,57 @@
 import * as THREE from 'three';
-import type { Feature, FeatureGroup, Sketch, SketchEntity, SketchPlane } from '../../../types/cad';
+import type { Body, Component, Feature, FeatureGroup, Sketch, SketchEntity, SketchPlane } from '../../../types/cad';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
+import { useComponentStore } from '../../componentStore';
 import { deserializeFeature, deserializeSketch, serializeFeature } from '../persistence';
 import { snapshotCADState } from '../historyUtils';
 import type { CADSliceContext } from '../sliceContext';
 import type { CADState } from '../state';
+
+type HistorySketch = Sketch & {
+  planeNormal: [number, number, number] | null;
+  planeOrigin: [number, number, number] | null;
+};
+
+type HistorySnapshot = {
+  features: Feature[];
+  sketches: HistorySketch[];
+  activeSketch?: HistorySketch | null;
+  featureGroups: FeatureGroup[];
+  componentStore?: {
+    rootComponentId: string;
+    activeComponentId: string | null;
+    selectedBodyId: string | null;
+    components: Record<string, Component & { transform: number[] | { elements?: number[] } }>;
+    bodies: Record<string, Body>;
+  };
+};
+
+const restoreComponentStoreSnapshot = (snapshot: HistorySnapshot['componentStore']) => {
+  if (!snapshot) return;
+
+  useComponentStore.setState({
+    rootComponentId: snapshot.rootComponentId,
+    activeComponentId: snapshot.activeComponentId ?? snapshot.rootComponentId,
+    selectedBodyId: snapshot.selectedBodyId,
+    components: Object.fromEntries(Object.entries(snapshot.components).map(([id, component]) => {
+      const rawTransform = component.transform;
+      const transformArray = Array.isArray(rawTransform) ? rawTransform : rawTransform?.elements;
+      return [
+        id,
+        {
+          ...component,
+          transform: Array.isArray(transformArray)
+            ? new THREE.Matrix4().fromArray(transformArray)
+            : new THREE.Matrix4(),
+        },
+      ];
+    })),
+    bodies: Object.fromEntries(Object.entries(snapshot.bodies).map(([id, body]) => [
+      id,
+      { ...body, mesh: null },
+    ])),
+  });
+};
 
 export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
   const slice: Partial<CADState> = {
@@ -37,11 +84,7 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
     const stack = [...state.undoStack];
     const snapshot = stack.pop()!;
     try {
-      const parsed = JSON.parse(snapshot) as {
-        features: Feature[];
-        sketches: Array<Sketch & { planeNormal: [number, number, number] | null; planeOrigin: [number, number, number] | null }>;
-        featureGroups: FeatureGroup[];
-      };
+      const parsed = JSON.parse(snapshot) as HistorySnapshot;
       if (!parsed || !Array.isArray(parsed.features)) {
         throw new Error('Invalid snapshot: missing features array');
       }
@@ -56,6 +99,11 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
       // the original mesh is still alive somewhere in the live state.
       const liveMeshById = new Map<string, Feature['mesh']>();
       for (const f of state.features) if (f.mesh) liveMeshById.set(f.id, f.mesh);
+      const restoredSketches = parsed.sketches.map((s) => deserializeSketch(s as unknown as Sketch));
+      const restoredActiveSketch = parsed.activeSketch
+        ? deserializeSketch(parsed.activeSketch as unknown as Sketch)
+        : null;
+      restoreComponentStoreSnapshot(parsed.componentStore);
       set({
         undoStack: stack,
         redoStack: [...state.redoStack, currentSnapshot],
@@ -64,7 +112,8 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
           const live = liveMeshById.get(restored.id);
           return live ? { ...restored, mesh: live } : restored;
         }),
-        sketches: parsed.sketches.map((s) => deserializeSketch(s as unknown as Sketch)),
+        sketches: restoredSketches,
+        activeSketch: restoredActiveSketch,
         featureGroups: parsed.featureGroups,
         statusMessage: 'Undo',
       });
@@ -83,11 +132,7 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
     const stack = [...state.redoStack];
     const snapshot = stack.pop()!;
     try {
-      const parsed = JSON.parse(snapshot) as {
-        features: Feature[];
-        sketches: Array<Sketch & { planeNormal: [number, number, number] | null; planeOrigin: [number, number, number] | null }>;
-        featureGroups: FeatureGroup[];
-      };
+      const parsed = JSON.parse(snapshot) as HistorySnapshot;
       if (!parsed || !Array.isArray(parsed.features)) {
         throw new Error('Invalid snapshot: missing features array');
       }
@@ -96,6 +141,11 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
       }
       const liveMeshById = new Map<string, Feature['mesh']>();
       for (const f of state.features) if (f.mesh) liveMeshById.set(f.id, f.mesh);
+      const restoredSketches = parsed.sketches.map((s) => deserializeSketch(s as unknown as Sketch));
+      const restoredActiveSketch = parsed.activeSketch
+        ? deserializeSketch(parsed.activeSketch as unknown as Sketch)
+        : null;
+      restoreComponentStoreSnapshot(parsed.componentStore);
       set({
         redoStack: stack,
         undoStack: [...state.undoStack, currentSnapshot],
@@ -104,7 +154,8 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
           const live = liveMeshById.get(restored.id);
           return live ? { ...restored, mesh: live } : restored;
         }),
-        sketches: parsed.sketches.map((s) => deserializeSketch(s as unknown as Sketch)),
+        sketches: restoredSketches,
+        activeSketch: restoredActiveSketch,
         featureGroups: parsed.featureGroups,
         statusMessage: 'Redo',
       });

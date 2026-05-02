@@ -18,10 +18,16 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
   min-height: 24px;
   padding: 3px 6px;
+  border: 0;
   border-radius: 3px;
+  background: transparent;
+  color: inherit;
   font-size: 12px;
+  font-family: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
@@ -29,8 +35,19 @@
   background: rgba(59, 130, 246, 0.14);
 }
 
-.tp-profile-row input {
-  margin: 0;
+.tp-profile-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  border: 1px solid var(--border, #9ca3af);
+  border-radius: 2px;
+  background: var(--panel-bg, #fff);
+  color: #2563eb;
+  font-size: 10px;
+  line-height: 1;
 }
 
 .tp-profile-row span {

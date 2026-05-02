@@ -1,4 +1,5 @@
 import type { Sketch, SketchEntity, SketchPoint } from '../../../../types/cad';
+import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import { EXTRUDE_DEFAULTS } from '../../defaults';
 import type { ExtrudeDirection, ExtrudeOperation } from '../../../../types/cad-extrude.types';
 import { useComponentStore } from '../../../componentStore';
@@ -194,12 +195,17 @@ export function createExtrudeSetupActions({ set, get }: CADSliceContext): Partia
     if (!feature || feature.type !== 'extrude') return;
     const p = feature.params;
     const sketchId = feature.sketchId ?? null;
+    const sketch = sketchId ? get().sketches.find((item) => item.id === sketchId) : null;
     const profileIndices = Array.isArray(p.profileIndices) ? (p.profileIndices as number[]) : null;
+    const profileCount = sketch ? GeometryEngine.sketchToShapes(sketch).length : 0;
     const selectedSketchIds = sketchId
       ? profileIndices?.length
         ? profileIndices.map((index) => `${sketchId}::${index}`)
-        : [sketchId]
+        : profileCount > 0
+          ? Array.from({ length: profileCount }, (_, index) => `${sketchId}::${index}`)
+          : [sketchId]
       : [];
+    const operation = (p.operation as ExtrudeOperation) ?? 'new-body';
     set({
       activeTool: 'extrude',
       editingFeatureId: featureId,
@@ -208,7 +214,7 @@ export function createExtrudeSetupActions({ set, get }: CADSliceContext): Partia
       extrudeDistance: typeof p.distance === 'number' ? p.distance : 10,
       extrudeDistance2: typeof p.distance2 === 'number' ? p.distance2 : 10,
       extrudeDirection: (p.direction as ExtrudeDirection) ?? 'positive',
-      extrudeOperation: (p.operation as ExtrudeOperation) ?? 'new-body',
+      extrudeOperation: operation,
       extrudeThinEnabled: !!p.thin,
       extrudeThinThickness: typeof p.thinThickness === 'number' ? p.thinThickness : 2,
       extrudeThinSide: (p.thinSide as 'side1' | 'side2' | 'center') ?? 'side1',
@@ -228,7 +234,7 @@ export function createExtrudeSetupActions({ set, get }: CADSliceContext): Partia
       extrudeTaperAngle: typeof p.taperAngle === 'number' ? p.taperAngle : 0,
       extrudeTaperAngle2: typeof p.taperAngle2 === 'number' ? p.taperAngle2 : 0,
       extrudeSymmetricFullLength: false,
-      extrudeBodyKind: (feature.bodyKind === 'surface' ? 'surface' : 'solid') as 'solid' | 'surface',
+      extrudeBodyKind: (operation === 'cut' || operation === 'intersect' || feature.bodyKind !== 'surface' ? 'solid' : 'surface') as 'solid' | 'surface',
       extrudeParticipantBodyIds: Array.isArray(p.participantBodyIds) ? (p.participantBodyIds as unknown as string[]) : [],
       extrudeConfinedFaceIds: Array.isArray(p.confinedFaceIds) ? (p.confinedFaceIds as unknown as string[]) : [],
       extrudeCreationOccurrence: typeof p.creationOccurrence === 'string' ? p.creationOccurrence : null,

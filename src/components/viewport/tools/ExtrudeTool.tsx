@@ -47,6 +47,7 @@ export default function ExtrudeTool() {
   const distance = useCADStore((s) => s.extrudeDistance);
   const direction = useCADStore((s) => s.extrudeDirection);
   const selectedFeatureId = useCADStore((s) => s.selectedFeatureId);
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
 
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [faceHit, setFaceHit] = useState<FacePickResult | null>(null);
@@ -84,7 +85,7 @@ export default function ExtrudeTool() {
         .map((feature) => feature.sketchId),
     );
     const fullyUsedSketchIds = new Set<string>();
-    for (const feature of features.filter((f) => f.type === 'extrude' && !f.suppressed)) {
+    for (const feature of features.filter((f) => f.type === 'extrude' && !f.suppressed && f.id !== editingFeatureId)) {
       const sketchId = feature.sketchId?.split('::')[0];
       if (!sketchId) continue;
       const profileIndex = feature.params.profileIndex;
@@ -121,11 +122,11 @@ export default function ExtrudeTool() {
         return otherFeatureIndex > sketchIndex;
       })
     );
-  }, [sketches, features, focusedSketchId]);
+  }, [sketches, features, focusedSketchId, editingFeatureId]);
 
   const consumedProfileIds = useMemo(() => new Set(
       features
-        .filter((f) => f.type === 'extrude' && !f.suppressed)
+        .filter((f) => f.type === 'extrude' && !f.suppressed && f.id !== editingFeatureId)
         .map((f) => {
           const sketchId = f.sketchId?.split('::')[0];
           const profileIndex = f.params.profileIndex;
@@ -135,7 +136,7 @@ export default function ExtrudeTool() {
         })
         .filter((id): id is string => !!id),
     ),
-    [features],
+    [features, editingFeatureId],
   );
 
   const profileEntries = useMemo(() => {

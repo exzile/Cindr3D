@@ -23,7 +23,7 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
     set({ activeTool: 'sketch-text', statusMessage: 'Sketch Text â€” click on the sketch to place text' });
   },
   commitSketchTextEntities: (segments) => {
-    const { activeSketch } = get();
+    const { activeSketch, sketches } = get();
     if (!activeSketch) return;
     const newEntities = segments.map((seg) => ({
       id: crypto.randomUUID(),
@@ -33,11 +33,13 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
         { id: crypto.randomUUID(), x: seg.x2, y: seg.y2, z: seg.z2 },
       ],
     }));
+    const nextSketch = {
+      ...activeSketch,
+      entities: [...activeSketch.entities, ...newEntities],
+    };
     set({
-      activeSketch: {
-        ...activeSketch,
-        entities: [...activeSketch.entities, ...newEntities],
-      },
+      activeSketch: nextSketch,
+      sketches: sketches.map((s) => (s.id === nextSketch.id ? nextSketch : s)),
       activeTool: 'select',
       statusMessage: 'Text placed',
     });
@@ -94,10 +96,12 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
   removeDimension: (dimId) => {
     const { activeSketch } = get();
     if (!activeSketch) return;
+    const nextSketch = { ...activeSketch, dimensions: (activeSketch.dimensions ?? []).filter((d) => d.id !== dimId) };
     set({
+      activeSketch: nextSketch,
       sketches: get().sketches.map((s) =>
         s.id === activeSketch.id
-          ? { ...s, dimensions: (s.dimensions ?? []).filter((d) => d.id !== dimId) }
+          ? nextSketch
           : s
       ),
     });
@@ -121,7 +125,11 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
       });
       return { ...e, points: updatedPoints };
     });
-    set({ activeSketch: { ...activeSketch, entities: updatedEntities } });
+    const nextSketch = { ...activeSketch, entities: updatedEntities };
+    set({
+      activeSketch: nextSketch,
+      sketches: get().sketches.map((s) => (s.id === nextSketch.id ? nextSketch : s)),
+    });
   },
 
   // â”€â”€â”€ D45: Project / Include live-link toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

@@ -75,6 +75,7 @@ function extrudeFeature(
   bodyId?: string,
   componentId?: string,
   startOffset = 0,
+  participantBodyIds: string[] = [],
 ): Feature {
   return {
     id,
@@ -94,6 +95,7 @@ function extrudeFeature(
       startOffset,
       extentType: 'distance',
       taperAngle: 0,
+      ...(participantBodyIds.length > 0 ? { participantBodyIds } : {}),
     },
     visible: true,
     suppressed: false,
@@ -106,7 +108,7 @@ function buildOrangePi3LtsCase(
   bodyIds: { case: string; board: string; top: string },
 ) {
   const outerW = 62;
-  const outerL = 93;
+  const outerL = 91;
   const wall = 2;
   const floor = 3;
   const wallH = 23;
@@ -138,7 +140,7 @@ function buildOrangePi3LtsCase(
   const ts = 10_000;
 
   const sketches: Sketch[] = [
-    sketch('op3lts-floor-sketch', 'Case floor - 62 x 93 mm', 'XY', new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), [
+    sketch('op3lts-floor-sketch', 'Case floor - 62 x 91 mm', 'XY', new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), [
       rect('op3lts-floor-rect', [-outerW / 2, 0, -outerL / 2], [outerW / 2, 0, outerL / 2]),
     ], componentIds.case),
     sketch('op3lts-left-wall-sketch', 'Left wall strip', 'XY', new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), [
@@ -226,17 +228,17 @@ function buildOrangePi3LtsCase(
     extrudeFeature('op3lts-front-wall', 'Join front wall', 'op3lts-front-wall-sketch', ts + 103, 'join', wallH, 'positive', undefined, componentIds.case),
     extrudeFeature('op3lts-back-wall', 'Join back wall', 'op3lts-back-wall-sketch', ts + 104, 'join', wallH, 'positive', undefined, componentIds.case),
     extrudeFeature('op3lts-standoffs', 'Join four raised screw standoffs', 'op3lts-standoffs-sketch', ts + 105, 'join', standoffHeight + standoffOverlap, 'positive', undefined, componentIds.case, -standoffOverlap),
-    extrudeFeature('op3lts-pilot-holes', 'Cut M2.5 screw pilot holes through standoffs', 'op3lts-standoff-holes-sketch', ts + 106, 'cut', standoffHeight + standoffOverlap + 1.5, 'positive', undefined, componentIds.case, -standoffOverlap),
-    extrudeFeature('op3lts-back-port-cuts', 'Cut HDMI, USB-C power and audio openings', 'op3lts-back-ports-sketch', ts + 107, 'cut', wallCutDepth, 'negative', undefined, componentIds.case, 1),
-    extrudeFeature('op3lts-front-access-cuts', 'Cut IR receiver and power button openings', 'op3lts-front-access-sketch', ts + 108, 'cut', wallCutDepth, 'positive', undefined, componentIds.case, -1),
-    extrudeFeature('op3lts-right-port-cuts', 'Cut Ethernet and USB openings', 'op3lts-right-ports-sketch', ts + 109, 'cut', wallCutDepth, 'negative', undefined, componentIds.case, 1),
-    extrudeFeature('op3lts-left-access-cuts', 'Cut microSD access opening', 'op3lts-left-access-sketch', ts + 110, 'cut', wallCutDepth, 'positive', undefined, componentIds.case, -1),
-    extrudeFeature('op3lts-vent-cuts', 'Cut bottom vent slots', 'op3lts-vent-sketch', ts + 111, 'cut', floorCutDepth, 'positive', undefined, componentIds.case, -1),
-    extrudeFeature('op3lts-gpio-cut-feature', 'Cut GPIO ribbon notch', 'op3lts-gpio-sketch', ts + 112, 'cut', wallCutDepth, 'positive', undefined, componentIds.case, -1),
+    extrudeFeature('op3lts-pilot-holes', 'Cut M2.5 screw pilot holes through standoffs', 'op3lts-standoff-holes-sketch', ts + 106, 'cut', standoffHeight + standoffOverlap + 1.5, 'positive', undefined, componentIds.case, -standoffOverlap, [bodyIds.case]),
+    extrudeFeature('op3lts-back-port-cuts', 'Cut HDMI, USB-C power and audio openings', 'op3lts-back-ports-sketch', ts + 107, 'cut', wallCutDepth, 'negative', undefined, componentIds.case, 1, [bodyIds.case]),
+    extrudeFeature('op3lts-front-access-cuts', 'Cut IR receiver and power button openings', 'op3lts-front-access-sketch', ts + 108, 'cut', wallCutDepth, 'positive', undefined, componentIds.case, -1, [bodyIds.case]),
+    extrudeFeature('op3lts-right-port-cuts', 'Cut Ethernet and USB openings', 'op3lts-right-ports-sketch', ts + 109, 'cut', wallCutDepth, 'negative', undefined, componentIds.case, 1, [bodyIds.case]),
+    extrudeFeature('op3lts-left-access-cuts', 'Cut microSD access opening', 'op3lts-left-access-sketch', ts + 110, 'cut', wallCutDepth, 'positive', undefined, componentIds.case, -1, [bodyIds.case]),
+    extrudeFeature('op3lts-vent-cuts', 'Cut bottom vent slots', 'op3lts-vent-sketch', ts + 111, 'cut', floorCutDepth, 'positive', undefined, componentIds.case, -1, [bodyIds.case]),
+    extrudeFeature('op3lts-gpio-cut-feature', 'Cut GPIO ribbon notch', 'op3lts-gpio-sketch', ts + 112, 'cut', wallCutDepth, 'positive', undefined, componentIds.case, -1, [bodyIds.case]),
     extrudeFeature('op3lts-board-proxy', 'Orange Pi 3 LTS board proxy', 'op3lts-board-sketch', ts + 113, 'new-body', boardThickness, 'positive', bodyIds.board, componentIds.board),
-    extrudeFeature('op3lts-board-hole-cuts', 'Cut board mounting clearance holes', 'op3lts-board-holes-sketch', ts + 114, 'cut', boardThickness + 0.8, 'positive', undefined, componentIds.board, -0.4),
+    extrudeFeature('op3lts-board-hole-cuts', 'Cut board mounting clearance holes', 'op3lts-board-holes-sketch', ts + 114, 'cut', boardThickness + 0.8, 'positive', undefined, componentIds.board, -0.4, [bodyIds.board]),
     extrudeFeature('op3lts-top-cover', 'Top cover frame', 'op3lts-top-cover-sketch', ts + 115, 'new-body', lidThickness, 'positive', bodyIds.top, componentIds.top),
-    extrudeFeature('op3lts-top-cover-window-cut', 'Cut removable center opening in top cover', 'op3lts-top-cover-window-sketch', ts + 116, 'cut', lidThickness + 1, 'positive', undefined, componentIds.top, -0.5),
+    extrudeFeature('op3lts-top-cover-window-cut', 'Cut removable center opening in top cover', 'op3lts-top-cover-window-sketch', ts + 116, 'cut', lidThickness + 1, 'positive', undefined, componentIds.top, -0.5, [bodyIds.top]),
   ];
 
   return {

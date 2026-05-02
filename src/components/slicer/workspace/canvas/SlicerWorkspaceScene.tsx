@@ -18,6 +18,7 @@ import { LayerHeightIndicator } from '../preview/BuildVolume';
 import { SectionPlaneController } from './SectionPlaneController';
 import { NozzleSimulator, NozzleTrail } from './NozzleSim';
 import { InlineGCodePreview } from './GCodeTubePreview';
+import { InlineGCodeWirePreview } from './GCodeWirePreview';
 import { HoverTooltip } from './HoverTooltip';
 
 export function SlicerWorkspaceScene() {
@@ -46,6 +47,7 @@ export function SlicerWorkspaceScene() {
   const previewSectionEnabled = useSlicerStore((s) => s.previewSectionEnabled);
   const previewSectionZ = useSlicerStore((s) => s.previewSectionZ);
   const previewColorMode = useSlicerStore((s) => s.previewColorMode);
+  const previewRenderMode = useSlicerStore((s) => s.previewRenderMode);
   const previewHiddenTypesArr = useSlicerStore((s) => s.previewHiddenTypes);
   const hiddenTypes = useMemo(() => new Set(previewHiddenTypesArr), [previewHiddenTypesArr]);
   const previewSimEnabled = useSlicerStore((s) => s.previewSimEnabled);
@@ -94,7 +96,7 @@ export function SlicerWorkspaceScene() {
     invalidate, previewMode, sliceResult, previewLayer, previewLayerStart,
   ]);
   useEffect(() => { invalidate(); }, [
-    invalidate, previewShowTravel, previewColorMode, previewHiddenTypesArr,
+    invalidate, previewShowTravel, previewColorMode, previewRenderMode, previewHiddenTypesArr,
   ]);
   useEffect(() => { invalidate(); }, [
     invalidate, previewSimEnabled, previewSimPlaying, previewSimTime,
@@ -317,19 +319,34 @@ export function SlicerWorkspaceScene() {
 
       {previewMode === 'preview' && sliceResult && (
         <>
-          <InlineGCodePreview
-            sliceResult={sliceResult}
-            filamentDiameter={printerProfile?.filamentDiameter ?? 1.75}
-            startLayer={previewLayerStart}
-            currentLayer={simState.layerIndex}
-            currentLayerMoveCount={simState.moveCount}
-            showTravel={previewShowTravel}
-            showRetractions={previewShowRetractions}
-            colorMode={previewColorMode}
-            hiddenTypes={hiddenTypes}
-            layerTimeRange={visibleLayerTimeRange}
-            onHoverMove={handleHoverMove}
-          />
+          {previewRenderMode === 'wireframe' ? (
+            <InlineGCodeWirePreview
+              sliceResult={sliceResult}
+              filamentDiameter={printerProfile?.filamentDiameter ?? 1.75}
+              startLayer={previewLayerStart}
+              currentLayer={simState.layerIndex}
+              currentLayerMoveCount={simState.moveCount}
+              showTravel={previewShowTravel}
+              showRetractions={previewShowRetractions}
+              colorMode={previewColorMode}
+              hiddenTypes={hiddenTypes}
+              layerTimeRange={visibleLayerTimeRange}
+            />
+          ) : (
+            <InlineGCodePreview
+              sliceResult={sliceResult}
+              filamentDiameter={printerProfile?.filamentDiameter ?? 1.75}
+              startLayer={previewLayerStart}
+              currentLayer={simState.layerIndex}
+              currentLayerMoveCount={simState.moveCount}
+              showTravel={previewShowTravel}
+              showRetractions={previewShowRetractions}
+              colorMode={previewColorMode}
+              hiddenTypes={hiddenTypes}
+              layerTimeRange={visibleLayerTimeRange}
+              onHoverMove={handleHoverMove}
+            />
+          )}
           <LayerHeightIndicator
             z={currentLayerData?.z ?? 0}
             sizeX={bv.x}

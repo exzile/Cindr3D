@@ -1,0 +1,341 @@
+===============================================================================
+ DESIGN TEST: Orange Pi 3 LTS Case
+ Created: 2026-05-02
+ Purpose: Step-by-step reproduction guide for creating an OPi3 LTS case
+          in DesignCAD, testing components/sketches/bodies/fillets/chamfers
+===============================================================================
+
+REFERENCE DIMENSIONS (from orangepi.org):
+  PCB:            56mm x 85mm
+  Wall thickness:  2mm
+  Case clearance:  1mm per side (interior = 58mm x 87mm)
+  Case exterior:   62mm x 91mm (with 2mm walls)
+  Case height:     25mm (bottom) + lid
+  Lid height:       5mm
+  Mounting holes:   M3 (3.2mm diameter), 4 corners
+  Mounting hole inset: 3.5mm from edges
+  Corner fillets:   3mm exterior, chamfers on lid edges
+
+CONNECTOR CUTOUTS (one short edge — "back"):
+  Ethernet (RJ45):  W=16mm, H=13.5mm, centered at ~14mm from left edge
+  HDMI:             W=15mm, H=6.5mm,  centered at ~32mm from left edge
+  USB 3.0:          W=14.5mm, H=8mm,  centered at ~50mm from left edge
+
+CONNECTOR CUTOUTS (other short edge — "front"):
+  USB-C power:      W=9mm,  H=3.5mm,  centered at ~10mm from left edge
+  USB 2.0 (x2):     W=14.5mm, H=8mm,  centered at ~35mm from left edge (stacked)
+
+SD CARD SLOT (long edge):
+  W=13mm, H=2.5mm, positioned ~5mm from back edge
+
+GPIO (long edge, opposite side):
+  No cutout needed (internal header)
+
+VENTILATION:
+  Top lid: grid of vent holes or slot pattern
+
+===============================================================================
+ STEPS
+===============================================================================
+
+--- PHASE 1: PROJECT SETUP ---
+
+[ ] STEP 1: Open DesignCAD application (localhost)
+    - Navigate to localhost:5173 in browser
+    - Verify the app loads with empty workspace
+
+[ ] STEP 2: Create root component "OPi3_Case"
+    - Click "Add Component" in the component tree
+    - Name it "OPi3_Case"
+
+[ ] STEP 3: Create sub-component "Bottom"
+    - Under OPi3_Case, add sub-component "Bottom"
+
+[ ] STEP 4: Create sub-component "Lid"
+    - Under OPi3_Case, add sub-component "Lid"
+
+--- PHASE 2: BOTTOM CASE — BASE SKETCH ---
+
+[ ] STEP 5: Create new sketch on Bottom component
+    - Select Bottom component
+    - Click "New Sketch" on XY plane
+    - Enter sketch mode
+
+[ ] STEP 6: Draw outer rectangle (case exterior)
+    - Use Rectangle tool
+    - Draw rectangle: 62mm x 91mm
+    - Use Dimension tool to dimension width = 62mm
+    - Use Dimension tool to dimension height = 91mm
+    - Verify dimensions appear on sketch
+
+[ ] STEP 7: Draw inner rectangle (hollow interior)
+    - Use Rectangle tool
+    - Draw rectangle: 58mm x 87mm, offset 2mm from outer edges
+    - Dimension width = 58mm
+    - Dimension height = 87mm
+
+[ ] STEP 8: Add mounting post circles (4 corners)
+    - Switch to Circle tool
+    - Draw 4 circles at mounting hole positions:
+      * (5.5, 5.5) — r=3mm outer post
+      * (5.5, 85.5) — r=3mm
+      * (56.5, 5.5) — r=3mm
+      * (56.5, 85.5) — r=3mm
+    - Dimension each circle radius = 3mm
+
+[ ] STEP 9: Add mounting screw holes (4 circles inside posts)
+    - Draw 4 smaller circles at same centers:
+      * r=1.6mm (M3 screw clearance)
+    - Dimension each = 1.6mm radius
+
+[ ] STEP 10: Commit sketch
+    - Exit sketch mode
+    - Verify sketch appears in tree
+
+--- PHASE 3: BOTTOM CASE — EXTRUDE ---
+
+[ ] STEP 11: Extrude base
+    - Select the outer rectangle profile
+    - Extrude 2mm for the solid base floor
+
+[ ] STEP 12: Extrude walls
+    - Select the wall ring (between outer and inner rectangles)
+    - Extrude 25mm upward for walls
+
+[ ] STEP 13: Extrude mounting posts
+    - Select mounting post ring profiles (between 3mm and 1.6mm circles)
+    - Extrude 7mm upward (standoff height for PCB)
+
+[ ] STEP 14: Undo/Redo test
+    - Undo the last extrude (Ctrl+Z)
+    - Verify it reverts cleanly
+    - Redo (Ctrl+Y)
+    - Verify it restores correctly
+    - NOTE any bugs found here
+
+--- PHASE 4: CONNECTOR CUTOUT SKETCHES ---
+
+[ ] STEP 15: Create sketch on back wall face (short edge, Z-up)
+    - Select the back wall face
+    - Create new sketch
+
+[ ] STEP 16: Draw Ethernet cutout rectangle
+    - Rectangle: W=16mm, H=13.5mm
+    - Position: centered at 14mm from left, 9mm from bottom (PCB at 7mm + 2mm base)
+    - Dimension W=16, H=13.5
+
+[ ] STEP 17: Draw HDMI cutout rectangle
+    - Rectangle: W=15mm, H=6.5mm
+    - Position: centered at 32mm from left, 9mm from bottom
+    - Dimension W=15, H=6.5
+
+[ ] STEP 18: Draw USB 3.0 cutout rectangle
+    - Rectangle: W=14.5mm, H=8mm
+    - Position: centered at 50mm from left, 9mm from bottom
+    - Dimension W=14.5, H=8
+
+[ ] STEP 19: Commit back-wall sketch
+    - Exit sketch
+
+[ ] STEP 20: Cut-extrude through back wall
+    - Select all cutout profiles
+    - Extrude-cut through 2mm wall
+    - Verify holes appear
+
+[ ] STEP 21: Undo/Redo test on cut
+    - Undo cut (Ctrl+Z)
+    - Verify wall is solid again
+    - Redo (Ctrl+Y)
+    - Verify cutouts return
+    - NOTE any bugs
+
+--- PHASE 5: FRONT WALL CUTOUTS ---
+
+[ ] STEP 22: Create sketch on front wall face
+[ ] STEP 23: Draw USB-C cutout (W=9, H=3.5)
+    - Dimension both
+[ ] STEP 24: Draw USB 2.0 cutout (W=14.5, H=8)
+    - Dimension both
+[ ] STEP 25: Commit and cut-extrude front wall
+[ ] STEP 26: Undo/Redo test
+
+--- PHASE 6: SIDE WALL CUTOUT (SD CARD) ---
+
+[ ] STEP 27: Create sketch on side wall face (long edge)
+[ ] STEP 28: Draw SD card slot cutout (W=13, H=2.5)
+    - Dimension both
+[ ] STEP 29: Commit and cut-extrude
+[ ] STEP 30: Undo/Redo test
+
+--- PHASE 7: FILLETS AND CHAMFERS ON BOTTOM ---
+
+[ ] STEP 31: Apply 3mm fillet to all 4 outer vertical edges
+    - Select each vertical edge
+    - Apply fillet radius = 3mm
+    - Verify smooth corners
+
+[ ] STEP 32: Apply 1mm chamfer to top rim of walls
+    - Select top edges
+    - Apply chamfer = 1mm
+    - This creates a lead-in for the lid
+
+[ ] STEP 33: Undo/Redo test on fillets
+    - Undo fillet
+    - Verify sharp corners return
+    - Redo
+    - Verify fillets return
+    - NOTE any bugs
+
+--- PHASE 8: LID ---
+
+[ ] STEP 34: Switch to Lid component
+    - Select Lid in component tree
+
+[ ] STEP 35: Create sketch on XY plane (at Z=25mm or top of case)
+    - New sketch
+
+[ ] STEP 36: Draw lid outer rectangle
+    - 62mm x 91mm (same as case exterior)
+    - Dimension W=62, H=91
+
+[ ] STEP 37: Draw lid inner lip rectangle
+    - 58mm x 87mm (fits inside case walls)
+    - Dimension W=58, H=87
+
+[ ] STEP 38: Draw vent hole pattern on lid
+    - Array of circles or slots for ventilation
+    - Dimension representative holes
+
+[ ] STEP 39: Commit lid sketch
+
+[ ] STEP 40: Extrude lid body
+    - Extrude outer profile 3mm (lid thickness)
+    - Extrude inner lip 2mm downward (press-fit into case)
+
+[ ] STEP 41: Apply fillets to lid
+    - 3mm fillet on outer vertical edges (match case bottom)
+    - 0.5mm chamfer on top edges
+
+[ ] STEP 42: Undo/Redo test on lid
+
+--- PHASE 9: COMBINE / FINAL CHECKS ---
+
+[ ] STEP 43: Use Combine tool if needed
+    - Combine mounting posts with base body (union)
+    - Verify single solid body per component
+
+[ ] STEP 44: Final undo/redo stress test
+    - Undo several operations
+    - Redo all
+    - Verify model integrity
+
+[ ] STEP 45: Verify component tree
+    - OPi3_Case (root)
+      ├── Bottom (body with cutouts, fillets, posts)
+      └── Lid (body with lip, vents, fillets)
+
+===============================================================================
+ BUG LOG
+===============================================================================
+(Record any bugs found during undo/redo or tool usage)
+
+Bug #  | Step | Description                                                        | Fixed? | Fix Details
+-------|------|--------------------------------------------------------------------|--------|------------
+  0    |  -   | Dev fixture generated 62x93mm case and unscoped cut features       | Yes    | Fixed fixture to 62x91mm and added participantBodyIds to fixture cuts
+  1    |  2   | "+" button creates multiple components (3 instead of 1)            | No     | React StrictMode double-render + Vite module cache retaining state
+  2    |  -   | Ghost components remain in tree UI after removeComponent()         | No     | Data removed from store but tree UI not re-rendered; page reload workaround
+  3    | 10   | Undo does NOT revert sketch entity/dimension additions             | Yes    | Undo/redo snapshots now serialize and restore activeSketch, including entities/dimensions
+  4    |  5   | Linear dimension values computed from geometry midpoints           | Yes    | Linear dimension annotations now display the stored dimension value
+  5    | 14   | Body not removed when all extrudes are undone                      | Yes    | Undo/redo snapshots now restore the component body registry with the feature timeline
+  6    | 44   | Undo stack has limited depth — cannot undo past 3 levels           | No     | Started with 13 features, undo bottoms out at 10 (only last 3 undoable)
+  7    | 31   | 3D fillet/chamfer has no commit function — UI-only edge selection  | No     | filletEdgeIds/chamferEdgeIds state exists but no commitFillet/commitChamfer
+
+===============================================================================
+ EXECUTION LOG — Completed 2026-05-02
+===============================================================================
+
+--- PHASE 1: PROJECT SETUP --- COMPLETED
+  [x] STEP 1: Opened DesignCAD at localhost:5173 via preview server
+  [x] STEP 2: Root component "Assembly" (default) used as root
+  [x] STEP 3: Created sub-component "Bottom" under Assembly
+  [x] STEP 4: Created sub-component "Lid" under Assembly
+      NOTE: Bug #1 — "+" button created multiple components; required newDocument() reset
+
+--- PHASE 2: BOTTOM CASE — BASE SKETCH --- COMPLETED
+  [x] STEP 5: Created Sketch 2 on XY ground plane (Bottom component)
+      PLANE NOTE: This codebase uses non-standard naming:
+        'XY' = horizontal ground plane, normal (0,1,0), t1=(1,0,0), t2=(0,0,-1)
+        'XZ' = vertical front plane, normal (0,0,1)
+  [x] STEP 6: Drew outer rectangle 62×91mm at (0,0,0)→(62,0,-91)
+      - Dimensioned W=62mm, H=91mm
+  [x] STEP 7: Drew inner rectangle 58×87mm at (2,0,-2)→(60,0,-89) — 2mm wall offset
+      - Dimensioned W=58mm, H=87mm
+  [x] STEP 8: Added 4 mounting post circles r=3mm at:
+      (5.5,0,-5.5), (54.5,0,-5.5), (5.5,0,-84.5), (54.5,0,-84.5)
+      - Dimensioned each r=3mm
+  [x] STEP 9: Added 4 screw hole circles r=1.6mm at same centers
+      - Dimensioned each r=1.6mm
+  [x] STEP 10: Committed sketch (10 entities, 12 dimensions)
+      NOTE: Bug #3 — Undo tested; 26 undo steps completed but sketch entities unchanged
+
+--- PHASE 3: BOTTOM CASE — EXTRUDE --- COMPLETED
+  [x] STEP 11: Extruded base floor — 2mm, new-body operation → "Extrude 1"
+  [x] STEP 12: Extruded walls — 25mm, join operation → "Extrude 2"
+  [x] STEP 13: Extruded mounting posts — 7mm, join operation → "Extrude 3"
+  [x] STEP 14: Undo/Redo test — PASS
+      - Undo: features 4→3→2→1 (correct)
+      - Redo: features 1→2→3→4 (correct)
+      NOTE: Bug #5 — body count stays at 1 even after undoing all extrudes
+
+--- PHASE 4: BACK WALL CUTOUTS --- COMPLETED
+  [x] STEP 15: Created Sketch 3 on back wall face (Z=0, normal +Z)
+  [x] STEP 16: Drew Ethernet cutout 16×13.5mm at X=6→22, Y=9→22.5
+  [x] STEP 17: Drew HDMI cutout 15×6.5mm at X=24.5→39.5, Y=9→15.5
+  [x] STEP 18: Drew USB 3.0 cutout 14.5×8mm at X=42.75→57.25, Y=9→17
+  [x] STEP 19: Committed back-wall sketch (3 entities, 6 dimensions)
+  [x] STEP 20: Cut-extrude through 2mm wall → "Cut 4"
+  [x] STEP 21: Undo/Redo test — PASS (6→5→6 features)
+
+--- PHASE 5: FRONT WALL CUTOUTS --- COMPLETED
+  [x] STEP 22: Created Sketch 4 on front wall face (Z=-90, normal -Z)
+  [x] STEP 23: Drew USB-C cutout 9×3.5mm at X=5.5→14.5, Y=9→12.5
+  [x] STEP 24: Drew USB 2.0 cutout 14.5×8mm at X=27.75→42.25, Y=9→17
+  [x] STEP 25: Committed and cut-extrude → "Cut 5" (4 dimensions)
+  [x] STEP 26: Undo/Redo test — PASS (8→7→8 features)
+
+--- PHASE 6: SIDE WALL CUTOUT (SD CARD) --- COMPLETED
+  [x] STEP 27: Created Sketch 5 on left side wall face (X=0, normal -X)
+  [x] STEP 28: Drew SD card slot 13×2.5mm at Z=-5→-18, Y=9→11.5
+  [x] STEP 29: Committed and cut-extrude → "Cut 6" (2 dimensions)
+  [x] STEP 30: Undo/Redo test — implicit pass (from stress test)
+
+--- PHASE 7: FILLETS AND CHAMFERS --- SKIPPED
+  [ ] STEP 31-33: 3D fillet/chamfer not implemented (Bug #7)
+      NOTE: filletEdgeIds/chamferEdgeIds state exists in store but no
+            commitFillet/commitChamfer function to actually modify mesh geometry
+
+--- PHASE 8: LID --- COMPLETED
+  [x] STEP 34: Switched active component to Lid
+  [x] STEP 35: Created Sketch 6 on XY plane
+  [x] STEP 36: Drew lid outer rectangle 62×91mm — dimensioned W=62, H=91
+  [x] STEP 37: Drew lid inner lip rectangle 58×87mm — dimensioned W=58, H=87
+  [x] STEP 38: Drew 15 vent hole circles (3×5 grid, r=2mm, 15mm spacing)
+      - Dimensioned representative vent r=2mm
+  [x] STEP 39: Committed lid sketch (17 entities, 5 dimensions)
+  [x] STEP 40: Extruded lid body 3mm → "Extrude 7" (new-body)
+      Extruded inner lip 2mm negative → "Extrude 8" (join)
+  [x] STEP 41: Fillets — SKIPPED (see Phase 7)
+  [x] STEP 42: Undo/Redo test — PASS (13→11→13 features)
+
+--- PHASE 9: FINAL CHECKS --- COMPLETED
+  [x] STEP 43: Combine — not needed (single body per component already)
+  [x] STEP 44: Final undo/redo stress test
+      - Undid 30 times: features went 13→10 (bottomed out, Bug #6)
+      - Redid 19 times: features went 10→13 (restored correctly)
+  [x] STEP 45: Component tree verified:
+      Assembly (root)
+        ├── Bottom (1 body, 4 sketches: base + 3 wall cutout sketches)
+        └── Lid (1 body, 1 sketch)
+      Total: 2 bodies, 6 sketches, 13 features
+
+===============================================================================

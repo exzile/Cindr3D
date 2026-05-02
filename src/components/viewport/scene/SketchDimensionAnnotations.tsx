@@ -112,7 +112,7 @@ export default function SketchDimensionAnnotations() {
             result.push({
               segments: segs,
               textPos: toWorld(ann.textPosition, origin, t1, t2),
-              label: DimensionEngine.formatDimensionValue(ann.value, 'mm', 2),
+              label: DimensionEngine.formatDimensionValue(dim.value, 'mm', 2),
             });
           } else {
             // angular — use vertex + two ray endpoints from first three entity points
@@ -170,15 +170,16 @@ export default function SketchDimensionAnnotations() {
             });
             result[result.length - 1].label = `DIA ${DimensionEngine.formatDimensionValue(dim.value, 'mm', 2)}`;
           } else {
-            // radial — show a line from center to edge
-            const edgePt: Vec2 = { x: cx + r, y: cy };
+            // radial — use stored text position as leader direction to mimic
+            // CAD-style radius callouts (leader from center toward text).
+            const text2d: Vec2 = dim.position ?? { x: cx + r * 0.6, y: cy + 1 };
+            const dir = { x: text2d.x - cx, y: text2d.y - cy };
+            const len = Math.hypot(dir.x, dir.y) || 1;
+            const edgePt: Vec2 = { x: cx + (dir.x / len) * r, y: cy + (dir.y / len) * r };
             const segs = makeSegments([[{ x: cx, y: cy }, edgePt]], origin, t1, t2);
             result.push({
               segments: segs,
-              textPos: toWorld(
-                { x: cx + r * 0.6, y: cy + 1 },
-                origin, t1, t2,
-              ),
+              textPos: toWorld(text2d, origin, t1, t2),
               label: `R${DimensionEngine.formatDimensionValue(r, 'mm', 2)}`,
             });
           }

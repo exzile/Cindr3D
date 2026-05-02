@@ -134,14 +134,25 @@ export default function ExtrudePanel() {
     return options;
   }, [extrudable, selectedIds, sketches, timelineSketchNames]);
 
-  const selectedSketches = selectedIds
-    .map((id) => sketches.find((sketch) => sketch.id === id.split('::')[0]))
+  const selectedProfileSketches = selectedIds
+    .map((id) => {
+      const [sketchId, rawIndex] = id.split('::');
+      const sketch = sketches.find((item) => item.id === sketchId);
+      if (!sketch) return null;
+      if (rawIndex === undefined) return sketch;
+      const profileIndex = Number(rawIndex);
+      return Number.isFinite(profileIndex)
+        ? GeometryEngine.createProfileSketch(sketch, profileIndex)
+        : null;
+    })
     .filter(Boolean) as typeof extrudable;
 
   const baseFeatureContainers = features.filter((feature) => feature.isBaseFeatureContainer);
-  const allClosedProfiles = selectedSketches.length > 0 && selectedSketches.every((sketch) => GeometryEngine.isSketchClosedProfile(sketch));
-  const effectiveBodyKind: 'solid' | 'surface' = allClosedProfiles ? bodyKind : 'surface';
+  const allClosedProfiles = selectedProfileSketches.length > 0 && selectedProfileSketches.every((sketch) => GeometryEngine.isSketchClosedProfile(sketch));
   const isCutMode = operation === 'cut';
+  const effectiveBodyKind: 'solid' | 'surface' = isCutMode || operation === 'intersect'
+    ? 'solid'
+    : allClosedProfiles ? bodyKind : 'surface';
   const side2ok = direction !== 'two-sides' || extentType2 === 'all' || extentType2 === 'to-object' || Math.abs(distance2) > 0.01;
   const extent1ok = extentType === 'all' || extentType === 'to-object' || Math.abs(distance) > 0.01;
   const toObjectOk = extentType !== 'to-object' || toEntityFaceId !== null;

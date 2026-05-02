@@ -264,27 +264,30 @@ export function createSketchLifecycleSlice({ set, get }: CADSliceContext) {
     });
   },
   addSketchEntity: (entity) => {
-    const { activeSketch } = get();
+    const { activeSketch, sketches } = get();
     if (activeSketch) {
       get().pushUndo();
+      const nextSketch = {
+        ...activeSketch,
+        entities: [...activeSketch.entities, entity],
+      };
       set({
-        activeSketch: {
-          ...activeSketch,
-          entities: [...activeSketch.entities, entity],
-        },
+        activeSketch: nextSketch,
+        sketches: upsertSketch(sketches, nextSketch),
       });
     }
   },
 
   replaceSketchEntities: (entities) => {
-    const { activeSketch } = get();
+    const { activeSketch, sketches } = get();
     if (activeSketch) {
-      set({ activeSketch: { ...activeSketch, entities } });
+      const nextSketch = { ...activeSketch, entities };
+      set({ activeSketch: nextSketch, sketches: upsertSketch(sketches, nextSketch) });
     }
   },
 
   cycleEntityLinetype: (entityId) => {
-    const { activeSketch } = get();
+    const { activeSketch, sketches } = get();
     if (!activeSketch) return;
     const CYCLE: Record<string, 'line' | 'construction-line' | 'centerline'> = {
       'line': 'construction-line',
@@ -297,18 +300,20 @@ export function createSketchLifecycleSlice({ set, get }: CADSliceContext) {
       if (!next) return e; // non-line types unchanged
       return { ...e, type: next };
     });
-    set({ activeSketch: { ...activeSketch, entities: updated } });
+    const nextSketch = { ...activeSketch, entities: updated };
+    set({ activeSketch: nextSketch, sketches: upsertSketch(sketches, nextSketch) });
   },
 
   // S6 Break Link — remove the 'linked' flag so a projected entity becomes editable
   breakProjectionLink: (entityId) => {
-    const { activeSketch } = get();
+    const { activeSketch, sketches } = get();
     if (!activeSketch) return;
     const updated = activeSketch.entities.map((e) =>
       e.id === entityId ? { ...e, linked: false } : e,
     );
     set({
       activeSketch: { ...activeSketch, entities: updated },
+      sketches: upsertSketch(sketches, { ...activeSketch, entities: updated }),
       statusMessage: 'Projection link broken — entity is now independent',
     });
   },

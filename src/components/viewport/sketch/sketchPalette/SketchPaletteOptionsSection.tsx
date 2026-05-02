@@ -17,7 +17,7 @@ export function SketchPaletteOptionsSection({
   return (
     <>
       <div className="sketch-palette-section-header" onClick={() => {}}>
-        <span>\u25bc Options</span>
+        <span>{'\u25bc'} Options</span>
       </div>
 
       <div className="sketch-palette-row">
@@ -69,7 +69,7 @@ export function SketchPaletteOptionsSection({
       </div>
 
       <div className="sketch-palette-section-header sketch-palette-section-header--spaced">
-        <span>\u25bc Grid &amp; Snap</span>
+        <span>{'\u25bc'} Grid &amp; Snap</span>
       </div>
 
       <div className="sketch-palette-row">

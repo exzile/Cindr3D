@@ -13,6 +13,7 @@ export function createPreviewActions(api: SlicerStoreApi): Pick<
   | 'setPreviewSectionEnabled'
   | 'setPreviewSectionZ'
   | 'setPreviewColorMode'
+  | 'setPreviewRenderMode'
   | 'togglePreviewType'
   | 'setPreviewColorSchemeOpen'
   | 'setPreviewGCodeOpen'
@@ -53,6 +54,7 @@ export function createPreviewActions(api: SlicerStoreApi): Pick<
     setPreviewSectionEnabled: (on) => set({ previewSectionEnabled: on }),
     setPreviewSectionZ: (z) => set({ previewSectionZ: z }),
     setPreviewColorMode: (mode) => set({ previewColorMode: mode }),
+    setPreviewRenderMode: (mode) => set({ previewRenderMode: mode }),
     togglePreviewType: (type) => set((state) => ({
       previewHiddenTypes: state.previewHiddenTypes.includes(type)
         ? state.previewHiddenTypes.filter((entry) => entry !== type)

@@ -5,7 +5,15 @@ import { BodyContextMenu } from './BodyContextMenu';
 import type { BodyCtxMenu } from './BodyContextMenu';
 import { MaterialPicker } from './MaterialPicker';
 
-export function BodyNode({ bodyId, inheritedVisible = true }: { bodyId: string; inheritedVisible?: boolean }) {
+export function BodyNode({
+  bodyId,
+  inheritedVisible = true,
+  displayName,
+}: {
+  bodyId: string;
+  inheritedVisible?: boolean;
+  displayName?: string;
+}) {
   const body = useComponentStore((s) => s.bodies[bodyId]);
   const toggleVisibility = useComponentStore((s) => s.toggleBodyVisibility);
   const selectedBodyId = useComponentStore((s) => s.selectedBodyId);
@@ -15,6 +23,7 @@ export function BodyNode({ bodyId, inheritedVisible = true }: { bodyId: string; 
 
   if (!body) return null;
   const effectiveVisible = inheritedVisible && body.visible !== false;
+  const bodyLabel = displayName ?? body.name;
 
   return (
     <div className="tree-leaf">
@@ -42,7 +51,7 @@ export function BodyNode({ bodyId, inheritedVisible = true }: { bodyId: string; 
         <span className="browser-item-icon body-icon" style={{ opacity: effectiveVisible ? 1 : 0.5 }}>
           <Box size={12} />
         </span>
-        <span className="browser-item-label" style={{ opacity: effectiveVisible ? 1 : 0.5 }}>{body.name}</span>
+        <span className="browser-item-label" style={{ opacity: effectiveVisible ? 1 : 0.5 }}>{bodyLabel}</span>
         {/* background is dynamic (per-body material color) — must stay inline */}
         <div
           className="body-color-dot"
@@ -57,7 +66,7 @@ export function BodyNode({ bodyId, inheritedVisible = true }: { bodyId: string; 
       {ctxMenu && (
         <BodyContextMenu
           menu={ctxMenu}
-          bodyName={body.name}
+          bodyName={bodyLabel}
           onClose={() => setCtxMenu(null)}
           onOpenMaterial={() => setShowMaterial(true)}
         />

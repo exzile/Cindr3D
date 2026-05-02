@@ -254,6 +254,53 @@ export function useSketchDimensionTool({
       dimensionToleranceMode !== 'none'
         ? { toleranceUpper: dimensionToleranceUpper, toleranceLower: dimensionToleranceLower }
         : {};
+    // Helper retained for future use by the dimension tool (was wired
+    // in the "theirs" branch of an earlier merge; the "ours" side
+    // doesn't call it yet). Underscore prefix to silence unused-var
+    // until a caller is restored.
+    const _addCircleOrArcDimension = (
+      entity: SketchEntity,
+      preferDiameterForCircle: boolean,
+    ): boolean => {
+      if ((entity.type !== 'circle' && entity.type !== 'arc') || !entity.radius) return false;
+      const center = entity.points[0];
+      const center2d = to2D(new THREE.Vector3(center.x, center.y, center.z));
+      const isCircleDiameter = entity.type === 'circle' && preferDiameterForCircle;
+      if (isCircleDiameter) {
+        const dimension = DimensionEngine.computeDiameterDimension(center2d.x, center2d.y, entity.radius, 0);
+        addSketchDimension({
+          id: crypto.randomUUID(),
+          type: 'diameter',
+          entityIds: [entity.id],
+          value: dimension.value,
+          position: dimension.textPosition,
+          driven: dimensionDrivenMode,
+          ...buildToleranceFields(),
+        });
+        setStatusMessage(`Diameter dimension added: DIA ${dimension.value.toFixed(2)}`);
+        return true;
+      }
+      const dimension = DimensionEngine.computeArcLengthDimension(
+        center2d.x,
+        center2d.y,
+        entity.radius,
+        entity.startAngle ?? 0,
+        entity.endAngle ?? (2 * Math.PI),
+        dimensionOffset,
+      );
+      addSketchDimension({
+        id: crypto.randomUUID(),
+        type: 'radial',
+        entityIds: [entity.id],
+        value: entity.radius,
+        position: dimension.textPosition,
+        driven: dimensionDrivenMode,
+        ...buildToleranceFields(),
+      });
+      setStatusMessage(`Radial dimension added: r=${entity.radius.toFixed(2)}`);
+      return true;
+    };
+    void _addCircleOrArcDimension;
 
     const commitCircleDimension = (entity: SketchEntity, type: 'radial' | 'diameter', value: number) => {
       if (!entity.radius) {
@@ -319,6 +366,45 @@ export function useSketchDimensionTool({
               ? 'Dimension: click closer to a line entity'
               : 'Aligned: click closer to a line entity',
           );
+          return;
+        }
+        if (entity.type === 'circle' && entity.radius) {
+          const center = entity.points[0];
+          const center2d = to2D(new THREE.Vector3(center.x, center.y, center.z));
+          const dimension = DimensionEngine.computeDiameterDimension(center2d.x, center2d.y, entity.radius, 0);
+          addSketchDimension({
+            id: crypto.randomUUID(),
+            type: 'diameter',
+            entityIds: [entity.id],
+            value: dimension.value,
+            position: dimension.textPosition,
+            driven: dimensionDrivenMode,
+            ...buildToleranceFields(),
+          });
+          setStatusMessage(`Diameter dimension added: DIA ${dimension.value.toFixed(2)}`);
+          return;
+        }
+        if (entity.type === 'arc' && entity.radius) {
+          const center = entity.points[0];
+          const center2d = to2D(new THREE.Vector3(center.x, center.y, center.z));
+          const dimension = DimensionEngine.computeArcLengthDimension(
+            center2d.x,
+            center2d.y,
+            entity.radius,
+            entity.startAngle ?? 0,
+            entity.endAngle ?? (2 * Math.PI),
+            dimensionOffset,
+          );
+          addSketchDimension({
+            id: crypto.randomUUID(),
+            type: 'radial',
+            entityIds: [entity.id],
+            value: entity.radius,
+            position: dimension.textPosition,
+            driven: dimensionDrivenMode,
+            ...buildToleranceFields(),
+          });
+          setStatusMessage(`Radial dimension added: r=${entity.radius.toFixed(2)}`);
           return;
         }
 

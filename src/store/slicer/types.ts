@@ -37,6 +37,7 @@ export interface SlicerStore {
   previewSectionEnabled: boolean;
   previewSectionZ: number;
   previewColorMode: PreviewColorMode;
+  previewRenderMode: 'solid' | 'wireframe';
   previewHiddenTypes: string[];
   previewColorSchemeOpen: boolean;
   previewGCodeOpen: boolean;
@@ -118,6 +119,7 @@ export interface SlicerStore {
   setPreviewSectionEnabled: (on: boolean) => void;
   setPreviewSectionZ: (z: number) => void;
   setPreviewColorMode: (mode: PreviewColorMode) => void;
+  setPreviewRenderMode: (mode: 'solid' | 'wireframe') => void;
   togglePreviewType: (type: string) => void;
   setPreviewColorSchemeOpen: (open: boolean) => void;
   setPreviewGCodeOpen: (open: boolean) => void;
