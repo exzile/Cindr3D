@@ -41,6 +41,7 @@ const BOARD_TYPE_OPTIONS: { value: PrinterBoardType; label: string; hint: string
   { value: 'repetier', label: 'Repetier', hint: 'Repetier-Firmware via Repetier-Server' },
   { value: 'other', label: 'Other', hint: 'Generic G-code printer' },
 ];
+const BOARD_TYPE_LOOKUP = new Map(BOARD_TYPE_OPTIONS.map((o) => [o.value, o]));
 
 interface ConnectionSectionProps {
   boardType: PrinterBoardType;
@@ -83,6 +84,7 @@ const TRANSPORT_OPTIONS: { value: DuetTransport; label: string; Icon: typeof Wif
   { value: 'network', label: 'Network', Icon: Wifi, hint: 'Connect over Wi-Fi or Ethernet via the board\'s HTTP API.' },
   { value: 'usb',     label: 'USB',     Icon: Usb,  hint: 'Connect a USB-attached printer board through Web Serial (Chrome / Edge).' },
 ];
+const TRANSPORT_LOOKUP = new Map(TRANSPORT_OPTIONS.map((o) => [o.value, o]));
 
 export function ConnectionSection({
   boardType,
@@ -115,6 +117,16 @@ export function ConnectionSection({
   const webSerialOk = isWebSerialSupported();
   const [serialPickError, setSerialPickError] = useState<string | null>(null);
 
+  const boardOption = BOARD_TYPE_LOOKUP.get(boardType);
+  const boardLabel = boardOption?.label ?? 'printer';
+  const transportHint = TRANSPORT_LOOKUP.get(transport)?.hint ?? '';
+
+  const ready = isUsb
+    ? webSerialOk && !!portLabel
+    : hostname.trim().length > 0;
+  const testDisabled = testing || connected || !ready;
+  const connectDisabled = !ready || (isUsb ? connecting : !canConnect);
+
   const handleSelectSerialPort = async () => {
     setSerialPickError(null);
     try {
@@ -144,7 +156,7 @@ export function ConnectionSection({
 
       <SettingRow
         label="Connection Type"
-        hint={TRANSPORT_OPTIONS.find((o) => o.value === transport)?.hint ?? ''}
+        hint={transportHint}
         control={
           <div className="duet-settings__mode-selector">
             {TRANSPORT_OPTIONS.map(({ value, label, Icon }) => (
@@ -163,7 +175,7 @@ export function ConnectionSection({
 
       <SettingRow
         label="Board Type"
-        hint={BOARD_TYPE_OPTIONS.find((o) => o.value === boardType)?.hint ?? ''}
+        hint={boardOption?.hint ?? ''}
         control={
           <div className="duet-settings__mode-selector">
             {BOARD_TYPE_OPTIONS.map((opt) => (
@@ -185,7 +197,7 @@ export function ConnectionSection({
           {isUsb ? <Usb size={16} /> : <Wifi size={16} />}
           {isUsb
             ? <span>Connected via USB ({portLabel || 'serial port'}) @ {baudRate} baud</span>
-            : <span>Connected to {BOARD_TYPE_OPTIONS.find((o) => o.value === boardType)?.label ?? 'printer'} at {config.hostname}</span>
+            : <span>Connected to {boardLabel} at {config.hostname}</span>
           }
         </div>
       ) : (
@@ -194,7 +206,7 @@ export function ConnectionSection({
           {isUsb
             ? 'Pick a USB serial port your printer is plugged into and choose a baud rate.'
             : isDuet ? 'Connect to your Duet3D board via its REST API'
-                     : `Connect to your ${BOARD_TYPE_OPTIONS.find((o) => o.value === boardType)?.label ?? 'printer'}`}
+                     : `Connect to your ${boardLabel}`}
         </div>
       )}
 
@@ -275,8 +287,8 @@ export function ConnectionSection({
               ? 'A USB device has been authorised for this printer. The same port will be re-used on connect.'
               : 'No port has been picked yet. Click below to pick the USB device your printer is on. Browsers only expose ports the user explicitly grants.'}
             control={
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <code className="duet-settings__mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div className="duet-settings__port-row">
+                <code className="duet-settings__mono duet-settings__port-label">
                   {portLabel || 'No port selected'}
                 </code>
                 <button
@@ -324,52 +336,41 @@ export function ConnectionSection({
       )}
 
       <div className="duet-settings__btn-row">
-        {(() => {
-          const usbReady = isUsb && webSerialOk && !!portLabel;
-          const networkReady = !isUsb && hostname.trim().length > 0;
-          const ready = usbReady || networkReady;
-          const testDisabled = testing || connected || !ready;
-          const connectDisabled = !ready || (isUsb ? connecting : !canConnect);
-          return (
+        <button
+          className={`duet-settings__btn duet-settings__btn--secondary${testDisabled ? ' duet-settings__btn--disabled' : ''}`}
+          onClick={handleTest}
+          disabled={testDisabled}
+        >
+          {testing ? (
             <>
-              <button
-                className={`duet-settings__btn duet-settings__btn--secondary${testDisabled ? ' duet-settings__btn--disabled' : ''}`}
-                onClick={handleTest}
-                disabled={testDisabled}
-              >
-                {testing ? (
-                  <>
-                    <Loader2 size={14} className="spin" /> Testing...
-                  </>
-                ) : (
-                  'Test Connection'
-                )}
-              </button>
-
-              {connected ? (
-                <button className="duet-settings__btn duet-settings__btn--danger" onClick={handleDisconnect}>
-                  <WifiOff size={14} /> Disconnect
-                </button>
-              ) : (
-                <button
-                  className={`duet-settings__btn duet-settings__btn--primary${connectDisabled ? ' duet-settings__btn--disabled' : ''}`}
-                  onClick={handleConnect}
-                  disabled={connectDisabled}
-                >
-                  {connecting ? (
-                    <>
-                      <Loader2 size={14} className="spin" /> Connecting...
-                    </>
-                  ) : (
-                    <>
-                      {isUsb ? <Usb size={14} /> : <Wifi size={14} />} Connect
-                    </>
-                  )}
-                </button>
-              )}
+              <Loader2 size={14} className="spin" /> Testing...
             </>
-          );
-        })()}
+          ) : (
+            'Test Connection'
+          )}
+        </button>
+
+        {connected ? (
+          <button className="duet-settings__btn duet-settings__btn--danger" onClick={handleDisconnect}>
+            <WifiOff size={14} /> Disconnect
+          </button>
+        ) : (
+          <button
+            className={`duet-settings__btn duet-settings__btn--primary${connectDisabled ? ' duet-settings__btn--disabled' : ''}`}
+            onClick={handleConnect}
+            disabled={connectDisabled}
+          >
+            {connecting ? (
+              <>
+                <Loader2 size={14} className="spin" /> Connecting...
+              </>
+            ) : (
+              <>
+                {isUsb ? <Usb size={14} /> : <Wifi size={14} />} Connect
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {testResult && (
@@ -400,7 +401,7 @@ export function ConnectionSection({
         </div>
       )}
 
-      <div className="duet-settings__section" style={{ marginTop: 16 }}>
+      <div className="duet-settings__section duet-settings__section--mt">
         <div className="duet-settings__section-title">Auto-Reconnect</div>
         <ToggleRow
           id="auto-reconnect-conn"

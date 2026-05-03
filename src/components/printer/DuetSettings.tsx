@@ -148,10 +148,6 @@ export default function DuetSettings() {
     setConfig({ boardType: value });
   }, [setConfig]);
 
-  const setConfigPatch = useCallback((patch: Parameters<typeof setConfig>[0]) => {
-    setConfig(patch);
-  }, [setConfig]);
-
   // When the user switches active printer, reload the form fields from the
   // newly-active config. Without this, hostname/password/mode would still
   // show the previous printer's values even though `config` has updated.
@@ -258,7 +254,7 @@ export default function DuetSettings() {
       prefs={prefs}
       setAutoUpdate={setAutoUpdate}
       setBoardType={setBoardType}
-      setConfigPatch={setConfigPatch}
+      setConfigPatch={setConfig}
       setHostname={setHostname}
       setMode={setMode}
       setPanelDueAsset={setPanelDueAsset}
@@ -275,7 +271,7 @@ export default function DuetSettings() {
       uploadProgress={uploadProgress}
       uploading={uploading}
     />
-  ), [activePrinterId, autoUpdate, axes, board, boardType, canConnect, config, connected, connecting, error, firmwareFile, firmwareStatus, firmwareUpdatePending, handleAutoUpdate, handleCheckForUpdate, handleCheckPanelDueUpdate, handleConnect, handleDisconnect, handleFirmwareInstall, handleFirmwareSelect, handleFirmwareUpload, handleIapSelect, handleIapUpload, handlePanelDueInstall, handleTest, handleUpdateDwcOnly, hostname, iapFile, iapInputRef, iapStatus, importInputRef, importResult, importing, loadPanelDueInfo, mode, panelDueAsset, panelDueCheck, panelDueFlashed, panelDueInfo, panelDueLogRef, panelDueUpdate, password, patchPrefs, prefs, setAutoUpdate, setBoardType, setConfigPatch, setHostname, setMode, setPanelDueAsset, setPanelDueUpdate, setPassword, setShowPanelDueNotes, setShowReleaseNotes, showPanelDueNotes, showReleaseNotes, tab, testResult, testing, updateCheck, uploadProgress, uploading]);
+  ), [activePrinterId, autoUpdate, axes, board, boardType, canConnect, config, connected, connecting, error, firmwareFile, firmwareStatus, firmwareUpdatePending, handleAutoUpdate, handleCheckForUpdate, handleCheckPanelDueUpdate, handleConnect, handleDisconnect, handleFirmwareInstall, handleFirmwareSelect, handleFirmwareUpload, handleIapSelect, handleIapUpload, handlePanelDueInstall, handleTest, handleUpdateDwcOnly, hostname, iapFile, iapInputRef, iapStatus, importInputRef, importResult, importing, loadPanelDueInfo, mode, panelDueAsset, panelDueCheck, panelDueFlashed, panelDueInfo, panelDueLogRef, panelDueUpdate, password, patchPrefs, prefs, setAutoUpdate, setBoardType, setConfig, setHostname, setMode, setPanelDueAsset, setPanelDueUpdate, setPassword, setShowPanelDueNotes, setShowReleaseNotes, showPanelDueNotes, showReleaseNotes, tab, testResult, testing, updateCheck, uploadProgress, uploading]);
 
   return (
     <div className="duet-settings__page">

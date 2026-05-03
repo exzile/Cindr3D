@@ -308,7 +308,6 @@
     transform 0.18s ease,
     box-shadow 0.2s ease,
     opacity 0.2s ease;
-  will-change: transform;
 }
 
 .duet-settings__btn:not(.duet-settings__btn--disabled):hover {
@@ -548,6 +547,27 @@
 .duet-settings__btn-row {
   gap: 10px;
   margin-top: 4px;
+}
+
+/* -- USB serial port row ---------------------------------------------------- */
+.duet-settings__port-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.duet-settings__port-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -- Section spacing utilities --------------------------------------------- */
+.duet-settings__section--mt {
+  margin-top: 16px;
 }
 
 /* -- Reduced motion --------------------------------------------------------- */
