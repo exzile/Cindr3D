@@ -39,20 +39,23 @@ describe('parseMarlinProgress', () => {
 });
 
 describe('layerFromPercent', () => {
-  it('returns 0 for invalid totals', () => {
+  it('returns 0 (sentinel) for invalid totals', () => {
     expect(layerFromPercent(50, 0)).toBe(0);
     expect(layerFromPercent(50, -10)).toBe(0);
   });
 
-  it('clamps below 0 and above 100', () => {
-    expect(layerFromPercent(-10, 100)).toBe(0);
-    expect(layerFromPercent(150, 100)).toBe(99);
+  it('clamps below 0 to layer 1 and above 100 to totalLayers', () => {
+    expect(layerFromPercent(-10, 100)).toBe(1);
+    expect(layerFromPercent(150, 100)).toBe(100);
   });
 
-  it('maps proportionally', () => {
-    expect(layerFromPercent(0, 100)).toBe(0);
-    expect(layerFromPercent(50, 100)).toBe(50);
-    expect(layerFromPercent(99.9, 100)).toBe(99);
-    expect(layerFromPercent(100, 100)).toBe(99);
+  it('returns 1-based layer numbers matching model.job.layer semantics', () => {
+    // 0% → just started → layer 1 (first layer, 1-based)
+    expect(layerFromPercent(0, 100)).toBe(1);
+    // 50% → half way through 100 layers → layer 51 (1-based)
+    expect(layerFromPercent(50, 100)).toBe(51);
+    // last segment is layer 100 (1-based), not 99
+    expect(layerFromPercent(99.9, 100)).toBe(100);
+    expect(layerFromPercent(100, 100)).toBe(100);
   });
 });

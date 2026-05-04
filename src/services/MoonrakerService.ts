@@ -346,8 +346,11 @@ export class MoonrakerService {
 
   /**
    * Fetch a synthesised print-status snapshot from Klipper's print_stats
-   * + display_status objects. Returns null when nothing is printing or
-   * the query failed.
+   * + display_status objects. Returns null only when the query fails or
+   * `print_stats.state` is missing — for any reported state (including
+   * idle / standby / paused / printing / complete / cancelled / error)
+   * the snapshot is returned, so callers should inspect `state` directly
+   * rather than treating null as "not printing".
    */
   async getPrintStatus(): Promise<MoonrakerPrintStatus | null> {
     try {

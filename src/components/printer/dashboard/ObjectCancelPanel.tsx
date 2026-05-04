@@ -6,8 +6,11 @@
  * Marlin  → parses M486 labels from the most-recently sliced G-code.
  * Others  → "not supported" note.
  *
- * Each firmware's cancellation is gated on the same version checks as the
- * dedicated Exclude Object tab components.
+ * Cancel actions on this card are best-effort: the dashboard panel is meant
+ * for quick access and does NOT enforce firmware-version gating — sending
+ * M486 to a too-old firmware will just be rejected by the printer. Use the
+ * dedicated Exclude Object tab when you want the version-aware UI with the
+ * red-banner warning and disabled buttons for confirmed-too-old firmware.
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Layers, RefreshCw, XCircle, WifiOff, ExternalLink } from 'lucide-react';

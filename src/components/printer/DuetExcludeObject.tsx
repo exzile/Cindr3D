@@ -59,10 +59,14 @@ export default function DuetExcludeObject() {
   const firmwareVersion = board?.firmwareVersion;
   const firmwareName = board?.firmwareName ?? '';
   const parsedVersion = parseVersion(firmwareVersion);
-  const supported = meetsMinVersion(parsedVersion, M486_MIN_RRF);
-  // Treat an unparseable banner as "unknown" — show a soft warning rather than
+  const meetsMin = meetsMinVersion(parsedVersion, M486_MIN_RRF);
+  // Treat an unparseable banner as "unknown" — best-effort send rather than
   // hard-blocking, since some transports (USB serial seed) only report a free-form string.
   const versionUnknown = parsedVersion === null;
+  // Buttons are enabled when the parsed version meets the minimum OR when
+  // we can't tell. Only block when we definitively know the firmware is
+  // too old. This matches the user-facing copy ("M486 will be sent anyway").
+  const supported = meetsMin || versionUnknown;
 
   const objects = model.job?.build?.objects ?? [];
   const currentObject = model.job?.build?.currentObject ?? -1;
@@ -91,7 +95,7 @@ export default function DuetExcludeObject() {
         <span className="klipper-badge info" style={{ marginLeft: 4 }}>Duet · M486</span>
         {firmwareVersion && (
           <span
-            className={`klipper-badge ${supported ? 'on' : versionUnknown ? 'warn' : 'error'}`}
+            className={`klipper-badge ${meetsMin ? 'on' : versionUnknown ? 'warn' : 'error'}`}
             style={{ marginLeft: 4 }}
             title={firmwareName ? `${firmwareName} ${firmwareVersion}` : firmwareVersion}
           >

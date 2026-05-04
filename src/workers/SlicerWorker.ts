@@ -178,32 +178,43 @@ function mergeSliceResults(results: SliceResultWithTool[]): SliceResult {
 }
 
 /**
- * Wrap each group's G-code with M486 object-label markers so slicers that
- * support CANCEL_OBJECTS (Klipper, Marlin 2.0.9+, RRF 3.5+) can cancel
- * individual objects mid-print.
+ * Strip characters that would break an M486 A"<name>" line: double quotes
+ * (which terminate the field), CR/LF (which split the M486 onto its own
+ * line), and collapse whitespace runs. Empty input returns empty so the
+ * caller can fall back to a generic label.
+ */
+function sanitizeM486Label(name: string): string {
+  return name.replace(/["\r\n]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Wrap each group's G-code with M486 object-label markers so firmware that
+ * supports object cancellation (Klipper, Marlin 2.0.9+, RRF 3.5+) can
+ * cancel individual objects mid-print.
  *
- * Format emitted (PrusaSlicer/Marlin/RRF compatible):
- *   M486 T<groupCount>
- *   M486 S0 A"<group 0 names>"
- *   ... group 0 gcode ...
+ * Slice groups are now per-object (see grouping in self.onmessage), so
+ * each result corresponds to a single plate object. Format emitted:
+ *   M486 T<objectCount>
+ *   M486 S0 A"<object 0 name>"
+ *   ... object 0 gcode ...
  *   M486 S-1
- *   M486 S1 A"<group 1 names>"
- *   ... group 1 gcode ...
+ *   M486 S1 A"<object 1 name>"
+ *   ... object 1 gcode ...
  *   M486 S-1
  *
  * Only emitted when at least one group carries a non-empty objectName —
- * i.e. the user has named objects on the plate (not all are the default
- * unnamed fallback).  Returns the input array unchanged when there are no
- * names so un-named plates don't get spurious M486 lines.
+ * un-named plates pass through unchanged so we don't generate spurious
+ * M486 lines.
  */
 function injectM486Labels(results: SliceResultWithTool[]): SliceResultWithTool[] {
   const hasNames = results.some((r) => r.objectNames && r.objectNames.length > 0);
   if (!hasNames) return results;
 
   const labeled = results.map((r, i) => {
-    const label = r.objectNames && r.objectNames.length > 0
+    const rawLabel = r.objectNames && r.objectNames.length > 0
       ? r.objectNames.join(' / ')
       : `Object ${i}`;
+    const label = sanitizeM486Label(rawLabel) || `Object ${i}`;
     return {
       ...r,
       gcode: `M486 S${i} A"${label}"\n${r.gcode}\nM486 S-1`,
@@ -495,16 +506,18 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
       else printables.push(g);
     }
 
-    // Partition printable geometries by their override signature. Each
-    // partition runs its own slice pass so the profile overrides (infill,
-    // walls, supports, etc.) genuinely apply to that subset of plate
-    // objects.
+    // Partition printable geometries into one slice group per plate object.
+    // The override signature still scopes the per-pass print profile, so
+    // objects with different overrides still get distinct profile passes —
+    // we just no longer merge multiple objects that share an override
+    // signature. That dedup was a performance optimisation, but it
+    // collapsed every object with default settings into a single M486
+    // cancellable unit, so cancelling P0 cancelled the whole plate.
     const groups = new Map<string, ReconstructedGeometry[]>();
-    for (const g of printables) {
-      const key = g.overrides ? JSON.stringify(g.overrides) : '__default__';
-      const bucket = groups.get(key) ?? [];
-      bucket.push(g);
-      groups.set(key, bucket);
+    for (let i = 0; i < printables.length; i++) {
+      const g = printables[i];
+      const overrideKey = g.overrides ? JSON.stringify(g.overrides) : '__default__';
+      groups.set(`${overrideKey}__${i}`, [g]);
     }
     if (groups.size === 0) {
       // No printables — nothing to slice. (A plate with only modifier

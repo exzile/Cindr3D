@@ -55,8 +55,12 @@ export default function MarlinExcludeObject() {
   const board = model.boards?.[0];
   const firmwareVersion = board?.firmwareVersion ?? board?.firmwareName;
   const parsedVersion = parseMarlinVersion(firmwareVersion);
-  const supported = meetsMinVersion(parsedVersion, M486_MIN_MARLIN);
+  const meetsMin = meetsMinVersion(parsedVersion, M486_MIN_MARLIN);
   const versionUnknown = parsedVersion === null;
+  // Best-effort send when the version is unparseable: button enabled for both
+  // a known-good version and unknown, but disabled when we definitively know
+  // the firmware is too old. Matches the user-facing copy.
+  const supported = meetsMin || versionUnknown;
 
   const { labels, declaredCount } = useMemo(
     () => parseM486Labels(sliceResult?.gcode ?? ''),
@@ -109,7 +113,7 @@ export default function MarlinExcludeObject() {
         <span className="klipper-badge info" style={{ marginLeft: 4 }}>Marlin · M486</span>
         {firmwareVersion && (
           <span
-            className={`klipper-badge ${supported ? 'on' : versionUnknown ? 'warn' : 'error'}`}
+            className={`klipper-badge ${meetsMin ? 'on' : versionUnknown ? 'warn' : 'error'}`}
             style={{ marginLeft: 4 }}
             title={firmwareVersion}
           >

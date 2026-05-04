@@ -18,7 +18,13 @@ export interface MarlinProgressUpdate {
   percent?: number;
   /** Remaining seconds. R<min> is converted to seconds; S<sec> is used as-is. */
   remainingSeconds?: number;
-  /** Current layer index (0-based). */
+  /**
+   * Current layer number, **1-based** to match how `model.job.layer` is
+   * consumed across the rest of the UI (FirstLayerInspection treats 1 as
+   * the first printing layer; ProgressSection computes height as
+   * `(layer - 1) * layerHeight`). Marlin's "echo:Layer N/M" output is
+   * already 1-based, and `layerFromPercent` is 1-based as well.
+   */
   layer?: number;
   /** Total layer count, when reported. */
   totalLayers?: number;
@@ -73,12 +79,15 @@ export function parseMarlinProgress(rawLine: string): MarlinProgressUpdate | nul
 }
 
 /**
- * Estimate a current-layer index from a progress percent and a known total
- * layer count. Used when the firmware reports percent (M73 P) but no
- * explicit layer number.
+ * Estimate a current-layer number (1-based, matching `model.job.layer`)
+ * from a progress percent and a known total layer count. Used when the
+ * firmware reports percent (M73 P) but no explicit layer number.
+ *
+ * Returns 0 (sentinel for "no info") when totalLayers is non-positive or
+ * the inputs aren't finite. Otherwise the result is in [1, totalLayers].
  */
 export function layerFromPercent(percent: number, totalLayers: number): number {
   if (!Number.isFinite(percent) || !Number.isFinite(totalLayers) || totalLayers <= 0) return 0;
   const clamped = Math.max(0, Math.min(100, percent));
-  return Math.min(totalLayers - 1, Math.floor((clamped / 100) * totalLayers));
+  return Math.max(1, Math.min(totalLayers, Math.floor((clamped / 100) * totalLayers) + 1));
 }

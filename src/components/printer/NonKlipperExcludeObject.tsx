@@ -18,21 +18,24 @@ interface FirmwareInfo {
   note: (version: string | undefined) => string;
 }
 
+/** Render the firmware version inline with a trailing space, or "" if none. */
+const ver = (v: string | undefined) => (v ? `${v} ` : '');
+
 const FIRMWARE_INFO: Record<string, FirmwareInfo> = {
   smoothie: {
     label: 'Smoothieware',
     note: (v) =>
-      `Smoothieware ${v ?? ''}does not support mid-print object cancellation. The project is no longer actively developed for FDM. Consider migrating to Klipper or Marlin if you need M486-style cancellation.`.replace(/\s+/g, ' '),
+      `Smoothieware ${ver(v)}does not support mid-print object cancellation. The project is no longer actively developed for FDM. Consider migrating to Klipper or Marlin if you need M486-style cancellation.`,
   },
   grbl: {
     label: 'grbl',
     note: (v) =>
-      `grbl ${v ?? ''}is a CNC firmware and has no concept of FDM print objects. M486 is not part of the grbl command set.`.replace(/\s+/g, ' '),
+      `grbl ${ver(v)}is a CNC firmware and has no concept of FDM print objects. M486 is not part of the grbl command set.`,
   },
   repetier: {
     label: 'Repetier',
     note: (v) =>
-      `Repetier-Firmware ${v ?? ''}does not implement M486 in any released mainline version. A handful of community forks have added it, but DesignCAD cannot rely on that being present. The pre-print workaround below is the most reliable option.`.replace(/\s+/g, ' '),
+      `Repetier-Firmware ${ver(v)}does not implement M486 in any released mainline version. A handful of community forks have added it, but DesignCAD cannot rely on that being present. The pre-print workaround below is the most reliable option.`,
   },
   other: {
     label: 'Unknown firmware',

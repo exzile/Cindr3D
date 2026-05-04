@@ -8,11 +8,17 @@
  * Reuses BuildPlateGrid / BuildVolumeWireframe from the slicer scene plus
  * InlineGCodeWirePreview for the toolpath rendering — no slicing happens here.
  *
- * Current-layer source by firmware:
- *   Duet     → model.job.layer (live from RRF object model)
- *   Klipper  → fallback to slicerStore.previewLayer (no live layer fetch yet)
- *   Marlin   → fallback to slicerStore.previewLayer (no live layer fetch yet)
- *   Other    → all layers visible
+ * Current-layer source by firmware (all live, 1-based at the source,
+ * converted to a 0-based index here for InlineGCodeWirePreview):
+ *   Duet     → model.job.layer (RRF object model)
+ *   Klipper  → useKlipperPrintStatus() (Moonraker print_stats / display_status,
+ *              polled at 3 s); prefers explicit current_layer, otherwise
+ *              estimates from display progress.
+ *   Marlin   → model.job.layer populated by DuetService.handleSerialLine
+ *              parsing M73 P/Q/R/S and "echo:Layer N/M" off the WebSerial
+ *              line stream.
+ *   Other    → falls back to slicerStore.previewLayer; if nothing, shows
+ *              all layers.
  */
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import * as THREE from 'three';
@@ -222,19 +228,24 @@ export default function MeshPreviewPanel() {
   const klipperStatus = useKlipperPrintStatus();
 
   // ── Current layer (cross-firmware) ─────────────────────────────────────────
+  // Returns a 0-based layer INDEX suitable for InlineGCodeWirePreview.
+  // `model.job.layer` (Duet, Marlin via parser) and `klipperStatus.currentLayer`
+  // are 1-based to match the rest of the printer UI; this hook converts.
+  // The slicerStore preview slider is already 0-based.
   const totalLayers = sliceResult?.layerCount ?? 0;
   const currentLayer = useMemo(() => {
+    const fromOneBased = (n: number) => Math.max(0, Math.min(Math.max(0, totalLayers - 1), n - 1));
     // Duet — live RRF object model
-    if (boardType === 'duet' && model.job?.layer !== undefined) return model.job.layer;
+    if (boardType === 'duet' && model.job?.layer !== undefined) return fromOneBased(model.job.layer);
     // Marlin — DuetService.handleSerialLine populates model.job.layer from M73
-    if (boardType === 'marlin' && model.job?.layer !== undefined) return model.job.layer;
+    if (boardType === 'marlin' && model.job?.layer !== undefined) return fromOneBased(model.job.layer);
     // Klipper — Moonraker print-status; prefer explicit layer, else estimate from progress
     if (boardType === 'klipper' && klipperStatus) {
-      if (klipperStatus.currentLayer !== undefined) return klipperStatus.currentLayer;
-      if (totalLayers > 0) return layerFromPercent(klipperStatus.progress * 100, totalLayers);
+      if (klipperStatus.currentLayer !== undefined) return fromOneBased(klipperStatus.currentLayer);
+      if (totalLayers > 0) return fromOneBased(layerFromPercent(klipperStatus.progress * 100, totalLayers));
     }
-    // Fallback — slicer preview slider
-    return previewLayer ?? totalLayers;
+    // Fallback — slicer preview slider (already 0-based)
+    return previewLayer ?? Math.max(0, totalLayers - 1);
   }, [boardType, model.job?.layer, klipperStatus, previewLayer, totalLayers]);
 
   // ── Cancelled / currently-printing detection ───────────────────────────────
@@ -290,8 +301,10 @@ export default function MeshPreviewPanel() {
     if (!rect) return;
     setMenu({
       objectId,
-      x: Math.min(e.nativeEvent.clientX - rect.left, rect.width - 220),
-      y: Math.min(e.nativeEvent.clientY - rect.top, rect.height - 140),
+      // Clamp to [0, max] so the menu stays inside the panel even when the
+      // panel is narrower than the menu itself.
+      x: Math.max(0, Math.min(e.nativeEvent.clientX - rect.left, rect.width - 220)),
+      y: Math.max(0, Math.min(e.nativeEvent.clientY - rect.top, rect.height - 140)),
     });
   };
 
