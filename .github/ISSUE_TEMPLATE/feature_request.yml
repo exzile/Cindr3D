@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an improvement for DesignCAD
+description: Suggest an improvement for Cindr3D
 title: "[Feature]: "
 labels: ["enhancement"]
 body:
@@ -14,7 +14,7 @@ body:
     id: proposal
     attributes:
       label: Proposed solution
-      description: What would you like DesignCAD to do?
+      description: What would you like Cindr3D to do?
     validations:
       required: true
   - type: textarea

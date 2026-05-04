@@ -163,7 +163,7 @@ function getColorsForTheme(theme: ThemeMode): ThemeColors {
 
 function getSavedTheme(): ThemeMode {
   try {
-    const saved = localStorage.getItem('dzign3d-theme');
+    const saved = localStorage.getItem('cindr3d-theme');
     if (saved === 'light' || saved === 'dark') return saved;
   } catch { /* noop */ }
   return 'light'; // Default to light (Fusion 360 style)
@@ -182,7 +182,7 @@ export const useThemeStore = create<ThemeStore>((set) => ({
   setTheme: (theme: ThemeMode) => {
     const colors = getColorsForTheme(theme);
     applyTheme(colors, theme);
-    try { localStorage.setItem('dzign3d-theme', theme); } catch { /* noop */ }
+    try { localStorage.setItem('cindr3d-theme', theme); } catch { /* noop */ }
     set({ theme, colors });
   },
 
@@ -191,7 +191,7 @@ export const useThemeStore = create<ThemeStore>((set) => ({
       const newTheme: ThemeMode = state.theme === 'light' ? 'dark' : 'light';
       const colors = getColorsForTheme(newTheme);
       applyTheme(colors, newTheme);
-      try { localStorage.setItem('dzign3d-theme', newTheme); } catch { /* noop */ }
+      try { localStorage.setItem('cindr3d-theme', newTheme); } catch { /* noop */ }
       return { theme: newTheme, colors };
     });
   },

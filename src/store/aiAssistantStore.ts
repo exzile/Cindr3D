@@ -82,7 +82,7 @@ export const useAiAssistantStore = create<AiAssistantState>()(
       clearMessages: () => set({ messages: [] }),
     }),
     {
-      name: 'designcad-ai-assistant',
+      name: 'cindr3d-ai-assistant',
       partialize: (s) => ({
         provider: s.provider,
         model: s.model,

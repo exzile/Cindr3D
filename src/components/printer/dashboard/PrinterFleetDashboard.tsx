@@ -7,6 +7,7 @@ import {
   CircleOff,
   Gauge,
   ListFilter,
+  ListOrdered,
   MonitorPlay,
   Pencil,
   Plus,
@@ -18,9 +19,11 @@ import {
   X,
 } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
+import { usePrintQueueStore } from '../../../store/printQueueStore';
 import type { SavedPrinter } from '../../../types/duet';
 import type { DuetPrefs } from '../../../utils/duetPrefs';
 import { DEFAULT_PREFS } from '../../../utils/duetPrefs';
+import { enabledCamerasFromPrefs, prefsWithCamera } from '../../../utils/cameraStreamUrl';
 import { cameraDisplayUrl, previewCameraStreamUrl } from '../../../utils/cameraStreamUrl';
 import { formatDurationWords } from '../../../utils/printerFormat';
 import { formatUptime, statusColor } from './helpers';
@@ -38,16 +41,17 @@ function prefsForPrinter(printer: SavedPrinter): DuetPrefs {
 
 function cameraUrlForPrinter(printer: SavedPrinter): string {
   const prefs = prefsForPrinter(printer);
+  const cameraPrefs = prefsWithCamera(prefs, prefs.dashboardCameraId);
   const fallbackUrl = (() => {
     const host = normalizedHost(printer.config.hostname);
     return host ? `${host}/webcam/?action=stream` : '';
   })();
-  const cameraUrl = previewCameraStreamUrl(prefs, fallbackUrl);
+  const cameraUrl = previewCameraStreamUrl(cameraPrefs, fallbackUrl);
   if (!cameraUrl) return '';
-  return cameraDisplayUrl(cameraUrl, prefs.webcamUsername, prefs.webcamPassword);
+  return cameraDisplayUrl(cameraUrl, cameraPrefs.webcamUsername, cameraPrefs.webcamPassword);
 }
 
-const CLIP_DB_NAME = 'dzign3d-camera-clips';
+const CLIP_DB_NAME = 'cindr3d-camera-clips';
 const CLIP_STORE = 'clips';
 
 async function countClipsForPrinter(printerId: string): Promise<number> {
@@ -298,8 +302,10 @@ export default function PrinterFleetDashboard() {
   const removePrinter = usePrinterStore((s) => s.removePrinter);
   const renamePrinter = usePrinterStore((s) => s.renamePrinter);
   const selectPrinter = usePrinterStore((s) => s.selectPrinter);
+  const updatePrinterPrefs = usePrinterStore((s) => s.updatePrinterPrefs);
   const setActiveTab = usePrinterStore((s) => s.setActiveTab);
   const connect = usePrinterStore((s) => s.connect);
+  const queueJobs = usePrintQueueStore((s) => s.jobs);
   const [showManage, setShowManage] = useState(false);
 
   const activeStatus = model.state?.status ?? (connected ? 'connected' : 'disconnected');
@@ -315,6 +321,16 @@ export default function PrinterFleetDashboard() {
       { label: 'Cameras', value: cameraCount, icon: <Camera size={15} /> },
     ];
   }, [connected, printers]);
+
+  const queuePreview = useMemo(() => {
+    const active = queueJobs.filter((job) => !['done', 'cancelled', 'failed'].includes(job.status));
+    return {
+      active,
+      ready: active.filter((job) => job.status === 'ready').length,
+      blocked: active.filter((job) => job.status === 'blocked').length,
+      printing: active.filter((job) => job.status === 'printing').length,
+    };
+  }, [queueJobs]);
 
   const jobFile = model.job?.file?.fileName ?? 'No active job';
   const fileSize = model.job?.file?.size ?? 0;
@@ -378,12 +394,48 @@ export default function PrinterFleetDashboard() {
         ))}
       </div>
 
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(160px, 1fr) auto',
+          gap: 12,
+          alignItems: 'center',
+          padding: 12,
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          background: 'var(--bg-panel)',
+          marginBottom: 14,
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700 }}>
+            <ListOrdered size={15} /> Smart Queue
+            <span style={{ color: 'var(--text-muted)', fontSize: 12, fontWeight: 500 }}>
+              {queuePreview.active.length} active - {queuePreview.ready} ready - {queuePreview.blocked} blocked - {queuePreview.printing} printing
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 6, overflow: 'hidden', color: 'var(--text-muted)', fontSize: 12 }}>
+            {queuePreview.active.slice(0, 3).map((job) => (
+              <span key={job.id} title={job.filePath} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {job.fileName}
+              </span>
+            ))}
+            {queuePreview.active.length === 0 && <span>No queued jobs</span>}
+          </div>
+        </div>
+        <button type="button" className="fleet-manage-btn" onClick={() => setActiveTab('queue')}>
+          Open Queue
+        </button>
+      </div>
+
       <div className="fleet-printer-list">
           {printers.map((printer) => {
             const isActive = printer.id === activePrinterId;
             const hasHost = Boolean(printer.config.hostname.trim());
             const status = isActive ? activeStatus : hasHost ? 'saved' : 'setup needed';
             const cameraUrl = cameraUrlForPrinter(printer);
+            const printerPrefs = prefsForPrinter(printer);
+            const cameraOptions = enabledCamerasFromPrefs(printerPrefs);
             const cardHasLiveJob = isActive && hasActiveJob;
             const cardIsPrinting = isActive && isPrinting;
             const cardProgress = cardHasLiveJob ? progress : 0;
@@ -431,6 +483,18 @@ export default function PrinterFleetDashboard() {
                       <button type="button" onClick={() => { void monitorPrinter(printer.id); setActiveTab('settings'); }}>
                         <Settings size={13} /> Settings
                       </button>
+                      {cameraOptions.length > 1 && (
+                        <select
+                          value={printerPrefs.dashboardCameraId || printerPrefs.activeCameraId}
+                          title="Dashboard camera"
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => updatePrinterPrefs(printer.id, { dashboardCameraId: event.target.value })}
+                        >
+                          {cameraOptions.map((camera) => (
+                            <option key={camera.id} value={camera.id}>{camera.label}</option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   </div>
 

@@ -4,7 +4,7 @@ import type { Feature, Sketch } from '../../types/cad';
 
 function openCadDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('dzign3d-cad', 1);
+    const req = indexedDB.open('cindr3d-cad', 1);
     req.onupgradeneeded = () => req.result.createObjectStore('kv');
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);

@@ -47,7 +47,7 @@ export function deserializeGeom(data: SerializedGeom): THREE.BufferGeometry {
 
 function openSlicerDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open('dzign3d-slicer', 1);
+    const request = indexedDB.open('cindr3d-slicer', 1);
     request.onupgradeneeded = () => request.result.createObjectStore('kv');
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);

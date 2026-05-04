@@ -1,8 +1,8 @@
-# DesignCAD MCP Tool Reference
+# Cindr3D MCP Tool Reference
 
 Generated from the MCP tool schemas registered in `vite.config.ts`.
 
-DesignCAD exposes a localhost-only Model Context Protocol server during development. The MCP server listens on `http://localhost:5174/mcp?token=...` by default and relays tool calls into the open DesignCAD browser tab.
+Cindr3D exposes a localhost-only Model Context Protocol server during development. The MCP server listens on `http://localhost:5174/mcp?token=...` by default and relays tool calls into the open Cindr3D browser tab.
 
 ## Connection
 
@@ -10,8 +10,8 @@ DesignCAD exposes a localhost-only Model Context Protocol server during developm
 |------|-------|
 | Default app URL | `http://localhost:5173` |
 | Default MCP URL | `http://localhost:5174/mcp?token=...` |
-| Port override | `DESIGNCAD_MCP_PORT` |
-| Pairing command | Copy the `claude mcp add designcad ...` line from the AI MCP status badge |
+| Port override | `CINDR3D_MCP_PORT` |
+| Pairing command | Copy the `claude mcp add cindr3d ...` line from the AI MCP status badge |
 
 The browser tab must stay open because CAD actions are executed through the in-page bridge. The server accepts localhost clients only, requires the pairing token, rate-limits tool calls, and records tool activity in the AI MCP status badge.
 
@@ -19,7 +19,7 @@ The browser tab must stay open because CAD actions are executed through the in-p
 
 | Tool | Inputs | Description |
 |------|--------|-------------|
-| `designcad_status` | none | Reports whether a DesignCAD browser tab is connected. |
+| `cindr3d_status` | none | Reports whether a Cindr3D browser tab is connected. |
 | `list_objects` | none | Returns feature and body ids, names, kinds, visibility, and suppression state. |
 | `get_object_properties` | `id: string` | Returns full details for one feature, including params, sketch id, body kind, and mesh bounds when available. |
 | `select_objects` | `ids: string[]` | Selects features by id. Pass an empty array to clear selection. |
@@ -84,10 +84,10 @@ Sketch coordinates use the active sketch plane units, millimeters by default.
 
 | Resource URI | Description |
 |--------------|-------------|
-| `designcad://document/summary` | Active document summary: units, object counts, workspace mode, and plate state. |
-| `designcad://document/objects` | Full active document object list as JSON. |
-| `designcad://printer/active` | Active printer and machine configuration as JSON. |
+| `cindr3d://document/summary` | Active document summary: units, object counts, workspace mode, and plate state. |
+| `cindr3d://document/objects` | Full active document object list as JSON. |
+| `cindr3d://printer/active` | Active printer and machine configuration as JSON. |
 
 ## Client Guidance
 
-Prefer read-only calls first: `designcad_status`, `list_objects`, `get_object_properties`, and `snapshot_view`. When changing geometry, use explicit dimensions and inspect with `snapshot_view` after meaningful steps. For destructive or broad operations, select target ids with `list_objects` rather than relying on names alone.
+Prefer read-only calls first: `cindr3d_status`, `list_objects`, `get_object_properties`, and `snapshot_view`. When changing geometry, use explicit dimensions and inspect with `snapshot_view` after meaningful steps. For destructive or broad operations, select target ids with `list_objects` rather than relying on names alone.

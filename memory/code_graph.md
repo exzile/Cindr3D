@@ -1,5 +1,5 @@
 ---
-name: DesignCAD Code Graph
+name: Cindr3D Code Graph
 description: Where the durable architectural anchors live — read before exploring. Granular file paths shifted in the 2026-04 refactor; use Glob for live locations.
 type: project
 ---
@@ -34,15 +34,15 @@ type: project
 
 ## Persistence schemas
 
-- `cadStore` → IndexedDB `dzign3d-cad`. Schema in `store/cad/persistence.ts` (`partialize` + `onRehydrateStorage`). Mesh rebuild on load. Coordinates with componentStore hydration to avoid double-add on refresh.
+- `cadStore` → IndexedDB `cindr3d-cad`. Schema in `store/cad/persistence.ts` (`partialize` + `onRehydrateStorage`). Mesh rebuild on load. Coordinates with componentStore hydration to avoid double-add on refresh.
 - `slicerStore` → IndexedDB. Reference template for `idbStorage` adapter + `serializeGeom`/`deserializeGeom`.
-- `printerStore` → localStorage `dzign3d-duet-config`.
-- `themeStore` → localStorage `dzign3d-theme`.
+- `printerStore` → localStorage `cindr3d-duet-config`.
+- `themeStore` → localStorage `cindr3d-theme`.
 
 ## Cross-references
 
-Detailed pipeline docs live under auto-memory at `~/.claude/projects/C--Users-joeyp-source-repos-exzile-DesignCAD/memory/`:
-- `project_designcad.md` — fuller architectural snapshot (shim+subdir, store slices, material singletons, persistence caches)
+Detailed pipeline docs live under auto-memory at `~/.claude/projects/C--Users-joeyp-source-repos-exzile-Cindr3D/memory/`:
+- `project_cindr3d.md` — fuller architectural snapshot (shim+subdir, store slices, material singletons, persistence caches)
 - `extrude_pipeline.md`, `slicer_engine.md`, `arachne_subsystem.md`, `sketch_interaction_pipeline.md`, `duet_service_architecture.md`
 - `r3f_critical_patterns.md` — recurring R3F bug catalog
 - `wasm_patterns.md` — emsdk adapter gotchas

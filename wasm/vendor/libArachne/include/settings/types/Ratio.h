@@ -1,5 +1,5 @@
-#ifndef DESIGNCAD_WASM_STUB_RATIO_H
-#define DESIGNCAD_WASM_STUB_RATIO_H
+#ifndef CINDR3D_WASM_STUB_RATIO_H
+#define CINDR3D_WASM_STUB_RATIO_H
 
 namespace cura
 {
@@ -24,4 +24,4 @@ constexpr Ratio operator""_r(long double value)
 }
 } // namespace cura
 
-#endif // DESIGNCAD_WASM_STUB_RATIO_H
+#endif // CINDR3D_WASM_STUB_RATIO_H

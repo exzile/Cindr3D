@@ -299,7 +299,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
           showSaveFilePicker(opts?: object): Promise<FileSystemFileHandle>;
         }).showSaveFilePicker({
           suggestedName: `${baseName}.dznd`,
-          types: [{ description: 'Dzign3D Design', accept: { 'application/json': ['.dznd'] } }],
+          types: [{ description: 'Cindr3D Design', accept: { 'application/json': ['.dznd'] } }],
         });
         const wrote = await writeToHandle(handle);
         if (!wrote) { setStatusMessage('Save failed — write permission not granted'); return; }
@@ -349,7 +349,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                         const [handle] = await (window as unknown as {
                           showOpenFilePicker(opts?: object): Promise<FileSystemFileHandle[]>;
                         }).showOpenFilePicker({
-                          types: [{ description: 'Dzign3D Design', accept: { 'application/json': ['.dznd', '.json'] } }],
+                          types: [{ description: 'Cindr3D Design', accept: { 'application/json': ['.dznd', '.json'] } }],
                           multiple: false,
                         });
                         const file = await handle.getFile();
@@ -491,8 +491,8 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
             and printer workspaces are not "file-backed" in the same sense. */}
         <span className="ribbon-title">
           {isDesign
-            ? (currentDesignFile ? `${currentDesignFile}.dznd — Dzign3D` : 'Untitled — Dzign3D')
-            : 'Dzign3D'}
+            ? (currentDesignFile ? `${currentDesignFile}.dznd — Cindr3D` : 'Untitled — Cindr3D')
+            : 'Cindr3D'}
           {bundleFilename && !isDesign ? ` — ${bundleFilename}` : ''}
         </span>
       </div>
@@ -754,7 +754,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
               <div className="save-modal-info">
                 <div className="save-modal-info-row">
                   <span className="save-modal-info-label">Format</span>
-                  <span className="save-modal-info-value">Dzign3D Design (.dznd)</span>
+                  <span className="save-modal-info-value">Cindr3D Design (.dznd)</span>
                 </div>
                 <div className="save-modal-info-row">
                   <span className="save-modal-info-label">Content</span>

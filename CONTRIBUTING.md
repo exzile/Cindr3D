@@ -1,6 +1,6 @@
-# Contributing to DesignCAD
+# Contributing to Cindr3D
 
-Thanks for taking the time to improve DesignCAD.
+Thanks for taking the time to improve Cindr3D.
 
 ## Development Setup
 

@@ -69,7 +69,7 @@ export const useSlicerVisibilityStore = create<SlicerVisibilityStore>()(persist(
     resetDefaults: () => set({ visible: { ...DEFAULTS }, detailLevel: 'advanced' }),
   }),
   {
-    name: 'dzign3d-slicer-section-visibility',
+    name: 'cindr3d-slicer-section-visibility',
     storage: createJSONStorage(() => localStorage),
   },
 ));

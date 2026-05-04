@@ -19,8 +19,8 @@ wasm/
 ## Build
 
 ```bash
-docker build -t designcad-wasm -f wasm/Dockerfile wasm
-docker run --rm -v "$PWD:/repo" -w /repo designcad-wasm bash wasm/build.sh
+docker build -t cindr3d-wasm -f wasm/Dockerfile wasm
+docker run --rm -v "$PWD:/repo" -w /repo cindr3d-wasm bash wasm/build.sh
 ```
 
 The Docker image vendors only the Boost subtrees we use plus Clipper2 C++

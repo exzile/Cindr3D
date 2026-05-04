@@ -1,11 +1,11 @@
-# Dzign3D Project Memory
+# Cindr3D Project Memory
 
 ## Read first
 
 - [intent.md](intent.md) — what we're building (Fusion 360 + Cura 5 + Duet3D parity), launch plan, what the user expects from Claude
 - [feedback_memory_first.md](feedback_memory_first.md) — read memory before launching Explore agents (saves massive tokens)
 - [code_graph.md](code_graph.md) — workspace anchors + "where to add X" lookup table
-- [project_designcad.md](project_designcad.md) — architectural invariants (shim+subdir pattern, store slices, material singletons, plane-aware math, persistence caches)
+- [project_cindr3d.md](project_cindr3d.md) — architectural invariants (shim+subdir pattern, store slices, material singletons, plane-aware math, persistence caches)
 
 ## Subsystems
 
@@ -34,5 +34,5 @@
 
 ## References
 
-- [azure_hosting.md](azure_hosting.md) — Azure Static Web App resource IDs and deferred dzign3d.com domain plan
+- [azure_hosting.md](azure_hosting.md) — Azure Static Web App resource IDs and deferred cindr3d.com domain plan
 - [fusion360_sdk.md](fusion360_sdk.md) — local SDK install path; C++ headers for Features/, BRep/, Sketch/; canonical enum names

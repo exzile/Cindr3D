@@ -1,6 +1,6 @@
 # Code of Conduct
 
-DesignCAD follows the Contributor Covenant Code of Conduct, version 2.1.
+Cindr3D follows the Contributor Covenant Code of Conduct, version 2.1.
 
 ## Our Pledge
 

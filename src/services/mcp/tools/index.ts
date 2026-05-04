@@ -111,7 +111,7 @@ const create_sphere: ToolHandler = async ({ radius, px = 0, py = 0, pz = 0 }) =>
 };
 
 const create_cone: ToolHandler = async ({ r1, r2, height, px = 0, py = 0, pz = 0 }) => {
-  // DesignCAD's cylinder primitive accepts radiusTop/radiusBottom for cones
+  // Cindr3D's cylinder primitive accepts radiusTop/radiusBottom for cones
   store().addPrimitive('cylinder', {
     radius: r1 as number,
     radiusTop: r2 as number,
@@ -346,12 +346,12 @@ const save_session: ToolHandler = async () => {
 
 const export_stl: ToolHandler = async ({ ids }) => {
   store().setShowExportDialog(true);
-  return { ok: true, selectedIds: ids ?? [], note: 'Export dialog opened in DesignCAD — choose STL and confirm.' };
+  return { ok: true, selectedIds: ids ?? [], note: 'Export dialog opened in Cindr3D — choose STL and confirm.' };
 };
 
 const export_step: ToolHandler = async ({ ids }) => {
   store().setShowExportDialog(true);
-  return { ok: true, selectedIds: ids ?? [], note: 'Export dialog opened in DesignCAD — choose STEP and confirm.' };
+  return { ok: true, selectedIds: ids ?? [], note: 'Export dialog opened in Cindr3D — choose STEP and confirm.' };
 };
 
 const export_gcode: ToolHandler = async ({ profileId }) => {

@@ -10,7 +10,7 @@ import { deserializeGeom, idbStorage, serializeGeom, type SerializedGeom } from 
 import type { SlicerStore } from './types';
 
 export const slicerPersistConfig = {
-  name: 'dzign3d-slicer-plate',
+  name: 'cindr3d-slicer-plate',
   storage: idbStorage as unknown as PersistStorage<SlicerStore, unknown>,
   // Bump whenever a default-profile field changes value or new
   // sanity-clamps land in `onRehydrateStorage`. Zustand compares the

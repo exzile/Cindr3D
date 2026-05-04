@@ -1,6 +1,6 @@
 ---
 name: Fusion 360 SDK Reference
-description: Local Fusion 360 SDK install path + canonical enum names used to audit DesignCAD dialog parity
+description: Local Fusion 360 SDK install path + canonical enum names used to audit Cindr3D dialog parity
 type: reference
 originSessionId: 44b47ea6-8828-4fd8-9638-602fb35b76e7
 ---

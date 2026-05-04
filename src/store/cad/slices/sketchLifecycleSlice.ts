@@ -54,9 +54,9 @@ export function createSketchLifecycleSlice({ set, get }: CADSliceContext) {
   viewMode: '3d',
   setViewMode: (mode) => set({ viewMode: mode }),
 
-  workspaceMode: (localStorage.getItem('dzign3d-workspace-mode') as 'design' | 'prepare' | 'printer') ?? 'design',
+  workspaceMode: (localStorage.getItem('cindr3d-workspace-mode') as 'design' | 'prepare' | 'printer') ?? 'design',
   setWorkspaceMode: (mode) => {
-    localStorage.setItem('dzign3d-workspace-mode', mode);
+    localStorage.setItem('cindr3d-workspace-mode', mode);
     set({ workspaceMode: mode });
   },
 

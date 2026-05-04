@@ -119,7 +119,7 @@ export function SlicerCostBreakdown() {
   const [expanded, setExpanded] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [laborRate, setLaborRate] = useState<number>(() => {
-    const saved = Number(localStorage.getItem('dzign3d-labor-rate'));
+    const saved = Number(localStorage.getItem('cindr3d-labor-rate'));
     return isFinite(saved) && saved >= 0 ? saved : 0;
   });
 
@@ -161,7 +161,7 @@ export function SlicerCostBreakdown() {
 
   const handleLaborRateChange = (v: number) => {
     setLaborRate(v);
-    try { localStorage.setItem('dzign3d-labor-rate', String(v)); } catch { /* ignore */ }
+    try { localStorage.setItem('cindr3d-labor-rate', String(v)); } catch { /* ignore */ }
   };
 
   return (

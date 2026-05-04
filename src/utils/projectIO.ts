@@ -63,7 +63,7 @@ function hasFileSystemAccess(): boolean {
 
 const FILE_TYPES = [
   {
-    description: 'Dzign3D Settings Bundle',
+    description: 'Cindr3D Settings Bundle',
     accept: { 'application/json': ['.dzn'] },
   },
 ];

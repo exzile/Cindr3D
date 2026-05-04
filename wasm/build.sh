@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Build WASM artifacts for ARACHNE-9.
 #
-# Run inside the designcad-wasm Docker image:
-#   docker build -t designcad-wasm -f wasm/Dockerfile wasm
-#   docker run --rm -v "$PWD/wasm:/wasm" designcad-wasm /wasm/build.sh
+# Run inside the cindr3d-wasm Docker image:
+#   docker build -t cindr3d-wasm -f wasm/Dockerfile wasm
+#   docker run --rm -v "$PWD/wasm:/wasm" cindr3d-wasm /wasm/build.sh
 #
 # Outputs to wasm/dist/. Each module is built standalone (no embind, no
 # Emscripten runtime). We use raw C exports so JS can marshal flat

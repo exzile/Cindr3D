@@ -2,7 +2,7 @@ import type { PersistStorage } from 'zustand/middleware';
 
 function openComponentDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('dzign3d-component-store', 1);
+    const req = indexedDB.open('cindr3d-component-store', 1);
     req.onupgradeneeded = () => req.result.createObjectStore('kv');
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);

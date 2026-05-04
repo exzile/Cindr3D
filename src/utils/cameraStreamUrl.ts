@@ -1,4 +1,6 @@
 import type { DuetPrefs } from '../types/duet-prefs.types';
+import type { CameraStreamConfig } from '../types/duet-prefs.types';
+import { cameraToLegacyPrefs, legacyCameraFromPrefs, normalizeDuetPrefs } from './duetPrefs';
 
 export function normalizeCameraStreamUrl(url: string): string {
   const trimmed = url.trim();
@@ -37,7 +39,35 @@ function amcrestMjpegStreamUrl(prefs: DuetPrefs, subtype: 0 | 1): string {
   return origin ? `${origin}/cgi-bin/mjpg/video.cgi?channel=1&subtype=${subtype}` : '';
 }
 
+export function enabledCamerasFromPrefs(prefs: DuetPrefs): CameraStreamConfig[] {
+  return normalizeDuetPrefs(prefs).cameras.filter((camera) => camera.enabled);
+}
+
+export function cameraByIdFromPrefs(prefs: DuetPrefs, cameraId?: string): CameraStreamConfig {
+  const normalized = normalizeDuetPrefs(prefs);
+  return normalized.cameras.find((camera) => camera.id === cameraId)
+    ?? normalized.cameras.find((camera) => camera.id === normalized.activeCameraId)
+    ?? normalized.cameras[0]
+    ?? legacyCameraFromPrefs(normalized);
+}
+
+export function prefsWithCamera(prefs: DuetPrefs, cameraId?: string): DuetPrefs {
+  const normalized = normalizeDuetPrefs(prefs);
+  const camera = cameraByIdFromPrefs(normalized, cameraId);
+  return {
+    ...normalized,
+    ...cameraToLegacyPrefs(camera),
+    activeCameraId: camera.id,
+  };
+}
+
+export function prefsWithDashboardCamera(prefs: DuetPrefs): DuetPrefs {
+  const normalized = normalizeDuetPrefs(prefs);
+  return prefsWithCamera(normalized, normalized.dashboardCameraId || normalized.activeCameraId);
+}
+
 export function preferredCameraStreamUrl(prefs: DuetPrefs, fallbackUrl = ''): string {
+  prefs = prefsWithCamera(prefs);
   const main = normalizeCameraStreamUrl(prefs.webcamMainStreamUrl ?? '');
   if (prefs.webcamStreamPreference === 'main') {
     const browserMain = amcrestMjpegStreamUrl(prefs, 0);
@@ -48,6 +78,7 @@ export function preferredCameraStreamUrl(prefs: DuetPrefs, fallbackUrl = ''): st
 }
 
 export function previewCameraStreamUrl(prefs: DuetPrefs, fallbackUrl = ''): string {
+  prefs = prefsWithCamera(prefs);
   const subStream = normalizeCameraStreamUrl(prefs.webcamUrl ?? '');
   if (subStream && canBrowserRenderCameraUrl(subStream)) return subStream;
 

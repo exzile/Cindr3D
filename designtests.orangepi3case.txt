@@ -2,7 +2,7 @@
  DESIGN TEST: Orange Pi 3 LTS Case
  Created: 2026-05-02
  Purpose: Step-by-step reproduction guide for creating an OPi3 LTS case
-          in DesignCAD, testing components/sketches/bodies/fillets/chamfers
+          in Cindr3D, testing components/sketches/bodies/fillets/chamfers
 ===============================================================================
 
 REFERENCE DIMENSIONS (from orangepi.org):
@@ -40,7 +40,7 @@ VENTILATION:
 
 --- PHASE 1: PROJECT SETUP ---
 
-[ ] STEP 1: Open DesignCAD application (localhost)
+[ ] STEP 1: Open Cindr3D application (localhost)
     - Navigate to localhost:5173 in browser
     - Verify the app loads with empty workspace
 
@@ -255,7 +255,7 @@ Bug #  | Step | Description                                                     
 ===============================================================================
 
 --- PHASE 1: PROJECT SETUP --- COMPLETED
-  [x] STEP 1: Opened DesignCAD at localhost:5173 via preview server
+  [x] STEP 1: Opened Cindr3D at localhost:5173 via preview server
   [x] STEP 2: Root component "Assembly" (default) used as root
   [x] STEP 3: Created sub-component "Bottom" under Assembly
   [x] STEP 4: Created sub-component "Lid" under Assembly

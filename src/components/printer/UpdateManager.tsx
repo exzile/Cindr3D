@@ -28,8 +28,8 @@ const FIRMWARE_REPOS: Record<string, { owner: string; repo: string; label: strin
   repetier: { owner: 'repetier', repo: 'Repetier-Firmware', label: 'Repetier Firmware' },
 };
 
-// DesignCAD's own release repo
-const DESIGNCAD_REPO = { owner: 'exzile', repo: 'DesignCAD', label: 'DesignCAD' };
+// Cindr3D's own release repo
+const CINDR3D_REPO = { owner: 'exzile', repo: 'Cindr3D', label: 'Cindr3D' };
 
 async function fetchLatestRelease(owner: string, repo: string): Promise<GithubRelease | null> {
   try {
@@ -76,7 +76,7 @@ function GithubReleaseChecker() {
   const firmwareRepo = FIRMWARE_REPOS[boardType] ?? null;
 
   const [firmwareRelease, setFirmwareRelease] = useState<GithubRelease | null>(null);
-  const [designcadRelease, setDesigncadRelease] = useState<GithubRelease | null>(null);
+  const [cindr3dRelease, setCindr3dRelease] = useState<GithubRelease | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
@@ -86,10 +86,10 @@ function GithubReleaseChecker() {
     try {
       const [fw, dc] = await Promise.all([
         firmwareRepo ? fetchLatestRelease(firmwareRepo.owner, firmwareRepo.repo) : Promise.resolve(null),
-        fetchLatestRelease(DESIGNCAD_REPO.owner, DESIGNCAD_REPO.repo),
+        fetchLatestRelease(CINDR3D_REPO.owner, CINDR3D_REPO.repo),
       ]);
       setFirmwareRelease(fw);
-      setDesigncadRelease(dc);
+      setCindr3dRelease(dc);
       setLastChecked(new Date());
     } catch {
       setError('Failed to reach GitHub API. Check your network connection.');
@@ -132,10 +132,10 @@ function GithubReleaseChecker() {
       {!loading && firmwareRelease && firmwareRepo && (
         <ReleaseBanner release={firmwareRelease} label={firmwareRepo.label} />
       )}
-      {!loading && designcadRelease && (
-        <ReleaseBanner release={designcadRelease} label={DESIGNCAD_REPO.label} />
+      {!loading && cindr3dRelease && (
+        <ReleaseBanner release={cindr3dRelease} label={CINDR3D_REPO.label} />
       )}
-      {!loading && !firmwareRelease && !designcadRelease && !error && (
+      {!loading && !firmwareRelease && !cindr3dRelease && !error && (
         <div className="klipper-card">
           <div className="klipper-card-body" style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 12, padding: 16 }}>
             No release information available.
@@ -147,7 +147,7 @@ function GithubReleaseChecker() {
         <div className="klipper-card-header"><Info size={13} style={{ display: 'inline', marginRight: 4 }} />About Updates</div>
         <div className="klipper-card-body">
           <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55 }}>
-            Release information is fetched directly from GitHub. DesignCAD does not auto-update firmware — it only
+            Release information is fetched directly from GitHub. Cindr3D does not auto-update firmware — it only
             shows you the latest available version. Always read release notes before updating firmware.
             For Klipper printers connected via Moonraker, the section above also shows component-level update status.
           </p>

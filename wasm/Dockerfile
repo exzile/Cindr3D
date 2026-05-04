@@ -7,8 +7,8 @@
 #   - boost.polygon   — boost::polygon::voronoi (Fortune sweep-line)
 #   - boost.geometry  — used by libArachne for polygon ops in 9.2C
 #
-# Build:   docker build -t designcad-wasm -f wasm/Dockerfile wasm
-# Run:     docker run --rm -v "$PWD/wasm:/wasm" designcad-wasm /wasm/build.sh
+# Build:   docker build -t cindr3d-wasm -f wasm/Dockerfile wasm
+# Run:     docker run --rm -v "$PWD/wasm:/wasm" cindr3d-wasm /wasm/build.sh
 #
 FROM emscripten/emsdk:3.1.74
 

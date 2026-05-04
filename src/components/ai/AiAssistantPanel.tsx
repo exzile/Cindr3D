@@ -1,6 +1,6 @@
 import { Bot, ChevronDown, ChevronRight, Copy, GripHorizontal, List, RefreshCw, Send, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { designCadMcpClient, type DesignCadMcpAuditEntry, type DesignCadMcpStatus } from '../../services/mcp/client';
+import { cindr3dMcpClient, type Cindr3dMcpAuditEntry, type Cindr3dMcpStatus } from '../../services/mcp/client';
 import { BYOK_TOOLS, DESTRUCTIVE_TOOLS, toAnthropic, toOpenAI } from '../../services/mcp/tools/byokDefs';
 import { TOOL_HANDLERS } from '../../services/mcp/tools/index';
 import { useAiAssistantStore, type AiProvider, type ChatMessage } from '../../store/aiAssistantStore';
@@ -52,7 +52,7 @@ type PanelGeometry = {
   height: number;
 };
 
-const PANEL_GEOMETRY_KEY = 'designcad-ai-assistant-geometry';
+const PANEL_GEOMETRY_KEY = 'cindr3d-ai-assistant-geometry';
 const PANEL_MIN_WIDTH = 360;
 const PANEL_MIN_HEIGHT = 380;
 const PANEL_EDGE_GAP = 8;
@@ -277,14 +277,14 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 }
 
 function McpTab() {
-  const [status, setStatus] = useState<DesignCadMcpStatus | null>(null);
+  const [status, setStatus] = useState<Cindr3dMcpStatus | null>(null);
   const [copied, setCopied] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
-  const [auditEntries, setAuditEntries] = useState<DesignCadMcpAuditEntry[]>([]);
+  const [auditEntries, setAuditEntries] = useState<Cindr3dMcpAuditEntry[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    designCadMcpClient.heartbeat().then(setStatus).catch((e) => setErr((e as Error).message));
+    cindr3dMcpClient.heartbeat().then(setStatus).catch((e) => setErr((e as Error).message));
   }, []);
 
   const copy = useCallback(async () => {
@@ -295,7 +295,7 @@ function McpTab() {
   }, [status]);
 
   const rotate = useCallback(async () => {
-    try { setStatus(await designCadMcpClient.rotateToken()); setErr(null); }
+    try { setStatus(await cindr3dMcpClient.rotateToken()); setErr(null); }
     catch (e) { setErr((e as Error).message); }
   }, []);
 
@@ -304,14 +304,14 @@ function McpTab() {
     setAuditOpen(next);
     if (!next) return;
     try {
-      const { entries } = await designCadMcpClient.audit();
+      const { entries } = await cindr3dMcpClient.audit();
       setAuditEntries(entries);
       setErr(null);
     } catch (e) { setErr((e as Error).message); }
   }, [auditOpen]);
 
   const clearAudit = useCallback(async () => {
-    try { await designCadMcpClient.clearAudit(); setAuditEntries([]); } catch { /* ignore */ }
+    try { await cindr3dMcpClient.clearAudit(); setAuditEntries([]); } catch { /* ignore */ }
   }, []);
 
   return (
@@ -510,7 +510,7 @@ function ChatTab() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={apiKey ? 'Message DesignCAD AI…' : 'Set an API key in Global Settings to start chatting'}
+          placeholder={apiKey ? 'Message Cindr3D AI…' : 'Set an API key in Global Settings to start chatting'}
           rows={2}
           disabled={!apiKey}
         />

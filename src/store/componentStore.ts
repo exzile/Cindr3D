@@ -46,7 +46,7 @@ export const useComponentStore = create<ComponentStore>()(persist((set, get) => 
   ...createAssemblyState({ set, get }),
 }),
 {
-  name: 'dzign3d-component-store',
+  name: 'cindr3d-component-store',
   storage: componentStorage,
 
   onRehydrateStorage: () => (state) => {

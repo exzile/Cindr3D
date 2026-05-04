@@ -7,10 +7,12 @@ import {
   FolderOpen,
   FileCode,
   Grid3x3,
+  Grid2X2,
   History,
   Braces,
   Settings,
   TrendingUp,
+  Trophy,
   Router,
   Plug,
   Camera,
@@ -20,6 +22,8 @@ import {
   Cpu,
   Package,
   Film,
+  ListOrdered,
+  Images,
 } from 'lucide-react';
 import DuetDashboard from '../DuetDashboard';
 import DuetStatus from '../DuetStatus';
@@ -27,6 +31,7 @@ import DuetConsole from '../DuetConsole';
 import DuetJobStatus from '../DuetJobStatus';
 import DuetPrintHistory from '../DuetPrintHistory';
 import DuetFileManager from '../DuetFileManager';
+import { PrintQueue } from '../jobStatus/PrintQueue';
 import DuetFilamentManager from '../DuetFilamentManager';
 import DuetMacros from '../DuetMacros';
 import DuetObjectModelBrowser from '../DuetObjectModelBrowser';
@@ -37,6 +42,9 @@ import DuetNetworkAndFirmware from '../DuetNetworkAndFirmware';
 import DuetPlugins from '../DuetPlugins';
 import PrinterFleetDashboard from '../dashboard/PrinterFleetDashboard';
 import CameraDashboardPanel from '../dashboard/CameraDashboardPanel';
+import AllCamerasGrid from '../cameras/AllCamerasGrid';
+import LayerGalleryPanel from '../cameras/LayerGalleryPanel';
+import CrossPrinterComparison from '../comparison/CrossPrinterComparison';
 import BedMap from '../BedMap';
 // Universal cross-firmware tabs
 import ExcludeObject from '../ExcludeObject';
@@ -50,12 +58,16 @@ import Timelapse from '../Timelapse';
 export const TABS = [
   { key: 'dashboard' as const, label: 'Dashboard', Icon: LayoutDashboard },
   { key: 'camera' as const, label: 'Camera', Icon: Camera },
+  { key: 'all-cameras' as const, label: 'All Cameras', Icon: Grid2X2 },
+  { key: 'layer-gallery' as const, label: 'Layer Gallery', Icon: Images },
   { key: 'status' as const, label: 'Status', Icon: Activity },
   { key: 'console' as const, label: 'Console', Icon: Terminal },
   { key: 'job' as const, label: 'Job', Icon: Play },
   { key: 'history' as const, label: 'History', Icon: History },
   { key: 'analytics' as const, label: 'Analytics', Icon: TrendingUp },
+  { key: 'comparison' as const, label: 'A/B Compare', Icon: Trophy },
   { key: 'files' as const, label: 'Files', Icon: FolderOpen },
+  { key: 'queue' as const, label: 'Queue', Icon: ListOrdered },
   // Duet-only: reads 0:/filaments via Duet file API
   { key: 'filaments' as const, label: 'Filaments', Icon: FileCode },
   { key: 'macros' as const, label: 'Macros', Icon: FileCode },
@@ -102,12 +114,16 @@ export const TAB_COMPONENTS: Record<TabKey, React.ComponentType> = {
   printers: PrinterFleetDashboard,
   dashboard: DuetDashboard,
   camera: CameraDashboardPanel,
+  'all-cameras': AllCamerasGrid,
+  'layer-gallery': LayerGalleryPanel,
   status: DuetStatus,
   console: DuetConsole,
   job: DuetJobStatus,
   history: DuetPrintHistory,
   analytics: DuetAnalytics,
+  comparison: CrossPrinterComparison,
   files: DuetFileManager,
+  queue: PrintQueue,
   filaments: DuetFilamentManager,
   macros: DuetMacros,
   heightmap: BedMap,             // unified — delegates to Klipper / Marlin / Duet internally

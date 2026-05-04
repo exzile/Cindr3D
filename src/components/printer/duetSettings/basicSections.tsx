@@ -4,7 +4,9 @@ import {
   CheckCircle,
   Info,
   Loader2,
+  Plus,
   Save,
+  Trash2,
   Usb,
   Wifi,
   WifiOff,
@@ -15,10 +17,14 @@ import type {
   DuetPrefs,
   NotifSeverity,
   CameraPathPreset,
+  CameraPtzProvider,
+  CameraStreamConfig,
+  CameraStreamRole,
   CameraSourceType,
   TemperatureUnit,
   Units,
 } from '../../../utils/duetPrefs';
+import { cameraToLegacyPrefs, legacyCameraFromPrefs } from '../../../utils/duetPrefs';
 import type { DuetTransport, PrinterBoardType } from '../../../types/duet';
 import { cameraDisplayUrl, normalizeCameraStreamUrl } from '../../../utils/cameraStreamUrl';
 import { isWebSerialSupported, requestSerialPort } from '../../../services/usb/webSerial';
@@ -683,21 +689,35 @@ export function CameraSection({
   patchPrefs: (patch: Partial<DuetPrefs>) => void;
   prefs: DuetPrefs;
 }) {
-  const savedCameraAddress = prefs.webcamHost || cameraAddressFromStreamUrl(prefs.webcamUrl);
+  const cameras = prefs.cameras.length > 0 ? prefs.cameras : [legacyCameraFromPrefs(prefs)];
+  const activeCamera = cameras.find((camera) => camera.id === prefs.activeCameraId) ?? cameras[0];
+  const savedCameraAddress = activeCamera.host || cameraAddressFromStreamUrl(activeCamera.url);
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [draftCameraId, setDraftCameraId] = useState(activeCamera.id);
+  const [draftLabel, setDraftLabel] = useState(activeCamera.label);
+  const [draftRole, setDraftRole] = useState<CameraStreamRole>(activeCamera.role);
+  const [draftEnabled, setDraftEnabled] = useState(activeCamera.enabled);
+  const [draftResolution, setDraftResolution] = useState(activeCamera.resolution);
   const [draftAddress, setDraftAddress] = useState(savedCameraAddress);
-  const [draftSourceType, setDraftSourceType] = useState<CameraSourceType>(prefs.webcamSourceType ?? 'network');
-  const [draftStreamUrl, setDraftStreamUrl] = useState(prefs.webcamUrl);
-  const [draftMainStreamUrl, setDraftMainStreamUrl] = useState(prefs.webcamMainStreamUrl);
-  const [draftUsbDeviceId, setDraftUsbDeviceId] = useState(prefs.webcamUsbDeviceId ?? '');
-  const [draftUsbDeviceLabel, setDraftUsbDeviceLabel] = useState(prefs.webcamUsbDeviceLabel ?? '');
-  const [draftServerUsbDevice, setDraftServerUsbDevice] = useState(prefs.webcamServerUsbDevice ?? '');
-  const [draftStreamPreference, setDraftStreamPreference] = useState(prefs.webcamStreamPreference);
-  const [draftMainStreamProtocol, setDraftMainStreamProtocol] = useState(prefs.webcamMainStreamProtocol);
-  const [draftRtspTransport, setDraftRtspTransport] = useState(prefs.webcamRtspTransport);
-  const [draftPathPreset, setDraftPathPreset] = useState<CameraPathPreset>(prefs.webcamPathPreset ?? 'generic');
-  const [draftUsername, setDraftUsername] = useState(prefs.webcamUsername);
-  const [draftPassword, setDraftPassword] = useState(prefs.webcamPassword);
+  const [draftSourceType, setDraftSourceType] = useState<CameraSourceType>(activeCamera.sourceType);
+  const [draftStreamUrl, setDraftStreamUrl] = useState(activeCamera.url);
+  const [draftMainStreamUrl, setDraftMainStreamUrl] = useState(activeCamera.mainStreamUrl);
+  const [draftUsbDeviceId, setDraftUsbDeviceId] = useState(activeCamera.usbDeviceId);
+  const [draftUsbDeviceLabel, setDraftUsbDeviceLabel] = useState(activeCamera.usbDeviceLabel);
+  const [draftServerUsbDevice, setDraftServerUsbDevice] = useState(activeCamera.serverUsbDevice);
+  const [draftStreamPreference, setDraftStreamPreference] = useState(activeCamera.streamPreference);
+  const [draftMainStreamProtocol, setDraftMainStreamProtocol] = useState(activeCamera.mainStreamProtocol);
+  const [draftRtspTransport, setDraftRtspTransport] = useState(activeCamera.rtspTransport);
+  const [draftPathPreset, setDraftPathPreset] = useState<CameraPathPreset>(activeCamera.pathPreset);
+  const [draftUsername, setDraftUsername] = useState(activeCamera.username);
+  const [draftPassword, setDraftPassword] = useState(activeCamera.password);
+  const [draftPtzEnabled, setDraftPtzEnabled] = useState(activeCamera.ptzEnabled);
+  const [draftPtzProvider, setDraftPtzProvider] = useState<CameraPtzProvider>(activeCamera.ptzProvider);
+  const [draftPtzMoveUrlTemplate, setDraftPtzMoveUrlTemplate] = useState(activeCamera.ptzMoveUrlTemplate);
+  const [draftPtzPresetUrlTemplate, setDraftPtzPresetUrlTemplate] = useState(activeCamera.ptzPresetUrlTemplate);
+  const [draftWebRtcEnabled, setDraftWebRtcEnabled] = useState(activeCamera.webRtcEnabled);
+  const [draftWebRtcUrl, setDraftWebRtcUrl] = useState(activeCamera.webRtcUrl);
+  const [draftWebRtcIceServers, setDraftWebRtcIceServers] = useState(activeCamera.webRtcIceServers);
   const [testState, setTestState] = useState<CameraTestState>({ status: 'idle' });
   const [saved, setSaved] = useState(false);
 
@@ -707,6 +727,11 @@ export function CameraSection({
     [draftPassword, draftUsername, resolvedUrl],
   );
   const hasUnsavedChanges =
+    draftCameraId !== prefs.activeCameraId ||
+    draftLabel !== activeCamera.label ||
+    draftRole !== activeCamera.role ||
+    draftEnabled !== activeCamera.enabled ||
+    draftResolution !== activeCamera.resolution ||
     draftSourceType !== (prefs.webcamSourceType ?? 'network') ||
     draftAddress !== savedCameraAddress ||
     draftStreamUrl !== prefs.webcamUrl ||
@@ -719,7 +744,111 @@ export function CameraSection({
     draftRtspTransport !== prefs.webcamRtspTransport ||
     draftPathPreset !== (prefs.webcamPathPreset ?? 'generic') ||
     draftUsername !== prefs.webcamUsername ||
-    draftPassword !== prefs.webcamPassword;
+    draftPassword !== prefs.webcamPassword ||
+    draftPtzEnabled !== activeCamera.ptzEnabled ||
+    draftPtzProvider !== activeCamera.ptzProvider ||
+    draftPtzMoveUrlTemplate !== activeCamera.ptzMoveUrlTemplate ||
+    draftPtzPresetUrlTemplate !== activeCamera.ptzPresetUrlTemplate ||
+    draftWebRtcEnabled !== activeCamera.webRtcEnabled ||
+    draftWebRtcUrl !== activeCamera.webRtcUrl ||
+    draftWebRtcIceServers !== activeCamera.webRtcIceServers;
+
+  const cameraFromDraft = (id = draftCameraId): CameraStreamConfig => ({
+    id,
+    label: draftLabel.trim() || 'Camera',
+    role: draftRole,
+    enabled: draftEnabled,
+    resolution: draftResolution.trim() || '1080p',
+    sourceType: draftSourceType,
+    host: draftAddress.trim(),
+    url: draftStreamUrl.trim() ? resolvedUrl : '',
+    mainStreamUrl: draftMainStreamUrl.trim(),
+    usbDeviceId: draftUsbDeviceId,
+    usbDeviceLabel: draftUsbDeviceLabel,
+    serverUsbDevice: draftServerUsbDevice.trim(),
+    streamPreference: draftStreamPreference,
+    mainStreamProtocol: draftMainStreamProtocol,
+    rtspTransport: draftRtspTransport,
+    pathPreset: draftPathPreset,
+    username: draftUsername.trim(),
+    password: draftPassword,
+    ptzEnabled: draftPtzEnabled,
+    ptzProvider: draftPtzProvider,
+    ptzMoveUrlTemplate: draftPtzMoveUrlTemplate.trim(),
+    ptzPresetUrlTemplate: draftPtzPresetUrlTemplate.trim(),
+    ptzPresets: activeCamera.ptzPresets,
+    ptzStartPresetId: activeCamera.ptzStartPresetId,
+    webRtcEnabled: draftWebRtcEnabled,
+    webRtcUrl: draftWebRtcUrl.trim(),
+    webRtcIceServers: draftWebRtcIceServers.trim(),
+  });
+
+  const loadCameraDraft = (camera: CameraStreamConfig) => {
+    setDraftCameraId(camera.id);
+    setDraftLabel(camera.label);
+    setDraftRole(camera.role);
+    setDraftEnabled(camera.enabled);
+    setDraftResolution(camera.resolution);
+    setDraftAddress(camera.host || cameraAddressFromStreamUrl(camera.url));
+    setDraftSourceType(camera.sourceType);
+    setDraftStreamUrl(camera.url);
+    setDraftMainStreamUrl(camera.mainStreamUrl);
+    setDraftUsbDeviceId(camera.usbDeviceId);
+    setDraftUsbDeviceLabel(camera.usbDeviceLabel);
+    setDraftServerUsbDevice(camera.serverUsbDevice);
+    setDraftStreamPreference(camera.streamPreference);
+    setDraftMainStreamProtocol(camera.mainStreamProtocol);
+    setDraftRtspTransport(camera.rtspTransport);
+    setDraftPathPreset(camera.pathPreset);
+    setDraftUsername(camera.username);
+    setDraftPassword(camera.password);
+    setDraftPtzEnabled(camera.ptzEnabled);
+    setDraftPtzProvider(camera.ptzProvider);
+    setDraftPtzMoveUrlTemplate(camera.ptzMoveUrlTemplate);
+    setDraftPtzPresetUrlTemplate(camera.ptzPresetUrlTemplate);
+    setDraftWebRtcEnabled(camera.webRtcEnabled);
+    setDraftWebRtcUrl(camera.webRtcUrl);
+    setDraftWebRtcIceServers(camera.webRtcIceServers);
+    setSaved(false);
+    setTestState({ status: 'idle' });
+  };
+
+  const selectCamera = (cameraId: string) => {
+    const nextCamera = cameras.find((camera) => camera.id === cameraId);
+    if (!nextCamera) return;
+    loadCameraDraft(nextCamera);
+    patchPrefs({
+      activeCameraId: nextCamera.id,
+      ...cameraToLegacyPrefs(nextCamera),
+    });
+  };
+
+  const addCamera = () => {
+    const nextCamera = {
+      ...legacyCameraFromPrefs({}, `camera-${Date.now()}`),
+      label: `Camera ${cameras.length + 1}`,
+      role: 'custom' as CameraStreamRole,
+    };
+    patchPrefs({
+      cameras: [...cameras.map((camera) => (camera.id === draftCameraId ? cameraFromDraft(camera.id) : camera)), nextCamera],
+      activeCameraId: nextCamera.id,
+      ...cameraToLegacyPrefs(nextCamera),
+    });
+    loadCameraDraft(nextCamera);
+  };
+
+  const removeCamera = () => {
+    if (cameras.length <= 1) return;
+    const remaining = cameras.filter((camera) => camera.id !== draftCameraId);
+    const nextCamera = remaining[0];
+    patchPrefs({
+      cameras: remaining,
+      activeCameraId: nextCamera.id,
+      dashboardCameraId: prefs.dashboardCameraId === draftCameraId ? nextCamera.id : prefs.dashboardCameraId,
+      ...cameraToLegacyPrefs(nextCamera),
+    });
+    loadCameraDraft(nextCamera);
+  };
 
   const fillAmcrestDefaults = () => {
     const subUrl = amcrestSubStreamUrl(draftAddress, hostname);
@@ -729,6 +858,8 @@ export function CameraSection({
     setDraftMainStreamProtocol('rtsp');
     setDraftRtspTransport('tcp');
     setDraftPathPreset('amcrest');
+    setDraftPtzEnabled(true);
+    setDraftPtzProvider('amcrest');
     setSaved(false);
     setTestState({ status: 'idle' });
   };
@@ -821,22 +952,15 @@ export function CameraSection({
   };
 
   const handleSaveCamera = () => {
-    const savedUrl = draftStreamUrl.trim() ? resolvedUrl : '';
+    const savedCamera = cameraFromDraft();
+    const savedUrl = savedCamera.url;
     setDraftStreamUrl(savedUrl);
+    const nextCameras = cameras.map((camera) => (camera.id === savedCamera.id ? savedCamera : camera));
     patchPrefs({
-      webcamSourceType: draftSourceType,
-      webcamHost: draftAddress.trim(),
-      webcamUrl: savedUrl,
-      webcamMainStreamUrl: draftMainStreamUrl.trim(),
-      webcamUsbDeviceId: draftUsbDeviceId,
-      webcamUsbDeviceLabel: draftUsbDeviceLabel,
-      webcamServerUsbDevice: draftServerUsbDevice.trim(),
-      webcamStreamPreference: draftStreamPreference,
-      webcamMainStreamProtocol: draftMainStreamProtocol,
-      webcamRtspTransport: draftRtspTransport,
-      webcamPathPreset: draftPathPreset,
-      webcamUsername: draftUsername.trim(),
-      webcamPassword: draftPassword,
+      ...cameraToLegacyPrefs(savedCamera),
+      cameras: nextCameras,
+      activeCameraId: savedCamera.id,
+      dashboardCameraId: prefs.dashboardCameraId || savedCamera.id,
     });
     setSaved(true);
   };
@@ -847,6 +971,103 @@ export function CameraSection({
       <div className="duet-settings__banner duet-settings__banner--info">
         <Camera size={16} /> Configure a network camera, browser USB camera, or server USB camera for this printer.
       </div>
+
+      <div className="duet-settings__section">
+        <div className="duet-settings__section-title">Camera Streams</div>
+        <div className="duet-settings__btn-row" style={{ flexWrap: 'wrap' }}>
+          {cameras.map((camera) => (
+            <button
+              key={camera.id}
+              type="button"
+              className={`duet-settings__btn duet-settings__btn--secondary${camera.id === draftCameraId ? ' is-active' : ''}`}
+              onClick={() => selectCamera(camera.id)}
+              title={camera.enabled ? `${camera.role} camera` : 'Disabled camera'}
+            >
+              <Camera size={14} /> {camera.label}
+            </button>
+          ))}
+          <button type="button" className="duet-settings__btn duet-settings__btn--secondary" onClick={addCamera}>
+            <Plus size={14} /> Add Camera
+          </button>
+          <button
+            type="button"
+            className={`duet-settings__btn duet-settings__btn--danger${cameras.length <= 1 ? ' duet-settings__btn--disabled' : ''}`}
+            onClick={removeCamera}
+            disabled={cameras.length <= 1}
+          >
+            <Trash2 size={14} /> Remove
+          </button>
+        </div>
+      </div>
+
+      <SettingRow
+        label="Camera Label"
+        hint="Name shown in camera tabs and dashboard selectors."
+        control={
+          <input
+            className="duet-settings__input"
+            type="text"
+            value={draftLabel}
+            onChange={(event) => {
+              setDraftLabel(event.target.value);
+              setSaved(false);
+            }}
+            placeholder="Top, side, nozzle, custom"
+          />
+        }
+      />
+
+      <SettingRow
+        label="Camera Role"
+        hint="Use roles to organize common farm camera positions."
+        control={
+          <select
+            className="duet-settings__select"
+            value={draftRole}
+            onChange={(event) => {
+              setDraftRole(event.target.value as CameraStreamRole);
+              setSaved(false);
+            }}
+          >
+            <option value="top">Top</option>
+            <option value="side">Side</option>
+            <option value="nozzle">Nozzle</option>
+            <option value="custom">Custom</option>
+          </select>
+        }
+      />
+
+      <SettingRow
+        label="Resolution"
+        hint="Informational resolution label used by dashboard cards."
+        control={
+          <select
+            className="duet-settings__select"
+            value={draftResolution}
+            onChange={(event) => {
+              setDraftResolution(event.target.value);
+              setSaved(false);
+            }}
+          >
+            <option value="480p">480p</option>
+            <option value="720p">720p</option>
+            <option value="1080p">1080p</option>
+            <option value="1440p">1440p</option>
+            <option value="4K">4K</option>
+          </select>
+        }
+      />
+
+      <ToggleRow
+        id={`camera-enabled-${draftCameraId}`}
+        checked={draftEnabled}
+        onChange={(value) => {
+          setDraftEnabled(value);
+          setSaved(false);
+        }}
+        label="Enable this camera"
+        hint="Disabled cameras stay saved but are hidden from monitoring views."
+      />
 
       <SettingRow
         label="Camera Source"
@@ -950,16 +1171,98 @@ export function CameraSection({
             className="duet-settings__select"
             value={draftPathPreset}
             onChange={(event) => {
-              setDraftPathPreset(event.target.value as CameraPathPreset);
+              const nextPreset = event.target.value as CameraPathPreset;
+              setDraftPathPreset(nextPreset);
+              if (draftPtzEnabled) {
+                setDraftPtzProvider(nextPreset === 'generic' ? 'generic-http' : nextPreset);
+              }
               setSaved(false);
               setTestState({ status: 'idle' });
             }}
           >
             <option value="generic">Generic / custom URLs</option>
             <option value="amcrest">Amcrest / Dahua-compatible paths</option>
+            <option value="reolink">Reolink paths</option>
+            <option value="tapo">Tapo paths</option>
+            <option value="hikvision">Hikvision paths</option>
+            <option value="onvif">ONVIF bridge</option>
           </select>
         }
       />
+
+      <ToggleRow
+        id={`camera-ptz-${draftCameraId}`}
+        checked={draftPtzEnabled}
+        onChange={(value) => {
+          setDraftPtzEnabled(value);
+          if (value && draftPtzProvider === 'off') {
+            setDraftPtzProvider(draftPathPreset === 'generic' ? 'generic-http' : draftPathPreset);
+          }
+          setSaved(false);
+        }}
+        label="Enable PTZ for this camera"
+        hint="Camera page controls use this provider and optional URL templates for pan, tilt, zoom, and preset jumps."
+      />
+
+      {draftPtzEnabled && (
+        <>
+          <SettingRow
+            label="PTZ Provider"
+            hint="Amcrest and Reolink have built-in HTTP commands. ONVIF, Tapo, Hikvision, and generic cameras can use local bridge/template URLs."
+            control={
+              <select
+                className="duet-settings__select"
+                value={draftPtzProvider}
+                onChange={(event) => {
+                  setDraftPtzProvider(event.target.value as CameraPtzProvider);
+                  setSaved(false);
+                }}
+              >
+                <option value="generic-http">Generic HTTP template</option>
+                <option value="amcrest">Amcrest / Dahua</option>
+                <option value="reolink">Reolink</option>
+                <option value="tapo">Tapo bridge/template</option>
+                <option value="hikvision">Hikvision bridge/template</option>
+                <option value="onvif">ONVIF bridge/template</option>
+              </select>
+            }
+          />
+
+          <SettingRow
+            label="PTZ Move Template"
+            hint="Optional URL template. Tokens: {base}, {direction}, {speed}, {action}, {username}, {password}. Leave blank for built-in Amcrest/Reolink."
+            control={
+              <input
+                className="duet-settings__input"
+                type="text"
+                value={draftPtzMoveUrlTemplate}
+                onChange={(event) => {
+                  setDraftPtzMoveUrlTemplate(event.target.value);
+                  setSaved(false);
+                }}
+                placeholder="{base}/ptz?move={direction}&speed={speed}&action={action}"
+              />
+            }
+          />
+
+          <SettingRow
+            label="PTZ Preset Template"
+            hint="Optional URL template for saved preset slots. Tokens: {base}, {preset}, {presetName}, {username}, {password}."
+            control={
+              <input
+                className="duet-settings__input"
+                type="text"
+                value={draftPtzPresetUrlTemplate}
+                onChange={(event) => {
+                  setDraftPtzPresetUrlTemplate(event.target.value);
+                  setSaved(false);
+                }}
+                placeholder="{base}/ptz?preset={preset}"
+              />
+            }
+          />
+        </>
+      )}
 
       <SettingRow
         label="Preferred Stream"
@@ -1057,6 +1360,55 @@ export function CameraSection({
         <div className="duet-settings__banner duet-settings__banner--info">
           <Info size={16} /> Browsers cannot play RTSP/H.264 directly. The MJPEG sub stream remains the dashboard preview until an RTSP bridge is configured.
         </div>
+      )}
+
+      <ToggleRow
+        id={`camera-webrtc-${draftCameraId}`}
+        checked={draftWebRtcEnabled}
+        onChange={(value) => {
+          setDraftWebRtcEnabled(value);
+          setSaved(false);
+        }}
+        label="Use WebRTC when available"
+        hint="The Camera page tries this low-latency WHEP/WebRTC endpoint first, then falls back to MJPEG or HLS if it cannot connect."
+      />
+
+      {draftWebRtcEnabled && (
+        <>
+          <SettingRow
+            label="WebRTC / WHEP URL"
+            hint="Use a self-hosted camera bridge URL such as go2rtc, MediaMTX, or another WHEP-compatible endpoint."
+            control={
+              <input
+                className="duet-settings__input"
+                type="text"
+                value={draftWebRtcUrl}
+                onChange={(event) => {
+                  setDraftWebRtcUrl(event.target.value);
+                  setSaved(false);
+                }}
+                placeholder="https://camera-bridge.local/api/whep?src=printer"
+              />
+            }
+          />
+
+          <SettingRow
+            label="ICE / TURN Servers"
+            hint="Optional. Enter one STUN/TURN URL per line, or a JSON RTCIceServer array when remote-network access needs TURN credentials."
+            control={
+              <textarea
+                className="duet-settings__input"
+                value={draftWebRtcIceServers}
+                onChange={(event) => {
+                  setDraftWebRtcIceServers(event.target.value);
+                  setSaved(false);
+                }}
+                placeholder="stun:stun.l.google.com:19302"
+                rows={3}
+              />
+            }
+          />
+        </>
       )}
 
       <SettingRow

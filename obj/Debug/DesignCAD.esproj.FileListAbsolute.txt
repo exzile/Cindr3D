@@ -1,1 +1,1 @@
-C:\Users\joeyp\source\repos\exzile\DesignCAD\obj\Debug\DesignCAD.esproj.CoreCompileInputs.cache
+C:\Users\joeyp\source\repos\exzile\Cindr3D\obj\Debug\Cindr3D.esproj.CoreCompileInputs.cache

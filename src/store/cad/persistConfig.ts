@@ -30,7 +30,7 @@ function rebuildExtrudeBodies(state: CADState) {
 
 export function createCADPersistConfig(): PersistOptions<CADState, Partial<CADState>> {
   return {
-    name: 'dzign3d-cad',
+    name: 'cindr3d-cad',
     storage: idbStorage as unknown as PersistStorage<unknown>,
     // Bump on every rehydration-time sanity-clamp expansion (see the
     // ARRAY_FIELDS list in onRehydrateStorage) so existing IndexedDB

@@ -1,5 +1,5 @@
-#ifndef DESIGNCAD_WASM_STUBS_SPDLOG_H
-#define DESIGNCAD_WASM_STUBS_SPDLOG_H
+#ifndef CINDR3D_WASM_STUBS_SPDLOG_H
+#define CINDR3D_WASM_STUBS_SPDLOG_H
 
 namespace spdlog
 {
@@ -24,4 +24,4 @@ inline void error(Args&&...)
 }
 } // namespace spdlog
 
-#endif // DESIGNCAD_WASM_STUBS_SPDLOG_H
+#endif // CINDR3D_WASM_STUBS_SPDLOG_H

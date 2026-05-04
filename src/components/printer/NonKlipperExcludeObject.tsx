@@ -35,7 +35,7 @@ const FIRMWARE_INFO: Record<string, FirmwareInfo> = {
   repetier: {
     label: 'Repetier',
     note: (v) =>
-      `Repetier-Firmware ${ver(v)}does not implement M486 in any released mainline version. A handful of community forks have added it, but DesignCAD cannot rely on that being present. The pre-print workaround below is the most reliable option.`,
+      `Repetier-Firmware ${ver(v)}does not implement M486 in any released mainline version. A handful of community forks have added it, but Cindr3D cannot rely on that being present. The pre-print workaround below is the most reliable option.`,
   },
   other: {
     label: 'Unknown firmware',
@@ -144,7 +144,7 @@ export default function NonKlipperExcludeObject() {
           <div className="klipper-card-header">Want real mid-print cancellation?</div>
           <div className="klipper-card-body">
             <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55 }}>
-              DesignCAD currently supports mid-print object exclusion on:
+              Cindr3D currently supports mid-print object exclusion on:
               <br />
               <strong>Klipper</strong> (via <code>EXCLUDE_OBJECT</code>),{' '}
               <strong>Duet RRF 3.5+</strong> (via <code>M486</code>), and{' '}

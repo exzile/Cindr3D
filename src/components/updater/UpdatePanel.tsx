@@ -27,7 +27,7 @@ interface ApplyResult {
   installed?: UpdateStatus['installed'];
 }
 
-const tokenStorageKey = 'designcad.updaterToken';
+const tokenStorageKey = 'cindr3d.updaterToken';
 
 async function readJson<T>(response: Response): Promise<T> {
   const text = await response.text();
@@ -83,7 +83,7 @@ export default function UpdatePanel({ onAlertChange }: UpdatePanelProps) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { 'X-DesignCAD-Updater-Key': token } : {}),
+          ...(token ? { 'X-Cindr3D-Updater-Key': token } : {}),
         },
         body: JSON.stringify({ channel: 'release' }),
       });

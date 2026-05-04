@@ -128,7 +128,7 @@ function cameraProxyPlugin(): Plugin {
           const mod = targetUrl.protocol === 'https:' ? https : http;
           const headers: http.OutgoingHttpHeaders = {
             Accept: req.headers.accept ?? 'multipart/x-mixed-replace,image/*,*/*',
-            'User-Agent': 'DesignCAD-camera-proxy',
+            'User-Agent': 'Cindr3D-camera-proxy',
             host: targetUrl.host,
           };
           if (authorization) headers.Authorization = authorization;
@@ -304,7 +304,7 @@ function redactCameraTarget(target: string): string {
 
 function rtspHlsBridgePlugin(): Plugin {
   const sessions = new Map<string, HlsBridgeSession>();
-  const root = path.join(os.tmpdir(), 'designcad-camera-hls');
+  const root = path.join(os.tmpdir(), 'cindr3d-camera-hls');
   const ffmpegPath = localFfmpegPath();
 
   function stopSession(id: string): void {
@@ -446,7 +446,7 @@ function rtspHlsBridgePlugin(): Plugin {
 
 function rtspRecordingPlugin(): Plugin {
   const recordings = new Map<string, RtspRecordingSession>();
-  const root = path.join(os.tmpdir(), 'designcad-camera-recordings');
+  const root = path.join(os.tmpdir(), 'cindr3d-camera-recordings');
   const ffmpegPath = localFfmpegPath();
 
   function recordingId(seed: string): string {
@@ -619,7 +619,7 @@ function githubProxyPlugin(): Plugin {
           const upstream = await fetch(targetUrl, {
             method: req.method ?? 'GET',
             headers: {
-              'User-Agent': 'DesignCAD-dev-proxy',
+              'User-Agent': 'Cindr3D-dev-proxy',
               ...(typeof acceptHdr === 'string' ? { Accept: acceptHdr } : {}),
             },
             redirect: 'follow',
@@ -828,8 +828,8 @@ class BrowserRelay {
     const callId = crypto.randomUUID();
     this.rateLimit(tool, callId);
     if (!this.browserConnected) {
-      this.record({ callId, tool, args, status: 'error', message: 'No DesignCAD tab connected.' });
-      return Promise.reject(new Error('No DesignCAD tab connected. Open DesignCAD in a browser tab first.'));
+      this.record({ callId, tool, args, status: 'error', message: 'No Cindr3D tab connected.' });
+      return Promise.reject(new Error('No Cindr3D tab connected. Open Cindr3D in a browser tab first.'));
     }
     this.record({ callId, tool, args, status: 'queued' });
     return new Promise((resolve, reject) => {
@@ -920,17 +920,17 @@ async function relayTool(relay: BrowserRelay, tool: string, args: Record<string,
   return textOk(text);
 }
 
-function createDesignCadMcpServer(relay: BrowserRelay): McpServer {
-  const server = new McpServer({ name: 'designcad', version: '0.1.0' });
+function createCindr3dMcpServer(relay: BrowserRelay): McpServer {
+  const server = new McpServer({ name: 'cindr3d', version: '0.1.0' });
 
   // ── Status ──
-  server.registerTool('designcad_status', {
-    title: 'DesignCAD Status',
-    description: 'Reports whether the DesignCAD browser tab is connected to this MCP server.',
+  server.registerTool('cindr3d_status', {
+    title: 'Cindr3D Status',
+    description: 'Reports whether the Cindr3D browser tab is connected to this MCP server.',
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, async () => textOk(relay.browserConnected
-    ? 'DesignCAD browser tab is connected and ready.'
-    : 'MCP server is running but no DesignCAD tab is connected yet. Open DesignCAD in a browser.'));
+    ? 'Cindr3D browser tab is connected and ready.'
+    : 'MCP server is running but no Cindr3D tab is connected yet. Open Cindr3D in a browser.'));
 
   // ── Document / scene ──────────────────────────────────────────────────────
   server.registerTool('list_objects', {
@@ -1895,25 +1895,25 @@ function createDesignCadMcpServer(relay: BrowserRelay): McpServer {
   }, ({ tool }) => relayTool(relay, 'printer_unload_filament', { tool }));
 
   // ── Phase 3: Resources ────────────────────────────────────────────────────
-  server.resource('document_summary', 'designcad://document/summary', {
+  server.resource('document_summary', 'cindr3d://document/summary', {
     title: 'Document Summary',
     description: 'Name, units, object count, and plate state of the active document.',
     mimeType: 'application/json',
   }, () => relay.call('resource_document_summary', {}).then((r) => ({
-    contents: [{ uri: 'designcad://document/summary', text: typeof r === 'string' ? r : JSON.stringify(r, null, 2), mimeType: 'application/json' }],
+    contents: [{ uri: 'cindr3d://document/summary', text: typeof r === 'string' ? r : JSON.stringify(r, null, 2), mimeType: 'application/json' }],
   })));
 
-  server.resource('document_objects', 'designcad://document/objects', {
+  server.resource('document_objects', 'cindr3d://document/objects', {
     title: 'Document Objects',
     description: 'Full object list for the active document as JSON.',
     mimeType: 'application/json',
   }, () => relay.call('resource_document_objects', {}).then((r) => ({
-    contents: [{ uri: 'designcad://document/objects', text: typeof r === 'string' ? r : JSON.stringify(r, null, 2), mimeType: 'application/json' }],
+    contents: [{ uri: 'cindr3d://document/objects', text: typeof r === 'string' ? r : JSON.stringify(r, null, 2), mimeType: 'application/json' }],
   })));
 
   server.resource(
     'document_feature',
-    new ResourceTemplate('designcad://document/feature/{id}', { list: undefined }),
+    new ResourceTemplate('cindr3d://document/feature/{id}', { list: undefined }),
     {
       title: 'Feature Tree',
       description: 'Full feature tree for a single object by ID — params, sketch entities, dimensions, face IDs, and bounding box.',
@@ -1924,28 +1924,28 @@ function createDesignCadMcpServer(relay: BrowserRelay): McpServer {
     })),
   );
 
-  server.resource('active_printer', 'designcad://printer/active', {
+  server.resource('active_printer', 'cindr3d://printer/active', {
     title: 'Active Printer',
     description: 'Selected printer and machine config (helps the model choose build-volume-appropriate sizes).',
     mimeType: 'application/json',
   }, () => relay.call('resource_active_printer', {}).then((r) => ({
-    contents: [{ uri: 'designcad://printer/active', text: typeof r === 'string' ? r : JSON.stringify(r, null, 2), mimeType: 'application/json' }],
+    contents: [{ uri: 'cindr3d://printer/active', text: typeof r === 'string' ? r : JSON.stringify(r, null, 2), mimeType: 'application/json' }],
   })));
 
   return server;
 }
 
-function designCadMcpPlugin(): Plugin {
+function cindr3dMcpPlugin(): Plugin {
   let token = crypto.randomBytes(18).toString('base64url');
   let lastHeartbeat = 0;
   let mcpHttpServer: http.Server | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   const sessions: Record<string, McpTransportSession> = {};
-  const port = Number.parseInt(process.env.DESIGNCAD_MCP_PORT ?? '', 10) || MCP_DEFAULT_PORT;
+  const port = Number.parseInt(process.env.CINDR3D_MCP_PORT ?? '', 10) || MCP_DEFAULT_PORT;
   const endpoint = `http://localhost:${port}/mcp`;
   const relay = new BrowserRelay();
 
-  const pairingLine = () => `claude mcp add designcad ${endpoint}?token=${token}`;
+  const pairingLine = () => `claude mcp add cindr3d ${endpoint}?token=${token}`;
 
   const closeSessions = async () => {
     const entries = Object.entries(sessions);
@@ -1976,7 +1976,7 @@ function designCadMcpPlugin(): Plugin {
     }
     const bearerToken = req.headers.authorization?.replace(/^Bearer\s+/i, '');
     if (parsedUrl.searchParams.get('token') !== token && bearerToken !== token) {
-      sendJson(res, 401, { error: 'Missing or invalid DesignCAD MCP pairing token.' });
+      sendJson(res, 401, { error: 'Missing or invalid Cindr3D MCP pairing token.' });
       return false;
     }
     return true;
@@ -2006,7 +2006,7 @@ function designCadMcpPlugin(): Plugin {
         return;
       }
       if (req.method === 'POST' && !sessionKey && isInitializeRequest(req.body)) {
-        const server = createDesignCadMcpServer(relay);
+        const server = createCindr3dMcpServer(relay);
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => crypto.randomUUID(),
           onsessioninitialized: (newSessionId) => {
@@ -2023,7 +2023,7 @@ function designCadMcpPlugin(): Plugin {
       }
       sendJson(res, 400, { error: 'Invalid or missing MCP session.' });
     } catch (error) {
-      console.error('[designcad-mcp] request failed:', error);
+      console.error('[cindr3d-mcp] request failed:', error);
       if (!res.headersSent) sendJson(res, 500, { error: 'Internal MCP server error.' });
       else res.end();
     }
@@ -2046,7 +2046,7 @@ function designCadMcpPlugin(): Plugin {
       mcpHttpServer?.once('error', reject);
       mcpHttpServer?.listen(port, '127.0.0.1', () => resolve());
     });
-    console.info(`[designcad-mcp] listening at ${endpoint}`);
+    console.info(`[cindr3d-mcp] listening at ${endpoint}`);
   };
 
   const controlResponse = () => ({
@@ -2057,7 +2057,7 @@ function designCadMcpPlugin(): Plugin {
   });
 
   return {
-    name: 'designcad-mcp',
+    name: 'cindr3d-mcp',
     apply: 'serve',
     configureServer(server) {
       heartbeatTimer = setInterval(() => {
@@ -2110,7 +2110,7 @@ function designCadMcpPlugin(): Plugin {
           }
           sendJson(res, 200, controlResponse());
         } catch (error) {
-          console.error('[designcad-mcp] control request failed:', error);
+          console.error('[cindr3d-mcp] control request failed:', error);
           sendJson(res, 500, { error: (error as Error).message });
         }
       });
@@ -2125,7 +2125,7 @@ function designCadMcpPlugin(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), wasm(), duetProxyPlugin(), cameraProxyPlugin(), rtspHlsBridgePlugin(), rtspRecordingPlugin(), githubProxyPlugin(), designCadMcpPlugin(), noCacheDevAssetsPlugin()],
+  plugins: [react(), wasm(), duetProxyPlugin(), cameraProxyPlugin(), rtspHlsBridgePlugin(), rtspRecordingPlugin(), githubProxyPlugin(), cindr3dMcpPlugin(), noCacheDevAssetsPlugin()],
   resolve: {
     alias: {
       module: fileURLToPath(new URL('./src/shims/nodeModule.ts', import.meta.url)),

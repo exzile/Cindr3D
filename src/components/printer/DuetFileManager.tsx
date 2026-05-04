@@ -12,6 +12,8 @@ import { BrowserBody } from './duetFileManager/BrowserBody';
 
 export default function DuetFileManager() {
   const currentDirectory = usePrinterStore((s) => s.currentDirectory);
+  const printers = usePrinterStore((s) => s.printers);
+  const activePrinterId = usePrinterStore((s) => s.activePrinterId);
   const files = usePrinterStore((s) => s.files);
   const selectedFile = usePrinterStore((s) => s.selectedFile);
   const uploading = usePrinterStore((s) => s.uploading);
@@ -210,8 +212,11 @@ export default function DuetFileManager() {
   }, [currentDirectory, startPrint]);
 
   const handleQueue = useCallback((item: DuetFileInfo) => {
-    addToQueue(`${currentDirectory}/${item.name}`);
-  }, [currentDirectory]);
+    addToQueue(`${currentDirectory}/${item.name}`, {
+      printerId: activePrinterId,
+      routingMode: 'manual',
+    }, printers);
+  }, [activePrinterId, currentDirectory, printers]);
 
   const handleSimulate = useCallback(async (item: DuetFileInfo) => {
     if (!service) return;

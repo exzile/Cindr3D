@@ -1,27 +1,22 @@
-const QUEUE_KEY = 'dzign3d-print-queue';
+import type { SavedPrinter } from '../../../types/duet';
+import type { AddPrintQueueJobInput } from '../../../store/printQueueStore';
+import { usePrintQueueStore } from '../../../store/printQueueStore';
 
 export function loadQueue(): string[] {
-  try {
-    const raw = localStorage.getItem(QUEUE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch { /* ignore */ }
-  return [];
+  return usePrintQueueStore.getState().jobs
+    .filter((job) => !['done', 'cancelled', 'failed'].includes(job.status))
+    .map((job) => job.filePath);
 }
 
 export function saveQueue(queue: string[]): void {
-  try {
-    localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
-  } catch { /* ignore */ }
+  usePrintQueueStore.getState().replaceWithFilePaths(queue);
 }
 
-export function addToQueue(filePath: string): void {
-  const queue = loadQueue();
-  if (!queue.includes(filePath)) {
-    queue.push(filePath);
-    saveQueue(queue);
-  }
+export function addToQueue(
+  filePath: string,
+  options: Omit<AddPrintQueueJobInput, 'filePath'> = {},
+  printers: SavedPrinter[] = [],
+): void {
+  usePrintQueueStore.getState().addCopies({ filePath, ...options }, printers);
   window.dispatchEvent(new Event('print-queue-changed'));
 }
