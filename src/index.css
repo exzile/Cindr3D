@@ -9,7 +9,6 @@
 html, body, #root {
   width: 100%;
   height: 100%;
-  overflow: hidden;
   scrollbar-color:
     color-mix(in srgb, var(--border, #d0d0d0) 72%, var(--accent, #0078d7))
     var(--bg-toolbar, #fafafa);

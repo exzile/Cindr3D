@@ -362,7 +362,7 @@ export function PanelBanners({
         </div>
       )}
 
-      {!connected && (
+      {!connected && !reconnecting && (
         <div
           style={{
             display: 'flex',

@@ -20,6 +20,13 @@ export function bindActivePrinterPrefs(usePrinterStore: { getState: () => Printe
 export function connectInitialPrinter(usePrinterStore: { getState: () => PrinterStore }): void {
   const initial = usePrinterStore.getState();
   if (initial.config.hostname) {
-    initial.connect().catch(() => {});
+    initial.connect()
+      .catch(() => {})
+      .finally(() => {
+        const state = usePrinterStore.getState();
+        if (state.reconnecting && state.config.hostname === initial.config.hostname) {
+          state.stopAutoReconnect();
+        }
+      });
   }
 }
