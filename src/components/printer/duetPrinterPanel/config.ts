@@ -15,6 +15,12 @@ import {
   Router,
   Plug,
   Camera,
+  Layers,
+  ArrowUpCircle,
+  Zap,
+  Cpu,
+  Package,
+  Film,
 } from 'lucide-react';
 import DuetDashboard from '../DuetDashboard';
 import DuetStatus from '../DuetStatus';
@@ -33,6 +39,14 @@ import DuetNetworkAndFirmware from '../DuetNetworkAndFirmware';
 import DuetPlugins from '../DuetPlugins';
 import PrinterFleetDashboard from '../dashboard/PrinterFleetDashboard';
 import CameraDashboardPanel from '../dashboard/CameraDashboardPanel';
+import KlipperExcludeObject from '../KlipperExcludeObject';
+import KlipperUpdateManager from '../KlipperUpdateManager';
+import KlipperPowerDevices from '../KlipperPowerDevices';
+import KlipperBedMesh from '../KlipperBedMesh';
+import KlipperInputShaper from '../KlipperInputShaper';
+import KlipperPressureAdvance from '../KlipperPressureAdvance';
+import KlipperSpoolman from '../KlipperSpoolman';
+import KlipperTimelapse from '../KlipperTimelapse';
 
 export const TABS = [
   { key: 'dashboard' as const, label: 'Dashboard', Icon: LayoutDashboard },
@@ -51,9 +65,30 @@ export const TABS = [
   { key: 'network' as const, label: 'Network', Icon: Router },
   { key: 'plugins' as const, label: 'Plugins', Icon: Plug },
   { key: 'settings' as const, label: 'Settings', Icon: Settings },
+  // Klipper-specific tabs
+  { key: 'klipper-exclude' as const, label: 'Exclude Object', Icon: Layers },
+  { key: 'klipper-updates' as const, label: 'Updates', Icon: ArrowUpCircle },
+  { key: 'klipper-power' as const, label: 'Power', Icon: Zap },
+  { key: 'klipper-bedmesh' as const, label: 'Bed Mesh', Icon: Grid3x3 },
+  { key: 'klipper-shaper' as const, label: 'Input Shaper', Icon: Cpu },
+  { key: 'klipper-pa' as const, label: 'Press. Advance', Icon: TrendingUp },
+  { key: 'klipper-spoolman' as const, label: 'Spoolman', Icon: Package },
+  { key: 'klipper-timelapse' as const, label: 'Timelapse', Icon: Film },
 ];
 
 export type TabKey = (typeof TABS)[number]['key'] | 'printers';
+
+/** Keys of tabs that only appear when connected to a Klipper printer. */
+export const KLIPPER_ONLY_TABS = new Set<TabKey>([
+  'klipper-exclude',
+  'klipper-updates',
+  'klipper-power',
+  'klipper-bedmesh',
+  'klipper-shaper',
+  'klipper-pa',
+  'klipper-spoolman',
+  'klipper-timelapse',
+]);
 
 export const TAB_COMPONENTS: Record<TabKey, React.ComponentType> = {
   printers: PrinterFleetDashboard,
@@ -73,4 +108,12 @@ export const TAB_COMPONENTS: Record<TabKey, React.ComponentType> = {
   network: DuetNetworkAndFirmware,
   plugins: DuetPlugins,
   settings: DuetSettings,
+  'klipper-exclude': KlipperExcludeObject,
+  'klipper-updates': KlipperUpdateManager,
+  'klipper-power': KlipperPowerDevices,
+  'klipper-bedmesh': KlipperBedMesh,
+  'klipper-shaper': KlipperInputShaper,
+  'klipper-pa': KlipperPressureAdvance,
+  'klipper-spoolman': KlipperSpoolman,
+  'klipper-timelapse': KlipperTimelapse,
 };

@@ -1,0 +1,314 @@
+/* Shared styles for all Klipper-specific tab panels */
+
+.klipper-tab {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-primary);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+/* ── Toolbar / header bar ──────────────────────────────────────────────────── */
+.klipper-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-panel, var(--bg-secondary));
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.klipper-tab-bar h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.klipper-tab-bar .spacer { flex: 1; }
+
+/* ── Scrollable body ───────────────────────────────────────────────────────── */
+.klipper-tab-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── Cards / sections ──────────────────────────────────────────────────────── */
+.klipper-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.klipper-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-panel, var(--bg-secondary));
+  border-bottom: 1px solid var(--border);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.klipper-card-body {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── Badge / status chips ──────────────────────────────────────────────────── */
+.klipper-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.klipper-badge.on  { background: color-mix(in srgb, #22c55e 18%, transparent); color: #22c55e; }
+.klipper-badge.off { background: color-mix(in srgb, var(--text-muted) 14%, transparent); color: var(--text-muted); }
+.klipper-badge.error { background: color-mix(in srgb, #ef4444 18%, transparent); color: #ef4444; }
+.klipper-badge.warn  { background: color-mix(in srgb, #f59e0b 18%, transparent); color: #f59e0b; }
+.klipper-badge.info  { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+
+/* ── Object grid (Exclude Object) ─────────────────────────────────────────── */
+.klipper-object-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.klipper-object-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  word-break: break-all;
+}
+
+.klipper-object-btn:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--accent); }
+.klipper-object-btn.excluded {
+  background: color-mix(in srgb, #ef4444 10%, transparent);
+  border-color: #ef4444;
+  color: #ef4444;
+  text-decoration: line-through;
+  cursor: default;
+  opacity: 0.7;
+}
+
+.klipper-object-btn.current {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── Bed Mesh heat-map grid ────────────────────────────────────────────────── */
+.klipper-mesh-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+}
+
+.klipper-mesh-row {
+  display: flex;
+  gap: 2px;
+}
+
+.klipper-mesh-cell {
+  width: 28px;
+  height: 28px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 600;
+  color: rgba(0,0,0,0.7);
+}
+
+/* ── Steps / wizard ────────────────────────────────────────────────────────── */
+.klipper-step {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.klipper-step-num {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.klipper-step-body {
+  flex: 1;
+  padding-top: 2px;
+}
+
+.klipper-step-title {
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.klipper-step-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin-bottom: 8px;
+}
+
+/* ── Table ─────────────────────────────────────────────────────────────────── */
+.klipper-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.klipper-table th {
+  padding: 5px 10px;
+  text-align: left;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+
+.klipper-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border-light, var(--border));
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+
+.klipper-table tr:last-child td { border-bottom: none; }
+.klipper-table tr:hover td { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+
+/* ── Form row ─────────────────────────────────────────────────────────────── */
+.klipper-form-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.klipper-form-row label {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.klipper-form-row input[type='number'],
+.klipper-form-row input[type='text'],
+.klipper-form-row select {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  min-width: 80px;
+}
+
+/* ── Disconnected placeholder ─────────────────────────────────────────────── */
+.klipper-disconnected {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 40px;
+  text-align: center;
+}
+
+/* ── Shared button overrides ──────────────────────────────────────────────── */
+.klipper-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.klipper-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.klipper-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.klipper-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.klipper-btn-primary:hover { filter: brightness(1.1); }
+
+.klipper-btn-danger {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.klipper-btn-danger:hover { background: color-mix(in srgb, #ef4444 12%, transparent); }
+
+/* ── Color legend bar (bed mesh) ──────────────────────────────────────────── */
+.klipper-mesh-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.klipper-mesh-legend-bar {
+  width: 120px;
+  height: 10px;
+  border-radius: 4px;
+  background: linear-gradient(to right, #3b82f6, #22c55e, #f59e0b, #ef4444);
+}

@@ -276,7 +276,7 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
         </div>
       )}
 
-      {!fullscreen && <PanelTabBar activeTab={activeTab as TabKey} onTabChange={setPanelTab} />}
+      {!fullscreen && <PanelTabBar activeTab={activeTab as TabKey} boardType={boardType} onTabChange={setPanelTab} />}
 
       <div
         style={{

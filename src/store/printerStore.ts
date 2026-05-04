@@ -67,7 +67,7 @@ export interface PrinterStore {
 
   showPrinter: boolean;
   showSettings: boolean;
-  activeTab: 'printers' | 'dashboard' | 'camera' | 'status' | 'console' | 'job' | 'history' | 'files' | 'filaments' | 'macros' | 'settings' | 'heightmap' | 'model' | 'config' | 'analytics' | 'network' | 'plugins';
+  activeTab: 'printers' | 'dashboard' | 'camera' | 'status' | 'console' | 'job' | 'history' | 'files' | 'filaments' | 'macros' | 'settings' | 'heightmap' | 'model' | 'config' | 'analytics' | 'network' | 'plugins' | 'klipper-exclude' | 'klipper-updates' | 'klipper-power' | 'klipper-bedmesh' | 'klipper-shaper' | 'klipper-pa' | 'klipper-spoolman' | 'klipper-timelapse';
 
   // Plugins (DSF) — list + install/start/stop
   plugins: DuetPluginInfo[];
