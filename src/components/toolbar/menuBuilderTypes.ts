@@ -21,6 +21,7 @@ export interface DesignMenuDeps {
   openTextureExtrudeDialog: () => void;
   removeFeature: (id: string) => void;
   selectedFeatureId?: string | null;
+  showComponentColors: boolean;
   setActiveAnalysis: (
     analysis:
       | 'draft'
@@ -37,6 +38,7 @@ export interface DesignMenuDeps {
   setComponentGrounded: (id: string, grounded: boolean) => void;
   setSectionEnabled: (enabled: boolean) => void;
   setStatusMessage: (message: string) => void;
+  setShowComponentColors: (value: boolean) => void;
   startExtrudeTool: () => void;
   startLoftTool: () => void;
   startPatchTool: () => void;

@@ -20,9 +20,7 @@ export default function KlipperPressureAdvance() {
 
   const handlePrintTower = useCallback(async () => {
     if (!service) return;
-    const speed = 300;
     const paStart = 0;
-    const paEnd = 0.1;
     const paIncrement = 0.005;
     setPrintingTower(true); setError(null);
     try {
@@ -37,7 +35,7 @@ export default function KlipperPressureAdvance() {
     if (!service) return;
     setApplying(true); setError(null); setApplied(false);
     try {
-      await service.setPressureAdvance(advance, extruder !== 'extruder' ? parseInt(extruder.replace('extruder', '') || '0') : 0);
+      await service.setPressureAdvance(advance, extruder);
       await service.setSmoothTime(smoothTime, extruder);
       setApplied(true);
     } catch (e) {

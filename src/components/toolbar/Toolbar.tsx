@@ -45,6 +45,8 @@ export default function Toolbar() {
   const undoAction = useCADStore((s) => s.undo);
   const redoAction = useCADStore((s) => s.redo);
   const autoConstrainSketch = useCADStore((s) => s.autoConstrainSketch);
+  const showComponentColors = useCADStore((s) => s.showComponentColors);
+  const setShowComponentColors = useCADStore((s) => s.setShowComponentColors);
   const startSketchTextTool = useCADStore((s) => s.startSketchTextTool);
   const startSketchProjectSurfaceTool = useCADStore((s) => s.startSketchProjectSurfaceTool);
   const sketches = useCADStore((s) => s.sketches);
@@ -223,11 +225,13 @@ export default function Toolbar() {
     openTextureExtrudeDialog,
     removeFeature,
     selectedFeatureId,
+    showComponentColors,
     setActiveAnalysis,
     setActiveDialog,
     setActiveTool: setActiveTool as (tool: Tool) => void,
     setComponentGrounded,
     setSectionEnabled,
+    setShowComponentColors,
     setStatusMessage,
     startExtrudeTool,
     startLoftTool,
@@ -256,11 +260,13 @@ export default function Toolbar() {
     openTextureExtrudeDialog,
     removeFeature,
     selectedFeatureId,
+    showComponentColors,
     setActiveAnalysis,
     setActiveDialog,
     setActiveTool,
     setComponentGrounded,
     setSectionEnabled,
+    setShowComponentColors,
     setStatusMessage,
     startExtrudeTool,
     startLoftTool,

@@ -25,3 +25,19 @@ export const DIM_MATERIAL = new THREE.MeshBasicMaterial({
   opacity: 0.42,
   side: THREE.DoubleSide,
 });
+
+const COMPONENT_COLOR_MATERIALS = new Map<string, THREE.MeshPhysicalMaterial>();
+
+export function componentColorMaterial(color: string): THREE.Material {
+  const key = color.toLowerCase();
+  const cached = COMPONENT_COLOR_MATERIALS.get(key);
+  if (cached) return cached;
+  const material = new THREE.MeshPhysicalMaterial({
+    color,
+    metalness: 0,
+    roughness: 0.58,
+    side: THREE.DoubleSide,
+  });
+  COMPONENT_COLOR_MATERIALS.set(key, material);
+  return material;
+}

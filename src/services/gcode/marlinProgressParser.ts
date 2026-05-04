@@ -68,7 +68,8 @@ export function parseMarlinProgress(rawLine: string): MarlinProgressUpdate | nul
   const layerMatch = LAYER_LINE.exec(line);
   if (layerMatch) {
     const layer = Number(layerMatch[1]);
-    if (Number.isFinite(layer) && layer >= 0) update.layer = layer;
+    const slicerCommentLayer = /^;\s*layer\s*:/i.test(line);
+    if (Number.isFinite(layer) && layer >= 0) update.layer = slicerCommentLayer ? layer + 1 : layer;
     if (layerMatch[2] !== undefined) {
       const total = Number(layerMatch[2]);
       if (Number.isFinite(total) && total > 0) update.totalLayers = total;

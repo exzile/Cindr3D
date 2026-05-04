@@ -28,8 +28,9 @@ describe('parseMarlinProgress', () => {
     expect(parseMarlinProgress('echo:Layer 5/100')).toMatchObject({ layer: 5, totalLayers: 100 });
   });
 
-  it('parses "; LAYER:42" slicer comment', () => {
-    expect(parseMarlinProgress('; LAYER:42')).toMatchObject({ layer: 42 });
+  it('normalizes 0-based "; LAYER:<n>" slicer comments to 1-based layers', () => {
+    expect(parseMarlinProgress('; LAYER:0')).toMatchObject({ layer: 1 });
+    expect(parseMarlinProgress('; LAYER:42')).toMatchObject({ layer: 43 });
   });
 
   it('parses combined M73 + layer line', () => {

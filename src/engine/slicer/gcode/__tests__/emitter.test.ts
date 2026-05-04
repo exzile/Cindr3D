@@ -154,6 +154,18 @@ describe('GCodeEmitter — setAccel', () => {
     expect(gcode.find((l) => l.startsWith('M204 S800'))).toBeTruthy();
   });
 
+  it('uses RepRapFirmware print acceleration syntax for print moves', () => {
+    const { emitter, gcode } = makeEmitter({ flavor: 'duet' });
+    emitter.setAccel(1500, 1000);
+    expect(gcode.find((l) => l.startsWith('M204 P1500'))).toBeTruthy();
+  });
+
+  it('uses RepRapFirmware travel acceleration syntax for travel moves', () => {
+    const { emitter, gcode } = makeEmitter({ flavor: 'duet' });
+    emitter.setAccel(2500, 1000, 'travel');
+    expect(gcode.find((l) => l.startsWith('M204 T2500'))).toBeTruthy();
+  });
+
   it('skips the emit when accel hasn’t changed (no duplicate M204)', () => {
     const { emitter, gcode } = makeEmitter();
     emitter.setAccel(1000, 1000);
@@ -166,6 +178,16 @@ describe('GCodeEmitter — setAccel', () => {
     const { emitter, gcode } = makeEmitter({ print: { accelerationEnabled: false } });
     emitter.setAccel(1500, 1000);
     expect(gcode.filter((l) => l.startsWith('M204'))).toHaveLength(0);
+  });
+
+  it('emits separate RepRapFirmware print and travel acceleration commands for the same value', () => {
+    const { emitter, gcode } = makeEmitter({ flavor: 'reprap' });
+    emitter.setAccel(1000, 1000);
+    emitter.setAccel(1000, 1000, 'travel');
+    expect(gcode.filter((l) => l.startsWith('M204'))).toEqual([
+      'M204 P1000 ; Accel',
+      'M204 T1000 ; Accel',
+    ]);
   });
 });
 
