@@ -88,7 +88,7 @@
 
 
 # ============================================================================
-# REMAINING WORK — Phases 7-16 (post-Klipper-unification feature plan)
+# REMAINING WORK — Phases 7-18 (post-Klipper-unification feature plan)
 # ============================================================================
 # Following the cross-firmware printer work shipped 2026-05-03, the next
 # batch expands DesignCAD into a print-farm-scale tool with vision-based
@@ -145,8 +145,35 @@
 #   [ ] Auto-decrement during prints using slicer-estimated filamentUsed
 #   [ ] Per-printer "what spool is loaded" tracking
 
+### 7.5 Multi-camera per printer  [M]
+#   Extend per-printer config to support N camera streams
+#   [ ] Camera tab: tabs for top / side / nozzle / custom views
+#   [ ] Dashboard cards: select which feed to display
+#   [ ] Per-camera resolution + URL config; per-camera enable toggle
+#   [ ] Migration: existing single-camera configs upgrade cleanly
+
+### 7.6 Layer-by-layer photo gallery  [S]
+#   New service: src/services/camera/layerGallery.ts
+#   [ ] Subscribe to layer-change events; trigger per-camera snapshot
+#   [ ] Store frames keyed by (printer, job, layer) — short retention,
+#       configurable cap
+#   [ ] Gallery UI: scroll through layers, find when failure started
+#   [ ] ZIP export for archival; pairs with vision failure detection (8.1)
+
+### 7.7 PTZ control for IP cameras  [M]
+#   [ ] ONVIF support for Reolink / Tapo / Hikvision / Amcrest / generic
+#   [ ] Per-camera preset positions; D-pad live pan/tilt/zoom UI
+#   [ ] Save current position as preset; jump-to-preset on print start
+
+### 7.8 WebRTC camera streaming  [L]
+#   [ ] Replace MJPEG with WebRTC for sub-second latency
+#   [ ] Optional ICE/TURN for remote-network access (self-hosted)
+#   [ ] Fallback to MJPEG when WebRTC unavailable (older cameras)
+
 # Dependencies: 7.1 has no deps. 7.2 depends on existing camera infra.
-# 7.3 runs after 7.1. 7.4 is parallel with everything else.
+# 7.3 runs after 7.1. 7.4 parallel with everything. 7.5 → 7.6 → 7.7 → 7.8
+# is the camera-infra ladder; 7.5 + 7.7 + 7.8 are also independently
+# valuable.
 
 
 ## ── Phase 8: Vision / AI features ─────────────────────────────────────────
@@ -342,7 +369,35 @@
 #   [ ] On printer reconnect, detect if a print was interrupted
 #   [ ] Offer resume from saved Z; warn about temperature ramp-up
 
-# All sub-phases independent except 13.5 which interacts with 7.1 queue.
+### 13.6 Chamber temperature monitor + control  [M]
+#   For ABS / ASA / PC / nylon prints in an enclosure.
+#   [ ] Read chamber temp from RRF heater channel / Klipper sensor /
+#       generic MQTT topic
+#   [ ] Optional control: chamber-heater target + ramp curve UI
+#   [ ] Pre-heat before print start; cool-down policy on completion
+#   [ ] Pairs with safety limits: cool-down on door open
+
+### 13.7 Air quality / fume sensors  [S]
+#   Cheap MQTT sensors (SCD30 / BME680 / PMS5003) become safety surface.
+#   [ ] Subscribe to MQTT topics for VOC / PM2.5 / CO2
+#   [ ] Per-printer thresholds: warn at level 1, pause at level 2
+#   [ ] Dashboard card: live air-quality readout per printer
+
+### 13.8 Door / enclosure sensor  [S]
+#   [ ] GPIO via Klipper / RRF / direct MQTT reed switch input
+#   [ ] Pause on door open during print (configurable)
+#   [ ] Optional safety lock: prevent print start with door open
+#   [ ] Pairs with chamber temperature (13.6) for cool-down on open
+
+### 13.9 Stepper driver tuning UI  [M]
+#   TMC tuning is currently config-file-only.
+#   [ ] Per-axis current / microstepping / stealthchop / spreadcycle
+#   [ ] M906 (RRF) / SET_TMC_CURRENT (Klipper) / M906 (Marlin) wrappers
+#   [ ] Quick-test "wiggle and listen" for noise-tuning
+#   [ ] Per-printer presets
+
+# All sub-phases independent except 13.5 (interacts with 7.1 queue) and
+# 13.8 (pairs with 13.6 chamber).
 
 
 ## ── Phase 14: Operational polish ──────────────────────────────────────────
@@ -382,6 +437,19 @@
 #   [ ] Optional: point at a git repo URL for sync
 #   [ ] Push profiles + spools on save; pull on app start
 #   [ ] Conflict resolution: last-writer-wins or manual
+
+### 14.7 PWA mode  [S]
+#   [ ] Web app manifest (icons, theme color, display: standalone)
+#   [ ] Service worker for offline caching of static assets + last-loaded
+#       project bundle
+#   [ ] Installable to home screen on desktop and mobile
+#   [ ] Custom splash screen + maskable icons
+
+### 14.8 Print-from-URL  [M]
+#   [ ] Paste Printables / MakerWorld / Thingiverse / direct STL URL
+#   [ ] Fetch + parse + auto-arrange on the build plate
+#   [ ] Source-aware: pull license + author info into project metadata
+#   [ ] Local cache so re-fetches are instant; respect Cache-Control
 
 
 ## ── Phase 15: Slicer fundamentals ─────────────────────────────────────────
@@ -428,15 +496,152 @@
 #       per filament, per printer
 #   [ ] "Your PLA failed 3× this week — last working profile was X"
 
-# 15.1, 15.2, 15.3 are independent and large. 15.4, 15.5, 15.7, 15.8 are
-# small + parallelizable. 15.6 is large and depends on the multi-extruder
-# decision below.
+### 15.9 Print thumbnails embedded in G-code  [S]
+#   Tiny + large PNG in the file header. Klipper/Mainsail, Bambu, and
+#   most modern Marlin LCDs render these on the file picker.
+#   [ ] Generate small (32×32) + large (300×300) PNG from current view
+#   [ ] Embed as base64 in G-code header per Klipper / Bambu / Marlin format
+#   [ ] Toggle in slicer settings; default on
+#   [ ] Auto-detected by firmware on file load
+
+### 15.10 Z-seam painter  [M]
+#   Per-layer seam point selection with paint-on-model overrides.
+#   [ ] Modes: random / aligned-rear / aligned-sharp / painted
+#   [ ] Painted mode: 3D brush in the CAD viewport over the model
+#   [ ] Stored as per-object metadata; flows to slicer as per-layer hint
+#   [ ] Preview shows seam location per layer
+
+### 15.11 Sequential printing  [M]
+#   Print each plate object to completion before moving to next — useful
+#   when total Z is short and parts are far apart.
+#   [ ] Z-clearance check (object height vs. nozzle clearance)
+#   [ ] Per-object skirt/brim
+#   [ ] Travel order: optimize start position, avoid knocking finished parts
+#   [ ] Warn when geometry violates clearance constraints
+
+### 15.12 Modifier mesh painting in 3D  [L]
+#   Paint regions on a mesh for per-region profiles, instead of importing
+#   separate cutter STLs. Massive UX win over the current modifier flow.
+#   [ ] Brush tool in Prepare viewport
+#   [ ] Region types: dense infill, smooth top, support blocker, custom
+#   [ ] Stored as triangle-tagged metadata per object
+#   [ ] Slicer pipeline reads tags and applies per-region settings
+#   [ ] Pairs with Phase 1 (per-object mesh override system)
+
+### 15.13 Fuzzy skin  [S]
+#   Adds texture to outer walls — niche but trivial.
+#   [ ] Per-object setting + UI toggle
+#   [ ] Configurable point distance and amplitude
+#   [ ] Outer-wall path receives controlled jitter at slicer time
+
+### 15.14 Coasting / wiping / scarf seams  [M]
+#   Modern seam-quality techniques.
+#   [ ] Coasting: stop extrusion N mm before end of move
+#   [ ] Wiping: short non-extrude move to drain hot pressure
+#   [ ] Scarf seams: ramp Z slightly to hide seam transitions
+#   [ ] Per-feature controls; defaults from print profile
+
+# 15.1, 15.2, 15.3 are independent and large. 15.4, 15.5, 15.7, 15.8,
+# 15.9, 15.13 are small + parallelizable. 15.6 is large and depends on
+# the multi-extruder decision below. 15.10, 15.11, 15.12, 15.14 are
+# medium-effort and can run in parallel.
 
 
-## ── Phase 16: Plugin / extension system  [FUTURE — not scheduled]  ────────
+## ── Phase 16: Design workspace ────────────────────────────────────────────
+## Goal: bring the CAD side up to par with the printer side. Phases 7-15
+## are mostly printer-management; this phase fills the Design-workspace
+## gap with parametric models, configurations, drawings, mesh repair,
+## and constraint-solver upgrades.
+
+### 16.1 Parametric model library  [L]
+#   New dir: src/parametric/ — one TS module per parametric model
+#   [ ] Built-in customizable objects: gridfinity bins, threaded inserts,
+#       brackets, boxes, cable clips, parametric pulleys/gears
+#   [ ] Parameter UI: numeric inputs, dropdowns, validation; live preview
+#   [ ] Generated geometry feeds the existing feature tree as a single
+#       feature with editable parameters
+#   [ ] Library structure: stable manifest format so plugin-system (18)
+#       can register new models without forking
+
+### 16.2 Design configurations / variants  [M]
+#   Inspired by SolidWorks configurations.
+#   [ ] Save N parameter sets per part ("small / medium / large", or
+#       "M3 / M4 / M5" of the same threaded mount)
+#   [ ] Configuration switcher in the CAD ribbon
+#   [ ] Per-config feature suppression (some features only in some variants)
+#   [ ] Configuration-aware export (export all variants in one click)
+
+### 16.3 2D drawings generation  [L]
+#   New workspace mode: drawing.
+#   [ ] Auto-generate orthographic views from 3D model (top, front, right)
+#   [ ] Dimension inference: pull from feature parameters where possible
+#   [ ] Title block with project metadata; configurable templates
+#   [ ] PDF / SVG / DXF export
+
+### 16.4 Mesh repair tools  [M]
+#   Currently STL imports rely on Blender / MeshLab for cleanup.
+#   [ ] Manifold check + report (non-manifold edges, dup vertices, flipped normals)
+#   [ ] Auto-fix: hole fill, normal flip, remove tiny features
+#   [ ] Manual tools: select-and-delete face, weld vertices
+#   [ ] Pre-import healing: optional auto-repair on STL import
+
+### 16.5 Sketch constraint solver upgrades  [L]
+#   Audit current solver coverage; close the gap with mature CAD tools.
+#   [ ] Add constraints: tangent (curve-curve, curve-line), perpendicular,
+#       equal-length, equal-radius, parallel, coincident, midpoint, symmetric
+#   [ ] Constraint visualization in sketch view (icons on geometry)
+#   [ ] Conflict-resolution UI when constraints over-define the sketch
+
+### 16.6 Threading / screw library  [S]
+#   [ ] Built-in M2-M12 metric threads, common bolt/nut profiles
+#   [ ] Helix-extrude based; configurable pitch, length, tolerance
+#   [ ] Drop-in feature for hardware mounts; pairs with parametric library
+
+### 16.7 Boolean history (non-destructive)  [L]
+#   Currently boolean ops are baked. This makes them editable.
+#   [ ] Each boolean op stores its parents; child can be edited and re-run
+#   [ ] Feature tree shows boolean parents as graph nodes
+#   [ ] Re-evaluation propagates on parent change
+#   [ ] Required for parametric editing of boolean-built parts
+
+# Dependencies: 16.1 → 16.2 (configs leverage parametric library).
+# 16.3, 16.4, 16.5, 16.6, 16.7 are independent and parallelizable.
+
+
+## ── Phase 17: Onboarding & education ──────────────────────────────────────
+## Goal: lower the floor for newcomers and add depth-help for everyone.
+## Pairs with the help-doc work shipped 2026-05-04.
+
+### 17.1 Calibration print library  [S]
+#   New tab in printer panel: src/components/printer/calibration/
+#   [ ] One-click presets: cube, temp tower, retraction tower, first-layer
+#       test, dimensional accuracy, flow calibration, PA/IS towers
+#   [ ] Each preset opens in Prepare workspace pre-laid-out + sliced
+#   [ ] Optional auto-tune integration with Phase 8.3 wizards
+
+### 17.2 Built-in guided tutorials  [M]
+#   Step-by-step interactive lessons with sample STLs.
+#   [ ] Examples: "design a phone stand", "your first calibration cube",
+#       "tune pressure advance", "use M486 to cancel a failed object"
+#   [ ] Highlighted UI elements with walkthrough overlay
+#   [ ] Progress tracking + resume
+
+### 17.3 Settings wiki / contextual deep-help  [M]
+#   Hover help on any setting expands into a rich-text page.
+#   [ ] Each page covers: what it does, when to change, common values,
+#       related settings, references
+#   [ ] Searchable from the help button; same dataset feeds the AI panel
+#       as structured setting context for diagnostics
+#   [ ] Markdown-authored, served from src/help/settings/*.md
+
+# Dependencies: all three sub-phases independent. 17.3 informs the
+# AI panel quality (Phase 8.2 diagnostics gets richer suggestions).
+
+
+## ── Phase 18: Plugin / extension system  [FUTURE — not scheduled]  ────────
 ## Goal: let users add their own panels, slicer post-processors, MCP
 ## tools, dashboard cards without forking. Captured here so feature
-## designs in Phases 7-15 are plugin-shaped from day one.
+## designs in Phases 7-17 are plugin-shaped from day one.
 #
 #   Open questions (resolve before implementation):
 #     - Manifest format (JSON / TS module / both?)
@@ -445,17 +650,19 @@
 #     - API stability commitment (semver, deprecation policy)
 #
 #   Once scoped, plugin shape would mirror MCP tool registration plus a
-#   panel-mount API and a slicer post-processor hook. Defer until enough
-#   of Phases 7-15 ships that the plugin surface is informed by real
-#   integration patterns.
+#   panel-mount API, a slicer post-processor hook, and a parametric-model
+#   registration hook (Phase 16.1). Defer until enough of Phases 7-17
+#   ships that the plugin surface is informed by real integration patterns.
 
 
 # CODEX-FRIENDLY SUBTASKS (parallelizable):
-#   Phases 7, 11, 13, 14 are mostly independent and run in parallel.
+#   Phases 7, 11, 13, 14, 16, 17 are mostly independent and run in parallel.
 #   Phase 8 (Vision) gates Phase 9 (AR) and parts of Phase 12.
 #   Phase 10 (Cost) is independent except for 10.2 → 12.1.
 #   Phase 15 (Slicer) is fully independent of the printer-management
 #   phases and runs on its own track.
+#   Phase 16 (Design workspace) is the largest CAD-side effort and is
+#   independent of every printer-side phase.
 
 
 # ============================================================================
