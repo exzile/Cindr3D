@@ -38,6 +38,12 @@ jobs:
       - name: Verify reproducible WASM build
         if: github.event_name == 'pull_request'
         run: npm run verify:wasm-build
+      - name: Upload regenerated WASM artifacts
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: regenerated-wasm-dist
+          path: wasm/dist
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
