@@ -1,7 +1,19 @@
 import { useCADStore } from '../../../store/cadStore';
+import { useAiAssistantStore } from '../../../store/aiAssistantStore';
 import { usePrinterStore } from '../../../store/printerStore';
 import { useSlicerStore } from '../../../store/slicerStore';
+import { useVisionStore } from '../../../store/visionStore';
 import { computeSliceStats, detectPrintIssues } from '../../../components/slicer/workspace/preview/sliceStats';
+import { getDuetPrefs } from '../../../utils/duetPrefs';
+import {
+  captureVisionFrame,
+  classifyPrintFrame,
+  summarizePrinterModel,
+  type VisionFrameSample,
+  type VisionFailureSettings,
+} from '../../vision/failureDetector';
+import { diagnosePrint } from '../../vision/printDiagnostics';
+import { analyzeTuningTower, type TuningWizardKind } from '../../vision/tuningWizards';
 import type { SketchEntity, SketchPoint } from '../../../types/cad/sketch';
 import type { Feature } from '../../../types/cad/feature';
 import type { SketchPlane } from '../../../types/cad/core';
@@ -918,6 +930,28 @@ const slicer_get_slice_stats: ToolHandler = async () => {
 
 function printerStore() { return usePrinterStore.getState(); }
 
+const printer_list_printers: ToolHandler = async () => {
+  const ps = printerStore();
+  return {
+    activePrinterId: ps.activePrinterId,
+    printers: ps.printers.map((printer) => ({
+      id: printer.id,
+      name: printer.name,
+      active: printer.id === ps.activePrinterId,
+      configured: Boolean(printer.config.hostname),
+    })),
+  };
+};
+
+const printer_select_printer: ToolHandler = async (args) => {
+  const id = String(args.id ?? '');
+  const ps = printerStore();
+  const printer = ps.printers.find((candidate) => candidate.id === id);
+  if (!printer) throw new Error(`Printer not found: ${id}`);
+  await ps.selectPrinter(id);
+  return { ok: true, id, name: printer.name };
+};
+
 function requireConnected() {
   if (!printerStore().connected) throw new Error('Printer is not connected — call printer_connect first.');
 }
@@ -1119,6 +1153,268 @@ const printer_unload_filament: ToolHandler = async (args) => {
   return { ok: true, tool: args.tool };
 };
 
+// ── Vision / AI print monitoring ─────────────────────────────────────────────
+
+function boolArg(value: unknown, fallback: boolean): boolean {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+  return String(value).toLowerCase() === 'true';
+}
+
+function numArg(value: unknown, fallback: number): number {
+  const next = Number(value);
+  return Number.isFinite(next) ? next : fallback;
+}
+
+function activePrinterName() {
+  const ps = printerStore();
+  return ps.printers.find((printer) => printer.id === ps.activePrinterId)?.name ?? 'Active printer';
+}
+
+function currentVisionGeometryContext() {
+  const ss = slicerStore();
+  const base = {
+    plateObjects: ss.plateObjects.map((object) => ({
+      id: object.id,
+      name: object.name,
+      position: object.position,
+      rotation: object.rotation,
+      scale: object.scale,
+    })),
+    sliceProgress: ss.sliceProgress,
+  };
+  if (!ss.sliceResult) return base;
+  const material = ss.getActiveMaterialProfile();
+  const printer = ss.getActivePrinterProfile();
+  const stats = computeSliceStats(ss.sliceResult, {
+    diameterMm: printer.filamentDiameter ?? 1.75,
+    densityGPerCm3: material.density ?? 1.24,
+    costPerKg: material.costPerKg,
+  });
+  return {
+    ...base,
+    slice: {
+      layerCount: ss.sliceResult.layerCount,
+      printTime: ss.sliceResult.printTime,
+      filamentUsed: ss.sliceResult.filamentUsed,
+      stats,
+    },
+  };
+}
+
+function notifyVisionFailure(summary: string): void {
+  window.dispatchEvent(new CustomEvent('vision:failure-detected', { detail: { summary } }));
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    new Notification('Cindr3D vision alert', { body: summary });
+  } catch {
+    // Notification availability varies by browser and context.
+  }
+}
+
+function currentExpectedLayerTimeSec(): number | undefined {
+  const ss = slicerStore();
+  const layer = printerStore().model.job?.layer ?? ss.previewLayer;
+  const layers = ss.sliceResult?.layers as unknown;
+  if (!Array.isArray(layers)) return undefined;
+  const record = layers[layer] as Record<string, unknown> | undefined;
+  const duration = record?.duration ?? record?.time ?? record?.layerTime;
+  return typeof duration === 'number' ? duration : undefined;
+}
+
+function currentMotorCurrents() {
+  const model = printerStore().model as Record<string, unknown>;
+  const move = model.move as Record<string, unknown> | undefined;
+  return move?.currentMove ?? move?.drives ?? move?.axes;
+}
+
+function recordVisionFrame(frame: VisionFrameSample): void {
+  const ps = printerStore();
+  useVisionStore.getState().recordFrame({
+    id: crypto.randomUUID(),
+    printerId: ps.activePrinterId,
+    printerName: activePrinterName(),
+    createdAt: Date.now(),
+    frame,
+  });
+}
+
+const vision_check_print: ToolHandler = async (args) => {
+  const ai = useAiAssistantStore.getState();
+  const ps = printerStore();
+  const vision = useVisionStore.getState();
+  const persistedSettings = vision.failureSettings;
+  const settings: VisionFailureSettings = {
+    sampleIntervalSec: numArg(args.sampleIntervalSec, persistedSettings.sampleIntervalSec),
+    confidenceThreshold: numArg(args.confidenceThreshold, persistedSettings.confidenceThreshold),
+    autoPauseEnabled: boolArg(args.autoPauseEnabled, persistedSettings.autoPauseEnabled),
+    requireUserConfirmation: boolArg(args.requireUserConfirmation, persistedSettings.requireUserConfirmation),
+  };
+  if (boolArg(args.saveSettings, false)) vision.updateFailureSettings(settings);
+
+  const frame = await captureVisionFrame(getDuetPrefs(), {
+    cameraId: typeof args.cameraId === 'string' ? args.cameraId : undefined,
+    fallbackUrl: typeof args.fallbackUrl === 'string' ? args.fallbackUrl : undefined,
+  });
+  recordVisionFrame(frame);
+  const result = await classifyPrintFrame({
+    frame,
+    settings,
+    provider: { provider: ai.provider, model: ai.model, apiKey: ai.apiKey },
+    context: {
+      printer: summarizePrinterModel(ps.activePrinterId, activePrinterName(), ps.model),
+      geometry: currentVisionGeometryContext(),
+      recentNotes: typeof args.notes === 'string' ? [args.notes] : undefined,
+    },
+  });
+  vision.recordCheck({
+    id: crypto.randomUUID(),
+    printerId: ps.activePrinterId,
+    printerName: activePrinterName(),
+    cameraId: frame.cameraId,
+    cameraLabel: frame.cameraLabel,
+    createdAt: Date.now(),
+    result,
+  });
+
+  const action = {
+    pauseAttempted: false,
+    pauseSent: false,
+    blockedByConfirmation: result.requiresConfirmation,
+  };
+  if (result.shouldPause) {
+    notifyVisionFailure(result.summary);
+    if (!result.requiresConfirmation || boolArg(args.confirmAutoAction, false)) {
+      requireConnected();
+      action.pauseAttempted = true;
+      await ps.pausePrint();
+      action.pauseSent = true;
+      action.blockedByConfirmation = false;
+    }
+  }
+
+  return {
+    frame: {
+      cameraId: frame.cameraId,
+      cameraLabel: frame.cameraLabel,
+      capturedAt: frame.capturedAt,
+      mimeType: frame.mimeType,
+      size: frame.size,
+    },
+    result,
+    settings,
+    action,
+  };
+};
+
+const diagnose_print: ToolHandler = async (args) => {
+  const ai = useAiAssistantStore.getState();
+  const ps = printerStore();
+  const vision = useVisionStore.getState();
+  const frameCount = Math.max(1, Math.min(5, Math.round(numArg(args.frameCount, 3))));
+  const cameraId = typeof args.cameraId === 'string' ? args.cameraId : undefined;
+  const recentFrames = vision.recentFrames
+    .filter((record) => record.printerId === ps.activePrinterId && (!cameraId || record.frame.cameraId === cameraId))
+    .slice(0, Math.max(0, frameCount - 1))
+    .map((record) => record.frame);
+  const freshFrame = await captureVisionFrame(getDuetPrefs(), {
+    cameraId,
+    fallbackUrl: typeof args.fallbackUrl === 'string' ? args.fallbackUrl : undefined,
+  });
+  recordVisionFrame(freshFrame);
+
+  const printer = summarizePrinterModel(ps.activePrinterId, activePrinterName(), ps.model);
+  const expectedLayerTimeSec = currentExpectedLayerTimeSec();
+  const result = await diagnosePrint({
+    provider: { provider: ai.provider, model: ai.model, apiKey: ai.apiKey },
+    frames: [freshFrame, ...recentFrames].slice(0, frameCount),
+    telemetry: {
+      printer,
+      motorCurrents: currentMotorCurrents(),
+      filamentSensorState: printer.filamentMonitorStatus,
+      expectedLayerTimeSec,
+      actualLayerTimeSec: printer.layerTimeSec,
+      slicerLayerDeltaSec: expectedLayerTimeSec !== undefined && printer.layerTimeSec !== undefined
+        ? printer.layerTimeSec - expectedLayerTimeSec
+        : undefined,
+      geometry: currentVisionGeometryContext(),
+      recentFailureChecks: vision.recentChecks
+        .filter((record) => record.printerId === ps.activePrinterId)
+        .slice(0, 5)
+        .map((record) => ({
+          category: record.result.category,
+          confidence: record.result.confidence,
+          severity: record.result.severity,
+          summary: record.result.summary,
+          createdAt: record.createdAt,
+        })),
+      operatorNotes: typeof args.notes === 'string' ? [args.notes] : undefined,
+    },
+  });
+  vision.recordDiagnosis({
+    id: crypto.randomUUID(),
+    printerId: ps.activePrinterId,
+    printerName: activePrinterName(),
+    createdAt: Date.now(),
+    result,
+  });
+
+  return {
+    result,
+    framesUsed: [freshFrame, ...recentFrames].slice(0, frameCount).map((frame) => ({
+      cameraId: frame.cameraId,
+      cameraLabel: frame.cameraLabel,
+      capturedAt: frame.capturedAt,
+      mimeType: frame.mimeType,
+      size: frame.size,
+    })),
+  };
+};
+
+const tuning_analyze_tower: ToolHandler = async (args) => {
+  const ai = useAiAssistantStore.getState();
+  const ps = printerStore();
+  const vision = useVisionStore.getState();
+  const kind = String(args.kind ?? 'pressure-advance') as TuningWizardKind;
+  const frameCount = Math.max(1, Math.min(5, Math.round(numArg(args.frameCount, 3))));
+  const cameraId = typeof args.cameraId === 'string' ? args.cameraId : undefined;
+  const recentFrames = vision.recentFrames
+    .filter((record) => record.printerId === ps.activePrinterId && (!cameraId || record.frame.cameraId === cameraId))
+    .slice(0, Math.max(0, frameCount - 1))
+    .map((record) => record.frame);
+  const freshFrame = await captureVisionFrame(getDuetPrefs(), {
+    cameraId,
+    fallbackUrl: typeof args.fallbackUrl === 'string' ? args.fallbackUrl : undefined,
+  });
+  recordVisionFrame(freshFrame);
+
+  const recommendation = await analyzeTuningTower({
+    provider: { provider: ai.provider, model: ai.model, apiKey: ai.apiKey },
+    frames: [freshFrame, ...recentFrames].slice(0, frameCount),
+    context: {
+      kind,
+      printer: summarizePrinterModel(ps.activePrinterId, activePrinterName(), ps.model),
+      startValue: args.startValue === undefined ? undefined : numArg(args.startValue, 0),
+      stepPerMm: args.stepPerMm === undefined ? undefined : numArg(args.stepPerMm, 0.005),
+      towerHeightMm: args.towerHeightMm === undefined ? undefined : numArg(args.towerHeightMm, 0),
+      axis: args.axis === 'X' || args.axis === 'Y' ? args.axis : undefined,
+      material: slicerStore().getActiveMaterialProfile(),
+      operatorNotes: typeof args.notes === 'string' ? [args.notes] : undefined,
+    },
+  });
+
+  return {
+    recommendation,
+    framesUsed: [freshFrame, ...recentFrames].slice(0, frameCount).map((frame) => ({
+      cameraId: frame.cameraId,
+      cameraLabel: frame.cameraLabel,
+      capturedAt: frame.capturedAt,
+      mimeType: frame.mimeType,
+      size: frame.size,
+    })),
+  };
+};
+
 const resource_active_printer: ToolHandler = async () => {
   try {
     const ps = usePrinterStore.getState();
@@ -1219,6 +1515,8 @@ export const TOOL_HANDLERS: Record<string, ToolHandler> = {
   slicer_set_sim_time,
   slicer_set_sim_speed,
   slicer_get_slice_stats,
+  printer_list_printers,
+  printer_select_printer,
   printer_get_status,
   printer_connect,
   printer_disconnect,
@@ -1244,4 +1542,7 @@ export const TOOL_HANDLERS: Record<string, ToolHandler> = {
   printer_run_macro,
   printer_load_filament,
   printer_unload_filament,
+  vision_check_print,
+  diagnose_print,
+  tuning_analyze_tower,
 };

@@ -13,7 +13,7 @@ export default function DimensionEditorOverlay() {
   const setSketchDimEditTypeahead = useCADStore((s) => s.setSketchDimEditTypeahead);
   const commitSketchDimEdit = useCADStore((s) => s.commitSketchDimEdit);
   const cancelSketchDimEdit = useCADStore((s) => s.cancelSketchDimEdit);
-  const parameters = useCADStore((s) => s.parameters ?? []);
+  const parameters = useCADStore((s) => s.parameters) ?? [];
 
   const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

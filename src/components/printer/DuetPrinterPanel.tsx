@@ -26,7 +26,6 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
   const macros = usePrinterStore((s) => s.macros);
   const filaments = usePrinterStore((s) => s.filaments);
   const printHistory = usePrinterStore((s) => s.printHistory);
-  const printers = usePrinterStore((s) => s.printers);
   const activePrinterId = usePrinterStore((s) => s.activePrinterId);
   const deductFilamentForPrinter = useSpoolStore((s) => s.deductFilamentForPrinter);
 
@@ -214,8 +213,6 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
 
   const ActiveTabComponent = TAB_COMPONENTS[(activeTab as TabKey)] ?? TAB_COMPONENTS.dashboard;
   const setPanelTab = (tab: TabKey) => setActiveTab(tab as typeof activeTab);
-  const activePrinter = printers.find((printer) => printer.id === activePrinterId);
-  const isPrintersPage = (activeTab as string) === 'printers';
 
   return (
     <div
@@ -267,22 +264,6 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
           reconnecting={reconnecting}
           onOpenSettings={() => setActiveTab('settings')}
         />
-      )}
-
-      {!isPrintersPage && (
-        <div className="printer-context-strip">
-          <div className="printer-context-strip__main">
-            <span className="printer-context-strip__label">Selected Printer</span>
-            <strong>{activePrinter?.name ?? 'Printer'}</strong>
-          </div>
-          <div className="printer-context-strip__meta">
-            <span>{config.hostname || 'No host configured'}</span>
-            <span>{boardType === 'duet' ? (config.mode === 'sbc' ? 'SBC' : 'Standalone') : boardType.charAt(0).toUpperCase() + boardType.slice(1)}</span>
-            <span className={connected ? 'is-connected' : 'is-offline'}>
-              {connected ? machineStatus : 'Offline'}
-            </span>
-          </div>
-        </div>
       )}
 
       {!fullscreen && <PanelTabBar activeTab={activeTab as TabKey} boardType={boardType} onTabChange={setPanelTab} />}

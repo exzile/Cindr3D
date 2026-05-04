@@ -77,7 +77,7 @@ function ObjectSilhouette({
   isCancelled: boolean;
   onContextMenu: (e: ThreeEvent<MouseEvent>) => void;
 }) {
-  const matrix = useMemo(() => objectMatrix(obj), [obj.position, obj.rotation, obj.scale, obj.mirrorX, obj.mirrorY, obj.mirrorZ]);
+  const matrix = useMemo(() => objectMatrix(obj), [obj]);
   // Reuse the geometry as-is; PlateObject geometry is already in model-local space.
   const geometry = obj.geometry as THREE.BufferGeometry | undefined;
   if (!geometry) return null;
@@ -111,7 +111,7 @@ function ObjectSilhouette({
 
 // ── Context menu (DOM overlay, not in 3D scene) ──────────────────────────────
 
-function ObjectContextMenu({
+export function ObjectContextMenu({
   obj,
   position,
   isCancelled,
@@ -249,7 +249,7 @@ export default function MeshPreviewPanel() {
   }, [boardType, model.job?.layer, klipperStatus, previewLayer, totalLayers]);
 
   // ── Cancelled / currently-printing detection ───────────────────────────────
-  const buildObjects = model.job?.build?.objects ?? [];
+  const buildObjects = useMemo(() => model.job?.build?.objects ?? [], [model.job?.build?.objects]);
   const buildCurrentIdx = model.job?.build?.currentObject ?? -1;
 
   const m486Labels = useMemo(

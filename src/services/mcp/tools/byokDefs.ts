@@ -268,6 +268,8 @@ BYOK_TOOLS.push(
 
 BYOK_TOOLS.push(
   // Status & connection
+  { name: 'printer_list_printers', description: 'List saved printers with IDs, names, active flag, and whether each has a configured hostname. Use this before named-printer commands.', params: {} },
+  { name: 'printer_select_printer', description: 'Switch the active printer by ID before running printer control tools on that printer.', params: { id: str('Printer ID from printer_list_printers') }, required: ['id'] },
   { name: 'printer_get_status', description: 'Return live machine status: connection state, temperatures (bed/chamber/tools), axis positions, active job progress, speed factor, and fan speeds.', params: {} },
   { name: 'printer_connect', description: 'Connect to the active printer using its saved configuration.', params: {} },
   { name: 'printer_disconnect', description: 'Disconnect from the active printer.', params: {} },
@@ -316,6 +318,68 @@ BYOK_TOOLS.push(
   // Filament
   { name: 'printer_load_filament', description: 'Load a filament profile on a tool (runs the load macro).', params: { tool: num('Tool index'), name: str('Filament name from 0:/filaments/') }, required: ['tool', 'name'] },
   { name: 'printer_unload_filament', description: 'Unload filament from a tool (runs the unload macro).', params: { tool: num('Tool index') }, required: ['tool'] },
+
+  // Vision
+  {
+    name: 'vision_check_print',
+    description: 'Capture a printer camera frame, combine it with printer telemetry and slicer geometry, and classify likely print failures such as spaghetti, layer shift, blob-of-doom, first-layer adhesion, or knocked-loose parts.',
+    params: {
+      cameraId: str('Optional camera ID. Defaults to the active camera.'),
+      confidenceThreshold: num('Failure confidence threshold from 0 to 1. Defaults to 0.82.'),
+      autoPauseEnabled: { type: 'string', description: '"true" to pause when confidence is above threshold; default false' },
+      requireUserConfirmation: { type: 'string', description: '"true" to require confirmation before an auto-pause; default true' },
+      saveSettings: { type: 'string', description: '"true" to persist the supplied threshold and auto-pause settings' },
+      confirmAutoAction: { type: 'string', description: '"true" only after the user confirms the suggested auto-pause' },
+      notes: str('Optional operator notes to include in the diagnosis context.'),
+    },
+  },
+  {
+    name: 'diagnose_print',
+    description: 'Diagnose what is wrong with the active print from recent camera frames, printer telemetry, filament sensor state, and slicer expected-vs-actual layer timing. Returns ranked causes and actionable suggestions.',
+    params: {
+      cameraId: str('Optional camera ID. Defaults to the active camera.'),
+      frameCount: num('Number of recent frames to include, 1 to 5. Defaults to 3.'),
+      notes: str('Optional operator notes to include in the diagnosis context.'),
+    },
+  },
+  {
+    name: 'tuning_analyze_tower',
+    description: 'Analyze calibration tower camera frames for pressure advance, retraction, temperature, first-layer squish, or input shaping. AI recommends values only; the operator applies them.',
+    params: {
+      kind: en('Tuning wizard kind', ['pressure-advance', 'retraction', 'temperature', 'first-layer-squish', 'input-shaper']),
+      cameraId: str('Optional camera ID. Defaults to the active camera.'),
+      frameCount: num('Number of recent frames to include, 1 to 5. Defaults to 3.'),
+      startValue: num('Tower start value, when applicable.'),
+      stepPerMm: num('Tower setting increment per mm, when applicable.'),
+      towerHeightMm: num('Visible/measured tower height in mm, when applicable.'),
+      axis: en('Axis for input shaper analysis', ['X', 'Y']),
+      notes: str('Optional operator notes to include in the tuning analysis.'),
+    },
+    required: ['kind'],
+  },
 );
 
-export const DESTRUCTIVE_TOOLS = new Set(['boolean_subtract', 'boolean_intersect']);
+export const DESTRUCTIVE_TOOLS = new Set([
+  'boolean_subtract',
+  'boolean_intersect',
+  'printer_send_gcode',
+  'printer_set_tool_temp',
+  'printer_set_bed_temp',
+  'printer_set_chamber_temp',
+  'printer_home_axes',
+  'printer_move_axis',
+  'printer_extrude',
+  'printer_set_baby_step',
+  'printer_set_speed_factor',
+  'printer_set_flow_factor',
+  'printer_set_fan_speed',
+  'printer_start_print',
+  'printer_pause_print',
+  'printer_resume_print',
+  'printer_cancel_print',
+  'printer_emergency_stop',
+  'printer_delete_file',
+  'printer_run_macro',
+  'printer_load_filament',
+  'printer_unload_filament',
+]);

@@ -184,42 +184,43 @@
 ### 8.1 Vision failure detection  [L]
 #   New service: src/services/vision/failureDetector.ts
 #   New MCP tool: vision_check_print
-#   [ ] Frame sampler — capture webcam frames at configurable interval
-#   [ ] AI-call helper that submits a frame + recent slicer geometry +
+#   [x] Frame sampler — capture webcam frames at configurable interval
+#   [x] AI-call helper that submits a frame + recent slicer geometry +
 #       printer state to the configured AI provider for classification
-#   [ ] Categories: spaghetti, layer-shift, blob-of-doom, first-layer
+#   [x] Categories: spaghetti, layer-shift, blob-of-doom, first-layer
 #       adhesion, knocked-loose part
-#   [ ] Auto-pause + push notification on high-confidence failure
-#   [ ] User-confirmation gate before auto-action; configurable
+#   [x] Auto-pause + push notification on high-confidence failure
+#   [x] User-confirmation gate before auto-action; configurable
 #       confidence thresholds in settings
 
 ### 8.2 "What's wrong with my print?" diagnostics  [M]
 #   New AI panel quick-action; new MCP tool: diagnose_print
-#   [ ] Aggregator: recent N camera frames, current temps, motor currents
+#   [x] Aggregator: recent N camera frames, current temps, motor currents
 #       (RRF), filament-sensor state, slicer-expected vs actual layer time
-#   [ ] AI call with structured prompt; expect ranked-list response
-#   [ ] Render diagnosis in AI panel with actionable suggestions
-#   [ ] One-click "apply suggestion" if it's a setting tweak
+#   [x] AI call with structured prompt; expect ranked-list response
+#   [x] Render diagnosis in AI panel with actionable suggestions
+#   [x] One-click "apply suggestion" if it's a setting tweak
 
 ### 8.3 Auto-tune wizards  [M]
 #   Extends existing Pressure Advance / Input Shaper tabs
-#   [ ] PA tower: print → AI scans camera → reports best zone height
-#   [ ] Retraction tower: same flow
-#   [ ] Temperature tower: same flow
-#   [ ] First-layer squish helper: AI watches first layer → suggest Z-offset
-#   [ ] All wizards integrate with existing tower workflows; AI is
+#   New MCP tool: tuning_analyze_tower
+#   [x] PA tower: print → AI scans camera → reports best zone height
+#   [x] Retraction tower: same flow
+#   [x] Temperature tower: same flow
+#   [x] First-layer squish helper: AI watches first layer → suggest Z-offset
+#   [x] All wizards integrate with existing tower workflows; AI is
 #       the analyzer, not the controller
 
 ### 8.4 Camera measurement tool  [S]
-#   [ ] Bed-corner pick → camera homography matrix
-#   [ ] Click two points on live image → real-world distance read-out
-#   [ ] Ruler overlay; saves calibration per-printer
+#   [x] Bed-corner pick → camera homography matrix
+#   [x] Click two points on live image → real-world distance read-out
+#   [x] Ruler overlay; saves calibration per-printer
 
 ### 8.5 Natural-language printer control  [S]
 #   Extends AI panel (text input only — voice deliberately out of scope)
-#   [ ] System prompt with available MCP tools
-#   [ ] Confirmation gate for destructive ops
-#   [ ] "Pause Voron, set Prusa to PETG temps, start the next file on
+#   [x] System prompt with available MCP tools
+#   [x] Confirmation gate for destructive ops
+#   [x] "Pause Voron, set Prusa to PETG temps, start the next file on
 #       Ender-3" — multi-tool plan executed via existing MCP surface
 
 # Dependencies: 8.1 → 8.2 (8.2 reuses the frame sampler). 8.3 depends on
@@ -233,25 +234,25 @@
 
 ### 9.1 Camera pose calibration  [M]
 #   Reuses 8.4 homography
-#   [ ] 4-corner bed pick on a still frame → solve for camera pose
-#   [ ] Per-printer persistent calibration store
-#   [ ] Quality indicator: re-pick if motion detected since last calibration
+#   [x] 4-corner bed pick on a still frame → solve for camera pose
+#   [x] Per-printer persistent calibration store
+#   [x] Quality indicator: re-pick if motion detected since last calibration
 
 ### 9.2 Toolpath overlay on camera  [M]
 #   New component: src/components/printer/dashboard/CameraOverlayPanel.tsx
-#   [ ] Render the InlineGCodeWirePreview through the calibrated transform
-#   [ ] Composite over the live camera frame at the same FPS
-#   [ ] Toggleable: print preview-only, camera-only, both
+#   [x] Render the InlineGCodeWirePreview through the calibrated transform
+#   [x] Composite over the live camera frame at the same FPS
+#   [x] Toggleable: print preview-only, camera-only, both
 
 ### 9.3 Right-click cancel from camera  [S]
-#   [ ] Inverse-project click coords back to bed coords
-#   [ ] Hit-test against plate-object bounding boxes
-#   [ ] Re-uses ObjectContextMenu from MeshPreviewPanel
+#   [x] Inverse-project click coords back to bed coords
+#   [x] Hit-test against plate-object bounding boxes
+#   [x] Re-uses ObjectContextMenu from MeshPreviewPanel
 
 ### 9.4 Post-print AR comparison  [S]
-#   [ ] After print completes, freeze final frame
-#   [ ] Overlay the model wireframe on top
-#   [ ] Highlight regions of dimensional mismatch (uses 8.4 measurement)
+#   [x] After print completes, freeze final frame
+#   [x] Overlay the model wireframe on top
+#   [x] Highlight regions of dimensional mismatch (uses 8.4 measurement)
 
 # Dependencies: 9.1 → 9.2 → 9.3 → 9.4. Whole phase blocks on 8.4 calibration.
 
@@ -656,8 +657,78 @@
 #   ships that the plugin surface is informed by real integration patterns.
 
 
+## -- Phase 19: Dashboard print preview card --------------------------------
+## Goal: turn the dashboard Print Preview card into a compact live print
+## situational-awareness panel, without making users leave the printer
+## dashboard for common view, layer, object, and diagnostic checks.
+
+### 19.1 View controls and camera recovery  [S]
+#   [ ] Add icon view presets: top, front, side, isometric
+#   [ ] Add "fit to print" / "fit to plate" action for awkward rotations
+#   [ ] Persist last dashboard preview view per printer or session
+#   [ ] Keep orbit target centered on the active print bounds when available
+
+### 19.2 Current-layer visual emphasis  [S]
+#   [ ] Brighten the active/current layer
+#   [ ] Dim already-printed layers
+#   [ ] Hide or ghost future layers depending on selected preview mode
+#   [ ] Add a compact layer progress indicator tied to live firmware status
+
+### 19.3 Object status overlays  [M]
+#   [ ] Render small in-scene labels/badges for printing, completed,
+#       cancelled, queued/upcoming
+#   [ ] Use Duet object model, Klipper EXCLUDE_OBJECT/status, and M486
+#       labels where available
+#   [ ] Keep label placement stable while orbiting and avoid overlap
+
+### 19.4 Live nozzle position marker  [M]
+#   [ ] Read live toolhead XYZ from printer state when available
+#   [ ] Render a small nozzle/crosshair marker above the plate
+#   [ ] Optionally draw a short recent-motion trail
+#   [ ] Degrade gracefully when firmware does not expose position
+
+### 19.5 Mini layer/timeline scrubber  [M]
+#   [ ] Add a compact scrubber inside the card for preview inspection
+#   [ ] Allow scrubber override without losing the live current-layer source
+#   [ ] Provide "return to live" control when manually scrubbing
+#   [ ] Support keyboard/wheel increments without stealing orbit gestures
+
+### 19.6 Object hover details  [S]
+#   [ ] Hover object silhouette to show name, dimensions, material estimate,
+#       active/cancelled state
+#   [ ] Reuse object matching from the right-click cancel menu
+#   [ ] Keep hover tooltip DOM-based so it stays readable over the canvas
+
+### 19.7 Preview color modes  [M]
+#   [ ] Add toggleable modes: line type, speed, layer time, extrusion amount,
+#       object
+#   [ ] Reuse slicer preview color utilities where possible
+#   [ ] Add compact legend only when the selected mode needs one
+
+### 19.8 Diagnostic problem markers  [M]
+#   [ ] Overlay markers from Phase 8 diagnostics/failure detection
+#   [ ] Highlight suspected spaghetti, adhesion-risk, layer anomaly, or
+#       object-at-risk regions
+#   [ ] Link marker click/hover to the AI diagnostic explanation
+
+### 19.9 Camera/AR sync affordances  [S]
+#   [ ] Add "match camera view" / "sync with AR overlay" actions
+#   [ ] Let the print preview card jump to the saved camera pose view
+#   [ ] Share active layer/object selection with CameraOverlayPanel
+
+### 19.10 Compact print stats strip  [S]
+#   [ ] Show current layer, Z height, percent, active object, elapsed, and
+#       remaining time in a dense stats row
+#   [ ] Keep values firmware-aware and hide unavailable fields
+#   [ ] Ensure the stats row does not crowd the 3D viewport at small card sizes
+
+# Dependencies: 19.1 and 19.2 are the best first slice. 19.3 depends on
+# the existing object-name matching used by Phase 9.3. 19.4 depends on
+# reliable live position data per firmware. 19.8 benefits from Phase 8.
+
+
 # CODEX-FRIENDLY SUBTASKS (parallelizable):
-#   Phases 7, 11, 13, 14, 16, 17 are mostly independent and run in parallel.
+#   Phases 7, 11, 13, 14, 16, 17, 19 are mostly independent and run in parallel.
 #   Phase 8 (Vision) gates Phase 9 (AR) and parts of Phase 12.
 #   Phase 10 (Cost) is independent except for 10.2 → 12.1.
 #   Phase 15 (Slicer) is fully independent of the printer-management
