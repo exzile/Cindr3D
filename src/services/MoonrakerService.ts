@@ -100,6 +100,30 @@ export interface MoonrakerTimelapseFile {
   modified: number;
 }
 
+/**
+ * Live print-status snapshot synthesised from Klipper's print_stats and
+ * display_status objects. `currentLayer` / `totalLayers` are populated
+ * when the user's macros call `SET_PRINT_STATS_INFO`; otherwise they're
+ * left undefined and consumers should estimate from `progress` × known
+ * layer count.
+ */
+export interface MoonrakerPrintStatus {
+  state: 'standby' | 'printing' | 'paused' | 'complete' | 'cancelled' | 'error' | string;
+  filename: string;
+  /** 0–1 fraction printed, from display_status. */
+  progress: number;
+  /** Seconds the current job has been printing. */
+  printDuration: number;
+  /** Filament length consumed so far, mm. */
+  filamentUsed: number;
+  /** From print_stats.info.current_layer (Mainsail/Fluidd convention). */
+  currentLayer?: number;
+  /** From print_stats.info.total_layer. */
+  totalLayers?: number;
+  /** Any non-empty status message Klipper has set, e.g. "Printing layer 5". */
+  message?: string;
+}
+
 export class MoonrakerService {
   private baseUrl: string;
 
@@ -316,5 +340,48 @@ export class MoonrakerService {
 
   getFileUrl(root: string, filename: string): string {
     return `${this.baseUrl}/server/files/${root}/${encodeURIComponent(filename)}`;
+  }
+
+  // ── Print status (live layer / progress) ─────────────────────────────────
+
+  /**
+   * Fetch a synthesised print-status snapshot from Klipper's print_stats
+   * + display_status objects. Returns null only when the query fails or
+   * `print_stats.state` is missing — for any reported state (including
+   * idle / standby / paused / printing / complete / cancelled / error)
+   * the snapshot is returned, so callers should inspect `state` directly
+   * rather than treating null as "not printing".
+   */
+  async getPrintStatus(): Promise<MoonrakerPrintStatus | null> {
+    try {
+      const res = await this.get<{
+        print_stats?: {
+          state?: string;
+          filename?: string;
+          print_duration?: number;
+          filament_used?: number;
+          message?: string;
+          info?: { current_layer?: number; total_layer?: number };
+        };
+        display_status?: { progress?: number; message?: string };
+      }>('/printer/objects/query?print_stats&display_status');
+
+      const ps = res.print_stats ?? {};
+      const ds = res.display_status ?? {};
+      if (!ps.state) return null;
+
+      return {
+        state: ps.state,
+        filename: ps.filename ?? '',
+        progress: ds.progress ?? 0,
+        printDuration: ps.print_duration ?? 0,
+        filamentUsed: ps.filament_used ?? 0,
+        currentLayer: ps.info?.current_layer,
+        totalLayers: ps.info?.total_layer,
+        message: ps.message || ds.message || undefined,
+      };
+    } catch {
+      return null;
+    }
   }
 }

@@ -1,91 +1,99 @@
 /**
- * NonKlipperExcludeObject — workaround UI for non-Klipper printers.
+ * NonKlipperExcludeObject — fallback workaround UI.
  *
- * Most firmware (Marlin, Duet, Repetier, etc.) do not support mid-print object exclusion.
- * This component explains the limitation and offers a pre-print workaround via the
- * DesignCAD Prepare workspace (where the user can delete bodies before slicing).
+ * Klipper, Duet, and Marlin each have their own dedicated component now;
+ * this one only renders for firmwares that genuinely have no M486 support
+ * (Smoothieware, grbl, Repetier, "other"). It surfaces the detected firmware
+ * version so the user can see exactly what was reported, and points them at
+ * the pre-print Prepare workaround.
  */
-import { Layers, AlertCircle, ArrowRight, Info } from 'lucide-react';
+import { Layers, AlertCircle, Info } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import './KlipperTabs.css';
 
-const FIRMWARE_SUPPORT: Record<string, { supported: boolean; note: string }> = {
+interface FirmwareInfo {
+  /** Display label for the firmware. */
+  label: string;
+  /** Short, version-aware note about why M486 isn't available here. */
+  note: (version: string | undefined) => string;
+}
+
+/** Render the firmware version inline with a trailing space, or "" if none. */
+const ver = (v: string | undefined) => (v ? `${v} ` : '');
+
+const FIRMWARE_INFO: Record<string, FirmwareInfo> = {
+  smoothie: {
+    label: 'Smoothieware',
+    note: (v) =>
+      `Smoothieware ${ver(v)}does not support mid-print object cancellation. The project is no longer actively developed for FDM. Consider migrating to Klipper or Marlin if you need M486-style cancellation.`,
+  },
+  grbl: {
+    label: 'grbl',
+    note: (v) =>
+      `grbl ${ver(v)}is a CNC firmware and has no concept of FDM print objects. M486 is not part of the grbl command set.`,
+  },
+  repetier: {
+    label: 'Repetier',
+    note: (v) =>
+      `Repetier-Firmware ${ver(v)}does not implement M486 in any released mainline version. A handful of community forks have added it, but DesignCAD cannot rely on that being present. The pre-print workaround below is the most reliable option.`,
+  },
+  other: {
+    label: 'Unknown firmware',
+    note: (v) =>
+      `Your firmware ${v ? `(${v}) ` : ''}may not support mid-print object cancellation. Check your firmware's docs for an M486 equivalent — if it exists, change the board type in Settings to the matching firmware to unlock the dedicated UI.`,
+  },
+  // Defensive fallbacks: these firmwares have dedicated components, but if
+  // someone lands here through a misconfig, we still tell them where to go.
   duet: {
-    supported: false,
-    note: 'Duet RRF does not currently support mid-print object exclusion via G-code. The M486 command used by Marlin is not available on RepRapFirmware.',
+    label: 'Duet',
+    note: () =>
+      'RepRapFirmware 3.5+ supports M486. Set the board type to "Duet" in Settings to use the dedicated Exclude Object UI.',
   },
   marlin: {
-    supported: true,
-    note: 'Marlin 2.1+ supports M486 object cancellation. However, your slicer must emit M486 labels in the G-code (Prusaslicer and Cura 5.x do this with "Label objects" enabled).',
+    label: 'Marlin',
+    note: () =>
+      'Marlin 2.0.9+ supports M486 (when built with CANCEL_OBJECTS). Set the board type to "Marlin" in Settings to use the dedicated Exclude Object UI.',
   },
-  smoothie: { supported: false, note: 'Smoothieware does not support mid-print object cancellation.' },
-  grbl: { supported: false, note: 'grbl is a CNC firmware and does not support FDM object exclusion.' },
-  repetier: { supported: false, note: 'Repetier does not support mid-print object cancellation.' },
-  other: { supported: false, note: 'Your firmware may not support mid-print object cancellation.' },
 };
 
 export default function NonKlipperExcludeObject() {
   const boardType = usePrinterStore((s) => s.config.boardType ?? 'other');
-  const setActiveTab = usePrinterStore((s) => s.setActiveTab);
-  const info = FIRMWARE_SUPPORT[boardType] ?? FIRMWARE_SUPPORT.other;
+  const model = usePrinterStore((s) => s.model);
+  const firmwareVersion = model.boards?.[0]?.firmwareVersion;
+
+  const info = FIRMWARE_INFO[boardType] ?? FIRMWARE_INFO.other;
 
   return (
     <div className="klipper-tab">
       <div className="klipper-tab-bar">
         <Layers size={15} />
         <h3>Exclude Object</h3>
-        <span className="klipper-badge info" style={{ marginLeft: 4, textTransform: 'capitalize' }}>{boardType}</span>
+        <span className="klipper-badge info" style={{ marginLeft: 4 }}>{info.label}</span>
+        {firmwareVersion && (
+          <span
+            className="klipper-badge off"
+            style={{ marginLeft: 4 }}
+            title={`Firmware version reported by your printer: ${firmwareVersion}`}
+          >
+            {firmwareVersion}
+          </span>
+        )}
         <div className="spacer" />
       </div>
 
       <div className="klipper-tab-body">
-        {/* Firmware capability card */}
-        <div className="klipper-card" style={{ borderColor: info.supported ? '#22c55e' : '#f59e0b' }}>
+        {/* Why this firmware can't do mid-print exclusion */}
+        <div className="klipper-card" style={{ borderColor: '#f59e0b' }}>
           <div className="klipper-card-header">
-            {info.supported
-              ? <><span className="klipper-badge on" style={{ marginRight: 6 }}>Supported</span>Mid-print Exclusion</>
-              : <><AlertCircle size={13} style={{ display: 'inline', marginRight: 6, color: '#f59e0b' }} />Limited Support</>}
+            <AlertCircle size={13} style={{ display: 'inline', marginRight: 6, color: '#f59e0b' }} />
+            Mid-print exclusion not available
           </div>
           <div className="klipper-card-body">
             <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-              {info.note}
+              {info.note(firmwareVersion)}
             </p>
           </div>
         </div>
-
-        {info.supported && boardType === 'marlin' && (
-          <div className="klipper-card">
-            <div className="klipper-card-header">Using M486 on Marlin</div>
-            <div className="klipper-card-body">
-              <div className="klipper-step">
-                <div className="klipper-step-num">1</div>
-                <div className="klipper-step-body">
-                  <div className="klipper-step-title">Enable "Label objects" in your slicer</div>
-                  <div className="klipper-step-desc">
-                    In PrusaSlicer: Print Settings → Output → Label objects.<br />
-                    In Cura 5.x: Extensions → Post-Processing → Add Script → Label Objects.
-                  </div>
-                </div>
-              </div>
-              <div className="klipper-step">
-                <div className="klipper-step-num">2</div>
-                <div className="klipper-step-body">
-                  <div className="klipper-step-title">During the print, send M486 via Console</div>
-                  <div className="klipper-step-desc">
-                    Navigate to the <strong>Console</strong> tab and send:
-                    <br />
-                    <code style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--accent)' }}>M486 S&lt;object_id&gt;</code>
-                    <br />
-                    where object_id starts at 1 for the first object in the G-code.
-                  </div>
-                  <button className="klipper-btn" onClick={() => setActiveTab('console')} style={{ marginTop: 6 }}>
-                    Open Console <ArrowRight size={13} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Pre-print workaround */}
         <div className="klipper-card">
@@ -131,14 +139,16 @@ export default function NonKlipperExcludeObject() {
           </div>
         </div>
 
-        {/* Klipper upgrade note */}
+        {/* Migration nudge */}
         <div className="klipper-card">
-          <div className="klipper-card-header">Want full mid-print exclusion?</div>
+          <div className="klipper-card-header">Want real mid-print cancellation?</div>
           <div className="klipper-card-body">
             <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55 }}>
-              Klipper supports real-time object cancellation via <code>EXCLUDE_OBJECT NAME=...</code> even mid-layer.
-              If you run Klipper, connect your printer and change the board type to <strong>Klipper</strong> in
-              Settings to unlock this feature.
+              DesignCAD currently supports mid-print object exclusion on:
+              <br />
+              <strong>Klipper</strong> (via <code>EXCLUDE_OBJECT</code>),{' '}
+              <strong>Duet RRF 3.5+</strong> (via <code>M486</code>), and{' '}
+              <strong>Marlin 2.0.9+</strong> (via <code>M486</code>, requires <code>CANCEL_OBJECTS</code> in the firmware build).
             </p>
           </div>
         </div>

@@ -75,7 +75,11 @@ type ChildWorkerMessage =
   | { type: 'cancelled'; requestId: number }
   | { type: 'error'; requestId: number; message: string };
 
-type SliceResultWithTool = SliceResult & { extruderIndex?: number };
+type SliceResultWithTool = SliceResult & {
+  extruderIndex?: number;
+  /** Plate-object names belonging to this slice group, used to emit M486 labels. */
+  objectNames?: string[];
+};
 
 function toolChangeLines(result: SliceResultWithTool): string[] {
   const tool = result.extruderIndex;
@@ -171,6 +175,57 @@ function mergeSliceResults(results: SliceResultWithTool[]): SliceResult {
     };
   }
   return merged;
+}
+
+/**
+ * Strip characters that would break an M486 A"<name>" line: double quotes
+ * (which terminate the field), CR/LF (which split the M486 onto its own
+ * line), and collapse whitespace runs. Empty input returns empty so the
+ * caller can fall back to a generic label.
+ */
+function sanitizeM486Label(name: string): string {
+  return name.replace(/["\r\n]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Wrap each group's G-code with M486 object-label markers so firmware that
+ * supports object cancellation (Klipper, Marlin 2.0.9+, RRF 3.5+) can
+ * cancel individual objects mid-print.
+ *
+ * Slice groups are now per-object (see grouping in self.onmessage), so
+ * each result corresponds to a single plate object. Format emitted:
+ *   M486 T<objectCount>
+ *   M486 S0 A"<object 0 name>"
+ *   ... object 0 gcode ...
+ *   M486 S-1
+ *   M486 S1 A"<object 1 name>"
+ *   ... object 1 gcode ...
+ *   M486 S-1
+ *
+ * Only emitted when at least one group carries a non-empty objectName —
+ * un-named plates pass through unchanged so we don't generate spurious
+ * M486 lines.
+ */
+function injectM486Labels(results: SliceResultWithTool[]): SliceResultWithTool[] {
+  const hasNames = results.some((r) => r.objectNames && r.objectNames.length > 0);
+  if (!hasNames) return results;
+
+  const labeled = results.map((r, i) => {
+    const rawLabel = r.objectNames && r.objectNames.length > 0
+      ? r.objectNames.join(' / ')
+      : `Object ${i}`;
+    const label = sanitizeM486Label(rawLabel) || `Object ${i}`;
+    return {
+      ...r,
+      gcode: `M486 S${i} A"${label}"\n${r.gcode}\nM486 S-1`,
+    };
+  });
+
+  // M486 T<n> must appear before any S<id> marker — prepend it to the
+  // first group so it lands at the very start of the merged output.
+  labeled[0] = { ...labeled[0], gcode: `M486 T${results.length}\n${labeled[0].gcode}` };
+
+  return labeled;
 }
 
 function getHardwareConcurrency(): number {
@@ -313,6 +368,8 @@ async function runSliceGroupsInWorkerPool(
     );
     const extruderIndex = effectivePrintProfile.extruderIndex;
     if (typeof extruderIndex === 'number') results[index].extruderIndex = extruderIndex;
+    const poolNames = geos.map((g) => g.objectName ?? '').filter(Boolean);
+    if (poolNames.length) results[index].objectNames = poolNames;
 
     await runNext();
   }
@@ -376,6 +433,8 @@ async function runSliceGroupsSequentially(
     const result = await slicer.slice(geosForSlice, modifierMeshesForSlice) as SliceResultWithTool;
     const extruderIndex = effectivePrintProfile.extruderIndex;
     if (typeof extruderIndex === 'number') result.extruderIndex = extruderIndex;
+    const seqNames = geos.map((g) => g.objectName ?? '').filter(Boolean);
+    if (seqNames.length) result.objectNames = seqNames;
     if (cancelRequested) throw new Error('Slicing cancelled');
     results.push(result);
   }
@@ -447,16 +506,18 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
       else printables.push(g);
     }
 
-    // Partition printable geometries by their override signature. Each
-    // partition runs its own slice pass so the profile overrides (infill,
-    // walls, supports, etc.) genuinely apply to that subset of plate
-    // objects.
+    // Partition printable geometries into one slice group per plate object.
+    // The override signature still scopes the per-pass print profile, so
+    // objects with different overrides still get distinct profile passes —
+    // we just no longer merge multiple objects that share an override
+    // signature. That dedup was a performance optimisation, but it
+    // collapsed every object with default settings into a single M486
+    // cancellable unit, so cancelling P0 cancelled the whole plate.
     const groups = new Map<string, ReconstructedGeometry[]>();
-    for (const g of printables) {
-      const key = g.overrides ? JSON.stringify(g.overrides) : '__default__';
-      const bucket = groups.get(key) ?? [];
-      bucket.push(g);
-      groups.set(key, bucket);
+    for (let i = 0; i < printables.length; i++) {
+      const g = printables[i];
+      const overrideKey = g.overrides ? JSON.stringify(g.overrides) : '__default__';
+      groups.set(`${overrideKey}__${i}`, [g]);
     }
     if (groups.size === 0) {
       // No printables — nothing to slice. (A plate with only modifier
@@ -551,6 +612,8 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
         const result = await slicer.slice(geosForSlice, modifierMeshesForSlice) as SliceResultWithTool;
         const extruderIndex = effectivePrintProfile.extruderIndex;
         if (typeof extruderIndex === 'number') result.extruderIndex = extruderIndex;
+        const inlineNames = geos.map((g) => g.objectName ?? '').filter(Boolean);
+        if (inlineNames.length) result.objectNames = inlineNames;
         if (cancelRequested) throw new Error('Slicing cancelled');
         resultsSequential.push(result);
       }
@@ -562,7 +625,7 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
         disposeGeometries(geometries);
         return;
       }
-      const merged = mergeSliceResults(results);
+      const merged = mergeSliceResults(injectM486Labels(results));
       activeSlicer = null;
       if (activeRequestId === requestId) self.postMessage({ type: 'complete', requestId, result: merged });
       disposeGeometries(geometries);

@@ -19,10 +19,13 @@ DesignCAD brings a professional CAD-style workflow into a web app that can run l
 ## Contents
 
 - [Overview](#overview)
+- [What's New](#whats-new)
 - [Feature Highlights](#feature-highlights)
+- [Cross-Firmware Support](#cross-firmware-support)
 - [Tech Stack](#tech-stack)
 - [Quick Start](#quick-start)
 - [Use Your Own Claude With DesignCAD](#use-your-own-claude-with-designcad)
+- [Roadmap](#roadmap)
 - [Development Scripts](#development-scripts)
 - [Project Layout](#project-layout)
 - [Production Builds](#production-builds)
@@ -36,48 +39,106 @@ DesignCAD brings a professional CAD-style workflow into a web app that can run l
 
 ## Overview
 
-DesignCAD combines design, print preparation, and printer interaction in one browser workspace.
+DesignCAD combines design, print preparation, and multi-printer fleet control in one browser workspace. It's designed to run locally during development or be served from a small Linux board (Orange Pi or similar) on your home network — no cloud account required.
 
 | Workspace | Purpose |
 |-----------|---------|
-| **Design** | Sketching, solid modeling, imports/exports, feature timeline, and component organization. |
-| **Prepare** | Plate setup, slicer-oriented model inspection, calibration utilities, and G-code preview. |
-| **Printer** | Duet/RepRapFirmware-style printer connection, monitoring, file handling, and update-oriented flows. |
-| **Self-hosting** | Static Nginx deployment with an optional local updater service for Orange Pi style installs. |
+| 🎨 **Design** | Sketching, solid modelling, imports/exports, feature timeline, component organisation. |
+| 🛠️ **Prepare** | Plate setup, slicing pipeline with WASM kernel, G-code preview, calibration utilities. |
+| 🖨️ **3D Printer** | Multi-printer fleet, live monitoring, files, macros, mid-print object cancellation, tuning, power, spools, timelapse, updates — all cross-firmware. |
+| 🤖 **AI** | Local MCP server + BYOK in-app chat panel for driving CAD/slicer/printer actions through your own Claude / OpenAI / OpenRouter subscription. |
 
 The project is evolving quickly. Some CAD and slicer features are experimental, but the repository is public so the implementation can be inspected, used, and improved in the open.
 
+## What's New
+
+> [!NOTE]
+> **2026-05** — Cross-firmware unification. Klipper-style features now work on Duet RRF, Marlin, and any host that talks the basics. The slicer emits `M486` labels automatically.
+
+**Headline features shipped this release:**
+
+- 🎯 **Mid-print object cancellation** — `M486` on Duet RRF 3.5+ and Marlin 2.0.9+, `EXCLUDE_OBJECT` on Klipper. Three surfaces: dedicated tab, dashboard list card, and a 3D Print Preview viewport with right-click context menus.
+- 🎬 **Live 3D Print Preview dashboard card** — viewport showing the build plate, plate-object silhouettes, and toolpath wireframe up to the layer currently being printed; right-click any object to cancel just that one.
+- ⚙️ **Cross-firmware tuning UI** — Input Shaper, Pressure Advance, Power, Spools, Timelapse, and Updates tabs that route to the right firmware-specific commands automatically.
+- 🏷️ **Slicer auto-labels** — every job DesignCAD slices is automatically tagged with `M486 S<id> A"<name>"` so cancellation works out of the box on uploaded files too.
+- 📡 **Live progress on every firmware** — Duet via the RRF object model, Klipper via Moonraker `print_stats` polling, Marlin via `M73` parsing on the USB stream.
+- 🤖 **AI Assistant** — local MCP server for Claude Code, plus an in-app BYOK chat panel that streams Anthropic, OpenAI, and OpenRouter with full tool-use.
+
 ## Feature Highlights
 
-### CAD And Modeling
+### 🎨 CAD & Modelling
 
-- 3D viewport with orbit, pan, zoom, and view-cube style navigation.
-- Sketching on XY, XZ, and YZ planes.
-- Sketch tools including line, circle, rectangle, arc, and text workflows.
-- Solid operation dialogs for extrude, revolve, sweep, loft, shell, rib, split, draft, hole, thread, chamfer, fillet, and related modeling actions.
-- Mesh, surface, construction, inspect, assemble, and utilities ribbon areas.
-- Component tree, feature timeline, selection filters, and visibility controls.
+- 3D viewport with orbit, pan, zoom, view-cube navigation
+- Sketching on XY / XZ / YZ planes with constraint-driven tools (line, circle, rectangle, arc, text)
+- Solid features: extrude, revolve, sweep, loft, shell, rib, split, draft, hole, thread, chamfer, fillet
+- Mesh, surface, construction, inspect, assemble, utilities ribbon areas
+- Component tree, feature timeline, selection filters, visibility controls
+- Imports: `.f3d`, `.step`, `.stp`, `.stl`, `.obj`; project + settings bundle save/load
+- Every CAD action is callable from the local MCP server (29 tools)
 
-### Import And Export
+### 🛠️ Slicer & Preview
 
-- Import support for `.f3d`, `.step`, `.stp`, `.stl`, and `.obj`.
-- Project/settings bundle flows for saving and loading workspace state.
-- Export dialog for generated project/model outputs.
+- Plate layout with multi-object support and per-object profile overrides
+- WASM-backed geometry kernel (Clipper2, Arachne) for crisp boolean ops and variable-width walls
+- Calibration utilities (towers, first-layer test)
+- G-code preview with layer slider, simulation playback, wireframe / tube modes, multiple color schemes (type / speed / flow / width / layer-time / wall-quality / seam)
+- Bridge skin classification with bridge-fan override
+- Print, printer, and material profiles with multi-profile flows
+- 🏷️ **`M486` object labels emitted automatically** — mid-print cancellation just works on supported firmware
 
-### Slicer And Preview
+### 🖨️ Printer Workflows (cross-firmware)
 
-- Prepare workspace for slicer-focused workflows.
-- Plate and model management.
-- Calibration utilities.
-- G-code preview and layer inspection.
-- WASM-backed geometry/slicer helpers.
+DesignCAD treats Klipper, Duet/RRF, Marlin, Smoothie, grbl, and Repetier as first-class boards. Tabs adapt to whichever board is connected; common features route to firmware-specific commands automatically.
 
-### Printer Workflows
+**Mid-print object cancellation** — three places to cancel:
 
-- Printer workspace for Duet/RepRapFirmware-style devices.
-- Printer profile and connection settings.
-- Firmware/update-related UI flows.
-- File and status panels for connected printers.
+- 🎯 **Exclude Object tab** — full UI with click-to-arm, click-to-confirm cancel; firmware-version badge auto-disables the buttons on too-old firmware
+- 📋 **Object Cancellation dashboard card** — compact two-click cancel inline with your other panels
+- 🎬 **3D Print Preview viewport** — right-click any object for a context menu with dimensions, position, currently-printing/cancelled status, and a per-object cancel button
+
+**Live print state** is fed in cross-firmware:
+
+- **Duet** — full RRF object-model polling
+- **Klipper** — Moonraker `print_stats` + `display_status` polled at 3 s
+- **Marlin** — `M73` (`P` / `R` / `Q` / `S`) and `echo:Layer N/M` parsed from the USB serial stream
+
+**Tabs:** Dashboard, Camera, Status, Console, Job, History, Analytics, Files, Macros, Bed Map, Exclude Object, Updates, Power, Input Shaper, Pressure Advance, Spools, Timelapse, Settings (plus Filaments / Object Model / DSF Plugins on Duet only).
+
+### 🤖 AI Assistant
+
+- 🔗 **Local MCP server** on `:5174` — pair Claude Code with `claude mcp add designcad …`
+- 🛡️ **Localhost-only**, token-paired, per-tool rate-limited (12 calls / 10 s / tool), 80-entry audit log in the AI status badge
+- 💬 **BYOK chat panel** — streaming Anthropic + OpenAI / OpenRouter with full tool-use; 29 tools cover primitives, sketches, features, booleans, transforms, exports, viewport snapshots, and document inspection
+- 🔒 Confirmation gate for destructive operations (configurable, off by default)
+- ↻ Token rotation from the badge; old tokens invalidate immediately on rotation
+
+### 📡 Self-hosting & deployment
+
+- Static SPA — any static host works; Nginx fallback to `index.html`
+- Optional Orange Pi updater service exposing `GET /api/update/status` + `POST /api/update/apply` against the latest GitHub release asset
+- WASM artifacts bundled and budget-checked in CI
+
+## Cross-Firmware Support
+
+| Tab / Feature | Klipper | Duet (RRF) | Marlin (USB) | Other |
+|---|:---:|:---:|:---:|:---:|
+| Dashboard (live) | ✅ | ✅ | ✅ | ✅ |
+| Camera | ✅ | ✅ | ✅ | ✅ |
+| Files | ✅ | ✅ | — | varies |
+| Macros | ✅ | ✅ | — | varies |
+| **Exclude Object** | ✅ `EXCLUDE_OBJECT` | ✅ `M486` (3.5+) | ✅ `M486` (2.0.9+) | Workaround page |
+| Bed Map | ✅ Moonraker mesh | ✅ heightmap.csv | ✅ G29 | — |
+| Input Shaper | ✅ `SET_INPUT_SHAPER` | ✅ `M593` (3.3+) | ✅ `M593` | Notes only |
+| Pressure Advance | ✅ `SET_PRESSURE_ADVANCE` | ✅ `M572` | ✅ `M900` | Notes only |
+| Power | ✅ Moonraker | ✅ HTTP plugs | ✅ HTTP plugs | ✅ HTTP plugs |
+| Spools | ✅ Spoolman bridge | ✅ local | ✅ local | ✅ local |
+| Timelapse | ✅ `moonraker-timelapse` | ✅ in-browser | ✅ in-browser | ✅ in-browser |
+| Updates | ✅ component + GitHub | ✅ GitHub | ✅ GitHub | ✅ GitHub |
+| Object Model browser | — | ✅ | — | — |
+| DSF Plugins | — | ✅ SBC | — | — |
+
+> [!TIP]
+> Mid-print cancellation requires labelled G-code. DesignCAD-sliced jobs are labelled automatically. For files from PrusaSlicer / SuperSlicer / OrcaSlicer, enable **Print Settings → Output → Label objects**. For Cura, run the **Label Objects** post-processing script.
 
 ## Tech Stack
 
@@ -125,17 +186,58 @@ http://localhost:5173
 
 ## Use Your Own Claude With DesignCAD
 
-DesignCAD can expose the active browser session as a local MCP server so users can drive CAD actions with their own assistant subscription. In development, start the app with `npm run dev`, open `http://localhost:5173`, then use the AI MCP status badge in the status bar to copy the pairing command:
+DesignCAD ships with two complementary AI integration paths. Both reuse the same 29-tool MCP surface, so behaviour is identical across them.
 
-```text
+### 🔗 Path 1: Pair Claude Code via MCP (recommended)
+
+Run Claude Code locally and add DesignCAD as an MCP server. Your subscription quota covers the conversation; geometry shows up live in the running browser session.
+
+```bash
+# Start the dev server
+npm run dev
+
+# Open http://localhost:5173, then click the AI MCP status badge
+# in the status bar to copy the pairing command:
 claude mcp add designcad http://localhost:5174/mcp?token=...
 ```
 
-The browser tab must stay open because tool calls are relayed into the running DesignCAD session. The MCP server is localhost-only, protected by a pairing token, rate-limited per tool, and includes an activity log in the status badge. Rotate the token from the badge if a pairing line is shared accidentally.
+The browser tab must stay open — tool calls are relayed into the running DesignCAD session.
 
-The MCP surface includes document inspection, primitive creation, sketches, common feature operations, booleans, transforms, exports, viewport snapshots, and read-only resources. See [docs/ai-mcp-tools.md](docs/ai-mcp-tools.md) for the tool reference and [docs/ai-examples.md](docs/ai-examples.md) for sample assistant transcripts.
+### 💬 Path 2: BYOK in-app chat panel
 
-An optional BYOK in-app chat panel is planned as a thin client over the same MCP tool surface for users who prefer Anthropic, OpenAI, or OpenRouter API keys inside the app. API keys should remain per-installation secrets and should only be sent to the selected provider.
+For users who prefer not to run Claude Code, the **AI Chat tab** inside DesignCAD provides a streaming chat interface that connects to your own Anthropic, OpenAI, or OpenRouter API key. Set the provider, model, and key in **Global Settings → AI**; the key is stored locally and sent only to your chosen provider.
+
+### 🛡️ Safety & Hardening
+
+- Localhost-only — refuses non-localhost origins
+- Token-paired auth, rotateable from the AI status badge
+- Per-tool rate limiting (12 calls / 10 s / tool)
+- 80-entry audit log of every tool call in the badge popover
+- Optional confirmation gate before destructive operations
+
+See [docs/ai-mcp-tools.md](docs/ai-mcp-tools.md) for the tool reference and [docs/ai-examples.md](docs/ai-examples.md) for sample assistant transcripts ("design a phone stand", "add 3 mm fillet to all top edges").
+
+## Roadmap
+
+The next 12 phases of work are tracked in detail in [`TaskLists.txt`](TaskLists.txt). Highlights:
+
+| Phase | Theme | What lands |
+|---|---|---|
+| 7 | 🏭 Print farm intelligence | Cross-printer queue, all-cameras grid, A/B compare, multi-camera per printer, PTZ, WebRTC streaming, fleet inventory |
+| 8 | 👁️ Vision / AI | Failure detection, "what's wrong" diagnostics, auto-tune wizards, camera measurement, natural-language control |
+| 9 | 🥽 AR camera overlay | Calibrated toolpath projected on live camera feed; cancel objects directly from the camera view |
+| 10 | 💰 Cost & energy | Cost-per-print, off-peak scheduling, solar-aware printing, sustainability dashboard |
+| 11 | 🔧 Maintenance & calibration | Calibration aging, wear tracking, filament moisture model |
+| 12 | 📅 Print scheduling | Calendar, bed-clearing auto-queue, pre-flight checklist |
+| 13 | 🔌 Integrations | Webhooks + Discord/Slack/Telegram, MQTT, HomeAssistant, profile import (Cura/Orca/Bambu), power-loss resume, chamber/air-quality/door sensors, stepper driver tuning |
+| 14 | ✨ Operational polish | Session resume, mobile UI, i18n, accessibility, profile diff, profile sync, PWA mode, print-from-URL |
+| 15 | 🧱 Slicer fundamentals | Tree supports, adaptive layers, non-planar ironing, vase mode, organic infill, multi-color, bed-mesh-aware auto-arrange, history analytics, embedded thumbnails, Z-seam painter, sequential printing, modifier-mesh painting, fuzzy skin |
+| 16 | 📐 Design workspace | Parametric model library, design configurations, 2D drawings, mesh repair, sketch constraint solver upgrades, threading library, non-destructive boolean history |
+| 17 | 🎓 Onboarding & education | Calibration print library, guided tutorials, settings deep-help wiki |
+| 18 | 🧩 Plugin system | *Future — captured for planning, not yet scheduled* |
+
+> [!TIP]
+> Phases 7, 11, 13, 14, 16, 17 are mostly independent and can run in parallel. Phase 8 (Vision) gates Phase 9 (AR). See [`TaskLists.txt`](TaskLists.txt) for detailed sub-phases, effort estimates, file hints, and dependency notes.
 
 ## Development Scripts
 
