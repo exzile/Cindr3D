@@ -40,6 +40,16 @@ export function shouldCaptureLayer(previousLayer: number | undefined, nextLayer:
   return previousLayer !== nextLayer;
 }
 
+export function safeLayerGalleryZipSegment(value: string, fallback = 'untitled'): string {
+  const sanitized = value
+    .trim()
+    .replace(/[<>:"/\\|?*\x00-\x1f]+/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/^\.+$/, '')
+    .replace(/^[._]+|[._]+$/g, '');
+  return sanitized || fallback;
+}
+
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -181,7 +191,9 @@ export async function exportLayerGalleryZip(frames: LayerGalleryFrame[]): Promis
 
   for (const frame of frames) {
     const ext = frame.mimeType.includes('png') ? 'png' : 'jpg';
-    const path = `${frame.jobName}/layer-${String(frame.layer).padStart(5, '0')}/${frame.cameraLabel}.${ext}`;
+    const jobName = safeLayerGalleryZipSegment(frame.jobName, 'job');
+    const cameraLabel = safeLayerGalleryZipSegment(frame.cameraLabel, 'camera');
+    const path = `${jobName}/layer-${String(frame.layer).padStart(5, '0')}/${cameraLabel}.${ext}`;
     files[path] = new Uint8Array(await frame.blob.arrayBuffer());
   }
   files['manifest.json'] = strToU8(JSON.stringify(manifest, null, 2));

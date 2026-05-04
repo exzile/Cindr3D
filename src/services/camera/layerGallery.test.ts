@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layerGalleryFrameId, shouldCaptureLayer } from './layerGallery';
+import { layerGalleryFrameId, safeLayerGalleryZipSegment, shouldCaptureLayer } from './layerGallery';
 
 describe('layerGallery helpers', () => {
   it('builds stable frame ids from printer job layer and camera', () => {
@@ -11,5 +11,11 @@ describe('layerGallery helpers', () => {
     expect(shouldCaptureLayer(1, 1, 'processing')).toBe(false);
     expect(shouldCaptureLayer(1, 2, 'idle')).toBe(false);
     expect(shouldCaptureLayer(1, undefined, 'processing')).toBe(false);
+  });
+
+  it('sanitizes gallery zip path segments', () => {
+    expect(safeLayerGalleryZipSegment('0:/gcodes/test cube.gcode')).toBe('0_gcodes_test_cube.gcode');
+    expect(safeLayerGalleryZipSegment('../bad\\camera?', 'camera')).toBe('bad_camera');
+    expect(safeLayerGalleryZipSegment('   ', 'camera')).toBe('camera');
   });
 });

@@ -22,7 +22,7 @@ const QUALITY_OPTIONS: Array<{ value: ComparisonQualityRating; label: string }> 
 
 function legProgress(leg: ComparisonLeg): number {
   const last = leg.samples[leg.samples.length - 1];
-  if (!last?.elapsedSeconds || !last.remainingSeconds) return 0;
+  if (last?.elapsedSeconds == null || last.remainingSeconds == null) return 0;
   const total = last.elapsedSeconds + last.remainingSeconds;
   return total > 0 ? Math.min(100, Math.max(0, (last.elapsedSeconds / total) * 100)) : 0;
 }

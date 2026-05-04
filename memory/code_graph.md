@@ -42,7 +42,7 @@ type: project
 ## Cross-references
 
 Detailed pipeline docs live under auto-memory at `~/.claude/projects/C--Users-joeyp-source-repos-exzile-Cindr3D/memory/`:
-- `project_cindr3d.md` — fuller architectural snapshot (shim+subdir, store slices, material singletons, persistence caches)
+- `project_designcad.md` — fuller architectural snapshot (shim+subdir, store slices, material singletons, persistence caches)
 - `extrude_pipeline.md`, `slicer_engine.md`, `arachne_subsystem.md`, `sketch_interaction_pipeline.md`, `duet_service_architecture.md`
 - `r3f_critical_patterns.md` — recurring R3F bug catalog
 - `wasm_patterns.md` — emsdk adapter gotchas
