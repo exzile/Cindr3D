@@ -78,7 +78,7 @@ export default function HomePage() {
       <section className="home-hero" aria-labelledby="home-hero-title">
         <div className="home-hero__media" aria-hidden="true" />
         <nav className="home-nav" aria-label="Demo navigation">
-          <a className="home-nav__brand" href="/">
+          <a className="home-nav__brand" href="/home">
             <img src="/logo.png" alt="" />
             <span>Cindr3D</span>
           </a>
@@ -86,7 +86,7 @@ export default function HomePage() {
             <a href="#workflows">Workflows</a>
             <a href="#features">Features</a>
             <a href="#how-to-use">How to use</a>
-            <a href="/app">Open app</a>
+            <a href="/">Open app</a>
           </div>
         </nav>
         <div className="home-hero__content">
@@ -96,7 +96,7 @@ export default function HomePage() {
             A self-hostable workshop system for designing parts, preparing prints, and running multiple 3D printers from one browser workspace.
           </p>
           <div className="home-hero__actions" aria-label="Primary actions">
-            <a className="home-button home-button--primary" href="/app">
+            <a className="home-button home-button--primary" href="/">
               Open the demo <ChevronRight size={18} />
             </a>
             <a className="home-button home-button--secondary" href="https://github.com/exzile/Cindr3D/releases/latest">
@@ -173,7 +173,7 @@ export default function HomePage() {
               The Azure Static Web Apps workflow stays manual-only. Run the GitHub Actions workflow when you want to refresh the public demo.
             </p>
           </div>
-          <a className="home-button home-button--primary" href="/app">
+          <a className="home-button home-button--primary" href="/">
             Launch Cindr3D <Cpu size={18} />
           </a>
         </div>

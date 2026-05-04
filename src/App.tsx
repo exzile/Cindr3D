@@ -37,7 +37,7 @@ function WorkspaceContent() {
 export default function App() {
   const workspaceMode = useCADStore((s) => s.workspaceMode);
   const [path, setPath] = useState(() => window.location.pathname);
-  const isWorkspaceRoute = path === '/app' || path.startsWith('/app/');
+  const isHomeRoute = path === '/home' || path.startsWith('/home/');
 
   useEffect(() => {
     const handlePopState = () => setPath(window.location.pathname);
@@ -46,12 +46,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!isWorkspaceRoute) return undefined;
+    if (isHomeRoute) return undefined;
     McpBridgeService.start();
     return () => McpBridgeService.stop();
-  }, [isWorkspaceRoute]);
+  }, [isHomeRoute]);
 
-  if (!isWorkspaceRoute) {
+  if (isHomeRoute) {
     return (
       <div className="app app--home">
         <HomePage />
