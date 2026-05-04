@@ -18,7 +18,7 @@ interface FirmwareInfo {
   note: (version: string | undefined) => string;
 }
 
-/** Render the firmware version inline with a trailing space, or "" if none. */
+/** Render the firmware version plus a trailing space, or "" if none. */
 const ver = (v: string | undefined) => (v ? `${v} ` : '');
 
 const FIRMWARE_INFO: Record<string, FirmwareInfo> = {

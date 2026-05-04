@@ -75,11 +75,13 @@ export function buildDesignMenus({
   openTextureExtrudeDialog,
   removeFeature,
   selectedFeatureId,
+  showComponentColors,
   setActiveAnalysis,
   setActiveDialog,
   setActiveTool,
   setComponentGrounded,
   setSectionEnabled,
+  setShowComponentColors,
   setStatusMessage,
   startExtrudeTool,
   startLoftTool,
@@ -248,11 +250,11 @@ export function buildDesignMenus({
       icon: <Pipette size={MI} />,
       label: 'Display Component Colors',
       shortcut: 'Shift+N',
-      checked: useCADStore.getState().showComponentColors,
+      checked: showComponentColors,
       onClick: () => {
-        const state = useCADStore.getState();
-        state.setShowComponentColors(!state.showComponentColors);
-        state.setStatusMessage(state.showComponentColors ? 'Component colors: OFF' : 'Component colors: ON');
+        const next = !showComponentColors;
+        setShowComponentColors(next);
+        setStatusMessage(next ? 'Component colors: ON' : 'Component colors: OFF');
       },
     },
   ];

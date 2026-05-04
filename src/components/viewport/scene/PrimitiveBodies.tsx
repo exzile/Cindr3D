@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
-import { BODY_MATERIAL, DIM_MATERIAL } from './bodyMaterial';
+import { BODY_MATERIAL, DIM_MATERIAL, componentColorMaterial } from './bodyMaterial';
 import { isComponentVisible } from './componentVisibility';
 
 /** Primitive solid bodies — Box / Cylinder / Sphere / Torus */
@@ -12,6 +12,7 @@ export default function PrimitiveBodies() {
   const activeComponentId = useComponentStore((s) => s.activeComponentId);
   const rootComponentId = useComponentStore((s) => s.rootComponentId);
   const components = useComponentStore((s) => s.components);
+  const showComponentColors = useCADStore((s) => s.showComponentColors);
 
   const editingInPlace = !!activeComponentId && activeComponentId !== rootComponentId;
 
@@ -86,11 +87,14 @@ export default function PrimitiveBodies() {
     <>
       {bodies.map((b) => {
         const dim = editingInPlace && b.componentId !== activeComponentId;
+        const componentMaterial = showComponentColors && b.componentId
+          ? componentColorMaterial(components[b.componentId]?.color ?? '#5B9BD5')
+          : BODY_MATERIAL;
         return (
           <mesh
             key={b.id}
             geometry={b.geom}
-            material={dim ? DIM_MATERIAL : BODY_MATERIAL}
+            material={dim ? DIM_MATERIAL : componentMaterial}
             position={b.position}
             rotation={b.rotation}
             castShadow

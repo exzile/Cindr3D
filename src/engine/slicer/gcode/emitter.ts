@@ -16,6 +16,7 @@ type TravelObstacle = CircleObstacle | SegmentObstacle;
 type TravelRouteOptions = {
   avoidPrintedParts?: boolean;
 };
+type AccelKind = 'print' | 'travel';
 
 function createStartEndState(
   stateOwner: GCodeEmitter,
@@ -70,7 +71,7 @@ export class GCodeEmitter {
   private readonly extraPrime: number;
   private readonly wipeDist: number;
   private readonly wipeExtraPrime: number;
-  private currentAccel = -1;
+  private currentAccelCommand = '';
   private currentJerk = -1;
   private lastExtrudeDx = 0;
   private lastExtrudeDy = 0;
@@ -128,12 +129,13 @@ export class GCodeEmitter {
       * this.flowCompFactor;
   }
 
-  setAccel(val: number | undefined, fallback: number): void {
+  setAccel(val: number | undefined, fallback: number, kind: AccelKind = 'print'): void {
     if (!this.print.accelerationEnabled) return;
     const v = Math.round(val ?? fallback);
-    if (v === this.currentAccel) return;
-    this.gcode.push(`M204 S${v} ; Accel`);
-    this.currentAccel = v;
+    const commandArg = this.isRRF ? `${kind === 'travel' ? 'T' : 'P'}${v}` : `S${v}`;
+    if (commandArg === this.currentAccelCommand) return;
+    this.gcode.push(`M204 ${commandArg} ; Accel`);
+    this.currentAccelCommand = commandArg;
   }
 
   setJerk(val: number | undefined, fallback: number): void {
@@ -300,7 +302,7 @@ export class GCodeEmitter {
       this.retract();
     }
     if (this.print.travelAccelerationEnabled ?? this.print.accelerationEnabled) {
-      this.setAccel(this.print.accelerationTravel, this.print.accelerationPrint);
+      this.setAccel(this.print.accelerationTravel, this.print.accelerationPrint, 'travel');
     }
     if (this.print.travelJerkEnabled ?? this.print.jerkEnabled) {
       this.setJerk(this.print.jerkTravel, this.print.jerkPrint);

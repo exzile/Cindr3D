@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { WifiOff, Camera, RefreshCw, Play, Trash2, Download, Film, AlertCircle } from 'lucide-react';
+import { WifiOff, Camera, RefreshCw, Trash2, Download, Film, AlertCircle } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { MoonrakerService, type MoonrakerTimelapseFile } from '../../services/MoonrakerService';
 import './KlipperTabs.css';

@@ -29,6 +29,7 @@ const VERTEX_SHADER = /* glsl */ `
   attribute vec3  iA;
   attribute vec3  iB;
   attribute vec2  iRadius;
+  attribute vec2  iHeight;
   attribute vec3  iColor;
 
   varying vec3 vWorldNormal;
@@ -51,11 +52,12 @@ const VERTEX_SHADER = /* glsl */ `
 
     vec3 anchor = mix(iA, iB, aSide);
     float radius = mix(iRadius.x, iRadius.y, aSide);
+    float halfHeight = mix(iHeight.x, iHeight.y, aSide);
 
     vec3 worldOffset =
         forward * (aLocal.x * radius)
       + right   * (aLocal.y * radius)
-      + up      * (aLocal.z * radius);
+      + up      * (aLocal.z * halfHeight);
 
     // Instance positions are baked in world space, so transform by the
     // mesh's modelMatrix (typically identity in our scene tree) to allow

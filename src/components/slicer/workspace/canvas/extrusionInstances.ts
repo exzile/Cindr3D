@@ -172,6 +172,7 @@ export interface LayerInstanceData {
   iA: Float32Array;        // start xyz
   iB: Float32Array;        // end xyz
   iRadius: Float32Array;   // (rStart, rEnd) — half the bead width
+  iHeight: Float32Array;
   iColor: Float32Array;    // rgb
   // Travel + retraction (rendered as line segments / points outside the capsule pipeline).
   travelPositions: Float32Array;
@@ -233,6 +234,7 @@ export function buildLayerInstances(opts: BuildLayerInstancesOptions): LayerInst
   const iA = new Float32Array(extrusionCount * 3);
   const iB = new Float32Array(extrusionCount * 3);
   const iRadius = new Float32Array(extrusionCount * 2);
+  const iHeight = new Float32Array(extrusionCount * 2);
   const iColor = new Float32Array(extrusionCount * 3);
   const travelPositions = new Float32Array(travelCount * 6);
   const retractPositions = new Float32Array(retractCount * 3);
@@ -314,6 +316,7 @@ export function buildLayerInstances(opts: BuildLayerInstancesOptions): LayerInst
     // XY axis at z = layer.z - layerHeight/2. The half-layerHeight Z offset
     // keeps the bead resting on the previous layer's top surface.
     const radius = Math.max(MIN_LINE_WIDTH_MM, renderWidth) * 0.5;
+    const halfHeight = Math.max(0.01, m.layerHeight ?? layerHeight) * 0.5;
     const beadCenterZ = layer.z - layerHeight * 0.5;
 
     const aOff = ext * 3;
@@ -327,6 +330,8 @@ export function buildLayerInstances(opts: BuildLayerInstancesOptions): LayerInst
     const rOff = ext * 2;
     iRadius[rOff    ] = radius;
     iRadius[rOff + 1] = radius;
+    iHeight[rOff    ] = halfHeight;
+    iHeight[rOff + 1] = halfHeight;
 
     // Same-vertex junction smoothing only — average radii where prev's `to`
     // exactly matches this `from` (consecutive vertices in one wall loop).
@@ -371,6 +376,7 @@ export function buildLayerInstances(opts: BuildLayerInstancesOptions): LayerInst
     if (beadCenterZ < minZ) minZ = beadCenterZ;
     if (beadCenterZ > maxZ) maxZ = beadCenterZ;
     if (radius > maxRadius) maxRadius = radius;
+    if (halfHeight > maxRadius) maxRadius = halfHeight;
     ext++;
   }
 
@@ -397,7 +403,7 @@ export function buildLayerInstances(opts: BuildLayerInstancesOptions): LayerInst
 
   return {
     count: extrusionCount,
-    iA, iB, iRadius, iColor,
+    iA, iB, iRadius, iHeight, iColor,
     travelPositions,
     retractPositions,
     moveRefs,

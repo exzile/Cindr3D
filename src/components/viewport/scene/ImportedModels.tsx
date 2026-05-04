@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
-import { DIM_MATERIAL } from './bodyMaterial';
+import { DIM_MATERIAL, componentColorMaterial } from './bodyMaterial';
 import { isComponentVisible } from './componentVisibility';
 
 export default function ImportedModels() {
@@ -11,6 +11,7 @@ export default function ImportedModels() {
   const activeComponentId = useComponentStore((s) => s.activeComponentId);
   const rootComponentId = useComponentStore((s) => s.rootComponentId);
   const components = useComponentStore((s) => s.components);
+  const showComponentColors = useCADStore((s) => s.showComponentColors);
 
   const editingInPlace = !!activeComponentId && activeComponentId !== rootComponentId;
 
@@ -40,14 +41,16 @@ export default function ImportedModels() {
       && isComponentVisible(components, f.componentId)
     ));
     visible.forEach((feature) => {
-      const dim = editingInPlace && feature.componentId !== activeComponentId;
-      feature.mesh!.traverse((obj) => {
-        const m = obj as THREE.Mesh;
-        if (!m.isMesh) return;
-        if (dim) {
+        const dim = editingInPlace && feature.componentId !== activeComponentId;
+        const componentColor = feature.componentId ? components[feature.componentId]?.color : undefined;
+        const colorMaterial = showComponentColors && componentColor ? componentColorMaterial(componentColor) : null;
+        feature.mesh!.traverse((obj) => {
+          const m = obj as THREE.Mesh;
+          if (!m.isMesh) return;
+        if (dim || colorMaterial) {
           // Stash original material the first time we dim this mesh
           if (!m.userData._origMaterial) m.userData._origMaterial = m.material;
-          m.material = DIM_MATERIAL;
+          m.material = dim ? DIM_MATERIAL : colorMaterial!;
         } else {
           // Restore original if we stashed one
           if (m.userData._origMaterial) {
@@ -57,7 +60,7 @@ export default function ImportedModels() {
         }
       });
     });
-  }, [features, editingInPlace, activeComponentId, components]);
+  }, [features, editingInPlace, activeComponentId, components, showComponentColors]);
 
   return (
     <>

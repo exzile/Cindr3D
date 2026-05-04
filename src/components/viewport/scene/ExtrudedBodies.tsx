@@ -11,7 +11,7 @@ import { useComponentStore } from '../../../store/componentStore';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
 import type { Feature, Sketch } from '../../../types/cad';
 import { boxesHaveJoinableContact } from '../../../utils/geometry/boundsContact';
-import { BODY_MATERIAL, SURFACE_MATERIAL, DIM_MATERIAL } from './bodyMaterial';
+import { BODY_MATERIAL, SURFACE_MATERIAL, DIM_MATERIAL, componentColorMaterial } from './bodyMaterial';
 
 /**
  * Wraps a single body mesh and pulses an emissive highlight when its bodyId
@@ -80,7 +80,17 @@ function BodyMesh({
 }
 
 /** Revolve geometry item — memoized, disposes geometry on change/unmount. */
-function RevolveItem({ feature, sketch }: { feature: Feature; sketch: Sketch | undefined }) {
+function RevolveItem({
+  feature,
+  sketch,
+  material,
+  bodyId,
+}: {
+  feature: Feature;
+  sketch: Sketch | undefined;
+  material: THREE.Material;
+  bodyId: string | undefined;
+}) {
   const angle = ((feature.params.angle as number) || 360) * (Math.PI / 180);
   const axisKey = (feature.params.axis as 'X' | 'Y' | 'Z') || 'Y';
   const isFaceRevolve = !!feature.params.faceRevolve;
@@ -103,7 +113,9 @@ function RevolveItem({ feature, sketch }: { feature: Feature; sketch: Sketch | u
       for (let i = 0; i < flat.length; i += 3) {
         boundary.push(new THREE.Vector3(flat[i], flat[i + 1], flat[i + 2]));
       }
-      return GeometryEngine.revolveFaceBoundary(boundary, axis, angle, isSurface);
+      const revolved = GeometryEngine.revolveFaceBoundary(boundary, axis, angle, isSurface);
+      if (revolved) revolved.material = material;
+      return revolved;
     }
     if (!sketch) return null;
     const m = GeometryEngine.revolveSketch(sketch, angle, axis);
@@ -113,18 +125,19 @@ function RevolveItem({ feature, sketch }: { feature: Feature; sketch: Sketch | u
     // The previous post-rotate-the-mesh path here was correct only when the
     // engine ignored the axis. Adding it now would compose with the engine's
     // rotation and double-flip X/Z revolves — drop it entirely.
-    m.material = isSurface ? SURFACE_MATERIAL : BODY_MATERIAL;
+    m.material = material;
     return m;
-  }, [isFaceRevolve, feature.params.faceBoundary, sketch, angle, axis, isSurface]);
+  }, [isFaceRevolve, feature.params.faceBoundary, sketch, angle, axis, isSurface, material]);
   useEffect(() => {
     /* eslint-disable react-hooks/immutability -- Three.js userData for raycasting */
     if (mesh) {
       mesh.userData.pickable = true;
       mesh.userData.featureId = feature.id;
+      mesh.userData.bodyId = bodyId;
     }
     /* eslint-enable react-hooks/immutability */
     return () => { mesh?.geometry.dispose(); };
-  }, [mesh, feature.id]);
+  }, [mesh, feature.id, bodyId]);
   if (!mesh) return null;
   return <primitive object={mesh} />;
 }
@@ -176,6 +189,8 @@ export default function ExtrudedBodies() {
   const rollbackIndex = useCADStore((s) => s.rollbackIndex);
   const activeComponentId = useComponentStore((s) => s.activeComponentId);
   const rootComponentId = useComponentStore((s) => s.rootComponentId);
+  const components = useComponentStore((s) => s.components);
+  const showComponentColors = useCADStore((s) => s.showComponentColors);
 
   const bodiesById = useComponentStore((s) => s.bodies);
 
@@ -209,8 +224,13 @@ export default function ExtrudedBodies() {
   const getMaterial = useCallback(
     (featureComponentId: string | undefined, bodyId: string | undefined, isSurface = false): THREE.Material => {
       const effectiveComponentId = featureComponentId ?? (bodyId ? bodiesById[bodyId]?.componentId : undefined);
-      const fallback: THREE.Material = isSurface ? SURFACE_MATERIAL : BODY_MATERIAL;
       const shouldDim = editingInPlace && effectiveComponentId !== activeComponentId;
+      const componentColor = effectiveComponentId ? components[effectiveComponentId]?.color : undefined;
+      const componentMaterial = showComponentColors && componentColor && !isSurface
+        ? componentColorMaterial(componentColor)
+        : null;
+      const fallback: THREE.Material = componentMaterial ?? (isSurface ? SURFACE_MATERIAL : BODY_MATERIAL);
+      if (componentMaterial) return shouldDim ? DIM_MATERIAL : componentMaterial;
       if (!bodyId) return shouldDim ? DIM_MATERIAL : fallback;
       const body = bodiesById[bodyId];
       if (!body || !body.material) return shouldDim ? DIM_MATERIAL : fallback;
@@ -237,7 +257,7 @@ export default function ExtrudedBodies() {
       materialCache.current.set(bodyId, { mat, key });
       return mat;
     },
-    [editingInPlace, activeComponentId, bodiesById],
+    [editingInPlace, activeComponentId, bodiesById, components, showComponentColors],
   );
 
   const resolveBodyId = useCallback(
@@ -513,12 +533,14 @@ export default function ExtrudedBodies() {
         );
       })}
       {features.filter((f) => f.type === 'revolve' && isActive(f)).map((feature) => {
+        const bodyId = resolveBodyId(feature.id, feature.bodyId);
+        const material = getMaterial(feature.componentId, bodyId, feature.bodyKind === 'surface');
         if (feature.params.faceRevolve) {
-          return <RevolveItem key={feature.id} feature={feature} sketch={undefined} />;
+          return <RevolveItem key={feature.id} feature={feature} sketch={undefined} material={material} bodyId={bodyId} />;
         }
         const sketch = sketches.find((s) => s.id === feature.sketchId);
         if (!sketch) return null;
-        return <RevolveItem key={feature.id} feature={feature} sketch={sketch} />;
+        return <RevolveItem key={feature.id} feature={feature} sketch={sketch} material={material} bodyId={bodyId} />;
       })}
       {/* Render features that have a pre-built stored mesh (D30 Sweep, D66 Thin Extrude,
           D69 Taper Extrude, D73 Rib). All these set feature.mesh at commit time.
