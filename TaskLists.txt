@@ -51,129 +51,411 @@
 
 
 # ============================================================================
-# AI ASSISTANT — MCP server + optional in-app chat  (architectural, multi-session)
+# SHIPPED — AI Assistant (MCP server + BYOK chat panel)  [DONE 2026-05-03]
 # ============================================================================
-# Goal: let users drive DesignCAD with their own Claude / Codex / OpenAI
-# subscription. Open-source-friendly: no Anthropic API spend on our side,
-# no shared key. Two consumption paths:
-#   (a) MCP server inside DesignCAD that exposes CAD tools. The user runs
-#       Claude Code locally and adds DesignCAD as an MCP server — chat
-#       happens in their terminal/IDE, geometry shows up in the running
-#       browser session. Subscription quota covers it because Claude Code
-#       is the authenticated client.
-#   (b) BYOK chat panel inside DesignCAD as a fallback for users who don't
-#       run Claude Code. The same MCP tool surface is reused as the
-#       function-call schema for the BYOK path so we don't ship two APIs.
+# Phases 1-6 complete. Local MCP server on :5174 with token-paired auth,
+# 29-tool surface (primitives, sketches, features, booleans, transforms,
+# export). BYOK chat panel reuses the same tool definitions over Anthropic
+# and OpenAI/OpenRouter streaming. See README "Use your own Claude with
+# DesignCAD" and docs/ai-examples.md for the full reference.
 #
-# Rule of the road: the MCP server is the source of truth. Every CAD
-# action the assistant can take must exist as an MCP tool first; the chat
-# panel is just a thin client over that surface.
+# Files of record:
+#   src/services/mcp/                    — server, tool handlers, byokDefs
+#   src/store/aiAssistantStore.ts        — provider/model/key/preferences
+#   src/components/ai/AiAssistantPanel.tsx — UI (MCP tab + Chat tab)
 
-## Phase 1 — MCP server scaffolding  [DONE 2026-05-03]
-#   New dir: src/services/mcp/
-#   [x] @modelcontextprotocol/sdk already present; CORS locked to localhost
-#       in vite.config.ts designCadMcpPlugin (isLocalhostHost + isAllowedLocalOrigin)
-#   [x] HTTP + StreamableHTTPServerTransport on port 5174 (DESIGNCAD_MCP_PORT env override)
-#   [x] Pairing token: crypto.randomBytes(18).toString('base64url'); exposed via
-#       /mcp-control/status pairingLine field; token rotation via /mcp-control/rotate
-#   [x] Lifecycle: heartbeat every 10s from McpBridgeService; server stops after 15s idle;
-#       McpBridgeService.start/stop wired in App.tsx useEffect; relay.closeAll on stopMcpServer
-#   [x] Browser relay: GET /mcp-control/relay (SSE) + POST /mcp-control/relay-result
 
-## Phase 2 — Core tool surface  [DONE 2026-05-03]
-#   src/services/mcp/tools/index.ts — all handlers; src/services/mcp/McpBridgeService.ts
+# ============================================================================
+# SHIPPED — Cross-firmware printer features  [DONE 2026-05-03]
+# ============================================================================
+# Klipper-style features unified across firmwares: Bed Map, Exclude Object,
+# Updates, Power, Input Shaper, Pressure Advance, Spools, and Timelapse all
+# routed through universal wrappers that delegate to firmware-specific paths
+# (Klipper/Moonraker, Duet/RRF, Marlin/USB, others). Mid-print object
+# cancellation surfaced via M486 (Duet ≥ 3.5, Marlin ≥ 2.0.9) and
+# EXCLUDE_OBJECT (Klipper) in three places: dedicated tab, dashboard list,
+# and 3D Print Preview viewport with right-click context menus.
 #
-#   Document / scene
-#   [x] list_objects
-#   [x] get_object_properties
-#   [x] select_objects
-#   [x] snapshot_view  (canvas.toDataURL → MCP image content item)
+# Slicer pipeline now emits M486 S<id> A"<name>" / S-1 / T<n> labels per
+# slice group. MoonrakerService gained getPrintStatus() for live progress;
+# DuetService.connectSerial subscribes to the WebSerial stream and parses
+# M73 / "echo:Layer N/M" updates into model.job.layer for cross-firmware
+# layer awareness. Shared utilities at src/services/gcode/{m486Labels,
+# objectNameMatch, marlinProgressParser}.ts.
 #
-#   Primitives
-#   [x] create_box
-#   [x] create_cylinder
-#   [x] create_sphere
-#   [x] create_cone  (cylinder with radiusTop/radiusBottom)
-#
-#   Sketches
-#   [x] start_sketch
-#   [x] sketch_rect
-#   [x] sketch_circle
-#   [x] sketch_polygon
-#   [x] sketch_dimension
-#   [x] finish_sketch
-#
-#   Features
-#   [x] extrude_sketch
-#   [x] revolve_sketch
-#   [x] fillet_edges
-#   [x] chamfer_edges
-#   [x] hole
-#
-#   Booleans + transforms
-#   [x] boolean_union
-#   [x] boolean_subtract
-#   [x] boolean_intersect
-#   [x] transform
-#   [x] mirror
-#   [x] linear_pattern
-#   [x] circular_pattern
-#
-#   Export / save
-#   [x] save_session
-#   [x] export_stl    (opens export dialog)
-#   [x] export_step   (opens export dialog)
-#   [x] export_gcode  (switches to prepare workspace)
+# Help guide updated: new "Mid-print object cancellation" and "Print tuning
+# & utilities" topics; Per-printer tool tabs list refreshed.
 
-## Phase 3 — Resources  [DONE 2026-05-03]
-#   [x] designcad://document/summary    — units, featureCount, sketchCount, workspaceMode
-#   [x] designcad://document/objects    — full object list, JSON
-#   [x] designcad://document/feature/{id} — feature tree for one object: params, sketch entities+dims, face IDs, bbox
-#   [x] designcad://printer/active      — active printer from printerStore
 
-## Phase 4 — Connection hardening  [DONE 2026-05-03]
-#   [x] Origin check: refuse non-localhost origins
-#   [x] Token rotation: regenerate from the AI MCP status badge; old token
-#       invalidates immediately by closing existing MCP sessions
-#   [x] Per-tool rate limit (12 calls / 10s / tool) so a runaway agent can't
-#       trash the document; rate-limit errors surface back to the model
-#   [x] Audit log: every tool call written to an 80-entry ring buffer visible
-#       from the AI MCP status badge activity popover
+# ============================================================================
+# REMAINING WORK — Phases 7-16 (post-Klipper-unification feature plan)
+# ============================================================================
+# Following the cross-firmware printer work shipped 2026-05-03, the next
+# batch expands DesignCAD into a print-farm-scale tool with vision-based
+# intelligence, AR overlays, energy/cost tracking, maintenance lifecycle,
+# integrations with home-automation systems, and operational polish
+# (mobile UI, i18n, a11y, session resume, profile diff). Slicer
+# fundamentals also expand (tree supports, adaptive layers, non-planar
+# ironing, profile import).
+#
+# Multi-user accounts, voice control, acoustic anomaly detection, and
+# the print quote engine are explicitly out of scope. The plugin /
+# extension system (Phase 16) is captured here for future planning only
+# and is NOT scheduled — feature designs in Phases 7-15 should be
+# plugin-shaped where natural so a later plugin runtime can adopt them.
+#
+# Phases are scoped to be parallelizable across feature groups; within a
+# group, sub-phases are dependency-ordered. Effort markers:
+#   S  = 1-2 days       L  = 1-2 weeks
+#   M  = 3-5 days       XL = 2-4 weeks
 
-## Phase 5 — In-app chat panel (BYOK)  [DONE 2026-05-03]
-#   src/store/aiAssistantStore.ts — provider/model/apiKey/useClaudeCode/confirmDestructive
-#     (persisted); messages/streaming (session only); PROVIDER_MODELS map
-#   src/services/mcp/tools/byokDefs.ts — 29 NeutralTool schemas; toAnthropic/toOpenAI
-#     converters; DESTRUCTIVE_TOOLS set for confirm gate
-#   src/components/ai/AiAssistantPanel.tsx — floating 360px panel, MCP tab + Chat tab
-#     MCP tab: server status, pairing line + copy/rotate, audit log collapsible
-#     Chat tab: settings (provider/model/key/useClaudeCode/confirmDestructive),
-#       streaming Anthropic + OpenAI/OpenRouter SSE, in-process tool dispatch
-#       via TOOL_HANDLERS, tool_result bubbles, stop button, clear chat
-#     "Use Claude Code" mode: skips API, shows pairing hint
-#   src/App.tsx — mounts <AiAssistantPanel /> (fixed position, always in DOM)
-#   src/components/panels/StatusBar.tsx — "AI" toggle button
-#   [x] AI Assistant settings tab
-#   [x] Streaming chat with tool-use (Anthropic + OpenAI/OpenRouter)
-#   [x] Session log + clear
-#   [x] Safety: confirm-before-destructive gate (configurable, off by default)
 
-## Phase 6 — Documentation  [DONE 2026-05-03]
-#   [x] README section: "Use your own Claude with DesignCAD" — covers
-#       both the MCP path (Claude Code) and the BYOK chat panel
-#   [x] Tool reference doc generated from the zod schemas
-#   [x] Sample transcripts ("design a phone stand", "add 3 mm fillet to
-#       all top edges") in docs/ai-examples.md
+## ── Phase 7: Print farm intelligence ──────────────────────────────────────
+## Goal: turn DesignCAD into a usable print-farm controller. Depends on
+## the existing fleet store; no firmware changes required.
+
+### 7.1 Smart print queue  [M]
+#   New store: src/store/printQueueStore.ts (zustand + persist)
+#   Queue UI: new tab in printer panel + a dashboard panel preview
+#   [ ] Cross-printer queue with drag-reorder and per-job status
+#   [ ] Auto-routing rules: build volume, material loaded, nozzle size,
+#       per-printer profile compatibility
+#   [ ] "Print N copies, distribute across printers" splitter
+#   [ ] Pause / cancel / move job between printers
+#   [ ] Persistence: queue survives browser restart; reconciles with
+#       printer state on reconnect
+
+### 7.2 All-cameras grid view  [S]
+#   New panel: src/components/printer/cameras/AllCamerasGrid.tsx
+#   [ ] Wall view of every saved printer's webcam feed
+#   [ ] Per-tile overlay: name, status, current layer, ETA, alerts
+#   [ ] Click a tile → jump to that printer's monitor
+#   [ ] Compact / expanded modes; configurable refresh rate
+
+### 7.3 Cross-printer A/B comparison  [M]
+#   [ ] Same G-code → run on Printer A and B in parallel
+#   [ ] Side-by-side timing dashboard (layer time deltas, total time)
+#   [ ] Optional camera-based dimensional comparison (depends on Phase 9)
+#   [ ] Aggregate "which printer is faster / quality-best" report
+
+### 7.4 Filament inventory across the fleet  [S]
+#   Extends existing spoolStore
+#   [ ] Aggregate weight per material across all spools
+#   [ ] Low-stock warnings (configurable threshold per material)
+#   [ ] Auto-decrement during prints using slicer-estimated filamentUsed
+#   [ ] Per-printer "what spool is loaded" tracking
+
+# Dependencies: 7.1 has no deps. 7.2 depends on existing camera infra.
+# 7.3 runs after 7.1. 7.4 is parallel with everything else.
+
+
+## ── Phase 8: Vision / AI features ─────────────────────────────────────────
+## Goal: leverage the existing AI panel + MCP server + camera feed for
+## failure detection, diagnostics, and auto-tuning.
+
+### 8.1 Vision failure detection  [L]
+#   New service: src/services/vision/failureDetector.ts
+#   New MCP tool: vision_check_print
+#   [ ] Frame sampler — capture webcam frames at configurable interval
+#   [ ] AI-call helper that submits a frame + recent slicer geometry +
+#       printer state to the configured AI provider for classification
+#   [ ] Categories: spaghetti, layer-shift, blob-of-doom, first-layer
+#       adhesion, knocked-loose part
+#   [ ] Auto-pause + push notification on high-confidence failure
+#   [ ] User-confirmation gate before auto-action; configurable
+#       confidence thresholds in settings
+
+### 8.2 "What's wrong with my print?" diagnostics  [M]
+#   New AI panel quick-action; new MCP tool: diagnose_print
+#   [ ] Aggregator: recent N camera frames, current temps, motor currents
+#       (RRF), filament-sensor state, slicer-expected vs actual layer time
+#   [ ] AI call with structured prompt; expect ranked-list response
+#   [ ] Render diagnosis in AI panel with actionable suggestions
+#   [ ] One-click "apply suggestion" if it's a setting tweak
+
+### 8.3 Auto-tune wizards  [M]
+#   Extends existing Pressure Advance / Input Shaper tabs
+#   [ ] PA tower: print → AI scans camera → reports best zone height
+#   [ ] Retraction tower: same flow
+#   [ ] Temperature tower: same flow
+#   [ ] First-layer squish helper: AI watches first layer → suggest Z-offset
+#   [ ] All wizards integrate with existing tower workflows; AI is
+#       the analyzer, not the controller
+
+### 8.4 Camera measurement tool  [S]
+#   [ ] Bed-corner pick → camera homography matrix
+#   [ ] Click two points on live image → real-world distance read-out
+#   [ ] Ruler overlay; saves calibration per-printer
+
+### 8.5 Natural-language printer control  [S]
+#   Extends AI panel (text input only — voice deliberately out of scope)
+#   [ ] System prompt with available MCP tools
+#   [ ] Confirmation gate for destructive ops
+#   [ ] "Pause Voron, set Prusa to PETG temps, start the next file on
+#       Ender-3" — multi-tool plan executed via existing MCP surface
+
+# Dependencies: 8.1 → 8.2 (8.2 reuses the frame sampler). 8.3 depends on
+# 8.1 frames. 8.4 is independent. 8.5 is independent. 8.4 unlocks
+# Phase 9 AR overlay.
+
+
+## ── Phase 9: AR camera overlay ────────────────────────────────────────────
+## Goal: project the toolpath wireframe onto the live camera feed,
+## enabling AR-style monitoring + per-object cancel from the camera.
+
+### 9.1 Camera pose calibration  [M]
+#   Reuses 8.4 homography
+#   [ ] 4-corner bed pick on a still frame → solve for camera pose
+#   [ ] Per-printer persistent calibration store
+#   [ ] Quality indicator: re-pick if motion detected since last calibration
+
+### 9.2 Toolpath overlay on camera  [M]
+#   New component: src/components/printer/dashboard/CameraOverlayPanel.tsx
+#   [ ] Render the InlineGCodeWirePreview through the calibrated transform
+#   [ ] Composite over the live camera frame at the same FPS
+#   [ ] Toggleable: print preview-only, camera-only, both
+
+### 9.3 Right-click cancel from camera  [S]
+#   [ ] Inverse-project click coords back to bed coords
+#   [ ] Hit-test against plate-object bounding boxes
+#   [ ] Re-uses ObjectContextMenu from MeshPreviewPanel
+
+### 9.4 Post-print AR comparison  [S]
+#   [ ] After print completes, freeze final frame
+#   [ ] Overlay the model wireframe on top
+#   [ ] Highlight regions of dimensional mismatch (uses 8.4 measurement)
+
+# Dependencies: 9.1 → 9.2 → 9.3 → 9.4. Whole phase blocks on 8.4 calibration.
+
+
+## ── Phase 10: Cost & energy ───────────────────────────────────────────────
+## Goal: turn the smart-plug + spool tracker into real cost / sustainability
+## intelligence.
+
+### 10.1 Cost-per-print  [S]
+#   New store fields on spoolStore + smart-plug data
+#   [ ] Filament cost: spool $/kg × estimated used kg
+#   [ ] Electricity cost: smart-plug wattage × time at TOU rate
+#   [ ] Live ticker during print + final receipt on completion
+#   [ ] Aggregate dashboard: per project, per filament, per printer
+
+### 10.2 Off-peak scheduling  [M]
+#   [ ] Per-printer TOU schedule editor (peak / off-peak / shoulder)
+#   [ ] Optional pull from utility API (configurable URL/format)
+#   [ ] Schedule a print to start during cheapest window
+#   [ ] Pairs with Phase 12 calendar UI
+
+### 10.3 Solar-aware printing  [S]
+#   [ ] Optional integration: Tesla Powerwall, Enphase Envoy, SolarEdge
+#   [ ] Read current solar surplus, gate prints on minimum surplus
+#   [ ] On-brand for sustainability messaging
+
+### 10.4 Sustainability dashboard  [S]
+#   [ ] Aggregate kg filament used, kWh consumed, CO2 estimate
+#   [ ] Per-printer / per-month breakdown
+#   [ ] Export to CSV / JSON
+
+# Dependencies: 10.1 standalone. 10.2 → 12.1 (calendar UI). 10.3 standalone.
+# 10.4 depends on 10.1 having collected enough data.
+
+
+## ── Phase 11: Maintenance & calibration lifecycle ─────────────────────────
+## Goal: track when calibration was last run + when components were
+## replaced, surface reminders.
+
+### 11.1 Calibration aging dashboard  [S]
+#   New store: src/store/calibrationStore.ts
+#   [ ] Per-printer record of: last bed mesh, last PA tune, last input
+#       shaper, last Z-offset check, last first-layer test
+#   [ ] Recommended re-cal interval per item (configurable)
+#   [ ] Dashboard card: overdue items in red, upcoming in amber
+
+### 11.2 Wear tracking  [S]
+#   [ ] Component register: belts, bearings, nozzles, hotends, build plate
+#   [ ] Hours-on / km-of-filament-through counters
+#   [ ] Replacement reminders at user-configurable intervals
+#   [ ] Service log: who replaced what, when, cost
+
+### 11.3 Filament moisture model  [S]
+#   [ ] Per-spool: opened-on date, ambient humidity (manual or MQTT sensor)
+#   [ ] Decay model → estimated moisture state
+#   [ ] Pre-print warning: "PETG opened 14 days at 55% RH — dry first?"
+
+# All sub-phases independent and parallelizable.
+
+
+## ── Phase 12: Print scheduling ────────────────────────────────────────────
+## Goal: time-aware print orchestration.
+
+### 12.1 Scheduling calendar  [M]
+#   New tab: src/components/printer/scheduling/PrintCalendar.tsx
+#   [ ] Calendar view (day / week) of past + scheduled prints
+#   [ ] Drag-to-schedule from queue; conflict detection
+#   [ ] Time-of-day quiet-hours awareness
+
+### 12.2 Bed-clearing auto-queue  [M]
+#   Depends on 8.4 (camera homography) for clearance detection
+#   [ ] Compare post-print bed frame to pre-print baseline
+#   [ ] AI-confirmed bed-clear signal → start next queued job
+#   [ ] User confirmation gate; configurable per printer
+
+### 12.3 Print start verification checklist  [S]
+#   [ ] Pre-flight modal: bed clean? nozzle wiped? filament loaded?
+#       SD card mounted? camera healthy?
+#   [ ] Camera-assist where possible (AI confirms each item)
+#   [ ] Skip / always-skip per printer
+
+# Dependencies: 12.1 standalone. 12.2 → 8.4 + 7.1. 12.3 standalone.
+
+
+## ── Phase 13: Integrations ────────────────────────────────────────────────
+## Goal: hook into the broader ecosystem — home automation, messaging,
+## webhooks, external slicers, power-loss recovery.
+
+### 13.1 Webhook + chat-app notifications  [S]
+#   Settings panel: per-printer or global notification rules
+#   [ ] Generic webhook (POST JSON) for PRINT_START, LAYER_CHANGE, PAUSED,
+#       FAILED, DONE
+#   [ ] First-class Discord, Slack, Telegram targets with per-channel
+#       formatting
+
+### 13.2 MQTT publisher  [S]
+#   New service: src/services/integrations/mqttPublisher.ts
+#   [ ] Configurable broker URL, topic prefix, auth
+#   [ ] Publish print events + temperatures + position at user-set rate
+#   [ ] Auto-reconnect on broker drop
+
+### 13.3 HomeAssistant entity bridge  [M]
+#   [ ] Local endpoint that HA's RESTful sensor / switch integrations
+#       can read
+#   [ ] Per-printer entities: temp sensors, progress, pause/cancel switches
+#   [ ] Auto-discovery payload (HA discovery format)
+
+### 13.4 Profile import (Cura / OrcaSlicer / Bambu Studio)  [M]
+#   [ ] Parser per format → DesignCAD's PrintProfile shape
+#   [ ] Import wizard: pick file → preview mappings → confirm
+#   [ ] Round-trip 3MF preserving multi-part build-plate layout
+
+### 13.5 Print resume from power loss  [M]
+#   [ ] Persist last-known print state (file, position, Z, bed/hotend
+#       temps) on a configurable cadence
+#   [ ] On printer reconnect, detect if a print was interrupted
+#   [ ] Offer resume from saved Z; warn about temperature ramp-up
+
+# All sub-phases independent except 13.5 which interacts with 7.1 queue.
+
+
+## ── Phase 14: Operational polish ──────────────────────────────────────────
+## Goal: cross-cutting work that makes the app feel finished. All
+## sub-phases run in parallel; no internal dependencies.
+
+### 14.1 Print resume across browser sessions  [M]
+#   [ ] Capture "what print is this UI attached to" so opening DesignCAD
+#       on a new device reconnects to the live job
+#   [ ] Reconnect handshake reuses live polling / websocket auth
+#   [ ] Banner: "Print was started from Chromebook on Tuesday 4 PM"
+
+### 14.2 Mobile / tablet UI mode  [XL]
+#   [ ] Detect viewport width + touch capability
+#   [ ] Bottom-sheet navigation for printer monitor
+#   [ ] Larger tap targets; one-thumb optimized layouts
+#   [ ] Big-button "kiosk mode" for tablet near printer
+
+### 14.3 i18n  [M]
+#   [ ] Externalise all strings to a translations bundle
+#   [ ] react-intl or similar; per-language JSON
+#   [ ] Settings: language picker; default from browser locale
+#   [ ] Ship English; accept community translations via PR
+
+### 14.4 Accessibility audit  [M]
+#   [ ] Keyboard-only nav across every workspace
+#   [ ] Screen-reader labels on all interactive elements
+#   [ ] High-contrast theme variant
+#   [ ] Reduced-motion mode for animations
+
+### 14.5 Profile versioning + diff  [S]
+#   [ ] Snapshot a profile on every save
+#   [ ] Diff viewer: pick two snapshots, see changed keys
+#   [ ] Restore individual changes (cherry-pick) or full snapshot
+
+### 14.6 Self-hosted profile / spool sync  [M]
+#   [ ] Optional: point at a git repo URL for sync
+#   [ ] Push profiles + spools on save; pull on app start
+#   [ ] Conflict resolution: last-writer-wins or manual
+
+
+## ── Phase 15: Slicer fundamentals ─────────────────────────────────────────
+## Goal: close the gap with Cura / Orca / Bambu on print-quality features.
+
+### 15.1 Tree supports  [XL]
+#   [ ] Algorithm: branch-network rooted at overhangs, growing toward bed
+#   [ ] Per-region support density; collision avoidance
+#   [ ] Preview rendering as wireframe, distinct from grid supports
+
+### 15.2 Adaptive layer height  [L]
+#   [ ] Per-feature slope detection; subdivide layers in steep regions
+#   [ ] Configurable min/max layer height
+#   [ ] Preview shows variable-height layers correctly
+
+### 15.3 Non-planar surface ironing  [L]
+#   [ ] Top-skin surface following local Z gradient (not perfectly flat)
+#   [ ] Slow nozzle pass at zero extrusion to flow-smooth surface
+#   [ ] Preview support
+
+### 15.4 Vase mode  [S]
+#   [ ] Spiralised single-wall print; Z continuously increases
+#   [ ] Per-object setting + UI toggle in slicer
+
+### 15.5 Organic / gyroid infill patterns  [M]
+#   [ ] Add gyroid, lightning, organic patterns to infill generator
+#   [ ] Density behaves like existing patterns
+
+### 15.6 Multi-color via tool change  [XL]
+#   [ ] Per-object tool index; M600 / T<n> insertion at tool boundaries
+#   [ ] Prime-tower generation between tools
+#   [ ] Multi-extruder UI surfacing
+#   Note: depends on multi-extruder UI work currently in
+#         "INTENTIONALLY NOT IMPLEMENTED"; revisit scope of that decision
+#         before starting.
+
+### 15.7 Bed-mesh-aware auto-arrange  [M]
+#   [ ] Read live bed mesh; weight placement toward flatter regions
+#   [ ] Avoid known dead spots
+#   [ ] Existing autoArrange action becomes mesh-aware when data is available
+
+### 15.8 Print stats analytics across history  [S]
+#   [ ] Surface patterns from print history: failure rate per profile,
+#       per filament, per printer
+#   [ ] "Your PLA failed 3× this week — last working profile was X"
+
+# 15.1, 15.2, 15.3 are independent and large. 15.4, 15.5, 15.7, 15.8 are
+# small + parallelizable. 15.6 is large and depends on the multi-extruder
+# decision below.
+
+
+## ── Phase 16: Plugin / extension system  [FUTURE — not scheduled]  ────────
+## Goal: let users add their own panels, slicer post-processors, MCP
+## tools, dashboard cards without forking. Captured here so feature
+## designs in Phases 7-15 are plugin-shaped from day one.
+#
+#   Open questions (resolve before implementation):
+#     - Manifest format (JSON / TS module / both?)
+#     - Sandbox boundary (iframe / Web Worker / runtime caps)
+#     - Distribution channel (manual install / registry / both?)
+#     - API stability commitment (semver, deprecation policy)
+#
+#   Once scoped, plugin shape would mirror MCP tool registration plus a
+#   panel-mount API and a slicer post-processor hook. Defer until enough
+#   of Phases 7-15 ships that the plugin surface is informed by real
+#   integration patterns.
+
 
 # CODEX-FRIENDLY SUBTASKS (parallelizable):
-#   Phase 1 (server + transport + token) is pure plumbing.
-#   Phase 2 tool wrappers are 1:1 with existing store actions — each
-#   tool is independent and can be done in parallel batches by feature
-#   group (primitives / sketches / features / booleans / export).
-#   Phase 3 resources are read-only and don't depend on Phase 2.
-#   Phase 4 is sequential after 1-3.
-#   Phase 5 depends on 1-4 being feature-complete.
-#   Phase 6 is the last step; do it after the surface stabilises.
+#   Phases 7, 11, 13, 14 are mostly independent and run in parallel.
+#   Phase 8 (Vision) gates Phase 9 (AR) and parts of Phase 12.
+#   Phase 10 (Cost) is independent except for 10.2 → 12.1.
+#   Phase 15 (Slicer) is fully independent of the printer-management
+#   phases and runs on its own track.
 
 
 # ============================================================================
