@@ -23,6 +23,7 @@ Cindr3D brings a professional CAD-style workflow into a web app that can run loc
 - [Overview](#overview)
 - [What's New](#whats-new)
 - [Feature Highlights](#feature-highlights)
+- [Print Farm Intelligence](#print-farm-intelligence)
 - [Cross-Firmware Support](#cross-firmware-support)
 - [Tech Stack](#tech-stack)
 - [Quick Start](#quick-start)
@@ -59,6 +60,9 @@ The project is evolving quickly. Some CAD and slicer features are experimental, 
 
 **Headline features shipped this release:**
 
+- **Smart print farm queue** - persistent cross-printer queueing with routing rules for build volume, loaded material, nozzle size, copy splitting, job moves, pause, and cancel.
+- **Fleet cameras** - all-cameras grid, per-printer multi-camera streams, layer-by-layer photo galleries, PTZ presets, print-start camera positioning, and WebRTC/WHEP low-latency streaming with MJPEG/HLS fallback.
+- **Fleet filament inventory** - material rollups, low-stock thresholds, per-printer loaded-spool tracking, and automatic filament deduction from slicer estimates.
 - 🎯 **Mid-print object cancellation** — `M486` on Duet RRF 3.5+ and Marlin 2.0.9+, `EXCLUDE_OBJECT` on Klipper. Three surfaces: dedicated tab, dashboard list card, and a 3D Print Preview viewport with right-click context menus.
 - 🎬 **Live 3D Print Preview dashboard card** — viewport showing the build plate, plate-object silhouettes, and toolpath wireframe up to the layer currently being printed; right-click any object to cancel just that one.
 - ⚙️ **Cross-firmware tuning UI** — Input Shaper, Pressure Advance, Power, Spools, Timelapse, and Updates tabs that route to the right firmware-specific commands automatically.
@@ -105,6 +109,36 @@ Cindr3D treats Klipper, Duet/RRF, Marlin, Smoothie, grbl, and Repetier as first-
 - **Marlin** — `M73` (`P` / `R` / `Q` / `S`) and `echo:Layer N/M` parsed from the USB serial stream
 
 **Tabs:** Dashboard, Camera, Status, Console, Job, History, Analytics, Files, Macros, Bed Map, Exclude Object, Updates, Power, Input Shaper, Pressure Advance, Spools, Timelapse, Settings (plus Filaments / Object Model / DSF Plugins on Duet only).
+
+## Print Farm Intelligence
+
+Cindr3D now treats the 3D Printer workspace as a small print-farm controller, not just a single-printer monitor.
+
+### Smart Queue
+
+- Persistent queue survives browser restarts and reconciles with each printer's live state.
+- Route jobs by build volume, loaded material, nozzle size, printer profile compatibility, and printer availability.
+- Split "print N copies" work across multiple printers, then move, pause, cancel, or reorder queued jobs.
+- Queue tab provides the full operator view; the fleet dashboard shows a compact next-jobs preview.
+
+### Fleet Cameras
+
+- All Cameras tab shows every enabled camera stream across saved printers with status overlays, ETA/layer context, compact and expanded modes, and click-through to the printer monitor.
+- Each printer can store multiple camera streams for top, side, nozzle, or custom views. Dashboard cards can choose which stream to show.
+- Camera settings support network cameras, browser USB cameras, server USB cameras, RTSP/HLS/HTTP main streams, WebRTC/WHEP endpoints, and optional ICE/TURN servers for self-hosted remote access.
+- WebRTC is tried first when configured for sub-second latency; if the peer connection fails, the camera panel falls back to the existing MJPEG/HLS stream.
+
+### Photo Evidence And PTZ
+
+- Layer Gallery captures per-layer snapshots from enabled cameras, stores them by printer/job/layer in IndexedDB, and exports ZIP archives for later review or vision tooling.
+- PTZ controls support Amcrest/Dahua and Reolink commands directly, plus generic/ONVIF/Tapo/Hikvision bridge URL templates.
+- Save per-camera PTZ preset slots and mark one as the print-start position so cameras automatically jump to a known first-layer framing.
+
+### Fleet Filament
+
+- Spools roll up by material across the fleet with configurable low-stock thresholds.
+- Assign a loaded spool per printer so routing rules and operator views know what each machine can print.
+- Completed prints deduct estimated filament from the loaded spool when slicer/firmware metadata includes filament length.
 
 ### 🤖 AI Assistant
 
