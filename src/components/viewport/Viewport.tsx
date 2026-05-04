@@ -21,6 +21,7 @@ import PrimitiveBodies from './scene/PrimitiveBodies';
 import FastenerBodies from './scene/FastenerBodies';
 import ExtrudedBodies from './scene/ExtrudedBodies';
 import ImportedModels from './scene/ImportedModels';
+import CanvasReferences from './scene/CanvasReferences';
 import SketchPlaneIndicator from './scene/SketchPlaneIndicator';
 import WorldAxes from './scene/WorldAxes';
 import SketchPlaneGrid, { GroundPlaneGrid } from './scene/SketchPlaneGrid';
@@ -227,6 +228,7 @@ export default function Viewport() {
         <PrimitiveBodies />
         <FastenerBodies />
         <ImportedModels />
+        <CanvasReferences />
         <SketchPlaneIndicator />
         <SketchInteraction />
         <MeasureInteraction />

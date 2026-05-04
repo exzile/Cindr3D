@@ -33,14 +33,15 @@ describe('Slicer parity fixes', () => {
 
     const sorted = sortSolidSkinLinesForEmission(lines, 0.45);
 
-    expect(sorted[0].from.x).toBe(0);
-    expect(sorted[0].to.x).toBe(4);
-    expect(sorted[1].from.x).toBe(4);
-    expect(sorted[1].to.x).toBe(0);
-    expect(sorted[2].from.x).toBe(6);
-    expect(sorted[2].to.x).toBe(10);
-    expect(sorted[3].from.x).toBe(10);
-    expect(sorted[3].to.x).toBe(6);
+    expect(sorted.map((line) => ({
+      from: [line.from.x, line.from.y],
+      to: [line.to.x, line.to.y],
+    }))).toEqual([
+      { from: [0, 0], to: [4, 0] },
+      { from: [4, 0.45], to: [0, 0.45] },
+      { from: [6, 0.45], to: [10, 0.45] },
+      { from: [10, 0], to: [6, 0] },
+    ]);
   });
 
   it('keeps solid-skin boundary ownership when rows are reversed for emission', () => {

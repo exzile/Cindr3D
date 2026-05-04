@@ -204,7 +204,10 @@ export async function prepareLayerGeometryState(
         if (approxDiam > maxD) continue;
       }
       const expanded = slicer.offsetContour(c.points, hhe);
-      if (expanded.length >= 3) c.points = expanded;
+      if (expanded.length >= 3) {
+        c.points = expanded;
+        c.area = slicer.signedArea(expanded);
+      }
     }
   }
 
@@ -234,7 +237,10 @@ export async function prepareLayerGeometryState(
       const offset = c.isOuter ? outerOffset : holeOffset;
       if (offset === 0) continue;
       const expanded = slicer.offsetContour(c.points, offset);
-      if (expanded.length >= 3) c.points = expanded;
+      if (expanded.length >= 3) {
+        c.points = expanded;
+        c.area = slicer.signedArea(expanded);
+      }
     }
   }
 

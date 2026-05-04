@@ -40,7 +40,7 @@ export function SerialConsoleSection({
   const [open, setOpen] = useState(false);
   const [opening, setOpening] = useState(false);
   const connectionRef = useRef<WebSerialConnection | null>(null);
-  const logRef = useRef<HTMLPreElement | null>(null);
+  const logRef = useRef<HTMLDivElement | null>(null);
 
   // Always close the temporary connection on unmount so unplug doesn't
   // leak file descriptors held by the browser.
@@ -77,6 +77,11 @@ export function SerialConsoleSection({
       const conn = new WebSerialConnection(baudRate);
       await conn.open(port);
       conn.onLine((line) => append('in', line));
+      conn.onDisconnect((err) => {
+        append('err', `Serial connection lost: ${err.message}`);
+        connectionRef.current = null;
+        setOpen(false);
+      });
       connectionRef.current = conn;
       setOpen(true);
       append('sys', `Opened ${portLabel || 'serial port'} @ ${baudRate} baud`);
@@ -155,7 +160,7 @@ export function SerialConsoleSection({
         </button>
       </div>
 
-      <pre ref={logRef} className="duet-settings__serial-log" aria-live="polite">
+      <div ref={logRef} className="duet-settings__serial-log" role="log" aria-live="polite">
         {lines.length === 0
           ? <span className="duet-settings__dim-text">No output yet.</span>
           : lines.map((l, i) => (
@@ -167,7 +172,7 @@ export function SerialConsoleSection({
               </div>
             ))
         }
-      </pre>
+      </div>
 
       <div className="duet-settings__serial-input-row">
         <input

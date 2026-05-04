@@ -22,6 +22,9 @@ export type ConstructionDefinition =
   | { method: 'offset-plane'; referencePlane: string; distance: number }
   | { method: 'midplane'; plane1: string; plane2: string }
   | { method: 'angle-plane'; referencePlane: string; angle: number; axis: string }
+  | { method: 'through-point'; point: [number, number, number]; referencePlane: string }
+  | { method: 'three-points'; pt1: [number, number, number]; pt2: [number, number, number]; pt3: [number, number, number] }
+  | { method: 'normal-to-curve'; origin: [number, number, number]; direction: [number, number, number] }
   | { method: 'tangent-plane'; faceId: string; point: { x: number; y: number; z: number } }
   | { method: 'three-points'; points: [string, string, string] }
   | { method: 'axis-through-points'; point1: string; point2: string }

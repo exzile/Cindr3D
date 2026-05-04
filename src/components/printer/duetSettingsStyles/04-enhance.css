@@ -757,6 +757,10 @@
 
 /* -- Reduced motion --------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
+  .duet-settings__body {
+    scroll-behavior: auto;
+  }
+
   .duet-settings__page *,
   .duet-settings__page *::before,
   .duet-settings__page *::after {

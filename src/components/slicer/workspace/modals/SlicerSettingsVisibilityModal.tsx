@@ -32,7 +32,7 @@ export function SlicerSettingsVisibilityModal({ onClose }: Props) {
     return out;
   }, [query]);
 
-  const totalVisible = SETTINGS_SECTIONS.reduce((n, s) => n + (visible[s.id] ? 1 : 0), 0);
+  const totalVisible = SETTINGS_SECTIONS.reduce((n, s) => n + ((visible[s.id] ?? s.defaultOn) ? 1 : 0), 0);
 
   return (
     <div className="ssv-modal__overlay" onClick={onClose}>

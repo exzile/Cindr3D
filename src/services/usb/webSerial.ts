@@ -77,6 +77,7 @@ export async function findGrantedPort(
 }
 
 export type SerialLineListener = (line: string) => void;
+export type SerialDisconnectListener = (error: Error) => void;
 
 /**
  * One open Web Serial connection. Buffers incoming bytes, splits on newlines,
@@ -92,6 +93,7 @@ export class WebSerialConnection {
   private encoder = new TextEncoder();
   private buffer = '';
   private listeners = new Set<SerialLineListener>();
+  private disconnectListeners = new Set<SerialDisconnectListener>();
   private pending: Array<{
     resolve: (response: string) => void;
     reject: (err: Error) => void;
@@ -112,6 +114,11 @@ export class WebSerialConnection {
   onLine(listener: SerialLineListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  onDisconnect(listener: SerialDisconnectListener): () => void {
+    this.disconnectListeners.add(listener);
+    return () => this.disconnectListeners.delete(listener);
   }
 
   async open(port: WebSerialPort): Promise<void> {
@@ -155,6 +162,7 @@ export class WebSerialConnection {
     }
     this.pending = [];
     this.listeners.clear();
+    this.disconnectListeners.clear();
     this.buffer = '';
   }
 
@@ -206,10 +214,19 @@ export class WebSerialConnection {
           this.dispatchLine(line);
         }
       }
-    } catch {
-      // Read errors usually mean the port was unplugged. Listeners get nothing
-      // more; pending sendGCode() calls will time out and resolve.
+    } catch (err) {
+      // Read errors usually mean the port was unplugged. Treat that as a hard
+      // disconnect so pending commands reject and isOpen() flips immediately.
+      if (!this.closed) await this.handleReadFailure(err);
     }
+  }
+
+  private async handleReadFailure(err: unknown): Promise<void> {
+    const error = err instanceof Error ? err : new Error(String(err || 'Serial connection lost'));
+    for (const listener of this.disconnectListeners) {
+      try { listener(error); } catch { /* listener errors must not break teardown */ }
+    }
+    await this.close();
   }
 
   private dispatchLine(line: string): void {

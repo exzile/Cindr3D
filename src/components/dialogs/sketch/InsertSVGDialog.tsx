@@ -4,6 +4,8 @@ import { useCADStore } from '../../../store/cadStore';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
 import type { SketchEntity, SketchPoint, Sketch } from '../../../types/cad';
 
+const MAX_SVG_PATH_SAMPLES = 4096;
+
 export function InsertSVGDialog({ onClose }: { onClose: () => void }) {
   const [scale, setScale] = useState(1);
   const [flipY, setFlipY] = useState(true);
@@ -20,7 +22,7 @@ export function InsertSVGDialog({ onClose }: { onClose: () => void }) {
   const samplePath = (el: SVGGeometryElement, numSamples: number): { x: number; y: number }[] => {
     const len = el.getTotalLength();
     const pts: { x: number; y: number }[] = [];
-    const steps = Math.max(numSamples, Math.ceil(len / 2));
+    const steps = Math.min(MAX_SVG_PATH_SAMPLES, Math.max(numSamples, Math.ceil(len / 2)));
     for (let i = 0; i <= steps; i++) {
       const pt = el.getPointAtLength((i / steps) * len);
       pts.push({ x: pt.x, y: pt.y });

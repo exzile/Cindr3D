@@ -257,6 +257,12 @@ export class DuetService {
 
       const baudRate = this.config.serialBaudRate ?? 115200;
       this.serial = new WebSerialConnection(baudRate);
+      this.serial.onDisconnect((err) => {
+        this.serial = null;
+        this.connected = false;
+        this.emit('error', err);
+        this.emit('disconnected', null);
+      });
       await this.serial.open(port);
 
       // Many boards drive RST low on DTR toggle when the port opens — give the
@@ -282,7 +288,7 @@ export class DuetService {
       const seed = {
         boards: [{
           firmwareVersion: firmwareVersion ?? 'USB serial',
-          firmwareName: firmwareVersion,
+          firmwareName: firmwareVersion?.split(/\s+/)[0] ?? 'USB serial',
           name: boardName ?? this.config.serialPortLabel ?? 'USB printer',
         }],
       } as unknown as Record<string, unknown>;

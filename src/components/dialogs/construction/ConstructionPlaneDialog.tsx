@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
+import type { ConstructionDefinition } from '../../../types/cad';
 import * as THREE from 'three';
 
 /** SDK-10: All supported plane definition methods */
@@ -61,8 +62,7 @@ export function ConstructionPlaneDialog({ onClose, initialMethod }: { onClose: (
     const normal = new THREE.Vector3(0, 0, 1);
     const origin = new THREE.Vector3(0, 0, 0);
     let name = 'Plane';
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let definition: any = {};
+    let definition: ConstructionDefinition = { method: 'offset-plane', referencePlane, distance };
 
     if (method === 'offset') {
       switch (referencePlane) {

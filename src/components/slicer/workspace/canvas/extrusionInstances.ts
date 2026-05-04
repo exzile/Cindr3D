@@ -3,6 +3,8 @@ import type { SliceLayer, SliceMove } from '../../../../types/slicer';
 import type { PreviewColorMode, ShaftMoveData } from '../../../../types/slicer-preview.types';
 import {
   MOVE_TYPE_THREE_COLORS,
+  SPEED_LOW_COLOR, SPEED_HIGH_COLOR,
+  FLOW_LOW_COLOR, FLOW_HIGH_COLOR,
   WIDTH_LOW_COLOR, WIDTH_HIGH_COLOR,
   LAYER_TIME_LOW_COLOR, LAYER_TIME_HIGH_COLOR,
   Z_SEAM_DIM_THREE_COLOR,
@@ -123,11 +125,11 @@ export function colorForMove(move: SliceMove, ctx: ColorContext): [number, numbe
   } else if (mode === 'speed') {
     const span = Math.max(0.01, ctx.speedRange[1] - ctx.speedRange[0]);
     const t = Math.max(0, Math.min(1, (move.speed - ctx.speedRange[0]) / span));
-    _scratch.setHSL((1 - t) * 0.66, 0.85, 0.52);
+    _scratch.copy(SPEED_LOW_COLOR).lerp(SPEED_HIGH_COLOR, t);
   } else if (mode === 'flow') {
     const span = Math.max(1e-9, ctx.flowRange[1] - ctx.flowRange[0]);
     const t = Math.max(0, Math.min(1, (move.extrusion - ctx.flowRange[0]) / span));
-    _scratch.setHSL((1 - t) * 0.38, 0.85, 0.52);
+    _scratch.copy(FLOW_LOW_COLOR).lerp(FLOW_HIGH_COLOR, t);
   } else if (mode === 'width') {
     const span = Math.max(0.001, ctx.widthRange[1] - ctx.widthRange[0]);
     const t = Math.max(0, Math.min(1, (move.lineWidth - ctx.widthRange[0]) / span));

@@ -193,7 +193,12 @@ export default function DuetConfigEditor() {
                       onClick={() => handleOpen(file.path)}
                       role="button"
                       tabIndex={0}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleOpen(file.path); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleOpen(file.path);
+                        }
+                      }}
                     >
                       <FileCode2 size={14} className="duet-config-editor__file-icon" />
                       <div className="duet-config-editor__file-info">

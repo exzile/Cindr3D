@@ -60,6 +60,7 @@ export function buildMoveTimeline(
   const hopEnabled = zHopWhenRetracted && zHopHeight > 0;
 
   for (const layer of sliceResult.layers) {
+    const layerStartTime = t;
     const fallbackLayerHeight = Math.max(layer.z - prevLayerZ, 0.001);
     const layerTravelSpeed = layer.layerIndex === 0
       ? Math.max(initialLayerTravelSpeed ?? travelSpeed, 1e-6)
@@ -125,6 +126,25 @@ export function buildMoveTimeline(
         : layer.z;
       flat.push({ move, z: moveZ });
       currentXY = move.to;
+    }
+
+    const dwell = Math.max(0, layer.layerTime - (t - layerStartTime));
+    if (dwell > 1e-6) {
+      t += dwell;
+      cumulative.push(t);
+      layerIndices.push(layer.layerIndex);
+      moveWithinLayer.push(layer.moves.length - 1);
+      flat.push({
+        move: {
+          type: 'travel',
+          from: currentXY,
+          to: currentXY,
+          speed: 0,
+          extrusion: 0,
+          lineWidth: 0,
+        },
+        z: layer.z,
+      });
     }
 
     prevLayerZ = layer.z;

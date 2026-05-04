@@ -27,8 +27,9 @@ export function createUiActions(api: PrinterStoreApi): Pick<
 
       autoReconnectAttempts = 0;
       set({ reconnecting: true });
-      const interval = prefs.reconnectInterval || 5000;
-      const maxRetries = prefs.maxRetries || 10;
+      const interval = prefs.reconnectInterval ?? 5000;
+      const maxRetries = prefs.maxRetries ?? 10;
+      const unlimitedRetries = maxRetries === 0;
 
       const attempt = () => {
         const state = get();
@@ -40,14 +41,14 @@ export function createUiActions(api: PrinterStoreApi): Pick<
         }
 
         autoReconnectAttempts++;
-        if (autoReconnectAttempts > maxRetries) {
+        if (!unlimitedRetries && autoReconnectAttempts > maxRetries) {
           set({ error: `Auto-reconnect failed after ${maxRetries} attempts`, reconnecting: false });
           autoReconnectTimer = null;
           autoReconnectAttempts = 0;
           return;
         }
 
-        set({ error: `Reconnecting... attempt ${autoReconnectAttempts}/${maxRetries}` });
+        set({ error: `Reconnecting... attempt ${autoReconnectAttempts}/${unlimitedRetries ? 'unlimited' : maxRetries}` });
         state.connect()
           .then(() => {
             if (get().connected) {

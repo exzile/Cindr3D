@@ -24,9 +24,8 @@ import { colors as COLORS } from '../../../utils/theme';
 // ── shared helpers ────────────────────────────────────────────────────────────
 
 function CancelRow({
-  id, name, cancelled, confirming, disabled, onArm, onConfirm,
+  name, cancelled, confirming, disabled, onArm, onConfirm,
 }: {
-  id: string | number;
   name: string;
   cancelled: boolean;
   confirming: boolean;
@@ -43,7 +42,7 @@ function CancelRow({
     }}>
       <span style={{
         fontSize: 11, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        color: cancelled ? COLORS.error ?? '#ef4444' : COLORS.textPrimary ?? '#e0e0ff',
+        color: cancelled ? COLORS.error ?? '#ef4444' : COLORS.text,
         textDecoration: cancelled ? 'line-through' : 'none',
         opacity: cancelled ? 0.6 : 1,
       }}>
@@ -122,7 +121,6 @@ function DuetCancelList() {
       {objects.map((obj, i) => (
         <CancelRow
           key={i}
-          id={i}
           name={obj.name || `Object ${i}`}
           cancelled={obj.cancelled}
           confirming={confirmIdx === i}
@@ -170,7 +168,6 @@ function MarlinCancelList() {
       {labels.map(({ id, name }) => (
         <CancelRow
           key={id}
-          id={id}
           name={name || `Object ${id}`}
           cancelled={cancelled.has(id)}
           confirming={confirmId === id}
@@ -256,7 +253,6 @@ function KlipperCancelList() {
       {objects.map((obj) => (
         <CancelRow
           key={obj.name}
-          id={obj.name}
           name={obj.name}
           cancelled={obj.excluded}
           confirming={confirmName === obj.name}

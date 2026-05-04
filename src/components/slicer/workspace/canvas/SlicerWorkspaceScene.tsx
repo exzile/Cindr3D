@@ -99,7 +99,7 @@ export function SlicerWorkspaceScene() {
     invalidate, previewShowTravel, previewColorMode, previewRenderMode, previewHiddenTypesArr,
   ]);
   useEffect(() => { invalidate(); }, [
-    invalidate, previewSimEnabled, previewSimPlaying, previewSimTime,
+    invalidate, previewSimEnabled, previewSimPlaying,
   ]);
   useEffect(() => { invalidate(); }, [
     invalidate, printabilityReport, printabilityHighlight,

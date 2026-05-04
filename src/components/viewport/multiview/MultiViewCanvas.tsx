@@ -11,6 +11,7 @@ import PrimitiveBodies from '../scene/PrimitiveBodies';
 import ExtrudedBodies from '../scene/ExtrudedBodies';
 import FormBodies from '../scene/FormBodies';
 import ImportedModels from '../scene/ImportedModels';
+import CanvasReferences from '../scene/CanvasReferences';
 import FastenerBodies from '../scene/FastenerBodies';
 import WorldAxes from '../scene/WorldAxes';
 import { GroundPlaneGrid } from '../scene/SketchPlaneGrid';
@@ -39,6 +40,7 @@ function SharedScene() {
       <ExtrudedBodies />
       <FormBodies />
       <ImportedModels />
+      <CanvasReferences />
       <FastenerBodies />
       <WorldAxes />
       <GroundPlaneGrid />

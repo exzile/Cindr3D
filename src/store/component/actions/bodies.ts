@@ -5,6 +5,15 @@ import { defaultComponentMaterial } from '../defaults';
 import type { ComponentStore } from '../types';
 import type { ComponentStoreApi } from '../storeApi';
 
+function copyObjectTransform(target: THREE.Object3D, source: THREE.Object3D): void {
+  target.position.copy(source.position);
+  target.quaternion.copy(source.quaternion);
+  target.scale.copy(source.scale);
+  target.matrix.copy(source.matrix);
+  target.matrixWorld.copy(source.matrixWorld);
+  target.matrixAutoUpdate = source.matrixAutoUpdate;
+}
+
 export function createBodyActions({ get, set }: ComponentStoreApi): Pick<
   ComponentStore,
   | 'addBody'
@@ -145,15 +154,20 @@ export function createBodyActions({ get, set }: ComponentStoreApi): Pick<
       let mirroredMesh: THREE.Mesh | THREE.Group | null = null;
       if (body.mesh instanceof THREE.Mesh) {
         mirroredMesh = GeometryEngine.mirrorMesh(body.mesh, plane);
+        copyObjectTransform(mirroredMesh, body.mesh);
       } else if (body.mesh instanceof THREE.Group) {
         const group = new THREE.Group();
+        copyObjectTransform(group, body.mesh);
         body.mesh.traverse((child) => {
           if (child instanceof THREE.Mesh) {
-            group.add(GeometryEngine.mirrorMesh(child, plane));
+            const mirroredChild = GeometryEngine.mirrorMesh(child, plane);
+            copyObjectTransform(mirroredChild, child);
+            group.add(mirroredChild);
           }
         });
-        mirroredMesh = group;
+        mirroredMesh = group.children.length > 0 ? group : null;
       }
+      if (!mirroredMesh) return null;
 
       const id = crypto.randomUUID();
       const mirrored: Body = {

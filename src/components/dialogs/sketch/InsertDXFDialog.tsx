@@ -150,8 +150,8 @@ export function InsertDXFDialog({ onClose }: { onClose: () => void }) {
           const cx = parseFloat(ent.lookup[10] ?? '0');
           const cy = parseFloat(ent.lookup[20] ?? '0');
           const r  = parseFloat(ent.lookup[40] ?? '0');
-          const sa = parseFloat(ent.lookup[50] ?? '0');
-          const ea = parseFloat(ent.lookup[51] ?? '360');
+          const sa = (parseFloat(ent.lookup[50] ?? '0') * Math.PI) / 180;
+          const ea = (parseFloat(ent.lookup[51] ?? '360') * Math.PI) / 180;
           if (!r) continue;
           const entity: SketchEntity = {
             id: crypto.randomUUID(),

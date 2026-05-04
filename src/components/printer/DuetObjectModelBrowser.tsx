@@ -209,31 +209,40 @@ function filterTree(value: JsonValue, search: string, path = ''): JsonValue | un
 // ---------------------------------------------------------------------------
 // Path-to-G-code mapping for known writable paths
 // ---------------------------------------------------------------------------
+function finiteNumber(input: string): number | null {
+  const value = Number(input);
+  return Number.isFinite(value) ? value : null;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
 function gcodeForPath(path: string, newValue: string): string | null {
   // move.speedFactor -> M220 S<percent>
   if (path === 'move.speedFactor') {
-    const pct = Math.round(parseFloat(newValue) * 100);
+    const value = finiteNumber(newValue);
+    if (value == null) return null;
+    const pct = Math.round(clamp(value, 0, 3) * 100);
     return `M220 S${pct}`;
   }
   // move.extruders[n].factor -> M221 D<n> S<percent>
   const extFactorMatch = path.match(/^move\.extruders\.(\d+)\.factor$/);
   if (extFactorMatch) {
-    const pct = Math.round(parseFloat(newValue) * 100);
+    const value = finiteNumber(newValue);
+    if (value == null) return null;
+    const pct = Math.round(clamp(value, 0, 3) * 100);
     return `M221 D${extFactorMatch[1]} S${pct}`;
   }
   // fans[n].requestedValue -> M106 P<n> S<0-255>
   const fanMatch = path.match(/^fans\.(\d+)\.requestedValue$/);
   if (fanMatch) {
-    const v = Math.round(parseFloat(newValue) * 255);
+    const value = finiteNumber(newValue);
+    if (value == null) return null;
+    const v = Math.round(clamp(value, 0, 1) * 255);
     return `M106 P${fanMatch[1]} S${v}`;
   }
-  // heat.heaters[n].active -> M104 or G10 for tool heaters
-  const heaterActiveMatch = path.match(/^heat\.heaters\.(\d+)\.active$/);
-  if (heaterActiveMatch) {
-    return `M568 P${heaterActiveMatch[1]} S${newValue}`;
-  }
-  // For other leaf values, send as raw M409 K"<path>" V<value> (RRF 3.3+)
-  return `M409 K"${path}" V${newValue}`;
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -260,7 +269,11 @@ export default function DuetObjectModelBrowser() {
       return;
     }
     const gcode = gcodeForPath(path, newValue);
-    if (!gcode) return;
+    if (!gcode) {
+      setEditStatus(`Unsupported edit path: ${path}`);
+      setTimeout(() => setEditStatus(null), 3000);
+      return;
+    }
     try {
       setEditStatus(`Sending: ${gcode}`);
       await sendGCode(gcode);

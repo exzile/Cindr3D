@@ -11,8 +11,6 @@ import { useCADStore } from '../../../store/cadStore';
 import type { Feature } from '../../../types/cad';
 import '../common/ToolPanel.css';
 
-const COIL_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x8899aa, roughness: 0.5, metalness: 0.3 });
-
 type CoilType = 'pitch-height' | 'pitch-revolutions' | 'height-revolutions';
 type CoilSection = 'circle' | 'square' | 'triangle';
 type CoilDirection = 'cw' | 'ccw';
@@ -150,9 +148,6 @@ export function CoilDialog({ onClose }: { onClose: () => void }) {
   const canApply = effectiveRevolutions > 0.01 && effectiveHeight > 0.001 && coilDiameter > 0 && sectionDiameter > 0;
 
   const handleApply = () => {
-    const geo = buildCoilGeometry(coilDiameter, pitch, effectiveHeight, effectiveRevolutions, sectionDiameter, section, direction);
-    const mesh = geo ? new THREE.Mesh(geo, COIL_MATERIAL) : undefined;
-
     const params: Record<string, number | string | boolean> = {
       coilType, section, direction,
       coilDiameter, pitch, height, revolutions, sectionDiameter,
@@ -162,6 +157,10 @@ export function CoilDialog({ onClose }: { onClose: () => void }) {
       updateFeatureParams(editing.id, params);
       setStatusMessage(`Updated coil (⌀${coilDiameter}mm, ${effectiveRevolutions.toFixed(1)} revolutions)`);
     } else {
+      const geo = buildCoilGeometry(coilDiameter, pitch, effectiveHeight, effectiveRevolutions, sectionDiameter, section, direction);
+      const mesh = geo
+        ? new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x8899aa, roughness: 0.5, metalness: 0.3 }))
+        : undefined;
       const feature: Feature = {
         id: crypto.randomUUID(),
         name: `Coil (⌀${coilDiameter}mm × ${effectiveRevolutions.toFixed(1)}rev)`,
