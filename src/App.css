@@ -41,6 +41,14 @@
   font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
+.app--home {
+  display: block;
+  height: auto;
+  min-height: 100vh;
+  overflow: auto;
+  background: #f7f4ef;
+}
+
 .workspace {
   display: flex;
   flex: 1;
