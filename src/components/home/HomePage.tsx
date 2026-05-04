@@ -370,9 +370,10 @@ function ReleaseRoadmapTabs() {
   type ReleaseTab = 'shipped' | 'roadmap';
   const [tab, setTab] = useState<ReleaseTab>('shipped');
 
-  function handleKey(e: React.KeyboardEvent, current: ReleaseTab) {
-    if (e.key === 'ArrowRight') setTab(current === 'shipped' ? 'roadmap' : 'shipped');
-    if (e.key === 'ArrowLeft') setTab(current === 'roadmap' ? 'shipped' : 'roadmap');
+  function handleKey(e: React.KeyboardEvent) {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    e.preventDefault();
+    setTab((current) => current === 'shipped' ? 'roadmap' : 'shipped');
   }
   return (
     <section className="home-band home-band--release" id="v2" aria-labelledby="release-title">
@@ -383,10 +384,10 @@ function ReleaseRoadmapTabs() {
             <h2 id="release-title">{tab === 'shipped' ? 'What shipped in 2.0' : 'Upcoming milestones'}</h2>
           </div>
           <div className="rrtabs__nav" role="tablist">
-            <button role="tab" aria-selected={tab === 'shipped'} className={`rrtabs__tab${tab === 'shipped' ? ' rrtabs__tab--active' : ''}`} onClick={() => setTab('shipped')} onKeyDown={(e) => handleKey(e, 'shipped')}>
+            <button role="tab" aria-selected={tab === 'shipped'} className={`rrtabs__tab${tab === 'shipped' ? ' rrtabs__tab--active' : ''}`} onClick={() => setTab('shipped')} onKeyDown={handleKey}>
               ✓ Shipped in 2.0
             </button>
-            <button role="tab" aria-selected={tab === 'roadmap'} className={`rrtabs__tab${tab === 'roadmap' ? ' rrtabs__tab--active' : ''}`} onClick={() => setTab('roadmap')} onKeyDown={(e) => handleKey(e, 'roadmap')}>
+            <button role="tab" aria-selected={tab === 'roadmap'} className={`rrtabs__tab${tab === 'roadmap' ? ' rrtabs__tab--active' : ''}`} onClick={() => setTab('roadmap')} onKeyDown={handleKey}>
               ◎ Roadmap
             </button>
           </div>
@@ -439,9 +440,14 @@ function WorkspaceTabs() {
   const [active, setActive] = useState(0);
   const wf = workflows[active];
 
-  function handleKey(e: React.KeyboardEvent, i: number) {
-    if (e.key === 'ArrowRight') setActive((i + 1) % workflows.length);
-    if (e.key === 'ArrowLeft') setActive((i - 1 + workflows.length) % workflows.length);
+  function handleKey(e: React.KeyboardEvent) {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    e.preventDefault();
+    setActive((current) =>
+      e.key === 'ArrowRight'
+        ? (current + 1) % workflows.length
+        : (current - 1 + workflows.length) % workflows.length,
+    );
   }
 
   return (
@@ -455,7 +461,7 @@ function WorkspaceTabs() {
             className={`wstabs__tab${i === active ? ' wstabs__tab--active' : ''}`}
             style={i === active ? { '--ws-color': w.color } as React.CSSProperties : undefined}
             onClick={() => setActive(i)}
-            onKeyDown={(e) => handleKey(e, i)}
+            onKeyDown={handleKey}
           >
             {w.title}
           </button>

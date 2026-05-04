@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import type { DragEvent } from 'react';
-import GridLayout, { WidthProvider, type Layout, type LayoutItem as GridLayoutItem } from 'react-grid-layout/legacy';
+import ReactGridLayout, { noCompactor, useContainerWidth, type Layout, type LayoutItem as GridLayoutItem } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
 import { Check, Edit3, Eye, EyeOff, FileCode, FolderOpen, GripVertical, Minus, PencilRuler, PlugZap, Plus, RotateCcw, Settings, Wifi, X } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import {
@@ -19,7 +20,6 @@ import CameraDashboardPanel from './dashboard/CameraDashboardPanel';
 import ViewSettingsPanel from './dashboard/ViewSettingsPanel';
 import { PANEL_DEFS } from './duetDashboard/config';
 
-const DashboardGrid = WidthProvider(GridLayout);
 const GRID_MARGIN: readonly [number, number] = [10, 10];
 const GRID_PADDING: readonly [number, number] = [10, 8];
 
@@ -73,6 +73,7 @@ export default function DuetDashboard() {
   const [menuDragId, setMenuDragId] = useState<PanelId | null>(null);
   const [renamingDashboardId, setRenamingDashboardId] = useState<string | null>(null);
   const [dashboardNameDraft, setDashboardNameDraft] = useState('');
+  const { width: gridWidth, containerRef: gridContainerRef, mounted: gridMounted } = useContainerWidth({ initialWidth: 1280 });
   const handleCloseViewSettings = useCallback(() => setShowViewSettings(false), []);
 
   const activePrinter = printers.find((printer) => printer.id === activePrinterId);
@@ -150,10 +151,13 @@ export default function DuetDashboard() {
   const handlePanelMenuDrop = useCallback((event: DragEvent, nextHidden: boolean) => {
     event.preventDefault();
     if (!menuDragId) return;
-    if (!nextHidden) handleAddPanel(menuDragId);
-    else setHidden(menuDragId, true);
+    if (!nextHidden) {
+      if (hidden[menuDragId]) handleAddPanel(menuDragId);
+    } else if (!hidden[menuDragId]) {
+      setHidden(menuDragId, true);
+    }
     setMenuDragId(null);
-  }, [handleAddPanel, menuDragId, setHidden]);
+  }, [handleAddPanel, hidden, menuDragId, setHidden]);
 
   const beginRenameDashboard = useCallback((id: string, name: string) => {
     setRenamingDashboardId(id);
@@ -385,39 +389,54 @@ export default function DuetDashboard() {
         />
       )}
 
-      <DashboardGrid
-        className={`duet-dash-card-list${editMode ? ' is-edit-grid' : ''}`}
-        layout={gridLayout}
-        cols={GRID_COLS}
-        rowHeight={ROW_HEIGHT}
-        margin={GRID_MARGIN}
-        containerPadding={GRID_PADDING}
-        compactType={null}
-        preventCollision
-        isDraggable={editMode}
-        isResizable={editMode}
-        draggableHandle=".dc-header"
-        draggableCancel=".dc-body button,.dc-body input,.dc-body select,.dc-body textarea,.dc-body a"
-        resizeHandles={['se', 'e', 's']}
-        isDroppable={editMode && menuDragId !== null}
-        droppingItem={menuDragId ? { ...(layouts[menuDragId] ?? defaultPanelLayout(menuDragId)), i: '__dropping-elem__' } : undefined}
-        onDropDragOver={handleGridDropDragOver}
-        onDrop={handleGridDrop}
-        onDragStop={(layout) => commitLayout(layout)}
-        onResizeStop={(layout) => commitLayout(layout)}
-      >
-        {visiblePanels.map((panel) => (
-          <div key={panel.id}>
-            <DashboardCard
-              title={panel.title}
-              icon={panel.icon}
-              editMode={editMode}
-            >
-              {panel.component}
-            </DashboardCard>
-          </div>
-        ))}
-      </DashboardGrid>
+      <div ref={gridContainerRef}>
+        {gridMounted && (
+          <ReactGridLayout
+            className={`duet-dash-card-list${editMode ? ' is-edit-grid' : ''}`}
+            layout={gridLayout}
+            width={gridWidth}
+            gridConfig={{
+              cols: GRID_COLS,
+              rowHeight: ROW_HEIGHT,
+              margin: GRID_MARGIN,
+              containerPadding: GRID_PADDING,
+            }}
+            compactor={noCompactor}
+            dragConfig={{
+              enabled: editMode,
+              handle: '.dc-header',
+              cancel: '.dc-body button,.dc-body input,.dc-body select,.dc-body textarea,.dc-body a',
+            }}
+            resizeConfig={{
+              enabled: editMode,
+              handles: ['se', 'e', 's'],
+            }}
+            dropConfig={{
+              enabled: editMode && menuDragId !== null,
+              defaultItem: menuDragId
+                ? { w: layouts[menuDragId]?.w ?? MIN_PANEL_WIDTH, h: layouts[menuDragId]?.h ?? 1 }
+                : { w: MIN_PANEL_WIDTH, h: 1 },
+            }}
+            droppingItem={menuDragId ? { ...(layouts[menuDragId] ?? defaultPanelLayout(menuDragId)), i: '__dropping-elem__' } : undefined}
+            onDropDragOver={handleGridDropDragOver}
+            onDrop={handleGridDrop}
+            onDragStop={(layout) => commitLayout(layout)}
+            onResizeStop={(layout) => commitLayout(layout)}
+          >
+            {visiblePanels.map((panel) => (
+              <div key={panel.id}>
+                <DashboardCard
+                  title={panel.title}
+                  icon={panel.icon}
+                  editMode={editMode}
+                >
+                  {panel.component}
+                </DashboardCard>
+              </div>
+            ))}
+          </ReactGridLayout>
+        )}
+      </div>
     </div>
   );
 }
