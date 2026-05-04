@@ -18,6 +18,7 @@ import {
   Star,
   FlaskConical,
   Camera,
+  Box,
 } from 'lucide-react';
 import type {
   ColSpan,
@@ -48,6 +49,7 @@ import RestorePointsPanel from '../dashboard/RestorePointsPanel';
 import FilamentSensorPanel from '../dashboard/FilamentSensorPanel';
 import CameraDashboardPanel from '../dashboard/CameraDashboardPanel';
 import ObjectCancelPanel from '../dashboard/ObjectCancelPanel';
+import MeshPreviewPanel from '../dashboard/MeshPreviewPanel';
 
 export interface PanelDef {
   id: PanelId;
@@ -76,6 +78,7 @@ export const PANEL_DEFS: PanelDef[] = [
   { id: 'system-info', title: 'System Info', icon: <Cpu size={12} />, component: <SystemInfoPanel /> },
   { id: 'filament-sensors', title: 'Filament Sensors', icon: <FlaskConical size={12} />, component: <FilamentSensorPanel /> },
   { id: 'object-cancel', title: 'Object Cancellation', icon: <Layers size={12} />, component: <ObjectCancelPanel /> },
+  { id: 'mesh-preview', title: 'Print Preview', icon: <Box size={12} />, component: <MeshPreviewPanel /> },
 ];
 
 export const PANEL_MAP = Object.fromEntries(

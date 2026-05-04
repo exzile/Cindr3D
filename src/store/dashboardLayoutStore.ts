@@ -24,6 +24,7 @@ export const PANEL_IDS = [
   'system-info',
   'filament-sensors',
   'object-cancel',
+  'mesh-preview',
 ] as const;
 
 export function isSpacerId(id: string): id is SpacerId { return id.startsWith('__spacer_'); }
@@ -51,8 +52,9 @@ const DEFAULT_ORDER: PanelId[] = [
   'atx-power', 'system-info',
   // ── Row 10: filament sensors (12) ─────────────────────────────────────────
   'filament-sensors',
-  // ── Row 11: object cancellation (6) ───────────────────────────────────────
+  // ── Row 11: object cancellation (6) + mesh preview (6) ────────────────────
   'object-cancel',
+  'mesh-preview',
 ];
 
 export const DEFAULT_COLSPANS: Record<PanelId, ColSpan> = {
@@ -79,6 +81,7 @@ export const DEFAULT_COLSPANS: Record<PanelId, ColSpan> = {
   'atx-power':         4,
   'filament-sensors': 12,
   'object-cancel':     6,
+  'mesh-preview':      6,
 };
 
 // Single source of truth for the grid row unit (matches CSS grid-auto-rows)
@@ -104,6 +107,7 @@ export const DEFAULT_ROWSPANS: Record<PanelId, number> = {
   'system-info':       3,
   'filament-sensors':  3,   // one row per monitor — grows via resize if needed
   'object-cancel':     4,   // compact list — grows as objects are added
+  'mesh-preview':      5,   // 3D viewport — needs height to be useful
 };
 
 interface DashboardLayoutState {
