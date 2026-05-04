@@ -392,6 +392,8 @@ const HELP_TOPICS: HelpTopic[] = [
         items: [
           'The offline state points you to Connection Settings, Files, Config, and Camera so setup is discoverable even before connecting.',
           'When connected, Dashboard shows heaters, axes, current job, uptime, board status, quick controls, and live model data.',
+          'The dashboard is a drag-and-resize card grid. Drag panels by their title bar (in edit mode), resize from corner handles, and hide cards you do not use. Layout persists per browser.',
+          'Cards include: Camera, Tools, Temperature, Fans, Axis Movement, Extruder, Speed & Flow, Pressure Advance, Input Shaper, Tool Offsets, Workplace Coordinates, Bed Compensation, Restore Points, Macros, Custom Buttons, ATX Power, System Info, Filament Sensors, Object Cancellation (compact list of labelled objects with per-object cancel), and Print Preview (3D viewport with bed, object silhouettes, and toolpath wireframe up to the live print layer; right-click an object for a context menu with stats and per-object cancel).',
           'The context strip names the active printer, host, board mode, and current online/offline state so you can tell which machine you are controlling.',
           'The bottom footer repeats machine status, current tool, uptime, and progress for quick scanning while switching tabs.',
           'Open Camera uses the saved per-printer camera profile and expands into the full camera workspace.',
@@ -426,19 +428,25 @@ const HELP_TOPICS: HelpTopic[] = [
       },
       {
         heading: 'Per-printer tool tabs',
-        intro: 'After a printer is selected/configured, the ribbon exposes deeper printer tabs:',
+        intro: 'After a printer is selected/configured, the ribbon exposes deeper printer tabs. The top row covers monitoring and the print itself; the bottom row covers tuning, automation, and per-firmware utilities (collectively the "cross-firmware" tabs - see the Mid-print object cancellation and Print tuning & utilities topics for details).',
         items: [
-          'Dashboard - heaters, axes, current job, camera summary, and quick controls.',
+          'Dashboard - heaters, axes, current job, camera summary, quick controls, plus drag-and-resizable panels including a 3D Print Preview card and an Object Cancellation card.',
           'Camera - live feed, snapshots, recordings, timelapses, overlays, calibration, PTZ, and clip review.',
           'Status and Console - board status plus a G-code console with command history.',
           'Job - active file, layer, progress, time remaining, pause/resume/cancel, and print details.',
           'History and Analytics - previous prints, event history, and aggregate printer performance.',
           'Files - browse, upload, download, delete, and start files on the printer storage.',
-          'Filaments - board-side filament library and printer-specific app filament profiles.',
+          'Filaments - board-side filament library and printer-specific app filament profiles (Duet only).',
           'Macros - saved G-code macros that can be run from the app.',
-          'Height Map - bed mesh probe data and visualisation.',
+          'Bed Map - bed mesh probe data and visualisation; routes to RRF heightmap.csv, Klipper bed_mesh, or Marlin G29 internally.',
           'Model and Config - object-model browser and config.g editor for Duet/RRF setups.',
           'Network and Plugins - board network status and Duet Software Framework plugin management where available.',
+          'Exclude Object - mid-print object cancellation on Klipper (EXCLUDE_OBJECT), Duet RRF 3.5+ (M486), or Marlin 2.0.9+ (M486 with CANCEL_OBJECTS).',
+          'Input Shaper and Pressure Advance - guided resonance and pressure-advance tuning with calibration-tower workflows; emits the right G-code per firmware (M593 / M572 for Duet, SET_INPUT_SHAPER / SET_PRESSURE_ADVANCE for Klipper, M593 / M900 for Marlin).',
+          'Power - smart-plug control for Tasmota, Shelly Gen1/Gen2, or generic HTTP devices (printer mains, lights, enclosure fans). Klipper printers also see Moonraker-managed power devices.',
+          'Spools - local filament-spool tracker (brand, material, color, weight remaining, active spool); cross-firmware via localStorage. Klipper installs with Spoolman get a dedicated bridge.',
+          'Timelapse - in-browser timelapse capture via webcam rendered to WebM client-side; Klipper installs with the moonraker-timelapse plugin get the server-rendered version.',
+          'Updates - GitHub release checker for the active firmware (RRF, Klipper, Marlin, Smoothie, Repetier) and for DesignCAD itself. Klipper also shows component-level Moonraker update status.',
           'Settings - connection, presets, camera, behaviour, safety, filaments, firmware, and backup.',
         ],
       },
@@ -622,6 +630,129 @@ const HELP_TOPICS: HelpTopic[] = [
           'Browser permissions are origin-scoped — a port granted at http://localhost:5173 is not visible at a different origin.',
           'Closing the browser tab closes the serial connection. Reopen and click Connect to restore.',
           'Some 8-bit boards (Mega 2560 with CH340) reset when the serial port opens. The app waits ~1.5 s before sending — this is normal.',
+        ],
+      },
+    ],
+  },
+
+  {
+    id: 'object-cancel',
+    title: 'Mid-print object cancellation',
+    summary: 'Cancel individual objects mid-print without stopping the whole job. Works on Klipper, Duet RRF 3.5+, and Marlin 2.0.9+ when the G-code carries object labels.',
+    group: '3D Printer',
+    sections: [
+      {
+        heading: 'What it does',
+        intro: 'Most prints involve more than one object on the plate. If one part lifts, knocks loose, or fails for any reason, mid-print cancellation lets you skip the rest of that single object while the others keep going. The firmware handles the actual extruder lift and skip logic; DesignCAD provides the UI on top.',
+        items: [
+          'Klipper - sends EXCLUDE_OBJECT NAME=<name> via Moonraker. Requires the [exclude_object] section in printer.cfg.',
+          'Duet (RepRapFirmware 3.5+) - sends M486 P<index>. Requires labelled objects in the G-code.',
+          'Marlin (2.0.9+) - sends M486 P<index>. Requires the firmware to be built with CANCEL_OBJECTS, plus labelled G-code.',
+          'Smoothie / grbl / Repetier - no firmware support; the Exclude Object tab shows a workaround page that points you back to the Prepare workspace to delete bodies before slicing.',
+        ],
+      },
+      {
+        heading: 'Three places to cancel',
+        intro: 'There are three surfaces in DesignCAD that can cancel an object mid-print, all backed by the same firmware commands.',
+        items: [
+          'Exclude Object tab - dedicated full-page UI. Lists every labelled object, shows the currently-printing one, dims cancelled ones, and uses click-to-arm + click-to-confirm to prevent accidents.',
+          'Object Cancellation dashboard card - compact list version that lives next to your other dashboard panels (drag/resize like any other card).',
+          'Print Preview dashboard card - 3D viewport showing your build plate, object silhouettes, and toolpath wireframe up to the layer currently being printed. Right-click an object to open a context menu with dimensions, position, currently-printing/cancelled status, and a per-object cancel button.',
+        ],
+      },
+      {
+        heading: 'Slicer support',
+        intro: 'Mid-print cancellation only works when the G-code carries object labels - the firmware needs a way to know which lines belong to which object.',
+        items: [
+          'DesignCAD - the built-in slicer now emits M486 labels automatically. Every plate object becomes a labelled group, so jobs you slice in the Prepare workspace work out of the box.',
+          'PrusaSlicer / SuperSlicer / OrcaSlicer - enable Print Settings -> Output -> Label objects.',
+          'Cura 5.x - install the Label Objects post-processing script: Extensions -> Post-Processing -> Add Script -> Label Objects.',
+          'Files without labels show "No labelled objects in this print" in the Exclude Object tab. Re-slice with labels enabled to populate the list.',
+        ],
+      },
+      {
+        heading: 'Firmware version requirements',
+        intro: 'The Exclude Object tab reads your firmware version (from the live object model on Duet, from the M115 banner on USB-attached printers) and surfaces a clear status badge.',
+        items: [
+          'Green badge - your firmware supports M486/EXCLUDE_OBJECT and the cancel buttons are live.',
+          'Red badge - your firmware is too old. Cancel buttons are disabled and the page tells you the minimum version (RRF 3.5, Marlin 2.0.9) and links to the Updates tab to check for newer firmware.',
+          'Amber badge - the firmware version was reported but couldn\'t be parsed. The cancel commands are still sent; your printer will reject them cleanly if unsupported.',
+        ],
+      },
+      {
+        heading: 'Manual M486 (SD-card prints)',
+        items: [
+          'The Marlin Exclude Object tab includes a "Send M486 manually" panel for prints DesignCAD didn\'t slice (e.g. files printed from SD card). Type the object ID from your slicer\'s preview, click Send, and the firmware cancels that object.',
+          'For Klipper, the same fallback is the EXCLUDE_OBJECT NAME=<name> command in the Console tab.',
+          'For Duet, M486 P<index> from the Console works if the Exclude Object tab can\'t see the labels.',
+        ],
+      },
+    ],
+  },
+
+  {
+    id: 'tuning-utilities',
+    title: 'Print tuning & utilities',
+    summary: 'Cross-firmware tabs for resonance compensation, pressure advance, smart-plug power, spool tracking, timelapses, and firmware updates.',
+    group: '3D Printer',
+    sections: [
+      {
+        heading: 'Input Shaper',
+        intro: 'Resonance compensation reduces ringing artifacts caused by frame vibration during fast moves. The Input Shaper tab gives you a guided UI per firmware.',
+        items: [
+          'Pick a shaper type (MZV is the recommended starting point on most printers; EI / 2-Hump EI / 3-Hump EI work better for high-vibration machines).',
+          'Enter measured X and Y resonance frequencies (typically 20-80 Hz for Marlin, 20-60 Hz for Duet, varies for Klipper).',
+          'Set damping ratio (default 0.1 is fine for most machines).',
+          'Click Apply to send the right G-code: SET_INPUT_SHAPER on Klipper (with optional ADXL345 TEST_RESONANCES auto-calibration), M593 P"<TYPE>" F<freq> S<damping> on Duet 3.3+, or M593 X F<freq> D<damping> + M593 Y F<freq> D<damping> on Marlin 2.x.',
+          'Klipper users with an accelerometer can hit "Test resonances" to run TEST_RESONANCES AXIS=X / AXIS=Y; the tab lists the resulting CSV files for the input_shaper script to consume.',
+        ],
+      },
+      {
+        heading: 'Pressure Advance',
+        intro: 'Pressure advance (called "Linear Advance" in Marlin) compensates for filament compression during printing, sharpening corners and reducing seams. The Pressure Advance tab walks you through the calibration tower workflow.',
+        items: [
+          'Step 1 - Reset PA to 0 with the firmware-appropriate command and print a calibration tower (TUNING_TOWER on Klipper, a tower G-code on Marlin/Duet).',
+          'Step 2 - Inspect the tower and note the height where corners look cleanest.',
+          'Step 3 - Enter that height; the tab calculates the PA value and sends the right command: SET_PRESSURE_ADVANCE ADVANCE=<x> SMOOTH_TIME=<t> on Klipper, M572 D0 S<x> on Duet, M900 K<x> on Marlin.',
+          'Klipper SMOOTH_TIME (default 0.04 s) damps interactions with input shaper. Duet/Marlin don\'t expose smooth time; the tab hides that field for those firmwares.',
+        ],
+      },
+      {
+        heading: 'Power',
+        intro: 'Control AC-side power (printer mains, enclosure fans, lights, dehumidifiers) without leaving DesignCAD. Two backends:',
+        items: [
+          'Klipper printers - the tab queries Moonraker /machine/device_power/devices and shows on/off/toggle for each Moonraker-managed device.',
+          'All other firmwares - the HTTP smart-plug backend supports Tasmota, Shelly Gen1, Shelly Gen2, and generic-URL plugs. Add devices by name + IP; states persist in localStorage.',
+          'Toggle commands hit the plug directly, not the printer - so you can power on the printer from this tab even when it\'s offline.',
+          'Klipper devices marked "lock during print" are disabled in the UI while a print is active to prevent accidents.',
+        ],
+      },
+      {
+        heading: 'Spools',
+        intro: 'Track filament inventory (brand, material, color, weight remaining, active spool) without needing a Spoolman server.',
+        items: [
+          'Cross-firmware - storage is local (Zustand-backed localStorage). Add a spool, mark it active, and the active spool is highlighted across the app.',
+          'Klipper - if your install runs Spoolman, the dedicated Klipper Spoolman bridge polls /server/spoolman/spool_id and lets you set the active spool ID through Moonraker. The tab also links to the Spoolman web UI on port 7912.',
+          'Each spool tracks initial weight, used weight, percent remaining, and free-form notes. Use it to plan multi-spool jobs or estimate when to reorder.',
+        ],
+      },
+      {
+        heading: 'Timelapse',
+        intro: 'Two implementations depending on your install.',
+        items: [
+          'Klipper with the moonraker-timelapse plugin - the tab uses Moonraker /machine/timelapse APIs to start a server-rendered timelapse, list past renders in the timelapse folder, and delete old files.',
+          'All other firmwares (and Klipper without the plugin) - the in-browser timelapse uses your webcam (getUserMedia). Capture frames manually or on layer change, render the result to WebM via MediaRecorder, then download the video.',
+          'No printer-side rendering needed for the browser version; everything runs in the tab.',
+        ],
+      },
+      {
+        heading: 'Updates',
+        intro: 'Firmware update awareness without leaving the app.',
+        items: [
+          'GitHub release checker - polls the upstream repo for your active firmware (Duet3D/RepRapFirmware, Klipper3d/klipper, MarlinFirmware/Marlin, Smoothieware, Repetier) plus DesignCAD itself.',
+          'Each banner shows the latest version, release date, pre-release flag if applicable, and a "View Release" link to the GitHub release notes.',
+          'Klipper - the tab also shows Moonraker\'s component-level update status (klipper, moonraker, mainsail/fluidd, system packages) and lets you trigger per-component or full updates from the UI.',
+          'DesignCAD does not auto-update firmware - this tab only tells you when something new is available. Always read release notes before upgrading.',
         ],
       },
     ],
