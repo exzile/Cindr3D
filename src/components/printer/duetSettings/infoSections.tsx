@@ -384,7 +384,7 @@ export function AboutSection({ board }: { board?: DuetBoard }) {
     <>
       <div className="duet-settings__page-title">About</div>
       <div className="duet-settings__section">
-        <div className="duet-settings__section-title">Dzign3D - Printer Panel</div>
+        <div className="duet-settings__section-title">Cindr3D - Printer Panel</div>
         <p className="duet-settings__about-text">
           Supports Duet3D (RepRapFirmware), Klipper (via Moonraker), Marlin (via OctoPrint or serial), Smoothieware, grbl, Repetier, and other G-code-based 3D printer controllers. Duet boards support both standalone and SBC (DuetSoftwareFramework) modes.
         </p>

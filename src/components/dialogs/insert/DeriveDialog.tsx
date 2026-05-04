@@ -1,6 +1,6 @@
 /**
  * DeriveDialog — D195
- * Imports bodies/features/parameters from another DesignCAD JSON file
+ * Imports bodies/features/parameters from another Cindr3D JSON file
  * into the current design with a reference marker.
  */
 
@@ -52,7 +52,7 @@ export function DeriveDialog({ onClose }: { onClose: () => void }) {
         setItems(parsed);
         setSelected(new Set(parsed.map((i) => i.id)));
       } catch {
-        setError('Failed to parse file. Must be a DesignCAD .json export.');
+        setError('Failed to parse file. Must be a Cindr3D .json export.');
         setItems([]);
       }
     };

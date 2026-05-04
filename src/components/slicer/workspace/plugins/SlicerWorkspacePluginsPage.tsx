@@ -74,7 +74,7 @@ const PLUGIN_DATA: PluginEntry[] = [
     name: '3MF Exporter',
     description: 'Export to 3MF format with full metadata support',
     version: '1.0.5',
-    author: 'DesignCAD Team',
+    author: 'Cindr3D Team',
     category: 'Exporters',
     installedInitially: true,
     icon: <FileOutput size={22} />,

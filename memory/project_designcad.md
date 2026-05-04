@@ -1,10 +1,10 @@
 ---
-name: DesignCAD Project Overview
+name: Cindr3D Project Overview
 description: Non-obvious architecture invariants — shim+subdir pattern, store slices, material singletons, plane-aware math, persistence caches
 type: project
 originSessionId: 768c4a3e-fc4c-4a2b-ba31-60db44f6dc31
 ---
-DesignCAD (Dzign3D) — Fusion 360-parity CAD in the browser. Work tracked in `TaskLists.txt`. Tests via `npm run test:run`.
+Cindr3D (Cindr3D) — Fusion 360-parity CAD in the browser. Work tracked in `TaskLists.txt`. Tests via `npm run test:run`.
 
 ## Shim+subdir pattern (post-2026-04 refactor)
 

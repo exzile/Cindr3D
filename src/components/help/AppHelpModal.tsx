@@ -29,7 +29,7 @@ const HELP_TOPICS: HelpTopic[] = [
     sections: [
       {
         heading: 'Workspaces',
-        intro: 'DesignCAD splits work into three workspaces. Use the workspace selector at the top-left to switch.',
+        intro: 'Cindr3D splits work into three workspaces. Use the workspace selector at the top-left to switch.',
         items: [
           'Design — the CAD modeller. Sketch, build solid features, assemble components, and inspect geometry.',
           'Prepare — the slicer. Lay parts out on a build plate, choose printer + material profiles, slice, preview, and export G-code.',
@@ -406,7 +406,7 @@ const HELP_TOPICS: HelpTopic[] = [
         items: [
           'Printer Preset patches common machine defaults such as board type, baud rate, build volume, and kinematics. Custom leaves existing settings alone.',
           'Connection Type switches between Network and USB. Network uses the firmware HTTP API; USB uses Web Serial from the browser.',
-          'Board Type changes which capabilities DesignCAD expects: Duet/RRF, Klipper, Marlin, Smoothieware, grbl, Repetier, or Other.',
+          'Board Type changes which capabilities Cindr3D expects: Duet/RRF, Klipper, Marlin, Smoothieware, grbl, Repetier, or Other.',
           'Hostname / IP accepts a plain IP or .local name. Leave http:// off unless the field hint says otherwise.',
           'Test Connection probes the board without opening the persistent session. Connect starts the actual live session.',
           'Auto-reconnect can retry dropped network or USB sessions using the configured interval and retry limit.',
@@ -432,6 +432,10 @@ const HELP_TOPICS: HelpTopic[] = [
         items: [
           'Dashboard - heaters, axes, current job, camera summary, quick controls, plus drag-and-resizable panels including a 3D Print Preview card and an Object Cancellation card.',
           'Camera - live feed, snapshots, recordings, timelapses, overlays, calibration, PTZ, and clip review.',
+          'Queue - persistent cross-printer job queue with drag-reorder, routing checks, copy splitting, pause/cancel, and move-to-printer actions.',
+          'All Cameras - wall view of every enabled camera stream across saved printers, with status overlays and click-through to Monitor.',
+          'A/B Compare - run the same G-code on two printers, compare timing samples, rate print quality, and queue both jobs together.',
+          'Layer Gallery - per-layer camera snapshots grouped by printer, job, layer, and camera stream, with ZIP export for print review.',
           'Status and Console - board status plus a G-code console with command history.',
           'Job - active file, layer, progress, time remaining, pause/resume/cancel, and print details.',
           'History and Analytics - previous prints, event history, and aggregate printer performance.',
@@ -446,7 +450,7 @@ const HELP_TOPICS: HelpTopic[] = [
           'Power - smart-plug control for Tasmota, Shelly Gen1/Gen2, or generic HTTP devices (printer mains, lights, enclosure fans). Klipper printers also see Moonraker-managed power devices.',
           'Spools - local filament-spool tracker (brand, material, color, weight remaining, active spool); cross-firmware via localStorage. Klipper installs with Spoolman get a dedicated bridge.',
           'Timelapse - in-browser timelapse capture via webcam rendered to WebM client-side; Klipper installs with the moonraker-timelapse plugin get the server-rendered version.',
-          'Updates - GitHub release checker for the active firmware (RRF, Klipper, Marlin, Smoothie, Repetier) and for DesignCAD itself. Klipper also shows component-level Moonraker update status.',
+          'Updates - GitHub release checker for the active firmware (RRF, Klipper, Marlin, Smoothie, Repetier) and for Cindr3D itself. Klipper also shows component-level Moonraker update status.',
           'Settings - connection, presets, camera, behaviour, safety, filaments, firmware, and backup.',
         ],
       },
@@ -471,6 +475,64 @@ const HELP_TOPICS: HelpTopic[] = [
           'Send a sliced file: export or upload G-code, open Files, select the file, then start the print from the printer panel.',
           'Tune materials: create per-printer Filament profiles, star the default, and use that default when changing filament or seeding slicer temperatures.',
           'Back up before experimenting: Settings, Backup, export a settings snapshot, then make firmware, machine, or safety changes.',
+        ],
+      },
+    ],
+  },
+
+  {
+    id: 'print-farm',
+    title: 'Print farm intelligence',
+    summary: 'Queue work across printers, compare machines, monitor every camera, and track filament across the fleet.',
+    group: '3D Printer',
+    sections: [
+      {
+        heading: 'Smart print queue',
+        intro: 'The Queue tab coordinates jobs across all saved printers. It is persistent, so queued jobs survive a browser restart and reconnect to live printer state when the app opens again.',
+        items: [
+          'Add G-code from the file manager or queue UI, then drag to reorder jobs.',
+          'Routing checks use build volume, loaded material, nozzle size, profile compatibility, and printer availability before assigning work.',
+          'Use copy splitting when you need multiple copies of the same file distributed across available printers.',
+          'Move a queued job between printers, pause queue execution, cancel a pending job, or let the next compatible printer pull work automatically.',
+          'The fleet dashboard shows a compact queue preview so operators can see what is coming without opening the full Queue tab.',
+        ],
+      },
+      {
+        heading: 'All cameras grid',
+        intro: 'Use All Cameras when you want a wall view instead of opening each printer monitor one at a time.',
+        items: [
+          'Every enabled camera stream appears as its own tile, even when a printer has multiple camera angles.',
+          'Tiles show printer name, camera label, role, connection state, current layer, ETA, and alerts when available.',
+          'Compact mode fits more printers on one screen; expanded mode gives larger live previews for inspection.',
+          'Click a tile to jump directly to that printer monitor and activate the selected camera stream.',
+        ],
+      },
+      {
+        heading: 'Cross-printer A/B comparison',
+        intro: 'A/B Compare helps answer which machine is faster or more reliable for the same file.',
+        items: [
+          'Pick Printer A and Printer B, choose the same G-code, and queue both jobs together.',
+          'The comparison view records timing samples from the active connected printers and shows layer/total-time deltas.',
+          'After the run, rate each result and add notes so speed and quality are reviewed together.',
+          'Use the report to decide which printer should handle future jobs with similar material or geometry.',
+        ],
+      },
+      {
+        heading: 'Fleet filament inventory',
+        items: [
+          'Spools roll up by material across the fleet, so PLA, PETG, ABS, TPU, and other stock can be scanned at a glance.',
+          'Set low-stock thresholds per material and assign one loaded spool per printer.',
+          'Queue routing can prefer printers that already have the required material loaded.',
+          'When print metadata includes filament length, completed prints deduct estimated grams from the loaded spool.',
+        ],
+      },
+      {
+        heading: 'Layer gallery',
+        items: [
+          'Layer Gallery captures snapshots on layer changes from every enabled camera stream for the active printer.',
+          'Frames are stored locally in IndexedDB by printer, job, layer, and camera, with a configurable retention cap.',
+          'Use the gallery to scroll back to the first layer where a defect appears.',
+          'Export a ZIP when you want to archive evidence or feed the frames into later vision diagnostics.',
         ],
       },
     ],
@@ -577,7 +639,7 @@ const HELP_TOPICS: HelpTopic[] = [
   {
     id: 'usb',
     title: 'USB connection (Web Serial)',
-    summary: 'Plug the printer into the computer running DesignCAD. No network required.',
+    summary: 'Plug the printer into the computer running Cindr3D. No network required.',
     group: '3D Printer',
     sections: [
       {
@@ -643,7 +705,7 @@ const HELP_TOPICS: HelpTopic[] = [
     sections: [
       {
         heading: 'What it does',
-        intro: 'Most prints involve more than one object on the plate. If one part lifts, knocks loose, or fails for any reason, mid-print cancellation lets you skip the rest of that single object while the others keep going. The firmware handles the actual extruder lift and skip logic; DesignCAD provides the UI on top.',
+        intro: 'Most prints involve more than one object on the plate. If one part lifts, knocks loose, or fails for any reason, mid-print cancellation lets you skip the rest of that single object while the others keep going. The firmware handles the actual extruder lift and skip logic; Cindr3D provides the UI on top.',
         items: [
           'Klipper - sends EXCLUDE_OBJECT NAME=<name> via Moonraker. Requires the [exclude_object] section in printer.cfg.',
           'Duet (RepRapFirmware 3.5+) - sends M486 P<index>. Requires labelled objects in the G-code.',
@@ -653,7 +715,7 @@ const HELP_TOPICS: HelpTopic[] = [
       },
       {
         heading: 'Three places to cancel',
-        intro: 'There are three surfaces in DesignCAD that can cancel an object mid-print, all backed by the same firmware commands.',
+        intro: 'There are three surfaces in Cindr3D that can cancel an object mid-print, all backed by the same firmware commands.',
         items: [
           'Exclude Object tab - dedicated full-page UI. Lists every labelled object, shows the currently-printing one, dims cancelled ones, and uses click-to-arm + click-to-confirm to prevent accidents.',
           'Object Cancellation dashboard card - compact list version that lives next to your other dashboard panels (drag/resize like any other card).',
@@ -664,7 +726,7 @@ const HELP_TOPICS: HelpTopic[] = [
         heading: 'Slicer support',
         intro: 'Mid-print cancellation only works when the G-code carries object labels - the firmware needs a way to know which lines belong to which object.',
         items: [
-          'DesignCAD - the built-in slicer now emits M486 labels automatically. Every plate object becomes a labelled group, so jobs you slice in the Prepare workspace work out of the box.',
+          'Cindr3D - the built-in slicer now emits M486 labels automatically. Every plate object becomes a labelled group, so jobs you slice in the Prepare workspace work out of the box.',
           'PrusaSlicer / SuperSlicer / OrcaSlicer - enable Print Settings -> Output -> Label objects.',
           'Cura 5.x - install the Label Objects post-processing script: Extensions -> Post-Processing -> Add Script -> Label Objects.',
           'Files without labels show "No labelled objects in this print" in the Exclude Object tab. Re-slice with labels enabled to populate the list.',
@@ -682,7 +744,7 @@ const HELP_TOPICS: HelpTopic[] = [
       {
         heading: 'Manual M486 (SD-card prints)',
         items: [
-          'The Marlin Exclude Object tab includes a "Send M486 manually" panel for prints DesignCAD didn\'t slice (e.g. files printed from SD card). Type the object ID from your slicer\'s preview, click Send, and the firmware cancels that object.',
+          'The Marlin Exclude Object tab includes a "Send M486 manually" panel for prints Cindr3D didn\'t slice (e.g. files printed from SD card). Type the object ID from your slicer\'s preview, click Send, and the firmware cancels that object.',
           'For Klipper, the same fallback is the EXCLUDE_OBJECT NAME=<name> command in the Console tab.',
           'For Duet, M486 P<index> from the Console works if the Exclude Object tab can\'t see the labels.',
         ],
@@ -719,7 +781,7 @@ const HELP_TOPICS: HelpTopic[] = [
       },
       {
         heading: 'Power',
-        intro: 'Control AC-side power (printer mains, enclosure fans, lights, dehumidifiers) without leaving DesignCAD. Two backends:',
+        intro: 'Control AC-side power (printer mains, enclosure fans, lights, dehumidifiers) without leaving Cindr3D. Two backends:',
         items: [
           'Klipper printers - the tab queries Moonraker /machine/device_power/devices and shows on/off/toggle for each Moonraker-managed device.',
           'All other firmwares - the HTTP smart-plug backend supports Tasmota, Shelly Gen1, Shelly Gen2, and generic-URL plugs. Add devices by name + IP; states persist in localStorage.',
@@ -749,10 +811,10 @@ const HELP_TOPICS: HelpTopic[] = [
         heading: 'Updates',
         intro: 'Firmware update awareness without leaving the app.',
         items: [
-          'GitHub release checker - polls the upstream repo for your active firmware (Duet3D/RepRapFirmware, Klipper3d/klipper, MarlinFirmware/Marlin, Smoothieware, Repetier) plus DesignCAD itself.',
+          'GitHub release checker - polls the upstream repo for your active firmware (Duet3D/RepRapFirmware, Klipper3d/klipper, MarlinFirmware/Marlin, Smoothieware, Repetier) plus Cindr3D itself.',
           'Each banner shows the latest version, release date, pre-release flag if applicable, and a "View Release" link to the GitHub release notes.',
           'Klipper - the tab also shows Moonraker\'s component-level update status (klipper, moonraker, mainsail/fluidd, system packages) and lets you trigger per-component or full updates from the UI.',
-          'DesignCAD does not auto-update firmware - this tab only tells you when something new is available. Always read release notes before upgrading.',
+          'Cindr3D does not auto-update firmware - this tab only tells you when something new is available. Always read release notes before upgrading.',
         ],
       },
     ],
@@ -769,23 +831,23 @@ const HELP_TOPICS: HelpTopic[] = [
         intro: 'Open 3D Printer, click Settings on the printer card, then choose Camera in the left settings rail.',
         image: { src: '/help/help-camera-settings.png', alt: 'Camera settings tab with source, stream, credentials, test, and save controls', caption: 'Camera settings - choose a source, fill stream details, test the feed, then save the per-printer camera profile.' },
         items: [
-          'Camera settings are stored per printer, so each printer card can use a different camera, credentials, stream quality, and path preset.',
+          'Camera settings are stored per printer, and each printer can save multiple streams for top, side, nozzle, or custom views.',
           'The printer does not have to be connected before you configure the camera. You can test and save camera settings while the board is offline.',
-          'After saving, the fleet card, dashboard camera panel, and Open Camera view all read from the saved values.',
+          'After saving, the fleet card, All Cameras grid, dashboard camera panel, Layer Gallery, and Open Camera view all read from the saved values.',
         ],
       },
       {
         heading: 'Choose the right source',
         items: [
           'Network camera - an IP camera, Wi-Fi camera, Raspberry Pi camera bridge, OctoPrint webcam endpoint, or any URL reachable by the browser over HTTP/HLS/RTSP.',
-          'Browser USB camera - a webcam attached to the computer viewing DesignCAD. The browser will ask for camera permission when the Camera page starts using it.',
-          'Server USB camera - a webcam attached to the machine running the DesignCAD server, such as an Orange Pi near the printer. Use this when the browser is on a laptop but the camera is plugged into the printer host.',
-          'Use one camera source per printer. Switch the source later if you move the camera from the browser machine to the printer host.',
+          'Browser USB camera - a webcam attached to the computer viewing Cindr3D. The browser will ask for camera permission when the Camera page starts using it.',
+          'Server USB camera - a webcam attached to the machine running the Cindr3D server, such as an Orange Pi near the printer. Use this when the browser is on a laptop but the camera is plugged into the printer host.',
+          'Use one camera source per stream. Add more streams when a printer has separate top, side, nozzle, or enclosure cameras.',
         ],
       },
       {
         heading: 'Network camera discovery',
-        intro: 'For most IP cameras, start with the simplest possible address and let DesignCAD probe the common paths.',
+        intro: 'For most IP cameras, start with the simplest possible address and let Cindr3D probe the common paths.',
         items: [
           'Enter only the host in Camera Address / IP, for example 192.168.1.55, printercam.local, or http://192.168.1.55.',
           'Leave Sub Stream URL blank on the first pass, then click Test Connection. A successful probe fills the MJPEG/snapshot URL for you.',
@@ -801,7 +863,9 @@ const HELP_TOPICS: HelpTopic[] = [
           'Sub Stream URL should be browser-renderable HTTP/MJPEG or a snapshot/MJPEG endpoint. This is what the fleet card and dashboard preview use most often.',
           'Main Stream URL is for high-quality video. RTSP/H.264 is common on IP cameras; HLS/HTTP works when your camera or bridge already exposes a browser-compatible stream.',
           'If Main Stream Protocol is RTSP, TCP is usually best on Wi-Fi because it is more tolerant of packet loss. UDP can be lower latency on a stable wired network.',
-          'Browsers cannot play RTSP directly. DesignCAD can route RTSP through its local RTSP-to-HLS bridge where the server supports it, while MJPEG remains the reliable dashboard preview path.',
+          'Browsers cannot play RTSP directly. Cindr3D can route RTSP through its local RTSP-to-HLS bridge where the server supports it, while MJPEG remains the reliable dashboard preview path.',
+          'Enable WebRTC when you have a WHEP-compatible bridge such as go2rtc or MediaMTX. The camera panel tries WebRTC first for low latency, then falls back to MJPEG/HLS when the peer connection fails.',
+          'ICE / TURN Servers is optional. Use one STUN/TURN URL per line, or a JSON RTCIceServer array when your self-hosted camera bridge needs remote-network relay credentials.',
         ],
       },
       {
@@ -828,12 +892,13 @@ const HELP_TOPICS: HelpTopic[] = [
       {
         heading: 'Full camera workspace tools',
         items: [
-          'Quality - switch between SD/sub stream and HD/main stream. HD may start the local RTSP bridge when the main stream is RTSP.',
+          'Quality - switch between SD/sub stream and HD/main stream. HD may start the local RTSP bridge when the main stream is RTSP; WebRTC takes priority when enabled and available.',
           'Snapshots - capture still images for first-layer checks, finish evidence, or troubleshooting.',
           'Recordings and timelapses - save short clips, print evidence, or reviewable timelapses tied to the active printer/job.',
           'Markers and tags - flag moments such as warping, stringing, layer shift, blobs, adhesion problems, and under-extrusion.',
           'Overlays - grid, crosshair, flip, rotation, and calibration aids help line up the camera with the bed.',
-          'PTZ controls - available for Amcrest / Dahua-compatible paths; use the Amcrest preset before trying pan, tilt, zoom, or home.',
+          'Camera tabs - switch between enabled top, side, nozzle, or custom camera streams without leaving the printer monitor.',
+          'PTZ controls - use Amcrest/Dahua or Reolink built-in commands, or configure generic/ONVIF/Tapo/Hikvision bridge URL templates. Save preset slots and mark one to run automatically at print start.',
         ],
       },
       {
@@ -852,9 +917,10 @@ const HELP_TOPICS: HelpTopic[] = [
           'If Test Connection fails, open the same URL directly in the browser first. If the browser cannot load it, check camera power, network, IP address, credentials, and CORS/proxy setup.',
           'If the test works but the preview does not, click Save Camera Settings and refresh the dashboard panel.',
           'If HTTP works but HTTPS does not, avoid mixed-content browser blocking by using the same scheme as the app deployment or a server-side bridge.',
-          'If RTSP HD does not start, confirm the DesignCAD server can reach the camera, then try RTSP Transport TCP before UDP.',
+          'If RTSP HD does not start, confirm the Cindr3D server can reach the camera, then try RTSP Transport TCP before UDP.',
+          'If WebRTC fails, the camera panel reports the failure and falls back to MJPEG/HLS. Check the WHEP endpoint, ICE/TURN values, and whether the bridge can see the source camera.',
           'If Browser USB shows no devices, use a Chromium browser on HTTPS or localhost, close other apps that may own the webcam, and grant camera permission when prompted.',
-          'If PTZ buttons do nothing, confirm the camera is Amcrest / Dahua-compatible, the path preset is Amcrest, and credentials have permission to control PTZ.',
+          'If PTZ buttons do nothing, confirm PTZ is enabled for that camera stream, the provider/template is correct, and the saved credentials have permission to control the camera.',
         ],
       },
     ],
@@ -995,7 +1061,7 @@ const HELP_TOPICS: HelpTopic[] = [
   {
     id: 'ai',
     title: 'AI Assistant & MCP',
-    summary: 'Chat with an AI directly in the app, or connect Claude Code via MCP to control DesignCAD from your terminal.',
+    summary: 'Chat with an AI directly in the app, or connect Claude Code via MCP to control Cindr3D from your terminal.',
     group: 'Reference',
     sections: [
       {
@@ -1014,10 +1080,10 @@ const HELP_TOPICS: HelpTopic[] = [
       },
       {
         heading: 'MCP tab — connect Claude Code',
-        intro: 'The MCP tab lets you wire Claude Code (the Anthropic CLI) into DesignCAD. Once connected, any Claude Code conversation can call tools that drive the app directly.',
+        intro: 'The MCP tab lets you wire Claude Code (the Anthropic CLI) into Cindr3D. Once connected, any Claude Code conversation can call tools that drive the app directly.',
         image: { src: '/help/help-ai-mcp.png', alt: 'AI panel MCP tab showing the server status and Claude Code config command', caption: 'MCP tab — copy the config command and paste it into Claude Code Settings → MCP Servers.' },
         items: [
-          'Copy the Claude Code Config command shown in the panel — it looks like: claude mcp add designcad http://localhost:5174/mcp?token=...',
+          'Copy the Claude Code Config command shown in the panel — it looks like: claude mcp add cindr3d http://localhost:5174/mcp?token=...',
           'In your terminal, open Claude Code Settings → MCP Servers and paste the command, then restart Claude Code.',
           'Return to the MCP tab — the "MCP Server Running :5174" indicator confirms the server is active.',
           'The Recent Tool Calls list at the bottom logs every tool call Claude Code has made, so you can audit what the AI changed.',
@@ -1030,7 +1096,7 @@ const HELP_TOPICS: HelpTopic[] = [
       },
       {
         heading: 'Chat tab — in-app AI chat (BYOK)',
-        intro: 'The Chat tab is a built-in chat interface that runs fully in your browser. It is Bring Your Own Key (BYOK) — your API key is stored locally and never sent to DesignCAD servers.',
+        intro: 'The Chat tab is a built-in chat interface that runs fully in your browser. It is Bring Your Own Key (BYOK) — your API key is stored locally and never sent to Cindr3D servers.',
         image: { src: '/help/help-ai-chat.png', alt: 'AI panel Chat tab with message input and empty state prompt', caption: 'Chat tab — set your provider and API key in Global Settings to unlock the chat input.' },
         items: [
           'Go to Global Settings → AI to set your provider (Anthropic, OpenAI, or compatible), model, and API key.',
@@ -1039,7 +1105,7 @@ const HELP_TOPICS: HelpTopic[] = [
           'Conversation history is kept in-session; a new page load starts a fresh thread.',
         ],
         notes: [
-          'Your API key is stored in browser localStorage and sent directly to the provider\'s API — not through DesignCAD servers.',
+          'Your API key is stored in browser localStorage and sent directly to the provider\'s API — not through Cindr3D servers.',
         ],
       },
       {
@@ -1214,7 +1280,7 @@ const HELP_TOPICS: HelpTopic[] = [
         heading: 'Network printer won\'t connect',
         items: [
           'Open the board\'s web UI (Duet Web Control / Mainsail / Fluidd) directly in a browser tab and confirm it loads.',
-          'If the IP works but DesignCAD says "Connection refused", clear the password field and try again — boards return err=2 when the password is wrong.',
+          'If the IP works but Cindr3D says "Connection refused", clear the password field and try again — boards return err=2 when the password is wrong.',
           'Reach the board over .local? Some networks block multicast DNS; try the raw IP.',
           'For Duet SBC mode, confirm DSF is running on the Pi and reachable on port 80 + 8181.',
         ],
@@ -1325,7 +1391,7 @@ export function AppHelpModal({ onClose }: { onClose: () => void }) {
           <div className="app-help-title">
             <BookOpen size={18} />
             <div>
-              <h2>DesignCAD Help</h2>
+              <h2>Cindr3D Help</h2>
               <p>Reference guide for modelling, slicing, printer fleets, cameras, USB connections, and updates.</p>
             </div>
           </div>

@@ -96,11 +96,11 @@ export default function DuetAnalytics() {
   const loading = usePrinterStore((s) => s.printHistoryLoading);
 
   const [windowDays, setWindowDays] = useState<number>(() => {
-    const saved = Number(localStorage.getItem('dzign3d-analytics-window'));
+    const saved = Number(localStorage.getItem('cindr3d-analytics-window'));
     return isFinite(saved) && saved > 0 ? saved : 30;
   });
   const [hourlyCost, setHourlyCost] = useState<number>(() => {
-    const saved = Number(localStorage.getItem('dzign3d-analytics-hourly'));
+    const saved = Number(localStorage.getItem('cindr3d-analytics-hourly'));
     return isFinite(saved) && saved >= 0 ? saved : 0;
   });
 
@@ -162,12 +162,12 @@ export default function DuetAnalytics() {
 
   const onWindowChange = (v: number) => {
     setWindowDays(v);
-    try { localStorage.setItem('dzign3d-analytics-window', String(v)); } catch { /* ignore */ }
+    try { localStorage.setItem('cindr3d-analytics-window', String(v)); } catch { /* ignore */ }
   };
 
   const onHourlyChange = (v: number) => {
     setHourlyCost(v);
-    try { localStorage.setItem('dzign3d-analytics-hourly', String(v)); } catch { /* ignore */ }
+    try { localStorage.setItem('cindr3d-analytics-hourly', String(v)); } catch { /* ignore */ }
   };
 
   return (

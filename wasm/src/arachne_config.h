@@ -1,5 +1,5 @@
-#ifndef DESIGNCAD_WASM_ARACHNE_CONFIG_H
-#define DESIGNCAD_WASM_ARACHNE_CONFIG_H
+#ifndef CINDR3D_WASM_ARACHNE_CONFIG_H
+#define CINDR3D_WASM_ARACHNE_CONFIG_H
 
 #include <cstdint>
 
@@ -32,4 +32,4 @@ struct ArachneConfig
     bool precise_outer_wall;
 };
 
-#endif // DESIGNCAD_WASM_ARACHNE_CONFIG_H
+#endif // CINDR3D_WASM_ARACHNE_CONFIG_H

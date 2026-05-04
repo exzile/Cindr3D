@@ -1,5 +1,5 @@
 ---
-name: DesignCAD Gotchas
+name: Cindr3D Gotchas
 description: Non-obvious bugs, version pins, broken third-party APIs, and hook rules that have already cost time in this repo
 type: project
 ---

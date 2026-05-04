@@ -50,37 +50,40 @@ import {
   type CameraDashboardPrefs,
   type CameraDashboardPreset,
   type CameraHdBridgeQuality,
+  type CameraPtzPreset,
   type DuetPrefs,
 } from '../../../utils/duetPrefs';
-import { cameraDisplayUrl, cameraUrlWithCredentials, normalizeCameraStreamUrl, preferredCameraStreamUrl } from '../../../utils/cameraStreamUrl';
+import { cameraDisplayUrl, cameraUrlWithCredentials, enabledCamerasFromPrefs, normalizeCameraStreamUrl, preferredCameraStreamUrl, prefsWithCamera } from '../../../utils/cameraStreamUrl';
+import { buildPtzMoveRequest, buildPtzPresetRequest, ptzProviderLabel, type PtzDirection } from '../../../services/camera/ptzControl';
+import { connectWhepVideoStream } from '../../../services/camera/webrtcStream';
 import { formatBytes } from './helpers';
 import './CameraDashboardPanel.css';
 
-const CLIP_DB_NAME = 'dzign3d-camera-clips';
+const CLIP_DB_NAME = 'cindr3d-camera-clips';
 const CLIP_DB_VERSION = 1;
 const CLIP_STORE = 'clips';
 const RECORDING_FPS = 12;
-const AUTO_RECORD_KEY = 'dzign3d-camera-auto-record';
-const AUTO_TIMELAPSE_KEY = 'dzign3d-camera-auto-timelapse';
-const TIMELAPSE_INTERVAL_KEY = 'dzign3d-camera-timelapse-interval';
-const TIMELAPSE_FPS_KEY = 'dzign3d-camera-timelapse-fps';
-const AUTO_SNAPSHOT_FIRST_LAYER_KEY = 'dzign3d-camera-auto-snapshot-first-layer';
-const AUTO_SNAPSHOT_LAYER_KEY = 'dzign3d-camera-auto-snapshot-layer';
-const AUTO_SNAPSHOT_FINISH_KEY = 'dzign3d-camera-auto-snapshot-finish';
-const AUTO_SNAPSHOT_ERROR_KEY = 'dzign3d-camera-auto-snapshot-error';
-const VIEW_GRID_KEY = 'dzign3d-camera-view-grid';
-const VIEW_CROSSHAIR_KEY = 'dzign3d-camera-view-crosshair';
-const VIEW_FLIP_KEY = 'dzign3d-camera-view-flip';
-const VIEW_ROTATION_KEY = 'dzign3d-camera-view-rotation';
-const HEALTH_OPEN_KEY = 'dzign3d-camera-health-open';
-const CONTROL_SECTION_KEY = 'dzign3d-camera-control-section';
-const EDITOR_COLLAPSED_KEY = 'dzign3d-camera-editor-collapsed';
-const CAMERA_PRESETS_KEY = 'dzign3d-camera-presets';
-const SCHEDULED_SNAPSHOT_KEY = 'dzign3d-camera-scheduled-snapshot';
-const SCHEDULED_SNAPSHOT_INTERVAL_KEY = 'dzign3d-camera-scheduled-snapshot-interval';
-const ANOMALY_CAPTURE_KEY = 'dzign3d-camera-anomaly-capture';
-const CALIBRATION_OVERLAY_KEY = 'dzign3d-camera-calibration-overlay';
-const BACKEND_RECORDING_KEY_PREFIX = 'dzign3d-camera-backend-recording';
+const AUTO_RECORD_KEY = 'cindr3d-camera-auto-record';
+const AUTO_TIMELAPSE_KEY = 'cindr3d-camera-auto-timelapse';
+const TIMELAPSE_INTERVAL_KEY = 'cindr3d-camera-timelapse-interval';
+const TIMELAPSE_FPS_KEY = 'cindr3d-camera-timelapse-fps';
+const AUTO_SNAPSHOT_FIRST_LAYER_KEY = 'cindr3d-camera-auto-snapshot-first-layer';
+const AUTO_SNAPSHOT_LAYER_KEY = 'cindr3d-camera-auto-snapshot-layer';
+const AUTO_SNAPSHOT_FINISH_KEY = 'cindr3d-camera-auto-snapshot-finish';
+const AUTO_SNAPSHOT_ERROR_KEY = 'cindr3d-camera-auto-snapshot-error';
+const VIEW_GRID_KEY = 'cindr3d-camera-view-grid';
+const VIEW_CROSSHAIR_KEY = 'cindr3d-camera-view-crosshair';
+const VIEW_FLIP_KEY = 'cindr3d-camera-view-flip';
+const VIEW_ROTATION_KEY = 'cindr3d-camera-view-rotation';
+const HEALTH_OPEN_KEY = 'cindr3d-camera-health-open';
+const CONTROL_SECTION_KEY = 'cindr3d-camera-control-section';
+const EDITOR_COLLAPSED_KEY = 'cindr3d-camera-editor-collapsed';
+const CAMERA_PRESETS_KEY = 'cindr3d-camera-presets';
+const SCHEDULED_SNAPSHOT_KEY = 'cindr3d-camera-scheduled-snapshot';
+const SCHEDULED_SNAPSHOT_INTERVAL_KEY = 'cindr3d-camera-scheduled-snapshot-interval';
+const ANOMALY_CAPTURE_KEY = 'cindr3d-camera-anomaly-capture';
+const CALIBRATION_OVERLAY_KEY = 'cindr3d-camera-calibration-overlay';
+const BACKEND_RECORDING_KEY_PREFIX = 'cindr3d-camera-backend-recording';
 const ISSUE_TAGS = ['Warping', 'Stringing', 'Layer shift', 'Blob', 'Adhesion', 'Under extrusion'] as const;
 const CLIP_RATINGS = ['Unrated', 'Good', 'Needs review', 'Failure evidence'] as const;
 const INSPECTION_ITEMS = ['First layer', 'Adhesion', 'Corners', 'Nozzle', 'Surface', 'Artifacts'] as const;
@@ -89,7 +92,6 @@ type CameraClipKind = 'clip' | 'timelapse' | 'snapshot' | 'auto';
 type ClipFilter = 'all' | CameraClipKind | 'job' | 'favorite' | 'album' | 'issue';
 type ClipSort = 'newest' | 'oldest' | 'largest';
 type ControlSection = CameraDashboardPrefs['activeControlSection'];
-type PtzDirection = 'up' | 'down' | 'left' | 'right' | 'home' | 'zoomIn' | 'zoomOut';
 type IssueTag = typeof ISSUE_TAGS[number];
 type ClipRating = typeof CLIP_RATINGS[number];
 const HD_BRIDGE_QUALITIES: Array<{ value: CameraHdBridgeQuality; label: string }> = [
@@ -416,26 +418,6 @@ function defaultCrop(): SnapshotCrop {
   return { x: 0, y: 0, width: 1, height: 1 };
 }
 
-function ptzCodeForDirection(direction: PtzDirection): string {
-  switch (direction) {
-    case 'up':
-      return 'Up';
-    case 'down':
-      return 'Down';
-    case 'left':
-      return 'Left';
-    case 'right':
-      return 'Right';
-    case 'zoomIn':
-      return 'ZoomTele';
-    case 'zoomOut':
-      return 'ZoomWide';
-    case 'home':
-    default:
-      return 'GotoPreset';
-  }
-}
-
 function cameraPtzBaseUrl(prefs: DuetPrefs, fallbackHostname: string): string {
   const cameraHost = prefs.webcamHost.trim();
   if (cameraHost) {
@@ -621,11 +603,18 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   });
 
   const activePrinter = printers.find((printer) => printer.id === activePrinterId);
-  const prefs = useMemo<DuetPrefs>(() => ({
+  const basePrefs = useMemo<DuetPrefs>(() => ({
     ...DEFAULT_PREFS,
     ...getDuetPrefs(),
     ...(activePrinter?.prefs as Partial<DuetPrefs> | undefined),
   }), [activePrinter]);
+  const cameras = useMemo(() => enabledCamerasFromPrefs(basePrefs), [basePrefs]);
+  const prefs = useMemo<DuetPrefs>(() => prefsWithCamera(basePrefs, basePrefs.activeCameraId), [basePrefs]);
+  const activeCamera = useMemo(() => (
+    prefs.cameras.find((camera) => camera.id === prefs.activeCameraId)
+    ?? cameras[0]
+    ?? prefs.cameras[0]
+  ), [cameras, prefs.activeCameraId, prefs.cameras]);
   const dashboardPrefs = useMemo<CameraDashboardPrefs>(() => {
     const printerPrefs = activePrinter?.prefs as Partial<DuetPrefs> | undefined;
     const storedDashboardPrefs = printerPrefs?.cameraDashboard;
@@ -657,6 +646,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const recordingThumbnailRef = useRef<Blob | undefined>(undefined);
   const backendRecordingRef = useRef<BackendRecordingSession | null>(null);
   const previousPrintStatusRef = useRef<string | undefined>(undefined);
+  const previousPtzPrintStatusRef = useRef<string | undefined>(undefined);
   const seenPrintLayersRef = useRef<Set<number>>(new Set());
   const reconnectHistoryRef = useRef<number[]>([]);
   const scheduledSnapshotTimerRef = useRef<number | null>(null);
@@ -665,6 +655,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const skipNextPrefsSaveRef = useRef(false);
 
   const [imageFailed, setImageFailed] = useState(false);
+  const [webRtcFailed, setWebRtcFailed] = useState(false);
   const [clips, setClips] = useState<CameraClip[]>([]);
   const [selectedClip, setSelectedClip] = useState<CameraClip | null>(null);
   const [selectedClipUrl, setSelectedClipUrl] = useState<string>('');
@@ -723,6 +714,8 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [dangerOpen, setDangerOpen] = useState(false);
   const [cameraPresets, setCameraPresets] = useState<CameraPreset[]>(() => dashboardPrefs.cameraPresets);
   const [presetName, setPresetName] = useState('');
+  const [ptzPresetName, setPtzPresetName] = useState('');
+  const [ptzPresetToken, setPtzPresetToken] = useState('1');
   const [compareBlend, setCompareBlend] = useState(50);
   const [selectedClipIds, setSelectedClipIds] = useState<string[]>([]);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -770,8 +763,10 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const printerName = activePrinter?.name ?? 'Printer';
   const isBrowserUsbCamera = prefs.webcamSourceType === 'browser-usb';
   const isServerUsbCamera = prefs.webcamSourceType === 'server-usb';
-  const isVideoStream = isBrowserUsbCamera || isServerUsbCamera || (prefs.webcamStreamPreference === 'main' && (hdMainIsRtsp || prefs.webcamMainStreamProtocol === 'hls' || prefs.webcamMainStreamProtocol === 'http'));
-  const cameraSourceUrl = isBrowserUsbCamera ? 'browser-usb' : isVideoStream ? videoUrl : displayUrl;
+  const webRtcUrl = activeCamera?.webRtcEnabled ? activeCamera.webRtcUrl.trim() : '';
+  const useWebRtcStream = Boolean(webRtcUrl && !webRtcFailed);
+  const isVideoStream = useWebRtcStream || isBrowserUsbCamera || isServerUsbCamera || (prefs.webcamStreamPreference === 'main' && (hdMainIsRtsp || prefs.webcamMainStreamProtocol === 'hls' || prefs.webcamMainStreamProtocol === 'http'));
+  const cameraSourceUrl = useWebRtcStream ? webRtcUrl : isBrowserUsbCamera ? 'browser-usb' : isVideoStream ? videoUrl : displayUrl;
   const hasCamera = Boolean(cameraSourceUrl) && !imageFailed;
   const recording = recordingKind !== null;
   const isTimelapseRecording = recordingKind === 'timelapse';
@@ -779,13 +774,15 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const isPrintActive = printStatus === 'processing' || printStatus === 'simulating';
   const hdLiveNeedsBridge = hdMainIsRtsp || isServerUsbCamera;
   const canUseBackendRecording = ((prefs.webcamStreamPreference === 'main' && hdMainIsRtsp) || isServerUsbCamera) && Boolean(backendRecordingUrl);
-  const canUseAmcrestPtz = prefs.webcamPathPreset === 'amcrest';
+  const canUsePtz = Boolean(activeCamera?.ptzEnabled && activeCamera.ptzProvider !== 'off');
+  const activePtzStartPreset = activeCamera?.ptzPresets.find((preset) => preset.id === activeCamera.ptzStartPresetId);
   const streamSrc = useMemo(() => {
     if (!cameraSourceUrl) return '';
+    if (useWebRtcStream) return cameraSourceUrl;
     if (isBrowserUsbCamera) return 'browser-usb';
     const separator = cameraSourceUrl.includes('?') ? '&' : '?';
     return `${cameraSourceUrl}${separator}_cameraReload=${streamRevision}`;
-  }, [cameraSourceUrl, isBrowserUsbCamera, streamRevision]);
+  }, [cameraSourceUrl, isBrowserUsbCamera, streamRevision, useWebRtcStream]);
   const totalStorageBytes = useMemo(() => clips.reduce((sum, clip) => sum + clip.size + (clip.thumbnailBlob?.size ?? 0), 0), [clips]);
   const storageByKind = useMemo(() => {
     return clips.reduce<Record<CameraClipKind, { count: number; size: number }>>((acc, clip) => {
@@ -932,6 +929,10 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     setImageFailed(false);
     setLastFrameAt(null);
   }, [cameraSourceUrl]);
+
+  useEffect(() => {
+    setWebRtcFailed(false);
+  }, [activeCamera?.id, webRtcUrl]);
 
   useEffect(() => {
     const interval = window.setInterval(() => setNowTick(Date.now()), 1000);
@@ -1728,6 +1729,14 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     setCameraPresets((presets) => presets.filter((preset) => preset.id !== presetId));
   }, []);
 
+  const updateActiveCamera = useCallback((patch: Partial<NonNullable<typeof activeCamera>>) => {
+    if (!activeCamera) return;
+    const nextCamera = { ...activeCamera, ...patch };
+    updatePrinterPrefs(activePrinterId, {
+      cameras: prefs.cameras.map((camera) => (camera.id === activeCamera.id ? nextCamera : camera)),
+    });
+  }, [activeCamera, activePrinterId, prefs.cameras, updatePrinterPrefs]);
+
   const setCameraQuality = useCallback((quality: DuetPrefs['webcamStreamPreference']) => {
     updatePrinterPrefs(activePrinterId, { webcamStreamPreference: quality });
     setStreamRevision((value) => value + 1);
@@ -1739,42 +1748,82 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
       setMessage('Enable PTZ controls before moving the camera.');
       return;
     }
-    if (!canUseAmcrestPtz) {
-      setMessage('Select the Amcrest camera path preset before using these PTZ controls.');
+    if (!activeCamera || !canUsePtz) {
+      setMessage('Enable PTZ for this camera in Camera Settings before moving it.');
       return;
     }
 
-    const base = cameraPtzBaseUrl(prefs, config.hostname);
-    if (!base) {
-      setMessage('Set the camera host in camera settings before using PTZ controls.');
+    const request = buildPtzMoveRequest(activeCamera, config.hostname, direction, ptzSpeed);
+    if (!request?.startUrl) {
+      setMessage('Configure this camera PTZ provider or command template before using PTZ controls.');
       return;
     }
-
-    const code = ptzCodeForDirection(direction);
-    const speed = Math.max(1, Math.min(8, Math.round(ptzSpeed || 1)));
-    const makeUrl = (action: 'start' | 'stop'): string => {
-      const url = new URL('/cgi-bin/ptz.cgi', base);
-      url.searchParams.set('action', action);
-      url.searchParams.set('channel', '1');
-      url.searchParams.set('code', code);
-      url.searchParams.set('arg1', '0');
-      url.searchParams.set('arg2', direction === 'home' ? '1' : String(speed));
-      url.searchParams.set('arg3', '0');
-      return url.toString();
-    };
 
     try {
-      await sendCameraCommand(makeUrl('start'), prefs.webcamUsername, prefs.webcamPassword);
-      if (direction !== 'home') {
+      await sendCameraCommand(request.startUrl, request.username, request.password);
+      if (request.stopUrl) {
         window.setTimeout(() => {
-          void sendCameraCommand(makeUrl('stop'), prefs.webcamUsername, prefs.webcamPassword);
+          void sendCameraCommand(request.stopUrl ?? '', request.username, request.password);
         }, 260);
       }
       setMessage(`Sent PTZ ${direction.replace(/([A-Z])/g, ' $1').toLowerCase()} command.`);
     } catch {
       setMessage('Unable to send PTZ command. Check the camera settings and credentials.');
     }
-  }, [canUseAmcrestPtz, config.hostname, prefs, ptzEnabled, ptzSpeed]);
+  }, [activeCamera, canUsePtz, config.hostname, ptzEnabled, ptzSpeed]);
+
+  const runPtzPreset = useCallback(async (preset: CameraPtzPreset, quiet = false) => {
+    if (!activeCamera) return;
+    const request = buildPtzPresetRequest(activeCamera, config.hostname, preset);
+    if (!request?.startUrl) {
+      if (!quiet) setMessage('Configure this camera preset command before jumping to a preset.');
+      return;
+    }
+    try {
+      await sendCameraCommand(request.startUrl, request.username, request.password);
+      if (!quiet) setMessage(`Moved camera to PTZ preset "${preset.name}".`);
+    } catch {
+      if (!quiet) setMessage('Unable to send PTZ preset command.');
+    }
+  }, [activeCamera, config.hostname]);
+
+  const savePtzPreset = useCallback(() => {
+    if (!activeCamera) return;
+    const token = ptzPresetToken.trim();
+    if (!token) {
+      setMessage('Enter the camera preset slot/token to save.');
+      return;
+    }
+    const name = ptzPresetName.trim() || `PTZ ${token}`;
+    const preset: CameraPtzPreset = {
+      id: `ptz-${Date.now()}`,
+      name,
+      token,
+      createdAt: Date.now(),
+    };
+    updateActiveCamera({
+      ptzPresets: [preset, ...activeCamera.ptzPresets.filter((item) => item.token !== token && item.name.toLowerCase() !== name.toLowerCase())].slice(0, 12),
+    });
+    setPtzPresetName('');
+    setMessage(`Saved PTZ preset "${name}".`);
+  }, [activeCamera, ptzPresetName, ptzPresetToken, updateActiveCamera]);
+
+  const deletePtzPreset = useCallback((presetId: string) => {
+    if (!activeCamera) return;
+    updateActiveCamera({
+      ptzPresets: activeCamera.ptzPresets.filter((preset) => preset.id !== presetId),
+      ptzStartPresetId: activeCamera.ptzStartPresetId === presetId ? '' : activeCamera.ptzStartPresetId,
+    });
+  }, [activeCamera, updateActiveCamera]);
+
+  useEffect(() => {
+    const previous = previousPtzPrintStatusRef.current;
+    previousPtzPrintStatusRef.current = printStatus;
+    const becameActive = !previous || (previous !== 'processing' && previous !== 'simulating');
+    if (isPrintActive && becameActive && activePtzStartPreset) {
+      void runPtzPreset(activePtzStartPreset, true);
+    }
+  }, [activePtzStartPreset, isPrintActive, printStatus, runPtzPreset]);
 
   const applySelectedIssue = useCallback(async () => {
     if (!selectedClip) return;
@@ -2165,6 +2214,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
 
   const reconnectCamera = useCallback(() => {
     setImageFailed(false);
+    setWebRtcFailed(false);
     setLastFrameAt(null);
     reconnectHistoryRef.current = [...reconnectHistoryRef.current, Date.now()].slice(-10);
     setReconnectCount((value) => value + 1);
@@ -2190,6 +2240,29 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     let cleanup: (() => void) | undefined;
 
     if (isBrowserUsbCamera) return undefined;
+    if (useWebRtcStream) {
+      void connectWhepVideoStream(video, {
+        url: streamSrc,
+        iceServersText: activeCamera?.webRtcIceServers ?? '',
+        onConnected: () => setLastFrameAt(Date.now()),
+      }).then((dispose) => {
+        if (disposed) {
+          dispose();
+          return;
+        }
+        cleanup = dispose;
+      }).catch(() => {
+        if (!disposed) {
+          setWebRtcFailed(true);
+          setMessage('WebRTC camera connection failed; falling back to MJPEG/HLS.');
+        }
+      });
+      return () => {
+        disposed = true;
+        cleanup?.();
+        video.srcObject = null;
+      };
+    }
     if (prefs.webcamMainStreamProtocol === 'hls' || streamSrc.startsWith('/camera-rtsp-hls')) {
       void import('hls.js').then(({ default: Hls }) => {
         if (disposed) return;
@@ -2224,7 +2297,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
         video.load();
       }
     };
-  }, [handleCameraError, isBrowserUsbCamera, isVideoStream, prefs.webcamMainStreamProtocol, streamSrc]);
+  }, [activeCamera?.webRtcIceServers, handleCameraError, isBrowserUsbCamera, isVideoStream, prefs.webcamMainStreamProtocol, streamSrc, useWebRtcStream]);
 
   const handleFrameLoad = useCallback(() => {
     const now = Date.now();
@@ -2282,6 +2355,28 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
               )}
             </div>
           </div>
+
+          {cameras.length > 1 && (
+            <div className="cam-panel__camera-tabs" aria-label="Camera streams">
+              {cameras.map((camera) => (
+                <button
+                  key={camera.id}
+                  className={`cam-panel__button${camera.id === prefs.activeCameraId ? ' is-active' : ''}`}
+                  type="button"
+                  onClick={() => {
+                    updatePrinterPrefs(activePrinterId, { activeCameraId: camera.id });
+                    setStreamRevision((value) => value + 1);
+                    setImageFailed(false);
+                    setWebRtcFailed(false);
+                    setMessage(`Switched to ${camera.label}.`);
+                  }}
+                >
+                  <Camera size={13} /> {camera.label}
+                  <small>{camera.resolution}</small>
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="cam-panel__viewer">
             <div className={frameClassName}>
@@ -2777,7 +2872,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
             <div className="cam-panel__ptz-tools">
               <div className="cam-panel__section-head">
                 <span><Camera size={14} /> PTZ</span>
-                <small>{ptzEnabled ? 'Enabled' : 'Off'}</small>
+                <small>{ptzEnabled && canUsePtz ? ptzProviderLabel(activeCamera?.ptzProvider ?? 'off') : 'Off'}</small>
               </div>
               <label className="cam-panel__toggle">
                 <input
@@ -2785,10 +2880,10 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
                   checked={ptzEnabled}
                   onChange={(event) => setPtzEnabled(event.target.checked)}
                 />
-                <span>Enable Amcrest move controls</span>
+                <span>Enable move controls</span>
               </label>
               <span className="cam-panel__note">
-                Uses Amcrest/Dahua-compatible PTZ paths with the camera host and credentials from Camera Settings.
+                Uses the selected camera's PTZ provider, presets, and credentials from Camera Settings.
               </span>
               <div className="cam-panel__settings-row">
                 <label>
@@ -2805,29 +2900,60 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
               </div>
               <div className="cam-panel__ptz-grid" aria-label="Camera movement controls">
                 <span />
-                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUseAmcrestPtz} onClick={() => void runPtzCommand('up')} title="Move up">
+                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUsePtz} onClick={() => void runPtzCommand('up')} title="Move up">
                   <ArrowUp size={14} />
                 </button>
                 <span />
-                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUseAmcrestPtz} onClick={() => void runPtzCommand('left')} title="Move left">
+                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUsePtz} onClick={() => void runPtzCommand('left')} title="Move left">
                   <ArrowLeft size={14} />
                 </button>
-                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUseAmcrestPtz} onClick={() => void runPtzCommand('home')} title="Go to home preset">
+                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUsePtz} onClick={() => void runPtzCommand('home')} title="Go to home preset">
                   <Home size={14} />
                 </button>
-                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUseAmcrestPtz} onClick={() => void runPtzCommand('right')} title="Move right">
+                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUsePtz} onClick={() => void runPtzCommand('right')} title="Move right">
                   <ArrowRight size={14} />
                 </button>
-                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUseAmcrestPtz} onClick={() => void runPtzCommand('zoomOut')} title="Zoom out">
+                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUsePtz} onClick={() => void runPtzCommand('zoomOut')} title="Zoom out">
                   <ZoomOut size={14} />
                 </button>
-                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUseAmcrestPtz} onClick={() => void runPtzCommand('down')} title="Move down">
+                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUsePtz} onClick={() => void runPtzCommand('down')} title="Move down">
                   <ArrowDown size={14} />
                 </button>
-                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUseAmcrestPtz} onClick={() => void runPtzCommand('zoomIn')} title="Zoom in">
+                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUsePtz} onClick={() => void runPtzCommand('zoomIn')} title="Zoom in">
                   <ZoomIn size={14} />
                 </button>
               </div>
+              <div className="cam-panel__ptz-preset-form">
+                <input className="cam-panel__input" value={ptzPresetName} placeholder="Preset name" onChange={(event) => setPtzPresetName(event.target.value)} />
+                <input className="cam-panel__input" value={ptzPresetToken} placeholder="Slot" onChange={(event) => setPtzPresetToken(event.target.value)} />
+                <button className="cam-panel__button" type="button" disabled={!activeCamera} onClick={savePtzPreset}>
+                  <Save size={13} /> Save PTZ
+                </button>
+              </div>
+              {activeCamera?.ptzPresets.length ? (
+                <div className="cam-panel__ptz-preset-list">
+                  {activeCamera.ptzPresets.map((preset) => (
+                    <div className="cam-panel__preset-row" key={preset.id}>
+                      <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUsePtz} onClick={() => void runPtzPreset(preset)}>
+                        <Play size={13} /> {preset.name}
+                      </button>
+                      <button
+                        className={`cam-panel__button${activeCamera.ptzStartPresetId === preset.id ? ' is-active' : ''}`}
+                        type="button"
+                        onClick={() => updateActiveCamera({ ptzStartPresetId: activeCamera.ptzStartPresetId === preset.id ? '' : preset.id })}
+                        title="Use on print start"
+                      >
+                        <Flag size={13} />
+                      </button>
+                      <button className="cam-panel__button cam-panel__button--danger" type="button" onClick={() => deletePtzPreset(preset.id)}>
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <span className="cam-panel__note">Save PTZ slot numbers after positioning the camera, then mark one for print-start framing.</span>
+              )}
             </div>
             <div className="cam-panel__toggle-grid">
               <label className="cam-panel__toggle">

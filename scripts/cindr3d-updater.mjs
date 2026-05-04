@@ -7,12 +7,12 @@ import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 
 const config = {
-  repo: process.env.DESIGNCAD_REPO ?? 'exzile/DesignCAD',
-  port: Number(process.env.DESIGNCAD_UPDATER_PORT ?? 8787),
-  host: process.env.DESIGNCAD_UPDATER_HOST ?? '127.0.0.1',
-  webRoot: process.env.DESIGNCAD_WEB_ROOT ?? '/var/www/designcad',
-  stateFile: process.env.DESIGNCAD_STATE_FILE ?? '/var/lib/designcad-updater/state.json',
-  tokenFile: process.env.DESIGNCAD_TOKEN_FILE ?? '/etc/designcad-updater/token',
+  repo: process.env.CINDR3D_REPO ?? 'exzile/Cindr3D',
+  port: Number(process.env.CINDR3D_UPDATER_PORT ?? 8787),
+  host: process.env.CINDR3D_UPDATER_HOST ?? '127.0.0.1',
+  webRoot: process.env.CINDR3D_WEB_ROOT ?? '/var/www/cindr3d',
+  stateFile: process.env.CINDR3D_STATE_FILE ?? '/var/lib/cindr3d-updater/state.json',
+  tokenFile: process.env.CINDR3D_TOKEN_FILE ?? '/etc/cindr3d-updater/token',
 };
 
 let installRunning = false;
@@ -44,7 +44,7 @@ async function github(path, headers = {}) {
   const response = await fetch(`https://api.github.com${path}`, {
     headers: {
       Accept: 'application/vnd.github+json',
-      'User-Agent': 'DesignCAD-Updater',
+      'User-Agent': 'Cindr3D-Updater',
       ...headers,
     },
   });
@@ -59,7 +59,7 @@ async function latestRelease() {
   try {
     const release = await github(`/repos/${config.repo}/releases/latest`);
     const installableAsset = release.assets?.find((asset) =>
-      /(designcad|dist|site).*\.(zip|tar\.gz|tgz)$/i.test(asset.name),
+      /(cindr3d|dist|site).*\.(zip|tar\.gz|tgz)$/i.test(asset.name),
     );
     return {
       tag: release.tag_name,
@@ -131,7 +131,7 @@ async function syncDist(distDir, installed) {
 async function download(url, destination) {
   const response = await fetch(url, {
     headers: {
-      'User-Agent': 'DesignCAD-Updater',
+      'User-Agent': 'Cindr3D-Updater',
     },
     redirect: 'follow',
   });
@@ -144,10 +144,10 @@ async function installRelease() {
   const release = await latestRelease();
   if (!release) throw new Error('No GitHub release found.');
   if (!release.asset) {
-    throw new Error('Latest release has no installable dist asset. Attach a designcad-dist.zip release asset.');
+    throw new Error('Latest release has no installable dist asset. Attach a cindr3d-dist.zip release asset.');
   }
 
-  const workDir = await mkdtemp(join(tmpdir(), 'designcad-release-'));
+  const workDir = await mkdtemp(join(tmpdir(), 'cindr3d-release-'));
   try {
     const archive = join(workDir, basename(release.asset.name));
     await download(release.asset.url, archive);
@@ -158,7 +158,7 @@ async function installRelease() {
     } else {
       await run('tar', ['-xzf', archive, '-C', extractDir]);
     }
-    const candidates = [extractDir, join(extractDir, 'dist'), join(extractDir, 'designcad-dist')];
+    const candidates = [extractDir, join(extractDir, 'dist'), join(extractDir, 'cindr3d-dist')];
     const distDir = candidates.find((candidate) => existsSync(join(candidate, 'index.html')));
     if (!distDir) throw new Error('Release asset did not contain index.html at the root or in dist/.');
     const installed = await syncDist(distDir, {
@@ -174,7 +174,7 @@ async function installRelease() {
 
 async function requireToken(req) {
   const expected = (await readFile(config.tokenFile, 'utf8')).trim();
-  const received = req.headers['x-designcad-updater-key'];
+  const received = req.headers['x-cindr3d-updater-key'];
   if (!expected || received !== expected) {
     const error = new Error('Updater key is missing or invalid.');
     error.statusCode = 401;
@@ -222,5 +222,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(config.port, config.host, () => {
-  console.log(`DesignCAD updater listening on http://${config.host}:${config.port}`);
+  console.log(`Cindr3D updater listening on http://${config.host}:${config.port}`);
 });

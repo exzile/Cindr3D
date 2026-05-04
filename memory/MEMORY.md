@@ -1,4 +1,4 @@
-# Dzign3D Project Memory
+# Cindr3D Project Memory
 
 ## Read first
 
@@ -34,5 +34,5 @@
 
 ## References
 
-- [azure_hosting.md](azure_hosting.md) — Azure Static Web App resource IDs and deferred dzign3d.com domain plan
+- [azure_hosting.md](azure_hosting.md) — Azure Static Web App resource IDs and deferred cindr3d.com domain plan
 - [fusion360_sdk.md](fusion360_sdk.md) — local SDK install path; C++ headers for Features/, BRep/, Sketch/; canonical enum names

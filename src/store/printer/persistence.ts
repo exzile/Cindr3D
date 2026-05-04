@@ -9,9 +9,9 @@ import type { LoadedPrinterState } from '../../types/printer-persistence.types';
 
 export type { LoadedPrinterState } from '../../types/printer-persistence.types';
 
-const LEGACY_CONFIG_KEY = 'dzign3d-duet-config';
-const PRINTERS_KEY = 'dzign3d-printers';
-const ACTIVE_PRINTER_KEY = 'dzign3d-active-printer';
+const LEGACY_CONFIG_KEY = 'cindr3d-duet-config';
+const PRINTERS_KEY = 'cindr3d-printers';
+const ACTIVE_PRINTER_KEY = 'cindr3d-active-printer';
 const TIMESTAMP_RE = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(.*)$/;
 const DURATION_RE = /(\d+):(\d{2}):(\d{2})/;
 

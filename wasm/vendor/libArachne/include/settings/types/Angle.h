@@ -1,5 +1,5 @@
-#ifndef DESIGNCAD_WASM_STUB_ANGLE_H
-#define DESIGNCAD_WASM_STUB_ANGLE_H
+#ifndef CINDR3D_WASM_STUB_ANGLE_H
+#define CINDR3D_WASM_STUB_ANGLE_H
 
 #include <cmath>
 
@@ -41,4 +41,4 @@ constexpr AngleRadians pi_div(double divisor)
 }
 } // namespace cura
 
-#endif // DESIGNCAD_WASM_STUB_ANGLE_H
+#endif // CINDR3D_WASM_STUB_ANGLE_H

@@ -19,7 +19,7 @@ I will make a compact stand with a slanted back, a base, and a small front retai
 Tool calls:
 
 ```text
-designcad_status()
+cindr3d_status()
 create_box({ "x": 90, "y": 70, "z": 6, "px": 0, "py": 0, "pz": 3 })
 create_box({ "x": 86, "y": 6, "z": 12, "px": 0, "py": -28, "pz": 9 })
 start_sketch({ "plane": "XZ" })

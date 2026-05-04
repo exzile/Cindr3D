@@ -26,7 +26,7 @@ import type { DuetConfig, SavedPrinter } from '../types/duet';
 // file. Old v1 exports still load — see applySettings().
 const EXPORT_VERSION = 2;
 const FILE_MIME = 'application/json';
-const FILE_EXT = 'dzign3d-settings.json';
+const FILE_EXT = 'cindr3d-settings.json';
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -71,7 +71,7 @@ interface PrinterPrefs {
 
 export interface ExportedSettings {
   version: number;
-  app: 'dzign3d';
+  app: 'cindr3d';
   exportedAt: string;
   cad: CadPrefs;
   slicer: SlicerPrefs;
@@ -91,7 +91,7 @@ export function buildExportPayload(): ExportedSettings {
 
   return {
     version: EXPORT_VERSION,
-    app: 'dzign3d',
+    app: 'cindr3d',
     exportedAt: new Date().toISOString(),
 
     cad: {
@@ -157,8 +157,8 @@ export function applySettings(raw: unknown): ImportResult {
 
   const s = raw as Partial<ExportedSettings>;
 
-  if (s.app !== 'dzign3d') {
-    result.error = 'Invalid file: not a Dzign3D settings export.';
+  if (s.app !== 'cindr3d') {
+    result.error = 'Invalid file: not a Cindr3D settings export.';
     return result;
   }
 

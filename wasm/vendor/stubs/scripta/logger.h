@@ -1,5 +1,5 @@
-#ifndef DESIGNCAD_WASM_STUBS_SCRIPTA_LOGGER_H
-#define DESIGNCAD_WASM_STUBS_SCRIPTA_LOGGER_H
+#ifndef CINDR3D_WASM_STUBS_SCRIPTA_LOGGER_H
+#define CINDR3D_WASM_STUBS_SCRIPTA_LOGGER_H
 
 namespace scripta
 {
@@ -25,4 +25,4 @@ inline void log(Args&&...)
 }
 } // namespace scripta
 
-#endif // DESIGNCAD_WASM_STUBS_SCRIPTA_LOGGER_H
+#endif // CINDR3D_WASM_STUBS_SCRIPTA_LOGGER_H

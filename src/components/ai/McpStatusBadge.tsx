@@ -1,27 +1,27 @@
 import { Copy, List, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import {
-  designCadMcpClient,
-  type DesignCadMcpAuditEntry,
-  type DesignCadMcpStatus,
-  stopDesignCadMcpOnUnload,
+  cindr3dMcpClient,
+  type Cindr3dMcpAuditEntry,
+  type Cindr3dMcpStatus,
+  stopCindr3dMcpOnUnload,
 } from '../../services/mcp/client';
 import './McpStatusBadge.css';
 
 const HEARTBEAT_MS = 5_000;
 
 export default function McpStatusBadge() {
-  const [status, setStatus] = useState<DesignCadMcpStatus | null>(null);
+  const [status, setStatus] = useState<Cindr3dMcpStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [auditEntries, setAuditEntries] = useState<DesignCadMcpAuditEntry[]>([]);
+  const [auditEntries, setAuditEntries] = useState<Cindr3dMcpAuditEntry[]>([]);
   const [auditOpen, setAuditOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     const sync = async () => {
       try {
-        const next = await designCadMcpClient.heartbeat();
+        const next = await cindr3dMcpClient.heartbeat();
         if (!cancelled) {
           setStatus(next);
           setError(null);
@@ -32,13 +32,13 @@ export default function McpStatusBadge() {
     };
     void sync();
     const id = setInterval(sync, HEARTBEAT_MS);
-    window.addEventListener('beforeunload', stopDesignCadMcpOnUnload);
-    window.addEventListener('pagehide', stopDesignCadMcpOnUnload);
+    window.addEventListener('beforeunload', stopCindr3dMcpOnUnload);
+    window.addEventListener('pagehide', stopCindr3dMcpOnUnload);
     return () => {
       cancelled = true;
       clearInterval(id);
-      window.removeEventListener('beforeunload', stopDesignCadMcpOnUnload);
-      window.removeEventListener('pagehide', stopDesignCadMcpOnUnload);
+      window.removeEventListener('beforeunload', stopCindr3dMcpOnUnload);
+      window.removeEventListener('pagehide', stopCindr3dMcpOnUnload);
     };
   }, []);
 
@@ -51,7 +51,7 @@ export default function McpStatusBadge() {
 
   const rotateToken = useCallback(async () => {
     try {
-      setStatus(await designCadMcpClient.rotateToken());
+      setStatus(await cindr3dMcpClient.rotateToken());
       setError(null);
     } catch (err) {
       setError((err as Error).message);
@@ -63,7 +63,7 @@ export default function McpStatusBadge() {
     setAuditOpen(nextOpen);
     if (!nextOpen) return;
     try {
-      const audit = await designCadMcpClient.audit();
+      const audit = await cindr3dMcpClient.audit();
       setAuditEntries(audit.entries);
       setError(null);
     } catch (err) {
@@ -73,7 +73,7 @@ export default function McpStatusBadge() {
 
   const clearAudit = useCallback(async () => {
     try {
-      await designCadMcpClient.clearAudit();
+      await cindr3dMcpClient.clearAudit();
       setAuditEntries([]);
       setError(null);
     } catch (err) {

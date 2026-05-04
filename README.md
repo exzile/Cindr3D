@@ -1,6 +1,8 @@
 <div align="center">
 
-# DesignCAD
+<img src=".github/cindr3d-logo.png" alt="Cindr3D" width="220" />
+
+# Cindr3D
 
 **Browser-based CAD, slicing, and printer control for makers and self-hosted workshops.**
 
@@ -10,21 +12,22 @@
 [![Vite](https://img.shields.io/badge/Vite-8-646cff.svg)](https://vite.dev/)
 [![Node](https://img.shields.io/badge/Node-%3E%3D22.12.0-339933.svg)](package.json)
 
-DesignCAD brings a professional CAD-style workflow into a web app that can run locally during development or be served from a small Linux board such as an Orange Pi.
+Cindr3D brings a professional CAD-style workflow into a web app that can run locally during development or be served from a small Linux board such as an Orange Pi.
 
 </div>
 
-> DesignCAD is not affiliated with Autodesk, Fusion 360, Duet3D, RepRapFirmware, or any slicer vendor.
+> Cindr3D is not affiliated with Autodesk, Fusion 360, Duet3D, RepRapFirmware, or any slicer vendor.
 
 ## Contents
 
 - [Overview](#overview)
 - [What's New](#whats-new)
 - [Feature Highlights](#feature-highlights)
+- [Print Farm Intelligence](#print-farm-intelligence)
 - [Cross-Firmware Support](#cross-firmware-support)
 - [Tech Stack](#tech-stack)
 - [Quick Start](#quick-start)
-- [Use Your Own Claude With DesignCAD](#use-your-own-claude-with-designcad)
+- [Use Your Own Claude With Cindr3D](#use-your-own-claude-with-cindr3d)
 - [Roadmap](#roadmap)
 - [Development Scripts](#development-scripts)
 - [Project Layout](#project-layout)
@@ -39,7 +42,7 @@ DesignCAD brings a professional CAD-style workflow into a web app that can run l
 
 ## Overview
 
-DesignCAD combines design, print preparation, and multi-printer fleet control in one browser workspace. It's designed to run locally during development or be served from a small Linux board (Orange Pi or similar) on your home network — no cloud account required.
+Cindr3D combines design, print preparation, and multi-printer fleet control in one browser workspace. It's designed to run locally during development or be served from a small Linux board (Orange Pi or similar) on your home network — no cloud account required.
 
 | Workspace | Purpose |
 |-----------|---------|
@@ -57,10 +60,13 @@ The project is evolving quickly. Some CAD and slicer features are experimental, 
 
 **Headline features shipped this release:**
 
+- **Smart print farm queue** - persistent cross-printer queueing with routing rules for build volume, loaded material, nozzle size, copy splitting, job moves, pause, and cancel.
+- **Fleet cameras** - all-cameras grid, per-printer multi-camera streams, layer-by-layer photo galleries, PTZ presets, print-start camera positioning, and WebRTC/WHEP low-latency streaming with MJPEG/HLS fallback.
+- **Fleet filament inventory** - material rollups, low-stock thresholds, per-printer loaded-spool tracking, and automatic filament deduction from slicer estimates.
 - 🎯 **Mid-print object cancellation** — `M486` on Duet RRF 3.5+ and Marlin 2.0.9+, `EXCLUDE_OBJECT` on Klipper. Three surfaces: dedicated tab, dashboard list card, and a 3D Print Preview viewport with right-click context menus.
 - 🎬 **Live 3D Print Preview dashboard card** — viewport showing the build plate, plate-object silhouettes, and toolpath wireframe up to the layer currently being printed; right-click any object to cancel just that one.
 - ⚙️ **Cross-firmware tuning UI** — Input Shaper, Pressure Advance, Power, Spools, Timelapse, and Updates tabs that route to the right firmware-specific commands automatically.
-- 🏷️ **Slicer auto-labels** — every job DesignCAD slices is automatically tagged with `M486 S<id> A"<name>"` so cancellation works out of the box on uploaded files too.
+- 🏷️ **Slicer auto-labels** — every job Cindr3D slices is automatically tagged with `M486 S<id> A"<name>"` so cancellation works out of the box on uploaded files too.
 - 📡 **Live progress on every firmware** — Duet via the RRF object model, Klipper via Moonraker `print_stats` polling, Marlin via `M73` parsing on the USB stream.
 - 🤖 **AI Assistant** — local MCP server for Claude Code, plus an in-app BYOK chat panel that streams Anthropic, OpenAI, and OpenRouter with full tool-use.
 
@@ -88,7 +94,7 @@ The project is evolving quickly. Some CAD and slicer features are experimental, 
 
 ### 🖨️ Printer Workflows (cross-firmware)
 
-DesignCAD treats Klipper, Duet/RRF, Marlin, Smoothie, grbl, and Repetier as first-class boards. Tabs adapt to whichever board is connected; common features route to firmware-specific commands automatically.
+Cindr3D treats Klipper, Duet/RRF, Marlin, Smoothie, grbl, and Repetier as first-class boards. Tabs adapt to whichever board is connected; common features route to firmware-specific commands automatically.
 
 **Mid-print object cancellation** — three places to cancel:
 
@@ -104,9 +110,39 @@ DesignCAD treats Klipper, Duet/RRF, Marlin, Smoothie, grbl, and Repetier as firs
 
 **Tabs:** Dashboard, Camera, Status, Console, Job, History, Analytics, Files, Macros, Bed Map, Exclude Object, Updates, Power, Input Shaper, Pressure Advance, Spools, Timelapse, Settings (plus Filaments / Object Model / DSF Plugins on Duet only).
 
+## Print Farm Intelligence
+
+Cindr3D now treats the 3D Printer workspace as a small print-farm controller, not just a single-printer monitor.
+
+### Smart Queue
+
+- Persistent queue survives browser restarts and reconciles with each printer's live state.
+- Route jobs by build volume, loaded material, nozzle size, printer profile compatibility, and printer availability.
+- Split "print N copies" work across multiple printers, then move, pause, cancel, or reorder queued jobs.
+- Queue tab provides the full operator view; the fleet dashboard shows a compact next-jobs preview.
+
+### Fleet Cameras
+
+- All Cameras tab shows every enabled camera stream across saved printers with status overlays, ETA/layer context, compact and expanded modes, and click-through to the printer monitor.
+- Each printer can store multiple camera streams for top, side, nozzle, or custom views. Dashboard cards can choose which stream to show.
+- Camera settings support network cameras, browser USB cameras, server USB cameras, RTSP/HLS/HTTP main streams, WebRTC/WHEP endpoints, and optional ICE/TURN servers for self-hosted remote access.
+- WebRTC is tried first when configured for sub-second latency; if the peer connection fails, the camera panel falls back to the existing MJPEG/HLS stream.
+
+### Photo Evidence And PTZ
+
+- Layer Gallery captures per-layer snapshots from enabled cameras, stores them by printer/job/layer in IndexedDB, and exports ZIP archives for later review or vision tooling.
+- PTZ controls support Amcrest/Dahua and Reolink commands directly, plus generic/ONVIF/Tapo/Hikvision bridge URL templates.
+- Save per-camera PTZ preset slots and mark one as the print-start position so cameras automatically jump to a known first-layer framing.
+
+### Fleet Filament
+
+- Spools roll up by material across the fleet with configurable low-stock thresholds.
+- Assign a loaded spool per printer so routing rules and operator views know what each machine can print.
+- Completed prints deduct estimated filament from the loaded spool when slicer/firmware metadata includes filament length.
+
 ### 🤖 AI Assistant
 
-- 🔗 **Local MCP server** on `:5174` — pair Claude Code with `claude mcp add designcad …`
+- 🔗 **Local MCP server** on `:5174` — pair Claude Code with `claude mcp add cindr3d …`
 - 🛡️ **Localhost-only**, token-paired, per-tool rate-limited (12 calls / 10 s / tool), 80-entry audit log in the AI status badge
 - 💬 **BYOK chat panel** — streaming Anthropic + OpenAI / OpenRouter with full tool-use; 29 tools cover primitives, sketches, features, booleans, transforms, exports, viewport snapshots, and document inspection
 - 🔒 Confirmation gate for destructive operations (configurable, off by default)
@@ -138,7 +174,7 @@ DesignCAD treats Klipper, Duet/RRF, Marlin, Smoothie, grbl, and Repetier as firs
 | DSF Plugins | — | ✅ SBC | — | — |
 
 > [!TIP]
-> Mid-print cancellation requires labelled G-code. DesignCAD-sliced jobs are labelled automatically. For files from PrusaSlicer / SuperSlicer / OrcaSlicer, enable **Print Settings → Output → Label objects**. For Cura, run the **Label Objects** post-processing script.
+> Mid-print cancellation requires labelled G-code. Cindr3D-sliced jobs are labelled automatically. For files from PrusaSlicer / SuperSlicer / OrcaSlicer, enable **Print Settings → Output → Label objects**. For Cura, run the **Label Objects** post-processing script.
 
 ## Tech Stack
 
@@ -184,13 +220,13 @@ Open:
 http://localhost:5173
 ```
 
-## Use Your Own Claude With DesignCAD
+## Use Your Own Claude With Cindr3D
 
-DesignCAD ships with two complementary AI integration paths. Both reuse the same 29-tool MCP surface, so behaviour is identical across them.
+Cindr3D ships with two complementary AI integration paths. Both reuse the same 29-tool MCP surface, so behaviour is identical across them.
 
 ### 🔗 Path 1: Pair Claude Code via MCP (recommended)
 
-Run Claude Code locally and add DesignCAD as an MCP server. Your subscription quota covers the conversation; geometry shows up live in the running browser session.
+Run Claude Code locally and add Cindr3D as an MCP server. Your subscription quota covers the conversation; geometry shows up live in the running browser session.
 
 ```bash
 # Start the dev server
@@ -198,14 +234,14 @@ npm run dev
 
 # Open http://localhost:5173, then click the AI MCP status badge
 # in the status bar to copy the pairing command:
-claude mcp add designcad http://localhost:5174/mcp?token=...
+claude mcp add cindr3d http://localhost:5174/mcp?token=...
 ```
 
-The browser tab must stay open — tool calls are relayed into the running DesignCAD session.
+The browser tab must stay open — tool calls are relayed into the running Cindr3D session.
 
 ### 💬 Path 2: BYOK in-app chat panel
 
-For users who prefer not to run Claude Code, the **AI Chat tab** inside DesignCAD provides a streaming chat interface that connects to your own Anthropic, OpenAI, or OpenRouter API key. Set the provider, model, and key in **Global Settings → AI**; the key is stored locally and sent only to your chosen provider.
+For users who prefer not to run Claude Code, the **AI Chat tab** inside Cindr3D provides a streaming chat interface that connects to your own Anthropic, OpenAI, or OpenRouter API key. Set the provider, model, and key in **Global Settings → AI**; the key is stored locally and sent only to your chosen provider.
 
 ### 🛡️ Safety & Hardening
 
@@ -277,7 +313,7 @@ wasm/
   dist/                Tracked WASM runtime artifacts
 
 scripts/
-  designcad-updater.mjs
+  cindr3d-updater.mjs
   install-orangepi-updater.sh
   check-wasm-budget.mjs
   verify-wasm-build.mjs
@@ -303,7 +339,7 @@ The production build is a static single-page app. Any static host can serve it a
 
 ## Orange Pi Hosting
 
-DesignCAD can be served from an Orange Pi 3 LTS or similar small Linux board. For small SD cards, build on your development machine and copy only `dist/` to the board.
+Cindr3D can be served from an Orange Pi 3 LTS or similar small Linux board. For small SD cards, build on your development machine and copy only `dist/` to the board.
 
 Recommended base packages:
 
@@ -329,7 +365,7 @@ server {
     listen 80;
     server_name _;
 
-    root /var/www/designcad;
+    root /var/www/cindr3d;
     index index.html;
 
     location / {
@@ -349,7 +385,7 @@ Deploy:
 
 ```bash
 npm run build
-rsync -av --delete dist/ user@device:/var/www/designcad/
+rsync -av --delete dist/ user@device:/var/www/cindr3d/
 ```
 
 ## Self-Updater Service
@@ -357,7 +393,7 @@ rsync -av --delete dist/ user@device:/var/www/designcad/
 The repository includes an optional updater service for a self-hosted Orange Pi deployment:
 
 ```text
-scripts/designcad-updater.mjs
+scripts/cindr3d-updater.mjs
 scripts/install-orangepi-updater.sh
 ```
 
@@ -379,14 +415,14 @@ sudo ./scripts/install-orangepi-updater.sh
 The installer creates:
 
 ```text
-/opt/designcad/updater/designcad-updater.mjs
-/etc/designcad-updater/updater.env
-/etc/designcad-updater/token
-/var/lib/designcad-updater/state.json
-designcad-updater.service
+/opt/cindr3d/updater/cindr3d-updater.mjs
+/etc/cindr3d-updater/updater.env
+/etc/cindr3d-updater/token
+/var/lib/cindr3d-updater/state.json
+cindr3d-updater.service
 ```
 
-Updater environment variables are documented in `.env.example`. The browser update panel uses the local updater key from `/etc/designcad-updater/token`.
+Updater environment variables are documented in `.env.example`. The browser update panel uses the local updater key from `/etc/cindr3d-updater/token`.
 
 ## Release Assets
 
@@ -395,7 +431,7 @@ The updater installs only the latest GitHub release asset. It does not update fr
 For faster and more reliable device updates, publish a release asset named like:
 
 ```text
-designcad-dist.zip
+cindr3d-dist.zip
 ```
 
 Accepted archive layouts:
@@ -481,6 +517,6 @@ Never commit:
 
 ## License
 
-DesignCAD is released under the MIT License. See `LICENSE`.
+Cindr3D is released under the MIT License. See `LICENSE`.
 
 The bundled Roboto font is licensed separately by Google under Apache-2.0. See `THIRD_PARTY_NOTICES.md`.

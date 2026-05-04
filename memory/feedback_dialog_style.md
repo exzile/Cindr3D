@@ -4,7 +4,7 @@ description: All tool dialogs/panels should match the Extrude panel look — non
 type: feedback
 originSessionId: 41af41c8-5267-46c1-bc59-dbc0fb757714
 ---
-The **ExtrudePanel** look is the canonical visual style for ALL tool dialogs/panels in DesignCAD.
+The **ExtrudePanel** look is the canonical visual style for ALL tool dialogs/panels in Cindr3D.
 
 **Why:** User explicitly said all tool dialogs should look like Extrude (2026-04-17). Old `dialog-overlay` modal style with large fonts and centered backdrop is being phased out.
 

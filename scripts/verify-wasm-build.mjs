@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const repoRoot = process.cwd();
-const imageName = process.env.WASM_DOCKER_IMAGE ?? 'designcad-wasm';
+const imageName = process.env.WASM_DOCKER_IMAGE ?? 'cindr3d-wasm';
 const expectedArtifacts = [
   'wasm/dist/clipper2.js',
   'wasm/dist/clipper2.wasm',

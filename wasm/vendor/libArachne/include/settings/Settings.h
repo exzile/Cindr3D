@@ -1,5 +1,5 @@
-#ifndef DESIGNCAD_WASM_STUB_SETTINGS_H
-#define DESIGNCAD_WASM_STUB_SETTINGS_H
+#ifndef CINDR3D_WASM_STUB_SETTINGS_H
+#define CINDR3D_WASM_STUB_SETTINGS_H
 
 namespace cura
 {
@@ -14,4 +14,4 @@ public:
 };
 } // namespace cura
 
-#endif // DESIGNCAD_WASM_STUB_SETTINGS_H
+#endif // CINDR3D_WASM_STUB_SETTINGS_H

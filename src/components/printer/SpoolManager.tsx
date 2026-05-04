@@ -3,8 +3,9 @@
  * Uses localStorage via spoolStore. Works with any printer firmware.
  */
 import { useState } from 'react';
-import { Package, Plus, Trash2, CheckCircle, Circle, Pencil, X, Save } from 'lucide-react';
-import { useSpoolStore, type Spool } from '../../store/spoolStore';
+import { AlertTriangle, Package, Plus, Trash2, CheckCircle, Circle, Pencil, X, Save } from 'lucide-react';
+import { usePrinterStore } from '../../store/printerStore';
+import { aggregateInventory, remainingG, useSpoolStore, type Spool } from '../../store/spoolStore';
 import './KlipperTabs.css';
 
 const MATERIALS = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'Nylon', 'PC', 'PLA+', 'SILK PLA', 'Other'];
@@ -23,9 +24,6 @@ const DEFAULT_FORM = {
 
 type FormState = typeof DEFAULT_FORM;
 
-function remainingG(spool: Spool) {
-  return Math.max(0, spool.initialWeightG - spool.usedWeightG);
-}
 function pctRemaining(spool: Spool) {
   if (spool.initialWeightG <= 0) return 0;
   return Math.max(0, Math.min(100, (remainingG(spool) / spool.initialWeightG) * 100));
@@ -193,9 +191,18 @@ function SpoolRow({ spool, isActive }: { spool: Spool; isActive: boolean }) {
 }
 
 export default function SpoolManager() {
-  const { spools, activeSpoolId } = useSpoolStore();
+  const printers = usePrinterStore((s) => s.printers);
+  const {
+    spools,
+    activeSpoolId,
+    loadedSpoolByPrinterId,
+    lowStockThresholdByMaterial,
+    setPrinterLoadedSpool,
+    setMaterialThreshold,
+  } = useSpoolStore();
   const [showAdd, setShowAdd] = useState(false);
   const activeSpool = spools.find((s) => s.id === activeSpoolId) ?? null;
+  const materialSummary = aggregateInventory(spools, lowStockThresholdByMaterial);
 
   return (
     <div className="klipper-tab">
@@ -241,6 +248,78 @@ export default function SpoolManager() {
           </div>
         )}
 
+        {/* Fleet inventory rollup */}
+        <div className="klipper-card">
+          <div className="klipper-card-header">Fleet Inventory</div>
+          <div className="klipper-card-body" style={{ gap: 12 }}>
+            {materialSummary.length === 0 ? (
+              <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>No material inventory yet.</div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                {materialSummary.map((summary) => (
+                  <div
+                    key={summary.material}
+                    style={{
+                      display: 'grid',
+                      gap: 6,
+                      padding: 10,
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      background: 'var(--bg-primary)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <strong>{summary.material}</strong>
+                      {summary.lowStock && <span className="klipper-badge warning"><AlertTriangle size={11} /> Low</span>}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                      {summary.remainingG.toFixed(0)} g across {summary.spoolCount} spool{summary.spoolCount === 1 ? '' : 's'}
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-muted)' }}>
+                      Warn below
+                      <input
+                        type="number"
+                        min={0}
+                        value={summary.thresholdG}
+                        onChange={(event) => setMaterialThreshold(summary.material, parseFloat(event.target.value) || 0)}
+                        style={{ width: 72, padding: '2px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+                      />
+                      g
+                    </label>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Per-printer loaded spool assignments */}
+        <div className="klipper-card">
+          <div className="klipper-card-header">Loaded Spools by Printer</div>
+          <div className="klipper-card-body" style={{ gap: 8 }}>
+            {printers.map((printer) => (
+              <div key={printer.id} className="klipper-form-row">
+                <label style={{ minWidth: 140 }}>{printer.name}</label>
+                <select
+                  value={loadedSpoolByPrinterId[printer.id] ?? ''}
+                  onChange={(event) => setPrinterLoadedSpool(printer.id, event.target.value || null)}
+                  style={{ flex: 1 }}
+                >
+                  <option value="">No loaded spool</option>
+                  {spools.map((spool) => (
+                    <option key={spool.id} value={spool.id}>
+                      {spool.material} - {spool.brand || spool.colorName || spool.id} ({remainingG(spool).toFixed(0)} g)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+            {printers.length === 0 && (
+              <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Add printers before assigning loaded spools.</div>
+            )}
+          </div>
+        </div>
+
         {/* Spool inventory table */}
         <div className="klipper-card">
           <div className="klipper-card-header">
@@ -278,8 +357,8 @@ export default function SpoolManager() {
           <div className="klipper-card-header">About Spool Tracking</div>
           <div className="klipper-card-body">
             <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55 }}>
-              Spool data is stored locally in your browser. Select a spool to mark it as active — this is used for
-              display purposes. Manually update the <strong>Used</strong> weight after prints using the edit button.
+              Spool data is stored locally in your browser. Assign loaded spools per printer to allow automatic
+              deduction from slicer-estimated filament usage when a print completes. Manually update the <strong>Used</strong> weight with the edit button when needed.
               For automatic tracking with Klipper + Spoolman, see the Klipper Spoolman tab.
             </p>
           </div>

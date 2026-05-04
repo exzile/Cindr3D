@@ -30,7 +30,7 @@ export class STLExporter {
  * This produces a minimal valid 3MF file compatible with most slicers
  */
 export class ThreeMFExporter {
-  static async export(object: THREE.Object3D, name = 'Dzign3D_Model'): Promise<Blob> {
+  static async export(object: THREE.Object3D, name = 'Cindr3D_Model'): Promise<Blob> {
     const { vertices, triangles } = this.collectMeshData(object);
 
     const enc = new TextEncoder();
@@ -100,7 +100,7 @@ export class ThreeMFExporter {
     let xml = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
   <metadata name="Title">${name}</metadata>
-  <metadata name="Application">Dzign3D</metadata>
+  <metadata name="Application">Cindr3D</metadata>
   <resources>
     <object id="1" type="model" name="${name}">
       <mesh>

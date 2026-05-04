@@ -96,7 +96,7 @@ describe('Slicer — G-code generation surface', () => {
       transform: new THREE.Matrix4(),
     }]);
     const head = result.gcode.split('\n').slice(0, 30).join('\n');
-    // Should contain at least one comment line at the start (Cura/Dzign3D
+    // Should contain at least one comment line at the start (Cura/Cindr3D
     // typically starts with `;FLAVOR:` or similar).
     expect(head).toMatch(/^;/m);
   }, 60_000);

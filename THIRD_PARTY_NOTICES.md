@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-DesignCAD includes third-party open-source dependencies through npm. See `package.json` and `package-lock.json` for the dependency list.
+Cindr3D includes third-party open-source dependencies through npm. See `package.json` and `package-lock.json` for the dependency list.
 
 ## Roboto Font
 

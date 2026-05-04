@@ -1,6 +1,6 @@
-export const FILAMENT_COLORS_KEY = 'dzign3d-filament-colors';
-export const FILAMENT_PROPS_KEY = 'dzign3d-filament-props';
-export const FILAMENT_SPOOLS_KEY = 'dzign3d-filament-spools';
+export const FILAMENT_COLORS_KEY = 'cindr3d-filament-colors';
+export const FILAMENT_PROPS_KEY = 'cindr3d-filament-props';
+export const FILAMENT_SPOOLS_KEY = 'cindr3d-filament-spools';
 
 export const MATERIAL_TYPES = ['PLA', 'ABS', 'PETG', 'TPU', 'Nylon', 'ASA', 'PC', 'HIPS', 'PVA', 'Other'] as const;
 

@@ -1,7 +1,7 @@
 /**
  * Match plate-object names to slicer-emitted object labels.
  *
- * Slicers add suffixes that don't exist on the original DesignCAD plate
+ * Slicers add suffixes that don't exist on the original Cindr3D plate
  * object — PrusaSlicer/SuperSlicer append "_id_<n>_copy_<n>", "_<id>",
  * or "_instance_<n>", and Cura sometimes adds ".stl" extensions or
  * 4+ digit instance counters. Substring matching alone produces false

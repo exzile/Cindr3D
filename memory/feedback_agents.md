@@ -1,10 +1,10 @@
 ---
-name: Agents on DesignCAD — hot-conflict files
-description: DesignCAD-specific hot files for ONE-agent-at-a-time rule (the rule itself lives in global session_rules)
+name: Agents on Cindr3D — hot-conflict files
+description: Cindr3D-specific hot files for ONE-agent-at-a-time rule (the rule itself lives in global session_rules)
 type: feedback
 originSessionId: 44b47ea6-8828-4fd8-9638-602fb35b76e7
 ---
-Global `feedback_session_rules.md` already mandates one background agent at a time. DesignCAD-specific addendum: the 2026-04 refactor broke old monolith hot files into shim + subdirs, so conflict surface moved. Never run two agents that might touch the same file below.
+Global `feedback_session_rules.md` already mandates one background agent at a time. Cindr3D-specific addendum: the 2026-04 refactor broke old monolith hot files into shim + subdirs, so conflict surface moved. Never run two agents that might touch the same file below.
 
 **Current hot files** (post-refactor):
 - `src/store/cadStore.ts` (shim) and `src/store/cad/state.ts` / `state/*.ts` (types + aggregator)

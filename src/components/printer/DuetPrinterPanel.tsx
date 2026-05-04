@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import './PrinterPanel.css';
 import { usePrinterStore } from '../../store/printerStore';
+import { useSpoolStore } from '../../store/spoolStore';
 import { useThemeStore } from '../../store/themeStore';
 import { getDuetPrefs } from '../../utils/duetPrefs';
 import DuetMessageBox from './DuetMessageBox';
@@ -27,6 +28,7 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
   const printHistory = usePrinterStore((s) => s.printHistory);
   const printers = usePrinterStore((s) => s.printers);
   const activePrinterId = usePrinterStore((s) => s.activePrinterId);
+  const deductFilamentForPrinter = useSpoolStore((s) => s.deductFilamentForPrinter);
 
   const boardType = (config as { boardType?: import('../../types/duet').PrinterBoardType }).boardType ?? 'duet';
 
@@ -150,6 +152,13 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
     const isError = status === 'halted';
     if (!isComplete && !isError) return;
 
+    if (isComplete) {
+      const filamentMm = model.job?.file?.filament?.reduce((sum, value) => sum + value, 0) ?? 0;
+      if (filamentMm > 0) {
+        deductFilamentForPrinter(activePrinterId, filamentMm);
+      }
+    }
+
     const prefs = getDuetPrefs();
     if (!prefs.soundAlertOnComplete) return;
 
@@ -186,7 +195,7 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
     } catch {
       // Audio not available.
     }
-  }, [model.state?.status]);
+  }, [activePrinterId, deductFilamentForPrinter, model.job?.file?.filament, model.state?.status]);
 
   if (!fullscreen && !showPrinter) return null;
 

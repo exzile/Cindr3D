@@ -1,6 +1,6 @@
 ---
 name: Cura 5.12 Parity Scoreboard
-description: Cura 5.12 setting categories with counts — used as the parity target for the Dzign3D slicer
+description: Cura 5.12 setting categories with counts — used as the parity target for the Cindr3D slicer
 type: reference
 ---
 
@@ -30,7 +30,7 @@ Reference install: `C:\Program Files\UltiMaker Cura 5.12.0`. Master settings fil
 ## Workstages
 1. Prepare — model loading, positioning, settings
 2. Preview — layer-by-layer visualization
-3. Monitor — live print monitoring (Dzign3D handles this in the Duet panel, not the slicer)
+3. Monitor — live print monitoring (Cindr3D handles this in the Duet panel, not the slicer)
 
 ## Input file formats Cura accepts
 STL, 3MF, AMF, X3D, OBJ, image (2D→3D), UFP, GCode, GCode.gz, Cura profiles, legacy profiles.

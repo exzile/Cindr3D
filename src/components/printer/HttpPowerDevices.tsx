@@ -20,7 +20,7 @@ interface PowerDevice {
   state: 'on' | 'off' | null;
 }
 
-const STORAGE_KEY = 'dzign3d-power-devices';
+const STORAGE_KEY = 'cindr3d-power-devices';
 
 function loadDevices(): PowerDevice[] {
   try {

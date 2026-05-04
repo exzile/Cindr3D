@@ -6,9 +6,11 @@ export type CameraStreamPreference = 'sub' | 'main';
 export type CameraSourceType = 'network' | 'browser-usb' | 'server-usb';
 export type CameraMainStreamProtocol = 'rtsp' | 'http' | 'hls';
 export type CameraRtspTransport = 'tcp' | 'udp';
-export type CameraPathPreset = 'generic' | 'amcrest';
+export type CameraPathPreset = 'generic' | 'amcrest' | 'reolink' | 'tapo' | 'hikvision' | 'onvif';
+export type CameraStreamRole = 'top' | 'side' | 'nozzle' | 'custom';
 export type CameraDashboardControlSection = 'record' | 'settings' | 'library' | 'timeline' | 'health';
 export type CameraHdBridgeQuality = 'native' | '1080p' | '720p' | '480p';
+export type CameraPtzProvider = 'off' | 'generic-http' | 'amcrest' | 'reolink' | 'tapo' | 'hikvision' | 'onvif';
 
 export interface CameraDashboardPreset {
   id: string;
@@ -27,6 +29,13 @@ export interface CameraDashboardCalibration {
   y: number;
   width: number;
   height: number;
+}
+
+export interface CameraPtzPreset {
+  id: string;
+  name: string;
+  token: string;
+  createdAt: number;
 }
 
 export interface CameraDashboardPrefs {
@@ -53,6 +62,36 @@ export interface CameraDashboardPrefs {
   ptzEnabled: boolean;
   ptzSpeed: number;
   hdBridgeQuality: CameraHdBridgeQuality;
+}
+
+export interface CameraStreamConfig {
+  id: string;
+  label: string;
+  role: CameraStreamRole;
+  enabled: boolean;
+  resolution: string;
+  sourceType: CameraSourceType;
+  host: string;
+  url: string;
+  mainStreamUrl: string;
+  usbDeviceId: string;
+  usbDeviceLabel: string;
+  serverUsbDevice: string;
+  streamPreference: 'sub' | 'main';
+  mainStreamProtocol: CameraMainStreamProtocol;
+  rtspTransport: CameraRtspTransport;
+  pathPreset: CameraPathPreset;
+  username: string;
+  password: string;
+  ptzEnabled: boolean;
+  ptzProvider: CameraPtzProvider;
+  ptzMoveUrlTemplate: string;
+  ptzPresetUrlTemplate: string;
+  ptzPresets: CameraPtzPreset[];
+  ptzStartPresetId: string;
+  webRtcEnabled: boolean;
+  webRtcUrl: string;
+  webRtcIceServers: string;
 }
 
 export interface CustomButton {
@@ -130,6 +169,9 @@ export interface DuetPrefs {
   webcamPathPreset: CameraPathPreset;
   webcamUsername: string;
   webcamPassword: string;
+  cameras: CameraStreamConfig[];
+  activeCameraId: string;
+  dashboardCameraId: string;
   cameraDashboard: CameraDashboardPrefs;
   // Behaviour
   confirmToolChange: boolean;

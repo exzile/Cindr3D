@@ -57,7 +57,7 @@
 # 29-tool surface (primitives, sketches, features, booleans, transforms,
 # export). BYOK chat panel reuses the same tool definitions over Anthropic
 # and OpenAI/OpenRouter streaming. See README "Use your own Claude with
-# DesignCAD" and docs/ai-examples.md for the full reference.
+# Cindr3D" and docs/ai-examples.md for the full reference.
 #
 # Files of record:
 #   src/services/mcp/                    — server, tool handlers, byokDefs
@@ -91,7 +91,7 @@
 # REMAINING WORK — Phases 7-18 (post-Klipper-unification feature plan)
 # ============================================================================
 # Following the cross-firmware printer work shipped 2026-05-03, the next
-# batch expands DesignCAD into a print-farm-scale tool with vision-based
+# batch expands Cindr3D into a print-farm-scale tool with vision-based
 # intelligence, AR overlays, energy/cost tracking, maintenance lifecycle,
 # integrations with home-automation systems, and operational polish
 # (mobile UI, i18n, a11y, session resume, profile diff). Slicer
@@ -111,64 +111,65 @@
 
 
 ## ── Phase 7: Print farm intelligence ──────────────────────────────────────
-## Goal: turn DesignCAD into a usable print-farm controller. Depends on
+## Goal: turn Cindr3D into a usable print-farm controller. Depends on
 ## the existing fleet store; no firmware changes required.
 
 ### 7.1 Smart print queue  [M]
 #   New store: src/store/printQueueStore.ts (zustand + persist)
 #   Queue UI: new tab in printer panel + a dashboard panel preview
-#   [ ] Cross-printer queue with drag-reorder and per-job status
-#   [ ] Auto-routing rules: build volume, material loaded, nozzle size,
+#   [x] Cross-printer queue with drag-reorder and per-job status
+#   [x] Auto-routing rules: build volume, material loaded, nozzle size,
 #       per-printer profile compatibility
-#   [ ] "Print N copies, distribute across printers" splitter
-#   [ ] Pause / cancel / move job between printers
-#   [ ] Persistence: queue survives browser restart; reconciles with
+#   [x] "Print N copies, distribute across printers" splitter
+#   [x] Pause / cancel / move job between printers
+#   [x] Persistence: queue survives browser restart; reconciles with
 #       printer state on reconnect
 
 ### 7.2 All-cameras grid view  [S]
 #   New panel: src/components/printer/cameras/AllCamerasGrid.tsx
-#   [ ] Wall view of every saved printer's webcam feed
-#   [ ] Per-tile overlay: name, status, current layer, ETA, alerts
-#   [ ] Click a tile → jump to that printer's monitor
-#   [ ] Compact / expanded modes; configurable refresh rate
+#   [x] Wall view of every saved printer's webcam feed
+#   [x] Per-tile overlay: name, status, current layer, ETA, alerts
+#   [x] Click a tile → jump to that printer's monitor
+#   [x] Compact / expanded modes; configurable refresh rate
 
 ### 7.3 Cross-printer A/B comparison  [M]
-#   [ ] Same G-code → run on Printer A and B in parallel
-#   [ ] Side-by-side timing dashboard (layer time deltas, total time)
-#   [ ] Optional camera-based dimensional comparison (depends on Phase 9)
-#   [ ] Aggregate "which printer is faster / quality-best" report
+#   [x] Same G-code → run on Printer A and B in parallel
+#   [x] Side-by-side timing dashboard (layer time deltas, total time)
+#   [x] Optional camera-based dimensional comparison (depends on Phase 9)
+#       Phase 7 records quality notes/ratings; dimensional camera analysis lands in Phase 9.
+#   [x] Aggregate "which printer is faster / quality-best" report
 
 ### 7.4 Filament inventory across the fleet  [S]
 #   Extends existing spoolStore
-#   [ ] Aggregate weight per material across all spools
-#   [ ] Low-stock warnings (configurable threshold per material)
-#   [ ] Auto-decrement during prints using slicer-estimated filamentUsed
-#   [ ] Per-printer "what spool is loaded" tracking
+#   [x] Aggregate weight per material across all spools
+#   [x] Low-stock warnings (configurable threshold per material)
+#   [x] Auto-decrement during prints using slicer-estimated filamentUsed
+#   [x] Per-printer "what spool is loaded" tracking
 
 ### 7.5 Multi-camera per printer  [M]
 #   Extend per-printer config to support N camera streams
-#   [ ] Camera tab: tabs for top / side / nozzle / custom views
-#   [ ] Dashboard cards: select which feed to display
-#   [ ] Per-camera resolution + URL config; per-camera enable toggle
-#   [ ] Migration: existing single-camera configs upgrade cleanly
+#   [x] Camera tab: tabs for top / side / nozzle / custom views
+#   [x] Dashboard cards: select which feed to display
+#   [x] Per-camera resolution + URL config; per-camera enable toggle
+#   [x] Migration: existing single-camera configs upgrade cleanly
 
 ### 7.6 Layer-by-layer photo gallery  [S]
 #   New service: src/services/camera/layerGallery.ts
-#   [ ] Subscribe to layer-change events; trigger per-camera snapshot
-#   [ ] Store frames keyed by (printer, job, layer) — short retention,
+#   [x] Subscribe to layer-change events; trigger per-camera snapshot
+#   [x] Store frames keyed by (printer, job, layer) — short retention,
 #       configurable cap
-#   [ ] Gallery UI: scroll through layers, find when failure started
-#   [ ] ZIP export for archival; pairs with vision failure detection (8.1)
+#   [x] Gallery UI: scroll through layers, find when failure started
+#   [x] ZIP export for archival; pairs with vision failure detection (8.1)
 
 ### 7.7 PTZ control for IP cameras  [M]
-#   [ ] ONVIF support for Reolink / Tapo / Hikvision / Amcrest / generic
-#   [ ] Per-camera preset positions; D-pad live pan/tilt/zoom UI
-#   [ ] Save current position as preset; jump-to-preset on print start
+#   [x] ONVIF support for Reolink / Tapo / Hikvision / Amcrest / generic
+#   [x] Per-camera preset positions; D-pad live pan/tilt/zoom UI
+#   [x] Save current position as preset; jump-to-preset on print start
 
 ### 7.8 WebRTC camera streaming  [L]
-#   [ ] Replace MJPEG with WebRTC for sub-second latency
-#   [ ] Optional ICE/TURN for remote-network access (self-hosted)
-#   [ ] Fallback to MJPEG when WebRTC unavailable (older cameras)
+#   [x] Replace MJPEG with WebRTC for sub-second latency
+#   [x] Optional ICE/TURN for remote-network access (self-hosted)
+#   [x] Fallback to MJPEG when WebRTC unavailable (older cameras)
 
 # Dependencies: 7.1 has no deps. 7.2 depends on existing camera infra.
 # 7.3 runs after 7.1. 7.4 parallel with everything. 7.5 → 7.6 → 7.7 → 7.8
@@ -359,7 +360,7 @@
 #   [ ] Auto-discovery payload (HA discovery format)
 
 ### 13.4 Profile import (Cura / OrcaSlicer / Bambu Studio)  [M]
-#   [ ] Parser per format → DesignCAD's PrintProfile shape
+#   [ ] Parser per format → Cindr3D's PrintProfile shape
 #   [ ] Import wizard: pick file → preview mappings → confirm
 #   [ ] Round-trip 3MF preserving multi-part build-plate layout
 
@@ -405,7 +406,7 @@
 ## sub-phases run in parallel; no internal dependencies.
 
 ### 14.1 Print resume across browser sessions  [M]
-#   [ ] Capture "what print is this UI attached to" so opening DesignCAD
+#   [ ] Capture "what print is this UI attached to" so opening Cindr3D
 #       on a new device reconnects to the live job
 #   [ ] Reconnect handshake reuses live polling / websocket auth
 #   [ ] Banner: "Print was started from Chromebook on Tuesday 4 PM"

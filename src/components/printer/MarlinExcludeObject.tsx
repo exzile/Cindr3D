@@ -237,7 +237,7 @@ export default function MarlinExcludeObject() {
               <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>
                 {sliceResult
                   ? 'The most recent slice did not contain any M486 labels. '
-                  : 'No sliced G-code is loaded in DesignCAD. '}
+                  : 'No sliced G-code is loaded in Cindr3D. '}
                 M486 needs object labels in the G-code itself — enable{' '}
                 <strong>Label objects</strong> in PrusaSlicer / SuperSlicer / OrcaSlicer
                 (Print Settings → Output) or run the <em>Label Objects</em> post-processing
@@ -252,7 +252,7 @@ export default function MarlinExcludeObject() {
           <div className="klipper-card-header">Send M486 manually</div>
           <div className="klipper-card-body">
             <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55 }}>
-              Use this for SD-card prints or any G-code DesignCAD didn't slice. Enter the
+              Use this for SD-card prints or any G-code Cindr3D didn't slice. Enter the
               object ID printed in your slicer's preview, then click Send.
             </p>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
