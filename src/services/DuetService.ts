@@ -48,7 +48,7 @@ import {
   simulateFileCommand,
   startPrintCommand,
 } from './duet/machineControls';
-import { parseMarlinProgress } from './gcode/marlinProgressParser';
+import { layerFromPercent, parseMarlinProgress } from './gcode/marlinProgressParser';
 import {
   WebSerialConnection,
   findGrantedPort,
@@ -318,20 +318,29 @@ export class DuetService {
     const update = parseMarlinProgress(line);
     if (!update) return;
     const jobPatch: Record<string, unknown> = {};
-    if (update.layer !== undefined) jobPatch.layer = update.layer;
+
+    // Total-layer count flows in via "echo:Layer N/M" or future M73 extensions.
+    // Update the model first so any percent→layer estimate below sees it.
+    const totalLayers = update.totalLayers
+      ?? this.objectModel.job?.file?.numLayers
+      ?? 0;
     if (update.totalLayers !== undefined) {
       jobPatch.file = { ...(this.objectModel.job?.file ?? {}), numLayers: update.totalLayers };
     }
+
+    // Prefer an explicit layer reading; fall back to estimating it from the
+    // M73 percent when we know the total. Marlin's M73 receipt is the only
+    // ongoing progress signal for the vast majority of printed jobs.
+    if (update.layer !== undefined) {
+      jobPatch.layer = update.layer;
+    } else if (update.percent !== undefined && totalLayers > 0) {
+      jobPatch.layer = layerFromPercent(update.percent, totalLayers);
+    }
+
     if (update.remainingSeconds !== undefined) {
       jobPatch.timesLeft = { ...(this.objectModel.job?.timesLeft ?? {}), file: update.remainingSeconds };
     }
-    if (update.percent !== undefined) {
-      // RRF doesn't store a top-level fractionPrinted; the percent flows in
-      // implicitly via filePosition/file.size, but Marlin has neither — so
-      // we stash it where the existing layer-progress UI will pick it up.
-      const currentLayer = this.objectModel.job?.layers ?? [];
-      jobPatch.layers = currentLayer; // unchanged, just preserve
-    }
+
     if (Object.keys(jobPatch).length > 0) {
       this.applyModelPatch({ job: jobPatch });
     }

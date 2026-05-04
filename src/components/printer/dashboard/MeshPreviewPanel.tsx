@@ -24,7 +24,7 @@ import { useSlicerStore } from '../../../store/slicerStore';
 import { parseM486Labels } from '../../../services/gcode/m486Labels';
 import { findMatchingObject, matchObjectNames } from '../../../services/gcode/objectNameMatch';
 import { layerFromPercent } from '../../../services/gcode/marlinProgressParser';
-import { MoonrakerService, type MoonrakerPrintStatus } from '../../../services/MoonrakerService';
+import { useKlipperPrintStatus } from '../hooks/useKlipperPrintStatus';
 import {
   BuildPlateGrid,
   BuildVolumeWireframe,
@@ -206,8 +206,6 @@ function ObjectContextMenu({
 export default function MeshPreviewPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const boardType = usePrinterStore((s) => s.config.boardType);
-  const hostname = usePrinterStore((s) => s.config.hostname);
-  const connected = usePrinterStore((s) => s.connected);
   const model = usePrinterStore((s) => s.model);
   const cancelObject = usePrinterStore((s) => s.cancelObject);
   const sendGCode = usePrinterStore((s) => s.sendGCode);
@@ -219,22 +217,9 @@ export default function MeshPreviewPanel() {
 
   const bv = printerProfile?.buildVolume ?? { x: 220, y: 220, z: 250 };
 
-  // ── Klipper print-status polling ───────────────────────────────────────────
-  // Klipper has no in-store live layer; poll Moonraker every 3s while connected
-  // and expose the synthesised status for rendering. Skipped for other boards.
-  const [klipperStatus, setKlipperStatus] = useState<MoonrakerPrintStatus | null>(null);
-  useEffect(() => {
-    if (boardType !== 'klipper' || !connected || !hostname) return;
-    const svc = new MoonrakerService(hostname);
-    let cancelled = false;
-    const tick = async () => {
-      const s = await svc.getPrintStatus();
-      if (!cancelled) setKlipperStatus(s);
-    };
-    void tick();
-    const id = setInterval(tick, 3000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [boardType, connected, hostname]);
+  // Klipper has no in-store live layer; the shared hook polls Moonraker every
+  // 3 s while connected and returns the latest synthesised status (null otherwise).
+  const klipperStatus = useKlipperPrintStatus();
 
   // ── Current layer (cross-firmware) ─────────────────────────────────────────
   const totalLayers = sliceResult?.layerCount ?? 0;
