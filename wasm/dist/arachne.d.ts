@@ -1,4 +1,4 @@
-﻿export interface ArachneModule {
+export interface ArachneModule {
   HEAPF64: Float64Array;
   HEAP32: Int32Array;
   _malloc(size: number): number;
@@ -19,5 +19,5 @@
 }
 
 export default function createArachneModule(
-  options?: { locateFile?(path: string): string }
+  options?: { wasmBinary?: ArrayBuffer; locateFile?(path: string): string }
 ): Promise<ArachneModule>;

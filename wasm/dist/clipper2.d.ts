@@ -1,4 +1,4 @@
-﻿export interface Clipper2Module {
+export interface Clipper2Module {
   HEAPF64: Float64Array;
   HEAP32: Int32Array;
   _malloc(size: number): number;
@@ -22,5 +22,5 @@
 }
 
 export default function createClipper2Module(
-  options?: { locateFile?(path: string): string }
+  options?: { wasmBinary?: ArrayBuffer; locateFile?(path: string): string }
 ): Promise<Clipper2Module>;
