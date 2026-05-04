@@ -20,9 +20,17 @@ export type PanelId =
   | 'object-cancel'
   | 'mesh-preview';
 
-// Spacer placeholder — encodes its column span in the ID, e.g. '__spacer_6'
-export type SpacerId = `__spacer_${number}`;
-export type LayoutItem = PanelId | SpacerId;
+export interface DashboardLayoutItem {
+  i: PanelId;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
-// Valid column spans in a 12-column grid
-export type ColSpan = 3 | 4 | 6 | 8 | 12;
+export interface DashboardConfig {
+  id: string;
+  name: string;
+  layouts: Record<PanelId, DashboardLayoutItem>;
+  hidden: Record<string, boolean>;
+}

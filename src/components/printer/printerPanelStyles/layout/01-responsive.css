@@ -32,12 +32,67 @@
 }
 
 .duet-dash-card-list {
+  --dc-grid-pad-top: 8px;
+  --dc-grid-pad-right: 10px;
+  --dc-grid-pad-bottom: 18px;
+  --dc-grid-pad-left: 10px;
+  --dc-grid-gap: 10px;
+  --dc-grid-row: 90px;
   position: relative;
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  grid-auto-rows: 90px;
-  gap: 10px;
-  padding: 8px 10px 18px;
+  min-height: calc(100vh - 112px);
+  overflow: visible;
+}
+
+.duet-dash-card-list.is-edit-grid::before {
+  content: '';
+  position: absolute;
+  top: var(--dc-grid-pad-top);
+  right: var(--dc-grid-pad-right);
+  bottom: var(--dc-grid-pad-bottom);
+  left: var(--dc-grid-pad-left);
+  pointer-events: none;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--accent) 28%, var(--border)) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 28%, var(--border)) 1px, transparent 1px);
+  background-size:
+    calc((100% - (11 * var(--dc-grid-gap))) / 12 + var(--dc-grid-gap)) calc(var(--dc-grid-row) + var(--dc-grid-gap)),
+    calc((100% - (11 * var(--dc-grid-gap))) / 12 + var(--dc-grid-gap)) calc(var(--dc-grid-row) + var(--dc-grid-gap));
+  border: 1px dashed color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 8px;
+  opacity: 0.55;
+  z-index: 0;
+}
+
+.duet-dash-card-list .react-grid-item {
+  z-index: 1;
+}
+
+.duet-dash-card-list .react-grid-item.react-draggable-dragging,
+.duet-dash-card-list .react-grid-item.resizing {
+  z-index: 5;
+}
+
+.duet-dash-card-list .react-grid-item.react-grid-placeholder {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  opacity: 0.28;
+}
+
+.duet-dash-card-list .react-grid-item > .react-resizable-handle {
+  opacity: 0;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.duet-dash-card-list .react-grid-item:hover > .react-resizable-handle,
+.duet-dash-card-list .react-grid-item.resizing > .react-resizable-handle {
+  opacity: 1;
+}
+
+.duet-dash-card-list .react-grid-item > .react-resizable-handle::after {
+  border-color: var(--accent);
 }
 
 /* Ã¢â€â‚¬Ã¢â€â‚¬ wrapper Ã¢â€â‚¬Ã¢â€â‚¬ */
@@ -59,6 +114,7 @@
     0 10px 24px rgba(0,0,0,0.13),
     0 2px 6px rgba(0,0,0,0.08);
   transition: opacity 0.15s, outline 0.1s, box-shadow 0.2s, border-color 0.2s, transform 0.2s;
+  height: 100%;
 }
 
 .dc-wrapper:not(.is-edit):not(.is-dragging) {
@@ -77,12 +133,12 @@
   transform: translateY(-1px);
 }
 
-.dc-wrapper:nth-child(6n + 1) { --dc-accent: #ef4444; }
-.dc-wrapper:nth-child(6n + 2) { --dc-accent: #3b82f6; }
-.dc-wrapper:nth-child(6n + 3) { --dc-accent: #14b8a6; }
-.dc-wrapper:nth-child(6n + 4) { --dc-accent: #f59e0b; }
-.dc-wrapper:nth-child(6n + 5) { --dc-accent: #8b5cf6; }
-.dc-wrapper:nth-child(6n + 6) { --dc-accent: #22c55e; }
+.react-grid-item:nth-child(6n + 1) .dc-wrapper { --dc-accent: #ef4444; }
+.react-grid-item:nth-child(6n + 2) .dc-wrapper { --dc-accent: #3b82f6; }
+.react-grid-item:nth-child(6n + 3) .dc-wrapper { --dc-accent: #14b8a6; }
+.react-grid-item:nth-child(6n + 4) .dc-wrapper { --dc-accent: #f59e0b; }
+.react-grid-item:nth-child(6n + 5) .dc-wrapper { --dc-accent: #8b5cf6; }
+.react-grid-item:nth-child(6n + 6) .dc-wrapper { --dc-accent: #22c55e; }
 
 .dc-wrapper.is-edit {
   outline: 1.5px dashed var(--accent);
@@ -95,37 +151,6 @@
 
 .dc-wrapper.is-edit:active .dc-header {
   cursor: grabbing;
-}
-
-.dc-wrapper.is-drop-before,
-.dc-wrapper.is-drop-after {
-  position: relative;
-}
-
-.dc-wrapper.is-drop-before::before {
-  content: '';
-  position: absolute;
-  inset: -3px 0 auto 0;
-  height: 3px;
-  background: var(--accent);
-  border-radius: 2px;
-  z-index: 20;
-  pointer-events: none;
-}
-
-.dc-wrapper.is-drop-after::after {
-  content: '';
-  position: absolute;
-  inset: auto 0 -3px 0;
-  height: 3px;
-  background: var(--accent);
-  border-radius: 2px;
-  z-index: 20;
-  pointer-events: none;
-}
-
-.dc-wrapper.is-dragging {
-  opacity: 0.4;
 }
 
 /* Ã¢â€â‚¬Ã¢â€â‚¬ header strip Ã¢â€â‚¬Ã¢â€â‚¬ */
@@ -196,75 +221,9 @@
 }
 
 /* Ã¢â€â‚¬Ã¢â€â‚¬ resize handle Ã¢â€â‚¬Ã¢â€â‚¬ */
-.dc-resize-handle {
-  position: absolute;
-  right: -4px;
-  top: 15%;
-  bottom: 15%;
-  width: 8px;
-  cursor: col-resize;
-  background: var(--accent);
-  border-radius: 4px;
-  opacity: 0;
-  transition: opacity 0.15s;
-  z-index: 10;
-}
-
-.dc-wrapper.is-edit:hover .dc-resize-handle {
-  opacity: 0.5;
-}
-
-.dc-resize-handle:hover,
-.dc-resize-handle:active {
-  opacity: 1 !important;
-}
 
 /* Ã¢â€â‚¬Ã¢â€â‚¬ height resize handle (bottom edge) Ã¢â€â‚¬Ã¢â€â‚¬ */
-.dc-resize-handle-y {
-  position: absolute;
-  bottom: -4px;
-  left: 20%;
-  right: 20%;
-  height: 8px;
-  cursor: row-resize;
-  background: var(--accent);
-  border-radius: 4px;
-  opacity: 0;
-  transition: opacity 0.15s;
-  z-index: 10;
-}
-
-.dc-wrapper.is-edit:hover .dc-resize-handle-y {
-  opacity: 0.5;
-}
-
-.dc-resize-handle-y:hover,
-.dc-resize-handle-y:active {
-  opacity: 1 !important;
-}
-
 /* Ã¢â€â‚¬Ã¢â€â‚¬ corner handle: bottom-right, resizes both width and height Ã¢â€â‚¬Ã¢â€â‚¬ */
-.dc-resize-corner {
-  position: absolute;
-  bottom: -5px;
-  right: -5px;
-  width: 12px;
-  height: 12px;
-  cursor: nwse-resize;
-  background: var(--accent);
-  border-radius: 50%;
-  opacity: 0;
-  transition: opacity 0.15s;
-  z-index: 12;
-}
-.dc-wrapper.is-edit:hover .dc-resize-corner {
-  opacity: 0.8;
-}
-.dc-resize-corner:hover,
-.dc-resize-corner:active {
-  opacity: 1 !important;
-}
-
 /* Ã¢â€â‚¬Ã¢â€â‚¬ body: strip child panel's own box so dc-wrapper is the only border Ã¢â€â‚¬Ã¢â€â‚¬ */
 .dc-body {
   flex: 1;

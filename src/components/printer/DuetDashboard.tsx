@@ -1,10 +1,16 @@
-import { useCallback, useState } from 'react';
-import { Eye, FileCode, FolderOpen, PencilRuler, PlugZap, RotateCcw, Settings, Wifi } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
+import type { DragEvent } from 'react';
+import ReactGridLayout, { noCompactor, useContainerWidth, type Layout, type LayoutItem as GridLayoutItem } from 'react-grid-layout';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
+import { Check, Edit3, Eye, EyeOff, FileCode, FolderOpen, GripVertical, Minus, PencilRuler, PlugZap, Plus, RotateCcw, Settings, Wifi, X } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import {
-  DEFAULT_COLSPANS,
-  DEFAULT_ROWSPANS,
-  isSpacerId,
+  GRID_COLS,
+  MIN_PANEL_WIDTH,
+  ROW_HEIGHT,
+  defaultPanelLayout,
+  type DashboardLayoutItem,
   type PanelId,
 } from '../../store/dashboardLayoutStore';
 import { useDashboardLayout } from '../../store/dashboardLayoutStore';
@@ -12,8 +18,30 @@ import { colors as COLORS } from '../../utils/theme';
 import DashboardCard from './dashboard/DashboardCard';
 import CameraDashboardPanel from './dashboard/CameraDashboardPanel';
 import ViewSettingsPanel from './dashboard/ViewSettingsPanel';
-import { PANEL_DEFS, PANEL_MAP, SpacerBlock } from './duetDashboard/config';
-import { useDashboardEditor } from './duetDashboard/useDashboardEditor';
+import { PANEL_DEFS } from './duetDashboard/config';
+
+const GRID_MARGIN: readonly [number, number] = [10, 10];
+const GRID_PADDING: readonly [number, number] = [10, 8];
+
+function panelSort(layouts: Record<PanelId, DashboardLayoutItem>) {
+  return (a: (typeof PANEL_DEFS)[number], b: (typeof PANEL_DEFS)[number]) => {
+    const aLayout = layouts[a.id] ?? defaultPanelLayout(a.id);
+    const bLayout = layouts[b.id] ?? defaultPanelLayout(b.id);
+    return aLayout.y - bLayout.y || aLayout.x - bLayout.x || a.title.localeCompare(b.title);
+  };
+}
+
+function gridBottom(layouts: Record<PanelId, DashboardLayoutItem>, hidden: Record<string, boolean>) {
+  return PANEL_DEFS.reduce((bottom, panel) => {
+    if (hidden[panel.id]) return bottom;
+    const layout = layouts[panel.id] ?? defaultPanelLayout(panel.id);
+    return Math.max(bottom, layout.y + layout.h);
+  }, 0);
+}
+
+function isPanelId(value: string): value is PanelId {
+  return PANEL_DEFS.some((panel) => panel.id === value);
+}
 
 export default function DuetDashboard() {
   const connected = usePrinterStore((s) => s.connected);
@@ -26,54 +54,127 @@ export default function DuetDashboard() {
   const setActiveTab = usePrinterStore((s) => s.setActiveTab);
   const error = usePrinterStore((s) => s.error);
   const setError = usePrinterStore((s) => s.setError);
-  const order = useDashboardLayout((s) => s.order);
+  const dashboards = useDashboardLayout((s) => s.dashboards);
+  const activeDashboardId = useDashboardLayout((s) => s.activeDashboardId);
+  const layouts = useDashboardLayout((s) => s.layouts);
   const hidden = useDashboardLayout((s) => s.hidden);
-  const colSpans = useDashboardLayout((s) => s.colSpans);
-  const rowSpans = useDashboardLayout((s) => s.rowSpans);
-  const setOrder = useDashboardLayout((s) => s.setOrder);
-  const setColSpan = useDashboardLayout((s) => s.setColSpan);
-  const setRowSpan = useDashboardLayout((s) => s.setRowSpan);
+  const addDashboard = useDashboardLayout((s) => s.addDashboard);
+  const removeDashboard = useDashboardLayout((s) => s.removeDashboard);
+  const renameDashboard = useDashboardLayout((s) => s.renameDashboard);
+  const setActiveDashboard = useDashboardLayout((s) => s.setActiveDashboard);
+  const setLayouts = useDashboardLayout((s) => s.setLayouts);
+  const setPanelLayout = useDashboardLayout((s) => s.setPanelLayout);
+  const setHidden = useDashboardLayout((s) => s.setHidden);
+  const setAllHidden = useDashboardLayout((s) => s.setAllHidden);
   const reset = useDashboardLayout((s) => s.reset);
 
+  const [editMode, setEditMode] = useState(false);
   const [showViewSettings, setShowViewSettings] = useState(false);
+  const [menuDragId, setMenuDragId] = useState<PanelId | null>(null);
+  const [renamingDashboardId, setRenamingDashboardId] = useState<string | null>(null);
+  const [dashboardNameDraft, setDashboardNameDraft] = useState('');
+  const { width: gridWidth, containerRef: gridContainerRef, mounted: gridMounted } = useContainerWidth({ initialWidth: 1280 });
   const handleCloseViewSettings = useCallback(() => setShowViewSettings(false), []);
 
-  const {
-    containerRef,
-    dragId,
-    dragOver,
-    dragOverlay,
-    dropZoneHover,
-    editMode,
-    gapMap,
-    handleContainerDragOver,
-    handleContainerDrop,
-    handleDragEnd,
-    handleDragOver,
-    handleDragStart,
-    handleDrop,
-    handleGapDrop,
-    handleResizeStart,
-    handleResizeStartCorner,
-    handleResizeStartY,
-    handleShiftLeft,
-    handleShiftRight,
-    removeFromOrder,
-    setDropZoneHover,
-    setEditMode,
-    shiftInfo,
-  } = useDashboardEditor({
-    colSpans,
-    hidden,
-    order,
-    rowSpans,
-    setColSpan,
-    setOrder,
-    setRowSpan,
-  });
-
-  const hiddenCount = Object.values(hidden).filter(Boolean).length;
   const activePrinter = printers.find((printer) => printer.id === activePrinterId);
+  const hiddenCount = Object.values(hidden).filter(Boolean).length;
+  const isOpeningDashboard = Boolean(config.hostname) && (connecting || reconnecting);
+  const visiblePanels = useMemo(
+    () => PANEL_DEFS.filter((panel) => !hidden[panel.id]).sort(panelSort(layouts)),
+    [hidden, layouts],
+  );
+
+  const gridLayout = useMemo<Layout>(() => visiblePanels.map((panel) => {
+    const item = layouts[panel.id] ?? defaultPanelLayout(panel.id);
+    return {
+      ...item,
+      minW: MIN_PANEL_WIDTH,
+      minH: 1,
+      maxW: GRID_COLS,
+      isDraggable: editMode,
+      isResizable: editMode,
+      resizeHandles: ['se', 'e', 's'],
+    };
+  }), [editMode, layouts, visiblePanels]);
+
+  const commitLayout = useCallback((nextLayout: Layout) => {
+    setLayouts({
+      ...layouts,
+      ...Object.fromEntries(
+        nextLayout
+          .filter((item): item is GridLayoutItem & { i: PanelId } => isPanelId(item.i))
+          .map((item) => [
+            item.i,
+            {
+              i: item.i,
+              x: item.x,
+              y: item.y,
+              w: item.w,
+              h: item.h,
+            },
+          ]),
+      ),
+    });
+  }, [layouts, setLayouts]);
+
+  const handleAddPanel = useCallback((id: PanelId, placement?: Pick<DashboardLayoutItem, 'x' | 'y'>) => {
+    const existing = layouts[id] ?? defaultPanelLayout(id);
+    setPanelLayout(id, {
+      ...existing,
+      x: placement?.x ?? 0,
+      y: placement?.y ?? gridBottom(layouts, hidden),
+    });
+    setHidden(id, false);
+  }, [hidden, layouts, setHidden, setPanelLayout]);
+
+  const handleGridDrop = useCallback((nextLayout: Layout, item: GridLayoutItem | undefined) => {
+    if (!menuDragId || !item) return;
+    const existing = layouts[menuDragId] ?? defaultPanelLayout(menuDragId);
+    commitLayout(nextLayout);
+    setPanelLayout(menuDragId, {
+      ...existing,
+      x: item.x,
+      y: item.y,
+      w: item.w,
+      h: item.h,
+    });
+    setHidden(menuDragId, false);
+    setMenuDragId(null);
+  }, [commitLayout, layouts, menuDragId, setHidden, setPanelLayout]);
+
+  const handleGridDropDragOver = useCallback(() => {
+    if (!menuDragId) return false;
+    const item = layouts[menuDragId] ?? defaultPanelLayout(menuDragId);
+    return { w: item.w, h: item.h };
+  }, [layouts, menuDragId]);
+
+  const handlePanelMenuDrop = useCallback((event: DragEvent, nextHidden: boolean) => {
+    event.preventDefault();
+    if (!menuDragId) return;
+    if (!nextHidden) {
+      if (hidden[menuDragId]) handleAddPanel(menuDragId);
+    } else if (!hidden[menuDragId]) {
+      setHidden(menuDragId, true);
+    }
+    setMenuDragId(null);
+  }, [handleAddPanel, hidden, menuDragId, setHidden]);
+
+  const beginRenameDashboard = useCallback((id: string, name: string) => {
+    setRenamingDashboardId(id);
+    setDashboardNameDraft(name);
+  }, []);
+
+  const commitRenameDashboard = useCallback(() => {
+    if (!renamingDashboardId) return;
+    renameDashboard(renamingDashboardId, dashboardNameDraft);
+    setRenamingDashboardId(null);
+    setDashboardNameDraft('');
+  }, [dashboardNameDraft, renameDashboard, renamingDashboardId]);
+
+  const cancelRenameDashboard = useCallback(() => {
+    setRenamingDashboardId(null);
+    setDashboardNameDraft('');
+  }, []);
 
   if (!connected) {
     return (
@@ -93,14 +194,14 @@ export default function DuetDashboard() {
 
         <div className="duet-dash-offline">
           <div className="duet-dash-offline__hero">
-            <div className="duet-dash-offline__icon">
-              <PlugZap size={28} />
+            <div className={`duet-dash-offline__icon${isOpeningDashboard ? ' is-pulsing' : ''}`}>
+              {isOpeningDashboard ? <Wifi size={28} /> : <PlugZap size={28} />}
             </div>
             <div>
-              <h2>Connect a Duet printer</h2>
+              <h2>{isOpeningDashboard ? 'Opening printer dashboard' : 'Connect a Duet printer'}</h2>
               <p>
-                {reconnecting
-                  ? 'Reconnecting to the last printer. You can still open settings to adjust the target.'
+                {isOpeningDashboard
+                  ? 'Restoring the saved printer connection. The dashboard will appear as soon as live machine data is ready.'
                   : 'Set up a Duet board to unlock live controls, file management, print monitoring, and machine diagnostics.'}
               </p>
             </div>
@@ -151,7 +252,7 @@ export default function DuetDashboard() {
   }
 
   return (
-    <div className="duet-dash-root" style={{ background: COLORS.bg }}>
+    <div className={`duet-dash-root${editMode ? ' is-layout-editing' : ''}`} style={{ background: COLORS.bg }}>
       {error && (
         <div className="duet-dash-error-banner" style={{ borderColor: COLORS.danger, color: COLORS.danger }}>
           <span>{error}</span>
@@ -167,10 +268,82 @@ export default function DuetDashboard() {
 
       <div className="duet-dash-controls-bar">
         <div className="dc-controls-left">
+          <div className="dc-dashboard-tabs" aria-label="Dashboard layouts">
+            {dashboards.map((dashboard) => {
+              const isActive = dashboard.id === activeDashboardId;
+              const isRenaming = dashboard.id === renamingDashboardId;
+              return (
+                <div
+                  key={dashboard.id}
+                  className={`dc-dashboard-tab${isActive ? ' is-active' : ''}`}
+                >
+                  {isRenaming ? (
+                    <>
+                      <input
+                        className="dc-dashboard-tab__input"
+                        value={dashboardNameDraft}
+                        autoFocus
+                        onChange={(event) => setDashboardNameDraft(event.target.value)}
+                        onBlur={commitRenameDashboard}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') commitRenameDashboard();
+                          if (event.key === 'Escape') cancelRenameDashboard();
+                        }}
+                      />
+                      <button
+                        className="dc-dashboard-tab__icon"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={commitRenameDashboard}
+                        title="Save dashboard name"
+                      >
+                        <Check size={11} />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="dc-dashboard-tab__select"
+                        onClick={() => setActiveDashboard(dashboard.id)}
+                        onDoubleClick={() => beginRenameDashboard(dashboard.id, dashboard.name)}
+                        title="Switch dashboard"
+                      >
+                        {dashboard.name}
+                      </button>
+                      {isActive && (
+                        <button
+                          className="dc-dashboard-tab__icon"
+                          onClick={() => beginRenameDashboard(dashboard.id, dashboard.name)}
+                          title="Rename dashboard"
+                        >
+                          <Edit3 size={11} />
+                        </button>
+                      )}
+                      {isActive && dashboards.length > 1 && (
+                        <button
+                          className="dc-dashboard-tab__icon"
+                          onClick={() => removeDashboard(dashboard.id)}
+                          title="Delete dashboard"
+                        >
+                          <X size={11} />
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })}
+            <button
+              className="dc-dashboard-add"
+              onClick={addDashboard}
+              title="Add dashboard"
+            >
+              <Plus size={12} /> Dashboard
+            </button>
+          </div>
           {hiddenCount > 0 && <span className="dc-hidden-badge">{hiddenCount} hidden</span>}
           {editMode && (
             <span className="dc-edit-badge">
-              Drag to swap · drag to empty space to move · resize handles on edges &amp; corners
+              {visiblePanels.length} active cards
             </span>
           )}
         </div>
@@ -200,129 +373,196 @@ export default function DuetDashboard() {
         </div>
       </div>
 
-      <div
-        className="duet-dash-card-list"
-        ref={containerRef}
-        onDragOver={editMode ? handleContainerDragOver : undefined}
-        onDrop={editMode ? handleContainerDrop : undefined}
-      >
-        {editMode && (
-          <div className="dc-edit-overlay" aria-hidden="true">
-            {Array.from({ length: 12 * 20 }).map((_, index) => (
-              <div key={index} className="dc-edit-col" />
+      {editMode && (
+        <DashboardLayoutOverlay
+          panels={PANEL_DEFS}
+          layouts={layouts}
+          hidden={hidden}
+          dragId={menuDragId}
+          onDragStart={setMenuDragId}
+          onDragEnd={() => setMenuDragId(null)}
+          onVisibilityDrop={handlePanelMenuDrop}
+          onClearPanels={() => setAllHidden(true)}
+          onDone={() => setEditMode(false)}
+          onAddPanel={handleAddPanel}
+          onSetHidden={setHidden}
+        />
+      )}
+
+      <div ref={gridContainerRef}>
+        {gridMounted && (
+          <ReactGridLayout
+            className={`duet-dash-card-list${editMode ? ' is-edit-grid' : ''}`}
+            layout={gridLayout}
+            width={gridWidth}
+            gridConfig={{
+              cols: GRID_COLS,
+              rowHeight: ROW_HEIGHT,
+              margin: GRID_MARGIN,
+              containerPadding: GRID_PADDING,
+            }}
+            compactor={noCompactor}
+            dragConfig={{
+              enabled: editMode,
+              handle: '.dc-header',
+              cancel: '.dc-body button,.dc-body input,.dc-body select,.dc-body textarea,.dc-body a',
+            }}
+            resizeConfig={{
+              enabled: editMode,
+              handles: ['se', 'e', 's'],
+            }}
+            dropConfig={{
+              enabled: editMode && menuDragId !== null,
+              defaultItem: menuDragId
+                ? { w: layouts[menuDragId]?.w ?? MIN_PANEL_WIDTH, h: layouts[menuDragId]?.h ?? 1 }
+                : { w: MIN_PANEL_WIDTH, h: 1 },
+            }}
+            droppingItem={menuDragId ? { ...(layouts[menuDragId] ?? defaultPanelLayout(menuDragId)), i: '__dropping-elem__' } : undefined}
+            onDropDragOver={handleGridDropDragOver}
+            onDrop={handleGridDrop}
+            onDragStop={(layout) => commitLayout(layout)}
+            onResizeStop={(layout) => commitLayout(layout)}
+          >
+            {visiblePanels.map((panel) => (
+              <div key={panel.id}>
+                <DashboardCard
+                  title={panel.title}
+                  icon={panel.icon}
+                  editMode={editMode}
+                >
+                  {panel.component}
+                </DashboardCard>
+              </div>
             ))}
-          </div>
+          </ReactGridLayout>
         )}
-
-        {dragOverlay &&
-          (() => {
-            const { top, height, colWidth, pStart, panelSpan, insertAfterIdx } = dragOverlay;
-            return Array.from({ length: 14 - panelSpan - pStart + 1 }).map((_, index) => {
-              const col = pStart + index;
-              const zoneKey = `ov-${col}`;
-              return (
-                <div
-                  key={zoneKey}
-                  className={`dc-gap-cell${dropZoneHover === zoneKey ? ' is-hover' : ''}`}
-                  style={{
-                    position: 'absolute',
-                    left: (col - 1) * colWidth,
-                    top,
-                    width: colWidth,
-                    height,
-                    zIndex: 20,
-                    borderRadius: 6,
-                  }}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setDropZoneHover(zoneKey);
-                  }}
-                  onDragLeave={() => setDropZoneHover(null)}
-                  onDrop={(event) => {
-                    event.stopPropagation();
-                    handleGapDrop(insertAfterIdx, col);
-                  }}
-                />
-              );
-            });
-          })()}
-
-        {order.flatMap((id, idx) => {
-          if (isSpacerId(id)) {
-            const span = Number(id.replace('__spacer_', ''));
-            if (!editMode) {
-              return [<div key={`spacer-${idx}`} style={{ gridColumn: `span ${span}` }} />];
-            }
-            return [
-              <SpacerBlock
-                key={`spacer-${idx}`}
-                span={span}
-                onDelete={() => removeFromOrder(idx)}
-              />,
-            ];
-          }
-
-          const def = PANEL_MAP[id as PanelId];
-          if (!def || hidden[id]) return [];
-
-          const span = colSpans[id] ?? DEFAULT_COLSPANS[id as PanelId];
-          const rowSpan = rowSpans[id] ?? DEFAULT_ROWSPANS[id as PanelId];
-          const shift = shiftInfo.get(id) ?? { left: false, right: false };
-
-          const card = (
-            <DashboardCard
-              key={id}
-              id={id}
-              title={def.title}
-              icon={def.icon}
-              colSpan={span}
-              rowSpan={rowSpan}
-              editMode={editMode}
-              dropEdge={dragOver?.id === (id as PanelId) ? dragOver.edge : null}
-              isDragging={dragId === (id as PanelId)}
-              canShiftLeft={shift.left}
-              canShiftRight={shift.right}
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              onDragEnd={handleDragEnd}
-              onResizeStart={handleResizeStart}
-              onResizeStartY={handleResizeStartY}
-              onResizeStartCorner={handleResizeStartCorner}
-              onShiftLeft={handleShiftLeft}
-              onShiftRight={handleShiftRight}
-            >
-              {def.component}
-            </DashboardCard>
-          );
-
-          const gapInfo = gapMap.get(idx);
-          if (gapInfo && dragId) {
-            if (dragId === id) return [card];
-            return [
-              card,
-              <div
-                key={`gap-${idx}`}
-                className={`dc-gap-zone${dropZoneHover === String(idx) ? ' is-hover' : ''}`}
-                style={{ gridColumn: `span ${gapInfo.span}`, gridRow: `span ${rowSpan}` }}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setDropZoneHover(String(idx));
-                }}
-                onDragLeave={() => setDropZoneHover(null)}
-                onDrop={(event) => {
-                  event.stopPropagation();
-                  handleGapDrop(idx, gapInfo.colStart);
-                }}
-              />,
-            ];
-          }
-
-          return [card];
-        })}
       </div>
     </div>
+  );
+}
+
+function DashboardLayoutOverlay({
+  panels,
+  layouts,
+  hidden,
+  dragId,
+  onDragStart,
+  onDragEnd,
+  onVisibilityDrop,
+  onClearPanels,
+  onDone,
+  onAddPanel,
+  onSetHidden,
+}: {
+  panels: typeof PANEL_DEFS;
+  layouts: Record<PanelId, DashboardLayoutItem>;
+  hidden: Record<string, boolean>;
+  dragId: PanelId | null;
+  onDragStart: (id: PanelId) => void;
+  onDragEnd: () => void;
+  onVisibilityDrop: (event: DragEvent, hidden: boolean) => void;
+  onClearPanels: () => void;
+  onDone: () => void;
+  onAddPanel: (id: PanelId) => void;
+  onSetHidden: (id: PanelId, hidden: boolean) => void;
+}) {
+  const visiblePanels = panels.filter((panel) => !hidden[panel.id]).sort(panelSort(layouts));
+  const hiddenPanels = panels.filter((panel) => hidden[panel.id]);
+
+  const renderPanelRow = (panel: (typeof PANEL_DEFS)[number]) => {
+    const isHidden = hidden[panel.id] ?? false;
+    const rowClass = [
+      'dc-layout-row',
+      isHidden ? 'is-hidden' : '',
+      dragId === panel.id ? 'is-dragging' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    return (
+      <div
+        key={panel.id}
+        className={rowClass}
+        draggable
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', panel.id);
+          onDragStart(panel.id);
+        }}
+        onDragEnd={onDragEnd}
+      >
+        <GripVertical size={14} className="dc-layout-row__grip" />
+        <span className="dc-layout-row__icon">{panel.icon}</span>
+        <span className="dc-layout-row__label">{panel.title}</span>
+        <button
+          className="dc-layout-row__toggle"
+          onClick={() => isHidden ? onAddPanel(panel.id) : onSetHidden(panel.id, true)}
+          title={isHidden ? 'Add card' : 'Remove card'}
+          aria-label={isHidden ? `Add ${panel.title}` : `Remove ${panel.title}`}
+        >
+          {isHidden ? <Plus size={13} /> : <Minus size={13} />}
+        </button>
+      </div>
+    );
+  };
+
+  return (
+    <aside className="dc-layout-overlay" aria-label="Dashboard cards">
+      <div className="dc-layout-overlay__header">
+        <span>Cards</span>
+        <div className="dc-layout-overlay__actions">
+          <span>{visiblePanels.length} / {panels.length}</span>
+          <button
+            className="dc-layout-clear"
+            disabled={visiblePanels.length === 0}
+            onClick={onClearPanels}
+            title="Clear all cards"
+          >
+            Clear
+          </button>
+          <button
+            className="dc-layout-done"
+            onClick={onDone}
+            title="Done editing layout"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+      <div
+        className="dc-layout-section"
+        onDragOver={(event) => {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'move';
+        }}
+        onDrop={(event) => onVisibilityDrop(event, false)}
+      >
+        <div className="dc-layout-section__title">
+          <Eye size={12} /> Active
+        </div>
+        <div className="dc-layout-list">
+          {visiblePanels.length > 0 ? visiblePanels.map(renderPanelRow) : (
+            <div className="dc-layout-empty">No active cards</div>
+          )}
+        </div>
+      </div>
+      <div
+        className="dc-layout-section"
+        onDragOver={(event) => {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'move';
+        }}
+        onDrop={(event) => onVisibilityDrop(event, true)}
+      >
+        <div className="dc-layout-section__title">
+          <EyeOff size={12} /> Hidden
+        </div>
+        <div className="dc-layout-list">
+          {hiddenPanels.length > 0 ? hiddenPanels.map(renderPanelRow) : (
+            <div className="dc-layout-empty">No hidden cards</div>
+          )}
+        </div>
+      </div>
+    </aside>
   );
 }

@@ -34,6 +34,23 @@
   border: 1px solid var(--border-light);
 }
 
+.duet-dash-offline__icon.is-pulsing {
+  animation: duetDashOpeningPulse 1.15s ease-in-out infinite;
+}
+
+@keyframes duetDashOpeningPulse {
+  0%,
+  100% {
+    opacity: 0.62;
+    transform: scale(0.96);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .duet-dash-offline h2 {
   margin: 0 0 6px;
   font-size: 18px;

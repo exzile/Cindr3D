@@ -1,4 +1,3 @@
-/* eslint-disable react-refresh/only-export-components */
 import type { ReactNode } from 'react';
 import {
   Wrench,
@@ -20,16 +19,7 @@ import {
   Camera,
   Box,
 } from 'lucide-react';
-import type {
-  ColSpan,
-  LayoutItem,
-  PanelId,
-} from '../../../store/dashboardLayoutStore';
-import {
-  DEFAULT_COLSPANS,
-  isSpacerId,
-  spacerSpan,
-} from '../../../store/dashboardLayoutStore';
+import type { PanelId } from '../../../store/dashboardLayoutStore';
 import DuetCustomButtons from '../DuetCustomButtons';
 import TemperaturePanel from '../dashboard/TemperaturePanel';
 import AxisMovementPanel from '../dashboard/AxisMovementPanel';
@@ -85,82 +75,3 @@ export const PANEL_MAP = Object.fromEntries(
   PANEL_DEFS.map((panel) => [panel.id, panel]),
 ) as Record<PanelId, PanelDef>;
 
-export function itemSpan(id: LayoutItem, colSpans: Record<string, ColSpan>): number {
-  if (isSpacerId(id)) return spacerSpan(id);
-  return (colSpans[id] ?? DEFAULT_COLSPANS[id]) as number;
-}
-
-export function computePanelColStarts(
-  order: LayoutItem[],
-  colSpans: Record<string, ColSpan>,
-  hidden: Record<string, boolean>,
-): Map<string, number> {
-  const cols = 12;
-  let cursor = 0;
-  const starts = new Map<string, number>();
-
-  for (const id of order) {
-    if (!isSpacerId(id) && hidden[id]) continue;
-    const span = itemSpan(id, colSpans);
-    if (cursor + span > cols) cursor = 0;
-    starts.set(id, cursor + 1);
-    cursor += span;
-    if (cursor >= cols) cursor = 0;
-  }
-
-  return starts;
-}
-
-export function computeRowGaps(
-  order: LayoutItem[],
-  colSpans: Record<string, ColSpan>,
-  hidden: Record<string, boolean>,
-): { span: number; insertAfterIndex: number; colStart: number }[] {
-  const cols = 12;
-  let cursor = 0;
-  let lastVisibleIdx = -1;
-  const gaps: { span: number; insertAfterIndex: number; colStart: number }[] = [];
-
-  for (let i = 0; i < order.length; i += 1) {
-    const id = order[i];
-    if (!isSpacerId(id) && hidden[id]) continue;
-    const span = itemSpan(id, colSpans);
-
-    if (cursor + span > cols) {
-      if (cursor > 0) {
-        gaps.push({ span: cols - cursor, insertAfterIndex: lastVisibleIdx, colStart: cursor + 1 });
-      }
-      cursor = span >= cols ? 0 : span;
-    } else {
-      cursor += span;
-      if (cursor >= cols) cursor = 0;
-    }
-
-    lastVisibleIdx = i;
-  }
-
-  if (cursor > 0) {
-    gaps.push({ span: cols - cursor, insertAfterIndex: lastVisibleIdx, colStart: cursor + 1 });
-  } else if (lastVisibleIdx >= 0) {
-    gaps.push({ span: cols, insertAfterIndex: lastVisibleIdx, colStart: 1 });
-  }
-
-  return gaps;
-}
-
-export function SpacerBlock({
-  span,
-  onDelete,
-}: {
-  span: number;
-  onDelete: () => void;
-}) {
-  return (
-    <div className="dc-spacer-block" style={{ gridColumn: `span ${span}` }}>
-      <span className="dc-spacer-label">{span} col space</span>
-      <button className="dc-spacer-delete" onClick={onDelete} title="Remove spacer">
-        ×
-      </button>
-    </div>
-  );
-}

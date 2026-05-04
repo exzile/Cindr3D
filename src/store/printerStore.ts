@@ -164,6 +164,7 @@ export interface PrinterStore {
 }
 
 const INITIAL = loadPrinters();
+const INITIAL_ACTIVE_PRINTER = getActivePrinter(INITIAL.printers, INITIAL.activePrinterId);
 
 export const usePrinterStore = create<PrinterStore>((set, get) => ({
   printers: INITIAL.printers,
@@ -171,9 +172,9 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
 
   connected: false,
   connecting: false,
-  reconnecting: false,
+  reconnecting: Boolean(INITIAL_ACTIVE_PRINTER.config.hostname),
   firmwareUpdatePending: false,
-  config: getActivePrinter(INITIAL.printers, INITIAL.activePrinterId).config,
+  config: INITIAL_ACTIVE_PRINTER.config,
   service: null,
 
   model: {},
