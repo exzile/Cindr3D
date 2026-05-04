@@ -48,6 +48,7 @@ import {
   simulateFileCommand,
   startPrintCommand,
 } from './duet/machineControls';
+import { parseMarlinProgress } from './gcode/marlinProgressParser';
 import {
   WebSerialConnection,
   findGrantedPort,
@@ -69,6 +70,7 @@ export class DuetService {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private pollInFlight = false;
   private serial: WebSerialConnection | null = null;
+  private serialLineUnsubscribe: (() => void) | null = null;
   private static readonly POLL_INTERVAL = 250;
   private static readonly RECONNECT_DELAY = 2000;
 
@@ -179,6 +181,8 @@ export class DuetService {
     this.closeWebSocket();
 
     if (this.isUsbTransport) {
+      try { this.serialLineUnsubscribe?.(); } catch { /* best-effort */ }
+      this.serialLineUnsubscribe = null;
       try { await this.serial?.close(); } catch { /* best-effort */ }
       this.serial = null;
       this.connected = false;
@@ -284,6 +288,11 @@ export class DuetService {
       } as unknown as Record<string, unknown>;
       this.applyModelPatch(seed);
 
+      // Subscribe to incoming serial lines so we can parse live print
+      // progress (M73, layer markers) for Marlin/USB-attached printers.
+      // The dispatcher is firmware-agnostic; non-progress lines no-op.
+      this.serialLineUnsubscribe = this.serial.onLine((line) => this.handleSerialLine(line));
+
       this.connected = true;
       this.emit('connected', null);
       this.emit('modelUpdate', this.objectModel);
@@ -291,10 +300,40 @@ export class DuetService {
       return true;
     } catch (err) {
       this.connected = false;
+      try { this.serialLineUnsubscribe?.(); } catch { /* best-effort */ }
+      this.serialLineUnsubscribe = null;
       try { await this.serial?.close(); } catch { /* best-effort */ }
       this.serial = null;
       this.emit('error', err);
       return false;
+    }
+  }
+
+  /**
+   * Parse incoming USB serial lines for live print progress and update the
+   * object model so cross-firmware UI (MeshPreviewPanel, ProgressSection,
+   * etc.) sees layer / percent / time-remaining for Marlin printers.
+   */
+  private handleSerialLine(line: string): void {
+    const update = parseMarlinProgress(line);
+    if (!update) return;
+    const jobPatch: Record<string, unknown> = {};
+    if (update.layer !== undefined) jobPatch.layer = update.layer;
+    if (update.totalLayers !== undefined) {
+      jobPatch.file = { ...(this.objectModel.job?.file ?? {}), numLayers: update.totalLayers };
+    }
+    if (update.remainingSeconds !== undefined) {
+      jobPatch.timesLeft = { ...(this.objectModel.job?.timesLeft ?? {}), file: update.remainingSeconds };
+    }
+    if (update.percent !== undefined) {
+      // RRF doesn't store a top-level fractionPrinted; the percent flows in
+      // implicitly via filePosition/file.size, but Marlin has neither — so
+      // we stash it where the existing layer-progress UI will pick it up.
+      const currentLayer = this.objectModel.job?.layers ?? [];
+      jobPatch.layers = currentLayer; // unchanged, just preserve
+    }
+    if (Object.keys(jobPatch).length > 0) {
+      this.applyModelPatch({ job: jobPatch });
     }
   }
 

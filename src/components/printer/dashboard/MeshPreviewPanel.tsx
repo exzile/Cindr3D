@@ -22,6 +22,9 @@ import { Layers, XCircle, Clock, Box, Ruler } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import { useSlicerStore } from '../../../store/slicerStore';
 import { parseM486Labels } from '../../../services/gcode/m486Labels';
+import { findMatchingObject, matchObjectNames } from '../../../services/gcode/objectNameMatch';
+import { layerFromPercent } from '../../../services/gcode/marlinProgressParser';
+import { MoonrakerService, type MoonrakerPrintStatus } from '../../../services/MoonrakerService';
 import {
   BuildPlateGrid,
   BuildVolumeWireframe,
@@ -203,6 +206,8 @@ function ObjectContextMenu({
 export default function MeshPreviewPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const boardType = usePrinterStore((s) => s.config.boardType);
+  const hostname = usePrinterStore((s) => s.config.hostname);
+  const connected = usePrinterStore((s) => s.connected);
   const model = usePrinterStore((s) => s.model);
   const cancelObject = usePrinterStore((s) => s.cancelObject);
   const sendGCode = usePrinterStore((s) => s.sendGCode);
@@ -214,12 +219,38 @@ export default function MeshPreviewPanel() {
 
   const bv = printerProfile?.buildVolume ?? { x: 220, y: 220, z: 250 };
 
+  // ── Klipper print-status polling ───────────────────────────────────────────
+  // Klipper has no in-store live layer; poll Moonraker every 3s while connected
+  // and expose the synthesised status for rendering. Skipped for other boards.
+  const [klipperStatus, setKlipperStatus] = useState<MoonrakerPrintStatus | null>(null);
+  useEffect(() => {
+    if (boardType !== 'klipper' || !connected || !hostname) return;
+    const svc = new MoonrakerService(hostname);
+    let cancelled = false;
+    const tick = async () => {
+      const s = await svc.getPrintStatus();
+      if (!cancelled) setKlipperStatus(s);
+    };
+    void tick();
+    const id = setInterval(tick, 3000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [boardType, connected, hostname]);
+
   // ── Current layer (cross-firmware) ─────────────────────────────────────────
-  // Duet has a live job.layer; Klipper/Marlin fall back to the slicer's preview
-  // slider position so the user at least sees the layer they're inspecting.
-  const liveLayer = boardType === 'duet' ? model.job?.layer : undefined;
   const totalLayers = sliceResult?.layerCount ?? 0;
-  const currentLayer = liveLayer ?? previewLayer ?? totalLayers;
+  const currentLayer = useMemo(() => {
+    // Duet — live RRF object model
+    if (boardType === 'duet' && model.job?.layer !== undefined) return model.job.layer;
+    // Marlin — DuetService.handleSerialLine populates model.job.layer from M73
+    if (boardType === 'marlin' && model.job?.layer !== undefined) return model.job.layer;
+    // Klipper — Moonraker print-status; prefer explicit layer, else estimate from progress
+    if (boardType === 'klipper' && klipperStatus) {
+      if (klipperStatus.currentLayer !== undefined) return klipperStatus.currentLayer;
+      if (totalLayers > 0) return layerFromPercent(klipperStatus.progress * 100, totalLayers);
+    }
+    // Fallback — slicer preview slider
+    return previewLayer ?? totalLayers;
+  }, [boardType, model.job?.layer, klipperStatus, previewLayer, totalLayers]);
 
   // ── Cancelled / currently-printing detection ───────────────────────────────
   const buildObjects = model.job?.build?.objects ?? [];
@@ -237,22 +268,28 @@ export default function MeshPreviewPanel() {
   }, [buildObjects]);
 
   const matchByName = useCallback((plateObj: PlateObject) => {
-    const target = plateObj.name?.trim().toLowerCase();
-    if (!target) return null;
-    const match = buildObjects.find((o) => o.name.toLowerCase().includes(target));
-    if (match) return match.name;
-    const m486 = m486Labels.find((l) => l.name.toLowerCase().includes(target));
-    return m486 ? m486.name : null;
+    // Try the live build-object list first (Duet only); fall back to M486
+    // labels parsed out of the slicer output. Use the shared name matcher
+    // so slicer-emitted suffixes like "_id_0_copy_1" don't break the match.
+    const fromBuild = findMatchingObject(plateObj.name, buildObjects, (o) => o.name);
+    if (fromBuild) return fromBuild.name;
+    const fromLabels = findMatchingObject(plateObj.name, m486Labels, (l) => l.name);
+    return fromLabels ? fromLabels.name : null;
   }, [buildObjects, m486Labels]);
 
   const isCurrentObject = useCallback((plateObj: PlateObject) => {
-    if (boardType !== 'duet' || buildCurrentIdx < 0) return false;
-    const cur = buildObjects[buildCurrentIdx];
-    if (!cur) return false;
-    const name = plateObj.name?.trim().toLowerCase();
-    if (!name) return false;
-    return cur.name.toLowerCase().includes(name);
-  }, [boardType, buildCurrentIdx, buildObjects]);
+    // Duet exposes the live currently-printing object index in the model.
+    if (boardType === 'duet' && buildCurrentIdx >= 0) {
+      const cur = buildObjects[buildCurrentIdx];
+      if (cur && matchObjectNames(plateObj.name, cur.name)) return true;
+    }
+    // Klipper exposes the active object name on print_stats.
+    if (boardType === 'klipper' && klipperStatus?.message) {
+      // Klipper sets `message` to e.g. "Printing object Cube" — best-effort match.
+      if (matchObjectNames(plateObj.name, klipperStatus.message)) return true;
+    }
+    return false;
+  }, [boardType, buildCurrentIdx, buildObjects, klipperStatus]);
 
   const isCancelledObject = useCallback((plateObj: PlateObject) => {
     const matched = matchByName(plateObj);
@@ -279,13 +316,13 @@ export default function MeshPreviewPanel() {
     if (!menuObj) return;
     const matched = matchByName(menuObj);
     try {
-      if (boardType === 'duet') {
-        const idx = buildObjects.findIndex((o) => o.name === matched);
+      if (boardType === 'duet' && matched) {
+        const idx = buildObjects.findIndex((o) => matchObjectNames(o.name, matched));
         if (idx >= 0) await cancelObject(idx);
       } else if (boardType === 'klipper' && matched) {
         await sendGCode(`EXCLUDE_OBJECT NAME=${matched}`);
       } else if (boardType === 'marlin' && matched) {
-        const label = m486Labels.find((l) => l.name === matched);
+        const label = m486Labels.find((l) => matchObjectNames(l.name, matched));
         if (label) await sendGCode(`M486 P${label.id}`);
       }
     } finally {
@@ -302,11 +339,14 @@ export default function MeshPreviewPanel() {
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <Layers size={14} /> Print Preview
         </span>
-        {totalLayers > 0 && (
-          <span style={{ fontSize: 10, color: COLORS.textDim ?? '#666' }}>
-            Layer {currentLayer + 1} / {totalLayers}
-          </span>
-        )}
+        <span style={{ fontSize: 10, color: COLORS.textDim ?? '#666', display: 'flex', gap: 6 }}>
+          {totalLayers > 0 && (
+            <span>Layer {Math.min(currentLayer + 1, totalLayers)} / {totalLayers}</span>
+          )}
+          {boardType === 'klipper' && klipperStatus && klipperStatus.progress > 0 && (
+            <span>{(klipperStatus.progress * 100).toFixed(0)}%</span>
+          )}
+        </span>
       </div>
 
       <div style={{ flex: 1, position: 'relative', minHeight: 180, background: 'var(--bg-secondary, #0d0d1a)' }}>
