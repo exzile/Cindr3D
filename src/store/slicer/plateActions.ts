@@ -694,7 +694,7 @@ export function createPlateActions({
       if (lower.endsWith('.dzign-plate.json') || lower.endsWith('.plate.json')) {
         const text = await file.text();
         get().importPlateJson(text);
-        return;
+        return get().selectedPlateObjectId;
       }
       const { FileImporter } = await import('../../engine/FileImporter');
       const group = await FileImporter.importFile(file);
@@ -737,6 +737,7 @@ export function createPlateActions({
 
       get().autoArrange();
       void Promise.resolve().then(() => get().runPrintabilityCheck());
+      return plateObject.id;
     } catch (err) {
       console.error('File import failed:', err);
       throw err;

@@ -119,7 +119,7 @@ export interface SlicerStore {
   importPlateJson: (json: string) => void;
   autoArrange: () => void;
   clearPlate: () => void;
-  importFileToPlate: (file: File) => Promise<void>;
+  importFileToPlate: (file: File) => Promise<string | null>;
   startSlice: () => void;
   cancelSlice: () => void;
   /** Terminate and respawn the slicer worker. Use to recover from a

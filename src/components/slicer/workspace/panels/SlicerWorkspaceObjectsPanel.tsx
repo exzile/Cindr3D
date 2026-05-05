@@ -5,7 +5,7 @@ import {
   Plus, Trash2, LayoutGrid, XCircle, Upload, Box,
   Layers, Copy, Eye, EyeOff, Lock, Unlock, Palette, AlertTriangle,
   Save, FolderOpen, AlignEndHorizontal, ArrowDownToLine, RotateCw,
-  Scissors, CircleDot, Maximize2, Wrench,
+  Scissors, CircleDot, Maximize2, Wrench, Link2,
 } from 'lucide-react';
 import { useSlicerStore } from '../../../../store/slicerStore';
 import { useCADStore } from '../../../../store/cadStore';
@@ -16,6 +16,7 @@ import { CalibrationMenu } from '../bottom/CalibrationMenu';
 import { ContextMenu, type ContextMenuItem } from '../ContextMenu';
 import { GeometryToolsModal, type GeometryTool } from '../GeometryToolsModal';
 import { computeMeshStats } from '../../../../engine/plateGeometryOps';
+import { fetchModelUrlToFile } from '../../../../utils/printFromUrl';
 import './SlicerWorkspaceObjectsPanel.css';
 
 const MODIFIER_LABELS: Record<string, string> = {
@@ -57,6 +58,7 @@ export function SlicerWorkspaceObjectsPanel() {
   const [addSearch, setAddSearch] = useState('');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [modelUrl, setModelUrl] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [colorPickerForId, setColorPickerForId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -121,6 +123,27 @@ export function SlicerWorkspaceObjectsPanel() {
     if (file) handleImportFile(file);
     if (e.target) e.target.value = '';
   }, [handleImportFile]);
+
+  const handleImportUrl = useCallback(async () => {
+    const url = modelUrl.trim();
+    if (!url) return;
+    if (isMountedRef.current) {
+      setImporting(true);
+      setImportError(null);
+    }
+    try {
+      const { file, sourceMetadata } = await fetchModelUrlToFile(url);
+      const importedId = await importFileToPlate(file);
+      if (importedId) {
+        useSlicerStore.getState().updatePlateObject(importedId, { sourceMetadata } as Partial<PlateObject>);
+      }
+      if (isMountedRef.current) setModelUrl('');
+    } catch (err) {
+      if (isMountedRef.current) setImportError((err as Error).message);
+    } finally {
+      if (isMountedRef.current) setImporting(false);
+    }
+  }, [importFileToPlate, modelUrl]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -320,6 +343,31 @@ export function SlicerWorkspaceObjectsPanel() {
         )}
         <input ref={fileInputRef} type="file" accept=".stl,.obj,.3mf,.amf,.step,.stp,.json" className="slicer-workspace-objects-panel__file-input" onChange={handleFileInput} />
 
+        <form
+          className="slicer-workspace-objects-panel__url-import"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleImportUrl();
+          }}
+        >
+          <Link2 size={13} className="slicer-workspace-objects-panel__url-icon" />
+          <input
+            type="url"
+            value={modelUrl}
+            onChange={(e) => setModelUrl(e.target.value)}
+            placeholder="Paste direct model URL"
+            className="slicer-workspace-objects-panel__url-input"
+            aria-label="Direct STL OBJ 3MF AMF STEP model URL"
+          />
+          <button
+            type="submit"
+            className="slicer-workspace-objects-panel__url-button"
+            disabled={importing || modelUrl.trim().length === 0}
+          >
+            Import
+          </button>
+        </form>
+
         {validation.hasIssues && (
           <div className="slicer-workspace-objects-panel__validation" role="alert">
             <AlertTriangle size={11} style={{ verticalAlign: 'middle', marginRight: 4 }} />
@@ -379,6 +427,11 @@ export function SlicerWorkspaceObjectsPanel() {
                   {obj.name}
                 </div>
                 <div className="slicer-workspace-objects-panel__size">{w.toFixed(1)} × {d.toFixed(1)} × {h.toFixed(1)} mm</div>
+                {obj.sourceMetadata && (
+                  <div className="slicer-workspace-objects-panel__source" title={obj.sourceMetadata.url}>
+                    Source: {obj.sourceMetadata.sourceSite === 'direct' ? 'URL' : obj.sourceMetadata.sourceSite}
+                  </div>
+                )}
               </div>
               <div className="slicer-workspace-objects-panel__row-icons">
                 <button

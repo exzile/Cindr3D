@@ -19,6 +19,13 @@ export interface PlateObject {
   // Flags
   locked?: boolean; // prevent accidental moves/transforms
   hidden?: boolean; // not rendered; still on plate, still slices unless excluded
+  sourceMetadata?: {
+    url: string;
+    sourceSite: 'direct' | 'printables' | 'makerworld' | 'thingiverse' | 'unknown';
+    fetchedAt: number;
+    license?: string;
+    author?: string;
+  };
   // Computed
   boundingBox: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } };
   selected?: boolean;

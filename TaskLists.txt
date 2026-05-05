@@ -303,10 +303,11 @@
 #   [x] Custom splash metadata + maskable icon entry
 
 ### 14.8 Print-from-URL  [M]
-#   [ ] Paste Printables / MakerWorld / Thingiverse / direct STL URL
-#   [ ] Fetch + parse + auto-arrange on the build plate
+#   [x] Paste direct STL / OBJ / 3MF / AMF / STEP URL
+#   [ ] Paste Printables / MakerWorld / Thingiverse page URL
+#   [x] Fetch + parse + auto-arrange direct model files on the build plate
 #   [ ] Source-aware: pull license + author info into project metadata
-#   [ ] Local cache so re-fetches are instant; respect Cache-Control
+#   [x] Local cache so re-fetches are instant; respect Cache-Control
 
 
 ## ── Phase 15: Slicer fundamentals ─────────────────────────────────────────
