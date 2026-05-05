@@ -19,6 +19,7 @@ import { usePrinterStore } from './store/printerStore';
 import './App.css';
 
 type WorkspaceMode = 'design' | 'prepare' | 'printer';
+type DeviceMode = 'mobile' | 'tablet' | 'desktop';
 
 const PRINTER_TABS = new Set<string>(['printers', ...TABS.map((tab) => tab.key)]);
 
@@ -41,6 +42,14 @@ function pathForWorkspace(workspaceMode: WorkspaceMode, printerTab: TabKey) {
   if (workspaceMode === 'prepare') return '/prepare';
   if (workspaceMode === 'printer') return `/printer/${printerTab}`;
   return '/design';
+}
+
+function detectDeviceMode(): { mode: DeviceMode; touch: boolean } {
+  const width = window.innerWidth;
+  const touch = window.matchMedia?.('(pointer: coarse)').matches
+    || navigator.maxTouchPoints > 0;
+  const mode: DeviceMode = width < 720 ? 'mobile' : width < 1100 ? 'tablet' : 'desktop';
+  return { mode, touch };
 }
 
 function WorkspaceContent() {
@@ -110,6 +119,21 @@ export default function App() {
     McpBridgeService.start();
     return () => McpBridgeService.stop();
   }, [isHomeRoute]);
+
+  useEffect(() => {
+    const applyDeviceMode = () => {
+      const { mode, touch } = detectDeviceMode();
+      document.documentElement.dataset.deviceMode = mode;
+      document.documentElement.toggleAttribute('data-touch', touch);
+    };
+    applyDeviceMode();
+    window.addEventListener('resize', applyDeviceMode);
+    window.addEventListener('orientationchange', applyDeviceMode);
+    return () => {
+      window.removeEventListener('resize', applyDeviceMode);
+      window.removeEventListener('orientationchange', applyDeviceMode);
+    };
+  }, []);
 
   if (isHomeRoute) {
     return (
