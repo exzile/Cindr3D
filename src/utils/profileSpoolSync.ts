@@ -26,6 +26,47 @@ export interface ProfileSpoolSyncPayload {
   };
 }
 
+export interface GitHubProfileSyncTarget {
+  owner: string;
+  repo: string;
+  branch: string;
+  path: string;
+}
+
+export function resolveGitHubProfileSyncTarget(
+  repoUrl: string,
+  branch: string,
+  syncPath: string,
+): GitHubProfileSyncTarget {
+  const trimmed = repoUrl.trim();
+  if (!trimmed) throw new Error('Enter a GitHub repository URL first.');
+  const url = new URL(trimmed);
+  if (url.hostname !== 'github.com' && url.hostname !== 'raw.githubusercontent.com') {
+    throw new Error('Push sync currently supports GitHub repository URLs.');
+  }
+
+  const parts = url.pathname.split('/').filter(Boolean);
+  if (url.hostname === 'raw.githubusercontent.com') {
+    const [owner, repo, rawBranch, ...rawPath] = parts;
+    if (!owner || !repo || !rawBranch || rawPath.length === 0) {
+      throw new Error('Raw GitHub URL must include owner, repo, branch, and JSON path.');
+    }
+    return { owner, repo, branch: rawBranch, path: rawPath.join('/') };
+  }
+
+  const [owner, repo, blob, blobBranch, ...blobPath] = parts;
+  if (!owner || !repo) throw new Error('GitHub URL must include owner and repository.');
+  if (blob === 'blob' && blobBranch && blobPath.length > 0) {
+    return { owner, repo, branch: blobBranch, path: blobPath.join('/') };
+  }
+  return {
+    owner,
+    repo,
+    branch: branch.trim() || 'main',
+    path: syncPath.replace(/^\/+/, '') || 'cindr3d-profile-sync.json',
+  };
+}
+
 export function normalizeProfileSyncUrl(repoUrl: string, branch: string, syncPath: string): string {
   const trimmed = repoUrl.trim();
   if (!trimmed) throw new Error('Enter a repository or raw sync URL first.');
@@ -48,6 +89,13 @@ export function normalizeProfileSyncUrl(repoUrl: string, branch: string, syncPat
   if (url.pathname.endsWith('.json')) return url.href;
   url.pathname = `${url.pathname.replace(/\/+$/, '')}/${path}`;
   return url.href;
+}
+
+function encodeBase64Utf8(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary);
 }
 
 export function buildProfileSpoolSyncPayload(): ProfileSpoolSyncPayload {
@@ -83,6 +131,7 @@ export function markProfileSpoolSyncPending(): void {
   const sync = useProfileSyncStore.getState();
   if (!sync.enabled) return;
   if (sync.lastSyncStatus === 'pulling') return;
+  if (sync.lastSyncStatus === 'pulled' && sync.lastSyncAt && Date.now() - sync.lastSyncAt < 1000) return;
   sync.markPendingPush(serializeProfileSpoolSyncPayload());
 }
 
@@ -129,6 +178,56 @@ export async function pullProfileSpoolSync(): Promise<ProfileSpoolSyncPayload> {
     return payload;
   } catch (err) {
     useProfileSyncStore.getState().markSync('error', (err as Error).message);
+    throw err;
+  }
+}
+
+export async function pushProfileSpoolSync(): Promise<void> {
+  const sync = useProfileSyncStore.getState();
+  const target = resolveGitHubProfileSyncTarget(sync.repoUrl, sync.branch, sync.syncPath);
+  const token = sync.githubToken.trim();
+  if (!token) throw new Error('Enter a GitHub fine-grained token with Contents read/write access.');
+
+  const payloadJson = sync.pendingPayloadJson ?? serializeProfileSpoolSyncPayload();
+  const pendingUpdatedAt = sync.pendingUpdatedAt;
+  const apiUrl = `https://api.github.com/repos/${target.owner}/${target.repo}/contents/${target.path}`;
+  const headers = {
+    Accept: 'application/vnd.github+json',
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+
+  sync.markSync('pushing', null, { clearPending: false });
+  try {
+    const current = await fetch(`${apiUrl}?ref=${encodeURIComponent(target.branch)}`, { headers });
+    let sha: string | undefined;
+    if (current.ok) {
+      const existing = await current.json() as { sha?: string; type?: string };
+      if (existing.type && existing.type !== 'file') throw new Error('GitHub sync path is not a file.');
+      sha = existing.sha;
+    } else if (current.status !== 404) {
+      throw new Error(`GitHub lookup failed (${current.status})`);
+    }
+
+    const response = await fetch(apiUrl, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        message: 'Sync Cindr3D profiles and spools',
+        content: encodeBase64Utf8(payloadJson),
+        branch: target.branch,
+        ...(sha ? { sha } : {}),
+      }),
+    });
+    if (!response.ok) throw new Error(`GitHub push failed (${response.status})`);
+
+    const latest = useProfileSyncStore.getState();
+    latest.markSync('pushed', null, {
+      clearPending: latest.pendingUpdatedAt === pendingUpdatedAt,
+    });
+  } catch (err) {
+    useProfileSyncStore.getState().markSync('error', (err as Error).message, { clearPending: false });
     throw err;
   }
 }

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_MATERIAL_PROFILES, DEFAULT_PRINT_PROFILES, DEFAULT_PRINTER_PROFILES } from '../types/slicer';
 import { useSlicerStore } from '../store/slicerStore';
 import { useSpoolStore } from '../store/spoolStore';
@@ -8,9 +8,12 @@ import {
   buildProfileSpoolSyncPayload,
   markProfileSpoolSyncPending,
   normalizeProfileSyncUrl,
+  pushProfileSpoolSync,
+  resolveGitHubProfileSyncTarget,
 } from './profileSpoolSync';
 
 beforeEach(() => {
+  vi.unstubAllGlobals();
   useSlicerStore.setState({
     printerProfiles: DEFAULT_PRINTER_PROFILES,
     materialProfiles: DEFAULT_MATERIAL_PROFILES,
@@ -30,7 +33,9 @@ beforeEach(() => {
     repoUrl: '',
     branch: 'main',
     syncPath: 'cindr3d-profile-sync.json',
+    githubToken: '',
     autoPullOnStart: false,
+    autoPushOnSave: false,
     hasPendingChanges: false,
     pendingPayloadJson: null,
     pendingUpdatedAt: null,
@@ -47,6 +52,30 @@ describe('profileSpoolSync', () => {
       'main',
       'profiles/sync.json',
     )).toBe('https://raw.githubusercontent.com/example/cindr-profiles/main/profiles/sync.json');
+  });
+
+  it('resolves GitHub push targets from repository and blob URLs', () => {
+    expect(resolveGitHubProfileSyncTarget(
+      'https://github.com/example/cindr-profiles',
+      'main',
+      'profiles/sync.json',
+    )).toEqual({
+      owner: 'example',
+      repo: 'cindr-profiles',
+      branch: 'main',
+      path: 'profiles/sync.json',
+    });
+
+    expect(resolveGitHubProfileSyncTarget(
+      'https://github.com/example/cindr-profiles/blob/dev/data/sync.json',
+      'main',
+      'profiles/sync.json',
+    )).toEqual({
+      owner: 'example',
+      repo: 'cindr-profiles',
+      branch: 'dev',
+      path: 'data/sync.json',
+    });
   });
 
   it('builds a payload with profiles and spools', () => {
@@ -116,5 +145,44 @@ describe('profileSpoolSync', () => {
       pendingPayloadJson: null,
       pendingUpdatedAt: null,
     });
+  });
+
+  it('pushes pending payloads through the GitHub contents API', async () => {
+    useProfileSyncStore.setState({
+      enabled: true,
+      repoUrl: 'https://github.com/example/cindr-profiles',
+      branch: 'main',
+      syncPath: 'profiles/sync.json',
+      githubToken: 'ghp_test',
+    });
+    markProfileSpoolSyncPending();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ type: 'file', sha: 'abc123' }),
+      })
+      .mockResolvedValueOnce({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await pushProfileSpoolSync();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://api.github.com/repos/example/cindr-profiles/contents/profiles/sync.json?ref=main',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer ghp_test' }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://api.github.com/repos/example/cindr-profiles/contents/profiles/sync.json',
+      expect.objectContaining({
+        method: 'PUT',
+        body: expect.stringContaining('"sha":"abc123"'),
+      }),
+    );
+    expect(useProfileSyncStore.getState().hasPendingChanges).toBe(false);
+
+    vi.unstubAllGlobals();
   });
 });

@@ -20,6 +20,7 @@ import {
   downloadProfileSpoolSyncPayload,
   normalizeProfileSyncUrl,
   pullProfileSpoolSync,
+  pushProfileSpoolSync,
 } from '../../utils/profileSpoolSync';
 import type { BundleSlice } from '../../types/settings-io.types';
 import UpdatePanel from '../updater/UpdatePanel';
@@ -160,7 +161,9 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
   const profileSyncRepoUrl = useProfileSyncStore((s) => s.repoUrl);
   const profileSyncBranch = useProfileSyncStore((s) => s.branch);
   const profileSyncPath = useProfileSyncStore((s) => s.syncPath);
+  const profileSyncGithubToken = useProfileSyncStore((s) => s.githubToken);
   const profileSyncAutoPull = useProfileSyncStore((s) => s.autoPullOnStart);
+  const profileSyncAutoPush = useProfileSyncStore((s) => s.autoPushOnSave);
   const profileSyncStatus = useProfileSyncStore((s) => s.lastSyncStatus);
   const profileSyncError = useProfileSyncStore((s) => s.lastSyncError);
   const profileSyncLastAt = useProfileSyncStore((s) => s.lastSyncAt);
@@ -170,7 +173,9 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
   const setProfileSyncRepoUrl = useProfileSyncStore((s) => s.setRepoUrl);
   const setProfileSyncBranch = useProfileSyncStore((s) => s.setBranch);
   const setProfileSyncPath = useProfileSyncStore((s) => s.setSyncPath);
+  const setProfileSyncGithubToken = useProfileSyncStore((s) => s.setGithubToken);
   const setProfileSyncAutoPull = useProfileSyncStore((s) => s.setAutoPullOnStart);
+  const setProfileSyncAutoPush = useProfileSyncStore((s) => s.setAutoPushOnSave);
 
   const profileSyncResolvedUrl = (() => {
     try {
@@ -188,6 +193,15 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
       setStatusMessage(`Profile sync pulled: ${payload.exportedAt}`);
     } catch (err) {
       setStatusMessage(`Profile sync failed: ${(err as Error).message}`);
+    }
+  }, [setStatusMessage]);
+
+  const handlePushProfileSync = useCallback(async () => {
+    try {
+      await pushProfileSpoolSync();
+      setStatusMessage('Profile sync pushed to GitHub');
+    } catch (err) {
+      setStatusMessage(`Profile sync push failed: ${(err as Error).message}`);
     }
   }, [setStatusMessage]);
 
@@ -840,6 +854,17 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                           placeholder="cindr3d-profile-sync.json"
                         />
                       </label>
+                      <label className="global-settings-field full">
+                        <span>GitHub token</span>
+                        <input
+                          type="password"
+                          className="settings-api-key"
+                          value={profileSyncGithubToken}
+                          onChange={(e) => setProfileSyncGithubToken(e.target.value)}
+                          placeholder="Fine-grained token with Contents read/write"
+                          autoComplete="off"
+                        />
+                      </label>
                       <div className="global-settings-field inline full">
                         <span>Pull on app start</span>
                         <label className="tp-toggle">
@@ -851,6 +876,21 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                           <span className="tp-toggle-track" />
                         </label>
                       </div>
+                      <div className="global-settings-field inline full">
+                        <span>Push on profile or spool save</span>
+                        <label className="tp-toggle">
+                          <input
+                            type="checkbox"
+                            checked={profileSyncAutoPush}
+                            onChange={(e) => setProfileSyncAutoPush(e.target.checked)}
+                          />
+                          <span className="tp-toggle-track" />
+                        </label>
+                      </div>
+                      <button className="global-settings-action" onClick={handlePushProfileSync} disabled={!profileSyncRepoUrl.trim() || !profileSyncGithubToken.trim()}>
+                        <FileUp size={15} />
+                        <span>Push now</span>
+                      </button>
                       <button className="global-settings-action" onClick={handlePullProfileSync} disabled={!profileSyncRepoUrl.trim()}>
                         <Download size={15} />
                         <span>Pull now</span>
