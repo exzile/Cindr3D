@@ -55,3 +55,47 @@ html[data-device-mode="tablet"] .printer-panel--narrow {
   padding-bottom: 78px;
 }
 
+.printer-kiosk-toggle {
+  margin-left: auto;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+}
+
+.printer-kiosk-toggle.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.printer-panel--kiosk button,
+.printer-panel--kiosk input,
+.printer-panel--kiosk select {
+  min-height: 48px;
+}
+
+.printer-panel--kiosk .control-btn {
+  min-width: 56px;
+  min-height: 56px;
+}
+
+.printer-panel--kiosk .printer-mobile-tabs {
+  padding: 12px;
+}
+
+.printer-panel--kiosk .printer-mobile-tabs__item {
+  min-width: 96px;
+  min-height: 60px;
+  font-size: 11px;
+}
+
+html[data-device-mode="mobile"] .printer-panel--kiosk,
+html[data-device-mode="tablet"] .printer-panel--kiosk {
+  padding-bottom: 100px;
+}
+

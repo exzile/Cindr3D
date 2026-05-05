@@ -36,6 +36,9 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
 
   const panelRootRef = useRef<HTMLDivElement>(null);
   const [isNarrow, setIsNarrow] = useState(false);
+  const [kioskMode, setKioskMode] = useState(() => {
+    try { return localStorage.getItem('cindr3d-printer-kiosk-mode') === 'true'; } catch { return false; }
+  });
 
   useEffect(() => {
     const el = panelRootRef.current;
@@ -213,12 +216,25 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
 
   const ActiveTabComponent = TAB_COMPONENTS[(activeTab as TabKey)] ?? TAB_COMPONENTS.dashboard;
   const setPanelTab = (tab: TabKey) => setActiveTab(tab as typeof activeTab);
+  const toggleKioskMode = () => {
+    setKioskMode((value) => {
+      const next = !value;
+      try { localStorage.setItem('cindr3d-printer-kiosk-mode', String(next)); } catch {
+        // Local storage can be unavailable in restricted browser contexts.
+      }
+      return next;
+    });
+  };
+  const panelClassName = [
+    isNarrow ? 'printer-panel--narrow' : '',
+    kioskMode ? 'printer-panel--kiosk' : '',
+  ].filter(Boolean).join(' ') || undefined;
 
   return (
     <div
       ref={panelRootRef}
       style={fullscreen ? panelStyles.fullscreen : panelStyles.overlay}
-      className={isNarrow ? 'printer-panel--narrow' : undefined}
+      className={panelClassName}
     >
       {connected && <DuetMessageBox />}
 
@@ -282,6 +298,8 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
         connected={connected}
         currentTool={currentTool}
         machineStatus={machineStatus}
+        kioskMode={kioskMode}
+        onToggleKioskMode={toggleKioskMode}
         printProgress={printProgress}
         upTime={upTime}
       />

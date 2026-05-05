@@ -271,7 +271,7 @@
 #   [x] Detect viewport width + touch capability
 #   [x] Bottom-sheet navigation for printer monitor
 #   [x] Larger tap targets; one-thumb optimized layouts
-#   [ ] Big-button "kiosk mode" for tablet near printer
+#   [x] Big-button "kiosk mode" for tablet near printer
 
 ### 14.3 i18n  [M]
 #   [ ] Externalise all strings to a translations bundle

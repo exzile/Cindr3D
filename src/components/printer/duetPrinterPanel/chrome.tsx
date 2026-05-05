@@ -447,6 +447,8 @@ export function PanelFooter({
   currentTool,
   upTime,
   board,
+  kioskMode,
+  onToggleKioskMode,
   printProgress,
 }: {
   connected: boolean;
@@ -459,6 +461,8 @@ export function PanelFooter({
     name?: string;
     shortName?: string;
   };
+  kioskMode: boolean;
+  onToggleKioskMode: () => void;
   printProgress: number | null;
 }) {
   return (
@@ -531,6 +535,15 @@ export function PanelFooter({
           <span>{printProgress.toFixed(1)}%</span>
         </div>
       )}
+      <button
+        type="button"
+        className={`printer-kiosk-toggle${kioskMode ? ' is-active' : ''}`}
+        onClick={onToggleKioskMode}
+        aria-pressed={kioskMode}
+        title="Toggle kiosk mode"
+      >
+        Kiosk
+      </button>
     </div>
   );
 }
