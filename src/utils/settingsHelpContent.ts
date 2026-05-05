@@ -10,6 +10,13 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
     brief: 'Vertical distance between layers',
     detailed:
       'Layer height controls the thickness of each printed layer. Smaller values (0.1mm) produce finer details and better surface quality but take longer to print. Larger values (0.3mm) print faster but with less detail. Typical range is 0.1-0.3mm depending on your nozzle diameter.',
+    whenToChange: [
+      'Use a smaller value for visible curves, miniature details, or mating faces.',
+      'Use a larger value for drafts, fixtures, and parts where print time matters more than finish.',
+    ],
+    commonValues: ['0.12mm fine detail', '0.20mm general PLA/PETG', '0.28mm fast draft with a 0.4mm nozzle'],
+    relatedSettings: ['First Layer Height', 'Line Width', 'Adaptive Layers'],
+    references: ['Layer Height setting guide'],
     imageUrl: 'https://example.com/images/layer-height.png',
   },
 
@@ -26,6 +33,13 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
     brief: 'Percentage of internal material fill',
     detailed:
       'Infill density controls how much of the interior is filled. 0% creates a hollow shell (light, fast), 20% is typical for general prints, 50% for stronger parts, and 100% for solid prints. Higher density = stronger but uses more material and takes longer.',
+    whenToChange: [
+      'Increase when parts crush, flex too much, or need screw retention.',
+      'Decrease for display models, prototypes, and large parts where shells carry the load.',
+    ],
+    commonValues: ['0-8% display models', '15-25% general parts', '35-60% brackets and fixtures'],
+    relatedSettings: ['Infill Pattern', 'Wall Count', 'Top Layers', 'Bottom Layers'],
+    references: ['Infill Density setting guide'],
     imageUrl: 'https://example.com/images/infill-density.png',
   },
 
@@ -34,6 +48,13 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
     brief: 'Default movement speed during printing',
     detailed:
       'Print speed is the travel velocity while extruding. Faster speeds (60+ mm/s) reduce print time but may reduce quality and cause layer shifting on complex prints. Slower speeds (30-40 mm/s) improve quality. The optimal speed depends on your printer\'s capabilities and the material.',
+    whenToChange: [
+      'Lower speed when corners ring, walls under-extrude, or details look melted.',
+      'Raise speed after temperature, flow, acceleration, and cooling are stable.',
+    ],
+    commonValues: ['35-45mm/s detail', '50-70mm/s general bedslinger', '120mm/s+ tuned CoreXY'],
+    relatedSettings: ['Outer Wall Speed', 'Travel Speed', 'Acceleration', 'Minimum Layer Time'],
+    references: ['Print Speed setting guide'],
     imageUrl: 'https://example.com/images/print-speed.png',
   },
 
@@ -58,6 +79,13 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
     brief: 'Filament pulled back to prevent stringing',
     detailed:
       'Retraction pulls the filament back when the nozzle moves between unconnected areas, preventing ooze and stringing artifacts. 0.8-1.0mm is typical for direct drive, 4-6mm for Bowden tubes. Too much retraction causes under-extrusion; too little causes stringing.',
+    whenToChange: [
+      'Increase slightly when travel moves leave wisps or blobs between islands.',
+      'Decrease when prints show gaps after travel, heat creep, or filament grinding.',
+    ],
+    commonValues: ['0.4-1.2mm direct drive', '3-6mm Bowden', '0mm for flexible materials only when needed'],
+    relatedSettings: ['Retraction Speed', 'Z-Hop When Retracted', 'Combing Mode', 'Travel Avoid Distance'],
+    references: ['Retraction Distance setting guide'],
     imageUrl: 'https://example.com/images/retraction-distance.png',
   },
 
@@ -66,6 +94,13 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
     brief: 'Minimum overhang angle requiring support',
     detailed:
       'Support angle determines when the slicer generates support structures. 45° is the steepest angle that typically prints unsupported. Lower angles (35-40°) generate more support (safer but uses more material). Higher angles (50-60°) use less support but risk failed prints on steep overhangs.',
+    whenToChange: [
+      'Lower the angle for soft materials, poor cooling, or cosmetic underside requirements.',
+      'Raise the angle for tuned printers, chamfered designs, or support removal issues.',
+    ],
+    commonValues: ['35-40 deg conservative', '45 deg general', '55-60 deg tuned PLA with good cooling'],
+    relatedSettings: ['Support Type', 'Support Z Distance', 'Support Interface', 'Minimum Support Area'],
+    references: ['Support Angle setting guide'],
     imageUrl: 'https://example.com/images/support-angle.png',
   },
 
@@ -154,6 +189,13 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
     brief: 'Method for sticking first layer to bed',
     detailed:
       'Adhesion type determines how the model bonds to the build plate: "None" for textured beds, "Skirt" (outline loop) for bed leveling check, "Brim" (border) for better adhesion, "Raft" (sacrificial base) for difficult materials. Raft and brim add material but improve success rate.',
+    whenToChange: [
+      'Use brim for tall, narrow, sharp-cornered, or warp-prone parts.',
+      'Use raft when bed condition or material shrinkage makes normal first layers unreliable.',
+    ],
+    commonValues: ['None for well-tuned textured plates', 'Skirt for nozzle priming', '5-12mm brim for ABS/PETG edges'],
+    relatedSettings: ['Brim Width', 'Skirt Lines', 'First Layer Height', 'Bed Temperature'],
+    references: ['Adhesion Type setting guide'],
     imageUrl: 'https://example.com/images/adhesion-types.png',
   },
 
@@ -432,13 +474,33 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
   maxTravelResolution: { brief: 'Minimum segment length for travel path approximation', detailed: 'Like max resolution but for travel moves. Slightly larger value (0.8mm) is fine since travel paths are not extruding material.' },
 
   // ── Dimensional Compensation ────────────────────────────────────────────────
-  horizontalExpansion: { brief: 'Expand or shrink all horizontal dimensions', detailed: 'Positive values make the model larger; negative make it smaller. Used to calibrate dimensional accuracy. If a 20mm part prints as 20.2mm, use -0.1mm expansion.' },
+  horizontalExpansion: {
+    brief: 'Expand or shrink all horizontal dimensions',
+    detailed: 'Positive values make the model larger; negative make it smaller. Used to calibrate dimensional accuracy. If a 20mm part prints as 20.2mm, use -0.1mm expansion.',
+    whenToChange: [
+      'Adjust after printing a dimensional gauge and confirming the error is consistent in X/Y.',
+      'Avoid using it to compensate for elephant foot; use first-layer compensation instead.',
+    ],
+    commonValues: ['-0.05mm to -0.15mm for oversized parts', '0mm for calibrated profiles', '+0.05mm for loose shrink-prone materials'],
+    relatedSettings: ['Hole Horizontal Expansion', 'Initial Layer Horizontal Expansion', 'Elephant Foot Compensation'],
+    references: ['Horizontal Expansion setting guide'],
+  },
   elephantFootCompensation: { brief: 'Reduce first-layer spreading (elephant foot)', detailed: 'The first layer often spreads slightly wider than designed ("elephant foot"). Positive values compensate by printing the first layer slightly narrower. 0.1–0.2mm typical.' },
   holeHorizontalExpansion: { brief: 'Expand hole diameters to compensate for shrinkage', detailed: 'FDM holes typically print smaller than designed. Positive values enlarge holes. Calibrate this for press-fit or clearance holes that need accurate sizing.' },
   initialLayerHorizontalExpansion: { brief: 'Horizontal expansion for first layer only', detailed: 'Adjusts the first layer width separately from the rest. Useful for compensating elephant foot independently from overall dimensional accuracy.' },
 
   // ── Flow ────────────────────────────────────────────────────────────────────
-  wallFlow: { brief: 'Flow rate multiplier for wall extrusions', detailed: 'Adjusts how much material is extruded for walls. 100% is normal. Reduce slightly (95–98%) if walls are over-extruding. Increase if there are gaps between wall lines.' },
+  wallFlow: {
+    brief: 'Flow rate multiplier for wall extrusions',
+    detailed: 'Adjusts how much material is extruded for walls. 100% is normal. Reduce slightly (95-98%) if walls are over-extruding. Increase if there are gaps between wall lines.',
+    whenToChange: [
+      'Tune after filament diameter, extrusion multiplier, and temperature are already reasonable.',
+      'Lower if wall surfaces look swollen or dimensions are consistently oversized.',
+    ],
+    commonValues: ['95-98% for slight over-extrusion', '100% default', '102-105% for visible wall gaps'],
+    relatedSettings: ['Outer Wall Flow', 'Inner Wall Flow', 'Initial Layer Flow', 'Flow Tower'],
+    references: ['Wall Flow setting guide'],
+  },
   outerWallFlow: { brief: 'Flow rate multiplier for outer walls', detailed: 'Fine-tune extrusion specifically for the outer wall. Slightly less material (97–99%) can reduce bulging on the outer surface for better dimensional accuracy.' },
   innerWallFlow: { brief: 'Flow rate multiplier for inner walls', detailed: 'Controls extrusion for inner walls. 100% is normal. Inner walls affect strength more than appearance, so keep close to 100%.' },
   topBottomFlow: { brief: 'Flow rate multiplier for top/bottom surfaces', detailed: 'Adjusts material for top and bottom solid surfaces. Keep near 100%. Slightly reducing (95–98%) can help with over-extrusion marks on top surfaces.' },

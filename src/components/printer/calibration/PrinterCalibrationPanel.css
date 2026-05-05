@@ -1,0 +1,131 @@
+.printer-calibration-panel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  color: var(--text-primary);
+}
+
+.printer-calibration-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+.printer-calibration-panel__header h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.printer-calibration-panel__header p {
+  margin: 3px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.printer-calibration-panel__prepare,
+.printer-calibration-panel__preset {
+  border: 1px solid var(--border);
+  background: var(--bg-toolbar);
+  color: var(--text-primary);
+}
+
+.printer-calibration-panel__prepare {
+  min-height: 30px;
+  border-radius: 6px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.printer-calibration-panel__prepare:hover,
+.printer-calibration-panel__preset:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-toolbar));
+}
+
+.printer-calibration-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.printer-calibration-panel__preset {
+  min-height: 96px;
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.printer-calibration-panel__preset:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.printer-calibration-panel__icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.printer-calibration-panel__body {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.printer-calibration-panel__category {
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.printer-calibration-panel__title {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.printer-calibration-panel__summary {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.printer-calibration-panel__download {
+  margin-top: 2px;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 540px) {
+  .printer-calibration-panel__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .printer-calibration-panel__prepare {
+    justify-content: center;
+  }
+}

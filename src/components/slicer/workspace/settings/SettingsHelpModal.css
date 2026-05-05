@@ -150,6 +150,48 @@
   to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
+.settings-help-modal__section {
+  display: grid;
+  gap: 7px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-help-modal__section h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-help-modal__section ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 17px;
+}
+
+.settings-help-modal__section li {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-help-modal__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settings-help-modal__chips span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--text-secondary);
+  background: var(--bg-toolbar);
+  font-size: 11px;
+}
+
 @media (max-width: 520px) {
   .settings-help-modal {
     width: 95%;

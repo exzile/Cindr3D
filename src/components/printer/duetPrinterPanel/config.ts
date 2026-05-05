@@ -24,6 +24,7 @@ import {
   Film,
   ListOrdered,
   Images,
+  FlaskConical,
 } from 'lucide-react';
 import DuetDashboard from '../DuetDashboard';
 import DuetStatus from '../DuetStatus';
@@ -54,6 +55,7 @@ import InputShaper from '../InputShaper';
 import PressureAdvance from '../PressureAdvance';
 import SpoolManager from '../SpoolManager';
 import Timelapse from '../Timelapse';
+import PrinterCalibrationPanel from '../calibration/PrinterCalibrationPanel';
 
 export const TABS = [
   { key: 'dashboard' as const, label: 'Dashboard', Icon: LayoutDashboard },
@@ -68,6 +70,7 @@ export const TABS = [
   { key: 'comparison' as const, label: 'A/B Compare', Icon: Trophy },
   { key: 'files' as const, label: 'Files', Icon: FolderOpen },
   { key: 'queue' as const, label: 'Queue', Icon: ListOrdered },
+  { key: 'calibration' as const, label: 'Calibration', Icon: FlaskConical },
   // Duet-only: reads 0:/filaments via Duet file API
   { key: 'filaments' as const, label: 'Filaments', Icon: FileCode },
   { key: 'macros' as const, label: 'Macros', Icon: FileCode },
@@ -124,6 +127,7 @@ export const TAB_COMPONENTS: Record<TabKey, React.ComponentType> = {
   comparison: CrossPrinterComparison,
   files: DuetFileManager,
   queue: PrintQueue,
+  calibration: PrinterCalibrationPanel,
   filaments: DuetFilamentManager,
   macros: DuetMacros,
   heightmap: BedMap,             // unified — delegates to Klipper / Marlin / Duet internally

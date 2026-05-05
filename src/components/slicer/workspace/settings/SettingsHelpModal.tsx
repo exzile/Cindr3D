@@ -50,6 +50,42 @@ export function SettingsHelpModal({
           )}
 
           <p className="settings-help-modal__description">{help.detailed}</p>
+
+          {help.whenToChange && help.whenToChange.length > 0 && (
+            <section className="settings-help-modal__section">
+              <h3>When to change</h3>
+              <ul>
+                {help.whenToChange.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </section>
+          )}
+
+          {help.commonValues && help.commonValues.length > 0 && (
+            <section className="settings-help-modal__section">
+              <h3>Common values</h3>
+              <ul>
+                {help.commonValues.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </section>
+          )}
+
+          {help.relatedSettings && help.relatedSettings.length > 0 && (
+            <section className="settings-help-modal__section">
+              <h3>Related settings</h3>
+              <div className="settings-help-modal__chips">
+                {help.relatedSettings.map((item) => <span key={item}>{item}</span>)}
+              </div>
+            </section>
+          )}
+
+          {help.references && help.references.length > 0 && (
+            <section className="settings-help-modal__section">
+              <h3>References</h3>
+              <ul>
+                {help.references.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </section>
+          )}
         </div>
       </div>
     </>
