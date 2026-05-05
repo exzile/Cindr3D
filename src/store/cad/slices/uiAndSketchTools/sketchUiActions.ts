@@ -105,6 +105,7 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
           d.id === sketchDimEditId ? updatedDimension : d,
         ),
       };
+      if (updatedDimension.driven) return withUpdatedDim;
       return { ...withUpdatedDim, entities: applyDimensionResize(withUpdatedDim, updatedDimension, nextValue) };
     };
     get().pushUndo?.();
@@ -119,6 +120,7 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
       sketchDimEditValue: '',
       sketchDimEditIsNew: false,
     });
+    if (!get().sketchComputeDeferred) get().solveSketch?.();
   },
   cancelSketchDimEdit: () => {
     const { sketchDimEditIsNew, pendingNewDimensionId } = get();
