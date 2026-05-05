@@ -1,3 +1,4 @@
+import type * as React from 'react';
 import { Eye, Layers, Undo2, Redo2 } from 'lucide-react';
 import { useSlicerStore } from '../../../../store/slicerStore';
 export type { SlicerPage } from '../../../../types/slicer-nav.types';
@@ -11,14 +12,40 @@ export function SlicerWorkspaceTopNav() {
   const plateHistory = useSlicerStore((s) => s.plateHistory);
   const plateFuture = useSlicerStore((s) => s.plateFuture);
   const hasSlice = sliceResult !== null;
+  const availableModes: ReadonlyArray<'model' | 'preview'> = hasSlice ? ['model', 'preview'] : ['model'];
+  const handlePreviewTabKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    mode: 'model' | 'preview',
+  ) => {
+    const index = availableModes.indexOf(mode);
+    if (index < 0) return;
+    let nextIndex = index;
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % availableModes.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + availableModes.length) % availableModes.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = availableModes.length - 1;
+    else return;
+
+    event.preventDefault();
+    const nextMode = availableModes[nextIndex];
+    setPreviewMode(nextMode);
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLButtonElement>(`[data-slicer-preview-mode="${nextMode}"]`)?.focus();
+    });
+  };
 
   return (
     <div className="slicer-workspace-nav">
+      <div role="tablist" aria-label="Prepare workspace view">
       <button
         type="button"
         className={`slicer-workspace-nav__tab ${previewMode === 'model' ? 'is-active' : ''}`}
         onClick={() => setPreviewMode('model')}
-        aria-pressed={previewMode === 'model'}
+        onKeyDown={(event) => handlePreviewTabKeyDown(event, 'model')}
+        role="tab"
+        aria-selected={previewMode === 'model'}
+        tabIndex={previewMode === 'model' ? 0 : -1}
+        data-slicer-preview-mode="model"
       >
         <Layers size={13} />
         Prepare
@@ -29,11 +56,16 @@ export function SlicerWorkspaceTopNav() {
         onClick={() => setPreviewMode('preview')}
         disabled={!hasSlice}
         title={hasSlice ? 'Show sliced preview' : 'Slice first to enable preview'}
-        aria-pressed={previewMode === 'preview'}
+        onKeyDown={(event) => handlePreviewTabKeyDown(event, 'preview')}
+        role="tab"
+        aria-selected={previewMode === 'preview'}
+        tabIndex={previewMode === 'preview' ? 0 : -1}
+        data-slicer-preview-mode="preview"
       >
         <Eye size={13} />
         Preview
       </button>
+      </div>
 
       <div style={{ flex: 1 }} />
 

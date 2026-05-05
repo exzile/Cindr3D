@@ -275,10 +275,13 @@ export function PanelTabBar({
         flexShrink: 0,
         overflowX: 'auto',
       }}
+      role="tablist"
+      aria-label="Printer sections"
     >
       {visibleTabs.map(({ key, label, Icon }) => (
         <button
           key={key}
+          type="button"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -296,7 +299,12 @@ export function PanelTabBar({
             transition: 'color 0.15s, border-color 0.15s',
           }}
           onClick={() => onTabChange(key)}
+          onKeyDown={(event) => movePrinterTabFocus(event, visibleTabs, key, onTabChange)}
           title={label}
+          role="tab"
+          aria-selected={activeTab === key}
+          tabIndex={activeTab === key ? 0 : -1}
+          data-printer-tab={key}
         >
           <Icon size={14} />
           <span className="tab-label">{label}</span>
@@ -311,6 +319,29 @@ function visiblePrinterTabs(boardType: PrinterBoardType) {
     if (KLIPPER_ONLY_TABS.has(key) && boardType !== 'klipper') return false;
     if (DUET_ONLY_TABS.has(key) && boardType === 'klipper') return false;
     return true;
+  });
+}
+
+function movePrinterTabFocus(
+  event: React.KeyboardEvent<HTMLButtonElement>,
+  visibleTabs: ReturnType<typeof visiblePrinterTabs>,
+  activeKey: TabKey,
+  onTabChange: (tab: TabKey) => void,
+): void {
+  const index = visibleTabs.findIndex(({ key }) => key === activeKey);
+  if (index < 0) return;
+  let nextIndex = index;
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % visibleTabs.length;
+  else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + visibleTabs.length) % visibleTabs.length;
+  else if (event.key === 'Home') nextIndex = 0;
+  else if (event.key === 'End') nextIndex = visibleTabs.length - 1;
+  else return;
+
+  event.preventDefault();
+  const nextTab = visibleTabs[nextIndex];
+  onTabChange(nextTab.key);
+  requestAnimationFrame(() => {
+    document.querySelector<HTMLButtonElement>(`[data-printer-tab="${nextTab.key}"]`)?.focus();
   });
 }
 
@@ -333,8 +364,10 @@ export function MobilePrinterTabSheet({
           type="button"
           className={`printer-mobile-tabs__item${activeTab === key ? ' is-active' : ''}`}
           onClick={() => onTabChange(key)}
+          onKeyDown={(event) => movePrinterTabFocus(event, visibleTabs, key, onTabChange)}
           title={label}
           aria-current={activeTab === key ? 'page' : undefined}
+          data-printer-tab={key}
         >
           <Icon size={14} />
           <span>{label}</span>

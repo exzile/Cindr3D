@@ -38,6 +38,44 @@ export function WorkspaceTabBar({
   onCancelPlaneSelect,
 }: WorkspaceTabBarProps) {
   const currentTabs = workspace === 'design' ? designTabs : [];
+  const handleDesignTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, tabId: RibbonTab) => {
+    if (inSketch) return;
+    const index = currentTabs.findIndex((tab) => tab.id === tabId);
+    if (index < 0) return;
+    let nextIndex = index;
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % currentTabs.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + currentTabs.length) % currentTabs.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = currentTabs.length - 1;
+    else return;
+
+    event.preventDefault();
+    const nextTab = currentTabs[nextIndex];
+    onTabClick(nextTab.id);
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLButtonElement>(`[data-ribbon-tab="${nextTab.id}"]`)?.focus();
+    });
+  };
+
+  const handleWorkspaceOptionKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    ws: Workspace,
+  ) => {
+    const workspaces: Workspace[] = ['design', 'prepare', 'printer'];
+    const index = workspaces.indexOf(ws);
+    let nextIndex = index;
+    if (event.key === 'ArrowDown') nextIndex = (index + 1) % workspaces.length;
+    else if (event.key === 'ArrowUp') nextIndex = (index - 1 + workspaces.length) % workspaces.length;
+    else if (event.key === 'Escape') {
+      event.preventDefault();
+      setWsDropdownOpen(false);
+      document.querySelector<HTMLButtonElement>('.ribbon-workspace-btn')?.focus();
+      return;
+    } else return;
+
+    event.preventDefault();
+    document.querySelector<HTMLButtonElement>(`[data-workspace-option="${workspaces[nextIndex]}"]`)?.focus();
+  };
 
   return (
     <div className="ribbon-tab-row">
@@ -46,27 +84,50 @@ export function WorkspaceTabBar({
         <button
           className="ribbon-workspace-btn"
           onClick={() => setWsDropdownOpen(!wsDropdownOpen)}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              setWsDropdownOpen(true);
+              requestAnimationFrame(() => {
+                document.querySelector<HTMLButtonElement>(`[data-workspace-option="${workspace}"]`)?.focus();
+              });
+            }
+          }}
+          aria-haspopup="menu"
+          aria-expanded={wsDropdownOpen}
         >
           {workspace === 'design' ? 'DESIGN' : workspace === 'prepare' ? 'PREPARE' : '3D PRINTER'}
           <ChevronDown size={11} className="ribbon-workspace-chevron" />
         </button>
         {wsDropdownOpen && (
-          <div className="ribbon-workspace-dropdown">
+          <div className="ribbon-workspace-dropdown" role="menu" aria-label="Workspace selector">
             <button
               className={`ribbon-workspace-option ${workspace === 'design' ? 'active' : ''}`}
               onClick={() => onWorkspaceSwitch('design')}
+              onKeyDown={(event) => handleWorkspaceOptionKeyDown(event, 'design')}
+              role="menuitemradio"
+              aria-checked={workspace === 'design'}
+              data-workspace-option="design"
             >
               Design
             </button>
             <button
               className={`ribbon-workspace-option ${workspace === 'prepare' ? 'active' : ''}`}
               onClick={() => onWorkspaceSwitch('prepare')}
+              onKeyDown={(event) => handleWorkspaceOptionKeyDown(event, 'prepare')}
+              role="menuitemradio"
+              aria-checked={workspace === 'prepare'}
+              data-workspace-option="prepare"
             >
               Prepare (3D Print)
             </button>
             <button
               className={`ribbon-workspace-option ${workspace === 'printer' ? 'active' : ''}`}
               onClick={() => onWorkspaceSwitch('printer')}
+              onKeyDown={(event) => handleWorkspaceOptionKeyDown(event, 'printer')}
+              role="menuitemradio"
+              aria-checked={workspace === 'printer'}
+              data-workspace-option="printer"
             >
               3D Printer
             </button>
@@ -77,13 +138,18 @@ export function WorkspaceTabBar({
       <div className="ribbon-tab-divider-v" />
 
       {/* Tab names */}
-      <div className="ribbon-tabs">
+      <div className="ribbon-tabs" role="tablist" aria-label="Design ribbon tabs">
         {currentTabs.map((tab) => (
           <button
             key={tab.id}
             className={`ribbon-tab ${!inSketch && activeTab === tab.id ? 'active' : ''} ${inSketch ? 'sketch-passive' : ''}`}
             style={{ '--tab-color': tab.color } as React.CSSProperties}
             onClick={() => !inSketch && onTabClick(tab.id)}
+            onKeyDown={(event) => handleDesignTabKeyDown(event, tab.id)}
+            role="tab"
+            aria-selected={!inSketch && activeTab === tab.id}
+            tabIndex={!inSketch && activeTab === tab.id ? 0 : -1}
+            data-ribbon-tab={tab.id}
           >
             {tab.label}
           </button>
