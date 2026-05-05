@@ -1,4 +1,7 @@
+import { enGenerated } from './en.generated';
+
 export const en = {
+  ...enGenerated,
   'app.workspace.design': 'Design',
   'app.workspace.prepare': 'Prepare',
   'app.workspace.preparePrint': 'Prepare (3D Print)',

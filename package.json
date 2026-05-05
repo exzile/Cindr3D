@@ -21,6 +21,7 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
+    "i18n:extract": "node scripts/extract-ui-strings.mjs",
     "graph:analyze": "corepack pnpm dlx --allow-build=@ladybugdb/core --allow-build=tree-sitter --allow-build=tree-sitter-typescript --allow-build=tree-sitter-javascript --allow-build=tree-sitter-cpp --allow-build=tree-sitter-c --allow-build=tree-sitter-cli gitnexus@latest analyze",
     "graph:list": "corepack pnpm dlx --allow-build=@ladybugdb/core --allow-build=tree-sitter --allow-build=tree-sitter-typescript --allow-build=tree-sitter-javascript --allow-build=tree-sitter-cpp --allow-build=tree-sitter-c --allow-build=tree-sitter-cli gitnexus@latest list",
     "graph:mcp": "corepack pnpm dlx --allow-build=@ladybugdb/core --allow-build=tree-sitter --allow-build=tree-sitter-typescript --allow-build=tree-sitter-javascript --allow-build=tree-sitter-cpp --allow-build=tree-sitter-c --allow-build=tree-sitter-cli gitnexus@latest mcp",

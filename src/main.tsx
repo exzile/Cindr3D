@@ -7,6 +7,7 @@ import './effects/language';
 import './effects/printSessionResume';
 import './effects/profileSpoolSync';
 import { registerServiceWorker } from './pwa/registerServiceWorker';
+import { installInteractiveLabelGuard } from './accessibility/interactiveLabels';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -15,3 +16,4 @@ createRoot(document.getElementById('root')!).render(
 );
 
 registerServiceWorker();
+installInteractiveLabelGuard();

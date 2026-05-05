@@ -274,7 +274,7 @@
 #   [x] Big-button "kiosk mode" for tablet near printer
 
 ### 14.3 i18n  [M]
-#   [ ] Externalise all strings to a translations bundle
+#   [x] Externalise all strings to a translations bundle
 #   [x] Externalise app shell, workspace nav, and global settings strings
 #   [x] Lightweight translation helper; per-language bundle modules
 #   [x] Settings: language picker; default from browser locale
@@ -286,7 +286,7 @@
 #   [x] Screen-reader labels on Timeline, Contact Sets, and Drive Joints controls
 #   [x] Keyboard object-list navigation in Prepare workspace
 #   [x] Keyboard-only nav across every workspace
-#   [ ] Screen-reader labels on all interactive elements
+#   [x] Screen-reader labels on all interactive elements
 #   [x] High-contrast theme variant
 #   [x] Reduced-motion mode for animations
 
