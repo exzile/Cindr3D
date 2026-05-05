@@ -183,6 +183,56 @@ export function SlicerWorkspaceObjectsPanel() {
     }
   }, [selectedId, selectPlateObject, togglePlateObjectInSelection, selectPlateObjectRange]);
 
+  const handleRowKeyboardSelect = useCallback((e: React.KeyboardEvent, id: string) => {
+    if (e.shiftKey && selectedId) {
+      selectPlateObjectRange(selectedId, id);
+    } else if (e.ctrlKey || e.metaKey) {
+      togglePlateObjectInSelection(id);
+    } else {
+      selectPlateObject(id);
+    }
+  }, [selectedId, selectPlateObject, togglePlateObjectInSelection, selectPlateObjectRange]);
+
+  const focusPlateRow = useCallback((index: number) => {
+    const bounded = Math.max(0, Math.min(plateObjects.length - 1, index));
+    const id = plateObjects[bounded]?.id;
+    if (!id) return;
+    const row = document.querySelector<HTMLElement>(`[data-plate-row-id="${CSS.escape(id)}"]`);
+    row?.focus();
+    selectPlateObject(id);
+  }, [plateObjects, selectPlateObject]);
+
+  const handleRowKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>, id: string) => {
+    if (e.target !== e.currentTarget) return;
+    const index = plateObjects.findIndex((obj) => obj.id === id);
+    if (index < 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusPlateRow(index + 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusPlateRow(index - 1);
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      focusPlateRow(0);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      focusPlateRow(plateObjects.length - 1);
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleRowKeyboardSelect(e, id);
+    } else if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      removeFromPlate(id);
+    } else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      e.preventDefault();
+      if (!selectedIds.includes(id)) selectPlateObject(id);
+      const rect = e.currentTarget.getBoundingClientRect();
+      setContextMenu({ id, x: rect.left + 16, y: rect.top + 16 });
+    }
+  }, [focusPlateRow, handleRowKeyboardSelect, plateObjects, removeFromPlate, selectedIds, selectPlateObject]);
+
   const handleColorChange = useCallback((color: string) => {
     if (colorPickerForId) updatePlateObject(colorPickerForId, { color } as Partial<PlateObject>);
   }, [colorPickerForId, updatePlateObject]);
@@ -385,6 +435,7 @@ export function SlicerWorkspaceObjectsPanel() {
             No objects on the build plate.
           </div>
         )}
+        <div role="listbox" aria-label="Objects on build plate">
         {plateObjects.map((obj) => {
           const w = obj.boundingBox.max.x - obj.boundingBox.min.x;
           const d = obj.boundingBox.max.y - obj.boundingBox.min.y;
@@ -397,12 +448,18 @@ export function SlicerWorkspaceObjectsPanel() {
           return (
             <div
               key={obj.id}
+              role="option"
+              tabIndex={0}
+              aria-selected={inSelection}
+              aria-label={`${obj.name}, ${w.toFixed(1)} by ${d.toFixed(1)} by ${h.toFixed(1)} millimeters${issues ? `, ${issues.length} issue${issues.length === 1 ? '' : 's'}` : ''}`}
+              data-plate-row-id={obj.id}
               draggable
               onDragStart={(e) => handleRowDragStart(e, obj.id)}
               onDragOver={handleRowDragOver}
               onDrop={(e) => handleRowDrop(e, obj.id)}
               onDragEnd={() => setDragRowId(null)}
               onClick={(e) => handleRowClick(e, obj.id)}
+              onKeyDown={(e) => handleRowKeyDown(e, obj.id)}
               onContextMenu={(e) => handleRowContextMenu(e, obj.id)}
               className={`slicer-workspace-objects-panel__row${isAnchor ? ' is-selected' : ''}${inSelection && !isAnchor ? ' is-multi' : ''}${dragRowId === obj.id ? ' is-dragging' : ''}`}
               title={[buildRowTooltip(obj), issues?.join('\n')].filter(Boolean).join('\n\n')}
@@ -437,6 +494,7 @@ export function SlicerWorkspaceObjectsPanel() {
                 <button
                   type="button"
                   title={obj.hidden ? 'Show object' : 'Hide object'}
+                  aria-label={`${obj.hidden ? 'Show' : 'Hide'} ${obj.name}`}
                   className={`slicer-workspace-objects-panel__icon-btn${obj.hidden ? ' is-active' : ''}`}
                   onClick={(e) => { e.stopPropagation(); updatePlateObject(obj.id, { hidden: !obj.hidden } as Partial<PlateObject>); }}
                 >
@@ -445,6 +503,7 @@ export function SlicerWorkspaceObjectsPanel() {
                 <button
                   type="button"
                   title={obj.locked ? 'Unlock object' : 'Lock object'}
+                  aria-label={`${obj.locked ? 'Unlock' : 'Lock'} ${obj.name}`}
                   className={`slicer-workspace-objects-panel__icon-btn${obj.locked ? ' is-active' : ''}`}
                   onClick={(e) => { e.stopPropagation(); updatePlateObject(obj.id, { locked: !obj.locked } as Partial<PlateObject>); }}
                 >
@@ -453,6 +512,7 @@ export function SlicerWorkspaceObjectsPanel() {
                 <button
                   type="button"
                   title="Set object color"
+                  aria-label={`Set color for ${obj.name}`}
                   className="slicer-workspace-objects-panel__icon-btn"
                   onClick={(e) => { e.stopPropagation(); openColorPicker(obj.id); }}
                   style={obj.color ? { color: obj.color } : undefined}
@@ -462,6 +522,7 @@ export function SlicerWorkspaceObjectsPanel() {
                 <button
                   type="button"
                   title={`Duplicate ${obj.name} (Ctrl+D)`}
+                  aria-label={`Duplicate ${obj.name}`}
                   className="slicer-workspace-objects-panel__icon-btn"
                   onClick={(e) => { e.stopPropagation(); duplicatePlateObject(obj.id); }}
                 >
@@ -470,6 +531,7 @@ export function SlicerWorkspaceObjectsPanel() {
                 <button
                   type="button"
                   title={`Remove ${obj.name} (Del)`}
+                  aria-label={`Remove ${obj.name}`}
                   className="slicer-workspace-objects-panel__icon-btn"
                   onClick={(e) => { e.stopPropagation(); removeFromPlate(obj.id); }}
                 >
@@ -479,6 +541,7 @@ export function SlicerWorkspaceObjectsPanel() {
             </div>
           );
         })}
+        </div>
       </div>
 
       <input
