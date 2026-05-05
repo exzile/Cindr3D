@@ -16,7 +16,7 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
     ],
     commonValues: ['0.12mm fine detail', '0.20mm general PLA/PETG', '0.28mm fast draft with a 0.4mm nozzle'],
     relatedSettings: ['First Layer Height', 'Line Width', 'Adaptive Layers'],
-    references: ['src/help/settings/layer-height.md'],
+    references: ['Layer Height setting guide'],
     imageUrl: 'https://example.com/images/layer-height.png',
   },
 
@@ -39,7 +39,7 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
     ],
     commonValues: ['0-8% display models', '15-25% general parts', '35-60% brackets and fixtures'],
     relatedSettings: ['Infill Pattern', 'Wall Count', 'Top Layers', 'Bottom Layers'],
-    references: ['src/help/settings/infill-density.md'],
+    references: ['Infill Density setting guide'],
     imageUrl: 'https://example.com/images/infill-density.png',
   },
 
@@ -54,7 +54,7 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
     ],
     commonValues: ['35-45mm/s detail', '50-70mm/s general bedslinger', '120mm/s+ tuned CoreXY'],
     relatedSettings: ['Outer Wall Speed', 'Travel Speed', 'Acceleration', 'Minimum Layer Time'],
-    references: ['src/help/settings/print-speed.md'],
+    references: ['Print Speed setting guide'],
     imageUrl: 'https://example.com/images/print-speed.png',
   },
 
@@ -85,7 +85,7 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
     ],
     commonValues: ['0.4-1.2mm direct drive', '3-6mm Bowden', '0mm for flexible materials only when needed'],
     relatedSettings: ['Retraction Speed', 'Z-Hop When Retracted', 'Combing Mode', 'Travel Avoid Distance'],
-    references: ['src/help/settings/retraction-distance.md'],
+    references: ['Retraction Distance setting guide'],
     imageUrl: 'https://example.com/images/retraction-distance.png',
   },
 
@@ -100,7 +100,7 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
     ],
     commonValues: ['35-40 deg conservative', '45 deg general', '55-60 deg tuned PLA with good cooling'],
     relatedSettings: ['Support Type', 'Support Z Distance', 'Support Interface', 'Minimum Support Area'],
-    references: ['src/help/settings/support-angle.md'],
+    references: ['Support Angle setting guide'],
     imageUrl: 'https://example.com/images/support-angle.png',
   },
 
@@ -195,7 +195,7 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
     ],
     commonValues: ['None for well-tuned textured plates', 'Skirt for nozzle priming', '5-12mm brim for ABS/PETG edges'],
     relatedSettings: ['Brim Width', 'Skirt Lines', 'First Layer Height', 'Bed Temperature'],
-    references: ['src/help/settings/adhesion-type.md'],
+    references: ['Adhesion Type setting guide'],
     imageUrl: 'https://example.com/images/adhesion-types.png',
   },
 
@@ -483,7 +483,7 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
     ],
     commonValues: ['-0.05mm to -0.15mm for oversized parts', '0mm for calibrated profiles', '+0.05mm for loose shrink-prone materials'],
     relatedSettings: ['Hole Horizontal Expansion', 'Initial Layer Horizontal Expansion', 'Elephant Foot Compensation'],
-    references: ['src/help/settings/horizontal-expansion.md'],
+    references: ['Horizontal Expansion setting guide'],
   },
   elephantFootCompensation: { brief: 'Reduce first-layer spreading (elephant foot)', detailed: 'The first layer often spreads slightly wider than designed ("elephant foot"). Positive values compensate by printing the first layer slightly narrower. 0.1–0.2mm typical.' },
   holeHorizontalExpansion: { brief: 'Expand hole diameters to compensate for shrinkage', detailed: 'FDM holes typically print smaller than designed. Positive values enlarge holes. Calibrate this for press-fit or clearance holes that need accurate sizing.' },
@@ -499,7 +499,7 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
     ],
     commonValues: ['95-98% for slight over-extrusion', '100% default', '102-105% for visible wall gaps'],
     relatedSettings: ['Outer Wall Flow', 'Inner Wall Flow', 'Initial Layer Flow', 'Flow Tower'],
-    references: ['src/help/settings/wall-flow.md'],
+    references: ['Wall Flow setting guide'],
   },
   outerWallFlow: { brief: 'Flow rate multiplier for outer walls', detailed: 'Fine-tune extrusion specifically for the outer wall. Slightly less material (97–99%) can reduce bulging on the outer surface for better dimensional accuracy.' },
   innerWallFlow: { brief: 'Flow rate multiplier for inner walls', detailed: 'Controls extrusion for inner walls. 100% is normal. Inner walls affect strength more than appearance, so keep close to 100%.' },

@@ -41,8 +41,11 @@ export function generateCalibrationCubeGCode(
   print: PrintProfile,
 ): string {
   const ctx = { printer, material, print };
+  const targetHeight = 20;
   const layerHeight = Math.max(print.layerHeight, 0.05);
-  const totalLayers = Math.max(1, Math.round(20 / layerHeight));
+  const firstLayerHeight = Math.min(Math.max(print.firstLayerHeight, 0.05), targetHeight);
+  const totalLayers = Math.max(1, 1 + Math.round((targetHeight - firstLayerHeight) / layerHeight));
+  const nominalHeight = firstLayerHeight + (totalLayers - 1) * layerHeight;
   const feedPrint = speed(print, 'outerWallSpeed', print.printSpeed);
   const feedTravel = speed(print, 'travelSpeed', 150);
   const lineWidth = print.outerWallLineWidth ?? print.lineWidth ?? 0.4;
@@ -51,27 +54,28 @@ export function generateCalibrationCubeGCode(
 
   const lines = buildCalibrationHeader('20mm Calibration Cube', ctx, [
     'Measure X/Y/Z after printing and adjust steps/mm or horizontal expansion.',
-    `Nominal size: 20 x 20 x ${formatNumber(totalLayers * layerHeight, 2)}mm.`,
+    `Nominal size: 20 x 20 x ${formatNumber(nominalHeight, 2)}mm.`,
   ]);
   const writer = new RelativeExtrusionWriter(lines, ctx);
-  let current = { ...min };
 
   lines.push('G92 E0');
-  writer.travel(current.x, current.y, feedTravel);
 
   for (let layer = 0; layer < totalLayers; layer += 1) {
-    const activeLayerHeight = layer === 0 ? print.firstLayerHeight : layerHeight;
-    const z = print.firstLayerHeight + layer * layerHeight;
+    const activeLayerHeight = layer === 0 ? firstLayerHeight : layerHeight;
+    const z = firstLayerHeight + layer * layerHeight;
     writer.moveZ(z, feedTravel);
     lines.push(`; layer ${layer + 1}/${totalLayers}`);
 
     for (let wall = 0; wall < Math.max(1, print.wallCount ?? 2); wall += 1) {
       const inset = wall * lineWidth;
-      current = drawRect(
+      const wallMin = { x: min.x + inset, y: min.y + inset };
+      const wallMax = { x: max.x - inset, y: max.y - inset };
+      writer.travel(wallMin.x, wallMin.y, feedTravel);
+      drawRect(
         writer,
-        current,
-        { x: min.x + inset, y: min.y + inset },
-        { x: max.x - inset, y: max.y - inset },
+        wallMin,
+        wallMin,
+        wallMax,
         lineWidth,
         activeLayerHeight,
         feedPrint,

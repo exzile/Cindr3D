@@ -10,6 +10,7 @@ import {
   generateRetractionTowerGCode,
   generateTemperatureTowerGCode,
 } from '../../../engine/calibration';
+import { useCADStore } from '../../../store/cadStore';
 import { useSlicerStore } from '../../../store/slicerStore';
 import type { MaterialProfile, PrinterProfile, PrintProfile } from '../../../types/slicer';
 import './PrinterCalibrationPanel.css';
@@ -121,10 +122,14 @@ function downloadGCode(filename: string, gcode: string): void {
 }
 
 export default function PrinterCalibrationPanel() {
+  const setWorkspaceMode = useCADStore((s) => s.setWorkspaceMode);
   const activePrinter = useSlicerStore((s) => s.getActivePrinterProfile());
   const activeMaterial = useSlicerStore((s) => s.getActiveMaterialProfile());
   const activePrint = useSlicerStore((s) => s.getActivePrintProfile());
   const ready = activePrinter !== null && activeMaterial !== null && activePrint !== null;
+  const profileSummary = ready
+    ? `${activePrinter.name} / ${activeMaterial.name} / ${activePrint.name}`
+    : 'Select printer, material, and print profiles in Prepare';
 
   const runPreset = (preset: CalibrationPreset) => {
     if (!activePrinter || !activeMaterial || !activePrint) return;
@@ -132,8 +137,7 @@ export default function PrinterCalibrationPanel() {
   };
 
   const openPrepare = () => {
-    window.history.pushState({}, '', '/prepare');
-    window.dispatchEvent(new PopStateEvent('popstate'));
+    setWorkspaceMode('prepare');
   };
 
   return (
@@ -141,7 +145,7 @@ export default function PrinterCalibrationPanel() {
       <header className="printer-calibration-panel__header">
         <div>
           <h2>Calibration Library</h2>
-          <p>{activePrinter.name} / {activeMaterial.name} / {activePrint.name}</p>
+          <p>{profileSummary}</p>
         </div>
         <button type="button" className="printer-calibration-panel__prepare" onClick={openPrepare}>
           <ExternalLink size={14} /> Prepare
