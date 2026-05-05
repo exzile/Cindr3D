@@ -94,6 +94,7 @@ interface CalibrationStore {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const SERVICE_LOG_LIMIT = 200;
 
 export const CALIBRATION_ITEMS: CalibrationItemDefinition[] = [
   { id: 'bed-mesh', label: 'Bed mesh', defaultIntervalDays: 14 },
@@ -133,8 +134,16 @@ function ensurePrinterRecords(records: Record<CalibrationItemId, CalibrationReco
   ) as Record<CalibrationItemId, CalibrationRecord>;
 }
 
+function finiteNonNegative(value: number, fallback: number): number {
+  return Number.isFinite(value) ? Math.max(0, value) : fallback;
+}
+
+function finiteNullableNonNegative(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : null;
+}
+
 export function getCalibrationStatus(record: CalibrationRecord, now = Date.now()): MaintenanceStatus {
-  if (!record.lastRunAt) return 'never';
+  if (record.lastRunAt == null) return 'never';
   const dueAt = record.lastRunAt + record.intervalDays * DAY_MS;
   const upcomingAt = dueAt - Math.max(1, Math.round(record.intervalDays * 0.2)) * DAY_MS;
   if (now >= dueAt) return 'overdue';
@@ -145,7 +154,7 @@ export function getCalibrationStatus(record: CalibrationRecord, now = Date.now()
 export function getCalibrationStatuses(records: CalibrationRecord[], now = Date.now()): CalibrationStatus[] {
   return records.map((record) => {
     const definition = CALIBRATION_ITEMS.find((item) => item.id === record.itemId) ?? CALIBRATION_ITEMS[0];
-    const dueAt = record.lastRunAt ? record.lastRunAt + record.intervalDays * DAY_MS : null;
+    const dueAt = record.lastRunAt == null ? null : record.lastRunAt + record.intervalDays * DAY_MS;
     const daysUntilDue = dueAt === null ? null : Math.ceil((dueAt - now) / DAY_MS);
     return {
       record,
@@ -173,7 +182,7 @@ export function getComponentStatus(component: WearComponent): ComponentStatus {
 }
 
 export function getMoistureStatus(profile: SpoolMoistureProfile, now = Date.now()): MoistureStatus {
-  if (!profile.openedAt) {
+  if (profile.openedAt == null) {
     return { profile, status: 'never', exposureDays: null, score: 0 };
   }
   const exposureDays = Math.max(0, (now - profile.openedAt) / DAY_MS);
@@ -226,6 +235,7 @@ export const useCalibrationStore = create<CalibrationStore>()(
       },
 
       updateCalibrationInterval: (printerId, itemId, intervalDays) => {
+        if (!Number.isFinite(intervalDays)) return;
         set((state) => {
           const printerRecords = ensurePrinterRecords(state.calibrationByPrinterId[printerId]);
           return {
@@ -252,8 +262,11 @@ export const useCalibrationStore = create<CalibrationStore>()(
               ...component,
               id,
               installedAt: component.installedAt ?? Date.now(),
-              hoursOn: component.hoursOn ?? 0,
-              filamentKm: component.filamentKm ?? 0,
+              hoursOn: finiteNonNegative(component.hoursOn ?? 0, 0),
+              filamentKm: finiteNonNegative(component.filamentKm ?? 0, 0),
+              reminderHours: finiteNullableNonNegative(component.reminderHours),
+              reminderFilamentKm: finiteNullableNonNegative(component.reminderFilamentKm),
+              replacementCost: finiteNullableNonNegative(component.replacementCost),
             },
           ],
         }));
@@ -261,9 +274,15 @@ export const useCalibrationStore = create<CalibrationStore>()(
       },
 
       updateComponent: (id, patch) => {
+        const cleanPatch = { ...patch };
+        if (cleanPatch.hoursOn !== undefined) cleanPatch.hoursOn = finiteNonNegative(cleanPatch.hoursOn, 0);
+        if (cleanPatch.filamentKm !== undefined) cleanPatch.filamentKm = finiteNonNegative(cleanPatch.filamentKm, 0);
+        if (cleanPatch.reminderHours !== undefined) cleanPatch.reminderHours = finiteNullableNonNegative(cleanPatch.reminderHours);
+        if (cleanPatch.reminderFilamentKm !== undefined) cleanPatch.reminderFilamentKm = finiteNullableNonNegative(cleanPatch.reminderFilamentKm);
+        if (cleanPatch.replacementCost !== undefined) cleanPatch.replacementCost = finiteNullableNonNegative(cleanPatch.replacementCost);
         set((state) => ({
           components: state.components.map((component) => (
-            component.id === id ? { ...component, ...patch } : component
+            component.id === id ? { ...component, ...cleanPatch } : component
           )),
         }));
       },
@@ -281,9 +300,9 @@ export const useCalibrationStore = create<CalibrationStore>()(
         const id = uid('service');
         set((state) => ({
           serviceLog: [
-            { ...entry, id, performedAt: entry.performedAt ?? Date.now() },
+            { ...entry, id, performedAt: entry.performedAt ?? Date.now(), cost: finiteNullableNonNegative(entry.cost) },
             ...state.serviceLog,
-          ],
+          ].slice(0, SERVICE_LOG_LIMIT),
         }));
         return id;
       },

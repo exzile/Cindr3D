@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
   getCalibrationStatus,
   getComponentStatus,
   getMoistureStatus,
   summarizeMaintenance,
+  useCalibrationStore,
   type CalibrationRecord,
   type SpoolMoistureProfile,
   type WearComponent,
@@ -12,6 +13,15 @@ import {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 describe('calibration lifecycle helpers', () => {
+  beforeEach(() => {
+    useCalibrationStore.setState({
+      calibrationByPrinterId: {},
+      components: [],
+      serviceLog: [],
+      moistureBySpoolId: {},
+    });
+  });
+
   it('classifies calibration records by interval age', () => {
     const now = Date.UTC(2026, 4, 5);
     const record: CalibrationRecord = {
@@ -25,6 +35,24 @@ describe('calibration lifecycle helpers', () => {
     expect(getCalibrationStatus({ ...record, lastRunAt: now - 12 * DAY_MS }, now)).toBe('upcoming');
     expect(getCalibrationStatus({ ...record, lastRunAt: now - 15 * DAY_MS }, now)).toBe('overdue');
     expect(getCalibrationStatus({ ...record, lastRunAt: null }, now)).toBe('never');
+  });
+
+  it('treats epoch timestamps as valid recorded calibration and moisture dates', () => {
+    const now = 2 * DAY_MS;
+    expect(getCalibrationStatus({
+      itemId: 'bed-mesh',
+      lastRunAt: 0,
+      intervalDays: 14,
+      note: '',
+    }, now)).toBe('ok');
+
+    expect(getMoistureStatus({
+      spoolId: 'spool-epoch',
+      openedAt: 0,
+      ambientHumidityPct: 50,
+      sensorLabel: '',
+      lastUpdatedAt: now,
+    }, now).status).toBe('ok');
   });
 
   it('tracks wear reminders from hour and filament counters', () => {
@@ -95,5 +123,41 @@ describe('calibration lifecycle helpers', () => {
       ok: 1,
       never: 1,
     });
+  });
+
+  it('caps persisted service log history and sanitizes non-finite component values', () => {
+    const store = useCalibrationStore.getState();
+    const componentId = store.addComponent({
+      printerId: 'printer-1',
+      name: 'Nozzle',
+      category: 'nozzle',
+      hoursOn: Number.NaN,
+      filamentKm: Number.POSITIVE_INFINITY,
+      reminderHours: Number.NaN,
+      reminderFilamentKm: 2,
+      replacementCost: Number.NaN,
+      note: '',
+    });
+
+    const component = useCalibrationStore.getState().components.find((item) => item.id === componentId);
+    expect(component?.hoursOn).toBe(0);
+    expect(component?.filamentKm).toBe(0);
+    expect(component?.reminderHours).toBeNull();
+    expect(component?.replacementCost).toBeNull();
+
+    for (let i = 0; i < 205; i++) {
+      useCalibrationStore.getState().logService({
+        printerId: 'printer-1',
+        componentId,
+        summary: `Service ${i}`,
+        performedBy: 'Test',
+        cost: Number.NaN,
+      });
+    }
+
+    const serviceLog = useCalibrationStore.getState().serviceLog;
+    expect(serviceLog).toHaveLength(200);
+    expect(serviceLog[0].summary).toBe('Service 204');
+    expect(serviceLog[0].cost).toBeNull();
   });
 });

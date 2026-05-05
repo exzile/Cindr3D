@@ -147,6 +147,25 @@ function statusLabel(status: string, daysUntilDue?: number | null): string {
   return 'Current';
 }
 
+function defaultCalibrationRecords(records: ReturnType<typeof useCalibrationStore.getState>['calibrationByPrinterId'][string] | undefined) {
+  return CALIBRATION_ITEMS.map((item) => records?.[item.id] ?? {
+    itemId: item.id,
+    lastRunAt: null,
+    intervalDays: item.defaultIntervalDays,
+    note: '',
+  });
+}
+
+function parseNonNegativeNumber(value: string): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
+}
+
+function parseOptionalNonNegativeNumber(value: string): number | null | undefined {
+  if (value.trim() === '') return null;
+  return parseNonNegativeNumber(value) ?? undefined;
+}
+
 export default function PrinterCalibrationPanel() {
   const [newComponentName, setNewComponentName] = useState('');
   const [newComponentCategory, setNewComponentCategory] = useState<WearComponent['category']>('other');
@@ -164,7 +183,7 @@ export default function PrinterCalibrationPanel() {
   const spools = useSpoolStore((s) => s.spools);
   const loadedSpoolByPrinterId = useSpoolStore((s) => s.loadedSpoolByPrinterId);
   const activeSpoolId = useSpoolStore((s) => s.activeSpoolId);
-  const getCalibrationRecords = useCalibrationStore((s) => s.getCalibrationRecords);
+  const calibrationByPrinterId = useCalibrationStore((s) => s.calibrationByPrinterId);
   const recordCalibration = useCalibrationStore((s) => s.recordCalibration);
   const updateCalibrationInterval = useCalibrationStore((s) => s.updateCalibrationInterval);
   const components = useCalibrationStore((s) => s.components);
@@ -182,7 +201,7 @@ export default function PrinterCalibrationPanel() {
     : 'Select printer, material, and print profiles in Prepare';
   const activeFleetPrinter = printers.find((printer) => printer.id === activePrinterId);
   const printerLabel = activeFleetPrinter?.name ?? 'Active printer';
-  const calibrationRecords = getCalibrationRecords(activePrinterId);
+  const calibrationRecords = defaultCalibrationRecords(calibrationByPrinterId[activePrinterId]);
   const calibrationStatuses = getCalibrationStatuses(calibrationRecords);
   const printerComponents = components.filter((component) => component.printerId === activePrinterId);
   const componentStatuses = printerComponents.map(getComponentStatus);
@@ -234,12 +253,15 @@ export default function PrinterCalibrationPanel() {
   const addCustomComponent = () => {
     const name = newComponentName.trim();
     if (!name) return;
+    const reminderHours = parseOptionalNonNegativeNumber(newComponentHours);
+    const reminderFilamentKm = parseOptionalNonNegativeNumber(newComponentFilamentKm);
+    if (reminderHours === undefined || reminderFilamentKm === undefined) return;
     addComponent({
       printerId: activePrinterId,
       name,
       category: newComponentCategory,
-      reminderHours: newComponentHours.trim() ? Number(newComponentHours) : null,
-      reminderFilamentKm: newComponentFilamentKm.trim() ? Number(newComponentFilamentKm) : null,
+      reminderHours,
+      reminderFilamentKm,
       replacementCost: null,
       note: '',
     });
@@ -254,30 +276,34 @@ export default function PrinterCalibrationPanel() {
   };
 
   const recordReplacement = (component: WearComponent) => {
+    const replacementCost = parseOptionalNonNegativeNumber(serviceCost);
+    if (replacementCost === undefined) return;
     updateComponent(component.id, {
       installedAt: Date.now(),
       hoursOn: 0,
       filamentKm: 0,
-      replacementCost: serviceCost.trim() ? Number(serviceCost) : component.replacementCost,
+      replacementCost: replacementCost ?? component.replacementCost,
     });
     logService({
       printerId: activePrinterId,
       componentId: component.id,
       summary: `${component.name} replaced`,
       performedBy: servicePerson.trim() || 'Local user',
-      cost: serviceCost.trim() ? Number(serviceCost) : component.replacementCost,
+      cost: replacementCost ?? component.replacementCost,
     });
   };
 
   const addServiceLogEntry = () => {
     const summaryText = serviceSummary.trim();
     if (!summaryText) return;
+    const cost = parseOptionalNonNegativeNumber(serviceCost);
+    if (cost === undefined) return;
     logService({
       printerId: activePrinterId,
       componentId: null,
       summary: summaryText,
       performedBy: servicePerson.trim() || 'Local user',
-      cost: serviceCost.trim() ? Number(serviceCost) : null,
+      cost,
     });
     setServiceSummary('');
     setServiceCost('');
@@ -328,7 +354,12 @@ export default function PrinterCalibrationPanel() {
                     type="number"
                     min={1}
                     value={item.record.intervalDays}
-                    onChange={(event) => updateCalibrationInterval(activePrinterId, item.record.itemId, Number(event.target.value))}
+                    onChange={(event) => {
+                      const intervalDays = parseNonNegativeNumber(event.target.value);
+                      if (intervalDays !== null && intervalDays >= 1) {
+                        updateCalibrationInterval(activePrinterId, item.record.itemId, intervalDays);
+                      }
+                    }}
                   />
                 </label>
                 <span className="printer-calibration-panel__pill">{statusLabel(item.status, item.daysUntilDue)}</span>
@@ -360,10 +391,22 @@ export default function PrinterCalibrationPanel() {
                     </span>
                   </div>
                   <div className="printer-calibration-panel__component-inputs">
-                    <label><span>Hours</span><input type="number" min={0} value={component.hoursOn} onChange={(event) => updateComponent(component.id, { hoursOn: Number(event.target.value) })} /></label>
-                    <label><span>km</span><input type="number" min={0} step={0.1} value={component.filamentKm} onChange={(event) => updateComponent(component.id, { filamentKm: Number(event.target.value) })} /></label>
-                    <label><span>Due h</span><input type="number" min={0} value={component.reminderHours ?? ''} onChange={(event) => updateComponent(component.id, { reminderHours: event.target.value ? Number(event.target.value) : null })} /></label>
-                    <label><span>Due km</span><input type="number" min={0} step={0.1} value={component.reminderFilamentKm ?? ''} onChange={(event) => updateComponent(component.id, { reminderFilamentKm: event.target.value ? Number(event.target.value) : null })} /></label>
+                    <label><span>Hours</span><input type="number" min={0} value={component.hoursOn} onChange={(event) => {
+                      const hoursOn = parseNonNegativeNumber(event.target.value);
+                      if (hoursOn !== null) updateComponent(component.id, { hoursOn });
+                    }} /></label>
+                    <label><span>km</span><input type="number" min={0} step={0.1} value={component.filamentKm} onChange={(event) => {
+                      const filamentKm = parseNonNegativeNumber(event.target.value);
+                      if (filamentKm !== null) updateComponent(component.id, { filamentKm });
+                    }} /></label>
+                    <label><span>Due h</span><input type="number" min={0} value={component.reminderHours ?? ''} onChange={(event) => {
+                      const reminderHours = parseOptionalNonNegativeNumber(event.target.value);
+                      if (reminderHours !== undefined) updateComponent(component.id, { reminderHours });
+                    }} /></label>
+                    <label><span>Due km</span><input type="number" min={0} step={0.1} value={component.reminderFilamentKm ?? ''} onChange={(event) => {
+                      const reminderFilamentKm = parseOptionalNonNegativeNumber(event.target.value);
+                      if (reminderFilamentKm !== undefined) updateComponent(component.id, { reminderFilamentKm });
+                    }} /></label>
                   </div>
                   <div className="printer-calibration-panel__component-actions">
                     <button type="button" title="Record replacement" onClick={() => recordReplacement(component)}>
@@ -419,7 +462,12 @@ export default function PrinterCalibrationPanel() {
                       min={0}
                       max={100}
                       value={moistureProfile?.ambientHumidityPct ?? 50}
-                      onChange={(event) => upsertMoistureProfile(loadedSpool.id, { ambientHumidityPct: Number(event.target.value) })}
+                      onChange={(event) => {
+                        const ambientHumidityPct = parseNonNegativeNumber(event.target.value);
+                        if (ambientHumidityPct !== null) {
+                          upsertMoistureProfile(loadedSpool.id, { ambientHumidityPct: Math.min(100, ambientHumidityPct) });
+                        }
+                      }}
                     />
                   </label>
                   <label>
