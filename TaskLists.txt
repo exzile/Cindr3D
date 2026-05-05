@@ -278,6 +278,7 @@
 #   [x] Externalise app shell, workspace nav, and global settings strings
 #   [x] Lightweight translation helper; per-language bundle modules
 #   [x] Settings: language picker; default from browser locale
+#   [x] Generated catalog freshness check for translation bundle updates
 #   [x] Ship English; accept community translations via PR
 
 ### 14.4 Accessibility audit  [M]
@@ -287,6 +288,7 @@
 #   [x] Keyboard object-list navigation in Prepare workspace
 #   [x] Keyboard-only nav across every workspace
 #   [x] Screen-reader labels on all interactive elements
+#   [x] Runtime guard infers labels from form labels and nearby field labels
 #   [x] High-contrast theme variant
 #   [x] Reduced-motion mode for animations
 

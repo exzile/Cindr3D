@@ -23,4 +23,30 @@ describe('interactiveLabels', () => {
 
     expect(document.querySelector('button')?.getAttribute('aria-label')).toBe('Fit to plate');
   });
+
+  it('uses associated label elements for form controls', () => {
+    document.body.innerHTML = `
+      <label for="height-input">Height</label>
+      <input id="height-input" type="number" />
+    `;
+
+    ensureInteractiveAccessibleNames(document);
+
+    expect(document.querySelector('input')?.getAttribute('aria-label')).toBe('Height');
+    expect(collectUnlabeledInteractiveElements(document)).toHaveLength(0);
+  });
+
+  it('uses nearby field labels for controls without native labels', () => {
+    document.body.innerHTML = `
+      <div class="dialog-field">
+        <span class="dialog-label">Wall thickness</span>
+        <button><svg /></button>
+      </div>
+    `;
+
+    ensureInteractiveAccessibleNames(document);
+
+    expect(document.querySelector('button')?.getAttribute('aria-label')).toBe('Wall thickness');
+    expect(collectUnlabeledInteractiveElements(document)).toHaveLength(0);
+  });
 });

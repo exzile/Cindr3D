@@ -24,13 +24,43 @@ function labelledByText(element: Element): string {
     .join(' ');
 }
 
+function textContent(element: Element | null | undefined): string | null {
+  const text = element?.textContent?.replace(/\s+/g, ' ').trim();
+  return text || null;
+}
+
+function cssEscape(value: string): string {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(value);
+  return value.replace(/["\\]/g, '\\$&');
+}
+
+function associatedLabelText(element: Element): string | null {
+  const id = element.getAttribute('id');
+  if (id) {
+    const explicitLabel = element.ownerDocument.querySelector(`label[for="${cssEscape(id)}"]`);
+    const labelText = textContent(explicitLabel);
+    if (labelText) return labelText;
+  }
+
+  const wrappingLabel = element.closest('label');
+  const wrappingText = textContent(wrappingLabel);
+  if (wrappingText) return wrappingText;
+
+  const field = element.closest('.dialog-field, .global-settings-field, .drive-joints-track-col, .sketch-sidebar-row');
+  const fieldLabel = field?.querySelector('.dialog-label, .global-settings-label, .drive-joints-track-col__label, .sketch-sidebar-row__label');
+  return textContent(fieldLabel);
+}
+
 function nearestDialogTitle(element: Element): string | null {
   const container = element.closest('.dialog-panel, .tp-panel, .global-settings-modal, .ai-panel');
   const title = container?.querySelector('.dialog-title, .tp-title, .global-settings-title, .ai-panel-title');
-  return title?.textContent?.replace(/\s+/g, ' ').trim() || null;
+  return textContent(title);
 }
 
 function fallbackLabel(element: Element): string | null {
+  const associated = associatedLabelText(element);
+  if (associated) return associated;
+
   const explicit = element.getAttribute('title')
     || element.getAttribute('placeholder')
     || element.getAttribute('name')
@@ -45,8 +75,7 @@ function fallbackLabel(element: Element): string | null {
   const role = element.getAttribute('role');
   if (role === 'tab') return visibleText(element) || null;
   if (element instanceof HTMLInputElement && element.type === 'checkbox') {
-    const label = element.closest('label')?.textContent?.replace(/\s+/g, ' ').trim();
-    return label || null;
+    return associatedLabelText(element);
   }
   return null;
 }
