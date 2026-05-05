@@ -50,6 +50,12 @@ export function snapshotFromPrinterState(state: PrinterStore): PrintSessionSnaps
   };
 }
 
+function hasKnownInactivePrinterState(state: PrinterStore): boolean {
+  const status = state.model.state?.status;
+  if (!status) return false;
+  return !ACTIVE_STATUSES.has(status);
+}
+
 usePrinterStore.subscribe((state) => {
   const snapshot = snapshotFromPrinterState(state);
   const sessionStore = usePrintSessionStore.getState();
@@ -59,7 +65,7 @@ usePrinterStore.subscribe((state) => {
   }
 
   const active = sessionStore.activeSession;
-  if (active?.printerId === state.activePrinterId) {
+  if (active?.printerId === state.activePrinterId && hasKnownInactivePrinterState(state)) {
     sessionStore.clearActiveSession(active.printerId);
   }
 });

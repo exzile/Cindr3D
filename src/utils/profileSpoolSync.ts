@@ -240,5 +240,4 @@ export function downloadProfileSpoolSyncPayload(): void {
   a.download = 'cindr3d-profile-sync.json';
   a.click();
   URL.revokeObjectURL(url);
-  useProfileSyncStore.getState().markSync('pushed');
 }
