@@ -399,6 +399,8 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
           <button
             className={`file-menu-btn${fileMenuOpen ? ' open' : ''}`}
             onClick={() => setFileMenuOpen((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={fileMenuOpen}
           >
             File
           </button>
@@ -515,6 +517,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
             onClick={toggleAutoSave}
             role="switch"
             aria-checked={autoSave}
+            aria-label={autoSave ? `Disable auto-save, currently every ${autoSaveInterval} seconds` : 'Enable auto-save'}
           >
             <span className="autosave-label">Auto</span>
             <span className="autosave-track">
@@ -533,6 +536,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
             <button
               className={`ribbon-quick-btn${undoStackLength === 0 ? ' ribbon-quick-btn-disabled' : ''}`}
               title="Undo (Ctrl+Z)"
+              aria-label="Undo"
               onClick={undoAction}
               disabled={undoStackLength === 0}
             >
@@ -541,6 +545,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
             <button
               className={`ribbon-quick-btn${redoStackLength === 0 ? ' ribbon-quick-btn-disabled' : ''}`}
               title="Redo (Ctrl+Y)"
+              aria-label="Redo"
               onClick={redoAction}
               disabled={redoStackLength === 0}
             >
@@ -596,18 +601,22 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
           className={`quick-ai-toggle${aiPanelOpen ? ' active' : ''}`}
           onClick={toggleAiPanel}
           title="Toggle AI Assistant"
+          aria-pressed={aiPanelOpen}
+          aria-label="Toggle AI Assistant"
         >
           <Bot size={13} aria-hidden="true" />
           <span>AI</span>
         </button>
         <McpStatusBadge />
-        <button className="ribbon-quick-btn" title="Toggle theme" onClick={toggleTheme}>
+        <button className="ribbon-quick-btn" title="Toggle theme" aria-label="Toggle theme" onClick={toggleTheme}>
           {theme === 'light' ? <Moon size={14} /> : <Sun size={14} />}
         </button>
         <div className="quick-popover-root" ref={notificationsRef}>
           <button
             className={`ribbon-quick-btn${hasUpdateAlert ? ' has-alert' : ''}`}
             title="Notifications"
+            aria-label="Notifications"
+            aria-expanded={notificationsOpen}
             onClick={() => {
               setNotificationsOpen((value) => !value);
               setGlobalSettingsOpen(false);
@@ -624,12 +633,14 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
             <UpdatePanel onAlertChange={setHasUpdateAlert} />
           </div>
         </div>
-        <button className="ribbon-quick-btn" title="Help" onClick={() => setHelpOpen(true)}>
+        <button className="ribbon-quick-btn" title="Help" aria-label="Help" onClick={() => setHelpOpen(true)}>
           <HelpCircle size={14} />
         </button>
         <button
           className="ribbon-quick-btn"
           title="Global settings"
+          aria-label="Global settings"
+          aria-expanded={globalSettingsOpen}
           onClick={() => {
             setGlobalSettingsOpen(true);
             setGlobalSettingsTab('general');
@@ -657,6 +668,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                 className="global-settings-close"
                 onClick={() => setGlobalSettingsOpen(false)}
                 title="Close settings"
+                aria-label="Close settings"
               >
                 <X size={15} />
               </button>
@@ -668,6 +680,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                   type="button"
                   className={`global-settings-nav-item ${globalSettingsTab === 'general' ? 'active' : ''}`}
                   onClick={() => setGlobalSettingsTab('general')}
+                  aria-current={globalSettingsTab === 'general' ? 'page' : undefined}
                 >
                   <Settings size={15} />
                   <span>General</span>
@@ -676,6 +689,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                   type="button"
                   className={`global-settings-nav-item ${globalSettingsTab === 'ai' ? 'active' : ''}`}
                   onClick={() => setGlobalSettingsTab('ai')}
+                  aria-current={globalSettingsTab === 'ai' ? 'page' : undefined}
                 >
                   <Bot size={15} />
                   <span>AI Assistant</span>
@@ -684,6 +698,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                   type="button"
                   className={`global-settings-nav-item ${globalSettingsTab === 'sync' ? 'active' : ''}`}
                   onClick={() => setGlobalSettingsTab('sync')}
+                  aria-current={globalSettingsTab === 'sync' ? 'page' : undefined}
                 >
                   <Download size={15} />
                   <span>Sync</span>
@@ -940,7 +955,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
             <div className="save-modal-header">
               <div className="save-modal-icon"><Save size={15} /></div>
               <div className="save-modal-title">Save Design</div>
-              <button className="save-modal-close" onClick={closeSaveAs} title="Cancel">
+              <button className="save-modal-close" onClick={closeSaveAs} title="Cancel" aria-label="Cancel save dialog">
                 <X size={14} />
               </button>
             </div>

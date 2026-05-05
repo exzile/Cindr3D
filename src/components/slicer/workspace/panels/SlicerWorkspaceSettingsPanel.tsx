@@ -58,7 +58,12 @@ export function SlicerWorkspaceSettingsPanel({ onEditProfile }: { onEditProfile:
             >
               {printProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <button className="slicer-workspace-settings-panel__compact-button" onClick={() => onEditProfile('print')}>
+            <button
+              className="slicer-workspace-settings-panel__compact-button"
+              onClick={() => onEditProfile('print')}
+              title="Edit print profile"
+              aria-label="Edit print profile"
+            >
               <Edit3 size={12} />
             </button>
           </div>
@@ -70,6 +75,7 @@ export function SlicerWorkspaceSettingsPanel({ onEditProfile }: { onEditProfile:
               type="button"
               className={`slicer-workspace-settings-panel__level-btn${detailLevel === lvl ? ' is-active' : ''}`}
               onClick={() => setDetailLevel(lvl)}
+              aria-pressed={detailLevel === lvl}
             >
               {lvl}
             </button>

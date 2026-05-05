@@ -18,6 +18,7 @@ export function SlicerWorkspaceTopNav() {
         type="button"
         className={`slicer-workspace-nav__tab ${previewMode === 'model' ? 'is-active' : ''}`}
         onClick={() => setPreviewMode('model')}
+        aria-pressed={previewMode === 'model'}
       >
         <Layers size={13} />
         Prepare
@@ -28,6 +29,7 @@ export function SlicerWorkspaceTopNav() {
         onClick={() => setPreviewMode('preview')}
         disabled={!hasSlice}
         title={hasSlice ? 'Show sliced preview' : 'Slice first to enable preview'}
+        aria-pressed={previewMode === 'preview'}
       >
         <Eye size={13} />
         Preview
@@ -41,6 +43,7 @@ export function SlicerWorkspaceTopNav() {
         onClick={undoPlate}
         disabled={plateHistory.length === 0}
         title="Undo (Ctrl+Z)"
+        aria-label="Undo plate changes"
       >
         <Undo2 size={13} />
       </button>
@@ -50,6 +53,7 @@ export function SlicerWorkspaceTopNav() {
         onClick={redoPlate}
         disabled={plateFuture.length === 0}
         title="Redo (Ctrl+Y)"
+        aria-label="Redo plate changes"
       >
         <Redo2 size={13} />
       </button>

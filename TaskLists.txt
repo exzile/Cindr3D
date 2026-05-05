@@ -280,6 +280,7 @@
 #   [x] Ship English; accept community translations via PR
 
 ### 14.4 Accessibility audit  [M]
+#   [x] Screen-reader labels on global toolbar + slicer shell controls
 #   [ ] Keyboard-only nav across every workspace
 #   [ ] Screen-reader labels on all interactive elements
 #   [x] High-contrast theme variant
