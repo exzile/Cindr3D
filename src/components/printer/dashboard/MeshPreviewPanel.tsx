@@ -20,17 +20,32 @@
  *   Other    → falls back to slicerStore.previewLayer; if nothing, shows
  *              all layers.
  */
-import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
+import { useState, useRef, useMemo, useCallback, useEffect, type ElementRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import * as THREE from 'three';
-import { Canvas, type ThreeEvent } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
-import { Layers, XCircle, Clock, Box, Ruler } from 'lucide-react';
+import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
+import { Html, Line, OrbitControls, Text } from '@react-three/drei';
+import {
+  ArrowRight,
+  ArrowUp,
+  Box,
+  Clock,
+  Eye,
+  Layers,
+  Maximize2,
+  Palette,
+  Rotate3D,
+  Ruler,
+  Square,
+  XCircle,
+} from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import { useSlicerStore } from '../../../store/slicerStore';
 import { parseM486Labels } from '../../../services/gcode/m486Labels';
 import { findMatchingObject, matchObjectNames } from '../../../services/gcode/objectNameMatch';
 import { layerFromPercent } from '../../../services/gcode/marlinProgressParser';
 import { useKlipperPrintStatus } from '../hooks/useKlipperPrintStatus';
+import { computeSliceStats, detectPrintIssues } from '../../slicer/workspace/preview/sliceStats';
+import { RiskMarkers } from '../../slicer/workspace/preview/RiskMarkers';
 import {
   BuildPlateGrid,
   BuildVolumeWireframe,
@@ -38,7 +53,9 @@ import {
 import { InlineGCodeWirePreview } from '../../slicer/workspace/canvas/GCodeWirePreview';
 import { panelStyle, sectionTitleStyle as labelStyle } from '../../../utils/printerPanelStyles';
 import { colors as COLORS } from '../../../utils/theme';
+import { formatDurationWords } from '../../../utils/printerFormat';
 import type { PlateObject } from '../../../types/slicer';
+import type { PreviewColorMode } from '../../../types/slicer-preview.types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -64,26 +81,175 @@ interface ContextMenuState {
   y: number;
 }
 
+type HoverState = ContextMenuState;
+
+type PreviewViewPreset = 'iso' | 'top' | 'front' | 'side' | 'fit';
+type DashboardPreviewColorMode = PreviewColorMode | 'object';
+
+interface PreviewBounds {
+  center: THREE.Vector3;
+  size: THREE.Vector3;
+  radius: number;
+}
+
+interface ObjectStatus {
+  label: string;
+  color: string;
+}
+
+function computePreviewBounds(objects: PlateObject[], buildVolume: { x: number; y: number; z: number }): PreviewBounds {
+  const box = new THREE.Box3();
+  const scratch = new THREE.Vector3();
+  let hasObjectBounds = false;
+
+  for (const obj of objects) {
+    if (obj.hidden) continue;
+    const { min, max } = obj.boundingBox;
+    const matrix = objectMatrix(obj);
+    const corners = [
+      [min.x, min.y, min.z], [max.x, min.y, min.z],
+      [min.x, max.y, min.z], [max.x, max.y, min.z],
+      [min.x, min.y, max.z], [max.x, min.y, max.z],
+      [min.x, max.y, max.z], [max.x, max.y, max.z],
+    ] as const;
+    for (const [x, y, z] of corners) {
+      scratch.set(x, y, z).applyMatrix4(matrix);
+      box.expandByPoint(scratch);
+      hasObjectBounds = true;
+    }
+  }
+
+  if (!hasObjectBounds) {
+    box.set(
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(buildVolume.x, buildVolume.y, Math.max(1, buildVolume.z * 0.12)),
+    );
+  }
+
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  return {
+    center,
+    size,
+    radius: Math.max(40, size.length() * 0.5, buildVolume.x * 0.45, buildVolume.y * 0.45),
+  };
+}
+
+function objectWorldCenter(obj: PlateObject): THREE.Vector3 {
+  const { min, max } = obj.boundingBox;
+  return new THREE.Vector3(
+    (min.x + max.x) / 2,
+    (min.y + max.y) / 2,
+    max.z + 4,
+  ).applyMatrix4(objectMatrix(obj));
+}
+
+function objectApproxFilament(sliceWeightG: number | undefined, objectCount: number): string {
+  if (!sliceWeightG || objectCount <= 0) return 'material --';
+  return `material ~${(sliceWeightG / objectCount).toFixed(1)}g`;
+}
+
+function axisPosition(model: { move?: { axes?: Array<{ letter: string; userPosition?: number; machinePosition?: number }> } }): { x: number; y: number; z: number } | null {
+  const axis = (letter: string) => model.move?.axes?.find((candidate) => candidate.letter.toUpperCase() === letter);
+  const x = axis('X')?.userPosition ?? axis('X')?.machinePosition;
+  const y = axis('Y')?.userPosition ?? axis('Y')?.machinePosition;
+  const z = axis('Z')?.userPosition ?? axis('Z')?.machinePosition;
+  return typeof x === 'number' && typeof y === 'number' && typeof z === 'number' ? { x, y, z } : null;
+}
+
+function clampLayerIndex(layer: number, totalLayers: number): number {
+  return Math.max(0, Math.min(Math.max(0, totalLayers - 1), layer));
+}
+
+function colorModeForPreview(mode: DashboardPreviewColorMode): PreviewColorMode {
+  return mode === 'object' ? 'type' : mode;
+}
+
+function previewCameraPose(view: PreviewViewPreset, bounds: PreviewBounds, buildVolume: { x: number; y: number; z: number }) {
+  const target = bounds.center.clone();
+  target.z = Math.max(target.z, Math.min(buildVolume.z * 0.25, bounds.size.z * 0.5));
+  const distance = Math.max(bounds.radius * (view === 'fit' ? 2.1 : 2.45), buildVolume.z * 0.75, 160);
+  const lift = Math.max(bounds.size.z * 0.65, buildVolume.z * 0.3, 55);
+
+  if (view === 'top') {
+    return { position: new THREE.Vector3(target.x, target.y, target.z + distance), target, up: new THREE.Vector3(0, 1, 0) };
+  }
+  if (view === 'front') {
+    return { position: new THREE.Vector3(target.x, target.y - distance, target.z + lift), target, up: new THREE.Vector3(0, 0, 1) };
+  }
+  if (view === 'side') {
+    return { position: new THREE.Vector3(target.x + distance, target.y, target.z + lift), target, up: new THREE.Vector3(0, 0, 1) };
+  }
+  return { position: new THREE.Vector3(target.x + distance * 0.8, target.y - distance * 0.75, target.z + distance * 0.65), target, up: new THREE.Vector3(0, 0, 1) };
+}
+
+function PreviewCameraControls({
+  buildVolume,
+  bounds,
+  revision,
+  view,
+}: {
+  buildVolume: { x: number; y: number; z: number };
+  bounds: PreviewBounds;
+  revision: number;
+  view: PreviewViewPreset;
+}) {
+  const controlsRef = useRef<ElementRef<typeof OrbitControls>>(null);
+  const { camera, invalidate } = useThree();
+
+  /* eslint-disable react-hooks/immutability */
+  useEffect(() => {
+    const pose = previewCameraPose(view, bounds, buildVolume);
+    camera.position.copy(pose.position);
+    camera.up.copy(pose.up);
+    camera.near = 0.5;
+    camera.far = Math.max(buildVolume.x, buildVolume.y, buildVolume.z, bounds.radius) * 12;
+    camera.lookAt(pose.target);
+    camera.updateProjectionMatrix();
+    controlsRef.current?.target.copy(pose.target);
+    controlsRef.current?.update();
+    invalidate();
+  }, [bounds, buildVolume, camera, invalidate, revision, view]);
+  /* eslint-enable react-hooks/immutability */
+
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      target={[bounds.center.x, bounds.center.y, bounds.center.z]}
+      enableDamping
+      dampingFactor={0.12}
+      minDistance={Math.max(buildVolume.x, buildVolume.y) * 0.25}
+      maxDistance={Math.max(buildVolume.x, buildVolume.y, buildVolume.z) * 5}
+    />
+  );
+}
+
 // ── Object silhouette + wireframe mesh ────────────────────────────────────────
 
 function ObjectSilhouette({
   obj,
   isCurrent,
   isCancelled,
+  colorMode,
   onContextMenu,
+  onHover,
+  onHoverEnd,
 }: {
   obj: PlateObject;
   isCurrent: boolean;
   isCancelled: boolean;
+  colorMode: DashboardPreviewColorMode;
   onContextMenu: (e: ThreeEvent<MouseEvent>) => void;
+  onHover: (e: ThreeEvent<PointerEvent>) => void;
+  onHoverEnd: () => void;
 }) {
-  const matrix = useMemo(() => objectMatrix(obj), [obj.position, obj.rotation, obj.scale, obj.mirrorX, obj.mirrorY, obj.mirrorZ]);
+  const matrix = useMemo(() => objectMatrix(obj), [obj]);
   // Reuse the geometry as-is; PlateObject geometry is already in model-local space.
   const geometry = obj.geometry as THREE.BufferGeometry | undefined;
   if (!geometry) return null;
 
-  const baseColor = isCancelled ? '#ef4444' : isCurrent ? '#44aaff' : (obj.color ?? '#7a89ff');
-  const opacity = isCancelled ? 0.08 : isCurrent ? 0.18 : 0.12;
+  const baseColor = isCancelled ? '#ef4444' : isCurrent ? '#44aaff' : colorMode === 'object' ? (obj.color ?? '#7a89ff') : '#7a89ff';
+  const opacity = isCancelled ? 0.08 : isCurrent ? 0.2 : colorMode === 'object' ? 0.18 : 0.1;
   const edgeOpacity = isCancelled ? 0.5 : isCurrent ? 1 : 0.7;
 
   return (
@@ -91,6 +257,8 @@ function ObjectSilhouette({
       <mesh
         geometry={geometry}
         onContextMenu={(e) => { e.stopPropagation(); onContextMenu(e); }}
+        onPointerMove={(e) => { e.stopPropagation(); onHover(e); }}
+        onPointerOut={onHoverEnd}
       >
         <meshBasicMaterial
           color={baseColor}
@@ -207,6 +375,82 @@ function ObjectContextMenu({
   );
 }
 
+function ObjectStatusBadge({
+  obj,
+  status,
+}: {
+  obj: PlateObject;
+  status: ObjectStatus;
+}) {
+  const position = useMemo(() => objectWorldCenter(obj), [obj]);
+  return (
+    <Html
+      position={[position.x, position.y, position.z]}
+      center
+      distanceFactor={110}
+      zIndexRange={[20, 0]}
+      style={{ pointerEvents: 'none' }}
+    >
+      <div
+        style={{
+          padding: '2px 5px',
+          borderRadius: 4,
+          border: `1px solid ${status.color}`,
+          background: 'rgba(10, 10, 20, 0.82)',
+          color: status.color,
+          fontSize: 9,
+          fontWeight: 700,
+          lineHeight: 1,
+          whiteSpace: 'nowrap',
+          textTransform: 'uppercase',
+        }}
+      >
+        {status.label}
+      </div>
+    </Html>
+  );
+}
+
+function NozzleMarker({
+  position,
+  trail,
+}: {
+  position: { x: number; y: number; z: number } | null;
+  trail: Array<{ x: number; y: number; z: number }>;
+}) {
+  const trailPoints = useMemo(
+    () => trail.map((point) => [point.x, point.y, point.z + 2] as [number, number, number]),
+    [trail],
+  );
+
+  if (!position) return null;
+
+  return (
+    <group position={[position.x, position.y, position.z + 3]}>
+      <mesh>
+        <sphereGeometry args={[1.8, 16, 16]} />
+        <meshBasicMaterial color="#facc15" depthWrite={false} />
+      </mesh>
+      <mesh rotation={[Math.PI, 0, 0]} position={[0, 0, 4]}>
+        <coneGeometry args={[2.4, 6, 18]} />
+        <meshBasicMaterial color="#facc15" transparent opacity={0.7} depthWrite={false} />
+      </mesh>
+      <lineSegments>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[new Float32Array([-5, 0, 0, 5, 0, 0, 0, -5, 0, 0, 5, 0]), 3]} />
+        </bufferGeometry>
+        <lineBasicMaterial color="#facc15" transparent opacity={0.8} depthWrite={false} />
+      </lineSegments>
+      {trailPoints.length > 1 && (
+        <Line points={trailPoints} color="#facc15" transparent opacity={0.35} depthWrite={false} />
+      )}
+      <Text position={[0, 0, 10]} fontSize={4} color="#facc15" anchorX="center" anchorY="middle">
+        nozzle
+      </Text>
+    </group>
+  );
+}
+
 // ── Main panel ────────────────────────────────────────────────────────────────
 
 export default function MeshPreviewPanel() {
@@ -220,12 +464,38 @@ export default function MeshPreviewPanel() {
   const sliceResult = useSlicerStore((s) => s.sliceResult);
   const previewLayer = useSlicerStore((s) => s.previewLayer);
   const printerProfile = useSlicerStore((s) => s.getActivePrinterProfile());
+  const materialProfile = useSlicerStore((s) => s.getActiveMaterialProfile());
+  const printabilityReport = useSlicerStore((s) => s.printabilityReport);
 
-  const bv = printerProfile?.buildVolume ?? { x: 220, y: 220, z: 250 };
+  const bv = useMemo(() => printerProfile?.buildVolume ?? { x: 220, y: 220, z: 250 }, [printerProfile?.buildVolume]);
+  const previewBounds = useMemo(() => computePreviewBounds(plateObjects, bv), [plateObjects, bv]);
+  const hiddenTypes = useMemo(() => new Set<string>(), []);
+  const storageKey = `cindr3d:dashboard-print-preview:${boardType}`;
+  const [viewPreset, setViewPreset] = useState<PreviewViewPreset>(() => {
+    try {
+      const saved = window.localStorage.getItem(`${storageKey}:view`);
+      return saved === 'top' || saved === 'front' || saved === 'side' || saved === 'fit' || saved === 'iso' ? saved : 'iso';
+    } catch {
+      return 'iso';
+    }
+  });
+  const [colorMode, setColorMode] = useState<DashboardPreviewColorMode>(() => {
+    try {
+      const saved = window.localStorage.getItem(`${storageKey}:color`);
+      return saved === 'speed' || saved === 'flow' || saved === 'width' || saved === 'layer-time' || saved === 'wall-quality' || saved === 'seam' || saved === 'object' || saved === 'type' ? saved : 'type';
+    } catch {
+      return 'type';
+    }
+  });
+  const [viewRevision, setViewRevision] = useState(0);
+  const [layerOverride, setLayerOverride] = useState<number | null>(null);
+  const [nozzleTrail, setNozzleTrail] = useState<Array<{ x: number; y: number; z: number }>>([]);
 
   // Klipper has no in-store live layer; the shared hook polls Moonraker every
   // 3 s while connected and returns the latest synthesised status (null otherwise).
   const klipperStatus = useKlipperPrintStatus();
+  const buildObjects = useMemo(() => model.job?.build?.objects ?? [], [model.job?.build?.objects]);
+  const buildCurrentIdx = model.job?.build?.currentObject ?? -1;
 
   // ── Current layer (cross-firmware) ─────────────────────────────────────────
   // Returns a 0-based layer INDEX suitable for InlineGCodeWirePreview.
@@ -247,11 +517,74 @@ export default function MeshPreviewPanel() {
     // Fallback — slicer preview slider (already 0-based)
     return previewLayer ?? Math.max(0, totalLayers - 1);
   }, [boardType, model.job?.layer, klipperStatus, previewLayer, totalLayers]);
+  const displayedLayer = layerOverride ?? currentLayer;
+  const isLiveLayer = layerOverride === null;
+  const displayedLayerData = sliceResult?.layers[displayedLayer];
+  const layerTimeRange = useMemo<[number, number]>(() => {
+    const times = sliceResult?.layers.map((layer) => layer.layerTime).filter((time) => Number.isFinite(time)) ?? [];
+    if (times.length === 0) return [0, 1];
+    return [Math.min(...times), Math.max(...times)];
+  }, [sliceResult?.layers]);
+  const sliceStats = useMemo(() => {
+    if (!sliceResult) return null;
+    return computeSliceStats(sliceResult, {
+      diameterMm: printerProfile?.filamentDiameter ?? 1.75,
+      densityGPerCm3: materialProfile?.density ?? 1.24,
+      costPerKg: materialProfile?.costPerKg,
+    });
+  }, [materialProfile?.costPerKg, materialProfile?.density, printerProfile?.filamentDiameter, sliceResult]);
+  const printIssues = useMemo(
+    () => (sliceResult && sliceStats ? detectPrintIssues(sliceResult, sliceStats) : []),
+    [sliceResult, sliceStats],
+  );
+  const currentLayerIssues = useMemo(
+    () => printIssues.filter((issue) => issue.layerIndex === displayedLayer),
+    [displayedLayer, printIssues],
+  );
+  const nozzlePosition = useMemo(() => axisPosition(model), [model]);
+  const progressPercent = boardType === 'klipper' && klipperStatus
+    ? klipperStatus.progress * 100
+    : model.job?.filePosition !== undefined && model.job?.file?.size
+      ? (model.job.filePosition / model.job.file.size) * 100
+      : totalLayers > 0
+        ? ((currentLayer + 1) / totalLayers) * 100
+        : null;
+  const elapsedSeconds = boardType === 'klipper' && klipperStatus ? klipperStatus.printDuration : model.job?.duration;
+  const remainingSeconds = model.job?.timesLeft?.file;
+  const activeObjectName = useMemo(() => {
+    if (boardType === 'duet' && model.job?.build && buildCurrentIdx >= 0) {
+      return model.job.build.objects[buildCurrentIdx]?.name ?? null;
+    }
+    if (boardType === 'klipper' && klipperStatus?.message) return klipperStatus.message;
+    return null;
+  }, [boardType, buildCurrentIdx, klipperStatus?.message, model.job?.build]);
+
+  useEffect(() => {
+    if (totalLayers <= 0) {
+      setLayerOverride(null);
+      return;
+    }
+    setLayerOverride((layer) => layer === null ? null : Math.max(0, Math.min(totalLayers - 1, layer)));
+  }, [totalLayers]);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(`${storageKey}:view`, viewPreset); } catch { /* ignore */ }
+  }, [storageKey, viewPreset]);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(`${storageKey}:color`, colorMode); } catch { /* ignore */ }
+  }, [colorMode, storageKey]);
+
+  useEffect(() => {
+    if (!nozzlePosition) return;
+    setNozzleTrail((trail) => {
+      const previous = trail.at(-1);
+      if (previous && Math.hypot(previous.x - nozzlePosition.x, previous.y - nozzlePosition.y, previous.z - nozzlePosition.z) < 0.1) return trail;
+      return [...trail, nozzlePosition].slice(-16);
+    });
+  }, [nozzlePosition]);
 
   // ── Cancelled / currently-printing detection ───────────────────────────────
-  const buildObjects = model.job?.build?.objects ?? [];
-  const buildCurrentIdx = model.job?.build?.currentObject ?? -1;
-
   const m486Labels = useMemo(
     () => parseM486Labels(sliceResult?.gcode ?? '').labels,
     [sliceResult?.gcode],
@@ -292,8 +625,58 @@ export default function MeshPreviewPanel() {
     return matched ? cancelledNames.has(matched) : false;
   }, [matchByName, cancelledNames]);
 
+  const objectStatus = useCallback((plateObj: PlateObject): ObjectStatus => {
+    if (isCancelledObject(plateObj)) return { label: 'cancelled', color: '#ef4444' };
+    if (isCurrentObject(plateObj)) return { label: 'printing', color: '#44aaff' };
+    const report = printabilityReport?.objects.find((entry) => entry.objectId === plateObj.id);
+    if (report?.issues.some((issue) => issue.severity === 'error')) return { label: 'risk', color: '#f97316' };
+    if (report?.issues.some((issue) => issue.severity === 'warning')) return { label: 'check', color: '#facc15' };
+    return { label: 'queued', color: '#a7f3d0' };
+  }, [isCancelledObject, isCurrentObject, printabilityReport?.objects]);
+
   // ── Context menu state ─────────────────────────────────────────────────────
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  const [hover, setHover] = useState<HoverState | null>(null);
+
+  const setPreviewView = useCallback((view: PreviewViewPreset) => {
+    setViewPreset(view);
+    setViewRevision((revision) => revision + 1);
+  }, []);
+
+  const setManualLayer = useCallback((layer: number) => {
+    if (totalLayers <= 0) return;
+    setLayerOverride(clampLayerIndex(layer, totalLayers));
+  }, [totalLayers]);
+
+  const handleLayerKeyDown = useCallback((event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      setManualLayer(displayedLayer - (event.shiftKey ? 10 : 1));
+    } else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      setManualLayer(displayedLayer + (event.shiftKey ? 10 : 1));
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      setManualLayer(0);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      setManualLayer(totalLayers - 1);
+    } else if (event.key.toLowerCase() === 'l') {
+      event.preventDefault();
+      setLayerOverride(null);
+    }
+  }, [displayedLayer, setManualLayer, totalLayers]);
+
+  const syncCameraOverlay = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('cindr3d:print-preview-sync-camera', {
+      detail: {
+        layer: displayedLayer,
+        objectName: activeObjectName,
+        view: viewPreset,
+        bounds: { center: previewBounds.center.toArray(), radius: previewBounds.radius },
+      },
+    }));
+  }, [activeObjectName, displayedLayer, previewBounds.center, previewBounds.radius, viewPreset]);
 
   const handleObjectContextMenu = (objectId: string) => (e: ThreeEvent<MouseEvent>) => {
     e.nativeEvent.preventDefault();
@@ -308,7 +691,18 @@ export default function MeshPreviewPanel() {
     });
   };
 
+  const handleObjectHover = (objectId: string) => (e: ThreeEvent<PointerEvent>) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setHover({
+      objectId,
+      x: Math.max(8, Math.min(e.nativeEvent.clientX - rect.left + 10, rect.width - 210)),
+      y: Math.max(8, Math.min(e.nativeEvent.clientY - rect.top + 10, rect.height - 92)),
+    });
+  };
+
   const menuObj = menu ? plateObjects.find((p) => p.id === menu.objectId) : null;
+  const hoverObj = hover ? plateObjects.find((p) => p.id === hover.objectId) : null;
 
   const handleCancelFromMenu = useCallback(async () => {
     if (!menuObj) return;
@@ -339,7 +733,7 @@ export default function MeshPreviewPanel() {
         </span>
         <span style={{ fontSize: 10, color: COLORS.textDim ?? '#666', display: 'flex', gap: 6 }}>
           {totalLayers > 0 && (
-            <span>Layer {Math.min(currentLayer + 1, totalLayers)} / {totalLayers}</span>
+            <span>{isLiveLayer ? 'Live' : 'Preview'} L{Math.min(displayedLayer + 1, totalLayers)} / {totalLayers}</span>
           )}
           {boardType === 'klipper' && klipperStatus && klipperStatus.progress > 0 && (
             <span>{(klipperStatus.progress * 100).toFixed(0)}%</span>
@@ -357,55 +751,291 @@ export default function MeshPreviewPanel() {
             Slice a model in the Prepare workspace to populate the preview.
           </div>
         ) : (
-          <Canvas
-            camera={{
-              position: [bv.x * 1.2, -bv.y * 0.8, bv.z * 1.4],
-              fov: 45,
-              near: 1,
-              far: bv.x * 20,
-              up: [0, 0, 1],
-            }}
-            frameloop="demand"
-            style={{ width: '100%', height: '100%' }}
-            onContextMenu={(e) => e.preventDefault()}
-          >
-            <ambientLight intensity={0.55} />
-            <directionalLight position={[bv.x, -bv.y, bv.z * 2]} intensity={0.7} />
+          <>
+            <Canvas
+              camera={{
+                position: [bv.x * 1.2, -bv.y * 0.8, bv.z * 1.4],
+                fov: 45,
+                near: 0.5,
+                far: Math.max(bv.x, bv.y, bv.z) * 12,
+                up: [0, 0, 1],
+              }}
+              frameloop="demand"
+              style={{ width: '100%', height: '100%' }}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              <ambientLight intensity={0.55} />
+              <directionalLight position={[bv.x, -bv.y, bv.z * 2]} intensity={0.7} />
 
-            <BuildPlateGrid sizeX={bv.x} sizeY={bv.y} />
-            <BuildVolumeWireframe x={bv.x} y={bv.y} z={bv.z} />
+              <BuildPlateGrid sizeX={bv.x} sizeY={bv.y} />
+              <BuildVolumeWireframe x={bv.x} y={bv.y} z={bv.z} />
 
-            {plateObjects.map((obj) => (
-              <ObjectSilhouette
-                key={obj.id}
-                obj={obj}
-                isCurrent={isCurrentObject(obj)}
-                isCancelled={isCancelledObject(obj)}
-                onContextMenu={handleObjectContextMenu(obj.id)}
+              {plateObjects.map((obj) => (
+                <ObjectSilhouette
+                  key={obj.id}
+                  obj={obj}
+                  isCurrent={isCurrentObject(obj)}
+                  isCancelled={isCancelledObject(obj)}
+                  colorMode={colorMode}
+                  onContextMenu={handleObjectContextMenu(obj.id)}
+                  onHover={handleObjectHover(obj.id)}
+                  onHoverEnd={() => setHover(null)}
+                />
+              ))}
+
+              {plateObjects.map((obj) => (
+                <ObjectStatusBadge key={`${obj.id}:status`} obj={obj} status={objectStatus(obj)} />
+              ))}
+
+              <NozzleMarker position={nozzlePosition} trail={nozzleTrail} />
+
+              {sliceResult && displayedLayer > 0 && (
+                <InlineGCodeWirePreview
+                  sliceResult={sliceResult}
+                  startLayer={0}
+                  currentLayer={displayedLayer - 1}
+                  showTravel={false}
+                  showRetractions={false}
+                  colorMode={colorModeForPreview(colorMode)}
+                  hiddenTypes={hiddenTypes}
+                  layerTimeRange={layerTimeRange}
+                  opacity={0.2}
+                  renderOrder={0}
+                />
+              )}
+
+              {sliceResult && (
+                <InlineGCodeWirePreview
+                  sliceResult={sliceResult}
+                  startLayer={displayedLayer}
+                  currentLayer={displayedLayer}
+                  showTravel={false}
+                  showRetractions={false}
+                  colorMode={colorModeForPreview(colorMode)}
+                  hiddenTypes={hiddenTypes}
+                  layerTimeRange={layerTimeRange}
+                  opacity={1}
+                  renderOrder={10}
+                />
+              )}
+
+              {displayedLayerData && currentLayerIssues.length > 0 && (
+                <RiskMarkers issues={currentLayerIssues} z={displayedLayerData.z} />
+              )}
+
+              <PreviewCameraControls
+                buildVolume={bv}
+                bounds={previewBounds}
+                revision={viewRevision}
+                view={viewPreset}
               />
-            ))}
+            </Canvas>
+            <div
+              style={{
+                position: 'absolute',
+                top: 8,
+                right: 8,
+                display: 'flex',
+                gap: 4,
+                pointerEvents: 'auto',
+              }}
+            >
+              {[
+                ['iso', 'Isometric view', Rotate3D],
+                ['top', 'Top view', Square],
+                ['front', 'Front view', ArrowUp],
+                ['side', 'Side view', ArrowRight],
+                ['fit', 'Fit print', Maximize2],
+                ['sync', 'Sync camera overlay', Eye],
+              ].map(([view, title, Icon]) => (
+                <button
+                  key={view as string}
+                  type="button"
+                  title={title as string}
+                  aria-label={title as string}
+                  onClick={() => view === 'sync' ? syncCameraOverlay() : setPreviewView(view as PreviewViewPreset)}
+                  style={{
+                    width: 24,
+                    height: 24,
+                    border: `1px solid ${viewPreset === view ? '#44aaff' : 'var(--border, #2a2a4a)'}`,
+                    borderRadius: 4,
+                    background: viewPreset === view ? 'rgba(68, 170, 255, 0.18)' : 'rgba(10, 10, 20, 0.76)',
+                    color: viewPreset === view ? '#9bd7ff' : 'var(--text-muted, #aaa)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Icon size={13} />
+                </button>
+              ))}
+            </div>
 
-            {sliceResult && (
-              <InlineGCodeWirePreview
-                sliceResult={sliceResult}
-                startLayer={0}
-                currentLayer={currentLayer}
-                showTravel={false}
-                showRetractions={false}
-                colorMode="type"
-                hiddenTypes={new Set()}
-                layerTimeRange={[0, 1]}
-              />
+            <label
+              style={{
+                position: 'absolute',
+                top: 8,
+                left: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '3px 6px',
+                border: '1px solid var(--border, #2a2a4a)',
+                borderRadius: 6,
+                background: 'rgba(10, 10, 20, 0.76)',
+                color: 'var(--text-muted, #aaa)',
+                fontSize: 10,
+                pointerEvents: 'auto',
+              }}
+            >
+              <Palette size={12} />
+              <select
+                value={colorMode}
+                aria-label="Preview color mode"
+                onChange={(event) => setColorMode(event.currentTarget.value as DashboardPreviewColorMode)}
+                style={{
+                  background: 'transparent',
+                  border: 0,
+                  color: 'inherit',
+                  fontSize: 10,
+                  outline: 'none',
+                }}
+              >
+                <option value="type">Type</option>
+                <option value="speed">Speed</option>
+                <option value="layer-time">Layer time</option>
+                <option value="flow">Extrusion</option>
+                <option value="width">Width</option>
+                <option value="object">Object</option>
+              </select>
+            </label>
+
+            {colorMode !== 'type' && colorMode !== 'object' && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 42,
+                  left: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '3px 6px',
+                  border: '1px solid var(--border, #2a2a4a)',
+                  borderRadius: 6,
+                  background: 'rgba(10, 10, 20, 0.76)',
+                  color: 'var(--text-muted, #aaa)',
+                  fontSize: 9,
+                  pointerEvents: 'none',
+                }}
+              >
+                <span style={{ width: 32, height: 5, borderRadius: 999, background: 'linear-gradient(90deg, #3b82f6, #22c55e, #f97316)' }} />
+                <span>{colorMode === 'flow' ? 'low to high extrusion' : colorMode === 'layer-time' ? 'fast to slow layer' : colorMode === 'speed' ? 'slow to fast' : 'narrow to wide'}</span>
+              </div>
             )}
 
-            <OrbitControls
-              target={[bv.x / 2, bv.y / 2, 0]}
-              enableDamping
-              dampingFactor={0.12}
-              minDistance={Math.max(bv.x, bv.y) * 0.4}
-              maxDistance={Math.max(bv.x, bv.y) * 4}
-            />
-          </Canvas>
+            {totalLayers > 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 8,
+                  right: 8,
+                  bottom: 8,
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(90px, 1fr) auto',
+                  gap: 8,
+                  alignItems: 'center',
+                  padding: '6px 8px',
+                  background: 'rgba(10, 10, 20, 0.82)',
+                  border: '1px solid var(--border, #2a2a4a)',
+                  borderRadius: 6,
+                  pointerEvents: 'auto',
+                  backdropFilter: 'blur(6px)',
+                }}
+              >
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(0, totalLayers - 1)}
+                  value={displayedLayer}
+                  aria-label="Preview layer"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onKeyDown={handleLayerKeyDown}
+                  onWheel={(e) => {
+                    e.stopPropagation();
+                    setManualLayer(displayedLayer + (e.deltaY > 0 ? 1 : -1));
+                  }}
+                  onChange={(e) => setManualLayer(Number(e.currentTarget.value))}
+                  style={{ width: '100%', minWidth: 0 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setLayerOverride(null)}
+                  disabled={isLiveLayer}
+                  title="Return to live layer"
+                  aria-label="Return to live layer"
+                  style={{
+                    border: '1px solid var(--border, #2a2a4a)',
+                    borderRadius: 4,
+                    background: isLiveLayer ? 'transparent' : 'rgba(68, 170, 255, 0.14)',
+                    color: isLiveLayer ? 'var(--text-muted, #777)' : '#9bd7ff',
+                    cursor: isLiveLayer ? 'default' : 'pointer',
+                    fontSize: 10,
+                    padding: '3px 7px',
+                  }}
+                >
+                  Live
+                </button>
+                <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'space-between', gap: 8, color: 'var(--text-muted, #aaa)', fontSize: 10, flexWrap: 'wrap' }}>
+                  <span>Layer {displayedLayer + 1} / {totalLayers}</span>
+                  <span>Z {sliceResult?.layers[displayedLayer]?.z?.toFixed(2) ?? '--'} mm</span>
+                  {progressPercent !== null && <span>{progressPercent.toFixed(0)}%</span>}
+                  {activeObjectName && <span>{activeObjectName}</span>}
+                  <span>Elapsed {formatDurationWords(elapsedSeconds, '--', false)}</span>
+                  <span>ETA {formatDurationWords(remainingSeconds, '--', false)}</span>
+                  {currentLayerIssues.length > 0 && <span>{currentLayerIssues.length} issue{currentLayerIssues.length === 1 ? '' : 's'}</span>}
+                  {currentLayerIssues[0] && <span title={currentLayerIssues[0].message}>{currentLayerIssues[0].message}</span>}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {hover && hoverObj && !menu && (
+          <div
+            style={{
+              position: 'absolute',
+              left: hover.x,
+              top: hover.y,
+              minWidth: 180,
+              padding: '6px 8px',
+              border: '1px solid var(--border, #2a2a4a)',
+              borderRadius: 6,
+              background: 'rgba(10, 10, 20, 0.9)',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
+              color: 'var(--text-primary, #f0f0f5)',
+              fontSize: 11,
+              pointerEvents: 'none',
+              zIndex: 40,
+            }}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 4, color: isCurrentObject(hoverObj) ? '#44aaff' : 'var(--text-primary, #f0f0f5)' }}>
+              {hoverObj.name || hoverObj.id.slice(0, 8)}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, color: 'var(--text-muted, #aaa)' }}>
+              <span>{(hoverObj.boundingBox.max.x - hoverObj.boundingBox.min.x).toFixed(1)} x {(hoverObj.boundingBox.max.y - hoverObj.boundingBox.min.y).toFixed(1)} mm</span>
+              <span>{isCancelledObject(hoverObj) ? 'cancelled' : isCurrentObject(hoverObj) ? 'printing' : 'queued'}</span>
+            </div>
+            <div style={{ marginTop: 3, display: 'flex', justifyContent: 'space-between', gap: 12, color: 'var(--text-muted, #aaa)' }}>
+              <span>{objectApproxFilament(sliceResult?.filamentWeight, plateObjects.length)}</span>
+              <span>{objectStatus(hoverObj).label}</span>
+            </div>
+            {printabilityReport?.objects.find((entry) => entry.objectId === hoverObj.id)?.issues[0] && (
+              <div style={{ marginTop: 4, color: '#facc15' }}>
+                {printabilityReport.objects.find((entry) => entry.objectId === hoverObj.id)?.issues[0]?.message}
+              </div>
+            )}
+          </div>
         )}
 
         {menu && menuObj && (

@@ -656,8 +656,77 @@
 #   ships that the plugin surface is informed by real integration patterns.
 
 
+## -- Phase 19: Dashboard print preview card --------------------------------
+## Goal: turn the dashboard Print Preview card into a compact live print
+## situational-awareness panel, without making users leave the printer
+## dashboard for common view, layer, object, and diagnostic checks.
+
+### 19.1 View controls and camera recovery  [S]
+#   [x] Add icon view presets: top, front, side, isometric
+#   [x] Add "fit to print" / "fit to plate" action for awkward rotations
+#   [x] Persist last dashboard preview view per printer or session
+#   [x] Keep orbit target centered on the active print bounds when available
+
+### 19.2 Current-layer visual emphasis  [S]
+#   [x] Brighten the active/current layer
+#   [x] Dim already-printed layers
+#   [x] Hide or ghost future layers depending on selected preview mode
+#   [x] Add a compact layer progress indicator tied to live firmware status
+
+### 19.3 Object status overlays  [M]
+#   [x] Render small in-scene labels/badges for printing, completed,
+#       cancelled, queued/upcoming
+#   [x] Use Duet object model, Klipper EXCLUDE_OBJECT/status, and M486
+#       labels where available
+#   [x] Keep label placement stable while orbiting and avoid overlap
+
+### 19.4 Live nozzle position marker  [M]
+#   [x] Read live toolhead XYZ from printer state when available
+#   [x] Render a small nozzle/crosshair marker above the plate
+#   [x] Optionally draw a short recent-motion trail
+#   [x] Degrade gracefully when firmware does not expose position
+
+### 19.5 Mini layer/timeline scrubber  [M]
+#   [x] Add a compact scrubber inside the card for preview inspection
+#   [x] Allow scrubber override without losing the live current-layer source
+#   [x] Provide "return to live" control when manually scrubbing
+#   [x] Support keyboard/wheel increments without stealing orbit gestures
+
+### 19.6 Object hover details  [S]
+#   [x] Hover object silhouette to show name, dimensions, active/cancelled state
+#   [x] Add material estimate to hover details
+#   [x] Reuse object matching from the right-click cancel menu
+#   [x] Keep hover tooltip DOM-based so it stays readable over the canvas
+
+### 19.7 Preview color modes  [M]
+#   [x] Add toggleable modes: line type, speed, layer time, extrusion amount,
+#       object
+#   [x] Reuse slicer preview color utilities where possible
+#   [x] Add compact legend only when the selected mode needs one
+
+### 19.8 Diagnostic problem markers  [M]
+#   [x] Overlay markers from slicer diagnostics/failure detection
+#   [x] Highlight adhesion-risk, layer anomaly, and object-at-risk regions
+#   [x] Link marker hover/details to the diagnostic explanation
+
+### 19.9 Camera/AR sync affordances  [S]
+#   [x] Add "match camera view" / "sync with AR overlay" actions
+#   [x] Emit saved-view/layer/object sync events for CameraOverlayPanel
+#   [x] Share active layer/object selection with CameraOverlayPanel
+
+### 19.10 Compact print stats strip  [S]
+#   [x] Show current layer, Z height, and firmware progress in a dense stats row
+#   [x] Add active object, elapsed, and remaining time
+#   [x] Keep values firmware-aware and hide unavailable fields
+#   [x] Ensure the stats row does not crowd the 3D viewport at small card sizes
+
+# Dependencies: complete. Camera/AR sync emits a dashboard event consumed by
+# camera overlays when Phase 9 overlay components are present; nozzle marker
+# gracefully hides on firmware that does not expose live XYZ.
+
+
 # CODEX-FRIENDLY SUBTASKS (parallelizable):
-#   Phases 7, 11, 13, 14, 16, 17 are mostly independent and run in parallel.
+#   Phases 7, 11, 13, 14, 16, 17, 19 are mostly independent and run in parallel.
 #   Phase 8 (Vision) gates Phase 9 (AR) and parts of Phase 12.
 #   Phase 10 (Cost) is independent except for 10.2 → 12.1.
 #   Phase 15 (Slicer) is fully independent of the printer-management

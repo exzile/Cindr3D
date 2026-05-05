@@ -45,7 +45,13 @@ export function BuildVolumeWireframe({ x, y, z, warning = false }: { x: number; 
   return (
     <mesh position={[x / 2, y / 2, z / 2]}>
       <boxGeometry args={[x, y, z]} />
-      <meshBasicMaterial color={baseColor} transparent opacity={warning ? 0.1 : 0.06} wireframe={false} />
+      <meshBasicMaterial
+        color={baseColor}
+        transparent
+        opacity={warning ? 0.1 : 0.06}
+        wireframe={false}
+        depthWrite={false}
+      />
       <lineSegments>
         <edgesGeometry args={[geo]} />
         <lineBasicMaterial color={baseColor} transparent opacity={lineOpacity} />
