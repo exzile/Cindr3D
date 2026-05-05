@@ -316,8 +316,9 @@ export function buildLayerInstances(opts: BuildLayerInstancesOptions): LayerInst
     // XY axis at z = layer.z - layerHeight/2. The half-layerHeight Z offset
     // keeps the bead resting on the previous layer's top surface.
     const radius = Math.max(MIN_LINE_WIDTH_MM, renderWidth) * 0.5;
-    const halfHeight = Math.max(0.01, m.layerHeight ?? layerHeight) * 0.5;
-    const beadCenterZ = layer.z - layerHeight * 0.5;
+    const moveLayerHeight = Math.max(0.01, m.layerHeight ?? layerHeight);
+    const halfHeight = moveLayerHeight * 0.5;
+    const beadCenterZ = layer.z - moveLayerHeight * 0.5;
 
     const aOff = ext * 3;
     iA[aOff    ] = m.from.x;

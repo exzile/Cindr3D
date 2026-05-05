@@ -45,6 +45,31 @@ describe('printQueueStore', () => {
     expect(route.blockedReasons.fine).toContain('Needs 0.6mm nozzle');
   });
 
+  it('ignores invalid persisted nozzle requirements while routing', () => {
+    const job = {
+      printerId: null,
+      requirements: { nozzleDiameter: null as unknown as number },
+      routing: { mode: 'auto', candidatePrinterIds: [], blockedReasons: {}, summary: '' },
+    } satisfies Pick<PrintQueueJob, 'printerId' | 'requirements' | 'routing'>;
+
+    const route = routeJobForPrinters(job, [printer('alpha', 'Alpha')]);
+
+    expect(route.candidatePrinterIds).toEqual(['alpha']);
+    expect(route.blockedReasons.alpha).toBeUndefined();
+  });
+
+  it('can complete the active job as cancelled without marking it done', () => {
+    const [jobId] = usePrintQueueStore.getState().addCopies({ filePath: '0:/gcodes/widget.gcode' }, [
+      printer('alpha', 'Alpha'),
+    ]);
+    usePrintQueueStore.getState().markJobPrinting(jobId);
+
+    usePrintQueueStore.getState().markActiveJobComplete('cancelled');
+
+    expect(usePrintQueueStore.getState().jobs[0].status).toBe('cancelled');
+    expect(usePrintQueueStore.getState().activeJobId).toBeNull();
+  });
+
   it('splits copies across compatible printers', () => {
     const printers = [
       printer('alpha', 'Alpha'),

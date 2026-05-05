@@ -192,6 +192,30 @@
   font-size: 11px;
 }
 
+.settings-help-modal__references details {
+  display: grid;
+  gap: 6px;
+}
+
+.settings-help-modal__references summary {
+  cursor: pointer;
+  color: var(--text-primary);
+}
+
+.settings-help-modal__references pre {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  background: var(--bg-toolbar);
+  color: var(--text-secondary);
+  font: inherit;
+  line-height: 1.45;
+}
+
 @media (max-width: 520px) {
   .settings-help-modal {
     width: 95%;

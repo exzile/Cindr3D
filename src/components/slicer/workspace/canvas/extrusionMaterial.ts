@@ -64,14 +64,18 @@ const VERTEX_SHADER = /* glsl */ `
     // for any future repositioning of the preview group.
     vec4 worldPos4 = modelMatrix * vec4(anchor + worldOffset, 1.0);
 
-    // Normal: aLocal is unit-length on the capsule surface so its rotation
-    // into the world frame is the surface normal. Tapered cones get a tiny
+    // Undo radius/height scaling before rotating the normalized surface
+    // direction into world space.
     // axial bias on the cylinder body — ignored, the visual difference is
-    // sub-pixel at slicer-preview line-width ratios.
+    vec3 scaledNormal = normalize(vec3(
+      aLocal.x / max(radius, 1e-5),
+      aLocal.y / max(radius, 1e-5),
+      aLocal.z / max(halfHeight, 1e-5)
+    ));
     vec3 localNormal = normalize(
-        forward * aLocal.x
-      + right   * aLocal.y
-      + up      * aLocal.z
+        forward * scaledNormal.x
+      + right   * scaledNormal.y
+      + up      * scaledNormal.z
     );
     vWorldNormal = normalize((modelMatrix * vec4(localNormal, 0.0)).xyz);
     vWorldPos = worldPos4.xyz;

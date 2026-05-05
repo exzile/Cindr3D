@@ -3,6 +3,25 @@ import type { SettingHelp } from '../../../../utils/settingsHelpContent';
 import { useEscapeKey } from '../../../../hooks/useEscapeKey';
 import './SettingsHelpModal.css';
 
+const SETTING_GUIDES = import.meta.glob('../../../../help/settings/*.md', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+
+function referenceSlug(reference: string): string {
+  return reference
+    .replace(/\s+setting guide$/i, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function guideForReference(reference: string): string | null {
+  return SETTING_GUIDES[`../../../../help/settings/${referenceSlug(reference)}.md`] ?? null;
+}
+
 export function SettingsHelpModal({
   title,
   help,
@@ -55,7 +74,7 @@ export function SettingsHelpModal({
             <section className="settings-help-modal__section">
               <h3>When to change</h3>
               <ul>
-                {help.whenToChange.map((item) => <li key={item}>{item}</li>)}
+                {help.whenToChange.map((item, index) => <li key={`when:${index}:${item}`}>{item}</li>)}
               </ul>
             </section>
           )}
@@ -64,7 +83,7 @@ export function SettingsHelpModal({
             <section className="settings-help-modal__section">
               <h3>Common values</h3>
               <ul>
-                {help.commonValues.map((item) => <li key={item}>{item}</li>)}
+                {help.commonValues.map((item, index) => <li key={`value:${index}:${item}`}>{item}</li>)}
               </ul>
             </section>
           )}
@@ -73,7 +92,7 @@ export function SettingsHelpModal({
             <section className="settings-help-modal__section">
               <h3>Related settings</h3>
               <div className="settings-help-modal__chips">
-                {help.relatedSettings.map((item) => <span key={item}>{item}</span>)}
+                {help.relatedSettings.map((item, index) => <span key={`related:${index}:${item}`}>{item}</span>)}
               </div>
             </section>
           )}
@@ -81,8 +100,20 @@ export function SettingsHelpModal({
           {help.references && help.references.length > 0 && (
             <section className="settings-help-modal__section">
               <h3>References</h3>
-              <ul>
-                {help.references.map((item) => <li key={item}>{item}</li>)}
+              <ul className="settings-help-modal__references">
+                {help.references.map((item, index) => {
+                  const guide = guideForReference(item);
+                  return (
+                    <li key={`reference:${index}:${item}`}>
+                      {guide ? (
+                        <details>
+                          <summary>{item}</summary>
+                          <pre>{guide}</pre>
+                        </details>
+                      ) : item}
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           )}

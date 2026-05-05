@@ -188,6 +188,21 @@ describe('buildLayerInstances', () => {
     expect(data.iB[2]).toBeCloseTo(0.9, 5);
   });
 
+  it('centers overridden-height moves using the move layer height', () => {
+    const l = layer([
+      move({ type: 'wall-outer', layerHeight: 0.4, from: { x: 0, y: 0 }, to: { x: 5, y: 0 } }),
+    ], 1.0);
+    const ctx = buildColorContext(l, 'type', undefined);
+    const data = buildLayerInstances({
+      layer: l, layerHeight: 0.2, filamentDiameter: 1.75,
+      isCurrentLayer: false, currentLayerMoveCount: undefined,
+      showTravel: false, hiddenTypes: HIDDEN, colorContext: ctx,
+    });
+    expect(data.iA[2]).toBeCloseTo(0.8, 5);
+    expect(data.iB[2]).toBeCloseTo(0.8, 5);
+    expect(data.iHeight[0]).toBeCloseTo(0.2, 5);
+  });
+
   it('encodes capsule radius as half the gcode line width', () => {
     const l = layer([
       move({ type: 'wall-outer', lineWidth: 0.45, from: { x: 0, y: 0 }, to: { x: 5, y: 0 } }),
