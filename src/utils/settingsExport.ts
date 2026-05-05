@@ -18,6 +18,8 @@ export type { ImportResult } from '../types/settings-io.types';
 import { usePrinterStore } from '../store/printerStore';
 import { useSlicerStore } from '../store/slicerStore';
 import { useThemeStore } from '../store/themeStore';
+import { useLanguageStore } from '../store/languageStore';
+import type { LanguageCode } from '../i18n';
 import type { PrinterProfile, MaterialProfile, PrintProfile } from '../types/slicer';
 import type { DuetConfig, SavedPrinter } from '../types/duet';
 
@@ -77,6 +79,7 @@ export interface ExportedSettings {
   slicer: SlicerPrefs;
   printer: PrinterPrefs;
   theme: 'light' | 'dark';
+  language: LanguageCode;
 }
 
 // ---------------------------------------------------------------------------
@@ -88,6 +91,7 @@ export function buildExportPayload(): ExportedSettings {
   const slicer = useSlicerStore.getState();
   const printer = usePrinterStore.getState();
   const theme = useThemeStore.getState();
+  const language = useLanguageStore.getState();
 
   return {
     version: EXPORT_VERSION,
@@ -128,6 +132,7 @@ export function buildExportPayload(): ExportedSettings {
     },
 
     theme: theme.theme,
+    language: language.language,
   };
 }
 
@@ -170,6 +175,10 @@ export function applySettings(raw: unknown): ImportResult {
   if (s.theme === 'light' || s.theme === 'dark') {
     useThemeStore.getState().setTheme(s.theme);
     result.appliedSections.push('Theme');
+  }
+  if (s.language === 'en') {
+    useLanguageStore.getState().setLanguage(s.language);
+    result.appliedSections.push('Language');
   }
 
   // ── Design workspace (CAD prefs) ─────────────────────────────────────────

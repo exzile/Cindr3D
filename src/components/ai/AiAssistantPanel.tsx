@@ -435,11 +435,11 @@ function McpTab() {
           <div className="ai-code-block">
             <pre>{status.pairingLine}</pre>
             <div className="ai-code-actions">
-              <button type="button" className="ai-icon-btn" onClick={copy} title="Copy">
+              <button type="button" className="ai-icon-btn" onClick={copy} title="Copy" aria-label="Copy Claude Code MCP config">
                 <Copy size={12} />
                 {copied && <span className="ai-copied-label">Copied</span>}
               </button>
-              <button type="button" className="ai-icon-btn" onClick={rotate} title="Rotate token">
+              <button type="button" className="ai-icon-btn" onClick={rotate} title="Rotate token" aria-label="Rotate Claude Code MCP pairing token">
                 <RefreshCw size={12} />
               </button>
             </div>
@@ -451,20 +451,20 @@ function McpTab() {
       )}
 
       <div className="ai-audit-header">
-        <button type="button" className="ai-collapse-btn" onClick={toggleAudit}>
+        <button type="button" className="ai-collapse-btn" onClick={toggleAudit} aria-expanded={auditOpen} aria-controls="ai-mcp-audit-list">
           {auditOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
           <span>Recent Tool Calls</span>
           <List size={11} />
         </button>
         {auditOpen && (
-          <button type="button" className="ai-icon-btn" onClick={clearAudit} title="Clear">
+          <button type="button" className="ai-icon-btn" onClick={clearAudit} title="Clear" aria-label="Clear recent MCP tool calls">
             <X size={11} />
           </button>
         )}
       </div>
 
       {auditOpen && (
-        <div className="ai-audit-list">
+        <div className="ai-audit-list" id="ai-mcp-audit-list">
           {auditEntries.length === 0 && <div className="ai-audit-empty">No tool calls yet</div>}
           {auditEntries.slice(0, 12).map((e) => (
             <div key={`${e.callId}-${e.timestamp}`} className={`ai-audit-row ai-audit-${e.status}`}>
@@ -633,16 +633,17 @@ function ChatTab() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder={apiKey ? 'Message Cindr3D AI…' : 'Set an API key in Global Settings to start chatting'}
+          aria-label="Message Cindr3D AI"
           rows={2}
           disabled={!apiKey}
         />
         <div className="ai-input-actions">
           {streaming
-            ? <button type="button" className="ai-send-btn ai-stop-btn" onClick={stop} title="Stop"><X size={14} /></button>
-            : <button type="button" className="ai-send-btn" disabled={!canSend || !input.trim()} onClick={() => void sendMessage(input)} title="Send (Enter)"><Send size={14} /></button>
+            ? <button type="button" className="ai-send-btn ai-stop-btn" onClick={stop} title="Stop" aria-label="Stop AI response"><X size={14} /></button>
+            : <button type="button" className="ai-send-btn" disabled={!canSend || !input.trim()} onClick={() => void sendMessage(input)} title="Send (Enter)" aria-label="Send AI message"><Send size={14} /></button>
           }
           {messages.length > 0 && !streaming && (
-            <button type="button" className="ai-clear-btn" onClick={clearMessages} title="Clear chat">
+            <button type="button" className="ai-clear-btn" onClick={clearMessages} title="Clear chat" aria-label="Clear AI chat">
               <X size={12} />
             </button>
           )}
@@ -739,11 +740,13 @@ export default function AiAssistantPanel() {
           <span className="ai-panel-title">AI Assistant</span>
           <GripHorizontal size={14} className="ai-panel-grip" />
         </div>
-        <div className="ai-panel-tabs">
+        <div className="ai-panel-tabs" role="tablist" aria-label="AI assistant sections">
           <button
             type="button"
             className={`ai-tab-btn ${activeTab === 'mcp' ? 'active' : ''}`}
             onClick={() => setActiveTab('mcp')}
+            role="tab"
+            aria-selected={activeTab === 'mcp'}
           >
             MCP
           </button>
@@ -751,11 +754,13 @@ export default function AiAssistantPanel() {
             type="button"
             className={`ai-tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
             onClick={() => setActiveTab('chat')}
+            role="tab"
+            aria-selected={activeTab === 'chat'}
           >
             Chat
           </button>
         </div>
-        <button type="button" className="ai-panel-close" onClick={() => setPanelOpen(false)} title="Close">
+        <button type="button" className="ai-panel-close" onClick={() => setPanelOpen(false)} title="Close" aria-label="Close AI Assistant">
           <X size={14} />
         </button>
       </div>

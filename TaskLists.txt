@@ -110,152 +110,20 @@
 #   M  = 3-5 days       XL = 2-4 weeks
 
 
-## ── Phase 7: Print farm intelligence ──────────────────────────────────────
-## Goal: turn Cindr3D into a usable print-farm controller. Depends on
-## the existing fleet store; no firmware changes required.
 
-### 7.1 Smart print queue  [M]
-#   New store: src/store/printQueueStore.ts (zustand + persist)
-#   Queue UI: new tab in printer panel + a dashboard panel preview
-#   [x] Cross-printer queue with drag-reorder and per-job status
-#   [x] Auto-routing rules: build volume, material loaded, nozzle size,
-#       per-printer profile compatibility
-#   [x] "Print N copies, distribute across printers" splitter
-#   [x] Pause / cancel / move job between printers
-#   [x] Persistence: queue survives browser restart; reconciles with
-#       printer state on reconnect
-
-### 7.2 All-cameras grid view  [S]
-#   New panel: src/components/printer/cameras/AllCamerasGrid.tsx
-#   [x] Wall view of every saved printer's webcam feed
-#   [x] Per-tile overlay: name, status, current layer, ETA, alerts
-#   [x] Click a tile → jump to that printer's monitor
-#   [x] Compact / expanded modes; configurable refresh rate
-
-### 7.3 Cross-printer A/B comparison  [M]
-#   [x] Same G-code → run on Printer A and B in parallel
-#   [x] Side-by-side timing dashboard (layer time deltas, total time)
-#   [x] Optional camera-based dimensional comparison (depends on Phase 9)
-#       Phase 7 records quality notes/ratings; dimensional camera analysis lands in Phase 9.
-#   [x] Aggregate "which printer is faster / quality-best" report
-
-### 7.4 Filament inventory across the fleet  [S]
-#   Extends existing spoolStore
-#   [x] Aggregate weight per material across all spools
-#   [x] Low-stock warnings (configurable threshold per material)
-#   [x] Auto-decrement during prints using slicer-estimated filamentUsed
-#   [x] Per-printer "what spool is loaded" tracking
-
-### 7.5 Multi-camera per printer  [M]
-#   Extend per-printer config to support N camera streams
-#   [x] Camera tab: tabs for top / side / nozzle / custom views
-#   [x] Dashboard cards: select which feed to display
-#   [x] Per-camera resolution + URL config; per-camera enable toggle
-#   [x] Migration: existing single-camera configs upgrade cleanly
-
-### 7.6 Layer-by-layer photo gallery  [S]
-#   New service: src/services/camera/layerGallery.ts
-#   [x] Subscribe to layer-change events; trigger per-camera snapshot
-#   [x] Store frames keyed by (printer, job, layer) — short retention,
-#       configurable cap
-#   [x] Gallery UI: scroll through layers, find when failure started
-#   [x] ZIP export for archival; pairs with vision failure detection (8.1)
-
-### 7.7 PTZ control for IP cameras  [M]
-#   [x] ONVIF support for Reolink / Tapo / Hikvision / Amcrest / generic
-#   [x] Per-camera preset positions; D-pad live pan/tilt/zoom UI
-#   [x] Save current position as preset; jump-to-preset on print start
-
-### 7.8 WebRTC camera streaming  [L]
-#   [x] Replace MJPEG with WebRTC for sub-second latency
-#   [x] Optional ICE/TURN for remote-network access (self-hosted)
-#   [x] Fallback to MJPEG when WebRTC unavailable (older cameras)
-
-# Dependencies: 7.1 has no deps. 7.2 depends on existing camera infra.
-# 7.3 runs after 7.1. 7.4 parallel with everything. 7.5 → 7.6 → 7.7 → 7.8
-# is the camera-infra ladder; 7.5 + 7.7 + 7.8 are also independently
-# valuable.
-
-
-## ── Phase 8: Vision / AI features ─────────────────────────────────────────
-## Goal: leverage the existing AI panel + MCP server + camera feed for
-## failure detection, diagnostics, and auto-tuning.
-
-### 8.1 Vision failure detection  [L]
-#   New service: src/services/vision/failureDetector.ts
-#   New MCP tool: vision_check_print
-#   [x] Frame sampler — capture webcam frames at configurable interval
-#   [x] AI-call helper that submits a frame + recent slicer geometry +
-#       printer state to the configured AI provider for classification
-#   [x] Categories: spaghetti, layer-shift, blob-of-doom, first-layer
-#       adhesion, knocked-loose part
-#   [x] Auto-pause + push notification on high-confidence failure
-#   [x] User-confirmation gate before auto-action; configurable
-#       confidence thresholds in settings
-
-### 8.2 "What's wrong with my print?" diagnostics  [M]
-#   New AI panel quick-action; new MCP tool: diagnose_print
-#   [x] Aggregator: recent N camera frames, current temps, motor currents
-#       (RRF), filament-sensor state, slicer-expected vs actual layer time
-#   [x] AI call with structured prompt; expect ranked-list response
-#   [x] Render diagnosis in AI panel with actionable suggestions
-#   [x] One-click "apply suggestion" if it's a setting tweak
-
-### 8.3 Auto-tune wizards  [M]
-#   Extends existing Pressure Advance / Input Shaper tabs
-#   New MCP tool: tuning_analyze_tower
-#   [x] PA tower: print → AI scans camera → reports best zone height
-#   [x] Retraction tower: same flow
-#   [x] Temperature tower: same flow
-#   [x] First-layer squish helper: AI watches first layer → suggest Z-offset
-#   [x] All wizards integrate with existing tower workflows; AI is
-#       the analyzer, not the controller
-
-### 8.4 Camera measurement tool  [S]
-#   [x] Bed-corner pick → camera homography matrix
-#   [x] Click two points on live image → real-world distance read-out
-#   [x] Ruler overlay; saves calibration per-printer
-
-### 8.5 Natural-language printer control  [S]
-#   Extends AI panel (text input only — voice deliberately out of scope)
-#   [x] System prompt with available MCP tools
-#   [x] Confirmation gate for destructive ops
-#   [x] "Pause Voron, set Prusa to PETG temps, start the next file on
-#       Ender-3" — multi-tool plan executed via existing MCP surface
-
-# Dependencies: 8.1 → 8.2 (8.2 reuses the frame sampler). 8.3 depends on
-# 8.1 frames. 8.4 is independent. 8.5 is independent. 8.4 unlocks
-# Phase 9 AR overlay.
-
-
-## ── Phase 9: AR camera overlay ────────────────────────────────────────────
-## Goal: project the toolpath wireframe onto the live camera feed,
-## enabling AR-style monitoring + per-object cancel from the camera.
-
-### 9.1 Camera pose calibration  [M]
-#   Reuses 8.4 homography
-#   [x] 4-corner bed pick on a still frame → solve for camera pose
-#   [x] Per-printer persistent calibration store
-#   [x] Quality indicator: re-pick if motion detected since last calibration
-
-### 9.2 Toolpath overlay on camera  [M]
-#   New component: src/components/printer/dashboard/CameraOverlayPanel.tsx
-#   [x] Render the InlineGCodeWirePreview through the calibrated transform
-#   [x] Composite over the live camera frame at the same FPS
-#   [x] Toggleable: print preview-only, camera-only, both
-
-### 9.3 Right-click cancel from camera  [S]
-#   [x] Inverse-project click coords back to bed coords
-#   [x] Hit-test against plate-object bounding boxes
-#   [x] Re-uses ObjectContextMenu from MeshPreviewPanel
-
-### 9.4 Post-print AR comparison  [S]
-#   [x] After print completes, freeze final frame
-#   [x] Overlay the model wireframe on top
-#   [x] Highlight regions of dimensional mismatch (uses 8.4 measurement)
-
-# Dependencies: 9.1 → 9.2 → 9.3 → 9.4. Whole phase blocks on 8.4 calibration.
-
+## SHIPPED - Phases 7-9: Farm intelligence, vision, and AR overlay [DONE 2026-05-05]
+# Phase 7 delivered the farm controller layer: cross-printer queue, all-camera
+# wall view, A/B comparison, fleet inventory, multi-camera support, layer
+# gallery, PTZ controls, and WebRTC streaming.
+#
+# Phase 8 delivered vision-assisted monitoring and tuning: failure detection,
+# diagnostics, tower analysis, camera measurement, and guarded natural-language
+# printer control.
+#
+# Phase 9 delivered camera AR: pose calibration, live toolpath overlay,
+# right-click object cancel from camera, and post-print comparison. Detailed
+# implementation notes live in the shipped PR history and relevant component
+# folders.
 
 ## ── Phase 10: Cost & energy ───────────────────────────────────────────────
 ## Goal: turn the smart-plug + spool tracker into real cost / sustainability
@@ -313,29 +181,16 @@
 # All sub-phases independent and parallelizable.
 
 
-## ── Phase 12: Print scheduling ────────────────────────────────────────────
-## Goal: time-aware print orchestration.
 
-### 12.1 Scheduling calendar  [M]
-#   New tab: src/components/printer/scheduling/PrintCalendar.tsx
-#   [ ] Calendar view (day / week) of past + scheduled prints
-#   [ ] Drag-to-schedule from queue; conflict detection
-#   [ ] Time-of-day quiet-hours awareness
-
-### 12.2 Bed-clearing auto-queue  [M]
-#   Depends on 8.4 (camera homography) for clearance detection
-#   [ ] Compare post-print bed frame to pre-print baseline
-#   [ ] AI-confirmed bed-clear signal → start next queued job
-#   [ ] User confirmation gate; configurable per printer
-
-### 12.3 Print start verification checklist  [S]
-#   [ ] Pre-flight modal: bed clean? nozzle wiped? filament loaded?
-#       SD card mounted? camera healthy?
-#   [ ] Camera-assist where possible (AI confirms each item)
-#   [ ] Skip / always-skip per printer
-
-# Dependencies: 12.1 standalone. 12.2 → 8.4 + 7.1. 12.3 standalone.
-
+## SHIPPED - Phase 12: Print scheduling [DONE 2026-05-05]
+# Time-aware orchestration is complete: day/week scheduling calendar, quiet
+# hours, scheduled-print editing, bed-clear auto-queue flow, and pre-flight
+# checklist with per-printer overrides. Review follow-ups also landed for
+# overnight quiet windows and keyboard/screen-reader accessibility.
+#
+# Files of record:
+#   src/store/schedulingStore.ts
+#   src/components/printer/scheduling/
 
 ## ── Phase 13: Integrations ────────────────────────────────────────────────
 ## Goal: hook into the broader ecosystem — home automation, messaging,
@@ -403,55 +258,25 @@
 
 
 ## ── Phase 14: Operational polish ──────────────────────────────────────────
-## Goal: cross-cutting work that makes the app feel finished. All
-## sub-phases run in parallel; no internal dependencies.
-
-### 14.1 Print resume across browser sessions  [M]
-#   [ ] Capture "what print is this UI attached to" so opening Cindr3D
-#       on a new device reconnects to the live job
-#   [ ] Reconnect handshake reuses live polling / websocket auth
-#   [ ] Banner: "Print was started from Chromebook on Tuesday 4 PM"
-
-### 14.2 Mobile / tablet UI mode  [XL]
-#   [ ] Detect viewport width + touch capability
-#   [ ] Bottom-sheet navigation for printer monitor
-#   [ ] Larger tap targets; one-thumb optimized layouts
-#   [ ] Big-button "kiosk mode" for tablet near printer
-
-### 14.3 i18n  [M]
-#   [ ] Externalise all strings to a translations bundle
-#   [ ] react-intl or similar; per-language JSON
-#   [ ] Settings: language picker; default from browser locale
-#   [ ] Ship English; accept community translations via PR
-
-### 14.4 Accessibility audit  [M]
-#   [ ] Keyboard-only nav across every workspace
-#   [ ] Screen-reader labels on all interactive elements
-#   [ ] High-contrast theme variant
-#   [ ] Reduced-motion mode for animations
-
-### 14.5 Profile versioning + diff  [S]
-#   [ ] Snapshot a profile on every save
-#   [ ] Diff viewer: pick two snapshots, see changed keys
-#   [ ] Restore individual changes (cherry-pick) or full snapshot
-
-### 14.6 Self-hosted profile / spool sync  [M]
-#   [ ] Optional: point at a git repo URL for sync
-#   [ ] Push profiles + spools on save; pull on app start
-#   [ ] Conflict resolution: last-writer-wins or manual
-
-### 14.7 PWA mode  [S]
-#   [ ] Web app manifest (icons, theme color, display: standalone)
-#   [ ] Service worker for offline caching of static assets + last-loaded
-#       project bundle
-#   [ ] Installable to home screen on desktop and mobile
-#   [ ] Custom splash screen + maskable icons
-
-### 14.8 Print-from-URL  [M]
-#   [ ] Paste Printables / MakerWorld / Thingiverse / direct STL URL
-#   [ ] Fetch + parse + auto-arrange on the build plate
-#   [ ] Source-aware: pull license + author info into project metadata
-#   [ ] Local cache so re-fetches are instant; respect Cache-Control
+## Status: DONE 2026-05-05
+## Completed feature summary:
+#   - Print-session resume across browser sessions and devices, including
+#     reconnect banners for active jobs.
+#   - Mobile and tablet UI mode with touch detection, bottom-sheet monitor
+#     navigation, larger tap targets, and kiosk-style printer controls.
+#   - Internationalization foundation with translation bundles, language
+#     selection, generated English string coverage, and catalog freshness checks.
+#   - Accessibility polish with screen-reader labels across interactive controls,
+#     runtime label inference, keyboard navigation, high contrast, and reduced
+#     motion support.
+#   - Profile versioning with automatic snapshots, profile diffing, and restore
+#     flows for individual or full profile changes.
+#   - Self-hosted profile and spool sync with import/export payload tracking,
+#     startup pull, save push, and conflict handling.
+#   - PWA installability with manifest metadata, service-worker asset caching,
+#     offline project handoff, splash metadata, and maskable icons.
+#   - Print-from-URL workflows for direct model files and model-sharing pages,
+#     including source metadata capture, auto-arrange, and local caching.
 
 
 ## ── Phase 15: Slicer fundamentals ─────────────────────────────────────────

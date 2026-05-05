@@ -8,6 +8,7 @@ import ExportDialog from './components/dialogs/ExportDialog';
 import DuetPrinterPanel from './components/printer/DuetPrinterPanel';
 import SlicerWorkspace from './components/slicer/SlicerWorkspace';
 import DuetNotifications from './components/printer/DuetNotifications';
+import { PrintSessionResumeBanner } from './components/printer/PrintSessionResumeBanner';
 import { useCADStore } from './store/cadStore';
 import ActiveDialog from './app/ActiveDialog';
 import { DevFixtureLoader } from './devFixtures/orangePi3LtsCase';
@@ -19,6 +20,7 @@ import { usePrinterStore } from './store/printerStore';
 import './App.css';
 
 type WorkspaceMode = 'design' | 'prepare' | 'printer';
+type DeviceMode = 'mobile' | 'tablet' | 'desktop';
 
 const PRINTER_TABS = new Set<string>(['printers', ...TABS.map((tab) => tab.key)]);
 
@@ -41,6 +43,14 @@ function pathForWorkspace(workspaceMode: WorkspaceMode, printerTab: TabKey) {
   if (workspaceMode === 'prepare') return '/prepare';
   if (workspaceMode === 'printer') return `/printer/${printerTab}`;
   return '/design';
+}
+
+function detectDeviceMode(): { mode: DeviceMode; touch: boolean } {
+  const width = window.innerWidth;
+  const touch = window.matchMedia?.('(pointer: coarse)').matches
+    || navigator.maxTouchPoints > 0;
+  const mode: DeviceMode = width < 720 ? 'mobile' : width < 1100 ? 'tablet' : 'desktop';
+  return { mode, touch };
 }
 
 function WorkspaceContent() {
@@ -111,6 +121,21 @@ export default function App() {
     return () => McpBridgeService.stop();
   }, [isHomeRoute]);
 
+  useEffect(() => {
+    const applyDeviceMode = () => {
+      const { mode, touch } = detectDeviceMode();
+      document.documentElement.dataset.deviceMode = mode;
+      document.documentElement.toggleAttribute('data-touch', touch);
+    };
+    applyDeviceMode();
+    window.addEventListener('resize', applyDeviceMode);
+    window.addEventListener('orientationchange', applyDeviceMode);
+    return () => {
+      window.removeEventListener('resize', applyDeviceMode);
+      window.removeEventListener('orientationchange', applyDeviceMode);
+    };
+  }, []);
+
   if (isHomeRoute) {
     return (
       <div className="app app--home">
@@ -123,6 +148,7 @@ export default function App() {
     <div className="app">
       <DevFixtureLoader />
       <Toolbar />
+      <PrintSessionResumeBanner />
       <WorkspaceContent />
       {workspaceMode === 'design' && <StatusBar />}
       <ExportDialog />

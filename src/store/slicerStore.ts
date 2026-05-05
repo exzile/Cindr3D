@@ -8,20 +8,60 @@ import type {
 import {
   DEFAULT_PRINTER_PROFILES, DEFAULT_MATERIAL_PROFILES, DEFAULT_PRINT_PROFILES,
 } from '../types/slicer';
+import { createProfilePatchForKey, getProfileValue } from '../utils/profileDiff';
 import { normalizeRotationDegreesToRadians, normalizeScale } from '../utils/slicerTransforms';
 import { createPreviewActions } from './slicer/actions/preview';
 import { slicerPersistConfig } from './slicer/persistConfig';
 import { createPlateActions } from './slicer/plateActions';
-import type { SlicerStore } from './slicer/types';
+import type { ProfileSnapshot, ProfileSnapshotKind, ProfileSnapshotProfile, SlicerStore } from './slicer/types';
 import { getActiveSliceRequestId, getCurrentSlicerWorker, getSlicerWorker, isWorkerBusy, nextSliceRequestId, resetSlicerWorker, setWorkerBusy } from './slicer/worker';
 
 export type { SlicerStore } from './slicer/types';
+
+const MAX_PROFILE_SNAPSHOTS_PER_PROFILE = 25;
+
+function cloneProfile<T extends ProfileSnapshotProfile>(profile: T): T {
+  if (typeof structuredClone === 'function') return structuredClone(profile);
+  return JSON.parse(JSON.stringify(profile)) as T;
+}
+
+function createProfileSnapshot<T extends ProfileSnapshotProfile>(
+  kind: ProfileSnapshotKind,
+  profile: T,
+): ProfileSnapshot {
+  const idSuffix = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return {
+    id: `${kind}-${profile.id}-${idSuffix}`,
+    kind,
+    profileId: profile.id,
+    profileName: profile.name,
+    createdAt: Date.now(),
+    profile: cloneProfile(profile),
+  };
+}
+
+function appendProfileSnapshot(
+  snapshots: ProfileSnapshot[],
+  snapshot: ProfileSnapshot,
+): ProfileSnapshot[] {
+  const matching = snapshots
+    .filter((entry) => entry.kind === snapshot.kind && entry.profileId === snapshot.profileId)
+    .concat(snapshot)
+    .slice(-MAX_PROFILE_SNAPSHOTS_PER_PROFILE);
+  const unrelated = snapshots.filter(
+    (entry) => entry.kind !== snapshot.kind || entry.profileId !== snapshot.profileId,
+  );
+  return [...unrelated, ...matching];
+}
 
 export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
   // Profiles — rehydrated from IDB on load; defaults used only on fresh install
   printerProfiles: DEFAULT_PRINTER_PROFILES,
   materialProfiles: DEFAULT_MATERIAL_PROFILES,
   printProfiles: DEFAULT_PRINT_PROFILES,
+  profileSnapshots: [],
 
   // Active selections — rehydrated from IDB; defaults used only on fresh install
   activePrinterProfileId: DEFAULT_PRINTER_PROFILES[0]?.id ?? '',
@@ -136,11 +176,17 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
     printerProfiles: [...state.printerProfiles, profile],
   })),
 
-  updatePrinterProfile: (id, updates) => set((state) => ({
-    printerProfiles: state.printerProfiles.map((p) =>
-      p.id === id ? { ...p, ...updates } : p
-    ),
-  })),
+  updatePrinterProfile: (id, updates) => set((state) => {
+    const currentProfile = state.printerProfiles.find((profile) => profile.id === id);
+    return {
+      printerProfiles: state.printerProfiles.map((p) =>
+        p.id === id ? { ...p, ...updates } : p
+      ),
+      profileSnapshots: currentProfile
+        ? appendProfileSnapshot(state.profileSnapshots, createProfileSnapshot('printer', currentProfile))
+        : state.profileSnapshots,
+    };
+  }),
 
   deletePrinterProfile: (id) => set((state) => {
     const filtered = state.printerProfiles.filter((p) => p.id !== id);
@@ -216,11 +262,17 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
     materialProfiles: [...state.materialProfiles, profile],
   })),
 
-  updateMaterialProfile: (id, updates) => set((state) => ({
-    materialProfiles: state.materialProfiles.map((p) =>
-      p.id === id ? { ...p, ...updates } : p
-    ),
-  })),
+  updateMaterialProfile: (id, updates) => set((state) => {
+    const currentProfile = state.materialProfiles.find((profile) => profile.id === id);
+    return {
+      materialProfiles: state.materialProfiles.map((p) =>
+        p.id === id ? { ...p, ...updates } : p
+      ),
+      profileSnapshots: currentProfile
+        ? appendProfileSnapshot(state.profileSnapshots, createProfileSnapshot('material', currentProfile))
+        : state.profileSnapshots,
+    };
+  }),
 
   deleteMaterialProfile: (id) => set((state) => {
     const filtered = state.materialProfiles.filter((p) => p.id !== id);
@@ -235,11 +287,17 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
     printProfiles: [...state.printProfiles, profile],
   })),
 
-  updatePrintProfile: (id, updates) => set((state) => ({
-    printProfiles: state.printProfiles.map((p) =>
-      p.id === id ? { ...p, ...updates } : p
-    ),
-  })),
+  updatePrintProfile: (id, updates) => set((state) => {
+    const currentProfile = state.printProfiles.find((profile) => profile.id === id);
+    return {
+      printProfiles: state.printProfiles.map((p) =>
+        p.id === id ? { ...p, ...updates } : p
+      ),
+      profileSnapshots: currentProfile
+        ? appendProfileSnapshot(state.profileSnapshots, createProfileSnapshot('print', currentProfile))
+        : state.profileSnapshots,
+    };
+  }),
 
   deletePrintProfile: (id) => set((state) => {
     const filtered = state.printProfiles.filter((p) => p.id !== id);
@@ -248,6 +306,79 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
       newState.activePrintProfileId = filtered[0].id;
     }
     return newState;
+  }),
+
+  restoreProfileSnapshot: (snapshotId) => set((state) => {
+    const snapshot = state.profileSnapshots.find((entry) => entry.id === snapshotId);
+    if (!snapshot) return {};
+    if (snapshot.kind === 'printer') {
+      const currentProfile = state.printerProfiles.find((profile) => profile.id === snapshot.profileId);
+      return {
+        printerProfiles: state.printerProfiles.map((profile) =>
+          profile.id === snapshot.profileId ? cloneProfile(snapshot.profile as PrinterProfile) : profile
+        ),
+        profileSnapshots: currentProfile
+          ? appendProfileSnapshot(state.profileSnapshots, createProfileSnapshot('printer', currentProfile))
+          : state.profileSnapshots,
+      };
+    }
+    if (snapshot.kind === 'material') {
+      const currentProfile = state.materialProfiles.find((profile) => profile.id === snapshot.profileId);
+      return {
+        materialProfiles: state.materialProfiles.map((profile) =>
+          profile.id === snapshot.profileId ? cloneProfile(snapshot.profile as MaterialProfile) : profile
+        ),
+        profileSnapshots: currentProfile
+          ? appendProfileSnapshot(state.profileSnapshots, createProfileSnapshot('material', currentProfile))
+          : state.profileSnapshots,
+      };
+    }
+    const currentProfile = state.printProfiles.find((profile) => profile.id === snapshot.profileId);
+    return {
+      printProfiles: state.printProfiles.map((profile) =>
+        profile.id === snapshot.profileId ? cloneProfile(snapshot.profile as PrintProfile) : profile
+      ),
+      profileSnapshots: currentProfile
+        ? appendProfileSnapshot(state.profileSnapshots, createProfileSnapshot('print', currentProfile))
+        : state.profileSnapshots,
+    };
+  }),
+
+  restoreProfileSnapshotKey: (snapshotId, keyPath) => set((state) => {
+    const snapshot = state.profileSnapshots.find((entry) => entry.id === snapshotId);
+    if (!snapshot) return {};
+    const value = getProfileValue(snapshot.profile, keyPath);
+    if (snapshot.kind === 'printer') {
+      const currentProfile = state.printerProfiles.find((profile) => profile.id === snapshot.profileId);
+      if (!currentProfile) return {};
+      const patch = createProfilePatchForKey(currentProfile, keyPath, value);
+      return {
+        printerProfiles: state.printerProfiles.map((profile) =>
+          profile.id === snapshot.profileId ? { ...profile, ...patch } : profile
+        ),
+        profileSnapshots: appendProfileSnapshot(state.profileSnapshots, createProfileSnapshot('printer', currentProfile)),
+      };
+    }
+    if (snapshot.kind === 'material') {
+      const currentProfile = state.materialProfiles.find((profile) => profile.id === snapshot.profileId);
+      if (!currentProfile) return {};
+      const patch = createProfilePatchForKey(currentProfile, keyPath, value);
+      return {
+        materialProfiles: state.materialProfiles.map((profile) =>
+          profile.id === snapshot.profileId ? { ...profile, ...patch } : profile
+        ),
+        profileSnapshots: appendProfileSnapshot(state.profileSnapshots, createProfileSnapshot('material', currentProfile)),
+      };
+    }
+    const currentProfile = state.printProfiles.find((profile) => profile.id === snapshot.profileId);
+    if (!currentProfile) return {};
+    const patch = createProfilePatchForKey(currentProfile, keyPath, value);
+    return {
+      printProfiles: state.printProfiles.map((profile) =>
+        profile.id === snapshot.profileId ? { ...profile, ...patch } : profile
+      ),
+      profileSnapshots: appendProfileSnapshot(state.profileSnapshots, createProfileSnapshot('print', currentProfile)),
+    };
   }),
 
   // --- Plate management ---

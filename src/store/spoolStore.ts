@@ -31,7 +31,7 @@ export interface MaterialInventorySummary {
   lowStock: boolean;
 }
 
-interface SpoolStore {
+export interface SpoolStore {
   spools: Spool[];
   activeSpoolId: string | null;
   loadedSpoolByPrinterId: Record<string, string | null>;

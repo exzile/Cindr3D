@@ -26,6 +26,7 @@ export const slicerPersistConfig = {
     printerProfiles: state.printerProfiles,
     materialProfiles: state.materialProfiles,
     printProfiles: state.printProfiles,
+    profileSnapshots: state.profileSnapshots,
     activePrinterProfileId: state.activePrinterProfileId,
     activeMaterialProfileId: state.activeMaterialProfileId,
     activePrintProfileId: state.activePrintProfileId,
@@ -51,6 +52,7 @@ export const slicerPersistConfig = {
     if (!state.printerProfiles?.length) state.printerProfiles = DEFAULT_PRINTER_PROFILES;
     if (!state.materialProfiles?.length) state.materialProfiles = DEFAULT_MATERIAL_PROFILES;
     if (!state.printProfiles?.length) state.printProfiles = DEFAULT_PRINT_PROFILES;
+    if (!Array.isArray(state.profileSnapshots)) state.profileSnapshots = [];
 
     // Backfill new default fields onto persisted profiles. When we add
     // a field to DEFAULT_PRINT_PROFILES (e.g. `connectInfillLines`),

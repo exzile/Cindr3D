@@ -420,6 +420,22 @@
   font-weight: 700;
 }
 
+.profile-sync-resolved-url,
+.profile-sync-status {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.profile-sync-resolved-url {
+  display: block;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-input);
+}
+
 @media (max-width: 640px) {
   .global-settings-body {
     grid-template-columns: 1fr;

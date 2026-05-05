@@ -55,3 +55,52 @@ canvas {
 ::selection {
   background: rgba(80, 120, 255, 0.3);
 }
+
+html[data-reduced-motion] *,
+html[data-reduced-motion] *::before,
+html[data-reduced-motion] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.001ms !important;
+}
+
+html[data-touch] {
+  --touch-target-min: 44px;
+}
+
+html[data-touch] button,
+html[data-touch] input,
+html[data-touch] select,
+html[data-touch] textarea,
+html[data-touch] [role="button"],
+html[data-touch] [role="checkbox"],
+html[data-touch] [role="switch"] {
+  min-height: var(--touch-target-min);
+}
+
+html[data-touch] .ribbon-quick-btn,
+html[data-touch] .file-menu-btn,
+html[data-touch] .file-menu-item,
+html[data-touch] .global-settings-action,
+html[data-touch] .quick-ai-toggle {
+  min-height: var(--touch-target-min);
+}
+
+html[data-high-contrast] {
+  --bg-hover: color-mix(in srgb, var(--accent) 24%, transparent);
+  --bg-active: color-mix(in srgb, var(--accent) 34%, transparent);
+  --border: color-mix(in srgb, var(--text-primary) 55%, transparent);
+  --border-light: color-mix(in srgb, var(--text-primary) 34%, transparent);
+  --border-strong: var(--text-primary);
+  --focus-ring: #ffd84d;
+}
+
+html[data-high-contrast] button:focus-visible,
+html[data-high-contrast] input:focus-visible,
+html[data-high-contrast] select:focus-visible,
+html[data-high-contrast] textarea:focus-visible,
+html[data-high-contrast] [tabindex]:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}

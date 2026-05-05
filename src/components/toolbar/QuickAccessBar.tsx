@@ -7,12 +7,21 @@ import {
 import { useCADStore } from '../../store/cadStore';
 import { useComponentStore } from '../../store/componentStore';
 import { useThemeStore } from '../../store/themeStore';
+import { useLanguageStore } from '../../store/languageStore';
 import { usePrinterStore } from '../../store/printerStore';
+import { useProfileSyncStore } from '../../store/profileSyncStore';
 import { PROVIDER_MODELS, useAiAssistantStore, type AiProvider } from '../../store/aiAssistantStore';
+import { SUPPORTED_LANGUAGES, translate, type LanguageCode } from '../../i18n';
 import {
-  openBundle, saveBundleAs, saveBundleSlice,
+  getLastOfflineBundleMetadata, openBundle, restoreLastOfflineBundle, saveBundleAs, saveBundleSlice,
   useProjectFileStore,
 } from '../../utils/projectIO';
+import {
+  downloadProfileSpoolSyncPayload,
+  normalizeProfileSyncUrl,
+  pullProfileSpoolSync,
+  pushProfileSpoolSync,
+} from '../../utils/profileSpoolSync';
 import type { BundleSlice } from '../../types/settings-io.types';
 import UpdatePanel from '../updater/UpdatePanel';
 import { AppHelpModal } from '../help/AppHelpModal';
@@ -29,6 +38,12 @@ interface QuickAccessBarProps {
 export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: QuickAccessBarProps) {
   const toggleTheme = useThemeStore((s) => s.toggleTheme);
   const theme = useThemeStore((s) => s.theme);
+  const reducedMotion = useThemeStore((s) => s.reducedMotion);
+  const setReducedMotion = useThemeStore((s) => s.setReducedMotion);
+  const highContrast = useThemeStore((s) => s.highContrast);
+  const setHighContrast = useThemeStore((s) => s.setHighContrast);
+  const language = useLanguageStore((s) => s.language);
+  const setLanguage = useLanguageStore((s) => s.setLanguage);
   const aiPanelOpen = useAiAssistantStore((s) => s.panelOpen);
   const toggleAiPanel = useAiAssistantStore((s) => s.togglePanel);
   const aiProvider = useAiAssistantStore((s) => s.provider);
@@ -72,6 +87,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
 
   const bundleFilename = useProjectFileStore((s) => s.filename);
   const hasBundle = useProjectFileStore((s) => s.hasBundle);
+  const [offlineBundle, setOfflineBundle] = useState(() => getLastOfflineBundleMetadata());
   const sliceForWorkspace: BundleSlice =
     workspaceMode === 'design' ? 'cad'
     : workspaceMode === 'prepare' ? 'slicer'
@@ -79,6 +95,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
 
   const handleSaveSettings = useCallback(async () => {
     const result = await saveBundleSlice(sliceForWorkspace);
+    setOfflineBundle(getLastOfflineBundleMetadata());
     setStatusMessage(
       result.ok
         ? `Settings saved: ${result.filename ?? ''}`
@@ -88,6 +105,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
 
   const handleSaveSettingsAs = useCallback(async () => {
     const result = await saveBundleAs('settings.dzn');
+    setOfflineBundle(getLastOfflineBundleMetadata());
     setStatusMessage(
       result.ok
         ? `Settings saved: ${result.filename ?? ''}`
@@ -101,15 +119,28 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
       setStatusMessage(`Load failed: ${result.error ?? 'unknown error'}`);
       return;
     }
+    setOfflineBundle(getLastOfflineBundleMetadata());
     setStatusMessage(
       `Settings loaded${result.filename ? ` from ${result.filename}` : ''}: ${result.appliedSections.join(', ')}`,
+    );
+  }, [setStatusMessage]);
+
+  const handleRestoreOfflineSettings = useCallback(() => {
+    const result = restoreLastOfflineBundle();
+    setOfflineBundle(getLastOfflineBundleMetadata());
+    if (!result.ok) {
+      setStatusMessage(`Offline restore failed: ${result.error ?? 'unknown error'}`);
+      return;
+    }
+    setStatusMessage(
+      `Offline settings restored${result.filename ? ` from ${result.filename}` : ''}: ${result.appliedSections.join(', ')}`,
     );
   }, [setStatusMessage]);
 
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [globalSettingsOpen, setGlobalSettingsOpen] = useState(false);
-  const [globalSettingsTab, setGlobalSettingsTab] = useState<'general' | 'ai'>('general');
+  const [globalSettingsTab, setGlobalSettingsTab] = useState<'general' | 'sync' | 'ai'>('general');
   const [helpOpen, setHelpOpen] = useState(false);
   const [hasUpdateAlert, setHasUpdateAlert] = useState(false);
   // null = modal hidden; 'new' / 'close' = modal showing with action-specific copy
@@ -126,6 +157,58 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
     try { return Number(localStorage.getItem('dznd-autosave-interval') || '30'); } catch { return 30; }
   });
   const getDesignJSON = useCADStore((s) => s.getDesignJSON);
+  const profileSyncEnabled = useProfileSyncStore((s) => s.enabled);
+  const profileSyncRepoUrl = useProfileSyncStore((s) => s.repoUrl);
+  const profileSyncBranch = useProfileSyncStore((s) => s.branch);
+  const profileSyncPath = useProfileSyncStore((s) => s.syncPath);
+  const profileSyncGithubToken = useProfileSyncStore((s) => s.githubToken);
+  const profileSyncAutoPull = useProfileSyncStore((s) => s.autoPullOnStart);
+  const profileSyncAutoPush = useProfileSyncStore((s) => s.autoPushOnSave);
+  const profileSyncStatus = useProfileSyncStore((s) => s.lastSyncStatus);
+  const profileSyncError = useProfileSyncStore((s) => s.lastSyncError);
+  const profileSyncLastAt = useProfileSyncStore((s) => s.lastSyncAt);
+  const profileSyncPending = useProfileSyncStore((s) => s.hasPendingChanges);
+  const profileSyncPendingAt = useProfileSyncStore((s) => s.pendingUpdatedAt);
+  const setProfileSyncEnabled = useProfileSyncStore((s) => s.setEnabled);
+  const setProfileSyncRepoUrl = useProfileSyncStore((s) => s.setRepoUrl);
+  const setProfileSyncBranch = useProfileSyncStore((s) => s.setBranch);
+  const setProfileSyncPath = useProfileSyncStore((s) => s.setSyncPath);
+  const setProfileSyncGithubToken = useProfileSyncStore((s) => s.setGithubToken);
+  const setProfileSyncAutoPull = useProfileSyncStore((s) => s.setAutoPullOnStart);
+  const setProfileSyncAutoPush = useProfileSyncStore((s) => s.setAutoPushOnSave);
+
+  const profileSyncResolvedUrl = (() => {
+    try {
+      return profileSyncRepoUrl.trim()
+        ? normalizeProfileSyncUrl(profileSyncRepoUrl, profileSyncBranch, profileSyncPath)
+        : '';
+    } catch {
+      return '';
+    }
+  })();
+
+  const handlePullProfileSync = useCallback(async () => {
+    try {
+      const payload = await pullProfileSpoolSync();
+      setStatusMessage(`Profile sync pulled: ${payload.exportedAt}`);
+    } catch (err) {
+      setStatusMessage(`Profile sync failed: ${(err as Error).message}`);
+    }
+  }, [setStatusMessage]);
+
+  const handlePushProfileSync = useCallback(async () => {
+    try {
+      await pushProfileSpoolSync();
+      setStatusMessage('Profile sync pushed to GitHub');
+    } catch (err) {
+      setStatusMessage(`Profile sync push failed: ${(err as Error).message}`);
+    }
+  }, [setStatusMessage]);
+
+  const handleExportProfileSync = useCallback(() => {
+    downloadProfileSpoolSyncPayload();
+    setStatusMessage('Profile sync file exported');
+  }, [setStatusMessage]);
   // Stored file handle for true in-place overwrite via File System Access API.
   // Set when user opens via showOpenFilePicker or saves via showSaveFilePicker.
   const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
@@ -332,6 +415,8 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
           <button
             className={`file-menu-btn${fileMenuOpen ? ' open' : ''}`}
             onClick={() => setFileMenuOpen((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={fileMenuOpen}
           >
             File
           </button>
@@ -406,6 +491,15 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                 <FolderOpen size={15} />
                 <span>Load Settings…</span>
               </button>
+              {offlineBundle && (
+                <button className="file-menu-item" onClick={() => { handleRestoreOfflineSettings(); closeMenu(); }}>
+                  <FolderOpen size={15} />
+                  <span>Load Last Offline Settings</span>
+                  <span className="file-menu-shortcut" style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {offlineBundle.filename ?? 'cached'}
+                  </span>
+                </button>
+              )}
               <button
                 className="file-menu-item"
                 onClick={() => { handleSaveSettings(); closeMenu(); }}
@@ -439,6 +533,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
             onClick={toggleAutoSave}
             role="switch"
             aria-checked={autoSave}
+            aria-label={autoSave ? `Disable auto-save, currently every ${autoSaveInterval} seconds` : 'Enable auto-save'}
           >
             <span className="autosave-label">Auto</span>
             <span className="autosave-track">
@@ -457,6 +552,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
             <button
               className={`ribbon-quick-btn${undoStackLength === 0 ? ' ribbon-quick-btn-disabled' : ''}`}
               title="Undo (Ctrl+Z)"
+              aria-label="Undo"
               onClick={undoAction}
               disabled={undoStackLength === 0}
             >
@@ -465,6 +561,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
             <button
               className={`ribbon-quick-btn${redoStackLength === 0 ? ' ribbon-quick-btn-disabled' : ''}`}
               title="Redo (Ctrl+Y)"
+              aria-label="Redo"
               onClick={redoAction}
               disabled={redoStackLength === 0}
             >
@@ -520,18 +617,22 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
           className={`quick-ai-toggle${aiPanelOpen ? ' active' : ''}`}
           onClick={toggleAiPanel}
           title="Toggle AI Assistant"
+          aria-pressed={aiPanelOpen}
+          aria-label="Toggle AI Assistant"
         >
           <Bot size={13} aria-hidden="true" />
           <span>AI</span>
         </button>
         <McpStatusBadge />
-        <button className="ribbon-quick-btn" title="Toggle theme" onClick={toggleTheme}>
+        <button className="ribbon-quick-btn" title="Toggle theme" aria-label="Toggle theme" onClick={toggleTheme}>
           {theme === 'light' ? <Moon size={14} /> : <Sun size={14} />}
         </button>
         <div className="quick-popover-root" ref={notificationsRef}>
           <button
             className={`ribbon-quick-btn${hasUpdateAlert ? ' has-alert' : ''}`}
             title="Notifications"
+            aria-label="Notifications"
+            aria-expanded={notificationsOpen}
             onClick={() => {
               setNotificationsOpen((value) => !value);
               setGlobalSettingsOpen(false);
@@ -548,12 +649,14 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
             <UpdatePanel onAlertChange={setHasUpdateAlert} />
           </div>
         </div>
-        <button className="ribbon-quick-btn" title="Help" onClick={() => setHelpOpen(true)}>
+        <button className="ribbon-quick-btn" title="Help" aria-label="Help" onClick={() => setHelpOpen(true)}>
           <HelpCircle size={14} />
         </button>
         <button
           className="ribbon-quick-btn"
           title="Global settings"
+          aria-label="Global settings"
+          aria-expanded={globalSettingsOpen}
           onClick={() => {
             setGlobalSettingsOpen(true);
             setGlobalSettingsTab('general');
@@ -573,14 +676,15 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                 <Settings size={16} />
               </div>
               <div>
-                <div className="global-settings-title">Global Settings</div>
-                <div className="global-settings-subtitle">Application preferences and AI assistant configuration</div>
+                <div className="global-settings-title">{translate(language, 'settings.globalTitle')}</div>
+                <div className="global-settings-subtitle">{translate(language, 'settings.globalSubtitle')}</div>
               </div>
               <button
                 type="button"
                 className="global-settings-close"
                 onClick={() => setGlobalSettingsOpen(false)}
-                title="Close settings"
+                title={`${translate(language, 'app.action.close')} settings`}
+                aria-label={`${translate(language, 'app.action.close')} settings`}
               >
                 <X size={15} />
               </button>
@@ -592,25 +696,36 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                   type="button"
                   className={`global-settings-nav-item ${globalSettingsTab === 'general' ? 'active' : ''}`}
                   onClick={() => setGlobalSettingsTab('general')}
+                  aria-current={globalSettingsTab === 'general' ? 'page' : undefined}
                 >
                   <Settings size={15} />
-                  <span>General</span>
+                  <span>{translate(language, 'settings.general')}</span>
                 </button>
                 <button
                   type="button"
                   className={`global-settings-nav-item ${globalSettingsTab === 'ai' ? 'active' : ''}`}
                   onClick={() => setGlobalSettingsTab('ai')}
+                  aria-current={globalSettingsTab === 'ai' ? 'page' : undefined}
                 >
                   <Bot size={15} />
-                  <span>AI Assistant</span>
+                  <span>{translate(language, 'settings.aiAssistant')}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`global-settings-nav-item ${globalSettingsTab === 'sync' ? 'active' : ''}`}
+                  onClick={() => setGlobalSettingsTab('sync')}
+                  aria-current={globalSettingsTab === 'sync' ? 'page' : undefined}
+                >
+                  <Download size={15} />
+                  <span>{translate(language, 'settings.sync')}</span>
                 </button>
               </nav>
 
               <div className="global-settings-content">
                 {globalSettingsTab === 'general' && (
                   <section className="global-settings-section">
-                    <div className="global-settings-section-title">General</div>
-                    <div className="global-settings-section-copy">Theme, settings bundles, and design workspace save preferences.</div>
+                    <div className="global-settings-section-title">{translate(language, 'settings.general')}</div>
+                    <div className="global-settings-section-copy">{translate(language, 'settings.generalDescription')}</div>
                     <div className="global-settings-grid">
                       <button className="global-settings-action" onClick={toggleTheme}>
                         {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
@@ -620,6 +735,12 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                         <FolderOpen size={15} />
                         <span>Load settings</span>
                       </button>
+                      {offlineBundle && (
+                        <button className="global-settings-action" onClick={handleRestoreOfflineSettings}>
+                          <FolderOpen size={15} />
+                          <span>Load offline settings</span>
+                        </button>
+                      )}
                       <button className="global-settings-action" onClick={handleSaveSettingsAs}>
                         <Save size={15} />
                         <span>Save settings as</span>
@@ -646,14 +767,159 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                           </select>
                         </label>
                       )}
+                      <div className="global-settings-field inline full">
+                        <span>{translate(language, 'settings.language')}</span>
+                        <select
+                          className="settings-wide-select"
+                          value={language}
+                          onChange={(e) => setLanguage(e.target.value as LanguageCode)}
+                          title={translate(language, 'settings.languageDescription')}
+                        >
+                          {SUPPORTED_LANGUAGES.map((option) => (
+                            <option key={option.code} value={option.code}>
+                              {translate(language, option.labelKey)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="global-settings-field inline full">
+                        <span>Reduced motion</span>
+                        <label className="tp-toggle">
+                          <input
+                            type="checkbox"
+                            checked={reducedMotion}
+                            onChange={(e) => setReducedMotion(e.target.checked)}
+                          />
+                          <span className="tp-toggle-track" />
+                        </label>
+                      </div>
+                      <div className="global-settings-field inline full">
+                        <span>High contrast</span>
+                        <label className="tp-toggle">
+                          <input
+                            type="checkbox"
+                            checked={highContrast}
+                            onChange={(e) => setHighContrast(e.target.checked)}
+                          />
+                          <span className="tp-toggle-track" />
+                        </label>
+                      </div>
+                    </div>
+                  </section>
+                )}
+
+                {globalSettingsTab === 'sync' && (
+                  <section className="global-settings-section">
+                    <div className="global-settings-section-title">{translate(language, 'settings.profileSync')}</div>
+                    <div className="global-settings-section-copy">{translate(language, 'settings.profileSyncDescription')}</div>
+                    <div className="global-settings-grid">
+                      <div className="global-settings-field inline full">
+                        <span>Enable profile sync</span>
+                        <label className="tp-toggle">
+                          <input
+                            type="checkbox"
+                            checked={profileSyncEnabled}
+                            onChange={(e) => setProfileSyncEnabled(e.target.checked)}
+                          />
+                          <span className="tp-toggle-track" />
+                        </label>
+                      </div>
+                      <label className="global-settings-field full">
+                        <span>Repository or raw JSON URL</span>
+                        <input
+                          type="url"
+                          className="settings-api-key"
+                          value={profileSyncRepoUrl}
+                          onChange={(e) => setProfileSyncRepoUrl(e.target.value)}
+                          placeholder="https://github.com/user/repo or raw JSON URL"
+                        />
+                      </label>
+                      <label className="global-settings-field">
+                        <span>Branch</span>
+                        <input
+                          type="text"
+                          className="settings-api-key"
+                          value={profileSyncBranch}
+                          onChange={(e) => setProfileSyncBranch(e.target.value)}
+                          placeholder="main"
+                        />
+                      </label>
+                      <label className="global-settings-field">
+                        <span>Sync path</span>
+                        <input
+                          type="text"
+                          className="settings-api-key"
+                          value={profileSyncPath}
+                          onChange={(e) => setProfileSyncPath(e.target.value)}
+                          placeholder="cindr3d-profile-sync.json"
+                        />
+                      </label>
+                      <label className="global-settings-field full">
+                        <span>GitHub token</span>
+                        <input
+                          type="password"
+                          className="settings-api-key"
+                          value={profileSyncGithubToken}
+                          onChange={(e) => setProfileSyncGithubToken(e.target.value)}
+                          placeholder="Fine-grained token with Contents read/write"
+                          autoComplete="off"
+                        />
+                      </label>
+                      <div className="global-settings-field inline full">
+                        <span>Pull on app start</span>
+                        <label className="tp-toggle">
+                          <input
+                            type="checkbox"
+                            checked={profileSyncAutoPull}
+                            onChange={(e) => setProfileSyncAutoPull(e.target.checked)}
+                          />
+                          <span className="tp-toggle-track" />
+                        </label>
+                      </div>
+                      <div className="global-settings-field inline full">
+                        <span>Push on profile or spool save</span>
+                        <label className="tp-toggle">
+                          <input
+                            type="checkbox"
+                            checked={profileSyncAutoPush}
+                            onChange={(e) => setProfileSyncAutoPush(e.target.checked)}
+                          />
+                          <span className="tp-toggle-track" />
+                        </label>
+                      </div>
+                      <button className="global-settings-action" onClick={handlePushProfileSync} disabled={!profileSyncRepoUrl.trim() || !profileSyncGithubToken.trim()}>
+                        <FileUp size={15} />
+                        <span>Push now</span>
+                      </button>
+                      <button className="global-settings-action" onClick={handlePullProfileSync} disabled={!profileSyncRepoUrl.trim()}>
+                        <Download size={15} />
+                        <span>Pull now</span>
+                      </button>
+                      <button className="global-settings-action" onClick={handleExportProfileSync}>
+                        <Save size={15} />
+                        <span>Export sync file</span>
+                      </button>
+                      <div className="global-settings-field full">
+                        <span>Resolved URL</span>
+                        <code className="profile-sync-resolved-url">{profileSyncResolvedUrl || 'Not configured'}</code>
+                      </div>
+                      <div className="global-settings-field full">
+                        <span>Status</span>
+                        <div className="profile-sync-status">
+                          {profileSyncStatus}
+                          {profileSyncLastAt ? ` at ${new Date(profileSyncLastAt).toLocaleString()}` : ''}
+                          {profileSyncError ? ` - ${profileSyncError}` : ''}
+                          {profileSyncPending ? ` - pending push from ${profileSyncPendingAt ? new Date(profileSyncPendingAt).toLocaleString() : 'local edits'}` : ''}
+                        </div>
+                      </div>
                     </div>
                   </section>
                 )}
 
                 {globalSettingsTab === 'ai' && (
                   <section className="global-settings-section">
-                    <div className="global-settings-section-title">AI Assistant</div>
-                    <div className="global-settings-section-copy">Choose whether chat uses Claude Code MCP or your own provider API key.</div>
+                    <div className="global-settings-section-title">{translate(language, 'settings.aiAssistant')}</div>
+                    <div className="global-settings-section-copy">{translate(language, 'settings.aiDescription')}</div>
                     <div className="global-settings-grid">
                       <div className="global-settings-field inline full">
                         <span>Use Claude Code MCP</span>
@@ -732,7 +998,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
             <div className="save-modal-header">
               <div className="save-modal-icon"><Save size={15} /></div>
               <div className="save-modal-title">Save Design</div>
-              <button className="save-modal-close" onClick={closeSaveAs} title="Cancel">
+              <button className="save-modal-close" onClick={closeSaveAs} title="Cancel" aria-label="Cancel save dialog">
                 <X size={14} />
               </button>
             </div>
