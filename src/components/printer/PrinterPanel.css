@@ -6,3 +6,52 @@
 @import './printerPanelStyles/05-panel.css';
 @import './printerPanelStyles/06-dashboard-layout.css';
 
+.printer-mobile-tabs {
+  display: none;
+}
+
+html[data-device-mode="mobile"] .printer-mobile-tabs,
+html[data-device-mode="tablet"] .printer-mobile-tabs {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 900;
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-panel) 94%, transparent);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  overflow-x: auto;
+}
+
+.printer-mobile-tabs__item {
+  min-width: 76px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 8px;
+  font-size: 10px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.printer-mobile-tabs__item.is-active {
+  color: var(--accent);
+  background: var(--accent-light);
+  border-color: var(--accent);
+}
+
+html[data-device-mode="mobile"] .printer-panel--narrow,
+html[data-device-mode="tablet"] .printer-panel--narrow {
+  padding-bottom: 78px;
+}
+

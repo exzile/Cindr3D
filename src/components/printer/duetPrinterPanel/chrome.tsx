@@ -263,11 +263,7 @@ export function PanelTabBar({
   boardType: PrinterBoardType;
   onTabChange: (tab: TabKey) => void;
 }) {
-  const visibleTabs = TABS.filter(({ key }) => {
-    if (KLIPPER_ONLY_TABS.has(key) && boardType !== 'klipper') return false;
-    if (DUET_ONLY_TABS.has(key) && boardType === 'klipper') return false;
-    return true;
-  });
+  const visibleTabs = visiblePrinterTabs(boardType);
 
   return (
     <div
@@ -307,6 +303,44 @@ export function PanelTabBar({
         </button>
       ))}
     </div>
+  );
+}
+
+function visiblePrinterTabs(boardType: PrinterBoardType) {
+  return TABS.filter(({ key }) => {
+    if (KLIPPER_ONLY_TABS.has(key) && boardType !== 'klipper') return false;
+    if (DUET_ONLY_TABS.has(key) && boardType === 'klipper') return false;
+    return true;
+  });
+}
+
+export function MobilePrinterTabSheet({
+  activeTab,
+  boardType,
+  onTabChange,
+}: {
+  activeTab: string;
+  boardType: PrinterBoardType;
+  onTabChange: (tab: TabKey) => void;
+}) {
+  const visibleTabs = visiblePrinterTabs(boardType);
+
+  return (
+    <nav className="printer-mobile-tabs" aria-label="Printer sections">
+      {visibleTabs.map(({ key, label, Icon }) => (
+        <button
+          key={key}
+          type="button"
+          className={`printer-mobile-tabs__item${activeTab === key ? ' is-active' : ''}`}
+          onClick={() => onTabChange(key)}
+          title={label}
+          aria-current={activeTab === key ? 'page' : undefined}
+        >
+          <Icon size={14} />
+          <span>{label}</span>
+        </button>
+      ))}
+    </nav>
   );
 }
 

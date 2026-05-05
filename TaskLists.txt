@@ -269,7 +269,7 @@
 
 ### 14.2 Mobile / tablet UI mode  [XL]
 #   [x] Detect viewport width + touch capability
-#   [ ] Bottom-sheet navigation for printer monitor
+#   [x] Bottom-sheet navigation for printer monitor
 #   [x] Larger tap targets; one-thumb optimized layouts
 #   [ ] Big-button "kiosk mode" for tablet near printer
 

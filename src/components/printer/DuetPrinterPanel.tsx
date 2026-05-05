@@ -7,7 +7,7 @@ import { getDuetPrefs } from '../../utils/duetPrefs';
 import DuetMessageBox from './DuetMessageBox';
 import './DuetAnalytics.css';
 import { type TabKey, TAB_COMPONENTS } from './duetPrinterPanel/config';
-import { PanelBanners, PanelFooter, PanelHeader, PanelTabBar } from './duetPrinterPanel/chrome';
+import { MobilePrinterTabSheet, PanelBanners, PanelFooter, PanelHeader, PanelTabBar } from './duetPrinterPanel/chrome';
 import { panelStyles } from './duetPrinterPanel/styles';
 
 export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: boolean } = {}) {
@@ -285,6 +285,13 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
         printProgress={printProgress}
         upTime={upTime}
       />
+      {fullscreen && (
+        <MobilePrinterTabSheet
+          activeTab={activeTab as TabKey}
+          boardType={boardType}
+          onTabChange={setPanelTab}
+        />
+      )}
     </div>
   );
 }
