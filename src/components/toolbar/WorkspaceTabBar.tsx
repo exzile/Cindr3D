@@ -1,14 +1,16 @@
 import * as React from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import type { Workspace, RibbonTab, TabDef } from '../../types/toolbar.types';
+import { useLanguageStore } from '../../store/languageStore';
+import { translate, type TranslationKey } from '../../i18n';
 
 const designTabs: TabDef[] = [
-  { id: 'solid', label: 'SOLID', color: 'var(--tab-solid)' },
-  { id: 'surface', label: 'SURFACE', color: 'var(--tab-surface)' },
-  { id: 'mesh', label: 'MESH', color: 'var(--tab-mesh)' },
-  { id: 'form', label: 'FORM', color: 'var(--tab-form)' },
-{ id: 'manage', label: 'MANAGE', color: 'var(--tab-manage)' },
-  { id: 'utilities', label: 'UTILITIES', color: 'var(--tab-utilities)' },
+  { id: 'solid', label: 'app.ribbon.solid', color: 'var(--tab-solid)' },
+  { id: 'surface', label: 'app.ribbon.surface', color: 'var(--tab-surface)' },
+  { id: 'mesh', label: 'app.ribbon.mesh', color: 'var(--tab-mesh)' },
+  { id: 'form', label: 'app.ribbon.form', color: 'var(--tab-form)' },
+  { id: 'manage', label: 'app.ribbon.manage', color: 'var(--tab-manage)' },
+  { id: 'utilities', label: 'app.ribbon.utilities', color: 'var(--tab-utilities)' },
 ];
 
 // Prepare workspace no longer uses sub-tabs — PLATE / PROFILES / SLICE / EXPORT
@@ -37,7 +39,14 @@ export function WorkspaceTabBar({
   sketchPlaneSelecting,
   onCancelPlaneSelect,
 }: WorkspaceTabBarProps) {
+  const language = useLanguageStore((s) => s.language);
   const currentTabs = workspace === 'design' ? designTabs : [];
+  const t = (key: TranslationKey) => translate(language, key);
+  const workspaceLabel = workspace === 'design'
+    ? t('app.workspace.design').toUpperCase()
+    : workspace === 'prepare'
+      ? t('app.workspace.prepare').toUpperCase()
+      : t('app.workspace.printer').toUpperCase();
   const handleDesignTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, tabId: RibbonTab) => {
     if (inSketch) return;
     const index = currentTabs.findIndex((tab) => tab.id === tabId);
@@ -96,11 +105,11 @@ export function WorkspaceTabBar({
           aria-haspopup="menu"
           aria-expanded={wsDropdownOpen}
         >
-          {workspace === 'design' ? 'DESIGN' : workspace === 'prepare' ? 'PREPARE' : '3D PRINTER'}
+          {workspaceLabel}
           <ChevronDown size={11} className="ribbon-workspace-chevron" />
         </button>
         {wsDropdownOpen && (
-          <div className="ribbon-workspace-dropdown" role="menu" aria-label="Workspace selector">
+          <div className="ribbon-workspace-dropdown" role="menu" aria-label={t('app.workspace.selector')}>
             <button
               className={`ribbon-workspace-option ${workspace === 'design' ? 'active' : ''}`}
               onClick={() => onWorkspaceSwitch('design')}
@@ -109,7 +118,7 @@ export function WorkspaceTabBar({
               aria-checked={workspace === 'design'}
               data-workspace-option="design"
             >
-              Design
+              {t('app.workspace.design')}
             </button>
             <button
               className={`ribbon-workspace-option ${workspace === 'prepare' ? 'active' : ''}`}
@@ -119,7 +128,7 @@ export function WorkspaceTabBar({
               aria-checked={workspace === 'prepare'}
               data-workspace-option="prepare"
             >
-              Prepare (3D Print)
+              {t('app.workspace.preparePrint')}
             </button>
             <button
               className={`ribbon-workspace-option ${workspace === 'printer' ? 'active' : ''}`}
@@ -129,7 +138,7 @@ export function WorkspaceTabBar({
               aria-checked={workspace === 'printer'}
               data-workspace-option="printer"
             >
-              3D Printer
+              {t('app.workspace.printer')}
             </button>
           </div>
         )}
@@ -138,7 +147,7 @@ export function WorkspaceTabBar({
       <div className="ribbon-tab-divider-v" />
 
       {/* Tab names */}
-      <div className="ribbon-tabs" role="tablist" aria-label="Design ribbon tabs">
+      <div className="ribbon-tabs" role="tablist" aria-label={t('app.workspace.designRibbonTabs')}>
         {currentTabs.map((tab) => (
           <button
             key={tab.id}
@@ -151,7 +160,7 @@ export function WorkspaceTabBar({
             tabIndex={!inSketch && activeTab === tab.id ? 0 : -1}
             data-ribbon-tab={tab.id}
           >
-            {tab.label}
+            {t(tab.label as TranslationKey)}
           </button>
         ))}
         {inSketch && (
@@ -159,7 +168,7 @@ export function WorkspaceTabBar({
             className="ribbon-tab active contextual sketch-contextual-tab"
             style={{ '--tab-color': '#ff8c00' } as React.CSSProperties}
           >
-            SKETCH
+            {t('app.ribbon.sketch')}
           </button>
         )}
       </div>

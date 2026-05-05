@@ -1,9 +1,12 @@
 import type * as React from 'react';
 import { Eye, Layers, Undo2, Redo2 } from 'lucide-react';
 import { useSlicerStore } from '../../../../store/slicerStore';
+import { useLanguageStore } from '../../../../store/languageStore';
+import { translate, type TranslationKey } from '../../../../i18n';
 export type { SlicerPage } from '../../../../types/slicer-nav.types';
 
 export function SlicerWorkspaceTopNav() {
+  const language = useLanguageStore((s) => s.language);
   const sliceResult = useSlicerStore((s) => s.sliceResult);
   const previewMode = useSlicerStore((s) => s.previewMode);
   const setPreviewMode = useSlicerStore((s) => s.setPreviewMode);
@@ -12,6 +15,7 @@ export function SlicerWorkspaceTopNav() {
   const plateHistory = useSlicerStore((s) => s.plateHistory);
   const plateFuture = useSlicerStore((s) => s.plateFuture);
   const hasSlice = sliceResult !== null;
+  const t = (key: TranslationKey) => translate(language, key);
   const availableModes: ReadonlyArray<'model' | 'preview'> = hasSlice ? ['model', 'preview'] : ['model'];
   const handlePreviewTabKeyDown = (
     event: React.KeyboardEvent<HTMLButtonElement>,
@@ -36,7 +40,7 @@ export function SlicerWorkspaceTopNav() {
 
   return (
     <div className="slicer-workspace-nav">
-      <div role="tablist" aria-label="Prepare workspace view">
+      <div role="tablist" aria-label={t('app.prepare.viewLabel')}>
       <button
         type="button"
         className={`slicer-workspace-nav__tab ${previewMode === 'model' ? 'is-active' : ''}`}
@@ -48,7 +52,7 @@ export function SlicerWorkspaceTopNav() {
         data-slicer-preview-mode="model"
       >
         <Layers size={13} />
-        Prepare
+        {t('app.workspace.prepare')}
       </button>
       <button
         type="button"
@@ -63,7 +67,7 @@ export function SlicerWorkspaceTopNav() {
         data-slicer-preview-mode="preview"
       >
         <Eye size={13} />
-        Preview
+        {t('app.prepare.preview')}
       </button>
       </div>
 
@@ -74,8 +78,8 @@ export function SlicerWorkspaceTopNav() {
         className="slicer-workspace-nav__tab"
         onClick={undoPlate}
         disabled={plateHistory.length === 0}
-        title="Undo (Ctrl+Z)"
-        aria-label="Undo plate changes"
+        title={`${t('app.action.undo')} (Ctrl+Z)`}
+        aria-label={t('app.prepare.undoPlate')}
       >
         <Undo2 size={13} />
       </button>
@@ -84,8 +88,8 @@ export function SlicerWorkspaceTopNav() {
         className="slicer-workspace-nav__tab"
         onClick={redoPlate}
         disabled={plateFuture.length === 0}
-        title="Redo (Ctrl+Y)"
-        aria-label="Redo plate changes"
+        title={`${t('app.action.redo')} (Ctrl+Y)`}
+        aria-label={t('app.prepare.redoPlate')}
       >
         <Redo2 size={13} />
       </button>

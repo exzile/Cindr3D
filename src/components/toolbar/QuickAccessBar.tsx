@@ -676,15 +676,15 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                 <Settings size={16} />
               </div>
               <div>
-                <div className="global-settings-title">Global Settings</div>
-                <div className="global-settings-subtitle">Application preferences and AI assistant configuration</div>
+                <div className="global-settings-title">{translate(language, 'settings.globalTitle')}</div>
+                <div className="global-settings-subtitle">{translate(language, 'settings.globalSubtitle')}</div>
               </div>
               <button
                 type="button"
                 className="global-settings-close"
                 onClick={() => setGlobalSettingsOpen(false)}
-                title="Close settings"
-                aria-label="Close settings"
+                title={`${translate(language, 'app.action.close')} settings`}
+                aria-label={`${translate(language, 'app.action.close')} settings`}
               >
                 <X size={15} />
               </button>
@@ -699,7 +699,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                   aria-current={globalSettingsTab === 'general' ? 'page' : undefined}
                 >
                   <Settings size={15} />
-                  <span>General</span>
+                  <span>{translate(language, 'settings.general')}</span>
                 </button>
                 <button
                   type="button"
@@ -708,7 +708,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                   aria-current={globalSettingsTab === 'ai' ? 'page' : undefined}
                 >
                   <Bot size={15} />
-                  <span>AI Assistant</span>
+                  <span>{translate(language, 'settings.aiAssistant')}</span>
                 </button>
                 <button
                   type="button"
@@ -717,15 +717,15 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                   aria-current={globalSettingsTab === 'sync' ? 'page' : undefined}
                 >
                   <Download size={15} />
-                  <span>Sync</span>
+                  <span>{translate(language, 'settings.sync')}</span>
                 </button>
               </nav>
 
               <div className="global-settings-content">
                 {globalSettingsTab === 'general' && (
                   <section className="global-settings-section">
-                    <div className="global-settings-section-title">General</div>
-                    <div className="global-settings-section-copy">Theme, settings bundles, and design workspace save preferences.</div>
+                    <div className="global-settings-section-title">{translate(language, 'settings.general')}</div>
+                    <div className="global-settings-section-copy">{translate(language, 'settings.generalDescription')}</div>
                     <div className="global-settings-grid">
                       <button className="global-settings-action" onClick={toggleTheme}>
                         {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
@@ -810,8 +810,8 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
 
                 {globalSettingsTab === 'sync' && (
                   <section className="global-settings-section">
-                    <div className="global-settings-section-title">Profile Sync</div>
-                    <div className="global-settings-section-copy">Sync slicer profiles and spool inventory from a self-hosted JSON file in a repository.</div>
+                    <div className="global-settings-section-title">{translate(language, 'settings.profileSync')}</div>
+                    <div className="global-settings-section-copy">{translate(language, 'settings.profileSyncDescription')}</div>
                     <div className="global-settings-grid">
                       <div className="global-settings-field inline full">
                         <span>Enable profile sync</span>
@@ -918,8 +918,8 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
 
                 {globalSettingsTab === 'ai' && (
                   <section className="global-settings-section">
-                    <div className="global-settings-section-title">AI Assistant</div>
-                    <div className="global-settings-section-copy">Choose whether chat uses Claude Code MCP or your own provider API key.</div>
+                    <div className="global-settings-section-title">{translate(language, 'settings.aiAssistant')}</div>
+                    <div className="global-settings-section-copy">{translate(language, 'settings.aiDescription')}</div>
                     <div className="global-settings-grid">
                       <div className="global-settings-field inline full">
                         <span>Use Claude Code MCP</span>
