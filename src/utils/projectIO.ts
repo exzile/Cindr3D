@@ -68,6 +68,17 @@ const FILE_TYPES = [
   },
 ];
 
+const OFFLINE_BUNDLE_KEY = 'cindr3d-last-settings-bundle';
+
+export interface OfflineBundleMetadata {
+  filename: string | null;
+  savedAt: string;
+}
+
+interface OfflineBundleRecord extends OfflineBundleMetadata {
+  payload: ExportedSettings;
+}
+
 // ---------------------------------------------------------------------------
 // Store — tracks the currently-open bundle file
 // ---------------------------------------------------------------------------
@@ -109,6 +120,56 @@ function downloadJSON(json: string, suggestedName: string): void {
   a.download = suggestedName;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function rememberOfflineBundle(payload: ExportedSettings, filename: string | null): void {
+  try {
+    const record: OfflineBundleRecord = {
+      filename,
+      savedAt: new Date().toISOString(),
+      payload,
+    };
+    localStorage.setItem(OFFLINE_BUNDLE_KEY, JSON.stringify(record));
+  } catch {
+    // Local storage can be unavailable or full; bundle IO should still work.
+  }
+}
+
+function readOfflineBundleRecord(): OfflineBundleRecord | null {
+  try {
+    const raw = localStorage.getItem(OFFLINE_BUNDLE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<OfflineBundleRecord>;
+    if (!parsed.payload || typeof parsed.savedAt !== 'string') return null;
+    return {
+      filename: typeof parsed.filename === 'string' ? parsed.filename : null,
+      savedAt: parsed.savedAt,
+      payload: parsed.payload as ExportedSettings,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function getLastOfflineBundleMetadata(): OfflineBundleMetadata | null {
+  const record = readOfflineBundleRecord();
+  return record ? { filename: record.filename, savedAt: record.savedAt } : null;
+}
+
+export function restoreLastOfflineBundle(): ImportResult & { filename?: string; savedAt?: string } {
+  const record = readOfflineBundleRecord();
+  if (!record) {
+    return { ok: false, appliedSections: [], warnings: [], error: 'No offline settings bundle is available.' };
+  }
+  const result = applySettings(record.payload);
+  if (result.ok) {
+    useProjectFileStore.getState().setHandle(null, record.filename);
+  }
+  return {
+    ...result,
+    filename: record.filename ?? undefined,
+    savedAt: record.savedAt,
+  };
 }
 
 async function readHandleJSON(handle: FSFileHandle): Promise<unknown> {
@@ -167,7 +228,10 @@ export async function openBundle(): Promise<OpenResult> {
       const [handle] = await w.showOpenFilePicker({ types: FILE_TYPES, multiple: false });
       const raw = await readHandleJSON(handle);
       const result = applySettings(raw);
-      if (result.ok) useProjectFileStore.getState().setHandle(handle, handle.name);
+      if (result.ok) {
+        useProjectFileStore.getState().setHandle(handle, handle.name);
+        rememberOfflineBundle(raw as ExportedSettings, handle.name);
+      }
       return { ...result, filename: handle.name };
     } catch (err) {
       if ((err as DOMException)?.name === 'AbortError') {
@@ -191,7 +255,10 @@ export async function openBundle(): Promise<OpenResult> {
         const text = await file.text();
         const raw = JSON.parse(text);
         const result = applySettings(raw);
-        if (result.ok) useProjectFileStore.getState().setHandle(null, file.name);
+        if (result.ok) {
+          useProjectFileStore.getState().setHandle(null, file.name);
+          rememberOfflineBundle(raw as ExportedSettings, file.name);
+        }
         resolve({ ...result, filename: file.name });
       } catch (e) {
         resolve({ ok: false, appliedSections: [], warnings: [], error: (e as Error).message });
@@ -216,6 +283,7 @@ export async function saveBundleAs(suggested = 'settings.dzn'): Promise<{ ok: bo
       });
       await writeHandleJSON(handle, payload);
       useProjectFileStore.getState().setHandle(handle, handle.name);
+      rememberOfflineBundle(payload, handle.name);
       return { ok: true, filename: handle.name };
     } catch (err) {
       if ((err as DOMException)?.name === 'AbortError') {
@@ -228,6 +296,7 @@ export async function saveBundleAs(suggested = 'settings.dzn'): Promise<{ ok: bo
   // show it. Subsequent saves will re-prompt (no in-place write without FSA).
   downloadJSON(JSON.stringify(payload, null, 2), suggested);
   useProjectFileStore.getState().setHandle(null, suggested);
+  rememberOfflineBundle(payload, suggested);
   return { ok: true, filename: suggested };
 }
 
@@ -264,6 +333,7 @@ export async function saveBundleSlice(
       }
       const merged = mergeSlice(base, fresh, slice);
       await writeHandleJSON(handle, merged);
+      rememberOfflineBundle(merged, handle.name);
       return { ok: true, filename: handle.name };
     } catch (err) {
       return { ok: false, error: (err as Error).message };

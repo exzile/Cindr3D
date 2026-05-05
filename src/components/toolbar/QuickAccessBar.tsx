@@ -10,7 +10,7 @@ import { useThemeStore } from '../../store/themeStore';
 import { usePrinterStore } from '../../store/printerStore';
 import { PROVIDER_MODELS, useAiAssistantStore, type AiProvider } from '../../store/aiAssistantStore';
 import {
-  openBundle, saveBundleAs, saveBundleSlice,
+  getLastOfflineBundleMetadata, openBundle, restoreLastOfflineBundle, saveBundleAs, saveBundleSlice,
   useProjectFileStore,
 } from '../../utils/projectIO';
 import type { BundleSlice } from '../../types/settings-io.types';
@@ -72,6 +72,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
 
   const bundleFilename = useProjectFileStore((s) => s.filename);
   const hasBundle = useProjectFileStore((s) => s.hasBundle);
+  const [offlineBundle, setOfflineBundle] = useState(() => getLastOfflineBundleMetadata());
   const sliceForWorkspace: BundleSlice =
     workspaceMode === 'design' ? 'cad'
     : workspaceMode === 'prepare' ? 'slicer'
@@ -79,6 +80,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
 
   const handleSaveSettings = useCallback(async () => {
     const result = await saveBundleSlice(sliceForWorkspace);
+    setOfflineBundle(getLastOfflineBundleMetadata());
     setStatusMessage(
       result.ok
         ? `Settings saved: ${result.filename ?? ''}`
@@ -88,6 +90,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
 
   const handleSaveSettingsAs = useCallback(async () => {
     const result = await saveBundleAs('settings.dzn');
+    setOfflineBundle(getLastOfflineBundleMetadata());
     setStatusMessage(
       result.ok
         ? `Settings saved: ${result.filename ?? ''}`
@@ -101,8 +104,21 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
       setStatusMessage(`Load failed: ${result.error ?? 'unknown error'}`);
       return;
     }
+    setOfflineBundle(getLastOfflineBundleMetadata());
     setStatusMessage(
       `Settings loaded${result.filename ? ` from ${result.filename}` : ''}: ${result.appliedSections.join(', ')}`,
+    );
+  }, [setStatusMessage]);
+
+  const handleRestoreOfflineSettings = useCallback(() => {
+    const result = restoreLastOfflineBundle();
+    setOfflineBundle(getLastOfflineBundleMetadata());
+    if (!result.ok) {
+      setStatusMessage(`Offline restore failed: ${result.error ?? 'unknown error'}`);
+      return;
+    }
+    setStatusMessage(
+      `Offline settings restored${result.filename ? ` from ${result.filename}` : ''}: ${result.appliedSections.join(', ')}`,
     );
   }, [setStatusMessage]);
 
@@ -406,6 +422,15 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                 <FolderOpen size={15} />
                 <span>Load Settings…</span>
               </button>
+              {offlineBundle && (
+                <button className="file-menu-item" onClick={() => { handleRestoreOfflineSettings(); closeMenu(); }}>
+                  <FolderOpen size={15} />
+                  <span>Load Last Offline Settings</span>
+                  <span className="file-menu-shortcut" style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {offlineBundle.filename ?? 'cached'}
+                  </span>
+                </button>
+              )}
               <button
                 className="file-menu-item"
                 onClick={() => { handleSaveSettings(); closeMenu(); }}
@@ -620,6 +645,12 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                         <FolderOpen size={15} />
                         <span>Load settings</span>
                       </button>
+                      {offlineBundle && (
+                        <button className="global-settings-action" onClick={handleRestoreOfflineSettings}>
+                          <FolderOpen size={15} />
+                          <span>Load offline settings</span>
+                        </button>
+                      )}
                       <button className="global-settings-action" onClick={handleSaveSettingsAs}>
                         <Save size={15} />
                         <span>Save settings as</span>

@@ -295,11 +295,11 @@
 #   [ ] Push profiles + spools on save; pull on app start
 #   [ ] Conflict resolution: last-writer-wins or manual
 
-### 14.7 PWA mode  [S]  [STARTED 2026-05-05]
+### 14.7 PWA mode  [S]  [DONE 2026-05-05]
 #   [x] Web app manifest (icons, theme color, display: standalone)
 #   [x] Service worker for offline caching of static assets
 #   [x] Installable to home screen on desktop and mobile
-#   [ ] Last-loaded project bundle offline handoff
+#   [x] Last-loaded project bundle offline handoff
 #   [x] Custom splash metadata + maskable icon entry
 
 ### 14.8 Print-from-URL  [M]
