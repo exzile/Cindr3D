@@ -1,0 +1,232 @@
+.bed-clear-panel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  overflow-y: auto;
+}
+
+.bed-clear-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.bed-clear-panel__header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.bed-clear-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  flex: 1;
+}
+
+/* ── Printer card ── */
+
+.bed-clear-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.bed-clear-card__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+}
+
+.bed-clear-card__name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bed-clear-card__status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  border-radius: 20px;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+}
+
+.bed-clear-card__status.clear {
+  background: color-mix(in srgb, var(--success) 14%, var(--bg-secondary));
+  border-color: color-mix(in srgb, var(--success) 40%, var(--border));
+  color: var(--success);
+}
+
+.bed-clear-card__status.occupied {
+  background: color-mix(in srgb, var(--error) 14%, var(--bg-secondary));
+  border-color: color-mix(in srgb, var(--error) 40%, var(--border));
+  color: var(--error);
+}
+
+.bed-clear-card__status.unknown {
+  background: var(--bg-primary);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+.bed-clear-card__body {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* toggle row */
+
+.bed-clear-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bed-clear-toggle-row__label {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* compact toggle switch */
+
+.bc-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  gap: 6px;
+}
+
+.bc-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.bc-toggle__track {
+  width: 34px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--border);
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.bc-toggle input:checked + .bc-toggle__track {
+  background: var(--accent);
+}
+
+.bc-toggle__thumb {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+  pointer-events: none;
+}
+
+.bc-toggle input:checked ~ .bc-toggle__thumb {
+  transform: translateX(16px);
+}
+
+/* number input row */
+
+.bed-clear-number-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.bed-clear-number-row input[type="number"] {
+  width: 64px;
+  padding: 3px 6px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  text-align: right;
+}
+
+/* action row */
+
+.bed-clear-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.bed-clear-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.bed-clear-btn:hover {
+  background: var(--bg-hover);
+}
+
+.bed-clear-btn.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.bed-clear-btn.primary:hover {
+  opacity: 0.9;
+}
+
+.bed-clear-btn.success {
+  background: var(--success);
+  color: #fff;
+  border-color: var(--success);
+}
+
+.bed-clear-btn.success:hover {
+  opacity: 0.9;
+}
+
+.bed-clear-last-checked {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.bed-clear-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
