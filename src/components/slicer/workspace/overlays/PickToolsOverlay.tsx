@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
-import { AlignEndHorizontal, Ruler, X } from 'lucide-react';
+import { AlignEndHorizontal, Box, Paintbrush, Ruler, X } from 'lucide-react';
 import * as THREE from 'three';
+import type { PaintedZSeamHint } from '../../../../types/slicer/profiles/print';
 import { useSlicerStore } from '../../../../store/slicerStore';
 import './PickToolsOverlay.css';
 
@@ -47,6 +48,24 @@ export function PickToolsOverlay() {
       >
         <Ruler size={14} /> Measure
       </button>
+      <button
+        type="button"
+        title="Paint Z seam hints on the selected object"
+        className={`slicer-pick-tools__btn${pickMode === 'seam-paint' ? ' is-active' : ''}`}
+        onClick={() => setPickMode(pickMode === 'seam-paint' ? 'none' : 'seam-paint')}
+        disabled={!selectedId}
+      >
+        <Paintbrush size={14} /> Seam
+      </button>
+      <button
+        type="button"
+        title="Paint modifier mesh regions on the selected object"
+        className={`slicer-pick-tools__btn${pickMode === 'modifier-paint' ? ' is-active' : ''}`}
+        onClick={() => setPickMode(pickMode === 'modifier-paint' ? 'none' : 'modifier-paint')}
+        disabled={!selectedId}
+      >
+        <Box size={14} /> Modifier
+      </button>
 
       {pickMode === 'lay-flat' && (
         <span className="slicer-pick-tools__hint">
@@ -67,6 +86,18 @@ export function PickToolsOverlay() {
             </>
           )}
           <button onClick={() => { clearMeasure(); setPickMode('none'); }} title="Done" className="slicer-pick-tools__cancel"><X size={11} /></button>
+        </span>
+      )}
+      {pickMode === 'seam-paint' && (
+        <span className="slicer-pick-tools__hint">
+          Click the selected model to add seam hints
+          <button onClick={() => setPickMode('none')} title="Done" className="slicer-pick-tools__cancel"><X size={11} /></button>
+        </span>
+      )}
+      {pickMode === 'modifier-paint' && (
+        <span className="slicer-pick-tools__hint">
+          Click the selected model to create modifier volumes
+          <button onClick={() => setPickMode('none')} title="Done" className="slicer-pick-tools__cancel"><X size={11} /></button>
         </span>
       )}
     </div>
@@ -98,6 +129,38 @@ export function MeasurementMarkers() {
           <lineBasicMaterial color="#ffaa44" />
         </line>
       )}
+    </group>
+  );
+}
+
+function isPaintedZSeamHint(value: unknown): value is PaintedZSeamHint {
+  return !!value
+    && typeof value === 'object'
+    && Number.isFinite((value as PaintedZSeamHint).x)
+    && Number.isFinite((value as PaintedZSeamHint).y);
+}
+
+export function SeamPaintMarkers() {
+  const plateObjects = useSlicerStore((s) => s.plateObjects);
+  const markers = useMemo(() => {
+    const out: Array<{ key: string; hint: PaintedZSeamHint }> = [];
+    for (const obj of plateObjects) {
+      const hints = (obj.perObjectSettings as { zSeamPaintHints?: unknown[] } | undefined)?.zSeamPaintHints ?? [];
+      hints.forEach((hint, index) => {
+        if (isPaintedZSeamHint(hint)) out.push({ key: `${obj.id}:${index}`, hint });
+      });
+    }
+    return out;
+  }, [plateObjects]);
+  if (markers.length === 0) return null;
+  return (
+    <group>
+      {markers.map(({ key, hint }) => (
+        <mesh key={key} position={[hint.x, hint.y, (hint.z ?? 0) + 0.8]}>
+          <sphereGeometry args={[0.75, 12, 12]} />
+          <meshBasicMaterial color="#e85d75" depthTest={false} />
+        </mesh>
+      ))}
     </group>
   );
 }

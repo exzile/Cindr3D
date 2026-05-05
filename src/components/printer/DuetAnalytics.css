@@ -145,6 +145,20 @@
   overflow: hidden;
 }
 
+.duet-analytics__table--compact {
+  margin-top: -4px;
+}
+
+.duet-analytics__caption {
+  caption-side: top;
+  text-align: left;
+  padding: 0 0 4px;
+  color: var(--textDim, #8a8aa3);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .duet-analytics__table th,
 .duet-analytics__table td {
   padding: 6px 10px;
@@ -242,4 +256,30 @@
   color: #e6e6f0;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+.duet-analytics__insights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+}
+
+.duet-analytics__insight {
+  padding: 10px 11px;
+  background: #211d28;
+  border: 1px solid #3c3146;
+  border-radius: 8px;
+}
+
+.duet-analytics__insight-title {
+  color: #f7d38b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.duet-analytics__insight-detail {
+  margin-top: 4px;
+  color: var(--textDim, #a3a3b8);
+  font-size: 11px;
+  line-height: 1.35;
 }

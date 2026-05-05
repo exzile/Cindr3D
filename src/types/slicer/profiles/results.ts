@@ -131,7 +131,7 @@ export interface SliceLayer {
 // -----------------------------------------------------------------------------
 
 export interface SliceMove {
-  type: 'travel' | 'wall-outer' | 'wall-inner' | 'gap-fill' | 'infill' | 'top-bottom' | 'support' | 'skirt' | 'brim' | 'raft' | 'bridge' | 'ironing';
+  type: 'travel' | 'wall-outer' | 'wall-inner' | 'gap-fill' | 'infill' | 'top-bottom' | 'support' | 'support-tree' | 'skirt' | 'brim' | 'raft' | 'bridge' | 'ironing';
   from: { x: number; y: number };
   to: { x: number; y: number };
   speed: number; // mm/s

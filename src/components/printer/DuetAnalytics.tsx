@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import {
   TrendingUp, Clock, Package, CheckCircle2, XCircle, Calendar,
-  Award, Activity, Info,
+  Award, Activity, Info, AlertTriangle,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import type { PrintHistoryEntry } from '../../store/printerStore';
+import { buildPrintHistoryAnalytics, type PrintHistoryGroup } from '../../utils/printHistoryAnalytics';
 import { colors as COLORS } from '../../utils/theme';
 
 // ---------------------------------------------------------------------------
@@ -94,6 +95,8 @@ function topN<T>(arr: T[], n: number, key: (x: T) => number): T[] {
 export default function DuetAnalytics() {
   const history = usePrinterStore((s) => s.printHistory);
   const loading = usePrinterStore((s) => s.printHistoryLoading);
+  const printers = usePrinterStore((s) => s.printers);
+  const activePrinterId = usePrinterStore((s) => s.activePrinterId);
 
   const [windowDays, setWindowDays] = useState<number>(() => {
     const saved = Number(localStorage.getItem('cindr3d-analytics-window'));
@@ -104,6 +107,14 @@ export default function DuetAnalytics() {
     return isFinite(saved) && saved >= 0 ? saved : 0;
   });
 
+  const activePrinterName = useMemo(
+    () => printers.find((printer) => printer.id === activePrinterId)?.name ?? 'Current printer',
+    [printers, activePrinterId],
+  );
+  const analytics = useMemo(
+    () => buildPrintHistoryAnalytics(history, activePrinterName),
+    [history, activePrinterName],
+  );
   const jobs = useMemo(() => buildJobs(history), [history]);
 
   const cutoff = useMemo(() => {
@@ -242,6 +253,22 @@ export default function DuetAnalytics() {
             />
           </div>
 
+          {analytics.insights.length > 0 && (
+            <>
+              <div className="duet-analytics__section-title">
+                <AlertTriangle size={11} /> Patterns
+              </div>
+              <div className="duet-analytics__insights">
+                {analytics.insights.map((insight) => (
+                  <div className="duet-analytics__insight" key={insight.title}>
+                    <div className="duet-analytics__insight-title">{insight.title}</div>
+                    <div className="duet-analytics__insight-detail">{insight.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
           {/* Jobs-per-day sparkline */}
           <div className="duet-analytics__section-title">Jobs per day</div>
           <div className="duet-analytics__sparkline" role="img" aria-label="Jobs per day bar chart">
@@ -284,6 +311,13 @@ export default function DuetAnalytics() {
               ))}
             </tbody>
           </table>
+
+          <div className="duet-analytics__section-title">
+            <AlertTriangle size={11} /> Failure patterns
+          </div>
+          <PatternTable groups={analytics.byFile.filter((group) => group.total >= 2).slice(0, 5)} empty="No repeated file patterns in window." />
+          <PatternTable groups={analytics.byProfile.filter((group) => group.total >= 2).slice(0, 5)} empty="No profile metadata found in history." label="Profiles" />
+          <PatternTable groups={analytics.byMaterial.filter((group) => group.total >= 2).slice(0, 5)} empty="No material metadata found in history." label="Materials" />
 
           {/* Recent jobs */}
           <div className="duet-analytics__section-title">Recent jobs</div>
@@ -332,6 +366,47 @@ export default function DuetAnalytics() {
         </>
       )}
     </div>
+  );
+}
+
+function PatternTable({
+  groups,
+  empty,
+  label,
+}: {
+  groups: PrintHistoryGroup[];
+  empty: string;
+  label?: string;
+}) {
+  return (
+    <table className="duet-analytics__table duet-analytics__table--compact">
+      {label && (
+        <caption className="duet-analytics__caption">{label}</caption>
+      )}
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Runs</th>
+          <th>Failures</th>
+          <th>Last working</th>
+        </tr>
+      </thead>
+      <tbody>
+        {groups.length === 0 && (
+          <tr><td colSpan={4} className="duet-analytics__empty-row">{empty}</td></tr>
+        )}
+        {groups.map((group) => (
+          <tr key={group.key}>
+            <td className="duet-analytics__file-cell" title={group.label}>{group.label}</td>
+            <td>{group.total}</td>
+            <td>{group.failureRate.toFixed(0)}%</td>
+            <td className="duet-analytics__file-cell" title={group.lastSuccess?.profile ?? group.lastSuccess?.material ?? undefined}>
+              {group.lastSuccess?.profile ?? group.lastSuccess?.material ?? '--'}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

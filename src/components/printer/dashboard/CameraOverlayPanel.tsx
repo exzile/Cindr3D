@@ -46,6 +46,7 @@ const TYPE_COLORS: Record<SliceMove['type'], string> = {
   infill: '#38bdf8',
   'top-bottom': '#f97316',
   support: '#a78bfa',
+  'support-tree': '#2ec4b6',
   skirt: '#94a3b8',
   brim: '#eab308',
   raft: '#d946ef',

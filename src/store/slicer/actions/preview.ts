@@ -1,6 +1,7 @@
 import { usePrinterStore } from '../../printerStore';
 import type { SlicerStore } from '../../slicerStore';
 import type { SlicerStoreApi } from '../storeApi';
+import { withEmbeddedGCodeThumbnails } from '../../../utils/gcodeThumbnails';
 
 export function createPreviewActions(api: SlicerStoreApi): Pick<
   SlicerStore,
@@ -97,22 +98,38 @@ export function createPreviewActions(api: SlicerStoreApi): Pick<
     setPrintabilityHighlight: (on) => set({ printabilityHighlight: on }),
 
     downloadGCode: () => {
-      const gcode = get().sliceResult?.gcode;
-      if (!gcode) return;
-      const blob = new Blob([gcode], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'output.gcode';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      void (async () => {
+        const state = get();
+        const result = state.sliceResult;
+        if (!result) return;
+        const print = state.getActivePrintProfile();
+        const gcode = await withEmbeddedGCodeThumbnails(
+          result.gcode,
+          result,
+          print.embedGCodeThumbnails ?? true,
+        );
+        const blob = new Blob([gcode], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'output.gcode';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      })();
     },
 
     sendToPrinter: async () => {
-      const gcode = get().sliceResult?.gcode;
-      if (!gcode) return;
+      const state = get();
+      const result = state.sliceResult;
+      if (!result) return;
+      const print = state.getActivePrintProfile();
+      const gcode = await withEmbeddedGCodeThumbnails(
+        result.gcode,
+        result,
+        print.embedGCodeThumbnails ?? true,
+      );
       const printerStore = usePrinterStore.getState();
       if (!printerStore.connected || !printerStore.service) {
         throw new Error('Printer not connected');

@@ -77,6 +77,7 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
   additionalSelectedIds: [],
   plateHistory: [],
   plateFuture: [],
+  activeBedMesh: null,
 
   // Slice state
   sliceProgress: {
@@ -384,6 +385,8 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
   // --- Plate management ---
 
   ...createPlateActions({ set, get }),
+
+  setActiveBedMesh: (mesh) => set({ activeBedMesh: mesh }),
 
   // --- Slicing ---
 

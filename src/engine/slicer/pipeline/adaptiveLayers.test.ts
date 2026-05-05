@@ -110,6 +110,25 @@ describe('computeAdaptiveLayerZs — basics', () => {
     expect(heightRange).toBeLessThanOrEqual(0.25);
   });
 
+  it('respects explicit min and max adaptive layer heights', () => {
+    const zs = computeAdaptiveLayerZs(
+      buildCubeTriangles(10),
+      10,
+      0.2,
+      0.2,
+      0.2,
+      0.05,
+      1,
+      0,
+      0.12,
+      0.24,
+    );
+    const heights = zs.map((z, i) => z - (i > 0 ? zs[i - 1] : 0)).slice(1);
+
+    expect(Math.min(...heights)).toBeGreaterThanOrEqual(0.12 - 1e-5);
+    expect(Math.max(...heights)).toBeLessThanOrEqual(0.24 + 1e-5);
+  });
+
   it('emits at least 2 layer Z values for any positive-height model', () => {
     const zs = computeAdaptiveLayerZs(buildCubeTriangles(1), 1, 0.2, 0.2, 0.1, 0.05, 1);
     expect(zs.length).toBeGreaterThanOrEqual(2);

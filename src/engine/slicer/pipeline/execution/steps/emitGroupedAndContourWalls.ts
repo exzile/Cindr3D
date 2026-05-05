@@ -325,6 +325,7 @@ function reorderOuterLoop(
     previousSeam: nearestPreviousSeam(run, loop, continuityTolerance),
     continuityTolerance,
     userSpecifiedRadius: pp.zSeamUserSpecifiedRadius ?? 0,
+    layerZ: layer.layerZ,
     isSupported: layer.hasBridgeRegions
       ? (point: THREE.Vector2) => !layer.isInBridgeRegion(point.x, point.y)
       : undefined,
@@ -463,6 +464,7 @@ function emitOuterLoop(params: EmitOuterLoopParams): number {
   const scarfLen = pp.scarfSeamLength ?? 0;
   const scarfActive = scarfLen > 0 && (pp.scarfSeamStartHeight === undefined || layerZ >= pp.scarfSeamStartHeight);
   const scarfStepLen = pp.scarfSeamStepLength ?? 0;
+  const scarfZLift = layerH * 0.5;
   let scarfRemaining = scarfActive ? scarfLen : 0;
   let layerTime = 0;
   for (let pi = 1; pi < reordered.length; pi++) {
@@ -471,6 +473,39 @@ function emitOuterLoop(params: EmitOuterLoopParams): number {
     let segLW = variableLineWidth ? segmentLineWidth(params.lineWidth, pi - 1, pi) : fallbackLineWidth;
     const baseSegLW = segLW;
     let segSpeed = outerWallSpeed;
+    const scarfRemainingBeforeSegment = scarfRemaining;
+    if (!spiralActive && scarfRemainingBeforeSegment > 0 && segLen > 1e-6) {
+      const scarfCovered = Math.min(segLen, scarfRemainingBeforeSegment);
+      const chunkLen = scarfStepLen > 0 ? Math.min(scarfStepLen, scarfCovered) : scarfCovered;
+      let emitted = 0;
+      let chunkFrom = from;
+      while (emitted < scarfCovered - 1e-6) {
+        const nextEmitted = Math.min(scarfCovered, emitted + chunkLen);
+        const ratio = nextEmitted / segLen;
+        const chunkTo = new THREE.Vector2(
+          from.x + (to.x - from.x) * ratio,
+          from.y + (to.y - from.y) * ratio,
+        );
+        const scarfDone = scarfLen - scarfRemainingBeforeSegment + nextEmitted;
+        const t = Math.min(1, scarfDone / scarfLen);
+        const chunkLineWidth = baseSegLW * Math.max(0.15, t);
+        const speedRatio = pp.scarfSeamStartSpeedRatio ?? 1.0;
+        const chunkSpeed = outerWallSpeed * (speedRatio + (1.0 - speedRatio) * t);
+        const chunkZ = layerZ + scarfZLift * (1 - t);
+        const chunkDist = chunkFrom.distanceTo(chunkTo);
+        layerTime += emitter.extrudeTo(chunkTo.x, chunkTo.y, chunkSpeed, chunkLineWidth, layerH, chunkZ).time;
+        moves.push({ type: 'wall-outer', from: { x: chunkFrom.x, y: chunkFrom.y }, to: { x: chunkTo.x, y: chunkTo.y }, speed: chunkSpeed, extrusion: emitter.calculateExtrusion(chunkDist, chunkLineWidth, layerH), lineWidth: chunkLineWidth });
+        chunkFrom = chunkTo;
+        emitted = nextEmitted;
+      }
+      scarfRemaining = Math.max(0, scarfRemainingBeforeSegment - segLen);
+      if (scarfCovered < segLen - 1e-6) {
+        const restDist = chunkFrom.distanceTo(to);
+        layerTime += emitter.extrudeTo(to.x, to.y, outerWallSpeed, baseSegLW, layerH, layerZ).time;
+        moves.push({ type: 'wall-outer', from: { x: chunkFrom.x, y: chunkFrom.y }, to: { x: to.x, y: to.y }, speed: outerWallSpeed, extrusion: emitter.calculateExtrusion(restDist, baseSegLW, layerH), lineWidth: baseSegLW });
+      }
+      continue;
+    }
     if (scarfRemaining > 0) {
       const done = scarfLen - scarfRemaining;
       const tRaw = done / scarfLen;
@@ -485,6 +520,11 @@ function emitOuterLoop(params: EmitOuterLoopParams): number {
       traveled += segLen;
       const t = Math.min(1, traveled / perimeter);
       segZ = spiralStartZ + (spiralEndZ - spiralStartZ) * t;
+    } else if (scarfRemainingBeforeSegment > 0) {
+      const doneAfterSegment = scarfLen - scarfRemainingBeforeSegment + segLen;
+      const tRaw = Math.min(1, doneAfterSegment / scarfLen);
+      const t = scarfStepLen > 0 ? Math.min(1, Math.ceil(doneAfterSegment / scarfStepLen) * scarfStepLen / scarfLen) : tRaw;
+      segZ = layerZ + scarfZLift * (1 - t);
     }
     layerTime += emitter.extrudeTo(to.x, to.y, segSpeed, segLW, layerH, segZ).time;
     moves.push({ type: 'wall-outer', from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, speed: segSpeed, extrusion: emitter.calculateExtrusion(segLen, segLW, layerH), lineWidth: segLW });

@@ -234,7 +234,7 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
   infillPattern: {
     brief: 'Structure pattern for internal fill',
     detailed:
-      'Different patterns offer different benefits: Grid (2D crosshatch, good for speed), Gyroid (TPMS, isotropic strength all directions), Cubic (3D grid, lightweight), Honeycomb (exceptional strength, 20-40% density), Lines (simple, fast), Triangles (diagonal bracing), Lightning (optimal branching). Gyroid and Cubic are strongest for weight.',
+      'Different patterns offer different benefits: Grid (2D crosshatch, good for speed), Gyroid (TPMS, isotropic strength all directions), Cubic (3D grid, lightweight), Honeycomb (exceptional strength, 20-40% density), Lines (simple, fast), Triangles (diagonal bracing), Lightning (optimal branching), Organic (wavy branching paths for gradual load paths). Gyroid and Cubic are strongest for weight.',
   },
 
   // Support Type (Tree vs Normal)
@@ -322,6 +322,8 @@ export const SETTINGS_HELP: Record<string, SettingHelp> = {
   initialLayerLineWidthFactor: { brief: 'First-layer line width scale factor (100–120%)', detailed: 'Widens first-layer lines to improve bed adhesion. 100% = normal, 120% = 20% wider. A wider first layer increases contact area with the bed, helping the print stick.' },
   adaptiveLayersMaxVariation: { brief: 'Maximum layer height change allowed', detailed: 'Limits how much adaptive layers can vary from the base layer height. 0.1mm means layers can change ±0.1mm. Larger values allow more variation for faster prints; smaller gives smoother quality transitions.' },
   adaptiveLayersVariationStep: { brief: 'How fast layer height changes between regions', detailed: 'How much the layer height can change between neighboring regions. Smaller values create smoother gradients. 0.05mm gives gradual transitions across curved surfaces.' },
+  adaptiveLayersMinHeight: { brief: 'Smallest adaptive layer height', detailed: 'Lower bound for adaptive layers. Smaller values preserve sloped and curved detail, but increase print time. Keep this within the reliable layer-height range for the active nozzle.' },
+  adaptiveLayersMaxHeight: { brief: 'Largest adaptive layer height', detailed: 'Upper bound for adaptive layers. Larger values speed up low-detail vertical regions, but too-large layers can weaken parts or reduce surface quality.' },
 
   // ── Walls ───────────────────────────────────────────────────────────────────
   outerWallFirst: { brief: 'Print outer wall before inner walls', detailed: 'When enabled, the outer wall is printed first, then inner walls fill in. This improves dimensional accuracy of the outer surface. May show more seam marks at the start point.' },

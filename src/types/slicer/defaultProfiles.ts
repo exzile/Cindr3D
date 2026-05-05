@@ -359,6 +359,9 @@ export const DEFAULT_PRINT_PROFILES: PrintProfile[] = [
     ironingSpeed: 15,
     ironingFlow: 10.0,             // ironing_flow = 10
     ironingSpacing: 0.1,           // ironing_line_spacing = 0.1
+    nonPlanarIroningEnabled: false,
+    nonPlanarIroningMaxOffset: 0.3,
+    nonPlanarIroningSampleSpacing: 1.0,
     spiralizeContour: false,       // magic_spiralize = false
     printSequence: 'all_at_once',  // print_sequence = 'all_at_once'
     draftShieldEnabled: false,     // draft_shield_enabled = false
@@ -368,6 +371,8 @@ export const DEFAULT_PRINT_PROFILES: PrintProfile[] = [
     adaptiveLayersEnabled: false,  // adaptive_layer_height_enabled = false
     adaptiveLayersMaxVariation: 0.1,   // adaptive_layer_height_variation = 0.1
     adaptiveLayersVariationStep: 0.01, // adaptive_layer_height_variation_step = 0.01
+    adaptiveLayersMinHeight: 0.08,
+    adaptiveLayersMaxHeight: 0.28,
     wallTransitionLength: 0.4,     // wall_transition_length = 0.4
     wallTransitionAngle: 10,       // wall_transition_angle = 10
     minWallLineWidth: 0.3,         // min_wall_line_width = 0.3
@@ -462,6 +467,7 @@ export const DEFAULT_PRINT_PROFILES: PrintProfile[] = [
     slicingClosingRadius: 0.049,
     extruderIndex: 0,
     postProcessingScripts: [],
+    embedGCodeThumbnails: true,
     nonPlanarSlicingEnabled: false,
   },
 ];

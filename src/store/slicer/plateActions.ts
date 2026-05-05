@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { StoreApi } from 'zustand';
-import type { PlateObject } from '../../types/slicer';
+import type { ModifierMeshRole, PlateObject } from '../../types/slicer';
 import { isBufferGeometry } from './persistence';
 import type { SlicerStore } from '../slicerStore';
 
@@ -9,6 +9,7 @@ const PLATE_HISTORY_LIMIT = 30;
 type PlateActionSlice = Pick<
   SlicerStore,
   | 'addToPlate'
+  | 'addPaintedModifierMesh'
   | 'removeFromPlate'
   | 'selectPlateObject'
   | 'togglePlateObjectInSelection'
@@ -51,6 +52,31 @@ function bboxFromGeometry(geometry: unknown): { min: { x: number; y: number; z: 
     : { min: { x: bbox.min.x, y: bbox.min.y, z: bbox.min.z }, max: { x: bbox.max.x, y: bbox.max.y, z: bbox.max.z } };
 }
 
+const MODIFIER_PAINT_COLORS: Record<Exclude<ModifierMeshRole, 'normal'>, string> = {
+  cutting_mesh: '#ff6b6b',
+  infill_mesh: '#4dabf7',
+  support_mesh: '#51cf66',
+  anti_overhang_mesh: '#ffd43b',
+};
+
+function modifierRoleLabel(role: Exclude<ModifierMeshRole, 'normal'>): string {
+  switch (role) {
+    case 'cutting_mesh': return 'Cutting';
+    case 'infill_mesh': return 'Infill';
+    case 'support_mesh': return 'Support';
+    case 'anti_overhang_mesh': return 'Support blocker';
+  }
+}
+
+function createPaintBrushGeometry(radiusMm: number, heightMm: number): THREE.BufferGeometry {
+  const radius = Math.max(0.5, Math.min(100, radiusMm));
+  const height = Math.max(0.2, Math.min(500, heightMm));
+  const geometry = new THREE.CylinderGeometry(radius, radius, height, 32, 1, false);
+  geometry.rotateX(Math.PI / 2);
+  geometry.computeBoundingBox();
+  return geometry;
+}
+
 export function createPlateActions({
   set,
   get,
@@ -91,6 +117,33 @@ export function createPlateActions({
     // Run printability check so the warning panel populates without the
     // user having to click the explicit "Check printability" button.
     void Promise.resolve().then(() => get().runPrintabilityCheck());
+  },
+
+  addPaintedModifierMesh: (role, point, radiusMm, heightMm, settings) => {
+    pushHistory();
+    const geometry = createPaintBrushGeometry(radiusMm, heightMm);
+    const safeBbox = bboxFromGeometry(geometry);
+    const plateObject: PlateObject = {
+      id: crypto.randomUUID(),
+      featureId: 'modifier-paint',
+      name: `${modifierRoleLabel(role)} paint`,
+      geometry,
+      position: { x: point.x, y: point.y, z: point.z },
+      rotation: { x: 0, y: 0, z: 0 },
+      scale: { x: 1, y: 1, z: 1 },
+      color: MODIFIER_PAINT_COLORS[role],
+      boundingBox: safeBbox,
+      modifierMeshRole: role,
+      modifierMeshSettings: settings,
+    };
+
+    set((state) => ({
+      plateObjects: [...state.plateObjects, plateObject],
+      selectedPlateObjectId: plateObject.id,
+      additionalSelectedIds: [],
+      sliceResult: null,
+      previewMode: 'model',
+    }));
   },
 
   removeFromPlate: (id) => {
@@ -619,7 +672,8 @@ export function createPlateActions({
   autoArrange: () => {
     void (async () => {
       const { packRectangles } = await import('../../engine/binPacker');
-      const { plateObjects, getActivePrinterProfile } = get();
+      const { scoreBedMeshPlacement } = await import('../../utils/bedMeshArrange');
+      const { plateObjects, getActivePrinterProfile, activeBedMesh } = get();
       if (plateObjects.length === 0) return;
 
       const printer = getActivePrinterProfile();
@@ -641,7 +695,11 @@ export function createPlateActions({
           };
         });
 
-      const placements = packRectangles(bedW, bedD, inputs, 4);
+      const placements = packRectangles(bedW, bedD, inputs, 4, {
+        scorePlacement: activeBedMesh
+          ? (candidate) => scoreBedMeshPlacement(activeBedMesh, candidate)
+          : undefined,
+      });
       const placementById = new Map(placements.map((p) => [p.id, p]));
 
       pushHistory();

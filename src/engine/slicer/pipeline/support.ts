@@ -599,13 +599,13 @@ function generateTreeSupportForLayer(
       contour.push(new THREE.Vector2(center.x + Math.cos(a) * r, center.y + Math.sin(a) * r));
     }
     for (let i = 0; i < segs; i++) {
-      moves.push({ type: 'support', from: contour[i], to: contour[(i + 1) % segs], speed: supportSpeed, extrusion: 0, lineWidth: supLW });
+      moves.push({ type: 'support-tree', from: contour[i], to: contour[(i + 1) % segs], speed: supportSpeed, extrusion: 0, lineWidth: supLW });
     }
     const lines = deps.generateScanLines(contour, supportDensityForLayer(pp, layerIndex), supLW, layerIndex % 2 === 0 ? 0 : Math.PI / 2);
     for (const line of lines) {
       const mid = new THREE.Vector2((line.from.x + line.to.x) / 2, (line.from.y + line.to.y) / 2);
       if (pointInsideMaterial(mid, modelContours, deps)) continue;
-      moves.push({ type: 'support', from: line.from, to: line.to, speed: supportSpeed, extrusion: 0, lineWidth: supLW });
+      moves.push({ type: 'support-tree', from: line.from, to: line.to, speed: supportSpeed, extrusion: 0, lineWidth: supLW });
     }
   }
   return moves;
@@ -787,7 +787,7 @@ export function filterMovesByBlockedMP(moves: SliceMove[], blocked: PCMultiPolyg
   if (blocked.length === 0 || moves.length === 0) return moves;
   const out: SliceMove[] = [];
   for (const move of moves) {
-    if (move.type !== 'support') {
+    if (move.type !== 'support' && move.type !== 'support-tree') {
       out.push(move);
       continue;
     }

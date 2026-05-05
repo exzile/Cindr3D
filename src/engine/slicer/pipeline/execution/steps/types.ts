@@ -44,6 +44,8 @@ export interface SlicerExecutionPipeline {
     variationStep: number,
     zScale: number,
     topographySize?: number,
+    minLayerHeight?: number,
+    maxLayerHeight?: number,
   ): number[];
   sliceTrianglesAtZ(
     triangles: Triangle[],
@@ -76,6 +78,7 @@ export interface SlicerExecutionPipeline {
       previousSeam: THREE.Vector2 | null;
       continuityTolerance: number;
       userSpecifiedRadius: number;
+      layerZ?: number;
       isSupported?: (point: THREE.Vector2) => boolean;
     },
   ): number;

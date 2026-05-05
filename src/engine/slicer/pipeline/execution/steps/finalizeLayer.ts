@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { SlicerExecutionPipeline, SliceLayerState, SliceRun } from './types';
+import type { Triangle } from '../../../../../types/slicer-pipeline.types';
 import { flipLine } from '../../infill';
 
 /**
@@ -20,6 +21,7 @@ export function nextConsecutiveBridgeLayers(
 }
 
 type IroningLine = { from: THREE.Vector2; to: THREE.Vector2 };
+export type NonPlanarIroningPoint = { x: number; y: number; z: number };
 
 export function sortIroningLinesMonotonic(lines: IroningLine[]): IroningLine[] {
   return lines
@@ -43,6 +45,58 @@ export function minimumLayerTimeForLayer(
 ): number {
   if (!hasOverhang) return pp.minLayerTime;
   return Math.max(pp.minLayerTime, pp.minLayerTimeWithOverhang ?? 0);
+}
+
+function topSurfaceZAtXY(
+  triangles: Triangle[],
+  x: number,
+  y: number,
+  offsetX: number,
+  offsetY: number,
+  offsetZ: number,
+): number | null {
+  let bestZ = -Infinity;
+  for (const tri of triangles) {
+    if (tri.normal.z <= 0.05) continue;
+    const ax = tri.v0.x + offsetX;
+    const ay = tri.v0.y + offsetY;
+    const bx = tri.v1.x + offsetX;
+    const by = tri.v1.y + offsetY;
+    const cx = tri.v2.x + offsetX;
+    const cy = tri.v2.y + offsetY;
+    const denom = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+    if (Math.abs(denom) < 1e-9) continue;
+    const u = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / denom;
+    const v = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / denom;
+    const w = 1 - u - v;
+    if (u < -1e-6 || v < -1e-6 || w < -1e-6) continue;
+    const z = u * (tri.v0.z + offsetZ) + v * (tri.v1.z + offsetZ) + w * (tri.v2.z + offsetZ);
+    if (z > bestZ) bestZ = z;
+  }
+  return bestZ === -Infinity ? null : bestZ;
+}
+
+export function buildNonPlanarIroningPoints(
+  line: IroningLine,
+  triangles: Triangle[],
+  offsets: { x: number; y: number; z: number },
+  layerZ: number,
+  maxLift: number,
+  sampleSpacing: number,
+): NonPlanarIroningPoint[] {
+  const length = line.from.distanceTo(line.to);
+  const steps = Math.max(1, Math.ceil(length / Math.max(0.2, sampleSpacing)));
+  const maxZ = layerZ + Math.max(0, maxLift);
+  const points: NonPlanarIroningPoint[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const x = line.from.x + (line.to.x - line.from.x) * t;
+    const y = line.from.y + (line.to.y - line.from.y) * t;
+    const sampled = topSurfaceZAtXY(triangles, x, y, offsets.x, offsets.y, offsets.z);
+    const z = Math.min(maxZ, Math.max(layerZ, sampled ?? layerZ));
+    points.push({ x, y, z });
+  }
+  return points;
 }
 
 export function finalizeLayer(
@@ -197,6 +251,34 @@ export function finalizeLayer(
         ? sortIroningLinesMonotonic(generatedIronLines)
         : generatedIronLines;
       for (const line of ironLines) {
+        if (pp.nonPlanarIroningEnabled) {
+          const points = buildNonPlanarIroningPoints(
+            line,
+            triangles,
+            { x: offsetX, y: offsetY, z: run.offsetZ },
+            layerZ,
+            pp.nonPlanarIroningMaxOffset ?? 0.3,
+            pp.nonPlanarIroningSampleSpacing ?? 1.0,
+          );
+          if (points.length < 2) continue;
+          emitter.travelTo(points[0].x, points[0].y, moves);
+          if (Math.abs(points[0].z - emitter.currentZ) > 1e-4) {
+            gcode.push(`G1 Z${points[0].z.toFixed(3)} F${(pp.ironingSpeed * 60).toFixed(0)} ; Non-planar ironing Z`);
+            emitter.currentZ = points[0].z;
+          }
+          for (let i = 1; i < points.length; i++) {
+            const from = points[i - 1];
+            const to = points[i];
+            const dist = Math.hypot(to.x - from.x, to.y - from.y);
+            gcode.push(`G1 X${to.x.toFixed(3)} Y${to.y.toFixed(3)} Z${to.z.toFixed(3)} F${(pp.ironingSpeed * 60).toFixed(0)}`);
+            layerTime += dist / pp.ironingSpeed;
+            emitter.currentX = to.x;
+            emitter.currentY = to.y;
+            emitter.currentZ = to.z;
+            moves.push({ type: 'ironing', from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, speed: pp.ironingSpeed, extrusion: 0, lineWidth: pp.ironingSpacing });
+          }
+          continue;
+        }
         emitter.travelTo(line.from.x, line.from.y, moves);
         emitter.unretract();
         const dist = Math.hypot(line.to.x - emitter.currentX, line.to.y - emitter.currentY);

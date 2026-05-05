@@ -6,9 +6,12 @@ import type {
   PrinterProfile,
   SliceProgress,
   SliceResult,
+  ModifierMeshRole,
+  ModifierMeshSettings,
 } from '../../types/slicer';
 import type { PreviewColorMode } from '../../types/slicer-preview.types';
 import type { PrintabilityReport } from '../../engine/PrintabilityCheck';
+import type { ArrangeBedMesh } from '../../utils/bedMeshArrange';
 
 export type ProfileSnapshotKind = 'printer' | 'material' | 'print';
 
@@ -40,6 +43,7 @@ export interface SlicerStore {
   /** Undo/redo history of plateObjects snapshots. */
   plateHistory: PlateObject[][];
   plateFuture: PlateObject[][];
+  activeBedMesh: ArrangeBedMesh | null;
   sliceProgress: SliceProgress;
   sliceResult: SliceResult | null;
   previewMode: 'model' | 'preview';
@@ -64,8 +68,8 @@ export interface SlicerStore {
   settingsPanel: 'printer' | 'material' | 'print' | null;
   transformMode: 'move' | 'scale' | 'rotate' | 'mirror' | 'settings';
   /** Transient viewport "pick mode" for tools that capture a click on the
-   *  3D scene (lay-flat-by-face, measurement). 'none' when idle. */
-  viewportPickMode: 'none' | 'lay-flat' | 'measure';
+   *  3D scene (lay-flat-by-face, measurement, painting). 'none' when idle. */
+  viewportPickMode: 'none' | 'lay-flat' | 'measure' | 'seam-paint' | 'modifier-paint';
   /** Accumulator for the measurement tool — populated as the user clicks.
    *  Reset whenever pick mode leaves 'measure'. */
   measurePoints: Array<{ x: number; y: number; z: number }>;
@@ -88,6 +92,13 @@ export interface SlicerStore {
   restoreProfileSnapshot: (snapshotId: string) => void;
   restoreProfileSnapshotKey: (snapshotId: string, keyPath: string) => void;
   addToPlate: (featureId: string, name: string, geometry: THREE.BufferGeometry | null | unknown) => void;
+  addPaintedModifierMesh: (
+    role: Exclude<ModifierMeshRole, 'normal'>,
+    point: { x: number; y: number; z: number },
+    radiusMm: number,
+    heightMm: number,
+    settings?: ModifierMeshSettings,
+  ) => void;
   removeFromPlate: (id: string) => void;
   selectPlateObject: (id: string | null) => void;
   togglePlateObjectInSelection: (id: string) => void;
@@ -118,6 +129,7 @@ export interface SlicerStore {
   exportPlateJson: () => string;
   importPlateJson: (json: string) => void;
   autoArrange: () => void;
+  setActiveBedMesh: (mesh: ArrangeBedMesh | null) => void;
   clearPlate: () => void;
   importFileToPlate: (file: File) => Promise<string | null>;
   startSlice: () => void;
@@ -152,7 +164,7 @@ export interface SlicerStore {
   sendToPrinter: () => Promise<void>;
   setSettingsPanel: (panel: 'printer' | 'material' | 'print' | null) => void;
   setTransformMode: (mode: 'move' | 'scale' | 'rotate' | 'mirror' | 'settings') => void;
-  setViewportPickMode: (mode: 'none' | 'lay-flat' | 'measure') => void;
+  setViewportPickMode: (mode: 'none' | 'lay-flat' | 'measure' | 'seam-paint' | 'modifier-paint') => void;
   pushMeasurePoint: (point: { x: number; y: number; z: number }) => void;
   clearMeasurePoints: () => void;
 }

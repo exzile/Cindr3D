@@ -19,6 +19,7 @@ export interface SeamPlacementOptions {
   previousSeam?: THREE.Vector2 | null;
   continuityTolerance?: number;
   userSpecifiedRadius?: number;
+  layerZ?: number;
   isSupported?: (point: THREE.Vector2) => boolean;
 }
 
@@ -102,6 +103,30 @@ function userSpecifiedIndex(contour: THREE.Vector2[], pp: PrintProfile): number 
   return bestIdx >= 0 ? bestIdx : closestPointIndex(contour, target);
 }
 
+function paintedSeamIndex(contour: THREE.Vector2[], pp: PrintProfile, layerZ?: number): number | null {
+  const hints = pp.zSeamPaintHints?.filter((hint) => Number.isFinite(hint.x) && Number.isFinite(hint.y)) ?? [];
+  if (hints.length === 0) return null;
+
+  let bestHint: THREE.Vector2 | null = null;
+  let bestScore = Infinity;
+  for (const hint of hints) {
+    const target = new THREE.Vector2(hint.x, hint.y);
+    const nearestIdx = closestPointIndex(contour, target);
+    const xyDistance = contour[nearestIdx].distanceTo(target);
+    const radius = hint.radius ?? pp.zSeamUserSpecifiedRadius ?? 0;
+    if (radius > 0 && xyDistance > radius) continue;
+    const zPenalty = layerZ !== undefined && hint.z !== undefined
+      ? Math.abs(hint.z - layerZ) * (hint.weight ?? 0.15)
+      : 0;
+    const score = xyDistance + zPenalty;
+    if (score < bestScore) {
+      bestScore = score;
+      bestHint = target;
+    }
+  }
+  return bestHint ? closestPointIndex(contour, bestHint) : null;
+}
+
 export function findSeamPosition(
   contour: THREE.Vector2[],
   pp: PrintProfile,
@@ -127,6 +152,11 @@ export function findSeamPosition(
 
     case 'user_specified': {
       seamIdx = userSpecifiedIndex(contour, pp);
+      break;
+    }
+
+    case 'painted': {
+      seamIdx = paintedSeamIndex(contour, pp, options.layerZ) ?? userSpecifiedIndex(contour, pp);
       break;
     }
 
