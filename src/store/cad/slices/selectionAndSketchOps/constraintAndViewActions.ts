@@ -1,5 +1,5 @@
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
-import { solveConstraints } from '../../../../engine/ConstraintSolver';
+import { dimensionsToSolverConstraints, solveConstraints } from '../../../../engine/ConstraintSolver';
 import type { SketchConstraint } from '../../../../types/cad';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
@@ -118,7 +118,10 @@ export function createConstraintAndViewActions({ set, get }: CADSliceContext): P
           return { ...pt, x: dx * t1.x + dy * t1.y + dz * t1.z, y: dx * t2.x + dy * t2.y + dz * t2.z, z: 0 };
         }),
       }));
-      const result = solveConstraints(projectedEntities, activeSketch.constraints ?? []);
+      const result = solveConstraints(projectedEntities, [
+        ...(activeSketch.constraints ?? []),
+        ...dimensionsToSolverConstraints(activeSketch.dimensions ?? []),
+      ]);
       if (!result.solved) {
         set((s) => ({
           activeSketch: s.activeSketch ? { ...s.activeSketch, overConstrained: true } : null,

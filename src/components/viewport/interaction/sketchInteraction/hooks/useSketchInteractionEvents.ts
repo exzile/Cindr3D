@@ -4,13 +4,14 @@ import * as THREE from 'three';
 import { useCADStore } from '../../../../../store/cadStore';
 import { GeometryEngine } from '../../../../../engine/GeometryEngine';
 import { commitSketchTool } from '../commitTool';
-import type { SketchPoint } from '../../../../../types/cad';
+import type { SketchEntity, SketchPoint } from '../../../../../types/cad';
 import { commitDraggedTangentArc, finalizeSplineFromContextMenu } from './sketchEventHelpers';
 import { handleSpecialSketchClick } from './specialSketchClickHandlers';
 
 const focusSketchEvent = 'cad:focus-sketch';
 const EDGE_ON_VIEW_DOT = 0.45;
 const SELECT_DRAG_PICK_RADIUS = 3;
+const SELECT_ENTITY_PICK_RADIUS = 1.2;
 
 interface SketchPointDragTarget {
   entityId: string;
@@ -154,6 +155,7 @@ export function useSketchInteractionEvents({
   dragJustFinishedRef,
 }: UseSketchInteractionEventsParams) {
   const pointDragRef = useRef<SketchPointDragTarget | null>(null);
+  const pointDragStartEntitiesRef = useRef<SketchEntity[] | null>(null);
 
   useEffect(() => {
     if (!activeSketch) return;
@@ -175,6 +177,156 @@ export function useSketchInteractionEvents({
     const projectToPlane = (pt: SketchPoint, origin: SketchPoint) => {
       const d = new THREE.Vector3(pt.x - origin.x, pt.y - origin.y, pt.z - origin.z);
       return { u: d.dot(t1), v: d.dot(t2) };
+    };
+
+    const worldToSketch2D = (point: THREE.Vector3) => {
+      const d = point.clone().sub(activeSketch.planeOrigin);
+      return { u: d.dot(t1), v: d.dot(t2) };
+    };
+
+    const sketchPointTo2D = (point: SketchPoint) => worldToSketch2D(new THREE.Vector3(point.x, point.y, point.z));
+
+    const distanceToSegment2D = (
+      point: { u: number; v: number },
+      start: { u: number; v: number },
+      end: { u: number; v: number },
+    ) => {
+      const dx = end.u - start.u;
+      const dy = end.v - start.v;
+      const lengthSq = dx * dx + dy * dy;
+      if (lengthSq < 1e-10) return Math.hypot(point.u - start.u, point.v - start.v);
+      const t = Math.max(0, Math.min(1, ((point.u - start.u) * dx + (point.v - start.v) * dy) / lengthSq));
+      return Math.hypot(point.u - (start.u + dx * t), point.v - (start.v + dy * t));
+    };
+
+    const normalizedAngle = (angle: number) => {
+      const twoPi = Math.PI * 2;
+      return ((angle % twoPi) + twoPi) % twoPi;
+    };
+
+    const angleWithinArc = (angle: number, start: number, end: number) => {
+      const a = normalizedAngle(angle);
+      const s = normalizedAngle(start);
+      const e = normalizedAngle(end);
+      return s <= e ? a >= s && a <= e : a >= s || a <= e;
+    };
+
+    const findNearestSelectableEntity = (worldPoint: THREE.Vector3): string | null => {
+      const point = worldToSketch2D(worldPoint);
+      let bestId: string | null = null;
+      let bestDistance = SELECT_ENTITY_PICK_RADIUS;
+
+      const considerSegment = (entityId: string, start: SketchPoint, end: SketchPoint) => {
+        const distance = distanceToSegment2D(point, sketchPointTo2D(start), sketchPointTo2D(end));
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestId = entityId;
+        }
+      };
+
+      for (const entity of activeSketch.entities) {
+        if (entity.points.length === 0) continue;
+
+        if (['line', 'construction-line', 'centerline'].includes(entity.type) && entity.points.length >= 2) {
+          considerSegment(entity.id, entity.points[0], entity.points[entity.points.length - 1]);
+          continue;
+        }
+
+        if (entity.type === 'spline' && entity.points.length >= 2) {
+          for (let i = 1; i < entity.points.length; i += 1) {
+            considerSegment(entity.id, entity.points[i - 1], entity.points[i]);
+          }
+          continue;
+        }
+
+        if (entity.type === 'rectangle' && entity.points.length >= 2) {
+          const p1 = new THREE.Vector3(entity.points[0].x, entity.points[0].y, entity.points[0].z);
+          const p2 = new THREE.Vector3(entity.points[1].x, entity.points[1].y, entity.points[1].z);
+          const delta = p2.clone().sub(p1);
+          const dt1 = t1.clone().multiplyScalar(delta.dot(t1));
+          const dt2 = t2.clone().multiplyScalar(delta.dot(t2));
+          const corners = [
+            p1.clone(),
+            p1.clone().add(dt1),
+            p1.clone().add(dt1).add(dt2),
+            p1.clone().add(dt2),
+          ].map((p) => ({ id: '', x: p.x, y: p.y, z: p.z }));
+          for (let i = 0; i < corners.length; i += 1) {
+            considerSegment(entity.id, corners[i], corners[(i + 1) % corners.length]);
+          }
+          continue;
+        }
+
+        if (entity.type === 'circle' || entity.type === 'arc') {
+          const center = sketchPointTo2D(entity.points[0]);
+          const radius = entity.radius ?? 0;
+          const du = point.u - center.u;
+          const dv = point.v - center.v;
+          if (entity.type === 'arc' && !angleWithinArc(Math.atan2(dv, du), entity.startAngle ?? 0, entity.endAngle ?? Math.PI)) {
+            continue;
+          }
+          const distance = Math.abs(Math.hypot(du, dv) - radius);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestId = entity.id;
+          }
+          continue;
+        }
+
+        if (entity.type === 'ellipse' || entity.type === 'elliptical-arc') {
+          const center = sketchPointTo2D(entity.points[0]);
+          const rotation = entity.rotation ?? 0;
+          const cosR = Math.cos(-rotation);
+          const sinR = Math.sin(-rotation);
+          const du = point.u - center.u;
+          const dv = point.v - center.v;
+          const localU = du * cosR - dv * sinR;
+          const localV = du * sinR + dv * cosR;
+          const angle = Math.atan2(localV / (entity.minorRadius ?? 1), localU / (entity.majorRadius ?? 1));
+          if (
+            entity.type === 'elliptical-arc' &&
+            !angleWithinArc(angle, entity.startAngle ?? 0, entity.endAngle ?? Math.PI)
+          ) {
+            continue;
+          }
+          const boundaryU = (entity.majorRadius ?? 1) * Math.cos(angle);
+          const boundaryV = (entity.minorRadius ?? 1) * Math.sin(angle);
+          const distance = Math.hypot(localU - boundaryU, localV - boundaryV);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestId = entity.id;
+          }
+          continue;
+        }
+
+        if (entity.type === 'point') {
+          const point2D = sketchPointTo2D(entity.points[0]);
+          const distance = Math.hypot(point.u - point2D.u, point.v - point2D.v);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestId = entity.id;
+          }
+        }
+      }
+
+      return bestId;
+    };
+
+    const selectSketchEntity = (entityId: string | null, additive: boolean) => {
+      const { selectedEntityIds, setSelectedEntityIds } = useCADStore.getState();
+      if (!entityId) {
+        if (!additive && selectedEntityIds.length > 0) setSelectedEntityIds([]);
+        return;
+      }
+      if (additive) {
+        setSelectedEntityIds(
+          selectedEntityIds.includes(entityId)
+            ? selectedEntityIds.filter((id) => id !== entityId)
+            : [...selectedEntityIds, entityId],
+        );
+      } else {
+        setSelectedEntityIds([entityId]);
+      }
     };
 
     const findNearestEditablePoint = (worldPoint: THREE.Vector3): SketchPointDragTarget | null => {
@@ -486,12 +638,22 @@ export function useSketchInteractionEvents({
       if (activeTool === 'select') {
         const point = getWorldPoint(event);
         if (!point) return;
-        const target = findNearestEditablePoint(point);
+        const additive = event.ctrlKey || event.metaKey;
+        const selectedEntityId = findNearestSelectableEntity(point);
+        const target = additive ? null : findNearestEditablePoint(point);
         if (!target) {
-          setStatusMessage('Select: drag a sketch corner or endpoint to adjust it');
+          selectSketchEntity(selectedEntityId, additive);
+          setStatusMessage(selectedEntityId ? 'Sketch entity selected' : 'Select: drag a sketch corner or endpoint to adjust it');
+          if (selectedEntityId) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
           return;
         }
-        useCADStore.getState().pushUndo();
+        selectSketchEntity(target.entityId, false);
+        const state = useCADStore.getState();
+        state.pushUndo();
+        pointDragStartEntitiesRef.current = state.activeSketch?.entities ?? null;
         pointDragRef.current = target;
         setStatusMessage('Dragging sketch point');
         event.preventDefault();
@@ -533,7 +695,23 @@ export function useSketchInteractionEvents({
       if (activeTool === 'select') {
         if (!pointDragRef.current) return;
         pointDragRef.current = null;
-        setStatusMessage('Sketch point adjusted');
+        useCADStore.getState().solveSketch?.();
+        const state = useCADStore.getState();
+        if (state.activeSketch?.overConstrained && pointDragStartEntitiesRef.current) {
+          const revertedSketch = {
+            ...state.activeSketch,
+            entities: pointDragStartEntitiesRef.current,
+            overConstrained: false,
+          };
+          useCADStore.setState({
+            activeSketch: revertedSketch,
+            sketches: state.sketches.map((sketch) => (sketch.id === revertedSketch.id ? revertedSketch : sketch)),
+            statusMessage: 'Move blocked by sketch dimensions or constraints',
+          });
+        } else {
+          setStatusMessage('Sketch point adjusted');
+        }
+        pointDragStartEntitiesRef.current = null;
         event.preventDefault();
         event.stopPropagation();
         return;

@@ -67,7 +67,7 @@ export interface PrinterStore {
 
   showPrinter: boolean;
   showSettings: boolean;
-  activeTab: 'printers' | 'dashboard' | 'camera' | 'all-cameras' | 'layer-gallery' | 'status' | 'console' | 'job' | 'history' | 'files' | 'queue' | 'calibration' | 'comparison' | 'filaments' | 'macros' | 'settings' | 'heightmap' | 'model' | 'config' | 'analytics' | 'network' | 'plugins' | 'exclude-object' | 'updates' | 'power' | 'input-shaper' | 'pressure-advance' | 'spool-manager' | 'timelapse';
+  activeTab: 'printers' | 'dashboard' | 'camera' | 'all-cameras' | 'layer-gallery' | 'status' | 'console' | 'job' | 'history' | 'files' | 'queue' | 'schedule' | 'bed-clear' | 'checklist' | 'calibration' | 'comparison' | 'filaments' | 'macros' | 'settings' | 'heightmap' | 'model' | 'config' | 'analytics' | 'network' | 'plugins' | 'exclude-object' | 'updates' | 'power' | 'input-shaper' | 'pressure-advance' | 'spool-manager' | 'timelapse';
 
   // Plugins (DSF) — list + install/start/stop
   plugins: DuetPluginInfo[];

@@ -1594,6 +1594,8 @@ export function AppHelpModal({ onClose }: { onClose: () => void }) {
                                 <button
                                   type="button"
                                   key={`${lesson.id}:${index}`}
+                                  role="checkbox"
+                                  aria-checked={checked}
                                   className={`app-help-tutorial__step${checked ? ' is-done' : ''}`}
                                   onClick={() => toggleTutorialStep(lesson.id, index)}
                                 >

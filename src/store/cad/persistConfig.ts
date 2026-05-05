@@ -28,6 +28,24 @@ function rebuildExtrudeBodies(state: CADState) {
   }
 }
 
+export function mergeActiveSketchForPersistence(sketches: Sketch[], activeSketch: Sketch | null): Sketch[] {
+  if (!activeSketch) return sketches;
+  const index = sketches.findIndex((sketch) => sketch.id === activeSketch.id);
+  if (index < 0) return [...sketches, activeSketch];
+
+  const next = [...sketches];
+  next[index] = activeSketch;
+  return next;
+}
+
+function shouldPersistActiveSketch(activeSketch: Sketch | null): activeSketch is Sketch {
+  return !!activeSketch && (
+    activeSketch.entities.length > 0 ||
+    activeSketch.constraints.length > 0 ||
+    activeSketch.dimensions.length > 0
+  );
+}
+
 export function createCADPersistConfig(): PersistOptions<CADState, Partial<CADState>> {
   return {
     name: 'cindr3d-cad',
@@ -106,7 +124,11 @@ export function createCADPersistConfig(): PersistOptions<CADState, Partial<CADSt
       dimensionToleranceMode: state.dimensionToleranceMode,
       dimensionToleranceUpper: state.dimensionToleranceUpper,
       dimensionToleranceLower: state.dimensionToleranceLower,
-      sketches: state.sketches,
+      activeSketch: shouldPersistActiveSketch(state.activeSketch) ? state.activeSketch : null,
+      sketches: mergeActiveSketchForPersistence(
+        state.sketches,
+        shouldPersistActiveSketch(state.activeSketch) ? state.activeSketch : null,
+      ),
       features: state.features.map((f: Feature) => serializeFeature(f) as Feature),
       parameters: state.parameters,
       frozenFormVertices: state.frozenFormVertices,

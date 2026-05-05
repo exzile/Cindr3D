@@ -25,6 +25,9 @@ import {
   ListOrdered,
   Images,
   FlaskConical,
+  CalendarDays,
+  ScanLine,
+  ClipboardList,
 } from 'lucide-react';
 import DuetDashboard from '../DuetDashboard';
 import DuetStatus from '../DuetStatus';
@@ -56,6 +59,9 @@ import PressureAdvance from '../PressureAdvance';
 import SpoolManager from '../SpoolManager';
 import Timelapse from '../Timelapse';
 import PrinterCalibrationPanel from '../calibration/PrinterCalibrationPanel';
+import PrintCalendar from '../scheduling/PrintCalendar';
+import BedClearPanel from '../scheduling/BedClearPanel';
+import ChecklistSettingsPanel from '../scheduling/StartChecklist';
 
 export const TABS = [
   { key: 'dashboard' as const, label: 'Dashboard', Icon: LayoutDashboard },
@@ -70,6 +76,9 @@ export const TABS = [
   { key: 'comparison' as const, label: 'A/B Compare', Icon: Trophy },
   { key: 'files' as const, label: 'Files', Icon: FolderOpen },
   { key: 'queue' as const, label: 'Queue', Icon: ListOrdered },
+  { key: 'schedule' as const, label: 'Schedule', Icon: CalendarDays },
+  { key: 'bed-clear' as const, label: 'Bed Clear', Icon: ScanLine },
+  { key: 'checklist' as const, label: 'Checklist', Icon: ClipboardList },
   { key: 'calibration' as const, label: 'Calibration', Icon: FlaskConical },
   // Duet-only: reads 0:/filaments via Duet file API
   { key: 'filaments' as const, label: 'Filaments', Icon: FileCode },
@@ -127,6 +136,9 @@ export const TAB_COMPONENTS: Record<TabKey, React.ComponentType> = {
   comparison: CrossPrinterComparison,
   files: DuetFileManager,
   queue: PrintQueue,
+  schedule: PrintCalendar,
+  'bed-clear': BedClearPanel,
+  checklist: ChecklistSettingsPanel,
   calibration: PrinterCalibrationPanel,
   filaments: DuetFilamentManager,
   macros: DuetMacros,

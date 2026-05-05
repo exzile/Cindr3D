@@ -115,7 +115,7 @@ export function PrintQueue() {
     const wasActive = ACTIVE_STATUSES.has(prev);
     if (!wasActive || status !== 'idle') return;
 
-    markActiveJobComplete();
+    markActiveJobComplete(prev === 'cancelling' ? 'cancelled' : 'done');
     if (autoStart && connected) {
       void startNextForActivePrinter();
     }
@@ -124,6 +124,7 @@ export function PrintQueue() {
   const handleQuickAdd = useCallback(() => {
     const filePath = quickPath.trim();
     if (!filePath) return;
+    const nozzleDiameter = Number(quickNozzle);
     addCopies({
       filePath,
       copies: quickCopies,
@@ -131,7 +132,7 @@ export function PrintQueue() {
       routingMode: quickPrinterId ? 'manual' : 'auto',
       requirements: {
         material: quickMaterial.trim() || undefined,
-        nozzleDiameter: quickNozzle ? Number(quickNozzle) : undefined,
+        nozzleDiameter: quickNozzle && Number.isFinite(nozzleDiameter) && nozzleDiameter > 0 ? nozzleDiameter : undefined,
       },
     }, printers);
     setQuickPath('');

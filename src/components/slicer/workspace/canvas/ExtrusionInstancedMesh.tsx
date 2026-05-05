@@ -123,7 +123,7 @@ export function ExtrusionInstancedMesh({ data, onHoverMove }: Props) {
         if (distance < raycaster.near || distance > raycaster.far) continue;
         intersects.push({
           distance,
-          point: SEGMENT_POINT.clone(),
+          point: RAY_POINT.clone(),
           object: mesh,
           instanceId: i,
         });

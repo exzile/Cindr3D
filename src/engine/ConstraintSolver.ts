@@ -2,7 +2,7 @@
  * ConstraintSolver.ts — Newton-Raphson 2D geometric constraint solver.
  * Pure TypeScript math; no React, no Three.js, no store imports.
  */
-import type { SketchEntity, SketchConstraint } from '../types/cad';
+import type { SketchEntity, SketchConstraint, SketchDimension } from '../types/cad';
 
 // ─── Public types ──────────────────────────────────────────────────────────
 
@@ -14,10 +14,12 @@ export interface SolverPoint {
 }
 
 export interface SolverConstraint {
-  type: SketchConstraint['type'];
+  type: SketchConstraint['type'] | 'dimension-linear' | 'dimension-aligned' | 'dimension-radial' | 'dimension-diameter';
   entityIds: string[];
   pointIndices?: number[];
   value?: number;
+  orientation?: SketchDimension['orientation'];
+  surfacePlane?: SketchConstraint['surfacePlane'];
 }
 
 export interface SolverResult {
@@ -149,12 +151,130 @@ function getPoint(
   return { x: sp.x, y: sp.y };
 }
 
+function parseDimensionReference(raw: string | undefined): {
+  entityId: string;
+  edgeIndex?: number;
+  vertexIndex?: number;
+  isCenter: boolean;
+} | null {
+  if (!raw) return null;
+  const [edgeEntityId, edgePart] = raw.split('::edge:');
+  if (edgePart !== undefined) {
+    const edgeIndex = Number(edgePart);
+    return {
+      entityId: edgeEntityId,
+      edgeIndex: Number.isInteger(edgeIndex) ? edgeIndex : undefined,
+      isCenter: false,
+    };
+  }
+
+  const [vertexEntityId, vertexPart] = raw.split('::vertex:');
+  if (vertexPart !== undefined) {
+    const vertexIndex = Number(vertexPart);
+    return {
+      entityId: vertexEntityId,
+      vertexIndex: Number.isInteger(vertexIndex) ? vertexIndex : undefined,
+      isCenter: false,
+    };
+  }
+
+  const [centerEntityId, centerPart] = raw.split('::center');
+  if (centerPart !== undefined) return { entityId: centerEntityId, isCenter: true };
+  return { entityId: raw, isCenter: false };
+}
+
+function resolveDimensionSegment(
+  raw: string | undefined,
+  entityMap: Map<string, SketchEntity>,
+  pointMap: Map<string, SolverPoint>,
+): { start: { x: number; y: number }; end: { x: number; y: number } } | null {
+  const ref = parseDimensionReference(raw);
+  if (!ref) return null;
+  const entity = entityMap.get(ref.entityId);
+  if (!entity) return null;
+
+  if (ref.isCenter) {
+    const center = getPoint(entity.id, 0, pointMap);
+    return { start: center, end: center };
+  }
+
+  if (ref.vertexIndex !== undefined) {
+    if (ref.vertexIndex < 0 || ref.vertexIndex >= entity.points.length) return null;
+    const vertex = getPoint(entity.id, ref.vertexIndex, pointMap);
+    return { start: vertex, end: vertex };
+  }
+
+  if (entity.type === 'rectangle' && entity.points.length >= 2) {
+    const p0 = getPoint(entity.id, 0, pointMap);
+    const p1 = getPoint(entity.id, 1, pointMap);
+    const corners = [
+      p0,
+      { x: p1.x, y: p0.y },
+      p1,
+      { x: p0.x, y: p1.y },
+    ];
+    if (ref.edgeIndex !== undefined) {
+      if (ref.edgeIndex < 0 || ref.edgeIndex > 3) return null;
+      return { start: corners[ref.edgeIndex], end: corners[(ref.edgeIndex + 1) % corners.length] };
+    }
+    return { start: p0, end: p1 };
+  }
+
+  if (entity.points.length >= 2) {
+    return {
+      start: getPoint(entity.id, 0, pointMap),
+      end: getPoint(entity.id, entity.points.length - 1, pointMap),
+    };
+  }
+
+  if (entity.points.length === 1) {
+    const point = getPoint(entity.id, 0, pointMap);
+    return { start: point, end: point };
+  }
+
+  return null;
+}
+
+function dimensionAxisDistance(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  orientation: SketchDimension['orientation'],
+): number {
+  if (orientation === 'vertical') return Math.abs(b.y - a.y);
+  if (orientation === 'horizontal') return Math.abs(b.x - a.x);
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+export function dimensionsToSolverConstraints(dimensions: SketchDimension[] = []): SolverConstraint[] {
+  return dimensions
+    .filter((dimension) => !dimension.driven)
+    .flatMap((dimension): SolverConstraint[] => {
+      switch (dimension.type) {
+        case 'linear':
+          return [{
+            type: 'dimension-linear',
+            entityIds: dimension.entityIds,
+            value: dimension.value,
+            orientation: dimension.orientation,
+          }];
+        case 'aligned':
+          return [{ type: 'dimension-aligned', entityIds: dimension.entityIds, value: dimension.value }];
+        case 'radial':
+          return [{ type: 'dimension-radial', entityIds: dimension.entityIds, value: dimension.value }];
+        case 'diameter':
+          return [{ type: 'dimension-diameter', entityIds: dimension.entityIds, value: dimension.value }];
+        default:
+          return [];
+      }
+    });
+}
+
 /**
  * Compute all residuals for the current parameter state.
  * Returns a flat array of residual values (one scalar per dimension).
  */
 function computeResiduals(
-  constraints: SketchConstraint[],
+  constraints: SolverConstraint[],
   entityMap: Map<string, SketchEntity>,
   pointMap: Map<string, SolverPoint>
 ): number[] {
@@ -430,6 +550,43 @@ function computeResiduals(
         residuals.push((nu * p.x + nv * p.y + d) / len - (c.value ?? 0));
         break;
       }
+      case 'dimension-linear':
+      case 'dimension-aligned': {
+        const targetValue = c.value;
+        if (targetValue === undefined || !Number.isFinite(targetValue)) break;
+        const first = resolveDimensionSegment(c.entityIds[0], entityMap, pointMap);
+        if (!first) break;
+        const second = resolveDimensionSegment(c.entityIds[1], entityMap, pointMap);
+
+        if (second) {
+          const firstPoint = Math.hypot(first.end.x - first.start.x, first.end.y - first.start.y) < 1e-8
+            ? first.start
+            : { x: (first.start.x + first.end.x) / 2, y: (first.start.y + first.end.y) / 2 };
+          const secondPoint = Math.hypot(second.end.x - second.start.x, second.end.y - second.start.y) < 1e-8
+            ? second.start
+            : { x: (second.start.x + second.end.x) / 2, y: (second.start.y + second.end.y) / 2 };
+          const distance = c.type === 'dimension-aligned'
+            ? Math.hypot(secondPoint.x - firstPoint.x, secondPoint.y - firstPoint.y)
+            : dimensionAxisDistance(firstPoint, secondPoint, c.orientation);
+          residuals.push(distance - targetValue);
+          break;
+        }
+
+        const distance = c.type === 'dimension-aligned'
+          ? Math.hypot(first.end.x - first.start.x, first.end.y - first.start.y)
+          : dimensionAxisDistance(first.start, first.end, c.orientation);
+        residuals.push(distance - targetValue);
+        break;
+      }
+      case 'dimension-radial':
+      case 'dimension-diameter': {
+        const ref = parseDimensionReference(c.entityIds[0]);
+        const entity = ref ? entityMap.get(ref.entityId) : null;
+        if (!entity || !Number.isFinite(c.value)) break;
+        const radius = entity.radius ?? 0;
+        residuals.push(radius - (c.type === 'dimension-diameter' ? (c.value ?? 0) / 2 : c.value ?? 0));
+        break;
+      }
       default:
         break;
     }
@@ -443,7 +600,7 @@ function computeResiduals(
 function computeJacobian(
   params: number[],
   paramIndex: { pointId: string; coord: 'x' | 'y' }[],
-  constraints: SketchConstraint[],
+  constraints: SolverConstraint[],
   entityMap: Map<string, SketchEntity>,
   pointMap: Map<string, SolverPoint>
 ): number[][] {
@@ -479,7 +636,7 @@ function computeJacobian(
 
 export function solveConstraints(
   entities: SketchEntity[],
-  constraints: SketchConstraint[],
+  constraints: SolverConstraint[],
   options?: { maxIterations?: number; tolerance?: number; stepSize?: number }
 ): SolverResult {
   const maxIterations = options?.maxIterations ?? 100;
@@ -495,11 +652,13 @@ export function solveConstraints(
 
   const { params: initialParams, pointMap, paramIndex } = buildParams(entities, fixedEntityIds);
 
-  // Nothing to solve
+  // Nothing can move; still evaluate residuals so fixed, inconsistent geometry is blocked.
   if (initialParams.length === 0 || constraints.length === 0) {
+    const residuals = computeResiduals(constraints, entityMap, pointMap);
+    const residual = residuals.length === 0 ? 0 : Math.max(...residuals.map(Math.abs));
     const updatedPoints = new Map<string, { x: number; y: number }>();
     for (const [id, sp] of pointMap) updatedPoints.set(id, { x: sp.x, y: sp.y });
-    return { solved: true, iterations: 0, updatedPoints, residual: 0 };
+    return { solved: residual < tolerance, iterations: 0, updatedPoints, residual };
   }
 
   let params = [...initialParams];

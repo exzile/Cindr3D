@@ -12,6 +12,15 @@ function speed(print: PrintProfile, key: keyof PrintProfile, fallback: number): 
   return typeof value === 'number' ? value * 60 : fallback * 60;
 }
 
+function layerCountForTargetHeight(targetHeight: number, firstLayerHeight: number, layerHeight: number): number {
+  if (targetHeight <= firstLayerHeight) return 1;
+  return 1 + Math.ceil((targetHeight - firstLayerHeight) / layerHeight);
+}
+
+function layerZ(layer: number, firstLayerHeight: number, layerHeight: number): number {
+  return layer === 0 ? firstLayerHeight : firstLayerHeight + layer * layerHeight;
+}
+
 function drawRect(
   writer: RelativeExtrusionWriter,
   current: { x: number; y: number },
@@ -44,7 +53,7 @@ export function generateCalibrationCubeGCode(
   const targetHeight = 20;
   const layerHeight = Math.max(print.layerHeight, 0.05);
   const firstLayerHeight = Math.min(Math.max(print.firstLayerHeight, 0.05), targetHeight);
-  const totalLayers = Math.max(1, 1 + Math.round((targetHeight - firstLayerHeight) / layerHeight));
+  const totalLayers = layerCountForTargetHeight(targetHeight, firstLayerHeight, layerHeight);
   const nominalHeight = firstLayerHeight + (totalLayers - 1) * layerHeight;
   const feedPrint = speed(print, 'outerWallSpeed', print.printSpeed);
   const feedTravel = speed(print, 'travelSpeed', 150);
@@ -62,7 +71,7 @@ export function generateCalibrationCubeGCode(
 
   for (let layer = 0; layer < totalLayers; layer += 1) {
     const activeLayerHeight = layer === 0 ? firstLayerHeight : layerHeight;
-    const z = firstLayerHeight + layer * layerHeight;
+    const z = layerZ(layer, firstLayerHeight, layerHeight);
     writer.moveZ(z, feedTravel);
     lines.push(`; layer ${layer + 1}/${totalLayers}`);
 
@@ -70,10 +79,11 @@ export function generateCalibrationCubeGCode(
       const inset = wall * lineWidth;
       const wallMin = { x: min.x + inset, y: min.y + inset };
       const wallMax = { x: max.x - inset, y: max.y - inset };
-      writer.travel(wallMin.x, wallMin.y, feedTravel);
+      const wallStart = { ...wallMin };
+      writer.travel(wallStart.x, wallStart.y, feedTravel);
       drawRect(
         writer,
-        wallMin,
+        wallStart,
         wallMin,
         wallMax,
         lineWidth,
@@ -135,8 +145,10 @@ export function generateDimensionalAccuracyGCode(
   print: PrintProfile,
 ): string {
   const ctx = { printer, material, print };
+  const targetHeight = 10;
   const layerHeight = Math.max(print.layerHeight, 0.05);
-  const totalLayers = Math.max(1, Math.round(10 / layerHeight));
+  const firstLayerHeight = Math.min(Math.max(print.firstLayerHeight, 0.05), targetHeight);
+  const totalLayers = layerCountForTargetHeight(targetHeight, firstLayerHeight, layerHeight);
   const feedPrint = speed(print, 'outerWallSpeed', print.printSpeed);
   const feedTravel = speed(print, 'travelSpeed', 150);
   const lineWidth = print.outerWallLineWidth ?? print.lineWidth ?? 0.4;
@@ -153,8 +165,8 @@ export function generateDimensionalAccuracyGCode(
 
   lines.push('G92 E0');
   for (let layer = 0; layer < totalLayers; layer += 1) {
-    const activeLayerHeight = layer === 0 ? print.firstLayerHeight : layerHeight;
-    writer.moveZ(print.firstLayerHeight + layer * layerHeight, feedTravel);
+    const activeLayerHeight = layer === 0 ? firstLayerHeight : layerHeight;
+    writer.moveZ(layerZ(layer, firstLayerHeight, layerHeight), feedTravel);
     lines.push(`; layer ${layer + 1}/${totalLayers}`);
     for (const square of squares) {
       writer.travel(square.min.x, square.min.y, feedTravel);
@@ -175,7 +187,9 @@ export function generateInputShaperTowerGCode(
   const ctx = { printer, material, print };
   const layerHeight = Math.max(print.layerHeight, 0.05);
   const layersPerBand = Math.max(1, Math.round(6 / layerHeight));
-  const accelerations = [1000, 2000, 3000, 4000, 5000, 6000];
+  const accelerationLimit = Math.max(1, printer.maxAcceleration);
+  const accelerations = Array.from(new Set([1000, 2000, 3000, 4000, 5000, 6000]
+    .map((value) => Math.min(value, accelerationLimit))));
   const totalLayers = layersPerBand * accelerations.length;
   const feedPrint = speed(print, 'outerWallSpeed', print.printSpeed);
   const feedTravel = speed(print, 'travelSpeed', 150);
@@ -206,7 +220,7 @@ export function generateInputShaperTowerGCode(
     current = drawRect(writer, current, min, max, lineWidth, activeLayerHeight, feedPrint);
   }
 
-  if (print.accelerationPrint) lines.push(`M204 P${formatNumber(print.accelerationPrint, 0)}`);
+  lines.push(`M204 P${formatNumber(print.accelerationPrint, 0)} T${formatNumber(print.accelerationTravel, 0)}`);
   lines.push(...buildCalibrationFooter(ctx));
   return `${lines.join('\n')}\n`;
 }

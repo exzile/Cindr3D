@@ -39,6 +39,14 @@ const PENDING_SELECTED_MAT = new THREE.LineBasicMaterial({
   opacity: 1,
   linewidth: 2,
 });
+const SELECTED_SKETCH_ENTITY_MAT = new THREE.LineBasicMaterial({
+  color: 0xf59e0b,
+  depthTest: false,
+  depthWrite: false,
+  transparent: true,
+  opacity: 1,
+  linewidth: 3,
+});
 const pendingDimensionLabelStyle: React.CSSProperties = {
   background: 'rgba(255, 255, 255, 0.94)',
   border: '1px solid rgba(96, 165, 250, 0.8)',
@@ -169,6 +177,51 @@ function DimensionHoverHighlight({ sketch, hoverId }: { sketch: Sketch; hoverId:
   useEffect(() => () => { line?.geometry?.dispose(); }, [line]);
   if (!line) return null;
   return <primitive object={line} />;
+}
+
+function SelectedSketchEntitiesHighlight({ sketch, selectedIds }: { sketch: Sketch; selectedIds: string[] }) {
+  const group = useMemo(() => {
+    const highlightGroup = new THREE.Group();
+    highlightGroup.renderOrder = 1350;
+    const selected = new Set(selectedIds);
+    const axes = GeometryEngine.getSketchAxes(sketch);
+    const selectedSketch: Sketch = {
+      ...sketch,
+      entities: sketch.entities.filter((entity) => selected.has(entity.id)),
+    };
+    const geometryGroup = GeometryEngine.createSketchGeometry(selectedSketch);
+    geometryGroup.traverse((object) => {
+      const line = object as THREE.Line | THREE.LineSegments;
+      if (line.isLine) {
+        line.material = SELECTED_SKETCH_ENTITY_MAT;
+        line.renderOrder = 1350;
+      }
+    });
+    highlightGroup.add(geometryGroup);
+
+    for (const entity of selectedSketch.entities) {
+      if (entity.type !== 'point' || !entity.points[0]) continue;
+      const point = entity.points[0];
+      const size = 0.65;
+      const { t1, t2 } = axes;
+      const positions = new Float32Array([
+        point.x - t1.x * size, point.y - t1.y * size, point.z - t1.z * size,
+        point.x + t1.x * size, point.y + t1.y * size, point.z + t1.z * size,
+        point.x - t2.x * size, point.y - t2.y * size, point.z - t2.z * size,
+        point.x + t2.x * size, point.y + t2.y * size, point.z + t2.z * size,
+      ]);
+      const pointGeometry = new THREE.BufferGeometry();
+      pointGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const marker = new THREE.LineSegments(pointGeometry, SELECTED_SKETCH_ENTITY_MAT);
+      marker.renderOrder = 1350;
+      highlightGroup.add(marker);
+    }
+
+    return highlightGroup;
+  }, [selectedIds, sketch]);
+
+  useEffect(() => () => disposeLineGeometries(group), [group]);
+  return <primitive object={group} />;
 }
 
 function PendingDimensionHighlight({
@@ -520,6 +573,7 @@ export default function SketchRenderer() {
   const entityVisSketchBodies = useCADStore((s) => s.entityVisSketchBodies);
   const pendingDimensionEntityIds = useCADStore((s) => s.pendingDimensionEntityIds);
   const dimensionHoverEntityId = useCADStore((s) => s.dimensionHoverEntityId);
+  const selectedEntityIds = useCADStore((s) => s.selectedEntityIds);
   const sketchDimEditId = useCADStore((s) => s.sketchDimEditId);
   const activeDimensionType = useCADStore((s) => s.activeDimensionType);
   const dimensionOffset = useCADStore((s) => s.dimensionOffset);
@@ -574,6 +628,9 @@ export default function SketchRenderer() {
           />
           {dimensionHoverEntityId && !pendingDimensionEntityIds.includes(dimensionHoverEntityId) && (
             <DimensionHoverHighlight sketch={activeSketch} hoverId={dimensionHoverEntityId} />
+          )}
+          {selectedEntityIds.length > 0 && (
+            <SelectedSketchEntitiesHighlight sketch={activeSketch} selectedIds={selectedEntityIds} />
           )}
           {pendingDimensionEntityIds.length > 0 && (
             <PendingDimensionHighlight

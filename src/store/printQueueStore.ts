@@ -65,7 +65,7 @@ interface PrintQueueStore {
   setJobStatus: (jobId: string, status: PrintQueueJobStatus) => void;
   setAutoStart: (autoStart: boolean) => void;
   reconcileWithPrinters: (printers: SavedPrinter[]) => void;
-  markActiveJobComplete: () => void;
+  markActiveJobComplete: (status?: Extract<PrintQueueJobStatus, 'done' | 'cancelled' | 'failed'>) => void;
   selectNextReadyJob: (printerId: string, printers: SavedPrinter[]) => PrintQueueJob | null;
   markJobPrinting: (jobId: string) => void;
 }
@@ -110,6 +110,18 @@ function volumeFits(requirement: NonNullable<PrintQueueRequirements['buildVolume
     && requirement.z <= machine.buildVolumeZ;
 }
 
+function validNozzleDiameter(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function sanitizeRequirements(requirements: PrintQueueRequirements | undefined): PrintQueueRequirements {
+  if (!requirements) return {};
+  return {
+    ...requirements,
+    nozzleDiameter: validNozzleDiameter(requirements.nozzleDiameter),
+  };
+}
+
 export function routeJobForPrinters(
   job: Pick<PrintQueueJob, 'printerId' | 'requirements' | 'routing'>,
   printers: SavedPrinter[],
@@ -132,11 +144,9 @@ export function routeJobForPrinters(
     if (job.requirements.buildVolume && !volumeFits(job.requirements.buildVolume, machine)) {
       reasons.push('Build volume too small');
     }
-    if (
-      job.requirements.nozzleDiameter !== undefined
-      && Math.abs(machine.nozzleDiameter - job.requirements.nozzleDiameter) > 0.01
-    ) {
-      reasons.push(`Needs ${job.requirements.nozzleDiameter}mm nozzle`);
+    const requiredNozzle = validNozzleDiameter(job.requirements.nozzleDiameter);
+    if (requiredNozzle !== undefined && Math.abs(machine.nozzleDiameter - requiredNozzle) > 0.01) {
+      reasons.push(`Needs ${requiredNozzle}mm nozzle`);
     }
     if (job.requirements.material) {
       const loadedMaterial = loadedMaterialForPrefs(prefs).toLowerCase();
@@ -186,7 +196,7 @@ function createJobsFromInput(input: AddPrintQueueJobInput, printers: SavedPrinte
     status: 'queued',
     createdAt: stamp,
     updatedAt: stamp,
-    requirements: input.requirements ?? {},
+    requirements: sanitizeRequirements(input.requirements),
     routing: {
       mode: routingMode,
       candidatePrinterIds: [],
@@ -302,10 +312,10 @@ export const usePrintQueueStore = create<PrintQueueStore>()(
         set((state) => ({ jobs: routeJobs(state.jobs, printers) }));
       },
 
-      markActiveJobComplete: () => {
+      markActiveJobComplete: (status = 'done') => {
         const { activeJobId } = get();
         if (!activeJobId) return;
-        get().setJobStatus(activeJobId, 'done');
+        get().setJobStatus(activeJobId, status);
       },
 
       selectNextReadyJob: (printerId, printers) => {

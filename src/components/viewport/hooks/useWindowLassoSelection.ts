@@ -1,10 +1,12 @@
 import { useCallback, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
+import { GeometryEngine } from '../../../engine/GeometryEngine';
 import type { ViewportCtxState } from '../../../types/viewport-context-menu.types';
 
 const _selBox3 = new THREE.Box3();
 const _selVec3 = new THREE.Vector3();
+const SKETCH_ENTITY_SAMPLE_COUNT = 48;
 
 function pointInPolygon(point: { x: number; y: number }, polygon: { x: number; y: number }[]): boolean {
   let inside = false;
@@ -97,6 +99,83 @@ export function useWindowLassoSelection() {
         };
       };
 
+      const projectSketchPoint = (point: { x: number; y: number; z: number }) => (
+        projectToScreen(new THREE.Vector3(point.x, point.y, point.z))
+      );
+
+      type ActiveSketch = NonNullable<ReturnType<typeof useCADStore.getState>['activeSketch']>;
+      const sampleSketchEntity = (
+        sketch: ActiveSketch,
+        entity: ActiveSketch['entities'][number],
+      ): Array<{ x: number; y: number }> => {
+        const projected: Array<{ x: number; y: number }> = [];
+        const pushWorldPoint = (point: THREE.Vector3) => {
+          const screenPoint = projectToScreen(point);
+          if (screenPoint) projected.push(screenPoint);
+        };
+        const pushSketchPoint = (point: { x: number; y: number; z: number }) => {
+          const screenPoint = projectSketchPoint(point);
+          if (screenPoint) projected.push(screenPoint);
+        };
+        const pushSegmentSamples = (start: THREE.Vector3, end: THREE.Vector3, samples = 12) => {
+          for (let i = 0; i <= samples; i += 1) {
+            pushWorldPoint(start.clone().lerp(end, i / samples));
+          }
+        };
+
+        if (entity.points.length === 0) return projected;
+        if (entity.type === 'rectangle' && entity.points.length >= 2) {
+          const { t1, t2 } = GeometryEngine.getSketchAxes(sketch);
+          const p1 = new THREE.Vector3(entity.points[0].x, entity.points[0].y, entity.points[0].z);
+          const p2 = new THREE.Vector3(entity.points[1].x, entity.points[1].y, entity.points[1].z);
+          const delta = p2.clone().sub(p1);
+          const dt1 = t1.clone().multiplyScalar(delta.dot(t1));
+          const dt2 = t2.clone().multiplyScalar(delta.dot(t2));
+          const corners = [p1, p1.clone().add(dt1), p1.clone().add(dt1).add(dt2), p1.clone().add(dt2)];
+          for (let i = 0; i < corners.length; i += 1) {
+            pushSegmentSamples(corners[i], corners[(i + 1) % corners.length]);
+          }
+          return projected;
+        }
+
+        if (entity.type === 'circle' || entity.type === 'arc' || entity.type === 'ellipse' || entity.type === 'elliptical-arc') {
+          const { t1, t2 } = GeometryEngine.getSketchAxes(sketch);
+          const center = new THREE.Vector3(entity.points[0].x, entity.points[0].y, entity.points[0].z);
+          const start = entity.type === 'circle' || entity.type === 'ellipse' ? 0 : entity.startAngle ?? 0;
+          const end = entity.type === 'circle' || entity.type === 'ellipse' ? Math.PI * 2 : entity.endAngle ?? Math.PI;
+          const major = entity.type === 'ellipse' || entity.type === 'elliptical-arc' ? entity.majorRadius ?? 1 : entity.radius ?? 1;
+          const minor = entity.type === 'ellipse' || entity.type === 'elliptical-arc' ? entity.minorRadius ?? 0.5 : entity.radius ?? 1;
+          const rotation = entity.rotation ?? 0;
+          const cosR = Math.cos(rotation);
+          const sinR = Math.sin(rotation);
+          for (let i = 0; i <= SKETCH_ENTITY_SAMPLE_COUNT; i += 1) {
+            const angle = start + (i / SKETCH_ENTITY_SAMPLE_COUNT) * (end - start);
+            const u = major * Math.cos(angle) * cosR - minor * Math.sin(angle) * sinR;
+            const v = major * Math.cos(angle) * sinR + minor * Math.sin(angle) * cosR;
+            pushWorldPoint(center.clone().addScaledVector(t1, u).addScaledVector(t2, v));
+          }
+          return projected;
+        }
+
+        if (entity.points.length >= 2) {
+          for (let i = 1; i < entity.points.length; i += 1) {
+            pushSegmentSamples(
+              new THREE.Vector3(entity.points[i - 1].x, entity.points[i - 1].y, entity.points[i - 1].z),
+              new THREE.Vector3(entity.points[i].x, entity.points[i].y, entity.points[i].z),
+            );
+          }
+        } else {
+          entity.points.forEach(pushSketchPoint);
+        }
+        return projected;
+      };
+
+      const mergeSelectedEntityIds = (matchedIds: string[], additive: boolean) => {
+        const { selectedEntityIds } = useCADStore.getState();
+        if (!additive) return matchedIds;
+        return Array.from(new Set([...selectedEntityIds, ...matchedIds]));
+      };
+
       type AnyFeature = ReturnType<typeof useCADStore.getState>['features'][number];
       const projectedFeatureCentroid = (feature: AnyFeature): { x: number; y: number } | null => {
         if (!feature.mesh || !feature.visible) return null;
@@ -106,17 +185,25 @@ export function useWindowLassoSelection() {
         return projectToScreen(_selVec3);
       };
 
-      const { features, windowSelectStart } = useCADStore.getState();
+      const { activeSketch, features, windowSelectStart } = useCADStore.getState();
+      const additive = event.ctrlKey || event.metaKey;
 
       if (isLassoRef.current) {
         const polygon = lassoAccumRef.current;
-        const matched = polygon.length >= 3
-          ? features.filter((feature) => {
-              const screenPoint = projectedFeatureCentroid(feature);
-              return screenPoint !== null && pointInPolygon(screenPoint, polygon);
-            })
-          : [];
-        setSelectedEntityIds(matched.map((feature) => feature.id));
+        if (polygon.length >= 3 && activeSketch) {
+          const matchedIds = activeSketch.entities
+            .filter((entity) => sampleSketchEntity(activeSketch, entity).some((screenPoint) => pointInPolygon(screenPoint, polygon)))
+            .map((entity) => entity.id);
+          setSelectedEntityIds(mergeSelectedEntityIds(matchedIds, additive));
+        } else {
+          const matched = polygon.length >= 3
+            ? features.filter((feature) => {
+                const screenPoint = projectedFeatureCentroid(feature);
+                return screenPoint !== null && pointInPolygon(screenPoint, polygon);
+              })
+            : [];
+          setSelectedEntityIds(mergeSelectedEntityIds(matched.map((feature) => feature.id), additive));
+        }
         clearLasso();
       } else {
         if (windowSelectStart) {
@@ -124,11 +211,20 @@ export function useWindowLassoSelection() {
           const maxX = Math.max(windowSelectStart.x, point.x);
           const minY = Math.min(windowSelectStart.y, point.y);
           const maxY = Math.max(windowSelectStart.y, point.y);
-          const matched = features.filter((feature) => {
-            const screenPoint = projectedFeatureCentroid(feature);
-            return screenPoint !== null && screenPoint.x >= minX && screenPoint.x <= maxX && screenPoint.y >= minY && screenPoint.y <= maxY;
-          });
-          setSelectedEntityIds(matched.map((feature) => feature.id));
+          if (activeSketch) {
+            const matchedIds = activeSketch.entities
+              .filter((entity) => sampleSketchEntity(activeSketch, entity).some((screenPoint) => (
+                screenPoint.x >= minX && screenPoint.x <= maxX && screenPoint.y >= minY && screenPoint.y <= maxY
+              )))
+              .map((entity) => entity.id);
+            setSelectedEntityIds(mergeSelectedEntityIds(matchedIds, additive));
+          } else {
+            const matched = features.filter((feature) => {
+              const screenPoint = projectedFeatureCentroid(feature);
+              return screenPoint !== null && screenPoint.x >= minX && screenPoint.x <= maxX && screenPoint.y >= minY && screenPoint.y <= maxY;
+            });
+            setSelectedEntityIds(mergeSelectedEntityIds(matched.map((feature) => feature.id), additive));
+          }
         }
         clearWindowSelect();
       }
