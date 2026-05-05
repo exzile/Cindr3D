@@ -141,7 +141,13 @@ export default function Timeline() {
         <h3>Timeline</h3>
         <div className="timeline-header__controls">
           <div className="timeline-nav">
-            <button className="timeline-nav__btn" onClick={() => { setRollbackIndex(0); }} title="Beginning - roll back to first feature" disabled={features.length === 0}>
+            <button
+              className="timeline-nav__btn"
+              onClick={() => { setRollbackIndex(0); }}
+              title="Beginning - roll back to first feature"
+              aria-label="Roll timeline back to first feature"
+              disabled={features.length === 0}
+            >
               <SkipBack size={11} />
             </button>
             <button
@@ -151,6 +157,7 @@ export default function Timeline() {
                 setRollbackIndex(Math.max(0, cur - 1));
               }}
               title="Previous feature"
+              aria-label="Move rollback marker to previous feature"
               disabled={features.length === 0 || rollbackIndex === 0}
             >
               <ChevronRight size={11} className="timeline-nav__icon--flip" />
@@ -165,11 +172,18 @@ export default function Timeline() {
                 }
               }}
               title="Next feature"
+              aria-label="Move rollback marker to next feature"
               disabled={features.length === 0 || rollbackIndex < 0}
             >
               <ChevronRight size={11} />
             </button>
-            <button className="timeline-nav__btn" onClick={() => setRollbackIndex(-1)} title="End - show all features" disabled={rollbackIndex < 0}>
+            <button
+              className="timeline-nav__btn"
+              onClick={() => setRollbackIndex(-1)}
+              title="End - show all features"
+              aria-label="Show all timeline features"
+              disabled={rollbackIndex < 0}
+            >
               <PlayCircle size={11} />
             </button>
           </div>
@@ -181,6 +195,7 @@ export default function Timeline() {
           <button
             className={`timeline-nav__btn${isPlaying ? ' active' : ''}`}
             title={isPlaying ? 'Stop playback' : 'Play from beginning (400ms/step)'}
+            aria-label={isPlaying ? 'Stop timeline playback' : 'Play timeline from beginning'}
             disabled={features.length === 0}
             onClick={isPlaying ? stopPlayback : startPlayback}
             style={{ marginLeft: 2 }}

@@ -75,7 +75,7 @@ export function DriveJointsDialog({ onClose }: { onClose: () => void }) {
       <div className="dialog-panel">
         <div className="dialog-header">
           <span className="dialog-title">Drive Joints</span>
-          <button className="dialog-close" onClick={onClose}><X size={14} /></button>
+          <button className="dialog-close" onClick={onClose} aria-label="Close drive joints dialog"><X size={14} /></button>
         </div>
 
         <div className="dialog-body">
@@ -86,6 +86,7 @@ export function DriveJointsDialog({ onClose }: { onClose: () => void }) {
               onClick={handlePlay}
               disabled={animationPlaying}
               title="Play"
+              aria-label="Play joint animation"
             >
               <Play size={14} />
             </button>
@@ -94,6 +95,7 @@ export function DriveJointsDialog({ onClose }: { onClose: () => void }) {
               onClick={handlePause}
               disabled={!animationPlaying}
               title="Pause"
+              aria-label="Pause joint animation"
             >
               <Pause size={14} />
             </button>
@@ -101,6 +103,7 @@ export function DriveJointsDialog({ onClose }: { onClose: () => void }) {
               className="btn btn-secondary drive-joints-btn"
               onClick={handleStop}
               title="Stop"
+              aria-label="Stop joint animation"
             >
               <Square size={14} />
             </button>
@@ -108,6 +111,7 @@ export function DriveJointsDialog({ onClose }: { onClose: () => void }) {
               className="btn btn-secondary drive-joints-loop-btn"
               onClick={() => setAnimationLoop(!animationLoop)}
               title="Toggle loop"
+              aria-label={`${animationLoop ? 'Disable' : 'Enable'} joint animation loop`}
             >
               <RotateCcw size={14} />
               <span className="drive-joints-loop-label">Loop</span>
@@ -130,6 +134,7 @@ export function DriveJointsDialog({ onClose }: { onClose: () => void }) {
               value={animationTime}
               className="drive-joints-scrubber"
               onChange={(e) => handleScrub(parseFloat(e.target.value))}
+              aria-label="Joint animation time"
             />
           </div>
 
@@ -183,6 +188,7 @@ export function DriveJointsDialog({ onClose }: { onClose: () => void }) {
                     <button
                       className="btn btn-secondary drive-joints-btn"
                       title="Remove track"
+                      aria-label={`Remove ${joint.name} animation track`}
                       onClick={() => removeJointTrack(track.jointId)}
                     >
                       <X size={12} />
