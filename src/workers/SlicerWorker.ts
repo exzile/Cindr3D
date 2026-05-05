@@ -97,10 +97,13 @@ interface PrimeTowerSettings {
   size: number;
   minVolume: number;
   wipe: boolean;
+  filamentDiameter: number;
+  relativeExtrusion: boolean;
 }
 
-function primeTowerSettingsFromProfile(profile: Record<string, unknown>): PrimeTowerSettings | undefined {
+function primeTowerSettingsFromProfile(profile: Record<string, unknown>, printerProfile: object): PrimeTowerSettings | undefined {
   if (profile.primeTowerEnable !== true) return undefined;
+  const printer = printerProfile as Record<string, unknown>;
   return {
     enabled: true,
     x: typeof profile.primeTowerPositionX === 'number' ? profile.primeTowerPositionX : 200,
@@ -108,6 +111,8 @@ function primeTowerSettingsFromProfile(profile: Record<string, unknown>): PrimeT
     size: typeof profile.primeTowerSize === 'number' ? profile.primeTowerSize : 20,
     minVolume: typeof profile.primeTowerMinVolume === 'number' ? profile.primeTowerMinVolume : 6,
     wipe: profile.primeTowerWipeEnable !== false,
+    filamentDiameter: typeof printer.filamentDiameter === 'number' ? printer.filamentDiameter : 1.75,
+    relativeExtrusion: profile.relativeExtrusion === true,
   };
 }
 
@@ -130,9 +135,14 @@ function primeTowerLines(
   const y0 = settings.y - half;
   const x1 = settings.x + half;
   const y1 = settings.y + half;
-  const purge = Math.max(0, settings.minVolume);
-  const edgePurge = purge / 4;
+  const purgeVolume = Math.max(0, settings.minVolume);
+  const filamentArea = Math.PI * (Math.max(0.01, settings.filamentDiameter) / 2) ** 2;
+  const purgeLength = purgeVolume / filamentArea;
+  const edgePurge = purgeLength / 4;
   const feed = 900;
+  const restoreExtrusionMode = settings.relativeExtrusion
+    ? 'M83 ; Restore relative extrusion'
+    : 'M82 ; Restore absolute extrusion';
   return [
     '; Prime tower purge',
     'M83 ; Relative extrusion for prime tower',
@@ -142,8 +152,19 @@ function primeTowerLines(
     `G1 X${x0.toFixed(3)} Y${y1.toFixed(3)} E${edgePurge.toFixed(5)} F${feed}`,
     `G1 X${x0.toFixed(3)} Y${y0.toFixed(3)} E${edgePurge.toFixed(5)} F${feed}`,
     ...(settings.wipe ? [`G0 X${settings.x.toFixed(3)} Y${settings.y.toFixed(3)} F9000 ; Prime tower wipe`] : []),
-    'M82 ; Restore absolute extrusion',
+    restoreExtrusionMode,
+    'G92 E0 ; Reset after prime tower',
   ];
+}
+
+function injectToolPreparation(gcode: string, lines: string[]): string {
+  if (lines.length === 0) return gcode;
+  const gcodeLines = gcode.split(/\r?\n/);
+  const insertionIndex = gcodeLines.findIndex((line) =>
+    line.startsWith(';BEFORE_LAYER_CHANGE') || line.startsWith('; ----- Layer') || line.startsWith(';LAYER:'));
+  const targetIndex = insertionIndex >= 0 ? insertionIndex : 0;
+  gcodeLines.splice(targetIndex, 0, ...lines);
+  return gcodeLines.join('\n');
 }
 
 function mergeSliceResults(
@@ -181,11 +202,10 @@ function mergeSliceResults(
     );
     const toolLines = toolChangeLines(r, previousTool);
     const towerLines = primeTowerLines(previousTool, r.extruderIndex, r.primeTower);
+    const preparedGcode = injectToolPreparation(r.gcode, [...toolLines, ...towerLines]);
     merged.gcode += headers.join('\n')
       + '\n'
-      + (toolLines.length ? `${toolLines.join('\n')}\n` : '')
-      + (towerLines.length ? `${towerLines.join('\n')}\n` : '')
-      + r.gcode
+      + preparedGcode
       + '\n';
     headers.length = 0;
     if (r.extruderIndex !== undefined) previousTool = r.extruderIndex;
@@ -344,6 +364,7 @@ function buildSequentialPrintObject(
   groupKey: string,
   geos: ReconstructedGeometry[],
   index: number,
+  adhesionMargin: number,
 ): SequentialPrintObject | null {
   const boxes = geos
     .map((geo) => getGeometryBounds(geo.geometry, geo.transform))
@@ -354,14 +375,35 @@ function buildSequentialPrintObject(
     id: groupKey,
     label,
     bounds: {
-      minX: Math.min(...boxes.map((box) => box.minX)),
-      maxX: Math.max(...boxes.map((box) => box.maxX)),
-      minY: Math.min(...boxes.map((box) => box.minY)),
-      maxY: Math.max(...boxes.map((box) => box.maxY)),
+      minX: Math.min(...boxes.map((box) => box.minX)) - adhesionMargin,
+      maxX: Math.max(...boxes.map((box) => box.maxX)) + adhesionMargin,
+      minY: Math.min(...boxes.map((box) => box.minY)) - adhesionMargin,
+      maxY: Math.max(...boxes.map((box) => box.maxY)) + adhesionMargin,
       minZ: Math.min(...boxes.map((box) => box.minZ)),
       maxZ: Math.max(...boxes.map((box) => box.maxZ)),
     },
   };
+}
+
+function sequentialAdhesionMargin(printProfile: object): number {
+  const profile = printProfile as Record<string, unknown>;
+  const lineWidth = typeof profile.skirtBrimLineWidth === 'number'
+    ? profile.skirtBrimLineWidth
+    : typeof profile.wallLineWidth === 'number'
+      ? profile.wallLineWidth
+      : 0.4;
+  if (profile.adhesionType === 'brim') {
+    const brimWidth = typeof profile.brimWidth === 'number' ? profile.brimWidth : 0;
+    const brimGap = typeof profile.brimGap === 'number' ? profile.brimGap : 0;
+    const avoid = typeof profile.brimAvoidMargin === 'number' ? profile.brimAvoidMargin : 0;
+    return Math.max(0, brimWidth + brimGap + avoid);
+  }
+  if (profile.adhesionType === 'skirt') {
+    const skirtDistance = typeof profile.skirtDistance === 'number' ? profile.skirtDistance : 0;
+    const skirtLines = typeof profile.skirtLines === 'number' ? profile.skirtLines : 0;
+    return Math.max(0, skirtDistance + skirtLines * lineWidth);
+  }
+  return 0;
 }
 
 function getSequentialClearance(printerProfile: object): SequentialPrintClearance {
@@ -378,9 +420,11 @@ function getSequentialClearance(printerProfile: object): SequentialPrintClearanc
 function planSequentialGroupOrder(
   groupList: Array<[string, ReconstructedGeometry[]]>,
   printerProfile: object,
+  printProfile: object,
 ): { groups: Array<[string, ReconstructedGeometry[]]>; warnings: SequentialPrintWarning[] } {
+  const adhesionMargin = sequentialAdhesionMargin(printProfile);
   const sequentialObjects = groupList
-    .map(([key, geos], index) => buildSequentialPrintObject(key, geos, index))
+    .map(([key, geos], index) => buildSequentialPrintObject(key, geos, index, adhesionMargin))
     .filter((object): object is SequentialPrintObject => object !== null);
   if (sequentialObjects.length !== groupList.length) {
     return { groups: groupList, warnings: [] };
@@ -513,7 +557,7 @@ async function runSliceGroupsInWorkerPool(
     );
     const extruderIndex = effectivePrintProfile.extruderIndex;
     if (typeof extruderIndex === 'number') results[index].extruderIndex = extruderIndex;
-    results[index].primeTower = primeTowerSettingsFromProfile(effectivePrintProfile);
+    results[index].primeTower = primeTowerSettingsFromProfile(effectivePrintProfile, printerProfile);
     const poolNames = geos.map((g) => g.objectName ?? '').filter(Boolean);
     if (poolNames.length) results[index].objectNames = poolNames;
 
@@ -579,7 +623,7 @@ async function runSliceGroupsSequentially(
     const result = await slicer.slice(geosForSlice, modifierMeshesForSlice) as SliceResultWithTool;
     const extruderIndex = effectivePrintProfile.extruderIndex;
     if (typeof extruderIndex === 'number') result.extruderIndex = extruderIndex;
-    result.primeTower = primeTowerSettingsFromProfile(effectivePrintProfile);
+    result.primeTower = primeTowerSettingsFromProfile(effectivePrintProfile, printerProfile);
     const seqNames = geos.map((g) => g.objectName ?? '').filter(Boolean);
     if (seqNames.length) result.objectNames = seqNames;
     if (cancelRequested) throw new Error('Slicing cancelled');
@@ -680,7 +724,7 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
     const baseGroupList = [...groups.entries()];
     const wantsSequentialPrint = (printProfile as Record<string, unknown>).printSequence === 'one_at_a_time';
     const sequentialPlan = wantsSequentialPrint
-      ? planSequentialGroupOrder(baseGroupList, printerProfile)
+      ? planSequentialGroupOrder(baseGroupList, printerProfile, printProfile)
       : { groups: baseGroupList, warnings: [] };
     const groupList = sequentialPlan.groups;
     const multi = groupList.length > 1;
@@ -764,7 +808,7 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
         const result = await slicer.slice(geosForSlice, modifierMeshesForSlice) as SliceResultWithTool;
         const extruderIndex = effectivePrintProfile.extruderIndex;
         if (typeof extruderIndex === 'number') result.extruderIndex = extruderIndex;
-        result.primeTower = primeTowerSettingsFromProfile(effectivePrintProfile);
+        result.primeTower = primeTowerSettingsFromProfile(effectivePrintProfile, printerProfile);
         const inlineNames = geos.map((g) => g.objectName ?? '').filter(Boolean);
         if (inlineNames.length) result.objectNames = inlineNames;
         if (cancelRequested) throw new Error('Slicing cancelled');

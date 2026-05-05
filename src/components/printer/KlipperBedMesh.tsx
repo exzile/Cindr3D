@@ -139,9 +139,15 @@ export default function KlipperBedMesh() {
   }, [mesh, selectedProfile]);
 
   useEffect(() => {
-    if (!mesh || !selectedProfile) return;
+    if (!mesh || !selectedProfile) {
+      setActiveBedMesh(null);
+      return undefined;
+    }
     const profile = mesh.profiles[selectedProfile];
-    if (!profile?.points?.length) return;
+    if (!profile?.points?.length) {
+      setActiveBedMesh(null);
+      return undefined;
+    }
     setActiveBedMesh({
       points: profile.points,
       minX: profile.mesh_params.min_x,
@@ -152,6 +158,7 @@ export default function KlipperBedMesh() {
       updatedAt: Date.now(),
       source: 'klipper',
     });
+    return () => setActiveBedMesh(null);
   }, [mesh, selectedProfile, setActiveBedMesh]);
 
   if (!connected) {

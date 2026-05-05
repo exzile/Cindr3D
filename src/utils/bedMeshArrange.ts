@@ -25,6 +25,7 @@ export function sampleBedMesh(mesh: ArrangeBedMesh, x: number, y: number): numbe
   const cols = mesh.points[0]?.length ?? 0;
   if (rows === 0 || cols === 0) return null;
   if (mesh.maxX <= mesh.minX || mesh.maxY <= mesh.minY) return null;
+  if (x < mesh.minX || x > mesh.maxX || y < mesh.minY || y > mesh.maxY) return null;
 
   const tx = clamp((x - mesh.minX) / (mesh.maxX - mesh.minX), 0, 1) * (cols - 1);
   const ty = clamp((y - mesh.minY) / (mesh.maxY - mesh.minY), 0, 1) * (rows - 1);
@@ -55,7 +56,7 @@ export function scoreBedMeshPlacement(mesh: ArrangeBedMesh | null, rect: BedMesh
       if (sample !== null) samples.push(sample);
     }
   }
-  if (samples.length === 0) return 0;
+  if (samples.length !== xs.length * ys.length) return 10000;
   const min = Math.min(...samples);
   const max = Math.max(...samples);
   const range = max - min;

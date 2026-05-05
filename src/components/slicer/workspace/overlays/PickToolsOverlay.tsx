@@ -3,6 +3,7 @@ import { AlignEndHorizontal, Box, Paintbrush, Ruler, X } from 'lucide-react';
 import * as THREE from 'three';
 import type { PaintedZSeamHint } from '../../../../types/slicer/profiles/print';
 import { useSlicerStore } from '../../../../store/slicerStore';
+import { normalizeRotationDegreesToRadians, normalizeScale } from '../../../../utils/slicerTransforms';
 import './PickToolsOverlay.css';
 
 /**
@@ -140,14 +141,31 @@ function isPaintedZSeamHint(value: unknown): value is PaintedZSeamHint {
     && Number.isFinite((value as PaintedZSeamHint).y);
 }
 
+function seamHintWorldPoint(obj: { position: { x: number; y: number; z?: number }; rotation?: unknown; scale?: unknown; mirrorX?: boolean; mirrorY?: boolean; mirrorZ?: boolean }, hint: PaintedZSeamHint): THREE.Vector3 {
+  const point = new THREE.Vector3(hint.x, hint.y, hint.z ?? 0);
+  if (hint.coordinateSpace !== 'object') return point;
+  const rot = normalizeRotationDegreesToRadians(obj.rotation);
+  const rawScale = normalizeScale(obj.scale);
+  const scale = new THREE.Vector3(
+    rawScale.x * (obj.mirrorX ? -1 : 1),
+    rawScale.y * (obj.mirrorY ? -1 : 1),
+    rawScale.z * (obj.mirrorZ ? -1 : 1),
+  );
+  return point.applyMatrix4(new THREE.Matrix4().compose(
+    new THREE.Vector3(obj.position.x, obj.position.y, obj.position.z ?? 0),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(rot.x, rot.y, rot.z)),
+    scale,
+  ));
+}
+
 export function SeamPaintMarkers() {
   const plateObjects = useSlicerStore((s) => s.plateObjects);
   const markers = useMemo(() => {
-    const out: Array<{ key: string; hint: PaintedZSeamHint }> = [];
+    const out: Array<{ key: string; point: THREE.Vector3 }> = [];
     for (const obj of plateObjects) {
       const hints = (obj.perObjectSettings as { zSeamPaintHints?: unknown[] } | undefined)?.zSeamPaintHints ?? [];
       hints.forEach((hint, index) => {
-        if (isPaintedZSeamHint(hint)) out.push({ key: `${obj.id}:${index}`, hint });
+        if (isPaintedZSeamHint(hint)) out.push({ key: `${obj.id}:${index}`, point: seamHintWorldPoint(obj, hint) });
       });
     }
     return out;
@@ -155,8 +173,8 @@ export function SeamPaintMarkers() {
   if (markers.length === 0) return null;
   return (
     <group>
-      {markers.map(({ key, hint }) => (
-        <mesh key={key} position={[hint.x, hint.y, (hint.z ?? 0) + 0.8]}>
+      {markers.map(({ key, point }) => (
+        <mesh key={key} position={[point.x, point.y, point.z + 0.8]}>
           <sphereGeometry args={[0.75, 12, 12]} />
           <meshBasicMaterial color="#e85d75" depthTest={false} />
         </mesh>

@@ -98,6 +98,7 @@ export interface SlicerStore {
     radiusMm: number,
     heightMm: number,
     settings?: ModifierMeshSettings,
+    source?: { objectId: string; localPoint: { x: number; y: number; z: number } },
   ) => void;
   removeFromPlate: (id: string) => void;
   selectPlateObject: (id: string | null) => void;

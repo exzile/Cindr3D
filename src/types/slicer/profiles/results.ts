@@ -36,6 +36,8 @@ export interface PlateObject {
   // rather than being printed itself. Storage-only until engine support lands.
   modifierMeshRole?: ModifierMeshRole;
   modifierMeshSettings?: ModifierMeshSettings;
+  modifierSourceObjectId?: string;
+  modifierSourceLocalPoint?: { x: number; y: number; z: number };
 }
 
 // -----------------------------------------------------------------------------

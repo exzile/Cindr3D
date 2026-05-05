@@ -70,7 +70,7 @@ function moveBounds(moves: SliceMove[]): { minX: number; minY: number; maxX: num
   return { minX, minY, maxX, maxY };
 }
 
-function colorForMove(type: SliceMove['type']): string {
+export function colorForMove(type: SliceMove['type']): string {
   switch (type) {
     case 'wall-outer':
       return '#2563eb';
@@ -82,6 +82,8 @@ function colorForMove(type: SliceMove['type']): string {
       return '#22c55e';
     case 'support':
       return '#eab308';
+    case 'support-tree':
+      return '#84cc16';
     case 'skirt':
     case 'brim':
       return '#a855f7';

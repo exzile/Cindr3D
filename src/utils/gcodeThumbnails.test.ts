@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { embedGCodeThumbnails } from './gcodeThumbnails';
+import { colorForMove, embedGCodeThumbnails } from './gcodeThumbnails';
 
 describe('G-code thumbnails', () => {
   it('embeds thumbnail blocks inside the slicer header', () => {
@@ -39,5 +39,9 @@ describe('G-code thumbnails', () => {
     expect(embedded).not.toContain('; old');
     expect(embedded.match(/;\s*thumbnail begin/g)).toHaveLength(1);
     expect(embedded).toContain('; newdata=');
+  });
+
+  it('uses the tree-support preview color for support-tree moves', () => {
+    expect(colorForMove('support-tree')).toBe('#84cc16');
   });
 });

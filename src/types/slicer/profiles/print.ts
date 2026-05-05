@@ -4,6 +4,7 @@ export interface PaintedZSeamHint {
   z?: number;
   radius?: number;
   weight?: number;
+  coordinateSpace?: 'world' | 'object';
 }
 
 export interface PrintProfile {

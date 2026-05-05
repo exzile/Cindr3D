@@ -143,6 +143,9 @@ export function PlateObjectMesh({
     }
     if (store.viewportPickMode === 'seam-paint' && e.point) {
       onClick();
+      const localPoint = meshRef.current
+        ? meshRef.current.worldToLocal(e.point.clone())
+        : e.point.clone();
       const perObjectSettings = ((obj as { perObjectSettings?: Record<string, unknown> }).perObjectSettings ?? {});
       const existing = Array.isArray(perObjectSettings.zSeamPaintHints)
         ? perObjectSettings.zSeamPaintHints.filter((hint): hint is PaintedZSeamHint => (
@@ -158,7 +161,7 @@ export function PlateObjectMesh({
           zSeamPosition: 'painted',
           zSeamPaintHints: [
             ...existing,
-            { x: e.point.x, y: e.point.y, z: e.point.z },
+            { x: localPoint.x, y: localPoint.y, z: localPoint.z, coordinateSpace: 'object' },
           ],
         },
       });
@@ -189,7 +192,17 @@ export function PlateObjectMesh({
         : role === 'support_mesh'
           ? { supportEnabled: true }
           : undefined;
-      store.addPaintedModifierMesh(role, { x: e.point.x, y: e.point.y, z: e.point.z }, radiusMm, heightMm, settings);
+      const localPoint = meshRef.current
+        ? meshRef.current.worldToLocal(e.point.clone())
+        : e.point.clone();
+      store.addPaintedModifierMesh(
+        role,
+        { x: e.point.x, y: e.point.y, z: e.point.z },
+        radiusMm,
+        heightMm,
+        settings,
+        { objectId: obj.id, localPoint: { x: localPoint.x, y: localPoint.y, z: localPoint.z } },
+      );
       return;
     }
     onClick();

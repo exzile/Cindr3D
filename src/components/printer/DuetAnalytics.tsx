@@ -111,17 +111,23 @@ export default function DuetAnalytics() {
     () => printers.find((printer) => printer.id === activePrinterId)?.name ?? 'Current printer',
     [printers, activePrinterId],
   );
-  const analytics = useMemo(
-    () => buildPrintHistoryAnalytics(history, activePrinterName),
-    [history, activePrinterName],
-  );
-  const jobs = useMemo(() => buildJobs(history), [history]);
-
   const cutoff = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() - windowDays);
     return d;
   }, [windowDays]);
+  const historyInWindow = useMemo(
+    () => history.filter((entry) => {
+      const when = parseTimestamp(entry.timestamp);
+      return !!when && when >= cutoff;
+    }),
+    [history, cutoff],
+  );
+  const analytics = useMemo(
+    () => buildPrintHistoryAnalytics(historyInWindow, activePrinterName),
+    [historyInWindow, activePrinterName],
+  );
+  const jobs = useMemo(() => buildJobs(history), [history]);
 
   const jobsInWindow = useMemo(
     () => jobs.filter((j) => j.startedAt >= cutoff),
