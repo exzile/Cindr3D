@@ -8,6 +8,7 @@
 import { useState, useCallback } from 'react';
 import { TrendingUp, Send, Info, ChevronRight } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
+import { TOOL_HANDLERS } from '../../services/mcp/tools';
 import type { PrinterBoardType } from '../../types/duet';
 import './KlipperTabs.css';
 
@@ -66,6 +67,9 @@ export default function PressureAdvance() {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [bestHeight, setBestHeight] = useState('');
   const [sending, setSending] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const sendCommands = useCallback(async (cmds: string[]) => {
     if (!connected) return;
@@ -89,6 +93,32 @@ export default function PressureAdvance() {
     void sendCommands(cmds);
     setStep(3);
   };
+
+  const handleAnalyzeTower = useCallback(async () => {
+    const handler = TOOL_HANDLERS.tuning_analyze_tower;
+    setAnalyzing(true);
+    setAiError(null);
+    try {
+      const result = await handler({
+        kind: 'pressure-advance',
+        frameCount: 3,
+        startValue: 0,
+        stepPerMm: 0.005,
+        notes: `Pressure advance tower for ${boardType}. Current typed height: ${bestHeight || 'unset'}.`,
+      }) as {
+        recommendation?: { bestValue?: number; bestHeightMm?: number; confidence?: number; summary?: string };
+      };
+      const rec = result.recommendation;
+      if (rec?.bestValue !== undefined) setPa(Number(rec.bestValue.toFixed(4)));
+      if (rec?.bestHeightMm !== undefined) setBestHeight(String(rec.bestHeightMm));
+      setAiSummary(rec?.summary ?? 'AI analysis returned no summary.');
+      setStep(3);
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAnalyzing(false);
+    }
+  }, [bestHeight, boardType]);
 
   const setCommands = buildSetCommand(boardType, pa, smooth);
   const note = FIRMWARE_NOTES[boardType] ?? FIRMWARE_NOTES.other!;
@@ -170,6 +200,20 @@ export default function PressureAdvance() {
               onClick={() => setStep(3)} disabled={step < 2}>
               Confirm Value <ChevronRight size={13} />
             </button>
+            <button className="klipper-btn" style={{ marginTop: 10, marginLeft: 8 }}
+              onClick={() => void handleAnalyzeTower()} disabled={analyzing}>
+              {analyzing ? 'Analyzing...' : 'Analyze with AI'}
+            </button>
+            {aiSummary && (
+              <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.45 }}>
+                {aiSummary}
+              </p>
+            )}
+            {aiError && (
+              <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--danger, #ef5350)', lineHeight: 1.45 }}>
+                {aiError}
+              </p>
+            )}
           </div>
         </div>
 

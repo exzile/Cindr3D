@@ -279,7 +279,7 @@ function ObjectSilhouette({
 
 // ── Context menu (DOM overlay, not in 3D scene) ──────────────────────────────
 
-function ObjectContextMenu({
+export function ObjectContextMenu({
   obj,
   position,
   isCancelled,

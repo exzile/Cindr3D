@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
 import { strToU8, zipSync } from 'fflate';
 import {
   Archive,
@@ -27,6 +27,7 @@ import {
   Play,
   RefreshCcw,
   RotateCw,
+  Ruler,
   Save,
   Scissors,
   Search,
@@ -56,7 +57,21 @@ import {
 import { cameraDisplayUrl, cameraUrlWithCredentials, enabledCamerasFromPrefs, normalizeCameraStreamUrl, preferredCameraStreamUrl, prefsWithCamera } from '../../../utils/cameraStreamUrl';
 import { buildPtzMoveRequest, buildPtzPresetRequest, ptzProviderLabel, type PtzDirection } from '../../../services/camera/ptzControl';
 import { connectWhepVideoStream } from '../../../services/camera/webrtcStream';
+import {
+  distanceBetweenImagePointsMm,
+  hasCompleteBedCorners,
+  solveCameraHomography,
+  type BedCorners,
+  type ImagePoint,
+} from '../../../services/vision/cameraMeasurement';
+import {
+  assessPoseCalibration,
+  poseFrameSignature,
+  solveCameraPoseCalibration,
+  type CameraPoseCalibration,
+} from '../../../services/vision/cameraPose';
 import { formatBytes } from './helpers';
+import CameraOverlayPanel, { type CameraOverlayMode } from './CameraOverlayPanel';
 import './CameraDashboardPanel.css';
 
 const CLIP_DB_NAME = 'cindr3d-camera-clips';
@@ -94,6 +109,24 @@ type ClipSort = 'newest' | 'oldest' | 'largest';
 type ControlSection = CameraDashboardPrefs['activeControlSection'];
 type IssueTag = typeof ISSUE_TAGS[number];
 type ClipRating = typeof CLIP_RATINGS[number];
+type BedCornerKey = keyof Required<BedCorners>;
+type MeasurementMode = 'off' | 'bed' | 'ruler';
+
+interface CameraMeasurementCalibration extends CameraDashboardCalibration {
+  bedWidthMm?: number;
+  bedDepthMm?: number;
+  bedCorners?: BedCorners;
+  measureA?: ImagePoint;
+  measureB?: ImagePoint;
+  pose?: CameraPoseCalibration;
+}
+
+const BED_CORNER_SEQUENCE: Array<{ key: BedCornerKey; label: string }> = [
+  { key: 'frontLeft', label: 'Front left' },
+  { key: 'frontRight', label: 'Front right' },
+  { key: 'backRight', label: 'Back right' },
+  { key: 'backLeft', label: 'Back left' },
+];
 const HD_BRIDGE_QUALITIES: Array<{ value: CameraHdBridgeQuality; label: string }> = [
   { value: 'native', label: 'Native' },
   { value: '1080p', label: '1080p' },
@@ -389,8 +422,9 @@ function loadCalibrationOverlay(): CameraDashboardCalibration {
   try {
     const value = localStorage.getItem(CALIBRATION_OVERLAY_KEY);
     if (!value) return { enabled: false, x: 12, y: 12, width: 76, height: 76 };
-    const parsed = JSON.parse(value) as { enabled?: boolean; x?: number; y?: number; width?: number; height?: number };
+    const parsed = JSON.parse(value) as CameraMeasurementCalibration;
     return {
+      ...parsed,
       enabled: Boolean(parsed.enabled),
       x: Number.isFinite(parsed.x) ? Number(parsed.x) : 12,
       y: Number.isFinite(parsed.y) ? Number(parsed.y) : 12,
@@ -412,6 +446,16 @@ function formatLastFrame(lastFrameAt: number | null, now: number): string {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function clampPercent(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
+function formatMeasurementDistance(distanceMm: number | null): string {
+  if (distanceMm === null) return 'Calibrate bed corners to measure';
+  if (distanceMm >= 1000) return `${(distanceMm / 1000).toFixed(2)} m`;
+  return `${distanceMm.toFixed(distanceMm >= 100 ? 1 : 2)} mm`;
 }
 
 function defaultCrop(): SnapshotCrop {
@@ -719,7 +763,12 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [compareBlend, setCompareBlend] = useState(50);
   const [selectedClipIds, setSelectedClipIds] = useState<string[]>([]);
   const [selectionMode, setSelectionMode] = useState(false);
-  const [calibration, setCalibration] = useState(() => dashboardPrefs.calibration);
+  const [calibration, setCalibration] = useState<CameraMeasurementCalibration>(() => dashboardPrefs.calibration as CameraMeasurementCalibration);
+  const [measurementMode, setMeasurementMode] = useState<MeasurementMode>('off');
+  const [nextBedCornerIndex, setNextBedCornerIndex] = useState(0);
+  const [poseStillUrl, setPoseStillUrl] = useState('');
+  const [finalComparisonUrl, setFinalComparisonUrl] = useState('');
+  const [cameraOverlayMode, setCameraOverlayMode] = useState<CameraOverlayMode>('camera');
   const [ptzEnabled, setPtzEnabled] = useState(() => dashboardPrefs.ptzEnabled);
   const [ptzSpeed, setPtzSpeed] = useState(() => dashboardPrefs.ptzSpeed);
   const [hdBridgeQuality, setHdBridgeQuality] = useState<CameraHdBridgeQuality>(() => dashboardPrefs.hdBridgeQuality);
@@ -970,7 +1019,17 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     setActiveControlSection(dashboardPrefs.activeControlSection);
     setEditorCollapsed(dashboardPrefs.editorCollapsed);
     setCameraPresets(dashboardPrefs.cameraPresets);
-    setCalibration(dashboardPrefs.calibration);
+    setCalibration(dashboardPrefs.calibration as CameraMeasurementCalibration);
+    setMeasurementMode('off');
+    setNextBedCornerIndex(0);
+    setPoseStillUrl((url) => {
+      if (url) URL.revokeObjectURL(url);
+      return '';
+    });
+    setFinalComparisonUrl((url) => {
+      if (url) URL.revokeObjectURL(url);
+      return '';
+    });
     setPtzEnabled(dashboardPrefs.ptzEnabled);
     setPtzSpeed(dashboardPrefs.ptzSpeed);
     setHdBridgeQuality(dashboardPrefs.hdBridgeQuality);
@@ -1113,6 +1172,14 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     if (selectedClipUrlRef.current) {
       URL.revokeObjectURL(selectedClipUrlRef.current);
     }
+    setPoseStillUrl((url) => {
+      if (url) URL.revokeObjectURL(url);
+      return '';
+    });
+    setFinalComparisonUrl((url) => {
+      if (url) URL.revokeObjectURL(url);
+      return '';
+    });
   }, []);
 
   useEffect(() => {
@@ -1277,6 +1344,41 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
       setBusy(false);
     }
   }, [canvasBlob, drawFrame, hasCamera, jobFileName, printerId, printerName, refreshClips]);
+
+  const capturePoseStill = useCallback(async () => {
+    if (!hasCamera) return;
+    try {
+      drawFrame();
+      const blob = await canvasBlob('image/png');
+      const nextUrl = URL.createObjectURL(blob);
+      setPoseStillUrl((currentUrl) => {
+        if (currentUrl) URL.revokeObjectURL(currentUrl);
+        return nextUrl;
+      });
+      setMeasurementMode('bed');
+      setNextBedCornerIndex(0);
+      setMessage('Frozen camera frame. Pick the four bed corners to calibrate AR pose.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to freeze camera frame.');
+    }
+  }, [canvasBlob, drawFrame, hasCamera]);
+
+  const captureFinalComparisonFrame = useCallback(async () => {
+    if (!hasCamera || !calibration.pose) return;
+    try {
+      drawFrame();
+      const blob = await canvasBlob('image/png');
+      const nextUrl = URL.createObjectURL(blob);
+      setFinalComparisonUrl((currentUrl) => {
+        if (currentUrl) URL.revokeObjectURL(currentUrl);
+        return nextUrl;
+      });
+      setCameraOverlayMode('both');
+      setMessage('Frozen final frame for AR print comparison.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to freeze final comparison frame.');
+    }
+  }, [calibration.pose, canvasBlob, drawFrame, hasCamera]);
 
   const captureAnomaly = useCallback((reason: string) => {
     if (!anomalyCapture || !hasCamera) return;
@@ -1555,11 +1657,14 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
       if (autoSnapshotFinish && printStatus === 'idle') {
         void captureSnapshot('Print finish snapshot');
       }
+      if (printStatus === 'idle') {
+        void captureFinalComparisonFrame();
+      }
       if (autoSnapshotError && (printStatus === 'halted' || printStatus === 'pausing' || printStatus === 'cancelling')) {
         void captureSnapshot('Print issue snapshot');
       }
     }
-  }, [autoSnapshotError, autoSnapshotFinish, autoSnapshotFirstLayer, captureSnapshot, hasCamera, isPrintActive, printStatus]);
+  }, [autoSnapshotError, autoSnapshotFinish, autoSnapshotFirstLayer, captureFinalComparisonFrame, captureSnapshot, hasCamera, isPrintActive, printStatus]);
 
   useEffect(() => {
     if (!hasCamera || !autoSnapshotLayer || !isPrintActive || currentLayer === undefined) return;
@@ -2308,10 +2413,100 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     setFrameCount((value) => value + 1);
   }, []);
 
+  const bedWidthMm = calibration.bedWidthMm ?? 220;
+  const bedDepthMm = calibration.bedDepthMm ?? 220;
+  const currentPoseSignature = poseFrameSignature(activeCamera?.id ?? prefs.activeCameraId, rotation, flipImage);
+  const homography = useMemo(
+    () => solveCameraHomography(calibration.bedCorners, bedWidthMm, bedDepthMm),
+    [bedDepthMm, bedWidthMm, calibration.bedCorners],
+  );
+  const measuredDistanceMm = useMemo(
+    () => distanceBetweenImagePointsMm(calibration.measureA, calibration.measureB, homography),
+    [calibration.measureA, calibration.measureB, homography],
+  );
+  const completeBedCorners = hasCompleteBedCorners(calibration.bedCorners) ? calibration.bedCorners : null;
+  const bedCornersComplete = completeBedCorners !== null;
+  const poseStatus = useMemo(
+    () => assessPoseCalibration(calibration.pose, calibration.bedCorners, currentPoseSignature),
+    [calibration.bedCorners, calibration.pose, currentPoseSignature],
+  );
+  const nextBedCorner = BED_CORNER_SEQUENCE[nextBedCornerIndex] ?? BED_CORNER_SEQUENCE[0];
+  const measurementStatus = measurementMode === 'bed'
+    ? `Pick ${nextBedCorner.label.toLowerCase()} corner`
+    : measurementMode === 'ruler'
+      ? calibration.measureA && !calibration.measureB
+        ? 'Pick endpoint B'
+        : 'Pick endpoint A'
+      : bedCornersComplete
+        ? 'Homography ready'
+        : 'Bed corners not calibrated';
+
+  const handleMeasurementClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    if (measurementMode === 'off') return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const point = {
+      x: clampPercent(((event.clientX - rect.left) / rect.width) * 100),
+      y: clampPercent(((event.clientY - rect.top) / rect.height) * 100),
+    };
+
+    if (measurementMode === 'bed') {
+      const corner = BED_CORNER_SEQUENCE[nextBedCornerIndex] ?? BED_CORNER_SEQUENCE[0];
+      setCalibration((value) => ({
+        ...value,
+        bedCorners: {
+          ...(value.bedCorners ?? {}),
+          [corner.key]: point,
+        },
+      }));
+      setNextBedCornerIndex((index) => {
+        const nextIndex = (index + 1) % BED_CORNER_SEQUENCE.length;
+        if (nextIndex === 0) {
+          setMeasurementMode('off');
+          setMessage('Bed corners picked. Save pose when the overlay matches the frozen frame.');
+        }
+        return nextIndex;
+      });
+      return;
+    }
+
+    setCalibration((value) => {
+      if (!value.measureA || value.measureB) {
+        return { ...value, measureA: point, measureB: undefined };
+      }
+      return { ...value, measureB: point };
+    });
+  }, [measurementMode, nextBedCornerIndex]);
+
+  const savePoseCalibration = useCallback(() => {
+    const pose = solveCameraPoseCalibration(calibration.bedCorners, bedWidthMm, bedDepthMm, currentPoseSignature);
+    if (!pose) {
+      setMessage('Pick all four bed corners before saving AR pose.');
+      return;
+    }
+    setCalibration((value) => ({ ...value, pose }));
+    setPoseStillUrl((url) => {
+      if (url) URL.revokeObjectURL(url);
+      return '';
+    });
+    setMeasurementMode('off');
+    setMessage(`Saved AR camera pose (${Math.round(pose.qualityScore * 100)}% quality).`);
+  }, [bedDepthMm, bedWidthMm, calibration.bedCorners, currentPoseSignature]);
+
+  const clearPoseStill = useCallback(() => {
+    setPoseStillUrl((url) => {
+      if (url) URL.revokeObjectURL(url);
+      return '';
+    });
+    setMeasurementMode('off');
+  }, []);
+
   const frameClassName = [
     'cam-panel__frame',
     showGrid ? 'cam-panel__frame--grid' : '',
     showCrosshair ? 'cam-panel__frame--crosshair' : '',
+    measurementMode !== 'off' ? 'cam-panel__frame--measuring' : '',
+    cameraOverlayMode === 'print' ? 'cam-panel__frame--ar-print-only' : '',
   ].filter(Boolean).join(' ');
   const imageStyle = {
     transform: `scaleX(${flipImage ? -1 : 1}) rotate(${rotation}deg)`,
@@ -2379,10 +2574,12 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
           )}
 
           <div className="cam-panel__viewer">
-            <div className={frameClassName}>
+            <div className={frameClassName} onClick={handleMeasurementClick}>
               {hasCamera ? (
                 <>
-                  {isVideoStream ? (
+                  {poseStillUrl || finalComparisonUrl ? (
+                    <img src={poseStillUrl || finalComparisonUrl} alt={`${printerName} frozen camera frame`} style={imageStyle} />
+                  ) : isVideoStream ? (
                     <video
                       ref={videoRef}
                       className="cam-panel__video"
@@ -2413,6 +2610,67 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
                   )}
                   <div className="cam-panel__health">{formatLastFrame(lastFrameAt, nowTick)}</div>
                   {calibration.enabled && <div className="cam-panel__calibration" style={calibrationStyle} />}
+                  <CameraOverlayPanel pose={calibration.pose} mode={cameraOverlayMode} frameTick={frameCount} comparison={Boolean(finalComparisonUrl)} />
+                  <div className="cam-panel__measurement-layer" aria-hidden="true">
+                    {bedCornersComplete && (
+                      <svg className="cam-panel__measurement-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+                        <polygon
+                          points={[
+                            completeBedCorners.frontLeft,
+                            completeBedCorners.frontRight,
+                            completeBedCorners.backRight,
+                            completeBedCorners.backLeft,
+                          ].map((point) => `${point.x},${point.y}`).join(' ')}
+                          className="cam-panel__bed-polygon"
+                        />
+                      </svg>
+                    )}
+                    {calibration.bedCorners && BED_CORNER_SEQUENCE.map(({ key, label }) => {
+                      const point = calibration.bedCorners?.[key];
+                      if (!point) return null;
+                      return (
+                        <span
+                          key={key}
+                          className="cam-panel__measure-point cam-panel__measure-point--corner"
+                          style={{ left: `${point.x}%`, top: `${point.y}%` }}
+                        >
+                          {label.slice(0, 1)}
+                        </span>
+                      );
+                    })}
+                    {calibration.measureA && calibration.measureB && (
+                      <svg className="cam-panel__measurement-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+                        <line
+                          x1={calibration.measureA.x}
+                          y1={calibration.measureA.y}
+                          x2={calibration.measureB.x}
+                          y2={calibration.measureB.y}
+                          className="cam-panel__ruler-line"
+                        />
+                      </svg>
+                    )}
+                    {calibration.measureA && (
+                      <span className="cam-panel__measure-point" style={{ left: `${calibration.measureA.x}%`, top: `${calibration.measureA.y}%` }}>
+                        A
+                      </span>
+                    )}
+                    {calibration.measureB && (
+                      <span className="cam-panel__measure-point" style={{ left: `${calibration.measureB.x}%`, top: `${calibration.measureB.y}%` }}>
+                        B
+                      </span>
+                    )}
+                    {(measurementMode !== 'off' || calibration.measureA || bedCornersComplete) && (
+                      <span className="cam-panel__measure-distance">
+                        {calibration.measureA && calibration.measureB ? formatMeasurementDistance(measuredDistanceMm) : measurementStatus}
+                      </span>
+                    )}
+                    {poseStillUrl && (
+                      <span className="cam-panel__pose-freeze">Frozen pose frame</span>
+                    )}
+                    {finalComparisonUrl && (
+                      <span className="cam-panel__pose-freeze">Post-print comparison</span>
+                    )}
+                  </div>
                 </>
               ) : (
                 <div className="cam-panel__empty">
@@ -2777,6 +3035,110 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
               <label>Y<input type="range" min={0} max={80} value={calibration.y} onChange={(event) => setCalibration((value) => ({ ...value, y: Number(event.target.value) }))} /></label>
               <label>W<input type="range" min={10} max={100} value={calibration.width} onChange={(event) => setCalibration((value) => ({ ...value, width: Number(event.target.value) }))} /></label>
               <label>H<input type="range" min={10} max={100} value={calibration.height} onChange={(event) => setCalibration((value) => ({ ...value, height: Number(event.target.value) }))} /></label>
+              <label>
+                Bed W
+                <input
+                  className="cam-panel__input"
+                  type="number"
+                  min={1}
+                  value={bedWidthMm}
+                  onChange={(event) => setCalibration((value) => ({ ...value, bedWidthMm: Number(event.target.value) || 1 }))}
+                />
+              </label>
+              <label>
+                Bed D
+                <input
+                  className="cam-panel__input"
+                  type="number"
+                  min={1}
+                  value={bedDepthMm}
+                  onChange={(event) => setCalibration((value) => ({ ...value, bedDepthMm: Number(event.target.value) || 1 }))}
+                />
+              </label>
+              <div className="cam-panel__overlay-mode" role="group" aria-label="AR overlay mode">
+                {(['camera', 'both', 'print'] as CameraOverlayMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    className={`cam-panel__button ${cameraOverlayMode === mode ? 'is-active' : ''}`}
+                    type="button"
+                    onClick={() => setCameraOverlayMode(mode)}
+                  >
+                    {mode === 'camera' ? 'Camera' : mode === 'both' ? 'AR' : 'Preview'}
+                  </button>
+                ))}
+              </div>
+              <button
+                className={`cam-panel__button ${measurementMode === 'bed' ? 'is-active' : ''}`}
+                type="button"
+                disabled={!hasCamera}
+                onClick={() => {
+                  setMeasurementMode((mode) => mode === 'bed' ? 'off' : 'bed');
+                  setNextBedCornerIndex(0);
+                }}
+              >
+                <Crosshair size={13} /> Pick corners
+              </button>
+              <button className="cam-panel__button" type="button" disabled={!hasCamera} onClick={() => { void capturePoseStill(); }}>
+                <Image size={13} /> Freeze pose
+              </button>
+              <button className="cam-panel__button" type="button" disabled={!bedCornersComplete || !homography} onClick={savePoseCalibration}>
+                <Save size={13} /> Save pose
+              </button>
+              {poseStillUrl && (
+                <button className="cam-panel__button" type="button" onClick={clearPoseStill}>
+                  <X size={13} /> Live view
+                </button>
+              )}
+              {finalComparisonUrl && (
+                <button
+                  className="cam-panel__button"
+                  type="button"
+                  onClick={() => {
+                    setFinalComparisonUrl((url) => {
+                      if (url) URL.revokeObjectURL(url);
+                      return '';
+                    });
+                  }}
+                >
+                  <X size={13} /> Clear compare
+                </button>
+              )}
+              <button
+                className={`cam-panel__button ${measurementMode === 'ruler' ? 'is-active' : ''}`}
+                type="button"
+                disabled={!hasCamera || !bedCornersComplete}
+                onClick={() => setMeasurementMode((mode) => mode === 'ruler' ? 'off' : 'ruler')}
+              >
+                <Ruler size={13} /> Ruler
+              </button>
+              <button
+                className="cam-panel__button"
+                type="button"
+                onClick={() => {
+                  setCalibration((value) => ({ ...value, measureA: undefined, measureB: undefined }));
+                  setMeasurementMode('ruler');
+                }}
+                disabled={!hasCamera || !bedCornersComplete}
+              >
+                <Eraser size={13} /> Clear ruler
+              </button>
+              <button
+                className="cam-panel__button cam-panel__button--danger"
+                type="button"
+                onClick={() => {
+                  setCalibration((value) => ({ ...value, bedCorners: undefined, measureA: undefined, measureB: undefined, pose: undefined }));
+                  setMeasurementMode('off');
+                  setNextBedCornerIndex(0);
+                }}
+              >
+                <Trash2 size={13} /> Clear bed
+              </button>
+              <span className="cam-panel__measurement-readout">
+                {calibration.measureA && calibration.measureB ? formatMeasurementDistance(measuredDistanceMm) : measurementStatus}
+              </span>
+              <span className={`cam-panel__pose-status cam-panel__pose-status--${poseStatus.state}`}>
+                {poseStatus.label}
+              </span>
             </div>
           </section>
           )}

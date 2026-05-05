@@ -184,42 +184,43 @@
 ### 8.1 Vision failure detection  [L]
 #   New service: src/services/vision/failureDetector.ts
 #   New MCP tool: vision_check_print
-#   [ ] Frame sampler — capture webcam frames at configurable interval
-#   [ ] AI-call helper that submits a frame + recent slicer geometry +
+#   [x] Frame sampler — capture webcam frames at configurable interval
+#   [x] AI-call helper that submits a frame + recent slicer geometry +
 #       printer state to the configured AI provider for classification
-#   [ ] Categories: spaghetti, layer-shift, blob-of-doom, first-layer
+#   [x] Categories: spaghetti, layer-shift, blob-of-doom, first-layer
 #       adhesion, knocked-loose part
-#   [ ] Auto-pause + push notification on high-confidence failure
-#   [ ] User-confirmation gate before auto-action; configurable
+#   [x] Auto-pause + push notification on high-confidence failure
+#   [x] User-confirmation gate before auto-action; configurable
 #       confidence thresholds in settings
 
 ### 8.2 "What's wrong with my print?" diagnostics  [M]
 #   New AI panel quick-action; new MCP tool: diagnose_print
-#   [ ] Aggregator: recent N camera frames, current temps, motor currents
+#   [x] Aggregator: recent N camera frames, current temps, motor currents
 #       (RRF), filament-sensor state, slicer-expected vs actual layer time
-#   [ ] AI call with structured prompt; expect ranked-list response
-#   [ ] Render diagnosis in AI panel with actionable suggestions
-#   [ ] One-click "apply suggestion" if it's a setting tweak
+#   [x] AI call with structured prompt; expect ranked-list response
+#   [x] Render diagnosis in AI panel with actionable suggestions
+#   [x] One-click "apply suggestion" if it's a setting tweak
 
 ### 8.3 Auto-tune wizards  [M]
 #   Extends existing Pressure Advance / Input Shaper tabs
-#   [ ] PA tower: print → AI scans camera → reports best zone height
-#   [ ] Retraction tower: same flow
-#   [ ] Temperature tower: same flow
-#   [ ] First-layer squish helper: AI watches first layer → suggest Z-offset
-#   [ ] All wizards integrate with existing tower workflows; AI is
+#   New MCP tool: tuning_analyze_tower
+#   [x] PA tower: print → AI scans camera → reports best zone height
+#   [x] Retraction tower: same flow
+#   [x] Temperature tower: same flow
+#   [x] First-layer squish helper: AI watches first layer → suggest Z-offset
+#   [x] All wizards integrate with existing tower workflows; AI is
 #       the analyzer, not the controller
 
 ### 8.4 Camera measurement tool  [S]
-#   [ ] Bed-corner pick → camera homography matrix
-#   [ ] Click two points on live image → real-world distance read-out
-#   [ ] Ruler overlay; saves calibration per-printer
+#   [x] Bed-corner pick → camera homography matrix
+#   [x] Click two points on live image → real-world distance read-out
+#   [x] Ruler overlay; saves calibration per-printer
 
 ### 8.5 Natural-language printer control  [S]
 #   Extends AI panel (text input only — voice deliberately out of scope)
-#   [ ] System prompt with available MCP tools
-#   [ ] Confirmation gate for destructive ops
-#   [ ] "Pause Voron, set Prusa to PETG temps, start the next file on
+#   [x] System prompt with available MCP tools
+#   [x] Confirmation gate for destructive ops
+#   [x] "Pause Voron, set Prusa to PETG temps, start the next file on
 #       Ender-3" — multi-tool plan executed via existing MCP surface
 
 # Dependencies: 8.1 → 8.2 (8.2 reuses the frame sampler). 8.3 depends on
@@ -233,25 +234,25 @@
 
 ### 9.1 Camera pose calibration  [M]
 #   Reuses 8.4 homography
-#   [ ] 4-corner bed pick on a still frame → solve for camera pose
-#   [ ] Per-printer persistent calibration store
-#   [ ] Quality indicator: re-pick if motion detected since last calibration
+#   [x] 4-corner bed pick on a still frame → solve for camera pose
+#   [x] Per-printer persistent calibration store
+#   [x] Quality indicator: re-pick if motion detected since last calibration
 
 ### 9.2 Toolpath overlay on camera  [M]
 #   New component: src/components/printer/dashboard/CameraOverlayPanel.tsx
-#   [ ] Render the InlineGCodeWirePreview through the calibrated transform
-#   [ ] Composite over the live camera frame at the same FPS
-#   [ ] Toggleable: print preview-only, camera-only, both
+#   [x] Render the InlineGCodeWirePreview through the calibrated transform
+#   [x] Composite over the live camera frame at the same FPS
+#   [x] Toggleable: print preview-only, camera-only, both
 
 ### 9.3 Right-click cancel from camera  [S]
-#   [ ] Inverse-project click coords back to bed coords
-#   [ ] Hit-test against plate-object bounding boxes
-#   [ ] Re-uses ObjectContextMenu from MeshPreviewPanel
+#   [x] Inverse-project click coords back to bed coords
+#   [x] Hit-test against plate-object bounding boxes
+#   [x] Re-uses ObjectContextMenu from MeshPreviewPanel
 
 ### 9.4 Post-print AR comparison  [S]
-#   [ ] After print completes, freeze final frame
-#   [ ] Overlay the model wireframe on top
-#   [ ] Highlight regions of dimensional mismatch (uses 8.4 measurement)
+#   [x] After print completes, freeze final frame
+#   [x] Overlay the model wireframe on top
+#   [x] Highlight regions of dimensional mismatch (uses 8.4 measurement)
 
 # Dependencies: 9.1 → 9.2 → 9.3 → 9.4. Whole phase blocks on 8.4 calibration.
 

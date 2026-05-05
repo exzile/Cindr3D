@@ -473,8 +473,76 @@
   word-break: break-all;
 }
 
+.ai-diagnosis {
+  gap: 7px;
+  width: min(100%, 520px);
+  padding: 8px 10px;
+}
+
+.ai-diagnosis-summary {
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.ai-diagnosis-causes,
+.ai-diagnosis-actions,
+.ai-diagnosis-tweaks {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ai-diagnosis-cause {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 7px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+.ai-diagnosis-actions span {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.ai-diagnosis-tweak,
+.ai-quick-action {
+  min-height: 26px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ai-diagnosis-tweak:hover:not(:disabled),
+.ai-quick-action:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.ai-diagnosis-tweak:disabled,
+.ai-quick-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .ai-msg-content {
   white-space: pre-wrap;
+}
+
+.ai-quick-actions {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
 }
 
 .ai-input-row {

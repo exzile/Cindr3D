@@ -1,4 +1,4 @@
-/* Ã¢â€â‚¬Ã¢â€â‚¬ Compact overrides: tighten panel content inside dashboard cards Ã¢â€â‚¬Ã¢â€â‚¬ */
+/* Compact overrides: tighten panel content inside dashboard cards */
 .dc-body .ex-card {
   padding: 7px 10px 7px 9px;
   margin-bottom: 5px;
@@ -35,7 +35,7 @@
   margin-bottom: 4px;
 }
 
-/* Ã¢â€â‚¬Ã¢â€â‚¬ Compact axis panel inside dashboard cards Ã¢â€â‚¬Ã¢â€â‚¬ */
+/* Compact axis panel inside dashboard cards */
 .dc-body .ax-panel {
   container-type: size;
   gap: clamp(4px, 1.2cqh, 10px);
@@ -49,11 +49,11 @@
 .dc-body .ax-card       { padding: clamp(6px, 1.2cqh, 11px) clamp(10px, 1.8cqw, 15px); margin-bottom: clamp(4px, 0.9cqh, 8px); }
 .dc-body .ax-card-label { margin-bottom: 4px; font-size: 8px; }
 
-/* Step size buttons Ã¢â‚¬â€ slightly smaller */
+/* Step size buttons - slightly smaller */
 .dc-body .ax-step-row { gap: clamp(3px, 0.8cqw, 7px); }
 .dc-body .ax-step-btn { height: clamp(24px, 5.6cqh, 34px); min-width: clamp(34px, 7cqw, 54px); max-width: none; font-size: clamp(10px, 2.1cqh, 12px); }
 
-/* Jog cross Ã¢â‚¬â€ tighten cells and hide decorative sub-labels/footer */
+/* Jog cross - tighten cells and hide decorative sub-labels/footer */
 .dc-body .ax-card--jog {
   flex: 1 1 132px;
   min-height: 118px;
@@ -75,7 +75,7 @@
 }
 .dc-body .ax-cross-foot { display: none; }
 
-/* Z column Ã¢â‚¬â€ match XY cross height */
+/* Z column - match XY cross height */
 .dc-body .ax-cross-btn svg,
 .dc-body .ax-cross-home svg {
   width: clamp(16px, 3.5cqh, 24px);
@@ -85,16 +85,16 @@
 .dc-body .ax-z-btn  { width: clamp(40px, 10cqw, 62px); height: clamp(36px, 12cqh, 66px); font-size: clamp(9px, 2cqh, 12px); gap: 1px; }
 .dc-body .ax-z-home { width: clamp(40px, 10cqw, 62px); height: clamp(22px, 5.8cqh, 34px); }
 
-/* Quick-move rows Ã¢â‚¬â€ tighter and shorter */
+/* Quick-move rows - tighter and shorter */
 .dc-body .ax-qm-block { gap: 3px; }
 .dc-body .ax-qm-row   { gap: clamp(2px, 0.6cqw, 5px); }
 .dc-body .ax-qm-btn   { height: clamp(22px, 4.7cqh, 31px); font-size: clamp(9px, 1.8cqh, 11px); }
 
-/* Baby step Ã¢â‚¬â€ compact display */
+/* Baby step - compact display */
 .dc-body .ax-baby-display { padding: clamp(4px, 1cqh, 8px) 0; }
 .dc-body .ax-baby-num     { font-size: clamp(13px, 2.8cqh, 18px); }
 
-/* Ã¢â€â‚¬Ã¢â€â‚¬ Reset Layout button Ã¢â€â‚¬Ã¢â€â‚¬ */
+/* Reset Layout button */
 .dc-reset-btn {
   display: inline-flex;
   align-items: center;
@@ -231,50 +231,6 @@
   opacity: 0.9;
 }
 
-.dc-layout-overlay {
-  position: fixed;
-  top: 96px;
-  right: 18px;
-  width: min(300px, calc(100vw - 34px));
-  max-height: calc(100vh - 132px);
-  z-index: 60;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg-panel) 94%, #111827 6%);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.24);
-}
-
-.dc-layout-overlay__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--text-primary);
-  font-size: 11px;
-  font-weight: 750;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-}
-
-.dc-layout-overlay__header span:last-child {
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.dc-layout-overlay__actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.dc-layout-overlay__actions span {
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
 
 .dc-layout-clear {
   height: 24px;
@@ -326,120 +282,7 @@
   overflow: hidden;
 }
 
-.dc-layout-section__title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 9px;
-  border-bottom: 1px solid var(--border-light);
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.55px;
-}
-
-.dc-layout-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 34vh;
-  overflow-y: auto;
-  padding: 5px;
-}
-
-.dc-layout-row {
-  position: relative;
-  display: grid;
-  grid-template-columns: 18px 18px minmax(0, 1fr) 24px;
-  align-items: center;
-  gap: 6px;
-  min-height: 30px;
-  padding: 4px 5px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--text-primary);
-  background: transparent;
-  cursor: grab;
-  user-select: none;
-}
-
-.dc-layout-row:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-light);
-}
-
-.dc-layout-row.is-hidden {
-  color: var(--text-muted);
-}
-
-.dc-layout-row.is-dragging {
-  opacity: 0.45;
-}
-
-.dc-layout-row__grip {
-  color: var(--text-muted);
-  opacity: 0.55;
-}
-
-.dc-layout-row__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--accent);
-}
-
-.dc-layout-row__label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.dc-layout-row__toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--bg-elevated);
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 0;
-}
-
-.dc-layout-row__toggle:hover {
-  color: var(--text-primary);
-  border-color: var(--border-strong);
-  background: var(--bg-elevated-hover);
-}
-
-.dc-layout-empty {
-  padding: 8px 6px;
-  color: var(--text-muted);
-  font-size: 11px;
-  text-align: center;
-}
-
-@media (max-width: 900px) {
-  .dc-layout-overlay {
-    position: relative;
-    float: none;
-    width: auto;
-    max-height: none;
-    margin: 6px 10px 4px;
-  }
-
-  .dc-layout-list {
-    max-height: 220px;
-  }
-}
-
-/* Ã¢â€â‚¬Ã¢â€â‚¬ controls bar layout Ã¢â€â‚¬Ã¢â€â‚¬ */
+/* Controls bar layout */
 .duet-dash-controls-bar {
   display: flex;
   align-items: center;
@@ -480,7 +323,7 @@
   opacity: 0.8;
 }
 
-/* Ã¢â€â‚¬Ã¢â€â‚¬ edit mode grid overlay Ã¢â€â‚¬Ã¢â€â‚¬ */
+/* Edit mode grid overlay */
 .dc-wrapper.is-edit {
   z-index: 3;
 }
@@ -489,7 +332,7 @@
   pointer-events: none;
 }
 
-/* Ã¢â€â‚¬Ã¢â€â‚¬ view settings dropdown Ã¢â€â‚¬Ã¢â€â‚¬ */
+/* View settings dropdown */
 .dc-view-wrap {
   position: relative;
 }
@@ -591,9 +434,9 @@
   opacity: 0.4;
 }
 
-/* Ã¢â€â‚¬Ã¢â€â‚¬ column shift buttons (edit mode, panel header) Ã¢â€â‚¬Ã¢â€â‚¬ */
-/* Ã¢â€â‚¬Ã¢â€â‚¬ empty drop zone (shown while dragging in edit mode) Ã¢â€â‚¬Ã¢â€â‚¬ */
-/* Ã¢â€â‚¬Ã¢â€â‚¬ per-column drop cells (own trailing gap subdivided by column) Ã¢â€â‚¬Ã¢â€â‚¬ */
+/* Column shift buttons (edit mode, panel header) */
+/* Empty drop zone (shown while dragging in edit mode) */
+/* Per-column drop cells (own trailing gap subdivided by column) */
 .dc-body .ax-motion-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(68px, clamp(76px, 18cqw, 116px));
@@ -670,3 +513,234 @@
   }
 }
 
+/* -- Edit-mode ribbon: matches the tools ribbon button style -- */
+.dc-layout-ribbon {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 4px 8px;
+  min-height: 76px;
+  background: var(--bg-toolbar, var(--bg-panel));
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+
+.dc-layout-ribbon::-webkit-scrollbar {
+  display: none;
+}
+
+/* Section group — mirrors .ribbon-section */
+.dc-layout-ribbon__section {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-light);
+  padding: 0 8px;
+  flex-shrink: 0;
+}
+
+.dc-layout-ribbon__section:last-of-type {
+  border-right: none;
+}
+
+/* Row of chips inside a section — mirrors .ribbon-section-content */
+.dc-layout-chip-list {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  padding-bottom: 2px;
+}
+
+/* Section label at the bottom — mirrors .ribbon-section-label */
+.dc-layout-ribbon__section-label {
+  font-size: 9px;
+  color: var(--text-muted);
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  font-weight: 600;
+  padding: 2px 0;
+  border-top: 1px solid var(--border-light);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: default;
+}
+
+/* Leading "Cards X/Y" meta section */
+.dc-layout-ribbon__label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0 10px;
+  gap: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  border-right: 1px solid var(--border-light);
+  margin-right: 4px;
+}
+
+.dc-layout-ribbon__count {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* Individual chip — mirrors .ribbon-button */
+.dc-layout-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 3px 7px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+  min-width: 44px;
+  height: 52px;
+  position: relative;
+  transition: all 0.12s ease;
+}
+
+.dc-layout-chip:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-light);
+  color: var(--text-primary);
+}
+
+/* Active (visible on dashboard) — green pulse like ribbon-button.active */
+.dc-layout-chip:not(.is-hidden) {
+  background: color-mix(in srgb, #22c55e 10%, var(--bg-elevated));
+  border-color: color-mix(in srgb, #22c55e 45%, var(--border));
+  color: #22c55e;
+  animation: dc-chip-active-pulse 1.6s ease-in-out infinite;
+}
+
+.dc-layout-chip:not(.is-hidden):hover {
+  background: color-mix(in srgb, #22c55e 18%, var(--bg-elevated));
+  border-color: #22c55e;
+  animation: none;
+}
+
+@keyframes dc-chip-active-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.30);
+    transform: translateY(0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.08);
+    transform: translateY(-1px);
+  }
+}
+
+/* Hidden panel chip — dimmed */
+.dc-layout-chip.is-hidden {
+  opacity: 0.55;
+}
+
+.dc-layout-chip.is-hidden:hover {
+  opacity: 1;
+}
+
+.dc-layout-chip.is-dragging {
+  opacity: 0.3;
+  animation: none;
+}
+
+/* Icon area — mirrors .ribbon-button-icon */
+.dc-layout-chip__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  color: inherit;
+  flex-shrink: 0;
+}
+
+/* Label below icon */
+.dc-layout-chip__label {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1;
+  color: inherit;
+}
+
+/* Small +/- badge in top-right corner */
+.dc-layout-chip__badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.dc-layout-chip:hover .dc-layout-chip__badge {
+  opacity: 1;
+}
+
+.dc-layout-chip:not(.is-hidden) .dc-layout-chip__badge {
+  border-color: color-mix(in srgb, #22c55e 40%, var(--border));
+  color: #22c55e;
+}
+
+/* Divider between sections */
+.dc-layout-ribbon__divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 4px;
+  background: var(--border-light);
+  flex-shrink: 0;
+}
+
+/* Empty-drop-zone hint */
+.dc-layout-ribbon__empty {
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 0 6px;
+  white-space: nowrap;
+  font-style: italic;
+  align-self: center;
+}
+
+/* Actions pushed to far right */
+.dc-layout-ribbon__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding-left: 10px;
+  flex-shrink: 0;
+  align-self: center;
+}

@@ -8,6 +8,7 @@
 import { useState, useCallback } from 'react';
 import { Cpu, Send, Info } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
+import { TOOL_HANDLERS } from '../../services/mcp/tools';
 import type { PrinterBoardType } from '../../types/duet';
 import './KlipperTabs.css';
 
@@ -70,6 +71,9 @@ export default function InputShaper() {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [sending, setSending] = useState(false);
   const [testAxis, setTestAxis] = useState<'X' | 'Y'>('X');
+  const [analyzing, setAnalyzing] = useState(false);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const sendCommands = useCallback(async (cmds: string[]) => {
     if (!connected) return;
@@ -95,6 +99,33 @@ export default function InputShaper() {
     void sendCommands(cmds);
     setStep(3);
   };
+
+  const handleAnalyzeTower = useCallback(async () => {
+    const handler = TOOL_HANDLERS.tuning_analyze_tower;
+    setAnalyzing(true);
+    setAiError(null);
+    try {
+      const result = await handler({
+        kind: 'input-shaper',
+        axis: testAxis,
+        frameCount: 3,
+        notes: `Input shaper ringing tower for ${boardType}. Recommend frequency for ${testAxis} axis.`,
+      }) as {
+        recommendation?: { bestValue?: number; confidence?: number; summary?: string };
+      };
+      const rec = result.recommendation;
+      if (rec?.bestValue !== undefined) {
+        if (testAxis === 'X') setFreqX(Number(rec.bestValue.toFixed(1)));
+        else setFreqY(Number(rec.bestValue.toFixed(1)));
+      }
+      setAiSummary(rec?.summary ?? 'AI analysis returned no summary.');
+      setStep(3);
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAnalyzing(false);
+    }
+  }, [boardType, testAxis]);
 
   const note = FIRMWARE_NOTES[boardType] ?? FIRMWARE_NOTES.other!;
   const setCommands = buildSetCommand(boardType, shaperType, freqX, freqY, damping);
@@ -194,6 +225,20 @@ export default function InputShaper() {
               onClick={() => setStep(3)} disabled={step < 2}>
               Confirm Settings
             </button>
+            <button className="klipper-btn" style={{ marginTop: 12, marginLeft: 8 }}
+              onClick={() => void handleAnalyzeTower()} disabled={analyzing}>
+              {analyzing ? 'Analyzing...' : 'Analyze with AI'}
+            </button>
+            {aiSummary && (
+              <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.45 }}>
+                {aiSummary}
+              </p>
+            )}
+            {aiError && (
+              <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--danger, #ef5350)', lineHeight: 1.45 }}>
+                {aiError}
+              </p>
+            )}
           </div>
         </div>
 

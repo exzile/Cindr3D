@@ -39,6 +39,9 @@
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .ribbon-title {
@@ -46,6 +49,55 @@
   font-weight: 500;
   color: var(--text-muted);
   letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+/* Printer status pill shown next to the app title in printer workspace */
+.ribbon-printer-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.ribbon-printer-pill.is-connected {
+  border-color: color-mix(in srgb, #22c55e 40%, var(--border));
+  background: color-mix(in srgb, #22c55e 10%, var(--bg-elevated));
+  color: var(--text-secondary);
+}
+
+.ribbon-printer-pill__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-muted);
+}
+
+.ribbon-printer-pill.is-connected .ribbon-printer-pill__dot {
+  background: #22c55e;
+}
+
+.ribbon-printer-pill__name {
+  font-weight: 650;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ribbon-printer-pill__status {
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: capitalize;
+  padding-left: 3px;
+  border-left: 1px solid var(--border-light);
 }
 
 .ribbon-quick-btn {
