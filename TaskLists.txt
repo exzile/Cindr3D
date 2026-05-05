@@ -262,7 +262,7 @@
 ## sub-phases run in parallel; no internal dependencies.
 
 ### 14.1 Print resume across browser sessions  [M]
-#   [ ] Capture "what print is this UI attached to" so opening Cindr3D
+#   [x] Capture "what print is this UI attached to" so opening Cindr3D
 #       on a new device reconnects to the live job
 #   [ ] Reconnect handshake reuses live polling / websocket auth
 #   [ ] Banner: "Print was started from Chromebook on Tuesday 4 PM"
