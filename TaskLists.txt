@@ -258,65 +258,25 @@
 
 
 ## ── Phase 14: Operational polish ──────────────────────────────────────────
-## Goal: cross-cutting work that makes the app feel finished. All
-## sub-phases run in parallel; no internal dependencies.
-
-### 14.1 Print resume across browser sessions  [M]
-#   [x] Capture "what print is this UI attached to" so opening Cindr3D
-#       on a new device reconnects to the live job
-#   [x] Reconnect handshake reuses live polling / websocket auth
-#   [x] Banner: "Print was started from Chromebook on Tuesday 4 PM"
-
-### 14.2 Mobile / tablet UI mode  [XL]
-#   [x] Detect viewport width + touch capability
-#   [x] Bottom-sheet navigation for printer monitor
-#   [x] Larger tap targets; one-thumb optimized layouts
-#   [x] Big-button "kiosk mode" for tablet near printer
-
-### 14.3 i18n  [M]
-#   [x] Externalise all strings to a translations bundle
-#   [x] Externalise app shell, workspace nav, and global settings strings
-#   [x] Lightweight translation helper; per-language bundle modules
-#   [x] Settings: language picker; default from browser locale
-#   [x] Generated catalog freshness check for translation bundle updates
-#   [x] Ship English; accept community translations via PR
-
-### 14.4 Accessibility audit  [M]
-#   [x] Screen-reader labels on global toolbar + slicer shell controls
-#   [x] Screen-reader labels on AI assistant panel and MCP status controls
-#   [x] Screen-reader labels on Timeline, Contact Sets, and Drive Joints controls
-#   [x] Keyboard object-list navigation in Prepare workspace
-#   [x] Keyboard-only nav across every workspace
-#   [x] Screen-reader labels on all interactive elements
-#   [x] Runtime guard infers labels from form labels and nearby field labels
-#   [x] High-contrast theme variant
-#   [x] Reduced-motion mode for animations
-
-### 14.5 Profile versioning + diff  [S]
-#   [x] Snapshot a profile on every save
-#   [x] Diff viewer: pick two snapshots, see changed keys
-#   [x] Restore individual changes (cherry-pick) or full snapshot
-
-### 14.6 Self-hosted profile / spool sync  [M]
-#   [x] Optional: point at a git repo/raw JSON URL for sync
-#   [x] Capture pending sync payload when profiles or spools change
-#   [x] Push profiles + spools on save
-#   [x] Pull profiles + spools on app start
-#   [x] Conflict resolution: last-writer-wins for imported sync payloads
-
-### 14.7 PWA mode  [S]  [DONE 2026-05-05]
-#   [x] Web app manifest (icons, theme color, display: standalone)
-#   [x] Service worker for offline caching of static assets
-#   [x] Installable to home screen on desktop and mobile
-#   [x] Last-loaded project bundle offline handoff
-#   [x] Custom splash metadata + maskable icon entry
-
-### 14.8 Print-from-URL  [M]
-#   [x] Paste direct STL / OBJ / 3MF / AMF / STEP URL
-#   [x] Paste Printables / MakerWorld / Thingiverse page URL
-#   [x] Fetch + parse + auto-arrange direct model files on the build plate
-#   [x] Source-aware: pull license + author info into project metadata
-#   [x] Local cache so re-fetches are instant; respect Cache-Control
+## Status: DONE 2026-05-05
+## Completed feature summary:
+#   - Print-session resume across browser sessions and devices, including
+#     reconnect banners for active jobs.
+#   - Mobile and tablet UI mode with touch detection, bottom-sheet monitor
+#     navigation, larger tap targets, and kiosk-style printer controls.
+#   - Internationalization foundation with translation bundles, language
+#     selection, generated English string coverage, and catalog freshness checks.
+#   - Accessibility polish with screen-reader labels across interactive controls,
+#     runtime label inference, keyboard navigation, high contrast, and reduced
+#     motion support.
+#   - Profile versioning with automatic snapshots, profile diffing, and restore
+#     flows for individual or full profile changes.
+#   - Self-hosted profile and spool sync with import/export payload tracking,
+#     startup pull, save push, and conflict handling.
+#   - PWA installability with manifest metadata, service-worker asset caching,
+#     offline project handoff, splash metadata, and maskable icons.
+#   - Print-from-URL workflows for direct model files and model-sharing pages,
+#     including source metadata capture, auto-arrange, and local caching.
 
 
 ## ── Phase 15: Slicer fundamentals ─────────────────────────────────────────
