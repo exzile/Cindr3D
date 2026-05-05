@@ -308,9 +308,9 @@
 
 ### 14.8 Print-from-URL  [M]
 #   [x] Paste direct STL / OBJ / 3MF / AMF / STEP URL
-#   [ ] Paste Printables / MakerWorld / Thingiverse page URL
+#   [x] Paste Printables / MakerWorld / Thingiverse page URL
 #   [x] Fetch + parse + auto-arrange direct model files on the build plate
-#   [ ] Source-aware: pull license + author info into project metadata
+#   [x] Source-aware: pull license + author info into project metadata
 #   [x] Local cache so re-fetches are instant; respect Cache-Control
 
 

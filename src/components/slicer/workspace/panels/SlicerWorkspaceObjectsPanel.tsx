@@ -405,9 +405,9 @@ export function SlicerWorkspaceObjectsPanel() {
             type="url"
             value={modelUrl}
             onChange={(e) => setModelUrl(e.target.value)}
-            placeholder="Paste direct model URL"
+            placeholder="Paste model or marketplace URL"
             className="slicer-workspace-objects-panel__url-input"
-            aria-label="Direct STL OBJ 3MF AMF STEP model URL"
+            aria-label="STL OBJ 3MF AMF STEP model URL or marketplace model page"
           />
           <button
             type="submit"
