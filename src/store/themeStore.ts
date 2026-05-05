@@ -7,9 +7,11 @@ interface ThemeStore {
   theme: ThemeMode;
   colors: ThemeColors;
   reducedMotion: boolean;
+  highContrast: boolean;
   setTheme: (theme: ThemeMode) => void;
   toggleTheme: () => void;
   setReducedMotion: (enabled: boolean) => void;
+  setHighContrast: (enabled: boolean) => void;
 }
 
 // ─── Light Theme (Fusion 360 style) ────────────────────────────────────────
@@ -161,6 +163,10 @@ function applyReducedMotion(enabled: boolean) {
   document.documentElement.toggleAttribute('data-reduced-motion', enabled);
 }
 
+function applyHighContrast(enabled: boolean) {
+  document.documentElement.toggleAttribute('data-high-contrast', enabled);
+}
+
 // ─── Store ─────────────────────────────────────────────────────────────────
 
 function getColorsForTheme(theme: ThemeMode): ThemeColors {
@@ -184,18 +190,30 @@ function getSavedReducedMotion(): boolean {
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 }
 
+function getSavedHighContrast(): boolean {
+  try {
+    const saved = localStorage.getItem('cindr3d-high-contrast');
+    if (saved === 'true') return true;
+    if (saved === 'false') return false;
+  } catch { /* noop */ }
+  return window.matchMedia?.('(prefers-contrast: more)').matches ?? false;
+}
+
 const initialTheme = getSavedTheme();
 const initialColors = getColorsForTheme(initialTheme);
 const initialReducedMotion = getSavedReducedMotion();
+const initialHighContrast = getSavedHighContrast();
 
 // Apply theme immediately on load
 applyTheme(initialColors, initialTheme);
 applyReducedMotion(initialReducedMotion);
+applyHighContrast(initialHighContrast);
 
 export const useThemeStore = create<ThemeStore>((set) => ({
   theme: initialTheme,
   colors: initialColors,
   reducedMotion: initialReducedMotion,
+  highContrast: initialHighContrast,
 
   setTheme: (theme: ThemeMode) => {
     const colors = getColorsForTheme(theme);
@@ -218,5 +236,11 @@ export const useThemeStore = create<ThemeStore>((set) => ({
     applyReducedMotion(enabled);
     try { localStorage.setItem('cindr3d-reduced-motion', String(enabled)); } catch { /* noop */ }
     set({ reducedMotion: enabled });
+  },
+
+  setHighContrast: (enabled: boolean) => {
+    applyHighContrast(enabled);
+    try { localStorage.setItem('cindr3d-high-contrast', String(enabled)); } catch { /* noop */ }
+    set({ highContrast: enabled });
   },
 }));

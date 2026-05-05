@@ -31,6 +31,8 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
   const theme = useThemeStore((s) => s.theme);
   const reducedMotion = useThemeStore((s) => s.reducedMotion);
   const setReducedMotion = useThemeStore((s) => s.setReducedMotion);
+  const highContrast = useThemeStore((s) => s.highContrast);
+  const setHighContrast = useThemeStore((s) => s.setHighContrast);
   const aiPanelOpen = useAiAssistantStore((s) => s.panelOpen);
   const toggleAiPanel = useAiAssistantStore((s) => s.togglePanel);
   const aiProvider = useAiAssistantStore((s) => s.provider);
@@ -686,6 +688,17 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                             type="checkbox"
                             checked={reducedMotion}
                             onChange={(e) => setReducedMotion(e.target.checked)}
+                          />
+                          <span className="tp-toggle-track" />
+                        </label>
+                      </div>
+                      <div className="global-settings-field inline full">
+                        <span>High contrast</span>
+                        <label className="tp-toggle">
+                          <input
+                            type="checkbox"
+                            checked={highContrast}
+                            onChange={(e) => setHighContrast(e.target.checked)}
                           />
                           <span className="tp-toggle-track" />
                         </label>

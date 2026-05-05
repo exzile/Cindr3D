@@ -270,7 +270,7 @@
 ### 14.2 Mobile / tablet UI mode  [XL]
 #   [x] Detect viewport width + touch capability
 #   [ ] Bottom-sheet navigation for printer monitor
-#   [ ] Larger tap targets; one-thumb optimized layouts
+#   [x] Larger tap targets; one-thumb optimized layouts
 #   [ ] Big-button "kiosk mode" for tablet near printer
 
 ### 14.3 i18n  [M]
@@ -282,7 +282,7 @@
 ### 14.4 Accessibility audit  [M]
 #   [ ] Keyboard-only nav across every workspace
 #   [ ] Screen-reader labels on all interactive elements
-#   [ ] High-contrast theme variant
+#   [x] High-contrast theme variant
 #   [x] Reduced-motion mode for animations
 
 ### 14.5 Profile versioning + diff  [S]
