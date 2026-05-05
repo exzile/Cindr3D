@@ -282,6 +282,7 @@
 
 ### 14.4 Accessibility audit  [M]
 #   [x] Screen-reader labels on global toolbar + slicer shell controls
+#   [x] Screen-reader labels on AI assistant panel and MCP status controls
 #   [x] Keyboard object-list navigation in Prepare workspace
 #   [x] Keyboard-only nav across every workspace
 #   [ ] Screen-reader labels on all interactive elements

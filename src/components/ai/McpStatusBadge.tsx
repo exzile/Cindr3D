@@ -92,13 +92,20 @@ export default function McpStatusBadge() {
         <span>AI MCP</span>
         {status && (
           <>
-            <button className="mcp-icon-button" type="button" onClick={copyPairingLine} title="Copy Claude MCP command">
+            <button className="mcp-icon-button" type="button" onClick={copyPairingLine} title="Copy Claude MCP command" aria-label="Copy Claude MCP command">
               <Copy size={12} aria-hidden="true" />
             </button>
-            <button className="mcp-icon-button" type="button" onClick={rotateToken} title="Rotate pairing token">
+            <button className="mcp-icon-button" type="button" onClick={rotateToken} title="Rotate pairing token" aria-label="Rotate Claude MCP pairing token">
               <RefreshCw size={12} aria-hidden="true" />
             </button>
-            <button className="mcp-icon-button" type="button" onClick={toggleAudit} title="Show MCP activity">
+            <button
+              className="mcp-icon-button"
+              type="button"
+              onClick={toggleAudit}
+              title="Show MCP activity"
+              aria-label="Show MCP activity"
+              aria-expanded={auditOpen}
+            >
               <List size={12} aria-hidden="true" />
             </button>
           </>
@@ -109,7 +116,7 @@ export default function McpStatusBadge() {
         <span className="mcp-audit-popover">
           <span className="mcp-audit-header">
             <span>Activity</span>
-            <button className="mcp-icon-button" type="button" onClick={clearAudit} title="Clear MCP activity">
+            <button className="mcp-icon-button" type="button" onClick={clearAudit} title="Clear MCP activity" aria-label="Clear MCP activity">
               <X size={12} aria-hidden="true" />
             </button>
           </span>
