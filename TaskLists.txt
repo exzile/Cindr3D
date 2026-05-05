@@ -153,29 +153,21 @@
 # 10.4 depends on 10.1 having collected enough data.
 
 
-## ── Phase 11: Maintenance & calibration lifecycle ─────────────────────────
-## Goal: track when calibration was last run + when components were
-## replaced, surface reminders.
+## SHIPPED - Phase 11: Maintenance & calibration lifecycle [DONE 2026-05-05]
+## Phase 11 delivered the maintenance lifecycle layer:
+#   - Calibration aging per printer, including bed mesh, pressure advance,
+#     input shaper, Z-offset, and first-layer checks with configurable
+#     service intervals and overdue/upcoming status.
+#   - Wear tracking for belts, bearings, nozzles, hotends, and build plates,
+#     with hours / filament counters, replacement thresholds, and service log.
+#   - Filament moisture estimates from opened-on date and humidity, surfaced
+#     in the Calibration tab and pre-flight checklist warnings.
+#
+# Files of record:
+#   src/store/calibrationStore.ts
+#   src/components/printer/calibration/PrinterCalibrationPanel.tsx
+#   src/components/printer/scheduling/StartChecklist.tsx
 
-### 11.1 Calibration aging dashboard  [S]
-#   New store: src/store/calibrationStore.ts
-#   [ ] Per-printer record of: last bed mesh, last PA tune, last input
-#       shaper, last Z-offset check, last first-layer test
-#   [ ] Recommended re-cal interval per item (configurable)
-#   [ ] Dashboard card: overdue items in red, upcoming in amber
-
-### 11.2 Wear tracking  [S]
-#   [ ] Component register: belts, bearings, nozzles, hotends, build plate
-#   [ ] Hours-on / km-of-filament-through counters
-#   [ ] Replacement reminders at user-configurable intervals
-#   [ ] Service log: who replaced what, when, cost
-
-### 11.3 Filament moisture model  [S]
-#   [ ] Per-spool: opened-on date, ambient humidity (manual or MQTT sensor)
-#   [ ] Decay model → estimated moisture state
-#   [ ] Pre-print warning: "PETG opened 14 days at 55% RH — dry first?"
-
-# All sub-phases independent and parallelizable.
 
 
 

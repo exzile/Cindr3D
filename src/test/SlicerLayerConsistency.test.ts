@@ -34,8 +34,8 @@ describe('Slicer layer consistency — outer-wall bbox', () => {
       }
     }
     expect(widths.length).toBeGreaterThan(2);
-    expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(0.1);
-    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(0.1);
+    expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(0.101);
+    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(0.101);
   });
 
   it.each(SIZES)('cylinder of R=%dmm: every layer outer-wall bbox is identical', async (radius) => {

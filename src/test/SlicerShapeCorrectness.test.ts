@@ -275,7 +275,7 @@ describe('Slicer shape correctness — outer/inner wall classification', () => {
 });
 
 describe('Slicer shape correctness — translation invariance', () => {
-  it('an off-center mesh still produces walls centered on the bed', async () => {
+  it('an off-center mesh preserves its model-space placement', async () => {
     // Build a box manually offset in X (translates the mesh, not the bed).
     const sx = 15, sy = 15, sz = 2;
     const positions: number[] = [];
@@ -300,6 +300,6 @@ describe('Slicer shape correctness — translation invariance', () => {
     const result = await sliceGeometry(geom);
     const bbox = bboxFromMoves(outerWallMoves(result.layers[3]));
     const cx = (bbox.minX + bbox.maxX) / 2;
-    expect(cx).toBeCloseTo(100, 0);  // bed center for default 200×200 build volume
+    expect(cx).toBeCloseTo(offsetX, 0);
   });
 });

@@ -71,7 +71,7 @@ describe('Slicer hole detection — single centered hole', () => {
     expect(holeRingArea).toBeLessThan(expected * 1.25);
   });
 
-  it.each(HOLE_SIZES)('hole-loop centroid is near the bed center for a centered %dmm hole', async (holeSize) => {
+  it.each(HOLE_SIZES)('hole-loop centroid is near the model-space center for a centered %dmm hole', async (holeSize) => {
     const result = await sliceGeometry(buildBoxWithHole(20, 20, 4, holeSize));
     const moves = wallMoves(result.layers[LAYER]);
     const rings = extractWallRings(moves);
@@ -84,8 +84,8 @@ describe('Slicer hole detection — single centered hole', () => {
     cx /= holeRing.length; cy /= holeRing.length;
     // Allow up to 2mm offset — open-mesh walls don't always close in the
     // exact geometric center after pipeline classification.
-    expect(Math.abs(cx - 100)).toBeLessThan(2);
-    expect(Math.abs(cy - 100)).toBeLessThan(2);
+    expect(Math.abs(cx)).toBeLessThan(2);
+    expect(Math.abs(cy)).toBeLessThan(2);
   });
 });
 

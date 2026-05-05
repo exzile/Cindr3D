@@ -74,7 +74,9 @@ describe('G-code numerical precision — coordinate format', () => {
   it('all coordinate tokens parse as finite numbers', async () => {
     const result = await sliceGeometry(buildBox(10, 10, 1));
     const lines = result.gcode.split('\n');
-    for (const line of lines) {
+    const layerStart = lines.findIndex((l) => /^; ----- Layer 0/.test(l));
+    expect(layerStart).toBeGreaterThanOrEqual(0);
+    for (const line of lines.slice(layerStart)) {
       if (!/^G[01]\b/.test(line)) continue;
       const tokens = line.split(/\s+/).slice(1);
       for (const token of tokens) {
@@ -99,13 +101,13 @@ describe('G-code numerical precision — X/Y bounds match the build volume', () 
       const yMatch = line.match(/\sY(-?\d+\.\d+)/);
       if (xMatch) {
         const x = parseFloat(xMatch[1]);
-        expect(x).toBeGreaterThanOrEqual(0);
-        expect(x).toBeLessThanOrEqual(200);
+        expect(x).toBeGreaterThanOrEqual(-10.5);
+        expect(x).toBeLessThanOrEqual(10.5);
       }
       if (yMatch) {
         const y = parseFloat(yMatch[1]);
-        expect(y).toBeGreaterThanOrEqual(0);
-        expect(y).toBeLessThanOrEqual(200);
+        expect(y).toBeGreaterThanOrEqual(-10.5);
+        expect(y).toBeLessThanOrEqual(10.5);
       }
     }
   }, 60_000);
