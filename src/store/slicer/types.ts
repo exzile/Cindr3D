@@ -10,10 +10,24 @@ import type {
 import type { PreviewColorMode } from '../../types/slicer-preview.types';
 import type { PrintabilityReport } from '../../engine/PrintabilityCheck';
 
+export type ProfileSnapshotKind = 'printer' | 'material' | 'print';
+
+export type ProfileSnapshotProfile = PrinterProfile | MaterialProfile | PrintProfile;
+
+export interface ProfileSnapshot {
+  id: string;
+  kind: ProfileSnapshotKind;
+  profileId: string;
+  profileName: string;
+  createdAt: number;
+  profile: ProfileSnapshotProfile;
+}
+
 export interface SlicerStore {
   printerProfiles: PrinterProfile[];
   materialProfiles: MaterialProfile[];
   printProfiles: PrintProfile[];
+  profileSnapshots: ProfileSnapshot[];
   activePrinterProfileId: string;
   activeMaterialProfileId: string;
   activePrintProfileId: string;
@@ -71,6 +85,8 @@ export interface SlicerStore {
   addPrintProfile: (profile: PrintProfile) => void;
   updatePrintProfile: (id: string, updates: Partial<PrintProfile>) => void;
   deletePrintProfile: (id: string) => void;
+  restoreProfileSnapshot: (snapshotId: string) => void;
+  restoreProfileSnapshotKey: (snapshotId: string, keyPath: string) => void;
   addToPlate: (featureId: string, name: string, geometry: THREE.BufferGeometry | null | unknown) => void;
   removeFromPlate: (id: string) => void;
   selectPlateObject: (id: string | null) => void;

@@ -6,6 +6,7 @@ import { PrinterProfileEditor } from './profileEditor/PrinterProfileEditor';
 import { MaterialProfileEditor } from './profileEditor/MaterialProfileEditor';
 import { PrintProfileEditor } from './profileEditor/PrintProfileEditor';
 import { btnAccent } from './profileEditor/shared';
+import { ProfileSnapshotDiffPanel } from './ProfileSnapshotDiffPanel';
 
 const titles = {
   printer: 'Printer Profile Editor',
@@ -26,6 +27,9 @@ export function SlicerProfileEditorModal({
   const updatePrinterProfile = useSlicerStore((s) => s.updatePrinterProfile);
   const updateMaterialProfile = useSlicerStore((s) => s.updateMaterialProfile);
   const updatePrintProfile = useSlicerStore((s) => s.updatePrintProfile);
+  const profileSnapshots = useSlicerStore((s) => s.profileSnapshots);
+  const restoreProfileSnapshot = useSlicerStore((s) => s.restoreProfileSnapshot);
+  const restoreProfileSnapshotKey = useSlicerStore((s) => s.restoreProfileSnapshotKey);
 
   const printer = getActivePrinterProfile();
   const material = getActiveMaterialProfile();
@@ -50,7 +54,8 @@ export function SlicerProfileEditorModal({
           background: colors.panel,
           border: `1px solid ${colors.panelBorder}`,
           borderRadius: 8,
-          width: 560,
+          width: 720,
+          maxWidth: 'calc(100vw - 24px)',
           maxHeight: '80vh',
           display: 'flex',
           flexDirection: 'column',
@@ -74,13 +79,40 @@ export function SlicerProfileEditorModal({
         </div>
 
         {type === 'printer' && printer && (
-          <PrinterProfileEditor activeTab={activeTab} setActiveTab={setActiveTab} printer={printer} updatePrinterProfile={updatePrinterProfile} />
+          <>
+            <PrinterProfileEditor activeTab={activeTab} setActiveTab={setActiveTab} printer={printer} updatePrinterProfile={updatePrinterProfile} />
+            <ProfileSnapshotDiffPanel
+              kind="printer"
+              currentProfile={printer}
+              snapshots={profileSnapshots}
+              restoreProfileSnapshot={restoreProfileSnapshot}
+              restoreProfileSnapshotKey={restoreProfileSnapshotKey}
+            />
+          </>
         )}
         {type === 'material' && material && (
-          <MaterialProfileEditor activeTab={activeTab} setActiveTab={setActiveTab} material={material} updateMaterialProfile={updateMaterialProfile} />
+          <>
+            <MaterialProfileEditor activeTab={activeTab} setActiveTab={setActiveTab} material={material} updateMaterialProfile={updateMaterialProfile} />
+            <ProfileSnapshotDiffPanel
+              kind="material"
+              currentProfile={material}
+              snapshots={profileSnapshots}
+              restoreProfileSnapshot={restoreProfileSnapshot}
+              restoreProfileSnapshotKey={restoreProfileSnapshotKey}
+            />
+          </>
         )}
         {type === 'print' && print && (
-          <PrintProfileEditor activeTab={activeTab} setActiveTab={setActiveTab} print={print} updatePrintProfile={updatePrintProfile} />
+          <>
+            <PrintProfileEditor activeTab={activeTab} setActiveTab={setActiveTab} print={print} updatePrintProfile={updatePrintProfile} />
+            <ProfileSnapshotDiffPanel
+              kind="print"
+              currentProfile={print}
+              snapshots={profileSnapshots}
+              restoreProfileSnapshot={restoreProfileSnapshot}
+              restoreProfileSnapshotKey={restoreProfileSnapshotKey}
+            />
+          </>
         )}
 
         <div

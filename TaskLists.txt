@@ -286,9 +286,9 @@
 #   [x] Reduced-motion mode for animations
 
 ### 14.5 Profile versioning + diff  [S]
-#   [ ] Snapshot a profile on every save
-#   [ ] Diff viewer: pick two snapshots, see changed keys
-#   [ ] Restore individual changes (cherry-pick) or full snapshot
+#   [x] Snapshot a profile on every save
+#   [x] Diff viewer: pick two snapshots, see changed keys
+#   [x] Restore individual changes (cherry-pick) or full snapshot
 
 ### 14.6 Self-hosted profile / spool sync  [M]
 #   [ ] Optional: point at a git repo URL for sync
