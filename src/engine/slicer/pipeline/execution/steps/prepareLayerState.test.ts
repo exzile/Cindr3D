@@ -64,6 +64,7 @@ interface TestPipeline {
   classifyContours(contours: unknown[]): Contour[];
   closeContourGaps(c: Contour[]): Contour[];
   offsetContour(points: THREE.Vector2[], offset: number): THREE.Vector2[];
+  signedArea(points: THREE.Vector2[]): number;
 }
 
 function makePipeline(triangles: unknown[]): TestPipeline {
@@ -75,6 +76,15 @@ function makePipeline(triangles: unknown[]): TestPipeline {
     connectSegments: () => [],
     classifyContours: () => [] as Contour[],
     closeContourGaps: (c: Contour[]) => c,
+    signedArea(points: THREE.Vector2[]): number {
+      let area = 0;
+      for (let i = 0; i < points.length; i++) {
+        const a = points[i];
+        const b = points[(i + 1) % points.length];
+        area += a.x * b.y - b.x * a.y;
+      }
+      return area / 2;
+    },
     /** Axis-aligned-rectangle stub matching the real `offsetContour`
      *  convention: positive offset shifts each edge along its (-dy, dx)
      *  inward normal. For a CCW outer that pulls vertices TOWARD the

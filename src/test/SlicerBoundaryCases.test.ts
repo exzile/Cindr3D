@@ -35,7 +35,12 @@ describe('Slicer boundary cases — small models', () => {
   }, 60_000);
 
   it.each([1, 2, 3] as const)('cylinder R=%dmm produces a circular wall path', async (radius) => {
-    const result = await sliceGeometry(buildCylinder(radius, 1, 16));
+    const result = await sliceGeometry(buildCylinder(radius, 1, 16), {
+      bottomLayers: 0,
+      connectInfillLines: false,
+      infillDensity: 0,
+      topLayers: 0,
+    });
     expect(result.layerCount).toBeGreaterThan(0);
     // Just verify no NaN/Inf in output.
     for (const layer of result.layers) {

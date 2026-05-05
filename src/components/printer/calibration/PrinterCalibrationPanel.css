@@ -60,6 +60,267 @@
   padding-right: 2px;
 }
 
+.printer-calibration-panel__lifecycle {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+}
+
+.printer-calibration-panel__summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.printer-calibration-panel__summary-card {
+  min-height: 58px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.printer-calibration-panel__summary-card span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.printer-calibration-panel__summary-card strong {
+  color: var(--text-primary);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.printer-calibration-panel__summary-card.is-overdue {
+  box-shadow: inset 3px 0 0 #ef4444;
+}
+
+.printer-calibration-panel__summary-card.is-upcoming {
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+
+.printer-calibration-panel__summary-card.is-ok {
+  box-shadow: inset 3px 0 0 #22c55e;
+}
+
+.printer-calibration-panel__section {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.printer-calibration-panel__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.printer-calibration-panel__section-head h3,
+.printer-calibration-panel__service-log h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.printer-calibration-panel__section-head h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.printer-calibration-panel__section-head button,
+.printer-calibration-panel__life-row button,
+.printer-calibration-panel__add-component button,
+.printer-calibration-panel__service-form button,
+.printer-calibration-panel__component-actions button {
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-toolbar);
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.printer-calibration-panel__rows {
+  display: grid;
+  gap: 8px;
+}
+
+.printer-calibration-panel__life-row,
+.printer-calibration-panel__component,
+.printer-calibration-panel__moisture {
+  border: 1px solid color-mix(in srgb, var(--row-color, var(--accent)) 22%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--row-color, var(--accent)) 6%, var(--bg-toolbar));
+  padding: 9px;
+}
+
+.printer-calibration-panel__life-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) 92px auto auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.printer-calibration-panel__life-row.is-overdue,
+.printer-calibration-panel__life-row.is-never,
+.printer-calibration-panel__component.is-overdue,
+.printer-calibration-panel__moisture.is-overdue,
+.printer-calibration-panel__moisture.is-never {
+  --row-color: #ef4444;
+}
+
+.printer-calibration-panel__life-row.is-upcoming,
+.printer-calibration-panel__component.is-upcoming,
+.printer-calibration-panel__moisture.is-upcoming {
+  --row-color: #f59e0b;
+}
+
+.printer-calibration-panel__life-row.is-ok,
+.printer-calibration-panel__component.is-ok,
+.printer-calibration-panel__moisture.is-ok {
+  --row-color: #22c55e;
+}
+
+.printer-calibration-panel__life-row strong,
+.printer-calibration-panel__component strong,
+.printer-calibration-panel__moisture strong,
+.printer-calibration-panel__service-log strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.printer-calibration-panel__life-row span,
+.printer-calibration-panel__component span,
+.printer-calibration-panel__moisture span,
+.printer-calibration-panel__service-log span {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.printer-calibration-panel__life-row label,
+.printer-calibration-panel__component-inputs label {
+  display: grid;
+  gap: 3px;
+}
+
+.printer-calibration-panel__life-row input,
+.printer-calibration-panel__component-inputs input,
+.printer-calibration-panel__add-component input,
+.printer-calibration-panel__add-component select,
+.printer-calibration-panel__service-form input {
+  min-width: 0;
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 0 7px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.printer-calibration-panel__pill {
+  justify-self: start;
+  border: 1px solid color-mix(in srgb, var(--row-color, var(--accent)) 32%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--row-color, var(--accent)) 11%, transparent);
+  padding: 4px 8px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.printer-calibration-panel__split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: 12px;
+}
+
+.printer-calibration-panel__component {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(190px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.printer-calibration-panel__component-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.printer-calibration-panel__component-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.printer-calibration-panel__component-actions button {
+  width: 30px;
+  padding: 0;
+}
+
+.printer-calibration-panel__add-component,
+.printer-calibration-panel__service-form {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 7px;
+  padding-top: 10px;
+}
+
+.printer-calibration-panel__add-component {
+  grid-template-columns: minmax(120px, 1fr) minmax(92px, 0.8fr) minmax(86px, 0.6fr) minmax(86px, 0.6fr) auto;
+}
+
+.printer-calibration-panel__service-form {
+  grid-template-columns: minmax(120px, 1fr) minmax(92px, 0.7fr) minmax(72px, 0.5fr) auto;
+}
+
+.printer-calibration-panel__moisture {
+  display: grid;
+  gap: 8px;
+}
+
+.printer-calibration-panel__moisture p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.printer-calibration-panel__empty {
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  padding: 12px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.printer-calibration-panel__service-log {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 7px;
+  margin-top: 2px;
+  padding-top: 10px;
+}
+
 .printer-calibration-panel__preset {
   min-height: 96px;
   border-radius: 8px;
@@ -127,5 +388,14 @@
 
   .printer-calibration-panel__prepare {
     justify-content: center;
+  }
+
+  .printer-calibration-panel__summary,
+  .printer-calibration-panel__split,
+  .printer-calibration-panel__life-row,
+  .printer-calibration-panel__component,
+  .printer-calibration-panel__add-component,
+  .printer-calibration-panel__service-form {
+    grid-template-columns: 1fr;
   }
 }

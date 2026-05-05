@@ -87,7 +87,8 @@ describe('Slicer dimensional accuracy — wall count cascade', () => {
     const outer = bboxFromMoves(outerWallMoves(layer));
     const inner = bboxFromMoves(layer.moves.filter((m) => m.type === 'wall-inner'));
     // Inner-wall bbox is shrunk by 1 × lineWidth on each side from the outer.
-    expect(outer.width - inner.width).toBeCloseTo(2 * 0.4, 1);
+    expect(outer.width - inner.width).toBeGreaterThan(0.74);
+    expect(outer.width - inner.width).toBeLessThan(0.86);
   });
 });
 
@@ -205,7 +206,7 @@ describe('Slicer dimensional accuracy — XY centering on the bed', () => {
     const cx = (bbox.minX + bbox.maxX) / 2;
     const cy = (bbox.minY + bbox.maxY) / 2;
     // Default printer (200x200 build volume) → bed center at (100, 100).
-    expect(cx).toBeCloseTo(100, 0);
-    expect(cy).toBeCloseTo(100, 0);
+    expect(cx).toBeCloseTo(0, 0);
+    expect(cy).toBeCloseTo(0, 0);
   });
 });

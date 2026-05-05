@@ -7,9 +7,11 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, ClipboardList, X } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, ChevronRight, ClipboardList, Droplets, X } from 'lucide-react';
+import { getMoistureStatus, useCalibrationStore } from '../../../store/calibrationStore';
 import { usePrinterStore } from '../../../store/printerStore';
 import { useSchedulingStore } from '../../../store/schedulingStore';
+import { useSpoolStore } from '../../../store/spoolStore';
 import './StartChecklist.css';
 
 // ─── Toggle (reuse locally) ────────────────────────────────────────────────────
@@ -40,8 +42,17 @@ export function StartChecklistModal({
   onCancel,
 }: StartChecklistModalProps) {
   const getChecklistForPrinter = useSchedulingStore((s) => s.getChecklistForPrinter);
+  const loadedSpoolByPrinterId = useSpoolStore((s) => s.loadedSpoolByPrinterId);
+  const activeSpoolId = useSpoolStore((s) => s.activeSpoolId);
+  const spools = useSpoolStore((s) => s.spools);
+  const moistureBySpoolId = useCalibrationStore((s) => s.moistureBySpoolId);
   const items = getChecklistForPrinter(printerId);
   const visibleItems = items.filter((i) => i.enabled);
+  const loadedSpoolId = loadedSpoolByPrinterId[printerId] ?? activeSpoolId;
+  const loadedSpool = spools.find((spool) => spool.id === loadedSpoolId) ?? null;
+  const moistureProfile = loadedSpool ? moistureBySpoolId[loadedSpool.id] ?? null : null;
+  const moistureStatus = moistureProfile ? getMoistureStatus(moistureProfile) : null;
+  const showMoistureWarning = moistureStatus?.status === 'overdue' || moistureStatus?.status === 'upcoming';
 
   const [checked, setChecked] = useState<Set<string>>(new Set());
 
@@ -79,6 +90,19 @@ export function StartChecklistModal({
         </div>
 
         <div className="start-checklist-modal__body">
+          {loadedSpool && showMoistureWarning && moistureStatus && (
+            <div className={`sc-moisture-warning is-${moistureStatus.status}`}>
+              {moistureStatus.status === 'overdue' ? <AlertTriangle size={15} /> : <Droplets size={15} />}
+              <div>
+                <strong>{loadedSpool.material} moisture check</strong>
+                <span>
+                  {moistureStatus.exposureDays?.toFixed(0)} days open at {moistureStatus.profile.ambientHumidityPct}% RH.
+                  {moistureStatus.status === 'overdue' ? ' Dry before printing.' : ' Consider drying before this job.'}
+                </span>
+              </div>
+            </div>
+          )}
+
           {visibleItems.map((item) => {
             const isChecked = checked.has(item.id);
             return (
