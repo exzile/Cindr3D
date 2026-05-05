@@ -86,6 +86,9 @@ type HoverState = ContextMenuState;
 type PreviewViewPreset = 'iso' | 'top' | 'front' | 'side' | 'fit';
 type DashboardPreviewColorMode = PreviewColorMode | 'object';
 
+const DEFAULT_VIEW_PRESET: PreviewViewPreset = 'iso';
+const DEFAULT_COLOR_MODE: DashboardPreviewColorMode = 'type';
+
 interface PreviewBounds {
   center: THREE.Vector3;
   size: THREE.Vector3;
@@ -95,6 +98,37 @@ interface PreviewBounds {
 interface ObjectStatus {
   label: string;
   color: string;
+}
+
+function isPreviewViewPreset(value: string | null): value is PreviewViewPreset {
+  return value === 'top' || value === 'front' || value === 'side' || value === 'fit' || value === 'iso';
+}
+
+function isDashboardPreviewColorMode(value: string | null): value is DashboardPreviewColorMode {
+  return value === 'speed'
+    || value === 'flow'
+    || value === 'width'
+    || value === 'layer-time'
+    || value === 'wall-quality'
+    || value === 'seam'
+    || value === 'object'
+    || value === 'type';
+}
+
+function readStoredPreviewSettings(storageKey: string): {
+  view: PreviewViewPreset;
+  color: DashboardPreviewColorMode;
+} {
+  try {
+    const savedView = window.localStorage.getItem(`${storageKey}:view`);
+    const savedColor = window.localStorage.getItem(`${storageKey}:color`);
+    return {
+      view: isPreviewViewPreset(savedView) ? savedView : DEFAULT_VIEW_PRESET,
+      color: isDashboardPreviewColorMode(savedColor) ? savedColor : DEFAULT_COLOR_MODE,
+    };
+  } catch {
+    return { view: DEFAULT_VIEW_PRESET, color: DEFAULT_COLOR_MODE };
+  }
 }
 
 function computePreviewBounds(objects: PlateObject[], buildVolume: { x: number; y: number; z: number }): PreviewBounds {
@@ -426,28 +460,30 @@ function NozzleMarker({
   if (!position) return null;
 
   return (
-    <group position={[position.x, position.y, position.z + 3]}>
-      <mesh>
-        <sphereGeometry args={[1.8, 16, 16]} />
-        <meshBasicMaterial color="#facc15" depthWrite={false} />
-      </mesh>
-      <mesh rotation={[Math.PI, 0, 0]} position={[0, 0, 4]}>
-        <coneGeometry args={[2.4, 6, 18]} />
-        <meshBasicMaterial color="#facc15" transparent opacity={0.7} depthWrite={false} />
-      </mesh>
-      <lineSegments>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" args={[new Float32Array([-5, 0, 0, 5, 0, 0, 0, -5, 0, 0, 5, 0]), 3]} />
-        </bufferGeometry>
-        <lineBasicMaterial color="#facc15" transparent opacity={0.8} depthWrite={false} />
-      </lineSegments>
+    <>
       {trailPoints.length > 1 && (
         <Line points={trailPoints} color="#facc15" transparent opacity={0.35} depthWrite={false} />
       )}
-      <Text position={[0, 0, 10]} fontSize={4} color="#facc15" anchorX="center" anchorY="middle">
-        nozzle
-      </Text>
-    </group>
+      <group position={[position.x, position.y, position.z + 3]}>
+        <mesh>
+          <sphereGeometry args={[1.8, 16, 16]} />
+          <meshBasicMaterial color="#facc15" depthWrite={false} />
+        </mesh>
+        <mesh rotation={[Math.PI, 0, 0]} position={[0, 0, 4]}>
+          <coneGeometry args={[2.4, 6, 18]} />
+          <meshBasicMaterial color="#facc15" transparent opacity={0.7} depthWrite={false} />
+        </mesh>
+        <lineSegments>
+          <bufferGeometry>
+            <bufferAttribute attach="attributes-position" args={[new Float32Array([-5, 0, 0, 5, 0, 0, 0, -5, 0, 0, 5, 0]), 3]} />
+          </bufferGeometry>
+          <lineBasicMaterial color="#facc15" transparent opacity={0.8} depthWrite={false} />
+        </lineSegments>
+        <Text position={[0, 0, 10]} fontSize={4} color="#facc15" anchorX="center" anchorY="middle">
+          nozzle
+        </Text>
+      </group>
+    </>
   );
 }
 
@@ -455,6 +491,9 @@ function NozzleMarker({
 
 export default function MeshPreviewPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const hoverFrameRef = useRef<number | null>(null);
+  const pendingHoverRef = useRef<HoverState | null>(null);
+  const activePrinterId = usePrinterStore((s) => s.activePrinterId);
   const boardType = usePrinterStore((s) => s.config.boardType);
   const model = usePrinterStore((s) => s.model);
   const cancelObject = usePrinterStore((s) => s.cancelObject);
@@ -470,23 +509,12 @@ export default function MeshPreviewPanel() {
   const bv = useMemo(() => printerProfile?.buildVolume ?? { x: 220, y: 220, z: 250 }, [printerProfile?.buildVolume]);
   const previewBounds = useMemo(() => computePreviewBounds(plateObjects, bv), [plateObjects, bv]);
   const hiddenTypes = useMemo(() => new Set<string>(), []);
-  const storageKey = `cindr3d:dashboard-print-preview:${boardType}`;
-  const [viewPreset, setViewPreset] = useState<PreviewViewPreset>(() => {
-    try {
-      const saved = window.localStorage.getItem(`${storageKey}:view`);
-      return saved === 'top' || saved === 'front' || saved === 'side' || saved === 'fit' || saved === 'iso' ? saved : 'iso';
-    } catch {
-      return 'iso';
-    }
-  });
-  const [colorMode, setColorMode] = useState<DashboardPreviewColorMode>(() => {
-    try {
-      const saved = window.localStorage.getItem(`${storageKey}:color`);
-      return saved === 'speed' || saved === 'flow' || saved === 'width' || saved === 'layer-time' || saved === 'wall-quality' || saved === 'seam' || saved === 'object' || saved === 'type' ? saved : 'type';
-    } catch {
-      return 'type';
-    }
-  });
+  const storageScope = activePrinterId || boardType || 'default';
+  const storageKey = `cindr3d:dashboard-print-preview:${storageScope}`;
+  const initialStoredSettings = useMemo(() => readStoredPreviewSettings(storageKey), [storageKey]);
+  const [viewPreset, setViewPreset] = useState<PreviewViewPreset>(() => initialStoredSettings.view);
+  const [colorMode, setColorMode] = useState<DashboardPreviewColorMode>(() => initialStoredSettings.color);
+  const [loadedStorageKey, setLoadedStorageKey] = useState(storageKey);
   const [viewRevision, setViewRevision] = useState(0);
   const [layerOverride, setLayerOverride] = useState<number | null>(null);
   const [nozzleTrail, setNozzleTrail] = useState<Array<{ x: number; y: number; z: number }>>([]);
@@ -541,6 +569,10 @@ export default function MeshPreviewPanel() {
     () => printIssues.filter((issue) => issue.layerIndex === displayedLayer),
     [displayedLayer, printIssues],
   );
+  const printabilityByObjectId = useMemo(
+    () => new Map((printabilityReport?.objects ?? []).map((entry) => [entry.objectId, entry])),
+    [printabilityReport?.objects],
+  );
   const nozzlePosition = useMemo(() => axisPosition(model), [model]);
   const progressPercent = boardType === 'klipper' && klipperStatus
     ? klipperStatus.progress * 100
@@ -568,12 +600,22 @@ export default function MeshPreviewPanel() {
   }, [totalLayers]);
 
   useEffect(() => {
-    try { window.localStorage.setItem(`${storageKey}:view`, viewPreset); } catch { /* ignore */ }
-  }, [storageKey, viewPreset]);
+    const saved = readStoredPreviewSettings(storageKey);
+    setLoadedStorageKey(storageKey);
+    setViewPreset(saved.view);
+    setColorMode(saved.color);
+    setViewRevision((revision) => revision + 1);
+  }, [storageKey]);
 
   useEffect(() => {
-    try { window.localStorage.setItem(`${storageKey}:color`, colorMode); } catch { /* ignore */ }
-  }, [colorMode, storageKey]);
+    if (loadedStorageKey !== storageKey) return;
+    try {
+      window.localStorage.setItem(`${storageKey}:view`, viewPreset);
+      window.localStorage.setItem(`${storageKey}:color`, colorMode);
+    } catch {
+      /* ignore */
+    }
+  }, [colorMode, loadedStorageKey, storageKey, viewPreset]);
 
   useEffect(() => {
     if (!nozzlePosition) return;
@@ -628,15 +670,21 @@ export default function MeshPreviewPanel() {
   const objectStatus = useCallback((plateObj: PlateObject): ObjectStatus => {
     if (isCancelledObject(plateObj)) return { label: 'cancelled', color: '#ef4444' };
     if (isCurrentObject(plateObj)) return { label: 'printing', color: '#44aaff' };
-    const report = printabilityReport?.objects.find((entry) => entry.objectId === plateObj.id);
+    const report = printabilityByObjectId.get(plateObj.id);
     if (report?.issues.some((issue) => issue.severity === 'error')) return { label: 'risk', color: '#f97316' };
     if (report?.issues.some((issue) => issue.severity === 'warning')) return { label: 'check', color: '#facc15' };
     return { label: 'queued', color: '#a7f3d0' };
-  }, [isCancelledObject, isCurrentObject, printabilityReport?.objects]);
+  }, [isCancelledObject, isCurrentObject, printabilityByObjectId]);
 
   // ── Context menu state ─────────────────────────────────────────────────────
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
+
+  useEffect(() => () => {
+    if (hoverFrameRef.current !== null) {
+      window.cancelAnimationFrame(hoverFrameRef.current);
+    }
+  }, []);
 
   const setPreviewView = useCallback((view: PreviewViewPreset) => {
     setViewPreset(view);
@@ -691,18 +739,45 @@ export default function MeshPreviewPanel() {
     });
   };
 
+  const clearObjectHover = useCallback(() => {
+    pendingHoverRef.current = null;
+    if (hoverFrameRef.current !== null) {
+      window.cancelAnimationFrame(hoverFrameRef.current);
+      hoverFrameRef.current = null;
+    }
+    setHover(null);
+  }, []);
+
   const handleObjectHover = (objectId: string) => (e: ThreeEvent<PointerEvent>) => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
-    setHover({
+    pendingHoverRef.current = {
       objectId,
       x: Math.max(8, Math.min(e.nativeEvent.clientX - rect.left + 10, rect.width - 210)),
       y: Math.max(8, Math.min(e.nativeEvent.clientY - rect.top + 10, rect.height - 92)),
+    };
+    if (hoverFrameRef.current !== null) return;
+    hoverFrameRef.current = window.requestAnimationFrame(() => {
+      hoverFrameRef.current = null;
+      const nextHover = pendingHoverRef.current;
+      if (!nextHover) return;
+      setHover((previous) => {
+        if (
+          previous
+          && previous.objectId === nextHover.objectId
+          && Math.abs(previous.x - nextHover.x) < 4
+          && Math.abs(previous.y - nextHover.y) < 4
+        ) {
+          return previous;
+        }
+        return nextHover;
+      });
     });
   };
 
   const menuObj = menu ? plateObjects.find((p) => p.id === menu.objectId) : null;
   const hoverObj = hover ? plateObjects.find((p) => p.id === hover.objectId) : null;
+  const hoverReport = hoverObj ? printabilityByObjectId.get(hoverObj.id) : null;
 
   const handleCancelFromMenu = useCallback(async () => {
     if (!menuObj) return;
@@ -779,7 +854,7 @@ export default function MeshPreviewPanel() {
                   colorMode={colorMode}
                   onContextMenu={handleObjectContextMenu(obj.id)}
                   onHover={handleObjectHover(obj.id)}
-                  onHoverEnd={() => setHover(null)}
+                  onHoverEnd={clearObjectHover}
                 />
               ))}
 
@@ -1030,9 +1105,9 @@ export default function MeshPreviewPanel() {
               <span>{objectApproxFilament(sliceResult?.filamentWeight, plateObjects.length)}</span>
               <span>{objectStatus(hoverObj).label}</span>
             </div>
-            {printabilityReport?.objects.find((entry) => entry.objectId === hoverObj.id)?.issues[0] && (
+            {hoverReport?.issues[0] && (
               <div style={{ marginTop: 4, color: '#facc15' }}>
-                {printabilityReport.objects.find((entry) => entry.objectId === hoverObj.id)?.issues[0]?.message}
+                {hoverReport.issues[0].message}
               </div>
             )}
           </div>
