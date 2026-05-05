@@ -1848,6 +1848,21 @@ function createCindr3dMcpServer(relay: BrowserRelay): McpServer {
     annotations: { readOnlyHint: false, openWorldHint: false },
   }, () => relayTool(relay, 'printer_emergency_stop', {}));
 
+  server.registerTool('printer_list_printers', {
+    title: 'List Printers',
+    description: 'List configured printers and identify the active printer.',
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, () => relayTool(relay, 'printer_list_printers', {}));
+
+  server.registerTool('printer_select_printer', {
+    title: 'Select Printer',
+    description: 'Switch the active printer by printer ID before running printer-specific tools.',
+    inputSchema: {
+      id: z.string().describe('Printer ID from printer_list_printers.'),
+    },
+    annotations: { readOnlyHint: false, openWorldHint: false },
+  }, ({ id }) => relayTool(relay, 'printer_select_printer', { id }));
+
   server.registerTool('printer_list_files', {
     title: 'List Printer Files',
     description: "List G-code files on the printer's SD card.",
@@ -1893,6 +1908,49 @@ function createCindr3dMcpServer(relay: BrowserRelay): McpServer {
     inputSchema: { tool: z.number().describe('Tool index') },
     annotations: { readOnlyHint: false, openWorldHint: false },
   }, ({ tool }) => relayTool(relay, 'printer_unload_filament', { tool }));
+
+  // ── Vision / AI print monitoring ─────────────────────────────────────────
+  server.registerTool('vision_check_print', {
+    title: 'Check Print With Vision',
+    description: 'Capture a camera frame, combine it with printer telemetry and slicer geometry, and classify likely print failures.',
+    inputSchema: {
+      cameraId: z.string().optional().describe('Optional camera ID. Defaults to the active camera.'),
+      confidenceThreshold: z.number().optional().describe('Failure confidence threshold from 0 to 1. Defaults to 0.82.'),
+      autoPauseEnabled: z.boolean().optional().describe('Pause when confidence is above threshold. Defaults to false.'),
+      requireUserConfirmation: z.boolean().optional().describe('Require confirmation before auto-pause. Defaults to true.'),
+      saveSettings: z.boolean().optional().describe('Persist the supplied threshold and auto-pause settings.'),
+      confirmAutoAction: z.boolean().optional().describe('Set true only after the user confirms the suggested auto-pause.'),
+      notes: z.string().optional().describe('Optional operator notes to include in the diagnosis context.'),
+    },
+    annotations: { readOnlyHint: false, openWorldHint: true },
+  }, (args) => relayTool(relay, 'vision_check_print', args as Record<string, unknown>));
+
+  server.registerTool('diagnose_print', {
+    title: 'Diagnose Print',
+    description: 'Diagnose the active print from recent camera frames, printer telemetry, filament state, and slicer expected-vs-actual layer timing.',
+    inputSchema: {
+      cameraId: z.string().optional().describe('Optional camera ID. Defaults to the active camera.'),
+      frameCount: z.number().optional().describe('Number of recent frames to include, 1 to 5. Defaults to 3.'),
+      notes: z.string().optional().describe('Optional operator notes to include in the diagnosis context.'),
+    },
+    annotations: { readOnlyHint: true, openWorldHint: true },
+  }, (args) => relayTool(relay, 'diagnose_print', args as Record<string, unknown>));
+
+  server.registerTool('tuning_analyze_tower', {
+    title: 'Analyze Tuning Tower',
+    description: 'Analyze calibration tower camera frames and recommend tuning values without applying them.',
+    inputSchema: {
+      kind: z.enum(['pressure-advance', 'retraction', 'temperature', 'first-layer-squish', 'input-shaper']).describe('Tuning wizard kind.'),
+      cameraId: z.string().optional().describe('Optional camera ID. Defaults to the active camera.'),
+      frameCount: z.number().optional().describe('Number of recent frames to include, 1 to 5. Defaults to 3.'),
+      startValue: z.number().optional().describe('Tower start value, when applicable.'),
+      stepPerMm: z.number().optional().describe('Tower setting increment per mm, when applicable.'),
+      towerHeightMm: z.number().optional().describe('Visible/measured tower height in mm, when applicable.'),
+      axis: z.enum(['X', 'Y']).optional().describe('Axis for input shaper analysis.'),
+      notes: z.string().optional().describe('Optional operator notes to include in the tuning analysis.'),
+    },
+    annotations: { readOnlyHint: true, openWorldHint: true },
+  }, (args) => relayTool(relay, 'tuning_analyze_tower', args as Record<string, unknown>));
 
   // ── Phase 3: Resources ────────────────────────────────────────────────────
   server.resource('document_summary', 'cindr3d://document/summary', {
@@ -2123,9 +2181,26 @@ function cindr3dMcpPlugin(): Plugin {
   };
 }
 
+// Strips the deprecation warn() from THREE.Clock so the console stays clean.
+// react-three-fiber still uses THREE.Clock internally and cannot be configured
+// to use THREE.Timer instead; removing just the warn() is the minimal fix.
+function silenceThreeClockPlugin(): Plugin {
+  return {
+    name: 'silence-three-clock',
+    transform(code, id) {
+      if (!id.includes('three') || !code.includes('THREE.Clock:')) return null;
+      // Remove the warn line:  warn( 'THREE.Clock: This module has been deprecated...' );
+      return {
+        code: code.replace(/warn\s*\(\s*['"]THREE\.Clock:[^'"]*['"]\s*\);?/g, ''),
+        map: null,
+      };
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), wasm(), duetProxyPlugin(), cameraProxyPlugin(), rtspHlsBridgePlugin(), rtspRecordingPlugin(), githubProxyPlugin(), cindr3dMcpPlugin(), noCacheDevAssetsPlugin()],
+  plugins: [silenceThreeClockPlugin(), react(), wasm(), duetProxyPlugin(), cameraProxyPlugin(), rtspHlsBridgePlugin(), rtspRecordingPlugin(), githubProxyPlugin(), cindr3dMcpPlugin(), noCacheDevAssetsPlugin()],
   resolve: {
     alias: {
       module: fileURLToPath(new URL('./src/shims/nodeModule.ts', import.meta.url)),

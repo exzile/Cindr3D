@@ -30,7 +30,7 @@
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.6.0",
+    "@react-three/fiber": "9.6.1",
     "@react-three/postprocessing": "^3.0.4",
     "fflate": "^0.8.2",
     "hls.js": "^1.6.16",

@@ -7,6 +7,7 @@ import {
 import { useCADStore } from '../../store/cadStore';
 import { useComponentStore } from '../../store/componentStore';
 import { useThemeStore } from '../../store/themeStore';
+import { usePrinterStore } from '../../store/printerStore';
 import { PROVIDER_MODELS, useAiAssistantStore, type AiProvider } from '../../store/aiAssistantStore';
 import {
   openBundle, saveBundleAs, saveBundleSlice,
@@ -60,6 +61,14 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
   const workspaceMode = useCADStore((s) => s.workspaceMode);
   const isDesign = workspaceMode === 'design';
   const showFileMenu = isDesign; // for undo/redo + design menu gating below
+
+  const printerConnected = usePrinterStore((s) => s.connected);
+  const printerModel = usePrinterStore((s) => s.model);
+  const printerPrinters = usePrinterStore((s) => s.printers);
+  const printerActivePrinterId = usePrinterStore((s) => s.activePrinterId);
+  const activePrinterName = printerPrinters.find((p) => p.id === printerActivePrinterId)?.name ?? 'Printer';
+  const printerStatus = printerModel.state?.status ?? 'disconnected';
+  const isPrinterWorkspace = workspaceMode === 'printer';
 
   const bundleFilename = useProjectFileStore((s) => s.filename);
   const hasBundle = useProjectFileStore((s) => s.hasBundle);
@@ -495,6 +504,15 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
             : 'Cindr3D'}
           {bundleFilename && !isDesign ? ` — ${bundleFilename}` : ''}
         </span>
+        {isPrinterWorkspace && (
+          <span className={`ribbon-printer-pill${printerConnected ? ' is-connected' : ''}`}>
+            <span className="ribbon-printer-pill__dot" />
+            <span className="ribbon-printer-pill__name">{activePrinterName}</span>
+            {printerConnected && (
+              <span className="ribbon-printer-pill__status">{printerStatus}</span>
+            )}
+          </span>
+        )}
       </div>
       <div className="ribbon-quick-right">
         <button

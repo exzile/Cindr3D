@@ -37,6 +37,7 @@ async function* readSSE(response: Response): AsyncGenerator<{ event?: string; da
 // ── Message types for API calls ───────────────────────────────────────────────
 
 type ApiMessage =
+  | { role: 'system'; content: string }
   | { role: 'user'; content: string | ApiContent[] }
   | { role: 'assistant'; content: string | ApiContent[] };
 
@@ -52,10 +53,36 @@ type PanelGeometry = {
   height: number;
 };
 
+type DiagnosisToolResult = {
+  result?: {
+    summary?: string;
+    rankedCauses?: Array<{
+      title?: string;
+      rationale?: string;
+      confidence?: number;
+      settingTweaks?: Array<{ tool: string; args: Record<string, unknown>; label: string }>;
+    }>;
+    immediateActions?: string[];
+  };
+};
+
 const PANEL_GEOMETRY_KEY = 'cindr3d-ai-assistant-geometry';
 const PANEL_MIN_WIDTH = 360;
 const PANEL_MIN_HEIGHT = 380;
 const PANEL_EDGE_GAP = 8;
+
+const AI_SYSTEM_PROMPT = `You are Cindr3D's in-app AI operator for CAD, slicing, printer monitoring, and physical printer control.
+
+Use the available MCP tools when they are the safest way to inspect state or act. Before acting on printer hardware, prefer reading status first. For named printer requests, list printers and switch to the requested printer before running printer tools. Execute multi-step user requests as an explicit ordered plan using tool calls, then summarize what changed.
+
+Safety rules:
+- Never invent printer, file, object, or profile IDs. List or inspect first when uncertain.
+- Ask for clarification instead of guessing when a command could affect the wrong printer, wrong file, or wrong temperature.
+- Destructive or physical operations may be gated by the app and require user confirmation.
+- Treat emergency stop, cancel print, file deletion, raw G-code, homing, jogging, extrusion, heater changes, fan changes, filament load/unload, macro runs, and starting/resuming prints as physical actions.
+
+Available MCP tools:
+${BYOK_TOOLS.map((tool) => `- ${tool.name}: ${tool.description}`).join('\n')}`;
 
 function defaultPanelGeometry(): PanelGeometry {
   const width = Math.min(440, Math.max(PANEL_MIN_WIDTH, window.innerWidth - 32));
@@ -113,8 +140,10 @@ async function* streamAnthropic(
   model: string,
   apiKey: string,
   messages: ApiMessage[],
+  systemPrompt: string,
 ): AsyncGenerator<StreamEvent> {
   const tools = BYOK_TOOLS.map(toAnthropic);
+  const apiMessages = messages.filter((message) => message.role !== 'system');
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -123,7 +152,7 @@ async function* streamAnthropic(
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
-    body: JSON.stringify({ model, messages, tools, stream: true, max_tokens: 4096 }),
+    body: JSON.stringify({ model, system: systemPrompt, messages: apiMessages, tools, stream: true, max_tokens: 4096 }),
   });
   if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${await res.text()}`);
 
@@ -192,7 +221,7 @@ async function* streamOpenAI(
         const t = tc as Record<string, unknown>;
         const idx = t.index as number;
         const fn = t.function as Record<string, unknown> | undefined;
-        if (t.id) toolAccum[idx] = { id: t.id as string, name: (fn?.name as string) ?? '', args: '' };
+        if (t.id) toolAccum[idx] = { id: t.id as string, name: (fn?.name as string) ?? '', args: (fn?.arguments as string) ?? '' };
         else if (toolAccum[idx]) {
           toolAccum[idx].name ||= (fn?.name as string) ?? '';
           toolAccum[idx].args += (fn?.arguments as string) ?? '';
@@ -223,7 +252,7 @@ async function dispatchTool(
   confirmDestructive: boolean,
 ): Promise<string> {
   if (confirmDestructive && DESTRUCTIVE_TOOLS.has(name)) {
-    const ok = window.confirm(`The assistant wants to run "${name}". This modifies geometry — proceed?`);
+    const ok = window.confirm(`The assistant wants to run "${name}". This can modify geometry, files, printer settings, or physical printer state. Proceed?`);
     if (!ok) return JSON.stringify({ error: 'User declined the operation.' });
   }
   const handler = TOOL_HANDLERS[name];
@@ -239,7 +268,9 @@ async function dispatchTool(
 // ── Convert our ChatMessage[] to API messages ─────────────────────────────────
 
 function buildApiMessages(messages: ChatMessage[]): ApiMessage[] {
-  return messages.flatMap((m): ApiMessage[] => {
+  return [
+    { role: 'system', content: AI_SYSTEM_PROMPT },
+    ...messages.flatMap((m): ApiMessage[] => {
     if (m.role === 'user') return [{ role: 'user', content: m.content }];
     if (m.role === 'assistant') return [{ role: 'assistant', content: m.content }];
     if (m.role === 'tool_result' && m.toolName) {
@@ -255,13 +286,15 @@ function buildApiMessages(messages: ChatMessage[]): ApiMessage[] {
       ];
     }
     return [];
-  });
+    }),
+  ];
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function MessageBubble({ msg }: { msg: ChatMessage }) {
   if (msg.role === 'tool_result') {
+    if (msg.toolName === 'diagnose_print') return <DiagnosisResultBubble msg={msg} />;
     return (
       <div className="ai-msg ai-msg-tool">
         <span className="ai-msg-tool-name">{msg.toolName}</span>
@@ -272,6 +305,76 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
   return (
     <div className={`ai-msg ai-msg-${msg.role} ${msg.error ? 'ai-msg-error' : ''}`}>
       <div className="ai-msg-content">{msg.content || <span className="ai-msg-thinking">…</span>}</div>
+    </div>
+  );
+}
+
+function DiagnosisResultBubble({ msg }: { msg: ChatMessage }) {
+  const [applying, setApplying] = useState<string | null>(null);
+  let parsed: DiagnosisToolResult | null = null;
+  try {
+    parsed = JSON.parse(msg.content) as DiagnosisToolResult;
+  } catch {
+    parsed = null;
+  }
+  const diagnosis = parsed?.result;
+  const causes = diagnosis?.rankedCauses ?? [];
+  const actions = diagnosis?.immediateActions ?? [];
+  const tweaks = causes.flatMap((cause) => cause.settingTweaks ?? []);
+
+  const applyTweak = useCallback(async (tweak: { tool: string; args: Record<string, unknown>; label: string }) => {
+    setApplying(tweak.label);
+    try {
+      await dispatchTool(tweak.tool, tweak.args, true);
+    } finally {
+      setApplying(null);
+    }
+  }, []);
+
+  if (!diagnosis) {
+    return (
+      <div className="ai-msg ai-msg-tool">
+        <span className="ai-msg-tool-name">{msg.toolName}</span>
+        <span className="ai-msg-tool-result">{msg.content}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="ai-msg ai-msg-tool ai-diagnosis">
+      <span className="ai-msg-tool-name">diagnose_print</span>
+      <div className="ai-diagnosis-summary">{diagnosis.summary}</div>
+      {causes.length > 0 && (
+        <div className="ai-diagnosis-causes">
+          {causes.slice(0, 3).map((cause, index) => (
+            <div key={`${cause.title}-${index}`} className="ai-diagnosis-cause">
+              <span>{cause.title ?? 'Possible cause'}</span>
+              {typeof cause.confidence === 'number' && <span>{Math.round(cause.confidence * 100)}%</span>}
+            </div>
+          ))}
+        </div>
+      )}
+      {actions.length > 0 && (
+        <div className="ai-diagnosis-actions">
+          {actions.slice(0, 3).map((action, index) => <span key={`${action}-${index}`}>{action}</span>)}
+        </div>
+      )}
+      {tweaks.length > 0 && (
+        <div className="ai-diagnosis-tweaks">
+          {tweaks.slice(0, 4).map((tweak, index) => (
+            <button
+              key={`${tweak.tool}-${tweak.label}-${index}`}
+              type="button"
+              className="ai-diagnosis-tweak"
+              disabled={applying !== null}
+              onClick={() => void applyTweak(tweak)}
+              title={tweak.tool}
+            >
+              {applying === tweak.label ? 'Applying...' : tweak.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -413,7 +516,7 @@ function ChatTab() {
 
       try {
         const stream = provider === 'anthropic'
-          ? streamAnthropic(model, apiKey, apiMessages)
+          ? streamAnthropic(model, apiKey, apiMessages, AI_SYSTEM_PROMPT)
           : streamOpenAI(getEndpoint(provider), model, apiKey, apiMessages);
 
         let lastAssistantContent = '';
@@ -426,7 +529,7 @@ function ChatTab() {
           } else if (evt.type === 'tool_call') {
             pendingToolCalls.push(evt);
           } else if (evt.type === 'done') {
-            continueLoop = evt.stop_reason === 'tool_use' && pendingToolCalls.length > 0;
+            continueLoop = (evt.stop_reason === 'tool_use' || evt.stop_reason === 'tool_calls') && pendingToolCalls.length > 0;
           }
         }
 
@@ -463,6 +566,20 @@ function ChatTab() {
 
     setStreaming(false);
   }, [streaming, provider, model, apiKey, confirmDestructive, addMessage, appendToLast, setStreaming]);
+
+  const runDiagnosis = useCallback(async () => {
+    if (streaming || !apiKey) return;
+    setStreaming(true);
+    addMessage({ id: crypto.randomUUID(), role: 'user', content: "What's wrong with my print?", timestamp: Date.now() });
+    try {
+      const resultStr = await dispatchTool('diagnose_print', { frameCount: 3 }, confirmDestructive);
+      addMessage({ id: crypto.randomUUID(), role: 'tool_result', toolName: 'diagnose_print', content: resultStr, timestamp: Date.now() });
+    } catch (err) {
+      addMessage({ id: crypto.randomUUID(), role: 'assistant', content: `Error: ${(err as Error).message}`, error: true, timestamp: Date.now() });
+    } finally {
+      setStreaming(false);
+    }
+  }, [streaming, apiKey, confirmDestructive, addMessage, setStreaming]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -503,6 +620,11 @@ function ChatTab() {
         )}
         {messages.map((m) => <MessageBubble key={m.id} msg={m} />)}
         <div ref={bottomRef} />
+      </div>
+      <div className="ai-quick-actions">
+        <button type="button" className="ai-quick-action" disabled={!apiKey || streaming} onClick={() => void runDiagnosis()}>
+          Diagnose print
+        </button>
       </div>
       <div className="ai-input-row">
         <textarea

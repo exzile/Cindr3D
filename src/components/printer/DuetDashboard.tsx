@@ -3,7 +3,7 @@ import type { DragEvent } from 'react';
 import ReactGridLayout, { noCompactor, useContainerWidth, type Layout, type LayoutItem as GridLayoutItem } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
-import { Check, Edit3, Eye, EyeOff, FileCode, FolderOpen, GripVertical, Minus, PencilRuler, PlugZap, Plus, RotateCcw, Settings, Wifi, X } from 'lucide-react';
+import { Check, Edit3, Eye, EyeOff, FileCode, FolderOpen, Minus, PencilRuler, PlugZap, Plus, RotateCcw, Settings, Wifi, X } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import {
   GRID_COLS,
@@ -469,10 +469,10 @@ function DashboardLayoutOverlay({
   const visiblePanels = panels.filter((panel) => !hidden[panel.id]).sort(panelSort(layouts));
   const hiddenPanels = panels.filter((panel) => hidden[panel.id]);
 
-  const renderPanelRow = (panel: (typeof PANEL_DEFS)[number]) => {
+  const renderChip = (panel: (typeof PANEL_DEFS)[number]) => {
     const isHidden = hidden[panel.id] ?? false;
-    const rowClass = [
-      'dc-layout-row',
+    const chipClass = [
+      'dc-layout-chip',
       isHidden ? 'is-hidden' : '',
       dragId === panel.id ? 'is-dragging' : '',
     ]
@@ -482,7 +482,7 @@ function DashboardLayoutOverlay({
     return (
       <div
         key={panel.id}
-        className={rowClass}
+        className={chipClass}
         draggable
         onDragStart={(event) => {
           event.dataTransfer.effectAllowed = 'move';
@@ -490,79 +490,79 @@ function DashboardLayoutOverlay({
           onDragStart(panel.id);
         }}
         onDragEnd={onDragEnd}
+        onClick={() => isHidden ? onAddPanel(panel.id) : onSetHidden(panel.id, true)}
+        title={isHidden ? `Add ${panel.title}` : `Remove ${panel.title}`}
+        role="button"
+        aria-pressed={!isHidden}
+        aria-label={isHidden ? `Add ${panel.title}` : `Remove ${panel.title}`}
       >
-        <GripVertical size={14} className="dc-layout-row__grip" />
-        <span className="dc-layout-row__icon">{panel.icon}</span>
-        <span className="dc-layout-row__label">{panel.title}</span>
-        <button
-          className="dc-layout-row__toggle"
-          onClick={() => isHidden ? onAddPanel(panel.id) : onSetHidden(panel.id, true)}
-          title={isHidden ? 'Add card' : 'Remove card'}
-          aria-label={isHidden ? `Add ${panel.title}` : `Remove ${panel.title}`}
-        >
-          {isHidden ? <Plus size={13} /> : <Minus size={13} />}
-        </button>
+        <span className="dc-layout-chip__icon">{panel.icon}</span>
+        <span className="dc-layout-chip__label">{panel.title}</span>
+        <span className="dc-layout-chip__badge">
+          {isHidden ? <Plus size={9} /> : <Minus size={9} />}
+        </span>
       </div>
     );
   };
 
   return (
-    <aside className="dc-layout-overlay" aria-label="Dashboard cards">
-      <div className="dc-layout-overlay__header">
+    <div className="dc-layout-ribbon" aria-label="Dashboard cards">
+      <div className="dc-layout-ribbon__label">
+        <span className="dc-layout-ribbon__count">{visiblePanels.length} / {panels.length}</span>
         <span>Cards</span>
-        <div className="dc-layout-overlay__actions">
-          <span>{visiblePanels.length} / {panels.length}</span>
-          <button
-            className="dc-layout-clear"
-            disabled={visiblePanels.length === 0}
-            onClick={onClearPanels}
-            title="Clear all cards"
-          >
-            Clear
-          </button>
-          <button
-            className="dc-layout-done"
-            onClick={onDone}
-            title="Done editing layout"
-          >
-            Done
-          </button>
-        </div>
       </div>
+
       <div
-        className="dc-layout-section"
+        className="dc-layout-ribbon__section dc-layout-ribbon__section--active"
         onDragOver={(event) => {
           event.preventDefault();
           event.dataTransfer.dropEffect = 'move';
         }}
         onDrop={(event) => onVisibilityDrop(event, false)}
       >
-        <div className="dc-layout-section__title">
-          <Eye size={12} /> Active
-        </div>
-        <div className="dc-layout-list">
-          {visiblePanels.length > 0 ? visiblePanels.map(renderPanelRow) : (
-            <div className="dc-layout-empty">No active cards</div>
+        <div className="dc-layout-chip-list">
+          {visiblePanels.length > 0 ? visiblePanels.map(renderChip) : (
+            <span className="dc-layout-ribbon__empty">Drop here</span>
           )}
         </div>
+        <span className="dc-layout-ribbon__section-label"><Eye size={9} /> Active</span>
       </div>
+
+      <div className="dc-layout-ribbon__divider" />
+
       <div
-        className="dc-layout-section"
+        className="dc-layout-ribbon__section dc-layout-ribbon__section--hidden"
         onDragOver={(event) => {
           event.preventDefault();
           event.dataTransfer.dropEffect = 'move';
         }}
         onDrop={(event) => onVisibilityDrop(event, true)}
       >
-        <div className="dc-layout-section__title">
-          <EyeOff size={12} /> Hidden
-        </div>
-        <div className="dc-layout-list">
-          {hiddenPanels.length > 0 ? hiddenPanels.map(renderPanelRow) : (
-            <div className="dc-layout-empty">No hidden cards</div>
+        <div className="dc-layout-chip-list">
+          {hiddenPanels.length > 0 ? hiddenPanels.map(renderChip) : (
+            <span className="dc-layout-ribbon__empty">None</span>
           )}
         </div>
+        <span className="dc-layout-ribbon__section-label"><EyeOff size={9} /> Hidden</span>
       </div>
-    </aside>
+
+      <div className="dc-layout-ribbon__actions">
+        <button
+          className="dc-layout-clear"
+          disabled={visiblePanels.length === 0}
+          onClick={onClearPanels}
+          title="Clear all cards"
+        >
+          Clear
+        </button>
+        <button
+          className="dc-layout-done"
+          onClick={onDone}
+          title="Done editing layout"
+        >
+          Done
+        </button>
+      </div>
+    </div>
   );
 }

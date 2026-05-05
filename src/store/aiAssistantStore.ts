@@ -62,7 +62,7 @@ export const useAiAssistantStore = create<AiAssistantState>()(
       model: PROVIDER_DEFAULT_MODELS.anthropic,
       apiKey: '',
       useClaudeCode: false,
-      confirmDestructive: false,
+      confirmDestructive: true,
       setProvider: (p) => set((s) => ({ provider: p, model: s.provider === p ? s.model : PROVIDER_DEFAULT_MODELS[p] })),
       setModel: (m) => set({ model: m }),
       setApiKey: (k) => set({ apiKey: k }),
