@@ -264,8 +264,8 @@
 ### 14.1 Print resume across browser sessions  [M]
 #   [x] Capture "what print is this UI attached to" so opening Cindr3D
 #       on a new device reconnects to the live job
-#   [ ] Reconnect handshake reuses live polling / websocket auth
-#   [ ] Banner: "Print was started from Chromebook on Tuesday 4 PM"
+#   [x] Reconnect handshake reuses live polling / websocket auth
+#   [x] Banner: "Print was started from Chromebook on Tuesday 4 PM"
 
 ### 14.2 Mobile / tablet UI mode  [XL]
 #   [x] Detect viewport width + touch capability

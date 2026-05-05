@@ -8,6 +8,7 @@ import ExportDialog from './components/dialogs/ExportDialog';
 import DuetPrinterPanel from './components/printer/DuetPrinterPanel';
 import SlicerWorkspace from './components/slicer/SlicerWorkspace';
 import DuetNotifications from './components/printer/DuetNotifications';
+import { PrintSessionResumeBanner } from './components/printer/PrintSessionResumeBanner';
 import { useCADStore } from './store/cadStore';
 import ActiveDialog from './app/ActiveDialog';
 import { DevFixtureLoader } from './devFixtures/orangePi3LtsCase';
@@ -147,6 +148,7 @@ export default function App() {
     <div className="app">
       <DevFixtureLoader />
       <Toolbar />
+      <PrintSessionResumeBanner />
       <WorkspaceContent />
       {workspaceMode === 'design' && <StatusBar />}
       <ExportDialog />
