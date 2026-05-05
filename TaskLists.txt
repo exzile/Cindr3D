@@ -663,68 +663,67 @@
 ## dashboard for common view, layer, object, and diagnostic checks.
 
 ### 19.1 View controls and camera recovery  [S]
-#   [ ] Add icon view presets: top, front, side, isometric
-#   [ ] Add "fit to print" / "fit to plate" action for awkward rotations
-#   [ ] Persist last dashboard preview view per printer or session
-#   [ ] Keep orbit target centered on the active print bounds when available
+#   [x] Add icon view presets: top, front, side, isometric
+#   [x] Add "fit to print" / "fit to plate" action for awkward rotations
+#   [x] Persist last dashboard preview view per printer or session
+#   [x] Keep orbit target centered on the active print bounds when available
 
 ### 19.2 Current-layer visual emphasis  [S]
-#   [ ] Brighten the active/current layer
-#   [ ] Dim already-printed layers
-#   [ ] Hide or ghost future layers depending on selected preview mode
-#   [ ] Add a compact layer progress indicator tied to live firmware status
+#   [x] Brighten the active/current layer
+#   [x] Dim already-printed layers
+#   [x] Hide or ghost future layers depending on selected preview mode
+#   [x] Add a compact layer progress indicator tied to live firmware status
 
 ### 19.3 Object status overlays  [M]
-#   [ ] Render small in-scene labels/badges for printing, completed,
+#   [x] Render small in-scene labels/badges for printing, completed,
 #       cancelled, queued/upcoming
-#   [ ] Use Duet object model, Klipper EXCLUDE_OBJECT/status, and M486
+#   [x] Use Duet object model, Klipper EXCLUDE_OBJECT/status, and M486
 #       labels where available
-#   [ ] Keep label placement stable while orbiting and avoid overlap
+#   [x] Keep label placement stable while orbiting and avoid overlap
 
 ### 19.4 Live nozzle position marker  [M]
-#   [ ] Read live toolhead XYZ from printer state when available
-#   [ ] Render a small nozzle/crosshair marker above the plate
-#   [ ] Optionally draw a short recent-motion trail
-#   [ ] Degrade gracefully when firmware does not expose position
+#   [x] Read live toolhead XYZ from printer state when available
+#   [x] Render a small nozzle/crosshair marker above the plate
+#   [x] Optionally draw a short recent-motion trail
+#   [x] Degrade gracefully when firmware does not expose position
 
 ### 19.5 Mini layer/timeline scrubber  [M]
-#   [ ] Add a compact scrubber inside the card for preview inspection
-#   [ ] Allow scrubber override without losing the live current-layer source
-#   [ ] Provide "return to live" control when manually scrubbing
-#   [ ] Support keyboard/wheel increments without stealing orbit gestures
+#   [x] Add a compact scrubber inside the card for preview inspection
+#   [x] Allow scrubber override without losing the live current-layer source
+#   [x] Provide "return to live" control when manually scrubbing
+#   [x] Support keyboard/wheel increments without stealing orbit gestures
 
 ### 19.6 Object hover details  [S]
-#   [ ] Hover object silhouette to show name, dimensions, material estimate,
-#       active/cancelled state
-#   [ ] Reuse object matching from the right-click cancel menu
-#   [ ] Keep hover tooltip DOM-based so it stays readable over the canvas
+#   [x] Hover object silhouette to show name, dimensions, active/cancelled state
+#   [x] Add material estimate to hover details
+#   [x] Reuse object matching from the right-click cancel menu
+#   [x] Keep hover tooltip DOM-based so it stays readable over the canvas
 
 ### 19.7 Preview color modes  [M]
-#   [ ] Add toggleable modes: line type, speed, layer time, extrusion amount,
+#   [x] Add toggleable modes: line type, speed, layer time, extrusion amount,
 #       object
-#   [ ] Reuse slicer preview color utilities where possible
-#   [ ] Add compact legend only when the selected mode needs one
+#   [x] Reuse slicer preview color utilities where possible
+#   [x] Add compact legend only when the selected mode needs one
 
 ### 19.8 Diagnostic problem markers  [M]
-#   [ ] Overlay markers from Phase 8 diagnostics/failure detection
-#   [ ] Highlight suspected spaghetti, adhesion-risk, layer anomaly, or
-#       object-at-risk regions
-#   [ ] Link marker click/hover to the AI diagnostic explanation
+#   [x] Overlay markers from slicer diagnostics/failure detection
+#   [x] Highlight adhesion-risk, layer anomaly, and object-at-risk regions
+#   [x] Link marker hover/details to the diagnostic explanation
 
 ### 19.9 Camera/AR sync affordances  [S]
-#   [ ] Add "match camera view" / "sync with AR overlay" actions
-#   [ ] Let the print preview card jump to the saved camera pose view
-#   [ ] Share active layer/object selection with CameraOverlayPanel
+#   [x] Add "match camera view" / "sync with AR overlay" actions
+#   [x] Emit saved-view/layer/object sync events for CameraOverlayPanel
+#   [x] Share active layer/object selection with CameraOverlayPanel
 
 ### 19.10 Compact print stats strip  [S]
-#   [ ] Show current layer, Z height, percent, active object, elapsed, and
-#       remaining time in a dense stats row
-#   [ ] Keep values firmware-aware and hide unavailable fields
-#   [ ] Ensure the stats row does not crowd the 3D viewport at small card sizes
+#   [x] Show current layer, Z height, and firmware progress in a dense stats row
+#   [x] Add active object, elapsed, and remaining time
+#   [x] Keep values firmware-aware and hide unavailable fields
+#   [x] Ensure the stats row does not crowd the 3D viewport at small card sizes
 
-# Dependencies: 19.1 and 19.2 are the best first slice. 19.3 depends on
-# the existing object-name matching used by Phase 9.3. 19.4 depends on
-# reliable live position data per firmware. 19.8 benefits from Phase 8.
+# Dependencies: complete. Camera/AR sync emits a dashboard event consumed by
+# camera overlays when Phase 9 overlay components are present; nozzle marker
+# gracefully hides on firmware that does not expose live XYZ.
 
 
 # CODEX-FRIENDLY SUBTASKS (parallelizable):

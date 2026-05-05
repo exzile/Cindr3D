@@ -22,6 +22,8 @@ function WireLayerLines({
   colorMode,
   hiddenTypes,
   layerTimeT,
+  opacity = 1,
+  renderOrder = 0,
 }: {
   layer: SliceLayer;
   isCurrentLayer: boolean;
@@ -31,6 +33,8 @@ function WireLayerLines({
   colorMode: PreviewColorMode;
   hiddenTypes: ReadonlySet<string>;
   layerTimeT?: number;
+  opacity?: number;
+  renderOrder?: number;
 }) {
   const { lineGeo, travelGeo, retractGeo } = useMemo(() => {
     const moves = (isCurrentLayer && currentLayerMoveCount !== undefined)
@@ -135,18 +139,18 @@ function WireLayerLines({
   return (
     <>
       {lineGeo && (
-        <lineSegments geometry={lineGeo}>
-          <lineBasicMaterial vertexColors depthWrite={false} />
+        <lineSegments geometry={lineGeo} renderOrder={renderOrder}>
+          <lineBasicMaterial vertexColors transparent={opacity < 1} opacity={opacity} depthWrite={false} />
         </lineSegments>
       )}
       {travelGeo && (
-        <lineSegments geometry={travelGeo} renderOrder={1}>
-          <lineBasicMaterial color="#4455aa" transparent opacity={0.35} depthWrite={false} />
+        <lineSegments geometry={travelGeo} renderOrder={renderOrder + 1}>
+          <lineBasicMaterial color="#4455aa" transparent opacity={0.35 * opacity} depthWrite={false} />
         </lineSegments>
       )}
       {showRetractions && retractGeo && (
-        <points geometry={retractGeo} renderOrder={2}>
-          <pointsMaterial color="#ff3333" size={0.35} sizeAttenuation transparent opacity={0.7} depthWrite={false} />
+        <points geometry={retractGeo} renderOrder={renderOrder + 2}>
+          <pointsMaterial color="#ff3333" size={0.35} sizeAttenuation transparent opacity={0.7 * opacity} depthWrite={false} />
         </points>
       )}
     </>
@@ -167,6 +171,8 @@ export function InlineGCodeWirePreview({
   colorMode,
   hiddenTypes,
   layerTimeRange,
+  opacity = 1,
+  renderOrder = 0,
 }: {
   sliceResult: SliceResult;
   filamentDiameter?: number;
@@ -178,6 +184,8 @@ export function InlineGCodeWirePreview({
   colorMode: PreviewColorMode;
   hiddenTypes: ReadonlySet<string>;
   layerTimeRange: [number, number];
+  opacity?: number;
+  renderOrder?: number;
 }) {
   const layers = useMemo(
     () => sliceResult.layers.filter(
@@ -204,6 +212,8 @@ export function InlineGCodeWirePreview({
             colorMode={colorMode}
             hiddenTypes={hiddenTypes}
             layerTimeT={layerTimeT}
+            opacity={opacity}
+            renderOrder={renderOrder}
           />
         );
       })}
