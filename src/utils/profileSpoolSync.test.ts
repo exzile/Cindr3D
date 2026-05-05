@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_MATERIAL_PROFILES, DEFAULT_PRINT_PROFILES, DEFAULT_PRINTER_PROFILES } from '../types/slicer';
 import { useSlicerStore } from '../store/slicerStore';
 import { useSpoolStore } from '../store/spoolStore';
+import { useProfileSyncStore } from '../store/profileSyncStore';
 import {
   applyProfileSpoolSyncPayload,
   buildProfileSpoolSyncPayload,
+  markProfileSpoolSyncPending,
   normalizeProfileSyncUrl,
 } from './profileSpoolSync';
 
@@ -22,6 +24,19 @@ beforeEach(() => {
     activeSpoolId: null,
     loadedSpoolByPrinterId: {},
     lowStockThresholdByMaterial: {},
+  });
+  useProfileSyncStore.setState({
+    enabled: false,
+    repoUrl: '',
+    branch: 'main',
+    syncPath: 'cindr3d-profile-sync.json',
+    autoPullOnStart: false,
+    hasPendingChanges: false,
+    pendingPayloadJson: null,
+    pendingUpdatedAt: null,
+    lastSyncAt: null,
+    lastSyncStatus: 'idle',
+    lastSyncError: null,
   });
 });
 
@@ -77,5 +92,29 @@ describe('profileSpoolSync', () => {
     expect(useSlicerStore.getState().printProfiles).toHaveLength(1);
     expect(useSlicerStore.getState().activePrintProfileId).toBe('remote-print');
     expect(useSpoolStore.getState().spools[0].brand).toBe('Remote');
+  });
+
+  it('captures a pending payload when sync is enabled', () => {
+    useProfileSyncStore.getState().setEnabled(true);
+    useSlicerStore.getState().updatePrintProfile(DEFAULT_PRINT_PROFILES[0].id, { name: 'Pending Print' });
+
+    markProfileSpoolSyncPending();
+
+    const sync = useProfileSyncStore.getState();
+    expect(sync.hasPendingChanges).toBe(true);
+    expect(sync.pendingPayloadJson).toContain('Pending Print');
+  });
+
+  it('clears pending payloads after a successful sync marker', () => {
+    useProfileSyncStore.getState().setEnabled(true);
+    markProfileSpoolSyncPending();
+
+    useProfileSyncStore.getState().markSync('pushed');
+
+    expect(useProfileSyncStore.getState()).toMatchObject({
+      hasPendingChanges: false,
+      pendingPayloadJson: null,
+      pendingUpdatedAt: null,
+    });
   });
 });

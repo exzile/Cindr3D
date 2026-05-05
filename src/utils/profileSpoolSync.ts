@@ -75,6 +75,17 @@ export function buildProfileSpoolSyncPayload(): ProfileSpoolSyncPayload {
   };
 }
 
+export function serializeProfileSpoolSyncPayload(): string {
+  return JSON.stringify(buildProfileSpoolSyncPayload(), null, 2);
+}
+
+export function markProfileSpoolSyncPending(): void {
+  const sync = useProfileSyncStore.getState();
+  if (!sync.enabled) return;
+  if (sync.lastSyncStatus === 'pulling') return;
+  sync.markPendingPush(serializeProfileSpoolSyncPayload());
+}
+
 export function applyProfileSpoolSyncPayload(raw: unknown): void {
   if (!raw || typeof raw !== 'object') throw new Error('Sync payload is not a JSON object.');
   const payload = raw as Partial<ProfileSpoolSyncPayload>;
@@ -123,8 +134,7 @@ export async function pullProfileSpoolSync(): Promise<ProfileSpoolSyncPayload> {
 }
 
 export function downloadProfileSpoolSyncPayload(): void {
-  const payload = buildProfileSpoolSyncPayload();
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const blob = new Blob([serializeProfileSpoolSyncPayload()], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

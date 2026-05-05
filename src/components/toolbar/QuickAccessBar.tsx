@@ -164,6 +164,8 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
   const profileSyncStatus = useProfileSyncStore((s) => s.lastSyncStatus);
   const profileSyncError = useProfileSyncStore((s) => s.lastSyncError);
   const profileSyncLastAt = useProfileSyncStore((s) => s.lastSyncAt);
+  const profileSyncPending = useProfileSyncStore((s) => s.hasPendingChanges);
+  const profileSyncPendingAt = useProfileSyncStore((s) => s.pendingUpdatedAt);
   const setProfileSyncEnabled = useProfileSyncStore((s) => s.setEnabled);
   const setProfileSyncRepoUrl = useProfileSyncStore((s) => s.setRepoUrl);
   const setProfileSyncBranch = useProfileSyncStore((s) => s.setBranch);
@@ -867,6 +869,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                           {profileSyncStatus}
                           {profileSyncLastAt ? ` at ${new Date(profileSyncLastAt).toLocaleString()}` : ''}
                           {profileSyncError ? ` - ${profileSyncError}` : ''}
+                          {profileSyncPending ? ` - pending push from ${profileSyncPendingAt ? new Date(profileSyncPendingAt).toLocaleString() : 'local edits'}` : ''}
                         </div>
                       </div>
                     </div>
