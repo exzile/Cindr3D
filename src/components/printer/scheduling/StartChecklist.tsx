@@ -82,10 +82,13 @@ export function StartChecklistModal({
           {visibleItems.map((item) => {
             const isChecked = checked.has(item.id);
             return (
-              <div
+              <button
+                type="button"
                 key={item.id}
                 className={`sc-item${isChecked ? ' checked' : ''}`}
                 onClick={() => toggle(item.id)}
+                role="checkbox"
+                aria-checked={isChecked}
               >
                 <div className="sc-item__checkbox">
                   {isChecked && <Check size={11} />}
@@ -96,7 +99,7 @@ export function StartChecklistModal({
                     <div className="sc-item__desc">{item.description}</div>
                   )}
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>

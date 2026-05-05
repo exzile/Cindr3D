@@ -66,12 +66,15 @@ function formatDateRange(start: Date, end: Date): string {
 }
 
 function quietWindowCoversMinute(w: QuietWindow, h: number, m: number, dow: DayOfWeek): boolean {
-  if (!w.days.includes(dow)) return false;
   const cur = h * 60 + m;
   const start = w.startHour * 60 + w.startMinute;
   const end = w.endHour * 60 + w.endMinute;
-  if (start <= end) return cur >= start && cur < end;
-  return cur >= start || cur < end;
+  if (start <= end) {
+    return w.days.includes(dow) && cur >= start && cur < end;
+  }
+
+  const previousDow = ((dow + 6) % 7) as DayOfWeek;
+  return (w.days.includes(dow) && cur >= start) || (w.days.includes(previousDow) && cur < end);
 }
 
 function isHourQuiet(windows: QuietWindow[], h: number, dow: DayOfWeek): boolean {
@@ -121,17 +124,19 @@ function EventChip({ event, dayDate, printerName, onClick }: EventChipProps) {
   const timeStr = `${formatTime(d.getHours(), d.getMinutes())}`;
 
   return (
-    <div
+    <button
+      type="button"
       className={`print-calendar__event print-calendar__event--${event.status}`}
       style={{ top, height: h }}
       onClick={() => onClick(event)}
       title={event.fileName}
+      aria-label={`Edit ${event.fileName}, ${timeStr}, ${printerName(event.printerId)}`}
     >
       <span className="print-calendar__event-name">{event.fileName}</span>
       <span className="print-calendar__event-time">
         {timeStr} · {printerName(event.printerId)}
       </span>
-    </div>
+    </button>
   );
 }
 
