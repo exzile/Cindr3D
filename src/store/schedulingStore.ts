@@ -141,13 +141,20 @@ function minuteOfDay(h: number, m: number): number {
 
 function isInWindow(window: QuietWindow, d: Date): boolean {
   const dow = d.getDay() as DayOfWeek;
-  if (!window.days.includes(dow)) return false;
   const current = minuteOfDay(d.getHours(), d.getMinutes());
   const start = minuteOfDay(window.startHour, window.startMinute);
   const end = minuteOfDay(window.endHour, window.endMinute);
-  if (start <= end) return current >= start && current < end;
-  // overnight window (e.g. 22:00 – 07:00)
-  return current >= start || current < end;
+  if (start <= end) {
+    return window.days.includes(dow) && current >= start && current < end;
+  }
+
+  // Overnight windows apply to the configured start day before midnight, and
+  // to the following day after midnight.
+  const previousDow = ((dow + 6) % 7) as DayOfWeek;
+  return (
+    (window.days.includes(dow) && current >= start) ||
+    (window.days.includes(previousDow) && current < end)
+  );
 }
 
 function defaultBedClearSettings(printerId: string): BedClearSettings {
@@ -275,6 +282,7 @@ export const useSchedulingStore = create<SchedulingStore>()(
       getChecklistForPrinter: (printerId) => {
         const { checklistItems, checklistOverrides } = get();
         const override = checklistOverrides.find((o) => o.printerId === printerId);
+        if (override?.showChecklist === false) return [];
         return checklistItems.map((item) => ({
           ...item,
           enabled:

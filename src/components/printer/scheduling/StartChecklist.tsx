@@ -6,7 +6,7 @@
  *   2. `ChecklistSettingsPanel` — standalone settings page (wired as a printer tab)
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, ClipboardList, X } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import { useSchedulingStore } from '../../../store/schedulingStore';
@@ -56,9 +56,13 @@ export function StartChecklistModal({
 
   const allChecked = visibleItems.every((i) => checked.has(i.id));
 
+  useEffect(() => {
+    if (visibleItems.length === 0) {
+      onConfirm();
+    }
+  }, [onConfirm, visibleItems.length]);
+
   if (visibleItems.length === 0) {
-    // No items enabled — skip modal, auto-confirm
-    onConfirm();
     return null;
   }
 

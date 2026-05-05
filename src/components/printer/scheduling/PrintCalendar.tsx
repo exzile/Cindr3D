@@ -83,7 +83,12 @@ function eventsForDay(events: ScheduledPrint[], day: Date): ScheduledPrint[] {
 }
 
 function topPx(epochMs: number, dayDate: Date): number {
+  const dayStart = new Date(dayDate);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = addDays(dayStart, 1).getTime();
+  const clamped = Math.min(Math.max(epochMs, dayStart.getTime()), dayEnd);
   const d = new Date(epochMs);
+  d.setTime(clamped);
   const minutes = d.getHours() * 60 + d.getMinutes();
   return (minutes / 60) * HOUR_HEIGHT;
 }
@@ -583,7 +588,7 @@ export default function PrintCalendar() {
               </span>
             )}
             {quietWindows.map((w) => (
-              <div key={w.id} className="print-calendar__quiet-row">
+              <div key={w.id} className="print-calendar__quiet-row" title={formatWindowLabel(w)}>
                 <span className="print-calendar__quiet-row__label">{w.label}</span>
                 <span className="print-calendar__quiet-row__days">
                   {w.days.map((d) => DAY_LABELS[d].slice(0, 2)).join(' ')}

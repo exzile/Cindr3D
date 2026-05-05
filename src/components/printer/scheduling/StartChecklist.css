@@ -313,3 +313,49 @@
 .checklist-settings__show-toggle span {
   flex: 1;
 }
+
+/* local toggle styles */
+
+.bc-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  gap: 6px;
+}
+
+.bc-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.bc-toggle__track {
+  width: 34px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--border);
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.bc-toggle input:checked + .bc-toggle__track {
+  background: var(--accent);
+}
+
+.bc-toggle__thumb {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+  pointer-events: none;
+}
+
+.bc-toggle input:checked ~ .bc-toggle__thumb {
+  transform: translateX(16px);
+}

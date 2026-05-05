@@ -64,10 +64,11 @@ function PrinterCard({ printerId, printerName }: PrinterCardProps) {
   const printers = usePrinterStore((s) => s.printers);
   const selectPrinter = usePrinterStore((s) => s.selectPrinter);
   const activePrinterId = usePrinterStore((s) => s.activePrinterId);
-  const model = usePrinterStore((s) => s.model);
+  const startPrint = usePrinterStore((s) => s.startPrint);
 
   const selectNextReadyJob = usePrintQueueStore((s) => s.selectNextReadyJob);
   const markJobPrinting = usePrintQueueStore((s) => s.markJobPrinting);
+  const setJobStatus = usePrintQueueStore((s) => s.setJobStatus);
 
   const lastCheckedLabel = useMemo(() => {
     if (!settings.lastCheckedAt) return null;
@@ -88,9 +89,13 @@ function PrinterCard({ printerId, printerName }: PrinterCardProps) {
     const nextJob = selectNextReadyJob(printerId, printers);
     if (!nextJob) return;
     markJobPrinting(nextJob.id);
-    // Delegate actual print start to printerStore via startPrint (not called here
-    // since we don't have the file path wired yet – the queue item carries it)
-  }, [activePrinterId, printerId, selectPrinter, printers, selectNextReadyJob, markJobPrinting]);
+    try {
+      await startPrint(nextJob.filePath);
+    } catch (err) {
+      setJobStatus(nextJob.id, 'failed');
+      throw err;
+    }
+  }, [activePrinterId, printerId, selectPrinter, printers, selectNextReadyJob, markJobPrinting, setJobStatus, startPrint]);
 
   return (
     <div className="bed-clear-card">
