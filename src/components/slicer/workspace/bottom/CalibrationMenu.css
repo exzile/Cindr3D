@@ -31,7 +31,7 @@
   left: 0;
   right: 0;
   bottom: calc(100% + 6px);
-  min-width: 190px;
+  min-width: 220px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -40,6 +40,15 @@
   display: grid;
   gap: 4px;
   z-index: 20;
+}
+
+.slicer-calibration-menu__group-label {
+  padding: 5px 8px 2px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .slicer-calibration-menu__item {

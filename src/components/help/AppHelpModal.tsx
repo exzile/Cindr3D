@@ -1,4 +1,4 @@
-import { BookOpen, ChevronDown, Search, X } from 'lucide-react';
+import { BookOpen, CheckCircle2, ChevronDown, Circle, PlayCircle, Search, X } from 'lucide-react';
 import { Fragment, useMemo, useState } from 'react';
 import './AppHelpModal.css';
 
@@ -20,6 +20,59 @@ interface HelpTopic {
   group?: string;
   sections: HelpSection[];
 }
+
+interface TutorialLesson {
+  id: string;
+  title: string;
+  summary: string;
+  steps: string[];
+}
+
+const TUTORIAL_PROGRESS_KEY = 'cindr3d:tutorial-progress:v1';
+
+const TUTORIAL_LESSONS: TutorialLesson[] = [
+  {
+    id: 'phone-stand',
+    title: 'Design a phone stand',
+    summary: 'Sketch a side profile, extrude it, add a fillet, and send the body to Prepare.',
+    steps: [
+      'Open Design, start a sketch on the XY plane, and draw the stand side profile.',
+      'Dimension the base, back angle, and lip so the sketch is fully constrained.',
+      'Finish the sketch, extrude the profile, then fillet the hand-contact edges.',
+      'Switch to Prepare and place the finished body on the build plate.',
+    ],
+  },
+  {
+    id: 'calibration-cube',
+    title: 'Your first calibration cube',
+    summary: 'Generate the cube preset, print it, then record X/Y/Z measurements.',
+    steps: [
+      'Open 3D Printer, choose Calibration, and download the 20mm calibration cube.',
+      'Print the cube with the active material profile and let it cool before measuring.',
+      'Measure X, Y, and Z with calipers, then adjust dimensional compensation if needed.',
+    ],
+  },
+  {
+    id: 'pressure-advance',
+    title: 'Tune pressure advance',
+    summary: 'Run the PA pattern or tower and choose the cleanest corner response.',
+    steps: [
+      'Select the pressure advance pattern for a quick pass or PA tower for a banded print.',
+      'Inspect the lines or corners for bulges, gaps, and rounded starts.',
+      'Save the best K value in Klipper, Marlin linear advance, or RepRap pressure advance.',
+    ],
+  },
+  {
+    id: 'm486-cancel',
+    title: 'Use M486 to cancel a failed object',
+    summary: 'Identify a failing plate object and cancel it without stopping the whole job.',
+    steps: [
+      'Slice a multi-object plate with object labels enabled.',
+      'Open 3D Printer, go to Exclude Object, and review each object status.',
+      'Cancel only the failed object, then watch the preview and printer status confirm it is skipped.',
+    ],
+  },
+];
 
 const HELP_TOPICS: HelpTopic[] = [
   {
@@ -62,6 +115,19 @@ const HELP_TOPICS: HelpTopic[] = [
           'Light/dark theme toggle lives in the top bar. Your choice persists per browser.',
           'Most colours are driven by CSS custom properties so switching themes is instant.',
         ],
+      },
+    ],
+  },
+
+  {
+    id: 'tutorials',
+    title: 'Guided tutorials',
+    summary: 'Interactive lessons with resumable progress for common first wins.',
+    group: 'Reference',
+    sections: [
+      {
+        heading: 'Lessons',
+        intro: 'Each lesson is broken into small checkpoints. Progress is stored in this browser so you can close help and resume later.',
       },
     ],
   },
@@ -1349,9 +1415,30 @@ function renderShortcutKeys(keys: string) {
 export function AppHelpModal({ onClose }: { onClose: () => void }) {
   const [activeTopicId, setActiveTopicId] = useState(HELP_TOPICS[0].id);
   const [query, setQuery] = useState('');
+  const [tutorialProgress, setTutorialProgress] = useState<Record<string, boolean>>(() => {
+    try {
+      const stored = window.localStorage.getItem(TUTORIAL_PROGRESS_KEY);
+      return stored ? JSON.parse(stored) as Record<string, boolean> : {};
+    } catch {
+      return {};
+    }
+  });
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
     () => new Set(['Design', 'Prepare', '3D Printer', 'Reference']),
   );
+
+  const toggleTutorialStep = (lessonId: string, stepIndex: number) => {
+    const key = `${lessonId}:${stepIndex}`;
+    setTutorialProgress((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        window.localStorage.setItem(TUTORIAL_PROGRESS_KEY, JSON.stringify(next));
+      } catch {
+        // Progress is optional; ignore storage failures.
+      }
+      return next;
+    });
+  };
 
   const filteredTopics = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -1486,6 +1573,41 @@ export function AppHelpModal({ onClose }: { onClose: () => void }) {
               <>
                 <h3>{activeTopic.title}</h3>
                 <p className="app-help-summary">{activeTopic.summary}</p>
+                {activeTopic.id === 'tutorials' && (
+                  <div className="app-help-tutorials">
+                    {TUTORIAL_LESSONS.map((lesson) => {
+                      const done = lesson.steps.filter((_, index) => tutorialProgress[`${lesson.id}:${index}`]).length;
+                      return (
+                        <section key={lesson.id} className="app-help-tutorial">
+                          <div className="app-help-tutorial__header">
+                            <PlayCircle size={16} />
+                            <div>
+                              <h4>{lesson.title}</h4>
+                              <p>{lesson.summary}</p>
+                            </div>
+                            <span>{done}/{lesson.steps.length}</span>
+                          </div>
+                          <div className="app-help-tutorial__steps">
+                            {lesson.steps.map((step, index) => {
+                              const checked = tutorialProgress[`${lesson.id}:${index}`] ?? false;
+                              return (
+                                <button
+                                  type="button"
+                                  key={step}
+                                  className={`app-help-tutorial__step${checked ? ' is-done' : ''}`}
+                                  onClick={() => toggleTutorialStep(lesson.id, index)}
+                                >
+                                  {checked ? <CheckCircle2 size={15} /> : <Circle size={15} />}
+                                  <span>{step}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </section>
+                      );
+                    })}
+                  </div>
+                )}
                 {activeTopic.sections.map((section) => (
               <section key={section.heading} className="app-help-section">
                 <h4>{section.heading}</h4>

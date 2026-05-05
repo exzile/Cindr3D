@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlaskConical } from 'lucide-react';
 import {
+  generateCalibrationCubeGCode,
+  generateDimensionalAccuracyGCode,
   generateFlowTowerGCode,
+  generateFirstLayerTestGCode,
+  generateInputShaperTowerGCode,
+  generatePressureAdvanceTowerGCode,
   generatePressureAdvancePatternGCode,
   generateRetractionTowerGCode,
   generateTemperatureTowerGCode,
@@ -65,6 +70,38 @@ export function CalibrationMenu({
       </button>
       {open && (
         <div className="slicer-calibration-menu__popover">
+          <div className="slicer-calibration-menu__group-label">Geometry</div>
+          <button
+            className="slicer-calibration-menu__item"
+            disabled={!canGenerate}
+            onClick={() => generateCalibration(
+              'calibration-cube-20mm.gcode',
+              generateCalibrationCubeGCode,
+            )}
+          >
+            Calibration cube
+          </button>
+          <button
+            className="slicer-calibration-menu__item"
+            disabled={!canGenerate}
+            onClick={() => generateCalibration(
+              'calibration-first-layer-test.gcode',
+              generateFirstLayerTestGCode,
+            )}
+          >
+            First-layer test
+          </button>
+          <button
+            className="slicer-calibration-menu__item"
+            disabled={!canGenerate}
+            onClick={() => generateCalibration(
+              'calibration-dimensional-accuracy.gcode',
+              generateDimensionalAccuracyGCode,
+            )}
+          >
+            Dimensional accuracy
+          </button>
+          <div className="slicer-calibration-menu__group-label">Tuning towers</div>
           <button
             className="slicer-calibration-menu__item"
             disabled={!canGenerate}
@@ -104,6 +141,26 @@ export function CalibrationMenu({
             )}
           >
             Pressure advance pattern
+          </button>
+          <button
+            className="slicer-calibration-menu__item"
+            disabled={!canGenerate}
+            onClick={() => generateCalibration(
+              'calibration-pressure-advance-tower.gcode',
+              generatePressureAdvanceTowerGCode,
+            )}
+          >
+            PA tower
+          </button>
+          <button
+            className="slicer-calibration-menu__item"
+            disabled={!canGenerate}
+            onClick={() => generateCalibration(
+              'calibration-input-shaper-tower.gcode',
+              generateInputShaperTowerGCode,
+            )}
+          >
+            Input shaper tower
           </button>
         </div>
       )}

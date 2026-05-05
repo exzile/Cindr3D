@@ -257,6 +257,99 @@
   line-height: 1.5;
 }
 
+/* Guided tutorials --------------------------------------------------------- */
+.app-help-tutorials {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.app-help-tutorial {
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.app-help-tutorial__header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: start;
+  padding: 12px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.app-help-tutorial__header svg {
+  color: var(--accent);
+  margin-top: 1px;
+}
+
+.app-help-tutorial__header h4,
+.app-help-tutorial__header p {
+  margin: 0;
+}
+
+.app-help-tutorial__header h4 {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.app-help-tutorial__header p {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.app-help-tutorial__header span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.app-help-tutorial__steps {
+  display: grid;
+}
+
+.app-help-tutorial__step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--border-light);
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 9px 12px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.app-help-tutorial__step:last-child {
+  border-bottom: 0;
+}
+
+.app-help-tutorial__step:hover {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.app-help-tutorial__step svg {
+  margin-top: 1px;
+  color: var(--text-muted);
+}
+
+.app-help-tutorial__step.is-done {
+  color: var(--text-primary);
+}
+
+.app-help-tutorial__step.is-done svg {
+  color: var(--accent);
+}
+
 /* Screenshots / figures ---------------------------------------------------- */
 .app-help-figure {
   margin: 0 0 12px;
