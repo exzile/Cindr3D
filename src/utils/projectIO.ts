@@ -204,6 +204,7 @@ function mergeSlice(
     slicer: (base.slicer ?? fresh.slicer) as ExportedSettings['slicer'],
     printer: (base.printer ?? fresh.printer) as ExportedSettings['printer'],
     theme: (base.theme ?? fresh.theme) as ExportedSettings['theme'],
+    language: (base.language ?? fresh.language) as ExportedSettings['language'],
   };
   merged[slice] = fresh[slice] as never;
   return merged;

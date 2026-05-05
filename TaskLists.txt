@@ -275,9 +275,9 @@
 
 ### 14.3 i18n  [M]
 #   [ ] Externalise all strings to a translations bundle
-#   [ ] react-intl or similar; per-language JSON
-#   [ ] Settings: language picker; default from browser locale
-#   [ ] Ship English; accept community translations via PR
+#   [x] Lightweight translation helper; per-language bundle modules
+#   [x] Settings: language picker; default from browser locale
+#   [x] Ship English; accept community translations via PR
 
 ### 14.4 Accessibility audit  [M]
 #   [ ] Keyboard-only nav across every workspace

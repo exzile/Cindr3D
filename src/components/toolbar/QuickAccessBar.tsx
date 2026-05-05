@@ -7,9 +7,11 @@ import {
 import { useCADStore } from '../../store/cadStore';
 import { useComponentStore } from '../../store/componentStore';
 import { useThemeStore } from '../../store/themeStore';
+import { useLanguageStore } from '../../store/languageStore';
 import { usePrinterStore } from '../../store/printerStore';
 import { useProfileSyncStore } from '../../store/profileSyncStore';
 import { PROVIDER_MODELS, useAiAssistantStore, type AiProvider } from '../../store/aiAssistantStore';
+import { SUPPORTED_LANGUAGES, translate, type LanguageCode } from '../../i18n';
 import {
   getLastOfflineBundleMetadata, openBundle, restoreLastOfflineBundle, saveBundleAs, saveBundleSlice,
   useProjectFileStore,
@@ -39,6 +41,8 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
   const setReducedMotion = useThemeStore((s) => s.setReducedMotion);
   const highContrast = useThemeStore((s) => s.highContrast);
   const setHighContrast = useThemeStore((s) => s.setHighContrast);
+  const language = useLanguageStore((s) => s.language);
+  const setLanguage = useLanguageStore((s) => s.setLanguage);
   const aiPanelOpen = useAiAssistantStore((s) => s.panelOpen);
   const toggleAiPanel = useAiAssistantStore((s) => s.togglePanel);
   const aiProvider = useAiAssistantStore((s) => s.provider);
@@ -732,6 +736,21 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                           </select>
                         </label>
                       )}
+                      <div className="global-settings-field inline full">
+                        <span>{translate(language, 'settings.language')}</span>
+                        <select
+                          className="settings-wide-select"
+                          value={language}
+                          onChange={(e) => setLanguage(e.target.value as LanguageCode)}
+                          title={translate(language, 'settings.languageDescription')}
+                        >
+                          {SUPPORTED_LANGUAGES.map((option) => (
+                            <option key={option.code} value={option.code}>
+                              {translate(language, option.labelKey)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                       <div className="global-settings-field inline full">
                         <span>Reduced motion</span>
                         <label className="tp-toggle">
