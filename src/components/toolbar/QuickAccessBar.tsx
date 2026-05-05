@@ -29,6 +29,8 @@ interface QuickAccessBarProps {
 export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: QuickAccessBarProps) {
   const toggleTheme = useThemeStore((s) => s.toggleTheme);
   const theme = useThemeStore((s) => s.theme);
+  const reducedMotion = useThemeStore((s) => s.reducedMotion);
+  const setReducedMotion = useThemeStore((s) => s.setReducedMotion);
   const aiPanelOpen = useAiAssistantStore((s) => s.panelOpen);
   const toggleAiPanel = useAiAssistantStore((s) => s.togglePanel);
   const aiProvider = useAiAssistantStore((s) => s.provider);
@@ -677,6 +679,17 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                           </select>
                         </label>
                       )}
+                      <div className="global-settings-field inline full">
+                        <span>Reduced motion</span>
+                        <label className="tp-toggle">
+                          <input
+                            type="checkbox"
+                            checked={reducedMotion}
+                            onChange={(e) => setReducedMotion(e.target.checked)}
+                          />
+                          <span className="tp-toggle-track" />
+                        </label>
+                      </div>
                     </div>
                   </section>
                 )}

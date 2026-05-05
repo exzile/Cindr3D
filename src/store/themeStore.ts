@@ -6,8 +6,10 @@ export type { ThemeMode, ThemeColors };
 interface ThemeStore {
   theme: ThemeMode;
   colors: ThemeColors;
+  reducedMotion: boolean;
   setTheme: (theme: ThemeMode) => void;
   toggleTheme: () => void;
+  setReducedMotion: (enabled: boolean) => void;
 }
 
 // ─── Light Theme (Fusion 360 style) ────────────────────────────────────────
@@ -155,6 +157,10 @@ root.style.setProperty('--tab-manage', colors.tabManage);
   root.style.setProperty('--hemisphere-ground', colors.hemisphereGround);
 }
 
+function applyReducedMotion(enabled: boolean) {
+  document.documentElement.toggleAttribute('data-reduced-motion', enabled);
+}
+
 // ─── Store ─────────────────────────────────────────────────────────────────
 
 function getColorsForTheme(theme: ThemeMode): ThemeColors {
@@ -169,15 +175,27 @@ function getSavedTheme(): ThemeMode {
   return 'light'; // Default to light (Fusion 360 style)
 }
 
+function getSavedReducedMotion(): boolean {
+  try {
+    const saved = localStorage.getItem('cindr3d-reduced-motion');
+    if (saved === 'true') return true;
+    if (saved === 'false') return false;
+  } catch { /* noop */ }
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+}
+
 const initialTheme = getSavedTheme();
 const initialColors = getColorsForTheme(initialTheme);
+const initialReducedMotion = getSavedReducedMotion();
 
 // Apply theme immediately on load
 applyTheme(initialColors, initialTheme);
+applyReducedMotion(initialReducedMotion);
 
 export const useThemeStore = create<ThemeStore>((set) => ({
   theme: initialTheme,
   colors: initialColors,
+  reducedMotion: initialReducedMotion,
 
   setTheme: (theme: ThemeMode) => {
     const colors = getColorsForTheme(theme);
@@ -194,5 +212,11 @@ export const useThemeStore = create<ThemeStore>((set) => ({
       try { localStorage.setItem('cindr3d-theme', newTheme); } catch { /* noop */ }
       return { theme: newTheme, colors };
     });
+  },
+
+  setReducedMotion: (enabled: boolean) => {
+    applyReducedMotion(enabled);
+    try { localStorage.setItem('cindr3d-reduced-motion', String(enabled)); } catch { /* noop */ }
+    set({ reducedMotion: enabled });
   },
 }));
