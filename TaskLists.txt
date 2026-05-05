@@ -291,9 +291,10 @@
 #   [x] Restore individual changes (cherry-pick) or full snapshot
 
 ### 14.6 Self-hosted profile / spool sync  [M]
-#   [ ] Optional: point at a git repo URL for sync
-#   [ ] Push profiles + spools on save; pull on app start
-#   [ ] Conflict resolution: last-writer-wins or manual
+#   [x] Optional: point at a git repo/raw JSON URL for sync
+#   [ ] Push profiles + spools on save
+#   [x] Pull profiles + spools on app start
+#   [x] Conflict resolution: last-writer-wins for imported sync payloads
 
 ### 14.7 PWA mode  [S]  [DONE 2026-05-05]
 #   [x] Web app manifest (icons, theme color, display: standalone)

@@ -8,11 +8,17 @@ import { useCADStore } from '../../store/cadStore';
 import { useComponentStore } from '../../store/componentStore';
 import { useThemeStore } from '../../store/themeStore';
 import { usePrinterStore } from '../../store/printerStore';
+import { useProfileSyncStore } from '../../store/profileSyncStore';
 import { PROVIDER_MODELS, useAiAssistantStore, type AiProvider } from '../../store/aiAssistantStore';
 import {
   getLastOfflineBundleMetadata, openBundle, restoreLastOfflineBundle, saveBundleAs, saveBundleSlice,
   useProjectFileStore,
 } from '../../utils/projectIO';
+import {
+  downloadProfileSpoolSyncPayload,
+  normalizeProfileSyncUrl,
+  pullProfileSpoolSync,
+} from '../../utils/profileSpoolSync';
 import type { BundleSlice } from '../../types/settings-io.types';
 import UpdatePanel from '../updater/UpdatePanel';
 import { AppHelpModal } from '../help/AppHelpModal';
@@ -129,7 +135,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [globalSettingsOpen, setGlobalSettingsOpen] = useState(false);
-  const [globalSettingsTab, setGlobalSettingsTab] = useState<'general' | 'ai'>('general');
+  const [globalSettingsTab, setGlobalSettingsTab] = useState<'general' | 'sync' | 'ai'>('general');
   const [helpOpen, setHelpOpen] = useState(false);
   const [hasUpdateAlert, setHasUpdateAlert] = useState(false);
   // null = modal hidden; 'new' / 'close' = modal showing with action-specific copy
@@ -146,6 +152,43 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
     try { return Number(localStorage.getItem('dznd-autosave-interval') || '30'); } catch { return 30; }
   });
   const getDesignJSON = useCADStore((s) => s.getDesignJSON);
+  const profileSyncEnabled = useProfileSyncStore((s) => s.enabled);
+  const profileSyncRepoUrl = useProfileSyncStore((s) => s.repoUrl);
+  const profileSyncBranch = useProfileSyncStore((s) => s.branch);
+  const profileSyncPath = useProfileSyncStore((s) => s.syncPath);
+  const profileSyncAutoPull = useProfileSyncStore((s) => s.autoPullOnStart);
+  const profileSyncStatus = useProfileSyncStore((s) => s.lastSyncStatus);
+  const profileSyncError = useProfileSyncStore((s) => s.lastSyncError);
+  const profileSyncLastAt = useProfileSyncStore((s) => s.lastSyncAt);
+  const setProfileSyncEnabled = useProfileSyncStore((s) => s.setEnabled);
+  const setProfileSyncRepoUrl = useProfileSyncStore((s) => s.setRepoUrl);
+  const setProfileSyncBranch = useProfileSyncStore((s) => s.setBranch);
+  const setProfileSyncPath = useProfileSyncStore((s) => s.setSyncPath);
+  const setProfileSyncAutoPull = useProfileSyncStore((s) => s.setAutoPullOnStart);
+
+  const profileSyncResolvedUrl = (() => {
+    try {
+      return profileSyncRepoUrl.trim()
+        ? normalizeProfileSyncUrl(profileSyncRepoUrl, profileSyncBranch, profileSyncPath)
+        : '';
+    } catch {
+      return '';
+    }
+  })();
+
+  const handlePullProfileSync = useCallback(async () => {
+    try {
+      const payload = await pullProfileSpoolSync();
+      setStatusMessage(`Profile sync pulled: ${payload.exportedAt}`);
+    } catch (err) {
+      setStatusMessage(`Profile sync failed: ${(err as Error).message}`);
+    }
+  }, [setStatusMessage]);
+
+  const handleExportProfileSync = useCallback(() => {
+    downloadProfileSpoolSyncPayload();
+    setStatusMessage('Profile sync file exported');
+  }, [setStatusMessage]);
   // Stored file handle for true in-place overwrite via File System Access API.
   // Set when user opens via showOpenFilePicker or saves via showSaveFilePicker.
   const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
@@ -633,6 +676,14 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                   <Bot size={15} />
                   <span>AI Assistant</span>
                 </button>
+                <button
+                  type="button"
+                  className={`global-settings-nav-item ${globalSettingsTab === 'sync' ? 'active' : ''}`}
+                  onClick={() => setGlobalSettingsTab('sync')}
+                >
+                  <Download size={15} />
+                  <span>Sync</span>
+                </button>
               </nav>
 
               <div className="global-settings-content">
@@ -702,6 +753,87 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                           />
                           <span className="tp-toggle-track" />
                         </label>
+                      </div>
+                    </div>
+                  </section>
+                )}
+
+                {globalSettingsTab === 'sync' && (
+                  <section className="global-settings-section">
+                    <div className="global-settings-section-title">Profile Sync</div>
+                    <div className="global-settings-section-copy">Sync slicer profiles and spool inventory from a self-hosted JSON file in a repository.</div>
+                    <div className="global-settings-grid">
+                      <div className="global-settings-field inline full">
+                        <span>Enable profile sync</span>
+                        <label className="tp-toggle">
+                          <input
+                            type="checkbox"
+                            checked={profileSyncEnabled}
+                            onChange={(e) => setProfileSyncEnabled(e.target.checked)}
+                          />
+                          <span className="tp-toggle-track" />
+                        </label>
+                      </div>
+                      <label className="global-settings-field full">
+                        <span>Repository or raw JSON URL</span>
+                        <input
+                          type="url"
+                          className="settings-api-key"
+                          value={profileSyncRepoUrl}
+                          onChange={(e) => setProfileSyncRepoUrl(e.target.value)}
+                          placeholder="https://github.com/user/repo or raw JSON URL"
+                        />
+                      </label>
+                      <label className="global-settings-field">
+                        <span>Branch</span>
+                        <input
+                          type="text"
+                          className="settings-api-key"
+                          value={profileSyncBranch}
+                          onChange={(e) => setProfileSyncBranch(e.target.value)}
+                          placeholder="main"
+                        />
+                      </label>
+                      <label className="global-settings-field">
+                        <span>Sync path</span>
+                        <input
+                          type="text"
+                          className="settings-api-key"
+                          value={profileSyncPath}
+                          onChange={(e) => setProfileSyncPath(e.target.value)}
+                          placeholder="cindr3d-profile-sync.json"
+                        />
+                      </label>
+                      <div className="global-settings-field inline full">
+                        <span>Pull on app start</span>
+                        <label className="tp-toggle">
+                          <input
+                            type="checkbox"
+                            checked={profileSyncAutoPull}
+                            onChange={(e) => setProfileSyncAutoPull(e.target.checked)}
+                          />
+                          <span className="tp-toggle-track" />
+                        </label>
+                      </div>
+                      <button className="global-settings-action" onClick={handlePullProfileSync} disabled={!profileSyncRepoUrl.trim()}>
+                        <Download size={15} />
+                        <span>Pull now</span>
+                      </button>
+                      <button className="global-settings-action" onClick={handleExportProfileSync}>
+                        <Save size={15} />
+                        <span>Export sync file</span>
+                      </button>
+                      <div className="global-settings-field full">
+                        <span>Resolved URL</span>
+                        <code className="profile-sync-resolved-url">{profileSyncResolvedUrl || 'Not configured'}</code>
+                      </div>
+                      <div className="global-settings-field full">
+                        <span>Status</span>
+                        <div className="profile-sync-status">
+                          {profileSyncStatus}
+                          {profileSyncLastAt ? ` at ${new Date(profileSyncLastAt).toLocaleString()}` : ''}
+                          {profileSyncError ? ` - ${profileSyncError}` : ''}
+                        </div>
                       </div>
                     </div>
                   </section>
