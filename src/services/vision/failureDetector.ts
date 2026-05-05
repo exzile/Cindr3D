@@ -279,8 +279,18 @@ async function callOpenAiVision(input: VisionCheckInput): Promise<string> {
 
 function parseVisionJson(text: string): Omit<VisionCheckResult, 'shouldPause' | 'requiresConfirmation' | 'rawText'> {
   const trimmed = text.trim();
-  const jsonText = trimmed.startsWith('{') ? trimmed : trimmed.slice(trimmed.indexOf('{'), trimmed.lastIndexOf('}') + 1);
-  const parsed = JSON.parse(jsonText) as Partial<VisionCheckResult>;
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
+  if (start < 0 || end <= start) {
+    throw new Error(`Vision provider returned invalid JSON: ${trimmed || '<empty response>'}`);
+  }
+  const jsonText = trimmed.slice(start, end + 1);
+  let parsed: Partial<VisionCheckResult>;
+  try {
+    parsed = JSON.parse(jsonText) as Partial<VisionCheckResult>;
+  } catch (error) {
+    throw new Error(`Vision provider returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const category = (parsed.category ?? 'unknown') as VisionFailureCategory;
   const severity = parsed.severity ?? (category === 'none' ? 'none' : 'warning');
   return {

@@ -1848,6 +1848,21 @@ function createCindr3dMcpServer(relay: BrowserRelay): McpServer {
     annotations: { readOnlyHint: false, openWorldHint: false },
   }, () => relayTool(relay, 'printer_emergency_stop', {}));
 
+  server.registerTool('printer_list_printers', {
+    title: 'List Printers',
+    description: 'List configured printers and identify the active printer.',
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, () => relayTool(relay, 'printer_list_printers', {}));
+
+  server.registerTool('printer_select_printer', {
+    title: 'Select Printer',
+    description: 'Switch the active printer by printer ID before running printer-specific tools.',
+    inputSchema: {
+      id: z.string().describe('Printer ID from printer_list_printers.'),
+    },
+    annotations: { readOnlyHint: false, openWorldHint: false },
+  }, ({ id }) => relayTool(relay, 'printer_select_printer', { id }));
+
   server.registerTool('printer_list_files', {
     title: 'List Printer Files',
     description: "List G-code files on the printer's SD card.",

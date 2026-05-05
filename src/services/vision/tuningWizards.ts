@@ -119,8 +119,18 @@ async function callOpenAiTuning(input: AnalyzeTuningTowerInput): Promise<string>
 
 function parseTuningJson(text: string, kind: TuningWizardKind): Omit<TuningTowerRecommendation, 'rawText'> {
   const trimmed = text.trim();
-  const jsonText = trimmed.startsWith('{') ? trimmed : trimmed.slice(trimmed.indexOf('{'), trimmed.lastIndexOf('}') + 1);
-  const parsed = JSON.parse(jsonText) as Partial<TuningTowerRecommendation>;
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
+  if (start < 0 || end <= start) {
+    throw new Error(`Tuning provider returned invalid JSON: ${trimmed || '<empty response>'}`);
+  }
+  const jsonText = trimmed.slice(start, end + 1);
+  let parsed: Partial<TuningTowerRecommendation>;
+  try {
+    parsed = JSON.parse(jsonText) as Partial<TuningTowerRecommendation>;
+  } catch (error) {
+    throw new Error(`Tuning provider returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
   return {
     kind: (parsed.kind ?? kind) as TuningWizardKind,
     bestValue: typeof parsed.bestValue === 'number' ? parsed.bestValue : undefined,

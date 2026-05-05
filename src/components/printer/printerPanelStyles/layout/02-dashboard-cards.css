@@ -1,4 +1,4 @@
-﻿/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Compact overrides: tighten panel content inside dashboard cards ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
+/* Compact overrides: tighten panel content inside dashboard cards */
 .dc-body .ex-card {
   padding: 7px 10px 7px 9px;
   margin-bottom: 5px;
@@ -35,7 +35,7 @@
   margin-bottom: 4px;
 }
 
-/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Compact axis panel inside dashboard cards ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
+/* Compact axis panel inside dashboard cards */
 .dc-body .ax-panel {
   container-type: size;
   gap: clamp(4px, 1.2cqh, 10px);
@@ -49,11 +49,11 @@
 .dc-body .ax-card       { padding: clamp(6px, 1.2cqh, 11px) clamp(10px, 1.8cqw, 15px); margin-bottom: clamp(4px, 0.9cqh, 8px); }
 .dc-body .ax-card-label { margin-bottom: 4px; font-size: 8px; }
 
-/* Step size buttons ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â slightly smaller */
+/* Step size buttons - slightly smaller */
 .dc-body .ax-step-row { gap: clamp(3px, 0.8cqw, 7px); }
 .dc-body .ax-step-btn { height: clamp(24px, 5.6cqh, 34px); min-width: clamp(34px, 7cqw, 54px); max-width: none; font-size: clamp(10px, 2.1cqh, 12px); }
 
-/* Jog cross ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â tighten cells and hide decorative sub-labels/footer */
+/* Jog cross - tighten cells and hide decorative sub-labels/footer */
 .dc-body .ax-card--jog {
   flex: 1 1 132px;
   min-height: 118px;
@@ -75,7 +75,7 @@
 }
 .dc-body .ax-cross-foot { display: none; }
 
-/* Z column ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â match XY cross height */
+/* Z column - match XY cross height */
 .dc-body .ax-cross-btn svg,
 .dc-body .ax-cross-home svg {
   width: clamp(16px, 3.5cqh, 24px);
@@ -85,16 +85,16 @@
 .dc-body .ax-z-btn  { width: clamp(40px, 10cqw, 62px); height: clamp(36px, 12cqh, 66px); font-size: clamp(9px, 2cqh, 12px); gap: 1px; }
 .dc-body .ax-z-home { width: clamp(40px, 10cqw, 62px); height: clamp(22px, 5.8cqh, 34px); }
 
-/* Quick-move rows ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â tighter and shorter */
+/* Quick-move rows - tighter and shorter */
 .dc-body .ax-qm-block { gap: 3px; }
 .dc-body .ax-qm-row   { gap: clamp(2px, 0.6cqw, 5px); }
 .dc-body .ax-qm-btn   { height: clamp(22px, 4.7cqh, 31px); font-size: clamp(9px, 1.8cqh, 11px); }
 
-/* Baby step ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â compact display */
+/* Baby step - compact display */
 .dc-body .ax-baby-display { padding: clamp(4px, 1cqh, 8px) 0; }
 .dc-body .ax-baby-num     { font-size: clamp(13px, 2.8cqh, 18px); }
 
-/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Reset Layout button ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
+/* Reset Layout button */
 .dc-reset-btn {
   display: inline-flex;
   align-items: center;
@@ -282,7 +282,7 @@
   overflow: hidden;
 }
 
-/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ controls bar layout ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
+/* Controls bar layout */
 .duet-dash-controls-bar {
   display: flex;
   align-items: center;
@@ -323,7 +323,7 @@
   opacity: 0.8;
 }
 
-/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ edit mode grid overlay ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
+/* Edit mode grid overlay */
 .dc-wrapper.is-edit {
   z-index: 3;
 }
@@ -332,7 +332,7 @@
   pointer-events: none;
 }
 
-/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ view settings dropdown ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
+/* View settings dropdown */
 .dc-view-wrap {
   position: relative;
 }
@@ -434,9 +434,9 @@
   opacity: 0.4;
 }
 
-/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ column shift buttons (edit mode, panel header) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
-/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ empty drop zone (shown while dragging in edit mode) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
-/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ per-column drop cells (own trailing gap subdivided by column) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
+/* Column shift buttons (edit mode, panel header) */
+/* Empty drop zone (shown while dragging in edit mode) */
+/* Per-column drop cells (own trailing gap subdivided by column) */
 .dc-body .ax-motion-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(68px, clamp(76px, 18cqw, 116px));

@@ -1214,7 +1214,8 @@ function notifyVisionFailure(summary: string): void {
 
 function currentExpectedLayerTimeSec(): number | undefined {
   const ss = slicerStore();
-  const layer = printerStore().model.job?.layer ?? ss.previewLayer;
+  const firmwareLayer = printerStore().model.job?.layer;
+  const layer = firmwareLayer === undefined ? ss.previewLayer : Math.max(0, firmwareLayer - 1);
   const layers = ss.sliceResult?.layers as unknown;
   if (!Array.isArray(layers)) return undefined;
   const record = layers[layer] as Record<string, unknown> | undefined;

@@ -119,8 +119,16 @@ function parseDiagnosisJson(text: string): Omit<PrintDiagnosisResult, 'rawText'>
   const trimmed = text.trim();
   const start = trimmed.indexOf('{');
   const end = trimmed.lastIndexOf('}');
-  const jsonText = trimmed.startsWith('{') ? trimmed : trimmed.slice(start, end + 1);
-  const parsed = JSON.parse(jsonText) as Partial<PrintDiagnosisResult>;
+  if (start < 0 || end <= start) {
+    throw new Error(`Diagnostics provider returned invalid JSON: ${trimmed || '<empty response>'}`);
+  }
+  const jsonText = trimmed.slice(start, end + 1);
+  let parsed: Partial<PrintDiagnosisResult>;
+  try {
+    parsed = JSON.parse(jsonText) as Partial<PrintDiagnosisResult>;
+  } catch (error) {
+    throw new Error(`Diagnostics provider returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const rankedCauses = Array.isArray(parsed.rankedCauses)
     ? parsed.rankedCauses.map((cause) => {
       const c = cause as Partial<PrintDiagnosisSuggestion>;

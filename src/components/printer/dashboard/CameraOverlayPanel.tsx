@@ -4,7 +4,11 @@ import { useSlicerStore } from '../../../store/slicerStore';
 import type { PlateObject, SliceMove } from '../../../types/slicer';
 import { parseM486Labels } from '../../../services/gcode/m486Labels';
 import { findMatchingObject, matchObjectNames } from '../../../services/gcode/objectNameMatch';
-import { projectBedPointToImage, projectImagePointToBed } from '../../../services/vision/cameraMeasurement';
+import {
+  invertHomography,
+  projectImagePointToBed,
+  type HomographyMatrix,
+} from '../../../services/vision/cameraMeasurement';
 import type { CameraPoseCalibration } from '../../../services/vision/cameraPose';
 import { ObjectContextMenu } from './MeshPreviewPanel';
 
@@ -54,9 +58,9 @@ function clampLayer(layer: number | undefined, maxLayer: number): number {
   return Math.max(0, Math.min(maxLayer, Math.round(layer ?? maxLayer)));
 }
 
-function projectMove(move: SliceMove, key: string, pose: CameraPoseCalibration, current: boolean): ProjectedMove | null {
-  const from = projectBedPointToImage(move.from, pose.homography);
-  const to = projectBedPointToImage(move.to, pose.homography);
+function projectMove(move: SliceMove, key: string, inverseHomography: HomographyMatrix, current: boolean): ProjectedMove | null {
+  const from = projectImagePointToBed(move.from, inverseHomography);
+  const to = projectImagePointToBed(move.to, inverseHomography);
   if (!from || !to) return null;
   return {
     key,
@@ -83,7 +87,7 @@ function objectContainsBedPoint(object: PlateObject, point: { x: number; y: numb
     && localY <= object.boundingBox.max.y;
 }
 
-function projectedObjectFootprint(object: PlateObject, pose: CameraPoseCalibration): string | null {
+function projectedObjectFootprint(object: PlateObject, inverseHomography: HomographyMatrix): string | null {
   const corners = [
     { x: object.boundingBox.min.x, y: object.boundingBox.min.y },
     { x: object.boundingBox.max.x, y: object.boundingBox.min.y },
@@ -100,12 +104,12 @@ function projectedObjectFootprint(object: PlateObject, pose: CameraPoseCalibrati
       y: object.position.y + x * Math.sin(rotation) + y * Math.cos(rotation),
     };
   });
-  const projected = corners.map((corner) => projectBedPointToImage(corner, pose.homography));
+  const projected = corners.map((corner) => projectImagePointToBed(corner, inverseHomography));
   if (projected.some((corner) => corner === null)) return null;
   return projected.map((corner) => `${corner!.x},${corner!.y}`).join(' ');
 }
 
-export default function CameraOverlayPanel({ pose, mode, frameTick, comparison = false }: CameraOverlayPanelProps) {
+export default function CameraOverlayPanel({ pose, mode, comparison = false }: CameraOverlayPanelProps) {
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const sliceResult = useSlicerStore((state) => state.sliceResult);
   const plateObjects = useSlicerStore((state) => state.plateObjects);
@@ -145,18 +149,23 @@ export default function CameraOverlayPanel({ pose, mode, frameTick, comparison =
 
   const projectedMoves = useMemo(() => {
     if (!pose || !sliceResult || mode === 'camera') return [];
+    const inverseHomography = invertHomography(pose.homography);
+    if (!inverseHomography) return [];
     const layers = sliceResult.layers.filter((layer) => layer.layerIndex <= currentLayer);
     const allMoves = layers.flatMap((layer) => layer.moves.map((move, moveIndex) => ({ layerIndex: layer.layerIndex, moveIndex, move })));
     const stride = Math.max(1, Math.ceil(allMoves.length / MAX_OVERLAY_MOVES));
     return allMoves
       .filter((_, index) => index % stride === 0)
-      .map(({ layerIndex, moveIndex, move }) => projectMove(move, `${layerIndex}-${moveIndex}-${frameTick}`, pose, layerIndex === currentLayer))
+      .map(({ layerIndex, moveIndex, move }) => projectMove(move, `${layerIndex}-${moveIndex}`, inverseHomography, layerIndex === currentLayer))
       .filter((move): move is ProjectedMove => move !== null);
-  }, [currentLayer, frameTick, mode, pose, sliceResult]);
+  }, [currentLayer, mode, pose, sliceResult]);
 
-  const projectedFootprints = useMemo(() => (
-    pose ? plateObjects.map((object) => ({ object, points: projectedObjectFootprint(object, pose) })).filter((item) => item.points) : []
-  ), [plateObjects, pose]);
+  const projectedFootprints = useMemo(() => {
+    if (!pose) return [];
+    const inverseHomography = invertHomography(pose.homography);
+    if (!inverseHomography) return [];
+    return plateObjects.map((object) => ({ object, points: projectedObjectFootprint(object, inverseHomography) })).filter((item) => item.points);
+  }, [plateObjects, pose]);
 
   const handleContextMenu = useCallback((event: MouseEvent<HTMLDivElement>) => {
     if (!pose || mode === 'camera') return;
