@@ -1,11 +1,4 @@
-# ============================================================================
-# REMAINING WORK — multi-session architectural items
-# ============================================================================
-# These are not single-pass tasks. Each requires a distinct architectural
-# investment that affects multiple subsystems. Keep them on this list
-# until someone schedules a focused multi-session pass; resist the urge
-# to half-wire them under a single PR.
-# ============================================================================
+
 
 ## Per-object mesh override system  (architectural — partially wired)
 # Cura's "Infill Mesh", "Cutting Mesh", "Support Mesh", and "Anti-Overhang
@@ -23,6 +16,10 @@
 #       generator (emitGroupedAndContourWalls) to consult per-region
 #       overrides and the layer-classification logic (isSolidTop /
 #       isSolidBottom) to be region-aware too.
+#   [ ] Smooth top/custom triangle-tagged modifier metadata per object —
+#       Phase 15 now generates modifier mesh volumes for painted regions,
+#       but true triangle-tagged per-object metadata is deferred until the
+#       override system can resolve region-specific skin/wall behavior.
 
 ## Multi-mesh repair  (depends on per-object framework)
 # Extends beyond the single-mesh removeAllHoles already wired. Requires
@@ -88,7 +85,7 @@
 
 
 # ============================================================================
-# REMAINING WORK — Phases 7-18 (post-Klipper-unification feature plan)
+# REMAINING WORK — Phases 7-19 (post-Klipper-unification feature plan)
 # ============================================================================
 # Following the cross-firmware printer work shipped 2026-05-03, the next
 # batch expands Cindr3D into a print-farm-scale tool with vision-based
@@ -279,99 +276,32 @@
 #     including source metadata capture, auto-arrange, and local caching.
 
 
-## ── Phase 15: Slicer fundamentals ─────────────────────────────────────────
-## Goal: close the gap with Cura / Orca / Bambu on print-quality features.
-
-### 15.1 Tree supports  [XL]
-#   [ ] Algorithm: branch-network rooted at overhangs, growing toward bed
-#   [ ] Per-region support density; collision avoidance
-#   [ ] Preview rendering as wireframe, distinct from grid supports
-
-### 15.2 Adaptive layer height  [L]
-#   [ ] Per-feature slope detection; subdivide layers in steep regions
-#   [ ] Configurable min/max layer height
-#   [ ] Preview shows variable-height layers correctly
-
-### 15.3 Non-planar surface ironing  [L]
-#   [ ] Top-skin surface following local Z gradient (not perfectly flat)
-#   [ ] Slow nozzle pass at zero extrusion to flow-smooth surface
-#   [ ] Preview support
-
-### 15.4 Vase mode  [S]
-#   [ ] Spiralised single-wall print; Z continuously increases
-#   [ ] Per-object setting + UI toggle in slicer
-
-### 15.5 Organic / gyroid infill patterns  [M]
-#   [ ] Add gyroid, lightning, organic patterns to infill generator
-#   [ ] Density behaves like existing patterns
-
-### 15.6 Multi-color via tool change  [XL]
-#   [ ] Per-object tool index; M600 / T<n> insertion at tool boundaries
-#   [ ] Prime-tower generation between tools
-#   [ ] Multi-extruder UI surfacing
-#   Note: depends on multi-extruder UI work currently in
-#         "INTENTIONALLY NOT IMPLEMENTED"; revisit scope of that decision
-#         before starting.
-
-### 15.7 Bed-mesh-aware auto-arrange  [M]
-#   [ ] Read live bed mesh; weight placement toward flatter regions
-#   [ ] Avoid known dead spots
-#   [ ] Existing autoArrange action becomes mesh-aware when data is available
-
-### 15.8 Print stats analytics across history  [S]
-#   [ ] Surface patterns from print history: failure rate per profile,
-#       per filament, per printer
-#   [ ] "Your PLA failed 3× this week — last working profile was X"
-
-### 15.9 Print thumbnails embedded in G-code  [S]
-#   Tiny + large PNG in the file header. Klipper/Mainsail, Bambu, and
-#   most modern Marlin LCDs render these on the file picker.
-#   [ ] Generate small (32×32) + large (300×300) PNG from current view
-#   [ ] Embed as base64 in G-code header per Klipper / Bambu / Marlin format
-#   [ ] Toggle in slicer settings; default on
-#   [ ] Auto-detected by firmware on file load
-
-### 15.10 Z-seam painter  [M]
-#   Per-layer seam point selection with paint-on-model overrides.
-#   [ ] Modes: random / aligned-rear / aligned-sharp / painted
-#   [ ] Painted mode: 3D brush in the CAD viewport over the model
-#   [ ] Stored as per-object metadata; flows to slicer as per-layer hint
-#   [ ] Preview shows seam location per layer
-
-### 15.11 Sequential printing  [M]
-#   Print each plate object to completion before moving to next — useful
-#   when total Z is short and parts are far apart.
-#   [ ] Z-clearance check (object height vs. nozzle clearance)
-#   [ ] Per-object skirt/brim
-#   [ ] Travel order: optimize start position, avoid knocking finished parts
-#   [ ] Warn when geometry violates clearance constraints
-
-### 15.12 Modifier mesh painting in 3D  [L]
-#   Paint regions on a mesh for per-region profiles, instead of importing
-#   separate cutter STLs. Massive UX win over the current modifier flow.
-#   [ ] Brush tool in Prepare viewport
-#   [ ] Region types: dense infill, smooth top, support blocker, custom
-#   [ ] Stored as triangle-tagged metadata per object
-#   [ ] Slicer pipeline reads tags and applies per-region settings
-#   [ ] Pairs with Phase 1 (per-object mesh override system)
-
-### 15.13 Fuzzy skin  [S]
-#   Adds texture to outer walls — niche but trivial.
-#   [ ] Per-object setting + UI toggle
-#   [ ] Configurable point distance and amplitude
-#   [ ] Outer-wall path receives controlled jitter at slicer time
-
-### 15.14 Coasting / wiping / scarf seams  [M]
-#   Modern seam-quality techniques.
-#   [ ] Coasting: stop extrusion N mm before end of move
-#   [ ] Wiping: short non-extrude move to drain hot pressure
-#   [ ] Scarf seams: ramp Z slightly to hide seam transitions
-#   [ ] Per-feature controls; defaults from print profile
-
-# 15.1, 15.2, 15.3 are independent and large. 15.4, 15.5, 15.7, 15.8,
-# 15.9, 15.13 are small + parallelizable. 15.6 is large and depends on
-# the multi-extruder decision below. 15.10, 15.11, 15.12, 15.14 are
-# medium-effort and can run in parallel.
+## SHIPPED - Phase 15: Slicer fundamentals [DONE 2026-05-05]
+# Phase 15 closed major Cura / Orca / Bambu-style print-quality gaps:
+#   - Added tree supports with branch growth, per-region support density,
+#     collision avoidance, and distinct wireframe preview rendering.
+#   - Added adaptive layer heights with slope-based subdivision, min/max
+#     controls, and variable-height preview support.
+#   - Added non-planar surface ironing that follows local top-skin Z gradients
+#     with slow zero-extrusion smoothing moves.
+#   - Added vase mode, fuzzy skin, and organic / gyroid / lightning infill
+#     with per-object controls where appropriate.
+#   - Added multi-color tool-change slicing with per-object tool indices,
+#     tool-selection G-code, and prime-tower purge moves between tools.
+#   - Added bed-mesh-aware auto-arrange that favors flatter regions and avoids
+#     known dead spots when mesh data is available.
+#   - Added print-history analytics for failure patterns across profiles,
+#     filament, and printers.
+#   - Added embedded G-code thumbnails for modern firmware file pickers.
+#   - Added Z-seam painting with per-object seam metadata, painted seam
+#     selection, and viewport seam markers.
+#   - Added sequential printing with clearance validation, per-object
+#     skirt/brim handling, and safer travel ordering.
+#   - Added modifier-region painting that stores generated modifier mesh
+#     volumes and feeds dense infill / support / cutting roles into the
+#     slicer pipeline.
+#   - Added coasting, wiping, and scarf seam controls for improved seam
+#     quality.
 
 
 ## ── Phase 16: Design workspace ────────────────────────────────────────────
@@ -435,34 +365,16 @@
 # 16.3, 16.4, 16.5, 16.6, 16.7 are independent and parallelizable.
 
 
-## ── Phase 17: Onboarding & education ──────────────────────────────────────
-## Goal: lower the floor for newcomers and add depth-help for everyone.
-## Pairs with the help-doc work shipped 2026-05-04.
-
-### 17.1 Calibration print library  [S]
-#   New tab in printer panel: src/components/printer/calibration/
-#   [ ] One-click presets: cube, temp tower, retraction tower, first-layer
-#       test, dimensional accuracy, flow calibration, PA/IS towers
-#   [ ] Each preset opens in Prepare workspace pre-laid-out + sliced
-#   [ ] Optional auto-tune integration with Phase 8.3 wizards
-
-### 17.2 Built-in guided tutorials  [M]
-#   Step-by-step interactive lessons with sample STLs.
-#   [ ] Examples: "design a phone stand", "your first calibration cube",
-#       "tune pressure advance", "use M486 to cancel a failed object"
-#   [ ] Highlighted UI elements with walkthrough overlay
-#   [ ] Progress tracking + resume
-
-### 17.3 Settings wiki / contextual deep-help  [M]
-#   Hover help on any setting expands into a rich-text page.
-#   [ ] Each page covers: what it does, when to change, common values,
-#       related settings, references
-#   [ ] Searchable from the help button; same dataset feeds the AI panel
-#       as structured setting context for diagnostics
-#   [ ] Markdown-authored, served from src/help/settings/*.md
-
-# Dependencies: all three sub-phases independent. 17.3 informs the
-# AI panel quality (Phase 8.2 diagnostics gets richer suggestions).
+## SHIPPED - Phase 17: Onboarding & education [DONE 2026-05-05]
+# Phase 17 lowered the onboarding floor and deepened in-app learning:
+#   - Added a printer-panel Calibration tab with one-click calibration
+#     G-code presets.
+#   - Expanded the Prepare calibration menu with cube, first-layer,
+#     dimensional accuracy, pressure-advance tower, and input-shaper tower
+#     presets.
+#   - Added guided Help tutorials with browser-local resumable progress.
+#   - Extended slicer setting help with richer contextual fields and
+#     Markdown-authored source pages under src/help/settings/.
 
 
 ## ── Phase 18: Plugin / extension system  [FUTURE — not scheduled]  ────────
@@ -482,83 +394,26 @@
 #   ships that the plugin surface is informed by real integration patterns.
 
 
-## -- Phase 19: Dashboard print preview card --------------------------------
-## Goal: turn the dashboard Print Preview card into a compact live print
-## situational-awareness panel, without making users leave the printer
-## dashboard for common view, layer, object, and diagnostic checks.
+## SHIPPED - Phase 19: Dashboard print preview card [DONE 2026-05-05]
+# Phase 19 turned the dashboard Print Preview card into a compact live print
+# situational-awareness panel:
+#   - Added dashboard preview camera presets, fit actions, persisted view
+#     state, and orbit recovery around the active print bounds.
+#   - Added current-layer emphasis, printed/future layer dimming modes, live
+#     layer progress, and a mini layer/timeline scrubber with return-to-live.
+#   - Added object status badges, stable object hover details, material
+#     estimates, and object matching shared with right-click cancellation.
+#   - Added live nozzle position, optional recent-motion trails, and graceful
+#     firmware fallbacks when XYZ data is unavailable.
+#   - Added preview color modes for line type, speed, layer time, extrusion,
+#     and object view with compact legends when needed.
+#   - Added diagnostic problem markers for adhesion risk, layer anomalies,
+#     and object-at-risk explanations.
+#   - Added camera/AR sync actions and shared saved-view, layer, and object
+#     selection events for CameraOverlayPanel.
+#   - Added a dense print stats strip with layer, Z height, progress, active
+#     object, elapsed time, and remaining time.
 
-### 19.1 View controls and camera recovery  [S]
-#   [x] Add icon view presets: top, front, side, isometric
-#   [x] Add "fit to print" / "fit to plate" action for awkward rotations
-#   [x] Persist last dashboard preview view per printer or session
-#   [x] Keep orbit target centered on the active print bounds when available
-
-### 19.2 Current-layer visual emphasis  [S]
-#   [x] Brighten the active/current layer
-#   [x] Dim already-printed layers
-#   [x] Hide or ghost future layers depending on selected preview mode
-#   [x] Add a compact layer progress indicator tied to live firmware status
-
-### 19.3 Object status overlays  [M]
-#   [x] Render small in-scene labels/badges for printing, completed,
-#       cancelled, queued/upcoming
-#   [x] Use Duet object model, Klipper EXCLUDE_OBJECT/status, and M486
-#       labels where available
-#   [x] Keep label placement stable while orbiting and avoid overlap
-
-### 19.4 Live nozzle position marker  [M]
-#   [x] Read live toolhead XYZ from printer state when available
-#   [x] Render a small nozzle/crosshair marker above the plate
-#   [x] Optionally draw a short recent-motion trail
-#   [x] Degrade gracefully when firmware does not expose position
-
-### 19.5 Mini layer/timeline scrubber  [M]
-#   [x] Add a compact scrubber inside the card for preview inspection
-#   [x] Allow scrubber override without losing the live current-layer source
-#   [x] Provide "return to live" control when manually scrubbing
-#   [x] Support keyboard/wheel increments without stealing orbit gestures
-
-### 19.6 Object hover details  [S]
-#   [x] Hover object silhouette to show name, dimensions, active/cancelled state
-#   [x] Add material estimate to hover details
-#   [x] Reuse object matching from the right-click cancel menu
-#   [x] Keep hover tooltip DOM-based so it stays readable over the canvas
-
-### 19.7 Preview color modes  [M]
-#   [x] Add toggleable modes: line type, speed, layer time, extrusion amount,
-#       object
-#   [x] Reuse slicer preview color utilities where possible
-#   [x] Add compact legend only when the selected mode needs one
-
-### 19.8 Diagnostic problem markers  [M]
-#   [x] Overlay markers from slicer diagnostics/failure detection
-#   [x] Highlight adhesion-risk, layer anomaly, and object-at-risk regions
-#   [x] Link marker hover/details to the diagnostic explanation
-
-### 19.9 Camera/AR sync affordances  [S]
-#   [x] Add "match camera view" / "sync with AR overlay" actions
-#   [x] Emit saved-view/layer/object sync events for CameraOverlayPanel
-#   [x] Share active layer/object selection with CameraOverlayPanel
-
-### 19.10 Compact print stats strip  [S]
-#   [x] Show current layer, Z height, and firmware progress in a dense stats row
-#   [x] Add active object, elapsed, and remaining time
-#   [x] Keep values firmware-aware and hide unavailable fields
-#   [x] Ensure the stats row does not crowd the 3D viewport at small card sizes
-
-# Dependencies: complete. Camera/AR sync emits a dashboard event consumed by
-# camera overlays when Phase 9 overlay components are present; nozzle marker
-# gracefully hides on firmware that does not expose live XYZ.
-
-
-# CODEX-FRIENDLY SUBTASKS (parallelizable):
-#   Phases 7, 11, 13, 14, 16, 17, 19 are mostly independent and run in parallel.
-#   Phase 8 (Vision) gates Phase 9 (AR) and parts of Phase 12.
-#   Phase 10 (Cost) is independent except for 10.2 → 12.1.
-#   Phase 15 (Slicer) is fully independent of the printer-management
-#   phases and runs on its own track.
-#   Phase 16 (Design workspace) is the largest CAD-side effort and is
-#   independent of every printer-side phase.
 
 
 # ============================================================================

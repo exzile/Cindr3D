@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { RefreshCw, WifiOff, Grid3x3, Play, Save, Trash2, AlertCircle } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
+import { useSlicerStore } from '../../store/slicerStore';
 import { MoonrakerService, type MoonrakerBedMesh } from '../../services/MoonrakerService';
 import './KlipperTabs.css';
 
@@ -61,6 +62,7 @@ export default function KlipperBedMesh() {
   const connected = usePrinterStore((s) => s.connected);
   const config = usePrinterStore((s) => s.config);
   const sendGCode = usePrinterStore((s) => s.sendGCode);
+  const setActiveBedMesh = useSlicerStore((s) => s.setActiveBedMesh);
 
   const [mesh, setMesh] = useState<MoonrakerBedMesh | null>(null);
   const [loading, setLoading] = useState(false);
@@ -135,6 +137,29 @@ export default function KlipperBedMesh() {
     if (!mesh || !selectedProfile) return null;
     return mesh.profiles[selectedProfile]?.points ?? null;
   }, [mesh, selectedProfile]);
+
+  useEffect(() => {
+    if (!mesh || !selectedProfile) {
+      setActiveBedMesh(null);
+      return undefined;
+    }
+    const profile = mesh.profiles[selectedProfile];
+    if (!profile?.points?.length) {
+      setActiveBedMesh(null);
+      return undefined;
+    }
+    setActiveBedMesh({
+      points: profile.points,
+      minX: profile.mesh_params.min_x,
+      maxX: profile.mesh_params.max_x,
+      minY: profile.mesh_params.min_y,
+      maxY: profile.mesh_params.max_y,
+      profileName: selectedProfile,
+      updatedAt: Date.now(),
+      source: 'klipper',
+    });
+    return () => setActiveBedMesh(null);
+  }, [mesh, selectedProfile, setActiveBedMesh]);
 
   if (!connected) {
     return (

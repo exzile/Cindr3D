@@ -42,6 +42,8 @@ export function QualitySection({ print, upd, isVisible, showHelp }: PrintSetting
           <>
             <Num label="Max Variation" unit="mm" value={print.adaptiveLayersMaxVariation ?? 0.1} step={0.01} min={0.01} max={0.5} onChange={(v) => upd({ adaptiveLayersMaxVariation: v })} helpBrief={getSettingHelp('adaptiveLayersMaxVariation')?.brief} onShowHelp={() => showHelp('adaptiveLayersMaxVariation', 'Max Layer Variation')} />
             <Num label="Variation Step" unit="mm" value={print.adaptiveLayersVariationStep ?? 0.05} step={0.01} min={0.01} max={0.2} onChange={(v) => upd({ adaptiveLayersVariationStep: v })} helpBrief={getSettingHelp('adaptiveLayersVariationStep')?.brief} onShowHelp={() => showHelp('adaptiveLayersVariationStep', 'Variation Step')} />
+            <Num label="Minimum Layer Height" unit="mm" value={print.adaptiveLayersMinHeight ?? Math.max(0.04, (print.layerHeight ?? 0.2) - (print.adaptiveLayersMaxVariation ?? 0.1))} step={0.01} min={0.04} max={1} onChange={(v) => upd({ adaptiveLayersMinHeight: v })} helpBrief={getSettingHelp('adaptiveLayersMinHeight')?.brief} onShowHelp={() => showHelp('adaptiveLayersMinHeight', 'Minimum Layer Height')} />
+            <Num label="Maximum Layer Height" unit="mm" value={print.adaptiveLayersMaxHeight ?? (print.layerHeight ?? 0.2) + (print.adaptiveLayersMaxVariation ?? 0.1)} step={0.01} min={0.05} max={1} onChange={(v) => upd({ adaptiveLayersMaxHeight: v })} helpBrief={getSettingHelp('adaptiveLayersMaxHeight')?.brief} onShowHelp={() => showHelp('adaptiveLayersMaxHeight', 'Maximum Layer Height')} />
             <Num label="Topography Size" unit="mm" value={print.adaptiveLayersTopographySize ?? 0.4} step={0.01} min={0.01} max={2} onChange={(v) => upd({ adaptiveLayersTopographySize: v })} />
           </>
         )}
@@ -97,7 +99,7 @@ export function WallsSection({ print, upd, isVisible, showHelp }: PrintSettingsS
         <Num label="Overhanging Wall Angle" unit="Â°" value={print.overhangingWallAngle ?? 45} min={0} max={89} onChange={(v) => upd({ overhangingWallAngle: v })} helpBrief={getSettingHelp('overhangingWallAngle')?.brief} onShowHelp={() => showHelp('overhangingWallAngle', 'Overhanging Wall Angle')} />
         <Num label="Overhanging Wall Speed" unit="%" value={print.overhangingWallSpeed ?? 100} step={5} min={10} max={100} onChange={(v) => upd({ overhangingWallSpeed: v })} helpBrief={getSettingHelp('overhangingWallSpeed')?.brief} onShowHelp={() => showHelp('overhangingWallSpeed', 'Overhanging Wall Speed')} />
         <SectionDivider label="Z Seam" />
-        <Sel label="Z Seam Position" value={print.zSeamPosition ?? 'sharpest_corner'} onChange={(v) => upd({ zSeamPosition: v })} options={[{ value: 'shortest', label: 'Shortest' }, { value: 'sharpest_corner', label: 'Sharpest Corner' }, { value: 'random', label: 'Random' }, { value: 'user_specified', label: 'User Specified (X/Y)' }, { value: 'back', label: 'Back' }]} helpBrief={getSettingHelp('zSeamAlignment')?.brief} onShowHelp={() => showHelp('zSeamAlignment', 'Z Seam Position')} />
+        <Sel label="Z Seam Position" value={print.zSeamPosition ?? 'sharpest_corner'} onChange={(v) => upd({ zSeamPosition: v })} options={[{ value: 'shortest', label: 'Shortest' }, { value: 'sharpest_corner', label: 'Sharpest Corner' }, { value: 'random', label: 'Random' }, { value: 'user_specified', label: 'User Specified (X/Y)' }, { value: 'painted', label: 'Painted' }, { value: 'back', label: 'Back' }]} helpBrief={getSettingHelp('zSeamAlignment')?.brief} onShowHelp={() => showHelp('zSeamAlignment', 'Z Seam Position')} />
         <Check label="Z Seam Relative" value={print.zSeamRelative ?? false} onChange={(v) => upd({ zSeamRelative: v })} helpBrief={getSettingHelp('zSeamRelative')?.brief} onShowHelp={() => showHelp('zSeamRelative', 'Z Seam Relative')} />
         <Check label="Snap Z Seam to Vertex" value={print.zSeamOnVertex ?? false} onChange={(v) => upd({ zSeamOnVertex: v })} helpBrief={getSettingHelp('zSeamOnVertex')?.brief} onShowHelp={() => showHelp('zSeamOnVertex', 'Snap Z Seam to Vertex')} />
         <Num label="Z Seam X" unit="mm" value={print.zSeamX ?? 0} step={0.1} min={-1000} max={1000} onChange={(v) => upd({ zSeamX: v })} helpBrief={getSettingHelp('zSeamAlignment')?.brief} onShowHelp={() => showHelp('zSeamAlignment', 'Z Seam X Position')} />
@@ -136,6 +138,13 @@ export function TopBottomSection({ print, upd, isVisible, showHelp }: PrintSetti
             <Num label="Ironing Flow" unit="%" value={print.ironingFlow} step={0.5} min={0} max={30} onChange={(v) => upd({ ironingFlow: v })} helpBrief={getSettingHelp('ironingFlow')?.brief} onShowHelp={() => showHelp('ironingFlow', 'Ironing Flow')} />
             <Num label="Ironing Spacing" unit="mm" value={print.ironingSpacing} step={0.01} min={0.01} max={1.0} onChange={(v) => upd({ ironingSpacing: v })} helpBrief={getSettingHelp('ironingSpacing')?.brief} onShowHelp={() => showHelp('ironingSpacing', 'Ironing Spacing')} />
             <Tier level="expert"><Check label="Monotonic Ironing Order" value={print.monotonicIroningOrder ?? false} onChange={(v) => upd({ monotonicIroningOrder: v })} /></Tier>
+            <Tier level="expert"><Check label="Non-planar Ironing" value={print.nonPlanarIroningEnabled ?? false} onChange={(v) => upd({ nonPlanarIroningEnabled: v })} /></Tier>
+            {(print.nonPlanarIroningEnabled ?? false) && (
+              <Tier level="expert">
+                <Num label="Non-planar Max Lift" unit="mm" value={print.nonPlanarIroningMaxOffset ?? 0.3} step={0.01} min={0.01} max={2} onChange={(v) => upd({ nonPlanarIroningMaxOffset: v })} />
+                <Num label="Non-planar Sample Spacing" unit="mm" value={print.nonPlanarIroningSampleSpacing ?? 1} step={0.1} min={0.2} max={5} onChange={(v) => upd({ nonPlanarIroningSampleSpacing: v })} />
+              </Tier>
+            )}
           </>
         )}
         <Tier level="expert"><Check label="Connect Top/Bottom Polygons" value={print.connectTopBottomPolygons ?? false} onChange={(v) => upd({ connectTopBottomPolygons: v })} /></Tier>

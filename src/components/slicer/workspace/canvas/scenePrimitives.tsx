@@ -2,7 +2,8 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Line, Text, TransformControls } from '@react-three/drei';
 import { type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
-import type { PlateObject } from '../../../../types/slicer';
+import type { ModifierMeshRole, ModifierMeshSettings, PlateObject } from '../../../../types/slicer';
+import type { PaintedZSeamHint } from '../../../../types/slicer/profiles/print';
 import { normalizeRotationRadians, normalizeScale } from '../../../../utils/slicerTransforms';
 import { useSlicerStore } from '../../../../store/slicerStore';
 
@@ -140,8 +141,72 @@ export function PlateObjectMesh({
       store.pushMeasurePoint({ x: e.point.x, y: e.point.y, z: e.point.z });
       return;
     }
+    if (store.viewportPickMode === 'seam-paint' && e.point) {
+      onClick();
+      const localPoint = meshRef.current
+        ? meshRef.current.worldToLocal(e.point.clone())
+        : e.point.clone();
+      const perObjectSettings = ((obj as { perObjectSettings?: Record<string, unknown> }).perObjectSettings ?? {});
+      const existing = Array.isArray(perObjectSettings.zSeamPaintHints)
+        ? perObjectSettings.zSeamPaintHints.filter((hint): hint is PaintedZSeamHint => (
+            !!hint
+            && typeof hint === 'object'
+            && Number.isFinite((hint as PaintedZSeamHint).x)
+            && Number.isFinite((hint as PaintedZSeamHint).y)
+          ))
+        : [];
+      store.updatePlateObject(obj.id, {
+        perObjectSettings: {
+          ...perObjectSettings,
+          zSeamPosition: 'painted',
+          zSeamPaintHints: [
+            ...existing,
+            { x: localPoint.x, y: localPoint.y, z: localPoint.z, coordinateSpace: 'object' },
+          ],
+        },
+      });
+      return;
+    }
+    if (store.viewportPickMode === 'modifier-paint' && e.point) {
+      onClick();
+      const perObjectSettings = ((obj as { perObjectSettings?: Record<string, unknown> }).perObjectSettings ?? {});
+      const candidateRole = perObjectSettings.modifierPaintRole;
+      const role: Exclude<ModifierMeshRole, 'normal'> = (
+        candidateRole === 'cutting_mesh'
+        || candidateRole === 'infill_mesh'
+        || candidateRole === 'support_mesh'
+        || candidateRole === 'anti_overhang_mesh'
+      ) ? candidateRole : 'support_mesh';
+      const radiusMm = typeof perObjectSettings.modifierPaintRadius === 'number'
+        ? perObjectSettings.modifierPaintRadius
+        : 5;
+      const heightMm = typeof perObjectSettings.modifierPaintHeight === 'number'
+        ? perObjectSettings.modifierPaintHeight
+        : 8;
+      const settings: ModifierMeshSettings | undefined = role === 'infill_mesh'
+        ? {
+            infillDensity: typeof perObjectSettings.modifierPaintInfillDensity === 'number'
+              ? perObjectSettings.modifierPaintInfillDensity
+              : undefined,
+          }
+        : role === 'support_mesh'
+          ? { supportEnabled: true }
+          : undefined;
+      const localPoint = meshRef.current
+        ? meshRef.current.worldToLocal(e.point.clone())
+        : e.point.clone();
+      store.addPaintedModifierMesh(
+        role,
+        { x: e.point.x, y: e.point.y, z: e.point.z },
+        radiusMm,
+        heightMm,
+        settings,
+        { objectId: obj.id, localPoint: { x: localPoint.x, y: localPoint.y, z: localPoint.z } },
+      );
+      return;
+    }
     onClick();
-  }, [obj.id, onClick]);
+  }, [obj, onClick]);
 
   const geometry = obj.geometry as unknown;
   const hasGeometry =
@@ -149,6 +214,7 @@ export function PlateObjectMesh({
     (!!geometry && typeof geometry === 'object' && (geometry as { isBufferGeometry?: boolean }).isBufferGeometry === true);
 
   const locked = !!obj.locked;
+  const isModifier = !!obj.modifierMeshRole && obj.modifierMeshRole !== 'normal';
   const gizmoMode = transformMode === 'rotate' ? 'rotate' : transformMode === 'scale' ? 'scale' : 'translate';
   const showGizmo = isSelected && !locked && (transformMode === 'move' || transformMode === 'rotate' || transformMode === 'scale');
 
@@ -222,8 +288,8 @@ export function PlateObjectMesh({
         {!hasGeometry && <boxGeometry args={boxArgs} />}
         <meshStandardMaterial
           color={materialColor}
-          transparent={isSelected}
-          opacity={isSelected ? 0.85 : 1}
+          transparent={isSelected || isModifier}
+          opacity={isModifier ? (isSelected ? 0.55 : 0.35) : (isSelected ? 0.85 : 1)}
           side={windingFlipped ? THREE.DoubleSide : THREE.FrontSide}
         />
         {isSelected && (

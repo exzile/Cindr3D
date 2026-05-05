@@ -9,7 +9,7 @@ import { buildMoveTimeline } from './previewTimeline';
 import { AxisIndicators, BuildPlateGrid, BuildVolumeWireframe, PlateObjectMesh } from './scenePrimitives';
 import { computeRange, computeLayerTimeRange } from '../preview/utils';
 import { validatePlate } from '../../../../store/slicer/plateValidation';
-import { MeasurementMarkers } from '../overlays/PickToolsOverlay';
+import { MeasurementMarkers, SeamPaintMarkers } from '../overlays/PickToolsOverlay';
 import { Legend } from '../preview/Legend';
 import { computeSliceStats, detectPrintIssues, extractZSeamPoints } from '../preview/sliceStats';
 import { ZSeamMarkers } from '../preview/ZSeamMarkers';
@@ -366,6 +366,7 @@ export function SlicerWorkspaceScene() {
       />
       <AxisIndicators />
       <MeasurementMarkers />
+      <SeamPaintMarkers />
 
       {previewMode === 'model' && plateObjects.map((obj) => {
         if (obj.hidden) return null;

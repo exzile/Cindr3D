@@ -16,6 +16,7 @@ export const MOVE_TYPE_COLORS: Record<SliceMove['type'], string> = {
   // visually separates the skin shells from sparse infill underneath.
   'top-bottom': '#5f56c8',
   support:      '#cc44bb',
+  'support-tree': '#2ec4b6',
   skirt:        '#999999',
   brim:         '#999999',
   raft:         '#777777',
@@ -37,6 +38,7 @@ export const MOVE_TYPE_LABELS: Record<SliceMove['type'], string> = {
   infill: 'Infill',
   'top-bottom': 'Top / Bottom',
   support: 'Support',
+  'support-tree': 'Tree Support',
   skirt: 'Skirt',
   brim: 'Brim',
   raft: 'Raft',

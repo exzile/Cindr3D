@@ -24,11 +24,25 @@ export interface PackResult {
   rotated: boolean;
 }
 
+export interface PackPlacementCandidate {
+  input: PackInput;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rotated: boolean;
+}
+
+export interface PackOptions {
+  scorePlacement?: (candidate: PackPlacementCandidate) => number;
+}
+
 export function packRectangles(
   bedW: number,
   bedH: number,
   inputs: PackInput[],
   margin = 4,
+  options: PackOptions = {},
 ): PackResult[] {
   // Sort by longest edge desc — classic shelf/maxrects warmup.
   const items = [...inputs].sort((a, b) => Math.max(b.w, b.h) - Math.max(a.w, a.h));
@@ -45,7 +59,8 @@ export function packRectangles(
     for (const fr of free) {
       // Try original orientation.
       if (fr.w >= targetW && fr.h >= targetH) {
-        const score = Math.min(fr.w - targetW, fr.h - targetH);
+        const score = Math.min(fr.w - targetW, fr.h - targetH) +
+          Math.max(0, options.scorePlacement?.({ input: it, x: fr.x, y: fr.y, w: targetW, h: targetH, rotated: false }) ?? 0);
         if (score < bestScore) {
           bestScore = score;
           bestRect = fr;
@@ -54,7 +69,8 @@ export function packRectangles(
       }
       // Try rotated 90°.
       if (fr.w >= targetH && fr.h >= targetW) {
-        const score = Math.min(fr.w - targetH, fr.h - targetW);
+        const score = Math.min(fr.w - targetH, fr.h - targetW) +
+          Math.max(0, options.scorePlacement?.({ input: it, x: fr.x, y: fr.y, w: targetH, h: targetW, rotated: true }) ?? 0);
         if (score < bestScore) {
           bestScore = score;
           bestRect = fr;

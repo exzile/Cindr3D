@@ -246,6 +246,8 @@ export function ExperimentalSection({ print, upd, isVisible, showHelp }: PrintSe
           <Num label="Min Volume Before Coasting" unit="mmÂ³" value={print.minVolumeBeforeCoasting ?? 0} step={0.01} min={0} max={10} onChange={(v) => upd({ minVolumeBeforeCoasting: v })} />
         </>
       )}
+      <SectionDivider label="G-code Preview" />
+      <Check label="Embed G-code Thumbnails" value={print.embedGCodeThumbnails ?? true} onChange={(v) => upd({ embedGCodeThumbnails: v })} />
       <SectionDivider label="Fuzzy Skin" />
       <Check label="Enable Fuzzy Skin" value={print.fuzzySkinsEnabled ?? false} onChange={(v) => upd({ fuzzySkinsEnabled: v })} helpBrief={getSettingHelp('fuzzySkinsEnabled')?.brief} onShowHelp={() => showHelp('fuzzySkinsEnabled', 'Enable Fuzzy Skin')} />
       {(print.fuzzySkinsEnabled ?? false) && (

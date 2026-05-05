@@ -7,7 +7,7 @@ import type { SliceLayer, SliceMove, SliceResult } from '../../../../types/slice
 
 export type FeatureType =
   | 'wall-outer' | 'wall-inner' | 'gap-fill' | 'infill' | 'top-bottom'
-  | 'support' | 'skirt' | 'brim' | 'raft' | 'bridge' | 'ironing';
+  | 'support' | 'support-tree' | 'skirt' | 'brim' | 'raft' | 'bridge' | 'ironing';
 
 export interface PerFeatureStats {
   /** Total filament length in mm of source filament (the SliceMove.extrusion sum). */

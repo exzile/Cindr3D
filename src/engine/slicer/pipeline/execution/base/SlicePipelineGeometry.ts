@@ -93,6 +93,8 @@ export class SlicePipelineGeometry {
     variationStep: number,
     zScale: number,
     topographySize: number = 0,
+    minLayerHeight?: number,
+    maxLayerHeight?: number,
   ): number[] {
     return computeAdaptiveLayerZsFromModule(
       triangles,
@@ -103,6 +105,8 @@ export class SlicePipelineGeometry {
       variationStep,
       zScale,
       topographySize,
+      minLayerHeight,
+      maxLayerHeight,
     );
   }
 

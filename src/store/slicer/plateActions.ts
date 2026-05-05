@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { StoreApi } from 'zustand';
-import type { PlateObject } from '../../types/slicer';
+import type { ModifierMeshRole, PlateObject } from '../../types/slicer';
 import { isBufferGeometry } from './persistence';
 import type { SlicerStore } from '../slicerStore';
 
@@ -9,6 +9,7 @@ const PLATE_HISTORY_LIMIT = 30;
 type PlateActionSlice = Pick<
   SlicerStore,
   | 'addToPlate'
+  | 'addPaintedModifierMesh'
   | 'removeFromPlate'
   | 'selectPlateObject'
   | 'togglePlateObjectInSelection'
@@ -51,6 +52,65 @@ function bboxFromGeometry(geometry: unknown): { min: { x: number; y: number; z: 
     : { min: { x: bbox.min.x, y: bbox.min.y, z: bbox.min.z }, max: { x: bbox.max.x, y: bbox.max.y, z: bbox.max.z } };
 }
 
+const MODIFIER_PAINT_COLORS: Record<Exclude<ModifierMeshRole, 'normal'>, string> = {
+  cutting_mesh: '#ff6b6b',
+  infill_mesh: '#4dabf7',
+  support_mesh: '#51cf66',
+  anti_overhang_mesh: '#ffd43b',
+};
+
+function modifierRoleLabel(role: Exclude<ModifierMeshRole, 'normal'>): string {
+  switch (role) {
+    case 'cutting_mesh': return 'Cutting';
+    case 'infill_mesh': return 'Infill';
+    case 'support_mesh': return 'Support';
+    case 'anti_overhang_mesh': return 'Support blocker';
+  }
+}
+
+function createPaintBrushGeometry(radiusMm: number, heightMm: number): THREE.BufferGeometry {
+  const radius = Math.max(0.5, Math.min(100, radiusMm));
+  const height = Math.max(0.2, Math.min(500, heightMm));
+  const geometry = new THREE.CylinderGeometry(radius, radius, height, 32, 1, false);
+  geometry.rotateX(Math.PI / 2);
+  geometry.computeBoundingBox();
+  return geometry;
+}
+
+function objectTransformMatrix(obj: PlateObject): THREE.Matrix4 {
+  const sx = (obj.scale?.x ?? 1) * (obj.mirrorX ? -1 : 1);
+  const sy = (obj.scale?.y ?? 1) * (obj.mirrorY ? -1 : 1);
+  const sz = (obj.scale?.z ?? 1) * (obj.mirrorZ ? -1 : 1);
+  const rx = ((obj.rotation?.x ?? 0) * Math.PI) / 180;
+  const ry = ((obj.rotation?.y ?? 0) * Math.PI) / 180;
+  const rz = ((obj.rotation?.z ?? 0) * Math.PI) / 180;
+  return new THREE.Matrix4().compose(
+    new THREE.Vector3(obj.position.x, obj.position.y, obj.position.z ?? 0),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)),
+    new THREE.Vector3(sx, sy, sz),
+  );
+}
+
+function anchoredModifierPosition(source: PlateObject, localPoint: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
+  const point = new THREE.Vector3(localPoint.x, localPoint.y, localPoint.z).applyMatrix4(objectTransformMatrix(source));
+  return { x: point.x, y: point.y, z: point.z };
+}
+
+function applyAnchoredModifierTransforms(objects: PlateObject[]): PlateObject[] {
+  const byId = new Map(objects.map((obj) => [obj.id, obj]));
+  return objects.map((obj) => {
+    if (!obj.modifierSourceObjectId || !obj.modifierSourceLocalPoint) return obj;
+    const source = byId.get(obj.modifierSourceObjectId);
+    if (!source) return obj;
+    return {
+      ...obj,
+      position: anchoredModifierPosition(source, obj.modifierSourceLocalPoint),
+      rotation: { ...source.rotation },
+      scale: { ...source.scale },
+    };
+  });
+}
+
 export function createPlateActions({
   set,
   get,
@@ -91,6 +151,36 @@ export function createPlateActions({
     // Run printability check so the warning panel populates without the
     // user having to click the explicit "Check printability" button.
     void Promise.resolve().then(() => get().runPrintabilityCheck());
+  },
+
+  addPaintedModifierMesh: (role, point, radiusMm, heightMm, settings, source) => {
+    pushHistory();
+    const geometry = createPaintBrushGeometry(radiusMm, heightMm);
+    const safeBbox = bboxFromGeometry(geometry);
+    const sourceObject = source ? get().plateObjects.find((obj) => obj.id === source.objectId) : undefined;
+    const plateObject: PlateObject = {
+      id: crypto.randomUUID(),
+      featureId: 'modifier-paint',
+      name: `${modifierRoleLabel(role)} paint`,
+      geometry,
+      position: { x: point.x, y: point.y, z: point.z },
+      rotation: sourceObject ? { ...sourceObject.rotation } : { x: 0, y: 0, z: 0 },
+      scale: sourceObject ? { ...sourceObject.scale } : { x: 1, y: 1, z: 1 },
+      color: MODIFIER_PAINT_COLORS[role],
+      boundingBox: safeBbox,
+      modifierMeshRole: role,
+      modifierMeshSettings: settings,
+      modifierSourceObjectId: source?.objectId,
+      modifierSourceLocalPoint: source?.localPoint,
+    };
+
+    set((state) => ({
+      plateObjects: [...state.plateObjects, plateObject],
+      selectedPlateObjectId: plateObject.id,
+      additionalSelectedIds: [],
+      sliceResult: null,
+      previewMode: 'model',
+    }));
   },
 
   removeFromPlate: (id) => {
@@ -153,9 +243,9 @@ export function createPlateActions({
   updatePlateObject: (id, updates) => {
     pushHistory();
     set((state) => ({
-      plateObjects: state.plateObjects.map((o) =>
+      plateObjects: applyAnchoredModifierTransforms(state.plateObjects.map((o) =>
         o.id === id ? { ...o, ...updates } : o,
-      ),
+      )),
     }));
   },
 
@@ -619,7 +709,8 @@ export function createPlateActions({
   autoArrange: () => {
     void (async () => {
       const { packRectangles } = await import('../../engine/binPacker');
-      const { plateObjects, getActivePrinterProfile } = get();
+      const { scoreBedMeshPlacement } = await import('../../utils/bedMeshArrange');
+      const { plateObjects, getActivePrinterProfile, activeBedMesh } = get();
       if (plateObjects.length === 0) return;
 
       const printer = getActivePrinterProfile();
@@ -627,7 +718,7 @@ export function createPlateActions({
       const bedD = printer?.buildVolume?.y ?? 220;
 
       const inputs = plateObjects
-        .filter((o) => !o.locked)
+        .filter((o) => !o.locked && (!o.modifierMeshRole || o.modifierMeshRole === 'normal'))
         .map((o) => {
           const sx = o.scale?.x ?? 1;
           const sy = o.scale?.y ?? 1;
@@ -641,7 +732,11 @@ export function createPlateActions({
           };
         });
 
-      const placements = packRectangles(bedW, bedD, inputs, 4);
+      const placements = packRectangles(bedW, bedD, inputs, 4, {
+        scorePlacement: activeBedMesh
+          ? (candidate) => scoreBedMeshPlacement(activeBedMesh, candidate)
+          : undefined,
+      });
       const placementById = new Map(placements.map((p) => [p.id, p]));
 
       pushHistory();
@@ -667,7 +762,7 @@ export function createPlateActions({
         };
       });
 
-      set({ plateObjects: arranged });
+      set({ plateObjects: applyAnchoredModifierTransforms(arranged) });
     })();
   },
 

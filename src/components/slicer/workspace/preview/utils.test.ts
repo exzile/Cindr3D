@@ -80,6 +80,11 @@ describe('Preview color palette — Cura/OrcaSlicer parity', () => {
     expect(c.g).toBeLessThan(0.2);
   });
 
+  it('tree support is teal and distinct from grid support', () => {
+    expect(MOVE_TYPE_COLORS['support-tree']).toBe('#2ec4b6');
+    expect(MOVE_TYPE_COLORS['support-tree']).not.toBe(MOVE_TYPE_COLORS.support);
+  });
+
   it('bridge is bright red (visually distinct from outer wall)', () => {
     const c = MOVE_TYPE_THREE_COLORS.bridge;
     expect(c.r).toBeGreaterThan(0.9);
@@ -104,7 +109,7 @@ describe('Preview color palette — Cura/OrcaSlicer parity', () => {
 
   it('every move type has a label and a color', () => {
     const types: SliceMove['type'][] = [
-      'wall-outer', 'wall-inner', 'infill', 'top-bottom', 'support',
+      'wall-outer', 'wall-inner', 'gap-fill', 'infill', 'top-bottom', 'support', 'support-tree',
       'skirt', 'brim', 'raft', 'bridge', 'travel', 'ironing',
     ];
     for (const t of types) {
@@ -116,8 +121,8 @@ describe('Preview color palette — Cura/OrcaSlicer parity', () => {
 
   it('hex colors and THREE colors agree', () => {
     const types: SliceMove['type'][] = [
-      'wall-outer', 'wall-inner', 'infill', 'top-bottom', 'support',
-      'skirt', 'bridge', 'travel', 'ironing',
+      'wall-outer', 'wall-inner', 'gap-fill', 'infill', 'top-bottom', 'support', 'support-tree',
+      'skirt', 'brim', 'raft', 'bridge', 'travel', 'ironing',
     ];
     for (const t of types) {
       const fromHex = new THREE.Color(MOVE_TYPE_COLORS[t]);

@@ -9,9 +9,19 @@ export function computeAdaptiveLayerZs(
   variationStep: number,
   zScale: number,
   topographySize: number = 0,
+  minLayerHeight?: number,
+  maxLayerHeight?: number,
 ): number[] {
-  const minH = Math.max(0.04, baseLayerHeight - maxVariation);
-  const maxH = Math.max(minH + 0.01, baseLayerHeight + maxVariation);
+  const variationMinH = Math.max(0.04, baseLayerHeight - maxVariation);
+  const variationMaxH = Math.max(variationMinH + 0.01, baseLayerHeight + maxVariation);
+  const requestedMinH = typeof minLayerHeight === 'number' && minLayerHeight > 0
+    ? minLayerHeight
+    : variationMinH;
+  const requestedMaxH = typeof maxLayerHeight === 'number' && maxLayerHeight > 0
+    ? maxLayerHeight
+    : variationMaxH;
+  const minH = Math.min(requestedMinH, requestedMaxH);
+  const maxH = Math.max(minH + 0.01, requestedMaxH);
 
   let modelMinZ = Infinity;
   for (const tri of triangles) {

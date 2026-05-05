@@ -237,6 +237,8 @@ export function prepareSliceGeometryRun(
       pp.adaptiveLayersVariationStep,
       zScale,
       pp.adaptiveLayersTopographySize ?? 0,
+      pp.adaptiveLayersMinHeight,
+      pp.adaptiveLayersMaxHeight,
     );
   } else {
     layerZs = [];

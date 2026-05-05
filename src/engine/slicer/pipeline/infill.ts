@@ -283,6 +283,93 @@ function generateCubicInfill(
   ];
 }
 
+function pointInMaterial(
+  point: THREE.Vector2,
+  contour: THREE.Vector2[],
+  holes: THREE.Vector2[][],
+  deps: InfillDeps,
+): boolean {
+  if (!deps.pointInContour(point, contour)) return false;
+  for (const h of holes) if (h.length >= 3 && deps.pointInContour(point, h)) return false;
+  return true;
+}
+
+function generateOrganicInfill(
+  contour: THREE.Vector2[],
+  density: number,
+  lineWidth: number,
+  layerIndex: number,
+  holes: THREE.Vector2[][],
+  printProfile: PrintProfile,
+  deps: InfillDeps,
+): InfillLine[] {
+  const results: InfillLine[] = [];
+  const bbox = deps.contourBBox(contour);
+  const spacing = lineWidth / (density / 100);
+  if (!(spacing > 0) || !isFinite(spacing)) return results;
+
+  const width = bbox.maxX - bbox.minX;
+  const height = bbox.maxY - bbox.minY;
+  const maxDim = Math.max(width, height);
+  const step = Math.max(0.35, Math.min(spacing * 0.35, 1.2));
+  const amplitude = Math.min(spacing * 0.55, Math.max(lineWidth * 2, maxDim * 0.08));
+  const period = Math.max(spacing * 3.25, lineWidth * 6);
+  const baseAngle = (layerIndex % 2 === 0 ? Math.PI / 8 : Math.PI / 2 + Math.PI / 8) +
+    ((printProfile.infillXOffset ?? 0) * 0.01);
+  const branchAngle = baseAngle + Math.PI / 3;
+  const phase = layerIndex * 0.73 + (printProfile.infillYOffset ?? 0) * 0.1;
+  const cx = (bbox.minX + bbox.maxX) / 2;
+  const cy = (bbox.minY + bbox.maxY) / 2;
+  const cos = Math.cos(baseAngle);
+  const sin = Math.sin(baseAngle);
+  const normalX = -sin;
+  const normalY = cos;
+  const span = maxDim * 1.45;
+  const branchEvery = Math.max(2, Math.round(spacing / step));
+
+  const addSegment = (from: THREE.Vector2, to: THREE.Vector2) => {
+    const mid = new THREE.Vector2((from.x + to.x) / 2, (from.y + to.y) / 2);
+    if (
+      from.distanceToSquared(to) > 0.01 &&
+      pointInMaterial(from, contour, holes, deps) &&
+      pointInMaterial(mid, contour, holes, deps) &&
+      pointInMaterial(to, contour, holes, deps)
+    ) {
+      results.push({ from, to });
+    }
+  };
+
+  let rowIndex = 0;
+  for (let offset = -maxDim; offset <= maxDim; offset += spacing, rowIndex++) {
+    let previous: THREE.Vector2 | null = null;
+    let stepIndex = 0;
+    for (let distance = -span; distance <= span; distance += step, stepIndex++) {
+      const wave = Math.sin((distance / period) * Math.PI * 2 + phase + rowIndex * 0.61) * amplitude;
+      const taper = 1 - Math.min(1, Math.abs(distance) / span);
+      const lateral = offset + wave * taper;
+      const point = new THREE.Vector2(
+        cx + cos * distance + normalX * lateral,
+        cy + sin * distance + normalY * lateral,
+      );
+      if (previous) addSegment(previous, point);
+
+      if ((rowIndex + stepIndex + layerIndex) % branchEvery === 0) {
+        const branchLength = spacing * (0.45 + 0.25 * Math.sin(stepIndex * 1.31 + phase));
+        const dir = (rowIndex + stepIndex) % 2 === 0 ? 1 : -1;
+        const branchEnd = new THREE.Vector2(
+          point.x + Math.cos(branchAngle) * branchLength * dir,
+          point.y + Math.sin(branchAngle) * branchLength * dir,
+        );
+        addSegment(point, branchEnd);
+      }
+
+      previous = point;
+    }
+  }
+
+  return results;
+}
+
 function generateZigzagLines(
   contour: THREE.Vector2[],
   density: number,
@@ -349,6 +436,8 @@ export function generateLinearInfill(
       return generateConcentricInfill(contour, lineWidth, holes, deps);
     case 'cubic':
       return generateCubicInfill(contour, density, lineWidth, layerIndex, holes, printProfile, deps);
+    case 'organic':
+      return generateOrganicInfill(contour, density, lineWidth, layerIndex, holes, printProfile, deps);
     case 'lightning': {
       const lightningOverhangAngle = (printProfile.lightningInfillOverhangAngle ?? 40) / 90;
       const prune = printProfile.lightningPruneAngle ?? 40;

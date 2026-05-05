@@ -25,6 +25,7 @@ const CATEGORY_LABEL: Record<SliceMove['type'], { label: string; cat: string; co
   'ironing':     { label: 'Ironing',    cat: 'Skin',      color: '#88ff88' },
   infill:        { label: 'Infill',     cat: 'Infill',    color: '#44aaff' },
   support:       { label: 'Support',    cat: 'Support',   color: '#ff44ff' },
+  'support-tree': { label: 'Tree Support', cat: 'Support', color: '#2ec4b6' },
   skirt:         { label: 'Skirt',      cat: 'Adhesion',  color: '#aaaaaa' },
   brim:          { label: 'Brim',       cat: 'Adhesion',  color: '#aaaaaa' },
   raft:          { label: 'Raft',       cat: 'Adhesion',  color: '#888888' },

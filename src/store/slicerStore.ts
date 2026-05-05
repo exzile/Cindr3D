@@ -15,10 +15,30 @@ import { slicerPersistConfig } from './slicer/persistConfig';
 import { createPlateActions } from './slicer/plateActions';
 import type { ProfileSnapshot, ProfileSnapshotKind, ProfileSnapshotProfile, SlicerStore } from './slicer/types';
 import { getActiveSliceRequestId, getCurrentSlicerWorker, getSlicerWorker, isWorkerBusy, nextSliceRequestId, resetSlicerWorker, setWorkerBusy } from './slicer/worker';
+import type { PaintedZSeamHint } from '../types/slicer/profiles/print';
 
 export type { SlicerStore } from './slicer/types';
 
 const MAX_PROFILE_SNAPSHOTS_PER_PROFILE = 25;
+
+function transformPaintedZSeamHints(overrides: Record<string, unknown> | undefined, transform: THREE.Matrix4): Record<string, unknown> | undefined {
+  const rawHints = overrides?.zSeamPaintHints;
+  if (!Array.isArray(rawHints)) return overrides;
+  const transformedHints = rawHints.map((hint): unknown => {
+    if (!hint || typeof hint !== 'object') return hint;
+    const seamHint = hint as PaintedZSeamHint;
+    if (seamHint.coordinateSpace !== 'object') return seamHint;
+    const point = new THREE.Vector3(seamHint.x, seamHint.y, seamHint.z ?? 0).applyMatrix4(transform);
+    return {
+      ...seamHint,
+      x: point.x,
+      y: point.y,
+      z: point.z,
+      coordinateSpace: 'world',
+    };
+  });
+  return { ...overrides, zSeamPaintHints: transformedHints };
+}
 
 function cloneProfile<T extends ProfileSnapshotProfile>(profile: T): T {
   if (typeof structuredClone === 'function') return structuredClone(profile);
@@ -77,6 +97,7 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
   additionalSelectedIds: [],
   plateHistory: [],
   plateFuture: [],
+  activeBedMesh: null,
 
   // Slice state
   sliceProgress: {
@@ -385,6 +406,8 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
 
   ...createPlateActions({ set, get }),
 
+  setActiveBedMesh: (mesh) => set({ activeBedMesh: mesh }),
+
   // --- Slicing ---
 
   startSlice: () => {
@@ -437,11 +460,40 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
         y: rawScl.y * (mir.mirrorY ? -1 : 1),
         z: rawScl.z * (mir.mirrorZ ? -1 : 1),
       };
-      const transform = new THREE.Matrix4().compose(
+      let transform = new THREE.Matrix4().compose(
         new THREE.Vector3(pos.x, pos.y, pos.z ?? 0),
         new THREE.Quaternion().setFromEuler(new THREE.Euler(rot.x, rot.y, rot.z)),
         new THREE.Vector3(scl.x, scl.y, scl.z),
       );
+      if (obj.modifierMeshRole && obj.modifierMeshRole !== 'normal' && obj.modifierSourceObjectId && obj.modifierSourceLocalPoint) {
+        const source = state.plateObjects.find((candidate) => candidate.id === obj.modifierSourceObjectId);
+        if (source) {
+          const sourcePos = (source.position as { x: number; y: number; z?: number });
+          const sourceRot = normalizeRotationDegreesToRadians((source as { rotation?: unknown }).rotation);
+          const sourceRawScale = normalizeScale((source as { scale?: unknown }).scale);
+          const sourceMir = source as { mirrorX?: boolean; mirrorY?: boolean; mirrorZ?: boolean };
+          const sourceScale = new THREE.Vector3(
+            sourceRawScale.x * (sourceMir.mirrorX ? -1 : 1),
+            sourceRawScale.y * (sourceMir.mirrorY ? -1 : 1),
+            sourceRawScale.z * (sourceMir.mirrorZ ? -1 : 1),
+          );
+          const sourceMatrix = new THREE.Matrix4().compose(
+            new THREE.Vector3(sourcePos.x, sourcePos.y, sourcePos.z ?? 0),
+            new THREE.Quaternion().setFromEuler(new THREE.Euler(sourceRot.x, sourceRot.y, sourceRot.z)),
+            sourceScale,
+          );
+          const anchoredPoint = new THREE.Vector3(
+            obj.modifierSourceLocalPoint.x,
+            obj.modifierSourceLocalPoint.y,
+            obj.modifierSourceLocalPoint.z,
+          ).applyMatrix4(sourceMatrix);
+          transform = new THREE.Matrix4().compose(
+            anchoredPoint,
+            new THREE.Quaternion().setFromEuler(new THREE.Euler(sourceRot.x, sourceRot.y, sourceRot.z)),
+            sourceScale,
+          );
+        }
+      }
 
       const indexAttr = geo.getIndex();
 
@@ -501,6 +553,7 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
         // not override the profile.
         ? Object.fromEntries(Object.entries(per).filter(([, v]) => v !== undefined))
         : undefined;
+      const transformedOverrides = transformPaintedZSeamHints(filteredOverrides, transform);
 
       const modifierMeshSettings = isModifier && obj.modifierMeshSettings
         ? Object.fromEntries(Object.entries(obj.modifierMeshSettings).filter(([, v]) => v !== undefined))
@@ -510,7 +563,7 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
         positions: positionsForWorker,
         index: indexForWorker,
         transformElements: new Float32Array(transform.elements),
-        overrides: filteredOverrides && Object.keys(filteredOverrides).length > 0 ? filteredOverrides : undefined,
+        overrides: transformedOverrides && Object.keys(transformedOverrides).length > 0 ? transformedOverrides : undefined,
         objectName: obj.name,
         modifierMeshRole: obj.modifierMeshRole,
         modifierMeshSettings: modifierMeshSettings && Object.keys(modifierMeshSettings).length > 0 ? modifierMeshSettings : undefined,
