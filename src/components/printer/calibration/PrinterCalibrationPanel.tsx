@@ -123,6 +123,90 @@ const PRESETS: CalibrationPreset[] = [
   },
 ];
 
+type CalibrationCard = {
+  id: string;
+  testType: string;
+  category: string;
+  title: string;
+  description: string;
+  linkedItemIds: CalibrationItemId[];
+};
+
+const CALIBRATION_CARDS: CalibrationCard[] = [
+  {
+    id: 'firmware-health',
+    testType: 'firmware-health',
+    category: 'System',
+    title: 'Firmware health',
+    description: 'Baseline command, heater, motion, and sensor checks before deeper tuning.',
+    linkedItemIds: [],
+  },
+  {
+    id: 'first-layer',
+    testType: 'first-layer',
+    category: 'Geometry',
+    title: 'First layer',
+    description: 'Bed adhesion, mesh quality, and Z-offset confirmation across the build surface.',
+    linkedItemIds: ['first-layer', 'z-offset'],
+  },
+  {
+    id: 'flow-rate',
+    testType: 'flow-rate',
+    category: 'Material',
+    title: 'Flow rate',
+    description: 'Extrusion multiplier check for wall thickness and surface consistency.',
+    linkedItemIds: [],
+  },
+  {
+    id: 'temperature-tower',
+    testType: 'temperature-tower',
+    category: 'Material',
+    title: 'Temperature tower',
+    description: 'Temperature bands for layer bonding, gloss, bridging, and detail quality.',
+    linkedItemIds: [],
+  },
+  {
+    id: 'retraction',
+    testType: 'retraction',
+    category: 'Material',
+    title: 'Retraction',
+    description: 'Stringing and travel cleanup across distance and speed changes.',
+    linkedItemIds: [],
+  },
+  {
+    id: 'pressure-advance',
+    testType: 'pressure-advance',
+    category: 'Motion',
+    title: 'Pressure advance',
+    description: 'Corner bulge and line-start tuning for faster, cleaner extrusion.',
+    linkedItemIds: ['pressure-advance'],
+  },
+  {
+    id: 'input-shaper',
+    testType: 'input-shaper',
+    category: 'Motion',
+    title: 'Input shaper',
+    description: 'Ringing and resonance review for acceleration-safe print profiles.',
+    linkedItemIds: ['input-shaper'],
+  },
+  {
+    id: 'dimensional-accuracy',
+    testType: 'dimensional-accuracy',
+    category: 'Geometry',
+    title: 'Dimensional accuracy',
+    description: 'Scale, shrinkage, and fit checks against measured reference dimensions.',
+    linkedItemIds: [],
+  },
+  {
+    id: 'max-volumetric-speed',
+    testType: 'max-volumetric-speed',
+    category: 'Material',
+    title: 'Max volumetric speed',
+    description: 'Throughput ceiling test for reliable high-flow slicing limits.',
+    linkedItemIds: [],
+  },
+];
+
 function downloadGCode(filename: string, gcode: string): void {
   const blob = new Blob([gcode], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
@@ -214,6 +298,17 @@ export default function PrinterCalibrationPanel() {
     printerComponents,
     moistureProfile ? [moistureProfile] : [],
   );
+  const calibrationStatusById = Object.fromEntries(
+    calibrationStatuses.map((item) => [item.record.itemId, item]),
+  ) as Partial<Record<CalibrationItemId, (typeof calibrationStatuses)[number]>>;
+  const getCardStatusClass = (linkedItemIds: CalibrationItemId[]) => {
+    if (linkedItemIds.some((itemId) => {
+      const status = calibrationStatusById[itemId]?.status;
+      return status === 'overdue' || status === 'never';
+    })) return 'is-overdue';
+    if (linkedItemIds.some((itemId) => calibrationStatusById[itemId]?.status === 'upcoming')) return 'is-upcoming';
+    return 'is-ok';
+  };
 
   const runPreset = (preset: CalibrationPreset) => {
     if (!activePrinter || !activeMaterial || !activePrint) return;
@@ -320,6 +415,35 @@ export default function PrinterCalibrationPanel() {
           <ExternalLink size={14} /> Prepare
         </button>
       </header>
+
+      <section className="calib-center" aria-label="Calibration Center">
+        <div className="calib-center__grid">
+          {CALIBRATION_CARDS.map((card) => (
+            <div key={card.id} className={`calib-center__card ${getCardStatusClass(card.linkedItemIds)}`}>
+              <div className="calib-center__card-body">
+                <span className="calib-center__category">{card.category}</span>
+                <strong className="calib-center__title">{card.title}</strong>
+                <p className="calib-center__desc">{card.description}</p>
+                {card.linkedItemIds.length > 0 && (
+                  <div className="calib-center__badges">
+                    {card.linkedItemIds.map((itemId) => {
+                      const linkedStatus = calibrationStatusById[itemId];
+                      return (
+                        <span key={itemId} className="printer-calibration-panel__pill">
+                          {linkedStatus ? statusLabel(linkedStatus.status, linkedStatus.daysUntilDue) : 'Current'}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <button type="button" className="calib-center__start" disabled>
+                Start
+              </button>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <section className="printer-calibration-panel__lifecycle" aria-label="Maintenance lifecycle">
         <div className="printer-calibration-panel__summary">
