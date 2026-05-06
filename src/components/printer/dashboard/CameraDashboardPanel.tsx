@@ -564,7 +564,17 @@ function sendCameraCommand(url: string, username: string, password: string, time
     timeout = window.setTimeout(finish, timeoutMs);
     image.onload = finish;
     image.onerror = finish;
-    image.src = cameraUrlWithCredentials(normalizeCameraStreamUrl(url), username, password);
+    const normalizedUrl = normalizeCameraStreamUrl(url);
+    if (import.meta.env.DEV) {
+      const params = new URLSearchParams({
+        url: normalizedUrl,
+        username: username.trim(),
+        password,
+      });
+      image.src = `/camera-command-proxy?${params.toString()}`;
+      return;
+    }
+    image.src = cameraUrlWithCredentials(normalizedUrl, username, password);
   });
 }
 

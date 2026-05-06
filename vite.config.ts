@@ -200,6 +200,86 @@ function cameraProxyPlugin(): Plugin {
 // following redirects (github.com → objects.githubusercontent.com).
 // Browsers block those asset-CDN URLs because they don't send CORS headers;
 // this dev-only proxy re-emits the bytes with ACAO:* so firmware updates work.
+function cameraCommandProxyPlugin(): Plugin {
+  return {
+    name: 'camera-command-proxy',
+    configureServer(server) {
+      server.middlewares.use('/camera-command-proxy', (req, res) => {
+        const parsedReq = new URL(req.url ?? '/', 'http://localhost');
+        const target = parsedReq.searchParams.get('url');
+        const username = parsedReq.searchParams.get('username') ?? '';
+        const password = parsedReq.searchParams.get('password') ?? '';
+        if (!target) { res.statusCode = 400; res.end('missing ?url'); return; }
+
+        let targetUrl: URL;
+        try { targetUrl = new URL(target); }
+        catch { res.statusCode = 400; res.end('bad url'); return; }
+        if (targetUrl.protocol !== 'http:' && targetUrl.protocol !== 'https:') {
+          res.statusCode = 400; res.end('unsupported protocol'); return;
+        }
+
+        const sendError = (label: string, err: Error) => {
+          console.error(`[camera-command-proxy] ${label} GET ${targetUrl.origin}${targetUrl.pathname}: ${err.message}`);
+          if (!res.headersSent) {
+            res.statusCode = 502;
+            res.setHeader('access-control-allow-origin', '*');
+            res.setHeader('content-type', 'text/plain');
+            res.end(`Upstream error: ${err.message}`);
+          }
+        };
+
+        const authFromChallenge = (challengeText: string): string => {
+          const lowerChallenge = challengeText.toLowerCase();
+          return lowerChallenge.startsWith('digest')
+            ? digestAuthHeader(challengeText, targetUrl, 'GET', username, password)
+            : lowerChallenge.startsWith('basic')
+              ? `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
+              : '';
+        };
+
+        const requestUpstream = (authorization?: string, canRetry = true) => {
+          const mod = targetUrl.protocol === 'https:' ? https : http;
+          const headers: http.OutgoingHttpHeaders = {
+            Accept: '*/*',
+            'User-Agent': 'Cindr3D-camera-command-proxy',
+            host: targetUrl.host,
+          };
+          if (authorization) headers.Authorization = authorization;
+          const upstreamReq = mod.request(targetUrl, { method: 'GET', headers }, (upstreamRes) => {
+            const challenge = upstreamRes.headers['www-authenticate'];
+            const challengeText = Array.isArray(challenge) ? challenge[0] : challenge;
+            if (canRetry && upstreamRes.statusCode === 401 && challengeText && username) {
+              const nextAuthorization = authFromChallenge(challengeText);
+              if (nextAuthorization && nextAuthorization !== authorization) {
+                upstreamRes.resume();
+                requestUpstream(nextAuthorization, false);
+                return;
+              }
+            }
+
+            upstreamRes.resume();
+            if (!res.headersSent) {
+              res.statusCode = upstreamRes.statusCode && upstreamRes.statusCode >= 400 ? upstreamRes.statusCode : 204;
+              res.setHeader('access-control-allow-origin', '*');
+              res.end();
+            }
+          });
+          upstreamReq.setTimeout(1200, () => {
+            upstreamReq.destroy(new Error('Camera command timed out'));
+          });
+          upstreamReq.on('error', (err) => sendError(authorization ? 'upstream auth error' : 'upstream error', err));
+          upstreamReq.end();
+        };
+
+        const preemptiveBasic = username
+          ? `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
+          : undefined;
+        requestUpstream(preemptiveBasic);
+      });
+    },
+  };
+}
+
 type HlsBridgeSession = {
   dir: string;
   indexPath: string;
@@ -2193,7 +2273,7 @@ function silenceThreeClockPlugin(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [silenceThreeClockPlugin(), react(), wasm(), duetProxyPlugin(), cameraProxyPlugin(), rtspHlsBridgePlugin(), rtspRecordingPlugin(), githubProxyPlugin(), cindr3dMcpPlugin(), noCacheDevAssetsPlugin()],
+  plugins: [silenceThreeClockPlugin(), react(), wasm(), duetProxyPlugin(), cameraProxyPlugin(), cameraCommandProxyPlugin(), rtspHlsBridgePlugin(), rtspRecordingPlugin(), githubProxyPlugin(), cindr3dMcpPlugin(), noCacheDevAssetsPlugin()],
   resolve: {
     alias: {
       module: fileURLToPath(new URL('./src/shims/nodeModule.ts', import.meta.url)),
