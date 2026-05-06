@@ -190,10 +190,10 @@
 #   [x] Auto-reconnect on broker drop
 
 ### 13.3 HomeAssistant entity bridge  [M]
-#   [ ] Local endpoint that HA's RESTful sensor / switch integrations
+#   [x] Local endpoint that HA's RESTful sensor / switch integrations
 #       can read
-#   [ ] Per-printer entities: temp sensors, progress, pause/cancel switches
-#   [ ] Auto-discovery payload (HA discovery format)
+#   [x] Per-printer entities: temp sensors, progress, pause/cancel switches
+#   [x] Auto-discovery payload (HA discovery format)
 
 ### 13.4 Profile import (Cura / OrcaSlicer / Bambu Studio)  [M]
 #   [ ] Parser per format → Cindr3D's PrintProfile shape

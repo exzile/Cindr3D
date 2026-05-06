@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type { CSSProperties } from 'react';
 import { X } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
+import { fetchHomeAssistantCommands, publishHomeAssistantSnapshot } from '../../services/integrations/homeAssistantBridge';
 import { sendIntegrationEvent, type IntegrationPrinterSnapshot } from '../../services/integrations/notificationSender';
 import { mqttPublisher } from '../../services/integrations/mqttPublisher';
 import { useIntegrationStore, type IntegrationEventType } from '../../store/integrationStore';
@@ -82,6 +83,9 @@ export default function DuetNotifications() {
   const connected = usePrinterStore((s) => s.connected);
   const activePrinterId = usePrinterStore((s) => s.activePrinterId);
   const printers = usePrinterStore((s) => s.printers);
+  const pausePrint = usePrinterStore((s) => s.pausePrint);
+  const resumePrint = usePrinterStore((s) => s.resumePrint);
+  const cancelPrint = usePrinterStore((s) => s.cancelPrint);
   const mqtt = useIntegrationStore((s) => s.mqtt);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -225,12 +229,17 @@ export default function DuetNotifications() {
 
   // Publish MQTT telemetry at the configured cadence as the object model updates.
   useEffect(() => {
-    if (!connected || !mqtt.enabled || !mqtt.includeTelemetry) return;
+    if (!connected) return;
     const now = Date.now();
-    if (now - lastMqttTelemetryRef.current < mqtt.publishRateMs) return;
+    const publishRateMs = mqtt.enabled && mqtt.includeTelemetry ? mqtt.publishRateMs : 5000;
+    if (now - lastMqttTelemetryRef.current < publishRateMs) return;
     lastMqttTelemetryRef.current = now;
-    mqttPublisher.configure(mqtt);
-    mqttPublisher.publishTelemetry(buildSnapshot());
+    const snapshot = buildSnapshot();
+    if (mqtt.enabled && mqtt.includeTelemetry) {
+      mqttPublisher.configure(mqtt);
+      mqttPublisher.publishTelemetry(snapshot);
+    }
+    void publishHomeAssistantSnapshot(snapshot);
   }, [
     connected,
     mqtt,
@@ -241,6 +250,20 @@ export default function DuetNotifications() {
     model.move?.axes,
     model.state?.status,
   ]);
+
+  useEffect(() => {
+    if (!connected || !activePrinterId) return;
+    const interval = window.setInterval(() => {
+      void fetchHomeAssistantCommands(activePrinterId).then((commands) => {
+        for (const command of commands) {
+          if (command.action === 'pause') void pausePrint();
+          if (command.action === 'resume') void resumePrint();
+          if (command.action === 'cancel') void cancelPrint();
+        }
+      });
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [activePrinterId, cancelPrint, connected, pausePrint, resumePrint]);
 
   // Watch for heater faults
   useEffect(() => {
