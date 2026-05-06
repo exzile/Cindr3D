@@ -59,7 +59,7 @@ export function SlicerViewportOverlays() {
         {gcodePanel}
         <SlicerPrintabilityPanel />
         <SlicerCostBreakdown />
-      </>
+              </>
     );
   }
 
@@ -101,6 +101,6 @@ export function SlicerViewportOverlays() {
       {showObjectEditing && !gcodePanel && panelOpen && panels[mode]}
       <SlicerPrintabilityPanel />
       <SlicerCostBreakdown />
-    </>
+          </>
   );
 }

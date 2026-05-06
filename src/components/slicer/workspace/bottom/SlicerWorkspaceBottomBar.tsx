@@ -47,6 +47,7 @@ export function SlicerWorkspaceBottomBar() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [sectionSnap, setSectionSnap] = useState(true);
   const sendResetTimerRef = useRef<number | null>(null);
+  const scrubWasPlayingRef = useRef(false);
 
   const isSlicing = sliceProgress.stage === 'preparing'
     || sliceProgress.stage === 'slicing'
@@ -250,6 +251,14 @@ export function SlicerWorkspaceBottomBar() {
               max={totalPrintTime > 0 ? totalPrintTime : 1}
               step={totalPrintTime > 0 ? totalPrintTime / 1000 : 0.001}
               value={Math.min(simTime, totalPrintTime || 0)}
+              onPointerDown={() => {
+                scrubWasPlayingRef.current = simPlaying;
+                if (simPlaying) setSimPlaying(false);
+              }}
+              onPointerUp={() => {
+                if (scrubWasPlayingRef.current) setSimPlaying(true);
+                scrubWasPlayingRef.current = false;
+              }}
               onChange={(e) => setSimTime(Number(e.target.value))}
             />
           </div>

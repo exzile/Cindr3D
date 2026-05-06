@@ -76,27 +76,20 @@ export function ExtrusionInstancedMesh({ data, onHoverMove }: Props) {
   // GPU buffers; without it, scrubbing a 200-layer print accumulates dead
   // VBOs until JS GC eventually reclaims them. Shared template attributes
   // and the shared index are NOT disposed here — the template owns those.
+  //
+  // NOTE: we intentionally do NOT call geometry.deleteAttribute() here.
+  // React 18 StrictMode double-mounts in dev (mount → cleanup → remount),
+  // and useMemo preserves the same geometry object across that cycle. If we
+  // delete the attributes in the cleanup, the re-mount renders empty geometry.
+  // Calling attribute.dispose() frees the GPU VBO; Three.js re-uploads from
+  // the preserved Float32Array on the next render, so scrubbing still works.
   useEffect(() => () => {
-    const iA      = geometry.getAttribute('iA');
-    const iB      = geometry.getAttribute('iB');
-    const iRadius = geometry.getAttribute('iRadius');
-    const iHeight = geometry.getAttribute('iHeight');
-    const iColor  = geometry.getAttribute('iColor');
     type Disposable = { dispose?: () => void };
-    (iA      as unknown as Disposable | undefined)?.dispose?.();
-    (iB      as unknown as Disposable | undefined)?.dispose?.();
-    (iRadius as unknown as Disposable | undefined)?.dispose?.();
-    (iHeight as unknown as Disposable | undefined)?.dispose?.();
-    (iColor  as unknown as Disposable | undefined)?.dispose?.();
-    geometry.deleteAttribute('iA');
-    geometry.deleteAttribute('iB');
-    geometry.deleteAttribute('iRadius');
-    geometry.deleteAttribute('iHeight');
-    geometry.deleteAttribute('iColor');
-    geometry.deleteAttribute('position');
-    geometry.deleteAttribute('aSide');
-    geometry.deleteAttribute('aLocal');
-    geometry.setIndex(null);
+    (geometry.getAttribute('iA')      as unknown as Disposable | undefined)?.dispose?.();
+    (geometry.getAttribute('iB')      as unknown as Disposable | undefined)?.dispose?.();
+    (geometry.getAttribute('iRadius') as unknown as Disposable | undefined)?.dispose?.();
+    (geometry.getAttribute('iHeight') as unknown as Disposable | undefined)?.dispose?.();
+    (geometry.getAttribute('iColor')  as unknown as Disposable | undefined)?.dispose?.();
     geometry.dispose();
   }, [geometry]);
 

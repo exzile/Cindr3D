@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Line } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -123,11 +123,26 @@ export function NozzleSimulator({
   onAdvance: (deltaSeconds: number) => void;
 }) {
   const { invalidate } = useThree();
+  const resumingRef = useRef(false);
 
   // Playback loop — delegates clamping/pausing to the store setter.
   useFrame((_, delta) => {
-    if (!playing) return;
-    onAdvance(delta * speed);
+    if (!playing) {
+      // Mark that the next playing frame needs its delta discarded.
+      resumingRef.current = true;
+      return;
+    }
+    // With frameloop="demand", frames stop while paused. The first frame after
+    // resuming carries delta = wall-time-since-last-frame, which can be many
+    // seconds. Skip it so the sim continues exactly where it left off.
+    if (resumingRef.current) {
+      resumingRef.current = false;
+      invalidate(); // schedule the real first frame immediately
+      return;
+    }
+    // Also clamp delta to 100ms so a slow frame at high speed never jumps
+    // more than 0.1 * speed seconds of sim time in one tick.
+    onAdvance(Math.min(delta, 0.1) * speed);
     invalidate();
   });
 
