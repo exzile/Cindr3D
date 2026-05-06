@@ -73,6 +73,15 @@ function eventTopicPart(event: IntegrationEventType): string {
   return event.toLowerCase().replace(/_/g, '-');
 }
 
+function connectionConfigKey(config: MqttIntegrationConfig): string {
+  return [
+    config.brokerUrl.trim(),
+    config.clientId.trim(),
+    config.username.trim(),
+    config.password,
+  ].join('\u001f');
+}
+
 export function mqttTopic(prefix: string, snapshot: IntegrationPrinterSnapshot, suffix: string): string {
   return `${normalizedTopicPrefix(prefix)}/printers/${printerTopicPart(snapshot)}/${suffix}`;
 }
@@ -142,13 +151,18 @@ class MqttPublisher {
   private pingTimer: number | null = null;
   private reconnectDelayMs = 1000;
   private nextPacketId = 1;
+  private activeConnectionKey: string | null = null;
+  private sessionEstablished = false;
 
   configure(config: MqttIntegrationConfig): void {
+    const nextConnectionKey = connectionConfigKey(config);
+    const connectionChanged = this.activeConnectionKey !== null && this.activeConnectionKey !== nextConnectionKey;
     this.config = config;
     if (!config.enabled || !config.brokerUrl.trim()) {
       this.disconnect();
       return;
     }
+    if (connectionChanged) this.disconnect();
     if (!this.ws || this.ws.readyState === WebSocket.CLOSED || this.ws.readyState === WebSocket.CLOSING) {
       this.connect();
     }
@@ -197,7 +211,9 @@ class MqttPublisher {
     this.clearTimers();
     const socket = this.ws;
     this.ws = null;
-    if (socket && socket.readyState === WebSocket.OPEN) {
+    this.sessionEstablished = false;
+    this.activeConnectionKey = null;
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
       socket.close(1000, 'disabled');
     }
   }
@@ -221,13 +237,17 @@ class MqttPublisher {
       const socket = new WebSocket(config.brokerUrl.trim(), ['mqtt']);
       socket.binaryType = 'arraybuffer';
       this.ws = socket;
+      this.activeConnectionKey = connectionConfigKey(config);
+      this.sessionEstablished = false;
 
       socket.addEventListener('open', () => {
         socket.send(sendableBuffer(encodeConnectPacket(config)));
       });
       socket.addEventListener('message', (event) => {
+        if (this.ws !== socket) return;
         const data = event.data instanceof ArrayBuffer ? new Uint8Array(event.data) : new Uint8Array();
         if (data[0] === 0x20 && data[3] === 0) {
+          this.sessionEstablished = true;
           this.reconnectDelayMs = 1000;
           this.startPing();
           this.resubscribe();
@@ -236,7 +256,12 @@ class MqttPublisher {
           this.handlePublish(data);
         }
       });
-      socket.addEventListener('close', () => this.scheduleReconnect());
+      socket.addEventListener('close', () => {
+        if (this.ws !== socket) return;
+        this.sessionEstablished = false;
+        this.ws = null;
+        this.scheduleReconnect();
+      });
       socket.addEventListener('error', () => {
         if (socket.readyState === WebSocket.OPEN) socket.close();
       });
@@ -247,7 +272,7 @@ class MqttPublisher {
 
   private flush(): void {
     const socket = this.ws;
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN || !this.sessionEstablished) return;
     const items = this.queue.splice(0);
     for (const item of items) {
       socket.send(sendableBuffer(encodePublishPacket(item.topic, item.payload)));
@@ -256,7 +281,7 @@ class MqttPublisher {
 
   private subscribeSocket(topic: string): void {
     const socket = this.ws;
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN || !this.sessionEstablished) return;
     socket.send(sendableBuffer(encodeSubscribePacket(topic, this.allocatePacketId())));
   }
 

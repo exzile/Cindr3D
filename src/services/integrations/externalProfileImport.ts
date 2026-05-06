@@ -82,8 +82,15 @@ function parseScalar(value: unknown): unknown {
 function flattenSettings(value: unknown, output: RawSettings = {}): RawSettings {
   if (!value || typeof value !== 'object') return output;
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    if (item && typeof item === 'object' && !Array.isArray(item)) flattenSettings(item, output);
-    else output[key] = parseScalar(item);
+    if (item && typeof item === 'object' && !Array.isArray(item)) {
+      const nested = item as Record<string, unknown>;
+      if ('value' in nested && (!nested.value || typeof nested.value !== 'object' || Array.isArray(nested.value))) {
+        output[key] = parseScalar(nested.value);
+      }
+      flattenSettings(nested, output);
+    } else {
+      output[key] = parseScalar(item);
+    }
   }
   return output;
 }

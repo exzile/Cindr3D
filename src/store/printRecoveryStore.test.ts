@@ -23,6 +23,23 @@ describe('print recovery store', () => {
     expect(usePrintRecoveryStore.getState().getRecoverableSnapshot('p1', 'idle')?.fileName).toBe('part.gcode');
   });
 
+  it('does not show recovery prompts for routine paused jobs', () => {
+    usePrintRecoveryStore.getState().saveSnapshot({
+      printerId: 'p1',
+      printerName: 'Voron',
+      fileName: 'part.gcode',
+      filePosition: 12345,
+      z: 12.4,
+      layer: 62,
+      bedTemp: 80,
+      toolTemp: 240,
+      status: 'processing',
+      updatedAt: Date.now(),
+    });
+
+    expect(usePrintRecoveryStore.getState().getRecoverableSnapshot('p1', 'paused')).toBeNull();
+  });
+
   it('hides dismissed and expired snapshots', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-05-06T12:00:00Z'));

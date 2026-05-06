@@ -180,10 +180,9 @@ function buildModelXml(snapshot: PlateSnapshot): string {
     xml += `        </vertices>
         <triangles>
 `;
-    const indices = geometry?.index ?? geometry?.positions.map((_, index) => index).filter((index) => index % 3 === 0) ?? [];
     if (geometry?.index) {
-      for (let index = 0; index < indices.length; index += 3) {
-        xml += `          <triangle v1="${indices[index] ?? 0}" v2="${indices[index + 1] ?? 0}" v3="${indices[index + 2] ?? 0}" />
+      for (let index = 0; index < geometry.index.length; index += 3) {
+        xml += `          <triangle v1="${geometry.index[index] ?? 0}" v2="${geometry.index[index + 1] ?? 0}" v3="${geometry.index[index + 2] ?? 0}" />
 `;
       }
     } else if (geometry) {

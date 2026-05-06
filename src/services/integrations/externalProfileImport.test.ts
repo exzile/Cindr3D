@@ -41,4 +41,18 @@ describe('external profile import', () => {
     expect(result.profile.supportEnabled).toBe(false);
     expect(result.profile.infillPattern).toBe('lines');
   });
+
+  it('preserves parent keys for nested JSON values', () => {
+    const result = parseExternalPrintProfile('nested.curaprofile', JSON.stringify({
+      settings: {
+        layer_height: { value: '0.2' },
+        support_enable: { value: 'true' },
+        sparse_infill_density: { value: '25%' },
+      },
+    }), base);
+
+    expect(result.profile.layerHeight).toBe(0.2);
+    expect(result.profile.supportEnabled).toBe(true);
+    expect(result.profile.infillDensity).toBe(25);
+  });
 });

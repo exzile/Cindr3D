@@ -29,7 +29,7 @@ function isRecoverable(snapshot: PrintRecoverySnapshot, dismissedAt: number | un
   if (!snapshot.fileName || snapshot.filePosition <= 0) return false;
   if (Date.now() - snapshot.updatedAt > SNAPSHOT_TTL_MS) return false;
   if (dismissedAt && dismissedAt >= snapshot.updatedAt) return false;
-  return currentStatus === 'idle' || currentStatus === 'halted' || currentStatus === 'paused';
+  return currentStatus === 'idle' || currentStatus === 'halted';
 }
 
 export const usePrintRecoveryStore = create<PrintRecoveryStore>()(

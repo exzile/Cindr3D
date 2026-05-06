@@ -186,12 +186,12 @@ export default function DuetNotifications() {
     if (!recoverySnapshot) return;
     setRecoveryBusy(true);
     try {
-      if (recoverySnapshot.bedTemp && recoverySnapshot.bedTemp > 0) await sendGCode(`M140 S${recoverySnapshot.bedTemp}`);
-      if (recoverySnapshot.toolTemp && recoverySnapshot.toolTemp > 0) await sendGCode(`M104 S${recoverySnapshot.toolTemp}`);
+      if (recoverySnapshot.bedTemp && recoverySnapshot.bedTemp > 0) await sendGCode(`M190 S${recoverySnapshot.bedTemp}`);
+      if (recoverySnapshot.toolTemp && recoverySnapshot.toolTemp > 0) await sendGCode(`M109 S${recoverySnapshot.toolTemp}`);
       if (recoverySnapshot.z !== null) await sendGCode(`G92 Z${recoverySnapshot.z.toFixed(3)}`);
       await sendGCode(`M24 S${Math.max(0, Math.floor(recoverySnapshot.filePosition))}`);
       clearRecoverySnapshot(recoverySnapshot.printerId);
-      addToast('success', 'Recovery resume command sent');
+      addToast('success', 'Recovery preheat and resume commands sent');
     } catch (error) {
       addToast('error', `Recovery resume failed: ${error instanceof Error ? error.message : 'unknown error'}`);
     } finally {
@@ -498,15 +498,15 @@ export default function DuetNotifications() {
         <div className="duet-toast duet-toast--recovery">
           <span className="duet-toast-message">
             Interrupted print detected: {recoverySnapshot.fileName}
-            {recoverySnapshot.z !== null ? ` at Z${recoverySnapshot.z.toFixed(2)}` : ''}. Heat bed/tool before confirming resume.
+            {recoverySnapshot.z !== null ? ` at Z${recoverySnapshot.z.toFixed(2)}` : ''}. Resume will wait for saved bed/tool temperatures first.
           </span>
           <button
             onClick={() => void handleResumeRecovery()}
             className="duet-toast-action"
             disabled={recoveryBusy}
-            title="Resume from saved file position"
+            title="Preheat and resume from saved file position"
           >
-            {recoveryBusy ? 'Resuming...' : 'Resume'}
+            {recoveryBusy ? 'Waiting...' : 'Preheat & Resume'}
           </button>
           <button
             onClick={() => dismissRecoverySnapshot(recoverySnapshot.printerId)}
