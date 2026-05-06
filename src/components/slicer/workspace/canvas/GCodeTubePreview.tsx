@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react';
+import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { SliceLayer, SliceResult } from '../../../../types/slicer';
 import type { MoveHoverInfo, PreviewColorMode } from '../../../../types/slicer-preview.types';
@@ -124,6 +125,15 @@ export function InlineGCodePreview({
   layerTimeRange: [number, number];
   onHoverMove?: (info: MoveHoverInfo | null) => void;
 }) {
+  const { invalidate } = useThree();
+
+  // Trigger one demand-mode render when this component mounts so the
+  // gcode preview appears immediately after slicing without needing
+  // navigate-away-and-back. The geometry attributes are preserved across
+  // React 18 StrictMode's double-mount cycle (see ExtrusionInstancedMesh),
+  // so the render scheduled here sees a fully populated scene.
+  useEffect(() => { invalidate(); }, [invalidate]);
+
   const layers = useMemo(
     () => sliceResult.layers.filter(
       (l) => l.layerIndex >= startLayer && l.layerIndex <= currentLayer,

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, type RootState } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Check, Box, Loader2, Layers } from 'lucide-react';
 import { SlicerWorkspaceScene } from './SlicerWorkspaceScene';
@@ -54,13 +54,17 @@ export function SlicerWorkspaceViewport() {
     return 'ready';
   }, [hydrated, total, ready, canvasReady]);
 
-  const handleCreated = useCallback(() => {
+  const handleCreated = useCallback((state: RootState) => {
     // Defer setting ready so one frame paints first.
     if (createdRafRef.current !== null) cancelAnimationFrame(createdRafRef.current);
     createdRafRef.current = requestAnimationFrame(() => {
       createdRafRef.current = null;
       setCanvasReady(true);
     });
+    // In demand mode, context restoration doesn't auto-schedule a new frame.
+    // Without this, a context-loss/restore cycle leaves the canvas blank until
+    // something else calls invalidate() (e.g. navigating away and back).
+    state.gl.domElement.addEventListener('webglcontextrestored', () => state.invalidate());
   }, []);
 
   useEffect(() => () => {
