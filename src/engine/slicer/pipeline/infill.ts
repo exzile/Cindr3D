@@ -212,20 +212,44 @@ function generateConcentricInfill(
 ): InfillLine[] {
   const results: InfillLine[] = [];
   const MAX_ITER = 500;
+  const signedArea = (points: THREE.Vector2[]): number => {
+    let area = 0;
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      area += a.x * b.y - b.x * a.y;
+    }
+    return area / 2;
+  };
 
   if (holes.length === 0) {
-    // Sign convention: positive offset on a CCW outer = INWARD = shrinks
-    // (see pathGeometry.ts). Concentric infill wants successive rings to
-    // shrink toward the polygon centroid, so we use +lineWidth here.
-    // (Previously this used -lineWidth, which grew the polygon each
-    // iteration and hit MAX_ITER=500 on every call — hanging the slicer.)
+    // Sign convention differs with winding. Slice contours can arrive either
+    // way, so try both offset directions and keep the one that actually
+    // shrinks the active ring.
     let current = contour;
     let iter = 0;
     let prevBbox = deps.contourBBox(current);
     while (current.length >= 3 && iter++ < MAX_ITER) {
-      const next = deps.offsetContour(current, lineWidth);
+      const shrinkOffset = signedArea(current) >= 0 ? lineWidth : -lineWidth;
+      const primary = deps.offsetContour(current, shrinkOffset);
+      const fallback = deps.offsetContour(current, -shrinkOffset);
+      const prevArea = (prevBbox.maxX - prevBbox.minX) * (prevBbox.maxY - prevBbox.minY);
+      const candidates = [primary, fallback]
+        .filter((candidate) => candidate.length >= 3)
+        .map((candidate) => {
+          const bbox = deps.contourBBox(candidate);
+          return {
+            contour: candidate,
+            bbox,
+            bboxArea: (bbox.maxX - bbox.minX) * (bbox.maxY - bbox.minY),
+          };
+        })
+        .filter((candidate) => candidate.bboxArea < prevArea - 1e-4)
+        .sort((a, b) => b.bboxArea - a.bboxArea);
+      const picked = candidates[0];
+      const next = picked?.contour ?? [];
       if (next.length < 3) break;
-      const nextBbox = deps.contourBBox(next);
+      const nextBbox = picked!.bbox;
       const shrinkX = Math.abs((prevBbox.maxX - prevBbox.minX) - (nextBbox.maxX - nextBbox.minX));
       const shrinkY = Math.abs((prevBbox.maxY - prevBbox.minY) - (nextBbox.maxY - nextBbox.minY));
       if (shrinkX < 0.01 && shrinkY < 0.01) break;

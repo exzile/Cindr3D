@@ -40,6 +40,22 @@ function registerSketchWithComponent(sketch: Sketch) {
   });
 }
 
+function readWorkspaceMode(): 'design' | 'prepare' | 'printer' {
+  try {
+    return (localStorage.getItem('cindr3d-workspace-mode') as 'design' | 'prepare' | 'printer') ?? 'design';
+  } catch {
+    return 'design';
+  }
+}
+
+function writeWorkspaceMode(mode: 'design' | 'prepare' | 'printer') {
+  try {
+    localStorage.setItem('cindr3d-workspace-mode', mode);
+  } catch {
+    // Some test and embedded browser contexts disable localStorage.
+  }
+}
+
 export function createSketchLifecycleSlice({ set, get }: CADSliceContext) {
   const slice: Partial<CADState> = {
   activeTool: 'select',
@@ -54,9 +70,9 @@ export function createSketchLifecycleSlice({ set, get }: CADSliceContext) {
   viewMode: '3d',
   setViewMode: (mode) => set({ viewMode: mode }),
 
-  workspaceMode: (localStorage.getItem('cindr3d-workspace-mode') as 'design' | 'prepare' | 'printer') ?? 'design',
+  workspaceMode: readWorkspaceMode(),
   setWorkspaceMode: (mode) => {
-    localStorage.setItem('cindr3d-workspace-mode', mode);
+    writeWorkspaceMode(mode);
     set({ workspaceMode: mode });
   },
 

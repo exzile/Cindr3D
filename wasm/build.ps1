@@ -41,6 +41,7 @@ $flags = @(
     '-fno-rtti',
     '-s', 'STANDALONE_WASM=0',     # need Module wrapper for HEAPF64/HEAP32 access
     '-s', 'WASM=1',
+    '-s', 'WASM_BIGINT=1',
     '-s', 'ALLOW_MEMORY_GROWTH=1',
     '-s', 'INITIAL_MEMORY=2MB',
     '-s', 'ENVIRONMENT=web,worker,node',

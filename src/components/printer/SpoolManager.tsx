@@ -5,7 +5,13 @@
 import { useState } from 'react';
 import { AlertTriangle, Package, Plus, Trash2, CheckCircle, Circle, Pencil, X, Save } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
-import { aggregateInventory, remainingG, useSpoolStore, type Spool } from '../../store/spoolStore';
+import {
+  aggregateInventory,
+  remainingG,
+  spoolCostPerKg,
+  useSpoolStore,
+  type Spool,
+} from '../../store/spoolStore';
 import './KlipperTabs.css';
 
 const MATERIALS = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'Nylon', 'PC', 'PLA+', 'SILK PLA', 'Other'];
@@ -19,6 +25,7 @@ const DEFAULT_FORM = {
   initialWeightG: 1000,
   usedWeightG: 0,
   diameterMm: 1.75,
+  costPerKg: 20,
   notes: '',
 };
 
@@ -94,6 +101,10 @@ function AddSpoolModal({ onClose }: { onClose: () => void }) {
           <select value={form.diameterMm} onChange={(e) => patch('diameterMm', parseFloat(e.target.value))} style={{ width: 90 }}>
             {DIAMETERS.map((d) => <option key={d} value={d}>{d} mm</option>)}
           </select>
+          <label>Cost</label>
+          <input type="number" min={0} step={0.5} value={form.costPerKg}
+            onChange={(e) => patch('costPerKg', parseFloat(e.target.value) || 0)} style={{ width: 84 }} />
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>$/kg</span>
         </div>
         <div className="klipper-form-row" style={{ alignItems: 'flex-start' }}>
           <label style={{ minWidth: 100, paddingTop: 4 }}>Notes</label>
@@ -118,12 +129,17 @@ function SpoolRow({ spool, isActive }: { spool: Spool; isActive: boolean }) {
   const { setActiveSpool, removeSpool, updateSpool } = useSpoolStore();
   const [editing, setEditing] = useState(false);
   const [editUsed, setEditUsed] = useState(String(spool.usedWeightG));
+  const [editCost, setEditCost] = useState(String(spoolCostPerKg(spool)));
   const pct = pctRemaining(spool);
   const barColor = pct > 50 ? '#22c55e' : pct > 20 ? '#f59e0b' : '#ef4444';
 
   const saveEdit = () => {
     const v = parseFloat(editUsed);
-    if (!isNaN(v)) updateSpool(spool.id, { usedWeightG: Math.max(0, Math.min(v, spool.initialWeightG)) });
+    const cost = parseFloat(editCost);
+    const patch: Partial<Pick<Spool, 'usedWeightG' | 'costPerKg'>> = {};
+    if (!isNaN(v)) patch.usedWeightG = Math.max(0, Math.min(v, spool.initialWeightG));
+    if (!isNaN(cost)) patch.costPerKg = Math.max(0, cost);
+    updateSpool(spool.id, patch);
     setEditing(false);
   };
 
@@ -165,16 +181,26 @@ function SpoolRow({ spool, isActive }: { spool: Spool; isActive: boolean }) {
                   onChange={(e) => setEditUsed(e.target.value)}
                   style={{ width: 70, padding: '2px 6px', fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>/ {spool.initialWeightG} g used</span>
+                <input type="number" min={0} step={0.5} value={editCost}
+                  onChange={(e) => setEditCost(e.target.value)}
+                  title="Cost per kg"
+                  style={{ width: 62, padding: '2px 6px', fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>$/kg</span>
                 <button className="klipper-btn klipper-btn-primary" style={{ padding: '2px 6px' }} onClick={saveEdit}><Save size={11} /></button>
                 <button className="klipper-btn" style={{ padding: '2px 6px' }} onClick={() => setEditing(false)}><X size={11} /></button>
               </>
             ) : (
               <>
                 <span style={{ fontSize: 12 }}>{remainingG(spool).toFixed(0)} g left</span>
-                <button className="klipper-btn" style={{ padding: '2px 4px' }} onClick={() => { setEditUsed(String(spool.usedWeightG)); setEditing(true); }}><Pencil size={11} /></button>
+                <button className="klipper-btn" style={{ padding: '2px 4px' }} onClick={() => { setEditUsed(String(spool.usedWeightG)); setEditCost(String(spoolCostPerKg(spool))); setEditing(true); }}><Pencil size={11} /></button>
               </>
             )}
           </div>
+          {!editing && (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              ${spoolCostPerKg(spool).toFixed(2)}/kg
+            </div>
+          )}
           <div style={{ width: 100, height: 5, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
             <div style={{ height: '100%', width: `${pct.toFixed(1)}%`, background: barColor, borderRadius: 3, transition: 'width 0.3s' }} />
           </div>
@@ -233,7 +259,7 @@ export default function SpoolManager() {
                   {activeSpool.brand} — {activeSpool.colorName || `#${activeSpool.colorHex}`}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  {activeSpool.material} · {activeSpool.diameterMm} mm · {remainingG(activeSpool).toFixed(0)} g remaining
+                  {activeSpool.material} · {activeSpool.diameterMm} mm · {remainingG(activeSpool).toFixed(0)} g remaining · ${spoolCostPerKg(activeSpool).toFixed(2)}/kg
                 </div>
                 <div style={{ marginTop: 6, width: '100%', height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
                   <div style={{
@@ -339,7 +365,7 @@ export default function SpoolManager() {
                     <th>Brand / Color</th>
                     <th>Material</th>
                     <th>Dia.</th>
-                    <th>Remaining</th>
+                    <th>Remaining / Cost</th>
                     <th style={{ width: 48 }}></th>
                   </tr>
                 </thead>
