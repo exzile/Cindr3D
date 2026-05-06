@@ -1,0 +1,184 @@
+.calib-wizard {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg-panel) 72%, transparent);
+  padding: 18px;
+}
+
+.calib-wizard__panel {
+  width: min(640px, 100%);
+  max-height: min(760px, calc(100vh - 36px));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  box-shadow: 0 18px 50px color-mix(in srgb, var(--text-primary) 22%, transparent);
+}
+
+.calib-wizard__header,
+.calib-wizard__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px;
+}
+
+.calib-wizard__header {
+  border-bottom: 1px solid var(--border);
+}
+
+.calib-wizard__header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.calib-wizard__step-indicator,
+.calib-step__muted,
+.calib-step label span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.calib-wizard__body {
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
+.calib-wizard__footer {
+  border-top: 1px solid var(--border);
+}
+
+.calib-wizard__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.calib-wizard__back,
+.calib-wizard__next,
+.calib-wizard__cancel,
+.calib-step button {
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.calib-wizard__next {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-panel));
+}
+
+.calib-wizard__back:disabled,
+.calib-wizard__next:disabled,
+.calib-step button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.calib-step {
+  display: grid;
+  gap: 12px;
+}
+
+.calib-step h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.calib-step p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.calib-step label,
+.calib-step__field {
+  display: grid;
+  gap: 5px;
+}
+
+.calib-step input,
+.calib-step select,
+.calib-step textarea {
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  padding: 0 8px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.calib-step textarea {
+  min-height: 86px;
+  padding: 8px;
+  resize: vertical;
+}
+
+.calib-step__list,
+.calib-step__checklist,
+.calib-step__panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.calib-step__radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.calib-step__radio input {
+  min-height: 0;
+}
+
+.calib-step__warning {
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-panel));
+  color: var(--text-primary);
+  padding: 10px;
+  font-size: 13px;
+}
+
+.calib-step__error {
+  color: color-mix(in srgb, var(--accent) 35%, var(--text-primary));
+  font-size: 13px;
+}
+
+.calib-step pre {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text-primary) 6%, var(--bg-panel));
+  color: var(--text-primary);
+  padding: 10px;
+  overflow: auto;
+  font-size: 12px;
+}
+
+.calib-step ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
