@@ -3,7 +3,9 @@ import { DEFAULT_MATERIAL_PROFILES, DEFAULT_PRINT_PROFILES, DEFAULT_PRINTER_PROF
 import {
   generateCalibrationCubeGCode,
   generateDimensionalAccuracyGCode,
+  generateFirstLayerTestGCode,
   generateInputShaperTowerGCode,
+  generatePressureAdvanceTowerGCode,
 } from './basicPrints';
 
 const printer = DEFAULT_PRINTER_PROFILES[0];
@@ -32,6 +34,29 @@ describe('basic calibration prints', () => {
     expect(cube).toContain('Nominal size: 20 x 20 x 20.6mm.');
     expect(cube).toContain('; layer 30/30');
     expect(gauge).toContain('; layer 15/15');
+  });
+
+  it('generates a first-layer test with five pad positions', () => {
+    const gcode = generateFirstLayerTestGCode(printer, material, print);
+
+    expect(gcode).toContain('G0 X25 Y25');
+    expect(gcode).toContain('G0 X95 Y25');
+    expect(gcode).toContain('G0 X165 Y25');
+    expect(gcode).toContain('G0 X25 Y95');
+    expect(gcode).toContain('G0 X165 Y95');
+  });
+
+  it('steps pressure advance values across bands and resets to zero at end', () => {
+    const gcode = generatePressureAdvanceTowerGCode(printer, material, print);
+
+    // Marlin flavor → M900
+    expect(gcode).toContain('M900 K0');
+    expect(gcode).toContain('M900 K0.02');
+    expect(gcode).toContain('M900 K0.1');
+    // restores PA to zero after tower
+    const lastPaIndex = gcode.lastIndexOf('M900 K0');
+    const lastBandIndex = gcode.lastIndexOf('M900 K0.1');
+    expect(lastPaIndex).toBeGreaterThan(lastBandIndex);
   });
 
   it('clamps input-shaper acceleration bands and restores print/travel acceleration', () => {
