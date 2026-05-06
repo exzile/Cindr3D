@@ -194,6 +194,13 @@ interface CameraDashboardPanelProps {
   compact?: boolean;
 }
 
+interface MediaViewportRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 function openClipDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(CLIP_DB_NAME, CLIP_DB_VERSION);
@@ -460,6 +467,37 @@ function formatMeasurementDistance(distanceMm: number | null): string {
 
 function defaultCrop(): SnapshotCrop {
   return { x: 0, y: 0, width: 1, height: 1 };
+}
+
+function measureContainedMedia(frame: HTMLElement, media: HTMLImageElement | HTMLVideoElement | null): MediaViewportRect {
+  const frameRect = frame.getBoundingClientRect();
+  if (!frameRect.width || !frameRect.height) return { left: 0, top: 0, width: 100, height: 100 };
+  const intrinsicWidth = media instanceof HTMLVideoElement
+    ? media.videoWidth
+    : media?.naturalWidth;
+  const intrinsicHeight = media instanceof HTMLVideoElement
+    ? media.videoHeight
+    : media?.naturalHeight;
+  if (!intrinsicWidth || !intrinsicHeight) return { left: 0, top: 0, width: 100, height: 100 };
+
+  const frameRatio = frameRect.width / frameRect.height;
+  const mediaRatio = intrinsicWidth / intrinsicHeight;
+  if (!Number.isFinite(mediaRatio) || mediaRatio <= 0) return { left: 0, top: 0, width: 100, height: 100 };
+
+  if (mediaRatio > frameRatio) {
+    const height = (frameRect.width / mediaRatio / frameRect.height) * 100;
+    return { left: 0, top: (100 - height) / 2, width: 100, height };
+  }
+
+  const width = (frameRect.height * mediaRatio / frameRect.width) * 100;
+  return { left: (100 - width) / 2, top: 0, width, height: 100 };
+}
+
+function sameMediaViewport(a: MediaViewportRect, b: MediaViewportRect): boolean {
+  return Math.abs(a.left - b.left) < 0.02
+    && Math.abs(a.top - b.top) < 0.02
+    && Math.abs(a.width - b.width) < 0.02
+    && Math.abs(a.height - b.height) < 0.02;
 }
 
 function cameraPtzBaseUrl(prefs: DuetPrefs, fallbackHostname: string): string {
@@ -774,6 +812,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [ptzEnabled, setPtzEnabled] = useState(() => dashboardPrefs.ptzEnabled);
   const [ptzSpeed, setPtzSpeed] = useState(() => dashboardPrefs.ptzSpeed);
   const [hdBridgeQuality, setHdBridgeQuality] = useState<CameraHdBridgeQuality>(() => dashboardPrefs.hdBridgeQuality);
+  const [mediaViewport, setMediaViewport] = useState<MediaViewportRect>({ left: 0, top: 0, width: 100, height: 100 });
   const [lastFrameIntervalMs, setLastFrameIntervalMs] = useState<number | null>(null);
   const [frameCount, setFrameCount] = useState(0);
   const [reconnectCount, setReconnectCount] = useState(0);
@@ -2417,13 +2456,39 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   }, [activeCamera?.webRtcIceServers, handleCameraError, isBrowserUsbCamera, isVideoStream, prefs.webcamMainStreamProtocol, streamSrc, useWebRtcStream]);
 
   const handleFrameLoad = useCallback(() => {
+    const frame = frameRef.current;
+    if (frame) {
+      const media = isVideoStream ? videoRef.current : imgRef.current;
+      const nextViewport = measureContainedMedia(frame, media);
+      setMediaViewport((current) => sameMediaViewport(current, nextViewport) ? current : nextViewport);
+    }
     const now = Date.now();
     setLastFrameAt((previous) => {
       if (previous) setLastFrameIntervalMs(now - previous);
       return now;
     });
     setFrameCount((value) => value + 1);
-  }, []);
+  }, [isVideoStream]);
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return undefined;
+    const update = () => {
+      const media = isVideoStream ? videoRef.current : imgRef.current;
+      const nextViewport = measureContainedMedia(frame, media);
+      setMediaViewport((current) => sameMediaViewport(current, nextViewport) ? current : nextViewport);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(frame);
+    const media = isVideoStream ? videoRef.current : imgRef.current;
+    if (media) observer.observe(media);
+    window.addEventListener('resize', update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, [isVideoStream, streamSrc]);
 
   const bedWidthMm = calibration.bedWidthMm ?? 220;
   const bedDepthMm = calibration.bedDepthMm ?? 220;
@@ -2458,11 +2523,16 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     if (!frame) return null;
     const rect = frame.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
+    const mediaLeft = rect.left + (mediaViewport.left / 100) * rect.width;
+    const mediaTop = rect.top + (mediaViewport.top / 100) * rect.height;
+    const mediaWidth = (mediaViewport.width / 100) * rect.width;
+    const mediaHeight = (mediaViewport.height / 100) * rect.height;
+    if (!mediaWidth || !mediaHeight) return null;
     return {
-      x: clampPercent(((event.clientX - rect.left) / rect.width) * 100),
-      y: clampPercent(((event.clientY - rect.top) / rect.height) * 100),
+      x: clampPercent(((event.clientX - mediaLeft) / mediaWidth) * 100),
+      y: clampPercent(((event.clientY - mediaTop) / mediaHeight) * 100),
     };
-  }, []);
+  }, [mediaViewport]);
 
   const handleMeasurementPoint = useCallback((point: ImagePoint) => {
     if (measurementMode === 'off') return;
@@ -2582,6 +2652,20 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     '--cal-w': `${calibration.width}%`,
     '--cal-h': `${calibration.height}%`,
   } as CSSProperties;
+  const mediaViewportStyle = {
+    '--media-left': `${mediaViewport.left}%`,
+    '--media-top': `${mediaViewport.top}%`,
+    '--media-width': `${mediaViewport.width}%`,
+    '--media-height': `${mediaViewport.height}%`,
+  } as CSSProperties;
+  const overlayModeOptions: Array<{ mode: CameraOverlayMode; label: string; hint: string }> = [
+    { mode: 'camera', label: 'Camera', hint: 'Live camera only' },
+    { mode: 'both', label: 'AR', hint: 'Camera with aligned print preview' },
+    { mode: 'print', label: 'Preview', hint: 'Print preview overlay with camera dimmed' },
+  ];
+  const showViewTools = !compact && (
+    measurementMode !== 'off' || calibration.enabled || bedCornersComplete || calibration.measureA || cameraOverlayMode !== 'camera'
+  );
 
   return (
     <div className={`cam-panel${compact ? ' cam-panel--compact' : ''}`}>
@@ -2674,70 +2758,72 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
                     </div>
                   )}
                   <div className="cam-panel__health">{formatLastFrame(lastFrameAt, nowTick)}</div>
-                  {calibration.enabled && <div className="cam-panel__calibration" style={calibrationStyle} />}
-                  <CameraOverlayPanel pose={calibration.pose} mode={cameraOverlayMode} frameTick={frameCount} comparison={Boolean(finalComparisonUrl)} />
-                  <div
-                    className={`cam-panel__measurement-layer${measurementMode !== 'off' ? ' is-picking' : ''}`}
-                    onPointerDown={handleMeasurementPointerDown}
-                  >
-                    {bedCornersComplete && (
-                      <svg className="cam-panel__measurement-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
-                        <polygon
-                          points={[
-                            completeBedCorners.frontLeft,
-                            completeBedCorners.frontRight,
-                            completeBedCorners.backRight,
-                            completeBedCorners.backLeft,
-                          ].map((point) => `${point.x},${point.y}`).join(' ')}
-                          className="cam-panel__bed-polygon"
-                        />
-                      </svg>
-                    )}
-                    {calibration.bedCorners && BED_CORNER_SEQUENCE.map(({ key, label }) => {
-                      const point = calibration.bedCorners?.[key];
-                      if (!point) return null;
-                      return (
-                        <button
-                          type="button"
-                          key={key}
-                          className={`cam-panel__measure-point cam-panel__measure-point--corner${draggingBedCorner === key ? ' is-dragging' : ''}`}
-                          style={{ left: `${point.x}%`, top: `${point.y}%` }}
-                          onPointerDown={(event) => handleCornerPointerDown(event, key)}
-                          onPointerMove={(event) => handleCornerPointerMove(event, key)}
-                          onPointerUp={handleCornerPointerUp}
-                          onPointerCancel={handleCornerPointerUp}
-                          aria-label={`Drag ${label.toLowerCase()} bed corner`}
-                        >
-                          {label.slice(0, 1)}
-                        </button>
-                      );
-                    })}
-                    {calibration.measureA && calibration.measureB && (
-                      <svg className="cam-panel__measurement-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
-                        <line
-                          x1={calibration.measureA.x}
-                          y1={calibration.measureA.y}
-                          x2={calibration.measureB.x}
-                          y2={calibration.measureB.y}
-                          className="cam-panel__ruler-line"
-                        />
-                      </svg>
-                    )}
-                    {calibration.measureA && (
-                      <span className="cam-panel__measure-point" style={{ left: `${calibration.measureA.x}%`, top: `${calibration.measureA.y}%` }}>
-                        A
-                      </span>
-                    )}
-                    {calibration.measureB && (
-                      <span className="cam-panel__measure-point" style={{ left: `${calibration.measureB.x}%`, top: `${calibration.measureB.y}%` }}>
-                        B
-                      </span>
-                    )}
-                    {(measurementMode !== 'off' || calibration.measureA || bedCornersComplete) && (
-                      <span className="cam-panel__measure-distance">
-                        {calibration.measureA && calibration.measureB ? formatMeasurementDistance(measuredDistanceMm) : measurementStatus}
-                      </span>
-                    )}
+                  <div className="cam-panel__media-viewport" style={mediaViewportStyle}>
+                    {calibration.enabled && <div className="cam-panel__calibration" style={calibrationStyle} />}
+                    <CameraOverlayPanel pose={calibration.pose} mode={cameraOverlayMode} frameTick={frameCount} comparison={Boolean(finalComparisonUrl)} />
+                    <div
+                      className={`cam-panel__measurement-layer${measurementMode !== 'off' ? ' is-picking' : ''}`}
+                      onPointerDown={handleMeasurementPointerDown}
+                    >
+                      {bedCornersComplete && (
+                        <svg className="cam-panel__measurement-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+                          <polygon
+                            points={[
+                              completeBedCorners.frontLeft,
+                              completeBedCorners.frontRight,
+                              completeBedCorners.backRight,
+                              completeBedCorners.backLeft,
+                            ].map((point) => `${point.x},${point.y}`).join(' ')}
+                            className="cam-panel__bed-polygon"
+                          />
+                        </svg>
+                      )}
+                      {calibration.bedCorners && BED_CORNER_SEQUENCE.map(({ key, label }) => {
+                        const point = calibration.bedCorners?.[key];
+                        if (!point) return null;
+                        return (
+                          <button
+                            type="button"
+                            key={key}
+                            className={`cam-panel__measure-point cam-panel__measure-point--corner${draggingBedCorner === key ? ' is-dragging' : ''}`}
+                            style={{ left: `${point.x}%`, top: `${point.y}%` }}
+                            onPointerDown={(event) => handleCornerPointerDown(event, key)}
+                            onPointerMove={(event) => handleCornerPointerMove(event, key)}
+                            onPointerUp={handleCornerPointerUp}
+                            onPointerCancel={handleCornerPointerUp}
+                            aria-label={`Drag ${label.toLowerCase()} bed corner`}
+                          >
+                            {label.slice(0, 1)}
+                          </button>
+                        );
+                      })}
+                      {calibration.measureA && calibration.measureB && (
+                        <svg className="cam-panel__measurement-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+                          <line
+                            x1={calibration.measureA.x}
+                            y1={calibration.measureA.y}
+                            x2={calibration.measureB.x}
+                            y2={calibration.measureB.y}
+                            className="cam-panel__ruler-line"
+                          />
+                        </svg>
+                      )}
+                      {calibration.measureA && (
+                        <span className="cam-panel__measure-point" style={{ left: `${calibration.measureA.x}%`, top: `${calibration.measureA.y}%` }}>
+                          A
+                        </span>
+                      )}
+                      {calibration.measureB && (
+                        <span className="cam-panel__measure-point" style={{ left: `${calibration.measureB.x}%`, top: `${calibration.measureB.y}%` }}>
+                          B
+                        </span>
+                      )}
+                      {(measurementMode !== 'off' || calibration.measureA || bedCornersComplete) && (
+                        <span className="cam-panel__measure-distance">
+                          {calibration.measureA && calibration.measureB ? formatMeasurementDistance(measuredDistanceMm) : measurementStatus}
+                        </span>
+                      )}
+                    </div>
                     {poseStillUrl && (
                       <span className="cam-panel__pose-freeze">Frozen pose frame</span>
                     )}
@@ -2754,6 +2840,75 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
                 </div>
               )}
             </div>
+
+            {(showViewTools || compact) && (
+              <section className={`cam-panel__view-tools${compact ? ' cam-panel__view-tools--compact' : ''}`} aria-label="Camera view and calibration tools">
+                <div className="cam-panel__view-mode" role="group" aria-label="Camera overlay mode">
+                  {overlayModeOptions.map(({ mode, label, hint }) => (
+                    <button
+                      key={mode}
+                      className={`cam-panel__button ${cameraOverlayMode === mode ? 'is-active' : ''}`}
+                      type="button"
+                      onClick={() => setCameraOverlayMode(mode)}
+                      title={hint}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {!compact && measurementMode !== 'off' && (
+                  <div className="cam-panel__view-status">
+                    <Crosshair size={13} />
+                    <span>{measurementStatus}</span>
+                  </div>
+                )}
+                {!compact && (measurementMode !== 'off' || bedCornersComplete || calibration.measureA) && (
+                  <div className="cam-panel__view-actions">
+                    <button
+                      className={`cam-panel__button ${measurementMode === 'bed' ? 'is-active' : ''}`}
+                      type="button"
+                      disabled={!hasCamera}
+                      onClick={() => {
+                        setMeasurementMode((mode) => mode === 'bed' ? 'off' : 'bed');
+                        setNextBedCornerIndex(0);
+                      }}
+                    >
+                      <Crosshair size={13} /> Pick corners
+                    </button>
+                    <button className="cam-panel__button" type="button" disabled={!bedCornersComplete || !homography} onClick={savePoseCalibration}>
+                      <Save size={13} /> Save pose
+                    </button>
+                    <button
+                      className={`cam-panel__button ${measurementMode === 'ruler' ? 'is-active' : ''}`}
+                      type="button"
+                      disabled={!hasCamera || !bedCornersComplete}
+                      onClick={() => setMeasurementMode((mode) => mode === 'ruler' ? 'off' : 'ruler')}
+                    >
+                      <Ruler size={13} /> Ruler
+                    </button>
+                    <button
+                      className="cam-panel__button cam-panel__button--danger"
+                      type="button"
+                      onClick={() => {
+                        setCalibration((value) => ({ ...value, bedCorners: undefined, measureA: undefined, measureB: undefined, pose: undefined }));
+                        setMeasurementMode('off');
+                        setNextBedCornerIndex(0);
+                      }}
+                    >
+                      <Trash2 size={13} /> Clear bed
+                    </button>
+                  </div>
+                )}
+                {!compact && calibration.enabled && (
+                  <div className="cam-panel__view-calibration">
+                    <label>X<input type="range" min={0} max={80} value={calibration.x} onChange={(event) => setCalibration((value) => ({ ...value, x: Number(event.target.value) }))} /></label>
+                    <label>Y<input type="range" min={0} max={80} value={calibration.y} onChange={(event) => setCalibration((value) => ({ ...value, y: Number(event.target.value) }))} /></label>
+                    <label>W<input type="range" min={10} max={100} value={calibration.width} onChange={(event) => setCalibration((value) => ({ ...value, width: Number(event.target.value) }))} /></label>
+                    <label>H<input type="range" min={10} max={100} value={calibration.height} onChange={(event) => setCalibration((value) => ({ ...value, height: Number(event.target.value) }))} /></label>
+                  </div>
+                )}
+              </section>
+            )}
 
             <canvas ref={canvasRef} className="cam-panel__hidden-canvas" />
           </div>
@@ -3105,10 +3260,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
                 />
                 <span>Calibration overlay</span>
               </label>
-              <label>X<input type="range" min={0} max={80} value={calibration.x} onChange={(event) => setCalibration((value) => ({ ...value, x: Number(event.target.value) }))} /></label>
-              <label>Y<input type="range" min={0} max={80} value={calibration.y} onChange={(event) => setCalibration((value) => ({ ...value, y: Number(event.target.value) }))} /></label>
-              <label>W<input type="range" min={10} max={100} value={calibration.width} onChange={(event) => setCalibration((value) => ({ ...value, width: Number(event.target.value) }))} /></label>
-              <label>H<input type="range" min={10} max={100} value={calibration.height} onChange={(event) => setCalibration((value) => ({ ...value, height: Number(event.target.value) }))} /></label>
               <label>
                 Bed W
                 <input
@@ -3129,18 +3280,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
                   onChange={(event) => setCalibration((value) => ({ ...value, bedDepthMm: Number(event.target.value) || 1 }))}
                 />
               </label>
-              <div className="cam-panel__overlay-mode" role="group" aria-label="AR overlay mode">
-                {(['camera', 'both', 'print'] as CameraOverlayMode[]).map((mode) => (
-                  <button
-                    key={mode}
-                    className={`cam-panel__button ${cameraOverlayMode === mode ? 'is-active' : ''}`}
-                    type="button"
-                    onClick={() => setCameraOverlayMode(mode)}
-                  >
-                    {mode === 'camera' ? 'Camera' : mode === 'both' ? 'AR' : 'Preview'}
-                  </button>
-                ))}
-              </div>
               <button
                 className={`cam-panel__button ${measurementMode === 'bed' ? 'is-active' : ''}`}
                 type="button"
@@ -3207,9 +3346,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
               >
                 <Trash2 size={13} /> Clear bed
               </button>
-              <span className="cam-panel__measurement-readout">
-                {calibration.measureA && calibration.measureB ? formatMeasurementDistance(measuredDistanceMm) : measurementStatus}
-              </span>
               <span className={`cam-panel__pose-status cam-panel__pose-status--${poseStatus.state}`}>
                 {poseStatus.label}
               </span>
