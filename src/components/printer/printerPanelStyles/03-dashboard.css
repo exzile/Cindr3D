@@ -1,6 +1,7 @@
 @import './dashboard/01-status.css';
 @import './dashboard/02-temperature.css';
 @import './dashboard/08-air-quality.css';
+@import './dashboard/09-stepper-tuning.css';
 
 .duet-dash-offline {
   display: flex;

@@ -18,6 +18,7 @@ export type PanelId =
   | 'system-info'
   | 'filament-sensors'
   | 'air-quality'
+  | 'stepper-tuning'
   | 'object-cancel'
   | 'mesh-preview';
 

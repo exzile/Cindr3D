@@ -38,6 +38,7 @@ import BedCompensationPanel from '../dashboard/BedCompensationPanel';
 import RestorePointsPanel from '../dashboard/RestorePointsPanel';
 import FilamentSensorPanel from '../dashboard/FilamentSensorPanel';
 import AirQualityPanel from '../dashboard/AirQualityPanel';
+import StepperTuningPanel from '../dashboard/StepperTuningPanel';
 import CameraDashboardPanel from '../dashboard/CameraDashboardPanel';
 import ObjectCancelPanel from '../dashboard/ObjectCancelPanel';
 import MeshPreviewPanel from '../dashboard/MeshPreviewPanel';
@@ -69,6 +70,7 @@ export const PANEL_DEFS: PanelDef[] = [
   { id: 'system-info', title: 'System Info', icon: <Cpu size={12} />, component: <SystemInfoPanel /> },
   { id: 'filament-sensors', title: 'Filament Sensors', icon: <FlaskConical size={12} />, component: <FilamentSensorPanel /> },
   { id: 'air-quality', title: 'Air Quality', icon: <Wind size={12} />, component: <AirQualityPanel /> },
+  { id: 'stepper-tuning', title: 'Stepper Tuning', icon: <Sliders size={12} />, component: <StepperTuningPanel /> },
   { id: 'object-cancel', title: 'Object Cancellation', icon: <Layers size={12} />, component: <ObjectCancelPanel /> },
   { id: 'mesh-preview', title: 'Print Preview', icon: <Box size={12} />, component: <MeshPreviewPanel /> },
 ];

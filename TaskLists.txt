@@ -228,10 +228,10 @@
 
 ### 13.9 Stepper driver tuning UI  [M]
 #   TMC tuning is currently config-file-only.
-#   [ ] Per-axis current / microstepping / stealthchop / spreadcycle
-#   [ ] M906 (RRF) / SET_TMC_CURRENT (Klipper) / M906 (Marlin) wrappers
-#   [ ] Quick-test "wiggle and listen" for noise-tuning
-#   [ ] Per-printer presets
+#   [x] Per-axis current / microstepping / stealthchop / spreadcycle
+#   [x] M906 (RRF) / SET_TMC_CURRENT (Klipper) / M906 (Marlin) wrappers
+#   [x] Quick-test "wiggle and listen" for noise-tuning
+#   [x] Per-printer presets
 
 # All sub-phases independent except 13.5 (interacts with 7.1 queue) and
 # 13.8 (pairs with 13.6 chamber).
