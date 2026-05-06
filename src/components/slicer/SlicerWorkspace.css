@@ -89,10 +89,19 @@
 /* ===== Center Viewport ===== */
 .slicer-workspace__viewport {
   flex: 1;
-  position: relative;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   min-width: 0;
   background: var(--bg-canvas);
+}
+
+/* Canvas wrapper — takes all remaining height above the gcode dock */
+.slicer-workspace__canvas-area {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .slicer-workspace__canvas {

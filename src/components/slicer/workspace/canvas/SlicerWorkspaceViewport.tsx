@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { Check, Box, Loader2, Layers } from 'lucide-react';
 import { SlicerWorkspaceScene } from './SlicerWorkspaceScene';
 import { SlicerViewportOverlays } from '../overlays/SlicerViewportOverlays';
+import { SlicerGCodeDockPanel } from '../overlays/SlicerGCodeDockPanel';
 import { SlicerColorSchemePanel } from '../overlays/SlicerColorSchemePanel';
 import { SlicerPreviewCanvasControls } from '../overlays/SlicerPreviewCanvasControls';
 import { CameraPresets } from '../overlays/CameraPresets';
@@ -89,59 +90,63 @@ export function SlicerWorkspaceViewport() {
 
   return (
     <div className="slicer-workspace__viewport">
-      {showLoader && (
-        <div className="slicer-viewport-loading" role="status" aria-live="polite">
-          <div className="slicer-viewport-loading__panel">
-            <div className="slicer-viewport-loading__spinner" />
-            <div className="slicer-viewport-loading__title">
-              Preparing your build plate
+      {/* Canvas area — flex: 1 so the dock panel below can take its natural height */}
+      <div className="slicer-workspace__canvas-area">
+        {showLoader && (
+          <div className="slicer-viewport-loading" role="status" aria-live="polite">
+            <div className="slicer-viewport-loading__panel">
+              <div className="slicer-viewport-loading__spinner" />
+              <div className="slicer-viewport-loading__title">
+                Preparing your build plate
+              </div>
+              <ul className="slicer-viewport-loading__steps">
+                <Step
+                  icon={<Layers size={12} />}
+                  label="Restoring saved plate"
+                  state={hydrated ? 'done' : 'active'}
+                />
+                <Step
+                  icon={<Box size={12} />}
+                  label={total === 0
+                    ? 'No saved models'
+                    : `Parsing geometries (${ready}/${total})`}
+                  state={!hydrated
+                    ? 'pending'
+                    : (total === 0 || ready >= total) ? 'done' : 'active'}
+                  progress={total > 0 && ready < total ? geomPercent : undefined}
+                />
+                <Step
+                  icon={<Loader2 size={12} />}
+                  label="Initializing 3D viewport"
+                  state={stage === 'canvas' ? 'active' : (canvasReady ? 'done' : 'pending')}
+                />
+              </ul>
+              <button
+                type="button"
+                className="slicer-viewport-loading__skip"
+                onClick={handleSkipLoader}
+                title="Dismiss this overlay and enter the workspace"
+              >
+                Skip
+              </button>
             </div>
-            <ul className="slicer-viewport-loading__steps">
-              <Step
-                icon={<Layers size={12} />}
-                label="Restoring saved plate"
-                state={hydrated ? 'done' : 'active'}
-              />
-              <Step
-                icon={<Box size={12} />}
-                label={total === 0
-                  ? 'No saved models'
-                  : `Parsing geometries (${ready}/${total})`}
-                state={!hydrated
-                  ? 'pending'
-                  : (total === 0 || ready >= total) ? 'done' : 'active'}
-                progress={total > 0 && ready < total ? geomPercent : undefined}
-              />
-              <Step
-                icon={<Loader2 size={12} />}
-                label="Initializing 3D viewport"
-                state={stage === 'canvas' ? 'active' : (canvasReady ? 'done' : 'pending')}
-              />
-            </ul>
-            <button
-              type="button"
-              className="slicer-viewport-loading__skip"
-              onClick={handleSkipLoader}
-              title="Dismiss this overlay and enter the workspace"
-            >
-              Skip
-            </button>
           </div>
-        </div>
-      )}
-      <Canvas
-        className="slicer-workspace__canvas"
-        camera={{ position: [300, -200, 250], fov: 45, near: 1, far: 10000, up: [0, 0, 1] }}
-        frameloop="demand"
-        onCreated={handleCreated}
-      >
-        <SlicerWorkspaceScene />
-      </Canvas>
-      <CameraPresets />
-      {previewMode === 'model' && <PickToolsOverlay />}
-      <SlicerViewportOverlays />
-      <SlicerPreviewCanvasControls />
-      {previewMode === 'preview' && colorSchemeOpen && <SlicerColorSchemePanel />}
+        )}
+        <Canvas
+          className="slicer-workspace__canvas"
+          camera={{ position: [300, -200, 250], fov: 45, near: 1, far: 10000, up: [0, 0, 1] }}
+          frameloop="demand"
+          onCreated={handleCreated}
+        >
+          <SlicerWorkspaceScene />
+        </Canvas>
+        <CameraPresets />
+        {previewMode === 'model' && <PickToolsOverlay />}
+        <SlicerViewportOverlays />
+        <SlicerPreviewCanvasControls />
+        {previewMode === 'preview' && colorSchemeOpen && <SlicerColorSchemePanel />}
+      </div>
+      <SlicerGCodeDockPanel />
     </div>
   );
 }
