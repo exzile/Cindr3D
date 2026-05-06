@@ -549,17 +549,22 @@ function cameraRtspSourceUrl(prefs: DuetPrefs, fallbackHostname: string): string
   return rtspUrl;
 }
 
+const pendingCameraCommandImages = new Set<HTMLImageElement>();
+
 function sendCameraCommand(url: string, username: string, password: string, timeoutMs = 600): Promise<void> {
   return new Promise((resolve) => {
     const image = new window.Image();
-    const timeout = window.setTimeout(() => resolve(), timeoutMs);
+    pendingCameraCommandImages.add(image);
+    let timeout = 0;
     const finish = () => {
       window.clearTimeout(timeout);
+      pendingCameraCommandImages.delete(image);
       resolve();
     };
+    timeout = window.setTimeout(finish, timeoutMs);
     image.onload = finish;
     image.onerror = finish;
-    image.src = cameraDisplayUrl(url, username, password);
+    image.src = cameraUrlWithCredentials(normalizeCameraStreamUrl(url), username, password);
   });
 }
 
