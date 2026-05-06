@@ -226,6 +226,7 @@ export interface CADModelingState {
 
   // SLD12 — Combine / Boolean (commit)
   commitCombine: (targetFeatureId: string, toolFeatureId: string, operation: 'join' | 'cut' | 'intersect', keepTool: boolean) => void;
+  recommitCombine: (featureId: string, params: { operation: 'join' | 'cut' | 'intersect'; keepTools: boolean; targetId: string; toolId: string }) => void;
 
   // SLD17 — Mirror feature (commit)
   commitMirrorFeature: (featureId: string, plane: 'XY' | 'XZ' | 'YZ') => void;

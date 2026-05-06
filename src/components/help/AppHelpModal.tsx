@@ -34,12 +34,12 @@ const TUTORIAL_LESSONS: TutorialLesson[] = [
   {
     id: 'phone-stand',
     title: 'Design a phone stand',
-    summary: 'Sketch a side profile, extrude it, add a fillet, and send the body to Prepare.',
+    summary: 'Sketch a side profile, extrude it, document the part, and send the body to Prepare.',
     steps: [
       'Open Design, start a sketch on the XY plane, and draw the stand side profile.',
       'Dimension the base, back angle, and lip so the sketch is fully constrained.',
       'Finish the sketch, extrude the profile, then fillet the hand-contact edges.',
-      'Switch to Prepare and place the finished body on the build plate.',
+      'Switch to Drawing if you need a 2D sheet, then Prepare when you are ready to place the finished body on the build plate.',
     ],
   },
   {
@@ -82,9 +82,10 @@ const HELP_TOPICS: HelpTopic[] = [
     sections: [
       {
         heading: 'Workspaces',
-        intro: 'Cindr3D splits work into three workspaces. Use the workspace selector at the top-left to switch.',
+        intro: 'Cindr3D splits work into four workspaces. Use the workspace selector at the top-left to switch.',
         items: [
           'Design — the CAD modeller. Sketch, build solid features, assemble components, and inspect geometry.',
+          'Drawing — the 2D documentation workspace. Generate orthographic sheets, inferred dimensions, title blocks, and SVG/DXF/PDF output.',
           'Prepare — the slicer. Lay parts out on a build plate, choose printer + material profiles, slice, preview, and export G-code.',
           '3D Printer — the fleet console. Manage printers, watch live cameras, send G-code, view job progress, manage files and macros, and configure each printer.',
         ],
@@ -93,7 +94,7 @@ const HELP_TOPICS: HelpTopic[] = [
         heading: 'Top bar',
         intro: 'The top bar is the same on every page. From left to right:',
         items: [
-          'Workspace selector — jump between Design, Prepare, and 3D Printer.',
+          'Workspace selector — jump between Design, Drawing, Prepare, and 3D Printer.',
           'Ribbon — context-sensitive tools for the active workspace.',
           'File menu — open, save, import, export, and settings-bundle actions.',
           'Quick access bar (right side) — gear (global settings), bell (notifications + site updates), question mark (this help guide), and the theme toggle.',
@@ -135,7 +136,7 @@ const HELP_TOPICS: HelpTopic[] = [
   {
     id: 'design',
     title: 'Design workspace',
-    summary: 'Sketches, solid features, components, the timeline, and viewport navigation.',
+    summary: 'Sketches, parametric models, configurations, drawings, mesh repair, components, the timeline, and viewport navigation.',
     group: 'Design',
     sections: [
       {
@@ -148,6 +149,45 @@ const HELP_TOPICS: HelpTopic[] = [
           'Finish the sketch, then create a feature: Extrude, Revolve, Sweep, Loft, Rib, Web, Emboss, or Patch.',
           'Use Modify to refine: Fillet, Chamfer, Shell, Draft, Scale, Combine (boolean), Offset Face, Replace Face, Direct Edit, Split Face/Body.',
           'Use Construct to add reference geometry: planes (offset, angle, tangent, midplane, perpendicular), axes, and points.',
+        ],
+      },
+      {
+        heading: 'Parametric library',
+        intro: 'The Insert menu includes a parametric model library for common printable starter objects.',
+        items: [
+          'Choose Parametric Library from the Insert section of the Solid ribbon.',
+          'Pick a built-in model such as Gridfinity Bin, Threaded Insert Boss, Angle Bracket, Project Box, Cable Clip, or Spur Gear Blank.',
+          'Adjust numeric, dropdown, and boolean parameters before inserting.',
+          'Inserted parametric models become timeline features with editable parameter metadata.',
+        ],
+      },
+      {
+        heading: 'Design configurations',
+        intro: 'Configurations let one design hold multiple named variants.',
+        items: [
+          'Use the configuration switcher in the Solid ribbon to move between variants.',
+          'Open Design Configurations to create, rename, capture, or delete variants.',
+          'Each configuration stores parametric parameter sets and per-feature suppression state.',
+          'Use Export in the configurations dialog to write the variant manifest for downstream workflows.',
+        ],
+      },
+      {
+        heading: 'Drawing workspace',
+        intro: 'Switch to Drawing from the workspace selector after creating visible Design geometry.',
+        items: [
+          'Cindr3D generates top, front, and right drawing views from the current visible model bounds.',
+          'Dimensions are inferred from model extents and shown on the sheet.',
+          'The title block records units, generation time, and drawing notes.',
+          'Export the drawing as SVG, DXF, or PDF from the left drawing panel.',
+        ],
+      },
+      {
+        heading: 'Mesh repair and boolean history',
+        items: [
+          'Mesh > Repair reports vertices, triangles, duplicate vertices, boundary edges, non-manifold edges, and degenerate faces.',
+          'Repair actions can weld duplicate vertices, recompute normals, flip normals, and auto-fix imported mesh geometry.',
+          'STL import applies conservative healing so duplicate vertices and stale normals are cleaned before the model enters the workspace.',
+          'Combine creates editable boolean features with parent links in the timeline; parent mesh edits can recompute downstream combine results.',
         ],
       },
       {

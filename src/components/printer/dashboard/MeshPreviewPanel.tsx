@@ -57,6 +57,8 @@ import { formatDurationWords } from '../../../utils/printerFormat';
 import type { PlateObject } from '../../../types/slicer';
 import type { PreviewColorMode } from '../../../types/slicer-preview.types';
 
+const NOZZLE_CROSSHAIR_POSITIONS = new Float32Array([-5, 0, 0, 5, 0, 0, 0, -5, 0, 0, 5, 0]);
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function objectMatrix(obj: PlateObject): THREE.Matrix4 {
@@ -475,7 +477,7 @@ function NozzleMarker({
         </mesh>
         <lineSegments>
           <bufferGeometry>
-            <bufferAttribute attach="attributes-position" args={[new Float32Array([-5, 0, 0, 5, 0, 0, 0, -5, 0, 0, 5, 0]), 3]} />
+            <bufferAttribute attach="attributes-position" args={[NOZZLE_CROSSHAIR_POSITIONS, 3]} />
           </bufferGeometry>
           <lineBasicMaterial color="#facc15" transparent opacity={0.8} depthWrite={false} />
         </lineSegments>

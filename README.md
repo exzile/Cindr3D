@@ -46,7 +46,7 @@ Cindr3D combines design, print preparation, and multi-printer fleet control in o
 
 | Workspace | Purpose |
 |-----------|---------|
-| 🎨 **Design** | Sketching, solid modelling, imports/exports, feature timeline, component organisation. |
+| 🎨 **Design** | Sketching, solid modelling, parametric models, configurations, drawings, mesh repair, imports/exports, feature timeline, component organisation. |
 | 🛠️ **Prepare** | Plate setup, slicing pipeline with WASM kernel, G-code preview, calibration utilities. |
 | 🖨️ **3D Printer** | Multi-printer fleet, live monitoring, files, macros, mid-print object cancellation, tuning, power, spools, timelapse, updates — all cross-firmware. |
 | 🤖 **AI** | Local MCP server + BYOK in-app chat panel for driving CAD/slicer/printer actions through your own Claude / OpenAI / OpenRouter subscription. |
@@ -56,11 +56,14 @@ The project is evolving quickly. Some CAD and slicer features are experimental, 
 ## What's New
 
 > [!NOTE]
-> **2026-05** - Integrations and enclosure operations. Cindr3D now reaches beyond the printer panel with webhooks, chat alerts, MQTT telemetry, Home Assistant bridging, power-loss recovery, slicer-profile import, enclosure safety, and stepper tuning.
+> **2026-05** - Design workspace and workshop operations. Cindr3D now adds parametric CAD library tools, design configurations, 2D drawings, mesh repair, and non-destructive boolean history alongside webhooks, MQTT telemetry, Home Assistant bridging, power-loss recovery, slicer-profile import, enclosure safety, and stepper tuning.
 
 **Headline features shipped this release:**
 
 - **Workshop integrations** - generic webhooks plus first-class Discord, Slack, Telegram, MQTT publishing/subscriptions, and a Home Assistant REST/discovery bridge for printer telemetry and pause/resume/cancel controls.
+- **Parametric CAD library** - insert configurable Gridfinity-style bins, threaded insert bosses, brackets, project boxes, cable clips, and gear blanks directly into the CAD feature timeline.
+- **Design configurations and drawings** - save named part variants with parameter sets and per-configuration feature suppression, then generate top/front/right drawing sheets with inferred dimensions, title blocks, and SVG/DXF/PDF export.
+- **Mesh repair and boolean history** - inspect manifold health, weld duplicate vertices, auto-fix STL imports, flip normals, and keep boolean combine features linked to editable parent bodies with downstream recompute.
 - **External slicer/profile exchange** - import Cura, OrcaSlicer, Bambu Studio, and 3MF profile data into Cindr3D print profiles, preview mappings before import, and round-trip Cindr3D build plates through 3MF sidecar manifests.
 - **Power-loss recovery** - persist in-progress file, position, Z, layer, bed, and tool state, then offer a reconnect resume flow that restores heat/Z and sends the saved file-position resume command.
 - **Enclosure safety** - chamber temperature monitoring/control from RRF, Klipper, or MQTT; ramp curves, preheat/cooldown policy, door-open cooldown, MQTT air-quality thresholds, and door/reed-switch pause/start-lock behavior.
@@ -81,7 +84,12 @@ The project is evolving quickly. Some CAD and slicer features are experimental, 
 
 - 3D viewport with orbit, pan, zoom, view-cube navigation
 - Sketching on XY / XZ / YZ planes with constraint-driven tools (line, circle, rectangle, arc, text)
+- Parametric model library for common printable objects and hardware-ready starter geometry
+- Design configurations for named variants, parameter sets, feature suppression, and variant export
+- Drawing workspace with generated orthographic views, inferred dimensions, title block, SVG / DXF / PDF export
 - Solid features: extrude, revolve, sweep, loft, shell, rib, split, draft, hole, thread, chamfer, fillet
+- Non-destructive boolean history with visible parent links and recompute when parent meshes change
+- Mesh repair tools: manifold report, duplicate vertex weld, normal flip, auto-fix, and STL import healing
 - Mesh, surface, construction, inspect, assemble, utilities ribbon areas
 - Component tree, feature timeline, selection filters, visibility controls
 - Imports: `.f3d`, `.step`, `.stp`, `.stl`, `.obj`; project + settings bundle save/load

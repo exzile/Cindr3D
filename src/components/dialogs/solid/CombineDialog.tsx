@@ -3,30 +3,31 @@ import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import type { Feature, BooleanOperation } from '../../../types/cad';
 
+type CombineOperation = Extract<BooleanOperation, 'join' | 'cut' | 'intersect'>;
+
 export function CombineDialog({ onClose }: { onClose: () => void }) {
   const editingFeatureId = useCADStore((s) => s.editingFeatureId);
   const features = useCADStore((s) => s.features);
   const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
   const p = editing?.params ?? {};
 
-  const [operation, setOperation] = useState<BooleanOperation>((p.operation as BooleanOperation) ?? 'join');
+  const [operation, setOperation] = useState<CombineOperation>((p.operation as CombineOperation) ?? 'join');
   const [keepTools, setKeepTools] = useState(p.keepTools !== false && !!p.keepTools);
   const [targetId, setTargetId] = useState<string>(String(p.targetId ?? ''));
   const [toolId, setToolId] = useState<string>(String(p.toolId ?? ''));
 
   const addFeature = useCADStore((s) => s.addFeature);
-  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const commitCombine = useCADStore((s) => s.commitCombine);
+  const recommitCombine = useCADStore((s) => s.recommitCombine);
 
   const meshFeatures = features.filter((f) => !!f.mesh);
 
   const handleApply = () => {
     if (editing) {
-      updateFeatureParams(editing.id, { operation, keepTools, targetId, toolId });
-      setStatusMessage(`Updated ${operation} operation${keepTools ? ' (keep tools)' : ''}`);
+      recommitCombine(editing.id, { operation, keepTools, targetId, toolId });
     } else if (targetId && toolId) {
-      commitCombine(targetId, toolId, operation as 'join' | 'cut' | 'intersect', keepTools);
+      commitCombine(targetId, toolId, operation, keepTools);
     } else {
       const feature: Feature = {
         id: crypto.randomUUID(),
@@ -71,7 +72,7 @@ export function CombineDialog({ onClose }: { onClose: () => void }) {
           </div>
           <div className="form-group">
             <label>Operation</label>
-            <select value={operation} onChange={(e) => setOperation(e.target.value as BooleanOperation)}>
+            <select value={operation} onChange={(e) => setOperation(e.target.value as CombineOperation)}>
               <option value="join">Join (Union)</option>
               <option value="cut">Cut (Subtract)</option>
               <option value="intersect">Intersect</option>

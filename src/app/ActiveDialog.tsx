@@ -85,6 +85,7 @@ import {
   MeshSeparateDialog,
   MeshTransformDialog,
   ConvertMeshToBRepDialog,
+  MeshRepairDialog,
   PipeDialog,
   CoilDialog,
   MoveBodyDialog,
@@ -96,6 +97,8 @@ import {
   InsertCanvasDialog,
   JointOriginDialog,
   InterferenceDialog,
+  ParametricModelDialog,
+  DesignConfigurationsDialog,
 } from '../components/dialogs';
 
 function TextureExtrudeDialogConnected({ onClose }: { onClose: () => void }) {
@@ -381,6 +384,7 @@ export default function ActiveDialog() {
     case 'mesh-separate': return <MeshSeparateDialog onClose={close} />;
     case 'mesh-transform': return <MeshTransformDialog onClose={close} />;
     case 'convert-mesh-to-brep': return <ConvertMeshToBRepDialog onClose={close} />;
+    case 'mesh-repair': return <MeshRepairDialog onClose={close} />;
     case 'pipe': return <PipeDialog onClose={close} />;
     case 'coil': return <CoilDialog onClose={close} />;
     case 'move-body': return <MoveBodyDialog onClose={close} />;
@@ -405,6 +409,8 @@ export default function ActiveDialog() {
     case 'duplicate-with-joints': return <DuplicateWithJointsDialogConnected onClose={close} />;
     case 'bom': return <BOMDialogConnected onClose={close} />;
     case 'insert-fastener': return <FastenerDialog onClose={close} />;
+    case 'parametric-library': return <ParametricModelDialog onClose={close} />;
+    case 'design-configurations': return <DesignConfigurationsDialog onClose={close} />;
     case 'derive': return <DeriveDialog onClose={close} />;
     case 'constrain-components': return <ConstrainComponentsDialog onClose={close} />;
     default: return null;

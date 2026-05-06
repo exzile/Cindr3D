@@ -116,12 +116,7 @@ function overhangIslands(
 }
 
 function islandBBox(island: SupportIsland, pp: PrintProfile, layerZ: number, layerIndex: number, modelHeight: number): BBox2 | null {
-  let bbox: BBox2 = {
-    minX: Math.min(...island.points.map((p) => p.x)),
-    maxX: Math.max(...island.points.map((p) => p.x)),
-    minY: Math.min(...island.points.map((p) => p.y)),
-    maxY: Math.max(...island.points.map((p) => p.y)),
-  };
+  let bbox: BBox2 = rawIslandBBox(island);
 
   if (pp.enableConicalSupport) {
     const angleRad = ((pp.conicalSupportAngle ?? 30) * Math.PI) / 180;
@@ -455,6 +450,7 @@ function emitSupportIsland(
   const chunkEnabled = !(effRoof || effFloor) && (pp.breakUpSupportInChunks ?? false);
   let linesInChunk = 0;
   let d = -maxDim / 2;
+  const midPt = new THREE.Vector2();
   while (d <= maxDim / 2) {
     if (++scanCount > 50000) break;
     const p1x = centerX + cos * (-maxDim) - sin * d;
@@ -468,7 +464,7 @@ function emitSupportIsland(
     const tooShort = Math.abs(fromX - toX) <= 0.5 && Math.abs(fromY - toY) <= 0.5;
     let emitted = false;
     if (!tooShort) {
-      const midPt = new THREE.Vector2((fromX + toX) / 2, (fromY + toY) / 2);
+      midPt.set((fromX + toX) / 2, (fromY + toY) / 2);
       if (!pointInsideMaterial(midPt, modelContours, deps)) {
         moves.push({
           type: 'support',
@@ -553,12 +549,13 @@ function mergeTreeAnchorsForLayer(anchors: TreeAnchor[], sliceZ: number, pp: Pri
 function nudgeTreeCenter(center: THREE.Vector2, radius: number, modelContours: Contour[], deps: SupportDeps): THREE.Vector2 | null {
   if (!pointInsideMaterial(center, modelContours, deps)) return center;
   const searchRadius = radius + 1;
+  const candidate = new THREE.Vector2();
   for (let ring = 1; ring <= 6; ring++) {
     const r = searchRadius * ring;
     for (let i = 0; i < 16; i++) {
       const a = (i / 16) * Math.PI * 2;
-      const candidate = new THREE.Vector2(center.x + Math.cos(a) * r, center.y + Math.sin(a) * r);
-      if (!pointInsideMaterial(candidate, modelContours, deps)) return candidate;
+      candidate.set(center.x + Math.cos(a) * r, center.y + Math.sin(a) * r);
+      if (!pointInsideMaterial(candidate, modelContours, deps)) return candidate.clone();
     }
   }
   return null;
@@ -602,8 +599,9 @@ function generateTreeSupportForLayer(
       moves.push({ type: 'support-tree', from: contour[i], to: contour[(i + 1) % segs], speed: supportSpeed, extrusion: 0, lineWidth: supLW });
     }
     const lines = deps.generateScanLines(contour, supportDensityForLayer(pp, layerIndex), supLW, layerIndex % 2 === 0 ? 0 : Math.PI / 2);
+    const mid = new THREE.Vector2();
     for (const line of lines) {
-      const mid = new THREE.Vector2((line.from.x + line.to.x) / 2, (line.from.y + line.to.y) / 2);
+      mid.set((line.from.x + line.to.x) / 2, (line.from.y + line.to.y) / 2);
       if (pointInsideMaterial(mid, modelContours, deps)) continue;
       moves.push({ type: 'support-tree', from: line.from, to: line.to, speed: supportSpeed, extrusion: 0, lineWidth: supLW });
     }
@@ -696,8 +694,9 @@ function emitTowerSupport(
   if (density > 0) {
     const angle = layerIndex % 2 === 0 ? 0 : Math.PI / 2;
     const lines = deps.generateScanLines(ring, density, supLW, angle);
+    const mid = new THREE.Vector2();
     for (const line of lines) {
-      const mid = new THREE.Vector2((line.from.x + line.to.x) / 2, (line.from.y + line.to.y) / 2);
+      mid.set((line.from.x + line.to.x) / 2, (line.from.y + line.to.y) / 2);
       if (pointInsideMaterial(mid, modelContours, deps)) continue;
       moves.push({
         type: 'support',

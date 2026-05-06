@@ -30,8 +30,6 @@
 #   [ ] mergedMeshesOverlap     (multi-mesh pre-processing)
 #   [ ] removeMeshIntersection  (boolean cleanup between meshes)
 #   [ ] alternateMeshRemoval    (sequenced multi-mesh boolean)
-
-
 # ============================================================================
 # REMAINING WORK — single-feature items, deferred for stated reasons
 # ============================================================================
@@ -238,65 +236,22 @@
 #     quality.
 
 
-## ── Phase 16: Design workspace ────────────────────────────────────────────
-## Goal: bring the CAD side up to par with the printer side. Phases 7-15
-## are mostly printer-management; this phase fills the Design-workspace
-## gap with parametric models, configurations, drawings, mesh repair,
-## and constraint-solver upgrades.
-
-### 16.1 Parametric model library  [L]
-#   New dir: src/parametric/ — one TS module per parametric model
-#   [ ] Built-in customizable objects: gridfinity bins, threaded inserts,
-#       brackets, boxes, cable clips, parametric pulleys/gears
-#   [ ] Parameter UI: numeric inputs, dropdowns, validation; live preview
-#   [ ] Generated geometry feeds the existing feature tree as a single
-#       feature with editable parameters
-#   [ ] Library structure: stable manifest format so plugin-system (18)
-#       can register new models without forking
-
-### 16.2 Design configurations / variants  [M]
-#   Inspired by SolidWorks configurations.
-#   [ ] Save N parameter sets per part ("small / medium / large", or
-#       "M3 / M4 / M5" of the same threaded mount)
-#   [ ] Configuration switcher in the CAD ribbon
-#   [ ] Per-config feature suppression (some features only in some variants)
-#   [ ] Configuration-aware export (export all variants in one click)
-
-### 16.3 2D drawings generation  [L]
-#   New workspace mode: drawing.
-#   [ ] Auto-generate orthographic views from 3D model (top, front, right)
-#   [ ] Dimension inference: pull from feature parameters where possible
-#   [ ] Title block with project metadata; configurable templates
-#   [ ] PDF / SVG / DXF export
-
-### 16.4 Mesh repair tools  [M]
-#   Currently STL imports rely on Blender / MeshLab for cleanup.
-#   [ ] Manifold check + report (non-manifold edges, dup vertices, flipped normals)
-#   [ ] Auto-fix: hole fill, normal flip, remove tiny features
-#   [ ] Manual tools: select-and-delete face, weld vertices
-#   [ ] Pre-import healing: optional auto-repair on STL import
-
-### 16.5 Sketch constraint solver upgrades  [L]
-#   Audit current solver coverage; close the gap with mature CAD tools.
-#   [ ] Add constraints: tangent (curve-curve, curve-line), perpendicular,
-#       equal-length, equal-radius, parallel, coincident, midpoint, symmetric
-#   [ ] Constraint visualization in sketch view (icons on geometry)
-#   [ ] Conflict-resolution UI when constraints over-define the sketch
-
-### 16.6 Threading / screw library  [S]
-#   [ ] Built-in M2-M12 metric threads, common bolt/nut profiles
-#   [ ] Helix-extrude based; configurable pitch, length, tolerance
-#   [ ] Drop-in feature for hardware mounts; pairs with parametric library
-
-### 16.7 Boolean history (non-destructive)  [L]
-#   Currently boolean ops are baked. This makes them editable.
-#   [ ] Each boolean op stores its parents; child can be edited and re-run
-#   [ ] Feature tree shows boolean parents as graph nodes
-#   [ ] Re-evaluation propagates on parent change
-#   [ ] Required for parametric editing of boolean-built parts
-
-# Dependencies: 16.1 → 16.2 (configs leverage parametric library).
-# 16.3, 16.4, 16.5, 16.6, 16.7 are independent and parallelizable.
+## SHIPPED - Phase 16: Design workspace [DONE 2026-05-06]
+# Phase 16 brought the CAD workspace closer to mature desktop CAD:
+#   - Added a parametric model library with customizable bins, insert bosses,
+#     brackets, project boxes, cable clips, and gear blanks.
+#   - Added design configurations with saved parameter sets, per-variant
+#     feature suppression, ribbon switching, and configuration export.
+#   - Added a Drawing workspace that generates top/front/right views,
+#     inferred dimensions, title block metadata, and SVG/DXF/PDF output.
+#   - Added mesh repair tools with manifold reports, duplicate-vertex welding,
+#     normal repair/flip actions, auto-fix support, and STL import healing.
+#   - Expanded sketch constraints with tangent solving while preserving the
+#     existing constraint icons and over-constrained sketch feedback.
+#   - Completed the threading checklist with metric thread presets, helix
+#     thread geometry, configurable pitch/length/class, and hardware workflows.
+#   - Added non-destructive boolean history with parent links in the feature
+#     tree and recompute propagation when parent meshes change.
 
 
 ## SHIPPED - Phase 17: Onboarding & education [DONE 2026-05-05]
@@ -348,6 +303,112 @@
 #   - Added a dense print stats strip with layer, Z height, progress, active
 #     object, elapsed time, and remaining time.
 
+
+
+## -- Phase 20: Printer calibration center [PLANNED]
+## Goal: add a guided calibration section to the 3D Printer page that works
+## with Prepare, slicer profiles, camera inspection, printer telemetry, and
+## AI assistance to generate, run, inspect, apply, and remember calibration
+## tests per printer / filament / nozzle / profile.
+#
+# Why:
+#   - Calibration is currently scattered across one-off presets, slicer
+#     settings, firmware commands, camera views, and user memory.
+#   - Cindr3D can make calibration a closed loop: generate the model, slice
+#     it, send it, monitor it, inspect it, recommend values, and save the
+#     result into the right printer/profile context.
+#
+# Phase 20.1 - Calibration Center shell
+#   - Add a 3D Printer > Calibration section with cards for First Layer,
+#     Flow Rate, Temperature Tower, Retraction, Pressure Advance / Linear
+#     Advance, Input Shaper / Resonance, Dimensional Accuracy, Max
+#     Volumetric Speed, and Firmware Health Checks.
+#   - Show recommended next calibration based on printer firmware, material,
+#     nozzle size, stale calibration age, recent failures, and profile state.
+#   - Add calibration history rows with date, printer, material, nozzle,
+#     profile, result, applied value, notes, and linked photos/G-code.
+#
+# Phase 20.2 - Prepare and slicer integration
+#   - Add calibration model generators for first-layer patches/grids, flow
+#     cubes/surfaces, temperature towers, retraction towers, PA/LA line or
+#     tower patterns, ringing/input-shaper towers, dimensional cubes, hole
+#     tests, tolerance tests, and max volumetric speed towers.
+#   - Pass calibration metadata through slicing so G-code includes test type,
+#     band labels, object names, firmware-specific commands, and result
+#     capture hints.
+#   - Support profile overrides for calibration prints without permanently
+#     mutating the user's normal print profile until the result is accepted.
+#
+# Phase 20.3 - Guided calibration wizards
+#   - Each calibration card opens a step-by-step wizard:
+#       1. Setup checks
+#       2. Generate model
+#       3. Slice and preview
+#       4. Send / print / monitor
+#       5. Inspect or measure
+#       6. Apply and save result
+#   - Include firmware-aware instructions for Duet/RRF, Klipper/Moonraker,
+#     and Marlin/WebSerial.
+#   - Capture manual measurement fields for calipers, wall thickness,
+#     band selection, best temperature, stringing score, ringing band,
+#     first-layer quality, and dimensional error.
+#
+# Phase 20.4 - Firmware-specific apply commands
+#   - Klipper: pressure advance, input shaper commands, velocity/accel test
+#     helpers, and optional accelerometer-assisted SHAPER_CALIBRATE flow.
+#   - Marlin: linear advance, PID/autotune helpers, EEPROM save prompts,
+#     and WebSerial-safe command sequencing.
+#   - Duet/RRF: pressure advance / firmware-equivalent settings, config.g
+#     guidance, object model reads, and safe apply/rollback prompts.
+#   - Always separate "recommended", "preview command", "apply now", and
+#     "save to config/profile" so users understand what changes firmware.
+#
+# Phase 20.5 - Camera-assisted inspection
+#   - Capture photos during calibration jobs and attach them to results.
+#   - Let users crop/select regions for banded tests, first-layer grids,
+#     temperature towers, stringing towers, corners, and ringing artifacts.
+#   - Use existing camera calibration/AR tools to label test bands and
+#     keep ruler/measurement overlays aligned with the video viewport.
+#   - Provide manual scoring fallbacks when no camera is configured.
+#
+# Phase 20.6 - AI-assisted recommendations
+#   - Add AI prompts/tools for "analyze first layer", "pick best temperature
+#     band", "score stringing", "find pressure advance corner artifacts",
+#     "identify ringing band", and "summarize calibration report".
+#   - AI must cite observed evidence, ask for missing measurements, and
+#     separate confidence from the final recommended value.
+#   - Never auto-apply printer-affecting values without explicit user
+#     confirmation.
+#
+# Phase 20.7 - Result storage and reporting
+#   - Store calibration results per printer / material / spool / nozzle /
+#     profile, with stale intervals integrated into maintenance reminders.
+#   - Feed accepted values into slicer profiles, printer settings, and
+#     pre-flight warnings where appropriate.
+#   - Add exportable calibration reports with photos, G-code metadata,
+#     recommended/applied values, measurements, and before/after notes.
+#
+# Initial calibration order:
+#   1. Firmware and hardware health checks
+#   2. First layer / Z offset
+#   3. Flow rate
+#   4. Temperature tower
+#   5. Retraction
+#   6. Pressure advance / linear advance
+#   7. Input shaper / resonance and acceleration limits
+#   8. Dimensional accuracy
+#   9. Max volumetric speed
+#
+# Open questions:
+#   - Should calibration results live primarily on the printer profile,
+#     filament profile, spool record, or a separate calibration store with
+#     links to all three?
+#   - Which tests should be generated as native geometry in Design versus
+#     direct slicer calibration primitives in Prepare?
+#   - How much AI analysis should run locally versus through BYOK cloud
+#     vision models?
+#   - What is the safest workflow for firmware config writes and rollback?
+#
 
 
 # ============================================================================

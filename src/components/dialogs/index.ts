@@ -50,6 +50,7 @@ export { MeshAlignDialog } from './mesh/MeshAlignDialog';
 export { MeshSeparateDialog } from './mesh/MeshSeparateDialog';
 export { MeshTransformDialog } from './mesh/MeshTransformDialog';
 export { ConvertMeshToBRepDialog } from './mesh/ConvertMeshToBRepDialog';
+export { MeshRepairDialog } from './mesh/MeshRepairDialog';
 
 // sketch
 export { RenameSketchDialog } from './sketch/RenameSketchDialog';
@@ -68,6 +69,10 @@ export { PointAlongPathDialog } from './construction/PointAlongPathDialog';
 
 // primitives
 export { PrimitivesDialog } from './primitives/PrimitivesDialog';
+
+// parametric
+export { ParametricModelDialog } from './parametric';
+export { DesignConfigurationsDialog } from './configurations';
 
 // assembly
 export { ContactSetsDialog } from './assembly/ContactSetsDialog';

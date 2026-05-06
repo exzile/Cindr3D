@@ -16,6 +16,13 @@ import { editDialogFor } from './editDialogFor';
 import { FeatureIcon } from './FeatureIcon';
 
 export function FeatureItem({ feature, index, indented }: { feature: Feature; index: number; indented?: boolean }) {
+  const allFeatures = useCADStore((s) => s.features);
+  const booleanParentNames = feature.type === 'combine' && Array.isArray(feature.params?.booleanParentIds)
+    ? (feature.params.booleanParentIds as unknown[])
+        .filter((id): id is string => typeof id === 'string')
+        .map((id) => allFeatures.find((f) => f.id === id)?.name ?? id)
+        .join(' → ')
+    : '';
   const toggleVisibility = useCADStore((s) => s.toggleFeatureVisibility);
   const toggleSuppressed = useCADStore((s) => s.toggleFeatureSuppressed);
   const removeFeature = useCADStore((s) => s.removeFeature);
@@ -117,6 +124,9 @@ export function FeatureItem({ feature, index, indented }: { feature: Feature; in
         <div className="timeline-item-info">
           <span className="timeline-item-name">{feature.name}</span>
           <span className="timeline-item-type">{feature.type}</span>
+          {booleanParentNames && (
+            <span className="timeline-item-type">parents: {booleanParentNames}</span>
+          )}
         </div>
         <div className="timeline-item-actions">
           <button className={`timeline-action-btn ${rollbackIndex === index ? 'active' : ''}`} onClick={handleRollbackClick} title={rollbackIndex === index ? 'Clear rollback' : 'Roll back to this feature'}>
@@ -188,16 +198,7 @@ export function FeatureItem({ feature, index, indented }: { feature: Feature; in
 
             <button
               className="timeline-context-menu__btn"
-              onClick={() => {
-                if (rollbackIndex === index) {
-                  setRollbackIndex(-1);
-                  setStatusMessage('Rollback cleared');
-                } else {
-                  setRollbackIndex(index);
-                  setStatusMessage(`Rolled back to "${feature.name}"`);
-                }
-                closeContextMenu();
-              }}
+              onClick={(e) => { handleRollbackClick(e); closeContextMenu(); }}
             >
               <SkipBack size={12} />
               {rollbackIndex === index ? 'Clear Rollback' : 'Roll Back To Here'}

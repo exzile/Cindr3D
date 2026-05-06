@@ -3,7 +3,7 @@ import {
   Blend, Copy, Layers,
   Axis3D, Ruler, FolderOpen,
   Image, Edit2, MousePointer2, Box,
-  Wrench, FileCode,
+  Wrench, FileCode, Boxes, SlidersHorizontal,
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore';
 import { RibbonSection } from './FlyoutMenu';
@@ -48,6 +48,9 @@ export function RibbonSolidTab({
   const openDecalDialog = useCADStore((s) => s.openDecalDialog);
   const openAttachedCanvasDialog = useCADStore((s) => s.openAttachedCanvasDialog);
   const openBoundingSolidDialog = useCADStore((s) => s.openBoundingSolidDialog);
+  const designConfigurations = useCADStore((s) => s.designConfigurations);
+  const activeDesignConfigurationId = useCADStore((s) => s.activeDesignConfigurationId);
+  const switchDesignConfiguration = useCADStore((s) => s.switchDesignConfiguration);
 
   return (
     <>
@@ -68,6 +71,25 @@ export function RibbonSolidTab({
         />
         <ToolButton icon={<ArrowUpFromLine size={ICON_LG} />} label="Extrude" onClick={handleExtrude} active={activeTool === 'extrude'} large colorClass="icon-blue" />
         <ToolButton icon={<RotateCcw size={ICON_LG} />} label="Revolve" onClick={handleRevolve} active={activeTool === 'revolve'} large colorClass="icon-blue" />
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3, minWidth: 112 }}>
+          <select
+            aria-label="Design configuration"
+            value={activeDesignConfigurationId}
+            onChange={(event) => switchDesignConfiguration(event.target.value)}
+            style={{ height: 24, fontSize: 11 }}
+          >
+            {designConfigurations.map((configuration) => (
+              <option key={configuration.id} value={configuration.id}>{configuration.name}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setActiveDialog('design-configurations')}
+            style={{ height: 22, fontSize: 11 }}
+          >
+            Configurations
+          </button>
+        </div>
       </RibbonSection>
 
       <RibbonSection title="MODIFY" menuItems={modifyMenuItems} accentColor="#ff6b00">
@@ -92,6 +114,8 @@ export function RibbonSolidTab({
         { icon: <Image size={MI} />, label: 'Decal', onClick: openDecalDialog },
         { icon: <Edit2 size={MI} />, label: 'Attached Canvas', onClick: () => openAttachedCanvasDialog() },
         { icon: <Box size={MI} />, label: 'Bounding Solid', onClick: openBoundingSolidDialog },
+        { icon: <Boxes size={MI} />, label: 'Parametric Library', onClick: () => setActiveDialog('parametric-library') },
+        { icon: <SlidersHorizontal size={MI} />, label: 'Design Configurations', onClick: () => setActiveDialog('design-configurations') },
         { icon: <Wrench size={MI} />, label: 'Insert Fastener', onClick: () => setActiveDialog('insert-fastener') },
         { icon: <FileCode size={MI} />, label: 'Derive', onClick: () => setActiveDialog('derive') },
       ]}>
