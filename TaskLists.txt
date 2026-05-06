@@ -185,9 +185,9 @@
 
 ### 13.2 MQTT publisher  [S]
 #   New service: src/services/integrations/mqttPublisher.ts
-#   [ ] Configurable broker URL, topic prefix, auth
-#   [ ] Publish print events + temperatures + position at user-set rate
-#   [ ] Auto-reconnect on broker drop
+#   [x] Configurable broker URL, topic prefix, auth
+#   [x] Publish print events + temperatures + position at user-set rate
+#   [x] Auto-reconnect on broker drop
 
 ### 13.3 HomeAssistant entity bridge  [M]
 #   [ ] Local endpoint that HA's RESTful sensor / switch integrations

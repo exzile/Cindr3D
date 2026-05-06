@@ -768,6 +768,10 @@
   justify-content: start;
 }
 
+.duet-settings__integration-form--mqtt {
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+}
+
 .duet-settings__integration-url {
   min-width: 0;
 }
@@ -884,7 +888,8 @@
   .duet-settings__body { padding: 14px 14px 18px; }
   .duet-settings__page-title { font-size: 16px; }
   .duet-settings__integration-form,
-  .duet-settings__integration-form--rule {
+  .duet-settings__integration-form--rule,
+  .duet-settings__integration-form--mqtt {
     grid-template-columns: 1fr;
   }
 }

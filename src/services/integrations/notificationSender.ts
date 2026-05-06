@@ -1,4 +1,5 @@
 import { useIntegrationStore, type IntegrationEventType, type IntegrationRule, type IntegrationTarget } from '../../store/integrationStore';
+import { mqttPublisher } from './mqttPublisher';
 
 export interface IntegrationPrinterSnapshot {
   printerId: string | null;
@@ -122,9 +123,11 @@ function ruleTargets(rule: IntegrationRule, targets: IntegrationTarget[]): Integ
 
 export async function sendIntegrationEvent(event: IntegrationEventType, snapshot: IntegrationPrinterSnapshot): Promise<IntegrationSendResult[]> {
   const state = useIntegrationStore.getState();
+  const payload = buildIntegrationPayload(event, snapshot);
+  mqttPublisher.configure(state.mqtt);
+  mqttPublisher.publishEvent(payload);
   const rules = state.matchingRules(event, snapshot.printerId);
   if (rules.length === 0) return [];
-  const payload = buildIntegrationPayload(event, snapshot);
   const targets = new Map<string, IntegrationTarget>();
   for (const rule of rules) {
     for (const target of ruleTargets(rule, state.targets)) {

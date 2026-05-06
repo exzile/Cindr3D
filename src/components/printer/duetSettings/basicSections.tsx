@@ -1575,12 +1575,14 @@ export function NotificationsSection({
 }) {
   const targets = useIntegrationStore((s) => s.targets);
   const rules = useIntegrationStore((s) => s.rules);
+  const mqtt = useIntegrationStore((s) => s.mqtt);
   const addTarget = useIntegrationStore((s) => s.addTarget);
   const updateTarget = useIntegrationStore((s) => s.updateTarget);
   const removeTarget = useIntegrationStore((s) => s.removeTarget);
   const addRule = useIntegrationStore((s) => s.addRule);
   const updateRule = useIntegrationStore((s) => s.updateRule);
   const removeRule = useIntegrationStore((s) => s.removeRule);
+  const updateMqtt = useIntegrationStore((s) => s.updateMqtt);
   const [targetDraft, setTargetDraft] = useState({
     name: '',
     type: 'webhook' as IntegrationTargetType,
@@ -1845,6 +1847,88 @@ export function NotificationsSection({
             ))}
           </div>
         )}
+      </div>
+
+      <div className="duet-settings__section duet-settings__section--mt">
+        <div className="duet-settings__section-title">MQTT Publisher</div>
+        <ToggleRow
+          id="mqtt-enabled"
+          checked={mqtt.enabled}
+          onChange={(value) => updateMqtt({ enabled: value })}
+          label="Enable MQTT publishing"
+          hint="Publishes print events and live telemetry to an MQTT broker over WebSocket."
+        />
+        <div className="duet-settings__integration-form duet-settings__integration-form--mqtt">
+          <input
+            className="duet-settings__input"
+            type="url"
+            value={mqtt.brokerUrl}
+            onChange={(event) => updateMqtt({ brokerUrl: event.target.value })}
+            placeholder="ws://broker.local:9001/mqtt"
+          />
+          <input
+            className="duet-settings__input"
+            type="text"
+            value={mqtt.topicPrefix}
+            onChange={(event) => updateMqtt({ topicPrefix: event.target.value })}
+            placeholder="Topic prefix"
+          />
+          <input
+            className="duet-settings__input"
+            type="text"
+            value={mqtt.clientId}
+            onChange={(event) => updateMqtt({ clientId: event.target.value })}
+            placeholder="Client ID (optional)"
+          />
+        </div>
+        <div className="duet-settings__integration-form duet-settings__integration-form--mqtt">
+          <input
+            className="duet-settings__input"
+            type="text"
+            value={mqtt.username}
+            onChange={(event) => updateMqtt({ username: event.target.value })}
+            placeholder="Username"
+          />
+          <input
+            className="duet-settings__input"
+            type="password"
+            value={mqtt.password}
+            onChange={(event) => updateMqtt({ password: event.target.value })}
+            placeholder="Password"
+          />
+          <select
+            className="duet-settings__select"
+            value={mqtt.publishRateMs}
+            onChange={(event) => updateMqtt({ publishRateMs: Number(event.target.value) })}
+          >
+            <option value={1000}>Telemetry every 1 second</option>
+            <option value={2500}>Telemetry every 2.5 seconds</option>
+            <option value={5000}>Telemetry every 5 seconds</option>
+            <option value={10000}>Telemetry every 10 seconds</option>
+            <option value={30000}>Telemetry every 30 seconds</option>
+          </select>
+        </div>
+        <div className="duet-settings__integration-chip-row">
+          <label className="duet-settings__integration-chip">
+            <input
+              type="checkbox"
+              checked={mqtt.includeEvents}
+              onChange={(event) => updateMqtt({ includeEvents: event.target.checked })}
+            />
+            <span>Print events</span>
+          </label>
+          <label className="duet-settings__integration-chip">
+            <input
+              type="checkbox"
+              checked={mqtt.includeTelemetry}
+              onChange={(event) => updateMqtt({ includeTelemetry: event.target.checked })}
+            />
+            <span>Temperatures and position</span>
+          </label>
+        </div>
+        <div className="duet-settings__hint">
+          Topics publish under {mqtt.topicPrefix || 'cindr3d'}/printers/&lt;printer&gt;/events/* and telemetry.
+        </div>
       </div>
     </>
   );

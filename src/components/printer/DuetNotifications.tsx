@@ -3,7 +3,8 @@ import type { CSSProperties } from 'react';
 import { X } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { sendIntegrationEvent, type IntegrationPrinterSnapshot } from '../../services/integrations/notificationSender';
-import type { IntegrationEventType } from '../../store/integrationStore';
+import { mqttPublisher } from '../../services/integrations/mqttPublisher';
+import { useIntegrationStore, type IntegrationEventType } from '../../store/integrationStore';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -81,6 +82,7 @@ export default function DuetNotifications() {
   const connected = usePrinterStore((s) => s.connected);
   const activePrinterId = usePrinterStore((s) => s.activePrinterId);
   const printers = usePrinterStore((s) => s.printers);
+  const mqtt = useIntegrationStore((s) => s.mqtt);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   // Track previous values for change detection
@@ -90,6 +92,7 @@ export default function DuetNotifications() {
   const prevConnectedRef = useRef<boolean>(false);
   const prevHeaterStatesRef = useRef<string[]>([]);
   const prevLayerRef = useRef<number | undefined>(undefined);
+  const lastMqttTelemetryRef = useRef(0);
 
   const addToast = useCallback((type: ToastType, message: string) => {
     const id = nextToastId++;
@@ -129,6 +132,13 @@ export default function DuetNotifications() {
       }
     });
   }, [addToast, buildSnapshot]);
+
+  useEffect(() => {
+    mqttPublisher.configure(mqtt);
+    return () => {
+      if (!mqtt.enabled) mqttPublisher.disconnect();
+    };
+  }, [mqtt]);
 
   // Auto-dismiss timer (single-shot to next expiry; avoids constant interval work)
   useEffect(() => {
@@ -212,6 +222,25 @@ export default function DuetNotifications() {
     }
     prevConnectedRef.current = connected;
   }, [connected, addToast]);
+
+  // Publish MQTT telemetry at the configured cadence as the object model updates.
+  useEffect(() => {
+    if (!connected || !mqtt.enabled || !mqtt.includeTelemetry) return;
+    const now = Date.now();
+    if (now - lastMqttTelemetryRef.current < mqtt.publishRateMs) return;
+    lastMqttTelemetryRef.current = now;
+    mqttPublisher.configure(mqtt);
+    mqttPublisher.publishTelemetry(buildSnapshot());
+  }, [
+    connected,
+    mqtt,
+    buildSnapshot,
+    model.heat?.heaters,
+    model.job?.filePosition,
+    model.job?.layer,
+    model.move?.axes,
+    model.state?.status,
+  ]);
 
   // Watch for heater faults
   useEffect(() => {
