@@ -56,10 +56,15 @@ The project is evolving quickly. Some CAD and slicer features are experimental, 
 ## What's New
 
 > [!NOTE]
-> **2026-05** — Cross-firmware unification. Klipper-style features now work on Duet RRF, Marlin, and any host that talks the basics. The slicer emits `M486` labels automatically.
+> **2026-05** - Integrations and enclosure operations. Cindr3D now reaches beyond the printer panel with webhooks, chat alerts, MQTT telemetry, Home Assistant bridging, power-loss recovery, slicer-profile import, enclosure safety, and stepper tuning.
 
 **Headline features shipped this release:**
 
+- **Workshop integrations** - generic webhooks plus first-class Discord, Slack, Telegram, MQTT publishing/subscriptions, and a Home Assistant REST/discovery bridge for printer telemetry and pause/resume/cancel controls.
+- **External slicer/profile exchange** - import Cura, OrcaSlicer, Bambu Studio, and 3MF profile data into Cindr3D print profiles, preview mappings before import, and round-trip Cindr3D build plates through 3MF sidecar manifests.
+- **Power-loss recovery** - persist in-progress file, position, Z, layer, bed, and tool state, then offer a reconnect resume flow that restores heat/Z and sends the saved file-position resume command.
+- **Enclosure safety** - chamber temperature monitoring/control from RRF, Klipper, or MQTT; ramp curves, preheat/cooldown policy, door-open cooldown, MQTT air-quality thresholds, and door/reed-switch pause/start-lock behavior.
+- **Stepper driver tuning** - dashboard card for per-axis current, microsteps, StealthChop/SpreadCycle mode, firmware-specific command wrappers, wiggle tests, and per-printer presets.
 - **Smart print farm queue** - persistent cross-printer queueing with routing rules for build volume, loaded material, nozzle size, copy splitting, job moves, pause, and cancel.
 - **Fleet cameras** - all-cameras grid, per-printer multi-camera streams, layer-by-layer photo galleries, PTZ presets, print-start camera positioning, and WebRTC/WHEP low-latency streaming with MJPEG/HLS fallback.
 - **Fleet filament inventory** - material rollups, low-stock thresholds, per-printer loaded-spool tracking, and automatic filament deduction from slicer estimates.
@@ -95,6 +100,22 @@ The project is evolving quickly. Some CAD and slicer features are experimental, 
 ### 🖨️ Printer Workflows (cross-firmware)
 
 Cindr3D treats Klipper, Duet/RRF, Marlin, Smoothie, grbl, and Repetier as first-class boards. Tabs adapt to whichever board is connected; common features route to firmware-specific commands automatically.
+
+**Integrations and automation**
+
+- Webhook, Discord, Slack, Telegram, and MQTT rules for `PRINT_START`, `LAYER_CHANGE`, `PAUSED`, `FAILED`, and `DONE`.
+- MQTT telemetry publishes printer status, temperatures, position, progress, and events at a configurable cadence.
+- Home Assistant bridge exposes per-printer REST/discovery payloads and accepts pause/resume/cancel actions.
+- Profile import wizard maps Cura, OrcaSlicer, Bambu Studio, and 3MF config fields into Cindr3D print profiles.
+- Power-loss recovery snapshots in-progress jobs and offers a guided resume after reconnect.
+
+**Enclosure and safety controls**
+
+- Chamber monitor/control reads RRF chamber heaters, Klipper-style sensors, or generic MQTT temperature topics.
+- Chamber targets support ramp curves, print-start preheat, completion cooldown, and door-open cooldown.
+- Air-quality card subscribes to VOC, PM2.5, and CO2 MQTT topics with warning and pause thresholds.
+- Door/enclosure sensor supports RRF/Klipper GPIO-style model data or direct MQTT reed-switch input with configurable pause/start-lock behavior.
+- Stepper Tuning dashboard adjusts per-axis current, microsteps, and StealthChop/SpreadCycle mode, with RRF/Marlin `M906`/`M350`/`M569` and Klipper `SET_TMC_CURRENT` wrappers.
 
 **Mid-print object cancellation** — three places to cancel:
 
@@ -170,6 +191,9 @@ Cindr3D now treats the 3D Printer workspace as a small print-farm controller, no
 | Spools | ✅ Spoolman bridge | ✅ local | ✅ local | ✅ local |
 | Timelapse | ✅ `moonraker-timelapse` | ✅ in-browser | ✅ in-browser | ✅ in-browser |
 | Updates | ✅ component + GitHub | ✅ GitHub | ✅ GitHub | ✅ GitHub |
+| Integrations | yes MQTT / HA / webhooks | yes MQTT / HA / webhooks | yes MQTT / HA / webhooks | yes MQTT / HA / webhooks |
+| Chamber / door / air quality | yes sensors + MQTT | yes heaters/GPIO + MQTT | yes MQTT/manual | yes MQTT/manual |
+| Stepper tuning | yes `SET_TMC_CURRENT` | yes `M906` / `M350` / `M569` | yes `M906` / `M350` / `M569` | Notes only |
 | Object Model browser | — | ✅ | — | — |
 | DSF Plugins | — | ✅ SBC | — | — |
 
@@ -255,7 +279,7 @@ See [docs/ai-mcp-tools.md](docs/ai-mcp-tools.md) for the tool reference and [doc
 
 ## Roadmap
 
-The next 12 phases of work are tracked in detail in [`TaskLists.txt`](TaskLists.txt). Highlights:
+Completed and upcoming phases are tracked in [`TaskLists.txt`](TaskLists.txt). Highlights:
 
 | Phase | Theme | What lands |
 |---|---|---|
@@ -273,7 +297,7 @@ The next 12 phases of work are tracked in detail in [`TaskLists.txt`](TaskLists.
 | 18 | 🧩 Plugin system | *Future — captured for planning, not yet scheduled* |
 
 > [!TIP]
-> Phases 7, 11, 13, 14, 16, 17 are mostly independent and can run in parallel. Phase 8 (Vision) gates Phase 9 (AR). See [`TaskLists.txt`](TaskLists.txt) for detailed sub-phases, effort estimates, file hints, and dependency notes.
+> Completed phases are condensed in [`TaskLists.txt`](TaskLists.txt) with summaries, while active/upcoming phases keep their detailed task lists, effort estimates, file hints, and dependency notes.
 
 ## Development Scripts
 
@@ -520,3 +544,4 @@ Never commit:
 Cindr3D is released under the MIT License. See `LICENSE`.
 
 The bundled Roboto font is licensed separately by Google under Apache-2.0. See `THIRD_PARTY_NOTICES.md`.
+

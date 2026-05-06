@@ -459,7 +459,7 @@ const HELP_TOPICS: HelpTopic[] = [
           'The offline state points you to Connection Settings, Files, Config, and Camera so setup is discoverable even before connecting.',
           'When connected, Dashboard shows heaters, axes, current job, uptime, board status, quick controls, and live model data.',
           'The dashboard is a drag-and-resize card grid. Drag panels by their title bar (in edit mode), resize from corner handles, and hide cards you do not use. Layout persists per browser.',
-          'Cards include: Camera, Tools, Temperature, Fans, Axis Movement, Extruder, Speed & Flow, Pressure Advance, Input Shaper, Tool Offsets, Workplace Coordinates, Bed Compensation, Restore Points, Macros, Custom Buttons, ATX Power, System Info, Filament Sensors, Object Cancellation (compact list of labelled objects with per-object cancel), and Print Preview (3D viewport with bed, object silhouettes, active-layer toolpaths, object status badges, nozzle marker, diagnostics, and per-object cancel).',
+          'Cards include: Camera, Tools, Temperature, Chamber controls, Air Quality, Stepper Tuning, Fans, Axis Movement, Extruder, Speed & Flow, Pressure Advance, Input Shaper, Tool Offsets, Workplace Coordinates, Bed Compensation, Restore Points, Macros, Custom Buttons, ATX Power, System Info, Filament Sensors, Object Cancellation (compact list of labelled objects with per-object cancel), and Print Preview (3D viewport with bed, object silhouettes, active-layer toolpaths, object status badges, nozzle marker, diagnostics, and per-object cancel).',
           'The context strip names the active printer, host, board mode, and current online/offline state so you can tell which machine you are controlling.',
           'The bottom footer repeats machine status, current tool, uptime, and progress for quick scanning while switching tabs.',
           'Open Camera uses the saved per-printer camera profile and expands into the full camera workspace.',
@@ -506,9 +506,10 @@ const HELP_TOPICS: HelpTopic[] = [
           'General stores name, identity, and day-to-day preferences.',
           'Camera stores network, browser USB, or server USB camera settings for the printer card, monitor, and camera workspace.',
           'Behaviour includes safety limits, auto-reconnect behaviour, sounds, and operational preferences.',
-          'Notifications controls alert severity, toast duration, sound, and printer event messages.',
+          'Notifications controls alert severity, toast duration, sounds, webhook/chat/MQTT targets, and print-event rules.',
           'Machine stores build volume, kinematics, axes, heaters, and motion-related printer metadata.',
           'Filaments stores per-printer material presets used by dashboard actions and slicer seeding.',
+          'Behaviour and dashboard cards cover chamber targets, ramping, door-open safety, air-quality thresholds, and stepper-driver tuning presets.',
           'Firmware, PanelDue, Backup, and About cover firmware-specific features, touchscreen setup, import/export state, and diagnostics.',
         ],
       },
@@ -522,6 +523,8 @@ const HELP_TOPICS: HelpTopic[] = [
           'All Cameras - wall view of every enabled camera stream across saved printers, with status overlays and click-through to Monitor.',
           'A/B Compare - run the same G-code on two printers, compare timing samples, rate print quality, and queue both jobs together.',
           'Layer Gallery - per-layer camera snapshots grouped by printer, job, layer, and camera stream, with ZIP export for print review.',
+          'Air Quality - live VOC, PM2.5, and CO2 MQTT sensor readouts with warn and pause thresholds.',
+          'Stepper Tuning - per-axis current, microsteps, StealthChop/SpreadCycle, firmware command wrappers, wiggle tests, and presets.',
           'Status and Console - board status plus a G-code console with command history.',
           'Job - active file, layer, progress, time remaining, pause/resume/cancel, and print details.',
           'History and Analytics - previous prints, event history, and aggregate printer performance.',
@@ -566,6 +569,49 @@ const HELP_TOPICS: HelpTopic[] = [
     ],
   },
 
+  {
+    id: 'integrations',
+    title: 'Integrations and enclosure safety',
+    summary: 'Webhooks, MQTT, Home Assistant, recovery, profile import, chamber control, air quality, door sensors, and stepper tuning.',
+    group: '3D Printer',
+    sections: [
+      {
+        heading: 'Notifications and automation',
+        intro: 'Open printer Settings, then Notifications, to connect Cindr3D to the rest of the workshop.',
+        items: [
+          'Create webhook, Discord, Slack, Telegram, and MQTT targets for print start, layer change, pause, failure, and completion events.',
+          'MQTT telemetry publishes printer status, temperatures, position, progress, and events at the configured cadence.',
+          'Home Assistant bridge exposes REST/discovery payloads for per-printer sensors and pause/resume/cancel actions.',
+          'Power-loss recovery snapshots active file, file position, Z, layer, bed, and tool heat so reconnect can offer a guided resume.',
+        ],
+      },
+      {
+        heading: 'External slicer profile import',
+        items: [
+          'Use the profile import wizard in Prepare to load Cura, OrcaSlicer, Bambu Studio, and 3MF config data.',
+          'Preview mapped fields before importing so temperatures, speeds, cooling, and machine hints are visible before confirmation.',
+          'Save a Cindr3D 3MF plate when you need to round-trip object layout and plate metadata through another workflow.',
+        ],
+      },
+      {
+        heading: 'Chamber, door, and air quality',
+        items: [
+          'Temperature dashboard chamber controls read RRF chamber heaters, Klipper-style sensors, or generic MQTT temperature topics.',
+          'Set chamber target, ramp start, ramp step, ramp interval, print-start preheat, completion cooldown, and door-open cooldown policy.',
+          'Door source can be manual, RRF GPIO, Klipper GPIO, or MQTT reed-switch input with optional pause-on-open and start-lock behavior.',
+          'Air Quality dashboard card subscribes to VOC, PM2.5, and CO2 MQTT topics and can warn or pause at per-printer thresholds.',
+        ],
+      },
+      {
+        heading: 'Stepper driver tuning',
+        items: [
+          'Stepper Tuning dashboard card stores per-printer presets for per-axis current, microsteps, mode, and driver index.',
+          'Apply emits the right command family: RRF/Marlin use M906, M350, and M569; Klipper uses SET_TMC_CURRENT plus the TMC mode field.',
+          'Wiggle moves the selected axis out and back so you can listen for noise changes after current or mode changes.',
+        ],
+      },
+    ],
+  },
   {
     id: 'print-farm',
     title: 'Print farm intelligence',
@@ -1664,3 +1710,4 @@ export function AppHelpModal({ onClose }: { onClose: () => void }) {
     </div>
   );
 }
+
