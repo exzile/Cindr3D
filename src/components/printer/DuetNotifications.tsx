@@ -4,7 +4,9 @@ import { X } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { usePrintRecoveryStore, type PrintRecoverySnapshot } from '../../store/printRecoveryStore';
 import { useChamberControlStore } from '../../store/chamberControlStore';
+import { AIR_QUALITY_SENSOR_LABELS, useAirQualityStore, type AirQualitySensorKey } from '../../store/airQualityStore';
 import { fetchHomeAssistantCommands, publishHomeAssistantSnapshot } from '../../services/integrations/homeAssistantBridge';
+import { evaluateAirQuality, parseAirQualityPayload } from '../../services/integrations/airQuality';
 import { computeChamberRampCommand, parseChamberTemperaturePayload } from '../../services/integrations/chamberControl';
 import { sendIntegrationEvent, type IntegrationPrinterSnapshot } from '../../services/integrations/notificationSender';
 import { mqttPublisher } from '../../services/integrations/mqttPublisher';
@@ -93,6 +95,7 @@ export default function DuetNotifications() {
   const setChamberTemp = usePrinterStore((s) => s.setChamberTemp);
   const mqtt = useIntegrationStore((s) => s.mqtt);
   const chamberControl = useChamberControlStore();
+  const airQuality = useAirQualityStore((s) => s.getPrinterAirQuality(activePrinterId));
   const saveRecoverySnapshot = usePrintRecoveryStore((s) => s.saveSnapshot);
   const clearRecoverySnapshot = usePrintRecoveryStore((s) => s.clearSnapshot);
   const dismissRecoverySnapshot = usePrintRecoveryStore((s) => s.dismissSnapshot);
@@ -110,6 +113,7 @@ export default function DuetNotifications() {
   const lastMqttTelemetryRef = useRef(0);
   const lastRecoverySnapshotRef = useRef(0);
   const doorOpenCooldownSentRef = useRef(false);
+  const lastAirQualityAlertRef = useRef('');
 
   const addToast = useCallback((type: ToastType, message: string) => {
     const id = nextToastId++;
@@ -207,6 +211,24 @@ export default function DuetNotifications() {
       useChamberControlStore.getState().setExternalTemperature(temperatureC);
     });
   }, [chamberControl.enabled, chamberControl.mqttTopic, mqtt]);
+
+  useEffect(() => {
+    if (!activePrinterId || !mqtt.enabled || !airQuality.enabled) return;
+    mqttPublisher.configure(mqtt);
+    const cleanups = (Object.keys(airQuality.sensors) as AirQualitySensorKey[])
+      .flatMap((sensor) => {
+        const topic = airQuality.sensors[sensor].topic.trim();
+        if (!topic) return [];
+        return [
+          mqttPublisher.subscribe(topic, (payload) => {
+            const value = parseAirQualityPayload(payload, sensor);
+            if (value === null) return;
+            useAirQualityStore.getState().setAirQualityReading(activePrinterId, sensor, value);
+          }),
+        ];
+      });
+    return () => cleanups.forEach((cleanup) => cleanup());
+  }, [activePrinterId, airQuality.enabled, airQuality.sensors, mqtt]);
 
   // Auto-dismiss timer (single-shot to next expiry; avoids constant interval work)
   useEffect(() => {
@@ -311,6 +333,35 @@ export default function DuetNotifications() {
     useChamberControlStore.getState().stopRamp();
     addToast('warning', 'Door open: chamber heater cooling down');
   }, [addToast, chamberControl.cooldownOnDoorOpen, chamberControl.doorOpen, chamberControl.enabled, setChamberTemp]);
+
+  useEffect(() => {
+    if (!activePrinterId || !airQuality.enabled) return;
+    const status = evaluateAirQuality(airQuality);
+    if (status.level === 'ok') {
+      lastAirQualityAlertRef.current = '';
+      return;
+    }
+
+    const newestUpdatedAt = Math.max(
+      0,
+      ...status.exceeded.map((item) => airQuality.readings[item.sensor].updatedAt ?? 0),
+    );
+    const alertKey = `${status.level}:${status.message}:${newestUpdatedAt}`;
+    if (alertKey === lastAirQualityAlertRef.current) return;
+    lastAirQualityAlertRef.current = alertKey;
+
+    if (status.level === 'warn') {
+      addToast('warning', `Air quality warning: ${status.message}`);
+      return;
+    }
+
+    addToast('error', `Air quality critical: ${status.message}`);
+    if (airQuality.pauseOnCritical && model.state?.status === 'processing') {
+      void pausePrint();
+      const names = status.exceeded.map((item) => AIR_QUALITY_SENSOR_LABELS[item.sensor]).join(', ');
+      dispatchIntegrationEvent('PAUSED', `air-quality-${names.toLowerCase()}`);
+    }
+  }, [activePrinterId, addToast, airQuality, dispatchIntegrationEvent, model.state?.status, pausePrint]);
 
   // Watch for layer changes during active prints
   useEffect(() => {

@@ -23,6 +23,7 @@ export const PANEL_IDS = [
   'custom-buttons',
   'system-info',
   'filament-sensors',
+  'air-quality',
   'object-cancel',
   'mesh-preview',
 ] as const;
@@ -50,6 +51,7 @@ const DEFAULT_ORDER: PanelId[] = [
   'atx-power',
   'system-info',
   'filament-sensors',
+  'air-quality',
   'object-cancel',
   'mesh-preview',
 ];
@@ -73,6 +75,7 @@ export const DEFAULT_COLSPANS: Record<PanelId, number> = {
   'input-shaper': 4,
   'atx-power': 4,
   'filament-sensors': 12,
+  'air-quality': 6,
   'object-cancel': 6,
   'mesh-preview': 6,
 };
@@ -96,6 +99,7 @@ export const DEFAULT_ROWSPANS: Record<PanelId, number> = {
   'atx-power': 2,
   'system-info': 3,
   'filament-sensors': 3,
+  'air-quality': 4,
   'object-cancel': 4,
   'mesh-preview': 5,
 };

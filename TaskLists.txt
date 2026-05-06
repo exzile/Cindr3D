@@ -216,9 +216,9 @@
 
 ### 13.7 Air quality / fume sensors  [S]
 #   Cheap MQTT sensors (SCD30 / BME680 / PMS5003) become safety surface.
-#   [ ] Subscribe to MQTT topics for VOC / PM2.5 / CO2
-#   [ ] Per-printer thresholds: warn at level 1, pause at level 2
-#   [ ] Dashboard card: live air-quality readout per printer
+#   [x] Subscribe to MQTT topics for VOC / PM2.5 / CO2
+#   [x] Per-printer thresholds: warn at level 1, pause at level 2
+#   [x] Dashboard card: live air-quality readout per printer
 
 ### 13.8 Door / enclosure sensor  [S]
 #   [ ] GPIO via Klipper / RRF / direct MQTT reed switch input
