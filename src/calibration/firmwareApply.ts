@@ -37,8 +37,17 @@ export function buildInputShaperCommands(
 }
 
 export function buildZOffsetCommands(flavor: FirmwareFlavor, delta: number): string[] {
-  void flavor;
+  if (flavor === 'klipper') return [`SET_GCODE_OFFSET Z_ADJUST=${delta.toFixed(3)} MOVE=1`];
   return [`M290 S${delta.toFixed(3)}`];
+}
+
+export function buildBedMeshCommands(flavor: FirmwareFlavor): string[] {
+  switch (flavor) {
+    case 'klipper': return ['BED_MESH_CALIBRATE'];
+    case 'marlin': return ['G29'];
+    case 'duet': return ['G29'];
+    case 'reprap': return ['G29'];
+  }
 }
 
 export function buildFlowRateCommands(flavor: FirmwareFlavor, flowPercent: number): string[] {
