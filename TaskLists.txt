@@ -175,6 +175,18 @@
 ## ── Phase 13: Integrations ────────────────────────────────────────────────
 ## Goal: hook into the broader ecosystem — home automation, messaging,
 ## webhooks, external slicers, power-loss recovery.
+## Status: DONE 2026-05-06
+## Completed feature summary:
+#   - Webhook, Discord, Slack, Telegram, MQTT, and Home Assistant integration
+#     surfaces for print events, telemetry, and remote pause/resume/cancel.
+#   - External slicer/profile exchange with Cura, Orca, Bambu, Prusa-style
+#     config import plus Cindr3D 3MF plate export/import round-tripping.
+#   - Power-loss recovery snapshots with reconnect detection and resumable
+#     bed/tool heat, Z restore, and file-position resume commands.
+#   - Enclosure controls for chamber temperature, ramping, preheat/cooldown,
+#     door-open safety, air-quality thresholds, and MQTT sensor ingestion.
+#   - Stepper driver tuning dashboard with current, microsteps, mode switching,
+#     quick wiggle tests, and per-printer presets.
 
 ### 13.1 Webhook + chat-app notifications  [S]
 #   Settings panel: per-printer or global notification rules
