@@ -201,10 +201,10 @@
 #   [x] Round-trip 3MF preserving multi-part build-plate layout
 
 ### 13.5 Print resume from power loss  [M]
-#   [ ] Persist last-known print state (file, position, Z, bed/hotend
+#   [x] Persist last-known print state (file, position, Z, bed/hotend
 #       temps) on a configurable cadence
-#   [ ] On printer reconnect, detect if a print was interrupted
-#   [ ] Offer resume from saved Z; warn about temperature ramp-up
+#   [x] On printer reconnect, detect if a print was interrupted
+#   [x] Offer resume from saved Z; warn about temperature ramp-up
 
 ### 13.6 Chamber temperature monitor + control  [M]
 #   For ABS / ASA / PC / nylon prints in an enclosure.

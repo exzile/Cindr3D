@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type { CSSProperties } from 'react';
 import { X } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
+import { usePrintRecoveryStore, type PrintRecoverySnapshot } from '../../store/printRecoveryStore';
 import { fetchHomeAssistantCommands, publishHomeAssistantSnapshot } from '../../services/integrations/homeAssistantBridge';
 import { sendIntegrationEvent, type IntegrationPrinterSnapshot } from '../../services/integrations/notificationSender';
 import { mqttPublisher } from '../../services/integrations/mqttPublisher';
@@ -86,8 +87,14 @@ export default function DuetNotifications() {
   const pausePrint = usePrinterStore((s) => s.pausePrint);
   const resumePrint = usePrinterStore((s) => s.resumePrint);
   const cancelPrint = usePrinterStore((s) => s.cancelPrint);
+  const sendGCode = usePrinterStore((s) => s.sendGCode);
   const mqtt = useIntegrationStore((s) => s.mqtt);
+  const saveRecoverySnapshot = usePrintRecoveryStore((s) => s.saveSnapshot);
+  const clearRecoverySnapshot = usePrintRecoveryStore((s) => s.clearSnapshot);
+  const dismissRecoverySnapshot = usePrintRecoveryStore((s) => s.dismissSnapshot);
+  const getRecoverableSnapshot = usePrintRecoveryStore((s) => s.getRecoverableSnapshot);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
 
   // Track previous values for change detection
   const prevBeepRef = useRef<{ duration: number; frequency: number } | undefined>(undefined);
@@ -97,6 +104,7 @@ export default function DuetNotifications() {
   const prevHeaterStatesRef = useRef<string[]>([]);
   const prevLayerRef = useRef<number | undefined>(undefined);
   const lastMqttTelemetryRef = useRef(0);
+  const lastRecoverySnapshotRef = useRef(0);
 
   const addToast = useCallback((type: ToastType, message: string) => {
     const id = nextToastId++;
@@ -136,6 +144,47 @@ export default function DuetNotifications() {
       }
     });
   }, [addToast, buildSnapshot]);
+
+  const recoverySnapshot = getRecoverableSnapshot(activePrinterId, model.state?.status ?? 'disconnected');
+
+  const buildRecoverySnapshot = useCallback((): PrintRecoverySnapshot | null => {
+    const activePrinter = printers.find((printer) => printer.id === activePrinterId);
+    const fileName = model.job?.file?.fileName ?? model.job?.lastFileName;
+    const filePosition = model.job?.filePosition ?? 0;
+    if (!activePrinterId || !fileName || filePosition <= 0) return null;
+    const bedHeater = model.heat?.bedHeaters?.[0];
+    const toolHeater = model.tools?.[model.state?.currentTool ?? 0]?.heaters?.[0];
+    const zAxis = model.move?.axes?.find((axis) => axis.letter.toUpperCase() === 'Z');
+    return {
+      printerId: activePrinterId,
+      printerName: activePrinter?.name ?? model.network?.name ?? 'Printer',
+      fileName,
+      filePosition,
+      z: typeof zAxis?.userPosition === 'number' ? zAxis.userPosition : null,
+      layer: typeof model.job?.layer === 'number' ? model.job.layer : null,
+      bedTemp: typeof bedHeater === 'number' ? model.heat?.heaters?.[bedHeater]?.active ?? null : null,
+      toolTemp: typeof toolHeater === 'number' ? model.heat?.heaters?.[toolHeater]?.active ?? null : null,
+      status: model.state?.status ?? 'disconnected',
+      updatedAt: Date.now(),
+    };
+  }, [activePrinterId, model.heat?.bedHeaters, model.heat?.heaters, model.job, model.move?.axes, model.network?.name, model.state?.currentTool, model.state?.status, model.tools, printers]);
+
+  const handleResumeRecovery = useCallback(async () => {
+    if (!recoverySnapshot) return;
+    setRecoveryBusy(true);
+    try {
+      if (recoverySnapshot.bedTemp && recoverySnapshot.bedTemp > 0) await sendGCode(`M140 S${recoverySnapshot.bedTemp}`);
+      if (recoverySnapshot.toolTemp && recoverySnapshot.toolTemp > 0) await sendGCode(`M104 S${recoverySnapshot.toolTemp}`);
+      if (recoverySnapshot.z !== null) await sendGCode(`G92 Z${recoverySnapshot.z.toFixed(3)}`);
+      await sendGCode(`M24 S${Math.max(0, Math.floor(recoverySnapshot.filePosition))}`);
+      clearRecoverySnapshot(recoverySnapshot.printerId);
+      addToast('success', 'Recovery resume command sent');
+    } catch (error) {
+      addToast('error', `Recovery resume failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+    } finally {
+      setRecoveryBusy(false);
+    }
+  }, [addToast, clearRecoverySnapshot, recoverySnapshot, sendGCode]);
 
   useEffect(() => {
     mqttPublisher.configure(mqtt);
@@ -191,6 +240,7 @@ export default function DuetNotifications() {
       if (prev === 'processing' && status === 'idle') {
         addToast('success', 'Print completed successfully');
         dispatchIntegrationEvent('DONE');
+        if (activePrinterId) clearRecoverySnapshot(activePrinterId);
       }
       // Print paused
       if (status === 'paused' && prev !== 'paused') {
@@ -204,7 +254,7 @@ export default function DuetNotifications() {
     }
 
     prevStatusRef.current = status;
-  }, [model.state?.status, addToast, dispatchIntegrationEvent]);
+  }, [activePrinterId, addToast, clearRecoverySnapshot, dispatchIntegrationEvent, model.state?.status]);
 
   // Watch for layer changes during active prints
   useEffect(() => {
@@ -252,6 +302,16 @@ export default function DuetNotifications() {
   ]);
 
   useEffect(() => {
+    if (model.state?.status !== 'processing') return;
+    const now = Date.now();
+    if (now - lastRecoverySnapshotRef.current < 5000) return;
+    const snapshot = buildRecoverySnapshot();
+    if (!snapshot) return;
+    lastRecoverySnapshotRef.current = now;
+    saveRecoverySnapshot(snapshot);
+  }, [buildRecoverySnapshot, model.job?.filePosition, model.job?.layer, model.state?.status, saveRecoverySnapshot]);
+
+  useEffect(() => {
     if (!connected || !activePrinterId) return;
     const interval = window.setInterval(() => {
       void fetchHomeAssistantCommands(activePrinterId).then((commands) => {
@@ -283,10 +343,33 @@ export default function DuetNotifications() {
     prevHeaterStatesRef.current = currentStates;
   }, [model.heat?.heaters, addToast, dispatchIntegrationEvent]);
 
-  if (toasts.length === 0) return null;
+  if (toasts.length === 0 && !recoverySnapshot) return null;
 
   return (
     <div className="duet-toast-stack">
+      {recoverySnapshot && (
+        <div className="duet-toast duet-toast--recovery">
+          <span className="duet-toast-message">
+            Interrupted print detected: {recoverySnapshot.fileName}
+            {recoverySnapshot.z !== null ? ` at Z${recoverySnapshot.z.toFixed(2)}` : ''}. Heat bed/tool before confirming resume.
+          </span>
+          <button
+            onClick={() => void handleResumeRecovery()}
+            className="duet-toast-action"
+            disabled={recoveryBusy}
+            title="Resume from saved file position"
+          >
+            {recoveryBusy ? 'Resuming...' : 'Resume'}
+          </button>
+          <button
+            onClick={() => dismissRecoverySnapshot(recoverySnapshot.printerId)}
+            className="duet-toast-close"
+            title="Dismiss recovery"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
       {toasts.map((toast) => {
         const colors = TOAST_COLORS[toast.type];
         const toastVars = {
