@@ -124,6 +124,17 @@ function cameraProxyPlugin(): Plugin {
           res.statusCode = 400; res.end('unsupported protocol'); return;
         }
 
+        const proxyError = (label: string, err: Error) => {
+          console.error(`[camera-proxy] ${label} GET ${targetUrl.origin}${targetUrl.pathname}: ${err.message}`);
+          if (!res.headersSent) {
+            res.statusCode = 502;
+            res.setHeader('content-type', 'text/plain');
+            res.end(`Upstream error: ${err.message}`);
+          } else {
+            res.end();
+          }
+        };
+
         const requestUpstream = (authorization?: string) => {
           const mod = targetUrl.protocol === 'https:' ? https : http;
           const headers: http.OutgoingHttpHeaders = {
@@ -133,7 +144,7 @@ function cameraProxyPlugin(): Plugin {
           };
           if (authorization) headers.Authorization = authorization;
           const upstreamReq = mod.request(targetUrl, { method: 'GET', headers });
-          upstreamReq.setTimeout(5000, () => {
+          upstreamReq.setTimeout(12000, () => {
             upstreamReq.destroy(new Error('Camera connection timed out'));
           });
           return upstreamReq;
@@ -147,66 +158,129 @@ function cameraProxyPlugin(): Plugin {
           upstream.pipe(res);
         };
 
-        const firstReq = requestUpstream();
-        firstReq.on('response', (firstRes) => {
-          firstReq.setTimeout(0);
-          const challenge = firstRes.headers['www-authenticate'];
-          const challengeText = Array.isArray(challenge) ? challenge[0] : challenge;
-          if (firstRes.statusCode !== 401 || !challengeText || !username) {
-            pipeResponse(firstRes);
-            return;
-          }
-
-          firstRes.resume();
+        const authFromChallenge = (challengeText: string): string => {
           const lowerChallenge = challengeText.toLowerCase();
-          const authorization = lowerChallenge.startsWith('digest')
+          return lowerChallenge.startsWith('digest')
             ? digestAuthHeader(challengeText, targetUrl, 'GET', username, password)
             : lowerChallenge.startsWith('basic')
               ? `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
               : '';
-          if (!authorization) {
-            res.statusCode = 401;
-            res.end('unsupported camera authentication');
-            return;
-          }
+        };
 
-          const secondReq = requestUpstream(authorization);
-          secondReq.on('response', (secondRes) => {
-            secondReq.setTimeout(0);
-            pipeResponse(secondRes);
-          });
-          secondReq.on('error', (err) => {
-            console.error(`[camera-proxy] upstream auth error GET ${targetUrl.origin}${targetUrl.pathname}: ${err.message}`);
-            if (!res.headersSent) {
-              res.statusCode = 502;
-              res.setHeader('content-type', 'text/plain');
-              res.end(`Upstream error: ${err.message}`);
-            } else {
-              res.end();
+        const startProxyRequest = (authorization?: string, canRetry = true) => {
+          const upstreamReq = requestUpstream(authorization);
+          upstreamReq.on('response', (upstreamRes) => {
+            upstreamReq.setTimeout(0);
+            const challenge = upstreamRes.headers['www-authenticate'];
+            const challengeText = Array.isArray(challenge) ? challenge[0] : challenge;
+            if (canRetry && upstreamRes.statusCode === 401 && challengeText && username) {
+              const nextAuthorization = authFromChallenge(challengeText);
+              if (nextAuthorization && nextAuthorization !== authorization) {
+                upstreamRes.resume();
+                startProxyRequest(nextAuthorization, false);
+                return;
+              }
             }
+            pipeResponse(upstreamRes);
           });
-          secondReq.end();
-        });
-        firstReq.on('error', (err) => {
-          console.error(`[camera-proxy] upstream error GET ${targetUrl.origin}${targetUrl.pathname}: ${err.message}`);
-          if (!res.headersSent) {
-            res.statusCode = 502;
-            res.setHeader('content-type', 'text/plain');
-            res.end(`Upstream error: ${err.message}`);
-          } else {
-            res.end();
-          }
-        });
-        firstReq.end();
+          upstreamReq.on('error', (err) => proxyError(authorization ? 'upstream auth error' : 'upstream error', err));
+          upstreamReq.end();
+        };
+
+        const preemptiveBasic = username
+          ? `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
+          : undefined;
+        startProxyRequest(preemptiveBasic);
       });
     },
   };
 }
 
-// Proxies /github-proxy?url=<encoded URL> → the upstream URL on GitHub,
-// following redirects (github.com → objects.githubusercontent.com).
-// Browsers block those asset-CDN URLs because they don't send CORS headers;
-// this dev-only proxy re-emits the bytes with ACAO:* so firmware updates work.
+// Sends short camera control commands through the dev server so PTZ can use
+// Basic/Digest auth without sharing the long-lived MJPEG stream proxy path.
+function cameraCommandProxyPlugin(): Plugin {
+  return {
+    name: 'camera-command-proxy',
+    configureServer(server) {
+      server.middlewares.use('/camera-command-proxy', (req, res) => {
+        const parsedReq = new URL(req.url ?? '/', 'http://localhost');
+        const targetHeader = req.headers['x-camera-url'];
+        const usernameHeader = req.headers['x-camera-username'];
+        const passwordHeader = req.headers['x-camera-password'];
+        const target = typeof targetHeader === 'string' ? targetHeader : parsedReq.searchParams.get('url');
+        const username = typeof usernameHeader === 'string' ? usernameHeader : parsedReq.searchParams.get('username') ?? '';
+        const password = typeof passwordHeader === 'string' ? passwordHeader : parsedReq.searchParams.get('password') ?? '';
+        if (!target) { res.statusCode = 400; res.end('missing ?url'); return; }
+
+        let targetUrl: URL;
+        try { targetUrl = new URL(target); }
+        catch { res.statusCode = 400; res.end('bad url'); return; }
+        if (targetUrl.protocol !== 'http:' && targetUrl.protocol !== 'https:') {
+          res.statusCode = 400; res.end('unsupported protocol'); return;
+        }
+
+        const sendError = (label: string, err: Error) => {
+          console.error(`[camera-command-proxy] ${label} GET ${targetUrl.origin}${targetUrl.pathname}: ${err.message}`);
+          if (!res.headersSent) {
+            res.statusCode = 502;
+            res.setHeader('access-control-allow-origin', '*');
+            res.setHeader('content-type', 'text/plain');
+            res.end(`Upstream error: ${err.message}`);
+          }
+        };
+
+        const authFromChallenge = (challengeText: string): string => {
+          const lowerChallenge = challengeText.toLowerCase();
+          return lowerChallenge.startsWith('digest')
+            ? digestAuthHeader(challengeText, targetUrl, 'GET', username, password)
+            : lowerChallenge.startsWith('basic')
+              ? `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
+              : '';
+        };
+
+        const requestUpstream = (authorization?: string, canRetry = true) => {
+          const mod = targetUrl.protocol === 'https:' ? https : http;
+          const headers: http.OutgoingHttpHeaders = {
+            Accept: '*/*',
+            'User-Agent': 'Cindr3D-camera-command-proxy',
+            host: targetUrl.host,
+          };
+          if (authorization) headers.Authorization = authorization;
+          const upstreamReq = mod.request(targetUrl, { method: 'GET', headers }, (upstreamRes) => {
+            const challenge = upstreamRes.headers['www-authenticate'];
+            const challengeText = Array.isArray(challenge) ? challenge[0] : challenge;
+            if (canRetry && upstreamRes.statusCode === 401 && challengeText && username) {
+              const nextAuthorization = authFromChallenge(challengeText);
+              if (nextAuthorization && nextAuthorization !== authorization) {
+                upstreamRes.resume();
+                requestUpstream(nextAuthorization, false);
+                return;
+              }
+            }
+
+            upstreamRes.resume();
+            if (!res.headersSent) {
+              res.statusCode = upstreamRes.statusCode && upstreamRes.statusCode >= 400 ? upstreamRes.statusCode : 204;
+              res.setHeader('access-control-allow-origin', '*');
+              res.end();
+            }
+          });
+          upstreamReq.setTimeout(1200, () => {
+            upstreamReq.destroy(new Error('Camera command timed out'));
+          });
+          upstreamReq.on('error', (err) => sendError(authorization ? 'upstream auth error' : 'upstream error', err));
+          upstreamReq.end();
+        };
+
+        const preemptiveBasic = username
+          ? `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
+          : undefined;
+        requestUpstream(preemptiveBasic);
+      });
+    },
+  };
+}
+
 type HlsBridgeSession = {
   dir: string;
   indexPath: string;
@@ -590,6 +664,8 @@ function rtspRecordingPlugin(): Plugin {
   };
 }
 
+// Proxies /github-proxy?url=<encoded URL> to GitHub-hosted assets and emits
+// permissive CORS headers for firmware downloads in local development.
 function githubProxyPlugin(): Plugin {
   const ALLOW_HOSTS = new Set([
     'api.github.com',
@@ -2200,7 +2276,7 @@ function silenceThreeClockPlugin(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [silenceThreeClockPlugin(), react(), wasm(), duetProxyPlugin(), cameraProxyPlugin(), rtspHlsBridgePlugin(), rtspRecordingPlugin(), githubProxyPlugin(), cindr3dMcpPlugin(), noCacheDevAssetsPlugin()],
+  plugins: [silenceThreeClockPlugin(), react(), wasm(), duetProxyPlugin(), cameraProxyPlugin(), cameraCommandProxyPlugin(), rtspHlsBridgePlugin(), rtspRecordingPlugin(), githubProxyPlugin(), cindr3dMcpPlugin(), noCacheDevAssetsPlugin()],
   resolve: {
     alias: {
       module: fileURLToPath(new URL('./src/shims/nodeModule.ts', import.meta.url)),

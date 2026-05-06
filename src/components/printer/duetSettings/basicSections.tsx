@@ -906,12 +906,18 @@ export function CameraSection({
 
     const attempts = candidateUrls.flatMap((sourceUrl) => {
       const displayUrl = cameraDisplayUrl(sourceUrl, draftUsername, draftPassword);
-      return [
-        { sourceUrl, testUrl: sourceUrl },
-        { sourceUrl, testUrl: displayUrl },
-        { sourceUrl, testUrl: withCacheBuster(sourceUrl) },
-        { sourceUrl, testUrl: withCacheBuster(displayUrl) },
-      ];
+      const prefersProxy = displayUrl !== sourceUrl;
+      return prefersProxy
+        ? [
+          { sourceUrl, testUrl: displayUrl },
+          { sourceUrl, testUrl: withCacheBuster(displayUrl) },
+          { sourceUrl, testUrl: sourceUrl },
+          { sourceUrl, testUrl: withCacheBuster(sourceUrl) },
+        ]
+        : [
+          { sourceUrl, testUrl: sourceUrl },
+          { sourceUrl, testUrl: withCacheBuster(sourceUrl) },
+        ];
     }).filter((attempt, index, all) => (
       attempt.testUrl && all.findIndex((item) => item.testUrl === attempt.testUrl) === index
     ));

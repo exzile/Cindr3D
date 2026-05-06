@@ -263,6 +263,121 @@
   white-space: nowrap;
 }
 
+.cam-panel__view-tools {
+  width: 100%;
+  max-width: 100%;
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--cam-live) 18%, var(--border-light));
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--cam-live) 7%, transparent), transparent 52%),
+    color-mix(in srgb, var(--bg-panel) 80%, #020617);
+}
+
+.cam-panel__view-tools--compact {
+  padding: clamp(5px, 1.3cqh, 7px);
+}
+
+.cam-panel__view-section {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--cam-live) 16%, var(--border-light));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+}
+
+.cam-panel__view-section-head,
+.cam-panel__view-section .cam-panel__secondary-grid,
+.cam-panel__view-section .cam-panel__view-mode,
+.cam-panel__view-section .cam-panel__view-status,
+.cam-panel__view-section .cam-panel__view-calibration,
+.cam-panel__view-section .cam-panel__toggle,
+.cam-panel__view-section .cam-panel__pose-status,
+.cam-panel__view-section .cam-panel__note {
+  grid-column: 1 / -1;
+}
+
+.cam-panel__view-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.cam-panel__view-section-head small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cam-panel__view-section .cam-panel__secondary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.cam-panel__view-mode,
+.cam-panel__view-actions,
+.cam-panel__view-calibration {
+  display: grid;
+  gap: 7px;
+}
+
+.cam-panel__view-mode {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cam-panel__view-actions {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.cam-panel__view-calibration {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.cam-panel__view-status {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--cam-save) 28%, var(--border-light));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--cam-save) 8%, transparent);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.cam-panel__view-calibration label {
+  display: grid;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.cam-panel__view-section label:not(.cam-panel__toggle) {
+  display: grid;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.cam-panel__view-calibration input[type="range"] {
+  width: 100%;
+  accent-color: var(--cam-live);
+}
+
 .cam-panel__record-chip {
   color: var(--cam-live);
 }
@@ -361,7 +476,8 @@
 
 .cam-panel__viewer {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
   align-items: center;
   justify-content: center;
   min-width: 0;
@@ -372,6 +488,7 @@
   border-radius: 8px;
   background: #050505;
   overflow: hidden;
+  gap: 8px;
 }
 
 .cam-panel--compact .cam-panel__viewer {
@@ -385,6 +502,7 @@
   width: 9999px;
   max-width: 100%;
   max-height: 100%;
+  align-self: stretch;
   aspect-ratio: 16 / 10;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--cam-live) 38%, var(--border-light));
@@ -411,11 +529,6 @@
   aspect-ratio: auto;
   border-radius: 7px;
   box-shadow: none;
-}
-
-.cam-panel--compact .cam-panel__frame img,
-.cam-panel--compact .cam-panel__video {
-  object-fit: cover;
 }
 
 .cam-panel__frame img,
@@ -471,6 +584,20 @@
   inset: 0;
   z-index: 3;
   pointer-events: none;
+}
+
+.cam-panel__media-viewport {
+  position: absolute;
+  left: var(--media-left);
+  top: var(--media-top);
+  width: var(--media-width);
+  height: var(--media-height);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.cam-panel__measurement-layer.is-picking {
+  pointer-events: auto;
 }
 
 .cam-panel__ar-overlay,
@@ -579,19 +706,36 @@
   place-items: center;
   width: 22px;
   height: 22px;
+  padding: 0;
   border: 2px solid color-mix(in srgb, var(--cam-save) 88%, white);
   border-radius: 50%;
   background: color-mix(in srgb, #020617 78%, transparent);
   color: #fff;
+  cursor: grab;
   font-size: 10px;
   font-weight: 900;
   line-height: 1;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.62);
   transform: translate(-50%, -50%);
+  pointer-events: auto;
+  touch-action: none;
 }
 
 .cam-panel__measure-point--corner {
   border-color: color-mix(in srgb, var(--cam-live) 88%, white);
+}
+
+.cam-panel__measure-point--corner:hover,
+.cam-panel__measure-point--corner.is-dragging,
+.cam-panel__measure-point--ruler:hover,
+.cam-panel__measure-point--ruler.is-dragging {
+  background: color-mix(in srgb, var(--cam-live) 28%, #020617);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--cam-live) 18%, transparent);
+}
+
+.cam-panel__measure-point--corner.is-dragging,
+.cam-panel__measure-point--ruler.is-dragging {
+  cursor: grabbing;
 }
 
 .cam-panel__measure-distance {
@@ -609,6 +753,13 @@
   line-height: 1.2;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.62);
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
+}
+
+.cam-panel__frame--measuring .cam-panel__measure-distance {
+  top: 10px;
+  bottom: auto;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .cam-panel__pose-freeze {
@@ -743,7 +894,7 @@
   top: 0;
   z-index: 3;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 5px;
   padding: 4px;
   border: 1px solid var(--border-light);
@@ -2036,6 +2187,11 @@ textarea.cam-panel__input {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .cam-panel__view-actions,
+  .cam-panel__view-calibration {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .cam-panel__meta,
   .cam-panel__clip-list,
   .cam-panel__clip-player,
@@ -2068,7 +2224,10 @@ textarea.cam-panel__input {
   .cam-panel__selection-tools,
   .cam-panel__danger-actions,
   .cam-panel__empty-actions,
-  .cam-panel__recent-strip {
+  .cam-panel__recent-strip,
+  .cam-panel__view-actions,
+  .cam-panel__view-calibration,
+  .cam-panel__view-mode {
     display: flex;
     flex-direction: column;
     align-items: stretch;

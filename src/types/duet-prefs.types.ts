@@ -8,7 +8,7 @@ export type CameraMainStreamProtocol = 'rtsp' | 'http' | 'hls';
 export type CameraRtspTransport = 'tcp' | 'udp';
 export type CameraPathPreset = 'generic' | 'amcrest' | 'reolink' | 'tapo' | 'hikvision' | 'onvif';
 export type CameraStreamRole = 'top' | 'side' | 'nozzle' | 'custom';
-export type CameraDashboardControlSection = 'record' | 'settings' | 'library' | 'timeline' | 'health';
+export type CameraDashboardControlSection = 'record' | 'view' | 'settings' | 'library' | 'timeline' | 'health';
 export type CameraHdBridgeQuality = 'native' | '1080p' | '720p' | '480p';
 export type CameraPtzProvider = 'off' | 'generic-http' | 'amcrest' | 'reolink' | 'tapo' | 'hikvision' | 'onvif';
 
