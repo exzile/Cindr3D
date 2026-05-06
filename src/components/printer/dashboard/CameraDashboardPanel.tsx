@@ -3290,7 +3290,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
             <div className="cam-panel__view-section" aria-label="Camera orientation">
               <div className="cam-panel__view-section-head">
                 <span>Orientation</span>
-                <small>{rotation}deg</small>
               </div>
               <div className="cam-panel__secondary-grid" aria-label="Camera view options">
                 <button className={`cam-panel__button ${showGrid ? 'is-active' : ''}`} type="button" onClick={() => setShowGrid((value) => !value)}>
