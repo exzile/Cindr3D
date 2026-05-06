@@ -52,6 +52,11 @@ function uid() {
   return `stepper-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function cloneAxisTunings(axes: Record<string, StepperAxisTuning>): Record<string, StepperAxisTuning> {
+  if (typeof structuredClone === 'function') return structuredClone(axes);
+  return JSON.parse(JSON.stringify(axes)) as Record<string, StepperAxisTuning>;
+}
+
 export const useStepperTuningStore = create<StepperTuningStore>()(
   persist(
     (set, get) => ({
@@ -87,7 +92,7 @@ export const useStepperTuningStore = create<StepperTuningStore>()(
             ...state.presets,
             [printerId]: [
               ...(state.presets[printerId] ?? []),
-              { id: uid(), name: trimmed, axes: structuredClone(axes) },
+              { id: uid(), name: trimmed, axes: cloneAxisTunings(axes) },
             ],
           },
         }));
@@ -99,7 +104,7 @@ export const useStepperTuningStore = create<StepperTuningStore>()(
         set((state) => ({
           printers: {
             ...state.printers,
-            [printerId]: structuredClone(preset.axes),
+            [printerId]: cloneAxisTunings(preset.axes),
           },
         }));
       },

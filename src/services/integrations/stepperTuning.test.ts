@@ -28,4 +28,20 @@ describe('stepper tuning helpers', () => {
 
     expect(buildStepperWiggleCommands('X')).toEqual(['G91', 'G1 X1 F1200', 'G1 X-1 F1200', 'G90']);
   });
+
+  it('uses Klipper extruder section names for E axes', () => {
+    expect(buildStepperTuningCommands('klipper', 'E', {
+      currentMa: 700,
+      microsteps: 32,
+      mode: 'stealthchop',
+      driverIndex: 0,
+    })).toContain('SET_TMC_CURRENT STEPPER=extruder CURRENT=0.70');
+
+    expect(buildStepperTuningCommands('klipper', 'E', {
+      currentMa: 720,
+      microsteps: 32,
+      mode: 'stealthchop',
+      driverIndex: 1,
+    })).toContain('SET_TMC_CURRENT STEPPER=extruder1 CURRENT=0.72');
+  });
 });

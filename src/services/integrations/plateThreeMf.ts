@@ -158,6 +158,29 @@ function relsXml(): string {
 </Relationships>`;
 }
 
+function buildItemTransform(object: PlateSnapshotObject): string {
+  const position = object.position ?? { x: 0, y: 0, z: 0 };
+  const rotation = object.rotation ?? { x: 0, y: 0, z: 0 };
+  const scale = object.scale ?? { x: 1, y: 1, z: 1 };
+  const matrix = new THREE.Matrix4().compose(
+    new THREE.Vector3(position.x, position.y, position.z),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(
+      THREE.MathUtils.degToRad(rotation.x),
+      THREE.MathUtils.degToRad(rotation.y),
+      THREE.MathUtils.degToRad(rotation.z),
+    )),
+    new THREE.Vector3(
+      (object.mirrorX ? -1 : 1) * scale.x,
+      (object.mirrorY ? -1 : 1) * scale.y,
+      (object.mirrorZ ? -1 : 1) * scale.z,
+    ),
+  );
+  const e = matrix.elements;
+  return [e[0], e[1], e[2], e[4], e[5], e[6], e[8], e[9], e[10], e[12], e[13], e[14]]
+    .map((value) => Number.isInteger(value) ? value.toString() : Number(value.toFixed(6)).toString())
+    .join(' ');
+}
+
 function buildModelXml(snapshot: PlateSnapshot): string {
   const objects = snapshot.plate.map((object, index) => ({ object, id: index + 1 }));
   let xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -201,10 +224,7 @@ function buildModelXml(snapshot: PlateSnapshot): string {
   <build>
 `;
   for (const { object, id } of objects) {
-    const tx = object.position?.x ?? 0;
-    const ty = object.position?.y ?? 0;
-    const tz = object.position?.z ?? 0;
-    xml += `    <item objectid="${id}" transform="1 0 0 0 1 0 0 0 1 ${tx} ${ty} ${tz}" />
+    xml += `    <item objectid="${id}" transform="${buildItemTransform(object)}" />
 `;
   }
   xml += `  </build>

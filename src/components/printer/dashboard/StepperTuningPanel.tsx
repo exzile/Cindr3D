@@ -63,6 +63,7 @@ export default function StepperTuningPanel() {
       <div className="st-grid">
         {axes.map(({ letter, driverIndex }) => {
           const tuning = getAxisTuning(activePrinterId, letter, driverIndex);
+          const isKlipper = config.boardType === 'klipper';
           return (
             <div key={letter} className="st-axis">
               <div className="st-axis__head">
@@ -82,6 +83,8 @@ export default function StepperTuningPanel() {
                 <select
                   value={tuning.microsteps}
                   onChange={(event) => updateAxisTuning(activePrinterId, letter, { microsteps: Number(event.target.value) })}
+                  disabled={isKlipper}
+                  title={isKlipper ? 'Klipper microsteps are configured in printer.cfg' : undefined}
                 >
                   {MICROSTEP_OPTIONS.map((value) => <option key={value} value={value}>{value}</option>)}
                 </select>

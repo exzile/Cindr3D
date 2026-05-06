@@ -8,7 +8,9 @@ export function buildStepperTuningCommands(
 ): string[] {
   const letter = axis.toUpperCase();
   if (boardType === 'klipper') {
-    const stepper = `stepper_${letter.toLowerCase()}`;
+    const stepper = letter === 'E'
+      ? `extruder${tuning.driverIndex > 0 ? tuning.driverIndex : ''}`
+      : `stepper_${letter.toLowerCase()}`;
     return [
       `SET_TMC_CURRENT STEPPER=${stepper} CURRENT=${(tuning.currentMa / 1000).toFixed(2)}`,
       `SET_TMC_FIELD STEPPER=${stepper} FIELD=en_spreadCycle VALUE=${tuning.mode === 'spreadcycle' ? 1 : 0}`,

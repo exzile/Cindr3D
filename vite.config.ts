@@ -2276,7 +2276,7 @@ type HomeAssistantBridgeCommand = {
   createdAt: string;
 };
 
-const HOME_ASSISTANT_BRIDGE_TOKEN = process.env.CINDR3D_HOME_ASSISTANT_TOKEN || crypto.randomBytes(16).toString('hex');
+const HOME_ASSISTANT_BRIDGE_TOKEN = process.env.CINDR3D_HOME_ASSISTANT_TOKEN?.trim() ?? '';
 
 function homeAssistantSlug(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '') || 'printer';
@@ -2298,7 +2298,7 @@ function homeAssistantDiscoveryPayload(origin: string, snapshots: HomeAssistantB
       const id = encodeURIComponent(stableId);
       const slug = homeAssistantSlug(stableId);
       const templateId = homeAssistantTemplateId(stableId);
-      return [
+      const sensors = [
         {
           platform: 'rest',
           name: `${snapshot.printerName} Status`,
@@ -2314,26 +2314,33 @@ function homeAssistantDiscoveryPayload(origin: string, snapshots: HomeAssistantB
           resource: `${origin}/home-assistant-bridge/state`,
           value_template: `{{ value_json.printers | selectattr('printerId', 'equalto', '${templateId}') | map(attribute='progress') | first }}`,
         },
+      ];
+      if (!HOME_ASSISTANT_BRIDGE_TOKEN) return sensors;
+      return [
+        ...sensors,
         {
           platform: 'rest_command',
           name: `${snapshot.printerName} Pause`,
           unique_id: `cindr3d_${slug}_pause`,
-          url: `${origin}/home-assistant-bridge/printers/${id}/actions/pause?token=${encodeURIComponent(HOME_ASSISTANT_BRIDGE_TOKEN)}`,
+          url: `${origin}/home-assistant-bridge/printers/${id}/actions/pause`,
           method: 'post',
+          headers: { 'x-cindr3d-bridge-token': HOME_ASSISTANT_BRIDGE_TOKEN },
         },
         {
           platform: 'rest_command',
           name: `${snapshot.printerName} Resume`,
           unique_id: `cindr3d_${slug}_resume`,
-          url: `${origin}/home-assistant-bridge/printers/${id}/actions/resume?token=${encodeURIComponent(HOME_ASSISTANT_BRIDGE_TOKEN)}`,
+          url: `${origin}/home-assistant-bridge/printers/${id}/actions/resume`,
           method: 'post',
+          headers: { 'x-cindr3d-bridge-token': HOME_ASSISTANT_BRIDGE_TOKEN },
         },
         {
           platform: 'rest_command',
           name: `${snapshot.printerName} Cancel`,
           unique_id: `cindr3d_${slug}_cancel`,
-          url: `${origin}/home-assistant-bridge/printers/${id}/actions/cancel?token=${encodeURIComponent(HOME_ASSISTANT_BRIDGE_TOKEN)}`,
+          url: `${origin}/home-assistant-bridge/printers/${id}/actions/cancel`,
           method: 'post',
+          headers: { 'x-cindr3d-bridge-token': HOME_ASSISTANT_BRIDGE_TOKEN },
         },
       ];
     }),
@@ -2410,7 +2417,11 @@ function homeAssistantBridgePlugin(): Plugin {
 
       const actionMatch = parsedReq.pathname.match(/^\/printers\/([^/]+)\/actions\/(pause|resume|cancel)$/);
       if (actionMatch && req.method === 'POST') {
-        const token = parsedReq.searchParams.get('token') ?? req.headers['x-cindr3d-bridge-token'];
+        if (!HOME_ASSISTANT_BRIDGE_TOKEN) {
+          sendJson(res, 503, { error: 'Set CINDR3D_HOME_ASSISTANT_TOKEN to enable Home Assistant control actions.' });
+          return;
+        }
+        const token = req.headers['x-cindr3d-bridge-token'];
         if (token !== HOME_ASSISTANT_BRIDGE_TOKEN) {
           sendJson(res, 401, { error: 'Missing or invalid Home Assistant bridge token.' });
           return;

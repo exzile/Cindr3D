@@ -73,7 +73,12 @@ export default function TemperaturePanel() {
     fallback: number,
     onValue: (value: number) => void,
   ) => {
-    const value = Number(editingTemps[key] ?? fallback);
+    const raw = editingTemps[key];
+    if (raw !== undefined && raw.trim() === '') {
+      setEditingTemps((prev) => { const next = { ...prev }; delete next[key]; return next; });
+      return;
+    }
+    const value = Number(raw ?? fallback);
     if (Number.isFinite(value)) onValue(value);
     setEditingTemps((prev) => { const next = { ...prev }; delete next[key]; return next; });
   }, [editingTemps]);

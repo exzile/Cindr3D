@@ -89,6 +89,7 @@ export default function DuetNotifications() {
   const model = usePrinterStore((s) => s.model);
   const connected = usePrinterStore((s) => s.connected);
   const activePrinterId = usePrinterStore((s) => s.activePrinterId);
+  const boardType = usePrinterStore((s) => s.config.boardType ?? 'duet');
   const printers = usePrinterStore((s) => s.printers);
   const pausePrint = usePrinterStore((s) => s.pausePrint);
   const resumePrint = usePrinterStore((s) => s.resumePrint);
@@ -184,6 +185,10 @@ export default function DuetNotifications() {
 
   const handleResumeRecovery = useCallback(async () => {
     if (!recoverySnapshot) return;
+    if (boardType !== 'duet') {
+      addToast('error', 'Recovery resume by file position is only supported for Duet/RRF printers.');
+      return;
+    }
     setRecoveryBusy(true);
     try {
       if (recoverySnapshot.bedTemp && recoverySnapshot.bedTemp > 0) await sendGCode(`M190 S${recoverySnapshot.bedTemp}`);
@@ -197,7 +202,7 @@ export default function DuetNotifications() {
     } finally {
       setRecoveryBusy(false);
     }
-  }, [addToast, clearRecoverySnapshot, recoverySnapshot, sendGCode]);
+  }, [addToast, boardType, clearRecoverySnapshot, recoverySnapshot, sendGCode]);
 
   useEffect(() => {
     mqttPublisher.configure(mqtt);

@@ -39,6 +39,8 @@ describe('plate 3MF round-trip', () => {
     expect(Array.from(bytes.slice(0, 4))).toEqual([0x50, 0x4b, 0x03, 0x04]);
     const entries = unzipSync(bytes);
     expect(Object.keys(entries)).toContain('Metadata/cindr3d-plate.json');
+    const modelXml = new TextDecoder().decode(entries['3D/3dmodel.model']);
+    expect(modelXml).toContain('transform="0.965926 0.258819 0 -0.258819 0.965926 0 0 0 1 25 2 0"');
     const restored = readPlateSnapshotFromThreeMf(bytes);
 
     expect(restored?.plate).toHaveLength(2);
