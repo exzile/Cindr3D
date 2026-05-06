@@ -17,6 +17,7 @@ import {
   Printer,
   Rocket,
   Shapes,
+  Sliders,
   Sparkles,
   SwitchCamera,
   Timer,
@@ -278,6 +279,21 @@ const v2Highlights = [
     detail: 'Bed Map, Exclude Object, Input Shaper, Pressure Advance, Spools, Timelapse, Power, and Updates all routed through universal wrappers that delegate to Duet/RRF, Klipper/Moonraker, Marlin/USB, and others.',
   },
   {
+    icon: Wifi,
+    label: 'Workshop integrations',
+    detail: 'Webhook, Discord, Slack, Telegram, MQTT, and Home Assistant bridges publish print events, telemetry, progress, temperatures, and remote pause/resume/cancel actions from the local app.',
+  },
+  {
+    icon: FlaskConical,
+    label: 'Enclosure and sensor safety',
+    detail: 'Chamber temperature control, ramp curves, print-start preheat, completion cooldown, door-open cooldown, VOC/PM2.5/CO2 MQTT thresholds, and enclosure door pause/start-lock policies.',
+  },
+  {
+    icon: Sliders,
+    label: 'Stepper driver tuning',
+    detail: 'Per-axis current, microsteps, StealthChop/SpreadCycle mode, firmware command wrappers, quick wiggle tests, and per-printer presets live directly on the dashboard.',
+  },
+  {
     icon: ListChecks,
     label: 'Mid-print object cancellation',
     detail: 'Surfaced in three places: a dedicated tab, the dashboard list, and a 3D preview viewport with right-click menus. Supports M486 (Duet >= 3.5, Marlin >= 2.0.9) and EXCLUDE_OBJECT (Klipper). Slicer emits labels automatically.',
@@ -345,17 +361,27 @@ const milestones = [
   {
     phase: 'Phase 12',
     icon: FlaskConical,
-    title: 'Scheduling and integrations',
+    title: 'Scheduling',
     items: [
       'Print scheduling calendar with drag-to-schedule and quiet-hours awareness',
-      'Webhook, Discord, Slack, Telegram, and MQTT notifications',
-      'HomeAssistant entity bridge and profile import from Cura / OrcaSlicer / Bambu Studio',
-      'Chamber temperature monitoring and control for ABS / ASA / PC enclosures',
+      'Bed-clearing auto-queue with printer-ready checks',
+      'Pre-flight checklist before queued jobs start',
     ],
   },
   {
-    phase: 'Phases 13-14',
+    phase: 'Phase 13',
     icon: Code2,
+    title: 'Integrations and enclosure operations',
+    items: [
+      'Webhook, Discord, Slack, Telegram, MQTT, and Home Assistant event bridges',
+      'Profile import from Cura / OrcaSlicer / Bambu Studio and 3MF plate round-trip',
+      'Power-loss recovery with resumable file-position restore',
+      'Chamber, air-quality, door/enclosure, and stepper-driver dashboard controls',
+    ],
+  },
+  {
+    phase: 'Phase 14',
+    icon: Sparkles,
     title: 'Polish and platform',
     items: [
       'PWA mode — installable, offline-capable, custom splash screen',

@@ -48,6 +48,30 @@
   opacity: 1;
 }
 
+.duet-toast--recovery {
+  --duet-toast-bg: rgba(245,158,11,0.16);
+  --duet-toast-border: rgba(245,158,11,0.45);
+  --duet-toast-text: var(--warning);
+  max-width: 420px;
+}
+
+.duet-toast-action {
+  border: 1px solid rgba(245,158,11,0.5);
+  border-radius: 6px;
+  background: rgba(245,158,11,0.12);
+  color: var(--duet-toast-text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 8px;
+  flex-shrink: 0;
+}
+
+.duet-toast-action:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 @keyframes duetToastSlideIn {
   from {
     opacity: 0;

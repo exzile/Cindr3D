@@ -128,6 +128,7 @@ export interface SlicerStore {
   redoPlate: () => void;
   pushPlateHistory: () => void;
   exportPlateJson: () => string;
+  exportPlateThreeMf: () => Promise<Blob>;
   importPlateJson: (json: string) => void;
   autoArrange: () => void;
   setActiveBedMesh: (mesh: ArrangeBedMesh | null) => void;

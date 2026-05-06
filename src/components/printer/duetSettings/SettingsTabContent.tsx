@@ -244,7 +244,7 @@ export function SettingsTabContent(props: {
     case 'behaviour':
       return <BehaviourSection prefs={prefs} patchPrefs={patchPrefs} />;
     case 'notifications':
-      return <NotificationsSection prefs={prefs} patchPrefs={patchPrefs} />;
+      return <NotificationsSection activePrinterId={activePrinterId} prefs={prefs} patchPrefs={patchPrefs} />;
     case 'machine':
       return <MachineSection axes={axes} board={board} boardType={boardType} connected={connected} prefs={prefs} patchPrefs={patchPrefs} />;
     case 'filaments':

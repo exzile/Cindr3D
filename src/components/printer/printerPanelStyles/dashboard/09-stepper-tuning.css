@@ -1,0 +1,156 @@
+.st-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.st-empty {
+  padding: 14px;
+  border: 1px dashed color-mix(in srgb, #f59e0b 24%, var(--border-light));
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: center;
+}
+
+.st-toolbar,
+.st-presets,
+.st-preset-row,
+.st-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.st-toolbar {
+  justify-content: space-between;
+}
+
+.st-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.st-presets input,
+.st-axis input,
+.st-axis select {
+  min-width: 0;
+  height: 27px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, #f59e0b 22%, var(--border-light));
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 11px;
+}
+
+.st-presets input {
+  width: 110px;
+}
+
+.st-presets button,
+.st-preset button,
+.st-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 27px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, #f59e0b 32%, var(--border-light));
+  border-radius: 6px;
+  background: color-mix(in srgb, #f59e0b 10%, var(--bg-elevated));
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.st-actions button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.st-preset {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, #f59e0b 24%, var(--border-light));
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.st-preset button {
+  border: 0;
+  border-radius: 0;
+}
+
+.st-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.st-axis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, #f59e0b 20%, var(--border-light));
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #f59e0b 7%, transparent), transparent 62%),
+    var(--bg-panel);
+}
+
+.st-axis__head,
+.st-actions {
+  grid-column: 1 / -1;
+}
+
+.st-axis__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.st-axis__head strong {
+  color: #fbbf24;
+  font-size: 15px;
+}
+
+.st-axis__head span,
+.st-axis label span {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.st-axis label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.st-axis input,
+.st-axis select {
+  width: 100%;
+}
+
+@media (max-width: 860px) {
+  .st-grid {
+    grid-template-columns: 1fr;
+  }
+}

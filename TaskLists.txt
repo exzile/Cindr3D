@@ -175,67 +175,18 @@
 ## ── Phase 13: Integrations ────────────────────────────────────────────────
 ## Goal: hook into the broader ecosystem — home automation, messaging,
 ## webhooks, external slicers, power-loss recovery.
-
-### 13.1 Webhook + chat-app notifications  [S]
-#   Settings panel: per-printer or global notification rules
-#   [ ] Generic webhook (POST JSON) for PRINT_START, LAYER_CHANGE, PAUSED,
-#       FAILED, DONE
-#   [ ] First-class Discord, Slack, Telegram targets with per-channel
-#       formatting
-
-### 13.2 MQTT publisher  [S]
-#   New service: src/services/integrations/mqttPublisher.ts
-#   [ ] Configurable broker URL, topic prefix, auth
-#   [ ] Publish print events + temperatures + position at user-set rate
-#   [ ] Auto-reconnect on broker drop
-
-### 13.3 HomeAssistant entity bridge  [M]
-#   [ ] Local endpoint that HA's RESTful sensor / switch integrations
-#       can read
-#   [ ] Per-printer entities: temp sensors, progress, pause/cancel switches
-#   [ ] Auto-discovery payload (HA discovery format)
-
-### 13.4 Profile import (Cura / OrcaSlicer / Bambu Studio)  [M]
-#   [ ] Parser per format → Cindr3D's PrintProfile shape
-#   [ ] Import wizard: pick file → preview mappings → confirm
-#   [ ] Round-trip 3MF preserving multi-part build-plate layout
-
-### 13.5 Print resume from power loss  [M]
-#   [ ] Persist last-known print state (file, position, Z, bed/hotend
-#       temps) on a configurable cadence
-#   [ ] On printer reconnect, detect if a print was interrupted
-#   [ ] Offer resume from saved Z; warn about temperature ramp-up
-
-### 13.6 Chamber temperature monitor + control  [M]
-#   For ABS / ASA / PC / nylon prints in an enclosure.
-#   [ ] Read chamber temp from RRF heater channel / Klipper sensor /
-#       generic MQTT topic
-#   [ ] Optional control: chamber-heater target + ramp curve UI
-#   [ ] Pre-heat before print start; cool-down policy on completion
-#   [ ] Pairs with safety limits: cool-down on door open
-
-### 13.7 Air quality / fume sensors  [S]
-#   Cheap MQTT sensors (SCD30 / BME680 / PMS5003) become safety surface.
-#   [ ] Subscribe to MQTT topics for VOC / PM2.5 / CO2
-#   [ ] Per-printer thresholds: warn at level 1, pause at level 2
-#   [ ] Dashboard card: live air-quality readout per printer
-
-### 13.8 Door / enclosure sensor  [S]
-#   [ ] GPIO via Klipper / RRF / direct MQTT reed switch input
-#   [ ] Pause on door open during print (configurable)
-#   [ ] Optional safety lock: prevent print start with door open
-#   [ ] Pairs with chamber temperature (13.6) for cool-down on open
-
-### 13.9 Stepper driver tuning UI  [M]
-#   TMC tuning is currently config-file-only.
-#   [ ] Per-axis current / microstepping / stealthchop / spreadcycle
-#   [ ] M906 (RRF) / SET_TMC_CURRENT (Klipper) / M906 (Marlin) wrappers
-#   [ ] Quick-test "wiggle and listen" for noise-tuning
-#   [ ] Per-printer presets
-
-# All sub-phases independent except 13.5 (interacts with 7.1 queue) and
-# 13.8 (pairs with 13.6 chamber).
-
+## Status: DONE 2026-05-06
+## Completed feature summary:
+#   - Webhook, Discord, Slack, Telegram, MQTT, and Home Assistant integration
+#     surfaces for print events, telemetry, and remote pause/resume/cancel.
+#   - External slicer/profile exchange with Cura, Orca, Bambu, Prusa-style
+#     config import plus Cindr3D 3MF plate export/import round-tripping.
+#   - Power-loss recovery snapshots with reconnect detection and resumable
+#     bed/tool heat, Z restore, and file-position resume commands.
+#   - Enclosure controls for chamber temperature, ramping, preheat/cooldown,
+#     door-open safety, air-quality thresholds, and MQTT sensor ingestion.
+#   - Stepper driver tuning dashboard with current, microsteps, mode switching,
+#     quick wiggle tests, and per-printer presets.
 
 ## ── Phase 14: Operational polish ──────────────────────────────────────────
 ## Status: DONE 2026-05-05

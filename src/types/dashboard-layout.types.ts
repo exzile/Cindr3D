@@ -17,6 +17,8 @@ export type PanelId =
   | 'custom-buttons'
   | 'system-info'
   | 'filament-sensors'
+  | 'air-quality'
+  | 'stepper-tuning'
   | 'object-cancel'
   | 'mesh-preview';
 

@@ -16,6 +16,8 @@ export default defineConfig({
       // wasm/.toolchain/. Their own bundled test files would otherwise
       // get swept up by vitest's default discovery.
       'wasm/.toolchain/**',
+      '.claude/worktrees/**',
+      '.codex-orca-src/**',
     ],
   },
 });

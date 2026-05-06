@@ -2257,6 +2257,191 @@ function cindr3dMcpPlugin(): Plugin {
   };
 }
 
+type HomeAssistantBridgeSnapshot = {
+  printerId: string | null;
+  printerName: string;
+  status: string;
+  fileName?: string;
+  layer?: number;
+  progress?: number;
+  temperatures?: Record<string, number | null>;
+  position?: Record<string, number | null>;
+  updatedAt: string;
+};
+
+type HomeAssistantBridgeCommand = {
+  id: string;
+  printerId: string | null;
+  action: 'pause' | 'resume' | 'cancel';
+  createdAt: string;
+};
+
+const HOME_ASSISTANT_BRIDGE_TOKEN = process.env.CINDR3D_HOME_ASSISTANT_TOKEN?.trim() ?? '';
+
+function homeAssistantSlug(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '') || 'printer';
+}
+
+function homeAssistantStableId(snapshot: HomeAssistantBridgeSnapshot): string {
+  return snapshot.printerId || snapshot.printerName || 'printer';
+}
+
+function homeAssistantTemplateId(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function homeAssistantDiscoveryPayload(origin: string, snapshots: HomeAssistantBridgeSnapshot[]) {
+  return {
+    generatedAt: new Date().toISOString(),
+    entities: snapshots.flatMap((snapshot) => {
+      const stableId = homeAssistantStableId(snapshot);
+      const id = encodeURIComponent(stableId);
+      const slug = homeAssistantSlug(stableId);
+      const templateId = homeAssistantTemplateId(stableId);
+      const sensors = [
+        {
+          platform: 'rest',
+          name: `${snapshot.printerName} Status`,
+          unique_id: `cindr3d_${slug}_status`,
+          resource: `${origin}/home-assistant-bridge/state`,
+          value_template: `{{ value_json.printers | selectattr('printerId', 'equalto', '${templateId}') | map(attribute='status') | first }}`,
+        },
+        {
+          platform: 'rest',
+          name: `${snapshot.printerName} Progress`,
+          unique_id: `cindr3d_${slug}_progress`,
+          unit_of_measurement: '%',
+          resource: `${origin}/home-assistant-bridge/state`,
+          value_template: `{{ value_json.printers | selectattr('printerId', 'equalto', '${templateId}') | map(attribute='progress') | first }}`,
+        },
+      ];
+      if (!HOME_ASSISTANT_BRIDGE_TOKEN) return sensors;
+      return [
+        ...sensors,
+        {
+          platform: 'rest_command',
+          name: `${snapshot.printerName} Pause`,
+          unique_id: `cindr3d_${slug}_pause`,
+          url: `${origin}/home-assistant-bridge/printers/${id}/actions/pause`,
+          method: 'post',
+          headers: { 'x-cindr3d-bridge-token': HOME_ASSISTANT_BRIDGE_TOKEN },
+        },
+        {
+          platform: 'rest_command',
+          name: `${snapshot.printerName} Resume`,
+          unique_id: `cindr3d_${slug}_resume`,
+          url: `${origin}/home-assistant-bridge/printers/${id}/actions/resume`,
+          method: 'post',
+          headers: { 'x-cindr3d-bridge-token': HOME_ASSISTANT_BRIDGE_TOKEN },
+        },
+        {
+          platform: 'rest_command',
+          name: `${snapshot.printerName} Cancel`,
+          unique_id: `cindr3d_${slug}_cancel`,
+          url: `${origin}/home-assistant-bridge/printers/${id}/actions/cancel`,
+          method: 'post',
+          headers: { 'x-cindr3d-bridge-token': HOME_ASSISTANT_BRIDGE_TOKEN },
+        },
+      ];
+    }),
+  };
+}
+
+function homeAssistantBridgePlugin(): Plugin {
+  const snapshots = new Map<string, HomeAssistantBridgeSnapshot>();
+  const commands: HomeAssistantBridgeCommand[] = [];
+
+  return {
+    name: 'home-assistant-bridge',
+    configureServer(server) {
+      register(server);
+    },
+    configurePreviewServer(server) {
+      register(server);
+    },
+  };
+
+  function register(server: MiddlewareHost): void {
+    server.middlewares.use('/home-assistant-bridge', async (req, res) => {
+      const parsedReq = new URL(req.url ?? '/', 'http://localhost');
+      const origin = `http://${req.headers.host ?? 'localhost:5173'}`;
+      const requestOrigin = req.headers.origin;
+      if (isAllowedLocalOrigin(requestOrigin)) {
+        res.setHeader('access-control-allow-origin', requestOrigin as string);
+        res.setHeader('vary', 'origin');
+      } else if (requestOrigin) {
+        res.statusCode = 403;
+        res.end('Forbidden origin');
+        return;
+      }
+      res.setHeader('access-control-allow-methods', 'GET,POST,OPTIONS');
+      res.setHeader('access-control-allow-headers', 'content-type,x-cindr3d-bridge-token');
+      if (req.method === 'OPTIONS') {
+        res.statusCode = 204;
+        res.end();
+        return;
+      }
+
+      if (parsedReq.pathname === '/state' && req.method === 'POST') {
+        const body = await readJsonBody(req) as HomeAssistantBridgeSnapshot | undefined;
+        if (!body?.printerName) {
+          sendJson(res, 400, { error: 'Missing printer snapshot.' });
+          return;
+        }
+        const key = body.printerId || body.printerName;
+        snapshots.set(key, { ...body, printerId: key, updatedAt: body.updatedAt ?? new Date().toISOString() });
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+
+      if (parsedReq.pathname === '/state' && req.method === 'GET') {
+        sendJson(res, 200, { printers: [...snapshots.values()] });
+        return;
+      }
+
+      if (parsedReq.pathname === '/discovery' && req.method === 'GET') {
+        sendJson(res, 200, homeAssistantDiscoveryPayload(origin, [...snapshots.values()]));
+        return;
+      }
+
+      if (parsedReq.pathname === '/commands' && req.method === 'GET') {
+        const printerId = parsedReq.searchParams.get('printerId');
+        const matching = commands.filter((command) => command.printerId === printerId);
+        for (const command of matching) {
+          const index = commands.findIndex((item) => item.id === command.id);
+          if (index >= 0) commands.splice(index, 1);
+        }
+        sendJson(res, 200, { commands: matching });
+        return;
+      }
+
+      const actionMatch = parsedReq.pathname.match(/^\/printers\/([^/]+)\/actions\/(pause|resume|cancel)$/);
+      if (actionMatch && req.method === 'POST') {
+        if (!HOME_ASSISTANT_BRIDGE_TOKEN) {
+          sendJson(res, 503, { error: 'Set CINDR3D_HOME_ASSISTANT_TOKEN to enable Home Assistant control actions.' });
+          return;
+        }
+        const token = req.headers['x-cindr3d-bridge-token'];
+        if (token !== HOME_ASSISTANT_BRIDGE_TOKEN) {
+          sendJson(res, 401, { error: 'Missing or invalid Home Assistant bridge token.' });
+          return;
+        }
+        const [, printerId, action] = actionMatch;
+        commands.push({
+          id: crypto.randomUUID(),
+          printerId: decodeURIComponent(printerId),
+          action: action as HomeAssistantBridgeCommand['action'],
+          createdAt: new Date().toISOString(),
+        });
+        sendJson(res, 202, { queued: true });
+        return;
+      }
+
+      sendJson(res, 404, { error: 'Not found' });
+    });
+  }
+}
+
 // Strips the deprecation warn() from THREE.Clock so the console stays clean.
 // react-three-fiber still uses THREE.Clock internally and cannot be configured
 // to use THREE.Timer instead; removing just the warn() is the minimal fix.
@@ -2276,7 +2461,7 @@ function silenceThreeClockPlugin(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [silenceThreeClockPlugin(), react(), wasm(), duetProxyPlugin(), cameraProxyPlugin(), cameraCommandProxyPlugin(), rtspHlsBridgePlugin(), rtspRecordingPlugin(), githubProxyPlugin(), cindr3dMcpPlugin(), noCacheDevAssetsPlugin()],
+  plugins: [silenceThreeClockPlugin(), react(), wasm(), duetProxyPlugin(), cameraProxyPlugin(), cameraCommandProxyPlugin(), rtspHlsBridgePlugin(), rtspRecordingPlugin(), githubProxyPlugin(), cindr3dMcpPlugin(), homeAssistantBridgePlugin(), noCacheDevAssetsPlugin()],
   resolve: {
     alias: {
       module: fileURLToPath(new URL('./src/shims/nodeModule.ts', import.meta.url)),
