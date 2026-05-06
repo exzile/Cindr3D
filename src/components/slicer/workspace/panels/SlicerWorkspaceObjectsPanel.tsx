@@ -42,6 +42,7 @@ export function SlicerWorkspaceObjectsPanel() {
   const importFileToPlate = useSlicerStore((s) => s.importFileToPlate);
   const duplicatePlateObject = useSlicerStore((s) => s.duplicatePlateObject);
   const exportPlateJson = useSlicerStore((s) => s.exportPlateJson);
+  const exportPlateThreeMf = useSlicerStore((s) => s.exportPlateThreeMf);
   const importPlateJson = useSlicerStore((s) => s.importPlateJson);
   const layFlatPlateObject = useSlicerStore((s) => s.layFlatPlateObject);
   const autoOrientPlateObject = useSlicerStore((s) => s.autoOrientPlateObject);
@@ -255,19 +256,35 @@ export function SlicerWorkspaceObjectsPanel() {
     URL.revokeObjectURL(url);
   }, [exportPlateJson]);
 
+  const handleSavePlateThreeMf = useCallback(async () => {
+    const blob = await exportPlateThreeMf();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'plate.3mf';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [exportPlateThreeMf]);
+
   const handleLoadPlate = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const text = await file.text();
-      importPlateJson(text);
+      if (file.name.toLowerCase().endsWith('.3mf')) {
+        await importFileToPlate(file);
+      } else {
+        const text = await file.text();
+        importPlateJson(text);
+      }
     } catch (err) {
       console.error('Plate load failed:', err);
       alert(`Plate load failed: ${(err as Error).message}`);
     } finally {
       if (e.target) e.target.value = '';
     }
-  }, [importPlateJson]);
+  }, [importFileToPlate, importPlateJson]);
 
   // Drag-to-reorder handlers. We use HTML5 drag events on the rows; Vite
   // / React-DnD would be heavier than needed here. The drag identifier is
@@ -593,7 +610,14 @@ export function SlicerWorkspaceObjectsPanel() {
             onClick={handleSavePlate}
             title="Save plate to file"
           >
-            <Save size={14} /> Save
+            <Save size={14} /> Save JSON
+          </button>
+          <button
+            className="slicer-workspace-objects-panel__secondary-button"
+            onClick={() => void handleSavePlateThreeMf()}
+            title="Save round-trippable 3MF plate"
+          >
+            <Save size={14} /> Save 3MF
           </button>
           <button
             className="slicer-workspace-objects-panel__secondary-button"
@@ -606,7 +630,7 @@ export function SlicerWorkspaceObjectsPanel() {
         <input
           ref={plateLoadInputRef}
           type="file"
-          accept=".json,.dzign-plate.json"
+          accept=".json,.dzign-plate.json,.3mf"
           className="slicer-workspace-objects-panel__file-input"
           onChange={handleLoadPlate}
         />

@@ -198,7 +198,7 @@
 ### 13.4 Profile import (Cura / OrcaSlicer / Bambu Studio)  [M]
 #   [x] Parser per format → Cindr3D's PrintProfile shape
 #   [x] Import wizard: pick file → preview mappings → confirm
-#   [ ] Round-trip 3MF preserving multi-part build-plate layout
+#   [x] Round-trip 3MF preserving multi-part build-plate layout
 
 ### 13.5 Print resume from power loss  [M]
 #   [ ] Persist last-known print state (file, position, Z, bed/hotend

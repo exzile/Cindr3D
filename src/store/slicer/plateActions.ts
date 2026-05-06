@@ -34,6 +34,7 @@ type PlateActionSlice = Pick<
   | 'redoPlate'
   | 'pushPlateHistory'
   | 'exportPlateJson'
+  | 'exportPlateThreeMf'
   | 'importPlateJson'
   | 'autoArrange'
   | 'clearPlate'
@@ -451,6 +452,17 @@ export function createPlateActions({
     });
   },
 
+  exportPlateThreeMf: async () => {
+    const state = get();
+    const { createPlateSnapshot, exportPlateThreeMf } = await import('../../services/integrations/plateThreeMf');
+    return exportPlateThreeMf(createPlateSnapshot({
+      activePrinterProfileId: state.activePrinterProfileId,
+      activeMaterialProfileId: state.activeMaterialProfileId,
+      activePrintProfileId: state.activePrintProfileId,
+      plateObjects: state.plateObjects,
+    }));
+  },
+
   importPlateJson: (json) => {
     let data: {
       version?: number;
@@ -790,6 +802,16 @@ export function createPlateActions({
         const text = await file.text();
         get().importPlateJson(text);
         return get().selectedPlateObjectId;
+      }
+      if (lower.endsWith('.3mf')) {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const { readPlateSnapshotFromThreeMf } = await import('../../services/integrations/plateThreeMf');
+        const snapshot = readPlateSnapshotFromThreeMf(bytes);
+        if (snapshot) {
+          get().importPlateJson(JSON.stringify(snapshot));
+          return get().selectedPlateObjectId;
+        }
+        file = new File([bytes], file.name, { type: file.type });
       }
       const { FileImporter } = await import('../../engine/FileImporter');
       const group = await FileImporter.importFile(file);
