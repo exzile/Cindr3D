@@ -4,6 +4,18 @@ import { usePrinterStore } from '../../../store/printerStore';
 import { useSlicerStore } from '../../../store/slicerStore';
 import type { TuningTowerRecommendation } from '../../../services/vision/tuningWizards';
 import type { PrinterProfile } from '../../../types/slicer';
+import {
+  buildConfigSnapshotInstructions,
+  buildFlowRateCommands,
+  buildInputShaperCommands,
+  buildPressureAdvanceCommands,
+  buildSaveConfigCommands,
+  buildZOffsetCommands,
+  getSaveConfigNote,
+  isFirmwareApplySupported,
+  type CalibrationApplyType,
+  type FirmwareFlavor,
+} from '../../firmwareApply';
 
 type CalibrationItemId = 'bed-mesh' | 'pressure-advance' | 'input-shaper' | 'z-offset' | 'first-layer';
 
@@ -23,18 +35,41 @@ function itemIdForTest(testType: string): CalibrationItemId {
   return 'z-offset';
 }
 
-function normalizeFirmware(value: string | undefined, fallback: PrinterProfile['gcodeFlavorType']): string {
-  return value ?? fallback;
+function normalizeFirmware(value: string | undefined, fallback: PrinterProfile['gcodeFlavorType']): FirmwareFlavor {
+  if (value === 'marlin' || value === 'klipper' || value === 'duet' || value === 'reprap') return value;
+  return fallback;
 }
 
-function buildCommandPreview(type: string, val: number | undefined, flavor: string): string[] {
-  if (!val) return ['No value to apply'];
-  if (type === 'pressure-advance') {
-    if (flavor === 'klipper') return [`SET_PRESSURE_ADVANCE EXTRUDER=extruder ADVANCE=${val.toFixed(4)}`];
-    if (flavor === 'marlin') return [`M900 K${val.toFixed(4)}`];
-    return [`M572 D0 S${val.toFixed(4)}`];
+function applyTypeForTest(testType: string): CalibrationApplyType | null {
+  if (testType === 'pressure-advance') return 'pressure-advance';
+  if (testType === 'input-shaper') return 'input-shaper';
+  if (testType === 'first-layer') return 'z-offset';
+  if (testType === 'flow-rate') return 'flow-rate';
+  if (testType === 'bed-mesh') return 'bed-mesh';
+  return null;
+}
+
+function buildCommandPreview(
+  type: string,
+  val: number | undefined,
+  flavor: FirmwareFlavor,
+  manualMeasurements: Record<string, number>,
+): string[] {
+  const applyType = applyTypeForTest(type);
+  if (!applyType) return [`// ${type} is saved as a measurement only.`];
+  if (!isFirmwareApplySupported(flavor, applyType)) return [`// ${applyType} apply is not supported for ${flavor}.`];
+  if (applyType === 'input-shaper') {
+    const freqX = manualMeasurements.freqX;
+    const freqY = manualMeasurements.freqY;
+    if (freqX == null || freqY == null) return ['No value to apply'];
+    return buildInputShaperCommands(flavor, freqX, freqY, 'mzv', 0.1, 0.1);
   }
-  return [`// Apply ${type} = ${val} - see Task D for firmware-specific commands`];
+  if (applyType === 'bed-mesh') return ['// Run bed mesh calibration from the firmware dashboard.'];
+  if (val == null) return ['No value to apply'];
+  if (applyType === 'pressure-advance') return buildPressureAdvanceCommands(flavor, val);
+  if (applyType === 'z-offset') return buildZOffsetCommands(flavor, val);
+  if (applyType === 'flow-rate') return buildFlowRateCommands(flavor, val);
+  return ['No value to apply'];
 }
 
 export function StepApplyResult({
@@ -51,7 +86,12 @@ export function StepApplyResult({
   const selectedPrinter = printers.find((printer) => printer.id === printerId);
   const value = recommendation?.bestValue ?? manualMeasurements.value;
   const firmware = normalizeFirmware(selectedPrinter?.config.boardType, activeProfile.gcodeFlavorType);
-  const commandPreview = useMemo(() => buildCommandPreview(testType, value, firmware), [firmware, testType, value]);
+  const commandPreview = useMemo(
+    () => buildCommandPreview(testType, value, firmware, manualMeasurements),
+    [firmware, manualMeasurements, testType, value],
+  );
+  const saveConfigCommands = useMemo(() => buildSaveConfigCommands(firmware), [firmware]);
+  const saveConfigNote = getSaveConfigNote(firmware);
   const measurementEntries = Object.entries(manualMeasurements);
 
   const saveResult = () => {
@@ -60,7 +100,7 @@ export function StepApplyResult({
         ? crypto.randomUUID()
         : Date.now().toString(),
       recordedAt: Date.now(),
-      appliedValue: recommendation?.bestValue ?? manualMeasurements.value ?? null,
+      appliedValue: recommendation?.bestValue ?? manualMeasurements.value ?? manualMeasurements.freqX ?? null,
       measurements: manualMeasurements,
       photoIds: [],
       aiConfidence: recommendation?.confidence ?? null,
@@ -107,6 +147,9 @@ export function StepApplyResult({
       <div className="calib-step__panel">
         <strong>Recommended value: {value ?? 'manual measurement'}</strong>
         <pre>{commandPreview.join('\n')}</pre>
+        <span className="calib-step__muted">{buildConfigSnapshotInstructions(firmware)}</span>
+        {saveConfigCommands.length > 0 && <pre>{saveConfigCommands.join('\n')}</pre>}
+        {saveConfigNote && <span className="calib-step__muted">{saveConfigNote}</span>}
         <button type="button" onClick={() => void sendPreviewCommands()}>
           Send preview commands
         </button>
