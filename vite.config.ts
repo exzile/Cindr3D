@@ -124,6 +124,17 @@ function cameraProxyPlugin(): Plugin {
           res.statusCode = 400; res.end('unsupported protocol'); return;
         }
 
+        const proxyError = (label: string, err: Error) => {
+          console.error(`[camera-proxy] ${label} GET ${targetUrl.origin}${targetUrl.pathname}: ${err.message}`);
+          if (!res.headersSent) {
+            res.statusCode = 502;
+            res.setHeader('content-type', 'text/plain');
+            res.end(`Upstream error: ${err.message}`);
+          } else {
+            res.end();
+          }
+        };
+
         const requestUpstream = (authorization?: string) => {
           const mod = targetUrl.protocol === 'https:' ? https : http;
           const headers: http.OutgoingHttpHeaders = {
@@ -133,7 +144,7 @@ function cameraProxyPlugin(): Plugin {
           };
           if (authorization) headers.Authorization = authorization;
           const upstreamReq = mod.request(targetUrl, { method: 'GET', headers });
-          upstreamReq.setTimeout(5000, () => {
+          upstreamReq.setTimeout(12000, () => {
             upstreamReq.destroy(new Error('Camera connection timed out'));
           });
           return upstreamReq;
@@ -147,57 +158,39 @@ function cameraProxyPlugin(): Plugin {
           upstream.pipe(res);
         };
 
-        const firstReq = requestUpstream();
-        firstReq.on('response', (firstRes) => {
-          firstReq.setTimeout(0);
-          const challenge = firstRes.headers['www-authenticate'];
-          const challengeText = Array.isArray(challenge) ? challenge[0] : challenge;
-          if (firstRes.statusCode !== 401 || !challengeText || !username) {
-            pipeResponse(firstRes);
-            return;
-          }
-
-          firstRes.resume();
+        const authFromChallenge = (challengeText: string): string => {
           const lowerChallenge = challengeText.toLowerCase();
-          const authorization = lowerChallenge.startsWith('digest')
+          return lowerChallenge.startsWith('digest')
             ? digestAuthHeader(challengeText, targetUrl, 'GET', username, password)
             : lowerChallenge.startsWith('basic')
               ? `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
               : '';
-          if (!authorization) {
-            res.statusCode = 401;
-            res.end('unsupported camera authentication');
-            return;
-          }
+        };
 
-          const secondReq = requestUpstream(authorization);
-          secondReq.on('response', (secondRes) => {
-            secondReq.setTimeout(0);
-            pipeResponse(secondRes);
-          });
-          secondReq.on('error', (err) => {
-            console.error(`[camera-proxy] upstream auth error GET ${targetUrl.origin}${targetUrl.pathname}: ${err.message}`);
-            if (!res.headersSent) {
-              res.statusCode = 502;
-              res.setHeader('content-type', 'text/plain');
-              res.end(`Upstream error: ${err.message}`);
-            } else {
-              res.end();
+        const startProxyRequest = (authorization?: string, canRetry = true) => {
+          const upstreamReq = requestUpstream(authorization);
+          upstreamReq.on('response', (upstreamRes) => {
+            upstreamReq.setTimeout(0);
+            const challenge = upstreamRes.headers['www-authenticate'];
+            const challengeText = Array.isArray(challenge) ? challenge[0] : challenge;
+            if (canRetry && upstreamRes.statusCode === 401 && challengeText && username) {
+              const nextAuthorization = authFromChallenge(challengeText);
+              if (nextAuthorization && nextAuthorization !== authorization) {
+                upstreamRes.resume();
+                startProxyRequest(nextAuthorization, false);
+                return;
+              }
             }
+            pipeResponse(upstreamRes);
           });
-          secondReq.end();
-        });
-        firstReq.on('error', (err) => {
-          console.error(`[camera-proxy] upstream error GET ${targetUrl.origin}${targetUrl.pathname}: ${err.message}`);
-          if (!res.headersSent) {
-            res.statusCode = 502;
-            res.setHeader('content-type', 'text/plain');
-            res.end(`Upstream error: ${err.message}`);
-          } else {
-            res.end();
-          }
-        });
-        firstReq.end();
+          upstreamReq.on('error', (err) => proxyError(authorization ? 'upstream auth error' : 'upstream error', err));
+          upstreamReq.end();
+        };
+
+        const preemptiveBasic = username
+          ? `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
+          : undefined;
+        startProxyRequest(preemptiveBasic);
       });
     },
   };
