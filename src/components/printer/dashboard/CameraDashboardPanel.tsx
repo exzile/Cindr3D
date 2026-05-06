@@ -2756,7 +2756,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
                   )}
                   <div className="cam-panel__health">{formatLastFrame(lastFrameAt, nowTick)}</div>
                   <div className="cam-panel__media-viewport" style={mediaViewportStyle}>
-                    {calibration.enabled && <div className="cam-panel__calibration" style={calibrationStyle} />}
+                    {!compact && calibration.enabled && <div className="cam-panel__calibration" style={calibrationStyle} />}
                     <CameraOverlayPanel pose={calibration.pose} mode={cameraOverlayMode} frameTick={frameCount} comparison={Boolean(finalComparisonUrl)} />
                     <div
                       className={`cam-panel__measurement-layer${measurementMode !== 'off' ? ' is-picking' : ''}`}
