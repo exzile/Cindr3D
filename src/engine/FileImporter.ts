@@ -7,6 +7,7 @@ import {
   extractF3DMeshData,
   extractZipEntry,
 } from './fileImporter/helpers';
+import { autoRepairMeshGeometry } from '../meshRepair';
 
 export class FileImporter {
   static async importSTEP(file: File): Promise<THREE.Group> {
@@ -46,8 +47,9 @@ export class FileImporter {
     const group = new THREE.Group();
     group.name = file.name.replace(/\.[^.]+$/, '');
 
-    const geometry = new STLLoader().parse(await file.arrayBuffer());
-    geometry.computeVertexNormals();
+    const rawGeometry = new STLLoader().parse(await file.arrayBuffer());
+    const geometry = autoRepairMeshGeometry(rawGeometry);
+    if (geometry !== rawGeometry) rawGeometry.dispose();
 
     const mesh = new THREE.Mesh(geometry, createImportMaterial());
     mesh.castShadow = true;

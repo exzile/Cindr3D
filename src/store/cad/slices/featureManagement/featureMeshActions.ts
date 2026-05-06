@@ -3,6 +3,44 @@ import type { Feature } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
+import { recomputeBooleanDependents, runBoolean } from './featureBooleanUtils';
+
+function getBooleanParentIds(feature: Feature): string[] {
+  const fromArray = feature.params.booleanParentIds;
+  if (Array.isArray(fromArray)) return fromArray.filter((id): id is string => typeof id === 'string');
+  return [feature.params.targetId, feature.params.toolId].filter((id): id is string => typeof id === 'string');
+}
+
+function keepsParentsHidden(feature: Feature): boolean {
+  return feature.type === 'combine' && feature.params.keepTools === false;
+}
+
+function parentIsHiddenByAnotherCombine(features: Feature[], parentId: string, excludeCombineId: string): boolean {
+  return features.some((feature) =>
+    feature.id !== excludeCombineId &&
+    keepsParentsHidden(feature) &&
+    getBooleanParentIds(feature).includes(parentId),
+  );
+}
+
+function syncActiveConfigurationSuppression(
+  state: CADState,
+  entries: Record<string, boolean>,
+): CADState['designConfigurations'] {
+  const updatedAt = Date.now();
+  return state.designConfigurations.map((configuration) =>
+    configuration.id === state.activeDesignConfigurationId
+      ? {
+          ...configuration,
+          featureSuppression: {
+            ...configuration.featureSuppression,
+            ...entries,
+          },
+          updatedAt,
+        }
+      : configuration,
+  );
+}
 
 export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -276,10 +314,16 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
     const newMesh = GeometryEngine.scaleMesh(srcMesh, sx, sy, sz);
     newMesh.castShadow = true;
     newMesh.receiveShadow = true;
-    set((state) => ({
-      features: state.features.map((f) => f.id === featureId ? { ...f, mesh: newMesh } : f),
-      statusMessage: `Scaled ${sx}Ãƒâ€”${sy}Ãƒâ€”${sz}`,
-    }));
+    const oldGeom = srcMesh.geometry;
+    set((state) => {
+      const features = state.features.map((f) => f.id === featureId ? { ...f, mesh: newMesh } : f);
+      return {
+        features: recomputeBooleanDependents(features, [featureId]),
+        statusMessage: `Scaled ${sx}×${sy}×${sz}`,
+      };
+    });
+    // Defer so the undo snapshot can still reference the old geometry if needed.
+    setTimeout(() => oldGeom.dispose(), 0);
   },
 
   // SLD12 Ã¢â‚¬â€ commitCombine: boolean op on two feature meshes
@@ -295,36 +339,59 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
       get().setStatusMessage('Combine: tool has no mesh');
       return;
     }
-    get().pushUndo();
     const tgtMesh = targetFeature.mesh as THREE.Mesh;
     const toolMesh = toolFeature.mesh as THREE.Mesh;
     let resultGeom: THREE.BufferGeometry;
     // CSG can throw on degenerate / non-manifold inputs. Catch + report so
     // the user gets a status message instead of a silent broken state, and
     // the partially-built result (if any) doesn't end up in the scene.
+    // pushUndo is called AFTER the try/catch so a failed CSG doesn't leave
+    // an orphaned snapshot on the undo stack.
     try {
-      if (operation === 'join') {
-        resultGeom = GeometryEngine.csgUnion(tgtMesh.geometry, toolMesh.geometry);
-      } else if (operation === 'cut') {
-        resultGeom = GeometryEngine.csgSubtract(tgtMesh.geometry, toolMesh.geometry);
-      } else {
-        resultGeom = GeometryEngine.csgIntersect(tgtMesh.geometry, toolMesh.geometry);
-      }
+      resultGeom = runBoolean(tgtMesh, toolMesh, operation);
     } catch (err) {
       get().setStatusMessage(`Combine (${operation}) failed: ${(err as Error)?.message ?? 'unknown CSG error'}`);
       return;
     }
+    get().pushUndo();
     const newMesh = new THREE.Mesh(resultGeom, tgtMesh.material);
     newMesh.castShadow = true;
     newMesh.receiveShadow = true;
+    const n = features.filter((f) => f.type === 'combine').length + 1;
+    const combineFeature: Feature = {
+      id: crypto.randomUUID(),
+      name: `Combine ${n} (${operation})`,
+      type: 'combine',
+      params: {
+        operation,
+        keepTools: keepTool,
+        targetId: targetFeatureId,
+        toolId: toolFeatureId,
+        booleanParentIds: [targetFeatureId, toolFeatureId],
+        recomputeOnParentChange: true,
+      },
+      mesh: newMesh,
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+      bodyKind: targetFeature.bodyKind,
+    };
     set((state) => {
-      let updated = state.features.map((f) =>
-        f.id === targetFeatureId ? { ...f, mesh: newMesh } : f
+      const updated = state.features.map((f) =>
+        !keepTool && (f.id === targetFeatureId || f.id === toolFeatureId)
+          ? { ...f, suppressed: true }
+          : f
       );
-      if (!keepTool) {
-        updated = updated.filter((f) => f.id !== toolFeatureId);
-      }
-      return { features: updated, statusMessage: `Combine (${operation}) applied` };
+      const suppressionEntries: Record<string, boolean> = {
+        [combineFeature.id]: false,
+        [targetFeatureId]: !keepTool,
+        [toolFeatureId]: !keepTool,
+      };
+      return {
+        features: [...updated, combineFeature],
+        designConfigurations: syncActiveConfigurationSuppression(state, suppressionEntries),
+        statusMessage: `Combine (${operation}) created with editable parents`,
+      };
     });
   },
 
@@ -363,15 +430,99 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
     }));
   },
 
+  // SLD12-edit — re-run CSG on an existing combine feature with new params.
+  // Atomically updates params + mesh in one pushUndo so the edit is a single
+  // undo step (avoids double-snapshot from separate updateFeatureParams + CSG).
+  recommitCombine: (featureId, params) => {
+    const { features } = get();
+    const feature = features.find((f) => f.id === featureId);
+    if (!feature || feature.type !== 'combine') {
+      get().setStatusMessage('Combine (edit): feature not found');
+      return;
+    }
+    const { operation, keepTools, targetId, toolId } = params;
+    const targetFeature = features.find((f) => f.id === targetId);
+    const toolFeature = features.find((f) => f.id === toolId);
+    if (!targetFeature?.mesh || !(targetFeature.mesh instanceof THREE.Mesh)) {
+      get().setStatusMessage('Combine (edit): target has no mesh');
+      return;
+    }
+    if (!toolFeature?.mesh || !(toolFeature.mesh instanceof THREE.Mesh)) {
+      get().setStatusMessage('Combine (edit): tool has no mesh');
+      return;
+    }
+    const tgtMesh = targetFeature.mesh as THREE.Mesh;
+    const toolMesh = toolFeature.mesh as THREE.Mesh;
+    let resultGeom: THREE.BufferGeometry;
+    try {
+      resultGeom = runBoolean(tgtMesh, toolMesh, operation);
+    } catch (err) {
+      get().setStatusMessage(`Combine (edit) failed: ${(err as Error)?.message ?? 'unknown CSG error'}`);
+      return;
+    }
+    get().pushUndo();
+    const newMesh = new THREE.Mesh(resultGeom, tgtMesh.material);
+    newMesh.castShadow = true;
+    newMesh.receiveShadow = true;
+    const oldMesh = feature.mesh;
+    set((state) => {
+      const oldParentIds = getBooleanParentIds(feature);
+      const nextParentIds = [targetId, toolId];
+      const affectedParentIds = Array.from(new Set([...oldParentIds, ...nextParentIds]));
+      const features = state.features.map((f) => {
+        if (f.id === featureId) {
+          return { ...f, mesh: newMesh, params: { ...f.params, operation, keepTools, targetId, toolId, booleanParentIds: [targetId, toolId], recomputeOnParentChange: true } };
+        }
+        if (affectedParentIds.includes(f.id)) {
+          const isNextParent = nextParentIds.includes(f.id);
+          const shouldSuppress = isNextParent
+            ? !keepTools
+            : parentIsHiddenByAnotherCombine(state.features, f.id, featureId);
+          return { ...f, suppressed: shouldSuppress };
+        }
+        return f;
+      });
+      const suppressionEntries: Record<string, boolean> = { [featureId]: false };
+      for (const id of affectedParentIds) {
+        suppressionEntries[id] = !!features.find((candidate) => candidate.id === id)?.suppressed;
+      }
+      return {
+        features,
+        designConfigurations: syncActiveConfigurationSuppression(state, suppressionEntries),
+        statusMessage: `Combine (${operation}) updated`,
+      };
+    });
+    if (oldMesh instanceof THREE.Mesh) {
+      const geo = oldMesh.geometry;
+      setTimeout(() => geo.dispose(), 0);
+    }
+  },
+
   toggleFeatureVisibility: (id) => set((state) => ({
     features: state.features.map((f) =>
       f.id === id ? { ...f, visible: !f.visible } : f
     ),
   })),
-  toggleFeatureSuppressed: (id) => set((state) => ({
-    features: state.features.map((f) =>
+  toggleFeatureSuppressed: (id) => set((state) => {
+    const features = state.features.map((f) =>
       f.id === id ? { ...f, suppressed: !f.suppressed } : f
-    ),
-  })),
+    );
+    const target = features.find((feature) => feature.id === id);
+    return {
+      features,
+      designConfigurations: state.designConfigurations.map((configuration) =>
+        configuration.id === state.activeDesignConfigurationId && target
+          ? {
+              ...configuration,
+              featureSuppression: {
+                ...configuration.featureSuppression,
+                [id]: !!target.suppressed,
+              },
+              updatedAt: Date.now(),
+            }
+          : configuration,
+      ),
+    };
+  }),
   };
 }

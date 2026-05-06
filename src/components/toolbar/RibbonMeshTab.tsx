@@ -2,7 +2,7 @@ import {
   Box, FolderOpen, Scissors, CircleDot,
   Blend, RefreshCw, SplitSquareHorizontal, Combine,
   Trash2, FlipHorizontal, AlignCenter, Unlink, Move,
-  Package, Link2, MousePointer2,
+  Package, Link2, MousePointer2, ShieldCheck,
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore';
 import { RibbonSection } from './FlyoutMenu';
@@ -37,6 +37,7 @@ export function RibbonMeshTab({ meshInsertInputRef, onMeshInsert }: RibbonMeshTa
       <RibbonSection title="MODIFY">
         <ToolButton icon={<Blend size={ICON_LG} />} label="Reduce" onClick={() => setActiveDialog('mesh-reduce')} large colorClass="icon-purple" />
         <ToolButton icon={<RefreshCw size={ICON_LG} />} label="Remesh" onClick={() => setActiveDialog('remesh')} large colorClass="icon-purple" />
+        <ToolButton icon={<ShieldCheck size={ICON_LG} />} label="Repair" onClick={() => setActiveDialog('mesh-repair')} large colorClass="icon-purple" />
         <ToolButton icon={<SplitSquareHorizontal size={ICON_LG} />} label="Plane Cut" onClick={() => setActiveDialog('plane-cut')} large colorClass="icon-purple" />
         <ToolButton icon={<Combine size={ICON_LG} />} label="Make Closed" onClick={() => setActiveDialog('make-closed-mesh')} large colorClass="icon-purple" />
         <ToolButton icon={<Trash2 size={ICON_LG} />} label="Erase &amp; Fill" onClick={() => setActiveDialog('erase-and-fill')} large colorClass="icon-purple" />

@@ -73,7 +73,7 @@ export const deserializeSketch = (sketch: Sketch): Sketch => ({
 
 const MESH_ONLY_TYPES = new Set([
   'fastener', 'derive', 'mesh-import', 'tessellate',
-  'mesh-combine', 'mesh-smooth', 'mesh-separate', 'import', 'primitive',
+  'mesh-combine', 'mesh-smooth', 'mesh-separate', 'import', 'primitive', 'combine',
 ]);
 
 interface SerializedFeature extends Omit<Feature, 'mesh'> {

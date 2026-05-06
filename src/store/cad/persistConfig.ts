@@ -53,7 +53,7 @@ export function createCADPersistConfig(): PersistOptions<CADState, Partial<CADSt
     // Bump on every rehydration-time sanity-clamp expansion (see the
     // ARRAY_FIELDS list in onRehydrateStorage) so existing IndexedDB
     // blobs go through migrate again and pick up the latest defaults.
-    version: 4,
+    version: 5,
     migrate: (persistedState: unknown) => {
       const state = (persistedState ?? {}) as Partial<CADState>;
       return {
@@ -67,6 +67,8 @@ export function createCADPersistConfig(): PersistOptions<CADState, Partial<CADSt
       return {
         ...currentState,
         ...state,
+        designConfigurations: state.designConfigurations ?? currentState.designConfigurations,
+        activeDesignConfigurationId: state.activeDesignConfigurationId ?? currentState.activeDesignConfigurationId,
         activeSketch: state.activeSketch ? deserializeSketch(state.activeSketch as Sketch) : currentState.activeSketch,
         sketches: (state.sketches ?? currentState.sketches).map((s) => deserializeSketch(s as Sketch)),
         features: (state.features ?? currentState.features).map((f) => deserializeFeature(f as Feature)),
@@ -86,6 +88,7 @@ export function createCADPersistConfig(): PersistOptions<CADState, Partial<CADSt
         'extrudeSelectedSketchIds',
         'features',
         'sketches',
+        'designConfigurations',
       ];
       const s = state as unknown as Record<string, unknown>;
       for (const key of ARRAY_FIELDS) {
@@ -130,6 +133,8 @@ export function createCADPersistConfig(): PersistOptions<CADState, Partial<CADSt
         shouldPersistActiveSketch(state.activeSketch) ? state.activeSketch : null,
       ),
       features: state.features.map((f: Feature) => serializeFeature(f) as Feature),
+      designConfigurations: state.designConfigurations,
+      activeDesignConfigurationId: state.activeDesignConfigurationId,
       parameters: state.parameters,
       frozenFormVertices: state.frozenFormVertices,
       featureGroups: state.featureGroups,

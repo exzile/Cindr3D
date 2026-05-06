@@ -11,6 +11,13 @@ const line = (id: string, x0: number, y0: number, x1: number, y1: number): Sketc
   ],
 });
 
+const circle = (id: string, x: number, y: number, radius: number): SketchEntity => ({
+  id,
+  type: 'circle',
+  points: [{ id: `${id}-0`, x, y, z: 0 }],
+  radius,
+});
+
 describe('dimension constraints in ConstraintSolver', () => {
   it('solves a driving aligned line dimension after geometry is moved', () => {
     const entities = [line('line-a', 0, 0, 14, 0)];
@@ -62,5 +69,19 @@ describe('dimension constraints in ConstraintSolver', () => {
     }];
 
     expect(dimensionsToSolverConstraints(dimensions)).toEqual([]);
+  });
+
+  it('solves line-to-circle tangent constraints', () => {
+    const result = solveConstraints([
+      line('line-a', -10, 5, 10, 5),
+      circle('circle-a', 0, 0, 3),
+    ], [
+      { type: 'fix', entityIds: ['line-a'] },
+      { type: 'tangent', entityIds: ['line-a', 'circle-a'] },
+    ]);
+
+    expect(result.solved).toBe(true);
+    const center = result.updatedPoints.get('circle-a-p0')!;
+    expect(Math.abs(center.y - 5)).toBeCloseTo(3, 3);
   });
 });

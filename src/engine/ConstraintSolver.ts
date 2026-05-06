@@ -393,9 +393,29 @@ function computeResiduals(
         break;
       }
       case 'fix':
-      case 'tangent':
-        // fix: handled via fixed flags; tangent: deferred
+        // fix: handled via fixed flags
         break;
+      case 'tangent': {
+        if (c.entityIds.length < 2) break;
+        const eA = entityMap.get(c.entityIds[0]);
+        const eB = entityMap.get(c.entityIds[1]);
+        if (!eA || !eB) break;
+        const line = eA.points.length >= 2 && (eA.type === 'line' || eA.type === 'construction-line' || eA.type === 'centerline') ? eA
+          : eB.points.length >= 2 && (eB.type === 'line' || eB.type === 'construction-line' || eB.type === 'centerline') ? eB
+            : null;
+        const curve = line === eA ? eB : eA;
+        if (!line || !(curve.type === 'circle' || curve.type === 'arc')) break;
+        const a0 = getPoint(line.id, 0, pointMap);
+        const a1 = getPoint(line.id, line.points.length - 1, pointMap);
+        const center = getPoint(curve.id, 0, pointMap);
+        const dx = a1.x - a0.x;
+        const dy = a1.y - a0.y;
+        const len = Math.hypot(dx, dy);
+        if (len < 1e-12) break;
+        const distance = Math.abs(dy * center.x - dx * center.y + a1.x * a0.y - a1.y * a0.x) / len;
+        residuals.push(distance - (curve.radius ?? 0));
+        break;
+      }
       case 'symmetric': {
         // entityIds: [axisId, entityAId, entityBId]
         // Mirror each point of entity A across the axis entity's line;

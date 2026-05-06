@@ -1,18 +1,118 @@
 import * as THREE from 'three';
 import type { Feature, FeatureType } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
+import { PARAMETRIC_MODELS } from '../../../../parametric';
+import type { ParametricParameterValue } from '../../../../parametric';
 import { useComponentStore } from '../../../componentStore';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
+import type { DesignConfiguration } from '../../state/coreState';
+import { recomputeBooleanDependents } from './featureBooleanUtils';
+
+const BASE_CONFIGURATION_ID = 'default';
+
+function captureConfigurationFromFeatures(
+  features: Feature[],
+  existing?: DesignConfiguration,
+  name = 'Default',
+): DesignConfiguration {
+  const featureSuppression: DesignConfiguration['featureSuppression'] = {};
+  const parametricParameters: DesignConfiguration['parametricParameters'] = {};
+
+  for (const feature of features) {
+    featureSuppression[feature.id] = !!feature.suppressed;
+    if (feature.params?.kind === 'parametric' && feature.params.parametricParameters) {
+      parametricParameters[feature.id] = {
+        ...(feature.params.parametricParameters as Record<string, ParametricParameterValue>),
+      };
+    }
+  }
+
+  return {
+    id: existing?.id ?? BASE_CONFIGURATION_ID,
+    name: existing?.name ?? name,
+    featureSuppression,
+    parametricParameters,
+    updatedAt: Date.now(),
+  };
+}
+
+function rebuildParametricMesh(feature: Feature, params: Record<string, ParametricParameterValue>): Feature {
+  const modelId = typeof feature.params?.parametricModelId === 'string' ? feature.params.parametricModelId : '';
+  const model = PARAMETRIC_MODELS.find((candidate) => candidate.id === modelId);
+  if (!model) {
+    return {
+      ...feature,
+      params: { ...feature.params, parametricParameters: params },
+    };
+  }
+
+  const oldMesh = feature.mesh;
+  let mesh: THREE.Mesh | undefined;
+  try {
+    mesh = model.build(params);
+  } catch {
+    return { ...feature, params: { ...feature.params, parametricParameters: params } };
+  }
+  if (oldMesh instanceof THREE.Mesh) {
+    const oldGeometry = oldMesh.geometry;
+    const oldMaterial = oldMesh.material;
+    setTimeout(() => {
+      oldGeometry?.dispose();
+      const materials = Array.isArray(oldMaterial) ? oldMaterial : [oldMaterial];
+      for (const material of materials) {
+        if (!material?.userData?.shared) material?.dispose?.();
+      }
+    }, 0);
+  }
+  return {
+    ...feature,
+    params: { ...feature.params, parametricParameters: params },
+    mesh,
+  };
+}
+
+function applyDesignConfiguration(features: Feature[], configuration: DesignConfiguration): Feature[] {
+  return features.map((feature) => {
+    const parametricParams = configuration.parametricParameters[feature.id];
+    const nextFeature = {
+      ...feature,
+      suppressed: configuration.featureSuppression[feature.id] ?? !!feature.suppressed,
+    };
+    return parametricParams ? rebuildParametricMesh(nextFeature, parametricParams) : nextFeature;
+  });
+}
 
 export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
   features: [],
+  designConfigurations: [{
+    id: BASE_CONFIGURATION_ID,
+    name: 'Default',
+    featureSuppression: {},
+    parametricParameters: {},
+    updatedAt: Date.now(),
+  }],
+  activeDesignConfigurationId: BASE_CONFIGURATION_ID,
   addFeature: (feature) => {
     const { historyEnabled } = get();
     if (historyEnabled) get().pushUndo();
     const f = historyEnabled ? feature : { ...feature, suppressTimeline: true };
-    set((state) => ({ features: [...state.features, f] }));
+    set((state) => {
+      const features = [...state.features, f];
+      const isParametric = f.params?.kind === 'parametric';
+      return {
+        features,
+        designConfigurations: state.designConfigurations.map((configuration) => {
+          if (configuration.id !== state.activeDesignConfigurationId) return configuration;
+          const featureSuppression = { ...configuration.featureSuppression, [f.id]: !!f.suppressed };
+          const parametricParameters = isParametric && f.params.parametricParameters
+            ? { ...configuration.parametricParameters, [f.id]: f.params.parametricParameters as Record<string, ParametricParameterValue> }
+            : configuration.parametricParameters;
+          return { ...configuration, featureSuppression, parametricParameters, updatedAt: Date.now() };
+        }),
+      };
+    });
   },
   addPrimitive: (kind, params) => set((state) => {
     const label =
@@ -207,6 +307,96 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
   // D190 rollback bar
   rollbackIndex: -1,
   setRollbackIndex: (index) => set({ rollbackIndex: index }),
+
+  createDesignConfiguration: (name) => {
+    const { features, designConfigurations } = get();
+    const label = name?.trim() || `Configuration ${designConfigurations.length + 1}`;
+    const id = crypto.randomUUID();
+    const configuration = captureConfigurationFromFeatures(
+      features,
+      { id, name: label, featureSuppression: {}, parametricParameters: {}, updatedAt: Date.now() },
+      label,
+    );
+    set((state) => ({
+      designConfigurations: [...state.designConfigurations, configuration],
+      activeDesignConfigurationId: id,
+      statusMessage: `Created configuration "${label}"`,
+    }));
+  },
+  switchDesignConfiguration: (id) => {
+    const { designConfigurations, features } = get();
+    const configuration = designConfigurations.find((candidate) => candidate.id === id);
+    if (!configuration) return;
+    get().pushUndo();
+    const applied = applyDesignConfiguration(features, configuration);
+    const rebuiltIds = applied.filter((f, i) => f.mesh !== features[i]?.mesh).map((f) => f.id);
+    const resolved = rebuiltIds.length > 0 ? recomputeBooleanDependents(applied, rebuiltIds) : applied;
+    set({
+      features: resolved,
+      activeDesignConfigurationId: id,
+      statusMessage: `Switched to ${configuration.name}`,
+    });
+  },
+  renameDesignConfiguration: (id, name) => {
+    const label = name.trim();
+    if (!label) return;
+    set((state) => ({
+      designConfigurations: state.designConfigurations.map((configuration) =>
+        configuration.id === id ? { ...configuration, name: label, updatedAt: Date.now() } : configuration,
+      ),
+      statusMessage: `Renamed configuration to "${label}"`,
+    }));
+  },
+  removeDesignConfiguration: (id) => {
+    if (id === BASE_CONFIGURATION_ID) return;
+    set((state) => {
+      const nextConfigurations = state.designConfigurations.filter((configuration) => configuration.id !== id);
+      const activeId = state.activeDesignConfigurationId === id ? BASE_CONFIGURATION_ID : state.activeDesignConfigurationId;
+      const activeConfiguration = nextConfigurations.find((configuration) => configuration.id === activeId);
+      return {
+        designConfigurations: nextConfigurations,
+        activeDesignConfigurationId: activeId,
+        features: activeConfiguration ? applyDesignConfiguration(state.features, activeConfiguration) : state.features,
+        statusMessage: 'Configuration removed',
+      };
+    });
+  },
+  captureDesignConfiguration: (id) => {
+    const { features, activeDesignConfigurationId } = get();
+    const targetId = id ?? activeDesignConfigurationId;
+    set((state) => ({
+      designConfigurations: state.designConfigurations.map((configuration) =>
+        configuration.id === targetId ? captureConfigurationFromFeatures(features, configuration) : configuration,
+      ),
+      statusMessage: 'Configuration captured',
+    }));
+  },
+  exportDesignConfigurations: () => {
+    const { designConfigurations, features } = get();
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      configurations: designConfigurations,
+      variants: designConfigurations.map((configuration) => ({
+        id: configuration.id,
+        name: configuration.name,
+        visibleFeatureIds: features
+          .filter((feature) => !(configuration.featureSuppression[feature.id] ?? feature.suppressed))
+          .map((feature) => feature.id),
+      })),
+    };
+    if (typeof document === 'undefined') {
+      set({ statusMessage: 'Configuration export prepared' });
+      return;
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'design-configurations.json';
+    link.click();
+    URL.revokeObjectURL(url);
+    set({ statusMessage: `Exported ${designConfigurations.length} configuration(s)` });
+  },
 
   // MM3 â€” Base Feature container
   baseFeatureActive: false,

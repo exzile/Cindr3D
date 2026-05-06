@@ -12,6 +12,15 @@ import type {
   Tool,
   ViewMode,
 } from '../../../types/cad';
+import type { ParametricParameterValue } from '../../../parametric';
+
+export interface DesignConfiguration {
+  id: string;
+  name: string;
+  featureSuppression: Record<string, boolean>;
+  parametricParameters: Record<string, Record<string, ParametricParameterValue>>;
+  updatedAt: number;
+}
 
 export interface CADCoreState {
   // Tool state
@@ -98,6 +107,16 @@ export interface CADCoreState {
   setRollbackIndex: (index: number) => void;
   selectedFeatureId: string | null;
   setSelectedFeatureId: (id: string | null) => void;
+
+  // Phase 16.2 - design configurations / variants
+  designConfigurations: DesignConfiguration[];
+  activeDesignConfigurationId: string;
+  createDesignConfiguration: (name?: string) => void;
+  switchDesignConfiguration: (id: string) => void;
+  renameDesignConfiguration: (id: string, name: string) => void;
+  removeDesignConfiguration: (id: string) => void;
+  captureDesignConfiguration: (id?: string) => void;
+  exportDesignConfigurations: () => void;
 
   // MM3 — Base Feature container
   baseFeatureActive: boolean;
