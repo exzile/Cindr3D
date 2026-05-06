@@ -65,6 +65,15 @@ describe('design configurations', () => {
 
     expect(useCADStore.getState().features[0].suppressed).toBe(false);
     expect(useCADStore.getState().features[0].params.parametricParameters).toMatchObject({ width: 80 });
+    expect(useCADStore.getState().activeDesignConfigurationId).toBe('default');
+
+    useCADStore.getState().undo();
+
+    expect(useCADStore.getState().activeDesignConfigurationId).not.toBe('default');
+    expect(useCADStore.getState().features[0].suppressed).toBe(true);
+    expect(useCADStore.getState().features[0].params.parametricParameters).toMatchObject({ width: 40 });
+
+    useCADStore.getState().switchDesignConfiguration('default');
 
     const smallId = useCADStore.getState().designConfigurations.find((configuration) => configuration.name === 'Small')?.id;
     expect(smallId).toBeTruthy();

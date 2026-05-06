@@ -328,27 +328,32 @@
 #   - Add calibration history rows with date, printer, material, nozzle,
 #     profile, result, applied value, notes, and linked photos/G-code.
 #
-# Phase 20.2 - Prepare and slicer integration
-#   - Add calibration model generators for first-layer patches/grids, flow
-#     cubes/surfaces, temperature towers, retraction towers, PA/LA line or
-#     tower patterns, ringing/input-shaper towers, dimensional cubes, hole
-#     tests, tolerance tests, and max volumetric speed towers.
+# Phase 20.2 - Calibration models and metadata
+#   - Pre-built calibration test models (first-layer patches/grids, flow
+#     cubes/surfaces, temperature towers, retraction towers, PA/LA towers,
+#     ringing towers, dimensional cubes, hole tests, tolerance tests, max
+#     volumetric speed towers) are built once and saved in a project folder.
+#     Models can be sourced from Thingiverse, GitHub, or other repositories.
 #   - Pass calibration metadata through slicing so G-code includes test type,
 #     band labels, object names, firmware-specific commands, and result
 #     capture hints.
 #   - Support profile overrides for calibration prints without permanently
 #     mutating the user's normal print profile until the result is accepted.
+#     Save up to 5 prior test profile results per calibration type.
 #
 # Phase 20.3 - Guided calibration wizards
 #   - Each calibration card opens a step-by-step wizard:
 #       1. Setup checks
-#       2. Generate model
+#       2. Load model (from project folder)
 #       3. Slice and preview
-#       4. Send / print / monitor
-#       5. Inspect or measure
-#       6. Apply and save result
+#       4. Choose printer and queue/send
+#       5. Monitor print
+#       6. Inspect or measure
+#       7. Apply and save result
 #   - Include firmware-aware instructions for Duet/RRF, Klipper/Moonraker,
 #     and Marlin/WebSerial.
+#   - Offer multi-printer selection and slot into scheduled queue with
+#     estimated run time.
 #   - Capture manual measurement fields for calipers, wall thickness,
 #     band selection, best temperature, stringing score, ringing band,
 #     first-layer quality, and dimensional error.
@@ -369,12 +374,16 @@
 #     temperature towers, stringing towers, corners, and ringing artifacts.
 #   - Use existing camera calibration/AR tools to label test bands and
 #     keep ruler/measurement overlays aligned with the video viewport.
-#   - Provide manual scoring fallbacks when no camera is configured.
+#   - Provide offline fallback: printable result sheets / markups so users
+#     can photograph results manually and attach JPEGs when no camera is
+#     configured.
 #
 # Phase 20.6 - AI-assisted recommendations
 #   - Add AI prompts/tools for "analyze first layer", "pick best temperature
 #     band", "score stringing", "find pressure advance corner artifacts",
 #     "identify ringing band", and "summarize calibration report".
+#   - User chooses whether AI analysis uses local MCP server (BYOK Claude,
+#     faster, private) or cloud vision models (more flexible).
 #   - AI must cite observed evidence, ask for missing measurements, and
 #     separate confidence from the final recommended value.
 #   - Never auto-apply printer-affecting values without explicit user
@@ -388,6 +397,13 @@
 #   - Add exportable calibration reports with photos, G-code metadata,
 #     recommended/applied values, measurements, and before/after notes.
 #
+# Phase 20.8 - Confidence & repeatability
+#   - Track measurement variance across repeated calibrations.
+#   - Highlight high-confidence bands for banded tests (temperature, PA, etc.)
+#     and suggest re-runs if results disagree beyond tolerance.
+#   - Surface confidence levels in recommendations and result history so
+#     users understand which values are stable vs. noisy.
+#
 # Initial calibration order:
 #   1. Firmware and hardware health checks
 #   2. First layer / Z offset
@@ -399,14 +415,16 @@
 #   8. Dimensional accuracy
 #   9. Max volumetric speed
 #
-# Open questions:
-#   - Should calibration results live primarily on the printer profile,
-#     filament profile, spool record, or a separate calibration store with
-#     links to all three?
-#   - Which tests should be generated as native geometry in Design versus
-#     direct slicer calibration primitives in Prepare?
-#   - How much AI analysis should run locally versus through BYOK cloud
-#     vision models?
+# Resolved decisions:
+#   - Calibration models are pre-built and saved in a project folder
+#     (downloadable from Thingiverse, GitHub, etc.)
+#   - Test profiles save up to 5 prior results for comparison
+#   - Calibration results live on a separate calibration store with links
+#     to printer/filament/spool/profile contexts
+#   - AI analysis: ask user to choose local (MCP) vs cloud vision each run
+#   - Phase 20.4 (firmware apply) drives Phase 20.2 (metadata) design
+#
+# Remaining open questions:
 #   - What is the safest workflow for firmware config writes and rollback?
 #
 

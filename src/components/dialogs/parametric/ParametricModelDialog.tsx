@@ -7,9 +7,18 @@ import { PARAMETRIC_MODELS, getDefaultParams } from '../../../parametric';
 import type { ParametricModelDefinition, ParametricParameterDefinition, ParametricParameterValue } from '../../../parametric';
 import '../common/ToolPanel.css';
 
-function coerceValue(parameter: ParametricParameterDefinition, raw: string): ParametricParameterValue {
+function coerceValue(parameter: ParametricParameterDefinition, raw: string, previous: ParametricParameterValue): ParametricParameterValue {
   if (parameter.type === 'boolean') return raw === 'true';
-  if (parameter.type === 'number') return Number(raw);
+  if (parameter.type === 'number') {
+    const parsed = Number(raw);
+    const fallback =
+      typeof previous === 'number' && Number.isFinite(previous) ? previous :
+      typeof parameter.defaultValue === 'number' && Number.isFinite(parameter.defaultValue) ? parameter.defaultValue :
+      parameter.min ?? 0;
+    const finite = Number.isFinite(parsed) ? parsed : fallback;
+    const minClamped = parameter.min === undefined ? finite : Math.max(parameter.min, finite);
+    return parameter.max === undefined ? minClamped : Math.min(parameter.max, minClamped);
+  }
   return raw;
 }
 
@@ -53,7 +62,7 @@ export function ParametricModelDialog({ onClose }: { onClose: () => void }) {
       ...current,
       [model.id]: {
         ...(current[model.id] ?? getDefaultParams(model)),
-        [parameter.key]: coerceValue(parameter, raw),
+        [parameter.key]: coerceValue(parameter, raw, (current[model.id] ?? getDefaultParams(model))[parameter.key]),
       },
     }));
   };

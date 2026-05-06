@@ -6,6 +6,7 @@ import { deserializeFeature, deserializeSketch, serializeFeature } from '../pers
 import { snapshotCADState } from '../historyUtils';
 import type { CADSliceContext } from '../sliceContext';
 import type { CADState } from '../state';
+import type { DesignConfiguration } from '../state/coreState';
 
 type HistorySketch = Sketch & {
   planeNormal: [number, number, number] | null;
@@ -17,6 +18,8 @@ type HistorySnapshot = {
   sketches: HistorySketch[];
   activeSketch?: HistorySketch | null;
   featureGroups: FeatureGroup[];
+  designConfigurations?: DesignConfiguration[];
+  activeDesignConfigurationId?: string;
   componentStore?: {
     rootComponentId: string;
     activeComponentId: string | null;
@@ -115,6 +118,8 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
         sketches: restoredSketches,
         activeSketch: restoredActiveSketch,
         featureGroups: parsed.featureGroups,
+        designConfigurations: parsed.designConfigurations ?? state.designConfigurations,
+        activeDesignConfigurationId: parsed.activeDesignConfigurationId ?? state.activeDesignConfigurationId,
         statusMessage: 'Undo',
       });
     } catch {
@@ -157,6 +162,8 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
         sketches: restoredSketches,
         activeSketch: restoredActiveSketch,
         featureGroups: parsed.featureGroups,
+        designConfigurations: parsed.designConfigurations ?? state.designConfigurations,
+        activeDesignConfigurationId: parsed.activeDesignConfigurationId ?? state.activeDesignConfigurationId,
         statusMessage: 'Redo',
       });
     } catch {

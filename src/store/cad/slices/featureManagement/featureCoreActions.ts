@@ -55,7 +55,15 @@ function rebuildParametricMesh(feature: Feature, params: Record<string, Parametr
     return { ...feature, params: { ...feature.params, parametricParameters: params } };
   }
   if (oldMesh instanceof THREE.Mesh) {
-    setTimeout(() => oldMesh.geometry?.dispose(), 0);
+    const oldGeometry = oldMesh.geometry;
+    const oldMaterial = oldMesh.material;
+    setTimeout(() => {
+      oldGeometry?.dispose();
+      const materials = Array.isArray(oldMaterial) ? oldMaterial : [oldMaterial];
+      for (const material of materials) {
+        if (!material?.userData?.shared) material?.dispose?.();
+      }
+    }, 0);
   }
   return {
     ...feature,

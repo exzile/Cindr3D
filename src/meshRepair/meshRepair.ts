@@ -19,6 +19,24 @@ function triangleIndices(geometry: THREE.BufferGeometry): number[] {
   return Array.from({ length: position.count }, (_, index) => index);
 }
 
+function remappedTriangleIndices(geometry: THREE.BufferGeometry, tolerance: number): number[] {
+  const position = geometry.getAttribute('position');
+  if (!position) return [];
+
+  const vertexMap = new Map<string, number>();
+  const remapped: number[] = [];
+  for (const sourceIndex of triangleIndices(geometry)) {
+    const k = key(position.getX(sourceIndex), position.getY(sourceIndex), position.getZ(sourceIndex), tolerance);
+    let nextIndex = vertexMap.get(k);
+    if (nextIndex === undefined) {
+      nextIndex = vertexMap.size;
+      vertexMap.set(k, nextIndex);
+    }
+    remapped.push(nextIndex);
+  }
+  return remapped;
+}
+
 export function analyzeMeshGeometry(geometry: THREE.BufferGeometry, tolerance = 1e-5): MeshRepairReport {
   const position = geometry.getAttribute('position');
   if (!position) {
@@ -33,7 +51,8 @@ export function analyzeMeshGeometry(geometry: THREE.BufferGeometry, tolerance = 
     seen.add(k);
   }
 
-  const indices = triangleIndices(geometry);
+  const sourceIndices = triangleIndices(geometry);
+  const indices = remappedTriangleIndices(geometry, tolerance);
   const edges = new Map<string, number>();
   let degenerateFaces = 0;
   const va = new THREE.Vector3();
@@ -43,12 +62,15 @@ export function analyzeMeshGeometry(geometry: THREE.BufferGeometry, tolerance = 
   const ac = new THREE.Vector3();
 
   for (let i = 0; i + 2 < indices.length; i += 3) {
+    const sourceA = sourceIndices[i];
+    const sourceB = sourceIndices[i + 1];
+    const sourceC = sourceIndices[i + 2];
     const a = indices[i];
     const b = indices[i + 1];
     const c = indices[i + 2];
-    va.fromBufferAttribute(position, a);
-    vb.fromBufferAttribute(position, b);
-    vc.fromBufferAttribute(position, c);
+    va.fromBufferAttribute(position, sourceA);
+    vb.fromBufferAttribute(position, sourceB);
+    vc.fromBufferAttribute(position, sourceC);
     if (ab.subVectors(vb, va).cross(ac.subVectors(vc, va)).lengthSq() <= tolerance * tolerance) degenerateFaces += 1;
     for (const [u, v] of [[a, b], [b, c], [c, a]]) {
       const edge = u < v ? `${u}:${v}` : `${v}:${u}`;
@@ -74,12 +96,9 @@ export function analyzeMeshGeometry(geometry: THREE.BufferGeometry, tolerance = 
 }
 
 export function weldMeshVertices(geometry: THREE.BufferGeometry, tolerance = 1e-5): THREE.BufferGeometry {
-  const needsExpand = !geometry.index;
-  const source = needsExpand ? geometry.toNonIndexed() : geometry;
-  const position = source.getAttribute('position');
-  const normal = source.getAttribute('normal');
+  const position = geometry.getAttribute('position');
+  const normal = geometry.getAttribute('normal');
   if (!position) {
-    if (needsExpand) source.dispose();
     return geometry.clone();
   }
 
@@ -88,19 +107,17 @@ export function weldMeshVertices(geometry: THREE.BufferGeometry, tolerance = 1e-
   const normals: number[] = [];
   const indices: number[] = [];
 
-  for (let i = 0; i < position.count; i += 1) {
-    const k = key(position.getX(i), position.getY(i), position.getZ(i), tolerance);
+  for (const sourceIndex of triangleIndices(geometry)) {
+    const k = key(position.getX(sourceIndex), position.getY(sourceIndex), position.getZ(sourceIndex), tolerance);
     let nextIndex = vertexMap.get(k);
     if (nextIndex === undefined) {
       nextIndex = positions.length / 3;
       vertexMap.set(k, nextIndex);
-      positions.push(position.getX(i), position.getY(i), position.getZ(i));
-      if (normal) normals.push(normal.getX(i), normal.getY(i), normal.getZ(i));
+      positions.push(position.getX(sourceIndex), position.getY(sourceIndex), position.getZ(sourceIndex));
+      if (normal) normals.push(normal.getX(sourceIndex), normal.getY(sourceIndex), normal.getZ(sourceIndex));
     }
     indices.push(nextIndex);
   }
-
-  if (needsExpand) source.dispose();
 
   const next = new THREE.BufferGeometry();
   next.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));

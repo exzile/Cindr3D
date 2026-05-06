@@ -5,6 +5,43 @@ import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
 import { recomputeBooleanDependents, runBoolean } from './featureBooleanUtils';
 
+function getBooleanParentIds(feature: Feature): string[] {
+  const fromArray = feature.params.booleanParentIds;
+  if (Array.isArray(fromArray)) return fromArray.filter((id): id is string => typeof id === 'string');
+  return [feature.params.targetId, feature.params.toolId].filter((id): id is string => typeof id === 'string');
+}
+
+function keepsParentsHidden(feature: Feature): boolean {
+  return feature.type === 'combine' && feature.params.keepTools === false;
+}
+
+function parentIsHiddenByAnotherCombine(features: Feature[], parentId: string, excludeCombineId: string): boolean {
+  return features.some((feature) =>
+    feature.id !== excludeCombineId &&
+    keepsParentsHidden(feature) &&
+    getBooleanParentIds(feature).includes(parentId),
+  );
+}
+
+function syncActiveConfigurationSuppression(
+  state: CADState,
+  entries: Record<string, boolean>,
+): CADState['designConfigurations'] {
+  const updatedAt = Date.now();
+  return state.designConfigurations.map((configuration) =>
+    configuration.id === state.activeDesignConfigurationId
+      ? {
+          ...configuration,
+          featureSuppression: {
+            ...configuration.featureSuppression,
+            ...entries,
+          },
+          updatedAt,
+        }
+      : configuration,
+  );
+}
+
 export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
   // D119 Tessellate
@@ -345,7 +382,16 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
           ? { ...f, suppressed: true }
           : f
       );
-      return { features: [...updated, combineFeature], statusMessage: `Combine (${operation}) created with editable parents` };
+      const suppressionEntries: Record<string, boolean> = {
+        [combineFeature.id]: false,
+        [targetFeatureId]: !keepTool,
+        [toolFeatureId]: !keepTool,
+      };
+      return {
+        features: [...updated, combineFeature],
+        designConfigurations: syncActiveConfigurationSuppression(state, suppressionEntries),
+        statusMessage: `Combine (${operation}) created with editable parents`,
+      };
     });
   },
 
@@ -419,18 +465,33 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
     newMesh.castShadow = true;
     newMesh.receiveShadow = true;
     const oldMesh = feature.mesh;
-    set((state) => ({
-      features: state.features.map((f) => {
+    set((state) => {
+      const oldParentIds = getBooleanParentIds(feature);
+      const nextParentIds = [targetId, toolId];
+      const affectedParentIds = Array.from(new Set([...oldParentIds, ...nextParentIds]));
+      const features = state.features.map((f) => {
         if (f.id === featureId) {
           return { ...f, mesh: newMesh, params: { ...f.params, operation, keepTools, targetId, toolId, booleanParentIds: [targetId, toolId], recomputeOnParentChange: true } };
         }
-        if (f.id === targetId || f.id === toolId) {
-          return { ...f, suppressed: !keepTools };
+        if (affectedParentIds.includes(f.id)) {
+          const isNextParent = nextParentIds.includes(f.id);
+          const shouldSuppress = isNextParent
+            ? !keepTools
+            : parentIsHiddenByAnotherCombine(state.features, f.id, featureId);
+          return { ...f, suppressed: shouldSuppress };
         }
         return f;
-      }),
-      statusMessage: `Combine (${operation}) updated`,
-    }));
+      });
+      const suppressionEntries: Record<string, boolean> = { [featureId]: false };
+      for (const id of affectedParentIds) {
+        suppressionEntries[id] = !!features.find((candidate) => candidate.id === id)?.suppressed;
+      }
+      return {
+        features,
+        designConfigurations: syncActiveConfigurationSuppression(state, suppressionEntries),
+        statusMessage: `Combine (${operation}) updated`,
+      };
+    });
     if (oldMesh instanceof THREE.Mesh) {
       const geo = oldMesh.geometry;
       setTimeout(() => geo.dispose(), 0);

@@ -20,6 +20,8 @@ export function snapshotCADState(state: CADState): string {
     sketches: state.sketches.map(serializeSketchForHistory),
     activeSketch: state.activeSketch ? serializeSketchForHistory(state.activeSketch) : null,
     featureGroups: state.featureGroups,
+    designConfigurations: state.designConfigurations,
+    activeDesignConfigurationId: state.activeDesignConfigurationId,
     componentStore: {
       rootComponentId: componentState.rootComponentId,
       activeComponentId: componentState.activeComponentId,
