@@ -839,7 +839,7 @@
   top: 0;
   z-index: 3;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 5px;
   padding: 4px;
   border: 1px solid var(--border-light);

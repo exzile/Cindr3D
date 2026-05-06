@@ -358,7 +358,7 @@ function loadNumberSetting(key: string, fallback: number): number {
 function loadControlSectionSetting(): ControlSection {
   try {
     const value = localStorage.getItem(CONTROL_SECTION_KEY);
-    return value === 'settings' || value === 'library' || value === 'timeline' || value === 'health' || value === 'record'
+    return value === 'settings' || value === 'library' || value === 'timeline' || value === 'health' || value === 'record' || value === 'view'
       ? value
       : 'record';
   } catch {
@@ -2663,9 +2663,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     { mode: 'both', label: 'AR', hint: 'Camera with aligned print preview' },
     { mode: 'print', label: 'Preview', hint: 'Print preview overlay with camera dimmed' },
   ];
-  const showViewTools = !compact && (
-    measurementMode !== 'off' || calibration.enabled || bedCornersComplete || calibration.measureA || cameraOverlayMode !== 'camera'
-  );
 
   return (
     <div className={`cam-panel${compact ? ' cam-panel--compact' : ''}`}>
@@ -2841,7 +2838,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
               )}
             </div>
 
-            {(showViewTools || compact) && (
+            {compact && (
               <section className={`cam-panel__view-tools${compact ? ' cam-panel__view-tools--compact' : ''}`} aria-label="Camera view and calibration tools">
                 <div className="cam-panel__view-mode" role="group" aria-label="Camera overlay mode">
                   {overlayModeOptions.map(({ mode, label, hint }) => (
@@ -3183,6 +3180,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
           <div className="cam-panel__control-tabs" role="tablist" aria-label="Camera control sections">
             {([
               ['record', 'Record', Video],
+              ['view', 'View', Crosshair],
               ['settings', 'Settings', Settings],
               ['library', 'Library', FolderOpen],
               ['timeline', 'Timeline', Timer],
@@ -3231,7 +3229,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
           </section>
           )}
 
-          {activeControlSection === 'record' && (
+          {activeControlSection === 'view' && (
           <section className="cam-panel__control-section" aria-label="Camera view controls">
             <div className="cam-panel__section-head">
               <span><Crosshair size={14} /> View</span>
@@ -3250,6 +3248,33 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
             <button className="cam-panel__button" type="button" onClick={() => setRotation((value) => (value + 90) % 360)}>
               <RotateCw size={13} /> Rotate
             </button>
+            </div>
+            <div className="cam-panel__view-tools" aria-label="Camera overlay mode and calibration">
+              <div className="cam-panel__view-mode" role="group" aria-label="Camera overlay mode">
+                {overlayModeOptions.map(({ mode, label, hint }) => (
+                  <button
+                    key={mode}
+                    className={`cam-panel__button ${cameraOverlayMode === mode ? 'is-active' : ''}`}
+                    type="button"
+                    onClick={() => setCameraOverlayMode(mode)}
+                    title={hint}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="cam-panel__view-status">
+                <Crosshair size={13} />
+                <span>{calibration.measureA && calibration.measureB ? formatMeasurementDistance(measuredDistanceMm) : measurementStatus}</span>
+              </div>
+              {calibration.enabled && (
+                <div className="cam-panel__view-calibration">
+                  <label>X<input type="range" min={0} max={80} value={calibration.x} onChange={(event) => setCalibration((value) => ({ ...value, x: Number(event.target.value) }))} /></label>
+                  <label>Y<input type="range" min={0} max={80} value={calibration.y} onChange={(event) => setCalibration((value) => ({ ...value, y: Number(event.target.value) }))} /></label>
+                  <label>W<input type="range" min={10} max={100} value={calibration.width} onChange={(event) => setCalibration((value) => ({ ...value, width: Number(event.target.value) }))} /></label>
+                  <label>H<input type="range" min={10} max={100} value={calibration.height} onChange={(event) => setCalibration((value) => ({ ...value, height: Number(event.target.value) }))} /></label>
+                </div>
+              )}
             </div>
             <div className="cam-panel__calibration-tools">
               <label className="cam-panel__toggle">
