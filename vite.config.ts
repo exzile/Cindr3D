@@ -196,19 +196,20 @@ function cameraProxyPlugin(): Plugin {
   };
 }
 
-// Proxies /github-proxy?url=<encoded URL> → the upstream URL on GitHub,
-// following redirects (github.com → objects.githubusercontent.com).
-// Browsers block those asset-CDN URLs because they don't send CORS headers;
-// this dev-only proxy re-emits the bytes with ACAO:* so firmware updates work.
+// Sends short camera control commands through the dev server so PTZ can use
+// Basic/Digest auth without sharing the long-lived MJPEG stream proxy path.
 function cameraCommandProxyPlugin(): Plugin {
   return {
     name: 'camera-command-proxy',
     configureServer(server) {
       server.middlewares.use('/camera-command-proxy', (req, res) => {
         const parsedReq = new URL(req.url ?? '/', 'http://localhost');
-        const target = parsedReq.searchParams.get('url');
-        const username = parsedReq.searchParams.get('username') ?? '';
-        const password = parsedReq.searchParams.get('password') ?? '';
+        const targetHeader = req.headers['x-camera-url'];
+        const usernameHeader = req.headers['x-camera-username'];
+        const passwordHeader = req.headers['x-camera-password'];
+        const target = typeof targetHeader === 'string' ? targetHeader : parsedReq.searchParams.get('url');
+        const username = typeof usernameHeader === 'string' ? usernameHeader : parsedReq.searchParams.get('username') ?? '';
+        const password = typeof passwordHeader === 'string' ? passwordHeader : parsedReq.searchParams.get('password') ?? '';
         if (!target) { res.statusCode = 400; res.end('missing ?url'); return; }
 
         let targetUrl: URL;
@@ -663,6 +664,8 @@ function rtspRecordingPlugin(): Plugin {
   };
 }
 
+// Proxies /github-proxy?url=<encoded URL> to GitHub-hosted assets and emits
+// permissive CORS headers for firmware downloads in local development.
 function githubProxyPlugin(): Plugin {
   const ALLOW_HOSTS = new Set([
     'api.github.com',

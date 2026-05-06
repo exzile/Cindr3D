@@ -566,12 +566,23 @@ function sendCameraCommand(url: string, username: string, password: string, time
     image.onerror = finish;
     const normalizedUrl = normalizeCameraStreamUrl(url);
     if (import.meta.env.DEV) {
-      const params = new URLSearchParams({
-        url: normalizedUrl,
-        username: username.trim(),
-        password,
+      const controller = new AbortController();
+      timeout = window.setTimeout(() => {
+        controller.abort();
+        finish();
+      }, timeoutMs);
+      void fetch('/camera-command-proxy', {
+        method: 'POST',
+        headers: {
+          'x-camera-url': normalizedUrl,
+          'x-camera-username': username.trim(),
+          'x-camera-password': password,
+        },
+        cache: 'no-store',
+        signal: controller.signal,
+      }).catch(() => undefined).finally(() => {
+        finish();
       });
-      image.src = `/camera-command-proxy?${params.toString()}`;
       return;
     }
     image.src = cameraUrlWithCredentials(normalizedUrl, username, password);
@@ -2902,7 +2913,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
             </div>
 
             {compact && (
-              <section className={`cam-panel__view-tools${compact ? ' cam-panel__view-tools--compact' : ''}`} aria-label="Camera view and calibration tools">
+              <section className="cam-panel__view-tools cam-panel__view-tools--compact" aria-label="Camera view mode">
                 <div className="cam-panel__view-mode" role="group" aria-label="Camera overlay mode">
                   {overlayModeOptions.map(({ mode, label, hint }) => (
                     <button
@@ -2916,57 +2927,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
                     </button>
                   ))}
                 </div>
-                {!compact && measurementMode !== 'off' && (
-                  <div className="cam-panel__view-status">
-                    <Crosshair size={13} />
-                    <span>{measurementStatus}</span>
-                  </div>
-                )}
-                {!compact && (measurementMode !== 'off' || bedCornersComplete || calibration.measureA) && (
-                  <div className="cam-panel__view-actions">
-                    <button
-                      className={`cam-panel__button ${measurementMode === 'bed' ? 'is-active' : ''}`}
-                      type="button"
-                      disabled={!hasCamera}
-                      onClick={() => {
-                        setMeasurementMode((mode) => mode === 'bed' ? 'off' : 'bed');
-                        setNextBedCornerIndex(0);
-                      }}
-                    >
-                      <Crosshair size={13} /> Pick corners
-                    </button>
-                    <button className="cam-panel__button" type="button" disabled={!bedCornersComplete || !homography} onClick={savePoseCalibration}>
-                      <Save size={13} /> Save pose
-                    </button>
-                    <button
-                      className={`cam-panel__button ${measurementMode === 'ruler' ? 'is-active' : ''}`}
-                      type="button"
-                      disabled={!hasCamera || !bedCornersComplete}
-                      onClick={() => setMeasurementMode((mode) => mode === 'ruler' ? 'off' : 'ruler')}
-                    >
-                      <Ruler size={13} /> Ruler
-                    </button>
-                    <button
-                      className="cam-panel__button cam-panel__button--danger"
-                      type="button"
-                      onClick={() => {
-                        setCalibration((value) => ({ ...value, bedCorners: undefined, measureA: undefined, measureB: undefined, pose: undefined }));
-                        setMeasurementMode('off');
-                        setNextBedCornerIndex(0);
-                      }}
-                    >
-                      <Trash2 size={13} /> Clear bed
-                    </button>
-                  </div>
-                )}
-                {!compact && calibration.enabled && (
-                  <div className="cam-panel__view-calibration">
-                    <label>X<input type="range" min={0} max={80} value={calibration.x} onChange={(event) => setCalibration((value) => ({ ...value, x: Number(event.target.value) }))} /></label>
-                    <label>Y<input type="range" min={0} max={80} value={calibration.y} onChange={(event) => setCalibration((value) => ({ ...value, y: Number(event.target.value) }))} /></label>
-                    <label>W<input type="range" min={10} max={100} value={calibration.width} onChange={(event) => setCalibration((value) => ({ ...value, width: Number(event.target.value) }))} /></label>
-                    <label>H<input type="range" min={10} max={100} value={calibration.height} onChange={(event) => setCalibration((value) => ({ ...value, height: Number(event.target.value) }))} /></label>
-                  </div>
-                )}
               </section>
             )}
 
