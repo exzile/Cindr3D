@@ -104,8 +104,9 @@ export function SlicerGCodeDockPanel() {
   const parsedByLayer = useMemo(() => {
     const map = new Map<number, GCodeLine[]>();
     for (const line of parsed) {
-      let arr = map.get(line.layerIndex);
-      if (!arr) { arr = []; map.set(line.layerIndex, arr); }
+      const layerIndex = line.layerIndex ?? 0;
+      let arr = map.get(layerIndex);
+      if (!arr) { arr = []; map.set(layerIndex, arr); }
       arr.push(line);
     }
     return map;
@@ -166,6 +167,7 @@ export function SlicerGCodeDockPanel() {
 
         if (state.previewSimPlaying) {
           setCurrentLayerIndex(layerIdx);
+          return;
         } else {
           deferredLayerRef.current = layerIdx;
           if (layerTimerRef.current) clearTimeout(layerTimerRef.current);
@@ -303,10 +305,17 @@ export function SlicerGCodeDockPanel() {
 
   return (
     <div className={`slicer-gcode-dock${expanded ? ' is-expanded' : ''}`}>
-      <button
-        type="button"
+      <div
         className="slicer-gcode-dock__header"
         onClick={() => setExpanded((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setExpanded((v) => !v);
+          }
+        }}
+        role="button"
+        tabIndex={0}
         aria-expanded={expanded}
         aria-label="Toggle G-code panel"
       >
@@ -345,7 +354,7 @@ export function SlicerGCodeDockPanel() {
         <span className="slicer-gcode-dock__chevron">
           {expanded ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
         </span>
-      </button>
+      </div>
 
       {expanded && (
         <div
