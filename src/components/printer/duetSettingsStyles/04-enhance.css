@@ -755,6 +755,110 @@
 }
 .duet-settings__serial-input-row .duet-settings__input { flex: 1; }
 
+/* -- Notification integrations -------------------------------------------- */
+.duet-settings__integration-form {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 160px minmax(220px, 2fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.duet-settings__integration-form--rule {
+  grid-template-columns: minmax(180px, 1fr) 180px;
+  justify-content: start;
+}
+
+.duet-settings__integration-url {
+  min-width: 0;
+}
+
+.duet-settings__integration-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.duet-settings__integration-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+}
+
+.duet-settings__integration-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.duet-settings__integration-toggle span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.duet-settings__integration-toggle strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.duet-settings__integration-toggle small {
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.duet-settings__integration-pick-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.duet-settings__integration-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.duet-settings__integration-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.duet-settings__integration-chip:has(input:checked) {
+  border-color: rgba(120,130,240,0.55);
+  background: rgba(120,130,240,0.14);
+  color: var(--text-primary);
+}
+
+.duet-settings__integration-chip input {
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent);
+}
+
 /* -- Reduced motion --------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   .duet-settings__body {
@@ -779,4 +883,8 @@
   .duet-settings__nav-back > svg { width: 16px; height: 16px; }
   .duet-settings__body { padding: 14px 14px 18px; }
   .duet-settings__page-title { font-size: 16px; }
+  .duet-settings__integration-form,
+  .duet-settings__integration-form--rule {
+    grid-template-columns: 1fr;
+  }
 }

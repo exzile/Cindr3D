@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import type { CSSProperties } from 'react';
 import { X } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
+import { sendIntegrationEvent, type IntegrationPrinterSnapshot } from '../../services/integrations/notificationSender';
+import type { IntegrationEventType } from '../../store/integrationStore';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -77,6 +79,8 @@ let nextToastId = 1;
 export default function DuetNotifications() {
   const model = usePrinterStore((s) => s.model);
   const connected = usePrinterStore((s) => s.connected);
+  const activePrinterId = usePrinterStore((s) => s.activePrinterId);
+  const printers = usePrinterStore((s) => s.printers);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   // Track previous values for change detection
@@ -85,6 +89,7 @@ export default function DuetNotifications() {
   const prevStatusRef = useRef<string>('');
   const prevConnectedRef = useRef<boolean>(false);
   const prevHeaterStatesRef = useRef<string[]>([]);
+  const prevLayerRef = useRef<number | undefined>(undefined);
 
   const addToast = useCallback((type: ToastType, message: string) => {
     const id = nextToastId++;
@@ -94,6 +99,36 @@ export default function DuetNotifications() {
   const removeToast = useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  const buildSnapshot = useCallback((statusOverride?: string): IntegrationPrinterSnapshot => {
+    const activePrinter = printers.find((printer) => printer.id === activePrinterId);
+    const temperatures = Object.fromEntries(
+      (model.heat?.heaters ?? []).map((heater, index) => [`heater${index}`, heater?.current ?? null]),
+    );
+    const position = Object.fromEntries(
+      (model.move?.axes ?? []).map((axis) => [axis.letter, axis.userPosition ?? axis.machinePosition ?? null]),
+    );
+
+    return {
+      printerId: activePrinterId,
+      printerName: activePrinter?.name ?? model.network?.name ?? 'Printer',
+      status: statusOverride ?? model.state?.status ?? (connected ? 'connected' : 'disconnected'),
+      fileName: model.job?.file?.fileName ?? model.job?.lastFileName,
+      layer: model.job?.layer,
+      progress: model.job?.file?.size ? Math.round((model.job.filePosition / model.job.file.size) * 100) : undefined,
+      temperatures,
+      position,
+    };
+  }, [activePrinterId, connected, model.heat?.heaters, model.job, model.move?.axes, model.network?.name, model.state?.status, printers]);
+
+  const dispatchIntegrationEvent = useCallback((event: IntegrationEventType, statusOverride?: string) => {
+    void sendIntegrationEvent(event, buildSnapshot(statusOverride)).then((results) => {
+      const failed = results.find((result) => !result.ok);
+      if (failed) {
+        addToast('warning', `Integration notification failed: ${failed.error ?? 'unknown error'}`);
+      }
+    });
+  }, [addToast, buildSnapshot]);
 
   // Auto-dismiss timer (single-shot to next expiry; avoids constant interval work)
   useEffect(() => {
@@ -135,18 +170,40 @@ export default function DuetNotifications() {
     const prev = prevStatusRef.current;
 
     if (prev && prev !== status) {
+      if (prev !== 'processing' && status === 'processing') {
+        dispatchIntegrationEvent('PRINT_START');
+      }
       // Print completed
       if (prev === 'processing' && status === 'idle') {
         addToast('success', 'Print completed successfully');
+        dispatchIntegrationEvent('DONE');
       }
       // Print paused
       if (status === 'paused' && prev !== 'paused') {
         addToast('warning', 'Print paused - requires attention');
+        dispatchIntegrationEvent('PAUSED');
+      }
+      if (status === 'halted' && prev !== 'halted') {
+        addToast('error', 'Printer halted');
+        dispatchIntegrationEvent('FAILED');
       }
     }
 
     prevStatusRef.current = status;
-  }, [model.state?.status, addToast]);
+  }, [model.state?.status, addToast, dispatchIntegrationEvent]);
+
+  // Watch for layer changes during active prints
+  useEffect(() => {
+    const status = model.state?.status ?? 'disconnected';
+    const layer = model.job?.layer;
+    const prevLayer = prevLayerRef.current;
+
+    if (status === 'processing' && typeof layer === 'number' && typeof prevLayer === 'number' && prevLayer !== layer) {
+      dispatchIntegrationEvent('LAYER_CHANGE');
+    }
+
+    prevLayerRef.current = typeof layer === 'number' ? layer : undefined;
+  }, [model.job?.layer, model.state?.status, dispatchIntegrationEvent]);
 
   // Watch for connection lost
   useEffect(() => {
@@ -166,12 +223,13 @@ export default function DuetNotifications() {
       currentStates.forEach((state, i) => {
         if (state === 'fault' && prevStates[i] !== 'fault') {
           addToast('error', `Heater ${i} fault detected`);
+          dispatchIntegrationEvent('FAILED', `heater-${i}-fault`);
         }
       });
     }
 
     prevHeaterStatesRef.current = currentStates;
-  }, [model.heat?.heaters, addToast]);
+  }, [model.heat?.heaters, addToast, dispatchIntegrationEvent]);
 
   if (toasts.length === 0) return null;
 

@@ -178,9 +178,9 @@
 
 ### 13.1 Webhook + chat-app notifications  [S]
 #   Settings panel: per-printer or global notification rules
-#   [ ] Generic webhook (POST JSON) for PRINT_START, LAYER_CHANGE, PAUSED,
+#   [x] Generic webhook (POST JSON) for PRINT_START, LAYER_CHANGE, PAUSED,
 #       FAILED, DONE
-#   [ ] First-class Discord, Slack, Telegram targets with per-channel
+#   [x] First-class Discord, Slack, Telegram targets with per-channel
 #       formatting
 
 ### 13.2 MQTT publisher  [S]
