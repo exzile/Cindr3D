@@ -1843,10 +1843,20 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   }, [activeCamera, activePrinterId, prefs.cameras, updatePrinterPrefs]);
 
   const setCameraQuality = useCallback((quality: DuetPrefs['webcamStreamPreference']) => {
-    updatePrinterPrefs(activePrinterId, { webcamStreamPreference: quality });
+    const nextCameras = activeCamera
+      ? prefs.cameras.map((camera) => (
+        camera.id === activeCamera.id
+          ? { ...camera, streamPreference: quality }
+          : camera
+      ))
+      : prefs.cameras;
+    updatePrinterPrefs(activePrinterId, {
+      webcamStreamPreference: quality,
+      cameras: nextCameras,
+    });
     setStreamRevision((value) => value + 1);
     setMessage(quality === 'main' && hdMainIsRtsp ? 'Starting automatic HD bridge...' : quality === 'main' ? 'Switched camera quality to HD.' : 'Switched camera quality to SD.');
-  }, [activePrinterId, hdMainIsRtsp, updatePrinterPrefs]);
+  }, [activeCamera, activePrinterId, hdMainIsRtsp, prefs.cameras, updatePrinterPrefs]);
 
   const runPtzCommand = useCallback(async (direction: PtzDirection) => {
     if (!ptzEnabled) {
