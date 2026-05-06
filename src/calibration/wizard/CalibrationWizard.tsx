@@ -21,7 +21,7 @@ export interface CalibrationWizardProps {
 
 interface CalibrationWizardState {
   step: number;
-  printerIdsel: string;
+  selectedPrinterId: string;
   spoolId: string;
   frames: VisionFrameSample[];
   recommendation: TuningTowerRecommendation | null;
@@ -49,7 +49,7 @@ export function CalibrationWizard({ testType, printerId, onClose }: CalibrationW
   const activePrinterId = usePrinterStore((state) => state.activePrinterId);
   const [state, setState] = useState<CalibrationWizardState>({
     step: 1,
-    printerIdsel: printerId ?? activePrinterId,
+    selectedPrinterId: printerId ?? activePrinterId,
     spoolId: '',
     frames: [],
     recommendation: null,
@@ -77,11 +77,11 @@ export function CalibrationWizard({ testType, printerId, onClose }: CalibrationW
   const body = (() => {
     switch (state.step) {
       case 1:
-        return <StepPickPrinter selectedId={state.printerIdsel} onChange={(id) => updateState({ printerIdsel: id })} />;
+        return <StepPickPrinter selectedId={state.selectedPrinterId} onChange={(id) => updateState({ selectedPrinterId: id })} />;
       case 2:
-        return <StepPickFilament printerId={state.printerIdsel} spoolId={state.spoolId} onChange={(spoolId) => updateState({ spoolId })} />;
+        return <StepPickFilament printerId={state.selectedPrinterId} spoolId={state.spoolId} onChange={(spoolId) => updateState({ spoolId })} />;
       case 3:
-        return <StepSetupCheck printerId={state.printerIdsel} testType={testType} />;
+        return <StepSetupCheck printerId={state.selectedPrinterId} testType={testType} />;
       case 4:
         return <StepLoadModel testType={testType} />;
       case 5:
@@ -94,7 +94,7 @@ export function CalibrationWizard({ testType, printerId, onClose }: CalibrationW
         return (
           <StepInspect
             testType={testType}
-            printerId={state.printerIdsel}
+            printerId={state.selectedPrinterId}
             spoolId={state.spoolId}
             frames={state.frames}
             onFrames={(frames) => updateState({ frames })}
@@ -106,7 +106,7 @@ export function CalibrationWizard({ testType, printerId, onClose }: CalibrationW
         return (
           <StepApplyResult
             testType={testType}
-            printerId={state.printerIdsel}
+            printerId={state.selectedPrinterId}
             recommendation={state.recommendation}
             manualMeasurements={state.manualMeasurements}
             onDone={onClose}

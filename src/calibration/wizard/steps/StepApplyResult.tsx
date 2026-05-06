@@ -1,11 +1,15 @@
 import { useMemo, useState } from 'react';
-import { useCalibrationStore, type CalibrationResult } from '../../../store/calibrationStore';
+import { useCalibrationStore, type CalibrationItemId, type CalibrationResult } from '../../../store/calibrationStore';
 import { usePrinterStore } from '../../../store/printerStore';
 import { useSlicerStore } from '../../../store/slicerStore';
 import type { TuningTowerRecommendation } from '../../../services/vision/tuningWizards';
 import type { PrinterProfile } from '../../../types/slicer';
-
-type CalibrationItemId = 'bed-mesh' | 'pressure-advance' | 'input-shaper' | 'z-offset' | 'first-layer';
+import {
+  type FirmwareFlavor,
+  buildFlowRateCommands,
+  buildPressureAdvanceCommands,
+  buildZOffsetCommands,
+} from '../../firmwareApply';
 
 interface StepApplyResultProps {
   testType: string;
@@ -23,18 +27,21 @@ function itemIdForTest(testType: string): CalibrationItemId {
   return 'z-offset';
 }
 
-function normalizeFirmware(value: string | undefined, fallback: PrinterProfile['gcodeFlavorType']): string {
-  return value ?? fallback;
+function normalizeFirmware(
+  value: string | undefined,
+  fallback: PrinterProfile['gcodeFlavorType'],
+): FirmwareFlavor {
+  if (value === 'marlin' || value === 'klipper' || value === 'duet' || value === 'reprap') return value;
+  return fallback;
 }
 
-function buildCommandPreview(type: string, val: number | undefined, flavor: string): string[] {
-  if (!val) return ['No value to apply'];
-  if (type === 'pressure-advance') {
-    if (flavor === 'klipper') return [`SET_PRESSURE_ADVANCE EXTRUDER=extruder ADVANCE=${val.toFixed(4)}`];
-    if (flavor === 'marlin') return [`M900 K${val.toFixed(4)}`];
-    return [`M572 D0 S${val.toFixed(4)}`];
-  }
-  return [`// Apply ${type} = ${val} - see Task D for firmware-specific commands`];
+function buildCommandPreview(type: string, val: number | undefined, flavor: FirmwareFlavor): string[] {
+  if (type === 'pressure-advance' && val !== undefined) return buildPressureAdvanceCommands(flavor, val);
+  if ((type === 'first-layer' || type === 'z-offset') && val !== undefined) return buildZOffsetCommands(flavor, val);
+  if (type === 'flow-rate' && val !== undefined) return buildFlowRateCommands(flavor, val);
+  if (type === 'bed-mesh') return ['BED_MESH_CALIBRATE']; // TODO: use buildBedMeshCommands after PR #38 merges
+  if (val === undefined) return ['No value to apply'];
+  return [`; ${type} = ${val} — send via printer dashboard`];
 }
 
 export function StepApplyResult({
@@ -55,10 +62,7 @@ export function StepApplyResult({
   const measurementEntries = Object.entries(manualMeasurements);
 
   const saveResult = () => {
-    const result: CalibrationResult = {
-      id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : Date.now().toString(),
+    const result: Omit<CalibrationResult, 'id'> = {
       recordedAt: Date.now(),
       appliedValue: recommendation?.bestValue ?? manualMeasurements.value ?? null,
       measurements: manualMeasurements,
@@ -74,7 +78,7 @@ export function StepApplyResult({
     setSendError(null);
     try {
       for (const command of commandPreview) {
-        if (command.startsWith('//') || command === 'No value to apply') continue;
+        if (command.startsWith(';') || command === 'No value to apply') continue;
         await sendGCode(command);
       }
     } catch (caught) {
