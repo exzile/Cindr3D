@@ -549,10 +549,10 @@ function cameraRtspSourceUrl(prefs: DuetPrefs, fallbackHostname: string): string
   return rtspUrl;
 }
 
-function sendCameraCommand(url: string, username: string, password: string): Promise<void> {
+function sendCameraCommand(url: string, username: string, password: string, timeoutMs = 600): Promise<void> {
   return new Promise((resolve) => {
     const image = new window.Image();
-    const timeout = window.setTimeout(() => resolve(), 1500);
+    const timeout = window.setTimeout(() => resolve(), timeoutMs);
     const finish = () => {
       window.clearTimeout(timeout);
       resolve();
@@ -1901,7 +1901,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     setMessage(quality === 'main' && hdMainIsRtsp ? 'Starting automatic HD bridge...' : quality === 'main' ? 'Switched camera quality to HD.' : 'Switched camera quality to SD.');
   }, [activeCamera, activePrinterId, hdMainIsRtsp, prefs.cameras, updatePrinterPrefs]);
 
-  const runPtzCommand = useCallback(async (direction: PtzDirection) => {
+  const runPtzCommand = useCallback((direction: PtzDirection) => {
     if (!ptzEnabled) {
       setMessage('Enable PTZ controls before moving the camera.');
       return;
@@ -1917,17 +1917,13 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
       return;
     }
 
-    try {
-      await sendCameraCommand(request.startUrl, request.username, request.password);
-      if (request.stopUrl) {
-        window.setTimeout(() => {
-          void sendCameraCommand(request.stopUrl ?? '', request.username, request.password);
-        }, 260);
-      }
-      setMessage(`Sent PTZ ${direction.replace(/([A-Z])/g, ' $1').toLowerCase()} command.`);
-    } catch {
-      setMessage('Unable to send PTZ command. Check the camera settings and credentials.');
+    void sendCameraCommand(request.startUrl, request.username, request.password, 250);
+    if (request.stopUrl) {
+      window.setTimeout(() => {
+        void sendCameraCommand(request.stopUrl ?? '', request.username, request.password, 250);
+      }, 260);
     }
+    setMessage(`Sent PTZ ${direction.replace(/([A-Z])/g, ' $1').toLowerCase()} command.`);
   }, [activeCamera, canUsePtz, config.hostname, ptzEnabled, ptzSpeed]);
 
   const runPtzPreset = useCallback(async (preset: CameraPtzPreset, quiet = false) => {
