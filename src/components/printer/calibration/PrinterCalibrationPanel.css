@@ -66,6 +66,69 @@
   min-height: 0;
 }
 
+.calib-center {
+  margin-bottom: 14px;
+}
+
+.calib-center__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.calib-center__card {
+  border: 1px solid color-mix(in srgb, var(--row-color, var(--accent)) 22%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--row-color, var(--accent)) 6%, var(--bg-toolbar));
+  padding: 9px;
+  display: grid;
+  gap: 8px;
+}
+
+.calib-center__card.is-overdue {
+  --row-color: #ef4444;
+}
+
+.calib-center__card.is-upcoming {
+  --row-color: #f59e0b;
+}
+
+.calib-center__card.is-ok {
+  --row-color: #22c55e;
+}
+
+.calib-center__card-body {
+  display: grid;
+  gap: 5px;
+}
+
+.calib-center__category {
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.calib-center__title {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.calib-center__desc {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.calib-center__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 .printer-calibration-panel__summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -141,7 +204,8 @@
 .printer-calibration-panel__life-row button,
 .printer-calibration-panel__add-component button,
 .printer-calibration-panel__service-form button,
-.printer-calibration-panel__component-actions button {
+.printer-calibration-panel__component-actions button,
+.calib-center__start {
   min-height: 28px;
   border: 1px solid var(--border);
   border-radius: 6px;
