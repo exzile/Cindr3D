@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import { Flame, Play, Snowflake, Square, Thermometer } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import { useChamberControlStore } from '../../../store/chamberControlStore';
+import { useDoorSensorStore } from '../../../store/doorSensorStore';
 import { resolveChamberReading } from '../../../services/integrations/chamberControl';
 import type { TemperatureSample } from '../../../types/duet';
 import { colors as COLORS } from '../../../utils/theme';
@@ -36,7 +37,10 @@ export default function TemperaturePanel() {
   const setToolTemp = usePrinterStore((s) => s.setToolTemp);
   const setBedTemp = usePrinterStore((s) => s.setBedTemp);
   const setChamberTemp = usePrinterStore((s) => s.setChamberTemp);
+  const activePrinterId = usePrinterStore((s) => s.activePrinterId);
   const chamberControl = useChamberControlStore();
+  const doorSensor = useDoorSensorStore((s) => s.getDoorSensor(activePrinterId));
+  const updateDoorSensor = useDoorSensorStore((s) => s.updateDoorSensor);
   const heaters = model.heat?.heaters ?? [];
   const rows = useHeaterRows();
   const chamberReading = useMemo(() => resolveChamberReading(model, chamberControl), [model, chamberControl]);
@@ -270,11 +274,43 @@ export default function TemperaturePanel() {
             <label><input type="checkbox" checked={chamberControl.preheatBeforePrint} onChange={(event) => updateChamberControl({ preheatBeforePrint: event.target.checked })} /> Preheat</label>
             <label><input type="checkbox" checked={chamberControl.cooldownOnDone} onChange={(event) => updateChamberControl({ cooldownOnDone: event.target.checked })} /> Cooldown done</label>
             <label><input type="checkbox" checked={chamberControl.cooldownOnDoorOpen} onChange={(event) => updateChamberControl({ cooldownOnDoorOpen: event.target.checked })} /> Door safety</label>
-            <label><input type="checkbox" checked={chamberControl.doorOpen} onChange={(event) => updateChamberControl({ doorOpen: event.target.checked })} /> Door open</label>
+            <label><input type="checkbox" checked={doorSensor.isOpen} onChange={(event) => {
+              if (!activePrinterId) return;
+              updateDoorSensor(activePrinterId, { isOpen: event.target.checked, updatedAt: Date.now() });
+              updateChamberControl({ doorOpen: event.target.checked });
+            }} /> Door open</label>
             <button className="duet-dash-chamber__cool" type="button" onClick={coolDownChamber}>
               <Snowflake size={13} /> Cool
             </button>
           </div>
+
+          {activePrinterId && (
+            <div className="duet-dash-door">
+              <label>
+                <span>Door source</span>
+                <select
+                  value={doorSensor.source}
+                  onChange={(event) => updateDoorSensor(activePrinterId, { source: event.target.value as typeof doorSensor.source })}
+                >
+                  <option value="manual">Manual</option>
+                  <option value="rrf">RRF GPIO</option>
+                  <option value="klipper">Klipper GPIO</option>
+                  <option value="mqtt">MQTT reed switch</option>
+                </select>
+              </label>
+              <label>
+                <span>Door topic</span>
+                <input
+                  value={doorSensor.mqttTopic}
+                  onChange={(event) => updateDoorSensor(activePrinterId, { mqttTopic: event.target.value })}
+                  placeholder="shop/printer/door"
+                />
+              </label>
+              <label><input type="checkbox" checked={doorSensor.enabled} onChange={(event) => updateDoorSensor(activePrinterId, { enabled: event.target.checked })} /> Monitor</label>
+              <label><input type="checkbox" checked={doorSensor.pauseOnOpen} onChange={(event) => updateDoorSensor(activePrinterId, { pauseOnOpen: event.target.checked })} /> Pause on open</label>
+              <label><input type="checkbox" checked={doorSensor.preventPrintStart} onChange={(event) => updateDoorSensor(activePrinterId, { preventPrintStart: event.target.checked })} /> Start lock</label>
+            </div>
+          )}
         </div>
       )}
 

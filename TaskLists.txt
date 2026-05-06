@@ -221,10 +221,10 @@
 #   [x] Dashboard card: live air-quality readout per printer
 
 ### 13.8 Door / enclosure sensor  [S]
-#   [ ] GPIO via Klipper / RRF / direct MQTT reed switch input
-#   [ ] Pause on door open during print (configurable)
-#   [ ] Optional safety lock: prevent print start with door open
-#   [ ] Pairs with chamber temperature (13.6) for cool-down on open
+#   [x] GPIO via Klipper / RRF / direct MQTT reed switch input
+#   [x] Pause on door open during print (configurable)
+#   [x] Optional safety lock: prevent print start with door open
+#   [x] Pairs with chamber temperature (13.6) for cool-down on open
 
 ### 13.9 Stepper driver tuning UI  [M]
 #   TMC tuning is currently config-file-only.

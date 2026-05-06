@@ -5,9 +5,11 @@ import { usePrinterStore } from '../../store/printerStore';
 import { usePrintRecoveryStore, type PrintRecoverySnapshot } from '../../store/printRecoveryStore';
 import { useChamberControlStore } from '../../store/chamberControlStore';
 import { AIR_QUALITY_SENSOR_LABELS, useAirQualityStore, type AirQualitySensorKey } from '../../store/airQualityStore';
+import { useDoorSensorStore } from '../../store/doorSensorStore';
 import { fetchHomeAssistantCommands, publishHomeAssistantSnapshot } from '../../services/integrations/homeAssistantBridge';
 import { evaluateAirQuality, parseAirQualityPayload } from '../../services/integrations/airQuality';
 import { computeChamberRampCommand, parseChamberTemperaturePayload } from '../../services/integrations/chamberControl';
+import { parseDoorPayload, resolveDoorOpenFromModel } from '../../services/integrations/doorSensor';
 import { sendIntegrationEvent, type IntegrationPrinterSnapshot } from '../../services/integrations/notificationSender';
 import { mqttPublisher } from '../../services/integrations/mqttPublisher';
 import { useIntegrationStore, type IntegrationEventType } from '../../store/integrationStore';
@@ -96,6 +98,7 @@ export default function DuetNotifications() {
   const mqtt = useIntegrationStore((s) => s.mqtt);
   const chamberControl = useChamberControlStore();
   const airQuality = useAirQualityStore((s) => s.getPrinterAirQuality(activePrinterId));
+  const doorSensor = useDoorSensorStore((s) => s.getDoorSensor(activePrinterId));
   const saveRecoverySnapshot = usePrintRecoveryStore((s) => s.saveSnapshot);
   const clearRecoverySnapshot = usePrintRecoveryStore((s) => s.clearSnapshot);
   const dismissRecoverySnapshot = usePrintRecoveryStore((s) => s.dismissSnapshot);
@@ -114,6 +117,7 @@ export default function DuetNotifications() {
   const lastRecoverySnapshotRef = useRef(0);
   const doorOpenCooldownSentRef = useRef(false);
   const lastAirQualityAlertRef = useRef('');
+  const doorPauseSentRef = useRef(false);
 
   const addToast = useCallback((type: ToastType, message: string) => {
     const id = nextToastId++;
@@ -230,6 +234,25 @@ export default function DuetNotifications() {
     return () => cleanups.forEach((cleanup) => cleanup());
   }, [activePrinterId, airQuality.enabled, airQuality.sensors, mqtt]);
 
+  useEffect(() => {
+    if (!activePrinterId || !mqtt.enabled || !doorSensor.enabled || doorSensor.source !== 'mqtt' || !doorSensor.mqttTopic.trim()) return;
+    mqttPublisher.configure(mqtt);
+    return mqttPublisher.subscribe(doorSensor.mqttTopic, (payload) => {
+      const isOpen = parseDoorPayload(payload, useDoorSensorStore.getState().getDoorSensor(activePrinterId));
+      if (isOpen === null) return;
+      useDoorSensorStore.getState().setDoorOpen(activePrinterId, isOpen);
+      useChamberControlStore.getState().updateChamberControl({ doorOpen: isOpen });
+    });
+  }, [activePrinterId, doorSensor.enabled, doorSensor.mqttTopic, doorSensor.source, mqtt]);
+
+  useEffect(() => {
+    if (!activePrinterId || !doorSensor.enabled || (doorSensor.source !== 'rrf' && doorSensor.source !== 'klipper')) return;
+    const isOpen = resolveDoorOpenFromModel(model, doorSensor);
+    if (isOpen === null || isOpen === doorSensor.isOpen) return;
+    useDoorSensorStore.getState().setDoorOpen(activePrinterId, isOpen);
+    useChamberControlStore.getState().updateChamberControl({ doorOpen: isOpen });
+  }, [activePrinterId, doorSensor, model]);
+
   // Auto-dismiss timer (single-shot to next expiry; avoids constant interval work)
   useEffect(() => {
     if (toasts.length === 0) return;
@@ -272,6 +295,11 @@ export default function DuetNotifications() {
     if (prev && prev !== status) {
       if (prev !== 'processing' && status === 'processing') {
         dispatchIntegrationEvent('PRINT_START');
+        if (doorSensor.enabled && doorSensor.preventPrintStart && doorSensor.isOpen) {
+          void pausePrint();
+          addToast('error', 'Door open: print start paused by enclosure safety lock');
+          dispatchIntegrationEvent('PAUSED', 'door-open-start-lock');
+        }
         if (chamberControl.enabled && chamberControl.preheatBeforePrint && chamberControl.targetTemperatureC > 0) {
           void setChamberTemp(chamberControl.targetTemperatureC);
           addToast('info', `Chamber preheat target set to ${chamberControl.targetTemperatureC}C`);
@@ -300,7 +328,7 @@ export default function DuetNotifications() {
     }
 
     prevStatusRef.current = status;
-  }, [activePrinterId, addToast, chamberControl.cooldownOnDone, chamberControl.enabled, chamberControl.preheatBeforePrint, chamberControl.targetTemperatureC, clearRecoverySnapshot, dispatchIntegrationEvent, model.state?.status, setChamberTemp]);
+  }, [activePrinterId, addToast, chamberControl.cooldownOnDone, chamberControl.enabled, chamberControl.preheatBeforePrint, chamberControl.targetTemperatureC, clearRecoverySnapshot, dispatchIntegrationEvent, doorSensor.enabled, doorSensor.isOpen, doorSensor.preventPrintStart, model.state?.status, pausePrint, setChamberTemp]);
 
   useEffect(() => {
     if (!chamberControl.rampActive) return;
@@ -333,6 +361,18 @@ export default function DuetNotifications() {
     useChamberControlStore.getState().stopRamp();
     addToast('warning', 'Door open: chamber heater cooling down');
   }, [addToast, chamberControl.cooldownOnDoorOpen, chamberControl.doorOpen, chamberControl.enabled, setChamberTemp]);
+
+  useEffect(() => {
+    if (!doorSensor.enabled || !doorSensor.pauseOnOpen || !doorSensor.isOpen) {
+      doorPauseSentRef.current = false;
+      return;
+    }
+    if (model.state?.status !== 'processing' || doorPauseSentRef.current) return;
+    doorPauseSentRef.current = true;
+    void pausePrint();
+    addToast('error', 'Door open: active print paused');
+    dispatchIntegrationEvent('PAUSED', 'door-open');
+  }, [addToast, dispatchIntegrationEvent, doorSensor.enabled, doorSensor.isOpen, doorSensor.pauseOnOpen, model.state?.status, pausePrint]);
 
   useEffect(() => {
     if (!activePrinterId || !airQuality.enabled) return;
