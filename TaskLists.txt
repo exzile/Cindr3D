@@ -122,36 +122,30 @@
 # implementation notes live in the shipped PR history and relevant component
 # folders.
 
-## ── Phase 10: Cost & energy ───────────────────────────────────────────────
-## Goal: turn the smart-plug + spool tracker into real cost / sustainability
-## intelligence.
-
-### 10.1 Cost-per-print  [S]
-#   New store fields on spoolStore + smart-plug data
-#   [ ] Filament cost: spool $/kg × estimated used kg
-#   [ ] Electricity cost: smart-plug wattage × time at TOU rate
-#   [ ] Live ticker during print + final receipt on completion
-#   [ ] Aggregate dashboard: per project, per filament, per printer
-
-### 10.2 Off-peak scheduling  [M]
-#   [ ] Per-printer TOU schedule editor (peak / off-peak / shoulder)
-#   [ ] Optional pull from utility API (configurable URL/format)
-#   [ ] Schedule a print to start during cheapest window
-#   [ ] Pairs with Phase 12 calendar UI
-
-### 10.3 Solar-aware printing  [S]
-#   [ ] Optional integration: Tesla Powerwall, Enphase Envoy, SolarEdge
-#   [ ] Read current solar surplus, gate prints on minimum surplus
-#   [ ] On-brand for sustainability messaging
-
-### 10.4 Sustainability dashboard  [S]
-#   [ ] Aggregate kg filament used, kWh consumed, CO2 estimate
-#   [ ] Per-printer / per-month breakdown
-#   [ ] Export to CSV / JSON
-
-# Dependencies: 10.1 standalone. 10.2 → 12.1 (calendar UI). 10.3 standalone.
-# 10.4 depends on 10.1 having collected enough data.
-
+## SHIPPED - Phase 10: Cost & energy [DONE 2026-05-05]
+# Phase 10 turned spool and power telemetry into cost, scheduling, and
+# sustainability intelligence:
+#   - Added per-spool cost-per-kg tracking and filament cost estimates with
+#     defaults for unknown spool pricing.
+#   - Added per-print cost modeling for filament, electricity, energy use,
+#     CO2 estimate, live print ticker, and completed-job receipt rows.
+#   - Added cost analytics grouped by project/file, filament/material,
+#     printer, month, and printer-month.
+#   - Added per-printer time-of-use rate windows, utility-rate config fields,
+#     cheapest-window planning, and schedule-at-cheapest-window integration
+#     with the existing scheduled-print queue.
+#   - Added solar-surplus gates for Tesla Powerwall, Enphase Envoy,
+#     SolarEdge, and custom providers so prints can wait for a minimum
+#     available surplus.
+#   - Added sustainability rollups for filament mass, kWh, estimated CO2,
+#     per-printer/per-month breakdowns, and CSV / JSON exports.
+#
+# Files of record:
+#   src/utils/printCost.ts
+#   src/store/spoolStore.ts
+#   src/store/schedulingStore.ts
+#   src/components/printer/DuetAnalytics.tsx
+#   src/components/printer/SpoolManager.tsx
 
 ## SHIPPED - Phase 11: Maintenance & calibration lifecycle [DONE 2026-05-05]
 ## Phase 11 delivered the maintenance lifecycle layer:
@@ -167,9 +161,6 @@
 #   src/store/calibrationStore.ts
 #   src/components/printer/calibration/PrinterCalibrationPanel.tsx
 #   src/components/printer/scheduling/StartChecklist.tsx
-
-
-
 
 ## SHIPPED - Phase 12: Print scheduling [DONE 2026-05-05]
 # Time-aware orchestration is complete: day/week scheduling calendar, quiet

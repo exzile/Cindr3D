@@ -18,6 +18,8 @@ export interface Spool {
   usedWeightG: number;
   /** Filament diameter in mm (typically 1.75 or 2.85) */
   diameterMm: number;
+  /** Filament cost in USD per kilogram. Optional for older saved spools. */
+  costPerKg?: number;
   notes: string;
   /** epoch ms */
   addedAt: number;
@@ -61,9 +63,20 @@ const MATERIAL_DENSITY_G_CM3: Record<string, number> = {
 };
 
 const DEFAULT_LOW_STOCK_THRESHOLD_G = 150;
+export const DEFAULT_SPOOL_COST_PER_KG = 20;
 
 export function remainingG(spool: Spool): number {
   return Math.max(0, spool.initialWeightG - spool.usedWeightG);
+}
+
+export function spoolCostPerKg(spool: Pick<Spool, 'costPerKg'>): number {
+  const value = Number(spool.costPerKg);
+  return Number.isFinite(value) && value >= 0 ? value : DEFAULT_SPOOL_COST_PER_KG;
+}
+
+export function estimateSpoolFilamentCost(spool: Pick<Spool, 'costPerKg'>, usedWeightG: number): number {
+  if (!Number.isFinite(usedWeightG) || usedWeightG <= 0) return 0;
+  return (usedWeightG / 1000) * spoolCostPerKg(spool);
 }
 
 export function filamentLengthToGrams(lengthMm: number, diameterMm: number, material: string): number {

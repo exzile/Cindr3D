@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { aggregateInventory, filamentLengthToGrams, type Spool } from './spoolStore';
+import {
+  aggregateInventory,
+  estimateSpoolFilamentCost,
+  filamentLengthToGrams,
+  spoolCostPerKg,
+  type Spool,
+} from './spoolStore';
 
 function spool(id: string, material: string, initialWeightG: number, usedWeightG: number): Spool {
   return {
@@ -11,6 +17,7 @@ function spool(id: string, material: string, initialWeightG: number, usedWeightG
     initialWeightG,
     usedWeightG,
     diameterMm: 1.75,
+    costPerKg: 24,
     notes: '',
     addedAt: 1,
   };
@@ -35,5 +42,11 @@ describe('spoolStore inventory helpers', () => {
 
   it('converts filament length to grams using material density', () => {
     expect(filamentLengthToGrams(1000, 1.75, 'PLA')).toBeCloseTo(2.98, 1);
+  });
+
+  it('estimates spool filament cost with a default for older saved spools', () => {
+    expect(estimateSpoolFilamentCost(spool('a', 'PLA', 1000, 0), 250)).toBeCloseTo(6);
+    expect(spoolCostPerKg({})).toBe(20);
+    expect(estimateSpoolFilamentCost({}, 500)).toBeCloseTo(10);
   });
 });
