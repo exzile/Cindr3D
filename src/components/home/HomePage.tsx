@@ -12,7 +12,6 @@ import {
   BrainCircuit,
   CalendarClock,
   CalendarDays,
-  CameraOff,
   ChevronRight,
   ClipboardCheck,
   Code2,
@@ -43,7 +42,6 @@ import {
   Microscope,
   Monitor,
   Move,
-  MoveHorizontal,
   Navigation,
   Package,
   Palette,
@@ -530,21 +528,21 @@ const faqs = [
   },
 ];
 
-const v2Highlights = [
+const latestReleaseHighlights = [
   {
     icon: Shapes,
     label: 'Parametric CAD workspace',
-    detail: 'Built-in parametric models, named design configurations, mesh repair, threading presets, and non-destructive boolean history bring the Design workspace closer to mature desktop CAD.',
+    detail: 'Built-in parametric library (Gridfinity bins, threaded insert bosses, brackets, project boxes, cable clips, gear blanks) drops directly onto the feature timeline. Named design configurations save parameter sets with per-variant feature suppression.',
   },
   {
-    icon: BrainCircuit,
-    label: 'AI assistant + MCP bridge',
-    detail: 'Local MCP server with token-paired auth and a 29-tool surface covering primitives, sketches, features, booleans, transforms, and export. BYOK chat panel supporting Anthropic and OpenAI/OpenRouter streaming.',
+    icon: PenLine,
+    label: 'Drawing workspace',
+    detail: 'Generates top, front, and right orthographic views from any 3D model with inferred dimensions, configurable title block, and SVG / DXF / PDF export — ready for shop-floor handoff or supplier quoting.',
   },
   {
-    icon: Zap,
-    label: 'Cross-firmware unification',
-    detail: 'Bed Map, Exclude Object, Input Shaper, Pressure Advance, Spools, Timelapse, Power, and Updates all routed through universal wrappers that delegate to Duet/RRF, Klipper/Moonraker, Marlin/USB, and others.',
+    icon: Wand2,
+    label: 'Mesh repair + boolean history',
+    detail: 'Manifold reports, duplicate-vertex welding, normal repair/flip, and STL import auto-fix. Non-destructive boolean combine features keep editable parent links and recompute when parent meshes change.',
   },
   {
     icon: Wifi,
@@ -552,111 +550,72 @@ const v2Highlights = [
     detail: 'Webhook, Discord, Slack, Telegram, MQTT, and Home Assistant bridges publish print events, telemetry, progress, temperatures, and remote pause/resume/cancel actions from the local app.',
   },
   {
+    icon: Zap,
+    label: 'Power-loss recovery',
+    detail: 'Snapshots in-progress file, position, Z, layer, bed, and tool state. After reconnect, restores heat and Z and resumes from the saved file position so a tripped breaker no longer means a wasted print.',
+  },
+  {
+    icon: ArrowLeftRight,
+    label: 'Slicer profile exchange',
+    detail: 'Import Cura, OrcaSlicer, Bambu Studio, and 3MF profile data into Cindr3D print profiles with a mapping preview. Round-trip Cindr3D plates through 3MF sidecar manifests for cross-tool collaboration.',
+  },
+  {
     icon: FlaskConical,
     label: 'Enclosure and sensor safety',
-    detail: 'Chamber temperature control, ramp curves, print-start preheat, completion cooldown, door-open cooldown, VOC/PM2.5/CO2 MQTT thresholds, and enclosure door pause/start-lock policies.',
+    detail: 'Chamber temperature control with ramp curves, print-start preheat, completion cooldown, door-open interlock, and MQTT VOC / PM2.5 / CO2 thresholds. Door / reed-switch pause and start-lock policies are configurable per printer.',
   },
   {
     icon: Sliders,
     label: 'Stepper driver tuning',
-    detail: 'Per-axis current, microsteps, StealthChop/SpreadCycle mode, firmware command wrappers, quick wiggle tests, and per-printer presets live directly on the dashboard.',
+    detail: 'Per-axis current, microsteps, StealthChop / SpreadCycle mode, firmware command wrappers, quick wiggle diagnostics, and per-printer presets that re-apply on connect — all directly on the dashboard.',
   },
   {
-    icon: ListChecks,
-    label: 'Mid-print object cancellation',
-    detail: 'Surfaced in three places: a dedicated tab, the dashboard list, and a 3D preview viewport with right-click menus. Supports M486 (Duet >= 3.5, Marlin >= 2.0.9) and EXCLUDE_OBJECT (Klipper). Slicer emits labels automatically.',
-  },
-  {
-    icon: Gauge,
-    label: 'Cross-firmware layer awareness',
-    detail: 'Moonraker getPrintStatus() for live progress. Duet serial parses M73 and echo:Layer N/M into the unified model so layer counters and ETAs work identically across all firmware targets.',
+    icon: Code2,
+    label: 'G-code dock panel',
+    detail: 'Full raw G-code listing with virtual scrolling synchronized to the current preview layer. Click any line to jump the 3D view; scrub the 3D view and the code panel follows. Includes a breakpoint system for step-by-step inspection.',
   },
   {
     icon: Film,
     label: 'Print farm foundations',
-    detail: 'Smart queue with drag-reorder, auto-routing, and copy-distribution across printers. All-cameras grid with per-tile overlays, PTZ presets, multi-camera per printer, and a per-layer photo gallery with ZIP export.',
-  },
-  {
-    icon: MoveHorizontal,
-    label: 'A/B cross-printer comparison',
-    detail: 'Run the same G-code on two printers in parallel, compare side-by-side layer timing deltas, and produce a quality report on which printer is faster or more consistent.',
+    detail: 'Smart queue with drag-reorder, auto-routing by build volume / material / nozzle, and copy distribution across printers. All-cameras grid with PTZ presets, multi-camera per printer, and a per-layer photo gallery with ZIP export.',
   },
 ];
 
-const milestones = [
+const nextReleaseFeatures = [
   {
-    phase: 'Phase 8',
-    icon: CameraOff,
-    title: 'Vision and AI diagnostics',
-    items: [
-      'Failure detection — spaghetti, layer-shift, blob-of-doom, adhesion with auto-pause',
-      '"What\'s wrong with my print?" AI diagnostics aggregating frames, temps, and slicer timing',
-      'Auto-tune wizards for pressure advance, retraction, temperature, and first-layer squish',
-      'Camera measurement tool with homography-based real-world distance readout',
-    ],
+    icon: Crosshair,
+    label: 'Calibration Center',
+    detail: 'Card-based section on the 3D Printer page for First Layer, Flow Rate, Temperature Tower, Retraction, Pressure Advance, Input Shaper, Dimensional Accuracy, Max Volumetric Speed, and Firmware Health Checks. Status badges roll up from the existing calibration aging tracker.',
   },
   {
-    phase: 'Phase 9',
-    icon: SwitchCamera,
-    title: 'AR camera overlay',
-    items: [
-      'Toolpath wireframe composited over the live camera feed at full frame rate',
-      'Right-click object cancel from the camera view using inverse-projected bed coordinates',
-      'Post-print AR comparison: frozen final frame with model wireframe overlay and mismatch highlights',
-    ],
+    icon: Box,
+    label: 'Calibration model library',
+    detail: 'Pre-built test STLs in assets/calibration-models/, scaled at load time to the active printer\'s nozzle diameter and profile layer height. Sourceable from Thingiverse or GitHub — no parametric regeneration required.',
   },
   {
-    phase: 'Phase 10',
-    icon: Zap,
-    title: 'Cost and energy tracking',
-    items: [
-      'Cost-per-print from filament price and smart-plug wattage with live ticker',
-      'Off-peak scheduling with TOU rate editor and optional utility API integration',
-      'Solar-aware printing gated on Powerwall / Enphase / SolarEdge surplus',
-      'Sustainability dashboard: kg filament, kWh, CO2 estimates with CSV export',
-    ],
+    icon: Wand2,
+    label: 'Guided wizards',
+    detail: 'Step-by-step flow: pick printer → pick filament/spool → setup checks → load model → slice with calibration overrides → queue or send → monitor → inspect → apply and save. Multi-printer aware with scheduling-queue integration.',
   },
   {
-    phase: 'Phase 11',
-    icon: Timer,
-    title: 'Maintenance lifecycle',
-    items: [
-      'Calibration aging dashboard with recommended re-cal intervals and overdue alerts',
-      'Wear tracking for belts, bearings, nozzles, and hotends with full service log',
-      'Filament moisture model with ambient humidity tracking and pre-print drying warnings',
-    ],
+    icon: ShieldCheck,
+    label: 'Firmware-safe apply + rollback',
+    detail: 'Per-firmware command sets for Klipper (PA, input shaper, SHAPER_CALIBRATE), Marlin (linear advance, PID, EEPROM), and Duet (PA, config.g). Every config write goes through snapshot → diff → typed confirm → one-click restore.',
   },
   {
-    phase: 'Phase 12',
-    icon: FlaskConical,
-    title: 'Scheduling',
-    items: [
-      'Print scheduling calendar with drag-to-schedule and quiet-hours awareness',
-      'Bed-clearing auto-queue with printer-ready checks',
-      'Pre-flight checklist before queued jobs start',
-    ],
+    icon: Scan,
+    label: 'Camera + offline inspection',
+    detail: 'Photos attach to results; crop banded regions, label test bands via the existing AR overlay, and align ruler / measurement overlays with the live video. Offline fallback prints a band-labeled measurement sheet for manual photos.',
   },
   {
-    phase: 'Phase 13',
-    icon: Code2,
-    title: 'Integrations and enclosure operations',
-    items: [
-      'Webhook, Discord, Slack, Telegram, MQTT, and Home Assistant event bridges',
-      'Profile import from Cura / OrcaSlicer / Bambu Studio and 3MF plate round-trip',
-      'Power-loss recovery with resumable file-position restore',
-      'Chamber, air-quality, door/enclosure, and stepper-driver dashboard controls',
-    ],
+    icon: BrainCircuit,
+    label: 'AI recommendations',
+    detail: 'Per-run choice between BYOK cloud vision (analyze first layer, score stringing, identify ringing band) and manual scoring. AI cites evidence, asks for missing measurements, and never auto-applies printer-affecting values without explicit confirmation.',
   },
   {
-    phase: 'Phase 14',
-    icon: Sparkles,
-    title: 'Polish and platform',
-    items: [
-      'PWA mode — installable, offline-capable, custom splash screen',
-      'Mobile and tablet UI with bottom-sheet nav and one-thumb kiosk mode',
-      'i18n, accessibility audit, high-contrast theme, and reduced-motion mode',
-      'Profile versioning with diff viewer and cherry-pick restore',
-    ],
+    icon: History,
+    label: 'Result history + confidence',
+    detail: 'Up to 5 most recent results per (printer × material × spool × nozzle × profile) tuple with date, applied value, measurements, photos, AI confidence, and notes. Variance across the rolling window surfaces high-confidence bands and flags noisy results for re-runs.',
   },
 ];
 
@@ -790,35 +749,35 @@ function FeatureDirectory() {
 }
 
 function ReleaseRoadmapTabs() {
-  type ReleaseTab = 'shipped' | 'roadmap';
-  const [tab, setTab] = useState<ReleaseTab>('shipped');
+  type ReleaseTab = 'next' | 'latest';
+  const [tab, setTab] = useState<ReleaseTab>('next');
 
   function handleKey(e: React.KeyboardEvent) {
     if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
     e.preventDefault();
-    setTab((current) => current === 'shipped' ? 'roadmap' : 'shipped');
+    setTab((current) => current === 'next' ? 'latest' : 'next');
   }
   return (
     <section className="home-band home-band--release" id="v2" aria-labelledby="release-title">
       <div className="rrtabs" style={{ width: 'min(1180px, calc(100% - 40px))', margin: '0 auto' }}>
         <div className="rrtabs__head">
           <div className="home-section-heading" style={{ margin: 0 }}>
-            <p>{tab === 'shipped' ? 'Next version' : 'Future planning'}</p>
-            <h2 id="release-title">{tab === 'shipped' ? 'Release highlights' : 'Upcoming milestones'}</h2>
+            <p>{tab === 'next' ? 'Coming next' : 'Just shipped'}</p>
+            <h2 id="release-title">{tab === 'next' ? 'Next release' : 'v0.3.0 release'}</h2>
           </div>
           <div className="rrtabs__nav" role="tablist">
-            <button role="tab" aria-selected={tab === 'shipped'} className={`rrtabs__tab${tab === 'shipped' ? ' rrtabs__tab--active' : ''}`} onClick={() => setTab('shipped')} onKeyDown={handleKey}>
+            <button role="tab" aria-selected={tab === 'next'} className={`rrtabs__tab${tab === 'next' ? ' rrtabs__tab--active' : ''}`} onClick={() => setTab('next')} onKeyDown={handleKey}>
               Next release
             </button>
-            <button role="tab" aria-selected={tab === 'roadmap'} className={`rrtabs__tab${tab === 'roadmap' ? ' rrtabs__tab--active' : ''}`} onClick={() => setTab('roadmap')} onKeyDown={handleKey}>
-              Roadmap
+            <button role="tab" aria-selected={tab === 'latest'} className={`rrtabs__tab${tab === 'latest' ? ' rrtabs__tab--active' : ''}`} onClick={() => setTab('latest')} onKeyDown={handleKey}>
+              v0.3.0 release
             </button>
           </div>
         </div>
 
-        {tab === 'shipped' && (
+        {tab === 'next' && (
           <div className="v2-grid">
-            {v2Highlights.map((h) => {
+            {nextReleaseFeatures.map((h) => {
               const Icon = h.icon;
               return (
                 <article className="v2-card" key={h.label}>
@@ -833,22 +792,17 @@ function ReleaseRoadmapTabs() {
           </div>
         )}
 
-        {tab === 'roadmap' && (
-          <div className="roadmap-grid">
-            {milestones.map((m) => {
-              const Icon = m.icon;
+        {tab === 'latest' && (
+          <div className="v2-grid">
+            {latestReleaseHighlights.map((h) => {
+              const Icon = h.icon;
               return (
-                <article className="roadmap-card" key={m.phase}>
-                  <div className="roadmap-card__header">
-                    <span className="roadmap-card__phase"><Rocket size={12} />{m.phase}</span>
+                <article className="v2-card" key={h.label}>
+                  <div className="v2-card__icon"><Icon size={18} /></div>
+                  <div>
+                    <h3>{h.label}</h3>
+                    <p>{h.detail}</p>
                   </div>
-                  <div className="roadmap-card__title-row">
-                    <Icon size={18} className="roadmap-card__icon" />
-                    <h3>{m.title}</h3>
-                  </div>
-                  <ul>
-                    {m.items.map((item) => <li key={item}>{item}</li>)}
-                  </ul>
                 </article>
               );
             })}
