@@ -111,6 +111,7 @@ type IssueTag = typeof ISSUE_TAGS[number];
 type ClipRating = typeof CLIP_RATINGS[number];
 type BedCornerKey = keyof Required<BedCorners>;
 type MeasurementMode = 'off' | 'bed' | 'ruler';
+type RulerEndpointKey = 'measureA' | 'measureB';
 
 interface CameraMeasurementCalibration extends CameraDashboardCalibration {
   bedWidthMm?: number;
@@ -806,6 +807,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [measurementMode, setMeasurementMode] = useState<MeasurementMode>('off');
   const [nextBedCornerIndex, setNextBedCornerIndex] = useState(0);
   const [draggingBedCorner, setDraggingBedCorner] = useState<BedCornerKey | null>(null);
+  const [draggingRulerEndpoint, setDraggingRulerEndpoint] = useState<RulerEndpointKey | null>(null);
   const [poseStillUrl, setPoseStillUrl] = useState('');
   const [finalComparisonUrl, setFinalComparisonUrl] = useState('');
   const [cameraOverlayMode, setCameraOverlayMode] = useState<CameraOverlayMode>('camera');
@@ -2613,6 +2615,38 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     setMessage('Adjusted bed corner. Save pose when the overlay matches the camera frame.');
   }, [draggingBedCorner]);
 
+  const updateRulerEndpoint = useCallback((endpoint: RulerEndpointKey, point: ImagePoint) => {
+    setCalibration((value) => ({ ...value, [endpoint]: point }));
+  }, []);
+
+  const handleRulerPointerDown = useCallback((event: PointerEvent<HTMLButtonElement>, endpoint: RulerEndpointKey) => {
+    const point = pointFromFramePointer(event);
+    if (!point) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDraggingRulerEndpoint(endpoint);
+    updateRulerEndpoint(endpoint, point);
+  }, [pointFromFramePointer, updateRulerEndpoint]);
+
+  const handleRulerPointerMove = useCallback((event: PointerEvent<HTMLButtonElement>, endpoint: RulerEndpointKey) => {
+    if (draggingRulerEndpoint !== endpoint) return;
+    const point = pointFromFramePointer(event);
+    if (!point) return;
+    event.preventDefault();
+    updateRulerEndpoint(endpoint, point);
+  }, [draggingRulerEndpoint, pointFromFramePointer, updateRulerEndpoint]);
+
+  const handleRulerPointerUp = useCallback((event: PointerEvent<HTMLButtonElement>) => {
+    if (draggingRulerEndpoint === null) return;
+    event.preventDefault();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setDraggingRulerEndpoint(null);
+    setMessage('Adjusted ruler marker.');
+  }, [draggingRulerEndpoint]);
+
   const savePoseCalibration = useCallback(() => {
     const pose = solveCameraPoseCalibration(calibration.bedCorners, bedWidthMm, bedDepthMm, currentPoseSignature);
     if (!pose) {
@@ -2806,14 +2840,32 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
                         </svg>
                       )}
                       {calibration.measureA && (
-                        <span className="cam-panel__measure-point" style={{ left: `${calibration.measureA.x}%`, top: `${calibration.measureA.y}%` }}>
+                        <button
+                          type="button"
+                          className={`cam-panel__measure-point cam-panel__measure-point--ruler${draggingRulerEndpoint === 'measureA' ? ' is-dragging' : ''}`}
+                          style={{ left: `${calibration.measureA.x}%`, top: `${calibration.measureA.y}%` }}
+                          onPointerDown={(event) => handleRulerPointerDown(event, 'measureA')}
+                          onPointerMove={(event) => handleRulerPointerMove(event, 'measureA')}
+                          onPointerUp={handleRulerPointerUp}
+                          onPointerCancel={handleRulerPointerUp}
+                          aria-label="Drag ruler endpoint A"
+                        >
                           A
-                        </span>
+                        </button>
                       )}
                       {calibration.measureB && (
-                        <span className="cam-panel__measure-point" style={{ left: `${calibration.measureB.x}%`, top: `${calibration.measureB.y}%` }}>
+                        <button
+                          type="button"
+                          className={`cam-panel__measure-point cam-panel__measure-point--ruler${draggingRulerEndpoint === 'measureB' ? ' is-dragging' : ''}`}
+                          style={{ left: `${calibration.measureB.x}%`, top: `${calibration.measureB.y}%` }}
+                          onPointerDown={(event) => handleRulerPointerDown(event, 'measureB')}
+                          onPointerMove={(event) => handleRulerPointerMove(event, 'measureB')}
+                          onPointerUp={handleRulerPointerUp}
+                          onPointerCancel={handleRulerPointerUp}
+                          aria-label="Drag ruler endpoint B"
+                        >
                           B
-                        </span>
+                        </button>
                       )}
                       {(measurementMode !== 'off' || calibration.measureA || bedCornersComplete) && (
                         <span className="cam-panel__measure-distance">
@@ -3235,48 +3287,31 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
               <span><Crosshair size={14} /> View</span>
               <small>{rotation}deg</small>
             </div>
-            <div className="cam-panel__secondary-grid" aria-label="Camera view options">
-            <button className={`cam-panel__button ${showGrid ? 'is-active' : ''}`} type="button" onClick={() => setShowGrid((value) => !value)}>
-              <Grid2X2 size={13} /> Grid
-            </button>
-            <button className={`cam-panel__button ${showCrosshair ? 'is-active' : ''}`} type="button" onClick={() => setShowCrosshair((value) => !value)}>
-              <Crosshair size={13} /> Center
-            </button>
-            <button className={`cam-panel__button ${flipImage ? 'is-active' : ''}`} type="button" onClick={() => setFlipImage((value) => !value)}>
-              <FlipHorizontal size={13} /> Flip
-            </button>
-            <button className="cam-panel__button" type="button" onClick={() => setRotation((value) => (value + 90) % 360)}>
-              <RotateCw size={13} /> Rotate
-            </button>
-            </div>
-            <div className="cam-panel__view-tools" aria-label="Camera overlay mode and calibration">
-              <div className="cam-panel__view-mode" role="group" aria-label="Camera overlay mode">
-                {overlayModeOptions.map(({ mode, label, hint }) => (
-                  <button
-                    key={mode}
-                    className={`cam-panel__button ${cameraOverlayMode === mode ? 'is-active' : ''}`}
-                    type="button"
-                    onClick={() => setCameraOverlayMode(mode)}
-                    title={hint}
-                  >
-                    {label}
-                  </button>
-                ))}
+            <div className="cam-panel__view-section" aria-label="Camera orientation">
+              <div className="cam-panel__view-section-head">
+                <span>Orientation</span>
+                <small>{rotation}deg</small>
               </div>
-              <div className="cam-panel__view-status">
-                <Crosshair size={13} />
-                <span>{calibration.measureA && calibration.measureB ? formatMeasurementDistance(measuredDistanceMm) : measurementStatus}</span>
+              <div className="cam-panel__secondary-grid" aria-label="Camera view options">
+                <button className={`cam-panel__button ${showGrid ? 'is-active' : ''}`} type="button" onClick={() => setShowGrid((value) => !value)}>
+                  <Grid2X2 size={13} /> Grid
+                </button>
+                <button className={`cam-panel__button ${showCrosshair ? 'is-active' : ''}`} type="button" onClick={() => setShowCrosshair((value) => !value)}>
+                  <Crosshair size={13} /> Center
+                </button>
+                <button className={`cam-panel__button ${flipImage ? 'is-active' : ''}`} type="button" onClick={() => setFlipImage((value) => !value)}>
+                  <FlipHorizontal size={13} /> Flip
+                </button>
+                <button className="cam-panel__button" type="button" onClick={() => setRotation((value) => (value + 90) % 360)}>
+                  <RotateCw size={13} /> Rotate
+                </button>
               </div>
-              {calibration.enabled && (
-                <div className="cam-panel__view-calibration">
-                  <label>X<input type="range" min={0} max={80} value={calibration.x} onChange={(event) => setCalibration((value) => ({ ...value, x: Number(event.target.value) }))} /></label>
-                  <label>Y<input type="range" min={0} max={80} value={calibration.y} onChange={(event) => setCalibration((value) => ({ ...value, y: Number(event.target.value) }))} /></label>
-                  <label>W<input type="range" min={10} max={100} value={calibration.width} onChange={(event) => setCalibration((value) => ({ ...value, width: Number(event.target.value) }))} /></label>
-                  <label>H<input type="range" min={10} max={100} value={calibration.height} onChange={(event) => setCalibration((value) => ({ ...value, height: Number(event.target.value) }))} /></label>
-                </div>
-              )}
             </div>
-            <div className="cam-panel__calibration-tools">
+            <div className="cam-panel__view-section" aria-label="Calibration overlay controls">
+              <div className="cam-panel__view-section-head">
+                <span>Calibration</span>
+                <small>{calibration.enabled ? 'Overlay on' : 'Overlay off'}</small>
+              </div>
               <label className="cam-panel__toggle">
                 <input
                   type="checkbox"
@@ -3285,6 +3320,14 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
                 />
                 <span>Calibration overlay</span>
               </label>
+              {calibration.enabled && (
+                <div className="cam-panel__view-calibration">
+                  <label>X<input type="range" min={0} max={80} value={calibration.x} onChange={(event) => setCalibration((value) => ({ ...value, x: Number(event.target.value) }))} /></label>
+                  <label>Y<input type="range" min={0} max={80} value={calibration.y} onChange={(event) => setCalibration((value) => ({ ...value, y: Number(event.target.value) }))} /></label>
+                  <label>W<input type="range" min={10} max={100} value={calibration.width} onChange={(event) => setCalibration((value) => ({ ...value, width: Number(event.target.value) }))} /></label>
+                  <label>H<input type="range" min={10} max={100} value={calibration.height} onChange={(event) => setCalibration((value) => ({ ...value, height: Number(event.target.value) }))} /></label>
+                </div>
+              )}
               <label>
                 Bed W
                 <input
@@ -3305,6 +3348,25 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
                   onChange={(event) => setCalibration((value) => ({ ...value, bedDepthMm: Number(event.target.value) || 1 }))}
                 />
               </label>
+            </div>
+            <div className="cam-panel__view-section" aria-label="AR and preview corner setup">
+              <div className="cam-panel__view-section-head">
+                <span>AR / Preview</span>
+                <small>{poseStatus.label}</small>
+              </div>
+              <div className="cam-panel__view-mode" role="group" aria-label="Camera overlay mode">
+                {overlayModeOptions.map(({ mode, label, hint }) => (
+                  <button
+                    key={mode}
+                    className={`cam-panel__button ${cameraOverlayMode === mode ? 'is-active' : ''}`}
+                    type="button"
+                    onClick={() => setCameraOverlayMode(mode)}
+                    title={hint}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               <button
                 className={`cam-panel__button ${measurementMode === 'bed' ? 'is-active' : ''}`}
                 type="button"
@@ -3342,25 +3404,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
                 </button>
               )}
               <button
-                className={`cam-panel__button ${measurementMode === 'ruler' ? 'is-active' : ''}`}
-                type="button"
-                disabled={!hasCamera || !bedCornersComplete}
-                onClick={() => setMeasurementMode((mode) => mode === 'ruler' ? 'off' : 'ruler')}
-              >
-                <Ruler size={13} /> Ruler
-              </button>
-              <button
-                className="cam-panel__button"
-                type="button"
-                onClick={() => {
-                  setCalibration((value) => ({ ...value, measureA: undefined, measureB: undefined }));
-                  setMeasurementMode('ruler');
-                }}
-                disabled={!hasCamera || !bedCornersComplete}
-              >
-                <Eraser size={13} /> Clear ruler
-              </button>
-              <button
                 className="cam-panel__button cam-panel__button--danger"
                 type="button"
                 onClick={() => {
@@ -3374,6 +3417,36 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
               <span className={`cam-panel__pose-status cam-panel__pose-status--${poseStatus.state}`}>
                 {poseStatus.label}
               </span>
+            </div>
+            <div className="cam-panel__view-section" aria-label="Ruler controls">
+              <div className="cam-panel__view-section-head">
+                <span>Ruler</span>
+                <small>{calibration.measureA && calibration.measureB ? formatMeasurementDistance(measuredDistanceMm) : 'No measure'}</small>
+              </div>
+              <div className="cam-panel__view-status">
+                <Ruler size={13} />
+                <span>{calibration.measureA && calibration.measureB ? formatMeasurementDistance(measuredDistanceMm) : measurementMode === 'ruler' ? measurementStatus : 'Start the ruler, then place A and B on the video.'}</span>
+              </div>
+              <button
+                className={`cam-panel__button ${measurementMode === 'ruler' ? 'is-active' : ''}`}
+                type="button"
+                disabled={!hasCamera || !bedCornersComplete}
+                onClick={() => setMeasurementMode((mode) => mode === 'ruler' ? 'off' : 'ruler')}
+              >
+                <Ruler size={13} /> {measurementMode === 'ruler' ? 'Stop ruler' : 'Start ruler'}
+              </button>
+              <button
+                className="cam-panel__button"
+                type="button"
+                onClick={() => {
+                  setCalibration((value) => ({ ...value, measureA: undefined, measureB: undefined }));
+                  setMeasurementMode('ruler');
+                }}
+                disabled={!hasCamera || !bedCornersComplete}
+              >
+                <Eraser size={13} /> Clear ruler
+              </button>
+              <span className="cam-panel__note">Drag markers A and B on the video to adjust the measurement.</span>
             </div>
           </section>
           )}

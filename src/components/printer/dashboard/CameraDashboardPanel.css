@@ -280,6 +280,45 @@
   padding: clamp(5px, 1.3cqh, 7px);
 }
 
+.cam-panel__view-section {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--cam-live) 16%, var(--border-light));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+}
+
+.cam-panel__view-section-head,
+.cam-panel__view-section .cam-panel__view-mode,
+.cam-panel__view-section .cam-panel__view-status,
+.cam-panel__view-section .cam-panel__view-calibration,
+.cam-panel__view-section .cam-panel__toggle,
+.cam-panel__view-section .cam-panel__pose-status,
+.cam-panel__view-section .cam-panel__note {
+  grid-column: 1 / -1;
+}
+
+.cam-panel__view-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.cam-panel__view-section-head small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .cam-panel__view-mode,
 .cam-panel__view-actions,
 .cam-panel__view-calibration {
@@ -314,6 +353,14 @@
 }
 
 .cam-panel__view-calibration label {
+  display: grid;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.cam-panel__view-section label:not(.cam-panel__toggle) {
   display: grid;
   gap: 4px;
   color: var(--text-muted);
@@ -674,12 +721,15 @@
 }
 
 .cam-panel__measure-point--corner:hover,
-.cam-panel__measure-point--corner.is-dragging {
+.cam-panel__measure-point--corner.is-dragging,
+.cam-panel__measure-point--ruler:hover,
+.cam-panel__measure-point--ruler.is-dragging {
   background: color-mix(in srgb, var(--cam-live) 28%, #020617);
   box-shadow: 0 0 0 5px color-mix(in srgb, var(--cam-live) 18%, transparent);
 }
 
-.cam-panel__measure-point--corner.is-dragging {
+.cam-panel__measure-point--corner.is-dragging,
+.cam-panel__measure-point--ruler.is-dragging {
   cursor: grabbing;
 }
 
