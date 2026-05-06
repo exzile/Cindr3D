@@ -8,6 +8,7 @@ import {
 } from '../../../services/vision/tuningWizards';
 import { useVisionStore } from '../../../store/visionStore';
 import type { VisionFrameSample, VisionProviderConfig } from '../../../services/vision/failureDetector';
+import { CalibrationCameraCapture } from '../../camera/CalibrationCameraCapture';
 
 interface StepInspectProps {
   testType: string;
@@ -26,15 +27,6 @@ function tuningKindForTest(testType: string): TuningWizardKind | null {
   if (testType === 'retraction') return 'retraction';
   if (testType === 'input-shaper') return 'input-shaper';
   return null;
-}
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error ?? new Error(`Unable to read ${file.name}`));
-    reader.readAsDataURL(file);
-  });
 }
 
 function fallbackProvider(): VisionProviderConfig {
@@ -57,29 +49,6 @@ export function StepInspect({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const tuningKind = tuningKindForTest(testType);
-
-  const handleFiles = async (files: FileList | null) => {
-    if (!files) return;
-    const nextFrames = await Promise.all(Array.from(files).map(async (file): Promise<VisionFrameSample> => ({
-      cameraId: 'manual-upload',
-      cameraLabel: 'Manual upload',
-      capturedAt: Date.now(),
-      mimeType: file.type || 'image/jpeg',
-      dataUrl: await readFileAsDataUrl(file),
-      size: file.size,
-    })));
-    const store = useVisionStore.getState();
-    for (const frame of nextFrames) {
-      store.recordFrame({
-        id: `${frame.cameraId}-${frame.capturedAt}-${Math.random().toString(36).slice(2, 7)}`,
-        printerId,
-        printerName: printerId || 'Selected printer',
-        createdAt: frame.capturedAt,
-        frame,
-      });
-    }
-    onFrames([...frames, ...nextFrames]);
-  };
 
   const runAnalysis = async () => {
     if (!tuningKind || frames.length === 0) return;
@@ -114,8 +83,7 @@ export function StepInspect({
     <div className="calib-step">
       <section className="calib-step__panel">
         <h3>Attach camera frames for AI analysis</h3>
-        <p>Camera capture panel (Task F) will appear here after merge.</p>
-        <input type="file" accept="image/*" multiple onChange={(event) => void handleFiles(event.target.files)} />
+        <CalibrationCameraCapture printerId={printerId} onFramesCaptured={onFrames} />
         <span className="calib-step__muted">{frames.length} frame(s) attached</span>
       </section>
 

@@ -27,6 +27,7 @@ import { usePrinterStore } from '../../../store/printerStore';
 import { useSpoolStore } from '../../../store/spoolStore';
 import { useSlicerStore } from '../../../store/slicerStore';
 import type { MaterialProfile, PrinterProfile, PrintProfile } from '../../../types/slicer';
+import { CalibrationWizard } from '../../../calibration/wizard/CalibrationWizard';
 import './PrinterCalibrationPanel.css';
 
 type CalibrationPreset = {
@@ -258,6 +259,7 @@ export default function PrinterCalibrationPanel() {
   const [serviceSummary, setServiceSummary] = useState('');
   const [servicePerson, setServicePerson] = useState('Local user');
   const [serviceCost, setServiceCost] = useState('');
+  const [wizardTestType, setWizardTestType] = useState<string | null>(null);
   const setWorkspaceMode = useCADStore((s) => s.setWorkspaceMode);
   const printers = usePrinterStore((s) => s.printers);
   const activePrinterId = usePrinterStore((s) => s.activePrinterId);
@@ -437,7 +439,7 @@ export default function PrinterCalibrationPanel() {
                   </div>
                 )}
               </div>
-              <button type="button" className="calib-center__start" disabled>
+              <button type="button" className="calib-center__start" onClick={() => setWizardTestType(card.testType)}>
                 Start
               </button>
             </div>
@@ -653,6 +655,13 @@ export default function PrinterCalibrationPanel() {
           );
         })}
       </div>
+      {wizardTestType && (
+        <CalibrationWizard
+          testType={wizardTestType}
+          printerId={activePrinterId}
+          onClose={() => setWizardTestType(null)}
+        />
+      )}
     </div>
   );
 }
