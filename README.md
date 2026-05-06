@@ -56,27 +56,36 @@ The project is evolving quickly. Some CAD and slicer features are experimental, 
 ## What's New
 
 > [!NOTE]
-> **2026-05** - Design workspace and workshop operations. Cindr3D now adds parametric CAD library tools, design configurations, 2D drawings, mesh repair, and non-destructive boolean history alongside webhooks, MQTT telemetry, Home Assistant bridging, power-loss recovery, slicer-profile import, enclosure safety, and stepper tuning.
+> **v0.3.0 — 2026-05-06.** Design workspace, workshop integrations, and operational depth. This release closes the gap between "browser CAD prototype" and a workshop-grade tool: parametric library, design configurations, 2D drawings, mesh repair, non-destructive booleans, plus Discord/Slack/Telegram/MQTT/HomeAssistant bridges, slicer-profile import, power-loss recovery, enclosure safety, and stepper driver tuning.
 
-**Headline features shipped this release:**
+**Design workspace**
 
-- **Workshop integrations** - generic webhooks plus first-class Discord, Slack, Telegram, MQTT publishing/subscriptions, and a Home Assistant REST/discovery bridge for printer telemetry and pause/resume/cancel controls.
-- **Parametric CAD library** - insert configurable Gridfinity-style bins, threaded insert bosses, brackets, project boxes, cable clips, and gear blanks directly into the CAD feature timeline.
-- **Design configurations and drawings** - save named part variants with parameter sets and per-configuration feature suppression, then generate top/front/right drawing sheets with inferred dimensions, title blocks, and SVG/DXF/PDF export.
-- **Mesh repair and boolean history** - inspect manifold health, weld duplicate vertices, auto-fix STL imports, flip normals, and keep boolean combine features linked to editable parent bodies with downstream recompute.
-- **External slicer/profile exchange** - import Cura, OrcaSlicer, Bambu Studio, and 3MF profile data into Cindr3D print profiles, preview mappings before import, and round-trip Cindr3D build plates through 3MF sidecar manifests.
-- **Power-loss recovery** - persist in-progress file, position, Z, layer, bed, and tool state, then offer a reconnect resume flow that restores heat/Z and sends the saved file-position resume command.
-- **Enclosure safety** - chamber temperature monitoring/control from RRF, Klipper, or MQTT; ramp curves, preheat/cooldown policy, door-open cooldown, MQTT air-quality thresholds, and door/reed-switch pause/start-lock behavior.
-- **Stepper driver tuning** - dashboard card for per-axis current, microsteps, StealthChop/SpreadCycle mode, firmware-specific command wrappers, wiggle tests, and per-printer presets.
-- **Smart print farm queue** - persistent cross-printer queueing with routing rules for build volume, loaded material, nozzle size, copy splitting, job moves, pause, and cancel.
-- **Fleet cameras** - all-cameras grid, per-printer multi-camera streams, layer-by-layer photo galleries, PTZ presets, print-start camera positioning, and WebRTC/WHEP low-latency streaming with MJPEG/HLS fallback.
-- **Fleet filament inventory** - material rollups, low-stock thresholds, per-printer loaded-spool tracking, and automatic filament deduction from slicer estimates.
-- 🎯 **Mid-print object cancellation** — `M486` on Duet RRF 3.5+ and Marlin 2.0.9+, `EXCLUDE_OBJECT` on Klipper. Three surfaces: dedicated tab, dashboard list card, and a 3D Print Preview viewport with right-click context menus.
-- 🎬 **Live 3D Print Preview dashboard card** — viewport showing the build plate, plate-object silhouettes, and toolpath wireframe up to the layer currently being printed; right-click any object to cancel just that one.
-- ⚙️ **Cross-firmware tuning UI** — Input Shaper, Pressure Advance, Power, Spools, Timelapse, and Updates tabs that route to the right firmware-specific commands automatically.
-- 🏷️ **Slicer auto-labels** — every job Cindr3D slices is automatically tagged with `M486 S<id> A"<name>"` so cancellation works out of the box on uploaded files too.
-- 📡 **Live progress on every firmware** — Duet via the RRF object model, Klipper via Moonraker `print_stats` polling, Marlin via `M73` parsing on the USB stream.
-- 🤖 **AI Assistant** — local MCP server for Claude Code, plus an in-app BYOK chat panel that streams Anthropic, OpenAI, and OpenRouter with full tool-use.
+- **Parametric model library** — drop configurable Gridfinity bins, threaded insert bosses, brackets, project boxes, cable clips, and gear blanks straight onto the feature timeline.
+- **Design configurations** — named parameter sets with per-variant feature suppression, ribbon switching, and configuration export.
+- **Drawing workspace** — auto-generated top/front/right views with inferred dimensions, title block, and SVG/DXF/PDF export.
+- **Mesh repair** — manifold report, duplicate-vertex weld, normal repair/flip, auto-fix, and STL import healing.
+- **Non-destructive boolean history** — combine features keep parent links and recompute when parents change.
+- **Threading library** — metric thread presets with helix geometry and configurable pitch, length, and class.
+- **Sketch tangent solving** — the constraint solver now resolves tangents while preserving over-constrained feedback.
+
+**Workshop integrations**
+
+- **Notification bridges** — generic webhooks plus first-class Discord, Slack, Telegram, and MQTT for `PRINT_START`, `LAYER_CHANGE`, `PAUSED`, `FAILED`, `DONE`.
+- **Home Assistant bridge** — REST/discovery payloads and remote pause/resume/cancel actions per printer.
+- **Slicer profile exchange** — import Cura, OrcaSlicer, Bambu Studio, and 3MF profile data with mapping preview, plus 3MF plate round-trip.
+- **Power-loss recovery** — snapshot file, position, Z, layer, bed, and tool state; offer a reconnect resume flow that restores heat/Z and resumes from the saved file position.
+- **Enclosure safety** — chamber temperature control, ramp curves, preheat/cooldown, door-open interlock, and MQTT VOC/PM2.5/CO2 thresholds.
+- **Stepper driver tuning** — per-axis current, microsteps, StealthChop/SpreadCycle mode, firmware command wrappers, wiggle tests, and per-printer presets.
+
+**Slicer + preview polish**
+
+- **G-code dock panel** — full raw G-code listing with virtual scrolling, click-to-jump, scrub-to-follow, and a breakpoint system for step-by-step inspection.
+- **Print Preview dashboard card** — live build plate with object silhouettes, toolpath up to the current layer, and right-click per-object cancel.
+- **PTZ camera improvements** — direct command delivery, lower latency, and tighter Reolink/Tapo/Hikvision/Amcrest control.
+
+**Carried forward from v0.2.0**
+
+- AI Assistant (local MCP server + BYOK chat panel), smart print farm queue, all-cameras fleet grid, mid-print object cancellation across all three firmwares, cross-firmware live progress, and the universal tuning UI for Input Shaper / Pressure Advance / Power / Spools / Timelapse / Updates.
 
 ## Feature Highlights
 
@@ -287,25 +296,17 @@ See [docs/ai-mcp-tools.md](docs/ai-mcp-tools.md) for the tool reference and [doc
 
 ## Roadmap
 
-Completed and upcoming phases are tracked in [`TaskLists.txt`](TaskLists.txt). Highlights:
+Shipped and upcoming phases are tracked in [`TaskLists.txt`](TaskLists.txt). What's next:
 
 | Phase | Theme | What lands |
 |---|---|---|
-| 7 | 🏭 Print farm intelligence | Cross-printer queue, all-cameras grid, A/B compare, multi-camera per printer, PTZ, WebRTC streaming, fleet inventory |
-| 8 | 👁️ Vision / AI | Failure detection, "what's wrong" diagnostics, auto-tune wizards, camera measurement, natural-language control |
-| 9 | 🥽 AR camera overlay | Calibrated toolpath projected on live camera feed; cancel objects directly from the camera view |
-| 10 | 💰 Cost & energy | Cost-per-print, off-peak scheduling, solar-aware printing, sustainability dashboard |
-| 11 | 🔧 Maintenance & calibration | Calibration aging, wear tracking, filament moisture model |
-| 12 | 📅 Print scheduling | Calendar, bed-clearing auto-queue, pre-flight checklist |
-| 13 | 🔌 Integrations | Webhooks + Discord/Slack/Telegram, MQTT, HomeAssistant, profile import (Cura/Orca/Bambu), power-loss resume, chamber/air-quality/door sensors, stepper driver tuning |
-| 14 | ✨ Operational polish | Session resume, mobile UI, i18n, accessibility, profile diff, profile sync, PWA mode, print-from-URL |
-| 15 | 🧱 Slicer fundamentals | Tree supports, adaptive layers, non-planar ironing, vase mode, organic infill, multi-color, bed-mesh-aware auto-arrange, history analytics, embedded thumbnails, Z-seam painter, sequential printing, modifier-mesh painting, fuzzy skin |
-| 16 | 📐 Design workspace | Parametric model library, design configurations, 2D drawings, mesh repair, sketch constraint solver upgrades, threading library, non-destructive boolean history |
-| 17 | 🎓 Onboarding & education | Calibration print library, guided tutorials, settings deep-help wiki |
-| 18 | 🧩 Plugin system | *Future — captured for planning, not yet scheduled* |
+| **20** | 🔬 **Printer calibration center** *(planned, XL)* | Closed-loop calibration: card-based wizards for first layer, flow, temperature, retraction, pressure advance, input shaper, dimensional accuracy, and max volumetric speed; pre-built calibration models scaled by nozzle/layer; firmware-specific apply with snapshot/diff/restore safety; camera + AI inspection; rolling 5-result history per printer/material/spool/nozzle/profile. |
+| 18 | 🧩 Plugin system | *Future — captured for planning, not yet scheduled.* |
+
+Phases 7–17 and 19 (print-farm intelligence, vision/AI, AR overlay, cost & energy, maintenance, scheduling, integrations, operational polish, slicer fundamentals, design workspace, onboarding, dashboard preview) shipped in `v0.2.0` and `v0.3.0`. See [`TaskLists.txt`](TaskLists.txt) for the full shipped log.
 
 > [!TIP]
-> Completed phases are condensed in [`TaskLists.txt`](TaskLists.txt) with summaries, while active/upcoming phases keep their detailed task lists, effort estimates, file hints, and dependency notes.
+> Shipped phases are condensed in [`TaskLists.txt`](TaskLists.txt) with summaries, while active/upcoming phases keep their detailed task lists, effort estimates, file hints, and dependency notes.
 
 ## Development Scripts
 

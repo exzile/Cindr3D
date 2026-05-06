@@ -305,58 +305,77 @@
 
 
 
-## -- Phase 20: Printer calibration center [PLANNED]
-## Goal: add a guided calibration section to the 3D Printer page that works
-## with Prepare, slicer profiles, camera inspection, printer telemetry, and
-## AI assistance to generate, run, inspect, apply, and remember calibration
-## tests per printer / filament / nozzle / profile.
+## -- Phase 20: Printer calibration center [PLANNED] [XL]
+## Goal: extend the Phase 11 calibrationStore and Phase 17 Calibration tab
+## into a guided closed-loop calibration center on the 3D Printer page that
+## generates, runs, inspects, applies, and remembers calibration tests per
+## printer / filament / spool / nozzle / profile.
 #
 # Why:
-#   - Calibration is currently scattered across one-off presets, slicer
-#     settings, firmware commands, camera views, and user memory.
-#   - Cindr3D can make calibration a closed loop: generate the model, slice
-#     it, send it, monitor it, inspect it, recommend values, and save the
-#     result into the right printer/profile context.
+#   - Calibration is currently scattered across one-off presets (Phase 17),
+#     slicer settings, firmware commands, camera views, and user memory.
+#   - Phase 11 tracks calibration aging but not result values, measurements,
+#     or photos.
+#   - Cindr3D can close the loop: load the model, slice it, send it, monitor
+#     it, inspect it, recommend values, and save the result back into the
+#     right printer/profile context.
+#
+# Dependencies (extends existing systems, does NOT replace):
+#   - Phase 11 calibrationStore.ts: extend CalibrationItemId list and
+#     CalibrationRecord with results history, measurements, photos
+#   - Phase 17 Calibration tab + Prepare calibration menu: subsume the
+#     one-click presets into the new wizard cards (existing presets become
+#     "quick run" entry points into the wizard)
+#   - Phase 12 schedulingStore: queue calibration prints alongside normal jobs
+#   - Phase 9 camera AR / pose calibration: reuse for band labeling overlays
+#   - Phase 1-6 MCP tools + AiAssistantPanel: BYOK vision analysis path
+#   - Phase 16 Drawing workspace PDF export: reuse for printable result sheets
 #
 # Phase 20.1 - Calibration Center shell
-#   - Add a 3D Printer > Calibration section with cards for First Layer,
-#     Flow Rate, Temperature Tower, Retraction, Pressure Advance / Linear
-#     Advance, Input Shaper / Resonance, Dimensional Accuracy, Max
-#     Volumetric Speed, and Firmware Health Checks.
+#   - Expand src/components/printer/calibration/PrinterCalibrationPanel into
+#     a card-based section with: First Layer, Flow Rate, Temperature Tower,
+#     Retraction, Pressure Advance / Linear Advance, Input Shaper / Resonance,
+#     Dimensional Accuracy, Max Volumetric Speed, and Firmware Health Checks.
+#   - Existing aging rows (bed-mesh, PA, input-shaper, z-offset, first-layer)
+#     surface as status badges on the matching cards.
 #   - Show recommended next calibration based on printer firmware, material,
 #     nozzle size, stale calibration age, recent failures, and profile state.
-#   - Add calibration history rows with date, printer, material, nozzle,
-#     profile, result, applied value, notes, and linked photos/G-code.
+#   - Add calibration history rows with date, printer, material, spool,
+#     nozzle, profile, result, applied value, notes, and linked photos/G-code.
 #
-# Phase 20.2 - Calibration models and metadata
+# Phase 20.2 - Calibration models library
 #   - Pre-built calibration test models (first-layer patches/grids, flow
 #     cubes/surfaces, temperature towers, retraction towers, PA/LA towers,
 #     ringing towers, dimensional cubes, hole tests, tolerance tests, max
-#     volumetric speed towers) are built once and saved in a project folder.
-#     Models can be sourced from Thingiverse, GitHub, or other repositories.
+#     volumetric speed towers) ship in a project folder
+#     (e.g. assets/calibration-models/) as STL files.
+#   - Models can be sourced from Thingiverse, GitHub, or other repositories.
+#   - One base STL per test type, scaled at load time based on the active
+#     printer's nozzle diameter and profile layer height.
 #   - Pass calibration metadata through slicing so G-code includes test type,
 #     band labels, object names, firmware-specific commands, and result
 #     capture hints.
 #   - Support profile overrides for calibration prints without permanently
 #     mutating the user's normal print profile until the result is accepted.
-#     Save up to 5 prior test profile results per calibration type.
 #
 # Phase 20.3 - Guided calibration wizards
 #   - Each calibration card opens a step-by-step wizard:
-#       1. Setup checks
-#       2. Load model (from project folder)
-#       3. Slice and preview
-#       4. Choose printer and queue/send
-#       5. Monitor print
-#       6. Inspect or measure
-#       7. Apply and save result
+#       1. Pick printer (defaults to active)
+#       2. Pick filament / spool (defaults to printer's loaded spool)
+#       3. Setup checks (firmware ready, nozzle size, bed temp limits, etc.)
+#       4. Load model (from calibration models library)
+#       5. Slice and preview (with calibration profile overrides)
+#       6. Queue / send (slot into scheduling queue or send now)
+#       7. Monitor print
+#       8. Inspect or measure (camera, manual, or AI-assisted)
+#       9. Apply and save result
 #   - Include firmware-aware instructions for Duet/RRF, Klipper/Moonraker,
 #     and Marlin/WebSerial.
-#   - Offer multi-printer selection and slot into scheduled queue with
-#     estimated run time.
+#   - Show estimated run time and offer "queue on next available printer".
 #   - Capture manual measurement fields for calipers, wall thickness,
 #     band selection, best temperature, stringing score, ringing band,
 #     first-layer quality, and dimensional error.
+#   - Allow "abort and home" mid-print for first-layer tests with bad Z.
 #
 # Phase 20.4 - Firmware-specific apply commands
 #   - Klipper: pressure advance, input shaper commands, velocity/accel test
@@ -367,44 +386,61 @@
 #     guidance, object model reads, and safe apply/rollback prompts.
 #   - Always separate "recommended", "preview command", "apply now", and
 #     "save to config/profile" so users understand what changes firmware.
+#   - Config-write safety workflow (applies to all firmwares):
+#       a. Snapshot existing config (config.g / printer.cfg / EEPROM dump)
+#          to project folder before any write
+#       b. Show diff (existing -> proposed) for user review
+#       c. Require typed confirmation for irreversible writes (M500,
+#          SAVE_CONFIG, EEPROM commits)
+#       d. Provide one-click "restore previous config" using the snapshot
 #
 # Phase 20.5 - Camera-assisted inspection
 #   - Capture photos during calibration jobs and attach them to results.
 #   - Let users crop/select regions for banded tests, first-layer grids,
 #     temperature towers, stringing towers, corners, and ringing artifacts.
-#   - Use existing camera calibration/AR tools to label test bands and
-#     keep ruler/measurement overlays aligned with the video viewport.
-#   - Provide offline fallback: printable result sheets / markups so users
-#     can photograph results manually and attach JPEGs when no camera is
-#     configured.
+#   - Use existing camera calibration/AR tools (Phase 9) to label test
+#     bands and keep ruler/measurement overlays aligned with the video.
+#   - Offline fallback: generate printable result sheets (reuse Phase 16
+#     PDF export) with band labels and a measurement grid so users can
+#     photograph results manually and attach JPEGs.
 #
 # Phase 20.6 - AI-assisted recommendations
 #   - Add AI prompts/tools for "analyze first layer", "pick best temperature
 #     band", "score stringing", "find pressure advance corner artifacts",
 #     "identify ringing band", and "summarize calibration report".
-#   - User chooses whether AI analysis uses local MCP server (BYOK Claude,
-#     faster, private) or cloud vision models (more flexible).
+#   - Two analysis modes (user picks per run):
+#       a. BYOK cloud vision via the existing AiAssistantPanel provider
+#          (Anthropic / OpenAI) - uses photos + measurements
+#       b. Manual scoring only - skip AI entirely, user fills measurement
+#          fields directly
+#     (Note: the local MCP server is a tool surface, not a vision model;
+#     image analysis always requires a cloud call when AI is used.)
 #   - AI must cite observed evidence, ask for missing measurements, and
 #     separate confidence from the final recommended value.
 #   - Never auto-apply printer-affecting values without explicit user
 #     confirmation.
 #
 # Phase 20.7 - Result storage and reporting
-#   - Store calibration results per printer / material / spool / nozzle /
-#     profile, with stale intervals integrated into maintenance reminders.
+#   - Extend calibrationStore with a results array per CalibrationRecord:
+#     per (printer x material x spool x nozzle x profile) tuple, store
+#     up to 5 most recent results with date, applied value, measurements,
+#     photos, AI confidence, and notes (rolling window).
+#   - Stale intervals continue to integrate with Phase 11 maintenance
+#     reminders.
 #   - Feed accepted values into slicer profiles, printer settings, and
 #     pre-flight warnings where appropriate.
-#   - Add exportable calibration reports with photos, G-code metadata,
-#     recommended/applied values, measurements, and before/after notes.
+#   - Add exportable calibration reports (PDF + JSON) with photos, G-code
+#     metadata, recommended/applied values, measurements, and before/after
+#     notes.
 #
 # Phase 20.8 - Confidence & repeatability
-#   - Track measurement variance across repeated calibrations.
+#   - Track measurement variance across the 5 stored results.
 #   - Highlight high-confidence bands for banded tests (temperature, PA, etc.)
 #     and suggest re-runs if results disagree beyond tolerance.
 #   - Surface confidence levels in recommendations and result history so
 #     users understand which values are stable vs. noisy.
 #
-# Initial calibration order:
+# Initial calibration order (matches the 9 cards in 20.1):
 #   1. Firmware and hardware health checks
 #   2. First layer / Z offset
 #   3. Flow rate
@@ -416,16 +452,17 @@
 #   9. Max volumetric speed
 #
 # Resolved decisions:
-#   - Calibration models are pre-built and saved in a project folder
-#     (downloadable from Thingiverse, GitHub, etc.)
-#   - Test profiles save up to 5 prior results for comparison
-#   - Calibration results live on a separate calibration store with links
-#     to printer/filament/spool/profile contexts
-#   - AI analysis: ask user to choose local (MCP) vs cloud vision each run
-#   - Phase 20.4 (firmware apply) drives Phase 20.2 (metadata) design
-#
-# Remaining open questions:
-#   - What is the safest workflow for firmware config writes and rollback?
+#   - Models: pre-built STLs in assets/calibration-models/, downloadable
+#     from Thingiverse / GitHub. One base STL per test type, scaled at
+#     load time by nozzle diameter and layer height (no sibling variants,
+#     no parametric Phase 16 generation).
+#   - "5 prior results" applies to calibration results history per
+#     (printer x material x spool x nozzle x profile) tuple in 20.7.
+#   - Storage: extend Phase 11 calibrationStore (no parallel store).
+#   - AI analysis: per-run choice between BYOK cloud vision and manual-only.
+#   - Firmware rollback: snapshot-diff-confirm-restore workflow in 20.4.
+#   - Phase 17 Prepare calibration menu: kept in place; clicks route through
+#     the new wizard cards rather than firing one-shot G-code presets.
 #
 
 
