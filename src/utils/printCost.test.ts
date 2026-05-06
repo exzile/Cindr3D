@@ -46,6 +46,20 @@ describe('print cost helpers', () => {
     expect(estimateElectricityCost(7200, 250, 0.18)).toBeCloseTo(0.09);
   });
 
+  it('prices electricity across sampled time-of-use rates', () => {
+    const start = Date.parse('2026-05-05T10:00:00');
+    const peakStart = Date.parse('2026-05-05T11:00:00');
+    const cost = estimateElectricityCost(
+      7200,
+      1000,
+      0.1,
+      start,
+      (epochMs) => (epochMs >= peakStart ? 0.3 : 0.1),
+    );
+
+    expect(cost).toBeCloseTo(0.4);
+  });
+
   it('uses matching material spool cost before falling back to fleet average', () => {
     expect(averageSpoolCostPerKg([spool('PLA', 22), spool('PETG', 30)], 'PLA')).toBe(22);
     expect(averageSpoolCostPerKg([spool('PLA', 22), spool('PETG', 30)], 'ABS')).toBe(26);
@@ -66,6 +80,21 @@ describe('print cost helpers', () => {
     expect(estimate.energyCost).toBeCloseTo(0.1);
     expect(estimate.co2Kg).toBeCloseTo(0.2);
     expect(estimate.totalCost).toBeCloseTo(1.1);
+  });
+
+  it('uses time-of-use rates for job receipts', () => {
+    const estimate = estimatePrintJobCost(job(), [spool('PLA', 25)], {
+      printerWatts: 1000,
+      electricityRatePerKwh: 0.1,
+      electricityRateAt: (epochMs) => (epochMs >= Date.parse('2026-05-05T11:00:00') ? 0.3 : 0.1),
+      filamentGramsPerHour: 0,
+      co2KgPerKwh: 0.4,
+      nowMs: Date.parse('2026-05-05T12:00:00'),
+    });
+
+    expect(estimate.energyKwh).toBeCloseTo(2);
+    expect(estimate.energyCost).toBeCloseTo(0.4);
+    expect(estimate.totalCost).toBeCloseTo(0.4);
   });
 
   it('uses elapsed wall time for in-progress jobs', () => {
@@ -94,6 +123,19 @@ describe('print cost helpers', () => {
     expect(summary.byPrinter.map((group) => group.key)).toContain('A');
     expect(summary.byMonth.map((group) => group.key)).toContain('2026-05');
     expect(summary.byPrinterMonth.map((group) => group.key)).toContain('A|2026-05');
+  });
+
+  it('groups monthly rollups using the local calendar month', () => {
+    const localMonthJob = job({ startedAt: new Date(2026, 0, 1, 0, 15), endedAt: new Date(2026, 0, 1, 1, 15) });
+    const summary = summarizePrintCosts([localMonthJob], [spool('PLA', 20)], {
+      printerWatts: 200,
+      electricityRatePerKwh: 0.1,
+      filamentGramsPerHour: 10,
+      co2KgPerKwh: 0.4,
+      nowMs: localMonthJob.endedAt?.getTime(),
+    });
+
+    expect(summary.byMonth[0].key).toBe('2026-01');
   });
 
   it('exports job-level sustainability data to CSV and JSON', () => {

@@ -17,6 +17,7 @@ import {
   effectiveJobDurationSec,
   exportPrintCostSummaryCsv,
   exportPrintCostSummaryJson,
+  printJobCostKey,
   summarizePrintCosts,
   type PrintCostRollup,
 } from '../../utils/printCost';
@@ -77,6 +78,19 @@ function fmtLocalDateTime(ms: number): string {
   });
 }
 
+function localDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function readStoredNumber(key: string, fallback: number, isValid: (value: number) => boolean): number {
+  try {
+    const saved = Number(window.localStorage.getItem(key));
+    return isValid(saved) ? saved : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function parseTimeParts(value: string): [number, number] {
   const [hour, minute] = value.split(':').map(Number);
   return [Number.isFinite(hour) ? hour : 0, Number.isFinite(minute) ? minute : 0];
@@ -120,26 +134,22 @@ export default function DuetAnalytics() {
   const upsertUtilityRateConfig = useSchedulingStore((s) => s.upsertUtilityRateConfig);
   const upsertSolarIntegrationConfig = useSchedulingStore((s) => s.upsertSolarIntegrationConfig);
   const canStartWithSolarSurplus = useSchedulingStore((s) => s.canStartWithSolarSurplus);
+  const rateAt = useSchedulingStore((s) => s.rateAt);
 
   const [windowDays, setWindowDays] = useState<number>(() => {
-    const saved = Number(localStorage.getItem('cindr3d-analytics-window'));
-    return isFinite(saved) && saved > 0 ? saved : 30;
+    return readStoredNumber('cindr3d-analytics-window', 30, (saved) => isFinite(saved) && saved > 0);
   });
   const [printerWatts, setPrinterWatts] = useState<number>(() => {
-    const saved = Number(localStorage.getItem('cindr3d-cost-watts'));
-    return isFinite(saved) && saved >= 0 ? saved : 250;
+    return readStoredNumber('cindr3d-cost-watts', 250, (saved) => isFinite(saved) && saved >= 0);
   });
   const [electricityRate, setElectricityRate] = useState<number>(() => {
-    const saved = Number(localStorage.getItem('cindr3d-cost-rate'));
-    return isFinite(saved) && saved >= 0 ? saved : 0.16;
+    return readStoredNumber('cindr3d-cost-rate', 0.16, (saved) => isFinite(saved) && saved >= 0);
   });
   const [filamentGPerHour, setFilamentGPerHour] = useState<number>(() => {
-    const saved = Number(localStorage.getItem('cindr3d-cost-filament-gph'));
-    return isFinite(saved) && saved >= 0 ? saved : 18;
+    return readStoredNumber('cindr3d-cost-filament-gph', 18, (saved) => isFinite(saved) && saved >= 0);
   });
   const [co2KgPerKwh, setCo2KgPerKwh] = useState<number>(() => {
-    const saved = Number(localStorage.getItem('cindr3d-cost-co2'));
-    return isFinite(saved) && saved >= 0 ? saved : 0.386;
+    return readStoredNumber('cindr3d-cost-co2', 0.386, (saved) => isFinite(saved) && saved >= 0);
   });
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [touTier, setTouTier] = useState<TOUTier>('off-peak');
@@ -210,7 +220,7 @@ export default function DuetAnalytics() {
       f.count++;
       f.time += durationSec;
       byFile.set(j.file, f);
-      const day = j.startedAt.toISOString().slice(0, 10);
+      const day = localDateKey(j.startedAt);
       byDay.set(day, (byDay.get(day) ?? 0) + 1);
     }
     const total = completed + cancelled;
@@ -228,7 +238,7 @@ export default function DuetAnalytics() {
     for (let i = days - 1; i >= 0; i--) {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
+      const key = localDateKey(d);
       arr.push({ label: fmtDate(d), value: stats.byDay.get(key) ?? 0 });
     }
     return arr;
@@ -240,17 +250,18 @@ export default function DuetAnalytics() {
     () => summarizePrintCosts(jobsInWindow, spools, {
       printerWatts,
       electricityRatePerKwh: electricityRate,
+      electricityRateAt: (epochMs) => rateAt(planningPrinterId, epochMs).ratePerKwh,
       filamentGramsPerHour: filamentGPerHour,
       co2KgPerKwh,
       nowMs,
     }),
-    [jobsInWindow, spools, printerWatts, electricityRate, filamentGPerHour, co2KgPerKwh, nowMs],
+    [jobsInWindow, spools, printerWatts, electricityRate, rateAt, planningPrinterId, touWindows, filamentGPerHour, co2KgPerKwh, nowMs],
   );
   const liveEstimate = costSummary.estimates.find((estimate) => estimate.job.outcome === 'in-progress') ?? null;
-  const recentEstimatesByFile = useMemo(() => {
+  const recentEstimatesByJob = useMemo(() => {
     const map = new Map<string, typeof costSummary.estimates[number]>();
     for (const estimate of costSummary.estimates) {
-      if (!map.has(estimate.job.file)) map.set(estimate.job.file, estimate);
+      map.set(printJobCostKey(estimate.job), estimate);
     }
     return map;
   }, [costSummary.estimates]);
@@ -410,7 +421,7 @@ export default function DuetAnalytics() {
             />
             <Card
               icon={<Package size={14} />}
-              value={fmtMoney(costSummary.totals.totalCost - costSummary.totals.energyKwh * electricityRate)}
+              value={fmtMoney(costSummary.totals.filamentCost)}
               label="Filament"
               hint={fmtWeight(costSummary.totals.filamentG)}
             />
@@ -418,7 +429,7 @@ export default function DuetAnalytics() {
               icon={<Zap size={14} />}
               value={`${costSummary.totals.energyKwh.toFixed(2)} kWh`}
               label="Energy"
-              hint={fmtMoney(costSummary.totals.energyKwh * electricityRate)}
+              hint={fmtMoney(costSummary.totals.energyCost)}
             />
             <Card
               icon={<Leaf size={14} />}
@@ -533,9 +544,9 @@ export default function DuetAnalytics() {
             </thead>
             <tbody>
               {jobsInWindow.slice(0, 20).map((j, i) => {
-                const receipt = recentEstimatesByFile.get(j.file);
+                const receipt = recentEstimatesByJob.get(printJobCostKey(j));
                 return (
-                  <tr key={`${j.file}-${i}`}>
+                  <tr key={printJobCostKey(j) || `${j.file}-${i}`}>
                     <td>{fmtDate(j.startedAt)} {j.startedAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</td>
                     <td className="duet-analytics__file-cell" title={j.file}>{j.file}</td>
                     <td>{fmtDuration(receipt?.durationSec ?? j.durationSec)}</td>

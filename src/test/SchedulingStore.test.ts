@@ -79,6 +79,33 @@ describe('scheduling store', () => {
     expect(new Date(cheapest?.start ?? 0).getHours()).toBe(22);
   });
 
+  it('considers minute-level TOU boundaries as candidate cheapest starts', () => {
+    useSchedulingStore.getState().addTOUWindow({
+      printerId: 'printer-a',
+      label: 'Short off peak',
+      tier: 'off-peak',
+      ratePerKwh: 0.05,
+      days: [1],
+      startHour: 10,
+      startMinute: 7,
+      endHour: 10,
+      endMinute: 37,
+    });
+
+    const cheapest = useSchedulingStore.getState().findCheapestStart(
+      'printer-a',
+      new Date('2026-05-04T10:00:00').getTime(),
+      20 * 60 * 1000,
+      1000,
+      1,
+    );
+
+    const start = new Date(cheapest?.start ?? 0);
+    expect(start.getHours()).toBe(10);
+    expect(start.getMinutes()).toBe(7);
+    expect(cheapest?.estimatedEnergyCost).toBeCloseTo((20 / 60) * 0.05);
+  });
+
   it('schedules a print at the cheapest configured window', () => {
     useSchedulingStore.getState().addTOUWindow({
       printerId: 'printer-a',
@@ -132,5 +159,21 @@ describe('scheduling store', () => {
     });
 
     expect(useSchedulingStore.getState().canStartWithSolarSurplus('printer-a', 500).allowed).toBe(true);
+  });
+
+  it('does not persist solar API keys in scheduling storage', () => {
+    useSchedulingStore.getState().upsertSolarIntegrationConfig('printer-a', {
+      enabled: true,
+      provider: 'custom',
+      endpointUrl: 'https://solar.example',
+      apiKey: 'secret-token',
+    });
+
+    const partialize = useSchedulingStore.persist.getOptions().partialize;
+    const persisted = partialize
+      ? partialize(useSchedulingStore.getState())
+      : useSchedulingStore.getState();
+
+    expect(JSON.stringify(persisted)).not.toContain('secret-token');
   });
 });

@@ -9,6 +9,7 @@ import type { PrintHistoryJob } from './printHistoryAnalytics';
 export interface PrintCostSettings {
   printerWatts: number;
   electricityRatePerKwh: number;
+  electricityRateAt?: (epochMs: number) => number | null | undefined;
   filamentGramsPerHour: number;
   co2KgPerKwh: number;
   nowMs?: number;
@@ -31,7 +32,9 @@ export interface PrintCostRollup {
   label: string;
   runs: number;
   filamentG: number;
+  filamentCost: number;
   energyKwh: number;
+  energyCost: number;
   co2Kg: number;
   totalCost: number;
 }
@@ -60,8 +63,31 @@ export function estimateEnergyKwh(durationSec: number, printerWatts: number): nu
   return (hours * clampFinite(printerWatts)) / 1000;
 }
 
-export function estimateElectricityCost(durationSec: number, printerWatts: number, ratePerKwh: number): number {
-  return estimateEnergyKwh(durationSec, printerWatts) * clampFinite(ratePerKwh);
+export function estimateElectricityCost(
+  durationSec: number,
+  printerWatts: number,
+  ratePerKwh: number,
+  startMs?: number,
+  electricityRateAt?: (epochMs: number) => number | null | undefined,
+): number {
+  if (!electricityRateAt || !Number.isFinite(startMs)) {
+    return estimateEnergyKwh(durationSec, printerWatts) * clampFinite(ratePerKwh);
+  }
+
+  const safeWatts = clampFinite(printerWatts);
+  const fallbackRate = clampFinite(ratePerKwh);
+  const safeStartMs = Number(startMs);
+  const endMs = safeStartMs + clampFinite(durationSec) * 1000;
+  let cursor = safeStartMs;
+  let cost = 0;
+  while (cursor < endMs) {
+    const next = Math.min(cursor + 60_000, endMs);
+    const sampledRate = electricityRateAt(cursor);
+    const rate = Number.isFinite(sampledRate) ? clampFinite(Number(sampledRate)) : fallbackRate;
+    cost += (safeWatts / 1000) * ((next - cursor) / 3_600_000) * rate;
+    cursor = next;
+  }
+  return cost;
 }
 
 export function averageSpoolCostPerKg(spools: Spool[], material?: string | null): number {
@@ -83,6 +109,16 @@ export function effectiveJobDurationSec(job: PrintHistoryJob, nowMs = Date.now()
   return clampFinite(job.durationSec);
 }
 
+export function printJobCostKey(job: PrintHistoryJob): string {
+  return [
+    job.printer,
+    job.file,
+    job.startedAt.getTime(),
+    job.endedAt?.getTime() ?? 'open',
+    job.outcome,
+  ].join('|');
+}
+
 export function estimatePrintJobCost(
   job: PrintHistoryJob,
   spools: Spool[],
@@ -94,7 +130,13 @@ export function estimatePrintJobCost(
   const filamentCostPerKg = averageSpoolCostPerKg(spools, job.material);
   const filamentCost = estimateSpoolFilamentCost({ costPerKg: filamentCostPerKg }, filamentG);
   const energyKwh = estimateEnergyKwh(durationSec, settings.printerWatts);
-  const energyCost = energyKwh * clampFinite(settings.electricityRatePerKwh);
+  const energyCost = estimateElectricityCost(
+    durationSec,
+    settings.printerWatts,
+    settings.electricityRatePerKwh,
+    job.startedAt.getTime(),
+    settings.electricityRateAt,
+  );
   const co2Kg = energyKwh * clampFinite(settings.co2KgPerKwh);
   return {
     job,
@@ -122,13 +164,17 @@ function rollupBy(
       label: labelFor(estimate),
       runs: 0,
       filamentG: 0,
+      filamentCost: 0,
       energyKwh: 0,
+      energyCost: 0,
       co2Kg: 0,
       totalCost: 0,
     };
     current.runs += 1;
     current.filamentG += estimate.filamentG;
+    current.filamentCost += estimate.filamentCost;
     current.energyKwh += estimate.energyKwh;
+    current.energyCost += estimate.energyCost;
     current.co2Kg += estimate.co2Kg;
     current.totalCost += estimate.totalCost;
     groups.set(key, current);
@@ -137,7 +183,7 @@ function rollupBy(
 }
 
 function monthKey(date: Date): string {
-  return date.toISOString().slice(0, 7);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
 export function summarizePrintCosts(
@@ -150,11 +196,13 @@ export function summarizePrintCosts(
     (sum, estimate) => ({
       runs: sum.runs + 1,
       filamentG: sum.filamentG + estimate.filamentG,
+      filamentCost: sum.filamentCost + estimate.filamentCost,
       energyKwh: sum.energyKwh + estimate.energyKwh,
+      energyCost: sum.energyCost + estimate.energyCost,
       co2Kg: sum.co2Kg + estimate.co2Kg,
       totalCost: sum.totalCost + estimate.totalCost,
     }),
-    { runs: 0, filamentG: 0, energyKwh: 0, co2Kg: 0, totalCost: 0 },
+    { runs: 0, filamentG: 0, filamentCost: 0, energyKwh: 0, energyCost: 0, co2Kg: 0, totalCost: 0 },
   );
   return {
     estimates,

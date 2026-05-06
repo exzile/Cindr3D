@@ -302,6 +302,38 @@ function rateAtForWindows(
   return matches.reduce((best, window) => (window.ratePerKwh < best.ratePerKwh ? window : best), matches[0]);
 }
 
+function setTimeOnDate(date: Date, hour: number, minute: number): number {
+  const next = new Date(date);
+  next.setHours(hour, minute, 0, 0);
+  return next.getTime();
+}
+
+function touBoundaryStarts(
+  windows: TOUWindow[],
+  printerId: string | null,
+  startMs: number,
+  endMs: number,
+): number[] {
+  const boundaries = new Set<number>();
+  const firstDay = new Date(startMs);
+  firstDay.setHours(0, 0, 0, 0);
+  for (let dayOffset = -1; dayOffset <= Math.ceil((endMs - startMs) / 86_400_000) + 1; dayOffset++) {
+    const date = new Date(firstDay.getTime() + dayOffset * 86_400_000);
+    const dow = date.getDay() as DayOfWeek;
+    for (const window of windows) {
+      if (window.printerId !== null && window.printerId !== printerId) continue;
+      if (!window.days.includes(dow)) continue;
+      for (const boundary of [
+        setTimeOnDate(date, window.startHour, window.startMinute),
+        setTimeOnDate(date, window.endHour, window.endMinute),
+      ]) {
+        if (boundary >= startMs && boundary <= endMs) boundaries.add(boundary);
+      }
+    }
+  }
+  return [...boundaries].sort((a, b) => a - b);
+}
+
 function energyCostForStart(
   windows: TOUWindow[],
   printerId: string | null,
@@ -309,16 +341,19 @@ function energyCostForStart(
   durationMs: number,
   printerWatts: number,
 ): Pick<CheapestPrintWindow, 'estimatedEnergyCost' | 'ratePerKwh' | 'tier' | 'label'> {
-  const sliceMs = 15 * 60 * 1000;
   const endMs = startMs + Math.max(0, durationMs);
   let cursor = startMs;
   let cost = 0;
   let weightedRate = 0;
   let sampledMs = 0;
   let lowest = rateAtForWindows(windows, printerId, startMs);
+  const boundaries = touBoundaryStarts(windows, printerId, startMs, endMs);
+  let boundaryIndex = 0;
 
   while (cursor < endMs) {
-    const next = Math.min(cursor + sliceMs, endMs);
+    while (boundaryIndex < boundaries.length && boundaries[boundaryIndex] <= cursor) boundaryIndex++;
+    const nextBoundary = boundaries[boundaryIndex] ?? endMs;
+    const next = Math.min(nextBoundary, endMs);
     const rate = rateAtForWindows(windows, printerId, cursor);
     const hours = (next - cursor) / 3_600_000;
     cost += (Math.max(0, printerWatts) / 1000) * hours * rate.ratePerKwh;
@@ -349,8 +384,16 @@ export function findCheapestTOUStart(
   const durationMs = Math.max(0, estimatedDurationMs);
   const horizonEnd = earliestStart + Math.max(stepMs, horizonHours * 3_600_000);
   let best: CheapestPrintWindow | null = null;
+  const candidates = new Set<number>();
 
   for (let start = earliestStart; start <= horizonEnd; start += stepMs) {
+    candidates.add(start);
+  }
+  for (const boundary of touBoundaryStarts(windows, printerId, earliestStart, horizonEnd)) {
+    candidates.add(boundary);
+  }
+
+  for (const start of [...candidates].sort((a, b) => a - b)) {
     const cost = energyCostForStart(windows, printerId, start, durationMs, printerWatts);
     const candidate = {
       start,
@@ -647,6 +690,24 @@ export const useSchedulingStore = create<SchedulingStore>()(
     }),
     {
       name: 'cindr3d-scheduling',
+      partialize: (state) => ({
+        ...state,
+        solarIntegrationConfigs: state.solarIntegrationConfigs.map((config) => ({
+          ...config,
+          apiKey: '',
+        })),
+      }),
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<SchedulingStore> | undefined;
+        return {
+          ...currentState,
+          ...persisted,
+          solarIntegrationConfigs: (persisted?.solarIntegrationConfigs ?? currentState.solarIntegrationConfigs).map((config) => ({
+            ...config,
+            apiKey: '',
+          })),
+        };
+      },
     },
   ),
 );
