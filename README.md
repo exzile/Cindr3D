@@ -56,19 +56,22 @@ The project is evolving quickly. Some CAD and slicer features are experimental, 
 ## What's New
 
 > [!NOTE]
-> **2026-05** — Cross-firmware unification. Klipper-style features now work on Duet RRF, Marlin, and any host that talks the basics. The slicer emits `M486` labels automatically.
+> **2026-05** - The active feature map now reaches Phase 19. Cindr3D has moved beyond cross-firmware control into print-farm intelligence, vision and AR overlays, cost/energy analytics, maintenance lifecycle tracking, scheduling, operational polish, deeper slicer fundamentals, guided onboarding, and a live dashboard print-preview card.
 
-**Headline features shipped this release:**
+**Headline features shipped so far:**
 
 - **Smart print farm queue** - persistent cross-printer queueing with routing rules for build volume, loaded material, nozzle size, copy splitting, job moves, pause, and cancel.
 - **Fleet cameras** - all-cameras grid, per-printer multi-camera streams, layer-by-layer photo galleries, PTZ presets, print-start camera positioning, and WebRTC/WHEP low-latency streaming with MJPEG/HLS fallback.
 - **Fleet filament inventory** - material rollups, low-stock thresholds, per-printer loaded-spool tracking, and automatic filament deduction from slicer estimates.
-- 🎯 **Mid-print object cancellation** — `M486` on Duet RRF 3.5+ and Marlin 2.0.9+, `EXCLUDE_OBJECT` on Klipper. Three surfaces: dedicated tab, dashboard list card, and a 3D Print Preview viewport with right-click context menus.
-- 🎬 **Live 3D Print Preview dashboard card** — viewport showing the build plate, plate-object silhouettes, and toolpath wireframe up to the layer currently being printed; right-click any object to cancel just that one.
-- ⚙️ **Cross-firmware tuning UI** — Input Shaper, Pressure Advance, Power, Spools, Timelapse, and Updates tabs that route to the right firmware-specific commands automatically.
-- 🏷️ **Slicer auto-labels** — every job Cindr3D slices is automatically tagged with `M486 S<id> A"<name>"` so cancellation works out of the box on uploaded files too.
-- 📡 **Live progress on every firmware** — Duet via the RRF object model, Klipper via Moonraker `print_stats` polling, Marlin via `M73` parsing on the USB stream.
-- 🤖 **AI Assistant** — local MCP server for Claude Code, plus an in-app BYOK chat panel that streams Anthropic, OpenAI, and OpenRouter with full tool-use.
+- **Vision and AR** - failure detection, AI diagnostics, tower analysis, camera measurement, guarded natural-language printer control, calibrated camera toolpath overlay, camera-view object cancellation, and post-print comparison.
+- **Cost, energy, and sustainability** - per-spool cost-per-kg, per-print receipts, live ticker, TOU-aware electricity pricing, cheapest-window scheduling, solar-surplus gates, CO2 estimates, and CSV/JSON exports.
+- **Maintenance and scheduling** - calibration aging, wear/service tracking, filament moisture warnings, day/week print calendar, quiet hours, bed-clear auto-queue, and per-printer pre-flight checklist overrides.
+- **Slicer fundamentals** - tree supports, adaptive layers, non-planar ironing, vase mode, fuzzy skin, organic/gyroid/lightning infill, multi-color tool changes, bed-mesh-aware arrange, thumbnails, Z-seam painting, sequential printing, modifier-region painting, coasting, wiping, and scarf seams.
+- **Operational polish** - session resume, mobile/tablet UI, i18n foundation, accessibility labels, high contrast, reduced motion, profile diff/restore, profile/spool sync, PWA support, print-from-URL, guided tutorials, and richer slicer setting help.
+- **Dashboard print preview** - saved views, current-layer emphasis, live layer scrubber, object badges, nozzle position/trails, color modes, diagnostics, camera/AR sync, and compact print stats.
+- **Mid-print object cancellation** - `M486` on Duet RRF 3.5+ and Marlin 2.0.9+, `EXCLUDE_OBJECT` on Klipper. Three surfaces: dedicated tab, dashboard list card, and a 3D Print Preview viewport with right-click context menus.
+- **Cross-firmware tuning UI** - Input Shaper, Pressure Advance, Power, Spools, Timelapse, and Updates tabs route to the right firmware-specific commands automatically.
+- **AI Assistant** - local MCP server for Claude Code, plus an in-app BYOK chat panel that streams Anthropic, OpenAI, and OpenRouter with full tool-use.
 
 ## Feature Highlights
 
@@ -139,6 +142,42 @@ Cindr3D now treats the 3D Printer workspace as a small print-farm controller, no
 - Spools roll up by material across the fleet with configurable low-stock thresholds.
 - Assign a loaded spool per printer so routing rules and operator views know what each machine can print.
 - Completed prints deduct estimated filament from the loaded spool when slicer/firmware metadata includes filament length.
+
+### Cost, Energy, And Maintenance
+
+- Spools store cost-per-kg so completed and in-progress prints can estimate filament spend per job.
+- Analytics receipts include duration, filament mass, filament cost, energy use, electricity cost, CO2 estimate, and total cost.
+- Cost rollups group by project/file, material, printer, month, and printer-month, with CSV and JSON exports.
+- Time-of-use windows price electricity across peak/off-peak boundaries and feed both analytics and cheapest-window scheduling.
+- Solar-surplus gates can hold starts until configured Powerwall, Enphase Envoy, SolarEdge, or custom surplus thresholds are available; solar API keys are not persisted to browser storage.
+- Calibration aging tracks bed mesh, pressure advance, input shaper, Z-offset, and first-layer checks with service intervals.
+- Wear tracking covers belts, bearings, nozzles, hotends, and build plates, with hours/filament counters, replacement thresholds, and service logs.
+- Filament moisture estimates from opened-on date and humidity surface in the Calibration tab and pre-flight warnings.
+
+### Scheduling And Operations
+
+- Day/week scheduling calendar with quiet hours, edit/reschedule flows, and scheduled-print queue integration.
+- Bed-clear auto-queue can wait after a job, check the build plate state, and start the next queued print when clear.
+- Pre-flight checklist items can be enabled, hidden, or overridden per printer.
+- Print-session resume restores active job context across browser sessions and devices.
+- Mobile/tablet UI adds touch-friendly navigation, bottom-sheet monitor panels, larger tap targets, and kiosk-style printer controls.
+- Internationalization, accessibility labels, keyboard navigation, high contrast, reduced motion, profile diff/restore, profile/spool sync, PWA installability, and print-from-URL are implemented.
+
+### Slicer Fundamentals
+
+- Tree supports with branch growth, per-region density, collision avoidance, and wireframe preview rendering.
+- Adaptive layer heights with slope-based subdivision, min/max controls, and variable-height preview support.
+- Non-planar surface ironing, vase mode, fuzzy skin, organic / gyroid / lightning infill, coasting, wiping, and scarf seams.
+- Multi-color tool-change slicing with per-object tool indices, tool-selection G-code, and prime-tower purge moves.
+- Bed-mesh-aware auto-arrange, print-history failure analytics, embedded G-code thumbnails, Z-seam painting, sequential printing, and modifier-region painting.
+
+### Onboarding And Dashboard Preview
+
+- Printer Calibration tab includes one-click G-code presets.
+- Prepare calibration menu includes cube, first-layer, dimensional accuracy, pressure-advance tower, and input-shaper tower presets.
+- Guided Help tutorials store resumable progress in the browser.
+- Slicer setting help has richer contextual explanations and Markdown-authored source pages.
+- Dashboard Print Preview card includes saved camera/view presets, current-layer emphasis, live layer scrubber, object status badges, material estimates, nozzle position/trails, color modes, diagnostic markers, camera/AR sync actions, and a dense print stats strip.
 
 ### 🤖 AI Assistant
 
@@ -255,25 +294,26 @@ See [docs/ai-mcp-tools.md](docs/ai-mcp-tools.md) for the tool reference and [doc
 
 ## Roadmap
 
-The next 12 phases of work are tracked in detail in [`TaskLists.txt`](TaskLists.txt). Highlights:
+Implemented and planned phases are tracked in detail in [`TaskLists.txt`](TaskLists.txt). Current status:
 
-| Phase | Theme | What lands |
-|---|---|---|
-| 7 | 🏭 Print farm intelligence | Cross-printer queue, all-cameras grid, A/B compare, multi-camera per printer, PTZ, WebRTC streaming, fleet inventory |
-| 8 | 👁️ Vision / AI | Failure detection, "what's wrong" diagnostics, auto-tune wizards, camera measurement, natural-language control |
-| 9 | 🥽 AR camera overlay | Calibrated toolpath projected on live camera feed; cancel objects directly from the camera view |
-| 10 | 💰 Cost & energy | Cost-per-print, off-peak scheduling, solar-aware printing, sustainability dashboard |
-| 11 | 🔧 Maintenance & calibration | Calibration aging, wear tracking, filament moisture model |
-| 12 | 📅 Print scheduling | Calendar, bed-clearing auto-queue, pre-flight checklist |
-| 13 | 🔌 Integrations | Webhooks + Discord/Slack/Telegram, MQTT, HomeAssistant, profile import (Cura/Orca/Bambu), power-loss resume, chamber/air-quality/door sensors, stepper driver tuning |
-| 14 | ✨ Operational polish | Session resume, mobile UI, i18n, accessibility, profile diff, profile sync, PWA mode, print-from-URL |
-| 15 | 🧱 Slicer fundamentals | Tree supports, adaptive layers, non-planar ironing, vase mode, organic infill, multi-color, bed-mesh-aware auto-arrange, history analytics, embedded thumbnails, Z-seam painter, sequential printing, modifier-mesh painting, fuzzy skin |
-| 16 | 📐 Design workspace | Parametric model library, design configurations, 2D drawings, mesh repair, sketch constraint solver upgrades, threading library, non-destructive boolean history |
-| 17 | 🎓 Onboarding & education | Calibration print library, guided tutorials, settings deep-help wiki |
-| 18 | 🧩 Plugin system | *Future — captured for planning, not yet scheduled* |
+| Phase | Status | Theme | Summary |
+|---|---|---|---|
+| 1-6 | Done | AI Assistant | Local MCP server, token-paired auth, 29-tool surface, BYOK chat, audit log, and safety gates. |
+| Cross-firmware batch | Done | Printer features | Bed Map, Exclude Object, Updates, Power, Input Shaper, Pressure Advance, Spools, Timelapse, M486 labels, and live progress unified across firmware targets. |
+| 7-9 | Done | Farm intelligence, vision, AR | Smart queue, fleet cameras, inventory, A/B compare, PTZ, layer gallery, WebRTC, failure detection, diagnostics, tower analysis, camera measurement, AR overlay, camera object cancel, and post-print comparison. |
+| 10 | Done | Cost & energy | Per-spool cost, per-print receipts, live ticker, TOU pricing, cheapest-window scheduling, solar surplus, sustainability rollups, CSV/JSON export. |
+| 11 | Done | Maintenance lifecycle | Calibration aging, wear tracking, service logs, filament moisture estimates, Calibration tab warnings, and pre-flight warnings. |
+| 12 | Done | Print scheduling | Day/week calendar, quiet hours, scheduled-print editing, bed-clear auto-queue, and per-printer checklist overrides. |
+| 13 | Planned | Integrations | Webhooks, chat-app notifications, MQTT, HomeAssistant, profile import, power-loss resume, chamber/air/door sensors, and TMC tuning. |
+| 14 | Done | Operational polish | Session resume, mobile/tablet UI, i18n, accessibility, high contrast, reduced motion, profile diff/restore, profile/spool sync, PWA, print-from-URL. |
+| 15 | Done | Slicer fundamentals | Tree supports, adaptive layers, non-planar ironing, vase mode, fuzzy skin, organic/gyroid/lightning infill, multi-color, bed-mesh arrange, thumbnails, Z-seam painting, sequential printing, modifier-region painting, coasting, wiping, scarf seams. |
+| 16 | Planned | Design workspace | Parametric model library, configurations, drawings, mesh repair, solver upgrades, threading library, and non-destructive boolean history. |
+| 17 | Done | Onboarding & education | Calibration presets, guided tutorials, resumable lesson progress, and richer setting help. |
+| 18 | Future | Plugin system | Captured for planning only; not scheduled yet. |
+| 19 | Done | Dashboard print preview | Saved preview views, layer emphasis, mini scrubber, object status/hover details, material estimates, nozzle trails, color modes, diagnostics, camera/AR sync, and stats strip. |
 
 > [!TIP]
-> Phases 7, 11, 13, 14, 16, 17 are mostly independent and can run in parallel. Phase 8 (Vision) gates Phase 9 (AR). See [`TaskLists.txt`](TaskLists.txt) for detailed sub-phases, effort estimates, file hints, and dependency notes.
+> `TaskLists.txt` remains the source of truth for remaining work, intentionally not implemented items, file hints, and dependency notes.
 
 ## Development Scripts
 

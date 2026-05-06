@@ -120,6 +120,60 @@ const HELP_TOPICS: HelpTopic[] = [
   },
 
   {
+    id: 'implemented-features',
+    title: 'Implemented feature map',
+    summary: 'A phase-by-phase guide to the major features currently in the app and where to find them.',
+    group: 'Reference',
+    sections: [
+      {
+        heading: 'AI, CAD, slicer, and printer foundation',
+        items: [
+          'AI Assistant: local MCP server on port 5174, token-paired localhost auth, 29 CAD/slicer/printer tools, audit log, optional destructive-operation confirmation, and BYOK chat for Anthropic, OpenAI, and OpenRouter.',
+          'Design workspace: sketching, constraints, solid modeling, feature timeline, components, imports/exports, inspection tools, and MCP-callable CAD actions.',
+          'Prepare workspace: multi-object plate layout, per-object profile overrides, WASM slicing kernels, calibration utilities, G-code preview, and automatic M486 object labels for supported firmware.',
+          'Cross-firmware printer workspace: Duet/RRF, Klipper/Moonraker, Marlin/WebSerial, and generic hosts share Dashboard, Camera, Status, Console, Job, History, Analytics, Files, Macros, Bed Map, Exclude Object, Updates, Power, Input Shaper, Pressure Advance, Spools, Timelapse, and Settings surfaces where supported.',
+        ],
+      },
+      {
+        heading: 'Print farm, vision, and AR',
+        items: [
+          'Smart queue routes work by build volume, loaded material, nozzle size, profile compatibility, and printer availability, with copy splitting, drag reorder, pause, cancel, and move actions.',
+          'Fleet cameras include an all-camera wall view, multi-camera per-printer streams, MJPEG/HLS/WebRTC sources, PTZ presets, print-start camera positions, per-layer photo gallery, and ZIP export.',
+          'Vision tools cover failure detection, diagnostics, tower analysis, camera measurement, and guarded natural-language printer control.',
+          'Camera AR adds pose calibration, live toolpath overlay, right-click object cancellation from the camera feed, and post-print comparison.',
+        ],
+      },
+      {
+        heading: 'Cost, maintenance, and scheduling',
+        items: [
+          'Cost and energy analytics track per-spool cost-per-kg, filament/electricity cost, kWh, estimated CO2, live cost ticker, completed-job receipts, project/material/printer/month rollups, and CSV/JSON exports.',
+          'Time-of-use planning supports per-printer rate windows, utility-rate config fields, cheapest-window scheduling, and TOU-aware receipts and rollups.',
+          'Solar gating can hold starts until Tesla Powerwall, Enphase Envoy, SolarEdge, or custom surplus thresholds are met; solar API keys are not persisted in browser storage.',
+          'Maintenance lifecycle tracks calibration age, service intervals, overdue/upcoming status, belts, bearings, nozzles, hotends, build plates, service logs, and filament moisture warnings.',
+          'Scheduling includes day/week calendar views, quiet hours, scheduled-print editing, bed-clear auto-queue, and per-printer pre-flight checklist overrides.',
+        ],
+      },
+      {
+        heading: 'Polish, slicer depth, and learning',
+        items: [
+          'Operational polish includes print-session resume, mobile/tablet UI, i18n foundation, accessibility labels, high contrast, reduced motion, profile versioning/diff/restore, profile/spool sync, PWA support, and print-from-URL.',
+          'Slicer fundamentals include tree supports, adaptive layers, non-planar ironing, vase mode, fuzzy skin, organic/gyroid/lightning infill, multi-color tool changes, bed-mesh-aware auto-arrange, print-history analytics, embedded thumbnails, Z-seam painting, sequential printing, modifier-region painting, coasting, wiping, and scarf seams.',
+          'Onboarding and education include the printer Calibration tab, Prepare calibration print presets, guided tutorials with resumable progress, and richer slicer setting help.',
+          'The dashboard Print Preview card includes saved camera/view presets, current-layer emphasis, live layer progress, mini timeline scrubber, object badges and hover details, nozzle position/trails, color modes, diagnostics, camera/AR sync, and a compact stats strip.',
+        ],
+      },
+      {
+        heading: 'Still planned',
+        items: [
+          'Phase 13 integrations are still planned: webhooks, Discord/Slack/Telegram, MQTT, HomeAssistant, profile import, power-loss resume, chamber/air-quality/door sensors, and stepper-driver tuning.',
+          'Phase 16 design-workspace expansion is still planned: parametric model library, configurations, drawings, mesh repair, solver upgrades, threading library, and non-destructive boolean history.',
+          'Phase 18 plugin/extension system is captured for future planning and is not scheduled yet.',
+        ],
+      },
+    ],
+  },
+
+  {
     id: 'tutorials',
     title: 'Guided tutorials',
     summary: 'Interactive lessons with resumable progress for common first wins.',

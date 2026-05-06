@@ -293,6 +293,21 @@ const v2Highlights = [
     detail: 'Smart queue with drag-reorder, auto-routing, and copy-distribution across printers. All-cameras grid with per-tile overlays, PTZ presets, multi-camera per printer, and a per-layer photo gallery with ZIP export.',
   },
   {
+    icon: Zap,
+    label: 'Cost, energy, and sustainability',
+    detail: 'Per-spool cost-per-kg, per-print receipts, live cost ticker, TOU-aware energy pricing, cheapest-window scheduling, solar-surplus gates, CO2 estimates, and CSV/JSON cost exports.',
+  },
+  {
+    icon: Timer,
+    label: 'Maintenance and calibration lifecycle',
+    detail: 'Per-printer calibration aging, wear tracking for belts/bearings/nozzles/hotends/build plates, service logs, filament moisture estimates, and pre-flight warnings before risky starts.',
+  },
+  {
+    icon: FlaskConical,
+    label: 'Slicer fundamentals',
+    detail: 'Tree supports, adaptive layers, non-planar ironing, vase mode, fuzzy skin, organic/gyroid/lightning infill, multi-color tool changes, thumbnails, Z-seam painting, sequential printing, and modifier-region painting.',
+  },
+  {
     icon: MoveHorizontal,
     label: 'A/B cross-printer comparison',
     detail: 'Run the same G-code on two printers in parallel, compare side-by-side layer timing deltas, and produce a quality report on which printer is faster or more consistent.',
@@ -301,67 +316,59 @@ const v2Highlights = [
 
 const milestones = [
   {
-    phase: 'Phase 8',
+    phase: 'Phases 7-9',
     icon: CameraOff,
-    title: 'Vision and AI diagnostics',
+    title: 'Farm intelligence, vision, and AR',
     items: [
-      'Failure detection — spaghetti, layer-shift, blob-of-doom, adhesion with auto-pause',
-      '"What\'s wrong with my print?" AI diagnostics aggregating frames, temps, and slicer timing',
-      'Auto-tune wizards for pressure advance, retraction, temperature, and first-layer squish',
-      'Camera measurement tool with homography-based real-world distance readout',
+      'Cross-printer queue, fleet inventory, all-camera wall view, A/B comparison, PTZ presets, and WebRTC streaming',
+      'Failure detection, AI diagnostics, tower analysis, camera measurement, and guarded natural-language printer control',
+      'Calibrated AR toolpath overlay, camera-view object cancellation, and post-print comparison',
     ],
   },
   {
-    phase: 'Phase 9',
-    icon: SwitchCamera,
-    title: 'AR camera overlay',
-    items: [
-      'Toolpath wireframe composited over the live camera feed at full frame rate',
-      'Right-click object cancel from the camera view using inverse-projected bed coordinates',
-      'Post-print AR comparison: frozen final frame with model wireframe overlay and mismatch highlights',
-    ],
-  },
-  {
-    phase: 'Phase 10',
+    phase: 'Phases 10-12',
     icon: Zap,
-    title: 'Cost and energy tracking',
+    title: 'Cost, maintenance, and scheduling',
     items: [
-      'Cost-per-print from filament price and smart-plug wattage with live ticker',
-      'Off-peak scheduling with TOU rate editor and optional utility API integration',
-      'Solar-aware printing gated on Powerwall / Enphase / SolarEdge surplus',
-      'Sustainability dashboard: kg filament, kWh, CO2 estimates with CSV export',
+      'Cost-per-print, TOU-aware energy pricing, off-peak planner, solar-surplus gate, sustainability rollups, and CSV/JSON exports',
+      'Calibration aging, wear tracking, service logs, filament moisture estimates, and pre-flight maintenance warnings',
+      'Day/week print calendar, quiet hours, scheduled-print editing, bed-clear auto-queue, and per-printer checklist overrides',
     ],
   },
   {
-    phase: 'Phase 11',
-    icon: Timer,
-    title: 'Maintenance lifecycle',
-    items: [
-      'Calibration aging dashboard with recommended re-cal intervals and overdue alerts',
-      'Wear tracking for belts, bearings, nozzles, and hotends with full service log',
-      'Filament moisture model with ambient humidity tracking and pre-print drying warnings',
-    ],
-  },
-  {
-    phase: 'Phase 12',
+    phase: 'Phases 14-15',
     icon: FlaskConical,
-    title: 'Scheduling and integrations',
+    title: 'Operational polish and slicer fundamentals',
     items: [
-      'Print scheduling calendar with drag-to-schedule and quiet-hours awareness',
-      'Webhook, Discord, Slack, Telegram, and MQTT notifications',
-      'HomeAssistant entity bridge and profile import from Cura / OrcaSlicer / Bambu Studio',
-      'Chamber temperature monitoring and control for ABS / ASA / PC enclosures',
+      'Session resume, mobile/tablet UI, i18n foundation, accessibility polish, profile diff/restore, PWA support, and print-from-URL',
+      'Tree supports, adaptive layers, non-planar ironing, vase mode, fuzzy skin, organic/gyroid/lightning infill, and multi-color tool-change slicing',
+      'Bed-mesh-aware auto-arrange, print-history analytics, thumbnails, Z-seam painting, sequential printing, modifier-region painting, coasting, wiping, and scarf seams',
     ],
   },
   {
-    phase: 'Phases 13-14',
-    icon: Code2,
-    title: 'Polish and platform',
+    phase: 'Phases 17 and 19',
+    icon: ListChecks,
+    title: 'Education and live dashboard preview',
     items: [
-      'PWA mode — installable, offline-capable, custom splash screen',
-      'Mobile and tablet UI with bottom-sheet nav and one-thumb kiosk mode',
-      'i18n, accessibility audit, high-contrast theme, and reduced-motion mode',
-      'Profile versioning with diff viewer and cherry-pick restore',
+      'Calibration tab presets, Prepare calibration print library, guided tutorials with resumable progress, and richer slicer setting help',
+      'Dashboard preview camera presets, persisted view state, current-layer emphasis, object status badges, nozzle trails, compact legends, diagnostics, and stats strip',
+    ],
+  },
+  {
+    phase: 'Phase 13',
+    icon: SwitchCamera,
+    title: 'Integrations still planned',
+    items: [
+      'Webhook, Discord, Slack, Telegram, MQTT, HomeAssistant, profile import, power-loss resume, chamber/air-quality/door sensors, and stepper-driver tuning are tracked in TaskLists.txt but not shipped yet',
+    ],
+  },
+  {
+    phase: 'Phases 16 and 18',
+    icon: Code2,
+    title: 'Design workspace and plugin system',
+    items: [
+      'Parametric model library, design configurations, 2D drawings, mesh repair, solver upgrades, threading library, and non-destructive boolean history remain future CAD work',
+      'The plugin/extension system is captured for future planning only so shipped features can stay plugin-shaped where natural',
     ],
   },
 ];
@@ -380,15 +387,15 @@ function ReleaseRoadmapTabs() {
       <div className="rrtabs" style={{ width: 'min(1180px, calc(100% - 40px))', margin: '0 auto' }}>
         <div className="rrtabs__head">
           <div className="home-section-heading" style={{ margin: 0 }}>
-            <p>{tab === 'shipped' ? 'Released May 2026' : "What's coming next"}</p>
-            <h2 id="release-title">{tab === 'shipped' ? 'What shipped in 2.0' : 'Upcoming milestones'}</h2>
+            <p>{tab === 'shipped' ? 'Implemented so far' : 'Completed phases and remaining work'}</p>
+            <h2 id="release-title">{tab === 'shipped' ? 'Feature map through Phase 19' : 'Phase status'}</h2>
           </div>
           <div className="rrtabs__nav" role="tablist">
             <button role="tab" aria-selected={tab === 'shipped'} className={`rrtabs__tab${tab === 'shipped' ? ' rrtabs__tab--active' : ''}`} onClick={() => setTab('shipped')} onKeyDown={handleKey}>
-              ✓ Shipped in 2.0
+              ✓ Implemented
             </button>
             <button role="tab" aria-selected={tab === 'roadmap'} className={`rrtabs__tab${tab === 'roadmap' ? ' rrtabs__tab--active' : ''}`} onClick={() => setTab('roadmap')} onKeyDown={handleKey}>
-              ◎ Roadmap
+              ◎ Phase status
             </button>
           </div>
         </div>
