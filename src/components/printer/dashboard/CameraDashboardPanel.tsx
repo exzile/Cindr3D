@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
 import { strToU8, zipSync } from 'fflate';
 import {
   Archive,
@@ -677,6 +677,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const hdMainIsRtsp = prefs.webcamMainStreamProtocol === 'rtsp' || /^rtsp:\/\//i.test(prefs.webcamMainStreamUrl.trim());
   const imgRef = useRef<HTMLImageElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const browserUsbStreamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -766,6 +767,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [calibration, setCalibration] = useState<CameraMeasurementCalibration>(() => dashboardPrefs.calibration as CameraMeasurementCalibration);
   const [measurementMode, setMeasurementMode] = useState<MeasurementMode>('off');
   const [nextBedCornerIndex, setNextBedCornerIndex] = useState(0);
+  const [draggingBedCorner, setDraggingBedCorner] = useState<BedCornerKey | null>(null);
   const [poseStillUrl, setPoseStillUrl] = useState('');
   const [finalComparisonUrl, setFinalComparisonUrl] = useState('');
   const [cameraOverlayMode, setCameraOverlayMode] = useState<CameraOverlayMode>('camera');
@@ -2451,14 +2453,19 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
         ? 'Homography ready'
         : 'Bed corners not calibrated';
 
-  const handleMeasurementClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
-    if (measurementMode === 'off') return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    const point = {
+  const pointFromFramePointer = useCallback((event: PointerEvent<HTMLElement>) => {
+    const frame = frameRef.current;
+    if (!frame) return null;
+    const rect = frame.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    return {
       x: clampPercent(((event.clientX - rect.left) / rect.width) * 100),
       y: clampPercent(((event.clientY - rect.top) / rect.height) * 100),
     };
+  }, []);
+
+  const handleMeasurementPoint = useCallback((point: ImagePoint) => {
+    if (measurementMode === 'off') return;
 
     if (measurementMode === 'bed') {
       const corner = BED_CORNER_SEQUENCE[nextBedCornerIndex] ?? BED_CORNER_SEQUENCE[0];
@@ -2487,6 +2494,54 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
       return { ...value, measureB: point };
     });
   }, [measurementMode, nextBedCornerIndex]);
+
+  const handleMeasurementPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (measurementMode === 'off') return;
+    if (event.target !== event.currentTarget) return;
+    const point = pointFromFramePointer(event);
+    if (!point) return;
+    event.preventDefault();
+    handleMeasurementPoint(point);
+  }, [handleMeasurementPoint, measurementMode, pointFromFramePointer]);
+
+  const updateBedCornerPoint = useCallback((corner: BedCornerKey, point: ImagePoint) => {
+    setCalibration((value) => ({
+      ...value,
+      bedCorners: {
+        ...(value.bedCorners ?? {}),
+        [corner]: point,
+      },
+      pose: undefined,
+    }));
+  }, []);
+
+  const handleCornerPointerDown = useCallback((event: PointerEvent<HTMLButtonElement>, corner: BedCornerKey) => {
+    const point = pointFromFramePointer(event);
+    if (!point) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDraggingBedCorner(corner);
+    updateBedCornerPoint(corner, point);
+  }, [pointFromFramePointer, updateBedCornerPoint]);
+
+  const handleCornerPointerMove = useCallback((event: PointerEvent<HTMLButtonElement>, corner: BedCornerKey) => {
+    if (draggingBedCorner !== corner) return;
+    const point = pointFromFramePointer(event);
+    if (!point) return;
+    event.preventDefault();
+    updateBedCornerPoint(corner, point);
+  }, [draggingBedCorner, pointFromFramePointer, updateBedCornerPoint]);
+
+  const handleCornerPointerUp = useCallback((event: PointerEvent<HTMLButtonElement>) => {
+    if (draggingBedCorner === null) return;
+    event.preventDefault();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setDraggingBedCorner(null);
+    setMessage('Adjusted bed corner. Save pose when the overlay matches the camera frame.');
+  }, [draggingBedCorner]);
 
   const savePoseCalibration = useCallback(() => {
     const pose = solveCameraPoseCalibration(calibration.bedCorners, bedWidthMm, bedDepthMm, currentPoseSignature);
@@ -2584,7 +2639,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
           )}
 
           <div className="cam-panel__viewer">
-            <div className={frameClassName} onClick={handleMeasurementClick}>
+            <div ref={frameRef} className={frameClassName}>
               {hasCamera ? (
                 <>
                   {poseStillUrl || finalComparisonUrl ? (
@@ -2621,7 +2676,10 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
                   <div className="cam-panel__health">{formatLastFrame(lastFrameAt, nowTick)}</div>
                   {calibration.enabled && <div className="cam-panel__calibration" style={calibrationStyle} />}
                   <CameraOverlayPanel pose={calibration.pose} mode={cameraOverlayMode} frameTick={frameCount} comparison={Boolean(finalComparisonUrl)} />
-                  <div className="cam-panel__measurement-layer" aria-hidden="true">
+                  <div
+                    className={`cam-panel__measurement-layer${measurementMode !== 'off' ? ' is-picking' : ''}`}
+                    onPointerDown={handleMeasurementPointerDown}
+                  >
                     {bedCornersComplete && (
                       <svg className="cam-panel__measurement-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
                         <polygon
@@ -2639,13 +2697,19 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
                       const point = calibration.bedCorners?.[key];
                       if (!point) return null;
                       return (
-                        <span
+                        <button
+                          type="button"
                           key={key}
-                          className="cam-panel__measure-point cam-panel__measure-point--corner"
+                          className={`cam-panel__measure-point cam-panel__measure-point--corner${draggingBedCorner === key ? ' is-dragging' : ''}`}
                           style={{ left: `${point.x}%`, top: `${point.y}%` }}
+                          onPointerDown={(event) => handleCornerPointerDown(event, key)}
+                          onPointerMove={(event) => handleCornerPointerMove(event, key)}
+                          onPointerUp={handleCornerPointerUp}
+                          onPointerCancel={handleCornerPointerUp}
+                          aria-label={`Drag ${label.toLowerCase()} bed corner`}
                         >
                           {label.slice(0, 1)}
-                        </span>
+                        </button>
                       );
                     })}
                     {calibration.measureA && calibration.measureB && (
