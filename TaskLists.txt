@@ -208,11 +208,11 @@
 
 ### 13.6 Chamber temperature monitor + control  [M]
 #   For ABS / ASA / PC / nylon prints in an enclosure.
-#   [ ] Read chamber temp from RRF heater channel / Klipper sensor /
+#   [x] Read chamber temp from RRF heater channel / Klipper sensor /
 #       generic MQTT topic
-#   [ ] Optional control: chamber-heater target + ramp curve UI
-#   [ ] Pre-heat before print start; cool-down policy on completion
-#   [ ] Pairs with safety limits: cool-down on door open
+#   [x] Optional control: chamber-heater target + ramp curve UI
+#   [x] Pre-heat before print start; cool-down policy on completion
+#   [x] Pairs with safety limits: cool-down on door open
 
 ### 13.7 Air quality / fume sensors  [S]
 #   Cheap MQTT sensors (SCD30 / BME680 / PMS5003) become safety surface.

@@ -3,7 +3,9 @@ import type { CSSProperties } from 'react';
 import { X } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { usePrintRecoveryStore, type PrintRecoverySnapshot } from '../../store/printRecoveryStore';
+import { useChamberControlStore } from '../../store/chamberControlStore';
 import { fetchHomeAssistantCommands, publishHomeAssistantSnapshot } from '../../services/integrations/homeAssistantBridge';
+import { computeChamberRampCommand, parseChamberTemperaturePayload } from '../../services/integrations/chamberControl';
 import { sendIntegrationEvent, type IntegrationPrinterSnapshot } from '../../services/integrations/notificationSender';
 import { mqttPublisher } from '../../services/integrations/mqttPublisher';
 import { useIntegrationStore, type IntegrationEventType } from '../../store/integrationStore';
@@ -88,7 +90,9 @@ export default function DuetNotifications() {
   const resumePrint = usePrinterStore((s) => s.resumePrint);
   const cancelPrint = usePrinterStore((s) => s.cancelPrint);
   const sendGCode = usePrinterStore((s) => s.sendGCode);
+  const setChamberTemp = usePrinterStore((s) => s.setChamberTemp);
   const mqtt = useIntegrationStore((s) => s.mqtt);
+  const chamberControl = useChamberControlStore();
   const saveRecoverySnapshot = usePrintRecoveryStore((s) => s.saveSnapshot);
   const clearRecoverySnapshot = usePrintRecoveryStore((s) => s.clearSnapshot);
   const dismissRecoverySnapshot = usePrintRecoveryStore((s) => s.dismissSnapshot);
@@ -105,6 +109,7 @@ export default function DuetNotifications() {
   const prevLayerRef = useRef<number | undefined>(undefined);
   const lastMqttTelemetryRef = useRef(0);
   const lastRecoverySnapshotRef = useRef(0);
+  const doorOpenCooldownSentRef = useRef(false);
 
   const addToast = useCallback((type: ToastType, message: string) => {
     const id = nextToastId++;
@@ -193,6 +198,16 @@ export default function DuetNotifications() {
     };
   }, [mqtt]);
 
+  useEffect(() => {
+    if (!mqtt.enabled || !chamberControl.enabled || !chamberControl.mqttTopic.trim()) return;
+    mqttPublisher.configure(mqtt);
+    return mqttPublisher.subscribe(chamberControl.mqttTopic, (payload) => {
+      const temperatureC = parseChamberTemperaturePayload(payload);
+      if (temperatureC === null) return;
+      useChamberControlStore.getState().setExternalTemperature(temperatureC);
+    });
+  }, [chamberControl.enabled, chamberControl.mqttTopic, mqtt]);
+
   // Auto-dismiss timer (single-shot to next expiry; avoids constant interval work)
   useEffect(() => {
     if (toasts.length === 0) return;
@@ -235,12 +250,21 @@ export default function DuetNotifications() {
     if (prev && prev !== status) {
       if (prev !== 'processing' && status === 'processing') {
         dispatchIntegrationEvent('PRINT_START');
+        if (chamberControl.enabled && chamberControl.preheatBeforePrint && chamberControl.targetTemperatureC > 0) {
+          void setChamberTemp(chamberControl.targetTemperatureC);
+          addToast('info', `Chamber preheat target set to ${chamberControl.targetTemperatureC}C`);
+        }
       }
       // Print completed
       if (prev === 'processing' && status === 'idle') {
         addToast('success', 'Print completed successfully');
         dispatchIntegrationEvent('DONE');
         if (activePrinterId) clearRecoverySnapshot(activePrinterId);
+        if (chamberControl.enabled && chamberControl.cooldownOnDone) {
+          void setChamberTemp(0);
+          useChamberControlStore.getState().stopRamp();
+          addToast('info', 'Chamber cooldown started');
+        }
       }
       // Print paused
       if (status === 'paused' && prev !== 'paused') {
@@ -254,7 +278,39 @@ export default function DuetNotifications() {
     }
 
     prevStatusRef.current = status;
-  }, [activePrinterId, addToast, clearRecoverySnapshot, dispatchIntegrationEvent, model.state?.status]);
+  }, [activePrinterId, addToast, chamberControl.cooldownOnDone, chamberControl.enabled, chamberControl.preheatBeforePrint, chamberControl.targetTemperatureC, clearRecoverySnapshot, dispatchIntegrationEvent, model.state?.status, setChamberTemp]);
+
+  useEffect(() => {
+    if (!chamberControl.rampActive) return;
+    const applyRampStep = () => {
+      const latest = useChamberControlStore.getState();
+      const command = computeChamberRampCommand(latest, Date.now());
+      if (!command) return;
+      void setChamberTemp(command.targetC);
+      useChamberControlStore.getState().updateChamberControl({
+        rampLastCommandedC: command.targetC,
+        rampActive: !command.done,
+        rampStartedAt: command.done ? null : latest.rampStartedAt,
+      });
+      addToast('info', `Chamber ramp target set to ${command.targetC}C`);
+    };
+
+    applyRampStep();
+    const interval = window.setInterval(applyRampStep, 15000);
+    return () => window.clearInterval(interval);
+  }, [addToast, chamberControl.rampActive, setChamberTemp]);
+
+  useEffect(() => {
+    if (!chamberControl.enabled || !chamberControl.cooldownOnDoorOpen || !chamberControl.doorOpen) {
+      doorOpenCooldownSentRef.current = false;
+      return;
+    }
+    if (doorOpenCooldownSentRef.current) return;
+    doorOpenCooldownSentRef.current = true;
+    void setChamberTemp(0);
+    useChamberControlStore.getState().stopRamp();
+    addToast('warning', 'Door open: chamber heater cooling down');
+  }, [addToast, chamberControl.cooldownOnDoorOpen, chamberControl.doorOpen, chamberControl.enabled, setChamberTemp]);
 
   // Watch for layer changes during active prints
   useEffect(() => {

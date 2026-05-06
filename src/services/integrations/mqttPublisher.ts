@@ -6,6 +6,8 @@ type PublishItem = {
   payload: unknown;
 };
 
+type SubscriptionHandler = (payload: string, topic: string) => void;
+
 const MQTT_PROTOCOL_NAME = 'MQTT';
 const MQTT_PROTOCOL_LEVEL = 4;
 const DEFAULT_KEEPALIVE_SECONDS = 30;
@@ -100,13 +102,46 @@ export function encodePublishPacket(topic: string, payload: unknown): Uint8Array
   return packet(0x30, body);
 }
 
+export function encodeSubscribePacket(topic: string, packetId: number): Uint8Array {
+  const body = concatBytes(
+    new Uint8Array([packetId >> 8, packetId & 0xff]),
+    mqttString(topic),
+    new Uint8Array([0x00]),
+  );
+  return packet(0x82, body);
+}
+
+export function decodePublishPacket(bytes: Uint8Array): { topic: string; payload: string } | null {
+  if ((bytes[0] & 0xf0) !== 0x30) return null;
+  let multiplier = 1;
+  let remaining = 0;
+  let offset = 1;
+  let digit = 0;
+  do {
+    digit = bytes[offset++];
+    remaining += (digit & 127) * multiplier;
+    multiplier *= 128;
+  } while ((digit & 128) !== 0 && offset < bytes.length);
+
+  if (remaining <= 2 || offset + remaining > bytes.length) return null;
+  const topicLength = (bytes[offset] << 8) + bytes[offset + 1];
+  offset += 2;
+  if (offset + topicLength > bytes.length) return null;
+  const topic = new TextDecoder().decode(bytes.slice(offset, offset + topicLength));
+  offset += topicLength;
+  const payload = new TextDecoder().decode(bytes.slice(offset, offset + remaining - topicLength - 2));
+  return { topic, payload };
+}
+
 class MqttPublisher {
   private config: MqttIntegrationConfig | null = null;
   private ws: WebSocket | null = null;
   private queue: PublishItem[] = [];
+  private subscriptions = new Map<string, Set<SubscriptionHandler>>();
   private reconnectTimer: number | null = null;
   private pingTimer: number | null = null;
   private reconnectDelayMs = 1000;
+  private nextPacketId = 1;
 
   configure(config: MqttIntegrationConfig): void {
     this.config = config;
@@ -138,6 +173,24 @@ class MqttPublisher {
         printer: snapshot,
       },
     });
+  }
+
+  subscribe(topic: string, handler: SubscriptionHandler): () => void {
+    const normalizedTopic = topic.trim();
+    if (!normalizedTopic) return () => undefined;
+    const handlers = this.subscriptions.get(normalizedTopic) ?? new Set<SubscriptionHandler>();
+    handlers.add(handler);
+    this.subscriptions.set(normalizedTopic, handlers);
+    this.subscribeSocket(normalizedTopic);
+    if (!this.ws || this.ws.readyState === WebSocket.CLOSED || this.ws.readyState === WebSocket.CLOSING) {
+      this.connect();
+    }
+
+    return () => {
+      const currentHandlers = this.subscriptions.get(normalizedTopic);
+      currentHandlers?.delete(handler);
+      if (currentHandlers?.size === 0) this.subscriptions.delete(normalizedTopic);
+    };
   }
 
   disconnect(): void {
@@ -177,7 +230,10 @@ class MqttPublisher {
         if (data[0] === 0x20 && data[3] === 0) {
           this.reconnectDelayMs = 1000;
           this.startPing();
+          this.resubscribe();
           this.flush();
+        } else {
+          this.handlePublish(data);
         }
       });
       socket.addEventListener('close', () => this.scheduleReconnect());
@@ -196,6 +252,32 @@ class MqttPublisher {
     for (const item of items) {
       socket.send(sendableBuffer(encodePublishPacket(item.topic, item.payload)));
     }
+  }
+
+  private subscribeSocket(topic: string): void {
+    const socket = this.ws;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(sendableBuffer(encodeSubscribePacket(topic, this.allocatePacketId())));
+  }
+
+  private resubscribe(): void {
+    for (const topic of this.subscriptions.keys()) {
+      this.subscribeSocket(topic);
+    }
+  }
+
+  private handlePublish(data: Uint8Array): void {
+    const packetData = decodePublishPacket(data);
+    if (!packetData) return;
+    const handlers = this.subscriptions.get(packetData.topic);
+    if (!handlers) return;
+    handlers.forEach((handler) => handler(packetData.payload, packetData.topic));
+  }
+
+  private allocatePacketId(): number {
+    const packetId = this.nextPacketId;
+    this.nextPacketId = this.nextPacketId >= 65535 ? 1 : this.nextPacketId + 1;
+    return packetId;
   }
 
   private startPing(): void {

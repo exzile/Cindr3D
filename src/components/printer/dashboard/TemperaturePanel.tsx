@@ -1,7 +1,9 @@
 import { Fragment, useState, useMemo, useCallback } from 'react';
 import type { CSSProperties } from 'react';
-import { Thermometer } from 'lucide-react';
+import { Flame, Play, Snowflake, Square, Thermometer } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
+import { useChamberControlStore } from '../../../store/chamberControlStore';
+import { resolveChamberReading } from '../../../services/integrations/chamberControl';
 import type { TemperatureSample } from '../../../types/duet';
 import { colors as COLORS } from '../../../utils/theme';
 import {
@@ -34,8 +36,11 @@ export default function TemperaturePanel() {
   const setToolTemp = usePrinterStore((s) => s.setToolTemp);
   const setBedTemp = usePrinterStore((s) => s.setBedTemp);
   const setChamberTemp = usePrinterStore((s) => s.setChamberTemp);
+  const chamberControl = useChamberControlStore();
   const heaters = model.heat?.heaters ?? [];
   const rows = useHeaterRows();
+  const chamberReading = useMemo(() => resolveChamberReading(model, chamberControl), [model, chamberControl]);
+  const showChamberControls = chamberControl.enabled || rows.some((row) => row.kind === 'chamber') || chamberReading.source !== 'none';
 
   const [editingTemps, setEditingTemps] = useState<Record<string, string>>({});
 
@@ -52,6 +57,35 @@ export default function TemperaturePanel() {
     }
     setEditingTemps((prev) => { const n = { ...prev }; delete n[key]; return n; });
   }, [editingTemps, setBedTemp, setChamberTemp, setToolTemp]);
+
+  const updateChamberControl = chamberControl.updateChamberControl;
+  const targetInput = editingTemps.chamberTarget ?? chamberControl.targetTemperatureC.toString();
+  const rampStartInput = editingTemps.chamberRampStart ?? chamberControl.rampStartTemperatureC.toString();
+  const rampStepInput = editingTemps.chamberRampStep ?? chamberControl.rampStepC.toString();
+  const rampMinutesInput = editingTemps.chamberRampMinutes ?? chamberControl.rampStepMinutes.toString();
+
+  const commitChamberNumber = useCallback((
+    key: string,
+    fallback: number,
+    onValue: (value: number) => void,
+  ) => {
+    const value = Number(editingTemps[key] ?? fallback);
+    if (Number.isFinite(value)) onValue(value);
+    setEditingTemps((prev) => { const next = { ...prev }; delete next[key]; return next; });
+  }, [editingTemps]);
+
+  const applyChamberTarget = useCallback(() => {
+    commitChamberNumber('chamberTarget', chamberControl.targetTemperatureC, (value) => {
+      updateChamberControl({ targetTemperatureC: value });
+      void setChamberTemp(value);
+    });
+  }, [chamberControl.targetTemperatureC, commitChamberNumber, setChamberTemp, updateChamberControl]);
+
+  const coolDownChamber = useCallback(() => {
+    chamberControl.stopRamp();
+    updateChamberControl({ targetTemperatureC: 0 });
+    void setChamberTemp(0);
+  }, [chamberControl, setChamberTemp, updateChamberControl]);
 
   return (
     <div style={panelStyle()}>
@@ -133,6 +167,116 @@ export default function TemperaturePanel() {
           );
         })}
       </div>
+
+      {showChamberControls && (
+        <div className="duet-dash-chamber">
+          <div className="duet-dash-chamber__header">
+            <div>
+              <span>Chamber</span>
+              <strong>
+                {chamberReading.temperatureC !== null ? `${chamberReading.temperatureC.toFixed(1)}C` : '--'}
+              </strong>
+            </div>
+            <label className="duet-dash-toggle">
+              <input
+                type="checkbox"
+                checked={chamberControl.enabled}
+                onChange={(event) => updateChamberControl({ enabled: event.target.checked })}
+              />
+              <span>Control</span>
+            </label>
+          </div>
+
+          <div className="duet-dash-chamber__grid">
+            <label>
+              <span>Source</span>
+              <select
+                value={chamberControl.source}
+                onChange={(event) => updateChamberControl({ source: event.target.value as typeof chamberControl.source })}
+              >
+                <option value="auto">Auto</option>
+                <option value="rrf">RRF heater</option>
+                <option value="klipper">Klipper sensor</option>
+                <option value="mqtt">MQTT topic</option>
+              </select>
+            </label>
+            <label>
+              <span>MQTT topic</span>
+              <input
+                value={chamberControl.mqttTopic}
+                onChange={(event) => updateChamberControl({ mqttTopic: event.target.value })}
+                placeholder="shop/printer/chamber"
+              />
+            </label>
+            <label>
+              <span>Target</span>
+              <input
+                type="number"
+                step={1}
+                value={targetInput}
+                onChange={(event) => setEditingTemps((prev) => ({ ...prev, chamberTarget: event.target.value }))}
+                onBlur={() => commitChamberNumber('chamberTarget', chamberControl.targetTemperatureC, (value) => updateChamberControl({ targetTemperatureC: value }))}
+                onKeyDown={(event) => { if (event.key === 'Enter') applyChamberTarget(); }}
+              />
+            </label>
+            <button className="duet-dash-chamber__button" type="button" onClick={applyChamberTarget}>
+              <Flame size={13} /> Apply
+            </button>
+          </div>
+
+          <div className="duet-dash-chamber__grid duet-dash-chamber__grid--ramp">
+            <label>
+              <span>Ramp start</span>
+              <input
+                type="number"
+                step={1}
+                value={rampStartInput}
+                onChange={(event) => setEditingTemps((prev) => ({ ...prev, chamberRampStart: event.target.value }))}
+                onBlur={() => commitChamberNumber('chamberRampStart', chamberControl.rampStartTemperatureC, (value) => updateChamberControl({ rampStartTemperatureC: value }))}
+              />
+            </label>
+            <label>
+              <span>Step C</span>
+              <input
+                type="number"
+                step={1}
+                value={rampStepInput}
+                onChange={(event) => setEditingTemps((prev) => ({ ...prev, chamberRampStep: event.target.value }))}
+                onBlur={() => commitChamberNumber('chamberRampStep', chamberControl.rampStepC, (value) => updateChamberControl({ rampStepC: value }))}
+              />
+            </label>
+            <label>
+              <span>Step min</span>
+              <input
+                type="number"
+                step={1}
+                value={rampMinutesInput}
+                onChange={(event) => setEditingTemps((prev) => ({ ...prev, chamberRampMinutes: event.target.value }))}
+                onBlur={() => commitChamberNumber('chamberRampMinutes', chamberControl.rampStepMinutes, (value) => updateChamberControl({ rampStepMinutes: value }))}
+              />
+            </label>
+            <button
+              className="duet-dash-chamber__button"
+              type="button"
+              onClick={() => chamberControl.rampActive ? chamberControl.stopRamp() : chamberControl.startRamp()}
+            >
+              {chamberControl.rampActive ? <Square size={13} /> : <Play size={13} />}
+              {chamberControl.rampActive ? 'Stop' : 'Ramp'}
+            </button>
+          </div>
+
+          <div className="duet-dash-chamber__policies">
+            <span title={chamberReading.label}>{chamberReading.label}</span>
+            <label><input type="checkbox" checked={chamberControl.preheatBeforePrint} onChange={(event) => updateChamberControl({ preheatBeforePrint: event.target.checked })} /> Preheat</label>
+            <label><input type="checkbox" checked={chamberControl.cooldownOnDone} onChange={(event) => updateChamberControl({ cooldownOnDone: event.target.checked })} /> Cooldown done</label>
+            <label><input type="checkbox" checked={chamberControl.cooldownOnDoorOpen} onChange={(event) => updateChamberControl({ cooldownOnDoorOpen: event.target.checked })} /> Door safety</label>
+            <label><input type="checkbox" checked={chamberControl.doorOpen} onChange={(event) => updateChamberControl({ doorOpen: event.target.checked })} /> Door open</label>
+            <button className="duet-dash-chamber__cool" type="button" onClick={coolDownChamber}>
+              <Snowflake size={13} /> Cool
+            </button>
+          </div>
+        </div>
+      )}
 
       <TemperatureChart rows={rows} temperatureHistory={temperatureHistory} heaters={heaters} />
     </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { encodeConnectPacket, encodePublishPacket, mqttTopic } from './mqttPublisher';
+import { decodePublishPacket, encodeConnectPacket, encodePublishPacket, encodeSubscribePacket, mqttTopic } from './mqttPublisher';
 import type { MqttIntegrationConfig } from '../../store/integrationStore';
 
 const mqttConfig: MqttIntegrationConfig = {
@@ -31,5 +31,15 @@ describe('mqtt publisher helpers', () => {
     expect(publish[0]).toBe(0x30);
     expect(new TextDecoder().decode(publish)).toContain('shop/printers/p1/events/done');
     expect(new TextDecoder().decode(publish)).toContain('"ok":true');
+  });
+
+  it('encodes subscriptions and decodes incoming publish packets', () => {
+    const subscribe = encodeSubscribePacket('shop/printer/chamber', 7);
+    const publish = encodePublishPacket('shop/printer/chamber', 42.5);
+    const decoded = decodePublishPacket(publish);
+
+    expect(subscribe[0]).toBe(0x82);
+    expect(new TextDecoder().decode(subscribe)).toContain('shop/printer/chamber');
+    expect(decoded).toEqual({ topic: 'shop/printer/chamber', payload: '42.5' });
   });
 });
