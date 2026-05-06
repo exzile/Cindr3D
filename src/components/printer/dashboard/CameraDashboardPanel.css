@@ -291,6 +291,7 @@
 }
 
 .cam-panel__view-section-head,
+.cam-panel__view-section .cam-panel__secondary-grid,
 .cam-panel__view-section .cam-panel__view-mode,
 .cam-panel__view-section .cam-panel__view-status,
 .cam-panel__view-section .cam-panel__view-calibration,
@@ -317,6 +318,10 @@
   font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.cam-panel__view-section .cam-panel__secondary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .cam-panel__view-mode,
