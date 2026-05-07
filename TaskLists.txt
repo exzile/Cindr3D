@@ -305,7 +305,7 @@
 
 
 
-## -- Phase 20: Printer calibration center [PLANNED] [XL]
+## SHIPPED - Phase 20: Printer calibration center [DONE 2026-05-07]
 ## Goal: extend the Phase 11 calibrationStore and Phase 17 Calibration tab
 ## into a guided closed-loop calibration center on the 3D Printer page that
 ## generates, runs, inspects, applies, and remembers calibration tests per
@@ -463,6 +463,292 @@
 #   - Firmware rollback: snapshot-diff-confirm-restore workflow in 20.4.
 #   - Phase 17 Prepare calibration menu: kept in place; clicks route through
 #     the new wizard cards rather than firing one-shot G-code presets.
+#
+# ---------------------------------------------------------------------------
+# Phase 20 Codex parallel task breakdown (Wave 1 — no file conflicts)
+# ---------------------------------------------------------------------------
+# All three Wave 1 tasks touch disjoint file sets and can be run in parallel.
+# Merge in any order. Wave 2 depends on all three Wave 1 tasks being merged.
+#
+# Task A — Data layer (calibrationStore.ts only)
+#   Files: src/store/calibrationStore.ts
+#   Goal:  Extend CalibrationRecord with a rolling 5-result history and
+#          confidence helpers.  Bump persist version 1 → 2.
+#
+#   1. Add CalibrationResult type (export):
+#        id: string
+#        recordedAt: number
+#        appliedValue: number | null
+#        measurements: Record<string, number>
+#        photoIds: string[]
+#        aiConfidence: number | null
+#        note: string
+#
+#   2. Add  results: CalibrationResult[]  (default []) to CalibrationRecord.
+#
+#   3. Add to CalibrationStore interface:
+#        addCalibrationResult(printerId, itemId, result): void
+#        getCalibrationResults(printerId, itemId): CalibrationResult[]
+#
+#   4. Implement addCalibrationResult: prepend result, slice(0,5).
+#      uid() for result.id = uid('result').
+#
+#   5. Export getCalibrationConfidence(results: CalibrationResult[]):
+#        { mean: number|null; stdDev: number|null;
+#          isStable: boolean; highConfidence: boolean; sampleCount: number }
+#      Logic: filter records with appliedValue != null; compute mean + stdDev;
+#      isStable = stdDev < mean*0.05; highConfidence = count>=3 && isStable.
+#      Return nulls when count === 0.
+#
+#   6. Bump persist: { name: 'cindr3d-calibration-lifecycle', version: 2 }
+#      Add migrate: { 2: (state) => add results:[] to each CalibrationRecord
+#      inside calibrationByPrinterId }
+#
+#   Constraints: no new files, no imports, no changes to existing helpers.
+#   TSC must pass.
+#
+# Task B — Asset library (new files only)
+#   Files: assets/calibration-models/manifest.json (new)
+#          assets/calibration-models/*.stl  (9 stub files, new)
+#          src/calibration/calibrationModels.ts (new)
+#
+#   Goal:  Manifest + STL stubs + Vite-importable scaling utility.
+#
+#   1. assets/calibration-models/manifest.json — array of 9 objects:
+#        { id, testType, filename, baseDimMm, baseNozzleDiameter,
+#          baseLayerHeight, description }
+#      testTypes (in order):
+#        firmware-health, first-layer, flow-rate, temperature-tower,
+#        retraction, pressure-advance, input-shaper,
+#        dimensional-accuracy, max-volumetric-speed
+#
+#   2. 9 binary STL stubs — 84 bytes each:
+#        80-byte ASCII header (pad with 0x00)
+#        uint32 LE triangle count = 1
+#        one triangle (12 floats × 4 bytes = 48 bytes + 2-byte attr = 50 bytes)
+#      Name files: firmware-health.stl, first-layer.stl, flow-rate.stl,
+#        temperature-tower.stl, retraction.stl, pressure-advance.stl,
+#        input-shaper.stl, dimensional-accuracy.stl, max-volumetric-speed.stl
+#
+#   3. src/calibration/calibrationModels.ts exports:
+#        interface CalibrationModelEntry {
+#          id: string; testType: string; filename: string;
+#          baseDimMm: number; baseNozzleDiameter: number;
+#          baseLayerHeight: number; description: string;
+#        }
+#        interface CalibrationModelScale {
+#          nozzleScale: number; layerScale: number; uniformScale: number;
+#        }
+#        getCalibrationModels(): CalibrationModelEntry[]
+#        getModelScale(entry, nozzleDiameter, layerHeight): CalibrationModelScale
+#          uniformScale = Math.sqrt(nozzleScale * layerScale)
+#          nozzleScale = nozzleDiameter / entry.baseNozzleDiameter
+#          layerScale = layerHeight / entry.baseLayerHeight
+#        getModelUrl(entry): string  — Vite ?url import per filename
+#
+#   Constraints: no changes to existing files.  TSC must pass.
+#
+# Task C — UI shell (PrinterCalibrationPanel.tsx + CSS only)
+#   Files: src/components/printer/calibration/PrinterCalibrationPanel.tsx
+#          src/components/printer/calibration/PrinterCalibrationPanel.css
+#
+#   Goal:  Add a 9-card Calibration Center section between the header and
+#          the existing lifecycle section.  No wizard logic.  Keep ALL
+#          existing code intact.
+#
+#   1. Define CALIBRATION_CARDS array (inside the file, not exported):
+#        { id, testType, category, title, description, linkedItemIds }
+#      Nine cards (same order as Task B testTypes):
+#        firmware-health  → linkedItemIds: []
+#        first-layer      → linkedItemIds: ['first-layer', 'z-offset']
+#        flow-rate        → linkedItemIds: []
+#        temperature-tower → linkedItemIds: []
+#        retraction       → linkedItemIds: []
+#        pressure-advance → linkedItemIds: ['pressure-advance']
+#        input-shaper     → linkedItemIds: ['input-shaper']
+#        dimensional-accuracy → linkedItemIds: []
+#        max-volumetric-speed → linkedItemIds: []
+#
+#   2. Add  <section className="calib-center">  between the </header> close
+#      and the existing .printer-calibration-panel__lifecycle section.
+#
+#   3. Card JSX per card:
+#        .calib-center__card (+ status class: is-overdue | is-upcoming | is-ok)
+#          .calib-center__card-body
+#            span.calib-center__category  (card.category)
+#            strong.calib-center__title   (card.title)
+#            p.calib-center__desc         (card.description)
+#            div.calib-center__badges     (statusLabel() pill for each
+#                                          linked CalibrationItemId — reuse
+#                                          statusLabel() already in the file)
+#          button.calib-center__start  disabled   "Start"
+#      Card status = worst status among linkedItemIds (overdue > upcoming > ok).
+#      Cards with no linkedItemIds → default to 'ok' class.
+#
+#   4. New CSS in PrinterCalibrationPanel.css:
+#        .calib-center          — margin-bottom: 14px
+#        .calib-center__grid    — display:grid; grid-template-columns:
+#                                 repeat(auto-fill, minmax(200px,1fr)); gap:10px
+#        .calib-center__card    — border, border-radius:8px, background,
+#                                 padding, display:grid, gap:8px
+#                                 is-overdue / is-upcoming / is-ok variants
+#                                 use same --row-color pattern as
+#                                 .printer-calibration-panel__life-row
+#        .calib-center__category — text-secondary, 10px, uppercase, letter-spacing
+#        .calib-center__title    — text-primary, 13px, bold
+#        .calib-center__desc     — text-secondary, 12px, line-height:1.4
+#        .calib-center__badges   — display:flex, flex-wrap:wrap, gap:4px
+#        .calib-center__start    — same base style as
+#                                  .printer-calibration-panel__section-head button
+#
+#   Constraints: keep all existing JSX and CSS.  TSC must pass.
+#
+# ---------------------------------------------------------------------------
+# Wave 2 architecture prep (completed pre-merge — safe to start coding after
+# all three Wave 1 PRs are merged into master)
+# ---------------------------------------------------------------------------
+#
+# Blast radius of Task A on existing code:
+#   useCalibrationStore has exactly 2 non-test consumers:
+#     - PrinterCalibrationPanel.tsx  (Task C territory; safe)
+#     - StartChecklist.tsx           (reads moistureBySpoolId only; untouched)
+#   Adding results: CalibrationResult[] is strictly additive.  Risk: LOW.
+#
+# Task D — Firmware apply commands  (20.4)
+#   New file: src/calibration/firmwareApply.ts  (no blast on existing code)
+#   Pattern:  follow stepperTuning.ts — take firmware flavor + value,
+#             return string[] of GCode commands.
+#   Firmware flavors: 'reprap' | 'marlin' | 'klipper' | 'duet'
+#     (gcodeFlavorType field on PrinterProfile in src/types/slicer/profiles/printer.ts)
+#   Send path: printerStore.sendGCode (universal; delegates to DuetService /
+#             MoonrakerService / OctoPrint/WebSerial).
+#
+#   Existing infrastructure already in place:
+#     - src/services/MoonrakerService.ts:
+#         sendGCode(), SET_PRESSURE_ADVANCE (line 268), TEST_RESONANCES (236),
+#         BED_MESH_CALIBRATE (218) — Klipper commands already exist
+#     - src/services/integrations/stepperTuning.ts:
+#         buildStepperTuningCommands(boardType, axis, tuning) — per-firmware
+#         pattern to copy exactly
+#     - src/utils/firmwareCompatibility.ts:
+#         getFirmwareIncompatibilities(flavor) — which settings are
+#         unsupported per firmware (already maps pressure advance / linear
+#         advance to marlin/klipper only)
+#     - src/store/printer/actions/controls.ts:
+#         All sendGCode call sites for reference (M290, M220, M221, etc.)
+#
+#   Functions to build in firmwareApply.ts:
+#     buildPressureAdvanceCommands(flavor, value):
+#       klipper → SET_PRESSURE_ADVANCE EXTRUDER=extruder ADVANCE={value}
+#       marlin  → M900 K{value}
+#       duet    → M572 D0 S{value}
+#       reprap  → M572 D0 S{value}
+#     buildInputShaperCommands(flavor, freqX, freqY, shaperType, dampingX, dampingY):
+#       klipper → SET_INPUT_SHAPER SHAPER_FREQ_X={freqX} SHAPER_FREQ_Y={freqY}
+#                 SHAPER_TYPE={shaperType} DAMPING_RATIO_X={dampingX} ...
+#       marlin  → not supported (return warning string[], no GCode)
+#       duet    → not supported (return warning string[])
+#     buildSaveConfigCommands(flavor):
+#       klipper → ['SAVE_CONFIG']
+#       marlin  → ['M500']
+#       duet    → [] + note: config.g must be edited via file API
+#     buildConfigSnapshotNote(flavor):
+#       returns human-readable string describing the snapshot step per firmware
+#
+#   UX flow (4 steps, displayed inside Task E wizard StepApplyResult):
+#     1. Recommended value (read-only display from TuningTowerRecommendation)
+#     2. Preview commands (show command list, no send)
+#     3. Apply now (send via sendGCode, confirm dialog for irreversible writes)
+#     4. Save to config (SAVE_CONFIG / M500 / file-API note per firmware)
+#
+#   Impact targets: firmwareApply.ts is new — zero blast radius.
+#   PrinterCalibrationPanel.tsx (Task C) wires Apply buttons in StepApplyResult.
+#
+# Task E — Guided calibration wizards  (20.3)
+#   New files: src/calibration/wizard/CalibrationWizard.tsx + .css
+#              src/calibration/wizard/steps/*.tsx (one per step)
+#
+#   Existing infrastructure to reuse directly:
+#     - src/services/vision/tuningWizards.ts:
+#         TuningWizardKind: 'pressure-advance' | 'retraction' | 'temperature'
+#                           | 'first-layer-squish' | 'input-shaper'
+#         TuningTowerContext, AnalyzeTuningTowerInput, TuningTowerRecommendation
+#         analyzeTuningTower(input) → Promise<TuningTowerRecommendation>
+#         pressureAdvanceValueFromHeight() helper
+#       MISSING wizard kinds (add to union):
+#         'firmware-health' | 'flow-rate' | 'dimensional-accuracy'
+#         | 'max-volumetric-speed'
+#     - src/store/visionStore.ts:
+#         recentFrames: VisionFrameRecord[] (last 25, each with VisionFrameSample)
+#         recordFrame(record) — call after each camera snapshot
+#     - src/calibration/calibrationModels.ts (Task B output):
+#         getCalibrationModels(), getModelScale(), getModelUrl()
+#     - src/store/calibrationStore.ts (Task A output):
+#         addCalibrationResult(printerId, itemId, result)
+#
+#   Steps to build (in src/calibration/wizard/steps/):
+#     StepPickPrinter.tsx    — select printer; default activePrinterId
+#     StepPickFilament.tsx   — select spool/filament; default loaded spool
+#     StepSetupCheck.tsx     — firmware ready, nozzle size, bed temp limits
+#                              uses firmwareCompatibility.ts for feature gating
+#     StepLoadModel.tsx      — shows model from Task B; getModelScale() preview
+#     StepSlicePreview.tsx   — stub (future Phase 20.3 deep integration)
+#     StepQueue.tsx          — stub (Phase 12 scheduling hook)
+#     StepMonitor.tsx        — stub (links to existing printer dashboard)
+#     StepInspect.tsx        — camera capture (Task F component) +
+#                              manual measurement fields +
+#                              AI analysis via analyzeTuningTower()
+#     StepApplyResult.tsx    — TuningTowerRecommendation display +
+#                              Task D firmwareApply commands +
+#                              addCalibrationResult() call
+#
+#   Wire-up: Task C's card "Start" button (currently disabled) calls
+#   onStartWizard(card.testType) which opens CalibrationWizard.
+#
+#   Impact targets: all new files.  Only touch tuningWizards.ts to extend
+#   the TuningWizardKind union (additive, no callers break).
+#
+# Task F — Camera inspection stub  (20.5)
+#   New files: src/calibration/camera/CalibrationCameraCapture.tsx + .css
+#
+#   Existing infrastructure to reuse directly:
+#     - src/components/printer/dashboard/CameraDashboardPanel.tsx:
+#         Full camera UI exists — do NOT duplicate or modify it.
+#         CalibrationCameraCapture is a lean read-only subset.
+#     - src/services/vision/cameraMeasurement.ts:
+#         solveCameraHomography(), distanceBetweenImagePointsMm(),
+#         projectImagePointToBed() — spatial measurement already solved.
+#     - src/services/vision/cameraPose.ts:
+#         assessPoseCalibration(), solveCameraPoseCalibration() — pose
+#         calibration already solved; use to check if camera is calibrated.
+#     - src/store/visionStore.ts:
+#         recordFrame(VisionFrameRecord) — save captured frames.
+#         recentFrames — feed into StepInspect → analyzeTuningTower().
+#     - src/utils/cameraStreamUrl.ts:
+#         normalizeCameraStreamUrl(), enabledCamerasFromPrefs() — stream
+#         URL helpers already implemented.
+#     - src/services/vision/failureDetector.ts:
+#         VisionFrameSample — the frame type that analyzeTuningTower() consumes.
+#
+#   CalibrationCameraCapture props interface:
+#     printerId: string
+#     onFramesCaptured: (frames: VisionFrameSample[]) => void
+#     maxFrames?: number (default 5)
+#   Behaviour:
+#     - Show live camera feed (read prefs via getDuetPrefs / enabledCamerasFromPrefs)
+#     - "Capture frame" button → canvas snapshot → VisionFrameSample (base64 dataUrl)
+#     - Display thumbnail strip of captured frames, allow delete
+#     - "Analyse" button enabled when frames.length > 0
+#     - calls visionStore.recordFrame() for each snapshot
+#     - calls onFramesCaptured(frames) for StepInspect to pass to analyzeTuningTower()
+#
+#   Impact targets: new files only.  Reads useVisionStore (readonly), reads
+#   usePrinterStore prefs (readonly).  Does not modify CameraDashboardPanel.
+#
+# Wave 2 merge order: D, E, F are file-disjoint and can be merged in any order.
+# Wave 3 (after Wave 2): Task G (20.6 AI recommendations — extends
+#   tuningWizards.ts buildTuningPrompt and adds a report-generation layer).
+# ---------------------------------------------------------------------------
 #
 
 
