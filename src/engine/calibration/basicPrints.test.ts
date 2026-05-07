@@ -8,7 +8,11 @@ import {
   generatePressureAdvanceTowerGCode,
 } from './basicPrints';
 
-const printer = DEFAULT_PRINTER_PROFILES[0];
+const printer = {
+  ...DEFAULT_PRINTER_PROFILES[0],
+  buildVolume: { x: 220, y: 220, z: 250 },
+  gcodeFlavorType: 'marlin' as const,
+};
 const material = DEFAULT_MATERIAL_PROFILES[0];
 const print = DEFAULT_PRINT_PROFILES[0];
 

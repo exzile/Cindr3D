@@ -1,3 +1,5 @@
+import type { PrinterProfile } from '../types/slicer';
+
 export type CalibrationTestType =
   | 'firmware-health'
   | 'first-layer'
@@ -9,4 +11,4 @@ export type CalibrationTestType =
   | 'dimensional-accuracy'
   | 'max-volumetric-speed';
 
-export type FirmwareFlavor = 'reprap' | 'marlin' | 'klipper' | 'duet';
+export type FirmwareFlavor = PrinterProfile['gcodeFlavorType'];
