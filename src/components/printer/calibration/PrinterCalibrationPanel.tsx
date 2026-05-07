@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, Droplets, ExternalLink, FlaskConical, Gauge, Plus, RefreshCw, Ruler, Sparkles, Trash2, Wrench } from 'lucide-react';
+import { Activity, Cpu, Download, Droplets, ExternalLink, FlaskConical, Gauge, Layers, Plus, RefreshCw, Ruler, Sparkles, Thermometer, Trash2, TrendingUp, Undo2, Wrench, Zap } from 'lucide-react';
 import {
   generateCalibrationCubeGCode,
   generateDimensionalAccuracyGCode,
@@ -128,9 +128,11 @@ type CalibrationCard = {
   id: string;
   testType: string;
   category: string;
+  categoryClass: 'system' | 'geometry' | 'material' | 'motion';
   title: string;
   description: string;
   linkedItemIds: CalibrationItemId[];
+  Icon: typeof Cpu;
 };
 
 const CALIBRATION_CARDS: CalibrationCard[] = [
@@ -138,73 +140,91 @@ const CALIBRATION_CARDS: CalibrationCard[] = [
     id: 'firmware-health',
     testType: 'firmware-health',
     category: 'System',
+    categoryClass: 'system',
     title: 'Firmware health',
     description: 'Baseline command, heater, motion, and sensor checks before deeper tuning.',
     linkedItemIds: [],
+    Icon: Cpu,
   },
   {
     id: 'first-layer',
     testType: 'first-layer',
     category: 'Geometry',
+    categoryClass: 'geometry',
     title: 'First layer',
     description: 'Bed adhesion, mesh quality, and Z-offset confirmation across the build surface.',
     linkedItemIds: ['first-layer', 'z-offset'],
+    Icon: Layers,
   },
   {
     id: 'flow-rate',
     testType: 'flow-rate',
     category: 'Material',
+    categoryClass: 'material',
     title: 'Flow rate',
     description: 'Extrusion multiplier check for wall thickness and surface consistency.',
     linkedItemIds: [],
+    Icon: Gauge,
   },
   {
     id: 'temperature-tower',
     testType: 'temperature-tower',
     category: 'Material',
+    categoryClass: 'material',
     title: 'Temperature tower',
     description: 'Temperature bands for layer bonding, gloss, bridging, and detail quality.',
     linkedItemIds: [],
+    Icon: Thermometer,
   },
   {
     id: 'retraction',
     testType: 'retraction',
     category: 'Material',
+    categoryClass: 'material',
     title: 'Retraction',
     description: 'Stringing and travel cleanup across distance and speed changes.',
     linkedItemIds: [],
+    Icon: Undo2,
   },
   {
     id: 'pressure-advance',
     testType: 'pressure-advance',
     category: 'Motion',
+    categoryClass: 'motion',
     title: 'Pressure advance',
     description: 'Corner bulge and line-start tuning for faster, cleaner extrusion.',
     linkedItemIds: ['pressure-advance'],
+    Icon: TrendingUp,
   },
   {
     id: 'input-shaper',
     testType: 'input-shaper',
     category: 'Motion',
+    categoryClass: 'motion',
     title: 'Input shaper',
     description: 'Ringing and resonance review for acceleration-safe print profiles.',
     linkedItemIds: ['input-shaper'],
+    Icon: Activity,
   },
   {
     id: 'dimensional-accuracy',
     testType: 'dimensional-accuracy',
     category: 'Geometry',
+    categoryClass: 'geometry',
     title: 'Dimensional accuracy',
     description: 'Scale, shrinkage, and fit checks against measured reference dimensions.',
     linkedItemIds: [],
+    Icon: Ruler,
   },
   {
     id: 'max-volumetric-speed',
     testType: 'max-volumetric-speed',
     category: 'Material',
+    categoryClass: 'material',
     title: 'Max volumetric speed',
     description: 'Throughput ceiling test for reliable high-flow slicing limits.',
     linkedItemIds: [],
+    Icon: Zap,
   },
 ];
 
@@ -420,30 +440,36 @@ export default function PrinterCalibrationPanel() {
 
       <section className="calib-center" aria-label="Calibration Center">
         <div className="calib-center__grid">
-          {CALIBRATION_CARDS.map((card) => (
-            <div key={card.id} className={`calib-center__card ${getCardStatusClass(card.linkedItemIds)}`}>
-              <div className="calib-center__card-body">
-                <span className="calib-center__category">{card.category}</span>
-                <strong className="calib-center__title">{card.title}</strong>
-                <p className="calib-center__desc">{card.description}</p>
-                {card.linkedItemIds.length > 0 && (
-                  <div className="calib-center__badges">
-                    {card.linkedItemIds.map((itemId) => {
-                      const linkedStatus = calibrationStatusById[itemId];
-                      return (
-                        <span key={itemId} className="printer-calibration-panel__pill">
-                          {linkedStatus ? statusLabel(linkedStatus.status, linkedStatus.daysUntilDue) : 'Current'}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
+          {CALIBRATION_CARDS.map((card) => {
+            const CardIcon = card.Icon;
+            return (
+              <div key={card.id} className={`calib-center__card calib-center__card--${card.categoryClass} ${getCardStatusClass(card.linkedItemIds)}`}>
+                <div className="calib-center__card-icon">
+                  <CardIcon size={15} />
+                </div>
+                <div className="calib-center__card-body">
+                  <span className="calib-center__category">{card.category}</span>
+                  <strong className="calib-center__title">{card.title}</strong>
+                  <p className="calib-center__desc">{card.description}</p>
+                  {card.linkedItemIds.length > 0 && (
+                    <div className="calib-center__badges">
+                      {card.linkedItemIds.map((itemId) => {
+                        const linkedStatus = calibrationStatusById[itemId];
+                        return (
+                          <span key={itemId} className="printer-calibration-panel__pill">
+                            {linkedStatus ? statusLabel(linkedStatus.status, linkedStatus.daysUntilDue) : 'Current'}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                <button type="button" className="calib-center__start" onClick={() => setWizardTestType(card.testType)}>
+                  Start →
+                </button>
               </div>
-              <button type="button" className="calib-center__start" onClick={() => setWizardTestType(card.testType)}>
-                Start
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
