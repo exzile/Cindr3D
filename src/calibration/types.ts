@@ -11,4 +11,4 @@ export type CalibrationTestType =
   | 'dimensional-accuracy'
   | 'max-volumetric-speed';
 
-export type FirmwareFlavor = PrinterProfile['gcodeFlavorType'];
+export type GCodeFlavorType = PrinterProfile['gcodeFlavorType'];
