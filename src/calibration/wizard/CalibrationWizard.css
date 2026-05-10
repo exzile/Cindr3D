@@ -1,4 +1,7 @@
 .calib-wizard {
+  /* Orange used exclusively for auto-configured calibration indicators */
+  --calib-auto: #f97316;
+
   position: fixed;
   inset: 0;
   z-index: 1000;
@@ -8,9 +11,18 @@
   padding: 18px;
 }
 
+/* ── Panel ────────────────────────────────────────────────────────────────── */
+
 .calib-wizard__panel {
-  width: min(640px, 100%);
-  max-height: min(760px, calc(100vh - 36px));
+  /* Width / height come from inline style (set by the resize hook).
+     These CSS values act as a safe, non-JS fallback only.           */
+  width: min(660px, calc(100vw - 32px));
+  max-height: min(700px, calc(100vh - 36px));
+  /* Hard limits so the panel can never be too tiny or overflow viewport */
+  min-width: 400px;
+  min-height: 420px;
+  max-width: calc(100vw - 32px);
+
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-panel);
@@ -18,7 +30,68 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   box-shadow: 0 18px 50px color-mix(in srgb, var(--text-primary) 22%, transparent);
+  /* Required so the absolutely-positioned resize handles are relative to this */
+  position: relative;
+  overflow: visible; /* handles protrude outside the border */
 }
+
+/* ── Resize handles ───────────────────────────────────────────────────────── */
+
+.calib-wizard__resize {
+  position: absolute;
+  z-index: 10;
+  /* transparent — just a hit-target */
+}
+
+/* Edge handles */
+.calib-wizard__resize--n {
+  top: -4px; left: 10px; right: 10px; height: 8px;
+  cursor: n-resize;
+}
+.calib-wizard__resize--s {
+  bottom: -4px; left: 10px; right: 10px; height: 8px;
+  cursor: s-resize;
+}
+.calib-wizard__resize--e {
+  right: -4px; top: 10px; bottom: 10px; width: 8px;
+  cursor: e-resize;
+}
+.calib-wizard__resize--w {
+  left: -4px; top: 10px; bottom: 10px; width: 8px;
+  cursor: w-resize;
+}
+
+/* Corner handles */
+.calib-wizard__resize--ne {
+  top: -4px; right: -4px; width: 14px; height: 14px;
+  cursor: ne-resize;
+}
+.calib-wizard__resize--se {
+  bottom: -4px; right: -4px; width: 14px; height: 14px;
+  cursor: se-resize;
+}
+.calib-wizard__resize--sw {
+  bottom: -4px; left: -4px; width: 14px; height: 14px;
+  cursor: sw-resize;
+}
+.calib-wizard__resize--nw {
+  top: -4px; left: -4px; width: 14px; height: 14px;
+  cursor: nw-resize;
+}
+
+/* Visual grip indicator on SE corner */
+.calib-wizard__resize--se::after {
+  content: '';
+  position: absolute;
+  bottom: 5px; right: 5px;
+  width: 7px; height: 7px;
+  border-right: 2px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+/* ── Header / Footer ──────────────────────────────────────────────────────── */
 
 .calib-wizard__header,
 .calib-wizard__footer {
@@ -26,16 +99,60 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 14px;
+  padding: 12px 14px;
 }
 
+/* Header: clean, slightly elevated, accent top stripe */
 .calib-wizard__header {
+  position: relative;
+  background: color-mix(in srgb, var(--text-primary) 3%, var(--bg-panel));
   border-bottom: 1px solid var(--border);
+  border-radius: 8px 8px 0 0;
+  overflow: hidden;
+}
+
+/* Thin accent stripe at the very top of the panel */
+.calib-wizard__header::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--accent);
+  opacity: 0.8;
+}
+
+/* Animated step-progress bar along the header bottom edge */
+.calib-wizard__progress {
+  position: absolute;
+  bottom: -1px; left: 0;
+  height: 2px;
+  background: var(--accent);
+  opacity: 0.5;
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .calib-wizard__header h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* "Step X of 8" — plain muted text, no pill */
+.calib-wizard__header .calib-wizard__step-indicator {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* Test-type badge in the footer */
+.calib-wizard__footer .calib-wizard__step-indicator {
+  background: color-mix(in srgb, var(--text-primary) 5%, var(--bg-panel));
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--text-secondary);
 }
 
 .calib-wizard__step-indicator,
@@ -45,11 +162,19 @@
   font-size: 12px;
 }
 
+/* ── Body (scrollable area for each step) ─────────────────────────────────── */
+
 .calib-wizard__body {
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 14px;
+  /* Enable container queries so steps can react to the wizard's current width */
+  container-type: inline-size;
+  container-name: calib-body;
 }
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
 
 .calib-wizard__footer {
   border-top: 1px solid var(--border);
@@ -60,6 +185,8 @@
   align-items: center;
   gap: 8px;
 }
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
 
 .calib-wizard__back,
 .calib-wizard__next,
@@ -88,9 +215,38 @@
   opacity: 0.55;
 }
 
+/* ── Header actions (Minimize + Cancel side-by-side) ─────────────────────── */
+
+.calib-wizard__header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.calib-wizard__minimize {
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.calib-wizard__minimize:hover {
+  background: color-mix(in srgb, var(--text-primary) 6%, var(--bg-panel));
+}
+
+/* ── Step base layout ─────────────────────────────────────────────────────── */
+
 .calib-step {
   display: grid;
   gap: 12px;
+  min-width: 0;
+  width: 100%;
 }
 
 .calib-step h3 {
@@ -105,7 +261,8 @@
   line-height: 1.45;
 }
 
-.calib-step label,
+/* Exclude inspect check-rows from the grid label reset — they use flex */
+.calib-step label:not(.calib-inspect__check-row),
 .calib-step__field {
   display: grid;
   gap: 5px;
@@ -129,6 +286,13 @@
   min-height: 86px;
   padding: 8px;
   resize: vertical;
+}
+
+.calib-step__inline-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
 }
 
 .calib-step__list,
@@ -181,4 +345,1132 @@
   padding-left: 18px;
   color: var(--text-secondary);
   font-size: 13px;
+}
+
+/* ── Model source selector (StepLoadModel) ───────────────────────────────── */
+
+.calib-step__model-source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  flex-wrap: wrap;
+}
+
+.calib-step__model-source-info {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.calib-step__model-source-name {
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calib-step__model-source-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+/* ── 3D model canvas (StepLoadModel) ─────────────────────────────────────── */
+
+.calib-step__model-canvas {
+  height: 220px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-secondary, #0d0d1a);
+  position: relative;
+}
+
+.calib-step__model-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* ── Setup check rows (StepSetupCheck) ───────────────────────────────────── */
+
+.calib-step__check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.calib-step__check-label {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.calib-step__check-value {
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: right;
+}
+
+.calib-step__ok-banner {
+  border: 1px solid #22c55e;
+  border-radius: 8px;
+  background: color-mix(in srgb, #22c55e 10%, var(--bg-panel));
+  color: #22c55e;
+  padding: 10px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Slice preview layout (StepSlicePreview) ─────────────────────────────── */
+
+.calib-step__slice-layout {
+  display: grid;
+  grid-template-columns: 1fr 230px;
+  gap: 10px;
+  align-items: start;
+}
+
+/* Widen the settings column when there's room */
+@container calib-body (min-width: 680px) {
+  .calib-step__slice-layout {
+    grid-template-columns: 1fr 250px;
+  }
+}
+
+@container calib-body (min-width: 820px) {
+  .calib-step__slice-layout {
+    grid-template-columns: 1fr 290px;
+  }
+  .calib-step__slice-canvas,
+  .calib-step__slice-settings {
+    height: 360px;
+  }
+}
+
+/* Collapse to single column on narrow panels */
+@container calib-body (max-width: 460px) {
+  .calib-step__slice-layout {
+    grid-template-columns: 1fr;
+  }
+  .calib-step__slice-settings {
+    height: auto;
+    max-height: 280px;
+  }
+}
+
+.calib-step__slice-canvas {
+  position: relative;      /* anchors the plane-info overlay */
+  height: 300px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-secondary, #0d0d1a);
+}
+
+/* ── Tuning-plane info overlay ───────────────────────────────────────────── */
+
+.calib-step__plane-info {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+
+.calib-step__plane-info-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px 3px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1;
+  background: rgba(249, 115, 22, 0.13);
+  color: #f97316;
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+
+.calib-step__plane-info-btn:hover {
+  background: rgba(249, 115, 22, 0.24);
+}
+
+.calib-step__plane-info-popup {
+  background: var(--bg-primary, #111);
+  border: 1px solid rgba(249, 115, 22, 0.30);
+  border-radius: 6px;
+  padding: 8px 10px;
+  max-width: 210px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-secondary, #aaa);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+
+.calib-step__plane-info-popup p {
+  margin: 0;
+}
+
+/* ── Plane hover tooltip (floats over the canvas at cursor position) ───────── */
+
+.calib-step__plane-tooltip {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;        /* never blocks 3-D pointer events */
+  background: var(--bg-primary, #111);
+  border: 1px solid rgba(249, 115, 22, 0.45);
+  border-radius: 5px;
+  padding: 5px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-primary, #e0e0e0);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
+}
+
+.calib-step__plane-tooltip__z {
+  font-size: 10px;
+  color: var(--text-secondary, #888);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Settings panel — flex column so the Reslice button is always pinned */
+.calib-step__slice-settings {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  height: 300px; /* matches canvas; overridden at larger container widths above */
+}
+
+.calib-step__slice-settings-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 0;
+  display: grid;
+  gap: 0;
+  align-content: start;
+}
+
+.calib-step__slice-settings-footer {
+  border-top: 1px solid var(--border);
+  padding: 8px 10px;
+  flex-shrink: 0;
+}
+
+/* ── Compact-input override ───────────────────────────────────────────────────
+   The generic `.calib-step input` rule (specificity 0,1,1) beats the field
+   class alone (0,1,0), so min-height:32px and font-size:13px always win.
+   This rule lives later in the file and targets the scroll container for a
+   clean (0,2,2) override without !important.                                 */
+.calib-step__slice-settings-scroll input:not([type="checkbox"]),
+.calib-step__slice-settings-scroll select {
+  min-height: 0;
+  height: 17px;
+  font-size: 11px;
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
+/* ── Slicer-style field rows ──────────────────────────────────────────────── */
+
+.calib-slice-section {
+  display: grid;
+  gap: 0;
+}
+
+/* Collapsible summary acting as the section header */
+.calib-slice-section > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px 3px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--accent);
+  cursor: pointer;
+  user-select: none;
+  list-style: none; /* Firefox */
+}
+
+/* Chromium hides the default triangle via ::-webkit-details-marker */
+.calib-slice-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Chevron icon — rotates when open */
+.calib-slice-section > summary::before {
+  content: '▸';
+  font-size: 9px;
+  opacity: 0.6;
+  transition: transform 0.15s;
+  display: inline-block;
+}
+
+details.calib-slice-section[open] > summary::before {
+  content: '▾';
+}
+
+/* Horizontal rule extending from the section title */
+.calib-slice-section > summary::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: color-mix(in srgb, var(--accent) 28%, var(--border));
+}
+
+/* ── Calibration script card ─────────────────────────────────────────────────
+   Each post-processor is shown as a card regardless of enabled state.
+   Disabled cards are dimmed; the Active/Paused pill toggles the state.        */
+
+.calib-script-card {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-panel));
+  display: grid;
+  gap: 6px;
+  transition: opacity 0.18s, border-color 0.18s, background 0.18s;
+}
+
+/* Disabled state — visually muted, still interactive */
+.calib-script-card--disabled {
+  opacity: 0.45;
+  background: color-mix(in srgb, var(--text-primary) 2%, var(--bg-panel));
+  border-color: var(--border);
+}
+
+.calib-script-card--disabled:hover {
+  opacity: 0.7;
+}
+
+.calib-script-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Title + kind badge grouped on the left */
+.calib-script-card__title-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.calib-script-card__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.calib-script-card__kind {
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-primary) 6%, var(--bg-panel));
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  font-family: monospace;
+}
+
+/* Active / Paused checkbox-style toggle — double-class beats .calib-step button */
+.calib-script-card__enable-btn.calib-script-card__enable-btn {
+  flex-shrink: 0;
+  min-height: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 6px;
+  border-radius: 4px;           /* square corners → reads as a form control */
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1.5px solid var(--border);
+  background: color-mix(in srgb, var(--text-primary) 4%, var(--bg-panel));
+  color: var(--text-secondary);
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Small checkbox square indicator */
+.calib-script-card__enable-btn::before {
+  content: '';
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1.5px solid currentColor;
+  background: transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+/* Hover on paused → faint fill previews what will happen on click */
+.calib-script-card__enable-btn:not(.calib-script-card__enable-btn--on):hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-panel));
+}
+
+.calib-script-card__enable-btn:not(.calib-script-card__enable-btn--on):hover::before {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+/* Active / checked state */
+.calib-script-card__enable-btn--on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-panel));
+  color: var(--accent);
+}
+
+/* Filled checkbox box for active */
+.calib-script-card__enable-btn--on::before {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Hover on active → slightly brighter to hint click will toggle off */
+.calib-script-card__enable-btn--on:hover {
+  background: color-mix(in srgb, var(--accent) 20%, var(--bg-panel));
+}
+
+.calib-script-card__detail {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.calib-script-card__hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  font-style: italic;
+}
+
+.calib-script-card__fields {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.calib-script-card__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.calib-script-card__field-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.calib-script-card__field-input {
+  width: 70px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-primary) 4%, var(--bg-panel));
+  color: var(--text-primary);
+  padding: 0 4px;
+  font: inherit;
+  font-size: 12px;
+  text-align: right;
+}
+
+.calib-script-card__field-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.calib-script-card__arrow {
+  font-size: 14px;
+  color: var(--accent);
+  padding-bottom: 2px;
+  align-self: flex-end;
+}
+
+/* ── Drive-type preset buttons (Pressure Advance card) ───────────────────── */
+
+.calib-script-card__drive-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0 2px;
+}
+
+.calib-script-card__drive-btns {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.calib-script-card__drive-btn {
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle, #444);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.calib-script-card__drive-btn:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.calib-script-card__drive-btn--active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, var(--bg-panel));
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.calib-script-card__drive-btn--custom {
+  border-style: dashed;
+  color: var(--text-tertiary, #888);
+  cursor: default;
+  pointer-events: none;
+}
+
+.calib-script-card__band-info {
+  font-size: 10px;
+  color: var(--text-tertiary, #888);
+  margin-top: 2px;
+  padding: 0 1px;
+}
+
+/* ── Tuning-tower step-sequence preview ──────────────────────────────────────
+   Chips showing the Z height → injected value at every step boundary.        */
+
+.calib-script-card__steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 7px;
+}
+
+.calib-script-card__step-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  font-size: 9.5px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.calib-script-card__step-z {
+  color: var(--text-secondary);
+}
+
+.calib-script-card__step-val {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.calib-slice-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 20px;
+  padding: 1px 8px;
+}
+
+.calib-slice-field:hover {
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-panel));
+}
+
+.calib-slice-field__label {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.calib-slice-field__input {
+  width: 50px;
+  min-width: 0;
+  flex-shrink: 0;
+  min-height: 0;
+  height: 17px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-primary) 4%, var(--bg-panel));
+  color: var(--text-primary);
+  padding: 0 3px;
+  font: inherit;
+  font-size: 11px;
+  text-align: right;
+}
+
+.calib-slice-field__input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* Select fields fill remaining space but won't overflow the panel */
+.calib-slice-field__input--select {
+  width: auto;
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  text-align: left;
+  padding: 0 3px;
+  cursor: pointer;
+}
+
+/* Checkbox fields — transform keeps the rendered size in check across browsers */
+.calib-slice-field__check {
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+  transform: scale(0.78);
+  transform-origin: center;
+}
+
+.calib-slice-field__unit {
+  width: 24px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  text-align: left;
+}
+
+/* ── Auto-set field highlight ────────────────────────────────────────────────
+   Fields touched by the calibration preset get a left accent bar and a
+   subtle tinted background so the user knows which settings were configured
+   automatically.                                                              */
+
+.calib-slice-field--auto {
+  background: color-mix(in srgb, var(--calib-auto) 7%, var(--bg-panel));
+  border-left: 2px solid color-mix(in srgb, var(--calib-auto) 70%, transparent);
+  padding-left: 8px; /* compensate for the 2 px border */
+  position: relative;
+}
+
+.calib-slice-field--auto:hover {
+  background: color-mix(in srgb, var(--calib-auto) 12%, var(--bg-panel));
+}
+
+/* Small ✦ dot appended to the label text */
+.calib-slice-field--auto .calib-slice-field__label::after {
+  content: '✦';
+  font-size: 8px;
+  color: var(--calib-auto);
+  margin-left: 5px;
+  vertical-align: middle;
+  opacity: 0.85;
+}
+
+/* ── Pre-configured settings bar (expandable) ────────────────────────────── */
+
+.calib-step__preset-bar {
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--calib-auto) 8%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, var(--calib-auto) 22%, transparent);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+}
+
+/* Header row: toggle button flex-grows, undo button sits at the right */
+.calib-step__preset-bar__header {
+  display: flex;
+  align-items: center;
+}
+
+/* Toggle button — double-class beats .calib-step button (0,1,1) */
+.calib-step__preset-bar__toggle.calib-step__preset-bar__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 10px;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.calib-step__preset-bar__toggle:hover {
+  background: color-mix(in srgb, var(--calib-auto) 6%, var(--bg-panel));
+}
+
+.calib-step__preset-bar__icon {
+  color: var(--calib-auto);
+  flex-shrink: 0;
+}
+
+.calib-step__preset-bar__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calib-step__preset-bar__text strong {
+  color: var(--calib-auto);
+}
+
+.calib-step__preset-bar__reason {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+  margin: 0 0 6px;
+}
+
+.calib-step__preset-bar__chevron {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  transition: transform 0.2s ease;
+}
+
+.calib-step__preset-bar__chevron--open {
+  transform: rotate(180deg);
+}
+
+/* Undo button — double-class to override .calib-step button min-height */
+.calib-step__preset-bar__undo.calib-step__preset-bar__undo {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  min-height: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin-right: 8px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.calib-step__preset-bar__undo:hover {
+  border-color: var(--calib-auto);
+  color: var(--calib-auto);
+}
+
+/* Undone state — bar stays visible but muted, invites Re-apply */
+.calib-step__preset-bar--undone {
+  background: color-mix(in srgb, var(--text-primary) 3%, var(--bg-panel));
+  border-color: var(--border);
+}
+
+.calib-step__preset-bar--undone .calib-step__preset-bar__icon {
+  color: var(--text-secondary);
+}
+
+.calib-step__preset-bar--undone .calib-step__preset-bar__text strong {
+  color: var(--text-primary);
+}
+
+.calib-step__preset-bar--undone .calib-step__preset-bar__toggle:hover {
+  background: color-mix(in srgb, var(--text-primary) 4%, var(--bg-panel));
+}
+
+.calib-step__preset-bar--undone .calib-step__preset-item__value {
+  color: var(--text-secondary);
+}
+
+/* Re-apply button — accent-tinted to stand out as the action to take */
+.calib-step__preset-bar__reapply.calib-step__preset-bar__reapply {
+  border-color: color-mix(in srgb, var(--calib-auto) 55%, var(--border));
+  color: var(--calib-auto);
+}
+
+.calib-step__preset-bar__reapply:hover {
+  border-color: var(--calib-auto);
+  background: color-mix(in srgb, var(--calib-auto) 12%, var(--bg-panel));
+}
+
+/* Expanded details panel — rationale text + overrides grid */
+.calib-step__preset-details {
+  border-top: 1px solid color-mix(in srgb, var(--calib-auto) 18%, transparent);
+  padding: 8px 10px 8px;
+}
+
+.calib-step__preset-bar--undone .calib-step__preset-details {
+  border-top-color: color-mix(in srgb, var(--text-secondary) 18%, transparent);
+}
+
+/* Two-column grid: label | value */
+.calib-step__preset-items {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  row-gap: 1px;
+}
+
+/* display:contents collapses the wrapper so label+value are direct grid children */
+.calib-step__preset-item {
+  display: contents;
+}
+
+.calib-step__preset-item__label {
+  padding: 2px 10px 2px 0;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  align-self: center;
+}
+
+.calib-step__preset-item__value {
+  padding: 2px 0;
+  font-size: 10.5px;
+  color: var(--calib-auto);
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+  align-self: center;
+}
+
+/* Separator spacer between sections */
+.calib-slice-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 2px 10px;
+  opacity: 0.5;
+}
+
+/* ── Post-processing indicator bar (expandable) ──────────────────────────── */
+
+.calib-step__pp-bar {
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+}
+
+/* Toggle button row — override the generic .calib-step button rule */
+.calib-step__pp-bar__toggle.calib-step__pp-bar__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  width: 100%;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.calib-step__pp-bar__toggle:hover {
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-panel));
+}
+
+.calib-step__pp-bar__icon {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.calib-step__pp-bar__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calib-step__pp-bar__text strong {
+  color: var(--accent);
+}
+
+.calib-step__pp-bar__chevron {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  transition: transform 0.2s ease;
+}
+
+.calib-step__pp-bar__chevron--open {
+  transform: rotate(180deg);
+}
+
+/* Script cards container — shown when expanded */
+.calib-step__pp-scripts {
+  border-top: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+/* ── Layer controls (StepSlicePreview) ───────────────────────────────────── */
+
+.calib-step__layer-controls {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.calib-step__layer-info {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* ── Queue step actions (StepQueue) ──────────────────────────────────────── */
+
+.calib-step__queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Add-filament modal (StepPickFilament) */
+.calib-step__modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg-panel) 72%, transparent);
+  padding: 16px;
+}
+
+.calib-step__modal {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  box-shadow: 0 18px 50px color-mix(in srgb, var(--text-primary) 22%, transparent);
+}
+
+.calib-step__modal-header,
+.calib-step__modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.calib-step__modal-header h4 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.calib-step__modal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.calib-step__modal-field--full {
+  grid-column: 1 / -1;
+}
+
+@container calib-body (max-width: 460px) {
+  .calib-step__inline-field,
+  .calib-step__modal-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── In-progress pill on calibration cards ───────────────────────────────── */
+
+.calib-center__in-progress-pill {
+  color: var(--accent, #7c70f5);
+  border-color: var(--accent, #7c70f5);
+  background: color-mix(in srgb, var(--accent, #7c70f5) 12%, var(--bg-panel));
+}
+
+.calib-center__card.is-in-progress {
+  border-color: var(--accent, #7c70f5);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, #7c70f5) 30%, transparent);
+}
+
+/* ── Inspect step (StepInspect) ──────────────────────────────────────────── */
+
+.calib-inspect__section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ── Health checklist ────────────────────────────────────────────────────── */
+
+.calib-inspect__checks {
+  display: grid;
+  gap: 10px;
+}
+
+.calib-inspect__check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  /* Override the grid that .calib-step label applies */
+  display: flex !important;
+}
+
+.calib-inspect__check-input {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  min-height: 0 !important;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.calib-inspect__check-text {
+  display: grid;
+  gap: 2px;
+}
+
+.calib-inspect__check-label {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* ── Manual measurement field rows ───────────────────────────────────────── */
+
+.calib-inspect__fields {
+  display: grid;
+  gap: 6px;
+}
+
+.calib-inspect-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.calib-inspect-field--full {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+  min-height: auto;
+}
+
+.calib-inspect-field__label {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.calib-inspect-field--full .calib-inspect-field__label {
+  flex: none;
+  width: 100%;
+}
+
+.calib-inspect-field__input {
+  width: 90px;
+  min-height: 0;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text-primary) 5%, var(--bg-panel));
+  color: var(--text-primary);
+  padding: 0 6px;
+  font: inherit;
+  font-size: 13px;
+  text-align: right;
+}
+
+.calib-inspect-field__input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.calib-inspect-field__textarea {
+  width: 100%;
+  min-height: 72px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text-primary) 5%, var(--bg-panel));
+  color: var(--text-primary);
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.calib-inspect-field__unit {
+  width: 34px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
 }

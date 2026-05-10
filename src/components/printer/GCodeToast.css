@@ -1,0 +1,214 @@
+/* ── GCode command toast stack ─────────────────────────────────────────────── */
+
+.gct-stack {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 20000; /* above modal overlays (10000) */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+/* Individual toast pill */
+.gct-pill {
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--border, #3a3a4a) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated, #1e1e2e) 96%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.35),
+    0 1px 3px rgba(0, 0, 0, 0.2);
+  pointer-events: auto;
+  user-select: none;
+  max-width: min(420px, 90vw);
+  overflow: hidden;
+  position: relative;
+
+  /* Enter animation */
+  animation: gct-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Simple (no actions) pills are clickable to dismiss */
+.gct-pill:not(.has-actions) {
+  cursor: pointer;
+}
+
+.gct-pill.is-exiting {
+  animation: gct-out 280ms ease-in both;
+}
+
+@keyframes gct-in {
+  from { opacity: 0; translate: 0 12px; scale: 0.96; }
+  to   { opacity: 1; translate: 0 0;    scale: 1; }
+}
+
+@keyframes gct-out {
+  from { opacity: 1; translate: 0 0;    scale: 1; }
+  to   { opacity: 0; translate: 0 6px;  scale: 0.97; }
+}
+
+/* ── Main row (icon + text + X) ───────────────────────────────── */
+
+.gct-main {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px 6px 10px;
+}
+
+/* Icon */
+.gct-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+/* Kind-specific icon colour */
+.gct-pill[data-kind="gcode"]   .gct-icon { color: #60a5fa; }
+.gct-pill[data-kind="macro"]   .gct-icon { color: #a78bfa; }
+.gct-pill[data-kind="info"]    .gct-icon { color: #34d399; }
+.gct-pill[data-kind="warning"] .gct-icon { color: #fbbf24; }
+.gct-pill[data-kind="error"]   .gct-icon { color: #f87171; }
+
+/* Text block */
+.gct-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+
+.gct-label {
+  font-family: 'Consolas', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary, #e0e0e0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Non-gcode toasts use the UI font */
+.gct-pill[data-kind="macro"]   .gct-label,
+.gct-pill[data-kind="info"]    .gct-label,
+.gct-pill[data-kind="warning"] .gct-label,
+.gct-pill[data-kind="error"]   .gct-label {
+  font-family: inherit;
+}
+
+.gct-sub {
+  font-size: 10.5px;
+  color: var(--text-muted, #7a7a90);
+  white-space: normal;
+  line-height: 1.35;
+}
+
+/* Close X — only visible on hover */
+.gct-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: 4px;
+  padding: 2px;
+  border: none;
+  background: none;
+  color: var(--text-muted, #7a7a90);
+  cursor: pointer;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 120ms, color 120ms;
+}
+
+.gct-pill:hover .gct-close {
+  opacity: 1;
+}
+
+.gct-close:hover {
+  color: var(--text-primary, #e0e0e0);
+}
+
+/* ── Action buttons row ───────────────────────────────────────── */
+
+.gct-actions {
+  display: flex;
+  gap: 6px;
+  padding: 0 10px 8px;
+  justify-content: flex-end;
+}
+
+.gct-action-btn {
+  padding: 3px 10px;
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, var(--border, #3a3a4a) 70%, transparent);
+  background: transparent;
+  color: var(--text-secondary, #b0b0c0);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+
+.gct-action-btn:hover {
+  background: color-mix(in srgb, var(--border, #3a3a4a) 30%, transparent);
+  color: var(--text-primary, #e0e0e0);
+}
+
+/* Primary (last) action button gets the accent colour */
+.gct-action-btn--primary {
+  border-color: color-mix(in srgb, #60a5fa 50%, var(--border, #3a3a4a));
+  color: #93c5fd;
+}
+
+.gct-action-btn--primary:hover {
+  background: color-mix(in srgb, #60a5fa 16%, transparent);
+  color: #bfdbfe;
+}
+
+/* Warning toasts get an amber accent on the primary button */
+.gct-pill[data-kind="warning"] .gct-action-btn--primary {
+  border-color: color-mix(in srgb, #fbbf24 50%, var(--border, #3a3a4a));
+  color: #fcd34d;
+}
+
+.gct-pill[data-kind="warning"] .gct-action-btn--primary:hover {
+  background: color-mix(in srgb, #fbbf24 16%, transparent);
+}
+
+/* ── Progress bar ─────────────────────────────────────────────── */
+
+.gct-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  pointer-events: none;
+}
+
+.gct-pill[data-kind="gcode"]   .gct-progress { background: #60a5fa; }
+.gct-pill[data-kind="macro"]   .gct-progress { background: #a78bfa; }
+.gct-pill[data-kind="info"]    .gct-progress { background: #34d399; }
+.gct-pill[data-kind="warning"] .gct-progress { background: #fbbf24; }
+.gct-pill[data-kind="error"]   .gct-progress { background: #f87171; }
+
+@keyframes gct-progress {
+  from { width: 100%; }
+  to   { width: 0%; }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .gct-pill,
+  .gct-pill.is-exiting {
+    animation: none;
+  }
+}

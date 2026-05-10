@@ -63,8 +63,13 @@ export function ProfileSnapshotDiffPanel({
   const [leftId, setLeftId] = useState(options[1]?.id ?? options[0]?.id ?? '');
   const [rightId, setRightId] = useState(options[0]?.id ?? '');
   useEffect(() => {
-    if (!options.some((option) => option.id === leftId)) setLeftId(options[1]?.id ?? options[0]?.id ?? '');
-    if (!options.some((option) => option.id === rightId)) setRightId(options[0]?.id ?? '');
+    let disposed = false;
+    queueMicrotask(() => {
+      if (disposed) return;
+      if (!options.some((option) => option.id === leftId)) setLeftId(options[1]?.id ?? options[0]?.id ?? '');
+      if (!options.some((option) => option.id === rightId)) setRightId(options[0]?.id ?? '');
+    });
+    return () => { disposed = true; };
   }, [leftId, options, rightId]);
   const left = options.find((option) => option.id === leftId) ?? options[0];
   const right = options.find((option) => option.id === rightId) ?? options[0];

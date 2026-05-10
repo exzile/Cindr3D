@@ -43,7 +43,8 @@ export function shouldCaptureLayer(previousLayer: number | undefined, nextLayer:
 export function safeLayerGalleryZipSegment(value: string, fallback = 'untitled'): string {
   const sanitized = value
     .trim()
-    .replace(/[<>:"/\\|?*\x00-\x1f]+/g, '_')
+    .replace(/[<>:"/\\|?*]+/g, '_')
+    .replace(/./g, (char) => char.charCodeAt(0) < 32 ? '_' : char)
     .replace(/\s+/g, '_')
     .replace(/^\.+$/, '')
     .replace(/^[._]+|[._]+$/g, '');

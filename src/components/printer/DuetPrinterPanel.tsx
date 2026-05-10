@@ -5,6 +5,7 @@ import { useSpoolStore } from '../../store/spoolStore';
 import { useThemeStore } from '../../store/themeStore';
 import { getDuetPrefs } from '../../utils/duetPrefs';
 import DuetMessageBox from './DuetMessageBox';
+import PrinterAlerts from './PrinterAlerts';
 import './DuetAnalytics.css';
 import { type TabKey, TAB_COMPONENTS } from './duetPrinterPanel/config';
 import { MobilePrinterTabSheet, PanelBanners, PanelFooter, PanelHeader, PanelTabBar } from './duetPrinterPanel/chrome';
@@ -19,6 +20,11 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
   const setActiveTab = usePrinterStore((s) => s.setActiveTab);
   const setShowPrinter = usePrinterStore((s) => s.setShowPrinter);
   const emergencyStop = usePrinterStore((s) => s.emergencyStop);
+  const sendGCode     = usePrinterStore((s) => s.sendGCode);
+  const resetHalt     = usePrinterStore((s) => s.resetHalt);
+  const pausePrint    = usePrinterStore((s) => s.pausePrint);
+  const resumePrint   = usePrinterStore((s) => s.resumePrint);
+  const cancelPrint   = usePrinterStore((s) => s.cancelPrint);
   const error = usePrinterStore((s) => s.error);
   const reconnecting = usePrinterStore((s) => s.reconnecting);
   const lastModelUpdate = usePrinterStore((s) => s.lastModelUpdate);
@@ -36,9 +42,6 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
 
   const panelRootRef = useRef<HTMLDivElement>(null);
   const [isNarrow, setIsNarrow] = useState(false);
-  const [kioskMode, setKioskMode] = useState(() => {
-    try { return localStorage.getItem('cindr3d-printer-kiosk-mode') === 'true'; } catch { return false; }
-  });
 
   useEffect(() => {
     const el = panelRootRef.current;
@@ -111,9 +114,7 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
   }, [lastModelUpdate, now]);
 
   const handleEmergencyStop = useCallback(() => {
-    if (confirm('Send emergency stop (M112)? This will immediately halt the machine.')) {
-      emergencyStop();
-    }
+    emergencyStop();
   }, [emergencyStop]);
 
   const originalTitleRef = useRef(document.title);
@@ -202,6 +203,8 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
   if (!fullscreen && !showPrinter) return null;
 
   const machineStatus = model.state?.status ?? 'disconnected';
+  const isPrinting    = machineStatus === 'processing' || machineStatus === 'simulating';
+  const isPaused      = machineStatus === 'paused';
   const upTime = model.state?.upTime ?? 0;
   const board = model.boards?.[0];
   const currentTool = model.state?.currentTool !== undefined && model.state.currentTool >= 0
@@ -216,19 +219,7 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
 
   const ActiveTabComponent = TAB_COMPONENTS[(activeTab as TabKey)] ?? TAB_COMPONENTS.dashboard;
   const setPanelTab = (tab: TabKey) => setActiveTab(tab as typeof activeTab);
-  const toggleKioskMode = () => {
-    setKioskMode((value) => {
-      const next = !value;
-      try { localStorage.setItem('cindr3d-printer-kiosk-mode', String(next)); } catch {
-        // Local storage can be unavailable in restricted browser contexts.
-      }
-      return next;
-    });
-  };
-  const panelClassName = [
-    isNarrow ? 'printer-panel--narrow' : '',
-    kioskMode ? 'printer-panel--kiosk' : '',
-  ].filter(Boolean).join(' ') || undefined;
+  const panelClassName = isNarrow ? 'printer-panel--narrow' : undefined;
 
   return (
     <div
@@ -284,6 +275,8 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
 
       {!fullscreen && <PanelTabBar activeTab={activeTab as TabKey} boardType={boardType} onTabChange={setPanelTab} />}
 
+      <PrinterAlerts />
+
       <div
         style={{
           ...panelStyles.content,
@@ -298,8 +291,14 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
         connected={connected}
         currentTool={currentTool}
         machineStatus={machineStatus}
-        kioskMode={kioskMode}
-        onToggleKioskMode={toggleKioskMode}
+        onResetHalt={() => void resetHalt()}
+        onHome={() => void sendGCode('G28')}
+        onMotorsOff={() => void sendGCode('M84')}
+        onPause={() => void pausePrint()}
+        onResume={() => void resumePrint()}
+        onCancel={() => void cancelPrint()}
+        isPrinting={isPrinting}
+        isPaused={isPaused}
         printProgress={printProgress}
         upTime={upTime}
       />

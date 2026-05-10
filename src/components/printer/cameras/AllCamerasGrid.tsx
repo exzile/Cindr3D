@@ -86,7 +86,7 @@ export default function AllCamerasGrid() {
     if (model.state?.status === 'paused') alerts.push('Paused');
     if (model.state?.status === 'cancelling') alerts.push('Cancelling');
     return alerts;
-  }, [model.state?.displayMessage, model.state?.status]);
+  }, [model.state]);
 
   const tiles = useMemo(() => printers.flatMap((printer) => {
     const isActive = printer.id === activePrinterId;

@@ -90,7 +90,7 @@ function solidBox(x0: number, y0: number, z0: number, x1: number, y1: number, z1
  */
 function hollowTube(dim: number, h: number, w: number): Tri[] {
   const tris: Tri[] = [];
-  const o = dim, i0 = w, i1 = dim - w;
+  const o = dim;
   // Outer 4 sides (no top or bottom on outer face — bottom handled by ring)
   // Front outer (y=0, from x0..x1)
   tris.push(...solidBox(0, 0, 0, o, w, h));   // front wall

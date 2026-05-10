@@ -36,7 +36,7 @@ const Q_PARAM = /\bQ\s*(\d+(?:\.\d+)?)/i;
 const R_PARAM = /\bR\s*(\d+(?:\.\d+)?)/i;
 const S_PARAM = /\bS\s*(\d+(?:\.\d+)?)/i;
 
-const LAYER_LINE = /(?:^|[\s;:])layer[\s:_]*(\d+)\s*(?:[\/of]+\s*(\d+))?/i;
+const LAYER_LINE = /(?:^|[\s;:])layer[\s:_]*(\d+)\s*(?:[/of]+\s*(\d+))?/i;
 
 export function parseMarlinProgress(rawLine: string): MarlinProgressUpdate | null {
   const line = rawLine.trim();

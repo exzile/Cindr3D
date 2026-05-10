@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckSquare, ChevronDown, ChevronRight, CircleAlert, CircleCheck, HelpCircle, Play, RefreshCcw, ScanLine } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import { usePrintQueueStore } from '../../../store/printQueueStore';
@@ -69,14 +69,20 @@ function PrinterCard({ printerId, printerName }: PrinterCardProps) {
   const selectNextReadyJob = usePrintQueueStore((s) => s.selectNextReadyJob);
   const markJobPrinting = usePrintQueueStore((s) => s.markJobPrinting);
   const setJobStatus = usePrintQueueStore((s) => s.setJobStatus);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const lastCheckedLabel = useMemo(() => {
     if (!settings.lastCheckedAt) return null;
-    const diff = Date.now() - settings.lastCheckedAt;
+    const diff = now - settings.lastCheckedAt;
     if (diff < 60_000) return 'just now';
     if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
     return `${Math.floor(diff / 3_600_000)}h ago`;
-  }, [settings.lastCheckedAt]);
+  }, [now, settings.lastCheckedAt]);
 
   const handleConfirmClear = useCallback(() => markBedCleared(printerId, true), [markBedCleared, printerId]);
   const handleMarkOccupied = useCallback(() => markBedCleared(printerId, false), [markBedCleared, printerId]);

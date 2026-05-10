@@ -35,6 +35,7 @@ export function ParametricModelDialog({ onClose }: { onClose: () => void }) {
   const builtMeshRef = useRef<THREE.Mesh | null>(null);
 
   useEffect(() => {
+    let disposed = false;
     const prev = builtMeshRef.current;
     if (prev) {
       prev.geometry.dispose();
@@ -43,11 +44,16 @@ export function ParametricModelDialog({ onClose }: { onClose: () => void }) {
     builtMeshRef.current = null;
     try {
       builtMeshRef.current = model.build(params);
-      setCanPreview(true);
+      queueMicrotask(() => {
+        if (!disposed) setCanPreview(true);
+      });
     } catch {
-      setCanPreview(false);
+      queueMicrotask(() => {
+        if (!disposed) setCanPreview(false);
+      });
     }
     return () => {
+      disposed = true;
       const mesh = builtMeshRef.current;
       if (mesh) {
         mesh.geometry.dispose();

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import * as THREE from 'three';
 import { Check, RefreshCw, X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
@@ -25,13 +25,19 @@ export function MeshRepairDialog({ onClose }: { onClose: () => void }) {
   const selected = features.find((feature) => feature.id === selectedFeatureId) ?? features.find((feature) => feature.mesh);
   const mesh = findMesh(selected?.mesh);
   const [repairCount, setRepairCount] = useState(0);
-  const report = useMemo(() => mesh ? analyzeMeshGeometry(mesh.geometry) : null, [mesh, repairCount]);
+  const report = mesh ? analyzeMeshGeometry(mesh.geometry) : null;
+  void repairCount;
 
-  const replaceGeometry = (geometry: THREE.BufferGeometry, label: string) => {
-    if (!mesh) return;
+  const getCurrentMesh = useCallback(() => {
+    const state = useCADStore.getState();
+    const current = state.features.find((feature) => feature.id === state.selectedFeatureId) ?? state.features.find((feature) => feature.mesh);
+    return findMesh(current?.mesh);
+  }, []);
+
+  const replaceGeometry = (targetMesh: THREE.Mesh, geometry: THREE.BufferGeometry, label: string) => {
     pushUndo();
-    const old = mesh.geometry;
-    mesh.geometry = geometry;
+    const old = targetMesh.geometry;
+    targetMesh.geometry = geometry;
     setTimeout(() => old.dispose(), 0);
     setRepairCount((c) => c + 1);
     setStatusMessage(label);
@@ -63,17 +69,24 @@ export function MeshRepairDialog({ onClose }: { onClose: () => void }) {
           )}
         </div>
         <div className="tp-actions">
-          <button className="tp-btn" disabled={!mesh} onClick={() => mesh && replaceGeometry(weldMeshVertices(mesh.geometry), 'Mesh vertices welded')}>
+          <button className="tp-btn" disabled={!mesh} onClick={() => {
+            const currentMesh = getCurrentMesh();
+            if (currentMesh) replaceGeometry(currentMesh, weldMeshVertices(currentMesh.geometry), 'Mesh vertices welded');
+          }}>
             <Check size={13} /> Weld
           </button>
-          <button className="tp-btn" disabled={!mesh} onClick={() => mesh && replaceGeometry(autoRepairMeshGeometry(mesh.geometry), 'Mesh auto-repaired')}>
+          <button className="tp-btn" disabled={!mesh} onClick={() => {
+            const currentMesh = getCurrentMesh();
+            if (currentMesh) replaceGeometry(currentMesh, autoRepairMeshGeometry(currentMesh.geometry), 'Mesh auto-repaired');
+          }}>
             <RefreshCw size={13} /> Auto-Fix
           </button>
           <button className="tp-btn tp-btn-cancel" disabled={!mesh} onClick={() => {
-            if (!mesh) return;
+            const currentMesh = getCurrentMesh();
+            if (!currentMesh) return;
             pushUndo();
-            mesh.geometry.scale(-1, 1, 1);
-            mesh.geometry.computeVertexNormals();
+            currentMesh.geometry.scale(-1, 1, 1);
+            currentMesh.geometry.computeVertexNormals();
             setRepairCount((c) => c + 1);
             setStatusMessage('Mesh normals flipped');
           }}>

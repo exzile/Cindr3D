@@ -3,11 +3,16 @@ import {
   Activity,
   Clock,
   Cpu,
+  Home,
   Loader2,
   Moon,
   OctagonAlert,
+  Pause,
+  Play,
+  Power,
   Search,
   Settings,
+  Square,
   Sun,
   Wifi,
   WifiOff,
@@ -480,8 +485,14 @@ export function PanelFooter({
   currentTool,
   upTime,
   board,
-  kioskMode,
-  onToggleKioskMode,
+  onResetHalt,
+  onHome,
+  onMotorsOff,
+  onPause,
+  onResume,
+  onCancel,
+  isPrinting,
+  isPaused,
   printProgress,
 }: {
   connected: boolean;
@@ -494,10 +505,19 @@ export function PanelFooter({
     name?: string;
     shortName?: string;
   };
-  kioskMode: boolean;
-  onToggleKioskMode: () => void;
+  onResetHalt: () => void;
+  onHome: () => void;
+  onMotorsOff: () => void;
+  onPause: () => void;
+  onResume: () => void;
+  onCancel: () => void;
+  isPrinting: boolean;
+  isPaused: boolean;
   printProgress: number | null;
 }) {
+  const isActivePrint = isPrinting || isPaused
+    || machineStatus === 'pausing' || machineStatus === 'resuming' || machineStatus === 'cancelling';
+
   return (
     <div
       style={{
@@ -512,11 +532,38 @@ export function PanelFooter({
         flexShrink: 0,
       }}
     >
-      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <Activity size={11} style={{ color: connected ? COLORS.success : COLORS.textDim }} />
-        <span style={{ fontWeight: 600, textTransform: 'capitalize', color: connected ? COLORS.success : COLORS.textDim }}>
+      {/* ── Left: status + meta ── */}
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Activity size={11} style={{ color: machineStatus === 'halted' ? COLORS.danger : connected ? COLORS.success : COLORS.textDim }} />
+        <span style={{ fontWeight: 600, textTransform: 'capitalize', color: machineStatus === 'halted' ? COLORS.danger : connected ? COLORS.success : COLORS.textDim }}>
           {machineStatus}
         </span>
+        {machineStatus === 'halted' && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onResetHalt(); }}
+            title="Send M999 to clear halt and resume"
+            className="printer-reset-halt"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              height: 20,
+              padding: '0 8px',
+              border: `1px solid ${COLORS.danger}`,
+              borderRadius: 4,
+              background: 'transparent',
+              color: COLORS.danger,
+              font: 'inherit',
+              fontSize: 10,
+              fontWeight: 700,
+              cursor: 'pointer',
+              letterSpacing: '0.03em',
+            }}
+          >
+            Reset (M999)
+          </button>
+        )}
       </span>
       <span style={{ color: COLORS.panelBorder }}>|</span>
       <span>Tool: {currentTool}</span>
@@ -544,39 +591,81 @@ export function PanelFooter({
         </>
       )}
 
-      {printProgress !== null && (
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div
-            style={{
-              width: 80,
-              height: 6,
-              background: COLORS.inputBg,
-              borderRadius: 3,
-              overflow: 'hidden',
-            }}
-          >
+      {/* ── Right: quick actions + progress ── */}
+      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+        {connected && !isActivePrint && (
+          <>
+            <button
+              type="button"
+              className="printer-footer-btn"
+              onClick={onHome}
+              title="Home all axes (G28)"
+            >
+              <Home size={11} />
+              Home
+            </button>
+            <button
+              type="button"
+              className="printer-footer-btn"
+              onClick={onMotorsOff}
+              title="Disable stepper motors (M84)"
+            >
+              <Power size={11} />
+              Motors Off
+            </button>
+          </>
+        )}
+
+        {connected && isActivePrint && (
+          <>
+            <button
+              type="button"
+              className={`printer-footer-btn printer-footer-btn--pause${isPaused ? ' is-active' : ''}`}
+              onClick={isPaused ? onResume : onPause}
+              disabled={machineStatus === 'pausing' || machineStatus === 'resuming'}
+              title={isPaused ? 'Resume print' : 'Pause print'}
+            >
+              {isPaused ? <Play size={11} /> : <Pause size={11} />}
+              {isPaused ? 'Resume' : 'Pause'}
+            </button>
+            <button
+              type="button"
+              className="printer-footer-btn printer-footer-btn--cancel"
+              onClick={onCancel}
+              disabled={machineStatus === 'cancelling'}
+              title="Cancel current print"
+            >
+              <Square size={11} />
+              Cancel
+            </button>
+          </>
+        )}
+
+        {printProgress !== null && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <div
               style={{
-                height: '100%',
-                background: COLORS.accent,
+                width: 80,
+                height: 6,
+                background: COLORS.inputBg,
                 borderRadius: 3,
-                transition: 'width 0.3s ease',
-                width: `${printProgress.toFixed(1)}%`,
+                overflow: 'hidden',
               }}
-            />
+            >
+              <div
+                style={{
+                  height: '100%',
+                  background: COLORS.accent,
+                  borderRadius: 3,
+                  transition: 'width 0.3s ease',
+                  width: `${printProgress.toFixed(1)}%`,
+                }}
+              />
+            </div>
+            <span>{printProgress.toFixed(1)}%</span>
           </div>
-          <span>{printProgress.toFixed(1)}%</span>
-        </div>
-      )}
-      <button
-        type="button"
-        className={`printer-kiosk-toggle${kioskMode ? ' is-active' : ''}`}
-        onClick={onToggleKioskMode}
-        aria-pressed={kioskMode}
-        title="Toggle kiosk mode"
-      >
-        Kiosk
-      </button>
+        )}
+      </div>
     </div>
   );
 }

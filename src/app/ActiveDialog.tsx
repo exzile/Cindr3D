@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useCADStore } from '../store/cadStore';
 import { useComponentStore } from '../store/componentStore';
 import ParametersPanel from '../components/panels/ParametersPanel';
@@ -173,7 +174,8 @@ function SplitFaceDialogConnected({ onClose }: { onClose: () => void }) {
 }
 
 function JointOriginDialogConnected({ onClose }: { onClose: () => void }) {
-  const components = Object.values(useComponentStore((s) => s.components));
+  const componentMap = useComponentStore((s) => s.components);
+  const components = useMemo(() => Object.values(componentMap), [componentMap]);
   const commitJointOrigin = useCADStore((s) => s.commitJointOrigin);
   return <JointOriginDialog open={true} components={components} onOk={commitJointOrigin} onClose={onClose} />;
 }
@@ -193,7 +195,8 @@ function InterferenceDialogConnected({ onClose }: { onClose: () => void }) {
 }
 
 function ContactSetsDialogConnected({ onClose }: { onClose: () => void }) {
-  const components = Object.values(useComponentStore((s) => s.components));
+  const componentMap = useComponentStore((s) => s.components);
+  const components = useMemo(() => Object.values(componentMap), [componentMap]);
   const contactSets = useCADStore((s) => s.contactSets);
   const addContactSet = useCADStore((s) => s.addContactSet);
   const toggleContactSet = useCADStore((s) => s.toggleContactSet);
@@ -216,7 +219,8 @@ function ContactSetsDialogConnected({ onClose }: { onClose: () => void }) {
 }
 
 function MirrorComponentDialogConnected({ onClose }: { onClose: () => void }) {
-  const components = Object.values(useComponentStore((s) => s.components));
+  const componentMap = useComponentStore((s) => s.components);
+  const components = useMemo(() => Object.values(componentMap), [componentMap]);
   const mirrorComponent = useComponentStore((s) => s.mirrorComponent);
   const constructionPlanes = useCADStore((s) => s.constructionPlanes);
   return (

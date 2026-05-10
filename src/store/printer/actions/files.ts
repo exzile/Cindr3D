@@ -2,6 +2,7 @@ import type { DuetPluginInfo } from '../../../types/duet';
 import { errorMessage } from '../persistence';
 import type { PrinterStoreApi } from '../storeApi';
 import type { PrinterStore } from '../../printerStore';
+import { addToast } from '../../toastStore';
 
 export function createFileActions(
   { get, set }: PrinterStoreApi,
@@ -77,7 +78,10 @@ export function createFileActions(
     },
     runMacro: async (filename) => {
       const { service, macroPath } = get(); if (!service) return;
-      try { await service.sendGCode(`M98 P"${macroPath}/${filename}"`); }
+      try {
+        addToast('macro', filename, 'Running macro…');
+        await service.sendGCode(`M98 P"${macroPath}/${filename}"`);
+      }
       catch (err) { set({ error: `Failed to run macro: ${(err as Error).message}` }); }
     },
     createMacro: async (filename, contents) => {

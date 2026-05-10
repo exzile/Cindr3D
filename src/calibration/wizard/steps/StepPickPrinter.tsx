@@ -16,7 +16,7 @@ export function StepPickPrinter({ selectedId, onChange }: StepPickPrinterProps) 
 
   return (
     <div className="calib-step">
-      <h3>Pick printer</h3>
+
       <p>Select the printer that will run this calibration.</p>
       <div className="calib-step__list">
         {printers.map((printer) => (

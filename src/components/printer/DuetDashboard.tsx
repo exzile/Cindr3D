@@ -1,9 +1,12 @@
-import { useCallback, useMemo, useState } from 'react';
-import type { DragEvent } from 'react';
-import ReactGridLayout, { noCompactor, useContainerWidth, type Layout, type LayoutItem as GridLayoutItem } from 'react-grid-layout';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import type { DragEvent, PointerEvent as ReactPointerEvent } from 'react';
+import ReactGridLayout, { noCompactor, type Layout, type LayoutItem as GridLayoutItem } from 'react-grid-layout';
+
+// Allow cards to overlap freely during drag; replace-on-drop logic runs at release.
+const overlapCompactor = { ...noCompactor, allowOverlap: true };
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
-import { Check, Edit3, Eye, EyeOff, FileCode, FolderOpen, Minus, PencilRuler, PlugZap, Plus, RotateCcw, Settings, Wifi, X } from 'lucide-react';
+import { ArrowLeftRight, Check, Edit3, Eye, EyeOff, FileCode, FolderOpen, Minus, PencilRuler, PlugZap, Plus, RotateCcw, Settings, Wifi, X } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import {
   GRID_COLS,
@@ -43,6 +46,30 @@ function isPanelId(value: string): value is PanelId {
   return PANEL_DEFS.some((panel) => panel.id === value);
 }
 
+// Ref-callback based width measurement — re-connects the ResizeObserver whenever
+// the element mounts. useContainerWidth from react-grid-layout only runs its effect
+// once (on component mount), so it misses the offline→connected DOM transition.
+function useGridWidth(initialWidth = 1280) {
+  const [width, setWidth] = useState(initialWidth);
+  const [mounted, setMounted] = useState(false);
+  const observerRef = useRef<ResizeObserver | null>(null);
+
+  const ref = useCallback((node: HTMLDivElement | null) => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
+    if (!node) return;
+    setWidth(node.offsetWidth);
+    setMounted(true);
+    observerRef.current = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w) setWidth(Math.round(w));
+    });
+    observerRef.current.observe(node);
+  }, []);
+
+  return { width, mounted, ref };
+}
+
 export default function DuetDashboard() {
   const connected = usePrinterStore((s) => s.connected);
   const connecting = usePrinterStore((s) => s.connecting);
@@ -66,6 +93,8 @@ export default function DuetDashboard() {
   const setPanelLayout = useDashboardLayout((s) => s.setPanelLayout);
   const setHidden = useDashboardLayout((s) => s.setHidden);
   const setAllHidden = useDashboardLayout((s) => s.setAllHidden);
+  const pageWidthPx = useDashboardLayout((s) => s.pageWidthPx);
+  const setPageWidth = useDashboardLayout((s) => s.setPageWidth);
   const reset = useDashboardLayout((s) => s.reset);
 
   const [editMode, setEditMode] = useState(false);
@@ -73,7 +102,15 @@ export default function DuetDashboard() {
   const [menuDragId, setMenuDragId] = useState<PanelId | null>(null);
   const [renamingDashboardId, setRenamingDashboardId] = useState<string | null>(null);
   const [dashboardNameDraft, setDashboardNameDraft] = useState('');
-  const { width: gridWidth, containerRef: gridContainerRef, mounted: gridMounted } = useContainerWidth({ initialWidth: 1280 });
+  const [draftWidth, setDraftWidth] = useState<number | null>(null);
+  const draggingItemIdRef = useRef<PanelId | null>(null);
+  const preDragLayoutsRef = useRef<Record<PanelId, DashboardLayoutItem> | null>(null);
+  const { width: gridWidth, ref: gridContainerRef, mounted: gridMounted } = useGridWidth();
+  // committedWidth: what the grid actually sizes to (changes only on handle release)
+  const committedWidth = Math.min(pageWidthPx ?? gridWidth, gridWidth);
+  // previewWidth: live during drag for dead-zone positioning; grid doesn't resize during drag
+  const previewWidth = Math.min(draftWidth ?? pageWidthPx ?? gridWidth, gridWidth);
+  const deadZoneWidth = Math.max(0, Math.floor((gridWidth - previewWidth) / 2));
   const handleCloseViewSettings = useCallback(() => setShowViewSettings(false), []);
 
   const activePrinter = printers.find((printer) => printer.id === activePrinterId);
@@ -147,6 +184,52 @@ export default function DuetDashboard() {
     const item = layouts[menuDragId] ?? defaultPanelLayout(menuDragId);
     return { w: item.w, h: item.h };
   }, [layouts, menuDragId]);
+
+  const handleCardDragStart = useCallback(
+    (_layout: Layout, _oldItem: GridLayoutItem | null, item: GridLayoutItem | null) => {
+      if (!item) return;
+      if (isPanelId(item.i)) {
+        draggingItemIdRef.current = item.i;
+        preDragLayoutsRef.current = { ...layouts };
+      }
+    },
+    [layouts],
+  );
+
+  const handleCardDragStop = useCallback(
+    (finalLayout: Layout) => {
+      const draggedId = draggingItemIdRef.current;
+      draggingItemIdRef.current = null;
+      preDragLayoutsRef.current = null;
+
+      if (!draggedId) {
+        commitLayout(finalLayout);
+        return;
+      }
+
+      const dropped = finalLayout.find((item) => item.i === draggedId);
+      if (!dropped) {
+        commitLayout(finalLayout);
+        return;
+      }
+
+      // Hide any card whose grid cell overlaps with the dropped position.
+      const overlappingIds: PanelId[] = [];
+      for (const item of finalLayout) {
+        if (!isPanelId(item.i) || item.i === draggedId) continue;
+        const hOverlap = dropped.x < item.x + item.w && dropped.x + dropped.w > item.x;
+        const vOverlap = dropped.y < item.y + item.h && dropped.y + dropped.h > item.y;
+        if (hOverlap && vOverlap) overlappingIds.push(item.i);
+      }
+
+      for (const id of overlappingIds) {
+        setHidden(id, true);
+      }
+
+      commitLayout(finalLayout.filter((item) => !overlappingIds.includes(item.i as PanelId)));
+    },
+    [commitLayout, setHidden],
+  );
 
   const handlePanelMenuDrop = useCallback((event: DragEvent, nextHidden: boolean) => {
     event.preventDefault();
@@ -389,19 +472,49 @@ export default function DuetDashboard() {
         />
       )}
 
-      <div ref={gridContainerRef}>
+      {/* Outer div keeps ref for width measurement — always full container width */}
+      <div ref={gridContainerRef} style={{ position: 'relative', overflow: 'visible' }}>
+        {editMode && deadZoneWidth > 1 && (
+          <>
+            <div className="dc-page-dead-zone" style={{ left: 0, width: deadZoneWidth }} aria-hidden="true" />
+            <div className="dc-page-dead-zone" style={{ right: 0, width: deadZoneWidth }} aria-hidden="true" />
+          </>
+        )}
+        {editMode && gridMounted && (
+          <>
+            <PageWidthHandle
+              side="left"
+              containerWidth={gridWidth}
+              effectiveWidth={draftWidth ?? pageWidthPx ?? gridWidth}
+              displayWidth={previewWidth}
+              onDraft={setDraftWidth}
+              onCommit={(px) => { setDraftWidth(null); setPageWidth(px >= gridWidth - 1 ? null : px); }}
+              onReset={() => { setDraftWidth(null); setPageWidth(null); }}
+            />
+            <PageWidthHandle
+              side="right"
+              containerWidth={gridWidth}
+              effectiveWidth={draftWidth ?? pageWidthPx ?? gridWidth}
+              displayWidth={previewWidth}
+              onDraft={setDraftWidth}
+              onCommit={(px) => { setDraftWidth(null); setPageWidth(px >= gridWidth - 1 ? null : px); }}
+              onReset={() => { setDraftWidth(null); setPageWidth(null); }}
+            />
+          </>
+        )}
+        <div style={{ width: committedWidth, marginLeft: 'auto', marginRight: 'auto' }}>
         {gridMounted && (
           <ReactGridLayout
             className={`duet-dash-card-list${editMode ? ' is-edit-grid' : ''}`}
             layout={gridLayout}
-            width={gridWidth}
+            width={committedWidth}
             gridConfig={{
               cols: GRID_COLS,
               rowHeight: ROW_HEIGHT,
               margin: GRID_MARGIN,
               containerPadding: GRID_PADDING,
             }}
-            compactor={noCompactor}
+            compactor={overlapCompactor}
             dragConfig={{
               enabled: editMode,
               handle: '.dc-header',
@@ -420,11 +533,12 @@ export default function DuetDashboard() {
             droppingItem={menuDragId ? { ...(layouts[menuDragId] ?? defaultPanelLayout(menuDragId)), i: '__dropping-elem__' } : undefined}
             onDropDragOver={handleGridDropDragOver}
             onDrop={handleGridDrop}
-            onDragStop={(layout) => commitLayout(layout)}
+            onDragStart={handleCardDragStart}
+            onDragStop={handleCardDragStop}
             onResizeStop={(layout) => commitLayout(layout)}
           >
             {visiblePanels.map((panel) => (
-              <div key={panel.id}>
+              <div key={panel.id} data-panel={panel.id}>
                 <DashboardCard
                   title={panel.title}
                   icon={panel.icon}
@@ -435,6 +549,86 @@ export default function DuetDashboard() {
               </div>
             ))}
           </ReactGridLayout>
+        )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const MIN_PAGE_WIDTH = 320;
+
+function PageWidthHandle({
+  side,
+  containerWidth,
+  effectiveWidth,
+  displayWidth,
+  onDraft,
+  onCommit,
+  onReset,
+}: {
+  side: 'left' | 'right';
+  containerWidth: number;
+  effectiveWidth: number;
+  displayWidth: number;
+  onDraft: (px: number) => void;
+  onCommit: (px: number) => void;
+  onReset: () => void;
+}) {
+  const handleRef = useRef<HTMLDivElement>(null);
+  const startX = useRef(0);
+  const startWidth = useRef(0);
+  const isConstrained = displayWidth < containerWidth - 1;
+  const handleLeft = side === 'right'
+    ? Math.round((containerWidth + displayWidth) / 2)
+    : Math.round((containerWidth - displayWidth) / 2);
+
+  const calcNext = (clientX: number) => {
+    const delta = clientX - startX.current;
+    // Right handle: drag right → wider. Left handle: drag left → wider (opposite sign).
+    const signed = side === 'right' ? delta : -delta;
+    return Math.max(MIN_PAGE_WIDTH, startWidth.current + 2 * signed);
+  };
+
+  const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    handleRef.current?.setPointerCapture(e.pointerId);
+    startX.current = e.clientX;
+    startWidth.current = effectiveWidth;
+  };
+
+  const handlePointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!handleRef.current?.hasPointerCapture(e.pointerId)) return;
+    onDraft(Math.round(calcNext(e.clientX)));
+  };
+
+  const handlePointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!handleRef.current?.hasPointerCapture(e.pointerId)) return;
+    onCommit(Math.round(calcNext(e.clientX)));
+  };
+
+  return (
+    <div
+      ref={handleRef}
+      className={`dc-page-handle dc-page-handle--${side}${isConstrained ? '' : ' is-full-width'}`}
+      style={{ left: handleLeft }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      title="Drag to adjust page width"
+    >
+      <div className="dc-page-handle__line" />
+      <div className="dc-page-handle__nub">
+        <ArrowLeftRight size={10} />
+        <span className="dc-page-handle__label">{Math.round(effectiveWidth)}px</span>
+        {isConstrained && side === 'right' && (
+          <button
+            className="dc-page-handle__reset"
+            onClick={(e) => { e.stopPropagation(); onReset(); }}
+            title="Reset to full width"
+          >
+            <X size={9} />
+          </button>
         )}
       </div>
     </div>
