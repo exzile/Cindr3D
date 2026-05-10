@@ -255,7 +255,7 @@ export default function DuetAnalytics() {
       co2KgPerKwh,
       nowMs,
     }),
-    [jobsInWindow, spools, printerWatts, electricityRate, rateAt, planningPrinterId, touWindows, filamentGPerHour, co2KgPerKwh, nowMs],
+    [jobsInWindow, spools, printerWatts, electricityRate, rateAt, planningPrinterId, filamentGPerHour, co2KgPerKwh, nowMs],
   );
   const liveEstimate = costSummary.estimates.find((estimate) => estimate.job.outcome === 'in-progress') ?? null;
   const recentEstimatesByJob = useMemo(() => {
@@ -264,7 +264,7 @@ export default function DuetAnalytics() {
       map.set(printJobCostKey(estimate.job), estimate);
     }
     return map;
-  }, [costSummary.estimates]);
+  }, [costSummary]);
   const cheapestWindow = useMemo(
     () => findCheapestStart(
       planningPrinterId,
@@ -273,11 +273,11 @@ export default function DuetAnalytics() {
       printerWatts,
       168,
     ),
-    [findCheapestStart, planningPrinterId, nowMs, plannerDurationHours, printerWatts, printerTouWindows],
+    [findCheapestStart, planningPrinterId, nowMs, plannerDurationHours, printerWatts],
   );
   const solarGate = useMemo(
     () => planningPrinterId ? canStartWithSolarSurplus(planningPrinterId, printerWatts) : null,
-    [canStartWithSolarSurplus, planningPrinterId, printerWatts, solarIntegrationConfigs],
+    [canStartWithSolarSurplus, planningPrinterId, printerWatts],
   );
 
   const onWindowChange = (v: number) => {

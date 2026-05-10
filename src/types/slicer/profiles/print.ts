@@ -1,3 +1,68 @@
+// ── Layer-aware post-processor types ─────────────────────────────────────────
+
+/** Which post-processor behaviour to apply. */
+export type LayerProcessorKind =
+  | 'change-at-z'       // change temperature / fan / speed / flow at a Z height
+  | 'pause-at-z'        // M0 / M25 pause at a Z height
+  | 'filament-change'   // M600 colour/filament change at a Z height
+  | 'tuning-tower'      // ramp a parameter linearly over a Z range
+  | 'search-replace'    // regex find-and-replace on the full G-code string
+  | 'timelapse'         // inject camera-shutter gcode at every layer change
+  | 'custom-gcode-at-z' // inject arbitrary gcode block at a Z height
+  | 'print-from-height'; // skip all layers below a given Z
+
+export interface LayerProcessor {
+  id: string;
+  enabled: boolean;
+  kind: LayerProcessorKind;
+
+  // ── Trigger (used by change-at-z, pause-at-z, filament-change, custom-gcode-at-z)
+  triggerMode?: 'z' | 'layer';   // default: 'z'
+  triggerZ?: number;              // mm — inject once when Z crosses this value
+  triggerLayer?: number;          // 0-based layer index (used when triggerMode='layer')
+
+  // ── change-at-z: which settings to modify ────────────────────────────────
+  changeTemperature?: boolean;
+  changeTemperatureValue?: number;       // °C  (M104 Sxxx)
+  changeBedTemperature?: boolean;
+  changeBedTemperatureValue?: number;    // °C  (M140 Sxxx)
+  changeFanSpeed?: boolean;
+  changeFanSpeedValue?: number;          // 0–255 (M106 Sxxx)
+  changePrintSpeed?: boolean;
+  changePrintSpeedValue?: number;        // mm/s → stored as feed-rate percent (M220 Sxxx)
+  changeFlowRate?: boolean;
+  changeFlowRateValue?: number;          // % (M221 Sxxx)
+
+  // ── pause-at-z ────────────────────────────────────────────────────────────
+  pauseCommand?: 'M0' | 'M25' | 'M600'; // default: 'M0'
+  parkX?: number;                        // optional nozzle-park X (mm)
+  parkY?: number;                        // optional nozzle-park Y (mm)
+  displayText?: string;                  // message shown on LCD (M117)
+
+  // ── tuning-tower ─────────────────────────────────────────────────────────
+  tuningParameter?: 'temperature' | 'bed-temperature' | 'fan' | 'speed' | 'flow' | 'pressure-advance';
+  tuningStartZ?: number;                 // mm — ramp start
+  tuningEndZ?: number;                   // mm — ramp end
+  tuningStartValue?: number;             // value at tuningStartZ
+  tuningEndValue?: number;               // value at tuningEndZ
+  tuningStepSize?: number;               // mm — inject command every N mm (0 = every layer)
+
+  // ── search-replace ────────────────────────────────────────────────────────
+  searchPattern?: string;                // regex pattern string
+  searchFlags?: string;                  // regex flags (g, i, m, …)  default: 'g'
+  replaceWith?: string;                  // replacement string (supports $1 back-refs)
+
+  // ── timelapse ─────────────────────────────────────────────────────────────
+  timelapseCommand?: string;             // G-code to inject (default: 'M240')
+  timelapseStartLayer?: number;          // first layer to capture (default: 0)
+
+  // ── custom-gcode-at-z ─────────────────────────────────────────────────────
+  customGcode?: string;                  // multi-line G-code block to inject
+
+  // ── print-from-height ─────────────────────────────────────────────────────
+  printFromZ?: number;                   // mm — discard all content below this Z
+}
+
 export interface PaintedZSeamHint {
   x: number;
   y: number;
@@ -591,6 +656,7 @@ export interface PrintProfile {
 
   // --- Post Processing ---------------------------------------------------
   postProcessingScripts?: string[];     // wired — simple G-code post-processing hooks
+  layerProcessors?: LayerProcessor[];   // wired — layer-aware post-processors (ChangeAtZ, pause, tuning tower…)
   embedGCodeThumbnails?: boolean;       // wired — embed 32x32 + 300x300 PNG thumbnails in exported G-code
 
   // --- Non-Planar --------------------------------------------------------

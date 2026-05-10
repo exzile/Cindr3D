@@ -6,6 +6,7 @@
   gap: 14px;
   padding: 14px;
   color: var(--text-primary);
+  overflow-y: auto;
 }
 
 .printer-calibration-panel__header {
@@ -54,16 +55,16 @@
 
 .printer-calibration-panel__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
   gap: 10px;
-  overflow: auto;
+  flex-shrink: 0;
   padding-right: 2px;
 }
 
 .printer-calibration-panel__lifecycle {
   display: grid;
   gap: 12px;
-  min-height: 0;
+  flex-shrink: 0;
 }
 
 .calib-center {
@@ -72,41 +73,52 @@
 
 .calib-center__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
   gap: 10px;
 }
 
+/* Category-based accent colours (set --card-accent per category class) */
+.calib-center__card--system   { --card-accent: #8b5cf6; }
+.calib-center__card--geometry { --card-accent: #3b82f6; }
+.calib-center__card--material { --card-accent: #f97316; }
+.calib-center__card--motion   { --card-accent: #10b981; }
+
 .calib-center__card {
-  border: 1px solid color-mix(in srgb, var(--row-color, var(--accent)) 22%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--card-accent, var(--accent)) 25%, var(--border));
+  border-left: 3px solid var(--card-accent, var(--accent));
   border-radius: 8px;
-  background: color-mix(in srgb, var(--row-color, var(--accent)) 6%, var(--bg-toolbar));
-  padding: 9px;
-  display: grid;
-  gap: 8px;
+  background: var(--bg-panel);
+  padding: 12px 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: box-shadow 0.15s ease, transform 0.12s ease;
 }
 
-.calib-center__card.is-overdue {
-  --row-color: #ef4444;
+.calib-center__card:hover {
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--card-accent, var(--accent)) 16%, transparent);
+  transform: translateY(-1px);
 }
 
-.calib-center__card.is-upcoming {
-  --row-color: #f59e0b;
-}
-
-.calib-center__card.is-ok {
-  --row-color: #22c55e;
-}
+/* Status still drives the row-color inherited by pill badges */
+.calib-center__card.is-overdue { --row-color: #ef4444; }
+.calib-center__card.is-upcoming { --row-color: #f59e0b; }
+.calib-center__card.is-ok      { --row-color: #22c55e; }
 
 .calib-center__card-body {
+  flex: 1;
   display: grid;
-  gap: 5px;
+  gap: 4px;
 }
 
 .calib-center__category {
-  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--card-accent, var(--accent));
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -114,70 +126,47 @@
   color: var(--text-primary);
   font-size: 13px;
   font-weight: 700;
+  line-height: 1.3;
 }
 
 .calib-center__desc {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.4;
+  font-size: 11.5px;
+  line-height: 1.45;
 }
 
 .calib-center__badges {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-}
-
-.printer-calibration-panel__summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.printer-calibration-panel__summary-card {
-  min-height: 58px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-panel);
-  padding: 10px;
-  display: grid;
-  gap: 4px;
-  box-shadow: inset 3px 0 0 var(--accent);
-}
-
-.printer-calibration-panel__summary-card span {
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.printer-calibration-panel__summary-card strong {
-  color: var(--text-primary);
-  font-size: 22px;
-  line-height: 1;
-}
-
-.printer-calibration-panel__summary-card.is-overdue {
-  box-shadow: inset 3px 0 0 #ef4444;
-}
-
-.printer-calibration-panel__summary-card.is-upcoming {
-  box-shadow: inset 3px 0 0 #f59e0b;
-}
-
-.printer-calibration-panel__summary-card.is-ok {
-  box-shadow: inset 3px 0 0 #22c55e;
+  margin-top: 2px;
 }
 
 .printer-calibration-panel__section {
-  border: 1px solid var(--border);
+  --section-accent: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--section-accent) 35%, var(--border));
   border-radius: 8px;
-  background: var(--bg-panel);
+  background: color-mix(in srgb, var(--section-accent) 4%, var(--bg-panel));
   padding: 10px;
   display: grid;
   gap: 10px;
+}
+
+.printer-calibration-panel__section--aging {
+  --section-accent: #3b82f6;
+}
+
+.printer-calibration-panel__section--wear {
+  --section-accent: #f59e0b;
+}
+
+.printer-calibration-panel__section--moisture {
+  --section-accent: #14b8a6;
+}
+
+.printer-calibration-panel__section--tests {
+  --section-accent: #8b5cf6;
 }
 
 .printer-calibration-panel__section-head {
@@ -188,13 +177,67 @@
 }
 
 .printer-calibration-panel__section-head h3,
+.printer-calibration-panel__section-title,
+.printer-calibration-panel__subsection-head h4,
 .printer-calibration-panel__service-log h4 {
   margin: 0;
-  color: var(--text-primary);
-  font-size: 13px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
 }
 
-.printer-calibration-panel__section-head h3 {
+.printer-calibration-panel__section-head h3,
+.printer-calibration-panel__section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.printer-calibration-panel__section-toggle {
+  min-height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--section-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.printer-calibration-panel__section-toggle .printer-calibration-panel__section-title {
+  color: var(--section-accent);
+}
+
+.printer-calibration-panel__section-toggle svg:first-child {
+  transition: transform 0.15s ease;
+  transform: rotate(-90deg);
+}
+
+.printer-calibration-panel__section-toggle svg:first-child.is-open {
+  transform: rotate(0deg);
+}
+
+.printer-calibration-panel__section-toggle:hover .printer-calibration-panel__section-title {
+  color: color-mix(in srgb, var(--section-accent) 82%, var(--text-primary));
+}
+
+.printer-calibration-panel__subsection {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.printer-calibration-panel__section-body {
+  display: grid;
+  gap: 10px;
+}
+
+.printer-calibration-panel__subsection-head h4 {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -205,6 +248,7 @@
 .printer-calibration-panel__add-component button,
 .printer-calibration-panel__service-form button,
 .printer-calibration-panel__component-actions button,
+.printer-calibration-panel__test-actions button,
 .calib-center__start {
   min-height: 28px;
   border: 1px solid var(--border);
@@ -221,6 +265,32 @@
   cursor: pointer;
 }
 
+.printer-calibration-panel__section-head .printer-calibration-panel__section-toggle {
+  min-height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--section-accent);
+  justify-content: flex-start;
+  padding: 0;
+}
+
+/* Start button — full-width, accent-tinted, overrides the shared button rule */
+.calib-center__card .calib-center__start {
+  width: 100%;
+  margin-top: auto;
+  background: color-mix(in srgb, var(--card-accent, var(--accent)) 10%, var(--bg-secondary));
+  border-color: color-mix(in srgb, var(--card-accent, var(--accent)) 35%, var(--border));
+  color: var(--card-accent, var(--accent));
+  font-weight: 600;
+  justify-content: center;
+  gap: 6px;
+}
+
+.calib-center__card .calib-center__start:hover {
+  background: color-mix(in srgb, var(--card-accent, var(--accent)) 22%, var(--bg-secondary));
+  border-color: var(--card-accent, var(--accent));
+}
+
 .printer-calibration-panel__rows {
   display: grid;
   gap: 8px;
@@ -228,7 +298,8 @@
 
 .printer-calibration-panel__life-row,
 .printer-calibration-panel__component,
-.printer-calibration-panel__moisture {
+.printer-calibration-panel__moisture,
+.printer-calibration-panel__test-row {
   border: 1px solid color-mix(in srgb, var(--row-color, var(--accent)) 22%, var(--border));
   border-radius: 8px;
   background: color-mix(in srgb, var(--row-color, var(--accent)) 6%, var(--bg-toolbar));
@@ -240,6 +311,22 @@
   grid-template-columns: minmax(130px, 1fr) 92px auto auto;
   align-items: center;
   gap: 9px;
+}
+
+.printer-calibration-panel__test-row {
+  display: grid;
+  /* info | pill | actions — the edit/confirm blocks span all three columns */
+  grid-template-columns: minmax(160px, 1fr) auto auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.printer-calibration-panel__test-row.is-active {
+  --row-color: #8b5cf6;
+}
+
+.printer-calibration-panel__test-row.is-completed {
+  --row-color: #22c55e;
 }
 
 .printer-calibration-panel__life-row.is-overdue,
@@ -265,6 +352,7 @@
 .printer-calibration-panel__life-row strong,
 .printer-calibration-panel__component strong,
 .printer-calibration-panel__moisture strong,
+.printer-calibration-panel__test-row strong,
 .printer-calibration-panel__service-log strong {
   display: block;
   color: var(--text-primary);
@@ -274,18 +362,21 @@
 .printer-calibration-panel__life-row span,
 .printer-calibration-panel__component span,
 .printer-calibration-panel__moisture span,
+.printer-calibration-panel__test-row span,
 .printer-calibration-panel__service-log span {
   color: var(--text-secondary);
   font-size: 11px;
 }
 
 .printer-calibration-panel__life-row label,
+.printer-calibration-panel__test-row label,
 .printer-calibration-panel__component-inputs label {
   display: grid;
   gap: 3px;
 }
 
 .printer-calibration-panel__life-row input,
+.printer-calibration-panel__test-row select,
 .printer-calibration-panel__component-inputs input,
 .printer-calibration-panel__add-component input,
 .printer-calibration-panel__add-component select,
@@ -313,8 +404,73 @@
 
 .printer-calibration-panel__split {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  grid-template-columns: 1fr;
   gap: 12px;
+}
+
+.printer-calibration-panel__test-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* The delete button is icon-only */
+.printer-calibration-panel__test-delete {
+  width: 30px;
+  padding: 0 !important;
+  color: var(--text-secondary);
+}
+
+.printer-calibration-panel__test-delete:hover {
+  color: #ef4444;
+  border-color: #ef4444;
+}
+
+/* Inline edit form — spans the full row */
+.printer-calibration-panel__test-edit {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0 2px;
+  border-top: 1px solid var(--border);
+}
+
+.printer-calibration-panel__test-edit label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.printer-calibration-panel__test-edit label span {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Inline delete confirmation — spans the full row */
+.printer-calibration-panel__test-confirm {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0 2px;
+  border-top: 1px dashed #ef4444;
+  color: #ef4444;
+  font-size: 12px;
+}
+
+.printer-calibration-panel__test-confirm span {
+  flex: 1;
+  color: #ef4444 !important;
+}
+
+.printer-calibration-panel__test-confirm-yes {
+  border-color: #ef4444 !important;
+  color: #ef4444 !important;
+  background: color-mix(in srgb, #ef4444 10%, var(--bg-panel)) !important;
 }
 
 .printer-calibration-panel__component {
@@ -385,63 +541,132 @@
   padding-top: 10px;
 }
 
-.printer-calibration-panel__preset {
-  min-height: 96px;
-  border-radius: 8px;
-  padding: 12px;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 10px;
-  text-align: left;
-  cursor: pointer;
+/* ── Preset download cards ─────────────────────────────────────────────── */
+
+.calib-preset-card--geometry { --preset-accent: #3b82f6; }
+.calib-preset-card--material { --preset-accent: #f97316; }
+.calib-preset-card--motion   { --preset-accent: #10b981; }
+
+.calib-preset-card {
+  border: 1px solid color-mix(in srgb, var(--preset-accent, var(--accent)) 22%, var(--border));
+  border-radius: 10px;
+  background: var(--bg-panel);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: box-shadow 0.15s ease, transform 0.12s ease;
 }
 
-.printer-calibration-panel__preset:disabled {
-  cursor: not-allowed;
-  opacity: 0.58;
+.calib-preset-card:hover {
+  box-shadow: 0 5px 18px color-mix(in srgb, var(--preset-accent, var(--accent)) 16%, transparent);
+  transform: translateY(-2px);
 }
 
-.printer-calibration-panel__icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
-  display: inline-flex;
+.calib-preset-card__preview {
+  height: 140px;
+  background: color-mix(in srgb, var(--preset-accent, var(--accent)) 7%, var(--bg-secondary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.calib-preset-card__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.calib-preset-card__preview-placeholder {
+  display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.printer-calibration-panel__body {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
+.calib-preset-card__meta {
+  padding: 11px 13px 8px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
-.printer-calibration-panel__category {
-  color: var(--text-secondary);
+.calib-preset-card__category {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--preset-accent, var(--accent));
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
-.printer-calibration-panel__title {
+.calib-preset-card__title {
+  color: var(--text-primary);
   font-size: 13px;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 1.3;
+  margin-top: 1px;
 }
 
-.printer-calibration-panel__summary {
+.calib-preset-card__desc {
+  margin: 3px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.4;
+  font-size: 11.5px;
+  line-height: 1.48;
 }
 
-.printer-calibration-panel__download {
-  margin-top: 2px;
+.calib-preset-card__footer {
+  border-top: 1px solid var(--border);
+  padding: 9px 13px;
+  display: flex;
+  gap: 7px;
+}
+
+.calib-preset-card__action {
+  flex: 1;
+  min-height: 30px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.calib-preset-card__action--secondary {
+  border: 1px solid var(--border);
+  background: var(--bg-toolbar);
   color: var(--text-secondary);
+}
+
+.calib-preset-card__action--secondary:hover {
+  border-color: var(--preset-accent, var(--accent));
+  color: var(--preset-accent, var(--accent));
+  background: color-mix(in srgb, var(--preset-accent, var(--accent)) 8%, var(--bg-toolbar));
+}
+
+.calib-preset-card__action--primary {
+  border: 1px solid color-mix(in srgb, var(--preset-accent, var(--accent)) 35%, var(--border));
+  background: color-mix(in srgb, var(--preset-accent, var(--accent)) 10%, var(--bg-toolbar));
+  color: var(--preset-accent, var(--accent));
+}
+
+.calib-preset-card__action--primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--preset-accent, var(--accent)) 20%, var(--bg-toolbar));
+  border-color: var(--preset-accent, var(--accent));
+}
+
+.calib-preset-card__action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 @media (max-width: 540px) {
@@ -454,9 +679,9 @@
     justify-content: center;
   }
 
-  .printer-calibration-panel__summary,
   .printer-calibration-panel__split,
   .printer-calibration-panel__life-row,
+  .printer-calibration-panel__test-row,
   .printer-calibration-panel__component,
   .printer-calibration-panel__add-component,
   .printer-calibration-panel__service-form {

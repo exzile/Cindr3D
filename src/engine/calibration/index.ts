@@ -9,3 +9,5 @@ export {
   generateInputShaperTowerGCode,
   generatePressureAdvanceTowerGCode,
 } from './basicPrints';
+export { generateFirmwareHealthGCode } from './firmwareHealth';
+export { generateMaxVolumetricSpeedGCode } from './maxVolSpeed';

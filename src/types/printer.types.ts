@@ -5,3 +5,10 @@ export interface PrintHistoryEntry {
   message: string;
   durationSec?: number;
 }
+
+export interface PrinterAlert {
+  id: string;
+  level: 'error' | 'warning';
+  message: string;
+  timestamp: number;
+}

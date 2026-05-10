@@ -21,17 +21,19 @@ function normalizedHost(hostname: string): string {
 }
 
 function useObjectUrls(frames: LayerGalleryFrame[]): Record<string, string> {
-  const [urls, setUrls] = useState<Record<string, string>>({});
-  useEffect(() => {
+  const urls = useMemo<Record<string, string>>(() => {
     const nextUrls: Record<string, string> = {};
     for (const frame of frames) {
       nextUrls[frame.id] = URL.createObjectURL(frame.blob);
     }
-    setUrls(nextUrls);
-    return () => {
-      for (const url of Object.values(nextUrls)) URL.revokeObjectURL(url);
-    };
+    return nextUrls;
   }, [frames]);
+
+  useEffect(() => {
+    return () => {
+      for (const url of Object.values(urls)) URL.revokeObjectURL(url);
+    };
+  }, [urls]);
   return urls;
 }
 

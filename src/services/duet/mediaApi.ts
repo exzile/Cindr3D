@@ -5,12 +5,16 @@ export async function getHeightMapData(
   downloadFile: (path: string) => Promise<Blob>,
   path = '0:/sys/heightmap.csv',
 ): Promise<DuetHeightMap | null> {
+  const blob = await downloadFile(path);
+  const text = await blob.text();
+  if (!text.trim()) return null;
   try {
-    const blob = await downloadFile(path);
-    const text = await blob.text();
     return parseHeightMapCsv(text);
-  } catch {
-    return null;
+  } catch (err) {
+    // Re-throw with the first lines of the raw CSV attached so the UI error
+    // banner shows enough context to diagnose unknown firmware formats.
+    const snippet = text.trim().split(/\r?\n/).slice(0, 4).join(' | ');
+    throw new Error(`${(err as Error).message}\nRaw (first 4 lines): ${snippet}`);
   }
 }
 

@@ -84,6 +84,7 @@ export function SlicerGCodeDockPanel() {
   // Virtual scroll state
   const [scrollTop, setScrollTop]     = useState(0);
   const [highlightIdx, setHighlightIdx] = useState(-1);
+  const [bodyHeight, setBodyHeight] = useState(300);
   const scrollTopRef = useRef(0);
   const bodyRef      = useRef<HTMLDivElement>(null);
 
@@ -91,10 +92,13 @@ export function SlicerGCodeDockPanel() {
   const sliceRef       = useRef(sliceResult);
   const expandedRef    = useRef(expanded);
   const breakpointsRef = useRef(breakpoints);
-  cumsumRef.current      = layerTimeCumsum;
-  sliceRef.current       = sliceResult;
-  expandedRef.current    = expanded;
-  breakpointsRef.current = breakpoints;
+
+  useEffect(() => {
+    cumsumRef.current      = layerTimeCumsum;
+    sliceRef.current       = sliceResult;
+    expandedRef.current    = expanded;
+    breakpointsRef.current = breakpoints;
+  }, [breakpoints, expanded, layerTimeCumsum, sliceResult]);
 
   const parsed = useMemo(
     () => parseGCodePreviewLines(sliceResult?.gcode ?? ''),
@@ -112,10 +116,16 @@ export function SlicerGCodeDockPanel() {
     return map;
   }, [parsed]);
 
-  const layerLines = parsedByLayer.get(currentLayerIndex) ?? [];
+  const layerLines = useMemo(
+    () => parsedByLayer.get(currentLayerIndex) ?? [],
+    [currentLayerIndex, parsedByLayer],
+  );
 
   const layerLinesRef  = useRef(layerLines);
-  layerLinesRef.current = layerLines;
+
+  useEffect(() => {
+    layerLinesRef.current = layerLines;
+  }, [layerLines]);
 
   const prevLayerRef     = useRef(-1);
   const prevLineIdxRef   = useRef(-1);
@@ -129,10 +139,15 @@ export function SlicerGCodeDockPanel() {
 
   // Reset scroll + highlight when layer changes
   useEffect(() => {
-    setScrollTop(0);
-    setHighlightIdx(-1);
+    let disposed = false;
+    queueMicrotask(() => {
+      if (disposed) return;
+      setScrollTop(0);
+      setHighlightIdx(-1);
+    });
     scrollTopRef.current = 0;
     if (bodyRef.current) bodyRef.current.scrollTop = 0;
+    return () => { disposed = true; };
   }, [currentLayerIndex]);
 
   // ---------------------------------------------------------------------------
@@ -267,11 +282,26 @@ export function SlicerGCodeDockPanel() {
   }, []);
 
   useEffect(() => {
-    if (!expanded) { setHighlightIdx(-1); prevLineIdxRef.current = -1; }
+    if (!expanded) {
+      let disposed = false;
+      queueMicrotask(() => {
+        if (!disposed) setHighlightIdx(-1);
+      });
+      prevLineIdxRef.current = -1;
+      return () => { disposed = true; };
+    }
+    return undefined;
   }, [expanded]);
 
   useEffect(() => {
-    if (!previewSimEnabled) setCurrentLayerIndex(previewLayer);
+    if (!previewSimEnabled) {
+      let disposed = false;
+      queueMicrotask(() => {
+        if (!disposed) setCurrentLayerIndex(previewLayer);
+      });
+      return () => { disposed = true; };
+    }
+    return undefined;
   }, [previewLayer, previewSimEnabled]);
 
   const handleBodyScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
@@ -279,6 +309,24 @@ export function SlicerGCodeDockPanel() {
     scrollTopRef.current = st;
     setScrollTop(st);
   }, []);
+
+  useEffect(() => {
+    if (!expanded || !bodyRef.current) return;
+    const body = bodyRef.current;
+    let disposed = false;
+    queueMicrotask(() => {
+      if (!disposed) setBodyHeight(body.clientHeight || 300);
+    });
+    const resizeObserver = new ResizeObserver((entries) => {
+      const height = entries[0]?.contentRect.height;
+      if (height && height > 0) setBodyHeight(height);
+    });
+    resizeObserver.observe(body);
+    return () => {
+      disposed = true;
+      resizeObserver.disconnect();
+    };
+  }, [expanded]);
 
   const toggleBreakpoint = useCallback((lineNumber: number, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -297,9 +345,8 @@ export function SlicerGCodeDockPanel() {
   // Virtual window calculation
   const totalLines = layerLines.length;
   const totalH     = totalLines * ROW_HEIGHT;
-  const bodyH      = bodyRef.current?.clientHeight ?? 300;
   const winStart   = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
-  const winEnd     = Math.min(totalLines, Math.ceil((scrollTop + bodyH) / ROW_HEIGHT) + OVERSCAN);
+  const winEnd     = Math.min(totalLines, Math.ceil((scrollTop + bodyHeight) / ROW_HEIGHT) + OVERSCAN);
   const offsetY    = winStart * ROW_HEIGHT;
   const visibleLines = layerLines.slice(winStart, winEnd);
 

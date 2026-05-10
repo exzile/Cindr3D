@@ -3,32 +3,33 @@ import {
   LayoutDashboard, Activity, Terminal, Play,
   History, FolderOpen, FlaskConical, FileCode,
   Grid3x3, Braces, Settings, Wifi, OctagonAlert, FileCode2, Plug,
-  Router, TrendingUp, MonitorPlay, Camera,
+  Router, TrendingUp, MonitorPlay, Camera, Gauge,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 
 type PrinterTabKey =
   | 'dashboard' | 'camera' | 'status' | 'console' | 'job' | 'history'
   | 'analytics' | 'files' | 'filaments' | 'macros' | 'heightmap'
-  | 'model' | 'config' | 'network' | 'plugins' | 'settings';
+  | 'model' | 'config' | 'network' | 'plugins' | 'calibration' | 'settings';
 
-const PRINTER_TABS: { key: PrinterTabKey; label: string; Icon: React.ComponentType<{ size?: number }> }[] = [
-  { key: 'dashboard', label: 'Dashboard',  Icon: LayoutDashboard },
-  { key: 'camera',    label: 'Camera',     Icon: Camera },
-  { key: 'status',    label: 'Status',     Icon: Activity },
-  { key: 'console',   label: 'Console',    Icon: Terminal },
-  { key: 'job',       label: 'Job',        Icon: Play },
-  { key: 'history',   label: 'History',    Icon: History },
-  { key: 'analytics', label: 'Analytics',  Icon: TrendingUp },
-  { key: 'files',     label: 'Files',      Icon: FolderOpen },
-  { key: 'filaments', label: 'Filaments',  Icon: FlaskConical },
-  { key: 'macros',    label: 'Macros',     Icon: FileCode },
-  { key: 'heightmap', label: 'Height Map', Icon: Grid3x3 },
-  { key: 'model',     label: 'Model',      Icon: Braces },
-  { key: 'config',    label: 'Config',     Icon: FileCode2 },
-  { key: 'network',   label: 'Network',    Icon: Router },
-  { key: 'plugins',   label: 'Plugins',    Icon: Plug },
-  { key: 'settings',  label: 'Settings',   Icon: Settings },
+const PRINTER_TABS: { key: PrinterTabKey; label: string; Icon: React.ComponentType<{ size?: number }>; color: string }[] = [
+  { key: 'dashboard',   label: 'Dashboard',   Icon: LayoutDashboard, color: 'icon-blue'   },
+  { key: 'camera',      label: 'Camera',      Icon: Camera,          color: 'icon-teal'   },
+  { key: 'status',      label: 'Status',      Icon: Activity,        color: 'icon-green'  },
+  { key: 'console',     label: 'Console',     Icon: Terminal,        color: 'icon-gray'   },
+  { key: 'job',         label: 'Job',         Icon: Play,            color: 'icon-orange' },
+  { key: 'history',     label: 'History',     Icon: History,         color: 'icon-gray'   },
+  { key: 'analytics',   label: 'Analytics',   Icon: TrendingUp,      color: 'icon-purple' },
+  { key: 'files',       label: 'Files',       Icon: FolderOpen,      color: 'icon-blue'   },
+  { key: 'filaments',   label: 'Filaments',   Icon: FlaskConical,    color: 'icon-teal'   },
+  { key: 'macros',      label: 'Macros',      Icon: FileCode,        color: 'icon-orange' },
+  { key: 'heightmap',   label: 'Height Map',  Icon: Grid3x3,         color: 'icon-green'  },
+  { key: 'model',       label: 'Model',       Icon: Braces,          color: 'icon-blue'   },
+  { key: 'config',      label: 'Config',      Icon: FileCode2,       color: 'icon-gray'   },
+  { key: 'network',     label: 'Network',     Icon: Router,          color: 'icon-teal'   },
+  { key: 'plugins',     label: 'Plugins',     Icon: Plug,            color: 'icon-purple' },
+  { key: 'calibration', label: 'Calibration', Icon: Gauge,           color: 'icon-orange' },
+  { key: 'settings',    label: 'Settings',    Icon: Settings,        color: 'icon-gray'   },
 ];
 
 export function RibbonPrinterTab() {
@@ -82,14 +83,14 @@ export function RibbonPrinterTab() {
       {showSelectedPrinterTools && (
         <div className="ribbon-section">
           <div className="ribbon-section-content">
-            {PRINTER_TABS.map(({ key, label, Icon }) => (
+            {PRINTER_TABS.map(({ key, label, Icon, color }) => (
               <button
                 key={key}
                 className={`ribbon-button large ${activeTab === key ? 'active' : ''}`}
                 onClick={() => navigate(key as Parameters<typeof setActiveTab>[0])}
                 title={label}
               >
-                <div className="ribbon-button-icon">
+                <div className={`ribbon-button-icon ${color}`}>
                   <Icon size={22} />
                 </div>
                 <span className="ribbon-button-label">{label}</span>

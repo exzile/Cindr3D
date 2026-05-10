@@ -151,7 +151,7 @@ export const editorStyles = {
     fontFamily: "'Consolas', 'Monaco', 'Courier New', monospace",
     fontSize: 13,
     lineHeight: '20px',
-    color: 'transparent',
+    color: '#d4d4d4',
     whiteSpace: 'pre' as const,
     overflowWrap: 'normal' as const,
     overflow: 'auto',

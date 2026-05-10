@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **DesignCAD** (23181 symbols, 34074 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Cindr3D** (25118 symbols, 37054 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -24,10 +24,10 @@ This project is indexed by GitNexus as **DesignCAD** (23181 symbols, 34074 relat
 
 | Resource | Use for |
 |----------|---------|
-| `gitnexus://repo/DesignCAD/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/DesignCAD/clusters` | All functional areas |
-| `gitnexus://repo/DesignCAD/processes` | All execution flows |
-| `gitnexus://repo/DesignCAD/process/{name}` | Step-by-step execution trace |
+| `gitnexus://repo/Cindr3D/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/Cindr3D/clusters` | All functional areas |
+| `gitnexus://repo/Cindr3D/processes` | All execution flows |
+| `gitnexus://repo/Cindr3D/process/{name}` | Step-by-step execution trace |
 
 ## CLI
 

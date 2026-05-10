@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { AudioLines, Save, SlidersHorizontal, Trash2, Zap } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
-import { useStepperTuningStore, type StepperMode } from '../../../store/stepperTuningStore';
+import { useStepperTuningStore, type StepperMode, type StepperPreset } from '../../../store/stepperTuningStore';
 import { buildStepperTuningCommands, buildStepperWiggleCommands } from '../../../services/integrations/stepperTuning';
 
 const DEFAULT_AXES = ['X', 'Y', 'Z', 'E'];
 const MICROSTEP_OPTIONS = [8, 16, 32, 64, 128, 256];
+const EMPTY_PRESETS: StepperPreset[] = [];
 
 export default function StepperTuningPanel() {
   const model = usePrinterStore((s) => s.model);
@@ -18,7 +19,9 @@ export default function StepperTuningPanel() {
   const savePreset = useStepperTuningStore((s) => s.savePreset);
   const applyPreset = useStepperTuningStore((s) => s.applyPreset);
   const removePreset = useStepperTuningStore((s) => s.removePreset);
-  const presets = useStepperTuningStore((s) => activePrinterId ? s.presets[activePrinterId] ?? [] : []);
+  // Selector must not inline `?? []` — that returns a new array reference every
+  // run when the key is missing, causing an infinite Zustand re-render loop.
+  const presets = useStepperTuningStore((s) => activePrinterId ? s.presets[activePrinterId] : null) ?? EMPTY_PRESETS;
   const [presetName, setPresetName] = useState('Quiet ABS');
 
   const axes = model.move?.axes?.length

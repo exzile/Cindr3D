@@ -1,11 +1,22 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   FileCode2, FolderOpen, ChevronRight, Settings2,
   Home, Layers, Play, Zap, Wrench, Plus, FileText,
 } from 'lucide-react';
 import DuetFileEditor from './DuetFileEditor';
 import { usePrinterStore } from '../../store/printerStore';
+import { addToast } from '../../store/toastStore';
 import './config/DuetConfigEditor.css';
+
+/** Files that require a full board restart to take effect. */
+const RESTART_REQUIRED = new Set([
+  '0:/sys/config.g',
+]);
+
+/** Files that can be re-executed without a restart (M98). */
+const REEXECUTE_FILES = new Set([
+  '0:/sys/config-override.g',
+]);
 
 // ---------------------------------------------------------------------------
 // Config file catalogue
@@ -134,10 +145,36 @@ function BrowseModal({ onOpen, onClose }: { onOpen: (path: string) => void; onCl
 // ---------------------------------------------------------------------------
 
 export default function DuetConfigEditor() {
-  const connected = usePrinterStore((s) => s.connected);
+  const connected  = usePrinterStore((s) => s.connected);
+  const sendGCode  = usePrinterStore((s) => s.sendGCode);
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [showBrowse, setShowBrowse] = useState(false);
   const [dirty, setDirty] = useState(false);
+
+  const handleSaved = useCallback((filePath: string) => {
+    if (RESTART_REQUIRED.has(filePath)) {
+      addToast(
+        'warning',
+        `${filePath.split('/').pop()} saved`,
+        'A restart is required for changes to take effect.',
+        [
+          { label: 'Later', onClick: () => {} },
+          { label: 'Restart now', onClick: () => void sendGCode('M999') },
+        ],
+      );
+    } else if (REEXECUTE_FILES.has(filePath)) {
+      addToast(
+        'info',
+        `${filePath.split('/').pop()} saved`,
+        'Re-run the file to apply changes without a restart.',
+        [
+          { label: 'Apply now', onClick: () => void sendGCode(`M98 P"${filePath}"`) },
+        ],
+      );
+    } else {
+      addToast('info', `${filePath.split('/').pop()} saved`);
+    }
+  }, [sendGCode]);
 
   const handleOpen = (path: string) => {
     if (!connected) return;
@@ -228,6 +265,7 @@ export default function DuetConfigEditor() {
                   setDirty(false);
                 }}
                 onDirtyChange={setDirty}
+                onSaved={handleSaved}
               />
             ) : (
               <div className="duet-config-editor__placeholder">

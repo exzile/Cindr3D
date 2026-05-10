@@ -35,13 +35,7 @@ export async function emergencyStopCommand(
   try {
     await sendGCode('M112');
   } catch {
-    // M112 may kill the connection before we get a reply
-  }
-  await new Promise((r) => setTimeout(r, 1000));
-  try {
-    await sendGCode('M999');
-  } catch {
-    // Board may not respond yet
+    // M112 may kill the connection before we get a reply — that's expected.
   }
 }
 

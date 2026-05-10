@@ -7,6 +7,7 @@ import {
   Gauge,
   Home,
   Info,
+  RefreshCw,
   Thermometer,
   Zap,
 } from 'lucide-react';
@@ -14,6 +15,7 @@ import type { ImportResult } from '../../../utils/settingsExport';
 import type { DuetBoard, PrinterBoardType } from '../../../types/duet';
 import type { DuetPrefs, KinematicsType, MachineConfig } from '../../../types/duet-prefs.types';
 import { SettingRow, ToggleRow } from './common';
+import { usePrinterStore } from '../../../store/printerStore';
 
 interface AxisInfo {
   acceleration?: number;
@@ -260,6 +262,15 @@ function LiveAxesSection({ axes }: { axes: AxisInfo[] }) {
   );
 }
 
+/** Map a firmware kinematics name to our persisted KinematicsType. */
+function mapKinematics(name: string): KinematicsType {
+  const n = name.toLowerCase();
+  if (n === 'cartesian') return 'cartesian';
+  if (n.startsWith('corexy') || n === 'corexy') return 'corexy';
+  if (n === 'delta') return 'delta';
+  return 'other';
+}
+
 export function MachineSection({
   axes,
   board,
@@ -275,14 +286,76 @@ export function MachineSection({
   prefs: DuetPrefs;
   patchPrefs: (patch: Partial<DuetPrefs>) => void;
 }) {
+  // Read the full live model directly — avoids threading many more props.
+  const model = usePrinterStore((s) => s.model);
+
   const mc = prefs.machineConfig;
   const patchMc = (patch: Partial<MachineConfig>) => {
     patchPrefs({ machineConfig: { ...mc, ...patch } });
   };
 
+  // Derive sync readiness from live model.
+  const xAxis = axes.find((a) => a.letter === 'X') ?? axes[0];
+  const yAxis = axes.find((a) => a.letter === 'Y') ?? axes[1];
+  const zAxis = axes.find((a) => a.letter === 'Z') ?? axes[2];
+  const canSync = connected && (xAxis?.max ?? 0) > 10 && (yAxis?.max ?? 0) > 10;
+
+  const handleSyncAll = canSync
+    ? () => {
+        const move  = model.move;
+        const heat  = model.heat;
+        const patch: Partial<MachineConfig> = {};
+
+        // ── Build volume ────────────────────────────────────────────
+        patch.buildVolumeX = Math.round((xAxis!.max ?? 0) - (xAxis!.min ?? 0));
+        patch.buildVolumeY = Math.round((yAxis!.max ?? 0) - (yAxis!.min ?? 0));
+        if (zAxis && (zAxis.max ?? 0) > 0) {
+          patch.buildVolumeZ = Math.round((zAxis.max ?? 0) - (zAxis.min ?? 0));
+        }
+
+        // ── Max feed rates (mm/s) ────────────────────────────────────
+        if ((xAxis!.speed ?? 0) > 0) patch.maxFeedRateX = Math.round(xAxis!.speed!);
+        if ((yAxis!.speed ?? 0) > 0) patch.maxFeedRateY = Math.round(yAxis!.speed!);
+        if (zAxis && (zAxis.speed ?? 0) > 0) patch.maxFeedRateZ = Math.round(zAxis.speed!);
+
+        // ── Max acceleration (mm/s²) ─────────────────────────────────
+        if ((xAxis!.acceleration ?? 0) > 0) patch.maxAccelX = Math.round(xAxis!.acceleration!);
+        if ((yAxis!.acceleration ?? 0) > 0) patch.maxAccelY = Math.round(yAxis!.acceleration!);
+        if (zAxis && (zAxis.acceleration ?? 0) > 0) patch.maxAccelZ = Math.round(zAxis.acceleration!);
+
+        // ── Kinematics ───────────────────────────────────────────────
+        const kinName = move?.kinematics?.name;
+        if (kinName) patch.kinematics = mapKinematics(kinName);
+
+        // ── Extruder count ───────────────────────────────────────────
+        const extruderCount = move?.extruders?.length ?? 0;
+        if (extruderCount > 0) patch.extruderCount = extruderCount;
+
+        // ── Heated bed / chamber ─────────────────────────────────────
+        if (heat) {
+          patch.hasHeatedBed     = (heat.bedHeaters     ?? []).some((h) => h >= 0);
+          patch.hasHeatedChamber = (heat.chamberHeaters ?? []).some((h) => h >= 0);
+        }
+
+        patchMc(patch);
+      }
+    : undefined;
+
   return (
     <>
-      <div className="duet-settings__page-title">Machine</div>
+      <div className="duet-settings__page-title ds-machine-title-row">
+        Machine
+        {handleSyncAll && (
+          <button
+            className="duet-settings__btn duet-settings__btn--xs ds-sync-btn"
+            onClick={handleSyncAll}
+            title="Read all machine parameters from the connected firmware and populate the fields below"
+          >
+            <RefreshCw size={11} />
+            Sync from Machine
+          </button>
+        )}
+      </div>
 
       {connected && <LiveBoardInfo board={board} connected={connected} />}
       {connected && axes.length > 0 && <LiveAxesSection axes={axes} />}

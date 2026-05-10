@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 import { Flame, Play, Snowflake, Square, Thermometer } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import { useChamberControlStore } from '../../../store/chamberControlStore';
-import { useDoorSensorStore } from '../../../store/doorSensorStore';
+import { DEFAULT_DOOR_SENSOR, useDoorSensorStore } from '../../../store/doorSensorStore';
 import { resolveChamberReading } from '../../../services/integrations/chamberControl';
 import type { TemperatureSample } from '../../../types/duet';
 import { colors as COLORS } from '../../../utils/theme';
@@ -39,7 +39,9 @@ export default function TemperaturePanel() {
   const setChamberTemp = usePrinterStore((s) => s.setChamberTemp);
   const activePrinterId = usePrinterStore((s) => s.activePrinterId);
   const chamberControl = useChamberControlStore();
-  const doorSensor = useDoorSensorStore((s) => s.getDoorSensor(activePrinterId));
+  // Select the stored entry directly; calling getDoorSensor() inside the selector
+  // creates a new object every run which causes an infinite re-render loop.
+  const doorSensor = useDoorSensorStore((s) => activePrinterId ? s.printers[activePrinterId] : null) ?? DEFAULT_DOOR_SENSOR;
   const updateDoorSensor = useDoorSensorStore((s) => s.updateDoorSensor);
   const heaters = model.heat?.heaters ?? [];
   const rows = useHeaterRows();

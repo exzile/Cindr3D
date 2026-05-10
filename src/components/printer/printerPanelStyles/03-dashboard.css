@@ -2,6 +2,7 @@
 @import './dashboard/02-temperature.css';
 @import './dashboard/08-air-quality.css';
 @import './dashboard/09-stepper-tuning.css';
+@import './dashboard/10-bed-compensation.css';
 
 .duet-dash-offline {
   display: flex;

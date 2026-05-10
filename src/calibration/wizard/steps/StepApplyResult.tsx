@@ -1,5 +1,9 @@
 import { useMemo, useState } from 'react';
-import { useCalibrationStore, type CalibrationResult } from '../../../store/calibrationStore';
+import {
+  useCalibrationStore,
+  type CalibrationItemId,
+  type CalibrationResult,
+} from '../../../store/calibrationStore';
 import { usePrinterStore } from '../../../store/printerStore';
 import { useSlicerStore } from '../../../store/slicerStore';
 import type { TuningTowerRecommendation } from '../../../services/vision/tuningWizards';
@@ -17,8 +21,6 @@ import {
   type FirmwareFlavor,
 } from '../../firmwareApply';
 
-type CalibrationItemId = 'bed-mesh' | 'pressure-advance' | 'input-shaper' | 'z-offset' | 'first-layer';
-
 interface StepApplyResultProps {
   testType: string;
   printerId: string;
@@ -32,6 +34,7 @@ function itemIdForTest(testType: string): CalibrationItemId {
   if (testType === 'first-layer') return 'first-layer';
   if (testType === 'input-shaper') return 'input-shaper';
   if (testType === 'bed-mesh') return 'bed-mesh';
+  if (testType === 'firmware-health') return 'firmware-health';
   return 'z-offset';
 }
 
@@ -46,6 +49,7 @@ function applyTypeForTest(testType: string): CalibrationApplyType | null {
   if (testType === 'first-layer') return 'z-offset';
   if (testType === 'flow-rate') return 'flow-rate';
   if (testType === 'bed-mesh') return 'bed-mesh';
+  // firmware-health is a pass/fail health check — no firmware value to apply.
   return null;
 }
 
@@ -80,12 +84,19 @@ export function StepApplyResult({
   onDone,
 }: StepApplyResultProps) {
   const [sendError, setSendError] = useState<string | null>(null);
-  const printers = usePrinterStore((state) => state.printers);
-  const sendGCode = usePrinterStore((state) => state.sendGCode);
+  const printers     = usePrinterStore((state) => state.printers);
+  const sendGCode    = usePrinterStore((state) => state.sendGCode);
+  const model        = usePrinterStore((state) => state.model);
   const activeProfile = useSlicerStore((state) => state.getActivePrinterProfile());
+  const activeSession = useCalibrationStore((state) => state.activeWizardSessions[printerId]);
   const selectedPrinter = printers.find((printer) => printer.id === printerId);
   const value = recommendation?.bestValue ?? manualMeasurements.value;
   const firmware = normalizeFirmware(selectedPrinter?.config.boardType, activeProfile.gcodeFlavorType);
+
+  // Live firmware version from the board object model (Duet/RRF only).
+  type LiveBoard = { firmwareName?: string; firmwareVersion?: string };
+  const liveBoard = ((model as { boards?: LiveBoard[] }).boards ?? [])[0] as LiveBoard | undefined;
+  const liveFirmwareVersion = liveBoard?.firmwareVersion;
   const commandPreview = useMemo(
     () => buildCommandPreview(testType, value, firmware, manualMeasurements),
     [firmware, manualMeasurements, testType, value],
@@ -105,6 +116,11 @@ export function StepApplyResult({
       photoIds: [],
       aiConfidence: recommendation?.confidence ?? null,
       note: recommendation?.summary ?? '',
+      // Firmware snapshot — lets history show exactly what was running at calibration time.
+      firmwareType: firmware,
+      firmwareVersion: liveFirmwareVersion,
+      // Spool context from the active wizard session.
+      spoolId: activeSession?.spoolId || undefined,
     };
     useCalibrationStore.getState().addCalibrationResult(printerId, itemIdForTest(testType), result);
     onDone();
@@ -122,10 +138,46 @@ export function StepApplyResult({
     }
   };
 
+  // Firmware health is pass/fail — no firmware command to apply.
+  const isFirmwareHealth = testType === 'firmware-health';
+  const healthChecks = isFirmwareHealth ? Object.entries(manualMeasurements) : [];
+  const healthPassed = healthChecks.length > 0 && healthChecks.every(([, v]) => v === 1);
+
   return (
     <div className="calib-step">
-      <h3>Apply result</h3>
-      {recommendation ? (
+
+      {isFirmwareHealth && (
+        <div className="calib-step__panel">
+          <strong>Firmware health summary</strong>
+          {healthChecks.length === 0 ? (
+            <span className="calib-step__muted">No checklist items recorded — go back to the Inspect step to fill them in.</span>
+          ) : (
+            <>
+              <ul>
+                {[
+                  { key: 'motion',     label: 'Motion quality' },
+                  { key: 'thermal',    label: 'Thermal stability' },
+                  { key: 'extrusion',  label: 'Extrusion consistency' },
+                  { key: 'firstLayer', label: 'First layer' },
+                  { key: 'dims',       label: 'Dimensional accuracy' },
+                ].map(({ key, label }) => {
+                  const val = manualMeasurements[key];
+                  if (val === undefined) return null;
+                  return (
+                    <li key={key}>
+                      {val === 1 ? '✓' : '✗'} {label}
+                    </li>
+                  );
+                })}
+              </ul>
+              <strong style={{ color: healthPassed ? '#22c55e' : '#f97316' }}>
+                {healthPassed ? 'All checks passed — printer is healthy.' : 'Some checks failed — review the flagged items.'}
+              </strong>
+            </>
+          )}
+        </div>
+      )}
+      {!isFirmwareHealth && (recommendation ? (
         <div className="calib-step__panel">
           <strong>Best value: {recommendation.bestValue ?? 'manual measurement'}</strong>
           <span>Confidence: {Math.round(recommendation.confidence * 100)}%</span>
@@ -143,18 +195,20 @@ export function StepApplyResult({
             <span className="calib-step__muted">No manual measurements entered.</span>
           )}
         </div>
+      ))}
+      {!isFirmwareHealth && (
+        <div className="calib-step__panel">
+          <strong>Recommended value: {value ?? 'manual measurement'}</strong>
+          <pre>{commandPreview.join('\n')}</pre>
+          <span className="calib-step__muted">{buildConfigSnapshotInstructions(firmware)}</span>
+          {saveConfigCommands.length > 0 && <pre>{saveConfigCommands.join('\n')}</pre>}
+          {saveConfigNote && <span className="calib-step__muted">{saveConfigNote}</span>}
+          <button type="button" onClick={() => void sendPreviewCommands()}>
+            Send preview commands
+          </button>
+          {sendError && <span className="calib-step__error">{sendError}</span>}
+        </div>
       )}
-      <div className="calib-step__panel">
-        <strong>Recommended value: {value ?? 'manual measurement'}</strong>
-        <pre>{commandPreview.join('\n')}</pre>
-        <span className="calib-step__muted">{buildConfigSnapshotInstructions(firmware)}</span>
-        {saveConfigCommands.length > 0 && <pre>{saveConfigCommands.join('\n')}</pre>}
-        {saveConfigNote && <span className="calib-step__muted">{saveConfigNote}</span>}
-        <button type="button" onClick={() => void sendPreviewCommands()}>
-          Send preview commands
-        </button>
-        {sendError && <span className="calib-step__error">{sendError}</span>}
-      </div>
       <button type="button" onClick={saveResult}>
         Save result
       </button>

@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { X, Save, RotateCcw, SaveAll, Loader2 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { DuetInsertCommandMenu } from './config/DuetInsertCommandMenu';
-import { highlightGCode, escapeHtml, formatSize } from './duetFileEditor/helpers';
+import { highlightGCode, formatSize } from './duetFileEditor/helpers';
 import { editorStyles } from './duetFileEditor/styles';
 import { SaveAsDialog } from './duetFileEditor/SaveAsDialog';
 
@@ -19,13 +19,15 @@ interface DuetFileEditorProps {
   inline?: boolean;
   /** Notify the parent whenever the dirty state changes. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** Called after a successful save — useful for showing restart prompts etc. */
+  onSaved?: (filePath: string) => void;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export default function DuetFileEditor({ filePath, onClose, isNew = false, inline = false, onDirtyChange }: DuetFileEditorProps) {
+export default function DuetFileEditor({ filePath, onClose, isNew = false, inline = false, onDirtyChange, onSaved }: DuetFileEditorProps) {
   const service = usePrinterStore((s) => s.service);
   const setError = usePrinterStore((s) => s.setError);
 
@@ -82,7 +84,7 @@ export default function DuetFileEditor({ filePath, onClose, isNew = false, inlin
   const lineCount = useMemo(() => content.split('\n').length, [content]);
 
   // Highlighted HTML
-  const highlightedHtml = useMemo(() => highlightGCode(escapeHtml(content)), [content]);
+  const highlightedHtml = useMemo(() => highlightGCode(content), [content]);
 
   // Fetch file contents on mount (skip when creating a new file)
   useEffect(() => {
@@ -141,12 +143,13 @@ export default function DuetFileEditor({ filePath, onClose, isNew = false, inlin
       const blob = new Blob([content], { type: 'application/octet-stream' });
       await service.uploadFile(filePath, blob);
       setOriginalContent(content);
+      onSaved?.(filePath);
     } catch (err) {
       setError(`Failed to save file: ${(err as Error).message}`);
     } finally {
       setSaving(false);
     }
-  }, [service, filePath, content, setError]);
+  }, [service, filePath, content, setError, onSaved]);
 
   // Save As
   const handleSaveAs = useCallback(

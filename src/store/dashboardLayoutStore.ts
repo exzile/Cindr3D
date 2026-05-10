@@ -294,11 +294,15 @@ function normalizeDashboard(value: unknown, fallbackName: string, fallbackId: st
   const dashboard = (value ?? {}) as Partial<DashboardConfig> & LegacyDashboardState;
   const rawName = typeof dashboard.name === 'string' ? dashboard.name.trim() : '';
   const rawId = typeof dashboard.id === 'string' ? dashboard.id.trim() : '';
+  const rawPageWidth = dashboard.pageWidthPx;
   return {
     id: rawId || fallbackId,
     name: rawName || fallbackName,
     layouts: normalizeLayouts(dashboard),
     hidden: sanitizeHidden(dashboard.hidden),
+    pageWidthPx: typeof rawPageWidth === 'number' && Number.isFinite(rawPageWidth) && rawPageWidth > 0
+      ? rawPageWidth
+      : undefined,
   };
 }
 
@@ -323,6 +327,7 @@ function activeFields(dashboards: DashboardConfig[], activeDashboardId: string) 
     activeDashboardId: activeDashboard.id,
     layouts: cloneLayouts(activeDashboard.layouts),
     hidden: { ...activeDashboard.hidden },
+    pageWidthPx: activeDashboard.pageWidthPx ?? null,
   };
 }
 
@@ -331,6 +336,7 @@ interface DashboardLayoutState {
   activeDashboardId: string;
   layouts: Record<PanelId, DashboardLayoutItem>;
   hidden: Record<string, boolean>;
+  pageWidthPx: number | null;
   addDashboard: () => void;
   removeDashboard: (id: string) => void;
   renameDashboard: (id: string, name: string) => void;
@@ -340,6 +346,7 @@ interface DashboardLayoutState {
   setHidden: (id: string, hidden: boolean) => void;
   setAllHidden: (hidden: boolean) => void;
   toggleHidden: (id: string) => void;
+  setPageWidth: (px: number | null) => void;
   reset: () => void;
 }
 
@@ -372,6 +379,7 @@ export const useDashboardLayout = create<DashboardLayoutState>()(
       activeDashboardId: DEFAULT_DASHBOARD_ID,
       layouts: cloneLayouts(DEFAULT_LAYOUTS),
       hidden: {},
+      pageWidthPx: null,
       addDashboard: () =>
         set((state) => {
           const dashboard: DashboardConfig = {
@@ -468,6 +476,15 @@ export const useDashboardLayout = create<DashboardLayoutState>()(
             ),
           };
         }),
+      setPageWidth: (px) =>
+        set((state) => ({
+          pageWidthPx: px,
+          dashboards: state.dashboards.map((dashboard) =>
+            dashboard.id === state.activeDashboardId
+              ? { ...dashboard, pageWidthPx: px ?? undefined }
+              : dashboard,
+          ),
+        })),
       reset: () =>
         set((state) => {
           const layouts = cloneLayouts(DEFAULT_LAYOUTS);
@@ -475,9 +492,10 @@ export const useDashboardLayout = create<DashboardLayoutState>()(
           return {
             layouts,
             hidden,
+            pageWidthPx: null,
             dashboards: state.dashboards.map((dashboard) =>
               dashboard.id === state.activeDashboardId
-                ? { ...dashboard, layouts, hidden }
+                ? { ...dashboard, layouts, hidden, pageWidthPx: undefined }
                 : dashboard,
             ),
           };

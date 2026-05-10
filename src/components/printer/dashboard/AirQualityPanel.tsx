@@ -4,6 +4,7 @@ import { AlertTriangle, Pause, Wind } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import {
   AIR_QUALITY_SENSOR_LABELS,
+  DEFAULT_AIR_QUALITY_CONFIG,
   useAirQualityStore,
   type AirQualitySensorKey,
 } from '../../../store/airQualityStore';
@@ -24,7 +25,11 @@ function levelColor(level: string) {
 
 export default function AirQualityPanel() {
   const activePrinterId = usePrinterStore((s) => s.activePrinterId);
-  const config = useAirQualityStore((s) => s.getPrinterAirQuality(activePrinterId));
+  // Select the stored entry directly so Zustand compares by reference — calling
+  // getPrinterAirQuality() inside the selector calls cloneDefault() every run
+  // which returns a new object, causing an infinite re-render loop.
+  const storedConfig = useAirQualityStore((s) => activePrinterId ? s.printers[activePrinterId] : null);
+  const config = storedConfig ?? DEFAULT_AIR_QUALITY_CONFIG;
   const updateConfig = useAirQualityStore((s) => s.updateAirQualityConfig);
   const updateSensor = useAirQualityStore((s) => s.updateAirQualitySensor);
   const status = useMemo(() => evaluateAirQuality(config), [config]);

@@ -69,6 +69,9 @@ export class DuetService {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private pollInFlight = false;
+  /** When true, the background poll loop skips rr_reply reads so callers
+   *  can drain the buffer themselves without racing the loop. */
+  private replyPollSuppressed = false;
   private serial: WebSerialConnection | null = null;
   private serialLineUnsubscribe: (() => void) | null = null;
   private static readonly POLL_INTERVAL = 250;
@@ -425,8 +428,14 @@ export class DuetService {
   }
 
 
+  private pollErrorCount = 0;
+  private static readonly MAX_POLL_ERRORS = 5;
+  /** Epoch ms of the last user-sent G-code — used to avoid racing rr_reply with sendGCode. */
+  private lastGCodeSentAt = 0;
+
   private startPolling(): void {
     if (this.pollTimer) return;
+    this.pollErrorCount = 0;
     if (import.meta.env.DEV) console.log('[DuetService] startPolling()');
     this.pollTimer = setInterval(async () => {
       if (!this.connected) {
@@ -438,11 +447,45 @@ export class DuetService {
       this.pollInFlight = true;
       try {
         const patch = await this.getObjectModel(undefined, 'd99fn');
-        this.applyModelPatch(patch as Record<string, unknown>);
+        // RRF standalone returns {"err":1} (HTTP 200) when the session has
+        // expired — e.g. after M999 causes a firmware reboot. Treat this as
+        // a disconnection so the store triggers an auto-reconnect and gets a
+        // fresh session, rather than silently merging {err:1} into the model
+        // and leaving the UI stuck in the previous (halted) state.
+        const patchObj = patch as Record<string, unknown>;
+        if (patchObj && typeof patchObj.err === 'number' && patchObj.err !== 0) {
+          if (import.meta.env.DEV) console.warn('[DuetService] rr_model err:', patchObj.err, '— session expired, reconnecting');
+          this.connected = false;
+          this.stopPolling();
+          this.emit('disconnected', null);
+          return;
+        }
+        this.pollErrorCount = 0;
+        this.applyModelPatch(patchObj);
         this.emit('modelUpdate', this.objectModel);
+
+        // Drain any async firmware messages (e.g. probe errors, BLTouch failures).
+        // Skip if sendGCode just read rr_reply in the last 400ms to avoid consuming
+        // the response that sendGCode is waiting for, or if a caller has taken
+        // exclusive ownership of rr_reply via suppressReplyPolling().
+        if (!this.replyPollSuppressed && Date.now() - this.lastGCodeSentAt > 400) {
+          const reply = await this.pollReply();
+          if (reply && reply.trim()) {
+            this.emit('firmwareMessage', reply.trim());
+          }
+        }
       } catch (err) {
         if (import.meta.env.DEV) console.error('[DuetService] poll error', err);
+        this.pollErrorCount++;
         this.emit('error', err);
+        // After several consecutive HTTP failures (e.g. 502 while board reboots
+        // after M999) treat the connection as lost and let the store reconnect.
+        if (this.pollErrorCount >= DuetService.MAX_POLL_ERRORS) {
+          if (import.meta.env.DEV) console.warn('[DuetService] too many poll errors, disconnecting');
+          this.connected = false;
+          this.stopPolling();
+          this.emit('disconnected', null);
+        }
       } finally {
         this.pollInFlight = false;
       }
@@ -533,9 +576,17 @@ export class DuetService {
     // Small delay to let firmware process
     await new Promise((r) => setTimeout(r, 50));
 
+    this.lastGCodeSentAt = Date.now();
     const replyUrl = `${this.baseUrl}/rr_reply`;
     const reply = await this.request<string>(replyUrl);
     return typeof reply === 'string' ? reply : JSON.stringify(reply);
+  }
+
+  /** Temporarily stop the background poll loop from draining rr_reply so a
+   *  caller can read it exclusively.  Always call with `false` in a finally
+   *  block to restore normal operation. */
+  suppressReplyPolling(suppress: boolean): void {
+    this.replyPollSuppressed = suppress;
   }
 
   /** Drain the next pending G-code reply without sending anything. Used to
