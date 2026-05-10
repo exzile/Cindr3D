@@ -1,14 +1,8 @@
+import type { CalibrationItemId } from '../store/calibrationStore';
 import type { PrinterProfile } from '../types/slicer';
+import type { TuningWizardKind } from '../services/vision/tuningWizards';
 
-export type CalibrationTestType =
-  | 'firmware-health'
-  | 'first-layer'
-  | 'flow-rate'
-  | 'temperature-tower'
-  | 'retraction'
-  | 'pressure-advance'
-  | 'input-shaper'
-  | 'dimensional-accuracy'
-  | 'max-volumetric-speed';
+/** Union of all calibration test identifiers across the UI store and vision service. */
+export type CalibrationTestType = CalibrationItemId | TuningWizardKind;
 
 export type GCodeFlavorType = PrinterProfile['gcodeFlavorType'];
