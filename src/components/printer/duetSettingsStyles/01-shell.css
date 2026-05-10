@@ -150,6 +150,13 @@
   margin-bottom: 4px;
 }
 
+/* Page title + inline action button (e.g. "Sync from Machine" on the Machine page) */
+.ds-machine-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 /* â”€â”€ Form group â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .duet-settings__form-group {
   display: flex;
@@ -360,6 +367,29 @@
 .duet-settings__btn--disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Extra-small variant — for inline buttons inside section title rows */
+.duet-settings__btn--xs {
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 5px;
+  gap: 4px;
+}
+
+/* "Sync from Machine" — appears in the Build Volume title row */
+.ds-sync-btn {
+  margin-left: auto;
+  background: var(--bg-panel, #1e1e2e);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.ds-sync-btn:hover {
+  color: #60a5fa;
+  border-color: color-mix(in srgb, #60a5fa 40%, var(--border));
+  background: color-mix(in srgb, #60a5fa 8%, var(--bg-panel, #1e1e2e));
 }
 
 /* â”€â”€ Section card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */

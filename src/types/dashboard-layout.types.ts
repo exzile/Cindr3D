@@ -35,4 +35,5 @@ export interface DashboardConfig {
   name: string;
   layouts: Record<PanelId, DashboardLayoutItem>;
   hidden: Record<string, boolean>;
+  pageWidthPx?: number;
 }

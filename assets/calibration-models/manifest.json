@@ -1,0 +1,92 @@
+[
+  {
+    "id": "firmware-health",
+    "testType": "firmware-health",
+    "filename": "firmware-health.stl",
+    "source": "VoronDesign/Voron-2 — Voron_Design_Cube_v7.stl (GPL v3)",
+    "baseDimMm": 30,
+    "baseNozzleDiameter": 0.4,
+    "baseLayerHeight": 0.2,
+    "description": "Voron Design Cube v7 (30mm). Flat walls reveal ringing, layer adhesion, extrusion quality, and surface finish in a single ~10 min print."
+  },
+  {
+    "id": "first-layer",
+    "testType": "first-layer",
+    "filename": "first-layer.stl",
+    "source": "Original — 120×120×0.3mm flat patch",
+    "baseDimMm": 120,
+    "baseNozzleDiameter": 0.4,
+    "baseLayerHeight": 0.2,
+    "description": "Single-layer 120×120mm patch. Peel off and inspect squish uniformly across the plate; adjust Z offset until the surface is smooth with no gaps or ridges."
+  },
+  {
+    "id": "flow-rate",
+    "testType": "flow-rate",
+    "filename": "flow-rate.stl",
+    "source": "Original — Ellis EM top-surface method, 30×30×3mm",
+    "baseDimMm": 30,
+    "baseNozzleDiameter": 0.4,
+    "baseLayerHeight": 0.2,
+    "description": "30×30×3mm flat cube (Ellis EM method). Print multiple copies at different flow-rate modifiers and choose the one with the smoothest top surface by touch."
+  },
+  {
+    "id": "temperature-tower",
+    "testType": "temperature-tower",
+    "filename": "temperature-tower.stl",
+    "source": "Original — 9-floor U-bridge tower, 30×20mm footprint, 90mm tall",
+    "baseDimMm": 30,
+    "baseNozzleDiameter": 0.4,
+    "baseLayerHeight": 0.2,
+    "description": "9-floor U-bridge tower (30×20mm, 90mm tall). Each 10mm floor tests bridging and overhang quality. Set a temperature change every 10mm in your slicer (e.g. 230→200°C)."
+  },
+  {
+    "id": "retraction",
+    "testType": "retraction",
+    "filename": "retraction.stl",
+    "source": "Original — two-post stringing test, 60mm base",
+    "baseDimMm": 60,
+    "baseNozzleDiameter": 0.4,
+    "baseLayerHeight": 0.2,
+    "description": "Two-post stringing test (60mm base). Travel moves between the ⌀5mm posts expose stringing; reduce retraction distance until strings disappear, then find the minimum that works."
+  },
+  {
+    "id": "pressure-advance",
+    "testType": "pressure-advance",
+    "filename": "pressure-advance.stl",
+    "source": "Klipper3d/klipper — square_tower.stl (GPL v3)",
+    "baseDimMm": 66,
+    "baseNozzleDiameter": 0.4,
+    "baseLayerHeight": 0.2,
+    "description": "Klipper square_tower (66×66×50mm). Print with increasing PA values per height band using Klipper's TUNING_TOWER command; clean 90° corners indicate the correct value."
+  },
+  {
+    "id": "input-shaper",
+    "testType": "input-shaper",
+    "filename": "input-shaper.stl",
+    "source": "Klipper3d/klipper — ringing_tower.stl (GPL v3)",
+    "baseDimMm": 120,
+    "baseNozzleDiameter": 0.4,
+    "baseLayerHeight": 0.2,
+    "description": "Klipper ringing tower (120×120×60mm L-shape). One wall isolates X-axis ringing; the other Y-axis. Count the bands and use the Klipper resonance frequency formula to find the correct shaper frequency."
+  },
+  {
+    "id": "dimensional-accuracy",
+    "testType": "dimensional-accuracy",
+    "filename": "dimensional-accuracy.stl",
+    "source": "dirtdigger/fleur_de_cali — calistar_100x2.stl (GPL v3)",
+    "baseDimMm": 108,
+    "baseNozzleDiameter": 0.4,
+    "baseLayerHeight": 0.2,
+    "description": "CaliStar 100×2mm (108mm tip-to-tip). Measure paired inner+outer dimensions on X and Y; the star geometry cancels elephant-foot distortion. Feed results into the companion spreadsheet to get XY scale correction values."
+  },
+  {
+    "id": "max-volumetric-speed",
+    "testType": "max-volumetric-speed",
+    "filename": "max-volumetric-speed.stl",
+    "source": "Original — 40×40×80mm vase-mode ramp tube",
+    "baseDimMm": 40,
+    "baseNozzleDiameter": 0.4,
+    "baseLayerHeight": 0.2,
+    "description": "40×40×80mm open-top tube (vase mode). Ramp print speed from slow to fast over the 80mm height; the layer where walls become rough or gaps appear marks the maximum reliable volumetric speed for this filament."
+  }
+]

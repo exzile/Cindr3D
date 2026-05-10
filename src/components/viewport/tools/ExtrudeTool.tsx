@@ -39,7 +39,8 @@ function buildSelectionId(sketchId: string, profileIndex: number): string {
 export default function ExtrudeTool() {
   const activeTool = useCADStore((s) => s.activeTool);
   const sketches = useCADStore((s) => s.sketches);
-  const selectedIds = useCADStore((s) => s.extrudeSelectedSketchIds) ?? [];
+  const selectedIdsRaw = useCADStore((s) => s.extrudeSelectedSketchIds);
+  const selectedIds = useMemo(() => selectedIdsRaw ?? [], [selectedIdsRaw]);
   const setSelectedIds = useCADStore((s) => s.setExtrudeSelectedSketchIds);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const startExtrudeFromFace = useCADStore((s) => s.startExtrudeFromFace);

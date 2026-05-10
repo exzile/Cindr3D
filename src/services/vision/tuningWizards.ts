@@ -5,7 +5,11 @@ export type TuningWizardKind =
   | 'retraction'
   | 'temperature'
   | 'first-layer-squish'
-  | 'input-shaper';
+  | 'input-shaper'
+  | 'firmware-health'
+  | 'flow-rate'
+  | 'dimensional-accuracy'
+  | 'max-volumetric-speed';
 
 export interface TuningTowerContext {
   kind: TuningWizardKind;
@@ -32,8 +36,32 @@ export interface TuningTowerRecommendation {
   summary: string;
   evidence: string[];
   suggestedActions: string[];
+  missingMeasurements?: string[];
   settingTweaks?: Array<{ tool: string; args: Record<string, unknown>; label: string }>;
   rawText?: string;
+}
+
+export interface TuningRecommendationReportInput {
+  recommendation: TuningTowerRecommendation;
+  context: TuningTowerContext;
+  measurements?: Record<string, number>;
+  frames?: VisionFrameSample[];
+  generatedAt?: number;
+}
+
+export interface TuningRecommendationReport {
+  title: string;
+  generatedAt: number;
+  kind: TuningWizardKind;
+  recommendedValue: number | null;
+  confidencePct: number;
+  summary: string;
+  evidence: string[];
+  missingMeasurements: string[];
+  suggestedActions: string[];
+  measurements: Record<string, number>;
+  frameCount: number;
+  markdown: string;
 }
 
 function splitDataUrl(dataUrl: string): { mimeType: string; base64: string } {
@@ -46,16 +74,140 @@ export function pressureAdvanceValueFromHeight(heightMm: number, startValue = 0,
   return Number((startValue + heightMm * stepPerMm).toFixed(4));
 }
 
+function kindGuidance(kind: TuningWizardKind): string[] {
+  switch (kind) {
+    case 'pressure-advance':
+      return [
+        'Pressure advance: inspect corners and extrusion transitions; prefer the lowest value with sharp corners and no gaps.',
+        'When a height band is visible, return bestHeightMm and compute bestValue from startValue and stepPerMm.',
+      ];
+    case 'retraction':
+      return [
+        'Retraction: score stringing, blobs, and under-extrusion after travels; bestValue is retraction distance in millimeters.',
+      ];
+    case 'temperature':
+      return [
+        'Temperature tower: pick the best temperature band from surface finish, bridging, stringing, and layer bonding clues.',
+        'bestValue is nozzle temperature in Celsius.',
+      ];
+    case 'first-layer-squish':
+      return [
+        'First layer: inspect line contact, gaps, ridges, elephant-foot risk, and adhesion.',
+        'bestValue is the Z-offset delta in millimeters; negative means closer to the bed.',
+      ];
+    case 'input-shaper':
+      return [
+        'Input shaper: identify ringing frequency bands per axis; bestValue may be the dominant frequency when only one axis is visible.',
+        'Use evidence to say which axis is supported by the frame.',
+      ];
+    case 'flow-rate':
+      return [
+        'Flow rate: compare wall thickness, top-surface closure, and corner bulging; bestValue is flow percent.',
+      ];
+    case 'dimensional-accuracy':
+      return [
+        'Dimensional accuracy: compare measured dimensions with nominal dimensions; bestValue is dimensional error in millimeters.',
+      ];
+    case 'max-volumetric-speed':
+      return [
+        'Max volumetric speed: find the highest clean speed/flow band before under-extrusion; bestValue is mm3/s.',
+      ];
+    case 'firmware-health':
+      return [
+        'Firmware health: summarize visible risk only; omit bestValue unless a numeric corrective value is directly measured.',
+      ];
+    default:
+      return [];
+  }
+}
+
 export function buildTuningPrompt(input: AnalyzeTuningTowerInput): string {
   return [
     'You are Cindr3D auto-tune vision analysis. Analyze calibration tower camera frames and recommend only the measured setting.',
     'The printer remains under operator control; do not claim to start, stop, or modify the printer.',
-    'Return only compact JSON with keys: kind, bestValue, bestHeightMm, confidence, summary, evidence, suggestedActions, settingTweaks.',
+    'Return only compact JSON with keys: kind, bestValue, bestHeightMm, confidence, summary, evidence, missingMeasurements, suggestedActions, settingTweaks.',
+    'Evidence must cite visible observations from the provided images or explicit operator measurements.',
+    'If the image is ambiguous, ask for the missing measurement in missingMeasurements and lower confidence instead of guessing.',
+    'Keep confidence separate from the recommended value: confidence is 0..1, bestValue is the final numeric recommendation only when supported.',
     'For pressure-advance, bestValue = startValue + bestHeightMm * stepPerMm when a best height is visible.',
     'For first-layer-squish, bestValue is suggested Z-offset delta in millimeters.',
+    ...kindGuidance(input.context.kind),
     'settingTweaks may include safe app tools such as slicer_set_material_setting, slicer_set_setting, printer_set_baby_step, printer_set_speed_factor, printer_set_flow_factor, or printer_set_fan_speed.',
     `Context: ${JSON.stringify(input.context)}`,
   ].join('\n');
+}
+
+function reportTitle(kind: TuningWizardKind): string {
+  switch (kind) {
+    case 'pressure-advance': return 'Pressure Advance Recommendation';
+    case 'retraction': return 'Retraction Recommendation';
+    case 'temperature': return 'Temperature Tower Recommendation';
+    case 'first-layer-squish': return 'First Layer Recommendation';
+    case 'input-shaper': return 'Input Shaper Recommendation';
+    case 'firmware-health': return 'Firmware Health Report';
+    case 'flow-rate': return 'Flow Rate Recommendation';
+    case 'dimensional-accuracy': return 'Dimensional Accuracy Report';
+    case 'max-volumetric-speed': return 'Max Volumetric Speed Recommendation';
+    default: return 'Calibration Recommendation';
+  }
+}
+
+function formatReportList(items: string[], fallback: string): string {
+  if (items.length === 0) return `- ${fallback}`;
+  return items.map((item) => `- ${item}`).join('\n');
+}
+
+export function buildTuningRecommendationReport({
+  recommendation,
+  context,
+  measurements = {},
+  frames = [],
+  generatedAt = Date.now(),
+}: TuningRecommendationReportInput): TuningRecommendationReport {
+  const title = reportTitle(recommendation.kind);
+  const confidencePct = Math.round(Math.min(1, Math.max(0, recommendation.confidence)) * 100);
+  const recommendedValue = recommendation.bestValue ?? null;
+  const missingMeasurements = recommendation.missingMeasurements ?? [];
+  const measurementLines = Object.entries(measurements).map(([key, value]) => `- ${key}: ${value}`);
+  const markdown = [
+    `# ${title}`,
+    '',
+    `Printer: ${context.printer.printerName}`,
+    `Kind: ${recommendation.kind}`,
+    `Recommended value: ${recommendedValue ?? 'manual review required'}`,
+    `Confidence: ${confidencePct}%`,
+    `Frames reviewed: ${frames.length}`,
+    '',
+    '## Summary',
+    recommendation.summary,
+    '',
+    '## Evidence',
+    formatReportList(recommendation.evidence, 'No visual evidence was returned.'),
+    '',
+    '## Measurements',
+    measurementLines.length > 0 ? measurementLines.join('\n') : '- No manual measurements recorded.',
+    '',
+    '## Missing Measurements',
+    formatReportList(missingMeasurements, 'None.'),
+    '',
+    '## Suggested Actions',
+    formatReportList(recommendation.suggestedActions, 'Review the recommendation before applying printer changes.'),
+  ].join('\n');
+
+  return {
+    title,
+    generatedAt,
+    kind: recommendation.kind,
+    recommendedValue,
+    confidencePct,
+    summary: recommendation.summary,
+    evidence: recommendation.evidence,
+    missingMeasurements,
+    suggestedActions: recommendation.suggestedActions,
+    measurements,
+    frameCount: frames.length,
+    markdown,
+  };
 }
 
 function openAiEndpoint(provider: VisionProviderConfig['provider']): string {
@@ -139,6 +291,7 @@ function parseTuningJson(text: string, kind: TuningWizardKind): Omit<TuningTower
     summary: String(parsed.summary ?? 'No tuning recommendation returned.'),
     evidence: Array.isArray(parsed.evidence) ? parsed.evidence.map(String) : [],
     suggestedActions: Array.isArray(parsed.suggestedActions) ? parsed.suggestedActions.map(String) : [],
+    missingMeasurements: Array.isArray(parsed.missingMeasurements) ? parsed.missingMeasurements.map(String) : undefined,
     settingTweaks: Array.isArray(parsed.settingTweaks) ? parsed.settingTweaks : undefined,
   };
 }

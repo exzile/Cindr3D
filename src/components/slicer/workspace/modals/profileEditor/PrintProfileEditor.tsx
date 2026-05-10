@@ -1,6 +1,8 @@
 import type { PrintProfile } from '../../../../../types/slicer';
+import type { LayerProcessor } from '../../../../../types/slicer/profiles/print';
 import { colors } from '../../../../../utils/theme';
 import { fieldRow, inputStyle, labelStyle, SectionBody, selectStyle, TabBar } from './shared';
+import { PostProcessorsTab } from './PostProcessorsTab';
 
 export function PrintProfileEditor({
   activeTab,
@@ -13,7 +15,7 @@ export function PrintProfileEditor({
   print: PrintProfile;
   updatePrintProfile: (id: string, updates: Partial<PrintProfile>) => void;
 }) {
-  const tabs = ['Layers', 'Walls', 'Infill', 'Speed', 'Support', 'Adhesion', 'Advanced'];
+  const tabs = ['Layers', 'Walls', 'Infill', 'Speed', 'Support', 'Adhesion', 'Advanced', 'Scripts'];
 
   return (
     <>
@@ -105,6 +107,12 @@ export function PrintProfileEditor({
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: colors.text, fontSize: 12, marginBottom: 8, cursor: 'pointer' }}><input type="checkbox" checked={print.ironingEnabled} onChange={(e) => updatePrintProfile(print.id, { ironingEnabled: e.target.checked })} style={{ accentColor: colors.accent }} />Enable Ironing</label>
             {print.ironingEnabled && (<><div style={fieldRow}><div style={labelStyle}>Ironing Speed (mm/s)</div><input type="number" style={inputStyle} value={print.ironingSpeed} onChange={(e) => updatePrintProfile(print.id, { ironingSpeed: parseInt(e.target.value) || 15 })} /></div><div style={fieldRow}><div style={labelStyle}>Ironing Flow (%)</div><input type="number" style={inputStyle} value={print.ironingFlow} onChange={(e) => updatePrintProfile(print.id, { ironingFlow: parseInt(e.target.value) || 10 })} /></div><div style={fieldRow}><div style={labelStyle}>Ironing Spacing (mm)</div><input type="number" style={inputStyle} value={print.ironingSpacing} step={0.01} onChange={(e) => updatePrintProfile(print.id, { ironingSpacing: parseFloat(e.target.value) || 0.1 })} /></div></>)}
           </>
+        )}
+        {activeTab === 7 && (
+          <PostProcessorsTab
+            processors={print.layerProcessors ?? []}
+            onChange={(updated: LayerProcessor[]) => updatePrintProfile(print.id, { layerProcessors: updated })}
+          />
         )}
       </SectionBody>
     </>

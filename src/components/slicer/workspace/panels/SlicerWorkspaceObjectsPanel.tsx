@@ -15,7 +15,7 @@ import { validatePlate } from '../../../../store/slicer/plateValidation';
 import { CalibrationMenu } from '../bottom/CalibrationMenu';
 import { ContextMenu, type ContextMenuItem } from '../ContextMenu';
 import { GeometryToolsModal, type GeometryTool } from '../GeometryToolsModal';
-import { computeMeshStats } from '../../../../engine/plateGeometryOps';
+import { computeMeshStats } from '../../../../engine/meshStats';
 import { fetchModelUrlToFile } from '../../../../utils/printFromUrl';
 import './SlicerWorkspaceObjectsPanel.css';
 

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { SliceResult } from '../../../../../types/slicer';
 import { finalizeGCodeStats, appendEndGCode } from '../../../gcode/footer';
-import { applyPostProcessingScripts } from '../../../gcode/postProcessing';
+import { applyLayerProcessors, applyPostProcessingScripts } from '../../../gcode/postProcessing';
 import { prepareSliceRun, type ModifierMeshInput } from './prepareSliceRun';
 import { emitLayerStartState, prepareLayerGeometryState, prepareLayerState } from './prepareLayerState';
 import { buildLayerMaterialFromContours } from '../layerTopology';
@@ -602,7 +602,9 @@ export async function runSlicePipeline(
   slicer.reportProgress('complete', 100, run.totalLayers, run.totalLayers, 'Slicing complete.');
 
   timingStartMs = nowMs();
-  const gcode = applyPostProcessingScripts(run.gcode.join('\n'), run.pp);
+  // Layer-aware processors run on the line array BEFORE join.
+  const processedLines = applyLayerProcessors(run.gcode, run.pp.layerProcessors ?? []);
+  const gcode = applyPostProcessingScripts(processedLines.join('\n'), run.pp);
   addTiming('postprocess', nowMs() - timingStartMs);
 
   const emittedLayerCount = run.sliceLayers.length;

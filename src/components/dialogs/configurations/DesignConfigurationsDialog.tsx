@@ -19,7 +19,11 @@ export function DesignConfigurationsDialog({ onClose }: { onClose: () => void })
   const [renameValue, setRenameValue] = useState(activeConfiguration?.name ?? '');
 
   useEffect(() => {
-    setRenameValue(activeConfiguration?.name ?? '');
+    let disposed = false;
+    queueMicrotask(() => {
+      if (!disposed) setRenameValue(activeConfiguration?.name ?? '');
+    });
+    return () => { disposed = true; };
   }, [activeConfiguration?.id, activeConfiguration?.name]);
 
   const handleCreate = () => {

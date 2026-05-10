@@ -19,9 +19,13 @@ export function useKlipperPrintStatus(intervalMs = 3000): MoonrakerPrintStatus |
 
   useEffect(() => {
     if (boardType !== 'klipper' || !connected || !hostname) {
-      setStatus(null);
-      return;
+      let disposed = false;
+      queueMicrotask(() => {
+        if (!disposed) setStatus(null);
+      });
+      return () => { disposed = true; };
     }
+
     const svc = new MoonrakerService(hostname);
     let cancelled = false;
     const tick = async () => {

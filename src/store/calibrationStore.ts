@@ -6,7 +6,22 @@ export type CalibrationItemId =
   | 'pressure-advance'
   | 'input-shaper'
   | 'z-offset'
-  | 'first-layer';
+  | 'first-layer'
+  | 'firmware-health';
+
+export interface WizardSession {
+  id: string;
+  printerId: string;
+  testType: string;
+  step: number;
+  startedAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+  spoolId: string;
+  /** Filament material selected in step 1, e.g. 'PLA', 'PETG'. */
+  filamentMaterial?: string;
+  status: 'active' | 'completed';
+}
 
 export type MaintenanceStatus = 'ok' | 'upcoming' | 'overdue' | 'never';
 
@@ -16,11 +31,28 @@ export interface CalibrationItemDefinition {
   defaultIntervalDays: number;
 }
 
+export type CalibrationResult = {
+  id: string;
+  recordedAt: number;
+  appliedValue: number | null;
+  measurements: Record<string, number>;
+  photoIds: string[];
+  aiConfidence: number | null;
+  note: string;
+  /** Firmware type at calibration time (e.g. 'duet', 'klipper'). */
+  firmwareType?: string;
+  /** Firmware version from the live board at calibration time (e.g. '3.5.4'). */
+  firmwareVersion?: string;
+  /** Spool / filament ID used during this calibration run. */
+  spoolId?: string;
+};
+
 export interface CalibrationRecord {
   itemId: CalibrationItemId;
   lastRunAt: number | null;
   intervalDays: number;
   note: string;
+  results?: CalibrationResult[];
 }
 
 export interface WearComponent {
@@ -82,8 +114,13 @@ interface CalibrationStore {
   components: WearComponent[];
   serviceLog: ServiceLogEntry[];
   moistureBySpoolId: Record<string, SpoolMoistureProfile>;
+  wizardSessions: WizardSession[];
+  /** One active wizard session per printer (keyed by printerId). Null = no session. */
+  activeWizardSessions: Record<string, WizardSession | null>;
 
   getCalibrationRecords: (printerId: string) => CalibrationRecord[];
+  addCalibrationResult: (printerId: string, itemId: CalibrationItemId, result: Omit<CalibrationResult, 'id'>) => void;
+  getCalibrationResults: (printerId: string, itemId: CalibrationItemId) => CalibrationResult[];
   recordCalibration: (printerId: string, itemId: CalibrationItemId, note?: string, when?: number) => void;
   updateCalibrationInterval: (printerId: string, itemId: CalibrationItemId, intervalDays: number) => void;
   addComponent: (component: Omit<WearComponent, 'id' | 'installedAt' | 'hoursOn' | 'filamentKm'> & Partial<Pick<WearComponent, 'installedAt' | 'hoursOn' | 'filamentKm'>>) => string;
@@ -91,10 +128,19 @@ interface CalibrationStore {
   removeComponent: (id: string) => void;
   logService: (entry: Omit<ServiceLogEntry, 'id' | 'performedAt'> & Partial<Pick<ServiceLogEntry, 'performedAt'>>) => string;
   upsertMoistureProfile: (spoolId: string, patch: Partial<Omit<SpoolMoistureProfile, 'spoolId' | 'lastUpdatedAt'>>) => void;
+  createWizardSession: (printerId: string, testType: string, spoolId?: string) => string;
+  updateWizardSessionById: (id: string, patch: Partial<Pick<WizardSession, 'step' | 'spoolId' | 'filamentMaterial' | 'status'>>) => void;
+  completeWizardSession: (id: string) => void;
+  deleteWizardSession: (id: string) => void;
+  startWizardSession: (printerId: string, testType: string, spoolId?: string) => void;
+  updateWizardSession: (printerId: string, step: number, spoolId?: string) => void;
+  endWizardSession: (printerId: string) => void;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SERVICE_LOG_LIMIT = 200;
+const CALIBRATION_RESULTS_LIMIT = 5;
+const WIZARD_SESSION_LIMIT = 50;
 
 export const CALIBRATION_ITEMS: CalibrationItemDefinition[] = [
   { id: 'bed-mesh', label: 'Bed mesh', defaultIntervalDays: 14 },
@@ -102,6 +148,7 @@ export const CALIBRATION_ITEMS: CalibrationItemDefinition[] = [
   { id: 'input-shaper', label: 'Input shaper', defaultIntervalDays: 90 },
   { id: 'z-offset', label: 'Z-offset check', defaultIntervalDays: 14 },
   { id: 'first-layer', label: 'First-layer test', defaultIntervalDays: 7 },
+  { id: 'firmware-health', label: 'Firmware health', defaultIntervalDays: 30 },
 ];
 
 export const DEFAULT_COMPONENTS: Array<Pick<WearComponent, 'name' | 'category' | 'reminderHours' | 'reminderFilamentKm'>> = [
@@ -122,6 +169,25 @@ function defaultCalibrationRecord(item: CalibrationItemDefinition): CalibrationR
     lastRunAt: null,
     intervalDays: item.defaultIntervalDays,
     note: '',
+    results: [],
+  };
+}
+
+function normalizeWizardSession(
+  session: Partial<WizardSession> & Pick<WizardSession, 'testType' | 'startedAt' | 'spoolId'>,
+  printerId: string,
+): WizardSession {
+  const now = Date.now();
+  return {
+    id: session.id ?? uid('calib-session'),
+    printerId: session.printerId ?? printerId,
+    testType: session.testType,
+    step: Number.isFinite(session.step) ? Math.min(8, Math.max(1, Math.round(session.step ?? 1))) : 1,
+    startedAt: Number.isFinite(session.startedAt) ? session.startedAt : now,
+    updatedAt: Number.isFinite(session.updatedAt) ? session.updatedAt ?? now : now,
+    completedAt: session.completedAt ?? null,
+    spoolId: session.spoolId ?? '',
+    status: session.status === 'completed' ? 'completed' : 'active',
   };
 }
 
@@ -129,7 +195,7 @@ function ensurePrinterRecords(records: Record<CalibrationItemId, CalibrationReco
   return Object.fromEntries(
     CALIBRATION_ITEMS.map((item) => {
       const existing = records?.[item.id];
-      return [item.id, existing ?? defaultCalibrationRecord(item)];
+      return [item.id, existing ? { ...existing, results: existing.results ?? [] } : defaultCalibrationRecord(item)];
     }),
   ) as Record<CalibrationItemId, CalibrationRecord>;
 }
@@ -149,6 +215,42 @@ export function getCalibrationStatus(record: CalibrationRecord, now = Date.now()
   if (now >= dueAt) return 'overdue';
   if (now >= upcomingAt) return 'upcoming';
   return 'ok';
+}
+
+export function getCalibrationConfidence(results: CalibrationResult[]): {
+  mean: number | null;
+  stdDev: number | null;
+  isStable: boolean;
+  highConfidence: boolean;
+  sampleCount: number;
+} {
+  const values = results
+    .map((result) => result.appliedValue)
+    .filter((value): value is number => value !== null);
+  const sampleCount = values.length;
+
+  if (sampleCount === 0) {
+    return {
+      mean: null,
+      stdDev: null,
+      isStable: false,
+      highConfidence: false,
+      sampleCount,
+    };
+  }
+
+  const mean = values.reduce((sum, value) => sum + value, 0) / sampleCount;
+  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / sampleCount;
+  const stdDev = Math.sqrt(variance);
+  const isStable = stdDev < mean * 0.05;
+
+  return {
+    mean,
+    stdDev,
+    isStable,
+    highConfidence: sampleCount >= 3 && isStable,
+    sampleCount,
+  };
 }
 
 export function getCalibrationStatuses(records: CalibrationRecord[], now = Date.now()): CalibrationStatus[] {
@@ -212,8 +314,33 @@ export const useCalibrationStore = create<CalibrationStore>()(
       components: [],
       serviceLog: [],
       moistureBySpoolId: {},
+      wizardSessions: [],
+      activeWizardSessions: {},
 
       getCalibrationRecords: (printerId) => Object.values(ensurePrinterRecords(get().calibrationByPrinterId[printerId])),
+
+      addCalibrationResult: (printerId, itemId, result) => {
+        set((state) => {
+          const printerRecords = ensurePrinterRecords(state.calibrationByPrinterId[printerId]);
+          return {
+            calibrationByPrinterId: {
+              ...state.calibrationByPrinterId,
+              [printerId]: {
+                ...printerRecords,
+                [itemId]: {
+                  ...printerRecords[itemId],
+                  results: [
+                    { ...result, id: uid('result') },
+                    ...(printerRecords[itemId].results ?? []),
+                  ].slice(0, CALIBRATION_RESULTS_LIMIT),
+                },
+              },
+            },
+          };
+        });
+      },
+
+      getCalibrationResults: (printerId, itemId) => ensurePrinterRecords(get().calibrationByPrinterId[printerId])[itemId].results ?? [],
 
       recordCalibration: (printerId, itemId, note = '', when = Date.now()) => {
         set((state) => {
@@ -307,6 +434,98 @@ export const useCalibrationStore = create<CalibrationStore>()(
         return id;
       },
 
+      createWizardSession: (printerId, testType, spoolId = '') => {
+        const session = normalizeWizardSession({ testType, step: 1, startedAt: Date.now(), spoolId }, printerId);
+        set((state) => ({
+          wizardSessions: [session, ...state.wizardSessions].slice(0, WIZARD_SESSION_LIMIT),
+          activeWizardSessions: {
+            ...state.activeWizardSessions,
+            [printerId]: session,
+          },
+        }));
+        return session.id;
+      },
+
+      updateWizardSessionById: (id, patch) => set((state) => {
+        const existing = state.wizardSessions.find((session) => session.id === id);
+        if (!existing) return {};
+        const updatedSession: WizardSession = {
+          ...existing,
+          ...patch,
+          step: patch.step !== undefined ? Math.min(8, Math.max(1, Math.round(patch.step))) : existing.step,
+          updatedAt: Date.now(),
+        };
+        const wizardSessions = state.wizardSessions.map((session) => (
+          session.id === id ? updatedSession : session
+        ));
+        const activeWizardSessions = {
+          ...state.activeWizardSessions,
+          [updatedSession.printerId]: updatedSession.status === 'active' ? updatedSession : null,
+        };
+        return { wizardSessions, activeWizardSessions };
+      }),
+
+      completeWizardSession: (id) => set((state) => {
+        const existing = state.wizardSessions.find((session) => session.id === id);
+        if (!existing) return {};
+        const now = Date.now();
+        const completedSession: WizardSession = { ...existing, status: 'completed', completedAt: now, updatedAt: now, step: 8 };
+        const wizardSessions = state.wizardSessions.map((session) => (
+          session.id === id ? completedSession : session
+        ));
+        const activeWizardSessions = { ...state.activeWizardSessions, [completedSession.printerId]: null };
+        return { wizardSessions, activeWizardSessions };
+      }),
+
+      deleteWizardSession: (id) => set((state) => {
+        const session = state.wizardSessions.find((item) => item.id === id);
+        return {
+          wizardSessions: state.wizardSessions.filter((item) => item.id !== id),
+          activeWizardSessions: session && state.activeWizardSessions[session.printerId]?.id === id
+            ? { ...state.activeWizardSessions, [session.printerId]: null }
+            : state.activeWizardSessions,
+        };
+      }),
+
+      startWizardSession: (printerId, testType, spoolId = '') => set((state) => {
+        const session = normalizeWizardSession({ testType, step: 1, startedAt: Date.now(), spoolId }, printerId);
+        return {
+          wizardSessions: [session, ...state.wizardSessions].slice(0, WIZARD_SESSION_LIMIT),
+          activeWizardSessions: {
+            ...state.activeWizardSessions,
+            [printerId]: session,
+          },
+        };
+      }),
+
+      updateWizardSession: (printerId, step, spoolId) => set((state) => {
+        const existing = state.activeWizardSessions[printerId];
+        if (!existing) return {};
+        const updated = {
+          ...existing,
+          step: Math.min(8, Math.max(1, Math.round(step))),
+          updatedAt: Date.now(),
+          ...(spoolId !== undefined ? { spoolId } : {}),
+        };
+        return {
+          wizardSessions: state.wizardSessions.map((session) => (
+            session.id === existing.id ? updated : session
+          )),
+          activeWizardSessions: {
+            ...state.activeWizardSessions,
+            [printerId]: updated,
+          },
+        };
+      }),
+
+      endWizardSession: (printerId) => set((state) => ({
+        wizardSessions: state.wizardSessions.filter((session) => session.id !== state.activeWizardSessions[printerId]?.id),
+        activeWizardSessions: {
+          ...state.activeWizardSessions,
+          [printerId]: null,
+        },
+      })),
+
       upsertMoistureProfile: (spoolId, patch) => {
         set((state) => {
           const existing = state.moistureBySpoolId[spoolId] ?? {
@@ -331,7 +550,32 @@ export const useCalibrationStore = create<CalibrationStore>()(
     }),
     {
       name: 'cindr3d-calibration-lifecycle',
-      version: 1,
+      version: 3,
+      migrate: (persistedState) => {
+        const state = persistedState as Partial<CalibrationStore>;
+        const migratedSessions = [
+          ...(state.wizardSessions ?? []),
+          ...Object.entries(state.activeWizardSessions ?? {})
+            .filter((entry): entry is [string, WizardSession] => entry[1] !== null)
+            .map(([printerId, session]) => normalizeWizardSession(session, printerId)),
+        ];
+        if (!state.calibrationByPrinterId) {
+          return {
+            ...state,
+            wizardSessions: migratedSessions,
+          };
+        }
+        return {
+          ...state,
+          wizardSessions: migratedSessions,
+          calibrationByPrinterId: Object.fromEntries(
+            Object.entries(state.calibrationByPrinterId).map(([printerId, records]) => [
+              printerId,
+              ensurePrinterRecords(records),
+            ]),
+          ),
+        };
+      },
     },
   ),
 );

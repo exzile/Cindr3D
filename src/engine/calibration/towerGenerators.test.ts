@@ -23,10 +23,11 @@ describe('retraction tower', () => {
   });
 
   it('inserts z-hop moves around spike travel and omits them when zHop is zero', () => {
-    const withHop = generateRetractionTowerGCode(printer, material, print); // retractionZHop=0.2
+    const withHop = generateRetractionTowerGCode(printer, material, print);
     const noHop = generateRetractionTowerGCode(printer, { ...material, retractionZHop: 0 }, print);
 
-    const countZMoves = (g: string) => g.split('\n').filter((l) => /^G0 Z/.test(l)).length;
+    const countZMoves = (g: string) =>
+      g.split('\n').filter((line) => /^G0 Z/.test(line)).length;
     expect(countZMoves(withHop)).toBeGreaterThan(countZMoves(noHop));
   });
 });
@@ -35,7 +36,6 @@ describe('temperature tower', () => {
   it('sets nozzleTemp+10 initially and transitions down to nozzleTemp-10', () => {
     const gcode = generateTemperatureTowerGCode(printer, material, print);
 
-    // material.nozzleTemp = 210 → bands: 220, 215, 210, 205, 200
     expect(gcode).toContain('M104 S220');
     expect(gcode).toContain('M109 S220');
     expect(gcode).toContain('temp=220C');
@@ -55,7 +55,7 @@ describe('temperature tower', () => {
 });
 
 describe('flow tower', () => {
-  it('steps M221 from 90 to 110 and restores 100 after the final band', () => {
+  it('steps from 90% to 110% and restores M221 S100 after the last band', () => {
     const gcode = generateFlowTowerGCode(printer, material, print);
 
     expect(gcode).toContain('M221 S90');

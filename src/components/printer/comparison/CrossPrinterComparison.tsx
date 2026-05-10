@@ -54,10 +54,8 @@ export default function CrossPrinterComparison() {
   const setLegQuality = useAbComparisonStore((s) => s.setLegQuality);
   const setLegNotes = useAbComparisonStore((s) => s.setLegNotes);
 
-  useEffect(() => {
-    if (!printerAId && printers[0]) setPrinterAId(printers[0].id);
-    if (!printerBId && printers[1]) setPrinterBId(printers[1].id);
-  }, [printerAId, printerBId, printers]);
+  const selectedPrinterAId = printerAId || printers[0]?.id || '';
+  const selectedPrinterBId = printerBId || printers[1]?.id || printers[0]?.id || '';
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null,
@@ -91,8 +89,8 @@ export default function CrossPrinterComparison() {
   }, [activePrinterId, activeSession, connected, model.job?.duration, model.job?.lastDuration, model.job?.layer, model.job?.timesLeft?.file, model.state?.status, recordSample, updateLeg]);
 
   const createComparison = useCallback(() => {
-    const printerA = printers.find((printer) => printer.id === printerAId);
-    const printerB = printers.find((printer) => printer.id === printerBId);
+    const printerA = printers.find((printer) => printer.id === selectedPrinterAId);
+    const printerB = printers.find((printer) => printer.id === selectedPrinterBId);
     const path = filePath.trim();
     if (!printerA || !printerB || !path || printerA.id === printerB.id) return;
     const sessionId = createSession({
@@ -105,7 +103,7 @@ export default function CrossPrinterComparison() {
     updateLeg(sessionId, 'a', { status: 'queued', queueJobId: jobA });
     updateLeg(sessionId, 'b', { status: 'queued', queueJobId: jobB });
     setActiveTab('comparison');
-  }, [addCopies, createSession, filePath, printerAId, printerBId, printers, setActiveTab, updateLeg]);
+  }, [addCopies, createSession, filePath, printers, selectedPrinterAId, selectedPrinterBId, setActiveTab, updateLeg]);
 
   const startLeg = useCallback(async (legId: ComparisonLegId) => {
     if (!activeSession) return;
@@ -176,13 +174,13 @@ export default function CrossPrinterComparison() {
           <FileCode size={14} />
           <input value={filePath} onChange={(event) => setFilePath(event.target.value)} placeholder="0:/gcodes/test.gcode" />
         </label>
-        <select value={printerAId} onChange={(event) => setPrinterAId(event.target.value)}>
+        <select value={selectedPrinterAId} onChange={(event) => setPrinterAId(event.target.value)}>
           {printers.map((printer) => <option key={printer.id} value={printer.id}>{printer.name}</option>)}
         </select>
-        <select value={printerBId} onChange={(event) => setPrinterBId(event.target.value)}>
+        <select value={selectedPrinterBId} onChange={(event) => setPrinterBId(event.target.value)}>
           {printers.map((printer) => <option key={printer.id} value={printer.id}>{printer.name}</option>)}
         </select>
-        <button type="button" onClick={createComparison} disabled={!filePath.trim() || printerAId === printerBId}>
+        <button type="button" onClick={createComparison} disabled={!filePath.trim() || selectedPrinterAId === selectedPrinterBId}>
           <Plus size={14} /> Queue A/B run
         </button>
       </div>

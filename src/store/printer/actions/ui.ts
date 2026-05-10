@@ -14,6 +14,7 @@ export function createUiActions(api: PrinterStoreApi): Pick<
   | 'setActiveTab'
   | 'setJogDistance'
   | 'setError'
+  | 'dismissAlert'
 > {
   const { get, set } = api;
 
@@ -81,5 +82,6 @@ export function createUiActions(api: PrinterStoreApi): Pick<
     setActiveTab: (tab) => set({ activeTab: tab }),
     setJogDistance: (distance) => set({ jogDistance: distance }),
     setError: (error) => set({ error }),
+    dismissAlert: (id) => set((state) => ({ printerAlerts: state.printerAlerts.filter((a) => a.id !== id) })),
   };
 }

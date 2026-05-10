@@ -14,7 +14,7 @@ import type {
   DuetPluginInfo,
   SavedPrinter,
 } from '../types/duet';
-import type { PrintHistoryEntry } from '../types/printer.types';
+import type { PrintHistoryEntry, PrinterAlert } from '../types/printer.types';
 import { createRegistryActions } from './printer/actions/registry';
 import { createUiActions } from './printer/actions/ui';
 import { createLifecycleActions } from './printer/actions/lifecycle';
@@ -24,7 +24,43 @@ import { bindActivePrinterPrefs, connectInitialPrinter } from './printer/prefsBi
 import { getActivePrinter, loadPrinters } from './printer/persistence';
 
 
-export type { PrintHistoryEntry } from '../types/printer.types';
+export type { PrintHistoryEntry, PrinterAlert } from '../types/printer.types';
+
+export interface LevelRunResult {
+  run: number;
+  /** Raw firmware reply for this run */
+  reply: string;
+  deviationBefore: number | null;
+  deviationAfter: number | null;
+  /** Per-leadscrew adjustment values in mm */
+  adjustments: number[];
+}
+
+/** Why the auto-converge loop stopped. */
+export type LevelBedStopReason =
+  | 'fixed'      // not auto-converge — ran exactly N passes
+  | 'target'     // deviationAfter dropped below targetDeviation
+  | 'plateaued'  // improvement < CONVERGENCE_THRESHOLD between passes
+  | 'maxPasses'; // hit the safety cap without converging
+
+export interface LevelBedOpts {
+  homeFirst?: boolean;
+  /** Fixed mode: run exactly this many passes (ignored in auto mode). */
+  repeat?: number;
+  /** Auto-converge: keep running until target or plateau; cap at maxPasses. */
+  autoConverge?: boolean;
+  /** Safety cap for auto mode (default 5). */
+  maxPasses?: number;
+  /** Target deviation in mm — stop when deviationAfter falls below this (default 0.05). */
+  targetDeviation?: number;
+}
+
+export interface LevelBedSummary {
+  results: LevelRunResult[];
+  autoConverge: boolean;
+  stopReason: LevelBedStopReason;
+  targetDeviation: number;
+}
 
 export interface PrinterStore {
   printers: SavedPrinter[];
@@ -63,6 +99,9 @@ export interface PrinterStore {
   printHistory: PrintHistoryEntry[];
   printHistoryLoading: boolean;
 
+  // Persistent firmware alerts (probe failures, BLTouch errors, etc.)
+  printerAlerts: PrinterAlert[];
+
   heightMap: DuetHeightMap | null;
 
   showPrinter: boolean;
@@ -92,6 +131,7 @@ export interface PrinterStore {
 
   // G-code
   sendGCode: (code: string) => Promise<void>;
+  resetHalt: () => Promise<void>;
 
   // Temperature
   setToolTemp: (tool: number, heater: number, temp: number) => Promise<void>;
@@ -152,6 +192,7 @@ export interface PrinterStore {
 
   loadHeightMap: (path?: string) => Promise<void>;
   probeGrid: () => Promise<void>;
+  levelBed: (opts?: LevelBedOpts) => Promise<LevelBedSummary>;
 
   startAutoReconnect: () => void;
   stopAutoReconnect: () => void;
@@ -161,6 +202,7 @@ export interface PrinterStore {
   setActiveTab: (tab: PrinterStore['activeTab']) => void;
   setJogDistance: (distance: number) => void;
   setError: (error: string | null) => void;
+  dismissAlert: (id: string) => void;
 }
 
 const INITIAL = loadPrinters();
@@ -198,6 +240,8 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
 
   printHistory: [],
   printHistoryLoading: false,
+
+  printerAlerts: [],
 
   heightMap: null,
 

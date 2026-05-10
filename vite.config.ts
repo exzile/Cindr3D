@@ -47,6 +47,13 @@ function duetProxyPlugin(): Plugin {
             res.end();
           }
         });
+        // Guard against the browser closing the connection mid-request (e.g. rapid
+        // poll cancellation). Without this, Node.js throws an unhandled 'error'
+        // event which crashes the Vite dev-server process.
+        req.on('error', (err) => {
+          console.error(`[duet-proxy] client disconnect ${req.method} ${targetUrl}: ${err.message}`);
+          try { proxyReq.destroy(); } catch { /* best-effort */ }
+        });
         req.pipe(proxyReq);
       });
     },
@@ -801,7 +808,10 @@ function isLocalhostHost(host: string | undefined): boolean {
 }
 
 function isAllowedLocalOrigin(origin: string | undefined): boolean {
-  if (!origin) return true;
+  // Non-browser requests (curl, Home Assistant, etc.) have no Origin header.
+  // Those are handled separately — don't grant them CORS "allowed" status or
+  // we'll try to reflect undefined back into access-control-allow-origin.
+  if (!origin) return false;
   try {
     const parsed = new URL(origin);
     return parsed.protocol === 'http:' && (
@@ -2366,14 +2376,17 @@ function homeAssistantBridgePlugin(): Plugin {
       const parsedReq = new URL(req.url ?? '/', 'http://localhost');
       const origin = `http://${req.headers.host ?? 'localhost:5173'}`;
       const requestOrigin = req.headers.origin;
-      if (isAllowedLocalOrigin(requestOrigin)) {
-        res.setHeader('access-control-allow-origin', requestOrigin as string);
+      if (requestOrigin && isAllowedLocalOrigin(requestOrigin)) {
+        // Reflect the exact origin back so same-origin cookies work.
+        res.setHeader('access-control-allow-origin', requestOrigin);
         res.setHeader('vary', 'origin');
       } else if (requestOrigin) {
+        // A foreign origin was supplied — reject it.
         res.statusCode = 403;
         res.end('Forbidden origin');
         return;
       }
+      // No Origin header = non-browser request (Home Assistant, curl, etc.) — no CORS headers needed.
       res.setHeader('access-control-allow-methods', 'GET,POST,OPTIONS');
       res.setHeader('access-control-allow-headers', 'content-type,x-cindr3d-bridge-token');
       if (req.method === 'OPTIONS') {
@@ -2471,10 +2484,25 @@ export default defineConfig({
     // Disable CSS minification — lightningcss crashes on @keyframes in
     // some versions of the Vite 8 / rolldown stack.
     cssMinify: false,
+    modulePreload: {
+      resolveDependencies: (_filename, deps, { hostType }) => {
+        if (hostType !== 'html') return deps;
+        return deps.filter((dep) => !/(^|\/)(dialogs|slicer)-.*\.js$/.test(dep));
+      },
+    },
     chunkSizeWarningLimit: 4096,
     assetsInlineLimit: (filePath) => filePath.endsWith('.wasm') ? false : undefined,
     rollupOptions: {
       output: {
+        manualChunks: (id) => {
+          const normalized = id.replace(/\\/g, '/');
+          if (normalized.includes('/src/components/printer/')) return 'printer';
+          if (normalized.includes('/src/components/slicer/')) return 'slicer';
+          if (normalized.includes('/src/components/dialogs/')) return 'dialogs';
+          if (normalized.includes('/src/components/viewport/')) return 'viewport';
+          if (normalized.includes('/src/store/')) return 'stores';
+          return undefined;
+        },
         assetFileNames: (assetInfo) =>
           assetInfo.names.some((name) => name.endsWith('.wasm'))
             ? 'assets/wasm/[name]-[hash][extname]'

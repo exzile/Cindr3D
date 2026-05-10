@@ -1,26 +1,28 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import Toolbar from './components/toolbar/Toolbar';
 import Viewport from './components/viewport/Viewport';
 import Timeline from './components/panels/Timeline';
 import ComponentTree from './components/panels/ComponentTree';
 import StatusBar from './components/panels/StatusBar';
-import ExportDialog from './components/dialogs/ExportDialog';
 import DuetPrinterPanel from './components/printer/DuetPrinterPanel';
-import SlicerWorkspace from './components/slicer/SlicerWorkspace';
 import DuetNotifications from './components/printer/DuetNotifications';
+import GCodeToast from './components/printer/GCodeToast';
 import { PrintSessionResumeBanner } from './components/printer/PrintSessionResumeBanner';
 import { useCADStore } from './store/cadStore';
-import ActiveDialog from './app/ActiveDialog';
 import { DevFixtureLoader } from './devFixtures/orangePi3LtsCase';
 import { McpBridgeService } from './services/mcp/McpBridgeService';
 import AiAssistantPanel from './components/ai/AiAssistantPanel';
-import HomePage from './components/home/HomePage';
 import { TABS, type TabKey } from './components/printer/duetPrinterPanel/config';
 import { usePrinterStore } from './store/printerStore';
 import './App.css';
 
 type WorkspaceMode = 'design' | 'prepare' | 'printer';
 type DeviceMode = 'mobile' | 'tablet' | 'desktop';
+
+const ActiveDialog = lazy(() => import('./app/ActiveDialog'));
+const ExportDialog = lazy(() => import('./components/dialogs/ExportDialog'));
+const HomePage = lazy(() => import('./components/home/HomePage'));
+const SlicerWorkspace = lazy(() => import('./components/slicer/SlicerWorkspace'));
 
 const PRINTER_TABS = new Set<string>(['printers', ...TABS.map((tab) => tab.key)]);
 
@@ -56,7 +58,13 @@ function detectDeviceMode(): { mode: DeviceMode; touch: boolean } {
 function WorkspaceContent() {
   const workspaceMode = useCADStore((s) => s.workspaceMode);
 
-  if (workspaceMode === 'prepare') return <SlicerWorkspace />;
+  if (workspaceMode === 'prepare') {
+    return (
+      <Suspense fallback={null}>
+        <SlicerWorkspace />
+      </Suspense>
+    );
+  }
   if (workspaceMode === 'printer') return <DuetPrinterPanel fullscreen />;
 
   return (
@@ -74,8 +82,10 @@ function WorkspaceContent() {
 export default function App() {
   const workspaceMode = useCADStore((s) => s.workspaceMode);
   const setWorkspaceMode = useCADStore((s) => s.setWorkspaceMode);
+  const showExportDialog = useCADStore((s) => s.showExportDialog);
   const activePrinterTab = usePrinterStore((s) => s.activeTab as TabKey);
   const setActivePrinterTab = usePrinterStore((s) => s.setActiveTab);
+  const activeDialog = useCADStore((s) => s.activeDialog);
   const [path, setPath] = useState(() => window.location.pathname);
   const skipNextUrlSyncRef = useRef(false);
   const route = routeFromPath(path);
@@ -139,7 +149,9 @@ export default function App() {
   if (isHomeRoute) {
     return (
       <div className="app app--home">
-        <HomePage />
+        <Suspense fallback={null}>
+          <HomePage />
+        </Suspense>
       </div>
     );
   }
@@ -151,9 +163,18 @@ export default function App() {
       <PrintSessionResumeBanner />
       <WorkspaceContent />
       {workspaceMode === 'design' && <StatusBar />}
-      <ExportDialog />
-      <ActiveDialog />
+      {showExportDialog && (
+        <Suspense fallback={null}>
+          <ExportDialog />
+        </Suspense>
+      )}
+      {activeDialog && (
+        <Suspense fallback={null}>
+          <ActiveDialog />
+        </Suspense>
+      )}
       <DuetNotifications />
+      <GCodeToast />
       <AiAssistantPanel />
     </div>
   );
