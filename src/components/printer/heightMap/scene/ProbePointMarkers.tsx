@@ -126,7 +126,6 @@ export function ProbePointMarkers({
       ref={meshRef}
       args={[undefined, undefined, count]}
       onPointerMove={onHover ? handlePointerMove : undefined}
-      onPointerLeave={onHover ? () => onHover(null) : undefined}
     >
       <sphereGeometry args={[radius, 12, 8]} />
       <meshStandardMaterial

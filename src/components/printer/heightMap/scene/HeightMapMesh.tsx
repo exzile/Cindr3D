@@ -89,7 +89,6 @@ export function HeightMapMesh({
       geometry={geometry}
       renderOrder={0}
       onPointerMove={onHover ? handlePointerMove : undefined}
-      onPointerLeave={onHover ? () => onHover(null) : undefined}
     >
       <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.55} metalness={0.08} />
     </mesh>
