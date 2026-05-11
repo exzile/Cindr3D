@@ -5,30 +5,28 @@ import {
   RotateCcw, ChevronRight,
 } from 'lucide-react';
 import { addToast } from '../../store/toastStore';
-import type { LevelBedOpts } from '../../store/printerStore';
 import { usePrinterStore } from '../../store/printerStore';
 import {
   Heatmap2D, Scene3D, getBedQuality,
   CAMERA_POSITIONS, type CameraPreset, type ConfiguredProbeGrid, type BedBounds,
 } from './heightMap/visualization';
 import {
-  computeDiffMap, computeMeshRmsDiff, computeStats,
-  parseM557, parseProbeOffset, type HeightMapStats,
+  computeDiffMap, computeStats,
+  parseM557, parseProbeOffset,
 } from './heightMap/utils';
-import type { DuetHeightMap as HeightMapData } from '../../types/duet';
 import {
   DEMO_HEIGHT_MAP, HM_PREFS_KEY, type HeightMapPrefs, loadHeightMapPrefs,
 } from './heightMap/prefs';
 import { generateBedTiltContent } from './heightMap/bedTilt';
-import type { ProbeOpts, SmartCalOpts, SmartCalResult, SmartCalStep } from './heightMap/types';
 import { HeightMapSidebar } from './heightMap/sidebar/HeightMapSidebar';
 import { HeightMapTopbar } from './heightMap/HeightMapTopbar';
 import { HeightMapModalsHost } from './heightMap/HeightMapModalsHost';
+import { useHeightMapRunners } from './heightMap/hooks/useHeightMapRunners';
 
 // Re-export for the printer-panel chrome that imports this from DuetHeightMap.
 export { LevelBedResultsModal } from './heightMap/modals/LevelBedResultsModal';
 
-/* ── Main component ─────────────────────────────────────────────── */
+/* ── Main component ──────────────────────────────────────────────── */
 
 export default function DuetHeightMap() {
   const heightMap         = usePrinterStore((s) => s.heightMap);
@@ -50,12 +48,6 @@ export default function DuetHeightMap() {
 
   const [loading, setLoading]               = useState(false);
   const [loadError, setLoadError]           = useState<string | null>(null);
-  const [probing, setProbing]               = useState(false);
-  const [leveling, setLeveling]             = useState(false);
-  // Live probe progress during a G29 sequence (component-local, avoids store changes)
-  const [probeProgress, setProbeProgress]   = useState<{
-    pass: number; totalPasses: number; done: number; total: number | null;
-  } | null>(null);
   const [showProbeModal, setShowProbeModal]   = useState(false);
   const [showLevelModal, setShowLevelModal]   = useState(false);
   const [showSetupModal,    setShowSetupModal]    = useState(false);
@@ -63,16 +55,10 @@ export default function DuetHeightMap() {
   const [bedTiltDerived,    setBedTiltDerived]    = useState(false);
   const [bedTiltNoG30,      setBedTiltNoG30]      = useState(false);
   const [creatingTiltFile,  setCreatingTiltFile]  = useState(false);
-  const [showProbeResultModal, setShowProbeResultModal] = useState(false);
-  const [probeResult,       setProbeResult]       = useState<{ stats: HeightMapStats | null; passes: number } | null>(null);
   const [m557Copied, setM557Copied] = useState(false);
   const m557CopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Smart Calibration
   const [showSmartCalModal,       setShowSmartCalModal]       = useState(false);
-  const [showSmartCalResultModal, setShowSmartCalResultModal] = useState(false);
-  const [smartCalRunning,         setSmartCalRunning]         = useState(false);
-  const [smartCalPhase,           setSmartCalPhase]           = useState<'homing' | 'leveling' | 'probing' | 'datum' | null>(null);
-  const [smartCalResult,          setSmartCalResult]          = useState<SmartCalResult | null>(null);
   // Save As modal
   const [showSaveAsModal,         setShowSaveAsModal]         = useState(false);
   const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeightMapPrefs().viewMode);
@@ -261,7 +247,6 @@ export default function DuetHeightMap() {
   const stats        = useMemo(() => computeStats(displayMap), [displayMap]);
   const quality      = getBedQuality(stats.rms);
   const useDiverging = compareMode || diverging;
-  const smartCalActive = smartCalRunning || smartCalPhase !== null;
 
   // Configured probe grid — drives the 3D marker positions in Scene3D.
   // Recomputed whenever any of the four range inputs or the points selector changes.
@@ -289,6 +274,24 @@ export default function DuetHeightMap() {
   const spacingX    = probePoints > 1 ? ((probeXMax - probeXMin) / (probePoints - 1)).toFixed(1) : '—';
   const spacingY    = probePoints > 1 ? ((probeYMax - probeYMin) / (probePoints - 1)).toFixed(1) : '—';
   const gridLabel   = `${probePoints}×${probePoints}`;
+
+  /* ── Long-running runners (probe / level / smart-cal) ── */
+  const runners = useHeightMapRunners({
+    service, sendGCode, probeGrid, levelBed,
+    m557Command, probeXMin, probeXMax, probeYMin, probeYMax,
+    boardType, setLoadError,
+  });
+  const {
+    probing, probeProgress, probeResult,
+    showProbeResultModal, setShowProbeResultModal,
+    runProbe,
+    leveling,
+    runLevel,
+    smartCalRunning, smartCalPhase, smartCalResult,
+    showSmartCalResultModal, setShowSmartCalResultModal,
+    runSmartCal,
+  } = runners;
+  const smartCalActive = smartCalRunning || smartCalPhase !== null;
 
   /* ── Camera presets ── */
   function applyPreset(preset: CameraPreset) {
@@ -349,108 +352,6 @@ export default function DuetHeightMap() {
     void sendGCode('G29 S1');
   }, [isCompensationEnabled, axes, sendGCode]);
 
-  const runProbe = useCallback(async (opts: ProbeOpts) => {
-    setShowProbeModal(false);
-    setProbing(true);
-    setProbeProgress(null);
-    setLoadError(null);
-    const isRRF = !boardType || boardType === 'duet';
-    const shouldRestoreProbeSamples = isRRF && opts.probesPerPoint > 1;
-    // Snapshot the firmware's current M558 sampling so we restore the user's
-    // baseline rather than stomping it with a hardcoded "A1 S0.01".
-    const liveProbe = service?.getModel().sensors?.probes?.[0];
-    const prevProbeA = liveProbe?.maxProbeCount ?? 1;
-    const prevProbeS = liveProbe?.tolerance ?? 0.01;
-    let passCount = 0;
-    try {
-      await sendGCode(m557Command);
-      if (opts.homeFirst) await sendGCode('G28');
-
-      // G30 S-1: move to bed centre first so we probe in a representative location,
-      // then set Z=0 datum without saving to G31.
-      if (opts.calibrateZDatum) {
-        const cx = ((probeXMin + probeXMax) / 2).toFixed(1);
-        const cy = ((probeYMin + probeYMax) / 2).toFixed(1);
-        // Use service directly (not store action) so we can capture the reply.
-        if (service) {
-          await service.sendGCode(`G1 X${cx} Y${cy} F6000`);
-          await service.sendGCode('G30 S-1');
-          // Offer to persist the calibrated datum to config-override.g
-          addToast(
-            'info',
-            'Z datum calibrated',
-            `Probed at bed centre (${cx}, ${cy}) — Z=0 reference set for this session.`,
-            [{ label: 'Persist (M500)', onClick: () => void sendGCode('M500') }],
-            10_000,
-          );
-        } else {
-          await sendGCode(`G1 X${cx} Y${cy} F6000`);
-          await sendGCode('G30 S-1');
-        }
-      }
-
-      if (shouldRestoreProbeSamples) await sendGCode(`M558 A${opts.probesPerPoint} S${opts.probeTolerance}`);
-
-      let prevMap: HeightMapData | null = null;
-      const maxIter = opts.mode === 'fixed' ? opts.passes : opts.maxPasses;
-
-      // ── Live probe progress tracking ──────────────────────────────────
-      // Watch move.probing transitions in the cached model — zero extra HTTP calls.
-      let probesDone = 0;
-      let wasProbing = false;
-      let probesPerRunLearned: number | null = null;
-
-      const probeTracker = service ? setInterval(() => {
-        const isProbing = service.getModel().move?.probing ?? false;
-        if (wasProbing && !isProbing) {
-          probesDone++;
-          setProbeProgress((prev) => prev ? { ...prev, done: probesDone, total: probesPerRunLearned } : null);
-        }
-        wasProbing = isProbing;
-      }, 200) : null;
-
-      try {
-        for (let i = 0; i < maxIter; i++) {
-          // Reset per-pass counters
-          probesDone = 0;
-          wasProbing = false;
-          setProbeProgress({ pass: i + 1, totalPasses: maxIter, done: 0, total: probesPerRunLearned });
-
-          await probeGrid();
-          passCount++;
-
-          if (probesDone > 0 && probesPerRunLearned === null) {
-            probesPerRunLearned = probesDone;
-          }
-
-          const curr = usePrinterStore.getState().heightMap;
-          if (opts.mode === 'converge' && prevMap && curr) {
-            if (computeMeshRmsDiff(prevMap, curr) <= opts.targetDiff) break;
-          }
-          if (curr) prevMap = curr;
-        }
-      } finally {
-        if (probeTracker !== null) clearInterval(probeTracker);
-        setProbeProgress(null);
-      }
-
-      // Always open the results modal — pass null stats if the map isn't available
-      // (e.g. getHeightMap failed or returned empty), so the user sees the "no data"
-      // fallback rather than just stale gcode-command toasts.
-      const finalMap = usePrinterStore.getState().heightMap;
-      setProbeResult({ stats: finalMap ? computeStats(finalMap) : null, passes: passCount });
-      setShowProbeResultModal(true);
-    } catch {
-      setLoadError('Probing failed');
-      addToast('error', 'Probing failed', 'The probe sequence did not complete.');
-    } finally {
-      if (shouldRestoreProbeSamples) {
-        try { await sendGCode(`M558 A${prevProbeA} S${prevProbeS}`); } catch { /* best-effort cleanup */ }
-      }
-      setProbing(false);
-    }
-  }, [boardType, m557Command, probeGrid, probeXMin, probeXMax, probeYMin, probeYMax, sendGCode, service]);
-
   /** Validate prerequisites before opening the Level Bed modal. */
   const handleLevelBedOpen = useCallback(async () => {
     if (!service) return;
@@ -481,154 +382,6 @@ export default function DuetHeightMap() {
       setCreatingTiltFile(false);
     }
   }, [service]);
-
-  const handleLevelBed = useCallback(async (opts: LevelBedOpts) => {
-    setShowLevelModal(false);
-    setLeveling(true);
-    try {
-      await levelBed(opts);
-    } catch (err) {
-      addToast('error', 'Level bed failed', (err as Error).message, undefined, 15_000);
-    } finally {
-      setLeveling(false);
-    }
-  }, [levelBed]);
-
-
-  /** Closed-loop calibration: level → probe → diagnose → repeat. */
-  const runSmartCal = useCallback(async (opts: SmartCalOpts) => {
-    setShowSmartCalModal(false);
-    setSmartCalRunning(true);
-    setSmartCalPhase(null);
-    setSmartCalResult(null);
-
-    const steps: SmartCalStep[] = [];
-    let finalStats: HeightMapStats | null = null;
-    let stopReason: SmartCalResult['stopReason'] = 'maxIterations';
-    let shouldLevel = true;
-
-    // Snapshot the firmware's current M558 so we can restore the user's
-    // baseline in `finally` — survives any throw mid-sequence.
-    const liveProbe = service?.getModel().sensors?.probes?.[0];
-    const prevProbeA = liveProbe?.maxProbeCount ?? 1;
-    const prevProbeS = liveProbe?.tolerance ?? 0.01;
-    const m558Modified = opts.probesPerPoint > 1;
-
-    try {
-      if (opts.homeFirst) {
-        setSmartCalPhase('homing');
-        await sendGCode('G28');
-        steps.push({ kind: 'info', label: 'Homed all axes', quality: 'info' });
-      }
-
-      // Set the requested probe sampling once for the whole closed loop.
-      if (m558Modified) {
-        await sendGCode(`M558 A${opts.probesPerPoint} S${opts.probeTolerance}`);
-      }
-
-      for (let i = 0; i < opts.maxIterations; i++) {
-        /* ── Level ── */
-        if (shouldLevel) {
-          setSmartCalPhase('leveling');
-          try {
-            await levelBed({ homeFirst: false });
-            steps.push({ kind: 'level', label: `Bed leveled (iteration ${i + 1})`, quality: 'good' });
-          } catch (err) {
-            steps.push({ kind: 'level', label: 'Leveling failed', detail: (err as Error).message, quality: 'bad' });
-            stopReason = 'failed';
-            break;
-          }
-          shouldLevel = false;
-        }
-
-        /* ── Probe ── */
-        setSmartCalPhase('probing');
-        try {
-          await sendGCode(m557Command);
-          await probeGrid();
-        } catch (err) {
-          steps.push({ kind: 'probe', label: `Probe failed (iteration ${i + 1})`, detail: (err as Error).message, quality: 'bad' });
-          stopReason = 'failed';
-          break;
-        }
-
-        /* ── Analyse ── */
-        const currentMap = usePrinterStore.getState().heightMap;
-        if (!currentMap) {
-          steps.push({ kind: 'probe', label: 'No probe data returned', quality: 'bad' });
-          stopReason = 'failed';
-          break;
-        }
-        const s = computeStats(currentMap);
-        finalStats = s;
-        const meanBad = Math.abs(s.mean) >= opts.targetMean;
-        const devBad  = s.rms             >= opts.targetDeviation;
-        steps.push({
-          kind:    'probe',
-          label:   `Probed (iteration ${i + 1}) — RMS ${s.rms.toFixed(4)} mm · mean ${s.mean >= 0 ? '+' : ''}${s.mean.toFixed(3)} mm`,
-          quality: (!meanBad && !devBad) ? 'good' : 'warn',
-        });
-
-        if (!meanBad && !devBad) {
-          steps.push({ kind: 'done', label: 'Bed calibrated — within all targets ✓', quality: 'good' });
-          stopReason = 'converged';
-          break;
-        }
-
-        /* ── Z datum recalibration ── */
-        if (meanBad) {
-          setSmartCalPhase('datum');
-          const cx = ((probeXMin + probeXMax) / 2).toFixed(1);
-          const cy = ((probeYMin + probeYMax) / 2).toFixed(1);
-          try {
-            if (service) {
-              await service.sendGCode(`G1 X${cx} Y${cy} F6000`);
-              await service.sendGCode('G30 S-1');
-            } else {
-              await sendGCode(`G1 X${cx} Y${cy} F6000`);
-              await sendGCode('G30 S-1');
-            }
-            steps.push({
-              kind:   'datum',
-              label:  `Z datum recalibrated at centre (${cx}, ${cy})`,
-              detail: `Mean was ${s.mean >= 0 ? '+' : ''}${s.mean.toFixed(3)} mm — target ±${opts.targetMean.toFixed(2)} mm`,
-              quality: 'info',
-            });
-          } catch (err) {
-            steps.push({ kind: 'datum', label: 'Z datum calibration failed', detail: (err as Error).message, quality: 'bad' });
-          }
-        }
-
-        /* ── Re-level decision ── */
-        if (devBad) {
-          steps.push({
-            kind:   'decision',
-            label:  `RMS ${s.rms.toFixed(4)} mm exceeds target ${opts.targetDeviation.toFixed(2)} mm — will re-level`,
-            quality: 'warn',
-          });
-          shouldLevel = true;
-        }
-
-        if (i === opts.maxIterations - 1) {
-          steps.push({ kind: 'done', label: `Max iterations (${opts.maxIterations}) reached`, quality: 'warn' });
-        }
-      }
-    } catch (err) {
-      steps.push({ kind: 'done', label: `Smart Cal error: ${(err as Error).message}`, quality: 'bad' });
-      stopReason = 'failed';
-    } finally {
-      // Restore M558 even when the closed loop bailed mid-iteration.
-      if (m558Modified) {
-        try { await sendGCode(`M558 A${prevProbeA} S${prevProbeS}`); } catch { /* best-effort cleanup */ }
-      }
-      setSmartCalRunning(false);
-      setSmartCalPhase(null);
-    }
-
-    const result: SmartCalResult = { steps, finalStats, stopReason };
-    setSmartCalResult(result);
-    setShowSmartCalResultModal(true);
-  }, [levelBed, m557Command, probeGrid, probeXMin, probeXMax, probeYMin, probeYMax, sendGCode, service]);
 
   const handleSaveAs = useCallback((filename: string) => {
     const safe = filename.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -695,11 +448,11 @@ export default function DuetHeightMap() {
         boardType={boardType}
         heightMap={heightMap}
         closeProbe={() => setShowProbeModal(false)}
-        runProbe={(opts) => void runProbe(opts)}
+        runProbe={(opts) => { setShowProbeModal(false); void runProbe(opts); }}
         closeLevel={() => setShowLevelModal(false)}
-        runLevel={(opts) => void handleLevelBed(opts)}
+        runLevel={(opts) => { setShowLevelModal(false); void runLevel(opts); }}
         closeSmartCal={() => setShowSmartCalModal(false)}
-        runSmartCal={(opts) => void runSmartCal(opts)}
+        runSmartCal={(opts) => { setShowSmartCalModal(false); void runSmartCal(opts); }}
         smartCalResult={smartCalResult}
         closeSmartCalResult={() => setShowSmartCalResultModal(false)}
         reopenSmartCal={() => { setShowSmartCalResultModal(false); setShowSmartCalModal(true); }}
@@ -722,7 +475,7 @@ export default function DuetHeightMap() {
         smartCalPhase={smartCalPhase}
       />
 
-      {/* ── Compare banner ────────────────────────────────────────────── */}
+      {/* ── Compare banner ──────────────────────────────────────────── */}
       {compareMode && (
         <div className="hm-compare-banner">
           <GitCompareArrows size={12} />
@@ -734,7 +487,7 @@ export default function DuetHeightMap() {
         </div>
       )}
 
-      {/* ── Split: viewport + sidebar ─────────────────────────────────────── */}
+      {/* ── Split: viewport + sidebar ──────────────────────────────────── */}
       <div className={`hm-split${sidebarOpen ? '' : ' hm-split--collapsed'}`}>
 
         {/* Viewport */}
@@ -816,7 +569,7 @@ export default function DuetHeightMap() {
           )}
         </div>
 
-        {/* ── Sidebar ───────────────────────────────────────────── */}
+        {/* ── Sidebar ─────────────────────────────────────────────── */}
         <HeightMapSidebar
           open={sidebarOpen}
           connected={connected}

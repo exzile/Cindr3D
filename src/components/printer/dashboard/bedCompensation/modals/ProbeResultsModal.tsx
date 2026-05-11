@@ -1,6 +1,6 @@
 import { CheckCircle, RefreshCcw, ScanLine, TriangleAlert } from 'lucide-react';
 import { Modal, ModalBody, ModalFooter } from '../../../../ui/Modal';
-import type { HeightMapStats } from '../../heightMap/utils';
+import type { HeightMapStats } from '../../../heightMap/utils';
 
 export function ProbeResultsModal({
   stats,
