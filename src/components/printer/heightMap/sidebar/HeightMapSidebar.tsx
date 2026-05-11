@@ -13,6 +13,7 @@ import type { DuetHeightMap as HeightMapData } from '../../../../types/duet';
 import { ActionsSection } from './ActionsSection';
 import { StatsSection } from './StatsSection';
 import { ProbeGridSection } from './ProbeGridSection';
+import { DisplayControlsSection } from './DisplayControlsSection';
 import { FilesSection } from './FilesSection';
 
 interface ConfigGrid { xMin: number; xMax: number; yMin: number; yMax: number; numPoints: number }
@@ -64,6 +65,7 @@ export function HeightMapSidebar(props: {
   m557Command: string;
   probeMaxCount: number | undefined;
   probeTol: number | undefined;
+  // Display controls
   mirrorX: boolean;
   setMirrorX: (next: boolean | ((v: boolean) => boolean)) => void;
   viewMode: '3d' | '2d';
@@ -134,6 +136,9 @@ export function HeightMapSidebar(props: {
         connected={props.connected}
         probeMaxCount={props.probeMaxCount}
         probeTol={props.probeTol}
+      />
+
+      <DisplayControlsSection
         mirrorX={props.mirrorX}
         setMirrorX={props.setMirrorX}
         viewMode={props.viewMode}
