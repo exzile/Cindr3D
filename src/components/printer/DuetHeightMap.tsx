@@ -9,13 +9,13 @@ import {
 } from 'lucide-react';
 import type { DuetService } from '../../services/DuetService';
 import { addToast } from '../../store/toastStore';
-import type { LevelBedSummary } from '../../store/printerStore';
+import type { LevelBedOpts, LevelBedSummary } from '../../store/printerStore';
 import { usePrinterStore } from '../../store/printerStore';
 import {
   Heatmap2D, Scene3D, getBedQuality,
   CAMERA_POSITIONS, type CameraPreset, type ConfiguredProbeGrid, type BedBounds,
 } from './heightMap/visualization';
-import { computeDiffMap, computeMeshRmsDiff, computeStats, exportHeightMapCSV, parseProbeOffset, type HeightMapStats } from './heightMap/utils';
+import { computeDiffMap, computeMeshRmsDiff, computeStats, exportHeightMapCSV, parseM557, parseProbeOffset, type HeightMapStats } from './heightMap/utils';
 import type { DuetHeightMap as HeightMapData, PrinterBoardType } from '../../types/duet';
 
 function isEditableKeyTarget(target: EventTarget | null): boolean {
@@ -79,14 +79,20 @@ function BedTiltSetupModal({
 }) {
   const [editedContent, setEditedContent] = useState(content);
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(editedContent);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2_000);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 2_000);
     } catch { /* ignore */ }
   }, [editedContent]);
+
+  useEffect(() => () => {
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -933,101 +939,6 @@ function SmartCalModal({
             Runs a closed-loop sequence: <strong>Level → Probe → Diagnose → Repeat</strong>.
             Adjusts the Z datum if mean offset is large, re-levels if RMS is still high.
           </p>
-
-          {/* Home first */}
-          <div className="hm-probe-opt-row">
-            <label className="hm-probe-opt-label">Home axes first</label>
-            <button
-              className={`hm-pill-toggle${homeFirst ? ' is-on' : ''}`}
-              onClick={() => setHomeFirst((v) => !v)}
-            >{homeFirst ? 'Yes' : 'No'}</button>
-          </div>
-
-          {/* Max iterations */}
-          <div className="hm-probe-opt-row">
-            <label className="hm-probe-opt-label">Max iterations</label>
-            <div className="hm-smartcal-iter-row">
-              {[1,2,3,4,5].map((n) => (
-                <button
-                  key={n}
-                  className={`hm-smartcal-iter-btn${maxIterations === n ? ' is-on' : ''}`}
-                  onClick={() => setMaxIterations(n)}
-                >{n}</button>
-              ))}
-            </div>
-          </div>
-
-          <div className="hm-probe-opt-section-label">Convergence targets</div>
-
-          {/* Target mean */}
-          <div className="hm-probe-opt-row">
-            <label className="hm-probe-opt-label">
-              Z datum threshold
-              <span className="hm-probe-opt-hint">Adjust datum if |mean| ≥ this</span>
-            </label>
-            <div className="hm-grid-input-wrap">
-              <input
-                className="hm-grid-input"
-                type="number" min={0.02} max={0.5} step={0.01}
-                value={targetMean}
-                onChange={(e) => setTargetMean(Number(e.target.value))}
-              />
-              <span className="hm-grid-unit">mm</span>
-            </div>
-          </div>
-
-          {/* Target deviation */}
-          <div className="hm-probe-opt-row">
-            <label className="hm-probe-opt-label">
-              Re-level threshold
-              <span className="hm-probe-opt-hint">Re-level if RMS ≥ this</span>
-            </label>
-            <div className="hm-grid-input-wrap">
-              <input
-                className="hm-grid-input"
-                type="number" min={0.01} max={0.3} step={0.01}
-                value={targetDeviation}
-                onChange={(e) => setTargetDeviation(Number(e.target.value))}
-              />
-              <span className="hm-grid-unit">mm</span>
-            </div>
-          </div>
-
-          <div className="hm-probe-opt-section-label">Probe quality</div>
-
-          {/* Probes per point */}
-          <div className="hm-probe-opt-row">
-            <label className="hm-probe-opt-label">
-              Dives per point
-              <span className="hm-probe-opt-hint">M558 A — probes per grid point</span>
-            </label>
-            <div className="hm-grid-input-wrap">
-              <input
-                className="hm-grid-input"
-                type="number" min={1} max={5} step={1}
-                value={probesPerPoint}
-                onChange={(e) => setProbesPerPoint(Math.max(1, Math.round(Number(e.target.value))))}
-              />
-            </div>
-          </div>
-
-          {probesPerPoint > 1 && (
-            <div className="hm-probe-opt-row">
-              <label className="hm-probe-opt-label">
-                Dive tolerance
-                <span className="hm-probe-opt-hint">M558 S — max spread between dives</span>
-              </label>
-              <div className="hm-grid-input-wrap">
-                <input
-                  className="hm-grid-input"
-                  type="number" min={0.01} max={0.1} step={0.01}
-                  value={probeTolerance}
-                  onChange={(e) => setProbeTolerance(Number(e.target.value))}
-                />
-                <span className="hm-grid-unit">mm</span>
-              </div>
-            </div>
-          )}
         </div>
         <div className="bc-modal-footer">
           <button className="bc-modal-btn bc-modal-btn--cancel" onClick={onCancel}>Cancel</button>
@@ -1067,6 +978,12 @@ function SmartCalResultModal({
   onClose:    () => void;
   onRunAgain: () => void;
 }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   const stopLabels: Record<SmartCalResult['stopReason'], string> = {
     converged:     'Converged — within targets',
     maxIterations: 'Max iterations reached',
@@ -1385,7 +1302,7 @@ function ProbeConfirmModal({
 function LevelBedModal({
   onConfirm, onCancel,
 }: {
-  onConfirm: (opts: import('../../store/printerStore').LevelBedOpts & { homeFirst: boolean }) => void;
+  onConfirm: (opts: LevelBedOpts & { homeFirst: boolean }) => void;
   onCancel: () => void;
 }) {
   const [homeFirst,        setHomeFirst]        = useState(false);
@@ -1673,46 +1590,74 @@ function loadHeightMapPrefs(): HeightMapPrefs {
   }
 }
 
-/**
- * Parse the last M557 command from a config.g text blob.
- * Supports both P (points-per-axis) and S (spacing-mm) variants.
- * Returns null if no valid M557 line is found.
- * Also returns `rawLine` — the original text of the M557 line — for display.
- */
-function parseM557(configText: string): {
-  xMin: number; xMax: number;
-  yMin: number; yMax: number;
-  numPoints: number;
-  rawLine: string;
-} | null {
-  let result: ReturnType<typeof parseM557> = null;
-  for (const raw of configText.split('\n')) {
-    const line = raw.replace(/;.*$/, '').trim();
-    if (!/^M557\b/i.test(line)) continue;
-    const xm = line.match(/X(-?\d+(?:\.\d+)?):(-?\d+(?:\.\d+)?)/i);
-    const ym = line.match(/Y(-?\d+(?:\.\d+)?):(-?\d+(?:\.\d+)?)/i);
-    if (!xm || !ym) continue;
-    const xMin = parseFloat(xm[1]);
-    const xMax = parseFloat(xm[2]);
-    const yMin = parseFloat(ym[1]);
-    const yMax = parseFloat(ym[2]);
-    if (xMax <= xMin || yMax <= yMin) continue; // malformed
-    const pm = line.match(/P(\d+(?:\.\d+)?)/i);
-    const sm = line.match(/S(\d+(?:\.\d+)?)/i);
-    let numPoints: number;
-    if (pm) {
-      numPoints = Math.max(2, Math.round(parseFloat(pm[1])));
-    } else if (sm) {
-      const spacing = parseFloat(sm[1]);
-      const span = Math.max(xMax - xMin, yMax - yMin);
-      numPoints = Math.max(2, Math.round(span / spacing) + 1);
-    } else {
-      numPoints = 9;
-    }
-    result = { xMin, xMax, yMin, yMax, numPoints, rawLine: raw.trim() };
-    // keep looping — last M557 wins
-  }
-  return result;
+/* ── Save As modal ──────────────────────────────────────────────────────────── */
+
+function SaveAsModal({
+  onConfirm, onCancel,
+}: {
+  onConfirm: (filename: string) => void;
+  onCancel: () => void;
+}) {
+  const [filename, setFilename] = useState('heightmap_backup');
+  const safeName = filename.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+      if (e.key === 'Enter' && !isEditableKeyTarget(e.target) && safeName) {
+        e.preventDefault();
+        onConfirm(safeName);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCancel, onConfirm, safeName]);
+
+  return createPortal(
+    <div className="bc-modal-overlay" onClick={onCancel}>
+      <div className="bc-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="hm-saveas-title">
+        <div className="bc-modal-header">
+          <div className="bc-modal-title-row">
+            <Save size={15} style={{ color: '#60a5fa', flexShrink: 0 }} />
+            <span id="hm-saveas-title" className="bc-modal-title">Save Height Map As</span>
+          </div>
+          <button className="bc-modal-close" onClick={onCancel} title="Cancel"><X size={13} /></button>
+        </div>
+        <div className="bc-modal-body">
+          <p className="bc-modal-desc">
+            Saves the current height map to the printer's <code>0:/sys</code> folder.
+            Filenames are sanitised to letters, numbers, dashes and underscores.
+          </p>
+          <div className="bc-modal-repeat-row">
+            <label className="bc-modal-repeat-label" htmlFor="hm-saveas-name">Filename</label>
+            <input
+              id="hm-saveas-name"
+              type="text"
+              className="bc-modal-num-input"
+              style={{ minWidth: 200 }}
+              value={filename}
+              autoFocus
+              onChange={(e) => setFilename(e.target.value)}
+            />
+            <span className="bc-modal-repeat-hint">
+              <code>0:/sys/{safeName || 'heightmap'}.csv</code>
+            </span>
+          </div>
+        </div>
+        <div className="bc-modal-footer">
+          <button className="bc-modal-btn bc-modal-btn--cancel" onClick={onCancel}>Cancel</button>
+          <button
+            className="bc-modal-btn bc-modal-btn--confirm"
+            disabled={!safeName}
+            onClick={() => onConfirm(safeName)}
+          >
+            <Save size={13} /> Save
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 /* ── Main component ─────────────────────────────────────────────────────────── */
@@ -1729,12 +1674,11 @@ export default function DuetHeightMap() {
   const compensationType = usePrinterStore((s) => s.model.move?.compensation?.type);
   const axes             = usePrinterStore((s) => s.model.move?.axes);
   const boardType        = usePrinterStore((s) => s.config.boardType);
-  // Current M558 probe settings from object model (live A/S values)
-  const probeModelRaw    = usePrinterStore((s) => {
-    const sensors = (s.model as Record<string, unknown>).sensors as Record<string, unknown> | undefined;
-    const probes  = sensors?.probes as unknown[] | undefined;
-    return probes?.[0] as { maxProbeCount?: number; tolerance?: number } | undefined;
-  });
+  // Current M558 probe settings from object model (live A/S values).
+  // Selecting primitive fields separately avoids the object-identity churn that
+  // would re-render this component on every unrelated model update.
+  const probeMaxCount = usePrinterStore((s) => s.model.sensors?.probes?.[0]?.maxProbeCount);
+  const probeTol      = usePrinterStore((s) => s.model.sensors?.probes?.[0]?.tolerance);
 
   const [loading, setLoading]               = useState(false);
   const [loadError, setLoadError]           = useState<string | null>(null);
@@ -1754,13 +1698,16 @@ export default function DuetHeightMap() {
   const [showProbeResultModal, setShowProbeResultModal] = useState(false);
   const [probeResult,       setProbeResult]       = useState<{ stats: HeightMapStats | null; passes: number } | null>(null);
   const [m557Copied, setM557Copied] = useState(false);
+  const m557CopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Smart Calibration
   const [showSmartCalModal,       setShowSmartCalModal]       = useState(false);
   const [showSmartCalResultModal, setShowSmartCalResultModal] = useState(false);
   const [smartCalRunning,         setSmartCalRunning]         = useState(false);
   const [smartCalPhase,           setSmartCalPhase]           = useState<'homing' | 'leveling' | 'probing' | 'datum' | null>(null);
   const [smartCalResult,          setSmartCalResult]          = useState<SmartCalResult | null>(null);
-const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeightMapPrefs().viewMode);
+  // Save As modal
+  const [showSaveAsModal,         setShowSaveAsModal]         = useState(false);
+  const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeightMapPrefs().viewMode);
   const [csvFiles, setCsvFiles]             = useState<string[]>([]);
   const [selectedCsv, setSelectedCsv]      = useState(() => loadHeightMapPrefs().selectedCsv);
   const [loadingCsvList, setLoadingCsvList] = useState(false);
@@ -1803,6 +1750,9 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
   // capturing a stale closure (effect deps are only [connected, service]).
   const probeGridUnlockedRef = useRef(probeGridUnlocked);
   useEffect(() => { probeGridUnlockedRef.current = probeGridUnlocked; }, [probeGridUnlocked]);
+  useEffect(() => () => {
+    if (m557CopyTimerRef.current) clearTimeout(m557CopyTimerRef.current);
+  }, []);
   const [g31Offset, setG31Offset] = useState<{ x: number; y: number } | null>(null);
   const configGridRef = useRef<{ xMin: number; xMax: number; yMin: number; yMax: number; numPoints: number } | null>(null);
 
@@ -2014,7 +1964,14 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
           {
             label: 'Home & Enable',
             onClick: () => {
-              void sendGCode('G28').then(() => sendGCode('G29 S1'));
+              void (async () => {
+                try {
+                  await sendGCode('G28');
+                  await sendGCode('G29 S1');
+                } catch (err) {
+                  addToast('error', 'Failed to home & enable compensation', (err as Error).message);
+                }
+              })();
             },
           },
         ],
@@ -2031,6 +1988,11 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
     setLoadError(null);
     const isRRF = !boardType || boardType === 'duet';
     const shouldRestoreProbeSamples = isRRF && opts.probesPerPoint > 1;
+    // Snapshot the firmware's current M558 sampling so we restore the user's
+    // baseline rather than stomping it with a hardcoded "A1 S0.01".
+    const liveProbe = service?.getModel().sensors?.probes?.[0];
+    const prevProbeA = liveProbe?.maxProbeCount ?? 1;
+    const prevProbeS = liveProbe?.tolerance ?? 0.01;
     let passCount = 0;
     try {
       await sendGCode(m557Command);
@@ -2071,9 +2033,7 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
       let probesPerRunLearned: number | null = null;
 
       const probeTracker = service ? setInterval(() => {
-        const m = service.getModel() as Record<string, unknown>;
-        const mv = m.move as Record<string, unknown> | undefined;
-        const isProbing = (mv?.probing as boolean | undefined) ?? false;
+        const isProbing = service.getModel().move?.probing ?? false;
         if (wasProbing && !isProbing) {
           probesDone++;
           setProbeProgress((prev) => prev ? { ...prev, done: probesDone, total: probesPerRunLearned } : null);
@@ -2117,7 +2077,7 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
       addToast('error', 'Probing failed', 'The probe sequence did not complete.');
     } finally {
       if (shouldRestoreProbeSamples) {
-        try { await sendGCode('M558 A1 S0.01'); } catch { /* best-effort cleanup */ }
+        try { await sendGCode(`M558 A${prevProbeA} S${prevProbeS}`); } catch { /* best-effort cleanup */ }
       }
       setProbing(false);
     }
@@ -2154,7 +2114,7 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
     }
   }, [service]);
 
-  const handleLevelBed = useCallback(async (opts: import('../../store/printerStore').LevelBedOpts) => {
+  const handleLevelBed = useCallback(async (opts: LevelBedOpts) => {
     setShowLevelModal(false);
     setLeveling(true);
     try {
@@ -2179,11 +2139,23 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
     let stopReason: SmartCalResult['stopReason'] = 'maxIterations';
     let shouldLevel = true;
 
+    // Snapshot the firmware's current M558 so we can restore the user's
+    // baseline in `finally` — survives any throw mid-sequence.
+    const liveProbe = service?.getModel().sensors?.probes?.[0];
+    const prevProbeA = liveProbe?.maxProbeCount ?? 1;
+    const prevProbeS = liveProbe?.tolerance ?? 0.01;
+    const m558Modified = opts.probesPerPoint > 1;
+
     try {
       if (opts.homeFirst) {
         setSmartCalPhase('homing');
         await sendGCode('G28');
         steps.push({ kind: 'info', label: 'Homed all axes', quality: 'info' });
+      }
+
+      // Set the requested probe sampling once for the whole closed loop.
+      if (m558Modified) {
+        await sendGCode(`M558 A${opts.probesPerPoint} S${opts.probeTolerance}`);
       }
 
       for (let i = 0; i < opts.maxIterations; i++) {
@@ -2204,14 +2176,8 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
         /* ── Probe ── */
         setSmartCalPhase('probing');
         try {
-          if (opts.probesPerPoint > 1) {
-            await sendGCode(`M558 A${opts.probesPerPoint} S${opts.probeTolerance}`);
-          }
           await sendGCode(m557Command);
           await probeGrid();
-          if (opts.probesPerPoint > 1) {
-            try { await sendGCode('M558 A1 S0.01'); } catch { /* best-effort restore */ }
-          }
         } catch (err) {
           steps.push({ kind: 'probe', label: `Probe failed (iteration ${i + 1})`, detail: (err as Error).message, quality: 'bad' });
           stopReason = 'failed';
@@ -2283,6 +2249,10 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
       steps.push({ kind: 'done', label: `Smart Cal error: ${(err as Error).message}`, quality: 'bad' });
       stopReason = 'failed';
     } finally {
+      // Restore M558 even when the closed loop bailed mid-iteration.
+      if (m558Modified) {
+        try { await sendGCode(`M558 A${prevProbeA} S${prevProbeS}`); } catch { /* best-effort cleanup */ }
+      }
       setSmartCalRunning(false);
       setSmartCalPhase(null);
     }
@@ -2292,11 +2262,18 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
     setShowSmartCalResultModal(true);
   }, [levelBed, m557Command, probeGrid, probeXMin, probeXMax, probeYMin, probeYMax, sendGCode, service]);
 
-  const handleSaveAs = useCallback(async () => {
-    const filename = prompt('Save height map as (filename without path/extension):', 'heightmap_backup');
-    if (!filename) return;
-    await sendGCode(`M374 P"0:/sys/${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}.csv"`);
-    void refreshCsvList();
+  const handleSaveAs = useCallback((filename: string) => {
+    const safe = filename.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+    if (!safe) return;
+    void (async () => {
+      try {
+        await sendGCode(`M374 P"0:/sys/${safe}.csv"`);
+        await refreshCsvList();
+        addToast('info', 'Height map saved', `0:/sys/${safe}.csv`);
+      } catch (err) {
+        addToast('error', 'Save failed', (err as Error).message);
+      }
+    })();
   }, [refreshCsvList, sendGCode]);
 
   const handleLoadCompare = useCallback(async (path: string) => {
@@ -2374,6 +2351,12 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
           result={smartCalResult}
           onClose={() => setShowSmartCalResultModal(false)}
           onRunAgain={() => { setShowSmartCalResultModal(false); setShowSmartCalModal(true); }}
+        />
+      )}
+      {showSaveAsModal && (
+        <SaveAsModal
+          onCancel={() => setShowSaveAsModal(false)}
+          onConfirm={(name) => { setShowSaveAsModal(false); handleSaveAs(name); }}
         />
       )}
 
@@ -2651,7 +2634,7 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
               </button>
               <button
                 className="hm-ribbon-btn hm-ribbon-btn--sm"
-                onClick={() => void handleSaveAs()}
+                onClick={() => setShowSaveAsModal(true)}
                 disabled={!heightMap || !connected}
                 title="Save a backup copy of the height map on the printer filesystem"
               >
@@ -2919,7 +2902,8 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
                 onClick={() => {
                   void navigator.clipboard.writeText(m557Command).then(() => {
                     setM557Copied(true);
-                    setTimeout(() => setM557Copied(false), 1_800);
+                    if (m557CopyTimerRef.current) clearTimeout(m557CopyTimerRef.current);
+                    m557CopyTimerRef.current = setTimeout(() => setM557Copied(false), 1_800);
                   });
                 }}
                 title="Copy M557 command to clipboard"
@@ -2929,13 +2913,13 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
             </div>
 
             {/* Current M558 probe settings from the live object model */}
-            {connected && probeModelRaw != null && (
+            {connected && probeMaxCount != null && (
               <div className="hm-m558-info" title="Current M558 probe settings reported by the firmware">
                 <span className="hm-m558-info__label">M558 live</span>
                 <span className="hm-m558-info__val">
-                  A{probeModelRaw.maxProbeCount ?? 1}
-                  {(probeModelRaw.maxProbeCount ?? 1) > 1 && (
-                    <> · S{probeModelRaw.tolerance != null ? probeModelRaw.tolerance.toFixed(3) : '0.010'}</>
+                  A{probeMaxCount}
+                  {probeMaxCount > 1 && (
+                    <> · S{probeTol != null ? probeTol.toFixed(3) : '0.010'}</>
                   )}
                 </span>
               </div>

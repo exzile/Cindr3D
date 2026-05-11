@@ -9,6 +9,9 @@ export interface ProbeOffset {
 /**
  * Parse a probe XY offset from a firmware config file.
  *
+ * Returns the FIRST G31 / M851 hit — older RRF configs put per-tool offsets on
+ * subsequent G31 lines and we want T0's offset for grid-bound checks.
+ *
  * Handles:
  *   G31 X<n> Y<n>  — RRF (Duet), Smoothieware
  *   M851 X<n> Y<n> — Marlin, Repetier, some Smoothieware variants
@@ -27,6 +30,51 @@ export function parseProbeOffset(configText: string): ProbeOffset | null {
     return { xOffset: xm ? parseFloat(xm[1]) : 0, yOffset: ym ? parseFloat(ym[1]) : 0 };
   }
   return null;
+}
+
+export interface ParsedM557 {
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
+  numPoints: number;
+  rawLine: string;
+}
+
+/**
+ * Parse an M557 probe-grid declaration from a firmware config file.
+ *
+ * Returns the LAST M557 — RRF config conventions place the operative M557 at
+ * the end of config.g, after any conditional setup blocks, so a late
+ * definition overrides earlier ones.
+ *
+ * Handles X<min>:<max> Y<min>:<max> with either P<count> (Duet/RRF) or
+ * S<spacing> (older configs derive a count from the span).
+ */
+export function parseM557(configText: string): ParsedM557 | null {
+  let result: ParsedM557 | null = null;
+  for (const raw of configText.split('\n')) {
+    const line = raw.replace(/;.*$/, '').trim();
+    if (!/^M557\b/i.test(line)) continue;
+    const xm = line.match(/X(-?\d+(?:\.\d+)?):(-?\d+(?:\.\d+)?)/i);
+    const ym = line.match(/Y(-?\d+(?:\.\d+)?):(-?\d+(?:\.\d+)?)/i);
+    if (!xm || !ym) continue;
+    const xMin = parseFloat(xm[1]);
+    const xMax = parseFloat(xm[2]);
+    const yMin = parseFloat(ym[1]);
+    const yMax = parseFloat(ym[2]);
+    if (xMax <= xMin || yMax <= yMin) continue;
+
+    const pm = line.match(/P(\d+(?:\.\d+)?)/i);
+    const sm = line.match(/S(\d+(?:\.\d+)?)/i);
+    const span = Math.max(xMax - xMin, yMax - yMin);
+    const numPoints = pm
+      ? Math.max(2, Math.round(parseFloat(pm[1])))
+      : sm ? Math.max(2, Math.round(span / parseFloat(sm[1])) + 1) : 9;
+
+    result = { xMin, xMax, yMin, yMax, numPoints, rawLine: raw.trim() };
+  }
+  return result;
 }
 
 export interface HeightMapStats {

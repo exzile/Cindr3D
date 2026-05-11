@@ -6,7 +6,7 @@ import {
   Home, ScanLine, TriangleAlert, Grid3x3, Ruler, Lock, LockOpen,
 } from 'lucide-react';
 import { usePrinterStore, type LevelBedOpts } from '../../../store/printerStore';
-import { computeStats, computeMeshRmsDiff, deviationColor, exportHeightMapCSV, parseProbeOffset, type HeightMapStats } from '../heightMap/utils';
+import { computeStats, computeMeshRmsDiff, deviationColor, exportHeightMapCSV, parseM557, parseProbeOffset, type HeightMapStats } from '../heightMap/utils';
 import {
   CAMERA_POSITIONS,
   Scene3D,
@@ -80,37 +80,6 @@ function saveProbeGridPrefs(prefs: ProbeGridPrefs) {
   } catch { /* storage unavailable */ }
 }
 
-
-function parseM557(configText: string): {
-  xMin: number; xMax: number;
-  yMin: number; yMax: number;
-  numPoints: number;
-  rawLine: string;
-} | null {
-  let result: ReturnType<typeof parseM557> = null;
-  for (const raw of configText.split('\n')) {
-    const line = raw.replace(/;.*$/, '').trim();
-    if (!/^M557\b/i.test(line)) continue;
-    const xm = line.match(/X(-?\d+(?:\.\d+)?):(-?\d+(?:\.\d+)?)/i);
-    const ym = line.match(/Y(-?\d+(?:\.\d+)?):(-?\d+(?:\.\d+)?)/i);
-    if (!xm || !ym) continue;
-    const xMin = parseFloat(xm[1]);
-    const xMax = parseFloat(xm[2]);
-    const yMin = parseFloat(ym[1]);
-    const yMax = parseFloat(ym[2]);
-    if (xMax <= xMin || yMax <= yMin) continue;
-
-    const pm = line.match(/P(\d+(?:\.\d+)?)/i);
-    const sm = line.match(/S(\d+(?:\.\d+)?)/i);
-    const span = Math.max(xMax - xMin, yMax - yMin);
-    const numPoints = pm
-      ? Math.max(2, Math.round(parseFloat(pm[1])))
-      : sm ? Math.max(2, Math.round(span / parseFloat(sm[1])) + 1) : 9;
-
-    result = { xMin, xMax, yMin, yMax, numPoints, rawLine: raw.trim() };
-  }
-  return result;
-}
 
 interface ProbeOpts {
   homeFirst: boolean;
@@ -843,6 +812,12 @@ export default function BedCompensationPanel() {
     setProbeYMax(yMax);
   }, [axes]);
 
+  // Auto-load the default heightmap when a printer first connects so the panel
+  // renders with real data instead of the demo placeholder.
+  useEffect(() => {
+    if (connected) void loadHeightMap();
+  }, [connected, loadHeightMap]);
+
   const handleLoad = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -857,6 +832,10 @@ export default function BedCompensationPanel() {
     setError(null);
     const isRRF = !boardType || boardType === 'duet';
     const shouldRestoreProbeSamples = isRRF && opts.probesPerPoint > 1;
+    // Capture the user's M558 baseline so we restore it (not a hardcoded A1).
+    const liveProbe = service?.getModel().sensors?.probes?.[0];
+    const prevProbeA = liveProbe?.maxProbeCount ?? 1;
+    const prevProbeS = liveProbe?.tolerance ?? 0.01;
     let passCount = 0;
     try {
       await sendGCode(m557Command);
@@ -873,19 +852,19 @@ export default function BedCompensationPanel() {
         }
         if (curr) prevMap = curr;
       }
-      if (isRRF && opts.probesPerPoint > 1) await sendGCode('M558 A1');
       const finalMap = usePrinterStore.getState().heightMap;
       setProbeResult({ stats: finalMap ? computeStats(finalMap) : null, passes: passCount });
       setShowProbeResultModal(true);
     } catch {
       setError('Probing failed');
     } finally {
+      // Restore M558 even when the probe sequence threw; do it once, here.
       if (shouldRestoreProbeSamples) {
-        try { await sendGCode('M558 A1'); } catch { /* best-effort cleanup */ }
+        try { await sendGCode(`M558 A${prevProbeA} S${prevProbeS}`); } catch { /* best-effort cleanup */ }
       }
       setProbing(false);
     }
-  }, [boardType, m557Command, probeGrid, sendGCode]);
+  }, [boardType, m557Command, probeGrid, sendGCode, service]);
 
   const handleLevelBed = useCallback(async (opts: LevelBedOpts) => {
     setShowLevelModal(false);
