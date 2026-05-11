@@ -1,4 +1,5 @@
 import type { DuetHeightMap } from '../../types/duet';
+import { errorMessage } from '../../utils/errorHandling';
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -226,7 +227,7 @@ function parseMarlinJson(body: string): DuetHeightMap {
   try {
     json = JSON.parse(body) as Record<string, unknown>;
   } catch (e) {
-    throw new Error(`Height map JSON parse error: ${(e as Error).message}`);
+    throw new Error(`Height map JSON parse error: ${errorMessage(e, 'Unknown error')}`);
   }
 
   // Klipper saved-variables wrapper

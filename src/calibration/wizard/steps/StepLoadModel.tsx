@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Center } from '@react-three/drei';
+import { PrintSpaceLights } from '../../../components/canvas/PrintSpaceLights';
 import { CALIBRATION_STL_URLS, getCalibrationModels } from '../../calibrationModels';
 import { useSlicerStore } from '../../../store/slicerStore';
 
@@ -189,9 +190,7 @@ export function StepLoadModel({ testType }: StepLoadModelProps) {
             camera={{ position: [0, -90, 25], up: [0, 0, 1], fov: 42 }}
             style={{ width: '100%', height: '100%' }}
           >
-            <ambientLight intensity={0.55} />
-            <directionalLight position={[40, -60, 80]} intensity={0.85} />
-            <directionalLight position={[-40, 40, 20]} intensity={0.3} />
+            <PrintSpaceLights />
             <PreviewMesh geometry={geometry} />
             <OrbitControls enablePan={false} />
           </Canvas>

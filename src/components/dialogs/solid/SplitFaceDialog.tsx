@@ -4,8 +4,8 @@
  */
 
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import type { Sketch, ConstructionPlane } from '../../../types/cad';
+import { DialogShell } from '../common/DialogShell';
 
 export interface SplitFaceParams {
   faceId: string | null;
@@ -47,15 +47,8 @@ export function SplitFaceDialog({ open, faceId, sketches, constructionPlanes, on
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Split Face</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-
-          <div className="form-group">
+    <DialogShell title="Split Face" onClose={onClose} size="sm" onConfirm={handleOk} confirmDisabled={!canOk}>
+      <div className="form-group">
             <label>Face to Split</label>
             <span style={{ fontSize: 12, opacity: 0.7 }}>
               {faceId ? 'Face selected' : 'Click a face in the viewport'}
@@ -109,13 +102,6 @@ export function SplitFaceDialog({ open, faceId, sketches, constructionPlanes, on
               Surface splitting uses the nearest surface body. Ensure a surface body exists in the model.
             </p>
           )}
-
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOk} disabled={!canOk}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

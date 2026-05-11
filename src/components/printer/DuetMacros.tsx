@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useMemo } from 'react';
 import './DuetMacros.css';
+import { errorMessage } from '../../utils/errorHandling';
 import {
   Play,
   FolderOpen,
@@ -16,6 +17,8 @@ import {
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import DuetFileEditor from './DuetFileEditor';
+
+const ROOT_PATH = '0:/macros';
 
 export default function DuetMacros() {
   const macros = usePrinterStore((s) => s.macros);
@@ -34,10 +37,9 @@ export default function DuetMacros() {
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const ROOT_PATH = '0:/macros';
+  const isAtRoot = macroPath === ROOT_PATH;
 
-  // Build breadcrumb segments from macroPath
-  const breadcrumbs = (() => {
+  const breadcrumbs = useMemo(() => {
     const parts: { label: string; path: string }[] = [{ label: 'Macros', path: ROOT_PATH }];
     if (macroPath !== ROOT_PATH) {
       const relative = macroPath.slice(ROOT_PATH.length + 1);
@@ -49,33 +51,19 @@ export default function DuetMacros() {
       }
     }
     return parts;
-  })();
+  }, [macroPath]);
 
-  const isAtRoot = macroPath === ROOT_PATH;
-
-  // Quick macros: .g files at root level (only shown when at root)
-  const quickMacros = isAtRoot
-    ? macros.filter((f) => f.type === 'f' && f.name.endsWith('.g')).slice(0, 6)
-    : [];
-
-  const folders = useMemo(
-    () =>
-      macros.filter(
-        (f) =>
-          f.type === 'd' &&
-          (!macroSearch || f.name.toLowerCase().includes(macroSearch.toLowerCase())),
-      ),
-    [macros, macroSearch],
-  );
-  const files = useMemo(
-    () =>
-      macros.filter(
-        (f) =>
-          f.type === 'f' &&
-          (!macroSearch || f.name.toLowerCase().includes(macroSearch.toLowerCase())),
-      ),
-    [macros, macroSearch],
-  );
+  const { folders, files, quickMacros } = useMemo(() => {
+    const lowerSearch = macroSearch.toLowerCase();
+    const matched = macros.filter((f) => !macroSearch || f.name.toLowerCase().includes(lowerSearch));
+    return {
+      folders: matched.filter((f) => f.type === 'd'),
+      files: matched.filter((f) => f.type === 'f'),
+      quickMacros: isAtRoot
+        ? macros.filter((f) => f.type === 'f' && f.name.endsWith('.g')).slice(0, 6)
+        : [],
+    };
+  }, [macros, macroSearch, isAtRoot]);
 
   const handleRunMacro = useCallback(
     async (filename: string) => {
@@ -112,7 +100,7 @@ export default function DuetMacros() {
         await service.uploadFile(uploadPath, file);
         refreshMacros();
       } catch (err) {
-        setError(`Macro upload failed: ${(err as Error).message}`);
+        setError(`Macro upload failed: ${errorMessage(err, 'Unknown error')}`);
       }
       // Reset input so the same file can be uploaded again
       if (fileInputRef.current) {
@@ -133,7 +121,7 @@ export default function DuetMacros() {
         }
         refreshMacros();
       } catch (err) {
-        setError(`Failed to delete macro: ${(err as Error).message}`);
+        setError(`Failed to delete macro: ${errorMessage(err, 'Unknown error')}`);
       } finally {
         setDeleting(null);
       }
@@ -189,7 +177,7 @@ export default function DuetMacros() {
           const uploadPath = `${macroPath}/${droppedFiles[i].name}`;
           await service.uploadFile(uploadPath, droppedFiles[i]);
         } catch (err) {
-          setError(`Macro upload failed: ${(err as Error).message}`);
+          setError(`Macro upload failed: ${errorMessage(err, 'Unknown error')}`);
         }
       }
       refreshMacros();

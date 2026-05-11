@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function StitchDialog({ onClose }: { onClose: () => void }) {
   const commitStitch = useCADStore((s) => s.commitStitch);
@@ -30,14 +30,8 @@ export function StitchDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Stitch</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
+    <DialogShell title="Stitch" onClose={onClose} size="sm" onConfirm={handleOK} confirmDisabled={selectedIds.length < 1}>
+      <div className="form-group">
             <label>Surface Bodies</label>
             {surfaceBodies.length === 0 ? (
               <p className="dialog-hint">No surface bodies found. Create a surface first.</p>
@@ -82,18 +76,6 @@ export function StitchDialog({ onClose }: { onClose: () => void }) {
             />
             Keep Original Surfaces
           </label>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn-primary"
-            onClick={handleOK}
-            disabled={selectedIds.length < 1}
-          >
-            OK
-          </button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

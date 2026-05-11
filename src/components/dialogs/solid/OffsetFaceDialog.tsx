@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function OffsetFaceDialog({ onClose }: { onClose: () => void }) {
   const editingFeatureId = useCADStore((s) => s.editingFeatureId);
@@ -42,64 +42,52 @@ export function OffsetFaceDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog-panel">
-        <div className="dialog-header">
-          <span className="dialog-title">{editing ? 'Edit Offset Face' : 'Offset Face'}</span>
-          <button className="dialog-close" onClick={onClose}><X size={14} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="dialog-field">
-            <label className="dialog-label">Body</label>
-            <select
-              className="dialog-select"
-              value={selectedBodyId}
-              onChange={(e) => setSelectedBodyId(e.target.value)}
-            >
-              {bodyFeatures.length === 0 && <option value="">— no bodies —</option>}
-              {bodyFeatures.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="dialog-field">
-            <label className="dialog-label">Offset Distance (mm)</label>
-            <input
-              className="dialog-input"
-              type="number"
-              step={0.1}
-              value={offsetDistance}
-              onChange={(e) => setOffsetDistance(parseFloat(e.target.value) || 0)}
-            />
-          </div>
-          <div className="dialog-field">
-            <label className="dialog-label">Direction</label>
-            <select
-              className="dialog-select"
-              value={direction}
-              onChange={(e) => setDirection(e.target.value as 'outward' | 'inward')}
-            >
-              <option value="outward">Outward</option>
-              <option value="inward">Inward</option>
-            </select>
-          </div>
-          <div className="dialog-field">
-            <label className="dialog-label">Extent</label>
-            <select
-              className="dialog-select"
-              value={extent}
-              onChange={(e) => setExtent(e.target.value as 'distance' | 'all')}
-            >
-              <option value="distance">Distance</option>
-              <option value="all">All</option>
-            </select>
-          </div>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
-        </div>
+    <DialogShell title={editing ? 'Edit Offset Face' : 'Offset Face'} onClose={onClose} onConfirm={handleOK}>
+      <div className="dialog-field">
+        <label className="dialog-label">Body</label>
+        <select
+          className="dialog-select"
+          value={selectedBodyId}
+          onChange={(e) => setSelectedBodyId(e.target.value)}
+        >
+          {bodyFeatures.length === 0 && <option value="">— no bodies —</option>}
+          {bodyFeatures.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
       </div>
-    </div>
+      <div className="dialog-field">
+        <label className="dialog-label">Offset Distance (mm)</label>
+        <input
+          className="dialog-input"
+          type="number"
+          step={0.1}
+          value={offsetDistance}
+          onChange={(e) => setOffsetDistance(parseFloat(e.target.value) || 0)}
+        />
+      </div>
+      <div className="dialog-field">
+        <label className="dialog-label">Direction</label>
+        <select
+          className="dialog-select"
+          value={direction}
+          onChange={(e) => setDirection(e.target.value as 'outward' | 'inward')}
+        >
+          <option value="outward">Outward</option>
+          <option value="inward">Inward</option>
+        </select>
+      </div>
+      <div className="dialog-field">
+        <label className="dialog-label">Extent</label>
+        <select
+          className="dialog-select"
+          value={extent}
+          onChange={(e) => setExtent(e.target.value as 'distance' | 'all')}
+        >
+          <option value="distance">Distance</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+    </DialogShell>
   );
 }

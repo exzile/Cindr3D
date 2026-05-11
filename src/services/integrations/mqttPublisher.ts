@@ -296,7 +296,10 @@ class MqttPublisher {
     if (!packetData) return;
     const handlers = this.subscriptions.get(packetData.topic);
     if (!handlers) return;
-    handlers.forEach((handler) => handler(packetData.payload, packetData.topic));
+    handlers.forEach((handler) => {
+      try { handler(packetData.payload, packetData.topic); }
+      catch (err) { console.error('[MQTT] subscriber threw:', err); }
+    });
   }
 
   private allocatePacketId(): number {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useComponentStore } from '../../../store/componentStore';
+import { DialogShell } from '../common/DialogShell';
 import { useCADStore } from '../../../store/cadStore';
 
 export function MotionLinkDialog({ onClose }: { onClose: () => void }) {
@@ -29,13 +29,7 @@ export function MotionLinkDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog-panel">
-        <div className="dialog-header">
-          <span className="dialog-title">Motion Link</span>
-          <button className="dialog-close" onClick={onClose}><X size={14} /></button>
-        </div>
-        <div className="dialog-body">
+    <DialogShell title="Motion Link" onClose={onClose} onConfirm={handleOK}>
           <div className="dialog-field">
             <label className="dialog-label">Source Joint</label>
             <select
@@ -82,12 +76,6 @@ export function MotionLinkDialog({ onClose }: { onClose: () => void }) {
               onChange={(e) => setOffset(parseFloat(e.target.value) || 0)}
             />
           </div>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

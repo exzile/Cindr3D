@@ -12,6 +12,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { errorMessage } from '../../../utils/errorHandling';
 import type {
   DateFormat,
   DuetPrefs,
@@ -166,7 +167,7 @@ export function ConnectionSection({
         serialProductId: info.productId,
       });
     } catch (err) {
-      const msg = (err as Error).message || 'Could not request a serial port.';
+      const msg = errorMessage(err, 'Unknown error') || 'Could not request a serial port.';
       // User cancellation is a NotFoundError; don't treat it as a failure.
       if (!/no port selected|user cancelled/i.test(msg)) {
         setSerialPickError(msg);

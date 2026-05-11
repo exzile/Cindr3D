@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
 import { THREAD_SIZES, findThreadSize } from './ThreadSizePresets';
 import type { ThreadStandard } from './ThreadSizePresets';
@@ -90,14 +90,8 @@ export function ThreadDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>{editing ? 'Edit Thread' : 'Thread'}</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="settings-grid">
+    <DialogShell title={editing ? 'Edit Thread' : 'Thread'} onClose={onClose} size="sm" onConfirm={handleApply} confirmDisabled={!canApply}>
+      <div className="settings-grid">
             <div className="form-group">
               <label>Type</label>
               <select value={threadType} onChange={(e) => setThreadType(e.target.value as 'cosmetic' | 'modeled')}>
@@ -197,12 +191,6 @@ export function ThreadDialog({ onClose }: { onClose: () => void }) {
             <input type="checkbox" checked={fullLength} onChange={(e) => setFullLength(e.target.checked)} />
             Full Length
           </label>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply} disabled={!canApply}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

@@ -1,6 +1,7 @@
 import { useState, type FocusEvent, type MouseEvent } from 'react';
-import { X, Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
 
 /** SOL-I1: Fillet type discriminator — CORR-3: added chord-length */
@@ -111,261 +112,250 @@ function FilletDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: FilletD
   };
 
   return (
-    <div className="dialog-overlay edge-pick-dialog">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Fillet</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
+    <DialogShell
+      title="Fillet"
+      onClose={onClose}
+      size="sm"
+      overlayClassName="edge-pick-dialog"
+      onConfirm={handleOK}
+      confirmDisabled={selectedEdgeCount === 0}
+    >
+      <p className="dialog-hint">
+        {selectedEdgeCount} edge(s) selected
+      </p>
+
+      {/* SOL-I1 / CORR-3: Fillet mode */}
+      <div className="form-group">
+        <label>Type</label>
+        <select value={mode} onChange={(e) => setMode(e.target.value as FilletMode)}>
+          <option value="constant">Constant Radius</option>
+          <option value="variable">Variable Radius</option>
+          <option value="chord-length">Chord Length</option>
+          <option value="full-round">Full Round</option>
+        </select>
+      </div>
+
+      {mode === 'constant' && (
+        <div className="form-group">
+          <label>Radius (mm)</label>
+          <input
+            type="number"
+            value={radius}
+            onFocus={selectNumberText}
+            onClick={selectNumberText}
+            onChange={(e) => setRadius(clamp(parseFloat(e.target.value) || 2, 0.01, 500))}
+            min={0.01}
+            max={500}
+            step={0.5}
+          />
         </div>
-        <div className="dialog-body">
-          <p className="dialog-hint">
-            {selectedEdgeCount} edge(s) selected
-          </p>
+      )}
 
-          {/* SOL-I1 / CORR-3: Fillet mode */}
-          <div className="form-group">
-            <label>Type</label>
-            <select value={mode} onChange={(e) => setMode(e.target.value as FilletMode)}>
-              <option value="constant">Constant Radius</option>
-              <option value="variable">Variable Radius</option>
-              <option value="chord-length">Chord Length</option>
-              <option value="full-round">Full Round</option>
-            </select>
-          </div>
-
-          {mode === 'constant' && (
+      {mode === 'variable' && (
+        <>
+          <div className="settings-grid">
             <div className="form-group">
-              <label>Radius (mm)</label>
+              <label>Start Radius (mm)</label>
               <input
                 type="number"
-                value={radius}
+                value={startRadius}
                 onFocus={selectNumberText}
                 onClick={selectNumberText}
-                onChange={(e) => setRadius(clamp(parseFloat(e.target.value) || 2, 0.01, 500))}
+                onChange={(e) => setStartRadius(clamp(parseFloat(e.target.value) || 1, 0.01, 500))}
                 min={0.01}
                 max={500}
                 step={0.5}
               />
             </div>
-          )}
-
-          {mode === 'variable' && (
-            <>
-              <div className="settings-grid">
-                <div className="form-group">
-                  <label>Start Radius (mm)</label>
-                  <input
-                    type="number"
-                    value={startRadius}
-                    onFocus={selectNumberText}
-                    onClick={selectNumberText}
-                    onChange={(e) => setStartRadius(clamp(parseFloat(e.target.value) || 1, 0.01, 500))}
-                    min={0.01}
-                    max={500}
-                    step={0.5}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>End Radius (mm)</label>
-                  <input
-                    type="number"
-                    value={endRadius}
-                    onFocus={selectNumberText}
-                    onClick={selectNumberText}
-                    onChange={(e) => setEndRadius(clamp(parseFloat(e.target.value) || 4, 0.01, 500))}
-                    min={0.01}
-                    max={500}
-                    step={0.5}
-                  />
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* CORR-3: Chord Length mode */}
-          {mode === 'chord-length' && (
             <div className="form-group">
-              <label>Chord Length (mm)</label>
+              <label>End Radius (mm)</label>
               <input
                 type="number"
-                value={chordLength}
+                value={endRadius}
                 onFocus={selectNumberText}
                 onClick={selectNumberText}
-                onChange={(e) => setChordLength(clamp(parseFloat(e.target.value) || 5, 0.01, 1000))}
+                onChange={(e) => setEndRadius(clamp(parseFloat(e.target.value) || 4, 0.01, 500))}
                 min={0.01}
-                max={1000}
+                max={500}
                 step={0.5}
               />
-              <p className="dialog-hint" style={{ marginTop: 4 }}>
-                Chord length controls the width of the fillet arc rather than its radius.
-                r = chordLen / (2 sin(θ/2)) for the edge dihedral angle θ.
-              </p>
             </div>
-          )}
-
-          {mode === 'full-round' && (
-            <p className="dialog-hint">
-              Select three edge sets: Side Face 1 → Center Face → Side Face 2.
-              The fillet radius is computed automatically to create a tangent blend.
-            </p>
-          )}
-
-          {/* CORR-3: Per-edge edge sets — lets each edge have its own radius type */}
-          <div className="form-group">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label style={{ marginBottom: 0 }}>Edge Sets</label>
-              <button
-                className="btn btn-xs"
-                style={{ padding: '2px 8px', fontSize: 11 }}
-                onClick={addEdgeSet}
-                title="Add an edge set with its own radius type (SDK FilletFeatureInput edge-set API)"
-              >
-                <Plus size={11} /> Add Set
-              </button>
-            </div>
-            {edgeSets.length === 0 && (
-              <p className="dialog-hint" style={{ marginTop: 4 }}>
-                Optional: add per-edge radius sets to assign different types to subsets of selected edges.
-              </p>
-            )}
-            {showEdgeSets && edgeSets.map((set, i) => (
-              <div key={i} style={{ border: '1px solid #555', borderRadius: 4, padding: '6px 8px', marginTop: 6, position: 'relative' }}>
-                <button
-                  style={{ position: 'absolute', top: 4, right: 4, background: 'none', border: 'none', cursor: 'pointer', color: '#cc4444', padding: 0 }}
-                  onClick={() => removeEdgeSet(i)}
-                  title="Remove this edge set"
-                >
-                  <Trash2 size={12} />
-                </button>
-                <div className="settings-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '4px 8px' }}>
-                  <div className="form-group" style={{ marginBottom: 4 }}>
-                    <label style={{ fontSize: 11 }}>Type</label>
-                    <select
-                      style={{ fontSize: 11 }}
-                      value={set.type}
-                      onChange={(e) => updateEdgeSet(i, { type: e.target.value as FilletEdgeSet['type'] })}
-                    >
-                      <option value="constant">Constant</option>
-                      <option value="variable">Variable</option>
-                      <option value="chord-length">Chord Length</option>
-                    </select>
-                  </div>
-                  {set.type === 'constant' && (
-                    <div className="form-group" style={{ marginBottom: 4 }}>
-                      <label style={{ fontSize: 11 }}>Radius (mm)</label>
-                      <input type="number" style={{ fontSize: 11 }} value={set.radius ?? 2} min={0.01} step={0.5}
-                        onFocus={selectNumberText}
-                        onClick={selectNumberText}
-                        onChange={(e) => updateEdgeSet(i, { radius: Math.max(0.01, parseFloat(e.target.value) || 2) })} />
-                    </div>
-                  )}
-                  {set.type === 'variable' && (
-                    <>
-                      <div className="form-group" style={{ marginBottom: 4 }}>
-                        <label style={{ fontSize: 11 }}>Start R (mm)</label>
-                        <input type="number" style={{ fontSize: 11 }} value={set.radius ?? 1} min={0.01} step={0.5}
-                          onFocus={selectNumberText}
-                          onClick={selectNumberText}
-                          onChange={(e) => updateEdgeSet(i, { radius: Math.max(0.01, parseFloat(e.target.value) || 1) })} />
-                      </div>
-                      <div className="form-group" style={{ marginBottom: 4 }}>
-                        <label style={{ fontSize: 11 }}>End R (mm)</label>
-                        <input type="number" style={{ fontSize: 11 }} value={set.endRadius ?? 4} min={0.01} step={0.5}
-                          onFocus={selectNumberText}
-                          onClick={selectNumberText}
-                          onChange={(e) => updateEdgeSet(i, { endRadius: Math.max(0.01, parseFloat(e.target.value) || 4) })} />
-                      </div>
-                    </>
-                  )}
-                  {set.type === 'chord-length' && (
-                    <div className="form-group" style={{ marginBottom: 4 }}>
-                      <label style={{ fontSize: 11 }}>Chord Len (mm)</label>
-                      <input type="number" style={{ fontSize: 11 }} value={set.chordLength ?? 5} min={0.01} step={0.5}
-                        onFocus={selectNumberText}
-                        onClick={selectNumberText}
-                        onChange={(e) => updateEdgeSet(i, { chordLength: Math.max(0.01, parseFloat(e.target.value) || 5) })} />
-                    </div>
-                  )}
-                </div>
-                <p className="dialog-hint" style={{ margin: '4px 0 0', fontSize: 10 }}>
-                  Edge IDs assigned automatically from the current selection when this set is the only one, or via edge picker (deferred).
-                </p>
-              </div>
-            ))}
           </div>
+        </>
+      )}
 
-          <div className="form-group">
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={propagate}
-                onChange={(e) => setPropagate(e.target.checked)}
-              />
-              Propagate Along Tangent Edges
-            </label>
-          </div>
-
-          <div className="form-group">
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={setback}
-                onChange={(e) => setSetback(e.target.checked)}
-              />
-              Setback
-            </label>
-          </div>
-          {setback && (
-            <>
-              <div className="form-group" style={{ paddingLeft: 16 }}>
-                <label>Setback Distance (mm)</label>
-                <input
-                  type="number"
-                  value={setbackDistance}
-                  onFocus={selectNumberText}
-                  onClick={selectNumberText}
-                  onChange={(e) => setSetbackDistance(Math.max(0, parseFloat(e.target.value) || 0))}
-                  min={0}
-                  max={500}
-                  step={0.5}
-                />
-              </div>
-              <div className="form-group" style={{ paddingLeft: 16 }}>
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={isRollingBallCorner}
-                    onChange={(e) => setIsRollingBallCorner(e.target.checked)}
-                  />
-                  Rolling Ball Corner
-                </label>
-              </div>
-            </>
-          )}
-
-          <div className="form-group">
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={isG2}
-                onChange={(e) => setIsG2(e.target.checked)}
-              />
-              G2 Smooth (curvature continuity)
-            </label>
-          </div>
+      {/* CORR-3: Chord Length mode */}
+      {mode === 'chord-length' && (
+        <div className="form-group">
+          <label>Chord Length (mm)</label>
+          <input
+            type="number"
+            value={chordLength}
+            onFocus={selectNumberText}
+            onClick={selectNumberText}
+            onChange={(e) => setChordLength(clamp(parseFloat(e.target.value) || 5, 0.01, 1000))}
+            min={0.01}
+            max={1000}
+            step={0.5}
+          />
+          <p className="dialog-hint" style={{ marginTop: 4 }}>
+            Chord length controls the width of the fillet arc rather than its radius.
+            r = chordLen / (2 sin(θ/2)) for the edge dihedral angle θ.
+          </p>
         </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+      )}
+
+      {mode === 'full-round' && (
+        <p className="dialog-hint">
+          Select three edge sets: Side Face 1 → Center Face → Side Face 2.
+          The fillet radius is computed automatically to create a tangent blend.
+        </p>
+      )}
+
+      {/* CORR-3: Per-edge edge sets — lets each edge have its own radius type */}
+      <div className="form-group">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <label style={{ marginBottom: 0 }}>Edge Sets</label>
           <button
-            className="btn btn-primary"
-            onClick={handleOK}
-            disabled={selectedEdgeCount === 0}
+            className="btn btn-xs"
+            style={{ padding: '2px 8px', fontSize: 11 }}
+            onClick={addEdgeSet}
+            title="Add an edge set with its own radius type (SDK FilletFeatureInput edge-set API)"
           >
-            OK
+            <Plus size={11} /> Add Set
           </button>
         </div>
+        {edgeSets.length === 0 && (
+          <p className="dialog-hint" style={{ marginTop: 4 }}>
+            Optional: add per-edge radius sets to assign different types to subsets of selected edges.
+          </p>
+        )}
+        {showEdgeSets && edgeSets.map((set, i) => (
+          <div key={i} style={{ border: '1px solid #555', borderRadius: 4, padding: '6px 8px', marginTop: 6, position: 'relative' }}>
+            <button
+              style={{ position: 'absolute', top: 4, right: 4, background: 'none', border: 'none', cursor: 'pointer', color: '#cc4444', padding: 0 }}
+              onClick={() => removeEdgeSet(i)}
+              title="Remove this edge set"
+            >
+              <Trash2 size={12} />
+            </button>
+            <div className="settings-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '4px 8px' }}>
+              <div className="form-group" style={{ marginBottom: 4 }}>
+                <label style={{ fontSize: 11 }}>Type</label>
+                <select
+                  style={{ fontSize: 11 }}
+                  value={set.type}
+                  onChange={(e) => updateEdgeSet(i, { type: e.target.value as FilletEdgeSet['type'] })}
+                >
+                  <option value="constant">Constant</option>
+                  <option value="variable">Variable</option>
+                  <option value="chord-length">Chord Length</option>
+                </select>
+              </div>
+              {set.type === 'constant' && (
+                <div className="form-group" style={{ marginBottom: 4 }}>
+                  <label style={{ fontSize: 11 }}>Radius (mm)</label>
+                  <input type="number" style={{ fontSize: 11 }} value={set.radius ?? 2} min={0.01} step={0.5}
+                    onFocus={selectNumberText}
+                    onClick={selectNumberText}
+                    onChange={(e) => updateEdgeSet(i, { radius: Math.max(0.01, parseFloat(e.target.value) || 2) })} />
+                </div>
+              )}
+              {set.type === 'variable' && (
+                <>
+                  <div className="form-group" style={{ marginBottom: 4 }}>
+                    <label style={{ fontSize: 11 }}>Start R (mm)</label>
+                    <input type="number" style={{ fontSize: 11 }} value={set.radius ?? 1} min={0.01} step={0.5}
+                      onFocus={selectNumberText}
+                      onClick={selectNumberText}
+                      onChange={(e) => updateEdgeSet(i, { radius: Math.max(0.01, parseFloat(e.target.value) || 1) })} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 4 }}>
+                    <label style={{ fontSize: 11 }}>End R (mm)</label>
+                    <input type="number" style={{ fontSize: 11 }} value={set.endRadius ?? 4} min={0.01} step={0.5}
+                      onFocus={selectNumberText}
+                      onClick={selectNumberText}
+                      onChange={(e) => updateEdgeSet(i, { endRadius: Math.max(0.01, parseFloat(e.target.value) || 4) })} />
+                  </div>
+                </>
+              )}
+              {set.type === 'chord-length' && (
+                <div className="form-group" style={{ marginBottom: 4 }}>
+                  <label style={{ fontSize: 11 }}>Chord Len (mm)</label>
+                  <input type="number" style={{ fontSize: 11 }} value={set.chordLength ?? 5} min={0.01} step={0.5}
+                    onFocus={selectNumberText}
+                    onClick={selectNumberText}
+                    onChange={(e) => updateEdgeSet(i, { chordLength: Math.max(0.01, parseFloat(e.target.value) || 5) })} />
+                </div>
+              )}
+            </div>
+            <p className="dialog-hint" style={{ margin: '4px 0 0', fontSize: 10 }}>
+              Edge IDs assigned automatically from the current selection when this set is the only one, or via edge picker (deferred).
+            </p>
+          </div>
+        ))}
       </div>
-    </div>
+
+      <div className="form-group">
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={propagate}
+            onChange={(e) => setPropagate(e.target.checked)}
+          />
+          Propagate Along Tangent Edges
+        </label>
+      </div>
+
+      <div className="form-group">
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={setback}
+            onChange={(e) => setSetback(e.target.checked)}
+          />
+          Setback
+        </label>
+      </div>
+      {setback && (
+        <>
+          <div className="form-group" style={{ paddingLeft: 16 }}>
+            <label>Setback Distance (mm)</label>
+            <input
+              type="number"
+              value={setbackDistance}
+              onFocus={selectNumberText}
+              onClick={selectNumberText}
+              onChange={(e) => setSetbackDistance(Math.max(0, parseFloat(e.target.value) || 0))}
+              min={0}
+              max={500}
+              step={0.5}
+            />
+          </div>
+          <div className="form-group" style={{ paddingLeft: 16 }}>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={isRollingBallCorner}
+                onChange={(e) => setIsRollingBallCorner(e.target.checked)}
+              />
+              Rolling Ball Corner
+            </label>
+          </div>
+        </>
+      )}
+
+      <div className="form-group">
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={isG2}
+            onChange={(e) => setIsG2(e.target.checked)}
+          />
+          G2 Smooth (curvature continuity)
+        </label>
+      </div>
+    </DialogShell>
   );
 }
 

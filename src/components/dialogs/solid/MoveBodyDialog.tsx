@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
 
 export function MoveBodyDialog({ onClose }: { onClose: () => void }) {
@@ -75,74 +75,62 @@ export function MoveBodyDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Move / Copy</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
+    <DialogShell title="Move / Copy" onClose={onClose} size="sm" onConfirm={handleApply}>
+      <div className="form-group">
+        <label>Target Body</label>
+        <select value={targetFeatureId} onChange={(e) => setTargetFeatureId(e.target.value)}>
+          {solidFeatures.length === 0
+            ? <option value="">— no bodies —</option>
+            : solidFeatures.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)
+          }
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Move Type</label>
+        <select value={moveType} onChange={(e) => setMoveType(e.target.value as 'free' | 'along-axis' | 'point-to-point')}>
+          <option value="free">Free Move</option>
+          <option value="along-axis">Along Axis</option>
+          <option value="point-to-point">Point to Point</option>
+        </select>
+      </div>
+      <div className="settings-grid">
+        <div className="form-group">
+          <label>X Offset (mm){incrementalMove ? ` [snap: ${moveStep}]` : ''}</label>
+          <input type="number" value={dx} step={moveStep}
+            onChange={(e) => setDx(snapToStep(parseFloat(e.target.value) || 0, moveStep))} />
         </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Target Body</label>
-            <select value={targetFeatureId} onChange={(e) => setTargetFeatureId(e.target.value)}>
-              {solidFeatures.length === 0
-                ? <option value="">— no bodies —</option>
-                : solidFeatures.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)
-              }
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Move Type</label>
-            <select value={moveType} onChange={(e) => setMoveType(e.target.value as 'free' | 'along-axis' | 'point-to-point')}>
-              <option value="free">Free Move</option>
-              <option value="along-axis">Along Axis</option>
-              <option value="point-to-point">Point to Point</option>
-            </select>
-          </div>
-          <div className="settings-grid">
-            <div className="form-group">
-              <label>X Offset (mm){incrementalMove ? ` [snap: ${moveStep}]` : ''}</label>
-              <input type="number" value={dx} step={moveStep}
-                onChange={(e) => setDx(snapToStep(parseFloat(e.target.value) || 0, moveStep))} />
-            </div>
-            <div className="form-group">
-              <label>Y Offset (mm)</label>
-              <input type="number" value={dy} step={moveStep}
-                onChange={(e) => setDy(snapToStep(parseFloat(e.target.value) || 0, moveStep))} />
-            </div>
-            <div className="form-group">
-              <label>Z Offset (mm)</label>
-              <input type="number" value={dz} step={moveStep}
-                onChange={(e) => setDz(snapToStep(parseFloat(e.target.value) || 0, moveStep))} />
-            </div>
-          </div>
-          <div className="settings-grid">
-            <div className="form-group">
-              <label>X Rotation (°){incrementalMove ? ` [snap: ${rotStep}°]` : ''}</label>
-              <input type="number" value={rx} step={rotStep}
-                onChange={(e) => setRx(snapToStep(parseFloat(e.target.value) || 0, rotStep))} />
-            </div>
-            <div className="form-group">
-              <label>Y Rotation (°)</label>
-              <input type="number" value={ry} step={rotStep}
-                onChange={(e) => setRy(snapToStep(parseFloat(e.target.value) || 0, rotStep))} />
-            </div>
-            <div className="form-group">
-              <label>Z Rotation (°)</label>
-              <input type="number" value={rz} step={rotStep}
-                onChange={(e) => setRz(snapToStep(parseFloat(e.target.value) || 0, rotStep))} />
-            </div>
-          </div>
-          <label className="checkbox-label">
-            <input type="checkbox" checked={copy} onChange={(e) => setCopy(e.target.checked)} />
-            Create Copy
-          </label>
+        <div className="form-group">
+          <label>Y Offset (mm)</label>
+          <input type="number" value={dy} step={moveStep}
+            onChange={(e) => setDy(snapToStep(parseFloat(e.target.value) || 0, moveStep))} />
         </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply}>OK</button>
+        <div className="form-group">
+          <label>Z Offset (mm)</label>
+          <input type="number" value={dz} step={moveStep}
+            onChange={(e) => setDz(snapToStep(parseFloat(e.target.value) || 0, moveStep))} />
         </div>
       </div>
-    </div>
+      <div className="settings-grid">
+        <div className="form-group">
+          <label>X Rotation (°){incrementalMove ? ` [snap: ${rotStep}°]` : ''}</label>
+          <input type="number" value={rx} step={rotStep}
+            onChange={(e) => setRx(snapToStep(parseFloat(e.target.value) || 0, rotStep))} />
+        </div>
+        <div className="form-group">
+          <label>Y Rotation (°)</label>
+          <input type="number" value={ry} step={rotStep}
+            onChange={(e) => setRy(snapToStep(parseFloat(e.target.value) || 0, rotStep))} />
+        </div>
+        <div className="form-group">
+          <label>Z Rotation (°)</label>
+          <input type="number" value={rz} step={rotStep}
+            onChange={(e) => setRz(snapToStep(parseFloat(e.target.value) || 0, rotStep))} />
+        </div>
+      </div>
+      <label className="checkbox-label">
+        <input type="checkbox" checked={copy} onChange={(e) => setCopy(e.target.checked)} />
+        Create Copy
+      </label>
+    </DialogShell>
   );
 }

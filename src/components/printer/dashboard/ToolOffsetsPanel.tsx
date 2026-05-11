@@ -5,9 +5,8 @@ import { colors as COLORS } from '../../../utils/theme';
 import {
   compactPanelInputStyle as inputStyle,
   dashboardButtonStyle as btnStyle,
-  panelStyle,
-  sectionTitleStyle as labelStyle,
 } from '../../../utils/printerPanelStyles';
+import { DashboardPanel } from './DashboardPanel';
 
 /** Axis letters used by G10 offset commands — matches the order of DuetTool.offsets[] */
 const AXIS_LETTERS = ['X', 'Y', 'Z', 'U', 'V', 'W', 'A', 'B', 'C'];
@@ -65,10 +64,7 @@ export default function ToolOffsetsPanel() {
   if (tools.length === 0) return null;
 
   return (
-    <div style={panelStyle()}>
-      <div style={labelStyle()} className="duet-dash-section-title-row">
-        <Crosshair size={14} /> Tool Offsets
-      </div>
+    <DashboardPanel icon={Crosshair} title="Tool Offsets">
 
       {tools.map((tool) => {
         const numAxes = Math.min(tool.offsets.length, AXIS_LETTERS.length);
@@ -157,6 +153,6 @@ export default function ToolOffsetsPanel() {
           </div>
         );
       })}
-    </div>
+    </DashboardPanel>
   );
 }

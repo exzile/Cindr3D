@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   RefreshCw, Plus, Loader2, FlaskConical, Check, X,
 } from 'lucide-react';
+import { errorMessage } from '../../utils/errorHandling';
 import { usePrinterStore } from '../../store/printerStore';
 import DuetFileEditor from './DuetFileEditor';
 import './DuetFilamentManager.css';
@@ -89,7 +90,7 @@ export default function DuetFilamentManager() {
     try {
       await refreshFilaments();
     } catch (err) {
-      setError((err as Error).message);
+      setError(errorMessage(err, 'Unknown error'));
     } finally {
       setLoading(false);
     }
@@ -111,7 +112,7 @@ export default function DuetFilamentManager() {
       setNewName('');
       setShowNew(false);
     } catch (err) {
-      setError(`Create failed: ${(err as Error).message}`);
+      setError(`Create failed: ${errorMessage(err, 'Unknown error')}`);
     } finally {
       setCreating(false);
     }
@@ -129,7 +130,7 @@ export default function DuetFilamentManager() {
       await refreshFilaments();
       setRenamingName(null);
     } catch (err) {
-      setError(`Rename failed: ${(err as Error).message}`);
+      setError(`Rename failed: ${errorMessage(err, 'Unknown error')}`);
     } finally {
       setRenaming(false);
     }
@@ -150,7 +151,7 @@ export default function DuetFilamentManager() {
       await service.deleteFile(base);
       await refreshFilaments();
     } catch (err) {
-      setError(`Delete failed: ${(err as Error).message}`);
+      setError(`Delete failed: ${errorMessage(err, 'Unknown error')}`);
     } finally {
       setDeletingName(null);
     }

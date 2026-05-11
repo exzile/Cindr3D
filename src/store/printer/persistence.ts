@@ -1,4 +1,5 @@
 import type { DuetConfig, SavedPrinter } from '../../types/duet';
+import { generateId } from '../../utils/generateId';
 import {
   clearLegacyDuetPrefs,
   DEFAULT_PREFS,
@@ -16,7 +17,7 @@ const TIMESTAMP_RE = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(.*)$/;
 const DURATION_RE = /(\d+):(\d{2}):(\d{2})/;
 
 export function genPrinterId(): string {
-  return `printer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return generateId('printer');
 }
 
 export function defaultPrinter(): SavedPrinter {
@@ -144,8 +145,4 @@ export function parseEventLog(text: string): PrintHistoryEntry[] {
   return entries.reverse();
 }
 
-export function errorMessage(err: unknown, fallback: string): string {
-  if (err instanceof Error && err.message.trim()) return err.message;
-  if (typeof err === 'string' && err.trim()) return err;
-  return fallback;
-}
+export { errorMessage } from '../../utils/errorHandling';

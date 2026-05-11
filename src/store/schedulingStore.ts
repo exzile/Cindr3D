@@ -7,6 +7,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { generateId } from '../utils/generateId';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -209,7 +210,7 @@ interface SchedulingStore {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function uid(): string {
-  return `sched-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return generateId('sched');
 }
 
 function minuteOfDay(h: number, m: number): number {

@@ -25,7 +25,9 @@ export async function publishHomeAssistantSnapshot(snapshot: IntegrationPrinterS
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(buildHomeAssistantSnapshot(snapshot)),
-  }).catch(() => undefined);
+  }).catch((err: unknown) => {
+    console.warn('[HA bridge] publishHomeAssistantSnapshot failed:', err instanceof Error ? err.message : String(err));
+  });
 }
 
 export async function fetchHomeAssistantCommands(printerId: string | null): Promise<HomeAssistantCommand[]> {

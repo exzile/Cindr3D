@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { generateId } from '../utils/generateId';
 
 export type IntegrationEventType = 'PRINT_START' | 'LAYER_CHANGE' | 'PAUSED' | 'FAILED' | 'DONE';
 export type IntegrationTargetType = 'webhook' | 'discord' | 'slack' | 'telegram';
@@ -58,7 +59,7 @@ interface IntegrationStore {
 }
 
 function uid(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return generateId(prefix);
 }
 
 function nowStamp() {

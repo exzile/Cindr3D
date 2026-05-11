@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { generateId } from '../utils/generateId';
 
 export interface Spool {
   id: string;
@@ -121,7 +122,7 @@ export const useSpoolStore = create<SpoolStore>()(
       lowStockThresholdByMaterial: {},
 
       addSpool: (spool) => {
-        const id = `spool-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        const id = generateId('spool');
         set((s) => ({
           spools: [
             ...s.spools,

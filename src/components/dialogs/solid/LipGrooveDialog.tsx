@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import '../FeatureDialogExtras.css';
 
 export function LipGrooveDialog({ onClose }: { onClose: () => void }) {
@@ -44,74 +44,66 @@ export function LipGrooveDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>{editing ? 'Edit Lip and Groove' : 'Lip and Groove'}</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
+    <DialogShell
+      title={editing ? 'Edit Lip and Groove' : 'Lip and Groove'}
+      onClose={onClose}
+      size="sm"
+      onConfirm={handleApply}
+      confirmLabel={editing ? 'Update' : 'OK'}
+    >
+      <div className="feature-dialog-section-title">Lip</div>
+      <div className="settings-grid">
+        <div className="form-group">
+          <label>Width (mm)</label>
+          <input type="number" value={lipWidth} min={0.1} step={0.1}
+            onChange={(e) => setLipWidth(Math.max(0.1, parseFloat(e.target.value) || lipWidth))} />
         </div>
-        <div className="dialog-body">
-          <div className="feature-dialog-section-title">Lip</div>
+        <div className="form-group">
+          <label>Height (mm)</label>
+          <input type="number" value={lipHeight} min={0.1} step={0.1}
+            onChange={(e) => setLipHeight(Math.max(0.1, parseFloat(e.target.value) || lipHeight))} />
+        </div>
+      </div>
+
+      <div className="form-group form-group--checkbox">
+        <label>
+          <input type="checkbox" checked={includeGroove}
+            onChange={(e) => setIncludeGroove(e.target.checked)} />
+          Include Groove
+        </label>
+      </div>
+
+      {includeGroove && (
+        <>
+          <div className="feature-dialog-section-title">Groove</div>
           <div className="settings-grid">
             <div className="form-group">
               <label>Width (mm)</label>
-              <input type="number" value={lipWidth} min={0.1} step={0.1}
-                onChange={(e) => setLipWidth(Math.max(0.1, parseFloat(e.target.value) || lipWidth))} />
+              <input type="number" value={grooveWidth} min={0.1} step={0.1}
+                onChange={(e) => setGrooveWidth(Math.max(0.1, parseFloat(e.target.value) || grooveWidth))} />
             </div>
             <div className="form-group">
-              <label>Height (mm)</label>
-              <input type="number" value={lipHeight} min={0.1} step={0.1}
-                onChange={(e) => setLipHeight(Math.max(0.1, parseFloat(e.target.value) || lipHeight))} />
+              <label>Depth (mm)</label>
+              <input type="number" value={grooveDepth} min={0.1} step={0.1}
+                onChange={(e) => setGrooveDepth(Math.max(0.1, parseFloat(e.target.value) || grooveDepth))} />
+            </div>
+            <div className="form-group">
+              <label>Clearance (mm)</label>
+              <input type="number" value={clearance} min={0} step={0.01}
+                onChange={(e) => setClearance(Math.max(0, parseFloat(e.target.value) || 0))} />
             </div>
           </div>
+        </>
+      )}
 
-          <div className="form-group form-group--checkbox">
-            <label>
-              <input type="checkbox" checked={includeGroove}
-                onChange={(e) => setIncludeGroove(e.target.checked)} />
-              Include Groove
-            </label>
-          </div>
-
-          {includeGroove && (
-            <>
-              <div className="feature-dialog-section-title">Groove</div>
-              <div className="settings-grid">
-                <div className="form-group">
-                  <label>Width (mm)</label>
-                  <input type="number" value={grooveWidth} min={0.1} step={0.1}
-                    onChange={(e) => setGrooveWidth(Math.max(0.1, parseFloat(e.target.value) || grooveWidth))} />
-                </div>
-                <div className="form-group">
-                  <label>Depth (mm)</label>
-                  <input type="number" value={grooveDepth} min={0.1} step={0.1}
-                    onChange={(e) => setGrooveDepth(Math.max(0.1, parseFloat(e.target.value) || grooveDepth))} />
-                </div>
-                <div className="form-group">
-                  <label>Clearance (mm)</label>
-                  <input type="number" value={clearance} min={0} step={0.01}
-                    onChange={(e) => setClearance(Math.max(0, parseFloat(e.target.value) || 0))} />
-                </div>
-              </div>
-            </>
-          )}
-
-          <div className="form-group">
-            <label>Operation</label>
-            <select value={operation} onChange={(e) => setOperation(e.target.value as typeof operation)}>
-              <option value="join">Join</option>
-              <option value="cut">Cut</option>
-              <option value="new-body">New Body</option>
-            </select>
-          </div>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply}>
-            {editing ? 'Update' : 'OK'}
-          </button>
-        </div>
+      <div className="form-group">
+        <label>Operation</label>
+        <select value={operation} onChange={(e) => setOperation(e.target.value as typeof operation)}>
+          <option value="join">Join</option>
+          <option value="cut">Cut</option>
+          <option value="new-body">New Body</option>
+        </select>
       </div>
-    </div>
+    </DialogShell>
   );
 }

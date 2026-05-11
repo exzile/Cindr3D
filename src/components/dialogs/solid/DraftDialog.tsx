@@ -2,6 +2,7 @@ import { useState } from 'react';
 import * as THREE from 'three';
 import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
 import '../FeatureDialogExtras.css';
 
@@ -88,92 +89,87 @@ export function DraftDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className={`dialog-overlay${draftType === 'parting-line' ? ' dialog-overlay--passthrough' : ''}`}>
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>{editing ? 'Edit Draft' : 'Draft'}</h3>
-          <button className="dialog-close" onClick={handleClose}><X size={16} /></button>
+    <DialogShell
+      title={editing ? 'Edit Draft' : 'Draft'}
+      onClose={handleClose}
+      size="sm"
+      overlayClassName={draftType === 'parting-line' ? 'dialog-overlay--passthrough' : undefined}
+      onConfirm={handleApply}
+      cancelLabel="Cancel"
+    >
+      <div className="form-group">
+        <label>Body</label>
+        <select value={selectedBodyId} onChange={(e) => setSelectedBodyId(e.target.value)}>
+          {bodyFeatures.length === 0 && <option value="">— no bodies —</option>}
+          {bodyFeatures.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Type</label>
+        <select value={draftType} onChange={(e) => setDraftType(e.target.value as 'fixed-plane' | 'parting-line')}>
+          <option value="fixed-plane">Fixed Plane</option>
+          <option value="parting-line">Parting Line</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Pull Direction</label>
+        <select value={pullAxis} onChange={(e) => setPullAxis(e.target.value as '+X' | '-X' | '+Y' | '-Y' | '+Z' | '-Z')}>
+          <option value="+Y">+Y Axis (Up)</option>
+          <option value="-Y">-Y Axis (Down)</option>
+          <option value="+Z">+Z Axis</option>
+          <option value="-Z">-Z Axis</option>
+          <option value="+X">+X Axis</option>
+          <option value="-X">-X Axis</option>
+        </select>
+      </div>
+      <div className="settings-grid">
+        <div className="form-group">
+          <label>Draft Angle (°)</label>
+          <input type="number" value={angle}
+            onChange={(e) => setAngle(Math.max(0.1, Math.min(89, parseFloat(e.target.value) || 3)))}
+            step={0.5} min={0.1} max={89} />
         </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Body</label>
-            <select value={selectedBodyId} onChange={(e) => setSelectedBodyId(e.target.value)}>
-              {bodyFeatures.length === 0 && <option value="">— no bodies —</option>}
-              {bodyFeatures.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Type</label>
-            <select value={draftType} onChange={(e) => setDraftType(e.target.value as 'fixed-plane' | 'parting-line')}>
-              <option value="fixed-plane">Fixed Plane</option>
-              <option value="parting-line">Parting Line</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Pull Direction</label>
-            <select value={pullAxis} onChange={(e) => setPullAxis(e.target.value as '+X' | '-X' | '+Y' | '-Y' | '+Z' | '-Z')}>
-              <option value="+Y">+Y Axis (Up)</option>
-              <option value="-Y">-Y Axis (Down)</option>
-              <option value="+Z">+Z Axis</option>
-              <option value="-Z">-Z Axis</option>
-              <option value="+X">+X Axis</option>
-              <option value="-X">-X Axis</option>
-            </select>
-          </div>
-          <div className="settings-grid">
-            <div className="form-group">
-              <label>Draft Angle (°)</label>
-              <input type="number" value={angle}
-                onChange={(e) => setAngle(Math.max(0.1, Math.min(89, parseFloat(e.target.value) || 3)))}
-                step={0.5} min={0.1} max={89} />
-            </div>
-            <div className="form-group">
-              <label>Mode</label>
-              <select value={mode} onChange={(e) => setMode(e.target.value as 'one-side' | 'two-side' | 'symmetric')}>
-                <option value="one-side">One Side</option>
-                <option value="two-side">Two Sides</option>
-                <option value="symmetric">Symmetric</option>
-              </select>
-            </div>
-          </div>
-          <div className="form-group">
-            <label>Fixed Plane Offset</label>
-            <input type="number" value={fixedPlaneY}
-              onChange={(e) => setFixedPlaneY(parseFloat(e.target.value) || 0)}
-              step={0.5} />
-          </div>
-          {/* SOL-I3: Parting face selector */}
-          {draftType === 'parting-line' && (
-            <div className="form-group">
-              <label>Parting Face</label>
-              {draftPartingFaceId ? (
-                <div className="face-selector">
-                  <span className="face-selector__chip">
-                    1 face selected
-                    <button
-                      type="button"
-                      className="face-selector__chip-clear"
-                      onClick={clearDraftPartingFace}
-                      title="Clear parting face"
-                    >
-                      <X size={11} />
-                    </button>
-                  </span>
-                </div>
-              ) : (
-                <p className="dialog-hint">Click a face in the viewport to set the parting plane.</p>
-              )}
-            </div>
-          )}
-          <p className="dialog-hint">Select the face(s) to draft in the viewport.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={handleClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply}>OK</button>
+        <div className="form-group">
+          <label>Mode</label>
+          <select value={mode} onChange={(e) => setMode(e.target.value as 'one-side' | 'two-side' | 'symmetric')}>
+            <option value="one-side">One Side</option>
+            <option value="two-side">Two Sides</option>
+            <option value="symmetric">Symmetric</option>
+          </select>
         </div>
       </div>
-    </div>
+      <div className="form-group">
+        <label>Fixed Plane Offset</label>
+        <input type="number" value={fixedPlaneY}
+          onChange={(e) => setFixedPlaneY(parseFloat(e.target.value) || 0)}
+          step={0.5} />
+      </div>
+      {/* SOL-I3: Parting face selector */}
+      {draftType === 'parting-line' && (
+        <div className="form-group">
+          <label>Parting Face</label>
+          {draftPartingFaceId ? (
+            <div className="face-selector">
+              <span className="face-selector__chip">
+                1 face selected
+                <button
+                  type="button"
+                  className="face-selector__chip-clear"
+                  onClick={clearDraftPartingFace}
+                  title="Clear parting face"
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            </div>
+          ) : (
+            <p className="dialog-hint">Click a face in the viewport to set the parting plane.</p>
+          )}
+        </div>
+      )}
+      <p className="dialog-hint">Select the face(s) to draft in the viewport.</p>
+    </DialogShell>
   );
 }

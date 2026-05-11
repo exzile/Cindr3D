@@ -2,6 +2,7 @@ import { useState } from 'react';
 import * as THREE from 'three';
 import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import '../FeatureDialogExtras.css';
 
 export function RemoveFaceDialog({ onClose }: { onClose: () => void }) {
@@ -53,59 +54,54 @@ export function RemoveFaceDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay dialog-overlay--passthrough">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>{editing ? 'Edit Remove Face' : 'Remove Face'}</h3>
-          <button className="dialog-close" onClick={handleClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Body</label>
-            <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
-              {bodyFeatures.length === 0 && <option value="">— no bodies —</option>}
-              {bodyFeatures.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label>Face to Remove</label>
-            {removeFaceFaceId ? (
-              <div className="face-selector">
-                <span className="face-selector__chip">
-                  1 face selected
-                  <button
-                    type="button"
-                    className="face-selector__chip-clear"
-                    onClick={clearRemoveFaceFace}
-                    title="Clear face selection"
-                  >
-                    <X size={11} />
-                  </button>
-                </span>
-              </div>
-            ) : (
-              <p className="dialog-hint">Click a face in the viewport to select it.</p>
-            )}
-          </div>
-
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={keepShape}
-              onChange={(e) => setKeepShape(e.target.checked)}
-            />
-            Keep Shape (extend adjacent faces)
-          </label>
-          <p className="dialog-hint">Removes the selected face and extends adjacent faces to close the gap.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={handleClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply} disabled={!canApply}>OK</button>
-        </div>
+    <DialogShell
+      title={editing ? 'Edit Remove Face' : 'Remove Face'}
+      onClose={handleClose}
+      size="sm"
+      overlayClassName="dialog-overlay--passthrough"
+      onConfirm={handleApply}
+      confirmDisabled={!canApply}
+    >
+      <div className="form-group">
+        <label>Body</label>
+        <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
+          {bodyFeatures.length === 0 && <option value="">— no bodies —</option>}
+          {bodyFeatures.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
       </div>
-    </div>
+
+      <div className="form-group">
+        <label>Face to Remove</label>
+        {removeFaceFaceId ? (
+          <div className="face-selector">
+            <span className="face-selector__chip">
+              1 face selected
+              <button
+                type="button"
+                className="face-selector__chip-clear"
+                onClick={clearRemoveFaceFace}
+                title="Clear face selection"
+              >
+                <X size={11} />
+              </button>
+            </span>
+          </div>
+        ) : (
+          <p className="dialog-hint">Click a face in the viewport to select it.</p>
+        )}
+      </div>
+
+      <label className="checkbox-label">
+        <input
+          type="checkbox"
+          checked={keepShape}
+          onChange={(e) => setKeepShape(e.target.checked)}
+        />
+        Keep Shape (extend adjacent faces)
+      </label>
+      <p className="dialog-hint">Removes the selected face and extends adjacent faces to close the gap.</p>
+    </DialogShell>
   );
 }

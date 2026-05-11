@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 type Axis = 'X' | 'Y' | 'Z';
 
@@ -45,72 +45,60 @@ export function RectangularPatternDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Rectangular Pattern</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Feature</label>
-            <select value={featureId} onChange={(e) => setFeatureId(e.target.value)}>
-              {meshFeatures.length === 0 && <option value="">— no features —</option>}
-              {meshFeatures.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </div>
+    <DialogShell title="Rectangular Pattern" onClose={onClose} size="sm" onConfirm={handleApply} confirmDisabled={!featureId}>
+      <div className="form-group">
+        <label>Feature</label>
+        <select value={featureId} onChange={(e) => setFeatureId(e.target.value)}>
+          {meshFeatures.length === 0 && <option value="">— no features —</option>}
+          {meshFeatures.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
+      </div>
 
-          {/* Direction 1 */}
-          <div className="form-group">
-            <label>Direction 1 Axis</label>
-            <div className="direction-inputs">
-              {(['X', 'Y', 'Z'] as Axis[]).map((ax) => (
-                <button key={ax} type="button" className="btn btn-secondary" onClick={() => handleDir1Preset(ax)}>{ax}</button>
-              ))}
-            </div>
-          </div>
-          <div className="settings-grid">
-            <div className="form-group">
-              <label>Count 1</label>
-              <input type="number" value={count1} min={2} max={100} onChange={(e) => setCount1(Math.max(2, parseInt(e.target.value) || 2))} />
-            </div>
-            <div className="form-group">
-              <label>Spacing 1 (mm)</label>
-              <input type="number" value={spacing1} min={0.1} step={1} onChange={(e) => setSpacing1(parseFloat(e.target.value) || 20)} />
-            </div>
-          </div>
-
-          {/* Direction 2 */}
-          <div className="form-group">
-            <label>Direction 2 Axis</label>
-            <div className="direction-inputs">
-              {(['X', 'Y', 'Z'] as Axis[]).map((ax) => (
-                <button key={ax} type="button" className="btn btn-secondary" onClick={() => handleDir2Preset(ax)}>{ax}</button>
-              ))}
-            </div>
-          </div>
-          <div className="settings-grid">
-            <div className="form-group">
-              <label>Count 2</label>
-              <input type="number" value={count2} min={2} max={100} onChange={(e) => setCount2(Math.max(2, parseInt(e.target.value) || 2))} />
-            </div>
-            <div className="form-group">
-              <label>Spacing 2 (mm)</label>
-              <input type="number" value={spacing2} min={0.1} step={1} onChange={(e) => setSpacing2(parseFloat(e.target.value) || 20)} />
-            </div>
-          </div>
-
-          <p className="dialog-hint">
-            Creates a {count1} × {count2} grid ({count1 * count2} total instances).
-          </p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply} disabled={!featureId}>OK</button>
+      {/* Direction 1 */}
+      <div className="form-group">
+        <label>Direction 1 Axis</label>
+        <div className="direction-inputs">
+          {(['X', 'Y', 'Z'] as Axis[]).map((ax) => (
+            <button key={ax} type="button" className="btn btn-secondary" onClick={() => handleDir1Preset(ax)}>{ax}</button>
+          ))}
         </div>
       </div>
-    </div>
+      <div className="settings-grid">
+        <div className="form-group">
+          <label>Count 1</label>
+          <input type="number" value={count1} min={2} max={100} onChange={(e) => setCount1(Math.max(2, parseInt(e.target.value) || 2))} />
+        </div>
+        <div className="form-group">
+          <label>Spacing 1 (mm)</label>
+          <input type="number" value={spacing1} min={0.1} step={1} onChange={(e) => setSpacing1(parseFloat(e.target.value) || 20)} />
+        </div>
+      </div>
+
+      {/* Direction 2 */}
+      <div className="form-group">
+        <label>Direction 2 Axis</label>
+        <div className="direction-inputs">
+          {(['X', 'Y', 'Z'] as Axis[]).map((ax) => (
+            <button key={ax} type="button" className="btn btn-secondary" onClick={() => handleDir2Preset(ax)}>{ax}</button>
+          ))}
+        </div>
+      </div>
+      <div className="settings-grid">
+        <div className="form-group">
+          <label>Count 2</label>
+          <input type="number" value={count2} min={2} max={100} onChange={(e) => setCount2(Math.max(2, parseInt(e.target.value) || 2))} />
+        </div>
+        <div className="form-group">
+          <label>Spacing 2 (mm)</label>
+          <input type="number" value={spacing2} min={0.1} step={1} onChange={(e) => setSpacing2(parseFloat(e.target.value) || 20)} />
+        </div>
+      </div>
+
+      <p className="dialog-hint">
+        Creates a {count1} × {count2} grid ({count1 * count2} total instances).
+      </p>
+    </DialogShell>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { X, Play, Pause, Square, RotateCcw } from 'lucide-react';
+import { DialogShell } from '../common/DialogShell';
 import { useComponentStore } from '../../../store/componentStore';
 import type { JointTrack, Joint } from '../../../types/cad';
 import './DriveJointsDialog.css';
@@ -71,14 +72,8 @@ export function DriveJointsDialog({ onClose }: { onClose: () => void }) {
   const durStr = animationDuration.toFixed(1);
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog-panel">
-        <div className="dialog-header">
-          <span className="dialog-title">Drive Joints</span>
-          <button className="dialog-close" onClick={onClose} aria-label="Close drive joints dialog"><X size={14} /></button>
-        </div>
+    <DialogShell title="Drive Joints" onClose={onClose} cancelLabel="Close">
 
-        <div className="dialog-body">
           {/* Transport bar */}
           <div className="dialog-field drive-joints-transport">
             <button
@@ -236,12 +231,6 @@ export function DriveJointsDialog({ onClose }: { onClose: () => void }) {
               onChange={(e) => setAnimationDuration(Math.max(0.1, parseFloat(e.target.value) || 5))}
             />
           </div>
-        </div>
-
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Close</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

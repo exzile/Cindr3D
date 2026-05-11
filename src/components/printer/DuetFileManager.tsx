@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import './DuetFileManager.css';
+import { errorMessage } from '../../utils/errorHandling';
 import { usePrinterStore } from '../../store/printerStore';
 import type { DuetFileInfo } from '../../types/duet';
 import DuetFileEditor from './DuetFileEditor';
@@ -179,7 +180,7 @@ export default function DuetFileManager() {
       await service.createDirectory(`${currentDirectory}/${name}`);
       await refreshFiles();
     } catch (err) {
-      setError(`Failed to create folder: ${(err as Error).message}`);
+      setError(`Failed to create folder: ${errorMessage(err, 'Unknown error')}`);
     }
   }, [service, currentDirectory, refreshFiles, setError]);
 
@@ -192,7 +193,7 @@ export default function DuetFileManager() {
       await service.moveFile(oldPath, newPath);
       await refreshFiles();
     } catch (err) {
-      setError(`Rename failed: ${(err as Error).message}`);
+      setError(`Rename failed: ${errorMessage(err, 'Unknown error')}`);
     }
   }, [service, renameTarget, currentDirectory, refreshFiles, setError]);
 
@@ -203,7 +204,7 @@ export default function DuetFileManager() {
       await deleteFile(path);
       if (selectedName === item.name) setSelectedName(null);
     } catch (err) {
-      setError(`Delete failed: ${(err as Error).message}`);
+      setError(`Delete failed: ${errorMessage(err, 'Unknown error')}`);
     }
   }, [currentDirectory, deleteFile, selectedName, setError]);
 
@@ -223,7 +224,7 @@ export default function DuetFileManager() {
     try {
       await service.simulateFile(`${currentDirectory}/${item.name}`);
     } catch (err) {
-      setError(`Simulate failed: ${(err as Error).message}`);
+      setError(`Simulate failed: ${errorMessage(err, 'Unknown error')}`);
     }
   }, [service, currentDirectory, setError]);
 
@@ -240,7 +241,7 @@ export default function DuetFileManager() {
       document.body.removeChild(anchor);
       URL.revokeObjectURL(url);
     } catch (err) {
-      setError(`Download failed: ${(err as Error).message}`);
+      setError(`Download failed: ${errorMessage(err, 'Unknown error')}`);
     }
   }, [service, currentDirectory, setError]);
 
@@ -272,7 +273,7 @@ export default function DuetFileManager() {
         try {
           await deleteFile(path);
         } catch (err) {
-          setError(`Delete failed for "${name}": ${(err as Error).message}`);
+          setError(`Delete failed for "${name}": ${errorMessage(err, 'Unknown error')}`);
         }
       }
       setCheckedFiles(new Set());

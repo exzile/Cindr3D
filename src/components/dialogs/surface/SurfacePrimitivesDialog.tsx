@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
+import { DialogShell } from '../common/DialogShell';
 
 export interface SurfacePrimitiveParams {
   type: 'plane' | 'box' | 'sphere' | 'cylinder' | 'torus' | 'cone';
@@ -40,14 +40,8 @@ export function SurfacePrimitivesDialog({ open, onOk, onClose }: SurfacePrimitiv
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Surface Primitives</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
+    <DialogShell title="Surface Primitives" onClose={onClose} size="sm" onConfirm={handleOK}>
+      <div className="form-group">
             <label>Type</label>
             <select value={type} onChange={(e) => setType(e.target.value as SurfacePrimitiveParams['type'])}>
               <option value="plane">Plane</option>
@@ -107,12 +101,6 @@ export function SurfacePrimitivesDialog({ open, onOk, onClose }: SurfacePrimitiv
           )}
 
           <p className="dialog-hint">Creates an open surface body (quilt) with no solid interior.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

@@ -1,5 +1,6 @@
 import { parseHeightMapCsv } from './heightMap';
 import type { DuetConfig, DuetHeightMap } from '../../types/duet';
+import { errorMessage } from '../../utils/errorHandling';
 
 export async function getHeightMapData(
   downloadFile: (path: string) => Promise<Blob>,
@@ -14,7 +15,7 @@ export async function getHeightMapData(
     // Re-throw with the first lines of the raw CSV attached so the UI error
     // banner shows enough context to diagnose unknown firmware formats.
     const snippet = text.trim().split(/\r?\n/).slice(0, 4).join(' | ');
-    throw new Error(`${(err as Error).message}\nRaw (first 4 lines): ${snippet}`);
+    throw new Error(`${errorMessage(err, 'Unknown error')}\nRaw (first 4 lines): ${snippet}`);
   }
 }
 

@@ -1,5 +1,5 @@
-import { X } from 'lucide-react';
 import { useState } from 'react';
+import { DialogShell } from '../common/DialogShell';
 
 export interface DeleteFaceParams {
   faceIds: string[];
@@ -19,14 +19,8 @@ export function DeleteFaceDialog({ open, faceCount, onOk, onClose }: DeleteFaceD
   if (!open) return null;
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Delete Face</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
+    <DialogShell title="Delete Face" onClose={onClose} size="sm" onConfirm={() => onOk({ faceIds: [], healMode })} confirmDisabled={faceCount === 0}>
+      <div className="form-group">
             <label>Selected Faces</label>
             <span className="dialog-info">
               {faceCount > 0 ? `${faceCount} face${faceCount !== 1 ? 's' : ''} selected` : 'Click faces in the viewport'}
@@ -44,18 +38,6 @@ export function DeleteFaceDialog({ open, faceCount, onOk, onClose }: DeleteFaceD
             </select>
           </div>
           <p className="dialog-hint">Select one or more faces to remove. Use Heal Mode to patch the resulting hole.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn-primary"
-            disabled={faceCount === 0}
-            onClick={() => onOk({ faceIds: [], healMode })}
-          >
-            OK
-          </button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

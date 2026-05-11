@@ -6,6 +6,7 @@ import {
 import type { DuetFileInfo } from '../../../types/duet';
 import { usePrinterStore } from '../../../store/printerStore';
 import { panelStyle, sectionTitleStyle as labelStyle } from '../../../utils/printerPanelStyles';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 const DEFAULT_MACRO_BODY = '; New macro\n; G-code commands below\n';
 const ROOT_PATH = '0:/macros';
@@ -45,6 +46,7 @@ export default function MacroPanel() {
   const [newName,   setNewName]             = useState('');
   const [newBody,   setNewBody]             = useState(DEFAULT_MACRO_BODY);
   const [busy,      setBusy]                = useState(false);
+  const run = useAsyncAction(setBusy);
   const [confirmDel, setConfirmDel]         = useState<string | null>(null);
   const [running,   setRunning]             = useState<string | null>(null);
   const runTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -156,24 +158,22 @@ export default function MacroPanel() {
   const handleCreate = useCallback(async () => {
     const trimmed = newName.trim();
     if (!trimmed) return;
-    setBusy(true);
-    try {
+    await run(async () => {
       await createMacro(trimmed, newBody);
       setCreating(false);
       setNewName('');
       setNewBody(DEFAULT_MACRO_BODY);
-    } finally { setBusy(false); }
-  }, [createMacro, newBody, newName]);
+    });
+  }, [run, createMacro, newBody, newName]);
 
   const handleDelete = useCallback(async (relativePath: string) => {
-    setBusy(true);
-    try {
+    await run(async () => {
       await deleteMacro(relativePath);
       setConfirmDel(null);
       const lastSlash = relativePath.lastIndexOf('/');
       if (lastSlash !== -1) void loadFolder(relativePath.substring(0, lastSlash));
-    } finally { setBusy(false); }
-  }, [deleteMacro, loadFolder]);
+    });
+  }, [run, deleteMacro, loadFolder]);
 
   const cancelCreate = useCallback(() => {
     setCreating(false);

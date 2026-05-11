@@ -9,9 +9,8 @@ import type { TemperatureSample } from '../../../types/duet';
 import { colors as COLORS } from '../../../utils/theme';
 import {
   compactPanelInputStyle as inputStyle,
-  panelStyle,
-  sectionTitleStyle as labelStyle,
 } from '../../../utils/printerPanelStyles';
+import { DashboardPanel } from './DashboardPanel';
 import {
   HEATER_CHART_COLORS,
   heaterStateColor,
@@ -99,10 +98,7 @@ export default function TemperaturePanel() {
   }, [chamberControl, setChamberTemp, updateChamberControl]);
 
   return (
-    <div style={panelStyle()}>
-      <div style={labelStyle()} className="duet-dash-section-title-row">
-        <Thermometer size={14} /> Temperatures
-      </div>
+    <DashboardPanel icon={Thermometer} title="Temperatures">
 
       <div className="duet-dash-heater-grid">
         <span className="duet-dash-heater-col">Heater</span>
@@ -528,6 +524,6 @@ function TemperatureChart({
           );
         })}
       </svg>
-    </div>
+    </DashboardPanel>
   );
 }

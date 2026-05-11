@@ -67,6 +67,7 @@ export default function ViewCube({ mainCameraQuaternion, onOrient, onHome, onZoo
         <div className="viewcube-container">
           <Canvas
             orthographic
+            frameloop="demand"
             camera={{ zoom: 22, near: 0.1, far: 100, position: [0, 0, 5] }}
             style={{ width: 140, height: 140, background: 'transparent' }}
             gl={{ alpha: true, antialias: true }}

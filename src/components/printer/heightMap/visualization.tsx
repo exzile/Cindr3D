@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
+import { PrintSpaceLights } from '../../canvas/PrintSpaceLights';
 import type { ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
@@ -1001,14 +1002,12 @@ export function Scene3D({
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <Canvas
+        frameloop="demand"
         camera={{ position: cameraPosition, fov: 45 }}
         style={{ width: '100%', height: '100%', background: 'transparent' }}
         gl={{ antialias: true, alpha: true }}
       >
-        <ambientLight intensity={0.7} />
-        <directionalLight position={[4, 6, 4]}   intensity={1.0} castShadow />
-        <directionalLight position={[-3, 2, -3]} intensity={0.35} />
-        <directionalLight position={[0, -4, 0]}  intensity={0.15} />
+        <PrintSpaceLights />
         <FlatPlate heightMap={heightMap} configuredGrid={configuredGrid} bedBounds={bedBounds} scaleXY={sceneScaleXY} mirrorX={mirrorX} />
         {/* Safety margin overlay — red fills + blue probe boundary — only when M208 bed > M557 probe area */}
         {bedBounds && configuredGrid && (

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function WebDialog({ onClose }: { onClose: () => void }) {
   const editingFeatureId = useCADStore((s) => s.editingFeatureId);
@@ -32,14 +32,8 @@ export function WebDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>{editing ? 'Edit Web' : 'Web'}</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
+    <DialogShell title={editing ? 'Edit Web' : 'Web'} onClose={onClose} size="sm" onConfirm={handleApply} confirmDisabled={!sketchId && !editing}>
+      <div className="form-group">
             <label>Profile Sketch</label>
             <select value={sketchId} onChange={(e) => setSketchId(e.target.value)}>
               <option value="" disabled>Select a sketch</option>
@@ -72,12 +66,6 @@ export function WebDialog({ onClose }: { onClose: () => void }) {
             </select>
           </div>
           <p className="dialog-hint">Select a sketch with multiple lines to create a cross-hatch web pattern.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={!sketchId && !editing} onClick={handleApply}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

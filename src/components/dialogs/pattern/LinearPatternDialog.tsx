@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function LinearPatternDialog({ onClose }: { onClose: () => void }) {
   const features = useCADStore((s) => s.features);
@@ -52,91 +52,79 @@ export function LinearPatternDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog">
-        <div className="dialog-header">
-          <h3>Linear Pattern</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
+    <DialogShell title="Linear Pattern" onClose={onClose} onConfirm={handleApply}>
+      <div className="form-group">
+        <label>Feature</label>
+        <select value={featureId} onChange={(e) => setFeatureId(e.target.value)}>
+          {meshFeatures.length === 0 && <option value="">No mesh features</option>}
+          {meshFeatures.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
+      </div>
+      <div className="settings-grid">
+        <div className="form-group">
+          <label>Count</label>
+          <input type="number" value={count} onChange={(e) => setCount(Math.max(2, parseInt(e.target.value) || 2))} min={2} max={100} />
         </div>
-        <div className="dialog-body">
+        <div className="form-group">
+          <label>Distribution</label>
+          <select value={distribution} onChange={(e) => setDistribution(e.target.value as 'spacing' | 'extent')}>
+            <option value="spacing">Spacing</option>
+            <option value="extent">Extent</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label>{distribution === 'extent' ? 'Total Extent (mm)' : 'Spacing (mm)'}</label>
+          <input type="number" value={spacing} onChange={(e) => setSpacing(parseFloat(e.target.value) || 10)} step={1} />
+        </div>
+      </div>
+      <div className="form-group">
+        <label>Direction (X, Y, Z)</label>
+        <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+          {(['X', 'Y', 'Z'] as const).map((ax) => (
+            <button key={ax} className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: 11 }} onClick={() => handleAxisPreset(ax)}>{ax} Axis</button>
+          ))}
+        </div>
+        <div className="direction-inputs">
+          <input type="number" value={directionX} onChange={(e) => setDirectionX(parseFloat(e.target.value) || 0)} step={0.1} />
+          <input type="number" value={directionY} onChange={(e) => setDirectionY(parseFloat(e.target.value) || 0)} step={0.1} />
+          <input type="number" value={directionZ} onChange={(e) => setDirectionZ(parseFloat(e.target.value) || 0)} step={0.1} />
+        </div>
+      </div>
+      <label className="checkbox-label">
+        <input type="checkbox" checked={useSecond} onChange={(e) => setUseSecond(e.target.checked)} />
+        Second Direction
+      </label>
+      {useSecond && (
+        <>
           <div className="form-group">
-            <label>Feature</label>
-            <select value={featureId} onChange={(e) => setFeatureId(e.target.value)}>
-              {meshFeatures.length === 0 && <option value="">No mesh features</option>}
-              {meshFeatures.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
+            <label>Direction 2 (X, Y, Z)</label>
+            <div className="direction-inputs">
+              <input type="number" value={dir2X} onChange={(e) => setDir2X(parseFloat(e.target.value) || 0)} step={0.1} />
+              <input type="number" value={dir2Y} onChange={(e) => setDir2Y(parseFloat(e.target.value) || 0)} step={0.1} />
+              <input type="number" value={dir2Z} onChange={(e) => setDir2Z(parseFloat(e.target.value) || 0)} step={0.1} />
+            </div>
           </div>
           <div className="settings-grid">
             <div className="form-group">
-              <label>Count</label>
-              <input type="number" value={count} onChange={(e) => setCount(Math.max(2, parseInt(e.target.value) || 2))} min={2} max={100} />
+              <label>Count 2</label>
+              <input type="number" value={count2} onChange={(e) => setCount2(Math.max(2, parseInt(e.target.value) || 2))} min={2} />
             </div>
             <div className="form-group">
-              <label>Distribution</label>
-              <select value={distribution} onChange={(e) => setDistribution(e.target.value as 'spacing' | 'extent')}>
+              <label>Distribution 2</label>
+              <select value={distribution2} onChange={(e) => setDistribution2(e.target.value as 'spacing' | 'extent')}>
                 <option value="spacing">Spacing</option>
                 <option value="extent">Extent</option>
               </select>
             </div>
             <div className="form-group">
-              <label>{distribution === 'extent' ? 'Total Extent (mm)' : 'Spacing (mm)'}</label>
-              <input type="number" value={spacing} onChange={(e) => setSpacing(parseFloat(e.target.value) || 10)} step={1} />
+              <label>{distribution2 === 'extent' ? 'Extent 2 (mm)' : 'Spacing 2 (mm)'}</label>
+              <input type="number" value={spacing2} onChange={(e) => setSpacing2(parseFloat(e.target.value) || 10)} />
             </div>
           </div>
-          <div className="form-group">
-            <label>Direction (X, Y, Z)</label>
-            <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
-              {(['X', 'Y', 'Z'] as const).map((ax) => (
-                <button key={ax} className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: 11 }} onClick={() => handleAxisPreset(ax)}>{ax} Axis</button>
-              ))}
-            </div>
-            <div className="direction-inputs">
-              <input type="number" value={directionX} onChange={(e) => setDirectionX(parseFloat(e.target.value) || 0)} step={0.1} />
-              <input type="number" value={directionY} onChange={(e) => setDirectionY(parseFloat(e.target.value) || 0)} step={0.1} />
-              <input type="number" value={directionZ} onChange={(e) => setDirectionZ(parseFloat(e.target.value) || 0)} step={0.1} />
-            </div>
-          </div>
-          <label className="checkbox-label">
-            <input type="checkbox" checked={useSecond} onChange={(e) => setUseSecond(e.target.checked)} />
-            Second Direction
-          </label>
-          {useSecond && (
-            <>
-              <div className="form-group">
-                <label>Direction 2 (X, Y, Z)</label>
-                <div className="direction-inputs">
-                  <input type="number" value={dir2X} onChange={(e) => setDir2X(parseFloat(e.target.value) || 0)} step={0.1} />
-                  <input type="number" value={dir2Y} onChange={(e) => setDir2Y(parseFloat(e.target.value) || 0)} step={0.1} />
-                  <input type="number" value={dir2Z} onChange={(e) => setDir2Z(parseFloat(e.target.value) || 0)} step={0.1} />
-                </div>
-              </div>
-              <div className="settings-grid">
-                <div className="form-group">
-                  <label>Count 2</label>
-                  <input type="number" value={count2} onChange={(e) => setCount2(Math.max(2, parseInt(e.target.value) || 2))} min={2} />
-                </div>
-                <div className="form-group">
-                  <label>Distribution 2</label>
-                  <select value={distribution2} onChange={(e) => setDistribution2(e.target.value as 'spacing' | 'extent')}>
-                    <option value="spacing">Spacing</option>
-                    <option value="extent">Extent</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>{distribution2 === 'extent' ? 'Extent 2 (mm)' : 'Spacing 2 (mm)'}</label>
-                  <input type="number" value={spacing2} onChange={(e) => setSpacing2(parseFloat(e.target.value) || 10)} />
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply}>OK</button>
-        </div>
-      </div>
-    </div>
+        </>
+      )}
+    </DialogShell>
   );
 }

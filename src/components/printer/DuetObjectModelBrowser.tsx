@@ -3,6 +3,7 @@ import { ChevronRight, ChevronDown, Search, Braces, X, Check } from 'lucide-reac
 import { usePrinterStore } from '../../store/printerStore';
 import { colors as COLORS } from '../../utils/theme';
 import './DuetObjectModelBrowser.css';
+import { errorMessage } from '../../utils/errorHandling';
 
 // ---------------------------------------------------------------------------
 // Tree rendering
@@ -280,7 +281,7 @@ export default function DuetObjectModelBrowser() {
       setEditStatus(`Sent: ${gcode}`);
       setTimeout(() => setEditStatus(null), 3000);
     } catch (err) {
-      setEditStatus(`Error: ${(err as Error).message}`);
+      setEditStatus(`Error: ${errorMessage(err, 'Unknown error')}`);
       setTimeout(() => setEditStatus(null), 5000);
     }
   }, [connected, sendGCode]);

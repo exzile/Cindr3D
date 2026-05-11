@@ -317,9 +317,9 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
       {levelBedPendingResult != null && (
         <LevelBedResultsModal
           summary={levelBedPendingResult}
-          onClose={() => usePrinterStore.setState({ levelBedPendingResult: null })}
+          onClose={() => usePrinterStore.getState().clearLevelBedResult()}
           onRunAgain={() => {
-            usePrinterStore.setState({ levelBedPendingResult: null });
+            usePrinterStore.getState().clearLevelBedResult();
             if (lastLevelBedOpts) void levelBed(lastLevelBedOpts);
           }}
         />

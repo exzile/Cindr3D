@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { X, CheckCircle, XCircle } from 'lucide-react';
+import { CheckCircle, XCircle } from 'lucide-react';
+import { DialogShell } from '../common/DialogShell';
 import type { InterferenceResult } from '../../../types/cad';
 
 interface Props {
@@ -22,13 +23,16 @@ export function InterferenceDialog({ open, onClose, onRun }: Props) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog-panel">
-        <div className="dialog-header">
-          <span className="dialog-title">Interference</span>
-          <button className="dialog-close" onClick={onClose}><X size={14} /></button>
+    <DialogShell
+      title="Interference"
+      onClose={onClose}
+      footer={
+        <div className="dialog-footer">
+          <button className="btn btn-secondary" onClick={onClose}>Close</button>
+          <button className="btn btn-primary" onClick={handleCompute}>Compute</button>
         </div>
-        <div className="dialog-body">
+      }
+    >
           <p className="interference-description">
             Detects overlapping volumes between solid bodies using AABB pre-filter and mesh intersection.
           </p>
@@ -70,12 +74,6 @@ export function InterferenceDialog({ open, onClose, onRun }: Props) {
               Create Interference Bodies (deferred)
             </label>
           </div>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Close</button>
-          <button className="btn btn-primary" onClick={handleCompute}>Compute</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

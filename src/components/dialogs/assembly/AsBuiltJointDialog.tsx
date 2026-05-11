@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useComponentStore } from '../../../store/componentStore';
+import { DialogShell } from '../common/DialogShell';
 import { useCADStore } from '../../../store/cadStore';
 import * as THREE from 'three';
 import type { JointType } from '../../../types/cad';
@@ -54,14 +54,7 @@ export default function AsBuiltJointDialog({ onClose }: Props) {
   }
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog-panel">
-        <div className="dialog-header">
-          <span className="dialog-title">As-Built Joint</span>
-          <button className="dialog-close" onClick={onClose}><X size={14} /></button>
-        </div>
-
-        <div className="dialog-body">
+    <DialogShell title="As-Built Joint" onClose={onClose} onConfirm={handleOK}>
           <div className="form-group">
             <label>Component 1</label>
             <select value={componentId1} onChange={(e) => setComponentId1(e.target.value)}>
@@ -95,13 +88,6 @@ export default function AsBuiltJointDialog({ onClose }: Props) {
           </div>
 
           <p className="form-note">Locks current positions of selected components.</p>
-        </div>
-
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

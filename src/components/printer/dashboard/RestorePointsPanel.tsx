@@ -1,10 +1,7 @@
 import { RotateCcw } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import { colors as COLORS } from '../../../utils/theme';
-import {
-  panelStyle,
-  sectionTitleStyle as labelStyle,
-} from '../../../utils/printerPanelStyles';
+import { DashboardPanel } from './DashboardPanel';
 
 /** G60 restore point labels */
 const RESTORE_POINT_LABELS = ['S0', 'S1', 'S2'] as const;
@@ -37,22 +34,16 @@ export default function RestorePointsPanel() {
   // If no restore points data is available at all, show empty state
   if (rows.length === 0) {
     return (
-      <div style={panelStyle()}>
-        <div style={labelStyle()} className="duet-dash-section-title-row">
-          <RotateCcw size={14} /> Restore Points (G60)
-        </div>
+      <DashboardPanel icon={RotateCcw} title="Restore Points (G60)">
         <div style={{ color: COLORS.textDim, fontSize: 12, textAlign: 'center', padding: '12px 0' }}>
           No restore points saved
         </div>
-      </div>
+      </DashboardPanel>
     );
   }
 
   return (
-    <div style={panelStyle()}>
-      <div style={labelStyle()} className="duet-dash-section-title-row">
-        <RotateCcw size={14} /> Restore Points (G60)
-      </div>
+    <DashboardPanel icon={RotateCcw} title="Restore Points (G60)">
 
       <div
         style={{
@@ -147,6 +138,6 @@ export default function RestorePointsPanel() {
           </tbody>
         </table>
       </div>
-    </div>
+    </DashboardPanel>
   );
 }

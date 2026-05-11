@@ -153,6 +153,13 @@ export interface PrinterStore {
   sendGCode: (code: string) => Promise<void>;
   resetHalt: () => Promise<void>;
 
+  // Console
+  clearConsoleHistory: () => void;
+  importConsoleEntries: (entries: ConsoleEntry[]) => void;
+  clearSelectedFile: () => void;
+  setUploadProgress: (progress: number) => void;
+  clearLevelBedResult: () => void;
+
   // Temperature
   setToolTemp: (tool: number, heater: number, temp: number) => Promise<void>;
   setBedTemp: (temp: number) => Promise<void>;

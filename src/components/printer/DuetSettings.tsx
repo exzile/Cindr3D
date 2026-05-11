@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import type { PrinterBoardType } from '../../types/duet';
 import { downloadSettings, importSettingsFromFile, type ImportResult } from '../../utils/settingsExport';
+import { errorMessage } from '../../utils/errorHandling';
 import { usePrinterStore } from '../../store/printerStore';
 import { SettingsTabContent } from './duetSettings/SettingsTabContent';
 import { useFirmwareUpdate } from './duetSettings/useFirmwareUpdate';
@@ -181,7 +182,7 @@ export default function DuetSettings() {
         error: result.error,
       });
     } catch (err) {
-      setTestResult({ success: false, error: (err as Error).message });
+      setTestResult({ success: false, error: errorMessage(err, 'Unknown error') });
     } finally {
       setTesting(false);
     }

@@ -112,7 +112,7 @@ export function BrowserBody({
           fileInfo={selectedFile}
           onClose={() => {
             setSelectedName(null);
-            usePrinterStore.setState({ selectedFile: null });
+            usePrinterStore.getState().clearSelectedFile();
           }}
         />
       )}

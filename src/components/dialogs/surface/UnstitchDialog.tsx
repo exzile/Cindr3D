@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function UnstitchDialog({ onClose }: { onClose: () => void }) {
   const commitUnstitch = useCADStore((s) => s.commitUnstitch);
@@ -19,14 +19,8 @@ export function UnstitchDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Unstitch</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          {surfaceFeatures.length === 0 ? (
+    <DialogShell title="Unstitch" onClose={onClose} size="sm" onConfirm={handleOK} confirmDisabled={surfaceFeatures.length === 0 || !selectedId}>
+      {surfaceFeatures.length === 0 ? (
             <p className="dialog-hint">No surface bodies found. Create a surface first.</p>
           ) : (
             <div className="form-group">
@@ -47,18 +41,6 @@ export function UnstitchDialog({ onClose }: { onClose: () => void }) {
             Keep Original Body
           </label>
           <p className="dialog-hint">Separates the selected body back into individual face surfaces.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn-primary"
-            onClick={handleOK}
-            disabled={surfaceFeatures.length === 0 || !selectedId}
-          >
-            OK
-          </button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

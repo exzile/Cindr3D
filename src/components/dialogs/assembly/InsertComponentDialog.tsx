@@ -2,7 +2,7 @@
  * InsertComponentDialog (A13) — insert an external design file as a reference component.
  */
 import { useState } from 'react';
-import { X } from 'lucide-react';
+import { DialogShell } from '../common/DialogShell';
 
 export interface InsertComponentParams {
   name: string;
@@ -32,13 +32,7 @@ export function InsertComponentDialog({ open, onOk, onClose }: Props) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog-panel">
-        <div className="dialog-header">
-          <span className="dialog-title">Insert Component</span>
-          <button className="dialog-close" onClick={onClose}><X size={14} /></button>
-        </div>
-        <div className="dialog-body">
+    <DialogShell title="Insert Component" onClose={onClose} onConfirm={handleOk}>
           <div className="dialog-field">
             <label className="dialog-label">Component Name</label>
             <input className="dialog-input" type="text" value={name} onChange={(e) => setName(e.target.value)} />
@@ -75,12 +69,6 @@ export function InsertComponentDialog({ open, onOk, onClose }: Props) {
               <input className="dialog-input" type="number" step={1} value={pz} onChange={(e) => setPz(parseFloat(e.target.value) || 0)} />
             </div>
           </div>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOk}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

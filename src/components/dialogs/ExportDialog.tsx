@@ -1,6 +1,8 @@
 import "./ExportDialog.css";
+import { errorMessage } from '../../utils/errorHandling';
 import { useCallback, useMemo, useState } from 'react';
-import { X, Download } from 'lucide-react';
+import { Download } from 'lucide-react';
+import { DialogShell } from './common/DialogShell';
 import { Vector3 } from 'three';
 import type { Mesh, Object3D } from 'three';
 import { useCADStore } from '../../store/cadStore';
@@ -160,7 +162,7 @@ export default function ExportDialog() {
 
       setShowExportDialog(false);
     } catch (err) {
-      setStatusMessage(`Export failed: ${(err as Error).message}`);
+      setStatusMessage(`Export failed: ${errorMessage(err, 'Unknown error')}`);
     } finally {
       disposeTransientMesh(mesh, disposable);
     }
@@ -183,16 +185,23 @@ export default function ExportDialog() {
   if (!showExportDialog) return null;
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog export-dialog">
-        <div className="dialog-header">
-          <h3>Export for 3D Printing</h3>
-          <button className="dialog-close" onClick={() => setShowExportDialog(false)}>
-            <X size={16} />
+    <DialogShell
+      title="Export for 3D Printing"
+      onClose={() => setShowExportDialog(false)}
+      className="export-dialog"
+      footer={
+        <div className="dialog-footer">
+          <button className="btn btn-secondary" onClick={() => setShowExportDialog(false)}>
+            Cancel
+          </button>
+          <button className="btn btn-primary" onClick={handleExport}>
+            <Download size={14} style={{ marginRight: 6 }} />
+            {sendToPrinter ? 'Upload to Printer' : 'Export'}
           </button>
         </div>
-
-        <div className="dialog-body export-body">
+      }
+    >
+        <div className="export-body">
           {/* Format selection */}
           <div className="form-group">
             <label>Format</label>
@@ -440,17 +449,6 @@ export default function ExportDialog() {
             </div>
           )}
         </div>
-
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={() => setShowExportDialog(false)}>
-            Cancel
-          </button>
-          <button className="btn btn-primary" onClick={handleExport}>
-            <Download size={14} style={{ marginRight: 6 }} />
-            {sendToPrinter ? 'Upload to Printer' : 'Export'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

@@ -4,9 +4,8 @@ import { usePrinterStore } from '../../../store/printerStore';
 import { colors as COLORS } from '../../../utils/theme';
 import {
   compactPanelInputStyle as inputStyle,
-  panelStyle,
-  sectionTitleStyle as labelStyle,
 } from '../../../utils/printerPanelStyles';
+import { DashboardPanel } from './DashboardPanel';
 
 export default function SpeedFlowPanel() {
   const model = usePrinterStore((s) => s.model);
@@ -28,10 +27,7 @@ export default function SpeedFlowPanel() {
   const currentFlowPct = Math.round(globalFlowFactor * 100);
 
   return (
-    <div style={panelStyle()}>
-      <div style={labelStyle()} className="duet-dash-section-title-row">
-        <Gauge size={14} /> Speed &amp; Flow
-      </div>
+    <DashboardPanel icon={Gauge} title="Speed & Flow">
 
       <div className="duet-dash-flow-block">
         <div className="duet-dash-label-sm">Speed Factor</div>
@@ -117,6 +113,6 @@ export default function SpeedFlowPanel() {
           </div>
         );
       })}
-    </div>
+    </DashboardPanel>
   );
 }

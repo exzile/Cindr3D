@@ -2,6 +2,7 @@ import { Bot, ChevronDown, ChevronRight, Copy, GripHorizontal, List, RefreshCw, 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { cindr3dMcpClient, type Cindr3dMcpAuditEntry, type Cindr3dMcpStatus } from '../../services/mcp/client';
 import { BYOK_TOOLS, DESTRUCTIVE_TOOLS, toAnthropic, toOpenAI } from '../../services/mcp/tools/byokDefs';
+import { errorMessage } from '../../utils/errorHandling';
 import { TOOL_HANDLERS } from '../../services/mcp/tools/index';
 import { useAiAssistantStore, type AiProvider, type ChatMessage } from '../../store/aiAssistantStore';
 import './AiAssistantPanel.css';
@@ -261,7 +262,7 @@ async function dispatchTool(
     const result = await handler(input as Record<string, unknown>);
     return JSON.stringify(result ?? { ok: true });
   } catch (err) {
-    return JSON.stringify({ error: (err as Error).message });
+    return JSON.stringify({ error: errorMessage(err, 'Unknown error') });
   }
 }
 
@@ -387,7 +388,7 @@ function McpTab() {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    cindr3dMcpClient.heartbeat().then(setStatus).catch((e) => setErr((e as Error).message));
+    cindr3dMcpClient.heartbeat().then(setStatus).catch((e) => setErr(errorMessage(e, 'Unknown error')));
   }, []);
 
   const copy = useCallback(async () => {
@@ -399,7 +400,7 @@ function McpTab() {
 
   const rotate = useCallback(async () => {
     try { setStatus(await cindr3dMcpClient.rotateToken()); setErr(null); }
-    catch (e) { setErr((e as Error).message); }
+    catch (e) { setErr(errorMessage(e, 'Unknown error')); }
   }, []);
 
   const toggleAudit = useCallback(async () => {
@@ -410,7 +411,7 @@ function McpTab() {
       const { entries } = await cindr3dMcpClient.audit();
       setAuditEntries(entries);
       setErr(null);
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(errorMessage(e, 'Unknown error')); }
   }, [auditOpen]);
 
   const clearAudit = useCallback(async () => {
@@ -558,7 +559,7 @@ function ChatTab() {
 
         if (pendingToolCalls.length === 0) continueLoop = false;
       } catch (err) {
-        const msg = (err as Error).message;
+        const msg = errorMessage(err, 'Unknown error');
         addMessage({ id: crypto.randomUUID(), role: 'assistant', content: `Error: ${msg}`, error: true, timestamp: Date.now() });
         continueLoop = false;
       }
@@ -575,7 +576,7 @@ function ChatTab() {
       const resultStr = await dispatchTool('diagnose_print', { frameCount: 3 }, confirmDestructive);
       addMessage({ id: crypto.randomUUID(), role: 'tool_result', toolName: 'diagnose_print', content: resultStr, timestamp: Date.now() });
     } catch (err) {
-      addMessage({ id: crypto.randomUUID(), role: 'assistant', content: `Error: ${(err as Error).message}`, error: true, timestamp: Date.now() });
+      addMessage({ id: crypto.randomUUID(), role: 'assistant', content: `Error: ${errorMessage(err, 'Unknown error')}`, error: true, timestamp: Date.now() });
     } finally {
       setStreaming(false);
     }

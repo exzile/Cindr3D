@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import './DuetHeightMap.css';
+import { errorMessage } from '../../utils/errorHandling';
 import {
   RefreshCw, Crosshair, Loader2, BarChart3, Grid3x3, Download, Save,
   FolderOpen, GitCompareArrows, X, Map,
@@ -1985,7 +1986,7 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
     try {
       await loadHeightMap(selectedCsv);
     } catch (err) {
-      const msg = (err as Error).message ?? String(err);
+      const msg = errorMessage(err, 'Unknown error');
       // 404 / file-not-found gives a terse message; make it readable
       if (/404|not found|no such/i.test(msg)) {
         setLoadError(`File not found on printer: ${selectedCsv.split('/').pop()}`);
@@ -2148,7 +2149,7 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
       setShowSetupModal(false);
       setShowLevelModal(true);
     } catch (err) {
-      addToast('error', 'Failed to save bed_tilt.g', (err as Error).message, undefined, 12_000);
+      addToast('error', 'Failed to save bed_tilt.g', errorMessage(err, 'Unknown error'), undefined, 12_000);
     } finally {
       setCreatingTiltFile(false);
     }
@@ -2160,7 +2161,7 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
     try {
       await levelBed(opts);
     } catch (err) {
-      addToast('error', 'Level bed failed', (err as Error).message, undefined, 15_000);
+      addToast('error', 'Level bed failed', errorMessage(err, 'Unknown error'), undefined, 15_000);
     } finally {
       setLeveling(false);
     }
@@ -2194,7 +2195,7 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
             await levelBed({ homeFirst: false });
             steps.push({ kind: 'level', label: `Bed leveled (iteration ${i + 1})`, quality: 'good' });
           } catch (err) {
-            steps.push({ kind: 'level', label: 'Leveling failed', detail: (err as Error).message, quality: 'bad' });
+            steps.push({ kind: 'level', label: 'Leveling failed', detail: errorMessage(err, 'Unknown error'), quality: 'bad' });
             stopReason = 'failed';
             break;
           }
@@ -2213,7 +2214,7 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
             try { await sendGCode('M558 A1 S0.01'); } catch { /* best-effort restore */ }
           }
         } catch (err) {
-          steps.push({ kind: 'probe', label: `Probe failed (iteration ${i + 1})`, detail: (err as Error).message, quality: 'bad' });
+          steps.push({ kind: 'probe', label: `Probe failed (iteration ${i + 1})`, detail: errorMessage(err, 'Unknown error'), quality: 'bad' });
           stopReason = 'failed';
           break;
         }
@@ -2261,7 +2262,7 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
               quality: 'info',
             });
           } catch (err) {
-            steps.push({ kind: 'datum', label: 'Z datum calibration failed', detail: (err as Error).message, quality: 'bad' });
+            steps.push({ kind: 'datum', label: 'Z datum calibration failed', detail: errorMessage(err, 'Unknown error'), quality: 'bad' });
           }
         }
 
@@ -2280,7 +2281,7 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
         }
       }
     } catch (err) {
-      steps.push({ kind: 'done', label: `Smart Cal error: ${(err as Error).message}`, quality: 'bad' });
+      steps.push({ kind: 'done', label: `Smart Cal error: ${errorMessage(err, 'Unknown error')}`, quality: 'bad' });
       stopReason = 'failed';
     } finally {
       setSmartCalRunning(false);

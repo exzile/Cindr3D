@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
+import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
 
 type MirrorType = 'features' | 'bodies' | 'components';
@@ -84,78 +84,66 @@ export function MirrorDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>{editing ? 'Edit Mirror' : 'Mirror'}</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Type</label>
-            <select value={mirrorType} onChange={(e) => setMirrorType(e.target.value as MirrorType)}>
-              <option value="features">Features</option>
-              <option value="bodies">Bodies</option>
-              <option value="components">Components</option>
-            </select>
-          </div>
-
-          {mirrorType === 'features' && (
-            <div className="form-group">
-              <label>Feature</label>
-              <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
-                <option value="">(pick all)</option>
-                {features.map((f) => (
-                  <option key={f.id} value={f.id}>{f.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          {mirrorType === 'bodies' && (
-            <div className="form-group">
-              <label>Body</label>
-              <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
-                <option value="">(select a body)</option>
-                {bodyList.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          {mirrorType === 'components' && (
-            <div className="form-group">
-              <label>Component</label>
-              <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
-                <option value="">(select a component)</option>
-                {componentList.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div className="form-group">
-            <label>Mirror Plane</label>
-            <select value={mirrorPlane} onChange={(e) => setMirrorPlane(e.target.value as MirrorPlane)}>
-              <option value="XY">XY Plane</option>
-              <option value="XZ">XZ Plane</option>
-              <option value="YZ">YZ Plane</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Compute Type</label>
-            <select value={computeType} onChange={(e) => setComputeType(e.target.value as ComputeType)}>
-              <option value="optimized">Optimized</option>
-              <option value="identical">Identical</option>
-              <option value="adjust">Adjust</option>
-            </select>
-          </div>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply}>OK</button>
-        </div>
+    <DialogShell title={editing ? 'Edit Mirror' : 'Mirror'} onClose={onClose} size="sm" onConfirm={handleApply}>
+      <div className="form-group">
+        <label>Type</label>
+        <select value={mirrorType} onChange={(e) => setMirrorType(e.target.value as MirrorType)}>
+          <option value="features">Features</option>
+          <option value="bodies">Bodies</option>
+          <option value="components">Components</option>
+        </select>
       </div>
-    </div>
+
+      {mirrorType === 'features' && (
+        <div className="form-group">
+          <label>Feature</label>
+          <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
+            <option value="">(pick all)</option>
+            {features.map((f) => (
+              <option key={f.id} value={f.id}>{f.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      {mirrorType === 'bodies' && (
+        <div className="form-group">
+          <label>Body</label>
+          <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
+            <option value="">(select a body)</option>
+            {bodyList.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      {mirrorType === 'components' && (
+        <div className="form-group">
+          <label>Component</label>
+          <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
+            <option value="">(select a component)</option>
+            {componentList.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <div className="form-group">
+        <label>Mirror Plane</label>
+        <select value={mirrorPlane} onChange={(e) => setMirrorPlane(e.target.value as MirrorPlane)}>
+          <option value="XY">XY Plane</option>
+          <option value="XZ">XZ Plane</option>
+          <option value="YZ">YZ Plane</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Compute Type</label>
+        <select value={computeType} onChange={(e) => setComputeType(e.target.value as ComputeType)}>
+          <option value="optimized">Optimized</option>
+          <option value="identical">Identical</option>
+          <option value="adjust">Adjust</option>
+        </select>
+      </div>
+    </DialogShell>
   );
 }

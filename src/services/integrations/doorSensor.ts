@@ -3,13 +3,15 @@ import type { DoorSensorConfig } from '../../store/doorSensorStore';
 
 const DOOR_RE = /(door|enclosure|lid|cover)/i;
 
-export function parseDoorPayload(payload: string, config: DoorSensorConfig): boolean | null {
+export function parseDoorPayload(payload: string, config: DoorSensorConfig, depth = 0): boolean | null {
   const normalized = payload.trim().toLowerCase();
   if (!normalized) return null;
   if (normalized === config.openPayload.trim().toLowerCase()) return true;
   if (normalized === config.closedPayload.trim().toLowerCase()) return false;
   if (['open', 'opened', 'true', '1', 'on', 'triggered'].includes(normalized)) return true;
   if (['closed', 'close', 'false', '0', 'off', 'clear', 'cleared'].includes(normalized)) return false;
+
+  if (depth >= 2) return null;
 
   try {
     const parsed = JSON.parse(payload) as unknown;
@@ -19,7 +21,7 @@ export function parseDoorPayload(payload: string, config: DoorSensorConfig): boo
       const value = record.open ?? record.doorOpen ?? record.triggered ?? record.state ?? record.value;
       if (typeof value === 'boolean') return value;
       if (typeof value === 'number') return value !== 0;
-      if (typeof value === 'string') return parseDoorPayload(value, config);
+      if (typeof value === 'string') return parseDoorPayload(value, config, depth + 1);
     }
   } catch {
     return null;

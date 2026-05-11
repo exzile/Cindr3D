@@ -46,11 +46,9 @@ import { layerFromPercent } from '../../../services/gcode/marlinProgressParser';
 import { useKlipperPrintStatus } from '../hooks/useKlipperPrintStatus';
 import { computeSliceStats, detectPrintIssues } from '../../slicer/workspace/preview/sliceStats';
 import { RiskMarkers } from '../../slicer/workspace/preview/RiskMarkers';
-import {
-  BuildPlateGrid,
-  BuildVolumeWireframe,
-} from '../../slicer/workspace/canvas/scenePrimitives';
-import { InlineGCodeWirePreview } from '../../slicer/workspace/canvas/GCodeWirePreview';
+import { PrintSpaceLights } from '../../canvas/PrintSpaceLights';
+import { BuildVolumeScene } from '../../canvas/BuildVolumeScene';
+import { LayeredGCodePreview } from '../../canvas/LayeredGCodePreview';
 import { panelStyle, sectionTitleStyle as labelStyle } from '../../../utils/printerPanelStyles';
 import { colors as COLORS } from '../../../utils/theme';
 import { formatDurationWords } from '../../../utils/printerFormat';
@@ -841,11 +839,9 @@ export default function MeshPreviewPanel() {
               style={{ width: '100%', height: '100%' }}
               onContextMenu={(e) => e.preventDefault()}
             >
-              <ambientLight intensity={0.55} />
-              <directionalLight position={[bv.x, -bv.y, bv.z * 2]} intensity={0.7} />
+              <PrintSpaceLights />
 
-              <BuildPlateGrid sizeX={bv.x} sizeY={bv.y} />
-              <BuildVolumeWireframe x={bv.x} y={bv.y} z={bv.z} />
+              <BuildVolumeScene bv={bv} />
 
               {plateObjects.map((obj) => (
                 <ObjectSilhouette
@@ -866,33 +862,13 @@ export default function MeshPreviewPanel() {
 
               <NozzleMarker position={nozzlePosition} trail={nozzleTrail} />
 
-              {sliceResult && displayedLayer > 0 && (
-                <InlineGCodeWirePreview
-                  sliceResult={sliceResult}
-                  startLayer={0}
-                  currentLayer={displayedLayer - 1}
-                  showTravel={false}
-                  showRetractions={false}
-                  colorMode={colorModeForPreview(colorMode)}
-                  hiddenTypes={hiddenTypes}
-                  layerTimeRange={layerTimeRange}
-                  opacity={0.2}
-                  renderOrder={0}
-                />
-              )}
-
               {sliceResult && (
-                <InlineGCodeWirePreview
+                <LayeredGCodePreview
                   sliceResult={sliceResult}
-                  startLayer={displayedLayer}
-                  currentLayer={displayedLayer}
-                  showTravel={false}
-                  showRetractions={false}
+                  displayedLayer={displayedLayer}
                   colorMode={colorModeForPreview(colorMode)}
                   hiddenTypes={hiddenTypes}
                   layerTimeRange={layerTimeRange}
-                  opacity={1}
-                  renderOrder={10}
                 />
               )}
 

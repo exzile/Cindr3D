@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
 
 export function InsertCanvasDialog({ onClose }: { onClose: () => void }) {
@@ -63,79 +63,68 @@ export function InsertCanvasDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Insert Canvas (Reference Image)</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <button className="btn btn-secondary" onClick={handleChooseFile}>
-              Choose Image File
-            </button>
-            {fileName && <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>{fileName}</span>}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".png,.jpg,.jpeg"
-              style={{ display: 'none' }}
-              onChange={handleFileChange}
-            />
-          </div>
-          <div className="form-group">
-            <label>Plane</label>
-            <select value={plane} onChange={(e) => setPlane(e.target.value as 'XY' | 'XZ' | 'YZ')}>
-              <option value="XY">XY (Top)</option>
-              <option value="XZ">XZ (Front)</option>
-              <option value="YZ">YZ (Side)</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Offset X</label>
-            <input
-              type="number"
-              value={offsetX}
-              onChange={(e) => setOffsetX(parseFloat(e.target.value) || 0)}
-              step={1}
-            />
-          </div>
-          <div className="form-group">
-            <label>Offset Y</label>
-            <input
-              type="number"
-              value={offsetY}
-              onChange={(e) => setOffsetY(parseFloat(e.target.value) || 0)}
-              step={1}
-            />
-          </div>
-          <div className="form-group">
-            <label>Scale</label>
-            <input
-              type="number"
-              value={imgScale}
-              onChange={(e) => setImgScale(parseFloat(e.target.value) || 1)}
-              step={0.1}
-              min={0.001}
-            />
-          </div>
-          <div className="form-group">
-            <label>Opacity (0–1)</label>
-            <input
-              type="number"
-              value={opacity}
-              onChange={(e) => setOpacity(Math.min(1, Math.max(0, parseFloat(e.target.value) || 0.5)))}
-              step={0.05}
-              min={0}
-              max={1}
-            />
-          </div>
-          <p className="dialog-hint">Adds a reference image to the viewport on the selected plane. The image appears in the feature timeline.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-        </div>
+    <DialogShell title="Insert Canvas (Reference Image)" onClose={onClose} size="sm" cancelLabel="Cancel">
+      <div className="form-group">
+        <button className="btn btn-secondary" onClick={handleChooseFile}>
+          Choose Image File
+        </button>
+        {fileName && <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>{fileName}</span>}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".png,.jpg,.jpeg"
+          style={{ display: 'none' }}
+          onChange={handleFileChange}
+        />
       </div>
-    </div>
+      <div className="form-group">
+        <label>Plane</label>
+        <select value={plane} onChange={(e) => setPlane(e.target.value as 'XY' | 'XZ' | 'YZ')}>
+          <option value="XY">XY (Top)</option>
+          <option value="XZ">XZ (Front)</option>
+          <option value="YZ">YZ (Side)</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Offset X</label>
+        <input
+          type="number"
+          value={offsetX}
+          onChange={(e) => setOffsetX(parseFloat(e.target.value) || 0)}
+          step={1}
+        />
+      </div>
+      <div className="form-group">
+        <label>Offset Y</label>
+        <input
+          type="number"
+          value={offsetY}
+          onChange={(e) => setOffsetY(parseFloat(e.target.value) || 0)}
+          step={1}
+        />
+      </div>
+      <div className="form-group">
+        <label>Scale</label>
+        <input
+          type="number"
+          value={imgScale}
+          onChange={(e) => setImgScale(parseFloat(e.target.value) || 1)}
+          step={0.1}
+          min={0.001}
+        />
+      </div>
+      <div className="form-group">
+        <label>Opacity (0–1)</label>
+        <input
+          type="number"
+          value={opacity}
+          onChange={(e) => setOpacity(Math.min(1, Math.max(0, parseFloat(e.target.value) || 0.5)))}
+          step={0.05}
+          min={0}
+          max={1}
+        />
+      </div>
+      <p className="dialog-hint">Adds a reference image to the viewport on the selected plane. The image appears in the feature timeline.</p>
+    </DialogShell>
   );
 }

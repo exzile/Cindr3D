@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DownloadCloud, RefreshCw } from 'lucide-react';
 import './UpdatePanel.css';
+import { errorMessage } from '../../utils/errorHandling';
 
 interface UpdateStatus {
   ok: boolean;
@@ -56,7 +57,7 @@ export default function UpdatePanel({ onAlertChange }: UpdatePanelProps) {
       setStatus(result);
       setMessage(result.ok ? 'Update status refreshed.' : result.error ?? 'Updater is unavailable.');
     } catch (err) {
-      setMessage(`Updater is unavailable: ${(err as Error).message}`);
+      setMessage(`Updater is unavailable: ${errorMessage(err, 'Unknown error')}`);
     } finally {
       setBusy(false);
     }
@@ -96,7 +97,7 @@ export default function UpdatePanel({ onAlertChange }: UpdatePanelProps) {
       await loadStatus();
       window.setTimeout(() => window.location.reload(), 1200);
     } catch (err) {
-      setMessage(`Install failed: ${(err as Error).message}`);
+      setMessage(`Install failed: ${errorMessage(err, 'Unknown error')}`);
     } finally {
       setBusy(false);
     }

@@ -1,7 +1,7 @@
 import type { PrinterStore, LevelRunResult, LevelBedOpts, LevelBedSummary, LevelBedStopReason } from '../../printerStore';
 import type { PrinterStoreApi } from '../storeApi';
 import type { DuetService } from '../../../services/DuetService';
-import { parseEventLog } from '../persistence';
+import { parseEventLog, errorMessage } from '../persistence';
 
 /** Poll state.status until the machine returns to idle after an async G-code.
  *
@@ -103,22 +103,22 @@ export function createControlActions(
     setToolTemp: async (tool, _heater, temp) => {
       const { service } = get(); if (!service) return;
       try { await service.sendGCode(`G10 P${tool} S${temp}`); }
-      catch (err) { set({ error: `Failed to set tool temp: ${(err as Error).message}` }); }
+      catch (err) { set({ error: `Failed to set tool temp: ${errorMessage(err, 'Unknown error')}` }); }
     },
     setBedTemp: async (temp) => {
       const { service } = get(); if (!service) return;
       try { await service.sendGCode(`M140 S${temp}`); }
-      catch (err) { set({ error: `Failed to set bed temp: ${(err as Error).message}` }); }
+      catch (err) { set({ error: `Failed to set bed temp: ${errorMessage(err, 'Unknown error')}` }); }
     },
     setChamberTemp: async (temp) => {
       const { service } = get(); if (!service) return;
       try { await service.sendGCode(`M141 S${temp}`); }
-      catch (err) { set({ error: `Failed to set chamber temp: ${(err as Error).message}` }); }
+      catch (err) { set({ error: `Failed to set chamber temp: ${errorMessage(err, 'Unknown error')}` }); }
     },
     homeAxes: async (axes) => {
       const { service } = get(); if (!service) return;
       try { await service.sendGCode(!axes || axes.length === 0 ? 'G28' : `G28 ${axes.join(' ')}`); }
-      catch (err) { set({ error: `Failed to home axes: ${(err as Error).message}` }); }
+      catch (err) { set({ error: `Failed to home axes: ${errorMessage(err, 'Unknown error')}` }); }
     },
     moveAxis: async (axis, distance) => {
       const { service } = get(); if (!service) return;
@@ -126,92 +126,92 @@ export function createControlActions(
         await service.sendGCode('G91');
         await service.sendGCode(`G1 ${axis.toUpperCase()}${distance} F6000`);
         await service.sendGCode('G90');
-      } catch (err) { set({ error: `Failed to move axis: ${(err as Error).message}` }); }
+      } catch (err) { set({ error: `Failed to move axis: ${errorMessage(err, 'Unknown error')}` }); }
     },
     extrude: async (amount, feedrate) => {
       const { service } = get(); if (!service) return;
       try {
         await service.sendGCode('M83');
         await service.sendGCode(`G1 E${amount} F${feedrate}`);
-      } catch (err) { set({ error: `Failed to extrude: ${(err as Error).message}` }); }
+      } catch (err) { set({ error: `Failed to extrude: ${errorMessage(err, 'Unknown error')}` }); }
     },
     setBabyStep: async (offset) => {
       const { service } = get(); if (!service) return;
       try { await service.sendGCode(`M290 S${offset}`); }
-      catch (err) { set({ error: `Failed to set baby step: ${(err as Error).message}` }); }
+      catch (err) { set({ error: `Failed to set baby step: ${errorMessage(err, 'Unknown error')}` }); }
     },
     setSpeedFactor: async (percent) => {
       const { service } = get(); if (!service) return;
       try { await service.sendGCode(`M220 S${percent}`); }
-      catch (err) { set({ error: `Failed to set speed factor: ${(err as Error).message}` }); }
+      catch (err) { set({ error: `Failed to set speed factor: ${errorMessage(err, 'Unknown error')}` }); }
     },
     setExtrusionFactor: async (extruder, percent) => {
       const { service } = get(); if (!service) return;
       try { await service.sendGCode(`M221 D${extruder} S${percent}`); }
-      catch (err) { set({ error: `Failed to set extrusion factor: ${(err as Error).message}` }); }
+      catch (err) { set({ error: `Failed to set extrusion factor: ${errorMessage(err, 'Unknown error')}` }); }
     },
     setGlobalFlowFactor: async (percent) => {
       const { service } = get(); if (!service) return;
       try { await service.sendGCode(`M221 D-1 S${percent}`); }
-      catch (err) { set({ error: `Failed to set global flow factor: ${(err as Error).message}` }); }
+      catch (err) { set({ error: `Failed to set global flow factor: ${errorMessage(err, 'Unknown error')}` }); }
     },
     setFanSpeed: async (fan, speed) => {
       const { service } = get(); if (!service) return;
       try {
         const duetSpeed = speed > 1 ? speed / 100 : speed;
         await service.sendGCode(`M106 P${fan} S${duetSpeed}`);
-      } catch (err) { set({ error: `Failed to set fan speed: ${(err as Error).message}` }); }
+      } catch (err) { set({ error: `Failed to set fan speed: ${errorMessage(err, 'Unknown error')}` }); }
     },
     startPrint: async (filename) => {
       const { service } = get(); if (!service) return;
       try { await service.sendGCode(`M32 "${filename}"`); }
-      catch (err) { set({ error: `Failed to start print: ${(err as Error).message}` }); }
+      catch (err) { set({ error: `Failed to start print: ${errorMessage(err, 'Unknown error')}` }); }
     },
     pausePrint: async () => {
       const { service } = get(); if (!service) return;
       try { await service.sendGCode('M25'); }
-      catch (err) { set({ error: `Failed to pause print: ${(err as Error).message}` }); }
+      catch (err) { set({ error: `Failed to pause print: ${errorMessage(err, 'Unknown error')}` }); }
     },
     resumePrint: async () => {
       const { service } = get(); if (!service) return;
       try { await service.sendGCode('M24'); }
-      catch (err) { set({ error: `Failed to resume print: ${(err as Error).message}` }); }
+      catch (err) { set({ error: `Failed to resume print: ${errorMessage(err, 'Unknown error')}` }); }
     },
     cancelPrint: async () => {
       const { service } = get(); if (!service) return;
       try { await service.sendGCode('M0'); }
-      catch (err) { set({ error: `Failed to cancel print: ${(err as Error).message}` }); }
+      catch (err) { set({ error: `Failed to cancel print: ${errorMessage(err, 'Unknown error')}` }); }
     },
     cancelObject: async (index) => {
       const { service } = get(); if (!service) return;
       try { await service.cancelObject(index); }
-      catch (err) { set({ error: `Failed to cancel object: ${(err as Error).message}` }); }
+      catch (err) { set({ error: `Failed to cancel object: ${errorMessage(err, 'Unknown error')}` }); }
     },
     emergencyStop: async () => {
       const { service } = get(); if (!service) return;
       try { await service.emergencyStop(); }
-      catch (err) { set({ error: `Emergency stop failed: ${(err as Error).message}` }); }
+      catch (err) { set({ error: `Emergency stop failed: ${errorMessage(err, 'Unknown error')}` }); }
     },
     refreshFilaments: async () => {
       const { service } = get(); if (!service) return;
       try {
         const entries = await service.listFiles('0:/filaments');
         set({ filaments: entries.filter((entry: { type: string }) => entry.type === 'd').map((entry: { name: string }) => entry.name).sort() });
-      } catch (err) { set({ error: `Failed to list filaments: ${(err as Error).message}` }); }
+      } catch (err) { set({ error: `Failed to list filaments: ${errorMessage(err, 'Unknown error')}` }); }
     },
     loadFilament: async (toolNumber, name) => {
       const { service } = get(); if (!service) return;
       try {
         await service.sendGCode(`T${toolNumber}`);
         await service.sendGCode(`M701 S"${name}"`);
-      } catch (err) { set({ error: `Failed to load filament: ${(err as Error).message}` }); }
+      } catch (err) { set({ error: `Failed to load filament: ${errorMessage(err, 'Unknown error')}` }); }
     },
     unloadFilament: async (toolNumber) => {
       const { service } = get(); if (!service) return;
       try {
         await service.sendGCode(`T${toolNumber}`);
         await service.sendGCode('M702');
-      } catch (err) { set({ error: `Failed to unload filament: ${(err as Error).message}` }); }
+      } catch (err) { set({ error: `Failed to unload filament: ${errorMessage(err, 'Unknown error')}` }); }
     },
     changeFilament: async (toolNumber, name) => {
       const { service } = get(); if (!service) return;
@@ -219,7 +219,7 @@ export function createControlActions(
         await service.sendGCode(`T${toolNumber}`);
         await service.sendGCode('M702');
         await service.sendGCode(`M701 S"${name}"`);
-      } catch (err) { set({ error: `Failed to change filament: ${(err as Error).message}` }); }
+      } catch (err) { set({ error: `Failed to change filament: ${errorMessage(err, 'Unknown error')}` }); }
     },
     uploadFirmware: async (file) => {
       const { service } = get(); if (!service) return;
@@ -228,7 +228,7 @@ export function createControlActions(
         await service.uploadFile(`0:/firmware/${file.name}`, file, (progress: number) => set({ uploadProgress: progress }));
         set({ uploading: false, uploadProgress: 100 });
       } catch (err) {
-        set({ uploading: false, uploadProgress: 0, error: `Firmware upload failed: ${(err as Error).message}` });
+        set({ uploading: false, uploadProgress: 0, error: `Firmware upload failed: ${errorMessage(err, 'Unknown error')}` });
         throw err;
       }
     },
@@ -237,7 +237,7 @@ export function createControlActions(
       try {
         await service.sendGCode('M997');
         set({ firmwareUpdatePending: true });
-      } catch (err) { set({ error: `Failed to trigger firmware install: ${(err as Error).message}` }); }
+      } catch (err) { set({ error: `Failed to trigger firmware install: ${errorMessage(err, 'Unknown error')}` }); }
     },
     refreshPrintHistory: async () => {
       const { service } = get(); if (!service) return;
@@ -247,13 +247,13 @@ export function createControlActions(
         const text = await blob.text();
         set({ printHistory: parseEventLog(text), printHistoryLoading: false });
       } catch (err) {
-        set({ printHistory: [], printHistoryLoading: false, error: `Failed to load print history: ${(err as Error).message}` });
+        set({ printHistory: [], printHistoryLoading: false, error: `Failed to load print history: ${errorMessage(err, 'Unknown error')}` });
       }
     },
     loadHeightMap: async (path) => {
       const { service } = get(); if (!service) return;
       try { set({ heightMap: await service.getHeightMap(path) }); }
-      catch (err) { set({ error: `Failed to load height map: ${(err as Error).message}` }); }
+      catch (err) { set({ error: `Failed to load height map: ${errorMessage(err, 'Unknown error')}` }); }
     },
     probeGrid: async () => {
       const { service } = get(); if (!service) return;
@@ -261,7 +261,7 @@ export function createControlActions(
         await service.sendGCode('G29');
         await waitUntilIdle(service);
         set({ heightMap: await service.getHeightMap() });
-      } catch (err) { set({ error: `Failed to probe grid: ${(err as Error).message}` }); }
+      } catch (err) { set({ error: `Failed to probe grid: ${errorMessage(err, 'Unknown error')}` }); }
     },
     levelBed: async (opts: LevelBedOpts = {}): Promise<LevelBedSummary> => {
       const {
@@ -472,7 +472,7 @@ export function createControlActions(
         }
 
         if (probesPerPoint > 1) await service.sendGCode('M558 A1 S0.01');
-      } catch (err) { set({ error: `Failed to level bed: ${(err as Error).message}` }); }
+      } catch (err) { set({ error: `Failed to level bed: ${errorMessage(err, 'Unknown error')}` }); }
 
       // Clear live progress — the results modal takes over from here.
       set({ levelBedProgress: null });
@@ -481,5 +481,6 @@ export function createControlActions(
       set({ levelBedPendingResult: summary, lastLevelBedOpts: opts });
       return summary;
     },
+    clearLevelBedResult: () => set({ levelBedPendingResult: null }),
   };
 }

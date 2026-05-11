@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import type { Component, ConstructionPlane } from '../../../types/cad';
+import { DialogShell } from '../common/DialogShell';
 
 export interface MirrorComponentParams {
   componentId: string;
@@ -32,13 +32,7 @@ export function MirrorComponentDialog({ open, components, constructionPlanes, on
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Mirror Component</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
+    <DialogShell title="Mirror Component" onClose={onClose} size="sm" onConfirm={handleOk} confirmLabel="Mirror" confirmDisabled={!componentId}>
           <div className="form-group">
             <label>Component</label>
             <select value={componentId} onChange={(e) => setComponentId(e.target.value)}>
@@ -69,14 +63,6 @@ export function MirrorComponentDialog({ open, components, constructionPlanes, on
               Create Linked Copy
             </label>
           </div>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOk} disabled={!componentId}>
-            Mirror
-          </button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

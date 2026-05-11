@@ -1,4 +1,5 @@
 import { unzipSync } from 'fflate';
+import { generateId } from '../../utils/generateId';
 import type { PrintProfile } from '../../types/slicer';
 
 export type ExternalProfileFormat = 'cura' | 'orca' | 'bambu' | 'unknown';
@@ -66,7 +67,7 @@ const BOOLEAN_FIELDS: Record<string, keyof PrintProfile> = {
 };
 
 function profileId(): string {
-  return `imported-print-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return generateId('imported-print');
 }
 
 function parseScalar(value: unknown): unknown {

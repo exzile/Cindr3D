@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import type { Component } from '../../../types/cad';
+import { DialogShell } from '../common/DialogShell';
 
 export interface JointOriginParams {
   name: string;
@@ -28,13 +28,7 @@ export function JointOriginDialog({ open, components, onOk, onClose }: Props) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog-panel">
-        <div className="dialog-header">
-          <span className="dialog-title">Joint Origin</span>
-          <button className="dialog-close" onClick={onClose}><X size={14} /></button>
-        </div>
-        <div className="dialog-body">
+    <DialogShell title="Joint Origin" onClose={onClose} onConfirm={handleOk}>
           <div className="dialog-field">
             <label className="dialog-label">Name</label>
             <input
@@ -69,12 +63,6 @@ export function JointOriginDialog({ open, components, onOk, onClose }: Props) {
               <option value="on-face">On Face</option>
             </select>
           </div>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOk}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

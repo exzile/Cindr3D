@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function MeshSectionSketchDialog({ onClose }: { onClose: () => void }) {
   const features = useCADStore((s) => s.features);
@@ -34,53 +34,46 @@ export function MeshSectionSketchDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog-panel">
-        <div className="dialog-header">
-          <span className="dialog-title">Mesh Section Sketch</span>
-          <button className="dialog-close" onClick={onClose}><X size={14} /></button>
-        </div>
-        <div className="dialog-body">
-          {done ? (
-            <p className="dialog-hint" style={{ color: 'var(--color-success, #22c55e)' }}>
-              Section sketch created successfully.
-            </p>
-          ) : (
-            <>
-              <div className="form-group">
-                <label>Feature</label>
-                <select value={featureId} onChange={(e) => setFeatureId(e.target.value)}>
-                  {meshFeatures.length === 0 && <option value="">No mesh features</option>}
-                  {meshFeatures.map((f) => (
-                    <option key={f.id} value={f.id}>{f.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Plane</label>
-                <select value={plane} onChange={(e) => setPlane(e.target.value as typeof plane)}>
-                  <option value="XY">XY (horizontal)</option>
-                  <option value="XZ">XZ (front vertical)</option>
-                  <option value="YZ">YZ (side vertical)</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Offset (mm)</label>
-                <input
-                  type="number"
-                  value={offset}
-                  onChange={(e) => setOffset(parseFloat(e.target.value) || 0)}
-                />
-              </div>
-              <p className="dialog-hint">Intersects the mesh with the plane to create a polyline sketch.</p>
-            </>
-          )}
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>{done ? 'Close' : 'Cancel'}</button>
-          {!done && <button className="btn btn-primary" onClick={handleOK}>OK</button>}
-        </div>
-      </div>
-    </div>
+    <DialogShell
+      title="Mesh Section Sketch"
+      onClose={onClose}
+      cancelLabel={done ? 'Close' : 'Cancel'}
+      onConfirm={done ? undefined : handleOK}
+    >
+      {done ? (
+        <p className="dialog-hint" style={{ color: 'var(--color-success, #22c55e)' }}>
+          Section sketch created successfully.
+        </p>
+      ) : (
+        <>
+          <div className="form-group">
+            <label>Feature</label>
+            <select value={featureId} onChange={(e) => setFeatureId(e.target.value)}>
+              {meshFeatures.length === 0 && <option value="">No mesh features</option>}
+              {meshFeatures.map((f) => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Plane</label>
+            <select value={plane} onChange={(e) => setPlane(e.target.value as typeof plane)}>
+              <option value="XY">XY (horizontal)</option>
+              <option value="XZ">XZ (front vertical)</option>
+              <option value="YZ">YZ (side vertical)</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Offset (mm)</label>
+            <input
+              type="number"
+              value={offset}
+              onChange={(e) => setOffset(parseFloat(e.target.value) || 0)}
+            />
+          </div>
+          <p className="dialog-hint">Intersects the mesh with the plane to create a polyline sketch.</p>
+        </>
+      )}
+    </DialogShell>
   );
 }

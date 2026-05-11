@@ -88,7 +88,7 @@ export default function RevolvePanel() {
                   Face selected
                   <button
                     className="tp-chip__clear"
-                    onClick={() => useCADStore.setState({ revolveFaceBoundary: null, revolveFaceNormal: null })}
+                    onClick={() => useCADStore.getState().clearRevolveFace()}
                     title="Clear"
                   ><X size={10} /></button>
                 </span>

@@ -10,6 +10,7 @@ import { useThemeStore } from '../../store/themeStore';
 import { useLanguageStore } from '../../store/languageStore';
 import { usePrinterStore } from '../../store/printerStore';
 import { useProfileSyncStore } from '../../store/profileSyncStore';
+import { errorMessage } from '../../utils/errorHandling';
 import { PROVIDER_MODELS, useAiAssistantStore, type AiProvider } from '../../store/aiAssistantStore';
 import { SUPPORTED_LANGUAGES, translate, type LanguageCode } from '../../i18n';
 import {
@@ -192,7 +193,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
       const payload = await pullProfileSpoolSync();
       setStatusMessage(`Profile sync pulled: ${payload.exportedAt}`);
     } catch (err) {
-      setStatusMessage(`Profile sync failed: ${(err as Error).message}`);
+      setStatusMessage(`Profile sync failed: ${errorMessage(err, 'Unknown error')}`);
     }
   }, [setStatusMessage]);
 
@@ -201,7 +202,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
       await pushProfileSpoolSync();
       setStatusMessage('Profile sync pushed to GitHub');
     } catch (err) {
-      setStatusMessage(`Profile sync push failed: ${(err as Error).message}`);
+      setStatusMessage(`Profile sync push failed: ${errorMessage(err, 'Unknown error')}`);
     }
   }, [setStatusMessage]);
 
@@ -399,7 +400,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
         setStatusMessage(`Design saved: ${baseName}.dznd`);
         finish(baseName);
       } catch (err) {
-        if ((err as Error).name !== 'AbortError') setStatusMessage('Save failed');
+        if (!(err instanceof Error && err.name === 'AbortError')) setStatusMessage('Save failed');
       }
     } else {
       saveToFile(name);
@@ -457,7 +458,7 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
                           await (handle as FSHandleWithPerms).requestPermission({ mode: 'readwrite' });
                         } catch { /* browser doesn't support it — writes fall back to download */ }
                       } catch (err) {
-                        if ((err as Error).name !== 'AbortError') setStatusMessage('Open failed');
+                        if (!(err instanceof Error && err.name === 'AbortError')) setStatusMessage('Open failed');
                       }
                     } else {
                       loadFileInputRef.current?.click();

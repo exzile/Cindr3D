@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { generateId } from '../utils/generateId';
 import { persist } from 'zustand/middleware';
 import type { DashboardConfig, DashboardLayoutItem, PanelId } from '../types/dashboard-layout.types';
 
@@ -383,7 +384,7 @@ export const useDashboardLayout = create<DashboardLayoutState>()(
       addDashboard: () =>
         set((state) => {
           const dashboard: DashboardConfig = {
-            id: `dashboard-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+            id: generateId('dashboard'),
             name: uniqueDashboardName(state.dashboards),
             layouts: cloneLayouts(DEFAULT_LAYOUTS),
             hidden: {},

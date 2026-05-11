@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import '../FeatureDialogExtras.css';
 
 export function SnapFitDialog({ onClose }: { onClose: () => void }) {
@@ -47,14 +47,8 @@ export function SnapFitDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>{editing ? 'Edit Snap Fit' : 'Snap Fit'}</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
+    <DialogShell title={editing ? 'Edit Snap Fit' : 'Snap Fit'} onClose={onClose} size="sm" onConfirm={handleApply} confirmLabel={editing ? 'Update' : 'OK'}>
+      <div className="form-group">
             <label>Type</label>
             <select value={snapType} onChange={(e) => setSnapType(e.target.value as typeof snapType)}>
               <option value="cantilever">Cantilever</option>
@@ -104,14 +98,6 @@ export function SnapFitDialog({ onClose }: { onClose: () => void }) {
               <option value="new-body">New Body</option>
             </select>
           </div>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply}>
-            {editing ? 'Update' : 'OK'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

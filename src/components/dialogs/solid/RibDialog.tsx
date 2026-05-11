@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function RibDialog({ onClose }: { onClose: () => void }) {
   const editingFeatureId = useCADStore((s) => s.editingFeatureId);
@@ -35,60 +35,48 @@ export function RibDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>{editing ? 'Edit Rib' : 'Rib'}</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
+    <DialogShell title={editing ? 'Edit Rib' : 'Rib'} onClose={onClose} size="sm" onConfirm={handleApply} confirmDisabled={!sketchId && !editing}>
+      <div className="form-group">
+        <label>Profile Sketch</label>
+        <select value={sketchId} onChange={(e) => setSketchId(e.target.value)}>
+          <option value="" disabled>Select a sketch</option>
+          {sketches.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </div>
+      <div className="settings-grid">
+        <div className="form-group">
+          <label>Thickness (mm)</label>
+          <input type="number" value={thickness} onChange={(e) => setThickness(Math.max(0.01, parseFloat(e.target.value) || 2))} step={0.5} min={0.01} />
         </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Profile Sketch</label>
-            <select value={sketchId} onChange={(e) => setSketchId(e.target.value)}>
-              <option value="" disabled>Select a sketch</option>
-              {sketches.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-          <div className="settings-grid">
-            <div className="form-group">
-              <label>Thickness (mm)</label>
-              <input type="number" value={thickness} onChange={(e) => setThickness(Math.max(0.01, parseFloat(e.target.value) || 2))} step={0.5} min={0.01} />
-            </div>
-            <div className="form-group">
-              <label>Height (mm)</label>
-              <input type="number" value={height} onChange={(e) => setHeight(Math.max(0.1, parseFloat(e.target.value) || 10))} step={1} min={0.1} />
-            </div>
-          </div>
-          <div className="form-group">
-            <label>Direction</label>
-            <select value={direction} onChange={(e) => setDirection(e.target.value as typeof direction)}>
-              <option value="normal">Normal</option>
-              <option value="flip">Flip</option>
-              <option value="symmetric">Symmetric</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Operation</label>
-            <select value={operation} onChange={(e) => setOperation(e.target.value as typeof operation)}>
-              <option value="join">Join</option>
-              <option value="new-body">New Body</option>
-            </select>
-          </div>
-          <label className="checkbox-label">
-            <input type="checkbox" checked={fillAllEnclosedFaces} onChange={(e) => setFillAllEnclosedFaces(e.target.checked)} />
-            Fill All Enclosed Faces
-          </label>
-          <label className="checkbox-label">
-            <input type="checkbox" checked={preserveCorners} onChange={(e) => setPreserveCorners(e.target.checked)} />
-            Preserve Corners
-          </label>
-          <p className="dialog-hint">Select a sketch profile to extrude as a thin structural rib.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={!sketchId && !editing} onClick={handleApply}>OK</button>
+        <div className="form-group">
+          <label>Height (mm)</label>
+          <input type="number" value={height} onChange={(e) => setHeight(Math.max(0.1, parseFloat(e.target.value) || 10))} step={1} min={0.1} />
         </div>
       </div>
-    </div>
+      <div className="form-group">
+        <label>Direction</label>
+        <select value={direction} onChange={(e) => setDirection(e.target.value as typeof direction)}>
+          <option value="normal">Normal</option>
+          <option value="flip">Flip</option>
+          <option value="symmetric">Symmetric</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Operation</label>
+        <select value={operation} onChange={(e) => setOperation(e.target.value as typeof operation)}>
+          <option value="join">Join</option>
+          <option value="new-body">New Body</option>
+        </select>
+      </div>
+      <label className="checkbox-label">
+        <input type="checkbox" checked={fillAllEnclosedFaces} onChange={(e) => setFillAllEnclosedFaces(e.target.checked)} />
+        Fill All Enclosed Faces
+      </label>
+      <label className="checkbox-label">
+        <input type="checkbox" checked={preserveCorners} onChange={(e) => setPreserveCorners(e.target.checked)} />
+        Preserve Corners
+      </label>
+      <p className="dialog-hint">Select a sketch profile to extrude as a thin structural rib.</p>
+    </DialogShell>
   );
 }

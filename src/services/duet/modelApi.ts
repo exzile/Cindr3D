@@ -31,8 +31,9 @@ export async function getObjectModelRequest(
   if (key) params.set('key', key);
   params.set('flags', flags ?? 'd99fn');
   const url = `${baseUrl}/rr_model?${params.toString()}`;
-  const response = await request<{ key: string; result: Partial<DuetObjectModel> }>(url);
-  return response.result ?? response as unknown as Partial<DuetObjectModel>;
+  const response = await request<{ key: string; result?: Partial<DuetObjectModel> }>(url);
+  // Some older RRF builds return the model directly rather than wrapped in { result }
+  return response.result ?? (response as unknown as Partial<DuetObjectModel>);
 }
 
 export async function fetchConfigSnapshot(

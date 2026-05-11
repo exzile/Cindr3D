@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function ThickenDialog({ onClose }: { onClose: () => void }) {
   const editingFeatureId = useCADStore((s) => s.editingFeatureId);
@@ -27,14 +27,8 @@ export function ThickenDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>{editing ? 'Edit Thicken' : 'Thicken'}</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
+    <DialogShell title={editing ? 'Edit Thicken' : 'Thicken'} onClose={onClose} size="sm" onConfirm={handleApply}>
+      <div className="form-group">
             <label>Thickness (mm)</label>
             <input type="number" value={thickness} onChange={(e) => setThickness(Math.max(0.01, parseFloat(e.target.value) || 2))} step={0.5} min={0.01} />
           </div>
@@ -55,12 +49,6 @@ export function ThickenDialog({ onClose }: { onClose: () => void }) {
             </select>
           </div>
           <p className="dialog-hint">Select a face or surface body in the viewport to thicken.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

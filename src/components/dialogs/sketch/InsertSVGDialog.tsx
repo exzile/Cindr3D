@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
 import type { SketchEntity, SketchPoint, Sketch } from '../../../types/cad';
 
@@ -159,50 +159,39 @@ export function InsertSVGDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Insert SVG into Sketch</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <button className="btn btn-secondary" onClick={handleChooseFile}>
-              Choose SVG File
-            </button>
-            {fileName && <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>{fileName}</span>}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".svg"
-              style={{ display: 'none' }}
-              onChange={handleFileChange}
-            />
-          </div>
-          <div className="form-group">
-            <label>Scale Factor</label>
-            <input
-              type="number"
-              value={scale}
-              onChange={(e) => setScale(parseFloat(e.target.value) || 1)}
-              step={0.1}
-              min={0.001}
-            />
-          </div>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={flipY}
-              onChange={(e) => setFlipY(e.target.checked)}
-            />
-            Flip Y (SVG is Y-down — recommended)
-          </label>
-          <p className="dialog-hint">Imports path, circle, and rect elements from the SVG into the active sketch.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-        </div>
+    <DialogShell title="Insert SVG into Sketch" onClose={onClose} size="sm" cancelLabel="Cancel">
+      <div className="form-group">
+        <button className="btn btn-secondary" onClick={handleChooseFile}>
+          Choose SVG File
+        </button>
+        {fileName && <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>{fileName}</span>}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".svg"
+          style={{ display: 'none' }}
+          onChange={handleFileChange}
+        />
       </div>
-    </div>
+      <div className="form-group">
+        <label>Scale Factor</label>
+        <input
+          type="number"
+          value={scale}
+          onChange={(e) => setScale(parseFloat(e.target.value) || 1)}
+          step={0.1}
+          min={0.001}
+        />
+      </div>
+      <label className="checkbox-label">
+        <input
+          type="checkbox"
+          checked={flipY}
+          onChange={(e) => setFlipY(e.target.checked)}
+        />
+        Flip Y (SVG is Y-down — recommended)
+      </label>
+      <p className="dialog-hint">Imports path, circle, and rect elements from the SVG into the active sketch.</p>
+    </DialogShell>
   );
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function MeshAlignDialog({ onClose }: { onClose: () => void }) {
   const features = useCADStore((s) => s.features);
@@ -25,13 +25,7 @@ export function MeshAlignDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Mesh Align</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
+    <DialogShell title="Mesh Align" onClose={onClose} size="sm" onConfirm={handleOK} confirmDisabled={!sourceId || !targetId}>
           <div className="form-group">
             <label>Source Body (to move)</label>
             <select value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
@@ -51,12 +45,6 @@ export function MeshAlignDialog({ onClose }: { onClose: () => void }) {
             </select>
           </div>
           <p className="dialog-hint">Translates the source body so its centroid matches the target body's centroid.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK} disabled={!sourceId || !targetId}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

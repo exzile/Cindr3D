@@ -26,6 +26,7 @@ import {
   type ExportedSettings,
 } from './settingsExport';
 import type { BundleSlice, ImportResult } from '../types/settings-io.types';
+import { errorMessage } from './errorHandling';
 
 export type { BundleSlice };
 
@@ -238,7 +239,7 @@ export async function openBundle(): Promise<OpenResult> {
       if ((err as DOMException)?.name === 'AbortError') {
         return { ok: false, appliedSections: [], warnings: [], error: 'Open cancelled.' };
       }
-      return { ok: false, appliedSections: [], warnings: [], error: (err as Error).message };
+      return { ok: false, appliedSections: [], warnings: [], error: errorMessage(err, 'Unknown error') };
     }
   }
   // Fallback: hidden <input type="file">
@@ -262,7 +263,7 @@ export async function openBundle(): Promise<OpenResult> {
         }
         resolve({ ...result, filename: file.name });
       } catch (e) {
-        resolve({ ok: false, appliedSections: [], warnings: [], error: (e as Error).message });
+        resolve({ ok: false, appliedSections: [], warnings: [], error: errorMessage(e, 'Unknown error') });
       }
     };
     input.click();
@@ -290,7 +291,7 @@ export async function saveBundleAs(suggested = 'settings.dzn'): Promise<{ ok: bo
       if ((err as DOMException)?.name === 'AbortError') {
         return { ok: false, error: 'Save cancelled.' };
       }
-      return { ok: false, error: (err as Error).message };
+      return { ok: false, error: errorMessage(err, 'Unknown error') };
     }
   }
   // Fallback: trigger a download and remember just the name so the UI can
@@ -337,7 +338,7 @@ export async function saveBundleSlice(
       rememberOfflineBundle(merged, handle.name);
       return { ok: true, filename: handle.name };
     } catch (err) {
-      return { ok: false, error: (err as Error).message };
+      return { ok: false, error: errorMessage(err, 'Unknown error') };
     }
   }
 

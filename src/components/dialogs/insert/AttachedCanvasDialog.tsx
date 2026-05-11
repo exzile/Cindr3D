@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { DialogShell } from '../common/DialogShell';
 
 export interface CanvasRecord {
   id: string;
@@ -60,13 +60,7 @@ export function AttachedCanvasDialog({ open, canvases, selectedId, onOk, onClose
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Attached Canvas</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
+    <DialogShell title="Attached Canvas" onClose={onClose} size="sm" onConfirm={handleOk} confirmDisabled={!selectedId}>
 
           {canvases.length === 0 ? (
             <p className="dialog-hint">No canvas references found. Use Insert Canvas to add one first.</p>
@@ -159,18 +153,6 @@ export function AttachedCanvasDialog({ open, canvases, selectedId, onOk, onClose
               )}
             </>
           )}
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn-primary"
-            onClick={handleOk}
-            disabled={!selectedId}
-          >
-            OK
-          </button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

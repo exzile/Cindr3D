@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Check, Download, Play } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import { useSlicerStore } from '../../../store/slicerStore';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 interface StepQueueProps {
   testType: string;
@@ -31,6 +32,7 @@ export function StepQueue({ testType }: StepQueueProps) {
   const [busy, setBusy]         = useState(false);
   const [printSent, setPrintSent] = useState(false);
   const [error, setError]       = useState<string | null>(null);
+  const run = useAsyncAction(setBusy, setError);
 
   const connected      = usePrinterStore((s) => s.connected);
   const uploading      = usePrinterStore((s) => s.uploading);
@@ -48,21 +50,13 @@ export function StepQueue({ testType }: StepQueueProps) {
     );
   }
 
-  const handleUploadAndPrint = async () => {
-    setError(null);
-    setBusy(true);
-    try {
-      // sendToPrinter uploads to currentDirectory (defaults to 0:/gcodes) with
-      // thumbnails embedded. startPrint issues M32 to start the job.
-      await sendToPrinter();
-      await startPrint('0:/gcodes/output.gcode');
-      setPrintSent(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const handleUploadAndPrint = () => run(async () => {
+    // sendToPrinter uploads to currentDirectory (defaults to 0:/gcodes) with
+    // thumbnails embedded. startPrint issues M32 to start the job.
+    await sendToPrinter();
+    await startPrint('0:/gcodes/output.gcode');
+    setPrintSent(true);
+  });
 
   const isBusy = busy || uploading;
   const progressLabel = uploading

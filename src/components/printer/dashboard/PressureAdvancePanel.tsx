@@ -5,9 +5,8 @@ import { colors as COLORS } from '../../../utils/theme';
 import {
   compactPanelInputStyle as inputStyle,
   dashboardButtonStyle as btnStyle,
-  panelStyle,
-  sectionTitleStyle as labelStyle,
 } from '../../../utils/printerPanelStyles';
+import { DashboardPanel } from './DashboardPanel';
 
 export default function PressureAdvancePanel() {
   const model = usePrinterStore((s) => s.model);
@@ -46,10 +45,7 @@ export default function PressureAdvancePanel() {
   if (extruders.length === 0) return null;
 
   return (
-    <div style={panelStyle()}>
-      <div style={labelStyle()} className="duet-dash-section-title-row">
-        <Activity size={14} /> Pressure Advance
-      </div>
+    <DashboardPanel icon={Activity} title="Pressure Advance">
 
       {extruders.map((ext, i) => {
         const currentValue = ext.pressure ?? 0;
@@ -100,6 +96,6 @@ export default function PressureAdvancePanel() {
           </div>
         );
       })}
-    </div>
+    </DashboardPanel>
   );
 }

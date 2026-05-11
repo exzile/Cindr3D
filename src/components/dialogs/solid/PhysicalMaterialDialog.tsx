@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
 
 type Preset = 'Air' | 'Water' | 'PLA' | 'ABS' | 'Nylon' | 'Aluminum' | 'Steel' | 'Titanium' | 'Custom';
@@ -62,66 +62,54 @@ export function PhysicalMaterialDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Physical Material</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Target Body</label>
-            <select value={targetFeatureId} onChange={(e) => setTargetFeatureId(e.target.value)}>
-              {solidFeatures.length === 0
-                ? <option value="">— no bodies —</option>
-                : solidFeatures.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)
-              }
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Material Preset</label>
-            <select value={preset} onChange={(e) => handlePresetChange(e.target.value as Preset)}>
-              {(Object.keys(PRESET_TABLE) as Preset[]).map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Density (kg/m³)</label>
-            <input
-              type="number"
-              value={density}
-              onChange={(e) => { setPreset('Custom'); setDensity(parseFloat(e.target.value) || 0); }}
-              step={1}
-              min={0}
-            />
-          </div>
-          <div className="form-group">
-            <label>Young's Modulus (GPa)</label>
-            <input
-              type="number"
-              value={youngModulus}
-              onChange={(e) => { setPreset('Custom'); setYoungModulus(parseFloat(e.target.value) || 0); }}
-              step={0.1}
-              min={0}
-            />
-          </div>
-          <div className="form-group">
-            <label>Yield Strength (MPa)</label>
-            <input
-              type="number"
-              value={yieldStrength}
-              onChange={(e) => { setPreset('Custom'); setYieldStrength(parseFloat(e.target.value) || 0); }}
-              step={1}
-              min={0}
-            />
-          </div>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply}>OK</button>
-        </div>
+    <DialogShell title="Physical Material" onClose={onClose} size="sm" onConfirm={handleApply}>
+      <div className="form-group">
+        <label>Target Body</label>
+        <select value={targetFeatureId} onChange={(e) => setTargetFeatureId(e.target.value)}>
+          {solidFeatures.length === 0
+            ? <option value="">— no bodies —</option>
+            : solidFeatures.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)
+          }
+        </select>
       </div>
-    </div>
+      <div className="form-group">
+        <label>Material Preset</label>
+        <select value={preset} onChange={(e) => handlePresetChange(e.target.value as Preset)}>
+          {(Object.keys(PRESET_TABLE) as Preset[]).map((p) => (
+            <option key={p} value={p}>{p}</option>
+          ))}
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Density (kg/m³)</label>
+        <input
+          type="number"
+          value={density}
+          onChange={(e) => { setPreset('Custom'); setDensity(parseFloat(e.target.value) || 0); }}
+          step={1}
+          min={0}
+        />
+      </div>
+      <div className="form-group">
+        <label>Young's Modulus (GPa)</label>
+        <input
+          type="number"
+          value={youngModulus}
+          onChange={(e) => { setPreset('Custom'); setYoungModulus(parseFloat(e.target.value) || 0); }}
+          step={0.1}
+          min={0}
+        />
+      </div>
+      <div className="form-group">
+        <label>Yield Strength (MPa)</label>
+        <input
+          type="number"
+          value={yieldStrength}
+          onChange={(e) => { setPreset('Custom'); setYieldStrength(parseFloat(e.target.value) || 0); }}
+          step={1}
+          min={0}
+        />
+      </div>
+    </DialogShell>
   );
 }

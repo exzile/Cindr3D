@@ -61,7 +61,7 @@ export default function ConstructionGeometryInteraction() {
     if (activeTool === 'construct-plane-two-edges') {
       if (step1Edge === null) {
         setStep1Edge(result);
-        useCADStore.setState((s) => ({ ...s, statusMessage: 'Plane Through Two Edges: click second edge' }));
+        useCADStore.getState().setStatusMessage('Plane Through Two Edges: click second edge');
         return;
       }
       // Compute normal from cross product of the two directions
@@ -103,7 +103,7 @@ export default function ConstructionGeometryInteraction() {
     if (activeTool === 'construct-point-two-edges') {
       if (step1Edge === null) {
         setStep1Edge(result);
-        useCADStore.setState((s) => ({ ...s, statusMessage: 'Point Through Two Edges: click second edge' }));
+        useCADStore.getState().setStatusMessage('Point Through Two Edges: click second edge');
         return;
       }
       // Find closest point between the two edge segments.
@@ -149,7 +149,7 @@ export default function ConstructionGeometryInteraction() {
     if (activeTool === 'construct-axis-two-points') {
       if (step1Vertex === null) {
         setStep1Vertex(result);
-        useCADStore.setState((s) => ({ ...s, statusMessage: 'Axis Through Two Points: click second point' }));
+        useCADStore.getState().setStatusMessage('Axis Through Two Points: click second point');
         return;
       }
       const dir = result.position.clone().sub(step1Vertex.position).normalize();
@@ -177,7 +177,7 @@ export default function ConstructionGeometryInteraction() {
     if (activeTool === 'construct-plane-tangent-at-point') {
       if (step1Normal === null) {
         // User clicked a vertex before picking a face — prompt again
-        useCADStore.setState((s) => ({ ...s, statusMessage: 'Plane Tangent at Point: click a curved face first' }));
+        useCADStore.getState().setStatusMessage('Plane Tangent at Point: click a curved face first');
         return;
       }
       addConstructionPlane({
@@ -193,7 +193,7 @@ export default function ConstructionGeometryInteraction() {
     // D189: Axis Perpendicular at Point — step 2: pick vertex, use stored face normal
     if (activeTool === 'construct-axis-perp-at-point') {
       if (step1Normal === null) {
-        useCADStore.setState((s) => ({ ...s, statusMessage: 'Axis Perpendicular at Point: click a planar face first' }));
+        useCADStore.getState().setStatusMessage('Axis Perpendicular at Point: click a planar face first');
         return;
       }
       addConstructionAxis({
@@ -233,7 +233,7 @@ export default function ConstructionGeometryInteraction() {
     if (activeTool === 'construct-plane-tangent-at-point') {
       if (step1Normal === null) {
         setStep1Normal(result.normal.clone());
-        useCADStore.setState((s) => ({ ...s, statusMessage: 'Plane Tangent at Point: now click a vertex' }));
+        useCADStore.getState().setStatusMessage('Plane Tangent at Point: now click a vertex');
         return;
       }
       // step 2 is handled in handleVertexClick
@@ -255,7 +255,7 @@ export default function ConstructionGeometryInteraction() {
     if (activeTool === 'construct-axis-perp-at-point') {
       if (step1Normal === null) {
         setStep1Normal(result.normal.clone());
-        useCADStore.setState((s) => ({ ...s, statusMessage: 'Axis Perpendicular at Point: now click a vertex' }));
+        useCADStore.getState().setStatusMessage('Axis Perpendicular at Point: now click a vertex');
         return;
       }
       // step 2 is handled in handleVertexClick

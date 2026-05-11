@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function MeshCombineDialog({ onClose }: { onClose: () => void }) {
   const commitMeshCombine = useCADStore((s) => s.commitMeshCombine);
@@ -32,13 +32,7 @@ export function MeshCombineDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog-panel">
-        <div className="dialog-header">
-          <span className="dialog-title">Mesh Combine</span>
-          <button className="dialog-close" onClick={onClose}><X size={14} /></button>
-        </div>
-        <div className="dialog-body">
+    <DialogShell title="Mesh Combine" onClose={onClose} onConfirm={handleOK}>
           <div className="form-group">
             <label>Operation</label>
             <select value={operation} onChange={(e) => setOperation(e.target.value as typeof operation)}>
@@ -65,12 +59,6 @@ export function MeshCombineDialog({ onClose }: { onClose: () => void }) {
             />
           </div>
           <p className="dialog-hint">Performs a boolean operation between two mesh bodies.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }
