@@ -26,12 +26,14 @@ function HeightMapMesh({
   heightMap,
   diverging = false,
   scaleXY: scaleXYProp,
+  mirrorX = false,
   onHover,
 }: {
   heightMap: HeightMapData;
   diverging?: boolean;
   /** Shared scene scale — pass from Scene3D so all components use the same space. */
   scaleXY?: number;
+  mirrorX?: boolean;
   onHover?: (info: HoverInfo | null) => void;
 }) {
   const { geometry, scaleXY } = useMemo(() => {
@@ -45,11 +47,12 @@ function HeightMapMesh({
     const scaleXY = scaleXYProp ?? 1 / Math.max(xRange, yRange, 1);
     const zScale = (1 / Math.max(Math.abs(stats.max), Math.abs(stats.min), 0.01)) * 0.3;
     const colorFn = diverging ? divergingColorThree : deviationColorThree;
+    const sx = (bx: number) => mirrorX ? (0.5 - bx * scaleXY) : (bx * scaleXY - 0.5);
 
     for (let yi = 0; yi < heightMap.numY; yi++) {
       for (let xi = 0; xi < heightMap.numX; xi++) {
         const value = heightMap.points[yi]?.[xi] ?? 0;
-        const x = (heightMap.xMin + xi * heightMap.xSpacing) * scaleXY - 0.5;
+        const x = sx(heightMap.xMin + xi * heightMap.xSpacing);
         const y = (heightMap.yMin + yi * heightMap.ySpacing) * scaleXY - 0.5;
         vertices.push(x, value * zScale, -y);
         const color = colorFn(value, stats.min, stats.max);
@@ -63,7 +66,12 @@ function HeightMapMesh({
         const b = a + 1;
         const c = a + heightMap.numX;
         const d = c + 1;
-        indices.push(a, c, b, b, c, d);
+        // Winding flips with X mirror — swap to keep normals facing up
+        if (mirrorX) {
+          indices.push(a, b, c, b, d, c);
+        } else {
+          indices.push(a, c, b, b, c, d);
+        }
       }
     }
 
@@ -72,7 +80,7 @@ function HeightMapMesh({
     geo.setIndex(indices);
     geo.computeVertexNormals();
     return { geometry: geo, scaleXY };
-  }, [heightMap, diverging, scaleXYProp]);
+  }, [heightMap, diverging, scaleXYProp, mirrorX]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
@@ -80,10 +88,10 @@ function HeightMapMesh({
     if (!onHover) return;
     e.stopPropagation();
     const scale = 1 / scaleXY;
-    // Reverse the scene-space normalisation:
-    //   x_scene = bedX * scaleXY - 0.5   →  bedX = (x_scene + 0.5) / scaleXY
-    //   z_scene = -(bedY * scaleXY - 0.5) →  bedY = (0.5 - z_scene) / scaleXY
-    const bedX = (e.point.x + 0.5) * scale;
+    // Reverse the scene-space normalisation (accounting for optional X mirror):
+    //   normal:   x_scene = bedX * scaleXY - 0.5  →  bedX = (x_scene + 0.5) / scaleXY
+    //   mirrored: x_scene = 0.5 - bedX * scaleXY  →  bedX = (0.5 - x_scene) / scaleXY
+    const bedX = mirrorX ? (0.5 - e.point.x) * scale : (e.point.x + 0.5) * scale;
     const bedY = (0.5 - e.point.z) * scale;
     // Snap to the nearest grid cell for the exact stored value
     const xi = Math.max(0, Math.min(heightMap.numX - 1,
@@ -92,7 +100,7 @@ function HeightMapMesh({
       Math.round((bedY - heightMap.yMin) / heightMap.ySpacing)));
     const value = heightMap.points[yi]?.[xi] ?? 0;
     onHover({ bedX, bedY, value, screenX: e.nativeEvent.clientX, screenY: e.nativeEvent.clientY });
-  }, [onHover, heightMap, scaleXY]);
+  }, [onHover, heightMap, scaleXY, mirrorX]);
 
   return (
     <mesh
@@ -108,7 +116,7 @@ function HeightMapMesh({
 
 /* ── Grid — surface-following, correct paired segments ──────────────────────── */
 
-function GridOverlay({ heightMap, scaleXY: scaleXYProp }: { heightMap: HeightMapData; scaleXY?: number }) {
+function GridOverlay({ heightMap, scaleXY: scaleXYProp, mirrorX = false }: { heightMap: HeightMapData; scaleXY?: number; mirrorX?: boolean }) {
   const geo = useMemo(() => {
     const xRange = heightMap.xMax - heightMap.xMin;
     const yRange = heightMap.yMax - heightMap.yMin;
@@ -127,7 +135,9 @@ function GridOverlay({ heightMap, scaleXY: scaleXYProp }: { heightMap: HeightMap
     const LIFT = 0.0018; // tiny offset to prevent z-fighting with the mesh face
 
     // World-space → normalised-scene coordinate helpers
-    const wx = (xi: number) => (heightMap.xMin + xi * heightMap.xSpacing) * scaleXY - 0.5;
+    const wx = (xi: number) => mirrorX
+      ? 0.5 - (heightMap.xMin + xi * heightMap.xSpacing) * scaleXY
+      : (heightMap.xMin + xi * heightMap.xSpacing) * scaleXY - 0.5;
     const wz = (yi: number) => -((heightMap.yMin + yi * heightMap.ySpacing) * scaleXY - 0.5);
     const wy = (xi: number, yi: number) => (heightMap.points[yi]?.[xi] ?? 0) * zScale + LIFT;
 
@@ -153,7 +163,7 @@ function GridOverlay({ heightMap, scaleXY: scaleXYProp }: { heightMap: HeightMap
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     return g;
-  }, [heightMap, scaleXYProp]);
+  }, [heightMap, scaleXYProp, mirrorX]);
 
   useEffect(() => () => geo.dispose(), [geo]);
 
@@ -180,12 +190,14 @@ function FlatPlate({
   configuredGrid,
   bedBounds,
   scaleXY: scaleXYProp,
+  mirrorX = false,
 }: {
   heightMap: HeightMapData;
   configuredGrid?: ConfiguredProbeGrid;
   /** Physical bed extents — when present the plate spans the full bed, not just the probe area. */
   bedBounds?: BedBounds;
   scaleXY?: number;
+  mirrorX?: boolean;
 }) {
   // ── Derived dimensions ──────────────────────────────────────────────────────
   const hmXRange = heightMap.xMax - heightMap.xMin;
@@ -204,7 +216,8 @@ function FlatPlate({
   const thickness = 0.012;
   const w   = (bedXMax - bedXMin) * scaleXY + margin;
   const d   = (bedYMax - bedYMin) * scaleXY + margin;
-  const cx  = (bedXMin + bedXMax) / 2 * scaleXY - 0.5;
+  const midX = (bedXMin + bedXMax) / 2 * scaleXY;
+  const cx  = mirrorX ? (0.5 - midX) : (midX - 0.5);
   const cz  = 0.5 - (bedYMin + bedYMax) / 2 * scaleXY;
 
   // ── Plate box — memoised BoxGeometry with explicit disposal (#1) ───────────
@@ -322,12 +335,14 @@ function ProbePointMarkers({
   configuredGrid,
   scaleXY: scaleXYProp,
   radiusScale = 1,
+  mirrorX = false,
   onHover,
 }: {
   heightMap: HeightMapData;
   configuredGrid?: ConfiguredProbeGrid;
   scaleXY?: number;
   radiusScale?: number;
+  mirrorX?: boolean;
   onHover?: (info: HoverInfo | null) => void;
 }) {
   const meshRef  = useRef<THREE.InstancedMesh>(null);
@@ -337,6 +352,7 @@ function ProbePointMarkers({
     const xRange  = heightMap.xMax - heightMap.xMin;
     const yRange  = heightMap.yMax - heightMap.yMin;
     const scaleXY = scaleXYProp ?? 1 / Math.max(xRange, yRange, 1);
+    const smx = (bx: number) => mirrorX ? (0.5 - bx * scaleXY) : (bx * scaleXY - 0.5);
 
     if (configuredGrid) {
       // Show where the probes *will* go based on the configured M557 settings.
@@ -353,7 +369,7 @@ function ProbePointMarkers({
         for (let xi = 0; xi < n; xi++) {
           const bx = xMin + xi * spacingX;
           const by = yMin + yi * spacingY;
-          const sx = bx * scaleXY - 0.5;
+          const sx = smx(bx);
           const sz = -(by * scaleXY - 0.5);
           pos.push([sx, r, sz]);
         }
@@ -369,14 +385,14 @@ function ProbePointMarkers({
     const pos: [number, number, number][] = [];
     for (let yi = 0; yi < heightMap.numY; yi++) {
       for (let xi = 0; xi < heightMap.numX; xi++) {
-        const x = (heightMap.xMin + xi * heightMap.xSpacing) * scaleXY - 0.5;
+        const x = smx(heightMap.xMin + xi * heightMap.xSpacing);
         const z = -((heightMap.yMin + yi * heightMap.ySpacing) * scaleXY - 0.5);
         // y = radius so the sphere's bottom rests exactly on the plate top face
         pos.push([x, r, z]);
       }
     }
     return { radius: r, positions: pos, count: pos.length, numX: heightMap.numX };
-  }, [heightMap, configuredGrid, scaleXYProp, radiusScale]);
+  }, [heightMap, configuredGrid, scaleXYProp, radiusScale, mirrorX]);
 
   // Place each instance. Runs once after mount and again whenever positions change.
   useEffect(() => {
@@ -458,13 +474,15 @@ function SafetyZones({
   bedBounds,
   configuredGrid,
   scaleXY,
+  mirrorX = false,
 }: {
   bedBounds: BedBounds;
   configuredGrid: ConfiguredProbeGrid;
   scaleXY: number;
+  mirrorX?: boolean;
 }) {
   const { marginGeo, borderGeo, hasMargins } = useMemo(() => {
-    const sx  = (x: number) => x * scaleXY - 0.5;
+    const sx  = (x: number) => mirrorX ? (0.5 - x * scaleXY) : (x * scaleXY - 0.5);
     const sz  = (y: number) => -(y * scaleXY - 0.5);
 
     // Physical bed corners in scene space
@@ -522,7 +540,7 @@ function SafetyZones({
     borderGeo.setAttribute('position', new THREE.Float32BufferAttribute(bverts, 3));
 
     return { marginGeo, borderGeo, hasMargins: count > 0 };
-  }, [bedBounds, configuredGrid, scaleXY]);
+  }, [bedBounds, configuredGrid, scaleXY, mirrorX]);
 
   useEffect(() => () => { marginGeo.dispose(); borderGeo.dispose(); }, [marginGeo, borderGeo]);
 
@@ -599,10 +617,12 @@ function ZRuler({
   heightMap,
   stats,
   scaleXY: scaleXYProp,
+  mirrorX = false,
 }: {
   heightMap: HeightMapData;
   stats: { min: number; max: number };
   scaleXY?: number;
+  mirrorX?: boolean;
 }) {
   // ── Scene-space geometry helpers (mirror HeightMapMesh exactly) ────────────
   const xRange  = heightMap.xMax - heightMap.xMin;
@@ -611,8 +631,11 @@ function ZRuler({
   const zScale  = (1 / Math.max(Math.abs(stats.max), Math.abs(stats.min), 0.01)) * 0.3;
 
   // Place the ruler at the right-front corner of the mesh with a small gap.
+  // When X is mirrored, bedX=xMin maps to the rightmost scene position.
   const GAP    = 0.052;
-  const rulerX = heightMap.xMax * scaleXY - 0.5 + GAP;
+  const rulerX = mirrorX
+    ? (0.5 - heightMap.xMin * scaleXY + GAP)
+    : (heightMap.xMax * scaleXY - 0.5 + GAP);
   const rulerZ = -(heightMap.yMin * scaleXY - 0.5); // front edge in scene space
 
   const yBottom = stats.min * zScale;
@@ -737,11 +760,13 @@ function XYRulers({
   configuredGrid,
   bedBounds,
   scaleXY: scaleXYProp,
+  mirrorX = false,
 }: {
   heightMap: HeightMapData;
   configuredGrid?: ConfiguredProbeGrid;
   bedBounds?: BedBounds;
   scaleXY?: number;
+  mirrorX?: boolean;
 }) {
   const xRange  = heightMap.xMax - heightMap.xMin;
   const yRange  = heightMap.yMax - heightMap.yMin;
@@ -753,9 +778,18 @@ function XYRulers({
   const bedYMin = bedBounds?.yMin ?? configuredGrid?.yMin ?? heightMap.yMin;
   const bedYMax = bedBounds?.yMax ?? configuredGrid?.yMax ?? heightMap.yMax;
 
+  // Scene-space X coordinate for a bed X value (respects mirrorX)
+  const toSceneX = useCallback(
+    (bx: number) => mirrorX ? (0.5 - bx * scaleXY) : (bx * scaleXY - 0.5),
+    [mirrorX, scaleXY],
+  );
+
   // Scene-space edges of the plate
-  const xL = bedXMin * scaleXY - 0.5;  // left
-  const xR = bedXMax * scaleXY - 0.5;  // right
+  const xL = toSceneX(bedXMin); // left in scene (bedXMin normal, bedXMax mirrored)
+  const xR = toSceneX(bedXMax); // right in scene (bedXMax normal, bedXMin mirrored)
+  // Ensure xL < xR when mirrored (bed values reversed, so swap)
+  const sceneXLeft  = mirrorX ? xR : xL;
+  const sceneXRight = mirrorX ? xL : xR;
   const zF = -(bedYMin * scaleXY - 0.5); // front (larger Z)
   const zB = -(bedYMax * scaleXY - 0.5); // back  (smaller Z)
 
@@ -764,7 +798,8 @@ function XYRulers({
   const INDENT =  0.040; // gap between bed edge and ruler line
 
   const zRuler = zF + INDENT; // X ruler sits in front of the bed
-  const xRuler = xL - INDENT; // Y ruler sits left of the bed
+  // Y ruler: left of bed (normal) or right of bed (mirrored — X=0 is on the right)
+  const xRuler = mirrorX ? (sceneXRight + INDENT) : (sceneXLeft - INDENT);
 
   const xTicks = useMemo(
     () => computeNiceTicks(bedXMin, bedXMax, 5),
@@ -780,14 +815,14 @@ function XYRulers({
     const ENDCAP = 0.010; // perpendicular end-cap half-length
 
     // ── X ruler ──────────────────────────────────────────────────────────────
-    // Spine
-    pts.push(xL, BELOW, zRuler,   xR, BELOW, zRuler);
+    // Spine (always from sceneXLeft to sceneXRight)
+    pts.push(sceneXLeft, BELOW, zRuler,   sceneXRight, BELOW, zRuler);
     // End caps (perpendicular in Z)
-    pts.push(xL, BELOW, zRuler - ENDCAP,  xL, BELOW, zRuler + ENDCAP);
-    pts.push(xR, BELOW, zRuler - ENDCAP,  xR, BELOW, zRuler + ENDCAP);
+    pts.push(sceneXLeft,  BELOW, zRuler - ENDCAP,  sceneXLeft,  BELOW, zRuler + ENDCAP);
+    pts.push(sceneXRight, BELOW, zRuler - ENDCAP,  sceneXRight, BELOW, zRuler + ENDCAP);
     // Ticks (downward in Y)
     for (const v of xTicks) {
-      const x = v * scaleXY - 0.5;
+      const x = toSceneX(v);
       pts.push(x, BELOW, zRuler,  x, BELOW - TICK, zRuler);
     }
 
@@ -797,16 +832,20 @@ function XYRulers({
     // End caps (perpendicular in X)
     pts.push(xRuler - ENDCAP, BELOW, zF,  xRuler + ENDCAP, BELOW, zF);
     pts.push(xRuler - ENDCAP, BELOW, zB,  xRuler + ENDCAP, BELOW, zB);
-    // Ticks (in +X direction, toward the bed)
+    // Ticks: toward the bed — left when mirrored (Y ruler right of bed), right when normal (Y ruler left of bed)
     for (const v of yTicks) {
       const z = -(v * scaleXY - 0.5);
-      pts.push(xRuler, BELOW, z,  xRuler + TICK, BELOW, z);
+      if (mirrorX) {
+        pts.push(xRuler, BELOW, z,  xRuler - TICK, BELOW, z);
+      } else {
+        pts.push(xRuler, BELOW, z,  xRuler + TICK, BELOW, z);
+      }
     }
 
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
     return g;
-  }, [BELOW, xL, xR, zF, zB, zRuler, xRuler, xTicks, yTicks, scaleXY]);
+  }, [BELOW, sceneXLeft, sceneXRight, zF, zB, zRuler, xRuler, xTicks, yTicks, scaleXY, mirrorX, toSceneX]);
 
   useEffect(() => () => lineGeo.dispose(), [lineGeo]);
 
@@ -820,7 +859,7 @@ function XYRulers({
       {xTicks.map((v) => (
         <Text
           key={`xr-${v}`}
-          position={[v * scaleXY - 0.5, BELOW - TICK - 0.013, zRuler]}
+          position={[toSceneX(v), BELOW - TICK - 0.013, zRuler]}
           fontSize={0.020}
           color="#94a3b8"
           anchorX="center"
@@ -833,7 +872,7 @@ function XYRulers({
 
       {/* X axis label */}
       <Text
-        position={[(xL + xR) / 2, BELOW - TICK - 0.034, zRuler]}
+        position={[(sceneXLeft + sceneXRight) / 2, BELOW - TICK - 0.034, zRuler]}
         fontSize={0.022}
         color="#ef4444"
         anchorX="center"
@@ -847,10 +886,10 @@ function XYRulers({
       {yTicks.map((v) => (
         <Text
           key={`yr-${v}`}
-          position={[xRuler - 0.010, BELOW, -(v * scaleXY - 0.5)]}
+          position={[mirrorX ? xRuler + 0.010 : xRuler - 0.010, BELOW, -(v * scaleXY - 0.5)]}
           fontSize={0.020}
           color="#94a3b8"
-          anchorX="right"
+          anchorX={mirrorX ? 'left' : 'right'}
           anchorY="middle"
           renderOrder={5}
         >
@@ -860,7 +899,7 @@ function XYRulers({
 
       {/* Y axis label */}
       <Text
-        position={[xRuler - 0.044, BELOW, (zF + zB) / 2]}
+        position={[mirrorX ? xRuler + 0.044 : xRuler - 0.044, BELOW, (zF + zB) / 2]}
         fontSize={0.022}
         color="#22c55e"
         anchorX="center"
@@ -896,6 +935,7 @@ export function Scene3D({
   showMesh = true,
   configuredGrid,
   bedBounds,
+  mirrorX = false,
 }: {
   heightMap: HeightMapData;
   diverging?: boolean;
@@ -909,6 +949,7 @@ export function Scene3D({
   configuredGrid?: ConfiguredProbeGrid;
   /** Physical bed extents from M208 axis limits — drives full plate + safety margin overlay. */
   bedBounds?: BedBounds;
+  mirrorX?: boolean;
 }) {
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const [tooltipInfo, setTooltipInfo] = useState<HoverInfo | null>(null);
@@ -943,10 +984,11 @@ export function Scene3D({
     const bedXMax = bedBounds?.xMax ?? configuredGrid?.xMax ?? heightMap.xMax;
     const bedYMin = bedBounds?.yMin ?? configuredGrid?.yMin ?? heightMap.yMin;
     const bedYMax = bedBounds?.yMax ?? configuredGrid?.yMax ?? heightMap.yMax;
-    const cx = (bedXMin + bedXMax) / 2 * sceneScaleXY - 0.5;
+    const midBedX = (bedXMin + bedXMax) / 2 * sceneScaleXY;
+    const cx = mirrorX ? (0.5 - midBedX) : (midBedX - 0.5);
     const cz = 0.5 - (bedYMin + bedYMax) / 2 * sceneScaleXY;
     return [cx, 0, cz];
-  }, [heightMap, configuredGrid, bedBounds, sceneScaleXY]);
+  }, [heightMap, configuredGrid, bedBounds, sceneScaleXY, mirrorX]);
 
   // Keep OrbitControls target centred on the bed when dimensions change.
   useEffect(() => {
@@ -967,10 +1009,10 @@ export function Scene3D({
         <directionalLight position={[4, 6, 4]}   intensity={1.0} castShadow />
         <directionalLight position={[-3, 2, -3]} intensity={0.35} />
         <directionalLight position={[0, -4, 0]}  intensity={0.15} />
-        <FlatPlate heightMap={heightMap} configuredGrid={configuredGrid} bedBounds={bedBounds} scaleXY={sceneScaleXY} />
+        <FlatPlate heightMap={heightMap} configuredGrid={configuredGrid} bedBounds={bedBounds} scaleXY={sceneScaleXY} mirrorX={mirrorX} />
         {/* Safety margin overlay — red fills + blue probe boundary — only when M208 bed > M557 probe area */}
         {bedBounds && configuredGrid && (
-          <SafetyZones bedBounds={bedBounds} configuredGrid={configuredGrid} scaleXY={sceneScaleXY} />
+          <SafetyZones bedBounds={bedBounds} configuredGrid={configuredGrid} scaleXY={sceneScaleXY} mirrorX={mirrorX} />
         )}
         {showProbePoints && (
           <ProbePointMarkers
@@ -978,13 +1020,14 @@ export function Scene3D({
             configuredGrid={configuredGrid}
             scaleXY={sceneScaleXY}
             radiusScale={probePointScale}
+            mirrorX={mirrorX}
             onHover={setTooltipInfo}
           />
         )}
-        {showMesh && <HeightMapMesh heightMap={heightMap} diverging={diverging} scaleXY={sceneScaleXY} onHover={setTooltipInfo} />}
-        {showMesh && <GridOverlay   heightMap={heightMap} scaleXY={sceneScaleXY} />}
-        {showMesh && showZRuler && <ZRuler heightMap={heightMap} stats={stats} scaleXY={sceneScaleXY} />}
-        {showXYRulers && <XYRulers heightMap={heightMap} configuredGrid={configuredGrid} bedBounds={bedBounds} scaleXY={sceneScaleXY} />}
+        {showMesh && <HeightMapMesh heightMap={heightMap} diverging={diverging} scaleXY={sceneScaleXY} mirrorX={mirrorX} onHover={setTooltipInfo} />}
+        {showMesh && <GridOverlay   heightMap={heightMap} scaleXY={sceneScaleXY} mirrorX={mirrorX} />}
+        {showMesh && showZRuler && <ZRuler heightMap={heightMap} stats={stats} scaleXY={sceneScaleXY} mirrorX={mirrorX} />}
+        {showXYRulers && <XYRulers heightMap={heightMap} configuredGrid={configuredGrid} bedBounds={bedBounds} scaleXY={sceneScaleXY} mirrorX={mirrorX} />}
         <AxisLabels />
         <OrbitControls
           ref={controlsRef}
@@ -1028,7 +1071,7 @@ export function Scene3D({
 
 /* ── 2-D Heatmap ────────────────────────────────────────────────────────────── */
 
-export function Heatmap2D({ heightMap, diverging = false }: { heightMap: HeightMapData; diverging?: boolean }) {
+export function Heatmap2D({ heightMap, diverging = false, mirrorX = false }: { heightMap: HeightMapData; diverging?: boolean; mirrorX?: boolean }) {
   const [hoverInfo, setHoverInfo] = useState<{ x: number; y: number; value: number; screenX: number; screenY: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const stats = useMemo(() => computeStats(heightMap), [heightMap]);
@@ -1078,10 +1121,12 @@ export function Heatmap2D({ heightMap, diverging = false }: { heightMap: HeightM
           Array.from({ length: heightMap.numX }, (_, xi) => {
             const value = heightMap.points[yi]?.[xi] ?? 0;
             const fill = diverging ? divergingColor(value, stats.min, stats.max) : deviationColor(value, stats.min, stats.max);
+            // When mirrorX: xi=0 (X=0) renders at the right side of the grid
+            const cellXi = mirrorX ? (heightMap.numX - 1 - xi) : xi;
             return (
               <rect
                 key={`${xi}-${yi}`}
-                x={padL + xi * cellW}
+                x={padL + cellXi * cellW}
                 y={padT + (heightMap.numY - 1 - yi) * cellH}
                 width={cellW}
                 height={cellH}
@@ -1095,7 +1140,9 @@ export function Heatmap2D({ heightMap, diverging = false }: { heightMap: HeightM
         )}
 
         {xTicks.map(({ i, mm }) => {
-          const cx = padL + i * cellW + cellW / 2;
+          // When mirrorX: tick i=0 (lowest X) is on the right
+          const tickXi = mirrorX ? (heightMap.numX - 1 - i) : i;
+          const cx = padL + tickXi * cellW + cellW / 2;
           return (
             <g key={`x-${i}`}>
               <line x1={cx} y1={padT + gridH} x2={cx} y2={padT + gridH + 4} style={{ stroke: 'var(--text-muted)', strokeWidth: 1 }} />

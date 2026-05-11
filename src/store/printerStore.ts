@@ -53,6 +53,10 @@ export interface LevelBedOpts {
   maxPasses?: number;
   /** Target deviation in mm — stop when deviationAfter falls below this (default 0.05). */
   targetDeviation?: number;
+  /** Probe dives per G30 point — sets M558 A{n} before each pass (default 1). */
+  probesPerPoint?: number;
+  /** M558 S value — max acceptable spread between dives in mm (default 0.01, recommend 0.05 for BLTouch). Only applied when probesPerPoint > 1. */
+  probeTolerance?: number;
 }
 
 export interface LevelBedSummary {
@@ -60,6 +64,16 @@ export interface LevelBedSummary {
   autoConverge: boolean;
   stopReason: LevelBedStopReason;
   targetDeviation: number;
+}
+
+/** Live progress state while levelBed is running. Cleared when done. */
+export interface LevelBedProgress {
+  currentRun: number;
+  totalRuns: number;
+  /** Probe points completed in the current run (counted via move.probing transitions). */
+  probesDone: number;
+  /** Total probes per run — null until learned from the first completed run. */
+  probesTotal: number | null;
 }
 
 export interface PrinterStore {
@@ -103,6 +117,12 @@ export interface PrinterStore {
   printerAlerts: PrinterAlert[];
 
   heightMap: DuetHeightMap | null;
+
+  // Live progress while levelBed is running — cleared when done.
+  levelBedProgress: LevelBedProgress | null;
+  // Level bed result pending display — survives tab navigation.
+  levelBedPendingResult: LevelBedSummary | null;
+  lastLevelBedOpts: LevelBedOpts | null;
 
   showPrinter: boolean;
   showSettings: boolean;
@@ -244,6 +264,9 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
   printerAlerts: [],
 
   heightMap: null,
+  levelBedProgress: null,
+  levelBedPendingResult: null,
+  lastLevelBedOpts: null,
 
   plugins: [],
   pluginsLoading: false,

@@ -1,6 +1,34 @@
 import * as THREE from 'three';
 import type { DuetHeightMap as HeightMapData } from '../../../types/duet';
 
+export interface ProbeOffset {
+  xOffset: number;
+  yOffset: number;
+}
+
+/**
+ * Parse a probe XY offset from a firmware config file.
+ *
+ * Handles:
+ *   G31 X<n> Y<n>  — RRF (Duet), Smoothieware
+ *   M851 X<n> Y<n> — Marlin, Repetier, some Smoothieware variants
+ *
+ * Returns null if no probe offset line with X or Y is found.
+ */
+export function parseProbeOffset(configText: string): ProbeOffset | null {
+  for (const raw of configText.split('\n')) {
+    const line = raw.replace(/;.*$/, '').trim();
+    const isG31 = /^G31\b/i.test(line);
+    const isM851 = /^M851\b/i.test(line);
+    if (!isG31 && !isM851) continue;
+    const xm = line.match(/X(-?\d+(?:\.\d+)?)/i);
+    const ym = line.match(/Y(-?\d+(?:\.\d+)?)/i);
+    if (!xm && !ym) continue;
+    return { xOffset: xm ? parseFloat(xm[1]) : 0, yOffset: ym ? parseFloat(ym[1]) : 0 };
+  }
+  return null;
+}
+
 export interface HeightMapStats {
   min: number;
   max: number;
@@ -60,6 +88,25 @@ export function divergingColorThree(value: number, minVal: number, maxVal: numbe
   return new THREE.Color((255 * (1 - f) + 239 * f) / 255, (255 * (1 - f) + 68 * f) / 255, (255 * (1 - f) + 68 * f) / 255);
 }
 
+export function computeMeshRmsDiff(a: HeightMapData, b: HeightMapData): number {
+  if (a.numX !== b.numX || a.numY !== b.numY) return Infinity;
+  let sumSquares = 0;
+  let count = 0;
+  for (let y = 0; y < a.numY; y++) {
+    for (let x = 0; x < a.numX; x++) {
+      const av = a.points[y]?.[x];
+      const bv = b.points[y]?.[x];
+      if (av !== undefined && bv !== undefined && !isNaN(av) && !isNaN(bv)) {
+        const diff = bv - av;
+        sumSquares += diff * diff;
+        count++;
+      }
+    }
+  }
+  if (count === 0) return Infinity;
+  return Math.sqrt(sumSquares / count);
+}
+
 export function computeDiffMap(map1: HeightMapData, map2: HeightMapData): HeightMapData | null {
   if (map1.numX !== map2.numX || map1.numY !== map2.numY) return null;
   const points = Array.from({ length: map1.numY }, (_, y) =>
@@ -69,19 +116,32 @@ export function computeDiffMap(map1: HeightMapData, map2: HeightMapData): Height
 }
 
 export function computeStats(hm: HeightMapData): HeightMapStats {
-  const values: number[] = [];
+  let min = Infinity;
+  let max = -Infinity;
+  let sum = 0;
+  let sumSquares = 0;
+  let count = 0;
   for (let y = 0; y < hm.numY; y++) {
     for (let x = 0; x < hm.numX; x++) {
       const value = hm.points[y]?.[x];
-      if (value !== undefined && !isNaN(value)) values.push(value);
+      if (value !== undefined && !isNaN(value)) {
+        min = Math.min(min, value);
+        max = Math.max(max, value);
+        sum += value;
+        sumSquares += value * value;
+        count++;
+      }
     }
   }
-  if (values.length === 0) return { min: 0, max: 0, mean: 0, rms: 0, probePoints: 0, gridDimensions: `${hm.numX}x${hm.numY}` };
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const mean = values.reduce((a, b) => a + b, 0) / values.length;
-  const rms = Math.sqrt(values.reduce((a, b) => a + b * b, 0) / values.length);
-  return { min, max, mean, rms, probePoints: values.length, gridDimensions: `${hm.numX} x ${hm.numY}` };
+  if (count === 0) return { min: 0, max: 0, mean: 0, rms: 0, probePoints: 0, gridDimensions: `${hm.numX}x${hm.numY}` };
+  return {
+    min,
+    max,
+    mean: sum / count,
+    rms: Math.sqrt(sumSquares / count),
+    probePoints: count,
+    gridDimensions: `${hm.numX} x ${hm.numY}`,
+  };
 }
 
 export function exportHeightMapCSV(hm: HeightMapData): void {

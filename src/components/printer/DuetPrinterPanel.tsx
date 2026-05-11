@@ -10,6 +10,7 @@ import './DuetAnalytics.css';
 import { type TabKey, TAB_COMPONENTS } from './duetPrinterPanel/config';
 import { MobilePrinterTabSheet, PanelBanners, PanelFooter, PanelHeader, PanelTabBar } from './duetPrinterPanel/chrome';
 import { panelStyles } from './duetPrinterPanel/styles';
+import { LevelBedResultsModal } from './DuetHeightMap';
 
 export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: boolean } = {}) {
   const showPrinter = usePrinterStore((s) => s.showPrinter);
@@ -34,6 +35,9 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
   const printHistory = usePrinterStore((s) => s.printHistory);
   const activePrinterId = usePrinterStore((s) => s.activePrinterId);
   const deductFilamentForPrinter = useSpoolStore((s) => s.deductFilamentForPrinter);
+  const levelBedPendingResult = usePrinterStore((s) => s.levelBedPendingResult);
+  const lastLevelBedOpts      = usePrinterStore((s) => s.lastLevelBedOpts);
+  const levelBed              = usePrinterStore((s) => s.levelBed);
 
   const boardType = (config as { boardType?: import('../../types/duet').PrinterBoardType }).boardType ?? 'duet';
 
@@ -307,6 +311,17 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
           activeTab={activeTab as TabKey}
           boardType={boardType}
           onTabChange={setPanelTab}
+        />
+      )}
+
+      {levelBedPendingResult != null && (
+        <LevelBedResultsModal
+          summary={levelBedPendingResult}
+          onClose={() => usePrinterStore.setState({ levelBedPendingResult: null })}
+          onRunAgain={() => {
+            usePrinterStore.setState({ levelBedPendingResult: null });
+            if (lastLevelBedOpts) void levelBed(lastLevelBedOpts);
+          }}
         />
       )}
     </div>

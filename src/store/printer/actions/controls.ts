@@ -25,7 +25,7 @@ function waitUntilIdle(
   const CHECK_INTERVAL        = 500;
   const TIMEOUT_MS            = 15 * 60 * 1_000;
   const MAX_IDLE_STREAK       = 6;       // 6 × 500 ms = 3 s of consecutive idle → done
-  const NEVER_BUSY_TIMEOUT_MS = 90_000;  // safety valve
+  const NEVER_BUSY_TIMEOUT_MS = 12_000;  // if machine never goes busy, fall through after 12 s
 
   return new Promise<void>((resolve) => {
     let seenBusy   = false;
@@ -263,13 +263,16 @@ export function createControlActions(
         set({ heightMap: await service.getHeightMap() });
       } catch (err) { set({ error: `Failed to probe grid: ${(err as Error).message}` }); }
     },
-    levelBed: async ({
-      homeFirst       = false,
-      repeat          = 1,
-      autoConverge    = false,
-      maxPasses       = 5,
-      targetDeviation = 0.05,
-    }: LevelBedOpts = {}): Promise<LevelBedSummary> => {
+    levelBed: async (opts: LevelBedOpts = {}): Promise<LevelBedSummary> => {
+      const {
+        homeFirst       = false,
+        repeat          = 1,
+        autoConverge    = false,
+        maxPasses       = 5,
+        targetDeviation = 0.05,
+        probesPerPoint  = 1,
+        probeTolerance  = 0.05,
+      } = opts;
       const { service, config } = get();
       const emptySummary = (reason: LevelBedStopReason): LevelBedSummary => ({
         results: [], autoConverge, stopReason: reason, targetDeviation,
@@ -285,6 +288,8 @@ export function createControlActions(
       // Auto mode runs up to maxPasses (minimum 2 — pass 1 corrects, pass 2 verifies).
       // Fixed mode runs exactly repeat passes.
       const maxRuns = autoConverge ? Math.max(2, maxPasses) : Math.max(1, repeat);
+      // Probe total per run: learned from the first completed run and reused for subsequent ones.
+      let probesPerRunLearned: number | null = null;
       // Stop when relative improvement < 15% OR absolute improvement < 3 µm.
       // The absolute floor prevents spurious "25% improvement!" when both values
       // are already within the noise floor (e.g. 0.008 → 0.006 mm = 2 µm).
@@ -294,8 +299,41 @@ export function createControlActions(
 
       try {
         if (homeFirst) await service.sendGCode('G28');
+        if (probesPerPoint > 1) await service.sendGCode(`M558 A${probesPerPoint} S${probeTolerance}`);
 
         for (let i = 0; i < maxRuns; i++) {
+          // ── Live run/probe progress ───────────────────────────────────────
+          let probesDone = 0;
+          let wasProbing = false;
+          set({
+            levelBedProgress: {
+              currentRun: i + 1,
+              totalRuns: maxRuns,
+              probesDone: 0,
+              probesTotal: probesPerRunLearned,
+            },
+          });
+
+          // Count probe completions by watching move.probing transitions in the
+          // already-cached service model — no extra HTTP calls.
+          const probeTracker = setInterval(() => {
+            const m = service.getModel() as Record<string, unknown>;
+            const mv = m.move as Record<string, unknown> | undefined;
+            const isProbing = (mv?.probing as boolean | undefined) ?? false;
+            if (wasProbing && !isProbing) {
+              probesDone++;
+              set({
+                levelBedProgress: {
+                  currentRun: i + 1,
+                  totalRuns: maxRuns,
+                  probesDone,
+                  probesTotal: probesPerRunLearned,
+                },
+              });
+            }
+            wasProbing = isProbing;
+          }, 200);
+
           const replyChunks: string[] = [];
 
           if (!isSbc) {
@@ -320,18 +358,39 @@ export function createControlActions(
             if (directReply?.trim()) replyChunks.push(directReply.trim());
 
             if (!isSbc) {
-              // Wait until the machine finishes (watches the cached model —
-              // no extra rr_model HTTP calls that would corrupt the diff state).
-              await waitUntilIdle(service, 3_000, /* requireBusy */ true);
-              // Give the firmware one extra second to finish writing output.
-              await new Promise<void>((r) => setTimeout(r, 1_000));
-              // Drain the entire accumulated rr_reply buffer in one read.
-              // Because the poll loop was suppressed, everything since the last
-              // unsuppressed read is sitting here waiting for us.
+              // Drain rr_reply every second while the macro runs.
+              // A single read at the end risks missing output: RRF emits messages
+              // incrementally (G28 homing lines, each G30 probe result, then the
+              // M671 "Leadscrew adjustments made" line).  If the buffer fills up or
+              // the machine is slow, the final message can be displaced.  Polling
+              // continuously — exactly as DWC does — prevents both overflow and
+              // the window where the idle detector fires just before the last
+              // message is written.
+              let drainInterval: ReturnType<typeof setInterval> | null = setInterval(async () => {
+                const chunk = await service.pollReply();
+                if (chunk?.trim()) replyChunks.push(chunk.trim());
+              }, 800);
+
+              try {
+                // Wait until the machine finishes (watches the cached model —
+                // no extra rr_model HTTP calls that would corrupt the diff state).
+                await waitUntilIdle(service, 2_000, /* requireBusy */ false);
+                // Give the firmware a moment to flush any final output.
+                await new Promise<void>((r) => setTimeout(r, 500));
+              } finally {
+                if (drainInterval !== null) { clearInterval(drainInterval); drainInterval = null; }
+              }
+
+              // One last drain after the interval is stopped.
               const drain = await service.pollReply();
               if (drain?.trim()) replyChunks.push(drain.trim());
             }
           } finally {
+            clearInterval(probeTracker);
+            // Learn probe count from first run so subsequent runs show X/total
+            if (probesPerRunLearned === null && probesDone > 0) {
+              probesPerRunLearned = probesDone;
+            }
             unsub();
             if (!isSbc) service.suppressReplyPolling(false);
           }
@@ -412,8 +471,15 @@ export function createControlActions(
           }
         }
 
+        if (probesPerPoint > 1) await service.sendGCode('M558 A1 S0.01');
       } catch (err) { set({ error: `Failed to level bed: ${(err as Error).message}` }); }
-      return { results, autoConverge, stopReason, targetDeviation };
+
+      // Clear live progress — the results modal takes over from here.
+      set({ levelBedProgress: null });
+
+      const summary: import('../../printerStore').LevelBedSummary = { results, autoConverge, stopReason, targetDeviation };
+      set({ levelBedPendingResult: summary, lastLevelBedOpts: opts });
+      return summary;
     },
   };
 }

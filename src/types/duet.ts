@@ -268,6 +268,12 @@ export interface DuetState {
   };
 }
 
+export interface DuetMessage {
+  content: string;
+  time?: string;
+  type?: string | number;
+}
+
 // Full Object Model
 export interface DuetObjectModel {
   boards: DuetBoard[];
@@ -276,6 +282,7 @@ export interface DuetObjectModel {
   job: DuetJob;
   move: DuetMove;
   network: DuetNetwork;
+  messages?: DuetMessage[];
   sensors: {
     analog: DuetSensor[];
     endstops: Array<{ triggered: boolean; type: string }>;

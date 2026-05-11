@@ -4,19 +4,24 @@ import './DuetHeightMap.css';
 import {
   RefreshCw, Crosshair, Loader2, BarChart3, Grid3x3, Download, Save,
   FolderOpen, GitCompareArrows, X, Map,
-  Home, ScanLine, TriangleAlert, RotateCcw, Camera, Ruler, ChevronRight,
-  Copy, CheckCircle, FilePlus, Lock, LockOpen,
+  Home, ScanLine, TriangleAlert, RotateCcw, Ruler, ChevronRight,
+  Copy, CheckCircle, FilePlus, Lock, LockOpen, Wand2, Repeat2, Minus, Plus,
 } from 'lucide-react';
 import type { DuetService } from '../../services/DuetService';
 import { addToast } from '../../store/toastStore';
 import type { LevelBedSummary } from '../../store/printerStore';
 import { usePrinterStore } from '../../store/printerStore';
 import {
-  ColorScaleLegend, Heatmap2D, Scene3D, getBedQuality,
+  Heatmap2D, Scene3D, getBedQuality,
   CAMERA_POSITIONS, type CameraPreset, type ConfiguredProbeGrid, type BedBounds,
 } from './heightMap/visualization';
-import { computeDiffMap, computeStats, exportHeightMapCSV } from './heightMap/utils';
-import type { DuetHeightMap as HeightMapData } from '../../types/duet';
+import { computeDiffMap, computeMeshRmsDiff, computeStats, exportHeightMapCSV, parseProbeOffset, type HeightMapStats } from './heightMap/utils';
+import type { DuetHeightMap as HeightMapData, PrinterBoardType } from '../../types/duet';
+
+function isEditableKeyTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName);
+}
 
 /* ── bed_tilt.g content generator ──────────────────────────────────────────── */
 
@@ -60,31 +65,71 @@ async function generateBedTiltContent(
 function BedTiltSetupModal({
   content,
   derived,
+  noG30Warning,
   creating,
   onCreateFile,
   onClose,
 }: {
   content: string;
   derived: boolean;
+  noG30Warning?: boolean;
   creating: boolean;
-  onCreateFile: () => void;
+  onCreateFile: (content: string) => void;
   onClose: () => void;
 }) {
+  const [editedContent, setEditedContent] = useState(content);
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(content);
+      await navigator.clipboard.writeText(editedContent);
       setCopied(true);
       setTimeout(() => setCopied(false), 2_000);
     } catch { /* ignore */ }
-  }, [content]);
+  }, [editedContent]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  const hasActiveG30 = editedContent.split('\n').some(
+    (line) => /^G30\b/i.test(line.replace(/;.*$/, '').trim()),
+  );
+
+  let description: React.ReactNode;
+  if (noG30Warning) {
+    description = (
+      <>
+        <strong>bed_tilt.g</strong> exists but has no active <code>G30</code> commands — this is
+        why no tilt-correction data was reported. Edit the file below: uncomment (or add) your{' '}
+        <code>G30</code> lines using the leadscrew XY positions from your <code>M671</code> in{' '}
+        <code>config.g</code>, then click <em>Save &amp; Continue</em>.
+      </>
+    );
+  } else if (derived) {
+    description = (
+      <>
+        <strong>bed_tilt.g</strong> was not found on your printer. The content below
+        was derived from your <code>bed.g</code> with <code>G29</code> and{' '}
+        <code>M374</code> removed — click <em>Create File &amp; Continue</em> to
+        upload it automatically.
+      </>
+    );
+  } else {
+    description = (
+      <>
+        <strong>bed_tilt.g</strong> was not found and <code>bed.g</code> could not
+        be read or contains no tilt-correction commands. Fill in the{' '}
+        <code>G30</code> coordinates below (matching your <code>M671</code> leadscrew
+        positions in <code>config.g</code>) and then create the file.
+      </>
+    );
+  }
+
+  const saveLabel = noG30Warning ? 'Save & Continue' : derived ? 'Create File & Continue' : 'Create Template & Continue';
+  const savingLabel = noG30Warning ? 'Saving…' : 'Creating…';
 
   return createPortal(
     <div className="bc-modal-overlay" onClick={onClose}>
@@ -97,33 +142,27 @@ function BedTiltSetupModal({
       >
         <div className="bc-modal-header">
           <div className="bc-modal-title-row">
-            <FilePlus size={15} style={{ color: '#60a5fa', flexShrink: 0 }} />
+            {noG30Warning
+              ? <TriangleAlert size={15} className="bc-modal-warn-icon" />
+              : <FilePlus size={15} style={{ color: '#60a5fa', flexShrink: 0 }} />}
             <span id="hm-setup-modal-title" className="bc-modal-title">
-              bed_tilt.g — Setup Required
+              {noG30Warning ? 'bed_tilt.g — No G30 Commands' : 'bed_tilt.g — Setup Required'}
             </span>
           </div>
           <button className="bc-modal-close" onClick={onClose} title="Cancel"><X size={13} /></button>
         </div>
 
         <div className="bc-modal-body">
-          <p className="bc-modal-desc">
-            {derived
-              ? <>
-                  <strong>bed_tilt.g</strong> was not found on your printer. The content below
-                  was derived from your <code>bed.g</code> with <code>G29</code> and{' '}
-                  <code>M374</code> removed — click <em>Create File &amp; Continue</em> to
-                  upload it automatically.
-                </>
-              : <>
-                  <strong>bed_tilt.g</strong> was not found and <code>bed.g</code> could not
-                  be read or contains no tilt-correction commands. Fill in the{' '}
-                  <code>G30</code> coordinates below (matching your <code>M671</code> leadscrew
-                  positions in <code>config.g</code>) and then create the file.
-                </>}
-          </p>
+          <p className="bc-modal-desc">{description}</p>
 
           <div className="bc-setup-code-wrap">
-            <pre className="bc-setup-code">{content}</pre>
+            <textarea
+              className="bc-setup-code bc-setup-code--editable"
+              value={editedContent}
+              onChange={(e) => setEditedContent(e.target.value)}
+              spellCheck={false}
+              rows={12}
+            />
             <button
               className={`bc-setup-copy-btn${copied ? ' is-copied' : ''}`}
               onClick={() => void handleCopy()}
@@ -139,16 +178,15 @@ function BedTiltSetupModal({
           <button className="bc-modal-btn bc-modal-btn--cancel" onClick={onClose}>Cancel</button>
           <button
             className="bc-modal-btn bc-modal-btn--confirm bc-modal-btn--level"
-            onClick={onCreateFile}
-            disabled={creating}
+            onClick={() => onCreateFile(editedContent)}
+            disabled={creating || !hasActiveG30}
+            title={!hasActiveG30 ? 'Add at least one uncommented G30 line first' : undefined}
             autoFocus
           >
             {creating
               ? <Loader2 size={13} className="hm-spin" />
               : <FilePlus size={13} />}
-            {creating
-              ? 'Creating…'
-              : derived ? 'Create File & Continue' : 'Create Template & Continue'}
+            {creating ? savingLabel : saveLabel}
           </button>
         </div>
       </div>
@@ -159,14 +197,16 @@ function BedTiltSetupModal({
 
 /* ── Level bed results modal ────────────────────────────────────────────────── */
 
-function LevelBedResultsModal({
+export function LevelBedResultsModal({
   summary,
   onClose,
   onRunAgain,
+  onEditBedTilt,
 }: {
   summary: LevelBedSummary;
   onClose: () => void;
   onRunAgain: () => void;
+  onEditBedTilt?: () => void;
 }) {
   const { results, autoConverge, stopReason, targetDeviation } = summary;
 
@@ -270,10 +310,19 @@ function LevelBedResultsModal({
                   <p className="bc-results-empty-title">No tilt-correction data parsed</p>
                   <p className="bc-results-empty-sub">
                     The firmware reply didn't contain recognisable deviation values.
-                    Check the raw output below — if it's empty, verify{' '}
-                    <code>M671</code> is in <code>config.g</code> and{' '}
-                    <code>bed_tilt.g</code> has your <code>G30</code> commands.
+                    {results[0]?.reply
+                      ? ' Check the raw output below for clues.'
+                      : <> The reply was empty — verify <code>M671</code> is in <code>config.g</code> and <code>bed_tilt.g</code> has active (uncommented) <code>G30</code> commands.</>}
                   </p>
+                  {onEditBedTilt && (
+                    <button
+                      className="bc-modal-btn bc-modal-btn--secondary"
+                      style={{ marginTop: 8 }}
+                      onClick={onEditBedTilt}
+                    >
+                      <FilePlus size={12} /> Edit bed_tilt.g
+                    </button>
+                  )}
                 </div>
               </div>
               {/* Raw firmware reply — always shown when parsing fails */}
@@ -394,26 +443,764 @@ function LevelBedResultsModal({
   );
 }
 
+/* ── Probe results modal ────────────────────────────────────────────────────── */
+
+function ProbeResultsModal({
+  stats,
+  passes,
+  onClose,
+  onRunAgain,
+  onEnableCompensation,
+}: {
+  stats: HeightMapStats | null;
+  passes: number;
+  onClose: () => void;
+  onRunAgain: () => void;
+  onEnableCompensation?: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const isGood = stats != null && stats.rms <= 0.1;
+  const isWarn = stats != null && stats.rms > 0.1 && stats.rms <= 0.2;
+  const isBad  = stats != null && stats.rms > 0.2;
+
+  return createPortal(
+    <div className="bc-modal-overlay" onClick={onClose}>
+      <div
+        className="bc-modal bc-modal--wide"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="hm-probe-results-title"
+      >
+        <div className="bc-modal-header">
+          <div className="bc-modal-title-row">
+            {stats == null
+              ? <TriangleAlert size={15} style={{ color: '#f59e0b', flexShrink: 0 }} />
+              : <BarChart3 size={15} style={{ color: '#60a5fa', flexShrink: 0 }} />}
+            <span id="hm-probe-results-title" className="bc-modal-title">Probe Results</span>
+            {passes > 1 && <span className="bc-results-pass-badge">{passes} passes</span>}
+          </div>
+          <button className="bc-modal-close" onClick={onClose} title="Close"><X size={13} /></button>
+        </div>
+
+        <div className="bc-modal-body">
+          {stats != null ? (
+            <>
+              {/* Save path */}
+              <div className="bc-probe-result-save">
+                <CheckCircle size={12} style={{ color: '#22c55e', flexShrink: 0 }} />
+                <span>Height map saved to <code>0:/sys/heightmap.csv</code></span>
+              </div>
+
+              {/* Stat grid */}
+              <div className="bc-probe-result-grid">
+                <div className="bc-probe-result-stat">
+                  <span className="bc-probe-result-label">Points probed</span>
+                  <span className="bc-probe-result-val">{stats.probePoints}</span>
+                </div>
+                <div className="bc-probe-result-stat">
+                  <span className="bc-probe-result-label">Grid</span>
+                  <span className="bc-probe-result-val">{stats.gridDimensions}</span>
+                </div>
+                <div className="bc-probe-result-stat">
+                  <span className="bc-probe-result-label">Min error</span>
+                  <span className={`bc-probe-result-val bc-probe-result-val--mono${stats.min < -0.2 ? ' is-bad' : stats.min < -0.1 ? ' is-warn' : ''}`}>
+                    {stats.min.toFixed(3)} mm
+                  </span>
+                </div>
+                <div className="bc-probe-result-stat">
+                  <span className="bc-probe-result-label">Max error</span>
+                  <span className={`bc-probe-result-val bc-probe-result-val--mono${stats.max > 0.2 ? ' is-bad' : stats.max > 0.1 ? ' is-warn' : ''}`}>
+                    {stats.max >= 0 ? '+' : ''}{stats.max.toFixed(3)} mm
+                  </span>
+                </div>
+                <div className="bc-probe-result-stat">
+                  <span className="bc-probe-result-label">Mean</span>
+                  <span className="bc-probe-result-val bc-probe-result-val--mono">
+                    {stats.mean >= 0 ? '+' : ''}{stats.mean.toFixed(3)} mm
+                  </span>
+                </div>
+                <div className="bc-probe-result-stat">
+                  <span className="bc-probe-result-label">RMS deviation</span>
+                  <span className={`bc-probe-result-val bc-probe-result-val--mono${isGood ? ' is-good' : isWarn ? ' is-warn' : ' is-bad'}`}>
+                    {stats.rms.toFixed(3)} mm
+                  </span>
+                </div>
+              </div>
+
+              {/* Summary verdict */}
+              <div className={`bc-results-summary${isGood ? ' is-good' : isWarn ? ' is-warn' : isBad ? ' is-bad' : ''}`}>
+                <div className="bc-results-summary-row">
+                  <span className="bc-results-summary-label">RMS deviation</span>
+                  <span className="bc-results-summary-val">{stats.rms.toFixed(3)} mm</span>
+                  <span className="bc-results-summary-verdict">
+                    {isGood ? '✓ Excellent — bed surface is flat'
+                      : isWarn ? '⚠ Acceptable — mesh compensation will correct this'
+                      : '✕ High deviation — check bed leveling screws'}
+                  </span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="bc-results-empty">
+              <TriangleAlert size={22} style={{ color: '#f59e0b' }} />
+              <div>
+                <p className="bc-results-empty-title">No height map data available</p>
+                <p className="bc-results-empty-sub">
+                  The probe sequence ran but the firmware did not return a valid height map.
+                  Check that all grid points are within the probe&apos;s reach and retry.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="bc-modal-footer">
+          <button className="bc-modal-btn bc-modal-btn--secondary" onClick={onRunAgain}>
+            <RefreshCw size={12} /> Run Again
+          </button>
+          {onEnableCompensation && stats != null && (
+            <button className="bc-modal-btn bc-modal-btn--confirm" onClick={onEnableCompensation}>
+              <CheckCircle size={13} /> Enable Compensation
+            </button>
+          )}
+          <button className="bc-modal-btn bc-modal-btn--primary" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 /* ── Probe confirm modal ────────────────────────────────────────────────────── */
 
-function ProbeConfirmModal({
-  onConfirm, onCancel, m557Command, gridLabel,
+interface ProbeOpts {
+  homeFirst: boolean;
+  calibrateZDatum: boolean;
+  probesPerPoint: number;
+  /** M558 S value — max acceptable spread between probe dives (mm). Only applied when probesPerPoint > 1. */
+  probeTolerance: number;
+  mode: 'fixed' | 'converge';
+  passes: number;
+  maxPasses: number;
+  targetDiff: number;
+}
+
+/** |mean| above this threshold triggers the auto-suggest for Z datum calibration. */
+const Z_DATUM_SUGGEST_THRESHOLD = 0.3;
+
+/* ── Smart Calibration types ────────────────────────────────────────────────── */
+
+interface SmartCalOpts {
+  homeFirst: boolean;
+  maxIterations: number;
+  /** Adjust Z datum when |mean| >= this (mm). Default 0.15. */
+  targetMean: number;
+  /** Re-level when RMS >= this (mm). Default 0.05. */
+  targetDeviation: number;
+  probesPerPoint: number;
+  probeTolerance: number;
+}
+
+type SmartCalStepKind = 'level' | 'probe' | 'datum' | 'decision' | 'done' | 'info';
+type SmartCalQuality  = 'good' | 'warn' | 'bad' | 'info';
+type SmartCalPreset = 'quick' | 'balanced' | 'precise' | 'custom';
+
+interface SmartCalStep {
+  kind:    SmartCalStepKind;
+  label:   string;
+  detail?: string;
+  quality: SmartCalQuality;
+}
+
+interface SmartCalResult {
+  steps:      SmartCalStep[];
+  finalStats: HeightMapStats | null;
+  stopReason: 'converged' | 'maxIterations' | 'failed';
+}
+
+/* ── SmartCalModal ──────────────────────────────────────────────────────────── */
+
+function SmartCalModal({
+  onConfirm, onCancel,
 }: {
-  onConfirm: (homeFirst: boolean) => void;
-  onCancel: () => void;
-  m557Command: string;
-  gridLabel: string;
+  onConfirm: (opts: SmartCalOpts) => void;
+  onCancel:  () => void;
 }) {
-  const [homeFirst, setHomeFirst] = useState(true);
+  const [homeFirst,       setHomeFirst]       = useState(true);
+  const [maxIterations,   setMaxIterations]   = useState(3);
+  const [targetMean,      setTargetMean]      = useState(0.15);
+  const [targetDeviation, setTargetDeviation] = useState(0.05);
+  const [probesPerPoint,  setProbesPerPoint]  = useState(1);
+  const [probeTolerance,  setProbeTolerance]  = useState(0.05);
+  const [activePreset,    setActivePreset]    = useState<SmartCalPreset>('balanced');
+
+  const buildOpts = useCallback((): SmartCalOpts => ({
+    homeFirst, maxIterations, targetMean, targetDeviation, probesPerPoint, probeTolerance,
+  }), [homeFirst, maxIterations, targetMean, targetDeviation, probesPerPoint, probeTolerance]);
+
+  const setPreset = (preset: Exclude<SmartCalPreset, 'custom'>) => {
+    setActivePreset(preset);
+    if (preset === 'quick') {
+      setMaxIterations(2);
+      setTargetMean(0.2);
+      setTargetDeviation(0.08);
+      setProbesPerPoint(1);
+      setProbeTolerance(0.05);
+      return;
+    }
+    if (preset === 'precise') {
+      setMaxIterations(5);
+      setTargetMean(0.08);
+      setTargetDeviation(0.03);
+      setProbesPerPoint(3);
+      setProbeTolerance(0.03);
+      return;
+    }
+    setMaxIterations(3);
+    setTargetMean(0.15);
+    setTargetDeviation(0.05);
+    setProbesPerPoint(1);
+    setProbeTolerance(0.05);
+  };
+
+  const setClampedNumber = (
+    value: string,
+    min: number,
+    max: number,
+    setter: (next: number) => void,
+    round = false,
+  ) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return;
+    setActivePreset('custom');
+    setter(Math.min(max, Math.max(min, round ? Math.round(parsed) : parsed)));
+  };
+
+  const stepNumber = (
+    value: number,
+    delta: number,
+    min: number,
+    max: number,
+    setter: (next: number) => void,
+    decimals = 2,
+    round = false,
+  ) => {
+    const next = round ? Math.round(value + delta) : Number((value + delta).toFixed(decimals));
+    setActivePreset('custom');
+    setter(Math.min(max, Math.max(min, next)));
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel();
-      if (e.key === 'Enter') onConfirm(homeFirst);
+      if (e.key === 'Enter' && !isEditableKeyTarget(e.target)) { e.preventDefault(); onConfirm(buildOpts()); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onConfirm, onCancel, homeFirst]);
+  }, [buildOpts, onCancel, onConfirm]);
+
+  return createPortal(
+    <div className="bc-modal-overlay" onClick={onCancel}>
+      <div className="bc-modal bc-modal--wide hm-smartcal-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="bc-modal-header">
+          <div className="bc-modal-title-row">
+            <Wand2 size={15} style={{ color: '#a855f7', flexShrink: 0 }} />
+            <span className="bc-modal-title">Smart Calibration</span>
+          </div>
+          <button className="bc-modal-close" onClick={onCancel} title="Close"><X size={14} /></button>
+        </div>
+        <div className="bc-modal-body hm-smartcal-body">
+          <div className="hm-smartcal-hero">
+            <div>
+              <p className="hm-smartcal-kicker">Closed-loop calibration</p>
+              <p className="hm-smartcal-intro">
+                Smart Cal levels the bed, probes the mesh, checks the result, then repeats only when the data says it should.
+              </p>
+            </div>
+            <button
+              type="button"
+              className={`hm-smartcal-home-toggle${homeFirst ? ' is-on' : ''}`}
+              onClick={() => setHomeFirst((v) => !v)}
+            >
+              <Home size={13} />
+              {homeFirst ? 'Home first' : 'Skip home'}
+            </button>
+          </div>
+
+          <div className="hm-smartcal-flow" aria-label="Smart calibration sequence">
+            {[
+              ['Level', <Home size={14} key="level" />],
+              ['Probe', <Crosshair size={14} key="probe" />],
+              ['Diagnose', <ScanLine size={14} key="diagnose" />],
+              ['Repeat', <RefreshCw size={14} key="repeat" />],
+            ].map(([label, icon], index) => (
+              <div className="hm-smartcal-flow-step" key={String(label)}>
+                <span className="hm-smartcal-flow-icon">{icon}</span>
+                <span>{label}</span>
+                {index < 3 && <ChevronRight size={13} className="hm-smartcal-flow-arrow" />}
+              </div>
+            ))}
+          </div>
+
+          <div className="hm-smartcal-presets" role="group" aria-label="Smart calibration presets">
+            <button
+              type="button"
+              className={activePreset === 'quick' ? 'is-active' : ''}
+              onClick={() => setPreset('quick')}
+            >
+              Quick
+            </button>
+            <button
+              type="button"
+              className={activePreset === 'balanced' ? 'is-active' : ''}
+              onClick={() => setPreset('balanced')}
+            >
+              Balanced
+            </button>
+            <button
+              type="button"
+              className={activePreset === 'precise' ? 'is-active' : ''}
+              onClick={() => setPreset('precise')}
+            >
+              Precise
+            </button>
+          </div>
+
+          <div className="hm-smartcal-grid">
+            <div className="hm-smartcal-card">
+              <div className="hm-smartcal-card-head">
+                <Repeat2 size={14} />
+                <span>Loop Limit</span>
+              </div>
+              <div className="hm-smartcal-iter-row">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    type="button"
+                    key={n}
+                    className={`hm-smartcal-iter-btn${maxIterations === n ? ' is-on' : ''}`}
+                    onClick={() => { setActivePreset('custom'); setMaxIterations(n); }}
+                    title={`${n} maximum ${n === 1 ? 'pass' : 'passes'}`}
+                  >{n}</button>
+                ))}
+              </div>
+              <span className="hm-smartcal-card-note">Stops early when targets are met.</span>
+            </div>
+
+            <div className="hm-smartcal-card">
+              <div className="hm-smartcal-card-head">
+                <Ruler size={14} />
+                <span>Convergence</span>
+              </div>
+              <label className="hm-smartcal-field">
+                <span>
+                  Z datum threshold
+                  <small>Adjust datum when mean reaches this value.</small>
+                </span>
+                <span className="hm-smartcal-input hm-smartcal-picker">
+                  <button
+                    type="button"
+                    onClick={() => stepNumber(targetMean, -0.01, 0.02, 0.5, setTargetMean)}
+                    disabled={targetMean <= 0.02}
+                    title="Decrease Z datum threshold"
+                  >
+                    <Minus size={12} />
+                  </button>
+                  <input
+                    type="number" min={0.02} max={0.5} step={0.01}
+                    value={targetMean}
+                    onChange={(e) => setClampedNumber(e.target.value, 0.02, 0.5, setTargetMean)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => stepNumber(targetMean, 0.01, 0.02, 0.5, setTargetMean)}
+                    disabled={targetMean >= 0.5}
+                    title="Increase Z datum threshold"
+                  >
+                    <Plus size={12} />
+                  </button>
+                  <em>mm</em>
+                </span>
+              </label>
+              <label className="hm-smartcal-field">
+                <span>
+                  Re-level threshold
+                  <small>Run another level pass when RMS reaches this value.</small>
+                </span>
+                <span className="hm-smartcal-input hm-smartcal-picker">
+                  <button
+                    type="button"
+                    onClick={() => stepNumber(targetDeviation, -0.01, 0.01, 0.3, setTargetDeviation)}
+                    disabled={targetDeviation <= 0.01}
+                    title="Decrease re-level threshold"
+                  >
+                    <Minus size={12} />
+                  </button>
+                  <input
+                    type="number" min={0.01} max={0.3} step={0.01}
+                    value={targetDeviation}
+                    onChange={(e) => setClampedNumber(e.target.value, 0.01, 0.3, setTargetDeviation)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => stepNumber(targetDeviation, 0.01, 0.01, 0.3, setTargetDeviation)}
+                    disabled={targetDeviation >= 0.3}
+                    title="Increase re-level threshold"
+                  >
+                    <Plus size={12} />
+                  </button>
+                  <em>mm</em>
+                </span>
+              </label>
+            </div>
+
+            <div className="hm-smartcal-card">
+              <div className="hm-smartcal-card-head">
+                <ScanLine size={14} />
+                <span>Probe Quality</span>
+              </div>
+              <label className="hm-smartcal-field">
+                <span>
+                  Dives per point
+                  <small>Higher values take longer and reduce noisy samples.</small>
+                </span>
+                <span className="hm-smartcal-input hm-smartcal-picker">
+                  <button
+                    type="button"
+                    onClick={() => stepNumber(probesPerPoint, -1, 1, 5, setProbesPerPoint, 0, true)}
+                    disabled={probesPerPoint <= 1}
+                    title="Decrease dives per point"
+                  >
+                    <Minus size={12} />
+                  </button>
+                  <input
+                    type="number" min={1} max={5} step={1}
+                    value={probesPerPoint}
+                    onChange={(e) => setClampedNumber(e.target.value, 1, 5, setProbesPerPoint, true)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => stepNumber(probesPerPoint, 1, 1, 5, setProbesPerPoint, 0, true)}
+                    disabled={probesPerPoint >= 5}
+                    title="Increase dives per point"
+                  >
+                    <Plus size={12} />
+                  </button>
+                </span>
+              </label>
+              {probesPerPoint > 1 && (
+                <label className="hm-smartcal-field">
+                  <span>
+                    Dive tolerance
+                    <small>Maximum spread allowed between repeated dives.</small>
+                  </span>
+                  <span className="hm-smartcal-input hm-smartcal-picker">
+                    <button
+                      type="button"
+                      onClick={() => stepNumber(probeTolerance, -0.01, 0.01, 0.1, setProbeTolerance)}
+                      disabled={probeTolerance <= 0.01}
+                      title="Decrease dive tolerance"
+                    >
+                      <Minus size={12} />
+                    </button>
+                    <input
+                      type="number" min={0.01} max={0.1} step={0.01}
+                      value={probeTolerance}
+                      onChange={(e) => setClampedNumber(e.target.value, 0.01, 0.1, setProbeTolerance)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => stepNumber(probeTolerance, 0.01, 0.01, 0.1, setProbeTolerance)}
+                      disabled={probeTolerance >= 0.1}
+                      title="Increase dive tolerance"
+                    >
+                      <Plus size={12} />
+                    </button>
+                    <em>mm</em>
+                  </span>
+                </label>
+              )}
+            </div>
+          </div>
+          <p className="hm-smartcal-intro">
+            Runs a closed-loop sequence: <strong>Level → Probe → Diagnose → Repeat</strong>.
+            Adjusts the Z datum if mean offset is large, re-levels if RMS is still high.
+          </p>
+
+          {/* Home first */}
+          <div className="hm-probe-opt-row">
+            <label className="hm-probe-opt-label">Home axes first</label>
+            <button
+              className={`hm-pill-toggle${homeFirst ? ' is-on' : ''}`}
+              onClick={() => setHomeFirst((v) => !v)}
+            >{homeFirst ? 'Yes' : 'No'}</button>
+          </div>
+
+          {/* Max iterations */}
+          <div className="hm-probe-opt-row">
+            <label className="hm-probe-opt-label">Max iterations</label>
+            <div className="hm-smartcal-iter-row">
+              {[1,2,3,4,5].map((n) => (
+                <button
+                  key={n}
+                  className={`hm-smartcal-iter-btn${maxIterations === n ? ' is-on' : ''}`}
+                  onClick={() => setMaxIterations(n)}
+                >{n}</button>
+              ))}
+            </div>
+          </div>
+
+          <div className="hm-probe-opt-section-label">Convergence targets</div>
+
+          {/* Target mean */}
+          <div className="hm-probe-opt-row">
+            <label className="hm-probe-opt-label">
+              Z datum threshold
+              <span className="hm-probe-opt-hint">Adjust datum if |mean| ≥ this</span>
+            </label>
+            <div className="hm-grid-input-wrap">
+              <input
+                className="hm-grid-input"
+                type="number" min={0.02} max={0.5} step={0.01}
+                value={targetMean}
+                onChange={(e) => setTargetMean(Number(e.target.value))}
+              />
+              <span className="hm-grid-unit">mm</span>
+            </div>
+          </div>
+
+          {/* Target deviation */}
+          <div className="hm-probe-opt-row">
+            <label className="hm-probe-opt-label">
+              Re-level threshold
+              <span className="hm-probe-opt-hint">Re-level if RMS ≥ this</span>
+            </label>
+            <div className="hm-grid-input-wrap">
+              <input
+                className="hm-grid-input"
+                type="number" min={0.01} max={0.3} step={0.01}
+                value={targetDeviation}
+                onChange={(e) => setTargetDeviation(Number(e.target.value))}
+              />
+              <span className="hm-grid-unit">mm</span>
+            </div>
+          </div>
+
+          <div className="hm-probe-opt-section-label">Probe quality</div>
+
+          {/* Probes per point */}
+          <div className="hm-probe-opt-row">
+            <label className="hm-probe-opt-label">
+              Dives per point
+              <span className="hm-probe-opt-hint">M558 A — probes per grid point</span>
+            </label>
+            <div className="hm-grid-input-wrap">
+              <input
+                className="hm-grid-input"
+                type="number" min={1} max={5} step={1}
+                value={probesPerPoint}
+                onChange={(e) => setProbesPerPoint(Math.max(1, Math.round(Number(e.target.value))))}
+              />
+            </div>
+          </div>
+
+          {probesPerPoint > 1 && (
+            <div className="hm-probe-opt-row">
+              <label className="hm-probe-opt-label">
+                Dive tolerance
+                <span className="hm-probe-opt-hint">M558 S — max spread between dives</span>
+              </label>
+              <div className="hm-grid-input-wrap">
+                <input
+                  className="hm-grid-input"
+                  type="number" min={0.01} max={0.1} step={0.01}
+                  value={probeTolerance}
+                  onChange={(e) => setProbeTolerance(Number(e.target.value))}
+                />
+                <span className="hm-grid-unit">mm</span>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="bc-modal-footer">
+          <button className="bc-modal-btn bc-modal-btn--cancel" onClick={onCancel}>Cancel</button>
+          <button className="bc-modal-btn bc-modal-btn--confirm" onClick={() => onConfirm(buildOpts())}>
+            <Wand2 size={13} />
+            Run Smart Cal
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/* ── SmartCalResultModal ────────────────────────────────────────────────────── */
+
+const SMARTCAL_STEP_META: Record<SmartCalStepKind, { icon: React.ReactNode; color: string }> = {
+  level:    { icon: <Home    size={13} />, color: '#22c55e' },
+  probe:    { icon: <Crosshair size={13} />, color: '#3b82f6' },
+  datum:    { icon: <ScanLine  size={13} />, color: '#a855f7' },
+  decision: { icon: <TriangleAlert size={13} />, color: '#f59e0b' },
+  done:     { icon: <CheckCircle  size={13} />, color: '#34d399' },
+  info:     { icon: <Ruler        size={13} />, color: '#94a3b8' },
+};
+
+const SMARTCAL_QUALITY_COLOR: Record<SmartCalQuality, string> = {
+  good: '#22c55e',
+  warn: '#f59e0b',
+  bad:  '#ef4444',
+  info: '#94a3b8',
+};
+
+function SmartCalResultModal({
+  result, onClose, onRunAgain,
+}: {
+  result:     SmartCalResult;
+  onClose:    () => void;
+  onRunAgain: () => void;
+}) {
+  const stopLabels: Record<SmartCalResult['stopReason'], string> = {
+    converged:     'Converged — within targets',
+    maxIterations: 'Max iterations reached',
+    failed:        'Sequence failed',
+  };
+  const stopColors: Record<SmartCalResult['stopReason'], string> = {
+    converged:     '#22c55e',
+    maxIterations: '#f59e0b',
+    failed:        '#ef4444',
+  };
+
+  return createPortal(
+    <div className="bc-modal-overlay" onClick={onClose}>
+      <div className="bc-modal bc-modal--md" onClick={(e) => e.stopPropagation()}>
+        <div className="bc-modal-header">
+          <span className="bc-modal-title">Smart Cal Results</span>
+          <button className="bc-modal-close" onClick={onClose}><X size={14} /></button>
+        </div>
+        <div className="bc-modal-body">
+
+          {/* Stop reason banner */}
+          <div
+            className="hm-smartcal-stop-banner"
+            style={{ '--scr-color': stopColors[result.stopReason] } as React.CSSProperties}
+          >
+            {result.stopReason === 'converged'
+              ? <CheckCircle size={13} />
+              : result.stopReason === 'failed'
+              ? <TriangleAlert size={13} />
+              : <Loader2 size={13} />}
+            {stopLabels[result.stopReason]}
+          </div>
+
+          {/* Final stats (if available) */}
+          {result.finalStats && (
+            <div className="hm-smartcal-final-stats">
+              <div className="hm-smartcal-stat">
+                <span className="hm-smartcal-stat__label">Final RMS</span>
+                <span
+                  className="hm-smartcal-stat__val"
+                  style={{ color: result.finalStats.rms < 0.1 ? '#22c55e' : result.finalStats.rms < 0.2 ? '#f59e0b' : '#ef4444' }}
+                >{result.finalStats.rms.toFixed(4)} mm</span>
+              </div>
+              <div className="hm-smartcal-stat">
+                <span className="hm-smartcal-stat__label">Final Mean</span>
+                <span
+                  className="hm-smartcal-stat__val"
+                  style={{ color: Math.abs(result.finalStats.mean) < 0.1 ? '#22c55e' : '#f59e0b' }}
+                >{result.finalStats.mean >= 0 ? '+' : ''}{result.finalStats.mean.toFixed(3)} mm</span>
+              </div>
+              <div className="hm-smartcal-stat">
+                <span className="hm-smartcal-stat__label">Range</span>
+                <span className="hm-smartcal-stat__val">
+                  {(result.finalStats.max - result.finalStats.min).toFixed(3)} mm
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Step timeline */}
+          <div className="hm-smartcal-timeline">
+            {result.steps.map((step, i) => {
+              const meta = SMARTCAL_STEP_META[step.kind];
+              return (
+                <div key={i} className="hm-smartcal-step">
+                  <div
+                    className="hm-smartcal-step__icon"
+                    style={{ color: meta.color, background: `color-mix(in srgb, ${meta.color} 12%, transparent)`, borderColor: `color-mix(in srgb, ${meta.color} 28%, transparent)` }}
+                  >
+                    {meta.icon}
+                  </div>
+                  {i < result.steps.length - 1 && <div className="hm-smartcal-step__line" />}
+                  <div className="hm-smartcal-step__body">
+                    <span
+                      className="hm-smartcal-step__label"
+                      style={{ color: SMARTCAL_QUALITY_COLOR[step.quality] }}
+                    >{step.label}</span>
+                    {step.detail && (
+                      <span className="hm-smartcal-step__detail">{step.detail}</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="bc-modal-footer">
+          <button className="bc-modal-btn bc-modal-btn--cancel" onClick={onRunAgain}>Run Again</button>
+          <button className="bc-modal-btn bc-modal-btn--confirm" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function ProbeConfirmModal({
+  onConfirm, onCancel, m557Command, gridLabel, boardType, lastMapMean,
+}: {
+  onConfirm: (opts: ProbeOpts) => void;
+  onCancel: () => void;
+  m557Command: string;
+  gridLabel: string;
+  boardType: PrinterBoardType | undefined;
+  /** Mean Z offset of the last loaded height map — used to auto-suggest datum calibration. */
+  lastMapMean: number | null;
+}) {
+  const suggestDatum = lastMapMean !== null && Math.abs(lastMapMean) >= Z_DATUM_SUGGEST_THRESHOLD;
+  const [homeFirst, setHomeFirst] = useState(true);
+  const [calibrateZDatum, setCalibrateZDatum] = useState(suggestDatum);
+  const [probesPerPoint, setProbesPerPoint] = useState(1);
+  const [probeTolerance, setProbeTolerance] = useState(0.05);
+  const [mode, setMode] = useState<'fixed' | 'converge'>('fixed');
+  const [passes, setPasses] = useState(1);
+  const [maxPasses, setMaxPasses] = useState(5);
+  const [targetDiff, setTargetDiff] = useState(0.02);
+  const isRRF = !boardType || boardType === 'duet';
+
+  const buildOpts = useCallback(
+    (): ProbeOpts => ({ homeFirst, calibrateZDatum, probesPerPoint, probeTolerance, mode, passes, maxPasses, targetDiff }),
+    [homeFirst, calibrateZDatum, probesPerPoint, probeTolerance, mode, passes, maxPasses, targetDiff],
+  );
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+      if (e.key === 'Enter' && !isEditableKeyTarget(e.target)) {
+        e.preventDefault();
+        onConfirm(buildOpts());
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onConfirm, onCancel, buildOpts]);
 
   return createPortal(
     <div className="bc-modal-overlay" onClick={onCancel}>
@@ -449,6 +1236,24 @@ function ProbeConfirmModal({
               </div>
             </label>
             <div className="bc-modal-step-arrow">↓</div>
+            <label className={`bc-modal-step bc-modal-step--toggle${calibrateZDatum ? '' : ' is-disabled'}`}>
+              <input type="checkbox" className="bc-modal-checkbox" checked={calibrateZDatum} onChange={(e) => setCalibrateZDatum(e.target.checked)} />
+              <Crosshair size={12} className="bc-modal-step-icon" />
+              <div>
+                <span className="bc-modal-step-label">
+                  Calibrate Z datum
+                  {suggestDatum && <span className="bc-modal-step-badge bc-modal-step-badge--warn">Recommended</span>}
+                </span>
+                <span className="bc-modal-step-cmd">G30 S-1</span>
+              </div>
+            </label>
+            {suggestDatum && calibrateZDatum && (
+              <div className="bc-modal-datum-hint">
+                Last mesh mean was {lastMapMean! > 0 ? '+' : ''}{lastMapMean!.toFixed(3)} mm — Z probe trigger height may be off.
+                G30 S-1 re-establishes Z=0 before probing.
+              </div>
+            )}
+            <div className="bc-modal-step-arrow">↓</div>
             <div className="bc-modal-step">
               <ScanLine size={12} className="bc-modal-step-icon" />
               <div>
@@ -457,6 +1262,98 @@ function ProbeConfirmModal({
               </div>
             </div>
           </div>
+
+          {isRRF && (
+            <div className="bc-modal-probe-dives-group">
+              <div className="bc-modal-repeat-row">
+                <label className="bc-modal-repeat-label" htmlFor="hm-probes-per-point">Per point</label>
+                <input
+                  id="hm-probes-per-point"
+                  type="number"
+                  className="bc-modal-num-input"
+                  min={1}
+                  max={5}
+                  value={probesPerPoint}
+                  onChange={(e) => setProbesPerPoint(Math.max(1, Math.min(5, Number(e.target.value) || 1)))}
+                />
+                <span className="bc-modal-repeat-hint">
+                  {probesPerPoint === 1 ? 'probe dive' : 'probe dives'} · M558 A{probesPerPoint}
+                  {probesPerPoint > 1 && ` S${probeTolerance}`}
+                </span>
+              </div>
+              {probesPerPoint > 1 && (
+                <div className="bc-modal-repeat-row bc-modal-repeat-row--sub">
+                  <label className="bc-modal-repeat-label" htmlFor="hm-probe-tolerance">Tolerance</label>
+                  <input
+                    id="hm-probe-tolerance"
+                    type="number"
+                    className="bc-modal-num-input"
+                    min={0.01}
+                    max={0.5}
+                    step={0.01}
+                    value={probeTolerance}
+                    onChange={(e) => setProbeTolerance(Math.max(0.01, Math.min(0.5, Number(e.target.value) || 0.05)))}
+                  />
+                  <span className="bc-modal-repeat-hint">mm max spread · M558 S{probeTolerance}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="bc-modal-mode-row">
+            <span className="bc-modal-mode-label">Mode</span>
+            <div className="bc-modal-mode-toggle">
+              <button type="button" className={`bc-modal-mode-btn${mode === 'fixed' ? ' is-active' : ''}`} onClick={() => setMode('fixed')}>Fixed passes</button>
+              <button type="button" className={`bc-modal-mode-btn${mode === 'converge' ? ' is-active' : ''}`} onClick={() => setMode('converge')}>Auto-converge</button>
+            </div>
+          </div>
+          {mode === 'fixed' ? (
+            <div className="bc-modal-repeat-row">
+              <label className="bc-modal-repeat-label" htmlFor="hm-probe-passes">Passes</label>
+              <input
+                id="hm-probe-passes"
+                type="number"
+                className="bc-modal-num-input"
+                min={1}
+                max={10}
+                value={passes}
+                onChange={(e) => setPasses(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+              />
+              <span className="bc-modal-repeat-hint">{passes === 1 ? 'mesh pass' : 'mesh passes'}</span>
+            </div>
+          ) : (
+            <div className="bc-modal-auto-fields">
+              <div className="bc-modal-repeat-row">
+                <label className="bc-modal-repeat-label" htmlFor="hm-probe-maxpasses">Max passes</label>
+                <input
+                  id="hm-probe-maxpasses"
+                  type="number"
+                  className="bc-modal-num-input"
+                  min={2}
+                  max={10}
+                  value={maxPasses}
+                  onChange={(e) => setMaxPasses(Math.max(2, Math.min(10, Number(e.target.value) || 2)))}
+                />
+                <span className="bc-modal-repeat-hint">safety cap</span>
+              </div>
+              <div className="bc-modal-repeat-row">
+                <label className="bc-modal-repeat-label" htmlFor="hm-probe-target">Target</label>
+                <input
+                  id="hm-probe-target"
+                  type="number"
+                  className="bc-modal-num-input"
+                  min={0.005}
+                  max={0.5}
+                  step={0.005}
+                  value={targetDiff}
+                  onChange={(e) => setTargetDiff(Math.max(0.005, Math.min(0.5, Number(e.target.value) || 0.005)))}
+                />
+                <span className="bc-modal-repeat-hint">mm RMS change</span>
+              </div>
+              <p className="bc-modal-auto-hint">Repeats until mesh RMS shift is below target or max passes is reached.</p>
+            </div>
+          )}
+
           <ul className="bc-modal-checklist">
             <li>Bed is clear of all objects and clips</li>
             <li>Nozzle is clean — no filament blobs</li>
@@ -466,9 +1363,15 @@ function ProbeConfirmModal({
 
         <div className="bc-modal-footer">
           <button className="bc-modal-btn bc-modal-btn--cancel" onClick={onCancel}>Cancel</button>
-          <button className="bc-modal-btn bc-modal-btn--confirm" onClick={() => onConfirm(homeFirst)} autoFocus>
+          <button className="bc-modal-btn bc-modal-btn--confirm" onClick={() => onConfirm(buildOpts())} autoFocus>
             <Crosshair size={13} />
-            {homeFirst ? 'Home & Probe' : 'Probe'}
+            {homeFirst && calibrateZDatum
+              ? (mode === 'converge' ? 'Home, Datum & Auto-Probe' : passes > 1 ? `Home, Datum & Probe x${passes}` : 'Home, Datum & Probe')
+              : homeFirst
+                ? (mode === 'converge' ? 'Home & Auto-Probe' : passes > 1 ? `Home & Probe x${passes}` : 'Home & Probe')
+                : calibrateZDatum
+                  ? (mode === 'converge' ? 'Datum & Auto-Probe' : passes > 1 ? `Datum & Probe x${passes}` : 'Datum & Probe')
+                  : (mode === 'converge' ? 'Auto-Probe' : passes > 1 ? `Probe x${passes}` : 'Probe')}
           </button>
         </div>
       </div>
@@ -485,29 +1388,35 @@ function LevelBedModal({
   onConfirm: (opts: import('../../store/printerStore').LevelBedOpts & { homeFirst: boolean }) => void;
   onCancel: () => void;
 }) {
-  const [homeFirst,       setHomeFirst]       = useState(false);
-  const [repeat,          setRepeat]          = useState(1);
-  const [autoConverge,    setAutoConverge]    = useState(false);
-  const [maxPasses,       setMaxPasses]       = useState(5);
-  const [targetDeviation, setTargetDeviation] = useState(0.05);
+  const [homeFirst,        setHomeFirst]        = useState(false);
+  const [repeat,           setRepeat]           = useState(1);
+  const [autoConverge,     setAutoConverge]     = useState(false);
+  const [maxPasses,        setMaxPasses]        = useState(5);
+  const [targetDeviation,  setTargetDeviation]  = useState(0.05);
+  const [probesPerPoint,   setProbesPerPoint]   = useState(1);
+  const [probeTolerance,   setProbeTolerance]   = useState(0.05);
 
-  const handleConfirm = () => onConfirm({
+  const handleConfirm = useCallback(() => onConfirm({
     homeFirst,
     autoConverge,
+    probesPerPoint,
+    probeTolerance,
     ...(autoConverge
       ? { maxPasses, targetDeviation }
       : { repeat }),
-  });
+  }), [autoConverge, homeFirst, maxPasses, onConfirm, probesPerPoint, probeTolerance, repeat, targetDeviation]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel();
-      if (e.key === 'Enter') handleConfirm();
+      if (e.key === 'Enter' && !isEditableKeyTarget(e.target)) {
+        e.preventDefault();
+        handleConfirm();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onConfirm, onCancel, homeFirst, repeat, autoConverge, maxPasses, targetDeviation]);
+  }, [onCancel, handleConfirm]);
 
   return createPortal(
     <div className="bc-modal-overlay" onClick={onCancel}>
@@ -535,6 +1444,41 @@ function LevelBedModal({
                 <span className="bc-modal-step-cmd">G28</span>
               </div>
             </label>
+          </div>
+
+          <div className="bc-modal-probe-dives-group">
+            <div className="bc-modal-repeat-row">
+              <label className="bc-modal-repeat-label" htmlFor="hm-level-probes-per-point">Per point</label>
+              <input
+                id="hm-level-probes-per-point"
+                type="number"
+                className="bc-modal-num-input"
+                min={1}
+                max={5}
+                value={probesPerPoint}
+                onChange={(e) => setProbesPerPoint(Math.max(1, Math.min(5, Number(e.target.value) || 1)))}
+              />
+              <span className="bc-modal-repeat-hint">
+                {probesPerPoint === 1 ? 'probe dive' : 'probe dives'} · M558 A{probesPerPoint}
+                {probesPerPoint > 1 && ` S${probeTolerance}`}
+              </span>
+            </div>
+            {probesPerPoint > 1 && (
+              <div className="bc-modal-repeat-row bc-modal-repeat-row--sub">
+                <label className="bc-modal-repeat-label" htmlFor="hm-level-tolerance">Tolerance</label>
+                <input
+                  id="hm-level-tolerance"
+                  type="number"
+                  className="bc-modal-num-input"
+                  min={0.01}
+                  max={0.5}
+                  step={0.01}
+                  value={probeTolerance}
+                  onChange={(e) => setProbeTolerance(Math.max(0.01, Math.min(0.5, Number(e.target.value) || 0.05)))}
+                />
+                <span className="bc-modal-repeat-hint">mm max spread · M558 S{probeTolerance}</span>
+              </div>
+            )}
           </div>
 
           {/* ── Mode toggle ── */}
@@ -671,6 +1615,7 @@ const HM_PREFS_KEY = 'designcad:heightmap-prefs';
 interface HeightMapPrefs {
   viewMode:        '3d' | '2d';
   diverging:       boolean;
+  mirrorX:         boolean;
   sidebarOpen:     boolean;
   showProbePoints: boolean;
   probePointScale: number;
@@ -688,6 +1633,7 @@ interface HeightMapPrefs {
 const HM_PREFS_DEFAULTS: HeightMapPrefs = {
   viewMode:        '3d',
   diverging:       false,
+  mirrorX:         false,
   sidebarOpen:     true,
   showProbePoints: true,
   probePointScale: 1,
@@ -706,6 +1652,7 @@ function loadHeightMapPrefs(): HeightMapPrefs {
     return {
       viewMode:        raw.viewMode === '2d' ? '2d' : '3d',
       diverging:       raw.diverging       ?? HM_PREFS_DEFAULTS.diverging,
+      mirrorX:         raw.mirrorX         ?? HM_PREFS_DEFAULTS.mirrorX,
       sidebarOpen:     raw.sidebarOpen     ?? HM_PREFS_DEFAULTS.sidebarOpen,
       showProbePoints: raw.showProbePoints ?? HM_PREFS_DEFAULTS.showProbePoints,
       probePointScale: typeof raw.probePointScale === 'number'
@@ -771,30 +1718,49 @@ function parseM557(configText: string): {
 /* ── Main component ─────────────────────────────────────────────────────────── */
 
 export default function DuetHeightMap() {
-  const heightMap     = usePrinterStore((s) => s.heightMap);
-  const loadHeightMap = usePrinterStore((s) => s.loadHeightMap);
-  const probeGrid     = usePrinterStore((s) => s.probeGrid);
-  const levelBed      = usePrinterStore((s) => s.levelBed);
-  const sendGCode     = usePrinterStore((s) => s.sendGCode);
-  const service       = usePrinterStore((s) => s.service);
-  const connected     = usePrinterStore((s) => s.connected);
+  const heightMap         = usePrinterStore((s) => s.heightMap);
+  const loadHeightMap     = usePrinterStore((s) => s.loadHeightMap);
+  const probeGrid         = usePrinterStore((s) => s.probeGrid);
+  const levelBed          = usePrinterStore((s) => s.levelBed);
+  const levelBedProgress  = usePrinterStore((s) => s.levelBedProgress);
+  const sendGCode         = usePrinterStore((s) => s.sendGCode);
+  const service           = usePrinterStore((s) => s.service);
+  const connected         = usePrinterStore((s) => s.connected);
   const compensationType = usePrinterStore((s) => s.model.move?.compensation?.type);
   const axes             = usePrinterStore((s) => s.model.move?.axes);
+  const boardType        = usePrinterStore((s) => s.config.boardType);
+  // Current M558 probe settings from object model (live A/S values)
+  const probeModelRaw    = usePrinterStore((s) => {
+    const sensors = (s.model as Record<string, unknown>).sensors as Record<string, unknown> | undefined;
+    const probes  = sensors?.probes as unknown[] | undefined;
+    return probes?.[0] as { maxProbeCount?: number; tolerance?: number } | undefined;
+  });
 
   const [loading, setLoading]               = useState(false);
   const [loadError, setLoadError]           = useState<string | null>(null);
   const [probing, setProbing]               = useState(false);
   const [leveling, setLeveling]             = useState(false);
+  // Live probe progress during a G29 sequence (component-local, avoids store changes)
+  const [probeProgress, setProbeProgress]   = useState<{
+    pass: number; totalPasses: number; done: number; total: number | null;
+  } | null>(null);
   const [showProbeModal, setShowProbeModal]   = useState(false);
   const [showLevelModal, setShowLevelModal]   = useState(false);
   const [showSetupModal,    setShowSetupModal]    = useState(false);
   const [bedTiltContent,    setBedTiltContent]    = useState('');
   const [bedTiltDerived,    setBedTiltDerived]    = useState(false);
+  const [bedTiltNoG30,      setBedTiltNoG30]      = useState(false);
   const [creatingTiltFile,  setCreatingTiltFile]  = useState(false);
-  const [showResultsModal,  setShowResultsModal]  = useState(false);
-  const [levelSummary,      setLevelSummary]      = useState<LevelBedSummary | null>(null);
-  const lastLevelOptsRef = useRef<import('../../store/printerStore').LevelBedOpts | null>(null);
-  const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeightMapPrefs().viewMode);
+  const [showProbeResultModal, setShowProbeResultModal] = useState(false);
+  const [probeResult,       setProbeResult]       = useState<{ stats: HeightMapStats | null; passes: number } | null>(null);
+  const [m557Copied, setM557Copied] = useState(false);
+  // Smart Calibration
+  const [showSmartCalModal,       setShowSmartCalModal]       = useState(false);
+  const [showSmartCalResultModal, setShowSmartCalResultModal] = useState(false);
+  const [smartCalRunning,         setSmartCalRunning]         = useState(false);
+  const [smartCalPhase,           setSmartCalPhase]           = useState<'homing' | 'leveling' | 'probing' | 'datum' | null>(null);
+  const [smartCalResult,          setSmartCalResult]          = useState<SmartCalResult | null>(null);
+const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeightMapPrefs().viewMode);
   const [csvFiles, setCsvFiles]             = useState<string[]>([]);
   const [selectedCsv, setSelectedCsv]      = useState(() => loadHeightMapPrefs().selectedCsv);
   const [loadingCsvList, setLoadingCsvList] = useState(false);
@@ -810,6 +1776,7 @@ export default function DuetHeightMap() {
   const [sceneKey, setSceneKey]     = useState(0);
   const [cameraPos, setCameraPos]   = useState<[number, number, number]>(CAMERA_POSITIONS.iso);
   const [diverging, setDiverging]   = useState(() => loadHeightMapPrefs().diverging);
+  const [mirrorX,   setMirrorX]     = useState(() => loadHeightMapPrefs().mirrorX);
 
   // Probe grid configuration — mirrors Duet M557 parameters
   const [probeXMin, setProbeXMin]       = useState(() => loadHeightMapPrefs().probeXMin);
@@ -836,6 +1803,24 @@ export default function DuetHeightMap() {
   // capturing a stale closure (effect deps are only [connected, service]).
   const probeGridUnlockedRef = useRef(probeGridUnlocked);
   useEffect(() => { probeGridUnlockedRef.current = probeGridUnlocked; }, [probeGridUnlocked]);
+  const [g31Offset, setG31Offset] = useState<{ x: number; y: number } | null>(null);
+  const configGridRef = useRef<{ xMin: number; xMax: number; yMin: number; yMax: number; numPoints: number } | null>(null);
+
+  const safeBounds = useMemo(() => {
+    if (!g31Offset) return null;
+    const xAxis = axes?.find((a) => a.letter === 'X');
+    const yAxis = axes?.find((a) => a.letter === 'Y');
+    const axXMin = xAxis?.min ?? 0;
+    const axXMax = xAxis?.max ?? 0;
+    const axYMin = yAxis?.min ?? 0;
+    const axYMax = yAxis?.max ?? 0;
+    return {
+      xMin: axXMin + Math.max(0, g31Offset.x),
+      xMax: axXMax > 0 ? axXMax + Math.min(0, g31Offset.x) : null,
+      yMin: axYMin + Math.max(0, g31Offset.y),
+      yMax: axYMax > 0 ? axYMax + Math.min(0, g31Offset.y) : null,
+    };
+  }, [g31Offset, axes]);
 
   const probeGridLocked = probeFromConfig && !probeGridUnlocked;
 
@@ -854,9 +1839,20 @@ export default function DuetHeightMap() {
       try {
         const blob = await service.downloadFile('0:/sys/config.g');
         const text = await blob.text();
+        // G31 may be in config-override.g (written by M500 auto-tune) rather than config.g.
+        // Try config.g first, then fall back to config-override.g.
+        let g31 = parseProbeOffset(text);
+        if (!g31) {
+          try {
+            const overrideBlob = await service.downloadFile('0:/sys/config-override.g');
+            g31 = parseProbeOffset(await overrideBlob.text());
+          } catch { /* config-override.g is optional */ }
+        }
+        if (g31) setG31Offset({ x: g31.xOffset, y: g31.yOffset });
         const parsed = parseM557(text);
         if (parsed) {
           m557LoadedRef.current = true;
+          configGridRef.current = { xMin: parsed.xMin, xMax: parsed.xMax, yMin: parsed.yMin, yMax: parsed.yMax, numPoints: parsed.numPoints };
           setProbeFromConfig(true);
           setConfigM557Line(parsed.rawLine);
           // Only overwrite the probe grid values if the user has NOT manually
@@ -882,6 +1878,8 @@ export default function DuetHeightMap() {
   useEffect(() => {
     // Skip if config.g M557 already populated the grid — it has intentional margins.
     if (m557LoadedRef.current) return;
+    // Skip if the user has unlocked and customized the grid — preserve their values.
+    if (probeGridUnlockedRef.current) return;
     if (!axes || axes.length < 2) return;
     const xAxis = axes.find((a) => a.letter === 'X') ?? axes[0];
     const yAxis = axes.find((a) => a.letter === 'Y') ?? axes[1];
@@ -904,13 +1902,13 @@ export default function DuetHeightMap() {
   useEffect(() => {
     try {
       const prefs: HeightMapPrefs = {
-        viewMode, diverging, sidebarOpen, showProbePoints, probePointScale, selectedCsv,
+        viewMode, diverging, mirrorX, sidebarOpen, showProbePoints, probePointScale, selectedCsv,
         probeXMin, probeXMax, probeYMin, probeYMax, probePoints,
         probeGridUnlocked,
       };
       localStorage.setItem(HM_PREFS_KEY, JSON.stringify(prefs));
     } catch { /* storage unavailable — ignore */ }
-  }, [viewMode, diverging, sidebarOpen, showProbePoints, probePointScale, selectedCsv,
+  }, [viewMode, diverging, mirrorX, sidebarOpen, showProbePoints, probePointScale, selectedCsv,
       probeXMin, probeXMax, probeYMin, probeYMax, probePoints, probeGridUnlocked]);
 
   /* ── File list ── */
@@ -945,6 +1943,7 @@ export default function DuetHeightMap() {
   const stats        = useMemo(() => computeStats(displayMap), [displayMap]);
   const quality      = getBedQuality(stats.rms);
   const useDiverging = compareMode || diverging;
+  const smartCalActive = smartCalRunning || smartCalPhase !== null;
 
   // Configured probe grid — drives the 3D marker positions in Scene3D.
   // Recomputed whenever any of the four range inputs or the points selector changes.
@@ -1025,57 +2024,141 @@ export default function DuetHeightMap() {
     void sendGCode('G29 S1');
   }, [isCompensationEnabled, axes, sendGCode]);
 
-  const runProbe = useCallback(async (homeFirst: boolean) => {
+  const runProbe = useCallback(async (opts: ProbeOpts) => {
     setShowProbeModal(false);
     setProbing(true);
+    setProbeProgress(null);
+    setLoadError(null);
+    const isRRF = !boardType || boardType === 'duet';
+    const shouldRestoreProbeSamples = isRRF && opts.probesPerPoint > 1;
+    let passCount = 0;
     try {
       await sendGCode(m557Command);
-      if (homeFirst) await sendGCode('G28');
-      await probeGrid();
-    } finally { setProbing(false); }
-  }, [probeGrid, sendGCode, m557Command]);
+      if (opts.homeFirst) await sendGCode('G28');
+
+      // G30 S-1: move to bed centre first so we probe in a representative location,
+      // then set Z=0 datum without saving to G31.
+      if (opts.calibrateZDatum) {
+        const cx = ((probeXMin + probeXMax) / 2).toFixed(1);
+        const cy = ((probeYMin + probeYMax) / 2).toFixed(1);
+        // Use service directly (not store action) so we can capture the reply.
+        if (service) {
+          await service.sendGCode(`G1 X${cx} Y${cy} F6000`);
+          await service.sendGCode('G30 S-1');
+          // Offer to persist the calibrated datum to config-override.g
+          addToast(
+            'info',
+            'Z datum calibrated',
+            `Probed at bed centre (${cx}, ${cy}) — Z=0 reference set for this session.`,
+            [{ label: 'Persist (M500)', onClick: () => void sendGCode('M500') }],
+            10_000,
+          );
+        } else {
+          await sendGCode(`G1 X${cx} Y${cy} F6000`);
+          await sendGCode('G30 S-1');
+        }
+      }
+
+      if (shouldRestoreProbeSamples) await sendGCode(`M558 A${opts.probesPerPoint} S${opts.probeTolerance}`);
+
+      let prevMap: HeightMapData | null = null;
+      const maxIter = opts.mode === 'fixed' ? opts.passes : opts.maxPasses;
+
+      // ── Live probe progress tracking ─────────────────────────────────────
+      // Watch move.probing transitions in the cached model — zero extra HTTP calls.
+      let probesDone = 0;
+      let wasProbing = false;
+      let probesPerRunLearned: number | null = null;
+
+      const probeTracker = service ? setInterval(() => {
+        const m = service.getModel() as Record<string, unknown>;
+        const mv = m.move as Record<string, unknown> | undefined;
+        const isProbing = (mv?.probing as boolean | undefined) ?? false;
+        if (wasProbing && !isProbing) {
+          probesDone++;
+          setProbeProgress((prev) => prev ? { ...prev, done: probesDone, total: probesPerRunLearned } : null);
+        }
+        wasProbing = isProbing;
+      }, 200) : null;
+
+      try {
+        for (let i = 0; i < maxIter; i++) {
+          // Reset per-pass counters
+          probesDone = 0;
+          wasProbing = false;
+          setProbeProgress({ pass: i + 1, totalPasses: maxIter, done: 0, total: probesPerRunLearned });
+
+          await probeGrid();
+          passCount++;
+
+          if (probesDone > 0 && probesPerRunLearned === null) {
+            probesPerRunLearned = probesDone;
+          }
+
+          const curr = usePrinterStore.getState().heightMap;
+          if (opts.mode === 'converge' && prevMap && curr) {
+            if (computeMeshRmsDiff(prevMap, curr) <= opts.targetDiff) break;
+          }
+          if (curr) prevMap = curr;
+        }
+      } finally {
+        if (probeTracker !== null) clearInterval(probeTracker);
+        setProbeProgress(null);
+      }
+
+      // Always open the results modal — pass null stats if the map isn't available
+      // (e.g. getHeightMap failed or returned empty), so the user sees the "no data"
+      // fallback rather than just stale gcode-command toasts.
+      const finalMap = usePrinterStore.getState().heightMap;
+      setProbeResult({ stats: finalMap ? computeStats(finalMap) : null, passes: passCount });
+      setShowProbeResultModal(true);
+    } catch {
+      setLoadError('Probing failed');
+      addToast('error', 'Probing failed', 'The probe sequence did not complete.');
+    } finally {
+      if (shouldRestoreProbeSamples) {
+        try { await sendGCode('M558 A1 S0.01'); } catch { /* best-effort cleanup */ }
+      }
+      setProbing(false);
+    }
+  }, [boardType, m557Command, probeGrid, probeXMin, probeXMax, probeYMin, probeYMax, sendGCode, service]);
 
   /** Validate prerequisites before opening the Level Bed modal. */
   const handleLevelBedOpen = useCallback(async () => {
     if (!service) return;
-
-    // bed_tilt.g must exist — levelBed calls M98 against it.
     try {
       await service.getFileInfo('0:/sys/bed_tilt.g');
       setShowLevelModal(true);
     } catch {
-      // File missing — generate content from bed.g (or template) and show setup modal.
       const { content, derived } = await generateBedTiltContent(service);
       setBedTiltContent(content);
       setBedTiltDerived(derived);
+      setBedTiltNoG30(false);
       setShowSetupModal(true);
     }
   }, [service]);
 
   /** Upload bed_tilt.g then open the Level Bed modal. */
-  const handleCreateBedTilt = useCallback(async () => {
+  const handleCreateBedTilt = useCallback(async (content: string) => {
     if (!service) return;
     setCreatingTiltFile(true);
     try {
-      const blob = new Blob([bedTiltContent], { type: 'text/plain' });
+      const blob = new Blob([content], { type: 'text/plain' });
       await service.uploadFile('0:/sys/bed_tilt.g', blob);
       setShowSetupModal(false);
       setShowLevelModal(true);
     } catch (err) {
-      addToast('error', 'Failed to create bed_tilt.g', (err as Error).message, undefined, 12_000);
+      addToast('error', 'Failed to save bed_tilt.g', (err as Error).message, undefined, 12_000);
     } finally {
       setCreatingTiltFile(false);
     }
-  }, [service, bedTiltContent]);
+  }, [service]);
 
   const handleLevelBed = useCallback(async (opts: import('../../store/printerStore').LevelBedOpts) => {
     setShowLevelModal(false);
     setLeveling(true);
-    lastLevelOptsRef.current = opts;
     try {
-      const summary = await levelBed(opts);
-      setLevelSummary(summary);
-      setShowResultsModal(true);
+      await levelBed(opts);
     } catch (err) {
       addToast('error', 'Level bed failed', (err as Error).message, undefined, 15_000);
     } finally {
@@ -1083,10 +2166,131 @@ export default function DuetHeightMap() {
     }
   }, [levelBed]);
 
-  const handleRunAgain = useCallback(() => {
-    setShowResultsModal(false);
-    if (lastLevelOptsRef.current) void handleLevelBed(lastLevelOptsRef.current);
-  }, [handleLevelBed]);
+
+  /** Closed-loop calibration: level → probe → diagnose → repeat. */
+  const runSmartCal = useCallback(async (opts: SmartCalOpts) => {
+    setShowSmartCalModal(false);
+    setSmartCalRunning(true);
+    setSmartCalPhase(null);
+    setSmartCalResult(null);
+
+    const steps: SmartCalStep[] = [];
+    let finalStats: HeightMapStats | null = null;
+    let stopReason: SmartCalResult['stopReason'] = 'maxIterations';
+    let shouldLevel = true;
+
+    try {
+      if (opts.homeFirst) {
+        setSmartCalPhase('homing');
+        await sendGCode('G28');
+        steps.push({ kind: 'info', label: 'Homed all axes', quality: 'info' });
+      }
+
+      for (let i = 0; i < opts.maxIterations; i++) {
+        /* ── Level ── */
+        if (shouldLevel) {
+          setSmartCalPhase('leveling');
+          try {
+            await levelBed({ homeFirst: false });
+            steps.push({ kind: 'level', label: `Bed leveled (iteration ${i + 1})`, quality: 'good' });
+          } catch (err) {
+            steps.push({ kind: 'level', label: 'Leveling failed', detail: (err as Error).message, quality: 'bad' });
+            stopReason = 'failed';
+            break;
+          }
+          shouldLevel = false;
+        }
+
+        /* ── Probe ── */
+        setSmartCalPhase('probing');
+        try {
+          if (opts.probesPerPoint > 1) {
+            await sendGCode(`M558 A${opts.probesPerPoint} S${opts.probeTolerance}`);
+          }
+          await sendGCode(m557Command);
+          await probeGrid();
+          if (opts.probesPerPoint > 1) {
+            try { await sendGCode('M558 A1 S0.01'); } catch { /* best-effort restore */ }
+          }
+        } catch (err) {
+          steps.push({ kind: 'probe', label: `Probe failed (iteration ${i + 1})`, detail: (err as Error).message, quality: 'bad' });
+          stopReason = 'failed';
+          break;
+        }
+
+        /* ── Analyse ── */
+        const currentMap = usePrinterStore.getState().heightMap;
+        if (!currentMap) {
+          steps.push({ kind: 'probe', label: 'No probe data returned', quality: 'bad' });
+          stopReason = 'failed';
+          break;
+        }
+        const s = computeStats(currentMap);
+        finalStats = s;
+        const meanBad = Math.abs(s.mean) >= opts.targetMean;
+        const devBad  = s.rms             >= opts.targetDeviation;
+        steps.push({
+          kind:    'probe',
+          label:   `Probed (iteration ${i + 1}) — RMS ${s.rms.toFixed(4)} mm · mean ${s.mean >= 0 ? '+' : ''}${s.mean.toFixed(3)} mm`,
+          quality: (!meanBad && !devBad) ? 'good' : 'warn',
+        });
+
+        if (!meanBad && !devBad) {
+          steps.push({ kind: 'done', label: 'Bed calibrated — within all targets ✓', quality: 'good' });
+          stopReason = 'converged';
+          break;
+        }
+
+        /* ── Z datum recalibration ── */
+        if (meanBad) {
+          setSmartCalPhase('datum');
+          const cx = ((probeXMin + probeXMax) / 2).toFixed(1);
+          const cy = ((probeYMin + probeYMax) / 2).toFixed(1);
+          try {
+            if (service) {
+              await service.sendGCode(`G1 X${cx} Y${cy} F6000`);
+              await service.sendGCode('G30 S-1');
+            } else {
+              await sendGCode(`G1 X${cx} Y${cy} F6000`);
+              await sendGCode('G30 S-1');
+            }
+            steps.push({
+              kind:   'datum',
+              label:  `Z datum recalibrated at centre (${cx}, ${cy})`,
+              detail: `Mean was ${s.mean >= 0 ? '+' : ''}${s.mean.toFixed(3)} mm — target ±${opts.targetMean.toFixed(2)} mm`,
+              quality: 'info',
+            });
+          } catch (err) {
+            steps.push({ kind: 'datum', label: 'Z datum calibration failed', detail: (err as Error).message, quality: 'bad' });
+          }
+        }
+
+        /* ── Re-level decision ── */
+        if (devBad) {
+          steps.push({
+            kind:   'decision',
+            label:  `RMS ${s.rms.toFixed(4)} mm exceeds target ${opts.targetDeviation.toFixed(2)} mm — will re-level`,
+            quality: 'warn',
+          });
+          shouldLevel = true;
+        }
+
+        if (i === opts.maxIterations - 1) {
+          steps.push({ kind: 'done', label: `Max iterations (${opts.maxIterations}) reached`, quality: 'warn' });
+        }
+      }
+    } catch (err) {
+      steps.push({ kind: 'done', label: `Smart Cal error: ${(err as Error).message}`, quality: 'bad' });
+      stopReason = 'failed';
+    } finally {
+      setSmartCalRunning(false);
+      setSmartCalPhase(null);
+    }
+
+    const result: SmartCalResult = { steps, finalStats, stopReason };
+    setSmartCalResult(result);
+    setShowSmartCalResultModal(true);
+  }, [levelBed, m557Command, probeGrid, probeXMin, probeXMax, probeYMin, probeYMax, sendGCode, service]);
 
   const handleSaveAs = useCallback(async () => {
     const filename = prompt('Save height map as (filename without path/extension):', 'heightmap_backup');
@@ -1124,24 +2328,33 @@ export default function DuetHeightMap() {
         <BedTiltSetupModal
           content={bedTiltContent}
           derived={bedTiltDerived}
+          noG30Warning={bedTiltNoG30}
           creating={creatingTiltFile}
-          onCreateFile={() => void handleCreateBedTilt()}
+          onCreateFile={(content) => void handleCreateBedTilt(content)}
           onClose={() => setShowSetupModal(false)}
         />
       )}
-      {showResultsModal && levelSummary && (
-        <LevelBedResultsModal
-          summary={levelSummary}
-          onClose={() => setShowResultsModal(false)}
-          onRunAgain={handleRunAgain}
+      {showProbeResultModal && probeResult && (
+        <ProbeResultsModal
+          stats={probeResult.stats}
+          passes={probeResult.passes}
+          onClose={() => setShowProbeResultModal(false)}
+          onRunAgain={() => { setShowProbeResultModal(false); setShowProbeModal(true); }}
+          onEnableCompensation={() => {
+            setShowProbeResultModal(false);
+            void sendGCode('G29 S1');
+            addToast('info', 'Mesh compensation enabled', 'G29 S1 applied — compensation is now active.');
+          }}
         />
       )}
       {showProbeModal && (
         <ProbeConfirmModal
-          onConfirm={(homeFirst) => void runProbe(homeFirst)}
+          onConfirm={(opts) => void runProbe(opts)}
           onCancel={() => setShowProbeModal(false)}
           m557Command={m557Command}
           gridLabel={gridLabel}
+          boardType={boardType}
+          lastMapMean={heightMap ? computeStats(heightMap).mean : null}
         />
       )}
       {showLevelModal && (
@@ -1150,22 +2363,120 @@ export default function DuetHeightMap() {
           onCancel={() => setShowLevelModal(false)}
         />
       )}
+      {showSmartCalModal && (
+        <SmartCalModal
+          onConfirm={(opts) => void runSmartCal(opts)}
+          onCancel={() => setShowSmartCalModal(false)}
+        />
+      )}
+      {showSmartCalResultModal && smartCalResult && (
+        <SmartCalResultModal
+          result={smartCalResult}
+          onClose={() => setShowSmartCalResultModal(false)}
+          onRunAgain={() => { setShowSmartCalResultModal(false); setShowSmartCalModal(true); }}
+        />
+      )}
 
-      {/* ── Title bar (slim) ─────────────────────────────────────────── */}
+      {/* ── Title bar ────────────────────────────────────────────────── */}
       <div className="hm-topbar">
         <Map size={13} className="hm-topbar__icon" />
         <span className="hm-topbar__title">Bed Height Map</span>
-        {isDemo && <span className="hm-topbar__demo-badge">Demo</span>}
+
+        <div className="hm-topbar__div" />
+
+        {/* 3D / 2D toggle */}
+        <div className="hm-view-toggle hm-topbar__ctrl">
+          <button
+            className={`hm-toggle-btn${viewMode === '3d' ? ' is-active' : ''}`}
+            onClick={() => setViewMode('3d')}
+            title="3D surface view — drag to rotate, scroll to zoom, Shift+drag to pan"
+          >
+            <BarChart3 size={12} /> 3D
+          </button>
+          <button
+            className={`hm-toggle-btn${viewMode === '2d' ? ' is-active' : ''}`}
+            onClick={() => setViewMode('2d')}
+            title="2D top-down heatmap — hover cells for exact values"
+          >
+            <Grid3x3 size={12} /> 2D
+          </button>
+        </div>
+
+        {/* Dev / Div color mode */}
+        <div className="hm-view-toggle hm-topbar__ctrl">
+          <button
+            className={`hm-toggle-btn${!useDiverging ? ' is-active' : ''}`}
+            onClick={() => !compareMode && setDiverging(false)}
+            disabled={compareMode}
+            title="Deviation palette — green = flat, yellow/red = warped"
+          >Dev</button>
+          <button
+            className={`hm-toggle-btn${useDiverging ? ' is-active' : ''}`}
+            onClick={() => !compareMode && setDiverging(true)}
+            disabled={compareMode}
+            title="Diverging palette — blue = low, red = high, white = zero"
+          >Div</button>
+        </div>
+
+        {/* Spacer — pushes progress indicators to the right */}
+        <div style={{ flex: 1 }} />
+
         {probing && (
           <span className="hm-topbar__probing">
             <Loader2 size={11} className="hm-spin" />
-            Probing bed…
+            {probeProgress ? (
+              <>
+                {probeProgress.totalPasses > 1 && (
+                  <span className="hm-topbar__progress-pill">
+                    Pass {probeProgress.pass}/{probeProgress.totalPasses}
+                  </span>
+                )}
+                {probeProgress.done > 0 && (
+                  <span className="hm-topbar__progress-pill">
+                    Probe&nbsp;
+                    {probeProgress.total != null
+                      ? `${probeProgress.done}/${probeProgress.total}`
+                      : probeProgress.done}
+                  </span>
+                )}
+                {probeProgress.done === 0 && probeProgress.totalPasses <= 1 && 'Probing bed…'}
+              </>
+            ) : (
+              'Probing bed…'
+            )}
           </span>
         )}
         {leveling && (
-          <span className="hm-topbar__probing">
+          <span className="hm-topbar__probing hm-topbar__probing--level">
             <Loader2 size={11} className="hm-spin" />
-            Leveling bed…
+            {levelBedProgress ? (
+              <>
+                <span className="hm-topbar__progress-pill">
+                  Run {levelBedProgress.currentRun}/{levelBedProgress.totalRuns}
+                </span>
+                {levelBedProgress.probesDone > 0 && (
+                  <span className="hm-topbar__progress-pill">
+                    Probe&nbsp;
+                    {levelBedProgress.probesTotal != null
+                      ? `${levelBedProgress.probesDone}/${levelBedProgress.probesTotal}`
+                      : levelBedProgress.probesDone}
+                  </span>
+                )}
+              </>
+            ) : (
+              'Leveling bed…'
+            )}
+          </span>
+        )}
+        {smartCalRunning && (
+          <span className="hm-topbar__probing hm-topbar__probing--smartcal">
+            <Loader2 size={11} className="hm-spin" />
+            <span className="hm-topbar__progress-pill">Smart Cal</span>
+            {smartCalPhase === 'homing'   && 'Homing…'}
+            {smartCalPhase === 'leveling' && 'Leveling…'}
+            {smartCalPhase === 'probing'  && 'Probing…'}
+            {smartCalPhase === 'datum'    && 'Calibrating Z datum…'}
+            {smartCalPhase === null       && 'Running…'}
           </span>
         )}
       </div>
@@ -1215,10 +2526,11 @@ export default function DuetHeightMap() {
                     showMesh={!isDemo}
                     configuredGrid={configuredGrid}
                     bedBounds={bedBounds}
+                    mirrorX={mirrorX}
                   />
                 </div>
               ) : (
-                <Heatmap2D heightMap={displayMap} diverging={useDiverging} />
+                <Heatmap2D heightMap={displayMap} diverging={useDiverging} mirrorX={mirrorX} />
               )}
               {isDemo && (
                 <div className="hm-demo-badge">
@@ -1226,6 +2538,39 @@ export default function DuetHeightMap() {
                   Preview — load or probe a real map to see your bed
                 </div>
               )}
+
+              {/* Camera presets — top-right canvas overlay, 3D only */}
+              {viewMode === '3d' && (
+                <div className="hm-cam-overlay">
+                  {([ ['iso','⬡','Iso','Isometric view'], ['top','↓','Top','Top-down view'], ['front','→','Front','Front view'], ['side','↗','Side','Side view'] ] as [CameraPreset, string, string, string][]).map(([preset, icon, label, tip]) => (
+                    <button key={preset} className="hm-preset-btn" onClick={() => applyPreset(preset)} title={tip}>
+                      <span className="hm-preset-btn__icon">{icon}</span>
+                      {label}
+                    </button>
+                  ))}
+                  <button className="hm-preset-btn hm-preset-btn--reset" onClick={() => setSceneKey((k) => k + 1)} title="Reset camera">
+                    <RotateCcw size={11} />
+                  </button>
+                </div>
+              )}
+
+              {/* Color scale legend — always visible at center-bottom of canvas */}
+              <div className="hm-legend-overlay">
+                <div className="hm-legend-wrap">
+                  <span className="hm-legend-val">{stats.min.toFixed(3)}</span>
+                  <div
+                    className="hm-legend-gradient"
+                    style={{
+                      background: useDiverging
+                        ? 'linear-gradient(to right, rgb(59,130,246), rgb(255,255,255), rgb(239,68,68))'
+                        : 'linear-gradient(to right, rgb(34,100,255), rgb(34,197,94), rgb(239,68,68))',
+                    }}
+                    title={`Color scale: ${stats.min.toFixed(3)} mm (low) → 0 mm (flat) → ${stats.max.toFixed(3)} mm (high)`}
+                  />
+                  <span className="hm-legend-val">{stats.max.toFixed(3)}</span>
+                  <span className="hm-legend-mm">mm</span>
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -1240,51 +2585,78 @@ export default function DuetHeightMap() {
               Actions
             </div>
 
-            <div className="hm-hero-row">
+            {/* Primary ribbon buttons — Probe + Level + Smart Cal */}
+            <div className="hm-ribbon-primary hm-ribbon-primary--three">
               <button
-                className={`hm-probe-hero${probing ? ' is-probing' : ''}`}
+                className={`hm-ribbon-btn hm-ribbon-btn--probe${probing ? ' is-active' : ''}`}
                 onClick={() => setShowProbeModal(true)}
-                disabled={loading || probing || leveling || !connected}
+                disabled={loading || probing || leveling || smartCalRunning || !connected}
                 title="Probe the bed surface to measure deviation (M557 + G29)"
               >
-                <span className="hm-probe-hero__icon">
-                  {probing ? <Loader2 size={18} className="hm-spin" /> : <Crosshair size={18} />}
+                <span className="hm-ribbon-btn__icon">
+                  {probing ? <Loader2 size={20} className="hm-spin" /> : <Crosshair size={20} />}
                 </span>
-                <span className="hm-probe-hero__body">
-                  <span className="hm-probe-hero__label">{probing ? 'Probing…' : 'Probe Bed'}</span>
-                  <span className="hm-probe-hero__sub">{gridLabel} · {spacingX}×{spacingY} mm</span>
-                </span>
+                <span className="hm-ribbon-btn__label">{probing ? 'Probing…' : 'Probe Bed'}</span>
+                <span className="hm-ribbon-btn__sub">{gridLabel} · {spacingX}×{spacingY} mm</span>
               </button>
 
               <button
-                className={`hm-probe-hero hm-probe-hero--level${leveling ? ' is-probing' : ''}`}
+                className={`hm-ribbon-btn hm-ribbon-btn--level${leveling ? ' is-active' : ''}`}
                 onClick={() => void handleLevelBedOpen()}
-                disabled={loading || probing || leveling || !connected}
+                disabled={loading || probing || leveling || smartCalRunning || !connected}
                 title="Run true bed leveling using independent Z motors (G32)"
               >
-                <span className="hm-probe-hero__icon">
-                  {leveling ? <Loader2 size={18} className="hm-spin" /> : <Home size={18} />}
+                <span className="hm-ribbon-btn__icon">
+                  {leveling ? <Loader2 size={20} className="hm-spin" /> : <Home size={20} />}
                 </span>
-                <span className="hm-probe-hero__body">
-                  <span className="hm-probe-hero__label">{leveling ? 'Leveling…' : 'Level Bed'}</span>
-                  <span className="hm-probe-hero__sub">G32 · tilt correction</span>
+                <span className="hm-ribbon-btn__label">{leveling ? 'Leveling…' : 'Level Bed'}</span>
+                <span className="hm-ribbon-btn__sub">G32 · tilt correction</span>
+              </button>
+
+              <button
+                className={`hm-ribbon-btn hm-ribbon-btn--smartcal${smartCalActive ? ' is-active' : ''}`}
+                onClick={() => setShowSmartCalModal(true)}
+                disabled={loading || probing || leveling || smartCalRunning || !connected}
+                title="Smart closed-loop calibration: level → probe → diagnose → repeat until converged"
+              >
+                <span className="hm-ribbon-btn__icon">
+                  {smartCalRunning ? <Loader2 size={20} className="hm-spin" /> : <Wand2 size={20} />}
                 </span>
+                <span className="hm-ribbon-btn__label">{smartCalRunning ? 'Calibrating…' : 'Smart Cal'}</span>
+                <span className="hm-ribbon-btn__sub">Auto · Closed loop</span>
               </button>
             </div>
 
-            <div className="hm-action-row">
-              <button className="hm-action-btn" onClick={() => void handleLoad()} disabled={loading || probing}
-                title="Load height map from printer">
-                {loading ? <Loader2 size={15} className="hm-spin" /> : <RefreshCw size={15} />}
-                Load
+            {/* Secondary ribbon buttons — Load / Export / Save As */}
+            <div className="hm-ribbon-secondary">
+              <button
+                className="hm-ribbon-btn hm-ribbon-btn--sm"
+                onClick={() => void handleLoad()}
+                disabled={loading || probing}
+                title="Load height map from printer"
+              >
+                <span className="hm-ribbon-btn__icon">
+                  {loading ? <Loader2 size={15} className="hm-spin" /> : <RefreshCw size={15} />}
+                </span>
+                <span className="hm-ribbon-btn__label">Load</span>
               </button>
-              <button className="hm-action-btn" onClick={() => heightMap && exportHeightMapCSV(heightMap)} disabled={!heightMap}
-                title="Export height map as CSV to your computer">
-                <Download size={15} />Export
+              <button
+                className="hm-ribbon-btn hm-ribbon-btn--sm"
+                onClick={() => heightMap && exportHeightMapCSV(heightMap)}
+                disabled={!heightMap}
+                title="Export height map as CSV to your computer"
+              >
+                <span className="hm-ribbon-btn__icon"><Download size={15} /></span>
+                <span className="hm-ribbon-btn__label">Export</span>
               </button>
-              <button className="hm-action-btn" onClick={() => void handleSaveAs()} disabled={!heightMap || !connected}
-                title="Save a backup copy of the height map on the printer filesystem">
-                <Save size={15} />Save As
+              <button
+                className="hm-ribbon-btn hm-ribbon-btn--sm"
+                onClick={() => void handleSaveAs()}
+                disabled={!heightMap || !connected}
+                title="Save a backup copy of the height map on the printer filesystem"
+              >
+                <span className="hm-ribbon-btn__icon"><Save size={15} /></span>
+                <span className="hm-ribbon-btn__label">Save As</span>
               </button>
             </div>
 
@@ -1306,7 +2678,7 @@ export default function DuetHeightMap() {
                 : 'Enable mesh bed compensation — loads and applies the height map (G29 S1)'}
             >
               <span className={`hm-pill-switch${isCompensationEnabled ? ' is-on' : ''}`}><span className="hm-pill-switch__thumb" /></span>
-              Mesh Compensation
+              <span className="hm-comp-label">Mesh Compensation</span>
               <span className={`hm-comp-badge${isCompensationEnabled ? ' is-on' : ''}`}>{isCompensationEnabled ? 'ON' : 'OFF'}</span>
             </button>
           </div>
@@ -1366,73 +2738,47 @@ export default function DuetHeightMap() {
                 <span className="hm-stat-value">{stats.gridDimensions} ({stats.probePoints} pts)</span>
               </div>
             </div>
-          </div>
 
-          {/* ── Visualization (View + Color + Camera merged) ── */}
-          <div className="hm-side-section">
-            <div className="hm-side-title">Visualization</div>
-
-            {/* View mode + color mode on same row */}
-            <div className="hm-vis-top-row">
-              <div className="hm-view-toggle" style={{ flex: 1 }}>
-                <button className={`hm-toggle-btn${viewMode === '3d' ? ' is-active' : ''}`} style={{ flex: 1, justifyContent: 'center' }} onClick={() => setViewMode('3d')}
-                  title="3D surface view — drag to rotate, scroll to zoom, Shift+drag to pan">
-                  <BarChart3 size={12} /> 3D
-                </button>
-                <button className={`hm-toggle-btn${viewMode === '2d' ? ' is-active' : ''}`} style={{ flex: 1, justifyContent: 'center' }} onClick={() => setViewMode('2d')}
-                  title="2D top-down heatmap — hover cells for exact values">
-                  <Grid3x3 size={12} /> 2D
-                </button>
+            {/* Z offset callout — shown when mean is large enough to indicate trigger height drift */}
+            {!isDemo && Math.abs(stats.mean) >= Z_DATUM_SUGGEST_THRESHOLD && (
+              <div className="hm-z-offset-callout">
+                <TriangleAlert size={11} className="hm-z-offset-callout__icon" />
+                <span className="hm-z-offset-callout__text">
+                  Mean offset {stats.mean >= 0 ? '+' : ''}{stats.mean.toFixed(3)} mm — Z probe trigger height may be off.
+                  Run <strong>G30 S-1</strong> before next probe to recalibrate.
+                </span>
               </div>
-              <div className="hm-view-toggle" style={{ flex: 1 }}>
-                <button className={`hm-toggle-btn${!useDiverging ? ' is-active' : ''}`} style={{ flex: 1, justifyContent: 'center' }} onClick={() => !compareMode && setDiverging(false)} disabled={compareMode}
-                  title="Deviation palette — green = flat, yellow/red = warped">Dev</button>
-                <button className={`hm-toggle-btn${useDiverging ? ' is-active' : ''}`} style={{ flex: 1, justifyContent: 'center' }} onClick={() => !compareMode && setDiverging(true)} disabled={compareMode}
-                  title="Diverging palette — blue = low, red = high, white = zero">Div</button>
-              </div>
-            </div>
-
-            {!isDemo && <ColorScaleLegend min={stats.min} max={stats.max} diverging={useDiverging} />}
-
-            {/* Camera presets — 3D only, inline row */}
-            {viewMode === '3d' && (
-              <>
-                <div className="hm-subsection-label"><Camera size={9} />Camera</div>
-                <div className="hm-preset-row">
-                  {([ ['iso','⬡','Iso','Isometric view — best for seeing overall warping'], ['top','↓','Top','Top-down view — directly above the bed'], ['front','→','Front','Front view — see the Y-axis curvature'], ['side','↗','Side','Side view — see the X-axis curvature'] ] as [CameraPreset, string, string, string][]).map(([preset, icon, label, tip]) => (
-                    <button key={preset} className="hm-preset-btn" onClick={() => applyPreset(preset)} title={tip}>
-                      <span className="hm-preset-btn__icon">{icon}</span>
-                      {label}
-                    </button>
-                  ))}
-                  <button className="hm-preset-btn hm-preset-btn--reset" onClick={() => setSceneKey((k) => k + 1)} title="Reset camera and re-render the scene">
-                    <RotateCcw size={11} />
-                  </button>
-                </div>
-                <div className="hm-mouse-hint">
-                  <span>Drag</span> rotate · <span>Scroll</span> zoom · <span>⇧+Drag</span> pan
-                </div>
-              </>
             )}
           </div>
 
           {/* ── Probe Grid ── */}
           <div className="hm-side-section">
+            {/* Section header — title + optional config.g badge + lock/unlock */}
             <div className="hm-side-title">
               <Ruler size={9} style={{ marginRight: 4 }} />Probe Grid
               {probeFromConfig && (
                 <>
                   <span
                     className="hm-probe-config-badge"
-                    title="Probe grid loaded from M557 in config.g"
+                    title={configM557Line
+                      ? `Probe grid loaded from config.g: ${configM557Line}`
+                      : 'Probe grid loaded from M557 in config.g'}
                   >
                     <Lock size={8} />config.g
                   </span>
                   <button
                     className={`hm-probe-lock-btn${probeGridUnlocked ? ' is-unlocked' : ''}`}
-                    onClick={() => setProbeGridUnlocked((v) => !v)}
+                    onClick={() => {
+                      if (probeGridUnlocked && configGridRef.current) {
+                        const g = configGridRef.current;
+                        setProbeXMin(g.xMin); setProbeXMax(g.xMax);
+                        setProbeYMin(g.yMin); setProbeYMax(g.yMax);
+                        setProbePoints(g.numPoints);
+                      }
+                      setProbeGridUnlocked((v) => !v);
+                    }}
                     title={probeGridUnlocked
-                      ? 'Re-lock — values will be restored from config.g on next connect'
+                      ? 'Re-lock — restores config.g values'
                       : 'Unlock — override for this session only (config.g is unchanged)'}
                   >
                     {probeGridUnlocked ? <LockOpen size={10} /> : <Lock size={10} />}
@@ -1441,47 +2787,65 @@ export default function DuetHeightMap() {
               )}
             </div>
 
-            {/* X and Y ranges on one row */}
-            <div className="hm-range-row">
-              <span className="hm-range-axis hm-range-axis--x" title="X axis probe range (mm)">X</span>
-              <input
-                className={`hm-grid-input hm-grid-input--sm${probeGridLocked ? ' is-locked' : ''}`}
-                type="number" value={probeXMin} min={0} max={probeXMax - 1}
-                disabled={probeGridLocked}
-                onChange={(e) => setProbeXMin(Number(e.target.value))}
-                title={probeGridLocked ? 'X start — set by M557 in config.g (unlock to override)' : 'X axis start position (mm)'}
-              />
-              <span className="hm-grid-sep">–</span>
-              <input
-                className={`hm-grid-input hm-grid-input--sm${probeGridLocked ? ' is-locked' : ''}`}
-                type="number" value={probeXMax} min={probeXMin + 1}
-                disabled={probeGridLocked}
-                onChange={(e) => setProbeXMax(Number(e.target.value))}
-                title={probeGridLocked ? 'X end — set by M557 in config.g (unlock to override)' : 'X axis end position (mm)'}
-              />
-              <span className="hm-range-axis hm-range-axis--y" title="Y axis probe range (mm)">Y</span>
-              <input
-                className={`hm-grid-input hm-grid-input--sm${probeGridLocked ? ' is-locked' : ''}`}
-                type="number" value={probeYMin} min={0} max={probeYMax - 1}
-                disabled={probeGridLocked}
-                onChange={(e) => setProbeYMin(Number(e.target.value))}
-                title={probeGridLocked ? 'Y start — set by M557 in config.g (unlock to override)' : 'Y axis start position (mm)'}
-              />
-              <span className="hm-grid-sep">–</span>
-              <input
-                className={`hm-grid-input hm-grid-input--sm${probeGridLocked ? ' is-locked' : ''}`}
-                type="number" value={probeYMax} min={probeYMin + 1}
-                disabled={probeGridLocked}
-                onChange={(e) => setProbeYMax(Number(e.target.value))}
-                title={probeGridLocked ? 'Y end — set by M557 in config.g (unlock to override)' : 'Y axis end position (mm)'}
-              />
-              <span className="hm-grid-unit">mm</span>
+            {/* X axis range — dedicated row */}
+            <div className="hm-axis-range">
+              <span className="hm-axis-label hm-axis-label--x" title="X axis probe range (mm)">X</span>
+              <label className="hm-axis-field">
+                <span className="hm-axis-field__label">Min</span>
+                <input
+                  className={`hm-grid-input hm-axis-input${probeGridLocked ? ' is-locked' : ''}`}
+                  type="number" value={probeXMin} min={0} max={probeXMax - 1}
+                  disabled={probeGridLocked}
+                  onChange={(e) => setProbeXMin(Number(e.target.value))}
+                  title={probeGridLocked ? 'X start — set by M557 in config.g (unlock to override)' : 'X axis start position (mm)'}
+                />
+              </label>
+              <span className="hm-axis-sep">→</span>
+              <label className="hm-axis-field">
+                <span className="hm-axis-field__label">Max</span>
+                <input
+                  className={`hm-grid-input hm-axis-input${probeGridLocked ? ' is-locked' : ''}`}
+                  type="number" value={probeXMax} min={probeXMin + 1}
+                  disabled={probeGridLocked}
+                  onChange={(e) => setProbeXMax(Number(e.target.value))}
+                  title={probeGridLocked ? 'X end — set by M557 in config.g (unlock to override)' : 'X axis end position (mm)'}
+                />
+              </label>
+              <span className="hm-axis-unit">mm</span>
             </div>
 
-            {/* Points + spacing on one row */}
-            <div className="hm-probe-pts-row">
+            {/* Y axis range — dedicated row */}
+            <div className="hm-axis-range">
+              <span className="hm-axis-label hm-axis-label--y" title="Y axis probe range (mm)">Y</span>
+              <label className="hm-axis-field">
+                <span className="hm-axis-field__label">Min</span>
+                <input
+                  className={`hm-grid-input hm-axis-input${probeGridLocked ? ' is-locked' : ''}`}
+                  type="number" value={probeYMin} min={0} max={probeYMax - 1}
+                  disabled={probeGridLocked}
+                  onChange={(e) => setProbeYMin(Number(e.target.value))}
+                  title={probeGridLocked ? 'Y start — set by M557 in config.g (unlock to override)' : 'Y axis start position (mm)'}
+                />
+              </label>
+              <span className="hm-axis-sep">→</span>
+              <label className="hm-axis-field">
+                <span className="hm-axis-field__label">Max</span>
+                <input
+                  className={`hm-grid-input hm-axis-input${probeGridLocked ? ' is-locked' : ''}`}
+                  type="number" value={probeYMax} min={probeYMin + 1}
+                  disabled={probeGridLocked}
+                  onChange={(e) => setProbeYMax(Number(e.target.value))}
+                  title={probeGridLocked ? 'Y end — set by M557 in config.g (unlock to override)' : 'Y axis end position (mm)'}
+                />
+              </label>
+              <span className="hm-axis-unit">mm</span>
+            </div>
+
+            {/* Grid density + spacing */}
+            <div className="hm-grid-density-row">
+              <span className="hm-grid-density-label">Grid</span>
               <select
-                className="hm-select"
+                className="hm-select hm-select--density"
                 value={probePoints}
                 disabled={probeGridLocked}
                 onChange={(e) => setProbePoints(Number(e.target.value))}
@@ -1490,42 +2854,104 @@ export default function DuetHeightMap() {
                   : 'Number of probe points per axis — more points = finer mesh, longer probe time'}
               >
                 {[3, 4, 5, 6, 7, 8, 9, 10, 11].map((n) => (
-                  <option key={n} value={n}>{n}×{n} ({n * n} pts)</option>
+                  <option key={n} value={n}>{n}×{n}</option>
                 ))}
               </select>
-              <span className="hm-probe-spacing" title="Approximate spacing between probe points">~{spacingX}×{spacingY} mm</span>
+              <span className="hm-grid-density-pts">{probePoints * probePoints} pts</span>
+              <span className="hm-grid-density-sep">·</span>
+              <span className="hm-grid-density-spacing" title="Approximate spacing between probe points">
+                ~{spacingX}×{spacingY} mm
+              </span>
             </div>
 
-            {/* Raw config.g M557 line — shown when loaded from config */}
-            {probeFromConfig && configM557Line && (
-              <div className="hm-probe-config-source" title="Exact M557 line read from 0:/sys/config.g">
-                <span className="hm-probe-config-source-label">config.g</span>
-                <code className="hm-probe-config-source-cmd">{configM557Line}</code>
-              </div>
-            )}
+            {/* Safety warning (conditional) */}
+            {(() => {
+              const xMinBad = probeXMin < (safeBounds?.xMin ?? (probeXMin === 0 ? 1 : 0));
+              const xMaxBad = safeBounds?.xMax != null && probeXMax > safeBounds.xMax;
+              const yMinBad = probeYMin < (safeBounds?.yMin ?? (probeYMin === 0 ? 1 : 0));
+              const yMaxBad = safeBounds?.yMax != null && probeYMax > safeBounds.yMax;
+              const anyBad = xMinBad || xMaxBad || yMinBad || yMaxBad;
+              if (!anyBad) return null;
 
-            {/* Warning when probe min values start at 0 — almost always means no safety margin */}
-            {(probeXMin === 0 || probeYMin === 0) && (
-              <div className="hm-probe-origin-warn">
-                <TriangleAlert size={11} />
-                <span>
-                  {probeXMin === 0 && probeYMin === 0
-                    ? 'X and Y start at 0'
-                    : probeXMin === 0 ? 'X starts at 0' : 'Y starts at 0'
-                  } — the probe may not reach the origin due to its nozzle offset.
-                  {probeGridLocked
-                    ? ' Unlock and set a safe margin, or fix M557 in config.g.'
-                    : ' Set a safe minimum (e.g. 10–30 mm) above.'}
+              const suggestions: string[] = [];
+              if (xMinBad) suggestions.push(`X min → ${safeBounds?.xMin ?? 10}`);
+              if (xMaxBad && safeBounds?.xMax != null) suggestions.push(`X max → ${safeBounds.xMax}`);
+              if (yMinBad) suggestions.push(`Y min → ${safeBounds?.yMin ?? 10}`);
+              if (yMaxBad && safeBounds?.yMax != null) suggestions.push(`Y max → ${safeBounds.yMax}`);
+
+              return (
+                <div className="hm-probe-origin-warn">
+                  <TriangleAlert size={11} className="hm-probe-origin-warn__icon" />
+                  <span className="hm-probe-origin-warn__text">
+                    Probe grid may be unreachable due to nozzle offset.
+                    {safeBounds
+                      ? ` Suggested: ${suggestions.join(', ')}.`
+                      : ' Set a safe margin above 0 (e.g. 10–30 mm).'}
+                  </span>
+                  <button
+                    type="button"
+                    className="hm-probe-origin-warn__apply"
+                    onClick={() => {
+                      if (probeGridLocked) setProbeGridUnlocked(true);
+                      if (xMinBad) setProbeXMin(safeBounds?.xMin ?? 10);
+                      if (xMaxBad && safeBounds?.xMax != null) setProbeXMax(safeBounds.xMax);
+                      if (yMinBad) setProbeYMin(safeBounds?.yMin ?? 10);
+                      if (yMaxBad && safeBounds?.yMax != null) setProbeYMax(safeBounds.yMax);
+                    }}
+                    title={safeBounds ? 'Apply safe bounds from G31 + axis limits' : 'Apply 10 mm safe minimum'}
+                  >
+                    Apply
+                  </button>
+                </div>
+              );
+            })()}
+
+            {/* M557 command preview with copy button */}
+            <div className="hm-m557-preview">
+              <div className="hm-m557-preview__body">
+                <span className="hm-m557-preview__label">M557 command</span>
+                <code className="hm-m557-preview__cmd" title="This M557 will be sent to the printer when you probe">
+                  {m557Command}
+                </code>
+              </div>
+              <button
+                className={`hm-m557-preview__copy${m557Copied ? ' is-copied' : ''}`}
+                onClick={() => {
+                  void navigator.clipboard.writeText(m557Command).then(() => {
+                    setM557Copied(true);
+                    setTimeout(() => setM557Copied(false), 1_800);
+                  });
+                }}
+                title="Copy M557 command to clipboard"
+              >
+                {m557Copied ? <CheckCircle size={11} /> : <Copy size={11} />}
+              </button>
+            </div>
+
+            {/* Current M558 probe settings from the live object model */}
+            {connected && probeModelRaw != null && (
+              <div className="hm-m558-info" title="Current M558 probe settings reported by the firmware">
+                <span className="hm-m558-info__label">M558 live</span>
+                <span className="hm-m558-info__val">
+                  A{probeModelRaw.maxProbeCount ?? 1}
+                  {(probeModelRaw.maxProbeCount ?? 1) > 1 && (
+                    <> · S{probeModelRaw.tolerance != null ? probeModelRaw.tolerance.toFixed(3) : '0.010'}</>
+                  )}
                 </span>
               </div>
             )}
 
-            {/* M557 command that will be sent — the effective values */}
-            <code className="hm-grid-cmd hm-grid-cmd--block" title="This M557 will be sent to the printer when you probe">{m557Command}</code>
-
-            {/* Markers + size — 3D only */}
-            {viewMode === '3d' && (
-              <div className="hm-markers-row">
+            {/* Display toggles — Mirror X + Markers (3D only) on one row */}
+            <div className="hm-probe-toggles">
+              <button
+                className={`hm-pill-toggle${mirrorX ? ' is-on' : ''}`}
+                onClick={() => setMirrorX((v) => !v)}
+                title={mirrorX ? 'X axis mirrored — X=0 on right (click to restore)' : 'Mirror X axis — X=0 on right, Y ruler on right side'}
+              >
+                <span className="hm-pill-toggle__track"><span className="hm-pill-toggle__thumb" /></span>
+                <span className="hm-pill-toggle__label">Mirror X</span>
+              </button>
+              {viewMode === '3d' && (
                 <button
                   className={`hm-pill-toggle${showProbePoints ? ' is-on' : ''}`}
                   onClick={() => setShowProbePoints((v) => !v)}
@@ -1534,14 +2960,14 @@ export default function DuetHeightMap() {
                   <span className="hm-pill-toggle__track"><span className="hm-pill-toggle__thumb" /></span>
                   <span className="hm-pill-toggle__label">Markers</span>
                 </button>
-                {showProbePoints && (
-                  <div className="hm-marker-size" title="Adjust the size of the probe point spheres">
-                    <input type="range" className="hm-size-slider" min={0.25} max={3} step={0.05}
-                      value={probePointScale} onChange={(e) => setProbePointScale(Number(e.target.value))}
-                      title={`Marker size: ${probePointScale.toFixed(2)}× (drag to resize)`} />
-                    <span className="hm-grid-unit" style={{ minWidth: 30, textAlign: 'right' }}>{probePointScale.toFixed(2)}×</span>
-                  </div>
-                )}
+              )}
+            </div>
+            {viewMode === '3d' && showProbePoints && (
+              <div className="hm-marker-size" title="Adjust the size of the probe point spheres">
+                <input type="range" className="hm-size-slider" min={0.25} max={3} step={0.05}
+                  value={probePointScale} onChange={(e) => setProbePointScale(Number(e.target.value))}
+                  title={`Marker size: ${probePointScale.toFixed(2)}× (drag to resize)`} />
+                <span className="hm-grid-unit" style={{ minWidth: 30, textAlign: 'right' }}>{probePointScale.toFixed(2)}×</span>
               </div>
             )}
           </div>
