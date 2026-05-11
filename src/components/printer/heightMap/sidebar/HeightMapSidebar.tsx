@@ -62,9 +62,6 @@ export function HeightMapSidebar(props: {
   setProbePoints: (n: number) => void;
   safeBounds: SafeBounds | null;
   m557Command: string;
-  m557Copied: boolean;
-  setM557Copied: (b: boolean) => void;
-  m557CopyTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
   probeMaxCount: number | undefined;
   probeTol: number | undefined;
   mirrorX: boolean;
@@ -134,9 +131,6 @@ export function HeightMapSidebar(props: {
         spacingY={props.spacingY}
         safeBounds={props.safeBounds}
         m557Command={props.m557Command}
-        m557Copied={props.m557Copied}
-        setM557Copied={props.setM557Copied}
-        m557CopyTimerRef={props.m557CopyTimerRef}
         connected={props.connected}
         probeMaxCount={props.probeMaxCount}
         probeTol={props.probeTol}

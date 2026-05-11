@@ -7,7 +7,7 @@
  * tracking machinery in one place.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { addToast } from '../../../../store/toastStore';
 import {
   usePrinterStore,
@@ -90,7 +90,18 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
   const [smartCalResult, setSmartCalResult] = useState<SmartCalResult | null>(null);
   const [showSmartCalResultModal, setShowSmartCalResultModal] = useState(false);
 
+  // Guards against (a) setState after unmount mid-sequence and (b) re-entry
+  // when the same runner is invoked twice before the first finishes (e.g.
+  // two callers, or a keystroke during a long probe).
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
+  const probeInFlightRef = useRef(false);
+  const smartCalInFlightRef = useRef(false);
+  const levelInFlightRef = useRef(false);
+
   const runProbe = useCallback(async (opts: ProbeOpts) => {
+    if (probeInFlightRef.current) return;
+    probeInFlightRef.current = true;
     setProbing(true);
     setProbeProgress(null);
     setLoadError(null);
@@ -139,6 +150,7 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
       let probesPerRunLearned: number | null = null;
 
       const probeTracker = service ? setInterval(() => {
+        if (!mountedRef.current) return;
         const isProbing = service.getModel().move?.probing ?? false;
         if (wasProbing && !isProbing) {
           probesDone++;
@@ -151,7 +163,9 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
         for (let i = 0; i < maxIter; i++) {
           probesDone = 0;
           wasProbing = false;
-          setProbeProgress({ pass: i + 1, totalPasses: maxIter, done: 0, total: probesPerRunLearned });
+          if (mountedRef.current) {
+            setProbeProgress({ pass: i + 1, totalPasses: maxIter, done: 0, total: probesPerRunLearned });
+          }
 
           await probeGrid();
           passCount++;
@@ -168,39 +182,47 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
         }
       } finally {
         if (probeTracker !== null) clearInterval(probeTracker);
-        setProbeProgress(null);
+        if (mountedRef.current) setProbeProgress(null);
       }
 
       // Always open the results modal — pass null stats if the map isn't
       // available so the user sees the "no data" fallback rather than just
       // stale gcode-command toasts.
-      const finalMap = usePrinterStore.getState().heightMap;
-      setProbeResult({ stats: finalMap ? computeStats(finalMap) : null, passes: passCount });
-      setShowProbeResultModal(true);
+      if (mountedRef.current) {
+        const finalMap = usePrinterStore.getState().heightMap;
+        setProbeResult({ stats: finalMap ? computeStats(finalMap) : null, passes: passCount });
+        setShowProbeResultModal(true);
+      }
     } catch {
-      setLoadError('Probing failed');
+      if (mountedRef.current) setLoadError('Probing failed');
       addToast('error', 'Probing failed', 'The probe sequence did not complete.');
     } finally {
       if (shouldRestoreProbeSamples) {
         try { await sendGCode(`M558 A${prevProbeA} S${prevProbeS}`); } catch { /* best-effort cleanup */ }
       }
-      setProbing(false);
+      if (mountedRef.current) setProbing(false);
+      probeInFlightRef.current = false;
     }
-  }, [boardType, m557Command, probeGrid, probeXMin, probeXMax, probeYMin, probeYMax, sendGCode, service, setLoadError]);
+  }, [boardType, m557Command, probeGrid, sendGCode, service, setLoadError]);
 
   const runLevel = useCallback(async (opts: LevelBedOpts) => {
+    if (levelInFlightRef.current) return;
+    levelInFlightRef.current = true;
     setLeveling(true);
     try {
       await levelBed(opts);
     } catch (err) {
       addToast('error', 'Level bed failed', (err as Error).message, undefined, 15_000);
     } finally {
-      setLeveling(false);
+      if (mountedRef.current) setLeveling(false);
+      levelInFlightRef.current = false;
     }
   }, [levelBed]);
 
   /** Closed-loop calibration: level → probe → diagnose → repeat. */
   const runSmartCal = useCallback(async (opts: SmartCalOpts) => {
+    if (smartCalInFlightRef.current) return;
+    smartCalInFlightRef.current = true;
     setSmartCalRunning(true);
     setSmartCalPhase(null);
     setSmartCalResult(null);
@@ -219,7 +241,7 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
 
     try {
       if (opts.homeFirst) {
-        setSmartCalPhase('homing');
+        if (mountedRef.current) setSmartCalPhase('homing');
         await sendGCode('G28');
         steps.push({ kind: 'info', label: 'Homed all axes', quality: 'info' });
       }
@@ -231,7 +253,7 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
       for (let i = 0; i < opts.maxIterations; i++) {
         /* ── Level ── */
         if (shouldLevel) {
-          setSmartCalPhase('leveling');
+          if (mountedRef.current) setSmartCalPhase('leveling');
           try {
             await levelBed({ homeFirst: false });
             steps.push({ kind: 'level', label: `Bed leveled (iteration ${i + 1})`, quality: 'good' });
@@ -244,7 +266,7 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
         }
 
         /* ── Probe ── */
-        setSmartCalPhase('probing');
+        if (mountedRef.current) setSmartCalPhase('probing');
         try {
           await sendGCode(m557Command);
           await probeGrid();
@@ -279,7 +301,7 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
 
         /* ── Z datum recalibration ── */
         if (meanBad) {
-          setSmartCalPhase('datum');
+          if (mountedRef.current) setSmartCalPhase('datum');
           const cx = ((probeXMin + probeXMax) / 2).toFixed(1);
           const cy = ((probeYMin + probeYMax) / 2).toFixed(1);
           try {
@@ -323,13 +345,18 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
       if (m558Modified) {
         try { await sendGCode(`M558 A${prevProbeA} S${prevProbeS}`); } catch { /* best-effort cleanup */ }
       }
-      setSmartCalRunning(false);
-      setSmartCalPhase(null);
+      // Result setters live INSIDE finally — they need to run on the error
+      // path too, and they need to be guarded by mountedRef so a navigate-
+      // away mid-iteration doesn't write into an unmounted component.
+      if (mountedRef.current) {
+        setSmartCalResult({ steps, finalStats, stopReason });
+        setShowSmartCalResultModal(true);
+        setSmartCalRunning(false);
+        setSmartCalPhase(null);
+      }
+      smartCalInFlightRef.current = false;
     }
-
-    setSmartCalResult({ steps, finalStats, stopReason });
-    setShowSmartCalResultModal(true);
-  }, [levelBed, m557Command, probeGrid, probeXMin, probeXMax, probeYMin, probeYMax, sendGCode, service]);
+  }, [levelBed, m557Command, probeGrid, sendGCode, service]);
 
   return {
     probing, probeProgress, probeResult,

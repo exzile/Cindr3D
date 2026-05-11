@@ -1,5 +1,6 @@
 import { CheckCircle, Copy, Lock, LockOpen, Ruler, TriangleAlert } from 'lucide-react';
 import type { MutableRefObject } from 'react';
+import { useCopyState } from '../hooks/useCopyState';
 
 interface ConfigGrid { xMin: number; xMax: number; yMin: number; yMax: number; numPoints: number }
 
@@ -23,7 +24,6 @@ export function ProbeGridSection({
   spacingX, spacingY,
   safeBounds,
   m557Command,
-  m557Copied, setM557Copied, m557CopyTimerRef,
   connected,
   probeMaxCount, probeTol,
   mirrorX, setMirrorX,
@@ -46,9 +46,6 @@ export function ProbeGridSection({
   spacingX: string; spacingY: string;
   safeBounds: SafeBounds | null;
   m557Command: string;
-  m557Copied: boolean;
-  setM557Copied: (b: boolean) => void;
-  m557CopyTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
   connected: boolean;
   probeMaxCount: number | undefined;
   probeTol: number | undefined;
@@ -60,6 +57,7 @@ export function ProbeGridSection({
   probePointScale: number;
   setProbePointScale: (n: number) => void;
 }) {
+  const m557Copy = useCopyState();
   const xMinBad = probeXMin < (safeBounds?.xMin ?? (probeXMin === 0 ? 1 : 0));
   const xMaxBad = safeBounds?.xMax != null && probeXMax > safeBounds.xMax;
   const yMinBad = probeYMin < (safeBounds?.yMin ?? (probeYMin === 0 ? 1 : 0));
@@ -223,17 +221,13 @@ export function ProbeGridSection({
           </code>
         </div>
         <button
-          className={`hm-m557-preview__copy${m557Copied ? ' is-copied' : ''}`}
+          className={`hm-m557-preview__copy${m557Copy.copied ? ' is-copied' : ''}`}
           onClick={() => {
-            void navigator.clipboard.writeText(m557Command).then(() => {
-              setM557Copied(true);
-              if (m557CopyTimerRef.current) clearTimeout(m557CopyTimerRef.current);
-              m557CopyTimerRef.current = setTimeout(() => setM557Copied(false), 1_800);
-            });
+            void navigator.clipboard.writeText(m557Command).then(m557Copy.flash);
           }}
           title="Copy M557 command to clipboard"
         >
-          {m557Copied ? <CheckCircle size={11} /> : <Copy size={11} />}
+          {m557Copy.copied ? <CheckCircle size={11} /> : <Copy size={11} />}
         </button>
       </div>
 

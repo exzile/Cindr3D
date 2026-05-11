@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Layers, RefreshCcw, Crosshair, Loader2, Download,
   ToggleLeft, ToggleRight, AlertCircle, Home,
 } from 'lucide-react';
 import { usePrinterStore, type LevelBedOpts } from '../../../store/printerStore';
-import { computeStats, computeMeshRmsDiff, exportHeightMapCSV, parseM557, parseProbeOffset, type HeightMapStats } from '../heightMap/utils';
+import { computeStats, computeMeshRmsDiff, exportHeightMapCSV, type HeightMapStats } from '../heightMap/utils';
+import { useProbeGridConfig } from '../heightMap/hooks/useProbeGridConfig';
 import {
   CAMERA_POSITIONS,
   Scene3D,
@@ -21,7 +22,7 @@ import { ProbeConfirmModal } from './bedCompensation/modals/ProbeConfirmModal';
 import { ProbeResultsModal } from './bedCompensation/modals/ProbeResultsModal';
 import { LevelBedModal } from './bedCompensation/modals/LevelBedModal';
 
-/* ─── main panel ────────────────────────────────────── */
+/* ─── main panel ───────────────────────────────── */
 
 export default function BedCompensationPanel() {
   const heightMap        = usePrinterStore((s) => s.heightMap);
@@ -44,19 +45,29 @@ export default function BedCompensationPanel() {
   const [showLevelModal, setShowLevelModal] = useState(false);
   const [showProbeResultModal, setShowProbeResultModal] = useState(false);
   const [probeResult, setProbeResult] = useState<{ stats: HeightMapStats | null; passes: number } | null>(null);
-  const [probeXMin, setProbeXMin]       = useState(() => loadProbeGridPrefs().probeXMin);
-  const [probeXMax, setProbeXMax]       = useState(() => loadProbeGridPrefs().probeXMax);
-  const [probeYMin, setProbeYMin]       = useState(() => loadProbeGridPrefs().probeYMin);
-  const [probeYMax, setProbeYMax]       = useState(() => loadProbeGridPrefs().probeYMax);
-  const [probePoints, setProbePoints]   = useState(() => loadProbeGridPrefs().probePoints);
-  const [probeFromConfig, setProbeFromConfig] = useState(false);
-  const [configM557Line, setConfigM557Line] = useState<string | null>(null);
-  const [probeXMinLimit, setProbeXMinLimit] = useState(0);
-  const [probeYMinLimit, setProbeYMinLimit] = useState(0);
   const [probeGridUnlocked, setProbeGridUnlocked] = useState(() => loadProbeGridPrefs().probeGridUnlocked);
-  const m557LoadedRef = useRef(false);
-  const probeGridUnlockedRef = useRef(probeGridUnlocked);
-  const configGridRef = useRef<{ xMin: number; xMax: number; yMin: number; yMax: number; numPoints: number } | null>(null);
+
+  /* ── Probe-grid config (M557/G31 from config.g + axes fallback) ── */
+  const {
+    probeXMin, probeXMax, probeYMin, probeYMax, probePoints,
+    setProbeXMin, setProbeXMax, setProbeYMin, setProbeYMax, setProbePoints,
+    probeFromConfig, configM557Line, configGridRef, g31Offset,
+  } = useProbeGridConfig({
+    service, connected, axes,
+    initial: {
+      probeXMin:   loadProbeGridPrefs().probeXMin,
+      probeXMax:   loadProbeGridPrefs().probeXMax,
+      probeYMin:   loadProbeGridPrefs().probeYMin,
+      probeYMax:   loadProbeGridPrefs().probeYMax,
+      probePoints: loadProbeGridPrefs().probePoints,
+    },
+    unlocked: probeGridUnlocked,
+  });
+
+  // G31 sets a minimum allowed travel for the probe tip; surface it so the
+  // ProbeGridSection's number inputs can clamp to it.
+  const probeXMinLimit = Math.max(0, g31Offset?.x ?? 0);
+  const probeYMinLimit = Math.max(0, g31Offset?.y ?? 0);
 
   const isEnabled = !!compensationType && compensationType !== 'none';
   const activeMap = heightMap ?? DEMO_HEIGHT_MAP;
@@ -95,73 +106,8 @@ export default function BedCompensationPanel() {
   })();
 
   useEffect(() => {
-    probeGridUnlockedRef.current = probeGridUnlocked;
-  }, [probeGridUnlocked]);
-
-  useEffect(() => {
     saveProbeGridPrefs({ probeXMin, probeXMax, probeYMin, probeYMax, probePoints, probeGridUnlocked });
   }, [probeXMin, probeXMax, probeYMin, probeYMax, probePoints, probeGridUnlocked]);
-
-  useEffect(() => {
-    if (!connected || !service) {
-      m557LoadedRef.current = false;
-      setProbeFromConfig(false);
-      setConfigM557Line(null);
-      return;
-    }
-    if (m557LoadedRef.current) return;
-    void (async () => {
-      try {
-        const blob = await service.downloadFile('0:/sys/config.g');
-        const text = await blob.text();
-        let g31 = parseProbeOffset(text);
-        if (!g31) {
-          try {
-            const overrideBlob = await service.downloadFile('0:/sys/config-override.g');
-            g31 = parseProbeOffset(await overrideBlob.text());
-          } catch { /* config-override.g is optional */ }
-        }
-        if (g31) {
-          const xLim = Math.max(0, g31.xOffset);
-          const yLim = Math.max(0, g31.yOffset);
-          setProbeXMinLimit(xLim);
-          setProbeYMinLimit(yLim);
-          if (!probeGridUnlockedRef.current) {
-            setProbeXMin((v) => Math.max(v, xLim));
-            setProbeYMin((v) => Math.max(v, yLim));
-          }
-        }
-        const parsed = parseM557(text);
-        if (!parsed) return;
-        m557LoadedRef.current = true;
-        configGridRef.current = { xMin: parsed.xMin, xMax: parsed.xMax, yMin: parsed.yMin, yMax: parsed.yMax, numPoints: parsed.numPoints };
-        setProbeFromConfig(true);
-        setConfigM557Line(parsed.rawLine);
-        if (!probeGridUnlockedRef.current) {
-          setProbeXMin(parsed.xMin);
-          setProbeXMax(parsed.xMax);
-          setProbeYMin(parsed.yMin);
-          setProbeYMax(parsed.yMax);
-          setProbePoints(parsed.numPoints);
-        }
-      } catch {
-        // config.g is optional for dashboard use.
-      }
-    })();
-  }, [connected, service]);
-
-  useEffect(() => {
-    if (m557LoadedRef.current || probeGridUnlockedRef.current || !axes || axes.length < 2) return;
-    const xAxis = axes.find((a) => a.letter === 'X') ?? axes[0];
-    const yAxis = axes.find((a) => a.letter === 'Y') ?? axes[1];
-    const xMax = xAxis?.max ?? 0;
-    const yMax = yAxis?.max ?? 0;
-    if (xMax <= 10 || yMax <= 10) return;
-    setProbeXMin(xAxis.min ?? 0);
-    setProbeXMax(xMax);
-    setProbeYMin(yAxis.min ?? 0);
-    setProbeYMax(yMax);
-  }, [axes]);
 
   // Auto-load the default heightmap when a printer first connects so the panel
   // renders with real data instead of the demo placeholder.

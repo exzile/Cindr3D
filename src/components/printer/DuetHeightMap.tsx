@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import './DuetHeightMap.css';
 import {
   Map, GitCompareArrows, X,
@@ -12,7 +12,6 @@ import {
 } from './heightMap/visualization';
 import {
   computeDiffMap, computeStats,
-  parseM557, parseProbeOffset,
 } from './heightMap/utils';
 import {
   DEMO_HEIGHT_MAP, HM_PREFS_KEY, type HeightMapPrefs, loadHeightMapPrefs,
@@ -22,6 +21,7 @@ import { HeightMapSidebar } from './heightMap/sidebar/HeightMapSidebar';
 import { HeightMapTopbar } from './heightMap/HeightMapTopbar';
 import { HeightMapModalsHost } from './heightMap/HeightMapModalsHost';
 import { useHeightMapRunners } from './heightMap/hooks/useHeightMapRunners';
+import { useProbeGridConfig } from './heightMap/hooks/useProbeGridConfig';
 
 // Re-export for the printer-panel chrome that imports this from DuetHeightMap.
 export { LevelBedResultsModal } from './heightMap/modals/LevelBedResultsModal';
@@ -55,8 +55,6 @@ export default function DuetHeightMap() {
   const [bedTiltDerived,    setBedTiltDerived]    = useState(false);
   const [bedTiltNoG30,      setBedTiltNoG30]      = useState(false);
   const [creatingTiltFile,  setCreatingTiltFile]  = useState(false);
-  const [m557Copied, setM557Copied] = useState(false);
-  const m557CopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Smart Calibration
   const [showSmartCalModal,       setShowSmartCalModal]       = useState(false);
   // Save As modal
@@ -79,36 +77,32 @@ export default function DuetHeightMap() {
   const [diverging, setDiverging]   = useState(() => loadHeightMapPrefs().diverging);
   const [mirrorX,   setMirrorX]     = useState(() => loadHeightMapPrefs().mirrorX);
 
-  // Probe grid configuration — mirrors Duet M557 parameters
-  const [probeXMin, setProbeXMin]       = useState(() => loadHeightMapPrefs().probeXMin);
-  const [probeXMax, setProbeXMax]       = useState(() => loadHeightMapPrefs().probeXMax);
-  const [probeYMin, setProbeYMin]       = useState(() => loadHeightMapPrefs().probeYMin);
-  const [probeYMax, setProbeYMax]       = useState(() => loadHeightMapPrefs().probeYMax);
-  const [probePoints, setProbePoints]   = useState(() => loadHeightMapPrefs().probePoints);
-
   // Probe point display
   const [showProbePoints, setShowProbePoints] = useState(() => loadHeightMapPrefs().showProbePoints);
   const [probePointScale, setProbePointScale] = useState(() => loadHeightMapPrefs().probePointScale);
 
-  // Track whether M557 was loaded from config.g (drives the locked-UI state).
-  const m557LoadedRef = useRef(false);
-  const [probeFromConfig, setProbeFromConfig] = useState(false);
-  // Raw M557 line from config.g — shown in the UI so users can see exactly what was loaded.
-  const [configM557Line, setConfigM557Line] = useState<string | null>(null);
   // Whether the user has explicitly unlocked the probe grid to override config.g values.
   // Persisted in localStorage so unlock + custom values survive page refreshes.
   const [probeGridUnlocked, setProbeGridUnlocked] = useState(
     () => loadHeightMapPrefs().probeGridUnlocked,
   );
-  // Ref so the async M557 effect can read the current unlock state without
-  // capturing a stale closure (effect deps are only [connected, service]).
-  const probeGridUnlockedRef = useRef(probeGridUnlocked);
-  useEffect(() => { probeGridUnlockedRef.current = probeGridUnlocked; }, [probeGridUnlocked]);
-  useEffect(() => () => {
-    if (m557CopyTimerRef.current) clearTimeout(m557CopyTimerRef.current);
-  }, []);
-  const [g31Offset, setG31Offset] = useState<{ x: number; y: number } | null>(null);
-  const configGridRef = useRef<{ xMin: number; xMax: number; yMin: number; yMax: number; numPoints: number } | null>(null);
+
+  /* ── Probe-grid config (M557/G31 from config.g + axes fallback) ── */
+  const {
+    probeXMin, probeXMax, probeYMin, probeYMax, probePoints,
+    setProbeXMin, setProbeXMax, setProbeYMin, setProbeYMax, setProbePoints,
+    probeFromConfig, configM557Line, configGridRef, g31Offset,
+  } = useProbeGridConfig({
+    service, connected, axes,
+    initial: {
+      probeXMin:   loadHeightMapPrefs().probeXMin,
+      probeXMax:   loadHeightMapPrefs().probeXMax,
+      probeYMin:   loadHeightMapPrefs().probeYMin,
+      probeYMax:   loadHeightMapPrefs().probeYMax,
+      probePoints: loadHeightMapPrefs().probePoints,
+    },
+    unlocked: probeGridUnlocked,
+  });
 
   const safeBounds = useMemo(() => {
     if (!g31Offset) return null;
@@ -127,80 +121,6 @@ export default function DuetHeightMap() {
   }, [g31Offset, axes]);
 
   const probeGridLocked = probeFromConfig && !probeGridUnlocked;
-
-  /* ── Load M557 probe grid from config.g on connect ── */
-  useEffect(() => {
-    if (!connected || !service) {
-      // Allow re-read on next connect; preserve unlock/value state across disconnects.
-      m557LoadedRef.current = false;
-      setProbeFromConfig(false);
-      setConfigM557Line(null);
-      return;
-    }
-    // Only run once per connection session.
-    if (m557LoadedRef.current) return;
-    void (async () => {
-      try {
-        const blob = await service.downloadFile('0:/sys/config.g');
-        const text = await blob.text();
-        // G31 may be in config-override.g (written by M500 auto-tune) rather than config.g.
-        // Try config.g first, then fall back to config-override.g.
-        let g31 = parseProbeOffset(text);
-        if (!g31) {
-          try {
-            const overrideBlob = await service.downloadFile('0:/sys/config-override.g');
-            g31 = parseProbeOffset(await overrideBlob.text());
-          } catch { /* config-override.g is optional */ }
-        }
-        if (g31) setG31Offset({ x: g31.xOffset, y: g31.yOffset });
-        const parsed = parseM557(text);
-        if (parsed) {
-          m557LoadedRef.current = true;
-          configGridRef.current = { xMin: parsed.xMin, xMax: parsed.xMax, yMin: parsed.yMin, yMax: parsed.yMax, numPoints: parsed.numPoints };
-          setProbeFromConfig(true);
-          setConfigM557Line(parsed.rawLine);
-          // Only overwrite the probe grid values if the user has NOT manually
-          // unlocked and edited them — this preserves their override on re-connect.
-          if (!probeGridUnlockedRef.current) {
-            setProbeXMin(parsed.xMin);
-            setProbeXMax(parsed.xMax);
-            setProbeYMin(parsed.yMin);
-            setProbeYMax(parsed.yMax);
-            setProbePoints(parsed.numPoints);
-          }
-        }
-      } catch {
-        // config.g not accessible — fall through to axes fallback below
-      }
-    })();
-  }, [connected, service]);
-
-  // Sync probe ranges from real axis limits when no M557 was found in config.g.
-  // We skip values that are zero or negative — those indicate the object model
-  // hasn't populated yet and would lock out the correct values when they arrive.
-  const lastAxesMaxRef = useRef<{ xMax: number; yMax: number } | null>(null);
-  useEffect(() => {
-    // Skip if config.g M557 already populated the grid — it has intentional margins.
-    if (m557LoadedRef.current) return;
-    // Skip if the user has unlocked and customized the grid — preserve their values.
-    if (probeGridUnlockedRef.current) return;
-    if (!axes || axes.length < 2) return;
-    const xAxis = axes.find((a) => a.letter === 'X') ?? axes[0];
-    const yAxis = axes.find((a) => a.letter === 'Y') ?? axes[1];
-    if (!xAxis || !yAxis) return;
-    const xMax = xAxis.max ?? 0;
-    const yMax = yAxis.max ?? 0;
-    // Only sync when the firmware reports plausible values (> 10 mm).
-    if (xMax <= 10 || yMax <= 10) return;
-    const last = lastAxesMaxRef.current;
-    if (!last || last.xMax !== xMax || last.yMax !== yMax) {
-      lastAxesMaxRef.current = { xMax, yMax };
-      setProbeXMin(xAxis.min ?? 0);
-      setProbeXMax(xMax);
-      setProbeYMin(yAxis.min ?? 0);
-      setProbeYMax(yMax);
-    }
-  }, [axes]);
 
   /* ── Persist sidebar prefs to localStorage ── */
   useEffect(() => {
@@ -612,9 +532,6 @@ export default function DuetHeightMap() {
           setProbePoints={setProbePoints}
           safeBounds={safeBounds}
           m557Command={m557Command}
-          m557Copied={m557Copied}
-          setM557Copied={setM557Copied}
-          m557CopyTimerRef={m557CopyTimerRef}
           probeMaxCount={probeMaxCount}
           probeTol={probeTol}
           mirrorX={mirrorX}
