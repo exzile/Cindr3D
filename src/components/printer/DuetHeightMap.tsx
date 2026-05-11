@@ -10,9 +10,7 @@ import {
   Heatmap2D, Scene3D, getBedQuality,
   CAMERA_POSITIONS, type CameraPreset, type ConfiguredProbeGrid, type BedBounds,
 } from './heightMap/visualization';
-import {
-  computeDiffMap, computeStats,
-} from './heightMap/utils';
+import { computeStats } from './heightMap/utils';
 import {
   DEMO_HEIGHT_MAP, HM_PREFS_KEY, type HeightMapPrefs, loadHeightMapPrefs,
 } from './heightMap/prefs';
@@ -22,6 +20,7 @@ import { HeightMapTopbar } from './heightMap/HeightMapTopbar';
 import { HeightMapModalsHost } from './heightMap/HeightMapModalsHost';
 import { useHeightMapRunners } from './heightMap/hooks/useHeightMapRunners';
 import { useProbeGridConfig } from './heightMap/hooks/useProbeGridConfig';
+import { useCompareMode } from './heightMap/hooks/useCompareMode';
 
 // Re-export for the printer-panel chrome that imports this from DuetHeightMap.
 export { LevelBedResultsModal } from './heightMap/modals/LevelBedResultsModal';
@@ -63,10 +62,6 @@ export default function DuetHeightMap() {
   const [csvFiles, setCsvFiles]             = useState<string[]>([]);
   const [selectedCsv, setSelectedCsv]      = useState(() => loadHeightMapPrefs().selectedCsv);
   const [loadingCsvList, setLoadingCsvList] = useState(false);
-  const [compareMode, setCompareMode]       = useState(false);
-  const [compareCsv, setCompareCsv]         = useState('');
-  const [compareMap, setCompareMap]         = useState<typeof heightMap | null>(null);
-  const [loadingCompare, setLoadingCompare] = useState(false);
 
   // Sidebar open/collapsed
   const [sidebarOpen, setSidebarOpen] = useState(() => loadHeightMapPrefs().sidebarOpen);
@@ -76,6 +71,13 @@ export default function DuetHeightMap() {
   const [cameraPos, setCameraPos]   = useState<[number, number, number]>(CAMERA_POSITIONS.iso);
   const [diverging, setDiverging]   = useState(() => loadHeightMapPrefs().diverging);
   const [mirrorX,   setMirrorX]     = useState(() => loadHeightMapPrefs().mirrorX);
+
+  /* ── Compare mode (diff a CSV against the active map) ── */
+  const {
+    compareMode, compareCsv, loadingCompare, diffMap,
+    loadCompare: handleLoadCompare,
+    exitCompare,
+  } = useCompareMode({ service, heightMap, setDiverging });
 
   // Probe point display
   const [showProbePoints, setShowProbePoints] = useState(() => loadHeightMapPrefs().showProbePoints);
@@ -159,10 +161,6 @@ export default function DuetHeightMap() {
   /* ── Derived ── */
   const isCompensationEnabled = !!compensationType && compensationType !== 'none';
   const isDemo   = !heightMap;
-  const diffMap  = useMemo(
-    () => (compareMode && heightMap && compareMap ? computeDiffMap(heightMap, compareMap) : null),
-    [compareMap, compareMode, heightMap],
-  );
   const displayMap   = diffMap ?? heightMap ?? DEMO_HEIGHT_MAP;
   const stats        = useMemo(() => computeStats(displayMap), [displayMap]);
   const quality      = getBedQuality(stats.rms);
@@ -316,28 +314,6 @@ export default function DuetHeightMap() {
       }
     })();
   }, [refreshCsvList, sendGCode]);
-
-  const handleLoadCompare = useCallback(async (path: string) => {
-    if (!service || !path) return;
-    setCompareCsv(path);
-    setLoadingCompare(true);
-    setDiverging(true);
-    try {
-      setCompareMap(await service.getHeightMap(path));
-      setCompareMode(true);
-    } catch {
-      setCompareMap(null);
-      setCompareMode(false);
-      setDiverging(false);
-    } finally { setLoadingCompare(false); }
-  }, [service]);
-
-  const exitCompare = useCallback(() => {
-    setCompareMode(false);
-    setCompareMap(null);
-    setCompareCsv('');
-    setDiverging(false);
-  }, []);
 
   /* ── Render ── */
   return (
