@@ -28,7 +28,7 @@
 
 ## Feedback rules (apply by default)
 
-- [feedback_code_quality.md](feedback_code_quality.md) — subcomponents over monoliths; the 2026-04 shim+subdir pattern
+- [feedback_code_quality.md](feedback_code_quality.md) — split by responsibility, not line count; shim+subdir pattern; shared-abstraction registry
 - [feedback_agents.md](feedback_agents.md) — ONE agent at a time; current hot files; TSC-OK gate
 - [feedback_dialog_style.md](feedback_dialog_style.md) — Extrude panel canonical; tool-panel + tp-* classes from common/ToolPanel.css
 
