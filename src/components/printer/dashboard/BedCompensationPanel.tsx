@@ -3,19 +3,18 @@ import {
   Layers, RefreshCcw, Crosshair, Loader2, Download,
   ToggleLeft, ToggleRight, AlertCircle, Home,
 } from 'lucide-react';
-import { usePrinterStore, type LevelBedOpts } from '../../../store/printerStore';
-import { computeStats, computeMeshRmsDiff, exportHeightMapCSV, type HeightMapStats } from '../heightMap/utils';
+import { usePrinterStore } from '../../../store/printerStore';
+import { computeStats, exportHeightMapCSV } from '../heightMap/utils';
 import { useProbeGridConfig } from '../heightMap/hooks/useProbeGridConfig';
+import { useHeightMapRunners } from '../heightMap/hooks/useHeightMapRunners';
 import {
   CAMERA_POSITIONS,
   Scene3D,
   type BedBounds,
   type ConfiguredProbeGrid,
 } from '../heightMap/visualization';
-import type { DuetHeightMap } from '../../../types/duet';
 import { DEMO_HEIGHT_MAP } from './bedCompensation/demo';
 import { loadProbeGridPrefs, saveProbeGridPrefs } from './bedCompensation/prefs';
-import type { ProbeOpts } from './bedCompensation/types';
 import { MiniHeatmap } from './bedCompensation/MiniHeatmap';
 import { ScaleLegend } from './bedCompensation/ScaleLegend';
 import { ProbeConfirmModal } from './bedCompensation/modals/ProbeConfirmModal';
@@ -37,14 +36,10 @@ export default function BedCompensationPanel() {
   const axes             = usePrinterStore((s) => s.model?.move?.axes);
 
   const [loading,      setLoading]      = useState(false);
-  const [probing,      setProbing]      = useState(false);
-  const [leveling,     setLeveling]     = useState(false);
   const [error,        setError]        = useState<string | null>(null);
   const [viewMode,     setViewMode]     = useState<'2d' | '3d'>('2d');
   const [showProbeModal, setShowProbeModal] = useState(false);
   const [showLevelModal, setShowLevelModal] = useState(false);
-  const [showProbeResultModal, setShowProbeResultModal] = useState(false);
-  const [probeResult, setProbeResult] = useState<{ stats: HeightMapStats | null; passes: number } | null>(null);
   const [probeGridUnlocked, setProbeGridUnlocked] = useState(() => loadProbeGridPrefs().probeGridUnlocked);
 
   /* ── Probe-grid config (M557/G31 from config.g + axes fallback) ── */
@@ -79,6 +74,23 @@ export default function BedCompensationPanel() {
   const spacingY = probePoints > 1 ? ((probeYMax - probeYMin) / (probePoints - 1)).toFixed(1) : '-';
   const gridLabel = `${probePoints}x${probePoints}`;
   const spacingLabel = `${spacingX}x${spacingY} mm`;
+
+  /* ── Long-running runners (probe + level) ── */
+  // Dashboard variant doesn't expose Smart Cal, but the hook is the same
+  // shape — we just don't render the smart-cal modal. Sharing the hook means
+  // we inherit the mount/re-entry guards and M558 snapshot-restore.
+  const {
+    probing, probeResult,
+    showProbeResultModal, setShowProbeResultModal,
+    runProbe,
+    leveling,
+    runLevel,
+  } = useHeightMapRunners({
+    service, sendGCode, probeGrid, levelBed,
+    m557Command, probeXMin, probeXMax, probeYMin, probeYMax,
+    boardType, setLoadError: setError,
+  });
+
   const configuredGrid = useMemo<ConfiguredProbeGrid>(
     () => ({ xMin: probeXMin, xMax: probeXMax, yMin: probeYMin, yMax: probeYMax, numPoints: probePoints }),
     [probeXMin, probeXMax, probeYMin, probeYMax, probePoints],
@@ -123,60 +135,6 @@ export default function BedCompensationPanel() {
     finally { setLoading(false); }
   }, [loadHeightMap]);
 
-  const runProbe = useCallback(async (opts: ProbeOpts) => {
-    setShowProbeModal(false);
-    setProbing(true);
-    setError(null);
-    const isRRF = !boardType || boardType === 'duet';
-    const shouldRestoreProbeSamples = isRRF && opts.probesPerPoint > 1;
-    // Capture the user's M558 baseline so we restore it (not a hardcoded A1).
-    const liveProbe = service?.getModel().sensors?.probes?.[0];
-    const prevProbeA = liveProbe?.maxProbeCount ?? 1;
-    const prevProbeS = liveProbe?.tolerance ?? 0.01;
-    let passCount = 0;
-    try {
-      await sendGCode(m557Command);
-      if (opts.homeFirst) await sendGCode('G28');
-      if (shouldRestoreProbeSamples) await sendGCode(`M558 A${opts.probesPerPoint}`);
-      let prevMap: DuetHeightMap | null = null;
-      const maxIter = opts.mode === 'fixed' ? opts.passes : opts.maxPasses;
-      for (let i = 0; i < maxIter; i++) {
-        await probeGrid();
-        passCount++;
-        const curr = usePrinterStore.getState().heightMap;
-        if (opts.mode === 'converge' && prevMap && curr) {
-          if (computeMeshRmsDiff(prevMap, curr) <= opts.targetDiff) break;
-        }
-        if (curr) prevMap = curr;
-      }
-      const finalMap = usePrinterStore.getState().heightMap;
-      setProbeResult({ stats: finalMap ? computeStats(finalMap) : null, passes: passCount });
-      setShowProbeResultModal(true);
-    } catch {
-      setError('Probing failed');
-    } finally {
-      // Restore M558 even when the probe sequence threw; do it once, here.
-      if (shouldRestoreProbeSamples) {
-        try { await sendGCode(`M558 A${prevProbeA} S${prevProbeS}`); } catch { /* best-effort cleanup */ }
-      }
-      setProbing(false);
-    }
-  }, [boardType, m557Command, probeGrid, sendGCode, service]);
-
-  const handleLevelBed = useCallback(async (opts: LevelBedOpts) => {
-    setShowLevelModal(false);
-    setLeveling(true);
-    setError(null);
-    try {
-      await levelBed(opts);
-      // Level results are shown by DuetPrinterPanel via levelBedPendingResult — no toast needed.
-    } catch {
-      setError('Level bed failed');
-    } finally {
-      setLeveling(false);
-    }
-  }, [levelBed]);
-
   const handleToggle = useCallback(() => {
     void sendGCode(isEnabled ? 'G29 S2' : 'G29 S1');
   }, [sendGCode, isEnabled]);
@@ -186,7 +144,7 @@ export default function BedCompensationPanel() {
 
       {showProbeModal && (
         <ProbeConfirmModal
-          onConfirm={(opts) => void runProbe(opts)}
+          onConfirm={(opts) => { setShowProbeModal(false); void runProbe(opts); }}
           onCancel={() => setShowProbeModal(false)}
           m557Command={m557Command}
           boardType={boardType}
@@ -232,7 +190,7 @@ export default function BedCompensationPanel() {
       )}
       {showLevelModal && (
         <LevelBedModal
-          onConfirm={(opts) => void handleLevelBed(opts)}
+          onConfirm={(opts) => { setShowLevelModal(false); void runLevel(opts); }}
           onCancel={() => setShowLevelModal(false)}
         />
       )}

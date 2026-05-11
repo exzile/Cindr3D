@@ -138,7 +138,7 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
         }
       }
 
-      if (shouldRestoreProbeSamples) await sendGCode(`M558 A${opts.probesPerPoint} S${opts.probeTolerance}`);
+      if (shouldRestoreProbeSamples) await sendGCode(`M558 A${opts.probesPerPoint} S${opts.probeTolerance ?? 0.01}`);
 
       let prevMap: HeightMapData | null = null;
       const maxIter = opts.mode === 'fixed' ? opts.passes : opts.maxPasses;

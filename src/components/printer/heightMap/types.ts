@@ -4,10 +4,11 @@ import type { HeightMapStats } from './utils';
 
 export interface ProbeOpts {
   homeFirst: boolean;
-  calibrateZDatum: boolean;
+  /** Run G30 S-1 at bed centre before probing. Dashboard variants omit this. */
+  calibrateZDatum?: boolean;
   probesPerPoint: number;
   /** M558 S value — max acceptable spread between probe dives (mm). Only applied when probesPerPoint > 1. */
-  probeTolerance: number;
+  probeTolerance?: number;
   mode: 'fixed' | 'converge';
   passes: number;
   maxPasses: number;
