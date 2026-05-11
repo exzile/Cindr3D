@@ -37,9 +37,34 @@ export function Heatmap2D({
       .map((i) => ({ i, mm: Math.round(heightMap.yMin + i * heightMap.ySpacing) }));
   }, [heightMap]);
 
-  const handleMouseMove = useCallback((e: React.MouseEvent<SVGRectElement>, xi: number, yi: number, value: number) => {
+  // Single SVG-level handler — computes xi/yi from the mouse position rather
+  // than attaching a separate onMouseMove to each of the numX*numY rects.
+  // The old per-cell handler shape allocated one new closure per cell on
+  // every render, and an 11x11 grid means 121 callback allocations on each
+  // hover-driven re-render. With one handler we get O(1) per render.
+  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     const rect = svgRef.current?.getBoundingClientRect();
     if (!rect) return;
+    // Convert client coords into viewBox-space (the SVG scales — we can't
+    // just subtract rect.left).
+    const vbX = ((e.clientX - rect.left) / rect.width) * svgW;
+    const vbY = ((e.clientY - rect.top)  / rect.height) * svgH;
+    if (vbX < padL || vbX > padL + gridW || vbY < padT || vbY > padT + gridH) {
+      setHoverInfo(null);
+      return;
+    }
+    const cellXi = Math.floor((vbX - padL) / cellW);
+    const cellYi = Math.floor((vbY - padT) / cellH);
+    if (cellXi < 0 || cellXi >= heightMap.numX || cellYi < 0 || cellYi >= heightMap.numY) {
+      setHoverInfo(null);
+      return;
+    }
+    // Reverse the visual transforms applied to the cells:
+    //   xi   = mirrorX ? numX-1-cellXi : cellXi
+    //   yi   = numY-1-cellYi  (Y is rendered top-down → bottom-up)
+    const xi = mirrorX ? (heightMap.numX - 1 - cellXi) : cellXi;
+    const yi = heightMap.numY - 1 - cellYi;
+    const value = heightMap.points[yi]?.[xi] ?? 0;
     setHoverInfo({
       x: heightMap.xMin + xi * heightMap.xSpacing,
       y: heightMap.yMin + yi * heightMap.ySpacing,
@@ -47,7 +72,9 @@ export function Heatmap2D({
       screenX: e.clientX - rect.left,
       screenY: e.clientY - rect.top,
     });
-  }, [heightMap]);
+  }, [heightMap, mirrorX, padL, padT, gridW, gridH, cellW, cellH, svgW, svgH]);
+
+  const handleMouseLeave = useCallback(() => setHoverInfo(null), []);
 
   return (
     <div className="heatmap-2d-container" style={{ position: 'relative' }}>
@@ -55,7 +82,9 @@ export function Heatmap2D({
         ref={svgRef}
         viewBox={`0 0 ${svgW} ${svgH}`}
         preserveAspectRatio="xMidYMid meet"
-        style={{ width: '100%', height: '100%', overflow: 'visible' }}
+        style={{ width: '100%', height: '100%', overflow: 'visible', cursor: 'crosshair' }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
       >
         {Array.from({ length: heightMap.numY }, (_, yi) =>
           Array.from({ length: heightMap.numX }, (_, xi) => {
@@ -71,9 +100,7 @@ export function Heatmap2D({
                 width={cellW}
                 height={cellH}
                 fill={fill}
-                style={{ stroke: 'var(--border-light)', strokeWidth: 0.5, cursor: 'crosshair' }}
-                onMouseMove={(e) => handleMouseMove(e, xi, yi, value)}
-                onMouseLeave={() => setHoverInfo(null)}
+                style={{ stroke: 'var(--border-light)', strokeWidth: 0.5, pointerEvents: 'none' }}
               />
             );
           }),
