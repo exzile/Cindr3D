@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Replace, X, Check, Loader2, Play, Pause, ArrowRight,
 } from 'lucide-react';
@@ -26,6 +26,10 @@ export function FilamentChange() {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>('idle');
   const [error, setError] = useState<string | null>(null);
+  const autoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (autoCloseTimerRef.current) clearTimeout(autoCloseTimerRef.current);
+  }, []);
   const [parkX, setParkX] = useState(DEFAULTS.parkX);
   const [parkY, setParkY] = useState(DEFAULTS.parkY);
   const [parkZ, setParkZ] = useState(DEFAULTS.parkZ);
@@ -128,7 +132,8 @@ export function FilamentChange() {
       await resumePrint();
       setStep('done');
       // Auto-close after a short delay so the user sees the success state.
-      window.setTimeout(() => { setOpen(false); reset(); }, 1200);
+      if (autoCloseTimerRef.current) clearTimeout(autoCloseTimerRef.current);
+      autoCloseTimerRef.current = setTimeout(() => { setOpen(false); reset(); }, 1200);
     } catch (err) {
       setStep('error');
       setError(err instanceof Error ? err.message : String(err));

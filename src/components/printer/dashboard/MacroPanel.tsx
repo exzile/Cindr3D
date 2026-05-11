@@ -48,6 +48,10 @@ export default function MacroPanel() {
   const [confirmDel, setConfirmDel]         = useState<string | null>(null);
   const [running,   setRunning]             = useState<string | null>(null);
   const runTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Clear the run-flash timeout on unmount so we don't setState on an unmounted component.
+  useEffect(() => () => {
+    if (runTimerRef.current) clearTimeout(runTimerRef.current);
+  }, []);
 
   const rootFiles = useMemo(() => macros.filter((m) => m.type === 'f'), [macros]);
   const dirs      = useMemo(() => macros.filter((m) => m.type === 'd'), [macros]);

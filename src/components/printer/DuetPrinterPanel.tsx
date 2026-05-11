@@ -62,6 +62,12 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
   const [globalSearch, setGlobalSearch] = useState('');
   const [showSearchResults, setShowSearchResults] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // 200ms blur-then-hide lets a click on a popover result fire before the
+  // results unmount. Stash the timer so we can clear it on unmount.
+  const searchBlurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (searchBlurTimerRef.current) clearTimeout(searchBlurTimerRef.current);
+  }, []);
 
   const searchResults = useMemo(() => {
     const q = globalSearch.trim().toLowerCase();
@@ -252,7 +258,8 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
             setShowSearchResults(false);
           }}
           onSearchBlur={() => {
-            setTimeout(() => setShowSearchResults(false), 200);
+            if (searchBlurTimerRef.current) clearTimeout(searchBlurTimerRef.current);
+            searchBlurTimerRef.current = setTimeout(() => setShowSearchResults(false), 200);
           }}
           onSearchChange={(value) => {
             setGlobalSearch(value);
