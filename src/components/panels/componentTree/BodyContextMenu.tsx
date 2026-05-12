@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Move, FolderOpen, Box, Layers, Settings, Link2, CircleDot,
   Download, Copy, Scissors, Trash2, MoreHorizontal, Eye,
@@ -7,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useComponentStore } from '../../../store/componentStore';
 import { useCADStore } from '../../../store/cadStore';
+import { ContextMenuShell } from '../../ui/ContextMenuShell';
 
 export interface BodyCtxMenu {
   bodyId: string;
@@ -139,46 +139,41 @@ export function BodyContextMenu({
     { separator: true, label: 'Find in Window', icon: <Search size={13} />, onClick: cs('Find in Window') },
   ];
 
-  return createPortal(
-    <>
-      <div className="sketch-ctx-backdrop" onClick={onClose} />
-      {/* top/left are dynamic (cursor position) — must stay inline */}
-      <div className="sketch-ctx-menu" style={{ top: menu.y, left: menu.x }}>
-        {items.map((item, i) => {
-          if (item.separator) {
-            return <div key={i} className="sketch-ctx-sep" />;
-          }
+  return (
+    <ContextMenuShell x={menu.x} y={menu.y} onClose={onClose}>
+      {items.map((item, i) => {
+        if (item.separator) {
+          return <div key={i} className="sketch-ctx-sep" />;
+        }
 
-          const isActive = item.type === 'opacity' && opacityOpen;
-          const isToggledOn = item.type === 'selectable' && !isSelectable;
+        const isActive = item.type === 'opacity' && opacityOpen;
+        const isToggledOn = item.type === 'selectable' && !isSelectable;
 
-          return (
-            <div key={i}>
-              <button
-                className={[
-                  'sketch-ctx-item',
-                  item.danger ? 'danger' : '',
-                  isActive ? 'active' : '',
-                  isToggledOn ? 'toggled-on' : '',
-                ].filter(Boolean).join(' ')}
-                onClick={item.onClick}
-              >
-                <span className="sketch-ctx-icon">{item.icon}</span>
-                <span className="sketch-ctx-label">{item.label}</span>
-                {item.shortcut && <span className="sketch-ctx-shortcut">{item.shortcut}</span>}
-              </button>
+        return (
+          <div key={i}>
+            <button
+              className={[
+                'sketch-ctx-item',
+                item.danger ? 'danger' : '',
+                isActive ? 'active' : '',
+                isToggledOn ? 'toggled-on' : '',
+              ].filter(Boolean).join(' ')}
+              onClick={item.onClick}
+            >
+              <span className="sketch-ctx-icon">{item.icon}</span>
+              <span className="sketch-ctx-label">{item.label}</span>
+              {item.shortcut && <span className="sketch-ctx-shortcut">{item.shortcut}</span>}
+            </button>
 
-              {item.type === 'opacity' && opacityOpen && (
-                <OpacityRow
-                  opacity={currentOpacity}
-                  onChange={(v) => setBodyOpacity(menu.bodyId, v)}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </>,
-    document.body,
+            {item.type === 'opacity' && opacityOpen && (
+              <OpacityRow
+                opacity={currentOpacity}
+                onChange={(v) => setBodyOpacity(menu.bodyId, v)}
+              />
+            )}
+          </div>
+        );
+      })}
+    </ContextMenuShell>
   );
 }

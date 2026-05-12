@@ -1,10 +1,10 @@
-import { createPortal } from 'react-dom';
 import {
   FolderOpen, Layers, Copy, Scissors, Settings, Trash2, MoreHorizontal,
   Eye, EyeOff, Search, PenTool, ScanEye,
 } from 'lucide-react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
+import { ContextMenuShell } from '../../ui/ContextMenuShell';
 
 export interface SketchCtxMenu {
   sketchId: string;
@@ -102,28 +102,23 @@ export function SketchContextMenu({ menu, onClose }: { menu: SketchCtxMenu; onCl
     { label: 'Find in Timeline', icon: <Search size={13} />, onClick: cs('Find in Timeline') },
   ];
 
-  return createPortal(
-    <>
-      <div className="sketch-ctx-backdrop" onClick={onClose} />
-      {/* top/left are dynamic (cursor position) — must stay inline */}
-      <div className="sketch-ctx-menu" style={{ top: menu.y, left: menu.x }}>
-        {items.map((item, i) =>
-          item.separator ? (
-            <div key={i} className="sketch-ctx-sep" />
-          ) : (
-            <button
-              key={i}
-              className={`sketch-ctx-item${item.danger ? ' danger' : ''}`}
-              onClick={item.onClick}
-            >
-              <span className="sketch-ctx-icon">{item.icon}</span>
-              <span className="sketch-ctx-label">{item.label}</span>
-              {item.shortcut && <span className="sketch-ctx-shortcut">{item.shortcut}</span>}
-            </button>
-          )
-        )}
-      </div>
-    </>,
-    document.body
+  return (
+    <ContextMenuShell x={menu.x} y={menu.y} onClose={onClose}>
+      {items.map((item, i) =>
+        item.separator ? (
+          <div key={i} className="sketch-ctx-sep" />
+        ) : (
+          <button
+            key={i}
+            className={`sketch-ctx-item${item.danger ? ' danger' : ''}`}
+            onClick={item.onClick}
+          >
+            <span className="sketch-ctx-icon">{item.icon}</span>
+            <span className="sketch-ctx-label">{item.label}</span>
+            {item.shortcut && <span className="sketch-ctx-shortcut">{item.shortcut}</span>}
+          </button>
+        )
+      )}
+    </ContextMenuShell>
   );
 }
