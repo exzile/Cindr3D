@@ -314,6 +314,7 @@ export default function DuetFileManager() {
         checkedFiles={checkedFiles}
         currentDirectory={currentDirectory}
         dragOver={dragOver}
+        service={service}
         handleDelete={handleDelete}
         handleDownload={handleDownload}
         handleDrop={handleDrop}

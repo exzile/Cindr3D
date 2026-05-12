@@ -1,6 +1,7 @@
 import React from 'react';
 import { compareVersions, findDwcAsset, panelDueBinAssets, pickFirmwareAssets, sortPanelDueAssets, type FirmwareMatch, type GitHubAsset, type GitHubRelease, type PanelDueConfig } from './helpers';
 import { BehaviourSection, CameraSection, ConnectionSection, GeneralSection, NotificationsSection } from './basicSections';
+import DuetObjectModelBrowser from '../DuetObjectModelBrowser';
 import { AboutSection, BackupSection, MachineSection } from './infoSections';
 import { FilamentsSection } from './filamentsSection';
 import { FirmwareSection, type AutoUpdateState, type PanelDueFlashed, type PanelDueUpdateState } from './firmwareSections';
@@ -17,6 +18,7 @@ export type DuetSettingsTabKey =
   | 'notifications'
   | 'machine'
   | 'filaments'
+  | 'printer-model'
   | 'firmware'
   | 'paneldue'
   | 'backup'
@@ -249,6 +251,13 @@ export function SettingsTabContent(props: {
       return <MachineSection axes={axes} board={board} boardType={boardType} connected={connected} prefs={prefs} patchPrefs={patchPrefs} />;
     case 'filaments':
       return <FilamentsSection prefs={prefs} patchPrefs={patchPrefs} />;
+    case 'printer-model':
+      return (
+        <>
+          <div className="duet-settings__page-title">Printer Model</div>
+          <DuetObjectModelBrowser />
+        </>
+      );
     case 'firmware':
       return renderFirmware();
     case 'paneldue':

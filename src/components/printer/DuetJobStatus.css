@@ -301,3 +301,466 @@
   width: 52px;
   text-align: right;
 }
+
+/* Theme refresh */
+.duet-job__root {
+  --dj-bg: var(--bg-primary, #f5f7fb);
+  --dj-panel: var(--bg-panel, #ffffff);
+  --dj-soft: var(--bg-secondary, #f8fafc);
+  --dj-elevated: var(--bg-elevated, #f1f5f9);
+  --dj-hover: var(--bg-hover, #eaf2ff);
+  --dj-border: var(--border, #d7dee8);
+  --dj-border-soft: var(--border-light, #e6ebf2);
+  --dj-text: var(--text-primary, #162033);
+  --dj-muted: var(--text-secondary, #5b6678);
+  --dj-subtle: var(--text-muted, #7a8494);
+  --dj-accent: var(--accent, #2f80ed);
+  --dj-success: var(--success, #22a06b);
+  --dj-warning: var(--warning, #b7791f);
+  --dj-danger: var(--error, #d64545);
+  --dj-purple: #8b5cf6;
+
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px 16px 18px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--dj-accent) 5%, transparent), transparent 260px),
+    var(--dj-bg);
+  color: var(--dj-text);
+}
+
+.duet-job__root--idle {
+  align-content: start;
+}
+
+.duet-job__header,
+.duet-job__queue,
+.duet-job__root .job-section {
+  border: 1px solid var(--dj-border);
+  background: var(--dj-panel);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+}
+
+.duet-job__header {
+  gap: 12px;
+  margin: 0 !important;
+  padding: 12px 14px !important;
+  border-radius: 10px !important;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--dj-accent) 8%, transparent), transparent 58%),
+    var(--dj-panel) !important;
+}
+
+.duet-job__header-filename {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dj-text) !important;
+  font-size: 15px;
+}
+
+.duet-job__header-filename-icon {
+  color: var(--dj-purple);
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.duet-job__header-status {
+  display: flex;
+  margin-top: 6px;
+}
+
+.duet-job__header-status-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 9px;
+  border: 1px solid var(--dj-border);
+  border-radius: 999px;
+  background: var(--dj-soft);
+  color: var(--dj-muted) !important;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.duet-job__header-status-label--printing {
+  border-color: color-mix(in srgb, var(--dj-success) 38%, transparent);
+  background: color-mix(in srgb, var(--dj-success) 14%, var(--dj-panel));
+  color: var(--dj-success) !important;
+}
+
+.duet-job__header-status-label--paused {
+  border-color: color-mix(in srgb, var(--dj-warning) 38%, transparent);
+  background: color-mix(in srgb, var(--dj-warning) 14%, var(--dj-panel));
+  color: var(--dj-warning) !important;
+}
+
+.duet-job__header-status-label--simulating {
+  border-color: color-mix(in srgb, var(--dj-accent) 38%, transparent);
+  background: color-mix(in srgb, var(--dj-accent) 14%, var(--dj-panel));
+  color: var(--dj-accent) !important;
+}
+
+.duet-job__header-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.duet-job__queue {
+  margin: 0 !important;
+  border-radius: 10px !important;
+  overflow: hidden;
+}
+
+.duet-job__queue-header {
+  min-height: 42px;
+  padding: 10px 12px !important;
+  background: var(--dj-elevated) !important;
+  color: var(--dj-text) !important;
+  border-bottom-color: var(--dj-border) !important;
+}
+
+.duet-job__queue-header input[type="checkbox"] {
+  accent-color: var(--dj-accent);
+}
+
+.duet-job__queue-body {
+  background: var(--dj-panel);
+}
+
+.duet-job__queue-quick-add {
+  grid-template-columns: minmax(180px, 1.4fr) 74px minmax(130px, 0.9fr) minmax(96px, 0.7fr) minmax(86px, 0.6fr) !important;
+  gap: 8px !important;
+  padding: 12px !important;
+  background: color-mix(in srgb, var(--dj-soft) 78%, var(--dj-panel));
+}
+
+.duet-job__queue-quick-add input,
+.duet-job__queue-quick-add select,
+.duet-job__queue-row select,
+.duet-job__queue button,
+.duet-job__queue-footer button {
+  min-height: 30px;
+  border: 1px solid var(--dj-border);
+  border-radius: 7px;
+  background: var(--dj-panel);
+  color: var(--dj-text);
+  font: inherit;
+}
+
+.duet-job__queue-quick-add input,
+.duet-job__queue-quick-add select,
+.duet-job__queue-row select {
+  padding: 5px 8px;
+  min-width: 0;
+}
+
+.duet-job__queue-quick-add button,
+.duet-job__queue-row button,
+.duet-job__queue-footer button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 9px;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s, transform 0.1s;
+}
+
+.duet-job__queue-quick-add button:hover:not(:disabled),
+.duet-job__queue-row button:hover:not(:disabled),
+.duet-job__queue-footer button:hover:not(:disabled) {
+  background: var(--dj-hover);
+  border-color: color-mix(in srgb, var(--dj-accent) 48%, var(--dj-border));
+  color: var(--dj-text);
+  transform: translateY(-1px);
+}
+
+.duet-job__queue button:disabled,
+.duet-job__queue-footer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.duet-job__queue-row {
+  grid-template-columns: 28px minmax(150px, 1fr) minmax(120px, 170px) minmax(86px, 96px) minmax(132px, auto) !important;
+  min-height: 56px;
+  padding: 10px 12px !important;
+  border-bottom-color: var(--dj-border-soft) !important;
+  transition: background 0.14s;
+}
+
+.duet-job__queue-row:hover {
+  background: color-mix(in srgb, var(--dj-accent) 5%, transparent);
+}
+
+.duet-job__queue-row button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.duet-job__queue-footer {
+  border-top-color: var(--dj-border) !important;
+  background: var(--dj-soft);
+}
+
+.duet-job__root .job-section {
+  position: relative;
+  margin: 0;
+  padding: 13px 14px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.duet-job__root .job-section::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: color-mix(in srgb, var(--dj-accent) 70%, var(--dj-purple));
+  opacity: 0.24;
+}
+
+.duet-job__root .job-section-title {
+  gap: 7px;
+  margin-bottom: 12px;
+  color: var(--dj-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.duet-job__root .job-section-title svg {
+  color: var(--dj-accent);
+}
+
+.duet-job__root .job-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  gap: 8px;
+}
+
+.duet-job__detail-row {
+  align-items: flex-start;
+  gap: 6px;
+  min-height: 42px;
+  padding: 8px 9px;
+  border: 1px solid var(--dj-border-soft);
+  border-radius: 8px;
+  background: var(--dj-soft);
+}
+
+.duet-job__detail-label {
+  color: var(--dj-muted);
+}
+
+.duet-job__detail-value {
+  color: var(--dj-text);
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-weight: 700;
+  text-align: right;
+}
+
+.duet-job__progress-bar-wrap {
+  padding: 12px;
+  border: 1px solid var(--dj-border-soft);
+  border-radius: 9px;
+  background: var(--dj-soft);
+}
+
+.duet-job__progress-bar-row {
+  align-items: baseline;
+  color: var(--dj-muted);
+}
+
+.duet-job__progress-bar-pct {
+  color: var(--dj-text);
+  font-size: 22px;
+}
+
+.duet-job__progress-bar-track {
+  height: 12px;
+  border: 1px solid var(--dj-border-soft);
+  border-radius: 999px;
+  background: var(--dj-elevated);
+}
+
+.duet-job__progress-bar-fill {
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--dj-accent), var(--dj-success));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--dj-accent) 24%, transparent);
+}
+
+.duet-job__thumbnail {
+  display: grid;
+  place-items: center;
+}
+
+.duet-job__thumbnail-img {
+  width: 100%;
+  max-width: 260px;
+  border: 1px solid var(--dj-border);
+  border-radius: 8px;
+  background: var(--dj-elevated);
+  object-fit: contain;
+}
+
+.duet-job__thumbnail-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 96px;
+  width: 100%;
+  border: 1px dashed var(--dj-border);
+  border-radius: 8px;
+  background: var(--dj-soft);
+  color: var(--dj-subtle);
+  font-size: 12px;
+}
+
+.duet-job__thumbnail-state--loading {
+  min-height: 128px;
+  flex-direction: row;
+}
+
+.duet-job__babystep-row {
+  gap: 14px;
+  padding: 10px 0;
+}
+
+.duet-job__babystep-btn {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+}
+
+.duet-job__babystep-display {
+  min-width: 126px;
+  padding: 8px 14px;
+  border: 1px solid var(--dj-border-soft);
+  border-radius: 9px;
+  background: var(--dj-soft);
+}
+
+.duet-job__babystep-label {
+  color: var(--dj-muted);
+}
+
+.duet-job__babystep-value {
+  color: var(--dj-text);
+  font-family: "Cascadia Mono", "Consolas", monospace;
+}
+
+.duet-job__babystep-hint {
+  color: var(--dj-subtle);
+}
+
+.duet-job__slider-row {
+  gap: 12px;
+  min-height: 36px;
+}
+
+.duet-job__slider-label,
+.duet-job__slider-value {
+  color: var(--dj-muted);
+}
+
+.duet-job__slider-input {
+  accent-color: var(--dj-accent);
+}
+
+.duet-job__webcam-wrap,
+.duet-job__obj-row {
+  border-color: var(--dj-border);
+}
+
+.duet-job__svg-chart {
+  border: 1px solid var(--dj-border-soft);
+  border-radius: 8px;
+  background: var(--dj-soft);
+}
+
+.duet-job__no-job {
+  min-height: 180px;
+  margin: 0;
+  border: 1px dashed color-mix(in srgb, var(--dj-accent) 35%, var(--dj-border));
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--dj-accent) 8%, transparent), transparent 65%),
+    var(--dj-panel);
+  color: var(--dj-subtle);
+}
+
+.duet-job__no-job svg {
+  color: var(--dj-accent);
+}
+
+.duet-job__no-job-primary {
+  color: var(--dj-text);
+  font-weight: 800;
+}
+
+.duet-job__no-job-secondary {
+  color: var(--dj-muted);
+  text-align: center;
+}
+
+.duet-job__root .control-btn {
+  border-radius: 7px;
+  background: var(--dj-soft);
+  color: var(--dj-muted);
+}
+
+.duet-job__root .control-btn:hover {
+  background: var(--dj-hover);
+}
+
+@media (max-width: 760px) {
+  .duet-job__root {
+    padding: 10px;
+  }
+
+  .duet-job__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .duet-job__header-actions {
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+
+  .duet-job__queue-quick-add,
+  .duet-job__queue-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .duet-job__queue-row {
+    gap: 7px !important;
+  }
+
+  .duet-job__queue-row > span:first-child {
+    text-align: left !important;
+  }
+
+  .duet-job__queue-row > div:last-child {
+    justify-content: flex-start !important;
+    flex-wrap: wrap;
+  }
+
+  .duet-job__root .job-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .duet-job__detail-row {
+    min-height: 0;
+  }
+
+  .duet-job__babystep-row {
+    flex-wrap: wrap;
+  }
+}

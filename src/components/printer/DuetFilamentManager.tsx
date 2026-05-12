@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 import {
   RefreshCw, Plus, Loader2, FlaskConical, Check, X,
 } from 'lucide-react';
@@ -84,17 +85,11 @@ export default function DuetFilamentManager() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected]);
 
-  const handleRefresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      await refreshFilaments();
-    } catch (err) {
-      setError(errorMessage(err, 'Unknown error'));
-    } finally {
-      setLoading(false);
-    }
-  }, [refreshFilaments]);
+  const run = useAsyncAction(setLoading, setError, 'Unknown error');
+  const handleRefresh = useCallback(
+    () => run(async () => { await refreshFilaments(); }),
+    [run, refreshFilaments],
+  );
 
   // Create a new filament directory + default macros
   const handleCreate = useCallback(async () => {

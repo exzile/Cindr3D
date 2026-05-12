@@ -9,7 +9,6 @@ import {
   Grid3x3,
   Grid2X2,
   History,
-  Braces,
   Settings,
   TrendingUp,
   Trophy,
@@ -38,7 +37,6 @@ import DuetFileManager from '../DuetFileManager';
 import { PrintQueue } from '../jobStatus/PrintQueue';
 import DuetFilamentManager from '../DuetFilamentManager';
 import DuetMacros from '../DuetMacros';
-import DuetObjectModelBrowser from '../DuetObjectModelBrowser';
 import DuetSettings from '../DuetSettings';
 import DuetConfigEditor from '../DuetConfigEditor';
 import DuetAnalytics from '../DuetAnalytics';
@@ -85,8 +83,6 @@ export const TABS = [
   { key: 'macros' as const, label: 'Macros', Icon: FileCode },
   // Unified: DuetHeightMap / KlipperBedMesh / MarlinBedLevel by boardType
   { key: 'heightmap' as const, label: 'Bed Map', Icon: Grid3x3 },
-  // Duet-only: RRF/DSF object model browser
-  { key: 'model' as const, label: 'Model', Icon: Braces },
   { key: 'config' as const, label: 'Config', Icon: FileCode },
   { key: 'network' as const, label: 'Network', Icon: Router },
   // Duet SBC only: DSF plugin manager
@@ -118,7 +114,6 @@ export const KLIPPER_ONLY_TABS = new Set<TabKey>([]);
  */
 export const DUET_ONLY_TABS = new Set<TabKey>([
   'filaments', // reads 0:/filaments via Duet file API — no Moonraker equivalent
-  'model',     // RRF/DSF object model — Klipper has no equivalent endpoint
   'plugins',   // DSF SBC plugin manager — not present on Klipper
 ]);
 
@@ -143,7 +138,6 @@ export const TAB_COMPONENTS: Record<TabKey, React.ComponentType> = {
   filaments: DuetFilamentManager,
   macros: DuetMacros,
   heightmap: BedMap,             // unified — delegates to Klipper / Marlin / Duet internally
-  model: DuetObjectModelBrowser,
   config: DuetConfigEditor,
   network: DuetNetworkAndFirmware,
   plugins: DuetPlugins,

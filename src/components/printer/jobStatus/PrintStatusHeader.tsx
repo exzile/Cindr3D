@@ -33,27 +33,28 @@ export function PrintStatusHeader() {
       : isSimulating
         ? '#44aaff'
         : '#666680';
+  const statusClass = isPrinting
+    ? 'duet-job__header-status-label duet-job__header-status-label--printing'
+    : isPaused
+      ? 'duet-job__header-status-label duet-job__header-status-label--paused'
+      : isSimulating
+        ? 'duet-job__header-status-label duet-job__header-status-label--simulating'
+        : 'duet-job__header-status-label';
 
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '10px 14px', background: '#1a1a2e', borderRadius: 8, marginBottom: 12,
-    }}>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{
-          fontSize: 14, fontWeight: 600, color: '#e0e0ff',
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }} title={fileName}>
-          <FileText size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
+    <div className="duet-job__header">
+      <div className="duet-job__header-info">
+        <div className="duet-job__header-filename" title={fileName}>
+          <FileText className="duet-job__header-filename-icon" size={14} />
           {shortName}
         </div>
-        <div style={{ fontSize: 12, marginTop: 2 }}>
-          <span style={{ color: statusColor, fontWeight: 500 }}>{statusLabel}</span>
+        <div className="duet-job__header-status">
+          <span className={statusClass} style={{ color: statusColor }}>{statusLabel}</span>
         </div>
       </div>
 
       {isActive && (
-        <div style={{ display: 'flex', gap: 6, marginLeft: 12, flexShrink: 0 }}>
+        <div className="duet-job__header-actions">
           {isPrinting && (
             <button className="control-btn" title="Pause print" onClick={() => pausePrint()}>
               <Pause size={16} />

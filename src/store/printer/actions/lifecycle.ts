@@ -83,7 +83,7 @@ export function createLifecycleActions(
           // Create a persistent alert for error / warning lines.
           const isError = entryType === 'error';
           const isWarning = entryType === 'warning';
-          if (isError || isWarning) {
+          if ((isError || isWarning) && !get().suppressPrinterAlerts) {
             const now = Date.now();
             const alert: PrinterAlert = {
               id: generateId(),

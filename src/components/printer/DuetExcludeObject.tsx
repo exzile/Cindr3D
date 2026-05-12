@@ -11,6 +11,7 @@
 import { useState } from 'react';
 import { Layers, WifiOff, AlertCircle, XCircle, ArrowUpCircle } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 import './KlipperTabs.css';
 
 /** First RRF version to ship M486 object-cancellation support. */
@@ -73,18 +74,13 @@ export default function DuetExcludeObject() {
   const cancelledCount = objects.filter((o) => o.cancelled).length;
   const remainingCount = objects.length - cancelledCount;
 
+  const run = useAsyncAction(setBusy, setError, 'Failed to send M486');
   const handleCancel = async (index: number) => {
     if (!supported) return;
-    setBusy(true);
-    setError(null);
-    try {
+    await run(async () => {
       await cancelObject(index);
       setConfirmIndex(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to send M486');
-    } finally {
-      setBusy(false);
-    }
+    });
   };
 
   return (

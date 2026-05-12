@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode, type RefObject } from 'react';
+import { useMemo, useState, type ReactNode, type RefObject } from 'react';
+import { useEscapeKey } from '../../../hooks/useEscapeKey';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronRight, X } from 'lucide-react';
 import { highlightText } from './config';
@@ -145,14 +146,7 @@ export function ConsoleHistory({
     });
   };
 
-  useEffect(() => {
-    if (!structuredViewer) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setStructuredViewer(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [structuredViewer]);
+  useEscapeKey(() => setStructuredViewer(null), !!structuredViewer);
 
   return (
     <>

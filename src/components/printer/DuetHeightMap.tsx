@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { createPortal } from 'react-dom';
 import './DuetHeightMap.css';
 import { errorMessage } from '../../utils/errorHandling';
@@ -6,7 +7,7 @@ import {
   RefreshCw, Crosshair, Loader2, BarChart3, Grid3x3, Download, Save,
   FolderOpen, GitCompareArrows, X, Map,
   Home, ScanLine, TriangleAlert, RotateCcw, Ruler, ChevronRight,
-  Copy, CheckCircle, FilePlus, Lock, LockOpen, Wand2, Repeat2, Minus, Plus,
+  Copy, CheckCircle, FilePlus, Lock, LockOpen, Wand2, Repeat2, Minus, Plus, Activity,
 } from 'lucide-react';
 import type { DuetService } from '../../services/DuetService';
 import { addToast } from '../../store/toastStore';
@@ -89,11 +90,7 @@ function BedTiltSetupModal({
     } catch { /* ignore */ }
   }, [editedContent]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useEscapeKey(onClose);
 
   const hasActiveG30 = editedContent.split('\n').some(
     (line) => /^G30\b/i.test(line.replace(/;.*$/, '').trim()),
@@ -211,11 +208,7 @@ export function LevelBedResultsModal({
 }) {
   const { results, autoConverge, stopReason, targetDeviation } = summary;
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useEscapeKey(onClose);
 
   const allEmpty = results.length > 0 && results.every(
     (r) => r.deviationBefore == null && r.deviationAfter == null,
@@ -459,11 +452,7 @@ function ProbeResultsModal({
   onRunAgain: () => void;
   onEnableCompensation?: () => void;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useEscapeKey(onClose);
 
   const isGood = stats != null && stats.rms <= 0.1;
   const isWarn = stats != null && stats.rms > 0.1 && stats.rms <= 0.2;
@@ -608,6 +597,10 @@ interface SmartCalOpts {
   targetDeviation: number;
   probesPerPoint: number;
   probeTolerance: number;
+  /** Total number of G32 bed-level passes allowed across the whole Smart Cal
+   *  session. Each re-level consumes one pass. When exhausted no further
+   *  leveling is attempted even if RMS is still bad. */
+  levelPasses: number;
 }
 
 type SmartCalStepKind = 'level' | 'probe' | 'datum' | 'decision' | 'done' | 'info';
@@ -627,25 +620,52 @@ interface SmartCalResult {
   stopReason: 'converged' | 'maxIterations' | 'failed';
 }
 
+/* ── SmartCal shared constants ──────────────────────────────────────────────── */
+
+const SMARTCAL_STEP_META: Record<SmartCalStepKind, { icon: React.ReactNode; color: string }> = {
+  level:    { icon: <Home    size={13} />, color: '#22c55e' },
+  probe:    { icon: <Crosshair size={13} />, color: '#3b82f6' },
+  datum:    { icon: <ScanLine  size={13} />, color: '#a855f7' },
+  decision: { icon: <TriangleAlert size={13} />, color: '#f59e0b' },
+  done:     { icon: <CheckCircle  size={13} />, color: '#34d399' },
+  info:     { icon: <Ruler        size={13} />, color: '#94a3b8' },
+};
+
+const SMARTCAL_QUALITY_COLOR: Record<SmartCalQuality, string> = {
+  good: '#22c55e',
+  warn: '#f59e0b',
+  bad:  '#ef4444',
+  info: '#94a3b8',
+};
+
 /* ── SmartCalModal ──────────────────────────────────────────────────────────── */
 
 function SmartCalModal({
-  onConfirm, onCancel,
+  onConfirm, onCancel, isRunning, phase, liveSteps, result, onClear,
 }: {
-  onConfirm: (opts: SmartCalOpts) => void;
-  onCancel:  () => void;
+  onConfirm:  (opts: SmartCalOpts) => void;
+  onCancel:   () => void;
+  isRunning:  boolean;
+  phase:      'homing' | 'leveling' | 'probing' | 'datum' | null;
+  liveSteps:  SmartCalStep[];
+  result:     SmartCalResult | null;
+  onClear:    () => void;
 }) {
+  const logScrollRef = useRef<HTMLDivElement>(null);
   const [homeFirst,       setHomeFirst]       = useState(true);
   const [maxIterations,   setMaxIterations]   = useState(3);
   const [targetMean,      setTargetMean]      = useState(0.15);
   const [targetDeviation, setTargetDeviation] = useState(0.05);
   const [probesPerPoint,  setProbesPerPoint]  = useState(1);
   const [probeTolerance,  setProbeTolerance]  = useState(0.05);
+  const [levelPasses,     setLevelPasses]     = useState(1);
   const [activePreset,    setActivePreset]    = useState<SmartCalPreset>('balanced');
 
   const buildOpts = useCallback((): SmartCalOpts => ({
     homeFirst, maxIterations, targetMean, targetDeviation, probesPerPoint, probeTolerance,
-  }), [homeFirst, maxIterations, targetMean, targetDeviation, probesPerPoint, probeTolerance]);
+    levelPasses,
+  }), [homeFirst, maxIterations, targetMean, targetDeviation, probesPerPoint, probeTolerance,
+       levelPasses]);
 
   const setPreset = (preset: Exclude<SmartCalPreset, 'custom'>) => {
     setActivePreset(preset);
@@ -655,6 +675,7 @@ function SmartCalModal({
       setTargetDeviation(0.08);
       setProbesPerPoint(1);
       setProbeTolerance(0.05);
+      setLevelPasses(1);
       return;
     }
     if (preset === 'precise') {
@@ -663,13 +684,16 @@ function SmartCalModal({
       setTargetDeviation(0.03);
       setProbesPerPoint(3);
       setProbeTolerance(0.03);
+      setLevelPasses(3);
       return;
     }
+    // balanced
     setMaxIterations(3);
     setTargetMean(0.15);
     setTargetDeviation(0.05);
     setProbesPerPoint(1);
     setProbeTolerance(0.05);
+    setLevelPasses(1);
   };
 
   const setClampedNumber = (
@@ -699,14 +723,43 @@ function SmartCalModal({
     setter(Math.min(max, Math.max(min, next)));
   };
 
+  const phaseLabels: Record<NonNullable<typeof phase>, string> = {
+    homing:   'Homing axes…',
+    leveling: 'Leveling bed…',
+    probing:  'Probing mesh…',
+    datum:    'Calibrating Z datum…',
+  };
+
+  const stopLabels: Record<NonNullable<SmartCalResult['stopReason']>, string> = {
+    converged:     'Converged — within targets',
+    maxIterations: 'Max iterations reached',
+    failed:        'Sequence failed',
+  };
+
+  const stopColors: Record<NonNullable<SmartCalResult['stopReason']>, string> = {
+    converged:     '#22c55e',
+    maxIterations: '#f59e0b',
+    failed:        '#ef4444',
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel();
-      if (e.key === 'Enter' && !isEditableKeyTarget(e.target)) { e.preventDefault(); onConfirm(buildOpts()); }
+      if (e.key === 'Enter' && !isEditableKeyTarget(e.target) && !isRunning) {
+        e.preventDefault();
+        onConfirm(buildOpts());
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [buildOpts, onCancel, onConfirm]);
+  }, [buildOpts, isRunning, onCancel, onConfirm]);
+
+  // Auto-scroll the log section to the bottom whenever a new step arrives.
+  useEffect(() => {
+    const el = logScrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [liveSteps, result]);
 
   return createPortal(
     <div className="bc-modal-overlay" onClick={onCancel}>
@@ -775,388 +828,270 @@ function SmartCalModal({
             </button>
           </div>
 
-          <div className="hm-smartcal-grid">
-            <div className="hm-smartcal-card">
-              <div className="hm-smartcal-card-head">
-                <Repeat2 size={14} />
-                <span>Loop Limit</span>
+          <div className="hm-smartcal-grid hm-smartcal-grid--matrix">
+            <section className="hm-smartcal-row hm-smartcal-row--level">
+              <div className="hm-smartcal-row-head">
+                <Home size={14} />
+                <div>
+                  <span>Bed Leveling</span>
+                  <small>Controls how the G32 tilt-correction step repeats.</small>
+                </div>
               </div>
-              <div className="hm-smartcal-iter-row">
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <button
-                    type="button"
-                    key={n}
-                    className={`hm-smartcal-iter-btn${maxIterations === n ? ' is-on' : ''}`}
-                    onClick={() => { setActivePreset('custom'); setMaxIterations(n); }}
-                    title={`${n} maximum ${n === 1 ? 'pass' : 'passes'}`}
-                  >{n}</button>
-                ))}
-              </div>
-              <span className="hm-smartcal-card-note">Stops early when targets are met.</span>
-            </div>
 
-            <div className="hm-smartcal-card">
-              <div className="hm-smartcal-card-head">
-                <Ruler size={14} />
-                <span>Convergence</span>
+              <div className="hm-smartcal-card">
+                <div className="hm-smartcal-card-head">
+                  <Repeat2 size={14} />
+                  <span>Loop Limit</span>
+                </div>
+                <div className="hm-smartcal-iter-row">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      type="button"
+                      key={n}
+                      className={`hm-smartcal-iter-btn${levelPasses === n ? ' is-on' : ''}`}
+                      onClick={() => { setActivePreset('custom'); setLevelPasses(n); }}
+                      title={`${n} ${n === 1 ? 'leveling pass' : 'leveling passes'} per Smart Cal loop`}
+                    >{n}</button>
+                  ))}
+                </div>
+                <span className="hm-smartcal-card-note">
+                  {levelPasses > 1
+                    ? `Budget of ${levelPasses} G32 passes across the entire session — consumed one per re-level.`
+                    : 'One G32 bed-level pass per session. Re-leveling is skipped if budget is exhausted.'}
+                </span>
               </div>
-              <label className="hm-smartcal-field">
-                <span>
-                  Z datum threshold
-                  <small>Adjust datum when mean reaches this value.</small>
-                </span>
-                <span className="hm-smartcal-input hm-smartcal-picker">
-                  <button
-                    type="button"
-                    onClick={() => stepNumber(targetMean, -0.01, 0.02, 0.5, setTargetMean)}
-                    disabled={targetMean <= 0.02}
-                    title="Decrease Z datum threshold"
-                  >
-                    <Minus size={12} />
-                  </button>
-                  <input
-                    type="number" min={0.02} max={0.5} step={0.01}
-                    value={targetMean}
-                    onChange={(e) => setClampedNumber(e.target.value, 0.02, 0.5, setTargetMean)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => stepNumber(targetMean, 0.01, 0.02, 0.5, setTargetMean)}
-                    disabled={targetMean >= 0.5}
-                    title="Increase Z datum threshold"
-                  >
-                    <Plus size={12} />
-                  </button>
-                  <em>mm</em>
-                </span>
-              </label>
-              <label className="hm-smartcal-field">
-                <span>
-                  Re-level threshold
-                  <small>Run another level pass when RMS reaches this value.</small>
-                </span>
-                <span className="hm-smartcal-input hm-smartcal-picker">
-                  <button
-                    type="button"
-                    onClick={() => stepNumber(targetDeviation, -0.01, 0.01, 0.3, setTargetDeviation)}
-                    disabled={targetDeviation <= 0.01}
-                    title="Decrease re-level threshold"
-                  >
-                    <Minus size={12} />
-                  </button>
-                  <input
-                    type="number" min={0.01} max={0.3} step={0.01}
-                    value={targetDeviation}
-                    onChange={(e) => setClampedNumber(e.target.value, 0.01, 0.3, setTargetDeviation)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => stepNumber(targetDeviation, 0.01, 0.01, 0.3, setTargetDeviation)}
-                    disabled={targetDeviation >= 0.3}
-                    title="Increase re-level threshold"
-                  >
-                    <Plus size={12} />
-                  </button>
-                  <em>mm</em>
-                </span>
-              </label>
-            </div>
 
-            <div className="hm-smartcal-card">
-              <div className="hm-smartcal-card-head">
-                <ScanLine size={14} />
-                <span>Probe Quality</span>
+              <div className="hm-smartcal-card">
+                <div className="hm-smartcal-card-head">
+                  <CheckCircle size={14} />
+                  <span>Quality</span>
+                </div>
+                <div className="hm-smartcal-quality-stack">
+                  <span className="hm-smartcal-quality-pill">G32 tilt correction</span>
+                  <span className="hm-smartcal-quality-pill">{levelPasses} {levelPasses === 1 ? 'pass' : 'passes'} total</span>
+                </div>
+                <span className="hm-smartcal-card-note">Uses the printer&apos;s bed_tilt.g / G32 leveling behavior.</span>
               </div>
-              <label className="hm-smartcal-field">
-                <span>
-                  Dives per point
-                  <small>Higher values take longer and reduce noisy samples.</small>
-                </span>
-                <span className="hm-smartcal-input hm-smartcal-picker">
-                  <button
-                    type="button"
-                    onClick={() => stepNumber(probesPerPoint, -1, 1, 5, setProbesPerPoint, 0, true)}
-                    disabled={probesPerPoint <= 1}
-                    title="Decrease dives per point"
-                  >
-                    <Minus size={12} />
-                  </button>
-                  <input
-                    type="number" min={1} max={5} step={1}
-                    value={probesPerPoint}
-                    onChange={(e) => setClampedNumber(e.target.value, 1, 5, setProbesPerPoint, true)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => stepNumber(probesPerPoint, 1, 1, 5, setProbesPerPoint, 0, true)}
-                    disabled={probesPerPoint >= 5}
-                    title="Increase dives per point"
-                  >
-                    <Plus size={12} />
-                  </button>
-                </span>
-              </label>
-              {probesPerPoint > 1 && (
+            </section>
+
+            <section className="hm-smartcal-row hm-smartcal-row--probe">
+              <div className="hm-smartcal-row-head">
+                <Crosshair size={14} />
+                <div>
+                  <span>Probing</span>
+                  <small>Controls mesh probe retries, thresholds, and sample quality.</small>
+                </div>
+              </div>
+
+              <div className="hm-smartcal-card">
+                <div className="hm-smartcal-card-head">
+                  <Repeat2 size={14} />
+                  <span>Loop Limit</span>
+                </div>
+                <div className="hm-smartcal-iter-row">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      type="button"
+                      key={n}
+                      className={`hm-smartcal-iter-btn${maxIterations === n ? ' is-on' : ''}`}
+                      onClick={() => { setActivePreset('custom'); setMaxIterations(n); }}
+                      title={`${n} maximum ${n === 1 ? 'probe loop' : 'probe loops'}`}
+                    >{n}</button>
+                  ))}
+                </div>
+                <span className="hm-smartcal-card-note">Stops early when mesh targets are met.</span>
+              </div>
+
+              <div className="hm-smartcal-card">
+                <div className="hm-smartcal-card-head">
+                  <Ruler size={14} />
+                  <span>Convergence</span>
+                </div>
                 <label className="hm-smartcal-field">
                   <span>
-                    Dive tolerance
-                    <small>Maximum spread allowed between repeated dives.</small>
+                    Z datum threshold
+                    <small>Adjust datum when |mean| reaches this.</small>
                   </span>
                   <span className="hm-smartcal-input hm-smartcal-picker">
-                    <button
-                      type="button"
-                      onClick={() => stepNumber(probeTolerance, -0.01, 0.01, 0.1, setProbeTolerance)}
-                      disabled={probeTolerance <= 0.01}
-                      title="Decrease dive tolerance"
-                    >
-                      <Minus size={12} />
-                    </button>
-                    <input
-                      type="number" min={0.01} max={0.1} step={0.01}
-                      value={probeTolerance}
-                      onChange={(e) => setClampedNumber(e.target.value, 0.01, 0.1, setProbeTolerance)}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => stepNumber(probeTolerance, 0.01, 0.01, 0.1, setProbeTolerance)}
-                      disabled={probeTolerance >= 0.1}
-                      title="Increase dive tolerance"
-                    >
-                      <Plus size={12} />
-                    </button>
+                    <button type="button" onClick={() => stepNumber(targetMean, -0.01, 0.02, 0.5, setTargetMean)} disabled={targetMean <= 0.02} title="Decrease Z datum threshold"><Minus size={12} /></button>
+                    <input type="number" min={0.02} max={0.5} step={0.01} value={targetMean} onChange={(e) => setClampedNumber(e.target.value, 0.02, 0.5, setTargetMean)} />
+                    <button type="button" onClick={() => stepNumber(targetMean, 0.01, 0.02, 0.5, setTargetMean)} disabled={targetMean >= 0.5} title="Increase Z datum threshold"><Plus size={12} /></button>
                     <em>mm</em>
                   </span>
                 </label>
-              )}
-            </div>
-          </div>
-          <p className="hm-smartcal-intro">
-            Runs a closed-loop sequence: <strong>Level → Probe → Diagnose → Repeat</strong>.
-            Adjusts the Z datum if mean offset is large, re-levels if RMS is still high.
-          </p>
-
-          {/* Home first */}
-          <div className="hm-probe-opt-row">
-            <label className="hm-probe-opt-label">Home axes first</label>
-            <button
-              className={`hm-pill-toggle${homeFirst ? ' is-on' : ''}`}
-              onClick={() => setHomeFirst((v) => !v)}
-            >{homeFirst ? 'Yes' : 'No'}</button>
-          </div>
-
-          {/* Max iterations */}
-          <div className="hm-probe-opt-row">
-            <label className="hm-probe-opt-label">Max iterations</label>
-            <div className="hm-smartcal-iter-row">
-              {[1,2,3,4,5].map((n) => (
-                <button
-                  key={n}
-                  className={`hm-smartcal-iter-btn${maxIterations === n ? ' is-on' : ''}`}
-                  onClick={() => setMaxIterations(n)}
-                >{n}</button>
-              ))}
-            </div>
-          </div>
-
-          <div className="hm-probe-opt-section-label">Convergence targets</div>
-
-          {/* Target mean */}
-          <div className="hm-probe-opt-row">
-            <label className="hm-probe-opt-label">
-              Z datum threshold
-              <span className="hm-probe-opt-hint">Adjust datum if |mean| ≥ this</span>
-            </label>
-            <div className="hm-grid-input-wrap">
-              <input
-                className="hm-grid-input"
-                type="number" min={0.02} max={0.5} step={0.01}
-                value={targetMean}
-                onChange={(e) => setTargetMean(Number(e.target.value))}
-              />
-              <span className="hm-grid-unit">mm</span>
-            </div>
-          </div>
-
-          {/* Target deviation */}
-          <div className="hm-probe-opt-row">
-            <label className="hm-probe-opt-label">
-              Re-level threshold
-              <span className="hm-probe-opt-hint">Re-level if RMS ≥ this</span>
-            </label>
-            <div className="hm-grid-input-wrap">
-              <input
-                className="hm-grid-input"
-                type="number" min={0.01} max={0.3} step={0.01}
-                value={targetDeviation}
-                onChange={(e) => setTargetDeviation(Number(e.target.value))}
-              />
-              <span className="hm-grid-unit">mm</span>
-            </div>
-          </div>
-
-          <div className="hm-probe-opt-section-label">Probe quality</div>
-
-          {/* Probes per point */}
-          <div className="hm-probe-opt-row">
-            <label className="hm-probe-opt-label">
-              Dives per point
-              <span className="hm-probe-opt-hint">M558 A — probes per grid point</span>
-            </label>
-            <div className="hm-grid-input-wrap">
-              <input
-                className="hm-grid-input"
-                type="number" min={1} max={5} step={1}
-                value={probesPerPoint}
-                onChange={(e) => setProbesPerPoint(Math.max(1, Math.round(Number(e.target.value))))}
-              />
-            </div>
-          </div>
-
-          {probesPerPoint > 1 && (
-            <div className="hm-probe-opt-row">
-              <label className="hm-probe-opt-label">
-                Dive tolerance
-                <span className="hm-probe-opt-hint">M558 S — max spread between dives</span>
-              </label>
-              <div className="hm-grid-input-wrap">
-                <input
-                  className="hm-grid-input"
-                  type="number" min={0.01} max={0.1} step={0.01}
-                  value={probeTolerance}
-                  onChange={(e) => setProbeTolerance(Number(e.target.value))}
-                />
-                <span className="hm-grid-unit">mm</span>
+                <label className="hm-smartcal-field">
+                  <span>
+                    Mesh RMS threshold
+                    <small>Repeat if mesh RMS reaches this.</small>
+                  </span>
+                  <span className="hm-smartcal-input hm-smartcal-picker">
+                    <button type="button" onClick={() => stepNumber(targetDeviation, -0.01, 0.01, 0.3, setTargetDeviation)} disabled={targetDeviation <= 0.01} title="Decrease mesh threshold"><Minus size={12} /></button>
+                    <input type="number" min={0.01} max={0.3} step={0.01} value={targetDeviation} onChange={(e) => setClampedNumber(e.target.value, 0.01, 0.3, setTargetDeviation)} />
+                    <button type="button" onClick={() => stepNumber(targetDeviation, 0.01, 0.01, 0.3, setTargetDeviation)} disabled={targetDeviation >= 0.3} title="Increase mesh threshold"><Plus size={12} /></button>
+                    <em>mm</em>
+                  </span>
+                </label>
               </div>
-            </div>
-          )}
-        </div>
-        <div className="bc-modal-footer">
-          <button className="bc-modal-btn bc-modal-btn--cancel" onClick={onCancel}>Cancel</button>
-          <button className="bc-modal-btn bc-modal-btn--confirm" onClick={() => onConfirm(buildOpts())}>
-            <Wand2 size={13} />
-            Run Smart Cal
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
 
-/* ── SmartCalResultModal ────────────────────────────────────────────────────── */
-
-const SMARTCAL_STEP_META: Record<SmartCalStepKind, { icon: React.ReactNode; color: string }> = {
-  level:    { icon: <Home    size={13} />, color: '#22c55e' },
-  probe:    { icon: <Crosshair size={13} />, color: '#3b82f6' },
-  datum:    { icon: <ScanLine  size={13} />, color: '#a855f7' },
-  decision: { icon: <TriangleAlert size={13} />, color: '#f59e0b' },
-  done:     { icon: <CheckCircle  size={13} />, color: '#34d399' },
-  info:     { icon: <Ruler        size={13} />, color: '#94a3b8' },
-};
-
-const SMARTCAL_QUALITY_COLOR: Record<SmartCalQuality, string> = {
-  good: '#22c55e',
-  warn: '#f59e0b',
-  bad:  '#ef4444',
-  info: '#94a3b8',
-};
-
-function SmartCalResultModal({
-  result, onClose, onRunAgain,
-}: {
-  result:     SmartCalResult;
-  onClose:    () => void;
-  onRunAgain: () => void;
-}) {
-  const stopLabels: Record<SmartCalResult['stopReason'], string> = {
-    converged:     'Converged — within targets',
-    maxIterations: 'Max iterations reached',
-    failed:        'Sequence failed',
-  };
-  const stopColors: Record<SmartCalResult['stopReason'], string> = {
-    converged:     '#22c55e',
-    maxIterations: '#f59e0b',
-    failed:        '#ef4444',
-  };
-
-  return createPortal(
-    <div className="bc-modal-overlay" onClick={onClose}>
-      <div className="bc-modal bc-modal--md" onClick={(e) => e.stopPropagation()}>
-        <div className="bc-modal-header">
-          <span className="bc-modal-title">Smart Cal Results</span>
-          <button className="bc-modal-close" onClick={onClose}><X size={14} /></button>
-        </div>
-        <div className="bc-modal-body">
-
-          {/* Stop reason banner */}
-          <div
-            className="hm-smartcal-stop-banner"
-            style={{ '--scr-color': stopColors[result.stopReason] } as React.CSSProperties}
-          >
-            {result.stopReason === 'converged'
-              ? <CheckCircle size={13} />
-              : result.stopReason === 'failed'
-              ? <TriangleAlert size={13} />
-              : <Loader2 size={13} />}
-            {stopLabels[result.stopReason]}
-          </div>
-
-          {/* Final stats (if available) */}
-          {result.finalStats && (
-            <div className="hm-smartcal-final-stats">
-              <div className="hm-smartcal-stat">
-                <span className="hm-smartcal-stat__label">Final RMS</span>
-                <span
-                  className="hm-smartcal-stat__val"
-                  style={{ color: result.finalStats.rms < 0.1 ? '#22c55e' : result.finalStats.rms < 0.2 ? '#f59e0b' : '#ef4444' }}
-                >{result.finalStats.rms.toFixed(4)} mm</span>
-              </div>
-              <div className="hm-smartcal-stat">
-                <span className="hm-smartcal-stat__label">Final Mean</span>
-                <span
-                  className="hm-smartcal-stat__val"
-                  style={{ color: Math.abs(result.finalStats.mean) < 0.1 ? '#22c55e' : '#f59e0b' }}
-                >{result.finalStats.mean >= 0 ? '+' : ''}{result.finalStats.mean.toFixed(3)} mm</span>
-              </div>
-              <div className="hm-smartcal-stat">
-                <span className="hm-smartcal-stat__label">Range</span>
-                <span className="hm-smartcal-stat__val">
-                  {(result.finalStats.max - result.finalStats.min).toFixed(3)} mm
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Step timeline */}
-          <div className="hm-smartcal-timeline">
-            {result.steps.map((step, i) => {
-              const meta = SMARTCAL_STEP_META[step.kind];
-              return (
-                <div key={i} className="hm-smartcal-step">
-                  <div
-                    className="hm-smartcal-step__icon"
-                    style={{ color: meta.color, background: `color-mix(in srgb, ${meta.color} 12%, transparent)`, borderColor: `color-mix(in srgb, ${meta.color} 28%, transparent)` }}
-                  >
-                    {meta.icon}
-                  </div>
-                  {i < result.steps.length - 1 && <div className="hm-smartcal-step__line" />}
-                  <div className="hm-smartcal-step__body">
-                    <span
-                      className="hm-smartcal-step__label"
-                      style={{ color: SMARTCAL_QUALITY_COLOR[step.quality] }}
-                    >{step.label}</span>
-                    {step.detail && (
-                      <span className="hm-smartcal-step__detail">{step.detail}</span>
-                    )}
-                  </div>
+              <div className="hm-smartcal-card">
+                <div className="hm-smartcal-card-head">
+                  <ScanLine size={14} />
+                  <span>Quality</span>
                 </div>
-              );
-            })}
+                <label className="hm-smartcal-field">
+                  <span>
+                    Dives per point
+                    <small>Higher values reduce noisy samples.</small>
+                  </span>
+                  <span className="hm-smartcal-input hm-smartcal-picker">
+                    <button type="button" onClick={() => stepNumber(probesPerPoint, -1, 1, 5, setProbesPerPoint, 0, true)} disabled={probesPerPoint <= 1} title="Decrease dives per point"><Minus size={12} /></button>
+                    <input type="number" min={1} max={5} step={1} value={probesPerPoint} onChange={(e) => setClampedNumber(e.target.value, 1, 5, setProbesPerPoint, true)} />
+                    <button type="button" onClick={() => stepNumber(probesPerPoint, 1, 1, 5, setProbesPerPoint, 0, true)} disabled={probesPerPoint >= 5} title="Increase dives per point"><Plus size={12} /></button>
+                  </span>
+                </label>
+                {probesPerPoint > 1 && (
+                  <label className="hm-smartcal-field">
+                    <span>
+                      Dive tolerance
+                      <small>Maximum spread between repeated dives.</small>
+                    </span>
+                    <span className="hm-smartcal-input hm-smartcal-picker">
+                      <button type="button" onClick={() => stepNumber(probeTolerance, -0.01, 0.01, 0.1, setProbeTolerance)} disabled={probeTolerance <= 0.01} title="Decrease dive tolerance"><Minus size={12} /></button>
+                      <input type="number" min={0.01} max={0.1} step={0.01} value={probeTolerance} onChange={(e) => setClampedNumber(e.target.value, 0.01, 0.1, setProbeTolerance)} />
+                      <button type="button" onClick={() => stepNumber(probeTolerance, 0.01, 0.01, 0.1, setProbeTolerance)} disabled={probeTolerance >= 0.1} title="Increase dive tolerance"><Plus size={12} /></button>
+                      <em>mm</em>
+                    </span>
+                  </label>
+                )}
+              </div>
+            </section>
           </div>
+
+          {/* ── Activity / log section ── */}
+          {(isRunning || liveSteps.length > 0 || result) && (
+            <>
+              {/* Scrollable log box */}
+              <div className="hm-smartcal-activity" ref={logScrollRef}>
+                {/* Sticky log header */}
+                <div className="hm-smartcal-activity__header">
+                  <Activity size={11} />
+                  Calibration log
+                </div>
+
+                {/* Step timeline */}
+                <div className="hm-smartcal-activity__body">
+                  {liveSteps.map((step, i) => {
+                    const meta = SMARTCAL_STEP_META[step.kind];
+                    const qualColor = SMARTCAL_QUALITY_COLOR[step.quality];
+                    return (
+                      <div
+                        key={i}
+                        className="hm-smartcal-step"
+                        style={{ '--step-color': qualColor } as React.CSSProperties}
+                      >
+                        <div
+                          className="hm-smartcal-step__icon"
+                          style={{ color: meta.color, background: `color-mix(in srgb, ${meta.color} 14%, transparent)`, borderColor: `color-mix(in srgb, ${meta.color} 30%, transparent)` }}
+                        >
+                          {meta.icon}
+                        </div>
+                        <div className="hm-smartcal-step__body">
+                          <span
+                            className="hm-smartcal-step__label"
+                            style={{ color: qualColor }}
+                          >{step.label}</span>
+                          {step.detail && (
+                            <span className="hm-smartcal-step__detail">{step.detail}</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Phase spinner — shown below the latest step while running */}
+                  {isRunning && phase && (
+                    <div className="hm-smartcal-activity__phase">
+                      <Loader2 size={12} className="hm-smartcal-activity__spin" />
+                      <span>{phaseLabels[phase]}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Final result summary — outside the scroll box, always fully visible */}
+              {result && !isRunning && (
+                <div className="hm-smartcal-result">
+                  {result.stopReason !== 'maxIterations' && (
+                    <div
+                      className="hm-smartcal-stop-banner"
+                      style={{ '--scr-color': stopColors[result.stopReason] } as React.CSSProperties}
+                    >
+                      {result.stopReason === 'converged'
+                        ? <CheckCircle size={13} />
+                        : <TriangleAlert size={13} />}
+                      {stopLabels[result.stopReason]}
+                    </div>
+                  )}
+
+                  {result.finalStats && (
+                    <div className="hm-smartcal-final-stats">
+                      <div className="hm-smartcal-stat">
+                        <span className="hm-smartcal-stat__label">Final RMS</span>
+                        <span
+                          className="hm-smartcal-stat__val"
+                          style={{ color: result.finalStats.rms < 0.1 ? '#22c55e' : result.finalStats.rms < 0.2 ? '#f59e0b' : '#ef4444' }}
+                        >{result.finalStats.rms.toFixed(4)} mm</span>
+                      </div>
+                      <div className="hm-smartcal-stat">
+                        <span className="hm-smartcal-stat__label">Final Mean</span>
+                        <span
+                          className="hm-smartcal-stat__val"
+                          style={{ color: Math.abs(result.finalStats.mean) < 0.1 ? '#22c55e' : '#f59e0b' }}
+                        >{result.finalStats.mean >= 0 ? '+' : ''}{result.finalStats.mean.toFixed(3)} mm</span>
+                      </div>
+                      <div className="hm-smartcal-stat">
+                        <span className="hm-smartcal-stat__label">Range</span>
+                        <span className="hm-smartcal-stat__val">
+                          {(result.finalStats.max - result.finalStats.min).toFixed(3)} mm
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    className="hm-smartcal-clear-btn"
+                    onClick={onClear}
+                  >
+                    <X size={12} />
+                    Clear log
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </div>
         <div className="bc-modal-footer">
-          <button className="bc-modal-btn bc-modal-btn--cancel" onClick={onRunAgain}>Run Again</button>
-          <button className="bc-modal-btn bc-modal-btn--confirm" onClick={onClose}>Done</button>
+          <button className="bc-modal-btn bc-modal-btn--cancel" onClick={onCancel}>
+            {isRunning ? 'Hide' : 'Cancel'}
+          </button>
+          <button
+            className="bc-modal-btn bc-modal-btn--confirm"
+            onClick={() => onConfirm(buildOpts())}
+            disabled={isRunning}
+          >
+            {isRunning ? (
+              <>
+                <Loader2 size={13} className="hm-smartcal-activity__spin" />
+                Running…
+              </>
+            ) : (
+              <>
+                <Wand2 size={13} />
+                Run Smart Cal
+              </>
+            )}
+          </button>
         </div>
       </div>
     </div>,
@@ -1722,9 +1657,10 @@ export default function DuetHeightMap() {
   const heightMap         = usePrinterStore((s) => s.heightMap);
   const loadHeightMap     = usePrinterStore((s) => s.loadHeightMap);
   const probeGrid         = usePrinterStore((s) => s.probeGrid);
-  const levelBed          = usePrinterStore((s) => s.levelBed);
-  const levelBedProgress  = usePrinterStore((s) => s.levelBedProgress);
-  const sendGCode         = usePrinterStore((s) => s.sendGCode);
+  const levelBed                   = usePrinterStore((s) => s.levelBed);
+  const levelBedProgress           = usePrinterStore((s) => s.levelBedProgress);
+  const setSuppressPrinterAlerts   = usePrinterStore((s) => s.setSuppressPrinterAlerts);
+  const sendGCode                  = usePrinterStore((s) => s.sendGCode);
   const service           = usePrinterStore((s) => s.service);
   const connected         = usePrinterStore((s) => s.connected);
   const compensationType = usePrinterStore((s) => s.model.move?.compensation?.type);
@@ -1756,11 +1692,13 @@ export default function DuetHeightMap() {
   const [probeResult,       setProbeResult]       = useState<{ stats: HeightMapStats | null; passes: number } | null>(null);
   const [m557Copied, setM557Copied] = useState(false);
   // Smart Calibration
-  const [showSmartCalModal,       setShowSmartCalModal]       = useState(false);
-  const [showSmartCalResultModal, setShowSmartCalResultModal] = useState(false);
-  const [smartCalRunning,         setSmartCalRunning]         = useState(false);
-  const [smartCalPhase,           setSmartCalPhase]           = useState<'homing' | 'leveling' | 'probing' | 'datum' | null>(null);
-  const [smartCalResult,          setSmartCalResult]          = useState<SmartCalResult | null>(null);
+  const [showSmartCalModal,   setShowSmartCalModal]   = useState(false);
+  const [smartCalRunning,     setSmartCalRunning]     = useState(false);
+  const [smartCalPhase,       setSmartCalPhase]       = useState<'homing' | 'leveling' | 'probing' | 'datum' | null>(null);
+  const [smartCalResult,      setSmartCalResult]      = useState<SmartCalResult | null>(null);
+  const [smartCalLiveSteps,   setSmartCalLiveSteps]   = useState<SmartCalStep[]>([]);
+  // Tracks whether the user closed the modal while a run was in progress — auto-reopens on completion.
+  const smartCalClosedDuringRunRef = useRef(false);
 const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeightMapPrefs().viewMode);
   const [csvFiles, setCsvFiles]             = useState<string[]>([]);
   const [selectedCsv, setSelectedCsv]      = useState(() => loadHeightMapPrefs().selectedCsv);
@@ -1804,6 +1742,14 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
   // capturing a stale closure (effect deps are only [connected, service]).
   const probeGridUnlockedRef = useRef(probeGridUnlocked);
   useEffect(() => { probeGridUnlockedRef.current = probeGridUnlocked; }, [probeGridUnlocked]);
+
+  // Auto-reopen the Smart Cal modal when a run finishes if the user had closed it during the run.
+  useEffect(() => {
+    if (!smartCalRunning && smartCalClosedDuringRunRef.current) {
+      smartCalClosedDuringRunRef.current = false;
+      setShowSmartCalModal(true);
+    }
+  }, [smartCalRunning]);
   const [g31Offset, setG31Offset] = useState<{ x: number; y: number } | null>(null);
   const configGridRef = useRef<{ xMin: number; xMax: number; yMin: number; yMax: number; numPoints: number } | null>(null);
 
@@ -2170,51 +2116,97 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
 
   /** Closed-loop calibration: level → probe → diagnose → repeat. */
   const runSmartCal = useCallback(async (opts: SmartCalOpts) => {
-    setShowSmartCalModal(false);
     setSmartCalRunning(true);
     setSmartCalPhase(null);
     setSmartCalResult(null);
+    setSmartCalLiveSteps([]);
+    // Mute firmware warning toasts — probe results will show in the Smart Cal log instead.
+    setSuppressPrinterAlerts(true);
 
     const steps: SmartCalStep[] = [];
+    const pushStep = (step: SmartCalStep) => {
+      steps.push(step);
+      setSmartCalLiveSteps([...steps]);
+    };
+
     let finalStats: HeightMapStats | null = null;
     let stopReason: SmartCalResult['stopReason'] = 'maxIterations';
     let shouldLevel = true;
+    // Tracks total G32 passes consumed this session. Each levelBed call = 1 pass.
+    let levelPassesUsed = 0;
+    // Set to true when a specific terminal message was already pushed, so the
+    // generic "Max iterations reached" footer is skipped.
+    let pushedEndStep = false;
 
     try {
       if (opts.homeFirst) {
         setSmartCalPhase('homing');
         await sendGCode('G28');
-        steps.push({ kind: 'info', label: 'Homed all axes', quality: 'info' });
+        pushStep({ kind: 'info', label: 'Homed all axes', quality: 'info' });
       }
 
       for (let i = 0; i < opts.maxIterations; i++) {
         /* ── Level ── */
         if (shouldLevel) {
-          setSmartCalPhase('leveling');
-          try {
-            await levelBed({ homeFirst: false });
-            steps.push({ kind: 'level', label: `Bed leveled (iteration ${i + 1})`, quality: 'good' });
-          } catch (err) {
-            steps.push({ kind: 'level', label: 'Leveling failed', detail: errorMessage(err, 'Unknown error'), quality: 'bad' });
-            stopReason = 'failed';
-            break;
+          if (levelPassesUsed >= opts.levelPasses) {
+            // Budget exhausted — skip leveling but continue probing/diagnosing
+            pushStep({
+              kind:    'decision',
+              label:   `Leveling budget exhausted (${opts.levelPasses} of ${opts.levelPasses} passes used)`,
+              quality: 'warn',
+            });
+            shouldLevel = false;
+          } else {
+            setSmartCalPhase('leveling');
+            try {
+              const levelSummary = await levelBed({
+                homeFirst:      false,
+                repeat:         1,        // single fixed pass; budget is enforced here
+                autoConverge:   false,
+                probesPerPoint: opts.probesPerPoint,
+                probeTolerance: opts.probeTolerance,
+                suppressResult: true,   // results shown inline in Smart Cal modal
+              });
+              levelPassesUsed++;
+              const lastRun = levelSummary.results[levelSummary.results.length - 1];
+              // deviationBefore = actual measured tilt before this pass.
+              // deviationAfter from firmware is a theoretical projection (always ~0) — not useful to display.
+              const devBefore = lastRun?.deviationBefore;
+              pushStep({
+                kind:    'level',
+                label:   `Bed leveled (pass ${levelPassesUsed} of ${opts.levelPasses})`,
+                detail:  devBefore != null && devBefore > 0
+                  ? `Tilt before adjustment: ${devBefore.toFixed(4)} mm`
+                  : undefined,
+                quality: 'good',
+              });
+            } catch (err) {
+              pushStep({ kind: 'level', label: 'Leveling failed', detail: errorMessage(err, 'Unknown error'), quality: 'bad' });
+              stopReason = 'failed';
+              break;
+            }
+            shouldLevel = false;
           }
-          shouldLevel = false;
         }
 
         /* ── Probe ── */
         setSmartCalPhase('probing');
+        let probeErr: unknown = null;
         try {
           if (opts.probesPerPoint > 1) {
             await sendGCode(`M558 A${opts.probesPerPoint} S${opts.probeTolerance}`);
           }
           await sendGCode(m557Command);
           await probeGrid();
+        } catch (err) {
+          probeErr = err;
+        } finally {
           if (opts.probesPerPoint > 1) {
             try { await sendGCode('M558 A1 S0.01'); } catch { /* best-effort restore */ }
           }
-        } catch (err) {
-          steps.push({ kind: 'probe', label: `Probe failed (iteration ${i + 1})`, detail: errorMessage(err, 'Unknown error'), quality: 'bad' });
+        }
+        if (probeErr !== null) {
+          pushStep({ kind: 'probe', label: `Probe failed (iteration ${i + 1})`, detail: errorMessage(probeErr, 'Unknown error'), quality: 'bad' });
           stopReason = 'failed';
           break;
         }
@@ -2222,7 +2214,7 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
         /* ── Analyse ── */
         const currentMap = usePrinterStore.getState().heightMap;
         if (!currentMap) {
-          steps.push({ kind: 'probe', label: 'No probe data returned', quality: 'bad' });
+          pushStep({ kind: 'probe', label: 'No probe data returned', quality: 'bad' });
           stopReason = 'failed';
           break;
         }
@@ -2230,14 +2222,14 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
         finalStats = s;
         const meanBad = Math.abs(s.mean) >= opts.targetMean;
         const devBad  = s.rms             >= opts.targetDeviation;
-        steps.push({
+        pushStep({
           kind:    'probe',
           label:   `Probed (iteration ${i + 1}) — RMS ${s.rms.toFixed(4)} mm · mean ${s.mean >= 0 ? '+' : ''}${s.mean.toFixed(3)} mm`,
           quality: (!meanBad && !devBad) ? 'good' : 'warn',
         });
 
         if (!meanBad && !devBad) {
-          steps.push({ kind: 'done', label: 'Bed calibrated — within all targets ✓', quality: 'good' });
+          pushStep({ kind: 'done', label: 'Bed calibrated — within all targets ✓', quality: 'good' });
           stopReason = 'converged';
           break;
         }
@@ -2255,43 +2247,49 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
               await sendGCode(`G1 X${cx} Y${cy} F6000`);
               await sendGCode('G30 S-1');
             }
-            steps.push({
+            pushStep({
               kind:   'datum',
               label:  `Z datum recalibrated at centre (${cx}, ${cy})`,
               detail: `Mean was ${s.mean >= 0 ? '+' : ''}${s.mean.toFixed(3)} mm — target ±${opts.targetMean.toFixed(2)} mm`,
               quality: 'info',
             });
           } catch (err) {
-            steps.push({ kind: 'datum', label: 'Z datum calibration failed', detail: errorMessage(err, 'Unknown error'), quality: 'bad' });
+            pushStep({ kind: 'datum', label: 'Z datum calibration failed', detail: errorMessage(err, 'Unknown error'), quality: 'bad' });
           }
         }
 
         /* ── Re-level decision ── */
         if (devBad) {
-          steps.push({
-            kind:   'decision',
-            label:  `RMS ${s.rms.toFixed(4)} mm exceeds target ${opts.targetDeviation.toFixed(2)} mm — will re-level`,
-            quality: 'warn',
-          });
-          shouldLevel = true;
+          if (levelPassesUsed < opts.levelPasses) {
+            pushStep({
+              kind:    'decision',
+              label:   `RMS ${s.rms.toFixed(4)} mm exceeds target ${opts.targetDeviation.toFixed(2)} mm — will re-level`,
+              quality: 'warn',
+            });
+            shouldLevel = true;
+          } else {
+            pushStep({
+              kind:    'decision',
+              label:   `RMS ${s.rms.toFixed(4)} mm exceeds target — leveling budget exhausted (${opts.levelPasses} ${opts.levelPasses === 1 ? 'pass' : 'passes'} used)`,
+              quality: 'warn',
+            });
+            pushedEndStep = true;
+          }
         }
 
-        if (i === opts.maxIterations - 1) {
-          steps.push({ kind: 'done', label: `Max iterations (${opts.maxIterations}) reached`, quality: 'warn' });
-        }
       }
     } catch (err) {
-      steps.push({ kind: 'done', label: `Smart Cal error: ${errorMessage(err, 'Unknown error')}`, quality: 'bad' });
+      pushStep({ kind: 'done', label: `Smart Cal error: ${errorMessage(err, 'Unknown error')}`, quality: 'bad' });
       stopReason = 'failed';
     } finally {
+      setSuppressPrinterAlerts(false);
       setSmartCalRunning(false);
       setSmartCalPhase(null);
     }
 
     const result: SmartCalResult = { steps, finalStats, stopReason };
     setSmartCalResult(result);
-    setShowSmartCalResultModal(true);
-  }, [levelBed, m557Command, probeGrid, probeXMin, probeXMax, probeYMin, probeYMax, sendGCode, service]);
+  }, [levelBed, m557Command, probeGrid, probeXMin, probeXMax, probeYMin, probeYMax, sendGCode, service, setSmartCalLiveSteps, setSuppressPrinterAlerts]);
 
   const handleSaveAs = useCallback(async () => {
     const filename = prompt('Save height map as (filename without path/extension):', 'heightmap_backup');
@@ -2367,14 +2365,15 @@ const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeig
       {showSmartCalModal && (
         <SmartCalModal
           onConfirm={(opts) => void runSmartCal(opts)}
-          onCancel={() => setShowSmartCalModal(false)}
-        />
-      )}
-      {showSmartCalResultModal && smartCalResult && (
-        <SmartCalResultModal
+          onCancel={() => {
+            if (smartCalRunning) smartCalClosedDuringRunRef.current = true;
+            setShowSmartCalModal(false);
+          }}
+          isRunning={smartCalRunning}
+          phase={smartCalPhase}
+          liveSteps={smartCalLiveSteps}
           result={smartCalResult}
-          onClose={() => setShowSmartCalResultModal(false)}
-          onRunAgain={() => { setShowSmartCalResultModal(false); setShowSmartCalModal(true); }}
+          onClear={() => { setSmartCalResult(null); setSmartCalLiveSteps([]); }}
         />
       )}
 

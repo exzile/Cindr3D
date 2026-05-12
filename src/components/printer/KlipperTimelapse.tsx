@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { errorMessage } from '../../utils/errorHandling';
 import { WifiOff, Camera, RefreshCw, Trash2, Download, Film, AlertCircle } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { MoonrakerService, type MoonrakerTimelapseFile } from '../../services/MoonrakerService';
@@ -24,33 +26,26 @@ export default function KlipperTimelapse() {
   const [error, setError] = useState<string | null>(null);
   const [service] = useState(() => connected ? new MoonrakerService(config.hostname) : null);
 
+  const run = useAsyncAction(setLoading, setError, 'Failed to load timelapse files — ensure [timelapse] is in moonraker.conf');
+  const runRender = useAsyncAction(setRendering, setError, 'Render failed');
   const refresh = useCallback(async () => {
     if (!service) return;
-    setLoading(true);
-    setError(null);
-    try {
+    await run(async () => {
       const f = await service.getTimelapseFiles();
       setFiles(f);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load timelapse files — ensure [timelapse] is in moonraker.conf');
-    } finally {
-      setLoading(false);
-    }
-  }, [service]);
+    });
+  }, [service, run]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
   const handleRender = useCallback(async () => {
     if (!service) return;
-    setRendering(true); setError(null);
-    try {
+    await runRender(async () => {
       await service.renderTimelapse();
       await new Promise((r) => setTimeout(r, 2000));
       await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Render failed');
-    } finally { setRendering(false); }
-  }, [service, refresh]);
+    });
+  }, [service, refresh, runRender]);
 
   const handleDelete = useCallback(async (filename: string) => {
     if (!service || !confirm(`Delete "${filename}"?`)) return;
@@ -58,7 +53,7 @@ export default function KlipperTimelapse() {
       await service.deleteTimelapseFile(filename);
       setFiles((prev) => prev.filter((f) => f.filename !== filename));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Delete failed');
+      setError(errorMessage(e, 'Delete failed'));
     }
   }, [service]);
 

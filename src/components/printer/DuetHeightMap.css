@@ -1512,7 +1512,7 @@
 
 /* ── SmartCal modal extras ────────────────────────────────────────────────── */
 .hm-smartcal-modal {
-  width: min(720px, calc(100vw - 48px));
+  width: min(920px, calc(100vw - 48px));
   border-color: color-mix(in srgb, #a855f7 34%, var(--border));
   box-shadow:
     0 0 0 1px color-mix(in srgb, #a855f7 12%, transparent),
@@ -1522,7 +1522,7 @@
 
 .hm-smartcal-body {
   gap: 12px;
-  max-height: min(72vh, 680px);
+  max-height: min(88vh, 860px);
   overflow: auto;
 }
 
@@ -1648,9 +1648,65 @@
 
 .hm-smartcal-grid {
   display: grid;
-  grid-template-columns: minmax(132px, 0.7fr) minmax(210px, 1.2fr) minmax(210px, 1fr);
+  gap: 10px;
+}
+
+.hm-smartcal-grid--matrix {
+  grid-template-columns: 1fr;
+}
+
+.hm-smartcal-row {
+  display: grid;
+  grid-template-columns: 148px repeat(3, minmax(0, 1fr));
   gap: 8px;
-  align-items: stretch;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--smartcal-row-color, #a855f7) 24%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--smartcal-row-color, #a855f7) 5%, var(--bg-elevated));
+}
+
+.hm-smartcal-row--level {
+  --smartcal-row-color: #22c55e;
+}
+
+.hm-smartcal-row--probe {
+  --smartcal-row-color: #3b82f6;
+}
+
+.hm-smartcal-row-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--smartcal-row-color, #a855f7) 10%, var(--bg-panel));
+  color: color-mix(in srgb, var(--smartcal-row-color, #a855f7) 82%, var(--text-primary));
+}
+
+.hm-smartcal-row-head svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.hm-smartcal-row-head div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hm-smartcal-row-head span {
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.hm-smartcal-row-head small {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.35;
+  font-weight: 500;
 }
 
 .hm-smartcal-card {
@@ -1676,6 +1732,14 @@
 .hm-smartcal-card-head svg {
   color: #a855f7;
   flex-shrink: 0;
+}
+
+.hm-smartcal-row--level .hm-smartcal-card-head svg {
+  color: #22c55e;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-card-head svg {
+  color: #3b82f6;
 }
 
 .hm-probe-opt-section-label {
@@ -1711,10 +1775,102 @@
 }
 .hm-smartcal-iter-btn:hover:not(.is-on) { background: var(--bg-hover); color: var(--text-primary); }
 
+/* Full-width row card (Bed Leveling, Probe Quality) */
+.hm-smartcal-card--full {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  min-height: 52px;
+}
+
+.hm-smartcal-card--full .hm-smartcal-card-head {
+  min-width: 108px;
+  flex-shrink: 0;
+}
+
+/* Vertical hairline divider between sections in a row card */
+.hm-smartcal-card-sep {
+  width: 1px;
+  min-height: 24px;
+  align-self: stretch;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+/* Label + control pair inside a row card */
+.hm-smartcal-inline-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hm-smartcal-inline-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Mode toggle inside a card (native smartcal style, replaces bc-modal-mode-toggle) */
+.hm-smartcal-mode-row {
+  display: flex;
+  gap: 4px;
+}
+
+.hm-smartcal-mode-btn {
+  flex: 1;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.hm-smartcal-mode-btn.is-on {
+  background: color-mix(in srgb, #a855f7 16%, var(--bg-panel));
+  border-color: color-mix(in srgb, #a855f7 50%, transparent);
+  color: #a855f7;
+}
+
+.hm-smartcal-mode-btn:hover:not(.is-on) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .hm-smartcal-card-note {
   color: var(--text-muted);
   font-size: 10px;
   line-height: 1.35;
+}
+
+.hm-smartcal-quality-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.hm-smartcal-quality-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--smartcal-row-color, #a855f7) 30%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--smartcal-row-color, #a855f7) 8%, var(--bg-elevated));
+  color: color-mix(in srgb, var(--smartcal-row-color, #a855f7) 78%, var(--text-primary));
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .hm-smartcal-field {
@@ -1817,11 +1973,70 @@
   font-weight: 700;
 }
 
+/* ── Compact probe section overrides ────────────────────────────────────── */
+/* Reduce vertical footprint so the log box has more visible height */
+.hm-smartcal-row--probe {
+  padding: 7px;
+  gap: 6px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-row-head {
+  padding: 6px 7px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-row-head span {
+  font-size: 11px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-row-head small {
+  font-size: 9px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-card {
+  padding: 7px 9px;
+  gap: 6px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-card-head {
+  font-size: 10px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-field {
+  gap: 7px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-field > span:first-child {
+  font-size: 10px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-field small {
+  font-size: 9px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-picker button {
+  width: 20px;
+  height: 20px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-picker input {
+  width: 36px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-card-note {
+  font-size: 9px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-iter-btn {
+  width: 24px;
+  height: 24px;
+  font-size: 11px;
+}
+
 @media (max-width: 760px) {
   .hm-smartcal-modal {
     width: min(560px, calc(100vw - 28px));
   }
-  .hm-smartcal-grid {
+  .hm-smartcal-row {
     grid-template-columns: 1fr;
   }
 }
@@ -1891,55 +2106,150 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Step timeline */
+/* Step timeline — compact flat log rows */
 .hm-smartcal-timeline {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 1px;
 }
+
+/* Each log row: colored left bar + icon badge + text */
 .hm-smartcal-step {
-  display: grid;
-  grid-template-columns: 28px 1px 1fr;
-  grid-template-rows: auto 1fr;
-  column-gap: 10px;
-  position: relative;
-  min-height: 38px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 10px 5px 0;
+  border-left: 2px solid var(--step-color, var(--border));
+  padding-left: 10px;
+  border-radius: 0 5px 5px 0;
+  background: transparent;
+  transition: background 0.1s;
 }
+.hm-smartcal-step:hover {
+  background: color-mix(in srgb, var(--step-color, var(--border)) 5%, transparent);
+}
+
 .hm-smartcal-step__icon {
-  grid-column: 1;
-  grid-row: 1;
-  width: 28px; height: 28px;
-  border-radius: 7px;
+  width: 18px; height: 18px;
+  border-radius: 4px;
   border: 1px solid;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  z-index: 1;
+  margin-top: 1px;
 }
-.hm-smartcal-step__line {
-  grid-column: 1;
-  grid-row: 2;
-  width: 1px;
-  background: var(--border);
-  margin: 0 auto;
-  min-height: 10px;
-}
+
+/* No connector line in compact mode */
+.hm-smartcal-step__line { display: none; }
+
 .hm-smartcal-step__body {
-  grid-column: 3;
-  grid-row: 1 / 3;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 5px 0 10px;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
 }
 .hm-smartcal-step__label {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.4;
+  font-variant-numeric: tabular-nums;
 }
 .hm-smartcal-step__detail {
   font-size: 10px;
   color: var(--text-muted);
-  line-height: 1.4;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Smart Cal inline activity / log section ─────────────────────────────── */
+
+.hm-smartcal-activity {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-primary, #0d0d0d);
+  /* Scrollable log box */
+  max-height: 300px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Sticky header — fully opaque so content never bleeds through */
+.hm-smartcal-activity__header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  /* Must be fully opaque — never use alpha here */
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  border-radius: 9px 9px 0 0;
+}
+
+/* Timeline body — padded inner area below the sticky header */
+.hm-smartcal-activity__body {
+  padding: 8px 12px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Phase spinner — shown at the tail of the log while running */
+.hm-smartcal-activity__phase {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 12px 6px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.hm-smartcal-activity__spin {
+  animation: spin 1s linear infinite;
+  color: #a855f7;
+  flex-shrink: 0;
+}
+
+/* Result summary — outside the scroll box, always fully visible */
+.hm-smartcal-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 2px 0;
+}
+
+.hm-smartcal-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  padding: 5px 11px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color 0.1s, color 0.1s;
+}
+
+.hm-smartcal-clear-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }

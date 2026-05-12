@@ -12,6 +12,7 @@
  * G-code stream did the rest.
  */
 import { useMemo, useState } from 'react';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 import {
   Layers, WifiOff, AlertCircle, XCircle, ArrowUpCircle, Send, Info,
 } from 'lucide-react';
@@ -78,19 +79,14 @@ export default function MarlinExcludeObject() {
     );
   }
 
+  const run = useAsyncAction(setBusy, setError, 'Failed to send M486');
   const sendCancel = async (id: number) => {
     if (!supported || cancelled.has(id)) return;
-    setBusy(true);
-    setError(null);
-    try {
+    await run(async () => {
       await sendGCode(`M486 P${id}`);
       setCancelled((prev) => new Set(prev).add(id));
       setConfirmIndex(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to send M486');
-    } finally {
-      setBusy(false);
-    }
+    });
   };
 
   const handleManualSend = () => {

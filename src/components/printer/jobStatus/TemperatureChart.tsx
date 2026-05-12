@@ -65,7 +65,7 @@ export function TemperatureChart() {
       <div className="job-section-title">
         <Thermometer size={14} /> Temperature History
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="duet-job__svg-chart">
         {/* Grid */}
         {yTicks.map((t) => (
           <g key={t}>

@@ -23,28 +23,17 @@ export function ProgressSection() {
       <div className="job-section-title">
         <Layers size={14} /> Progress
       </div>
-      {/* Large progress bar */}
-      <div style={{ marginBottom: 10 }}>
-        <div style={{
-          display: 'flex', justifyContent: 'space-between', marginBottom: 4,
-          fontSize: 12, color: '#aaaacc',
-        }}>
+      <div className="duet-job__progress-bar-wrap">
+        <div className="duet-job__progress-bar-row">
           <span>Overall</span>
-          <span style={{ fontSize: 18, fontWeight: 700, color: '#e0e0ff' }}>
+          <span className="duet-job__progress-bar-pct">
             {pct.toFixed(1)}%
           </span>
         </div>
-        <div style={{
-          height: 10, background: '#1a1a2e', borderRadius: 5, overflow: 'hidden',
-        }}>
-          <div style={{
-            height: '100%', width: `${Math.min(100, pct)}%`,
-            background: 'linear-gradient(90deg, #44aaff, #44cc88)',
-            borderRadius: 5, transition: 'width 0.5s ease',
-          }} />
+        <div className="duet-job__progress-bar-track">
+          <div className="duet-job__progress-bar-fill" style={{ width: `${Math.min(100, pct)}%` }} />
         </div>
       </div>
-      {/* Detail rows */}
       <div className="job-detail-grid">
         <JobDetailRow label="File progress" value={`${formatBytes(filePos)} / ${formatBytes(fileSize)}`} />
         <JobDetailRow label="Layer" value={`${currentLayer} / ${totalLayers}`} />

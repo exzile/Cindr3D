@@ -4,6 +4,7 @@
  * Klipper      → also delegates to KlipperUpdateManager (Moonraker component updates).
  */
 import { useState, useCallback, useEffect } from 'react';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { ArrowUpCircle, RefreshCw, ExternalLink, Tag, GitBranch, Info, AlertCircle } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import KlipperUpdateManager from './KlipperUpdateManager';
@@ -81,9 +82,9 @@ function GithubReleaseChecker() {
   const [error, setError] = useState<string | null>(null);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
 
+  const run = useAsyncAction(setLoading, setError, 'Failed to reach GitHub API. Check your network connection.');
   const check = useCallback(async () => {
-    setLoading(true); setError(null);
-    try {
+    await run(async () => {
       const [fw, dc] = await Promise.all([
         firmwareRepo ? fetchLatestRelease(firmwareRepo.owner, firmwareRepo.repo) : Promise.resolve(null),
         fetchLatestRelease(CINDR3D_REPO.owner, CINDR3D_REPO.repo),
@@ -91,10 +92,8 @@ function GithubReleaseChecker() {
       setFirmwareRelease(fw);
       setCindr3dRelease(dc);
       setLastChecked(new Date());
-    } catch {
-      setError('Failed to reach GitHub API. Check your network connection.');
-    } finally { setLoading(false); }
-  }, [firmwareRepo]);
+    });
+  }, [firmwareRepo, run]);
 
   useEffect(() => { void check(); }, [check]);
 

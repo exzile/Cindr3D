@@ -4,6 +4,7 @@
  * Device list is persisted in localStorage.
  */
 import { useState } from 'react';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { Zap, Plus, Trash2, Power, RefreshCw, X, Save, Info } from 'lucide-react';
 import './KlipperTabs.css';
 
@@ -186,27 +187,18 @@ function DeviceCard({ device, onUpdate, onRemove }: {
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const run = useAsyncAction(setBusy, setError);
 
-  const handleToggle = async () => {
-    setBusy(true); setError(null);
-    try {
-      const action = device.state === 'on' ? 'off' : 'on';
-      await sendCommand(device, action);
-      onUpdate({ state: action });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Command failed');
-    } finally { setBusy(false); }
-  };
+  const handleToggle = () => run(async () => {
+    const action = device.state === 'on' ? 'off' : 'on';
+    await sendCommand(device, action);
+    onUpdate({ state: action });
+  });
 
-  const handleRefresh = async () => {
-    setBusy(true); setError(null);
-    try {
-      const s = await fetchState(device);
-      onUpdate({ state: s });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Refresh failed');
-    } finally { setBusy(false); }
-  };
+  const handleRefresh = () => run(async () => {
+    const s = await fetchState(device);
+    onUpdate({ state: s });
+  });
 
   return (
     <div className="klipper-card">

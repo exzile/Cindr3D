@@ -57,6 +57,10 @@ export interface LevelBedOpts {
   probesPerPoint?: number;
   /** M558 S value — max acceptable spread between dives in mm (default 0.01, recommend 0.05 for BLTouch). Only applied when probesPerPoint > 1. */
   probeTolerance?: number;
+  /** When true, skip setting levelBedPendingResult in the store so the
+   *  LevelBedResultsModal is not shown. Used by Smart Cal which displays
+   *  results inline in its own modal. */
+  suppressResult?: boolean;
 }
 
 export interface LevelBedSummary {
@@ -115,6 +119,10 @@ export interface PrinterStore {
 
   // Persistent firmware alerts (probe failures, BLTouch errors, etc.)
   printerAlerts: PrinterAlert[];
+  /** When true, incoming warning/error console entries are NOT promoted to
+   *  persistent alerts.  Set during Smart Cal so probe-result warnings show
+   *  only in the Smart Cal log rather than also firing a toast. */
+  suppressPrinterAlerts: boolean;
 
   heightMap: DuetHeightMap | null;
 
@@ -230,6 +238,7 @@ export interface PrinterStore {
   setJogDistance: (distance: number) => void;
   setError: (error: string | null) => void;
   dismissAlert: (id: string) => void;
+  setSuppressPrinterAlerts: (suppress: boolean) => void;
 }
 
 const INITIAL = loadPrinters();
@@ -269,6 +278,7 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
   printHistoryLoading: false,
 
   printerAlerts: [],
+  suppressPrinterAlerts: false,
 
   heightMap: null,
   levelBedProgress: null,

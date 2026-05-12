@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { WifiOff, TrendingUp, Play, Settings, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { errorMessage } from '../../utils/errorHandling';
 import { usePrinterStore } from '../../store/printerStore';
 import { MoonrakerService } from '../../services/MoonrakerService';
 import './KlipperTabs.css';
@@ -27,7 +28,7 @@ export default function KlipperPressureAdvance() {
       await sendGCode('TUNING_TOWER COMMAND=SET_PRESSURE_ADVANCE PARAMETER=ADVANCE START='
         + paStart + ' FACTOR=' + paIncrement + ' BAND=5');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to start tuning tower');
+      setError(errorMessage(e, 'Failed to start tuning tower'));
     } finally { setPrintingTower(false); }
   }, [service, sendGCode]);
 
@@ -39,7 +40,7 @@ export default function KlipperPressureAdvance() {
       await service.setSmoothTime(smoothTime, extruder);
       setApplied(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to apply settings');
+      setError(errorMessage(e, 'Failed to apply settings'));
     } finally { setApplying(false); }
   }, [service, advance, smoothTime, extruder]);
 

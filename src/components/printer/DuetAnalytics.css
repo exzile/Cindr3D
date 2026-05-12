@@ -555,3 +555,372 @@
   font-size: 11px;
   line-height: 1.35;
 }
+
+/* Theme refresh */
+
+.duet-analytics {
+  --da-bg: var(--bg-primary, #0f1117);
+  --da-panel: var(--bg-panel, #151922);
+  --da-elevated: var(--bg-elevated, #1b2130);
+  --da-hover: var(--bg-hover, #232b3a);
+  --da-border: var(--border, #2a3242);
+  --da-border-soft: var(--border-light, #232b34);
+  --da-text: var(--text-primary, var(--text, #e6e6f0));
+  --da-muted: var(--text-secondary, var(--textDim, #9aa3b5));
+  --da-subtle: var(--text-muted, #7f8797);
+  --da-accent: var(--accent, #4a9eff);
+  --da-success: #22c55e;
+  --da-warn: #f59e0b;
+  --da-danger: #ef4444;
+  --da-purple: #a855f7;
+
+  gap: 14px;
+  padding: 16px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--da-accent) 4%, transparent), transparent 220px),
+    var(--da-bg);
+  color: var(--da-text);
+  scrollbar-width: thin;
+  scrollbar-color: var(--da-border) transparent;
+}
+
+.duet-analytics__toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--da-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--da-panel) 92%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.duet-analytics__toolbar-title {
+  color: var(--da-text);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.duet-analytics__toolbar-title svg {
+  color: var(--da-purple);
+}
+
+.duet-analytics__toolbar-actions {
+  gap: 7px;
+}
+
+.duet-analytics__export,
+.duet-analytics__window select,
+.duet-analytics__day-chips button,
+.duet-analytics__tou-add,
+.duet-analytics__schedule-btn,
+.duet-analytics__tou-row button {
+  min-height: 28px;
+  border-color: var(--da-border);
+  border-radius: 7px;
+  background: var(--da-elevated);
+  color: var(--da-text);
+  transition: background 0.14s, border-color 0.14s, color 0.14s, transform 0.1s;
+}
+
+.duet-analytics__export:hover:not(:disabled),
+.duet-analytics__day-chips button:hover,
+.duet-analytics__tou-add:hover,
+.duet-analytics__schedule-btn:hover:not(:disabled),
+.duet-analytics__tou-row button:hover {
+  background: var(--da-hover);
+  border-color: color-mix(in srgb, var(--da-accent) 50%, var(--da-border));
+  transform: translateY(-1px);
+}
+
+.duet-analytics__window {
+  color: var(--da-muted);
+}
+
+.duet-analytics__hint,
+.duet-analytics__empty {
+  width: 100%;
+  max-width: none;
+  min-height: 140px;
+  background: color-mix(in srgb, var(--da-panel) 82%, transparent);
+  border-color: color-mix(in srgb, var(--da-accent) 30%, var(--da-border));
+  color: var(--da-muted);
+}
+
+.duet-analytics__cards {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.duet-analytics__card,
+.duet-analytics__sparkline,
+.duet-analytics__table,
+.duet-analytics__cost,
+.duet-analytics__tou-panel,
+.duet-analytics__insight,
+.duet-analytics__receipt {
+  border-color: var(--da-border);
+  background: var(--da-panel);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.duet-analytics__card {
+  position: relative;
+  min-height: 78px;
+  padding: 12px;
+  overflow: hidden;
+}
+
+.duet-analytics__card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: color-mix(in srgb, currentColor 60%, transparent);
+  opacity: 0.35;
+}
+
+.duet-analytics__card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  flex-shrink: 0;
+}
+
+.duet-analytics__card-value {
+  color: var(--da-text);
+  font-size: 20px;
+}
+
+.duet-analytics__card-label,
+.duet-analytics__empty-row,
+.duet-analytics__caption,
+.duet-analytics__receipt-grid,
+.duet-analytics__cost,
+.duet-analytics__planner label,
+.duet-analytics__utility-config label,
+.duet-analytics__solar-gate span,
+.duet-analytics__insight-detail {
+  color: var(--da-muted);
+}
+
+.duet-analytics__section-title {
+  width: 100%;
+  margin: 8px 0 -2px;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--da-border-soft);
+  color: var(--da-muted);
+}
+
+.duet-analytics__sparkline {
+  height: 76px;
+  padding: 10px 12px 8px;
+}
+
+.duet-analytics__spark-bar {
+  background: linear-gradient(
+    0deg,
+    color-mix(in srgb, var(--da-accent) 88%, #111827),
+    color-mix(in srgb, var(--da-success) 68%, var(--da-accent))
+  );
+}
+
+.duet-analytics__table {
+  border-spacing: 0;
+  border-collapse: separate;
+  border-radius: 8px;
+}
+
+.duet-analytics__table th {
+  background: var(--da-elevated);
+  color: var(--da-muted);
+}
+
+.duet-analytics__table th,
+.duet-analytics__table td {
+  border-bottom-color: var(--da-border-soft);
+}
+
+.duet-analytics__table tbody tr {
+  transition: background 0.12s;
+}
+
+.duet-analytics__table tbody tr:hover {
+  background: color-mix(in srgb, var(--da-accent) 6%, transparent);
+}
+
+.duet-analytics__file-cell {
+  color: color-mix(in srgb, var(--da-text) 88%, var(--da-accent));
+}
+
+.duet-analytics__status {
+  border: 1px solid transparent;
+}
+
+.duet-analytics__status--completed {
+  background: color-mix(in srgb, var(--da-success) 16%, transparent);
+  border-color: color-mix(in srgb, var(--da-success) 38%, transparent);
+  color: #86efac;
+}
+
+.duet-analytics__status--cancelled {
+  background: color-mix(in srgb, var(--da-danger) 14%, transparent);
+  border-color: color-mix(in srgb, var(--da-danger) 34%, transparent);
+  color: #fca5a5;
+}
+
+.duet-analytics__status--in-progress {
+  background: color-mix(in srgb, var(--da-warn) 15%, transparent);
+  border-color: color-mix(in srgb, var(--da-warn) 36%, transparent);
+  color: #fcd34d;
+}
+
+.duet-analytics__cost {
+  align-items: stretch;
+  padding: 12px;
+}
+
+.duet-analytics__cost label,
+.duet-analytics__planner label,
+.duet-analytics__utility-config label {
+  min-height: 30px;
+}
+
+.duet-analytics__cost input,
+.duet-analytics__tou-form input,
+.duet-analytics__tou-form select,
+.duet-analytics__planner input,
+.duet-analytics__utility-config input,
+.duet-analytics__utility-config select {
+  border-color: var(--da-border);
+  border-radius: 7px;
+  background: var(--da-elevated);
+  color: var(--da-text);
+}
+
+.duet-analytics__cost input:focus,
+.duet-analytics__tou-form input:focus,
+.duet-analytics__tou-form select:focus,
+.duet-analytics__planner input:focus,
+.duet-analytics__utility-config input:focus,
+.duet-analytics__utility-config select:focus {
+  outline: none;
+  border-color: var(--da-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--da-accent) 18%, transparent);
+}
+
+.duet-analytics__cost-value,
+.duet-analytics__tou-heading,
+.duet-analytics__receipt-grid strong,
+.duet-analytics__receipt-file,
+.duet-analytics__planner-result strong,
+.duet-analytics__solar-gate strong,
+.duet-analytics__tou-row span:first-child {
+  color: var(--da-text);
+}
+
+.duet-analytics__receipt {
+  background: color-mix(in srgb, var(--da-accent) 10%, var(--da-panel));
+  border-color: color-mix(in srgb, var(--da-accent) 36%, var(--da-border));
+}
+
+.duet-analytics__receipt-title {
+  color: color-mix(in srgb, var(--da-accent) 72%, var(--da-text));
+}
+
+.duet-analytics__tou-grid {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.duet-analytics__tou-panel {
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.duet-analytics__tou-row {
+  border-color: var(--da-border);
+  background: var(--da-elevated);
+}
+
+.duet-analytics__tou-row--off-peak {
+  background: color-mix(in srgb, var(--da-success) 10%, var(--da-elevated));
+}
+
+.duet-analytics__tou-row--peak {
+  background: color-mix(in srgb, var(--da-danger) 9%, var(--da-elevated));
+}
+
+.duet-analytics__planner-result {
+  background: var(--da-elevated);
+  border-color: var(--da-border);
+}
+
+.duet-analytics__utility-config {
+  border-top-color: var(--da-border-soft);
+}
+
+.duet-analytics__solar-gate {
+  border-color: var(--da-border);
+}
+
+.duet-analytics__solar-gate.allowed {
+  background: color-mix(in srgb, var(--da-success) 11%, var(--da-elevated));
+  color: #86efac;
+}
+
+.duet-analytics__solar-gate.blocked {
+  background: color-mix(in srgb, var(--da-warn) 12%, var(--da-elevated));
+  color: #fcd34d;
+}
+
+.duet-analytics__insight {
+  background: color-mix(in srgb, var(--da-warn) 8%, var(--da-panel));
+  border-color: color-mix(in srgb, var(--da-warn) 28%, var(--da-border));
+}
+
+.duet-analytics__insight-title {
+  color: #facc15;
+}
+
+@media (max-width: 760px) {
+  .duet-analytics {
+    padding: 10px;
+  }
+
+  .duet-analytics__toolbar {
+    position: static;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .duet-analytics__toolbar-actions {
+    justify-content: flex-start;
+  }
+
+  .duet-analytics__cards {
+    grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+  }
+
+  .duet-analytics__receipt,
+  .duet-analytics__cost {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .duet-analytics__receipt-grid {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    text-align: left;
+  }
+
+  .duet-analytics__table {
+    display: block;
+    overflow-x: auto;
+  }
+}

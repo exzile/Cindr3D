@@ -318,7 +318,7 @@ export default function TemperaturePanel() {
       )}
 
       <TemperatureChart rows={rows} temperatureHistory={temperatureHistory} heaters={heaters} />
-    </div>
+    </DashboardPanel>
   );
 }
 
@@ -524,6 +524,6 @@ function TemperatureChart({
           );
         })}
       </svg>
-    </DashboardPanel>
+    </div>
   );
 }

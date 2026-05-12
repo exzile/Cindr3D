@@ -1,4 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useContainerSize } from '../../hooks/useContainerSize';
+import { useNow } from '../../hooks/useNow';
 import './PrinterPanel.css';
 import { usePrinterStore } from '../../store/printerStore';
 import { useSpoolStore } from '../../store/spoolStore';
@@ -45,19 +47,8 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
   const toggleTheme = useThemeStore((s) => s.toggleTheme);
 
   const panelRootRef = useRef<HTMLDivElement>(null);
-  const [isNarrow, setIsNarrow] = useState(false);
-
-  useEffect(() => {
-    const el = panelRootRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setIsNarrow(entry.contentRect.width < 480);
-      }
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+  const { width: panelWidth } = useContainerSize(panelRootRef);
+  const isNarrow = panelWidth > 0 && panelWidth < 480;
 
   const [globalSearch, setGlobalSearch] = useState('');
   const [showSearchResults, setShowSearchResults] = useState(false);
@@ -96,14 +87,8 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
     return results.slice(0, 20);
   }, [globalSearch, files, macros, filaments, printHistory]);
 
-  const [now, setNow] = useState(Date.now);
   const hasStaleModel = !connected && lastModelUpdate !== null && Object.keys(model).length > 0;
-
-  useEffect(() => {
-    if (!hasStaleModel) return;
-    const id = setInterval(() => setNow(Date.now()), 15_000);
-    return () => clearInterval(id);
-  }, [hasStaleModel]);
+  const now = useNow(15_000, hasStaleModel);
 
   const lastUpdatedText = useMemo(() => {
     if (!lastModelUpdate) return null;

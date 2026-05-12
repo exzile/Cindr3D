@@ -1,36 +1,45 @@
-import type { CSSProperties } from 'react';
 import { Fragment } from 'react';
 import { CircuitBoard, Cpu, Gauge, Network } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
-import { colors as COLORS } from '../../../utils/theme';
-import {
-  panelStyle,
-  sectionTitleStyle as sectionTitle,
-  twoColRowGridStyle as rowGrid,
-} from '../../../utils/printerPanelStyles';
+import { DashboardPanel } from '../dashboard/DashboardPanel';
 
 const EMPTY_ARRAY: readonly never[] = [];
 
-function driverBadge(status?: string): { text: string; color: string; bg: string } {
-  if (!status) return { text: 'OK', color: COLORS.success, bg: 'rgba(76,175,80,0.12)' };
+function driverBadge(status?: string): 'ok' | 'err' | 'warn' {
+  if (!status) return 'ok';
   const normalized = status.toLowerCase();
-  if (normalized === 'stall' || normalized === 'stalled' || normalized === 'standstill') {
-    return { text: 'STALL', color: COLORS.danger, bg: 'rgba(244,67,54,0.12)' };
-  }
+  if (normalized === 'stall' || normalized === 'stalled' || normalized === 'standstill') return 'err';
   if (
     normalized.includes('overtemp')
     || normalized.includes('over_temp')
     || normalized.includes('overtemperature')
-  ) {
-    return { text: 'OVER-TEMP', color: COLORS.warning, bg: 'rgba(255,152,0,0.12)' };
-  }
-  if (normalized.includes('openload') || normalized.includes('open_load') || normalized === 'openload') {
-    return { text: 'OPEN LOAD', color: COLORS.warning, bg: 'rgba(255,152,0,0.12)' };
-  }
-  if (normalized === 'ok' || normalized === 'good') {
-    return { text: 'OK', color: COLORS.success, bg: 'rgba(76,175,80,0.12)' };
-  }
-  return { text: status.toUpperCase(), color: COLORS.warning, bg: 'rgba(255,152,0,0.12)' };
+  ) return 'warn';
+  if (normalized.includes('openload') || normalized.includes('open_load') || normalized === 'openload') return 'warn';
+  if (normalized === 'ok' || normalized === 'good') return 'ok';
+  return 'warn';
+}
+
+function driverBadgeText(status?: string): string {
+  if (!status) return 'OK';
+  const normalized = status.toLowerCase();
+  if (normalized === 'stall' || normalized === 'stalled' || normalized === 'standstill') return 'STALL';
+  if (
+    normalized.includes('overtemp')
+    || normalized.includes('over_temp')
+    || normalized.includes('overtemperature')
+  ) return 'OVER-TEMP';
+  if (normalized.includes('openload') || normalized.includes('open_load') || normalized === 'openload') return 'OPEN LOAD';
+  if (normalized === 'ok' || normalized === 'good') return 'OK';
+  return status.toUpperCase();
+}
+
+function statusColor(status: string | undefined): string {
+  const s = (status ?? '').toLowerCase();
+  if (s === 'idle') return '#22c55e';
+  if (s === 'printing' || s === 'processing') return '#3b82f6';
+  if (s === 'busy') return '#f59e0b';
+  if (s === 'error' || s === 'halted') return '#ef4444';
+  return '#94a3b8';
 }
 
 export function BoardsPanel() {
@@ -39,67 +48,79 @@ export function BoardsPanel() {
 
   if (boards.length === 0) {
     return (
-      <div style={panelStyle()}>
-        <div style={sectionTitle()}><CircuitBoard size={14} /> Boards</div>
-        <div className="duet-status-dim">No board info reported.</div>
-      </div>
+      <DashboardPanel icon={CircuitBoard} title="Boards">
+        <div className="ds-kv__key">No board info reported.</div>
+      </DashboardPanel>
     );
   }
 
   return (
-    <div style={panelStyle()}>
-      <div style={sectionTitle()}><CircuitBoard size={14} /> Boards</div>
+    <DashboardPanel icon={CircuitBoard} title="Boards">
       {boards.map((board, index) => (
-        <div key={index} className={index < boards.length - 1 ? 'duet-status-block' : undefined}>
-          <div className="duet-status-board-title">
+        <Fragment key={index}>
+          {index > 0 && <hr className="ds-sep" />}
+          <div className="ds-sub-title">
             {board.name || board.shortName || `Board ${index}`}
             {index > 0 && (board as unknown as Record<string, unknown>).canAddress != null && (
-              <span className="duet-status-dim" style={{ fontWeight: 400, marginLeft: 6 }}>
+              <span className="ds-kv__key" style={{ fontWeight: 400, marginLeft: 6 }}>
                 (CAN {String((board as unknown as Record<string, unknown>).canAddress)})
               </span>
             )}
           </div>
-          <div style={rowGrid()}>
+          <div className="ds-kv">
             {index > 0 && (board as unknown as Record<string, unknown>).canAddress != null && (
               <>
-                <span className="duet-status-dim">CAN address</span>
-                <span className="duet-status-mono">{String((board as unknown as Record<string, unknown>).canAddress)}</span>
+                <span className="ds-kv__key">CAN address</span>
+                <span className="ds-kv__val">{String((board as unknown as Record<string, unknown>).canAddress)}</span>
               </>
             )}
-            <span className="duet-status-dim">Firmware</span>
-            <span className="duet-status-mono">{board.firmwareName} {board.firmwareVersion}</span>
+            <span className="ds-kv__key">Firmware</span>
+            <span className="ds-kv__val">{board.firmwareName} {board.firmwareVersion}</span>
             {board.firmwareDate && (
               <>
-                <span className="duet-status-dim">Build date</span>
-                <span className="duet-status-mono">{board.firmwareDate}</span>
+                <span className="ds-kv__key">Build date</span>
+                <span className="ds-kv__val">{board.firmwareDate}</span>
               </>
             )}
             {board.mcuTemp && (
               <>
-                <span className="duet-status-dim">MCU temp</span>
-                <span className="duet-status-mono">
+                <span className="ds-kv__key">MCU temp</span>
+                <span
+                  className="ds-kv__val"
+                  style={{
+                    color: (board.mcuTemp.current ?? 0) > 60 ? '#f59e0b' : undefined,
+                  }}
+                >
                   {board.mcuTemp.current?.toFixed(1)}° (min {board.mcuTemp.min?.toFixed(0)}°, max {board.mcuTemp.max?.toFixed(0)}°)
                 </span>
               </>
             )}
             {board.vIn && (
               <>
-                <span className="duet-status-dim">VIN</span>
-                <span className="duet-status-mono">
+                <span className="ds-kv__key">VIN</span>
+                <span
+                  className="ds-kv__val"
+                  style={{
+                    color:
+                      (board.vIn.current ?? 0) < 11 || (board.vIn.current ?? 0) > 26
+                        ? '#f59e0b'
+                        : undefined,
+                  }}
+                >
                   {board.vIn.current?.toFixed(1)} V (min {board.vIn.min?.toFixed(1)}, max {board.vIn.max?.toFixed(1)})
                 </span>
               </>
             )}
             {board.v12 && (
               <>
-                <span className="duet-status-dim">V12</span>
-                <span className="duet-status-mono">{board.v12.current?.toFixed(1)} V</span>
+                <span className="ds-kv__key">V12</span>
+                <span className="ds-kv__val">{board.v12.current?.toFixed(1)} V</span>
               </>
             )}
           </div>
-        </div>
+        </Fragment>
       ))}
-    </div>
+    </DashboardPanel>
   );
 }
 
@@ -130,35 +151,22 @@ export function DriversPanel() {
 
   if (rows.length === 0) return null;
 
-  const badgeStyle = (badge: ReturnType<typeof driverBadge>): CSSProperties => ({
-    display: 'inline-block',
-    padding: '1px 6px',
-    borderRadius: 4,
-    fontSize: 10,
-    fontWeight: 700,
-    letterSpacing: '0.03em',
-    color: badge.color,
-    background: badge.bg,
-    lineHeight: '16px',
-    whiteSpace: 'nowrap',
-  });
-
   return (
-    <div style={panelStyle()}>
-      <div style={sectionTitle()}><Cpu size={14} /> Motor Drivers</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr auto', gap: '6px 12px', fontSize: 12, alignItems: 'center' }}>
+    <DashboardPanel icon={Cpu} title="Motor Drivers">
+      <div className="ds-driver-row">
         {rows.map((row, index) => {
-          const badge = driverBadge(row.status);
+          const variant = driverBadge(row.status);
+          const text = driverBadgeText(row.status);
           return (
             <Fragment key={index}>
-              <span style={{ fontWeight: 600 }}>{row.label}</span>
-              <span className="duet-status-mono">{row.driver || '—'}</span>
-              <span style={badgeStyle(badge)}>{badge.text}</span>
+              <span className="ds-driver-axis">{row.label}</span>
+              <span className="ds-kv__val">{row.driver || '—'}</span>
+              <span className={`ds-badge ds-badge--${variant}`}>{text}</span>
             </Fragment>
           );
         })}
       </div>
-    </div>
+    </DashboardPanel>
   );
 }
 
@@ -168,62 +176,61 @@ export function NetworkPanel() {
 
   if (populated.length === 0) {
     return (
-      <div style={panelStyle()}>
-        <div style={sectionTitle()}><Network size={14} /> Network</div>
-        <div className="duet-status-dim">No network interfaces reported.</div>
-      </div>
+      <DashboardPanel icon={Network} title="Network">
+        <div className="ds-kv__key">No network interfaces reported.</div>
+      </DashboardPanel>
     );
   }
 
   return (
-    <div style={panelStyle()}>
-      <div style={sectionTitle()}><Network size={14} /> Network</div>
+    <DashboardPanel icon={Network} title="Network">
       {populated.map((iface, index) => (
-        <div key={index} className={index < populated.length - 1 ? 'duet-status-block' : undefined}>
-          <div className="duet-status-board-title">
+        <Fragment key={index}>
+          {index > 0 && <hr className="ds-sep" />}
+          <div className="ds-sub-title">
             {iface.type}{iface.speed ? ` (${iface.speed} Mbps)` : ''}
           </div>
-          <div style={rowGrid()}>
-            <span className="duet-status-dim">IP address</span>
-            <span className="duet-status-mono">{iface.actualIP || '—'}</span>
-            <span className="duet-status-dim">Subnet</span>
-            <span className="duet-status-mono">{iface.subnet || '—'}</span>
-            <span className="duet-status-dim">Gateway</span>
-            <span className="duet-status-mono">{iface.gateway || '—'}</span>
-            <span className="duet-status-dim">MAC address</span>
-            <span className="duet-status-mono">{iface.mac || '—'}</span>
+          <div className="ds-kv">
+            <span className="ds-kv__key">IP address</span>
+            <span className="ds-kv__val">{iface.actualIP || '—'}</span>
+            <span className="ds-kv__key">Subnet</span>
+            <span className="ds-kv__val">{iface.subnet || '—'}</span>
+            <span className="ds-kv__key">Gateway</span>
+            <span className="ds-kv__val">{iface.gateway || '—'}</span>
+            <span className="ds-kv__key">MAC address</span>
+            <span className="ds-kv__val">{iface.mac || '—'}</span>
             {iface.dnsServer && (
               <>
-                <span className="duet-status-dim">DNS server</span>
-                <span className="duet-status-mono">{iface.dnsServer}</span>
+                <span className="ds-kv__key">DNS server</span>
+                <span className="ds-kv__val">{iface.dnsServer}</span>
               </>
             )}
             {iface.ssid && (
               <>
-                <span className="duet-status-dim">WiFi SSID</span>
-                <span className="duet-status-mono">{iface.ssid}</span>
+                <span className="ds-kv__key">WiFi SSID</span>
+                <span className="ds-kv__val">{iface.ssid}</span>
               </>
             )}
             {iface.signal != null && (
               <>
-                <span className="duet-status-dim">WiFi signal</span>
-                <span className="duet-status-mono">{iface.signal} dBm</span>
+                <span className="ds-kv__key">WiFi signal</span>
+                <span className="ds-kv__val">{iface.signal} dBm</span>
               </>
             )}
-            <span className="duet-status-dim">State</span>
-            <span className={`duet-status-flag ${iface.state === 'active' ? 'success' : ''}`}>
+            <span className="ds-kv__key">State</span>
+            <span className={`ds-badge ${iface.state === 'active' ? 'ds-badge--ok' : 'ds-badge--dim'}`}>
               {iface.state || '—'}
             </span>
             {iface.activeProtocols.length > 0 && (
               <>
-                <span className="duet-status-dim">Active protocols</span>
-                <span className="duet-status-mono">{iface.activeProtocols.join(', ')}</span>
+                <span className="ds-kv__key">Active protocols</span>
+                <span className="ds-kv__val">{iface.activeProtocols.join(', ')}</span>
               </>
             )}
           </div>
-        </div>
+        </Fragment>
       ))}
-    </div>
+    </DashboardPanel>
   );
 }
 
@@ -231,19 +238,34 @@ export function MachineSummaryPanel() {
   const state = usePrinterStore((s) => s.model.state);
   const move = usePrinterStore((s) => s.model.move);
 
+  const heroColor = statusColor(state?.status);
+  const isPrinting = state?.status === 'printing' || state?.status === 'processing';
+
   return (
-    <div style={panelStyle()}>
-      <div style={sectionTitle()}><Gauge size={14} /> Machine Summary</div>
-      <div style={rowGrid()}>
-        <span className="duet-status-dim">Status</span>
-        <span className="duet-status-mono">{state?.status ?? 'unknown'}</span>
-        <span className="duet-status-dim">Current tool</span>
-        <span className="duet-status-mono">{(state?.currentTool ?? -1) >= 0 ? `T${state?.currentTool}` : 'none'}</span>
-        <span className="duet-status-dim">Compensation</span>
-        <span className="duet-status-mono">{move?.compensation?.type ?? 'none'}</span>
-        <span className="duet-status-dim">Workplace</span>
-        <span className="duet-status-mono">G54</span>
+    <DashboardPanel icon={Gauge} title="Machine Summary">
+      <div
+        className="ds-status-hero"
+        style={{ '--hero-color': heroColor } as React.CSSProperties}
+      >
+        <div className={`ds-status-hero__dot${isPrinting ? ' ds-status-hero__dot--pulse' : ''}`} />
+        <span className="ds-status-hero__label">{state?.status ?? 'unknown'}</span>
       </div>
-    </div>
+      <div className="ds-kpi-row">
+        <div className="ds-kpi">
+          <span className="ds-kpi__label">Tool</span>
+          <span className="ds-kpi__val">
+            {(state?.currentTool ?? -1) >= 0 ? `T${state?.currentTool}` : 'none'}
+          </span>
+        </div>
+        <div className="ds-kpi">
+          <span className="ds-kpi__label">Compensation</span>
+          <span className="ds-kpi__val">{move?.compensation?.type ?? 'none'}</span>
+        </div>
+        <div className="ds-kpi">
+          <span className="ds-kpi__label">Workplace</span>
+          <span className="ds-kpi__val">G54</span>
+        </div>
+      </div>
+    </DashboardPanel>
   );
 }

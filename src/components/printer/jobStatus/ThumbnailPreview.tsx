@@ -48,12 +48,9 @@ export function ThumbnailPreview() {
       <div className="job-section-title">
         <Image size={14} /> Print Preview
       </div>
-      <div style={{ textAlign: 'center' }}>
+      <div className="duet-job__thumbnail">
         {loading ? (
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            height: 120, color: '#888899', gap: 6,
-          }}>
+          <div className="duet-job__thumbnail-state duet-job__thumbnail-state--loading">
             <Loader2 size={16} className="spin" />
             Loading thumbnail...
           </div>
@@ -61,18 +58,12 @@ export function ThumbnailPreview() {
           <img
             src={thumbnailSrc}
             alt="Print thumbnail"
-            style={{
-              width: '100%', maxWidth: 240, borderRadius: 6,
-              border: '1px solid #2a2a4a', background: '#0d0d1a',
-            }}
+            className="duet-job__thumbnail-img"
           />
         ) : (
-          <div style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', height: 80, color: '#666680', gap: 6,
-          }}>
+          <div className="duet-job__thumbnail-state">
             <Image size={32} strokeWidth={1} />
-            <span style={{ fontSize: 12 }}>No thumbnail</span>
+            <span>No thumbnail</span>
           </div>
         )}
       </div>

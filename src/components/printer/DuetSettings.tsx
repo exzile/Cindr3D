@@ -2,7 +2,7 @@
 import {
   ArrowLeft, Plug, Settings as SettingsIcon, ToggleLeft, Bell, Cpu, BadgeInfo,
   Zap, Download,
-  Monitor, Camera, Droplet,
+  Monitor, Camera, Droplet, Braces,
 } from 'lucide-react';
 import type { PrinterBoardType } from '../../types/duet';
 import { downloadSettings, importSettingsFromFile, type ImportResult } from '../../utils/settingsExport';
@@ -28,6 +28,7 @@ const ALL_TABS = [
   { key: 'notifications' as const, label: 'Notifications', Icon: Bell },
   { key: 'machine'       as const, label: 'Machine',       Icon: Cpu },
   { key: 'filaments'     as const, label: 'Filaments',     Icon: Droplet },
+  { key: 'printer-model' as const, label: 'Printer Model',  Icon: Braces,  duetOnly: true },
   { key: 'firmware'      as const, label: 'Firmware',      Icon: Zap,     duetOnly: true },
   { key: 'paneldue'      as const, label: 'PanelDue',      Icon: Monitor, duetOnly: true },
   { key: 'backup'        as const, label: 'Backup',        Icon: Download },

@@ -83,5 +83,6 @@ export function createUiActions(api: PrinterStoreApi): Pick<
     setJogDistance: (distance) => set({ jogDistance: distance }),
     setError: (error) => set({ error }),
     dismissAlert: (id) => set((state) => ({ printerAlerts: state.printerAlerts.filter((a) => a.id !== id) })),
+    setSuppressPrinterAlerts: (suppress: boolean) => set({ suppressPrinterAlerts: suppress }),
   };
 }

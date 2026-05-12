@@ -272,6 +272,7 @@ export function createControlActions(
         targetDeviation = 0.05,
         probesPerPoint  = 1,
         probeTolerance  = 0.05,
+        suppressResult  = false,
       } = opts;
       const { service, config } = get();
       const emptySummary = (reason: LevelBedStopReason): LevelBedSummary => ({
@@ -358,32 +359,60 @@ export function createControlActions(
             if (directReply?.trim()) replyChunks.push(directReply.trim());
 
             if (!isSbc) {
-              // Drain rr_reply every second while the macro runs.
-              // A single read at the end risks missing output: RRF emits messages
-              // incrementally (G28 homing lines, each G30 probe result, then the
-              // M671 "Leadscrew adjustments made" line).  If the buffer fills up or
-              // the machine is slow, the final message can be displaced.  Polling
-              // continuously — exactly as DWC does — prevents both overflow and
-              // the window where the idle detector fires just before the last
-              // message is written.
-              let drainInterval: ReturnType<typeof setInterval> | null = setInterval(async () => {
-                const chunk = await service.pollReply();
-                if (chunk?.trim()) replyChunks.push(chunk.trim());
-              }, 800);
+              // Sequential drain loop — poll rr_reply every 600ms and check idle
+              // state.  Using setInterval with an async callback causes concurrent
+              // HTTP requests when network latency exceeds the interval; the racing
+              // calls split the reply buffer so the critical M671 line is lost.
+              // A sequential await-per-poll guarantees ordering.
+              //
+              // seenBusy guard: sendGCode returns as soon as the command is
+              // buffered, before the firmware starts executing bed_tilt.g.  The
+              // model poll may not have ticked yet, so the machine can appear idle
+              // for the first several loop iterations.  Counting those idle ticks
+              // caused the loop to break after ~3 s — before M671 was ever emitted.
+              // We mirror waitUntilIdle's requireBusy logic: don't count consecutive
+              // idle ticks until the machine has been seen as non-idle at least once.
+              // Fall through after NEVER_BUSY_MS if it never goes busy (safety valve).
+              let consecutiveIdle  = 0;
+              let seenBusy         = false;
+              const IDLE_TARGET       = 6;           // 6 × 600 ms = 3 s of confirmed idle
+              const NEVER_BUSY_MS     = 15_000;      // fall through if machine never starts
+              const loopDeadline      = Date.now() + 5 * 60_000;
+              const neverBusyDeadline = Date.now() + NEVER_BUSY_MS;
 
-              try {
-                // Wait until the machine finishes (watches the cached model —
-                // no extra rr_model HTTP calls that would corrupt the diff state).
-                await waitUntilIdle(service, 2_000, /* requireBusy */ false);
-                // Give the firmware a moment to flush any final output.
-                await new Promise<void>((r) => setTimeout(r, 500));
-              } finally {
-                if (drainInterval !== null) { clearInterval(drainInterval); drainInterval = null; }
+              while (Date.now() < loopDeadline) {
+                await new Promise<void>((r) => setTimeout(r, 600));
+                try {
+                  const chunk = await service.pollReply();
+                  if (chunk?.trim()) replyChunks.push(chunk.trim());
+                } catch { /* network hiccup — keep going */ }
+
+                const cached = service.getModel();
+                const status = (cached.state as { status?: string } | undefined)?.status ?? 'idle';
+                if (status !== 'idle') {
+                  seenBusy       = true;
+                  consecutiveIdle = 0;
+                } else {
+                  consecutiveIdle++;
+                  // Only exit on idle once we have confirmed the macro started,
+                  // OR the fall-through timeout has elapsed (handles edge cases
+                  // where the machine processes bed_tilt.g too fast to be seen
+                  // as busy by a 600 ms poll, e.g. a trivially short macro).
+                  const canExit = seenBusy || Date.now() > neverBusyDeadline;
+                  if (canExit && consecutiveIdle >= IDLE_TARGET) break;
+                }
               }
 
-              // One last drain after the interval is stopped.
-              const drain = await service.pollReply();
-              if (drain?.trim()) replyChunks.push(drain.trim());
+              // Post-idle flush: the M671 line is written just as the machine
+              // goes idle and can arrive several poll cycles late over a slow link.
+              // Drain 8 more times with 700 ms gaps to make sure we capture it.
+              for (let flush = 0; flush < 8; flush++) {
+                await new Promise<void>((r) => setTimeout(r, 700));
+                try {
+                  const chunk = await service.pollReply();
+                  if (chunk?.trim()) replyChunks.push(chunk.trim());
+                } catch { /* ignore */ }
+              }
             }
           } finally {
             clearInterval(probeTracker);
@@ -474,11 +503,13 @@ export function createControlActions(
         if (probesPerPoint > 1) await service.sendGCode('M558 A1 S0.01');
       } catch (err) { set({ error: `Failed to level bed: ${errorMessage(err, 'Unknown error')}` }); }
 
-      // Clear live progress — the results modal takes over from here.
+      // Clear live progress — the results modal takes over from here (unless suppressed).
       set({ levelBedProgress: null });
 
       const summary: import('../../printerStore').LevelBedSummary = { results, autoConverge, stopReason, targetDeviation };
-      set({ levelBedPendingResult: summary, lastLevelBedOpts: opts });
+      if (!suppressResult) {
+        set({ levelBedPendingResult: summary, lastLevelBedOpts: opts });
+      }
       return summary;
     },
     clearLevelBedResult: () => set({ levelBedPendingResult: null }),

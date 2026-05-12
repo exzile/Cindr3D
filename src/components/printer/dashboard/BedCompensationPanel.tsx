@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useEscapeKey } from '../../../hooks/useEscapeKey';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 import { createPortal } from 'react-dom';
 import {
   Layers, RefreshCcw, Crosshair, Loader2, Download,
@@ -134,11 +136,7 @@ function ProbeResultsModal({
   onClose: () => void;
   onRunAgain: () => void;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useEscapeKey(onClose);
 
   const isGood = stats != null && stats.rms <= 0.1;
   const isWarn = stats != null && stats.rms > 0.1 && stats.rms <= 0.2;
@@ -843,13 +841,11 @@ export default function BedCompensationPanel() {
     setProbeYMax(yMax);
   }, [axes]);
 
-  const handleLoad = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try { await loadHeightMap(); }
-    catch { setError('Failed to load height map'); }
-    finally { setLoading(false); }
-  }, [loadHeightMap]);
+  const run = useAsyncAction(setLoading, setError, 'Failed to load height map');
+  const handleLoad = useCallback(
+    () => run(async () => { await loadHeightMap(); }),
+    [loadHeightMap, run],
+  );
 
   const runProbe = useCallback(async (opts: ProbeOpts) => {
     setShowProbeModal(false);
