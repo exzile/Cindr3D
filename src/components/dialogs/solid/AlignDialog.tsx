@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function AlignDialog({ onClose }: { onClose: () => void }) {
   const addFeature = useCADStore((s) => s.addFeature);
@@ -25,50 +25,38 @@ export function AlignDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog-panel">
-        <div className="dialog-header">
-          <span className="dialog-title">Align</span>
-          <button className="dialog-close" onClick={onClose}><X size={14} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="dialog-field">
-            <label className="dialog-label">Move Type</label>
-            <select
-              className="dialog-select"
-              value={moveType}
-              onChange={(e) => setMoveType(e.target.value as 'align' | 'translate' | 'rotate')}
-            >
-              <option value="align">Align</option>
-              <option value="translate">Translate</option>
-              <option value="rotate">Rotate</option>
-            </select>
-          </div>
-          <div className="dialog-field dialog-field-row">
-            <label className="dialog-label">Flip</label>
-            <input
-              type="checkbox"
-              checked={flip}
-              onChange={(e) => setFlip(e.target.checked)}
-            />
-          </div>
-          <div className="dialog-field dialog-field-row">
-            <label className="dialog-label">Allow Rotation</label>
-            <input
-              type="checkbox"
-              checked={allowRotation}
-              onChange={(e) => setAllowRotation(e.target.checked)}
-            />
-          </div>
-          <p className="dialog-note">
-            Select geometry pairs in the viewport (coming soon)
-          </p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
-        </div>
+    <DialogShell title="Align" onClose={onClose} onConfirm={handleOK}>
+      <div className="dialog-field">
+        <label className="dialog-label">Move Type</label>
+        <select
+          className="dialog-select"
+          value={moveType}
+          onChange={(e) => setMoveType(e.target.value as 'align' | 'translate' | 'rotate')}
+        >
+          <option value="align">Align</option>
+          <option value="translate">Translate</option>
+          <option value="rotate">Rotate</option>
+        </select>
       </div>
-    </div>
+      <div className="dialog-field dialog-field-row">
+        <label className="dialog-label">Flip</label>
+        <input
+          type="checkbox"
+          checked={flip}
+          onChange={(e) => setFlip(e.target.checked)}
+        />
+      </div>
+      <div className="dialog-field dialog-field-row">
+        <label className="dialog-label">Allow Rotation</label>
+        <input
+          type="checkbox"
+          checked={allowRotation}
+          onChange={(e) => setAllowRotation(e.target.checked)}
+        />
+      </div>
+      <p className="dialog-note">
+        Select geometry pairs in the viewport (coming soon)
+      </p>
+    </DialogShell>
   );
 }

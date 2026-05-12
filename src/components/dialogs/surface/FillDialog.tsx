@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
+import { DialogShell } from '../common/DialogShell';
 
 export interface FillParams {
   boundaryEdgeCount: number;
@@ -42,14 +42,8 @@ export function FillDialog({ open, edgeCount, onOk, onClose }: FillDialogProps) 
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Fill Surface</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
+    <DialogShell title="Fill Surface" onClose={onClose} size="sm" onConfirm={handleOK}>
+      <div className="form-group">
             <label>Boundary Edges</label>
             <span className="dialog-info">{count} edge{count !== 1 ? 's' : ''} selected</span>
           </div>
@@ -74,12 +68,6 @@ export function FillDialog({ open, edgeCount, onOk, onClose }: FillDialogProps) 
             </select>
           </div>
           <p className="dialog-hint">Select boundary edges/curves in the viewport, then click OK.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

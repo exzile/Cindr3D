@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function PlaneAlongPathDialog({ onClose }: { onClose: () => void }) {
   const addFeature = useCADStore((s) => s.addFeature);
@@ -26,13 +26,7 @@ export function PlaneAlongPathDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog-panel">
-        <div className="dialog-header">
-          <span className="dialog-title">Plane Along Path</span>
-          <button className="dialog-close" onClick={onClose}><X size={14} /></button>
-        </div>
-        <div className="dialog-body">
+    <DialogShell title="Plane Along Path" onClose={onClose} onConfirm={handleOK}>
           <div className="dialog-field">
             <label className="dialog-label">Path Sketch</label>
             <select
@@ -66,12 +60,6 @@ export function PlaneAlongPathDialog({ onClose }: { onClose: () => void }) {
             />
             Flip
           </label>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

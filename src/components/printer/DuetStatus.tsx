@@ -1,3 +1,4 @@
+import './DuetStatus.css';
 import {
   BoardsPanel,
   DriversPanel,
@@ -15,7 +16,7 @@ import {
 
 export default function DuetStatus() {
   return (
-    <div className="duet-status-grid">
+    <div className="ds-grid">
       <MachineSummaryPanel />
       <EndstopsPanel />
       <ProbesPanel />

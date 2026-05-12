@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
+import { useNow } from '../../../hooks/useNow';
 import { strToU8, zipSync } from 'fflate';
 import {
   Archive,
@@ -784,7 +785,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [timelapseFps, setTimelapseFps] = useState(() => dashboardPrefs.timelapseFps);
   const [streamRevision, setStreamRevision] = useState(0);
   const [lastFrameAt, setLastFrameAt] = useState<number | null>(null);
-  const [nowTick, setNowTick] = useState(() => Date.now());
+  const nowTick = useNow(1000);
   const [fullscreen, setFullscreen] = useState(false);
   const [showGrid, setShowGrid] = useState(() => dashboardPrefs.showGrid);
   const [showCrosshair, setShowCrosshair] = useState(() => dashboardPrefs.showCrosshair);
@@ -1051,11 +1052,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   useEffect(() => {
     setWebRtcFailed(false);
   }, [activeCamera?.id, webRtcUrl]);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => setNowTick(Date.now()), 1000);
-    return () => window.clearInterval(interval);
-  }, []);
 
   useEffect(() => {
     if (!recording) return undefined;

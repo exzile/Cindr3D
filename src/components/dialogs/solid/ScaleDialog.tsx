@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
 
 export function ScaleDialog({ onClose }: { onClose: () => void }) {
@@ -55,62 +55,50 @@ export function ScaleDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>{editing ? 'Edit Scale' : 'Scale'}</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Scale Type</label>
-            <select value={scaleType} onChange={(e) => setScaleType(e.target.value as 'uniform' | 'non-uniform')}>
-              <option value="uniform">Uniform</option>
-              <option value="non-uniform">Non-Uniform</option>
-            </select>
-          </div>
-          {scaleType === 'uniform' ? (
-            <div className="form-group">
-              <label>Scale Factor</label>
-              <input type="number" value={factor}
-                onChange={(e) => setFactor(Math.max(0.001, parseFloat(e.target.value) || 1))}
-                step={0.1} min={0.001} />
-            </div>
-          ) : (
-            <div className="settings-grid">
-              <div className="form-group">
-                <label>X Factor</label>
-                <input type="number" value={factorX}
-                  onChange={(e) => setFactorX(Math.max(0.001, parseFloat(e.target.value) || 1))}
-                  step={0.1} min={0.001} />
-              </div>
-              <div className="form-group">
-                <label>Y Factor</label>
-                <input type="number" value={factorY}
-                  onChange={(e) => setFactorY(Math.max(0.001, parseFloat(e.target.value) || 1))}
-                  step={0.1} min={0.001} />
-              </div>
-              <div className="form-group">
-                <label>Z Factor</label>
-                <input type="number" value={factorZ}
-                  onChange={(e) => setFactorZ(Math.max(0.001, parseFloat(e.target.value) || 1))}
-                  step={0.1} min={0.001} />
-              </div>
-            </div>
-          )}
-          <div className="form-group">
-            <label>Reference Point</label>
-            <select value={refPoint} onChange={(e) => setRefPoint(e.target.value as 'centroid' | 'origin')}>
-              <option value="centroid">Body Centroid</option>
-              <option value="origin">World Origin</option>
-            </select>
-          </div>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply}>OK</button>
-        </div>
+    <DialogShell title={editing ? 'Edit Scale' : 'Scale'} onClose={onClose} size="sm" onConfirm={handleApply}>
+      <div className="form-group">
+        <label>Scale Type</label>
+        <select value={scaleType} onChange={(e) => setScaleType(e.target.value as 'uniform' | 'non-uniform')}>
+          <option value="uniform">Uniform</option>
+          <option value="non-uniform">Non-Uniform</option>
+        </select>
       </div>
-    </div>
+      {scaleType === 'uniform' ? (
+        <div className="form-group">
+          <label>Scale Factor</label>
+          <input type="number" value={factor}
+            onChange={(e) => setFactor(Math.max(0.001, parseFloat(e.target.value) || 1))}
+            step={0.1} min={0.001} />
+        </div>
+      ) : (
+        <div className="settings-grid">
+          <div className="form-group">
+            <label>X Factor</label>
+            <input type="number" value={factorX}
+              onChange={(e) => setFactorX(Math.max(0.001, parseFloat(e.target.value) || 1))}
+              step={0.1} min={0.001} />
+          </div>
+          <div className="form-group">
+            <label>Y Factor</label>
+            <input type="number" value={factorY}
+              onChange={(e) => setFactorY(Math.max(0.001, parseFloat(e.target.value) || 1))}
+              step={0.1} min={0.001} />
+          </div>
+          <div className="form-group">
+            <label>Z Factor</label>
+            <input type="number" value={factorZ}
+              onChange={(e) => setFactorZ(Math.max(0.001, parseFloat(e.target.value) || 1))}
+              step={0.1} min={0.001} />
+          </div>
+        </div>
+      )}
+      <div className="form-group">
+        <label>Reference Point</label>
+        <select value={refPoint} onChange={(e) => setRefPoint(e.target.value as 'centroid' | 'origin')}>
+          <option value="centroid">Body Centroid</option>
+          <option value="origin">World Origin</option>
+        </select>
+      </div>
+    </DialogShell>
   );
 }

@@ -2,7 +2,8 @@
  * ContactSetsDialog (A12) — manage physical contact detection between component pairs.
  */
 import { useState } from 'react';
-import { X, Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
+import { DialogShell } from '../common/DialogShell';
 import type { Component, ContactSetEntry } from '../../../types/cad';
 
 interface Props {
@@ -31,13 +32,8 @@ export function ContactSetsDialog({ open, components, contactSets, onAdd, onTogg
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog-panel">
-        <div className="dialog-header">
-          <span className="dialog-title">Contact Sets</span>
-          <button className="dialog-close" onClick={onClose} aria-label="Close contact sets dialog"><X size={14} /></button>
-        </div>
-        <div className="dialog-body">
+    <DialogShell title="Contact Sets" onClose={onClose} cancelLabel="Close">
+
           {/* A25: bulk enable / disable */}
           <div className="contact-sets-bulk-row">
             <button className="btn btn-secondary contact-sets-bulk-btn" onClick={onEnableAll}>
@@ -93,11 +89,6 @@ export function ContactSetsDialog({ open, components, contactSets, onAdd, onTogg
               Add Contact Set
             </button>
           </div>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Close</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

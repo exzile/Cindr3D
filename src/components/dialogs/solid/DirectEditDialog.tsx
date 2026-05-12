@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
+import { DialogShell } from '../common/DialogShell';
 
 export interface DirectEditParams {
   mode: 'offset-face' | 'extrude' | 'taper';
@@ -29,61 +29,49 @@ export default function DirectEditDialog({ open, onClose, onConfirm, selectedFac
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Direct Edit</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          {selectedFaceInfo && (
-            <p className="dialog-hint" style={{ marginBottom: 12 }}>
-              Editing: {selectedFaceInfo}
-            </p>
-          )}
+    <DialogShell title="Direct Edit" onClose={onClose} size="sm" onConfirm={handleOK}>
+      {selectedFaceInfo && (
+        <p className="dialog-hint" style={{ marginBottom: 12 }}>
+          Editing: {selectedFaceInfo}
+        </p>
+      )}
 
-          <div className="form-group">
-            <label>Mode</label>
-            <select value={mode} onChange={(e) => setMode(e.target.value as 'offset-face' | 'extrude' | 'taper')}>
-              <option value="offset-face">Offset Face</option>
-              <option value="extrude">Extrude</option>
-              <option value="taper">Taper</option>
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label>Distance (mm)</label>
-            <input
-              type="number"
-              value={distance}
-              onChange={(e) => setDistance(Math.max(-500, Math.min(500, parseFloat(e.target.value) || 10)))}
-              min={-500}
-              max={500}
-              step={0.5}
-            />
-          </div>
-
-          {mode === 'taper' && (
-            <div className="form-group">
-              <label>Taper Angle (°)</label>
-              <input
-                type="number"
-                value={tapAngle}
-                onChange={(e) => setTapAngle(Math.max(-45, Math.min(45, parseFloat(e.target.value) || 0)))}
-                min={-45}
-                max={45}
-                step={1}
-              />
-            </div>
-          )}
-
-          <p className="dialog-hint">Changes are applied live. Click OK to commit.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
-        </div>
+      <div className="form-group">
+        <label>Mode</label>
+        <select value={mode} onChange={(e) => setMode(e.target.value as 'offset-face' | 'extrude' | 'taper')}>
+          <option value="offset-face">Offset Face</option>
+          <option value="extrude">Extrude</option>
+          <option value="taper">Taper</option>
+        </select>
       </div>
-    </div>
+
+      <div className="form-group">
+        <label>Distance (mm)</label>
+        <input
+          type="number"
+          value={distance}
+          onChange={(e) => setDistance(Math.max(-500, Math.min(500, parseFloat(e.target.value) || 10)))}
+          min={-500}
+          max={500}
+          step={0.5}
+        />
+      </div>
+
+      {mode === 'taper' && (
+        <div className="form-group">
+          <label>Taper Angle (°)</label>
+          <input
+            type="number"
+            value={tapAngle}
+            onChange={(e) => setTapAngle(Math.max(-45, Math.min(45, parseFloat(e.target.value) || 0)))}
+            min={-45}
+            max={45}
+            step={1}
+          />
+        </div>
+      )}
+
+      <p className="dialog-hint">Changes are applied live. Click OK to commit.</p>
+    </DialogShell>
   );
 }

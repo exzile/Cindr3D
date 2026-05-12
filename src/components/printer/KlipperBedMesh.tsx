@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { errorMessage } from '../../utils/errorHandling';
 import { RefreshCw, WifiOff, Grid3x3, Play, Save, Trash2, AlertCircle } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { useSlicerStore } from '../../store/slicerStore';
@@ -72,40 +74,31 @@ export default function KlipperBedMesh() {
   const [error, setError] = useState<string | null>(null);
   const [service] = useState(() => connected ? new MoonrakerService(config.hostname) : null);
 
+  const run = useAsyncAction(setLoading, setError, 'Failed to load bed mesh — ensure [bed_mesh] is in printer.cfg');
+  const runCalibrate = useAsyncAction(setCalibrating, setError, 'Calibration failed');
   const refresh = useCallback(async () => {
     if (!service) return;
-    setLoading(true);
-    setError(null);
-    try {
+    await run(async () => {
       const m = await service.getBedMesh();
       setMesh(m);
       setSelectedProfile((prev) => prev || m.active_profile || Object.keys(m.profiles)[0] || '');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load bed mesh — ensure [bed_mesh] is in printer.cfg');
-    } finally {
-      setLoading(false);
-    }
-  }, [service]);
+    });
+  }, [service, run]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
   const handleCalibrate = useCallback(async () => {
     if (!confirm('Run BED_MESH_CALIBRATE? This will probe the full bed.')) return;
-    setCalibrating(true);
-    try {
+    await runCalibrate(async () => {
       await sendGCode('BED_MESH_CALIBRATE');
       await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Calibration failed');
-    } finally {
-      setCalibrating(false);
-    }
-  }, [sendGCode, refresh]);
+    });
+  }, [sendGCode, refresh, runCalibrate]);
 
   const handleLoad = useCallback(async () => {
     if (!service || !selectedProfile) return;
     try { await service.loadBedMeshProfile(selectedProfile); } catch (e) {
-      setError(e instanceof Error ? e.message : 'Load failed');
+      setError(errorMessage(e, 'Load failed'));
     }
   }, [service, selectedProfile]);
 
@@ -117,7 +110,7 @@ export default function KlipperBedMesh() {
       setSaveAs('');
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Save failed');
+      setError(errorMessage(e, 'Save failed'));
     }
   }, [service, saveAs, selectedProfile, refresh]);
 
@@ -128,7 +121,7 @@ export default function KlipperBedMesh() {
       await service.deleteBedMeshProfile(selectedProfile);
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Delete failed');
+      setError(errorMessage(e, 'Delete failed'));
     }
   }, [service, selectedProfile, refresh]);
 

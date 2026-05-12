@@ -225,6 +225,15 @@ const workflows = [
           'Filament inventory across the fleet with low-stock warnings',
         ],
       },
+      {
+        label: 'Calibration center',
+        items: [
+          '9 calibration types: first layer, flow rate, temperature tower, retraction, pressure advance, input shaper, dimensional accuracy, max volumetric speed, and firmware health',
+          'Guided step-by-step wizard from printer selection to apply-and-save with per-firmware rollback',
+          'Calibration slice presets auto-scaled to nozzle diameter and profile layer height',
+          'Saved sessions, quick filament creation, and aging tracker integration',
+        ],
+      },
     ],
   },
 ];
@@ -299,6 +308,7 @@ const featureGroups = [
       { icon: Palette, title: 'Multi-color slicing', body: 'Per-object tool indices with T0/T1/… selection G-code and prime-tower purge move generation. Configurable purge volume, wipe tower position, and purge lines for single-extruder MMU setups.' },
       { icon: Scissors, title: 'Seam and modifier controls', body: 'Coasting, wiping, scarf seam, Z-seam alignment painting on the model surface, sequential printing (object-by-object), and per-region modifier meshes for localized profile overrides anywhere on the model.' },
       { icon: Wand2, title: 'Advanced print modes', body: 'Non-planar surface ironing for smooth top faces, vase/spiralize mode, fuzzy skin texture, organic/natural infill, gyroid infill, lightning infill, and Arachne variable-width perimeter walls for accurate thin-feature reproduction.' },
+      { icon: Code2, title: 'Layer processor post-processors', body: '8-type layer processor system in the slicer profile editor: tuning tower (ramp any parameter across Z bands — temperature, pressure advance, fan, flow, speed), change settings at Z, pause at Z, filament change at Z, timelapse command injection, custom G-code at Z, search & replace (regex), and print from height. Processors compose; each is independently enabled per profile.' },
     ],
   },
   {
@@ -334,9 +344,9 @@ const featureGroups = [
     summary: 'Daily printer management: jobs, files, macros, hardware controls, and live print preview.',
     details: [
       { icon: FolderOpen, title: 'File manager', body: 'Upload single or batch G-code files, rename, move, delete, and start print jobs from the browser. Folder support for organized storage, file metadata display including estimated print time and filament, and quick-start from the file browser.' },
-      { icon: Terminal, title: 'Macro library and console', body: 'Saved macro buttons with custom labels, icons, and confirmation prompts. Interactive G-code console with command history, syntax highlighting, and manual XYZ/XYZE jog controls with configurable step sizes.' },
+      { icon: Terminal, title: 'Macro library and console', body: 'Browsable macro folder tree (0:/macros) with expand/collapse, search filter, and per-folder lazy loading. Create macros with a custom G-code body inline — no file manager round-trip required. Confirm-before-delete guard. Interactive G-code console with command history, syntax highlighting, and manual XYZ/XYZE jog controls.' },
       { icon: Thermometer, title: 'Hardware controls', body: 'Heater setpoints with active/standby/off states, fan speed overrides (part cooling + chassis), power management commands, and per-spool filament tracking with live usage deduction against loaded-spool weight.' },
-      { icon: Monitor, title: 'Live print dashboard', body: 'Real-time layer progress bar, ETA countdown, print-preview card with animated nozzle position and motion trail, object badges showing cancel state, and a diagnostics panel for firmware warnings and error history.' },
+      { icon: Monitor, title: 'Customizable drag-and-resize dashboard grid', body: 'The printer dashboard is a fully interactive grid layout — drag panels to reposition, resize them freely, show or hide individual panels, and reset to the default arrangement. Layout is saved per printer. The header includes a global search that finds settings, controls, and files across all dashboard tabs.' },
       { icon: XCircle, title: 'Mid-print object cancellation', body: 'Cancel any object from a dedicated Objects tab, from the dashboard badge list, or by right-clicking the object in the 3D print-preview viewport. Sends EXCLUDE_OBJECT_START/END or M486 commands as appropriate for the connected firmware.' },
     ],
   },
@@ -390,6 +400,19 @@ const featureGroups = [
       { icon: Droplets, title: 'Filament moisture model', body: 'Ambient humidity sensor integration and opened-on date tracking per spool. A moisture-risk score rises with time and humidity; pre-flight drying warnings fire when the score exceeds a threshold before a queued job starts.' },
       { icon: CalendarDays, title: 'Scheduling calendar', body: 'Day and week calendar views with drag-to-schedule print slots, quiet-hour enforcement (no jobs start between 11 pm and 7 am by default), scheduled-print editing in a popover, and bed-clear auto-queue on job completion.' },
       { icon: ClipboardCheck, title: 'Pre-flight checklist', body: 'Configurable per-printer checklist that runs automatically before any queued job starts. Each item can be auto-verified (bed temperature stable, filament loaded, door closed) or manual-confirm. A failed check pauses the queue and notifies.' },
+    ],
+  },
+  {
+    page: '3D Printer',
+    section: 'Calibration center',
+    icon: Crosshair,
+    summary: 'End-to-end guided calibration for every key printer parameter, with firmware-safe apply and result history.',
+    details: [
+      { icon: FlaskConical, title: 'Card-based calibration hub', body: 'Nine test types on a dedicated 3D Printer page section: first layer, flow rate, temperature tower, retraction, pressure advance, input shaper, dimensional accuracy, max volumetric speed, and firmware health checks. Each card shows the last-run date and aging status rolled up from the calibration tracker.' },
+      { icon: ListChecks, title: 'Guided calibration wizard with in-wizard 3D preview', body: 'Seven-step flow: pick printer → pick filament or quick-create a spool → run setup checks → load the scaled test model → slice with auto-configured calibration presets → queue or send immediately → monitor → inspect → apply and save. The slice step renders the full 3D toolpath inline — hover any tuning plane to see the exact Z height and parameter value for that band.' },
+      { icon: ShieldCheck, title: 'Per-firmware apply + rollback', body: 'Klipper: SET_PRESSURE_ADVANCE, SHAPER_CALIBRATE, SAVE_CONFIG. Marlin: M900, M303 PID, EEPROM. Duet: PA via config.g. Every write goes through snapshot → diff → typed confirm. One-click restore reverts to the previous snapshot without re-running the test.' },
+      { icon: Sliders, title: 'Calibration slice presets', body: 'Per-test G-code profiles auto-scaled to the active printer\'s nozzle diameter and profile layer height. Presets cover band spacing, line width, speed, and temperature ramp parameters — no manual tuning of the test geometry required.' },
+      { icon: Zap, title: 'Firmware health + max volumetric speed generators', body: 'Firmware health check emits a diagnostic sequence that surfaces misconfigured step rates, thermistor readings, and safety limits. Max volumetric speed ramps extrusion rate in stepped bands to find the flow ceiling for a given filament and nozzle combination.' },
     ],
   },
   {
@@ -530,92 +553,82 @@ const faqs = [
 
 const latestReleaseHighlights = [
   {
-    icon: Shapes,
-    label: 'Parametric CAD workspace',
-    detail: 'Built-in parametric library (Gridfinity bins, threaded insert bosses, brackets, project boxes, cable clips, gear blanks) drops directly onto the feature timeline. Named design configurations save parameter sets with per-variant feature suppression.',
+    icon: Crosshair,
+    label: 'Calibration Center',
+    detail: 'Card-based calibration hub on the 3D Printer page covering nine test types: first layer, flow rate, temperature tower, retraction, pressure advance, input shaper, dimensional accuracy, max volumetric speed, and firmware health checks. Status badges roll up from the calibration aging tracker.',
   },
   {
-    icon: PenLine,
-    label: 'Drawing workspace',
-    detail: 'Generates top, front, and right orthographic views from any 3D model with inferred dimensions, configurable title block, and SVG / DXF / PDF export — ready for shop-floor handoff or supplier quoting.',
-  },
-  {
-    icon: Wand2,
-    label: 'Mesh repair + boolean history',
-    detail: 'Manifold reports, duplicate-vertex welding, normal repair/flip, and STL import auto-fix. Non-destructive boolean combine features keep editable parent links and recompute when parent meshes change.',
-  },
-  {
-    icon: Wifi,
-    label: 'Workshop integrations',
-    detail: 'Webhook, Discord, Slack, Telegram, MQTT, and Home Assistant bridges publish print events, telemetry, progress, temperatures, and remote pause/resume/cancel actions from the local app.',
-  },
-  {
-    icon: Zap,
-    label: 'Power-loss recovery',
-    detail: 'Snapshots in-progress file, position, Z, layer, bed, and tool state. After reconnect, restores heat and Z and resumes from the saved file position so a tripped breaker no longer means a wasted print.',
-  },
-  {
-    icon: ArrowLeftRight,
-    label: 'Slicer profile exchange',
-    detail: 'Import Cura, OrcaSlicer, Bambu Studio, and 3MF profile data into Cindr3D print profiles with a mapping preview. Round-trip Cindr3D plates through 3MF sidecar manifests for cross-tool collaboration.',
-  },
-  {
-    icon: FlaskConical,
-    label: 'Enclosure and sensor safety',
-    detail: 'Chamber temperature control with ramp curves, print-start preheat, completion cooldown, door-open interlock, and MQTT VOC / PM2.5 / CO2 thresholds. Door / reed-switch pause and start-lock policies are configurable per printer.',
+    icon: ListChecks,
+    label: 'Guided calibration wizard with in-wizard 3D preview',
+    detail: 'Seven-step flow — pick printer → pick filament (or quick-create a spool) → setup check → load model → slice with calibration presets → queue → monitor → inspect → apply and save. The slice step renders the full 3D toolpath with interactive hoverable tuning planes: each Z band where a parameter changes (temperature, PA, fan, flow) appears as a translucent plane showing the exact value transition.',
   },
   {
     icon: Sliders,
-    label: 'Stepper driver tuning',
-    detail: 'Per-axis current, microsteps, StealthChop / SpreadCycle mode, firmware command wrappers, quick wiggle diagnostics, and per-printer presets that re-apply on connect — all directly on the dashboard.',
+    label: 'Calibration slice presets',
+    detail: 'Auto-configured G-code profiles for every calibration test type. Presets are scaled to the active printer\'s nozzle diameter and profile layer height at load time so the test geometry is always correctly proportioned.',
+  },
+  {
+    icon: ShieldCheck,
+    label: 'Firmware-safe apply + rollback',
+    detail: 'Per-firmware command sets for Klipper (SET_PRESSURE_ADVANCE, SHAPER_CALIBRATE, SAVE_CONFIG), Marlin (M900, M303, EEPROM), and Duet (PA config.g). Every write goes through snapshot → diff → typed confirm → one-click rollback.',
+  },
+  {
+    icon: LayoutGrid,
+    label: 'Customizable dashboard grid',
+    detail: 'The printer dashboard is now a fully drag-and-resize panel grid. Rearrange temperature, macros, camera, bed compensation, job progress, and other panels by dragging. Resize any panel. Hide panels you don\'t use. Layout persists per printer across sessions.',
+  },
+  {
+    icon: FlaskConical,
+    label: 'Firmware health + max volumetric speed generators',
+    detail: 'Two new G-code generators: firmware health check emits a structured diagnostic sequence that surfaces misconfigured limits, step rates, and thermistor readings; max volumetric speed ramps extrusion rate across bands to find the flow ceiling for a given filament and nozzle.',
+  },
+  {
+    icon: Bell,
+    label: 'G-code toast + printer alerts',
+    detail: 'Inline toast notifications surface G-code responses, macro completions, and firmware warnings without covering the dashboard. A dedicated PrinterAlerts strip shows persistent alerts (thermal runaway, min-temp, driver faults) with dismiss and detail actions.',
+  },
+  {
+    icon: LayoutGrid,
+    label: 'Bed compensation panel overhaul',
+    detail: 'Full 3D mesh deviation visualization with per-point deviation heatmap and mesh statistics. Trigger a full bed probe via a guarded confirm modal with a "home axes first" option — the bed is never probed without explicit confirmation. Per-point re-probe and CSV export of the current mesh.',
+  },
+  {
+    icon: Scan,
+    label: 'Height map visualization overhaul',
+    detail: 'Redesigned interactive probing visualization with gradient heatmap, contour lines, per-point deviation tooltip, and a configurable deviation scale. Exports the mesh as CSV or triggers a fresh probing sequence directly from the panel.',
   },
   {
     icon: Code2,
-    label: 'G-code dock panel',
-    detail: 'Full raw G-code listing with virtual scrolling synchronized to the current preview layer. Click any line to jump the 3D view; scrub the 3D view and the code panel follows. Includes a breakpoint system for step-by-step inspection.',
-  },
-  {
-    icon: Film,
-    label: 'Print farm foundations',
-    detail: 'Smart queue with drag-reorder, auto-routing by build volume / material / nozzle, and copy distribution across printers. All-cameras grid with PTZ presets, multi-camera per printer, and a per-layer photo gallery with ZIP export.',
+    label: 'Post-processors tab — 8 layer processor types',
+    detail: 'Full layer-processor system in the slicer profile editor with 8 types: change settings at Z, pause at Z, filament change at Z, tuning tower (parameter ramp across Z bands), search & replace (regex), timelapse capture command injection, custom G-code at Z, and print from height. Processors compose and each is independently enabled or disabled per profile.',
   },
 ];
 
 const nextReleaseFeatures = [
   {
-    icon: Crosshair,
-    label: 'Calibration Center',
-    detail: 'Card-based section on the 3D Printer page for First Layer, Flow Rate, Temperature Tower, Retraction, Pressure Advance, Input Shaper, Dimensional Accuracy, Max Volumetric Speed, and Firmware Health Checks. Status badges roll up from the existing calibration aging tracker.',
-  },
-  {
-    icon: Box,
-    label: 'Calibration model library',
-    detail: 'Pre-built test STLs in assets/calibration-models/, scaled at load time to the active printer\'s nozzle diameter and profile layer height. Sourceable from Thingiverse or GitHub — no parametric regeneration required.',
-  },
-  {
-    icon: Wand2,
-    label: 'Guided wizards',
-    detail: 'Step-by-step flow: pick printer → pick filament/spool → setup checks → load model → slice with calibration overrides → queue or send → monitor → inspect → apply and save. Multi-printer aware with scheduling-queue integration.',
-  },
-  {
-    icon: ShieldCheck,
-    label: 'Firmware-safe apply + rollback',
-    detail: 'Per-firmware command sets for Klipper (PA, input shaper, SHAPER_CALIBRATE), Marlin (linear advance, PID, EEPROM), and Duet (PA, config.g). Every config write goes through snapshot → diff → typed confirm → one-click restore.',
-  },
-  {
     icon: Scan,
-    label: 'Camera + offline inspection',
-    detail: 'Photos attach to results; crop banded regions, label test bands via the existing AR overlay, and align ruler / measurement overlays with the live video. Offline fallback prints a band-labeled measurement sheet for manual photos.',
+    label: 'Camera-assisted band inspection',
+    detail: 'Photos attach to calibration results directly from the wizard. Crop banded regions, label test bands using the existing AR overlay, and align ruler / measurement overlays with the live video feed. Offline fallback generates a printable band-labeled measurement sheet.',
   },
   {
     icon: BrainCircuit,
-    label: 'AI recommendations',
-    detail: 'Per-run choice between BYOK cloud vision (analyze first layer, score stringing, identify ringing band) and manual scoring. AI cites evidence, asks for missing measurements, and never auto-applies printer-affecting values without explicit confirmation.',
+    label: 'AI calibration recommendations',
+    detail: 'Per-run choice between BYOK cloud vision (analyze first-layer adhesion, score stringing artifacts, identify ringing bands) and manual scoring. AI cites evidence from attached photos, asks for missing measurements, and never auto-applies printer-affecting values without explicit confirmation.',
   },
   {
     icon: History,
-    label: 'Result history + confidence',
-    detail: 'Up to 5 most recent results per (printer × material × spool × nozzle × profile) tuple with date, applied value, measurements, photos, AI confidence, and notes. Variance across the rolling window surfaces high-confidence bands and flags noisy results for re-runs.',
+    label: 'Result history + confidence scoring',
+    detail: 'Up to 5 most recent results per printer × material × nozzle × profile tuple with date, applied value, measurements, photos, AI confidence, and notes. Variance across the rolling window surfaces high-confidence bands and flags noisy results for re-runs.',
+  },
+  {
+    icon: BarChart2,
+    label: 'Calibration repeatability analytics',
+    detail: 'Per-parameter drift charts across sessions: spot when pressure advance creeps between filament swaps or input shaper shifts after a belt service. Configurable alert thresholds flag values that have moved outside their confidence band since last applied.',
+  },
+  {
+    icon: Rocket,
+    label: 'Plugin / extension system',
+    detail: 'A registry-based plugin architecture that lets third-party tools hook into CAD features, slicer pipeline steps, printer panels, and MCP tool sets. Plugins are isolated web workers — a broken plugin cannot crash the main workspace.',
   },
 ];
 
@@ -763,14 +776,14 @@ function ReleaseRoadmapTabs() {
         <div className="rrtabs__head">
           <div className="home-section-heading" style={{ margin: 0 }}>
             <p>{tab === 'next' ? 'Coming next' : 'Just shipped'}</p>
-            <h2 id="release-title">{tab === 'next' ? 'Next release' : 'v0.3.0 release'}</h2>
+            <h2 id="release-title">{tab === 'next' ? 'Next release' : 'v0.4.0 release'}</h2>
           </div>
           <div className="rrtabs__nav" role="tablist">
             <button role="tab" aria-selected={tab === 'next'} className={`rrtabs__tab${tab === 'next' ? ' rrtabs__tab--active' : ''}`} onClick={() => setTab('next')} onKeyDown={handleKey}>
               Next release
             </button>
             <button role="tab" aria-selected={tab === 'latest'} className={`rrtabs__tab${tab === 'latest' ? ' rrtabs__tab--active' : ''}`} onClick={() => setTab('latest')} onKeyDown={handleKey}>
-              v0.3.0 release
+              v0.4.0 release
             </button>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
+import { DialogShell } from '../common/DialogShell';
 
 export interface TextureExtrudeParams {
   imageUrl: string;
@@ -30,14 +30,8 @@ export default function TextureExtrudeDialog({ open, onClose, onConfirm }: Props
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Texture Extrude</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
+    <DialogShell title="Texture Extrude" onClose={onClose} size="sm" onConfirm={handleApply} confirmLabel="Apply" confirmDisabled={!hasUrl}>
+      <div className="form-group">
             <label>Image URL</label>
             <input
               type="text"
@@ -98,12 +92,6 @@ export default function TextureExtrudeDialog({ open, onClose, onConfirm }: Props
               title="Higher = smoother displacement, slower"
             />
           </div>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply} disabled={!hasUrl}>Apply</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

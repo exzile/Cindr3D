@@ -1,5 +1,6 @@
 import type { DuetObjectModel } from '../../types/duet';
 import type { ChamberControlConfig } from '../../store/chamberControlStore';
+import { parseNumericPayload } from '../../utils/parseNumericPayload';
 
 export interface ChamberReading {
   source: 'rrf' | 'klipper' | 'mqtt' | 'none';
@@ -79,25 +80,7 @@ export function resolveChamberReading(
 }
 
 export function parseChamberTemperaturePayload(payload: string): number | null {
-  const trimmed = payload.trim();
-  if (!trimmed) return null;
-  const direct = Number(trimmed);
-  if (Number.isFinite(direct)) return direct;
-
-  try {
-    const parsed = JSON.parse(trimmed) as unknown;
-    if (typeof parsed === 'number' && Number.isFinite(parsed)) return parsed;
-    if (parsed && typeof parsed === 'object') {
-      const record = parsed as Record<string, unknown>;
-      const value = record.temperatureC ?? record.temperature ?? record.temp ?? record.value;
-      const next = Number(value);
-      return Number.isFinite(next) ? next : null;
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
+  return parseNumericPayload(payload, ['temperatureC', 'temperature', 'temp', 'value']);
 }
 
 export function computeChamberRampCommand(

@@ -5,7 +5,7 @@
  */
 
 import { useState } from 'react';
-import { X } from 'lucide-react';
+import { DialogShell } from '../common/DialogShell';
 
 export interface DecalParams {
   imageUrl: string;
@@ -42,13 +42,7 @@ export function DecalDialog({ open, onOk, onClose, faceId }: Props) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Decal</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
+    <DialogShell title="Decal" onClose={onClose} size="sm" onConfirm={handleOk} confirmDisabled={!canOk}>
 
           <div className="form-group">
             <label>Image URL</label>
@@ -128,12 +122,6 @@ export function DecalDialog({ open, onOk, onClose, faceId }: Props) {
           <p className="dialog-hint">
             Decals are applied as a flat visual overlay on the selected face. No geometry is modified.
           </p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOk} disabled={!canOk}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

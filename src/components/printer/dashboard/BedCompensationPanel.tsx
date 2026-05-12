@@ -1,212 +1,114 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Layers, RefreshCcw, Crosshair, Loader2, Download,
-  ToggleLeft, ToggleRight, AlertCircle, FolderOpen, X,
-  Home, ScanLine, TriangleAlert,
+  ToggleLeft, ToggleRight, AlertCircle, Home,
 } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
-import { computeStats, deviationColor, exportHeightMapCSV } from '../heightMap/utils';
-import type { DuetHeightMap } from '../../../types/duet';
+import { computeStats, exportHeightMapCSV } from '../heightMap/utils';
+import { useProbeGridConfig } from '../heightMap/hooks/useProbeGridConfig';
+import { useHeightMapRunners } from '../heightMap/hooks/useHeightMapRunners';
+import {
+  CAMERA_POSITIONS,
+  Scene3D,
+  type BedBounds,
+  type ConfiguredProbeGrid,
+} from '../heightMap/visualization';
+import { DEMO_HEIGHT_MAP } from './bedCompensation/demo';
+import { loadProbeGridPrefs, saveProbeGridPrefs } from './bedCompensation/prefs';
+import { MiniHeatmap } from './bedCompensation/MiniHeatmap';
+import { ScaleLegend } from './bedCompensation/ScaleLegend';
+import { ProbeConfirmModal } from './bedCompensation/modals/ProbeConfirmModal';
+import { ProbeResultsModal } from './bedCompensation/modals/ProbeResultsModal';
+import { LevelBedModal } from './bedCompensation/modals/LevelBedModal';
 
-/* ─── demo mesh shown when no real map is loaded ───────────────── */
-
-const DEMO_HEIGHT_MAP: DuetHeightMap = {
-  xMin: 0, xMax: 235, xSpacing: 47,
-  yMin: 0, yMax: 235, ySpacing: 47,
-  radius: -1,
-  numX: 6, numY: 6,
-  points: [
-    [ 0.042,  0.018, -0.008, -0.021, -0.012,  0.031],
-    [ 0.029,  0.011, -0.019, -0.038, -0.024,  0.014],
-    [ 0.007, -0.013, -0.031, -0.047, -0.033, -0.006],
-    [-0.014, -0.029, -0.048, -0.062, -0.044, -0.018],
-    [-0.008, -0.021, -0.037, -0.051, -0.038, -0.011],
-    [ 0.023,  0.004, -0.015, -0.026, -0.019,  0.016],
-  ],
-};
-
-/* ─── probe confirm modal ──────────────────────────────────────── */
-
-function ProbeConfirmModal({ onConfirm, onCancel }: { onConfirm: (homeFirst: boolean) => void; onCancel: () => void }) {
-  const [homeFirst, setHomeFirst] = useState(true);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel();
-      if (e.key === 'Enter') onConfirm(homeFirst);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onConfirm, onCancel, homeFirst]);
-
-  return createPortal(
-    <div className="bc-modal-overlay" onClick={onCancel}>
-      <div className="bc-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="bc-modal-title">
-        <div className="bc-modal-header">
-          <div className="bc-modal-title-row">
-            <TriangleAlert size={15} className="bc-modal-warn-icon" />
-            <span id="bc-modal-title" className="bc-modal-title">Probe Bed Mesh</span>
-          </div>
-          <button className="bc-modal-close" onClick={onCancel} title="Cancel">
-            <X size={13} />
-          </button>
-        </div>
-
-        <div className="bc-modal-body">
-          <p className="bc-modal-desc">
-            This will move the toolhead across the bed to measure surface deviation.
-            Make sure the bed is clear before continuing.
-          </p>
-
-          <div className="bc-modal-steps">
-            <label className={`bc-modal-step bc-modal-step--toggle${homeFirst ? '' : ' is-disabled'}`}>
-              <input
-                type="checkbox"
-                className="bc-modal-checkbox"
-                checked={homeFirst}
-                onChange={(e) => setHomeFirst(e.target.checked)}
-              />
-              <Home size={12} className="bc-modal-step-icon" />
-              <div>
-                <span className="bc-modal-step-label">Home all axes</span>
-                <span className="bc-modal-step-cmd">G28</span>
-              </div>
-            </label>
-            <div className="bc-modal-step-arrow">↓</div>
-            <div className="bc-modal-step">
-              <ScanLine size={12} className="bc-modal-step-icon" />
-              <div>
-                <span className="bc-modal-step-label">Probe bed mesh</span>
-                <span className="bc-modal-step-cmd">G29</span>
-              </div>
-            </div>
-          </div>
-
-          <ul className="bc-modal-checklist">
-            <li>Bed is clear of all objects and clips</li>
-            <li>Nozzle is clean — no filament blobs</li>
-            <li>Bed is at print temperature (if using thermal expansion)</li>
-          </ul>
-        </div>
-
-        <div className="bc-modal-footer">
-          <button className="bc-modal-btn bc-modal-btn--cancel" onClick={onCancel}>
-            Cancel
-          </button>
-          <button className="bc-modal-btn bc-modal-btn--confirm" onClick={() => onConfirm(homeFirst)} autoFocus>
-            <Crosshair size={13} />
-            {homeFirst ? 'Home & Probe' : 'Probe'}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-/* ─── mini heatmap ─────────────────────────────────────────────── */
-
-function MiniHeatmap({ heightMap }: { heightMap: DuetHeightMap }) {
-  const canvasRef  = useRef<HTMLCanvasElement>(null);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-  const stats      = useMemo(() => computeStats(heightMap), [heightMap]);
-
-  const drawRef = useRef<() => void>(() => {});
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx || canvas.width === 0 || canvas.height === 0) return;
-    const W = canvas.width;
-    const H = canvas.height;
-    ctx.clearRect(0, 0, W, H);
-    const cellW = W / heightMap.numX;
-    const cellH = H / heightMap.numY;
-    for (let y = 0; y < heightMap.numY; y++) {
-      for (let x = 0; x < heightMap.numX; x++) {
-        const val = heightMap.points[y]?.[x] ?? 0;
-        ctx.fillStyle = deviationColor(val, stats.min, stats.max);
-        ctx.fillRect(
-          Math.floor(x * cellW),
-          Math.floor(y * cellH),
-          Math.ceil(cellW),
-          Math.ceil(cellH),
-        );
-      }
-    }
-  }, [heightMap, stats]);
-
-  useEffect(() => {
-    drawRef.current = draw;
-    draw();
-  }, [draw]);
-
-  useEffect(() => {
-    const wrapper = wrapperRef.current;
-    const canvas  = canvasRef.current;
-    if (!wrapper || !canvas) return;
-    const ro = new ResizeObserver((entries) => {
-      const rect = entries[0]?.contentRect;
-      if (!rect || rect.width < 4 || rect.height < 4) return;
-      canvas.width  = Math.round(rect.width);
-      canvas.height = Math.round(rect.height);
-      drawRef.current();
-    });
-    ro.observe(wrapper);
-    return () => ro.disconnect();
-  }, []);
-
-  return (
-    <div ref={wrapperRef} className="bc-canvas-wrap">
-      <canvas ref={canvasRef} className="bc-canvas" title="Bed mesh deviation heatmap" />
-    </div>
-  );
-}
-
-/* ─── scale legend ─────────────────────────────────────────────── */
-
-function ScaleLegend({ min, max }: { min: number; max: number }) {
-  const steps = 5;
-  return (
-    <div className="bc-legend">
-      {Array.from({ length: steps }, (_, i) => {
-        const t   = i / (steps - 1);
-        const val = min + t * (max - min);
-        return (
-          <div key={i} className="bc-legend-step">
-            <div className="bc-legend-swatch" style={{ background: deviationColor(val, min, max) }} />
-            <span className="bc-legend-label">{val >= 0 ? '+' : ''}{val.toFixed(2)}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ─── main panel ───────────────────────────────────────────────── */
+/* ─── main panel ───────────────────────────────── */
 
 export default function BedCompensationPanel() {
   const heightMap        = usePrinterStore((s) => s.heightMap);
   const loadHeightMap    = usePrinterStore((s) => s.loadHeightMap);
   const probeGrid        = usePrinterStore((s) => s.probeGrid);
+  const levelBed         = usePrinterStore((s) => s.levelBed);
   const sendGCode        = usePrinterStore((s) => s.sendGCode);
   const service          = usePrinterStore((s) => s.service);
   const connected        = usePrinterStore((s) => s.connected);
+  const boardType        = usePrinterStore((s) => s.config.boardType);
   const compensationType = usePrinterStore((s) => s.model?.move?.compensation?.type);
+  const axes             = usePrinterStore((s) => s.model?.move?.axes);
 
-  const [csvFiles,     setCsvFiles]     = useState<string[]>([]);
-  const [selectedCsv,  setSelectedCsv]  = useState('0:/sys/heightmap.csv');
-  const [loadingCsv,   setLoadingCsv]   = useState(false);
   const [loading,      setLoading]      = useState(false);
-  const [probing,      setProbing]      = useState(false);
   const [error,        setError]        = useState<string | null>(null);
+  const [viewMode,     setViewMode]     = useState<'2d' | '3d'>('2d');
   const [showProbeModal, setShowProbeModal] = useState(false);
+  const [showLevelModal, setShowLevelModal] = useState(false);
+  const [probeGridUnlocked, setProbeGridUnlocked] = useState(() => loadProbeGridPrefs().probeGridUnlocked);
+
+  /* ── Probe-grid config (M557/G31 from config.g + axes fallback) ── */
+  const {
+    probeXMin, probeXMax, probeYMin, probeYMax, probePoints,
+    setProbeXMin, setProbeXMax, setProbeYMin, setProbeYMax, setProbePoints,
+    probeFromConfig, configM557Line, configGridRef, g31Offset,
+  } = useProbeGridConfig({
+    service, connected, axes,
+    initial: {
+      probeXMin:   loadProbeGridPrefs().probeXMin,
+      probeXMax:   loadProbeGridPrefs().probeXMax,
+      probeYMin:   loadProbeGridPrefs().probeYMin,
+      probeYMax:   loadProbeGridPrefs().probeYMax,
+      probePoints: loadProbeGridPrefs().probePoints,
+    },
+    unlocked: probeGridUnlocked,
+  });
+
+  // G31 sets a minimum allowed travel for the probe tip; surface it so the
+  // ProbeGridSection's number inputs can clamp to it.
+  const probeXMinLimit = Math.max(0, g31Offset?.x ?? 0);
+  const probeYMinLimit = Math.max(0, g31Offset?.y ?? 0);
 
   const isEnabled = !!compensationType && compensationType !== 'none';
   const activeMap = heightMap ?? DEMO_HEIGHT_MAP;
   const isDemo    = !heightMap;
   const stats     = useMemo(() => computeStats(activeMap), [activeMap]);
+  const probeGridLocked = probeFromConfig && !probeGridUnlocked;
+  const m557Command = `M557 X${probeXMin}:${probeXMax} Y${probeYMin}:${probeYMax} P${probePoints}`;
+  const spacingX = probePoints > 1 ? ((probeXMax - probeXMin) / (probePoints - 1)).toFixed(1) : '-';
+  const spacingY = probePoints > 1 ? ((probeYMax - probeYMin) / (probePoints - 1)).toFixed(1) : '-';
+  const gridLabel = `${probePoints}x${probePoints}`;
+  const spacingLabel = `${spacingX}x${spacingY} mm`;
+
+  /* ── Long-running runners (probe + level) ── */
+  // Dashboard variant doesn't expose Smart Cal, but the hook is the same
+  // shape — we just don't render the smart-cal modal. Sharing the hook means
+  // we inherit the mount/re-entry guards and M558 snapshot-restore.
+  const {
+    probing, probeResult,
+    showProbeResultModal, setShowProbeResultModal,
+    runProbe,
+    leveling,
+    runLevel,
+  } = useHeightMapRunners({
+    service, sendGCode, probeGrid, levelBed,
+    m557Command, probeXMin, probeXMax, probeYMin, probeYMax,
+    boardType, setLoadError: setError,
+  });
+
+  const configuredGrid = useMemo<ConfiguredProbeGrid>(
+    () => ({ xMin: probeXMin, xMax: probeXMax, yMin: probeYMin, yMax: probeYMax, numPoints: probePoints }),
+    [probeXMin, probeXMax, probeYMin, probeYMax, probePoints],
+  );
+  const bedBounds = useMemo<BedBounds | undefined>(() => {
+    if (!axes || axes.length < 2) return undefined;
+    const xAxis = axes.find((a) => a.letter === 'X') ?? axes[0];
+    const yAxis = axes.find((a) => a.letter === 'Y') ?? axes[1];
+    const xMax = xAxis?.max ?? 0;
+    const yMax = yAxis?.max ?? 0;
+    if (xMax <= 10 || yMax <= 10) return undefined;
+    return {
+      xMin: xAxis.min ?? 0,
+      xMax,
+      yMin: yAxis.min ?? 0,
+      yMax,
+    };
+  }, [axes]);
 
   const compensationLabel = (() => {
     if (!compensationType || compensationType === 'none') return 'None';
@@ -215,54 +117,23 @@ export default function BedCompensationPanel() {
     return compensationType;
   })();
 
-  const refreshCsvList = useCallback(async () => {
-    if (!service) return;
-    setLoadingCsv(true);
-    try {
-      const entries = await service.listFiles('0:/sys');
-      const csvs = entries
-        .filter((e) => e.type === 'f' && e.name.toLowerCase().endsWith('.csv'))
-        .map((e) => e.name)
-        .sort();
-      setCsvFiles(csvs);
-      if (csvs.length > 0 && !csvs.includes('heightmap.csv')) {
-        setSelectedCsv(`0:/sys/${csvs[0]}`);
-      }
-    } catch {
-      setCsvFiles([]);
-    } finally {
-      setLoadingCsv(false);
-    }
-  }, [service]);
-
   useEffect(() => {
-    if (connected) {
-      void refreshCsvList();
-      void loadHeightMap();
-    }
-  }, [connected]); // eslint-disable-line react-hooks/exhaustive-deps
+    saveProbeGridPrefs({ probeXMin, probeXMax, probeYMin, probeYMax, probePoints, probeGridUnlocked });
+  }, [probeXMin, probeXMax, probeYMin, probeYMax, probePoints, probeGridUnlocked]);
+
+  // Auto-load the default heightmap when a printer first connects so the panel
+  // renders with real data instead of the demo placeholder.
+  useEffect(() => {
+    if (connected) void loadHeightMap();
+  }, [connected, loadHeightMap]);
 
   const handleLoad = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try { await loadHeightMap(selectedCsv); }
+    try { await loadHeightMap(); }
     catch { setError('Failed to load height map'); }
     finally { setLoading(false); }
-  }, [loadHeightMap, selectedCsv]);
-
-  const runProbe = useCallback(async (homeFirst: boolean) => {
-    setShowProbeModal(false);
-    setProbing(true);
-    setError(null);
-    try {
-      if (homeFirst) {
-        await sendGCode('G28');
-      }
-      await probeGrid();
-    }
-    catch { setError('Probing failed'); }
-    finally { setProbing(false); }
-  }, [probeGrid, sendGCode]);
+  }, [loadHeightMap]);
 
   const handleToggle = useCallback(() => {
     void sendGCode(isEnabled ? 'G29 S2' : 'G29 S1');
@@ -273,8 +144,54 @@ export default function BedCompensationPanel() {
 
       {showProbeModal && (
         <ProbeConfirmModal
-          onConfirm={(homeFirst) => void runProbe(homeFirst)}
+          onConfirm={(opts) => { setShowProbeModal(false); void runProbe(opts); }}
           onCancel={() => setShowProbeModal(false)}
+          m557Command={m557Command}
+          boardType={boardType}
+          gridLabel={gridLabel}
+          spacingLabel={spacingLabel}
+          probeXMin={probeXMin}
+          probeXMax={probeXMax}
+          probeYMin={probeYMin}
+          probeYMax={probeYMax}
+          probePoints={probePoints}
+          probeGridLocked={probeGridLocked}
+          probeFromConfig={probeFromConfig}
+          probeGridUnlocked={probeGridUnlocked}
+          configM557Line={configM557Line}
+          xMinLimit={probeXMinLimit}
+          yMinLimit={probeYMinLimit}
+          onProbeXMinChange={(v) => { setProbeXMin(v); setProbeGridUnlocked(true); }}
+          onProbeXMaxChange={(v) => { setProbeXMax(v); setProbeGridUnlocked(true); }}
+          onProbeYMinChange={(v) => { setProbeYMin(v); setProbeGridUnlocked(true); }}
+          onProbeYMaxChange={(v) => { setProbeYMax(v); setProbeGridUnlocked(true); }}
+          onProbePointsChange={(v) => { setProbePoints(v); setProbeGridUnlocked(true); }}
+          onToggleProbeGridLock={() => {
+            const wasUnlocked = probeGridUnlocked;
+            if (wasUnlocked && configGridRef.current) {
+              const g = configGridRef.current;
+              setProbeXMin(g.xMin);
+              setProbeXMax(g.xMax);
+              setProbeYMin(g.yMin);
+              setProbeYMax(g.yMax);
+              setProbePoints(g.numPoints);
+            }
+            setProbeGridUnlocked((v) => !v);
+          }}
+        />
+      )}
+      {showProbeResultModal && probeResult && (
+        <ProbeResultsModal
+          stats={probeResult.stats}
+          passes={probeResult.passes}
+          onClose={() => setShowProbeResultModal(false)}
+          onRunAgain={() => { setShowProbeResultModal(false); setShowProbeModal(true); }}
+        />
+      )}
+      {showLevelModal && (
+        <LevelBedModal
+          onConfirm={(opts) => { setShowLevelModal(false); void runLevel(opts); }}
+          onCancel={() => setShowLevelModal(false)}
         />
       )}
 
@@ -303,7 +220,45 @@ export default function BedCompensationPanel() {
       {/* ── heatmap + stats ── */}
       <div className="bc-viz-row">
         <div className="bc-canvas-col">
-          <MiniHeatmap heightMap={activeMap} />
+          <div className="bc-view-toggle" role="tablist" aria-label="Mesh preview view">
+            <button
+              type="button"
+              className={viewMode === '2d' ? 'is-active' : ''}
+              onClick={() => setViewMode('2d')}
+              role="tab"
+              aria-selected={viewMode === '2d'}
+              title="2D heatmap view"
+            >
+              2D
+            </button>
+            <button
+              type="button"
+              className={viewMode === '3d' ? 'is-active' : ''}
+              onClick={() => setViewMode('3d')}
+              role="tab"
+              aria-selected={viewMode === '3d'}
+              title="3D surface view"
+            >
+              3D
+            </button>
+          </div>
+          {viewMode === '3d' ? (
+            <div className="bc-scene-wrap">
+              <Scene3D
+                heightMap={activeMap}
+                cameraPosition={CAMERA_POSITIONS.iso}
+                showProbePoints
+                probePointScale={0.55}
+                showZRuler={false}
+                showXYRulers={false}
+                configuredGrid={configuredGrid}
+                bedBounds={bedBounds}
+              />
+              <span className="bc-scene-hint">drag rotate · scroll zoom</span>
+            </div>
+          ) : (
+            <MiniHeatmap heightMap={activeMap} />
+          )}
           {isDemo && <span className="bc-demo-badge">demo</span>}
         </div>
         <div className="bc-right-col">
@@ -345,39 +300,13 @@ export default function BedCompensationPanel() {
         </div>
       )}
 
-      {/* ── file selector ── */}
-      <div className="bc-file-row">
-        <FolderOpen size={12} className="bc-file-icon" />
-        <select
-          className="bc-select"
-          value={selectedCsv}
-          onChange={(e) => setSelectedCsv(e.target.value)}
-          disabled={loadingCsv || csvFiles.length === 0}
-        >
-          {csvFiles.length === 0
-            ? <option value="0:/sys/heightmap.csv">heightmap.csv</option>
-            : csvFiles.map((f) => (
-                <option key={f} value={`0:/sys/${f}`}>{f}</option>
-              ))
-          }
-        </select>
-        <button
-          className="bc-icon-btn"
-          onClick={() => void refreshCsvList()}
-          disabled={!connected || loadingCsv}
-          title="Refresh file list"
-        >
-          {loadingCsv ? <Loader2 size={11} className="bc-spin" /> : <RefreshCcw size={11} />}
-        </button>
-      </div>
-
       {/* ── actions ── */}
       <div className="bc-actions">
         <button
           className="bc-btn"
           onClick={() => void handleLoad()}
           disabled={!connected || loading || probing}
-          title="Load selected height map from printer"
+          title="Load the printer's default height map"
         >
           {loading ? <Loader2 size={12} className="bc-spin" /> : <RefreshCcw size={12} />}
           Load Map
@@ -385,11 +314,20 @@ export default function BedCompensationPanel() {
         <button
           className="bc-btn bc-btn--probe"
           onClick={() => setShowProbeModal(true)}
-          disabled={!connected || loading || probing}
-          title="Home axes then probe bed mesh (G28 + G29)"
+          disabled={!connected || loading || probing || leveling}
+          title="Configure grid, then home axes and probe bed mesh"
         >
           {probing ? <Loader2 size={12} className="bc-spin" /> : <Crosshair size={12} />}
           {probing ? 'Probing…' : 'Probe Bed'}
+        </button>
+        <button
+          className="bc-btn bc-btn--level"
+          onClick={() => setShowLevelModal(true)}
+          disabled={!connected || loading || probing || leveling}
+          title="Run bed_tilt.g tilt correction"
+        >
+          {leveling ? <Loader2 size={12} className="bc-spin" /> : <Home size={12} />}
+          {leveling ? 'Leveling...' : 'Level Bed'}
         </button>
         <button
           className="bc-btn"

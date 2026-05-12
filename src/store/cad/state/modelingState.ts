@@ -113,6 +113,7 @@ export interface CADModelingState {
   setRevolveProfileMode: (m: 'sketch' | 'face') => void;
   revolveFaceBoundary: number[] | null;
   revolveFaceNormal: [number, number, number] | null;
+  clearRevolveFace: () => void;
   startRevolveFromFace: (boundary: THREE.Vector3[], normal: THREE.Vector3) => void;
   startRevolveTool: () => void;
   cancelRevolveTool: () => void;

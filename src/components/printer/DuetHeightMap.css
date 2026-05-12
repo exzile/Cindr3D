@@ -52,10 +52,104 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  margin-left: auto;
   font-size: 11px;
   color: var(--accent, #3b82f6);
   font-weight: 600;
+}
+
+/* Thin vertical separator between topbar sections */
+.hm-topbar__div {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+/* Compact toggle groups sitting directly in the topbar */
+.hm-topbar__ctrl { flex-shrink: 0; }
+.hm-topbar__ctrl .hm-toggle-btn { padding: 3px 8px; font-size: 11px; height: 24px; }
+
+/* Color scale legend — floating center-bottom of canvas */
+.hm-legend-overlay {
+  position: absolute;
+  bottom: 14px;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+}
+.hm-legend-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  max-width: 380px;
+  width: 100%;
+  background: color-mix(in srgb, var(--bg-panel) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+  border-radius: 20px;
+  backdrop-filter: blur(8px);
+}
+.hm-legend-gradient {
+  flex: 1;
+  height: 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  min-width: 120px;
+}
+.hm-legend-val {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  min-width: 44px;
+  text-align: center;
+}
+.hm-legend-val:first-child { text-align: right; }
+.hm-legend-mm {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: 2px;
+}
+
+/* Camera preset cluster — top-right corner of canvas */
+.hm-cam-overlay {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.hm-topbar__probing--level {
+  color: #a78bfa;
+}
+
+/* Compact pill badges — "Run 1/3", "Probe 2/3" */
+.hm-topbar__progress-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  background: color-mix(in srgb, #a78bfa 14%, transparent);
+  border: 1px solid color-mix(in srgb, #a78bfa 35%, transparent);
+  color: #a78bfa;
+  letter-spacing: 0.3px;
+}
+/* When inside a plain (probe/blue) probing span, use the accent color instead of purple */
+.hm-topbar__probing:not(.hm-topbar__probing--level) .hm-topbar__progress-pill {
+  background: color-mix(in srgb, var(--accent, #3b82f6) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent, #3b82f6) 35%, transparent);
+  color: var(--accent, #3b82f6);
 }
 
 /* ── Compare banner ───────────────────────────────────────────────────────── */
@@ -311,6 +405,7 @@
 .hm-side-section--actions {
   --sc-accent: var(--accent, #3b82f6);
   --sc-border: color-mix(in srgb, var(--accent, #3b82f6) 30%, var(--border-light));
+  gap: 8px;
 }
 
 /* Stats — green accent */
@@ -379,125 +474,166 @@
 }
 .hm-load-error__dismiss:hover { opacity: 1; }
 
-/* ── Probe hero button ────────────────────────────────────────────────────── */
-.hm-probe-hero {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 12px 14px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--accent, #3b82f6) 40%, var(--border));
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--accent, #3b82f6) 12%, var(--bg-elevated)) 0%,
-    color-mix(in srgb, var(--accent, #3b82f6)  6%, var(--bg-elevated)) 100%
-  );
-  color: color-mix(in srgb, var(--accent, #3b82f6) 92%, var(--text-primary));
-  font-family: inherit;
-  cursor: pointer;
-  text-align: left;
-  position: relative;
-  overflow: hidden;
-  transition: border-color 0.18s, box-shadow 0.18s, transform 0.1s;
-  animation: hm-probe-idle 4s ease-in-out infinite;
-}
-@keyframes hm-probe-idle {
-  0%, 100% { box-shadow: 0 0 0 0    color-mix(in srgb, var(--accent, #3b82f6) 0%,  transparent); }
-  50%       { box-shadow: 0 0 14px 0 color-mix(in srgb, var(--accent, #3b82f6) 22%, transparent); }
-}
-.hm-probe-hero:hover:not(:disabled) {
-  border-color: var(--accent, #3b82f6);
-  box-shadow: 0 0 0 3px  color-mix(in srgb, var(--accent, #3b82f6) 22%, transparent),
-              0 4px 16px color-mix(in srgb, var(--accent, #3b82f6) 25%, transparent);
-  transform: translateY(-1px);
-  animation: none;
-}
-/* Sweep-shine */
-.hm-probe-hero::after {
-  content: '';
-  position: absolute; inset: 0;
-  background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.09) 50%, transparent 70%);
-  transform: translateX(-100%);
-}
-.hm-probe-hero:hover:not(:disabled)::after {
-  transform: translateX(100%);
-  transition: transform 0.55s ease;
-}
-.hm-probe-hero.is-probing {
-  animation: none;
-  border-color: color-mix(in srgb, var(--accent, #3b82f6) 55%, var(--border));
-  box-shadow: 0 0 16px color-mix(in srgb, var(--accent, #3b82f6) 28%, transparent);
-}
-.hm-probe-hero:disabled { opacity: 0.35; cursor: not-allowed; animation: none; }
+/* ── Ribbon-style action buttons ──────────────────────────────────────────── */
 
-.hm-probe-hero__icon {
-  display: flex; align-items: center; justify-content: center;
-  width: 38px; height: 38px;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--accent, #3b82f6) 20%, var(--bg-elevated));
-  flex-shrink: 0;
-}
-.hm-probe-hero__body  { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.hm-probe-hero__label { font-size: 14px; font-weight: 700; line-height: 1; letter-spacing: -0.2px; }
-.hm-probe-hero__sub   { font-size: 10px; opacity: 0.6; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-/* ── Hero button row — probe + level side by side ─────────────────────────── */
-.hm-hero-row {
-  display: flex;
-  gap: 8px;
-}
-.hm-hero-row .hm-probe-hero {
-  flex: 1;
-  min-width: 0;
-}
-
-/* Level Bed variant — green accent instead of blue */
-.hm-probe-hero--level {
-  --accent: #22c55e;
-}
-@keyframes hm-level-idle {
-  0%, 100% { box-shadow: 0 0 0 0    color-mix(in srgb, #22c55e 0%,  transparent); }
-  50%       { box-shadow: 0 0 14px 0 color-mix(in srgb, #22c55e 22%, transparent); }
-}
-.hm-probe-hero--level {
-  animation: hm-level-idle 4s ease-in-out infinite;
-}
-.hm-probe-hero--level.is-probing {
-  border-color: color-mix(in srgb, #22c55e 55%, var(--border));
-  box-shadow: 0 0 16px color-mix(in srgb, #22c55e 28%, transparent);
-}
-
-/* ── Secondary action buttons ─────────────────────────────────────────────── */
-.hm-action-row {
+/* Primary row: Probe Bed + Level Bed — 2 equal columns */
+.hm-ribbon-primary {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(72px, 1fr));
   gap: 6px;
 }
-.hm-action-btn {
+
+.hm-ribbon-primary--three {
+  grid-template-columns: repeat(3, minmax(72px, 1fr));
+}
+
+/* Secondary row: Load / Export / Save As — 3 equal columns */
+.hm-ribbon-secondary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(58px, 1fr));
+  gap: 6px;
+}
+
+/* Base ribbon button — icon on top, label below */
+.hm-ribbon-btn {
+  --rb-accent: var(--accent, #3b82f6);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  padding: 9px 4px 8px;
+  padding: 10px 6px 9px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--rb-accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--rb-accent) 8%, var(--bg-elevated));
+  color: color-mix(in srgb, var(--rb-accent) 85%, var(--text-primary));
+  font-family: inherit;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 84px;
+  transition: border-color 0.16s, box-shadow 0.16s, background 0.16s, transform 0.1s;
+  animation: hm-ribbon-pulse 4s ease-in-out infinite;
+}
+
+@keyframes hm-ribbon-pulse {
+  0%, 100% { box-shadow: 0 0 0 0    color-mix(in srgb, var(--rb-accent) 0%,  transparent); }
+  50%       { box-shadow: 0 0 10px 0 color-mix(in srgb, var(--rb-accent) 18%, transparent); }
+}
+
+.hm-ribbon-btn:hover:not(:disabled) {
+  border-color: var(--rb-accent);
+  background: color-mix(in srgb, var(--rb-accent) 14%, var(--bg-elevated));
+  box-shadow: 0 0 0 2px  color-mix(in srgb, var(--rb-accent) 20%, transparent),
+              0 3px 12px color-mix(in srgb, var(--rb-accent) 22%, transparent);
+  transform: translateY(-1px);
+  animation: none;
+}
+
+/* Sweep-shine on hover */
+.hm-ribbon-btn::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.08) 50%, transparent 70%);
+  transform: translateX(-110%);
+}
+.hm-ribbon-btn:hover:not(:disabled)::after {
+  transform: translateX(110%);
+  transition: transform 0.5s ease;
+}
+
+.hm-ribbon-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.hm-ribbon-btn.is-active {
+  animation: none;
+  border-color: color-mix(in srgb, var(--rb-accent) 60%, var(--border));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--rb-accent) 25%, transparent);
+}
+
+.hm-ribbon-btn:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+  animation: none;
+}
+
+/* Icon container — centred circle with tinted bg */
+.hm-ribbon-btn__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
   border-radius: 8px;
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--rb-accent) 18%, var(--bg-elevated));
+  flex-shrink: 0;
+}
+
+/* Primary button: larger icon container */
+.hm-ribbon-primary .hm-ribbon-btn .hm-ribbon-btn__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+
+.hm-ribbon-btn__label {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.1px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.hm-ribbon-btn__sub {
+  font-size: 9px;
+  font-weight: 500;
+  opacity: 0.58;
+  line-height: 1.2;
+  white-space: normal;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  text-align: center;
+}
+
+/* Small variant — secondary actions have slightly smaller padding */
+.hm-ribbon-btn--sm {
+  padding: 8px 4px 7px;
+  gap: 4px;
+  min-height: 62px;
+  border-color: var(--border);
   background: var(--bg-panel);
   color: var(--text-secondary);
-  font-size: 10px; font-weight: 600; font-family: inherit;
-  cursor: pointer;
-  transition: background 0.14s, border-color 0.14s, color 0.14s, transform 0.1s, box-shadow 0.14s;
+  animation: none;
 }
-.hm-action-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: color-mix(in srgb, var(--accent, #3b82f6) 55%, var(--border));
+.hm-ribbon-btn--sm .hm-ribbon-btn__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--accent, #3b82f6);
+}
+.hm-ribbon-btn--sm .hm-ribbon-btn__label {
+  font-size: 10px;
+  font-weight: 600;
+}
+.hm-ribbon-btn--sm:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent, #3b82f6) 50%, var(--border));
+  background: var(--bg-elevated);
   color: var(--text-primary);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   transform: translateY(-1px);
-  box-shadow: 0 3px 8px rgba(0,0,0,0.12);
+  animation: none;
 }
-.hm-action-btn:active:not(:disabled) { transform: translateY(0); box-shadow: none; }
-.hm-action-btn:disabled { opacity: 0.32; cursor: not-allowed; }
+
+/* Accent colours per primary button variant */
+.hm-ribbon-btn--probe { --rb-accent: #3b82f6; }
+.hm-ribbon-btn--level { --rb-accent: #22c55e; }
 
 /* ── Pill switch (comp toggle) ────────────────────────────────────────────── */
 .hm-pill-switch {
@@ -519,13 +655,18 @@
 
 /* ── Mesh compensation button ─────────────────────────────────────────────── */
 .hm-comp-btn {
-  display: flex; align-items: center; gap: 8px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
   padding: 8px 11px; border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg-panel);
   color: var(--text-secondary);
   font-size: 12px; font-weight: 600; font-family: inherit;
   cursor: pointer; width: 100%;
+  min-width: 0;
   transition: background 0.14s, border-color 0.14s, color 0.14s, box-shadow 0.14s;
 }
 .hm-comp-btn.is-on {
@@ -539,10 +680,16 @@
   color: var(--text-primary);
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
+.hm-comp-label {
+  min-width: 0;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
 .hm-comp-badge {
-  margin-left: auto;
   font-size: 9px; font-weight: 800; letter-spacing: 0.6px;
   padding: 2px 7px; border-radius: 999px;
+  justify-self: end;
   background: color-mix(in srgb, var(--text-muted) 12%, transparent);
   color: var(--text-muted);
   transition: background 0.22s, color 0.22s;
@@ -702,6 +849,33 @@
 .hm-stat-label { font-size: 11px; color: var(--text-secondary); font-weight: 500; }
 .hm-stat-value { font-size: 12px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 
+/* ── Z offset callout (stats sidebar) ────────────────────────────────────── */
+.hm-z-offset-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: color-mix(in srgb, #f59e0b 9%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, #f59e0b 30%, transparent);
+  margin-top: 4px;
+}
+.hm-z-offset-callout__icon {
+  color: #f59e0b;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.hm-z-offset-callout__text {
+  font-size: 10px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+.hm-z-offset-callout__text strong {
+  color: var(--text-primary);
+  font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 10px;
+}
+
 /* ── Visualization top row (view + color toggles side-by-side) ───────────── */
 .hm-vis-top-row {
   display: flex;
@@ -823,6 +997,7 @@
   letter-spacing: 0.3px;
   text-transform: none;
   margin-left: auto; /* push to right edge of title row */
+  min-width: 0;
   white-space: nowrap;
   user-select: none;
 }
@@ -902,74 +1077,223 @@
   line-height: 1.45;
 }
 .hm-probe-origin-warn svg { flex-shrink: 0; margin-top: 1px; }
-
-/* X + Y ranges on a single row */
-.hm-range-row {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  flex-wrap: nowrap;
-}
-
-/* Axis labels (X / Y) */
-.hm-range-axis {
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.3px;
+.hm-probe-origin-warn__icon { flex-shrink: 0; margin-top: 1px; }
+.hm-probe-origin-warn__text { flex: 1; }
+.hm-probe-origin-warn__apply {
   flex-shrink: 0;
-  width: 12px;
-  text-align: center;
+  align-self: center;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, #f97316 40%, var(--border));
+  background: color-mix(in srgb, #f97316 15%, var(--bg-panel));
+  color: #ea580c;
+  font-size: 10px;
+  cursor: pointer;
+  white-space: nowrap;
 }
-.hm-range-axis--x { color: #60a5fa; }
-.hm-range-axis--y { color: #34d399; margin-left: 4px; }
+.hm-probe-origin-warn__apply:hover { background: color-mix(in srgb, #f97316 25%, var(--bg-panel)); }
 
-/* Narrower input for use inside hm-range-row */
-.hm-grid-input--sm { width: 44px; }
+/* X / Y range rows — one per axis */
+.hm-axis-range {
+  display: grid;
+  grid-template-columns: 18px minmax(72px, 1fr) auto minmax(72px, 1fr) auto;
+  align-items: end;
+  gap: 5px;
+  min-width: 0;
+}
 
-/* Points select + spacing hint on one row */
-.hm-probe-pts-row {
+.hm-axis-label {
+  font-size: 11px;
+  font-weight: 800;
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+  letter-spacing: 0.2px;
+}
+.hm-axis-label--x { color: #60a5fa; }
+.hm-axis-label--y { color: #34d399; }
+
+.hm-axis-input {
+  width: 100% !important;
+  min-width: 0;
+  height: 28px;
+  font-size: 12px;
+}
+
+.hm-axis-field {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hm-axis-field__label {
+  color: var(--text-muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.hm-axis-sep {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.hm-axis-unit {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  padding-bottom: 5px;
+}
+
+/* Grid density row */
+.hm-grid-density-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
-.hm-probe-spacing {
+.hm-grid-density-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.hm-select--density {
+  height: 28px;
+  padding: 0 24px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+.hm-grid-density-pts {
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.hm-grid-density-sep {
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.hm-grid-density-spacing {
   font-size: 10px;
   color: var(--text-secondary);
   font-style: italic;
+  flex: 1 1 96px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
-/* M557 command block */
-.hm-grid-cmd--block {
-  display: block;
-  padding: 6px 9px;
-  border-radius: 6px;
-  background: var(--bg-panel);
+/* M557 command preview block with inline copy button */
+.hm-m557-preview {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  border-radius: 7px;
   border: 1px solid var(--border);
-  font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
-  font-size: 10px;
-  color: var(--accent, #3b82f6);
-  word-break: break-all;
-  user-select: all;
+  background: var(--bg-panel);
+  overflow: hidden;
 }
 
-/* Markers toggle + size slider row */
-.hm-markers-row {
+.hm-m557-preview__body {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  padding: 7px 9px;
+}
+
+.hm-m557-preview__label {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.hm-m557-preview__cmd {
+  font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 10.5px;
+  color: var(--accent, #3b82f6);
+  user-select: all;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.hm-m557-preview__copy {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  width: 34px;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.14s, background 0.14s;
+}
+.hm-m557-preview__copy:hover {
+  color: var(--accent, #3b82f6);
+  background: color-mix(in srgb, var(--accent, #3b82f6) 8%, var(--bg-elevated));
+}
+.hm-m557-preview__copy.is-copied {
+  color: #22c55e;
 }
 
-/* Slider + value label */
+/* Display toggles row (Mirror X + Markers side by side) */
+.hm-probe-toggles {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Marker size slider row */
 .hm-marker-size {
   display: flex;
   align-items: center;
   gap: 5px;
-  flex: 1;
-  min-width: 0;
 }
 .hm-marker-size .hm-size-slider { flex: 1; }
+
+/* ── M558 live settings display ───────────────────────────────────────────── */
+.hm-m558-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  font-size: 10px;
+  margin-top: 4px;
+}
+.hm-m558-info__label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.hm-m558-info__val {
+  font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+  color: var(--accent, #3b82f6);
+  font-weight: 600;
+}
 
 .hm-grid-row { display: flex; align-items: center; gap: 6px; min-height: 26px; }
 .hm-grid-label { font-size: 11px; color: var(--text-secondary); font-weight: 500; width: 52px; flex-shrink: 0; }
@@ -1138,6 +1462,794 @@
   .hm-sidebar.is-open { width: min(340px, 96vw); }
   .hm-sidebar > * { min-width: min(340px, 96vw); }
   .hm-side-section { margin: 4px 6px; padding: 11px 11px; }
-  .hm-probe-hero__label { font-size: 13px; }
+  .hm-ribbon-primary,
+  .hm-ribbon-primary--three {
+    grid-template-columns: 1fr 1fr;
+  }
+  .hm-ribbon-primary--three .hm-ribbon-btn--smartcal {
+    grid-column: 1 / -1;
+    min-height: 70px;
+  }
+  .hm-ribbon-secondary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .hm-ribbon-btn__label { font-size: 10px; }
+  .hm-ribbon-btn--sm .hm-ribbon-btn__label { font-size: 9px; }
+  .hm-ribbon-btn { min-height: 76px; padding-inline: 5px; }
+  .hm-ribbon-btn--sm { min-height: 56px; }
+  .hm-comp-btn {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .hm-comp-badge {
+    grid-column: 2;
+    justify-self: start;
+  }
   .hm-range-row { flex-wrap: wrap; }
+  .hm-side-title { flex-wrap: wrap; row-gap: 5px; }
+  .hm-probe-config-badge { margin-left: 0; }
+  .hm-axis-range {
+    grid-template-columns: 18px minmax(82px, 1fr) minmax(82px, 1fr) auto;
+  }
+  .hm-axis-sep { display: none; }
+  .hm-grid-density-label { width: 100%; }
+  .hm-grid-density-spacing { flex-basis: 100%; }
+}
+
+/* ── Smart Cal ribbon button ──────────────────────────────────────────────── */
+.hm-ribbon-btn--smartcal {
+  --rb-accent: #a855f7;
+}
+
+/* Smart Cal topbar indicator */
+.hm-topbar__probing--smartcal .hm-topbar__progress-pill {
+  background:   color-mix(in srgb, #a855f7 14%, transparent);
+  border-color: color-mix(in srgb, #a855f7 35%, transparent);
+  color:        #a855f7;
+}
+.hm-topbar__probing--smartcal {
+  color: color-mix(in srgb, #a855f7 80%, var(--text-secondary));
+}
+
+/* ── SmartCal modal extras ────────────────────────────────────────────────── */
+.hm-smartcal-modal {
+  width: min(920px, calc(100vw - 48px));
+  border-color: color-mix(in srgb, #a855f7 34%, var(--border));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, #a855f7 12%, transparent),
+    0 24px 64px rgba(0, 0, 0, 0.5),
+    0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.hm-smartcal-body {
+  gap: 12px;
+  max-height: min(88vh, 860px);
+  overflow: auto;
+}
+
+.hm-smartcal-body > .hm-smartcal-intro,
+.hm-smartcal-body > .hm-probe-opt-row,
+.hm-smartcal-body > .hm-probe-opt-section-label {
+  display: none;
+}
+
+.hm-smartcal-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 13px;
+  border: 1px solid color-mix(in srgb, #a855f7 28%, var(--border));
+  border-radius: 9px;
+  background: color-mix(in srgb, #a855f7 8%, var(--bg-panel));
+}
+
+.hm-smartcal-kicker {
+  margin: 0 0 4px;
+  color: #c084fc;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.hm-smartcal-intro {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.hm-smartcal-home-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 104px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, #a855f7 34%, var(--border));
+  border-radius: 7px;
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.hm-smartcal-home-toggle.is-on {
+  background: color-mix(in srgb, #22c55e 12%, var(--bg-panel));
+  border-color: color-mix(in srgb, #22c55e 44%, var(--border));
+  color: #22c55e;
+}
+
+.hm-smartcal-flow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.hm-smartcal-flow-step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.hm-smartcal-flow-icon {
+  display: inline-flex;
+  color: #a855f7;
+  flex-shrink: 0;
+}
+
+.hm-smartcal-flow-arrow {
+  position: absolute;
+  right: -10px;
+  color: var(--text-muted);
+  z-index: 1;
+}
+
+.hm-smartcal-presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.hm-smartcal-presets button {
+  min-width: 0;
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hm-smartcal-presets button:hover,
+.hm-smartcal-presets button.is-active {
+  border-color: color-mix(in srgb, #a855f7 48%, var(--border));
+  background: color-mix(in srgb, #a855f7 10%, var(--bg-panel));
+  color: #c084fc;
+}
+
+.hm-smartcal-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.hm-smartcal-grid--matrix {
+  grid-template-columns: 1fr;
+}
+
+.hm-smartcal-row {
+  display: grid;
+  grid-template-columns: 148px repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--smartcal-row-color, #a855f7) 24%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--smartcal-row-color, #a855f7) 5%, var(--bg-elevated));
+}
+
+.hm-smartcal-row--level {
+  --smartcal-row-color: #22c55e;
+}
+
+.hm-smartcal-row--probe {
+  --smartcal-row-color: #3b82f6;
+}
+
+.hm-smartcal-row-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--smartcal-row-color, #a855f7) 10%, var(--bg-panel));
+  color: color-mix(in srgb, var(--smartcal-row-color, #a855f7) 82%, var(--text-primary));
+}
+
+.hm-smartcal-row-head svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.hm-smartcal-row-head div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hm-smartcal-row-head span {
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.hm-smartcal-row-head small {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.35;
+  font-weight: 500;
+}
+
+.hm-smartcal-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-panel);
+}
+
+.hm-smartcal-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.hm-smartcal-card-head svg {
+  color: #a855f7;
+  flex-shrink: 0;
+}
+
+.hm-smartcal-row--level .hm-smartcal-card-head svg {
+  color: #22c55e;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-card-head svg {
+  color: #3b82f6;
+}
+
+.hm-probe-opt-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+  margin: 10px 0 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.hm-smartcal-iter-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.hm-smartcal-iter-btn {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-size: 12px; font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.hm-smartcal-iter-btn.is-on {
+  background:   color-mix(in srgb, #a855f7 16%, var(--bg-panel));
+  border-color: color-mix(in srgb, #a855f7 50%, transparent);
+  color:        #a855f7;
+}
+.hm-smartcal-iter-btn:hover:not(.is-on) { background: var(--bg-hover); color: var(--text-primary); }
+
+/* Full-width row card (Bed Leveling, Probe Quality) */
+.hm-smartcal-card--full {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  min-height: 52px;
+}
+
+.hm-smartcal-card--full .hm-smartcal-card-head {
+  min-width: 108px;
+  flex-shrink: 0;
+}
+
+/* Vertical hairline divider between sections in a row card */
+.hm-smartcal-card-sep {
+  width: 1px;
+  min-height: 24px;
+  align-self: stretch;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+/* Label + control pair inside a row card */
+.hm-smartcal-inline-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hm-smartcal-inline-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Mode toggle inside a card (native smartcal style, replaces bc-modal-mode-toggle) */
+.hm-smartcal-mode-row {
+  display: flex;
+  gap: 4px;
+}
+
+.hm-smartcal-mode-btn {
+  flex: 1;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.hm-smartcal-mode-btn.is-on {
+  background: color-mix(in srgb, #a855f7 16%, var(--bg-panel));
+  border-color: color-mix(in srgb, #a855f7 50%, transparent);
+  color: #a855f7;
+}
+
+.hm-smartcal-mode-btn:hover:not(.is-on) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.hm-smartcal-card-note {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.hm-smartcal-quality-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.hm-smartcal-quality-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--smartcal-row-color, #a855f7) 30%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--smartcal-row-color, #a855f7) 8%, var(--bg-elevated));
+  color: color-mix(in srgb, var(--smartcal-row-color, #a855f7) 78%, var(--text-primary));
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.hm-smartcal-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.hm-smartcal-field > span:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.hm-smartcal-field small {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.hm-smartcal-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-elevated);
+}
+
+.hm-smartcal-input input {
+  width: 54px;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.hm-smartcal-picker {
+  gap: 2px;
+  padding: 2px;
+}
+
+.hm-smartcal-picker button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.hm-smartcal-picker button:hover:not(:disabled) {
+  background: color-mix(in srgb, #a855f7 12%, var(--bg-panel));
+  color: #c084fc;
+}
+
+.hm-smartcal-picker button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.hm-smartcal-picker input {
+  width: 42px;
+  padding: 0 2px;
+}
+
+.hm-smartcal-input input::-webkit-outer-spin-button,
+.hm-smartcal-input input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.hm-smartcal-input input {
+  -moz-appearance: textfield;
+}
+
+.hm-smartcal-input em {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+/* ── Compact probe section overrides ────────────────────────────────────── */
+/* Reduce vertical footprint so the log box has more visible height */
+.hm-smartcal-row--probe {
+  padding: 7px;
+  gap: 6px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-row-head {
+  padding: 6px 7px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-row-head span {
+  font-size: 11px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-row-head small {
+  font-size: 9px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-card {
+  padding: 7px 9px;
+  gap: 6px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-card-head {
+  font-size: 10px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-field {
+  gap: 7px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-field > span:first-child {
+  font-size: 10px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-field small {
+  font-size: 9px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-picker button {
+  width: 20px;
+  height: 20px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-picker input {
+  width: 36px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-card-note {
+  font-size: 9px;
+}
+
+.hm-smartcal-row--probe .hm-smartcal-iter-btn {
+  width: 24px;
+  height: 24px;
+  font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .hm-smartcal-modal {
+    width: min(560px, calc(100vw - 28px));
+  }
+  .hm-smartcal-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .hm-smartcal-hero {
+    flex-direction: column;
+  }
+  .hm-smartcal-home-toggle {
+    width: 100%;
+  }
+  .hm-smartcal-flow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .hm-smartcal-flow-arrow {
+    display: none;
+  }
+  .hm-smartcal-field {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .hm-smartcal-input {
+    justify-content: flex-end;
+  }
+}
+
+/* ── SmartCal result modal ────────────────────────────────────────────────── */
+.hm-smartcal-stop-banner {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  background:   color-mix(in srgb, var(--scr-color, #22c55e) 10%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, var(--scr-color, #22c55e) 30%, transparent);
+  color:        color-mix(in srgb, var(--scr-color, #22c55e) 90%, var(--text-primary));
+}
+
+.hm-smartcal-final-stats {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.hm-smartcal-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 7px 10px;
+}
+.hm-smartcal-stat__label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+}
+.hm-smartcal-stat__val {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Step timeline — compact flat log rows */
+.hm-smartcal-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Each log row: colored left bar + icon badge + text */
+.hm-smartcal-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 10px 5px 0;
+  border-left: 2px solid var(--step-color, var(--border));
+  padding-left: 10px;
+  border-radius: 0 5px 5px 0;
+  background: transparent;
+  transition: background 0.1s;
+}
+.hm-smartcal-step:hover {
+  background: color-mix(in srgb, var(--step-color, var(--border)) 5%, transparent);
+}
+
+.hm-smartcal-step__icon {
+  width: 18px; height: 18px;
+  border-radius: 4px;
+  border: 1px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* No connector line in compact mode */
+.hm-smartcal-step__line { display: none; }
+
+.hm-smartcal-step__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.hm-smartcal-step__label {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+.hm-smartcal-step__detail {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Smart Cal inline activity / log section ─────────────────────────────── */
+
+.hm-smartcal-activity {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-primary, #0d0d0d);
+  /* Scrollable log box */
+  max-height: 300px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Sticky header — fully opaque so content never bleeds through */
+.hm-smartcal-activity__header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  /* Must be fully opaque — never use alpha here */
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  border-radius: 9px 9px 0 0;
+}
+
+/* Timeline body — padded inner area below the sticky header */
+.hm-smartcal-activity__body {
+  padding: 8px 12px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Phase spinner — shown at the tail of the log while running */
+.hm-smartcal-activity__phase {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 12px 6px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.hm-smartcal-activity__spin {
+  animation: spin 1s linear infinite;
+  color: #a855f7;
+  flex-shrink: 0;
+}
+
+/* Result summary — outside the scroll box, always fully visible */
+.hm-smartcal-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 2px 0;
+}
+
+.hm-smartcal-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  padding: 5px 11px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color 0.1s, color 0.1s;
+}
+
+.hm-smartcal-clear-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }

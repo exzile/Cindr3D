@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import { useComponentStore } from '../../../store/componentStore';
 import * as THREE from 'three';
 
@@ -50,13 +50,7 @@ export function JointDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog">
-        <div className="dialog-header">
-          <h3>Joint</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
+    <DialogShell title="Joint" onClose={onClose} onConfirm={handleApply}>
           <div className="form-group">
             <label>Name</label>
             <input type="text" value={name} onChange={(e) => setName(e.target.value)} />
@@ -129,12 +123,6 @@ export function JointDialog({ onClose }: { onClose: () => void }) {
               </div>
             </div>
           )}
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

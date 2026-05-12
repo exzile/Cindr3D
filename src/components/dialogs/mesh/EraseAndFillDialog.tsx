@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import * as THREE from 'three';
+import { DialogShell } from '../common/DialogShell';
 import { useCADStore } from '../../../store/cadStore';
 
 const FACE_NORMALS: Record<string, THREE.Vector3> = {
@@ -52,13 +52,7 @@ export function EraseAndFillDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Erase And Fill</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
+    <DialogShell title="Erase And Fill" onClose={onClose} size="sm" onConfirm={handleOK} confirmDisabled={!selectedId}>
           <div className="form-group">
             <label>Body</label>
             <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
@@ -85,12 +79,6 @@ export function EraseAndFillDialog({ onClose }: { onClose: () => void }) {
             </select>
           </div>
           <p className="dialog-hint">Deletes the selected face region and rebuilds a patch over the hole.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK} disabled={!selectedId}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

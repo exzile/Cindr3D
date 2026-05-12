@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchLatestDwc, fetchLatestFirmware, proxiedGithubUrl, type GitHubAsset, type GitHubRelease } from './helpers';
+import { errorMessage } from '../../../utils/errorHandling';
 import { usePrinterStore } from '../../../store/printerStore';
 import type { AutoUpdateState } from '../../../types/panel-due.types';
 
@@ -107,7 +108,7 @@ export function useFirmwareUpdate({
       await uploadFirmware(firmwareFile);
       setFirmwareStatus({ type: 'success', message: `${firmwareFile.name} uploaded to 0:/firmware/` });
     } catch (err) {
-      setFirmwareStatus({ type: 'error', message: (err as Error).message });
+      setFirmwareStatus({ type: 'error', message: errorMessage(err, 'Unknown error') });
     }
   }, [firmwareFile, uploadFirmware]);
 
@@ -129,7 +130,7 @@ export function useFirmwareUpdate({
       await uploadFirmware(iapFile);
       setIapStatus({ type: 'success', message: `${iapFile.name} uploaded to 0:/firmware/` });
     } catch (err) {
-      setIapStatus({ type: 'error', message: (err as Error).message });
+      setIapStatus({ type: 'error', message: errorMessage(err, 'Unknown error') });
     }
   }, [iapFile, uploadFirmware]);
 
@@ -149,7 +150,7 @@ export function useFirmwareUpdate({
       ]);
       setUpdateCheck({ loading: false, release, dwcRelease: dwcSettled, checkedAt: Date.now() });
     } catch (err) {
-      setUpdateCheck({ loading: false, error: (err as Error).message, checkedAt: Date.now() });
+      setUpdateCheck({ loading: false, error: errorMessage(err, 'Unknown error'), checkedAt: Date.now() });
     }
   }, []);
 
@@ -179,12 +180,12 @@ export function useFirmwareUpdate({
     const service = usePrinterStore.getState().service;
     if (!service) throw new Error('Not connected to a printer.');
     await service.uploadFile(`0:/www/${file.name}`, file, (progress) => {
-      usePrinterStore.setState({ uploadProgress: progress });
+      usePrinterStore.getState().setUploadProgress(progress);
     });
   }, []);
 
   const buildDownloadError = useCallback((err: unknown): string => {
-    const msg = (err as Error).message;
+    const msg = errorMessage(err, 'Unknown error');
     const corsHint = import.meta.env.DEV
       ? 'The dev-server GitHub proxy may be misconfigured â€” check the Vite logs.'
       : 'GitHub release assets do not send CORS headers, so the browser cannot fetch them directly. Run the app via the Vite dev server (which proxies GitHub), or click the filename link below to download manually and use the Upload button.';
@@ -221,7 +222,7 @@ export function useFirmwareUpdate({
       try {
         await uploadDwcZip(dwcFile);
       } catch (err) {
-        setAutoUpdate({ step: 'error', progress: 0, assetName: dwcFile.name, error: `DWC upload failed: ${(err as Error).message}` });
+        setAutoUpdate({ step: 'error', progress: 0, assetName: dwcFile.name, error: `DWC upload failed: ${errorMessage(err, 'Unknown error')}` });
         return;
       }
     }
@@ -230,7 +231,7 @@ export function useFirmwareUpdate({
     try {
       await uploadFirmware(fwFile);
     } catch (err) {
-      setAutoUpdate({ step: 'error', progress: 0, assetName: fwFile.name, error: `Firmware upload failed: ${(err as Error).message}` });
+      setAutoUpdate({ step: 'error', progress: 0, assetName: fwFile.name, error: `Firmware upload failed: ${errorMessage(err, 'Unknown error')}` });
       return;
     }
 
@@ -239,7 +240,7 @@ export function useFirmwareUpdate({
       await installFirmware();
       setAutoUpdate({ step: 'done', progress: 100, assetName: fwFile.name });
     } catch (err) {
-      setAutoUpdate({ step: 'error', progress: 100, assetName: fwFile.name, error: `Install command (M997) failed: ${(err as Error).message}` });
+      setAutoUpdate({ step: 'error', progress: 100, assetName: fwFile.name, error: `Install command (M997) failed: ${errorMessage(err, 'Unknown error')}` });
     }
   }, [buildDownloadError, downloadAsset, installFirmware, uploadDwcZip, uploadFirmware]);
 
@@ -260,7 +261,7 @@ export function useFirmwareUpdate({
     try {
       await uploadDwcZip(dwcFile);
     } catch (err) {
-      setAutoUpdate({ step: 'error', progress: 0, assetName: dwcFile.name, error: `DWC upload failed: ${(err as Error).message}` });
+      setAutoUpdate({ step: 'error', progress: 0, assetName: dwcFile.name, error: `DWC upload failed: ${errorMessage(err, 'Unknown error')}` });
       return;
     }
 

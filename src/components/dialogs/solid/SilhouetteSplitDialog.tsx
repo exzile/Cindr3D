@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function SilhouetteSplitDialog({ onClose }: { onClose: () => void }) {
   const editingFeatureId = useCADStore((s) => s.editingFeatureId);
@@ -50,46 +50,34 @@ export function SilhouetteSplitDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>{editing ? 'Edit Split Body' : 'Split Body'}</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Body to Split</label>
-            <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
-              {bodyFeatures.length === 0 && <option value="">— no bodies —</option>}
-              {bodyFeatures.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Split Plane Normal</label>
-            <select value={direction} onChange={(e) => setDirection(e.target.value as 'x' | 'y' | 'z')}>
-              <option value="x">YZ Plane (X normal)</option>
-              <option value="y">XZ Plane (Y normal)</option>
-              <option value="z">XY Plane (Z normal)</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Plane Offset</label>
-            <input
-              type="number"
-              value={planeOffset}
-              onChange={(e) => setPlaneOffset(parseFloat(e.target.value) || 0)}
-              step={0.5}
-            />
-          </div>
-          <p className="dialog-hint">Splits the body into two halves along the chosen plane. Both halves are kept as separate bodies.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply} disabled={!selectedId}>OK</button>
-        </div>
+    <DialogShell title={editing ? 'Edit Split Body' : 'Split Body'} onClose={onClose} size="sm" onConfirm={handleApply} confirmDisabled={!selectedId}>
+      <div className="form-group">
+        <label>Body to Split</label>
+        <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
+          {bodyFeatures.length === 0 && <option value="">— no bodies —</option>}
+          {bodyFeatures.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
       </div>
-    </div>
+      <div className="form-group">
+        <label>Split Plane Normal</label>
+        <select value={direction} onChange={(e) => setDirection(e.target.value as 'x' | 'y' | 'z')}>
+          <option value="x">YZ Plane (X normal)</option>
+          <option value="y">XZ Plane (Y normal)</option>
+          <option value="z">XY Plane (Z normal)</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Plane Offset</label>
+        <input
+          type="number"
+          value={planeOffset}
+          onChange={(e) => setPlaneOffset(parseFloat(e.target.value) || 0)}
+          step={0.5}
+        />
+      </div>
+      <p className="dialog-hint">Splits the body into two halves along the chosen plane. Both halves are kept as separate bodies.</p>
+    </DialogShell>
   );
 }

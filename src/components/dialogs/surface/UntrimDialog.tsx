@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function UntrimDialog({ onClose }: { onClose: () => void }) {
   const commitUntrim = useCADStore((s) => s.commitUntrim);
@@ -19,54 +19,34 @@ export function UntrimDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog-panel">
-        <div className="dialog-header">
-          <span className="dialog-title">Untrim</span>
-          <button className="dialog-close" onClick={onClose}><X size={14} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="dialog-field">
-            <label className="dialog-label">Surface Body</label>
-            <select
-              className="dialog-input"
-              value={sourceFeatureId}
-              onChange={(e) => setSourceFeatureId(e.target.value)}
-            >
-              <option value="">— select —</option>
-              {surfaceBodies.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="dialog-field">
-            <label className="dialog-label">Expand Factor</label>
-            <input
-              type="number"
-              className="dialog-input"
-              value={expandFactor}
-              min={1.01}
-              max={10}
-              step={0.1}
-              onChange={(e) => setExpandFactor(parseFloat(e.target.value) || 1.5)}
-            />
-          </div>
-          <p className="dialog-hint">
-            Extends the trimmed boundary edges of the selected surface outward
-            to its natural (un-trimmed) boundary by the given expansion factor.
-          </p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn-primary"
-            onClick={handleOK}
-            disabled={!sourceFeatureId}
-          >
-            OK
-          </button>
-        </div>
+    <DialogShell title="Untrim" onClose={onClose} onConfirm={handleOK} confirmDisabled={!sourceFeatureId}>
+      <div className="form-group">
+        <label>Surface Body</label>
+        <select
+          value={sourceFeatureId}
+          onChange={(e) => setSourceFeatureId(e.target.value)}
+        >
+          <option value="">— select —</option>
+          {surfaceBodies.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
       </div>
-    </div>
+      <div className="form-group">
+        <label>Expand Factor</label>
+        <input
+          type="number"
+          value={expandFactor}
+          min={1.01}
+          max={10}
+          step={0.1}
+          onChange={(e) => setExpandFactor(parseFloat(e.target.value) || 1.5)}
+        />
+      </div>
+      <p className="dialog-hint">
+        Extends the trimmed boundary edges of the selected surface outward
+        to its natural (un-trimmed) boundary by the given expansion factor.
+      </p>
+    </DialogShell>
   );
 }

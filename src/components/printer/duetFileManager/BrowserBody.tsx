@@ -1,5 +1,6 @@
 import { Loader2, Upload } from 'lucide-react';
 import type { DuetFileInfo, DuetGCodeFileInfo } from '../../../types/duet';
+import type { DuetService } from '../../../services/DuetService';
 import { usePrinterStore } from '../../../store/printerStore';
 import { FileInfoPanel } from './FileInfoPanel';
 import { FileTable } from './FileTable';
@@ -9,6 +10,7 @@ export function BrowserBody({
   checkedFiles,
   currentDirectory,
   dragOver,
+  service,
   handleDelete,
   handleDownload,
   handleDrop,
@@ -36,6 +38,7 @@ export function BrowserBody({
   checkedFiles: Set<string>;
   currentDirectory: string;
   dragOver: boolean;
+  service: DuetService | null;
   handleDelete: (item: DuetFileInfo) => Promise<void>;
   handleDownload: (item: DuetFileInfo) => Promise<void>;
   handleDrop: (event: React.DragEvent) => Promise<void>;
@@ -89,6 +92,7 @@ export function BrowserBody({
             checkedFiles={checkedFiles}
             currentDirectory={currentDirectory}
             selectedName={selectedName}
+            service={service}
             sortField={sortField}
             sortDir={sortDir}
             sortedFiles={sortedFiles}
@@ -112,7 +116,7 @@ export function BrowserBody({
           fileInfo={selectedFile}
           onClose={() => {
             setSelectedName(null);
-            usePrinterStore.setState({ selectedFile: null });
+            usePrinterStore.getState().clearSelectedFile();
           }}
         />
       )}

@@ -5,9 +5,8 @@ import { colors as COLORS } from '../../../utils/theme';
 import {
   compactPanelInputStyle as inputStyle,
   dashboardButtonStyle as btnStyle,
-  panelStyle,
-  sectionTitleStyle as labelStyle,
 } from '../../../utils/printerPanelStyles';
+import { DashboardPanel } from './DashboardPanel';
 
 const SHAPER_TYPES = [
   { value: 'none', label: 'None' },
@@ -50,10 +49,7 @@ export default function InputShaperPanel() {
   );
 
   return (
-    <div style={panelStyle()}>
-      <div style={labelStyle()} className="duet-dash-section-title-row">
-        <Waves size={14} /> Input Shaper
-      </div>
+    <DashboardPanel icon={Waves} title="Input Shaper">
 
       <div
         style={{
@@ -134,6 +130,6 @@ export default function InputShaperPanel() {
       >
         Apply Input Shaper
       </button>
-    </div>
+    </DashboardPanel>
   );
 }

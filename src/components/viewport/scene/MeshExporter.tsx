@@ -91,7 +91,6 @@ export default function MeshExporter() {
           clearBodyExport();
         },
         (error) => {
-          console.error('GLTFExporter error:', error);
           setStatusMessage('Export failed: GLB error');
           clones.forEach((c) => c.geometry.dispose());
           clearBodyExport();

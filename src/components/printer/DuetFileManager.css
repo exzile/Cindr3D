@@ -113,6 +113,38 @@
   color: var(--error);
 }
 
+/* ── Thumbnail cell ─────────────────────────────────────────────────────── */
+
+.duet-file-mgr__td--thumb {
+  padding: 3px 6px;
+  width: 56px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.duet-file-mgr__thumb-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 38px;
+}
+
+.duet-file-mgr__thumb-img {
+  max-width: 52px;
+  max-height: 38px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 3px;
+  display: block;
+}
+
+.duet-file-mgr__thumb-spin {
+  color: var(--text-muted);
+  animation: spin 1s linear infinite;
+}
+
 .duet-file-mgr__action-btn {
   background: none;
   border: none;

@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { errorMessage } from '../../utils/errorHandling';
 import { RefreshCw, WifiOff, Layers, X } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { MoonrakerService, type MoonrakerExcludeObjectStatus } from '../../services/MoonrakerService';
@@ -13,19 +15,14 @@ export default function KlipperExcludeObject() {
   const [error, setError] = useState<string | null>(null);
   const [service] = useState(() => connected ? new MoonrakerService(config.hostname) : null);
 
+  const run = useAsyncAction(setLoading, setError, 'Failed to load object list');
   const refresh = useCallback(async () => {
     if (!service) return;
-    setLoading(true);
-    setError(null);
-    try {
+    await run(async () => {
       const s = await service.getExcludeObjectStatus();
       setStatus(s);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load object list');
-    } finally {
-      setLoading(false);
-    }
-  }, [service]);
+    });
+  }, [service, run]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -35,7 +32,7 @@ export default function KlipperExcludeObject() {
       await service.excludeObject(name);
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to exclude object');
+      setError(errorMessage(e, 'Failed to exclude object'));
     }
   }, [service, refresh]);
 
@@ -46,7 +43,7 @@ export default function KlipperExcludeObject() {
       await service.resetExcludeObjects();
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to reset');
+      setError(errorMessage(e, 'Failed to reset'));
     }
   }, [service, refresh]);
 

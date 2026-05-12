@@ -5,11 +5,9 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { useSlicerStore } from '../../../store/slicerStore';
 import { CALIBRATION_STL_URLS, getCalibrationModels } from '../../calibrationModels';
-import { InlineGCodeWirePreview } from '../../../components/slicer/workspace/canvas/GCodeWirePreview';
-import {
-  BuildPlateGrid,
-  BuildVolumeWireframe,
-} from '../../../components/slicer/workspace/canvas/scenePrimitives';
+import { LayeredGCodePreview } from '../../../components/canvas/LayeredGCodePreview';
+import { PrintSpaceLights } from '../../../components/canvas/PrintSpaceLights';
+import { BuildVolumeScene } from '../../../components/canvas/BuildVolumeScene';
 import type { PrintProfile, MaterialProfile } from '../../../types/slicer';
 import {
   getCalibrationSlicePreset,
@@ -23,9 +21,6 @@ interface StepSlicePreviewProps {
   testType: string;
   filamentMaterial: string;
 }
-
-// A stable empty set — never recreated between renders.
-const EMPTY_HIDDEN: ReadonlySet<string> = new Set<string>();
 
 // A stable empty array — used as the fallback when layerProcessors is undefined.
 const EMPTY_PROCESSORS: LayerProcessor[] = [];
@@ -688,9 +683,8 @@ export function StepSlicePreview({ testType, filamentMaterial }: StepSlicePrevie
             }}
             style={{ width: '100%', height: '100%' }}
           >
-            <ambientLight intensity={0.4} />
-            <BuildPlateGrid sizeX={bv.x} sizeY={bv.y} />
-            <BuildVolumeWireframe x={bv.x} y={bv.y} z={bv.z} />
+            <PrintSpaceLights />
+            <BuildVolumeScene bv={bv} />
 
             <TuningPlaneMarkers
               processors={printProfile?.layerProcessors ?? EMPTY_PROCESSORS}
@@ -701,32 +695,11 @@ export function StepSlicePreview({ testType, filamentMaterial }: StepSlicePrevie
               onHoverChange={setHoveredPlane}
             />
 
-            {displayedLayer > 0 && (
-              <InlineGCodeWirePreview
-                sliceResult={sliceResult}
-                startLayer={0}
-                currentLayer={displayedLayer - 1}
-                showTravel={false}
-                showRetractions={false}
-                colorMode="type"
-                hiddenTypes={EMPTY_HIDDEN}
-                layerTimeRange={layerTimeRange}
-                opacity={0.2}
-                renderOrder={0}
-              />
-            )}
-
-            <InlineGCodeWirePreview
+            <LayeredGCodePreview
               sliceResult={sliceResult}
-              startLayer={displayedLayer}
-              currentLayer={displayedLayer}
-              showTravel={false}
-              showRetractions={false}
+              displayedLayer={displayedLayer}
               colorMode="type"
-              hiddenTypes={EMPTY_HIDDEN}
               layerTimeRange={layerTimeRange}
-              opacity={1}
-              renderOrder={10}
             />
 
             <OrbitControls

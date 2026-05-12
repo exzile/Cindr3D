@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { generateId } from '../utils/generateId';
 
 export type CalibrationItemId =
   | 'bed-mesh'
@@ -160,7 +161,7 @@ export const DEFAULT_COMPONENTS: Array<Pick<WearComponent, 'name' | 'category' |
 ];
 
 function uid(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return generateId(prefix);
 }
 
 function defaultCalibrationRecord(item: CalibrationItemDefinition): CalibrationRecord {

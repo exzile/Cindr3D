@@ -53,6 +53,14 @@ export interface LevelBedOpts {
   maxPasses?: number;
   /** Target deviation in mm — stop when deviationAfter falls below this (default 0.05). */
   targetDeviation?: number;
+  /** Probe dives per G30 point — sets M558 A{n} before each pass (default 1). */
+  probesPerPoint?: number;
+  /** M558 S value — max acceptable spread between dives in mm (default 0.01, recommend 0.05 for BLTouch). Only applied when probesPerPoint > 1. */
+  probeTolerance?: number;
+  /** When true, skip setting levelBedPendingResult in the store so the
+   *  LevelBedResultsModal is not shown. Used by Smart Cal which displays
+   *  results inline in its own modal. */
+  suppressResult?: boolean;
 }
 
 export interface LevelBedSummary {
@@ -60,6 +68,16 @@ export interface LevelBedSummary {
   autoConverge: boolean;
   stopReason: LevelBedStopReason;
   targetDeviation: number;
+}
+
+/** Live progress state while levelBed is running. Cleared when done. */
+export interface LevelBedProgress {
+  currentRun: number;
+  totalRuns: number;
+  /** Probe points completed in the current run (counted via move.probing transitions). */
+  probesDone: number;
+  /** Total probes per run — null until learned from the first completed run. */
+  probesTotal: number | null;
 }
 
 export interface PrinterStore {
@@ -101,8 +119,18 @@ export interface PrinterStore {
 
   // Persistent firmware alerts (probe failures, BLTouch errors, etc.)
   printerAlerts: PrinterAlert[];
+  /** When true, incoming warning/error console entries are NOT promoted to
+   *  persistent alerts.  Set during Smart Cal so probe-result warnings show
+   *  only in the Smart Cal log rather than also firing a toast. */
+  suppressPrinterAlerts: boolean;
 
   heightMap: DuetHeightMap | null;
+
+  // Live progress while levelBed is running — cleared when done.
+  levelBedProgress: LevelBedProgress | null;
+  // Level bed result pending display — survives tab navigation.
+  levelBedPendingResult: LevelBedSummary | null;
+  lastLevelBedOpts: LevelBedOpts | null;
 
   showPrinter: boolean;
   showSettings: boolean;
@@ -132,6 +160,13 @@ export interface PrinterStore {
   // G-code
   sendGCode: (code: string) => Promise<void>;
   resetHalt: () => Promise<void>;
+
+  // Console
+  clearConsoleHistory: () => void;
+  importConsoleEntries: (entries: ConsoleEntry[]) => void;
+  clearSelectedFile: () => void;
+  setUploadProgress: (progress: number) => void;
+  clearLevelBedResult: () => void;
 
   // Temperature
   setToolTemp: (tool: number, heater: number, temp: number) => Promise<void>;
@@ -203,6 +238,7 @@ export interface PrinterStore {
   setJogDistance: (distance: number) => void;
   setError: (error: string | null) => void;
   dismissAlert: (id: string) => void;
+  setSuppressPrinterAlerts: (suppress: boolean) => void;
 }
 
 const INITIAL = loadPrinters();
@@ -242,8 +278,12 @@ export const usePrinterStore = create<PrinterStore>((set, get) => ({
   printHistoryLoading: false,
 
   printerAlerts: [],
+  suppressPrinterAlerts: false,
 
   heightMap: null,
+  levelBedProgress: null,
+  levelBedPendingResult: null,
+  lastLevelBedOpts: null,
 
   plugins: [],
   pluginsLoading: false,

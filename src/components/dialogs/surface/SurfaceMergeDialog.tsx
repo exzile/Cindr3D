@@ -1,4 +1,4 @@
-import { X } from 'lucide-react';
+import { DialogShell } from '../common/DialogShell';
 
 export interface SurfaceMergeParams {
   face1Id: string | null;
@@ -19,14 +19,8 @@ export function SurfaceMergeDialog({ open, onOk, onClose, face1Id = null, face2I
   const canCommit = face1Id !== null && face2Id !== null;
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Merge (Surface)</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
+    <DialogShell title="Merge (Surface)" onClose={onClose} size="sm" onConfirm={() => onOk({ face1Id, face2Id })} confirmDisabled={!canCommit}>
+      <div className="form-group">
             <label>Face 1</label>
             <span className="dialog-info">
               {face1Id ? `Face picked (${face1Id.slice(0, 8)}…)` : 'Click a face in the viewport'}
@@ -39,18 +33,6 @@ export function SurfaceMergeDialog({ open, onOk, onClose, face1Id = null, face2I
             </span>
           </div>
           <p className="dialog-hint">Pick two tangent or coincident surface faces to merge their shared edge.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn-primary"
-            disabled={!canCommit}
-            onClick={() => onOk({ face1Id, face2Id })}
-          >
-            OK
-          </button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

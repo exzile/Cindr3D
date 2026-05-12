@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { errorMessage } from '../../../utils/errorHandling';
 import { Activity, CheckCircle2, ChevronDown, Cpu, Download, Droplets, ExternalLink, FlaskConical, Gauge, Layers, Plus, RefreshCw, Ruler, Sparkles, Thermometer, Trash2, TrendingUp, Undo2, Wrench, Zap } from 'lucide-react';
 import {
   generateCalibrationCubeGCode,
@@ -333,6 +334,7 @@ export default function PrinterCalibrationPanel() {
   const importFileToPlate = useSlicerStore((s) => s.importFileToPlate);
   const printers = usePrinterStore((s) => s.printers);
   const activePrinterId = usePrinterStore((s) => s.activePrinterId);
+  const setError = usePrinterStore((s) => s.setError);
   const activePrinter = useSlicerStore((s) => s.getActivePrinterProfile());
   const activeMaterial = useSlicerStore((s) => s.getActiveMaterialProfile());
   const activePrint = useSlicerStore((s) => s.getActivePrintProfile());
@@ -414,7 +416,7 @@ export default function PrinterCalibrationPanel() {
       await importFileToPlate(file);
       setWorkspaceMode('prepare');
     } catch (err) {
-      console.error('Failed to open calibration model in Prepare:', err);
+      setError(`Failed to open calibration model: ${errorMessage(err, 'Unknown error')}`);
     }
   };
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
 import './BoundaryFillDialog.css';
 
@@ -57,53 +57,41 @@ export function BoundaryFillDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>{editing ? 'Edit Boundary Fill' : 'Boundary Fill'}</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Fill Type</label>
-            <select value={fillType} onChange={(e) => setFillType(e.target.value as 'between-surfaces' | 'enclosed-volume')}>
-              <option value="between-surfaces">Between Surfaces</option>
-              <option value="enclosed-volume">Enclosed Volume</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Operation</label>
-            <select value={operation} onChange={(e) => setOperation(e.target.value as 'new-body' | 'join' | 'cut')}>
-              <option value="new-body">New Body</option>
-              <option value="join">Join</option>
-              <option value="cut">Cut</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Tool Bodies (select all that form the boundary)</label>
-            <div className="boundary-fill-body-list">
-              {bodyFeatures.length === 0 && (
-                <span className="boundary-fill-empty">No bodies in scene</span>
-              )}
-              {bodyFeatures.map((f) => (
-                <label key={f.id} className="checkbox-label boundary-fill-body-item">
-                  <input
-                    type="checkbox"
-                    checked={selectedToolIds.includes(f.id)}
-                    onChange={() => toggleTool(f.id)}
-                  />
-                  {f.name}
-                </label>
-              ))}
-            </div>
-          </div>
-          <p className="dialog-hint">Select intersecting surfaces or bodies that define the enclosed region to fill.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply}>OK</button>
+    <DialogShell title={editing ? 'Edit Boundary Fill' : 'Boundary Fill'} onClose={onClose} size="sm" onConfirm={handleApply}>
+      <div className="form-group">
+        <label>Fill Type</label>
+        <select value={fillType} onChange={(e) => setFillType(e.target.value as 'between-surfaces' | 'enclosed-volume')}>
+          <option value="between-surfaces">Between Surfaces</option>
+          <option value="enclosed-volume">Enclosed Volume</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Operation</label>
+        <select value={operation} onChange={(e) => setOperation(e.target.value as 'new-body' | 'join' | 'cut')}>
+          <option value="new-body">New Body</option>
+          <option value="join">Join</option>
+          <option value="cut">Cut</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Tool Bodies (select all that form the boundary)</label>
+        <div className="boundary-fill-body-list">
+          {bodyFeatures.length === 0 && (
+            <span className="boundary-fill-empty">No bodies in scene</span>
+          )}
+          {bodyFeatures.map((f) => (
+            <label key={f.id} className="checkbox-label boundary-fill-body-item">
+              <input
+                type="checkbox"
+                checked={selectedToolIds.includes(f.id)}
+                onChange={() => toggleTool(f.id)}
+              />
+              {f.name}
+            </label>
+          ))}
         </div>
       </div>
-    </div>
+      <p className="dialog-hint">Select intersecting surfaces or bodies that define the enclosed region to fill.</p>
+    </DialogShell>
   );
 }

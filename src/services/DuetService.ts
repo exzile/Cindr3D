@@ -4,6 +4,7 @@ import type {
   DuetFileInfo,
   DuetGCodeFileInfo,
   DuetHeightMap,
+  DuetMessage,
 } from '../types/duet';
 import {
   createDirectory as createDirectoryRequest,
@@ -69,6 +70,7 @@ export class DuetService {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private pollInFlight = false;
+  private emittedMessageKeys = new Set<string>();
   /** When true, the background poll loop skips rr_reply reads so callers
    *  can drain the buffer themselves without racing the loop. */
   private replyPollSuppressed = false;
@@ -99,11 +101,7 @@ export class DuetService {
   }
 
   private get wsUrl(): string {
-    const base = this.baseUrl.replace(/^http/, 'ws');
-    if (this.config.mode === 'sbc') {
-      return `${base}/machine`;
-    }
-    return `${base}/machine`;
+    return `${this.baseUrl.replace(/^http/, 'ws')}/machine`;
   }
 
   /** Convenience wrapper around fetch with common error handling. */
@@ -454,7 +452,7 @@ export class DuetService {
         // and leaving the UI stuck in the previous (halted) state.
         const patchObj = patch as Record<string, unknown>;
         if (patchObj && typeof patchObj.err === 'number' && patchObj.err !== 0) {
-          if (import.meta.env.DEV) console.warn('[DuetService] rr_model err:', patchObj.err, '— session expired, reconnecting');
+          if (import.meta.env.DEV) console.debug('[DuetService] rr_model err:', patchObj.err, '— session expired, reconnecting');
           this.connected = false;
           this.stopPolling();
           this.emit('disconnected', null);
@@ -475,13 +473,17 @@ export class DuetService {
           }
         }
       } catch (err) {
-        if (import.meta.env.DEV) console.error('[DuetService] poll error', err);
         this.pollErrorCount++;
-        this.emit('error', err);
+        if (import.meta.env.DEV) {
+          console.debug(
+            `[DuetService] poll retry (${this.pollErrorCount}/${DuetService.MAX_POLL_ERRORS})`,
+            err,
+          );
+        }
         // After several consecutive HTTP failures (e.g. 502 while board reboots
         // after M999) treat the connection as lost and let the store reconnect.
         if (this.pollErrorCount >= DuetService.MAX_POLL_ERRORS) {
-          if (import.meta.env.DEV) console.warn('[DuetService] too many poll errors, disconnecting');
+          if (import.meta.env.DEV) console.debug('[DuetService] too many poll retries, reconnecting');
           this.connected = false;
           this.stopPolling();
           this.emit('disconnected', null);
@@ -505,15 +507,8 @@ export class DuetService {
   }
 
 
-  /**
-   * Deep-merge a partial patch into the cached object model.
-   * Handles both full replacement objects and incremental patches from the WS.
-   */
-  /**
-   * Deep-merge a partial patch into the cached object model.
-   * Handles both full replacement objects and incremental patches from the WS.
-   */
   private applyModelPatch(patch: Record<string, unknown>): void {
+    this.emitFirmwareMessagesFromPatch(patch);
     this.objectModel = applyObjectModelPatch(this.objectModel, patch);
   }
 
@@ -550,6 +545,33 @@ export class DuetService {
 
   private emit(event: string, data: unknown): void {
     this.eventBus.emit(event, data);
+  }
+
+  private rememberFirmwareMessage(key: string): boolean {
+    if (this.emittedMessageKeys.has(key)) return false;
+    this.emittedMessageKeys.add(key);
+    if (this.emittedMessageKeys.size > 1000) {
+      const [oldest] = this.emittedMessageKeys;
+      if (oldest) this.emittedMessageKeys.delete(oldest);
+    }
+    return true;
+  }
+
+  private emitFirmwareMessagesFromPatch(patch: Record<string, unknown>): void {
+    const messages = patch.messages;
+    if (!Array.isArray(messages)) return;
+
+    for (const raw of messages) {
+      if (!raw || typeof raw !== 'object') continue;
+      const message = raw as Partial<DuetMessage>;
+      const content = typeof message.content === 'string' ? message.content.trim() : '';
+      if (!content) continue;
+      const time = typeof message.time === 'string' ? message.time : '';
+      const key = `${time}|${message.type ?? ''}|${content}`;
+      if (this.rememberFirmwareMessage(key)) {
+        this.emit('firmwareMessage', message);
+      }
+    }
   }
   // G-Code execution
 
@@ -604,7 +626,8 @@ export class DuetService {
       const url = `${this.baseUrl}/rr_reply`;
       const reply = await this.request<string>(url);
       return typeof reply === 'string' ? reply : '';
-    } catch {
+    } catch (err) {
+      if (import.meta.env.DEV) console.debug('[DuetService] rr_reply poll retry', err);
       return '';
     }
   }

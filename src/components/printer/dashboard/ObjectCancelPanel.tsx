@@ -13,6 +13,7 @@
  * red-banner warning and disabled buttons for confirmed-too-old firmware.
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 import { Layers, RefreshCw, XCircle, WifiOff, ExternalLink } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import { useSlicerStore } from '../../../store/slicerStore';
@@ -108,10 +109,11 @@ function DuetCancelList() {
 
   const [confirmIdx, setConfirmIdx] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const run = useAsyncAction(setBusy);
 
   const handleConfirm = async (i: number) => {
-    setBusy(true);
-    try { await cancelObject(i); } finally { setBusy(false); setConfirmIdx(null); }
+    await run(async () => { await cancelObject(i); });
+    setConfirmIdx(null);
   };
 
   if (objects.length === 0) return <EmptyNote text="No labelled objects. Print in progress?" />;
@@ -150,13 +152,14 @@ function MarlinCancelList() {
   const [cancelled, setCancelled] = useState<Set<number>>(new Set());
   const [confirmId, setConfirmId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const run = useAsyncAction(setBusy);
 
   const handleConfirm = async (id: number) => {
-    setBusy(true);
-    try {
+    await run(async () => {
       await sendGCode(`M486 P${id}`);
       setCancelled((p) => new Set(p).add(id));
-    } finally { setBusy(false); setConfirmId(null); }
+    });
+    setConfirmId(null);
   };
 
   if (labels.length === 0) {
@@ -202,28 +205,27 @@ function KlipperCancelList() {
   const [error, setError] = useState<string | null>(null);
   const [confirmName, setConfirmName] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const run = useAsyncAction(setBusy, setError);
+  const runRefresh = useAsyncAction(setLoading, setError, 'Failed');
 
   const refresh = useCallback(async () => {
     if (!svcRef.current) return;
-    setLoading(true); setError(null);
-    try {
-      const status = await svcRef.current.getExcludeObjectStatus();
+    await runRefresh(async () => {
+      const status = await svcRef.current!.getExcludeObjectStatus();
       const excluded = new Set(status.excluded_objects ?? []);
       setObjects((status.objects ?? []).map((o) => ({ name: o.name, excluded: excluded.has(o.name) })));
-    } catch (e) { setError(e instanceof Error ? e.message : 'Failed'); }
-    finally { setLoading(false); }
-  }, []);
+    });
+  }, [runRefresh]);
 
   useEffect(() => { if (connected) void refresh(); }, [connected, refresh]);
 
   const handleConfirm = async (name: string) => {
     if (!svcRef.current) return;
-    setBusy(true);
-    try {
-      await svcRef.current.excludeObject(name);
+    await run(async () => {
+      await svcRef.current!.excludeObject(name);
       setObjects((prev) => prev.map((o) => o.name === name ? { ...o, excluded: true } : o));
-    } catch (e) { setError(e instanceof Error ? e.message : 'Failed'); }
-    finally { setBusy(false); setConfirmName(null); }
+    });
+    setConfirmName(null);
   };
 
   if (error) return (

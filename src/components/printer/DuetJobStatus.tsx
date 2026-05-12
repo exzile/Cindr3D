@@ -28,15 +28,15 @@ export default function DuetJobStatus() {
 
   if (!hasJob) {
     return (
-      <>
+      <div className="duet-job__root duet-job__root--idle">
         <NoJobMessage />
         <PrintQueue />
-      </>
+      </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0, padding: '12px 0' }}>
+    <div className="duet-job__root">
       <PrintQueue />
       <PrintStatusHeader />
       <FilamentChange />

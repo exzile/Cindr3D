@@ -3,10 +3,7 @@ import { Cpu, Clock, Zap, Server, HardDrive, Wifi } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import { colors as COLORS } from '../../../utils/theme';
 import './SystemInfoPanel.css';
-import {
-  panelStyle,
-  sectionTitleStyle as labelStyle,
-} from '../../../utils/printerPanelStyles';
+import { DashboardPanel } from './DashboardPanel';
 import {
   formatBytes,
   formatUptime,
@@ -29,10 +26,7 @@ export default function SystemInfoPanel() {
   const iface = network?.interfaces?.[0];
 
   return (
-    <div style={panelStyle()}>
-      <div style={labelStyle()} className="duet-dash-section-title-row">
-        <Server size={14} /> System Info
-      </div>
+    <DashboardPanel icon={Server} title="System Info">
 
       <div className="duet-dash-sys-grid">
         <div className="duet-dash-sys-card duet-dash-sys-span-full" style={{ background: COLORS.surface }}>
@@ -158,6 +152,6 @@ export default function SystemInfoPanel() {
           </div>
         )}
       </div>
-    </div>
+    </DashboardPanel>
   );
 }

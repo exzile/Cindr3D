@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import type { Feature, BooleanOperation } from '../../../types/cad';
 
 type CombineOperation = Extract<BooleanOperation, 'join' | 'cut' | 'intersect'>;
@@ -45,57 +45,45 @@ export function CombineDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>{editing ? 'Edit Combine Bodies' : 'Combine Bodies'}</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Target Body</label>
-            <select value={targetId} onChange={(e) => setTargetId(e.target.value)}>
-              <option value="">(select target)</option>
-              {meshFeatures.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Tool Body</label>
-            <select value={toolId} onChange={(e) => setToolId(e.target.value)}>
-              <option value="">(select tool)</option>
-              {meshFeatures.filter((f) => f.id !== targetId).map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Operation</label>
-            <select value={operation} onChange={(e) => setOperation(e.target.value as CombineOperation)}>
-              <option value="join">Join (Union)</option>
-              <option value="cut">Cut (Subtract)</option>
-              <option value="intersect">Intersect</option>
-            </select>
-          </div>
-          <div className="boolean-preview">
-            <div className="boolean-diagram">
-              {operation === 'join' && <div className="bool-icon join">A + B</div>}
-              {operation === 'cut' && <div className="bool-icon cut">A - B</div>}
-              {operation === 'intersect' && <div className="bool-icon intersect">A &cap; B</div>}
-            </div>
-          </div>
-          <label className="checkbox-label">
-            <input type="checkbox" checked={keepTools} onChange={(e) => setKeepTools(e.target.checked)} />
-            Keep Tools (preserve tool bodies)
-          </label>
-          <p className="dialog-hint">Select a target body and a tool body to combine.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply}>OK</button>
+    <DialogShell title={editing ? 'Edit Combine Bodies' : 'Combine Bodies'} onClose={onClose} size="sm" onConfirm={handleApply}>
+      <div className="form-group">
+        <label>Target Body</label>
+        <select value={targetId} onChange={(e) => setTargetId(e.target.value)}>
+          <option value="">(select target)</option>
+          {meshFeatures.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Tool Body</label>
+        <select value={toolId} onChange={(e) => setToolId(e.target.value)}>
+          <option value="">(select tool)</option>
+          {meshFeatures.filter((f) => f.id !== targetId).map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Operation</label>
+        <select value={operation} onChange={(e) => setOperation(e.target.value as CombineOperation)}>
+          <option value="join">Join (Union)</option>
+          <option value="cut">Cut (Subtract)</option>
+          <option value="intersect">Intersect</option>
+        </select>
+      </div>
+      <div className="boolean-preview">
+        <div className="boolean-diagram">
+          {operation === 'join' && <div className="bool-icon join">A + B</div>}
+          {operation === 'cut' && <div className="bool-icon cut">A - B</div>}
+          {operation === 'intersect' && <div className="bool-icon intersect">A &cap; B</div>}
         </div>
       </div>
-    </div>
+      <label className="checkbox-label">
+        <input type="checkbox" checked={keepTools} onChange={(e) => setKeepTools(e.target.checked)} />
+        Keep Tools (preserve tool bodies)
+      </label>
+      <p className="dialog-hint">Select a target body and a tool body to combine.</p>
+    </DialogShell>
   );
 }

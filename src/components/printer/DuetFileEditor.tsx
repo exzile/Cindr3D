@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { X, Save, RotateCcw, SaveAll, Loader2 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { DuetInsertCommandMenu } from './config/DuetInsertCommandMenu';
+import { errorMessage } from '../../utils/errorHandling';
 import { highlightGCode, formatSize } from './duetFileEditor/helpers';
 import { editorStyles } from './duetFileEditor/styles';
 import { SaveAsDialog } from './duetFileEditor/SaveAsDialog';
@@ -108,7 +109,7 @@ export default function DuetFileEditor({ filePath, onClose, isNew = false, inlin
         }
       } catch (err) {
         if (!cancelled) {
-          setError(`Failed to load file: ${(err as Error).message}`);
+          setError(`Failed to load file: ${errorMessage(err, 'Unknown error')}`);
           onClose();
         }
       } finally {
@@ -145,7 +146,7 @@ export default function DuetFileEditor({ filePath, onClose, isNew = false, inlin
       setOriginalContent(content);
       onSaved?.(filePath);
     } catch (err) {
-      setError(`Failed to save file: ${(err as Error).message}`);
+      setError(`Failed to save file: ${errorMessage(err, 'Unknown error')}`);
     } finally {
       setSaving(false);
     }
@@ -162,7 +163,7 @@ export default function DuetFileEditor({ filePath, onClose, isNew = false, inlin
         await service.uploadFile(targetPath, blob);
         setOriginalContent(content);
       } catch (err) {
-        setError(`Failed to save file: ${(err as Error).message}`);
+        setError(`Failed to save file: ${errorMessage(err, 'Unknown error')}`);
       } finally {
         setSaving(false);
       }

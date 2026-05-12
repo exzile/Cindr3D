@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { WifiOff, Cpu, Play, Settings, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { errorMessage } from '../../utils/errorHandling';
 import { usePrinterStore } from '../../store/printerStore';
 import { MoonrakerService } from '../../services/MoonrakerService';
 import './KlipperTabs.css';
@@ -29,7 +30,7 @@ export default function KlipperInputShaper() {
       await sendGCode('G28');
       await service.testResonances('X');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Test failed');
+      setError(errorMessage(e, 'Test failed'));
     } finally { setTestingX(false); }
   }, [service, sendGCode]);
 
@@ -40,7 +41,7 @@ export default function KlipperInputShaper() {
       await sendGCode('G28');
       await service.testResonances('Y');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Test failed');
+      setError(errorMessage(e, 'Test failed'));
     } finally { setTestingY(false); }
   }, [service, sendGCode]);
 
@@ -51,7 +52,7 @@ export default function KlipperInputShaper() {
       await service.setInputShaper(shaperType, freqX, freqY, dampingRatio);
       setApplied(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to apply shaper settings');
+      setError(errorMessage(e, 'Failed to apply shaper settings'));
     } finally { setApplying(false); }
   }, [service, shaperType, freqX, freqY, dampingRatio]);
 

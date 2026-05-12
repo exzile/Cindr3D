@@ -1,10 +1,7 @@
 import type { CSSProperties } from 'react';
 import { Fan, Thermometer, Zap } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
-import {
-  panelStyle,
-  sectionTitleStyle as labelStyle,
-} from '../../../utils/printerPanelStyles';
+import { DashboardPanel } from './DashboardPanel';
 
 const PRESETS = [0, 25, 50, 75, 100];
 
@@ -23,10 +20,7 @@ export default function FanControlPanel() {
   const fans = (model.fans ?? []).filter((f) => f && (f.max === undefined || f.max > 0));
 
   return (
-    <div style={panelStyle()}>
-      <div style={labelStyle()} className="duet-dash-section-title-row">
-        <Fan size={14} /> Fans
-      </div>
+    <DashboardPanel icon={Fan} title="Fans">
 
       {fans.length === 0 && <div className="fan-empty">No fans detected</div>}
 
@@ -93,6 +87,6 @@ export default function FanControlPanel() {
           </div>
         );
       })}
-    </div>
+    </DashboardPanel>
   );
 }

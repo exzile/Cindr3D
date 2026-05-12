@@ -4,10 +4,15 @@ import './DuetConsole.css';
 import { usePrinterStore } from '../../store/printerStore';
 import { formatTimeOfDay } from '../../utils/printerFormat';
 import { ConsoleFilters } from './duetConsole/ConsoleFilters';
-import type { FilterType } from './duetConsole/ConsoleFilters';
+import type { ConsoleFilterState } from './duetConsole/ConsoleFilters';
 import { ConsoleHistory } from './duetConsole/ConsoleHistory';
 import { ConsoleInput } from './duetConsole/ConsoleInput';
 import { ConsoleToolbar } from './duetConsole/ConsoleToolbar';
+import {
+  isPrinterLogFile,
+  normalizePrinterLogPath,
+  parsePrinterLogLineDetails,
+} from '../../utils/printerConsole';
 import {
   COMMAND_HISTORY_KEY,
   GCODE_SUGGESTIONS,
@@ -16,14 +21,20 @@ import {
   fuzzyMatch,
 } from './duetConsole/config';
 
-function formatTime(date: Date): string {
-  return formatTimeOfDay(date);
+const MAX_IMPORTED_LOG_LINES = 1500;
+
+function isDebugConsoleEntry(entry: { content: string }): boolean {
+  return entry.content.trim().toLowerCase().startsWith('[debug]');
 }
 
 export default function DuetConsole() {
   const consoleHistory = usePrinterStore((s) => s.consoleHistory);
   const sendGCode = usePrinterStore((s) => s.sendGCode);
+  const clearConsoleHistory = usePrinterStore((s) => s.clearConsoleHistory);
+  const importConsoleEntries = usePrinterStore((s) => s.importConsoleEntries);
   const connected = usePrinterStore((s) => s.connected);
+  const service = usePrinterStore((s) => s.service);
+  const logFile = usePrinterStore((s) => s.model?.state?.logFile);
 
   const [input, setInput] = useState('');
   const [commandHistory, setCommandHistory] = useState<string[]>(() => {
@@ -42,27 +53,43 @@ export default function DuetConsole() {
   const [verbose, setVerbose] = useState(false);
   const [hideTemps, setHideTemps] = useState(false);
   const [searchText, setSearchText] = useState('');
-  const [filterType, setFilterType] = useState<FilterType>('all');
+  const [showDebug, setShowDebug] = useState(false);
+  const [visibleTypes, setVisibleTypes] = useState<ConsoleFilterState>({
+    command: true,
+    response: true,
+    warning: true,
+    error: true,
+  });
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
-  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [autoFollowTop, setAutoFollowTop] = useState(true);
+  const [loadingPrinterLog, setLoadingPrinterLog] = useState(false);
+  const [liveLogPaused, setLiveLogPaused] = useState(false);
+  const [clearedAt, setClearedAt] = useState<Date | null>(null);
 
   const outputRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const draftInputRef = useRef('');
+  const autoLoadedLogRef = useRef<string | null>(null);
+  const loadingPrinterLogRef = useRef(false);
 
   const isMultiLine = input.includes('\n');
 
   const filteredEntries = useMemo(() => {
-    return consoleHistory.filter((entry) => {
-      if (hideTemps && TEMP_REPORT_PATTERN.test(entry.content)) return false;
-      if (filterType !== 'all' && entry.type !== filterType) return false;
-      if (searchText && !entry.content.toLowerCase().includes(searchText.toLowerCase())) return false;
-      return true;
-    });
-  }, [consoleHistory, filterType, hideTemps, searchText]);
+    return consoleHistory
+      .filter((entry) => {
+        if (clearedAt && entry.timestamp <= clearedAt) return false;
+        if (hideTemps && TEMP_REPORT_PATTERN.test(entry.content)) return false;
+        if (!visibleTypes[entry.type]) return false;
+        if (!showDebug && isDebugConsoleEntry(entry)) return false;
+        if (searchText && !entry.content.toLowerCase().includes(searchText.toLowerCase())) return false;
+        return true;
+      })
+      .slice()
+      .reverse();
+  }, [clearedAt, consoleHistory, hideTemps, searchText, showDebug, visibleTypes]);
 
   const suggestions = useMemo(() => {
     const trimmed = input.trim().toUpperCase();
@@ -74,10 +101,10 @@ export default function DuetConsole() {
 
   useEffect(() => {
     const el = outputRef.current;
-    if (el && isAtBottom) {
-      el.scrollTop = el.scrollHeight;
+    if (el && autoFollowTop) {
+      el.scrollTop = 0;
     }
-  }, [consoleHistory.length, isAtBottom]);
+  }, [autoFollowTop, filteredEntries.length]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -85,7 +112,6 @@ export default function DuetConsole() {
 
   useEffect(() => {
     if (suggestions.length > 0 && input.trim().length > 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowSuggestions(true);
       setSelectedSuggestion(0);
     } else {
@@ -93,17 +119,10 @@ export default function DuetConsole() {
     }
   }, [input, suggestions]);
 
-  const handleScroll = useCallback(() => {
+  const scrollToTop = useCallback(() => {
     const el = outputRef.current;
     if (!el) return;
-    setIsAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 30);
-  }, []);
-
-  const scrollToBottom = useCallback(() => {
-    const el = outputRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-    setIsAtBottom(true);
+    el.scrollTop = 0;
   }, []);
 
   const handleSend = useCallback(() => {
@@ -224,8 +243,9 @@ export default function DuetConsole() {
   );
 
   const handleClear = useCallback(() => {
-    usePrinterStore.setState({ consoleHistory: [] });
-  }, []);
+    setClearedAt(new Date());
+    clearConsoleHistory();
+  }, [clearConsoleHistory]);
 
   const handleCopyAll = useCallback(() => {
     const text = filteredEntries
@@ -241,6 +261,93 @@ export default function DuetConsole() {
     sendGCode(gcode);
   }, [sendGCode]);
 
+  const handleLoadPrinterLog = useCallback(async (showMissingLogWarning = true) => {
+    if (!service || loadingPrinterLogRef.current) return;
+    loadingPrinterLogRef.current = true;
+    setLoadingPrinterLog(true);
+    if (showMissingLogWarning) {
+      setClearedAt(null);
+    }
+
+    try {
+      const sysFiles = await service.listFiles('0:/sys').catch(() => []);
+      const discoveredLogPaths = sysFiles
+        .filter((file) => file.type === 'f' && isPrinterLogFile(file.name))
+        .map((file) => `0:/sys/${file.name}`);
+      const candidatePaths = Array.from(new Set([
+        ...normalizePrinterLogPath(logFile),
+        ...discoveredLogPaths,
+      ]));
+
+      if (candidatePaths.length === 0) {
+        if (showMissingLogWarning) {
+          importConsoleEntries([{
+            timestamp: new Date(),
+            type: 'warning',
+            content: 'No printer log file found. Enable RepRapFirmware event logging with M929 P"eventlog.txt" S3, then pull logs again.',
+          }]);
+        }
+        return;
+      }
+
+      const chunks: string[] = [];
+      for (const path of candidatePaths) {
+        try {
+          const blob = await service.downloadFile(path);
+          const text = await blob.text();
+          if (text.trim()) chunks.push(text);
+        } catch {
+          // The file may have rotated or disappeared after listing; continue with the rest.
+        }
+      }
+      const text = chunks.join('\n');
+      if (!text.trim()) return;
+
+      const clearCutoff = showMissingLogWarning ? null : clearedAt;
+      const importedEntries = text
+        .split(/\r?\n/)
+        .slice(-MAX_IMPORTED_LOG_LINES)
+        .map((line) => parsePrinterLogLineDetails(line))
+        .filter((parsed) => parsed !== null)
+        .filter((parsed) => !clearCutoff || (parsed.hasTimestamp && parsed.entry.timestamp > clearCutoff))
+        .map((parsed) => parsed.entry);
+
+      importConsoleEntries(importedEntries);
+    } finally {
+      loadingPrinterLogRef.current = false;
+      setLoadingPrinterLog(false);
+    }
+  }, [clearedAt, importConsoleEntries, logFile, service]);
+
+  useEffect(() => {
+    if (!connected || !service) {
+      autoLoadedLogRef.current = null;
+      return;
+    }
+    const key = `${service.getConfig().hostname}|${logFile ?? 'eventlog.txt'}`;
+    if (autoLoadedLogRef.current !== key) {
+      autoLoadedLogRef.current = key;
+      void handleLoadPrinterLog(false);
+    }
+    if (liveLogPaused) return;
+    const interval = window.setInterval(() => {
+      void handleLoadPrinterLog(false);
+    }, 5_000);
+    return () => window.clearInterval(interval);
+  }, [connected, handleLoadPrinterLog, liveLogPaused, logFile, service]);
+
+  const handleToggleLiveLog = useCallback(() => {
+    setLiveLogPaused((paused) => !paused);
+  }, []);
+
+  const handleToggleAutoFollowTop = useCallback(() => {
+    setAutoFollowTop((enabled) => {
+      const next = !enabled;
+      if (next) requestAnimationFrame(scrollToTop);
+      return next;
+    });
+  }, [scrollToTop]);
+
   const handleToggleVerbose = useCallback(() => {
     const nextVerbose = !verbose;
     sendGCode(nextVerbose ? 'M111 S1' : 'M111 S0');
@@ -250,34 +357,39 @@ export default function DuetConsole() {
   return (
     <div className="duet-console">
       <ConsoleToolbar
+        autoFollowTop={autoFollowTop}
         connected={connected}
+        liveLogPaused={liveLogPaused}
+        loadingPrinterLog={loadingPrinterLog}
         verbose={verbose}
         onClear={handleClear}
         onCopyAll={handleCopyAll}
+        onLoadPrinterLog={() => void handleLoadPrinterLog(true)}
         onQuickCommand={handleQuickCommand}
+        onToggleAutoFollowTop={handleToggleAutoFollowTop}
+        onToggleLiveLog={handleToggleLiveLog}
         onToggleVerbose={handleToggleVerbose}
       />
 
       <ConsoleFilters
         consoleCount={consoleHistory.length}
         filteredCount={filteredEntries.length}
-        filterType={filterType}
         hideTemps={hideTemps}
         searchText={searchText}
-        setFilterType={setFilterType}
+        showDebug={showDebug}
+        visibleTypes={visibleTypes}
         setHideTemps={setHideTemps}
         setSearchText={setSearchText}
+        setShowDebug={setShowDebug}
+        setVisibleTypes={setVisibleTypes}
       />
 
       <ConsoleHistory
         filteredEntries={filteredEntries}
-        formatTime={formatTime}
-        isAtBottom={isAtBottom}
+        formatTime={formatTimeOfDay}
         outputRef={outputRef}
         searchText={searchText}
         totalEntries={consoleHistory.length}
-        onScroll={handleScroll}
-        onScrollToBottom={scrollToBottom}
       />
 
       <ConsoleInput

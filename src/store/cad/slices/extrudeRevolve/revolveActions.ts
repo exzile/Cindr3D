@@ -20,6 +20,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
   setRevolveIsProjectAxis: (v) => set({ revolveIsProjectAxis: v }),
   // Face mode
   setRevolveProfileMode: (m) => set({ revolveProfileMode: m }),
+  clearRevolveFace: () => set({ revolveFaceBoundary: null, revolveFaceNormal: null }),
   startRevolveFromFace: (boundary, normal) => {
     if (boundary.length < 3) return;
     const flat = boundary.flatMap((v) => [v.x, v.y, v.z]);

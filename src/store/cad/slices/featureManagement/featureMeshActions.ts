@@ -4,6 +4,7 @@ import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
 import { recomputeBooleanDependents, runBoolean } from './featureBooleanUtils';
+import { errorMessage } from '../../../../utils/errorHandling';
 
 function getBooleanParentIds(feature: Feature): string[] {
   const fromArray = feature.params.booleanParentIds;
@@ -109,7 +110,7 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
       return !!live && live.mesh === currentMesh;
     };
     const onErr = (err: unknown) => {
-      get().setStatusMessage(`Mesh Reduce failed: ${(err as Error)?.message ?? 'unknown error'}`);
+      get().setStatusMessage(`Mesh Reduce failed: ${errorMessage(err, 'unknown error')}`);
     };
     if (featureMesh instanceof THREE.Mesh) {
       applyToMesh(featureMesh).then((newMesh) => {
@@ -350,7 +351,7 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
     try {
       resultGeom = runBoolean(tgtMesh, toolMesh, operation);
     } catch (err) {
-      get().setStatusMessage(`Combine (${operation}) failed: ${(err as Error)?.message ?? 'unknown CSG error'}`);
+      get().setStatusMessage(`Combine (${operation}) failed: ${errorMessage(err, 'unknown CSG error')}`);
       return;
     }
     get().pushUndo();
@@ -457,7 +458,7 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
     try {
       resultGeom = runBoolean(tgtMesh, toolMesh, operation);
     } catch (err) {
-      get().setStatusMessage(`Combine (edit) failed: ${(err as Error)?.message ?? 'unknown CSG error'}`);
+      get().setStatusMessage(`Combine (edit) failed: ${errorMessage(err, 'unknown CSG error')}`);
       return;
     }
     get().pushUndo();

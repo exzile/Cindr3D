@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 import { X } from 'lucide-react';
 import { useSlicerStore } from '../../../store/slicerStore';
 import './GeometryToolsModal.css';
@@ -31,31 +32,27 @@ export function GeometryToolsModal({
     return obj.boundingBox.max.z - obj.boundingBox.min.z;
   });
   const [busy, setBusy] = useState(false);
+  const run = useAsyncAction(setBusy);
 
   if (!obj) return null;
 
-  const apply = async () => {
-    setBusy(true);
-    try {
-      if (tool === 'hollow') {
-        await hollow(objectId, wallThickness);
-      } else if (tool === 'cut') {
-        const normal = cutAxis === 'x' ? { x: 1, y: 0, z: 0 }
-          : cutAxis === 'y' ? { x: 0, y: 1, z: 0 }
-          : { x: 0, y: 0, z: 1 };
-        const point = { x: 0, y: 0, z: 0 };
-        if (cutAxis === 'x') point.x = cutOffset;
-        else if (cutAxis === 'y') point.y = cutOffset;
-        else point.z = cutOffset;
-        await cut(objectId, point, normal);
-      } else {
-        scaleToHeight(objectId, targetHeight);
-      }
-      onClose();
-    } finally {
-      setBusy(false);
+  const apply = () => run(async () => {
+    if (tool === 'hollow') {
+      await hollow(objectId, wallThickness);
+    } else if (tool === 'cut') {
+      const normal = cutAxis === 'x' ? { x: 1, y: 0, z: 0 }
+        : cutAxis === 'y' ? { x: 0, y: 1, z: 0 }
+        : { x: 0, y: 0, z: 1 };
+      const point = { x: 0, y: 0, z: 0 };
+      if (cutAxis === 'x') point.x = cutOffset;
+      else if (cutAxis === 'y') point.y = cutOffset;
+      else point.z = cutOffset;
+      await cut(objectId, point, normal);
+    } else {
+      scaleToHeight(objectId, targetHeight);
     }
-  };
+    onClose();
+  });
 
   const titles: Record<GeometryTool, string> = {
     hollow: 'Hollow Object',

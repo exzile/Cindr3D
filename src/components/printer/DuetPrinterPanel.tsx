@@ -1,4 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useContainerSize } from '../../hooks/useContainerSize';
+import { useNow } from '../../hooks/useNow';
 import './PrinterPanel.css';
 import { usePrinterStore } from '../../store/printerStore';
 import { useSpoolStore } from '../../store/spoolStore';
@@ -10,6 +12,7 @@ import './DuetAnalytics.css';
 import { type TabKey, TAB_COMPONENTS } from './duetPrinterPanel/config';
 import { MobilePrinterTabSheet, PanelBanners, PanelFooter, PanelHeader, PanelTabBar } from './duetPrinterPanel/chrome';
 import { panelStyles } from './duetPrinterPanel/styles';
+import { LevelBedResultsModal } from './DuetHeightMap';
 
 export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: boolean } = {}) {
   const showPrinter = usePrinterStore((s) => s.showPrinter);
@@ -34,6 +37,9 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
   const printHistory = usePrinterStore((s) => s.printHistory);
   const activePrinterId = usePrinterStore((s) => s.activePrinterId);
   const deductFilamentForPrinter = useSpoolStore((s) => s.deductFilamentForPrinter);
+  const levelBedPendingResult = usePrinterStore((s) => s.levelBedPendingResult);
+  const lastLevelBedOpts      = usePrinterStore((s) => s.lastLevelBedOpts);
+  const levelBed              = usePrinterStore((s) => s.levelBed);
 
   const boardType = (config as { boardType?: import('../../types/duet').PrinterBoardType }).boardType ?? 'duet';
 
@@ -41,23 +47,18 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
   const toggleTheme = useThemeStore((s) => s.toggleTheme);
 
   const panelRootRef = useRef<HTMLDivElement>(null);
-  const [isNarrow, setIsNarrow] = useState(false);
-
-  useEffect(() => {
-    const el = panelRootRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setIsNarrow(entry.contentRect.width < 480);
-      }
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+  const { width: panelWidth } = useContainerSize(panelRootRef);
+  const isNarrow = panelWidth > 0 && panelWidth < 480;
 
   const [globalSearch, setGlobalSearch] = useState('');
   const [showSearchResults, setShowSearchResults] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // 200ms blur-then-hide lets a click on a popover result fire before the
+  // results unmount. Stash the timer so we can clear it on unmount.
+  const searchBlurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (searchBlurTimerRef.current) clearTimeout(searchBlurTimerRef.current);
+  }, []);
 
   const searchResults = useMemo(() => {
     const q = globalSearch.trim().toLowerCase();
@@ -92,14 +93,8 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
     return results.slice(0, 20);
   }, [globalSearch, files, macros, filaments, printHistory]);
 
-  const [now, setNow] = useState(Date.now);
   const hasStaleModel = !connected && lastModelUpdate !== null && Object.keys(model).length > 0;
-
-  useEffect(() => {
-    if (!hasStaleModel) return;
-    const id = setInterval(() => setNow(Date.now()), 15_000);
-    return () => clearInterval(id);
-  }, [hasStaleModel]);
+  const now = useNow(15_000, hasStaleModel);
 
   const lastUpdatedText = useMemo(() => {
     if (!lastModelUpdate) return null;
@@ -248,7 +243,8 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
             setShowSearchResults(false);
           }}
           onSearchBlur={() => {
-            setTimeout(() => setShowSearchResults(false), 200);
+            if (searchBlurTimerRef.current) clearTimeout(searchBlurTimerRef.current);
+            searchBlurTimerRef.current = setTimeout(() => setShowSearchResults(false), 200);
           }}
           onSearchChange={(value) => {
             setGlobalSearch(value);
@@ -307,6 +303,17 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
           activeTab={activeTab as TabKey}
           boardType={boardType}
           onTabChange={setPanelTab}
+        />
+      )}
+
+      {levelBedPendingResult != null && (
+        <LevelBedResultsModal
+          summary={levelBedPendingResult}
+          onClose={() => usePrinterStore.getState().clearLevelBedResult()}
+          onRunAgain={() => {
+            usePrinterStore.getState().clearLevelBedResult();
+            if (lastLevelBedOpts) void levelBed(lastLevelBedOpts);
+          }}
         />
       )}
     </div>

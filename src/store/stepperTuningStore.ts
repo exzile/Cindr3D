@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { generateId } from '../utils/generateId';
 
 export type StepperMode = 'stealthchop' | 'spreadcycle';
 
@@ -49,7 +50,7 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
 }
 
 function uid() {
-  return `stepper-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  return generateId('stepper');
 }
 
 function cloneAxisTunings(axes: Record<string, StepperAxisTuning>): Record<string, StepperAxisTuning> {

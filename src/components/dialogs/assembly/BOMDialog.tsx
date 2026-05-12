@@ -1,5 +1,6 @@
-import { X, Download } from 'lucide-react';
+import { Download } from 'lucide-react';
 import './BOMDialog.css';
+import { DialogShell } from '../common/DialogShell';
 
 export interface BOMEntry {
   partNumber: number;
@@ -21,13 +22,21 @@ export function BOMDialog({ open, entries, onExportCSV, onClose }: Props) {
   if (!open) return null;
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog bom-dialog">
-        <div className="dialog-header">
-          <h3>Bill of Materials</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
+    <DialogShell
+      title="Bill of Materials"
+      onClose={onClose}
+      className="bom-dialog"
+      footer={
+        <div className="dialog-footer">
+          <button className="btn btn-secondary bom-export-btn" onClick={onExportCSV}>
+            <Download size={14} />
+            Export CSV
+          </button>
+          <button className="btn btn-primary" onClick={onClose}>Close</button>
         </div>
-        <div className="dialog-body bom-body">
+      }
+    >
+        <div className="bom-body">
           {entries.length === 0 ? (
             <p className="bom-empty">
               No components in assembly.
@@ -58,14 +67,6 @@ export function BOMDialog({ open, entries, onExportCSV, onClose }: Props) {
             </table>
           )}
         </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary bom-export-btn" onClick={onExportCSV}>
-            <Download size={14} />
-            Export CSV
-          </button>
-          <button className="btn btn-primary" onClick={onClose}>Close</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

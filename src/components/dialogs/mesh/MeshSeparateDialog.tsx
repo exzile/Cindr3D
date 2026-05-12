@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function MeshSeparateDialog({ onClose }: { onClose: () => void }) {
   const features = useCADStore((s) => s.features);
@@ -20,29 +20,17 @@ export function MeshSeparateDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog-panel">
-        <div className="dialog-header">
-          <span className="dialog-title">Mesh Separate</span>
-          <button className="dialog-close" onClick={onClose}><X size={14} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Feature</label>
-            <select value={featureId} onChange={(e) => setFeatureId(e.target.value)}>
-              {meshFeatures.length === 0 && <option value="">No mesh features</option>}
-              {meshFeatures.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </div>
-          <p className="dialog-hint">Splits the mesh into separate bodies at disconnected islands.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
-        </div>
+    <DialogShell title="Mesh Separate" onClose={onClose} onConfirm={handleOK}>
+      <div className="form-group">
+        <label>Feature</label>
+        <select value={featureId} onChange={(e) => setFeatureId(e.target.value)}>
+          {meshFeatures.length === 0 && <option value="">No mesh features</option>}
+          {meshFeatures.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
       </div>
-    </div>
+      <p className="dialog-hint">Splits the mesh into separate bodies at disconnected islands.</p>
+    </DialogShell>
   );
 }

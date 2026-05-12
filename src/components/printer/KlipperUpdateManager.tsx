@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { errorMessage } from '../../utils/errorHandling';
 import { RefreshCw, WifiOff, ArrowUpCircle, CheckCircle2, AlertCircle, Loader2, Download } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { MoonrakerService, type MoonrakerUpdateStatus, type MoonrakerUpdateComponent } from '../../services/MoonrakerService';
@@ -70,19 +72,14 @@ export default function KlipperUpdateManager({ embedded = false }: { embedded?: 
   const [error, setError] = useState<string | null>(null);
   const [service] = useState(() => connected ? new MoonrakerService(config.hostname) : null);
 
+  const run = useAsyncAction(setLoading, setError, 'Failed to load update status');
   const refresh = useCallback(async (forceRefresh = false) => {
     if (!service) return;
-    setLoading(true);
-    setError(null);
-    try {
+    await run(async () => {
       const s = await service.getUpdateStatus(forceRefresh);
       setStatus(s);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load update status');
-    } finally {
-      setLoading(false);
-    }
-  }, [service]);
+    });
+  }, [service, run]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -94,7 +91,7 @@ export default function KlipperUpdateManager({ embedded = false }: { embedded?: 
       await service.updateComponent(name);
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Update failed');
+      setError(errorMessage(e, 'Update failed'));
     } finally {
       setUpdatingComponent(null);
     }
@@ -108,7 +105,7 @@ export default function KlipperUpdateManager({ embedded = false }: { embedded?: 
       await service.fullUpdate();
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Full update failed');
+      setError(errorMessage(e, 'Full update failed'));
     } finally {
       setUpdatingComponent(null);
     }

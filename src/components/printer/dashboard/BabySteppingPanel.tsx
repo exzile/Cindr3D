@@ -4,9 +4,8 @@ import { usePrinterStore } from '../../../store/printerStore';
 import { colors as COLORS } from '../../../utils/theme';
 import {
   dashboardButtonStyle as btnStyle,
-  panelStyle,
-  sectionTitleStyle as labelStyle,
 } from '../../../utils/printerPanelStyles';
+import { DashboardPanel } from './DashboardPanel';
 
 export default function BabySteppingPanel() {
   const model = usePrinterStore((s) => s.model);
@@ -28,10 +27,7 @@ export default function BabySteppingPanel() {
   }, [sendGCode]);
 
   return (
-    <div style={panelStyle()}>
-      <div style={labelStyle()} className="duet-dash-section-title-row">
-        <ArrowUpDown size={14} /> Baby Stepping
-      </div>
+    <DashboardPanel icon={ArrowUpDown} title="Baby Stepping">
 
       <div
         style={{
@@ -142,6 +138,6 @@ export default function BabySteppingPanel() {
           <RotateCcw size={10} /> Reset
         </button>
       </div>
-    </div>
+    </DashboardPanel>
   );
 }

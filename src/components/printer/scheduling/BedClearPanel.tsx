@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { useNow } from '../../../hooks/useNow';
 import { CheckSquare, ChevronDown, ChevronRight, CircleAlert, CircleCheck, HelpCircle, Play, RefreshCcw, ScanLine } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import { usePrintQueueStore } from '../../../store/printQueueStore';
@@ -69,12 +70,7 @@ function PrinterCard({ printerId, printerName }: PrinterCardProps) {
   const selectNextReadyJob = usePrintQueueStore((s) => s.selectNextReadyJob);
   const markJobPrinting = usePrintQueueStore((s) => s.markJobPrinting);
   const setJobStatus = usePrintQueueStore((s) => s.setJobStatus);
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
+  const now = useNow(60_000);
 
   const lastCheckedLabel = useMemo(() => {
     if (!settings.lastCheckedAt) return null;

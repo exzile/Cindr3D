@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import * as THREE from 'three';
 
 // ===== Mesh Reduce Dialog =====
@@ -24,40 +24,28 @@ export function MeshReduceDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Reduce Mesh</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Target Feature</label>
-            <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
-              {meshFeatures.length === 0 && <option value="">— no mesh features —</option>}
-              {meshFeatures.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Reduction: {percent}%</label>
-            <input
-              type="range"
-              min={1}
-              max={99}
-              value={percent}
-              onChange={(e) => setPercent(parseInt(e.target.value, 10))}
-            />
-          </div>
-          <p className="dialog-hint">Removes a percentage of vertices from the mesh.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply} disabled={!selectedId}>OK</button>
-        </div>
+    <DialogShell title="Reduce Mesh" onClose={onClose} size="sm" onConfirm={handleApply} confirmDisabled={!selectedId}>
+      <div className="form-group">
+        <label>Target Feature</label>
+        <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
+          {meshFeatures.length === 0 && <option value="">— no mesh features —</option>}
+          {meshFeatures.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
       </div>
-    </div>
+      <div className="form-group">
+        <label>Reduction: {percent}%</label>
+        <input
+          type="range"
+          min={1}
+          max={99}
+          value={percent}
+          onChange={(e) => setPercent(parseInt(e.target.value, 10))}
+        />
+      </div>
+      <p className="dialog-hint">Removes a percentage of vertices from the mesh.</p>
+    </DialogShell>
   );
 }
 
@@ -81,30 +69,18 @@ export function ReverseNormalDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Reverse Normal</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Target Feature</label>
-            <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
-              {meshFeatures.length === 0 && <option value="">— no mesh features —</option>}
-              {meshFeatures.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </div>
-          <p className="dialog-hint">Flips face winding to reverse which side is front-facing.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply} disabled={!selectedId}>OK</button>
-        </div>
+    <DialogShell title="Reverse Normal" onClose={onClose} size="sm" onConfirm={handleApply} confirmDisabled={!selectedId}>
+      <div className="form-group">
+        <label>Target Feature</label>
+        <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
+          {meshFeatures.length === 0 && <option value="">— no mesh features —</option>}
+          {meshFeatures.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
       </div>
-    </div>
+      <p className="dialog-hint">Flips face winding to reverse which side is front-facing.</p>
+    </DialogShell>
   );
 }
 
@@ -139,37 +115,25 @@ export function TessellateDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Tessellate</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          {meshFeatures.length === 0 ? (
-            <p className="dialog-hint">No solid or surface features with geometry found. Create or import a body first.</p>
-          ) : (
-            <>
-              <div className="form-group">
-                <label>Source Feature</label>
-                <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
-                  {meshFeatures.map((f) => (
-                    <option key={f.id} value={f.id}>{f.name}</option>
-                  ))}
-                </select>
-              </div>
-              {vertexCount != null && (
-                <p className="dialog-hint">Vertex count: {vertexCount.toLocaleString()}</p>
-              )}
-              <p className="dialog-hint">Clones the selected feature&apos;s geometry as a new mesh body in the timeline.</p>
-            </>
+    <DialogShell title="Tessellate" onClose={onClose} size="sm" onConfirm={handleApply} confirmDisabled={meshFeatures.length === 0 || !selectedId}>
+      {meshFeatures.length === 0 ? (
+        <p className="dialog-hint">No solid or surface features with geometry found. Create or import a body first.</p>
+      ) : (
+        <>
+          <div className="form-group">
+            <label>Source Feature</label>
+            <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
+              {meshFeatures.map((f) => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
+            </select>
+          </div>
+          {vertexCount != null && (
+            <p className="dialog-hint">Vertex count: {vertexCount.toLocaleString()}</p>
           )}
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply} disabled={meshFeatures.length === 0 || !selectedId}>OK</button>
-        </div>
-      </div>
-    </div>
+          <p className="dialog-hint">Clones the selected feature&apos;s geometry as a new mesh body in the timeline.</p>
+        </>
+      )}
+    </DialogShell>
   );
 }

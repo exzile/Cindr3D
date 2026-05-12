@@ -4,6 +4,7 @@ import { useComponentStore } from '../../store/componentStore';
 import type { Tool, Feature } from '../../types/cad';
 import type * as THREE from 'three';
 import './Toolbar.css';
+import { errorMessage } from '../../utils/errorHandling';
 import { QuickAccessBar } from './QuickAccessBar';
 import { WorkspaceTabBar } from './WorkspaceTabBar';
 import { RibbonSolidTab } from './RibbonSolidTab';
@@ -135,7 +136,7 @@ export default function Toolbar() {
       addFeature(feature);
       setStatusMessage(`Imported ${file.name}`);
     } catch (err) {
-      setStatusMessage(`Import failed: ${(err as Error).message}`);
+      setStatusMessage(`Import failed: ${errorMessage(err, 'Unknown error')}`);
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -161,7 +162,7 @@ export default function Toolbar() {
       addFeature(feature);
       setStatusMessage(`Inserted mesh body: ${file.name}`);
     } catch (err) {
-      setStatusMessage(`Mesh insert failed: ${(err as Error).message}`);
+      setStatusMessage(`Mesh insert failed: ${errorMessage(err, 'Unknown error')}`);
     }
     if (meshInsertInputRef.current) meshInsertInputRef.current.value = '';
   };

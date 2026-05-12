@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function SurfaceSplitDialog({ onClose }: { onClose: () => void }) {
   const commitSurfaceSplit = useCADStore((s) => s.commitSurfaceSplit);
@@ -19,14 +19,8 @@ export function SurfaceSplitDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Surface Split</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
+    <DialogShell title="Surface Split" onClose={onClose} size="sm" onConfirm={handleOK} confirmDisabled={!sourceFeatureId || !splitterFeatureId}>
+      <div className="form-group">
             <label>Surface to Split</label>
             <select
               value={sourceFeatureId}
@@ -57,18 +51,6 @@ export function SurfaceSplitDialog({ onClose }: { onClose: () => void }) {
             splitting tool. The source surface will be hidden and replaced by
             two new surface bodies.
           </p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn-primary"
-            onClick={handleOK}
-            disabled={!sourceFeatureId || !splitterFeatureId}
-          >
-            OK
-          </button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

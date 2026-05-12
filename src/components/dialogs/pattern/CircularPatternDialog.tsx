@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function CircularPatternDialog({ onClose }: { onClose: () => void }) {
   const features = useCADStore((s) => s.features);
@@ -38,54 +38,42 @@ export function CircularPatternDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Circular Pattern</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
+    <DialogShell title="Circular Pattern" onClose={onClose} size="sm" onConfirm={handleApply}>
+      <div className="form-group">
+        <label>Feature</label>
+        <select value={featureId} onChange={(e) => setFeatureId(e.target.value)}>
+          {meshFeatures.length === 0 && <option value="">No mesh features</option>}
+          {meshFeatures.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Axis</label>
+        <select value={axis} onChange={(e) => setAxis(e.target.value as 'X' | 'Y' | 'Z')}>
+          <option value="X">X Axis</option>
+          <option value="Y">Y Axis</option>
+          <option value="Z">Z Axis</option>
+        </select>
+      </div>
+      <div className="settings-grid">
+        <div className="form-group">
+          <label>Count</label>
+          <input type="number" value={count} onChange={(e) => setCount(Math.max(2, parseInt(e.target.value) || 2))} min={2} max={100} />
         </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Feature</label>
-            <select value={featureId} onChange={(e) => setFeatureId(e.target.value)}>
-              {meshFeatures.length === 0 && <option value="">No mesh features</option>}
-              {meshFeatures.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Axis</label>
-            <select value={axis} onChange={(e) => setAxis(e.target.value as 'X' | 'Y' | 'Z')}>
-              <option value="X">X Axis</option>
-              <option value="Y">Y Axis</option>
-              <option value="Z">Z Axis</option>
-            </select>
-          </div>
-          <div className="settings-grid">
-            <div className="form-group">
-              <label>Count</label>
-              <input type="number" value={count} onChange={(e) => setCount(Math.max(2, parseInt(e.target.value) || 2))} min={2} max={100} />
-            </div>
-            <div className="form-group">
-              <label>Total Angle (°)</label>
-              <input type="number" value={totalAngle} onChange={(e) => setTotalAngle(parseFloat(e.target.value) || 360)} min={1} max={360} />
-            </div>
-          </div>
-          <div className="form-group">
-            <label>Axis Origin (X, Y, Z)</label>
-            <div className="direction-inputs">
-              <input type="number" value={originX} onChange={(e) => setOriginX(parseFloat(e.target.value) || 0)} step={1} />
-              <input type="number" value={originY} onChange={(e) => setOriginY(parseFloat(e.target.value) || 0)} step={1} />
-              <input type="number" value={originZ} onChange={(e) => setOriginZ(parseFloat(e.target.value) || 0)} step={1} />
-            </div>
-          </div>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply}>OK</button>
+        <div className="form-group">
+          <label>Total Angle (°)</label>
+          <input type="number" value={totalAngle} onChange={(e) => setTotalAngle(parseFloat(e.target.value) || 360)} min={1} max={360} />
         </div>
       </div>
-    </div>
+      <div className="form-group">
+        <label>Axis Origin (X, Y, Z)</label>
+        <div className="direction-inputs">
+          <input type="number" value={originX} onChange={(e) => setOriginX(parseFloat(e.target.value) || 0)} step={1} />
+          <input type="number" value={originY} onChange={(e) => setOriginY(parseFloat(e.target.value) || 0)} step={1} />
+          <input type="number" value={originZ} onChange={(e) => setOriginZ(parseFloat(e.target.value) || 0)} step={1} />
+        </div>
+      </div>
+    </DialogShell>
   );
 }

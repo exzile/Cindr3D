@@ -85,15 +85,14 @@ export async function uploadFile(
 
   const url = `${baseUrl}/rr_upload?name=${encodeURIComponent(path)}&time=${encodeURIComponent(new Date().toISOString())}`;
   return uploadViaXhr('POST', url, content, onProgress, (responseText) => {
+    let res: { err?: number };
     try {
-      const res = JSON.parse(responseText);
-      if (res.err !== 0) {
-        throw new Error(`Upload error (err=${res.err})`);
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.startsWith('Upload error')) {
-        throw err;
-      }
+      res = JSON.parse(responseText) as { err?: number };
+    } catch {
+      return; // non-JSON response — treat as success (some RRF builds omit body on success)
+    }
+    if (res.err !== 0) {
+      throw new Error(`Upload error (err=${res.err})`);
     }
   });
 }

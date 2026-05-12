@@ -215,6 +215,7 @@ export default function MultiViewCanvas({ layout }: { layout: Layout }) {
       <Canvas
         eventSource={containerRef}
         eventPrefix="client"
+        frameloop="demand"
         style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
         gl={{ antialias: true, alpha: false }}
       >

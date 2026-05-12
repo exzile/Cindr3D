@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { generateId } from '../utils/generateId';
 
 export type ToastKind = 'gcode' | 'macro' | 'info' | 'warning' | 'error';
 
@@ -36,7 +37,7 @@ export const useToastStore = create<ToastStore>((set) => ({
   toasts: [],
 
   addToast: (kind, label, sub, actions, durationMs) => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const id = generateId();
     const toast: Toast = { id, kind, label, sub: sub ?? undefined, actions, exiting: false };
     const duration = durationMs ?? (actions?.length ? ACTION_DURATION_MS : DURATION_MS);
 

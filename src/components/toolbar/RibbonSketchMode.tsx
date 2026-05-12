@@ -1,4 +1,5 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef } from 'react';
+import { useContainerSize } from '../../hooks/useContainerSize';
 import {
   PenLine, RectangleHorizontal, Circle, Spline, Hexagon, CircleDot,
   Waypoints, ArrowUpFromLine, Scissors, Download, Type,
@@ -39,15 +40,7 @@ export function RibbonSketchMode({
   sketchConstraintMenuItems,
 }: RibbonSketchModeProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const [wrapperWidth, setWrapperWidth] = useState(0);
-
-  useEffect(() => {
-    const el = wrapperRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([entry]) => setWrapperWidth(entry.contentRect.width));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  const { width: wrapperWidth } = useContainerSize(wrapperRef);
 
   // Distribute available width equally across 3 big sections (CREATE, MODIFY, CONSTRAINTS)
   const maxBigSection: number | undefined = wrapperWidth > 0

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useNow } from '../../hooks/useNow';
 import {
   TrendingUp, Clock, Package, CheckCircle2, XCircle, Calendar,
   Award, Activity, Info, AlertTriangle, Zap, Leaf, Receipt, Download,
@@ -151,7 +152,7 @@ export default function DuetAnalytics() {
   const [co2KgPerKwh, setCo2KgPerKwh] = useState<number>(() => {
     return readStoredNumber('cindr3d-cost-co2', 0.386, (saved) => isFinite(saved) && saved >= 0);
   });
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const nowMs = useNow(15000);
   const [touTier, setTouTier] = useState<TOUTier>('off-peak');
   const [touLabel, setTouLabel] = useState('Off-peak');
   const [touRate, setTouRate] = useState(0.08);
@@ -160,11 +161,6 @@ export default function DuetAnalytics() {
   const [touDays, setTouDays] = useState<DayOfWeek[]>(ALL_DAYS);
   const [plannerFilePath, setPlannerFilePath] = useState('0:/gcodes/next-print.gcode');
   const [plannerDurationHours, setPlannerDurationHours] = useState(4);
-
-  useEffect(() => {
-    const id = window.setInterval(() => setNowMs(Date.now()), 15000);
-    return () => window.clearInterval(id);
-  }, []);
 
   const activePrinterName = useMemo(
     () => printers.find((printer) => printer.id === activePrinterId)?.name ?? 'Current printer',

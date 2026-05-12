@@ -3,13 +3,10 @@ import '../DuetJobStatus.css';
 
 export function NoJobMessage() {
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      gap: 12, padding: '48px 24px', color: '#666680',
-    }}>
+    <div className="duet-job__no-job">
       <FileText size={48} strokeWidth={1} />
-      <p style={{ margin: 0, fontSize: 16 }}>No print job active</p>
-      <p style={{ margin: 0, fontSize: 12, color: '#555' }}>
+      <p className="duet-job__no-job-primary">No print job active</p>
+      <p className="duet-job__no-job-secondary">
         Start a print from the Files tab to monitor progress here.
       </p>
     </div>

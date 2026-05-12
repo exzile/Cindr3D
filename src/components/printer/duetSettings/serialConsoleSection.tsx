@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Loader2, Power, PowerOff, Send, Terminal, Trash2 } from 'lucide-react';
+import { errorMessage } from '../../../utils/errorHandling';
 import {
   WebSerialConnection,
   findGrantedPort,
@@ -86,7 +87,7 @@ export function SerialConsoleSection({
       setOpen(true);
       append('sys', `Opened ${portLabel || 'serial port'} @ ${baudRate} baud`);
     } catch (err) {
-      append('err', (err as Error).message || 'Could not open the serial port.');
+      append('err', errorMessage(err, 'Unknown error') || 'Could not open the serial port.');
     } finally {
       setOpening(false);
     }
@@ -112,7 +113,7 @@ export function SerialConsoleSection({
       await connectionRef.current.sendGCode(code, 4000);
       // The reply lines arrive via onLine and are already appended.
     } catch (err) {
-      append('err', (err as Error).message);
+      append('err', errorMessage(err, 'Unknown error'));
     }
   };
 

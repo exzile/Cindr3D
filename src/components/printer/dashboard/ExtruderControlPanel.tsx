@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Droplets, ArrowDown, ArrowUp } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
-import { panelStyle, sectionTitleStyle as labelStyle } from '../../../utils/printerPanelStyles';
+import { DashboardPanel } from './DashboardPanel';
 
 const AMOUNTS = [1, 5, 10, 25, 50, 100];
 
@@ -29,12 +29,7 @@ export default function ExtruderControlPanel() {
   };
 
   return (
-    <div style={panelStyle()}>
-
-      {/* Section header */}
-      <div style={labelStyle()} className="duet-dash-section-title-row">
-        <Droplets size={14} /> Extruder
-      </div>
+    <DashboardPanel icon={Droplets} title="Extruder">
 
       {/* Tool selector (only when multiple tools exist) */}
       {tools.length > 1 && (
@@ -117,6 +112,6 @@ export default function ExtruderControlPanel() {
         </button>
       </div>
 
-    </div>
+    </DashboardPanel>
   );
 }

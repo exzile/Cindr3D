@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchLatestPanelDue, panelDueBinAssets, panelDueVariantLabel, parseM575, proxiedGithubUrl, sortPanelDueAssets, type GitHubAsset, type GitHubRelease, type PanelDueConfig } from './helpers';
+import { errorMessage } from '../../../utils/errorHandling';
 import { usePrinterStore } from '../../../store/printerStore';
 import type { PanelDueFlashed, PanelDueUpdateState } from '../../../types/panel-due.types';
 
@@ -53,7 +54,7 @@ export function usePanelDue({
         loading: false,
         loaded: true,
         configs: [],
-        error: `Couldn't read 0:/sys/config.g â€” ${(err as Error).message}`,
+        error: `Couldn't read 0:/sys/config.g â€” ${errorMessage(err, 'Unknown error')}`,
       });
     }
 
@@ -86,7 +87,7 @@ export function usePanelDue({
       const bins = sortPanelDueAssets(panelDueBinAssets(release.assets));
       if (bins.length > 0) setPanelDueAsset(bins[0]);
     } catch (err) {
-      setPanelDueCheck({ loading: false, error: (err as Error).message, checkedAt: Date.now() });
+      setPanelDueCheck({ loading: false, error: errorMessage(err, 'Unknown error'), checkedAt: Date.now() });
     }
   }, []);
 
@@ -117,7 +118,7 @@ export function usePanelDue({
       }
       binFile = new Blob(chunks as BlobPart[], { type: 'application/octet-stream' });
     } catch (err) {
-      setPanelDueUpdate({ step: 'error', progress: 0, assetName: asset.name, error: `Download failed: ${(err as Error).message}` });
+      setPanelDueUpdate({ step: 'error', progress: 0, assetName: asset.name, error: `Download failed: ${errorMessage(err, 'Unknown error')}` });
       return;
     }
 
@@ -131,7 +132,7 @@ export function usePanelDue({
         setPanelDueUpdate((s) => ({ ...s, progress }));
       });
     } catch (err) {
-      setPanelDueUpdate({ step: 'error', progress: 0, assetName: canonicalName, error: `Upload failed: ${(err as Error).message}` });
+      setPanelDueUpdate({ step: 'error', progress: 0, assetName: canonicalName, error: `Upload failed: ${errorMessage(err, 'Unknown error')}` });
       return;
     }
 
@@ -180,7 +181,7 @@ export function usePanelDue({
         step: 'error',
         progress: 100,
         assetName: canonicalName,
-        error: `Install command (M997 S4) failed: ${(err as Error).message}`,
+        error: `Install command (M997 S4) failed: ${errorMessage(err, 'Unknown error')}`,
         messages: collected,
       });
       return;

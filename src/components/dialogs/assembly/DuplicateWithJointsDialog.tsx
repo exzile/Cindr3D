@@ -1,5 +1,5 @@
-import { X } from 'lucide-react';
 import type { Component } from '../../../types/cad';
+import { DialogShell } from '../common/DialogShell';
 
 interface Props {
   open: boolean;
@@ -18,13 +18,7 @@ export function DuplicateWithJointsDialog({ open, component, jointCount, onOk, o
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Duplicate With Joints</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
+    <DialogShell title="Duplicate With Joints" onClose={onClose} size="sm" onConfirm={handleOk} confirmLabel="Duplicate">
           <p style={{ margin: 0 }}>
             Duplicate <strong>{component.name}</strong>?
           </p>
@@ -33,12 +27,6 @@ export function DuplicateWithJointsDialog({ open, component, jointCount, onOk, o
               ? `This will also copy ${jointCount} associated joint${jointCount === 1 ? '' : 's'}.`
               : 'No joints are associated with this component.'}
           </p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOk}>Duplicate</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

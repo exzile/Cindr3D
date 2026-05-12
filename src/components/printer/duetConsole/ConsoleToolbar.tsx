@@ -1,19 +1,31 @@
-import { Copy, MessageSquare, Trash2 } from 'lucide-react';
+import { ArrowUpToLine, Copy, Loader2, MessageSquare, Pause, Play, RefreshCw, Trash2 } from 'lucide-react';
 import { QUICK_COMMANDS } from './config';
 
 export function ConsoleToolbar({
+  autoFollowTop,
   connected,
+  liveLogPaused,
+  loadingPrinterLog,
   verbose,
   onClear,
   onCopyAll,
+  onLoadPrinterLog,
   onQuickCommand,
+  onToggleAutoFollowTop,
+  onToggleLiveLog,
   onToggleVerbose,
 }: {
+  autoFollowTop: boolean;
   connected: boolean;
+  liveLogPaused: boolean;
+  loadingPrinterLog: boolean;
   verbose: boolean;
   onClear: () => void;
   onCopyAll: () => void;
+  onLoadPrinterLog: () => void;
   onQuickCommand: (gcode: string) => void;
+  onToggleAutoFollowTop: () => void;
+  onToggleLiveLog: () => void;
   onToggleVerbose: () => void;
 }) {
   return (
@@ -41,6 +53,32 @@ export function ConsoleToolbar({
         >
           <MessageSquare size={12} />
           <span>{verbose ? 'Verbose' : 'Quiet'}</span>
+        </button>
+        <button
+          className="duet-console__clear-btn"
+          onClick={onLoadPrinterLog}
+          disabled={!connected || loadingPrinterLog}
+          title="Pull printer log file"
+        >
+          {loadingPrinterLog ? <Loader2 size={14} className="duet-console__spin" /> : <RefreshCw size={14} />}
+          <span>Pull Log</span>
+        </button>
+        <button
+          className={`duet-console__clear-btn${liveLogPaused ? ' is-paused' : ' is-live'}`}
+          onClick={onToggleLiveLog}
+          disabled={!connected}
+          title={liveLogPaused ? 'Resume live log polling' : 'Pause live log polling'}
+        >
+          {liveLogPaused ? <Play size={14} /> : <Pause size={14} />}
+          <span>{liveLogPaused ? 'Resume' : 'Pause'}</span>
+        </button>
+        <button
+          className={`duet-console__clear-btn${autoFollowTop ? ' is-following' : ''}`}
+          onClick={onToggleAutoFollowTop}
+          title={autoFollowTop ? 'Auto-scroll to newest logs is on' : 'Auto-scroll to newest logs is off'}
+        >
+          <ArrowUpToLine size={14} />
+          <span>{autoFollowTop ? 'Top On' : 'Top Off'}</span>
         </button>
         <button
           className="duet-console__clear-btn"

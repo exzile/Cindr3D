@@ -1,5 +1,6 @@
 import type { AirQualityPrinterConfig, AirQualitySensorKey } from '../../store/airQualityStore';
 import { AIR_QUALITY_SENSOR_LABELS } from '../../store/airQualityStore';
+import { parseNumericPayload } from '../../utils/parseNumericPayload';
 
 export type AirQualityLevel = 'ok' | 'warn' | 'critical';
 
@@ -9,32 +10,14 @@ export interface AirQualityStatus {
   exceeded: Array<{ sensor: AirQualitySensorKey; value: number; limit: number; level: Exclude<AirQualityLevel, 'ok'> }>;
 }
 
+const AIR_QUALITY_ALIASES: Record<AirQualitySensorKey, string[]> = {
+  voc: ['voc', 'tvoc', 'iaq', 'value'],
+  pm25: ['pm25', 'pm2_5', 'pm2.5', 'particles', 'value'],
+  co2: ['co2', 'eco2', 'carbonDioxide', 'value'],
+};
+
 export function parseAirQualityPayload(payload: string, sensor: AirQualitySensorKey): number | null {
-  const trimmed = payload.trim();
-  if (!trimmed) return null;
-  const direct = Number(trimmed);
-  if (Number.isFinite(direct)) return direct;
-
-  try {
-    const parsed = JSON.parse(trimmed) as unknown;
-    if (typeof parsed === 'number' && Number.isFinite(parsed)) return parsed;
-    if (parsed && typeof parsed === 'object') {
-      const record = parsed as Record<string, unknown>;
-      const aliases: Record<AirQualitySensorKey, string[]> = {
-        voc: ['voc', 'tvoc', 'iaq', 'value'],
-        pm25: ['pm25', 'pm2_5', 'pm2.5', 'particles', 'value'],
-        co2: ['co2', 'eco2', 'carbonDioxide', 'value'],
-      };
-      for (const key of aliases[sensor]) {
-        const next = Number(record[key]);
-        if (Number.isFinite(next)) return next;
-      }
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
+  return parseNumericPayload(payload, AIR_QUALITY_ALIASES[sensor]);
 }
 
 export function evaluateAirQuality(config: AirQualityPrinterConfig): AirQualityStatus {

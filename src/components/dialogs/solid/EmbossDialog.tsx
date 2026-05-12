@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
 
 export function EmbossDialog({ onClose }: { onClose: () => void }) {
@@ -54,43 +54,31 @@ export function EmbossDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>{editing ? 'Edit Emboss' : 'Emboss'}</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
+    <DialogShell title={editing ? 'Edit Emboss' : 'Emboss'} onClose={onClose} size="sm" onConfirm={handleApply} confirmDisabled={!profileId}>
+      <div className="form-group">
+        <label>Profile Sketch</label>
+        <select value={profileId} onChange={(e) => setProfileId(e.target.value)}>
+          <option value="" disabled>Select a sketch</option>
+          {sketches.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </div>
+      <div className="settings-grid">
+        <div className="form-group">
+          <label>Style</label>
+          <select value={style} onChange={(e) => setStyle(e.target.value as 'emboss' | 'deboss')}>
+            <option value="emboss">Emboss (Raise)</option>
+            <option value="deboss">Deboss (Recess)</option>
+          </select>
         </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Profile Sketch</label>
-            <select value={profileId} onChange={(e) => setProfileId(e.target.value)}>
-              <option value="" disabled>Select a sketch</option>
-              {sketches.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-          <div className="settings-grid">
-            <div className="form-group">
-              <label>Style</label>
-              <select value={style} onChange={(e) => setStyle(e.target.value as 'emboss' | 'deboss')}>
-                <option value="emboss">Emboss (Raise)</option>
-                <option value="deboss">Deboss (Recess)</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label>Depth (mm)</label>
-              <input type="number" value={depth} onChange={(e) => setDepth(Math.max(0.01, parseFloat(e.target.value) || 1))} step={0.1} min={0.01} />
-            </div>
-          </div>
-          <div className="form-group">
-            <label>Draft Angle (deg)</label>
-            <input type="number" value={angle} onChange={(e) => setAngle(parseFloat(e.target.value) || 0)} min={0} max={30} step={0.5} />
-          </div>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={!profileId} onClick={handleApply}>OK</button>
+        <div className="form-group">
+          <label>Depth (mm)</label>
+          <input type="number" value={depth} onChange={(e) => setDepth(Math.max(0.01, parseFloat(e.target.value) || 1))} step={0.1} min={0.01} />
         </div>
       </div>
-    </div>
+      <div className="form-group">
+        <label>Draft Angle (deg)</label>
+        <input type="number" value={angle} onChange={(e) => setAngle(parseFloat(e.target.value) || 0)} min={0} max={30} step={0.5} />
+      </div>
+    </DialogShell>
   );
 }

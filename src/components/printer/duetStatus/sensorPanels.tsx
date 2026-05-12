@@ -8,12 +8,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
-import { colors as COLORS } from '../../../utils/theme';
-import {
-  panelStyle,
-  sectionTitleStyle as sectionTitle,
-  twoColRowGridStyle as rowGrid,
-} from '../../../utils/printerPanelStyles';
+import { DashboardPanel } from '../dashboard/DashboardPanel';
 
 const EMPTY_ARRAY: readonly never[] = [];
 
@@ -24,31 +19,31 @@ export function EndstopsPanel() {
 
   if (populated.length === 0) {
     return (
-      <div style={panelStyle()}>
-        <div style={sectionTitle()}><Crosshair size={14} /> Endstops</div>
-        <div className="duet-status-dim">No endstops reported.</div>
-      </div>
+      <DashboardPanel icon={Crosshair} title="Endstops">
+        <div className="ds-kv__key">No endstops reported.</div>
+      </DashboardPanel>
     );
   }
 
   return (
-    <div style={panelStyle()}>
-      <div style={sectionTitle()}><Crosshair size={14} /> Endstops</div>
-      <div style={rowGrid()}>
+    <DashboardPanel icon={Crosshair} title="Endstops">
+      <div className="ds-kv">
         {populated.map(({ endstop, index }) => {
           const axisLetter = axes[index]?.letter ?? `#${index}`;
           const triggered = endstop?.triggered;
           return (
             <Fragment key={index}>
-              <span>{axisLetter} <span className="duet-status-dim">({endstop?.type ?? 'unknown'})</span></span>
-              <span className={`duet-status-flag ${triggered ? 'danger' : 'success'}`}>
+              <span>
+                {axisLetter} <span className="ds-kv__key">({endstop?.type ?? 'unknown'})</span>
+              </span>
+              <span className={`ds-badge ${triggered ? 'ds-badge--err' : 'ds-badge--ok'}`}>
                 {triggered ? 'TRIGGERED' : 'open'}
               </span>
             </Fragment>
           );
         })}
       </div>
-    </div>
+    </DashboardPanel>
   );
 }
 
@@ -58,42 +53,41 @@ export function ProbesPanel() {
 
   if (populated.length === 0) {
     return (
-      <div style={panelStyle()}>
-        <div style={sectionTitle()}><Radar size={14} /> Z-Probes</div>
-        <div className="duet-status-dim">No probes configured.</div>
-      </div>
+      <DashboardPanel icon={Radar} title="Z-Probes">
+        <div className="ds-kv__key">No probes configured.</div>
+      </DashboardPanel>
     );
   }
 
   return (
-    <div style={panelStyle()}>
-      <div style={sectionTitle()}><Radar size={14} /> Z-Probes</div>
+    <DashboardPanel icon={Radar} title="Z-Probes">
       {populated.map(({ probe, index }, probeIndex) => {
         const threshold = probe?.threshold ?? 0;
         const value = probe?.value ?? 0;
         const triggered = threshold > 0 && value >= threshold;
         return (
-          <div key={index} className={probeIndex < populated.length - 1 ? 'duet-status-block' : undefined}>
-            <div style={rowGrid()} className="duet-status-row-gap">
-              <span className="duet-status-dim">Probe {index} (type {probe?.type ?? '—'})</span>
-              <span className={`duet-status-flag ${triggered ? 'danger' : 'success'}`}>
+          <Fragment key={index}>
+            {probeIndex > 0 && <hr className="ds-sep" />}
+            <div className="ds-kv" style={{ marginBottom: 4 }}>
+              <span className="ds-kv__key">Probe {index} (type {probe?.type ?? '—'})</span>
+              <span className={`ds-badge ${triggered ? 'ds-badge--err' : 'ds-badge--ok'}`}>
                 {triggered ? 'TRIGGERED' : 'open'}
               </span>
             </div>
-            <div style={rowGrid()}>
-              <span className="duet-status-dim">Value</span>
-              <span className="duet-status-mono">{value} / {threshold}</span>
-              <span className="duet-status-dim">Trigger height</span>
-              <span className="duet-status-mono">{probe?.triggerHeight?.toFixed(3) ?? '—'} mm</span>
-              <span className="duet-status-dim">Dive height</span>
-              <span className="duet-status-mono">{probe?.diveHeight?.toFixed(2) ?? '—'} mm</span>
-              <span className="duet-status-dim">Speed</span>
-              <span className="duet-status-mono">{probe?.speed ?? '—'} mm/s</span>
+            <div className="ds-kv">
+              <span className="ds-kv__key">Value</span>
+              <span className="ds-kv__val">{value} / {threshold}</span>
+              <span className="ds-kv__key">Trigger height</span>
+              <span className="ds-kv__val">{probe?.triggerHeight?.toFixed(3) ?? '—'} mm</span>
+              <span className="ds-kv__key">Dive height</span>
+              <span className="ds-kv__val">{probe?.diveHeight?.toFixed(2) ?? '—'} mm</span>
+              <span className="ds-kv__key">Speed</span>
+              <span className="ds-kv__val">{probe?.speed ?? '—'} mm/s</span>
             </div>
-          </div>
+          </Fragment>
         );
       })}
-    </div>
+    </DashboardPanel>
   );
 }
 
@@ -103,27 +97,27 @@ export function AnalogSensorsPanel() {
 
   if (populated.length === 0) {
     return (
-      <div style={panelStyle()}>
-        <div style={sectionTitle()}><Activity size={14} /> Analog Sensors</div>
-        <div className="duet-status-dim">No analog sensors reported.</div>
-      </div>
+      <DashboardPanel icon={Activity} title="Analog Sensors">
+        <div className="ds-kv__key">No analog sensors reported.</div>
+      </DashboardPanel>
     );
   }
 
   return (
-    <div style={panelStyle()}>
-      <div style={sectionTitle()}><Activity size={14} /> Analog Sensors</div>
-      <div style={rowGrid()}>
+    <DashboardPanel icon={Activity} title="Analog Sensors">
+      <div className="ds-kv">
         {populated.map(({ sensor, index }) => (
           <Fragment key={index}>
-            <span>{sensor.name} <span className="duet-status-dim">({sensor.type})</span></span>
-            <span className="duet-status-mono">
+            <span>
+              {sensor.name} <span className="ds-kv__key">({sensor.type})</span>
+            </span>
+            <span className="ds-kv__val">
               {typeof sensor.lastReading === 'number' ? `${sensor.lastReading.toFixed(1)}°` : '—'}
             </span>
           </Fragment>
         ))}
       </div>
-    </div>
+    </DashboardPanel>
   );
 }
 
@@ -134,34 +128,34 @@ export function SpindlePanel() {
   if (populated.length === 0) return null;
 
   return (
-    <div style={panelStyle()}>
-      <div style={sectionTitle()}><Disc size={14} /> Spindles</div>
+    <DashboardPanel icon={Disc} title="Spindles">
       {populated.map(({ spindle, index }, spindleIndex) => {
         const stateLabel = spindle.state === 'forward' ? 'FORWARD' : spindle.state === 'reverse' ? 'REVERSE' : 'IDLE';
-        const stateClass = spindle.state === 'stopped' ? '' : 'success';
+        const stateVariant = spindle.state === 'stopped' ? 'ds-badge--dim' : 'ds-badge--ok';
         return (
-          <div key={index} className={spindleIndex < populated.length - 1 ? 'duet-status-block' : undefined}>
-            <div className="duet-status-board-title">Spindle {index}</div>
-            <div style={rowGrid()}>
-              <span className="duet-status-dim">State</span>
-              <span className={`duet-status-flag ${stateClass}`}>{stateLabel}</span>
-              <span className="duet-status-dim">Current RPM</span>
-              <span className="duet-status-mono">{spindle.current ?? 0}</span>
-              <span className="duet-status-dim">Active speed</span>
-              <span className="duet-status-mono">{spindle.active ?? 0} RPM</span>
-              <span className="duet-status-dim">Range</span>
-              <span className="duet-status-mono">{spindle.min ?? 0} – {spindle.max ?? 0} RPM</span>
+          <Fragment key={index}>
+            {spindleIndex > 0 && <hr className="ds-sep" />}
+            <div className="ds-sub-title">Spindle {index}</div>
+            <div className="ds-kv">
+              <span className="ds-kv__key">State</span>
+              <span className={`ds-badge ${stateVariant}`}>{stateLabel}</span>
+              <span className="ds-kv__key">Current RPM</span>
+              <span className="ds-kv__val">{spindle.current ?? 0}</span>
+              <span className="ds-kv__key">Active speed</span>
+              <span className="ds-kv__val">{spindle.active ?? 0} RPM</span>
+              <span className="ds-kv__key">Range</span>
+              <span className="ds-kv__val">{spindle.min ?? 0} – {spindle.max ?? 0} RPM</span>
               {spindle.tool >= 0 && (
                 <>
-                  <span className="duet-status-dim">Tool</span>
-                  <span className="duet-status-mono">T{spindle.tool}</span>
+                  <span className="ds-kv__key">Tool</span>
+                  <span className="ds-kv__val">T{spindle.tool}</span>
                 </>
               )}
             </div>
-          </div>
+          </Fragment>
         );
       })}
-    </div>
+    </DashboardPanel>
   );
 }
 
@@ -172,15 +166,14 @@ export function LaserPanel() {
   if (typeof laserPwm !== 'number') return null;
 
   return (
-    <div style={panelStyle()}>
-      <div style={sectionTitle()}><Focus size={14} /> Laser</div>
-      <div style={rowGrid()}>
-        <span className="duet-status-dim">PWM</span>
-        <span className="duet-status-mono">{laserPwm.toFixed(3)}</span>
-        <span className="duet-status-dim">Power</span>
-        <span className="duet-status-mono">{(laserPwm * 100).toFixed(1)}%</span>
+    <DashboardPanel icon={Focus} title="Laser">
+      <div className="ds-kv">
+        <span className="ds-kv__key">PWM</span>
+        <span className="ds-kv__val">{laserPwm.toFixed(3)}</span>
+        <span className="ds-kv__key">Power</span>
+        <span className="ds-kv__val">{(laserPwm * 100).toFixed(1)}%</span>
       </div>
-    </div>
+    </DashboardPanel>
   );
 }
 
@@ -209,59 +202,28 @@ export function GpioPanel() {
 
   if (populated.length === 0) {
     return (
-      <div style={panelStyle()}>
-        <div style={sectionTitle()}><Zap size={14} /> General Purpose Outputs</div>
-        <div className="duet-status-dim">No GP outputs configured.</div>
-      </div>
+      <DashboardPanel icon={Zap} title="General Purpose Outputs">
+        <div className="ds-kv__key">No GP outputs configured.</div>
+      </DashboardPanel>
     );
   }
 
   return (
-    <div style={panelStyle()}>
-      <div style={sectionTitle()}><Zap size={14} /> General Purpose Outputs</div>
+    <DashboardPanel icon={Zap} title="General Purpose Outputs">
       {populated.map(({ gpio, index }) => {
         const pwm = gpio?.pwm ?? 0;
         const displayPct = localPwm[index] !== undefined ? Math.round(localPwm[index]) : Math.round(pwm * 100);
+        const isOn = pwm > 0;
         return (
-          <div
-            key={index}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '6px 0',
-              borderBottom: `1px solid ${COLORS.panelBorder}`,
-            }}
-          >
+          <div key={index} className="ds-gpio-row">
             <span style={{ fontSize: 12, fontWeight: 600, minWidth: 36 }}>GP{index}</span>
             <button
+              className={`ds-toggle ${isOn ? 'ds-toggle--on' : 'ds-toggle--off'}`}
               onClick={() => handleToggle(index, pwm)}
-              title={pwm > 0 ? `Turn off GP${index} (M42 P${index} S0)` : `Turn on GP${index} (M42 P${index} S1)`}
-              style={{
-                width: 36,
-                height: 20,
-                borderRadius: 10,
-                border: 'none',
-                cursor: 'pointer',
-                position: 'relative',
-                background: pwm > 0 ? COLORS.success : COLORS.surface,
-                transition: 'background 0.2s',
-                flexShrink: 0,
-              }}
+              title={isOn ? `Turn off GP${index} (M42 P${index} S0)` : `Turn on GP${index} (M42 P${index} S1)`}
             >
-              <span
-                style={{
-                  display: 'block',
-                  width: 14,
-                  height: 14,
-                  borderRadius: '50%',
-                  background: '#fff',
-                  position: 'absolute',
-                  top: 3,
-                  left: pwm > 0 ? 19 : 3,
-                  transition: 'left 0.2s',
-                }}
-              />
+              <span className="ds-toggle__track" />
+              <span className="ds-toggle__thumb" />
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
               <input
@@ -273,7 +235,7 @@ export function GpioPanel() {
                 onChange={(e) => setLocalPwm((prev) => ({ ...prev, [index]: Number(e.target.value) }))}
                 onMouseUp={() => handleSliderCommit(index)}
                 onTouchEnd={() => handleSliderCommit(index)}
-                style={{ flex: 1, accentColor: COLORS.accent }}
+                style={{ flex: 1, accentColor: 'var(--accent)' }}
                 title={`Set GP${index} PWM (0-100%)`}
               />
               <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 600, minWidth: 36, textAlign: 'right' }}>
@@ -283,6 +245,6 @@ export function GpioPanel() {
           </div>
         );
       })}
-    </div>
+    </DashboardPanel>
   );
 }

@@ -120,6 +120,10 @@ export interface DuetProbe {
   offsets: number[];
   triggerHeight: number;
   deployedByUser: boolean;
+  /** M558 A — max probe dives per point. */
+  maxProbeCount?: number;
+  /** M558 S — max acceptable spread between dives (mm). */
+  tolerance?: number;
 }
 
 // Spindle
@@ -238,6 +242,8 @@ export interface DuetMove {
   speedFactor: number;
   compensation?: { type: string };
   idle?: { timeout: number; factor: number };
+  /** True while a G30/G29 probe dive is in progress (RRF). */
+  probing?: boolean;
 }
 
 // Heat system
@@ -268,6 +274,12 @@ export interface DuetState {
   };
 }
 
+export interface DuetMessage {
+  content: string;
+  time?: string;
+  type?: string | number;
+}
+
 // Full Object Model
 export interface DuetObjectModel {
   boards: DuetBoard[];
@@ -276,6 +288,7 @@ export interface DuetObjectModel {
   job: DuetJob;
   move: DuetMove;
   network: DuetNetwork;
+  messages?: DuetMessage[];
   sensors: {
     analog: DuetSensor[];
     endstops: Array<{ triggered: boolean; type: string }>;

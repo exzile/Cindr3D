@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
 
 export function SplitBodyDialog({ onClose }: { onClose: () => void }) {
@@ -32,14 +32,8 @@ export function SplitBodyDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Split Body</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
+    <DialogShell title="Split Body" onClose={onClose} size="sm" onConfirm={handleApply}>
+      <div className="form-group">
             <label>Body to Split</label>
             <select value={bodyFeatureId} onChange={(e) => setBodyFeatureId(e.target.value)}>
               {solidFeatures.length === 0
@@ -73,12 +67,6 @@ export function SplitBodyDialog({ onClose }: { onClose: () => void }) {
             <input type="checkbox" checked={keepBoth} onChange={(e) => setKeepBoth(e.target.checked)} />
             Keep Both Sides
           </label>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

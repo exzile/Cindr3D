@@ -1,4 +1,5 @@
 import { useProfileSyncStore } from '../store/profileSyncStore';
+import { errorMessage } from './errorHandling';
 import { useSlicerStore } from '../store/slicerStore';
 import { useSpoolStore, type Spool } from '../store/spoolStore';
 import type { MaterialProfile, PrintProfile, PrinterProfile } from '../types/slicer';
@@ -177,7 +178,7 @@ export async function pullProfileSpoolSync(): Promise<ProfileSpoolSyncPayload> {
     useProfileSyncStore.getState().markSync('pulled');
     return payload;
   } catch (err) {
-    useProfileSyncStore.getState().markSync('error', (err as Error).message);
+    useProfileSyncStore.getState().markSync('error', errorMessage(err, 'Unknown error'));
     throw err;
   }
 }
@@ -227,7 +228,7 @@ export async function pushProfileSpoolSync(): Promise<void> {
       clearPending: latest.pendingUpdatedAt === pendingUpdatedAt,
     });
   } catch (err) {
-    useProfileSyncStore.getState().markSync('error', (err as Error).message, { clearPending: false });
+    useProfileSyncStore.getState().markSync('error', errorMessage(err, 'Unknown error'), { clearPending: false });
     throw err;
   }
 }

@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import { colors as COLORS } from '../../../utils/theme';
-import { panelStyle, sectionTitleStyle as labelStyle } from '../../../utils/printerPanelStyles';
+import { DashboardPanel } from './DashboardPanel';
 
 const DEFAULT_AXES = ['X', 'Y', 'Z'];
 const PLANAR_AXES = ['X', 'Y'];
@@ -43,12 +43,7 @@ export default function AxisMovementPanel() {
   const extraAxes = axisLetters.filter((l) => !PLANAR_AXES.includes(l) && l !== Z_AXIS);
 
   return (
-    <div className="ax-panel" style={panelStyle()}>
-
-      {/* Section header */}
-      <div style={labelStyle()} className="duet-dash-section-title-row">
-        <MoveHorizontal size={14} /> Axes &amp; Movement
-      </div>
+    <DashboardPanel icon={MoveHorizontal} title="Axes & Movement" className="ax-panel">
 
       {/* ============================================================
           Position cards
@@ -282,6 +277,6 @@ export default function AxisMovementPanel() {
         </div>
       </div>
 
-    </div>
+    </DashboardPanel>
   );
 }

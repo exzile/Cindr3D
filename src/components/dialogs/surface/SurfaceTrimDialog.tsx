@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function SurfaceTrimDialog({ onClose }: { onClose: () => void }) {
   const commitSurfaceTrim = useCADStore((s) => s.commitSurfaceTrim);
@@ -20,14 +20,8 @@ export function SurfaceTrimDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Surface Trim</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
+    <DialogShell title="Surface Trim" onClose={onClose} size="sm" onConfirm={handleOK} confirmDisabled={!sourceFeatureId || !trimmerFeatureId}>
+      <div className="form-group">
             <label>Source Surface</label>
             <select
               value={sourceFeatureId}
@@ -67,18 +61,6 @@ export function SurfaceTrimDialog({ onClose }: { onClose: () => void }) {
             Select the surface to trim and the surface or plane to trim against.
             The selected keep-side of the source surface will be retained.
           </p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn-primary"
-            onClick={handleOK}
-            disabled={!sourceFeatureId || !trimmerFeatureId}
-          >
-            OK
-          </button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

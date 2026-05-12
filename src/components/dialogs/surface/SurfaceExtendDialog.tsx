@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function SurfaceExtendDialog({ onClose }: { onClose: () => void }) {
   const commitSurfaceExtend = useCADStore((s) => s.commitSurfaceExtend);
@@ -15,14 +15,8 @@ export function SurfaceExtendDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Surface Extend</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
+    <DialogShell title="Surface Extend" onClose={onClose} size="sm" onConfirm={handleOK}>
+      <div className="form-group">
             <label>Distance (mm)</label>
             <input type="number" value={extendDistance} onChange={(e) => setExtendDistance(parseFloat(e.target.value) || 5)} step={0.5} min={0.01} />
           </div>
@@ -39,12 +33,6 @@ export function SurfaceExtendDialog({ onClose }: { onClose: () => void }) {
             Merge with adjacent faces
           </label>
           <p className="dialog-hint">Select the edge(s) to extend in the viewport.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

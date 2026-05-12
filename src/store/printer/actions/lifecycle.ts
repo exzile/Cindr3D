@@ -6,9 +6,11 @@ import { errorMessage, savePrintersList } from '../persistence';
 import type { PrinterStoreApi } from '../storeApi';
 import type { PrinterStore } from '../../printerStore';
 import { addToast } from '../../toastStore';
+import { MAX_CONSOLE_HISTORY } from '../../../constants/printerConsole';
+import { consoleEntryTypeFromPrinterMessage, dateFromPrinterTimestamp, mergeConsoleEntries } from '../../../utils/printerConsole';
+import { generateId } from '../../../utils/generateId';
 
 const MAX_TEMPERATURE_HISTORY = 200;
-const MAX_CONSOLE_HISTORY = 500;
 const TRANSIENT_CONNECTION_ERROR_PREFIXES = [
   'Printer connection issue:',
   'Connection lost',
@@ -21,7 +23,7 @@ function isTransientConnectionError(error: string | null): boolean {
 
 export function createLifecycleActions(
   { get, set }: PrinterStoreApi,
-): Pick<PrinterStore, 'connect' | 'disconnect' | 'testConnection' | 'sendGCode' | 'resetHalt'> {
+): Pick<PrinterStore, 'connect' | 'disconnect' | 'testConnection' | 'sendGCode' | 'resetHalt' | 'clearConsoleHistory' | 'importConsoleEntries'> {
   return {
     connect: async () => {
       const { config, service: existingService, connecting } = get();
@@ -62,21 +64,29 @@ export function createLifecycleActions(
           const currentService = get().service;
           if (currentService !== service) return;
 
-          const msg = String(rawMsg).trim();
+          const msgPayload = rawMsg && typeof rawMsg === 'object'
+            ? rawMsg as { content?: unknown; time?: unknown; type?: unknown }
+            : null;
+          const msg = String(msgPayload?.content ?? rawMsg).trim();
           if (!msg) return;
 
           // Add to console history as an async firmware response.
           const state = get();
-          const entry: ConsoleEntry = { timestamp: new Date(), type: 'response', content: msg };
+          const entryType = consoleEntryTypeFromPrinterMessage(msgPayload?.type, msg);
+          const entry: ConsoleEntry = {
+            timestamp: dateFromPrinterTimestamp(msgPayload?.time),
+            type: entryType,
+            content: msg,
+          };
           set({ consoleHistory: [...state.consoleHistory, entry].slice(-MAX_CONSOLE_HISTORY) });
 
           // Create a persistent alert for error / warning lines.
-          const isError = msg.startsWith('Error:') || /\berror\b/i.test(msg);
-          const isWarning = !isError && (msg.startsWith('Warning:') || /\bwarning\b/i.test(msg));
-          if (isError || isWarning) {
+          const isError = entryType === 'error';
+          const isWarning = entryType === 'warning';
+          if ((isError || isWarning) && !get().suppressPrinterAlerts) {
             const now = Date.now();
             const alert: PrinterAlert = {
-              id: `${now}-${Math.random().toString(36).slice(2)}`,
+              id: generateId(),
               level: isError ? 'error' : 'warning',
               message: msg,
               timestamp: now,
@@ -205,11 +215,11 @@ export function createLifecycleActions(
     testConnection: async () => testDuetConnection(get().config),
 
     sendGCode: async (code) => {
-      const { service, consoleHistory } = get();
+      const { service } = get();
       if (!service) return;
 
       const commandEntry: ConsoleEntry = { timestamp: new Date(), type: 'command', content: code };
-      set({ consoleHistory: [...consoleHistory, commandEntry].slice(-MAX_CONSOLE_HISTORY) });
+      set((s) => ({ consoleHistory: [...s.consoleHistory, commandEntry].slice(-MAX_CONSOLE_HISTORY) }));
 
       // Show a brief toast so the user can see the command was dispatched
       const label = code.length > 60 ? `${code.slice(0, 57)}…` : code;
@@ -224,17 +234,23 @@ export function createLifecycleActions(
         };
         set({ consoleHistory: [...get().consoleHistory, responseEntry].slice(-MAX_CONSOLE_HISTORY) });
       } catch (err) {
+        const msg = errorMessage(err, 'Unknown error');
         const errorEntry: ConsoleEntry = {
           timestamp: new Date(),
           type: 'error',
-          content: (err as Error).message,
+          content: msg,
         };
         set({
           consoleHistory: [...get().consoleHistory, errorEntry].slice(-MAX_CONSOLE_HISTORY),
-          error: `G-code error: ${(err as Error).message}`,
+          error: `G-code error: ${msg}`,
         });
       }
     },
+
+    clearConsoleHistory: () => set({ consoleHistory: [] }),
+
+    importConsoleEntries: (entries) =>
+      set((s) => ({ consoleHistory: mergeConsoleEntries(s.consoleHistory, entries) })),
 
     resetHalt: async () => {
       const { service, connected, config } = get();

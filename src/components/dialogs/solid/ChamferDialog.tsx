@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
 
 /** SOL-I6: 'three-face' added per Fusion SDK ThreeEdgeChamferEdge */
@@ -51,102 +51,91 @@ function ChamferDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: Chamfe
     Math.max(min, Math.min(max, val));
 
   return (
-    <div className="dialog-overlay edge-pick-dialog">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Chamfer</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <p className="dialog-hint">
-            {selectedEdgeCount} edge(s) selected
-          </p>
+    <DialogShell
+      title="Chamfer"
+      onClose={onClose}
+      size="sm"
+      overlayClassName="edge-pick-dialog"
+      onConfirm={handleOK}
+      confirmDisabled={selectedEdgeCount === 0}
+    >
+      <p className="dialog-hint">
+        {selectedEdgeCount} edge(s) selected
+      </p>
 
-          <div className="form-group">
-            <label>Mode</label>
-            <select
-              value={mode}
-              onChange={(e) => setMode(e.target.value as ChamferMode)}
-            >
-              <option value="equal-dist">Equal Distance</option>
-              <option value="two-dist">Two Distances</option>
-              <option value="dist-angle">Distance + Angle</option>
-              <option value="three-face">Three Face</option>
-            </select>
-          </div>
-
-          {mode === 'three-face' ? (
-            <p className="dialog-hint">
-              Select edges at the intersection of three faces. The chamfer is
-              automatically sized to blend all three faces tangentially.
-            </p>
-          ) : (
-            <div className="form-group">
-              <label>Distance (mm)</label>
-              <input
-                type="number"
-                value={distance}
-                onChange={(e) => setDistance(clamp(parseFloat(e.target.value) || 2, 0.01, 500))}
-                min={0.01}
-                max={500}
-                step={0.5}
-              />
-            </div>
-          )}
-
-          {mode === 'two-dist' && (
-            <div className="form-group">
-              <label>Distance 2 (mm)</label>
-              <input
-                type="number"
-                value={distance2}
-                onChange={(e) => setDistance2(clamp(parseFloat(e.target.value) || 2, 0.01, 500))}
-                min={0.01}
-                max={500}
-                step={0.5}
-              />
-            </div>
-          )}
-
-          {mode === 'dist-angle' && (
-            <div className="form-group">
-              <label>Angle (°)</label>
-              <input
-                type="number"
-                value={angle}
-                onChange={(e) => setAngle(clamp(parseFloat(e.target.value) || 45, 1, 89))}
-                min={1}
-                max={89}
-                step={1}
-              />
-            </div>
-          )}
-
-          {mode !== 'three-face' && (
-            <div className="form-group">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={propagate}
-                  onChange={(e) => setPropagate(e.target.checked)}
-                />
-                Propagate Along Tangent Edges
-              </label>
-            </div>
-          )}
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn-primary"
-            onClick={handleOK}
-            disabled={selectedEdgeCount === 0}
-          >
-            OK
-          </button>
-        </div>
+      <div className="form-group">
+        <label>Mode</label>
+        <select
+          value={mode}
+          onChange={(e) => setMode(e.target.value as ChamferMode)}
+        >
+          <option value="equal-dist">Equal Distance</option>
+          <option value="two-dist">Two Distances</option>
+          <option value="dist-angle">Distance + Angle</option>
+          <option value="three-face">Three Face</option>
+        </select>
       </div>
-    </div>
+
+      {mode === 'three-face' ? (
+        <p className="dialog-hint">
+          Select edges at the intersection of three faces. The chamfer is
+          automatically sized to blend all three faces tangentially.
+        </p>
+      ) : (
+        <div className="form-group">
+          <label>Distance (mm)</label>
+          <input
+            type="number"
+            value={distance}
+            onChange={(e) => setDistance(clamp(parseFloat(e.target.value) || 2, 0.01, 500))}
+            min={0.01}
+            max={500}
+            step={0.5}
+          />
+        </div>
+      )}
+
+      {mode === 'two-dist' && (
+        <div className="form-group">
+          <label>Distance 2 (mm)</label>
+          <input
+            type="number"
+            value={distance2}
+            onChange={(e) => setDistance2(clamp(parseFloat(e.target.value) || 2, 0.01, 500))}
+            min={0.01}
+            max={500}
+            step={0.5}
+          />
+        </div>
+      )}
+
+      {mode === 'dist-angle' && (
+        <div className="form-group">
+          <label>Angle (°)</label>
+          <input
+            type="number"
+            value={angle}
+            onChange={(e) => setAngle(clamp(parseFloat(e.target.value) || 45, 1, 89))}
+            min={1}
+            max={89}
+            step={1}
+          />
+        </div>
+      )}
+
+      {mode !== 'three-face' && (
+        <div className="form-group">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={propagate}
+              onChange={(e) => setPropagate(e.target.checked)}
+            />
+            Propagate Along Tangent Edges
+          </label>
+        </div>
+      )}
+    </DialogShell>
   );
 }
 

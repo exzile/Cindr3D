@@ -1,4 +1,5 @@
 import { Copy, List, RefreshCw, X } from 'lucide-react';
+import { errorMessage } from '../../utils/errorHandling';
 import { useCallback, useEffect, useState } from 'react';
 import {
   cindr3dMcpClient,
@@ -27,7 +28,7 @@ export default function McpStatusBadge() {
           setError(null);
         }
       } catch (err) {
-        if (!cancelled) setError((err as Error).message);
+        if (!cancelled) setError(errorMessage(err, 'Unknown error'));
       }
     };
     void sync();
@@ -54,7 +55,7 @@ export default function McpStatusBadge() {
       setStatus(await cindr3dMcpClient.rotateToken());
       setError(null);
     } catch (err) {
-      setError((err as Error).message);
+      setError(errorMessage(err, 'Unknown error'));
     }
   }, []);
 
@@ -67,7 +68,7 @@ export default function McpStatusBadge() {
       setAuditEntries(audit.entries);
       setError(null);
     } catch (err) {
-      setError((err as Error).message);
+      setError(errorMessage(err, 'Unknown error'));
     }
   }, [auditOpen]);
 
@@ -77,7 +78,7 @@ export default function McpStatusBadge() {
       setAuditEntries([]);
       setError(null);
     } catch (err) {
-      setError((err as Error).message);
+      setError(errorMessage(err, 'Unknown error'));
     }
   }, []);
 

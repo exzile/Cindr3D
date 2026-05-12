@@ -5,9 +5,8 @@ import { colors as COLORS } from '../../../utils/theme';
 import {
   compactPanelInputStyle as inputStyle,
   dashboardButtonStyle as btnStyle,
-  panelStyle,
-  sectionTitleStyle as labelStyle,
 } from '../../../utils/printerPanelStyles';
+import { DashboardPanel } from './DashboardPanel';
 
 /** G54-G59 workspace names, indexed 0-5 */
 const WORKSPACE_NAMES = ['G54', 'G55', 'G56', 'G57', 'G58', 'G59'] as const;
@@ -65,10 +64,7 @@ export default function WorkplaceCoordinatesPanel() {
   if (visibleAxes.length === 0) return null;
 
   return (
-    <div style={panelStyle()}>
-      <div style={labelStyle()} className="duet-dash-section-title-row">
-        <MapPin size={14} /> Workplace Coordinates
-      </div>
+    <DashboardPanel icon={MapPin} title="Workplace Coordinates">
 
       {/* Workspace selector buttons */}
       <div
@@ -173,6 +169,6 @@ export default function WorkplaceCoordinatesPanel() {
           })}
         </div>
       </div>
-    </div>
+    </DashboardPanel>
   );
 }

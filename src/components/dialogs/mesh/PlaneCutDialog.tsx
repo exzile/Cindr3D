@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function PlaneCutDialog({ onClose }: { onClose: () => void }) {
   const features = useCADStore((s) => s.features);
@@ -41,59 +41,47 @@ export function PlaneCutDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog-panel">
-        <div className="dialog-header">
-          <span className="dialog-title">Plane Cut</span>
-          <button className="dialog-close" onClick={onClose}><X size={14} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Feature</label>
-            <select value={featureId} onChange={(e) => setFeatureId(e.target.value)}>
-              {meshFeatures.length === 0 && <option value="">No mesh features</option>}
-              {meshFeatures.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Plane</label>
-            <select value={planePreset} onChange={(e) => setPlanePreset(e.target.value as typeof planePreset)}>
-              <option value="XY">XY (horizontal)</option>
-              <option value="XZ">XZ (front vertical)</option>
-              <option value="YZ">YZ (side vertical)</option>
-              <option value="Custom">Custom Normal</option>
-            </select>
-          </div>
-          {planePreset === 'Custom' && (
-            <div className="form-group">
-              <label>Normal (X, Y, Z)</label>
-              <div className="direction-inputs">
-                <input type="number" value={customNX} onChange={(e) => setCustomNX(parseFloat(e.target.value) || 0)} step={0.1} />
-                <input type="number" value={customNY} onChange={(e) => setCustomNY(parseFloat(e.target.value) || 0)} step={0.1} />
-                <input type="number" value={customNZ} onChange={(e) => setCustomNZ(parseFloat(e.target.value) || 0)} step={0.1} />
-              </div>
-            </div>
-          )}
-          <div className="form-group">
-            <label>Offset (mm)</label>
-            <input type="number" value={offset} onChange={(e) => setOffset(parseFloat(e.target.value) || 0)} />
-          </div>
-          <div className="form-group">
-            <label>Keep Side</label>
-            <select value={keepSide} onChange={(e) => setKeepSide(e.target.value as 'positive' | 'negative')}>
-              <option value="positive">Positive (above/front/right)</option>
-              <option value="negative">Negative (below/back/left)</option>
-            </select>
-          </div>
-          <p className="dialog-hint">Trims the mesh body with the selected plane.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleOK}>OK</button>
-        </div>
+    <DialogShell title="Plane Cut" onClose={onClose} onConfirm={handleOK}>
+      <div className="form-group">
+        <label>Feature</label>
+        <select value={featureId} onChange={(e) => setFeatureId(e.target.value)}>
+          {meshFeatures.length === 0 && <option value="">No mesh features</option>}
+          {meshFeatures.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
       </div>
-    </div>
+      <div className="form-group">
+        <label>Plane</label>
+        <select value={planePreset} onChange={(e) => setPlanePreset(e.target.value as typeof planePreset)}>
+          <option value="XY">XY (horizontal)</option>
+          <option value="XZ">XZ (front vertical)</option>
+          <option value="YZ">YZ (side vertical)</option>
+          <option value="Custom">Custom Normal</option>
+        </select>
+      </div>
+      {planePreset === 'Custom' && (
+        <div className="form-group">
+          <label>Normal (X, Y, Z)</label>
+          <div className="direction-inputs">
+            <input type="number" value={customNX} onChange={(e) => setCustomNX(parseFloat(e.target.value) || 0)} step={0.1} />
+            <input type="number" value={customNY} onChange={(e) => setCustomNY(parseFloat(e.target.value) || 0)} step={0.1} />
+            <input type="number" value={customNZ} onChange={(e) => setCustomNZ(parseFloat(e.target.value) || 0)} step={0.1} />
+          </div>
+        </div>
+      )}
+      <div className="form-group">
+        <label>Offset (mm)</label>
+        <input type="number" value={offset} onChange={(e) => setOffset(parseFloat(e.target.value) || 0)} />
+      </div>
+      <div className="form-group">
+        <label>Keep Side</label>
+        <select value={keepSide} onChange={(e) => setKeepSide(e.target.value as 'positive' | 'negative')}>
+          <option value="positive">Positive (above/front/right)</option>
+          <option value="negative">Negative (below/back/left)</option>
+        </select>
+      </div>
+      <p className="dialog-hint">Trims the mesh body with the selected plane.</p>
+    </DialogShell>
   );
 }

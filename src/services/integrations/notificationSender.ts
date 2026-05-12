@@ -112,7 +112,7 @@ async function sendToTarget(target: IntegrationTarget, payload: IntegrationNotif
     }
     return { targetId: target.id, ok: true };
   } catch (error) {
-    return { targetId: target.id, ok: false, error: error instanceof Error ? error.message : 'Unable to send integration notification' };
+    return { targetId: target.id, ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import type { Sketch } from '../../../types/cad';
+import { DialogShell } from '../common/DialogShell';
 
 export interface OffsetCurveParams {
   sketchId: string | null;
@@ -28,14 +28,8 @@ export function OffsetCurveDialog({ open, sketches, onOk, onClose }: OffsetCurve
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Offset Curve to Surface</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
+    <DialogShell title="Offset Curve to Surface" onClose={onClose} size="sm" onConfirm={handleOK} confirmDisabled={!sketchId}>
+      <div className="form-group">
             <label>Curve (Sketch)</label>
             <select
               value={sketchId ?? ''}
@@ -65,12 +59,6 @@ export function OffsetCurveDialog({ open, sketches, onOk, onClose }: OffsetCurve
             </select>
           </div>
           <p className="dialog-hint">Creates a surface strip by offsetting the selected curve along its plane normal.</p>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={!sketchId} onClick={handleOK}>OK</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

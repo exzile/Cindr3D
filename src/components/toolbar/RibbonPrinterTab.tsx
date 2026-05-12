@@ -2,7 +2,7 @@ import * as React from 'react';
 import {
   LayoutDashboard, Activity, Terminal, Play,
   History, FolderOpen, FlaskConical, FileCode,
-  Grid3x3, Braces, Settings, Wifi, OctagonAlert, FileCode2, Plug,
+  Grid3x3, Settings, Wifi, OctagonAlert, FileCode2, Plug,
   Router, TrendingUp, MonitorPlay, Camera, Gauge,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
@@ -10,7 +10,7 @@ import { usePrinterStore } from '../../store/printerStore';
 type PrinterTabKey =
   | 'dashboard' | 'camera' | 'status' | 'console' | 'job' | 'history'
   | 'analytics' | 'files' | 'filaments' | 'macros' | 'heightmap'
-  | 'model' | 'config' | 'network' | 'plugins' | 'calibration' | 'settings';
+  | 'config' | 'network' | 'plugins' | 'calibration' | 'settings';
 
 const PRINTER_TABS: { key: PrinterTabKey; label: string; Icon: React.ComponentType<{ size?: number }>; color: string }[] = [
   { key: 'dashboard',   label: 'Dashboard',   Icon: LayoutDashboard, color: 'icon-blue'   },
@@ -24,7 +24,6 @@ const PRINTER_TABS: { key: PrinterTabKey; label: string; Icon: React.ComponentTy
   { key: 'filaments',   label: 'Filaments',   Icon: FlaskConical,    color: 'icon-teal'   },
   { key: 'macros',      label: 'Macros',      Icon: FileCode,        color: 'icon-orange' },
   { key: 'heightmap',   label: 'Height Map',  Icon: Grid3x3,         color: 'icon-green'  },
-  { key: 'model',       label: 'Model',       Icon: Braces,          color: 'icon-blue'   },
   { key: 'config',      label: 'Config',      Icon: FileCode2,       color: 'icon-gray'   },
   { key: 'network',     label: 'Network',     Icon: Router,          color: 'icon-teal'   },
   { key: 'plugins',     label: 'Plugins',     Icon: Plug,            color: 'icon-purple' },

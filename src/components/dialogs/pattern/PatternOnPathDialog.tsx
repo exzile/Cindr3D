@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 
 export function PatternOnPathDialog({ onClose }: { onClose: () => void }) {
   const editingFeatureId = useCADStore((s) => s.editingFeatureId);
@@ -49,63 +49,57 @@ export function PatternOnPathDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>{editing ? 'Edit Pattern on Path' : 'Pattern on Path'}</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Feature to Pattern</label>
-            <select value={sourceFeatureId} onChange={(e) => setSourceFeatureId(e.target.value)}>
-              <option value="" disabled>Select a feature</option>
-              {meshFeatures.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Path Sketch</label>
-            <select value={pathSketchId} onChange={(e) => setPathSketchId(e.target.value)}>
-              <option value="" disabled>Select a sketch</option>
-              {sketches.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Count</label>
-            <input type="number" value={count} min={2} step={1}
-              onChange={(e) => setCount(Math.max(2, parseInt(e.target.value) || 2))} />
-          </div>
-          <div className="form-group">
-            <label>Orientation</label>
-            <select value={alignment} onChange={(e) => setAlignment(e.target.value as 'tangent' | 'fixed')}>
-              <option value="tangent">Tangent to Path</option>
-              <option value="fixed">Fixed (Parallel)</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Distance Type</label>
-            <select value={distanceType} onChange={(e) => setDistanceType(e.target.value as 'percent' | 'spacing')}>
-              <option value="percent">% of Path Length</option>
-              <option value="spacing">Equal Spacing</option>
-            </select>
-          </div>
-          {distanceType === 'percent' && (
-            <div className="form-group">
-              <label>Path Coverage (%)</label>
-              <input type="number" value={distance} min={1} max={100} step={5}
-                onChange={(e) => setDistance(Math.max(1, Math.min(100, parseFloat(e.target.value) || 100)))} />
-            </div>
-          )}
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={(!sourceFeatureId || !pathSketchId) && !editing} onClick={handleApply}>OK</button>
-        </div>
+    <DialogShell
+      title={editing ? 'Edit Pattern on Path' : 'Pattern on Path'}
+      onClose={onClose}
+      size="sm"
+      onConfirm={handleApply}
+      confirmDisabled={(!sourceFeatureId || !pathSketchId) && !editing}
+    >
+      <div className="form-group">
+        <label>Feature to Pattern</label>
+        <select value={sourceFeatureId} onChange={(e) => setSourceFeatureId(e.target.value)}>
+          <option value="" disabled>Select a feature</option>
+          {meshFeatures.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
       </div>
-    </div>
+      <div className="form-group">
+        <label>Path Sketch</label>
+        <select value={pathSketchId} onChange={(e) => setPathSketchId(e.target.value)}>
+          <option value="" disabled>Select a sketch</option>
+          {sketches.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Count</label>
+        <input type="number" value={count} min={2} step={1}
+          onChange={(e) => setCount(Math.max(2, parseInt(e.target.value) || 2))} />
+      </div>
+      <div className="form-group">
+        <label>Orientation</label>
+        <select value={alignment} onChange={(e) => setAlignment(e.target.value as 'tangent' | 'fixed')}>
+          <option value="tangent">Tangent to Path</option>
+          <option value="fixed">Fixed (Parallel)</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Distance Type</label>
+        <select value={distanceType} onChange={(e) => setDistanceType(e.target.value as 'percent' | 'spacing')}>
+          <option value="percent">% of Path Length</option>
+          <option value="spacing">Equal Spacing</option>
+        </select>
+      </div>
+      {distanceType === 'percent' && (
+        <div className="form-group">
+          <label>Path Coverage (%)</label>
+          <input type="number" value={distance} min={1} max={100} step={5}
+            onChange={(e) => setDistance(Math.max(1, Math.min(100, parseFloat(e.target.value) || 100)))} />
+        </div>
+      )}
+    </DialogShell>
   );
 }

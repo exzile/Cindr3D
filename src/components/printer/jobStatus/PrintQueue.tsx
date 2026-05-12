@@ -162,12 +162,13 @@ export function PrintQueue() {
   }, [activeJobId, pausePrint, printers, reconcileWithPrinters, resumePrint, setJobStatus]);
 
   return (
-    <div style={{
+    <div className="duet-job__queue" style={{
       margin: '0 14px 12px', border: '1px solid var(--border)',
       borderRadius: 8, overflow: 'hidden', background: 'var(--bg-panel)',
     }}>
       <button
         onClick={() => setCollapsed((c) => !c)}
+        className="duet-job__queue-header"
         style={{
           display: 'flex', alignItems: 'center', gap: 6,
           width: '100%', padding: '8px 12px', border: 'none',
@@ -194,8 +195,8 @@ export function PrintQueue() {
       </button>
 
       {!collapsed && (
-        <div style={{ maxHeight: 420, overflow: 'auto' }}>
-          <div style={{
+        <div className="duet-job__queue-body" style={{ maxHeight: 420, overflow: 'auto' }}>
+          <div className="duet-job__queue-quick-add" style={{
             display: 'grid',
             gridTemplateColumns: 'minmax(160px, 1fr) 72px minmax(120px, 160px) 96px 84px',
             gap: 6,
@@ -247,6 +248,7 @@ export function PrintQueue() {
             activeJobs.map((job, index) => (
               <div
                 key={job.id}
+                className="duet-job__queue-row"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '24px minmax(120px, 1fr) minmax(100px, 150px) 84px 112px',
@@ -315,7 +317,7 @@ export function PrintQueue() {
           )}
 
           {(completedCount > 0 || activeJobs.length > 0) && (
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: 10, borderTop: '1px solid var(--border)' }}>
+            <div className="duet-job__queue-footer" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: 10, borderTop: '1px solid var(--border)' }}>
               <button type="button" onClick={clearCompleted} disabled={completedCount === 0}>Clear completed</button>
               <button type="button" onClick={clearAll} disabled={jobs.length === 0}>Clear all</button>
             </div>

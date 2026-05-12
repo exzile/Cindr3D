@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { errorMessage } from '../../utils/errorHandling';
 import { WifiOff, Package, RefreshCw, ExternalLink, AlertCircle } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { MoonrakerService, type MoonrakerSpoolmanSpool } from '../../services/MoonrakerService';
@@ -14,11 +16,10 @@ export default function KlipperSpoolman() {
   const [error, setError] = useState<string | null>(null);
   const [service] = useState(() => connected ? new MoonrakerService(config.hostname) : null);
 
+  const run = useAsyncAction(setLoading, setError, 'Failed to load spool — ensure [spoolman] is in moonraker.conf');
   const refresh = useCallback(async () => {
     if (!service) return;
-    setLoading(true);
-    setError(null);
-    try {
+    await run(async () => {
       const spoolId = await service.getActiveSpoolId();
       if (spoolId !== null) {
         const s = await service.getSpoolById(spoolId);
@@ -26,12 +27,8 @@ export default function KlipperSpoolman() {
       } else {
         setSpool(null);
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load spool — ensure [spoolman] is in moonraker.conf');
-    } finally {
-      setLoading(false);
-    }
-  }, [service]);
+    });
+  }, [service, run]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -44,7 +41,7 @@ export default function KlipperSpoolman() {
       setNewSpoolId('');
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to set spool');
+      setError(errorMessage(e, 'Failed to set spool'));
     }
   }, [service, newSpoolId, refresh]);
 
@@ -54,7 +51,7 @@ export default function KlipperSpoolman() {
       await service.setActiveSpool(null);
       setSpool(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to clear spool');
+      setError(errorMessage(e, 'Failed to clear spool'));
     }
   }, [service]);
 

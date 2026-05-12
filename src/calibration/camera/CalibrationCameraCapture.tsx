@@ -6,6 +6,7 @@ import { getDuetPrefs } from '../../utils/duetPrefs';
 import { usePrinterStore } from '../../store/printerStore';
 import type { CameraStreamConfig, DuetPrefs } from '../../types/duet-prefs.types';
 import './CalibrationCameraCapture.css';
+import { generateId } from '../../utils/generateId';
 
 export interface CalibrationCameraCaptureProps {
   printerId: string;
@@ -14,7 +15,7 @@ export interface CalibrationCameraCaptureProps {
 }
 
 function uid(): string {
-  return `calib-frame-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  return generateId('calib-frame');
 }
 
 function cameraUrl(camera: CameraStreamConfig, prefs: DuetPrefs): string {

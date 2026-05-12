@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import { useComponentStore } from '../../../store/componentStore';
 
 type PatternType = 'linear' | 'circular';
@@ -28,13 +28,7 @@ export function ComponentPatternDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>Component Pattern</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
+    <DialogShell title="Component Pattern" onClose={onClose} size="sm" onConfirm={handleApply} confirmLabel="Create Pattern" confirmDisabled={!sourceId}>
           <div className="form-group">
             <label>Source Component</label>
             <select value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
@@ -92,14 +86,6 @@ export function ComponentPatternDialog({ onClose }: { onClose: () => void }) {
               </div>
             </>
           )}
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply} disabled={!sourceId}>
-            Create Pattern
-          </button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

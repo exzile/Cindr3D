@@ -15,35 +15,29 @@ export function BabySteppingControls() {
       <div className="job-section-title">
         <ArrowUpDown size={14} /> Baby Stepping (Z Offset)
       </div>
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '8px 0',
-      }}>
+      <div className="duet-job__babystep-row">
         <button
-          className="control-btn"
+          className="control-btn duet-job__babystep-btn"
           title="Lower Z by 0.02mm"
           onClick={() => setBabyStep(-0.02)}
-          style={{ width: 40, height: 40 }}
         >
           <Minus size={16} />
         </button>
-        <div style={{
-          textAlign: 'center', minWidth: 100,
-        }}>
-          <div style={{ fontSize: 10, color: '#666680', marginBottom: 2 }}>Z Offset</div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: '#e0e0ff', fontFamily: 'monospace' }}>
+        <div className="duet-job__babystep-display">
+          <div className="duet-job__babystep-label">Z Offset</div>
+          <div className="duet-job__babystep-value">
             {currentOffset >= 0 ? '+' : ''}{currentOffset.toFixed(3)} mm
           </div>
         </div>
         <button
-          className="control-btn"
+          className="control-btn duet-job__babystep-btn"
           title="Raise Z by 0.02mm"
           onClick={() => setBabyStep(0.02)}
-          style={{ width: 40, height: 40 }}
         >
           <Plus size={16} />
         </button>
       </div>
-      <div style={{ fontSize: 10, color: '#555', textAlign: 'center' }}>
+      <div className="duet-job__babystep-hint">
         Step: 0.02 mm
       </div>
     </div>

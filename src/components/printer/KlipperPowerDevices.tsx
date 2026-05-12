@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { RefreshCw, WifiOff, Zap, Power, AlertCircle } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import { MoonrakerService, type MoonrakerPowerDevice } from '../../services/MoonrakerService';
@@ -48,19 +49,14 @@ export default function KlipperPowerDevices() {
   const [error, setError] = useState<string | null>(null);
   const [service] = useState(() => connected ? new MoonrakerService(config.hostname) : null);
 
+  const run = useAsyncAction(setLoading, setError, 'Failed to load devices — ensure [power] is configured in moonraker.conf');
   const refresh = useCallback(async () => {
     if (!service) return;
-    setLoading(true);
-    setError(null);
-    try {
+    await run(async () => {
       const d = await service.getPowerDevices();
       setDevices(d);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load devices — ensure [power] is configured in moonraker.conf');
-    } finally {
-      setLoading(false);
-    }
-  }, [service]);
+    });
+  }, [service, run]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
 import '../FeatureDialogExtras.css';
 
@@ -112,103 +113,91 @@ export function ShellDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="dialog-overlay">
-      <div className="dialog dialog-sm">
-        <div className="dialog-header">
-          <h3>{editing ? 'Edit Shell' : 'Shell'}</h3>
-          <button className="dialog-close" onClick={handleClose}><X size={16} /></button>
-        </div>
-        <div className="dialog-body">
-          <div className="form-group">
-            <label>Body</label>
-            <select value={selectedBodyId} onChange={(e) => setSelectedBodyId(e.target.value)}>
-              {bodyFeatures.length === 0 && <option value="">— no bodies —</option>}
-              {bodyFeatures.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Direction</label>
-            <select value={direction} onChange={(e) => setDirection(e.target.value as 'inward' | 'outward' | 'symmetric')}>
-              <option value="inward">Inward</option>
-              <option value="outward">Outward</option>
-              <option value="symmetric">Symmetric</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Thickness (mm)</label>
-            <input
-              type="number"
-              value={thickness}
-              onChange={(e) => setThickness(parseFloat(e.target.value) || 2)}
-              step={0.5}
-              min={0.1}
-            />
-          </div>
-
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={tangentChain}
-              onChange={(e) => setTangentChain(e.target.checked)}
-            />
-            Tangent Chain face selection
-          </label>
-
-          {/* SOL-I7: Individual Face Offsets toggle */}
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={individualOffsets}
-              onChange={(e) => setIndividualOffsets(e.target.checked)}
-            />
-            Individual Face Offsets
-          </label>
-          {individualOffsets && (
-            <p className="dialog-hint">
-              Enter a custom thickness for each selected face. Blank = global thickness.
-            </p>
-          )}
-
-          {/* SOL-I2: Faces to Remove */}
-          <div className="form-group">
-            <label>Faces to Remove</label>
-            <p className="dialog-hint">
-              Click faces in the viewport to add them to the removal set.
-            </p>
-            {shellRemoveFaceIds.length === 0 ? (
-              <p className="dialog-hint">No faces selected — all faces will be shelled.</p>
-            ) : (
-              <div className="shell-face-list">
-                {shellRemoveFaceIds.map((id, i) => (
-                  <FaceRow
-                    key={id}
-                    index={i}
-                    faceId={id}
-                    thickness={shellFaceThicknesses[id] ?? thickness}
-                    defaultThickness={thickness}
-                    showOverride={individualOffsets}
-                    onThicknessChange={setShellFaceThickness}
-                    onRemove={removeShellRemoveFace}
-                  />
-                ))}
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => { clearShellRemoveFaces(); clearShellFaceThicknesses(); }}
-                >
-                  Clear All
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="dialog-footer">
-          <button className="btn btn-secondary" onClick={handleClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleApply}>OK</button>
-        </div>
+    <DialogShell title={editing ? 'Edit Shell' : 'Shell'} onClose={handleClose} size="sm" onConfirm={handleApply}>
+      <div className="form-group">
+        <label>Body</label>
+        <select value={selectedBodyId} onChange={(e) => setSelectedBodyId(e.target.value)}>
+          {bodyFeatures.length === 0 && <option value="">— no bodies —</option>}
+          {bodyFeatures.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
       </div>
-    </div>
+      <div className="form-group">
+        <label>Direction</label>
+        <select value={direction} onChange={(e) => setDirection(e.target.value as 'inward' | 'outward' | 'symmetric')}>
+          <option value="inward">Inward</option>
+          <option value="outward">Outward</option>
+          <option value="symmetric">Symmetric</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Thickness (mm)</label>
+        <input
+          type="number"
+          value={thickness}
+          onChange={(e) => setThickness(parseFloat(e.target.value) || 2)}
+          step={0.5}
+          min={0.1}
+        />
+      </div>
+
+      <label className="checkbox-label">
+        <input
+          type="checkbox"
+          checked={tangentChain}
+          onChange={(e) => setTangentChain(e.target.checked)}
+        />
+        Tangent Chain face selection
+      </label>
+
+      {/* SOL-I7: Individual Face Offsets toggle */}
+      <label className="checkbox-label">
+        <input
+          type="checkbox"
+          checked={individualOffsets}
+          onChange={(e) => setIndividualOffsets(e.target.checked)}
+        />
+        Individual Face Offsets
+      </label>
+      {individualOffsets && (
+        <p className="dialog-hint">
+          Enter a custom thickness for each selected face. Blank = global thickness.
+        </p>
+      )}
+
+      {/* SOL-I2: Faces to Remove */}
+      <div className="form-group">
+        <label>Faces to Remove</label>
+        <p className="dialog-hint">
+          Click faces in the viewport to add them to the removal set.
+        </p>
+        {shellRemoveFaceIds.length === 0 ? (
+          <p className="dialog-hint">No faces selected — all faces will be shelled.</p>
+        ) : (
+          <div className="shell-face-list">
+            {shellRemoveFaceIds.map((id, i) => (
+              <FaceRow
+                key={id}
+                index={i}
+                faceId={id}
+                thickness={shellFaceThicknesses[id] ?? thickness}
+                defaultThickness={thickness}
+                showOverride={individualOffsets}
+                onThicknessChange={setShellFaceThickness}
+                onRemove={removeShellRemoveFace}
+              />
+            ))}
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => { clearShellRemoveFaces(); clearShellFaceThicknesses(); }}
+            >
+              Clear All
+            </button>
+          </div>
+        )}
+      </div>
+    </DialogShell>
   );
 }

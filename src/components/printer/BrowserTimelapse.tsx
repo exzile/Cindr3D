@@ -6,6 +6,7 @@
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Camera, Play, Square, Image, Download, Trash2, Film, Info } from 'lucide-react';
+import { errorMessage } from '../../utils/errorHandling';
 import './KlipperTabs.css';
 
 interface CapturedFrame {
@@ -39,7 +40,7 @@ export default function BrowserTimelapse() {
       }
       setCameraActive(true);
     } catch (e) {
-      setCameraError(e instanceof Error ? e.message : 'Camera access denied');
+      setCameraError(errorMessage(e, 'Camera access denied'));
     }
   }, []);
 
@@ -119,7 +120,7 @@ export default function BrowserTimelapse() {
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
     } catch (e) {
-      setRenderError(e instanceof Error ? e.message : 'Render failed');
+      setRenderError(errorMessage(e, 'Render failed'));
     } finally {
       setRendering(false);
     }
