@@ -61,7 +61,7 @@ function ReleaseBanner({ release, label }: { release: GithubRelease; label: stri
         <a
           href={release.html_url}
           target="_blank"
-          rel="noreferrer"
+          rel="noopener noreferrer"
           className="klipper-btn"
           style={{ textDecoration: 'none', flexShrink: 0 }}
         >

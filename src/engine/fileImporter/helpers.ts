@@ -58,6 +58,12 @@ export function createMeshFromPoints(points: THREE.Vector3[], name: string): THR
   return mesh;
 }
 
+// Defensive cap on decompressed size of a single ZIP entry (3MF/AMF model
+// XML, F3D OBJ payload). A crafted "zip-bomb" 3MF can claim a 50:1 or higher
+// compression ratio; without this guard the browser would OOM trying to
+// concatenate gigabytes of decompressed bytes into a single Uint8Array.
+const MAX_ZIP_ENTRY_DECOMPRESSED_BYTES = 256 * 1024 * 1024;
+
 export async function extractZipEntry(bytes: Uint8Array, targetSuffix: string): Promise<string | null> {
   let offset = 0;
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -108,13 +114,19 @@ export async function extractZipEntry(bytes: Uint8Array, targetSuffix: string): 
           writer.write(data);
           writer.close();
           const chunks: Uint8Array[] = [];
+          let total = 0;
           for (;;) {
             const { done, value } = await reader.read();
             if (done) break;
-            chunks.push(value as Uint8Array);
+            const chunk = value as Uint8Array;
+            total += chunk.length;
+            if (total > MAX_ZIP_ENTRY_DECOMPRESSED_BYTES) {
+              try { await reader.cancel(); } catch { /* already closed */ }
+              console.error(`3MF: decompressed entry exceeded ${MAX_ZIP_ENTRY_DECOMPRESSED_BYTES} bytes (zip-bomb guard)`);
+              return null;
+            }
+            chunks.push(chunk);
           }
-          let total = 0;
-          for (const chunk of chunks) total += chunk.length;
           const result = new Uint8Array(total);
           let pos = 0;
           for (const chunk of chunks) {

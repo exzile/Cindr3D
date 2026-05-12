@@ -134,7 +134,7 @@ export default function DuetPlugins() {
                       <a
                         href={p.homepage}
                         target="_blank"
-                        rel="noreferrer"
+                        rel="noopener noreferrer"
                         style={styles.homepage}
                       >
                         <ExternalLink size={11} /> homepage

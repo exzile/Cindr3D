@@ -14,7 +14,8 @@ import { usePrinterStore } from '../../store/printerStore';
 import './KlipperTabs.css';
 
 export default function MarlinBedLevel() {
-  const { sendGCode, connected } = usePrinterStore();
+  const sendGCode = usePrinterStore((s) => s.sendGCode);
+  const connected = usePrinterStore((s) => s.connected);
   const [sending, setSending] = useState(false);
   const [zOffset, setZOffset] = useState(0.0);
   const [lastCmd, setLastCmd] = useState<string | null>(null);

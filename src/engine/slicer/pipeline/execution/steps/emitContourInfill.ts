@@ -178,9 +178,11 @@ function splitInfillByTopSkin(
         booleanMultiPolygonClipper2Sync(regionMP, topSkinRegion, 'difference'),
         'topSkinDifference',
       );
-    } catch {
+    } catch (err) {
       // On Clipper failure, fall back to treating the whole region as
-      // sparse — safer than emitting double extrusion.
+      // sparse — safer than emitting double extrusion. Log so the quality
+      // degradation is diagnosable instead of silent.
+      console.warn('[slicer/emitContourInfill] top-skin split failed; falling back to sparse', err);
       sparseRegions.push(region);
       continue;
     }
@@ -812,7 +814,7 @@ export function emitContourInfill(
           shadowTris.push([ring]);
         }
         if (shadowTris.length > 0) {
-          try { overhangShadowMP = unionMultiPolygon(shadowTris); } catch { overhangShadowMP = []; }
+          try { overhangShadowMP = unionMultiPolygon(shadowTris); } catch (err) { console.warn('[slicer/emitContourInfill] overhang shadow union failed; disabling overhang boost', err); overhangShadowMP = []; }
         }
       }
       const infillOverlapMm = ((pp.infillOverlap ?? 10) / 100) * lineWidth;
@@ -859,7 +861,7 @@ export function emitContourInfill(
               try {
                 boostedMP = intersectMultiPolygon(infillRegionMP, overhangShadowMP);
                 normalMP = differenceMultiPolygon(infillRegionMP, overhangShadowMP);
-              } catch { boostedMP = []; normalMP = infillRegionMP; }
+              } catch (err) { console.warn('[slicer/emitContourInfill] overhang boost split failed; using normal infill', err); boostedMP = []; normalMP = infillRegionMP; }
               const boostedDensity = Math.min(100, subDensity * 1.5);
               for (const region of slicer.multiPolygonToRegions(boostedMP)) infillLines.push(...genPattern(region.contour, boostedDensity, region.holes));
               for (const region of slicer.multiPolygonToRegions(normalMP)) infillLines.push(...genPattern(region.contour, subDensity, region.holes));

@@ -61,7 +61,7 @@ const FIRMWARE_NOTES: Partial<Record<PrinterBoardType, string>> = {
 
 export default function InputShaper() {
   const boardType = usePrinterStore((s) => s.config.boardType ?? 'other');
-  const { sendGCode } = usePrinterStore();
+  const sendGCode = usePrinterStore((s) => s.sendGCode);
   const connected = usePrinterStore((s) => s.connected);
 
   const [shaperType, setShaperType] = useState<ShaperType>('mzv');

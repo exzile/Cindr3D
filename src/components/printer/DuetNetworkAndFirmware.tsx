@@ -136,7 +136,7 @@ export default function DuetNetworkAndFirmware() {
                 className="dnf__btn"
                 href="https://github.com/Duet3D/RepRapFirmware/releases"
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
               >
                 <Globe size={13} /> View release notes
               </a>

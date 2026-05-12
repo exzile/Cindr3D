@@ -83,10 +83,13 @@ export const useAiAssistantStore = create<AiAssistantState>()(
     }),
     {
       name: 'cindr3d-ai-assistant',
+      // SECURITY: apiKey is intentionally NOT persisted. localStorage is
+      // readable by any script on the same origin (and by browser extensions),
+      // so persisting Anthropic / OpenAI / OpenRouter keys would leak them on
+      // the public Azure demo. Users re-enter the key per session.
       partialize: (s) => ({
         provider: s.provider,
         model: s.model,
-        apiKey: s.apiKey,
         useClaudeCode: s.useClaudeCode,
         confirmDestructive: s.confirmDestructive,
         activeTab: s.activeTab,

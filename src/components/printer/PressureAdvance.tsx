@@ -59,7 +59,7 @@ const FIRMWARE_NOTES: Partial<Record<PrinterBoardType, string>> = {
 
 export default function PressureAdvance() {
   const boardType = usePrinterStore((s) => s.config.boardType ?? 'other');
-  const { sendGCode } = usePrinterStore();
+  const sendGCode = usePrinterStore((s) => s.sendGCode);
   const connected = usePrinterStore((s) => s.connected);
 
   const [pa, setPa] = useState(0.04);

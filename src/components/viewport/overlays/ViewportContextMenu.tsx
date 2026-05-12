@@ -1,10 +1,10 @@
-import { createPortal } from 'react-dom';
 import {
   Undo2, Redo2, Ruler, PenTool, Eye, EyeOff, MousePointer2,
   ScanEye, CheckSquare,
 } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
+import { ContextMenuShell } from '../../ui/ContextMenuShell';
 import type { ViewportCtxState } from '../../../types/viewport-context-menu.types';
 
 export function ViewportContextMenu({
@@ -130,28 +130,24 @@ export function ViewportContextMenu({
     },
   });
 
-  return createPortal(
-    <>
-      <div className="sketch-ctx-backdrop" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }} />
-      <div className="sketch-ctx-menu" style={{ top: menu.y, left: menu.x }}>
-        {items.map((item, i) =>
-          item.kind === 'sep' ? (
-            <div key={i} className="sketch-ctx-sep" />
-          ) : (
-            <button
-              key={i}
-              className={`sketch-ctx-item${item.disabled ? ' disabled' : ''}${item.danger ? ' danger' : ''}`}
-              onClick={item.disabled ? undefined : item.onClick}
-              disabled={item.disabled}
-            >
-              <span className="sketch-ctx-icon">{item.icon}</span>
-              <span className="sketch-ctx-label">{item.label}</span>
-              {item.shortcut && <span className="sketch-ctx-shortcut">{item.shortcut}</span>}
-            </button>
-          )
-        )}
-      </div>
-    </>,
-    document.body,
+  return (
+    <ContextMenuShell x={menu.x} y={menu.y} onClose={onClose}>
+      {items.map((item, i) =>
+        item.kind === 'sep' ? (
+          <div key={i} className="sketch-ctx-sep" />
+        ) : (
+          <button
+            key={i}
+            className={`sketch-ctx-item${item.disabled ? ' disabled' : ''}${item.danger ? ' danger' : ''}`}
+            onClick={item.disabled ? undefined : item.onClick}
+            disabled={item.disabled}
+          >
+            <span className="sketch-ctx-icon">{item.icon}</span>
+            <span className="sketch-ctx-label">{item.label}</span>
+            {item.shortcut && <span className="sketch-ctx-shortcut">{item.shortcut}</span>}
+          </button>
+        )
+      )}
+    </ContextMenuShell>
   );
 }
