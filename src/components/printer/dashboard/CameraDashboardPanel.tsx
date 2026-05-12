@@ -101,30 +101,52 @@ import {
   type IssueTag,
   type SnapshotCrop,
 } from './cameraDashboard/clipStore';
+import {
+  cameraRtspBridgeUrl,
+  cameraRtspSourceUrl,
+  cameraServerUsbBridgeUrl,
+  normalizedHost,
+  sendCameraCommand,
+} from './cameraDashboard/cameraUrls';
+import {
+  clampPercent,
+  defaultCrop,
+  formatLastFrame,
+  formatMeasurementDistance,
+  imageFromBlob,
+  measureContainedMedia,
+  sameMediaViewport,
+  transformSnapshotBlob,
+  type MediaViewportRect,
+} from './cameraDashboard/snapshotEdit';
+import {
+  ANOMALY_CAPTURE_KEY,
+  AUTO_RECORD_KEY,
+  AUTO_SNAPSHOT_ERROR_KEY,
+  AUTO_SNAPSHOT_FINISH_KEY,
+  AUTO_SNAPSHOT_FIRST_LAYER_KEY,
+  AUTO_SNAPSHOT_LAYER_KEY,
+  AUTO_TIMELAPSE_KEY,
+  CALIBRATION_OVERLAY_KEY,
+  CAMERA_PRESETS_KEY,
+  CONTROL_SECTION_KEY,
+  EDITOR_COLLAPSED_KEY,
+  HEALTH_OPEN_KEY,
+  SCHEDULED_SNAPSHOT_INTERVAL_KEY,
+  SCHEDULED_SNAPSHOT_KEY,
+  TIMELAPSE_FPS_KEY,
+  TIMELAPSE_INTERVAL_KEY,
+  VIEW_CROSSHAIR_KEY,
+  VIEW_FLIP_KEY,
+  VIEW_GRID_KEY,
+  VIEW_ROTATION_KEY,
+  backendRecordingStorageKey,
+  loadCameraDashboardPrefs,
+  loadCameraPresets,
+} from './cameraDashboard/prefsStorage';
 import './CameraDashboardPanel.css';
 
 const RECORDING_FPS = 12;
-const AUTO_RECORD_KEY = 'cindr3d-camera-auto-record';
-const AUTO_TIMELAPSE_KEY = 'cindr3d-camera-auto-timelapse';
-const TIMELAPSE_INTERVAL_KEY = 'cindr3d-camera-timelapse-interval';
-const TIMELAPSE_FPS_KEY = 'cindr3d-camera-timelapse-fps';
-const AUTO_SNAPSHOT_FIRST_LAYER_KEY = 'cindr3d-camera-auto-snapshot-first-layer';
-const AUTO_SNAPSHOT_LAYER_KEY = 'cindr3d-camera-auto-snapshot-layer';
-const AUTO_SNAPSHOT_FINISH_KEY = 'cindr3d-camera-auto-snapshot-finish';
-const AUTO_SNAPSHOT_ERROR_KEY = 'cindr3d-camera-auto-snapshot-error';
-const VIEW_GRID_KEY = 'cindr3d-camera-view-grid';
-const VIEW_CROSSHAIR_KEY = 'cindr3d-camera-view-crosshair';
-const VIEW_FLIP_KEY = 'cindr3d-camera-view-flip';
-const VIEW_ROTATION_KEY = 'cindr3d-camera-view-rotation';
-const HEALTH_OPEN_KEY = 'cindr3d-camera-health-open';
-const CONTROL_SECTION_KEY = 'cindr3d-camera-control-section';
-const EDITOR_COLLAPSED_KEY = 'cindr3d-camera-editor-collapsed';
-const CAMERA_PRESETS_KEY = 'cindr3d-camera-presets';
-const SCHEDULED_SNAPSHOT_KEY = 'cindr3d-camera-scheduled-snapshot';
-const SCHEDULED_SNAPSHOT_INTERVAL_KEY = 'cindr3d-camera-scheduled-snapshot-interval';
-const ANOMALY_CAPTURE_KEY = 'cindr3d-camera-anomaly-capture';
-const CALIBRATION_OVERLAY_KEY = 'cindr3d-camera-calibration-overlay';
-const BACKEND_RECORDING_KEY_PREFIX = 'cindr3d-camera-backend-recording';
 type ControlSection = CameraDashboardPrefs['activeControlSection'];
 type BedCornerKey = keyof Required<BedCorners>;
 type MeasurementMode = 'off' | 'bed' | 'ruler';
@@ -156,340 +178,6 @@ type CameraPreset = CameraDashboardPreset;
 
 interface CameraDashboardPanelProps {
   compact?: boolean;
-}
-
-interface MediaViewportRect {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
-
-function normalizedHost(hostname: string): string {
-  const value = hostname.trim();
-  if (!value) return '';
-  if (/^https?:\/\//i.test(value)) return value.replace(/\/$/, '');
-  return `http://${value.replace(/\/$/, '')}`;
-}
-
-function backendRecordingStorageKey(printerId: string): string {
-  return `${BACKEND_RECORDING_KEY_PREFIX}:${printerId}`;
-}
-
-function loadBooleanSetting(key: string): boolean {
-  try {
-    return localStorage.getItem(key) === 'true';
-  } catch {
-    return false;
-  }
-}
-
-function loadNumberSetting(key: string, fallback: number): number {
-  try {
-    const value = Number(localStorage.getItem(key));
-    return Number.isFinite(value) && value > 0 ? value : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function loadControlSectionSetting(): ControlSection {
-  try {
-    const value = localStorage.getItem(CONTROL_SECTION_KEY);
-    return value === 'settings' || value === 'library' || value === 'timeline' || value === 'health' || value === 'record' || value === 'view'
-      ? value
-      : 'record';
-  } catch {
-    return 'record';
-  }
-}
-
-function loadCameraPresets(): CameraPreset[] {
-  try {
-    const value = localStorage.getItem(CAMERA_PRESETS_KEY);
-    if (!value) return [];
-    const parsed = JSON.parse(value) as CameraPreset[];
-    return Array.isArray(parsed) ? parsed.filter((preset) => preset.id && preset.name) : [];
-  } catch {
-    return [];
-  }
-}
-
-function loadCameraDashboardPrefs(): CameraDashboardPrefs {
-  return {
-    ...DEFAULT_CAMERA_DASHBOARD_PREFS,
-    autoRecord: loadBooleanSetting(AUTO_RECORD_KEY),
-    autoTimelapse: loadBooleanSetting(AUTO_TIMELAPSE_KEY),
-    autoSnapshotFirstLayer: loadBooleanSetting(AUTO_SNAPSHOT_FIRST_LAYER_KEY),
-    autoSnapshotLayer: loadBooleanSetting(AUTO_SNAPSHOT_LAYER_KEY),
-    autoSnapshotFinish: loadBooleanSetting(AUTO_SNAPSHOT_FINISH_KEY),
-    autoSnapshotError: loadBooleanSetting(AUTO_SNAPSHOT_ERROR_KEY),
-    scheduledSnapshots: loadBooleanSetting(SCHEDULED_SNAPSHOT_KEY),
-    scheduledSnapshotIntervalMin: loadNumberSetting(SCHEDULED_SNAPSHOT_INTERVAL_KEY, DEFAULT_CAMERA_DASHBOARD_PREFS.scheduledSnapshotIntervalMin),
-    anomalyCapture: loadBooleanSetting(ANOMALY_CAPTURE_KEY),
-    timelapseIntervalSec: loadNumberSetting(TIMELAPSE_INTERVAL_KEY, DEFAULT_CAMERA_DASHBOARD_PREFS.timelapseIntervalSec),
-    timelapseFps: loadNumberSetting(TIMELAPSE_FPS_KEY, DEFAULT_CAMERA_DASHBOARD_PREFS.timelapseFps),
-    showGrid: loadBooleanSetting(VIEW_GRID_KEY),
-    showCrosshair: loadBooleanSetting(VIEW_CROSSHAIR_KEY),
-    flipImage: loadBooleanSetting(VIEW_FLIP_KEY),
-    rotation: loadNumberSetting(VIEW_ROTATION_KEY, 360) % 360,
-    healthPanelOpen: (() => {
-      try {
-        const value = localStorage.getItem(HEALTH_OPEN_KEY);
-        return value === null ? true : value === 'true';
-      } catch {
-        return true;
-      }
-    })(),
-    activeControlSection: loadControlSectionSetting(),
-    editorCollapsed: loadBooleanSetting(EDITOR_COLLAPSED_KEY),
-    cameraPresets: loadCameraPresets(),
-    calibration: loadCalibrationOverlay(),
-  };
-}
-
-function loadCalibrationOverlay(): CameraDashboardCalibration {
-  try {
-    const value = localStorage.getItem(CALIBRATION_OVERLAY_KEY);
-    if (!value) return { enabled: false, x: 12, y: 12, width: 76, height: 76 };
-    const parsed = JSON.parse(value) as CameraMeasurementCalibration;
-    return {
-      ...parsed,
-      enabled: Boolean(parsed.enabled),
-      x: Number.isFinite(parsed.x) ? Number(parsed.x) : 12,
-      y: Number.isFinite(parsed.y) ? Number(parsed.y) : 12,
-      width: Number.isFinite(parsed.width) ? Number(parsed.width) : 76,
-      height: Number.isFinite(parsed.height) ? Number(parsed.height) : 76,
-    };
-  } catch {
-    return { enabled: false, x: 12, y: 12, width: 76, height: 76 };
-  }
-}
-
-function formatLastFrame(lastFrameAt: number | null, now: number): string {
-  if (!lastFrameAt) return 'Waiting for frame';
-  const seconds = Math.max(0, Math.round((now - lastFrameAt) / 1000));
-  if (seconds < 2) return 'Frame just now';
-  if (seconds < 60) return `Last frame ${seconds}s ago`;
-  return `Last frame ${Math.round(seconds / 60)}m ago`;
-}
-
-function clamp01(value: number): number {
-  return Math.max(0, Math.min(1, value));
-}
-
-function clampPercent(value: number): number {
-  return Math.max(0, Math.min(100, value));
-}
-
-function formatMeasurementDistance(distanceMm: number | null): string {
-  if (distanceMm === null) return 'Calibrate bed corners to measure';
-  if (distanceMm >= 1000) return `${(distanceMm / 1000).toFixed(2)} m`;
-  return `${distanceMm.toFixed(distanceMm >= 100 ? 1 : 2)} mm`;
-}
-
-function defaultCrop(): SnapshotCrop {
-  return { x: 0, y: 0, width: 1, height: 1 };
-}
-
-function measureContainedMedia(frame: HTMLElement, media: HTMLImageElement | HTMLVideoElement | null): MediaViewportRect {
-  const frameRect = frame.getBoundingClientRect();
-  if (!frameRect.width || !frameRect.height) return { left: 0, top: 0, width: 100, height: 100 };
-  const intrinsicWidth = media instanceof HTMLVideoElement
-    ? media.videoWidth
-    : media?.naturalWidth;
-  const intrinsicHeight = media instanceof HTMLVideoElement
-    ? media.videoHeight
-    : media?.naturalHeight;
-  if (!intrinsicWidth || !intrinsicHeight) return { left: 0, top: 0, width: 100, height: 100 };
-
-  const frameRatio = frameRect.width / frameRect.height;
-  const mediaRatio = intrinsicWidth / intrinsicHeight;
-  if (!Number.isFinite(mediaRatio) || mediaRatio <= 0) return { left: 0, top: 0, width: 100, height: 100 };
-
-  if (mediaRatio > frameRatio) {
-    const height = (frameRect.width / mediaRatio / frameRect.height) * 100;
-    return { left: 0, top: (100 - height) / 2, width: 100, height };
-  }
-
-  const width = (frameRect.height * mediaRatio / frameRect.width) * 100;
-  return { left: (100 - width) / 2, top: 0, width, height: 100 };
-}
-
-function sameMediaViewport(a: MediaViewportRect, b: MediaViewportRect): boolean {
-  return Math.abs(a.left - b.left) < 0.02
-    && Math.abs(a.top - b.top) < 0.02
-    && Math.abs(a.width - b.width) < 0.02
-    && Math.abs(a.height - b.height) < 0.02;
-}
-
-function cameraPtzBaseUrl(prefs: DuetPrefs, fallbackHostname: string): string {
-  const cameraHost = prefs.webcamHost.trim();
-  if (cameraHost) {
-    return /^https?:\/\//i.test(cameraHost) ? cameraHost : `http://${cameraHost}`;
-  }
-  const streamUrl = prefs.webcamUrl.trim() || prefs.webcamMainStreamUrl.trim();
-  if (streamUrl) {
-    try {
-      return new URL(streamUrl).origin;
-    } catch {
-      // Fall through to the printer host if the stream URL is a relative path.
-    }
-  }
-  return normalizedHost(fallbackHostname);
-}
-
-function cameraRtspBridgeUrl(prefs: DuetPrefs, fallbackHostname: string, quality: CameraHdBridgeQuality): string {
-  const rtspUrl = cameraRtspSourceUrl(prefs, fallbackHostname);
-  if (!rtspUrl) return '';
-  const withCredentials = cameraUrlWithCredentials(rtspUrl, prefs.webcamUsername, prefs.webcamPassword);
-  const params = new URLSearchParams({ url: withCredentials, quality });
-  return `/camera-rtsp-hls?${params.toString()}`;
-}
-
-function cameraServerUsbBridgeUrl(prefs: DuetPrefs, quality: CameraHdBridgeQuality): string {
-  const device = prefs.webcamServerUsbDevice.trim();
-  if (!device) return '';
-  const params = new URLSearchParams({ source: 'usb', device, quality });
-  return `/camera-rtsp-hls?${params.toString()}`;
-}
-
-function cameraRtspSourceUrl(prefs: DuetPrefs, fallbackHostname: string): string {
-  const configured = normalizeCameraStreamUrl(prefs.webcamMainStreamUrl);
-  let rtspUrl = /^rtsp:\/\//i.test(configured) ? configured : '';
-  if (!rtspUrl) {
-    if (prefs.webcamPathPreset !== 'amcrest') return '';
-    const base = cameraPtzBaseUrl(prefs, fallbackHostname);
-    if (!base) return '';
-    try {
-      const parsed = new URL(base);
-      rtspUrl = `rtsp://${parsed.hostname}:554/cam/realmonitor?channel=1&subtype=0`;
-    } catch {
-      return '';
-    }
-  }
-  return rtspUrl;
-}
-
-const pendingCameraCommandImages = new Set<HTMLImageElement>();
-
-function sendCameraCommand(url: string, username: string, password: string, timeoutMs = 600): Promise<void> {
-  return new Promise((resolve) => {
-    const image = new window.Image();
-    pendingCameraCommandImages.add(image);
-    let timeout = 0;
-    const finish = () => {
-      window.clearTimeout(timeout);
-      pendingCameraCommandImages.delete(image);
-      resolve();
-    };
-    timeout = window.setTimeout(finish, timeoutMs);
-    image.onload = finish;
-    image.onerror = finish;
-    const normalizedUrl = normalizeCameraStreamUrl(url);
-    if (import.meta.env.DEV) {
-      const controller = new AbortController();
-      timeout = window.setTimeout(() => {
-        controller.abort();
-        finish();
-      }, timeoutMs);
-      void fetch('/camera-command-proxy', {
-        method: 'POST',
-        headers: {
-          'x-camera-url': normalizedUrl,
-          'x-camera-username': username.trim(),
-          'x-camera-password': password,
-        },
-        cache: 'no-store',
-        signal: controller.signal,
-      }).catch(() => undefined).finally(() => {
-        finish();
-      });
-      return;
-    }
-    image.src = cameraUrlWithCredentials(normalizedUrl, username, password);
-  });
-}
-
-async function imageFromBlob(blob: Blob): Promise<HTMLImageElement> {
-  const url = URL.createObjectURL(blob);
-  try {
-    const image = new window.Image();
-    image.src = url;
-    await image.decode();
-    return image;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-async function transformSnapshotBlob(
-  blob: Blob,
-  rotation: number,
-  flipHorizontal: boolean,
-  crop: SnapshotCrop,
-  brightness: number,
-  contrast: number,
-  sharpen: number,
-  annotation: string,
-): Promise<Blob> {
-  const image = await imageFromBlob(blob);
-  const normalizedRotation = ((rotation % 360) + 360) % 360;
-  const swapsAxes = normalizedRotation === 90 || normalizedRotation === 270;
-  const cropX = Math.round(clamp01(crop.x) * image.naturalWidth);
-  const cropY = Math.round(clamp01(crop.y) * image.naturalHeight);
-  const cropWidth = Math.max(1, Math.round(clamp01(crop.width) * image.naturalWidth));
-  const cropHeight = Math.max(1, Math.round(clamp01(crop.height) * image.naturalHeight));
-  const canvas = document.createElement('canvas');
-  canvas.width = swapsAxes ? cropHeight : cropWidth;
-  canvas.height = swapsAxes ? cropWidth : cropHeight;
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('Snapshot editor is not available in this browser.');
-
-  context.translate(canvas.width / 2, canvas.height / 2);
-  context.rotate((normalizedRotation * Math.PI) / 180);
-  context.scale(flipHorizontal ? -1 : 1, 1);
-  context.filter = `brightness(${brightness}%) contrast(${contrast}%)`;
-  context.drawImage(image, cropX, cropY, cropWidth, cropHeight, -cropWidth / 2, -cropHeight / 2, cropWidth, cropHeight);
-  context.filter = 'none';
-
-  if (sharpen > 0) {
-    context.globalAlpha = Math.min(0.28, sharpen / 250);
-    context.drawImage(canvas, -1, 0);
-    context.drawImage(canvas, 1, 0);
-    context.drawImage(canvas, 0, -1);
-    context.drawImage(canvas, 0, 1);
-    context.globalAlpha = 1;
-  }
-
-  if (annotation.trim()) {
-    const text = annotation.trim();
-    const pad = Math.max(10, Math.round(canvas.width * 0.018));
-    context.font = `700 ${Math.max(16, Math.round(canvas.width * 0.032))}px system-ui, sans-serif`;
-    const textWidth = context.measureText(text).width;
-    const boxHeight = Math.max(32, Math.round(canvas.height * 0.075));
-    context.fillStyle = 'rgba(2, 6, 23, 0.72)';
-    context.fillRect(pad, pad, Math.min(canvas.width - pad * 2, textWidth + pad * 2), boxHeight);
-    context.fillStyle = '#ffffff';
-    context.fillText(text, pad * 1.7, pad + boxHeight * 0.65);
-
-    context.strokeStyle = '#f59e0b';
-    context.lineWidth = Math.max(3, Math.round(canvas.width * 0.006));
-    context.beginPath();
-    context.moveTo(canvas.width * 0.72, canvas.height * 0.22);
-    context.lineTo(canvas.width * 0.86, canvas.height * 0.36);
-    context.lineTo(canvas.width * 0.8, canvas.height * 0.36);
-    context.moveTo(canvas.width * 0.86, canvas.height * 0.36);
-    context.lineTo(canvas.width * 0.86, canvas.height * 0.3);
-    context.stroke();
-  }
-
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((result) => {
-      if (result) resolve(result);
-      else reject(new Error('Unable to save edited snapshot.'));
-    }, 'image/png');
-  });
 }
 
 export default function CameraDashboardPanel({ compact = false }: CameraDashboardPanelProps = {}) {
