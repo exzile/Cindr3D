@@ -73,11 +73,36 @@ import {
 } from '../../../services/vision/cameraPose';
 import { formatBytes } from './helpers';
 import CameraOverlayPanel, { type CameraOverlayMode } from './CameraOverlayPanel';
+import {
+  CLIP_RATINGS,
+  INSPECTION_ITEMS,
+  ISSUE_TAGS,
+  clipDurationLabel,
+  clipExportName,
+  clipFileExtension,
+  clipIssueTags,
+  clipKind,
+  clipLabel,
+  clipManifest,
+  deleteClip,
+  formatClipDuration,
+  loadClips,
+  parseClipDuration,
+  pickRecordingMimeType,
+  saveClip,
+  savedRecordingMessage,
+  type BackendRecordingSession,
+  type CameraClip,
+  type CameraClipKind,
+  type CameraMarker,
+  type ClipFilter,
+  type ClipRating,
+  type ClipSort,
+  type IssueTag,
+  type SnapshotCrop,
+} from './cameraDashboard/clipStore';
 import './CameraDashboardPanel.css';
 
-const CLIP_DB_NAME = 'cindr3d-camera-clips';
-const CLIP_DB_VERSION = 1;
-const CLIP_STORE = 'clips';
 const RECORDING_FPS = 12;
 const AUTO_RECORD_KEY = 'cindr3d-camera-auto-record';
 const AUTO_TIMELAPSE_KEY = 'cindr3d-camera-auto-timelapse';
@@ -100,16 +125,7 @@ const SCHEDULED_SNAPSHOT_INTERVAL_KEY = 'cindr3d-camera-scheduled-snapshot-inter
 const ANOMALY_CAPTURE_KEY = 'cindr3d-camera-anomaly-capture';
 const CALIBRATION_OVERLAY_KEY = 'cindr3d-camera-calibration-overlay';
 const BACKEND_RECORDING_KEY_PREFIX = 'cindr3d-camera-backend-recording';
-const ISSUE_TAGS = ['Warping', 'Stringing', 'Layer shift', 'Blob', 'Adhesion', 'Under extrusion'] as const;
-const CLIP_RATINGS = ['Unrated', 'Good', 'Needs review', 'Failure evidence'] as const;
-const INSPECTION_ITEMS = ['First layer', 'Adhesion', 'Corners', 'Nozzle', 'Surface', 'Artifacts'] as const;
-
-type CameraClipKind = 'clip' | 'timelapse' | 'snapshot' | 'auto';
-type ClipFilter = 'all' | CameraClipKind | 'job' | 'favorite' | 'album' | 'issue';
-type ClipSort = 'newest' | 'oldest' | 'largest';
 type ControlSection = CameraDashboardPrefs['activeControlSection'];
-type IssueTag = typeof ISSUE_TAGS[number];
-type ClipRating = typeof CLIP_RATINGS[number];
 type BedCornerKey = keyof Required<BedCorners>;
 type MeasurementMode = 'off' | 'bed' | 'ruler';
 type RulerEndpointKey = 'measureA' | 'measureB';
@@ -136,60 +152,6 @@ const HD_BRIDGE_QUALITIES: Array<{ value: CameraHdBridgeQuality; label: string }
   { value: '480p', label: '480p' },
 ];
 
-interface CameraMarker {
-  id: string;
-  atMs: number;
-  label: string;
-}
-
-interface CameraClip {
-  id: string;
-  printerId: string;
-  printerName: string;
-  name?: string;
-  notes?: string;
-  tags?: string[];
-  favorite?: boolean;
-  album?: string;
-  kind?: CameraClipKind;
-  jobName?: string;
-  markers?: CameraMarker[];
-  trimStartMs?: number;
-  trimEndMs?: number;
-  snapshotAdjustments?: {
-    brightness: number;
-    contrast: number;
-    sharpen: number;
-    crop: SnapshotCrop;
-    annotation: string;
-  };
-  editedAt?: number;
-  rating?: ClipRating;
-  checklist?: string[];
-  thumbnailBlob?: Blob;
-  createdAt: number;
-  durationMs: number;
-  mimeType: string;
-  size: number;
-  blob: Blob;
-}
-
-interface BackendRecordingSession {
-  id: string;
-  kind: Exclude<CameraClipKind, 'snapshot'>;
-  jobName?: string;
-  markers: CameraMarker[];
-  startedAt: number;
-  thumbnailBlob?: Blob;
-}
-
-interface SnapshotCrop {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
 type CameraPreset = CameraDashboardPreset;
 
 interface CameraDashboardPanelProps {
@@ -203,137 +165,11 @@ interface MediaViewportRect {
   height: number;
 }
 
-function openClipDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(CLIP_DB_NAME, CLIP_DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(CLIP_STORE)) {
-        const store = db.createObjectStore(CLIP_STORE, { keyPath: 'id' });
-        store.createIndex('printerId', 'printerId', { unique: false });
-        store.createIndex('createdAt', 'createdAt', { unique: false });
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('Unable to open clip database.'));
-  });
-}
-
-function transactionDone(transaction: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error ?? new Error('Clip database transaction failed.'));
-    transaction.onabort = () => reject(transaction.error ?? new Error('Clip database transaction aborted.'));
-  });
-}
-
-async function saveClip(clip: CameraClip): Promise<void> {
-  const db = await openClipDb();
-  try {
-    const transaction = db.transaction(CLIP_STORE, 'readwrite');
-    transaction.objectStore(CLIP_STORE).put(clip);
-    await transactionDone(transaction);
-  } finally {
-    db.close();
-  }
-}
-
-async function deleteClip(id: string): Promise<void> {
-  const db = await openClipDb();
-  try {
-    const transaction = db.transaction(CLIP_STORE, 'readwrite');
-    transaction.objectStore(CLIP_STORE).delete(id);
-    await transactionDone(transaction);
-  } finally {
-    db.close();
-  }
-}
-
-async function loadClips(printerId: string): Promise<CameraClip[]> {
-  const db = await openClipDb();
-  try {
-    return await new Promise((resolve, reject) => {
-      const request = db.transaction(CLIP_STORE, 'readonly').objectStore(CLIP_STORE).getAll();
-      request.onsuccess = () => {
-        const clips = (request.result as CameraClip[])
-          .filter((clip) => clip.printerId === printerId)
-          .sort((a, b) => b.createdAt - a.createdAt);
-        resolve(clips);
-      };
-      request.onerror = () => reject(request.error ?? new Error('Unable to load camera clips.'));
-    });
-  } finally {
-    db.close();
-  }
-}
-
 function normalizedHost(hostname: string): string {
   const value = hostname.trim();
   if (!value) return '';
   if (/^https?:\/\//i.test(value)) return value.replace(/\/$/, '');
   return `http://${value.replace(/\/$/, '')}`;
-}
-
-function formatClipDuration(ms: number): string {
-  const seconds = Math.max(0, Math.round(ms / 1000));
-  const minutes = Math.floor(seconds / 60);
-  const remainder = seconds % 60;
-  return `${minutes}:${String(remainder).padStart(2, '0')}`;
-}
-
-function clipDurationLabel(ms: number): string {
-  const seconds = Math.max(0, Math.round(ms / 1000));
-  const minutes = Math.floor(seconds / 60);
-  const remainder = seconds % 60;
-  if (minutes < 60) return `${minutes}m ${remainder}s`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ${minutes % 60}m`;
-}
-
-function parseClipDuration(value: string): number {
-  const trimmed = value.trim();
-  if (!trimmed) return 0;
-  const parts = trimmed.split(':').map((part) => Number(part));
-  if (parts.some((part) => !Number.isFinite(part) || part < 0)) return 0;
-  if (parts.length === 1) return Math.round(parts[0] * 1000);
-  const seconds = parts.pop() ?? 0;
-  const minutes = parts.pop() ?? 0;
-  const hours = parts.pop() ?? 0;
-  return Math.round(((hours * 60 * 60) + (minutes * 60) + seconds) * 1000);
-}
-
-function clipKind(clip: CameraClip): CameraClipKind {
-  return clip.kind ?? 'clip';
-}
-
-function clipLabel(clip: CameraClip): string {
-  if (clip.name?.trim()) return clip.name.trim();
-  const kind = clipKind(clip);
-  if (kind === 'snapshot') return 'Snapshot';
-  if (kind === 'timelapse') return `${formatClipDuration(clip.durationMs)} timelapse`;
-  if (kind === 'auto') return `${formatClipDuration(clip.durationMs)} auto recording`;
-  return `${formatClipDuration(clip.durationMs)} camera clip`;
-}
-
-function savedRecordingMessage(kind: CameraClipKind, durationMs: number): string {
-  if (kind === 'timelapse') return `Saved ${formatClipDuration(durationMs)} timelapse.`;
-  if (kind === 'auto') return `Saved ${formatClipDuration(durationMs)} auto recording.`;
-  return `Saved ${formatClipDuration(durationMs)} clip.`;
-}
-
-function clipFileExtension(clip: CameraClip): string {
-  if (clipKind(clip) === 'snapshot') return 'png';
-  if (clip.mimeType.includes('mp4')) return 'mp4';
-  return 'webm';
-}
-
-function pickRecordingMimeType(): string {
-  const candidates = [
-    'video/webm;codecs=vp9',
-    'video/webm;codecs=vp8',
-    'video/webm',
-  ];
-  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? '';
 }
 
 function backendRecordingStorageKey(printerId: string): string {
@@ -410,21 +246,6 @@ function loadCameraDashboardPrefs(): CameraDashboardPrefs {
     cameraPresets: loadCameraPresets(),
     calibration: loadCalibrationOverlay(),
   };
-}
-
-function isIssueTag(value: string): value is IssueTag {
-  return (ISSUE_TAGS as readonly string[]).includes(value);
-}
-
-function clipIssueTags(clip: CameraClip): IssueTag[] {
-  return (clip.tags ?? [])
-    .map((tag) => tag.startsWith('issue:') ? tag.slice(6) : '')
-    .filter(isIssueTag);
-}
-
-function clipExportName(clip: CameraClip, index: number): string {
-  const label = clipLabel(clip).replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '') || `camera-${index + 1}`;
-  return `${String(index + 1).padStart(2, '0')}-${label}.${clipFileExtension(clip)}`;
 }
 
 function loadCalibrationOverlay(): CameraDashboardCalibration {
@@ -669,31 +490,6 @@ async function transformSnapshotBlob(
       else reject(new Error('Unable to save edited snapshot.'));
     }, 'image/png');
   });
-}
-
-function clipManifest(clip: CameraClip) {
-  return {
-    id: clip.id,
-    name: clipLabel(clip),
-    kind: clipKind(clip),
-    favorite: Boolean(clip.favorite),
-    album: clip.album,
-    printerName: clip.printerName,
-    jobName: clip.jobName,
-    notes: clip.notes,
-    tags: clip.tags,
-    markers: clip.markers,
-    rating: clip.rating,
-    checklist: clip.checklist,
-    trimStartMs: clip.trimStartMs,
-    trimEndMs: clip.trimEndMs,
-    snapshotAdjustments: clip.snapshotAdjustments,
-    createdAt: new Date(clip.createdAt).toISOString(),
-    editedAt: clip.editedAt ? new Date(clip.editedAt).toISOString() : undefined,
-    durationMs: clip.durationMs,
-    mimeType: clip.mimeType,
-    size: clip.size,
-  };
 }
 
 export default function CameraDashboardPanel({ compact = false }: CameraDashboardPanelProps = {}) {
