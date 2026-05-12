@@ -68,7 +68,8 @@ export function closeContourGaps(
   let unioned: PCMultiPolygon;
   try {
     unioned = unionMultiPolygon(inflated);
-  } catch {
+  } catch (err) {
+    console.warn('[slicer/perimeters] union failed; falling back to original contours', err);
     return contours;
   }
   if (unioned.length === 0) return contours;

@@ -382,10 +382,15 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
                 }
               }
               // splitByConnectedComponents returns [probe.geometry] (same ref)
-              // when singly connected; otherwise fresh allocations. Dispose the
-              // parts list â€” which contains the original when singly connected â€”
-              // so we never double-dispose.
+              // when singly connected, and N fresh allocations (NOT including
+              // probe.geometry) when actually split. Dispose the parts list —
+              // which covers probe.geometry in the singly-connected case — and
+              // then dispose probe.geometry explicitly when it was NOT in parts,
+              // otherwise it leaks on every multi-body extrude.
               for (const g of parts) g.dispose();
+              if (parts.length !== 1 || parts[0] !== probe.geometry) {
+                probe.geometry.dispose();
+              }
             }
           } catch { /* ignore â€” fall back to single body */ }
         }

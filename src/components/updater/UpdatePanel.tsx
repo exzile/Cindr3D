@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DownloadCloud, RefreshCw } from 'lucide-react';
 import './UpdatePanel.css';
 import { errorMessage } from '../../utils/errorHandling';
@@ -45,21 +45,35 @@ export default function UpdatePanel({ onAlertChange }: UpdatePanelProps) {
   const [message, setMessage] = useState('Checking for updates...');
   const [busy, setBusy] = useState(false);
   const [token, setToken] = useState(() => localStorage.getItem(tokenStorageKey) ?? '');
+  const inFlightRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+    inFlightRef.current?.abort();
+    inFlightRef.current = null;
+  }, []);
 
   const releaseAvailable = useMemo(() => {
     return Boolean(status?.releaseUpdate?.available && status.releaseUpdate.hasInstallableAsset);
   }, [status]);
 
   const loadStatus = useCallback(async () => {
+    inFlightRef.current?.abort();
+    const controller = new AbortController();
+    inFlightRef.current = controller;
     setBusy(true);
     try {
-      const result = await readJson<UpdateStatus>(await fetch('/api/update/status'));
+      const result = await readJson<UpdateStatus>(await fetch('/api/update/status', { signal: controller.signal }));
+      if (!mountedRef.current || controller.signal.aborted) return;
       setStatus(result);
       setMessage(result.ok ? 'Update status refreshed.' : result.error ?? 'Updater is unavailable.');
     } catch (err) {
+      if (!mountedRef.current || controller.signal.aborted) return;
       setMessage(`Updater is unavailable: ${errorMessage(err, 'Unknown error')}`);
     } finally {
-      setBusy(false);
+      if (mountedRef.current) setBusy(false);
+      if (inFlightRef.current === controller) inFlightRef.current = null;
     }
   }, []);
 
@@ -77,6 +91,9 @@ export default function UpdatePanel({ onAlertChange }: UpdatePanelProps) {
   }, [onAlertChange, releaseAvailable]);
 
   const applyUpdate = async () => {
+    inFlightRef.current?.abort();
+    const controller = new AbortController();
+    inFlightRef.current = controller;
     setBusy(true);
     setMessage('Installing latest release...');
     try {
@@ -87,19 +104,24 @@ export default function UpdatePanel({ onAlertChange }: UpdatePanelProps) {
           ...(token ? { 'X-Cindr3D-Updater-Key': token } : {}),
         },
         body: JSON.stringify({ channel: 'release' }),
+        signal: controller.signal,
       });
       const result = await readJson<ApplyResult>(response);
+      if (!mountedRef.current || controller.signal.aborted) return;
       if (!response.ok || !result.ok) {
         setMessage(result.error ?? `Install failed with HTTP ${response.status}`);
         return;
       }
       setMessage(result.message ?? 'Update installed. Reloading...');
       await loadStatus();
+      if (!mountedRef.current) return;
       window.setTimeout(() => window.location.reload(), 1200);
     } catch (err) {
+      if (!mountedRef.current || controller.signal.aborted) return;
       setMessage(`Install failed: ${errorMessage(err, 'Unknown error')}`);
     } finally {
-      setBusy(false);
+      if (mountedRef.current) setBusy(false);
+      if (inFlightRef.current === controller) inFlightRef.current = null;
     }
   };
 

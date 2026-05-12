@@ -142,6 +142,7 @@ async function* streamAnthropic(
   apiKey: string,
   messages: ApiMessage[],
   systemPrompt: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent> {
   const tools = BYOK_TOOLS.map(toAnthropic);
   const apiMessages = messages.filter((message) => message.role !== 'system');
@@ -154,6 +155,7 @@ async function* streamAnthropic(
       'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({ model, system: systemPrompt, messages: apiMessages, tools, stream: true, max_tokens: 4096 }),
+    signal,
   });
   if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${await res.text()}`);
 
@@ -197,12 +199,14 @@ async function* streamOpenAI(
   model: string,
   apiKey: string,
   messages: ApiMessage[],
+  signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent> {
   const tools = BYOK_TOOLS.map(toOpenAI);
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
     body: JSON.stringify({ model, messages, tools, stream: true }),
+    signal,
   });
   if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
 
@@ -500,6 +504,11 @@ function ChatTab() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+  }, []);
+
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || streaming) return;
 
@@ -507,18 +516,23 @@ function ChatTab() {
     setStreaming(true);
     setInput('');
 
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     const history = [...useAiAssistantStore.getState().messages];
     const apiMessages = buildApiMessages(history);
 
     let continueLoop = true;
     while (continueLoop) {
+      if (controller.signal.aborted) break;
       const assistantId = crypto.randomUUID();
       addMessage({ id: assistantId, role: 'assistant', content: '', timestamp: Date.now() });
 
       try {
         const stream = provider === 'anthropic'
-          ? streamAnthropic(model, apiKey, apiMessages, AI_SYSTEM_PROMPT)
-          : streamOpenAI(getEndpoint(provider), model, apiKey, apiMessages);
+          ? streamAnthropic(model, apiKey, apiMessages, AI_SYSTEM_PROMPT, controller.signal)
+          : streamOpenAI(getEndpoint(provider), model, apiKey, apiMessages, controller.signal);
 
         let lastAssistantContent = '';
         const pendingToolCalls: Array<{ id: string; name: string; input: unknown }> = [];
@@ -559,12 +573,17 @@ function ChatTab() {
 
         if (pendingToolCalls.length === 0) continueLoop = false;
       } catch (err) {
+        if (controller.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
+          continueLoop = false;
+          break;
+        }
         const msg = errorMessage(err, 'Unknown error');
         addMessage({ id: crypto.randomUUID(), role: 'assistant', content: `Error: ${msg}`, error: true, timestamp: Date.now() });
         continueLoop = false;
       }
     }
 
+    if (abortRef.current === controller) abortRef.current = null;
     setStreaming(false);
   }, [streaming, provider, model, apiKey, confirmDestructive, addMessage, appendToLast, setStreaming]);
 
@@ -663,6 +682,12 @@ export default function AiAssistantPanel() {
   const setActiveTab = useAiAssistantStore((s) => s.setActiveTab);
   const [geometry, setGeometry] = useState<PanelGeometry>(() => loadPanelGeometry());
 
+  // Holds an in-flight drag/resize cleanup so we can flush it on unmount, on
+  // pointercancel (alt-tab, system interrupt), or when a new gesture starts —
+  // otherwise window listeners that only unhook on pointerup leak forever if
+  // the up event never arrives.
+  const activeGestureCleanupRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
     if (!panelOpen) return;
     localStorage.setItem(PANEL_GEOMETRY_KEY, JSON.stringify(geometry));
@@ -674,9 +699,16 @@ export default function AiAssistantPanel() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  useEffect(() => () => {
+    activeGestureCleanupRef.current?.();
+    activeGestureCleanupRef.current = null;
+  }, []);
+
   const beginMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
+    activeGestureCleanupRef.current?.();
+
     const startX = event.clientX;
     const startY = event.clientY;
     const start = geometry;
@@ -689,19 +721,25 @@ export default function AiAssistantPanel() {
       }));
     };
 
-    const handlePointerUp = () => {
+    const cleanup = () => {
       window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointerup', cleanup);
+      window.removeEventListener('pointercancel', cleanup);
+      if (activeGestureCleanupRef.current === cleanup) activeGestureCleanupRef.current = null;
     };
 
     window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointerup', cleanup);
+    window.addEventListener('pointercancel', cleanup);
+    activeGestureCleanupRef.current = cleanup;
   }, [geometry]);
 
   const beginResize = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
+    activeGestureCleanupRef.current?.();
+
     const startX = event.clientX;
     const startY = event.clientY;
     const start = geometry;
@@ -714,13 +752,17 @@ export default function AiAssistantPanel() {
       }));
     };
 
-    const handlePointerUp = () => {
+    const cleanup = () => {
       window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointerup', cleanup);
+      window.removeEventListener('pointercancel', cleanup);
+      if (activeGestureCleanupRef.current === cleanup) activeGestureCleanupRef.current = null;
     };
 
     window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointerup', cleanup);
+    window.addEventListener('pointercancel', cleanup);
+    activeGestureCleanupRef.current = cleanup;
   }, [geometry]);
 
   if (!panelOpen) return null;

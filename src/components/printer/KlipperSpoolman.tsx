@@ -77,7 +77,7 @@ export default function KlipperSpoolman() {
         <a
           href={spoolmanUrl}
           target="_blank"
-          rel="noreferrer"
+          rel="noopener noreferrer"
           className="klipper-btn"
           style={{ textDecoration: 'none' }}
         >
