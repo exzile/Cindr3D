@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { AlignEndHorizontal, Box, Paintbrush, Ruler, X } from 'lucide-react';
 import * as THREE from 'three';
 import type { PaintedZSeamHint } from '../../../../types/slicer/profiles/print';
@@ -107,6 +107,22 @@ export function PickToolsOverlay() {
 
 export function MeasurementMarkers() {
   const measurePoints = useSlicerStore((s) => s.measurePoints);
+
+  // Build the connecting-line geometry once per pair of points. Inline
+  // `<bufferAttribute args={[new Float32Array([...])]}>` reallocated on every
+  // render and R3F rebuilt the GPU buffer each time (see memory/r3f_critical_patterns.md).
+  const lineGeo = useMemo(() => {
+    if (measurePoints.length < 2) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array([
+      measurePoints[0].x, measurePoints[0].y, measurePoints[0].z,
+      measurePoints[1].x, measurePoints[1].y, measurePoints[1].z,
+    ]), 3));
+    return g;
+  }, [measurePoints]);
+
+  useEffect(() => () => { lineGeo?.dispose(); }, [lineGeo]);
+
   if (measurePoints.length === 0) return null;
   return (
     <group>
@@ -116,19 +132,10 @@ export function MeasurementMarkers() {
           <meshBasicMaterial color={i === 0 ? '#ff8a4c' : '#2f80ed'} />
         </mesh>
       ))}
-      {measurePoints.length === 2 && (
-        <line>
-          <bufferGeometry>
-            <bufferAttribute
-              attach="attributes-position"
-              args={[new Float32Array([
-                measurePoints[0].x, measurePoints[0].y, measurePoints[0].z,
-                measurePoints[1].x, measurePoints[1].y, measurePoints[1].z,
-              ]), 3]}
-            />
-          </bufferGeometry>
+      {lineGeo && (
+        <lineSegments geometry={lineGeo}>
           <lineBasicMaterial color="#ffaa44" />
-        </line>
+        </lineSegments>
       )}
     </group>
   );

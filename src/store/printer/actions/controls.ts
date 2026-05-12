@@ -25,7 +25,7 @@ function waitUntilIdle(
   const CHECK_INTERVAL        = 500;
   const TIMEOUT_MS            = 15 * 60 * 1_000;
   const MAX_IDLE_STREAK       = 6;       // 6 × 500 ms = 3 s of consecutive idle → done
-  const NEVER_BUSY_TIMEOUT_MS = 12_000;  // if machine never goes busy, fall through after 12 s
+  const NEVER_BUSY_TIMEOUT_MS = 90_000;  // safety valve when requireBusy=true
 
   return new Promise<void>((resolve) => {
     let seenBusy   = false;
@@ -98,6 +98,7 @@ export function createControlActions(
   | 'loadHeightMap'
   | 'probeGrid'
   | 'levelBed'
+  | 'clearLevelBedResult'
 > {
   return {
     setToolTemp: async (tool, _heater, temp) => {
@@ -281,6 +282,7 @@ export function createControlActions(
       if (!service) return emptySummary('fixed');
 
       const results: LevelRunResult[] = [];
+      let runThrew = false;
       // SBC: sendGCode blocks until the macro finishes and returns its full output.
       // Standalone HTTP: fire-and-forget — output arrives via firmwareMessage polling.
       // Serial/USB: same as SBC (sendGCode returns output synchronously).
@@ -298,9 +300,16 @@ export function createControlActions(
       const MIN_ABS_IMPROVEMENT_MM  = 0.003;  // 3 µm absolute
       let stopReason: LevelBedStopReason = autoConverge ? 'maxPasses' : 'fixed';
 
+      // Snapshot the user's current M558 sampling so we can restore it in finally.
+      // Avoids stomping a non-default baseline (e.g. config.g sets A3 S0.03).
+      const probeModel = service.getModel().sensors?.probes?.[0];
+      const prevProbeCount = probeModel?.maxProbeCount ?? 1;
+      const prevProbeTol   = probeModel?.tolerance ?? 0.01;
+      const m558Modified = probesPerPoint > 1;
+
       try {
         if (homeFirst) await service.sendGCode('G28');
-        if (probesPerPoint > 1) await service.sendGCode(`M558 A${probesPerPoint} S${probeTolerance}`);
+        if (m558Modified) await service.sendGCode(`M558 A${probesPerPoint} S${probeTolerance}`);
 
         for (let i = 0; i < maxRuns; i++) {
           // ── Live run/probe progress ───────────────────────────────────────
@@ -318,9 +327,7 @@ export function createControlActions(
           // Count probe completions by watching move.probing transitions in the
           // already-cached service model — no extra HTTP calls.
           const probeTracker = setInterval(() => {
-            const m = service.getModel() as Record<string, unknown>;
-            const mv = m.move as Record<string, unknown> | undefined;
-            const isProbing = (mv?.probing as boolean | undefined) ?? false;
+            const isProbing = service.getModel().move?.probing ?? false;
             if (wasProbing && !isProbing) {
               probesDone++;
               set({
@@ -500,14 +507,23 @@ export function createControlActions(
           }
         }
 
-        if (probesPerPoint > 1) await service.sendGCode('M558 A1 S0.01');
-      } catch (err) { set({ error: `Failed to level bed: ${errorMessage(err, 'Unknown error')}` }); }
+      } catch (err) {
+        runThrew = true;
+        set({ error: `Failed to level bed: ${errorMessage(err, 'Unknown error')}` });
+      } finally {
+        // Always restore the user's prior M558 sampling, even on throw.
+        if (m558Modified) {
+          try { await service.sendGCode(`M558 A${prevProbeCount} S${prevProbeTol}`); }
+          catch { /* best-effort cleanup */ }
+        }
+        // Clear live progress — the results modal takes over from here.
+        set({ levelBedProgress: null });
+      }
 
-      // Clear live progress — the results modal takes over from here (unless suppressed).
-      set({ levelBedProgress: null });
-
-      const summary: import('../../printerStore').LevelBedSummary = { results, autoConverge, stopReason, targetDeviation };
-      if (!suppressResult) {
+      const summary: LevelBedSummary = { results, autoConverge, stopReason, targetDeviation };
+      // Only surface the results modal when the run actually completed — on a
+      // throw the user already got an error toast and a half-empty modal is noise.
+      if (!runThrew && !suppressResult) {
         set({ levelBedPendingResult: summary, lastLevelBedOpts: opts });
       }
       return summary;

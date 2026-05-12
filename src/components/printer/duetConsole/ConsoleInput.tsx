@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { KeyboardEvent, RefObject } from 'react';
 import { Send } from 'lucide-react';
 import { highlightGCode } from './config';
@@ -44,6 +44,16 @@ export function ConsoleInput({
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 }) {
   const highlightBackdropRef = useRef<HTMLDivElement | null>(null);
+  // 150ms blur-then-hide lets a click on a suggestion fire before the
+  // suggestion list unmounts. Stash the timer so we can clear it on unmount.
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+  }, []);
+  const scheduleHide = () => {
+    if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+    blurTimerRef.current = setTimeout(onHideSuggestions, 150);
+  };
 
   useLayoutEffect(() => {
     const backdrop = highlightBackdropRef.current;
@@ -85,9 +95,7 @@ export function ConsoleInput({
               value={input}
               onChange={(event) => onInputChange(event.target.value)}
               onKeyDown={onKeyDown}
-              onBlur={() => {
-                window.setTimeout(onHideSuggestions, 150);
-              }}
+              onBlur={scheduleHide}
               onScroll={() => {
                 const textarea = textareaRef.current;
                 const backdrop = highlightBackdropRef.current;
@@ -111,9 +119,7 @@ export function ConsoleInput({
             value={input}
             onChange={(event) => onInputChange(event.target.value)}
             onKeyDown={onKeyDown}
-            onBlur={() => {
-              window.setTimeout(onHideSuggestions, 150);
-            }}
+            onBlur={scheduleHide}
             onFocus={() => {
               if (suggestions.length > 0 && input.trim().length > 0) {
                 onShowSuggestions();

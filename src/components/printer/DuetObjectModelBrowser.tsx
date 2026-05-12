@@ -256,6 +256,17 @@ export default function DuetObjectModelBrowser() {
 
   const [search, setSearch] = useState('');
   const [editStatus, setEditStatus] = useState<string | null>(null);
+  const editStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (editStatusTimerRef.current) clearTimeout(editStatusTimerRef.current);
+  }, []);
+
+  const flashEditStatus = useCallback((msg: string, ms: number) => {
+    setEditStatus(msg);
+    if (editStatusTimerRef.current) clearTimeout(editStatusTimerRef.current);
+    editStatusTimerRef.current = setTimeout(() => setEditStatus(null), ms);
+  }, []);
 
   const filtered = useMemo(
     () => filterTree(model as JsonObject, search),
@@ -271,20 +282,17 @@ export default function DuetObjectModelBrowser() {
     }
     const gcode = gcodeForPath(path, newValue);
     if (!gcode) {
-      setEditStatus(`Unsupported edit path: ${path}`);
-      setTimeout(() => setEditStatus(null), 3000);
+      flashEditStatus(`Unsupported edit path: ${path}`, 3000);
       return;
     }
     try {
       setEditStatus(`Sending: ${gcode}`);
       await sendGCode(gcode);
-      setEditStatus(`Sent: ${gcode}`);
-      setTimeout(() => setEditStatus(null), 3000);
+      flashEditStatus(`Sent: ${gcode}`, 3000);
     } catch (err) {
-      setEditStatus(`Error: ${errorMessage(err, 'Unknown error')}`);
-      setTimeout(() => setEditStatus(null), 5000);
+      flashEditStatus(`Error: ${errorMessage(err, 'Unknown error')}`, 5000);
     }
-  }, [connected, sendGCode]);
+  }, [connected, flashEditStatus, sendGCode]);
 
   return (
     <div className="duet-obj-browser">
