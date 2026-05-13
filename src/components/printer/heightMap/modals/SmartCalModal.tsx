@@ -144,180 +144,216 @@ export function SmartCalModal({
           </button>
         </div>
 
-        <div className="hm-smartcal-grid">
-          <div className="hm-smartcal-card">
-            <div className="hm-smartcal-card-head">
-              <Repeat2 size={14} />
-              <span>Loop Limit</span>
+        <div className="hm-smartcal-grid hm-smartcal-grid--matrix">
+
+          {/* ── Bed Leveling row ────────────────────────────────────────── */}
+          <div className="hm-smartcal-row hm-smartcal-row--level">
+            <div className="hm-smartcal-row-head">
+              <Home size={14} />
+              <div>
+                <span>Bed Leveling</span>
+                <small>Auto-trams the bed before each probe pass.</small>
+              </div>
             </div>
 
-            <label className="hm-smartcal-iter-label" title="Maximum total probe-and-diagnose iterations">
-              Max iterations
-            </label>
-            <div className="hm-smartcal-iter-row">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  type="button"
-                  key={n}
-                  className={`hm-smartcal-iter-btn${maxIterations === n ? ' is-on' : ''}`}
-                  onClick={() => { setActivePreset('custom'); setMaxIterations(n); }}
-                  title={`${n} maximum ${n === 1 ? 'iteration' : 'iterations'}`}
-                >{n}</button>
-              ))}
+            {/* Loop Limit */}
+            <div className="hm-smartcal-card">
+              <div className="hm-smartcal-card-head">
+                <Repeat2 size={14} />
+                <span>Loop Limit</span>
+              </div>
+              <label className="hm-smartcal-iter-label" title="Maximum total probe-and-diagnose iterations">
+                Max iterations
+              </label>
+              <div className="hm-smartcal-iter-row">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    type="button"
+                    key={n}
+                    className={`hm-smartcal-iter-btn${maxIterations === n ? ' is-on' : ''}`}
+                    onClick={() => { setActivePreset('custom'); setMaxIterations(n); }}
+                    title={`${n} maximum ${n === 1 ? 'iteration' : 'iterations'}`}
+                  >{n}</button>
+                ))}
+              </div>
+              <span className="hm-smartcal-card-note">Stops early when targets are met.</span>
             </div>
 
-            <label className="hm-smartcal-iter-label" title="Hard cap on how many bed-leveling passes can run in one session">
-              Max level passes
-            </label>
-            <div className="hm-smartcal-iter-row">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  type="button"
-                  key={n}
-                  className={`hm-smartcal-iter-btn${maxLevelPasses === n ? ' is-on' : ''}`}
-                  onClick={() => { setActivePreset('custom'); setMaxLevelPasses(n); }}
-                  title={`Cap leveling at ${n} ${n === 1 ? 'pass' : 'passes'}`}
-                >{n}</button>
-              ))}
+            {/* Level Cap */}
+            <div className="hm-smartcal-card">
+              <div className="hm-smartcal-card-head">
+                <Repeat2 size={14} />
+                <span>Level Cap</span>
+              </div>
+              <label className="hm-smartcal-iter-label" title="Hard cap on how many bed-leveling passes may run in one session">
+                Max level passes
+              </label>
+              <div className="hm-smartcal-iter-row">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    type="button"
+                    key={n}
+                    className={`hm-smartcal-iter-btn${maxLevelPasses === n ? ' is-on' : ''}`}
+                    onClick={() => { setActivePreset('custom'); setMaxLevelPasses(n); }}
+                    title={`Cap leveling at ${n} ${n === 1 ? 'pass' : 'passes'}`}
+                  >{n}</button>
+                ))}
+              </div>
+              <span className="hm-smartcal-card-note">Re-levels only when RMS target is missed.</span>
             </div>
 
-            <span className="hm-smartcal-card-note">Stops early when targets are met.</span>
-          </div>
-
-          <div className="hm-smartcal-card">
-            <div className="hm-smartcal-card-head">
-              <Ruler size={14} />
-              <span>Convergence</span>
-            </div>
-            <label className="hm-smartcal-field">
-              <span>
-                Z datum threshold
-                <small>Adjust datum when mean reaches this value.</small>
-              </span>
-              <span className="hm-smartcal-input hm-smartcal-picker">
-                <button
-                  type="button"
-                  onClick={() => stepNumber(targetMean, -0.01, 0.02, 0.5, setTargetMean)}
-                  disabled={targetMean <= 0.02}
-                  title="Decrease Z datum threshold"
-                >
-                  <Minus size={12} />
-                </button>
-                <input
-                  type="number" min={0.02} max={0.5} step={0.01}
-                  value={targetMean}
-                  onChange={(e) => setClampedNumber(e.target.value, 0.02, 0.5, setTargetMean)}
-                />
-                <button
-                  type="button"
-                  onClick={() => stepNumber(targetMean, 0.01, 0.02, 0.5, setTargetMean)}
-                  disabled={targetMean >= 0.5}
-                  title="Increase Z datum threshold"
-                >
-                  <Plus size={12} />
-                </button>
-                <em>mm</em>
-              </span>
-            </label>
-            <label className="hm-smartcal-field">
-              <span>
-                Re-level threshold
-                <small>Run another level pass when RMS reaches this value.</small>
-              </span>
-              <span className="hm-smartcal-input hm-smartcal-picker">
-                <button
-                  type="button"
-                  onClick={() => stepNumber(targetDeviation, -0.01, 0.01, 0.3, setTargetDeviation)}
-                  disabled={targetDeviation <= 0.01}
-                  title="Decrease re-level threshold"
-                >
-                  <Minus size={12} />
-                </button>
-                <input
-                  type="number" min={0.01} max={0.3} step={0.01}
-                  value={targetDeviation}
-                  onChange={(e) => setClampedNumber(e.target.value, 0.01, 0.3, setTargetDeviation)}
-                />
-                <button
-                  type="button"
-                  onClick={() => stepNumber(targetDeviation, 0.01, 0.01, 0.3, setTargetDeviation)}
-                  disabled={targetDeviation >= 0.3}
-                  title="Increase re-level threshold"
-                >
-                  <Plus size={12} />
-                </button>
-                <em>mm</em>
-              </span>
-            </label>
-          </div>
-
-          <div className="hm-smartcal-card">
-            <div className="hm-smartcal-card-head">
-              <ScanLine size={14} />
-              <span>Probe Quality</span>
-            </div>
-            <label className="hm-smartcal-field">
-              <span>
-                Dives per point
-                <small>Higher values take longer and reduce noisy samples.</small>
-              </span>
-              <span className="hm-smartcal-input hm-smartcal-picker">
-                <button
-                  type="button"
-                  onClick={() => stepNumber(probesPerPoint, -1, 1, 5, setProbesPerPoint, 0, true)}
-                  disabled={probesPerPoint <= 1}
-                  title="Decrease dives per point"
-                >
-                  <Minus size={12} />
-                </button>
-                <input
-                  type="number" min={1} max={5} step={1}
-                  value={probesPerPoint}
-                  onChange={(e) => setClampedNumber(e.target.value, 1, 5, setProbesPerPoint, true)}
-                />
-                <button
-                  type="button"
-                  onClick={() => stepNumber(probesPerPoint, 1, 1, 5, setProbesPerPoint, 0, true)}
-                  disabled={probesPerPoint >= 5}
-                  title="Increase dives per point"
-                >
-                  <Plus size={12} />
-                </button>
-              </span>
-            </label>
-            {probesPerPoint > 1 && (
+            {/* Re-level threshold */}
+            <div className="hm-smartcal-card">
+              <div className="hm-smartcal-card-head">
+                <Ruler size={14} />
+                <span>Re-level Threshold</span>
+              </div>
               <label className="hm-smartcal-field">
                 <span>
-                  Dive tolerance
-                  <small>Maximum spread allowed between repeated dives.</small>
+                  RMS trigger
+                  <small>Run another level pass when RMS exceeds this.</small>
+                </span>
+                <span className="hm-smartcal-input hm-smartcal-picker">
+                  <button
+                    type="button"
+                    onClick={() => stepNumber(targetDeviation, -0.01, 0.01, 0.3, setTargetDeviation)}
+                    disabled={targetDeviation <= 0.01}
+                    title="Decrease re-level threshold"
+                  ><Minus size={12} /></button>
+                  <input
+                    type="number" min={0.01} max={0.3} step={0.01}
+                    value={targetDeviation}
+                    onChange={(e) => setClampedNumber(e.target.value, 0.01, 0.3, setTargetDeviation)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => stepNumber(targetDeviation, 0.01, 0.01, 0.3, setTargetDeviation)}
+                    disabled={targetDeviation >= 0.3}
+                    title="Increase re-level threshold"
+                  ><Plus size={12} /></button>
+                  <em>mm</em>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          {/* ── Probe row ────────────────────────────────────────────────── */}
+          <div className="hm-smartcal-row hm-smartcal-row--probe">
+            <div className="hm-smartcal-row-head">
+              <Crosshair size={14} />
+              <div>
+                <span>Probe</span>
+                <small>Maps the surface and diagnoses convergence.</small>
+              </div>
+            </div>
+
+            {/* Z Datum Threshold */}
+            <div className="hm-smartcal-card">
+              <div className="hm-smartcal-card-head">
+                <Ruler size={14} />
+                <span>Z Datum</span>
+              </div>
+              <label className="hm-smartcal-field">
+                <span>
+                  Datum threshold
+                  <small>Recalibrate Z=0 when |mean| reaches this.</small>
+                </span>
+                <span className="hm-smartcal-input hm-smartcal-picker">
+                  <button
+                    type="button"
+                    onClick={() => stepNumber(targetMean, -0.01, 0.02, 0.5, setTargetMean)}
+                    disabled={targetMean <= 0.02}
+                    title="Decrease Z datum threshold"
+                  ><Minus size={12} /></button>
+                  <input
+                    type="number" min={0.02} max={0.5} step={0.01}
+                    value={targetMean}
+                    onChange={(e) => setClampedNumber(e.target.value, 0.02, 0.5, setTargetMean)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => stepNumber(targetMean, 0.01, 0.02, 0.5, setTargetMean)}
+                    disabled={targetMean >= 0.5}
+                    title="Increase Z datum threshold"
+                  ><Plus size={12} /></button>
+                  <em>mm</em>
+                </span>
+              </label>
+            </div>
+
+            {/* Dives per point */}
+            <div className="hm-smartcal-card">
+              <div className="hm-smartcal-card-head">
+                <ScanLine size={14} />
+                <span>Probe Quality</span>
+              </div>
+              <label className="hm-smartcal-field">
+                <span>
+                  Dives per point
+                  <small>Higher values average out noisy samples.</small>
+                </span>
+                <span className="hm-smartcal-input hm-smartcal-picker">
+                  <button
+                    type="button"
+                    onClick={() => stepNumber(probesPerPoint, -1, 1, 5, setProbesPerPoint, 0, true)}
+                    disabled={probesPerPoint <= 1}
+                    title="Decrease dives per point"
+                  ><Minus size={12} /></button>
+                  <input
+                    type="number" min={1} max={5} step={1}
+                    value={probesPerPoint}
+                    onChange={(e) => setClampedNumber(e.target.value, 1, 5, setProbesPerPoint, true)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => stepNumber(probesPerPoint, 1, 1, 5, setProbesPerPoint, 0, true)}
+                    disabled={probesPerPoint >= 5}
+                    title="Increase dives per point"
+                  ><Plus size={12} /></button>
+                </span>
+              </label>
+            </div>
+
+            {/* Dive tolerance */}
+            <div className="hm-smartcal-card">
+              <div className="hm-smartcal-card-head">
+                <ScanLine size={14} />
+                <span>Dive Tolerance</span>
+              </div>
+              <label className="hm-smartcal-field">
+                <span>
+                  Max spread
+                  <small>
+                    {probesPerPoint > 1
+                      ? 'Maximum allowed spread between repeated dives.'
+                      : 'Only applies when dives per point > 1.'}
+                  </small>
                 </span>
                 <span className="hm-smartcal-input hm-smartcal-picker">
                   <button
                     type="button"
                     onClick={() => stepNumber(probeTolerance, -0.01, 0.01, 0.1, setProbeTolerance)}
-                    disabled={probeTolerance <= 0.01}
+                    disabled={probeTolerance <= 0.01 || probesPerPoint <= 1}
                     title="Decrease dive tolerance"
-                  >
-                    <Minus size={12} />
-                  </button>
+                  ><Minus size={12} /></button>
                   <input
                     type="number" min={0.01} max={0.1} step={0.01}
                     value={probeTolerance}
+                    disabled={probesPerPoint <= 1}
                     onChange={(e) => setClampedNumber(e.target.value, 0.01, 0.1, setProbeTolerance)}
                   />
                   <button
                     type="button"
                     onClick={() => stepNumber(probeTolerance, 0.01, 0.01, 0.1, setProbeTolerance)}
-                    disabled={probeTolerance >= 0.1}
+                    disabled={probeTolerance >= 0.1 || probesPerPoint <= 1}
                     title="Increase dive tolerance"
-                  >
-                    <Plus size={12} />
-                  </button>
+                  ><Plus size={12} /></button>
                   <em>mm</em>
                 </span>
               </label>
-            )}
+            </div>
           </div>
+
         </div>
         <p className="hm-smartcal-intro">
           Runs a closed-loop sequence: <strong>Level → Probe → Diagnose → Repeat</strong>.
