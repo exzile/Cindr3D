@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
 import { useNow } from '../../../hooks/useNow';
-import { strToU8, zipSync } from 'fflate';
 import {
   Archive,
   AlertTriangle,
@@ -48,28 +47,24 @@ import {
   DEFAULT_CAMERA_DASHBOARD_PREFS,
   DEFAULT_PREFS,
   getDuetPrefs,
-  type CameraDashboardCalibration,
   type CameraDashboardPrefs,
-  type CameraDashboardPreset,
   type CameraHdBridgeQuality,
   type CameraPtzPreset,
   type DuetPrefs,
 } from '../../../utils/duetPrefs';
-import { cameraDisplayUrl, cameraUrlWithCredentials, enabledCamerasFromPrefs, normalizeCameraStreamUrl, preferredCameraStreamUrl, prefsWithCamera } from '../../../utils/cameraStreamUrl';
+import { enabledCamerasFromPrefs, prefsWithCamera } from '../../../utils/cameraStreamUrl';
 import { buildPtzMoveRequest, buildPtzPresetRequest, ptzProviderLabel, type PtzDirection } from '../../../services/camera/ptzControl';
 import { connectWhepVideoStream } from '../../../services/camera/webrtcStream';
 import {
   distanceBetweenImagePointsMm,
   hasCompleteBedCorners,
   solveCameraHomography,
-  type BedCorners,
   type ImagePoint,
 } from '../../../services/vision/cameraMeasurement';
 import {
   assessPoseCalibration,
   poseFrameSignature,
   solveCameraPoseCalibration,
-  type CameraPoseCalibration,
 } from '../../../services/vision/cameraPose';
 import { formatBytes } from './helpers';
 import CameraOverlayPanel, { type CameraOverlayMode } from './CameraOverlayPanel';
@@ -78,16 +73,12 @@ import {
   INSPECTION_ITEMS,
   ISSUE_TAGS,
   clipDurationLabel,
-  clipExportName,
-  clipFileExtension,
   clipIssueTags,
   clipKind,
   clipLabel,
-  clipManifest,
   deleteClip,
   formatClipDuration,
   loadClips,
-  parseClipDuration,
   pickRecordingMimeType,
   saveClip,
   savedRecordingMessage,
@@ -102,10 +93,34 @@ import {
   type SnapshotCrop,
 } from './cameraDashboard/clipStore';
 import {
-  cameraRtspBridgeUrl,
-  cameraRtspSourceUrl,
-  cameraServerUsbBridgeUrl,
-  normalizedHost,
+  buildBulkClipUpdate,
+  buildClipDetailsUpdate,
+  buildClipMarker,
+  buildClipWithMarker,
+  buildClipWithoutMarker,
+  buildFavoriteToggle,
+  buildIssueTagUpdate,
+  buildTimelapseCopy,
+  buildTrimmedVideoCopy,
+} from './cameraDashboard/clipMutations';
+import {
+  clipAlbums,
+  filterVisibleClips,
+  selectCompareClip,
+  sortedSnapshotClips,
+  summarizeClipStorageByJob,
+  summarizeClipStorageByKind,
+  timelineClipsForJob,
+  totalClipStorageBytes,
+} from './cameraDashboard/clipLibrary';
+import {
+  downloadClipBlob,
+  downloadClipBundle,
+  downloadClipManifest,
+  downloadContactSheet,
+  downloadJobReport,
+} from './cameraDashboard/clipExport';
+import {
   sendCameraCommand,
 } from './cameraDashboard/cameraUrls';
 import {
@@ -113,7 +128,6 @@ import {
   defaultCrop,
   formatLastFrame,
   formatMeasurementDistance,
-  imageFromBlob,
   measureContainedMedia,
   sameMediaViewport,
   transformSnapshotBlob,
@@ -144,37 +158,19 @@ import {
   loadCameraDashboardPrefs,
   loadCameraPresets,
 } from './cameraDashboard/prefsStorage';
+import {
+  BED_CORNER_SEQUENCE,
+  HD_BRIDGE_QUALITIES,
+  RECORDING_FPS,
+  type BedCornerKey,
+  type CameraMeasurementCalibration,
+  type CameraPreset,
+  type ControlSection,
+  type MeasurementMode,
+  type RulerEndpointKey,
+} from './cameraDashboard/types';
+import { buildCameraStreamState } from './cameraDashboard/streamState';
 import './CameraDashboardPanel.css';
-
-const RECORDING_FPS = 12;
-type ControlSection = CameraDashboardPrefs['activeControlSection'];
-type BedCornerKey = keyof Required<BedCorners>;
-type MeasurementMode = 'off' | 'bed' | 'ruler';
-type RulerEndpointKey = 'measureA' | 'measureB';
-
-interface CameraMeasurementCalibration extends CameraDashboardCalibration {
-  bedWidthMm?: number;
-  bedDepthMm?: number;
-  bedCorners?: BedCorners;
-  measureA?: ImagePoint;
-  measureB?: ImagePoint;
-  pose?: CameraPoseCalibration;
-}
-
-const BED_CORNER_SEQUENCE: Array<{ key: BedCornerKey; label: string }> = [
-  { key: 'frontLeft', label: 'Front left' },
-  { key: 'frontRight', label: 'Front right' },
-  { key: 'backRight', label: 'Back right' },
-  { key: 'backLeft', label: 'Back left' },
-];
-const HD_BRIDGE_QUALITIES: Array<{ value: CameraHdBridgeQuality; label: string }> = [
-  { value: 'native', label: 'Native' },
-  { value: '1080p', label: '1080p' },
-  { value: '720p', label: '720p' },
-  { value: '480p', label: '480p' },
-];
-
-type CameraPreset = CameraDashboardPreset;
 
 interface CameraDashboardPanelProps {
   compact?: boolean;
@@ -224,7 +220,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     };
   }, [activePrinter]);
 
-  const hdMainIsRtsp = prefs.webcamMainStreamProtocol === 'rtsp' || /^rtsp:\/\//i.test(prefs.webcamMainStreamUrl.trim());
   const imgRef = useRef<HTMLImageElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -333,73 +328,42 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
 
-  const streamUrl = useMemo(() => {
-    if (prefs.webcamSourceType === 'browser-usb') return 'browser-usb://camera';
-    if (prefs.webcamSourceType === 'server-usb') return cameraServerUsbBridgeUrl(prefs, hdBridgeQuality);
-    const host = normalizedHost(config.hostname);
-    const fallbackUrl = service?.getWebcamUrl() ?? (host ? `${host}/webcam/?action=stream` : '');
-    if (prefs.webcamStreamPreference === 'main' && hdMainIsRtsp) {
-      return cameraRtspBridgeUrl(prefs, config.hostname, hdBridgeQuality);
-    }
-    return preferredCameraStreamUrl(prefs, fallbackUrl);
-  }, [config.hostname, hdBridgeQuality, hdMainIsRtsp, prefs, service]);
-
-  const displayUrl = useMemo(
-    () => streamUrl.startsWith('browser-usb://') ? '' : cameraDisplayUrl(streamUrl, prefs.webcamUsername, prefs.webcamPassword),
-    [prefs.webcamPassword, prefs.webcamUsername, streamUrl],
-  );
-  const videoUrl = useMemo(
-    () => streamUrl.startsWith('browser-usb://')
-      ? ''
-      : streamUrl.startsWith('/camera-rtsp-hls')
-      ? streamUrl
-      : cameraUrlWithCredentials(normalizeCameraStreamUrl(streamUrl), prefs.webcamUsername, prefs.webcamPassword),
-    [prefs.webcamPassword, prefs.webcamUsername, streamUrl],
-  );
-  const backendRecordingUrl = useMemo(() => {
-    if (prefs.webcamSourceType === 'server-usb') return prefs.webcamServerUsbDevice.trim();
-    const rtspUrl = cameraRtspSourceUrl(prefs, config.hostname);
-    return rtspUrl ? cameraUrlWithCredentials(rtspUrl, prefs.webcamUsername, prefs.webcamPassword) : '';
-  }, [config.hostname, prefs]);
+  const streamState = useMemo(() => buildCameraStreamState({
+    prefs,
+    hostname: config.hostname,
+    hdBridgeQuality,
+    serviceWebcamUrl: service?.getWebcamUrl(),
+    activeCamera,
+    webRtcFailed,
+    imageFailed,
+    streamRevision,
+  }), [activeCamera, config.hostname, hdBridgeQuality, imageFailed, prefs, service, streamRevision, webRtcFailed]);
 
   const printerId = activePrinter?.id ?? 'default-printer';
   const printerName = activePrinter?.name ?? 'Printer';
-  const isBrowserUsbCamera = prefs.webcamSourceType === 'browser-usb';
-  const isServerUsbCamera = prefs.webcamSourceType === 'server-usb';
-  const webRtcUrl = activeCamera?.webRtcEnabled ? activeCamera.webRtcUrl.trim() : '';
-  const useWebRtcStream = Boolean(webRtcUrl && !webRtcFailed);
-  const isVideoStream = useWebRtcStream || isBrowserUsbCamera || isServerUsbCamera || (prefs.webcamStreamPreference === 'main' && (hdMainIsRtsp || prefs.webcamMainStreamProtocol === 'hls' || prefs.webcamMainStreamProtocol === 'http'));
-  const cameraSourceUrl = useWebRtcStream ? webRtcUrl : isBrowserUsbCamera ? 'browser-usb' : isVideoStream ? videoUrl : displayUrl;
-  const hasCamera = Boolean(cameraSourceUrl) && !imageFailed;
+  const {
+    hdMainIsRtsp,
+    displayUrl,
+    backendRecordingUrl,
+    isBrowserUsbCamera,
+    isServerUsbCamera,
+    webRtcUrl,
+    useWebRtcStream,
+    isVideoStream,
+    cameraSourceUrl,
+    hasCamera,
+    hdLiveNeedsBridge,
+    canUseBackendRecording,
+    streamSrc,
+  } = streamState;
   const recording = recordingKind !== null;
   const isTimelapseRecording = recordingKind === 'timelapse';
   const isAutoRecording = recordingKind === 'auto';
   const isPrintActive = printStatus === 'processing' || printStatus === 'simulating';
-  const hdLiveNeedsBridge = hdMainIsRtsp || isServerUsbCamera;
-  const canUseBackendRecording = ((prefs.webcamStreamPreference === 'main' && hdMainIsRtsp) || isServerUsbCamera) && Boolean(backendRecordingUrl);
   const canUsePtz = Boolean(activeCamera?.ptzEnabled && activeCamera.ptzProvider !== 'off');
   const activePtzStartPreset = activeCamera?.ptzPresets.find((preset) => preset.id === activeCamera.ptzStartPresetId);
-  const streamSrc = useMemo(() => {
-    if (!cameraSourceUrl) return '';
-    if (useWebRtcStream) return cameraSourceUrl;
-    if (isBrowserUsbCamera) return 'browser-usb';
-    const separator = cameraSourceUrl.includes('?') ? '&' : '?';
-    return `${cameraSourceUrl}${separator}_cameraReload=${streamRevision}`;
-  }, [cameraSourceUrl, isBrowserUsbCamera, streamRevision, useWebRtcStream]);
-  const totalStorageBytes = useMemo(() => clips.reduce((sum, clip) => sum + clip.size + (clip.thumbnailBlob?.size ?? 0), 0), [clips]);
-  const storageByKind = useMemo(() => {
-    return clips.reduce<Record<CameraClipKind, { count: number; size: number }>>((acc, clip) => {
-      const kind = clipKind(clip);
-      acc[kind].count += 1;
-      acc[kind].size += clip.size + (clip.thumbnailBlob?.size ?? 0);
-      return acc;
-    }, {
-      auto: { count: 0, size: 0 },
-      clip: { count: 0, size: 0 },
-      snapshot: { count: 0, size: 0 },
-      timelapse: { count: 0, size: 0 },
-    });
-  }, [clips]);
+  const totalStorageBytes = useMemo(() => totalClipStorageBytes(clips), [clips]);
+  const storageByKind = useMemo(() => summarizeClipStorageByKind(clips), [clips]);
 
   useEffect(() => {
     const key = backendRecordingStorageKey(printerId);
@@ -442,29 +406,10 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
       window.sessionStorage.removeItem(key);
     }
   }, [printerId]);
-  const storageByJob = useMemo(() => {
-    const grouped = new Map<string, { count: number; size: number }>();
-    clips.forEach((clip) => {
-      const key = clip.jobName || 'No job';
-      const current = grouped.get(key) ?? { count: 0, size: 0 };
-      current.count += 1;
-      current.size += clip.size + (clip.thumbnailBlob?.size ?? 0);
-      grouped.set(key, current);
-    });
-    return Array.from(grouped.entries())
-      .map(([name, value]) => ({ name, ...value }))
-      .sort((a, b) => b.size - a.size)
-      .slice(0, 4);
-  }, [clips]);
-  const albums = useMemo(() => {
-    return Array.from(new Set(clips.map((clip) => clip.album?.trim()).filter(Boolean) as string[])).sort();
-  }, [clips]);
-  const snapshotClips = useMemo(() => {
-    return clips.filter((clip) => clipKind(clip) === 'snapshot').sort((a, b) => b.createdAt - a.createdAt);
-  }, [clips]);
-  const compareClip = useMemo(() => {
-    return snapshotClips.find((clip) => clip.id === compareClipId) ?? snapshotClips.find((clip) => clip.id !== selectedClip?.id) ?? null;
-  }, [compareClipId, selectedClip?.id, snapshotClips]);
+  const storageByJob = useMemo(() => summarizeClipStorageByJob(clips), [clips]);
+  const albums = useMemo(() => clipAlbums(clips), [clips]);
+  const snapshotClips = useMemo(() => sortedSnapshotClips(clips), [clips]);
+  const compareClip = useMemo(() => selectCompareClip(snapshotClips, compareClipId, selectedClip?.id), [compareClipId, selectedClip?.id, snapshotClips]);
   const compareClipUrl = compareClip ? thumbUrls[compareClip.id] : '';
   const frameAgeMs = lastFrameAt ? nowTick - lastFrameAt : null;
   const estimatedFps = lastFrameIntervalMs ? Math.min(60, 1000 / lastFrameIntervalMs) : 0;
@@ -477,40 +422,10 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
       : 'Ready';
   const selectedKind = selectedClip ? clipKind(selectedClip) : null;
   const selectedBulkClips = useMemo(() => clips.filter((clip) => selectedClipIds.includes(clip.id)), [clips, selectedClipIds]);
-  const visibleClips = useMemo(() => {
-    const query = clipQuery.trim().toLowerCase();
-    return clips
-      .filter((clip) => {
-        const kind = clipKind(clip);
-        const matchesFilter = clipFilter === 'all'
-          || kind === clipFilter
-          || (clipFilter === 'job' && Boolean(clip.jobName))
-          || (clipFilter === 'favorite' && Boolean(clip.favorite))
-          || (clipFilter === 'album' && Boolean(clip.album))
-          || (clipFilter === 'issue' && clipIssueTags(clip).length > 0);
-        if (!matchesFilter) return false;
-        if (!query) return true;
-        const haystack = [
-          clipLabel(clip),
-          clip.jobName,
-          clip.album,
-          clip.notes,
-          ...(clip.tags ?? []),
-        ].filter(Boolean).join(' ').toLowerCase();
-        return haystack.includes(query);
-      })
-      .sort((a, b) => {
-        if (clipSort === 'oldest') return a.createdAt - b.createdAt;
-        if (clipSort === 'largest') return b.size - a.size;
-        return b.createdAt - a.createdAt;
-      });
-  }, [clipFilter, clipQuery, clipSort, clips]);
+  const visibleClips = useMemo(() => filterVisibleClips(clips, clipFilter, clipSort, clipQuery), [clipFilter, clipQuery, clipSort, clips]);
   const recentClips = useMemo(() => clips.slice(0, 6), [clips]);
   const timelineJobName = jobFileName || selectedClip?.jobName || '';
-  const timelineClips = useMemo(() => {
-    const source = timelineJobName ? clips.filter((clip) => clip.jobName === timelineJobName) : clips.slice(0, 12);
-    return [...source].sort((a, b) => a.createdAt - b.createdAt).slice(-16);
-  }, [clips, timelineJobName]);
+  const timelineClips = useMemo(() => timelineClipsForJob(clips, timelineJobName), [clips, timelineJobName]);
 
   const refreshClips = useCallback(async () => {
     setBusy(true);
@@ -1233,29 +1148,12 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   }, []);
 
   const downloadClip = useCallback((clip: CameraClip) => {
-    const url = URL.createObjectURL(clip.blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${clip.printerName.replace(/\s+/g, '-')}-camera-${clipKind(clip)}-${new Date(clip.createdAt).toISOString().replace(/[:.]/g, '-')}.${clipFileExtension(clip)}`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    downloadClipBlob(clip);
   }, []);
 
   const exportVisibleClips = useCallback(() => {
-    const exportedAt = new Date().toISOString();
-    const manifest = visibleClips.map(clipManifest);
     visibleClips.forEach(downloadClip);
-    const manifestBlob = new Blob([JSON.stringify({ exportedAt, clips: manifest }, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(manifestBlob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `camera-clips-manifest-${exportedAt.replace(/[:.]/g, '-')}.json`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    downloadClipManifest(visibleClips);
   }, [downloadClip, visibleClips]);
 
   const removeClip = useCallback(async (clip: CameraClip) => {
@@ -1307,18 +1205,16 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
 
   const saveSelectedClipDetails = useCallback(async () => {
     if (!selectedClip) return;
-    const updated: CameraClip = {
-      ...selectedClip,
-      name: clipDraftName.trim() || undefined,
-      notes: clipDraftNotes.trim() || undefined,
+    const updated = buildClipDetailsUpdate(selectedClip, {
+      name: clipDraftName,
+      notes: clipDraftNotes,
       kind: clipDraftKind,
-      jobName: clipDraftJobName.trim() || undefined,
-      album: clipDraftAlbum.trim() || undefined,
-      rating: clipDraftRating === 'Unrated' ? undefined : clipDraftRating,
-      checklist: clipDraftChecklist.length ? clipDraftChecklist : undefined,
-      tags: clipDraftTags.split(',').map((tag) => tag.trim()).filter(Boolean),
-      editedAt: Date.now(),
-    };
+      jobName: clipDraftJobName,
+      album: clipDraftAlbum,
+      rating: clipDraftRating,
+      checklist: clipDraftChecklist,
+      tags: clipDraftTags,
+    });
     setBusy(true);
     try {
       await saveClip(updated);
@@ -1334,11 +1230,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
 
   const toggleSelectedClipFavorite = useCallback(async () => {
     if (!selectedClip) return;
-    const updated: CameraClip = {
-      ...selectedClip,
-      favorite: !selectedClip.favorite,
-      editedAt: Date.now(),
-    };
+    const updated = buildFavoriteToggle(selectedClip);
     setBusy(true);
     try {
       await saveClip(updated);
@@ -1487,12 +1379,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
 
   const applySelectedIssue = useCallback(async () => {
     if (!selectedClip) return;
-    const issueTag = `issue:${issueDraft}`;
-    const updated: CameraClip = {
-      ...selectedClip,
-      tags: Array.from(new Set([...(selectedClip.tags ?? []), issueTag])),
-      editedAt: Date.now(),
-    };
+    const updated = buildIssueTagUpdate(selectedClip, issueDraft);
     setBusy(true);
     try {
       await saveClip(updated);
@@ -1520,34 +1407,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
 
   const generateJobReport = useCallback((clipsToReport: CameraClip[]) => {
     const reportClips = clipsToReport.length ? clipsToReport : timelineClips;
-    const lines = [
-      `# ${printerName} camera report`,
-      '',
-      `Generated: ${new Date().toLocaleString()}`,
-      `Job: ${timelineJobName || 'Recent media'}`,
-      `Items: ${reportClips.length}`,
-      `Storage: ${formatBytes(reportClips.reduce((sum, clip) => sum + clip.size, 0))}`,
-      '',
-      '## Findings',
-      ...reportClips.map((clip) => [
-        `- ${new Date(clip.createdAt).toLocaleString()} - ${clipLabel(clip)}`,
-        `  - Type: ${clipKind(clip)}`,
-        `  - Rating: ${clip.rating ?? 'Unrated'}`,
-        `  - Issues: ${clipIssueTags(clip).join(', ') || 'None'}`,
-        `  - Checklist: ${(clip.checklist ?? []).join(', ') || 'None'}`,
-        clip.notes ? `  - Notes: ${clip.notes}` : '',
-        (clip.markers?.length ?? 0) > 0 ? `  - Markers: ${clip.markers?.map((marker) => `${marker.label} ${formatClipDuration(marker.atMs)}`).join('; ')}` : '',
-      ].filter(Boolean).join('\n')),
-    ];
-    const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${printerName.replace(/\s+/g, '-')}-camera-report-${new Date().toISOString().replace(/[:.]/g, '-')}.md`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    downloadJobReport(reportClips, printerName, timelineJobName);
     setMessage('Generated camera job report.');
   }, [printerName, timelineClips, timelineJobName]);
 
@@ -1559,39 +1419,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     }
     setBusy(true);
     try {
-      const cellWidth = 320;
-      const cellHeight = 230;
-      const columns = Math.min(3, snapshots.length);
-      const rows = Math.ceil(snapshots.length / columns);
-      const canvas = document.createElement('canvas');
-      canvas.width = columns * cellWidth;
-      canvas.height = rows * cellHeight;
-      const context = canvas.getContext('2d');
-      if (!context) throw new Error('Contact sheet canvas is not available.');
-      context.fillStyle = '#020617';
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      await Promise.all(snapshots.map(async (clip, index) => {
-        const image = await imageFromBlob(clip.blob);
-        const x = (index % columns) * cellWidth;
-        const y = Math.floor(index / columns) * cellHeight;
-        context.fillStyle = '#050505';
-        context.fillRect(x + 10, y + 10, cellWidth - 20, cellHeight - 48);
-        context.drawImage(image, x + 10, y + 10, cellWidth - 20, cellHeight - 48);
-        context.fillStyle = '#fff';
-        context.font = '700 14px system-ui, sans-serif';
-        context.fillText(clipLabel(clip).slice(0, 34), x + 12, y + cellHeight - 22);
-      }));
-      const blob = await new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob((result) => result ? resolve(result) : reject(new Error('Unable to save contact sheet.')), 'image/png');
-      });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${printerName.replace(/\s+/g, '-')}-contact-sheet-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      await downloadContactSheet(snapshots, printerName);
       setMessage(`Generated contact sheet with ${snapshots.length} snapshot${snapshots.length === 1 ? '' : 's'}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to generate contact sheet.');
@@ -1604,26 +1432,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     if (clipsToExport.length === 0) return;
     setBusy(true);
     try {
-      const entries: Record<string, Uint8Array> = {};
-      await Promise.all(clipsToExport.map(async (clip, index) => {
-        entries[`media/${clipExportName(clip, index)}`] = new Uint8Array(await clip.blob.arrayBuffer());
-      }));
-      entries['manifest.json'] = strToU8(JSON.stringify({
-        exportedAt: new Date().toISOString(),
-        printerId,
-        printerName,
-        clips: clipsToExport.map(clipManifest),
-      }, null, 2));
-      const zipped = zipSync(entries, { level: 6 });
-      const zippedBuffer = zipped.buffer.slice(zipped.byteOffset, zipped.byteOffset + zipped.byteLength) as ArrayBuffer;
-      const url = URL.createObjectURL(new Blob([zippedBuffer], { type: 'application/zip' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${printerName.replace(/\s+/g, '-')}-camera-bundle-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      await downloadClipBundle(clipsToExport, printerId, printerName);
       setMessage(`Exported ${clipsToExport.length} camera item${clipsToExport.length === 1 ? '' : 's'} as a bundle.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to export camera bundle.');
@@ -1634,16 +1443,8 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
 
   const addSelectedClipMarker = useCallback(async () => {
     if (!selectedClip || clipKind(selectedClip) === 'snapshot') return;
-    const marker: CameraMarker = {
-      id: `${Date.now()}`,
-      atMs: Math.max(0, Math.min(selectedClip.durationMs, parseClipDuration(markerDraftTime))),
-      label: markerDraftLabel.trim() || `Marker ${(selectedClip.markers?.length ?? 0) + 1}`,
-    };
-    const updated: CameraClip = {
-      ...selectedClip,
-      markers: [...(selectedClip.markers ?? []), marker].sort((a, b) => a.atMs - b.atMs),
-      editedAt: Date.now(),
-    };
+    const marker = buildClipMarker(selectedClip, markerDraftTime, markerDraftLabel);
+    const updated = buildClipWithMarker(selectedClip, marker);
     setBusy(true);
     try {
       await saveClip(updated);
@@ -1661,11 +1462,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
 
   const removeSelectedClipMarker = useCallback(async (markerId: string) => {
     if (!selectedClip) return;
-    const updated: CameraClip = {
-      ...selectedClip,
-      markers: (selectedClip.markers ?? []).filter((marker) => marker.id !== markerId),
-      editedAt: Date.now(),
-    };
+    const updated = buildClipWithoutMarker(selectedClip, markerId);
     setBusy(true);
     try {
       await saveClip(updated);
@@ -1681,25 +1478,14 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
 
   const saveTrimmedVideoCopy = useCallback(async () => {
     if (!selectedClip || clipKind(selectedClip) === 'snapshot') return;
-    const startMs = Math.max(0, parseClipDuration(trimStart));
-    const endMs = trimEnd.trim() ? parseClipDuration(trimEnd) : selectedClip.durationMs;
-    if (endMs <= startMs) {
+    const result = buildTrimmedVideoCopy(selectedClip, trimStart, trimEnd);
+    if (!result) {
       setMessage('Trim end must be after trim start.');
       return;
     }
-    const updated: CameraClip = {
-      ...selectedClip,
-      id: `${selectedClip.id}-trim-${Date.now()}`,
-      name: `${clipLabel(selectedClip)} trim`,
-      trimStartMs: startMs,
-      trimEndMs: Math.min(endMs, selectedClip.durationMs),
-      durationMs: Math.min(endMs, selectedClip.durationMs) - startMs,
-      tags: Array.from(new Set([...(selectedClip.tags ?? []), 'trimmed'])),
-      editedAt: Date.now(),
-    };
     setBusy(true);
     try {
-      await saveClip(updated);
+      await saveClip(result.clip);
       await refreshClips();
       setMessage('Saved trimmed video reference. Export includes trim metadata for the selected segment.');
     } catch (error) {
@@ -1711,14 +1497,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
 
   const makeTimelapseCopy = useCallback(async () => {
     if (!selectedClip || clipKind(selectedClip) === 'snapshot') return;
-    const updated: CameraClip = {
-      ...selectedClip,
-      id: `${selectedClip.id}-timelapse-${Date.now()}`,
-      name: `${clipLabel(selectedClip)} timelapse`,
-      kind: 'timelapse',
-      tags: Array.from(new Set([...(selectedClip.tags ?? []), 'timelapse'])),
-      editedAt: Date.now(),
-    };
+    const updated = buildTimelapseCopy(selectedClip);
     setBusy(true);
     try {
       await saveClip(updated);
@@ -1745,15 +1524,9 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
 
   const applyBulkTags = useCallback(async () => {
     if (visibleClips.length === 0) return;
-    const tags = bulkTags.split(',').map((tag) => tag.trim()).filter(Boolean);
     setBusy(true);
     try {
-      await Promise.all(visibleClips.map((clip) => saveClip({
-        ...clip,
-        album: bulkAlbum.trim() || clip.album,
-        tags: Array.from(new Set([...(clip.tags ?? []), ...tags])),
-        editedAt: Date.now(),
-      })));
+      await Promise.all(visibleClips.map((clip) => saveClip(buildBulkClipUpdate(clip, bulkTags, bulkAlbum))));
       await refreshClips();
       setMessage('Updated visible camera items.');
     } catch (error) {
