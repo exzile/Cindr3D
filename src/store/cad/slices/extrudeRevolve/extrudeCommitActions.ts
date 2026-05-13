@@ -392,7 +392,7 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
                 probe.geometry.dispose();
               }
             }
-          } catch { /* ignore â€” fall back to single body */ }
+          } catch { /* ignore — fall back to single body */ }
         }
       } else if (effectiveOperation === 'new-component') {
         const componentStore = useComponentStore.getState();
