@@ -89,7 +89,7 @@ export function Scene3D({
   }, [meshCenter]);
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%' }} onPointerLeave={() => setTooltipInfo(null)}>
       <Canvas
         camera={{ position: cameraPosition, fov: 45 }}
         style={{ width: '100%', height: '100%', background: 'transparent' }}

@@ -14,13 +14,14 @@ import { computeStats } from './heightMap/utils';
 import {
   DEMO_HEIGHT_MAP, HM_PREFS_KEY, type HeightMapPrefs, loadHeightMapPrefs,
 } from './heightMap/prefs';
-import { generateBedTiltContent } from './heightMap/bedTilt';
 import { HeightMapSidebar } from './heightMap/sidebar/HeightMapSidebar';
 import { HeightMapTopbar } from './heightMap/HeightMapTopbar';
 import { HeightMapModalsHost } from './heightMap/HeightMapModalsHost';
 import { useHeightMapRunners } from './heightMap/hooks/useHeightMapRunners';
 import { useProbeGridConfig } from './heightMap/hooks/useProbeGridConfig';
 import { useCompareMode } from './heightMap/hooks/useCompareMode';
+import { useCsvFileList } from './heightMap/hooks/useCsvFileList';
+import { useBedTiltSetup } from './heightMap/hooks/useBedTiltSetup';
 
 // Re-export for the printer-panel chrome that imports this from DuetHeightMap.
 export { LevelBedResultsModal } from './heightMap/modals/LevelBedResultsModal';
@@ -48,20 +49,12 @@ export default function DuetHeightMap() {
   const [loading, setLoading]               = useState(false);
   const [loadError, setLoadError]           = useState<string | null>(null);
   const [showProbeModal, setShowProbeModal]   = useState(false);
-  const [showLevelModal, setShowLevelModal]   = useState(false);
-  const [showSetupModal,    setShowSetupModal]    = useState(false);
-  const [bedTiltContent,    setBedTiltContent]    = useState('');
-  const [bedTiltDerived,    setBedTiltDerived]    = useState(false);
-  const [bedTiltNoG30,      setBedTiltNoG30]      = useState(false);
-  const [creatingTiltFile,  setCreatingTiltFile]  = useState(false);
   // Smart Calibration
   const [showSmartCalModal,       setShowSmartCalModal]       = useState(false);
   // Save As modal
   const [showSaveAsModal,         setShowSaveAsModal]         = useState(false);
   const [viewMode, setViewMode]             = useState<'3d' | '2d'>(() => loadHeightMapPrefs().viewMode);
-  const [csvFiles, setCsvFiles]             = useState<string[]>([]);
   const [selectedCsv, setSelectedCsv]      = useState(() => loadHeightMapPrefs().selectedCsv);
-  const [loadingCsvList, setLoadingCsvList] = useState(false);
 
   // Sidebar open/collapsed
   const [sidebarOpen, setSidebarOpen] = useState(() => loadHeightMapPrefs().sidebarOpen);
@@ -78,6 +71,16 @@ export default function DuetHeightMap() {
     loadCompare: handleLoadCompare,
     exitCompare,
   } = useCompareMode({ service, heightMap, setDiverging });
+
+  /* ── CSV file list ── */
+  const { csvFiles, loadingCsvList, refreshCsvList } = useCsvFileList({ service, connected });
+
+  /* ── Bed-tilt setup flow ── */
+  const {
+    showSetupModal, bedTiltContent, bedTiltDerived, bedTiltNoG30, creatingTiltFile,
+    showLevelModal, setShowLevelModal,
+    closeSetup, handleLevelBedOpen, handleCreateBedTilt,
+  } = useBedTiltSetup({ service });
 
   // Probe point display
   const [showProbePoints, setShowProbePoints] = useState(() => loadHeightMapPrefs().showProbePoints);
@@ -136,27 +139,6 @@ export default function DuetHeightMap() {
     } catch { /* storage unavailable — ignore */ }
   }, [viewMode, diverging, mirrorX, sidebarOpen, showProbePoints, probePointScale, selectedCsv,
       probeXMin, probeXMax, probeYMin, probeYMax, probePoints, probeGridUnlocked]);
-
-  /* ── File list ── */
-  const refreshCsvList = useCallback(async () => {
-    if (!service) return;
-    setLoadingCsvList(true);
-    try {
-      const entries = await service.listFiles('0:/sys');
-      setCsvFiles(
-        entries
-          .filter((e) => e.type === 'f' && e.name.toLowerCase().endsWith('.csv'))
-          .map((e) => e.name)
-          .sort(),
-      );
-    } catch {
-      setCsvFiles([]);
-    } finally {
-      setLoadingCsvList(false);
-    }
-  }, [service]);
-
-  useEffect(() => { if (connected) void refreshCsvList(); }, [connected, refreshCsvList]);
 
   /* ── Derived ── */
   const isCompensationEnabled = !!compensationType && compensationType !== 'none';
@@ -270,37 +252,6 @@ export default function DuetHeightMap() {
     void sendGCode('G29 S1');
   }, [isCompensationEnabled, axes, sendGCode]);
 
-  /** Validate prerequisites before opening the Level Bed modal. */
-  const handleLevelBedOpen = useCallback(async () => {
-    if (!service) return;
-    try {
-      await service.getFileInfo('0:/sys/bed_tilt.g');
-      setShowLevelModal(true);
-    } catch {
-      const { content, derived } = await generateBedTiltContent(service);
-      setBedTiltContent(content);
-      setBedTiltDerived(derived);
-      setBedTiltNoG30(false);
-      setShowSetupModal(true);
-    }
-  }, [service]);
-
-  /** Upload bed_tilt.g then open the Level Bed modal. */
-  const handleCreateBedTilt = useCallback(async (content: string) => {
-    if (!service) return;
-    setCreatingTiltFile(true);
-    try {
-      const blob = new Blob([content], { type: 'text/plain' });
-      await service.uploadFile('0:/sys/bed_tilt.g', blob);
-      setShowSetupModal(false);
-      setShowLevelModal(true);
-    } catch (err) {
-      addToast('error', 'Failed to save bed_tilt.g', (err as Error).message, undefined, 12_000);
-    } finally {
-      setCreatingTiltFile(false);
-    }
-  }, [service]);
-
   const handleSaveAs = useCallback((filename: string) => {
     const safe = filename.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
     if (!safe) return;
@@ -331,7 +282,7 @@ export default function DuetHeightMap() {
         bedTiltNoG30={bedTiltNoG30}
         creatingTiltFile={creatingTiltFile}
         onCreateBedTilt={(content) => void handleCreateBedTilt(content)}
-        closeSetup={() => setShowSetupModal(false)}
+        closeSetup={closeSetup}
         probeResult={probeResult}
         closeProbeResult={() => setShowProbeResultModal(false)}
         reopenProbe={() => { setShowProbeResultModal(false); setShowProbeModal(true); }}

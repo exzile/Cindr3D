@@ -86,54 +86,46 @@ export interface HeightMapStats {
   gridDimensions: string;
 }
 
-export function deviationColor(value: number, minVal: number, maxVal: number): string {
+function deviationRGB(value: number, minVal: number, maxVal: number): [number, number, number] {
   const range = Math.max(Math.abs(minVal), Math.abs(maxVal), 0.001);
   const t = Math.max(-1, Math.min(1, value / range));
   if (t < 0) {
     const f = 1 + t;
-    const r = Math.round(34 * f);
-    const g = Math.round(100 * (1 - f) + 197 * f);
-    const b = Math.round(255 * (1 - f) + 94 * f);
-    return `rgb(${r},${g},${b})`;
+    return [Math.round(34 * f), Math.round(100 * (1 - f) + 197 * f), Math.round(255 * (1 - f) + 94 * f)];
   }
   const f = t;
-  const r = Math.round(34 * (1 - f) + 239 * f);
-  const g = Math.round(197 * (1 - f) + 68 * f);
-  const b = Math.round(94 * (1 - f) + 68 * f);
+  return [Math.round(34 * (1 - f) + 239 * f), Math.round(197 * (1 - f) + 68 * f), Math.round(94 * (1 - f) + 68 * f)];
+}
+
+function divergingRGB(value: number, minVal: number, maxVal: number): [number, number, number] {
+  const range = Math.max(Math.abs(minVal), Math.abs(maxVal), 0.001);
+  const t = Math.max(-1, Math.min(1, value / range));
+  if (t < 0) {
+    const f = -t;
+    return [Math.round(255 * (1 - f) + 59 * f), Math.round(255 * (1 - f) + 130 * f), Math.round(255 * (1 - f) + 246 * f)];
+  }
+  const f = t;
+  return [Math.round(255 * (1 - f) + 239 * f), Math.round(255 * (1 - f) + 68 * f), Math.round(255 * (1 - f) + 68 * f)];
+}
+
+export function deviationColor(value: number, minVal: number, maxVal: number): string {
+  const [r, g, b] = deviationRGB(value, minVal, maxVal);
   return `rgb(${r},${g},${b})`;
 }
 
 export function deviationColorThree(value: number, minVal: number, maxVal: number): THREE.Color {
-  const range = Math.max(Math.abs(minVal), Math.abs(maxVal), 0.001);
-  const t = Math.max(-1, Math.min(1, value / range));
-  if (t < 0) {
-    const f = 1 + t;
-    return new THREE.Color((34 * f) / 255, (100 * (1 - f) + 197 * f) / 255, (255 * (1 - f) + 94 * f) / 255);
-  }
-  const f = t;
-  return new THREE.Color((34 * (1 - f) + 239 * f) / 255, (197 * (1 - f) + 68 * f) / 255, (94 * (1 - f) + 68 * f) / 255);
+  const [r, g, b] = deviationRGB(value, minVal, maxVal);
+  return new THREE.Color(r / 255, g / 255, b / 255);
 }
 
 export function divergingColor(value: number, minVal: number, maxVal: number): string {
-  const range = Math.max(Math.abs(minVal), Math.abs(maxVal), 0.001);
-  const t = Math.max(-1, Math.min(1, value / range));
-  if (t < 0) {
-    const f = -t;
-    return `rgb(${Math.round(255 * (1 - f) + 59 * f)},${Math.round(255 * (1 - f) + 130 * f)},${Math.round(255 * (1 - f) + 246 * f)})`;
-  }
-  const f = t;
-  return `rgb(${Math.round(255 * (1 - f) + 239 * f)},${Math.round(255 * (1 - f) + 68 * f)},${Math.round(255 * (1 - f) + 68 * f)})`;
+  const [r, g, b] = divergingRGB(value, minVal, maxVal);
+  return `rgb(${r},${g},${b})`;
 }
 
 export function divergingColorThree(value: number, minVal: number, maxVal: number): THREE.Color {
-  const range = Math.max(Math.abs(minVal), Math.abs(maxVal), 0.001);
-  const t = Math.max(-1, Math.min(1, value / range));
-  if (t < 0) {
-    const f = -t;
-    return new THREE.Color((255 * (1 - f) + 59 * f) / 255, (255 * (1 - f) + 130 * f) / 255, (255 * (1 - f) + 246 * f) / 255);
-  }
-  const f = t;
-  return new THREE.Color((255 * (1 - f) + 239 * f) / 255, (255 * (1 - f) + 68 * f) / 255, (255 * (1 - f) + 68 * f) / 255);
+  const [r, g, b] = divergingRGB(value, minVal, maxVal);
+  return new THREE.Color(r / 255, g / 255, b / 255);
 }
 
 export function computeMeshRmsDiff(a: HeightMapData, b: HeightMapData): number {
@@ -181,7 +173,7 @@ export function computeStats(hm: HeightMapData): HeightMapStats {
       }
     }
   }
-  if (count === 0) return { min: 0, max: 0, mean: 0, rms: 0, probePoints: 0, gridDimensions: `${hm.numX}x${hm.numY}` };
+  if (count === 0) return { min: 0, max: 0, mean: 0, rms: 0, probePoints: 0, gridDimensions: `${hm.numX} x ${hm.numY}` };
   return {
     min,
     max,
