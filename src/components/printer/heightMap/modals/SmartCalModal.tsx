@@ -11,6 +11,7 @@ export function SmartCalModal({
 }) {
   const [homeFirst,       setHomeFirst]       = useState(true);
   const [maxIterations,   setMaxIterations]   = useState(3);
+  const [maxLevelPasses,  setMaxLevelPasses]  = useState(2);
   const [targetMean,      setTargetMean]      = useState(0.15);
   const [targetDeviation, setTargetDeviation] = useState(0.05);
   const [probesPerPoint,  setProbesPerPoint]  = useState(1);
@@ -18,13 +19,14 @@ export function SmartCalModal({
   const [activePreset,    setActivePreset]    = useState<SmartCalPreset>('balanced');
 
   const handleConfirm = useCallback(() => onConfirm({
-    homeFirst, maxIterations, targetMean, targetDeviation, probesPerPoint, probeTolerance,
-  }), [homeFirst, maxIterations, targetMean, targetDeviation, probesPerPoint, probeTolerance, onConfirm]);
+    homeFirst, maxIterations, maxLevelPasses, targetMean, targetDeviation, probesPerPoint, probeTolerance,
+  }), [homeFirst, maxIterations, maxLevelPasses, targetMean, targetDeviation, probesPerPoint, probeTolerance, onConfirm]);
 
   const setPreset = (preset: Exclude<SmartCalPreset, 'custom'>) => {
     setActivePreset(preset);
     if (preset === 'quick') {
       setMaxIterations(2);
+      setMaxLevelPasses(1);
       setTargetMean(0.2);
       setTargetDeviation(0.08);
       setProbesPerPoint(1);
@@ -33,13 +35,16 @@ export function SmartCalModal({
     }
     if (preset === 'precise') {
       setMaxIterations(5);
+      setMaxLevelPasses(3);
       setTargetMean(0.08);
       setTargetDeviation(0.03);
       setProbesPerPoint(3);
       setProbeTolerance(0.03);
       return;
     }
+    // balanced
     setMaxIterations(3);
+    setMaxLevelPasses(2);
     setTargetMean(0.15);
     setTargetDeviation(0.05);
     setProbesPerPoint(1);
@@ -145,6 +150,10 @@ export function SmartCalModal({
               <Repeat2 size={14} />
               <span>Loop Limit</span>
             </div>
+
+            <label className="hm-smartcal-iter-label" title="Maximum total probe-and-diagnose iterations">
+              Max iterations
+            </label>
             <div className="hm-smartcal-iter-row">
               {[1, 2, 3, 4, 5].map((n) => (
                 <button
@@ -152,10 +161,26 @@ export function SmartCalModal({
                   key={n}
                   className={`hm-smartcal-iter-btn${maxIterations === n ? ' is-on' : ''}`}
                   onClick={() => { setActivePreset('custom'); setMaxIterations(n); }}
-                  title={`${n} maximum ${n === 1 ? 'pass' : 'passes'}`}
+                  title={`${n} maximum ${n === 1 ? 'iteration' : 'iterations'}`}
                 >{n}</button>
               ))}
             </div>
+
+            <label className="hm-smartcal-iter-label" title="Hard cap on how many bed-leveling passes can run in one session">
+              Max level passes
+            </label>
+            <div className="hm-smartcal-iter-row">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  type="button"
+                  key={n}
+                  className={`hm-smartcal-iter-btn${maxLevelPasses === n ? ' is-on' : ''}`}
+                  onClick={() => { setActivePreset('custom'); setMaxLevelPasses(n); }}
+                  title={`Cap leveling at ${n} ${n === 1 ? 'pass' : 'passes'}`}
+                >{n}</button>
+              ))}
+            </div>
+
             <span className="hm-smartcal-card-note">Stops early when targets are met.</span>
           </div>
 

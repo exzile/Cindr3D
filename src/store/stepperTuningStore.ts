@@ -22,6 +22,9 @@ interface StepperTuningStore {
   presets: Record<string, StepperPreset[]>;
   getAxisTuning: (printerId: string | null | undefined, axis: string, fallbackDriverIndex?: number) => StepperAxisTuning;
   updateAxisTuning: (printerId: string, axis: string, patch: Partial<StepperAxisTuning>) => void;
+  /** Seed axes from parsed config.g data. Only writes axes that have NO stored
+   *  entry yet for this printer — existing user edits are never overwritten. */
+  seedAxisTuning: (printerId: string, parsed: Record<string, Partial<StepperAxisTuning>>) => void;
   savePreset: (printerId: string, name: string) => void;
   applyPreset: (printerId: string, presetId: string) => void;
   removePreset: (printerId: string, presetId: string) => void;
@@ -67,6 +70,27 @@ export const useStepperTuningStore = create<StepperTuningStore>()(
       getAxisTuning: (printerId, axis, fallbackDriverIndex = 0) => {
         if (!printerId) return cleanAxisTuning({ driverIndex: fallbackDriverIndex }, fallbackDriverIndex);
         return cleanAxisTuning(get().printers[printerId]?.[axis.toUpperCase()] ?? { driverIndex: fallbackDriverIndex }, fallbackDriverIndex);
+      },
+
+      seedAxisTuning: (printerId, parsed) => {
+        set((state) => {
+          const existing = state.printers[printerId] ?? {};
+          const additions: Record<string, StepperAxisTuning> = {};
+          for (const [rawKey, partial] of Object.entries(parsed)) {
+            const key = rawKey.toUpperCase();
+            // Only seed axes that have no persisted entry yet
+            if (existing[key]) continue;
+            const fallback = partial.driverIndex ?? 0;
+            additions[key] = cleanAxisTuning(partial, fallback);
+          }
+          if (Object.keys(additions).length === 0) return state;
+          return {
+            printers: {
+              ...state.printers,
+              [printerId]: { ...existing, ...additions },
+            },
+          };
+        });
       },
 
       updateAxisTuning: (printerId, axis, patch) => {

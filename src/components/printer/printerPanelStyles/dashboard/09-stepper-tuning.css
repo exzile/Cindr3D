@@ -1,156 +1,540 @@
+/* =================================================================
+   Stepper Tuning panel  (st-* namespace)
+   Two named containers:
+     st-panel  — the outer flex column (controls outer grid & preset bar)
+     st-axis   — each individual motor card (cqw drives fluid sizing)
+   ================================================================= */
+
+/* ── outer panel ── */
 .st-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  container-type: inline-size;
+  container-name: st-panel;
 }
 
 .st-empty {
-  padding: 14px;
-  border: 1px dashed color-mix(in srgb, #f59e0b 24%, var(--border-light));
+  padding: 16px;
+  border: 1px dashed var(--border-light);
   border-radius: 8px;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   font-size: 12px;
   text-align: center;
 }
 
-.st-toolbar,
-.st-presets,
-.st-preset-row,
-.st-actions {
+/* ── section divider ── */
+.st-section-label {
   display: flex;
   align-items: center;
-  gap: 7px;
-  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  user-select: none;
+  margin-top: 2px;
 }
 
-.st-toolbar {
-  justify-content: space-between;
+.st-section-label::before,
+.st-section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-light);
 }
 
-.st-title {
-  display: inline-flex;
+/* ── preset bar ── */
+.st-preset-bar {
+  display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
-.st-presets input,
-.st-axis input,
-.st-axis select {
+.st-name-input {
+  flex: 1;
   min-width: 0;
-  height: 27px;
-  padding: 0 7px;
-  border: 1px solid color-mix(in srgb, #f59e0b 22%, var(--border-light));
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg-input);
   color: var(--text-primary);
   font: inherit;
   font-size: 11px;
+  outline: none;
+  transition: border-color 0.15s;
 }
 
-.st-presets input {
-  width: 110px;
+.st-name-input:focus           { border-color: var(--accent); }
+.st-name-input::placeholder    { color: var(--text-muted); font-style: italic; }
+
+.st-save-wrap {
+  position: relative;
+  flex-shrink: 0;
 }
 
-.st-presets button,
-.st-preset button,
-.st-actions button {
+/* Invisible full-screen backdrop — closes the menu on outside click */
+.st-save-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+.st-save-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 5px;
-  min-height: 27px;
-  padding: 0 9px;
-  border: 1px solid color-mix(in srgb, #f59e0b 32%, var(--border-light));
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
   border-radius: 6px;
-  background: color-mix(in srgb, #f59e0b 10%, var(--bg-elevated));
-  color: var(--text-primary);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
   font: inherit;
   font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
   cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
-.st-actions button:disabled {
-  cursor: default;
-  opacity: 0.45;
+.st-save-btn:hover,
+.st-save-btn.is-open {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── Save options dropdown ── */
+.st-save-menu {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0;
+  z-index: 100;
+  width: 250px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.14);
+  overflow: hidden;
+  padding: 4px;
+}
+
+.st-save-menu__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.st-save-menu__item:hover { background: var(--bg-hover); }
+
+.st-save-menu__item svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.st-save-menu__item span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.st-save-menu__item strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.st-save-menu__item em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* ── preset chips ── */
+.st-preset-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
 }
 
 .st-preset {
   display: inline-flex;
-  align-items: center;
-  border: 1px solid color-mix(in srgb, #f59e0b 24%, var(--border-light));
-  border-radius: 7px;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
   overflow: hidden;
 }
 
 .st-preset button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 9px;
   border: 0;
-  border-radius: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
 }
 
+.st-preset button:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+.st-preset button + button {
+  border-left: 1px solid var(--border-light);
+  color: var(--text-muted);
+  padding: 0 7px;
+}
+
+/* ════════════════════════════════════════════════════════
+   Per-axis color tokens — set on .st-axis via data-attrs.
+   Default: purple (unknown axis)
+   ════════════════════════════════════════════════════════ */
+.st-axis            { --ax: #8b5cf6; --ax-dim: rgba(139,  92, 246, 0.10); }
+.st-axis[data-axis="X"] { --ax: #ef4444; --ax-dim: rgba(239,  68,  68, 0.10); }
+.st-axis[data-axis="Y"] { --ax: #22c55e; --ax-dim: rgba( 34, 197,  94, 0.10); }
+.st-axis[data-axis="Z"] { --ax: #3b82f6; --ax-dim: rgba( 59, 130, 246, 0.10); }
+.st-axis[data-axis="E"] { --ax: #f59e0b; --ax-dim: rgba(245, 158,  11, 0.10); }
+/* extruder motors (E0, E1 …) — higher specificity */
+.st-axis[data-kind="extruder"] { --ax: #f97316; --ax-dim: rgba(249, 115,  22, 0.10); }
+
+/* ── axis card grid — auto-fill: 1 → 2 → 3 cols based on available width ── */
 .st-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 8px;
 }
 
+/* ════════════════════════════════════════════════════════
+   Individual axis / extruder card
+   container-name: st-axis  so children can use cqw for
+   fluid sizing relative to THIS card's width.
+   ════════════════════════════════════════════════════════ */
 .st-axis {
+  /* card container — children use cqw relative to this */
+  container-type: inline-size;
+  container-name: st-axis;
+
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  padding: 9px;
-  border: 1px solid color-mix(in srgb, #f59e0b 20%, var(--border-light));
-  border-radius: 8px;
+
+  /* fluid card padding & gap based on the PANEL width (cqw → st-panel) */
+  padding: clamp(7px, 2.5cqw, 11px);
+  gap: clamp(4px, 1.4cqw, 7px);
+
+  border: 1px solid color-mix(in srgb, var(--ax) 24%, var(--border-light));
+  border-radius: 10px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, #f59e0b 7%, transparent), transparent 62%),
+    linear-gradient(140deg, var(--ax-dim) 0%, transparent 55%),
     var(--bg-panel);
+  position: relative;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.st-axis__head,
-.st-actions {
-  grid-column: 1 / -1;
+.st-axis:hover {
+  border-color: color-mix(in srgb, var(--ax) 42%, var(--border-light));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ax) 10%, transparent);
 }
 
+/* left accent bar */
+.st-axis::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  border-radius: 10px 0 0 10px;
+  background: linear-gradient(to bottom, var(--ax), color-mix(in srgb, var(--ax) 30%, transparent));
+}
+
+/* ── head row ─────────────────────────────────── */
 .st-axis__head {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: clamp(6px, 2.5cqw, 10px);
+  padding-bottom: clamp(5px, 2cqw, 8px);
+  border-bottom: 1px solid color-mix(in srgb, var(--ax) 14%, var(--border-light));
+  margin-bottom: 2px;
 }
 
-.st-axis__head strong {
-  color: #fbbf24;
-  font-size: 15px;
+/* axis letter badge — fluid size driven by card width (cqw → st-axis) */
+.st-axis__badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: clamp(28px, 10cqw, 36px);
+  height: clamp(28px, 10cqw, 36px);
+  padding: 0 4px;
+  border-radius: clamp(6px, 2.5cqw, 9px);
+  background: color-mix(in srgb, var(--ax) 14%, var(--bg-elevated));
+  border: 1px solid color-mix(in srgb, var(--ax) 36%, var(--border-light));
+  color: var(--ax);
+  font-size: clamp(11px, 4.2cqw, 14px);
+  font-weight: 800;
+  font-family: monospace;
+  letter-spacing: -0.02em;
+  flex-shrink: 0;
+  box-shadow:
+    0 0 8px color-mix(in srgb, var(--ax) 16%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--ax) 18%, rgba(255,255,255,0.06));
 }
 
-.st-axis__head span,
-.st-axis label span {
-  color: var(--text-muted);
+/* driver index area */
+.st-axis__meta {
+  display: flex;
+  align-items: center;
+  gap: clamp(4px, 1.8cqw, 6px);
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.st-drv-label {
   font-size: 9px;
-  font-weight: 750;
-  letter-spacing: 0.04em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
-.st-axis label {
+.st-driver-input {
+  width: clamp(38px, 14cqw, 46px);
+  height: clamp(20px, 7.5cqw, 24px);
+  padding: 0 5px;
+  border: 1px solid var(--border-light);
+  border-radius: 5px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: clamp(10px, 3.5cqw, 11px);
+  font-family: monospace;
+  outline: none;
+  -moz-appearance: textfield;
+  transition: border-color 0.12s;
+}
+
+.st-driver-input::-webkit-outer-spin-button,
+.st-driver-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.st-driver-input:focus { border-color: color-mix(in srgb, var(--ax) 55%, var(--border)); }
+
+/* filament pill — extruder cards only */
+.st-filament-tag {
+  display: inline-flex;
+  align-items: center;
+  height: clamp(16px, 6cqw, 20px);
+  padding: 0 clamp(5px, 2cqw, 8px);
+  border-radius: 10px;
+  background: var(--ax-dim);
+  border: 1px solid color-mix(in srgb, var(--ax) 30%, var(--border-light));
+  color: var(--ax);
+  font-size: clamp(8px, 3cqw, 9px);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: clamp(40px, 20cqw, 80px);
+}
+
+/* ── field rows ─────────────────────────────────── */
+.st-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: clamp(3px, 1.2cqw, 4px);
   min-width: 0;
 }
 
-.st-axis input,
-.st-axis select {
-  width: 100%;
+.st-field > span {
+  font-size: clamp(8px, 3cqw, 9px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-@media (max-width: 860px) {
-  .st-grid {
-    grid-template-columns: 1fr;
-  }
+.st-field > span em {
+  font-style: normal;
+  font-weight: 500;
+  font-size: 8px;
+  opacity: 0.65;
+}
+
+.st-field input,
+.st-field select {
+  min-width: 0;
+  width: 100%;
+  height: clamp(24px, 9cqw, 28px);
+  padding: 0 clamp(5px, 2cqw, 8px);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: clamp(10px, 3.8cqw, 11px);
+  font-family: monospace;
+  outline: none;
+  box-sizing: border-box;
+  -moz-appearance: textfield;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.st-field input::-webkit-outer-spin-button,
+.st-field input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+.st-field input:focus,
+.st-field select:focus {
+  border-color: color-mix(in srgb, var(--ax) 55%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ax) 12%, transparent);
+}
+
+.st-field.is-locked { opacity: 0.48; }
+
+.st-field--full { grid-column: 1 / -1; }
+
+/* ── mode pills ─────────────────────────────────── */
+.st-mode-row { display: flex; gap: clamp(3px, 1.5cqw, 5px); }
+
+.st-mode-pill {
+  flex: 1;
+  min-width: 0;
+  height: clamp(22px, 8.5cqw, 26px);
+  border-radius: 6px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: clamp(8px, 3.2cqw, 10px);
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s;
+}
+
+.st-mode-pill:not(.is-active):hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+.st-mode-pill--stealthchop.is-active {
+  background: rgba(34, 197, 94, 0.13);
+  border-color: rgba(34, 197, 94, 0.5);
+  color: #4ade80;
+  box-shadow: 0 0 7px rgba(34, 197, 94, 0.14);
+}
+
+.st-mode-pill--spreadcycle.is-active {
+  background: rgba(251, 146, 60, 0.13);
+  border-color: rgba(251, 146, 60, 0.5);
+  color: #fb923c;
+  box-shadow: 0 0 7px rgba(251, 146, 60, 0.14);
+}
+
+/* ── action buttons ─────────────────────────────── */
+.st-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: clamp(4px, 1.8cqw, 6px);
+  padding-top: clamp(5px, 2cqw, 8px);
+  margin-top: 2px;
+  border-top: 1px solid color-mix(in srgb, var(--ax) 12%, var(--border-light));
+}
+
+.st-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(3px, 1.5cqw, 5px);
+  height: clamp(24px, 9cqw, 30px);
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: clamp(10px, 3.5cqw, 11px);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, opacity 0.12s, transform 0.08s;
+}
+
+.st-btn:not(:disabled):active { transform: scale(0.96); }
+.st-btn:disabled { opacity: 0.28; cursor: not-allowed; }
+
+.st-btn--apply {
+  background: rgba(86, 201, 138, 0.12);
+  border-color: rgba(86, 201, 138, 0.35);
+  color: #22c55e;
+}
+.st-btn--apply:not(:disabled):hover {
+  background: rgba(86, 201, 138, 0.22);
+  border-color: rgba(86, 201, 138, 0.6);
+  color: #4ade80;
+}
+
+.st-btn--wiggle {
+  background: rgba(100, 160, 255, 0.10);
+  border-color: rgba(100, 160, 255, 0.28);
+  color: #60a5fa;
+}
+.st-btn--wiggle:not(:disabled):hover {
+  background: rgba(100, 160, 255, 0.18);
+  border-color: rgba(100, 160, 255, 0.50);
+  color: #93c5fd;
+}
+
+/* ════════════════════════════════════════════════════════
+   Layout breakpoints — named containers for precision
+   ════════════════════════════════════════════════════════ */
+
+/* Preset bar: stack at very narrow panel */
+@container st-panel (max-width: 280px) {
+  .st-preset-bar { flex-direction: column; align-items: stretch; }
+  .st-save-btn   { justify-content: center; }
+  .st-panel      { gap: 7px; }
+}
+
+/* Axis card internal grid: collapse to 1 col when the card itself is narrow.
+   Fires at ≤220px card width — happens in 3-col layout or very narrow 2-col. */
+@container st-axis (max-width: 220px) {
+  .st-axis { grid-template-columns: 1fr; }
+  .st-field--full { grid-column: 1; }
+}
+
+/* Ultra-compact: very narrow card — drop decorative / secondary elements */
+@container st-axis (max-width: 155px) {
+  .st-drv-label    { display: none; }
+  .st-filament-tag { display: none; }
+
+  /* mode pills: stack */
+  .st-mode-row     { flex-direction: column; }
+
+  /* button icons — drop so text fits */
+  .st-btn svg      { display: none; }
+  .st-btn          { gap: 0; }
 }

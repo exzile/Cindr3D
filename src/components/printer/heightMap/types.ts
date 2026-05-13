@@ -21,6 +21,8 @@ export const Z_DATUM_SUGGEST_THRESHOLD = 0.3;
 export interface SmartCalOpts {
   homeFirst: boolean;
   maxIterations: number;
+  /** Hard cap on how many leveling passes may run in one Smart Cal session. Default 2. */
+  maxLevelPasses: number;
   /** Adjust Z datum when |mean| >= this (mm). Default 0.15. */
   targetMean: number;
   /** Re-level when RMS >= this (mm). Default 0.05. */

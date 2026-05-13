@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Droplets, ArrowDown, ArrowUp } from 'lucide-react';
+import { Droplets, ArrowDown, ArrowUp, Thermometer } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import { DashboardPanel } from './DashboardPanel';
 
-const AMOUNTS = [1, 5, 10, 25, 50, 100];
+const AMOUNTS   = [1, 5, 10, 25, 50, 100];
+const FEEDRATES = [300, 600, 1200, 2400];
 
 export default function ExtruderControlPanel() {
   const model         = usePrinterStore((s) => s.model);
@@ -14,38 +15,57 @@ export default function ExtruderControlPanel() {
   const extrudeFeedrate = usePrinterStore((s) => s.extrudeFeedrate);
 
   const tools       = model.tools ?? [];
+  const heaters     = model.heat?.heaters ?? [];
   const currentTool = model.state?.currentTool ?? -1;
 
   const [amount, setAmount]             = useState(extrudeAmount);
   const [feedrate, setFeedrate]         = useState(extrudeFeedrate);
   const [selectedTool, setSelectedTool] = useState(currentTool);
-  const [custom, setCustom]             = useState('');
+  const [customAmt, setCustomAmt]       = useState('');
+  const [customFeed, setCustomFeed]     = useState('');
 
-  const activeAmount = custom !== '' ? Number(custom) : amount;
+  const activeAmount   = customAmt  !== '' ? Number(customAmt)  : amount;
+  const activeFeedrate = customFeed !== '' ? Number(customFeed) : feedrate;
 
   const handleExtrude = (dir: number) => {
     if (selectedTool >= 0 && selectedTool !== currentTool) sendGCode(`T${selectedTool}`);
-    extrudeAction(activeAmount * dir, feedrate);
+    extrudeAction(activeAmount * dir, activeFeedrate);
   };
 
-  return (
-    <DashboardPanel icon={Droplets} title="Extruder">
+  // Temperature readout for selected tool
+  const toolObj    = tools.find((t) => t.number === selectedTool);
+  const heaterIdx  = toolObj?.heaters?.[0];
+  const heaterData = heaterIdx !== undefined ? heaters[heaterIdx] : undefined;
 
-      {/* Tool selector (only when multiple tools exist) */}
+  return (
+    <DashboardPanel icon={Droplets} title="Extruder" className="ex-panel">
+
+      {/* Tool selector */}
       {tools.length > 1 && (
         <div className="ex-card ex-card--tool">
           <div className="ex-label">Tool</div>
-          <select
-            className="ex-select"
-            value={selectedTool}
-            onChange={(e) => setSelectedTool(Number(e.target.value))}
-          >
-            {tools.map((t) => (
-              <option key={t.number} value={t.number}>
-                {t.name || `Tool ${t.number}`}
-              </option>
-            ))}
-          </select>
+          <div className="ex-tool-row">
+            <select
+              className="ex-select"
+              value={selectedTool}
+              onChange={(e) => setSelectedTool(Number(e.target.value))}
+            >
+              {tools.map((t) => (
+                <option key={t.number} value={t.number}>
+                  {t.name || `Tool ${t.number}`}
+                </option>
+              ))}
+            </select>
+            {heaterData !== undefined && (
+              <div className="ex-temp-badge">
+                <Thermometer size={11} />
+                <span className="ex-temp-current">{heaterData.current.toFixed(1)}°</span>
+                {heaterData.active > 0 && (
+                  <span className="ex-temp-target">/ {heaterData.active.toFixed(0)}°</span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -56,8 +76,8 @@ export default function ExtruderControlPanel() {
           {AMOUNTS.map((a) => (
             <button
               key={a}
-              className={`ex-pill${a === amount && custom === '' ? ' is-active' : ''}`}
-              onClick={() => { setAmount(a); setCustom(''); }}
+              className={`ex-pill${a === amount && customAmt === '' ? ' is-active' : ''}`}
+              onClick={() => { setAmount(a); setCustomAmt(''); }}
             >
               {a}
             </button>
@@ -67,10 +87,10 @@ export default function ExtruderControlPanel() {
           <span className="ex-sublabel">Custom</span>
           <input
             type="number"
-            className={`ex-input${custom !== '' ? ' is-active' : ''}`}
-            value={custom}
+            className={`ex-input${customAmt !== '' ? ' is-active' : ''}`}
+            value={customAmt}
             placeholder={String(amount)}
-            onChange={(e) => setCustom(e.target.value)}
+            onChange={(e) => setCustomAmt(e.target.value)}
             min={0.1}
             step={0.1}
           />
@@ -78,37 +98,63 @@ export default function ExtruderControlPanel() {
         </div>
       </div>
 
-      {/* Feedrate */}
+      {/* Feedrate presets + custom */}
       <div className="ex-card ex-card--feed">
         <div className="ex-label">Feedrate &mdash; mm/min</div>
-        <input
-          type="number"
-          className="ex-input ex-input--full"
-          value={feedrate}
-          onChange={(e) => setFeedrate(Number(e.target.value))}
-          min={1}
-        />
+        <div className="ex-pill-row ex-pill-row--feed">
+          {FEEDRATES.map((f) => (
+            <button
+              key={f}
+              className={`ex-pill ex-pill--feed${f === feedrate && customFeed === '' ? ' is-active' : ''}`}
+              onClick={() => { setFeedrate(f); setCustomFeed(''); }}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+        <div className="ex-custom-row">
+          <span className="ex-sublabel">Custom</span>
+          <input
+            type="number"
+            className={`ex-input ex-input--feed${customFeed !== '' ? ' is-active' : ''}`}
+            value={customFeed}
+            placeholder={String(feedrate)}
+            onChange={(e) => setCustomFeed(e.target.value)}
+            min={1}
+            step={10}
+          />
+          <span className="ex-unit">mm/min</span>
+        </div>
+      </div>
+
+      {/* Live summary */}
+      <div className="ex-summary">
+        <span className="ex-summary__val">
+          {activeAmount}<span className="ex-summary__unit">mm</span>
+        </span>
+        <span className="ex-summary__sep">@</span>
+        <span className="ex-summary__val">
+          {activeFeedrate}<span className="ex-summary__unit">mm/min</span>
+        </span>
       </div>
 
       {/* Action buttons */}
       <div className="ex-actions">
         <button
-          className="ex-action-btn ex-action-btn--extrude"
-          disabled={!connected}
-          onClick={() => handleExtrude(1)}
-        >
-          <ArrowDown size={16} />
-          <span>Extrude</span>
-          <span className="ex-action-amt">{activeAmount} mm</span>
-        </button>
-        <button
           className="ex-action-btn ex-action-btn--retract"
           disabled={!connected}
           onClick={() => handleExtrude(-1)}
         >
-          <ArrowUp size={16} />
+          <ArrowUp size={15} />
           <span>Retract</span>
-          <span className="ex-action-amt">{activeAmount} mm</span>
+        </button>
+        <button
+          className="ex-action-btn ex-action-btn--extrude"
+          disabled={!connected}
+          onClick={() => handleExtrude(1)}
+        >
+          <ArrowDown size={15} />
+          <span>Extrude</span>
         </button>
       </div>
 

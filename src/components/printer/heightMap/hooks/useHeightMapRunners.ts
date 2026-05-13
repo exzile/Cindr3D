@@ -231,6 +231,7 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
     let finalStats: HeightMapStats | null = null;
     let stopReason: SmartCalResult['stopReason'] = 'maxIterations';
     let shouldLevel = true;
+    let levelPassCount = 0;
 
     // Snapshot current M558 so we restore the user's baseline in `finally` —
     // survives any throw mid-sequence.
@@ -240,10 +241,14 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
     const m558Modified = opts.probesPerPoint > 1;
 
     try {
+      console.log('[SmartCal] Starting — opts:', opts);
+
       if (opts.homeFirst) {
         if (mountedRef.current) setSmartCalPhase('homing');
+        console.log('[SmartCal] Homing all axes…');
         await sendGCode('G28');
         steps.push({ kind: 'info', label: 'Homed all axes', quality: 'info' });
+        console.log('[SmartCal] Homing complete.');
       }
 
       if (m558Modified) {
@@ -251,26 +256,43 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
       }
 
       for (let i = 0; i < opts.maxIterations; i++) {
+        console.log(`[SmartCal] ── Iteration ${i + 1} / ${opts.maxIterations} ──`);
+
         /* ── Level ── */
         if (shouldLevel) {
-          if (mountedRef.current) setSmartCalPhase('leveling');
-          try {
-            await levelBed({ homeFirst: false });
-            steps.push({ kind: 'level', label: `Bed leveled (iteration ${i + 1})`, quality: 'good' });
-          } catch (err) {
-            steps.push({ kind: 'level', label: 'Leveling failed', detail: (err as Error).message, quality: 'bad' });
-            stopReason = 'failed';
-            break;
+          if (levelPassCount >= opts.maxLevelPasses) {
+            console.log(`[SmartCal] Level pass skipped — reached max level passes (${opts.maxLevelPasses}).`);
+            steps.push({
+              kind:    'decision',
+              label:   `Level pass skipped — max level passes (${opts.maxLevelPasses}) reached`,
+              quality: 'warn',
+            });
+          } else {
+            levelPassCount++;
+            console.log(`[SmartCal] Leveling bed (level pass ${levelPassCount} / ${opts.maxLevelPasses})…`);
+            if (mountedRef.current) setSmartCalPhase('leveling');
+            try {
+              await levelBed({ homeFirst: false });
+              steps.push({ kind: 'level', label: `Bed leveled (iteration ${i + 1}, level pass ${levelPassCount})`, quality: 'good' });
+              console.log('[SmartCal] Leveling complete.');
+            } catch (err) {
+              console.warn('[SmartCal] Leveling failed:', err);
+              steps.push({ kind: 'level', label: 'Leveling failed', detail: (err as Error).message, quality: 'bad' });
+              stopReason = 'failed';
+              break;
+            }
           }
           shouldLevel = false;
         }
 
         /* ── Probe ── */
+        console.log(`[SmartCal] Probing mesh (iteration ${i + 1})…`);
         if (mountedRef.current) setSmartCalPhase('probing');
         try {
           await sendGCode(m557Command);
           await probeGrid();
         } catch (err) {
+          console.warn('[SmartCal] Probe failed:', err);
           steps.push({ kind: 'probe', label: `Probe failed (iteration ${i + 1})`, detail: (err as Error).message, quality: 'bad' });
           stopReason = 'failed';
           break;
@@ -279,6 +301,7 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
         /* ── Analyse ── */
         const currentMap = usePrinterStore.getState().heightMap;
         if (!currentMap) {
+          console.warn('[SmartCal] No height map data after probe.');
           steps.push({ kind: 'probe', label: 'No probe data returned', quality: 'bad' });
           stopReason = 'failed';
           break;
@@ -287,6 +310,13 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
         finalStats = s;
         const meanBad = Math.abs(s.mean) >= opts.targetMean;
         const devBad  = s.rms             >= opts.targetDeviation;
+
+        console.log(
+          `[SmartCal] Iteration ${i + 1} results — RMS: ${s.rms.toFixed(4)} mm (target <${opts.targetDeviation}),` +
+          ` mean: ${s.mean >= 0 ? '+' : ''}${s.mean.toFixed(3)} mm (target <±${opts.targetMean})` +
+          ` | meanBad=${meanBad}, devBad=${devBad}`,
+        );
+
         steps.push({
           kind:    'probe',
           label:   `Probed (iteration ${i + 1}) — RMS ${s.rms.toFixed(4)} mm · mean ${s.mean >= 0 ? '+' : ''}${s.mean.toFixed(3)} mm`,
@@ -294,6 +324,7 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
         });
 
         if (!meanBad && !devBad) {
+          console.log('[SmartCal] Converged — all targets met.');
           steps.push({ kind: 'done', label: 'Bed calibrated — within all targets ✓', quality: 'good' });
           stopReason = 'converged';
           break;
@@ -301,6 +332,7 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
 
         /* ── Z datum recalibration ── */
         if (meanBad) {
+          console.log(`[SmartCal] Mean offset ${s.mean.toFixed(3)} mm exceeds ±${opts.targetMean} mm — recalibrating Z datum…`);
           if (mountedRef.current) setSmartCalPhase('datum');
           const cx = ((probeXMin + probeXMax) / 2).toFixed(1);
           const cy = ((probeYMin + probeYMax) / 2).toFixed(1);
@@ -312,6 +344,7 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
               await sendGCode(`G1 X${cx} Y${cy} F6000`);
               await sendGCode('G30 S-1');
             }
+            console.log(`[SmartCal] Z datum recalibrated at centre (${cx}, ${cy}).`);
             steps.push({
               kind:   'datum',
               label:  `Z datum recalibrated at centre (${cx}, ${cy})`,
@@ -319,28 +352,43 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
               quality: 'info',
             });
           } catch (err) {
+            console.warn('[SmartCal] Z datum calibration failed:', err);
             steps.push({ kind: 'datum', label: 'Z datum calibration failed', detail: (err as Error).message, quality: 'bad' });
           }
         }
 
         /* ── Re-level decision ── */
         if (devBad) {
-          steps.push({
-            kind:   'decision',
-            label:  `RMS ${s.rms.toFixed(4)} mm exceeds target ${opts.targetDeviation.toFixed(2)} mm — will re-level`,
-            quality: 'warn',
-          });
-          shouldLevel = true;
+          if (levelPassCount < opts.maxLevelPasses) {
+            console.log(`[SmartCal] RMS ${s.rms.toFixed(4)} mm exceeds target ${opts.targetDeviation.toFixed(2)} mm — scheduling re-level.`);
+            steps.push({
+              kind:   'decision',
+              label:  `RMS ${s.rms.toFixed(4)} mm exceeds target ${opts.targetDeviation.toFixed(2)} mm — will re-level`,
+              quality: 'warn',
+            });
+            shouldLevel = true;
+          } else {
+            console.log(`[SmartCal] RMS still high but max level passes (${opts.maxLevelPasses}) reached — continuing without re-level.`);
+            steps.push({
+              kind:   'decision',
+              label:  `RMS ${s.rms.toFixed(4)} mm still high — max level passes reached, skipping re-level`,
+              quality: 'warn',
+            });
+          }
         }
 
         if (i === opts.maxIterations - 1) {
+          console.log(`[SmartCal] Max iterations (${opts.maxIterations}) reached.`);
           steps.push({ kind: 'done', label: `Max iterations (${opts.maxIterations}) reached`, quality: 'warn' });
         }
       }
     } catch (err) {
+      console.error('[SmartCal] Unhandled error:', err);
       steps.push({ kind: 'done', label: `Smart Cal error: ${(err as Error).message}`, quality: 'bad' });
       stopReason = 'failed';
     } finally {
+      console.log(`[SmartCal] Done — stopReason: ${stopReason}, levelPasses: ${levelPassCount}, steps: ${steps.length}`);
+
       // Restore M558 even when the closed loop bailed mid-iteration.
       if (m558Modified) {
         try { await sendGCode(`M558 A${prevProbeA} S${prevProbeS}`); } catch { /* best-effort cleanup */ }

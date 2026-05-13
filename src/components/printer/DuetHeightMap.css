@@ -1753,10 +1753,22 @@
   border-top: 1px solid var(--border);
 }
 
+.hm-smartcal-iter-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 8px 0 4px;
+  cursor: default;
+}
+
 .hm-smartcal-iter-row {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
+  margin-bottom: 4px;
 }
 .hm-smartcal-iter-btn {
   width: 28px; height: 28px;
