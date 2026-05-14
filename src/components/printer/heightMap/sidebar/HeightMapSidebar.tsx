@@ -7,7 +7,6 @@
  * own without bloating the host file.
  */
 
-import type { MutableRefObject } from 'react';
 import type { HeightMapStats } from '../utils';
 import type { DuetHeightMap as HeightMapData } from '../../../../types/duet';
 import { ActionsSection } from './ActionsSection';
@@ -16,7 +15,6 @@ import { ProbeGridSection } from './ProbeGridSection';
 import { DisplayControlsSection } from './DisplayControlsSection';
 import { FilesSection } from './FilesSection';
 
-interface ConfigGrid { xMin: number; xMax: number; yMin: number; yMax: number; numPoints: number }
 interface SafeBounds { xMin: number; xMax: number | null; yMin: number; yMax: number | null }
 
 export function HeightMapSidebar(props: {
@@ -53,7 +51,6 @@ export function HeightMapSidebar(props: {
   configM557Line: string | null;
   probeGridUnlocked: boolean;
   setProbeGridUnlocked: (next: boolean | ((v: boolean) => boolean)) => void;
-  configGridRef: MutableRefObject<ConfigGrid | null>;
   probeGridLocked: boolean;
   probeXMin: number; probeXMax: number; probeYMin: number; probeYMax: number; probePoints: number;
   setProbeXMin: (n: number) => void;
@@ -119,7 +116,6 @@ export function HeightMapSidebar(props: {
         configM557Line={props.configM557Line}
         probeGridUnlocked={props.probeGridUnlocked}
         setProbeGridUnlocked={props.setProbeGridUnlocked}
-        configGridRef={props.configGridRef}
         probeGridLocked={props.probeGridLocked}
         probeXMin={props.probeXMin}
         probeXMax={props.probeXMax}

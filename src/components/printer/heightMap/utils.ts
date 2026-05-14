@@ -7,6 +7,26 @@ export interface ProbeOffset {
 }
 
 /**
+ * Adjust a 1-D axis range so the probe tip stays inside the bed when the
+ * probe is mounted with an XY offset from the nozzle (RRF G31 / Marlin M851).
+ *
+ *   safe_min = axisMin + max(0, -offset)  — probe LEFT/FRONT of nozzle: push min inward
+ *   safe_max = axisMax + min(0, -offset)  — probe RIGHT/BACK of nozzle: pull max inward
+ *
+ * `offset` is the probe-tip-minus-nozzle delta along this axis.
+ */
+export function safeAxisRange(
+  axisMin: number,
+  axisMax: number,
+  offset: number,
+): { min: number; max: number } {
+  return {
+    min: axisMin + Math.max(0, -offset),
+    max: axisMax + Math.min(0, -offset),
+  };
+}
+
+/**
  * Parse a probe XY offset from a firmware config file.
  *
  * Returns the FIRST G31 / M851 hit — older RRF configs put per-tool offsets on

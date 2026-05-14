@@ -64,8 +64,6 @@ export interface HeightMapRunnersApi {
   smartCalPhase: SmartCalPhase;
   smartCalResult: SmartCalResult | null;
   smartCalLiveSteps: SmartCalStep[];
-  showSmartCalResultModal: boolean;
-  setShowSmartCalResultModal: (b: boolean) => void;
   runSmartCal: (opts: SmartCalOpts) => Promise<void>;
   clearSmartCalResult: () => void;
 }
@@ -93,7 +91,6 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
   const [smartCalPhase, setSmartCalPhase] = useState<SmartCalPhase>(null);
   const [smartCalResult, setSmartCalResult] = useState<SmartCalResult | null>(null);
   const [smartCalLiveSteps, setSmartCalLiveSteps] = useState<SmartCalStep[]>([]);
-  const [showSmartCalResultModal, setShowSmartCalResultModal] = useState(false);
 
   // Guards against (a) setState after unmount mid-sequence and (b) re-entry
   // when the same runner is invoked twice before the first finishes (e.g.
@@ -216,7 +213,8 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
       if (mountedRef.current) setProbing(false);
       probeInFlightRef.current = false;
     }
-  }, [boardType, m557Command, probeGrid, sendGCode, service, setLoadError]);
+  }, [boardType, m557Command, probeGrid, sendGCode, service, setLoadError,
+      probeXMin, probeXMax, probeYMin, probeYMax]);
 
   const runLevel = useCallback(async (opts: LevelBedOpts) => {
     if (levelInFlightRef.current) return;
@@ -447,13 +445,13 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
       // away mid-iteration doesn't write into an unmounted component.
       if (mountedRef.current) {
         setSmartCalResult({ steps, finalStats, stopReason });
-        setShowSmartCalResultModal(true);
         setSmartCalRunning(false);
         setSmartCalPhase(null);
       }
       smartCalInFlightRef.current = false;
     }
-  }, [levelBed, m557Command, probeGrid, sendGCode, service, setSuppressPrinterAlerts]);
+  }, [levelBed, m557Command, probeGrid, sendGCode, service, setSuppressPrinterAlerts,
+      probeXMin, probeXMax, probeYMin, probeYMax]);
 
   const clearSmartCalResult = useCallback(() => {
     setSmartCalResult(null);
@@ -467,7 +465,6 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
     leveling,
     runLevel,
     smartCalRunning, smartCalPhase, smartCalResult, smartCalLiveSteps,
-    showSmartCalResultModal, setShowSmartCalResultModal,
     runSmartCal,
     clearSmartCalResult,
   };

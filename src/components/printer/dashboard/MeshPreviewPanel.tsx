@@ -311,6 +311,16 @@ function NozzleMarker({
     [trail],
   );
 
+  // Build the crosshair geometry once per mount and dispose it on unmount.
+  // Inline JSX <bufferAttribute args={[arr, 3]}> rebuilds the GPU buffer on
+  // every render (per r3f_critical_patterns.md), leaking on long-lived panels.
+  const crosshairGeo = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(NOZZLE_CROSSHAIR_POSITIONS, 3));
+    return g;
+  }, []);
+  useEffect(() => () => crosshairGeo.dispose(), [crosshairGeo]);
+
   if (!position) return null;
 
   return (
@@ -327,10 +337,7 @@ function NozzleMarker({
           <coneGeometry args={[2.4, 6, 18]} />
           <meshBasicMaterial color="#facc15" transparent opacity={0.7} depthWrite={false} />
         </mesh>
-        <lineSegments>
-          <bufferGeometry>
-            <bufferAttribute attach="attributes-position" args={[NOZZLE_CROSSHAIR_POSITIONS, 3]} />
-          </bufferGeometry>
+        <lineSegments geometry={crosshairGeo}>
           <lineBasicMaterial color="#facc15" transparent opacity={0.8} depthWrite={false} />
         </lineSegments>
         <Text position={[0, 0, 10]} fontSize={4} color="#facc15" anchorX="center" anchorY="middle">
