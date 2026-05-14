@@ -1,15 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
 import { useNow } from '../../../hooks/useNow';
-import {
-  Camera,
-  Crosshair,
-  FolderOpen,
-  Gauge,
-  Settings,
-  Timer,
-  Video,
-  X,
-} from 'lucide-react';
+import { Camera } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import {
   DEFAULT_CAMERA_DASHBOARD_PREFS,
@@ -65,6 +56,8 @@ import {
 import { buildCameraStreamState } from './cameraDashboard/streamState';
 import { CameraDashboardTopbar } from './cameraDashboard/CameraDashboardTopbar';
 import { ClipEditorPanel } from './cameraDashboard/ClipEditorPanel';
+import { ControlTabBar } from './cameraDashboard/ControlTabBar';
+import { FullscreenViewer } from './cameraDashboard/FullscreenViewer';
 import { HealthSection } from './cameraDashboard/HealthSection';
 import { MeasurementLayer } from './cameraDashboard/MeasurementLayer';
 import { RecentCapturesStrip } from './cameraDashboard/RecentCapturesStrip';
@@ -829,28 +822,10 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
         </div>
 
         {!compact && <aside className="cam-panel__controls" aria-label="Camera controls and saved clips">
-          <div className="cam-panel__control-tabs" role="tablist" aria-label="Camera control sections">
-            {([
-              ['record', 'Record', Video],
-              ['view', 'View', Crosshair],
-              ['settings', 'Settings', Settings],
-              ['library', 'Library', FolderOpen],
-              ['timeline', 'Timeline', Timer],
-              ['health', 'Health', Gauge],
-            ] as const).map(([key, label, Icon]) => (
-              <button
-                key={key}
-                className={`cam-panel__tab${activeControlSection === key ? ' is-active' : ''}`}
-                type="button"
-                role="tab"
-                aria-selected={activeControlSection === key}
-                onClick={() => setActiveControlSection(key)}
-              >
-                <Icon size={13} />
-                <span>{label}</span>
-              </button>
-            ))}
-          </div>
+          <ControlTabBar
+            activeControlSection={activeControlSection}
+            setActiveControlSection={setActiveControlSection}
+          />
 
           {activeControlSection === 'record' && (
             <RecordSection
@@ -1030,28 +1005,17 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
       </div>
 
       {!compact && fullscreen && (
-        <div className="cam-panel__fullscreen" role="dialog" aria-label="Fullscreen camera view">
-          <button className="cam-panel__fullscreen-close" type="button" onClick={() => setFullscreen(false)}>
-            <X size={18} />
-          </button>
-          <div className={frameClassName}>
-            {hasCamera ? (
-              <>
-                {isVideoStream ? (
-                  <video className="cam-panel__video" src={streamSrc} muted playsInline autoPlay controls style={imageStyle} />
-                ) : (
-                  <img src={streamSrc} alt={`${printerName} fullscreen camera stream`} style={imageStyle} />
-                )}
-                <div className="cam-panel__health">{formatLastFrame(lastFrameAt, nowTick)}</div>
-              </>
-            ) : (
-              <div className="cam-panel__empty">
-                <Camera size={28} />
-                <strong>Camera stream unavailable</strong>
-              </div>
-            )}
-          </div>
-        </div>
+        <FullscreenViewer
+          hasCamera={hasCamera}
+          isVideoStream={isVideoStream}
+          streamSrc={streamSrc}
+          printerName={printerName}
+          frameClassName={frameClassName}
+          imageStyle={imageStyle}
+          lastFrameAt={lastFrameAt}
+          nowTick={nowTick}
+          onClose={() => setFullscreen(false)}
+        />
       )}
     </div>
   );
