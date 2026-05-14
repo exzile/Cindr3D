@@ -1,44 +1,36 @@
 /**
- * useClipActions — every saved-clip operation the dashboard exposes:
+ * useClipActions — composer for every saved-clip operation the dashboard
+ * exposes. The action surface is intentionally split into focused
+ * sub-hooks so each call-site below maps to one concern:
  *
- *   Selection:
- *     • selectClip
+ *   • selection + URL lifecycle (selectClip)
+ *   • destructive (removeClip, removeVisibleClips)
+ *   • metadata mutations on `selectedClip` (details / favorite / issue /
+ *     inspection / markers)
+ *   • bulk-edit (applyBulkTags, cleanupOldClips, toggleBulkSelection)
+ *   • video-only edits (useClipVideoActions: trim / timelapse copy /
+ *     marker-to-marker trim)
+ *   • snapshot editor (useSnapshotEditActions: rotate / flip / crop /
+ *     adjust / annotate)
+ *   • export & reporting (useClipExportActions: per-clip download,
+ *     visible export, contact sheets, job reports, bundles)
  *
- *   Single-clip mutations on `selectedClip`:
- *     • saveSelectedClipDetails (name/notes/kind/job/album/rating/checklist/tags)
- *     • toggleSelectedClipFavorite
- *     • applySelectedIssue
- *     • addSelectedClipMarker / removeSelectedClipMarker
- *     • saveTrimmedVideoCopy / makeTimelapseCopy / trimBetweenFirstTwoMarkers
- *     • saveSnapshotEdits (rotation/flip/crop/brightness/contrast/sharpen/annotation)
- *     • removeClip
- *
- *   Multi-clip / library:
- *     • downloadClip / exportVisibleClips / removeVisibleClips
- *     • applyBulkTags / cleanupOldClips
- *     • generateJobReport / generateContactSheet / exportClipBundle
- *     • toggleInspectionItem / toggleBulkSelection
- *
- * Big deps surface because the parent owns all the draft state for the
- * inline editor + the bulk-edit fields; passing them in keeps the hook
- * stateless and the parent's React tree the single source of truth.
+ * Re-exports the union as a single object so existing call sites in the
+ * camera dashboard don't need to change.
  */
 import { useCallback, type MutableRefObject } from 'react';
 import {
-  clipKind, clipLabel, deleteClip, formatClipDuration, saveClip,
-  type CameraClip, type CameraClipKind, type CameraMarker, type ClipRating,
+  clipKind, deleteClip, formatClipDuration, saveClip,
+  type CameraClip, type CameraClipKind, type ClipRating,
   type IssueTag, type SnapshotCrop,
 } from './clipStore';
 import {
   buildBulkClipUpdate, buildClipDetailsUpdate, buildClipMarker, buildClipWithMarker,
   buildClipWithoutMarker, buildFavoriteToggle, buildIssueTagUpdate,
-  buildTimelapseCopy, buildTrimmedVideoCopy,
 } from './clipMutations';
-import {
-  downloadClipBlob, downloadClipBundle, downloadClipManifest,
-  downloadContactSheet, downloadJobReport,
-} from './clipExport';
-import { defaultCrop, transformSnapshotBlob } from './snapshotEdit';
+import { useClipExportActions } from './useClipExportActions';
+import { useClipVideoActions } from './useClipVideoActions';
+import { useSnapshotEditActions } from './useSnapshotEditActions';
 
 export interface UseClipActionsDeps {
   // Selected clip + its blob URL
@@ -70,7 +62,7 @@ export interface UseClipActionsDeps {
   setMarkerDraftLabel: (next: string) => void;
   setMarkerDraftTime: (next: string) => void;
 
-  // Trim editor
+  // Trim editor (video-only actions)
   trimStart: string;
   trimEnd: string;
   setTrimStart: (next: string) => void;
@@ -92,8 +84,6 @@ export interface UseClipActionsDeps {
   setSnapshotContrast: (v: number) => void;
   setSnapshotSharpen: (v: number) => void;
   setSnapshotAnnotation: (v: string) => void;
-
-  // Bulk edit
 
   // Source lists
   clips: CameraClip[];
@@ -138,15 +128,6 @@ export function useClipActions(deps: UseClipActionsDeps) {
     setSelectedClip(clip);
     setSelectedClipUrl(url);
   }, [selectedClipUrlRef, setSelectedClip, setSelectedClipUrl]);
-
-  const downloadClip = useCallback((clip: CameraClip) => {
-    downloadClipBlob(clip);
-  }, []);
-
-  const exportVisibleClips = useCallback(() => {
-    visibleClips.forEach(downloadClip);
-    downloadClipManifest(visibleClips);
-  }, [downloadClip, visibleClips]);
 
   const removeClip = useCallback(async (clip: CameraClip) => {
     const ok = window.confirm('Delete this saved camera clip from local browser storage? This cannot be undone.');
@@ -264,42 +245,6 @@ export function useClipActions(deps: UseClipActionsDeps) {
     ));
   }, [setSelectedClipIds]);
 
-  const generateJobReport = useCallback((clipsToReport: CameraClip[]) => {
-    const reportClips = clipsToReport.length ? clipsToReport : timelineClips;
-    downloadJobReport(reportClips, printerName, timelineJobName);
-    setMessage('Generated camera job report.');
-  }, [printerName, setMessage, timelineClips, timelineJobName]);
-
-  const generateContactSheet = useCallback(async (clipsToUse: CameraClip[]) => {
-    const snapshots = clipsToUse.filter((clip) => clipKind(clip) === 'snapshot');
-    if (snapshots.length === 0) {
-      setMessage('Select one or more snapshots before generating a contact sheet.');
-      return;
-    }
-    setBusy(true);
-    try {
-      await downloadContactSheet(snapshots, printerName);
-      setMessage(`Generated contact sheet with ${snapshots.length} snapshot${snapshots.length === 1 ? '' : 's'}.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to generate contact sheet.');
-    } finally {
-      setBusy(false);
-    }
-  }, [printerName, setBusy, setMessage]);
-
-  const exportClipBundle = useCallback(async (clipsToExport: CameraClip[]) => {
-    if (clipsToExport.length === 0) return;
-    setBusy(true);
-    try {
-      await downloadClipBundle(clipsToExport, printerId, printerName);
-      setMessage(`Exported ${clipsToExport.length} camera item${clipsToExport.length === 1 ? '' : 's'} as a bundle.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to export camera bundle.');
-    } finally {
-      setBusy(false);
-    }
-  }, [printerId, printerName, setBusy, setMessage]);
-
   const addSelectedClipMarker = useCallback(async () => {
     if (!selectedClip || clipKind(selectedClip) === 'snapshot') return;
     const marker = buildClipMarker(selectedClip, markerDraftTime, markerDraftLabel);
@@ -334,52 +279,6 @@ export function useClipActions(deps: UseClipActionsDeps) {
       setBusy(false);
     }
   }, [refreshClips, selectedClip, setBusy, setMessage, setSelectedClip]);
-
-  const saveTrimmedVideoCopy = useCallback(async () => {
-    if (!selectedClip || clipKind(selectedClip) === 'snapshot') return;
-    const result = buildTrimmedVideoCopy(selectedClip, trimStart, trimEnd);
-    if (!result) {
-      setMessage('Trim end must be after trim start.');
-      return;
-    }
-    setBusy(true);
-    try {
-      await saveClip(result.clip);
-      await refreshClips();
-      setMessage('Saved trimmed video reference. Export includes trim metadata for the selected segment.');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to save trimmed video.');
-    } finally {
-      setBusy(false);
-    }
-  }, [refreshClips, selectedClip, setBusy, setMessage, trimEnd, trimStart]);
-
-  const makeTimelapseCopy = useCallback(async () => {
-    if (!selectedClip || clipKind(selectedClip) === 'snapshot') return;
-    const updated = buildTimelapseCopy(selectedClip);
-    setBusy(true);
-    try {
-      await saveClip(updated);
-      await refreshClips();
-      setMessage('Saved timelapse version.');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to save timelapse version.');
-    } finally {
-      setBusy(false);
-    }
-  }, [refreshClips, selectedClip, setBusy, setMessage]);
-
-  const trimBetweenFirstTwoMarkers = useCallback(async () => {
-    if (!selectedClip || clipKind(selectedClip) === 'snapshot') return;
-    const markers = [...(selectedClip.markers ?? [])].sort((a, b) => a.atMs - b.atMs);
-    if (markers.length < 2) {
-      setMessage('Add at least two markers before trimming marker-to-marker.');
-      return;
-    }
-    setTrimStart(formatClipDuration(markers[0].atMs));
-    setTrimEnd(formatClipDuration(markers[1].atMs));
-    setMessage(`Prepared trim from ${markers[0].label} to ${markers[1].label}.`);
-  }, [selectedClip, setMessage, setTrimEnd, setTrimStart]);
 
   const applyBulkTags = useCallback(async (bulkTags: string, bulkAlbum: string) => {
     if (visibleClips.length === 0) return;
@@ -416,74 +315,25 @@ export function useClipActions(deps: UseClipActionsDeps) {
     }
   }, [clips, refreshClips, setBusy, setMessage]);
 
-  const saveSnapshotEdits = useCallback(async () => {
-    if (!selectedClip || clipKind(selectedClip) !== 'snapshot') return;
-    const cropChanged = snapshotCrop.x !== 0 || snapshotCrop.y !== 0 || snapshotCrop.width !== 1 || snapshotCrop.height !== 1;
-    const hasAdjustments = snapshotBrightness !== 100 || snapshotContrast !== 100 || snapshotSharpen > 0 || Boolean(snapshotAnnotation.trim());
-    if (!snapshotEditFlip && snapshotEditRotation === 0 && !cropChanged && !hasAdjustments) {
-      setMessage('No snapshot edits to save.');
-      return;
-    }
-    setBusy(true);
-    try {
-      const blob = await transformSnapshotBlob(
-        selectedClip.blob,
-        snapshotEditRotation,
-        snapshotEditFlip,
-        snapshotCrop,
-        snapshotBrightness,
-        snapshotContrast,
-        snapshotSharpen,
-        snapshotAnnotation,
-      );
-      const now = Date.now();
-      const updated: CameraClip = {
-        ...selectedClip,
-        id: saveSnapshotAsCopy ? `${selectedClip.id}-edit-${now}` : selectedClip.id,
-        name: saveSnapshotAsCopy ? `${clipLabel(selectedClip)} edit` : selectedClip.name,
-        blob,
-        thumbnailBlob: blob,
-        mimeType: blob.type || 'image/png',
-        size: blob.size,
-        snapshotAdjustments: {
-          brightness: snapshotBrightness,
-          contrast: snapshotContrast,
-          sharpen: snapshotSharpen,
-          crop: snapshotCrop,
-          annotation: snapshotAnnotation.trim(),
-        },
-        editedAt: now,
-      };
-      await saveClip(updated);
-      if (selectedClipUrlRef.current) {
-        URL.revokeObjectURL(selectedClipUrlRef.current);
-      }
-      const url = URL.createObjectURL(updated.blob);
-      selectedClipUrlRef.current = url;
-      setSelectedClip(updated);
-      setSelectedClipUrl(url);
-      setSnapshotEditFlip(false);
-      setSnapshotEditRotation(0);
-      setSnapshotCrop(defaultCrop());
-      setSnapshotBrightness(100);
-      setSnapshotContrast(100);
-      setSnapshotSharpen(0);
-      setSnapshotAnnotation('');
-      await refreshClips();
-      setMessage(saveSnapshotAsCopy ? 'Saved edited snapshot as a copy.' : 'Saved edited snapshot.');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to save edited snapshot.');
-    } finally {
-      setBusy(false);
-    }
-  }, [
-    refreshClips, saveSnapshotAsCopy, selectedClip, selectedClipUrlRef,
-    setBusy, setMessage, setSelectedClip, setSelectedClipUrl,
-    setSnapshotAnnotation, setSnapshotBrightness, setSnapshotContrast, setSnapshotCrop,
-    setSnapshotEditFlip, setSnapshotEditRotation, setSnapshotSharpen,
-    snapshotAnnotation, snapshotBrightness, snapshotContrast, snapshotCrop,
-    snapshotEditFlip, snapshotEditRotation, snapshotSharpen,
-  ]);
+  const { saveTrimmedVideoCopy, makeTimelapseCopy, trimBetweenFirstTwoMarkers } = useClipVideoActions({
+    selectedClip, trimStart, trimEnd, setTrimStart, setTrimEnd,
+    setBusy, setMessage, refreshClips,
+  });
+
+  const { saveSnapshotEdits } = useSnapshotEditActions({
+    selectedClip, setSelectedClip, setSelectedClipUrl, selectedClipUrlRef,
+    saveSnapshotAsCopy, snapshotEditFlip, snapshotEditRotation, snapshotCrop,
+    snapshotBrightness, snapshotContrast, snapshotSharpen, snapshotAnnotation,
+    setSnapshotEditFlip, setSnapshotEditRotation, setSnapshotCrop,
+    setSnapshotBrightness, setSnapshotContrast, setSnapshotSharpen, setSnapshotAnnotation,
+    setBusy, setMessage, refreshClips,
+  });
+
+  const { downloadClip, exportVisibleClips, generateJobReport, generateContactSheet, exportClipBundle } = useClipExportActions({
+    visibleClips, timelineClips, timelineJobName,
+    printerId, printerName,
+    setBusy, setMessage,
+  });
 
   return {
     selectClip, downloadClip, exportVisibleClips, removeClip, removeVisibleClips,
