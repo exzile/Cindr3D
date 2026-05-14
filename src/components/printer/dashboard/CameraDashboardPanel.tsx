@@ -264,8 +264,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     captureSnapshot, captureFinalComparisonFrame,
   });
 
-
-
   const { updateActiveCamera, setCameraQuality } = useCameraConfigMutations({
     activePrinterId, activeCamera, cameras: prefs.cameras, hdMainIsRtsp,
     updatePrinterPrefs, setStreamRevision, setMessage,
