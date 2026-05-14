@@ -134,6 +134,9 @@ import {
   type RulerEndpointKey,
 } from './cameraDashboard/types';
 import { buildCameraStreamState } from './cameraDashboard/streamState';
+import { LibrarySection } from './cameraDashboard/LibrarySection';
+import { SettingsSection } from './cameraDashboard/SettingsSection';
+import { ViewControlsSection } from './cameraDashboard/ViewControlsSection';
 import { useAutoSnapshots } from './cameraDashboard/useAutoSnapshots';
 import { useBrowserUsbCamera } from './cameraDashboard/useBrowserUsbCamera';
 import { useCameraDashboardPersistence } from './cameraDashboard/useCameraDashboardPersistence';
@@ -1206,426 +1209,93 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
           )}
 
           {activeControlSection === 'view' && (
-          <section className="cam-panel__control-section" aria-label="Camera view controls">
-            <div className="cam-panel__section-head">
-              <span><Crosshair size={14} /> View</span>
-              <small>{rotation}deg</small>
-            </div>
-            <div className="cam-panel__view-section" aria-label="Camera orientation">
-              <div className="cam-panel__view-section-head">
-                <span>Orientation</span>
-              </div>
-              <div className="cam-panel__secondary-grid" aria-label="Camera view options">
-                <button className={`cam-panel__button ${showGrid ? 'is-active' : ''}`} type="button" onClick={() => setShowGrid((value) => !value)}>
-                  <Grid2X2 size={13} /> Grid
-                </button>
-                <button className={`cam-panel__button ${showCrosshair ? 'is-active' : ''}`} type="button" onClick={() => setShowCrosshair((value) => !value)}>
-                  <Crosshair size={13} /> Center
-                </button>
-                <button className={`cam-panel__button ${flipImage ? 'is-active' : ''}`} type="button" onClick={() => setFlipImage((value) => !value)}>
-                  <FlipHorizontal size={13} /> Flip
-                </button>
-                <button className="cam-panel__button" type="button" onClick={() => setRotation((value) => (value + 90) % 360)}>
-                  <RotateCw size={13} /> Rotate
-                </button>
-              </div>
-            </div>
-            <div className="cam-panel__view-section" aria-label="Calibration overlay controls">
-              <div className="cam-panel__view-section-head">
-                <span>Calibration</span>
-                <small>{calibration.enabled ? 'Overlay on' : 'Overlay off'}</small>
-              </div>
-              <label className="cam-panel__toggle">
-                <input
-                  type="checkbox"
-                  checked={calibration.enabled}
-                  onChange={(event) => setCalibration((value) => ({ ...value, enabled: event.target.checked }))}
-                />
-                <span>Calibration overlay</span>
-              </label>
-              {calibration.enabled && (
-                <div className="cam-panel__view-calibration">
-                  <label>X<input type="range" min={0} max={80} value={calibration.x} onChange={(event) => setCalibration((value) => ({ ...value, x: Number(event.target.value) }))} /></label>
-                  <label>Y<input type="range" min={0} max={80} value={calibration.y} onChange={(event) => setCalibration((value) => ({ ...value, y: Number(event.target.value) }))} /></label>
-                  <label>W<input type="range" min={10} max={100} value={calibration.width} onChange={(event) => setCalibration((value) => ({ ...value, width: Number(event.target.value) }))} /></label>
-                  <label>H<input type="range" min={10} max={100} value={calibration.height} onChange={(event) => setCalibration((value) => ({ ...value, height: Number(event.target.value) }))} /></label>
-                </div>
-              )}
-              <label>
-                Bed W
-                <input
-                  className="cam-panel__input"
-                  type="number"
-                  min={1}
-                  value={bedWidthMm}
-                  onChange={(event) => setCalibration((value) => ({ ...value, bedWidthMm: Number(event.target.value) || 1 }))}
-                />
-              </label>
-              <label>
-                Bed D
-                <input
-                  className="cam-panel__input"
-                  type="number"
-                  min={1}
-                  value={bedDepthMm}
-                  onChange={(event) => setCalibration((value) => ({ ...value, bedDepthMm: Number(event.target.value) || 1 }))}
-                />
-              </label>
-            </div>
-            <div className="cam-panel__view-section" aria-label="AR and preview corner setup">
-              <div className="cam-panel__view-section-head">
-                <span>AR / Preview</span>
-                <small>{poseStatus.label}</small>
-              </div>
-              <div className="cam-panel__view-mode" role="group" aria-label="Camera overlay mode">
-                {overlayModeOptions.map(({ mode, label, hint }) => (
-                  <button
-                    key={mode}
-                    className={`cam-panel__button ${cameraOverlayMode === mode ? 'is-active' : ''}`}
-                    type="button"
-                    onClick={() => setCameraOverlayMode(mode)}
-                    title={hint}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <button
-                className={`cam-panel__button ${measurementMode === 'bed' ? 'is-active' : ''}`}
-                type="button"
-                disabled={!hasCamera}
-                onClick={() => {
-                  setMeasurementMode((mode) => mode === 'bed' ? 'off' : 'bed');
-                  setNextBedCornerIndex(0);
-                }}
-              >
-                <Crosshair size={13} /> Pick corners
-              </button>
-              <button className="cam-panel__button" type="button" disabled={!hasCamera} onClick={() => { void capturePoseStill(); }}>
-                <Image size={13} /> Freeze pose
-              </button>
-              <button className="cam-panel__button" type="button" disabled={!bedCornersComplete || !homography} onClick={savePoseCalibration}>
-                <Save size={13} /> Save pose
-              </button>
-              {poseStillUrl && (
-                <button className="cam-panel__button" type="button" onClick={clearPoseStill}>
-                  <X size={13} /> Live view
-                </button>
-              )}
-              {finalComparisonUrl && (
-                <button
-                  className="cam-panel__button"
-                  type="button"
-                  onClick={() => {
-                    setFinalComparisonUrl((url) => {
-                      if (url) URL.revokeObjectURL(url);
-                      return '';
-                    });
-                  }}
-                >
-                  <X size={13} /> Clear compare
-                </button>
-              )}
-              <button
-                className="cam-panel__button cam-panel__button--danger"
-                type="button"
-                onClick={() => {
-                  setCalibration((value) => ({ ...value, bedCorners: undefined, measureA: undefined, measureB: undefined, pose: undefined }));
-                  setMeasurementMode('off');
-                  setNextBedCornerIndex(0);
-                }}
-              >
-                <Trash2 size={13} /> Clear bed
-              </button>
-              <span className={`cam-panel__pose-status cam-panel__pose-status--${poseStatus.state}`}>
-                {poseStatus.label}
-              </span>
-            </div>
-            <div className="cam-panel__view-section" aria-label="Ruler controls">
-              <div className="cam-panel__view-section-head">
-                <span>Ruler</span>
-                <small>{calibration.measureA && calibration.measureB ? formatMeasurementDistance(measuredDistanceMm) : 'No measure'}</small>
-              </div>
-              <div className="cam-panel__view-status">
-                <Ruler size={13} />
-                <span>{calibration.measureA && calibration.measureB ? formatMeasurementDistance(measuredDistanceMm) : measurementMode === 'ruler' ? measurementStatus : 'Start the ruler, then place A and B on the video.'}</span>
-              </div>
-              <button
-                className={`cam-panel__button ${measurementMode === 'ruler' ? 'is-active' : ''}`}
-                type="button"
-                disabled={!hasCamera || !bedCornersComplete}
-                onClick={() => setMeasurementMode((mode) => mode === 'ruler' ? 'off' : 'ruler')}
-              >
-                <Ruler size={13} /> {measurementMode === 'ruler' ? 'Stop ruler' : 'Start ruler'}
-              </button>
-              <button
-                className="cam-panel__button"
-                type="button"
-                onClick={() => {
-                  setCalibration((value) => ({ ...value, measureA: undefined, measureB: undefined }));
-                  setMeasurementMode('ruler');
-                }}
-                disabled={!hasCamera || !bedCornersComplete}
-              >
-                <Eraser size={13} /> Clear ruler
-              </button>
-              <span className="cam-panel__note">Drag markers A and B on the video to adjust the measurement.</span>
-            </div>
-          </section>
+            <ViewControlsSection
+              showGrid={showGrid}
+              setShowGrid={setShowGrid}
+              showCrosshair={showCrosshair}
+              setShowCrosshair={setShowCrosshair}
+              flipImage={flipImage}
+              setFlipImage={setFlipImage}
+              rotation={rotation}
+              setRotation={setRotation}
+              calibration={calibration}
+              setCalibration={setCalibration}
+              bedWidthMm={bedWidthMm}
+              bedDepthMm={bedDepthMm}
+              poseStatus={poseStatus}
+              overlayModeOptions={overlayModeOptions}
+              cameraOverlayMode={cameraOverlayMode}
+              setCameraOverlayMode={setCameraOverlayMode}
+              measurementMode={measurementMode}
+              setMeasurementMode={setMeasurementMode}
+              setNextBedCornerIndex={setNextBedCornerIndex}
+              hasCamera={hasCamera}
+              bedCornersComplete={bedCornersComplete}
+              homography={homography}
+              capturePoseStill={capturePoseStill}
+              savePoseCalibration={savePoseCalibration}
+              poseStillUrl={poseStillUrl}
+              clearPoseStill={clearPoseStill}
+              finalComparisonUrl={finalComparisonUrl}
+              setFinalComparisonUrl={setFinalComparisonUrl}
+              measuredDistanceMm={measuredDistanceMm}
+              measurementStatus={measurementStatus}
+            />
           )}
 
           {activeControlSection === 'settings' && (
-          <section className="cam-panel__control-section" aria-label="Camera automation settings">
-            <div className="cam-panel__section-head">
-              <span><Settings size={14} /> Settings</span>
-              <small>{prefs.webcamStreamPreference === 'main' ? 'HD' : 'SD'} stream</small>
-            </div>
-            <div className="cam-panel__quality-tools" aria-label="Camera quality">
-              <button
-                className={`cam-panel__button ${prefs.webcamStreamPreference === 'sub' ? 'is-active' : ''}`}
-                type="button"
-                onClick={() => setCameraQuality('sub')}
-              >
-                <Video size={13} /> SD
-              </button>
-              <button
-                className={`cam-panel__button ${prefs.webcamStreamPreference === 'main' ? 'is-active' : ''}`}
-                type="button"
-                onClick={() => setCameraQuality('main')}
-                title={hdLiveNeedsBridge ? 'HD uses the local automatic RTSP to HLS bridge.' : 'Use HD stream'}
-              >
-                <Video size={13} /> HD
-              </button>
-              {hdLiveNeedsBridge && (
-                <span className="cam-panel__note">
-                  HD uses a local FFmpeg bridge automatically. First load can take a few seconds.
-                </span>
-              )}
-              {hdLiveNeedsBridge && prefs.webcamStreamPreference === 'main' && (
-                <label className="cam-panel__quality-select">
-                  Bridge quality
-                  <select
-                    className="cam-panel__input"
-                    value={hdBridgeQuality}
-                    onChange={(event) => {
-                      setHdBridgeQuality(event.target.value as CameraHdBridgeQuality);
-                      setStreamRevision((value) => value + 1);
-                      setMessage('Updating HD bridge quality...');
-                    }}
-                  >
-                    {HD_BRIDGE_QUALITIES.map((quality) => (
-                      <option key={quality.value} value={quality.value}>{quality.label}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
-            </div>
-            <div className="cam-panel__settings-row">
-            <label>
-              Interval
-              <input
-                className="cam-panel__input"
-                type="number"
-                min={1}
-                max={60}
-                value={timelapseIntervalSec}
-                onChange={(event) => setTimelapseIntervalSec(Math.max(1, Number(event.target.value) || 1))}
-              />
-            </label>
-            <label>
-              FPS
-              <input
-                className="cam-panel__input"
-                type="number"
-                min={1}
-                max={30}
-                value={timelapseFps}
-                onChange={(event) => setTimelapseFps(Math.max(1, Math.min(30, Number(event.target.value) || 1)))}
-              />
-            </label>
-            </div>
-            <div className="cam-panel__preset-tools">
-              <input className="cam-panel__input" value={presetName} placeholder="Preset name" onChange={(event) => setPresetName(event.target.value)} />
-              <button className="cam-panel__button" type="button" onClick={saveCameraPreset}>
-                <Save size={13} /> Save Preset
-              </button>
-              {cameraPresets.length === 0 ? (
-                <span className="cam-panel__note">Save view/recording settings as presets for repeat camera setups.</span>
-              ) : cameraPresets.map((preset) => (
-                <div className="cam-panel__preset-row" key={preset.id}>
-                  <button className="cam-panel__button" type="button" onClick={() => applyCameraPreset(preset)}>
-                    <Play size={13} /> {preset.name}
-                  </button>
-                  <button className="cam-panel__button cam-panel__button--danger" type="button" onClick={() => deleteCameraPreset(preset.id)}>
-                    <X size={13} />
-                  </button>
-                </div>
-              ))}
-            </div>
-            <div className="cam-panel__ptz-tools">
-              <div className="cam-panel__section-head">
-                <span><Camera size={14} /> PTZ</span>
-                <small>{ptzEnabled && canUsePtz ? ptzProviderLabel(activeCamera?.ptzProvider ?? 'off') : 'Off'}</small>
-              </div>
-              <label className="cam-panel__toggle">
-                <input
-                  type="checkbox"
-                  checked={ptzEnabled}
-                  onChange={(event) => setPtzEnabled(event.target.checked)}
-                />
-                <span>Enable move controls</span>
-              </label>
-              <span className="cam-panel__note">
-                Uses the selected camera's PTZ provider, presets, and credentials from Camera Settings.
-              </span>
-              <div className="cam-panel__settings-row">
-                <label>
-                  Speed
-                  <input
-                    className="cam-panel__input"
-                    type="number"
-                    min={1}
-                    max={8}
-                    value={ptzSpeed}
-                    onChange={(event) => setPtzSpeed(Math.max(1, Math.min(8, Number(event.target.value) || 1)))}
-                  />
-                </label>
-              </div>
-              <div className="cam-panel__ptz-grid" aria-label="Camera movement controls">
-                <span />
-                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUsePtz} onClick={() => void runPtzCommand('up')} title="Move up">
-                  <ArrowUp size={14} />
-                </button>
-                <span />
-                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUsePtz} onClick={() => void runPtzCommand('left')} title="Move left">
-                  <ArrowLeft size={14} />
-                </button>
-                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUsePtz} onClick={() => void runPtzCommand('home')} title="Go to home preset">
-                  <Home size={14} />
-                </button>
-                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUsePtz} onClick={() => void runPtzCommand('right')} title="Move right">
-                  <ArrowRight size={14} />
-                </button>
-                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUsePtz} onClick={() => void runPtzCommand('zoomOut')} title="Zoom out">
-                  <ZoomOut size={14} />
-                </button>
-                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUsePtz} onClick={() => void runPtzCommand('down')} title="Move down">
-                  <ArrowDown size={14} />
-                </button>
-                <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUsePtz} onClick={() => void runPtzCommand('zoomIn')} title="Zoom in">
-                  <ZoomIn size={14} />
-                </button>
-              </div>
-              <div className="cam-panel__ptz-preset-form">
-                <input className="cam-panel__input" value={ptzPresetName} placeholder="Preset name" onChange={(event) => setPtzPresetName(event.target.value)} />
-                <input className="cam-panel__input" value={ptzPresetToken} placeholder="Slot" onChange={(event) => setPtzPresetToken(event.target.value)} />
-                <button className="cam-panel__button" type="button" disabled={!activeCamera} onClick={savePtzPreset}>
-                  <Save size={13} /> Save PTZ
-                </button>
-              </div>
-              {activeCamera?.ptzPresets.length ? (
-                <div className="cam-panel__ptz-preset-list">
-                  {activeCamera.ptzPresets.map((preset) => (
-                    <div className="cam-panel__preset-row" key={preset.id}>
-                      <button className="cam-panel__button" type="button" disabled={!ptzEnabled || !canUsePtz} onClick={() => void runPtzPreset(preset)}>
-                        <Play size={13} /> {preset.name}
-                      </button>
-                      <button
-                        className={`cam-panel__button${activeCamera.ptzStartPresetId === preset.id ? ' is-active' : ''}`}
-                        type="button"
-                        onClick={() => updateActiveCamera({ ptzStartPresetId: activeCamera.ptzStartPresetId === preset.id ? '' : preset.id })}
-                        title="Use on print start"
-                      >
-                        <Flag size={13} />
-                      </button>
-                      <button className="cam-panel__button cam-panel__button--danger" type="button" onClick={() => deletePtzPreset(preset.id)}>
-                        <X size={13} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <span className="cam-panel__note">Save PTZ slot numbers after positioning the camera, then mark one for print-start framing.</span>
-              )}
-            </div>
-            <div className="cam-panel__toggle-grid">
-              <label className="cam-panel__toggle">
-                <input
-                  type="checkbox"
-                  checked={autoRecord}
-                  onChange={(event) => setAutoRecord(event.target.checked)}
-                />
-                <span>Auto-record print jobs</span>
-              </label>
-              <label className="cam-panel__toggle">
-                <input
-                  type="checkbox"
-                  checked={autoTimelapse}
-                  onChange={(event) => setAutoTimelapse(event.target.checked)}
-                />
-                <span>Auto timelapse</span>
-              </label>
-              <label className="cam-panel__toggle">
-                <input
-                  type="checkbox"
-                  checked={autoSnapshotFirstLayer}
-                  onChange={(event) => setAutoSnapshotFirstLayer(event.target.checked)}
-                />
-                <span>First-layer snapshot</span>
-              </label>
-              <label className="cam-panel__toggle">
-                <input
-                  type="checkbox"
-                  checked={autoSnapshotLayer}
-                  onChange={(event) => setAutoSnapshotLayer(event.target.checked)}
-                />
-                <span>Every-layer snapshots</span>
-              </label>
-              <label className="cam-panel__toggle">
-                <input
-                  type="checkbox"
-                  checked={autoSnapshotFinish}
-                  onChange={(event) => setAutoSnapshotFinish(event.target.checked)}
-                />
-                <span>Finish snapshot</span>
-              </label>
-              <label className="cam-panel__toggle">
-                <input
-                  type="checkbox"
-                  checked={autoSnapshotError}
-                  onChange={(event) => setAutoSnapshotError(event.target.checked)}
-                />
-                <span>Error snapshot</span>
-              </label>
-              <label className="cam-panel__toggle">
-                <input
-                  type="checkbox"
-                  checked={scheduledSnapshots}
-                  onChange={(event) => setScheduledSnapshots(event.target.checked)}
-                />
-                <span>Timed snapshots</span>
-              </label>
-              <label className="cam-panel__toggle">
-                <input
-                  type="checkbox"
-                  checked={anomalyCapture}
-                  onChange={(event) => setAnomalyCapture(event.target.checked)}
-                />
-                <span>Anomaly capture</span>
-              </label>
-              <label>
-                Every minutes
-                <input
-                  className="cam-panel__input"
-                  type="number"
-                  min={1}
-                  max={240}
-                  value={scheduledSnapshotIntervalMin}
-                  onChange={(event) => setScheduledSnapshotIntervalMin(Math.max(1, Number(event.target.value) || 1))}
-                />
-              </label>
-            </div>
-          </section>
+            <SettingsSection
+              webcamStreamPreference={prefs.webcamStreamPreference}
+              setCameraQuality={setCameraQuality}
+              hdLiveNeedsBridge={hdLiveNeedsBridge}
+              hdBridgeQuality={hdBridgeQuality}
+              setHdBridgeQuality={setHdBridgeQuality}
+              setStreamRevision={setStreamRevision}
+              setMessage={setMessage}
+              timelapseIntervalSec={timelapseIntervalSec}
+              setTimelapseIntervalSec={setTimelapseIntervalSec}
+              timelapseFps={timelapseFps}
+              setTimelapseFps={setTimelapseFps}
+              presetName={presetName}
+              setPresetName={setPresetName}
+              saveCameraPreset={saveCameraPreset}
+              applyCameraPreset={applyCameraPreset}
+              deleteCameraPreset={deleteCameraPreset}
+              cameraPresets={cameraPresets}
+              ptzEnabled={ptzEnabled}
+              setPtzEnabled={setPtzEnabled}
+              ptzSpeed={ptzSpeed}
+              setPtzSpeed={setPtzSpeed}
+              canUsePtz={canUsePtz}
+              activeCamera={activeCamera}
+              updateActiveCamera={updateActiveCamera}
+              ptzPresetName={ptzPresetName}
+              setPtzPresetName={setPtzPresetName}
+              ptzPresetToken={ptzPresetToken}
+              setPtzPresetToken={setPtzPresetToken}
+              runPtzCommand={runPtzCommand}
+              runPtzPreset={runPtzPreset}
+              savePtzPreset={savePtzPreset}
+              deletePtzPreset={deletePtzPreset}
+              autoRecord={autoRecord}
+              setAutoRecord={setAutoRecord}
+              autoTimelapse={autoTimelapse}
+              setAutoTimelapse={setAutoTimelapse}
+              autoSnapshotFirstLayer={autoSnapshotFirstLayer}
+              setAutoSnapshotFirstLayer={setAutoSnapshotFirstLayer}
+              autoSnapshotLayer={autoSnapshotLayer}
+              setAutoSnapshotLayer={setAutoSnapshotLayer}
+              autoSnapshotFinish={autoSnapshotFinish}
+              setAutoSnapshotFinish={setAutoSnapshotFinish}
+              autoSnapshotError={autoSnapshotError}
+              setAutoSnapshotError={setAutoSnapshotError}
+              scheduledSnapshots={scheduledSnapshots}
+              setScheduledSnapshots={setScheduledSnapshots}
+              scheduledSnapshotIntervalMin={scheduledSnapshotIntervalMin}
+              setScheduledSnapshotIntervalMin={setScheduledSnapshotIntervalMin}
+              anomalyCapture={anomalyCapture}
+              setAnomalyCapture={setAnomalyCapture}
+            />
           )}
 
           {activeControlSection === 'health' && (
@@ -1680,181 +1350,47 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
           )}
 
           {activeControlSection === 'library' && (
-          <section className="cam-panel__control-section cam-panel__control-section--library" aria-label="Saved camera library">
-            <div className="cam-panel__library-head">
-            <div className="cam-panel__library-title">
-              <FolderOpen size={14} /> Saved Clips
-            </div>
-            <button className="cam-panel__button cam-panel__button--load" type="button" disabled={busy} onClick={() => { void refreshClips(); }}>
-              <RefreshCcw size={12} /> Load
-            </button>
-            </div>
-
-          <div className="cam-panel__selection-tools">
-            <button className={`cam-panel__button ${selectionMode ? 'is-active' : ''}`} type="button" onClick={() => setSelectionMode((value) => !value)}>
-              <Tags size={13} /> Select Media
-            </button>
-            <button className="cam-panel__button" type="button" disabled={!selectionMode || visibleClips.length === 0} onClick={() => setSelectedClipIds(visibleClips.map((clip) => clip.id))}>
-              <Tags size={13} /> Select Visible
-            </button>
-            <button className="cam-panel__button" type="button" disabled={selectedClipIds.length === 0} onClick={() => setSelectedClipIds([])}>
-              <X size={13} /> Clear {selectedClipIds.length}
-            </button>
-          </div>
-
-          <div className="cam-panel__filter-row">
-            <label className="cam-panel__search">
-              <Search size={12} />
-              <input
-                type="search"
-                value={clipQuery}
-                placeholder="Search clips"
-                onChange={(event) => setClipQuery(event.target.value)}
-              />
-            </label>
-            <select className="cam-panel__select" value={clipFilter} onChange={(event) => setClipFilter(event.target.value as ClipFilter)}>
-              <option value="all">All</option>
-              <option value="clip">Clips</option>
-              <option value="snapshot">Snapshots</option>
-              <option value="timelapse">Timelapse</option>
-              <option value="auto">Auto</option>
-              <option value="job">With job</option>
-              <option value="favorite">Favorites</option>
-              <option value="album">Albums</option>
-              <option value="issue">Issues</option>
-            </select>
-            <select className="cam-panel__select" value={clipSort} onChange={(event) => setClipSort(event.target.value as ClipSort)}>
-              <option value="newest">Newest</option>
-              <option value="oldest">Oldest</option>
-              <option value="largest">Largest</option>
-            </select>
-          </div>
-
-          <div className="cam-panel__storage" aria-label="Camera clip storage">
-            <div>
-              <HardDrive size={13} />
-              <span>{formatBytes(totalStorageBytes)} local</span>
-            </div>
-            <div className="cam-panel__storage-bar"><span style={{ width: `${Math.min(100, totalStorageBytes / 5_000_000)}%` }} /></div>
-          </div>
-
-          <div className="cam-panel__storage-manager" aria-label="Camera storage manager">
-            {(Object.keys(storageByKind) as CameraClipKind[]).map((kind) => (
-              <div key={kind}>
-                <span>{kind}</span>
-                <strong>{storageByKind[kind].count}</strong>
-                <em>{formatBytes(storageByKind[kind].size)}</em>
-                <div><span style={{ width: `${totalStorageBytes ? Math.max(4, (storageByKind[kind].size / totalStorageBytes) * 100) : 0}%` }} /></div>
-              </div>
-            ))}
-            {storageByJob.map((job) => (
-              <div key={job.name}>
-                <span>{job.name}</span>
-                <strong>{job.count}</strong>
-                <em>{formatBytes(job.size)}</em>
-                <div><span style={{ width: `${totalStorageBytes ? Math.max(4, (job.size / totalStorageBytes) * 100) : 0}%` }} /></div>
-              </div>
-            ))}
-          </div>
-
-          <div className="cam-panel__bulk-tools">
-            <input className="cam-panel__input" value={bulkAlbum} placeholder="Album for visible items" list="camera-albums" onChange={(event) => setBulkAlbum(event.target.value)} />
-            <input className="cam-panel__input" value={bulkTags} placeholder="Bulk tags" onChange={(event) => setBulkTags(event.target.value)} />
-            <button className="cam-panel__button" type="button" disabled={visibleClips.length === 0 || busy} onClick={() => { void applyBulkTags(); }}>
-              <Tags size={13} /> Apply to Visible
-            </button>
-            <button className="cam-panel__button" type="button" disabled={visibleClips.length === 0} onClick={exportVisibleClips}>
-              <Archive size={13} /> Export Visible
-            </button>
-            <button className="cam-panel__button" type="button" disabled={visibleClips.length === 0 || busy} onClick={() => { void exportClipBundle(visibleClips); }}>
-              <Archive size={13} /> Export Bundle
-            </button>
-            <button className="cam-panel__button" type="button" disabled={selectedBulkClips.length === 0 || busy} onClick={() => { void exportClipBundle(selectedBulkClips); }}>
-              <Archive size={13} /> Export Selected
-            </button>
-            <button className="cam-panel__button" type="button" disabled={selectedBulkClips.length === 0 || busy} onClick={() => { void generateContactSheet(selectedBulkClips); }}>
-              <Image size={13} /> Contact Sheet
-            </button>
-            <button className="cam-panel__button" type="button" disabled={selectedBulkClips.length === 0} onClick={() => generateJobReport(selectedBulkClips)}>
-              <Save size={13} /> Report
-            </button>
-          </div>
-
-          <datalist id="camera-albums">
-            {albums.map((album) => <option key={album} value={album} />)}
-          </datalist>
-
-          <div className="cam-panel__clip-list" aria-label="Saved camera clips">
-            {clips.length === 0 ? (
-              <div className="cam-panel__note">Recorded clips save in this browser for the selected printer. Use Download to keep a file outside the app.</div>
-            ) : visibleClips.length === 0 ? (
-              <div className="cam-panel__note">No saved camera items match the current filter.</div>
-            ) : visibleClips.map((clip) => (
-              <button
-                key={clip.id}
-                className={`cam-panel__clip${selectedClip?.id === clip.id ? ' is-selected' : ''}`}
-                type="button"
-                onClick={() => {
-                  if (selectionMode) {
-                    toggleBulkSelection(clip.id);
-                    return;
-                  }
-                  selectClip(clip);
-                }}
-              >
-                {selectionMode && (
-                  <input
-                    className="cam-panel__clip-check"
-                    type="checkbox"
-                    checked={selectedClipIds.includes(clip.id)}
-                    onChange={(event) => {
-                      event.stopPropagation();
-                      toggleBulkSelection(clip.id);
-                    }}
-                    onClick={(event) => event.stopPropagation()}
-                  />
-                )}
-                <span className="cam-panel__thumb">
-                  {thumbUrls[clip.id] ? <img src={thumbUrls[clip.id]} alt="" /> : clipKind(clip) === 'snapshot' ? <Image size={15} /> : <Video size={15} />}
-                </span>
-                <span className="cam-panel__clip-main">
-                  <span className="cam-panel__clip-name">
-                    {clip.favorite && <Star size={11} />}
-                    {clipLabel(clip)}
-                  </span>
-                  <span className="cam-panel__clip-size">{clip.jobName ? clip.jobName : formatBytes(clip.size)}</span>
-                </span>
-                <span className="cam-panel__clip-date">{new Date(clip.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
-                <span className="cam-panel__clip-date">{new Date(clip.createdAt).toLocaleDateString()}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className={`cam-panel__danger-zone${dangerOpen ? ' is-open' : ''}`}>
-            <button className="cam-panel__danger-toggle" type="button" onClick={() => setDangerOpen((value) => !value)}>
-              <AlertTriangle size={13} />
-              <span>Danger Zone</span>
-              {dangerOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-            </button>
-            {dangerOpen && (
-              <div className="cam-panel__danger-actions">
-                <label>
-                  Cleanup days
-                  <input className="cam-panel__input" type="number" min={1} value={cleanupDays} onChange={(event) => setCleanupDays(Math.max(1, Number(event.target.value) || 1))} />
-                </label>
-                <button className="cam-panel__button cam-panel__button--danger" type="button" disabled={busy} onClick={() => { void cleanupOldClips(); }}>
-                  <Eraser size={13} /> Cleanup Old
-                </button>
-                <button className="cam-panel__button cam-panel__button--danger" type="button" disabled={visibleClips.length === 0 || busy} onClick={() => { void removeVisibleClips(); }}>
-                  <Trash2 size={13} /> Delete Visible
-                </button>
-                <button className="cam-panel__button cam-panel__button--danger" type="button" disabled={selectedBulkClips.length === 0 || busy} onClick={() => { void Promise.all(selectedBulkClips.map((clip) => removeClip(clip))); }}>
-                  <Trash2 size={13} /> Delete Selected
-                </button>
-              </div>
-            )}
-          </div>
-          </section>
+            <LibrarySection
+              busy={busy}
+              refreshClips={refreshClips}
+              selectionMode={selectionMode}
+              setSelectionMode={setSelectionMode}
+              selectedClipIds={selectedClipIds}
+              setSelectedClipIds={setSelectedClipIds}
+              selectedBulkClips={selectedBulkClips}
+              clipQuery={clipQuery}
+              setClipQuery={setClipQuery}
+              clipFilter={clipFilter}
+              setClipFilter={setClipFilter}
+              clipSort={clipSort}
+              setClipSort={setClipSort}
+              totalStorageBytes={totalStorageBytes}
+              storageByKind={storageByKind}
+              storageByJob={storageByJob}
+              bulkAlbum={bulkAlbum}
+              setBulkAlbum={setBulkAlbum}
+              bulkTags={bulkTags}
+              setBulkTags={setBulkTags}
+              albums={albums}
+              clips={clips}
+              visibleClips={visibleClips}
+              selectedClip={selectedClip}
+              thumbUrls={thumbUrls}
+              applyBulkTags={applyBulkTags}
+              exportVisibleClips={exportVisibleClips}
+              exportClipBundle={exportClipBundle}
+              generateContactSheet={generateContactSheet}
+              generateJobReport={generateJobReport}
+              selectClip={selectClip}
+              toggleBulkSelection={toggleBulkSelection}
+              removeClip={removeClip}
+              removeVisibleClips={removeVisibleClips}
+              cleanupOldClips={cleanupOldClips}
+              dangerOpen={dangerOpen}
+              setDangerOpen={setDangerOpen}
+              cleanupDays={cleanupDays}
+              setCleanupDays={setCleanupDays}
+            />
           )}
         </aside>}
       </div>
