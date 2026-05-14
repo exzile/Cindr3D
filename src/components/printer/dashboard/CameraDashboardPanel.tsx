@@ -7,12 +7,8 @@ import { type MediaViewportRect } from './cameraDashboard/snapshotEdit';
 import { type CameraMeasurementCalibration } from './cameraDashboard/types';
 import { buildCameraStreamState } from './cameraDashboard/streamState';
 import { CameraDashboardControls } from './cameraDashboard/CameraDashboardControls';
-import { CameraDashboardTopbar } from './cameraDashboard/CameraDashboardTopbar';
-import { CameraViewer } from './cameraDashboard/CameraViewer';
-import { ClipEditorPanel } from './cameraDashboard/ClipEditorPanel';
+import { CameraDashboardWorkspace } from './cameraDashboard/CameraDashboardWorkspace';
 import { FullscreenViewer } from './cameraDashboard/FullscreenViewer';
-import { RecentCapturesStrip } from './cameraDashboard/RecentCapturesStrip';
-import { RecordStrip } from './cameraDashboard/RecordStrip';
 import { useCameraConfigMutations } from './cameraDashboard/useCameraConfigMutations';
 import { useCameraConnection } from './cameraDashboard/useCameraConnection';
 import { useCameraFrameStyles } from './cameraDashboard/useCameraFrameStyles';
@@ -348,168 +344,74 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   return (
     <div className={`cam-panel${compact ? ' cam-panel--compact' : ''}`}>
       <div className="cam-panel__layout">
-        <div className="cam-panel__workspace">
-          <CameraDashboardTopbar
-            hasCamera={hasCamera}
-            imageFailed={imageFailed}
-            printerName={printerName}
-            message={message}
-            compact={compact}
-            reconnectCamera={reconnectCamera}
-            setFullscreen={setFullscreen}
-            setActiveTab={setActiveTab}
-            cameras={cameras}
-            activeCameraId={prefs.activeCameraId}
-            activePrinterId={activePrinterId}
-            updatePrinterPrefs={updatePrinterPrefs}
-            setStreamRevision={setStreamRevision}
-            setImageFailed={setImageFailed}
-            setWebRtcFailed={setWebRtcFailed}
-            setMessage={setMessage}
-          />
-
-
-          <CameraViewer
-            compact={compact}
-            frameClassName={frameClassName}
-            imageStyle={imageStyle}
-            calibrationStyle={calibrationStyle}
-            mediaViewportStyle={mediaViewportStyle}
-            frameRef={frameRef}
-            videoRef={videoRef}
-            imgRef={imgRef}
-            canvasRef={canvasRef}
-            isVideoStream={isVideoStream}
-            isBrowserUsbCamera={isBrowserUsbCamera}
-            streamSrc={streamSrc}
-            displayUrl={displayUrl}
-            hasCamera={hasCamera}
-            printerName={printerName}
-            handleFrameLoad={handleFrameLoad}
-            handleCameraError={handleCameraError}
-            poseStillUrl={poseStillUrl}
-            finalComparisonUrl={finalComparisonUrl}
-            recording={recording}
-            isTimelapseRecording={isTimelapseRecording}
-            isAutoRecording={isAutoRecording}
-            elapsedMs={elapsedMs}
-            lastFrameAt={lastFrameAt}
-            nowTick={nowTick}
-            calibration={calibration}
-            cameraOverlayMode={cameraOverlayMode}
-            setCameraOverlayMode={setCameraOverlayMode}
-            frameCount={frameCount}
-            overlayModeOptions={OVERLAY_MODE_OPTIONS}
-            measurementMode={measurementMode}
-            measurementStatus={measurementStatus}
-            bedCornersComplete={bedCornersComplete}
-            completeBedCorners={completeBedCorners}
-            measuredDistanceMm={measuredDistanceMm}
-            draggingBedCorner={draggingBedCorner}
-            draggingRulerEndpoint={draggingRulerEndpoint}
-            handleMeasurementPointerDown={handleMeasurementPointerDown}
-            handleCornerPointerDown={handleCornerPointerDown}
-            handleCornerPointerMove={handleCornerPointerMove}
-            handleCornerPointerUp={handleCornerPointerUp}
-            handleRulerPointerDown={handleRulerPointerDown}
-            handleRulerPointerMove={handleRulerPointerMove}
-            handleRulerPointerUp={handleRulerPointerUp}
-          />
-
-          <RecordStrip
-            recording={recording}
-            recordingStatusLabel={recordingStatusLabel}
-            jobFileName={jobFileName}
-            recordingMarkerCount={recordingMarkerCount}
-            totalStorageBytes={totalStorageBytes}
-          />
-
-          {!compact && (
-            <RecentCapturesStrip
-              recentClips={recentClips}
-              selectedClipId={selectedClip?.id}
-              thumbUrls={thumbUrls}
-              selectClip={selectClip}
-              setEditorCollapsed={setEditorCollapsed}
-            />
-          )}
-
-          {!compact && (
-            <ClipEditorPanel
-              editorCollapsed={editorCollapsed}
-              setEditorCollapsed={setEditorCollapsed}
-              selectedClip={selectedClip}
-              selectedClipUrl={selectedClipUrl}
-              selectedKind={selectedKind}
-              compareClip={compareClip}
-              compareClipUrl={compareClipUrl}
-              setCompareClipId={setCompareClipId}
-              snapshotClips={snapshotClips}
-              clipDraftName={clipDraftName}
-              setClipDraftName={setClipDraftName}
-              clipDraftKind={clipDraftKind}
-              setClipDraftKind={setClipDraftKind}
-              clipDraftJobName={clipDraftJobName}
-              setClipDraftJobName={setClipDraftJobName}
-              clipDraftAlbum={clipDraftAlbum}
-              setClipDraftAlbum={setClipDraftAlbum}
-              clipDraftTags={clipDraftTags}
-              setClipDraftTags={setClipDraftTags}
-              clipDraftRating={clipDraftRating}
-              setClipDraftRating={setClipDraftRating}
-              clipDraftNotes={clipDraftNotes}
-              setClipDraftNotes={setClipDraftNotes}
-              clipDraftChecklist={clipDraftChecklist}
-              toggleInspectionItem={toggleInspectionItem}
-              issueDraft={issueDraft}
-              setIssueDraft={setIssueDraft}
-              snapshotEditFlip={snapshotEditFlip}
-              setSnapshotEditFlip={setSnapshotEditFlip}
-              snapshotEditRotation={snapshotEditRotation}
-              setSnapshotEditRotation={setSnapshotEditRotation}
-              snapshotCrop={snapshotCrop}
-              setSnapshotCrop={setSnapshotCrop}
-              snapshotBrightness={snapshotBrightness}
-              setSnapshotBrightness={setSnapshotBrightness}
-              snapshotContrast={snapshotContrast}
-              setSnapshotContrast={setSnapshotContrast}
-              snapshotSharpen={snapshotSharpen}
-              setSnapshotSharpen={setSnapshotSharpen}
-              snapshotAnnotation={snapshotAnnotation}
-              setSnapshotAnnotation={setSnapshotAnnotation}
-              saveSnapshotAsCopy={saveSnapshotAsCopy}
-              setSaveSnapshotAsCopy={setSaveSnapshotAsCopy}
-              trimStart={trimStart}
-              setTrimStart={setTrimStart}
-              trimEnd={trimEnd}
-              setTrimEnd={setTrimEnd}
-              markerDraftLabel={markerDraftLabel}
-              setMarkerDraftLabel={setMarkerDraftLabel}
-              markerDraftTime={markerDraftTime}
-              setMarkerDraftTime={setMarkerDraftTime}
-              hasCamera={hasCamera}
-              recording={recording}
-              busy={busy}
-              startRecording={startRecording}
-              captureSnapshot={captureSnapshot}
-              setActiveControlSection={setActiveControlSection}
-              downloadClip={downloadClip}
-              toggleSelectedClipFavorite={toggleSelectedClipFavorite}
-              selectClip={selectClip}
-              saveSelectedClipDetails={saveSelectedClipDetails}
-              exportClipBundle={exportClipBundle}
-              removeClip={removeClip}
-              applySelectedIssue={applySelectedIssue}
-              saveSnapshotEdits={saveSnapshotEdits}
-              saveTrimmedVideoCopy={saveTrimmedVideoCopy}
-              trimBetweenFirstTwoMarkers={trimBetweenFirstTwoMarkers}
-              makeTimelapseCopy={makeTimelapseCopy}
-              addSelectedClipMarker={addSelectedClipMarker}
-              removeSelectedClipMarker={removeSelectedClipMarker}
-            />
-          )}
-
-        </div>
+        <CameraDashboardWorkspace
+          compact={compact}
+          topbarProps={{
+            hasCamera, imageFailed, printerName, message, compact,
+            reconnectCamera, setFullscreen, setActiveTab,
+            cameras, activeCameraId: prefs.activeCameraId,
+            activePrinterId, updatePrinterPrefs,
+            setStreamRevision, setImageFailed, setWebRtcFailed, setMessage,
+          }}
+          viewerProps={{
+            compact, frameClassName, imageStyle, calibrationStyle, mediaViewportStyle,
+            frameRef, videoRef, imgRef, canvasRef,
+            isVideoStream, isBrowserUsbCamera, streamSrc, displayUrl,
+            hasCamera, printerName, handleFrameLoad, handleCameraError,
+            poseStillUrl, finalComparisonUrl,
+            recording, isTimelapseRecording, isAutoRecording, elapsedMs,
+            lastFrameAt, nowTick, calibration,
+            cameraOverlayMode, setCameraOverlayMode, frameCount,
+            overlayModeOptions: OVERLAY_MODE_OPTIONS,
+            measurementMode, measurementStatus,
+            bedCornersComplete, completeBedCorners, measuredDistanceMm,
+            draggingBedCorner, draggingRulerEndpoint,
+            handleMeasurementPointerDown,
+            handleCornerPointerDown, handleCornerPointerMove, handleCornerPointerUp,
+            handleRulerPointerDown, handleRulerPointerMove, handleRulerPointerUp,
+          }}
+          recordStripProps={{
+            recording, recordingStatusLabel, jobFileName,
+            recordingMarkerCount, totalStorageBytes,
+          }}
+          recentCapturesProps={{
+            recentClips, selectedClipId: selectedClip?.id,
+            thumbUrls, selectClip, setEditorCollapsed,
+          }}
+          clipEditorProps={{
+            editorCollapsed, setEditorCollapsed,
+            selectedClip, selectedClipUrl, selectedKind,
+            compareClip, compareClipUrl, setCompareClipId,
+            snapshotClips,
+            clipDraftName, setClipDraftName,
+            clipDraftKind, setClipDraftKind,
+            clipDraftJobName, setClipDraftJobName,
+            clipDraftAlbum, setClipDraftAlbum,
+            clipDraftTags, setClipDraftTags,
+            clipDraftRating, setClipDraftRating,
+            clipDraftNotes, setClipDraftNotes,
+            clipDraftChecklist, toggleInspectionItem,
+            issueDraft, setIssueDraft,
+            snapshotEditFlip, setSnapshotEditFlip,
+            snapshotEditRotation, setSnapshotEditRotation,
+            snapshotCrop, setSnapshotCrop,
+            snapshotBrightness, setSnapshotBrightness,
+            snapshotContrast, setSnapshotContrast,
+            snapshotSharpen, setSnapshotSharpen,
+            snapshotAnnotation, setSnapshotAnnotation,
+            saveSnapshotAsCopy, setSaveSnapshotAsCopy,
+            trimStart, setTrimStart, trimEnd, setTrimEnd,
+            markerDraftLabel, setMarkerDraftLabel,
+            markerDraftTime, setMarkerDraftTime,
+            hasCamera, recording, busy,
+            startRecording, captureSnapshot, setActiveControlSection,
+            downloadClip, toggleSelectedClipFavorite, selectClip,
+            saveSelectedClipDetails, exportClipBundle, removeClip,
+            applySelectedIssue, saveSnapshotEdits,
+            saveTrimmedVideoCopy, trimBetweenFirstTwoMarkers, makeTimelapseCopy,
+            addSelectedClipMarker, removeSelectedClipMarker,
+          }}
+        />
 
         {!compact && (
           <CameraDashboardControls
