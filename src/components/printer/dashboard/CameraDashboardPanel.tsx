@@ -150,9 +150,11 @@ import {
   type RulerEndpointKey,
 } from './cameraDashboard/types';
 import { buildCameraStreamState } from './cameraDashboard/streamState';
+import { useAutoSnapshots } from './cameraDashboard/useAutoSnapshots';
 import { useCameraDashboardPersistence } from './cameraDashboard/useCameraDashboardPersistence';
 import { useCameraMeasurement } from './cameraDashboard/useCameraMeasurement';
 import { useCameraPresets } from './cameraDashboard/useCameraPresets';
+import { useCameraRecording } from './cameraDashboard/useCameraRecording';
 import { usePtzControls } from './cameraDashboard/usePtzControls';
 import { useSnapshotCapture } from './cameraDashboard/useSnapshotCapture';
 import './CameraDashboardPanel.css';
@@ -618,264 +620,24 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     isPrintActive, droppedFrameWarning,
   });
 
-  const stopBackendRecording = useCallback(async () => {
-    const session = backendRecordingRef.current;
-    if (!session) return false;
-    backendRecordingRef.current = null;
-    window.sessionStorage.removeItem(backendRecordingStorageKey(printerId));
-    recordingKindRef.current = null;
-    recordingJobRef.current = undefined;
-    recordingMarkersRef.current = [];
-    recordingThumbnailRef.current = undefined;
-    setRecordingKind(null);
-    setElapsedMs(0);
-    setBusy(true);
-    try {
-      const response = await fetch(`/camera-rtsp-record?action=stop&id=${encodeURIComponent(session.id)}`, {
-        cache: 'no-store',
-      });
-      if (!response.ok) {
-        throw new Error(await response.text() || 'Unable to stop backend camera recording.');
-      }
-      const blob = await response.blob();
-      const durationMs = Number(response.headers.get('x-recording-duration-ms')) || (Date.now() - session.startedAt);
-      if (blob.size <= 0) {
-        setMessage('No video frames were captured.');
-        return true;
-      }
-      await saveClip({
-        id: `${printerId}-${Date.now()}`,
-        printerId,
-        printerName,
-        kind: session.kind,
-        jobName: session.jobName,
-        markers: session.markers,
-        thumbnailBlob: session.thumbnailBlob,
-        createdAt: Date.now(),
-        durationMs,
-        mimeType: blob.type || 'video/mp4',
-        size: blob.size,
-        blob,
-      });
-      setMessage(savedRecordingMessage(session.kind, durationMs));
-      await refreshClips();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to save backend camera recording.');
-    } finally {
-      setBusy(false);
-    }
-    return true;
-  }, [printerId, printerName, refreshClips]);
+  const { startRecording, stopRecording } = useCameraRecording({
+    recorderRef, chunksRef, startedAtRef, recordingKindRef, recordingJobRef,
+    recordingMarkersRef, recordingThumbnailRef, backendRecordingRef, frameTimerRef,
+    canvasRef,
+    drawFrame, canvasBlob, hasCamera, recording, canUseBackendRecording,
+    isServerUsbCamera, backendRecordingUrl,
+    hdBridgeQuality, timelapseFps, timelapseIntervalSec,
+    autoRecord, autoTimelapse, isPrintActive, jobFileName,
+    printerId, printerName,
+    setRecordingKind, setElapsedMs, setBusy, setMessage, refreshClips,
+  });
 
-  const stopRecording = useCallback(() => {
-    if (frameTimerRef.current !== null) {
-      window.clearInterval(frameTimerRef.current);
-      frameTimerRef.current = null;
-    }
-    if (backendRecordingRef.current) {
-      void stopBackendRecording();
-      return;
-    }
-    const recorder = recorderRef.current;
-    if (recorder && recorder.state !== 'inactive') {
-      recorder.stop();
-    }
-  }, [stopBackendRecording]);
-
-  const startRecording = useCallback(async (kind: Exclude<CameraClipKind, 'snapshot'> = 'clip', jobName?: string) => {
-    if (!hasCamera || recording) return;
-    if (canUseBackendRecording) {
-      try {
-        let thumbnailBlob: Blob | undefined;
-        try {
-          drawFrame();
-          thumbnailBlob = await canvasBlob('image/jpeg', 0.75);
-        } catch {
-          thumbnailBlob = undefined;
-        }
-        const params = new URLSearchParams({
-          action: 'start',
-          kind,
-          quality: hdBridgeQuality,
-        });
-        if (isServerUsbCamera) {
-          params.set('source', 'usb');
-          params.set('device', backendRecordingUrl);
-        } else {
-          params.set('url', backendRecordingUrl);
-        }
-        const response = await fetch(`/camera-rtsp-record?${params.toString()}`, { cache: 'no-store' });
-        if (!response.ok) {
-          throw new Error(await response.text() || 'Unable to start backend camera recording.');
-        }
-        const result = await response.json() as { id: string; createdAt?: number };
-        const startedAt = result.createdAt ?? Date.now();
-        backendRecordingRef.current = {
-          id: result.id,
-          kind,
-          jobName,
-          markers: [],
-          startedAt,
-          thumbnailBlob,
-        };
-        window.sessionStorage.setItem(backendRecordingStorageKey(printerId), JSON.stringify({
-          id: result.id,
-          kind,
-          jobName,
-          markers: [],
-          startedAt,
-        }));
-        startedAtRef.current = startedAt;
-        recordingKindRef.current = kind;
-        recordingJobRef.current = jobName;
-        recordingMarkersRef.current = [];
-        recordingThumbnailRef.current = thumbnailBlob;
-        setRecordingKind(kind);
-        setElapsedMs(0);
-        setMessage(kind === 'timelapse' ? 'Backend timelapse recording started...' : kind === 'auto' ? 'Backend auto-recording active print...' : 'Backend camera recording started...');
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : 'Unable to start backend camera recording.');
-      }
-      return;
-    }
-
-    if (!('MediaRecorder' in window)) {
-      setMessage('This browser does not support camera clip recording.');
-      return;
-    }
-
-    try {
-      drawFrame();
-      const canvas = canvasRef.current;
-      if (!canvas) throw new Error('Recording canvas is not ready.');
-      recordingThumbnailRef.current = await canvasBlob('image/jpeg', 0.75);
-      const stream = canvas.captureStream(kind === 'timelapse' ? timelapseFps : RECORDING_FPS);
-      const mimeType = pickRecordingMimeType();
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      chunksRef.current = [];
-      startedAtRef.current = Date.now();
-      recordingKindRef.current = kind;
-      recordingJobRef.current = jobName;
-      recordingMarkersRef.current = [];
-
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
-      };
-
-      recorder.onstop = () => {
-        const durationMs = Date.now() - startedAtRef.current;
-        const type = recorder.mimeType || mimeType || 'video/webm';
-        const blob = new Blob(chunksRef.current, { type });
-        const stoppedKind = recordingKindRef.current ?? kind;
-        const stoppedJob = recordingJobRef.current;
-        const stoppedMarkers = recordingMarkersRef.current;
-        const stoppedThumbnail = recordingThumbnailRef.current;
-        recorderRef.current = null;
-        recordingKindRef.current = null;
-        recordingJobRef.current = undefined;
-        recordingMarkersRef.current = [];
-        recordingThumbnailRef.current = undefined;
-        setRecordingKind(null);
-        setElapsedMs(0);
-        void (async () => {
-          if (blob.size <= 0) {
-            setMessage('No video frames were captured.');
-            return;
-          }
-          setBusy(true);
-          try {
-            await saveClip({
-              id: `${printerId}-${Date.now()}`,
-              printerId,
-              printerName,
-              kind: stoppedKind,
-              jobName: stoppedJob,
-              markers: stoppedMarkers,
-              thumbnailBlob: stoppedThumbnail,
-              createdAt: Date.now(),
-              durationMs,
-              mimeType: type,
-              size: blob.size,
-              blob,
-            });
-            setMessage(savedRecordingMessage(stoppedKind, durationMs));
-            await refreshClips();
-          } catch (error) {
-            setMessage(error instanceof Error ? error.message : 'Unable to save camera clip.');
-          } finally {
-            setBusy(false);
-          }
-        })();
-      };
-
-      recorder.onerror = () => {
-        setMessage('Recording stopped because the camera stream could not be captured.');
-        stopRecording();
-      };
-
-      recorderRef.current = recorder;
-      frameTimerRef.current = window.setInterval(() => {
-        try {
-          drawFrame();
-        } catch {
-          stopRecording();
-          setMessage('Recording stopped because the camera frame could not be read.');
-        }
-      }, kind === 'timelapse' ? Math.max(1, timelapseIntervalSec) * 1000 : Math.round(1000 / RECORDING_FPS));
-
-      recorder.start(1000);
-      setRecordingKind(kind);
-      setElapsedMs(0);
-      setMessage(kind === 'timelapse' ? 'Recording timelapse...' : kind === 'auto' ? 'Auto-recording active print...' : 'Recording camera clip...');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to start recording.');
-    }
-  }, [backendRecordingUrl, canUseBackendRecording, canvasBlob, drawFrame, hasCamera, hdBridgeQuality, isServerUsbCamera, printerId, printerName, recording, refreshClips, stopRecording, timelapseFps, timelapseIntervalSec]);
-
-  useEffect(() => {
-    if ((!autoRecord && !autoTimelapse) || !hasCamera) return;
-    if (isPrintActive && !recordingKindRef.current) {
-      void startRecording(autoTimelapse ? 'timelapse' : 'auto', jobFileName);
-      return;
-    }
-    if (!isPrintActive && (recordingKindRef.current === 'auto' || (autoTimelapse && recordingKindRef.current === 'timelapse'))) {
-      stopRecording();
-    }
-  }, [autoRecord, autoTimelapse, hasCamera, isPrintActive, jobFileName, startRecording, stopRecording]);
-
-  useEffect(() => {
-    const previous = previousPrintStatusRef.current;
-    previousPrintStatusRef.current = printStatus;
-
-    if (!hasCamera) return;
-    const becameActive = !previous || (previous !== 'processing' && previous !== 'simulating');
-    if (isPrintActive && becameActive) {
-      seenPrintLayersRef.current = new Set();
-      if (autoSnapshotFirstLayer) {
-        void captureSnapshot('First layer snapshot');
-      }
-      return;
-    }
-
-    if (previous && previous !== printStatus && !isPrintActive) {
-      if (autoSnapshotFinish && printStatus === 'idle') {
-        void captureSnapshot('Print finish snapshot');
-      }
-      if (printStatus === 'idle') {
-        void captureFinalComparisonFrame();
-      }
-      if (autoSnapshotError && (printStatus === 'halted' || printStatus === 'pausing' || printStatus === 'cancelling')) {
-        void captureSnapshot('Print issue snapshot');
-      }
-    }
-  }, [autoSnapshotError, autoSnapshotFinish, autoSnapshotFirstLayer, captureFinalComparisonFrame, captureSnapshot, hasCamera, isPrintActive, printStatus]);
-
-  useEffect(() => {
-    if (!hasCamera || !autoSnapshotLayer || !isPrintActive || currentLayer === undefined) return;
-    if (seenPrintLayersRef.current.has(currentLayer)) return;
-    seenPrintLayersRef.current.add(currentLayer);
-    void captureSnapshot(`Layer ${currentLayer} snapshot`);
-  }, [autoSnapshotLayer, captureSnapshot, currentLayer, hasCamera, isPrintActive]);
+  useAutoSnapshots({
+    hasCamera, isPrintActive, printStatus, currentLayer,
+    autoSnapshotFirstLayer, autoSnapshotLayer, autoSnapshotFinish, autoSnapshotError,
+    previousPrintStatusRef, seenPrintLayersRef,
+    captureSnapshot, captureFinalComparisonFrame,
+  });
 
   const selectClip = useCallback((clip: CameraClip) => {
     if (selectedClipUrlRef.current) {
