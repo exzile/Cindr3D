@@ -14,27 +14,13 @@ import { type CameraOverlayMode } from './CameraOverlayPanel';
 import {
   clipKind,
   formatClipDuration,
-  loadClips,
   type BackendRecordingSession,
-  type CameraClip,
   type CameraClipKind,
   type CameraMarker,
-  type ClipFilter,
   type ClipRating,
-  type ClipSort,
   type IssueTag,
   type SnapshotCrop,
 } from './cameraDashboard/clipStore';
-import {
-  clipAlbums,
-  filterVisibleClips,
-  selectCompareClip,
-  sortedSnapshotClips,
-  summarizeClipStorageByJob,
-  summarizeClipStorageByKind,
-  timelineClipsForJob,
-  totalClipStorageBytes,
-} from './cameraDashboard/clipLibrary';
 import {
   defaultCrop,
   type MediaViewportRect,
@@ -73,6 +59,7 @@ import { useCameraPresets } from './cameraDashboard/useCameraPresets';
 import { useCameraRecording } from './cameraDashboard/useCameraRecording';
 import { useClipActions } from './cameraDashboard/useClipActions';
 import { useClipDraftSync } from './cameraDashboard/useClipDraftSync';
+import { useClipLibrary } from './cameraDashboard/useClipLibrary';
 import { useClipThumbnailUrls } from './cameraDashboard/useClipThumbnailUrls';
 import { useMediaViewport } from './cameraDashboard/useMediaViewport';
 import { useVideoStream } from './cameraDashboard/useVideoStream';
@@ -137,7 +124,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const frameTimerRef = useRef<number | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const startedAtRef = useRef<number>(0);
-  const selectedClipUrlRef = useRef<string | null>(null);
   const recordingKindRef = useRef<CameraClipKind | null>(null);
   const recordingJobRef = useRef<string | undefined>(undefined);
   const recordingMarkersRef = useRef<CameraMarker[]>([]);
@@ -153,9 +139,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
 
   const [imageFailed, setImageFailed] = useState(false);
   const [webRtcFailed, setWebRtcFailed] = useState(false);
-  const [clips, setClips] = useState<CameraClip[]>([]);
-  const [selectedClip, setSelectedClip] = useState<CameraClip | null>(null);
-  const [selectedClipUrl, setSelectedClipUrl] = useState<string>('');
   const [recordingKind, setRecordingKind] = useState<CameraClipKind | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [autoRecord, setAutoRecord] = useState(() => dashboardPrefs.autoRecord);
@@ -177,9 +160,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [showCrosshair, setShowCrosshair] = useState(() => dashboardPrefs.showCrosshair);
   const [flipImage, setFlipImage] = useState(() => dashboardPrefs.flipImage);
   const [rotation, setRotation] = useState(() => dashboardPrefs.rotation % 360);
-  const [clipFilter, setClipFilter] = useState<ClipFilter>('all');
-  const [clipSort, setClipSort] = useState<ClipSort>('newest');
-  const [clipQuery, setClipQuery] = useState('');
   const [clipDraftName, setClipDraftName] = useState('');
   const [clipDraftNotes, setClipDraftNotes] = useState('');
   const [clipDraftTags, setClipDraftTags] = useState('');
@@ -204,7 +184,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [bulkTags, setBulkTags] = useState('');
   const [bulkAlbum, setBulkAlbum] = useState('');
   const [cleanupDays, setCleanupDays] = useState(30);
-  const [compareClipId, setCompareClipId] = useState('');
   const [healthPanelOpen, setHealthPanelOpen] = useState(() => dashboardPrefs.healthPanelOpen);
   const [activeControlSection, setActiveControlSection] = useState<ControlSection>(() => dashboardPrefs.activeControlSection);
   const [editorCollapsed, setEditorCollapsed] = useState(() => dashboardPrefs.editorCollapsed);
@@ -214,8 +193,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [ptzPresetName, setPtzPresetName] = useState('');
   const [ptzPresetToken, setPtzPresetToken] = useState('1');
   const [compareBlend, setCompareBlend] = useState(50);
-  const [selectedClipIds, setSelectedClipIds] = useState<string[]>([]);
-  const [selectionMode, setSelectionMode] = useState(false);
   const [cameraOverlayMode, setCameraOverlayMode] = useState<CameraOverlayMode>('camera');
   const [ptzEnabled, setPtzEnabled] = useState(() => dashboardPrefs.ptzEnabled);
   const [ptzSpeed, setPtzSpeed] = useState(() => dashboardPrefs.ptzSpeed);
@@ -283,6 +260,27 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
 
   const printerId = activePrinter?.id ?? 'default-printer';
   const printerName = activePrinter?.name ?? 'Printer';
+
+  const {
+    clips, setClips,
+    selectedClip, setSelectedClip,
+    selectedClipUrl, setSelectedClipUrl,
+    selectedClipUrlRef,
+    clipFilter, setClipFilter,
+    clipSort, setClipSort,
+    clipQuery, setClipQuery,
+    compareClipId, setCompareClipId,
+    selectedClipIds, setSelectedClipIds,
+    selectionMode, setSelectionMode,
+    totalStorageBytes, storageByKind, storageByJob,
+    albums, snapshotClips, compareClip,
+    selectedBulkClips, visibleClips, recentClips,
+    timelineJobName, timelineClips,
+    refreshClips,
+  } = useClipLibrary({ printerId, jobFileName, setBusy, setMessage });
+  const thumbUrls = useClipThumbnailUrls(clips);
+  const compareClipUrl = compareClip ? thumbUrls[compareClip.id] : '';
+
   const {
     hdMainIsRtsp,
     displayUrl,
@@ -304,14 +302,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const isPrintActive = printStatus === 'processing' || printStatus === 'simulating';
   const canUsePtz = Boolean(activeCamera?.ptzEnabled && activeCamera.ptzProvider !== 'off');
   const activePtzStartPreset = activeCamera?.ptzPresets.find((preset) => preset.id === activeCamera.ptzStartPresetId);
-  const totalStorageBytes = useMemo(() => totalClipStorageBytes(clips), [clips]);
-  const storageByKind = useMemo(() => summarizeClipStorageByKind(clips), [clips]);
-
-  const storageByJob = useMemo(() => summarizeClipStorageByJob(clips), [clips]);
-  const albums = useMemo(() => clipAlbums(clips), [clips]);
-  const snapshotClips = useMemo(() => sortedSnapshotClips(clips), [clips]);
-  const compareClip = useMemo(() => selectCompareClip(snapshotClips, compareClipId, selectedClip?.id), [compareClipId, selectedClip?.id, snapshotClips]);
-  const compareClipUrl = compareClip ? thumbUrls[compareClip.id] : '';
   const frameAgeMs = lastFrameAt ? nowTick - lastFrameAt : null;
   const estimatedFps = lastFrameIntervalMs ? Math.min(60, 1000 / lastFrameIntervalMs) : 0;
   const droppedFrameWarning = frameAgeMs !== null && frameAgeMs > 5000;
@@ -322,23 +312,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
       ? 'Print active'
       : 'Ready';
   const selectedKind = selectedClip ? clipKind(selectedClip) : null;
-  const selectedBulkClips = useMemo(() => clips.filter((clip) => selectedClipIds.includes(clip.id)), [clips, selectedClipIds]);
-  const visibleClips = useMemo(() => filterVisibleClips(clips, clipFilter, clipSort, clipQuery), [clipFilter, clipQuery, clipSort, clips]);
-  const recentClips = useMemo(() => clips.slice(0, 6), [clips]);
-  const timelineJobName = jobFileName || selectedClip?.jobName || '';
-  const timelineClips = useMemo(() => timelineClipsForJob(clips, timelineJobName), [clips, timelineJobName]);
-
-  const refreshClips = useCallback(async () => {
-    setBusy(true);
-    try {
-      setClips(await loadClips(printerId));
-      setMessage('');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to load saved clips.');
-    } finally {
-      setBusy(false);
-    }
-  }, [printerId]);
 
   useEffect(() => {
     void refreshClips();
@@ -364,8 +337,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
       return '';
     });
   }, []);
-
-  const thumbUrls = useClipThumbnailUrls(clips);
 
   useBrowserUsbCamera({
     isBrowserUsbCamera,
