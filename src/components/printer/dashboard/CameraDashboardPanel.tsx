@@ -6,7 +6,6 @@ import {
   DEFAULT_PREFS,
   getDuetPrefs,
   type CameraDashboardPrefs,
-  type CameraHdBridgeQuality,
   type DuetPrefs,
 } from '../../../utils/duetPrefs';
 import { enabledCamerasFromPrefs, prefsWithCamera } from '../../../utils/cameraStreamUrl';
@@ -24,11 +23,7 @@ import {
   loadCameraDashboardPrefs,
   loadCameraPresets,
 } from './cameraDashboard/prefsStorage';
-import {
-  type CameraMeasurementCalibration,
-  type CameraPreset,
-  type ControlSection,
-} from './cameraDashboard/types';
+import { type CameraMeasurementCalibration } from './cameraDashboard/types';
 import { buildCameraStreamState } from './cameraDashboard/streamState';
 import { CameraDashboardTopbar } from './cameraDashboard/CameraDashboardTopbar';
 import { CameraViewer } from './cameraDashboard/CameraViewer';
@@ -47,7 +42,7 @@ import { TimelineSection } from './cameraDashboard/TimelineSection';
 import { ViewControlsSection } from './cameraDashboard/ViewControlsSection';
 import { useAutoSnapshots } from './cameraDashboard/useAutoSnapshots';
 import { useBrowserUsbCamera } from './cameraDashboard/useBrowserUsbCamera';
-import { useCameraDashboardPersistence } from './cameraDashboard/useCameraDashboardPersistence';
+import { useDashboardPrefsState } from './cameraDashboard/useDashboardPrefsState';
 import { useCameraMeasurement } from './cameraDashboard/useCameraMeasurement';
 import { useCameraPresets } from './cameraDashboard/useCameraPresets';
 import { useCameraRecording } from './cameraDashboard/useCameraRecording';
@@ -135,17 +130,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [webRtcFailed, setWebRtcFailed] = useState(false);
   const [recordingKind, setRecordingKind] = useState<CameraClipKind | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
-  const [autoRecord, setAutoRecord] = useState(() => dashboardPrefs.autoRecord);
-  const [autoTimelapse, setAutoTimelapse] = useState(() => dashboardPrefs.autoTimelapse);
-  const [autoSnapshotFirstLayer, setAutoSnapshotFirstLayer] = useState(() => dashboardPrefs.autoSnapshotFirstLayer);
-  const [autoSnapshotLayer, setAutoSnapshotLayer] = useState(() => dashboardPrefs.autoSnapshotLayer);
-  const [autoSnapshotFinish, setAutoSnapshotFinish] = useState(() => dashboardPrefs.autoSnapshotFinish);
-  const [autoSnapshotError, setAutoSnapshotError] = useState(() => dashboardPrefs.autoSnapshotError);
-  const [scheduledSnapshots, setScheduledSnapshots] = useState(() => dashboardPrefs.scheduledSnapshots);
-  const [scheduledSnapshotIntervalMin, setScheduledSnapshotIntervalMin] = useState(() => dashboardPrefs.scheduledSnapshotIntervalMin);
-  const [anomalyCapture, setAnomalyCapture] = useState(() => dashboardPrefs.anomalyCapture);
-  const [timelapseIntervalSec, setTimelapseIntervalSec] = useState(() => dashboardPrefs.timelapseIntervalSec);
-  const [timelapseFps, setTimelapseFps] = useState(() => dashboardPrefs.timelapseFps);
   const [streamRevision, setStreamRevision] = useState(0);
   const [lastFrameAt, setLastFrameAt] = useState<number | null>(null);
   const nowTick = useNow(1000);
@@ -157,36 +141,18 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [bulkTags, setBulkTags] = useState('');
   const [bulkAlbum, setBulkAlbum] = useState('');
   const [cleanupDays, setCleanupDays] = useState(30);
-  const [healthPanelOpen, setHealthPanelOpen] = useState(() => dashboardPrefs.healthPanelOpen);
-  const [activeControlSection, setActiveControlSection] = useState<ControlSection>(() => dashboardPrefs.activeControlSection);
-  const [editorCollapsed, setEditorCollapsed] = useState(() => dashboardPrefs.editorCollapsed);
   const [dangerOpen, setDangerOpen] = useState(false);
-  const [cameraPresets, setCameraPresets] = useState<CameraPreset[]>(() => dashboardPrefs.cameraPresets);
   const [presetName, setPresetName] = useState('');
   const [ptzPresetName, setPtzPresetName] = useState('');
   const [ptzPresetToken, setPtzPresetToken] = useState('1');
   const [compareBlend, setCompareBlend] = useState(50);
   const [cameraOverlayMode, setCameraOverlayMode] = useState<CameraOverlayMode>('camera');
-  const [ptzEnabled, setPtzEnabled] = useState(() => dashboardPrefs.ptzEnabled);
-  const [ptzSpeed, setPtzSpeed] = useState(() => dashboardPrefs.ptzSpeed);
-  const [hdBridgeQuality, setHdBridgeQuality] = useState<CameraHdBridgeQuality>(() => dashboardPrefs.hdBridgeQuality);
   const [mediaViewport, setMediaViewport] = useState<MediaViewportRect>({ left: 0, top: 0, width: 100, height: 100 });
   const [lastFrameIntervalMs, setLastFrameIntervalMs] = useState<number | null>(null);
   const [frameCount, setFrameCount] = useState(0);
   const [reconnectCount, setReconnectCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-
-  const streamState = useMemo(() => buildCameraStreamState({
-    prefs,
-    hostname: config.hostname,
-    hdBridgeQuality,
-    serviceWebcamUrl: service?.getWebcamUrl(),
-    activeCamera,
-    webRtcFailed,
-    imageFailed,
-    streamRevision,
-  }), [activeCamera, config.hostname, hdBridgeQuality, imageFailed, prefs, service, streamRevision, webRtcFailed]);
 
   const measurement = useCameraMeasurement({
     initialCalibration: dashboardPrefs.calibration as CameraMeasurementCalibration,
@@ -213,23 +179,44 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     savePoseCalibration, clearPoseStill,
   } = measurement;
 
-  useCameraDashboardPersistence({
+  const {
+    autoRecord, setAutoRecord,
+    autoTimelapse, setAutoTimelapse,
+    autoSnapshotFirstLayer, setAutoSnapshotFirstLayer,
+    autoSnapshotLayer, setAutoSnapshotLayer,
+    autoSnapshotFinish, setAutoSnapshotFinish,
+    autoSnapshotError, setAutoSnapshotError,
+    scheduledSnapshots, setScheduledSnapshots,
+    scheduledSnapshotIntervalMin, setScheduledSnapshotIntervalMin,
+    anomalyCapture, setAnomalyCapture,
+    timelapseIntervalSec, setTimelapseIntervalSec,
+    timelapseFps, setTimelapseFps,
+    healthPanelOpen, setHealthPanelOpen,
+    activeControlSection, setActiveControlSection,
+    editorCollapsed, setEditorCollapsed,
+    cameraPresets, setCameraPresets,
+    ptzEnabled, setPtzEnabled,
+    ptzSpeed, setPtzSpeed,
+    hdBridgeQuality, setHdBridgeQuality,
+  } = useDashboardPrefsState({
     activePrinterId, dashboardPrefs, updatePrinterPrefs,
     hydratedPrinterIdRef, skipNextPrefsSaveRef,
-    autoRecord, autoTimelapse, autoSnapshotFirstLayer, autoSnapshotLayer,
-    autoSnapshotFinish, autoSnapshotError, scheduledSnapshots,
-    scheduledSnapshotIntervalMin, anomalyCapture, timelapseIntervalSec, timelapseFps,
-    showGrid, showCrosshair, flipImage, rotation,
-    healthPanelOpen, activeControlSection, editorCollapsed,
-    cameraPresets, calibration, ptzEnabled, ptzSpeed, hdBridgeQuality,
-    setAutoRecord, setAutoTimelapse, setAutoSnapshotFirstLayer, setAutoSnapshotLayer,
-    setAutoSnapshotFinish, setAutoSnapshotError, setScheduledSnapshots,
-    setScheduledSnapshotIntervalMin, setAnomalyCapture, setTimelapseIntervalSec, setTimelapseFps,
-    setShowGrid, setShowCrosshair, setFlipImage, setRotation,
-    setHealthPanelOpen, setActiveControlSection, setEditorCollapsed,
-    setCameraPresets, setCalibration, setPtzEnabled, setPtzSpeed, setHdBridgeQuality,
-    setMeasurementMode, setNextBedCornerIndex, setPoseStillUrl, setFinalComparisonUrl,
+    viewMode: { showGrid, setShowGrid, showCrosshair, setShowCrosshair, flipImage, setFlipImage, rotation, setRotation },
+    calibration,
+    setCalibration, setMeasurementMode, setNextBedCornerIndex,
+    setPoseStillUrl, setFinalComparisonUrl,
   });
+
+  const streamState = useMemo(() => buildCameraStreamState({
+    prefs,
+    hostname: config.hostname,
+    hdBridgeQuality,
+    serviceWebcamUrl: service?.getWebcamUrl(),
+    activeCamera,
+    webRtcFailed,
+    imageFailed,
+    streamRevision,
+  }), [activeCamera, config.hostname, hdBridgeQuality, imageFailed, prefs, service, streamRevision, webRtcFailed]);
 
   const printerId = activePrinter?.id ?? 'default-printer';
   const printerName = activePrinter?.name ?? 'Printer';
