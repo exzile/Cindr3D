@@ -2,6 +2,7 @@ import {
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Camera, Flag, Home, Play,
   Save, Settings, Video, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
+import { useState } from 'react';
 import { ptzProviderLabel, type PtzDirection } from '../../../../services/camera/ptzControl';
 import type { CameraHdBridgeQuality, CameraPtzPreset, DuetPrefs } from '../../../../utils/duetPrefs';
 import { HD_BRIDGE_QUALITIES, type CameraPreset } from './types';
@@ -42,9 +43,7 @@ export function SettingsSection(props: {
   setTimelapseFps: (value: number) => void;
 
   // Camera presets
-  presetName: string;
-  setPresetName: (value: string) => void;
-  saveCameraPreset: () => void;
+  saveCameraPreset: (name: string) => void;
   applyCameraPreset: (preset: CameraPreset) => void;
   deleteCameraPreset: (presetId: string) => void;
   cameraPresets: CameraPreset[];
@@ -57,13 +56,9 @@ export function SettingsSection(props: {
   canUsePtz: boolean;
   activeCamera: ActiveCameraLike | null | undefined;
   updateActiveCamera: (patch: Partial<ActiveCameraLike>) => void;
-  ptzPresetName: string;
-  setPtzPresetName: (value: string) => void;
-  ptzPresetToken: string;
-  setPtzPresetToken: (value: string) => void;
   runPtzCommand: (direction: PtzDirection) => void;
   runPtzPreset: (preset: CameraPtzPreset) => Promise<void> | void;
-  savePtzPreset: () => void;
+  savePtzPreset: (name: string, token: string) => void;
   deletePtzPreset: (presetId: string) => void;
 
   // Auto-trigger toggles
@@ -90,9 +85,8 @@ export function SettingsSection(props: {
     webcamStreamPreference, setCameraQuality, hdLiveNeedsBridge,
     hdBridgeQuality, setHdBridgeQuality, setStreamRevision, setMessage,
     timelapseIntervalSec, setTimelapseIntervalSec, timelapseFps, setTimelapseFps,
-    presetName, setPresetName, saveCameraPreset, applyCameraPreset, deleteCameraPreset, cameraPresets,
+    saveCameraPreset, applyCameraPreset, deleteCameraPreset, cameraPresets,
     ptzEnabled, setPtzEnabled, ptzSpeed, setPtzSpeed, canUsePtz, activeCamera, updateActiveCamera,
-    ptzPresetName, setPtzPresetName, ptzPresetToken, setPtzPresetToken,
     runPtzCommand, runPtzPreset, savePtzPreset, deletePtzPreset,
     autoRecord, setAutoRecord, autoTimelapse, setAutoTimelapse,
     autoSnapshotFirstLayer, setAutoSnapshotFirstLayer, autoSnapshotLayer, setAutoSnapshotLayer,
@@ -100,6 +94,12 @@ export function SettingsSection(props: {
     scheduledSnapshots, setScheduledSnapshots, scheduledSnapshotIntervalMin, setScheduledSnapshotIntervalMin,
     anomalyCapture, setAnomalyCapture,
   } = props;
+
+  // Form drafts — used only by the Save buttons below. Owning them here
+  // keeps the host from carrying three transient text inputs.
+  const [presetName, setPresetName] = useState('');
+  const [ptzPresetName, setPtzPresetName] = useState('');
+  const [ptzPresetToken, setPtzPresetToken] = useState('1');
 
   return (
     <section className="cam-panel__control-section" aria-label="Camera automation settings">
@@ -173,7 +173,7 @@ export function SettingsSection(props: {
       </div>
       <div className="cam-panel__preset-tools">
         <input className="cam-panel__input" value={presetName} placeholder="Preset name" onChange={(event) => setPresetName(event.target.value)} />
-        <button className="cam-panel__button" type="button" onClick={saveCameraPreset}>
+        <button className="cam-panel__button" type="button" onClick={() => { saveCameraPreset(presetName); setPresetName(''); }}>
           <Save size={13} /> Save Preset
         </button>
         {cameraPresets.length === 0 ? (
@@ -246,7 +246,7 @@ export function SettingsSection(props: {
         <div className="cam-panel__ptz-preset-form">
           <input className="cam-panel__input" value={ptzPresetName} placeholder="Preset name" onChange={(event) => setPtzPresetName(event.target.value)} />
           <input className="cam-panel__input" value={ptzPresetToken} placeholder="Slot" onChange={(event) => setPtzPresetToken(event.target.value)} />
-          <button className="cam-panel__button" type="button" disabled={!activeCamera} onClick={savePtzPreset}>
+          <button className="cam-panel__button" type="button" disabled={!activeCamera} onClick={() => { savePtzPreset(ptzPresetName, ptzPresetToken); setPtzPresetName(''); }}>
             <Save size={13} /> Save PTZ
           </button>
         </div>

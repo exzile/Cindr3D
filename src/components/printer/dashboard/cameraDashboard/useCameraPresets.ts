@@ -10,8 +10,6 @@ import type { CameraPreset } from './types';
 export interface UseCameraPresetsDeps {
   cameraPresets: CameraPreset[];
   setCameraPresets: (updater: (presets: CameraPreset[]) => CameraPreset[]) => void;
-  presetName: string;
-  setPresetName: (next: string) => void;
   setMessage: (msg: string) => void;
   showGrid: boolean;
   showCrosshair: boolean;
@@ -29,13 +27,13 @@ export interface UseCameraPresetsDeps {
 
 export function useCameraPresets(deps: UseCameraPresetsDeps) {
   const {
-    cameraPresets, setCameraPresets, presetName, setPresetName, setMessage,
+    cameraPresets, setCameraPresets, setMessage,
     showGrid, showCrosshair, flipImage, rotation, timelapseIntervalSec, timelapseFps,
     setShowGrid, setShowCrosshair, setFlipImage, setRotation, setTimelapseIntervalSec, setTimelapseFps,
   } = deps;
 
-  const saveCameraPreset = useCallback(() => {
-    const name = presetName.trim() || `Preset ${cameraPresets.length + 1}`;
+  const saveCameraPreset = useCallback((rawName: string) => {
+    const name = rawName.trim() || `Preset ${cameraPresets.length + 1}`;
     const preset: CameraPreset = {
       id: `${Date.now()}`,
       name,
@@ -47,9 +45,8 @@ export function useCameraPresets(deps: UseCameraPresetsDeps) {
       timelapseFps,
     };
     setCameraPresets((presets) => [preset, ...presets.filter((item) => item.name.toLowerCase() !== name.toLowerCase())].slice(0, 8));
-    setPresetName('');
     setMessage(`Saved camera preset "${name}".`);
-  }, [cameraPresets.length, flipImage, presetName, rotation, setCameraPresets, setMessage, setPresetName, showCrosshair, showGrid, timelapseFps, timelapseIntervalSec]);
+  }, [cameraPresets.length, flipImage, rotation, setCameraPresets, setMessage, showCrosshair, showGrid, timelapseFps, timelapseIntervalSec]);
 
   const applyCameraPreset = useCallback((preset: CameraPreset) => {
     setShowGrid(preset.showGrid);

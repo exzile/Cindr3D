@@ -142,9 +142,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [showCrosshair, setShowCrosshair] = useState(() => dashboardPrefs.showCrosshair);
   const [flipImage, setFlipImage] = useState(() => dashboardPrefs.flipImage);
   const [rotation, setRotation] = useState(() => dashboardPrefs.rotation % 360);
-  const [presetName, setPresetName] = useState('');
-  const [ptzPresetName, setPtzPresetName] = useState('');
-  const [ptzPresetToken, setPtzPresetToken] = useState('1');
   const [compareBlend, setCompareBlend] = useState(50);
   const [cameraOverlayMode, setCameraOverlayMode] = useState<CameraOverlayMode>('camera');
   const [mediaViewport, setMediaViewport] = useState<MediaViewportRect>({ left: 0, top: 0, width: 100, height: 100 });
@@ -360,15 +357,15 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   }, [activeCamera, activePrinterId, hdMainIsRtsp, prefs.cameras, updatePrinterPrefs]);
 
   const { saveCameraPreset, applyCameraPreset, deleteCameraPreset } = useCameraPresets({
-    cameraPresets, setCameraPresets, presetName, setPresetName, setMessage,
+    cameraPresets, setCameraPresets, setMessage,
     showGrid, showCrosshair, flipImage, rotation, timelapseIntervalSec, timelapseFps,
     setShowGrid, setShowCrosshair, setFlipImage, setRotation, setTimelapseIntervalSec, setTimelapseFps,
   });
 
   const { runPtzCommand, runPtzPreset, savePtzPreset, deletePtzPreset } = usePtzControls({
     activeCamera, hostname: config.hostname, canUsePtz, ptzEnabled, ptzSpeed,
-    ptzPresetName, ptzPresetToken, isPrintActive, printStatus,
-    activePtzStartPreset, setPtzPresetName, setMessage, updateActiveCamera,
+    isPrintActive, printStatus,
+    activePtzStartPreset, setMessage, updateActiveCamera,
   });
 
   const {
@@ -688,8 +685,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
               setTimelapseIntervalSec={setTimelapseIntervalSec}
               timelapseFps={timelapseFps}
               setTimelapseFps={setTimelapseFps}
-              presetName={presetName}
-              setPresetName={setPresetName}
               saveCameraPreset={saveCameraPreset}
               applyCameraPreset={applyCameraPreset}
               deleteCameraPreset={deleteCameraPreset}
@@ -701,10 +696,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
               canUsePtz={canUsePtz}
               activeCamera={activeCamera}
               updateActiveCamera={updateActiveCamera}
-              ptzPresetName={ptzPresetName}
-              setPtzPresetName={setPtzPresetName}
-              ptzPresetToken={ptzPresetToken}
-              setPtzPresetToken={setPtzPresetToken}
               runPtzCommand={runPtzCommand}
               runPtzPreset={runPtzPreset}
               savePtzPreset={savePtzPreset}

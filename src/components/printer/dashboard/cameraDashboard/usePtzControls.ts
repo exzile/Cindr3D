@@ -27,12 +27,9 @@ export interface UsePtzControlsDeps {
   canUsePtz: boolean;
   ptzEnabled: boolean;
   ptzSpeed: number;
-  ptzPresetName: string;
-  ptzPresetToken: string;
   isPrintActive: boolean;
   printStatus: string | undefined;
   activePtzStartPreset: CameraPtzPreset | undefined;
-  setPtzPresetName: (next: string) => void;
   setMessage: (msg: string) => void;
   updateActiveCamera: (patch: Partial<ActiveCameraLike>) => void;
 }
@@ -40,8 +37,8 @@ export interface UsePtzControlsDeps {
 export function usePtzControls(deps: UsePtzControlsDeps) {
   const {
     activeCamera, hostname, canUsePtz, ptzEnabled, ptzSpeed,
-    ptzPresetName, ptzPresetToken, isPrintActive, printStatus,
-    activePtzStartPreset, setPtzPresetName, setMessage, updateActiveCamera,
+    isPrintActive, printStatus,
+    activePtzStartPreset, setMessage, updateActiveCamera,
   } = deps;
 
   const runPtzCommand = useCallback((direction: PtzDirection) => {
@@ -84,14 +81,14 @@ export function usePtzControls(deps: UsePtzControlsDeps) {
     }
   }, [activeCamera, hostname, setMessage]);
 
-  const savePtzPreset = useCallback(() => {
+  const savePtzPreset = useCallback((rawName: string, rawToken: string) => {
     if (!activeCamera) return;
-    const token = ptzPresetToken.trim();
+    const token = rawToken.trim();
     if (!token) {
       setMessage('Enter the camera preset slot/token to save.');
       return;
     }
-    const name = ptzPresetName.trim() || `PTZ ${token}`;
+    const name = rawName.trim() || `PTZ ${token}`;
     const preset: CameraPtzPreset = {
       id: `ptz-${Date.now()}`,
       name,
@@ -101,9 +98,8 @@ export function usePtzControls(deps: UsePtzControlsDeps) {
     updateActiveCamera({
       ptzPresets: [preset, ...activeCamera.ptzPresets.filter((item) => item.token !== token && item.name.toLowerCase() !== name.toLowerCase())].slice(0, 12),
     });
-    setPtzPresetName('');
     setMessage(`Saved PTZ preset "${name}".`);
-  }, [activeCamera, ptzPresetName, ptzPresetToken, setMessage, setPtzPresetName, updateActiveCamera]);
+  }, [activeCamera, setMessage, updateActiveCamera]);
 
   const deletePtzPreset = useCallback((presetId: string) => {
     if (!activeCamera) return;
