@@ -1,46 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
 import { useNow } from '../../../hooks/useNow';
 import {
-  Archive,
-  AlertTriangle,
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
   Camera,
-  ChevronDown,
-  ChevronUp,
-  Copy,
   Crosshair,
-  Crop,
-  Download,
-  Eraser,
-  Flag,
-  FlipHorizontal,
   FolderOpen,
   Gauge,
-  Grid2X2,
-  HardDrive,
-  Home,
-  Image,
-  Maximize2,
-  Play,
-  RefreshCcw,
-  RotateCw,
-  Ruler,
-  Save,
-  Scissors,
-  Search,
   Settings,
-  Square,
-  Star,
-  Tags,
   Timer,
-  Trash2,
   Video,
   X,
-  ZoomIn,
-  ZoomOut,
 } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import {
@@ -49,27 +17,15 @@ import {
   getDuetPrefs,
   type CameraDashboardPrefs,
   type CameraHdBridgeQuality,
-  type CameraPtzPreset,
   type DuetPrefs,
 } from '../../../utils/duetPrefs';
 import { enabledCamerasFromPrefs, prefsWithCamera } from '../../../utils/cameraStreamUrl';
-import { ptzProviderLabel } from '../../../services/camera/ptzControl';
 import { formatBytes } from './helpers';
 import CameraOverlayPanel, { type CameraOverlayMode } from './CameraOverlayPanel';
 import {
-  CLIP_RATINGS,
-  INSPECTION_ITEMS,
-  ISSUE_TAGS,
-  clipDurationLabel,
-  clipIssueTags,
   clipKind,
-  clipLabel,
-  deleteClip,
   formatClipDuration,
   loadClips,
-  pickRecordingMimeType,
-  saveClip,
-  savedRecordingMessage,
   type BackendRecordingSession,
   type CameraClip,
   type CameraClipKind,
@@ -81,17 +37,6 @@ import {
   type SnapshotCrop,
 } from './cameraDashboard/clipStore';
 import {
-  buildBulkClipUpdate,
-  buildClipDetailsUpdate,
-  buildClipMarker,
-  buildClipWithMarker,
-  buildClipWithoutMarker,
-  buildFavoriteToggle,
-  buildIssueTagUpdate,
-  buildTimelapseCopy,
-  buildTrimmedVideoCopy,
-} from './cameraDashboard/clipMutations';
-import {
   clipAlbums,
   filterVisibleClips,
   selectCompareClip,
@@ -101,16 +46,6 @@ import {
   timelineClipsForJob,
   totalClipStorageBytes,
 } from './cameraDashboard/clipLibrary';
-import {
-  downloadClipBlob,
-  downloadClipBundle,
-  downloadClipManifest,
-  downloadContactSheet,
-  downloadJobReport,
-} from './cameraDashboard/clipExport';
-import {
-  sendCameraCommand,
-} from './cameraDashboard/cameraUrls';
 import {
   defaultCrop,
   formatLastFrame,
@@ -134,8 +69,10 @@ import {
   type RulerEndpointKey,
 } from './cameraDashboard/types';
 import { buildCameraStreamState } from './cameraDashboard/streamState';
+import { CameraDashboardTopbar } from './cameraDashboard/CameraDashboardTopbar';
 import { ClipEditorPanel } from './cameraDashboard/ClipEditorPanel';
 import { HealthSection } from './cameraDashboard/HealthSection';
+import { RecentCapturesStrip } from './cameraDashboard/RecentCapturesStrip';
 import { RecordSection } from './cameraDashboard/RecordSection';
 import { LibrarySection } from './cameraDashboard/LibrarySection';
 import { SettingsSection } from './cameraDashboard/SettingsSection';
@@ -684,56 +621,25 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     <div className={`cam-panel${compact ? ' cam-panel--compact' : ''}`}>
       <div className="cam-panel__layout">
         <div className="cam-panel__workspace">
-          <div className="cam-panel__topbar">
-            <div className="cam-panel__status-block">
-              <span className={`cam-panel__status-dot${hasCamera && !imageFailed ? ' is-online' : ''}`} />
-              <div>
-                <strong>{hasCamera ? printerName : 'Camera not configured'}</strong>
-                <span>{message || (hasCamera ? 'MJPEG dashboard stream ready.' : 'Add a camera stream in settings to enable capture.')}</span>
-              </div>
-            </div>
-            <div className="cam-panel__top-actions">
-              <button className="cam-panel__button" type="button" disabled={!hasCamera} onClick={reconnectCamera}>
-                <RefreshCcw size={13} /> Reconnect
-              </button>
-              {compact ? (
-                <button className="cam-panel__button" type="button" onClick={() => setActiveTab('camera')}>
-                  <Camera size={13} /> Open Camera
-                </button>
-              ) : (
-                <>
-                  <button className="cam-panel__button" type="button" disabled={!hasCamera} onClick={() => setFullscreen(true)}>
-                    <Maximize2 size={13} /> Fullscreen
-                  </button>
-                  <button className="cam-panel__button" type="button" onClick={() => setActiveTab('settings')}>
-                    <Settings size={13} /> Camera Settings
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
+          <CameraDashboardTopbar
+            hasCamera={hasCamera}
+            imageFailed={imageFailed}
+            printerName={printerName}
+            message={message}
+            compact={compact}
+            reconnectCamera={reconnectCamera}
+            setFullscreen={setFullscreen}
+            setActiveTab={setActiveTab}
+            cameras={cameras}
+            activeCameraId={prefs.activeCameraId}
+            activePrinterId={activePrinterId}
+            updatePrinterPrefs={updatePrinterPrefs}
+            setStreamRevision={setStreamRevision}
+            setImageFailed={setImageFailed}
+            setWebRtcFailed={setWebRtcFailed}
+            setMessage={setMessage}
+          />
 
-          {cameras.length > 1 && (
-            <div className="cam-panel__camera-tabs" aria-label="Camera streams">
-              {cameras.map((camera) => (
-                <button
-                  key={camera.id}
-                  className={`cam-panel__button${camera.id === prefs.activeCameraId ? ' is-active' : ''}`}
-                  type="button"
-                  onClick={() => {
-                    updatePrinterPrefs(activePrinterId, { activeCameraId: camera.id });
-                    setStreamRevision((value) => value + 1);
-                    setImageFailed(false);
-                    setWebRtcFailed(false);
-                    setMessage(`Switched to ${camera.label}.`);
-                  }}
-                >
-                  <Camera size={13} /> {camera.label}
-                  <small>{camera.resolution}</small>
-                </button>
-              ))}
-            </div>
-          )}
 
           <div className="cam-panel__viewer">
             <div ref={frameRef} className={frameClassName}>
@@ -902,30 +808,15 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
             <span>{formatBytes(totalStorageBytes)} saved locally</span>
           </div>
 
-          {!compact && <div className="cam-panel__recent-strip" aria-label="Recent camera captures">
-            <div className="cam-panel__recent-title">
-              <FolderOpen size={13} />
-              <span>Recent Captures</span>
-            </div>
-            {recentClips.length === 0 ? (
-              <span className="cam-panel__recent-empty">No captures yet</span>
-            ) : recentClips.map((clip) => (
-              <button
-                key={clip.id}
-                className={`cam-panel__recent-item${selectedClip?.id === clip.id ? ' is-selected' : ''}`}
-                type="button"
-                onClick={() => {
-                  selectClip(clip);
-                  setEditorCollapsed(false);
-                }}
-              >
-                <span className="cam-panel__recent-thumb">
-                  {thumbUrls[clip.id] ? <img src={thumbUrls[clip.id]} alt="" /> : clipKind(clip) === 'snapshot' ? <Image size={13} /> : <Video size={13} />}
-                </span>
-                <span>{clipLabel(clip)}</span>
-              </button>
-            ))}
-          </div>}
+          {!compact && (
+            <RecentCapturesStrip
+              recentClips={recentClips}
+              selectedClipId={selectedClip?.id}
+              thumbUrls={thumbUrls}
+              selectClip={selectClip}
+              setEditorCollapsed={setEditorCollapsed}
+            />
+          )}
 
           {!compact && (
             <ClipEditorPanel
