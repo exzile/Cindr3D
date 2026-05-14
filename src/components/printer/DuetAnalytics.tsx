@@ -13,14 +13,13 @@ import {
   type TOUTier,
 } from '../../store/schedulingStore';
 import { useSpoolStore } from '../../store/spoolStore';
-import { buildPrintHistoryAnalytics, type PrintHistoryGroup } from '../../utils/printHistoryAnalytics';
+import { buildPrintHistoryAnalytics } from '../../utils/printHistoryAnalytics';
 import {
   effectiveJobDurationSec,
   exportPrintCostSummaryCsv,
   exportPrintCostSummaryJson,
   printJobCostKey,
   summarizePrintCosts,
-  type PrintCostRollup,
 } from '../../utils/printCost';
 import { colors as COLORS } from '../../utils/theme';
 import {
@@ -41,6 +40,9 @@ import {
   readStoredNumber,
   topN,
 } from './duetAnalytics/helpers';
+import { Card } from './duetAnalytics/Card';
+import { CostRollupTable } from './duetAnalytics/CostRollupTable';
+import { PatternTable } from './duetAnalytics/PatternTable';
 
 // ---------------------------------------------------------------------------
 // Component
@@ -766,105 +768,3 @@ export default function DuetAnalytics() {
   );
 }
 
-function PatternTable({
-  groups,
-  empty,
-  label,
-}: {
-  groups: PrintHistoryGroup[];
-  empty: string;
-  label?: string;
-}) {
-  return (
-    <table className="duet-analytics__table duet-analytics__table--compact">
-      {label && (
-        <caption className="duet-analytics__caption">{label}</caption>
-      )}
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Runs</th>
-          <th>Failures</th>
-          <th>Last working</th>
-        </tr>
-      </thead>
-      <tbody>
-        {groups.length === 0 && (
-          <tr><td colSpan={4} className="duet-analytics__empty-row">{empty}</td></tr>
-        )}
-        {groups.map((group) => (
-          <tr key={group.key}>
-            <td className="duet-analytics__file-cell" title={group.label}>{group.label}</td>
-            <td>{group.total}</td>
-            <td>{group.failureRate.toFixed(0)}%</td>
-            <td className="duet-analytics__file-cell" title={group.lastSuccess?.profile ?? group.lastSuccess?.material ?? undefined}>
-              {group.lastSuccess?.profile ?? group.lastSuccess?.material ?? '--'}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function CostRollupTable({
-  rows,
-  empty,
-  label,
-}: {
-  rows: PrintCostRollup[];
-  empty: string;
-  label: string;
-}) {
-  return (
-    <table className="duet-analytics__table duet-analytics__table--compact">
-      <caption className="duet-analytics__caption">{label}</caption>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Runs</th>
-          <th>Filament</th>
-          <th>Energy</th>
-          <th>Cost</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.length === 0 && (
-          <tr><td colSpan={5} className="duet-analytics__empty-row">{empty}</td></tr>
-        )}
-        {rows.map((row) => (
-          <tr key={row.key}>
-            <td className="duet-analytics__file-cell" title={row.label}>{row.label}</td>
-            <td>{row.runs}</td>
-            <td>{fmtWeight(row.filamentG)}</td>
-            <td>{row.energyKwh.toFixed(2)} kWh</td>
-            <td>{fmtMoney(row.totalCost)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function Card({
-  icon, value, label, color, hint,
-}: {
-  icon: React.ReactNode;
-  value: string | number;
-  label: string;
-  color?: string;
-  hint?: string;
-}) {
-  return (
-    <div className="duet-analytics__card">
-      <div className="duet-analytics__card-icon" style={color ? { color } : undefined}>{icon}</div>
-      <div>
-        <div className="duet-analytics__card-value">{value}</div>
-        <div className="duet-analytics__card-label">
-          {label}
-          {hint && <span className="duet-analytics__card-hint"> · {hint}</span>}
-        </div>
-      </div>
-    </div>
-  );
-}
