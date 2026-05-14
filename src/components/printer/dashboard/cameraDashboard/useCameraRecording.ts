@@ -19,7 +19,7 @@
  * The host owns every ref + state value the hook needs and passes them
  * through. Returns `{ startRecording, stopRecording }`.
  */
-import { useCallback, useEffect, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useState, type MutableRefObject } from 'react';
 import {
   formatClipDuration,
   pickRecordingMimeType,
@@ -31,8 +31,6 @@ import {
 } from './clipStore';
 import { backendRecordingStorageKey } from './prefsStorage';
 import { RECORDING_FPS } from './types';
-
-type SetState<T> = (value: T) => void;
 
 export interface UseCameraRecordingDeps {
   // Refs the recorder + backend session share with the host
@@ -51,7 +49,6 @@ export interface UseCameraRecordingDeps {
   drawFrame: () => void;
   canvasBlob: (type: string, quality?: number) => Promise<Blob>;
   hasCamera: boolean;
-  recording: boolean;
   canUseBackendRecording: boolean;
   isServerUsbCamera: boolean;
   backendRecordingUrl: string;
@@ -72,8 +69,6 @@ export interface UseCameraRecordingDeps {
   printerName: string;
 
   // UI feedback channels
-  setRecordingKind: SetState<CameraClipKind | null>;
-  setElapsedMs: SetState<number>;
   setBusy: (busy: boolean) => void;
   setMessage: (msg: string) => void;
   refreshClips: () => Promise<void>;
@@ -87,14 +82,26 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
     recorderRef, chunksRef, startedAtRef, recordingKindRef, recordingJobRef,
     recordingMarkersRef, recordingThumbnailRef, backendRecordingRef, frameTimerRef,
     canvasRef,
-    drawFrame, canvasBlob, hasCamera, recording, canUseBackendRecording,
+    drawFrame, canvasBlob, hasCamera, canUseBackendRecording,
     isServerUsbCamera, backendRecordingUrl,
     hdBridgeQuality, timelapseFps, timelapseIntervalSec,
     autoRecord, autoTimelapse, isPrintActive, jobFileName,
     printerId, printerName,
-    setRecordingKind, setElapsedMs, setBusy, setMessage, refreshClips,
+    setBusy, setMessage, refreshClips,
     captureAnomaly,
   } = deps;
+
+  const [recordingKind, setRecordingKind] = useState<CameraClipKind | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const recording = recordingKind !== null;
+  const isTimelapseRecording = recordingKind === 'timelapse';
+  const isAutoRecording = recordingKind === 'auto';
+  const recordingStatusLabel = recording
+    ? `${isTimelapseRecording ? 'Timelapse' : isAutoRecording ? 'Auto recording' : 'Recording'} ${formatClipDuration(elapsedMs)}`
+    : isPrintActive
+      ? 'Print active'
+      : 'Ready';
+  const recordingMarkerCount = recordingMarkersRef.current.length;
 
   const stopBackendRecording = useCallback(async () => {
     const session = backendRecordingRef.current;
@@ -439,5 +446,10 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
     recordingMarkersRef, setMessage, startedAtRef,
   ]);
 
-  return { startRecording, stopRecording, addMarker };
+  return {
+    startRecording, stopRecording, addMarker,
+    recordingKind, elapsedMs,
+    recording, isTimelapseRecording, isAutoRecording,
+    recordingStatusLabel, recordingMarkerCount,
+  };
 }

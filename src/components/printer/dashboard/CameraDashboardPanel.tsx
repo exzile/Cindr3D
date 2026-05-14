@@ -137,8 +137,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     reconnectCount, setReconnectCount,
     frameAgeMs, estimatedFps, droppedFrameWarning,
   } = useStreamHealth(nowTick);
-  const [recordingKind, setRecordingKind] = useState<CameraClipKind | null>(null);
-  const [elapsedMs, setElapsedMs] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
   const [showGrid, setShowGrid] = useState(() => dashboardPrefs.showGrid);
   const [showCrosshair, setShowCrosshair] = useState(() => dashboardPrefs.showCrosshair);
@@ -259,18 +257,9 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     canUseBackendRecording,
     streamSrc,
   } = streamState;
-  const recording = recordingKind !== null;
-  const isTimelapseRecording = recordingKind === 'timelapse';
-  const isAutoRecording = recordingKind === 'auto';
   const isPrintActive = printStatus === 'processing' || printStatus === 'simulating';
   const canUsePtz = Boolean(activeCamera?.ptzEnabled && activeCamera.ptzProvider !== 'off');
   const activePtzStartPreset = activeCamera?.ptzPresets.find((preset) => preset.id === activeCamera.ptzStartPresetId);
-  const recordingMarkerCount = recordingMarkersRef.current.length;
-  const recordingStatusLabel = recording
-    ? `${isTimelapseRecording ? 'Timelapse' : isAutoRecording ? 'Auto recording' : 'Recording'} ${formatClipDuration(elapsedMs)}`
-    : isPrintActive
-      ? 'Print active'
-      : 'Ready';
   const selectedKind = selectedClip ? clipKind(selectedClip) : null;
 
   useBrowserUsbCamera({
@@ -323,16 +312,21 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     isPrintActive, droppedFrameWarning,
   });
 
-  const { startRecording, stopRecording, addMarker } = useCameraRecording({
+  const {
+    startRecording, stopRecording, addMarker,
+    recordingKind, elapsedMs,
+    recording, isTimelapseRecording, isAutoRecording,
+    recordingStatusLabel, recordingMarkerCount,
+  } = useCameraRecording({
     recorderRef, chunksRef, startedAtRef, recordingKindRef, recordingJobRef,
     recordingMarkersRef, recordingThumbnailRef, backendRecordingRef, frameTimerRef,
     canvasRef,
-    drawFrame, canvasBlob, hasCamera, recording, canUseBackendRecording,
+    drawFrame, canvasBlob, hasCamera, canUseBackendRecording,
     isServerUsbCamera, backendRecordingUrl,
     hdBridgeQuality, timelapseFps, timelapseIntervalSec,
     autoRecord, autoTimelapse, isPrintActive, jobFileName,
     printerId, printerName,
-    setRecordingKind, setElapsedMs, setBusy, setMessage, refreshClips,
+    setBusy, setMessage, refreshClips,
     captureAnomaly,
   });
 
