@@ -318,6 +318,55 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
     setMessage, setRecordingKind, startedAtRef, stopRecording, timelapseFps, timelapseIntervalSec,
   ]);
 
+  // Restore a backend-recording session from sessionStorage. The session
+  // survives a panel re-mount or page refresh; we re-hydrate the refs +
+  // elapsed timer, then ask the backend to confirm the session is still
+  // running. If not, scrub the stale storage entry so the UI is honest.
+  useEffect(() => {
+    const key = backendRecordingStorageKey(printerId);
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) {
+      if (backendRecordingRef.current) {
+        backendRecordingRef.current = null;
+        setRecordingKind(null);
+        setElapsedMs(0);
+      }
+      return;
+    }
+
+    try {
+      const stored = JSON.parse(raw) as BackendRecordingSession;
+      backendRecordingRef.current = { ...stored, markers: stored.markers ?? [] };
+      startedAtRef.current = stored.startedAt;
+      recordingKindRef.current = stored.kind;
+      recordingJobRef.current = stored.jobName;
+      recordingMarkersRef.current = stored.markers ?? [];
+      setRecordingKind(stored.kind);
+      setElapsedMs(Date.now() - stored.startedAt);
+      void fetch('/camera-rtsp-record?action=status', { cache: 'no-store' })
+        .then((response) => response.ok ? response.json() as Promise<{ recordings: Array<{ id: string }> }> : { recordings: [] })
+        .then((status) => {
+          if (!status.recordings.some((recording) => recording.id === stored.id)) {
+            window.sessionStorage.removeItem(key);
+            if (backendRecordingRef.current?.id === stored.id) {
+              backendRecordingRef.current = null;
+              recordingKindRef.current = null;
+              recordingJobRef.current = undefined;
+              recordingMarkersRef.current = [];
+              setRecordingKind(null);
+              setElapsedMs(0);
+            }
+          }
+        })
+        .catch(() => {});
+    } catch {
+      window.sessionStorage.removeItem(key);
+    }
+  }, [
+    backendRecordingRef, printerId, recordingJobRef, recordingKindRef,
+    recordingMarkersRef, setElapsedMs, setRecordingKind, startedAtRef,
+  ]);
+
   // Auto-record on print transitions: kick off when a print becomes active,
   // stop when an auto-/timelapse-recorded job returns to idle.
   useEffect(() => {

@@ -151,11 +151,13 @@ import {
 } from './cameraDashboard/types';
 import { buildCameraStreamState } from './cameraDashboard/streamState';
 import { useAutoSnapshots } from './cameraDashboard/useAutoSnapshots';
+import { useBrowserUsbCamera } from './cameraDashboard/useBrowserUsbCamera';
 import { useCameraDashboardPersistence } from './cameraDashboard/useCameraDashboardPersistence';
 import { useCameraMeasurement } from './cameraDashboard/useCameraMeasurement';
 import { useCameraPresets } from './cameraDashboard/useCameraPresets';
 import { useCameraRecording } from './cameraDashboard/useCameraRecording';
 import { useClipActions } from './cameraDashboard/useClipActions';
+import { useClipDraftSync } from './cameraDashboard/useClipDraftSync';
 import { usePtzControls } from './cameraDashboard/usePtzControls';
 import { useSnapshotCapture } from './cameraDashboard/useSnapshotCapture';
 import './CameraDashboardPanel.css';
@@ -388,47 +390,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const totalStorageBytes = useMemo(() => totalClipStorageBytes(clips), [clips]);
   const storageByKind = useMemo(() => summarizeClipStorageByKind(clips), [clips]);
 
-  useEffect(() => {
-    const key = backendRecordingStorageKey(printerId);
-    const raw = window.sessionStorage.getItem(key);
-    if (!raw) {
-      if (backendRecordingRef.current) {
-        backendRecordingRef.current = null;
-        setRecordingKind(null);
-        setElapsedMs(0);
-      }
-      return;
-    }
-
-    try {
-      const stored = JSON.parse(raw) as BackendRecordingSession;
-      backendRecordingRef.current = { ...stored, markers: stored.markers ?? [] };
-      startedAtRef.current = stored.startedAt;
-      recordingKindRef.current = stored.kind;
-      recordingJobRef.current = stored.jobName;
-      recordingMarkersRef.current = stored.markers ?? [];
-      setRecordingKind(stored.kind);
-      setElapsedMs(Date.now() - stored.startedAt);
-      void fetch('/camera-rtsp-record?action=status', { cache: 'no-store' })
-        .then((response) => response.ok ? response.json() as Promise<{ recordings: Array<{ id: string }> }> : { recordings: [] })
-        .then((status) => {
-          if (!status.recordings.some((recording) => recording.id === stored.id)) {
-            window.sessionStorage.removeItem(key);
-            if (backendRecordingRef.current?.id === stored.id) {
-              backendRecordingRef.current = null;
-              recordingKindRef.current = null;
-              recordingJobRef.current = undefined;
-              recordingMarkersRef.current = [];
-              setRecordingKind(null);
-              setElapsedMs(0);
-            }
-          }
-        })
-        .catch(() => {});
-    } catch {
-      window.sessionStorage.removeItem(key);
-    }
-  }, [printerId]);
   const storageByJob = useMemo(() => summarizeClipStorageByJob(clips), [clips]);
   const albums = useMemo(() => clipAlbums(clips), [clips]);
   const snapshotClips = useMemo(() => sortedSnapshotClips(clips), [clips]);
@@ -518,93 +479,27 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     };
   }, [clips]);
 
-  useEffect(() => {
-    if (!isBrowserUsbCamera) {
-      browserUsbStreamRef.current?.getTracks().forEach((track) => track.stop());
-      browserUsbStreamRef.current = null;
-      return undefined;
-    }
+  useBrowserUsbCamera({
+    isBrowserUsbCamera,
+    videoRef,
+    browserUsbStreamRef,
+    webcamUsbDeviceId: prefs.webcamUsbDeviceId,
+    webcamUsbDeviceLabel: prefs.webcamUsbDeviceLabel,
+    setImageFailed,
+    setLastFrameAt,
+    setMessage,
+  });
 
-    let disposed = false;
-    const video = videoRef.current;
-    if (!video || !navigator.mediaDevices?.getUserMedia) {
-      setImageFailed(true);
-      setMessage('This browser cannot access USB cameras.');
-      return undefined;
-    }
-
-    setImageFailed(false);
-    const videoConstraints: boolean | MediaTrackConstraints = prefs.webcamUsbDeviceId
-      ? { deviceId: { exact: prefs.webcamUsbDeviceId } }
-      : true;
-    void navigator.mediaDevices.getUserMedia({ audio: false, video: videoConstraints })
-      .then((stream) => {
-        if (disposed) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        browserUsbStreamRef.current = stream;
-        video.srcObject = stream;
-        void video.play().catch(() => {});
-        setLastFrameAt(Date.now());
-        setMessage(prefs.webcamUsbDeviceLabel ? `Using USB camera: ${prefs.webcamUsbDeviceLabel}` : 'Using browser USB camera.');
-      })
-      .catch(() => {
-        setImageFailed(true);
-        setMessage('Unable to open USB camera. Check browser permissions and camera settings.');
-      });
-
-    return () => {
-      disposed = true;
-      browserUsbStreamRef.current?.getTracks().forEach((track) => track.stop());
-      browserUsbStreamRef.current = null;
-      if (video.srcObject) video.srcObject = null;
-    };
-  }, [isBrowserUsbCamera, prefs.webcamUsbDeviceId, prefs.webcamUsbDeviceLabel]);
-
-  useEffect(() => {
-    if (!selectedClip) {
-      setClipDraftName('');
-      setClipDraftNotes('');
-      setClipDraftTags('');
-      setClipDraftJobName('');
-      setClipDraftAlbum('');
-      setClipDraftKind('clip');
-      setClipDraftRating('Unrated');
-      setClipDraftChecklist([]);
-      setMarkerDraftLabel('');
-      setMarkerDraftTime('0:00');
-      setSnapshotEditFlip(false);
-      setSnapshotEditRotation(0);
-      setSnapshotCrop(defaultCrop());
-      setSnapshotBrightness(100);
-      setSnapshotContrast(100);
-      setSnapshotSharpen(0);
-      setSnapshotAnnotation('');
-      setTrimStart('0:00');
-      setTrimEnd('');
-      return;
-    }
-    setClipDraftName(selectedClip.name ?? '');
-    setClipDraftNotes(selectedClip.notes ?? '');
-    setClipDraftTags((selectedClip.tags ?? []).join(', '));
-    setClipDraftJobName(selectedClip.jobName ?? '');
-    setClipDraftAlbum(selectedClip.album ?? '');
-    setClipDraftKind(clipKind(selectedClip));
-    setClipDraftRating(selectedClip.rating ?? 'Unrated');
-    setClipDraftChecklist(selectedClip.checklist ?? []);
-    setMarkerDraftLabel('');
-    setMarkerDraftTime('0:00');
-    setSnapshotEditFlip(false);
-    setSnapshotEditRotation(0);
-    setSnapshotCrop(selectedClip.snapshotAdjustments?.crop ?? defaultCrop());
-    setSnapshotBrightness(selectedClip.snapshotAdjustments?.brightness ?? 100);
-    setSnapshotContrast(selectedClip.snapshotAdjustments?.contrast ?? 100);
-    setSnapshotSharpen(selectedClip.snapshotAdjustments?.sharpen ?? 0);
-    setSnapshotAnnotation(selectedClip.snapshotAdjustments?.annotation ?? '');
-    setTrimStart(formatClipDuration(selectedClip.trimStartMs ?? 0));
-    setTrimEnd(selectedClip.trimEndMs ? formatClipDuration(selectedClip.trimEndMs) : '');
-  }, [selectedClip]);
+  useClipDraftSync({
+    selectedClip,
+    setClipDraftName, setClipDraftNotes, setClipDraftTags,
+    setClipDraftJobName, setClipDraftAlbum, setClipDraftKind, setClipDraftRating,
+    setClipDraftChecklist,
+    setMarkerDraftLabel, setMarkerDraftTime,
+    setSnapshotEditFlip, setSnapshotEditRotation, setSnapshotCrop,
+    setSnapshotBrightness, setSnapshotContrast, setSnapshotSharpen, setSnapshotAnnotation,
+    setTrimStart, setTrimEnd,
+  });
 
   const {
     drawFrame, canvasBlob, captureSnapshot, capturePoseStill,
