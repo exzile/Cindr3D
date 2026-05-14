@@ -30,9 +30,11 @@ import {
   topN,
 } from './duetAnalytics/helpers';
 import { Card } from './duetAnalytics/Card';
+import { CostConfigInputs } from './duetAnalytics/CostConfigInputs';
 import { CostRollupTable } from './duetAnalytics/CostRollupTable';
 import { OffPeakSchedulingSection } from './duetAnalytics/OffPeakSchedulingSection';
 import { PatternTable } from './duetAnalytics/PatternTable';
+import { RecentJobsTable } from './duetAnalytics/RecentJobsTable';
 
 // ---------------------------------------------------------------------------
 // Component
@@ -175,12 +177,6 @@ export default function DuetAnalytics() {
   const onWindowChange = (v: number) => {
     setWindowDays(v);
     try { localStorage.setItem('cindr3d-analytics-window', String(v)); } catch { /* ignore */ }
-  };
-
-  const saveNumber = (key: string, value: number, setter: (next: number) => void) => {
-    const next = Math.max(0, Number(value) || 0);
-    setter(next);
-    try { localStorage.setItem(key, String(next)); } catch { /* ignore */ }
   };
 
   const exportCsv = () => {
@@ -380,90 +376,20 @@ export default function DuetAnalytics() {
           <PatternTable groups={analytics.byProfile.filter((group) => group.total >= 2).slice(0, 5)} empty="No profile metadata found in history." label="Profiles" />
           <PatternTable groups={analytics.byMaterial.filter((group) => group.total >= 2).slice(0, 5)} empty="No material metadata found in history." label="Materials" />
 
-          {/* Recent jobs */}
-          <div className="duet-analytics__section-title">Recent jobs</div>
-          <table className="duet-analytics__table">
-            <thead>
-              <tr>
-                <th>Started</th>
-                <th>File</th>
-                <th>Duration</th>
-                <th>Receipt</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {jobsInWindow.slice(0, 20).map((j, i) => {
-                const receipt = recentEstimatesByJob.get(printJobCostKey(j));
-                return (
-                  <tr key={printJobCostKey(j) || `${j.file}-${i}`}>
-                    <td>{fmtDate(j.startedAt)} {j.startedAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</td>
-                    <td className="duet-analytics__file-cell" title={j.file}>{j.file}</td>
-                    <td>{fmtDuration(receipt?.durationSec ?? j.durationSec)}</td>
-                    <td>
-                      {receipt ? `${fmtMoney(receipt.totalCost)} · ${fmtWeight(receipt.filamentG)} · ${receipt.energyKwh.toFixed(2)} kWh` : '--'}
-                    </td>
-                    <td>
-                      <span className={`duet-analytics__status duet-analytics__status--${j.outcome}`}>
-                        {j.outcome}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <RecentJobsTable jobs={jobsInWindow} receiptsByJob={recentEstimatesByJob} />
 
-          {/* Cost config */}
-          <div className="duet-analytics__cost">
-            <label>
-              Printer draw
-              <input
-                type="number"
-                min={0}
-                step={10}
-                value={printerWatts}
-                onChange={(e) => saveNumber('cindr3d-cost-watts', Number(e.target.value), setPrinterWatts)}
-              />
-              <span>W</span>
-            </label>
-            <label>
-              Rate
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                value={electricityRate}
-                onChange={(e) => saveNumber('cindr3d-cost-rate', Number(e.target.value), setElectricityRate)}
-              />
-              <span>$/kWh</span>
-            </label>
-            <label>
-              Filament
-              <input
-                type="number"
-                min={0}
-                step={1}
-                value={filamentGPerHour}
-                onChange={(e) => saveNumber('cindr3d-cost-filament-gph', Number(e.target.value), setFilamentGPerHour)}
-              />
-              <span>g/h</span>
-            </label>
-            <label>
-              CO2
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                value={co2KgPerKwh}
-                onChange={(e) => saveNumber('cindr3d-cost-co2', Number(e.target.value), setCo2KgPerKwh)}
-              />
-              <span>kg/kWh</span>
-            </label>
-            <span className="duet-analytics__cost-value">
-              {fmtMoney(costSummary.totals.totalCost)} over {windowDays} days
-            </span>
-          </div>
+          <CostConfigInputs
+            printerWatts={printerWatts}
+            setPrinterWatts={setPrinterWatts}
+            electricityRate={electricityRate}
+            setElectricityRate={setElectricityRate}
+            filamentGPerHour={filamentGPerHour}
+            setFilamentGPerHour={setFilamentGPerHour}
+            co2KgPerKwh={co2KgPerKwh}
+            setCo2KgPerKwh={setCo2KgPerKwh}
+            totalCost={costSummary.totals.totalCost}
+            windowDays={windowDays}
+          />
         </>
       )}
 
