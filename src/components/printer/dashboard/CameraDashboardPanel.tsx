@@ -19,7 +19,6 @@ import {
 } from './cameraDashboard/clipStore';
 import { type MediaViewportRect } from './cameraDashboard/snapshotEdit';
 import {
-  backendRecordingStorageKey,
   loadCameraDashboardPrefs,
   loadCameraPresets,
 } from './cameraDashboard/prefsStorage';
@@ -273,31 +272,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
       : 'Ready';
   const selectedKind = selectedClip ? clipKind(selectedClip) : null;
 
-  useEffect(() => {
-    void refreshClips();
-  }, [refreshClips]);
-
-
-  useEffect(() => () => {
-    if (frameTimerRef.current !== null) {
-      window.clearInterval(frameTimerRef.current);
-    }
-    if (scheduledSnapshotTimerRef.current !== null) {
-      window.clearInterval(scheduledSnapshotTimerRef.current);
-    }
-    if (selectedClipUrlRef.current) {
-      URL.revokeObjectURL(selectedClipUrlRef.current);
-    }
-    setPoseStillUrl((url) => {
-      if (url) URL.revokeObjectURL(url);
-      return '';
-    });
-    setFinalComparisonUrl((url) => {
-      if (url) URL.revokeObjectURL(url);
-      return '';
-    });
-  }, []);
-
   useBrowserUsbCamera({
     isBrowserUsbCamera,
     videoRef,
@@ -348,7 +322,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     isPrintActive, droppedFrameWarning,
   });
 
-  const { startRecording, stopRecording } = useCameraRecording({
+  const { startRecording, stopRecording, addMarker } = useCameraRecording({
     recorderRef, chunksRef, startedAtRef, recordingKindRef, recordingJobRef,
     recordingMarkersRef, recordingThumbnailRef, backendRecordingRef, frameTimerRef,
     canvasRef,
@@ -358,6 +332,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     autoRecord, autoTimelapse, isPrintActive, jobFileName,
     printerId, printerName,
     setRecordingKind, setElapsedMs, setBusy, setMessage, refreshClips,
+    captureAnomaly,
   });
 
   useAutoSnapshots({
@@ -430,32 +405,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     printerId, printerName,
     setBusy, setMessage, refreshClips,
   });
-
-  const addMarker = useCallback(() => {
-    if (!recording) return;
-    const atMs = Date.now() - startedAtRef.current;
-    const marker: CameraMarker = {
-      id: `${Date.now()}`,
-      atMs,
-      label: `Marker ${recordingMarkersRef.current.length + 1}`,
-    };
-    recordingMarkersRef.current = [...recordingMarkersRef.current, marker];
-    if (backendRecordingRef.current) {
-      backendRecordingRef.current = {
-        ...backendRecordingRef.current,
-        markers: recordingMarkersRef.current,
-      };
-      window.sessionStorage.setItem(backendRecordingStorageKey(printerId), JSON.stringify({
-        id: backendRecordingRef.current.id,
-        kind: backendRecordingRef.current.kind,
-        jobName: backendRecordingRef.current.jobName,
-        markers: backendRecordingRef.current.markers,
-        startedAt: backendRecordingRef.current.startedAt,
-      }));
-    }
-    setMessage(`Added marker at ${formatClipDuration(atMs)}.`);
-    captureAnomaly(`manual marker ${formatClipDuration(atMs)}`);
-  }, [captureAnomaly, printerId, recording]);
 
   const { reconnectCamera, handleCameraError } = useCameraConnection({
     activePrinterId,

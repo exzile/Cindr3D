@@ -14,7 +14,7 @@
  * "what clips exist + how are they being viewed" concern so the host
  * stops being a 17-state god component for the clip library alone.
  */
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   loadClips,
   type CameraClip,
@@ -97,6 +97,21 @@ export function useClipLibrary(deps: UseClipLibraryDeps) {
       setBusy(false);
     }
   }, [printerId, setBusy, setMessage]);
+
+  // Initial load — fetches whenever the printer changes (refreshClips
+  // captures printerId in its closure).
+  useEffect(() => {
+    void refreshClips();
+  }, [refreshClips]);
+
+  // Final cleanup — drop any in-flight selected-clip blob URL when the
+  // component unmounts so the browser can collect the underlying Blob.
+  useEffect(() => () => {
+    if (selectedClipUrlRef.current) {
+      URL.revokeObjectURL(selectedClipUrlRef.current);
+      selectedClipUrlRef.current = null;
+    }
+  }, []);
 
   return {
     // State + setters

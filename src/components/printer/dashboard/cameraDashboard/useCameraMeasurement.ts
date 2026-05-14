@@ -15,7 +15,7 @@
  * and `flipImage`; this hook is pure orchestration on top of those.
  */
 import {
-  useCallback, useMemo, useState,
+  useCallback, useEffect, useMemo, useState,
   type PointerEvent as ReactPointerEvent, type RefObject,
 } from 'react';
 import {
@@ -58,6 +58,19 @@ export function useCameraMeasurement(deps: UseCameraMeasurementDeps) {
   const [draggingRulerEndpoint, setDraggingRulerEndpoint] = useState<RulerEndpointKey | null>(null);
   const [poseStillUrl, setPoseStillUrl] = useState('');
   const [finalComparisonUrl, setFinalComparisonUrl] = useState('');
+
+  // Revoke the frozen-frame blob URLs on unmount so the browser can
+  // collect the underlying Blob even if the user never clears them.
+  useEffect(() => () => {
+    setPoseStillUrl((url) => {
+      if (url) URL.revokeObjectURL(url);
+      return '';
+    });
+    setFinalComparisonUrl((url) => {
+      if (url) URL.revokeObjectURL(url);
+      return '';
+    });
+  }, []);
 
   const bedWidthMm = calibration.bedWidthMm ?? 220;
   const bedDepthMm = calibration.bedDepthMm ?? 220;

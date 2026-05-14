@@ -21,6 +21,7 @@
  */
 import { useCallback, useEffect, type MutableRefObject } from 'react';
 import {
+  formatClipDuration,
   pickRecordingMimeType,
   saveClip,
   savedRecordingMessage,
@@ -76,6 +77,9 @@ export interface UseCameraRecordingDeps {
   setBusy: (busy: boolean) => void;
   setMessage: (msg: string) => void;
   refreshClips: () => Promise<void>;
+
+  /** From useSnapshotCapture — manual markers also trigger an anomaly snap. */
+  captureAnomaly: (reason: string) => void;
 }
 
 export function useCameraRecording(deps: UseCameraRecordingDeps) {
@@ -89,6 +93,7 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
     autoRecord, autoTimelapse, isPrintActive, jobFileName,
     printerId, printerName,
     setRecordingKind, setElapsedMs, setBusy, setMessage, refreshClips,
+    captureAnomaly,
   } = deps;
 
   const stopBackendRecording = useCallback(async () => {
@@ -391,5 +396,48 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
     return () => window.clearInterval(interval);
   }, [recording, setElapsedMs, startedAtRef]);
 
-  return { startRecording, stopRecording };
+  // Clear the per-frame sampling interval on unmount — MediaRecorder
+  // itself releases its stream tracks, but the timer that re-draws into
+  // the canvas would tick forever if not cleared.
+  useEffect(() => () => {
+    if (frameTimerRef.current !== null) {
+      window.clearInterval(frameTimerRef.current);
+      frameTimerRef.current = null;
+    }
+  }, [frameTimerRef]);
+
+  // Manual marker — fired from the record-strip button while a recording
+  // is in flight. Mirrors to the backend-session sessionStorage so a
+  // panel re-mount still picks up the marker on restore. Also captures an
+  // anomaly snapshot so there's a frame of context next to the marker.
+  const addMarker = useCallback(() => {
+    if (!recording) return;
+    const atMs = Date.now() - startedAtRef.current;
+    const marker: CameraMarker = {
+      id: `${Date.now()}`,
+      atMs,
+      label: `Marker ${recordingMarkersRef.current.length + 1}`,
+    };
+    recordingMarkersRef.current = [...recordingMarkersRef.current, marker];
+    if (backendRecordingRef.current) {
+      backendRecordingRef.current = {
+        ...backendRecordingRef.current,
+        markers: recordingMarkersRef.current,
+      };
+      window.sessionStorage.setItem(backendRecordingStorageKey(printerId), JSON.stringify({
+        id: backendRecordingRef.current.id,
+        kind: backendRecordingRef.current.kind,
+        jobName: backendRecordingRef.current.jobName,
+        markers: backendRecordingRef.current.markers,
+        startedAt: backendRecordingRef.current.startedAt,
+      }));
+    }
+    setMessage(`Added marker at ${formatClipDuration(atMs)}.`);
+    captureAnomaly(`manual marker ${formatClipDuration(atMs)}`);
+  }, [
+    backendRecordingRef, captureAnomaly, printerId, recording,
+    recordingMarkersRef, setMessage, startedAtRef,
+  ]);
+
+  return { startRecording, stopRecording, addMarker };
 }
