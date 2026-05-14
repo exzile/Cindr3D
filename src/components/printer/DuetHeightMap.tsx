@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import './DuetHeightMap.css';
 import {
   Map, GitCompareArrows, X,
@@ -96,7 +96,7 @@ export default function DuetHeightMap() {
   const {
     probeXMin, probeXMax, probeYMin, probeYMax, probePoints,
     setProbeXMin, setProbeXMax, setProbeYMin, setProbeYMax, setProbePoints,
-    probeFromConfig, configM557Line, configGridRef, g31Offset,
+    probeFromConfig, configM557Line, configGridRef, g31Offset, resetGrid,
   } = useProbeGridConfig({
     service, connected, axes,
     initial: {
@@ -117,11 +117,15 @@ export default function DuetHeightMap() {
     const axXMax = xAxis?.max ?? 0;
     const axYMin = yAxis?.min ?? 0;
     const axYMax = yAxis?.max ?? 0;
+    // When the probe is to the LEFT of the nozzle (G31 X negative), the nozzle
+    // must be inset from the bed edge by |offset| so the probe stays on the bed.
+    //   safe_min = axisMin + max(0, -offset)
+    //   safe_max = axisMax + min(0, -offset)
     return {
-      xMin: axXMin + Math.max(0, g31Offset.x),
-      xMax: axXMax > 0 ? axXMax + Math.min(0, g31Offset.x) : null,
-      yMin: axYMin + Math.max(0, g31Offset.y),
-      yMax: axYMax > 0 ? axYMax + Math.min(0, g31Offset.y) : null,
+      xMin: axXMin + Math.max(0, -g31Offset.x),
+      xMax: axXMax > 0 ? axXMax + Math.min(0, -g31Offset.x) : null,
+      yMin: axYMin + Math.max(0, -g31Offset.y),
+      yMax: axYMax > 0 ? axYMax + Math.min(0, -g31Offset.y) : null,
     };
   }, [g31Offset, axes]);
 
@@ -187,11 +191,21 @@ export default function DuetHeightMap() {
     runProbe,
     leveling,
     runLevel,
-    smartCalRunning, smartCalPhase, smartCalResult,
+    smartCalRunning, smartCalPhase, smartCalResult, smartCalLiveSteps,
     showSmartCalResultModal, setShowSmartCalResultModal,
     runSmartCal,
+    clearSmartCalResult,
   } = runners;
   const smartCalActive = smartCalRunning || smartCalPhase !== null;
+
+  // Auto-reopen SmartCal modal when run completes if user closed it during the run
+  const smartCalClosedDuringRunRef = useRef(false);
+  useEffect(() => {
+    if (!smartCalRunning && smartCalClosedDuringRunRef.current) {
+      smartCalClosedDuringRunRef.current = false;
+      setShowSmartCalModal(true);
+    }
+  }, [smartCalRunning]);
 
   /* ── Camera presets ── */
   function applyPreset(preset: CameraPreset) {
@@ -275,7 +289,7 @@ export default function DuetHeightMap() {
         showProbeResultModal={showProbeResultModal}
         showLevelModal={showLevelModal}
         showSmartCalModal={showSmartCalModal}
-        showSmartCalResultModal={showSmartCalResultModal}
+        showSmartCalResultModal={false}
         showSaveAsModal={showSaveAsModal}
         bedTiltContent={bedTiltContent}
         bedTiltDerived={bedTiltDerived}
@@ -298,9 +312,16 @@ export default function DuetHeightMap() {
         runProbe={(opts) => { setShowProbeModal(false); void runProbe(opts); }}
         closeLevel={() => setShowLevelModal(false)}
         runLevel={(opts) => { setShowLevelModal(false); void runLevel(opts); }}
-        closeSmartCal={() => setShowSmartCalModal(false)}
-        runSmartCal={(opts) => { setShowSmartCalModal(false); void runSmartCal(opts); }}
+        closeSmartCal={() => {
+          if (smartCalRunning) smartCalClosedDuringRunRef.current = true;
+          setShowSmartCalModal(false);
+        }}
+        runSmartCal={(opts) => { void runSmartCal(opts); }}
         smartCalResult={smartCalResult}
+        smartCalRunning={smartCalRunning}
+        smartCalPhase={smartCalPhase}
+        smartCalLiveSteps={smartCalLiveSteps}
+        onClearSmartCal={clearSmartCalResult}
         closeSmartCalResult={() => setShowSmartCalResultModal(false)}
         reopenSmartCal={() => { setShowSmartCalResultModal(false); setShowSmartCalModal(true); }}
         closeSaveAs={() => setShowSaveAsModal(false)}
@@ -461,6 +482,8 @@ export default function DuetHeightMap() {
           m557Command={m557Command}
           probeMaxCount={probeMaxCount}
           probeTol={probeTol}
+          g31Offset={g31Offset}
+          resetGrid={resetGrid}
           mirrorX={mirrorX}
           setMirrorX={setMirrorX}
           viewMode={viewMode}

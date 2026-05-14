@@ -63,9 +63,11 @@ export interface HeightMapRunnersApi {
   smartCalRunning: boolean;
   smartCalPhase: SmartCalPhase;
   smartCalResult: SmartCalResult | null;
+  smartCalLiveSteps: SmartCalStep[];
   showSmartCalResultModal: boolean;
   setShowSmartCalResultModal: (b: boolean) => void;
   runSmartCal: (opts: SmartCalOpts) => Promise<void>;
+  clearSmartCalResult: () => void;
 }
 
 export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunnersApi {
@@ -74,6 +76,8 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
     m557Command, probeXMin, probeXMax, probeYMin, probeYMax,
     boardType, setLoadError,
   } = deps;
+
+  const setSuppressPrinterAlerts = usePrinterStore((s) => s.setSuppressPrinterAlerts);
 
   // Probe state
   const [probing, setProbing] = useState(false);
@@ -88,13 +92,22 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
   const [smartCalRunning, setSmartCalRunning] = useState(false);
   const [smartCalPhase, setSmartCalPhase] = useState<SmartCalPhase>(null);
   const [smartCalResult, setSmartCalResult] = useState<SmartCalResult | null>(null);
+  const [smartCalLiveSteps, setSmartCalLiveSteps] = useState<SmartCalStep[]>([]);
   const [showSmartCalResultModal, setShowSmartCalResultModal] = useState(false);
 
   // Guards against (a) setState after unmount mid-sequence and (b) re-entry
   // when the same runner is invoked twice before the first finishes (e.g.
   // two callers, or a keystroke during a long probe).
+  //
+  // NOTE: the effect body must set mountedRef.current = true so that React
+  // Strict Mode's intentional unmount→remount cycle doesn't leave the ref
+  // permanently false (cleanup fires on the simulated unmount; without the
+  // reset inside the body the ref is false for the entire real lifetime).
   const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const probeInFlightRef = useRef(false);
   const smartCalInFlightRef = useRef(false);
   const levelInFlightRef = useRef(false);
@@ -227,7 +240,16 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
     setSmartCalPhase(null);
     setSmartCalResult(null);
 
+    // Reset live steps before starting
+    setSmartCalLiveSteps([]);
+    setSuppressPrinterAlerts(true);
+
     const steps: SmartCalStep[] = [];
+    const pushStep = (step: SmartCalStep) => {
+      steps.push(step);
+      if (mountedRef.current) setSmartCalLiveSteps([...steps]);
+    };
+
     let finalStats: HeightMapStats | null = null;
     let stopReason: SmartCalResult['stopReason'] = 'maxIterations';
     let shouldLevel = true;
@@ -247,7 +269,7 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
         if (mountedRef.current) setSmartCalPhase('homing');
         console.log('[SmartCal] Homing all axes…');
         await sendGCode('G28');
-        steps.push({ kind: 'info', label: 'Homed all axes', quality: 'info' });
+        pushStep({ kind: 'info', label: 'Homed all axes', quality: 'info' });
         console.log('[SmartCal] Homing complete.');
       }
 
@@ -262,9 +284,9 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
         if (shouldLevel) {
           if (levelPassCount >= opts.maxLevelPasses) {
             console.log(`[SmartCal] Level pass skipped — reached max level passes (${opts.maxLevelPasses}).`);
-            steps.push({
+            pushStep({
               kind:    'decision',
-              label:   `Level pass skipped — max level passes (${opts.maxLevelPasses}) reached`,
+              label:   `Leveling budget exhausted (${opts.maxLevelPasses} of ${opts.maxLevelPasses} passes used)`,
               quality: 'warn',
             });
           } else {
@@ -272,12 +294,28 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
             console.log(`[SmartCal] Leveling bed (level pass ${levelPassCount} / ${opts.maxLevelPasses})…`);
             if (mountedRef.current) setSmartCalPhase('leveling');
             try {
-              await levelBed({ homeFirst: false });
-              steps.push({ kind: 'level', label: `Bed leveled (iteration ${i + 1}, level pass ${levelPassCount})`, quality: 'good' });
+              const levelSummary = await levelBed({
+                homeFirst:      false,
+                repeat:         1,
+                autoConverge:   false,
+                probesPerPoint: opts.probesPerPoint,
+                probeTolerance: opts.probeTolerance,
+                suppressResult: true,
+              });
+              const lastRun = (levelSummary as { results?: Array<{ deviationBefore: number | null }> }).results?.at(-1);
+              const devBefore = lastRun?.deviationBefore;
+              pushStep({
+                kind:    'level',
+                label:   `Bed leveled (pass ${levelPassCount} of ${opts.maxLevelPasses})`,
+                detail:  devBefore != null && devBefore > 0
+                  ? `Tilt before adjustment: ${devBefore.toFixed(4)} mm`
+                  : undefined,
+                quality: 'good',
+              });
               console.log('[SmartCal] Leveling complete.');
             } catch (err) {
               console.warn('[SmartCal] Leveling failed:', err);
-              steps.push({ kind: 'level', label: 'Leveling failed', detail: (err as Error).message, quality: 'bad' });
+              pushStep({ kind: 'level', label: 'Leveling failed', detail: (err as Error).message, quality: 'bad' });
               stopReason = 'failed';
               break;
             }
@@ -286,14 +324,16 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
         }
 
         /* ── Probe ── */
-        console.log(`[SmartCal] Probing mesh (iteration ${i + 1})…`);
+        console.log(`[SmartCal] Probing mesh (iteration ${i + 1}, ${opts.probePasses} pass${opts.probePasses > 1 ? 'es' : ''})…`);
         if (mountedRef.current) setSmartCalPhase('probing');
         try {
           await sendGCode(m557Command);
-          await probeGrid();
+          for (let p = 0; p < opts.probePasses; p++) {
+            await probeGrid();
+          }
         } catch (err) {
           console.warn('[SmartCal] Probe failed:', err);
-          steps.push({ kind: 'probe', label: `Probe failed (iteration ${i + 1})`, detail: (err as Error).message, quality: 'bad' });
+          pushStep({ kind: 'probe', label: `Probe failed (iteration ${i + 1})`, detail: (err as Error).message, quality: 'bad' });
           stopReason = 'failed';
           break;
         }
@@ -302,7 +342,7 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
         const currentMap = usePrinterStore.getState().heightMap;
         if (!currentMap) {
           console.warn('[SmartCal] No height map data after probe.');
-          steps.push({ kind: 'probe', label: 'No probe data returned', quality: 'bad' });
+          pushStep({ kind: 'probe', label: 'No probe data returned', quality: 'bad' });
           stopReason = 'failed';
           break;
         }
@@ -317,15 +357,15 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
           ` | meanBad=${meanBad}, devBad=${devBad}`,
         );
 
-        steps.push({
+        pushStep({
           kind:    'probe',
-          label:   `Probed (iteration ${i + 1}) — RMS ${s.rms.toFixed(4)} mm · mean ${s.mean >= 0 ? '+' : ''}${s.mean.toFixed(3)} mm`,
+          label:   `Probed (iteration ${i + 1}${opts.probePasses > 1 ? `, ${opts.probePasses} passes` : ''}) — RMS ${s.rms.toFixed(4)} mm · mean ${s.mean >= 0 ? '+' : ''}${s.mean.toFixed(3)} mm`,
           quality: (!meanBad && !devBad) ? 'good' : 'warn',
         });
 
         if (!meanBad && !devBad) {
           console.log('[SmartCal] Converged — all targets met.');
-          steps.push({ kind: 'done', label: 'Bed calibrated — within all targets ✓', quality: 'good' });
+          pushStep({ kind: 'done', label: 'Bed calibrated — within all targets ✓', quality: 'good' });
           stopReason = 'converged';
           break;
         }
@@ -345,7 +385,7 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
               await sendGCode('G30 S-1');
             }
             console.log(`[SmartCal] Z datum recalibrated at centre (${cx}, ${cy}).`);
-            steps.push({
+            pushStep({
               kind:   'datum',
               label:  `Z datum recalibrated at centre (${cx}, ${cy})`,
               detail: `Mean was ${s.mean >= 0 ? '+' : ''}${s.mean.toFixed(3)} mm — target ±${opts.targetMean.toFixed(2)} mm`,
@@ -353,7 +393,7 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
             });
           } catch (err) {
             console.warn('[SmartCal] Z datum calibration failed:', err);
-            steps.push({ kind: 'datum', label: 'Z datum calibration failed', detail: (err as Error).message, quality: 'bad' });
+            pushStep({ kind: 'datum', label: 'Z datum calibration failed', detail: (err as Error).message, quality: 'bad' });
           }
         }
 
@@ -361,7 +401,7 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
         if (devBad) {
           if (levelPassCount < opts.maxLevelPasses) {
             console.log(`[SmartCal] RMS ${s.rms.toFixed(4)} mm exceeds target ${opts.targetDeviation.toFixed(2)} mm — scheduling re-level.`);
-            steps.push({
+            pushStep({
               kind:   'decision',
               label:  `RMS ${s.rms.toFixed(4)} mm exceeds target ${opts.targetDeviation.toFixed(2)} mm — will re-level`,
               quality: 'warn',
@@ -369,25 +409,34 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
             shouldLevel = true;
           } else {
             console.log(`[SmartCal] RMS still high but max level passes (${opts.maxLevelPasses}) reached — continuing without re-level.`);
-            steps.push({
-              kind:   'decision',
-              label:  `RMS ${s.rms.toFixed(4)} mm still high — max level passes reached, skipping re-level`,
+            pushStep({
+              kind:    'decision',
+              label:   `RMS ${s.rms.toFixed(4)} mm exceeds target — leveling budget exhausted (${opts.maxLevelPasses} ${opts.maxLevelPasses === 1 ? 'pass' : 'passes'} used)`,
               quality: 'warn',
             });
           }
-        }
-
-        if (i === opts.maxIterations - 1) {
-          console.log(`[SmartCal] Max iterations (${opts.maxIterations}) reached.`);
-          steps.push({ kind: 'done', label: `Max iterations (${opts.maxIterations}) reached`, quality: 'warn' });
+        } else {
+          // RMS is within target — no re-level needed this iteration.
+          // Only log when there are more iterations to run (converged case
+          // already broke out of the loop with its own "all targets met" step).
+          if (i < opts.maxIterations - 1) {
+            console.log(`[SmartCal] RMS ${s.rms.toFixed(4)} mm within target — no re-level needed.`);
+            pushStep({
+              kind:    'decision',
+              label:   `RMS ${s.rms.toFixed(4)} mm within target — skipping re-level`,
+              quality: 'good',
+            });
+          }
         }
       }
     } catch (err) {
       console.error('[SmartCal] Unhandled error:', err);
-      steps.push({ kind: 'done', label: `Smart Cal error: ${(err as Error).message}`, quality: 'bad' });
+      pushStep({ kind: 'done', label: `Smart Cal error: ${(err as Error).message}`, quality: 'bad' });
       stopReason = 'failed';
     } finally {
       console.log(`[SmartCal] Done — stopReason: ${stopReason}, levelPasses: ${levelPassCount}, steps: ${steps.length}`);
+
+      setSuppressPrinterAlerts(false);
 
       // Restore M558 even when the closed loop bailed mid-iteration.
       if (m558Modified) {
@@ -404,7 +453,12 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
       }
       smartCalInFlightRef.current = false;
     }
-  }, [levelBed, m557Command, probeGrid, sendGCode, service]);
+  }, [levelBed, m557Command, probeGrid, sendGCode, service, setSuppressPrinterAlerts]);
+
+  const clearSmartCalResult = useCallback(() => {
+    setSmartCalResult(null);
+    setSmartCalLiveSteps([]);
+  }, []);
 
   return {
     probing, probeProgress, probeResult,
@@ -412,8 +466,9 @@ export function useHeightMapRunners(deps: HeightMapRunnersDeps): HeightMapRunner
     runProbe,
     leveling,
     runLevel,
-    smartCalRunning, smartCalPhase, smartCalResult,
+    smartCalRunning, smartCalPhase, smartCalResult, smartCalLiveSteps,
     showSmartCalResultModal, setShowSmartCalResultModal,
     runSmartCal,
+    clearSmartCalResult,
   };
 }

@@ -10,7 +10,7 @@
 import { addToast } from '../../../store/toastStore';
 import type { LevelBedOpts } from '../../../store/printerStore';
 import { computeStats, type HeightMapStats } from './utils';
-import type { ProbeOpts, SmartCalOpts, SmartCalResult } from './types';
+import type { ProbeOpts, SmartCalOpts, SmartCalResult, SmartCalStep } from './types';
 import type { DuetHeightMap as HeightMapData, PrinterBoardType } from '../../../types/duet';
 import { BedTiltSetupModal } from './modals/BedTiltSetupModal';
 import { ProbeResultsModal } from './modals/ProbeResultsModal';
@@ -62,6 +62,10 @@ export function HeightMapModalsHost(props: {
   closeSmartCal: () => void;
   runSmartCal: (opts: SmartCalOpts) => void;
   smartCalResult: SmartCalResult | null;
+  smartCalRunning: boolean;
+  smartCalPhase: 'homing' | 'leveling' | 'probing' | 'datum' | null;
+  smartCalLiveSteps: SmartCalStep[];
+  onClearSmartCal: () => void;
   closeSmartCalResult: () => void;
   reopenSmartCal: () => void;
 
@@ -107,7 +111,15 @@ export function HeightMapModalsHost(props: {
         <LevelBedModal onConfirm={props.runLevel} onCancel={props.closeLevel} />
       )}
       {props.showSmartCalModal && (
-        <SmartCalModal onConfirm={props.runSmartCal} onCancel={props.closeSmartCal} />
+        <SmartCalModal
+          onConfirm={props.runSmartCal}
+          onCancel={props.closeSmartCal}
+          isRunning={props.smartCalRunning}
+          phase={props.smartCalPhase}
+          liveSteps={props.smartCalLiveSteps}
+          result={props.smartCalResult}
+          onClear={props.onClearSmartCal}
+        />
       )}
       {props.showSmartCalResultModal && props.smartCalResult && (
         <SmartCalResultModal

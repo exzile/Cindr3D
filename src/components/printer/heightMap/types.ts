@@ -23,6 +23,8 @@ export interface SmartCalOpts {
   maxIterations: number;
   /** Hard cap on how many leveling passes may run in one Smart Cal session. Default 2. */
   maxLevelPasses: number;
+  /** Number of full mesh probes to run per iteration (last result is used). Default 1. */
+  probePasses: number;
   /** Adjust Z datum when |mean| >= this (mm). Default 0.15. */
   targetMean: number;
   /** Re-level when RMS >= this (mm). Default 0.05. */

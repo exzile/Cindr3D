@@ -30,7 +30,6 @@ import {
   Box,
   Clock,
   Eye,
-  Layers,
   Maximize2,
   Palette,
   Rotate3D,
@@ -657,10 +656,7 @@ export default function MeshPreviewPanel() {
 
   return (
     <div style={panelStyle({ display: 'flex', flexDirection: 'column', minHeight: 220, padding: 0 })} ref={containerRef}>
-      <div style={{ ...labelStyle({ padding: '8px 10px 4px' }), display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Layers size={14} /> Print Preview
-        </span>
+      <div style={{ ...labelStyle({ padding: '8px 10px 4px' }), display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
         <span style={{ fontSize: 10, color: COLORS.textDim ?? '#666', display: 'flex', gap: 6 }}>
           {totalLayers > 0 && (
             <span>{isLiveLayer ? 'Live' : 'Preview'} L{Math.min(displayedLayer + 1, totalLayers)} / {totalLayers}</span>

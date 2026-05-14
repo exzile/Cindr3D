@@ -1,4 +1,23 @@
 /* Compact overrides: tighten panel content inside dashboard cards */
+
+/* DashboardCard already shows the panel title in dc-header — suppress the
+   redundant ds-panel__head that DashboardPanel renders inside dc-body so
+   the title doesn't appear twice. Standalone DashboardPanel usage outside
+   a DashboardCard (e.g. duetStatus panels) is unaffected. */
+.dc-body .ds-panel__head {
+  display: none;
+}
+
+/* Strip the inner ds-panel's own card chrome — dc-wrapper is the sole
+   border/background surface. Without this, a second border + rounded box
+   appears inside the card body. */
+.dc-body .ds-panel {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
 .dc-body .ex-card {
   padding: 7px 10px 7px 9px;
   margin-bottom: 5px;

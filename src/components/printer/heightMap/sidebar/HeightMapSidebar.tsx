@@ -65,6 +65,8 @@ export function HeightMapSidebar(props: {
   m557Command: string;
   probeMaxCount: number | undefined;
   probeTol: number | undefined;
+  g31Offset: { x: number; y: number } | null;
+  resetGrid: () => void;
   // Display controls
   mirrorX: boolean;
   setMirrorX: (next: boolean | ((v: boolean) => boolean)) => void;
@@ -136,6 +138,8 @@ export function HeightMapSidebar(props: {
         connected={props.connected}
         probeMaxCount={props.probeMaxCount}
         probeTol={props.probeTol}
+        g31Offset={props.g31Offset}
+        resetGrid={props.resetGrid}
       />
 
       <DisplayControlsSection

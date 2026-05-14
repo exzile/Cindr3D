@@ -84,8 +84,10 @@ export function ActionsSection({
         <button
           className={`hm-ribbon-btn hm-ribbon-btn--smartcal${smartCalActive ? ' is-active' : ''}`}
           onClick={onSmartCal}
-          disabled={loading || probing || leveling || smartCalRunning || !connected}
-          title="Smart closed-loop calibration: level → probe → diagnose → repeat until converged"
+          disabled={loading || probing || leveling || !connected}
+          title={smartCalRunning
+            ? 'Smart Cal is running — click to reopen the calibration window'
+            : 'Smart closed-loop calibration: level → probe → diagnose → repeat until converged'}
         >
           <span className="hm-ribbon-btn__icon">
             {smartCalRunning ? <Loader2 size={20} className="hm-spin" /> : <Wand2 size={20} />}

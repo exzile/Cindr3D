@@ -1,4 +1,4 @@
-import { CheckCircle, Copy, Lock, LockOpen, Ruler, TriangleAlert } from 'lucide-react';
+import { CheckCircle, Copy, Lock, LockOpen, RotateCcw, Ruler, TriangleAlert } from 'lucide-react';
 import type { MutableRefObject } from 'react';
 import { useCopyState } from '../hooks/useCopyState';
 
@@ -21,6 +21,8 @@ export function ProbeGridSection({
   probeGridLocked,
   probeXMin, probeXMax, probeYMin, probeYMax, probePoints,
   setProbeXMin, setProbeXMax, setProbeYMin, setProbeYMax, setProbePoints,
+  g31Offset,
+  resetGrid,
   spacingX, spacingY,
   safeBounds,
   m557Command,
@@ -45,6 +47,8 @@ export function ProbeGridSection({
   connected: boolean;
   probeMaxCount: number | undefined;
   probeTol: number | undefined;
+  g31Offset: { x: number; y: number } | null;
+  resetGrid: () => void;
 }) {
   const m557Copy = useCopyState();
   const xMinBad = probeXMin < (safeBounds?.xMin ?? (probeXMin === 0 ? 1 : 0));
@@ -63,7 +67,7 @@ export function ProbeGridSection({
 
   return (
     <div className="hm-side-section">
-      {/* Section header — title + optional config.g badge + lock/unlock */}
+      {/* Section header — title + optional config.g badge + lock/unlock + reset */}
       <div className="hm-side-title">
         <Ruler size={9} style={{ marginRight: 4 }} />Probe Grid
         {probeFromConfig && (
@@ -79,22 +83,28 @@ export function ProbeGridSection({
             <button
               className={`hm-probe-lock-btn${probeGridUnlocked ? ' is-unlocked' : ''}`}
               onClick={() => {
-                if (probeGridUnlocked && configGridRef.current) {
-                  const g = configGridRef.current;
-                  setProbeXMin(g.xMin); setProbeXMax(g.xMax);
-                  setProbeYMin(g.yMin); setProbeYMax(g.yMax);
-                  setProbePoints(g.numPoints);
-                }
+                if (probeGridUnlocked) resetGrid();
                 setProbeGridUnlocked((v) => !v);
               }}
               title={probeGridUnlocked
-                ? 'Re-lock — restores config.g values'
+                ? 'Re-lock — restores config.g values (adjusted for probe offset)'
                 : 'Unlock — override for this session only (config.g is unchanged)'}
             >
               {probeGridUnlocked ? <LockOpen size={10} /> : <Lock size={10} />}
             </button>
           </>
         )}
+        <button
+          className="hm-probe-reset-btn"
+          onClick={resetGrid}
+          title={probeFromConfig
+            ? 'Reset to config.g values'
+            : 'Reset to calculated bounds (axis limits + probe offset)'}
+          style={{ marginLeft: 'auto' }}
+        >
+          <RotateCcw size={9} />
+          Reset
+        </button>
       </div>
 
       {/* X axis range */}
@@ -219,6 +229,16 @@ export function ProbeGridSection({
           {m557Copy.copied ? <CheckCircle size={11} /> : <Copy size={11} />}
         </button>
       </div>
+
+      {/* G31 probe offset parsed from config.g / config-override.g */}
+      {g31Offset && (
+        <div className="hm-m558-info" title="Probe tip offset parsed from G31 in config.g or config-override.g">
+          <span className="hm-m558-info__label">G31 offset</span>
+          <span className="hm-m558-info__val">
+            X{g31Offset.x >= 0 ? '+' : ''}{g31Offset.x} · Y{g31Offset.y >= 0 ? '+' : ''}{g31Offset.y}
+          </span>
+        </div>
+      )}
 
       {/* Current M558 probe settings from the live object model */}
       {connected && probeMaxCount != null && (

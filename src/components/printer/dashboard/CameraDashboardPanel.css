@@ -2234,11 +2234,17 @@ textarea.cam-panel__input {
   .cam-panel__empty-actions,
   .cam-panel__recent-strip,
   .cam-panel__view-actions,
-  .cam-panel__view-calibration,
-  .cam-panel__view-mode {
+  .cam-panel__view-calibration {
     display: flex;
     flex-direction: column;
     align-items: stretch;
+  }
+
+  /* Keep Camera/AR/Preview as a horizontal 3-col row — labels are short
+     enough to fit even at narrow container widths. */
+  .cam-panel__view-mode {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .cam-panel__control-tabs {
