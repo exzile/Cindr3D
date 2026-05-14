@@ -17,14 +17,8 @@ import {
   type BackendRecordingSession,
   type CameraClipKind,
   type CameraMarker,
-  type ClipRating,
-  type IssueTag,
-  type SnapshotCrop,
 } from './cameraDashboard/clipStore';
-import {
-  defaultCrop,
-  type MediaViewportRect,
-} from './cameraDashboard/snapshotEdit';
+import { type MediaViewportRect } from './cameraDashboard/snapshotEdit';
 import {
   backendRecordingStorageKey,
   loadCameraDashboardPrefs,
@@ -58,7 +52,7 @@ import { useCameraMeasurement } from './cameraDashboard/useCameraMeasurement';
 import { useCameraPresets } from './cameraDashboard/useCameraPresets';
 import { useCameraRecording } from './cameraDashboard/useCameraRecording';
 import { useClipActions } from './cameraDashboard/useClipActions';
-import { useClipDraftSync } from './cameraDashboard/useClipDraftSync';
+import { useClipEditorDrafts } from './cameraDashboard/useClipEditorDrafts';
 import { useClipLibrary } from './cameraDashboard/useClipLibrary';
 import { useClipThumbnailUrls } from './cameraDashboard/useClipThumbnailUrls';
 import { useMediaViewport } from './cameraDashboard/useMediaViewport';
@@ -160,27 +154,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [showCrosshair, setShowCrosshair] = useState(() => dashboardPrefs.showCrosshair);
   const [flipImage, setFlipImage] = useState(() => dashboardPrefs.flipImage);
   const [rotation, setRotation] = useState(() => dashboardPrefs.rotation % 360);
-  const [clipDraftName, setClipDraftName] = useState('');
-  const [clipDraftNotes, setClipDraftNotes] = useState('');
-  const [clipDraftTags, setClipDraftTags] = useState('');
-  const [clipDraftJobName, setClipDraftJobName] = useState('');
-  const [clipDraftAlbum, setClipDraftAlbum] = useState('');
-  const [clipDraftKind, setClipDraftKind] = useState<CameraClipKind>('clip');
-  const [clipDraftRating, setClipDraftRating] = useState<ClipRating>('Unrated');
-  const [clipDraftChecklist, setClipDraftChecklist] = useState<string[]>([]);
-  const [issueDraft, setIssueDraft] = useState<IssueTag>('Warping');
-  const [markerDraftLabel, setMarkerDraftLabel] = useState('');
-  const [markerDraftTime, setMarkerDraftTime] = useState('0:00');
-  const [snapshotEditFlip, setSnapshotEditFlip] = useState(false);
-  const [snapshotEditRotation, setSnapshotEditRotation] = useState(0);
-  const [snapshotCrop, setSnapshotCrop] = useState<SnapshotCrop>(() => defaultCrop());
-  const [snapshotBrightness, setSnapshotBrightness] = useState(100);
-  const [snapshotContrast, setSnapshotContrast] = useState(100);
-  const [snapshotSharpen, setSnapshotSharpen] = useState(0);
-  const [snapshotAnnotation, setSnapshotAnnotation] = useState('');
-  const [saveSnapshotAsCopy, setSaveSnapshotAsCopy] = useState(true);
-  const [trimStart, setTrimStart] = useState('0:00');
-  const [trimEnd, setTrimEnd] = useState('');
   const [bulkTags, setBulkTags] = useState('');
   const [bulkAlbum, setBulkAlbum] = useState('');
   const [cleanupDays, setCleanupDays] = useState(30);
@@ -349,16 +322,29 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     setMessage,
   });
 
-  useClipDraftSync({
-    selectedClip,
-    setClipDraftName, setClipDraftNotes, setClipDraftTags,
-    setClipDraftJobName, setClipDraftAlbum, setClipDraftKind, setClipDraftRating,
-    setClipDraftChecklist,
-    setMarkerDraftLabel, setMarkerDraftTime,
-    setSnapshotEditFlip, setSnapshotEditRotation, setSnapshotCrop,
-    setSnapshotBrightness, setSnapshotContrast, setSnapshotSharpen, setSnapshotAnnotation,
-    setTrimStart, setTrimEnd,
-  });
+  const {
+    clipDraftName, setClipDraftName,
+    clipDraftNotes, setClipDraftNotes,
+    clipDraftTags, setClipDraftTags,
+    clipDraftJobName, setClipDraftJobName,
+    clipDraftAlbum, setClipDraftAlbum,
+    clipDraftKind, setClipDraftKind,
+    clipDraftRating, setClipDraftRating,
+    clipDraftChecklist, setClipDraftChecklist,
+    issueDraft, setIssueDraft,
+    markerDraftLabel, setMarkerDraftLabel,
+    markerDraftTime, setMarkerDraftTime,
+    snapshotEditFlip, setSnapshotEditFlip,
+    snapshotEditRotation, setSnapshotEditRotation,
+    snapshotCrop, setSnapshotCrop,
+    snapshotBrightness, setSnapshotBrightness,
+    snapshotContrast, setSnapshotContrast,
+    snapshotSharpen, setSnapshotSharpen,
+    snapshotAnnotation, setSnapshotAnnotation,
+    saveSnapshotAsCopy, setSaveSnapshotAsCopy,
+    trimStart, setTrimStart,
+    trimEnd, setTrimEnd,
+  } = useClipEditorDrafts(selectedClip);
 
   const {
     drawFrame, canvasBlob, captureSnapshot, capturePoseStill,
