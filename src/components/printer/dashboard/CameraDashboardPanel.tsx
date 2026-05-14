@@ -134,8 +134,11 @@ import {
   type RulerEndpointKey,
 } from './cameraDashboard/types';
 import { buildCameraStreamState } from './cameraDashboard/streamState';
+import { HealthSection } from './cameraDashboard/HealthSection';
+import { RecordSection } from './cameraDashboard/RecordSection';
 import { LibrarySection } from './cameraDashboard/LibrarySection';
 import { SettingsSection } from './cameraDashboard/SettingsSection';
+import { TimelineSection } from './cameraDashboard/TimelineSection';
 import { ViewControlsSection } from './cameraDashboard/ViewControlsSection';
 import { useAutoSnapshots } from './cameraDashboard/useAutoSnapshots';
 import { useBrowserUsbCamera } from './cameraDashboard/useBrowserUsbCamera';
@@ -1180,32 +1183,16 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
           </div>
 
           {activeControlSection === 'record' && (
-          <section className="cam-panel__control-section cam-panel__control-section--record" aria-label="Current record controls">
-            <div className="cam-panel__section-head">
-              <span><Video size={14} /> Current Record</span>
-              <small>{recording ? formatClipDuration(elapsedMs) : 'Ready'}</small>
-            </div>
-            <div className="cam-panel__toolbar">
-            {recording ? (
-              <button className="cam-panel__button cam-panel__button--stop" type="button" onClick={stopRecording}>
-                <Square size={13} /> Stop
-              </button>
-            ) : (
-              <button className="cam-panel__button cam-panel__button--record" type="button" disabled={!hasCamera || busy} onClick={() => { void startRecording('clip'); }}>
-                <Video size={13} /> Record Clip
-              </button>
-            )}
-            <button className="cam-panel__button" type="button" disabled={!hasCamera || busy || recording} onClick={() => { void captureSnapshot(); }}>
-              <Image size={13} /> Snapshot
-            </button>
-            <button className="cam-panel__button" type="button" disabled={!hasCamera || busy || recording} onClick={() => { void startRecording('timelapse'); }}>
-              <Timer size={13} /> Timelapse
-            </button>
-            <button className="cam-panel__button" type="button" disabled={!hasCamera || !recording} onClick={addMarker}>
-              <Flag size={13} /> Marker
-            </button>
-            </div>
-          </section>
+            <RecordSection
+              recording={recording}
+              elapsedMs={elapsedMs}
+              hasCamera={hasCamera}
+              busy={busy}
+              stopRecording={stopRecording}
+              startRecording={startRecording}
+              captureSnapshot={captureSnapshot}
+              addMarker={addMarker}
+            />
           )}
 
           {activeControlSection === 'view' && (
@@ -1299,54 +1286,31 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
           )}
 
           {activeControlSection === 'health' && (
-          <section className="cam-panel__control-section" aria-label="Camera health diagnostics controls">
-            <div className="cam-panel__section-head">
-              <span><Gauge size={14} /> Health</span>
-              <small>{estimatedFps ? `${estimatedFps.toFixed(1)} FPS` : 'Waiting'}</small>
-            </div>
-            {healthPanelOpen && (
-              <div className={`cam-panel__health-card${droppedFrameWarning ? ' is-warning' : ''}`} aria-label="Camera health diagnostics">
-                <span>Frames {frameCount}</span>
-                <span>Reconnects {reconnectCount}</span>
-                <span>{droppedFrameWarning ? `Frame stale: ${clipDurationLabel(frameAgeMs ?? 0)}` : formatLastFrame(lastFrameAt, nowTick)}</span>
-                {reconnectHistoryRef.current.length > 0 && (
-                  <span>Last reconnect {new Date(reconnectHistoryRef.current[reconnectHistoryRef.current.length - 1]).toLocaleTimeString()}</span>
-                )}
-              </div>
-            )}
-            <button className="cam-panel__button" type="button" onClick={() => setHealthPanelOpen((value) => !value)}>
-              <Gauge size={13} /> {healthPanelOpen ? 'Hide Health' : 'Show Health'}
-            </button>
-          </section>
+            <HealthSection
+              estimatedFps={estimatedFps}
+              healthPanelOpen={healthPanelOpen}
+              setHealthPanelOpen={setHealthPanelOpen}
+              droppedFrameWarning={droppedFrameWarning}
+              frameAgeMs={frameAgeMs}
+              lastFrameAt={lastFrameAt}
+              nowTick={nowTick}
+              frameCount={frameCount}
+              reconnectCount={reconnectCount}
+              reconnectHistoryRef={reconnectHistoryRef}
+            />
           )}
 
           {activeControlSection === 'timeline' && (
-          <section className="cam-panel__control-section" aria-label="Print event timeline">
-            <div className="cam-panel__section-head">
-              <span><Timer size={14} /> Print Timeline</span>
-              <small>{timelineJobName || 'Recent media'}</small>
-            </div>
-            <div className="cam-panel__timeline">
-              {timelineClips.length === 0 ? (
-                <div className="cam-panel__note">No saved captures are tied to the current print yet.</div>
-              ) : timelineClips.map((clip) => (
-                <button key={clip.id} type="button" onClick={() => { selectClip(clip); setEditorCollapsed(false); }}>
-                  <span>{new Date(clip.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
-                  <strong>{clipLabel(clip)}</strong>
-                  <em>{clipIssueTags(clip).join(', ') || clipKind(clip)}</em>
-                </button>
-              ))}
-            </div>
-            <button className="cam-panel__button" type="button" disabled={timelineClips.length === 0 || busy} onClick={() => { void exportClipBundle(timelineClips); }}>
-              <Archive size={13} /> Export Timeline Bundle
-            </button>
-            <button className="cam-panel__button" type="button" disabled={timelineClips.length === 0} onClick={() => generateJobReport(timelineClips)}>
-              <Save size={13} /> Generate Report
-            </button>
-            <button className="cam-panel__button" type="button" disabled={timelineClips.length === 0 || busy} onClick={() => { void generateContactSheet(timelineClips); }}>
-              <Image size={13} /> Contact Sheet
-            </button>
-          </section>
+            <TimelineSection
+              timelineJobName={timelineJobName}
+              timelineClips={timelineClips}
+              busy={busy}
+              selectClip={selectClip}
+              setEditorCollapsed={setEditorCollapsed}
+              exportClipBundle={exportClipBundle}
+              generateJobReport={generateJobReport}
+              generateContactSheet={generateContactSheet}
+            />
           )}
 
           {activeControlSection === 'library' && (
