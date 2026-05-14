@@ -170,6 +170,8 @@ import {
   type RulerEndpointKey,
 } from './cameraDashboard/types';
 import { buildCameraStreamState } from './cameraDashboard/streamState';
+import { useCameraPresets } from './cameraDashboard/useCameraPresets';
+import { usePtzControls } from './cameraDashboard/usePtzControls';
 import './CameraDashboardPanel.css';
 
 interface CameraDashboardPanelProps {
@@ -236,7 +238,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const recordingThumbnailRef = useRef<Blob | undefined>(undefined);
   const backendRecordingRef = useRef<BackendRecordingSession | null>(null);
   const previousPrintStatusRef = useRef<string | undefined>(undefined);
-  const previousPtzPrintStatusRef = useRef<string | undefined>(undefined);
   const seenPrintLayersRef = useRef<Set<number>>(new Set());
   const reconnectHistoryRef = useRef<number[]>([]);
   const scheduledSnapshotTimerRef = useRef<number | null>(null);
@@ -1244,36 +1245,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     }
   }, [refreshClips, selectedClip]);
 
-  const saveCameraPreset = useCallback(() => {
-    const name = presetName.trim() || `Preset ${cameraPresets.length + 1}`;
-    const preset: CameraPreset = {
-      id: `${Date.now()}`,
-      name,
-      showGrid,
-      showCrosshair,
-      flipImage,
-      rotation,
-      timelapseIntervalSec,
-      timelapseFps,
-    };
-    setCameraPresets((presets) => [preset, ...presets.filter((item) => item.name.toLowerCase() !== name.toLowerCase())].slice(0, 8));
-    setPresetName('');
-    setMessage(`Saved camera preset "${name}".`);
-  }, [cameraPresets.length, flipImage, presetName, rotation, showCrosshair, showGrid, timelapseFps, timelapseIntervalSec]);
-
-  const applyCameraPreset = useCallback((preset: CameraPreset) => {
-    setShowGrid(preset.showGrid);
-    setShowCrosshair(preset.showCrosshair);
-    setFlipImage(preset.flipImage);
-    setRotation(preset.rotation);
-    setTimelapseIntervalSec(preset.timelapseIntervalSec);
-    setTimelapseFps(preset.timelapseFps);
-    setMessage(`Applied camera preset "${preset.name}".`);
-  }, []);
-
-  const deleteCameraPreset = useCallback((presetId: string) => {
-    setCameraPresets((presets) => presets.filter((preset) => preset.id !== presetId));
-  }, []);
 
   const updateActiveCamera = useCallback((patch: Partial<NonNullable<typeof activeCamera>>) => {
     if (!activeCamera) return;
@@ -1299,83 +1270,18 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     setMessage(quality === 'main' && hdMainIsRtsp ? 'Starting automatic HD bridge...' : quality === 'main' ? 'Switched camera quality to HD.' : 'Switched camera quality to SD.');
   }, [activeCamera, activePrinterId, hdMainIsRtsp, prefs.cameras, updatePrinterPrefs]);
 
-  const runPtzCommand = useCallback((direction: PtzDirection) => {
-    if (!ptzEnabled) {
-      setMessage('Enable PTZ controls before moving the camera.');
-      return;
-    }
-    if (!activeCamera || !canUsePtz) {
-      setMessage('Enable PTZ for this camera in Camera Settings before moving it.');
-      return;
-    }
+  const { saveCameraPreset, applyCameraPreset, deleteCameraPreset } = useCameraPresets({
+    cameraPresets, setCameraPresets, presetName, setPresetName, setMessage,
+    showGrid, showCrosshair, flipImage, rotation, timelapseIntervalSec, timelapseFps,
+    setShowGrid, setShowCrosshair, setFlipImage, setRotation, setTimelapseIntervalSec, setTimelapseFps,
+  });
 
-    const request = buildPtzMoveRequest(activeCamera, config.hostname, direction, ptzSpeed);
-    if (!request?.startUrl) {
-      setMessage('Configure this camera PTZ provider or command template before using PTZ controls.');
-      return;
-    }
+  const { runPtzCommand, runPtzPreset, savePtzPreset, deletePtzPreset } = usePtzControls({
+    activeCamera, hostname: config.hostname, canUsePtz, ptzEnabled, ptzSpeed,
+    ptzPresetName, ptzPresetToken, isPrintActive, printStatus,
+    activePtzStartPreset, setPtzPresetName, setMessage, updateActiveCamera,
+  });
 
-    void sendCameraCommand(request.startUrl, request.username, request.password, 250);
-    if (request.stopUrl) {
-      window.setTimeout(() => {
-        void sendCameraCommand(request.stopUrl ?? '', request.username, request.password, 250);
-      }, 260);
-    }
-    setMessage(`Sent PTZ ${direction.replace(/([A-Z])/g, ' $1').toLowerCase()} command.`);
-  }, [activeCamera, canUsePtz, config.hostname, ptzEnabled, ptzSpeed]);
-
-  const runPtzPreset = useCallback(async (preset: CameraPtzPreset, quiet = false) => {
-    if (!activeCamera) return;
-    const request = buildPtzPresetRequest(activeCamera, config.hostname, preset);
-    if (!request?.startUrl) {
-      if (!quiet) setMessage('Configure this camera preset command before jumping to a preset.');
-      return;
-    }
-    try {
-      await sendCameraCommand(request.startUrl, request.username, request.password);
-      if (!quiet) setMessage(`Moved camera to PTZ preset "${preset.name}".`);
-    } catch {
-      if (!quiet) setMessage('Unable to send PTZ preset command.');
-    }
-  }, [activeCamera, config.hostname]);
-
-  const savePtzPreset = useCallback(() => {
-    if (!activeCamera) return;
-    const token = ptzPresetToken.trim();
-    if (!token) {
-      setMessage('Enter the camera preset slot/token to save.');
-      return;
-    }
-    const name = ptzPresetName.trim() || `PTZ ${token}`;
-    const preset: CameraPtzPreset = {
-      id: `ptz-${Date.now()}`,
-      name,
-      token,
-      createdAt: Date.now(),
-    };
-    updateActiveCamera({
-      ptzPresets: [preset, ...activeCamera.ptzPresets.filter((item) => item.token !== token && item.name.toLowerCase() !== name.toLowerCase())].slice(0, 12),
-    });
-    setPtzPresetName('');
-    setMessage(`Saved PTZ preset "${name}".`);
-  }, [activeCamera, ptzPresetName, ptzPresetToken, updateActiveCamera]);
-
-  const deletePtzPreset = useCallback((presetId: string) => {
-    if (!activeCamera) return;
-    updateActiveCamera({
-      ptzPresets: activeCamera.ptzPresets.filter((preset) => preset.id !== presetId),
-      ptzStartPresetId: activeCamera.ptzStartPresetId === presetId ? '' : activeCamera.ptzStartPresetId,
-    });
-  }, [activeCamera, updateActiveCamera]);
-
-  useEffect(() => {
-    const previous = previousPtzPrintStatusRef.current;
-    previousPtzPrintStatusRef.current = printStatus;
-    const becameActive = !previous || (previous !== 'processing' && previous !== 'simulating');
-    if (isPrintActive && becameActive && activePtzStartPreset) {
-      void runPtzPreset(activePtzStartPreset, true);
-    }
-  }, [activePtzStartPreset, isPrintActive, printStatus, runPtzPreset]);
 
   const applySelectedIssue = useCallback(async () => {
     if (!selectedClip) return;
