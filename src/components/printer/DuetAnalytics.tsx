@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNow } from '../../hooks/useNow';
 import {
-  Activity, AlertTriangle, Award, Calendar, Download, Info, Receipt, TrendingUp,
+  Activity, AlertTriangle, Calendar, Download, Info, Receipt, TrendingUp,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import {
@@ -18,7 +18,6 @@ import {
 } from '../../utils/printCost';
 import {
   downloadText,
-  fmtDate,
   fmtDuration,
   fmtMoney,
   fmtWeight,
@@ -29,10 +28,12 @@ import {
 } from './duetAnalytics/helpers';
 import { CostConfigInputs } from './duetAnalytics/CostConfigInputs';
 import { CostRollupTable } from './duetAnalytics/CostRollupTable';
+import { JobsPerDaySparkline } from './duetAnalytics/JobsPerDaySparkline';
 import { KpiCardsRow } from './duetAnalytics/KpiCardsRow';
 import { OffPeakSchedulingSection } from './duetAnalytics/OffPeakSchedulingSection';
 import { PatternTable } from './duetAnalytics/PatternTable';
 import { RecentJobsTable } from './duetAnalytics/RecentJobsTable';
+import { TopFilesTable } from './duetAnalytics/TopFilesTable';
 
 // ---------------------------------------------------------------------------
 // Component
@@ -136,22 +137,6 @@ export default function DuetAnalytics() {
     const topFiles = topN([...byFile.entries()], 5, ([, v]) => v.count);
     return { completed, cancelled, total, successRate, totalSec, avgSec, topFiles, byDay };
   }, [jobsInWindow, nowMs]);
-
-  // Build a 14-column (or windowDays) spark bar of jobs/day.
-  const spark = useMemo(() => {
-    const arr: { label: string; value: number }[] = [];
-    const now = new Date();
-    const days = Math.min(windowDays, 30);
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      const key = localDateKey(d);
-      arr.push({ label: fmtDate(d), value: stats.byDay.get(key) ?? 0 });
-    }
-    return arr;
-  }, [stats.byDay, windowDays]);
-
-  const sparkMax = Math.max(1, ...spark.map((s) => s.value));
 
   const costSummary = useMemo(
     () => summarizePrintCosts(jobsInWindow, spools, {
@@ -262,48 +247,9 @@ export default function DuetAnalytics() {
             </>
           )}
 
-          {/* Jobs-per-day sparkline */}
-          <div className="duet-analytics__section-title">Jobs per day</div>
-          <div className="duet-analytics__sparkline" role="img" aria-label="Jobs per day bar chart">
-            {spark.map((d, i) => (
-              <div
-                key={i}
-                className="duet-analytics__spark-col"
-                title={`${d.label}: ${d.value} job${d.value === 1 ? '' : 's'}`}
-              >
-                <div
-                  className="duet-analytics__spark-bar"
-                  style={{ height: `${(d.value / sparkMax) * 100}%` }}
-                />
-              </div>
-            ))}
-          </div>
+          <JobsPerDaySparkline byDay={stats.byDay} windowDays={windowDays} />
 
-          {/* Top files */}
-          <div className="duet-analytics__section-title">
-            <Award size={11} /> Most-printed files
-          </div>
-          <table className="duet-analytics__table">
-            <thead>
-              <tr>
-                <th>File</th>
-                <th>Runs</th>
-                <th>Total time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stats.topFiles.length === 0 && (
-                <tr><td colSpan={3} className="duet-analytics__empty-row">No jobs in window.</td></tr>
-              )}
-              {stats.topFiles.map(([file, v]) => (
-                <tr key={file}>
-                  <td title={file} className="duet-analytics__file-cell">{file}</td>
-                  <td>{v.count}</td>
-                  <td>{fmtDuration(v.time)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <TopFilesTable rows={stats.topFiles} />
 
           <div className="duet-analytics__section-title">
             <Receipt size={11} /> Cost rollups
