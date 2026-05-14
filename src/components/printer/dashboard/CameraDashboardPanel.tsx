@@ -1,24 +1,12 @@
 import { useMemo, useRef, useState } from 'react';
 import { useNow } from '../../../hooks/useNow';
 import { usePrinterStore } from '../../../store/printerStore';
-import {
-  DEFAULT_CAMERA_DASHBOARD_PREFS,
-  DEFAULT_PREFS,
-  getDuetPrefs,
-  type CameraDashboardPrefs,
-  type DuetPrefs,
-} from '../../../utils/duetPrefs';
-import { enabledCamerasFromPrefs, prefsWithCamera } from '../../../utils/cameraStreamUrl';
 import { type CameraOverlayMode } from './CameraOverlayPanel';
 import {
   clipKind,
   formatClipDuration,
 } from './cameraDashboard/clipStore';
 import { type MediaViewportRect } from './cameraDashboard/snapshotEdit';
-import {
-  loadCameraDashboardPrefs,
-  loadCameraPresets,
-} from './cameraDashboard/prefsStorage';
 import { type CameraMeasurementCalibration } from './cameraDashboard/types';
 import { buildCameraStreamState } from './cameraDashboard/streamState';
 import { CameraDashboardTopbar } from './cameraDashboard/CameraDashboardTopbar';
@@ -34,6 +22,7 @@ import { RecordStrip } from './cameraDashboard/RecordStrip';
 import { useCameraConfigMutations } from './cameraDashboard/useCameraConfigMutations';
 import { useCameraConnection } from './cameraDashboard/useCameraConnection';
 import { useCameraFrameStyles } from './cameraDashboard/useCameraFrameStyles';
+import { useResolvedDashboardPrefs } from './cameraDashboard/useResolvedDashboardPrefs';
 import { LibrarySection } from './cameraDashboard/LibrarySection';
 import { SettingsSection } from './cameraDashboard/SettingsSection';
 import { TimelineSection } from './cameraDashboard/TimelineSection';
@@ -82,32 +71,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   });
 
   const activePrinter = printers.find((printer) => printer.id === activePrinterId);
-  const basePrefs = useMemo<DuetPrefs>(() => ({
-    ...DEFAULT_PREFS,
-    ...getDuetPrefs(),
-    ...(activePrinter?.prefs as Partial<DuetPrefs> | undefined),
-  }), [activePrinter]);
-  const cameras = useMemo(() => enabledCamerasFromPrefs(basePrefs), [basePrefs]);
-  const prefs = useMemo<DuetPrefs>(() => prefsWithCamera(basePrefs, basePrefs.activeCameraId), [basePrefs]);
-  const activeCamera = useMemo(() => (
-    prefs.cameras.find((camera) => camera.id === prefs.activeCameraId)
-    ?? cameras[0]
-    ?? prefs.cameras[0]
-  ), [cameras, prefs.activeCameraId, prefs.cameras]);
-  const dashboardPrefs = useMemo<CameraDashboardPrefs>(() => {
-    const printerPrefs = activePrinter?.prefs as Partial<DuetPrefs> | undefined;
-    const storedDashboardPrefs = printerPrefs?.cameraDashboard;
-    return {
-      ...DEFAULT_CAMERA_DASHBOARD_PREFS,
-      ...(storedDashboardPrefs ? {} : loadCameraDashboardPrefs()),
-      ...storedDashboardPrefs,
-      calibration: {
-        ...DEFAULT_CAMERA_DASHBOARD_PREFS.calibration,
-        ...(storedDashboardPrefs?.calibration ?? {}),
-      },
-      cameraPresets: storedDashboardPrefs?.cameraPresets ?? (storedDashboardPrefs ? [] : loadCameraPresets()),
-    };
-  }, [activePrinter]);
+  const { cameras, prefs, activeCamera, dashboardPrefs } = useResolvedDashboardPrefs(activePrinter);
 
   // DOM refs the JSX attaches.
   const imgRef = useRef<HTMLImageElement>(null);
