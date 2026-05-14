@@ -53,19 +53,7 @@ import {
   type DuetPrefs,
 } from '../../../utils/duetPrefs';
 import { enabledCamerasFromPrefs, prefsWithCamera } from '../../../utils/cameraStreamUrl';
-import { buildPtzMoveRequest, buildPtzPresetRequest, ptzProviderLabel, type PtzDirection } from '../../../services/camera/ptzControl';
-import { connectWhepVideoStream } from '../../../services/camera/webrtcStream';
-import {
-  distanceBetweenImagePointsMm,
-  hasCompleteBedCorners,
-  solveCameraHomography,
-  type ImagePoint,
-} from '../../../services/vision/cameraMeasurement';
-import {
-  assessPoseCalibration,
-  poseFrameSignature,
-  solveCameraPoseCalibration,
-} from '../../../services/vision/cameraPose';
+import { ptzProviderLabel } from '../../../services/camera/ptzControl';
 import { formatBytes } from './helpers';
 import CameraOverlayPanel, { type CameraOverlayMode } from './CameraOverlayPanel';
 import {
@@ -124,13 +112,9 @@ import {
   sendCameraCommand,
 } from './cameraDashboard/cameraUrls';
 import {
-  clampPercent,
   defaultCrop,
   formatLastFrame,
   formatMeasurementDistance,
-  measureContainedMedia,
-  sameMediaViewport,
-  transformSnapshotBlob,
   type MediaViewportRect,
 } from './cameraDashboard/snapshotEdit';
 import {
@@ -158,6 +142,8 @@ import { useCameraPresets } from './cameraDashboard/useCameraPresets';
 import { useCameraRecording } from './cameraDashboard/useCameraRecording';
 import { useClipActions } from './cameraDashboard/useClipActions';
 import { useClipDraftSync } from './cameraDashboard/useClipDraftSync';
+import { useMediaViewport } from './cameraDashboard/useMediaViewport';
+import { useVideoStream } from './cameraDashboard/useVideoStream';
 import { usePtzControls } from './cameraDashboard/usePtzControls';
 import { useSnapshotCapture } from './cameraDashboard/useSnapshotCapture';
 import './CameraDashboardPanel.css';
@@ -646,106 +632,18 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     setImageFailed(true);
   }, [activePrinterId, prefs.webcamStreamPreference, updatePrinterPrefs]);
 
-  useEffect(() => {
-    if (!isVideoStream || !videoRef.current || !streamSrc) return undefined;
-    const video = videoRef.current;
-    let disposed = false;
-    let cleanup: (() => void) | undefined;
+  useVideoStream({
+    videoRef, isVideoStream, streamSrc, isBrowserUsbCamera, useWebRtcStream,
+    webcamMainStreamProtocol: prefs.webcamMainStreamProtocol,
+    webRtcIceServers: activeCamera?.webRtcIceServers ?? '',
+    setLastFrameAt, setWebRtcFailed, setMessage,
+    onFatalError: handleCameraError,
+  });
 
-    if (isBrowserUsbCamera) return undefined;
-    if (useWebRtcStream) {
-      void connectWhepVideoStream(video, {
-        url: streamSrc,
-        iceServersText: activeCamera?.webRtcIceServers ?? '',
-        onConnected: () => setLastFrameAt(Date.now()),
-      }).then((dispose) => {
-        if (disposed) {
-          dispose();
-          return;
-        }
-        cleanup = dispose;
-      }).catch(() => {
-        if (!disposed) {
-          setWebRtcFailed(true);
-          setMessage('WebRTC camera connection failed; falling back to MJPEG/HLS.');
-        }
-      });
-      return () => {
-        disposed = true;
-        cleanup?.();
-        video.srcObject = null;
-      };
-    }
-    if (prefs.webcamMainStreamProtocol === 'hls' || streamSrc.startsWith('/camera-rtsp-hls')) {
-      void import('hls.js').then(({ default: Hls }) => {
-        if (disposed) return;
-        if (!Hls.isSupported()) {
-          video.src = streamSrc;
-          cleanup = () => {
-            video.removeAttribute('src');
-            video.load();
-          };
-          return;
-        }
-        const hls = new Hls({ lowLatencyMode: true });
-        hls.loadSource(streamSrc);
-        hls.attachMedia(video);
-        hls.on(Hls.Events.ERROR, (_event, data) => {
-          if (data.fatal) handleCameraError();
-        });
-        cleanup = () => hls.destroy();
-      }).catch(handleCameraError);
-      return () => {
-        disposed = true;
-        cleanup?.();
-      };
-    }
-
-    video.src = streamSrc;
-    return () => {
-      disposed = true;
-      cleanup?.();
-      if (!cleanup) {
-        video.removeAttribute('src');
-        video.load();
-      }
-    };
-  }, [activeCamera?.webRtcIceServers, handleCameraError, isBrowserUsbCamera, isVideoStream, prefs.webcamMainStreamProtocol, streamSrc, useWebRtcStream]);
-
-  const handleFrameLoad = useCallback(() => {
-    const frame = frameRef.current;
-    if (frame) {
-      const media = isVideoStream ? videoRef.current : imgRef.current;
-      const nextViewport = measureContainedMedia(frame, media);
-      setMediaViewport((current) => sameMediaViewport(current, nextViewport) ? current : nextViewport);
-    }
-    const now = Date.now();
-    setLastFrameAt((previous) => {
-      if (previous) setLastFrameIntervalMs(now - previous);
-      return now;
-    });
-    setFrameCount((value) => value + 1);
-  }, [isVideoStream]);
-
-  useEffect(() => {
-    const frame = frameRef.current;
-    if (!frame) return undefined;
-    const update = () => {
-      const media = isVideoStream ? videoRef.current : imgRef.current;
-      const nextViewport = measureContainedMedia(frame, media);
-      setMediaViewport((current) => sameMediaViewport(current, nextViewport) ? current : nextViewport);
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(frame);
-    const media = isVideoStream ? videoRef.current : imgRef.current;
-    if (media) observer.observe(media);
-    window.addEventListener('resize', update);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', update);
-    };
-  }, [isVideoStream, streamSrc]);
+  const { handleFrameLoad } = useMediaViewport({
+    frameRef, imgRef, videoRef, isVideoStream, streamSrc,
+    setMediaViewport, setLastFrameAt, setLastFrameIntervalMs, setFrameCount,
+  });
 
   const frameClassName = [
     'cam-panel__frame',
