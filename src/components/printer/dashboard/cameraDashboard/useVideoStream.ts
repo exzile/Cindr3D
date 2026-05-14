@@ -21,11 +21,15 @@ export interface UseVideoStreamDeps {
   videoRef: RefObject<HTMLVideoElement | null>;
   isVideoStream: boolean;
   streamSrc: string;
+  cameraSourceUrl: string;
+  webRtcUrl: string;
+  activeCameraId: string | undefined;
   isBrowserUsbCamera: boolean;
   useWebRtcStream: boolean;
   webcamMainStreamProtocol: string;
   webRtcIceServers: string;
   setLastFrameAt: (timestamp: number | null) => void;
+  setImageFailed: (failed: boolean) => void;
   setWebRtcFailed: (failed: boolean) => void;
   setMessage: (msg: string) => void;
   onFatalError: () => void;
@@ -33,10 +37,24 @@ export interface UseVideoStreamDeps {
 
 export function useVideoStream(deps: UseVideoStreamDeps) {
   const {
-    videoRef, isVideoStream, streamSrc, isBrowserUsbCamera, useWebRtcStream,
+    videoRef, isVideoStream, streamSrc, cameraSourceUrl, webRtcUrl, activeCameraId,
+    isBrowserUsbCamera, useWebRtcStream,
     webcamMainStreamProtocol, webRtcIceServers,
-    setLastFrameAt, setWebRtcFailed, setMessage, onFatalError,
+    setLastFrameAt, setImageFailed, setWebRtcFailed, setMessage, onFatalError,
   } = deps;
+
+  // Reset failed-image flag + clear last-frame stamp whenever the live
+  // image source URL changes (a user switching streams should erase the
+  // old failure state so the new stream gets a clean chance).
+  useEffect(() => {
+    setImageFailed(false);
+    setLastFrameAt(null);
+  }, [cameraSourceUrl, setImageFailed, setLastFrameAt]);
+
+  // Reset WebRTC failure flag when the camera or WHEP URL changes.
+  useEffect(() => {
+    setWebRtcFailed(false);
+  }, [activeCameraId, webRtcUrl, setWebRtcFailed]);
 
   useEffect(() => {
     if (!isVideoStream || !videoRef.current || !streamSrc) return undefined;

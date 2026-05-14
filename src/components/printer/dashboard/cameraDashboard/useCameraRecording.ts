@@ -380,5 +380,16 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
     }
   }, [autoRecord, autoTimelapse, hasCamera, isPrintActive, jobFileName, recordingKindRef, startRecording, stopRecording]);
 
+  // Elapsed-time ticker: refresh `elapsedMs` twice per second while a
+  // recording is in flight. Uses the existing `startedAtRef` so the timer
+  // survives a re-mount mid-recording.
+  useEffect(() => {
+    if (!recording) return undefined;
+    const interval = window.setInterval(() => {
+      setElapsedMs(Date.now() - startedAtRef.current);
+    }, 500);
+    return () => window.clearInterval(interval);
+  }, [recording, setElapsedMs, startedAtRef]);
+
   return { startRecording, stopRecording };
 }

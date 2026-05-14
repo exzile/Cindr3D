@@ -73,6 +73,7 @@ import { useCameraPresets } from './cameraDashboard/useCameraPresets';
 import { useCameraRecording } from './cameraDashboard/useCameraRecording';
 import { useClipActions } from './cameraDashboard/useClipActions';
 import { useClipDraftSync } from './cameraDashboard/useClipDraftSync';
+import { useClipThumbnailUrls } from './cameraDashboard/useClipThumbnailUrls';
 import { useMediaViewport } from './cameraDashboard/useMediaViewport';
 import { useVideoStream } from './cameraDashboard/useVideoStream';
 import { usePtzControls } from './cameraDashboard/usePtzControls';
@@ -223,7 +224,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [lastFrameIntervalMs, setLastFrameIntervalMs] = useState<number | null>(null);
   const [frameCount, setFrameCount] = useState(0);
   const [reconnectCount, setReconnectCount] = useState(0);
-  const [thumbUrls, setThumbUrls] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -344,23 +344,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     void refreshClips();
   }, [refreshClips]);
 
-  useEffect(() => {
-    setImageFailed(false);
-    setLastFrameAt(null);
-  }, [cameraSourceUrl]);
-
-  useEffect(() => {
-    setWebRtcFailed(false);
-  }, [activeCamera?.id, webRtcUrl]);
-
-  useEffect(() => {
-    if (!recording) return undefined;
-    const interval = window.setInterval(() => {
-      setElapsedMs(Date.now() - startedAtRef.current);
-    }, 500);
-    return () => window.clearInterval(interval);
-  }, [recording]);
-
 
   useEffect(() => () => {
     if (frameTimerRef.current !== null) {
@@ -382,19 +365,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     });
   }, []);
 
-  useEffect(() => {
-    const urls: Record<string, string> = {};
-    clips.forEach((clip) => {
-      const thumbnail = clip.thumbnailBlob ?? (clipKind(clip) === 'snapshot' ? clip.blob : undefined);
-      if (thumbnail) {
-        urls[clip.id] = URL.createObjectURL(thumbnail);
-      }
-    });
-    setThumbUrls(urls);
-    return () => {
-      Object.values(urls).forEach((url) => URL.revokeObjectURL(url));
-    };
-  }, [clips]);
+  const thumbUrls = useClipThumbnailUrls(clips);
 
   useBrowserUsbCamera({
     isBrowserUsbCamera,
@@ -557,10 +528,12 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   });
 
   useVideoStream({
-    videoRef, isVideoStream, streamSrc, isBrowserUsbCamera, useWebRtcStream,
+    videoRef, isVideoStream, streamSrc, cameraSourceUrl, webRtcUrl,
+    activeCameraId: activeCamera?.id,
+    isBrowserUsbCamera, useWebRtcStream,
     webcamMainStreamProtocol: prefs.webcamMainStreamProtocol,
     webRtcIceServers: activeCamera?.webRtcIceServers ?? '',
-    setLastFrameAt, setWebRtcFailed, setMessage,
+    setLastFrameAt, setImageFailed, setWebRtcFailed, setMessage,
     onFatalError: handleCameraError,
   });
 
