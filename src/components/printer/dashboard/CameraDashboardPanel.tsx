@@ -2,31 +2,21 @@ import { useMemo, useRef, useState } from 'react';
 import { useNow } from '../../../hooks/useNow';
 import { usePrinterStore } from '../../../store/printerStore';
 import { type CameraOverlayMode } from './CameraOverlayPanel';
-import {
-  clipKind,
-  formatClipDuration,
-} from './cameraDashboard/clipStore';
+import { clipKind } from './cameraDashboard/clipStore';
 import { type MediaViewportRect } from './cameraDashboard/snapshotEdit';
 import { type CameraMeasurementCalibration } from './cameraDashboard/types';
 import { buildCameraStreamState } from './cameraDashboard/streamState';
+import { CameraDashboardControls } from './cameraDashboard/CameraDashboardControls';
 import { CameraDashboardTopbar } from './cameraDashboard/CameraDashboardTopbar';
 import { CameraViewer } from './cameraDashboard/CameraViewer';
 import { ClipEditorPanel } from './cameraDashboard/ClipEditorPanel';
-import { ControlTabBar } from './cameraDashboard/ControlTabBar';
 import { FullscreenViewer } from './cameraDashboard/FullscreenViewer';
-import { HealthSection } from './cameraDashboard/HealthSection';
-import { MeasurementLayer } from './cameraDashboard/MeasurementLayer';
 import { RecentCapturesStrip } from './cameraDashboard/RecentCapturesStrip';
-import { RecordSection } from './cameraDashboard/RecordSection';
 import { RecordStrip } from './cameraDashboard/RecordStrip';
 import { useCameraConfigMutations } from './cameraDashboard/useCameraConfigMutations';
 import { useCameraConnection } from './cameraDashboard/useCameraConnection';
 import { useCameraFrameStyles } from './cameraDashboard/useCameraFrameStyles';
 import { useResolvedDashboardPrefs } from './cameraDashboard/useResolvedDashboardPrefs';
-import { LibrarySection } from './cameraDashboard/LibrarySection';
-import { SettingsSection } from './cameraDashboard/SettingsSection';
-import { TimelineSection } from './cameraDashboard/TimelineSection';
-import { ViewControlsSection } from './cameraDashboard/ViewControlsSection';
 import { useAutoSnapshots } from './cameraDashboard/useAutoSnapshots';
 import { useBrowserUsbCamera } from './cameraDashboard/useBrowserUsbCamera';
 import { useDashboardPrefsState } from './cameraDashboard/useDashboardPrefsState';
@@ -521,173 +511,74 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
 
         </div>
 
-        {!compact && <aside className="cam-panel__controls" aria-label="Camera controls and saved clips">
-          <ControlTabBar
+        {!compact && (
+          <CameraDashboardControls
             activeControlSection={activeControlSection}
             setActiveControlSection={setActiveControlSection}
+            recordProps={{
+              recording, elapsedMs, hasCamera, busy,
+              stopRecording, startRecording, captureSnapshot, addMarker,
+            }}
+            viewProps={{
+              showGrid, setShowGrid, showCrosshair, setShowCrosshair,
+              flipImage, setFlipImage, rotation, setRotation,
+              calibration, setCalibration, bedWidthMm, bedDepthMm,
+              poseStatus, overlayModeOptions: OVERLAY_MODE_OPTIONS,
+              cameraOverlayMode, setCameraOverlayMode,
+              measurementMode, setMeasurementMode, setNextBedCornerIndex,
+              hasCamera, bedCornersComplete, homography,
+              capturePoseStill, savePoseCalibration,
+              poseStillUrl, clearPoseStill,
+              finalComparisonUrl, setFinalComparisonUrl,
+              measuredDistanceMm, measurementStatus,
+            }}
+            settingsProps={{
+              webcamStreamPreference: prefs.webcamStreamPreference,
+              setCameraQuality, hdLiveNeedsBridge,
+              hdBridgeQuality, setHdBridgeQuality,
+              setStreamRevision, setMessage,
+              timelapseIntervalSec, setTimelapseIntervalSec,
+              timelapseFps, setTimelapseFps,
+              saveCameraPreset, applyCameraPreset, deleteCameraPreset, cameraPresets,
+              ptzEnabled, setPtzEnabled, ptzSpeed, setPtzSpeed, canUsePtz,
+              activeCamera, updateActiveCamera,
+              runPtzCommand, runPtzPreset, savePtzPreset, deletePtzPreset,
+              autoRecord, setAutoRecord,
+              autoTimelapse, setAutoTimelapse,
+              autoSnapshotFirstLayer, setAutoSnapshotFirstLayer,
+              autoSnapshotLayer, setAutoSnapshotLayer,
+              autoSnapshotFinish, setAutoSnapshotFinish,
+              autoSnapshotError, setAutoSnapshotError,
+              scheduledSnapshots, setScheduledSnapshots,
+              scheduledSnapshotIntervalMin, setScheduledSnapshotIntervalMin,
+              anomalyCapture, setAnomalyCapture,
+            }}
+            healthProps={{
+              estimatedFps, healthPanelOpen, setHealthPanelOpen,
+              droppedFrameWarning, frameAgeMs, lastFrameAt, nowTick,
+              frameCount, reconnectCount, reconnectHistoryRef,
+            }}
+            timelineProps={{
+              timelineJobName, timelineClips, busy,
+              selectClip, setEditorCollapsed,
+              exportClipBundle, generateJobReport, generateContactSheet,
+            }}
+            libraryProps={{
+              busy, refreshClips,
+              selectionMode, setSelectionMode,
+              selectedClipIds, setSelectedClipIds, selectedBulkClips,
+              clipQuery, setClipQuery,
+              clipFilter, setClipFilter,
+              clipSort, setClipSort,
+              totalStorageBytes, storageByKind, storageByJob, albums,
+              clips, visibleClips, selectedClip, thumbUrls,
+              applyBulkTags, exportVisibleClips, exportClipBundle,
+              generateContactSheet, generateJobReport,
+              selectClip, toggleBulkSelection,
+              removeClip, removeVisibleClips, cleanupOldClips,
+            }}
           />
-
-          {activeControlSection === 'record' && (
-            <RecordSection
-              recording={recording}
-              elapsedMs={elapsedMs}
-              hasCamera={hasCamera}
-              busy={busy}
-              stopRecording={stopRecording}
-              startRecording={startRecording}
-              captureSnapshot={captureSnapshot}
-              addMarker={addMarker}
-            />
-          )}
-
-          {activeControlSection === 'view' && (
-            <ViewControlsSection
-              showGrid={showGrid}
-              setShowGrid={setShowGrid}
-              showCrosshair={showCrosshair}
-              setShowCrosshair={setShowCrosshair}
-              flipImage={flipImage}
-              setFlipImage={setFlipImage}
-              rotation={rotation}
-              setRotation={setRotation}
-              calibration={calibration}
-              setCalibration={setCalibration}
-              bedWidthMm={bedWidthMm}
-              bedDepthMm={bedDepthMm}
-              poseStatus={poseStatus}
-              overlayModeOptions={OVERLAY_MODE_OPTIONS}
-              cameraOverlayMode={cameraOverlayMode}
-              setCameraOverlayMode={setCameraOverlayMode}
-              measurementMode={measurementMode}
-              setMeasurementMode={setMeasurementMode}
-              setNextBedCornerIndex={setNextBedCornerIndex}
-              hasCamera={hasCamera}
-              bedCornersComplete={bedCornersComplete}
-              homography={homography}
-              capturePoseStill={capturePoseStill}
-              savePoseCalibration={savePoseCalibration}
-              poseStillUrl={poseStillUrl}
-              clearPoseStill={clearPoseStill}
-              finalComparisonUrl={finalComparisonUrl}
-              setFinalComparisonUrl={setFinalComparisonUrl}
-              measuredDistanceMm={measuredDistanceMm}
-              measurementStatus={measurementStatus}
-            />
-          )}
-
-          {activeControlSection === 'settings' && (
-            <SettingsSection
-              webcamStreamPreference={prefs.webcamStreamPreference}
-              setCameraQuality={setCameraQuality}
-              hdLiveNeedsBridge={hdLiveNeedsBridge}
-              hdBridgeQuality={hdBridgeQuality}
-              setHdBridgeQuality={setHdBridgeQuality}
-              setStreamRevision={setStreamRevision}
-              setMessage={setMessage}
-              timelapseIntervalSec={timelapseIntervalSec}
-              setTimelapseIntervalSec={setTimelapseIntervalSec}
-              timelapseFps={timelapseFps}
-              setTimelapseFps={setTimelapseFps}
-              saveCameraPreset={saveCameraPreset}
-              applyCameraPreset={applyCameraPreset}
-              deleteCameraPreset={deleteCameraPreset}
-              cameraPresets={cameraPresets}
-              ptzEnabled={ptzEnabled}
-              setPtzEnabled={setPtzEnabled}
-              ptzSpeed={ptzSpeed}
-              setPtzSpeed={setPtzSpeed}
-              canUsePtz={canUsePtz}
-              activeCamera={activeCamera}
-              updateActiveCamera={updateActiveCamera}
-              runPtzCommand={runPtzCommand}
-              runPtzPreset={runPtzPreset}
-              savePtzPreset={savePtzPreset}
-              deletePtzPreset={deletePtzPreset}
-              autoRecord={autoRecord}
-              setAutoRecord={setAutoRecord}
-              autoTimelapse={autoTimelapse}
-              setAutoTimelapse={setAutoTimelapse}
-              autoSnapshotFirstLayer={autoSnapshotFirstLayer}
-              setAutoSnapshotFirstLayer={setAutoSnapshotFirstLayer}
-              autoSnapshotLayer={autoSnapshotLayer}
-              setAutoSnapshotLayer={setAutoSnapshotLayer}
-              autoSnapshotFinish={autoSnapshotFinish}
-              setAutoSnapshotFinish={setAutoSnapshotFinish}
-              autoSnapshotError={autoSnapshotError}
-              setAutoSnapshotError={setAutoSnapshotError}
-              scheduledSnapshots={scheduledSnapshots}
-              setScheduledSnapshots={setScheduledSnapshots}
-              scheduledSnapshotIntervalMin={scheduledSnapshotIntervalMin}
-              setScheduledSnapshotIntervalMin={setScheduledSnapshotIntervalMin}
-              anomalyCapture={anomalyCapture}
-              setAnomalyCapture={setAnomalyCapture}
-            />
-          )}
-
-          {activeControlSection === 'health' && (
-            <HealthSection
-              estimatedFps={estimatedFps}
-              healthPanelOpen={healthPanelOpen}
-              setHealthPanelOpen={setHealthPanelOpen}
-              droppedFrameWarning={droppedFrameWarning}
-              frameAgeMs={frameAgeMs}
-              lastFrameAt={lastFrameAt}
-              nowTick={nowTick}
-              frameCount={frameCount}
-              reconnectCount={reconnectCount}
-              reconnectHistoryRef={reconnectHistoryRef}
-            />
-          )}
-
-          {activeControlSection === 'timeline' && (
-            <TimelineSection
-              timelineJobName={timelineJobName}
-              timelineClips={timelineClips}
-              busy={busy}
-              selectClip={selectClip}
-              setEditorCollapsed={setEditorCollapsed}
-              exportClipBundle={exportClipBundle}
-              generateJobReport={generateJobReport}
-              generateContactSheet={generateContactSheet}
-            />
-          )}
-
-          {activeControlSection === 'library' && (
-            <LibrarySection
-              busy={busy}
-              refreshClips={refreshClips}
-              selectionMode={selectionMode}
-              setSelectionMode={setSelectionMode}
-              selectedClipIds={selectedClipIds}
-              setSelectedClipIds={setSelectedClipIds}
-              selectedBulkClips={selectedBulkClips}
-              clipQuery={clipQuery}
-              setClipQuery={setClipQuery}
-              clipFilter={clipFilter}
-              setClipFilter={setClipFilter}
-              clipSort={clipSort}
-              setClipSort={setClipSort}
-              totalStorageBytes={totalStorageBytes}
-              storageByKind={storageByKind}
-              storageByJob={storageByJob}
-              albums={albums}
-              clips={clips}
-              visibleClips={visibleClips}
-              selectedClip={selectedClip}
-              thumbUrls={thumbUrls}
-              applyBulkTags={applyBulkTags}
-              exportVisibleClips={exportVisibleClips}
-              exportClipBundle={exportClipBundle}
-              generateContactSheet={generateContactSheet}
-              generateJobReport={generateJobReport}
-              selectClip={selectClip}
-              toggleBulkSelection={toggleBulkSelection}
-              removeClip={removeClip}
-              removeVisibleClips={removeVisibleClips}
-              cleanupOldClips={cleanupOldClips}
-            />
-          )}
-        </aside>}
+        )}
       </div>
 
       {!compact && fullscreen && (
