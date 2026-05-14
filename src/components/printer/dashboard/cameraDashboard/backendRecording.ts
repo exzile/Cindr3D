@@ -10,9 +10,17 @@
  *
  * The session blob persists across page refreshes via sessionStorage
  * so a running recording doesn't get stranded.
+ *
+ * Also includes `persistRecordedClip` — the post-stop helper that both
+ * the backend and MediaRecorder paths use to write the final blob into
+ * the clip store. Kept here so the messaging + size guard live in one
+ * place instead of two slightly-different inline copies.
  */
 import { backendRecordingStorageKey } from './prefsStorage';
-import type { BackendRecordingSession, CameraClipKind } from './clipStore';
+import {
+  saveClip, savedRecordingMessage,
+  type BackendRecordingSession, type CameraClipKind, type CameraMarker,
+} from './clipStore';
 
 const ENDPOINT = '/camera-rtsp-record';
 
@@ -80,4 +88,50 @@ export function persistBackendSession(
 
 export function clearBackendSession(printerId: string): void {
   window.sessionStorage.removeItem(backendRecordingStorageKey(printerId));
+}
+
+export interface PersistRecordedClipOptions {
+  blob: Blob;
+  durationMs: number;
+  kind: CameraClipKind;
+  jobName: string | undefined;
+  markers: CameraMarker[];
+  thumbnailBlob: Blob | undefined;
+  mimeTypeFallback: string;
+  printerId: string;
+  printerName: string;
+  saveErrorMessage: string;
+  setBusy: (busy: boolean) => void;
+  setMessage: (msg: string) => void;
+  refreshClips: () => Promise<void>;
+}
+
+export async function persistRecordedClip(opts: PersistRecordedClipOptions): Promise<void> {
+  if (opts.blob.size <= 0) {
+    opts.setMessage('No video frames were captured.');
+    return;
+  }
+  opts.setBusy(true);
+  try {
+    await saveClip({
+      id: `${opts.printerId}-${Date.now()}`,
+      printerId: opts.printerId,
+      printerName: opts.printerName,
+      kind: opts.kind,
+      jobName: opts.jobName,
+      markers: opts.markers,
+      thumbnailBlob: opts.thumbnailBlob,
+      createdAt: Date.now(),
+      durationMs: opts.durationMs,
+      mimeType: opts.blob.type || opts.mimeTypeFallback,
+      size: opts.blob.size,
+      blob: opts.blob,
+    });
+    opts.setMessage(savedRecordingMessage(opts.kind, opts.durationMs));
+    await opts.refreshClips();
+  } catch (error) {
+    opts.setMessage(error instanceof Error ? error.message : opts.saveErrorMessage);
+  } finally {
+    opts.setBusy(false);
+  }
 }

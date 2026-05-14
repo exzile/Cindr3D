@@ -23,8 +23,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   formatClipDuration,
   pickRecordingMimeType,
-  saveClip,
-  savedRecordingMessage,
   type BackendRecordingSession,
   type CameraClipKind,
   type CameraMarker,
@@ -34,6 +32,7 @@ import {
   fetchBackendRecordingStatus,
   loadStoredBackendSession,
   persistBackendSession,
+  persistRecordedClip,
   startBackendRecording,
   stopBackendRecording as stopBackendRecordingFetch,
 } from './backendRecording';
@@ -123,34 +122,22 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
     recordingThumbnailRef.current = undefined;
     setRecordingKind(null);
     setElapsedMs(0);
-    setBusy(true);
     try {
       const { blob, durationHeader } = await stopBackendRecordingFetch(session.id);
-      const durationMs = durationHeader ?? (Date.now() - session.startedAt);
-      if (blob.size <= 0) {
-        setMessage('No video frames were captured.');
-        return true;
-      }
-      await saveClip({
-        id: `${printerId}-${Date.now()}`,
-        printerId,
-        printerName,
+      await persistRecordedClip({
+        blob,
+        durationMs: durationHeader ?? (Date.now() - session.startedAt),
         kind: session.kind,
         jobName: session.jobName,
         markers: session.markers,
         thumbnailBlob: session.thumbnailBlob,
-        createdAt: Date.now(),
-        durationMs,
-        mimeType: blob.type || 'video/mp4',
-        size: blob.size,
-        blob,
+        mimeTypeFallback: 'video/mp4',
+        printerId, printerName,
+        saveErrorMessage: 'Unable to save backend camera recording.',
+        setBusy, setMessage, refreshClips,
       });
-      setMessage(savedRecordingMessage(session.kind, durationMs));
-      await refreshClips();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to save backend camera recording.');
-    } finally {
-      setBusy(false);
     }
     return true;
   }, [printerId, printerName, refreshClips, setBusy, setMessage]);
@@ -241,35 +228,14 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
         recordingThumbnailRef.current = undefined;
         setRecordingKind(null);
         setElapsedMs(0);
-        void (async () => {
-          if (blob.size <= 0) {
-            setMessage('No video frames were captured.');
-            return;
-          }
-          setBusy(true);
-          try {
-            await saveClip({
-              id: `${printerId}-${Date.now()}`,
-              printerId,
-              printerName,
-              kind: stoppedKind,
-              jobName: stoppedJob,
-              markers: stoppedMarkers,
-              thumbnailBlob: stoppedThumbnail,
-              createdAt: Date.now(),
-              durationMs,
-              mimeType: type,
-              size: blob.size,
-              blob,
-            });
-            setMessage(savedRecordingMessage(stoppedKind, durationMs));
-            await refreshClips();
-          } catch (error) {
-            setMessage(error instanceof Error ? error.message : 'Unable to save camera clip.');
-          } finally {
-            setBusy(false);
-          }
-        })();
+        void persistRecordedClip({
+          blob, durationMs, kind: stoppedKind, jobName: stoppedJob,
+          markers: stoppedMarkers, thumbnailBlob: stoppedThumbnail,
+          mimeTypeFallback: type,
+          printerId, printerName,
+          saveErrorMessage: 'Unable to save camera clip.',
+          setBusy, setMessage, refreshClips,
+        });
       };
 
       recorder.onerror = () => {
