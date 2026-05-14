@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
 import { useNow } from '../../../hooks/useNow';
-import { Camera } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
 import {
   DEFAULT_CAMERA_DASHBOARD_PREFS,
@@ -11,8 +10,7 @@ import {
   type DuetPrefs,
 } from '../../../utils/duetPrefs';
 import { enabledCamerasFromPrefs, prefsWithCamera } from '../../../utils/cameraStreamUrl';
-import { formatBytes } from './helpers';
-import CameraOverlayPanel, { type CameraOverlayMode } from './CameraOverlayPanel';
+import { type CameraOverlayMode } from './CameraOverlayPanel';
 import {
   clipKind,
   formatClipDuration,
@@ -39,8 +37,6 @@ import {
 } from './cameraDashboard/clipLibrary';
 import {
   defaultCrop,
-  formatLastFrame,
-  formatMeasurementDistance,
   type MediaViewportRect,
 } from './cameraDashboard/snapshotEdit';
 import {
@@ -55,6 +51,7 @@ import {
 } from './cameraDashboard/types';
 import { buildCameraStreamState } from './cameraDashboard/streamState';
 import { CameraDashboardTopbar } from './cameraDashboard/CameraDashboardTopbar';
+import { CameraViewer } from './cameraDashboard/CameraViewer';
 import { ClipEditorPanel } from './cameraDashboard/ClipEditorPanel';
 import { ControlTabBar } from './cameraDashboard/ControlTabBar';
 import { FullscreenViewer } from './cameraDashboard/FullscreenViewer';
@@ -62,6 +59,8 @@ import { HealthSection } from './cameraDashboard/HealthSection';
 import { MeasurementLayer } from './cameraDashboard/MeasurementLayer';
 import { RecentCapturesStrip } from './cameraDashboard/RecentCapturesStrip';
 import { RecordSection } from './cameraDashboard/RecordSection';
+import { RecordStrip } from './cameraDashboard/RecordStrip';
+import { useCameraConnection } from './cameraDashboard/useCameraConnection';
 import { LibrarySection } from './cameraDashboard/LibrarySection';
 import { SettingsSection } from './cameraDashboard/SettingsSection';
 import { TimelineSection } from './cameraDashboard/TimelineSection';
@@ -543,26 +542,19 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     captureAnomaly(`manual marker ${formatClipDuration(atMs)}`);
   }, [captureAnomaly, printerId, recording]);
 
-  const reconnectCamera = useCallback(() => {
-    setImageFailed(false);
-    setWebRtcFailed(false);
-    setLastFrameAt(null);
-    reconnectHistoryRef.current = [...reconnectHistoryRef.current, Date.now()].slice(-10);
-    setReconnectCount((value) => value + 1);
-    setStreamRevision((value) => value + 1);
-    setMessage('Reconnecting camera stream...');
-    captureAnomaly('camera reconnect');
-  }, [captureAnomaly]);
-
-  const handleCameraError = useCallback(() => {
-    if (prefs.webcamStreamPreference === 'main') {
-      updatePrinterPrefs(activePrinterId, { webcamStreamPreference: 'sub' });
-      setStreamRevision((value) => value + 1);
-      setMessage('HD stream unavailable, falling back to SD.');
-      return;
-    }
-    setImageFailed(true);
-  }, [activePrinterId, prefs.webcamStreamPreference, updatePrinterPrefs]);
+  const { reconnectCamera, handleCameraError } = useCameraConnection({
+    activePrinterId,
+    webcamStreamPreference: prefs.webcamStreamPreference,
+    updatePrinterPrefs,
+    reconnectHistoryRef,
+    captureAnomaly,
+    setImageFailed,
+    setWebRtcFailed,
+    setLastFrameAt,
+    setReconnectCount,
+    setStreamRevision,
+    setMessage,
+  });
 
   useVideoStream({
     videoRef, isVideoStream, streamSrc, isBrowserUsbCamera, useWebRtcStream,
@@ -629,108 +621,60 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
           />
 
 
-          <div className="cam-panel__viewer">
-            <div ref={frameRef} className={frameClassName}>
-              {hasCamera ? (
-                <>
-                  {poseStillUrl || finalComparisonUrl ? (
-                    <img src={poseStillUrl || finalComparisonUrl} alt={`${printerName} frozen camera frame`} style={imageStyle} />
-                  ) : isVideoStream ? (
-                    <video
-                      ref={videoRef}
-                      className="cam-panel__video"
-                      muted
-                      playsInline
-                      autoPlay
-                      controls={!isBrowserUsbCamera}
-                      style={imageStyle}
-                      onLoadedData={handleFrameLoad}
-                      onPlaying={handleFrameLoad}
-                      onError={handleCameraError}
-                    />
-                  ) : (
-                    <img
-                      ref={imgRef}
-                      src={streamSrc}
-                      alt={`${printerName} camera stream`}
-                      style={imageStyle}
-                      onLoad={handleFrameLoad}
-                      onError={handleCameraError}
-                    />
-                  )}
-                  {recording && (
-                    <div className="cam-panel__recording">
-                      <span className="cam-panel__recording-dot" />
-                      {isTimelapseRecording ? 'TIMELAPSE' : isAutoRecording ? 'AUTO REC' : 'REC'} {formatClipDuration(elapsedMs)}
-                    </div>
-                  )}
-                  <div className="cam-panel__health">{formatLastFrame(lastFrameAt, nowTick)}</div>
-                  <div className="cam-panel__media-viewport" style={mediaViewportStyle}>
-                    {!compact && calibration.enabled && <div className="cam-panel__calibration" style={calibrationStyle} />}
-                    <CameraOverlayPanel pose={calibration.pose} mode={cameraOverlayMode} frameTick={frameCount} comparison={Boolean(finalComparisonUrl)} />
-                    <MeasurementLayer
-                      measurementMode={measurementMode}
-                      measurementStatus={measurementStatus}
-                      calibration={calibration}
-                      bedCornersComplete={bedCornersComplete}
-                      completeBedCorners={completeBedCorners}
-                      measuredDistanceMm={measuredDistanceMm}
-                      draggingBedCorner={draggingBedCorner}
-                      draggingRulerEndpoint={draggingRulerEndpoint}
-                      onMeasurementPointerDown={handleMeasurementPointerDown}
-                      handleCornerPointerDown={handleCornerPointerDown}
-                      handleCornerPointerMove={handleCornerPointerMove}
-                      handleCornerPointerUp={handleCornerPointerUp}
-                      handleRulerPointerDown={handleRulerPointerDown}
-                      handleRulerPointerMove={handleRulerPointerMove}
-                      handleRulerPointerUp={handleRulerPointerUp}
-                    />
-                    {poseStillUrl && (
-                      <span className="cam-panel__pose-freeze">Frozen pose frame</span>
-                    )}
-                    {finalComparisonUrl && (
-                      <span className="cam-panel__pose-freeze">Post-print comparison</span>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="cam-panel__empty">
-                  <Camera size={28} />
-                  <strong>{displayUrl ? 'Camera stream unavailable' : 'No camera stream configured'}</strong>
-                  <span>Open camera settings to add an MJPEG sub stream for live dashboard preview and recording.</span>
-                </div>
-              )}
-            </div>
+          <CameraViewer
+            compact={compact}
+            frameClassName={frameClassName}
+            imageStyle={imageStyle}
+            calibrationStyle={calibrationStyle}
+            mediaViewportStyle={mediaViewportStyle}
+            frameRef={frameRef}
+            videoRef={videoRef}
+            imgRef={imgRef}
+            canvasRef={canvasRef}
+            isVideoStream={isVideoStream}
+            isBrowserUsbCamera={isBrowserUsbCamera}
+            streamSrc={streamSrc}
+            displayUrl={displayUrl}
+            hasCamera={hasCamera}
+            printerName={printerName}
+            handleFrameLoad={handleFrameLoad}
+            handleCameraError={handleCameraError}
+            poseStillUrl={poseStillUrl}
+            finalComparisonUrl={finalComparisonUrl}
+            recording={recording}
+            isTimelapseRecording={isTimelapseRecording}
+            isAutoRecording={isAutoRecording}
+            elapsedMs={elapsedMs}
+            lastFrameAt={lastFrameAt}
+            nowTick={nowTick}
+            calibration={calibration}
+            cameraOverlayMode={cameraOverlayMode}
+            setCameraOverlayMode={setCameraOverlayMode}
+            frameCount={frameCount}
+            overlayModeOptions={overlayModeOptions}
+            measurementMode={measurementMode}
+            measurementStatus={measurementStatus}
+            bedCornersComplete={bedCornersComplete}
+            completeBedCorners={completeBedCorners}
+            measuredDistanceMm={measuredDistanceMm}
+            draggingBedCorner={draggingBedCorner}
+            draggingRulerEndpoint={draggingRulerEndpoint}
+            handleMeasurementPointerDown={handleMeasurementPointerDown}
+            handleCornerPointerDown={handleCornerPointerDown}
+            handleCornerPointerMove={handleCornerPointerMove}
+            handleCornerPointerUp={handleCornerPointerUp}
+            handleRulerPointerDown={handleRulerPointerDown}
+            handleRulerPointerMove={handleRulerPointerMove}
+            handleRulerPointerUp={handleRulerPointerUp}
+          />
 
-            {compact && (
-              <section className="cam-panel__view-tools cam-panel__view-tools--compact" aria-label="Camera view mode">
-                <div className="cam-panel__view-mode" role="group" aria-label="Camera overlay mode">
-                  {overlayModeOptions.map(({ mode, label, hint }) => (
-                    <button
-                      key={mode}
-                      className={`cam-panel__button ${cameraOverlayMode === mode ? 'is-active' : ''}`}
-                      type="button"
-                      onClick={() => setCameraOverlayMode(mode)}
-                      title={hint}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            <canvas ref={canvasRef} className="cam-panel__hidden-canvas" />
-          </div>
-
-          <div className="cam-panel__record-strip" aria-label="Current camera capture status">
-            <span className={`cam-panel__record-chip${recording ? ' is-recording' : ''}`}>
-              {recordingStatusLabel}
-            </span>
-            <span>{jobFileName || 'No active job'}</span>
-            <span>{recordingMarkerCount} marker{recordingMarkerCount === 1 ? '' : 's'}</span>
-            <span>{formatBytes(totalStorageBytes)} saved locally</span>
-          </div>
+          <RecordStrip
+            recording={recording}
+            recordingStatusLabel={recordingStatusLabel}
+            jobFileName={jobFileName}
+            recordingMarkerCount={recordingMarkerCount}
+            totalStorageBytes={totalStorageBytes}
+          />
 
           {!compact && (
             <RecentCapturesStrip
