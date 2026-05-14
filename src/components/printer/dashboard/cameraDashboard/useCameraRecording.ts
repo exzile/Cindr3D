@@ -29,7 +29,14 @@ import {
   type CameraClipKind,
   type CameraMarker,
 } from './clipStore';
-import { backendRecordingStorageKey } from './prefsStorage';
+import {
+  clearBackendSession,
+  fetchBackendRecordingStatus,
+  loadStoredBackendSession,
+  persistBackendSession,
+  startBackendRecording,
+  stopBackendRecording as stopBackendRecordingFetch,
+} from './backendRecording';
 import { RECORDING_FPS } from './types';
 
 export interface UseCameraRecordingDeps {
@@ -105,11 +112,11 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
       : 'Ready';
   const recordingMarkerCount = recordingMarkersRef.current.length;
 
-  const stopBackendRecording = useCallback(async () => {
+  const stopBackend = useCallback(async () => {
     const session = backendRecordingRef.current;
     if (!session) return false;
     backendRecordingRef.current = null;
-    window.sessionStorage.removeItem(backendRecordingStorageKey(printerId));
+    clearBackendSession(printerId);
     recordingKindRef.current = null;
     recordingJobRef.current = undefined;
     recordingMarkersRef.current = [];
@@ -118,14 +125,8 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
     setElapsedMs(0);
     setBusy(true);
     try {
-      const response = await fetch(`/camera-rtsp-record?action=stop&id=${encodeURIComponent(session.id)}`, {
-        cache: 'no-store',
-      });
-      if (!response.ok) {
-        throw new Error(await response.text() || 'Unable to stop backend camera recording.');
-      }
-      const blob = await response.blob();
-      const durationMs = Number(response.headers.get('x-recording-duration-ms')) || (Date.now() - session.startedAt);
+      const { blob, durationHeader } = await stopBackendRecordingFetch(session.id);
+      const durationMs = durationHeader ?? (Date.now() - session.startedAt);
       if (blob.size <= 0) {
         setMessage('No video frames were captured.');
         return true;
@@ -152,11 +153,7 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
       setBusy(false);
     }
     return true;
-  }, [
-    backendRecordingRef, printerId, printerName, recordingJobRef, recordingKindRef,
-    recordingMarkersRef, recordingThumbnailRef, refreshClips,
-    setBusy, setElapsedMs, setMessage, setRecordingKind,
-  ]);
+  }, [printerId, printerName, refreshClips, setBusy, setMessage]);
 
   const stopRecording = useCallback(() => {
     if (frameTimerRef.current !== null) {
@@ -164,14 +161,14 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
       frameTimerRef.current = null;
     }
     if (backendRecordingRef.current) {
-      void stopBackendRecording();
+      void stopBackend();
       return;
     }
     const recorder = recorderRef.current;
     if (recorder && recorder.state !== 'inactive') {
       recorder.stop();
     }
-  }, [backendRecordingRef, frameTimerRef, recorderRef, stopBackendRecording]);
+  }, [stopBackend]);
 
   const startRecording = useCallback(async (
     kind: Exclude<CameraClipKind, 'snapshot'> = 'clip',
@@ -187,38 +184,11 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
         } catch {
           thumbnailBlob = undefined;
         }
-        const params = new URLSearchParams({
-          action: 'start',
-          kind,
-          quality: hdBridgeQuality,
+        const { id, createdAt: startedAt } = await startBackendRecording({
+          kind, quality: hdBridgeQuality, isServerUsbCamera, backendRecordingUrl,
         });
-        if (isServerUsbCamera) {
-          params.set('source', 'usb');
-          params.set('device', backendRecordingUrl);
-        } else {
-          params.set('url', backendRecordingUrl);
-        }
-        const response = await fetch(`/camera-rtsp-record?${params.toString()}`, { cache: 'no-store' });
-        if (!response.ok) {
-          throw new Error(await response.text() || 'Unable to start backend camera recording.');
-        }
-        const result = await response.json() as { id: string; createdAt?: number };
-        const startedAt = result.createdAt ?? Date.now();
-        backendRecordingRef.current = {
-          id: result.id,
-          kind,
-          jobName,
-          markers: [],
-          startedAt,
-          thumbnailBlob,
-        };
-        window.sessionStorage.setItem(backendRecordingStorageKey(printerId), JSON.stringify({
-          id: result.id,
-          kind,
-          jobName,
-          markers: [],
-          startedAt,
-        }));
+        backendRecordingRef.current = { id, kind, jobName, markers: [], startedAt, thumbnailBlob };
+        persistBackendSession(printerId, { id, kind, jobName, markers: [], startedAt });
         startedAtRef.current = startedAt;
         recordingKindRef.current = kind;
         recordingJobRef.current = jobName;
@@ -337,9 +307,8 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
   // elapsed timer, then ask the backend to confirm the session is still
   // running. If not, scrub the stale storage entry so the UI is honest.
   useEffect(() => {
-    const key = backendRecordingStorageKey(printerId);
-    const raw = window.sessionStorage.getItem(key);
-    if (!raw) {
+    const stored = loadStoredBackendSession(printerId);
+    if (!stored) {
       if (backendRecordingRef.current) {
         backendRecordingRef.current = null;
         setRecordingKind(null);
@@ -347,39 +316,27 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
       }
       return;
     }
+    backendRecordingRef.current = stored;
+    startedAtRef.current = stored.startedAt;
+    recordingKindRef.current = stored.kind;
+    recordingJobRef.current = stored.jobName;
+    recordingMarkersRef.current = stored.markers;
+    setRecordingKind(stored.kind);
+    setElapsedMs(Date.now() - stored.startedAt);
 
-    try {
-      const stored = JSON.parse(raw) as BackendRecordingSession;
-      backendRecordingRef.current = { ...stored, markers: stored.markers ?? [] };
-      startedAtRef.current = stored.startedAt;
-      recordingKindRef.current = stored.kind;
-      recordingJobRef.current = stored.jobName;
-      recordingMarkersRef.current = stored.markers ?? [];
-      setRecordingKind(stored.kind);
-      setElapsedMs(Date.now() - stored.startedAt);
-      void fetch('/camera-rtsp-record?action=status', { cache: 'no-store' })
-        .then((response) => response.ok ? response.json() as Promise<{ recordings: Array<{ id: string }> }> : { recordings: [] })
-        .then((status) => {
-          if (!status.recordings.some((recording) => recording.id === stored.id)) {
-            window.sessionStorage.removeItem(key);
-            if (backendRecordingRef.current?.id === stored.id) {
-              backendRecordingRef.current = null;
-              recordingKindRef.current = null;
-              recordingJobRef.current = undefined;
-              recordingMarkersRef.current = [];
-              setRecordingKind(null);
-              setElapsedMs(0);
-            }
-          }
-        })
-        .catch(() => {});
-    } catch {
-      window.sessionStorage.removeItem(key);
-    }
-  }, [
-    backendRecordingRef, printerId, recordingJobRef, recordingKindRef,
-    recordingMarkersRef, setElapsedMs, setRecordingKind, startedAtRef,
-  ]);
+    void fetchBackendRecordingStatus().then((status) => {
+      if (status.recordings.some((rec) => rec.id === stored.id)) return;
+      clearBackendSession(printerId);
+      if (backendRecordingRef.current?.id === stored.id) {
+        backendRecordingRef.current = null;
+        recordingKindRef.current = null;
+        recordingJobRef.current = undefined;
+        recordingMarkersRef.current = [];
+        setRecordingKind(null);
+        setElapsedMs(0);
+      }
+    }).catch(() => {});
+  }, [printerId]);
 
   // Auto-record on print transitions: kick off when a print becomes active,
   // stop when an auto-/timelapse-recorded job returns to idle.
@@ -433,13 +390,11 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
         ...backendRecordingRef.current,
         markers: recordingMarkersRef.current,
       };
-      window.sessionStorage.setItem(backendRecordingStorageKey(printerId), JSON.stringify({
-        id: backendRecordingRef.current.id,
-        kind: backendRecordingRef.current.kind,
-        jobName: backendRecordingRef.current.jobName,
-        markers: backendRecordingRef.current.markers,
-        startedAt: backendRecordingRef.current.startedAt,
-      }));
+      const session = backendRecordingRef.current;
+      persistBackendSession(printerId, {
+        id: session.id, kind: session.kind, jobName: session.jobName,
+        markers: session.markers, startedAt: session.startedAt,
+      });
     }
     setMessage(`Added marker at ${formatClipDuration(atMs)}.`);
     captureAnomaly(`manual marker ${formatClipDuration(atMs)}`);
