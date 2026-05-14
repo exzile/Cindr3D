@@ -58,20 +58,15 @@ import {
   loadCameraPresets,
 } from './cameraDashboard/prefsStorage';
 import {
-  BED_CORNER_SEQUENCE,
-  HD_BRIDGE_QUALITIES,
-  RECORDING_FPS,
-  type BedCornerKey,
   type CameraMeasurementCalibration,
   type CameraPreset,
   type ControlSection,
-  type MeasurementMode,
-  type RulerEndpointKey,
 } from './cameraDashboard/types';
 import { buildCameraStreamState } from './cameraDashboard/streamState';
 import { CameraDashboardTopbar } from './cameraDashboard/CameraDashboardTopbar';
 import { ClipEditorPanel } from './cameraDashboard/ClipEditorPanel';
 import { HealthSection } from './cameraDashboard/HealthSection';
+import { MeasurementLayer } from './cameraDashboard/MeasurementLayer';
 import { RecentCapturesStrip } from './cameraDashboard/RecentCapturesStrip';
 import { RecordSection } from './cameraDashboard/RecordSection';
 import { LibrarySection } from './cameraDashboard/LibrarySection';
@@ -680,87 +675,23 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
                   <div className="cam-panel__media-viewport" style={mediaViewportStyle}>
                     {!compact && calibration.enabled && <div className="cam-panel__calibration" style={calibrationStyle} />}
                     <CameraOverlayPanel pose={calibration.pose} mode={cameraOverlayMode} frameTick={frameCount} comparison={Boolean(finalComparisonUrl)} />
-                    <div
-                      className={`cam-panel__measurement-layer${measurementMode !== 'off' ? ' is-picking' : ''}`}
-                      onPointerDown={handleMeasurementPointerDown}
-                    >
-                      {bedCornersComplete && (
-                        <svg className="cam-panel__measurement-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
-                          <polygon
-                            points={[
-                              completeBedCorners.frontLeft,
-                              completeBedCorners.frontRight,
-                              completeBedCorners.backRight,
-                              completeBedCorners.backLeft,
-                            ].map((point) => `${point.x},${point.y}`).join(' ')}
-                            className="cam-panel__bed-polygon"
-                          />
-                        </svg>
-                      )}
-                      {calibration.bedCorners && BED_CORNER_SEQUENCE.map(({ key, label }) => {
-                        const point = calibration.bedCorners?.[key];
-                        if (!point) return null;
-                        return (
-                          <button
-                            type="button"
-                            key={key}
-                            className={`cam-panel__measure-point cam-panel__measure-point--corner${draggingBedCorner === key ? ' is-dragging' : ''}`}
-                            style={{ left: `${point.x}%`, top: `${point.y}%` }}
-                            onPointerDown={(event) => handleCornerPointerDown(event, key)}
-                            onPointerMove={(event) => handleCornerPointerMove(event, key)}
-                            onPointerUp={handleCornerPointerUp}
-                            onPointerCancel={handleCornerPointerUp}
-                            aria-label={`Drag ${label.toLowerCase()} bed corner`}
-                          >
-                            {label.slice(0, 1)}
-                          </button>
-                        );
-                      })}
-                      {calibration.measureA && calibration.measureB && (
-                        <svg className="cam-panel__measurement-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
-                          <line
-                            x1={calibration.measureA.x}
-                            y1={calibration.measureA.y}
-                            x2={calibration.measureB.x}
-                            y2={calibration.measureB.y}
-                            className="cam-panel__ruler-line"
-                          />
-                        </svg>
-                      )}
-                      {calibration.measureA && (
-                        <button
-                          type="button"
-                          className={`cam-panel__measure-point cam-panel__measure-point--ruler${draggingRulerEndpoint === 'measureA' ? ' is-dragging' : ''}`}
-                          style={{ left: `${calibration.measureA.x}%`, top: `${calibration.measureA.y}%` }}
-                          onPointerDown={(event) => handleRulerPointerDown(event, 'measureA')}
-                          onPointerMove={(event) => handleRulerPointerMove(event, 'measureA')}
-                          onPointerUp={handleRulerPointerUp}
-                          onPointerCancel={handleRulerPointerUp}
-                          aria-label="Drag ruler endpoint A"
-                        >
-                          A
-                        </button>
-                      )}
-                      {calibration.measureB && (
-                        <button
-                          type="button"
-                          className={`cam-panel__measure-point cam-panel__measure-point--ruler${draggingRulerEndpoint === 'measureB' ? ' is-dragging' : ''}`}
-                          style={{ left: `${calibration.measureB.x}%`, top: `${calibration.measureB.y}%` }}
-                          onPointerDown={(event) => handleRulerPointerDown(event, 'measureB')}
-                          onPointerMove={(event) => handleRulerPointerMove(event, 'measureB')}
-                          onPointerUp={handleRulerPointerUp}
-                          onPointerCancel={handleRulerPointerUp}
-                          aria-label="Drag ruler endpoint B"
-                        >
-                          B
-                        </button>
-                      )}
-                      {(measurementMode !== 'off' || calibration.measureA || bedCornersComplete) && (
-                        <span className="cam-panel__measure-distance">
-                          {calibration.measureA && calibration.measureB ? formatMeasurementDistance(measuredDistanceMm) : measurementStatus}
-                        </span>
-                      )}
-                    </div>
+                    <MeasurementLayer
+                      measurementMode={measurementMode}
+                      measurementStatus={measurementStatus}
+                      calibration={calibration}
+                      bedCornersComplete={bedCornersComplete}
+                      completeBedCorners={completeBedCorners}
+                      measuredDistanceMm={measuredDistanceMm}
+                      draggingBedCorner={draggingBedCorner}
+                      draggingRulerEndpoint={draggingRulerEndpoint}
+                      onMeasurementPointerDown={handleMeasurementPointerDown}
+                      handleCornerPointerDown={handleCornerPointerDown}
+                      handleCornerPointerMove={handleCornerPointerMove}
+                      handleCornerPointerUp={handleCornerPointerUp}
+                      handleRulerPointerDown={handleRulerPointerDown}
+                      handleRulerPointerMove={handleRulerPointerMove}
+                      handleRulerPointerUp={handleRulerPointerUp}
+                    />
                     {poseStillUrl && (
                       <span className="cam-panel__pose-freeze">Frozen pose frame</span>
                     )}
