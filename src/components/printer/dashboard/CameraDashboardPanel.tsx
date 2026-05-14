@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNow } from '../../../hooks/useNow';
 import { usePrinterStore } from '../../../store/printerStore';
 import {
@@ -31,7 +31,9 @@ import { MeasurementLayer } from './cameraDashboard/MeasurementLayer';
 import { RecentCapturesStrip } from './cameraDashboard/RecentCapturesStrip';
 import { RecordSection } from './cameraDashboard/RecordSection';
 import { RecordStrip } from './cameraDashboard/RecordStrip';
+import { useCameraConfigMutations } from './cameraDashboard/useCameraConfigMutations';
 import { useCameraConnection } from './cameraDashboard/useCameraConnection';
+import { useCameraFrameStyles } from './cameraDashboard/useCameraFrameStyles';
 import { LibrarySection } from './cameraDashboard/LibrarySection';
 import { SettingsSection } from './cameraDashboard/SettingsSection';
 import { TimelineSection } from './cameraDashboard/TimelineSection';
@@ -314,29 +316,10 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
 
 
 
-  const updateActiveCamera = useCallback((patch: Partial<NonNullable<typeof activeCamera>>) => {
-    if (!activeCamera) return;
-    const nextCamera = { ...activeCamera, ...patch };
-    updatePrinterPrefs(activePrinterId, {
-      cameras: prefs.cameras.map((camera) => (camera.id === activeCamera.id ? nextCamera : camera)),
-    });
-  }, [activeCamera, activePrinterId, prefs.cameras, updatePrinterPrefs]);
-
-  const setCameraQuality = useCallback((quality: DuetPrefs['webcamStreamPreference']) => {
-    const nextCameras = activeCamera
-      ? prefs.cameras.map((camera) => (
-        camera.id === activeCamera.id
-          ? { ...camera, streamPreference: quality }
-          : camera
-      ))
-      : prefs.cameras;
-    updatePrinterPrefs(activePrinterId, {
-      webcamStreamPreference: quality,
-      cameras: nextCameras,
-    });
-    setStreamRevision((value) => value + 1);
-    setMessage(quality === 'main' && hdMainIsRtsp ? 'Starting automatic HD bridge...' : quality === 'main' ? 'Switched camera quality to HD.' : 'Switched camera quality to SD.');
-  }, [activeCamera, activePrinterId, hdMainIsRtsp, prefs.cameras, updatePrinterPrefs]);
+  const { updateActiveCamera, setCameraQuality } = useCameraConfigMutations({
+    activePrinterId, activeCamera, cameras: prefs.cameras, hdMainIsRtsp,
+    updatePrinterPrefs, setStreamRevision, setMessage,
+  });
 
   const { saveCameraPreset, applyCameraPreset, deleteCameraPreset } = useCameraPresets({
     cameraPresets, setCameraPresets, setMessage,
@@ -403,28 +386,10 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     setMediaViewport, setLastFrameAt, setLastFrameIntervalMs, setFrameCount,
   });
 
-  const frameClassName = [
-    'cam-panel__frame',
-    showGrid ? 'cam-panel__frame--grid' : '',
-    showCrosshair ? 'cam-panel__frame--crosshair' : '',
-    measurementMode !== 'off' ? 'cam-panel__frame--measuring' : '',
-    cameraOverlayMode === 'print' ? 'cam-panel__frame--ar-print-only' : '',
-  ].filter(Boolean).join(' ');
-  const imageStyle = {
-    transform: `scaleX(${flipImage ? -1 : 1}) rotate(${rotation}deg)`,
-  };
-  const calibrationStyle = {
-    '--cal-x': `${calibration.x}%`,
-    '--cal-y': `${calibration.y}%`,
-    '--cal-w': `${calibration.width}%`,
-    '--cal-h': `${calibration.height}%`,
-  } as CSSProperties;
-  const mediaViewportStyle = {
-    '--media-left': `${mediaViewport.left}%`,
-    '--media-top': `${mediaViewport.top}%`,
-    '--media-width': `${mediaViewport.width}%`,
-    '--media-height': `${mediaViewport.height}%`,
-  } as CSSProperties;
+  const { frameClassName, imageStyle, calibrationStyle, mediaViewportStyle } = useCameraFrameStyles({
+    showGrid, showCrosshair, measurementMode, cameraOverlayMode,
+    flipImage, rotation, calibration, mediaViewport,
+  });
 
   return (
     <div className={`cam-panel${compact ? ' cam-panel--compact' : ''}`}>
