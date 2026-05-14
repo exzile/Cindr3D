@@ -134,26 +134,6 @@ import {
   type MediaViewportRect,
 } from './cameraDashboard/snapshotEdit';
 import {
-  ANOMALY_CAPTURE_KEY,
-  AUTO_RECORD_KEY,
-  AUTO_SNAPSHOT_ERROR_KEY,
-  AUTO_SNAPSHOT_FINISH_KEY,
-  AUTO_SNAPSHOT_FIRST_LAYER_KEY,
-  AUTO_SNAPSHOT_LAYER_KEY,
-  AUTO_TIMELAPSE_KEY,
-  CALIBRATION_OVERLAY_KEY,
-  CAMERA_PRESETS_KEY,
-  CONTROL_SECTION_KEY,
-  EDITOR_COLLAPSED_KEY,
-  HEALTH_OPEN_KEY,
-  SCHEDULED_SNAPSHOT_INTERVAL_KEY,
-  SCHEDULED_SNAPSHOT_KEY,
-  TIMELAPSE_FPS_KEY,
-  TIMELAPSE_INTERVAL_KEY,
-  VIEW_CROSSHAIR_KEY,
-  VIEW_FLIP_KEY,
-  VIEW_GRID_KEY,
-  VIEW_ROTATION_KEY,
   backendRecordingStorageKey,
   loadCameraDashboardPrefs,
   loadCameraPresets,
@@ -170,8 +150,11 @@ import {
   type RulerEndpointKey,
 } from './cameraDashboard/types';
 import { buildCameraStreamState } from './cameraDashboard/streamState';
+import { useCameraDashboardPersistence } from './cameraDashboard/useCameraDashboardPersistence';
+import { useCameraMeasurement } from './cameraDashboard/useCameraMeasurement';
 import { useCameraPresets } from './cameraDashboard/useCameraPresets';
 import { usePtzControls } from './cameraDashboard/usePtzControls';
+import { useSnapshotCapture } from './cameraDashboard/useSnapshotCapture';
 import './CameraDashboardPanel.css';
 
 interface CameraDashboardPanelProps {
@@ -310,13 +293,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [compareBlend, setCompareBlend] = useState(50);
   const [selectedClipIds, setSelectedClipIds] = useState<string[]>([]);
   const [selectionMode, setSelectionMode] = useState(false);
-  const [calibration, setCalibration] = useState<CameraMeasurementCalibration>(() => dashboardPrefs.calibration as CameraMeasurementCalibration);
-  const [measurementMode, setMeasurementMode] = useState<MeasurementMode>('off');
-  const [nextBedCornerIndex, setNextBedCornerIndex] = useState(0);
-  const [draggingBedCorner, setDraggingBedCorner] = useState<BedCornerKey | null>(null);
-  const [draggingRulerEndpoint, setDraggingRulerEndpoint] = useState<RulerEndpointKey | null>(null);
-  const [poseStillUrl, setPoseStillUrl] = useState('');
-  const [finalComparisonUrl, setFinalComparisonUrl] = useState('');
   const [cameraOverlayMode, setCameraOverlayMode] = useState<CameraOverlayMode>('camera');
   const [ptzEnabled, setPtzEnabled] = useState(() => dashboardPrefs.ptzEnabled);
   const [ptzSpeed, setPtzSpeed] = useState(() => dashboardPrefs.ptzSpeed);
@@ -339,6 +315,49 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     imageFailed,
     streamRevision,
   }), [activeCamera, config.hostname, hdBridgeQuality, imageFailed, prefs, service, streamRevision, webRtcFailed]);
+
+  const measurement = useCameraMeasurement({
+    initialCalibration: dashboardPrefs.calibration as CameraMeasurementCalibration,
+    frameRef,
+    mediaViewport,
+    activeCameraId: activeCamera?.id ?? prefs.activeCameraId,
+    rotation,
+    flipImage,
+    setMessage,
+  });
+  const {
+    calibration, setCalibration,
+    measurementMode, setMeasurementMode,
+    setNextBedCornerIndex,
+    draggingBedCorner, draggingRulerEndpoint,
+    poseStillUrl, setPoseStillUrl,
+    finalComparisonUrl, setFinalComparisonUrl,
+    homography, measuredDistanceMm,
+    completeBedCorners, bedCornersComplete, poseStatus,
+    measurementStatus,
+    handleMeasurementPointerDown,
+    handleCornerPointerDown, handleCornerPointerMove, handleCornerPointerUp,
+    handleRulerPointerDown, handleRulerPointerMove, handleRulerPointerUp,
+    savePoseCalibration, clearPoseStill,
+  } = measurement;
+
+  useCameraDashboardPersistence({
+    activePrinterId, dashboardPrefs, updatePrinterPrefs,
+    hydratedPrinterIdRef, skipNextPrefsSaveRef,
+    autoRecord, autoTimelapse, autoSnapshotFirstLayer, autoSnapshotLayer,
+    autoSnapshotFinish, autoSnapshotError, scheduledSnapshots,
+    scheduledSnapshotIntervalMin, anomalyCapture, timelapseIntervalSec, timelapseFps,
+    showGrid, showCrosshair, flipImage, rotation,
+    healthPanelOpen, activeControlSection, editorCollapsed,
+    cameraPresets, calibration, ptzEnabled, ptzSpeed, hdBridgeQuality,
+    setAutoRecord, setAutoTimelapse, setAutoSnapshotFirstLayer, setAutoSnapshotLayer,
+    setAutoSnapshotFinish, setAutoSnapshotError, setScheduledSnapshots,
+    setScheduledSnapshotIntervalMin, setAnomalyCapture, setTimelapseIntervalSec, setTimelapseFps,
+    setShowGrid, setShowCrosshair, setFlipImage, setRotation,
+    setHealthPanelOpen, setActiveControlSection, setEditorCollapsed,
+    setCameraPresets, setCalibration, setPtzEnabled, setPtzSpeed, setHdBridgeQuality,
+    setMeasurementMode, setNextBedCornerIndex, setPoseStillUrl, setFinalComparisonUrl,
+  });
 
   const printerId = activePrinter?.id ?? 'default-printer';
   const printerName = activePrinter?.name ?? 'Printer';
@@ -461,171 +480,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     return () => window.clearInterval(interval);
   }, [recording]);
 
-  useEffect(() => {
-    if (hydratedPrinterIdRef.current === activePrinterId) return;
-    hydratedPrinterIdRef.current = activePrinterId;
-    skipNextPrefsSaveRef.current = true;
-    setAutoRecord(dashboardPrefs.autoRecord);
-    setAutoTimelapse(dashboardPrefs.autoTimelapse);
-    setAutoSnapshotFirstLayer(dashboardPrefs.autoSnapshotFirstLayer);
-    setAutoSnapshotLayer(dashboardPrefs.autoSnapshotLayer);
-    setAutoSnapshotFinish(dashboardPrefs.autoSnapshotFinish);
-    setAutoSnapshotError(dashboardPrefs.autoSnapshotError);
-    setScheduledSnapshots(dashboardPrefs.scheduledSnapshots);
-    setScheduledSnapshotIntervalMin(dashboardPrefs.scheduledSnapshotIntervalMin);
-    setAnomalyCapture(dashboardPrefs.anomalyCapture);
-    setTimelapseIntervalSec(dashboardPrefs.timelapseIntervalSec);
-    setTimelapseFps(dashboardPrefs.timelapseFps);
-    setShowGrid(dashboardPrefs.showGrid);
-    setShowCrosshair(dashboardPrefs.showCrosshair);
-    setFlipImage(dashboardPrefs.flipImage);
-    setRotation(dashboardPrefs.rotation % 360);
-    setHealthPanelOpen(dashboardPrefs.healthPanelOpen);
-    setActiveControlSection(dashboardPrefs.activeControlSection);
-    setEditorCollapsed(dashboardPrefs.editorCollapsed);
-    setCameraPresets(dashboardPrefs.cameraPresets);
-    setCalibration(dashboardPrefs.calibration as CameraMeasurementCalibration);
-    setMeasurementMode('off');
-    setNextBedCornerIndex(0);
-    setPoseStillUrl((url) => {
-      if (url) URL.revokeObjectURL(url);
-      return '';
-    });
-    setFinalComparisonUrl((url) => {
-      if (url) URL.revokeObjectURL(url);
-      return '';
-    });
-    setPtzEnabled(dashboardPrefs.ptzEnabled);
-    setPtzSpeed(dashboardPrefs.ptzSpeed);
-    setHdBridgeQuality(dashboardPrefs.hdBridgeQuality);
-  }, [activePrinterId, dashboardPrefs]);
-
-  useEffect(() => {
-    if (skipNextPrefsSaveRef.current) {
-      skipNextPrefsSaveRef.current = false;
-      return undefined;
-    }
-
-    const nextCameraPrefs: CameraDashboardPrefs = {
-      autoRecord,
-      autoTimelapse,
-      autoSnapshotFirstLayer,
-      autoSnapshotLayer,
-      autoSnapshotFinish,
-      autoSnapshotError,
-      scheduledSnapshots,
-      scheduledSnapshotIntervalMin,
-      anomalyCapture,
-      timelapseIntervalSec,
-      timelapseFps,
-      showGrid,
-      showCrosshair,
-      flipImage,
-      rotation,
-      healthPanelOpen,
-      activeControlSection,
-      editorCollapsed,
-      cameraPresets,
-      calibration,
-      ptzEnabled,
-      ptzSpeed,
-      hdBridgeQuality,
-    };
-
-    const timeout = window.setTimeout(() => {
-      updatePrinterPrefs(activePrinterId, { cameraDashboard: nextCameraPrefs });
-    }, 150);
-
-    return () => window.clearTimeout(timeout);
-  }, [
-    activeControlSection,
-    activePrinterId,
-    anomalyCapture,
-    autoRecord,
-    autoSnapshotError,
-    autoSnapshotFinish,
-    autoSnapshotFirstLayer,
-    autoSnapshotLayer,
-    autoTimelapse,
-    calibration,
-    cameraPresets,
-    editorCollapsed,
-    flipImage,
-    hdBridgeQuality,
-    healthPanelOpen,
-    ptzEnabled,
-    ptzSpeed,
-    rotation,
-    scheduledSnapshotIntervalMin,
-    scheduledSnapshots,
-    showCrosshair,
-    showGrid,
-    timelapseFps,
-    timelapseIntervalSec,
-    updatePrinterPrefs,
-  ]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(AUTO_RECORD_KEY, String(autoRecord));
-    } catch {
-      /* storage unavailable */
-    }
-  }, [autoRecord]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(AUTO_TIMELAPSE_KEY, String(autoTimelapse));
-      localStorage.setItem(TIMELAPSE_INTERVAL_KEY, String(timelapseIntervalSec));
-      localStorage.setItem(TIMELAPSE_FPS_KEY, String(timelapseFps));
-    } catch {
-      /* storage unavailable */
-    }
-  }, [autoTimelapse, timelapseFps, timelapseIntervalSec]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(AUTO_SNAPSHOT_FIRST_LAYER_KEY, String(autoSnapshotFirstLayer));
-      localStorage.setItem(AUTO_SNAPSHOT_LAYER_KEY, String(autoSnapshotLayer));
-      localStorage.setItem(AUTO_SNAPSHOT_FINISH_KEY, String(autoSnapshotFinish));
-      localStorage.setItem(AUTO_SNAPSHOT_ERROR_KEY, String(autoSnapshotError));
-      localStorage.setItem(SCHEDULED_SNAPSHOT_KEY, String(scheduledSnapshots));
-      localStorage.setItem(SCHEDULED_SNAPSHOT_INTERVAL_KEY, String(scheduledSnapshotIntervalMin));
-      localStorage.setItem(ANOMALY_CAPTURE_KEY, String(anomalyCapture));
-    } catch {
-      /* storage unavailable */
-    }
-  }, [anomalyCapture, autoSnapshotError, autoSnapshotFinish, autoSnapshotFirstLayer, autoSnapshotLayer, scheduledSnapshotIntervalMin, scheduledSnapshots]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(CAMERA_PRESETS_KEY, JSON.stringify(cameraPresets));
-    } catch {
-      /* storage unavailable */
-    }
-  }, [cameraPresets]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(CALIBRATION_OVERLAY_KEY, JSON.stringify(calibration));
-    } catch {
-      /* storage unavailable */
-    }
-  }, [calibration]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(VIEW_GRID_KEY, String(showGrid));
-      localStorage.setItem(VIEW_CROSSHAIR_KEY, String(showCrosshair));
-      localStorage.setItem(VIEW_FLIP_KEY, String(flipImage));
-      localStorage.setItem(VIEW_ROTATION_KEY, String(rotation));
-      localStorage.setItem(HEALTH_OPEN_KEY, String(healthPanelOpen));
-      localStorage.setItem(CONTROL_SECTION_KEY, activeControlSection);
-      localStorage.setItem(EDITOR_COLLAPSED_KEY, String(editorCollapsed));
-    } catch {
-      /* storage unavailable */
-    }
-  }, [activeControlSection, editorCollapsed, flipImage, healthPanelOpen, rotation, showCrosshair, showGrid]);
 
   useEffect(() => () => {
     if (frameTimerRef.current !== null) {
@@ -749,135 +603,20 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     setTrimEnd(selectedClip.trimEndMs ? formatClipDuration(selectedClip.trimEndMs) : '');
   }, [selectedClip]);
 
-  const drawFrame = useCallback(() => {
-    const image = isVideoStream ? videoRef.current : imgRef.current;
-    const canvas = canvasRef.current;
-    if (!image || !canvas) throw new Error('Camera preview is not ready yet.');
-    const width = image instanceof HTMLVideoElement
-      ? image.videoWidth || image.clientWidth || 1280
-      : image.naturalWidth || image.clientWidth || 1280;
-    const height = image instanceof HTMLVideoElement
-      ? image.videoHeight || image.clientHeight || 720
-      : image.naturalHeight || image.clientHeight || 720;
-    if (width <= 0 || height <= 0) throw new Error('Camera stream has not produced a frame yet.');
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('Canvas recording is not available in this browser.');
-    context.drawImage(image, 0, 0, width, height);
-    setLastFrameAt(Date.now());
-  }, [isVideoStream]);
-
-  const canvasBlob = useCallback(async (type: string, quality?: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) throw new Error('Camera frame is not ready.');
-    return new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((result) => {
-        if (result) resolve(result);
-        else reject(new Error('Unable to encode camera frame.'));
-      }, type, quality);
-    });
-  }, []);
-
-  const captureSnapshot = useCallback(async (label?: string) => {
-    if (!hasCamera) return;
-    try {
-      drawFrame();
-      const blob = await canvasBlob('image/png');
-      const now = Date.now();
-      setBusy(true);
-      await saveClip({
-        id: `${printerId}-snapshot-${now}`,
-        printerId,
-        printerName,
-        name: label,
-        kind: 'snapshot',
-        jobName: jobFileName,
-        album: jobFileName ? 'Print events' : undefined,
-        tags: label ? ['auto-capture'] : undefined,
-        createdAt: now,
-        durationMs: 0,
-        mimeType: blob.type || 'image/png',
-        size: blob.size,
-        blob,
-      });
-      setMessage(label ? `Saved ${label}.` : 'Saved camera snapshot.');
-      await refreshClips();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to save camera snapshot.');
-    } finally {
-      setBusy(false);
-    }
-  }, [canvasBlob, drawFrame, hasCamera, jobFileName, printerId, printerName, refreshClips]);
-
-  const capturePoseStill = useCallback(async () => {
-    if (!hasCamera) return;
-    try {
-      drawFrame();
-      const blob = await canvasBlob('image/png');
-      const nextUrl = URL.createObjectURL(blob);
-      setPoseStillUrl((currentUrl) => {
-        if (currentUrl) URL.revokeObjectURL(currentUrl);
-        return nextUrl;
-      });
-      setMeasurementMode('bed');
-      setNextBedCornerIndex(0);
-      setMessage('Frozen camera frame. Pick the four bed corners to calibrate AR pose.');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to freeze camera frame.');
-    }
-  }, [canvasBlob, drawFrame, hasCamera]);
-
-  const captureFinalComparisonFrame = useCallback(async () => {
-    if (!hasCamera || !calibration.pose) return;
-    try {
-      drawFrame();
-      const blob = await canvasBlob('image/png');
-      const nextUrl = URL.createObjectURL(blob);
-      setFinalComparisonUrl((currentUrl) => {
-        if (currentUrl) URL.revokeObjectURL(currentUrl);
-        return nextUrl;
-      });
-      setCameraOverlayMode('both');
-      setMessage('Frozen final frame for AR print comparison.');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to freeze final comparison frame.');
-    }
-  }, [calibration.pose, canvasBlob, drawFrame, hasCamera]);
-
-  const captureAnomaly = useCallback((reason: string) => {
-    if (!anomalyCapture || !hasCamera) return;
-    void captureSnapshot(`Anomaly: ${reason}`);
-  }, [anomalyCapture, captureSnapshot, hasCamera]);
-
-  useEffect(() => {
-    if (scheduledSnapshotTimerRef.current !== null) {
-      window.clearInterval(scheduledSnapshotTimerRef.current);
-      scheduledSnapshotTimerRef.current = null;
-    }
-    if (!scheduledSnapshots || !hasCamera || !isPrintActive) return undefined;
-
-    scheduledSnapshotTimerRef.current = window.setInterval(() => {
-      void captureSnapshot('Scheduled snapshot');
-    }, Math.max(1, scheduledSnapshotIntervalMin) * 60 * 1000);
-
-    return () => {
-      if (scheduledSnapshotTimerRef.current !== null) {
-        window.clearInterval(scheduledSnapshotTimerRef.current);
-        scheduledSnapshotTimerRef.current = null;
-      }
-    };
-  }, [captureSnapshot, hasCamera, isPrintActive, scheduledSnapshotIntervalMin, scheduledSnapshots]);
-
-  useEffect(() => {
-    if (!anomalyCapture || !droppedFrameWarning) {
-      if (!droppedFrameWarning) staleAnomalyCapturedRef.current = false;
-      return;
-    }
-    if (staleAnomalyCapturedRef.current) return;
-    staleAnomalyCapturedRef.current = true;
-    captureAnomaly('stale frame');
-  }, [anomalyCapture, captureAnomaly, droppedFrameWarning]);
+  const {
+    drawFrame, canvasBlob, captureSnapshot, capturePoseStill,
+    captureFinalComparisonFrame, captureAnomaly,
+  } = useSnapshotCapture({
+    imgRef, videoRef, canvasRef, scheduledSnapshotTimerRef, staleAnomalyCapturedRef,
+    isVideoStream, hasCamera,
+    printerId, printerName, jobFileName,
+    calibrationPose: calibration.pose,
+    setPoseStillUrl, setMeasurementMode, setNextBedCornerIndex,
+    setFinalComparisonUrl, setCameraOverlayMode,
+    setLastFrameAt, setBusy, setMessage, refreshClips,
+    anomalyCapture, scheduledSnapshots, scheduledSnapshotIntervalMin,
+    isPrintActive, droppedFrameWarning,
+  });
 
   const stopBackendRecording = useCallback(async () => {
     const session = backendRecordingRef.current;
@@ -1672,184 +1411,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
       window.removeEventListener('resize', update);
     };
   }, [isVideoStream, streamSrc]);
-
-  const bedWidthMm = calibration.bedWidthMm ?? 220;
-  const bedDepthMm = calibration.bedDepthMm ?? 220;
-  const currentPoseSignature = poseFrameSignature(activeCamera?.id ?? prefs.activeCameraId, rotation, flipImage);
-  const homography = useMemo(
-    () => solveCameraHomography(calibration.bedCorners, bedWidthMm, bedDepthMm),
-    [bedDepthMm, bedWidthMm, calibration.bedCorners],
-  );
-  const measuredDistanceMm = useMemo(
-    () => distanceBetweenImagePointsMm(calibration.measureA, calibration.measureB, homography),
-    [calibration.measureA, calibration.measureB, homography],
-  );
-  const completeBedCorners = hasCompleteBedCorners(calibration.bedCorners) ? calibration.bedCorners : null;
-  const bedCornersComplete = completeBedCorners !== null;
-  const poseStatus = useMemo(
-    () => assessPoseCalibration(calibration.pose, calibration.bedCorners, currentPoseSignature),
-    [calibration.bedCorners, calibration.pose, currentPoseSignature],
-  );
-  const nextBedCorner = BED_CORNER_SEQUENCE[nextBedCornerIndex] ?? BED_CORNER_SEQUENCE[0];
-  const measurementStatus = measurementMode === 'bed'
-    ? `Pick ${nextBedCorner.label.toLowerCase()} corner`
-    : measurementMode === 'ruler'
-      ? calibration.measureA && !calibration.measureB
-        ? 'Pick endpoint B'
-        : 'Pick endpoint A'
-      : bedCornersComplete
-        ? 'Homography ready'
-        : 'Bed corners not calibrated';
-
-  const pointFromFramePointer = useCallback((event: PointerEvent<HTMLElement>) => {
-    const frame = frameRef.current;
-    if (!frame) return null;
-    const rect = frame.getBoundingClientRect();
-    if (!rect.width || !rect.height) return null;
-    const mediaLeft = rect.left + (mediaViewport.left / 100) * rect.width;
-    const mediaTop = rect.top + (mediaViewport.top / 100) * rect.height;
-    const mediaWidth = (mediaViewport.width / 100) * rect.width;
-    const mediaHeight = (mediaViewport.height / 100) * rect.height;
-    if (!mediaWidth || !mediaHeight) return null;
-    return {
-      x: clampPercent(((event.clientX - mediaLeft) / mediaWidth) * 100),
-      y: clampPercent(((event.clientY - mediaTop) / mediaHeight) * 100),
-    };
-  }, [mediaViewport]);
-
-  const handleMeasurementPoint = useCallback((point: ImagePoint) => {
-    if (measurementMode === 'off') return;
-
-    if (measurementMode === 'bed') {
-      const corner = BED_CORNER_SEQUENCE[nextBedCornerIndex] ?? BED_CORNER_SEQUENCE[0];
-      setCalibration((value) => ({
-        ...value,
-        bedCorners: {
-          ...(value.bedCorners ?? {}),
-          [corner.key]: point,
-        },
-      }));
-      setNextBedCornerIndex((index) => {
-        const nextIndex = (index + 1) % BED_CORNER_SEQUENCE.length;
-        if (nextIndex === 0) {
-          setMeasurementMode('off');
-          setMessage('Bed corners picked. Save pose when the overlay matches the frozen frame.');
-        }
-        return nextIndex;
-      });
-      return;
-    }
-
-    setCalibration((value) => {
-      if (!value.measureA || value.measureB) {
-        return { ...value, measureA: point, measureB: undefined };
-      }
-      return { ...value, measureB: point };
-    });
-  }, [measurementMode, nextBedCornerIndex]);
-
-  const handleMeasurementPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (measurementMode === 'off') return;
-    if (event.target !== event.currentTarget) return;
-    const point = pointFromFramePointer(event);
-    if (!point) return;
-    event.preventDefault();
-    handleMeasurementPoint(point);
-  }, [handleMeasurementPoint, measurementMode, pointFromFramePointer]);
-
-  const updateBedCornerPoint = useCallback((corner: BedCornerKey, point: ImagePoint) => {
-    setCalibration((value) => ({
-      ...value,
-      bedCorners: {
-        ...(value.bedCorners ?? {}),
-        [corner]: point,
-      },
-      pose: undefined,
-    }));
-  }, []);
-
-  const handleCornerPointerDown = useCallback((event: PointerEvent<HTMLButtonElement>, corner: BedCornerKey) => {
-    const point = pointFromFramePointer(event);
-    if (!point) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setDraggingBedCorner(corner);
-    updateBedCornerPoint(corner, point);
-  }, [pointFromFramePointer, updateBedCornerPoint]);
-
-  const handleCornerPointerMove = useCallback((event: PointerEvent<HTMLButtonElement>, corner: BedCornerKey) => {
-    if (draggingBedCorner !== corner) return;
-    const point = pointFromFramePointer(event);
-    if (!point) return;
-    event.preventDefault();
-    updateBedCornerPoint(corner, point);
-  }, [draggingBedCorner, pointFromFramePointer, updateBedCornerPoint]);
-
-  const handleCornerPointerUp = useCallback((event: PointerEvent<HTMLButtonElement>) => {
-    if (draggingBedCorner === null) return;
-    event.preventDefault();
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    setDraggingBedCorner(null);
-    setMessage('Adjusted bed corner. Save pose when the overlay matches the camera frame.');
-  }, [draggingBedCorner]);
-
-  const updateRulerEndpoint = useCallback((endpoint: RulerEndpointKey, point: ImagePoint) => {
-    setCalibration((value) => ({ ...value, [endpoint]: point }));
-  }, []);
-
-  const handleRulerPointerDown = useCallback((event: PointerEvent<HTMLButtonElement>, endpoint: RulerEndpointKey) => {
-    const point = pointFromFramePointer(event);
-    if (!point) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setDraggingRulerEndpoint(endpoint);
-    updateRulerEndpoint(endpoint, point);
-  }, [pointFromFramePointer, updateRulerEndpoint]);
-
-  const handleRulerPointerMove = useCallback((event: PointerEvent<HTMLButtonElement>, endpoint: RulerEndpointKey) => {
-    if (draggingRulerEndpoint !== endpoint) return;
-    const point = pointFromFramePointer(event);
-    if (!point) return;
-    event.preventDefault();
-    updateRulerEndpoint(endpoint, point);
-  }, [draggingRulerEndpoint, pointFromFramePointer, updateRulerEndpoint]);
-
-  const handleRulerPointerUp = useCallback((event: PointerEvent<HTMLButtonElement>) => {
-    if (draggingRulerEndpoint === null) return;
-    event.preventDefault();
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    setDraggingRulerEndpoint(null);
-    setMessage('Adjusted ruler marker.');
-  }, [draggingRulerEndpoint]);
-
-  const savePoseCalibration = useCallback(() => {
-    const pose = solveCameraPoseCalibration(calibration.bedCorners, bedWidthMm, bedDepthMm, currentPoseSignature);
-    if (!pose) {
-      setMessage('Pick all four bed corners before saving AR pose.');
-      return;
-    }
-    setCalibration((value) => ({ ...value, pose }));
-    setPoseStillUrl((url) => {
-      if (url) URL.revokeObjectURL(url);
-      return '';
-    });
-    setMeasurementMode('off');
-    setMessage(`Saved AR camera pose (${Math.round(pose.qualityScore * 100)}% quality).`);
-  }, [bedDepthMm, bedWidthMm, calibration.bedCorners, currentPoseSignature]);
-
-  const clearPoseStill = useCallback(() => {
-    setPoseStillUrl((url) => {
-      if (url) URL.revokeObjectURL(url);
-      return '';
-    });
-    setMeasurementMode('off');
-  }, []);
 
   const frameClassName = [
     'cam-panel__frame',
