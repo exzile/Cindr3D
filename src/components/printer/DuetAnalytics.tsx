@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNow } from '../../hooks/useNow';
 import {
-  TrendingUp, Clock, Package, CheckCircle2, XCircle, Calendar,
-  Award, Activity, Info, AlertTriangle, Zap, Leaf, Receipt, Download,
+  Activity, AlertTriangle, Award, Calendar, Download, Info, Receipt, TrendingUp,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import {
@@ -17,7 +16,6 @@ import {
   printJobCostKey,
   summarizePrintCosts,
 } from '../../utils/printCost';
-import { colors as COLORS } from '../../utils/theme';
 import {
   downloadText,
   fmtDate,
@@ -29,9 +27,9 @@ import {
   readStoredNumber,
   topN,
 } from './duetAnalytics/helpers';
-import { Card } from './duetAnalytics/Card';
 import { CostConfigInputs } from './duetAnalytics/CostConfigInputs';
 import { CostRollupTable } from './duetAnalytics/CostRollupTable';
+import { KpiCardsRow } from './duetAnalytics/KpiCardsRow';
 import { OffPeakSchedulingSection } from './duetAnalytics/OffPeakSchedulingSection';
 import { PatternTable } from './duetAnalytics/PatternTable';
 import { RecentJobsTable } from './duetAnalytics/RecentJobsTable';
@@ -229,60 +227,7 @@ export default function DuetAnalytics() {
 
       {!loading && history.length > 0 && (
         <>
-          {/* Headline KPI cards */}
-          <div className="duet-analytics__cards">
-            <Card
-              icon={<CheckCircle2 size={14} />}
-              value={stats.completed}
-              label="Completed"
-              color={COLORS.success}
-            />
-            <Card
-              icon={<XCircle size={14} />}
-              value={stats.cancelled}
-              label="Cancelled"
-              color={COLORS.error ?? '#d94545'}
-            />
-            <Card
-              icon={<TrendingUp size={14} />}
-              value={`${stats.successRate.toFixed(0)}%`}
-              label="Success rate"
-              color={COLORS.accent}
-            />
-            <Card
-              icon={<Clock size={14} />}
-              value={fmtDuration(stats.totalSec)}
-              label="Total print time"
-            />
-            <Card
-              icon={<Clock size={14} />}
-              value={fmtDuration(stats.avgSec)}
-              label="Avg per print"
-            />
-            <Card
-              icon={<Package size={14} />}
-              value={fmtMoney(costSummary.totals.totalCost)}
-              label="Total cost"
-              color={COLORS.accent}
-            />
-            <Card
-              icon={<Package size={14} />}
-              value={fmtMoney(costSummary.totals.filamentCost)}
-              label="Filament"
-              hint={fmtWeight(costSummary.totals.filamentG)}
-            />
-            <Card
-              icon={<Zap size={14} />}
-              value={`${costSummary.totals.energyKwh.toFixed(2)} kWh`}
-              label="Energy"
-              hint={fmtMoney(costSummary.totals.energyCost)}
-            />
-            <Card
-              icon={<Leaf size={14} />}
-              value={`${costSummary.totals.co2Kg.toFixed(2)} kg`}
-              label="CO2 estimate"
-            />
-          </div>
+          <KpiCardsRow stats={stats} totals={costSummary.totals} />
 
           {liveEstimate && (
             <div className="duet-analytics__receipt duet-analytics__receipt--live">
