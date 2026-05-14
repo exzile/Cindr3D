@@ -2,6 +2,7 @@ import {
   AlertTriangle, Archive, ChevronDown, ChevronUp, Eraser, FolderOpen,
   HardDrive, Image, RefreshCcw, Save, Search, Star, Tags, Trash2, Video, X,
 } from 'lucide-react';
+import { useState } from 'react';
 import { formatBytes } from '../helpers';
 import {
   clipKind, clipLabel,
@@ -44,11 +45,7 @@ export function LibrarySection(props: {
   storageByKind: Record<CameraClipKind, StorageSummaryEntry>;
   storageByJob: StorageByJobEntry[];
 
-  // Bulk-tag editor
-  bulkAlbum: string;
-  setBulkAlbum: (next: string) => void;
-  bulkTags: string;
-  setBulkTags: (next: string) => void;
+  // Album autocomplete options (sourced from existing clips)
   albums: string[];
 
   // List sources
@@ -58,7 +55,7 @@ export function LibrarySection(props: {
   thumbUrls: Record<string, string>;
 
   // Actions
-  applyBulkTags: () => Promise<void> | void;
+  applyBulkTags: (bulkTags: string, bulkAlbum: string) => Promise<void> | void;
   exportVisibleClips: () => void;
   exportClipBundle: (clips: CameraClip[]) => Promise<void> | void;
   generateContactSheet: (clips: CameraClip[]) => Promise<void> | void;
@@ -67,25 +64,25 @@ export function LibrarySection(props: {
   toggleBulkSelection: (clipId: string) => void;
   removeClip: (clip: CameraClip) => Promise<void> | void;
   removeVisibleClips: () => Promise<void> | void;
-  cleanupOldClips: () => Promise<void> | void;
-
-  // Danger zone
-  dangerOpen: boolean;
-  setDangerOpen: (updater: (value: boolean) => boolean) => void;
-  cleanupDays: number;
-  setCleanupDays: (next: number) => void;
+  cleanupOldClips: (cleanupDays: number) => Promise<void> | void;
 }) {
   const {
     busy, refreshClips,
     selectionMode, setSelectionMode, selectedClipIds, setSelectedClipIds, selectedBulkClips,
     clipQuery, setClipQuery, clipFilter, setClipFilter, clipSort, setClipSort,
     totalStorageBytes, storageByKind, storageByJob,
-    bulkAlbum, setBulkAlbum, bulkTags, setBulkTags, albums,
+    albums,
     clips, visibleClips, selectedClip, thumbUrls,
     applyBulkTags, exportVisibleClips, exportClipBundle, generateContactSheet, generateJobReport,
     selectClip, toggleBulkSelection, removeClip, removeVisibleClips, cleanupOldClips,
-    dangerOpen, setDangerOpen, cleanupDays, setCleanupDays,
   } = props;
+
+  // Locally-owned input state — drafts for the bulk-tag editor + the
+  // collapsible Danger Zone. Nothing else in the dashboard reads these.
+  const [bulkTags, setBulkTags] = useState('');
+  const [bulkAlbum, setBulkAlbum] = useState('');
+  const [cleanupDays, setCleanupDays] = useState(30);
+  const [dangerOpen, setDangerOpen] = useState(false);
 
   return (
     <section className="cam-panel__control-section cam-panel__control-section--library" aria-label="Saved camera library">
@@ -168,7 +165,7 @@ export function LibrarySection(props: {
       <div className="cam-panel__bulk-tools">
         <input className="cam-panel__input" value={bulkAlbum} placeholder="Album for visible items" list="camera-albums" onChange={(event) => setBulkAlbum(event.target.value)} />
         <input className="cam-panel__input" value={bulkTags} placeholder="Bulk tags" onChange={(event) => setBulkTags(event.target.value)} />
-        <button className="cam-panel__button" type="button" disabled={visibleClips.length === 0 || busy} onClick={() => { void applyBulkTags(); }}>
+        <button className="cam-panel__button" type="button" disabled={visibleClips.length === 0 || busy} onClick={() => { void applyBulkTags(bulkTags, bulkAlbum); }}>
           <Tags size={13} /> Apply to Visible
         </button>
         <button className="cam-panel__button" type="button" disabled={visibleClips.length === 0} onClick={exportVisibleClips}>
@@ -250,7 +247,7 @@ export function LibrarySection(props: {
               Cleanup days
               <input className="cam-panel__input" type="number" min={1} value={cleanupDays} onChange={(event) => setCleanupDays(Math.max(1, Number(event.target.value) || 1))} />
             </label>
-            <button className="cam-panel__button cam-panel__button--danger" type="button" disabled={busy} onClick={() => { void cleanupOldClips(); }}>
+            <button className="cam-panel__button cam-panel__button--danger" type="button" disabled={busy} onClick={() => { void cleanupOldClips(cleanupDays); }}>
               <Eraser size={13} /> Cleanup Old
             </button>
             <button className="cam-panel__button cam-panel__button--danger" type="button" disabled={visibleClips.length === 0 || busy} onClick={() => { void removeVisibleClips(); }}>

@@ -10,6 +10,12 @@
  * Also bumps the frame-rate stats (`lastFrameIntervalMs`, `frameCount`,
  * `lastFrameAt`) on every load tick so the health diagnostics card has
  * current data without sampling the DOM separately.
+ *
+ * NOTE: mediaViewport state stays in the host because useCameraMeasurement
+ * needs to read it in its pointer-event callbacks, and the hook ordering
+ * (measurement → prefs → streamState → mediaViewport) means measurement is
+ * declared before this hook would run. Host owns the state; this hook
+ * owns the effect and frame-load handler that write to it.
  */
 import { useCallback, useEffect, type RefObject } from 'react';
 import { measureContainedMedia, sameMediaViewport, type MediaViewportRect } from './snapshotEdit';

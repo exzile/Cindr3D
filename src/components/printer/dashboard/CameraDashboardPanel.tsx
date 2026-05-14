@@ -142,10 +142,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [showCrosshair, setShowCrosshair] = useState(() => dashboardPrefs.showCrosshair);
   const [flipImage, setFlipImage] = useState(() => dashboardPrefs.flipImage);
   const [rotation, setRotation] = useState(() => dashboardPrefs.rotation % 360);
-  const [bulkTags, setBulkTags] = useState('');
-  const [bulkAlbum, setBulkAlbum] = useState('');
-  const [cleanupDays, setCleanupDays] = useState(30);
-  const [dangerOpen, setDangerOpen] = useState(false);
   const [presetName, setPresetName] = useState('');
   const [ptzPresetName, setPtzPresetName] = useState('');
   const [ptzPresetToken, setPtzPresetToken] = useState('1');
@@ -395,7 +391,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     snapshotBrightness, snapshotContrast, snapshotSharpen, snapshotAnnotation,
     setSnapshotEditFlip, setSnapshotEditRotation, setSnapshotCrop,
     setSnapshotBrightness, setSnapshotContrast, setSnapshotSharpen, setSnapshotAnnotation,
-    bulkTags, bulkAlbum, cleanupDays,
     clips, visibleClips, timelineClips, timelineJobName,
     printerId, printerName,
     setBusy, setMessage, refreshClips,
@@ -781,10 +776,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
               totalStorageBytes={totalStorageBytes}
               storageByKind={storageByKind}
               storageByJob={storageByJob}
-              bulkAlbum={bulkAlbum}
-              setBulkAlbum={setBulkAlbum}
-              bulkTags={bulkTags}
-              setBulkTags={setBulkTags}
               albums={albums}
               clips={clips}
               visibleClips={visibleClips}
@@ -800,10 +791,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
               removeClip={removeClip}
               removeVisibleClips={removeVisibleClips}
               cleanupOldClips={cleanupOldClips}
-              dangerOpen={dangerOpen}
-              setDangerOpen={setDangerOpen}
-              cleanupDays={cleanupDays}
-              setCleanupDays={setCleanupDays}
             />
           )}
         </aside>}

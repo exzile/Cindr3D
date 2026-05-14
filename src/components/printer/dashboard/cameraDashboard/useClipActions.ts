@@ -94,9 +94,6 @@ export interface UseClipActionsDeps {
   setSnapshotAnnotation: (v: string) => void;
 
   // Bulk edit
-  bulkTags: string;
-  bulkAlbum: string;
-  cleanupDays: number;
 
   // Source lists
   clips: CameraClip[];
@@ -127,7 +124,6 @@ export function useClipActions(deps: UseClipActionsDeps) {
     snapshotBrightness, snapshotContrast, snapshotSharpen, snapshotAnnotation,
     setSnapshotEditFlip, setSnapshotEditRotation, setSnapshotCrop,
     setSnapshotBrightness, setSnapshotContrast, setSnapshotSharpen, setSnapshotAnnotation,
-    bulkTags, bulkAlbum, cleanupDays,
     clips, visibleClips, timelineClips, timelineJobName,
     printerId, printerName,
     setBusy, setMessage, refreshClips,
@@ -385,7 +381,7 @@ export function useClipActions(deps: UseClipActionsDeps) {
     setMessage(`Prepared trim from ${markers[0].label} to ${markers[1].label}.`);
   }, [selectedClip, setMessage, setTrimEnd, setTrimStart]);
 
-  const applyBulkTags = useCallback(async () => {
+  const applyBulkTags = useCallback(async (bulkTags: string, bulkAlbum: string) => {
     if (visibleClips.length === 0) return;
     setBusy(true);
     try {
@@ -397,9 +393,9 @@ export function useClipActions(deps: UseClipActionsDeps) {
     } finally {
       setBusy(false);
     }
-  }, [bulkAlbum, bulkTags, refreshClips, setBusy, setMessage, visibleClips]);
+  }, [refreshClips, setBusy, setMessage, visibleClips]);
 
-  const cleanupOldClips = useCallback(async () => {
+  const cleanupOldClips = useCallback(async (cleanupDays: number) => {
     const cutoff = Date.now() - cleanupDays * 24 * 60 * 60 * 1000;
     const targets = clips.filter((clip) => !clip.favorite && clip.createdAt < cutoff);
     if (targets.length === 0) {
@@ -418,7 +414,7 @@ export function useClipActions(deps: UseClipActionsDeps) {
     } finally {
       setBusy(false);
     }
-  }, [cleanupDays, clips, refreshClips, setBusy, setMessage]);
+  }, [clips, refreshClips, setBusy, setMessage]);
 
   const saveSnapshotEdits = useCallback(async () => {
     if (!selectedClip || clipKind(selectedClip) !== 'snapshot') return;
