@@ -150,6 +150,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     draggingBedCorner, draggingRulerEndpoint,
     poseStillUrl, setPoseStillUrl,
     finalComparisonUrl, setFinalComparisonUrl,
+    bedWidthMm, bedDepthMm,
     homography, measuredDistanceMm,
     completeBedCorners, bedCornersComplete, poseStatus,
     measurementStatus,
