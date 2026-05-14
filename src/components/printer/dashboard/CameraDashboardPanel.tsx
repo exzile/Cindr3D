@@ -53,6 +53,7 @@ import { useMediaViewport } from './cameraDashboard/useMediaViewport';
 import { useVideoStream } from './cameraDashboard/useVideoStream';
 import { usePtzControls } from './cameraDashboard/usePtzControls';
 import { useSnapshotCapture } from './cameraDashboard/useSnapshotCapture';
+import { useStreamHealth } from './cameraDashboard/useStreamHealth';
 import './CameraDashboardPanel.css';
 
 interface CameraDashboardPanelProps {
@@ -125,13 +126,19 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const hydratedPrinterIdRef = useRef(activePrinterId);
   const skipNextPrefsSaveRef = useRef(false);
 
-  const [imageFailed, setImageFailed] = useState(false);
-  const [webRtcFailed, setWebRtcFailed] = useState(false);
+  const nowTick = useNow(1000);
+  const {
+    imageFailed, setImageFailed,
+    webRtcFailed, setWebRtcFailed,
+    streamRevision, setStreamRevision,
+    lastFrameAt, setLastFrameAt,
+    lastFrameIntervalMs, setLastFrameIntervalMs,
+    frameCount, setFrameCount,
+    reconnectCount, setReconnectCount,
+    frameAgeMs, estimatedFps, droppedFrameWarning,
+  } = useStreamHealth(nowTick);
   const [recordingKind, setRecordingKind] = useState<CameraClipKind | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
-  const [streamRevision, setStreamRevision] = useState(0);
-  const [lastFrameAt, setLastFrameAt] = useState<number | null>(null);
-  const nowTick = useNow(1000);
   const [fullscreen, setFullscreen] = useState(false);
   const [showGrid, setShowGrid] = useState(() => dashboardPrefs.showGrid);
   const [showCrosshair, setShowCrosshair] = useState(() => dashboardPrefs.showCrosshair);
@@ -147,9 +154,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [compareBlend, setCompareBlend] = useState(50);
   const [cameraOverlayMode, setCameraOverlayMode] = useState<CameraOverlayMode>('camera');
   const [mediaViewport, setMediaViewport] = useState<MediaViewportRect>({ left: 0, top: 0, width: 100, height: 100 });
-  const [lastFrameIntervalMs, setLastFrameIntervalMs] = useState<number | null>(null);
-  const [frameCount, setFrameCount] = useState(0);
-  const [reconnectCount, setReconnectCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -261,9 +265,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const isPrintActive = printStatus === 'processing' || printStatus === 'simulating';
   const canUsePtz = Boolean(activeCamera?.ptzEnabled && activeCamera.ptzProvider !== 'off');
   const activePtzStartPreset = activeCamera?.ptzPresets.find((preset) => preset.id === activeCamera.ptzStartPresetId);
-  const frameAgeMs = lastFrameAt ? nowTick - lastFrameAt : null;
-  const estimatedFps = lastFrameIntervalMs ? Math.min(60, 1000 / lastFrameIntervalMs) : 0;
-  const droppedFrameWarning = frameAgeMs !== null && frameAgeMs > 5000;
   const recordingMarkerCount = recordingMarkersRef.current.length;
   const recordingStatusLabel = recording
     ? `${isTimelapseRecording ? 'Timelapse' : isAutoRecording ? 'Auto recording' : 'Recording'} ${formatClipDuration(elapsedMs)}`
