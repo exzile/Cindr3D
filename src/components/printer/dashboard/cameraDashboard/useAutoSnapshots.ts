@@ -3,15 +3,15 @@
  *
  *   • First-layer snapshot when a print starts
  *   • Per-layer snapshot when the live `currentLayer` advances (de-duped via
- *     `seenPrintLayersRef`)
+ *     an internal Set ref)
  *   • Print-finish snapshot + AR comparison freeze when the print returns
  *     to idle
  *   • Print-error snapshot on halt / pause / cancel transitions
  *
- * The host owns the `previousPrintStatusRef` and `seenPrintLayersRef` so a
- * print that survives a panel re-mount keeps its state.
+ * Internal refs (previousPrintStatus, seenPrintLayers) live here because
+ * nothing outside this hook reads them.
  */
-import { useEffect, type MutableRefObject } from 'react';
+import { useEffect, useRef } from 'react';
 
 export interface UseAutoSnapshotsDeps {
   hasCamera: boolean;
@@ -22,8 +22,6 @@ export interface UseAutoSnapshotsDeps {
   autoSnapshotLayer: boolean;
   autoSnapshotFinish: boolean;
   autoSnapshotError: boolean;
-  previousPrintStatusRef: MutableRefObject<string | undefined>;
-  seenPrintLayersRef: MutableRefObject<Set<number>>;
   captureSnapshot: (label?: string) => Promise<void>;
   captureFinalComparisonFrame: () => Promise<void>;
 }
@@ -32,9 +30,11 @@ export function useAutoSnapshots(deps: UseAutoSnapshotsDeps) {
   const {
     hasCamera, isPrintActive, printStatus, currentLayer,
     autoSnapshotFirstLayer, autoSnapshotLayer, autoSnapshotFinish, autoSnapshotError,
-    previousPrintStatusRef, seenPrintLayersRef,
     captureSnapshot, captureFinalComparisonFrame,
   } = deps;
+
+  const previousPrintStatusRef = useRef<string | undefined>(undefined);
+  const seenPrintLayersRef = useRef<Set<number>>(new Set());
 
   // Print-status transitions: first-layer, finish, AR comparison freeze, error.
   useEffect(() => {
@@ -65,7 +65,6 @@ export function useAutoSnapshots(deps: UseAutoSnapshotsDeps) {
   }, [
     autoSnapshotError, autoSnapshotFinish, autoSnapshotFirstLayer,
     captureFinalComparisonFrame, captureSnapshot, hasCamera, isPrintActive, printStatus,
-    previousPrintStatusRef, seenPrintLayersRef,
   ]);
 
   // Per-layer snapshot — fires once per layer index seen during the active print.
@@ -74,5 +73,5 @@ export function useAutoSnapshots(deps: UseAutoSnapshotsDeps) {
     if (seenPrintLayersRef.current.has(currentLayer)) return;
     seenPrintLayersRef.current.add(currentLayer);
     void captureSnapshot(`Layer ${currentLayer} snapshot`);
-  }, [autoSnapshotLayer, captureSnapshot, currentLayer, hasCamera, isPrintActive, seenPrintLayersRef]);
+  }, [autoSnapshotLayer, captureSnapshot, currentLayer, hasCamera, isPrintActive]);
 }

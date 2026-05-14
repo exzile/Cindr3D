@@ -7,12 +7,11 @@
  * turns off and the OS releases the device. The effect re-runs when the user
  * picks a different device or when the dashboard switches off USB sources.
  */
-import { useEffect, type MutableRefObject, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 
 export interface UseBrowserUsbCameraDeps {
   isBrowserUsbCamera: boolean;
   videoRef: RefObject<HTMLVideoElement | null>;
-  browserUsbStreamRef: MutableRefObject<MediaStream | null>;
   webcamUsbDeviceId: string | undefined;
   webcamUsbDeviceLabel: string | undefined;
   setImageFailed: (failed: boolean) => void;
@@ -22,10 +21,14 @@ export interface UseBrowserUsbCameraDeps {
 
 export function useBrowserUsbCamera(deps: UseBrowserUsbCameraDeps) {
   const {
-    isBrowserUsbCamera, videoRef, browserUsbStreamRef,
+    isBrowserUsbCamera, videoRef,
     webcamUsbDeviceId, webcamUsbDeviceLabel,
     setImageFailed, setLastFrameAt, setMessage,
   } = deps;
+
+  // Internal — owned by the hook because nothing outside the USB stream
+  // negotiation reads the active MediaStream.
+  const browserUsbStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     if (!isBrowserUsbCamera) {
@@ -70,7 +73,7 @@ export function useBrowserUsbCamera(deps: UseBrowserUsbCameraDeps) {
       if (video.srcObject) video.srcObject = null;
     };
   }, [
-    browserUsbStreamRef, isBrowserUsbCamera, setImageFailed, setLastFrameAt,
+    isBrowserUsbCamera, setImageFailed, setLastFrameAt,
     setMessage, videoRef, webcamUsbDeviceId, webcamUsbDeviceLabel,
   ]);
 }

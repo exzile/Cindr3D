@@ -13,9 +13,6 @@ import { type CameraOverlayMode } from './CameraOverlayPanel';
 import {
   clipKind,
   formatClipDuration,
-  type BackendRecordingSession,
-  type CameraClipKind,
-  type CameraMarker,
 } from './cameraDashboard/clipStore';
 import { type MediaViewportRect } from './cameraDashboard/snapshotEdit';
 import {
@@ -104,27 +101,11 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     };
   }, [activePrinter]);
 
+  // DOM refs the JSX attaches.
   const imgRef = useRef<HTMLImageElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
-  const browserUsbStreamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const frameTimerRef = useRef<number | null>(null);
-  const chunksRef = useRef<BlobPart[]>([]);
-  const startedAtRef = useRef<number>(0);
-  const recordingKindRef = useRef<CameraClipKind | null>(null);
-  const recordingJobRef = useRef<string | undefined>(undefined);
-  const recordingMarkersRef = useRef<CameraMarker[]>([]);
-  const recordingThumbnailRef = useRef<Blob | undefined>(undefined);
-  const backendRecordingRef = useRef<BackendRecordingSession | null>(null);
-  const previousPrintStatusRef = useRef<string | undefined>(undefined);
-  const seenPrintLayersRef = useRef<Set<number>>(new Set());
-  const reconnectHistoryRef = useRef<number[]>([]);
-  const scheduledSnapshotTimerRef = useRef<number | null>(null);
-  const staleAnomalyCapturedRef = useRef(false);
-  const hydratedPrinterIdRef = useRef(activePrinterId);
-  const skipNextPrefsSaveRef = useRef(false);
 
   const nowTick = useNow(1000);
   const {
@@ -194,7 +175,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     hdBridgeQuality, setHdBridgeQuality,
   } = useDashboardPrefsState({
     activePrinterId, dashboardPrefs, updatePrinterPrefs,
-    hydratedPrinterIdRef, skipNextPrefsSaveRef,
     viewMode: { showGrid, setShowGrid, showCrosshair, setShowCrosshair, flipImage, setFlipImage, rotation, setRotation },
     calibration,
     setCalibration, setMeasurementMode, setNextBedCornerIndex,
@@ -258,7 +238,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   useBrowserUsbCamera({
     isBrowserUsbCamera,
     videoRef,
-    browserUsbStreamRef,
     webcamUsbDeviceId: prefs.webcamUsbDeviceId,
     webcamUsbDeviceLabel: prefs.webcamUsbDeviceLabel,
     setImageFailed,
@@ -294,7 +273,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     drawFrame, canvasBlob, captureSnapshot, capturePoseStill,
     captureFinalComparisonFrame, captureAnomaly,
   } = useSnapshotCapture({
-    imgRef, videoRef, canvasRef, scheduledSnapshotTimerRef, staleAnomalyCapturedRef,
+    imgRef, videoRef, canvasRef,
     isVideoStream, hasCamera,
     printerId, printerName, jobFileName,
     calibrationPose: calibration.pose,
@@ -311,8 +290,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     recording, isTimelapseRecording, isAutoRecording,
     recordingStatusLabel, recordingMarkerCount,
   } = useCameraRecording({
-    recorderRef, chunksRef, startedAtRef, recordingKindRef, recordingJobRef,
-    recordingMarkersRef, recordingThumbnailRef, backendRecordingRef, frameTimerRef,
     canvasRef,
     drawFrame, canvasBlob, hasCamera, canUseBackendRecording,
     isServerUsbCamera, backendRecordingUrl,
@@ -326,7 +303,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   useAutoSnapshots({
     hasCamera, isPrintActive, printStatus, currentLayer,
     autoSnapshotFirstLayer, autoSnapshotLayer, autoSnapshotFinish, autoSnapshotError,
-    previousPrintStatusRef, seenPrintLayersRef,
     captureSnapshot, captureFinalComparisonFrame,
   });
 
@@ -393,11 +369,10 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     setBusy, setMessage, refreshClips,
   });
 
-  const { reconnectCamera, handleCameraError } = useCameraConnection({
+  const { reconnectCamera, handleCameraError, reconnectHistoryRef } = useCameraConnection({
     activePrinterId,
     webcamStreamPreference: prefs.webcamStreamPreference,
     updatePrinterPrefs,
-    reconnectHistoryRef,
     captureAnomaly,
     setImageFailed,
     setWebRtcFailed,

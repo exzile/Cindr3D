@@ -12,14 +12,13 @@
  *     transparently; otherwise sets the imageFailed flag so the empty
  *     state renders.
  */
-import { useCallback, type MutableRefObject } from 'react';
+import { useCallback, useRef } from 'react';
 import type { DuetPrefs } from '../../../../utils/duetPrefs';
 
 export interface UseCameraConnectionDeps {
   activePrinterId: string;
   webcamStreamPreference: DuetPrefs['webcamStreamPreference'];
   updatePrinterPrefs: (printerId: string, patch: { webcamStreamPreference: DuetPrefs['webcamStreamPreference'] }) => void;
-  reconnectHistoryRef: MutableRefObject<number[]>;
   captureAnomaly: (reason: string) => void;
   setImageFailed: (next: boolean) => void;
   setWebRtcFailed: (next: boolean) => void;
@@ -32,10 +31,14 @@ export interface UseCameraConnectionDeps {
 export function useCameraConnection(deps: UseCameraConnectionDeps) {
   const {
     activePrinterId, webcamStreamPreference, updatePrinterPrefs,
-    reconnectHistoryRef, captureAnomaly,
+    captureAnomaly,
     setImageFailed, setWebRtcFailed, setLastFrameAt,
     setReconnectCount, setStreamRevision, setMessage,
   } = deps;
+
+  // Internal — sliding window of recent reconnect timestamps. Exposed via
+  // the return so the Health card can show "last reconnect at …".
+  const reconnectHistoryRef = useRef<number[]>([]);
 
   const reconnectCamera = useCallback(() => {
     setImageFailed(false);
@@ -47,7 +50,7 @@ export function useCameraConnection(deps: UseCameraConnectionDeps) {
     setMessage('Reconnecting camera stream...');
     captureAnomaly('camera reconnect');
   }, [
-    captureAnomaly, reconnectHistoryRef, setImageFailed, setLastFrameAt,
+    captureAnomaly, setImageFailed, setLastFrameAt,
     setMessage, setReconnectCount, setStreamRevision, setWebRtcFailed,
   ]);
 
@@ -61,5 +64,5 @@ export function useCameraConnection(deps: UseCameraConnectionDeps) {
     setImageFailed(true);
   }, [activePrinterId, setImageFailed, setMessage, setStreamRevision, updatePrinterPrefs, webcamStreamPreference]);
 
-  return { reconnectCamera, handleCameraError };
+  return { reconnectCamera, handleCameraError, reconnectHistoryRef };
 }

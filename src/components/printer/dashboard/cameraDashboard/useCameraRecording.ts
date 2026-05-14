@@ -19,7 +19,7 @@
  * The host owns every ref + state value the hook needs and passes them
  * through. Returns `{ startRecording, stopRecording }`.
  */
-import { useCallback, useEffect, useState, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   formatClipDuration,
   pickRecordingMimeType,
@@ -33,16 +33,7 @@ import { backendRecordingStorageKey } from './prefsStorage';
 import { RECORDING_FPS } from './types';
 
 export interface UseCameraRecordingDeps {
-  // Refs the recorder + backend session share with the host
-  recorderRef: MutableRefObject<MediaRecorder | null>;
-  chunksRef: MutableRefObject<BlobPart[]>;
-  startedAtRef: MutableRefObject<number>;
-  recordingKindRef: MutableRefObject<CameraClipKind | null>;
-  recordingJobRef: MutableRefObject<string | undefined>;
-  recordingMarkersRef: MutableRefObject<CameraMarker[]>;
-  recordingThumbnailRef: MutableRefObject<Blob | undefined>;
-  backendRecordingRef: MutableRefObject<BackendRecordingSession | null>;
-  frameTimerRef: MutableRefObject<number | null>;
+  /** The off-screen drawing canvas the host renders. */
   canvasRef: { current: HTMLCanvasElement | null };
 
   // Stream + capture deps supplied by useSnapshotCapture / streamState
@@ -79,8 +70,6 @@ export interface UseCameraRecordingDeps {
 
 export function useCameraRecording(deps: UseCameraRecordingDeps) {
   const {
-    recorderRef, chunksRef, startedAtRef, recordingKindRef, recordingJobRef,
-    recordingMarkersRef, recordingThumbnailRef, backendRecordingRef, frameTimerRef,
     canvasRef,
     drawFrame, canvasBlob, hasCamera, canUseBackendRecording,
     isServerUsbCamera, backendRecordingUrl,
@@ -90,6 +79,19 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
     setBusy, setMessage, refreshClips,
     captureAnomaly,
   } = deps;
+
+  // Internal refs — every one is private to the recording state machine.
+  // The host doesn't read them; previously they were declared here and
+  // passed in just so the same instances survived re-mounts of consumers.
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<BlobPart[]>([]);
+  const startedAtRef = useRef<number>(0);
+  const recordingKindRef = useRef<CameraClipKind | null>(null);
+  const recordingJobRef = useRef<string | undefined>(undefined);
+  const recordingMarkersRef = useRef<CameraMarker[]>([]);
+  const recordingThumbnailRef = useRef<Blob | undefined>(undefined);
+  const backendRecordingRef = useRef<BackendRecordingSession | null>(null);
+  const frameTimerRef = useRef<number | null>(null);
 
   const [recordingKind, setRecordingKind] = useState<CameraClipKind | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);

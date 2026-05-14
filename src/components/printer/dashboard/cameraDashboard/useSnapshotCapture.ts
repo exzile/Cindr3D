@@ -18,7 +18,7 @@
  * The component owns the refs (video/img/canvas) + the surrounding state +
  * the clip-list refresh; this hook just composes them.
  */
-import { useCallback, useEffect, type MutableRefObject, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import { saveClip } from './clipStore';
 import type { CameraMeasurementCalibration } from './types';
 import type { CameraOverlayMode } from '../CameraOverlayPanel';
@@ -28,8 +28,6 @@ export interface UseSnapshotCaptureDeps {
   imgRef: RefObject<HTMLImageElement | null>;
   videoRef: RefObject<HTMLVideoElement | null>;
   canvasRef: RefObject<HTMLCanvasElement | null>;
-  scheduledSnapshotTimerRef: MutableRefObject<number | null>;
-  staleAnomalyCapturedRef: MutableRefObject<boolean>;
   // Stream / camera state
   isVideoStream: boolean;
   hasCamera: boolean;
@@ -59,7 +57,7 @@ export interface UseSnapshotCaptureDeps {
 
 export function useSnapshotCapture(deps: UseSnapshotCaptureDeps) {
   const {
-    imgRef, videoRef, canvasRef, scheduledSnapshotTimerRef, staleAnomalyCapturedRef,
+    imgRef, videoRef, canvasRef,
     isVideoStream, hasCamera,
     printerId, printerName, jobFileName,
     calibrationPose, setPoseStillUrl, setMeasurementMode, setNextBedCornerIndex,
@@ -68,6 +66,10 @@ export function useSnapshotCapture(deps: UseSnapshotCaptureDeps) {
     anomalyCapture, scheduledSnapshots, scheduledSnapshotIntervalMin,
     isPrintActive, droppedFrameWarning,
   } = deps;
+
+  // Internal — both refs are only read by the effects below.
+  const scheduledSnapshotTimerRef = useRef<number | null>(null);
+  const staleAnomalyCapturedRef = useRef(false);
 
   const drawFrame = useCallback(() => {
     const image = isVideoStream ? videoRef.current : imgRef.current;
@@ -188,7 +190,7 @@ export function useSnapshotCapture(deps: UseSnapshotCaptureDeps) {
         scheduledSnapshotTimerRef.current = null;
       }
     };
-  }, [captureSnapshot, hasCamera, isPrintActive, scheduledSnapshotIntervalMin, scheduledSnapshots, scheduledSnapshotTimerRef]);
+  }, [captureSnapshot, hasCamera, isPrintActive, scheduledSnapshotIntervalMin, scheduledSnapshots]);
 
   // Stale-frame anomaly trigger — captures one snapshot per stale-frame event,
   // resets the latch as soon as the warning clears.
@@ -200,7 +202,7 @@ export function useSnapshotCapture(deps: UseSnapshotCaptureDeps) {
     if (staleAnomalyCapturedRef.current) return;
     staleAnomalyCapturedRef.current = true;
     captureAnomaly('stale frame');
-  }, [anomalyCapture, captureAnomaly, droppedFrameWarning, staleAnomalyCapturedRef]);
+  }, [anomalyCapture, captureAnomaly, droppedFrameWarning]);
 
   return { drawFrame, canvasBlob, captureSnapshot, capturePoseStill, captureFinalComparisonFrame, captureAnomaly };
 }

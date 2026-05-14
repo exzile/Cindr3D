@@ -9,7 +9,7 @@
  * still in `useCameraDashboardPersistence` — this hook just owns the
  * state and threads it through.
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { CameraDashboardPrefs, CameraHdBridgeQuality } from '../../../../utils/duetPrefs';
 import { useCameraDashboardPersistence } from './useCameraDashboardPersistence';
 import type {
@@ -34,8 +34,6 @@ export interface UseDashboardPrefsStateDeps {
   activePrinterId: string;
   dashboardPrefs: CameraDashboardPrefs;
   updatePrinterPrefs: (printerId: string, patch: { cameraDashboard: CameraDashboardPrefs }) => void;
-  hydratedPrinterIdRef: React.MutableRefObject<string>;
-  skipNextPrefsSaveRef: React.MutableRefObject<boolean>;
   // View-mode state is declared by the host (useCameraMeasurement needs
   // rotation + flipImage at declaration time, so we can't own it here);
   // we just thread it through to the persistence loop.
@@ -54,11 +52,15 @@ export interface UseDashboardPrefsStateDeps {
 export function useDashboardPrefsState(deps: UseDashboardPrefsStateDeps) {
   const {
     activePrinterId, dashboardPrefs, updatePrinterPrefs,
-    hydratedPrinterIdRef, skipNextPrefsSaveRef,
     viewMode,
     setCalibration, setMeasurementMode, setNextBedCornerIndex,
     setPoseStillUrl, setFinalComparisonUrl, calibration,
   } = deps;
+
+  // Internal — coordinate hydration so the immediately-following save
+  // doesn't echo the just-loaded prefs back to disk.
+  const hydratedPrinterIdRef = useRef(activePrinterId);
+  const skipNextPrefsSaveRef = useRef(false);
   const { showGrid, setShowGrid, showCrosshair, setShowCrosshair, flipImage, setFlipImage, rotation, setRotation } = viewMode;
 
   // Auto-trigger toggles + intervals
