@@ -57,6 +57,12 @@ interface CameraDashboardPanelProps {
   compact?: boolean;
 }
 
+const OVERLAY_MODE_OPTIONS: Array<{ mode: CameraOverlayMode; label: string; hint: string }> = [
+  { mode: 'camera', label: 'Camera', hint: 'Live camera only' },
+  { mode: 'both',   label: 'AR',     hint: 'Camera with aligned print preview' },
+  { mode: 'print',  label: 'Preview', hint: 'Print preview overlay with camera dimmed' },
+];
+
 export default function CameraDashboardPanel({ compact = false }: CameraDashboardPanelProps = {}) {
   const service = usePrinterStore((s) => s.service);
   const config = usePrinterStore((s) => s.config);
@@ -123,7 +129,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const [showCrosshair, setShowCrosshair] = useState(() => dashboardPrefs.showCrosshair);
   const [flipImage, setFlipImage] = useState(() => dashboardPrefs.flipImage);
   const [rotation, setRotation] = useState(() => dashboardPrefs.rotation % 360);
-  const [compareBlend, setCompareBlend] = useState(50);
   const [cameraOverlayMode, setCameraOverlayMode] = useState<CameraOverlayMode>('camera');
   const [mediaViewport, setMediaViewport] = useState<MediaViewportRect>({ left: 0, top: 0, width: 100, height: 100 });
   const [busy, setBusy] = useState(false);
@@ -419,11 +424,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     '--media-width': `${mediaViewport.width}%`,
     '--media-height': `${mediaViewport.height}%`,
   } as CSSProperties;
-  const overlayModeOptions: Array<{ mode: CameraOverlayMode; label: string; hint: string }> = [
-    { mode: 'camera', label: 'Camera', hint: 'Live camera only' },
-    { mode: 'both', label: 'AR', hint: 'Camera with aligned print preview' },
-    { mode: 'print', label: 'Preview', hint: 'Print preview overlay with camera dimmed' },
-  ];
 
   return (
     <div className={`cam-panel${compact ? ' cam-panel--compact' : ''}`}>
@@ -479,7 +479,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
             cameraOverlayMode={cameraOverlayMode}
             setCameraOverlayMode={setCameraOverlayMode}
             frameCount={frameCount}
-            overlayModeOptions={overlayModeOptions}
+            overlayModeOptions={OVERLAY_MODE_OPTIONS}
             measurementMode={measurementMode}
             measurementStatus={measurementStatus}
             bedCornersComplete={bedCornersComplete}
@@ -525,8 +525,6 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
               compareClipUrl={compareClipUrl}
               setCompareClipId={setCompareClipId}
               snapshotClips={snapshotClips}
-              compareBlend={compareBlend}
-              setCompareBlend={setCompareBlend}
               clipDraftName={clipDraftName}
               setClipDraftName={setClipDraftName}
               clipDraftKind={clipDraftKind}
@@ -627,7 +625,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
               bedWidthMm={bedWidthMm}
               bedDepthMm={bedDepthMm}
               poseStatus={poseStatus}
-              overlayModeOptions={overlayModeOptions}
+              overlayModeOptions={OVERLAY_MODE_OPTIONS}
               cameraOverlayMode={cameraOverlayMode}
               setCameraOverlayMode={setCameraOverlayMode}
               measurementMode={measurementMode}

@@ -2,7 +2,7 @@ import {
   Archive, ChevronDown, ChevronUp, Copy, Crop, Download, FlipHorizontal, Flag,
   FolderOpen, Image, Play, RotateCw, Save, Scissors, Star, Trash2, Video, X,
 } from 'lucide-react';
-import { type CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { formatBytes } from '../helpers';
 import {
   CLIP_RATINGS, INSPECTION_ITEMS, ISSUE_TAGS,
@@ -41,8 +41,6 @@ export function ClipEditorPanel(props: {
   compareClipUrl: string;
   setCompareClipId: (id: string) => void;
   snapshotClips: CameraClip[];
-  compareBlend: number;
-  setCompareBlend: (value: number) => void;
 
   // Detail draft
   clipDraftName: string;
@@ -119,7 +117,7 @@ export function ClipEditorPanel(props: {
   const {
     editorCollapsed, setEditorCollapsed,
     selectedClip, selectedClipUrl, selectedKind,
-    compareClip, compareClipUrl, setCompareClipId, snapshotClips, compareBlend, setCompareBlend,
+    compareClip, compareClipUrl, setCompareClipId, snapshotClips,
     clipDraftName, setClipDraftName, clipDraftKind, setClipDraftKind,
     clipDraftJobName, setClipDraftJobName, clipDraftAlbum, setClipDraftAlbum,
     clipDraftTags, setClipDraftTags, clipDraftRating, setClipDraftRating,
@@ -137,6 +135,9 @@ export function ClipEditorPanel(props: {
     saveTrimmedVideoCopy, trimBetweenFirstTwoMarkers, makeTimelapseCopy,
     addSelectedClipMarker, removeSelectedClipMarker,
   } = props;
+
+  // Local — A/B compare slider position. Only the inline scrubber reads it.
+  const [compareBlend, setCompareBlend] = useState(50);
 
   return (
     <div className={`cam-panel__bottom-panel${editorCollapsed ? ' is-collapsed' : ''}`} aria-label="Selected saved camera media">
