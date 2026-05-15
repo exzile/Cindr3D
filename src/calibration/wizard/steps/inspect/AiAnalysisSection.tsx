@@ -4,6 +4,12 @@ import { RecommendationCard } from './RecommendationCard';
 interface AiAnalysisSectionProps {
   /** Null for tests that don't support AI analysis (the user sees a manual-only note). */
   tuningKind: TuningWizardKind | null;
+  /**
+   * Calibration card `testType` currently being inspected — forwarded to the
+   * recommendation card so it can suggest a different test (e.g. "Calibrate
+   * retraction next") when the AI evidence points at another problem.
+   */
+  currentTestType: string;
   providerReady: boolean;
   framesCount: number;
   loading: boolean;
@@ -25,6 +31,7 @@ interface AiAnalysisSectionProps {
  */
 export function AiAnalysisSection({
   tuningKind,
+  currentTestType,
   providerReady,
   framesCount,
   loading,
@@ -70,6 +77,10 @@ export function AiAnalysisSection({
               formatBestValue={formatBestValue}
               valueLabel={valueLabel}
               onApply={onApplyRecommendation}
+              currentTestType={currentTestType}
+              /* onJumpToTest intentionally left undefined — the wizard hasn't
+                 wired test navigation yet, so the next-test hint renders as a
+                 tinted info row rather than a CTA button. */
             />
           )}
         </>

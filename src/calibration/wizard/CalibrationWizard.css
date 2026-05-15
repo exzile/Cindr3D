@@ -1663,3 +1663,51 @@ details.calib-slice-section[open] > summary::before {
 .calib-inspect__rec-apply:hover {
   background: color-mix(in srgb, var(--accent) 28%, var(--bg-panel));
 }
+
+/* ── "Run X next" suggestion slot ────────────────────────────────────────── */
+
+.calib-inspect__rec-next {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-panel));
+}
+
+.calib-inspect__rec-next-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.calib-inspect__rec-next-reason {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.calib-inspect__rec-next-target {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.calib-inspect__rec-next-target strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.calib-inspect__rec-next-cta.calib-inspect__rec-next-cta {
+  justify-self: start;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg-panel));
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.calib-inspect__rec-next-cta:hover {
+  background: color-mix(in srgb, var(--accent) 32%, var(--bg-panel));
+}

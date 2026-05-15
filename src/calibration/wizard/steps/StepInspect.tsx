@@ -140,6 +140,7 @@ export function StepInspect({
       {!isFirmwareHealth && (
         <AiAnalysisSection
           tuningKind={testCtx.kind}
+          currentTestType={testType}
           providerReady={analysis.providerReady}
           framesCount={frames.length}
           loading={analysis.loading}
