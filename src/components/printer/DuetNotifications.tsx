@@ -10,6 +10,7 @@ import { useDoorSensorIntegration } from './duetNotifications/useDoorSensorInteg
 import { usePrintRecovery } from './duetNotifications/usePrintRecovery';
 import { useStatusTransitions } from './duetNotifications/useStatusTransitions';
 import { useHomeAssistantCommandPoller } from './duetNotifications/useHomeAssistantCommandPoller';
+import { usePrintCompletionScore } from '../../hooks/usePrintCompletionScore';
 import { usePrinterStore } from '../../store/printerStore';
 
 export default function DuetNotifications() {
@@ -24,6 +25,7 @@ export default function DuetNotifications() {
   useDoorSensorIntegration(addToast, dispatchIntegrationEvent);
   useStatusTransitions(addToast, dispatchIntegrationEvent);
   useHomeAssistantCommandPoller(buildSnapshot);
+  usePrintCompletionScore();
 
   const { recoverySnapshot, recoveryBusy, handleResumeRecovery, dismissRecoverySnapshot } = usePrintRecovery(addToast);
 

@@ -34,6 +34,7 @@ import { FilamentMoistureSection } from './FilamentMoistureSection';
 import { WearTrackingSection } from './WearTrackingSection';
 import { CalibrationResultsSection } from './results/CalibrationResultsSection';
 import { VisionFailureAlertsSection } from './VisionFailureAlertsSection';
+import { PrintQualityHistorySection } from '../quality/PrintQualityHistorySection';
 import './PrinterCalibrationPanel.css';
 
 export default function PrinterCalibrationPanel() {
@@ -50,6 +51,7 @@ export default function PrinterCalibrationPanel() {
   const [isCalibrationTestsOpen, setIsCalibrationTestsOpen] = useState(false);
   const [isCalibrationAgingOpen, setIsCalibrationAgingOpen] = useState(false);
   const [isCalibrationResultsOpen, setIsCalibrationResultsOpen] = useState(false);
+  const [isPrintQualityOpen, setIsPrintQualityOpen] = useState(false);
   const [isWearTrackingOpen, setIsWearTrackingOpen] = useState(false);
   const [isFilamentMoistureOpen, setIsFilamentMoistureOpen] = useState(false);
 
@@ -232,6 +234,12 @@ export default function PrinterCalibrationPanel() {
         <CalibrationResultsSection
           isOpen={isCalibrationResultsOpen}
           setIsOpen={setIsCalibrationResultsOpen}
+          activePrinterId={activePrinterId}
+        />
+
+        <PrintQualityHistorySection
+          isOpen={isPrintQualityOpen}
+          setIsOpen={setIsPrintQualityOpen}
           activePrinterId={activePrinterId}
         />
 

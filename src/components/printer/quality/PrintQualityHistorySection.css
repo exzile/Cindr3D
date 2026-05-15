@@ -1,0 +1,8 @@
+.printer-quality-history {
+  --section-accent: #10b981;
+}
+
+.print-quality-history__list {
+  display: grid;
+  gap: 8px;
+}
