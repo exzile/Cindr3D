@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { DimensionEngine } from '../../../../../engine/DimensionEngine';
 import { GeometryEngine } from '../../../../../engine/GeometryEngine';
 import { applyDimensionResize } from '../../../../../engine/dimensionResizeUtils';
+import { inferLinearPlacement } from '../../../../../engine/dimensionPlacement';
 import { useCADStore } from '../../../../../store/cadStore';
 import type { Sketch, SketchDimension, SketchEntity } from '../../../../../types/cad';
 
@@ -212,6 +213,9 @@ export function useSketchDimensionTool({
   const pendingLinearSecondPickRef = useRef<PickedDimensionEntity | null>(null);
   const draggingDimensionRef = useRef<{ dimensionId: string; moved: boolean } | null>(null);
   const suppressNextClickRef = useRef(false);
+  // Fingerprint of the last published ghost preview — avoids per-move store
+  // writes (preview-fingerprint pattern from sketch_interaction_pipeline.md).
+  const previewFingerprintRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!activeSketch || activeTool !== 'dimension') {
@@ -316,6 +320,43 @@ export function useSketchDimensionTool({
         position: placement ?? dimension.textPosition,
       };
     };
+    // Cursor-driven single-line linear/aligned placement (Fusion-style).
+    // Returns the would-be SketchDimension shape (sans id) for a single line
+    // pick measured against the cursor world point. Used both for the live
+    // ghost preview and the click-to-place commit so they agree exactly.
+    const computeSingleLinearDimension = (
+      pick: PickedDimensionEntity,
+      cursorWorld: THREE.Vector3,
+    ): {
+      type: 'linear' | 'aligned';
+      value: number;
+      position: { x: number; y: number };
+      orientation?: 'horizontal' | 'vertical';
+    } | null => {
+      if (!pick.start || !pick.end) return null;
+      const start = to2D(pick.start);
+      const end = to2D(pick.end);
+      if (Math.hypot(end.x - start.x, end.y - start.y) < 1e-8) return null;
+      const cursor = to2D(cursorWorld);
+      const placement = inferLinearPlacement(start, end, cursor, dimensionOrientation);
+      if (placement.kind === 'aligned') {
+        const aligned = DimensionEngine.computeAlignedDimension(start, end, placement.offset);
+        return { type: 'aligned', value: aligned.value, position: aligned.textPosition };
+      }
+      const linear = DimensionEngine.computeLinearDimension(
+        start,
+        end,
+        placement.offset,
+        placement.axis,
+      );
+      return {
+        type: 'linear',
+        value: linear.value,
+        position: linear.textPosition,
+        orientation: placement.axis,
+      };
+    };
+
     const dimensionReferenceKey = (type: string, entityIds: string[]) => {
       const normalizedIds = entityIds.length >= 2 && entityIds.every((id) => id === entityIds[0])
         ? [entityIds[0]]
@@ -397,7 +438,11 @@ export function useSketchDimensionTool({
 
     const fireAndEdit = (dim: SketchDimension, statusMsg: string) => {
       commitDimension(dim, activeSketch.id, dimensionDrivenMode);
-      useCADStore.setState({ pendingNewDimensionId: dim.id });
+      // Tear down the ghost preview on commit so it doesn't linger over the
+      // freshly-placed real dimension. The fingerprint reset lets the next
+      // hover (after the editor closes) recompute cleanly.
+      previewFingerprintRef.current = null;
+      useCADStore.setState({ pendingNewDimensionId: dim.id, dimensionPreview: null });
       setStatusMessage(statusMsg);
     };
 
@@ -525,6 +570,64 @@ export function useSketchDimensionTool({
               pendingLinearSecondPickRef.current = null;
               useCADStore.setState({ pendingDimensionEntityIds: [] });
               return;
+            }
+          }
+        }
+
+        // Fusion-style placement click for a pending SINGLE-line linear/aligned
+        // pick. Runs before the "must be near an entity" guard so the dimension
+        // can be placed in empty space. A click that lands on a *different*
+        // valid line still defers to the existing two-entity / angular upgrade
+        // paths below (we only commit here when no valid two-entity dim forms).
+        {
+          const _placePick = pendingLinearPickRef.current;
+          if (
+            (activeDimensionType === 'linear' || activeDimensionType === 'aligned') &&
+            _placePick &&
+            _placePick.start &&
+            _placePick.end &&
+            _placePick.start.distanceTo(_placePick.end) >= 1e-8 &&
+            !pendingLinearSecondPickRef.current &&
+            currentPending.length === 1
+          ) {
+            const _firstId = _placePick.highlightId ?? _placePick.entity.id;
+            const _clickedId = pick ? (pick.highlightId ?? pick.entity.id) : null;
+            const _isSecondLine =
+              pick != null &&
+              !!pick.start &&
+              !!pick.end &&
+              pick.start.distanceTo(pick.end) >= 1e-8 &&
+              _clickedId !== _firstId &&
+              (computeTwoLineDimension(_placePick, pick, worldPoint) != null ||
+                computeAngleDimension(_placePick, pick, worldPoint) != null);
+            if (!_isSecondLine) {
+              const _single = computeSingleLinearDimension(_placePick, worldPoint);
+              if (_single) {
+                const _ids = [_firstId];
+                if (hasExistingDimension(activeDimensionType, _ids)) {
+                  rejectDuplicateDimension();
+                  return;
+                }
+                fireAndEdit(
+                  {
+                    id: crypto.randomUUID(),
+                    type: _single.type,
+                    entityIds: _ids,
+                    value: _single.value,
+                    position: _single.position,
+                    driven: dimensionDrivenMode,
+                    ...(_single.type === 'linear' && _single.orientation
+                      ? { orientation: _single.orientation }
+                      : {}),
+                    ...buildToleranceFields(),
+                  },
+                  `${_single.type === 'linear' ? 'Linear' : 'Aligned'} dimension added: ${_single.value.toFixed(2)}`,
+                );
+                pendingLinearPickRef.current = null;
+                pendingLinearSecondPickRef.current = null;
+                useCADStore.setState({ pendingDimensionEntityIds: _ids, dimensionPreview: null });
+                return;
+              }
             }
           }
         }
@@ -686,33 +789,20 @@ export function useSketchDimensionTool({
             setStatusMessage('Angular: click the second line');
             return;
           }
-          // Linear/aligned: place immediately on first click; keep ref for two-entity upgrade
-          pendingLinearPickRef.current = pick;
-          const _start0 = to2D(pick.start);
-          const _end0 = to2D(pick.end);
-          const _dim0 =
-            activeDimensionType === 'linear'
-              ? DimensionEngine.computeLinearDimension(_start0, _end0, dimensionOffset, dimensionOrientation !== 'auto' ? dimensionOrientation : undefined)
-              : DimensionEngine.computeAlignedDimension(_start0, _end0, dimensionOffset);
+          // Linear/aligned: Fusion-style — first click only PICKS the line.
+          // The dimension rubber-bands with the cursor; orientation + offset
+          // are decided by the next (placement) click. Keep the ref so the
+          // existing two-entity upgrade path still works when the second
+          // click lands on another line.
           const _entityIds0 = [pick.highlightId ?? entity.id];
           if (hasExistingDimension(activeDimensionType, _entityIds0)) {
             rejectDuplicateDimension();
             return;
           }
-          fireAndEdit(
-            {
-              id: crypto.randomUUID(),
-              type: activeDimensionType as SketchDimension['type'],
-              entityIds: _entityIds0,
-              value: _dim0.value,
-              position: _dim0.textPosition,
-              driven: dimensionDrivenMode,
-              ...(activeDimensionType === 'linear' ? { orientation: dimensionOrientation } : {}),
-              ...buildToleranceFields(),
-            },
-            `${activeDimensionType === 'linear' ? 'Linear' : 'Aligned'} dimension added: ${_dim0.value.toFixed(2)}`,
-          );
+          pendingLinearPickRef.current = pick;
+          addPendingDimensionEntity(pick.highlightId ?? entity.id);
           useCADStore.setState({ pendingDimensionEntityIds: _entityIds0 });
+          setStatusMessage('Move cursor and click to place dimension');
           return;
         }
 
@@ -871,9 +961,93 @@ export function useSketchDimensionTool({
       if (event.key === 'Escape') {
         pendingLinearPickRef.current = null;
         pendingLinearSecondPickRef.current = null;
+        previewFingerprintRef.current = null;
+        // cancelDimensionTool() also resets dimensionPreview to null.
         cancelDimensionTool();
       }
     };
+    // Build the transient ghost SketchDimension from the current cursor while a
+    // placement is pending: single-entity linear/aligned (pendingLinearPickRef
+    // set, no second pick) OR the existing two-entity / angular placement step
+    // (both picks set, awaiting a location click).
+    const computePreviewDimension = (cursorWorld: THREE.Vector3): SketchDimension | null => {
+      const firstPick = pendingLinearPickRef.current;
+      const secondPick = pendingLinearSecondPickRef.current;
+      if (firstPick && secondPick) {
+        const ids = [
+          firstPick.highlightId ?? firstPick.entity.id,
+          secondPick.highlightId ?? secondPick.entity.id,
+        ];
+        const twoLine = computeTwoLineDimension(firstPick, secondPick, cursorWorld);
+        if (twoLine) {
+          return {
+            id: '__preview__',
+            type: activeDimensionType === 'aligned' ? 'aligned' : 'linear',
+            entityIds: ids,
+            value: twoLine.value,
+            position: twoLine.position,
+            driven: dimensionDrivenMode,
+            ...(activeDimensionType !== 'aligned' ? { orientation: twoLine.orientation } : {}),
+          };
+        }
+        const angle = computeAngleDimension(firstPick, secondPick, cursorWorld);
+        if (angle) {
+          return {
+            id: '__preview__',
+            type: 'angular',
+            entityIds: ids,
+            value: angle.value,
+            position: angle.position,
+            driven: dimensionDrivenMode,
+          };
+        }
+        return null;
+      }
+      if (
+        firstPick &&
+        !secondPick &&
+        (activeDimensionType === 'linear' || activeDimensionType === 'aligned')
+      ) {
+        const single = computeSingleLinearDimension(firstPick, cursorWorld);
+        if (!single) return null;
+        return {
+          id: '__preview__',
+          type: single.type,
+          entityIds: [firstPick.highlightId ?? firstPick.entity.id],
+          value: single.value,
+          position: single.position,
+          driven: dimensionDrivenMode,
+          ...(single.type === 'linear' && single.orientation
+            ? { orientation: single.orientation }
+            : {}),
+        };
+      }
+      return null;
+    };
+
+    const publishPreview = (worldPoint: THREE.Vector3 | null) => {
+      const preview = worldPoint ? computePreviewDimension(worldPoint) : null;
+      if (!preview) {
+        if (previewFingerprintRef.current !== null) {
+          previewFingerprintRef.current = null;
+          useCADStore.setState({ dimensionPreview: null });
+        }
+        return;
+      }
+      // Round value + position so micro-cursor jitter doesn't spam the store.
+      const fp = [
+        preview.type,
+        preview.entityIds.join('|'),
+        preview.value.toFixed(3),
+        preview.position.x.toFixed(3),
+        preview.position.y.toFixed(3),
+        preview.orientation ?? '',
+      ].join('~');
+      if (fp === previewFingerprintRef.current) return;
+      previewFingerprintRef.current = fp;
+      useCADStore.setState({ dimensionPreview: preview });
+    };
+
     const handleHoverMove = (event: MouseEvent) => {
       const worldPoint = getWorldPoint(event);
       const pick = worldPoint ? findNearestEntity(worldPoint) : null;
@@ -881,6 +1055,7 @@ export function useSketchDimensionTool({
       if (useCADStore.getState().dimensionHoverEntityId !== hoverId) {
         useCADStore.setState({ dimensionHoverEntityId: hoverId });
       }
+      publishPreview(worldPoint);
       canvas.style.cursor = hoverId ? 'crosshair' : '';
     };
 
@@ -901,6 +1076,10 @@ export function useSketchDimensionTool({
       if (useCADStore.getState().activeTool !== 'dimension') {
         pendingLinearPickRef.current = null;
         pendingLinearSecondPickRef.current = null;
+        previewFingerprintRef.current = null;
+        if (useCADStore.getState().dimensionPreview !== null) {
+          useCADStore.setState({ dimensionPreview: null });
+        }
       }
     };
   }, [

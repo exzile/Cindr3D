@@ -333,6 +333,11 @@ export interface CADModelingState {
   dimensionToleranceLower: number;
   pendingDimensionEntityIds: string[];
   dimensionHoverEntityId: string | null;
+  /**
+   * Transient Fusion-style ghost dimension that rubber-bands with the cursor
+   * while a placement is pending. Never persisted (not in partialize).
+   */
+  dimensionPreview: SketchDimension | null;
   pendingNewDimensionId: string | null;
   // Dimension editor overlay (rendered in ViewportPanels, outside the WebGL canvas)
   sketchDimEditId: string | null;

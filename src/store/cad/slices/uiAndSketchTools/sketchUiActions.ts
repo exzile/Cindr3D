@@ -59,6 +59,7 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
   dimensionToleranceLower: 0.1,
   pendingDimensionEntityIds: [],
   dimensionHoverEntityId: null,
+  dimensionPreview: null,
   pendingNewDimensionId: null,
 
   // ─── Dimension editor overlay ──────────────────────────────────────────────
@@ -116,6 +117,7 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
       statusMessage: `Dimension updated: ${nextValue.toFixed(2)}`,
       pendingNewDimensionId: null,
       pendingDimensionEntityIds: [],
+      dimensionPreview: null,
       sketchDimEditId: null,
       sketchDimEditValue: '',
       sketchDimEditIsNew: false,
@@ -128,6 +130,7 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
     set({
       pendingNewDimensionId: null,
       pendingDimensionEntityIds: [],
+      dimensionPreview: null,
       sketchDimEditId: null,
       sketchDimEditValue: '',
       sketchDimEditIsNew: false,
@@ -149,9 +152,9 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
       set({ statusMessage: 'Open a sketch first before using the Dimension tool' });
       return;
     }
-    set({ activeTool: 'dimension', pendingDimensionEntityIds: [], dimensionHoverEntityId: null, statusMessage: 'Dimension â€” click entities to measure' });
+    set({ activeTool: 'dimension', pendingDimensionEntityIds: [], dimensionHoverEntityId: null, dimensionPreview: null, statusMessage: 'Dimension â€” click entities to measure' });
   },
-  cancelDimensionTool: () => set({ activeTool: 'select', pendingDimensionEntityIds: [], dimensionHoverEntityId: null, statusMessage: 'Dimension tool cancelled' }),
+  cancelDimensionTool: () => set({ activeTool: 'select', pendingDimensionEntityIds: [], dimensionHoverEntityId: null, dimensionPreview: null, statusMessage: 'Dimension tool cancelled' }),
   addPendingDimensionEntity: (id) => set((state) => ({
     pendingDimensionEntityIds: state.pendingDimensionEntityIds.includes(id)
       ? state.pendingDimensionEntityIds

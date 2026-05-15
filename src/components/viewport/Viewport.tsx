@@ -16,6 +16,7 @@ import SliceEffect from './scene/SliceEffect';
 import SketchRenderer from './scene/SketchRenderer';
 import SketchConstraintOverlay from './scene/SketchConstraintOverlay';
 import SketchDimensionAnnotations from './scene/SketchDimensionAnnotations';
+import SketchDimensionPreview from './scene/SketchDimensionPreview';
 import SketchSplineHandles from './scene/SketchSplineHandles';
 import PrimitiveBodies from './scene/PrimitiveBodies';
 import FastenerBodies from './scene/FastenerBodies';
@@ -223,6 +224,7 @@ export default function Viewport() {
         <SketchRenderer />
         <SketchConstraintOverlay />
         <SketchDimensionAnnotations />
+        <SketchDimensionPreview />
         <SketchSplineHandles />
         <ExtrudedBodies />
         <PrimitiveBodies />
