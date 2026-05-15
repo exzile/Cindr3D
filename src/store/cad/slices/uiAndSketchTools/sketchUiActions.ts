@@ -50,7 +50,7 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
   cancelSketchTextTool: () => set({ activeTool: 'select', statusMessage: 'Sketch Text cancelled' }),
 
   // â”€â”€â”€ D28: Dimension tool â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  activeDimensionType: 'linear',
+  activeDimensionType: 'auto',
   dimensionOffset: 10,
   dimensionDrivenMode: false,
   dimensionOrientation: 'auto',

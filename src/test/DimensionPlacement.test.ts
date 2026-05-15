@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inferLinearPlacement } from '../engine/dimensionPlacement';
+import { inferLinearPlacement, pointToLineDistance } from '../engine/dimensionPlacement';
 
 // Horizontal line along +X from (0,0) → (10,0).
 const HSTART = { x: 0, y: 0 };
@@ -73,5 +73,56 @@ describe('inferLinearPlacement', () => {
     const p = inferLinearPlacement({ x: 2, y: 2 }, { x: 2, y: 2 }, { x: 5, y: 5 }, 'auto');
     expect(p).toBeTruthy();
     expect(['linear', 'aligned']).toContain(p.kind);
+  });
+});
+
+describe('pointToLineDistance', () => {
+  it('perpendicular distance from a point above a horizontal line', () => {
+    // Line along +X from (0,0)→(10,0); point at (3,5) → distance 5, foot (3,0).
+    const r = pointToLineDistance({ x: 3, y: 5 }, { x: 0, y: 0 }, { x: 10, y: 0 });
+    expect(r.distance).toBeCloseTo(5, 6);
+    expect(r.foot.x).toBeCloseTo(3, 6);
+    expect(r.foot.y).toBeCloseTo(0, 6);
+  });
+
+  it('perpendicular distance to a vertical line', () => {
+    // Line along +Y from (0,0)→(0,10); point at (4,7) → distance 4, foot (0,7).
+    const r = pointToLineDistance({ x: 4, y: 7 }, { x: 0, y: 0 }, { x: 0, y: 10 });
+    expect(r.distance).toBeCloseTo(4, 6);
+    expect(r.foot.x).toBeCloseTo(0, 6);
+    expect(r.foot.y).toBeCloseTo(7, 6);
+  });
+
+  it('diagonal line: distance + foot computed against the INFINITE line', () => {
+    // 45° line through origin: y = x. Point (4,0) → perpendicular distance is
+    // 4/√2 ≈ 2.828427, foot at (2,2).
+    const r = pointToLineDistance({ x: 4, y: 0 }, { x: 0, y: 0 }, { x: 10, y: 10 });
+    expect(r.distance).toBeCloseTo(4 / Math.SQRT2, 6);
+    expect(r.foot.x).toBeCloseTo(2, 6);
+    expect(r.foot.y).toBeCloseTo(2, 6);
+  });
+
+  it('foot can lie beyond the finite segment (infinite-line projection)', () => {
+    // Segment (0,0)→(2,0) but point at (10,3): foot projects to (10,0),
+    // well past the segment end — Fusion measures to the infinite line.
+    const r = pointToLineDistance({ x: 10, y: 3 }, { x: 0, y: 0 }, { x: 2, y: 0 });
+    expect(r.distance).toBeCloseTo(3, 6);
+    expect(r.foot.x).toBeCloseTo(10, 6);
+    expect(r.foot.y).toBeCloseTo(0, 6);
+  });
+
+  it('point exactly on the line → distance 0, foot == point', () => {
+    const r = pointToLineDistance({ x: 5, y: 5 }, { x: 0, y: 0 }, { x: 10, y: 10 });
+    expect(r.distance).toBeCloseTo(0, 6);
+    expect(r.foot.x).toBeCloseTo(5, 6);
+    expect(r.foot.y).toBeCloseTo(5, 6);
+  });
+
+  it('degenerate zero-length line does not divide by zero', () => {
+    const r = pointToLineDistance({ x: 3, y: 4 }, { x: 0, y: 0 }, { x: 0, y: 0 });
+    expect(Number.isFinite(r.distance)).toBe(true);
+    expect(r.distance).toBeCloseTo(5, 6); // hypot(3,4)
+    expect(r.foot.x).toBeCloseTo(0, 6);
+    expect(r.foot.y).toBeCloseTo(0, 6);
   });
 });

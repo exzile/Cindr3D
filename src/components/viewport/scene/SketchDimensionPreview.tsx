@@ -16,6 +16,7 @@ import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { DimensionEngine } from '../../../engine/DimensionEngine';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
+import { pointToLineDistance } from '../../../engine/dimensionPlacement';
 import { DIMENSION_PREVIEW_MATERIAL } from '../../../engine/geometryEngine/materials';
 import type { SketchEntity } from '../../../types/cad';
 
@@ -244,6 +245,21 @@ export default function SketchDimensionPreview() {
           }
           textPos2D = ann.textPosition;
           label = `${ann.value.toFixed(2)}°`;
+        }
+      } else if (
+        dim.type === 'aligned' && seg0 && seg1 &&
+        (isDegen(seg0) !== isDegen(seg1))
+      ) {
+        // Point↔line perpendicular distance: exactly one degenerate (point)
+        // segment + one real line. Render the aligned annotation between the
+        // point and its perpendicular foot on the infinite line.
+        const pointSeg = isDegen(seg0) ? seg0 : seg1;
+        const lineSeg = isDegen(seg0) ? seg1 : seg0;
+        const { foot } = pointToLineDistance(pointSeg.start, lineSeg.start, lineSeg.end);
+        const ann = computeAlignedAt(pointSeg.start, foot, dim.position);
+        if (ann) {
+          pairs = [ann.extensionLine1, ann.extensionLine2, ...withArrowheads(ann.dimensionLine)];
+          textPos2D = ann.textPosition;
         }
       } else if ((dim.type === 'linear' || dim.type === 'aligned') && seg0 && seg1) {
         // Two-entity: degenerate point picks measure point→point; two real

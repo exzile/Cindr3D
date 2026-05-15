@@ -3,9 +3,9 @@ import * as THREE from 'three';
 import { DimensionEngine } from '../../../../../engine/DimensionEngine';
 import { GeometryEngine } from '../../../../../engine/GeometryEngine';
 import { applyDimensionResize } from '../../../../../engine/dimensionResizeUtils';
-import { inferLinearPlacement } from '../../../../../engine/dimensionPlacement';
+import { inferLinearPlacement, pointToLineDistance } from '../../../../../engine/dimensionPlacement';
 import { useCADStore } from '../../../../../store/cadStore';
-import type { Sketch, SketchDimension, SketchEntity } from '../../../../../types/cad';
+import type { DimensionType, Sketch, SketchDimension, SketchEntity } from '../../../../../types/cad';
 
 interface DimensionToolContext {
   activeTool: string;
@@ -20,7 +20,7 @@ interface DimensionToolContext {
   addPendingDimensionEntity: (entityId: string) => void;
   addSketchDimension: (dimension: Parameters<typeof useCADStore.getState> extends never ? never : {
     id: string;
-    type: 'linear' | 'angular' | 'radial' | 'diameter' | 'arc-length' | 'aligned';
+    type: DimensionType;
     entityIds: string[];
     value: number;
     position: { x: number; y: number };
@@ -357,6 +357,68 @@ export function useSketchDimensionTool({
       };
     };
 
+    // Fusion-style point↔line perpendicular distance. Detects which pick is a
+    // (degenerate) point and which is a real line segment, projects the point
+    // onto the INFINITE line via the pure pointToLineDistance helper, and
+    // returns an *aligned* dimension between the point and its foot. The
+    // committed/preview dimension carries entityIds = [pointId, lineId]; the
+    // measured value is the perpendicular distance. Reuses the same preview /
+    // commit machinery as the other paths (returns the SketchDimension-sans-id
+    // shape consumed by fireAndEdit / computePreviewDimension).
+    const isDegeneratePick = (p: PickedDimensionEntity) =>
+      p.start != null && p.end != null && p.start.distanceTo(p.end) < 1e-8;
+    const isLinePick = (p: PickedDimensionEntity) =>
+      p.start != null && p.end != null && p.start.distanceTo(p.end) >= 1e-8;
+    const orderPointLine = (
+      a: PickedDimensionEntity,
+      b: PickedDimensionEntity,
+    ): { pointPick: PickedDimensionEntity; linePick: PickedDimensionEntity } | null => {
+      if (isDegeneratePick(a) && isLinePick(b)) return { pointPick: a, linePick: b };
+      if (isDegeneratePick(b) && isLinePick(a)) return { pointPick: b, linePick: a };
+      return null;
+    };
+    const computePointToLineDimension = (
+      firstPick: PickedDimensionEntity,
+      secondPick: PickedDimensionEntity,
+      cursorWorld?: THREE.Vector3,
+    ): {
+      value: number;
+      position: { x: number; y: number };
+      pointId: string;
+      lineId: string;
+    } | null => {
+      const ordered = orderPointLine(firstPick, secondPick);
+      if (!ordered) return null;
+      const { pointPick, linePick } = ordered;
+      if (!pointPick.start || !linePick.start || !linePick.end) return null;
+      const point = to2D(pointPick.start);
+      const lineStart = to2D(linePick.start);
+      const lineEnd = to2D(linePick.end);
+      const { distance, foot } = pointToLineDistance(point, lineStart, lineEnd);
+      // Aligned annotation between the point and its perpendicular foot. The
+      // dimension line rubber-bands with the cursor like the other aligned
+      // previews: signed offset = cursor distance from the point→foot midline.
+      let offset = 0;
+      const dx = foot.x - point.x;
+      const dy = foot.y - point.y;
+      const len = Math.hypot(dx, dy);
+      if (cursorWorld && len > 1e-8) {
+        const c = to2D(cursorWorld);
+        const mid = { x: (point.x + foot.x) / 2, y: (point.y + foot.y) / 2 };
+        const normal = { x: -dy / len, y: dx / len };
+        offset = (c.x - mid.x) * normal.x + (c.y - mid.y) * normal.y;
+      }
+      const aligned = DimensionEngine.computeAlignedDimension(point, foot, offset);
+      return {
+        // Value is the true perpendicular distance (== |point→foot|); when the
+        // point lies exactly on the line this is 0.
+        value: distance,
+        position: aligned.textPosition,
+        pointId: pointPick.highlightId ?? pointPick.entity.id,
+        lineId: linePick.highlightId ?? linePick.entity.id,
+      };
+    };
+
     const dimensionReferenceKey = (type: string, entityIds: string[]) => {
       const normalizedIds = entityIds.length >= 2 && entityIds.every((id) => id === entityIds[0])
         ? [entityIds[0]]
@@ -463,33 +525,77 @@ export function useSketchDimensionTool({
       const pick = findNearestEntity(worldPoint);
       const entity = pick?.entity ?? null;
 
-      if (activeDimensionType === 'linear' || activeDimensionType === 'aligned' || activeDimensionType === 'angular') {
+      if (
+        activeDimensionType === 'auto' ||
+        activeDimensionType === 'linear' ||
+        activeDimensionType === 'aligned' ||
+        activeDimensionType === 'angular'
+      ) {
+        // 'auto' (Fusion-style modeless) routes through the universal inferring
+        // path: it behaves EXACTLY like 'linear' here — the cursor decides
+        // H/V/aligned via inferLinearPlacement (which already returns aligned
+        // on a perpendicular pull), single-line / two-point / two-line / angular
+        // upgrade / circle→diameter / arc→radial / point→line all fall out of
+        // the same logic. Explicit modes stay verbatim as power-user overrides.
+        const effectiveType: 'linear' | 'aligned' | 'angular' =
+          activeDimensionType === 'auto' ? 'linear' : activeDimensionType;
         const currentPending = useCADStore.getState().pendingDimensionEntityIds;
         const firstPick = pendingLinearPickRef.current;
         const secondPick = pendingLinearSecondPickRef.current;
         if (currentPending.length >= 2 && firstPick && secondPick) {
+          // Point↔line perpendicular distance (Fusion-style): one pick is a
+          // point, the other a line. Always an aligned dimension between the
+          // point and its foot on the infinite line. Checked before the
+          // two-line path because computeTwoLineDimension would mis-treat the
+          // degenerate point pick as a zero-length "line".
+          if (effectiveType !== 'angular') {
+            const ptLine = computePointToLineDimension(firstPick, secondPick, worldPoint);
+            if (ptLine) {
+              const entityIds = [ptLine.pointId, ptLine.lineId];
+              if (hasExistingDimension('aligned', entityIds)) {
+                rejectDuplicateDimension();
+                return;
+              }
+              fireAndEdit(
+                {
+                  id: crypto.randomUUID(),
+                  type: 'aligned',
+                  entityIds,
+                  value: ptLine.value,
+                  position: ptLine.position,
+                  driven: dimensionDrivenMode,
+                  ...buildToleranceFields(),
+                },
+                `Point-to-line distance added: ${ptLine.value.toFixed(2)}`,
+              );
+              pendingLinearPickRef.current = null;
+              pendingLinearSecondPickRef.current = null;
+              useCADStore.setState({ pendingDimensionEntityIds: entityIds });
+              return;
+            }
+          }
           const twoLineDimension = computeTwoLineDimension(firstPick, secondPick, worldPoint);
           if (twoLineDimension) {
             const entityIds = [
               firstPick.highlightId ?? firstPick.entity.id,
               secondPick.highlightId ?? secondPick.entity.id,
             ];
-            if (hasExistingDimension(activeDimensionType, entityIds)) {
+            if (hasExistingDimension(effectiveType, entityIds)) {
               rejectDuplicateDimension();
               return;
             }
             fireAndEdit(
               {
                 id: crypto.randomUUID(),
-                type: activeDimensionType as SketchDimension['type'],
+                type: effectiveType as SketchDimension['type'],
                 entityIds,
                 value: twoLineDimension.value,
                 position: twoLineDimension.position,
                 driven: dimensionDrivenMode,
-                ...(activeDimensionType === 'linear' ? { orientation: twoLineDimension.orientation } : {}),
+                ...(effectiveType === 'linear' ? { orientation: twoLineDimension.orientation } : {}),
                 ...buildToleranceFields(),
               },
-              `${activeDimensionType === 'linear' ? 'Linear' : 'Aligned'} dimension added: ${twoLineDimension.value.toFixed(2)}`,
+              `${effectiveType === 'linear' ? 'Linear' : 'Aligned'} dimension added: ${twoLineDimension.value.toFixed(2)}`,
             );
             pendingLinearPickRef.current = null;
             pendingLinearSecondPickRef.current = null;
@@ -528,13 +634,29 @@ export function useSketchDimensionTool({
         const isPointPick = (p: PickedDimensionEntity) =>
           p.start != null && p.end != null && p.start.distanceTo(p.end) < 1e-8;
 
-        if ((activeDimensionType === 'linear' || activeDimensionType === 'aligned') && pick && isPointPick(pick)) {
+        if ((effectiveType === 'linear' || effectiveType === 'aligned') && pick && isPointPick(pick)) {
           const currentPending2 = useCADStore.getState().pendingDimensionEntityIds;
           const firstPick2 = pendingLinearPickRef.current;
           if (currentPending2.length === 0) {
             pendingLinearPickRef.current = pick;
             addPendingDimensionEntity(pick.highlightId ?? pick.entity.id);
             setStatusMessage('Dimension: click the second point');
+            return;
+          }
+          // Line-then-point: a line is already pending and the user clicked a
+          // point ⇒ promote to a point↔line perpendicular-distance dimension.
+          // Stash the point as the second pick and wait for the placement
+          // click (rubber-bands like the two-line flow).
+          if (
+            firstPick2 &&
+            isLinePick(firstPick2) &&
+            !pendingLinearSecondPickRef.current &&
+            currentPending2.length === 1 &&
+            (pick.highlightId ?? pick.entity.id) !== currentPending2[0]
+          ) {
+            pendingLinearSecondPickRef.current = pick;
+            addPendingDimensionEntity(pick.highlightId ?? pick.entity.id);
+            setStatusMessage('Point-to-line: select location for dimension');
             return;
           }
           if (firstPick2 && isPointPick(firstPick2) && (pick.highlightId ?? pick.entity.id) !== currentPending2[0]) {
@@ -546,25 +668,25 @@ export function useSketchDimensionTool({
                 firstPick2.highlightId ?? firstPick2.entity.id,
                 pick.highlightId ?? pick.entity.id,
               ];
-              if (hasExistingDimension(activeDimensionType, entityIds)) {
+              if (hasExistingDimension(effectiveType, entityIds)) {
                 rejectDuplicateDimension();
                 return;
               }
-              const dimension = activeDimensionType === 'linear'
+              const dimension = effectiveType === 'linear'
                 ? DimensionEngine.computeLinearDimension(p1, p2, dimensionOffset, dimensionOrientation !== 'auto' ? dimensionOrientation : undefined)
                 : DimensionEngine.computeAlignedDimension(p1, p2, dimensionOffset);
               fireAndEdit(
                 {
                   id: crypto.randomUUID(),
-                  type: activeDimensionType as SketchDimension['type'],
+                  type: effectiveType as SketchDimension['type'],
                   entityIds,
                   value: dimension.value,
                   position: dimension.textPosition,
                   driven: dimensionDrivenMode,
-                  ...(activeDimensionType === 'linear' ? { orientation: dimensionOrientation } : {}),
+                  ...(effectiveType === 'linear' ? { orientation: dimensionOrientation } : {}),
                   ...buildToleranceFields(),
                 },
-                `${activeDimensionType === 'linear' ? 'Linear' : 'Aligned'} dimension added: ${dimension.value.toFixed(2)}`,
+                `${effectiveType === 'linear' ? 'Linear' : 'Aligned'} dimension added: ${dimension.value.toFixed(2)}`,
               );
               pendingLinearPickRef.current = null;
               pendingLinearSecondPickRef.current = null;
@@ -582,7 +704,7 @@ export function useSketchDimensionTool({
         {
           const _placePick = pendingLinearPickRef.current;
           if (
-            (activeDimensionType === 'linear' || activeDimensionType === 'aligned') &&
+            (effectiveType === 'linear' || effectiveType === 'aligned') &&
             _placePick &&
             _placePick.start &&
             _placePick.end &&
@@ -604,7 +726,7 @@ export function useSketchDimensionTool({
               const _single = computeSingleLinearDimension(_placePick, worldPoint);
               if (_single) {
                 const _ids = [_firstId];
-                if (hasExistingDimension(activeDimensionType, _ids)) {
+                if (hasExistingDimension(effectiveType, _ids)) {
                   rejectDuplicateDimension();
                   return;
                 }
@@ -634,9 +756,9 @@ export function useSketchDimensionTool({
 
         if (!entity) {
           setStatusMessage(
-            activeDimensionType === 'linear'
+            effectiveType === 'linear'
               ? 'Dimension: click closer to a line entity'
-              : activeDimensionType === 'angular'
+              : effectiveType === 'angular'
                 ? 'Angular: click closer to a line entity'
               : 'Aligned: click closer to a line entity',
           );
@@ -692,9 +814,9 @@ export function useSketchDimensionTool({
 
         if (!pick?.start || !pick.end) {
           setStatusMessage(
-            activeDimensionType === 'linear'
+            effectiveType === 'linear'
               ? 'Dimension: click closer to a line segment'
-              : activeDimensionType === 'angular'
+              : effectiveType === 'angular'
                 ? 'Angular: click closer to a line segment'
               : 'Aligned: click closer to a line segment',
           );
@@ -704,14 +826,14 @@ export function useSketchDimensionTool({
         // While a newly-placed single-entity edit is open, allow upgrading to two-entity
         // by clicking a second parallel line — or silently ignore same-entity re-clicks.
         const { sketchDimEditId: _editId, sketchDimEditIsNew: _editIsNew } = useCADStore.getState();
-        if (_editId && _editIsNew && pendingLinearPickRef.current && activeDimensionType !== 'angular') {
+        if (_editId && _editIsNew && pendingLinearPickRef.current && effectiveType !== 'angular') {
           const _firstId = pendingLinearPickRef.current.highlightId ?? pendingLinearPickRef.current.entity.id;
           const _clickedId = pick.highlightId ?? entity.id;
           if (_clickedId === _firstId) return; // same entity — editor already open, do nothing
           const _twoLine = computeTwoLineDimension(pendingLinearPickRef.current, pick, worldPoint);
           if (_twoLine) {
             const _entityIds = [_firstId, _clickedId];
-            if (!hasExistingDimension(activeDimensionType, _entityIds)) {
+            if (!hasExistingDimension(effectiveType, _entityIds)) {
               // Close editor without undo and directly remove the provisional single-entity
               // dimension by ID. Using undo() is unreliable here because it can leave D1
               // in the sketch if the undo stack isn't exactly as expected.
@@ -727,15 +849,15 @@ export function useSketchDimensionTool({
               fireAndEdit(
                 {
                   id: crypto.randomUUID(),
-                  type: activeDimensionType as SketchDimension['type'],
+                  type: effectiveType as SketchDimension['type'],
                   entityIds: _entityIds,
                   value: _twoLine.value,
                   position: _twoLine.position,
                   driven: dimensionDrivenMode,
-                  ...(activeDimensionType === 'linear' ? { orientation: _twoLine.orientation } : {}),
+                  ...(effectiveType === 'linear' ? { orientation: _twoLine.orientation } : {}),
                   ...buildToleranceFields(),
                 },
-                `${activeDimensionType === 'linear' ? 'Linear' : 'Aligned'} dimension added: ${_twoLine.value.toFixed(2)}`,
+                `${effectiveType === 'linear' ? 'Linear' : 'Aligned'} dimension added: ${_twoLine.value.toFixed(2)}`,
               );
               pendingLinearPickRef.current = null;
               pendingLinearSecondPickRef.current = null;
@@ -783,7 +905,7 @@ export function useSketchDimensionTool({
         if (_editId && _editIsNew) return;
 
         if (currentPending.length === 0) {
-          if (activeDimensionType === 'angular') {
+          if (effectiveType === 'angular') {
             pendingLinearPickRef.current = pick;
             addPendingDimensionEntity(pick.highlightId ?? entity.id);
             setStatusMessage('Angular: click the second line');
@@ -795,7 +917,7 @@ export function useSketchDimensionTool({
           // existing two-entity upgrade path still works when the second
           // click lands on another line.
           const _entityIds0 = [pick.highlightId ?? entity.id];
-          if (hasExistingDimension(activeDimensionType, _entityIds0)) {
+          if (hasExistingDimension(effectiveType, _entityIds0)) {
             rejectDuplicateDimension();
             return;
           }
@@ -808,9 +930,9 @@ export function useSketchDimensionTool({
 
         if (!firstPick?.start || !firstPick.end) {
           setStatusMessage(
-            activeDimensionType === 'linear'
+            effectiveType === 'linear'
               ? 'Dimension: first entity is invalid, please try again'
-              : activeDimensionType === 'angular'
+              : effectiveType === 'angular'
                 ? 'Angular: first entity is invalid, please try again'
               : 'Aligned: first entity is invalid, please try again',
           );
@@ -819,6 +941,20 @@ export function useSketchDimensionTool({
         }
 
         if (currentPending.length === 1 && (pick.highlightId ?? entity.id) !== currentPending[0]) {
+          // Point-then-line: a point is already pending and the user clicked a
+          // line ⇒ promote to point↔line perpendicular distance. Checked first
+          // so computeTwoLineDimension never mis-treats the degenerate point as
+          // a zero-length line.
+          if (
+            effectiveType !== 'angular' &&
+            orderPointLine(firstPick, pick) != null &&
+            !pendingLinearSecondPickRef.current
+          ) {
+            pendingLinearSecondPickRef.current = pick;
+            addPendingDimensionEntity(pick.highlightId ?? entity.id);
+            setStatusMessage('Point-to-line: select location for dimension');
+            return;
+          }
           const twoLineDimension = computeTwoLineDimension(firstPick, pick);
           if (twoLineDimension) {
             pendingLinearSecondPickRef.current = pick;
@@ -835,7 +971,7 @@ export function useSketchDimensionTool({
           }
         }
 
-        if (activeDimensionType === 'angular') {
+        if (effectiveType === 'angular') {
           setStatusMessage('Angular: click a different non-parallel line');
           return;
         }
@@ -843,11 +979,11 @@ export function useSketchDimensionTool({
         const start = to2D(firstPick.start);
         const end = to2D(firstPick.end);
         const dimension =
-          activeDimensionType === 'linear'
+          effectiveType === 'linear'
             ? DimensionEngine.computeLinearDimension(start, end, dimensionOffset)
             : DimensionEngine.computeAlignedDimension(start, end, dimensionOffset);
         const entityIds = [firstPick.highlightId ?? firstPick.entity.id];
-        if (hasExistingDimension(activeDimensionType, entityIds)) {
+        if (hasExistingDimension(effectiveType, entityIds)) {
           rejectDuplicateDimension();
           return;
         }
@@ -855,15 +991,15 @@ export function useSketchDimensionTool({
         fireAndEdit(
           {
             id: crypto.randomUUID(),
-            type: activeDimensionType as SketchDimension['type'],
+            type: effectiveType as SketchDimension['type'],
             entityIds,
             value: dimension.value,
             position: dimension.textPosition,
             driven: dimensionDrivenMode,
-            ...(activeDimensionType === 'linear' ? { orientation: dimensionOrientation } : {}),
+            ...(effectiveType === 'linear' ? { orientation: dimensionOrientation } : {}),
             ...buildToleranceFields(),
           },
-          `${activeDimensionType === 'linear' ? 'Linear' : 'Aligned'} dimension added: ${dimension.value.toFixed(2)}`,
+          `${effectiveType === 'linear' ? 'Linear' : 'Aligned'} dimension added: ${dimension.value.toFixed(2)}`,
         );
         pendingLinearPickRef.current = null;
         pendingLinearSecondPickRef.current = null;
@@ -978,6 +1114,22 @@ export function useSketchDimensionTool({
           firstPick.highlightId ?? firstPick.entity.id,
           secondPick.highlightId ?? secondPick.entity.id,
         ];
+        // Point↔line ghost: aligned dimension point→foot, rubber-banding with
+        // the cursor. Checked before two-line so the degenerate point pick is
+        // not mis-read as a zero-length line. (entityIds = [pointId, lineId].)
+        if (activeDimensionType !== 'angular') {
+          const ptLine = computePointToLineDimension(firstPick, secondPick, cursorWorld);
+          if (ptLine) {
+            return {
+              id: '__preview__',
+              type: 'aligned',
+              entityIds: [ptLine.pointId, ptLine.lineId],
+              value: ptLine.value,
+              position: ptLine.position,
+              driven: dimensionDrivenMode,
+            };
+          }
+        }
         const twoLine = computeTwoLineDimension(firstPick, secondPick, cursorWorld);
         if (twoLine) {
           return {
@@ -1006,7 +1158,9 @@ export function useSketchDimensionTool({
       if (
         firstPick &&
         !secondPick &&
-        (activeDimensionType === 'linear' || activeDimensionType === 'aligned')
+        (activeDimensionType === 'auto' ||
+          activeDimensionType === 'linear' ||
+          activeDimensionType === 'aligned')
       ) {
         const single = computeSingleLinearDimension(firstPick, cursorWorld);
         if (!single) return null;

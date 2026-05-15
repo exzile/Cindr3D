@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { DimensionEngine } from '../../../engine/DimensionEngine';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
+import { pointToLineDistance } from '../../../engine/dimensionPlacement';
 import type { SketchEntity } from '../../../types/cad';
 
 // ── Module-level material singletons ──────────────────────────────────────────
@@ -333,6 +334,27 @@ export default function SketchDimensionAnnotations() {
               const ann = dim.type === 'linear'
                 ? computeLinearAnnotationAtPosition(seg0!.start, seg1!.start, dim.position, dim.orientation ?? 'auto')
                 : computeAlignedAnnotationAtPosition(seg0!.start, seg1!.start, dim.position);
+              if (!ann) continue;
+              const segs = makeSegments(
+                [ann.extensionLine1, ann.extensionLine2, ...withArrowheads(ann.dimensionLine)],
+                origin, t1, t2,
+              );
+              result.push({
+                dimensionId: dim.id,
+                segments: segs,
+                textPos: toWorld(ann.textPosition, origin, t1, t2),
+                label: DimensionEngine.formatDimensionValue(dim.value, 'mm', 2),
+              });
+              continue;
+            }
+            // Point↔line perpendicular distance: aligned dim, exactly one
+            // degenerate (point) segment + one real line. Render the aligned
+            // annotation between the point and its perpendicular foot.
+            if (dim.type === 'aligned' && seg0 && seg1 && (isDegen(seg0) !== isDegen(seg1))) {
+              const pointSeg = isDegen(seg0) ? seg0 : seg1;
+              const lineSeg = isDegen(seg0) ? seg1 : seg0;
+              const { foot } = pointToLineDistance(pointSeg.start, lineSeg.start, lineSeg.end);
+              const ann = computeAlignedAnnotationAtPosition(pointSeg.start, foot, dim.position);
               if (!ann) continue;
               const segs = makeSegments(
                 [ann.extensionLine1, ann.extensionLine2, ...withArrowheads(ann.dimensionLine)],

@@ -76,3 +76,37 @@ export function inferLinearPlacement(
   }
   return { kind: 'linear', axis: 'horizontal', offset: Math.sign(rel.y || 1) * relLen };
 }
+
+/**
+ * Perpendicular distance from `point` to the *infinite* line through
+ * `lineStart`→`lineEnd`, plus the foot (the perpendicular projection of the
+ * point onto that infinite line).
+ *
+ * Mirrors Fusion 360's point-to-line dimension: the measured value is the
+ * perpendicular distance, and the dimension is drawn between the point and
+ * its foot as a true-length (aligned) annotation.
+ *
+ * Pure 2D sketch-space math, no THREE.js. A zero-length line is degenerate —
+ * we fall back to the plain point-to-start distance with the foot at the
+ * (coincident) line endpoint so callers never divide by zero or NaN out.
+ */
+export function pointToLineDistance(
+  point: Vec2,
+  lineStart: Vec2,
+  lineEnd: Vec2,
+): { distance: number; foot: Vec2 } {
+  const dx = lineEnd.x - lineStart.x;
+  const dy = lineEnd.y - lineStart.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 1e-12) {
+    // Degenerate line (zero length): treat it as the single point lineStart.
+    const foot = { x: lineStart.x, y: lineStart.y };
+    return { distance: Math.hypot(point.x - foot.x, point.y - foot.y), foot };
+  }
+  // Project onto the INFINITE line (parameter `t` is NOT clamped to [0,1] —
+  // Fusion measures to the infinite line, not the finite segment).
+  const t = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / lenSq;
+  const foot = { x: lineStart.x + t * dx, y: lineStart.y + t * dy };
+  const distance = Math.hypot(point.x - foot.x, point.y - foot.y);
+  return { distance, foot };
+}

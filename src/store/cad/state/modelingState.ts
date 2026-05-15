@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Parameter, SketchDimension } from '../../../types/cad';
+import type { DimensionToolType, Parameter, SketchDimension } from '../../../types/cad';
 import type { ExtrudeDirection, ExtrudeOperation } from '../../../types/cad-extrude.types';
 
 export interface CADModelingState {
@@ -321,7 +321,7 @@ export interface CADModelingState {
   cancelSketchTextTool: () => void;
 
   // D28 — Dimension tool
-  activeDimensionType: 'linear' | 'angular' | 'radial' | 'diameter' | 'arc-length' | 'aligned';
+  activeDimensionType: DimensionToolType;
   dimensionOffset: number;
   /** SK-A3: when true, newly created dimensions are marked driven (reference) */
   dimensionDrivenMode: boolean;
@@ -352,7 +352,7 @@ export interface CADModelingState {
   setSketchDimEditTypeahead: (items: Parameter[]) => void;
   commitSketchDimEdit: (rawValue: string) => void;
   cancelSketchDimEdit: () => void;
-  setActiveDimensionType: (t: 'linear' | 'angular' | 'radial' | 'diameter' | 'arc-length' | 'aligned') => void;
+  setActiveDimensionType: (t: DimensionToolType) => void;
   setDimensionOffset: (v: number) => void;
   setDimensionDrivenMode: (v: boolean) => void;
   setDimensionOrientation: (v: 'horizontal' | 'vertical' | 'auto') => void;

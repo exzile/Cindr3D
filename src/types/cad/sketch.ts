@@ -75,9 +75,22 @@ export interface SketchEntity {
 
 export type DimensionOrientation = 'horizontal' | 'vertical' | 'auto';
 
+/**
+ * Concrete type a *committed* dimension can have. Always resolved — a stored
+ * SketchDimension is never 'auto'.
+ */
+export type DimensionType = 'linear' | 'angular' | 'radial' | 'diameter' | 'arc-length' | 'aligned';
+
+/**
+ * Type selectable in the Dimension panel. 'auto' is the Fusion-style modeless
+ * default: the concrete type is inferred from what the user clicks. The hook
+ * resolves 'auto' to a concrete {@link DimensionType} before committing.
+ */
+export type DimensionToolType = DimensionType | 'auto';
+
 export interface SketchDimension {
   id: string;
-  type: 'linear' | 'angular' | 'radial' | 'diameter' | 'arc-length' | 'aligned';
+  type: DimensionType;
   entityIds: string[];
   value: number;
   position: { x: number; y: number };
