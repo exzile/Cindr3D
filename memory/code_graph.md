@@ -30,7 +30,7 @@ type: project
 | New store action | `store/<name>/{slices,actions}/` — never in the store shim |
 | New WASM op | See `auto-memory/wasm_patterns.md` |
 | New calibration test | Card in `components/printer/calibration/calibrationContent.ts` `CALIBRATION_CARDS`, G-code generator in `engine/calibration/`, slice preset in `calibration/calibrationSlicePresets.ts`, then add a `tuningKindForTest` mapping + manual field in `calibration/wizard/steps/StepInspect.tsx` |
-| AI photo analysis for a calibration test | Extend `TuningWizardKind` + `kindGuidance` in `services/vision/tuningWizards.ts`; if the test has tower-style bands, pass `startValue`/`stepPerMm`/`towerHeightMm` in `TuningTowerContext` so the model can map a visible band to a value. `StepInspect.tsx` reads provider config from `useAiAssistantStore` — do NOT re-introduce a `fallbackProvider()` with an empty key |
+| AI photo analysis for a calibration test | Extend `TuningWizardKind` + `kindGuidance` in `services/vision/tuningWizards.ts`; if the test has tower-style bands, pass `startValue`/`stepPerMm`/`towerHeightMm` in `TuningTowerContext` so the model can map a visible band to a value. Per-test wiring lives under `calibration/wizard/steps/inspect/` (shim + subdir): add the test to `inspectHelpers.tuningKindForTest`, derive its context in a sibling `<test>Context.ts`, surface it via `useTestContext` + `useTuningAnalysis`, and add tips in `PhotoGuidance.tsx`. `StepInspect.tsx` itself is a thin composer — do NOT push new logic back into it, and do NOT re-introduce a `fallbackProvider()` with an empty key (provider config comes from `useAiAssistantStore`) |
 
 ## Plane-axis math (single source of truth)
 
