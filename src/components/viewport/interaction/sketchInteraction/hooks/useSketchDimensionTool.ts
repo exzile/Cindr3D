@@ -152,6 +152,36 @@ function createNearestEntityFinder(entities: SketchEntity[], origin: THREE.Vecto
 }
 
 /**
+ * Single shared over-constraint interception. A non-driven dimension that
+ * would make the solver fail must NOT push undo, mutate entities, or open
+ * the value editor — instead the Fusion-style driven-dimension prompt is
+ * raised via the transient `pendingOverConstraint` store state and the
+ * caller bails. The trial solve shares input-building with the real solve
+ * (`wouldOverConstrain`) so this prediction matches what `solveSketch()`
+ * would later compute. Driven dims short-circuit (they never reach the
+ * solver), and a dimension born driven (dimensionDrivenMode on at add time)
+ * therefore never prompts.
+ *
+ * This is the SINGLE chokepoint for the guard: `commitDimension` routes
+ * through it, and every direct `addSketchDimension(...)` add site that
+ * bypasses `commitDimension` (inferred circle→diameter, arc→radial, the
+ * explicit arc-length branch, and `_addCircleOrArcDimension`) calls it
+ * first. No copy-pasted guard blocks.
+ *
+ * @returns `true` if it intercepted (raised the prompt) and the caller must
+ *   bail without adding; `false` otherwise (safe to proceed).
+ */
+function interceptOverConstraint(dim: SketchDimension, activeSketchId: string): boolean {
+  const sketch = useCADStore.getState().activeSketch;
+  if (!sketch || sketch.id !== activeSketchId) return false;
+  if (dim.driven || !wouldOverConstrain(sketch, dim)) return false;
+  useCADStore.setState({
+    pendingOverConstraint: { dimension: dim, activeSketchId, mode: 'add' },
+  });
+  return true;
+}
+
+/**
  * Adds a dimension to the active sketch and immediately resizes entities to match the value.
  * Single atomic store update so first-creation and subsequent edits behave identically.
  *
@@ -183,19 +213,11 @@ function commitDimension(
   });
   if (isDuplicate) return false;
 
-  // Fusion-style over-constraint interception: a non-driven dimension that
-  // would make the solver fail must NOT push undo, mutate entities, or open
-  // the value editor. Instead raise the driven-dimension prompt and bail. The
-  // trial solve shares input-building with the real solve so this prediction
-  // matches what solveSketch() would later compute. Driven dims short-circuit
-  // (they never reach the solver), and if dimensionDrivenMode is already on at
-  // add time the dimension is born driven ⇒ no prompt.
-  if (!dim.driven && wouldOverConstrain(sketch, dim)) {
-    useCADStore.setState({
-      pendingOverConstraint: { dimension: dim, activeSketchId, mode: 'add' },
-    });
-    return false;
-  }
+  // Fusion-style over-constraint interception via the single shared helper
+  // (behaviour identical to the previous inline guard — see
+  // interceptOverConstraint). Runs AFTER the duplicate rejection above so the
+  // dup-check / over-constraint ordering is preserved.
+  if (interceptOverConstraint(dim, activeSketchId)) return false;
 
   state.pushUndo?.();
   const applyToSketch = (s: Sketch): Sketch => {
@@ -463,6 +485,21 @@ export function useSketchDimensionTool({
       dimensionToleranceMode !== 'none'
         ? { toleranceUpper: dimensionToleranceUpper, toleranceLower: dimensionToleranceLower }
         : {};
+    // Hook-scoped adapter around the single shared `interceptOverConstraint`
+    // module helper. It adds nothing to the guard logic itself (no duplicated
+    // guard block) — it only mirrors the ghost-preview teardown that
+    // `fireAndEdit` does on a rejected/intercepted commit, so the direct
+    // `addSketchDimension(...)` bypass sites (inferred circle→diameter,
+    // arc→radial, the explicit arc-length branch, and _addCircleOrArcDimension)
+    // get behaviour identical to the `commitDimension` path: bail, no append,
+    // no success message, no lingering preview. Driven dims short-circuit
+    // inside `interceptOverConstraint` so a born-driven dimension never prompts.
+    const interceptAndClearPreview = (dim: SketchDimension): boolean => {
+      if (!interceptOverConstraint(dim, activeSketch.id)) return false;
+      previewFingerprintRef.current = null;
+      useCADStore.setState({ dimensionPreview: null });
+      return true;
+    };
     // Helper retained for future use by the dimension tool (was wired
     // in the "theirs" branch of an earlier merge; the "ours" side
     // doesn't call it yet). Underscore prefix to silence unused-var
@@ -481,7 +518,7 @@ export function useSketchDimensionTool({
           rejectDuplicateDimension();
           return true;
         }
-        addSketchDimension({
+        const diaDim: SketchDimension = {
           id: crypto.randomUUID(),
           type: 'diameter',
           entityIds: [entity.id],
@@ -489,7 +526,9 @@ export function useSketchDimensionTool({
           position: dimension.textPosition,
           driven: dimensionDrivenMode,
           ...buildToleranceFields(),
-        });
+        };
+        if (interceptAndClearPreview(diaDim)) return true;
+        addSketchDimension(diaDim);
         setStatusMessage(`Diameter dimension added: DIA ${dimension.value.toFixed(2)}`);
         return true;
       }
@@ -505,7 +544,7 @@ export function useSketchDimensionTool({
         rejectDuplicateDimension();
         return true;
       }
-      addSketchDimension({
+      const radDim: SketchDimension = {
         id: crypto.randomUUID(),
         type: 'radial',
         entityIds: [entity.id],
@@ -513,7 +552,9 @@ export function useSketchDimensionTool({
         position: dimension.textPosition,
         driven: dimensionDrivenMode,
         ...buildToleranceFields(),
-      });
+      };
+      if (interceptAndClearPreview(radDim)) return true;
+      addSketchDimension(radDim);
       setStatusMessage(`Radial dimension added: r=${entity.radius.toFixed(2)}`);
       return true;
     };
@@ -801,7 +842,7 @@ export function useSketchDimensionTool({
             rejectDuplicateDimension();
             return;
           }
-          addSketchDimension({
+          const diaDim: SketchDimension = {
             id: crypto.randomUUID(),
             type: 'diameter',
             entityIds: [entity.id],
@@ -809,7 +850,9 @@ export function useSketchDimensionTool({
             position: dimension.textPosition,
             driven: dimensionDrivenMode,
             ...buildToleranceFields(),
-          });
+          };
+          if (interceptAndClearPreview(diaDim)) return;
+          addSketchDimension(diaDim);
           setStatusMessage(`Diameter dimension added: DIA ${dimension.value.toFixed(2)}`);
           return;
         }
@@ -828,7 +871,7 @@ export function useSketchDimensionTool({
             rejectDuplicateDimension();
             return;
           }
-          addSketchDimension({
+          const radDim: SketchDimension = {
             id: crypto.randomUUID(),
             type: 'radial',
             entityIds: [entity.id],
@@ -836,7 +879,9 @@ export function useSketchDimensionTool({
             position: dimension.textPosition,
             driven: dimensionDrivenMode,
             ...buildToleranceFields(),
-          });
+          };
+          if (interceptAndClearPreview(radDim)) return;
+          addSketchDimension(radDim);
           setStatusMessage(`Radial dimension added: r=${entity.radius.toFixed(2)}`);
           return;
         }
@@ -1110,7 +1155,7 @@ export function useSketchDimensionTool({
           rejectDuplicateDimension();
           return;
         }
-        addSketchDimension({
+        const arcLenDim: SketchDimension = {
           id: crypto.randomUUID(),
           type: 'arc-length',
           entityIds: [entity.id],
@@ -1118,7 +1163,9 @@ export function useSketchDimensionTool({
           position: dimension.textPosition,
           driven: dimensionDrivenMode,
           ...buildToleranceFields(),
-        });
+        };
+        if (interceptAndClearPreview(arcLenDim)) return;
+        addSketchDimension(arcLenDim);
         setStatusMessage(`Arc length dimension added: ${dimension.value.toFixed(2)}`);
       }
     };

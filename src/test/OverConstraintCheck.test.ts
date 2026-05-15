@@ -28,6 +28,28 @@ const line = (id: string, x0: number, x1: number): SketchEntity => ({
   ],
 });
 
+const circle = (id: string, radius: number): SketchEntity => ({
+  id,
+  type: 'circle',
+  points: [{ id: `${id}-c`, x: 0, y: 0, z: 0 }],
+  radius,
+});
+
+const radialDim = (
+  id: string,
+  entityId: string,
+  value: number,
+  type: 'radial' | 'diameter' = 'radial',
+  driven = false,
+): SketchDimension => ({
+  id,
+  type,
+  entityIds: [entityId],
+  value,
+  position: { x: 4, y: 4 },
+  driven,
+});
+
 const lengthDim = (
   id: string,
   entityId: string,
@@ -67,6 +89,42 @@ describe('wouldOverConstrain', () => {
     // false before any trial solve runs.
     const sketch = mkSketch([line('line-a', 0, 14)], [lengthDim('dim-1', 'line-a', 10)]);
     const candidate = lengthDim('dim-2', 'line-a', 25, /* driven */ true);
+
+    expect(wouldOverConstrain(sketch, candidate)).toBe(false);
+  });
+
+  // Type-coverage proof for the universal guard: radial and diameter
+  // dimensions go through the SAME wouldOverConstrain predicate (via
+  // dimensionsToSolverConstraints → dimension-radial / dimension-diameter
+  // residuals), so the shared interceptOverConstraint helper now wired into
+  // the inferred circle→diameter / arc→radial / explicit arc-length add sites
+  // gets real coverage — not just linear/aligned.
+  it('(d) a redundant radial dimension on an already radius-constrained circle over-constrains → true', () => {
+    // circle-a's radius (5) is already pinned by a driving radial dim; a
+    // second NON-driven radial demanding 9 on the same circle cannot also be
+    // satisfied (radius is not a solver DOF) ⇒ trial solve fails.
+    const sketch = mkSketch([circle('circle-a', 5)], [radialDim('rad-1', 'circle-a', 5)]);
+    const candidate = radialDim('rad-2', 'circle-a', 9);
+
+    expect(wouldOverConstrain(sketch, candidate)).toBe(true);
+  });
+
+  it('(e) a conflicting diameter dimension on a radius-constrained circle over-constrains → true', () => {
+    // Same circle, but the redundant candidate is a DIAMETER (18 ⇒ r=9),
+    // conflicting with the existing radial (r=5). Proves the diameter branch
+    // of dimensionsToSolverConstraints is exercised by the same predicate.
+    const sketch = mkSketch([circle('circle-a', 5)], [radialDim('rad-1', 'circle-a', 5)]);
+    const candidate = radialDim('dia-1', 'circle-a', 18, 'diameter');
+
+    expect(wouldOverConstrain(sketch, candidate)).toBe(true);
+  });
+
+  it('(f) a driven conflicting radial candidate never over-constrains → false', () => {
+    // Same conflicting circle setup as (d) but the candidate is driven
+    // (reference) — short-circuits before the trial solve, exactly like (c)
+    // for linear. This is what the "Create driven dimension" fallback yields.
+    const sketch = mkSketch([circle('circle-a', 5)], [radialDim('rad-1', 'circle-a', 5)]);
+    const candidate = radialDim('rad-2', 'circle-a', 9, 'radial', /* driven */ true);
 
     expect(wouldOverConstrain(sketch, candidate)).toBe(false);
   });
