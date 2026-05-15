@@ -29,6 +29,7 @@ export function CameraCaptureSection({ testType, printerId, framesCount, onFrame
       ) : (
         <p className="calib-step__muted">
           Capture or upload clear photos of the print to enable AI-assisted analysis.
+          Multiple frames give the AI a stronger signal — 2-4 complementary views are ideal.
           {framesCount > 0 && <> &nbsp;<strong>{framesCount}</strong> frame(s) attached.</>}
         </p>
       )}

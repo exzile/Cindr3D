@@ -1,8 +1,18 @@
 import { useMemo } from 'react';
 import { useSlicerStore } from '../../../../store/slicerStore';
-import { tuningKindForTest, isPressureAdvanceTest, isFirstLayerTest } from './inspectHelpers';
+import {
+  tuningKindForTest,
+  isPressureAdvanceTest,
+  isFirstLayerTest,
+  isTemperatureTowerTest,
+  isRetractionTest,
+  isMaxVolSpeedTest,
+} from './inspectHelpers';
 import { derivePressureAdvanceContext } from './paContext';
 import { deriveFirstLayerContext } from './firstLayerContext';
+import { deriveTemperatureContext } from './temperatureContext';
+import { deriveRetractionContext } from './retractionContext';
+import { deriveMaxVolSpeedContext } from './maxVolSpeedContext';
 import type { InspectTestContext } from './types';
 
 /**
@@ -28,6 +38,15 @@ export function useTestContext(testType: string): InspectTestContext {
     } else if (isFirstLayerTest(testType)) {
       const fl = deriveFirstLayerContext(printerProfile, printProfile, materialProfile);
       if (fl) ctx.firstLayer = fl;
+    } else if (isTemperatureTowerTest(testType)) {
+      const t = deriveTemperatureContext(printProfile);
+      if (t) ctx.temperature = t;
+    } else if (isRetractionTest(testType)) {
+      const r = deriveRetractionContext(printProfile);
+      if (r) ctx.retraction = r;
+    } else if (isMaxVolSpeedTest(testType)) {
+      const m = deriveMaxVolSpeedContext(printProfile);
+      if (m) ctx.maxVolSpeed = m;
     }
 
     return ctx;

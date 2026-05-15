@@ -86,12 +86,18 @@ function kindGuidance(kind: TuningWizardKind): string[] {
       ];
     case 'retraction':
       return [
-        'Retraction: score stringing, blobs, and under-extrusion after travels; bestValue is retraction distance in millimeters.',
+        'Retraction tower: each band prints the same travel-heavy hop at a different retraction distance.',
+        'When startValue/stepPerMm/towerHeightMm are provided the tower ramps retraction linearly over Z — return bestHeightMm at the cleanest band and compute bestValue = startValue + bestHeightMm * stepPerMm.',
+        'Score the travels (not the tower walls) for stringing, blobs, and under-extrusion at the start of the next move.',
+        'Prefer the lowest retraction distance that produces clean travels — too much retraction shows as under-extrusion at travel ends.',
+        'bestValue is retraction distance in millimeters (typically 0.2 - 6 mm; direct drive uses small values, Bowden uses larger).',
       ];
     case 'temperature':
       return [
-        'Temperature tower: pick the best temperature band from surface finish, bridging, stringing, and layer bonding clues.',
-        'bestValue is nozzle temperature in Celsius.',
+        'Temperature tower: each band prints at a different nozzle temperature, hotter at the bottom and cooler toward the top.',
+        'When startValue/stepPerMm/towerHeightMm are provided the temperature steps linearly over Z — return bestHeightMm at the cleanest band and compute bestValue = startValue + bestHeightMm * stepPerMm.',
+        'Compare bridges, overhangs, stringing, surface finish, and inter-layer bonding across bands; the best band balances bridging quality (favours hotter) with stringing/sag (favours cooler).',
+        'bestValue is nozzle temperature in degrees Celsius — round to the nearest integer (no fractional degrees).',
       ];
     case 'first-layer-squish':
       return [
@@ -113,7 +119,10 @@ function kindGuidance(kind: TuningWizardKind): string[] {
       ];
     case 'max-volumetric-speed':
       return [
-        'Max volumetric speed: find the highest clean speed/flow band before under-extrusion; bestValue is mm3/s.',
+        'Max volumetric speed: the test is a single-wall vase printed with a continuous feed-rate ramp (M220 percent) over Z.',
+        'When startValue/stepPerMm/towerHeightMm are provided the percent steps linearly over Z; return bestHeightMm at the LAST clean Z (just below the height where the wall first turns rough or gappy).',
+        'Inspect the wall for under-extrusion lines, gaps, or rough texture — these mark the point the hot-end could no longer melt filament fast enough.',
+        'Operator notes carry the base print speed (mm/s) and line width — convert the bestHeightMm into a feed-rate percent, then percent * baseSpeed * lineWidth * layerHeight = mm3/s; report bestValue in mm3/s with one decimal.',
       ];
     case 'firmware-health':
       return [
@@ -125,6 +134,12 @@ function kindGuidance(kind: TuningWizardKind): string[] {
 }
 
 export function buildTuningPrompt(input: AnalyzeTuningTowerInput): string {
+  const crossFrameLines = input.frames.length > 1
+    ? [
+        `You will see ${input.frames.length} camera frames of the SAME print. Treat them as complementary views — look for observations that AGREE across frames and weight those higher in your evidence.`,
+        'If observations DISAGREE across frames (e.g. one shows good corners and another shows bulge), say so in evidence and LOWER confidence rather than guessing.',
+      ]
+    : [];
   return [
     'You are Cindr3D auto-tune vision analysis. Analyze calibration tower camera frames and recommend only the measured setting.',
     'The printer remains under operator control; do not claim to start, stop, or modify the printer.',
@@ -134,6 +149,7 @@ export function buildTuningPrompt(input: AnalyzeTuningTowerInput): string {
     'Keep confidence separate from the recommended value: confidence is 0..1, bestValue is the final numeric recommendation only when supported.',
     'For pressure-advance, bestValue = startValue + bestHeightMm * stepPerMm when a best height is visible.',
     'For first-layer-squish, bestValue is suggested Z-offset delta in millimeters.',
+    ...crossFrameLines,
     ...kindGuidance(input.context.kind),
     'settingTweaks may include safe app tools such as slicer_set_material_setting, slicer_set_setting, printer_set_baby_step, printer_set_speed_factor, printer_set_flow_factor, or printer_set_fan_speed.',
     `Context: ${JSON.stringify(input.context)}`,

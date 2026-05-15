@@ -4,15 +4,30 @@ interface ManualFieldsProps {
   paValue?: number | null;
   /** Controlled value for the first-layer Z-offset delta — used so AI auto-fill is reflected in the input. */
   firstLayerValue?: number | null;
+  /** Controlled value for the temperature-tower field — populated from AI. */
+  temperatureValue?: number | null;
+  /** Controlled value for the retraction-distance field — populated from AI. */
+  retractionValue?: number | null;
+  /** Controlled value for the max-volumetric-speed field — populated from AI. */
+  maxVolSpeedValue?: number | null;
   onMeasurement: (key: string, value: number) => void;
 }
 
 /**
- * Per-test manual measurement inputs. Most fields are uncontrolled (the wizard
- * only needs the final value reported via onMeasurement), but pressure-advance
- * and first-layer are controlled so the AI recommendation can populate them.
+ * Per-test manual measurement inputs. Each tower-style test that supports AI
+ * auto-fill exposes a controlled value so the recommendation can populate the
+ * input; non-tower tests are uncontrolled (only the final value is propagated
+ * via onMeasurement).
  */
-export function ManualFields({ testType, paValue, firstLayerValue, onMeasurement }: ManualFieldsProps) {
+export function ManualFields({
+  testType,
+  paValue,
+  firstLayerValue,
+  temperatureValue,
+  retractionValue,
+  maxVolSpeedValue,
+  onMeasurement,
+}: ManualFieldsProps) {
   if (testType === 'pressure-advance') return (
     <div className="calib-inspect-field">
       <span className="calib-inspect-field__label">Best PA value</span>
@@ -45,6 +60,7 @@ export function ManualFields({ testType, paValue, firstLayerValue, onMeasurement
       <input
         className="calib-inspect-field__input"
         type="number" step={1} min={150} max={320} placeholder="e.g. 215"
+        value={temperatureValue ?? ''}
         onChange={(e) => onMeasurement('value', Number(e.target.value))}
       />
       <span className="calib-inspect-field__unit">°C</span>
@@ -57,9 +73,23 @@ export function ManualFields({ testType, paValue, firstLayerValue, onMeasurement
       <input
         className="calib-inspect-field__input"
         type="number" step={0.1} min={0} placeholder="e.g. 1.0"
+        value={retractionValue ?? ''}
         onChange={(e) => onMeasurement('value', Number(e.target.value))}
       />
       <span className="calib-inspect-field__unit">mm</span>
+    </div>
+  );
+
+  if (testType === 'max-volumetric-speed') return (
+    <div className="calib-inspect-field">
+      <span className="calib-inspect-field__label">Max volumetric flow</span>
+      <input
+        className="calib-inspect-field__input"
+        type="number" step={0.1} min={0} placeholder="e.g. 11.5"
+        value={maxVolSpeedValue ?? ''}
+        onChange={(e) => onMeasurement('value', Number(e.target.value))}
+      />
+      <span className="calib-inspect-field__unit">mm³/s</span>
     </div>
   );
 
@@ -98,7 +128,7 @@ export function ManualFields({ testType, paValue, firstLayerValue, onMeasurement
     </div>
   );
 
-  // Generic fallback (e.g. dimensional-accuracy, max-volumetric-speed)
+  // Generic fallback (e.g. dimensional-accuracy)
   return (
     <div className="calib-inspect-field calib-inspect-field--full">
       <span className="calib-inspect-field__label">Observations / notes</span>

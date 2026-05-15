@@ -1,4 +1,5 @@
 import type { PrintProfile } from '../../../../types/slicer';
+import { deriveTowerContext } from './towerContextHelpers';
 import type { PressureAdvanceContext } from './types';
 
 /**
@@ -12,21 +13,11 @@ import type { PressureAdvanceContext } from './types';
 export function derivePressureAdvanceContext(
   printProfile: PrintProfile | undefined,
 ): PressureAdvanceContext | null {
-  const proc = printProfile?.layerProcessors?.find(
-    (p) => p.kind === 'tuning-tower' && p.tuningParameter === 'pressure-advance',
-  );
-  if (!proc) return null;
-
-  const startZ     = proc.tuningStartZ     ?? 0;
-  const endZ       = proc.tuningEndZ       ?? 50;
-  const startValue = proc.tuningStartValue ?? 0;
-  const endValue   = proc.tuningEndValue   ?? 0.1;
-  const stepSize   = proc.tuningStepSize   ?? 5;
-  const span = Math.max(0.001, endZ - startZ);
-  const stepPerMm = (endValue - startValue) / span;
-  const bandCount = stepSize > 0
-    ? Math.max(1, Math.round(span / stepSize) + 1)
-    : Math.round(span);
-
-  return { startValue, endValue, startZ, endZ, stepPerMm, stepSize, bandCount };
+  return deriveTowerContext(printProfile, 'pressure-advance', {
+    startZ:     0,
+    endZ:       50,
+    startValue: 0,
+    endValue:   0.1,
+    stepSize:   5,
+  });
 }
