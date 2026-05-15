@@ -1,8 +1,5 @@
 import { CheckCircle, Copy, Lock, LockOpen, RotateCcw, Ruler, TriangleAlert } from 'lucide-react';
-import type { MutableRefObject } from 'react';
 import { useCopyState } from '../hooks/useCopyState';
-
-interface ConfigGrid { xMin: number; xMax: number; yMin: number; yMax: number; numPoints: number }
 
 interface SafeBounds {
   xMin: number;
@@ -17,7 +14,6 @@ export function ProbeGridSection({
   configM557Line,
   probeGridUnlocked,
   setProbeGridUnlocked,
-  configGridRef,
   probeGridLocked,
   probeXMin, probeXMax, probeYMin, probeYMax, probePoints,
   setProbeXMin, setProbeXMax, setProbeYMin, setProbeYMax, setProbePoints,
@@ -33,7 +29,6 @@ export function ProbeGridSection({
   configM557Line: string | null;
   probeGridUnlocked: boolean;
   setProbeGridUnlocked: (next: boolean | ((v: boolean) => boolean)) => void;
-  configGridRef: MutableRefObject<ConfigGrid | null>;
   probeGridLocked: boolean;
   probeXMin: number; probeXMax: number; probeYMin: number; probeYMax: number; probePoints: number;
   setProbeXMin: (n: number) => void;

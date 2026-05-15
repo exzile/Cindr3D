@@ -10,7 +10,7 @@ import {
   Heatmap2D, Scene3D, getBedQuality,
   CAMERA_POSITIONS, type CameraPreset, type ConfiguredProbeGrid, type BedBounds,
 } from './heightMap/visualization';
-import { computeStats } from './heightMap/utils';
+import { computeStats, safeAxisRange } from './heightMap/utils';
 import {
   DEMO_HEIGHT_MAP, HM_PREFS_KEY, type HeightMapPrefs, loadHeightMapPrefs,
 } from './heightMap/prefs';
@@ -96,7 +96,7 @@ export default function DuetHeightMap() {
   const {
     probeXMin, probeXMax, probeYMin, probeYMax, probePoints,
     setProbeXMin, setProbeXMax, setProbeYMin, setProbeYMax, setProbePoints,
-    probeFromConfig, configM557Line, configGridRef, g31Offset, resetGrid,
+    probeFromConfig, configM557Line, g31Offset, resetGrid,
   } = useProbeGridConfig({
     service, connected, axes,
     initial: {
@@ -117,15 +117,13 @@ export default function DuetHeightMap() {
     const axXMax = xAxis?.max ?? 0;
     const axYMin = yAxis?.min ?? 0;
     const axYMax = yAxis?.max ?? 0;
-    // When the probe is to the LEFT of the nozzle (G31 X negative), the nozzle
-    // must be inset from the bed edge by |offset| so the probe stays on the bed.
-    //   safe_min = axisMin + max(0, -offset)
-    //   safe_max = axisMax + min(0, -offset)
+    const xRange = safeAxisRange(axXMin, axXMax, g31Offset.x);
+    const yRange = safeAxisRange(axYMin, axYMax, g31Offset.y);
     return {
-      xMin: axXMin + Math.max(0, -g31Offset.x),
-      xMax: axXMax > 0 ? axXMax + Math.min(0, -g31Offset.x) : null,
-      yMin: axYMin + Math.max(0, -g31Offset.y),
-      yMax: axYMax > 0 ? axYMax + Math.min(0, -g31Offset.y) : null,
+      xMin: xRange.min,
+      xMax: axXMax > 0 ? xRange.max : null,
+      yMin: yRange.min,
+      yMax: axYMax > 0 ? yRange.max : null,
     };
   }, [g31Offset, axes]);
 
@@ -192,7 +190,6 @@ export default function DuetHeightMap() {
     leveling,
     runLevel,
     smartCalRunning, smartCalPhase, smartCalResult, smartCalLiveSteps,
-    showSmartCalResultModal, setShowSmartCalResultModal,
     runSmartCal,
     clearSmartCalResult,
   } = runners;
@@ -289,7 +286,6 @@ export default function DuetHeightMap() {
         showProbeResultModal={showProbeResultModal}
         showLevelModal={showLevelModal}
         showSmartCalModal={showSmartCalModal}
-        showSmartCalResultModal={false}
         showSaveAsModal={showSaveAsModal}
         bedTiltContent={bedTiltContent}
         bedTiltDerived={bedTiltDerived}
@@ -322,8 +318,6 @@ export default function DuetHeightMap() {
         smartCalPhase={smartCalPhase}
         smartCalLiveSteps={smartCalLiveSteps}
         onClearSmartCal={clearSmartCalResult}
-        closeSmartCalResult={() => setShowSmartCalResultModal(false)}
-        reopenSmartCal={() => { setShowSmartCalResultModal(false); setShowSmartCalModal(true); }}
         closeSaveAs={() => setShowSaveAsModal(false)}
         onSaveAsConfirm={(name) => { setShowSaveAsModal(false); handleSaveAs(name); }}
       />
@@ -466,7 +460,6 @@ export default function DuetHeightMap() {
           configM557Line={configM557Line}
           probeGridUnlocked={probeGridUnlocked}
           setProbeGridUnlocked={setProbeGridUnlocked}
-          configGridRef={configGridRef}
           probeGridLocked={probeGridLocked}
           probeXMin={probeXMin}
           probeXMax={probeXMax}

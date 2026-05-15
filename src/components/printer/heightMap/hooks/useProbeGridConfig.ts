@@ -25,7 +25,7 @@ import {
 } from 'react';
 import type { DuetService } from '../../../../services/DuetService';
 import type { DuetAxis } from '../../../../types/duet';
-import { parseM557, parseProbeOffset } from '../utils';
+import { parseM557, parseProbeOffset, safeAxisRange } from '../utils';
 
 export interface ProbeGridState {
   probeXMin: number;
@@ -137,12 +137,12 @@ export function useProbeGridConfig(deps: UseProbeGridConfigDeps): UseProbeGridCo
         if (!unlockedRef.current) {
           // Adjust by G31 probe offset so the probe tip stays within bed bounds.
           // e.g. G31 X-25 → nozzle must be ≥25 mm from bed edge when probe is at X=0.
-          const ox = g31?.xOffset ?? 0;
-          const oy = g31?.yOffset ?? 0;
-          setProbeXMin(parsed.xMin + Math.max(0, -ox));
-          setProbeXMax(parsed.xMax + Math.min(0, -ox));
-          setProbeYMin(parsed.yMin + Math.max(0, -oy));
-          setProbeYMax(parsed.yMax + Math.min(0, -oy));
+          const xRange = safeAxisRange(parsed.xMin, parsed.xMax, g31?.xOffset ?? 0);
+          const yRange = safeAxisRange(parsed.yMin, parsed.yMax, g31?.yOffset ?? 0);
+          setProbeXMin(xRange.min);
+          setProbeXMax(xRange.max);
+          setProbeYMin(yRange.min);
+          setProbeYMax(yRange.max);
           setProbePoints(parsed.numPoints);
         }
       } catch {
@@ -175,36 +175,33 @@ export function useProbeGridConfig(deps: UseProbeGridConfigDeps): UseProbeGridCo
     if (last && last.xMax === xMax && last.yMax === yMax && last.g31x === ox && last.g31y === oy) return;
     lastAxesSeedRef.current = { xMax, yMax, g31x: ox, g31y: oy };
     // Apply G31 probe offset so the probe tip stays within bed bounds.
-    //   safe_min = axisMin + max(0, -offset)  — probe left/front of nozzle: push min inward
-    //   safe_max = axisMax + min(0, -offset)  — probe right/back of nozzle: pull max inward
-    setProbeXMin((xAxis.min ?? 0) + Math.max(0, -ox));
-    setProbeXMax(xMax + Math.min(0, -ox));
-    setProbeYMin((yAxis.min ?? 0) + Math.max(0, -oy));
-    setProbeYMax(yMax + Math.min(0, -oy));
+    const xRange = safeAxisRange(xAxis.min ?? 0, xMax, ox);
+    const yRange = safeAxisRange(yAxis.min ?? 0, yMax, oy);
+    setProbeXMin(xRange.min);
+    setProbeXMax(xRange.max);
+    setProbeYMin(yRange.min);
+    setProbeYMax(yRange.max);
   }, [axes, g31Offset]);
 
   /** Re-applies canonical values from config.g or the axes+G31 fallback. */
   const resetGrid = useCallback(() => {
+    const ox = g31Offset?.x ?? 0;
+    const oy = g31Offset?.y ?? 0;
     // Prefer the config.g M557 snapshot — it's the authoritative source.
     if (configGridRef.current) {
       const g = configGridRef.current;
-      const ox = g31Offset?.x ?? 0;
-      const oy = g31Offset?.y ?? 0;
-      setProbeXMin(g.xMin + Math.max(0, -ox));
-      setProbeXMax(g.xMax + Math.min(0, -ox));
-      setProbeYMin(g.yMin + Math.max(0, -oy));
-      setProbeYMax(g.yMax + Math.min(0, -oy));
+      const xRange = safeAxisRange(g.xMin, g.xMax, ox);
+      const yRange = safeAxisRange(g.yMin, g.yMax, oy);
+      setProbeXMin(xRange.min);
+      setProbeXMax(xRange.max);
+      setProbeYMin(yRange.min);
+      setProbeYMax(yRange.max);
       setProbePoints(g.numPoints);
       return;
     }
     // Fall back to axis limits + G31 offset calculation.
     // Clear the guard ref so the axes effect re-seeds even if axes haven't changed.
     lastAxesSeedRef.current = null;
-    const ox = g31Offset?.x ?? 0;
-    const oy = g31Offset?.y ?? 0;
-    // We can't re-trigger the useEffect imperatively, so compute directly here.
-    // The hook's `axes` dep is from the closure — read the latest value via the ref if needed.
-    // Since resetGrid is called from a user interaction, `axes` in the closure is current.
     if (!axes || axes.length < 2) return;
     const xAxis = axes.find((a) => a.letter === 'X') ?? axes[0];
     const yAxis = axes.find((a) => a.letter === 'Y') ?? axes[1];
@@ -212,10 +209,12 @@ export function useProbeGridConfig(deps: UseProbeGridConfigDeps): UseProbeGridCo
     const xMax = xAxis.max ?? 0;
     const yMax = yAxis.max ?? 0;
     if (xMax <= 10 || yMax <= 10) return;
-    setProbeXMin((xAxis.min ?? 0) + Math.max(0, -ox));
-    setProbeXMax(xMax + Math.min(0, -ox));
-    setProbeYMin((yAxis.min ?? 0) + Math.max(0, -oy));
-    setProbeYMax(yMax + Math.min(0, -oy));
+    const xRange = safeAxisRange(xAxis.min ?? 0, xMax, ox);
+    const yRange = safeAxisRange(yAxis.min ?? 0, yMax, oy);
+    setProbeXMin(xRange.min);
+    setProbeXMax(xRange.max);
+    setProbeYMin(yRange.min);
+    setProbeYMax(yRange.max);
   }, [axes, g31Offset]);
 
   return {

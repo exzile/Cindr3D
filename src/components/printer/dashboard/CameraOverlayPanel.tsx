@@ -10,7 +10,7 @@ import {
   type HomographyMatrix,
 } from '../../../services/vision/cameraMeasurement';
 import type { CameraPoseCalibration } from '../../../services/vision/cameraPose';
-import { ObjectContextMenu } from './MeshPreviewPanel';
+import { ObjectContextMenu } from './meshPreview/ObjectContextMenu';
 
 export type CameraOverlayMode = 'camera' | 'print' | 'both';
 

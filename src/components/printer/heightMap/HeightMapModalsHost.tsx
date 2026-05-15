@@ -17,7 +17,6 @@ import { ProbeResultsModal } from './modals/ProbeResultsModal';
 import { ProbeConfirmModal } from './modals/ProbeConfirmModal';
 import { LevelBedModal } from './modals/LevelBedModal';
 import { SmartCalModal } from './modals/SmartCalModal';
-import { SmartCalResultModal } from './modals/SmartCalResultModal';
 import { SaveAsModal } from './modals/SaveAsModal';
 
 export type ProbeResult = { stats: HeightMapStats | null; passes: number };
@@ -29,7 +28,6 @@ export function HeightMapModalsHost(props: {
   showProbeResultModal: boolean;
   showLevelModal: boolean;
   showSmartCalModal: boolean;
-  showSmartCalResultModal: boolean;
   showSaveAsModal: boolean;
 
   // Setup modal
@@ -66,8 +64,6 @@ export function HeightMapModalsHost(props: {
   smartCalPhase: 'homing' | 'leveling' | 'probing' | 'datum' | null;
   smartCalLiveSteps: SmartCalStep[];
   onClearSmartCal: () => void;
-  closeSmartCalResult: () => void;
-  reopenSmartCal: () => void;
 
   // Save As
   closeSaveAs: () => void;
@@ -119,13 +115,6 @@ export function HeightMapModalsHost(props: {
           liveSteps={props.smartCalLiveSteps}
           result={props.smartCalResult}
           onClear={props.onClearSmartCal}
-        />
-      )}
-      {props.showSmartCalResultModal && props.smartCalResult && (
-        <SmartCalResultModal
-          result={props.smartCalResult}
-          onClose={props.closeSmartCalResult}
-          onRunAgain={props.reopenSmartCal}
         />
       )}
       {props.showSaveAsModal && (
