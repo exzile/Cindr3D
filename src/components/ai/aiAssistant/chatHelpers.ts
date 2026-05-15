@@ -45,9 +45,9 @@ export async function dispatchTool(
   }
 }
 
-export function buildApiMessages(messages: ChatMessage[]): ApiMessage[] {
+export function buildApiMessages(messages: ChatMessage[], systemPrompt: string = AI_SYSTEM_PROMPT): ApiMessage[] {
   return [
-    { role: 'system', content: AI_SYSTEM_PROMPT },
+    { role: 'system', content: systemPrompt },
     ...messages.flatMap((m): ApiMessage[] => {
       if (m.role === 'user') return [{ role: 'user', content: m.content }];
       if (m.role === 'assistant') return [{ role: 'assistant', content: m.content }];

@@ -8,6 +8,7 @@ import { useThemeStore } from '../../store/themeStore';
 import { getDuetPrefs } from '../../utils/duetPrefs';
 import DuetMessageBox from './DuetMessageBox';
 import PrinterAlerts from './PrinterAlerts';
+import { LiveFailureMonitorCard } from './quality/LiveFailureMonitorCard';
 import './DuetAnalytics.css';
 import { type TabKey, TAB_COMPONENTS } from './duetPrinterPanel/config';
 import { MobilePrinterTabSheet, PanelBanners, PanelFooter, PanelHeader, PanelTabBar } from './duetPrinterPanel/chrome';
@@ -272,6 +273,12 @@ export default function DuetPrinterPanel({ fullscreen = false }: { fullscreen?: 
       {!fullscreen && <PanelTabBar activeTab={activeTab as TabKey} boardType={boardType} onTabChange={setPanelTab} />}
 
       <PrinterAlerts />
+
+      {connected && (activeTab === 'dashboard' || activeTab === 'camera' || activeTab === 'status') && (
+        <div style={{ padding: '8px 10px 0' }}>
+          <LiveFailureMonitorCard />
+        </div>
+      )}
 
       <div
         style={{

@@ -3,6 +3,7 @@ import type { CADState } from '../../state';
 import type { Sketch } from '../../../../types/cad';
 import { evaluateExpression } from '../../../../utils/expressionEval';
 import { applyDimensionResize } from '../../../../engine/dimensionResizeUtils';
+import { wouldOverConstrain } from '../../../../engine/overConstraintCheck';
 
 export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -50,7 +51,7 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
   cancelSketchTextTool: () => set({ activeTool: 'select', statusMessage: 'Sketch Text cancelled' }),
 
   // â”€â”€â”€ D28: Dimension tool â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  activeDimensionType: 'linear',
+  activeDimensionType: 'auto',
   dimensionOffset: 10,
   dimensionDrivenMode: false,
   dimensionOrientation: 'auto',
@@ -59,6 +60,7 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
   dimensionToleranceLower: 0.1,
   pendingDimensionEntityIds: [],
   dimensionHoverEntityId: null,
+  dimensionPreview: null,
   pendingNewDimensionId: null,
 
   // ─── Dimension editor overlay ──────────────────────────────────────────────
@@ -97,6 +99,36 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
     const dimension = (activeSketch.dimensions ?? []).find((d) => d.id === sketchDimEditId);
     if (!dimension) return;
     const updatedDimension = { ...dimension, value: nextValue };
+
+    // Fusion-style over-constraint interception on edit. Build the trial
+    // sketch with the OLD entry of this dimension removed, then ask whether
+    // re-adding it with the new value would over-constrain. Driven dims
+    // short-circuit (they never reach the solver). On a positive hit do NOT
+    // apply the value — raise the driven-dimension prompt instead.
+    if (!updatedDimension.driven) {
+      const sketchWithoutThisDim: Sketch = {
+        ...activeSketch,
+        dimensions: (activeSketch.dimensions ?? []).filter((d) => d.id !== sketchDimEditId),
+      };
+      if (wouldOverConstrain(sketchWithoutThisDim, updatedDimension)) {
+        set({
+          pendingOverConstraint: {
+            dimension: updatedDimension,
+            activeSketchId: activeSketch.id,
+            mode: 'edit',
+            previousValue: dimension.value,
+          },
+          pendingNewDimensionId: null,
+          pendingDimensionEntityIds: [],
+          dimensionPreview: null,
+          sketchDimEditId: null,
+          sketchDimEditValue: '',
+          sketchDimEditIsNew: false,
+        });
+        return;
+      }
+    }
+
     const applyToSketch = (sketch: Sketch): Sketch => {
       if (sketch.id !== activeSketch.id) return sketch;
       const withUpdatedDim = {
@@ -116,6 +148,7 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
       statusMessage: `Dimension updated: ${nextValue.toFixed(2)}`,
       pendingNewDimensionId: null,
       pendingDimensionEntityIds: [],
+      dimensionPreview: null,
       sketchDimEditId: null,
       sketchDimEditValue: '',
       sketchDimEditIsNew: false,
@@ -128,12 +161,64 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
     set({
       pendingNewDimensionId: null,
       pendingDimensionEntityIds: [],
+      dimensionPreview: null,
       sketchDimEditId: null,
       sketchDimEditValue: '',
       sketchDimEditIsNew: false,
       sketchDimEditTypeahead: [],
     });
     if (wasNew) get().undo?.();
+  },
+
+  // ─── Over-constraint prompt (Fusion-style driven-dimension fallback) ───────
+  pendingOverConstraint: null,
+  resolveOverConstraintAsDriven: () => {
+    const pending = get().pendingOverConstraint;
+    if (!pending) return;
+    const { activeSketch } = get();
+    if (!activeSketch || activeSketch.id !== pending.activeSketchId) {
+      set({ pendingOverConstraint: null });
+      return;
+    }
+    // Make the candidate a driven (reference) dimension: no resize, no solver,
+    // no value editor. Driven dims never reach the solver so they cannot
+    // over-constrain. The add path appends it; the edit path replaces the
+    // existing entry (keeping the new value as a reference annotation).
+    const drivenDim = { ...pending.dimension, driven: true };
+    get().pushUndo?.();
+    const applyToSketch = (sketch: Sketch): Sketch => {
+      if (sketch.id !== pending.activeSketchId) return sketch;
+      const dims = sketch.dimensions ?? [];
+      const nextDims =
+        pending.mode === 'edit' && dims.some((d) => d.id === drivenDim.id)
+          ? dims.map((d) => (d.id === drivenDim.id ? drivenDim : d))
+          : [...dims, drivenDim];
+      return { ...sketch, dimensions: nextDims };
+    };
+    set({
+      activeSketch: applyToSketch(get().activeSketch ?? activeSketch),
+      sketches: get().sketches.map(applyToSketch),
+      pendingOverConstraint: null,
+      statusMessage: `Driven (reference) dimension created: ${drivenDim.value.toFixed(2)}`,
+    });
+    // No solveSketch(): driven dims are annotation-only, geometry is unchanged.
+  },
+  cancelOverConstraint: () => {
+    const pending = get().pendingOverConstraint;
+    if (!pending) {
+      set({ pendingOverConstraint: null });
+      return;
+    }
+    // Add path: nothing was added — just clear. Edit path: nothing was applied
+    // either (interception happens BEFORE mutation), so reverting is also a
+    // no-op beyond clearing the prompt and restoring the editor's status.
+    set({
+      pendingOverConstraint: null,
+      statusMessage:
+        pending.mode === 'edit'
+          ? `Reverted to ${pending.previousValue?.toFixed(2) ?? 'previous value'}`
+          : 'Over-constraining dimension discarded',
+    });
   },
 
   setActiveDimensionType: (t) => set({ activeDimensionType: t }),
@@ -149,9 +234,9 @@ export function createSketchUiActions({ set, get }: CADSliceContext): Partial<CA
       set({ statusMessage: 'Open a sketch first before using the Dimension tool' });
       return;
     }
-    set({ activeTool: 'dimension', pendingDimensionEntityIds: [], dimensionHoverEntityId: null, statusMessage: 'Dimension â€” click entities to measure' });
+    set({ activeTool: 'dimension', pendingDimensionEntityIds: [], dimensionHoverEntityId: null, dimensionPreview: null, statusMessage: 'Dimension â€” click entities to measure' });
   },
-  cancelDimensionTool: () => set({ activeTool: 'select', pendingDimensionEntityIds: [], dimensionHoverEntityId: null, statusMessage: 'Dimension tool cancelled' }),
+  cancelDimensionTool: () => set({ activeTool: 'select', pendingDimensionEntityIds: [], dimensionHoverEntityId: null, dimensionPreview: null, statusMessage: 'Dimension tool cancelled' }),
   addPendingDimensionEntity: (id) => set((state) => ({
     pendingDimensionEntityIds: state.pendingDimensionEntityIds.includes(id)
       ? state.pendingDimensionEntityIds

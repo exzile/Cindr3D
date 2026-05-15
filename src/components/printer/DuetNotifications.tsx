@@ -10,6 +10,8 @@ import { useDoorSensorIntegration } from './duetNotifications/useDoorSensorInteg
 import { usePrintRecovery } from './duetNotifications/usePrintRecovery';
 import { useStatusTransitions } from './duetNotifications/useStatusTransitions';
 import { useHomeAssistantCommandPoller } from './duetNotifications/useHomeAssistantCommandPoller';
+import { usePrintCompletionScore } from '../../hooks/usePrintCompletionScore';
+import { useLayerFailureSampler } from '../../hooks/useLayerFailureSampler';
 import { usePrinterStore } from '../../store/printerStore';
 
 export default function DuetNotifications() {
@@ -24,6 +26,11 @@ export default function DuetNotifications() {
   useDoorSensorIntegration(addToast, dispatchIntegrationEvent);
   useStatusTransitions(addToast, dispatchIntegrationEvent);
   useHomeAssistantCommandPoller(buildSnapshot);
+  usePrintCompletionScore();
+  // Layer-by-layer proactive failure detection — runs the vision detector
+  // every N layers of a live print, records results to useVisionStore, and
+  // (optionally) auto-pauses on high-confidence failures.
+  useLayerFailureSampler({ layerStep: 5 });
 
   const { recoverySnapshot, recoveryBusy, handleResumeRecovery, dismissRecoverySnapshot } = usePrintRecovery(addToast);
 

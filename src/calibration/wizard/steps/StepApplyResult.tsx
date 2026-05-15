@@ -7,7 +7,14 @@ import {
 import { usePrinterStore } from '../../../store/printerStore';
 import { useSlicerStore } from '../../../store/slicerStore';
 import type { TuningTowerRecommendation } from '../../../services/vision/tuningWizards';
+import type { VisionFrameSample } from '../../../services/vision/failureDetector';
 import type { PrinterProfile } from '../../../types/slicer';
+import {
+  dataUrlToBlob,
+  saveCalibrationPhotos,
+  type CalibrationPhotoRecord,
+} from '../../../services/calibration/calibrationPhotoStore';
+import { generateId } from '../../../utils/generateId';
 import {
   buildConfigSnapshotInstructions,
   buildFlowRateCommands,
@@ -26,6 +33,8 @@ interface StepApplyResultProps {
   printerId: string;
   recommendation: TuningTowerRecommendation | null;
   manualMeasurements: Record<string, number>;
+  /** Photos captured during the Inspect step — persisted to IDB on save. */
+  frames: VisionFrameSample[];
   onDone: () => void;
 }
 
@@ -81,9 +90,11 @@ export function StepApplyResult({
   printerId,
   recommendation,
   manualMeasurements,
+  frames,
   onDone,
 }: StepApplyResultProps) {
   const [sendError, setSendError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const printers     = usePrinterStore((state) => state.printers);
   const sendGCode    = usePrinterStore((state) => state.sendGCode);
   const model        = usePrinterStore((state) => state.model);
@@ -105,15 +116,42 @@ export function StepApplyResult({
   const saveConfigNote = getSaveConfigNote(firmware);
   const measurementEntries = Object.entries(manualMeasurements);
 
-  const saveResult = () => {
+  const saveResult = async () => {
+    setSaving(true);
+    setSendError(null);
+    const resultId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : Date.now().toString();
+    const itemId = itemIdForTest(testType);
+
+    // Persist captured photos to IDB so the history view can render thumbnails
+    // after a page reload. Failure to write photos must not block saving the
+    // numeric result — we degrade gracefully to photoIds: [].
+    const photoIds: string[] = [];
+    if (frames.length > 0) {
+      const records: CalibrationPhotoRecord[] = frames.map((frame) => ({
+        id: generateId('calib-photo'),
+        printerId,
+        itemId,
+        resultId,
+        capturedAt: frame.capturedAt,
+        mimeType: frame.mimeType,
+        blob: dataUrlToBlob(frame.dataUrl),
+      }));
+      try {
+        await saveCalibrationPhotos(records);
+        photoIds.push(...records.map((r) => r.id));
+      } catch (caught) {
+        setSendError(`Photo save failed: ${caught instanceof Error ? caught.message : String(caught)}`);
+      }
+    }
+
     const result: CalibrationResult = {
-      id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : Date.now().toString(),
+      id: resultId,
       recordedAt: Date.now(),
       appliedValue: recommendation?.bestValue ?? manualMeasurements.value ?? manualMeasurements.freqX ?? null,
       measurements: manualMeasurements,
-      photoIds: [],
+      photoIds,
       aiConfidence: recommendation?.confidence ?? null,
       note: recommendation?.summary ?? '',
       // Firmware snapshot — lets history show exactly what was running at calibration time.
@@ -122,7 +160,8 @@ export function StepApplyResult({
       // Spool context from the active wizard session.
       spoolId: activeSession?.spoolId || undefined,
     };
-    useCalibrationStore.getState().addCalibrationResult(printerId, itemIdForTest(testType), result);
+    useCalibrationStore.getState().addCalibrationResult(printerId, itemId, result);
+    setSaving(false);
     onDone();
   };
 
@@ -209,8 +248,8 @@ export function StepApplyResult({
           {sendError && <span className="calib-step__error">{sendError}</span>}
         </div>
       )}
-      <button type="button" onClick={saveResult}>
-        Save result
+      <button type="button" onClick={() => void saveResult()} disabled={saving}>
+        {saving ? 'Saving…' : `Save result${frames.length > 0 ? ` (+${frames.length} photo${frames.length === 1 ? '' : 's'})` : ''}`}
       </button>
     </div>
   );

@@ -212,6 +212,7 @@ export function CalibrationWizard({ testType, printerId, sessionId, onClose }: C
             printerId={resolvedPrinterId}
             recommendation={state.recommendation}
             manualMeasurements={state.manualMeasurements}
+            frames={state.frames}
             onDone={handleFinish}
           />
         );

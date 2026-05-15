@@ -26,6 +26,57 @@ describe('tuningWizards helpers', () => {
     expect(prompt).toContain('Evidence must cite visible observations');
   });
 
+  it('cross-frame instruction is added when multiple frames are provided', () => {
+    const multiFramePrompt = buildTuningPrompt({
+      frames: [
+        {
+          cameraId: 'cam-1',
+          cameraLabel: 'Front',
+          capturedAt: 1000,
+          mimeType: 'image/jpeg',
+          dataUrl: 'data:image/jpeg;base64,AA==',
+          size: 1,
+        },
+        {
+          cameraId: 'cam-2',
+          cameraLabel: 'Side',
+          capturedAt: 1001,
+          mimeType: 'image/jpeg',
+          dataUrl: 'data:image/jpeg;base64,BB==',
+          size: 1,
+        },
+      ],
+      provider: { provider: 'openai', model: 'gpt-4o', apiKey: 'test' },
+      context: {
+        kind: 'pressure-advance',
+        printer: { printerId: 'p1', printerName: 'Voron', status: 'processing' },
+      },
+    });
+
+    expect(multiFramePrompt).toContain('complementary views');
+    expect(multiFramePrompt).toContain('AGREE across frames');
+
+    const singleFramePrompt = buildTuningPrompt({
+      frames: [
+        {
+          cameraId: 'cam-1',
+          cameraLabel: 'Front',
+          capturedAt: 1000,
+          mimeType: 'image/jpeg',
+          dataUrl: 'data:image/jpeg;base64,AA==',
+          size: 1,
+        },
+      ],
+      provider: { provider: 'openai', model: 'gpt-4o', apiKey: 'test' },
+      context: {
+        kind: 'pressure-advance',
+        printer: { printerId: 'p1', printerName: 'Voron', status: 'processing' },
+      },
+    });
+
+    expect(singleFramePrompt).not.toContain('complementary views');
+  });
+
   it('builds a deterministic recommendation report', () => {
     const report = buildTuningRecommendationReport({
       generatedAt: 1234,

@@ -1,5 +1,6 @@
 import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import type { DimensionToolType } from '../../../types/cad';
 import './SketchPalette.css';
 
 export default function SketchDimensionPanel() {
@@ -23,6 +24,7 @@ export default function SketchDimensionPanel() {
   if (activeTool !== 'dimension') return null;
 
   const hints: Record<string, string> = {
+    auto: 'Click an entity — type is inferred (Fusion-style)',
     linear: 'Click two points or one line',
     angular: 'Click two lines sharing a vertex',
     radial: 'Click a circle or arc',
@@ -48,10 +50,9 @@ export default function SketchDimensionPanel() {
           <select
             className="sketch-palette-input--narrow"
             value={activeDimensionType}
-            onChange={(e) => setActiveDimensionType(
-              e.target.value as 'linear' | 'angular' | 'radial' | 'diameter' | 'arc-length' | 'aligned'
-            )}
+            onChange={(e) => setActiveDimensionType(e.target.value as DimensionToolType)}
           >
+            <option value="auto">Auto (smart)</option>
             <option value="linear">Linear</option>
             <option value="angular">Angular</option>
             <option value="radial">Radial</option>
@@ -75,8 +76,10 @@ export default function SketchDimensionPanel() {
           />
         </div>
 
-        {/* CORR-1: Orientation — only meaningful for linear/aligned */}
-        {(activeDimensionType === 'linear' || activeDimensionType === 'aligned') && (
+        {/* CORR-1: Orientation — only meaningful for auto/linear/aligned */}
+        {(activeDimensionType === 'auto' ||
+          activeDimensionType === 'linear' ||
+          activeDimensionType === 'aligned') && (
           <div className="sketch-palette-row">
             <span className="sketch-palette-label">Orientation</span>
             <select

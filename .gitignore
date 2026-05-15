@@ -38,7 +38,7 @@ nuget.config
 .claude/
 CLAUDE.md
 .codex/
-memory/
+# memory/ is committed — project memory persists across local + remote sessions
 
 # GitNexus local code graph cache
 .gitnexus/

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Parameter, SketchDimension } from '../../../types/cad';
+import type { DimensionToolType, Parameter, SketchDimension } from '../../../types/cad';
 import type { ExtrudeDirection, ExtrudeOperation } from '../../../types/cad-extrude.types';
 
 export interface CADModelingState {
@@ -321,7 +321,7 @@ export interface CADModelingState {
   cancelSketchTextTool: () => void;
 
   // D28 — Dimension tool
-  activeDimensionType: 'linear' | 'angular' | 'radial' | 'diameter' | 'arc-length' | 'aligned';
+  activeDimensionType: DimensionToolType;
   dimensionOffset: number;
   /** SK-A3: when true, newly created dimensions are marked driven (reference) */
   dimensionDrivenMode: boolean;
@@ -333,6 +333,11 @@ export interface CADModelingState {
   dimensionToleranceLower: number;
   pendingDimensionEntityIds: string[];
   dimensionHoverEntityId: string | null;
+  /**
+   * Transient Fusion-style ghost dimension that rubber-bands with the cursor
+   * while a placement is pending. Never persisted (not in partialize).
+   */
+  dimensionPreview: SketchDimension | null;
   pendingNewDimensionId: string | null;
   // Dimension editor overlay (rendered in ViewportPanels, outside the WebGL canvas)
   sketchDimEditId: string | null;
@@ -347,7 +352,24 @@ export interface CADModelingState {
   setSketchDimEditTypeahead: (items: Parameter[]) => void;
   commitSketchDimEdit: (rawValue: string) => void;
   cancelSketchDimEdit: () => void;
-  setActiveDimensionType: (t: 'linear' | 'angular' | 'radial' | 'diameter' | 'arc-length' | 'aligned') => void;
+
+  /**
+   * Fusion-style over-constraint prompt. Transient: set when a non-driven
+   * dimension would over-constrain the sketch (intercepted BEFORE any
+   * mutation), cleared by the dialog's Create-driven / Cancel actions. Never
+   * persisted (absent from persistConfig.partialize).
+   */
+  pendingOverConstraint: {
+    dimension: SketchDimension;
+    activeSketchId: string;
+    mode: 'add' | 'edit';
+    previousValue?: number;
+  } | null;
+  /** Resolve the prompt by committing the candidate as a driven (reference) dimension. */
+  resolveOverConstraintAsDriven: () => void;
+  /** Resolve the prompt by discarding (add) / reverting (edit) — no change persisted. */
+  cancelOverConstraint: () => void;
+  setActiveDimensionType: (t: DimensionToolType) => void;
   setDimensionOffset: (v: number) => void;
   setDimensionDrivenMode: (v: boolean) => void;
   setDimensionOrientation: (v: 'horizontal' | 'vertical' | 'auto') => void;

@@ -1,0 +1,112 @@
+.print-quality-card {
+  --quality-accent: var(--accent);
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 10px;
+  align-items: stretch;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--quality-accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--quality-accent) 4%, var(--bg-panel));
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.print-quality-card--ok   { --quality-accent: #22c55e; }
+.print-quality-card--warn { --quality-accent: #f59e0b; }
+.print-quality-card--fail { --quality-accent: #ef4444; }
+
+.print-quality-card__thumb {
+  width: 96px;
+  height: 72px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--quality-accent) 8%, var(--bg-secondary));
+  border: 1px solid color-mix(in srgb, var(--quality-accent) 30%, var(--border));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.print-quality-card__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.print-quality-card__thumb-empty {
+  color: var(--text-secondary);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.print-quality-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.print-quality-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.print-quality-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--quality-accent) 15%, var(--bg-secondary));
+  border: 1px solid color-mix(in srgb, var(--quality-accent) 45%, var(--border));
+  color: var(--quality-accent);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.print-quality-card__when {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.print-quality-card__filename {
+  color: var(--text-primary);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.print-quality-card__summary {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.print-quality-card__causes {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 2px;
+  color: var(--text-secondary);
+}
+
+.print-quality-card__causes li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.print-quality-card__confidence {
+  font-variant-numeric: tabular-nums;
+  color: var(--quality-accent);
+  font-weight: 600;
+}

@@ -33,3 +33,16 @@ export const EXTRUDE_MATERIAL = tagShared(new THREE.MeshPhysicalMaterial({
   roughness: 0.4,
   side: THREE.DoubleSide,
 }));
+
+// Dimmed dashed line used by the Fusion-style dimension ghost preview while a
+// placement is pending. Singleton — never disposed (tagged shared).
+export const DIMENSION_PREVIEW_MATERIAL = tagShared(new THREE.LineDashedMaterial({
+  color: 0x2563eb,
+  linewidth: 1,
+  dashSize: 0.6,
+  gapSize: 0.3,
+  transparent: true,
+  opacity: 0.5,
+  depthTest: false,
+  depthWrite: false,
+}));
