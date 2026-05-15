@@ -32,6 +32,7 @@ import { CalibrationPresetsGrid } from './CalibrationPresetsGrid';
 import { CalibrationTestsSection } from './CalibrationTestsSection';
 import { FilamentMoistureSection } from './FilamentMoistureSection';
 import { WearTrackingSection } from './WearTrackingSection';
+import { CalibrationResultsSection } from './results/CalibrationResultsSection';
 import './PrinterCalibrationPanel.css';
 
 export default function PrinterCalibrationPanel() {
@@ -44,9 +45,10 @@ export default function PrinterCalibrationPanel() {
   const [wizardTestType, setWizardTestType] = useState<string | null>(null);
   const [wizardSessionId, setWizardSessionId] = useState<string | null>(null);
 
-  // Collapsible-open flags for the four lifecycle sections.
+  // Collapsible-open flags for the lifecycle sections.
   const [isCalibrationTestsOpen, setIsCalibrationTestsOpen] = useState(false);
   const [isCalibrationAgingOpen, setIsCalibrationAgingOpen] = useState(false);
+  const [isCalibrationResultsOpen, setIsCalibrationResultsOpen] = useState(false);
   const [isWearTrackingOpen, setIsWearTrackingOpen] = useState(false);
   const [isFilamentMoistureOpen, setIsFilamentMoistureOpen] = useState(false);
 
@@ -219,6 +221,12 @@ export default function PrinterCalibrationPanel() {
           calibrationStatuses={calibrationStatuses}
           updateCalibrationInterval={updateCalibrationInterval}
           markCalibration={markCalibration}
+        />
+
+        <CalibrationResultsSection
+          isOpen={isCalibrationResultsOpen}
+          setIsOpen={setIsCalibrationResultsOpen}
+          activePrinterId={activePrinterId}
         />
 
         <div className="printer-calibration-panel__split">

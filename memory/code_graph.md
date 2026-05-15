@@ -17,6 +17,7 @@ type: project
 - `src/utils/expressionEval.ts` — parameter expression evaluator.
 - `src/calibration/` — 7-step printer-tuning wizard (`wizard/CalibrationWizard.tsx`, `wizard/steps/Step*.tsx`), STL/G-code generators in `engine/calibration/`, slice presets per test in `calibration/calibrationSlicePresets.ts`, camera capture in `calibration/camera/CalibrationCameraCapture.tsx`.
 - `src/services/vision/` — multimodal-LLM analyzers: `failureDetector.ts` (in-flight spaghetti/layer-shift), `tuningWizards.ts` (calibration-photo recommendations), `printDiagnostics.ts`, `cameraPose.ts`. All accept a `VisionProviderConfig { provider, model, apiKey }` and call Anthropic or OpenAI/OpenRouter directly from the browser.
+- `src/services/calibration/calibrationPhotoStore.ts` — IDB-backed Blob store (`cindr3d-calibration-photos` / `photos`) for calibration result photos. Keyed by photo ID; `CalibrationResult.photoIds` holds the IDs. Survives reloads without bloating localStorage. Renders go through `components/printer/calibration/results/CalibrationResultThumbnail.tsx` (async object-URL with revoke-on-unmount).
 
 ## Where to add common things
 
@@ -31,6 +32,7 @@ type: project
 | New WASM op | See `auto-memory/wasm_patterns.md` |
 | New calibration test | Card in `components/printer/calibration/calibrationContent.ts` `CALIBRATION_CARDS`, G-code generator in `engine/calibration/`, slice preset in `calibration/calibrationSlicePresets.ts`, then add a `tuningKindForTest` mapping + manual field in `calibration/wizard/steps/StepInspect.tsx` |
 | AI photo analysis for a calibration test | Extend `TuningWizardKind` + `kindGuidance` in `services/vision/tuningWizards.ts`; if the test has tower-style bands, pass `startValue`/`stepPerMm`/`towerHeightMm` in `TuningTowerContext` so the model can map a visible band to a value. Per-test wiring lives under `calibration/wizard/steps/inspect/` (shim + subdir): add the test to `inspectHelpers.tuningKindForTest`, derive its context in a sibling `<test>Context.ts`, surface it via `useTestContext` + `useTuningAnalysis`, and add tips in `PhotoGuidance.tsx`. `StepInspect.tsx` itself is a thin composer — do NOT push new logic back into it, and do NOT re-introduce a `fallbackProvider()` with an empty key (provider config comes from `useAiAssistantStore`) |
+| Calibration photo / history persistence | Photos written by `StepApplyResult.saveResult()` via `services/calibration/calibrationPhotoStore.ts` (one IDB transaction per save), photo IDs land in `CalibrationResult.photoIds`. History UI lives in `components/printer/calibration/results/{CalibrationResultsSection,CalibrationResultsHistory,CalibrationResultThumbnail}.tsx` — each a focused file. Mount the section in `PrinterCalibrationPanel.tsx` alongside `CalibrationAgingSection` |
 
 ## Plane-axis math (single source of truth)
 
