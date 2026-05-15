@@ -33,6 +33,7 @@ import { CalibrationTestsSection } from './CalibrationTestsSection';
 import { FilamentMoistureSection } from './FilamentMoistureSection';
 import { WearTrackingSection } from './WearTrackingSection';
 import { CalibrationResultsSection } from './results/CalibrationResultsSection';
+import { VisionFailureAlertsSection } from './VisionFailureAlertsSection';
 import './PrinterCalibrationPanel.css';
 
 export default function PrinterCalibrationPanel() {
@@ -194,6 +195,11 @@ export default function PrinterCalibrationPanel() {
           <ExternalLink size={14} /> Prepare
         </button>
       </header>
+
+      <VisionFailureAlertsSection
+        printerId={activePrinterId}
+        startCalibrationTest={startCalibrationTest}
+      />
 
       <CalibrationCardsGrid
         activeWizardSessionsByTest={activeWizardSessionsByTest}

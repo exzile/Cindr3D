@@ -1,0 +1,42 @@
+.failure-calibration-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.failure-calibration-link__icon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.failure-calibration-link__text {
+  color: var(--text-secondary);
+}
+
+.failure-calibration-link__button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.failure-calibration-link__button:hover {
+  text-decoration: underline;
+}
+
+.failure-calibration-link__button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
