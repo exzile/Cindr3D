@@ -543,6 +543,28 @@
   border-top: 1px solid var(--border-light);
   background: var(--bg-secondary);
   flex-shrink: 0;
+  align-items: center;
+}
+
+.ai-context-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ai-context-toggle input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.ai-context-toggle:hover {
+  color: var(--text-primary);
 }
 
 .ai-input-row {

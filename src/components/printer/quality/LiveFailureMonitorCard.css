@@ -1,0 +1,187 @@
+.live-failure-monitor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.lfm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lfm-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.lfm-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.lfm-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.lfm-pill.is-active .lfm-dot {
+  background: var(--success, #4caf50);
+  box-shadow: 0 0 4px var(--success, #4caf50);
+}
+
+.lfm-pill.is-running .lfm-dot {
+  background: var(--accent, #4fc3f7);
+  animation: lfm-pulse 1s ease-in-out infinite;
+}
+
+.lfm-pill.is-idle .lfm-dot {
+  background: var(--text-muted);
+}
+
+.lfm-pill.is-disabled {
+  opacity: 0.7;
+}
+
+.lfm-pill.is-error .lfm-dot {
+  background: var(--danger, #ef5350);
+}
+
+@keyframes lfm-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.lfm-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
+}
+
+.lfm-summary-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lfm-summary-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.lfm-summary-value {
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.lfm-cat--spaghetti,
+.lfm-cat--layer-shift,
+.lfm-cat--blob-of-doom,
+.lfm-cat--first-layer-adhesion,
+.lfm-cat--knocked-loose-part {
+  color: var(--danger, #ef5350);
+}
+
+.lfm-cat--unknown {
+  color: var(--text-secondary);
+}
+
+.lfm-sev--critical {
+  color: var(--danger, #ef5350);
+}
+
+.lfm-sev--warning {
+  color: var(--warning, #ffa726);
+}
+
+.lfm-sev--watch {
+  color: var(--accent, #4fc3f7);
+}
+
+.lfm-sev--none {
+  color: var(--success, #4caf50);
+}
+
+.lfm-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.lfm-error {
+  margin: 0;
+  padding: 5px 7px;
+  border: 1px solid rgba(239, 83, 80, 0.3);
+  border-radius: 4px;
+  background: rgba(239, 83, 80, 0.08);
+  color: var(--danger, #ef5350);
+  font-size: 10px;
+}
+
+.lfm-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+
+.lfm-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.lfm-toggle input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.lfm-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.lfm-toggle-hint {
+  margin-left: auto;
+  color: var(--text-muted);
+  opacity: 0.7;
+}

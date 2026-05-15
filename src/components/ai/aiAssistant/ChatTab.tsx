@@ -2,6 +2,7 @@ import { Bot, Send, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAiAssistantStore } from '../../../store/aiAssistantStore';
 import { errorMessage } from '../../../utils/errorHandling';
+import { buildPrinterContextSnapshot } from '../../../services/aiAssistant/printerContextSnapshot';
 import { AI_SYSTEM_PROMPT, buildApiMessages, dispatchTool } from './chatHelpers';
 import { getEndpoint, streamAnthropic, streamOpenAI } from './llmStreaming';
 import { MessageBubble } from './MessageBubble';
@@ -17,6 +18,8 @@ export function ChatTab() {
   const apiKey = useAiAssistantStore((s) => s.apiKey);
   const useClaudeCode = useAiAssistantStore((s) => s.useClaudeCode);
   const confirmDestructive = useAiAssistantStore((s) => s.confirmDestructive);
+  const injectPrinterContext = useAiAssistantStore((s) => s.injectPrinterContext);
+  const setInjectPrinterContext = useAiAssistantStore((s) => s.setInjectPrinterContext);
   const messages = useAiAssistantStore((s) => s.messages);
   const streaming = useAiAssistantStore((s) => s.streaming);
   const addMessage = useAiAssistantStore((s) => s.addMessage);
@@ -49,7 +52,11 @@ export function ChatTab() {
     abortRef.current = controller;
 
     const history = [...useAiAssistantStore.getState().messages];
-    const apiMessages = buildApiMessages(history);
+    const printerCtx = injectPrinterContext ? buildPrinterContextSnapshot() : '';
+    const systemPrompt = printerCtx
+      ? `${AI_SYSTEM_PROMPT}\n\n## Current printer context\n${printerCtx}`
+      : AI_SYSTEM_PROMPT;
+    const apiMessages = buildApiMessages(history, systemPrompt);
 
     let continueLoop = true;
     while (continueLoop) {
@@ -59,7 +66,7 @@ export function ChatTab() {
 
       try {
         const stream = provider === 'anthropic'
-          ? streamAnthropic(model, apiKey, apiMessages, AI_SYSTEM_PROMPT, controller.signal)
+          ? streamAnthropic(model, apiKey, apiMessages, systemPrompt, controller.signal)
           : streamOpenAI(getEndpoint(provider), model, apiKey, apiMessages, controller.signal);
 
         let lastAssistantContent = '';
@@ -115,7 +122,7 @@ export function ChatTab() {
 
     if (abortRef.current === controller) abortRef.current = null;
     setStreaming(false);
-  }, [streaming, provider, model, apiKey, confirmDestructive, addMessage, appendToLast, setStreaming]);
+  }, [streaming, provider, model, apiKey, confirmDestructive, injectPrinterContext, addMessage, appendToLast, setStreaming]);
 
   const runDiagnosis = useCallback(async () => {
     if (streaming || !apiKey) return;
@@ -175,6 +182,18 @@ export function ChatTab() {
         <button type="button" className="ai-quick-action" disabled={!apiKey || streaming} onClick={() => void runDiagnosis()}>
           Diagnose print
         </button>
+        <label
+          className="ai-context-toggle"
+          title="When on, your message includes a snapshot of the active printer's status, recent calibrations, and recent vision checks so the model can reason over real state. Turn off for a fully private prompt."
+        >
+          <input
+            type="checkbox"
+            checked={injectPrinterContext}
+            onChange={(e) => setInjectPrinterContext(e.target.checked)}
+            disabled={streaming}
+          />
+          <span>Context: {injectPrinterContext ? 'on' : 'off'}</span>
+        </label>
       </div>
       <div className="ai-input-row">
         <textarea

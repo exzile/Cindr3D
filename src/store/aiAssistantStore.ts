@@ -28,11 +28,16 @@ export interface AiAssistantState {
   apiKey: string;
   useClaudeCode: boolean;
   confirmDestructive: boolean;
+  /** When true, the chat send-site prepends a printer/calibration/vision
+   *  snapshot to the system prompt so the model can reason over real state.
+   *  User can opt out in the chat panel for privacy. Persisted. */
+  injectPrinterContext: boolean;
   setProvider: (p: AiProvider) => void;
   setModel: (m: string) => void;
   setApiKey: (k: string) => void;
   setUseClaudeCode: (v: boolean) => void;
   setConfirmDestructive: (v: boolean) => void;
+  setInjectPrinterContext: (v: boolean) => void;
 
   // Chat session (not persisted between reloads)
   messages: ChatMessage[];
@@ -63,11 +68,13 @@ export const useAiAssistantStore = create<AiAssistantState>()(
       apiKey: '',
       useClaudeCode: false,
       confirmDestructive: true,
+      injectPrinterContext: true,
       setProvider: (p) => set((s) => ({ provider: p, model: s.provider === p ? s.model : PROVIDER_DEFAULT_MODELS[p] })),
       setModel: (m) => set({ model: m }),
       setApiKey: (k) => set({ apiKey: k }),
       setUseClaudeCode: (v) => set({ useClaudeCode: v }),
       setConfirmDestructive: (v) => set({ confirmDestructive: v }),
+      setInjectPrinterContext: (v) => set({ injectPrinterContext: v }),
 
       messages: [],
       streaming: false,
@@ -92,6 +99,7 @@ export const useAiAssistantStore = create<AiAssistantState>()(
         model: s.model,
         useClaudeCode: s.useClaudeCode,
         confirmDestructive: s.confirmDestructive,
+        injectPrinterContext: s.injectPrinterContext,
         activeTab: s.activeTab,
       }),
     },
