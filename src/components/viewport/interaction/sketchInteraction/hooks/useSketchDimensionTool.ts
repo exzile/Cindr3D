@@ -4,6 +4,7 @@ import { DimensionEngine } from '../../../../../engine/DimensionEngine';
 import { GeometryEngine } from '../../../../../engine/GeometryEngine';
 import { applyDimensionResize } from '../../../../../engine/dimensionResizeUtils';
 import { inferLinearPlacement, pointToLineDistance } from '../../../../../engine/dimensionPlacement';
+import { wouldOverConstrain } from '../../../../../engine/overConstraintCheck';
 import { useCADStore } from '../../../../../store/cadStore';
 import type { DimensionType, Sketch, SketchDimension, SketchEntity } from '../../../../../types/cad';
 
@@ -153,17 +154,22 @@ function createNearestEntityFinder(entities: SketchEntity[], origin: THREE.Vecto
 /**
  * Adds a dimension to the active sketch and immediately resizes entities to match the value.
  * Single atomic store update so first-creation and subsequent edits behave identically.
+ *
+ * @returns `true` when the dimension was committed (caller opens the value
+ *   editor), `false` when it was rejected or intercepted (duplicate, no
+ *   sketch, or over-constraining → driven-dimension prompt) and the caller
+ *   must NOT open the editor.
  */
 function commitDimension(
   dim: SketchDimension,
   activeSketchId: string,
   drivenMode: boolean,
-): void {
+): boolean {
   const state = useCADStore.getState();
   const sketch = state.activeSketch;
-  if (!sketch || sketch.id !== activeSketchId) return;
+  if (!sketch || sketch.id !== activeSketchId) return false;
   const existing = sketch.dimensions ?? [];
-  if (existing.some((d) => d.id === dim.id)) return;
+  if (existing.some((d) => d.id === dim.id)) return false;
   // Reject semantic duplicates: same entity set + same type + same orientation.
   const dimEntitiesKey = [...dim.entityIds].sort().join(',');
   const isDuplicate = existing.some((d) => {
@@ -175,7 +181,21 @@ function commitDimension(
       dim.type === 'angular' || dim.type === 'arc-length' || dim.type === 'aligned';
     return sameOrientation;
   });
-  if (isDuplicate) return;
+  if (isDuplicate) return false;
+
+  // Fusion-style over-constraint interception: a non-driven dimension that
+  // would make the solver fail must NOT push undo, mutate entities, or open
+  // the value editor. Instead raise the driven-dimension prompt and bail. The
+  // trial solve shares input-building with the real solve so this prediction
+  // matches what solveSketch() would later compute. Driven dims short-circuit
+  // (they never reach the solver), and if dimensionDrivenMode is already on at
+  // add time the dimension is born driven ⇒ no prompt.
+  if (!dim.driven && wouldOverConstrain(sketch, dim)) {
+    useCADStore.setState({
+      pendingOverConstraint: { dimension: dim, activeSketchId, mode: 'add' },
+    });
+    return false;
+  }
 
   state.pushUndo?.();
   const applyToSketch = (s: Sketch): Sketch => {
@@ -190,6 +210,7 @@ function commitDimension(
     sketches: state.sketches.map(applyToSketch),
   });
   if (!state.sketchComputeDeferred) state.solveSketch?.();
+  return true;
 }
 
 export function useSketchDimensionTool({
@@ -499,7 +520,15 @@ export function useSketchDimensionTool({
     void _addCircleOrArcDimension;
 
     const fireAndEdit = (dim: SketchDimension, statusMsg: string) => {
-      commitDimension(dim, activeSketch.id, dimensionDrivenMode);
+      const committed = commitDimension(dim, activeSketch.id, dimensionDrivenMode);
+      if (!committed) {
+        // Rejected (duplicate) or intercepted (over-constraint prompt raised):
+        // do NOT set pendingNewDimensionId / open the value editor. Clear the
+        // ghost preview so it doesn't linger; the prompt (if any) drives next.
+        previewFingerprintRef.current = null;
+        useCADStore.setState({ dimensionPreview: null });
+        return;
+      }
       // Tear down the ghost preview on commit so it doesn't linger over the
       // freshly-placed real dimension. The fingerprint reset lets the next
       // hover (after the editor closes) recompute cleanly.

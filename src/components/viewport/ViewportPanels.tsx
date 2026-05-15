@@ -1,6 +1,7 @@
 import CanvasControls from './canvasControls/CanvasControls';
 import SketchPalette from './sketch/SketchPalette';
 import DimensionEditorOverlay from './sketch/DimensionEditorOverlay';
+import OverConstraintDialog from './sketch/OverConstraintDialog';
 import MeasurePanel from './panels/MeasurePanel';
 import ExtrudePanel from './panels/ExtrudePanel';
 import RevolvePanel from './panels/RevolvePanel';
@@ -44,6 +45,7 @@ export function ViewportPanels() {
       <AnalysisPanel />
       <ExplodedViewPanel />
       <DimensionEditorOverlay />
+      <OverConstraintDialog />
     </>
   );
 }

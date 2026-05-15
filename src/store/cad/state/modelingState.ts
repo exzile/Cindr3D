@@ -352,6 +352,23 @@ export interface CADModelingState {
   setSketchDimEditTypeahead: (items: Parameter[]) => void;
   commitSketchDimEdit: (rawValue: string) => void;
   cancelSketchDimEdit: () => void;
+
+  /**
+   * Fusion-style over-constraint prompt. Transient: set when a non-driven
+   * dimension would over-constrain the sketch (intercepted BEFORE any
+   * mutation), cleared by the dialog's Create-driven / Cancel actions. Never
+   * persisted (absent from persistConfig.partialize).
+   */
+  pendingOverConstraint: {
+    dimension: SketchDimension;
+    activeSketchId: string;
+    mode: 'add' | 'edit';
+    previousValue?: number;
+  } | null;
+  /** Resolve the prompt by committing the candidate as a driven (reference) dimension. */
+  resolveOverConstraintAsDriven: () => void;
+  /** Resolve the prompt by discarding (add) / reverting (edit) — no change persisted. */
+  cancelOverConstraint: () => void;
   setActiveDimensionType: (t: DimensionToolType) => void;
   setDimensionOffset: (v: number) => void;
   setDimensionDrivenMode: (v: boolean) => void;

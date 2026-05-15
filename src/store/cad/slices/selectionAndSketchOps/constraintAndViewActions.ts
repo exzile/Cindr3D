@@ -1,5 +1,6 @@
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
-import { dimensionsToSolverConstraints, solveConstraints } from '../../../../engine/ConstraintSolver';
+import { solveConstraints } from '../../../../engine/ConstraintSolver';
+import { buildSketchSolveInputs } from '../../../../engine/sketchSolveInputs';
 import type { SketchConstraint } from '../../../../types/cad';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
@@ -111,17 +112,12 @@ export function createConstraintAndViewActions({ set, get }: CADSliceContext): P
       if (!activeSketch) return;
       const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
       const origin = activeSketch.planeOrigin;
-      const projectedEntities = activeSketch.entities.map((e) => ({
-        ...e,
-        points: e.points.map((pt) => {
-          const dx = pt.x - origin.x, dy = pt.y - origin.y, dz = pt.z - origin.z;
-          return { ...pt, x: dx * t1.x + dy * t1.y + dz * t1.z, y: dx * t2.x + dy * t2.y + dz * t2.z, z: 0 };
-        }),
-      }));
-      const result = solveConstraints(projectedEntities, [
-        ...(activeSketch.constraints ?? []),
-        ...dimensionsToSolverConstraints(activeSketch.dimensions ?? []),
-      ]);
+      // Solver inputs (projected entities + geometric + non-driven dimension
+      // constraints) are built by the shared `buildSketchSolveInputs` so the
+      // trial over-constraint check in engine/overConstraintCheck.ts can run
+      // the exact same assembly — prediction must match reality.
+      const { entities: projectedEntities, constraints } = buildSketchSolveInputs(activeSketch);
+      const result = solveConstraints(projectedEntities, constraints);
       if (!result.solved) {
         set((s) => ({
           activeSketch: s.activeSketch ? { ...s.activeSketch, overConstrained: true } : null,
