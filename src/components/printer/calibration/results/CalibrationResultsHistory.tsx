@@ -87,6 +87,20 @@ function CalibrationResultRow({ result }: { result: CalibrationResult }) {
   const confidencePct = result.aiConfidence != null
     ? Math.round(Math.min(1, Math.max(0, result.aiConfidence)) * 100)
     : null;
+  const [openPhotoId, setOpenPhotoId] = useState<string | null>(null);
+
+  // Cycle through the row's photos when the viewer asks for prev/next.
+  const handleNavigate = (direction: -1 | 1) => {
+    setOpenPhotoId((current) => {
+      if (current == null || result.photoIds.length === 0) return current;
+      const idx = result.photoIds.indexOf(current);
+      if (idx < 0) return current;
+      const len = result.photoIds.length;
+      const nextIdx = (idx + direction + len) % len;
+      return result.photoIds[nextIdx];
+    });
+  };
+
   return (
     <li className="calib-results__row">
       <div className="calib-results__meta">
@@ -107,9 +121,18 @@ function CalibrationResultRow({ result }: { result: CalibrationResult }) {
               key={id}
               photoId={id}
               alt={`Calibration photo ${i + 1} from ${formatDate(result.recordedAt)}`}
+              onClick={() => setOpenPhotoId(id)}
             />
           ))}
         </div>
+      )}
+      {openPhotoId && (
+        <CalibrationResultViewer
+          result={result}
+          photoId={openPhotoId}
+          onClose={() => setOpenPhotoId(null)}
+          onNavigate={result.photoIds.length > 1 ? handleNavigate : undefined}
+        />
       )}
     </li>
   );

@@ -1,0 +1,164 @@
+/*
+ * Calibration photo viewer — full-resolution lightbox.
+ *
+ * Composes the shared `Modal` shell (bc-modal-*), so we only style the
+ * viewer-specific inner regions here. Keep the `calib-viewer__` namespace
+ * consistent with `calib-results__` from CalibrationResultsHistory.css.
+ */
+
+.bc-modal.calib-viewer {
+  width: min(820px, calc(100vw - 48px));
+}
+
+.calib-viewer__pager-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-panel));
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.calib-viewer__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 1fr);
+  gap: 14px;
+  padding: 14px 16px;
+}
+
+@media (max-width: 720px) {
+  .calib-viewer__body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.calib-viewer__photo-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  max-height: min(72vh, 560px);
+  border: 1px solid var(--border-light);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--text-primary) 6%, var(--bg-panel));
+  overflow: hidden;
+}
+
+.calib-viewer__photo {
+  display: block;
+  max-width: 100%;
+  max-height: min(72vh, 560px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.calib-viewer__photo-loading {
+  width: 100%;
+  height: 100%;
+  min-height: 240px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--text-primary) 5%, var(--bg-panel)) 0%,
+    color-mix(in srgb, var(--text-primary) 10%, var(--bg-panel)) 50%,
+    color-mix(in srgb, var(--text-primary) 5%, var(--bg-panel)) 100%
+  );
+  background-size: 200% 100%;
+  animation: calib-viewer-shimmer 1.2s linear infinite;
+}
+
+@keyframes calib-viewer-shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+.calib-viewer__photo-fallback {
+  padding: 20px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.calib-viewer__details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.calib-viewer__facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 12px;
+  align-items: baseline;
+  font-size: 12px;
+}
+
+.calib-viewer__fact {
+  display: contents;
+}
+
+.calib-viewer__fact dt {
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.calib-viewer__fact dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+}
+
+.calib-viewer__fact-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.calib-viewer__fact-confidence {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-panel));
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.calib-viewer__fact-mono {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.calib-viewer__note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--text-primary) 3%, var(--bg-panel));
+}
+
+.calib-viewer__note-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.calib-viewer__note-body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
+.calib-viewer__footer-spacer {
+  flex: 1;
+}
