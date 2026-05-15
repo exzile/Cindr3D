@@ -14,7 +14,7 @@ export interface SolverPoint {
 }
 
 export interface SolverConstraint {
-  type: SketchConstraint['type'] | 'dimension-linear' | 'dimension-aligned' | 'dimension-radial' | 'dimension-diameter';
+  type: SketchConstraint['type'] | 'dimension-linear' | 'dimension-aligned' | 'dimension-radial' | 'dimension-diameter' | 'dimension-arc-length';
   entityIds: string[];
   pointIndices?: number[];
   value?: number;
@@ -263,6 +263,8 @@ export function dimensionsToSolverConstraints(dimensions: SketchDimension[] = []
           return [{ type: 'dimension-radial', entityIds: dimension.entityIds, value: dimension.value }];
         case 'diameter':
           return [{ type: 'dimension-diameter', entityIds: dimension.entityIds, value: dimension.value }];
+        case 'arc-length':
+          return [{ type: 'dimension-arc-length', entityIds: dimension.entityIds, value: dimension.value }];
         default:
           return [];
       }
@@ -605,6 +607,28 @@ function computeResiduals(
         if (!entity || !Number.isFinite(c.value)) break;
         const radius = entity.radius ?? 0;
         residuals.push(radius - (c.type === 'dimension-diameter' ? (c.value ?? 0) / 2 : c.value ?? 0));
+        break;
+      }
+      case 'dimension-arc-length': {
+        // Detection-only constraint (radius/angles are NOT solver params), so
+        // this mirrors dimension-radial/diameter exactly: its Jacobian row is
+        // ~0, residual ≠ 0 only when the dimension conflicts with the
+        // already-fixed geometry ⇒ solver reports !solved ⇒ over-constraint
+        // detected. The arc-length value is computed IDENTICALLY to
+        // DimensionEngine.computeArcLengthDimension so the prediction matches
+        // the annotation/edit math: normalise end so the CCW sweep is positive,
+        // then arcLength = r * (end - startAngle). A circle (no angles) uses
+        // startAngle 0 / endAngle 2π ⇒ full circumference 2πr, matching the
+        // dimension hook's arc-length branch which accepts arc OR circle.
+        const ref = parseDimensionReference(c.entityIds[0]);
+        const entity = ref ? entityMap.get(ref.entityId) : null;
+        if (!entity || !Number.isFinite(c.value)) break;
+        const r = entity.radius ?? 0;
+        const startAngle = entity.startAngle ?? 0;
+        let end = entity.endAngle ?? 2 * Math.PI;
+        while (end <= startAngle) end += 2 * Math.PI;
+        const currentArcLength = r * (end - startAngle);
+        residuals.push(currentArcLength - (c.value ?? 0));
         break;
       }
       default:
