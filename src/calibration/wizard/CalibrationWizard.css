@@ -1474,3 +1474,192 @@ details.calib-slice-section[open] > summary::before {
   color: var(--text-secondary);
   flex-shrink: 0;
 }
+
+/* ── Pressure-advance photo guidance ─────────────────────────────────────── */
+
+.calib-inspect__tips {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.calib-inspect__pa-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.calib-inspect__pa-params strong {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── AI analysis action row + config CTA ─────────────────────────────────── */
+
+.calib-inspect__ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.calib-inspect__ai-config-btn.calib-inspect__ai-config-btn {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel));
+}
+
+.calib-inspect__ai-config-btn:hover {
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-panel));
+}
+
+/* ── Inline AI recommendation card ───────────────────────────────────────── */
+
+.calib-inspect__rec {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-panel));
+}
+
+.calib-inspect__rec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.calib-inspect__rec-value,
+.calib-inspect__rec-confidence {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.calib-inspect__rec-confidence {
+  flex: 1;
+  min-width: 160px;
+}
+
+.calib-inspect__rec-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.calib-inspect__rec-number {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  line-height: 1.1;
+}
+
+.calib-inspect__rec-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-primary) 8%, var(--bg-panel));
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.calib-inspect__rec-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--accent) 60%, transparent),
+    var(--accent)
+  );
+  transition: width 0.3s ease;
+}
+
+.calib-inspect__rec-pct {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.calib-inspect__rec-summary {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.calib-inspect__rec-details {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text-primary) 4%, var(--bg-panel));
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+}
+
+.calib-inspect__rec-details > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  list-style: none;
+  user-select: none;
+}
+
+.calib-inspect__rec-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.calib-inspect__rec-details > summary::before {
+  content: '▸';
+  font-size: 10px;
+  opacity: 0.6;
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s;
+}
+
+.calib-inspect__rec-details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.calib-inspect__rec-details ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.calib-inspect__rec-details--warn {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-panel));
+}
+
+.calib-inspect__rec-details--warn > summary {
+  color: var(--accent);
+}
+
+.calib-inspect__rec-apply.calib-inspect__rec-apply {
+  justify-self: start;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg-panel));
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.calib-inspect__rec-apply:hover {
+  background: color-mix(in srgb, var(--accent) 28%, var(--bg-panel));
+}

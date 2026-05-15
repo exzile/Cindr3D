@@ -14,8 +14,11 @@ export type TuningWizardKind =
 export interface TuningTowerContext {
   kind: TuningWizardKind;
   printer: VisionPrinterSnapshot;
+  /** Numeric value at the bottom of the tower (e.g. PA at startZ). */
   startValue?: number;
+  /** Numeric increase per mm of Z height — used to map a band height to a value. */
   stepPerMm?: number;
+  /** Effective Z span (endZ - startZ) the tuning ramp covers, in mm. */
   towerHeightMm?: number;
   axis?: 'X' | 'Y';
   material?: unknown;
