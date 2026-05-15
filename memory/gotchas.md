@@ -29,3 +29,8 @@ Things that are NOT obvious from reading the current code, and would burn time t
 
 ## Toolbar
 - **`ToolButton` dropdowns render INSIDE the button container** (no portal), so they get clipped by `.ribbon-content { overflow-y: hidden }`. Section-level flyouts already use `createPortal`. If a `ToolButton` dropdown ever extends past the ribbon, port it to a portal too.
+
+## Calibration wizard / vision AI
+- **Vision analyzers need a real provider config.** `services/vision/{tuningWizards,failureDetector,printDiagnostics}.ts` all reject empty `apiKey`. `StepInspect.tsx` reads `provider`/`model`/`apiKey` from `useAiAssistantStore` and falls back to a "Configure AI provider" CTA that opens the assistant panel — do NOT regress to a hard-coded `fallbackProvider()` with an empty key.
+- **`apiKey` is intentionally not persisted** (see `aiAssistantStore.ts` `partialize`). The user re-enters it per session. Don't add it to the persisted slice "for convenience" — it would leak on the public Azure demo.
+- **Pressure-advance recommendation needs tower geometry context.** When `StepInspect` analyzes a PA tower it reads `tuningStartZ`/`tuningEndZ`/`tuningStartValue`/`tuningEndValue`/`tuningStepSize` from the active print profile's `layerProcessors` (`tuning-tower` kind, `tuningParameter === 'pressure-advance'`) and passes `startValue`/`stepPerMm`/`towerHeightMm` into the prompt. Other band-style tests (temperature, retraction, max-volumetric-speed) should follow the same pattern when they grow AI support.

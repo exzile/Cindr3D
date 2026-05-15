@@ -15,6 +15,8 @@ type: project
 - `src/services/` — `DuetService.ts` façade + `duet/` per-concern modules; `OctoPrintService.ts`. See `auto-memory/duet_service_architecture.md`.
 - `src/workers/SlicerWorker.ts` — slicer off-main-thread. Warms WASM modules at boot.
 - `src/utils/expressionEval.ts` — parameter expression evaluator.
+- `src/calibration/` — 7-step printer-tuning wizard (`wizard/CalibrationWizard.tsx`, `wizard/steps/Step*.tsx`), STL/G-code generators in `engine/calibration/`, slice presets per test in `calibration/calibrationSlicePresets.ts`, camera capture in `calibration/camera/CalibrationCameraCapture.tsx`.
+- `src/services/vision/` — multimodal-LLM analyzers: `failureDetector.ts` (in-flight spaghetti/layer-shift), `tuningWizards.ts` (calibration-photo recommendations), `printDiagnostics.ts`, `cameraPose.ts`. All accept a `VisionProviderConfig { provider, model, apiKey }` and call Anthropic or OpenAI/OpenRouter directly from the browser.
 
 ## Where to add common things
 
@@ -27,6 +29,8 @@ type: project
 | New geometry op | `engine/geometryEngine/core/{mesh,sketch,solid,surface}/` or `operations/meshOps/` — never in the `GeometryEngine.ts` shim |
 | New store action | `store/<name>/{slices,actions}/` — never in the store shim |
 | New WASM op | See `auto-memory/wasm_patterns.md` |
+| New calibration test | Card in `components/printer/calibration/calibrationContent.ts` `CALIBRATION_CARDS`, G-code generator in `engine/calibration/`, slice preset in `calibration/calibrationSlicePresets.ts`, then add a `tuningKindForTest` mapping + manual field in `calibration/wizard/steps/StepInspect.tsx` |
+| AI photo analysis for a calibration test | Extend `TuningWizardKind` + `kindGuidance` in `services/vision/tuningWizards.ts`; if the test has tower-style bands, pass `startValue`/`stepPerMm`/`towerHeightMm` in `TuningTowerContext` so the model can map a visible band to a value. `StepInspect.tsx` reads provider config from `useAiAssistantStore` — do NOT re-introduce a `fallbackProvider()` with an empty key |
 
 ## Plane-axis math (single source of truth)
 
