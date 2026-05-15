@@ -1,11 +1,26 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   useCalibrationStore,
   type CalibrationItemId,
   type CalibrationResult,
 } from '../../../../store/calibrationStore';
 import { CalibrationResultThumbnail } from './CalibrationResultThumbnail';
+import { CalibrationDriftChart } from './CalibrationDriftChart';
+import { CalibrationResultViewer } from './CalibrationResultViewer';
 import './CalibrationResultsHistory.css';
+
+/** Axis-style label for the drift sparkline per calibration item. */
+function inferValueLabel(itemId: CalibrationItemId): string {
+  switch (itemId) {
+    case 'pressure-advance': return 'PA';
+    case 'first-layer': return 'Z-offset (mm)';
+    case 'input-shaper': return 'freq (Hz)';
+    case 'z-offset': return 'Z-offset (mm)';
+    case 'bed-mesh': return 'deviation (mm)';
+    case 'firmware-health': return '';
+    default: return '';
+  }
+}
 
 interface CalibrationResultsHistoryProps {
   printerId: string;
@@ -52,6 +67,13 @@ export function CalibrationResultsHistory({
         <strong className="calib-results__title">{title}</strong>
         <span className="calib-results__count">{results.length}</span>
       </header>
+      <CalibrationDriftChart
+        points={results
+          .filter((r) => r.appliedValue !== null)
+          .map((r) => ({ value: r.appliedValue!, recordedAt: r.recordedAt }))
+          .reverse()}
+        valueLabel={inferValueLabel(itemId)}
+      />
       <ol className="calib-results__list">
         {results.map((result) => (
           <CalibrationResultRow key={result.id} result={result} />
