@@ -61,7 +61,10 @@ import {
   coilGeometry as coilGeometryImpl,
   revolveFaceBoundary as revolveFaceBoundaryImpl,
   revolveSketch as revolveSketchImpl,
+  resolveRevolveSweep as resolveRevolveSweepImpl,
+  type RevolveDirection,
 } from './solid/revolve';
+export type { RevolveDirection } from './solid/revolve';
 import {
   loftSketches as loftSketchesImpl,
   patchSketch as patchSketchImpl,
@@ -259,14 +262,24 @@ export class GeometryEngine {
   static revolveFaceBoundary(
     boundary: THREE.Vector3[],
     axisDir: THREE.Vector3,
-    angle: number,
+    sweep: number,
     isSurface = false,
+    phiStart = 0,
   ): THREE.Mesh | null {
-    return revolveFaceBoundaryImpl(boundary, axisDir, angle, isSurface);
+    return revolveFaceBoundaryImpl(boundary, axisDir, sweep, isSurface, phiStart);
   }
 
-  static revolveSketch(sketch: Sketch, angle: number, axis: THREE.Vector3): THREE.Mesh | null {
-    return revolveSketchImpl(sketch, angle, axis);
+  static revolveSketch(sketch: Sketch, sweep: number, axis: THREE.Vector3, phiStart = 0): THREE.Mesh | null {
+    return revolveSketchImpl(sketch, sweep, axis, phiStart);
+  }
+
+  /** Panel angle/angle2/direction → lathe start + total sweep (radians). */
+  static resolveRevolveSweep(
+    angleDeg: number,
+    angle2Deg: number,
+    direction: RevolveDirection,
+  ): { phiStart: number; sweep: number } {
+    return resolveRevolveSweepImpl(angleDeg, angle2Deg, direction);
   }
 
   /** Internal sweep implementation that takes both the curve and Frenet frames */

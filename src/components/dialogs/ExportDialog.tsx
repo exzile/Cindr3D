@@ -73,8 +73,11 @@ export default function ExportDialog() {
         const sketch = sketches.find(s => s.id === feature.sketchId);
         if (!sketch) continue;
         const angleDeg = typeof feature.params.angle === 'number' ? feature.params.angle : 360;
+        const angle2Deg = typeof feature.params.angle2 === 'number' ? feature.params.angle2 : angleDeg;
+        const direction = (feature.params.direction as 'one-side' | 'symmetric' | 'two-sides') || 'one-side';
         const axis = getRevolveAxisVector(feature.params.axis);
-        const mesh = GeometryEngine.revolveSketch(sketch, (angleDeg * Math.PI) / 180, axis);
+        const { phiStart, sweep } = GeometryEngine.resolveRevolveSweep(angleDeg, angle2Deg, direction);
+        const mesh = GeometryEngine.revolveSketch(sketch, sweep, axis, phiStart);
         if (mesh) return { mesh, disposable: true };
       }
 
