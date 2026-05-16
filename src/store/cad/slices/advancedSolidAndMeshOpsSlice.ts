@@ -4,25 +4,12 @@ import { GeometryEngine } from '../../../engine/GeometryEngine';
 import { errorMessage } from '../../../utils/errorHandling';
 import type { CADSliceContext } from '../sliceContext';
 import type { CADState } from '../state';
+import { placeToolFeature, pickMostRecentSolidTarget } from './featureManagement/bodyBoolean';
 
-/**
- * Pick the body to boolean a boundary fill against (operation join/cut):
- * the most recent active, visible SOLID feature that already carries a real
- * THREE.Mesh, excluding the tool bodies that define the boundary itself.
- * Mirrors revolve's pickRevolveTarget — extrude bodies live only in the R3F
- * scene (no feature.mesh) so they are not eligible single-shot targets.
- */
+/** Boundary-fill target = shared most-recent-solid pick, skipping the tool
+ *  bodies that define the boundary and any prior boundary-fill body. */
 function pickBoundaryFillTarget(features: Feature[], excludeIds: Set<string>): Feature | undefined {
-  let best: Feature | undefined;
-  for (const f of features) {
-    if (excludeIds.has(f.id)) continue;
-    if (!f.visible || f.suppressed) continue;
-    if (f.bodyKind === 'surface') continue;
-    if (f.params?.featureKind === 'boundary-fill') continue;
-    if (!(f.mesh instanceof THREE.Mesh)) continue;
-    if (!best || f.timestamp >= best.timestamp) best = f;
-  }
-  return best;
+  return pickMostRecentSolidTarget(features, { excludeIds, excludeFeatureKind: 'boundary-fill' });
 }
 
 /**
@@ -225,8 +212,12 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
       suppressed: false,
       timestamp: Date.now(),
     };
-    set({ features: [...features, feature] });
-    const opNote = operation !== 'new-body' ? ` (${operation} not booleaned — standalone body)` : '';
+    let opNote = '';
+    set((s) => {
+      const r = placeToolFeature(s, feature, operation);
+      opNote = r.note;
+      return { features: r.features, designConfigurations: r.designConfigurations };
+    });
     get().setStatusMessage(`Pipe ${n} created: ⌀${outerDiameter}mm${hollow ? `, ${wallThickness}mm wall` : ''}${opNote}`);
   },
 
@@ -260,11 +251,12 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
       suppressed: false,
       timestamp: Date.now(),
     };
-    set({ features: [...features, feature] });
-    // operation join/cut is stored but not booleaned — same known limitation
-    // as pipe/revolve; the hook is added as a standalone body the user can
-    // position and combine manually.
-    const opNote = operation !== 'new-body' ? ` (${operation} not booleaned — standalone body)` : '';
+    let opNote = '';
+    set((s) => {
+      const r = placeToolFeature(s, feature, operation);
+      opNote = r.note;
+      return { features: r.features, designConfigurations: r.designConfigurations };
+    });
     get().setStatusMessage(`Snap Fit ${n} created: ${snapType}, ${length}×${width}×${thickness}mm${opNote}`);
   },
 
@@ -302,12 +294,12 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
       suppressed: false,
       timestamp: Date.now(),
     };
-    set({ features: [...features, feature] });
-    // The dialog collects no target body/edge, so this is a standalone mating
-    // demonstrator solid. operation join/cut is recorded but not booleaned
-    // (same known limitation as pipe/snap-fit) — there is no picked body to
-    // combine with; the groove IS cut in-place into its own half via CSG.
-    const opNote = operation !== 'new-body' ? ` (${operation} not booleaned — standalone body)` : '';
+    let opNote = '';
+    set((s) => {
+      const r = placeToolFeature(s, feature, operation);
+      opNote = r.note;
+      return { features: r.features, designConfigurations: r.designConfigurations };
+    });
     get().setStatusMessage(
       `Lip and Groove ${n} created: lip ${lipWidth}×${lipHeight}mm`
       + `${includeGroove ? `, groove ${grooveWidth}×${grooveDepth}mm (${clearance}mm clearance)` : ''}${opNote}`,

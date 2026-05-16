@@ -1,7 +1,11 @@
 import * as THREE from 'three';
 import type { Feature } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
-import { errorMessage } from '../../../../utils/errorHandling';
+import {
+  pickMostRecentSolidTarget,
+  applyBodyBoolean,
+  syncConfigurationSuppression,
+} from '../featureManagement/bodyBoolean';
 import { REVOLVE_DEFAULTS } from '../../defaults';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
@@ -21,81 +25,6 @@ function resolveRevolveAxisVec(
   if (axisKey === 'X') return new THREE.Vector3(1, 0, 0);
   if (axisKey === 'Z') return new THREE.Vector3(0, 0, 1);
   return new THREE.Vector3(0, 1, 0);
-}
-
-/**
- * Pick the body to boolean a revolve against: the most recent active,
- * visible SOLID feature that already carries a real THREE.Mesh (excluding
- * the revolve being committed and any surface body). Mirrors commitCombine's
- * "target has a mesh" requirement — extrude bodies live only in the R3F
- * scene (no feature.mesh) so they are not eligible single-shot targets here.
- */
-function pickRevolveTarget(features: Feature[]): Feature | undefined {
-  let best: Feature | undefined;
-  for (const f of features) {
-    if (f.type === 'revolve') continue;
-    if (!f.visible || f.suppressed) continue;
-    if (f.bodyKind === 'surface') continue;
-    if (!(f.mesh instanceof THREE.Mesh)) continue;
-    if (!best || f.timestamp >= best.timestamp) best = f;
-  }
-  return best;
-}
-
-/**
- * Run the requested boolean (join/cut/intersect) between the target body
- * mesh and the freshly-built revolve mesh, returning a new pickable solid
- * mesh. Wrapped in try/catch like commitCombine — CSG can throw on
- * degenerate / non-manifold input; on failure we return null so the caller
- * can fall back to new-body behaviour without corrupting state.
- */
-function applyRevolveBoolean(
-  targetMesh: THREE.Mesh,
-  revolveMesh: THREE.Mesh,
-  operation: 'join' | 'cut' | 'intersect',
-): THREE.Mesh | null {
-  try {
-    const targetGeom = GeometryEngine.bakeMeshWorldGeometry(targetMesh);
-    const toolGeom = GeometryEngine.bakeMeshWorldGeometry(revolveMesh);
-    let resultGeom: THREE.BufferGeometry;
-    if (operation === 'join') {
-      resultGeom = GeometryEngine.csgUnion(targetGeom, toolGeom);
-    } else if (operation === 'cut') {
-      resultGeom = GeometryEngine.csgSubtract(targetGeom, toolGeom);
-    } else {
-      resultGeom = GeometryEngine.csgIntersect(targetGeom, toolGeom);
-    }
-    targetGeom.dispose();
-    toolGeom.dispose();
-    const mesh = new THREE.Mesh(resultGeom, targetMesh.material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    return mesh;
-  } catch (err) {
-    void errorMessage(err, 'unknown CSG error');
-    return null;
-  }
-}
-
-/**
- * Mirror of commitCombine's designConfigurations sync: record the
- * suppression flags of the freshly-built revolve feature and the consumed
- * target into the active configuration so they survive a config switch.
- */
-function syncRevolveConfigurationSuppression(
-  state: CADState,
-  entries: Record<string, boolean>,
-): CADState['designConfigurations'] {
-  const updatedAt = Date.now();
-  return state.designConfigurations.map((configuration) =>
-    configuration.id === state.activeDesignConfigurationId
-      ? {
-          ...configuration,
-          featureSuppression: { ...configuration.featureSuppression, ...entries },
-          updatedAt,
-        }
-      : configuration,
-  );
 }
 
 export function createRevolveActions({ set, get }: CADSliceContext): Partial<CADState> {
@@ -180,7 +109,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       // result on feature.mesh so the stored-mesh render path handles it.
       let faceFallbackNote = '';
       if (revolveOperation && revolveOperation !== 'new-body' && revolveBodyKind !== 'surface') {
-        const target = pickRevolveTarget(features);
+        const target = pickMostRecentSolidTarget(features, { excludeType: 'revolve' });
         if (target) {
           const { phiStart, sweep } = GeometryEngine.resolveRevolveSweep(revolveAngle, revolveAngle2, revolveDirection);
           const axisVec = resolveRevolveAxisVec(revolveAxis as string, undefined);
@@ -190,7 +119,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
           }
           const revolveMesh = GeometryEngine.revolveFaceBoundary(boundary, axisVec, sweep, false, phiStart);
           if (revolveMesh) {
-            const result = applyRevolveBoolean(target.mesh as THREE.Mesh, revolveMesh, revolveOperation);
+            const result = applyBodyBoolean(target.mesh as THREE.Mesh, revolveMesh, revolveOperation);
             revolveMesh.geometry.dispose();
             if (result) {
               feature.mesh = result;
@@ -203,7 +132,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
                 );
                 return {
                   features: [...updated, feature],
-                  designConfigurations: syncRevolveConfigurationSuppression(state, {
+                  designConfigurations: syncConfigurationSuppression(state, {
                     [feature.id]: false,
                     [target.id]: true,
                   }),
@@ -301,13 +230,13 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
     // the !f.mesh guard in ExtrudedBodies). new-body falls through unchanged.
     let sketchFallbackNote = '';
     if (revolveOperation && revolveOperation !== 'new-body' && revolveBodyKind !== 'surface') {
-      const target = pickRevolveTarget(features);
+      const target = pickMostRecentSolidTarget(features, { excludeType: 'revolve' });
       if (target) {
         const { phiStart, sweep } = GeometryEngine.resolveRevolveSweep(revolveAngle, revolveAngle2, revolveDirection);
         const axisVec = resolveRevolveAxisVec(resolvedAxisKey, centerlineAxisDirection);
         const revolveMesh = GeometryEngine.revolveSketch(sketch, sweep, axisVec, phiStart);
         if (revolveMesh) {
-          const result = applyRevolveBoolean(target.mesh as THREE.Mesh, revolveMesh, revolveOperation);
+          const result = applyBodyBoolean(target.mesh as THREE.Mesh, revolveMesh, revolveOperation);
           revolveMesh.geometry.dispose();
           if (result) {
             feature.mesh = result;
@@ -319,7 +248,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
               );
               return {
                 features: [...updated, feature],
-                designConfigurations: syncRevolveConfigurationSuppression(state, {
+                designConfigurations: syncConfigurationSuppression(state, {
                   [feature.id]: false,
                   [target.id]: true,
                 }),
