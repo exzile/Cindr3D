@@ -3,6 +3,7 @@ import type { Feature } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
+import { placeToolFeature } from '../featureManagement/bodyBoolean';
 
 const SURFACE_MATERIAL = () =>
   new THREE.MeshPhysicalMaterial({
@@ -190,9 +191,29 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
         .find((f) => f.mesh && (f.mesh as THREE.Mesh).isMesh && f.bodyKind === 'surface')?.mesh as THREE.Mesh | undefined;
       const signedDistance =
         params.direction === 'inward' ? -params.offsetDistance : params.offsetDistance;
-      const mesh = sourceMesh
+      let mesh = sourceMesh
         ? configureMesh(GeometryEngine.offsetSurface(sourceMesh, signedDistance))
         : undefined;
+
+      // operation 'join' on a surface = MERGE the offset result back into the
+      // source surface (surface semantics — not a solid boolean), consuming
+      // the source. 'new-body' (default) keeps the offset as its own surface.
+      let joinNote = '';
+      let consumedSourceId: string | undefined;
+      if (params.operation === 'join' && sourceMesh && mesh) {
+        const srcFeature = [...features].reverse().find(
+          (f) => f.mesh === sourceMesh && f.bodyKind === 'surface',
+        );
+        try {
+          const merged = configureMesh(GeometryEngine.mergeSurfaces(mesh, sourceMesh));
+          mesh.geometry.dispose();
+          mesh = merged;
+          consumedSourceId = srcFeature?.id;
+          joinNote = srcFeature ? ` (merged with ${srcFeature.name})` : '';
+        } catch {
+          joinNote = ' (join failed — standalone surface)';
+        }
+      }
 
       const feature: Feature = {
         id: crypto.randomUUID(),
@@ -205,8 +226,16 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
         timestamp: Date.now(),
         bodyKind: 'surface',
       };
-      get().addFeature(feature);
-      get().setStatusMessage(`Offset Surface ${n} created`);
+      get().pushUndo();
+      set((s) => ({
+        features: [
+          ...s.features.map((f) =>
+            consumedSourceId && f.id === consumedSourceId ? { ...f, visible: false, suppressed: true } : f,
+          ),
+          feature,
+        ],
+      }));
+      get().setStatusMessage(`Offset Surface ${n} created${joinNote}`);
     },
 
     commitSurfaceExtend: (params) => {
@@ -375,8 +404,16 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
         timestamp: Date.now(),
         bodyKind: 'solid',
       };
-      get().addFeature(feature);
-      get().setStatusMessage(`Thicken ${n}: ${params.thickness}mm ${params.direction}`);
+      // Thicken yields a solid — honour operation join/cut against the most
+      // recent solid body via the shared helper (was: always standalone).
+      get().pushUndo();
+      let opNote = '';
+      set((s) => {
+        const r = placeToolFeature(s, feature, params.operation ?? 'new-body');
+        opNote = r.note;
+        return { features: r.features, designConfigurations: r.designConfigurations };
+      });
+      get().setStatusMessage(`Thicken ${n}: ${params.thickness}mm ${params.direction}${opNote}`);
     },
   };
 }

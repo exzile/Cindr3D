@@ -2,6 +2,23 @@ import type { Feature, Tool } from '../../../types/cad';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
 import type { CADSliceContext } from '../sliceContext';
 import type { CADState } from '../state';
+import { placeToolFeature, type BodyBooleanOp } from './featureManagement/bodyBoolean';
+
+/**
+ * Map a panel operation (which may include 'new-component') + body kind to a
+ * BodyBooleanOp for placeToolFeature. Surface bodies and new-component never
+ * solid-boolean here — they stay standalone.
+ */
+function toolBooleanOp(
+  operation: string | undefined,
+  isSurface: boolean,
+  hasMesh: boolean,
+): BodyBooleanOp {
+  if (isSurface || !hasMesh) return 'new-body';
+  return operation === 'join' || operation === 'cut' || operation === 'intersect'
+    ? operation
+    : 'new-body';
+}
 
 export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
   const slice: Partial<CADState> = {
@@ -76,13 +93,22 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
       mesh: mesh ?? undefined,
       bodyKind: sweepBodyKind === 'surface' ? 'surface' : 'solid',
     };
-    set({
-      features: [...features, feature],
-      activeTool: 'select',
-      sweepProfileSketchId: null,
-      sweepPathSketchId: null,
-      sweepBodyKind: 'solid',
-      statusMessage: `${sweepBodyKind === 'surface' ? 'Surface ' : ''}Sweep created (${units})`,
+    let opNote = '';
+    set((s) => {
+      const r = placeToolFeature(
+        s, feature,
+        toolBooleanOp(sweepOperation, sweepBodyKind === 'surface', !!mesh),
+      );
+      opNote = r.note;
+      return {
+        features: r.features,
+        designConfigurations: r.designConfigurations,
+        activeTool: 'select',
+        sweepProfileSketchId: null,
+        sweepPathSketchId: null,
+        sweepBodyKind: 'solid',
+        statusMessage: `${sweepBodyKind === 'surface' ? 'Surface ' : ''}Sweep created${opNote} (${units})`,
+      };
     });
   },
 
@@ -139,11 +165,20 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
       mesh: mesh ?? undefined,
       bodyKind: loftBodyKind === 'surface' ? 'surface' : 'solid',
     };
-    set({
-      features: [...features, feature],
-      activeTool: 'select',
-      loftProfileSketchIds: [],
-      statusMessage: `${loftBodyKind === 'surface' ? 'Surface ' : ''}Loft created across ${profileSketches.length} profiles (${units})`,
+    let opNote = '';
+    set((s) => {
+      const r = placeToolFeature(
+        s, feature,
+        toolBooleanOp(loftOperation, loftBodyKind === 'surface', !!mesh),
+      );
+      opNote = r.note;
+      return {
+        features: r.features,
+        designConfigurations: r.designConfigurations,
+        activeTool: 'select',
+        loftProfileSketchIds: [],
+        statusMessage: `${loftBodyKind === 'surface' ? 'Surface ' : ''}Loft created across ${profileSketches.length} profiles${opNote} (${units})`,
+      };
     });
   },
 

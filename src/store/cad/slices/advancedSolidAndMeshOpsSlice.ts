@@ -549,8 +549,17 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
       suppressed: false,
       timestamp: Date.now(),
     };
-    get().addFeature(feature);
-    get().setStatusMessage(`Emboss ${n}: ${style} ${depth}mm`);
+    // Emboss raises the profile ON the body (join); deboss engraves INTO it
+    // (cut). Route through the shared helper so it actually booleans against
+    // the target body instead of leaving a floating slab.
+    get().pushUndo();
+    let opNote = '';
+    set((s) => {
+      const r = placeToolFeature(s, feature, style === 'deboss' ? 'cut' : 'join');
+      opNote = r.note;
+      return { features: r.features, designConfigurations: r.designConfigurations };
+    });
+    get().setStatusMessage(`Emboss ${n}: ${style} ${depth}mm${opNote}`);
   },
 
   // ── SLD6 — Boundary Fill ─────────────────────────────────────────────────
