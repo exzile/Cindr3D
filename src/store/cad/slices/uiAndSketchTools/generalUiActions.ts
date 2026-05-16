@@ -20,13 +20,15 @@ export function createGeneralUiActions({ set, get }: CADSliceContext): Partial<C
   filletLiveRadius: 2,
   setFilletLiveRadius: (r) => set({ filletLiveRadius: Math.max(0.01, r) }),
 
-  // D7 Chamfer edge selection
+  // D7 Chamfer edge selection + live distance for gizmo drag feedback
   chamferEdgeIds: [],
   addChamferEdge: (id) => set((state) => ({
     chamferEdgeIds: state.chamferEdgeIds.includes(id) ? state.chamferEdgeIds : [...state.chamferEdgeIds, id],
   })),
   removeChamferEdge: (id) => set((state) => ({ chamferEdgeIds: state.chamferEdgeIds.filter((e) => e !== id) })),
   clearChamferEdges: () => set({ chamferEdgeIds: [] }),
+  chamferLiveDistance: 2,
+  setChamferLiveDistance: (d) => set({ chamferLiveDistance: Math.max(0.01, d) }),
 
   activeDialog: null,
   setActiveDialog: (dialog) => set((state) => ({
@@ -37,6 +39,7 @@ export function createGeneralUiActions({ set, get }: CADSliceContext): Partial<C
     filletEdgeIds: dialog === 'fillet' ? [] : state.filletEdgeIds,
     filletLiveRadius: dialog === 'fillet' ? 2 : state.filletLiveRadius,
     chamferEdgeIds: dialog === 'chamfer' ? [] : state.chamferEdgeIds,
+    chamferLiveDistance: dialog === 'chamfer' ? 2 : state.chamferLiveDistance,
   })),
   dialogPayload: null,
   setDialogPayload: (payload) => set({ dialogPayload: payload }),

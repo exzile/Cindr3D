@@ -5,8 +5,9 @@ import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
 import { recomputeBooleanDependents, runBoolean } from './featureBooleanUtils';
 import { errorMessage } from '../../../../utils/errorHandling';
-import { liveBodyMeshes } from '../../../../store/meshRegistry';
 import { parseFilletEdgeIds, computeFilletGeometry } from '../../../../utils/geometry/filletGeometry';
+import { parseChamferEdgeIds, computeChamferGeometry } from '../../../../utils/geometry/chamferGeometry';
+import { applyEdgeCut } from './applyEdgeCut';
 
 function getBooleanParentIds(feature: Feature): string[] {
   const fromArray = feature.params.booleanParentIds;
@@ -459,131 +460,40 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
     get().setStatusMessage('Align: unsupported body type (no mesh)');
   },
 
-  // 3D edge fillet — rounds picked edges of a mesh-backed OR primitive body.
-  // Edge IDs (from filletEdgeIds) use the new format:
+  // 3D edge fillet — rounds picked edges of a mesh-backed, primitive, OR
+  // extrude (CSG-pipeline) body. Edge IDs (filletEdgeIds) use the format
   //   `${featureId}|${meshUuid}:${ax,ay,az}:${bx,by,bz}`
-  // The featureId prefix (before the `|`) lets us find the source feature
-  // directly without relying on feature.mesh.uuid — which is absent for
-  // primitive features (box/cyl/sphere/torus) whose mesh is created by
-  // PrimitiveBodies at render time and never stored in feature.mesh.
-  // For primitives we rebuild the geometry from params and apply the world
-  // transform so edge coords (world-space from the picker) match.
-  // After filleting a primitive, feature.mesh is set, causing PrimitiveBodies
-  // to skip it (skip-if-mesh guard) and ExtrudedBodies to pick it up via the
-  // stored-mesh rendering path.
-  // Approximate rolling-ball: each shared edge is set back along both adjacent
-  // faces and a smooth arc band is stitched between the setback lines.
+  // The whole flow (parse → resolve source geometry → CSG → mesh swap) is
+  // shared with commitChamfer via applyEdgeCut; the rounding itself is
+  // computeFilletGeometry, shared with FilletPreview so the committed result
+  // matches the preview exactly.
   commitFillet: (radius, segments) => {
-    const { filletEdgeIds, features } = get();
-    if (!(radius > 0) || filletEdgeIds.length === 0) {
-      get().setStatusMessage('Fillet: pick edges and set a radius > 0');
-      return;
-    }
-    // Parse edge IDs using the shared utility (same logic as FilletPreview).
-    const parsed = parseFilletEdgeIds(filletEdgeIds);
-    if (!parsed) { get().setStatusMessage('Fillet: no valid edges parsed'); return; }
-    const { featureId: targetFid, meshUuid: targetMeshUuid, edges } = parsed;
-    // Find the source feature.
-    const feature = targetFid
-      ? features.find((f) => f.id === targetFid)
-      : features.find((f) => f.mesh instanceof THREE.Mesh && (f.mesh as THREE.Object3D).uuid === targetMeshUuid);
-    if (!feature) {
-      get().setStatusMessage('Fillet: selected edges are not on a solid/surface body');
-      return;
-    }
-    console.log('[commitFillet] feature:', feature.id, 'type:', feature.type,
-      'hasMesh:', feature.mesh instanceof THREE.Mesh,
-      'edges:', edges.length, 'radius:', radius,
-      'inRegistry:', liveBodyMeshes.has(targetMeshUuid));
-    // Obtain source geometry.
-    //  1. Mesh-backed features (sweep, thin extrude, etc.): use stored mesh.
-    //  2. Primitive features (box/cyl/sphere/torus): rebuild geometry from params.
-    //  3. Extrude features (CSG pipeline): look up the live rendered mesh from
-    //     the BodyMesh registry (liveBodyMeshes, keyed by THREE.js mesh UUID).
-    //     The UUID is embedded in the edge ID by FilletEdgeHighlight/edgeId().
-    const hasMesh = feature.mesh instanceof THREE.Mesh;
-    let srcGeo: THREE.BufferGeometry;
-    let srcMaterial: THREE.Material | THREE.Material[];
-    let oldGeomToDispose: THREE.BufferGeometry | null = null;
-    if (hasMesh) {
-      const srcMesh = feature.mesh as THREE.Mesh;
-      srcGeo = srcMesh.geometry.clone().toNonIndexed();
-      srcMaterial = srcMesh.material;
-      oldGeomToDispose = srcMesh.geometry;
-    } else if (feature.type === 'primitive') {
-      const p = feature.params;
-      const kind = p.kind as string;
-      let baseGeo: THREE.BufferGeometry | null = null;
-      if (kind === 'box') {
-        baseGeo = new THREE.BoxGeometry(Number(p.width) || 20, Number(p.height) || 20, Number(p.depth) || 20);
-      } else if (kind === 'cylinder') {
-        baseGeo = new THREE.CylinderGeometry(
-          Number(p.radius) || 10, Number(p.radiusTop ?? p.radius) || 10, Number(p.height) || 20, 48,
-        );
-      } else if (kind === 'sphere') {
-        baseGeo = new THREE.SphereGeometry(Number(p.radius) || 10, 48, 32);
-      } else if (kind === 'torus') {
-        baseGeo = new THREE.TorusGeometry(Number(p.radius) || 15, Number(p.tubeRadius) || 3, 24, 48);
-      }
-      if (!baseGeo) { get().setStatusMessage('Fillet: unsupported primitive type'); return; }
-      // Apply world transform so edge coords (world-space) match vertices.
-      const pos = new THREE.Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0);
-      const quat = new THREE.Quaternion().setFromEuler(new THREE.Euler(
-        THREE.MathUtils.degToRad(Number(p.rx) || 0),
-        THREE.MathUtils.degToRad(Number(p.ry) || 0),
-        THREE.MathUtils.degToRad(Number(p.rz) || 0),
-      ));
-      baseGeo.applyMatrix4(new THREE.Matrix4().compose(pos, quat, new THREE.Vector3(1, 1, 1)));
-      srcGeo = baseGeo.toNonIndexed();
-      baseGeo.dispose();
-      // Placeholder — ExtrudedBodies overrides on next render via its material useEffect.
-      srcMaterial = new THREE.MeshStandardMaterial({ color: 0x5b9bd5, roughness: 0.4, metalness: 0.1 });
-    } else {
-      // Extrude (CSG-pipeline) feature: geometry lives only in the R3F scene.
-      // BodyMesh registers its THREE.Mesh in liveBodyMeshes by UUID on mount so
-      // we can reach it here without re-running the expensive CSG pipeline.
-      const liveMesh = liveBodyMeshes.get(targetMeshUuid);
-      if (!liveMesh) {
-        get().setStatusMessage('Fillet: body not yet rendered — select the edge and try again');
-        return;
-      }
-      srcGeo = liveMesh.geometry.clone().toNonIndexed();
-      srcMaterial = liveMesh.material;
-    }
-    // ── Rolling-ball fillet — shared utility (same code as FilletPreview) ──
-    const newGeo = computeFilletGeometry(srcGeo, edges, radius, segments);
-    srcGeo.dispose();
-    if (!newGeo) {
-      get().setStatusMessage('Fillet: no eligible edges (need an edge shared by two faces)');
-      return;
-    }
-    get().pushUndo();
-    const newMesh = new THREE.Mesh(newGeo, srcMaterial);
-    newMesh.userData = hasMesh
-      ? { ...(feature.mesh as THREE.Mesh).userData }
-      : { pickable: true, featureId: feature.id };
-    newMesh.castShadow = true;
-    newMesh.receiveShadow = true;
-    if (hasMesh) {
-      // Mesh-backed feature: replace mesh and propagate boolean dependents.
-      set((state) => ({
-        features: recomputeBooleanDependents(
-          state.features.map((f) => (f.id === feature.id ? { ...f, mesh: newMesh } : f)),
-          [feature.id],
-        ),
-        statusMessage: `Filleted ${edges.length} edge(s) at r=${radius}`,
-      }));
-      if (oldGeomToDispose) setTimeout(() => oldGeomToDispose!.dispose(), 0);
-    } else {
-      // Primitive OR extrude (from registry): store the filleted mesh so
-      // PrimitiveBodies skips it (skip-if-mesh guard) and ExtrudedBodies
-      // renders it via the stored-mesh path (the CSG pipeline also skips it
-      // because of the `!f.mesh` filter in its feature list).
-      set((state) => ({
-        features: state.features.map((f) => (f.id === feature.id ? { ...f, mesh: newMesh } : f)),
-        statusMessage: `Filleted ${edges.length} edge(s) at r=${radius}`,
-      }));
-    }
+    applyEdgeCut({ get, set }, {
+      tool: 'Fillet',
+      edgeIds: get().filletEdgeIds,
+      sizeValid: radius > 0,
+      parse: parseFilletEdgeIds,
+      compute: (srcGeo, edges) => computeFilletGeometry(srcGeo, edges, radius, segments),
+      pastVerb: 'Filleted',
+      sizeLabel: `r=${radius}`,
+    });
+  },
+
+  // 3D edge chamfer — flat bevel on picked edges. Same machinery as
+  // commitFillet (shared applyEdgeCut + edge-cut core); only the per-edge
+  // cutter differs (triangular wedge vs prism−cylinder). distance is the
+  // live/face-1 setback; distance2 is the face-2 setback the dialog resolves
+  // from its mode (equal / two-distance / distance+angle).
+  commitChamfer: (distance, distance2) => {
+    applyEdgeCut({ get, set }, {
+      tool: 'Chamfer',
+      edgeIds: get().chamferEdgeIds,
+      sizeValid: distance > 0,
+      parse: parseChamferEdgeIds,
+      compute: (srcGeo, edges) => computeChamferGeometry(srcGeo, edges, distance, distance2),
+      pastVerb: 'Chamfered',
+      sizeLabel: `d=${distance}`,
+    });
   },
 
   // SLD12 Ã¢â‚¬â€ commitCombine: boolean op on two feature meshes

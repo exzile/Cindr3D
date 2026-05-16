@@ -41,6 +41,8 @@ import FilletEdgeHighlight from './scene/FilletEdgeHighlight';
 import FilletGizmo from './scene/FilletGizmo';
 import FilletPreview from './scene/FilletPreview';
 import ChamferEdgeHighlight from './scene/ChamferEdgeHighlight';
+import ChamferGizmo from './scene/ChamferGizmo';
+import ChamferPreview from './scene/ChamferPreview';
 import ConstructionGeometryInteraction from './scene/ConstructionGeometryInteraction';
 import ConstructionGeometryRenderer from './scene/ConstructionGeometryRenderer';
 import ReplaceFaceInteraction from './scene/ReplaceFaceInteraction';
@@ -251,6 +253,8 @@ export default function Viewport() {
         <FilletGizmo />
         <FilletPreview />
         <ChamferEdgeHighlight />
+        <ChamferGizmo />
+        <ChamferPreview />
         <ConstructionGeometryInteraction />
         <ConstructionGeometryRenderer />
         <ReplaceFaceInteraction />

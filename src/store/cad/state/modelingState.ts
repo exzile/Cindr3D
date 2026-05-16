@@ -232,6 +232,10 @@ export interface CADModelingState {
   // 3D edge fillet (commit) — rounds edges in filletEdgeIds on the target body
   commitFillet: (radius: number, segments: number) => void;
 
+  // 3D edge chamfer (commit) — bevels edges in chamferEdgeIds. distance is the
+  // face-1 / live setback; distance2 (optional) is the face-2 setback.
+  commitChamfer: (distance: number, distance2?: number) => void;
+
   // Align tool — geometry-pair picking + transform commit
   alignPickStage: 'idle' | 'source' | 'target';
   alignPickKind: 'face' | 'edge' | 'vertex';
@@ -259,11 +263,13 @@ export interface CADModelingState {
   filletLiveRadius: number;
   setFilletLiveRadius: (r: number) => void;
 
-  // D7 Chamfer edge selection
+  // D7 Chamfer edge selection + live distance (synced with ChamferGizmo drag)
   chamferEdgeIds: string[];
   addChamferEdge: (id: string) => void;
   removeChamferEdge: (id: string) => void;
   clearChamferEdges: () => void;
+  chamferLiveDistance: number;
+  setChamferLiveDistance: (d: number) => void;
 
   // Active feature dialog
   activeDialog: string | null;

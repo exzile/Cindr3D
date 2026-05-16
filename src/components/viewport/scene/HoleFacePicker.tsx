@@ -11,7 +11,7 @@
  * All BufferGeometry instances are disposed before being replaced.
  */
 
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect, useMemo, useState } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
@@ -19,6 +19,7 @@ import { useCADStore } from '../../../store/cadStore';
 import { useFacePicker, type FacePickResult } from '../../../hooks/useFacePicker';
 import { usePickerSceneCleanup } from '../../../hooks/usePickerSceneCleanup';
 import { buildFaceGeometry } from './pickerGeometry';
+import { usePickCursor, pulseFactor } from './pickPulse';
 
 // ── Module-level material singletons ─────────────────────────────────────────
 const HOVER_MAT = new THREE.MeshBasicMaterial({
@@ -63,6 +64,15 @@ export default function HoleFacePicker() {
   const pickEnabled = activeDialog === 'hole' && holeFaceId === null;
   const overlayEnabled = activeDialog === 'hole';
 
+  // Per-instance clone of the shared HOVER_MAT so we can pulse opacity without
+  // mutating the module-level singleton (one clone per component lifetime).
+  const pulseHoverMat = useMemo(() => HOVER_MAT.clone(), []);
+  useEffect(() => () => { pulseHoverMat.dispose(); }, [pulseHoverMat]);
+
+  // Crosshair cursor while a pickable face is hovered (only while picking).
+  const [hovering, setHovering] = useState(false);
+  usePickCursor(pickEnabled, hovering);
+
   const hoverResultRef = useRef<FacePickResult | null>(null);
   const selectedBoundaryRef = useRef<THREE.Vector3[] | null>(null);
 
@@ -75,6 +85,7 @@ export default function HoleFacePicker() {
 
   const handleHover = useCallback((result: FacePickResult | null) => {
     hoverResultRef.current = result;
+    setHovering(result !== null);
   }, []);
 
   const handleClick = useCallback(
@@ -92,7 +103,7 @@ export default function HoleFacePicker() {
 
   useFacePicker({ enabled: pickEnabled, onHover: handleHover, onClick: handleClick });
 
-  useFrame(({ scene, invalidate }) => {
+  useFrame(({ scene, invalidate, clock }) => {
     // Tear everything down when the dialog is not open.
     if (!overlayEnabled) {
       if (hoverMeshRef.current) {
@@ -119,7 +130,7 @@ export default function HoleFacePicker() {
       const hr = hoverResultRef.current;
       if (hr) {
         if (!hoverMeshRef.current) {
-          const mesh = new THREE.Mesh(buildFaceGeometry(hr.boundary), HOVER_MAT);
+          const mesh = new THREE.Mesh(buildFaceGeometry(hr.boundary), pulseHoverMat);
           mesh.renderOrder = 99;
           scene.add(mesh);
           hoverMeshRef.current = mesh;
@@ -127,6 +138,8 @@ export default function HoleFacePicker() {
           hoverMeshRef.current.geometry.dispose();
           hoverMeshRef.current.geometry = buildFaceGeometry(hr.boundary);
         }
+        // Subtle breathing pulse on the hover highlight (per-instance clone).
+        pulseHoverMat.opacity = 0.3 + 0.35 * pulseFactor(clock.elapsedTime * 1000);
       } else if (hoverMeshRef.current) {
         scene.remove(hoverMeshRef.current);
         hoverMeshRef.current.geometry.dispose();
