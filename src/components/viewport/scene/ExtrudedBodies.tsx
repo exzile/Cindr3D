@@ -551,7 +551,7 @@ export default function ExtrudedBodies() {
           />
         );
       })}
-      {features.filter((f) => f.type === 'revolve' && isActive(f)).map((feature) => {
+      {features.filter((f) => f.type === 'revolve' && isActive(f) && !f.mesh).map((feature) => {
         const bodyId = resolveBodyId(feature.id, feature.bodyId);
         const material = getMaterial(feature.componentId, bodyId, feature.bodyKind === 'surface');
         if (feature.params.faceRevolve) {
