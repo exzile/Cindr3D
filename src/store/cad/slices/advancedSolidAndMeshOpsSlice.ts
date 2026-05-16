@@ -118,6 +118,44 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     get().setStatusMessage(`Pipe ${n} created: ⌀${outerDiameter}mm${hollow ? `, ${wallThickness}mm wall` : ''}${opNote}`);
   },
 
+  // ── SLD — Snap Fit (cantilever snap-hook) ────────────────────────────────
+  commitSnapFit: (params) => {
+    const { features } = get();
+    const { snapType, length, width, thickness, overhang, overhangAngle, returnAngle, operation } = params;
+    if (![length, width, thickness].every((v) => Number.isFinite(v) && v > 0)) {
+      get().setStatusMessage('Snap Fit: length, width and thickness must be positive numbers');
+      return;
+    }
+    get().pushUndo();
+    const geom = GeometryEngine.snapFitGeometry(
+      length, width, thickness, overhang, overhangAngle, returnAngle,
+    );
+    const mesh = new THREE.Mesh(geom);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    const n = features.filter((f) => f.type === 'snapFit').length + 1;
+    const featureId = crypto.randomUUID();
+    mesh.userData.pickable = true;
+    mesh.userData.featureId = featureId;
+    const feature: Feature = {
+      id: featureId,
+      name: `Snap Fit ${n} (${snapType})`,
+      type: 'snapFit',
+      params: { isSnapFit: true, snapType, length, width, thickness, overhang, overhangAngle, returnAngle, operation },
+      mesh,
+      bodyKind: 'solid',
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+    };
+    set({ features: [...features, feature] });
+    // operation join/cut is stored but not booleaned — same known limitation
+    // as pipe/revolve; the hook is added as a standalone body the user can
+    // position and combine manually.
+    const opNote = operation !== 'new-body' ? ` (${operation} not booleaned — standalone body)` : '';
+    get().setStatusMessage(`Snap Fit ${n} created: ${snapType}, ${length}×${width}×${thickness}mm${opNote}`);
+  },
+
   // ── SLD4 — Rest ──────────────────────────────────────────────────────────
   commitRest: (params) => {
     const { features } = get();

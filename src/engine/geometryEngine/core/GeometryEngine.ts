@@ -72,6 +72,7 @@ import {
   sweepSketchInternal as sweepSketchInternalImpl,
 } from './solid/profileSweeps';
 import { pipeGeometry as pipeGeometryImpl } from './solid/pipe';
+import { snapFitGeometry as snapFitGeometryImpl } from './solid/snapFit';
 import {
   bakeMeshWorldGeometry as bakeMeshWorldGeometryImpl,
   extractMeshGeometry as extractMeshGeometryImpl,
@@ -320,6 +321,17 @@ export class GeometryEngine {
     wallThickness: number,
   ): THREE.BufferGeometry {
     return pipeGeometryImpl(points, outerDiameter, hollow, wallThickness);
+  }
+
+  static snapFitGeometry(
+    length: number,
+    width: number,
+    thickness: number,
+    overhang: number,
+    overhangAngleDeg: number,
+    returnAngleDeg: number,
+  ): THREE.BufferGeometry {
+    return snapFitGeometryImpl(length, width, thickness, overhang, overhangAngleDeg, returnAngleDeg);
   }
 
   static async simplifyGeometry(

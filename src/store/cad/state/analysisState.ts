@@ -175,6 +175,18 @@ export interface CADAnalysisState {
     pathSketchId: string;
   }): void;
 
+  // ── SLD — Snap Fit ───────────────────────────────────────────────────────
+  commitSnapFit(params: {
+    snapType: 'cantilever' | 'annular' | 'torsional';
+    length: number;
+    width: number;
+    thickness: number;
+    overhang: number;
+    overhangAngle: number;
+    returnAngle: number;
+    operation: 'new-body' | 'join' | 'cut';
+  }): void;
+
   // ── SLD4 — Rest ──────────────────────────────────────────────────────────
   commitRest(params: { profileId: string; width: number; depth: number; thickness: number; normalX: number; normalY: number; normalZ: number; centerX: number; centerY: number; centerZ: number }): void;
 
