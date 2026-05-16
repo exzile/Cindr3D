@@ -14,7 +14,7 @@ export interface SolverPoint {
 }
 
 export interface SolverConstraint {
-  type: SketchConstraint['type'] | 'dimension-linear' | 'dimension-aligned' | 'dimension-radial' | 'dimension-diameter' | 'dimension-arc-length';
+  type: SketchConstraint['type'] | 'dimension-linear' | 'dimension-aligned' | 'dimension-radial' | 'dimension-diameter' | 'dimension-arc-length' | 'dimension-linear-diameter' | 'dimension-ellipse-major' | 'dimension-ellipse-minor' | 'dimension-concentric-gap';
   entityIds: string[];
   pointIndices?: number[];
   value?: number;
@@ -265,6 +265,16 @@ export function dimensionsToSolverConstraints(dimensions: SketchDimension[] = []
           return [{ type: 'dimension-diameter', entityIds: dimension.entityIds, value: dimension.value }];
         case 'arc-length':
           return [{ type: 'dimension-arc-length', entityIds: dimension.entityIds, value: dimension.value }];
+        case 'linear-diameter':
+          // linear-diameter constrains radius = value/2, same as diameter
+          return [{ type: 'dimension-linear-diameter', entityIds: dimension.entityIds, value: dimension.value }];
+        case 'ellipse-major':
+          return [{ type: 'dimension-ellipse-major', entityIds: dimension.entityIds, value: dimension.value }];
+        case 'ellipse-minor':
+          return [{ type: 'dimension-ellipse-minor', entityIds: dimension.entityIds, value: dimension.value }];
+        case 'concentric-gap':
+          // entityIds = [circle1Id, circle2Id]; value = |r2 - r1|
+          return [{ type: 'dimension-concentric-gap', entityIds: dimension.entityIds, value: dimension.value }];
         default:
           return [];
       }
@@ -629,6 +639,72 @@ function computeResiduals(
         while (end <= startAngle) end += 2 * Math.PI;
         const currentArcLength = r * (end - startAngle);
         residuals.push(currentArcLength - (c.value ?? 0));
+        break;
+      }
+      case 'dimension-linear-diameter': {
+        // Same as dimension-diameter: constrains radius = value/2
+        const ref2 = parseDimensionReference(c.entityIds[0]);
+        const ent2 = ref2 ? entityMap.get(ref2.entityId) : null;
+        if (!ent2 || !Number.isFinite(c.value)) break;
+        residuals.push((ent2.radius ?? 0) - (c.value ?? 0) / 2);
+        break;
+      }
+      case 'dimension-ellipse-major': {
+        const ref3 = parseDimensionReference(c.entityIds[0]);
+        const ent3 = ref3 ? entityMap.get(ref3.entityId) : null;
+        if (!ent3 || !Number.isFinite(c.value)) break;
+        residuals.push((ent3.majorRadius ?? 0) - (c.value ?? 0));
+        break;
+      }
+      case 'dimension-ellipse-minor': {
+        const ref4 = parseDimensionReference(c.entityIds[0]);
+        const ent4 = ref4 ? entityMap.get(ref4.entityId) : null;
+        if (!ent4 || !Number.isFinite(c.value)) break;
+        residuals.push((ent4.minorRadius ?? 0) - (c.value ?? 0));
+        break;
+      }
+      case 'dimension-concentric-gap': {
+        // entityIds = [circle1Id, circle2Id]; value = |r2 - r1|
+        if (c.entityIds.length < 2) break;
+        const refCg1 = parseDimensionReference(c.entityIds[0]);
+        const refCg2 = parseDimensionReference(c.entityIds[1]);
+        const entCg1 = refCg1 ? entityMap.get(refCg1.entityId) : null;
+        const entCg2 = refCg2 ? entityMap.get(refCg2.entityId) : null;
+        if (!entCg1 || !entCg2 || !Number.isFinite(c.value)) break;
+        const r1 = entCg1.radius ?? 0;
+        const r2 = entCg2.radius ?? 0;
+        residuals.push(Math.abs(r2 - r1) - (c.value ?? 0));
+        break;
+      }
+      case 'polygon': {
+        // Keeps a regular polygon regular: all N side-line entities have equal length.
+        // entityIds contains the IDs of all N line entities (each with 2 points).
+        const n = c.entityIds.length;
+        if (n < 3) break;
+        const getLineLenSq = (id: string) => {
+          const e = entityMap.get(id);
+          if (!e || e.points.length < 2) return 0;
+          const a = getPoint(e.id, 0, pointMap);
+          const b = getPoint(e.id, e.points.length - 1, pointMap);
+          const dx = b.x - a.x; const dy = b.y - a.y;
+          return dx * dx + dy * dy;
+        };
+        const len0sq = getLineLenSq(c.entityIds[0]);
+        for (let i = 1; i < n; i++) {
+          residuals.push(getLineLenSq(c.entityIds[i]) - len0sq);
+        }
+        break;
+      }
+      case 'line-parallel-surface': {
+        // Line direction is perpendicular to surface normal (i.e., line lies
+        // in the plane parallel to the surface): dot(line_dir, normal) = 0
+        if (!c.surfacePlane || c.entityIds.length < 1) break;
+        const ent6 = entityMap.get(c.entityIds[0]);
+        if (!ent6 || ent6.points.length < 2) break;
+        const lp0 = getPoint(ent6.id, 0, pointMap);
+        const lp1 = getPoint(ent6.id, ent6.points.length - 1, pointMap);
+        const { nu, nv } = c.surfacePlane;
+        residuals.push((lp1.x - lp0.x) * nu + (lp1.y - lp0.y) * nv);
         break;
       }
       default:

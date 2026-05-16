@@ -25,8 +25,14 @@ const SELECTED_MAT = new THREE.LineBasicMaterial({
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+// Edge ID format: `${featureId}|${meshUuid}:${ax,ay,az}:${bx,by,bz}`
+// The featureId prefix (joined with `|`) lets commitFillet find the source
+// feature directly via f.id lookup instead of matching by mesh UUID, which
+// fails for primitive features whose mesh isn't stored in feature.mesh.
 function edgeId(result: EdgePickResult): string {
-  return `${result.mesh.uuid}:${result.edgeVertexA.toArray().join(',')}:${result.edgeVertexB.toArray().join(',')}`;
+  const fid = (result.mesh.userData.featureId as string | undefined) ?? '';
+  const prefix = fid ? `${fid}|` : '';
+  return `${prefix}${result.mesh.uuid}:${result.edgeVertexA.toArray().join(',')}:${result.edgeVertexB.toArray().join(',')}`;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -34,6 +40,7 @@ export default function FilletEdgeHighlight() {
   const activeDialog = useCADStore((s) => s.activeDialog);
   const filletEdgeIds = useCADStore((s) => s.filletEdgeIds);
   const addFilletEdge = useCADStore((s) => s.addFilletEdge);
+  const removeFilletEdge = useCADStore((s) => s.removeFilletEdge);
 
   const enabled = activeDialog === 'fillet';
 
@@ -74,13 +81,18 @@ export default function FilletEdgeHighlight() {
 
   const handleClick = useCallback((result: EdgePickResult) => {
     const id = edgeId(result);
+    // Toggle: clicking an already-selected edge deselects it.
+    if (filletEdgeIds.includes(id)) {
+      removeFilletEdge(id);
+      return;
+    }
     addFilletEdge(id);
     // Store edge data for rendering
     selectedEdgesDataRef.current.set(id, {
       a: result.edgeVertexA.clone(),
       b: result.edgeVertexB.clone(),
     });
-  }, [addFilletEdge]);
+  }, [addFilletEdge, removeFilletEdge, filletEdgeIds]);
 
   useEdgePicker({ enabled, onHover: handleHover, onClick: handleClick });
 

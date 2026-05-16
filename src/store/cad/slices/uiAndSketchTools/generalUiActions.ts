@@ -10,13 +10,15 @@ export function createGeneralUiActions({ set, get }: CADSliceContext): Partial<C
   showExportDialog: false,
   setShowExportDialog: (show) => set({ showExportDialog: show }),
 
-  // D6 Fillet edge selection
+  // D6 Fillet edge selection + live radius for gizmo drag feedback
   filletEdgeIds: [],
   addFilletEdge: (id) => set((state) => ({
     filletEdgeIds: state.filletEdgeIds.includes(id) ? state.filletEdgeIds : [...state.filletEdgeIds, id],
   })),
   removeFilletEdge: (id) => set((state) => ({ filletEdgeIds: state.filletEdgeIds.filter((e) => e !== id) })),
   clearFilletEdges: () => set({ filletEdgeIds: [] }),
+  filletLiveRadius: 2,
+  setFilletLiveRadius: (r) => set({ filletLiveRadius: Math.max(0.01, r) }),
 
   // D7 Chamfer edge selection
   chamferEdgeIds: [],
@@ -31,8 +33,9 @@ export function createGeneralUiActions({ set, get }: CADSliceContext): Partial<C
     activeDialog: dialog,
     // D186: closing the dialog also clears editing state so the next one opens fresh
     editingFeatureId: dialog === null ? null : state.editingFeatureId,
-    // Clear edge selections when closing fillet/chamfer dialogs
+    // Clear edge selections and reset live radius when opening fillet/chamfer dialogs
     filletEdgeIds: dialog === 'fillet' ? [] : state.filletEdgeIds,
+    filletLiveRadius: dialog === 'fillet' ? 2 : state.filletLiveRadius,
     chamferEdgeIds: dialog === 'chamfer' ? [] : state.chamferEdgeIds,
   })),
   dialogPayload: null,

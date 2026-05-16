@@ -25,6 +25,7 @@ export default function ConstructionGeometryInteraction() {
 
   const [step1Edge, setStep1Edge] = useState<EdgePickResult | null>(null);
   const [step1Vertex, setStep1Vertex] = useState<VertexPickResult | null>(null);
+  const [step2Vertex, setStep2Vertex] = useState<VertexPickResult | null>(null);
   // Stores the face normal captured in step 1 for D187 / D189 two-step tools
   const [step1Normal, setStep1Normal] = useState<THREE.Vector3 | null>(null);
 
@@ -33,6 +34,7 @@ export default function ConstructionGeometryInteraction() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setStep1Edge(null);
     setStep1Vertex(null);
+    setStep2Vertex(null);
     setStep1Normal(null);
   }, [activeTool]);
 
@@ -45,7 +47,8 @@ export default function ConstructionGeometryInteraction() {
     activeTool === 'construct-axis-two-points' ||
     activeTool === 'construct-point-vertex' ||
     activeTool === 'construct-plane-tangent-at-point' ||
-    activeTool === 'construct-axis-perp-at-point'
+    activeTool === 'construct-axis-perp-at-point' ||
+    activeTool === 'construct-plane-three-points'
   );
   const isFaceTool = (
     activeTool === 'construct-point-center' ||
@@ -145,6 +148,42 @@ export default function ConstructionGeometryInteraction() {
 
   // ── Vertex click handler ──────────────────────────────────────────────────
   const handleVertexClick = useCallback((result: VertexPickResult) => {
+    // Plane Through Three Points — 3-step pick
+    if (activeTool === 'construct-plane-three-points') {
+      if (step1Vertex === null) {
+        setStep1Vertex(result);
+        useCADStore.getState().setStatusMessage('Plane Through Three Points: click second point');
+        return;
+      }
+      if (step2Vertex === null) {
+        setStep2Vertex(result);
+        useCADStore.getState().setStatusMessage('Plane Through Three Points: click third point');
+        return;
+      }
+      const p1 = step1Vertex.position;
+      const p2 = step2Vertex.position;
+      const p3 = result.position;
+      const v1 = p2.clone().sub(p1);
+      const v2 = p3.clone().sub(p1);
+      const normal = new THREE.Vector3().crossVectors(v1, v2);
+      if (normal.lengthSq() < 1e-10) {
+        useCADStore.getState().setStatusMessage('Plane Through Three Points: points are collinear — try again');
+        setStep1Vertex(null);
+        setStep2Vertex(null);
+        return;
+      }
+      normal.normalize();
+      addConstructionPlane({
+        origin: p1.toArray() as [number, number, number],
+        normal: normal.toArray() as [number, number, number],
+        size: 10,
+      });
+      setStep1Vertex(null);
+      setStep2Vertex(null);
+      cancelConstructTool();
+      return;
+    }
+
     // D177: Axis Through Two Points
     if (activeTool === 'construct-axis-two-points') {
       if (step1Vertex === null) {
@@ -205,7 +244,7 @@ export default function ConstructionGeometryInteraction() {
       cancelConstructTool();
       return;
     }
-  }, [activeTool, step1Vertex, step1Normal, addConstructionAxis, addConstructionPlane, addConstructionPoint, cancelConstructTool]);
+  }, [activeTool, step1Vertex, step2Vertex, step1Normal, addConstructionAxis, addConstructionPlane, addConstructionPoint, cancelConstructTool]);
 
   // ── Face click handler ────────────────────────────────────────────────────
   const handleFaceClick = useCallback((result: FacePickResult) => {

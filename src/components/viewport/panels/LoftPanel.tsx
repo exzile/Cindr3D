@@ -21,6 +21,8 @@ export default function LoftPanel() {
   const setEndCond = useCADStore((s) => s.setLoftEndCondition);
   const railId = useCADStore((s) => s.loftRailSketchId);
   const setRailId = useCADStore((s) => s.setLoftRailSketchId);
+  const loftOperation = useCADStore((s) => s.loftOperation);
+  const setLoftOperation = useCADStore((s) => s.setLoftOperation);
 
   const commitLoft = useCADStore((s) => s.commitLoft);
   const cancelLoftTool = useCADStore((s) => s.cancelLoftTool);
@@ -128,6 +130,19 @@ export default function LoftPanel() {
             <option value="surface">Surface Body</option>
           </select>
         </div>
+        {bodyKind !== 'surface' && (
+          <div className="sketch-palette-row">
+            <span className="sketch-palette-label">Operation</span>
+            <select className="measure-select" value={loftOperation}
+              onChange={(e) => setLoftOperation(e.target.value as 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component')}>
+              <option value="new-body">New Body</option>
+              <option value="join">Join</option>
+              <option value="cut">Cut</option>
+              <option value="intersect">Intersect</option>
+              <option value="new-component">New Component</option>
+            </select>
+          </div>
+        )}
 
         <div className="extrude-panel-actions">
           <button className="btn btn-secondary" onClick={cancelLoftTool}>

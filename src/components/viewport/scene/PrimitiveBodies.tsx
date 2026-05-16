@@ -28,6 +28,10 @@ export default function PrimitiveBodies() {
       if (f.type !== 'primitive') continue;
       // D187 suppress + D190 rollback + visibility
       if (!f.visible || f.suppressed) continue;
+      // Skip-if-mesh guard: if a fillet/chamfer has stored a custom mesh into
+      // this primitive, skip the param-based render here — ExtrudedBodies picks
+      // it up through its stored-mesh path to avoid double rendering.
+      if (f.mesh) continue;
       if (!isComponentVisible(components, f.componentId)) continue;
       if (rollbackIndex >= 0) {
         const idx = features.indexOf(f);

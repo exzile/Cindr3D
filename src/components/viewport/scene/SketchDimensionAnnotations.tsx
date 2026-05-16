@@ -540,6 +540,60 @@ export default function SketchDimensionAnnotations() {
             textPos: toWorld(dim.position, origin, t1, t2),
             label: DimensionEngine.formatDimensionValue(dim.value, 'mm', 2),
           });
+        } else if (dim.type === 'linear-diameter') {
+          // Linear callout with ⌀ prefix: horizontal dimension line across circle diameter
+          const circEntLd = ents[0];
+          if (!circEntLd?.points[0]) continue;
+          const center2dLd = to2DLocal(circEntLd.points[0]);
+          const r = circEntLd.radius ?? dim.value / 2;
+          const ann = DimensionEngine.computeLinearDiameterDimension(
+            center2dLd.x, center2dLd.y, r, OFFSET,
+          );
+          const segs = makeSegments(
+            [ann.extensionLine1, ann.extensionLine2, ...withArrowheads(ann.dimensionLine)],
+            origin, t1, t2,
+          );
+          result.push({
+            dimensionId: dim.id,
+            segments: segs,
+            textPos: toWorld(dim.position, origin, t1, t2),
+            label: `⌀${DimensionEngine.formatDimensionValue(dim.value, 'mm', 2)}`,
+          });
+        } else if (dim.type === 'ellipse-major' || dim.type === 'ellipse-minor') {
+          const ellipseEnt = ents[0];
+          if (!ellipseEnt?.points[0] || !ellipseEnt.majorRadius || !ellipseEnt.minorRadius) continue;
+          const ec = to2DLocal(ellipseEnt.points[0]);
+          const rotation = ellipseEnt.rotation ?? 0;
+          const isMajor = dim.type === 'ellipse-major';
+          const axisRadius = isMajor ? ellipseEnt.majorRadius : ellipseEnt.minorRadius;
+          const axisAngle = isMajor ? rotation : rotation + Math.PI / 2;
+          const axisEnd = {
+            x: ec.x + axisRadius * Math.cos(axisAngle),
+            y: ec.y + axisRadius * Math.sin(axisAngle),
+          };
+          const ann = DimensionEngine.computeEllipseDimension(ec.x, ec.y, axisEnd, dim.type, OFFSET);
+          const segs = makeSegments(withArrowheads(ann.dimensionLine), origin, t1, t2);
+          result.push({
+            dimensionId: dim.id,
+            segments: segs,
+            textPos: toWorld(dim.position, origin, t1, t2),
+            label: `${isMajor ? 'Ra' : 'Rb'}=${DimensionEngine.formatDimensionValue(dim.value, 'mm', 2)}`,
+          });
+        } else if (dim.type === 'concentric-gap' && ents.length >= 2) {
+          const cgEnt1 = ents[0];
+          const cgEnt2 = ents[1];
+          if (!cgEnt1?.points[0] || !cgEnt2?.points[0]) continue;
+          const cg1 = to2DLocal(cgEnt1.points[0]);
+          const r1 = cgEnt1.radius ?? 0;
+          const r2 = cgEnt2.radius ?? 0;
+          const ann = DimensionEngine.computeConcentricGapDimension(cg1.x, cg1.y, r1, r2, Math.PI / 4);
+          const segs = makeSegments(withArrowheads(ann.dimensionLine), origin, t1, t2);
+          result.push({
+            dimensionId: dim.id,
+            segments: segs,
+            textPos: toWorld(dim.position, origin, t1, t2),
+            label: DimensionEngine.formatDimensionValue(dim.value, 'mm', 2),
+          });
         }
       } catch {
         // Skip malformed dimensions silently

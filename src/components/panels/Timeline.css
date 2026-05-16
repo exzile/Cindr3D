@@ -1,6 +1,6 @@
 /* ===== Timeline Panel (Browser) ===== */
 .timeline-panel {
-  width: 260px;
+  width: var(--timeline-width, 260px);
   background: var(--bg-panel);
   border-left: 1px solid var(--border);
   display: flex;

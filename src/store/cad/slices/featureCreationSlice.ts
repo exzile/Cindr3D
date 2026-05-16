@@ -17,7 +17,7 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
   sweepTwistAngle: 0,
   sweepTaperAngle: 0,
   sweepGuideRailId: null,
-  sweepOperation: 'new-body' as 'new-body' | 'join' | 'cut',
+  sweepOperation: 'new-body' as 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component',
   sweepDistance: 'entire' as 'entire' | 'distance',
   // SDK-5: path parametric start/end (0–1 fraction)
   sweepDistanceOne: 0,
@@ -27,7 +27,7 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
   setSweepTwistAngle: (v) => set({ sweepTwistAngle: v }),
   setSweepTaperAngle: (v) => set({ sweepTaperAngle: v }),
   setSweepGuideRailId: (v) => set({ sweepGuideRailId: v }),
-  setSweepOperation: (v) => set({ sweepOperation: v }),
+  setSweepOperation: (v: 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component') => set({ sweepOperation: v }),
   setSweepDistance: (v) => set({ sweepDistance: v }),
   setSweepDistanceOne: (v) => set({ sweepDistanceOne: Math.max(0, Math.min(1, v)) }),
   setSweepDistanceTwo: (v) => set({ sweepDistanceTwo: Math.max(0, Math.min(1, v)) }),
@@ -97,11 +97,13 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
   loftStartCondition: 'free' as const,
   loftEndCondition: 'free' as const,
   loftRailSketchId: null,
+  loftOperation: 'new-body' as 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component',
   setLoftClosed: (v) => set({ loftClosed: v }),
   setLoftTangentEdgesMerged: (v) => set({ loftTangentEdgesMerged: v }),
   setLoftStartCondition: (v) => set({ loftStartCondition: v }),
   setLoftEndCondition: (v) => set({ loftEndCondition: v }),
   setLoftRailSketchId: (v) => set({ loftRailSketchId: v }),
+  setLoftOperation: (v: 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component') => set({ loftOperation: v }),
   startLoftTool: () => {
     const extrudable = get().sketches.filter((s) => s.entities.length > 0);
     if (extrudable.length < 2) {
@@ -110,9 +112,9 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
     }
     set({ activeTool: 'loft', loftProfileSketchIds: ['', ''], statusMessage: 'Loft — select 2+ profile sketches in the panel, then OK' });
   },
-  cancelLoftTool: () => set({ activeTool: 'select', loftProfileSketchIds: [], loftClosed: false, loftTangentEdgesMerged: false, loftStartCondition: 'free', loftEndCondition: 'free', loftRailSketchId: null, statusMessage: 'Loft cancelled' }),
+  cancelLoftTool: () => set({ activeTool: 'select', loftProfileSketchIds: [], loftClosed: false, loftTangentEdgesMerged: false, loftStartCondition: 'free', loftEndCondition: 'free', loftRailSketchId: null, loftOperation: 'new-body', statusMessage: 'Loft cancelled' }),
   commitLoft: () => {
-    const { loftProfileSketchIds, loftBodyKind, sketches, features, units } = get();
+    const { loftProfileSketchIds, loftBodyKind, loftOperation, sketches, features, units } = get();
     const validIds = loftProfileSketchIds.filter(Boolean);
     if (validIds.length < 2) {
       set({ statusMessage: 'Select at least 2 profile sketches' });
@@ -130,7 +132,7 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
       name: `${loftBodyKind === 'surface' ? 'Surface ' : ''}Loft ${features.filter((f) => f.type === 'loft').length + 1}`,
       type: 'loft',
       sketchId: validIds[0],
-      params: { loftProfileIds: validIds.join(',') },
+      params: { loftProfileIds: validIds.join(','), operation: loftOperation },
       visible: true,
       suppressed: false,
       timestamp: Date.now(),

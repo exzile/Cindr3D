@@ -16,6 +16,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
   setRevolveAngle2: (a) => set({ revolveAngle2: a }),
   // D103 body kind
   setRevolveBodyKind: (k) => set({ revolveBodyKind: k }),
+  setRevolveOperation: (op) => set({ revolveOperation: op }),
   // CORR-10
   setRevolveIsProjectAxis: (v) => set({ revolveIsProjectAxis: v }),
   // Face mode
@@ -45,7 +46,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
     });
   },
   commitRevolve: () => {
-    const { revolveProfileMode, revolveSelectedSketchId, revolveFaceBoundary, revolveAxis, revolveAngle, revolveDirection, revolveAngle2, revolveBodyKind, revolveIsProjectAxis, sketches, features, units } = get();
+    const { revolveProfileMode, revolveSelectedSketchId, revolveFaceBoundary, revolveAxis, revolveAngle, revolveDirection, revolveAngle2, revolveBodyKind, revolveOperation, revolveIsProjectAxis, sketches, features, units } = get();
 
     // Ã¢â€â‚¬Ã¢â€â‚¬ Face mode Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     if (revolveProfileMode === 'face') {
@@ -70,6 +71,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
           faceRevolve: true,
           faceBoundary: revolveFaceBoundary,
           isProjectAxis: revolveIsProjectAxis,
+          operation: revolveOperation,
         },
         visible: true,
         suppressed: false,
@@ -136,6 +138,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
         direction: revolveDirection,
         angle2: revolveAngle2,
         isProjectAxis: revolveIsProjectAxis,
+        operation: revolveOperation,
       },
       visible: true,
       suppressed: false,

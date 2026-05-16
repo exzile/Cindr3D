@@ -306,12 +306,38 @@ function SurfacePrimitivesDialogConnected({ onClose }: { onClose: () => void }) 
   return <SurfacePrimitivesDialog open={true} onOk={(params) => { commitSurfacePrimitive(params); onClose(); }} onClose={onClose} />;
 }
 
+/**
+ * Design-page feature/modeling tool dialogs that should render as
+ * Fusion 360-style non-modal side panels (need live viewport face/edge
+ * picking). Everything NOT in this set — BOM, Export, configs, parametric,
+ * assembly/management forms, joints, material/appearance libraries — stays
+ * a centered modal. Do not widen without explicit user intent.
+ */
+const TOOL_DIALOG_SCOPE = new Set<string>([
+  'shell', 'linear-pattern', 'circular-pattern', 'rectangular-pattern', 'mirror', 'combine',
+  'hole', 'construction-plane', 'construction-plane-angle', 'construction-plane-midplane',
+  'thicken', 'rib', 'web', 'emboss', 'rest', 'redefine-sketch-plane', 'base-feature',
+  'draft', 'scale', 'primitive-box', 'primitive-cylinder', 'primitive-sphere',
+  'primitive-torus', 'primitive-coil', 'tessellate', 'pattern-on-path', 'thread',
+  'mesh-reduce', 'reverse-normal', 'silhouette-split', 'remove-face', 'boundary-fill',
+  'offset-surface', 'surface-trim', 'surface-extend', 'stitch', 'unstitch', 'surface-split',
+  'offset-face', 'align-dialog', 'fillet', 'chamfer', 'axis-perp-to-face',
+  'perpendicular-plane', 'plane-along-path', 'point-at-edge-plane', 'point-along-path',
+  'untrim', 'surface-merge', 'fill', 'offset-curve', 'delete-face', 'surface-primitives',
+  'mesh-section-sketch', 'mesh-primitives', 'remesh', 'plane-cut', 'make-closed-mesh',
+  'erase-and-fill', 'mesh-smooth', 'mesh-shell', 'mesh-combine', 'mesh-reverse-normal',
+  'mesh-align', 'mesh-separate', 'mesh-transform', 'convert-mesh-to-brep', 'mesh-repair',
+  'pipe', 'coil', 'move-body', 'split', 'insert-svg', 'insert-dxf', 'insert-canvas',
+  'direct-edit', 'texture-extrude', 'decal', 'attached-canvas', 'split-face', 'bounding-solid',
+]);
+
 export default function ActiveDialog() {
   const activeDialog = useCADStore((s) => s.activeDialog);
   const setActiveDialog = useCADStore((s) => s.setActiveDialog);
   const dialogPayload = useCADStore((s) => s.dialogPayload);
   const close = () => setActiveDialog(null);
 
+  const node = (() => {
   switch (activeDialog) {
     case 'shell': return <ShellDialog onClose={close} />;
     case 'linear-pattern': return <LinearPatternDialog onClose={close} />;
@@ -419,4 +445,10 @@ export default function ActiveDialog() {
     case 'constrain-components': return <ConstrainComponentsDialog onClose={close} />;
     default: return null;
   }
+  })();
+
+  if (node && activeDialog && TOOL_DIALOG_SCOPE.has(activeDialog)) {
+    return <div className="tool-dialog-scope">{node}</div>;
+  }
+  return node;
 }

@@ -31,6 +31,10 @@ export default function SketchDimensionPanel() {
     diameter: 'Click a circle',
     'arc-length': 'Click an arc or circle',
     aligned: 'Click two entities (true length along direction)',
+    'linear-diameter': 'Click a circle or arc — shows ⌀ as linear callout (for revolve sections)',
+    'ellipse-major': 'Click an ellipse — dimensions its major (Ra) axis',
+    'ellipse-minor': 'Click an ellipse — dimensions its minor (Rb) axis',
+    'concentric-gap': 'Click first circle, then second — measures radial gap (wall thickness)',
   };
 
   return (
@@ -57,8 +61,12 @@ export default function SketchDimensionPanel() {
             <option value="angular">Angular</option>
             <option value="radial">Radial</option>
             <option value="diameter">Diameter</option>
+            <option value="linear-diameter">Linear Diameter (⌀)</option>
             <option value="arc-length">Arc Length</option>
             <option value="aligned">Aligned</option>
+            <option value="ellipse-major">Ellipse Major Axis (Ra)</option>
+            <option value="ellipse-minor">Ellipse Minor Axis (Rb)</option>
+            <option value="concentric-gap">Concentric Gap</option>
           </select>
         </div>
 

@@ -15,6 +15,10 @@ export function createAssemblyActions({ set, get }: CADSliceContext): Partial<CA
     jointOrigins: [],
     showJointOriginDialog: false,
     jointOriginPickedPoint: null,
+    jointDialogPickedOrigin: null,
+    jointDialogPickMode: false,
+    setJointDialogPickedOrigin: (p) => set({ jointDialogPickedOrigin: p }),
+    setJointDialogPickMode: (v) => set({ jointDialogPickMode: v }),
     openJointOriginDialog: () =>
       set({ activeDialog: 'joint-origin', showJointOriginDialog: true, jointOriginPickedPoint: null }),
     closeJointOriginDialog: () =>

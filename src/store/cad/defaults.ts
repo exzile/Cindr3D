@@ -57,6 +57,7 @@ export const REVOLVE_DEFAULTS = {
   revolveDirection: 'one-side' as 'one-side' | 'symmetric' | 'two-sides',
   revolveAngle2: 360,
   revolveBodyKind: 'solid' as 'solid' | 'surface',
+  revolveOperation: 'new-body' as 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component',
   revolveIsProjectAxis: false as boolean,
   revolveProfileMode: 'sketch' as 'sketch' | 'face',
   revolveFaceBoundary: null as number[] | null,

@@ -1,4 +1,4 @@
-import { useState, type FocusEvent, type MouseEvent } from 'react';
+import { useState, useEffect, type FocusEvent, type MouseEvent } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import { DialogShell } from '../common/DialogShell';
@@ -55,7 +55,13 @@ interface FilletDialogProps {
 }
 
 function FilletDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: FilletDialogProps) {
-  const [radius, setRadius] = useState(2);
+  // filletLiveRadius is updated by FilletGizmo drags so the dialog reflects
+  // the radius while the user drags the on-canvas handle.
+  const filletLiveRadius = useCADStore((s) => s.filletLiveRadius);
+  const setFilletLiveRadius = useCADStore((s) => s.setFilletLiveRadius);
+  const [radius, setRadius] = useState(() => filletLiveRadius);
+  // Sync gizmo drag → dialog input (no loop: input onChange only fires on user events).
+  useEffect(() => { setRadius(filletLiveRadius); }, [filletLiveRadius]);
   const [mode, setMode] = useState<FilletMode>('constant');
   const [startRadius, setStartRadius] = useState(1);
   const [endRadius, setEndRadius] = useState(4);
@@ -143,7 +149,11 @@ function FilletDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: FilletD
             value={radius}
             onFocus={selectNumberText}
             onClick={selectNumberText}
-            onChange={(e) => setRadius(clamp(parseFloat(e.target.value) || 2, 0.01, 500))}
+            onChange={(e) => {
+              const r = clamp(parseFloat(e.target.value) || 2, 0.01, 500);
+              setRadius(r);
+              setFilletLiveRadius(r);
+            }}
             min={0.01}
             max={500}
             step={0.5}
@@ -368,6 +378,7 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const renameFeature = useCADStore((s) => s.renameFeature);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
+  const commitFillet = useCADStore((s) => s.commitFillet);
 
   const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
   const p = editing?.params ?? {};
@@ -391,7 +402,8 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
         timestamp: Date.now(),
       };
       addFeature(feature);
-      setStatusMessage(`Fillet applied: r=${params.radius}`);
+      // Actually round the geometry (was previously a no-op stub).
+      commitFillet(params.radius, 4);
     }
     onClose();
   };

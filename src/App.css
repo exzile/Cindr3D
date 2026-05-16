@@ -27,6 +27,9 @@
   --warning: #ff9800;
   --error: #f44336;
   --info: #2196f3;
+  /* Width of the right-hand Timeline sidebar. Single-sourced so the
+     side-docked tool dialogs can reserve it and never overlap it. */
+  --timeline-width: 260px;
 }
 
 /* ===== Layout ===== */
@@ -144,6 +147,105 @@
   gap: 8px;
   padding: 16px 20px;
   border-top: 1px solid var(--border-light);
+}
+
+/* ===================================================================
+ * Fusion 360-style tool dialogs (SCOPED — opt-in only).
+ * Applied via the .tool-dialog-scope wrapper in ActiveDialog.tsx to
+ * ONLY design-page feature/modeling tool dialogs (the ones that need
+ * live viewport face/edge picking). Visually matches the Sketch
+ * Palette (.sketch-palette): 240px, right edge, vertically centered,
+ * accent-dot header, light shadow, no backdrop, click-through overlay.
+ * Every other site dialog (BOM, Export, configs, assembly/management
+ * forms, libraries) keeps the centered-modal rules above.
+ * Do NOT widen this scope without explicit user intent.
+ * =================================================================== */
+.tool-dialog-scope { display: contents; }
+
+/* Full-screen, non-interactive layer (the base .dialog-overlay is
+   position:fixed and ActiveDialog mounts OUTSIDE .viewport-container,
+   so this overlay spans the whole window). It parks the panel on the
+   right edge, vertically centered, but reserves the Timeline sidebar
+   width on the right so the dialog lands exactly 12px to the LEFT of
+   the timeline — the same spot as .sketch-palette inside the viewport,
+   never overlapping the timeline or any right-docked panel.
+   Clicks pass through to the viewport. */
+.tool-dialog-scope .dialog-overlay {
+  background: transparent;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 12px calc(var(--timeline-width, 260px) + 12px) 12px 12px;
+  backdrop-filter: none;
+  pointer-events: none;
+}
+
+/* Panel chrome mirrors .sketch-palette exactly. */
+.tool-dialog-scope .dialog {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  width: 240px;
+  min-width: 240px;
+  max-width: 240px;
+  max-height: calc(100vh - 24px);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  font-size: 12px;
+  overflow: hidden;
+  backdrop-filter: none;
+}
+
+.tool-dialog-scope .dialog-header {
+  flex: 0 0 auto;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--bg-toolbar);
+}
+
+/* Accent dot before the title — same as .sketch-palette-dot. */
+.tool-dialog-scope .dialog-header h3 {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.tool-dialog-scope .dialog-header h3::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+
+.tool-dialog-scope .dialog-close {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+}
+
+.tool-dialog-scope .dialog-body {
+  flex: 1 1 auto;
+  padding: 8px 10px;
+  gap: 10px;
+  font-size: 12px;
+  overflow: auto;
+}
+
+.tool-dialog-scope .dialog-footer {
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  gap: 6px;
+}
+
+.tool-dialog-scope .dialog-footer .btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 4px;
 }
 
 

@@ -45,8 +45,10 @@ export function buildSketchMenus({
   autoConstrainSketch,
   comingSoon,
   selectionFilter,
+  selectionMode,
   setActiveTool,
   setSelectionFilter,
+  setSelectionMode,
   setStatusMessage,
   startSketchProjectSurfaceTool,
   startSketchTextTool,
@@ -63,10 +65,10 @@ export function buildSketchMenus({
   };
 
   const selectMenuItems: MenuItem[] = [
-    { icon: <MousePointer2 size={MI} />, label: 'Select', onClick: () => setActiveTool('select') },
-    { icon: <Square size={MI} />, label: 'Window Selection', shortcut: '1', onClick: comingSoon('Window Selection') },
-    { icon: <Spline size={MI} />, label: 'Freeform Selection', shortcut: '2', onClick: comingSoon('Freeform Selection') },
-    { icon: <PenTool size={MI} />, label: 'Paint Selection', shortcut: '3', onClick: comingSoon('Paint Selection') },
+    { icon: <MousePointer2 size={MI} />, label: 'Select', checked: selectionMode === 'normal', onClick: () => { setActiveTool('select'); setSelectionMode('normal'); setStatusMessage('Select: click to select, drag for window select (Shift+drag for lasso)'); } },
+    { icon: <Square size={MI} />, label: 'Window Selection', shortcut: '1', checked: selectionMode === 'window', onClick: () => { setActiveTool('select'); setSelectionMode('window'); setStatusMessage('Window Selection: drag left-to-right to include, right-to-left to cross-select'); } },
+    { icon: <Spline size={MI} />, label: 'Freeform Selection', shortcut: '2', checked: selectionMode === 'lasso', onClick: () => { setActiveTool('select'); setSelectionMode('lasso'); setStatusMessage('Freeform Selection: drag to draw a freehand lasso'); } },
+    { icon: <PenTool size={MI} />, label: 'Paint Selection', shortcut: '3', checked: selectionMode === 'paint', onClick: () => { setActiveTool('select'); setSelectionMode('paint'); setStatusMessage('Paint Selection: drag over geometry to select as you move'); } },
     {
       separator: true,
       icon: <MousePointer2 size={MI} />,

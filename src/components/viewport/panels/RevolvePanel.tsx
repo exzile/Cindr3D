@@ -23,6 +23,8 @@ export default function RevolvePanel() {
   const setAngle2 = useCADStore((s) => s.setRevolveAngle2);
   const bodyKind = useCADStore((s) => s.revolveBodyKind);
   const setBodyKind = useCADStore((s) => s.setRevolveBodyKind);
+  const revolveOperation = useCADStore((s) => s.revolveOperation);
+  const setRevolveOperation = useCADStore((s) => s.setRevolveOperation);
   const isProjectAxis = useCADStore((s) => s.revolveIsProjectAxis);
   const setIsProjectAxis = useCADStore((s) => s.setRevolveIsProjectAxis);
 
@@ -182,6 +184,22 @@ export default function RevolvePanel() {
               <option value="surface">Surface Body</option>
             </select>
           </div>
+          {bodyKind !== 'surface' && (
+            <div className="tp-row">
+              <span className="tp-label">Operation</span>
+              <select
+                className="tp-select"
+                value={revolveOperation}
+                onChange={(e) => setRevolveOperation(e.target.value as 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component')}
+              >
+                <option value="new-body">New Body</option>
+                <option value="join">Join</option>
+                <option value="cut">Cut</option>
+                <option value="intersect">Intersect</option>
+                <option value="new-component">New Component</option>
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
