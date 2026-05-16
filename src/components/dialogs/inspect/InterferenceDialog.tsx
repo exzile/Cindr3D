@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CheckCircle, XCircle } from 'lucide-react';
 import { DialogShell } from '../common/DialogShell';
+import { useCADStore } from '../../../store/cadStore';
 import type { InterferenceResult } from '../../../types/cad';
 
 interface Props {
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function InterferenceDialog({ open, onClose, onRun }: Props) {
+  const commitInterferenceBodies = useCADStore((s) => s.commitInterferenceBodies);
   const [results, setResults] = useState<InterferenceResult[]>([]);
   const [hasRun, setHasRun] = useState(false);
   const [createBodies, setCreateBodies] = useState(false);
@@ -20,6 +22,9 @@ export function InterferenceDialog({ open, onClose, onRun }: Props) {
     const r = onRun();
     setResults(r);
     setHasRun(true);
+    // Detection (onRun) is unchanged; only when the box is checked do we also
+    // CSG-intersect each interfering pair into new solid bodies.
+    if (createBodies) commitInterferenceBodies();
   };
 
   return (
@@ -64,14 +69,13 @@ export function InterferenceDialog({ open, onClose, onRun }: Props) {
             </div>
           )}
           <div className="dialog-field interference-options-field">
-            <label className="interference-disabled-label">
+            <label>
               <input
                 type="checkbox"
                 checked={createBodies}
                 onChange={(e) => setCreateBodies(e.target.checked)}
-                disabled
               />
-              Create Interference Bodies (deferred)
+              Create Interference Bodies
             </label>
           </div>
     </DialogShell>
