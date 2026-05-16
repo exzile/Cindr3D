@@ -16,6 +16,9 @@ export interface PlateObject {
   mirrorZ?: boolean;
   // Per-object colour override
   color?: string;
+  // Per-object surface texture (image data URL or http URL) applied as the
+  // material map in the Prepare viewport. Visual-only (does not affect slicing).
+  textureUrl?: string;
   // Flags
   locked?: boolean; // prevent accidental moves/transforms
   hidden?: boolean; // not rendered; still on plate, still slices unless excluded

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import {
   FlipHorizontal, Maximize2, Move, RotateCw, SlidersHorizontal,
   Copy, Trash2, AlignEndHorizontal, ArrowDownToLine, Compass,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useSlicerStore } from '../../../../../store/slicerStore';
 import type { TransformMode } from './types';
@@ -11,6 +12,7 @@ const toolbarItems: { id: TransformMode; icon: ReactNode; title: string }[] = [
   { id: 'scale', icon: <Maximize2 size={18} />, title: 'Scale (S)' },
   { id: 'rotate', icon: <RotateCw size={18} />, title: 'Rotate (R)' },
   { id: 'mirror', icon: <FlipHorizontal size={18} />, title: 'Mirror' },
+  { id: 'texture', icon: <ImageIcon size={18} />, title: 'Texture' },
   { id: 'settings', icon: <SlidersHorizontal size={18} />, title: 'Per-object Settings' },
 ];
 

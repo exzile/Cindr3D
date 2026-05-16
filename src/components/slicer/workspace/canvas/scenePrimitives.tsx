@@ -1,11 +1,46 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Line, Text, TransformControls } from '@react-three/drei';
-import { type ThreeEvent } from '@react-three/fiber';
+import { useThree, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { ModifierMeshRole, ModifierMeshSettings, PlateObject } from '../../../../types/slicer';
 import type { PaintedZSeamHint } from '../../../../types/slicer/profiles/print';
 import { normalizeRotationRadians, normalizeScale } from '../../../../utils/slicerTransforms';
 import { useSlicerStore } from '../../../../store/slicerStore';
+
+/**
+ * Loads `url` (image data-URL or http URL) into a THREE.Texture for the
+ * per-object surface texture set via the Prepare-page Texture panel.
+ * Disposes the previous texture on change/unmount and invalidates the
+ * (frameloop="demand") canvas once the image is ready.
+ */
+function useObjectTexture(url: string | undefined): THREE.Texture | null {
+  const invalidate = useThree((s) => s.invalidate);
+  const [tex, setTex] = useState<THREE.Texture | null>(null);
+
+  useEffect(() => {
+    if (!url) { setTex(null); return; }
+    let cancelled = false;
+    new THREE.TextureLoader().load(
+      url,
+      (t) => {
+        if (cancelled) { t.dispose(); return; }
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.anisotropy = 4;
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        setTex(t);
+        invalidate();
+      },
+      undefined,
+      () => { if (!cancelled) setTex(null); },
+    );
+    return () => { cancelled = true; };
+  }, [url, invalidate]);
+
+  // Dispose the prior texture when it is replaced / on unmount.
+  useEffect(() => () => { tex?.dispose(); }, [tex]);
+
+  return tex;
+}
 
 export function BuildPlateGrid({ sizeX, sizeY }: { sizeX: number; sizeY: number }) {
   const gridGeo = useMemo(() => {
@@ -88,7 +123,7 @@ export function PlateObjectMesh({
   isSelected: boolean;
   materialColor: string;
   onClick: () => void;
-  transformMode: 'move' | 'scale' | 'rotate' | 'mirror' | 'settings';
+  transformMode: 'move' | 'scale' | 'rotate' | 'mirror' | 'texture' | 'settings';
   onTransformCommit: (id: string, pos: { x: number; y: number; z: number }, rot: { x: number; y: number; z: number }, scl: { x: number; y: number; z: number }) => void;
   highlightedTriangles?: Set<number>;
 }) {
@@ -98,6 +133,8 @@ export function PlateObjectMesh({
     meshRef.current = m;
     setMeshInstance(m);
   }, []);
+
+  const objectTexture = useObjectTexture(obj.textureUrl);
 
   const pos = obj.position as { x: number; y: number; z?: number };
   const rot = normalizeRotationRadians((obj as { rotation?: unknown }).rotation);
@@ -287,7 +324,8 @@ export function PlateObjectMesh({
       >
         {!hasGeometry && <boxGeometry args={boxArgs} />}
         <meshStandardMaterial
-          color={materialColor}
+          color={objectTexture ? '#ffffff' : materialColor}
+          map={objectTexture ?? undefined}
           transparent={isSelected || isModifier}
           opacity={isModifier ? (isSelected ? 0.55 : 0.35) : (isSelected ? 0.85 : 1)}
           side={windingFlipped ? THREE.DoubleSide : THREE.FrontSide}
