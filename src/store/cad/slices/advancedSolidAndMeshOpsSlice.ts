@@ -4,7 +4,7 @@ import { GeometryEngine } from '../../../engine/GeometryEngine';
 import { errorMessage } from '../../../utils/errorHandling';
 import type { CADSliceContext } from '../sliceContext';
 import type { CADState } from '../state';
-import { placeToolFeature, pickMostRecentSolidTarget } from './featureManagement/bodyBoolean';
+import { placeToolFeature, pickMostRecentSolidTarget, syncConfigurationSuppression } from './featureManagement/bodyBoolean';
 
 /** Boundary-fill target = shared most-recent-solid pick, skipping the tool
  *  bodies that define the boundary and any prior boundary-fill body. */
@@ -649,6 +649,17 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
         : state.features;
       return {
         features: [...updated, feature],
+        // Mirror placeToolFeature/commitCombine: persist the consumed target's
+        // suppression into the active design configuration so switching
+        // configurations doesn't resurrect the consumed source body.
+        ...(consumedTargetId
+          ? {
+              designConfigurations: syncConfigurationSuppression(state, {
+                [feature.id]: false,
+                [consumedTargetId]: true,
+              }),
+            }
+          : {}),
         statusMessage: `Boundary Fill ${n} (${operation})${fillNote}${opNote}`,
       };
     });

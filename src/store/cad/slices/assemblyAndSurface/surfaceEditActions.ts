@@ -32,7 +32,14 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
       })),
     addDeleteFacePick: (featureId, normal, centroid) =>
       set((s) => {
-        const id = centroid.map((v) => v.toFixed(3)).join(',');
+        // Key on body + face normal + centroid so coincident/mirrored parts
+        // sharing a centroid don't collide (commitDeleteFace groups by
+        // featureId, so cross-body picks must stay distinct here).
+        const id = [
+          featureId,
+          ...normal.map((v) => v.toFixed(3)),
+          ...centroid.map((v) => v.toFixed(3)),
+        ].join('|');
         if (s.deleteFaceIds.includes(id)) return {};
         return {
           deleteFaceIds: [...s.deleteFaceIds, id],
