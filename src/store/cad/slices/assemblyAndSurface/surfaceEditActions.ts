@@ -3,6 +3,7 @@ import type { Feature } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
+import { placeToolFeature } from '../featureManagement/bodyBoolean';
 
 const SURFACE_MATERIAL = () =>
   new THREE.MeshPhysicalMaterial({
@@ -23,47 +24,107 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
   return {
     showDeleteFaceDialog: false,
     deleteFaceIds: [],
-    openDeleteFaceDialog: () => set({ activeDialog: 'delete-face', showDeleteFaceDialog: true, deleteFaceIds: [] }),
+    deleteFacePicks: [],
+    openDeleteFaceDialog: () => set({ activeDialog: 'delete-face', showDeleteFaceDialog: true, deleteFaceIds: [], deleteFacePicks: [] }),
     addDeleteFace: (id) =>
       set((s) => ({
         deleteFaceIds: s.deleteFaceIds.includes(id) ? s.deleteFaceIds : [...s.deleteFaceIds, id],
       })),
-    clearDeleteFaces: () => set({ deleteFaceIds: [] }),
-    closeDeleteFaceDialog: () => set({ activeDialog: null, showDeleteFaceDialog: false, deleteFaceIds: [] }),
+    addDeleteFacePick: (featureId, normal, centroid) =>
+      set((s) => {
+        const id = centroid.map((v) => v.toFixed(3)).join(',');
+        if (s.deleteFaceIds.includes(id)) return {};
+        return {
+          deleteFaceIds: [...s.deleteFaceIds, id],
+          deleteFacePicks: [...s.deleteFacePicks, { featureId, normal, centroid }],
+        };
+      }),
+    clearDeleteFaces: () => set({ deleteFaceIds: [], deleteFacePicks: [] }),
+    closeDeleteFaceDialog: () => set({ activeDialog: null, showDeleteFaceDialog: false, deleteFaceIds: [], deleteFacePicks: [] }),
     commitDeleteFace: (params) => {
-      const { features } = get();
-      const n = features.filter((f) => f.params?.featureKind === 'delete-face').length + 1;
-      const faceIds = params.faceIds.length > 0 ? params.faceIds : get().deleteFaceIds;
-      const feature: Feature = {
-        id: crypto.randomUUID(),
-        name: `Delete Face ${n}`,
-        type: 'thicken',
-        params: { featureKind: 'delete-face', faceIds: faceIds.join(','), healMode: params.healMode },
-        visible: true,
-        suppressed: false,
-        timestamp: Date.now(),
-        bodyKind: 'surface',
-      };
-      get().addFeature(feature);
-      set({ activeDialog: null, showDeleteFaceDialog: false, deleteFaceIds: [] });
-      get().setStatusMessage(`Delete Face ${n}: ${faceIds.length} face${faceIds.length !== 1 ? 's' : ''} removed`);
+      const { features, deleteFacePicks } = get();
+      if (deleteFacePicks.length === 0) {
+        get().setStatusMessage('Delete Face: click one or more faces in the viewport first');
+        return;
+      }
+      // Group picks by the body they were picked on; remove each face (and
+      // heal the hole) in turn on that body's mesh. Mirrors commitRemoveFace
+      // but multi-face + multi-body.
+      const byFeature = new Map<string, typeof deleteFacePicks>();
+      for (const p of deleteFacePicks) {
+        const arr = byFeature.get(p.featureId);
+        if (arr) arr.push(p); else byFeature.set(p.featureId, [p]);
+      }
+      let removed = 0;
+      const nextMesh = new Map<string, THREE.Mesh>();
+      for (const [featureId, picks] of byFeature) {
+        const srcMesh = features.find((f) => f.id === featureId)?.mesh as THREE.Mesh | undefined;
+        if (!srcMesh?.isMesh) continue;
+        let working = srcMesh;
+        for (const p of picks) {
+          working = GeometryEngine.removeFaceAndHeal(
+            working,
+            new THREE.Vector3(...p.normal),
+            new THREE.Vector3(...p.centroid),
+          );
+          removed++;
+        }
+        working.castShadow = true;
+        working.receiveShadow = true;
+        nextMesh.set(featureId, working);
+      }
+      if (nextMesh.size === 0) {
+        get().setStatusMessage('Delete Face: picked faces are not on a body');
+        return;
+      }
+      get().pushUndo();
+      set({
+        features: features.map((f) =>
+          nextMesh.has(f.id)
+            ? { ...f, mesh: nextMesh.get(f.id)!, params: { ...f.params, deleteFaceHealMode: params.healMode } }
+            : f,
+        ),
+        activeDialog: null,
+        showDeleteFaceDialog: false,
+        deleteFaceIds: [],
+        deleteFacePicks: [],
+      });
+      get().setStatusMessage(`Delete Face: removed ${removed} face${removed !== 1 ? 's' : ''}`);
     },
 
     commitSurfaceTrim: (params) => {
       const { features } = get();
+      const source = features.find((f) => f.id === params.sourceFeatureId);
+      const trimmer = features.find((f) => f.id === params.trimmerFeatureId);
+      const srcMesh = source?.mesh as THREE.Mesh | undefined;
+      const trimMesh = trimmer?.mesh as THREE.Mesh | undefined;
+      if (!srcMesh?.isMesh || !trimMesh?.isMesh) {
+        get().setStatusMessage('Surface Trim: select a source surface and a trimming tool');
+        return;
+      }
       const n = features.filter((f) => f.params?.featureKind === 'surface-trim').length + 1;
+      const geom = GeometryEngine.trimSurface(srcMesh, trimMesh, params.keepSide);
+      get().pushUndo();
       const feature: Feature = {
         id: crypto.randomUUID(),
         name: `Surface Trim ${n}`,
         type: 'split-body',
         params: { featureKind: 'surface-trim', ...params },
+        mesh: configureMesh(geom),
         visible: true,
         suppressed: false,
         timestamp: Date.now(),
         bodyKind: 'surface',
       };
-      get().addFeature(feature);
-      get().setStatusMessage(`Surface Trim ${n} created`);
+      // Trim consumes the source surface (Fusion behaviour) — hide it so the
+      // trimmed result replaces it rather than overlapping.
+      set({
+        features: [
+          ...features.map((f) => (f.id === params.sourceFeatureId ? { ...f, visible: false } : f)),
+          feature,
+        ],
+      });
+      get().setStatusMessage(`Surface Trim ${n}: kept ${params.keepSide} side`);
     },
 
     commitSurfaceSplit: (params) => {
@@ -130,9 +191,29 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
         .find((f) => f.mesh && (f.mesh as THREE.Mesh).isMesh && f.bodyKind === 'surface')?.mesh as THREE.Mesh | undefined;
       const signedDistance =
         params.direction === 'inward' ? -params.offsetDistance : params.offsetDistance;
-      const mesh = sourceMesh
+      let mesh = sourceMesh
         ? configureMesh(GeometryEngine.offsetSurface(sourceMesh, signedDistance))
         : undefined;
+
+      // operation 'join' on a surface = MERGE the offset result back into the
+      // source surface (surface semantics — not a solid boolean), consuming
+      // the source. 'new-body' (default) keeps the offset as its own surface.
+      let joinNote = '';
+      let consumedSourceId: string | undefined;
+      if (params.operation === 'join' && sourceMesh && mesh) {
+        const srcFeature = [...features].reverse().find(
+          (f) => f.mesh === sourceMesh && f.bodyKind === 'surface',
+        );
+        try {
+          const merged = configureMesh(GeometryEngine.mergeSurfaces(mesh, sourceMesh));
+          mesh.geometry.dispose();
+          mesh = merged;
+          consumedSourceId = srcFeature?.id;
+          joinNote = srcFeature ? ` (merged with ${srcFeature.name})` : '';
+        } catch {
+          joinNote = ' (join failed — standalone surface)';
+        }
+      }
 
       const feature: Feature = {
         id: crypto.randomUUID(),
@@ -145,8 +226,16 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
         timestamp: Date.now(),
         bodyKind: 'surface',
       };
-      get().addFeature(feature);
-      get().setStatusMessage(`Offset Surface ${n} created`);
+      get().pushUndo();
+      set((s) => ({
+        features: [
+          ...s.features.map((f) =>
+            consumedSourceId && f.id === consumedSourceId ? { ...f, visible: false, suppressed: true } : f,
+          ),
+          feature,
+        ],
+      }));
+      get().setStatusMessage(`Offset Surface ${n} created${joinNote}`);
     },
 
     commitSurfaceExtend: (params) => {
@@ -191,7 +280,37 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
       const stitched = sourceMeshes.length > 0
         ? GeometryEngine.stitchSurfaces(sourceMeshes, params.tolerance)
         : null;
-      const mesh = stitched ? configureMesh(stitched.geometry) : undefined;
+
+      let mesh: THREE.Mesh | undefined;
+      let bodyKind: Feature['bodyKind'] = 'surface';
+      let closedHoles = false;
+      if (stitched) {
+        mesh = configureMesh(stitched.geometry);
+        bodyKind = stitched.isSolid ? 'solid' : 'surface';
+        // "Close Open Edges": cap remaining boundary loops so the stitched
+        // result becomes a watertight solid. Only worth running when stitching
+        // didn't already produce a closed body.
+        if (params.closeOpenEdges && !stitched.isSolid) {
+          try {
+            const closed = GeometryEngine.makeClosedMesh(mesh);
+            // makeClosedMesh re-walks edges; if no open boundary edge remains
+            // the result is a closed solid. Re-test the same way stitch does.
+            const sealed = GeometryEngine.stitchSurfaces([closed], params.tolerance);
+            // The capped mesh supersedes the open stitched mesh — dispose the
+            // intermediate geometries we created (never shared singletons).
+            mesh.geometry.dispose();
+            closed.geometry.dispose();
+            mesh = configureMesh(sealed.geometry);
+            bodyKind = sealed.isSolid ? 'solid' : 'surface';
+            closedHoles = true;
+          } catch (err) {
+            // Capping failed — keep the plain stitched surface, don't corrupt state.
+            get().setStatusMessage(
+              `Stitch ${n}: could not close open edges (${err instanceof Error ? err.message : 'error'}); kept open surface`,
+            );
+          }
+        }
+      }
       const feature: Feature = {
         id: crypto.randomUUID(),
         name: `Stitch ${n}`,
@@ -201,7 +320,7 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
         visible: true,
         suppressed: false,
         timestamp: Date.now(),
-        bodyKind: stitched?.isSolid ? 'solid' : 'surface',
+        bodyKind,
       };
       get().addFeature(feature);
       if (!params.keepOriginal && params.sourceFeatureIds.length > 0) {
@@ -209,7 +328,11 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
           features: features.map((f) => (params.sourceFeatureIds.includes(f.id) ? { ...f, visible: false } : f)),
         });
       }
-      get().setStatusMessage(`Stitch ${n} created`);
+      get().setStatusMessage(
+        closedHoles
+          ? `Stitch ${n} created (open edges closed${bodyKind === 'solid' ? ' — solid body' : ''})`
+          : `Stitch ${n} created`,
+      );
     },
 
     commitUnstitch: (params) => {
@@ -281,8 +404,16 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
         timestamp: Date.now(),
         bodyKind: 'solid',
       };
-      get().addFeature(feature);
-      get().setStatusMessage(`Thicken ${n}: ${params.thickness}mm ${params.direction}`);
+      // Thicken yields a solid — honour operation join/cut against the most
+      // recent solid body via the shared helper (was: always standalone).
+      get().pushUndo();
+      let opNote = '';
+      set((s) => {
+        const r = placeToolFeature(s, feature, params.operation ?? 'new-body');
+        opNote = r.note;
+        return { features: r.features, designConfigurations: r.designConfigurations };
+      });
+      get().setStatusMessage(`Thicken ${n}: ${params.thickness}mm ${params.direction}${opNote}`);
     },
   };
 }

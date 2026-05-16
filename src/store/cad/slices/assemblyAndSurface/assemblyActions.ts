@@ -6,6 +6,7 @@ import type {
   JointOriginRecord,
 } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
+import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
 import { useComponentStore } from '../../../componentStore';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
@@ -76,6 +77,89 @@ export function createAssemblyActions({ set, get }: CADSliceContext): Partial<CA
         }
       }
       set({ interferenceResults: results });
+    },
+    commitInterferenceBodies: () => {
+      const { features } = get();
+      const solidFeatures = features.filter(
+        (f) => f.mesh && f.visible && (!f.bodyKind || f.bodyKind === 'solid') && (f.mesh as THREE.Mesh).isMesh,
+      );
+      // Collect the new interference solids first; only pushUndo + commit if
+      // at least one pair produced a real intersection volume so a no-op run
+      // doesn't leave an empty snapshot on the undo stack.
+      const newFeatures: Feature[] = [];
+      let baseIndex = features.filter((f) => f.name.startsWith('Interference')).length;
+      for (let i = 0; i < solidFeatures.length; i++) {
+        for (let j = i + 1; j < solidFeatures.length; j++) {
+          const fA = solidFeatures[i];
+          const fB = solidFeatures[j];
+          const meshA = fA.mesh as THREE.Mesh;
+          const meshB = fB.mesh as THREE.Mesh;
+          const boxA = new THREE.Box3().setFromObject(meshA);
+          const boxB = new THREE.Box3().setFromObject(meshB);
+          if (!boxA.intersectsBox(boxB)) continue;
+          // Clone-then-bake so the world-baked intermediates are owned here and
+          // disposed after CSG — never the shared feature geometry singletons.
+          let geomA: THREE.BufferGeometry | null = null;
+          let geomB: THREE.BufferGeometry | null = null;
+          let result: THREE.BufferGeometry | null = null;
+          try {
+            geomA = GeometryEngine.bakeMeshWorldGeometry(meshA);
+            geomB = GeometryEngine.bakeMeshWorldGeometry(meshB);
+            result = GeometryEngine.csgIntersect(geomA, geomB);
+            const posAttr = result.getAttribute('position') as THREE.BufferAttribute | undefined;
+            const vertCount = posAttr ? posAttr.count : 0;
+            // Guard tiny / edge-kiss results the same way the extrude overlap
+            // rule does (>6 verts ⇒ a real volume, not a coincident face/edge).
+            if (vertCount > 6) {
+              baseIndex += 1;
+              const mesh = new THREE.Mesh(result, BODY_MATERIAL);
+              mesh.castShadow = true;
+              mesh.receiveShadow = true;
+              const interferenceFeature: Feature = {
+                id: crypto.randomUUID(),
+                name: `Interference ${baseIndex} (${fA.name}∩${fB.name})`,
+                type: 'combine',
+                params: {
+                  featureKind: 'interference',
+                  operation: 'intersect',
+                  sourceIds: [fA.id, fB.id],
+                },
+                mesh,
+                bodyKind: 'solid',
+                visible: true,
+                suppressed: false,
+                timestamp: Date.now(),
+              };
+              mesh.userData.pickable = true;
+              mesh.userData.featureId = interferenceFeature.id;
+              newFeatures.push(interferenceFeature);
+              result = null; // ownership transferred to the feature mesh
+            }
+          } catch (err) {
+            // A single non-manifold / degenerate pair must not abort the rest.
+            get().setStatusMessage(
+              `Interference body (${fA.name}∩${fB.name}) skipped: ${
+                err instanceof Error ? err.message : 'CSG error'
+              }`,
+            );
+          } finally {
+            geomA?.dispose();
+            geomB?.dispose();
+            result?.dispose();
+          }
+        }
+      }
+      if (newFeatures.length === 0) {
+        get().setStatusMessage('Interference: no overlapping volumes to create bodies from');
+        return;
+      }
+      get().pushUndo();
+      set((state) => ({
+        features: [...state.features, ...newFeatures],
+        statusMessage: `Created ${newFeatures.length} interference ${
+          newFeatures.length === 1 ? 'body' : 'bodies'
+        }`,
+      }));
     },
 
     showMirrorComponentDialog: false,

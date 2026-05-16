@@ -131,13 +131,29 @@ export function createSurfaceUiActions({ set, get }: CADSliceContext): Partial<C
   setDecalFace: (id, normal, centroid) => set({ decalFaceId: id, decalFaceNormal: normal, decalFaceCentroid: centroid }),
   closeDecalDialog: () => set({ activeDialog: null, decalFaceId: null, decalFaceNormal: null, decalFaceCentroid: null }),
   commitDecal: (params) => {
-    const { decalFaceId, features, setActiveDialog } = get();
+    const { decalFaceId, decalFaceNormal, decalFaceCentroid, features, setActiveDialog } = get();
+    // `decalFaceId` carries the picked body's *featureId* (set by the face
+    // picker). The decal projects onto that body's mesh; render+geometry are
+    // handled by the DecalProjections scene component from these params — we
+    // deliberately do NOT set feature.mesh (ExtrudedBodies' material-override
+    // effect would clobber the textured material).
+    const targetFeatureId = params.faceId ?? decalFaceId ?? '';
+    if (!targetFeatureId || !decalFaceNormal || !decalFaceCentroid) {
+      get().setStatusMessage('Decal: pick a face on a body first');
+      return;
+    }
     const n = features.filter((f) => f.type === 'decal').length + 1;
     const feature: Feature = {
       id: crypto.randomUUID(),
       name: `Decal ${n}`,
       type: 'decal',
-      params: { ...params, faceId: params.faceId ?? decalFaceId ?? '' },
+      params: {
+        ...params,
+        faceId: targetFeatureId,
+        targetFeatureId,
+        point: decalFaceCentroid,
+        normal: decalFaceNormal,
+      },
       visible: true,
       suppressed: false,
       timestamp: Date.now(),

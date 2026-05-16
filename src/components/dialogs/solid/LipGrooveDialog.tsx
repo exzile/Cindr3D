@@ -9,7 +9,7 @@ export function LipGrooveDialog({ onClose }: { onClose: () => void }) {
   const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
   const p = editing?.params ?? {};
 
-  const addFeature = useCADStore((s) => s.addFeature);
+  const commitLipGroove = useCADStore((s) => s.commitLipGroove);
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
@@ -29,16 +29,7 @@ export function LipGrooveDialog({ onClose }: { onClose: () => void }) {
       updateFeatureParams(editing.id, params);
       setStatusMessage(`Updated Lip and Groove`);
     } else {
-      addFeature({
-        id: crypto.randomUUID(),
-        name: `Lip and Groove`,
-        type: 'lipGroove',
-        params,
-        visible: true,
-        suppressed: false,
-        timestamp: Date.now(),
-      });
-      setStatusMessage(`Lip and Groove created`);
+      commitLipGroove(params);
     }
     onClose();
   };

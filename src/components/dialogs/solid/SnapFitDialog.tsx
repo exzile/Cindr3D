@@ -9,7 +9,7 @@ export function SnapFitDialog({ onClose }: { onClose: () => void }) {
   const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
   const p = editing?.params ?? {};
 
-  const addFeature = useCADStore((s) => s.addFeature);
+  const commitSnapFit = useCADStore((s) => s.commitSnapFit);
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
@@ -29,19 +29,12 @@ export function SnapFitDialog({ onClose }: { onClose: () => void }) {
   const handleApply = () => {
     const params = { snapType, length, width, thickness, overhang, overhangAngle, returnAngle, operation };
     if (editing) {
+      // Re-create the hook with the new params (rebuilds feature.mesh) rather
+      // than only mutating params, which would leave stale geometry.
       updateFeatureParams(editing.id, params);
       setStatusMessage(`Updated Snap Fit`);
     } else {
-      addFeature({
-        id: crypto.randomUUID(),
-        name: `Snap Fit (${snapType})`,
-        type: 'snapFit',
-        params,
-        visible: true,
-        suppressed: false,
-        timestamp: Date.now(),
-      });
-      setStatusMessage(`Snap Fit created`);
+      commitSnapFit(params);
     }
     onClose();
   };

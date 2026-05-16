@@ -24,8 +24,12 @@ export default function RevolveTool() {
   const faceBoundary   = useCADStore((s) => s.revolveFaceBoundary);
   const revolveAngle   = useCADStore((s) => s.revolveAngle);
   const setAngle       = useCADStore((s) => s.setRevolveAngle);
+  const revolveAngle2  = useCADStore((s) => s.revolveAngle2);
+  const revolveDir     = useCADStore((s) => s.revolveDirection);
   const revolveAxis    = useCADStore((s) => s.revolveAxis);
   const startFromFace  = useCADStore((s) => s.startRevolveFromFace);
+  const sketches       = useCADStore((s) => s.sketches);
+  const selectedSketchId = useCADStore((s) => s.revolveSelectedSketchId);
 
   const [faceHit, setFaceHit] = useState<FacePickResult | null>(null);
   // Keeps the THREE.Vector3[] boundary alive for FaceHighlight + preview after clicking
@@ -84,36 +88,59 @@ export default function RevolveTool() {
     };
   }, [hasFace, gl, setAngle]);
 
-  // Axis vector — recomputed only when revolveAxis changes
+  const selectedSketch = useMemo(
+    () => sketches.find((s) => s.id === selectedSketchId) ?? null,
+    [sketches, selectedSketchId],
+  );
+
+  // Axis vector — supports X/Y/Z and (sketch mode) the sketch centerline,
+  // mirroring commitRevolve so the preview matches the committed body.
   const axisVec = useMemo(() => {
     if (revolveAxis === 'X') return new THREE.Vector3(1, 0, 0);
     if (revolveAxis === 'Z') return new THREE.Vector3(0, 0, 1);
+    if (revolveAxis === 'centerline' && selectedSketch) {
+      const cl = selectedSketch.entities.find((e) => e.type === 'centerline' && e.points.length >= 2);
+      if (cl) {
+        const p0 = cl.points[0];
+        const p1 = cl.points[cl.points.length - 1];
+        const d = new THREE.Vector3(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
+        if (d.lengthSq() > 1e-9) return d.normalize();
+      }
+    }
     return new THREE.Vector3(0, 1, 0);
-  }, [revolveAxis]);
+  }, [revolveAxis, selectedSketch]);
 
-  // Live preview mesh — rebuilt when boundary, angle or axis changes
+  // Live preview mesh — same geometry fns + sweep resolver as the committed
+  // RevolveBody, so "what you see is what you get" across one-side /
+  // symmetric / two-sides for both sketch and face profiles.
   const previewMesh = useMemo(() => {
-    if (!selBoundary || selBoundary.length < 3) return null;
-    const rad = revolveAngle * (Math.PI / 180);
-    const m = GeometryEngine.revolveFaceBoundary(selBoundary, axisVec, rad, false);
+    const { phiStart, sweep } = GeometryEngine.resolveRevolveSweep(revolveAngle, revolveAngle2, revolveDir);
+    if (Math.abs(sweep) < 1e-3) return null;
+    let m: THREE.Mesh | null = null;
+    if (profileMode === 'face') {
+      if (!selBoundary || selBoundary.length < 3) return null;
+      m = GeometryEngine.revolveFaceBoundary(selBoundary, axisVec, sweep, false, phiStart);
+    } else {
+      if (!selectedSketch) return null;
+      m = GeometryEngine.revolveSketch(selectedSketch, sweep, axisVec, phiStart);
+    }
     if (m) m.material = _previewMat;
     return m;
-  }, [selBoundary, revolveAngle, axisVec]);
+  }, [profileMode, selBoundary, selectedSketch, revolveAngle, revolveAngle2, revolveDir, axisVec]);
 
   // Dispose preview geometry when it's replaced or the tool exits
   useEffect(() => {
     return () => { previewMesh?.geometry.dispose(); };
   }, [previewMesh]);
 
-  if (!isFaceMode) return null;
+  if (activeTool !== 'revolve') return null;
 
   return (
     <>
-      {/* Hover highlight while picking */}
-      {isPicking && faceHit && <FaceHighlight boundary={faceHit.boundary} />}
-      {/* Persistent highlight of the selected face */}
-      {selBoundary && <FaceHighlight boundary={selBoundary} />}
-      {/* Live preview of the revolved shape */}
+      {/* Face-mode picking highlights */}
+      {isFaceMode && isPicking && faceHit && <FaceHighlight boundary={faceHit.boundary} />}
+      {isFaceMode && selBoundary && <FaceHighlight boundary={selBoundary} />}
+      {/* Live preview of the revolved shape — sketch AND face modes */}
       {previewMesh && <primitive object={previewMesh} />}
     </>
   );

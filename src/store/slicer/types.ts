@@ -66,7 +66,7 @@ export interface SlicerStore {
   printabilityReport: PrintabilityReport | null;
   printabilityHighlight: boolean;
   settingsPanel: 'printer' | 'material' | 'print' | null;
-  transformMode: 'move' | 'scale' | 'rotate' | 'mirror' | 'settings';
+  transformMode: 'move' | 'scale' | 'rotate' | 'mirror' | 'texture' | 'settings';
   /** Transient viewport "pick mode" for tools that capture a click on the
    *  3D scene (lay-flat-by-face, measurement, painting). 'none' when idle. */
   viewportPickMode: 'none' | 'lay-flat' | 'measure' | 'seam-paint' | 'modifier-paint';
@@ -165,7 +165,7 @@ export interface SlicerStore {
   downloadGCode: () => void;
   sendToPrinter: () => Promise<void>;
   setSettingsPanel: (panel: 'printer' | 'material' | 'print' | null) => void;
-  setTransformMode: (mode: 'move' | 'scale' | 'rotate' | 'mirror' | 'settings') => void;
+  setTransformMode: (mode: 'move' | 'scale' | 'rotate' | 'mirror' | 'texture' | 'settings') => void;
   setViewportPickMode: (mode: 'none' | 'lay-flat' | 'measure' | 'seam-paint' | 'modifier-paint') => void;
   pushMeasurePoint: (point: { x: number; y: number; z: number }) => void;
   clearMeasurePoints: () => void;

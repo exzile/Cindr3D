@@ -1,9 +1,10 @@
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { useFacePicker, type FacePickResult } from '../../../hooks/useFacePicker';
 import { usePickerSceneCleanup } from '../../../hooks/usePickerSceneCleanup';
 import { buildFaceGeometry } from './pickerGeometry';
+import { usePickCursor, pulseFactor } from './pickPulse';
 
 export interface UseSimpleFacePickerOptions {
   overlayEnabled: boolean;
@@ -65,8 +66,13 @@ export function useSimpleFacePicker({
   const selectedMeshRef = useRef<THREE.Mesh | null>(null);
   usePickerSceneCleanup([hoverMeshRef, selectedMeshRef]);
 
+  // Drive the crosshair cursor while a pickable face is under the pointer.
+  const [hovering, setHovering] = useState(false);
+  usePickCursor(pickEnabled, hovering);
+
   const handleHover = useCallback((result: FacePickResult | null) => {
     hoverResultRef.current = result;
+    setHovering(result !== null);
   }, []);
 
   const handleClick = useCallback((result: FacePickResult) => {
@@ -76,7 +82,7 @@ export function useSimpleFacePicker({
 
   useFacePicker({ enabled: pickEnabled, onHover: handleHover, onClick: handleClick });
 
-  useFrame(({ scene, invalidate }) => {
+  useFrame(({ scene, invalidate, clock }) => {
     const hoverMat = hoverMatRef.current!;
     const selectedMat = selectedMatRef.current!;
 
@@ -101,6 +107,8 @@ export function useSimpleFacePicker({
           hoverMeshRef.current.geometry.dispose();
           hoverMeshRef.current.geometry = buildFaceGeometry(hr.boundary);
         }
+        // Subtle breathing pulse on the hover highlight (per-instance mat).
+        hoverMat.opacity = 0.3 + 0.35 * pulseFactor(clock.elapsedTime * 1000);
       } else if (hoverMeshRef.current) {
         scene.remove(hoverMeshRef.current);
         hoverMeshRef.current.geometry.dispose();

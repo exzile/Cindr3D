@@ -9,13 +9,14 @@
  * before being replaced to prevent GPU memory leaks.
  */
 
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useMemo, useState } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useCADStore } from '../../../store/cadStore';
 import { useFacePicker, type FacePickResult } from '../../../hooks/useFacePicker';
 import { usePickerSceneCleanup } from '../../../hooks/usePickerSceneCleanup';
 import { buildFaceGeometry } from './pickerGeometry';
+import { usePickCursor, pulseFactor } from './pickPulse';
 
 // ── Module-level material singletons ─────────────────────────────────────────
 const HOVER_MAT = new THREE.MeshBasicMaterial({
@@ -41,6 +42,15 @@ export default function ShellFacePicker() {
   const removeShellRemoveFace = useCADStore((s) => s.removeShellRemoveFace);
 
   const active = activeDialog === 'shell';
+
+  // Per-instance clone of the shared HOVER_MAT so we can pulse opacity without
+  // mutating the module-level singleton (one clone per component lifetime).
+  const pulseHoverMat = useMemo(() => HOVER_MAT.clone(), []);
+  useEffect(() => () => { pulseHoverMat.dispose(); }, [pulseHoverMat]);
+
+  // Crosshair cursor while a pickable face is hovered.
+  const [hovering, setHovering] = useState(false);
+  usePickCursor(active, hovering);
 
   // Track hover result and selected face boundaries
   const hoverResultRef = useRef<FacePickResult | null>(null);
@@ -68,6 +78,7 @@ export default function ShellFacePicker() {
 
   const handleHover = useCallback((result: FacePickResult | null) => {
     hoverResultRef.current = result;
+    setHovering(result !== null);
   }, []);
 
   const handleClick = useCallback(
@@ -86,7 +97,7 @@ export default function ShellFacePicker() {
 
   useFacePicker({ enabled: active, onHover: handleHover, onClick: handleClick });
 
-  useFrame(({ scene, invalidate }) => {
+  useFrame(({ scene, invalidate, clock }) => {
     if (!active) {
       // Clean up all overlays when dialog is closed
       if (hoverMeshRef.current) {
@@ -108,7 +119,7 @@ export default function ShellFacePicker() {
     const hr = hoverResultRef.current;
     if (hr) {
       if (!hoverMeshRef.current) {
-        const mesh = new THREE.Mesh(buildFaceGeometry(hr.boundary), HOVER_MAT);
+        const mesh = new THREE.Mesh(buildFaceGeometry(hr.boundary), pulseHoverMat);
         mesh.renderOrder = 99;
         scene.add(mesh);
         hoverMeshRef.current = mesh;
@@ -116,6 +127,8 @@ export default function ShellFacePicker() {
         hoverMeshRef.current.geometry.dispose();
         hoverMeshRef.current.geometry = buildFaceGeometry(hr.boundary);
       }
+      // Subtle breathing pulse on the hover highlight (per-instance clone).
+      pulseHoverMat.opacity = 0.25 + 0.35 * pulseFactor(clock.elapsedTime * 1000);
     } else if (hoverMeshRef.current) {
       scene.remove(hoverMeshRef.current);
       hoverMeshRef.current.geometry.dispose();

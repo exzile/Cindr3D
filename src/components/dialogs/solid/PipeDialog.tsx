@@ -1,12 +1,10 @@
 import { useState } from 'react';
 import { useCADStore } from '../../../store/cadStore';
 import { DialogShell } from '../common/DialogShell';
-import type { Feature } from '../../../types/cad';
 
 export function PipeDialog({ onClose }: { onClose: () => void }) {
   const sketches = useCADStore((s) => s.sketches);
-  const addFeature = useCADStore((s) => s.addFeature);
-  const setStatusMessage = useCADStore((s) => s.setStatusMessage);
+  const commitPipe = useCADStore((s) => s.commitPipe);
 
   const [pathSketchId, setPathSketchId] = useState(sketches[0]?.id ?? '');
   const [outerDiameter, setOuterDiameter] = useState(10);
@@ -15,18 +13,7 @@ export function PipeDialog({ onClose }: { onClose: () => void }) {
   const [operation, setOperation] = useState<'new-body' | 'join' | 'cut'>('new-body');
 
   const handleApply = () => {
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `Pipe (⌀${outerDiameter}mm)`,
-      type: 'pipe',
-      params: { isPipe: true, outerDiameter, hollow, wallThickness, operation, pathSketchId },
-      bodyKind: 'solid',
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    };
-    addFeature(feature);
-    setStatusMessage(`Created pipe ⌀${outerDiameter}mm`);
+    commitPipe({ outerDiameter, hollow, wallThickness, operation, pathSketchId });
     onClose();
   };
 

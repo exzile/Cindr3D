@@ -27,11 +27,21 @@ interface Props {
 export function DecalDialog({ open, onOk, onClose, faceId }: Props) {
   const [imageUrl, setImageUrl] = useState('');
   const [opacity, setOpacity] = useState(1);
-  const [scaleU, setScaleU] = useState(1);
-  const [scaleV, setScaleV] = useState(1);
+  const [scaleU, setScaleU] = useState(10);
+  const [scaleV, setScaleV] = useState(10);
   const [rotation, setRotation] = useState(0);
 
   if (!open) return null;
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') setImageUrl(reader.result);
+    };
+    reader.readAsDataURL(file); // data: URL — consumed by THREE.TextureLoader
+  };
 
   const isValidUrl = imageUrl.trim().length > 0;
   const canOk = faceId !== null && isValidUrl;
@@ -48,10 +58,15 @@ export function DecalDialog({ open, onOk, onClose, faceId }: Props) {
             <label>Image URL</label>
             <input
               type="text"
-              value={imageUrl}
+              value={imageUrl.startsWith('data:') ? '(file selected)' : imageUrl}
               onChange={(e) => setImageUrl(e.target.value)}
               placeholder="https://..."
             />
+          </div>
+
+          <div className="form-group">
+            <label>Or upload image</label>
+            <input type="file" accept="image/*" onChange={handleFile} />
           </div>
 
           {isValidUrl && (
@@ -88,22 +103,22 @@ export function DecalDialog({ open, onOk, onClose, faceId }: Props) {
 
           <div className="form-group dialog-field-row">
             <div className="dialog-field-col">
-              <label>Scale U</label>
+              <label>Width (mm)</label>
               <input
                 type="number"
                 value={scaleU}
                 min={0.001}
-                step={0.1}
+                step={1}
                 onChange={(e) => setScaleU(parseFloat(e.target.value) || 1)}
               />
             </div>
             <div className="dialog-field-col">
-              <label>Scale V</label>
+              <label>Height (mm)</label>
               <input
                 type="number"
                 value={scaleV}
                 min={0.001}
-                step={0.1}
+                step={1}
                 onChange={(e) => setScaleV(parseFloat(e.target.value) || 1)}
               />
             </div>

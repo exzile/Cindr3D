@@ -34,11 +34,16 @@ export function BoundaryFillDialog({ onClose }: { onClose: () => void }) {
   const handleApply = () => {
     if (editing) {
       updateFeatureParams(editing.id, { fillType, operation, isBoundaryFill: true, toolFeatureIds: selectedToolIds.join(',') });
-      if (selectedToolIds.length > 0) commitBoundaryFill(selectedToolIds, operation);
-      setStatusMessage(`Updated Boundary Fill (${fillType}, ${operation})`);
+      if (selectedToolIds.length > 0) {
+        // commitBoundaryFill emits its own detailed status (algorithm used,
+        // any bounding-box / op fallback note) — don't clobber it here.
+        commitBoundaryFill(selectedToolIds, operation);
+      } else {
+        setStatusMessage(`Updated Boundary Fill (${fillType}, ${operation})`);
+      }
     } else if (selectedToolIds.length > 0) {
+      // commitBoundaryFill sets the authoritative status message itself.
       commitBoundaryFill(selectedToolIds, operation);
-      setStatusMessage(`Created Boundary Fill ${boundaryFillCount} (${fillType}, ${operation})`);
     } else {
       // Stub — no tool bodies selected yet
       const feature: Feature = {

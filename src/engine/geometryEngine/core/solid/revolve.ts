@@ -4,11 +4,36 @@ import { SURFACE_MATERIAL } from '../../../../components/viewport/scene/bodyMate
 import { EXTRUDE_MATERIAL } from '../../materials';
 import { sketchToShape as sketchToShapeImpl } from '../sketch/sketchProfiles';
 
+export type RevolveDirection = 'one-side' | 'symmetric' | 'two-sides';
+
+/**
+ * Single source of truth for turning the panel's angle / angle2 / direction
+ * into a lathe start angle + total sweep (radians). Shared by the committed
+ * renderer (RevolveBody), the live preview (RevolveTool) and STL export so
+ * symmetric / two-sides revolves look identical everywhere.
+ *
+ *  - one-side : start 0,         sweep = angle
+ *  - symmetric: start -angle/2,  sweep = angle           (centred on the profile)
+ *  - two-sides: start -angle2,   sweep = angle + angle2   (angle one way, angle2 the other)
+ */
+export function resolveRevolveSweep(
+  angleDeg: number,
+  angle2Deg: number,
+  direction: RevolveDirection,
+): { phiStart: number; sweep: number } {
+  const a = THREE.MathUtils.degToRad(angleDeg);
+  const a2 = THREE.MathUtils.degToRad(angle2Deg);
+  if (direction === 'symmetric') return { phiStart: -a / 2, sweep: a };
+  if (direction === 'two-sides') return { phiStart: -a2, sweep: a + a2 };
+  return { phiStart: 0, sweep: a };
+}
+
 export function revolveFaceBoundary(
   boundary: THREE.Vector3[],
   axisDir: THREE.Vector3,
-  angle: number,
+  sweep: number,
   isSurface = false,
+  phiStart = 0,
 ): THREE.Mesh | null {
   if (boundary.length < 3) return null;
 
@@ -21,7 +46,7 @@ export function revolveFaceBoundary(
   const axis = axisDir.clone().normalize();
 
   for (let segment = 0; segment <= segments; segment++) {
-    rotation.setFromAxisAngle(axis, (angle / segments) * segment);
+    rotation.setFromAxisAngle(axis, phiStart + (sweep / segments) * segment);
     for (let i = 0; i < pointCount; i++) {
       point.copy(boundary[i]).applyQuaternion(rotation);
       positions.push(point.x, point.y, point.z);
@@ -38,7 +63,7 @@ export function revolveFaceBoundary(
     }
   }
 
-  if (!isSurface && angle < 2 * Math.PI - 0.01) {
+  if (!isSurface && sweep < 2 * Math.PI - 0.01) {
     let cx = 0;
     let cy = 0;
     let cz = 0;
@@ -51,16 +76,21 @@ export function revolveFaceBoundary(
     cy /= pointCount;
     cz /= pointCount;
 
+    // Start cap — rotated to phiStart so it meets the first side ring.
+    rotation.setFromAxisAngle(axis, phiStart);
     const startCenter = positions.length / 3;
-    positions.push(cx, cy, cz);
+    point.set(cx, cy, cz).applyQuaternion(rotation);
+    positions.push(point.x, point.y, point.z);
     for (let i = 0; i < pointCount; i++) {
-      positions.push(boundary[i].x, boundary[i].y, boundary[i].z);
+      point.copy(boundary[i]).applyQuaternion(rotation);
+      positions.push(point.x, point.y, point.z);
     }
     for (let i = 0; i < pointCount; i++) {
       indices.push(startCenter, startCenter + 1 + ((i + 1) % pointCount), startCenter + 1 + i);
     }
 
-    rotation.setFromAxisAngle(axis, angle);
+    // End cap — rotated to phiStart + sweep.
+    rotation.setFromAxisAngle(axis, phiStart + sweep);
     point.set(cx, cy, cz).applyQuaternion(rotation);
     const endCenter = positions.length / 3;
     positions.push(point.x, point.y, point.z);
@@ -83,7 +113,12 @@ export function revolveFaceBoundary(
   return mesh;
 }
 
-export function revolveSketch(sketch: Sketch, angle: number, axis: THREE.Vector3): THREE.Mesh | null {
+export function revolveSketch(
+  sketch: Sketch,
+  sweep: number,
+  axis: THREE.Vector3,
+  phiStart = 0,
+): THREE.Mesh | null {
   if (sketch.entities.length === 0) return null;
 
   const shape = sketchToShapeImpl(sketch);
@@ -95,7 +130,7 @@ export function revolveSketch(sketch: Sketch, angle: number, axis: THREE.Vector3
   if (minX < -1e-3 && maxX > 1e-3) return null;
 
   const lathePoints = points.map((point) => new THREE.Vector2(Math.abs(point.x), point.y));
-  const geometry = new THREE.LatheGeometry(lathePoints, 64, 0, angle);
+  const geometry = new THREE.LatheGeometry(lathePoints, 64, phiStart, sweep);
   const targetAxis = axis.clone().normalize();
   const yAxis = new THREE.Vector3(0, 1, 0);
   const cosine = yAxis.dot(targetAxis);

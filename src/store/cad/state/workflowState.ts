@@ -167,6 +167,8 @@ export interface CADWorkflowState {
   openInterferenceDialog(): void;
   closeInterferenceDialog(): void;
   computeInterference(): void;
+  /** CSG-intersect every interfering solid pair into new interference bodies. */
+  commitInterferenceBodies(): void;
 
   // ── A22 — Mirror Component ────────────────────────────────────────────────
   showMirrorComponentDialog: boolean;

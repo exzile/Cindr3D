@@ -1,8 +1,31 @@
 import * as THREE from 'three';
 import type { Feature } from '../../../../types/cad';
+import { GeometryEngine } from '../../../../engine/GeometryEngine';
+import {
+  pickMostRecentSolidTarget,
+  applyBodyBoolean,
+  syncConfigurationSuppression,
+} from '../featureManagement/bodyBoolean';
 import { REVOLVE_DEFAULTS } from '../../defaults';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
+
+/**
+ * Resolve the world-space axis vector for a revolve exactly the way
+ * RevolveItem (the renderer) does: an explicit centerline direction wins,
+ * otherwise the named X/Y/Z axis (default Y).
+ */
+function resolveRevolveAxisVec(
+  axisKey: string,
+  axisDirection: [number, number, number] | undefined,
+): THREE.Vector3 {
+  if (axisDirection) {
+    return new THREE.Vector3(axisDirection[0], axisDirection[1], axisDirection[2]);
+  }
+  if (axisKey === 'X') return new THREE.Vector3(1, 0, 0);
+  if (axisKey === 'Z') return new THREE.Vector3(0, 0, 1);
+  return new THREE.Vector3(0, 1, 0);
+}
 
 export function createRevolveActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -79,12 +102,61 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
         bodyKind: revolveBodyKind === 'surface' ? 'surface' : 'solid',
       };
       const angleDesc = revolveDirection === 'symmetric' ? `Ã‚Â±${revolveAngle / 2}Ã‚Â°` : `${revolveAngle}Ã‚Â°`;
+
+      // Ã¢â€â‚¬Ã¢â€â‚¬ Boolean operation (join / cut / intersect) Ã¢â€â‚¬Ã¢â€â‚¬
+      // For non-new-body ops, bake the revolve mesh NOW (same math as
+      // RevolveItem) and CSG it against the chosen target body, storing the
+      // result on feature.mesh so the stored-mesh render path handles it.
+      let faceFallbackNote = '';
+      if (revolveOperation && revolveOperation !== 'new-body' && revolveBodyKind !== 'surface') {
+        const target = pickMostRecentSolidTarget(features, { excludeType: 'revolve' });
+        if (target) {
+          const { phiStart, sweep } = GeometryEngine.resolveRevolveSweep(revolveAngle, revolveAngle2, revolveDirection);
+          const axisVec = resolveRevolveAxisVec(revolveAxis as string, undefined);
+          const boundary: THREE.Vector3[] = [];
+          for (let i = 0; i < revolveFaceBoundary.length; i += 3) {
+            boundary.push(new THREE.Vector3(revolveFaceBoundary[i], revolveFaceBoundary[i + 1], revolveFaceBoundary[i + 2]));
+          }
+          const revolveMesh = GeometryEngine.revolveFaceBoundary(boundary, axisVec, sweep, false, phiStart);
+          if (revolveMesh) {
+            const result = applyBodyBoolean(target.mesh as THREE.Mesh, revolveMesh, revolveOperation);
+            revolveMesh.geometry.dispose();
+            if (result) {
+              feature.mesh = result;
+              feature.bodyKind = 'solid';
+              feature.params.targetFeatureId = target.id;
+              get().pushUndo();
+              set((state) => {
+                const updated = state.features.map((f) =>
+                  f.id === target.id ? { ...f, suppressed: true, visible: false } : f,
+                );
+                return {
+                  features: [...updated, feature],
+                  designConfigurations: syncConfigurationSuppression(state, {
+                    [feature.id]: false,
+                    [target.id]: true,
+                  }),
+                  activeTool: 'select',
+                  ...REVOLVE_DEFAULTS,
+                  statusMessage: `Revolve ${revolveOperation} with ${target.name} (${units})`,
+                };
+              });
+              return;
+            }
+            // CSG failed Ã¢â‚¬â€ fall through to new-body behaviour with a note.
+            faceFallbackNote = ` (${revolveOperation} failed Ã¢â‚¬â€ kept as new body)`;
+          }
+        } else {
+          faceFallbackNote = ` (no solid body to ${revolveOperation} Ã¢â‚¬â€ kept as new body)`;
+        }
+      }
+
       get().pushUndo();
       set({
         features: [...features, feature],
         activeTool: 'select',
         ...REVOLVE_DEFAULTS,
-        statusMessage: `Revolved face by ${angleDesc} around ${revolveAxis} (${units})`,
+        statusMessage: `Revolved face by ${angleDesc} around ${revolveAxis} (${units})${faceFallbackNote}`,
       });
       return;
     }
@@ -150,11 +222,55 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       : revolveDirection === 'two-sides'
         ? `${revolveAngle}Ã‚Â°/${revolveAngle2}Ã‚Â°`
         : `${revolveAngle}Ã‚Â°`;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Boolean operation (join / cut / intersect) Ã¢â€â‚¬Ã¢â€â‚¬
+    // Bake the revolve mesh NOW with the SAME math RevolveItem uses, CSG it
+    // against the chosen target body, and store the result on feature.mesh
+    // (the stored-mesh render path then draws it; RevolveItem is skipped via
+    // the !f.mesh guard in ExtrudedBodies). new-body falls through unchanged.
+    let sketchFallbackNote = '';
+    if (revolveOperation && revolveOperation !== 'new-body' && revolveBodyKind !== 'surface') {
+      const target = pickMostRecentSolidTarget(features, { excludeType: 'revolve' });
+      if (target) {
+        const { phiStart, sweep } = GeometryEngine.resolveRevolveSweep(revolveAngle, revolveAngle2, revolveDirection);
+        const axisVec = resolveRevolveAxisVec(resolvedAxisKey, centerlineAxisDirection);
+        const revolveMesh = GeometryEngine.revolveSketch(sketch, sweep, axisVec, phiStart);
+        if (revolveMesh) {
+          const result = applyBodyBoolean(target.mesh as THREE.Mesh, revolveMesh, revolveOperation);
+          revolveMesh.geometry.dispose();
+          if (result) {
+            feature.mesh = result;
+            feature.bodyKind = 'solid';
+            feature.params.targetFeatureId = target.id;
+            set((state) => {
+              const updated = state.features.map((f) =>
+                f.id === target.id ? { ...f, suppressed: true, visible: false } : f,
+              );
+              return {
+                features: [...updated, feature],
+                designConfigurations: syncConfigurationSuppression(state, {
+                  [feature.id]: false,
+                  [target.id]: true,
+                }),
+                activeTool: 'select',
+                ...REVOLVE_DEFAULTS,
+                statusMessage: `Revolve ${revolveOperation} with ${target.name} (${units})`,
+              };
+            });
+            return;
+          }
+          sketchFallbackNote = ` (${revolveOperation} failed Ã¢â‚¬â€ kept as new body)`;
+        }
+      } else {
+        sketchFallbackNote = ` (no solid body to ${revolveOperation} Ã¢â‚¬â€ kept as new body)`;
+      }
+    }
+
     set({
       features: [...features, feature],
       activeTool: 'select',
       ...REVOLVE_DEFAULTS,
-      statusMessage: `Revolved ${sketch.name} by ${angleDesc} around ${revolveAxis === 'centerline' ? 'sketch centerline' : revolveAxis} (${units})`,
+      statusMessage: `Revolved ${sketch.name} by ${angleDesc} around ${revolveAxis === 'centerline' ? 'sketch centerline' : revolveAxis} (${units})${sketchFallbackNote}`,
     });
   },
   };

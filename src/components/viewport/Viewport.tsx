@@ -41,6 +41,8 @@ import FilletEdgeHighlight from './scene/FilletEdgeHighlight';
 import FilletGizmo from './scene/FilletGizmo';
 import FilletPreview from './scene/FilletPreview';
 import ChamferEdgeHighlight from './scene/ChamferEdgeHighlight';
+import ChamferGizmo from './scene/ChamferGizmo';
+import ChamferPreview from './scene/ChamferPreview';
 import ConstructionGeometryInteraction from './scene/ConstructionGeometryInteraction';
 import ConstructionGeometryRenderer from './scene/ConstructionGeometryRenderer';
 import ReplaceFaceInteraction from './scene/ReplaceFaceInteraction';
@@ -51,6 +53,7 @@ import SplitFacePicker from './scene/SplitFacePicker';
 import HoleFacePicker from './scene/HoleFacePicker';
 import ShellFacePicker from './scene/ShellFacePicker';
 import RemoveFacePicker from './scene/RemoveFacePicker';
+import DeleteFacePicker from './scene/DeleteFacePicker';
 import DraftPartingLinePicker from './scene/DraftPartingLinePicker';
 import DraftPullDirectionPicker from './scene/DraftPullDirectionPicker';
 import JointDialogPicker from './scene/JointDialogPicker';
@@ -251,6 +254,8 @@ export default function Viewport() {
         <FilletGizmo />
         <FilletPreview />
         <ChamferEdgeHighlight />
+        <ChamferGizmo />
+        <ChamferPreview />
         <ConstructionGeometryInteraction />
         <ConstructionGeometryRenderer />
         <ReplaceFaceInteraction />
@@ -261,6 +266,7 @@ export default function Viewport() {
         <HoleFacePicker />
         <ShellFacePicker />
         <RemoveFacePicker />
+        <DeleteFacePicker />
         <DraftPartingLinePicker />
         <DraftPullDirectionPicker />
         <MeshExporter />

@@ -11,6 +11,7 @@ import { ObjectSettingsPanel } from './objectControls/ObjectSettingsPanel';
 import { ObjectToolbar } from './objectControls/ObjectToolbar';
 import { RotateObjectPanel } from './objectControls/RotateObjectPanel';
 import { ScaleObjectPanel } from './objectControls/ScaleObjectPanel';
+import { TextureObjectPanel } from './objectControls/TextureObjectPanel';
 import type { TransformMode } from './objectControls/types';
 import { SlicerGCodePreviewPanel } from './SlicerGCodePreviewPanel';
 
@@ -91,6 +92,7 @@ export function SlicerViewportOverlays() {
     ),
     rotate: <RotateObjectPanel {...panelProps} />,
     mirror: <MirrorObjectPanel {...panelProps} />,
+    texture: <TextureObjectPanel {...panelProps} />,
     settings: <ObjectSettingsPanel {...panelProps} />,
   };
 

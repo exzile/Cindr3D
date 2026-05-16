@@ -1,7 +1,24 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useCADStore } from '../../../store/cadStore';
 import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
+
+const clampDeg = (a: number) => Math.max(1, Math.min(89, a));
+
+/**
+ * Resolve the face-2 setback from the dialog mode (mirrors Fusion):
+ *  - equal-dist / three-face → equal to face-1 distance
+ *  - two-dist                → explicit second distance
+ *  - dist-angle              → distance · tan(angle from face 1)
+ */
+export function resolveChamferDistance2(p: ChamferParams): number {
+  if (p.mode === 'two-dist') return p.distance2 ?? p.distance;
+  if (p.mode === 'dist-angle') {
+    const a = clampDeg(p.angle ?? 45);
+    return Math.max(0.01, p.distance * Math.tan((a * Math.PI) / 180));
+  }
+  return p.distance;
+}
 
 /** SOL-I6: 'three-face' added per Fusion SDK ThreeEdgeChamferEdge */
 export type ChamferMode = 'equal-dist' | 'two-dist' | 'dist-angle' | 'three-face';
@@ -23,8 +40,14 @@ interface ChamferDialogProps {
 }
 
 function ChamferDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: ChamferDialogProps) {
+  // chamferLiveDistance is updated by ChamferGizmo drags so the dialog
+  // reflects the distance while the user drags the on-canvas handle.
+  const chamferLiveDistance = useCADStore((s) => s.chamferLiveDistance);
+  const setChamferLiveDistance = useCADStore((s) => s.setChamferLiveDistance);
   const [mode, setMode] = useState<ChamferMode>('equal-dist');
-  const [distance, setDistance] = useState(2);
+  const [distance, setDistance] = useState(() => chamferLiveDistance);
+  // Sync gizmo drag → dialog input (no loop: input onChange only fires on user events).
+  useEffect(() => { setDistance(chamferLiveDistance); }, [chamferLiveDistance]);
   const [distance2, setDistance2] = useState(2);
   const [angle, setAngle] = useState(45);
   const [propagate, setPropagate] = useState(true);
@@ -87,7 +110,11 @@ function ChamferDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: Chamfe
           <input
             type="number"
             value={distance}
-            onChange={(e) => setDistance(clamp(parseFloat(e.target.value) || 2, 0.01, 500))}
+            onChange={(e) => {
+              const d = clamp(parseFloat(e.target.value) || 2, 0.01, 500);
+              setDistance(d);
+              setChamferLiveDistance(d);
+            }}
             min={0.01}
             max={500}
             step={0.5}
@@ -147,6 +174,7 @@ export function ChamferDialog({ onClose }: { onClose: () => void }) {
   const features = useCADStore((s) => s.features);
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
+  const commitChamfer = useCADStore((s) => s.commitChamfer);
 
   const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
   const p = editing?.params ?? {};
@@ -168,7 +196,10 @@ export function ChamferDialog({ onClose }: { onClose: () => void }) {
         timestamp: Date.now(),
       };
       addFeature(feature);
-      setStatusMessage(`Chamfer applied: d=${params.distance}`);
+      // Actually bevel the geometry (was previously a no-op stub, exactly as
+      // commitFillet was before the fillet fix). The dialog mode resolves the
+      // face-2 setback; the gizmo/preview drive the primary distance.
+      commitChamfer(params.distance, resolveChamferDistance2(params));
     }
     onClose();
   };

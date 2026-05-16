@@ -44,8 +44,11 @@ export interface CADAnalysisState {
   // ── SFC18 — Delete Face ──────────────────────────────────────────────────
   showDeleteFaceDialog: boolean;
   deleteFaceIds: string[];
+  /** Per-picked-face data the commit needs (which body + face plane). */
+  deleteFacePicks: { featureId: string; normal: [number, number, number]; centroid: [number, number, number] }[];
   openDeleteFaceDialog(): void;
   addDeleteFace(id: string): void;
+  addDeleteFacePick(featureId: string, normal: [number, number, number], centroid: [number, number, number]): void;
   clearDeleteFaces(): void;
   closeDeleteFaceDialog(): void;
   commitDeleteFace(params: import('../../../components/dialogs/surface/DeleteFaceDialog').DeleteFaceParams): void;
@@ -162,6 +165,38 @@ export interface CADAnalysisState {
 
   // ── SLD2 — Web (dialog-based) ────────────────────────────────────────────
   commitWeb(sketchId: string, thickness: number, height: number): void;
+
+  // ── SLD — Pipe ───────────────────────────────────────────────────────────
+  commitPipe(params: {
+    outerDiameter: number;
+    hollow: boolean;
+    wallThickness: number;
+    operation: 'new-body' | 'join' | 'cut';
+    pathSketchId: string;
+  }): void;
+
+  // ── SLD — Snap Fit ───────────────────────────────────────────────────────
+  commitSnapFit(params: {
+    snapType: 'cantilever' | 'annular' | 'torsional';
+    length: number;
+    width: number;
+    thickness: number;
+    overhang: number;
+    overhangAngle: number;
+    returnAngle: number;
+    operation: 'new-body' | 'join' | 'cut';
+  }): void;
+
+  // ── SLD — Lip and Groove ─────────────────────────────────────────────────
+  commitLipGroove(params: {
+    lipWidth: number;
+    lipHeight: number;
+    grooveWidth: number;
+    grooveDepth: number;
+    clearance: number;
+    includeGroove: boolean;
+    operation: 'new-body' | 'join' | 'cut';
+  }): void;
 
   // ── SLD4 — Rest ──────────────────────────────────────────────────────────
   commitRest(params: { profileId: string; width: number; depth: number; thickness: number; normalX: number; normalY: number; normalZ: number; centerX: number; centerY: number; centerZ: number }): void;

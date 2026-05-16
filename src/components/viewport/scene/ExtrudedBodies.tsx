@@ -104,7 +104,13 @@ function RevolveItem({
   material: THREE.Material;
   bodyId: string | undefined;
 }) {
-  const angle = ((feature.params.angle as number) || 360) * (Math.PI / 180);
+  const angleDeg = (feature.params.angle as number) || 360;
+  const angle2Deg = (feature.params.angle2 as number) ?? angleDeg;
+  const revolveDirection = (feature.params.direction as 'one-side' | 'symmetric' | 'two-sides') || 'one-side';
+  const { phiStart, sweep } = useMemo(
+    () => GeometryEngine.resolveRevolveSweep(angleDeg, angle2Deg, revolveDirection),
+    [angleDeg, angle2Deg, revolveDirection],
+  );
   const axisKey = (feature.params.axis as 'X' | 'Y' | 'Z') || 'Y';
   const isFaceRevolve = !!feature.params.faceRevolve;
   const useCenterline = !!feature.params.useCenterline;
@@ -126,12 +132,12 @@ function RevolveItem({
       for (let i = 0; i < flat.length; i += 3) {
         boundary.push(new THREE.Vector3(flat[i], flat[i + 1], flat[i + 2]));
       }
-      const revolved = GeometryEngine.revolveFaceBoundary(boundary, axis, angle, isSurface);
+      const revolved = GeometryEngine.revolveFaceBoundary(boundary, axis, sweep, isSurface, phiStart);
       if (revolved) revolved.material = material;
       return revolved;
     }
     if (!sketch) return null;
-    const m = GeometryEngine.revolveSketch(sketch, angle, axis);
+    const m = GeometryEngine.revolveSketch(sketch, sweep, axis, phiStart);
     if (!m) return null;
     // NOTE: round-4 axis fix — `revolveSketch` now applies the lathe→axis
     // rotation INTERNALLY (rotates the BufferGeometry so +Y aligns with `axis`).
@@ -140,7 +146,7 @@ function RevolveItem({
     // rotation and double-flip X/Z revolves — drop it entirely.
     m.material = material;
     return m;
-  }, [isFaceRevolve, feature.params.faceBoundary, sketch, angle, axis, isSurface, material]);
+  }, [isFaceRevolve, feature.params.faceBoundary, sketch, sweep, phiStart, axis, isSurface, material]);
   useEffect(() => {
     /* eslint-disable react-hooks/immutability -- Three.js userData for raycasting */
     if (mesh) {
@@ -545,7 +551,7 @@ export default function ExtrudedBodies() {
           />
         );
       })}
-      {features.filter((f) => f.type === 'revolve' && isActive(f)).map((feature) => {
+      {features.filter((f) => f.type === 'revolve' && isActive(f) && !f.mesh).map((feature) => {
         const bodyId = resolveBodyId(feature.id, feature.bodyId);
         const material = getMaterial(feature.componentId, bodyId, feature.bodyKind === 'surface');
         if (feature.params.faceRevolve) {
