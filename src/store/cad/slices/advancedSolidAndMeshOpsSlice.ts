@@ -1,8 +1,120 @@
 import * as THREE from 'three';
 import type { Feature } from '../../../types/cad';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
+import { errorMessage } from '../../../utils/errorHandling';
 import type { CADSliceContext } from '../sliceContext';
 import type { CADState } from '../state';
+
+/**
+ * Pick the body to boolean a boundary fill against (operation join/cut):
+ * the most recent active, visible SOLID feature that already carries a real
+ * THREE.Mesh, excluding the tool bodies that define the boundary itself.
+ * Mirrors revolve's pickRevolveTarget — extrude bodies live only in the R3F
+ * scene (no feature.mesh) so they are not eligible single-shot targets.
+ */
+function pickBoundaryFillTarget(features: Feature[], excludeIds: Set<string>): Feature | undefined {
+  let best: Feature | undefined;
+  for (const f of features) {
+    if (excludeIds.has(f.id)) continue;
+    if (!f.visible || f.suppressed) continue;
+    if (f.bodyKind === 'surface') continue;
+    if (f.params?.featureKind === 'boundary-fill') continue;
+    if (!(f.mesh instanceof THREE.Mesh)) continue;
+    if (!best || f.timestamp >= best.timestamp) best = f;
+  }
+  return best;
+}
+
+/**
+ * Compute the boundary-fill solid geometry from the selected tool meshes.
+ *
+ * - ≥2 tool bodies → CSG INTERSECTION (the enclosed common region the bodies
+ *   bound, Fusion "Boundary Fill" cell behaviour). Iteratively csgIntersect
+ *   the world-baked tool geometries.
+ * - exactly 1 tool body → that body's solid; an open surface is run through
+ *   stitchSurfaces and the closed result is used.
+ * - open surfaces → stitchSurfaces (all of them together) and use the closed
+ *   stitched result if it produced a watertight shell.
+ * - anything that cannot be closed / intersected → combined bounding box of
+ *   the SELECTED meshes only (with a status note appended by the caller).
+ *
+ * All baked intermediates are disposed; the returned geometry is owned by the
+ * caller. `note` is '' on a clean fill, otherwise a human-readable reason the
+ * fallback box was used.
+ */
+function computeBoundaryFillGeometry(
+  toolFeatures: Feature[],
+): { geometry: THREE.BufferGeometry; note: string } {
+  const meshes = toolFeatures
+    .map((f) => f.mesh)
+    .filter((m): m is THREE.Mesh => m instanceof THREE.Mesh);
+
+  // World-baked geometry per tool so position/rotation/scale are respected
+  // before CSG (same convention as revolve's applyRevolveBoolean).
+  const baked = meshes.map((m) => GeometryEngine.bakeMeshWorldGeometry(m));
+  const disposeBaked = () => baked.forEach((g) => g.dispose());
+
+  // Surface bodies that are NOT already watertight are stitch candidates.
+  const openSurfaceMeshes = toolFeatures
+    .filter((f) => f.bodyKind === 'surface' && f.mesh instanceof THREE.Mesh)
+    .map((f) => f.mesh as THREE.Mesh);
+
+  const fallbackBox = (reason: string): { geometry: THREE.BufferGeometry; note: string } => {
+    const box = new THREE.Box3();
+    for (const m of meshes) box.expandByObject(m);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+    const geom = new THREE.BoxGeometry(
+      Math.max(size.x, 1e-3),
+      Math.max(size.y, 1e-3),
+      Math.max(size.z, 1e-3),
+    );
+    geom.translate(center.x, center.y, center.z);
+    disposeBaked();
+    return { geometry: geom, note: ` (${reason} — bounding-box fill)` };
+  };
+
+  try {
+    // ── ≥2 tool bodies: enclosed common region = iterative intersection ──
+    if (baked.length >= 2) {
+      let acc = baked[0].clone();
+      for (let i = 1; i < baked.length; i++) {
+        const next = GeometryEngine.csgIntersect(acc, baked[i]);
+        acc.dispose();
+        acc = next;
+      }
+      const posAttr = acc.getAttribute('position');
+      if (!posAttr || posAttr.count < 3) {
+        acc.dispose();
+        return fallbackBox('selected bodies do not enclose a common region');
+      }
+      disposeBaked();
+      return { geometry: acc, note: '' };
+    }
+
+    // ── Single open surface(s): try to stitch closed ──
+    if (openSurfaceMeshes.length > 0) {
+      const stitched = GeometryEngine.stitchSurfaces(openSurfaceMeshes);
+      if (stitched.isSolid) {
+        disposeBaked();
+        return { geometry: stitched.geometry, note: '' };
+      }
+      stitched.geometry.dispose();
+      return fallbackBox('selected surface(s) could not be stitched closed');
+    }
+
+    // ── Single closed body: the fill IS that body's solid ──
+    if (baked.length === 1) {
+      return { geometry: baked[0], note: '' };
+    }
+
+    return fallbackBox('no usable tool geometry');
+  } catch (err) {
+    return fallbackBox(`fill failed: ${errorMessage(err, 'CSG error')}`);
+  }
+}
 
 export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext) {
   const slice: Partial<CADState> = {
@@ -450,46 +562,95 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
   },
 
   // ── SLD6 — Boundary Fill ─────────────────────────────────────────────────
+  // Real Fusion-style Boundary Fill: the selected tool bodies/surfaces define
+  // a region; the fill solid is the enclosed cell. ≥2 tools → CSG
+  // intersection of the tool solids; a single closed body → that solid; open
+  // surfaces → stitched-closed shell; un-closeable input → bounding box of
+  // the SELECTED meshes (with a status note). join/cut operations boolean the
+  // fill against the most-recent solid (revolve-style target pick).
   commitBoundaryFill: (toolFeatureIds, operation) => {
     const { features } = get();
-    const toolMeshes = toolFeatureIds
-      .map((id) => features.find((f) => f.id === id)?.mesh as THREE.Mesh | undefined)
-      .filter((m): m is THREE.Mesh => !!m?.isMesh);
-    if (toolMeshes.length === 0) {
+    const idSet = new Set(toolFeatureIds);
+    const toolFeatures = toolFeatureIds
+      .map((id) => features.find((f) => f.id === id))
+      .filter((f): f is Feature => !!f && f.mesh instanceof THREE.Mesh);
+    if (toolFeatures.length === 0) {
       get().setStatusMessage('Boundary Fill: no valid tool bodies selected');
       return;
     }
-    get().pushUndo();
-    // Compute combined bounding box
-    const box = new THREE.Box3();
-    for (const m of toolMeshes) {
-      box.expandByObject(m);
+
+    // Build the fill geometry. Failures inside fall back to a bounding box +
+    // note rather than throwing, so state is never corrupted.
+    const { geometry: fillGeom, note: fillNote } = computeBoundaryFillGeometry(toolFeatures);
+
+    // ── operation: join / cut against an existing solid body ──
+    // Bake the fill, CSG it against the most-recent solid target (same
+    // pattern as revolve's applyRevolveBoolean). On failure or no target,
+    // fall through to a standalone body + note.
+    let resultGeom: THREE.BufferGeometry = fillGeom;
+    let opNote = '';
+    let consumedTargetId: string | undefined;
+    if (operation === 'join' || operation === 'cut') {
+      const target = pickBoundaryFillTarget(features, idSet);
+      if (!target || !(target.mesh instanceof THREE.Mesh)) {
+        opNote = ` (no solid body to ${operation} — standalone body)`;
+      } else {
+        let targetGeom: THREE.BufferGeometry | undefined;
+        try {
+          targetGeom = GeometryEngine.bakeMeshWorldGeometry(target.mesh);
+          const combined = operation === 'join'
+            ? GeometryEngine.csgUnion(targetGeom, fillGeom)
+            : GeometryEngine.csgSubtract(targetGeom, fillGeom);
+          targetGeom.dispose();
+          fillGeom.dispose();
+          resultGeom = combined;
+          consumedTargetId = target.id;
+        } catch (err) {
+          // Baked target geom is an intermediate — dispose it; keep fillGeom
+          // alive as the standalone-body fallback (resultGeom === fillGeom).
+          targetGeom?.dispose();
+          opNote = ` (${operation} failed: ${errorMessage(err, 'CSG error')} — standalone body)`;
+          resultGeom = fillGeom;
+        }
+      }
     }
-    const size = new THREE.Vector3();
-    const center = new THREE.Vector3();
-    box.getSize(size);
-    box.getCenter(center);
-    const fillGeom = new THREE.BoxGeometry(size.x, size.y, size.z);
-    const fillMesh = new THREE.Mesh(
-      fillGeom,
-      new THREE.MeshPhysicalMaterial({ color: 0x3b82f6, metalness: 0.1, roughness: 0.4 }),
-    );
-    fillMesh.position.copy(center);
+
+    const fillMesh = new THREE.Mesh(resultGeom);
     fillMesh.castShadow = true;
     fillMesh.receiveShadow = true;
+    const featureId = crypto.randomUUID();
+    fillMesh.userData.pickable = true;
+    fillMesh.userData.featureId = featureId;
     const n = features.filter((f) => f.params?.featureKind === 'boundary-fill').length + 1;
     const feature: Feature = {
-      id: crypto.randomUUID(),
+      id: featureId,
       name: `Boundary Fill ${n}`,
       type: 'boundary-fill',
-      params: { featureKind: 'boundary-fill', toolFeatureIds: toolFeatureIds.join(','), operation, isBoundaryFill: true },
+      params: {
+        featureKind: 'boundary-fill',
+        toolFeatureIds: toolFeatureIds.join(','),
+        operation,
+        isBoundaryFill: true,
+        ...(consumedTargetId ? { targetFeatureId: consumedTargetId } : {}),
+      },
       mesh: fillMesh,
+      bodyKind: 'solid',
       visible: true,
       suppressed: false,
       timestamp: Date.now(),
     };
-    get().addFeature(feature);
-    get().setStatusMessage(`Boundary Fill ${n} (${operation}): bounding box fill created`);
+    get().pushUndo();
+    set((state) => {
+      const updated = consumedTargetId
+        ? state.features.map((f) =>
+            f.id === consumedTargetId ? { ...f, suppressed: true, visible: false } : f,
+          )
+        : state.features;
+      return {
+        features: [...updated, feature],
+        statusMessage: `Boundary Fill ${n} (${operation})${fillNote}${opNote}`,
+      };
+    });
   },
 
   // ── SLD15 — Silhouette Split ─────────────────────────────────────────────
