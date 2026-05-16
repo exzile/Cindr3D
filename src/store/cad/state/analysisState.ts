@@ -44,8 +44,11 @@ export interface CADAnalysisState {
   // ── SFC18 — Delete Face ──────────────────────────────────────────────────
   showDeleteFaceDialog: boolean;
   deleteFaceIds: string[];
+  /** Per-picked-face data the commit needs (which body + face plane). */
+  deleteFacePicks: { featureId: string; normal: [number, number, number]; centroid: [number, number, number] }[];
   openDeleteFaceDialog(): void;
   addDeleteFace(id: string): void;
+  addDeleteFacePick(featureId: string, normal: [number, number, number], centroid: [number, number, number]): void;
   clearDeleteFaces(): void;
   closeDeleteFaceDialog(): void;
   commitDeleteFace(params: import('../../../components/dialogs/surface/DeleteFaceDialog').DeleteFaceParams): void;

@@ -53,6 +53,7 @@ import SplitFacePicker from './scene/SplitFacePicker';
 import HoleFacePicker from './scene/HoleFacePicker';
 import ShellFacePicker from './scene/ShellFacePicker';
 import RemoveFacePicker from './scene/RemoveFacePicker';
+import DeleteFacePicker from './scene/DeleteFacePicker';
 import DraftPartingLinePicker from './scene/DraftPartingLinePicker';
 import DraftPullDirectionPicker from './scene/DraftPullDirectionPicker';
 import JointDialogPicker from './scene/JointDialogPicker';
@@ -265,6 +266,7 @@ export default function Viewport() {
         <HoleFacePicker />
         <ShellFacePicker />
         <RemoveFacePicker />
+        <DeleteFacePicker />
         <DraftPartingLinePicker />
         <DraftPullDirectionPicker />
         <MeshExporter />

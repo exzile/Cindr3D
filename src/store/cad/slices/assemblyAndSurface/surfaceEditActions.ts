@@ -23,47 +23,107 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
   return {
     showDeleteFaceDialog: false,
     deleteFaceIds: [],
-    openDeleteFaceDialog: () => set({ activeDialog: 'delete-face', showDeleteFaceDialog: true, deleteFaceIds: [] }),
+    deleteFacePicks: [],
+    openDeleteFaceDialog: () => set({ activeDialog: 'delete-face', showDeleteFaceDialog: true, deleteFaceIds: [], deleteFacePicks: [] }),
     addDeleteFace: (id) =>
       set((s) => ({
         deleteFaceIds: s.deleteFaceIds.includes(id) ? s.deleteFaceIds : [...s.deleteFaceIds, id],
       })),
-    clearDeleteFaces: () => set({ deleteFaceIds: [] }),
-    closeDeleteFaceDialog: () => set({ activeDialog: null, showDeleteFaceDialog: false, deleteFaceIds: [] }),
+    addDeleteFacePick: (featureId, normal, centroid) =>
+      set((s) => {
+        const id = centroid.map((v) => v.toFixed(3)).join(',');
+        if (s.deleteFaceIds.includes(id)) return {};
+        return {
+          deleteFaceIds: [...s.deleteFaceIds, id],
+          deleteFacePicks: [...s.deleteFacePicks, { featureId, normal, centroid }],
+        };
+      }),
+    clearDeleteFaces: () => set({ deleteFaceIds: [], deleteFacePicks: [] }),
+    closeDeleteFaceDialog: () => set({ activeDialog: null, showDeleteFaceDialog: false, deleteFaceIds: [], deleteFacePicks: [] }),
     commitDeleteFace: (params) => {
-      const { features } = get();
-      const n = features.filter((f) => f.params?.featureKind === 'delete-face').length + 1;
-      const faceIds = params.faceIds.length > 0 ? params.faceIds : get().deleteFaceIds;
-      const feature: Feature = {
-        id: crypto.randomUUID(),
-        name: `Delete Face ${n}`,
-        type: 'thicken',
-        params: { featureKind: 'delete-face', faceIds: faceIds.join(','), healMode: params.healMode },
-        visible: true,
-        suppressed: false,
-        timestamp: Date.now(),
-        bodyKind: 'surface',
-      };
-      get().addFeature(feature);
-      set({ activeDialog: null, showDeleteFaceDialog: false, deleteFaceIds: [] });
-      get().setStatusMessage(`Delete Face ${n}: ${faceIds.length} face${faceIds.length !== 1 ? 's' : ''} removed`);
+      const { features, deleteFacePicks } = get();
+      if (deleteFacePicks.length === 0) {
+        get().setStatusMessage('Delete Face: click one or more faces in the viewport first');
+        return;
+      }
+      // Group picks by the body they were picked on; remove each face (and
+      // heal the hole) in turn on that body's mesh. Mirrors commitRemoveFace
+      // but multi-face + multi-body.
+      const byFeature = new Map<string, typeof deleteFacePicks>();
+      for (const p of deleteFacePicks) {
+        const arr = byFeature.get(p.featureId);
+        if (arr) arr.push(p); else byFeature.set(p.featureId, [p]);
+      }
+      let removed = 0;
+      const nextMesh = new Map<string, THREE.Mesh>();
+      for (const [featureId, picks] of byFeature) {
+        const srcMesh = features.find((f) => f.id === featureId)?.mesh as THREE.Mesh | undefined;
+        if (!srcMesh?.isMesh) continue;
+        let working = srcMesh;
+        for (const p of picks) {
+          working = GeometryEngine.removeFaceAndHeal(
+            working,
+            new THREE.Vector3(...p.normal),
+            new THREE.Vector3(...p.centroid),
+          );
+          removed++;
+        }
+        working.castShadow = true;
+        working.receiveShadow = true;
+        nextMesh.set(featureId, working);
+      }
+      if (nextMesh.size === 0) {
+        get().setStatusMessage('Delete Face: picked faces are not on a body');
+        return;
+      }
+      get().pushUndo();
+      set({
+        features: features.map((f) =>
+          nextMesh.has(f.id)
+            ? { ...f, mesh: nextMesh.get(f.id)!, params: { ...f.params, deleteFaceHealMode: params.healMode } }
+            : f,
+        ),
+        activeDialog: null,
+        showDeleteFaceDialog: false,
+        deleteFaceIds: [],
+        deleteFacePicks: [],
+      });
+      get().setStatusMessage(`Delete Face: removed ${removed} face${removed !== 1 ? 's' : ''}`);
     },
 
     commitSurfaceTrim: (params) => {
       const { features } = get();
+      const source = features.find((f) => f.id === params.sourceFeatureId);
+      const trimmer = features.find((f) => f.id === params.trimmerFeatureId);
+      const srcMesh = source?.mesh as THREE.Mesh | undefined;
+      const trimMesh = trimmer?.mesh as THREE.Mesh | undefined;
+      if (!srcMesh?.isMesh || !trimMesh?.isMesh) {
+        get().setStatusMessage('Surface Trim: select a source surface and a trimming tool');
+        return;
+      }
       const n = features.filter((f) => f.params?.featureKind === 'surface-trim').length + 1;
+      const geom = GeometryEngine.trimSurface(srcMesh, trimMesh, params.keepSide);
+      get().pushUndo();
       const feature: Feature = {
         id: crypto.randomUUID(),
         name: `Surface Trim ${n}`,
         type: 'split-body',
         params: { featureKind: 'surface-trim', ...params },
+        mesh: configureMesh(geom),
         visible: true,
         suppressed: false,
         timestamp: Date.now(),
         bodyKind: 'surface',
       };
-      get().addFeature(feature);
-      get().setStatusMessage(`Surface Trim ${n} created`);
+      // Trim consumes the source surface (Fusion behaviour) — hide it so the
+      // trimmed result replaces it rather than overlapping.
+      set({
+        features: [
+          ...features.map((f) => (f.id === params.sourceFeatureId ? { ...f, visible: false } : f)),
+          feature,
+        ],
+      });
+      get().setStatusMessage(`Surface Trim ${n}: kept ${params.keepSide} side`);
     },
 
     commitSurfaceSplit: (params) => {
