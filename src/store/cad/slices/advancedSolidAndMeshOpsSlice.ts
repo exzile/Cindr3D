@@ -73,6 +73,51 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     get().setStatusMessage(`Web ${n} created: ${thickness}mm thick`);
   },
 
+  // ── SLD — Pipe ───────────────────────────────────────────────────────────
+  commitPipe: (params) => {
+    const { features, sketches } = get();
+    const { outerDiameter, hollow, wallThickness, operation, pathSketchId } = params;
+    if (!Number.isFinite(outerDiameter) || outerDiameter <= 0) {
+      get().setStatusMessage('Pipe: outer diameter must be a positive number');
+      return;
+    }
+    // Path polyline from the sketch entities (point coords are world-space,
+    // same convention sweepSketchInternal uses). Empty / missing sketch ⇒
+    // pipeGeometry falls back to a straight vertical pipe.
+    const sketch = sketches.find((s) => s.id === pathSketchId);
+    const pathPoints: THREE.Vector3[] = [];
+    if (sketch) {
+      for (const e of sketch.entities) {
+        if (e.type === 'centerline' || e.type === 'construction-line' || e.isConstruction) continue;
+        for (const p of e.points) pathPoints.push(new THREE.Vector3(p.x, p.y, p.z));
+      }
+    }
+    get().pushUndo();
+    const geom = GeometryEngine.pipeGeometry(pathPoints, outerDiameter, hollow, wallThickness);
+    const mesh = new THREE.Mesh(geom);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    const n = features.filter((f) => f.type === 'pipe').length + 1;
+    const featureId = crypto.randomUUID();
+    mesh.userData.pickable = true;
+    mesh.userData.featureId = featureId;
+    const feature: Feature = {
+      id: featureId,
+      name: `Pipe ${n} (⌀${outerDiameter}mm)`,
+      type: 'pipe',
+      sketchId: sketch ? pathSketchId : undefined,
+      params: { isPipe: true, outerDiameter, hollow, wallThickness, operation, pathSketchId },
+      mesh,
+      bodyKind: 'solid',
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+    };
+    set({ features: [...features, feature] });
+    const opNote = operation !== 'new-body' ? ` (${operation} not booleaned — standalone body)` : '';
+    get().setStatusMessage(`Pipe ${n} created: ⌀${outerDiameter}mm${hollow ? `, ${wallThickness}mm wall` : ''}${opNote}`);
+  },
+
   // ── SLD4 — Rest ──────────────────────────────────────────────────────────
   commitRest: (params) => {
     const { features } = get();

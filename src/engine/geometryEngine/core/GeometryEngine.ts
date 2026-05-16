@@ -71,6 +71,7 @@ import {
   ruledSurface as ruledSurfaceImpl,
   sweepSketchInternal as sweepSketchInternalImpl,
 } from './solid/profileSweeps';
+import { pipeGeometry as pipeGeometryImpl } from './solid/pipe';
 import {
   bakeMeshWorldGeometry as bakeMeshWorldGeometryImpl,
   extractMeshGeometry as extractMeshGeometryImpl,
@@ -310,6 +311,15 @@ export class GeometryEngine {
     turns: number,
   ): THREE.BufferGeometry {
     return coilGeometryImpl(outerRadius, wireRadius, pitch, turns);
+  }
+
+  static pipeGeometry(
+    points: THREE.Vector3[],
+    outerDiameter: number,
+    hollow: boolean,
+    wallThickness: number,
+  ): THREE.BufferGeometry {
+    return pipeGeometryImpl(points, outerDiameter, hollow, wallThickness);
   }
 
   static async simplifyGeometry(

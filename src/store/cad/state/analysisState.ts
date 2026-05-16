@@ -166,6 +166,15 @@ export interface CADAnalysisState {
   // ── SLD2 — Web (dialog-based) ────────────────────────────────────────────
   commitWeb(sketchId: string, thickness: number, height: number): void;
 
+  // ── SLD — Pipe ───────────────────────────────────────────────────────────
+  commitPipe(params: {
+    outerDiameter: number;
+    hollow: boolean;
+    wallThickness: number;
+    operation: 'new-body' | 'join' | 'cut';
+    pathSketchId: string;
+  }): void;
+
   // ── SLD4 — Rest ──────────────────────────────────────────────────────────
   commitRest(params: { profileId: string; width: number; depth: number; thickness: number; normalX: number; normalY: number; normalZ: number; centerX: number; centerY: number; centerZ: number }): void;
 
