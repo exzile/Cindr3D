@@ -156,6 +156,52 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     get().setStatusMessage(`Snap Fit ${n} created: ${snapType}, ${length}×${width}×${thickness}mm${opNote}`);
   },
 
+  // ── SLD — Lip and Groove ─────────────────────────────────────────────────
+  commitLipGroove: (params) => {
+    const { features } = get();
+    const { lipWidth, lipHeight, grooveWidth, grooveDepth, clearance, includeGroove, operation } = params;
+    if (![lipWidth, lipHeight].every((v) => Number.isFinite(v) && v > 0)) {
+      get().setStatusMessage('Lip and Groove: lip width and height must be positive numbers');
+      return;
+    }
+    if (includeGroove && ![grooveWidth, grooveDepth].every((v) => Number.isFinite(v) && v > 0)) {
+      get().setStatusMessage('Lip and Groove: groove width and depth must be positive numbers');
+      return;
+    }
+    get().pushUndo();
+    const geom = GeometryEngine.lipGrooveGeometry(
+      lipWidth, lipHeight, grooveWidth, grooveDepth, clearance, includeGroove,
+    );
+    const mesh = new THREE.Mesh(geom);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    const n = features.filter((f) => f.type === 'lipGroove').length + 1;
+    const featureId = crypto.randomUUID();
+    mesh.userData.pickable = true;
+    mesh.userData.featureId = featureId;
+    const feature: Feature = {
+      id: featureId,
+      name: includeGroove ? `Lip and Groove ${n}` : `Lip ${n}`,
+      type: 'lipGroove',
+      params: { isLipGroove: true, lipWidth, lipHeight, grooveWidth, grooveDepth, clearance, includeGroove, operation },
+      mesh,
+      bodyKind: 'solid',
+      visible: true,
+      suppressed: false,
+      timestamp: Date.now(),
+    };
+    set({ features: [...features, feature] });
+    // The dialog collects no target body/edge, so this is a standalone mating
+    // demonstrator solid. operation join/cut is recorded but not booleaned
+    // (same known limitation as pipe/snap-fit) — there is no picked body to
+    // combine with; the groove IS cut in-place into its own half via CSG.
+    const opNote = operation !== 'new-body' ? ` (${operation} not booleaned — standalone body)` : '';
+    get().setStatusMessage(
+      `Lip and Groove ${n} created: lip ${lipWidth}×${lipHeight}mm`
+      + `${includeGroove ? `, groove ${grooveWidth}×${grooveDepth}mm (${clearance}mm clearance)` : ''}${opNote}`,
+    );
+  },
+
   // ── SLD4 — Rest ──────────────────────────────────────────────────────────
   commitRest: (params) => {
     const { features } = get();

@@ -73,6 +73,7 @@ import {
 } from './solid/profileSweeps';
 import { pipeGeometry as pipeGeometryImpl } from './solid/pipe';
 import { snapFitGeometry as snapFitGeometryImpl } from './solid/snapFit';
+import { lipGrooveGeometry as lipGrooveGeometryImpl } from './solid/lipGroove';
 import {
   bakeMeshWorldGeometry as bakeMeshWorldGeometryImpl,
   extractMeshGeometry as extractMeshGeometryImpl,
@@ -332,6 +333,17 @@ export class GeometryEngine {
     returnAngleDeg: number,
   ): THREE.BufferGeometry {
     return snapFitGeometryImpl(length, width, thickness, overhang, overhangAngleDeg, returnAngleDeg);
+  }
+
+  static lipGrooveGeometry(
+    lipWidth: number,
+    lipHeight: number,
+    grooveWidth: number,
+    grooveDepth: number,
+    clearance: number,
+    includeGroove: boolean,
+  ): THREE.BufferGeometry {
+    return lipGrooveGeometryImpl(lipWidth, lipHeight, grooveWidth, grooveDepth, clearance, includeGroove);
   }
 
   static async simplifyGeometry(

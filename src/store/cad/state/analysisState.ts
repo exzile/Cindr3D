@@ -187,6 +187,17 @@ export interface CADAnalysisState {
     operation: 'new-body' | 'join' | 'cut';
   }): void;
 
+  // ── SLD — Lip and Groove ─────────────────────────────────────────────────
+  commitLipGroove(params: {
+    lipWidth: number;
+    lipHeight: number;
+    grooveWidth: number;
+    grooveDepth: number;
+    clearance: number;
+    includeGroove: boolean;
+    operation: 'new-body' | 'join' | 'cut';
+  }): void;
+
   // ── SLD4 — Rest ──────────────────────────────────────────────────────────
   commitRest(params: { profileId: string; width: number; depth: number; thickness: number; normalX: number; normalY: number; normalZ: number; centerX: number; centerY: number; centerZ: number }): void;
 
