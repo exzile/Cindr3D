@@ -66,7 +66,7 @@ export function StitchDialog({ onClose }: { onClose: () => void }) {
               checked={closeOpenEdges}
               onChange={(e) => setCloseOpenEdges(e.target.checked)}
             />
-            Close Open Edges (no-op)
+            Close Open Edges
           </label>
           <label className="checkbox-label">
             <input

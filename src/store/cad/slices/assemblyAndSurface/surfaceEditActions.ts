@@ -251,7 +251,37 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
       const stitched = sourceMeshes.length > 0
         ? GeometryEngine.stitchSurfaces(sourceMeshes, params.tolerance)
         : null;
-      const mesh = stitched ? configureMesh(stitched.geometry) : undefined;
+
+      let mesh: THREE.Mesh | undefined;
+      let bodyKind: Feature['bodyKind'] = 'surface';
+      let closedHoles = false;
+      if (stitched) {
+        mesh = configureMesh(stitched.geometry);
+        bodyKind = stitched.isSolid ? 'solid' : 'surface';
+        // "Close Open Edges": cap remaining boundary loops so the stitched
+        // result becomes a watertight solid. Only worth running when stitching
+        // didn't already produce a closed body.
+        if (params.closeOpenEdges && !stitched.isSolid) {
+          try {
+            const closed = GeometryEngine.makeClosedMesh(mesh);
+            // makeClosedMesh re-walks edges; if no open boundary edge remains
+            // the result is a closed solid. Re-test the same way stitch does.
+            const sealed = GeometryEngine.stitchSurfaces([closed], params.tolerance);
+            // The capped mesh supersedes the open stitched mesh — dispose the
+            // intermediate geometries we created (never shared singletons).
+            mesh.geometry.dispose();
+            closed.geometry.dispose();
+            mesh = configureMesh(sealed.geometry);
+            bodyKind = sealed.isSolid ? 'solid' : 'surface';
+            closedHoles = true;
+          } catch (err) {
+            // Capping failed — keep the plain stitched surface, don't corrupt state.
+            get().setStatusMessage(
+              `Stitch ${n}: could not close open edges (${err instanceof Error ? err.message : 'error'}); kept open surface`,
+            );
+          }
+        }
+      }
       const feature: Feature = {
         id: crypto.randomUUID(),
         name: `Stitch ${n}`,
@@ -261,7 +291,7 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
         visible: true,
         suppressed: false,
         timestamp: Date.now(),
-        bodyKind: stitched?.isSolid ? 'solid' : 'surface',
+        bodyKind,
       };
       get().addFeature(feature);
       if (!params.keepOriginal && params.sourceFeatureIds.length > 0) {
@@ -269,7 +299,11 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
           features: features.map((f) => (params.sourceFeatureIds.includes(f.id) ? { ...f, visible: false } : f)),
         });
       }
-      get().setStatusMessage(`Stitch ${n} created`);
+      get().setStatusMessage(
+        closedHoles
+          ? `Stitch ${n} created (open edges closed${bodyKind === 'solid' ? ' — solid body' : ''})`
+          : `Stitch ${n} created`,
+      );
     },
 
     commitUnstitch: (params) => {
