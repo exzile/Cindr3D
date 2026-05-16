@@ -99,6 +99,19 @@ export interface CADWorkflowState {
   ) => void;
   clearDraftPartingFace: () => void;
 
+  // ── SOL-F2: Draft pull direction face picker ─────────────────────────────
+  draftPullFaceId: string | null;
+  draftPullFaceNormal: [number, number, number] | null;
+  draftPullFaceCentroid: [number, number, number] | null;
+  draftPullFacePickActive: boolean;
+  setDraftPullFace: (
+    id: string,
+    normal: [number, number, number],
+    centroid: [number, number, number],
+  ) => void;
+  clearDraftPullFace: () => void;
+  setDraftPullFacePickActive: (v: boolean) => void;
+
   // ── SOL-I5: Remove Face face picker ─────────────────────────────────────
   removeFaceFaceId: string | null;
   removeFaceFaceNormal: [number, number, number] | null;
@@ -141,6 +154,12 @@ export interface CADWorkflowState {
   closeJointOriginDialog(): void;
   setJointOriginPoint(p: [number, number, number]): void;
   commitJointOrigin(params: { name: string; componentId: string | null; alignmentType: 'default' | 'between-two-faces' | 'on-face' }): void;
+
+  // ── A-F1: Joint dialog geometry snap ────────────────────────────────────
+  jointDialogPickedOrigin: [number, number, number] | null;
+  jointDialogPickMode: boolean;
+  setJointDialogPickedOrigin(p: [number, number, number] | null): void;
+  setJointDialogPickMode(v: boolean): void;
 
   // ── D196 — Interference ─────────────────────────────────────────────────
   showInterferenceDialog: boolean;

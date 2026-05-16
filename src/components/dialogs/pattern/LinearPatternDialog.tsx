@@ -23,6 +23,7 @@ export function LinearPatternDialog({ onClose }: { onClose: () => void }) {
   const [dir2X, setDir2X] = useState(0);
   const [dir2Y, setDir2Y] = useState(0);
   const [dir2Z, setDir2Z] = useState(1);
+  const [computeType, setComputeType] = useState<'identical' | 'adjusted' | 'optimized'>('identical');
 
   const effectiveSpacing = distribution === 'extent' ? spacing / Math.max(1, count - 1) : spacing;
   const effectiveSpacing2 = distribution2 === 'extent' ? spacing2 / Math.max(1, count2 - 1) : spacing2;
@@ -91,6 +92,14 @@ export function LinearPatternDialog({ onClose }: { onClose: () => void }) {
           <input type="number" value={directionY} onChange={(e) => setDirectionY(parseFloat(e.target.value) || 0)} step={0.1} />
           <input type="number" value={directionZ} onChange={(e) => setDirectionZ(parseFloat(e.target.value) || 0)} step={0.1} />
         </div>
+      </div>
+      <div className="form-group">
+        <label>Compute Type</label>
+        <select value={computeType} onChange={(e) => setComputeType(e.target.value as 'identical' | 'adjusted' | 'optimized')}>
+          <option value="identical">Identical</option>
+          <option value="adjusted">Adjusted</option>
+          <option value="optimized">Optimized</option>
+        </select>
       </div>
       <label className="checkbox-label">
         <input type="checkbox" checked={useSecond} onChange={(e) => setUseSecond(e.target.checked)} />

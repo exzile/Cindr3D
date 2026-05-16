@@ -8,6 +8,7 @@ const _boxCurrent = new THREE.Box3();
 const _boxTool = new THREE.Box3();
 import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
+import { liveBodyMeshes } from '../../../store/meshRegistry';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
 import type { Feature, Sketch } from '../../../types/cad';
 import { boxesHaveJoinableContact } from '../../../utils/geometry/boundsContact';
@@ -50,6 +51,18 @@ function BodyMesh({
   useEffect(() => {
     return () => { animatedMat?.dispose(); };
   }, [animatedMat]);
+
+  // Register this mesh in the live body-mesh registry so commitFillet can
+  // obtain the rendered geometry for extrude features, which are not stored
+  // in feature.mesh (they live only in the R3F scene via the CSG pipeline).
+  // Key is the THREE.js mesh UUID — stable for the object's lifetime.
+  useEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    liveBodyMeshes.set(mesh.uuid, mesh);
+    return () => { liveBodyMeshes.delete(mesh.uuid); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once on mount/unmount — uuid is stable for the mesh's lifetime
 
   useFrame(({ clock, invalidate }) => {
     if (!isSelected) return;

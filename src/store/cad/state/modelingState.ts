@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { DimensionToolType, Parameter, SketchDimension } from '../../../types/cad';
+import type { AlignGeomPick, DimensionToolType, Parameter, SketchDimension } from '../../../types/cad';
 import type { ExtrudeDirection, ExtrudeOperation } from '../../../types/cad-extrude.types';
 
 export interface CADModelingState {
@@ -49,12 +49,12 @@ export interface CADModelingState {
   extrudeStartFaceCentroid: [number, number, number] | null;
   setExtrudeStartFace: (normal: [number, number, number], centroid: [number, number, number]) => void;
   clearExtrudeStartFace: () => void;
-  // Extrude extent types (D68) — EX-3: added 'to-object'
-  extrudeExtentType: 'distance' | 'all' | 'to-object';
-  setExtrudeExtentType: (t: 'distance' | 'all' | 'to-object') => void;
+  // Extrude extent types (D68) — EX-3: added 'to-object', EX-F1: added 'to-next'
+  extrudeExtentType: 'distance' | 'all' | 'to-object' | 'to-next';
+  setExtrudeExtentType: (t: 'distance' | 'all' | 'to-object' | 'to-next') => void;
   // EX-10: independent extent type for side 2 when direction=two-sides
-  extrudeExtentType2: 'distance' | 'all' | 'to-object';
-  setExtrudeExtentType2: (t: 'distance' | 'all' | 'to-object') => void;
+  extrudeExtentType2: 'distance' | 'all' | 'to-object' | 'to-next';
+  setExtrudeExtentType2: (t: 'distance' | 'all' | 'to-object' | 'to-next') => void;
   /** EX-3: face data for To-Object terminus (picked via viewport) */
   extrudeToEntityFaceId: string | null;
   extrudeToEntityFaceNormal: [number, number, number] | null;
@@ -106,6 +106,8 @@ export interface CADModelingState {
   // Revolve body kind (D103)
   revolveBodyKind: 'solid' | 'surface';
   setRevolveBodyKind: (k: 'solid' | 'surface') => void;
+  revolveOperation: 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component';
+  setRevolveOperation: (op: 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component') => void;
   // CORR-10: project axis onto profile plane before revolving
   revolveIsProjectAxis: boolean;
   setRevolveIsProjectAxis: (v: boolean) => void;
@@ -133,7 +135,7 @@ export interface CADModelingState {
   sweepTwistAngle: number;
   sweepTaperAngle: number;
   sweepGuideRailId: string | null;
-  sweepOperation: 'new-body' | 'join' | 'cut';
+  sweepOperation: 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component';
   sweepDistance: 'entire' | 'distance';
   // SDK-5: path parametric start/end (0–1 fraction of path length)
   sweepDistanceOne: number;
@@ -145,7 +147,7 @@ export interface CADModelingState {
   setSweepTwistAngle: (v: number) => void;
   setSweepTaperAngle: (v: number) => void;
   setSweepGuideRailId: (v: string | null) => void;
-  setSweepOperation: (v: 'new-body' | 'join' | 'cut') => void;
+  setSweepOperation: (v: 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component') => void;
   setSweepDistance: (v: 'entire' | 'distance') => void;
   startSweepTool: () => void;
   cancelSweepTool: () => void;
@@ -162,11 +164,13 @@ export interface CADModelingState {
   loftStartCondition: 'free' | 'tangent' | 'curvature';
   loftEndCondition: 'free' | 'tangent' | 'curvature';
   loftRailSketchId: string | null;
+  loftOperation: 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component';
   setLoftClosed: (v: boolean) => void;
   setLoftTangentEdgesMerged: (v: boolean) => void;  // SDK-8
   setLoftStartCondition: (v: 'free' | 'tangent' | 'curvature') => void;
   setLoftEndCondition: (v: 'free' | 'tangent' | 'curvature') => void;
   setLoftRailSketchId: (v: string | null) => void;
+  setLoftOperation: (v: 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component') => void;
   startLoftTool: () => void;
   cancelLoftTool: () => void;
   commitLoft: () => void;
@@ -225,6 +229,21 @@ export interface CADModelingState {
   // SLD13 — Scale (commit)
   commitScale: (featureId: string, sx: number, sy: number, sz: number) => void;
 
+  // 3D edge fillet (commit) — rounds edges in filletEdgeIds on the target body
+  commitFillet: (radius: number, segments: number) => void;
+
+  // Align tool — geometry-pair picking + transform commit
+  alignPickStage: 'idle' | 'source' | 'target';
+  alignPickKind: 'face' | 'edge' | 'vertex';
+  alignSource: AlignGeomPick | null;
+  alignTarget: AlignGeomPick | null;
+  setAlignPickStage: (stage: 'idle' | 'source' | 'target') => void;
+  setAlignPickKind: (kind: 'face' | 'edge' | 'vertex') => void;
+  setAlignSource: (pick: AlignGeomPick | null) => void;
+  setAlignTarget: (pick: AlignGeomPick | null) => void;
+  resetAlign: () => void;
+  commitAlign: (opts: { moveType: 'align' | 'translate' | 'rotate'; flip: boolean; allowRotation: boolean }) => void;
+
   // SLD12 — Combine / Boolean (commit)
   commitCombine: (targetFeatureId: string, toolFeatureId: string, operation: 'join' | 'cut' | 'intersect', keepTool: boolean) => void;
   recommitCombine: (featureId: string, params: { operation: 'join' | 'cut' | 'intersect'; keepTools: boolean; targetId: string; toolId: string }) => void;
@@ -232,11 +251,13 @@ export interface CADModelingState {
   // SLD17 — Mirror feature (commit)
   commitMirrorFeature: (featureId: string, plane: 'XY' | 'XZ' | 'YZ') => void;
 
-  // D6 Fillet edge selection
+  // D6 Fillet edge selection + live radius (synced with FilletGizmo drag)
   filletEdgeIds: string[];
   addFilletEdge: (id: string) => void;
   removeFilletEdge: (id: string) => void;
   clearFilletEdges: () => void;
+  filletLiveRadius: number;
+  setFilletLiveRadius: (r: number) => void;
 
   // D7 Chamfer edge selection
   chamferEdgeIds: string[];

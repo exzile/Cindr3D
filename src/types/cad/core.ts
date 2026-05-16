@@ -131,6 +131,7 @@ export type Tool =
   | 'sketch-text'
   | 'isoparametric'
   | 'construct-plane-two-edges'
+  | 'construct-plane-three-points'
   | 'construct-axis-through-edge'
   | 'construct-axis-two-points'
   | 'construct-point-vertex'

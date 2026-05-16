@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { SketchPoint, SketchEntity } from '../../../../../types/cad';
+import type { SketchPoint, SketchEntity, SketchConstraint } from '../../../../../types/cad';
 import { circumcenter2D } from '../helpers';
 import type { SketchCommitHandler } from './types';
 
@@ -7,11 +7,42 @@ function planeDir(edgeDir: THREE.Vector3, normal: THREE.Vector3): THREE.Vector3 
   return edgeDir.clone().cross(normal).normalize();
 }
 
+function applyPolygonConstraints(
+  lineIds: string[],
+  addSketchConstraint: (c: SketchConstraint) => void,
+) {
+  const n = lineIds.length;
+  if (n < 3) return;
+  // coincident: end of line[i] shares position with start of line[(i+1)%n]
+  for (let i = 0; i < n; i++) {
+    addSketchConstraint({
+      id: crypto.randomUUID(),
+      type: 'coincident',
+      entityIds: [lineIds[i], lineIds[(i + 1) % n]],
+      pointIndices: [1, 0],
+    });
+  }
+  // equal: all side lengths equal to first side
+  for (let i = 1; i < n; i++) {
+    addSketchConstraint({
+      id: crypto.randomUUID(),
+      type: 'equal',
+      entityIds: [lineIds[0], lineIds[i]],
+    });
+  }
+  // polygon constraint carrying all side entityIds for solver
+  addSketchConstraint({
+    id: crypto.randomUUID(),
+    type: 'polygon',
+    entityIds: lineIds,
+  });
+}
+
 export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
   const {
     activeTool, activeSketch, sketchPoint, drawingPoints, setDrawingPoints,
     t1, t2, projectToPlane,
-    addSketchEntity, setStatusMessage,
+    addSketchEntity, addSketchConstraint, setStatusMessage,
     polygonSides, conicRho,
   } = ctx;
   void activeSketch;
@@ -150,13 +181,17 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
           .distanceTo(new THREE.Vector3(center.x, center.y, center.z));
         if (radius > 0.001) {
           const sides = polygonSides;
+          const lineIds: string[] = [];
           for (let i = 0; i < sides; i++) {
             const a1 = (i / sides) * Math.PI * 2;
             const a2 = ((i + 1) / sides) * Math.PI * 2;
             const p1: SketchPoint = { id: crypto.randomUUID(), x: center.x + t1.x * Math.cos(a1) * radius + t2.x * Math.sin(a1) * radius, y: center.y + t1.y * Math.cos(a1) * radius + t2.y * Math.sin(a1) * radius, z: center.z + t1.z * Math.cos(a1) * radius + t2.z * Math.sin(a1) * radius };
             const p2: SketchPoint = { id: crypto.randomUUID(), x: center.x + t1.x * Math.cos(a2) * radius + t2.x * Math.sin(a2) * radius, y: center.y + t1.y * Math.cos(a2) * radius + t2.y * Math.sin(a2) * radius, z: center.z + t1.z * Math.cos(a2) * radius + t2.z * Math.sin(a2) * radius };
-            addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [p1, p2] });
+            const eid = crypto.randomUUID();
+            lineIds.push(eid);
+            addSketchEntity({ id: eid, type: 'line', points: [p1, p2] });
           }
+          applyPolygonConstraints(lineIds, addSketchConstraint);
           setStatusMessage(`${sides}-gon (inscribed) added (vertex r=${radius.toFixed(2)})`);
         } else { setStatusMessage('Polygon too small — try again'); }
         setDrawingPoints([]);
@@ -175,13 +210,17 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
         const sides = polygonSides;
         const radius = apothem / Math.cos(Math.PI / sides); // vertex distance
         if (radius > 0.001) {
+          const lineIds: string[] = [];
           for (let i = 0; i < sides; i++) {
             const a1 = (i / sides) * Math.PI * 2;
             const a2 = ((i + 1) / sides) * Math.PI * 2;
             const p1: SketchPoint = { id: crypto.randomUUID(), x: center.x + t1.x * Math.cos(a1) * radius + t2.x * Math.sin(a1) * radius, y: center.y + t1.y * Math.cos(a1) * radius + t2.y * Math.sin(a1) * radius, z: center.z + t1.z * Math.cos(a1) * radius + t2.z * Math.sin(a1) * radius };
             const p2: SketchPoint = { id: crypto.randomUUID(), x: center.x + t1.x * Math.cos(a2) * radius + t2.x * Math.sin(a2) * radius, y: center.y + t1.y * Math.cos(a2) * radius + t2.y * Math.sin(a2) * radius, z: center.z + t1.z * Math.cos(a2) * radius + t2.z * Math.sin(a2) * radius };
-            addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [p1, p2] });
+            const eid = crypto.randomUUID();
+            lineIds.push(eid);
+            addSketchEntity({ id: eid, type: 'line', points: [p1, p2] });
           }
+          applyPolygonConstraints(lineIds, addSketchConstraint);
           setStatusMessage(`${sides}-gon (circumscribed) added (apothem=${apothem.toFixed(2)})`);
         } else { setStatusMessage('Polygon too small — try again'); }
         setDrawingPoints([]);
@@ -211,13 +250,17 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
           const centerPt = new THREE.Vector3(midX + perpDir.x * apothem, midY + perpDir.y * apothem, midZ + perpDir.z * apothem);
           const toP1 = new THREE.Vector3(p1.x - centerPt.x, p1.y - centerPt.y, p1.z - centerPt.z);
           const startAngle = Math.atan2(toP1.dot(t2), toP1.dot(t1));
+          const lineIds: string[] = [];
           for (let i = 0; i < sides; i++) {
             const a1 = startAngle + (i / sides) * Math.PI * 2;
             const a2 = startAngle + ((i + 1) / sides) * Math.PI * 2;
             const v1: SketchPoint = { id: crypto.randomUUID(), x: centerPt.x + t1.x * Math.cos(a1) * radius + t2.x * Math.sin(a1) * radius, y: centerPt.y + t1.y * Math.cos(a1) * radius + t2.y * Math.sin(a1) * radius, z: centerPt.z + t1.z * Math.cos(a1) * radius + t2.z * Math.sin(a1) * radius };
             const v2: SketchPoint = { id: crypto.randomUUID(), x: centerPt.x + t1.x * Math.cos(a2) * radius + t2.x * Math.sin(a2) * radius, y: centerPt.y + t1.y * Math.cos(a2) * radius + t2.y * Math.sin(a2) * radius, z: centerPt.z + t1.z * Math.cos(a2) * radius + t2.z * Math.sin(a2) * radius };
-            addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [v1, v2] });
+            const eid = crypto.randomUUID();
+            lineIds.push(eid);
+            addSketchEntity({ id: eid, type: 'line', points: [v1, v2] });
           }
+          applyPolygonConstraints(lineIds, addSketchConstraint);
           setStatusMessage(`${sides}-gon (edge) added (side=${sideLen.toFixed(2)})`);
         } else { setStatusMessage('Edge too small — try again'); }
         setDrawingPoints([]);

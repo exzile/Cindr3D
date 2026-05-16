@@ -32,7 +32,17 @@ export function DraftDialog({ onClose }: { onClose: () => void }) {
   const draftPartingFaceCentroid = useCADStore((s) => s.draftPartingFaceCentroid);
   const clearDraftPartingFace = useCADStore((s) => s.clearDraftPartingFace);
 
+  // SOL-F2: pull direction face picker
+  const draftPullFaceId = useCADStore((s) => s.draftPullFaceId);
+  const draftPullFaceNormal = useCADStore((s) => s.draftPullFaceNormal);
+  const draftPullFacePickActive = useCADStore((s) => s.draftPullFacePickActive);
+  const clearDraftPullFace = useCADStore((s) => s.clearDraftPullFace);
+  const setDraftPullFacePickActive = useCADStore((s) => s.setDraftPullFacePickActive);
+
   const getPullAxisDir = (): THREE.Vector3 => {
+    if (draftPullFaceNormal) {
+      return new THREE.Vector3(...draftPullFaceNormal).normalize();
+    }
     if (draftType === 'parting-line' && draftPartingFaceNormal) {
       return new THREE.Vector3(...draftPartingFaceNormal).normalize();
     }
@@ -80,11 +90,13 @@ export function DraftDialog({ onClose }: { onClose: () => void }) {
       setStatusMessage(`Draft applied: ${angle}° (${mode})`);
     }
     clearDraftPartingFace();
+    clearDraftPullFace();
     onClose();
   };
 
   const handleClose = () => {
     clearDraftPartingFace();
+    clearDraftPullFace();
     onClose();
   };
 
@@ -93,7 +105,7 @@ export function DraftDialog({ onClose }: { onClose: () => void }) {
       title={editing ? 'Edit Draft' : 'Draft'}
       onClose={handleClose}
       size="sm"
-      overlayClassName={draftType === 'parting-line' ? 'dialog-overlay--passthrough' : undefined}
+      overlayClassName={(draftType === 'parting-line' || draftPullFacePickActive) ? 'dialog-overlay--passthrough' : undefined}
       onConfirm={handleApply}
       cancelLabel="Cancel"
     >
@@ -115,14 +127,54 @@ export function DraftDialog({ onClose }: { onClose: () => void }) {
       </div>
       <div className="form-group">
         <label>Pull Direction</label>
-        <select value={pullAxis} onChange={(e) => setPullAxis(e.target.value as '+X' | '-X' | '+Y' | '-Y' | '+Z' | '-Z')}>
-          <option value="+Y">+Y Axis (Up)</option>
-          <option value="-Y">-Y Axis (Down)</option>
-          <option value="+Z">+Z Axis</option>
-          <option value="-Z">-Z Axis</option>
-          <option value="+X">+X Axis</option>
-          <option value="-X">-X Axis</option>
-        </select>
+        {draftPullFaceId ? (
+          <div className="face-selector">
+            <span className="face-selector__chip">
+              Face selected
+              <button
+                type="button"
+                className="face-selector__chip-clear"
+                onClick={clearDraftPullFace}
+                title="Clear pull face"
+              >
+                <X size={11} />
+              </button>
+            </span>
+          </div>
+        ) : draftPullFacePickActive ? (
+          <div className="face-selector">
+            <span className="face-selector__chip" style={{ color: '#ffaa44' }}>
+              Click a face in viewport…
+              <button
+                type="button"
+                className="face-selector__chip-clear"
+                onClick={() => setDraftPullFacePickActive(false)}
+                title="Cancel pick"
+              >
+                <X size={11} />
+              </button>
+            </span>
+          </div>
+        ) : (
+          <>
+            <select value={pullAxis} onChange={(e) => setPullAxis(e.target.value as '+X' | '-X' | '+Y' | '-Y' | '+Z' | '-Z')}>
+              <option value="+Y">+Y Axis (Up)</option>
+              <option value="-Y">-Y Axis (Down)</option>
+              <option value="+Z">+Z Axis</option>
+              <option value="-Z">-Z Axis</option>
+              <option value="+X">+X Axis</option>
+              <option value="-X">-X Axis</option>
+            </select>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ marginTop: 4, fontSize: 11 }}
+              onClick={() => setDraftPullFacePickActive(true)}
+            >
+              Pick Face
+            </button>
+          </>
+        )}
       </div>
       <div className="settings-grid">
         <div className="form-group">

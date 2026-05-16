@@ -1,4 +1,56 @@
-
+## 3D Edge Fillet engine  (IMPLEMENTED 2026-05-15 — approximate blend; Chamfer still stub)
+# Fillet now actually rounds geometry: commitFillet in
+# featureMeshActions.ts parses filletEdgeIds (mesh.uuid:A:B), finds the
+# target mesh-backed feature, clones geom toNonIndexed, and for each edge
+# shared by exactly 2 triangles sets back both faces by `radius` and
+# stitches a 4-segment slerp arc band. Wired from FilletDialog.handleConfirm
+# (new branch) + exposed on the Surface ribbon tab.
+# REMAINING REFINEMENT (still [ ]):
+#   [ ] Exact rolling-ball tangency (current: equal `radius` setback on
+#       both faces — not true tangent arc for non-90° dihedral angles).
+#   [ ] Single-face / open surface-sheet edges (currently skipped — need
+#       2 adjacent tris).
+#   [ ] Per-edge variable radius / chord-length edge-sets (FilletParams
+#       already models these; commitFillet uses one global radius).
+#   [ ] Chamfer is still a no-op stub — mirror commitFillet as
+#       commitChamfer (flat single-segment bevel, seg=1, no arc).
+#
+# Original finding (for context): Chamfer + (old) Fillet were no-op
+# placeholders; createFilletGeometry at sketchRendering.ts:54 ignores
+# radius and is never called.
+#
+# Evidence:
+#   - createFilletGeometry(mesh,_radius) at
+#     src/engine/geometryEngine/core/sketch/sketchRendering.ts:54 explicitly
+#     ignores radius (`void _radius`) and returns mesh.clone() — documented
+#     no-op. It is NEVER called anywhere.
+#   - No feature pipeline consumes `type:'fillet'` / `type:'chamfer'`.
+#     FilletDialog.tsx / ChamferDialog.tsx create a Feature with
+#     params.edgeIds (comma-joined edge ids) + radius; nothing rounds geometry.
+#   - FilletEdgeHighlight.tsx / ChamferEdgeHighlight.tsx only highlight picked
+#     edges; pickerGeometry.ts is overlay-only.
+#
+# IMPLEMENTATION PLAN (do in a fresh session — needs full context budget):
+#   [ ] Build a mesh edge-fillet engine: given a feature's BufferGeometry +
+#       selected edge ids + radius, identify the edge loop(s), generate a
+#       rolling-ball blend strip, retriangulate/weld adjacent faces. Must
+#       work for BOTH closed solids and open surface sheets.
+#   [ ] Add commitFillet (and commitChamfer) store actions mirroring the
+#       commitScale/commitAlign pattern in
+#       src/store/cad/slices/featureManagement/featureMeshActions.ts
+#       (clone geom → transform → replace feature.mesh →
+#       recomputeBooleanDependents → deferred old-geom dispose).
+#   [ ] Wire FilletDialog/ChamferDialog handleConfirm to call the new
+#       commit action instead of just addFeature.
+#   [ ] Edge-id scheme: see how FilletEdgeHighlight maps edge ids to
+#       geometry (the edge picker) so the engine can resolve ids → segments.
+#   [ ] Body model: mesh-backed features render via feature.mesh in
+#       ExtrudedBodies.tsx (features.filter(f=>isActive(f)&&f.mesh));
+#       primitives regenerate from params in PrimitiveBodies.tsx (no
+#       persistent mesh) — fillet only applies to mesh-backed bodies.
+#   [ ] Surface parity: add a Fillet ToolButton to
+#       src/components/toolbar/RibbonSurfaceTab.tsx (currently absent) and
+#       reuse the same dialog/engine for surface bodies.
 
 ## Per-object mesh override system  (architectural — partially wired)
 # Cura's "Infill Mesh", "Cutting Mesh", "Support Mesh", and "Anti-Overhang

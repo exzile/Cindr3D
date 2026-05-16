@@ -16,6 +16,7 @@ export function CircularPatternDialog({ onClose }: { onClose: () => void }) {
   const [originX, setOriginX] = useState(0);
   const [originY, setOriginY] = useState(0);
   const [originZ, setOriginZ] = useState(0);
+  const [computeType, setComputeType] = useState<'identical' | 'adjusted' | 'optimized'>('identical');
 
   const axisVec: Record<'X' | 'Y' | 'Z', [number, number, number]> = {
     X: [1, 0, 0],
@@ -65,6 +66,14 @@ export function CircularPatternDialog({ onClose }: { onClose: () => void }) {
           <label>Total Angle (°)</label>
           <input type="number" value={totalAngle} onChange={(e) => setTotalAngle(parseFloat(e.target.value) || 360)} min={1} max={360} />
         </div>
+      </div>
+      <div className="form-group">
+        <label>Compute Type</label>
+        <select value={computeType} onChange={(e) => setComputeType(e.target.value as 'identical' | 'adjusted' | 'optimized')}>
+          <option value="identical">Identical</option>
+          <option value="adjusted">Adjusted</option>
+          <option value="optimized">Optimized</option>
+        </select>
       </div>
       <div className="form-group">
         <label>Axis Origin (X, Y, Z)</label>

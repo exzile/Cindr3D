@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useCADStore } from '../../../store/cadStore';
 import { DialogShell } from '../common/DialogShell';
 import { useComponentStore } from '../../../store/componentStore';
+import { X } from 'lucide-react';
 import * as THREE from 'three';
 
 export function JointDialog({ onClose }: { onClose: () => void }) {
@@ -14,6 +15,20 @@ export function JointDialog({ onClose }: { onClose: () => void }) {
   const [originX, setOriginX] = useState(0);
   const [originY, setOriginY] = useState(0);
   const [originZ, setOriginZ] = useState(0);
+
+  const jointDialogPickedOrigin = useCADStore((s) => s.jointDialogPickedOrigin);
+  const jointDialogPickMode = useCADStore((s) => s.jointDialogPickMode);
+  const setJointDialogPickMode = useCADStore((s) => s.setJointDialogPickMode);
+  const setJointDialogPickedOrigin = useCADStore((s) => s.setJointDialogPickedOrigin);
+
+  useEffect(() => {
+    if (jointDialogPickedOrigin) {
+      setOriginX(jointDialogPickedOrigin[0]);
+      setOriginY(jointDialogPickedOrigin[1]);
+      setOriginZ(jointDialogPickedOrigin[2]);
+      setJointDialogPickMode(false);
+    }
+  }, [jointDialogPickedOrigin, setJointDialogPickMode]);
 
   const addJoint = useComponentStore((s) => s.addJoint);
   const components = useComponentStore((s) => s.components);
@@ -46,11 +61,19 @@ export function JointDialog({ onClose }: { onClose: () => void }) {
     });
 
     setStatusMessage(`Created ${jointType} joint: ${name}`);
+    setJointDialogPickMode(false);
+    setJointDialogPickedOrigin(null);
+    onClose();
+  };
+
+  const handleClose = () => {
+    setJointDialogPickMode(false);
+    setJointDialogPickedOrigin(null);
     onClose();
   };
 
   return (
-    <DialogShell title="Joint" onClose={onClose} onConfirm={handleApply}>
+    <DialogShell title="Joint" onClose={handleClose} onConfirm={handleApply}>
           <div className="form-group">
             <label>Name</label>
             <input type="text" value={name} onChange={(e) => setName(e.target.value)} />
@@ -84,6 +107,33 @@ export function JointDialog({ onClose }: { onClose: () => void }) {
               <option value="planar">Planar</option>
               <option value="ball">Ball</option>
             </select>
+          </div>
+          <div className="form-group">
+            <label>Origin</label>
+            {jointDialogPickMode ? (
+              <div className="face-selector">
+                <span className="face-selector__chip" style={{ color: '#ffaa44' }}>
+                  Click a point in viewport…
+                  <button
+                    type="button"
+                    className="face-selector__chip-clear"
+                    onClick={() => setJointDialogPickMode(false)}
+                    title="Cancel pick"
+                  >
+                    <X size={11} />
+                  </button>
+                </span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ fontSize: 11, marginBottom: 4 }}
+                onClick={() => setJointDialogPickMode(true)}
+              >
+                {jointDialogPickedOrigin ? '✓ Picked — click to re-pick' : 'Pick from Viewport'}
+              </button>
+            )}
           </div>
           <div className="settings-grid">
             <div className="form-group">

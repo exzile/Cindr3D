@@ -59,12 +59,51 @@ export interface DiameterDimension {
   textPosition: { x: number; y: number };
 }
 
+/** Linear diameter: ⌀ callout displayed as a linear dimension line (common in revolve-section views). */
+export interface LinearDiameterDimension {
+  type: 'linear-diameter';
+  value: number;
+  center: { x: number; y: number };
+  radius: number;
+  extensionLine1: [{ x: number; y: number }, { x: number; y: number }];
+  extensionLine2: [{ x: number; y: number }, { x: number; y: number }];
+  dimensionLine: [{ x: number; y: number }, { x: number; y: number }];
+  textPosition: { x: number; y: number };
+}
+
+/** Ellipse axis dimension: Ra (major) or Rb (minor). */
+export interface EllipseDimension {
+  type: 'ellipse-major' | 'ellipse-minor';
+  value: number;
+  center: { x: number; y: number };
+  axisEnd: { x: number; y: number };
+  dimensionLine: [{ x: number; y: number }, { x: number; y: number }];
+  textPosition: { x: number; y: number };
+}
+
+/** Gap between two concentric circles: value = |r2 - r1|. */
+export interface ConcentricGapDimension {
+  type: 'concentric-gap';
+  value: number;
+  center: { x: number; y: number };
+  innerRadius: number;
+  outerRadius: number;
+  angle: number;
+  innerPt: { x: number; y: number };
+  outerPt: { x: number; y: number };
+  dimensionLine: [{ x: number; y: number }, { x: number; y: number }];
+  textPosition: { x: number; y: number };
+}
+
 export type DimensionAnnotation =
   | LinearDimension
   | AlignedDimension
   | ArcLengthDimension
   | AngleDimension
-  | DiameterDimension;
+  | DiameterDimension
+  | LinearDiameterDimension
+  | EllipseDimension
+  | ConcentricGapDimension;
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -361,6 +400,113 @@ export class DimensionEngine {
       center: { x: cx, y: cy },
       radius: r,
       dimensionLine: [dimP1, dimP2],
+      textPosition,
+    };
+  }
+
+  /**
+   * Computes a linear-diameter dimension for a circle/arc in a revolve-section sketch.
+   * Displays as a horizontal linear callout with ⌀ prefix; value = 2 × radius.
+   *
+   * @param cx     Circle center X
+   * @param cy     Circle center Y
+   * @param r      Circle radius
+   * @param offset Vertical offset for the dimension line (positive = above center)
+   */
+  static computeLinearDiameterDimension(
+    cx: number,
+    cy: number,
+    r: number,
+    offset: number,
+  ): LinearDiameterDimension {
+    const value = 2 * r;
+    const yDim = cy + offset;
+    const dimP1: Vec2 = { x: cx - r, y: yDim };
+    const dimP2: Vec2 = { x: cx + r, y: yDim };
+    return {
+      type: 'linear-diameter',
+      value,
+      center: { x: cx, y: cy },
+      radius: r,
+      extensionLine1: [{ x: cx - r, y: cy }, { x: cx - r, y: yDim }],
+      extensionLine2: [{ x: cx + r, y: cy }, { x: cx + r, y: yDim }],
+      dimensionLine: [dimP1, dimP2],
+      textPosition: midpoint(dimP1, dimP2),
+    };
+  }
+
+  /**
+   * Computes an ellipse axis dimension leader.
+   *
+   * @param cx       Ellipse center X
+   * @param cy       Ellipse center Y
+   * @param axisEnd  Endpoint of the axis being dimensioned (major or minor)
+   * @param axisType 'ellipse-major' | 'ellipse-minor'
+   * @param offset   Additional leader offset beyond the axis endpoint
+   */
+  static computeEllipseDimension(
+    cx: number,
+    cy: number,
+    axisEnd: Vec2,
+    axisType: 'ellipse-major' | 'ellipse-minor',
+    offset: number,
+  ): EllipseDimension {
+    const value = Math.hypot(axisEnd.x - cx, axisEnd.y - cy);
+    const dir = normalize({ x: axisEnd.x - cx, y: axisEnd.y - cy });
+    const textPt: Vec2 = {
+      x: axisEnd.x + dir.x * (offset + 2),
+      y: axisEnd.y + dir.y * (offset + 2),
+    };
+    return {
+      type: axisType,
+      value,
+      center: { x: cx, y: cy },
+      axisEnd,
+      dimensionLine: [{ x: cx, y: cy }, axisEnd],
+      textPosition: textPt,
+    };
+  }
+
+  /**
+   * Computes the gap dimension between two concentric circles.
+   * The annotation is a radial leader between the inner and outer circle edges.
+   *
+   * @param cx    Shared center X
+   * @param cy    Shared center Y
+   * @param r1    Radius of first circle
+   * @param r2    Radius of second circle
+   * @param angle Angle (radians) at which to draw the leader
+   */
+  static computeConcentricGapDimension(
+    cx: number,
+    cy: number,
+    r1: number,
+    r2: number,
+    angle: number,
+  ): ConcentricGapDimension {
+    const inner = Math.min(r1, r2);
+    const outer = Math.max(r1, r2);
+    const value = outer - inner;
+
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+
+    const innerPt: Vec2 = { x: cx + inner * cosA, y: cy + inner * sinA };
+    const outerPt: Vec2 = { x: cx + outer * cosA, y: cy + outer * sinA };
+
+    const textR = outer + 3;
+    const textPosition: Vec2 = { x: cx + textR * cosA, y: cy + textR * sinA };
+
+    return {
+      type: 'concentric-gap',
+      value,
+      center: { x: cx, y: cy },
+      innerRadius: inner,
+      outerRadius: outer,
+      angle,
+      innerPt,
+      outerPt,
+      dimensionLine: [innerPt, outerPt],
       textPosition,
     };
   }

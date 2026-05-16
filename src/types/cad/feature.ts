@@ -77,3 +77,14 @@ export interface FeatureGroup {
   collapsed: boolean;
   parentGroupId?: string;
 }
+
+/** A picked geometry reference used by the Align tool. */
+export interface AlignGeomPick {
+  /** Feature whose body was picked (null = world/origin geometry). */
+  featureId: string | null;
+  kind: 'face' | 'edge' | 'vertex';
+  /** Representative world point: face centroid / edge midpoint / vertex position. */
+  point: [number, number, number];
+  /** Face normal or edge direction (world, unit). Null for vertex. */
+  dir: [number, number, number] | null;
+}

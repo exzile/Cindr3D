@@ -59,9 +59,11 @@ export interface SelectionFilter {
 export interface SketchMenuDeps {
   autoConstrainSketch: () => void;
   selectionFilter: SelectionFilter;
+  selectionMode: 'normal' | 'window' | 'lasso';
   comingSoon: (feature: string) => () => void;
   setActiveTool: (tool: Tool) => void;
   setSelectionFilter: (update: Partial<SelectionFilter>) => void;
+  setSelectionMode: (mode: 'normal' | 'window' | 'lasso') => void;
   setStatusMessage: (message: string) => void;
   startSketchProjectSurfaceTool: () => void;
   startSketchTextTool: () => void;

@@ -263,6 +263,25 @@ export function createSurfaceUiActions({ set, get }: CADSliceContext): Partial<C
     draftPartingFaceCentroid: null,
   }),
 
+  // ── SOL-F2: Draft pull direction face picker ──────────────────────────
+  draftPullFaceId: null,
+  draftPullFaceNormal: null,
+  draftPullFaceCentroid: null,
+  draftPullFacePickActive: false,
+  setDraftPullFace: (id, normal, centroid) => set({
+    draftPullFaceId: id,
+    draftPullFaceNormal: normal,
+    draftPullFaceCentroid: centroid,
+    draftPullFacePickActive: false,
+  }),
+  clearDraftPullFace: () => set({
+    draftPullFaceId: null,
+    draftPullFaceNormal: null,
+    draftPullFaceCentroid: null,
+    draftPullFacePickActive: false,
+  }),
+  setDraftPullFacePickActive: (v) => set({ draftPullFacePickActive: v }),
+
   // Ã¢â€â‚¬Ã¢â€â‚¬ SOL-I5: Remove Face face picker Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   removeFaceFaceId: null,
   removeFaceFaceNormal: null,

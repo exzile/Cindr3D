@@ -140,10 +140,10 @@ export default function FormInteraction() {
       case 'form-quadball':     setStatusMessage('Form Quadball: click to place a T-Spline quadball'); break;
       case 'form-pipe':         setStatusMessage('Form Pipe: click to sweep a tube along the first available path sketch'); break;
       case 'form-face':         setStatusMessage('Form Face: click to place a single T-Spline face'); break;
-      case 'form-extrude':      setStatusMessage('Form Extrude: select edges to extrude — coming soon'); break;
-      case 'form-revolve':      setStatusMessage('Form Revolve: select edges to revolve — coming soon'); break;
-      case 'form-sweep':        setStatusMessage('Form Sweep: select edges to sweep — coming soon'); break;
-      case 'form-loft':         setStatusMessage('Form Loft: select profile edges to loft — coming soon'); break;
+      case 'form-extrude':      setStatusMessage('Form Extrude: click to extrude the active body\'s top ring upward'); break;
+      case 'form-revolve':      setStatusMessage('Form Revolve: click to revolve the first profile sketch 360° about Y'); break;
+      case 'form-sweep':        setStatusMessage('Form Sweep: click to sweep — needs path sketch (first) + profile sketch (second)'); break;
+      case 'form-loft':         setStatusMessage('Form Loft: click to loft between 2+ profile sketches'); break;
       case 'form-edit':         setStatusMessage('Edit Form: click a vertex to select; drag to move'); break;
       case 'form-delete':
         setStatusMessage(

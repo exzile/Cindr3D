@@ -201,7 +201,7 @@ export function buildDesignMenus({
     { icon: <Layers size={MI} />, label: 'Midplane', onClick: () => setActiveDialog('construction-plane-midplane') },
     { icon: <Layers size={MI} />, label: 'Perpendicular Plane', onClick: () => setActiveDialog('perpendicular-plane') },
     { separator: true, icon: <Square size={MI} />, label: 'Plane Through Two Edges', onClick: () => { setActiveTool('construct-plane-two-edges'); setStatusMessage('Plane Through Two Edges: click first edge, then second edge'); } },
-    { icon: <Layers size={MI} />, label: 'Plane Through Three Points', onClick: comingSoon('Plane Through Three Points') },
+    { icon: <Layers size={MI} />, label: 'Plane Through Three Points', onClick: () => { setActiveTool('construct-plane-three-points'); setStatusMessage('Plane Through Three Points: click first point'); } },
     { icon: <Layers size={MI} />, label: 'Plane Tangent to Face at Point', onClick: () => { setActiveTool('construct-plane-tangent-at-point'); setStatusMessage('Plane Tangent at Point: click a curved face, then a vertex'); } },
     { icon: <Layers size={MI} />, label: 'Plane Along Path', onClick: () => setActiveDialog('plane-along-path') },
     { separator: true, icon: <RotateCcw size={MI} />, label: 'Axis Through Cylinder/Cone/Torus', onClick: () => { setActiveTool('construct-axis-cylinder'); setStatusMessage('Axis Through Cylinder: click a curved face'); } },

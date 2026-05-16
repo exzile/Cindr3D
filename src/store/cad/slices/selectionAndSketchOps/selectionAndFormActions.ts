@@ -16,6 +16,9 @@ export function createSelectionAndFormActions({ set }: CADSliceContext): Partial
         };
       }),
 
+    selectionMode: 'normal',
+    setSelectionMode: (mode) => set({ selectionMode: mode }),
+
     windowSelecting: false,
     windowSelectStart: null,
     windowSelectEnd: null,

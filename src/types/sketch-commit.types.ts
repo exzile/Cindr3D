@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Sketch, SketchEntity, SketchPoint } from './cad';
+import type { Sketch, SketchConstraint, SketchEntity, SketchPoint } from './cad';
 
 export interface SketchCommitCtx {
   activeTool: string;
@@ -11,6 +11,7 @@ export interface SketchCommitCtx {
   t2: THREE.Vector3;
   projectToPlane: (pt: SketchPoint, origin: SketchPoint) => { u: number; v: number };
   addSketchEntity: (e: SketchEntity) => void;
+  addSketchConstraint: (c: SketchConstraint) => void;
   replaceSketchEntities: (entities: SketchEntity[]) => void;
   cycleEntityLinetype: (id: string) => void;
   setStatusMessage: (msg: string) => void;

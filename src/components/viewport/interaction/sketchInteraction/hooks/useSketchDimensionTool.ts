@@ -123,6 +123,18 @@ function createNearestEntityFinder(entities: SketchEntity[], origin: THREE.Vecto
           best.pick = { entity };
         }
       }
+
+      if ((entity.type === 'ellipse' || entity.type === 'elliptical-arc') &&
+          entity.points.length >= 1 && entity.majorRadius && entity.minorRadius) {
+        const center = new THREE.Vector3(entity.points[0].x, entity.points[0].y, entity.points[0].z);
+        const dist = worldPoint.distanceTo(center);
+        const avgRadius = (entity.majorRadius + entity.minorRadius) / 2;
+        const distance = Math.abs(dist - avgRadius);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best.pick = { entity };
+        }
+      }
     }
 
     // Second pass: vertex/center proximity wins over a segment if closer.
@@ -208,7 +220,9 @@ function commitDimension(
     const sameOrientation =
       (d.orientation ?? 'auto') === (dim.orientation ?? 'auto') ||
       dim.type === 'radial' || dim.type === 'diameter' ||
-      dim.type === 'angular' || dim.type === 'arc-length' || dim.type === 'aligned';
+      dim.type === 'angular' || dim.type === 'arc-length' || dim.type === 'aligned' ||
+      dim.type === 'linear-diameter' || dim.type === 'ellipse-major' ||
+      dim.type === 'ellipse-minor' || dim.type === 'concentric-gap';
     return sameOrientation;
   });
   if (isDuplicate) return false;
@@ -886,6 +900,38 @@ export function useSketchDimensionTool({
           return;
         }
 
+        if ((entity.type === 'ellipse' || entity.type === 'elliptical-arc') &&
+            entity.majorRadius && entity.minorRadius) {
+          // Auto mode: clicking an ellipse defaults to major-axis dimension
+          if (hasExistingDimension('ellipse-major', [entity.id])) {
+            rejectDuplicateDimension();
+            return;
+          }
+          const center = entity.points[0];
+          const center2d = to2D(new THREE.Vector3(center.x, center.y, center.z));
+          const rotation = entity.rotation ?? 0;
+          const axisEnd = {
+            x: center2d.x + entity.majorRadius * Math.cos(rotation),
+            y: center2d.y + entity.majorRadius * Math.sin(rotation),
+          };
+          const eDim = DimensionEngine.computeEllipseDimension(
+            center2d.x, center2d.y, axisEnd, 'ellipse-major', dimensionOffset,
+          );
+          const ellipseDim: SketchDimension = {
+            id: crypto.randomUUID(),
+            type: 'ellipse-major',
+            entityIds: [entity.id],
+            value: eDim.value,
+            position: eDim.textPosition,
+            driven: dimensionDrivenMode,
+            ...buildToleranceFields(),
+          };
+          if (interceptAndClearPreview(ellipseDim)) return;
+          addSketchDimension(ellipseDim);
+          setStatusMessage(`Ellipse major axis: Ra=${eDim.value.toFixed(2)}`);
+          return;
+        }
+
         if (!pick?.start || !pick.end) {
           setStatusMessage(
             effectiveType === 'linear'
@@ -1167,6 +1213,129 @@ export function useSketchDimensionTool({
         if (interceptAndClearPreview(arcLenDim)) return;
         addSketchDimension(arcLenDim);
         setStatusMessage(`Arc length dimension added: ${dimension.value.toFixed(2)}`);
+        return;
+      }
+
+      if (activeDimensionType === 'linear-diameter') {
+        if (!entity || (entity.type !== 'circle' && entity.type !== 'arc') || !entity.radius) {
+          setStatusMessage('Linear Diameter: click on a circle or arc');
+          return;
+        }
+        if (hasExistingDimension('linear-diameter', [entity.id])) { rejectDuplicateDimension(); return; }
+        {
+          const center = entity.points[0];
+          const center2d = to2D(new THREE.Vector3(center.x, center.y, center.z));
+          const ldDim = DimensionEngine.computeLinearDiameterDimension(
+            center2d.x, center2d.y, entity.radius, dimensionOffset,
+          );
+          fireAndEdit(
+            {
+              id: crypto.randomUUID(),
+              type: 'linear-diameter',
+              entityIds: [entity.id],
+              value: ldDim.value,
+              position: ldDim.textPosition,
+              driven: dimensionDrivenMode,
+              ...buildToleranceFields(),
+            },
+            `Linear diameter added: ⌀${ldDim.value.toFixed(2)}`,
+          );
+        }
+        return;
+      }
+
+      if (activeDimensionType === 'ellipse-major' || activeDimensionType === 'ellipse-minor') {
+        if (!entity || (entity.type !== 'ellipse' && entity.type !== 'elliptical-arc')) {
+          setStatusMessage(`${activeDimensionType === 'ellipse-major' ? 'Major' : 'Minor'} axis dimension: click an ellipse`);
+          return;
+        }
+        if (!entity.majorRadius || !entity.minorRadius) return;
+        const center = entity.points[0];
+        const center2d = to2D(new THREE.Vector3(center.x, center.y, center.z));
+        const rotation = entity.rotation ?? 0;
+        const isMajor = activeDimensionType === 'ellipse-major';
+        const axisRadius = isMajor ? entity.majorRadius : entity.minorRadius;
+        const axisAngle = isMajor ? rotation : rotation + Math.PI / 2;
+        const axisEnd = {
+          x: center2d.x + axisRadius * Math.cos(axisAngle),
+          y: center2d.y + axisRadius * Math.sin(axisAngle),
+        };
+        if (hasExistingDimension(activeDimensionType, [entity.id])) { rejectDuplicateDimension(); return; }
+        {
+          const eDim = DimensionEngine.computeEllipseDimension(
+            center2d.x, center2d.y, axisEnd, activeDimensionType, dimensionOffset,
+          );
+          fireAndEdit(
+            {
+              id: crypto.randomUUID(),
+              type: activeDimensionType,
+              entityIds: [entity.id],
+              value: eDim.value,
+              position: eDim.textPosition,
+              driven: dimensionDrivenMode,
+              ...buildToleranceFields(),
+            },
+            `Ellipse ${isMajor ? 'major' : 'minor'} axis: ${eDim.value.toFixed(2)}`,
+          );
+        }
+        return;
+      }
+
+      if (activeDimensionType === 'concentric-gap') {
+        if (!entity || (entity.type !== 'circle' && entity.type !== 'arc') || !entity.radius) {
+          setStatusMessage('Concentric Gap: click a circle or arc');
+          return;
+        }
+        const currentPendingCg = useCADStore.getState().pendingDimensionEntityIds;
+        const firstPickCg = pendingLinearPickRef.current;
+
+        if (currentPendingCg.length === 0 || !firstPickCg) {
+          pendingLinearPickRef.current = pick;
+          addPendingDimensionEntity(entity.id);
+          setStatusMessage('Concentric Gap: click the second concentric circle');
+          return;
+        }
+
+        // Second pick — commit the dimension
+        const firstEntity = firstPickCg.entity;
+        if (!firstEntity.radius) {
+          pendingLinearPickRef.current = null;
+          useCADStore.setState({ pendingDimensionEntityIds: [] });
+          return;
+        }
+        const center1 = firstEntity.points[0];
+        const center2 = entity.points[0];
+        const c1 = to2D(new THREE.Vector3(center1.x, center1.y, center1.z));
+        const c2 = to2D(new THREE.Vector3(center2.x, center2.y, center2.z));
+        const centerDist = Math.hypot(c2.x - c1.x, c2.y - c1.y);
+        if (centerDist > 1) {
+          setStatusMessage('Concentric Gap: circles must share the same center');
+          pendingLinearPickRef.current = null;
+          useCADStore.setState({ pendingDimensionEntityIds: [] });
+          return;
+        }
+        const entityIds = [firstEntity.id, entity.id];
+        if (hasExistingDimension('concentric-gap', entityIds)) { rejectDuplicateDimension(); return; }
+        {
+          const cgDim = DimensionEngine.computeConcentricGapDimension(
+            c1.x, c1.y, firstEntity.radius, entity.radius, Math.PI / 4,
+          );
+          fireAndEdit(
+            {
+              id: crypto.randomUUID(),
+              type: 'concentric-gap',
+              entityIds,
+              value: cgDim.value,
+              position: cgDim.textPosition,
+              driven: dimensionDrivenMode,
+              ...buildToleranceFields(),
+            },
+            `Concentric gap: ${cgDim.value.toFixed(2)}`,
+          );
+          pendingLinearPickRef.current = null;
+          useCADStore.setState({ pendingDimensionEntityIds: [] });
+        }
+        return;
       }
     };
     const handleKeyDown = (event: KeyboardEvent) => {

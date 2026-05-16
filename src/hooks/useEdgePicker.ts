@@ -25,6 +25,95 @@ const _vC = new THREE.Vector3();
 const _closest = new THREE.Vector3();
 const _ab = new THREE.Vector3();
 const _ap = new THREE.Vector3();
+// Extra scratch for face-normal computation (isFeatureEdge)
+const _fnP0 = new THREE.Vector3();
+const _fnP1 = new THREE.Vector3();
+const _fnP2 = new THREE.Vector3();
+const _fnE1 = new THREE.Vector3();
+const _fnN1 = new THREE.Vector3();
+const _fnN2 = new THREE.Vector3();
+
+// ---------------------------------------------------------------------------
+// Feature-edge detection
+//
+// A "feature edge" is one where adjacent face normals diverge by more than
+// HARD_EDGE_COS_THRESHOLD radians — i.e. it is NOT a coplanar triangulation
+// diagonal. Only feature edges are shown as fillet/chamfer candidates.
+//
+// The adjacency map is built lazily per geometry and cached in a WeakMap so
+// it is computed at most once per BufferGeometry instance.
+// ---------------------------------------------------------------------------
+
+/** cos(5°) — edges whose adjacent faces share a smaller angle are coplanar */
+const HARD_EDGE_COS_THRESHOLD = Math.cos(5 * Math.PI / 180); // ≈ 0.9962
+
+/** geometry → Map<"min_max", faceIndex[]> — built once, evicted when geom is GC'd */
+const _edgeAdjCache = new WeakMap<THREE.BufferGeometry, Map<string, number[]>>();
+
+function buildEdgeAdj(geom: THREE.BufferGeometry): Map<string, number[]> {
+  const cached = _edgeAdjCache.get(geom);
+  if (cached) return cached;
+
+  const map = new Map<string, number[]>();
+  const idx = geom.index;
+  const triCount = idx ? idx.count / 3 : geom.attributes.position.count / 3;
+  const getI = (fi: number, c: number) => idx ? idx.getX(fi * 3 + c) : fi * 3 + c;
+
+  for (let fi = 0; fi < triCount; fi++) {
+    const i0 = getI(fi, 0), i1 = getI(fi, 1), i2 = getI(fi, 2);
+    for (const [a, b] of [[i0, i1], [i1, i2], [i2, i0]] as [number, number][]) {
+      const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+      let arr = map.get(key);
+      if (!arr) { arr = []; map.set(key, arr); }
+      arr.push(fi);
+    }
+  }
+
+  _edgeAdjCache.set(geom, map);
+  return map;
+}
+
+/** Compute world-space face normal for triangle fi into `out` (scratch-safe). */
+function computeFaceNormal(
+  posAttr: THREE.BufferAttribute,
+  idx: THREE.BufferAttribute | null,
+  fi: number,
+  m: THREE.Matrix4,
+  out: THREE.Vector3,
+): void {
+  const getI = (c: number) => idx ? idx.getX(fi * 3 + c) : fi * 3 + c;
+  _fnP0.fromBufferAttribute(posAttr, getI(0)).applyMatrix4(m);
+  _fnP1.fromBufferAttribute(posAttr, getI(1)).applyMatrix4(m);
+  _fnP2.fromBufferAttribute(posAttr, getI(2)).applyMatrix4(m);
+  _fnE1.subVectors(_fnP1, _fnP0);
+  out.subVectors(_fnP2, _fnP0).cross(_fnE1).normalize();
+}
+
+/**
+ * Returns true if the edge (ia, ib) in `geom` is a feature edge.
+ * An edge is a feature edge when:
+ *   – it is a boundary edge (only one adjacent triangle), or
+ *   – the two adjacent triangles meet at a dihedral angle > 5°
+ * Coplanar triangulation diagonals (angle ≈ 0°) are NOT feature edges.
+ */
+function isFeatureEdge(
+  geom: THREE.BufferGeometry,
+  ia: number,
+  ib: number,
+  m: THREE.Matrix4,
+): boolean {
+  const adj = buildEdgeAdj(geom);
+  const key = ia < ib ? `${ia}_${ib}` : `${ib}_${ia}`;
+  const faces = adj.get(key);
+  if (!faces || faces.length < 2) return true; // boundary edge — always a feature edge
+
+  const posAttr = geom.attributes.position as THREE.BufferAttribute;
+  computeFaceNormal(posAttr, geom.index, faces[0], m, _fnN1);
+  computeFaceNormal(posAttr, geom.index, faces[1], m, _fnN2);
+
+  // |dot| close to 1 → normals nearly parallel → coplanar → NOT a feature edge
+  return Math.abs(_fnN1.dot(_fnN2)) < HARD_EDGE_COS_THRESHOLD;
+}
 
 // ---------------------------------------------------------------------------
 // Internal geometry helpers
@@ -53,7 +142,7 @@ function closestPointOnSegment(
 }
 
 // ---------------------------------------------------------------------------
-// Internal: pick nearest edge from a raycast hit
+// Internal: pick nearest FEATURE edge from a raycast hit
 // ---------------------------------------------------------------------------
 
 function pickNearestEdge(
@@ -87,7 +176,7 @@ function pickNearestEdge(
   _vB.fromBufferAttribute(posAttr, i1).applyMatrix4(m);
   _vC.fromBufferAttribute(posAttr, i2).applyMatrix4(m);
 
-  // 3 edges: [A-B], [B-C], [C-A]
+  // 3 edges: [A-B], [B-C], [C-A] — only consider feature (hard) edges
   const edges: [THREE.Vector3, THREE.Vector3, number, number][] = [
     [_vA, _vB, i0, i1],
     [_vB, _vC, i1, i2],
@@ -98,6 +187,7 @@ function pickNearestEdge(
   let bestEdge: [THREE.Vector3, THREE.Vector3, number, number] | null = null;
 
   for (const [a, b, ia, ib] of edges) {
+    if (!isFeatureEdge(geom, ia, ib, m)) continue; // skip coplanar triangulation diagonals
     closestPointOnSegment(hitPoint, a, b, _closest);
     const dSq = hitPoint.distanceToSquared(_closest);
     if (dSq < bestDistSq) {

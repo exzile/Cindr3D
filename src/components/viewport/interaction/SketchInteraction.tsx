@@ -486,6 +486,7 @@ export default function SketchInteraction() {
     getRawWorldPoint,
     findSnapCandidate,
     addSketchEntity,
+    addSketchConstraint,
     replaceSketchEntities,
     cycleEntityLinetype,
     setStatusMessage,

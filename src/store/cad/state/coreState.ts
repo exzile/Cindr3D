@@ -139,6 +139,10 @@ export interface CADCoreState {
   setSelectedEntityIds: (ids: string[]) => void;
   toggleEntitySelection: (id: string) => void;
 
+  // Selection mode (window / lasso / normal)
+  selectionMode: 'normal' | 'window' | 'lasso';
+  setSelectionMode: (mode: 'normal' | 'window' | 'lasso') => void;
+
   // D204 — Window Selection
   windowSelecting: boolean;
   windowSelectStart: { x: number; y: number } | null;

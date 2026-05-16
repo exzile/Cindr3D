@@ -39,6 +39,8 @@ export default function Toolbar() {
   const setSectionEnabled = useCADStore((s) => s.setSectionEnabled);
   const setSelectionFilter = useCADStore((s) => s.setSelectionFilter);
   const selectionFilter = useCADStore((s) => s.selectionFilter);
+  const selectionMode = useCADStore((s) => s.selectionMode);
+  const setSelectionMode = useCADStore((s) => s.setSelectionMode);
   const selectedFeatureId = useCADStore((s) => s.selectedFeatureId);
   const removeFeature = useCADStore((s) => s.removeFeature);
   const addFeature = useCADStore((s) => s.addFeature);
@@ -286,8 +288,10 @@ export default function Toolbar() {
     autoConstrainSketch,
     comingSoon,
     selectionFilter,
+    selectionMode,
     setActiveTool: setActiveTool as (tool: Tool) => void,
     setSelectionFilter,
+    setSelectionMode,
     setStatusMessage,
     startSketchProjectSurfaceTool,
     startSketchTextTool,
@@ -295,8 +299,10 @@ export default function Toolbar() {
     autoConstrainSketch,
     comingSoon,
     selectionFilter,
+    selectionMode,
     setActiveTool,
     setSelectionFilter,
+    setSelectionMode,
     setStatusMessage,
     startSketchProjectSurfaceTool,
     startSketchTextTool,

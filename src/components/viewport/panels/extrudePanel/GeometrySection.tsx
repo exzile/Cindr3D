@@ -37,14 +37,14 @@ export function GeometrySection({
   distance: number;
   distance2: number;
   effectiveBodyKind: 'solid' | 'surface';
-  extentType: 'distance' | 'all' | 'to-object';
-  extentType2: 'distance' | 'all' | 'to-object';
+  extentType: 'distance' | 'all' | 'to-object' | 'to-next';
+  extentType2: 'distance' | 'all' | 'to-object' | 'to-next';
   extrudeSymmetricFullLength: boolean;
   setDistance: (value: number) => void;
   setDistance2: (value: number) => void;
   setDirection: (value: ExtrudeDirection) => void;
-  setExtentType: (value: 'distance' | 'all' | 'to-object') => void;
-  setExtentType2: (value: 'distance' | 'all' | 'to-object') => void;
+  setExtentType: (value: 'distance' | 'all' | 'to-object' | 'to-next') => void;
+  setExtentType2: (value: 'distance' | 'all' | 'to-object' | 'to-next') => void;
   setExtrudeSymmetricFullLength: (value: boolean) => void;
   setStartOffset: (value: number) => void;
   setStartType: (value: 'profile' | 'offset' | 'entity') => void;
@@ -138,11 +138,12 @@ export function GeometrySection({
             <select
               className="tp-select"
               value={extentType}
-              onChange={(event) => setExtentType(event.target.value as 'distance' | 'all' | 'to-object')}
+              onChange={(event) => setExtentType(event.target.value as 'distance' | 'all' | 'to-object' | 'to-next')}
             >
               <option value="distance">Distance</option>
               <option value="all">All</option>
               <option value="to-object">To Object</option>
+              <option value="to-next">To Next</option>
             </select>
           </div>
 
@@ -181,11 +182,12 @@ export function GeometrySection({
             <select
               className="tp-select"
               value={extentType}
-              onChange={(event) => setExtentType(event.target.value as 'distance' | 'all' | 'to-object')}
+              onChange={(event) => setExtentType(event.target.value as 'distance' | 'all' | 'to-object' | 'to-next')}
             >
               <option value="distance">Distance</option>
               <option value="all">All</option>
               <option value="to-object">To Object</option>
+              <option value="to-next">To Next</option>
             </select>
           </div>
           {extentType === 'distance' && (
@@ -204,11 +206,12 @@ export function GeometrySection({
             <select
               className="tp-select"
               value={extentType2}
-              onChange={(event) => setExtentType2(event.target.value as 'distance' | 'all' | 'to-object')}
+              onChange={(event) => setExtentType2(event.target.value as 'distance' | 'all' | 'to-object' | 'to-next')}
             >
               <option value="distance">Distance</option>
               <option value="all">All</option>
               <option value="to-object">To Object</option>
+              <option value="to-next">To Next</option>
             </select>
           </div>
           {extentType2 === 'distance' && (

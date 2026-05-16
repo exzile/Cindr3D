@@ -65,6 +65,8 @@ export function createSketchLifecycleSlice({ set, get }: CADSliceContext) {
     // Reset transient extrude/revolve state when switching away from them
     ...(tool !== 'extrude' ? EXTRUDE_DEFAULTS : {}),
     ...(tool !== 'revolve' ? REVOLVE_DEFAULTS : {}),
+    // Reset selection mode when leaving select tool
+    ...(tool !== 'select' ? { selectionMode: 'normal' as const } : {}),
   }),
 
   viewMode: '3d',

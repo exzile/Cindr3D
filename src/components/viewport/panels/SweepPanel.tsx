@@ -166,15 +166,19 @@ export default function SweepPanel() {
         {/* Output */}
         <div className="tp-section">
           <div className="tp-section-title">Output</div>
+          {bodyKind !== 'surface' && (
           <div className="tp-row">
             <span className="tp-label">Operation</span>
             <select className="tp-select" value={operation}
-              onChange={(e) => setOperation(e.target.value as 'new-body' | 'join' | 'cut')}>
+              onChange={(e) => setOperation(e.target.value as 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component')}>
               <option value="new-body">New Body</option>
-              <option value="join" disabled>Join</option>
-              <option value="cut" disabled>Cut</option>
+              <option value="join">Join</option>
+              <option value="cut">Cut</option>
+              <option value="intersect">Intersect</option>
+              <option value="new-component">New Component</option>
             </select>
           </div>
+          )}
           <div className="tp-row">
             <span className="tp-label">Body</span>
             <select className="tp-select" value={bodyKind}

@@ -61,6 +61,7 @@ interface UseSketchInteractionEventsParams {
     type: 'endpoint' | 'midpoint' | 'center' | 'intersection' | 'perpendicular' | 'tangent';
   } | null;
   addSketchEntity: ReturnType<typeof useCADStore.getState>['addSketchEntity'];
+  addSketchConstraint: ReturnType<typeof useCADStore.getState>['addSketchConstraint'];
   replaceSketchEntities: ReturnType<typeof useCADStore.getState>['replaceSketchEntities'];
   cycleEntityLinetype: ReturnType<typeof useCADStore.getState>['cycleEntityLinetype'];
   setStatusMessage: ReturnType<typeof useCADStore.getState>['setStatusMessage'];
@@ -115,6 +116,7 @@ export function useSketchInteractionEvents({
   getRawWorldPoint,
   findSnapCandidate,
   addSketchEntity,
+  addSketchConstraint,
   replaceSketchEntities,
   cycleEntityLinetype,
   setStatusMessage,
@@ -521,6 +523,7 @@ export function useSketchInteractionEvents({
         t2,
         projectToPlane,
         addSketchEntity: addSketchEntityWrapped,
+        addSketchConstraint,
         replaceSketchEntities,
         cycleEntityLinetype,
         setStatusMessage,
