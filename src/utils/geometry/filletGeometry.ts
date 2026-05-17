@@ -71,11 +71,27 @@ function buildFilletCutter(
   // ── Corner prism: spans [0,setback] along u1, [0,setback] along u2, and
   //    [-eps, length+eps] along the edge. Built as a unit box then placed
   //    with a basis matrix (columns u1, edgeDir, u2) anchored at edge start.
+  //
+  // (u1, edgeDir, u2) is right-handed for some edges and left-handed for
+  // others (depends on the edge's world orientation + adjacent-triangle
+  // order). A left-handed basis makes `makeBasis` a MIRROR (negative
+  // determinant): the prism−cylinder cutter is turned inside-out and
+  // CSG-subtracting it leaves a back-facing (invisible) fillet surface — the
+  // same "edge looks un-filleted" defect the chamfer cutter guards against.
+  // The prism cross-section is a symmetric setback×setback square and the
+  // cylinder is placed off the symmetric bisector, so swapping the u1/u2
+  // basis columns yields a geometrically identical world cutter (same world
+  // shape/volume — buffer/triangle ordering may differ) with a right-handed
+  // (non-mirroring) basis. det>0 edges are unchanged (branch not taken).
+  const leftHanded =
+    new THREE.Matrix4().makeBasis(u1, edgeDir, u2).determinant() < 0;
+  const axisX = leftHanded ? u2 : u1;
+  const axisZ = leftHanded ? u1 : u2;
   const prism = new THREE.BoxGeometry(setback, length + 2 * eps, setback);
   // Box is centered at local origin; shift so the (u1=0, u2=0) corner sits on
   // the edge line and the edge axis spans [-eps, length+eps].
   prism.translate(setback / 2, length / 2, setback / 2);
-  const basis = new THREE.Matrix4().makeBasis(u1, edgeDir, u2);
+  const basis = new THREE.Matrix4().makeBasis(axisX, edgeDir, axisZ);
   basis.setPosition(a.x, a.y, a.z);
   prism.applyMatrix4(basis);
 

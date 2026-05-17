@@ -55,11 +55,32 @@ function buildChamferCutter(
   if (phi < 0.05 || phi > Math.PI - 0.05) return null;
   if (!(d1 > 0) || !(d2 > 0)) return null;
 
+  // (u1, u2, edgeDir) is RIGHT-handed for some edges and LEFT-handed for
+  // others (it depends purely on the edge's world orientation + which adjacent
+  // triangle resolveEdge happened to list first). A left-handed basis makes
+  // `makeBasis` a MIRROR (negative determinant): applying it turns the
+  // ExtrudeGeometry inside-out, and CSG-subtracting an inside-out cutter
+  // yields a back-facing (FrontSide-culled, invisible) chamfer facet — the
+  // "I chamfered an edge and nothing happened" bug, hit on ~5/12 box edges.
+  // Fix: when the basis would mirror, swap the two in-face axes (u1↔u2) and
+  // the matching setback legs (d1↔d2). The world wedge {a, a+d1·u1, a+d2·u2}
+  // is geometrically identical (same corners / volume / cut result — vertex
+  // and triangle ordering in the ExtrudeGeometry may differ); only the basis
+  // handedness flips to right-handed, so no mirror and the facet comes out
+  // correctly outward-wound. det>0 edges are completely unchanged (branch
+  // not taken).
+  const leftHanded =
+    new THREE.Matrix4().makeBasis(u1, u2, edgeDir).determinant() < 0;
+  const axisX = leftHanded ? u2 : u1;
+  const axisY = leftHanded ? u1 : u2;
+  const legX = leftHanded ? d2 : d1;
+  const legY = leftHanded ? d1 : d2;
+
   // Local corner triangle in the XY plane; extruded along +Z (the edge).
   const shape = new THREE.Shape();
-  shape.moveTo(0, 0);      // sharp corner, on the edge line
-  shape.lineTo(d1, 0);     // face-1 setback
-  shape.lineTo(0, d2);     // face-2 setback
+  shape.moveTo(0, 0);         // sharp corner, on the edge line
+  shape.lineTo(legX, 0);      // axis-X setback
+  shape.lineTo(0, legY);      // axis-Y setback
   shape.lineTo(0, 0);
 
   const prism = new THREE.ExtrudeGeometry(shape, {
@@ -68,9 +89,9 @@ function buildChamferCutter(
     steps: 1,
   });
   // ExtrudeGeometry spans local z ∈ [0, depth]; shift so the edge axis spans
-  // [-eps, length+eps] and place via basis (cols u1, u2, edgeDir) at corner a.
+  // [-eps, length+eps] and place via the right-handed basis at corner a.
   prism.translate(0, 0, -eps);
-  const basis = new THREE.Matrix4().makeBasis(u1, u2, edgeDir);
+  const basis = new THREE.Matrix4().makeBasis(axisX, axisY, edgeDir);
   basis.setPosition(a.x, a.y, a.z);
   prism.applyMatrix4(basis);
 
