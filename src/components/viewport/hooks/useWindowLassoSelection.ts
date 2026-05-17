@@ -2,10 +2,15 @@ import { useCallback, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
+import { isGizmoDragging } from '../scene/gizmoDragGuard';
 import type { ViewportCtxState } from '../../../types/viewport-context-menu.types';
 
 const _selBox3 = new THREE.Box3();
 const _selVec3 = new THREE.Vector3();
+// Scratch vectors reused across sampleSketchEntity calls — avoids per-sample allocs
+const _samplePt = new THREE.Vector3();
+const _sampleA = new THREE.Vector3();
+const _sampleB = new THREE.Vector3();
 const SKETCH_ENTITY_SAMPLE_COUNT = 48;
 const PAINT_RADIUS = 15;
 
@@ -53,11 +58,12 @@ function sampleSketchEntity(
     if (sp) projected.push(sp);
   };
   const pushSketchPoint = (pt: { x: number; y: number; z: number }) => {
-    pushWorldPoint(new THREE.Vector3(pt.x, pt.y, pt.z));
+    pushWorldPoint(_samplePt.set(pt.x, pt.y, pt.z));
   };
+  // Uses _samplePt as scratch — safe because pushWorldPoint only reads it.
   const pushSegmentSamples = (start: THREE.Vector3, end: THREE.Vector3, samples = 12) => {
     for (let i = 0; i <= samples; i += 1) {
-      pushWorldPoint(start.clone().lerp(end, i / samples));
+      pushWorldPoint(_samplePt.lerpVectors(start, end, i / samples));
     }
   };
 
@@ -65,21 +71,29 @@ function sampleSketchEntity(
 
   if (entity.type === 'rectangle' && entity.points.length >= 2) {
     const { t1, t2 } = GeometryEngine.getSketchAxes(sketch);
-    const p1 = new THREE.Vector3(entity.points[0].x, entity.points[0].y, entity.points[0].z);
-    const p2 = new THREE.Vector3(entity.points[1].x, entity.points[1].y, entity.points[1].z);
-    const delta = p2.clone().sub(p1);
-    const dt1 = t1.clone().multiplyScalar(delta.dot(t1));
-    const dt2 = t2.clone().multiplyScalar(delta.dot(t2));
-    const corners = [p1, p1.clone().add(dt1), p1.clone().add(dt1).add(dt2), p1.clone().add(dt2)];
-    for (let i = 0; i < corners.length; i += 1) {
-      pushSegmentSamples(corners[i], corners[(i + 1) % corners.length]);
-    }
+    const p0 = entity.points[0]; const p1e = entity.points[1];
+    _sampleA.set(p0.x, p0.y, p0.z);
+    _sampleB.set(p1e.x, p1e.y, p1e.z);
+    const dx = _sampleB.x - _sampleA.x; const dy = _sampleB.y - _sampleA.y; const dz = _sampleB.z - _sampleA.z;
+    const dt1x = t1.x * (dx * t1.x + dy * t1.y + dz * t1.z);
+    const dt1y = t1.y * (dx * t1.x + dy * t1.y + dz * t1.z);
+    const dt1z = t1.z * (dx * t1.x + dy * t1.y + dz * t1.z);
+    const dt2x = t2.x * (dx * t2.x + dy * t2.y + dz * t2.z);
+    const dt2y = t2.y * (dx * t2.x + dy * t2.y + dz * t2.z);
+    const dt2z = t2.z * (dx * t2.x + dy * t2.y + dz * t2.z);
+    const c0 = _sampleA;
+    const c1 = new THREE.Vector3(_sampleA.x + dt1x, _sampleA.y + dt1y, _sampleA.z + dt1z);
+    const c2 = new THREE.Vector3(_sampleA.x + dt1x + dt2x, _sampleA.y + dt1y + dt2y, _sampleA.z + dt1z + dt2z);
+    const c3 = new THREE.Vector3(_sampleA.x + dt2x, _sampleA.y + dt2y, _sampleA.z + dt2z);
+    pushSegmentSamples(c0, c1); pushSegmentSamples(c1, c2);
+    pushSegmentSamples(c2, c3); pushSegmentSamples(c3, c0);
     return projected;
   }
 
   if (entity.type === 'circle' || entity.type === 'arc' || entity.type === 'ellipse' || entity.type === 'elliptical-arc') {
     const { t1, t2 } = GeometryEngine.getSketchAxes(sketch);
-    const center = new THREE.Vector3(entity.points[0].x, entity.points[0].y, entity.points[0].z);
+    const ep0 = entity.points[0];
+    _sampleA.set(ep0.x, ep0.y, ep0.z); // center — never mutated below
     const start = entity.type === 'circle' || entity.type === 'ellipse' ? 0 : entity.startAngle ?? 0;
     const end = entity.type === 'circle' || entity.type === 'ellipse' ? Math.PI * 2 : entity.endAngle ?? Math.PI;
     const major = entity.type === 'ellipse' || entity.type === 'elliptical-arc' ? entity.majorRadius ?? 1 : entity.radius ?? 1;
@@ -91,16 +105,17 @@ function sampleSketchEntity(
       const angle = start + (i / SKETCH_ENTITY_SAMPLE_COUNT) * (end - start);
       const u = major * Math.cos(angle) * cosR - minor * Math.sin(angle) * sinR;
       const v = major * Math.cos(angle) * sinR + minor * Math.sin(angle) * cosR;
-      pushWorldPoint(center.clone().addScaledVector(t1, u).addScaledVector(t2, v));
+      pushWorldPoint(_samplePt.copy(_sampleA).addScaledVector(t1, u).addScaledVector(t2, v));
     }
     return projected;
   }
 
   if (entity.points.length >= 2) {
     for (let i = 1; i < entity.points.length; i += 1) {
+      const prev = entity.points[i - 1]; const curr = entity.points[i];
       pushSegmentSamples(
-        new THREE.Vector3(entity.points[i - 1].x, entity.points[i - 1].y, entity.points[i - 1].z),
-        new THREE.Vector3(entity.points[i].x, entity.points[i].y, entity.points[i].z),
+        _sampleA.set(prev.x, prev.y, prev.z),
+        _sampleB.set(curr.x, curr.y, curr.z),
       );
     }
   } else {
@@ -145,6 +160,8 @@ export function useWindowLassoSelection() {
   const [viewportCtxMenu, setViewportCtxMenu] = useState<ViewportCtxState | null>(null);
 
   const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    // An on-canvas gizmo arrow is being dragged — don't begin a marquee.
+    if (isGizmoDragging()) return;
     if (event.button === 2) {
       rightDownRef.current = { x: event.clientX, y: event.clientY };
     }
@@ -162,6 +179,9 @@ export function useWindowLassoSelection() {
   }, [activeTool, selectionMode]);
 
   const handlePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    // Defense-in-depth: if a gizmo drag started (regardless of R3F-vs-React
+    // event ordering on the initiating pointerdown), never draw a marquee.
+    if (isGizmoDragging()) return;
     if (!dragStartRef.current) return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -216,6 +236,7 @@ export function useWindowLassoSelection() {
   }, [setWindowSelectStart, setWindowSelectEnd, setLassoSelecting, setLassoPoints, setSelectedEntityIds]);
 
   const handlePointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (isGizmoDragging()) { dragStartRef.current = null; isDraggingRef.current = false; return; }
     if (!dragStartRef.current) return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
