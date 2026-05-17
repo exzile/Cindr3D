@@ -14,15 +14,10 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { buildPtzMoveRequest, buildPtzPresetRequest, type PtzDirection } from '../../../../services/camera/ptzControl';
 import { sendCameraCommand } from './cameraUrls';
-import type { CameraPtzPreset } from '../../../../utils/duetPrefs';
-
-type ActiveCameraLike = {
-  ptzPresets: CameraPtzPreset[];
-  ptzStartPresetId?: string;
-} & Record<string, unknown>;
+import type { CameraPtzPreset, CameraStreamConfig } from '../../../../utils/duetPrefs';
 
 export interface UsePtzControlsDeps {
-  activeCamera: ActiveCameraLike | null | undefined;
+  activeCamera: CameraStreamConfig | null | undefined;
   hostname: string;
   canUsePtz: boolean;
   ptzEnabled: boolean;
@@ -31,7 +26,7 @@ export interface UsePtzControlsDeps {
   printStatus: string | undefined;
   activePtzStartPreset: CameraPtzPreset | undefined;
   setMessage: (msg: string) => void;
-  updateActiveCamera: (patch: Partial<ActiveCameraLike>) => void;
+  updateActiveCamera: (patch: Partial<CameraStreamConfig>) => void;
 }
 
 export function usePtzControls(deps: UsePtzControlsDeps) {

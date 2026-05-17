@@ -90,7 +90,7 @@ export default function MeshExporter() {
           clones.forEach((c) => c.geometry.dispose());
           clearBodyExport();
         },
-        (error) => {
+        () => {
           setStatusMessage('Export failed: GLB error');
           clones.forEach((c) => c.geometry.dispose());
           clearBodyExport();

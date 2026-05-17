@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AudioLines, HardDrive, Save, Trash2, Zap } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
-import { useStepperTuningStore, type StepperMode, type StepperPreset } from '../../../store/stepperTuningStore';
+import { useStepperTuningStore, type StepperPreset } from '../../../store/stepperTuningStore';
 import {
   buildStepperTuningCommands,
   buildStepperWiggleCommands,
@@ -11,11 +11,6 @@ import {
 const DEFAULT_AXIS_LETTERS = ['X', 'Y', 'Z', 'E'];
 const MICROSTEP_OPTIONS    = [8, 16, 32, 64, 128, 256];
 const EMPTY_PRESETS: StepperPreset[] = [];
-const MODES: { value: StepperMode; label: string }[] = [
-  { value: 'stealthchop', label: 'StealthChop' },
-  { value: 'spreadcycle', label: 'SpreadCycle' },
-];
-
 interface MotorEntry {
   storeKey:      string;
   label:         string;

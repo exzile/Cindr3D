@@ -11,7 +11,7 @@ import { statusLabel } from './calibrationHelpers';
 
 interface CalibrationStatusEntry {
   status: 'ok' | 'upcoming' | 'overdue' | 'never';
-  daysUntilDue: number;
+  daysUntilDue: number | null;
 }
 
 export interface CalibrationCardsGridProps {

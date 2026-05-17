@@ -11,10 +11,9 @@ import type { PlateObject } from '../../../../types/slicer';
 import { parseM486Labels } from '../../../../services/gcode/m486Labels';
 import { findMatchingObject, matchObjectNames } from '../../../../services/gcode/objectNameMatch';
 import type { ObjectStatus } from './helpers';
+import type { ObjectReport } from '../../../../types/printability.types';
 
 interface BuildObject { name: string; cancelled?: boolean }
-interface PrintabilityIssue { severity: 'error' | 'warning' | 'info' }
-interface PrintabilityEntry { objectId: string; issues: PrintabilityIssue[] }
 
 export interface UseObjectMatchingDeps {
   boardType: string | undefined;
@@ -22,7 +21,7 @@ export interface UseObjectMatchingDeps {
   buildCurrentIdx: number;
   klipperMessage: string | null | undefined;
   gcode: string | null | undefined;
-  printabilityObjects: PrintabilityEntry[] | undefined;
+  printabilityObjects: ObjectReport[] | undefined;
 }
 
 export function useObjectMatching(deps: UseObjectMatchingDeps) {

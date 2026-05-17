@@ -16,8 +16,8 @@
  *              line stream
  *   Other    → slicerStore.previewLayer; else "all layers"
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ThreeEvent } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Canvas, type ThreeEvent } from '@react-three/fiber';
 import { usePrinterStore } from '../../../store/printerStore';
 import { useSlicerStore } from '../../../store/slicerStore';
 import { computeSliceStats, detectPrintIssues } from '../../slicer/workspace/preview/sliceStats';

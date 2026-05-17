@@ -239,7 +239,7 @@ export function MachineSummaryPanel() {
   const move = usePrinterStore((s) => s.model.move);
 
   const heroColor = statusColor(state?.status);
-  const isPrinting = state?.status === 'printing' || state?.status === 'processing';
+  const isPrinting = state?.status === 'processing';
 
   return (
     <DashboardPanel icon={Gauge} title="Machine Summary">

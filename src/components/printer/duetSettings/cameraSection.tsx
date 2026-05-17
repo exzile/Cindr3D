@@ -9,13 +9,12 @@ import type {
   DuetPrefs,
 } from '../../../utils/duetPrefs';
 import { cameraToLegacyPrefs, legacyCameraFromPrefs } from '../../../utils/duetPrefs';
-import { cameraDisplayUrl } from '../../../utils/cameraStreamUrl';
+import { cameraDisplayUrl, normalizeCameraStreamUrl } from '../../../utils/cameraStreamUrl';
 import { SettingRow, ToggleRow } from './common';
 import {
   amcrestMainStreamUrl,
   amcrestSubStreamUrl,
   cameraAddressFromStreamUrl,
-  cameraBaseUrl,
   cameraStreamCandidates,
   cameraTestDisplayUrl,
   probeCameraStreamUrl,

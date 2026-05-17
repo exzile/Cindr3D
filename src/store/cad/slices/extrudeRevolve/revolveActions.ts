@@ -108,7 +108,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       // RevolveItem) and CSG it against the chosen target body, storing the
       // result on feature.mesh so the stored-mesh render path handles it.
       let faceFallbackNote = '';
-      if (revolveOperation && revolveOperation !== 'new-body' && revolveBodyKind !== 'surface') {
+      if (revolveOperation && revolveOperation !== 'new-body' && revolveOperation !== 'new-component' && revolveBodyKind !== 'surface') {
         const target = pickMostRecentSolidTarget(features, { excludeType: 'revolve' });
         if (target) {
           const { phiStart, sweep } = GeometryEngine.resolveRevolveSweep(revolveAngle, revolveAngle2, revolveDirection);
@@ -229,7 +229,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
     // (the stored-mesh render path then draws it; RevolveItem is skipped via
     // the !f.mesh guard in ExtrudedBodies). new-body falls through unchanged.
     let sketchFallbackNote = '';
-    if (revolveOperation && revolveOperation !== 'new-body' && revolveBodyKind !== 'surface') {
+    if (revolveOperation && revolveOperation !== 'new-body' && revolveOperation !== 'new-component' && revolveBodyKind !== 'surface') {
       const target = pickMostRecentSolidTarget(features, { excludeType: 'revolve' });
       if (target) {
         const { phiStart, sweep } = GeometryEngine.resolveRevolveSweep(revolveAngle, revolveAngle2, revolveDirection);

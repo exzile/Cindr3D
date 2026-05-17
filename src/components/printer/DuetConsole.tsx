@@ -251,7 +251,7 @@ export default function DuetConsole() {
     const text = filteredEntries
       .map(
         (entry, index) =>
-          `${String(index + 1).padStart(4, ' ')} [${formatTime(entry.timestamp)}] ${entry.type === 'command' ? '> ' : ''}${entry.content}`,
+          `${String(index + 1).padStart(4, ' ')} [${formatTimeOfDay(entry.timestamp)}] ${entry.type === 'command' ? '> ' : ''}${entry.content}`,
       )
       .join('\n');
     navigator.clipboard.writeText(text);
