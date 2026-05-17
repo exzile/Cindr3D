@@ -64,9 +64,11 @@ function buildChamferCutter(
   // "I chamfered an edge and nothing happened" bug, hit on ~5/12 box edges.
   // Fix: when the basis would mirror, swap the two in-face axes (u1↔u2) and
   // the matching setback legs (d1↔d2). The world wedge {a, a+d1·u1, a+d2·u2}
-  // is byte-identical; only the basis handedness flips to right-handed, so
-  // no mirror and the facet comes out correctly outward-wound. det>0 edges
-  // are completely unchanged (branch not taken).
+  // is geometrically identical (same corners / volume / cut result — vertex
+  // and triangle ordering in the ExtrudeGeometry may differ); only the basis
+  // handedness flips to right-handed, so no mirror and the facet comes out
+  // correctly outward-wound. det>0 edges are completely unchanged (branch
+  // not taken).
   const leftHanded =
     new THREE.Matrix4().makeBasis(u1, u2, edgeDir).determinant() < 0;
   const axisX = leftHanded ? u2 : u1;

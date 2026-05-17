@@ -80,7 +80,8 @@ function buildFilletCutter(
   // same "edge looks un-filleted" defect the chamfer cutter guards against.
   // The prism cross-section is a symmetric setback×setback square and the
   // cylinder is placed off the symmetric bisector, so swapping the u1/u2
-  // basis columns yields a byte-identical world cutter with a right-handed
+  // basis columns yields a geometrically identical world cutter (same world
+  // shape/volume — buffer/triangle ordering may differ) with a right-handed
   // (non-mirroring) basis. det>0 edges are unchanged (branch not taken).
   const leftHanded =
     new THREE.Matrix4().makeBasis(u1, edgeDir, u2).determinant() < 0;
