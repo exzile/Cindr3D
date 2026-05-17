@@ -12,6 +12,7 @@
  */
 import * as THREE from 'three';
 import { GeometryEngine } from '../../engine/GeometryEngine';
+import { liveBodyMeshes } from '../../store/meshRegistry';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -54,15 +55,28 @@ export type EdgeCutterFn = (re: ResolvedEdge, eps: number) => THREE.BufferGeomet
 // ---------------------------------------------------------------------------
 
 /**
- * Parses picked edge IDs from the store and returns the group with the most
- * edges (i.e. the feature/mesh the user picked the most edges on).
+ * Parses picked edge IDs from the store and returns the edges to cut, grouped
+ * onto the single physical body the user is targeting.
  *
  * Edge ID format:
  *   `${featureId}|${meshUuid}:${ax,ay,az}:${bx,by,bz}`  (new)
  *   `${meshUuid}:${ax,ay,az}:${bx,by,bz}`               (legacy)
+ *
+ * Grouping is keyed STRICTLY by the embedded `meshUuid` — stable for a given
+ * THREE.Mesh's lifetime — never by the `featureId` prefix. That prefix is
+ * volatile: an edge picked before R3F's `onUpdate` sets
+ * `mesh.userData.featureId` comes back as a legacy prefix-less ID, while a
+ * later pick on the SAME mesh gets the `${featureId}|` prefix. The old code
+ * keyed on `featureId ?? meshUuid`, which split those two picks into separate
+ * groups, then returned only the largest group — SILENTLY DROPPING the
+ * minority. That is the "have to select, deselect, then select again to
+ * chamfer" bug: the dropped edge only takes effect once re-picked with a
+ * prefix that happens to match the surviving group. Keying on meshUuid keeps
+ * every edge on one body together regardless of prefix drift, so N picked
+ * edges yield N parsed edges.
  */
 export function parseEdgeIds(edgeIds: string[]): ParsedEdges | null {
-  const byKey = new Map<string, ParsedEdges>();
+  const byMesh = new Map<string, ParsedEdges>();
 
   for (const id of edgeIds) {
     let featureId: string | null = null;
@@ -75,20 +89,36 @@ export function parseEdgeIds(edgeIds: string[]): ParsedEdges | null {
     const a = parts[1].split(',').map(Number);
     const b = parts[2].split(',').map(Number);
     if (a.length !== 3 || b.length !== 3 || [...a, ...b].some((n) => !Number.isFinite(n))) continue;
-    const key = featureId ?? meshUuid;
     const edge: PickedEdge = {
       a: new THREE.Vector3(a[0], a[1], a[2]),
       b: new THREE.Vector3(b[0], b[1], b[2]),
     };
-    const existing = byKey.get(key);
-    if (existing) { existing.edges.push(edge); }
-    else { byKey.set(key, { featureId, meshUuid, edges: [edge] }); }
+    const existing = byMesh.get(meshUuid);
+    if (existing) {
+      existing.edges.push(edge);
+      // Prefer a concrete featureId: applyEdgeCut resolves extrude/feature
+      // bodies by feature id (the uuid fallback only works for mesh-backed
+      // features), so a legacy null prefix must not shadow a real one picked
+      // on the same mesh.
+      if (existing.featureId === null && featureId !== null) existing.featureId = featureId;
+    } else {
+      byMesh.set(meshUuid, { featureId, meshUuid, edges: [edge] });
+    }
   }
 
+  if (byMesh.size === 0) return null;
+  // Common case: every edge is on one physical body — return them all, no drop.
+  if (byMesh.size === 1) return byMesh.values().next().value as ParsedEdges;
+
+  // Genuinely ambiguous: edges span multiple distinct meshes. Prefer a group
+  // whose mesh is still live (a stale uuid left over from a BodyMesh remount
+  // is no longer in the registry); break remaining ties by edge count, first
+  // insertion winning — preserving the previous deterministic behaviour.
   let target: ParsedEdges | null = null;
-  let best = 0;
-  for (const [, v] of byKey) {
-    if (v.edges.length > best) { best = v.edges.length; target = v; }
+  let best = -1;
+  for (const v of byMesh.values()) {
+    const score = (liveBodyMeshes.has(v.meshUuid) ? 1e9 : 0) + v.edges.length;
+    if (score > best) { best = score; target = v; }
   }
   return target;
 }
