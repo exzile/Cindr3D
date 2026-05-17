@@ -29,7 +29,8 @@ const PRINTER_TABS = new Set<string>(['printers', ...TABS.map((tab) => tab.key)]
 function routeFromPath(pathname: string): { workspaceMode?: WorkspaceMode; printerTab?: TabKey; isHome: boolean } {
   if (pathname === '/home' || pathname.startsWith('/home/')) return { isHome: true };
   if (pathname === '/prepare' || pathname === '/prepare/') return { workspaceMode: 'prepare', isHome: false };
-  if (pathname === '/design' || pathname === '/design/' || pathname === '/') return { workspaceMode: 'design', isHome: false };
+  if (pathname === '/' || pathname === '/home' || pathname.startsWith('/home/')) return { isHome: true };
+  if (pathname === '/design' || pathname === '/design/') return { workspaceMode: 'design', isHome: false };
   if (pathname === '/printer' || pathname.startsWith('/printer/')) {
     const candidate = pathname.split('/')[2] || 'dashboard';
     return {
