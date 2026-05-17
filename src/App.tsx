@@ -127,7 +127,7 @@ export default function App() {
   }, [activePrinterTab, isHomeRoute, workspaceMode]);
 
   useEffect(() => {
-    if (isHomeRoute) return undefined;
+    if (isHomeRoute || !import.meta.env.DEV) return undefined;
     McpBridgeService.start();
     return () => McpBridgeService.stop();
   }, [isHomeRoute]);
