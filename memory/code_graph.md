@@ -11,6 +11,7 @@ type: project
 - `src/components/` — `viewport/`, `toolbar/`, `panels/`, `dialogs/{solid,surface,mesh,pattern,sketch,assembly,construction,primitives,insert,inspect}/`, `slicer/`, `printer/`
 - `src/engine/` — `geometryEngine/{core,operations}/` (real code; `engine/GeometryEngine.ts` is a 2-line shim), `slicer/{geometry,pipeline,gcode}/` (real code; `engine/Slicer.ts` was removed, `engine/slicer/Slicer.ts` is a tiny `SlicePipeline` subclass), `SubdivisionEngine.ts` (Catmull-Clark for Form workspace)
 - `src/store/` — Zustand stores: `cadStore`, `slicerStore`, `componentStore`, `printerStore`, `themeStore`. Each big store is now a shim that composes per-area slices/actions in a `<store>/` subdir. **Never put new logic in the shim.**
+- `src/store/meshRegistry.ts` — module-level `Map<string, THREE.Mesh>` (`liveBodyMeshes`). R3F body components register on mount, unregister on unmount. Used by `resolveBodySource` and `EdgeOpPreview`/`EdgeOpGizmo` to look up live scene meshes by UUID. Import directly — not a Zustand store.
 - `src/types/` — fragmented `*.types.ts` files per concern (cad, slicer, duet, picker, settings, sketch-commit, etc.). `cad.ts` and `slicer.ts` are re-exports.
 - `src/services/` — `DuetService.ts` façade + `duet/` per-concern modules; `OctoPrintService.ts`. See `auto-memory/duet_service_architecture.md`.
 - `src/workers/SlicerWorker.ts` — slicer off-main-thread. Warms WASM modules at boot.

@@ -232,8 +232,10 @@ function booleanPathsWithModule(
   const clip = clips.filter((p) => p.length >= 2);
   if (subj.length === 0 && clip.length === 0) return [];
 
-  const subjTotal = subj.reduce((s, p) => s + p.length, 0);
-  const clipTotal = clip.reduce((s, p) => s + p.length, 0);
+  let subjTotal = 0;
+  for (const p of subj) subjTotal += p.length;
+  let clipTotal = 0;
+  for (const p of clip) clipTotal += p.length;
 
   // Allocate input buffers separately so each malloc is 16-aligned.
   const subjPointsPtr = subjTotal > 0 ? mod._malloc(subjTotal * 2 * 8) : 0;
@@ -242,10 +244,9 @@ function booleanPathsWithModule(
   const clipCountsPtr = clip.length > 0 ? mod._malloc(clip.length * 4) : 0;
 
   const writePaths = (
-    paths: THREE.Vector2[][], pointsPtr: number, countsPtr: number,
+    paths: THREE.Vector2[][], pointsPtr: number, countsPtr: number, total: number,
   ) => {
     if (paths.length === 0) return;
-    const total = paths.reduce((s, p) => s + p.length, 0);
     const pts = new Float64Array(mod.HEAPF64.buffer, pointsPtr, total * 2);
     const cnt = new Int32Array(mod.HEAP32.buffer, countsPtr, paths.length);
     let off = 0;
@@ -256,8 +257,8 @@ function booleanPathsWithModule(
   };
 
   try {
-    writePaths(subj, subjPointsPtr, subjCountsPtr);
-    writePaths(clip, clipPointsPtr, clipCountsPtr);
+    writePaths(subj, subjPointsPtr, subjCountsPtr, subjTotal);
+    writePaths(clip, clipPointsPtr, clipCountsPtr, clipTotal);
 
     const status = mod._booleanPaths(
       subjPointsPtr, subjCountsPtr, subj.length,

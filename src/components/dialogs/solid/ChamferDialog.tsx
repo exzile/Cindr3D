@@ -35,11 +35,26 @@ export interface ChamferParams {
 interface ChamferDialogProps {
   open: boolean;
   selectedEdgeCount: number;
+  edgeIds: string[];
+  onRemoveEdge: (id: string) => void;
   onClose: () => void;
   onConfirm: (params: ChamferParams) => void;
 }
 
-function ChamferDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: ChamferDialogProps) {
+function parseEdgeLabel(id: string, index: number): string {
+  let rest = id;
+  const pipe = id.indexOf('|');
+  if (pipe > 0) rest = id.slice(pipe + 1);
+  const parts = rest.split(':');
+  if (parts.length < 3) return `Edge ${index + 1}`;
+  const a = parts[1].split(',').map(Number);
+  const b = parts[2].split(',').map(Number);
+  if (a.length !== 3 || b.length !== 3) return `Edge ${index + 1}`;
+  const fmt = (n: number) => n.toFixed(1);
+  return `Edge ${index + 1}  (${fmt(a[0])}, ${fmt(a[1])}, ${fmt(a[2])}) → (${fmt(b[0])}, ${fmt(b[1])}, ${fmt(b[2])})`;
+}
+
+function ChamferDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClose, onConfirm }: ChamferDialogProps) {
   // chamferLiveDistance is updated by ChamferGizmo drags so the dialog
   // reflects the distance while the user drags the on-canvas handle.
   const chamferLiveDistance = useCADStore((s) => s.chamferLiveDistance);
@@ -85,6 +100,33 @@ function ChamferDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: Chamfe
       <p className="dialog-hint">
         {selectedEdgeCount} edge(s) selected
       </p>
+
+      {edgeIds.length > 0 && (
+        <div style={{ maxHeight: 110, overflowY: 'auto', border: '1px solid #444', borderRadius: 4, marginBottom: 8 }}>
+          {edgeIds.map((id, i) => (
+            <div
+              key={id}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '3px 6px',
+                borderBottom: i < edgeIds.length - 1 ? '1px solid #333' : 'none',
+                fontSize: 11,
+              }}
+            >
+              <span style={{ fontFamily: 'monospace', color: '#ccc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 4 }}>
+                {parseEdgeLabel(id, i)}
+              </span>
+              <button
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cc4444', padding: '0 2px', fontSize: 14, lineHeight: 1 }}
+                onClick={() => onRemoveEdge(id)}
+                title="Remove edge"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="form-group">
         <label>Mode</label>
@@ -170,6 +212,7 @@ function ChamferDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: Chamfe
 export function ChamferDialog({ onClose }: { onClose: () => void }) {
   const addFeature = useCADStore((s) => s.addFeature);
   const chamferEdgeIds = useCADStore((s) => s.chamferEdgeIds);
+  const removeChamferEdge = useCADStore((s) => s.removeChamferEdge);
   const editingFeatureId = useCADStore((s) => s.editingFeatureId);
   const features = useCADStore((s) => s.features);
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
@@ -208,6 +251,8 @@ export function ChamferDialog({ onClose }: { onClose: () => void }) {
     <ChamferDialogUI
       open={true}
       selectedEdgeCount={chamferEdgeIds.length}
+      edgeIds={chamferEdgeIds}
+      onRemoveEdge={removeChamferEdge}
       onClose={onClose}
       onConfirm={handleConfirm}
     />

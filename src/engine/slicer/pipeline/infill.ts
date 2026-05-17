@@ -5,6 +5,7 @@ import type { InfillDeps } from '../../../types/slicer-pipeline-deps.types';
 import type { InfillLine } from '../../../types/slicer-pipeline-infill.types';
 import type { InfillRegion } from '../../../types/slicer-pipeline.types';
 import { booleanMultiPolygonClipper2Sync } from '../geometry/clipper2Boolean';
+import { signedArea } from '../geometry/contourUtils';
 
 // ARACHNE-9.4A.4: see perimeters.ts comment. Worker awaits load() before slice.
 function requireMP(result: PCMultiPolygon | null, op: string): PCMultiPolygon {
@@ -82,14 +83,19 @@ export function generateScanLines(
   const MAX_SCAN_LINES = 50000;
   let scanCount = 0;
 
+  // Scratch objects reused every iteration — avoid per-line Vector2 GC pressure.
+  const p1 = new THREE.Vector2();
+  const p2 = new THREE.Vector2();
+  const mid = new THREE.Vector2();
+
   const startOffset = phaseOffset % spacing;
   for (let d = -maxDim / 2 + startOffset; d <= maxDim / 2 + startOffset; d += spacing) {
     if (++scanCount > MAX_SCAN_LINES) break;
-    const p1 = new THREE.Vector2(
+    p1.set(
       centerX + cos * (-maxDim) - sin * d,
       centerY + sin * (-maxDim) + cos * d,
     );
-    const p2 = new THREE.Vector2(
+    p2.set(
       centerX + cos * maxDim - sin * d,
       centerY + sin * maxDim + cos * d,
     );
@@ -115,7 +121,7 @@ export function generateScanLines(
       const end = new THREE.Vector2(p1.x + dirX * t2, p1.y + dirY * t2);
       const dx = end.x - start.x;
       const dy = end.y - start.y;
-      const mid = new THREE.Vector2((start.x + end.x) / 2, (start.y + end.y) / 2);
+      mid.set((start.x + end.x) / 2, (start.y + end.y) / 2);
       const midInsideHole = holes.some((hole) => hole.length >= 3 && deps.pointInContour(mid, hole));
       if (dx * dx + dy * dy > 0.01 && deps.pointInContour(mid, contour) && !midInsideHole) {
         results.push({ from: start, to: end });
@@ -212,15 +218,6 @@ function generateConcentricInfill(
 ): InfillLine[] {
   const results: InfillLine[] = [];
   const MAX_ITER = 500;
-  const signedArea = (points: THREE.Vector2[]): number => {
-    let area = 0;
-    for (let i = 0; i < points.length; i++) {
-      const a = points[i];
-      const b = points[(i + 1) % points.length];
-      area += a.x * b.y - b.x * a.y;
-    }
-    return area / 2;
-  };
 
   if (holes.length === 0) {
     // Sign convention differs with winding. Slice contours can arrive either

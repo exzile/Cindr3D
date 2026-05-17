@@ -81,25 +81,26 @@ export function splitByConnectedComponents(
   if (trianglesByComponent.size <= 1) return [geometry];
 
   const result = Array.from(trianglesByComponent.values(), (triangles) => {
-    const componentPositions: number[] = [];
-    const componentNormals: number[] = [];
-    const componentUvs: number[] = [];
+    const vertCount = triangles.length * 3;
+    const componentPositions: number[] = new Array(vertCount * 3);
+    const componentNormals: number[] = normals ? new Array(vertCount * 3) : [];
+    const componentUvs: number[] = uvs ? new Array(vertCount * 2) : [];
+    let posOff = 0, normOff = 0, uvOff = 0;
 
     for (const triangleIndex of triangles) {
       for (const vertexIndex of getTri(triangleIndex)) {
-        componentPositions.push(
-          positions.getX(vertexIndex),
-          positions.getY(vertexIndex),
-          positions.getZ(vertexIndex),
-        );
+        componentPositions[posOff++] = positions.getX(vertexIndex);
+        componentPositions[posOff++] = positions.getY(vertexIndex);
+        componentPositions[posOff++] = positions.getZ(vertexIndex);
         if (normals) {
-          componentNormals.push(
-            normals.getX(vertexIndex),
-            normals.getY(vertexIndex),
-            normals.getZ(vertexIndex),
-          );
+          componentNormals[normOff++] = normals.getX(vertexIndex);
+          componentNormals[normOff++] = normals.getY(vertexIndex);
+          componentNormals[normOff++] = normals.getZ(vertexIndex);
         }
-        if (uvs) componentUvs.push(uvs.getX(vertexIndex), uvs.getY(vertexIndex));
+        if (uvs) {
+          componentUvs[uvOff++] = uvs.getX(vertexIndex);
+          componentUvs[uvOff++] = uvs.getY(vertexIndex);
+        }
       }
     }
 

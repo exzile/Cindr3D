@@ -50,32 +50,33 @@ export default function CameraController({ onQuaternionChange }: { onQuaternionC
   const startDistanceRef = useRef(0);
   const endDistanceRef = useRef(0);
   const requestedDistanceRef = useRef<number | null>(null);
-  // Stable scratch objects — reused every frame to avoid per-frame GC pressure
+  // Stable scratch objects — reused every frame/event to avoid GC pressure
   const _q = useRef(new THREE.Quaternion());
   const _dir = useRef(new THREE.Vector3());
   const _orbit = useRef(new THREE.Vector3());
   const _up = useRef(new THREE.Vector3());
+  const _box = useRef(new THREE.Box3());
+  const _center = useRef(new THREE.Vector3());
+  const _size = useRef(new THREE.Vector3());
 
   const frameVisibleScene = useCallback(() => {
-    const box = new THREE.Box3();
+    _box.current.makeEmpty();
     scene.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       if (mesh.isMesh && mesh.visible) {
-        box.expandByObject(mesh);
+        _box.current.expandByObject(mesh);
       }
     });
-    if (box.isEmpty()) return;
-    const center = new THREE.Vector3();
-    const size = new THREE.Vector3();
-    box.getCenter(center);
-    box.getSize(size);
-    const radius = Math.max(size.x, size.y, size.z) * 1.2;
+    if (_box.current.isEmpty()) return;
+    _box.current.getCenter(_center.current);
+    _box.current.getSize(_size.current);
+    const radius = Math.max(_size.current.x, _size.current.y, _size.current.z) * 1.2;
     const orbitControls = controls as OrbitControlsLike;
     if (orbitControls?.target) {
-      orbitControls.target.copy(center);
+      orbitControls.target.copy(_center.current);
     }
-    const dir = camera.position.clone().sub(center).normalize();
-    camera.position.copy(center).addScaledVector(dir, radius * 2);
+    const dir = camera.position.clone().sub(_center.current).normalize();
+    camera.position.copy(_center.current).addScaledVector(dir, radius * 2);
     orbitControls?.update?.();
     invalidate();
   }, [camera, controls, invalidate, scene]);

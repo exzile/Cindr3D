@@ -81,8 +81,10 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
       extrudeStartFaceCentroid, extrudeStartFaceNormal,
       extrudeCreationOccurrence,
       extrudeTargetBaseFeature,
+      extrudeToEntityFaceCentroid, extrudeToObjectFlipDirection,
       editingFeatureId,
       sketches, features, units,
+      pushUndo,
     } = get();
     // EX-13: edit mode â€” identify the feature being replaced
     const editingExtrude = editingFeatureId
@@ -140,9 +142,8 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
       set({ statusMessage: 'Distance must be non-zero' });
       return;
     }
-    get().pushUndo();
-    // EX-3: for to-object extent, derive distance from profile plane â†’ face centroid projection
-    const { extrudeToEntityFaceCentroid, extrudeToObjectFlipDirection } = get();
+    pushUndo();
+    // EX-3: for to-object extent, derive distance from profile plane → face centroid projection
     const computeToObjectDistance = (profileSketch: Sketch): number => {
       if (!extrudeToEntityFaceCentroid) return Math.abs(extrudeDistance);
       const target = new THREE.Vector3(...extrudeToEntityFaceCentroid);

@@ -158,17 +158,18 @@ export function simplifyClosedContour(points: THREE.Vector2[], tolerance: number
   keep[anchor0] = 1;
   keep[anchor1] = 1;
   dpKeepIndices(deduped, anchor0, anchor1, tolerance, keep);
-  // Second half: anchor1 → end → anchor0 (wrap). DP on an explicit array.
-  const half2: THREE.Vector2[] = [];
-  const half2Src: number[] = [];
-  for (let i = anchor1; i < n; i++) { half2.push(deduped[i]); half2Src.push(i); }
-  half2.push(deduped[anchor0]);
-  half2Src.push(anchor0);
-  const keep2 = new Uint8Array(half2.length);
+  // Second half: anchor1 → end → anchor0 (wrap). Build a temporary view that
+  // maps contiguous indices [0..half2Len) back to deduped indices without
+  // allocating a Vector2 array — use an index-remap approach with a wrapper.
+  const half2Len = n - anchor1 + 1; // anchor1..n-1 plus anchor0
+  const half2View: THREE.Vector2[] = new Array(half2Len);
+  for (let i = 0; i < n - anchor1; i++) half2View[i] = deduped[anchor1 + i];
+  half2View[half2Len - 1] = deduped[anchor0];
+  const keep2 = new Uint8Array(half2Len);
   keep2[0] = 1;
-  keep2[half2.length - 1] = 1;
-  dpKeepIndices(half2, 0, half2.length - 1, tolerance, keep2);
-  for (let i = 0; i < half2Src.length; i++) if (keep2[i]) keep[half2Src[i]] = 1;
+  keep2[half2Len - 1] = 1;
+  dpKeepIndices(half2View, 0, half2Len - 1, tolerance, keep2);
+  for (let i = 0; i < half2Len - 1; i++) if (keep2[i]) keep[anchor1 + i] = 1;
 
   const out: THREE.Vector2[] = [];
   for (let i = 0; i < n; i++) if (keep[i]) out.push(deduped[i]);

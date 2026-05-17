@@ -50,11 +50,26 @@ export interface FilletParams {
 interface FilletDialogProps {
   open: boolean;
   selectedEdgeCount: number;
+  edgeIds: string[];
+  onRemoveEdge: (id: string) => void;
   onClose: () => void;
   onConfirm: (params: FilletParams) => void;
 }
 
-function FilletDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: FilletDialogProps) {
+function parseEdgeLabel(id: string, index: number): string {
+  let rest = id;
+  const pipe = id.indexOf('|');
+  if (pipe > 0) rest = id.slice(pipe + 1);
+  const parts = rest.split(':');
+  if (parts.length < 3) return `Edge ${index + 1}`;
+  const a = parts[1].split(',').map(Number);
+  const b = parts[2].split(',').map(Number);
+  if (a.length !== 3 || b.length !== 3) return `Edge ${index + 1}`;
+  const fmt = (n: number) => n.toFixed(1);
+  return `Edge ${index + 1}  (${fmt(a[0])}, ${fmt(a[1])}, ${fmt(a[2])}) → (${fmt(b[0])}, ${fmt(b[1])}, ${fmt(b[2])})`;
+}
+
+function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClose, onConfirm }: FilletDialogProps) {
   // filletLiveRadius is updated by FilletGizmo drags so the dialog reflects
   // the radius while the user drags the on-canvas handle.
   const filletLiveRadius = useCADStore((s) => s.filletLiveRadius);
@@ -129,6 +144,33 @@ function FilletDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: FilletD
       <p className="dialog-hint">
         {selectedEdgeCount} edge(s) selected
       </p>
+
+      {edgeIds.length > 0 && (
+        <div style={{ maxHeight: 110, overflowY: 'auto', border: '1px solid #444', borderRadius: 4, marginBottom: 8 }}>
+          {edgeIds.map((id, i) => (
+            <div
+              key={id}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '3px 6px',
+                borderBottom: i < edgeIds.length - 1 ? '1px solid #333' : 'none',
+                fontSize: 11,
+              }}
+            >
+              <span style={{ fontFamily: 'monospace', color: '#ccc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 4 }}>
+                {parseEdgeLabel(id, i)}
+              </span>
+              <button
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cc4444', padding: '0 2px', fontSize: 14, lineHeight: 1 }}
+                onClick={() => onRemoveEdge(id)}
+                title="Remove edge"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* SOL-I1 / CORR-3: Fillet mode */}
       <div className="form-group">
@@ -373,6 +415,7 @@ function FilletDialogUI({ open, selectedEdgeCount, onClose, onConfirm }: FilletD
 export function FilletDialog({ onClose }: { onClose: () => void }) {
   const addFeature = useCADStore((s) => s.addFeature);
   const filletEdgeIds = useCADStore((s) => s.filletEdgeIds);
+  const removeFilletEdge = useCADStore((s) => s.removeFilletEdge);
   const editingFeatureId = useCADStore((s) => s.editingFeatureId);
   const features = useCADStore((s) => s.features);
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
@@ -412,6 +455,8 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
     <FilletDialogUI
       open={true}
       selectedEdgeCount={filletEdgeIds.length || existingEdgeIds.length}
+      edgeIds={filletEdgeIds}
+      onRemoveEdge={removeFilletEdge}
       onClose={onClose}
       onConfirm={handleConfirm}
     />
