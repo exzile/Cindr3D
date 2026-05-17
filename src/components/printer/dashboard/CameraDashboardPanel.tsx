@@ -71,7 +71,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     webRtcFailed, setWebRtcFailed,
     streamRevision, setStreamRevision,
     lastFrameAt, setLastFrameAt,
-    lastFrameIntervalMs, setLastFrameIntervalMs,
+    setLastFrameIntervalMs,
     frameCount, setFrameCount,
     reconnectCount, setReconnectCount,
     frameAgeMs, estimatedFps, droppedFrameWarning,
@@ -154,14 +154,14 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
   const printerName = activePrinter?.name ?? 'Printer';
 
   const {
-    clips, setClips,
+    clips,
     selectedClip, setSelectedClip,
     selectedClipUrl, setSelectedClipUrl,
     selectedClipUrlRef,
     clipFilter, setClipFilter,
     clipSort, setClipSort,
     clipQuery, setClipQuery,
-    compareClipId, setCompareClipId,
+    setCompareClipId,
     selectedClipIds, setSelectedClipIds,
     selectionMode, setSelectionMode,
     totalStorageBytes, storageByKind, storageByJob,
@@ -244,7 +244,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
 
   const {
     startRecording, stopRecording, addMarker,
-    recordingKind, elapsedMs,
+    elapsedMs,
     recording, isTimelapseRecording, isAutoRecording,
     recordingStatusLabel, recordingMarkerCount,
   } = useCameraRecording({

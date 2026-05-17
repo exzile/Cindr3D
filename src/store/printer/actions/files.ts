@@ -23,6 +23,8 @@ export function createFileActions(
   | 'startPlugin'
   | 'stopPlugin'
   | 'uninstallPlugin'
+  | 'clearSelectedFile'
+  | 'setUploadProgress'
 > {
   return {
     navigateToDirectory: async (dir) => {

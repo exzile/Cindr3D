@@ -4,7 +4,7 @@ import {
 import { forwardRef } from 'react';
 import type { BundleSlice } from '../../../types/settings-io.types';
 
-interface OfflineBundleMeta { filename?: string }
+interface OfflineBundleMeta { filename?: string | null }
 
 /**
  * File menu dropdown — the design-only block (New / Open / Save / Import /

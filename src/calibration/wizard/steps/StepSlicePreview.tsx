@@ -7,7 +7,7 @@ import { CALIBRATION_STL_URLS, getCalibrationModels } from '../../calibrationMod
 import { LayeredGCodePreview } from '../../../components/canvas/LayeredGCodePreview';
 import { PrintSpaceLights } from '../../../components/canvas/PrintSpaceLights';
 import { BuildVolumeScene } from '../../../components/canvas/BuildVolumeScene';
-import type { PrintProfile, MaterialProfile } from '../../../types/slicer';
+import type { PrintProfile, MaterialProfile, LayerProcessor } from '../../../types/slicer';
 import {
   getCalibrationSlicePreset,
   getAutoSetKeys,
@@ -18,6 +18,7 @@ import {
   EMPTY_PROCESSORS,
   FIELD_LABELS,
   MODEL_FOOTPRINTS,
+  computeTuningSteps,
   fmtPresetValue,
   fmtStepValue,
   type PlaneHoverInfo,

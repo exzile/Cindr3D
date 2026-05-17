@@ -43,7 +43,6 @@ const MI = 16;
 
 export function buildSketchMenus({
   autoConstrainSketch,
-  comingSoon,
   selectionFilter,
   selectionMode,
   setActiveTool,

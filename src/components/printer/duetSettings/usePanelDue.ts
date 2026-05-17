@@ -148,7 +148,7 @@ export function usePanelDue({
     };
 
     let outcome: 'success' | 'error' | 'timeout' = 'timeout';
-    let errorMessage = '';
+    let flashErrorDetail = '';
 
     try {
       const service = usePrinterStore.getState().service;
@@ -167,7 +167,7 @@ export function usePanelDue({
           pushLine(line);
           if (errorRe.test(line)) {
             outcome = 'error';
-            errorMessage = line.trim();
+            flashErrorDetail = line.trim();
             break;
           }
           if (successRe.test(line)) {
@@ -192,7 +192,7 @@ export function usePanelDue({
         step: 'error',
         progress: 100,
         assetName: canonicalName,
-        error: errorMessage || 'PanelDue reported a flash failure â€” see messages below.',
+        error: flashErrorDetail || 'PanelDue reported a flash failure â€” see messages below.',
         messages: collected,
       });
       return;

@@ -15,6 +15,7 @@ export function createUiActions(api: PrinterStoreApi): Pick<
   | 'setJogDistance'
   | 'setError'
   | 'dismissAlert'
+  | 'setSuppressPrinterAlerts'
 > {
   const { get, set } = api;
 

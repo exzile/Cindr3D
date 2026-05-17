@@ -77,17 +77,63 @@ export function SlicerWorkspaceObjectsPanel() {
     };
   }, []);
 
+  const openColorPicker = useCallback((id: string) => {
+    setColorPickerForId(id);
+    requestAnimationFrame(() => colorInputRef.current?.click());
+  }, []);
+
+  const buildContextMenuItems = useCallback((id: string): ContextMenuItem[] => {
+    const obj = plateObjects.find((o) => o.id === id);
+    return obj ? (() => {
+      const role = obj.modifierMeshRole ?? 'normal';
+      return [
+        { label: 'Duplicate', shortcut: 'Ctrl+D', icon: <Copy size={12} />, onClick: () => duplicatePlateObject(id) },
+        { label: obj.hidden ? 'Show' : 'Hide', icon: obj.hidden ? <Eye size={12} /> : <EyeOff size={12} />,
+          onClick: () => updatePlateObject(id, { hidden: !obj.hidden } as Partial<PlateObject>) },
+        { label: obj.locked ? 'Unlock' : 'Lock', icon: obj.locked ? <Unlock size={12} /> : <Lock size={12} />,
+          onClick: () => updatePlateObject(id, { locked: !obj.locked } as Partial<PlateObject>) },
+        { separator: true } as ContextMenuItem,
+        { label: 'Lay Flat', shortcut: 'F', icon: <AlignEndHorizontal size={12} />, onClick: () => layFlatPlateObject(id) },
+        { label: 'Auto-orient', icon: <RotateCw size={12} />, onClick: () => autoOrientPlateObject(id) },
+        { label: 'Drop to Bed', shortcut: 'B', icon: <ArrowDownToLine size={12} />, onClick: () => dropToBedPlateObject(id) },
+        { label: 'Center', onClick: () => centerPlateObject(id) },
+        { label: 'Resolve overlap', onClick: () => resolveOverlapForObject(id) },
+        { separator: true } as ContextMenuItem,
+        { label: 'Scale to size…', icon: <Maximize2 size={12} />, onClick: () => setActiveTool({ tool: 'scale-to-size', id }) },
+        { label: 'Hollow…', icon: <CircleDot size={12} />, onClick: () => setActiveTool({ tool: 'hollow', id }) },
+        { label: 'Cut by plane…', icon: <Scissors size={12} />, onClick: () => setActiveTool({ tool: 'cut', id }) },
+        { separator: true } as ContextMenuItem,
+        { label: `Role: ${MODIFIER_LABELS[role]} →`, disabled: true, onClick: () => undefined },
+        { label: 'Normal printable', onClick: () => updatePlateObject(id, { modifierMeshRole: 'normal' } as Partial<PlateObject>),
+          disabled: role === 'normal' },
+        { label: 'Cutting mesh', onClick: () => updatePlateObject(id, { modifierMeshRole: 'cutting_mesh' } as Partial<PlateObject>),
+          disabled: role === 'cutting_mesh' },
+        { label: 'Infill mesh', onClick: () => updatePlateObject(id, { modifierMeshRole: 'infill_mesh' } as Partial<PlateObject>),
+          disabled: role === 'infill_mesh' },
+        { label: 'Support mesh', onClick: () => updatePlateObject(id, { modifierMeshRole: 'support_mesh' } as Partial<PlateObject>),
+          disabled: role === 'support_mesh' },
+        { label: 'Anti-overhang mesh', onClick: () => updatePlateObject(id, { modifierMeshRole: 'anti_overhang_mesh' } as Partial<PlateObject>),
+          disabled: role === 'anti_overhang_mesh' },
+        { separator: true } as ContextMenuItem,
+        { label: 'Set color…', icon: <Palette size={12} />, onClick: () => openColorPicker(id) },
+        { label: 'Delete', shortcut: 'Del', icon: <Trash2 size={12} />, danger: true, onClick: () => removeFromPlate(id) },
+      ];
+    })() : [];
+  }, [plateObjects, duplicatePlateObject, updatePlateObject,
+      layFlatPlateObject, autoOrientPlateObject, dropToBedPlateObject, centerPlateObject,
+      resolveOverlapForObject, openColorPicker, removeFromPlate]);
+
   // Listen for "open context menu for this object" events fired from the
   // viewport mesh on right-click. Keeps the menu logic in one place
   // (here) rather than duplicating it inside the 3D scene.
   useEffect(() => {
     const handler = (ev: Event) => {
       const detail = (ev as CustomEvent<{ id: string; x: number; y: number }>).detail;
-      setContextMenu(detail);
+      setContextMenu({ ...detail, items: buildContextMenuItems(detail.id) });
     };
     window.addEventListener('slicer:object-context-menu', handler);
     return () => window.removeEventListener('slicer:object-context-menu', handler);
-  }, []);
+  }, [buildContextMenuItems]);
 
   const selectedIds = useMemo(
     () => (selectedId ? [selectedId, ...additionalSelectedIds] : []),
@@ -231,18 +277,13 @@ export function SlicerWorkspaceObjectsPanel() {
       e.preventDefault();
       if (!selectedIds.includes(id)) selectPlateObject(id);
       const rect = e.currentTarget.getBoundingClientRect();
-      setContextMenu({ id, x: rect.left + 16, y: rect.top + 16 });
+      setContextMenu({ id, x: rect.left + 16, y: rect.top + 16, items: buildContextMenuItems(id) });
     }
-  }, [focusPlateRow, handleRowKeyboardSelect, plateObjects, removeFromPlate, selectedIds, selectPlateObject]);
+  }, [focusPlateRow, handleRowKeyboardSelect, plateObjects, removeFromPlate, selectedIds, selectPlateObject, buildContextMenuItems]);
 
   const handleColorChange = useCallback((color: string) => {
     if (colorPickerForId) updatePlateObject(colorPickerForId, { color } as Partial<PlateObject>);
   }, [colorPickerForId, updatePlateObject]);
-
-  const openColorPicker = useCallback((id: string) => {
-    setColorPickerForId(id);
-    requestAnimationFrame(() => colorInputRef.current?.click());
-  }, []);
 
   const handleSavePlate = useCallback(() => {
     const json = exportPlateJson();
@@ -316,46 +357,8 @@ export function SlicerWorkspaceObjectsPanel() {
   const handleRowContextMenu = useCallback((e: React.MouseEvent, id: string) => {
     e.preventDefault();
     if (!selectedIds.includes(id)) selectPlateObject(id);
-    const obj = plateObjects.find((o) => o.id === id);
-    const items: ContextMenuItem[] = obj ? (() => {
-      const role = obj.modifierMeshRole ?? 'normal';
-      return [
-        { label: 'Duplicate', shortcut: 'Ctrl+D', icon: <Copy size={12} />, onClick: () => duplicatePlateObject(id) },
-        { label: obj.hidden ? 'Show' : 'Hide', icon: obj.hidden ? <Eye size={12} /> : <EyeOff size={12} />,
-          onClick: () => updatePlateObject(id, { hidden: !obj.hidden } as Partial<PlateObject>) },
-        { label: obj.locked ? 'Unlock' : 'Lock', icon: obj.locked ? <Unlock size={12} /> : <Lock size={12} />,
-          onClick: () => updatePlateObject(id, { locked: !obj.locked } as Partial<PlateObject>) },
-        { separator: true } as ContextMenuItem,
-        { label: 'Lay Flat', shortcut: 'F', icon: <AlignEndHorizontal size={12} />, onClick: () => layFlatPlateObject(id) },
-        { label: 'Auto-orient', icon: <RotateCw size={12} />, onClick: () => autoOrientPlateObject(id) },
-        { label: 'Drop to Bed', shortcut: 'B', icon: <ArrowDownToLine size={12} />, onClick: () => dropToBedPlateObject(id) },
-        { label: 'Center', onClick: () => centerPlateObject(id) },
-        { label: 'Resolve overlap', onClick: () => resolveOverlapForObject(id) },
-        { separator: true } as ContextMenuItem,
-        { label: 'Scale to size…', icon: <Maximize2 size={12} />, onClick: () => setActiveTool({ tool: 'scale-to-size', id }) },
-        { label: 'Hollow…', icon: <CircleDot size={12} />, onClick: () => setActiveTool({ tool: 'hollow', id }) },
-        { label: 'Cut by plane…', icon: <Scissors size={12} />, onClick: () => setActiveTool({ tool: 'cut', id }) },
-        { separator: true } as ContextMenuItem,
-        { label: `Role: ${MODIFIER_LABELS[role]} →`, disabled: true, onClick: () => undefined },
-        { label: 'Normal printable', onClick: () => updatePlateObject(id, { modifierMeshRole: 'normal' } as Partial<PlateObject>),
-          disabled: role === 'normal' },
-        { label: 'Cutting mesh', onClick: () => updatePlateObject(id, { modifierMeshRole: 'cutting_mesh' } as Partial<PlateObject>),
-          disabled: role === 'cutting_mesh' },
-        { label: 'Infill mesh', onClick: () => updatePlateObject(id, { modifierMeshRole: 'infill_mesh' } as Partial<PlateObject>),
-          disabled: role === 'infill_mesh' },
-        { label: 'Support mesh', onClick: () => updatePlateObject(id, { modifierMeshRole: 'support_mesh' } as Partial<PlateObject>),
-          disabled: role === 'support_mesh' },
-        { label: 'Anti-overhang mesh', onClick: () => updatePlateObject(id, { modifierMeshRole: 'anti_overhang_mesh' } as Partial<PlateObject>),
-          disabled: role === 'anti_overhang_mesh' },
-        { separator: true } as ContextMenuItem,
-        { label: 'Set color…', icon: <Palette size={12} />, onClick: () => openColorPicker(id) },
-        { label: 'Delete', shortcut: 'Del', icon: <Trash2 size={12} />, danger: true, onClick: () => removeFromPlate(id) },
-      ];
-    })() : [];
-    setContextMenu({ id, x: e.clientX, y: e.clientY, items });
-  }, [selectedIds, selectPlateObject, plateObjects, duplicatePlateObject, updatePlateObject,
-      layFlatPlateObject, autoOrientPlateObject, dropToBedPlateObject, centerPlateObject,
-      resolveOverlapForObject, openColorPicker, removeFromPlate]);
+    setContextMenu({ id, x: e.clientX, y: e.clientY, items: buildContextMenuItems(id) });
+  }, [selectedIds, selectPlateObject, buildContextMenuItems]);
 
   // Per-row stats. Computed lazily via tooltip — heavy meshes don't pay
   // unless the user actually hovers. We memoize per-id to avoid re-computing

@@ -4,15 +4,8 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { ptzProviderLabel, type PtzDirection } from '../../../../services/camera/ptzControl';
-import type { CameraHdBridgeQuality, CameraPtzPreset, DuetPrefs } from '../../../../utils/duetPrefs';
+import type { CameraHdBridgeQuality, CameraPtzPreset, CameraStreamConfig, DuetPrefs } from '../../../../utils/duetPrefs';
 import { HD_BRIDGE_QUALITIES, type CameraPreset } from './types';
-
-type ActiveCameraLike = {
-  id: string;
-  ptzProvider?: string;
-  ptzPresets: CameraPtzPreset[];
-  ptzStartPresetId?: string;
-} & Record<string, unknown>;
 
 /**
  * "Settings" sidebar section — every automation knob the dashboard exposes:
@@ -54,8 +47,8 @@ export function SettingsSection(props: {
   ptzSpeed: number;
   setPtzSpeed: (value: number) => void;
   canUsePtz: boolean;
-  activeCamera: ActiveCameraLike | null | undefined;
-  updateActiveCamera: (patch: Partial<ActiveCameraLike>) => void;
+  activeCamera: CameraStreamConfig | null | undefined;
+  updateActiveCamera: (patch: Partial<CameraStreamConfig>) => void;
   runPtzCommand: (direction: PtzDirection) => void;
   runPtzPreset: (preset: CameraPtzPreset) => Promise<void> | void;
   savePtzPreset: (name: string, token: string) => void;

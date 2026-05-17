@@ -7,7 +7,7 @@
  * Extracted from StepSlicePreview.tsx so the React component stays focused on
  * slicing state, scene composition, and tooltip plumbing.
  */
-import type { LayerProcessor } from '../../types/slicer/profiles/print';
+import type { LayerProcessor } from '../../../types/slicer/profiles/print';
 
 /** A stable empty array — the fallback when layerProcessors is undefined. */
 export const EMPTY_PROCESSORS: LayerProcessor[] = [];

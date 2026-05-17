@@ -1,12 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import type { DragEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type { DragEvent } from 'react';
 import ReactGridLayout, { noCompactor, type Layout, type LayoutItem as GridLayoutItem } from 'react-grid-layout';
 
 // Allow cards to overlap freely during drag; replace-on-drop logic runs at release.
 const overlapCompactor = { ...noCompactor, allowOverlap: true };
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
-import { ArrowLeftRight, Check, Edit3, Eye, EyeOff, FileCode, FolderOpen, Minus, PencilRuler, PlugZap, Plus, RotateCcw, Settings, Wifi, X } from 'lucide-react';
+import { Check, Edit3, Eye, FileCode, FolderOpen, PencilRuler, PlugZap, Plus, RotateCcw, Settings, Wifi, X } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
 import {
   GRID_COLS,

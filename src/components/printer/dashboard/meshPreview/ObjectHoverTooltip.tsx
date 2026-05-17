@@ -1,8 +1,6 @@
 import type { PlateObject } from '../../../../types/slicer';
 import { objectApproxFilament, type ObjectStatus } from './helpers';
-
-interface PrintabilityIssue { message: string }
-interface PrintabilityEntry { issues: PrintabilityIssue[] }
+import type { ObjectReport } from '../../../../types/printability.types';
 
 /**
  * DOM tooltip shown when the user hovers an ObjectSilhouette. Driven by the
@@ -25,7 +23,7 @@ export function ObjectHoverTooltip({
   isCurrent: boolean;
   isCancelled: boolean;
   status: ObjectStatus;
-  report: PrintabilityEntry | null;
+  report: ObjectReport | null;
 }) {
   return (
     <div
