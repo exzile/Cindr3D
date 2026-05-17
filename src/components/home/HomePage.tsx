@@ -105,7 +105,7 @@ export default function HomePage() {
           </div>
           <div className="home-hero__right">
             <div className="home-hero__actions" aria-label="Primary actions">
-              <a className="home-button home-button--primary" href="/">
+              <a className="home-button home-button--primary" href="/design">
                 Open the demo <ChevronRight size={16} />
               </a>
               <a className="home-button home-button--secondary" href="https://github.com/exzile/Cindr3D" target="_blank" rel="noreferrer">
