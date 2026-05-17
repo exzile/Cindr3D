@@ -14,11 +14,10 @@ export function signedArea(points: ReadonlyArray<{ x: number; y: number }>): num
 }
 
 export function reorderFromIndex(contour: THREE.Vector2[], startIdx: number): THREE.Vector2[] {
+  if (startIdx === 0) return contour.slice();
   const n = contour.length;
-  const result: THREE.Vector2[] = [];
-  for (let i = 0; i < n; i++) {
-    result.push(contour[(startIdx + i) % n]);
-  }
+  const result: THREE.Vector2[] = new Array(n);
+  for (let i = 0; i < n; i++) result[i] = contour[(startIdx + i) % n];
   return result;
 }
 

@@ -208,15 +208,17 @@ function orcaOrderedContourWallData(
   startPosition: { x: number; y: number },
 ): ContourWallData[] {
   if (items.length <= 1) return items;
-  const remaining = [...items];
+  const n = items.length;
+  const used = new Uint8Array(n);
   const ordered: ContourWallData[] = [];
   let current = startPosition;
 
-  while (remaining.length > 0) {
-    let bestIdx = 0;
+  for (let pass = 0; pass < n; pass++) {
+    let bestIdx = -1;
     let bestDist = Infinity;
-    for (let i = 0; i < remaining.length; i++) {
-      const point = wallStartPoint(remaining[i]);
+    for (let i = 0; i < n; i++) {
+      if (used[i]) continue;
+      const point = wallStartPoint(items[i]);
       if (!point) continue;
       const dist = distanceSq(current, point);
       if (dist < bestDist) {
@@ -224,9 +226,10 @@ function orcaOrderedContourWallData(
         bestIdx = i;
       }
     }
-    const [next] = remaining.splice(bestIdx, 1);
-    ordered.push(next);
-    const end = wallEndPoint(next);
+    if (bestIdx === -1) break;
+    used[bestIdx] = 1;
+    ordered.push(items[bestIdx]);
+    const end = wallEndPoint(items[bestIdx]);
     if (end) current = end;
   }
 

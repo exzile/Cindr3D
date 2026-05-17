@@ -18,7 +18,7 @@ export default function FilletEdgeHighlight() {
       edgeIds={filletEdgeIds}
       addEdge={addFilletEdge}
       removeEdge={removeFilletEdge}
-      selectedColor={0xff6600}
+      selectedColor={0xaa44ff}
     />
   );
 }

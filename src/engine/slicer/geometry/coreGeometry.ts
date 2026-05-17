@@ -40,18 +40,17 @@ function weldTriangleVertices(triangles: Triangle[]): void {
     return c;
   };
   const vkey = (v: THREE.Vector3) => `${v.x.toFixed(4)},${v.y.toFixed(4)},${v.z.toFixed(4)}`;
-  const edgeKey = (a: THREE.Vector3, b: THREE.Vector3): string => {
-    const ka = vkey(a);
-    const kb = vkey(b);
-    return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
-  };
+  const edgeKey = (ka: string, kb: string): string => ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
   for (const t of triangles) {
     t.v0 = snap(t.v0);
     t.v1 = snap(t.v1);
     t.v2 = snap(t.v2);
-    t.edgeKey01 = edgeKey(t.v0, t.v1);
-    t.edgeKey12 = edgeKey(t.v1, t.v2);
-    t.edgeKey20 = edgeKey(t.v2, t.v0);
+    const k0 = vkey(t.v0);
+    const k1 = vkey(t.v1);
+    const k2 = vkey(t.v2);
+    t.edgeKey01 = edgeKey(k0, k1);
+    t.edgeKey12 = edgeKey(k1, k2);
+    t.edgeKey20 = edgeKey(k2, k0);
     updateTriangleZBounds(t);
   }
 }

@@ -55,7 +55,7 @@ export function pulseFactor(tNowMs: number, periodMs = 900): number {
 // applyLinePulse
 // ---------------------------------------------------------------------------
 
-const MIN_PULSE_OPACITY = 0.45;
+const MIN_PULSE_OPACITY = 0.2;
 
 /**
  * Mutates a line's material opacity between ~0.45 and 1.0 using pulseFactor.

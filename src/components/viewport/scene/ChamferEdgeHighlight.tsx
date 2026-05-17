@@ -20,7 +20,7 @@ export default function ChamferEdgeHighlight() {
       edgeIds={chamferEdgeIds}
       addEdge={addChamferEdge}
       removeEdge={removeChamferEdge}
-      selectedColor={0xaacc00}
+      selectedColor={0xaa44ff}
     />
   );
 }
