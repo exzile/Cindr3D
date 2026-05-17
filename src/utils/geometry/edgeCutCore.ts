@@ -670,6 +670,74 @@ function earClip(
   return out;
 }
 
+/** Longest-edge² / area above which a triangle counts as "elongated". */
+const NEEDLE_ASPECT = 1e4;
+
+/**
+ * True when a triangle is a hair-thin CSG "needle": a sliver whose AREA can
+ * clear the size-relative degenerate-area floor (so the protected degenerate
+ * drop keeps it) but whose SHORTEST ALTITUDE is far below anything a real
+ * bevel/round facet has, AND which is extremely elongated. three-bvh-csg emits
+ * these where several chamfer/fillet facets meet a shared corner; they carry
+ * ~zero surface yet z-fight as the flickering "stray triangle" at grazing
+ * angles. Gated on BOTH min-altitude and aspect so a small but well-shaped
+ * corner triangle (low aspect) and a long but genuinely wide chamfer/fillet
+ * strip (large altitude) are both kept — only true degenerate needles match,
+ * so no valid facet is ever dropped. `needleAlt` is the caller's
+ * size-relative altitude floor (chamfer tolerates a larger one than fillet:
+ * a flat bevel has no thin-but-valid strips, a rounded arc's terminal strip
+ * does). Size-relative and gated by design — an absolute floor here would
+ * re-expose the shared-corner artifact this whole module guards against.
+ */
+function isNeedleTriangle(
+  ax: number, ay: number, az: number,
+  bx: number, by: number, bz: number,
+  cx: number, cy: number, cz: number,
+  needleAlt: number,
+): boolean {
+  const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+  const e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
+  const crx = e1y * e2z - e1z * e2y;
+  const cry = e1z * e2x - e1x * e2z;
+  const crz = e1x * e2y - e1y * e2x;
+  const crLen = Math.sqrt(crx * crx + cry * cry + crz * crz);
+  if (crLen <= 0) return false; // exact zero-area is the degenerate drop's job
+  const e3x = cx - bx, e3y = cy - by, e3z = cz - bz;
+  const lMaxSq = Math.max(
+    e1x * e1x + e1y * e1y + e1z * e1z,
+    e2x * e2x + e2y * e2y + e2z * e2z,
+    e3x * e3x + e3y * e3y + e3z * e3z,
+  );
+  const hMin = crLen / Math.sqrt(lMaxSq);  // shortest triangle altitude
+  const aspect = lMaxSq / (crLen * 0.5);   // longest-edge² / area
+  return hMin < needleAlt && aspect > NEEDLE_ASPECT;
+}
+
+/**
+ * Filters a flat xyz triangle-soup (9 floats/tri), dropping isNeedleTriangle
+ * matches. Used as a SECOND needle pass on the post-retriangulate positions:
+ * the coplanar-fan collapse (and its raw-soup fallback) can itself emit a
+ * fresh sliver the pre-retriangulate pass never saw.
+ */
+function dropNeedles(pos: Float32Array, needleAlt: number): Float32Array {
+  const triCount = (pos.length / 9) | 0;
+  const kept = new Float32Array(pos.length);
+  let w = 0;
+  for (let t = 0; t < triCount; t++) {
+    const o = t * 9;
+    if (
+      isNeedleTriangle(
+        pos[o], pos[o + 1], pos[o + 2],
+        pos[o + 3], pos[o + 4], pos[o + 5],
+        pos[o + 6], pos[o + 7], pos[o + 8],
+        needleAlt,
+      )
+    ) continue;
+    for (let k = 0; k < 9; k++) kept[w++] = pos[o + k];
+  }
+  return w === kept.length ? kept : kept.subarray(0, w);
+}
+
 /**
  * Welds the unwelded triangle-soup that three-bvh-csg emits back into a clean
  * manifold and drops the near-zero-area sliver triangles a boolean can leave
@@ -685,8 +753,17 @@ function earClip(
  * removes any sliver the last cut produced. mergeVertices welds by ALL
  * attributes, so the normal/uv attributes are dropped first to unify purely by
  * position (same pattern shellMesh/extrusionInternals use).
+ *
+ * `needleAltRel` scales the size-relative needle-altitude floor (see
+ * isNeedleTriangle): the caller passes a larger value for chamfer (flat
+ * bevels have no thin-but-valid strips) than for fillet (a rounded arc's
+ * terminal strip is legitimately thin). Defaults to the conservative
+ * fillet-safe value.
  */
-function weldAndCleanSolid(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+function weldAndCleanSolid(
+  geo: THREE.BufferGeometry,
+  needleAltRel = 1e-6,
+): THREE.BufferGeometry {
   let work: THREE.BufferGeometry | null = null;
   let welded: THREE.BufferGeometry | null = null;
   let ni: THREE.BufferGeometry | null = null;
@@ -708,6 +785,9 @@ function weldAndCleanSolid(geo: THREE.BufferGeometry): THREE.BufferGeometry {
     // Reject a triangle when |e1×e2| (= 2·area) is below a size-relative floor.
     const degenLen = Math.max(diag * 1e-7, 1e-7);
     const degenLenSq = degenLen * degenLen;
+    // Size-relative shortest-altitude floor for the needle sweep (see
+    // isNeedleTriangle). Far below any real bevel/round facet on this model.
+    const needleAlt = Math.max(diag * needleAltRel, 1e-7);
 
     welded = mergeVertices(work, weldTol);
     work.dispose();
@@ -730,7 +810,18 @@ function weldAndCleanSolid(geo: THREE.BufferGeometry): THREE.BufferGeometry {
       const o = t * 9;
       e1.set(p[o + 3] - p[o],     p[o + 4] - p[o + 1], p[o + 5] - p[o + 2]);
       e2.set(p[o + 6] - p[o],     p[o + 7] - p[o + 1], p[o + 8] - p[o + 2]);
+      // PROTECTED size-relative degenerate-area drop — left exactly as-is.
       if (cr.crossVectors(e1, e2).lengthSq() < degenLenSq) continue;
+      // Needle sweep: additive to, and strictly stricter than, the drop above
+      // (a needle's area can clear the degenerate floor). See isNeedleTriangle.
+      if (
+        isNeedleTriangle(
+          p[o], p[o + 1], p[o + 2],
+          p[o + 3], p[o + 4], p[o + 5],
+          p[o + 6], p[o + 7], p[o + 8],
+          needleAlt,
+        )
+      ) continue;
       for (let k = 0; k < 9; k++) kept[w++] = p[o + k];
     }
     ni.dispose();
@@ -749,6 +840,15 @@ function weldAndCleanSolid(geo: THREE.BufferGeometry): THREE.BufferGeometry {
     } catch {
       finalPos = cleanPos; // any failure → keep the (correct, if coarse) soup
     }
+    // Second needle sweep: the coplanar-fan collapse (and its raw-soup
+    // fallback) can itself emit a fresh hair-thin sliver the pre-retriangulate
+    // sweep never saw. Re-apply the identical size-relative, gated test so a
+    // retriangulation/bridge needle can't survive into the result — or into
+    // the next sequential cutter, which would re-seed the shared-corner spike.
+    finalPos = dropNeedles(
+      finalPos instanceof Float32Array ? finalPos : new Float32Array(finalPos),
+      needleAlt,
+    );
     const fw = (finalPos as ArrayLike<number>).length;
 
     const out = new THREE.BufferGeometry();
@@ -929,7 +1029,10 @@ export function computeEdgeCutGeometry(
     // before the next cutter slices it (and so the final result is clean):
     // this is what eliminates the degenerate sliver/spike at shared corners.
     try {
-      const cleaned = weldAndCleanSolid(next);
+      // Chamfer produces only flat bevel facets (no thin-but-valid strips), so
+      // it tolerates a much more aggressive needle-altitude floor than fillet,
+      // whose rounded arc has a legitimately thin terminal strip.
+      const cleaned = weldAndCleanSolid(next, tag === 'chamfer' ? 1e-5 : 1e-6);
       next.dispose();
       solid = cleaned;
     } catch (err) {
