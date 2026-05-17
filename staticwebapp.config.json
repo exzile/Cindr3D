@@ -1,4 +1,11 @@
 {
+  "routes": [
+    {
+      "route": "/",
+      "redirect": "/home",
+      "statusCode": 302
+    }
+  ],
   "navigationFallback": {
     "rewrite": "/index.html",
     "exclude": ["/assets/*", "/*.js", "/*.css", "/*.ico", "/*.png", "/*.svg"]
