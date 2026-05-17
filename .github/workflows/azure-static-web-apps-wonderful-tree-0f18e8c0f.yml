@@ -3,13 +3,26 @@ name: Azure Static Web Apps CI/CD
 on:
   workflow_dispatch:
 
+# Deny all permissions by default; grant only what each job needs.
+permissions: {}
+
+# Prevent concurrent deploys. A queued run will wait; a superseded one is cancelled.
+concurrency:
+  group: azure-deploy-production
+  cancel-in-progress: false
+
 jobs:
   build_and_deploy_job:
+    # Hard gate: skip entirely if triggered by anyone other than the repo owner.
+    if: github.actor == 'exzile'
     runs-on: ubuntu-latest
     name: Build and Deploy Job
+    # Targets the production environment — enable required-reviewer protection in
+    # GitHub → Settings → Environments → production for a second approval layer.
+    environment: production
     permissions:
-       id-token: write
-       contents: read
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v3
         with:
