@@ -18,12 +18,14 @@ import { useThree, useFrame, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import { liveBodyMeshes } from '../../../../store/meshRegistry';
 import { parseEdgeIds, computeEdgeGizmoDir } from '../../../../utils/geometry/edgeCutCore';
+import { setGizmoDragging } from '../gizmoDragGuard';
 
 // ── Module-level scratch (shared, no state — safe) ───────────────────────────
 const _scratchRay = new THREE.Ray();
 const _scratchW0 = new THREE.Vector3();
 const _scratchOffset = new THREE.Vector3();
 const _coneLocalUp = new THREE.Vector3(0, 1, 0);
+const _scratchNdc = new THREE.Vector2();
 
 interface EdgeOpGizmoProps {
   enabled: boolean;
@@ -93,7 +95,9 @@ export default function EdgeOpGizmo({
     if (!parsed) return fallback;
     const liveMesh = liveBodyMeshes.get(parsed.meshUuid);
     if (!liveMesh) return fallback;
-    const srcGeo = liveMesh.geometry.clone().toNonIndexed();
+    const srcGeo = liveMesh.geometry.index
+      ? liveMesh.geometry.clone().toNonIndexed()
+      : liveMesh.geometry.clone();
     const dir = computeEdgeGizmoDir(srcGeo, parsed.edges);
     srcGeo.dispose();
     return dir ?? fallback;
@@ -153,13 +157,16 @@ export default function EdgeOpGizmo({
   const onPointerDown = useCallback((ev: ThreeEvent<PointerEvent>) => {
     ev.stopPropagation();
     const rect = gl.domElement.getBoundingClientRect();
-    const ndc = new THREE.Vector2(
+    _scratchNdc.set(
       ((ev.clientX - rect.left) / rect.width) * 2 - 1,
       -((ev.clientY - rect.top) / rect.height) * 2 + 1,
     );
-    const sAtPointer = rayToAxis(ndc);
+    const sAtPointer = rayToAxis(_scratchNdc);
     if (sAtPointer === null) return;
     draggingRef.current = true;
+    // Suppress window/lasso marquee + edge-pick for the duration of this drag
+    // (and the trailing synthetic click). Cleared on pointer-up below.
+    setGizmoDragging(true);
     const current = getLiveValue();
     dragOffsetRef.current = current - sAtPointer;
     liveValueRef.current = current;
@@ -175,7 +182,7 @@ export default function EdgeOpGizmo({
     return () => { mountedRef.current = false; };
   }, []);
 
-  const THROTTLE_MS = 50;
+  const THROTTLE_MS = 16;
   const lastFlushRef = useRef(0);
   const pendingTimeoutRef = useRef(0);
 
@@ -216,6 +223,9 @@ export default function EdgeOpGizmo({
       if (controls) controls.enabled = true;
       gl.domElement.style.cursor = '';
       /* eslint-enable react-hooks/immutability */
+      // Defer clearing past the trailing synthetic `click` (which fires after
+      // pointerup, before a 0ms task) so useEdgePicker still bails on it.
+      window.setTimeout(() => setGizmoDragging(false), 0);
     };
 
     window.addEventListener('pointermove', onMove);
@@ -224,6 +234,8 @@ export default function EdgeOpGizmo({
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current);
+      // Never strand the guard true if we unmount mid-drag (HMR / dialog close).
+      setGizmoDragging(false);
     };
   }, [gl, rayToAxis, controls, setLiveValue]);
 

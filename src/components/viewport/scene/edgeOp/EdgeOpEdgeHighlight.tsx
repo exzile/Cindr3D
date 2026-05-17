@@ -58,7 +58,7 @@ export default function EdgeOpEdgeHighlight({
     [],
   );
   const selectedMat = useMemo(
-    () => new THREE.LineBasicMaterial({ color: selectedColor, linewidth: 2, transparent: true, depthTest: false }),
+    () => new THREE.LineBasicMaterial({ color: selectedColor, linewidth: 3, transparent: true, depthTest: false }),
     [selectedColor],
   );
   useEffect(() => () => { hoverMat.dispose(); }, [hoverMat]);
@@ -124,7 +124,12 @@ export default function EdgeOpEdgeHighlight({
     });
   }, [addEdge, removeEdge, edgeIds]);
 
-  useEdgePicker({ enabled, onHover: handleHover, onClick: handleClick });
+  useEdgePicker({
+    enabled,
+    onHover: handleHover,
+    onClick: handleClick,
+    filter: (m) => typeof m.userData.featureId === 'string',
+  });
 
   useFrame(({ scene, invalidate }) => {
     if (!enabled) {
@@ -201,7 +206,7 @@ export default function EdgeOpEdgeHighlight({
     // Pulse: hovered line bright, selected lines a subtler steady pulse.
     const now = performance.now();
     if (hoverLineRef.current) applyLinePulse(hoverLineRef.current, 1, now);
-    selectedLinesRef.current.forEach((line) => applyLinePulse(line, 0.85, now));
+    selectedLinesRef.current.forEach((line) => applyLinePulse(line, 1.0, now));
   });
 
   return null;

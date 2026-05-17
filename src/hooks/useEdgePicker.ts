@@ -12,6 +12,7 @@
 import { useEffect, useRef } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import { isGizmoDragging } from '../components/viewport/scene/gizmoDragGuard';
 import type { EdgePickResult, UseEdgePickerOptions } from '../types/edge-picker.types';
 export type { EdgePickResult, UseEdgePickerOptions } from '../types/edge-picker.types';
 
@@ -25,6 +26,91 @@ const _vC = new THREE.Vector3();
 const _closest = new THREE.Vector3();
 const _ab = new THREE.Vector3();
 const _ap = new THREE.Vector3();
+// Occlusion / proximity scratch
+const _occRay = new THREE.Raycaster();
+const _occPt = new THREE.Vector3();   // world point on edge nearest the cursor
+const _occNdc = new THREE.Vector3();  // that point projected to NDC
+const _occNdc2 = new THREE.Vector2();
+const _projA = new THREE.Vector3();
+const _projB = new THREE.Vector3();
+
+/** Max distance (CSS px) the cursor may be from an edge to pick/hover it. */
+const EDGE_PICK_PX = 12;
+
+/** Squared distance (px²) from point P to segment AB, all in screen pixels. */
+function segDistSqPx(
+  px: number, py: number,
+  ax: number, ay: number,
+  bx: number, by: number,
+): number {
+  const abx = bx - ax; const aby = by - ay;
+  const apx = px - ax; const apy = py - ay;
+  const lenSq = abx * abx + aby * aby;
+  const t = lenSq > 0 ? Math.max(0, Math.min(1, (apx * abx + apy * aby) / lenSq)) : 0;
+  const cx = ax + abx * t; const cy = ay + aby * t;
+  const dx = px - cx; const dy = py - cy;
+  return dx * dx + dy * dy;
+}
+
+/**
+ * Visibility + proximity gate for a candidate edge.
+ *
+ * - Occlusion: casts camera → (point on the edge nearest the cursor hit) and
+ *   rejects the edge if the solid is struck meaningfully nearer than that
+ *   point — i.e. the edge is behind the body from the current view. You must
+ *   rotate so the edge is actually visible before it can be picked.
+ * - Proximity: rejects the edge if the cursor is further than EDGE_PICK_PX
+ *   screen pixels from the projected edge segment — you must point AT the
+ *   line, not anywhere on the face it bounds.
+ */
+function edgeIsPickable(
+  result: EdgePickResult,
+  hitPoint: THREE.Vector3,
+  camera: THREE.Camera,
+  pickables: THREE.Mesh[],
+  cursorPx: number,
+  cursorPy: number,
+  rectW: number,
+  rectH: number,
+): boolean {
+  const ea = result.edgeVertexA;
+  const eb = result.edgeVertexB;
+
+  // ── Proximity (screen space) ──────────────────────────────────────────────
+  _projA.copy(ea).project(camera);
+  _projB.copy(eb).project(camera);
+  // Behind the camera → not pickable here.
+  if (_projA.z > 1 || _projB.z > 1) return false;
+  const ax = (_projA.x * 0.5 + 0.5) * rectW;
+  const ay = (1 - (_projA.y * 0.5 + 0.5)) * rectH;
+  const bx = (_projB.x * 0.5 + 0.5) * rectW;
+  const by = (1 - (_projB.y * 0.5 + 0.5)) * rectH;
+  if (segDistSqPx(cursorPx, cursorPy, ax, ay, bx, by) > EDGE_PICK_PX * EDGE_PICK_PX) {
+    return false;
+  }
+
+  // ── Occlusion (depth) ─────────────────────────────────────────────────────
+  // Point on the edge nearest the cursor's surface hit, in world space.
+  closestPointOnSegment(hitPoint, ea, eb, _occPt);
+  // Build the view ray through that point via its NDC — correct for BOTH
+  // perspective and orthographic cameras (this app uses an ortho camera, where
+  // rays are parallel, not emanating from camera.position).
+  _occNdc.copy(_occPt).project(camera);
+  _occNdc2.set(_occNdc.x, _occNdc.y);
+  _occRay.setFromCamera(_occNdc2, camera);
+  const distToEdge = _occRay.ray.origin.distanceTo(_occPt);
+  if (distToEdge < 1e-6) return true;
+  _occRay.far = distToEdge * 1.5;
+  const occHits = _occRay.intersectObjects(pickables, false);
+  if (occHits.length > 0) {
+    // Tolerance: the edge sits on the body surface, so the view ray through it
+    // legitimately strikes the body at ~distToEdge. Only treat it as occluded
+    // when something is hit clearly in front of that.
+    const eps = Math.max(distToEdge * 0.01, 1e-3);
+    if (occHits[0].distance < distToEdge - eps) return false;
+  }
+  return true;
+}
 // Extra scratch for face-normal computation (isFeatureEdge)
 const _fnP0 = new THREE.Vector3();
 const _fnP1 = new THREE.Vector3();
@@ -47,22 +133,38 @@ const _fnN2 = new THREE.Vector3();
 /** cos(5°) — edges whose adjacent faces share a smaller angle are coplanar */
 const HARD_EDGE_COS_THRESHOLD = Math.cos(5 * Math.PI / 180); // ≈ 0.9962
 
-/** geometry → Map<"min_max", faceIndex[]> — built once, evicted when geom is GC'd */
+/** geometry → Map<posKey_posKey, faceIndex[]> — built once, evicted when geom is GC'd */
 const _edgeAdjCache = new WeakMap<THREE.BufferGeometry, Map<string, number[]>>();
+
+/**
+ * Position-based vertex key — matches vertices that occupy the same point in
+ * local space regardless of whether they share an index. This is critical for
+ * non-indexed (CSG/extrude) geometry where every triangle has its own unique
+ * vertex indices even at shared edge positions.
+ */
+function vposKey(posAttr: THREE.BufferAttribute, i: number): string {
+  // Round to 4 decimal places — handles floating-point noise while staying
+  // precise enough for typical mm-scale CAD geometry.
+  return `${Math.round(posAttr.getX(i) * 1e4)}_${Math.round(posAttr.getY(i) * 1e4)}_${Math.round(posAttr.getZ(i) * 1e4)}`;
+}
 
 function buildEdgeAdj(geom: THREE.BufferGeometry): Map<string, number[]> {
   const cached = _edgeAdjCache.get(geom);
   if (cached) return cached;
 
   const map = new Map<string, number[]>();
+  const posAttr = geom.attributes.position as THREE.BufferAttribute;
   const idx = geom.index;
-  const triCount = idx ? idx.count / 3 : geom.attributes.position.count / 3;
+  const triCount = idx ? idx.count / 3 : posAttr.count / 3;
   const getI = (fi: number, c: number) => idx ? idx.getX(fi * 3 + c) : fi * 3 + c;
 
   for (let fi = 0; fi < triCount; fi++) {
     const i0 = getI(fi, 0), i1 = getI(fi, 1), i2 = getI(fi, 2);
-    for (const [a, b] of [[i0, i1], [i1, i2], [i2, i0]] as [number, number][]) {
-      const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+    const k0 = vposKey(posAttr, i0);
+    const k1 = vposKey(posAttr, i1);
+    const k2 = vposKey(posAttr, i2);
+    for (const [ka, kb] of [[k0, k1], [k1, k2], [k2, k0]] as [string, string][]) {
+      const key = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
       let arr = map.get(key);
       if (!arr) { arr = []; map.set(key, arr); }
       arr.push(fi);
@@ -102,12 +204,14 @@ function isFeatureEdge(
   ib: number,
   m: THREE.Matrix4,
 ): boolean {
+  const posAttr = geom.attributes.position as THREE.BufferAttribute;
   const adj = buildEdgeAdj(geom);
-  const key = ia < ib ? `${ia}_${ib}` : `${ib}_${ia}`;
+  const ka = vposKey(posAttr, ia);
+  const kb = vposKey(posAttr, ib);
+  const key = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
   const faces = adj.get(key);
   if (!faces || faces.length < 2) return true; // boundary edge — always a feature edge
 
-  const posAttr = geom.attributes.position as THREE.BufferAttribute;
   computeFaceNormal(posAttr, geom.index, faces[0], m, _fnN1);
   computeFaceNormal(posAttr, geom.index, faces[1], m, _fnN2);
 
@@ -261,7 +365,8 @@ export function useEdgePicker(options: UseEdgePickerOptions): void {
     const handlePointerMove = (event: PointerEvent) => {
       updateMouse(event);
       raycaster.setFromCamera(_mouse, camera);
-      const hits = raycaster.intersectObjects(collectPickable(), false);
+      const pickables = collectPickable();
+      const hits = raycaster.intersectObjects(pickables, false);
 
       if (hits.length > 0 && hits[0].faceIndex !== undefined && hits[0].point) {
         const hit = hits[0];
@@ -271,9 +376,15 @@ export function useEdgePicker(options: UseEdgePickerOptions): void {
           hit.point,
         );
         if (result) {
-          hoverRef.current = result;
-          optionsRef.current.onHover?.(result);
-          return;
+          const r = gl.domElement.getBoundingClientRect();
+          if (edgeIsPickable(
+            result, hit.point, camera, pickables,
+            event.clientX - r.left, event.clientY - r.top, r.width, r.height,
+          )) {
+            hoverRef.current = result;
+            optionsRef.current.onHover?.(result);
+            return;
+          }
         }
       }
 
@@ -285,9 +396,13 @@ export function useEdgePicker(options: UseEdgePickerOptions): void {
 
     const handleClick = (event: MouseEvent) => {
       if (event.button !== 0) return;
+      // The trailing synthetic click after a gizmo-arrow drag must not pick an
+      // edge. EdgeOpGizmo clears this flag on a deferred (post-click) task.
+      if (isGizmoDragging()) return;
       updateMouse(event);
       raycaster.setFromCamera(_mouse, camera);
-      const hits = raycaster.intersectObjects(collectPickable(), false);
+      const pickables = collectPickable();
+      const hits = raycaster.intersectObjects(pickables, false);
       if (hits.length === 0) return;
       const hit = hits[0];
       if (hit.faceIndex === undefined || !hit.point) return;
@@ -297,6 +412,11 @@ export function useEdgePicker(options: UseEdgePickerOptions): void {
         hit.point,
       );
       if (result) {
+        const r = gl.domElement.getBoundingClientRect();
+        if (!edgeIsPickable(
+          result, hit.point, camera, pickables,
+          event.clientX - r.left, event.clientY - r.top, r.width, r.height,
+        )) return;
         optionsRef.current.onClick?.(result);
       }
     };

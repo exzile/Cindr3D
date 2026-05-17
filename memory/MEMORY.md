@@ -12,6 +12,7 @@
 - [slicer_engine.md](slicer_engine.md) — slicer pipeline contracts, two-emission-site rule, calcExtrusion-as-method, layer-height contract, scarf seam duality
 - [arachne_subsystem.md](arachne_subsystem.md) — variable-width walls (pure-JS + WASM post-9.2/9.4), flap-topology limit, libArachne integration, diagnostic patterns, what doesn't work
 - [extrude_pipeline.md](extrude_pipeline.md) — profile flat list + atomic regions, smallest-wins picker, csgIntersect overlap rule, disconnected-body splitting
+- [csg_edge_cut.md](csg_edge_cut.md) — chamfer/fillet shared driver; FIXED: weld-between-cuts (corner spike, KEEP); OPEN: three-bvh-csg quad-fan + parseEdgeIds group-drop ("2nd edge doesn't chamfer"; naive "return all edges" fix regressed — reverted); ruled-out approaches + test harness
 - [sketch_interaction_pipeline.md](sketch_interaction_pipeline.md) — chain-of-responsibility commit dispatch, fingerprint-LRU preview cache, SketchCommitCtx shape
 - [duet_service_architecture.md](duet_service_architecture.md) — DuetService façade + per-concern sibling modules, where to add new API calls
 
