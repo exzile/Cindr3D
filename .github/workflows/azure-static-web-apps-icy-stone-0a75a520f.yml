@@ -1,46 +1,44 @@
 name: Azure Static Web Apps CI/CD
 
 on:
-  push:
-    branches:
-      - master
-  pull_request:
-    types: [opened, synchronize, reopened, closed]
-    branches:
-      - master
+  workflow_dispatch:
+
+# Deny all permissions by default; grant only what each job needs.
+permissions: {}
+
+# Prevent concurrent deploys. A queued run will wait; a superseded one is cancelled.
+concurrency:
+  group: azure-deploy-production
+  cancel-in-progress: false
 
 jobs:
   build_and_deploy_job:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
+    # Hard gate: skip entirely if triggered by anyone other than the repo owner.
+    if: github.actor == 'exzile'
     runs-on: ubuntu-latest
     name: Build and Deploy Job
+    # Targets the production environment — enable required-reviewer protection in
+    # GitHub → Settings → Environments → production for a second approval layer.
+    environment: production
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
           lfs: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+      - name: Check WASM bundle-size budget
+        run: npm run check:wasm-budget
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_ICY_STONE_0A75A520F }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }} # Used for Github integrations (i.e. PR comments)
           action: "upload"
-          ###### Repository/Build Configurations - These values can be configured to match your app requirements. ######
-          # For more information regarding Static Web App workflow configurations, please visit: https://aka.ms/swaworkflowconfig
-          app_location: "/" # App source code path
-          api_location: "" # Api source code path - optional
-          output_location: "dist" # Built app content directory - optional
-          ###### End of Repository/Build Configurations ######
-
-  close_pull_request_job:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
-    runs-on: ubuntu-latest
-    name: Close Pull Request Job
-    steps:
-      - name: Close Pull Request
-        id: closepullrequest
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_ICY_STONE_0A75A520F }}
-          action: "close"
+          app_location: "/"
+          api_location: ""
+          output_location: "dist"
