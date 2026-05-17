@@ -153,6 +153,7 @@ export function useWindowLassoSelection() {
   const isDraggingRef = useRef(false);
   const isLassoRef = useRef(false);
   const isPaintRef = useRef(false);
+  const isWindowRef = useRef(false);
   const lassoAccumRef = useRef<{ x: number; y: number }[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const rightDownRef = useRef<{ x: number; y: number } | null>(null);
@@ -173,8 +174,12 @@ export function useWindowLassoSelection() {
     dragStartRef.current = point;
     isDraggingRef.current = false;
     isPaintRef.current = selectionMode === 'paint';
-    // lasso mode: selectionMode='lasso' OR shift held in normal/window modes
+    // lasso mode: selectionMode='lasso' OR shift held in any mode
     isLassoRef.current = !isPaintRef.current && (selectionMode === 'lasso' || event.shiftKey);
+    // window box-marquee is OPT-IN: only when the user explicitly picked the
+    // 'window' selection mode. In 'normal' mode a bare drag must NOT draw a
+    // selection box (it's just a click-through / camera move).
+    isWindowRef.current = !isPaintRef.current && !isLassoRef.current && selectionMode === 'window';
     lassoAccumRef.current = [point];
   }, [activeTool, selectionMode]);
 
@@ -191,6 +196,12 @@ export function useWindowLassoSelection() {
 
     if (!isDraggingRef.current) {
       if (Math.sqrt(dx * dx + dy * dy) < 5) return;
+      // Normal mode (no paint/lasso/window): a drag is NOT a marquee. Abort
+      // the gesture so no selection box is drawn and pointer-up is a no-op.
+      if (!isPaintRef.current && !isLassoRef.current && !isWindowRef.current) {
+        dragStartRef.current = null;
+        return;
+      }
       isDraggingRef.current = true;
       if (isPaintRef.current) {
         // Paint mode starts immediately — no overlay needed
@@ -301,6 +312,7 @@ export function useWindowLassoSelection() {
     dragStartRef.current = null;
     isDraggingRef.current = false;
     isPaintRef.current = false;
+    isWindowRef.current = false;
     lassoAccumRef.current = [];
   }, [setSelectedEntityIds, clearWindowSelect, clearLasso]);
 
