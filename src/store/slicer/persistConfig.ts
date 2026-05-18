@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { PersistStorage } from 'zustand/middleware';
+import { createJSONStorage } from 'zustand/middleware';
 import type { PlateObject } from '../../types/slicer';
 import {
   DEFAULT_MATERIAL_PROFILES,
@@ -11,7 +11,31 @@ import type { SlicerStore } from './types';
 
 export const slicerPersistConfig = {
   name: 'cindr3d-slicer-plate',
-  storage: idbStorage as unknown as PersistStorage<SlicerStore, unknown>,
+  // createJSONStorage wraps idbStorage so Zustand always stores/retrieves a
+  // JSON string — the correct pattern for Zustand v5.  The raw cast that was
+  // here before caused Zustand to call setItem with an object (StorageValue<S>),
+  // which IDB stored via structured clone.  On getItem the object came back and
+  // Zustand v5 tried to use it directly — but if the schema ever drifted or a
+  // race occurred during HMR the round-trip silently broke.  JSON strings are
+  // always safe.
+  //
+  // The wrapper below also handles the one-time migration from the old
+  // object-in-IDB format: if IDB stored a raw JS object (structured clone) it
+  // is JSON.stringify'd here so createJSONStorage can parse it, preserving any
+  // custom printer/material/print profiles the user has saved.
+  storage: createJSONStorage(() => ({
+    getItem: async (name: string): Promise<string | null> => {
+      const result = await idbStorage.getItem(name);
+      if (!result) return null;
+      if (typeof result === 'string') return result;
+      // Old format: Zustand called setItem with a StorageValue object (not a
+      // string) and IDB stored it via structured clone.  Stringify it so
+      // createJSONStorage can parse it normally.
+      try { return JSON.stringify(result); } catch { return null; }
+    },
+    setItem: idbStorage.setItem.bind(idbStorage),
+    removeItem: idbStorage.removeItem.bind(idbStorage),
+  })),
   // Bump whenever a default-profile field changes value or new
   // sanity-clamps land in `onRehydrateStorage`. Zustand compares the
   // persisted version against this number and runs the legacy-state

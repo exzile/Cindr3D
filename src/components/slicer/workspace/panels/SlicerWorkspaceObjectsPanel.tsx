@@ -10,14 +10,15 @@ import {
 import { useSlicerStore } from '../../../../store/slicerStore';
 import { errorMessage } from '../../../../utils/errorHandling';
 import { useCADStore } from '../../../../store/cadStore';
+import { useComponentStore } from '../../../../store/componentStore';
 import type { PlateObject } from '../../../../types/slicer';
-import { NON_BODY_FEATURE_TYPES } from '../../slicerFeatureTypes';
 import { validatePlate } from '../../../../store/slicer/plateValidation';
 import { CalibrationMenu } from '../bottom/CalibrationMenu';
 import { ContextMenu, type ContextMenuItem } from '../ContextMenu';
 import { GeometryToolsModal, type GeometryTool } from '../GeometryToolsModal';
 import { computeMeshStats } from '../../../../engine/meshStats';
 import { fetchModelUrlToFile } from '../../../../utils/printFromUrl';
+import { liveBodyMeshes, bodyGeometryCache, bodyIdGeometryCache } from '../../../../store/meshRegistry';
 import './SlicerWorkspaceObjectsPanel.css';
 
 const MODIFIER_LABELS: Record<string, string> = {
@@ -55,6 +56,7 @@ export function SlicerWorkspaceObjectsPanel() {
   const getActiveMaterialProfile = useSlicerStore((s) => s.getActiveMaterialProfile);
   const getActivePrintProfile = useSlicerStore((s) => s.getActivePrintProfile);
   const features = useCADStore((s) => s.features);
+  const cadBodies = useComponentStore((s) => s.bodies);
 
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [addSearch, setAddSearch] = useState('');
@@ -200,26 +202,65 @@ export function SlicerWorkspaceObjectsPanel() {
     if (file) handleImportFile(file);
   }, [handleImportFile]);
 
-  const handleAddModel = useCallback((feature: typeof features[0]) => {
-    addToPlate(feature.id, feature.name, null);
+  const handleAddBody = useCallback((bodyId: string, bodyName: string) => {
+    // 1. Body-id-keyed persistent cache (written by ExtrudedBodies CSG pipeline)
+    let geo: THREE.BufferGeometry | null = bodyIdGeometryCache.get(bodyId) ?? null;
+
+    // 2. Fall back to feature-id-keyed cache using the body's featureIds
+    if (!geo) {
+      const body = useComponentStore.getState().bodies[bodyId];
+      if (body) {
+        for (const fid of body.featureIds) {
+          const cached = bodyGeometryCache.get(fid);
+          if (cached) { geo = cached; break; }
+        }
+      }
+    }
+
+    // 3. Live mesh registry (viewport currently mounted)
+    if (!geo) {
+      for (const [, m] of liveBodyMeshes) {
+        if (m.userData?.bodyId === bodyId && m.geometry) {
+          geo = m.geometry;
+          break;
+        }
+      }
+    }
+
+    // 4. Stored mesh on features belonging to this body (thin/surface extrudes)
+    if (!geo) {
+      const body = useComponentStore.getState().bodies[bodyId];
+      if (body) {
+        for (const fid of body.featureIds) {
+          const f = features.find((feat) => feat.id === fid);
+          const fm = f?.mesh as THREE.Mesh | undefined;
+          if (fm?.isMesh && fm.geometry) { geo = fm.geometry; break; }
+        }
+      }
+    }
+
+    addToPlate(bodyId, bodyName, geo);
     setShowAddMenu(false);
     setAddSearch('');
-  }, [addToPlate]);
+  }, [addToPlate, features]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     if (!isDragging) setIsDragging(true);
   }, [isDragging]);
 
-  const addableFeatures = useMemo(
-    () => features.filter((f) => !NON_BODY_FEATURE_TYPES.has(f.type) && !f.suppressed),
-    [features],
-  );
-  const filteredFeatures = useMemo(() => {
+  // Bodies visible in the current design, sorted by name.
+  const addableBodies = useMemo(() => {
+    return Object.values(cadBodies)
+      .filter((b) => b.visible !== false)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  }, [cadBodies]);
+
+  const filteredBodies = useMemo(() => {
     const q = addSearch.trim().toLowerCase();
-    if (!q) return addableFeatures;
-    return addableFeatures.filter((f) => f.name.toLowerCase().includes(q));
-  }, [addableFeatures, addSearch]);
+    if (!q) return addableBodies;
+    return addableBodies.filter((b) => b.name.toLowerCase().includes(q));
+  }, [addableBodies, addSearch]);
 
   const handleRowClick = useCallback((e: React.MouseEvent, id: string) => {
     if (e.shiftKey && selectedId) {
@@ -580,27 +621,35 @@ export function SlicerWorkspaceObjectsPanel() {
             <div className="slicer-workspace-objects-panel__menu">
               <input
                 type="text"
-                placeholder="Search features..."
+                placeholder="Search bodies..."
                 className="slicer-workspace-objects-panel__menu-search"
                 value={addSearch}
                 onChange={(e) => setAddSearch(e.target.value)}
                 autoFocus
               />
-              {filteredFeatures.length === 0 && (
+              {filteredBodies.length === 0 && (
                 <div className="slicer-workspace-objects-panel__menu-empty">
-                  {addableFeatures.length === 0 ? 'No CAD features available.' : 'No matches.'}
+                  {addableBodies.length === 0 ? 'No CAD bodies available.' : 'No matches.'}
                 </div>
               )}
-              {filteredFeatures.map((f) => (
-                <div key={f.id} onClick={() => handleAddModel(f)} className="slicer-workspace-objects-panel__menu-item">
+              {filteredBodies.map((b) => (
+                <div key={b.id} onClick={() => handleAddBody(b.id, b.name)} className="slicer-workspace-objects-panel__menu-item">
                   <Box size={12} className="slicer-workspace-objects-panel__menu-item-icon" />
-                  {f.name}
+                  {b.name}
                 </div>
               ))}
             </div>
           )}
         </div>
-        <button className="slicer-workspace-objects-panel__secondary-button" onClick={() => autoArrange()} title="Bin-pack objects on the plate">
+        <button
+          className="slicer-workspace-objects-panel__secondary-button"
+          onClick={() => {
+            autoArrange();
+            useCADStore.getState().setStatusMessage(`Auto-arranged ${plateObjects.length} object${plateObjects.length !== 1 ? 's' : ''}`);
+          }}
+          title="Bin-pack objects on the plate"
+          disabled={plateObjects.length === 0}
+        >
           <LayoutGrid size={14} /> Auto Arrange
         </button>
         <button className="slicer-workspace-objects-panel__danger-button" onClick={() => clearPlate()} disabled={plateObjects.length === 0}>

@@ -131,12 +131,44 @@ export function createPlateActions({
     pushHistory();
     const safeBbox = bboxFromGeometry(geometry);
 
+    // If this body is already on the plate (same featureId), replace it in-place
+    // instead of adding a duplicate.  This makes "Send to Prepare" idempotent —
+    // calling it a second time updates the geometry rather than stacking copies.
+    const existing = get().plateObjects.find((o) => o.featureId === featureId);
+    if (existing) {
+      // Update geometry + bbox in-place; keep the user's current position.
+      set((state) => ({
+        plateObjects: state.plateObjects.map((o) =>
+          o.featureId === featureId
+            ? { ...o, name, geometry, boundingBox: safeBbox }
+            : o,
+        ),
+        selectedPlateObjectId: existing.id,
+        additionalSelectedIds: [],
+      }));
+      void Promise.resolve().then(() => get().runPrintabilityCheck());
+      return;
+    }
+
+    // Simple linear placement: put the new object to the right of all
+    // existing objects so it appears immediately without overlap.
+    // The explicit "Auto Arrange" button runs the full bin-packer + centering.
+    const PLACE_MARGIN = 4;
+    const others = get().plateObjects;
+    const rightEdge = others.reduce((max, o) => {
+      const osx = o.scale?.x ?? 1;
+      return Math.max(max, o.position.x + (o.boundingBox.max.x ?? 0) * osx);
+    }, 0);
+    const initPos = others.length === 0
+      ? { x: -(safeBbox.min.x ?? 0), y: -(safeBbox.min.y ?? 0), z: 0 }
+      : { x: rightEdge + PLACE_MARGIN - (safeBbox.min.x ?? 0), y: -(safeBbox.min.y ?? 0), z: 0 };
+
     const plateObject: PlateObject = {
       id: crypto.randomUUID(),
       featureId,
       name,
       geometry,
-      position: { x: 0, y: 0, z: 0 },
+      position: initPos,
       rotation: { x: 0, y: 0, z: 0 },
       scale: { x: 1, y: 1, z: 1 },
       boundingBox: safeBbox,
@@ -148,7 +180,6 @@ export function createPlateActions({
       additionalSelectedIds: [],
     }));
 
-    get().autoArrange();
     // Run printability check so the warning panel populates without the
     // user having to click the explicit "Check printability" button.
     void Promise.resolve().then(() => get().runPrintabilityCheck());
@@ -720,61 +751,90 @@ export function createPlateActions({
 
   autoArrange: () => {
     void (async () => {
-      const { packRectangles } = await import('../../engine/binPacker');
-      const { scoreBedMeshPlacement } = await import('../../utils/bedMeshArrange');
-      const { plateObjects, getActivePrinterProfile, activeBedMesh } = get();
-      if (plateObjects.length === 0) return;
+      try {
+        const { packRectangles } = await import('../../engine/binPacker');
+        const { scoreBedMeshPlacement } = await import('../../utils/bedMeshArrange');
+        const { plateObjects, getActivePrinterProfile, activeBedMesh } = get();
+        if (plateObjects.length === 0) return;
 
-      const printer = getActivePrinterProfile();
-      const bedW = printer?.buildVolume?.x ?? 220;
-      const bedD = printer?.buildVolume?.y ?? 220;
+        const printer = getActivePrinterProfile();
+        const bedW = printer?.buildVolume?.x ?? 220;
+        const bedD = printer?.buildVolume?.y ?? 220;
 
-      const inputs = plateObjects
-        .filter((o) => !o.locked && (!o.modifierMeshRole || o.modifierMeshRole === 'normal'))
-        .map((o) => {
+        const inputs = plateObjects
+          .filter((o) => !o.locked && (!o.modifierMeshRole || o.modifierMeshRole === 'normal'))
+          .map((o) => {
+            const sx = o.scale?.x ?? 1;
+            const sy = o.scale?.y ?? 1;
+            const w = (o.boundingBox.max.x - o.boundingBox.min.x) * sx;
+            const d = (o.boundingBox.max.y - o.boundingBox.min.y) * sy;
+            return {
+              id: o.id,
+              w: isFinite(w) && w > 0 ? w : 50,
+              h: isFinite(d) && d > 0 ? d : 50,
+              fallback: { x: o.position.x, y: o.position.y },
+            };
+          });
+
+        if (inputs.length === 0) return;
+
+        const placements = packRectangles(bedW, bedD, inputs, 4, {
+          scorePlacement: activeBedMesh
+            ? (candidate) => scoreBedMeshPlacement(activeBedMesh, candidate)
+            : undefined,
+        });
+
+        // Center the packed group on the bed so objects land in the middle
+        // rather than the front-left corner. Compute the actual extent of all
+        // placed rects (not the bin size) and shift by half the slack.
+        const inputById = new Map(inputs.map((i) => [i.id, i]));
+        let maxExtentX = 0;
+        let maxExtentY = 0;
+        for (const p of placements) {
+          const inp = inputById.get(p.id);
+          if (!inp) continue;
+          const itemW = p.rotated ? inp.h : inp.w;
+          const itemH = p.rotated ? inp.w : inp.h;
+          maxExtentX = Math.max(maxExtentX, p.x + itemW);
+          maxExtentY = Math.max(maxExtentY, p.y + itemH);
+        }
+        const centerOffsetX = Math.max(0, (bedW - maxExtentX) / 2);
+        const centerOffsetY = Math.max(0, (bedD - maxExtentY) / 2);
+        const centeredPlacements = placements.map((p) => ({
+          ...p,
+          x: p.x + centerOffsetX,
+          y: p.y + centerOffsetY,
+        }));
+
+        const placementById = new Map(centeredPlacements.map((p) => [p.id, p]));
+
+        pushHistory();
+        const arranged = plateObjects.map((o) => {
+          const p = placementById.get(o.id);
+          if (!p) return o;
           const sx = o.scale?.x ?? 1;
           const sy = o.scale?.y ?? 1;
-          const w = (o.boundingBox.max.x - o.boundingBox.min.x) * sx;
-          const d = (o.boundingBox.max.y - o.boundingBox.min.y) * sy;
+          const sz = o.scale?.z ?? 1;
+          const minX = (o.boundingBox.min.x ?? 0) * sx;
+          const minY = (o.boundingBox.min.y ?? 0) * sy;
+          const minZ = (o.boundingBox.min.z ?? 0) * sz;
+          // The rotated case (90°) implies the bin packer wants the object turned,
+          // but rotating the mesh changes its slicing — out of scope for the
+          // arrange action. Treat `rotated:true` as a hint we ignore.
           return {
-            id: o.id,
-            w: isFinite(w) && w > 0 ? w : 50,
-            h: isFinite(d) && d > 0 ? d : 50,
-            fallback: { x: o.position.x, y: o.position.y },
+            ...o,
+            position: {
+              x: p.x - minX,
+              y: p.y - minY,
+              z: isFinite(minZ) ? -minZ : 0,
+            },
           };
         });
 
-      const placements = packRectangles(bedW, bedD, inputs, 4, {
-        scorePlacement: activeBedMesh
-          ? (candidate) => scoreBedMeshPlacement(activeBedMesh, candidate)
-          : undefined,
-      });
-      const placementById = new Map(placements.map((p) => [p.id, p]));
-
-      pushHistory();
-      const arranged = plateObjects.map((o) => {
-        const p = placementById.get(o.id);
-        if (!p) return o;
-        const sx = o.scale?.x ?? 1;
-        const sy = o.scale?.y ?? 1;
-        const sz = o.scale?.z ?? 1;
-        const minX = (o.boundingBox.min.x ?? 0) * sx;
-        const minY = (o.boundingBox.min.y ?? 0) * sy;
-        const minZ = (o.boundingBox.min.z ?? 0) * sz;
-        // The rotated case (90°) implies the bin packer wants the object turned,
-        // but rotating the mesh changes its slicing — out of scope for the
-        // arrange action. Treat `rotated:true` as a hint we ignore.
-        return {
-          ...o,
-          position: {
-            x: p.x - minX,
-            y: p.y - minY,
-            z: isFinite(minZ) ? -minZ : 0,
-          },
-        };
-      });
-
-      set({ plateObjects: applyAnchoredModifierTransforms(arranged) });
+        set({ plateObjects: applyAnchoredModifierTransforms(arranged) });
+      } catch (err) {
+        console.error('[autoArrange] failed:', err);
+      }
     })();
   },
 

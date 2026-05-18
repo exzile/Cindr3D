@@ -2,10 +2,12 @@ import { useState } from 'react';
 import {
   Move, FolderOpen, Box, Layers, Settings, Link2, CircleDot,
   Download, Copy, Scissors, Trash2, MoreHorizontal, Eye,
-  Search, MousePointer2, ScanEye,
+  Search, MousePointer2, ScanEye, Printer,
 } from 'lucide-react';
 import { useComponentStore } from '../../../store/componentStore';
 import { useCADStore } from '../../../store/cadStore';
+import { useSlicerStore } from '../../../store/slicerStore';
+import { bodyIdGeometryCache } from '../../../store/meshRegistry';
 import { ContextMenuShell } from '../../ui/ContextMenuShell';
 
 export interface BodyCtxMenu {
@@ -73,6 +75,8 @@ export function BodyContextMenu({
   const setStatusMessage   = useCADStore((s) => s.setStatusMessage);
   const setActiveDialog    = useCADStore((s) => s.setActiveDialog);
   const triggerBodyExport  = useCADStore((s) => s.triggerBodyExport);
+  const setWorkspaceMode   = useCADStore((s) => s.setWorkspaceMode);
+  const addToPlate         = useSlicerStore((s) => s.addToPlate);
 
   const isSelectable = body?.selectable !== false;
   const currentOpacity = body?.opacity ?? 1;
@@ -83,7 +87,33 @@ export function BodyContextMenu({
   };
 
   const items: MenuItem[] = [
-    { label: 'Move/Copy', shortcut: 'M', icon: <Move size={13} />, onClick: cs('Move/Copy') },
+    {
+      label: 'Send to Prepare',
+      icon: <Printer size={13} />,
+      onClick: () => {
+        const geomSrc = bodyIdGeometryCache.get(menu.bodyId);
+        if (geomSrc) {
+          // Clone so the slicer owns an independent copy.
+          const geom = geomSrc.clone();
+          // bodyIdGeometryCache stores world-space geometry. The slicer plateObject
+          // applies its own position transform, so we need local-space vertices:
+          // center XY at origin and floor Z at 0 (bottom of body on build plate).
+          geom.computeBoundingBox();
+          const bbox = geom.boundingBox!;
+          const cx = (bbox.min.x + bbox.max.x) / 2;
+          const cy = (bbox.min.y + bbox.max.y) / 2;
+          geom.translate(-cx, -cy, -bbox.min.z);
+          geom.computeBoundingBox(); // recompute after normalizing
+          addToPlate(menu.bodyId, bodyName, geom);
+          setWorkspaceMode('prepare');
+          setStatusMessage(`Sent "${bodyName}" to Prepare`);
+        } else {
+          setStatusMessage('Body geometry not available — try again after the model renders');
+        }
+        onClose();
+      },
+    },
+    { separator: true, label: 'Move/Copy', shortcut: 'M', icon: <Move size={13} />, onClick: cs('Move/Copy') },
     { label: 'Move to Group', icon: <FolderOpen size={13} />, onClick: cs('Move to Group') },
     { separator: true, label: 'Create Components from Bodies', icon: <Box size={13} />, onClick: cs('Create Components from Bodies') },
     { label: 'Create Selection Set', icon: <Layers size={13} />, onClick: cs('Create Selection Set') },
