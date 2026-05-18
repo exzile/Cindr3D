@@ -15,3 +15,23 @@ import type * as THREE from 'three';
 
 /** mesh.uuid → live rendered THREE.Mesh (identity matrixWorld, geometry in world-space) */
 export const liveBodyMeshes = new Map<string, THREE.Mesh>();
+
+/**
+ * Persistent geometry cache that survives viewport unmounts (e.g. navigating
+ * to the slicer).  ExtrudedBodies writes a cloned BufferGeometry here keyed
+ * by featureId whenever its CSG pipeline recomputes.  The slicer's
+ * "Add from CAD" reads from here so it receives real geometry even when the
+ * design viewport is not mounted.
+ *
+ * Key: feature.id  Value: cloned THREE.BufferGeometry (owned by the cache)
+ */
+export const bodyGeometryCache = new Map<string, THREE.BufferGeometry>();
+
+/**
+ * Same as bodyGeometryCache but keyed by bodyId (from componentStore).
+ * Multiple disconnected pieces sharing a bodyId are merged into one geometry.
+ * Used by the slicer "Add from CAD" which lists Bodies, not raw features.
+ *
+ * Key: body.id  Value: cloned THREE.BufferGeometry (owned by the cache)
+ */
+export const bodyIdGeometryCache = new Map<string, THREE.BufferGeometry>();

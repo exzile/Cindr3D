@@ -154,19 +154,15 @@ export default function ExtrudeGizmo({ sketch }: { sketch: Sketch }) {
       lastFlushRef.current = performance.now();
       const store = useCADStore.getState();
       store.setExtrudeDistance(liveDistRef.current);
-      // Auto-toggle Join/Cut for Press-Pull based on drag direction:
-      // dragging outward (positive) = join, inward (negative) = cut.
-      const ids = store.extrudeSelectedSketchIds;
-      if (ids.length > 0) {
-        const skId = ids[0].split('::')[0];
-        const sk = store.sketches.find((s: { id: string }) => s.id === skId);
-        const isPressPull = sk?.name?.startsWith('Press Pull Profile');
-        if (isPressPull) {
-          const wantCut = liveDistRef.current < 0;
-          const currentOp = store.extrudeOperation;
-          if (wantCut && currentOp !== 'cut') store.setExtrudeOperation('cut');
-          else if (!wantCut && currentOp !== 'join') store.setExtrudeOperation('join');
-        }
+      // Auto-toggle Join/Cut based on drag direction when solid bodies exist.
+      // Dragging outward (positive distance) = join material to body.
+      // Dragging inward (negative distance) = cut material from body.
+      // Applied to all profile types — press-pull and regular sketch extrudes.
+      const currentOp = store.extrudeOperation;
+      if (currentOp === 'join' || currentOp === 'cut') {
+        const wantCut = liveDistRef.current < 0;
+        if (wantCut && currentOp !== 'cut') store.setExtrudeOperation('cut');
+        else if (!wantCut && currentOp !== 'join') store.setExtrudeOperation('join');
       }
     };
 

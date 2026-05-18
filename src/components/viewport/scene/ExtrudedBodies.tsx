@@ -2,17 +2,17 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-
-// Module-level scratch objects — avoids per-feature heap allocations in the CSG loop.
-const _boxCurrent = new THREE.Box3();
-const _boxTool = new THREE.Box3();
 import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
-import { liveBodyMeshes } from '../../../store/meshRegistry';
+import { liveBodyMeshes, bodyGeometryCache, bodyIdGeometryCache } from '../../../store/meshRegistry';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
 import type { Feature, Sketch } from '../../../types/cad';
 import { boxesHaveJoinableContact } from '../../../utils/geometry/boundsContact';
 import { BODY_MATERIAL, SURFACE_MATERIAL, DIM_MATERIAL, componentColorMaterial } from './bodyMaterial';
+
+// Module-level scratch objects reused across renders — avoids per-feature heap allocations.
+const _boxCurrent = new THREE.Box3();
+const _boxTool = new THREE.Box3();
 
 /**
  * Wraps a single body mesh and pulses an emissive highlight when its bodyId
@@ -514,6 +514,36 @@ export default function ExtrudedBodies() {
       for (const g of bodies) g.dispose();
     };
   }, [bodies]);
+
+  // Keep the persistent geometry caches in sync so the slicer can read real
+  // geometry even when this viewport is unmounted (e.g. navigated to /prepare).
+  useEffect(() => {
+    // featureId-keyed cache (used by commitFillet and other ops that target a feature)
+    bodies.forEach((geom, i) => {
+      const fId = featureIds[i];
+      if (!fId) return;
+      bodyGeometryCache.get(fId)?.dispose();
+      bodyGeometryCache.set(fId, geom.clone());
+    });
+
+    // bodyId-keyed cache (used by slicer "Add from CAD" which lists Bodies).
+    // Multiple disconnected pieces that share the same bodyId are merged.
+    const byBodyId = new Map<string, THREE.BufferGeometry[]>();
+    featureBodyIds.forEach((bId, i) => {
+      if (!bId) return;
+      const arr = byBodyId.get(bId);
+      if (arr) arr.push(bodies[i]);
+      else byBodyId.set(bId, [bodies[i]]);
+    });
+    for (const [bId, geoms] of byBodyId) {
+      bodyIdGeometryCache.get(bId)?.dispose();
+      const merged = geoms.length === 1 ? geoms[0].clone() : (() => {
+        const m = mergeGeometries(geoms, false);
+        return m ?? geoms[0].clone();
+      })();
+      bodyIdGeometryCache.set(bId, merged);
+    }
+  }, [bodies, featureIds, featureBodyIds]);
 
   // Apply dim / appearance materials on pre-built stored meshes in an effect,
   // never in render, so cleanup is guaranteed when Edit In Place exits.

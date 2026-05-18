@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
+import type { ShellPickData } from '../../../store/cad/state/workflowState';
 import '../FeatureDialogExtras.css';
+
+type ShellDir = 'inside' | 'outside' | 'both';
 
 // ── Sub-component: per-face thickness row (SOL-I7) ─────────────────────────
 interface FaceRowProps {
@@ -45,53 +48,91 @@ function FaceRow({ index, faceId, thickness, defaultThickness, showOverride, onT
 
 // ── Main dialog ────────────────────────────────────────────────────────────
 export function ShellDialog({ onClose }: { onClose: () => void }) {
-  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
-  const features         = useCADStore((s) => s.features);
-  const editing          = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
-  const p                = editing?.params ?? {};
+  const editingFeatureId  = useCADStore((s) => s.editingFeatureId);
+  const features          = useCADStore((s) => s.features);
+  const selectedFeatureId = useCADStore((s) => s.selectedFeatureId);
+  const editing           = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p                 = editing?.params ?? {};
 
-  const bodyFeatures = features.filter((f) => !!f.mesh);
+  // Include features with a stored mesh AND CSG-pipeline solid bodies (extrude/revolve/primitive)
+  // that never store feature.mesh — commitShell resolves their geometry via liveBodyMeshes.
+  const bodyFeatures = features.filter((f) => {
+    if (f.suppressed || !f.visible) return false;
+    if (f.mesh) return true;
+    if (f.type === 'extrude' && f.bodyKind !== 'surface') return true;
+    if (f.type === 'revolve' && f.bodyKind !== 'surface') return true;
+    if (f.type === 'primitive') return true;
+    return false;
+  });
 
-  const [selectedBodyId, setSelectedBodyId] = useState<string>(String(p.bodyId ?? bodyFeatures[0]?.id ?? ''));
-  const [thickness, setThickness]   = useState(Number(p.thickness ?? 2));
-  const [direction, setDirection]   = useState<'inward' | 'outward' | 'symmetric'>((p.direction as 'inward' | 'outward' | 'symmetric') ?? 'inward');
+  const defaultBodyId = String(
+    p.bodyId ??
+    (selectedFeatureId && bodyFeatures.some((f) => f.id === selectedFeatureId) ? selectedFeatureId : null) ??
+    bodyFeatures[0]?.id ??
+    '',
+  );
+  const [selectedBodyId, setSelectedBodyId] = useState<string>(defaultBodyId);
+  const [direction, setDirection]   = useState<ShellDir>((p.shellDirection as ShellDir) ?? 'inside');
+  const [insideThickness, setInsideThickness]   = useState(Number(p.insideThickness ?? p.thickness ?? 2));
+  const [outsideThickness, setOutsideThickness] = useState(Number(p.outsideThickness ?? p.thickness ?? 2));
+  const [shellType, setShellType]   = useState<'sharp' | 'rounded'>((p.shellType as 'sharp' | 'rounded') ?? 'sharp');
   const [tangentChain, setTangentChain] = useState(p.tangentChain !== false);
   // SOL-I7: individual face offsets mode
   const [individualOffsets, setIndividualOffsets] = useState(!!(p.individualOffsets));
 
   const shellRemoveFaceIds     = useCADStore((s) => s.shellRemoveFaceIds);
+  const shellRemoveFaceData    = useCADStore((s) => s.shellRemoveFaceData);
   const removeShellRemoveFace  = useCADStore((s) => s.removeShellRemoveFace);
   const clearShellRemoveFaces  = useCADStore((s) => s.clearShellRemoveFaces);
   const shellFaceThicknesses   = useCADStore((s) => s.shellFaceThicknesses);
   const setShellFaceThickness  = useCADStore((s) => s.setShellFaceThickness);
   const clearShellFaceThicknesses = useCADStore((s) => s.clearShellFaceThicknesses);
+  const setShellTangentChain   = useCADStore((s) => s.setShellTangentChain);
 
   const addFeature          = useCADStore((s) => s.addFeature);
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const commitShell         = useCADStore((s) => s.commitShell);
   const setStatusMessage    = useCADStore((s) => s.setStatusMessage);
 
-  const removeFacesStr = shellRemoveFaceIds.join(',');
+  // Keep the shared tangent-chain flag in sync so ShellFacePicker groups
+  // tangentially-connected faces while picking.
+  useEffect(() => { setShellTangentChain(tangentChain); }, [tangentChain, setShellTangentChain]);
+
+  const wallThickness = direction === 'outside' ? outsideThickness : insideThickness;
+
+  const buildOpts = () => {
+    const tin = direction === 'outside' ? 0 : insideThickness;
+    const tout = direction === 'inside' ? 0 : outsideThickness;
+    const removeFaces: ShellPickData[] = shellRemoveFaceIds
+      .map((id) => shellRemoveFaceData[id])
+      .filter((d): d is ShellPickData => !!d);
+    const faceThicknesses = individualOffsets
+      ? shellRemoveFaceIds
+          .filter((id) => shellRemoveFaceData[id] && shellFaceThicknesses[id] != null)
+          .map((id) => ({ ...shellRemoveFaceData[id], thickness: shellFaceThicknesses[id] }))
+      : [];
+    return { insideThickness: tin, outsideThickness: tout, shellType, removeFaces, faceThicknesses };
+  };
 
   const handleApply = () => {
+    const opts = buildOpts();
     const params = {
-      thickness, direction, tangentChain,
+      shellDirection: direction,
+      insideThickness, outsideThickness, shellType, tangentChain,
       bodyId: selectedBodyId,
-      removeFaces: removeFacesStr,
+      removeFaces: shellRemoveFaceIds.join(','),
       individualOffsets,
       faceThicknesses: individualOffsets ? shellFaceThicknesses : {},
     };
     if (editing) {
       updateFeatureParams(editing.id, params);
-      if (selectedBodyId) commitShell(selectedBodyId, thickness, direction);
-      setStatusMessage(`Updated shell (${thickness}mm ${direction})`);
+      if (selectedBodyId) commitShell(selectedBodyId, opts);
     } else if (selectedBodyId) {
-      commitShell(selectedBodyId, thickness, direction);
-      setStatusMessage(`Created ${direction} shell with ${thickness}mm thickness`);
+      commitShell(selectedBodyId, opts);
     } else {
       const feature: Feature = {
         id: crypto.randomUUID(),
-        name: `Shell (${thickness}mm ${direction})`,
+        name: `Shell (${wallThickness}mm ${direction})`,
         type: 'shell',
         params,
         visible: true,
@@ -99,7 +140,7 @@ export function ShellDialog({ onClose }: { onClose: () => void }) {
         timestamp: Date.now(),
       };
       addFeature(feature);
-      setStatusMessage(`Created ${direction} shell with ${thickness}mm thickness`);
+      setStatusMessage(`Created ${direction} shell with ${wallThickness}mm thickness`);
     }
     clearShellRemoveFaces();
     clearShellFaceThicknesses();
@@ -111,6 +152,9 @@ export function ShellDialog({ onClose }: { onClose: () => void }) {
     clearShellFaceThicknesses();
     onClose();
   };
+
+  const showInside = direction !== 'outside';
+  const showOutside = direction !== 'inside';
 
   return (
     <DialogShell title={editing ? 'Edit Shell' : 'Shell'} onClose={handleClose} size="sm" onConfirm={handleApply}>
@@ -125,21 +169,42 @@ export function ShellDialog({ onClose }: { onClose: () => void }) {
       </div>
       <div className="form-group">
         <label>Direction</label>
-        <select value={direction} onChange={(e) => setDirection(e.target.value as 'inward' | 'outward' | 'symmetric')}>
-          <option value="inward">Inward</option>
-          <option value="outward">Outward</option>
-          <option value="symmetric">Symmetric</option>
+        <select value={direction} onChange={(e) => setDirection(e.target.value as ShellDir)}>
+          <option value="inside">Inside</option>
+          <option value="outside">Outside</option>
+          <option value="both">Both</option>
         </select>
       </div>
+      {showInside && (
+        <div className="form-group">
+          <label>Inside Thickness (mm)</label>
+          <input
+            type="number"
+            value={insideThickness}
+            onChange={(e) => setInsideThickness(Math.max(0.01, parseFloat(e.target.value) || 2))}
+            step={0.5}
+            min={0.01}
+          />
+        </div>
+      )}
+      {showOutside && (
+        <div className="form-group">
+          <label>Outside Thickness (mm)</label>
+          <input
+            type="number"
+            value={outsideThickness}
+            onChange={(e) => setOutsideThickness(Math.max(0.01, parseFloat(e.target.value) || 2))}
+            step={0.5}
+            min={0.01}
+          />
+        </div>
+      )}
       <div className="form-group">
-        <label>Thickness (mm)</label>
-        <input
-          type="number"
-          value={thickness}
-          onChange={(e) => setThickness(parseFloat(e.target.value) || 2)}
-          step={0.5}
-          min={0.1}
-        />
+        <label>Shell Type</label>
+        <select value={shellType} onChange={(e) => setShellType(e.target.value as 'sharp' | 'rounded')}>
+          <option value="sharp">Sharp (crisp corners)</option>
+          <option value="rounded">Rounded (blended corners)</option>
+        </select>
       </div>
 
       <label className="checkbox-label">
@@ -162,7 +227,7 @@ export function ShellDialog({ onClose }: { onClose: () => void }) {
       </label>
       {individualOffsets && (
         <p className="dialog-hint">
-          Enter a custom thickness for each selected face. Blank = global thickness.
+          Enter a custom wall thickness for each selected face. Blank = global thickness.
         </p>
       )}
 
@@ -173,7 +238,7 @@ export function ShellDialog({ onClose }: { onClose: () => void }) {
           Click faces in the viewport to add them to the removal set.
         </p>
         {shellRemoveFaceIds.length === 0 ? (
-          <p className="dialog-hint">No faces selected — all faces will be shelled.</p>
+          <p className="dialog-hint">No faces selected — closed hollow body.</p>
         ) : (
           <div className="shell-face-list">
             {shellRemoveFaceIds.map((id, i) => (
@@ -181,8 +246,8 @@ export function ShellDialog({ onClose }: { onClose: () => void }) {
                 key={id}
                 index={i}
                 faceId={id}
-                thickness={shellFaceThicknesses[id] ?? thickness}
-                defaultThickness={thickness}
+                thickness={shellFaceThicknesses[id] ?? wallThickness}
+                defaultThickness={wallThickness}
                 showOverride={individualOffsets}
                 onThicknessChange={setShellFaceThickness}
                 onRemove={removeShellRemoveFace}

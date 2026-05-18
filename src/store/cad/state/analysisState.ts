@@ -1,4 +1,19 @@
 import * as THREE from 'three';
+import type { ShellPickData } from './workflowState';
+
+/** Options for the Fusion-parity Shell commit. */
+export interface ShellCommitOptions {
+  /** Inward wall thickness (≥ 0). */
+  insideThickness: number;
+  /** Outward wall thickness (≥ 0). */
+  outsideThickness: number;
+  /** Sharp = crisp inner corners; rounded = blended (Fusion ShellTypes). */
+  shellType: 'sharp' | 'rounded';
+  /** Faces to remove (openings). */
+  removeFaces: ShellPickData[];
+  /** Per-face wall-thickness overrides (Fusion "Individual Faces"). */
+  faceThicknesses: (ShellPickData & { thickness: number })[];
+}
 
 export interface CADAnalysisState {
 // ── D197–D203 Surface & Body Analysis Overlays ──────────────────────────
@@ -211,7 +226,7 @@ export interface CADAnalysisState {
   commitRemesh(featureId: string, mode: 'refine' | 'coarsen', iterations: number): void;
 
 // ── SLD10 — Shell ────────────────────────────────────────────────────────
-  commitShell(featureId: string, thickness: number, direction: 'inward' | 'outward' | 'symmetric'): void;
+  commitShell(featureId: string, opts: ShellCommitOptions): void;
 
   // ── SLD11 — Draft ────────────────────────────────────────────────────────
   commitDraft(featureId: string, pullAxisDir: THREE.Vector3, draftAngle: number, fixedPlaneY: number): void;
@@ -227,6 +242,14 @@ export interface CADAnalysisState {
 
   // ── SLD6 — Boundary Fill ─────────────────────────────────────────────────
   commitBoundaryFill(toolFeatureIds: string[], operation: 'new-body' | 'join' | 'cut'): void;
+
+  // ── SLD13 — Split Body ───────────────────────────────────────────────────
+  commitSplitBody(params: {
+    bodyFeatureId: string;
+    toolType: 'plane' | 'sketch' | 'face';
+    toolId: string;
+    isSplittingToolExtended: boolean;
+  }): void;
 
   // ── SLD15 — Silhouette Split ─────────────────────────────────────────────
   commitSilhouetteSplit(featureId: string, planeNormal: THREE.Vector3, planeOffset: number): void;

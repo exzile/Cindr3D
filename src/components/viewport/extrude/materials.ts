@@ -39,10 +39,27 @@ export const PREVIEW_MATERIAL_CUT = new THREE.MeshStandardMaterial({
 export const PREVIEW_EDGE_MATERIAL = new THREE.LineBasicMaterial({ color: 0x1d4ed8 });
 export const PREVIEW_EDGE_MATERIAL_CUT = new THREE.LineBasicMaterial({ color: 0x991b1b });
 
-export const ARROW_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
-export const ARROW_MATERIAL_CUT = new THREE.MeshBasicMaterial({ color: 0xef4444 });
-export const ARROW_LINE_MATERIAL = new THREE.LineBasicMaterial({ color: 0xffaa00 });
-export const ARROW_LINE_MATERIAL_CUT = new THREE.LineBasicMaterial({ color: 0xef4444 });
+// X-ray pass — same geometry, no depth test, drawn over everything at low opacity
+// so the cut/join outline is visible through body surfaces.
+export const PREVIEW_EDGE_XRAY_MATERIAL = new THREE.LineBasicMaterial({
+  color: 0x3b82f6,
+  transparent: true,
+  opacity: 0.28,
+  depthTest: false,
+});
+export const PREVIEW_EDGE_XRAY_MATERIAL_CUT = new THREE.LineBasicMaterial({
+  color: 0xef4444,
+  transparent: true,
+  opacity: 0.28,
+  depthTest: false,
+});
+
+// depthTest:false so the gizmo arrow is always visible even when inside the body.
+// depthWrite:false prevents it from clobbering the depth buffer for subsequent passes.
+export const ARROW_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xffaa00, depthTest: false, depthWrite: false });
+export const ARROW_MATERIAL_CUT = new THREE.MeshBasicMaterial({ color: 0xef4444, depthTest: false, depthWrite: false });
+export const ARROW_LINE_MATERIAL = new THREE.LineBasicMaterial({ color: 0xffaa00, depthTest: false, depthWrite: false });
+export const ARROW_LINE_MATERIAL_CUT = new THREE.LineBasicMaterial({ color: 0xef4444, depthTest: false, depthWrite: false });
 
 // Face-highlight materials for press-pull face picking
 export const FACE_HIGHLIGHT_FILL = new THREE.MeshBasicMaterial({

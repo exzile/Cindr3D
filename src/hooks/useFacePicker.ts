@@ -88,7 +88,9 @@ export function useFacePicker(options: UseFacePickerOptions): void {
         const meshVerts = hitMesh.geometry?.getAttribute('position')?.count ?? 0;
         // Skip if this mesh has fewer verts than one we already found
         if (bestResult && meshVerts <= bestMeshVerts) continue;
-        const result = GeometryEngine.computeCoplanarFaceBoundary(hitMesh, hit.faceIndex!);
+        const result = GeometryEngine.computeCoplanarFaceBoundary(
+          hitMesh, hit.faceIndex!, optionsRef.current.coplanarTol,
+        );
         if (result) {
           bestMeshVerts = meshVerts;
           bestResult = {
