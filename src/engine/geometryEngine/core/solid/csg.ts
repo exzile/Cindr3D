@@ -18,8 +18,19 @@ export function csgSubtract(a: THREE.BufferGeometry, b: THREE.BufferGeometry): T
   brushA.updateMatrixWorld();
   brushB.updateMatrixWorld();
   const result = csgEvaluator.evaluate(brushA, brushB, SUBTRACTION);
-  result.geometry.computeVertexNormals();
-  return result.geometry;
+  // Non-indexed geometry gives each triangle its own vertices so normals at
+  // cut edges are computed independently per face — no averaging across the
+  // outer-surface/cut-wall boundary.  This makes the depth of the cut clearly
+  // visible (cut walls are distinct faces, not blurred into the outer surface).
+  // toNonIndexed gives each triangle its own vertices → per-face normals at
+  // cut edges are not averaged with outer-surface normals → depth is visible.
+  // Skip if already non-indexed (three-bvh-csg sometimes returns non-indexed geometry).
+  const nonIndexed = result.geometry.index
+    ? result.geometry.toNonIndexed()
+    : result.geometry;
+  nonIndexed.computeVertexNormals();
+  if (nonIndexed !== result.geometry) result.geometry.dispose();
+  return nonIndexed;
 }
 
 export function csgUnion(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.BufferGeometry {

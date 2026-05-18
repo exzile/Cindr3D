@@ -18,6 +18,11 @@ export function SlicerWorkspaceViewport() {
   const [hydrated, setHydrated] = useState(() => useSlicerStore.persist.hasHydrated());
   const [canvasReady, setCanvasReady] = useState(false);
   const createdRafRef = useRef<number | null>(null);
+  // Incremented to force an unmount+remount of the Canvas when the WebGL
+  // context is permanently lost (e.g. in sandboxed environments or after a
+  // GPU crash).  Remounting creates a fresh WebGL context.
+  const [canvasKey, setCanvasKey] = useState(0);
+  const contextLostTimerRef = useRef<number>(0);
   // User- or timeout-forced dismissal. Wins over every other condition so the
   // overlay can never trap the user even if the Canvas `onCreated` never fires
   // (WebGL context failure, silent error inside the scene, etc.).
@@ -62,14 +67,39 @@ export function SlicerWorkspaceViewport() {
       createdRafRef.current = null;
       setCanvasReady(true);
     });
+
+    const canvas = state.gl.domElement;
+
     // In demand mode, context restoration doesn't auto-schedule a new frame.
-    // Without this, a context-loss/restore cycle leaves the canvas blank until
-    // something else calls invalidate() (e.g. navigating away and back).
-    state.gl.domElement.addEventListener('webglcontextrestored', () => state.invalidate());
+    canvas.addEventListener('webglcontextrestored', () => {
+      clearTimeout(contextLostTimerRef.current);
+      state.invalidate();
+    });
+
+    // When the context is lost, give the browser 2 s to restore it on its own
+    // (the normal path for GPU crashes / tab backgrounding).  If it hasn't
+    // restored by then, bump canvasKey to force a full Canvas remount which
+    // creates a brand-new WebGL context.  This keeps the viewport alive in
+    // sandboxed environments (like the Claude Preview) where the browser kills
+    // contexts aggressively.
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault(); // signal that we want context restoration
+      // Show the loading overlay immediately — the canvas is blank right now.
+      // Don't wait for the 2 s remount timer; the user sees a blank viewport
+      // the instant the context is lost.
+      setCanvasReady(false);
+      setDismissed(false);
+      clearTimeout(contextLostTimerRef.current);
+      contextLostTimerRef.current = window.setTimeout(() => {
+        // Context still not restored — remount the canvas entirely.
+        setCanvasKey((k) => k + 1);
+      }, 2000);
+    });
   }, []);
 
   useEffect(() => () => {
     if (createdRafRef.current !== null) cancelAnimationFrame(createdRafRef.current);
+    clearTimeout(contextLostTimerRef.current);
   }, []);
 
   // Absolute safety net: no matter what stage we're on, force the loader to
@@ -82,6 +112,16 @@ export function SlicerWorkspaceViewport() {
     const t = setTimeout(() => setDismissed(true), 2000);
     return () => clearTimeout(t);
   }, []);
+
+  // When the canvas remounts due to WebGL context recovery (canvasKey > 0),
+  // reset dismissed so the loading overlay re-appears and covers the blank
+  // period until handleCreated fires for the new canvas.
+  useEffect(() => {
+    if (canvasKey === 0) return;
+    setDismissed(false);
+    const t = setTimeout(() => setDismissed(true), 2000);
+    return () => clearTimeout(t);
+  }, [canvasKey]);
 
   const handleSkipLoader = useCallback(() => setDismissed(true), []);
 
@@ -133,6 +173,7 @@ export function SlicerWorkspaceViewport() {
           </div>
         )}
         <Canvas
+          key={canvasKey}
           className="slicer-workspace__canvas"
           camera={{ position: [300, -200, 250], fov: 45, near: 1, far: 10000, up: [0, 0, 1] }}
           frameloop="demand"

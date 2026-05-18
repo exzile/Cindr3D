@@ -88,9 +88,18 @@ export function createExtrudeSetupActions({ set, get }: CADSliceContext): Partia
     const cleanedSketches = sketches.filter(
       (s) => !s.name.startsWith('Press Pull Profile') || usedSketchIds.has(s.id),
     );
+    // When solid bodies already exist, default to 'join' so the gizmo can
+    // auto-switch to 'cut' when the user drags into the body.  'new-body' is
+    // only the right default when the canvas is empty.
+    const hasSolidBodies = features.some(
+      (f) => f.type === 'extrude' && !f.suppressed && f.visible !== false &&
+             f.bodyKind !== 'surface' &&
+             (f.params.operation === 'new-body' || f.params.operation === 'join'),
+    );
     set({
       activeTool: 'extrude',
       ...EXTRUDE_DEFAULTS,
+      extrudeOperation: hasSolidBodies ? 'join' : 'new-body',
       sketches: cleanedSketches,
       extrudeSelectedSketchId: null,
       statusMessage: 'Click a profile or face to extrude',

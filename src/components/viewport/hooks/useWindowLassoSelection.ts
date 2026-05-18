@@ -13,6 +13,8 @@ const _sampleA = new THREE.Vector3();
 const _sampleB = new THREE.Vector3();
 const SKETCH_ENTITY_SAMPLE_COUNT = 48;
 const PAINT_RADIUS = 15;
+// Module-level flag for the active gesture — safe as singleton because there is only one Viewport.
+let _isWindowGesture = false;
 
 function pointInPolygon(point: { x: number; y: number }, polygon: { x: number; y: number }[]): boolean {
   let inside = false;
@@ -153,7 +155,6 @@ export function useWindowLassoSelection() {
   const isDraggingRef = useRef(false);
   const isLassoRef = useRef(false);
   const isPaintRef = useRef(false);
-  const isWindowRef = useRef(false);
   const lassoAccumRef = useRef<{ x: number; y: number }[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const rightDownRef = useRef<{ x: number; y: number } | null>(null);
@@ -179,7 +180,7 @@ export function useWindowLassoSelection() {
     // window box-marquee is OPT-IN: only when the user explicitly picked the
     // 'window' selection mode. In 'normal' mode a bare drag must NOT draw a
     // selection box (it's just a click-through / camera move).
-    isWindowRef.current = !isPaintRef.current && !isLassoRef.current && selectionMode === 'window';
+    _isWindowGesture = !isPaintRef.current && !isLassoRef.current && selectionMode === 'window';
     lassoAccumRef.current = [point];
   }, [activeTool, selectionMode]);
 
@@ -198,7 +199,7 @@ export function useWindowLassoSelection() {
       if (Math.sqrt(dx * dx + dy * dy) < 5) return;
       // Normal mode (no paint/lasso/window): a drag is NOT a marquee. Abort
       // the gesture so no selection box is drawn and pointer-up is a no-op.
-      if (!isPaintRef.current && !isLassoRef.current && !isWindowRef.current) {
+      if (!isPaintRef.current && !isLassoRef.current && !_isWindowGesture) {
         dragStartRef.current = null;
         return;
       }
@@ -312,7 +313,7 @@ export function useWindowLassoSelection() {
     dragStartRef.current = null;
     isDraggingRef.current = false;
     isPaintRef.current = false;
-    isWindowRef.current = false;
+    _isWindowGesture = false;
     lassoAccumRef.current = [];
   }, [setSelectedEntityIds, clearWindowSelect, clearLasso]);
 

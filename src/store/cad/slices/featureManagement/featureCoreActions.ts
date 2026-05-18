@@ -218,6 +218,18 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
     // the feature is out of state (prevents renderer accessing disposed GPU resources).
     const target = get().features.find((f) => f.id === id);
     const removedSketchId = target?.type === 'sketch' ? target.sketchId : null;
+
+    // Clean up the body that owned this feature when it was the sole occupant.
+    // Without this, deleting a "new-body" extrude leaves an orphaned body entry
+    // in componentStore that continues to appear in the Bodies browser.
+    if (target?.bodyId) {
+      const componentStore = useComponentStore.getState();
+      const body = componentStore.bodies[target.bodyId];
+      if (body && body.featureIds.length > 0 && body.featureIds.every((fid) => fid === id)) {
+        componentStore.removeBody(target.bodyId);
+      }
+    }
+
     set((state) => ({
       features: state.features.filter((f) => f.id !== id),
       ...(removedSketchId

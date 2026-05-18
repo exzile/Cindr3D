@@ -247,15 +247,27 @@ export function createSurfaceUiActions({ set, get }: CADSliceContext): Partial<C
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ SOL-I2: Shell face removal selection Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   shellRemoveFaceIds: [],
-  addShellRemoveFace: (id) => set((state) => ({
+  shellRemoveFaceData: {},
+  addShellRemoveFace: (id, data) => set((state) => ({
     shellRemoveFaceIds: state.shellRemoveFaceIds.includes(id)
       ? state.shellRemoveFaceIds
       : [...state.shellRemoveFaceIds, id],
+    shellRemoveFaceData: data
+      ? { ...state.shellRemoveFaceData, [id]: data }
+      : state.shellRemoveFaceData,
   })),
-  removeShellRemoveFace: (id) => set((state) => ({
-    shellRemoveFaceIds: state.shellRemoveFaceIds.filter((x) => x !== id),
-  })),
-  clearShellRemoveFaces: () => set({ shellRemoveFaceIds: [] }),
+  removeShellRemoveFace: (id) => set((state) => {
+    const nextData = { ...state.shellRemoveFaceData };
+    delete nextData[id];
+    return {
+      shellRemoveFaceIds: state.shellRemoveFaceIds.filter((x) => x !== id),
+      shellRemoveFaceData: nextData,
+    };
+  }),
+  clearShellRemoveFaces: () => set({ shellRemoveFaceIds: [], shellRemoveFaceData: {} }),
+
+  shellTangentChain: true,
+  setShellTangentChain: (v) => set({ shellTangentChain: v }),
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ SOL-I7: Shell individual face thickness overrides Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   shellFaceThicknesses: {},

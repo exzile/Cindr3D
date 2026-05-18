@@ -40,6 +40,7 @@ export default function ShellFacePicker() {
   const shellRemoveFaceIds = useCADStore((s) => s.shellRemoveFaceIds);
   const addShellRemoveFace = useCADStore((s) => s.addShellRemoveFace);
   const removeShellRemoveFace = useCADStore((s) => s.removeShellRemoveFace);
+  const shellTangentChain = useCADStore((s) => s.shellTangentChain);
 
   const active = activeDialog === 'shell';
 
@@ -88,14 +89,27 @@ export default function ShellFacePicker() {
         removeShellRemoveFace(id);
         selectedBoundariesRef.current.delete(id);
       } else {
-        addShellRemoveFace(id);
+        addShellRemoveFace(id, {
+          normal: result.normal.toArray() as [number, number, number],
+          centroid: result.centroid.toArray() as [number, number, number],
+          boundary: result.boundary.map(
+            (v) => v.toArray() as [number, number, number],
+          ),
+        });
         selectedBoundariesRef.current.set(id, result.boundary.map((v) => v.clone()));
       }
     },
     [shellRemoveFaceIds, addShellRemoveFace, removeShellRemoveFace],
   );
 
-  useFacePicker({ enabled: active, onHover: handleHover, onClick: handleClick });
+  // Tangent chain → looser coplanar tolerance so tangentially-connected
+  // near-coplanar triangles fold into one selectable/removable face.
+  useFacePicker({
+    enabled: active,
+    onHover: handleHover,
+    onClick: handleClick,
+    coplanarTol: shellTangentChain ? 0.05 : undefined,
+  });
 
   useFrame(({ scene, invalidate, clock }) => {
     if (!active) {

@@ -8,10 +8,12 @@ import type {
 import {
   DEFAULT_PRINTER_PROFILES, DEFAULT_MATERIAL_PROFILES, DEFAULT_PRINT_PROFILES,
 } from '../types/slicer';
+import type { PlateObject } from '../types/slicer';
 import { createProfilePatchForKey, getProfileValue } from '../utils/profileDiff';
 import { normalizeRotationDegreesToRadians, normalizeScale } from '../utils/slicerTransforms';
 import { createPreviewActions } from './slicer/actions/preview';
 import { slicerPersistConfig } from './slicer/persistConfig';
+import { deserializeGeom, type SerializedGeom } from './slicer/persistence';
 import { createPlateActions } from './slicer/plateActions';
 import type { ProfileSnapshot, ProfileSnapshotKind, ProfileSnapshotProfile, SlicerStore } from './slicer/types';
 import { getActiveSliceRequestId, getCurrentSlicerWorker, getSlicerWorker, isWorkerBusy, nextSliceRequestId, resetSlicerWorker, setWorkerBusy } from './slicer/worker';
@@ -708,3 +710,37 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
 
   ...createPreviewActions({ set, get }),
 }), slicerPersistConfig as Parameters<typeof persist<SlicerStore>>[1]));
+
+// ── Post-hydration geometry deserialization ────────────────────────────────
+// The onRehydrateStorage callback in persistConfig mutates the state object
+// directly, but useSyncExternalStore (Zustand v5 / React 18) snapshots the
+// state synchronously when the hydration setState fires — BEFORE the mutation
+// runs.  The component tree therefore renders with the raw SerializedGeom plain
+// objects, geometry instanceof THREE.BufferGeometry is false, meshes throw /
+// return null, and the objects disappear.
+//
+// onFinishHydration fires AFTER that render cycle completes.  Calling setState
+// here issues a fresh notification that React picks up cleanly, so the second
+// render sees proper THREE.BufferGeometry instances and the objects stay visible.
+useSlicerStore.persist.onFinishHydration((state) => {
+  // Always emit a fresh setState after IDB hydration, even when
+  // onRehydrateStorage already mutated the geometry objects in-place.
+  // onRehydrateStorage mutates state directly (no setState notification), so
+  // the plateObjects array reference never changes from React's perspective.
+  // SlicerWorkspaceScene's  useEffect(() => { invalidate() }, [plateObjects])
+  // therefore never fires, demand-mode R3F never repaints, and the viewport
+  // stays blank.  Mapping into a new array here guarantees:
+  //   1. A new array reference  → React re-renders the scene components
+  //   2. A proper setState      → Zustand emits, useEffect fires, invalidate() called
+  //   3. Geometry is BufferGeometry → PlateObjectMesh renders real geometry
+  if (!state.plateObjects?.length) return;
+  useSlicerStore.setState({
+    plateObjects: state.plateObjects.map((obj): PlateObject => ({
+      ...obj,
+      geometry:
+        obj.geometry && !(obj.geometry instanceof THREE.BufferGeometry)
+          ? deserializeGeom(obj.geometry as unknown as SerializedGeom)
+          : obj.geometry,
+    })),
+  });
+});

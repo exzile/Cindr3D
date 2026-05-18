@@ -10,6 +10,13 @@ import type { InsertComponentParams } from '../../../components/dialogs/assembly
 import type { DirectEditParams } from '../../../components/dialogs/solid/DirectEditDialog';
 import type { TextureExtrudeParams } from '../../../components/dialogs/solid/TextureExtrudeDialog';
 
+/** Serialised face pick for the Shell dialog (world-space, plain arrays). */
+export interface ShellPickData {
+  normal: [number, number, number];
+  centroid: [number, number, number];
+  boundary: [number, number, number][];
+}
+
 export interface CADWorkflowState {
   // ── CONSTRUCTION GEOMETRY (D175–D180) ──
   constructionPlanes: ConstructionPlane[];
@@ -79,9 +86,15 @@ export interface CADWorkflowState {
 
   // ── SOL-I2: Shell face removal selection ────────────────────────────────
   shellRemoveFaceIds: string[];
-  addShellRemoveFace: (id: string) => void;
+  /** Full pick geometry per face id, used by commitShell to cut openings. */
+  shellRemoveFaceData: Record<string, ShellPickData>;
+  addShellRemoveFace: (id: string, data?: ShellPickData) => void;
   removeShellRemoveFace: (id: string) => void;
   clearShellRemoveFaces: () => void;
+
+  /** Tangent-chain face grouping for Shell (Fusion isTangentChain, default true). */
+  shellTangentChain: boolean;
+  setShellTangentChain: (v: boolean) => void;
 
   // ── SOL-I7: Shell individual face thickness overrides ────────────────────
   shellFaceThicknesses: Record<string, number>;

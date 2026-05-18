@@ -51,6 +51,7 @@ import {
 } from './sketch/sketchRendering';
 import {
   buildExtrudeFeatureEdges as buildExtrudeFeatureEdgesImpl,
+  buildExtrudeXRayEdges as buildExtrudeXRayEdgesImpl,
   buildExtrudeFeatureMesh as buildExtrudeFeatureMeshImpl,
   extrudeSketch as extrudeSketchImpl,
   extrudeSketchSurface as extrudeSketchSurfaceImpl,
@@ -84,6 +85,7 @@ import {
   removeFaceAndHeal as removeFaceAndHealImpl,
   shellMesh as shellMeshImpl,
 } from './mesh/meshEditing';
+import { shellSolid as shellSolidImpl, type ShellOptions } from './mesh/shellSolid';
 import {
   csgIntersect as csgIntersectImpl,
   csgSubtract as csgSubtractImpl,
@@ -237,6 +239,10 @@ export class GeometryEngine {
 
   static buildExtrudeFeatureEdges(sketch: Sketch, distance: number): THREE.BufferGeometry | null {
     return buildExtrudeFeatureEdgesImpl(sketch, distance);
+  }
+
+  static buildExtrudeXRayEdges(sketch: Sketch, distance: number): THREE.BufferGeometry | null {
+    return buildExtrudeXRayEdgesImpl(sketch, distance);
   }
 
   static splitByConnectedComponents(
@@ -579,6 +585,11 @@ export class GeometryEngine {
 
   static shellMesh(mesh: THREE.Mesh, thickness: number, direction: 'inward' | 'outward' | 'symmetric'): THREE.Mesh {
     return shellMeshImpl(mesh, thickness, direction);
+  }
+
+  /** Fusion-parity solid shell (watertight, face removal, two-thickness). */
+  static shellSolid(mesh: THREE.Mesh, opts: ShellOptions): THREE.Mesh {
+    return shellSolidImpl(mesh, opts);
   }
 
   static draftMesh(mesh: THREE.Mesh, pullAxisDir: THREE.Vector3, draftAngle: number, fixedPlaneY: number = 0): THREE.Mesh {

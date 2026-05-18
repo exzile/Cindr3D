@@ -13,4 +13,10 @@ export interface UseFacePickerOptions {
   onHover?: (result: FacePickResult | null) => void;
   onClick?: (result: FacePickResult) => void;
   filter?: (mesh: THREE.Mesh) => boolean;
+  /**
+   * Coplanar-grouping tolerance forwarded to computeCoplanarFaceBoundary.
+   * A looser value folds tangentially-connected near-coplanar triangles into
+   * one face (Shell's "tangent chain"). Defaults to the boundary util default.
+   */
+  coplanarTol?: number;
 }

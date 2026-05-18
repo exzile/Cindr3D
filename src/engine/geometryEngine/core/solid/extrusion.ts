@@ -366,6 +366,83 @@ export function buildExtrudeFeatureEdges(sketch: Sketch, distance: number): THRE
   return geometry;
 }
 
+/**
+ * Like buildExtrudeFeatureEdges but also emits spine lines connecting the two
+ * cap circles at evenly-spaced intervals (~8 per loop) so that smooth profiles
+ * (circles, arcs) have visible connecting lines in the x-ray preview pass.
+ */
+export function buildExtrudeXRayEdges(sketch: Sketch, distance: number): THREE.BufferGeometry | null {
+  if (sketch.entities.length === 0 || Math.abs(distance) < 0.001) return null;
+
+  const { t1, t2 } = getRightHandedFrame(sketch);
+  const origin = sketch.planeOrigin;
+  const project = (p: SketchPoint): { u: number; v: number } => {
+    const d = new THREE.Vector3(p.x - origin.x, p.y - origin.y, p.z - origin.z);
+    return { u: d.dot(t1), v: d.dot(t2) };
+  };
+  const shapes = entitiesToShapes(sketch.entities, project);
+  if (shapes.length === 0) return null;
+
+  const positions: number[] = [];
+  const z0 = 0;
+  const z1 = distance;
+  const segments = 64;
+  const sharpCos = Math.cos(Math.PI / 12);
+
+  const stripClosing = (points: THREE.Vector2[]): THREE.Vector2[] =>
+    points.length >= 2 && points[points.length - 1].distanceTo(points[0]) < 1e-6 ? points.slice(0, -1) : points;
+
+  const addLoop = (points: THREE.Vector2[], z: number) => {
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      positions.push(a.x, a.y, z, b.x, b.y, z);
+    }
+  };
+
+  const _sd1 = new THREE.Vector2();
+  const _sd2 = new THREE.Vector2();
+  // Spine verticals: sharp corners + evenly-spaced to give ~8 lines for smooth profiles.
+  const addSpineVerticals = (points: THREE.Vector2[]) => {
+    const n = points.length;
+    const stride = Math.max(1, Math.round(n / 8));
+    for (let i = 0; i < n; i++) {
+      const curr = points[i];
+      let isSharp = false;
+      _sd1.subVectors(curr, points[(i - 1 + n) % n]);
+      _sd2.subVectors(points[(i + 1) % n], curr);
+      if (_sd1.lengthSq() >= 1e-12 && _sd2.lengthSq() >= 1e-12) {
+        _sd1.normalize();
+        _sd2.normalize();
+        isSharp = _sd1.dot(_sd2) < sharpCos;
+      }
+      if (isSharp || i % stride === 0) {
+        positions.push(curr.x, curr.y, z0, curr.x, curr.y, z1);
+      }
+    }
+  };
+
+  for (const shape of shapes) {
+    const outer = stripClosing(shape.getPoints(segments));
+    if (outer.length >= 2) {
+      addLoop(outer, z0);
+      addLoop(outer, z1);
+      addSpineVerticals(outer);
+    }
+    for (const hole of shape.holes) {
+      const holePts = stripClosing(hole.getPoints(segments));
+      if (holePts.length < 2) continue;
+      addLoop(holePts, z0);
+      addLoop(holePts, z1);
+      addSpineVerticals(holePts);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  return geometry;
+}
+
 function extrudeCustomPlaneSketch(sketch: Sketch, distance: number, profileIndex?: number): THREE.Mesh | null {
   const { t1, t2, normal } = getRightHandedFrame(sketch);
   const origin = sketch.planeOrigin;
