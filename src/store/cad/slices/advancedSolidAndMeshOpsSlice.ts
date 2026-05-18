@@ -701,7 +701,8 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
   },
 
   // ── SLD13 — Split Body ───────────────────────────────────────────────────
-  commitSplitBody: ({ bodyFeatureId, toolType, toolId, isSplittingToolExtended: _ext }) => {
+  commitSplitBody: ({ bodyFeatureId, toolType, toolId }) => {
+    get().pushUndo();
     const { features } = get();
     const srcFeature = features.find((f) => f.id === bodyFeatureId);
 

@@ -225,7 +225,7 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
     if (target?.bodyId) {
       const componentStore = useComponentStore.getState();
       const body = componentStore.bodies[target.bodyId];
-      if (body && body.featureIds.every((fid) => fid === id)) {
+      if (body && body.featureIds.length > 0 && body.featureIds.every((fid) => fid === id)) {
         componentStore.removeBody(target.bodyId);
       }
     }

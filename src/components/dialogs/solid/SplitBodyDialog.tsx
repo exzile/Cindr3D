@@ -6,22 +6,25 @@ export function SplitBodyDialog({ onClose }: { onClose: () => void }) {
   const features = useCADStore((s) => s.features);
   const commitSplitBody = useCADStore((s) => s.commitSplitBody);
 
+  // Exclude sketch and construction geometry — only solid/surface features
+  // can be split. Note: 'construction-point' is not in the FeatureType union
+  // so it must not be compared here.
   const solidFeatures = features.filter(
     (f) =>
       f.type !== 'sketch' &&
       f.type !== 'construction-plane' &&
-      f.type !== 'construction-axis' &&
-      f.type !== 'construction-point',
+      f.type !== 'construction-axis',
   );
 
   const [bodyFeatureId, setBodyFeatureId] = useState(solidFeatures[0]?.id ?? '');
   const [toolType, setToolType] = useState<'plane' | 'sketch' | 'face'>('plane');
   const [toolId, setToolId] = useState('XY');
-  const [isSplittingToolExtended, setIsSplittingToolExtended] = useState(true);
 
   const handleApply = () => {
     if (!bodyFeatureId) return;
-    commitSplitBody({ bodyFeatureId, toolType, toolId, isSplittingToolExtended });
+    // isSplittingToolExtended is reserved for future implementation (plane
+    // clamping to body bbox). Hardcode true until the engine supports it.
+    commitSplitBody({ bodyFeatureId, toolType, toolId, isSplittingToolExtended: true });
     onClose();
   };
 
@@ -53,14 +56,6 @@ export function SplitBodyDialog({ onClose }: { onClose: () => void }) {
           placeholder={toolType === 'plane' ? 'XY / XZ / YZ' : 'Sketch or face name'}
         />
       </div>
-      <label className="checkbox-label">
-        <input
-          type="checkbox"
-          checked={isSplittingToolExtended}
-          onChange={(e) => setIsSplittingToolExtended(e.target.checked)}
-        />
-        Extend Splitting Tool
-      </label>
     </DialogShell>
   );
 }

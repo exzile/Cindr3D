@@ -154,12 +154,13 @@ export default function ExtrudeGizmo({ sketch }: { sketch: Sketch }) {
       lastFlushRef.current = performance.now();
       const store = useCADStore.getState();
       store.setExtrudeDistance(liveDistRef.current);
-      // Auto-toggle Join/Cut based on drag direction when solid bodies exist.
-      // Dragging outward (positive distance) = join material to body.
-      // Dragging inward (negative distance) = cut material from body.
-      // Applied to all profile types — press-pull and regular sketch extrudes.
+      // Auto-toggle Join/Cut based on drag direction, but only for press-pull
+      // profiles. For regular sketch extrudes the user has explicitly chosen
+      // their operation, and silently overriding it mid-drag is surprising.
+      const activeSketch = store.sketches.find((s) => s.id === store.extrudeSelectedSketchId);
+      const isPressPull = activeSketch?.name.startsWith('Press Pull Profile') ?? false;
       const currentOp = store.extrudeOperation;
-      if (currentOp === 'join' || currentOp === 'cut') {
+      if (isPressPull && (currentOp === 'join' || currentOp === 'cut')) {
         const wantCut = liveDistRef.current < 0;
         if (wantCut && currentOp !== 'cut') store.setExtrudeOperation('cut');
         else if (!wantCut && currentOp !== 'join') store.setExtrudeOperation('join');
