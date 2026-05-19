@@ -284,6 +284,19 @@ export function PlateObjectMesh({
   );
   useEffect(() => () => { placeholderBoxGeo?.dispose(); }, [placeholderBoxGeo]);
 
+  // Bounding-box geo used for the selection outline — always a clean box,
+  // never the mesh geometry (which has CSG triangulation seams at the circle rim).
+  const selectionBoxGeo = useMemo(
+    () => new THREE.BoxGeometry(boxArgs[0], boxArgs[1], boxArgs[2]),
+    [boxArgs],
+  );
+  useEffect(() => () => { selectionBoxGeo.dispose(); }, [selectionBoxGeo]);
+  const selectionBoxOffset: [number, number, number] = [
+    (obj.boundingBox.min.x + obj.boundingBox.max.x) / 2,
+    (obj.boundingBox.min.y + obj.boundingBox.max.y) / 2,
+    (obj.boundingBox.min.z + obj.boundingBox.max.z) / 2,
+  ];
+
   const overhangGeom = useMemo(() => {
     if (!highlightedTriangles || highlightedTriangles.size === 0 || !hasGeometry) return null;
     const src = obj.geometry as THREE.BufferGeometry;
@@ -331,8 +344,8 @@ export function PlateObjectMesh({
           side={windingFlipped ? THREE.DoubleSide : THREE.FrontSide}
         />
         {isSelected && (
-          <lineSegments>
-            <edgesGeometry args={[hasGeometry ? obj.geometry : placeholderBoxGeo!]} />
+          <lineSegments position={selectionBoxOffset}>
+            <edgesGeometry args={[selectionBoxGeo]} />
             <lineBasicMaterial color="#ffaa00" linewidth={2} />
           </lineSegments>
         )}

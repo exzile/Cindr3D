@@ -7,7 +7,7 @@ import type { PresetsType } from '@react-three/drei/helpers/environment-assets';
 import * as THREE from 'three';
 import { useCADStore } from '../../store/cadStore';
 import { useThemeStore } from '../../store/themeStore';
-import { EnvErrorBoundary } from './EnvErrorBoundary';
+import { EnvErrorBoundary, CrashBoundary } from './EnvErrorBoundary';
 import ExtrudeTool from './tools/ExtrudeTool';
 import RevolveTool from './tools/RevolveTool';
 import SceneTheme from './scene/SceneTheme';
@@ -251,12 +251,14 @@ export default function Viewport() {
         <JointAnimationPlayer />
         <SketchPlaneDragger />
         <Sketch3DPlaneIndicator />
-        <FilletEdgeHighlight />
-        <FilletGizmo />
-        <FilletPreview />
-        <ChamferEdgeHighlight />
-        <ChamferGizmo />
-        <ChamferPreview />
+        <CrashBoundary label="EdgeOp">
+          <FilletEdgeHighlight />
+          <FilletGizmo />
+          <FilletPreview />
+          <ChamferEdgeHighlight />
+          <ChamferGizmo />
+          <ChamferPreview />
+        </CrashBoundary>
         <ConstructionGeometryInteraction />
         <ConstructionGeometryRenderer />
         <ReplaceFaceInteraction />

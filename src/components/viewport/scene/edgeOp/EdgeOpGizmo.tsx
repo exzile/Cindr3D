@@ -91,16 +91,21 @@ export default function EdgeOpGizmo({
 
   const gizmoDir = useMemo(() => {
     const fallback = new THREE.Vector3(0, 1, 0);
-    const parsed = parseEdgeIds(edgeIds);
-    if (!parsed) return fallback;
-    const liveMesh = liveBodyMeshes.get(parsed.meshUuid);
-    if (!liveMesh) return fallback;
-    const srcGeo = liveMesh.geometry.index
-      ? liveMesh.geometry.clone().toNonIndexed()
-      : liveMesh.geometry.clone();
-    const dir = computeEdgeGizmoDir(srcGeo, parsed.edges);
-    srcGeo.dispose();
-    return dir ?? fallback;
+    try {
+      const parsed = parseEdgeIds(edgeIds);
+      if (!parsed) return fallback;
+      const liveMesh = liveBodyMeshes.get(parsed.meshUuid);
+      if (!liveMesh) return fallback;
+      const srcGeo = liveMesh.geometry.index
+        ? liveMesh.geometry.clone().toNonIndexed()
+        : liveMesh.geometry.clone();
+      const dir = computeEdgeGizmoDir(srcGeo, parsed.edges);
+      srcGeo.dispose();
+      return dir ?? fallback;
+    } catch (err) {
+      console.error('[EdgeOpGizmo] gizmoDir threw:', err);
+      return fallback;
+    }
   }, [edgeIds]);
 
   const draggingRef = useRef(false);

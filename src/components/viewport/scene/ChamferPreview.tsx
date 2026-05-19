@@ -20,7 +20,7 @@ export default function ChamferPreview() {
 
   const compute = useCallback(
     (srcGeo: THREE.BufferGeometry, edges: PickedEdge[], value: number) =>
-      computeChamferGeometry(srcGeo, edges, value),
+      computeChamferGeometry(srcGeo, edges, value, undefined, true),
     [],
   );
 
