@@ -11,6 +11,7 @@
  * battle-tested implementation.
  */
 import * as THREE from 'three';
+import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GeometryEngine } from '../../engine/GeometryEngine';
 import { liveBodyMeshes } from '../../store/meshRegistry';
 // weldAndCleanSolid moved to engine/geometryEngine/core/solid/weldClean.ts so
@@ -55,6 +56,18 @@ export interface ResolvedEdge {
  * faces. Returns null for degenerate edges (the driver skips them).
  */
 export type EdgeCutterFn = (re: ResolvedEdge, eps: number) => THREE.BufferGeometry | null;
+
+/**
+ * Builds ONE analytic cutting tool for a full circular-rim edge loop (fillet
+ * torus / chamfer cone frustum). `re` is a representative resolved edge from
+ * the loop, used only for orientation (which face is the cap vs the wall and
+ * the dihedral angle). Returns null if the loop can't be handled analytically
+ * (caller then falls back to the per-segment path).
+ */
+export type LoopCutterFn = (
+  circle: EdgeLoopCircle,
+  re: ResolvedEdge,
+) => THREE.BufferGeometry | null;
 
 // ---------------------------------------------------------------------------
 // Edge-ID parsing
@@ -155,15 +168,150 @@ export function buildTriangleList(srcGeo: THREE.BufferGeometry): THREE.Vector3[]
   return tris;
 }
 
-/** Position-equality predicate scaled to the geometry's bounding-box diagonal. */
-export function makeNear(srcGeo: THREE.BufferGeometry): (p: THREE.Vector3, q: THREE.Vector3) => boolean {
+/** Position tolerance scaled to the geometry's bounding-box diagonal. */
+export function computePositionEps(srcGeo: THREE.BufferGeometry): number {
   srcGeo.computeBoundingBox();
   const diag = srcGeo.boundingBox
     ? srcGeo.boundingBox.min.distanceTo(srcGeo.boundingBox.max)
     : 1;
-  const eps = Math.max(diag * 1e-4, 1e-5);
+  return Math.max(diag * 1e-4, 1e-5);
+}
+
+/** Position-equality predicate scaled to the geometry's bounding-box diagonal. */
+export function makeNear(srcGeo: THREE.BufferGeometry): (p: THREE.Vector3, q: THREE.Vector3) => boolean {
+  const eps = computePositionEps(srcGeo);
   const epsSq = eps * eps;
   return (p: THREE.Vector3, q: THREE.Vector3) => p.distanceToSquared(q) <= epsSq;
+}
+
+// ---------------------------------------------------------------------------
+// Spatial triangle index
+//
+// Maps quantized vertex positions to the set of triangle indices containing
+// that position. Allows O(1) candidate lookup instead of O(n) full scan when
+// resolving which triangles share a given edge endpoint. Critical for meshes
+// with many small edges (e.g. circle rims with 30+ segments) where the O(n)
+// scan over all tris makes each edge resolution prohibitively slow.
+// ---------------------------------------------------------------------------
+
+/** Quantize a position to a grid cell key. */
+function triIdxKey(v: THREE.Vector3, eps: number): string {
+  return `${Math.round(v.x / eps)},${Math.round(v.y / eps)},${Math.round(v.z / eps)}`;
+}
+
+/** Build a spatial index mapping quantized vertex positions → triangle indices. */
+export function buildTriangleIndex(tris: THREE.Vector3[][], eps: number): Map<string, number[]> {
+  const map = new Map<string, number[]>();
+  for (let i = 0; i < tris.length; i++) {
+    for (const v of tris[i]) {
+      const k = triIdxKey(v, eps);
+      const arr = map.get(k);
+      if (arr) arr.push(i); else map.set(k, [i]);
+    }
+  }
+  return map;
+}
+
+/**
+ * Returns deduplicated triangle indices whose bounding cells overlap the 3×3×3
+ * neighbourhood of the cell containing `p`. Covers float-rounding jitter at
+ * cell boundaries without scanning the full triangle list. Deduplication is
+ * critical: without it the same triangle index appears multiple times in the
+ * primary-pass adj array, making adj.length > 2 and causing resolveEdge to
+ * return null for valid edges.
+ */
+function getCandidatesNear(p: THREE.Vector3, map: Map<string, number[]>, eps: number): number[] {
+  const cx = Math.round(p.x / eps), cy = Math.round(p.y / eps), cz = Math.round(p.z / eps);
+  const seen = new Set<number>();
+  for (let dx = -1; dx <= 1; dx++)
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dz = -1; dz <= 1; dz++) {
+        const arr = map.get(`${cx + dx},${cy + dy},${cz + dz}`);
+        if (arr) for (const t of arr) seen.add(t);
+      }
+  return Array.from(seen);
+}
+
+// ---------------------------------------------------------------------------
+// Circular-rim detection
+//
+// A hole-rim (or circular boss) edge selection arrives as N short chord
+// segments approximating a circle. Cutting each segment with its own CSG tool
+// produces a chaotic triangle soup at every seam (the per-segment cutters are
+// straight boxes in slightly-rotated bases). When the whole loop is a single
+// planar circle we can instead build ONE analytic cutter (a torus for fillet,
+// a cone frustum for chamfer) and subtract it once — a clean Fusion-style
+// surface with zero seams. `fitEdgeCircle` recognises that case.
+// ---------------------------------------------------------------------------
+
+export interface EdgeLoopCircle {
+  /** Circle centre (world space). */
+  center: THREE.Vector3;
+  /** Circle radius. */
+  radius: number;
+  /** Unit normal of the circle's plane (the hole / boss axis). */
+  axis: THREE.Vector3;
+}
+
+/**
+ * If the picked edges' endpoints form a single planar circle (closed loop,
+ * all points coplanar and equidistant from the centroid), returns its
+ * {center, radius, axis}. Otherwise null (box edges, arcs, splines, multi-loop
+ * selections all fall back to the per-segment cutter path).
+ */
+export function fitEdgeCircle(edges: PickedEdge[]): EdgeLoopCircle | null {
+  if (edges.length < 8) return null; // too few segments to trust a circle fit
+
+  // Ordered point list = each segment's start (the loop is consecutive
+  // segments a→b, b→c, …). Use the a's plus the final b.
+  const pts: THREE.Vector3[] = edges.map((e) => e.a);
+  pts.push(edges[edges.length - 1].b);
+
+  // Closed-loop check: last point ≈ first point.
+  const span = pts[0].distanceTo(pts[Math.floor(pts.length / 2)]);
+  if (span < 1e-6) return null;
+  if (pts[0].distanceTo(pts[pts.length - 1]) > span * 0.05) return null;
+  pts.pop(); // drop the duplicate closing point
+
+  const center = new THREE.Vector3();
+  for (const p of pts) center.add(p);
+  center.divideScalar(pts.length);
+
+  // Newell's method → robust plane normal for the (near-planar) polygon.
+  const axis = new THREE.Vector3();
+  for (let i = 0; i < pts.length; i++) {
+    const cur = pts[i];
+    const nxt = pts[(i + 1) % pts.length];
+    axis.x += (cur.y - nxt.y) * (cur.z + nxt.z);
+    axis.y += (cur.z - nxt.z) * (cur.x + nxt.x);
+    axis.z += (cur.x - nxt.x) * (cur.y + nxt.y);
+  }
+  if (axis.lengthSq() < 1e-12) return null;
+  axis.normalize();
+
+  // Validate: every point equidistant from centre (circle) and coplanar.
+  let rMin = Infinity;
+  let rMax = 0;
+  let rSum = 0;
+  let maxPlaneDev = 0;
+  const w = new THREE.Vector3();
+  for (const p of pts) {
+    w.subVectors(p, center);
+    const planeDev = Math.abs(w.dot(axis));
+    if (planeDev > maxPlaneDev) maxPlaneDev = planeDev;
+    const r = Math.sqrt(Math.max(0, w.lengthSq() - planeDev * planeDev));
+    if (r < rMin) rMin = r;
+    if (r > rMax) rMax = r;
+    rSum += r;
+  }
+  const rAvg = rSum / pts.length;
+  if (rAvg < 1e-6) return null;
+  // 5% radius spread and 5%-of-radius planarity tolerances — loose enough for
+  // the polyline approximation, tight enough to reject non-circles.
+  if ((rMax - rMin) / rAvg > 0.05) return null;
+  if (maxPlaneDev > rAvg * 0.05) return null;
+
+  return { center, radius: rAvg, axis };
 }
 
 // ---------------------------------------------------------------------------
@@ -179,16 +327,72 @@ export function resolveEdge(
   tris: THREE.Vector3[][],
   e: PickedEdge,
   near: (p: THREE.Vector3, q: THREE.Vector3) => boolean,
+  triIdx?: Map<string, number[]>,
+  eps?: number,
 ): ResolvedEdge | null {
+  // With a spatial index: only visit triangles in the 3×3×3 neighbourhood of
+  // e.a — every triangle containing e.a as a vertex is guaranteed to appear
+  // there. Without: fall back to the original linear scan (all tris).
+  const candidateIndices: number[] =
+    triIdx != null && eps != null
+      ? getCandidatesNear(e.a, triIdx, eps)
+      : tris.map((_, i) => i);
+
   // Primary pass: find triangles that share BOTH edge endpoints as exact vertices.
   const adj: { tri: THREE.Vector3[]; ia: number; ib: number; ic: number }[] = [];
-  for (const tri of tris) {
+  for (const idx of candidateIndices) {
+    const tri = tris[idx];
     let ia = -1; let ib = -1;
     for (let k = 0; k < 3; k++) {
       if (ia < 0 && near(tri[k], e.a)) ia = k;
       else if (ib < 0 && near(tri[k], e.b)) ib = k;
     }
     if (ia >= 0 && ib >= 0) adj.push({ tri, ia, ib, ic: 3 - ia - ib });
+  }
+
+  // Plane-dedup: three-bvh-csg triangulates flat annular rings (e.g. the top
+  // face of an extruded body with a circular hole) into many triangles, some
+  // of which contain BOTH rim[i] and rim[i+1] as vertices. Those all appear in
+  // the primary pass above, driving adj.length >> 2 and causing resolveEdge to
+  // return null even when two real adjacent faces exist. Fix: collapse adj to
+  // one representative per distinct face-plane normal before the fallback
+  // chain. Real adjacent faces have different normals (≥ a few degrees apart);
+  // coplanar CSG-fan duplicates share the same normal within fp-noise.
+  // Also handles adj.length=2 where both matches are coplanar (same flat-face
+  // triangulation) — reduces to adj.length=1 so the fallbacks can find the
+  // second real face.
+  if (adj.length >= 2) {
+    // For each distinct face plane keep the entry whose ic vertex is FARTHEST
+    // from the edge chord. On flat annular rings this selects an outer-boundary
+    // ic over an inner-rim ic, giving the correct u2 direction for fillet/chamfer.
+    const eDir0 = e.b.clone().sub(e.a); const eLen0 = eDir0.length();
+    const eDirN = eLen0 > 1e-9 ? eDir0.clone().divideScalar(eLen0) : new THREE.Vector3(1, 0, 0);
+    const _icProj = new THREE.Vector3();
+    const icPerpDist = (a: (typeof adj)[0]): number => {
+      const ic = a.tri[a.ic];
+      const w = ic.clone().sub(e.a);
+      const tPar = w.dot(eDirN);
+      _icProj.copy(e.a).addScaledVector(eDirN, tPar);
+      return ic.distanceTo(_icProj);
+    };
+    const planes: { na: number; nb: number; nc: number; rep: (typeof adj)[0]; d: number }[] = [];
+    for (const a of adj) {
+      const e1x = a.tri[1].x - a.tri[0].x, e1y = a.tri[1].y - a.tri[0].y, e1z = a.tri[1].z - a.tri[0].z;
+      const e2x = a.tri[2].x - a.tri[0].x, e2y = a.tri[2].y - a.tri[0].y, e2z = a.tri[2].z - a.tri[0].z;
+      const nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+      const nl = Math.sqrt(nx * nx + ny * ny + nz * nz);
+      if (nl < 1e-18) continue;
+      const ux = nx / nl, uy = ny / nl, uz = nz / nl;
+      const d = icPerpDist(a);
+      const existing = planes.find((p) => Math.abs(p.na * ux + p.nb * uy + p.nc * uz) > 1 - 1e-4);
+      if (!existing) {
+        planes.push({ na: ux, nb: uy, nc: uz, rep: a, d });
+      } else if (d > existing.d) {
+        existing.rep = a; existing.d = d; // prefer farthest ic per plane
+      }
+    }
+    adj.length = 0;
+    for (const { rep } of planes) adj.push(rep);
   }
 
   // Split-edge fallback: when the geometry triangulates two adjacent faces with
@@ -219,7 +423,8 @@ export function resolveEdge(
 
     const _proj = new THREE.Vector3();
     outerLoop:
-    for (const tri of tris) {
+    for (const idx of candidateIndices) {
+      const tri = tris[idx];
       // Triangle must have ea as a vertex.
       let eaIdx = -1;
       for (let k = 0; k < 3; k++) {
@@ -256,6 +461,86 @@ export function resolveEdge(
         break outerLoop;
       }
     }
+  }
+
+  // Flat-face fallback: handles circle-rim edges where the flat-face
+  // triangulation (ear-clipping after CSG + weldAndClean) produces triangles
+  // that contain A but NOT B — so the primary pass finds only the cylinder-wall
+  // face (which has both A and B) and misses the flat-cap face (A only).
+  // Unlike the split-edge fallback above, we don't require the second vertex to
+  // lie on the A→B segment; we just need any triangle in a different plane that
+  // has A (or B) and an off-edge-line third vertex.
+  if (adj.length === 1) {
+    const f1b = adj[0];
+    const eVec2 = e.b.clone().sub(e.a);
+    const eLen2 = eVec2.length();
+    if (eLen2 < 1e-9) return null;
+    const eDir2 = eVec2.clone().divideScalar(eLen2);
+    const f1n2 = new THREE.Vector3().crossVectors(
+      f1b.tri[1].clone().sub(f1b.tri[0]),
+      f1b.tri[2].clone().sub(f1b.tri[0]),
+    ).normalize();
+    const planeTol2 = 1 - 1e-4;
+
+    // Extend the candidate set to also cover triangles near B (flat-cap
+    // triangle might have B but not A, or lie slightly outside A's grid cell).
+    const candB: number[] =
+      triIdx != null && eps != null
+        ? getCandidatesNear(e.b, triIdx, eps)
+        : [];
+    const extCandidates = candB.length
+      ? Array.from(new Set([...candidateIndices, ...candB]))
+      : candidateIndices;
+
+    const _proj2 = new THREE.Vector3();
+    // Collect ALL valid flat-face candidates; pick the one whose ic vertex is
+    // FARTHEST from the edge chord. For circle-rim edges the ear-clipped
+    // annular ring may produce both "ear" triangles (ic = outer-boundary vertex,
+    // far from chord, correct u2 = outward) and triangles whose ic vertex is
+    // another rim point (close to chord, wrong u2 = inward → fillet cuts into
+    // the hole wall). Maximising perpendicular distance reliably selects the
+    // outer-boundary ic over any nearby rim ic, giving the correct u2 direction.
+    let bestFlatCandidate: { tri: THREE.Vector3[]; ia: number; ib: number; ic: number } | null = null;
+    let bestFlatPerpDist = -1;
+    for (const idx of extCandidates) {
+      const tri = tris[idx];
+      // Triangle must have A or B as a vertex.
+      let anchorIdx = -1;
+      let anchorPt: THREE.Vector3 | null = null;
+      for (let k = 0; k < 3; k++) {
+        if (near(tri[k], e.a)) { anchorIdx = k; anchorPt = e.a; break; }
+        if (near(tri[k], e.b)) { anchorIdx = k; anchorPt = e.b; break; }
+      }
+      if (anchorIdx < 0 || !anchorPt) continue;
+
+      // Must be in a different plane from f1.
+      const tn2 = new THREE.Vector3().crossVectors(
+        tri[1].clone().sub(tri[0]),
+        tri[2].clone().sub(tri[0]),
+      );
+      const tnLen2 = tn2.length();
+      if (tnLen2 < 1e-18) continue;
+      tn2.divideScalar(tnLen2);
+      if (Math.abs(tn2.dot(f1n2)) >= planeTol2) continue;
+
+      // Find ic: a vertex that is not at A, not at B, and not on the A→B line.
+      for (let k = 0; k < 3; k++) {
+        if (near(tri[k], e.a) || near(tri[k], e.b)) continue;
+        const w2 = tri[k].clone().sub(anchorPt);
+        const tPar2 = w2.dot(eDir2);
+        _proj2.copy(anchorPt).addScaledVector(eDir2, tPar2);
+        if (near(tri[k], _proj2)) continue; // on edge line → skip
+        // Perpendicular distance from ic to the chord — prefer the largest
+        // so we select outer-boundary ic vertices over nearby rim vertices.
+        const perpDist = tri[k].distanceTo(_proj2);
+        if (perpDist > bestFlatPerpDist) {
+          bestFlatPerpDist = perpDist;
+          bestFlatCandidate = { tri, ia: anchorIdx, ib: 3 - anchorIdx - k, ic: k };
+        }
+        break; // one ic candidate per triangle
+      }
+    }
+    if (bestFlatCandidate) adj.push(bestFlatCandidate);
   }
 
   if (adj.length !== 2) return null;
@@ -296,12 +581,15 @@ export function computeEdgeGizmoDir(
   edges: PickedEdge[],
 ): THREE.Vector3 | null {
   const tris = buildTriangleList(srcGeo);
-  const near = makeNear(srcGeo);
+  const eps = computePositionEps(srcGeo);
+  const epsSq = eps * eps;
+  const near = (p: THREE.Vector3, q: THREE.Vector3) => p.distanceToSquared(q) <= epsSq;
+  const triIdx = buildTriangleIndex(tris, eps);
 
   const acc = new THREE.Vector3();
   let n = 0;
   for (const e of edges) {
-    const re = resolveEdge(tris, e, near);
+    const re = resolveEdge(tris, e, near, triIdx, eps);
     if (!re) continue;
     // Interior bisector (u1+u2) points into the solid; negate for exterior.
     acc.add(re.u1.clone().add(re.u2).normalize().negate());
@@ -330,9 +618,14 @@ export function computeEdgeCutGeometry(
   edges: PickedEdge[],
   makeCutter: EdgeCutterFn,
   tag: string,
+  fast?: boolean,
+  makeLoopCutter?: LoopCutterFn,
 ): THREE.BufferGeometry | null {
   const tris = buildTriangleList(srcGeo);
-  const near = makeNear(srcGeo);
+  const eps = computePositionEps(srcGeo);
+  const epsSq = eps * eps;
+  const near = (p: THREE.Vector3, q: THREE.Vector3) => p.distanceToSquared(q) <= epsSq;
+  const triIdx = buildTriangleIndex(tris, eps);
 
   // Dedupe edges by GEOMETRY (endpoint pair, either direction, within the
   // edge-match tolerance). Tangent-edge propagation and live-preview
@@ -349,18 +642,72 @@ export function computeEdgeCutGeometry(
     if (!dup) uniqueEdges.push(e);
   }
 
+  // ── Circular-rim fast path ────────────────────────────────────────────────
+  // If the whole selection is one planar circle and the tool supplied an
+  // analytic loop cutter, subtract it ONCE. This is the only way to get a
+  // clean Fusion-style toroidal fillet / conical chamfer: the per-segment
+  // path below tiles ~120 straight box cutters around the circle and the
+  // seams between them collapse into an unrenderable triangle soup.
+  if (makeLoopCutter) {
+    const circle = fitEdgeCircle(uniqueEdges);
+    if (circle) {
+      // Resolve a representative edge for orientation. Try the middle first
+      // (away from any seam artefacts), then scan outward for any that
+      // resolves cleanly.
+      let rep: ResolvedEdge | null = null;
+      const order = [Math.floor(uniqueEdges.length / 2)];
+      for (let i = 0; i < uniqueEdges.length; i++) if (i !== order[0]) order.push(i);
+      for (const idx of order) {
+        rep = resolveEdge(tris, uniqueEdges[idx], near, triIdx, eps);
+        if (rep) break;
+      }
+      if (rep) {
+        const loopCutter = makeLoopCutter(circle, rep);
+        if (loopCutter) {
+          try {
+            // GeometryEngine.csgSubtract welds + cleans + rebuilds topology
+            // internally, so the result is already a clean manifold.
+            const result = GeometryEngine.csgSubtract(srcGeo.clone(), loopCutter);
+            loopCutter.dispose();
+            const posN =
+              (result.attributes.position as THREE.BufferAttribute | undefined)?.count ?? 0;
+            if (posN > 0) {
+              try {
+                const creased = toCreasedNormals(result, THREE.MathUtils.degToRad(40));
+                result.dispose();
+                creased.computeBoundingBox();
+                creased.computeBoundingSphere();
+                return creased;
+              } catch {
+                result.computeVertexNormals();
+                result.computeBoundingBox();
+                result.computeBoundingSphere();
+                return result;
+              }
+            }
+            result.dispose();
+            // Empty result → fall through to the per-segment path.
+          } catch (err) {
+            loopCutter.dispose();
+            console.error(`[${tag}] loop cutter csgSubtract threw — falling back:`, err);
+          }
+        }
+      }
+    }
+  }
+
   // Running solid: start from a clone of the source so we never mutate the
   // caller's geometry; subtract each edge cutter in turn.
   let solid: THREE.BufferGeometry = srcGeo.clone();
   let cut = 0;
 
   for (const e of uniqueEdges) {
-    const re = resolveEdge(tris, e, near);
-    if (!re) { console.warn(`[${tag}] edge did not resolve to 2 faces — skipped`); continue; }
+    const re = resolveEdge(tris, e, near, triIdx, eps);
+    if (!re) continue;
     // Small overhang past the edge ends so the boolean is clean at the ends
     // without visibly notching the adjacent faces.
-    const eps = Math.max(re.length * 1e-3, 1e-4);
-    const cutter = makeCutter(re, eps);
+    const edgeEps = Math.max(re.length * 1e-3, 1e-4);
+    const cutter = makeCutter(re, edgeEps);
     if (!cutter) { console.warn(`[${tag}] degenerate dihedral — edge skipped`); continue; }
     // three-bvh-csg can throw on degenerate / non-manifold inputs. Catch so
     // one bad edge doesn't abort the whole commit (which would also skip the
@@ -374,15 +721,22 @@ export function computeEdgeCutGeometry(
     cutter.dispose();
     if (!next) continue;
     solid.dispose();
-    // Re-weld the soup three-bvh-csg just produced into a clean manifold
-    // before the next cutter slices it (and so the final result is clean):
-    // this is what eliminates the degenerate sliver/spike at shared corners.
-    try {
-      const cleaned = weldAndCleanSolid(next);
-      next.dispose();
-      solid = cleaned;
-    } catch (err) {
-      console.error(`[${tag}] weld/clean failed — keeping raw CSG result:`, err);
+    // In commit mode (fast=false) re-weld after every edge: this eliminates
+    // degenerate slivers at shared corners (e.g. the same box vertex touched
+    // by two perpendicular filleted edges). In fast/preview mode we skip
+    // intermediate welds — non-overlapping cutters (rim fillets, isolated box
+    // edges) don't need them, and avoiding N weld calls is the dominant
+    // speedup for high-segment rims (60–120 edges).
+    if (!fast) {
+      try {
+        const cleaned = weldAndCleanSolid(next, false);
+        next.dispose();
+        solid = cleaned;
+      } catch (err) {
+        console.error(`[${tag}] weld/clean failed — keeping raw CSG result:`, err);
+        solid = next;
+      }
+    } else {
       solid = next;
     }
     cut++;
@@ -394,6 +748,18 @@ export function computeEdgeCutGeometry(
     return null;
   }
 
+  // Fast/preview mode skipped intermediate welds — do one final clean now so
+  // the preview mesh is manifold and toCreasedNormals has good vertex sharing.
+  if (fast && cut > 0) {
+    try {
+      const cleaned = weldAndCleanSolid(solid, true);
+      solid.dispose();
+      solid = cleaned;
+    } catch (err) {
+      console.error(`[${tag}] final weld/clean failed:`, err);
+    }
+  }
+
   // Guard against an empty result (e.g. size so large the cutter removed the
   // entire body) — storing an empty mesh looks like the body vanished.
   const posCount = (solid.attributes.position as THREE.BufferAttribute | undefined)?.count ?? 0;
@@ -403,7 +769,16 @@ export function computeEdgeCutGeometry(
     return null;
   }
 
-  solid.computeVertexNormals();
+  // Crease-aware normals: smooth on the curved fillet/chamfer arc (adjacent
+  // facets typically 10–15° apart) while preserving hard edges at the 90°
+  // flat-face↔fillet boundary. 40° crease angle comfortably spans both cases.
+  try {
+    const creased = toCreasedNormals(solid, THREE.MathUtils.degToRad(40));
+    solid.dispose();
+    solid = creased;
+  } catch {
+    solid.computeVertexNormals();
+  }
   solid.computeBoundingBox();
   solid.computeBoundingSphere();
   return solid;
