@@ -117,15 +117,18 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
     const srcGeo = liveMesh.geometry.index
       ? liveMesh.geometry.clone().toNonIndexed()
       : liveMesh.geometry.clone();
-    const srcVertCount = srcGeo.attributes.position.count;
     const previewGeo = compute(srcGeo, parsed.edges, liveValue);
     srcGeo.dispose();
 
     if (!previewGeo) { restoreLiveMesh(); invalidate(); return; }
 
-    // A chamfer/fillet always adds geometry. Fewer vertices than source means
-    // the CSG over-cut (distance too large, bad edges, etc.) — discard.
-    if (previewGeo.attributes.position.count < srcVertCount) {
+    // Reject genuinely empty output only. The previous guard used
+    // `count < srcVertCount` assuming chamfer/fillet always add vertices, but
+    // `retriangulateCoplanarRegions` (run inside weldAndCleanSolid after the CSG
+    // subtract) merges coplanar fans and can legally reduce vertex count below
+    // the source even for a perfectly valid result — causing false rejections
+    // that left the preview blank while the body stayed visible.
+    if (previewGeo.attributes.position.count === 0) {
       previewGeo.dispose();
       restoreLiveMesh();
       invalidate();

@@ -6,6 +6,34 @@ import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
 import { liveBodyMeshes, bodyGeometryCache, bodyIdGeometryCache } from '../../../store/meshRegistry';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
+import { extractEdgeTopology, type BodyTopology } from '../../../engine/geometryEngine/core/solid/edgeTopology';
+import { extrudeProfileTopology } from '../../../engine/geometryEngine/core/solid/profileTopology';
+
+// A cut that doesn't reach the body's outer edges leaves every one of them
+// geometrically UNCHANGED — but re-extracting topology from the CSG result
+// reliably loses a few of them in the non-manifold soup around the hole. So
+// after a cut we PRESERVE the pre-cut body's exact edges that are clear of the
+// tool, and take only the NEW rim (edges touching the tool's volume) from the
+// post-cut extraction. `mergeCutTopology` implements that. An edge is "clear"
+// when no point of its polyline is inside the padded tool AABB.
+function polylineHitsBox(poly: THREE.Vector3[], box: THREE.Box3): boolean {
+  for (const p of poly) if (box.containsPoint(p)) return true;
+  return false;
+}
+function mergeCutTopology(
+  preTopo: BodyTopology | undefined,
+  postTopo: BodyTopology | undefined,
+  toolBox: THREE.Box3,
+): BodyTopology | undefined {
+  if (!preTopo?.edges?.length) return postTopo;
+  if (!postTopo?.edges?.length) return preTopo;
+  const survivors = preTopo.edges.filter((e) => !polylineHitsBox(e.polyline, toolBox));
+  const rim = postTopo.edges.filter((e) => polylineHitsBox(e.polyline, toolBox));
+  // Nothing survived the clear-of-tool test (unexpected) → keep the post
+  // extraction so we never end up with no edges at all.
+  if (survivors.length === 0) return postTopo;
+  return { edges: [...survivors, ...rim] };
+}
 import type { Feature, Sketch } from '../../../types/cad';
 import { boxesHaveJoinableContact } from '../../../utils/geometry/boundsContact';
 import { BODY_MATERIAL, SURFACE_MATERIAL, DIM_MATERIAL, componentColorMaterial } from './bodyMaterial';
@@ -61,8 +89,10 @@ function BodyMesh({
     if (!mesh) return;
     liveBodyMeshes.set(mesh.uuid, mesh);
     return () => { liveBodyMeshes.delete(mesh.uuid); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run once on mount/unmount — uuid is stable for the mesh's lifetime
+  // geometry is in deps so the registry is refreshed whenever the body's
+  // rendered geometry changes (e.g. after a fillet/chamfer commit).  The mesh
+  // object (and its uuid) stays the same — only the BufferGeometry is swapped.
+  }, [geometry]);
 
   useFrame(({ clock, invalidate }) => {
     if (!isSelected) return;
@@ -315,24 +345,49 @@ export default function ExtrudedBodies() {
       : 0;
     if (profileIndices && profileIndices.length > 1) {
       const geometries: THREE.BufferGeometry[] = [];
+      // Exact per-profile edges from the sketch loops (already WORLD space).
+      const accEdges: { id: string; polyline: THREE.Vector3[]; kind: string }[] = [];
       for (const index of profileIndices) {
         const profileSketch = GeometryEngine.createProfileSketch(sketch, index);
         if (!profileSketch) continue;
         const mesh = GeometryEngine.buildExtrudeFeatureMesh(profileSketch, distance, direction, taperAngle, startOffset, distance2, (feature.params.taperAngle2 as number) ?? taperAngle);
         if (!mesh) continue;
+        const pt = extrudeProfileTopology(profileSketch, distance, direction, startOffset, distance2, taperAngle);
+        for (const e of pt.edges) accEdges.push({ id: `${index}:${e.id}`, kind: e.kind, polyline: e.polyline });
         geometries.push(GeometryEngine.bakeMeshWorldGeometry(mesh));
         mesh.geometry.dispose();
       }
       const merged = geometries.length > 0 ? mergeGeometries(geometries, false) : null;
       geometries.forEach((geometry) => geometry.dispose());
-      return merged ? new THREE.Mesh(merged) : null;
+      if (!merged) return null;
+      const mm = new THREE.Mesh(merged);
+      if (accEdges.length > 0) mm.userData.topoWorld = { edges: accEdges };
+      return mm;
     }
     const sketchForOp = profileIndex !== undefined
       ? GeometryEngine.createProfileSketch(sketch, profileIndex)
       : sketch;
     if (!sketchForOp) return null;
     const taperAngle2 = (feature.params.taperAngle2 as number) ?? taperAngle;
-    return GeometryEngine.buildExtrudeFeatureMesh(sketchForOp, distance, direction, taperAngle, startOffset, distance2, taperAngle2);
+    const m = GeometryEngine.buildExtrudeFeatureMesh(sketchForOp, distance, direction, taperAngle, startOffset, distance2, taperAngle2);
+    if (m) {
+      // Exact edge topology from the CLEAN, indexed THREE.ExtrudeGeometry —
+      // before bake/CSG turns it into the non-manifold soup. This is the
+      // correct source for pure-extrude bodies (profile loops + side seams);
+      // it never produces the soup-residual hole-region lines. Stored LOCAL;
+      // transformed to world at bake time. CSG-modified bodies fall back to
+      // soup-region extraction in commitCurrent.
+      // EXACT edges from the sketch profile loops (clean by construction —
+      // already in WORLD space). Falls back to mesh-soup extraction only for
+      // taper / custom-plane, where profile-derived caps aren't exact.
+      const pt = extrudeProfileTopology(sketchForOp, distance, direction, startOffset, distance2, taperAngle2);
+      if (pt.edges.length > 0) {
+        m.userData.topoWorld = pt;
+      } else {
+        try { m.userData.localTopo = extractEdgeTopology(m.geometry); } catch { /* soup fallback */ }
+      }
+    }
+    return m;
   };
 
   // Content-based signature of the sketches actually referenced by active
@@ -407,6 +462,11 @@ export default function ExtrudedBodies() {
         // Bodies browser). The split order is deterministic (sorted by
         // centroid) so commit-time and render-time agree on which piece
         // corresponds to which bodyId.
+        // Exact extrude topology, if present (pure extrude, never run through
+        // a boolean — a CSG op replaces currentGeom with a soup that has no
+        // userData.topology). Preserved verbatim for the common single-body
+        // case; CSG/multi-part bodies fall back to soup-region extraction.
+        const exactTopo = (currentGeom.userData as { topology?: unknown }).topology;
         const parts = GeometryEngine.splitByConnectedComponents(currentGeom);
         if (parts.length > 1 && parts[0] !== currentGeom) {
           // Multi-part — the original currentGeom is safe to dispose because
@@ -415,6 +475,18 @@ export default function ExtrudedBodies() {
         }
         const bodyIdsForParts = [currentBodyId, ...currentExtraBodyIds];
         for (let i = 0; i < parts.length; i++) {
+          if (exactTopo && parts.length === 1) {
+            // Single pure-extrude body → use its exact ExtrudeGeometry edges
+            // (zero soup-residual hole lines).
+            parts[i].userData.topology = exactTopo;
+          } else {
+            // CSG result or split body → soup-region extraction (best effort).
+            try {
+              parts[i].userData.topology = extractEdgeTopology(parts[i]);
+            } catch {
+              parts[i].userData.topology = { edges: [] };
+            }
+          }
           outBodies.push(parts[i]);
           outIds.push(currentFeatureId);
           outComponentIds.push(currentComponentId);
@@ -438,6 +510,28 @@ export default function ExtrudedBodies() {
       if (!toolMesh) continue;
 
       const toolGeom = GeometryEngine.bakeMeshWorldGeometry(toolMesh);
+      // Exact profile-derived topology is already in WORLD space → attach
+      // verbatim. The legacy LOCAL soup-fallback path is transformed by
+      // matrixWorld to match the baked geometry.
+      const tw = toolMesh.userData.topoWorld as
+        | { edges: { id: string; polyline: THREE.Vector3[]; kind: string }[] }
+        | undefined;
+      const lt = toolMesh.userData.localTopo as
+        | { edges: { id: string; polyline: THREE.Vector3[]; kind: string }[] }
+        | undefined;
+      if (tw) {
+        toolGeom.userData.topology = tw;
+      } else if (lt) {
+        toolMesh.updateMatrixWorld(true);
+        const m4 = toolMesh.matrixWorld;
+        toolGeom.userData.topology = {
+          edges: lt.edges.map((e) => ({
+            id: e.id,
+            kind: e.kind,
+            polyline: e.polyline.map((p) => p.clone().applyMatrix4(m4)),
+          })),
+        };
+      }
       toolMesh.geometry.dispose();
 
       const op = (feature.params.operation as 'new-body' | 'join' | 'cut' | 'intersect') ?? 'new-body';
@@ -458,9 +552,26 @@ export default function ExtrudedBodies() {
           toolGeom.dispose();
           continue;
         }
+        // Pre-cut exact topology + the tool's world AABB, captured BEFORE the
+        // boolean disposes them. A through/blind cut clear of the outer edges
+        // leaves them unchanged, so they are preserved verbatim below.
+        const preCutTopo = (currentGeom.userData as { topology?: BodyTopology }).topology;
+        const toolBox = new THREE.Box3().setFromBufferAttribute(
+          toolGeom.attributes.position as THREE.BufferAttribute,
+        );
+        // Pad by ~0.5% of the tool's diagonal so an outer edge that merely
+        // grazes the tool is still treated as cut-affected (taken from the
+        // post extraction), never falsely "preserved".
+        toolBox.expandByScalar(Math.max(toolBox.min.distanceTo(toolBox.max) * 5e-3, 1e-4));
         const next = GeometryEngine.csgSubtract(currentGeom, toolGeom);
         currentGeom.dispose();
         toolGeom.dispose();
+        const merged = mergeCutTopology(
+          preCutTopo,
+          (next.userData as { topology?: BodyTopology }).topology,
+          toolBox,
+        );
+        if (merged) next.userData.topology = merged;
         currentGeom = next;
         currentFeatureId = feature.id;
         // Keep the original body's component/body association — cut features

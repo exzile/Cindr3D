@@ -88,7 +88,7 @@ import {
 import { shellSolid as shellSolidImpl, type ShellOptions } from './mesh/shellSolid';
 import {
   csgIntersect as csgIntersectImpl,
-  csgSubtract as csgSubtractImpl,
+  csgSubtractWithTopology as csgSubtractWithTopologyImpl,
   csgUnion as csgUnionImpl,
 } from './solid/csg';
 import {
@@ -257,7 +257,12 @@ export class GeometryEngine {
   }
 
   static csgSubtract(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.BufferGeometry {
-    return csgSubtractImpl(a, b);
+    // Phase 2: route through the topology-extracting variant. Render geometry
+    // is byte-identical to the legacy path (same toNonIndexed + per-face
+    // normals); the model-edge topology is attached as userData.topology for
+    // the edge picker / fillet / chamfer. csgSubtractImpl is kept for callers
+    // (e.g. shellSolid) that don't need topology.
+    return csgSubtractWithTopologyImpl(a, b).geometry;
   }
 
   static csgUnion(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.BufferGeometry {

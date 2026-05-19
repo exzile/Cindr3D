@@ -72,7 +72,7 @@ export default function HomePage() {
                 {l.label}
               </a>
             ))}
-            <a href="/" className="home-button home-button--primary home-nav__cta" style={{ minHeight: 32, padding: '0 14px', fontSize: 13 }}>
+            <a href="/design" className="home-button home-button--primary home-nav__cta" style={{ minHeight: 32, padding: '0 14px', fontSize: 13 }}>
               Open app
             </a>
           </div>
@@ -200,7 +200,7 @@ export default function HomePage() {
             </ol>
           </div>
           <div className="deploy-panel__actions">
-            <a className="home-button home-button--primary" href="/">
+            <a className="home-button home-button--primary" href="/design">
               Launch Cindr3D <Cpu size={18} />
             </a>
             <a className="home-button home-button--light" href="https://github.com/exzile/Cindr3D" target="_blank" rel="noreferrer">

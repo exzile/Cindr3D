@@ -34,3 +34,18 @@ export function buildEdgeGeometry(a: THREE.Vector3, b: THREE.Vector3): THREE.Buf
   geom.setFromPoints([a, b]);
   return geom;
 }
+
+/**
+ * Build a polyline BufferGeometry from an ordered list of points. Used to
+ * highlight a FULL model edge (a chain of collinear/tangent-continuous mesh
+ * edges) as a single THREE.Line instead of one triangle-edge segment.
+ * Falls back to a degenerate 2-point line if fewer than 2 points are given.
+ */
+export function buildPolylineGeometry(points: THREE.Vector3[]): THREE.BufferGeometry {
+  const geom = new THREE.BufferGeometry();
+  geom.setFromPoints(points.length >= 2 ? points : [
+    points[0] ?? new THREE.Vector3(),
+    points[0] ?? new THREE.Vector3(),
+  ]);
+  return geom;
+}

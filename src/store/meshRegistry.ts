@@ -10,12 +10,25 @@
  *
  * Key: mesh.uuid (stable for the lifetime of the THREE.Mesh object).
  * Intentionally lives outside Zustand so it is never serialised or persisted.
+ *
+ * Implementation note — globalThis singletons:
+ *   Vite's HMR can re-evaluate this module when its importers change, producing
+ *   a second Map instance.  BodyMesh (ExtrudedBodies) writes to the first
+ *   instance while EdgeOpPreview reads from the second, causing a permanent
+ *   MISS even though the mesh is registered.  Storing the Maps on globalThis
+ *   means every re-evaluation picks up the existing instance instead of
+ *   creating a new empty one, so HMR never splits the registries.
  */
 import type * as THREE from 'three';
 
-/** mesh.uuid → live rendered THREE.Mesh (identity matrixWorld, geometry in world-space) */
-export const liveBodyMeshes = new Map<string, THREE.Mesh>();
+const _g = globalThis as Record<string, unknown>;
 
+// ── Live body-mesh registry ──────────────────────────────────────────────────
+/** mesh.uuid → live rendered THREE.Mesh (identity matrixWorld, geometry in world-space) */
+_g.__cindr3d_liveBodyMeshes__ ??= new Map<string, THREE.Mesh>();
+export const liveBodyMeshes = _g.__cindr3d_liveBodyMeshes__ as Map<string, THREE.Mesh>;
+
+// ── Persistent geometry caches ───────────────────────────────────────────────
 /**
  * Persistent geometry cache that survives viewport unmounts (e.g. navigating
  * to the slicer).  ExtrudedBodies writes a cloned BufferGeometry here keyed
@@ -25,7 +38,8 @@ export const liveBodyMeshes = new Map<string, THREE.Mesh>();
  *
  * Key: feature.id  Value: cloned THREE.BufferGeometry (owned by the cache)
  */
-export const bodyGeometryCache = new Map<string, THREE.BufferGeometry>();
+_g.__cindr3d_bodyGeometryCache__ ??= new Map<string, THREE.BufferGeometry>();
+export const bodyGeometryCache = _g.__cindr3d_bodyGeometryCache__ as Map<string, THREE.BufferGeometry>;
 
 /**
  * Same as bodyGeometryCache but keyed by bodyId (from componentStore).
@@ -34,4 +48,5 @@ export const bodyGeometryCache = new Map<string, THREE.BufferGeometry>();
  *
  * Key: body.id  Value: cloned THREE.BufferGeometry (owned by the cache)
  */
-export const bodyIdGeometryCache = new Map<string, THREE.BufferGeometry>();
+_g.__cindr3d_bodyIdGeometryCache__ ??= new Map<string, THREE.BufferGeometry>();
+export const bodyIdGeometryCache = _g.__cindr3d_bodyIdGeometryCache__ as Map<string, THREE.BufferGeometry>;
