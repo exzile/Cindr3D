@@ -750,9 +750,14 @@ export function computeEdgeCutGeometry(
 
   // Fast/preview mode skipped intermediate welds — do one final clean now so
   // the preview mesh is manifold and toCreasedNormals has good vertex sharing.
+  // Use fast=false (full retriangulate) even in preview mode: the coplanar-fan
+  // collapse (retriangulateCoplanarRegions) fixes the giant diagonal "broken
+  // face" the CSG boolean leaves on flat sides — skipping it makes the preview
+  // look like the old rolling-ball artifact. Skipping intermediate welds already
+  // gave us the main speedup; one full weld at the end is still much faster.
   if (fast && cut > 0) {
     try {
-      const cleaned = weldAndCleanSolid(solid, true);
+      const cleaned = weldAndCleanSolid(solid, false);
       solid.dispose();
       solid = cleaned;
     } catch (err) {
