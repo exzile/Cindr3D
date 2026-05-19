@@ -10,7 +10,7 @@ import { entitiesToShapes, sketchToShape } from '../sketch/sketchProfiles';
 import { csgUnion } from './csg';
 import { buildExtrudeGeomHolesAware } from './extrusionInternals';
 
-function getRightHandedFrame(sketch: Sketch): { t1: THREE.Vector3; t2: THREE.Vector3; normal: THREE.Vector3 } {
+export function getRightHandedFrame(sketch: Sketch): { t1: THREE.Vector3; t2: THREE.Vector3; normal: THREE.Vector3 } {
   const { t1, t2 } = getSketchAxesUtil(sketch);
   const normal = sketch.planeNormal.clone().normalize();
   const frameT2 = t2.clone();

@@ -22,7 +22,7 @@ import { useRef, useCallback, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEdgePicker, type EdgePickResult } from '../../../../hooks/useEdgePicker';
-import { buildEdgeGeometry } from '../pickerGeometry';
+import { buildPolylineGeometry } from '../pickerGeometry';
 import { applyLinePulse } from '../pickPulse';
 
 interface EdgeOpEdgeHighlightProps {
@@ -38,10 +38,19 @@ interface EdgeOpEdgeHighlightProps {
   selectedColor: number;
 }
 
+/** Ordered points representing the picked edge: the full chained model edge
+ *  when available, else the single hit segment. */
+function edgePoints(result: EdgePickResult): THREE.Vector3[] {
+  return result.chain && result.chain.length >= 2
+    ? result.chain
+    : [result.edgeVertexA, result.edgeVertexB];
+}
+
 function edgeId(result: EdgePickResult): string {
   const fid = (result.mesh.userData.featureId as string | undefined) ?? '';
   const prefix = fid ? `${fid}|` : '';
-  return `${prefix}${result.mesh.uuid}:${result.edgeVertexA.toArray().join(',')}:${result.edgeVertexB.toArray().join(',')}`;
+  const pts = edgePoints(result).map((p) => p.toArray().join(',')).join(':');
+  return `${prefix}${result.mesh.uuid}:${pts}`;
 }
 
 export default function EdgeOpEdgeHighlight({
@@ -66,9 +75,18 @@ export default function EdgeOpEdgeHighlight({
 
   const hoverLineRef = useRef<THREE.Line | null>(null);
   const hoverResultRef = useRef<EdgePickResult | null>(null);
+  // Identity of the hover edge whose geometry is currently built. The pulse
+  // keeps the demand loop running (invalidate()), so without this the hover
+  // line's BufferGeometry was disposed + rebuilt EVERY frame while the cursor
+  // sat on one edge. `hoverResultRef` only changes on pointermove; the stable
+  // edge id changes only when a DIFFERENT model edge is hovered — so we rebuild
+  // exactly when the rendered polyline would actually differ.
+  const renderedHoverRef = useRef<EdgePickResult | null>(null);
+  const renderedHoverIdRef = useRef<string | null>(null);
 
   const selectedLinesRef = useRef<Map<string, THREE.Line>>(new Map());
-  const selectedEdgesDataRef = useRef<Map<string, { a: THREE.Vector3; b: THREE.Vector3 }>>(new Map());
+  // id → the full ordered polyline of the selected model edge (≥2 points).
+  const selectedEdgesDataRef = useRef<Map<string, THREE.Vector3[]>>(new Map());
 
   // Imperative cursor: a reactive `hovering` state would re-render on every
   // pointermove (the dep-storm the R3F patterns warn about), so the cursor is
@@ -118,10 +136,7 @@ export default function EdgeOpEdgeHighlight({
       return;
     }
     addEdge(id);
-    selectedEdgesDataRef.current.set(id, {
-      a: result.edgeVertexA.clone(),
-      b: result.edgeVertexB.clone(),
-    });
+    selectedEdgesDataRef.current.set(id, edgePoints(result).map((p) => p.clone()));
   }, [addEdge, removeEdge, edgeIds]);
 
   useEdgePicker({
@@ -137,6 +152,8 @@ export default function EdgeOpEdgeHighlight({
         scene.remove(hoverLineRef.current);
         hoverLineRef.current.geometry.dispose();
         hoverLineRef.current = null;
+        renderedHoverRef.current = null;
+        renderedHoverIdRef.current = null;
       }
       if (selectedLinesRef.current.size > 0) {
         selectedLinesRef.current.forEach((line) => {
@@ -165,21 +182,35 @@ export default function EdgeOpEdgeHighlight({
       cursorOnRef.current = wantCursor;
     }
 
-    // Hover line
+    // Hover line — draw the FULL chained model edge when available. Only
+    // (re)build the geometry when the hovered model edge actually changes;
+    // every frame in between is just the pulse mutating opacity.
     if (hr) {
-      if (!hoverLineRef.current) {
-        const line = new THREE.Line(buildEdgeGeometry(hr.edgeVertexA, hr.edgeVertexB), hoverMat);
-        line.renderOrder = 100;
-        scene.add(line);
-        hoverLineRef.current = line;
-      } else {
-        hoverLineRef.current.geometry.dispose();
-        hoverLineRef.current.geometry = buildEdgeGeometry(hr.edgeVertexA, hr.edgeVertexB);
+      if (hr !== renderedHoverRef.current) {
+        renderedHoverRef.current = hr;
+        const id = edgeId(hr);
+        if (id !== renderedHoverIdRef.current || !hoverLineRef.current) {
+          renderedHoverIdRef.current = id;
+          const hPts = hr.chain && hr.chain.length >= 2
+            ? hr.chain
+            : [hr.edgeVertexA, hr.edgeVertexB];
+          if (!hoverLineRef.current) {
+            const line = new THREE.Line(buildPolylineGeometry(hPts), hoverMat);
+            line.renderOrder = 100;
+            scene.add(line);
+            hoverLineRef.current = line;
+          } else {
+            hoverLineRef.current.geometry.dispose();
+            hoverLineRef.current.geometry = buildPolylineGeometry(hPts);
+          }
+        }
       }
     } else if (hoverLineRef.current) {
       scene.remove(hoverLineRef.current);
       hoverLineRef.current.geometry.dispose();
       hoverLineRef.current = null;
+      renderedHoverRef.current = null;
+      renderedHoverIdRef.current = null;
     }
 
     // Sync selected lines with edgeIds
@@ -194,8 +225,8 @@ export default function EdgeOpEdgeHighlight({
     for (const id of edgeIds) {
       if (!selectedLinesRef.current.has(id)) {
         const edgeData = selectedEdgesDataRef.current.get(id);
-        if (edgeData) {
-          const line = new THREE.Line(buildEdgeGeometry(edgeData.a, edgeData.b), selectedMat);
+        if (edgeData && edgeData.length >= 2) {
+          const line = new THREE.Line(buildPolylineGeometry(edgeData), selectedMat);
           line.renderOrder = 100;
           scene.add(line);
           selectedLinesRef.current.set(id, line);
