@@ -42,6 +42,9 @@ Note: the geometry-layer edge-dedupe above means even if parse returns duplicate
 - **Feed the boolean a welded INDEXED manifold source** instead of non-indexed soup — does NOT fix the quad-fan (top-front stayed 40) and slightly regressed the multi-edge case. Reverted.
 - Position-welded boundary/non-manifold counts OVER-COUNT on raw three-bvh-csg soup — valid only for RELATIVE comparison; the trustworthy absolute signal is **near-zero-area (degenerate) triangle count**.
 
+## PERF 2026-05-20 (round 12) — parseEdgeIds avoids per-point split+map+some allocations
+The chain-segment parse loop ran `parts[pi].split(',').map(Number)` plus `.some((n) => !Number.isFinite(n))` per point — three transient arrays + a closure invocation per point. Circle-rim selections arrive with 30+ points per ID, and with several picked rims the loop allocates hundreds of throw-away arrays per parse. Switched to direct `indexOf`/`slice`/`+` parsing (no transient arrays, no closure) with explicit `Number.isFinite` checks on the three scalars. Behaviour-equivalent — added 8 new unit tests covering simple/legacy/featureId-prefixed IDs, chained multi-segment IDs, malformed IDs, NaN/Infinity rejection, and the null-featureId upgrade case to lock in the contract. Also added 3 tests for `parseEdgeLabel`'s `Number.isFinite` guard (no `NaN` in the dialog).
+
 ## PERF 2026-05-20 (round 11) — hoist edgeIds Set to a useMemo
 `EdgeOpEdgeHighlight.useFrame` was constructing `new Set(edgeIds)` on every frame for the selected-line cleanup membership check (~100 ops × 60 Hz = 6000/sec on a circle-rim selection). Hoisted into `const edgeIdSet = useMemo(() => new Set(edgeIds), [edgeIds])` so it's built once per edgeIds change. `handleClick` also switched to `edgeIdSet.has(id)` instead of `edgeIds.includes(id)` — O(1) vs O(N), and the callback's identity stability follows edgeIdSet (which already follows edgeIds).
 

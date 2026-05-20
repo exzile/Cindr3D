@@ -6,6 +6,8 @@ import {
   clusterEdgesByEndpointConnectivity,
   buildTriangleList,
   computeEdgeGizmoDir,
+  parseEdgeIds,
+  parseEdgeLabel,
   type PickedEdge,
 } from './edgeCutCore';
 
@@ -167,6 +169,107 @@ describe('buildTriangleList — indexed vs non-indexed parity', () => {
 
     indexed.dispose();
     nonIndexed.dispose();
+  });
+});
+
+describe('parseEdgeIds', () => {
+  it('parses a simple two-point legacy edge ID', () => {
+    const out = parseEdgeIds(['mesh-uuid:0,0,0:1,0,0']);
+    expect(out).not.toBeNull();
+    expect(out!.featureId).toBeNull();
+    expect(out!.meshUuid).toBe('mesh-uuid');
+    expect(out!.edges).toHaveLength(1);
+    expect(out!.edges[0].a.x).toBe(0);
+    expect(out!.edges[0].b.x).toBe(1);
+  });
+
+  it('parses a featureId-prefixed edge ID', () => {
+    const out = parseEdgeIds(['feat-1|mesh-uuid:0,0,0:1,0,0']);
+    expect(out).not.toBeNull();
+    expect(out!.featureId).toBe('feat-1');
+    expect(out!.meshUuid).toBe('mesh-uuid');
+  });
+
+  it('parses a chained edge ID into multiple segments', () => {
+    // 4 points → 3 segments
+    const out = parseEdgeIds(['mesh-uuid:0,0,0:1,0,0:1,1,0:0,1,0']);
+    expect(out).not.toBeNull();
+    expect(out!.edges).toHaveLength(3);
+    expect(out!.edges[0].a.toArray()).toEqual([0, 0, 0]);
+    expect(out!.edges[1].a.toArray()).toEqual([1, 0, 0]);
+    expect(out!.edges[2].b.toArray()).toEqual([0, 1, 0]);
+  });
+
+  it('handles negative and decimal coordinates', () => {
+    const out = parseEdgeIds(['m:-1.5,2.25,-0.5:3.75,-4,0']);
+    expect(out).not.toBeNull();
+    expect(out!.edges[0].a.toArray()).toEqual([-1.5, 2.25, -0.5]);
+    expect(out!.edges[0].b.toArray()).toEqual([3.75, -4, 0]);
+  });
+
+  it('returns null when all IDs are malformed', () => {
+    expect(parseEdgeIds([])).toBeNull();
+    expect(parseEdgeIds(['totally-broken'])).toBeNull();
+    expect(parseEdgeIds(['mesh:onlyOnePoint'])).toBeNull();
+    expect(parseEdgeIds(['mesh:bad,coords:1,2,3'])).toBeNull();
+  });
+
+  it('drops only the malformed ID and keeps the rest', () => {
+    const out = parseEdgeIds([
+      'mesh:0,0,0:1,0,0',
+      'mesh:nope:1,1,1',          // malformed middle coord
+      'mesh:2,0,0:3,0,0',
+    ]);
+    expect(out).not.toBeNull();
+    // Two good IDs → 2 segments on the same mesh.
+    expect(out!.edges).toHaveLength(2);
+  });
+
+  it('rejects NaN/Infinity coords', () => {
+    expect(parseEdgeIds(['m:NaN,0,0:1,0,0'])).toBeNull();
+    expect(parseEdgeIds(['m:Infinity,0,0:1,0,0'])).toBeNull();
+  });
+
+  it('merges edges on the same mesh under one ParsedEdges', () => {
+    const out = parseEdgeIds([
+      'mesh:0,0,0:1,0,0',
+      'mesh:1,0,0:1,1,0',
+      'mesh:1,1,0:0,1,0',
+    ]);
+    expect(out).not.toBeNull();
+    expect(out!.edges).toHaveLength(3);
+  });
+
+  it('upgrades a null featureId to a concrete one seen on the same mesh', () => {
+    // First ID has no featureId; second has one — the merged result should
+    // carry the concrete featureId (applyEdgeCut needs it for feature-id
+    // lookup on extrude bodies).
+    const out = parseEdgeIds([
+      'mesh:0,0,0:1,0,0',
+      'feat-1|mesh:1,0,0:1,1,0',
+    ]);
+    expect(out).not.toBeNull();
+    expect(out!.featureId).toBe('feat-1');
+  });
+});
+
+describe('parseEdgeLabel', () => {
+  it('formats endpoints with 1-decimal precision', () => {
+    const label = parseEdgeLabel('m:0,0,0:1.2345,2,3', 0);
+    expect(label).toContain('Edge 1');
+    expect(label).toContain('(0.0, 0.0, 0.0)');
+    expect(label).toContain('(1.2, 2.0, 3.0)');
+  });
+
+  it('falls back to `Edge N` for malformed IDs', () => {
+    expect(parseEdgeLabel('garbage', 0)).toBe('Edge 1');
+    expect(parseEdgeLabel('mesh:notenough', 4)).toBe('Edge 5');
+  });
+
+  it('never prints NaN for non-finite coords (Number.isFinite guard)', () => {
+    const label = parseEdgeLabel('m:NaN,0,0:1,0,0', 0);
+    expect(label).toBe('Edge 1');
+    expect(label).not.toContain('NaN');
   });
 });
 

@@ -110,12 +110,26 @@ export function parseEdgeIds(edgeIds: string[]): ParsedEdges | null {
     // consecutive segments (the whole box edge / hole-rim loop). Decoding the
     // chain into its segments means the cut pipeline chamfers the ENTIRE edge.
     const pts: THREE.Vector3[] = [];
+    let parseOk = true;
     for (let pi = 1; pi < parts.length; pi++) {
-      const c = parts[pi].split(',').map(Number);
-      if (c.length !== 3 || c.some((n) => !Number.isFinite(n))) { pts.length = 0; break; }
-      pts.push(new THREE.Vector3(c[0], c[1], c[2]));
+      // Parse each "x,y,z" coord directly via two indexOf splits instead of
+      // `split(',').map(Number).some(...)`. Avoids two transient arrays per
+      // point on multi-point chain IDs — circle-rim selections arrive with
+      // 30+ points per ID, so this matters when the user picks several.
+      const seg = parts[pi];
+      const c1 = seg.indexOf(',');
+      const c2 = c1 < 0 ? -1 : seg.indexOf(',', c1 + 1);
+      if (c2 < 0) { parseOk = false; break; }
+      const x = +seg.slice(0, c1);
+      const y = +seg.slice(c1 + 1, c2);
+      const z = +seg.slice(c2 + 1);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+        parseOk = false;
+        break;
+      }
+      pts.push(new THREE.Vector3(x, y, z));
     }
-    if (pts.length < 2) continue;
+    if (!parseOk || pts.length < 2) continue;
     const segs: PickedEdge[] = [];
     for (let pi = 0; pi < pts.length - 1; pi++) {
       segs.push({ a: pts[pi], b: pts[pi + 1] });
