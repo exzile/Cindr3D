@@ -42,6 +42,9 @@ Note: the geometry-layer edge-dedupe above means even if parse returns duplicate
 - **Feed the boolean a welded INDEXED manifold source** instead of non-indexed soup — does NOT fix the quad-fan (top-front stayed 40) and slightly regressed the multi-edge case. Reverted.
 - Position-welded boundary/non-manifold counts OVER-COUNT on raw three-bvh-csg soup — valid only for RELATIVE comparison; the trustworthy absolute signal is **near-zero-area (degenerate) triangle count**.
 
+## PERF 2026-05-20 (round 9) — skip redundant computeBoundingBox
+`computePositionEps` was unconditionally calling `srcGeo.computeBoundingBox()` on every invocation. The render pipeline almost always has the bbox set (frustum culling needs it), so the recompute was wasted O(N) work. Now guarded by `if (!srcGeo.boundingBox) srcGeo.computeBoundingBox()`. Hit primarily by `EdgeOpPreview.parsedAndClustered` memo (runs `computePositionEps(liveMesh.geometry)` on every edges change) and indirectly through the per-srcGeo cache's first miss.
+
 ## PERF 2026-05-20 (round 8) — EdgeOpPreview reuses preview mesh across updates
 Previously every debounced value tick (every 150 ms during gizmo drag) did `scene.remove(previewMesh) + previewMesh.geometry.dispose() + new THREE.Mesh(...) + scene.add(newMesh)` — a full scenegraph remove/add cycle plus shadow-flag setup. Now we keep the same `THREE.Mesh` wrapper in the scene across updates and just swap its `geometry` field (the geometry itself MUST be a new buffer per tick — positions differ). The previous geometry is disposed AFTER the swap so the mesh is never temporarily geometry-less.
 
