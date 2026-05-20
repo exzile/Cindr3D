@@ -42,6 +42,11 @@ Note: the geometry-layer edge-dedupe above means even if parse returns duplicate
 - **Feed the boolean a welded INDEXED manifold source** instead of non-indexed soup — does NOT fix the quad-fan (top-front stayed 40) and slightly regressed the multi-edge case. Reverted.
 - Position-welded boundary/non-manifold counts OVER-COUNT on raw three-bvh-csg soup — valid only for RELATIVE comparison; the trustworthy absolute signal is **near-zero-area (degenerate) triangle count**.
 
+## PERF 2026-05-20 (round 8) — EdgeOpPreview reuses preview mesh across updates
+Previously every debounced value tick (every 150 ms during gizmo drag) did `scene.remove(previewMesh) + previewMesh.geometry.dispose() + new THREE.Mesh(...) + scene.add(newMesh)` — a full scenegraph remove/add cycle plus shadow-flag setup. Now we keep the same `THREE.Mesh` wrapper in the scene across updates and just swap its `geometry` field (the geometry itself MUST be a new buffer per tick — positions differ). The previous geometry is disposed AFTER the swap so the mesh is never temporarily geometry-less.
+
+The mesh is still rebuilt fresh when `liveMesh.material` swaps (i.e. body identity changes under us) — same conservatism as before. Bail-out paths (`!parsedAndClustered`, `!previewGeo`, empty positions) now also clean up the lingering preview mesh through a single `restoreLiveMesh()` helper, so the "we kept the mesh between ticks" optimisation can never strand it on dialog close or mesh-disappear.
+
 ## PERF 2026-05-20 (round 7) — cached edge chain in topology cache
 `pickNearestEdge` allocated a fresh `THREE.Vector3[]` for the whole edge polyline every time it returned (continuous hover at 60 Hz, up to ~30 segments per circle-rim edge). Moved the chain materialisation into `topologyCache.getCachedChain(ce)` — lazily built on first access, then reused for the cached edge's lifetime. WeakMap-evicts with the geometry; rebuilds automatically on cache miss (when geom/topo/matrix changes).
 

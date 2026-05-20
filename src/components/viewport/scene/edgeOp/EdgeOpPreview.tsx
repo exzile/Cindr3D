@@ -143,14 +143,14 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
   }, [scene]); // invalidate stable; scene stable for Canvas lifetime
 
   useEffect(() => {
-    // Remove the stale preview geometry — but DON'T restore live-mesh visibility
-    // yet. If we're just updating liveValue on the same mesh, we keep it hidden
-    // throughout so there's no visible flash between updates during gizmo drag.
-    if (previewMeshRef.current) {
-      scene.remove(previewMeshRef.current);
-      previewMeshRef.current.geometry.dispose();
-      previewMeshRef.current = null;
-    }
+    // Hold a local reference to the previous geometry so we can dispose it
+    // ONLY after the new preview is in place — and only the geometry, never
+    // the mesh wrapper. Keeping the mesh in the scene across updates avoids
+    // the remove/add round-trip on every debounced value tick (R3F also
+    // skips re-allocating the renderlist entry). Geometry still has to swap
+    // because the new positions are a fresh buffer.
+    const oldPreviewGeo: THREE.BufferGeometry | null =
+      previewMeshRef.current?.geometry ?? null;
 
     const restoreLiveMesh = () => {
       if (hiddenMeshRef.current) {
@@ -161,6 +161,12 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
       }
       // No preview → the real (now visible) body is pickable again; drop proxy.
       removePickProxy(scene);
+      // Strand-safe: if we're bailing out, drop the lingering preview mesh too.
+      if (previewMeshRef.current) {
+        scene.remove(previewMeshRef.current);
+        previewMeshRef.current.geometry.dispose();
+        previewMeshRef.current = null;
+      }
     };
 
     // parsedAndClustered is null when !enabled, edges empty, or no live mesh —
@@ -241,11 +247,23 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
       pickProxyRef.current = proxy;
     }
 
-    const previewMesh = new THREE.Mesh(previewGeo, liveMesh.material);
-    previewMesh.castShadow = true;
-    previewMesh.receiveShadow = true;
-    scene.add(previewMesh);
-    previewMeshRef.current = previewMesh;
+    if (previewMeshRef.current && previewMeshRef.current.material === liveMesh.material) {
+      // Reuse the mesh: just swap in the new geometry. Stays in the scene
+      // across debounced ticks so R3F's renderlist entry isn't recycled.
+      previewMeshRef.current.geometry = previewGeo;
+    } else {
+      // First preview, or the live mesh swapped under us: build a fresh mesh.
+      if (previewMeshRef.current) scene.remove(previewMeshRef.current);
+      const previewMesh = new THREE.Mesh(previewGeo, liveMesh.material);
+      previewMesh.castShadow = true;
+      previewMesh.receiveShadow = true;
+      scene.add(previewMesh);
+      previewMeshRef.current = previewMesh;
+    }
+
+    // Dispose the previous geometry AFTER the new one is in place so there's
+    // never a window where the mesh is temporarily geometry-less.
+    if (oldPreviewGeo && oldPreviewGeo !== previewGeo) oldPreviewGeo.dispose();
 
     invalidate();
     // parsedAndClustered carries enabled+debouncedEdgeIds as its own deps; the
