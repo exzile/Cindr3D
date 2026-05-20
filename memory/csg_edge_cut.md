@@ -8,6 +8,32 @@ Chamfer and fillet are ONE operation differing only in the per-edge cutter. Shar
 ## Edge-ID format
 `${featureId}|${meshUuid}:${ax,ay,az}:${bx,by,bz}` (world coords; legacy = no `featureId|`). `meshUuid` is VOLATILE (recreated on geometry swap / BodyMesh remount / HMR). Built in `EdgeOpEdgeHighlight.tsx` `edgeId(result)`.
 
+## FIXED 2026-05-20 — ghost topology (selection of pre-cut edges through filleted/chamfered geometry)
+When a fillet/chamfer cut consumes a sharp edge it leaves no detectable edge in `extractEdgeTopology` (fillet transitions have ~0–7.5° dihedral, well below the 30° threshold; chamfer endpoint transitions are tangent). The picker was blind to those edges and users couldn't chamfer-the-already-filleted-edge.
+
+**Fix**: `computeEdgeCutGeometry` in `edgeCutCore.ts` now captures `srcGeo.userData.topology + srcGeo.userData.ghostTopology` at the top of the function and stamps the union as `output.userData.ghostTopology = { edges: [...] }`. Multi-step chains (box → fillet → chamfer → …) accumulate the history: each operation's source-topology contribution flows into the result's ghost.
+
+**Picker**: `pickNearestEdge` reads `geom.userData.ghostTopology` alongside `geom.userData.topology` and walks both through the same screen-space-nearest loop — whichever segment is closer wins. Ghost edges are returned through the same `EdgePickResult` shape (no `isGhost` flag yet — added if/when the highlight needs to render them differently).
+
+**Cache**: `topologyCache.getCachedEdges` was a one-entry-per-geom WeakMap; ghost + live with the same geom thrashed it. Refactored to `WeakMap<geom, Map<topo, entry>>` so both topologies stay warm. matrixSnap compare unchanged.
+
+**Migration**: existing committed fillets have NO `ghostTopology` — they were stamped before this code landed. Users must delete + re-apply the fillet feature for ghost edges to materialize on that body. Documented user-facing.
+
+**Chamfer-on-ghost-edge commit caveat**: the cutter is built at the original (pre-fillet) edge coordinates and CSG-subtracted from the current (filleted) geometry. Result is geometrically valid but may render as a chamfer-stacked-on-fillet faceted shape rather than a clean "fillet replaced by chamfer". Cleaner replacement requires timeline-aware logic (suppress the prior fillet before re-applying chamfer) — separate change.
+
+## FIXED 2026-05-20 — edge picker uses SCREEN-space distance (KEEP)
+`pickNearestEdge` (in `src/hooks/edgePicker/nearestEdge.ts`) previously found the edge nearest the 3D ray-hit point. **This is wrong** on perspective/isometric views: when the raycast lands on a face, the 3D-nearest edge to that hit point is often NOT the edge the user is visually pointing at. Symptom: on a filleted box viewed from a TOP perspective, the user couldn't pick the visible "front-top edge" — the algorithm kept selecting the left-top or back-top edge (3D-nearer to the cursor's surface hit) and the proximity gate then rejected it because that 3D-nearest edge projected ~120-160 px away in screen space.
+
+**Fix:** changed the inner loop to project every cached-edge segment to canvas-pixel space and pick the segment with the minimum `segDistSqPx` to the cursor. The 3D `hitPoint` is no longer consulted for edge selection (param kept and underscored). Signature now takes `camera, cursorPx, cursorPy, rectW, rectH`; both callsites in `useEdgePicker.ts` (`handlePointerMove` + `handleClick`) updated.
+
+**Why this is safe for circles/rims:** a circle is ONE `CachedEdge` with N segments — the closest segment determines screen distance, but the whole `chain` (full polyline) is still returned for highlight/cut. Selection behavior on circles is identical. The cached-chain pattern (PERF round 7) is untouched: `getCachedChain(bestEdge)` is still called once per pick.
+
+**Why occlusion still works:** `edgeIsPickable` still casts a ray through the segment's nearest-to-hitpoint NDC. If the picked edge is behind the body, the front face is hit first → rejected. The `hitPoint` parameter still feeds the occlusion check via the caller, even though `pickNearestEdge` itself doesn't use it for selection.
+
+**Companion changes:** `EDGE_PICK_PX` bumped 12→20 in `edgeVisibility.ts` (perspective foreshortening leaves the cursor a few px off the projected line even when it looks "on" the edge — matches Fusion-style slop). `edgeIsPickable` now walks the full chain in screen space (was only checking `edgeVertexA/B`).
+
+**Perf:** ~300 segment projections per pointermove worst case (98 edges × avg 2 segments + a few rims), <0.1 ms. The broad-phase AABB skip was removed (it gated on 3D distance, which is no longer the metric) — net cost still well under one frame.
+
 ## Verified fix — weld between sequential CSG cuts (KEEP)
 `computeEdgeCutGeometry` calls `weldAndCleanSolid(next)` after every successful `csgSubtract` (and on the final result). three-bvh-csg emits an UNWELDED triangle soup; the next cut slicing that soup near a vertex shared by two picked edges produced a gray "star/spike" of degenerate/inverted slivers. Welding (`mergeVertices`, **normal+uv deleted first** so it unifies by position, then `computeVertexNormals` — three-bvh-csg throws if a later operand lacks `normal`) + dropping near-zero-area tris hands each subsequent boolean a clean manifold. Hardened 2026-05: weld + degenerate-area tolerances are **bbox-diagonal-relative** (like `makeNear`; weld=max(diag·1e-5,1e-6), degenLen=max(diag·1e-7,1e-7)) so sub-mm/huge parts are safe; zero `uv` re-added to match the old raw-CSG attribute set; `try/finally` disposes all intermediates on throw; output positions preallocated (no per-vert push). Verified: 2-/4-edge shared-corner degenerate tris 2/3→0, non-manifold 4→0, single-edge known-good stays clean, cuts apply monotonically. **Do not remove or regress this.**
 

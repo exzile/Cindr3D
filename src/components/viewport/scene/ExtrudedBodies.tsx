@@ -647,6 +647,30 @@ export default function ExtrudedBodies() {
     }
   }, [bodies, featureIds, featureBodyIds]);
 
+  // Register stored-mesh features (fillet/chamfer/sweep/etc.) in liveBodyMeshes
+  // so EdgeOpPreview can locate the geometry by mesh UUID when it needs to
+  // dispatch a live-preview job (e.g. chamfer after fillet commits).
+  // BodyMesh handles its own registration; <primitive>-rendered meshes do not,
+  // so we mirror the same pattern here for them.
+  useEffect(() => {
+    const stored: Array<{ uuid: string }> = [];
+    for (const f of features) {
+      if (!isActive(f) || !f.mesh) continue;
+      const m = f.mesh as THREE.Mesh;
+      // Stamp userData eagerly so collectPickable / EdgeOpEdgeHighlight's
+      // featureId filter can find this mesh before R3F's <primitive> onUpdate
+      // fires on the next animation frame. Without this the mesh is in the scene
+      // but invisible to the edge picker until the first R3F reconcile after mount.
+      m.userData.pickable = true;
+      m.userData.featureId = f.id;
+      m.userData.bodyId = resolveBodyId(f.id, f.bodyId);
+      liveBodyMeshes.set(m.uuid, m);
+      stored.push({ uuid: m.uuid });
+    }
+    return () => { stored.forEach(({ uuid }) => liveBodyMeshes.delete(uuid)); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [features, rollbackIndex]);
+
   // Apply dim / appearance materials on pre-built stored meshes in an effect,
   // never in render, so cleanup is guaranteed when Edit In Place exits.
   useEffect(() => {

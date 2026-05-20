@@ -50,14 +50,15 @@ export function getCachedChain(ce: CachedEdge): THREE.Vector3[] {
   return out;
 }
 
-interface TopoCache {
-  topo: BodyTopologyLike;
+interface TopoCacheEntry {
   /** 12-float snapshot of the matrix's affine elements (skips the bottom row). */
   matrixSnap: Float32Array;
   edges: CachedEdge[];
 }
 
-const _topoCache = new WeakMap<THREE.BufferGeometry, TopoCache>();
+// Two-level cache: WeakMap on geometry (evicts when GC'd), inner Map keyed on
+// topo identity so live + ghost topologies for the same geom can coexist.
+const _topoCacheV2 = new WeakMap<THREE.BufferGeometry, Map<BodyTopologyLike, TopoCacheEntry>>();
 const _t = new THREE.Vector3();
 
 /** Element-wise compare of two 12-float matrix snapshots. */
@@ -92,8 +93,17 @@ export function getCachedEdges(
   // per-move concat allocation and the O(string-length) cmp. Live body
   // meshes typically have identity matrixWorld, so the compare returns true
   // on the very first row and short-circuits.
-  const hit = _topoCache.get(geom);
-  if (hit && hit.topo === topo && matrixSnapEq(hit.matrixSnap, m)) return hit.edges;
+  //
+  // GHOST TOPOLOGY SUPPORT: nearestEdge.ts calls this twice per pointermove —
+  // once with the live topology and once with `geom.userData.ghostTopology`.
+  // Both share the same `geom` but the `topo` reference differs, so we key the
+  // inner cache on the topo identity to keep both warm. WeakMap on geom evicts
+  // when the geometry is GC'd; the inner Map shares that lifetime.
+  let perGeom = _topoCacheV2.get(geom);
+  if (perGeom) {
+    const hit = perGeom.get(topo);
+    if (hit && matrixSnapEq(hit.matrixSnap, m)) return hit.edges;
+  }
 
   const edges: CachedEdge[] = topo.edges.map((edge) => {
     const pl = edge.polyline;
@@ -109,7 +119,11 @@ export function getCachedEdges(
     }
     return { pts, aabb: new Float64Array([mnx, mny, mnz, mxx, mxy, mxz]), ref: edge };
   });
-  _topoCache.set(geom, { topo, matrixSnap: snapshotMatrix(m), edges });
+  if (!perGeom) {
+    perGeom = new Map();
+    _topoCacheV2.set(geom, perGeom);
+  }
+  perGeom.set(topo, { matrixSnap: snapshotMatrix(m), edges });
   return edges;
 }
 

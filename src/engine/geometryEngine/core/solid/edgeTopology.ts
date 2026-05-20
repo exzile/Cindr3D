@@ -27,6 +27,12 @@ import * as THREE from 'three';
 import { HalfEdgeMap } from 'three-bvh-csg';
 import { modelEdgeId } from './edgeId';
 
+type HalfEdgeMapWithDisjointEdges = HalfEdgeMap & {
+  matchDisjointEdges: boolean;
+  useDrawRange: boolean;
+  getDisjointSiblingTriangleIndices(triIndex: number, edgeIndex: number): number[];
+};
+
 export interface ModelEdge {
   /** Stable id (canonical endpoint hash) — same regardless of which segment was hit. */
   id: string;
@@ -163,7 +169,7 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
   };
 
   // Position-hashed half-edge map; disjoint matching stitches CSG T-junctions.
-  const hem = new HalfEdgeMap();
+  const hem = new HalfEdgeMap() as HalfEdgeMapWithDisjointEdges;
   hem.matchDisjointEdges = true;
   hem.useDrawRange = false;
   try {

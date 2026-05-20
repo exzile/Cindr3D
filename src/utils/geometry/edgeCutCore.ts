@@ -12,14 +12,14 @@
  */
 import * as THREE from 'three';
 import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { GeometryEngine } from '../../engine/GeometryEngine';
 import { liveBodyMeshes } from '../../store/meshRegistry';
-// weldAndCleanSolid moved to engine/geometryEngine/core/solid/weldClean.ts so
-// csg.ts can clean a CSG result without the csg → edgeCutCore → GeometryEngine
-// → csg import cycle. Imported here for internal use by computeEdgeCutGeometry;
-// re-exported below so existing external consumers keep importing it from here.
 import { weldAndCleanSolid } from '../../engine/geometryEngine/core/solid/weldClean';
 export { weldAndCleanSolid } from '../../engine/geometryEngine/core/solid/weldClean';
+import {
+  csgSubtract as csgSubtractRaw,
+  csgSubtractWithTopology,
+} from '../../engine/geometryEngine/core/solid/csg';
+import { extractEdgeTopology } from '../../engine/geometryEngine/core/solid/edgeTopology';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -864,9 +864,21 @@ export function computeEdgeCutGeometry(
   edges: PickedEdge[],
   makeCutter: EdgeCutterFn,
   tag: string,
-  fast?: boolean,
+  _fast?: boolean,
   makeLoopCutter?: LoopCutterFn,
 ): THREE.BufferGeometry | null {
+  // Capture source topology + any prior ghost so the picker can still find
+  // edges that this cut consumes (fillet replaces the box's sharp top-left
+  // corner with an arc — the picker would otherwise be blind to it). Stored
+  // on the OUTPUT as `ghostTopology` for nearestEdge.ts to merge into its
+  // screen-space search. Source's own ghost is unioned in so multi-step chains
+  // (box → fillet → chamfer → …) keep history intact.
+  const srcTopo = (srcGeo.userData?.topology as { edges?: unknown[] } | undefined)?.edges;
+  const srcGhost = (srcGeo.userData?.ghostTopology as { edges?: unknown[] } | undefined)?.edges;
+  const ghostEdges: unknown[] = [];
+  if (Array.isArray(srcTopo)) ghostEdges.push(...srcTopo);
+  if (Array.isArray(srcGhost)) ghostEdges.push(...srcGhost);
+
   const { tris, triIdx, eps } = getOrBuildSrcCache(srcGeo);
   const epsSq = eps * eps;
   const near = (p: THREE.Vector3, q: THREE.Vector3) => p.distanceToSquared(q) <= epsSq;
@@ -920,7 +932,7 @@ export function computeEdgeCutGeometry(
           const loopCutter = makeLoopCutter(circle, rep);
           if (loopCutter) {
             try {
-              const result = GeometryEngine.csgSubtract(solid, loopCutter);
+              const result = csgSubtractWithTopology(solid, loopCutter).geometry;
               loopCutter.dispose();
               const posN =
                 (result.attributes.position as THREE.BufferAttribute | undefined)?.count ?? 0;
@@ -958,7 +970,12 @@ export function computeEdgeCutGeometry(
     // dialog's onClose).
     let next: THREE.BufferGeometry | null = null;
     try {
-      next = GeometryEngine.csgSubtract(solid, cutter);
+      // Raw CSG (no weld/topology) for per-segment cuts. The intermediate
+      // weldAndCleanSolid below fuses the seam verts before the next cut;
+      // the final weldAndCleanSolid(false) after the loop runs retriangulate
+      // once for the finished solid. GeometryEngine.csgSubtract runs a full
+      // weld + topology on every call — redundant and expensive for N>1 cuts.
+      next = csgSubtractRaw(solid, cutter);
     } catch (err) {
       console.error(`[${tag}] csgSubtract threw — edge skipped:`, err);
     }
@@ -973,7 +990,13 @@ export function computeEdgeCutGeometry(
     // fast=true (cheap weld, skip retriangulate) — a final full weld below
     // handles the coplanar fan before the geometry is handed to the renderer.
     try {
-      const cleaned = weldAndCleanSolid(next, fast ? true : false);
+      // Always use fast (cheap) weld between sequential CSG cuts — the weld
+      // only needs to hand a manifold solid to the next boolean (corner-spike
+      // fix); retriangulateCoplanarRegions is cosmetic and only needed once on
+      // the final result. Running it after every edge was O(N×retriangulate)
+      // in commit mode; the single final weld below (always-on for per-segment
+      // paths) gives identical quality in O(1×retriangulate).
+      const cleaned = weldAndCleanSolid(next, true);
       next.dispose();
       solid = cleaned;
     } catch (err) {
@@ -990,15 +1013,14 @@ export function computeEdgeCutGeometry(
     return null;
   }
 
-  // Final weld for per-segment paths in preview mode: the intermediate cheap
-  // welds (fast=true) leave coplanar fans on flat sides; one full weld here
-  // (retriangulateCoplanarRegions) collapses them so the preview doesn't show
-  // the rolling-ball artifact. Gated on perSegCut, NOT cut: loop-cutter results
-  // are already clean manifolds (GeometryEngine.csgSubtract welds internally),
-  // so running weldAndCleanSolid on them is unnecessary and expensive — it runs
-  // retriangulateCoplanarRegions on the torus/cone surface, which is slow enough
-  // to freeze the preview thread and also corrupts the smooth curved geometry.
-  if (fast && perSegCut > 0) {
+  // Final full weld for per-segment paths: the cheap intermediate welds leave
+  // coplanar fans on flat sides; one full weld here collapses them. Gated on
+  // perSegCut, NOT cut: loop-cutter results are already clean manifolds, so
+  // running weldAndCleanSolid on them is unnecessary and corrupts the smooth
+  // curved geometry. Runs in BOTH commit and preview mode (previously only
+  // preview triggered this; commit used full intermediates instead — O(N)
+  // retriangulate calls instead of O(1)).
+  if (perSegCut > 0) {
     try {
       const cleaned = weldAndCleanSolid(solid, false);
       solid.dispose();
@@ -1017,15 +1039,39 @@ export function computeEdgeCutGeometry(
     return null;
   }
 
+  // Extract topology BEFORE toCreasedNormals destroys the indexed geometry.
+  // toCreasedNormals splits vertices at creases → HalfEdgeMap can no longer
+  // find sibling triangles by index, so extractEdgeTopology returns empty edges.
+  // We run on the still-indexed solid here and carry the result through.
+  // Gate on !_fast: the preview/worker path doesn't need topology (it's
+  // discarded); the commit path (fast=undefined/false) does.
+  let savedTopology: object | undefined = solid.userData.topology as object | undefined;
+  if (!_fast && !savedTopology) {
+    try { savedTopology = extractEdgeTopology(solid); }
+    catch { savedTopology = { edges: [] }; }
+  }
+
   // Crease-aware normals: smooth on the curved fillet/chamfer arc (adjacent
   // facets typically 10–15° apart) while preserving hard edges at the 90°
   // flat-face↔fillet boundary. 40° crease angle comfortably spans both cases.
   try {
     const creased = toCreasedNormals(solid, THREE.MathUtils.degToRad(40));
+    if (savedTopology) {
+      creased.userData.topology = savedTopology;
+      // Mark as current version so the lazy fallback in nearestEdge.ts never
+      // clobbers this higher-quality pre-toCreasedNormals extraction.
+      creased.userData._topoV = 2;
+    }
+    if (ghostEdges.length > 0) creased.userData.ghostTopology = { edges: ghostEdges };
     solid.dispose();
     solid = creased;
   } catch {
     solid.computeVertexNormals();
+    if (savedTopology) {
+      solid.userData.topology = savedTopology;
+      solid.userData._topoV = 2;
+    }
+    if (ghostEdges.length > 0) solid.userData.ghostTopology = { edges: ghostEdges };
   }
   solid.computeBoundingBox();
   solid.computeBoundingSphere();

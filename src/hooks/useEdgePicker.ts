@@ -79,6 +79,9 @@ export function useEdgePicker(options: UseEdgePickerOptions): void {
           hit.object as THREE.Mesh,
           hit.faceIndex!,
           hit.point,
+          camera,
+          event.clientX - r.left, event.clientY - r.top,
+          r.width, r.height,
         );
         if (result) {
           if (edgeIsPickable(
@@ -115,6 +118,9 @@ export function useEdgePicker(options: UseEdgePickerOptions): void {
         hit.object as THREE.Mesh,
         hit.faceIndex!,
         hit.point,
+        camera,
+        event.clientX - r.left, event.clientY - r.top,
+        r.width, r.height,
       );
       if (result) {
         if (!edgeIsPickable(
