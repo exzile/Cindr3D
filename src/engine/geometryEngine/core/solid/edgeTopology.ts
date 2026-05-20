@@ -160,6 +160,23 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
     v.x += nx[t]; v.y += ny[t]; v.z += nz[t];
   }
   for (const v of regN.values()) { const L = v.length(); if (L > 1e-12) v.divideScalar(L); }
+
+  // position-id → set of coplanar-region roots touching it.
+  // Used in the crease loop below to rescue genuine face-boundary edges whose
+  // triangle edge has no HalfEdgeMap sibling (CSG diagonal triangulation at a
+  // box corner): both endpoints of such an edge touch two distinct regions with
+  // dihedral > 30° even though no triangle edge is aligned with the boundary.
+  const posRegions = new Map<number, Set<number>>();
+  for (let t = 0; t < triCount; t++) {
+    const r = find(t);
+    for (let c = 0; c < 3; c++) {
+      const pid = vId[t * 3 + c];
+      let rs = posRegions.get(pid);
+      if (!rs) { rs = new Set<number>(); posRegions.set(pid, rs); }
+      rs.add(r);
+    }
+  }
+
   const regionCrease = (t0: number, t1: number): boolean => {
     const r0 = find(t0), r1 = find(t1);
     if (r0 === r1) return false;                 // same flat region → not a crease
@@ -194,17 +211,11 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
       const kb = keyFn(_p1.x, _p1.y, _p1.z, q);
       if (ka === kb) continue;
       const ek = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+
       if (rawByKey.has(ek)) continue;
 
       const sib = hem.getSiblingTriangleIndex(t, e);
       const disj = hem.getDisjointSiblingTriangleIndices(t, e);
-
-      // A CLOSED SOLID has no genuine open-boundary edges — a lone half-edge
-      // (no sibling, no disjoint match) is a CSG/extrude soup artifact (the
-      // 865 tiny "boundary" fragments around a hole), NOT a model edge. Only
-      // CREASES are real edges: sharp against EVERY adjacent face. Coplanar
-      // against all neighbours ⇒ interior triangulation diagonal ⇒ skip.
-      if (sib === -1 && disj.length === 0) continue;     // artifact — drop
 
       // The input has been welded + cleaned toward a manifold solid before
       // this runs (csgSubtractWithTopology), which removes the LONG broken-fan
@@ -223,12 +234,29 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
       let sharp = false;
       if (sib !== -1 && regionCrease(t, sib)) sharp = true;
       // (2) No manifold neighbour. Trust a disjoint (T-junction) pair only
-      // when the sibling triangle GEOMETRICALLY owns this whole edge (one of
-      // its 3 edges ≈ _p0–_p1, both endpoints within the weld tol): a genuine
-      // crease whose two faces are T-split still passes; a fan-splinter
-      // phantom (matched merely for being collinear) is rejected.
+      // when the sibling triangle GEOMETRICALLY owns this edge.
+      //
+      // ORIGINAL CHECK: a sibling edge exactly spans _p0→_p1 (both endpoints
+      // within weld tolerance). This handles the common case where both faces
+      // have the same tessellation density.
+      //
+      // SUB-SEGMENT CHECK: a sibling edge whose BOTH endpoints lie on the
+      // infinite line through _p0→_p1 (within a relaxed collinearity tolerance).
+      // This handles the case where one face is subdivided into many small
+      // triangles by T-junctions (e.g. fillet CSG creates a large diagonal
+      // triangle on the top face spanning the whole left-top edge, while the
+      // left face has many smaller triangles — no single left-face triangle spans
+      // the full edge, but each one IS collinear with it). Both checks still
+      // require regionCrease to pass, which filters out same-face diagonals.
       if (!sharp && sib === -1) {
         const tolSq = q * q;
+        // Direction vector of the target half-edge (for sub-segment test).
+        const _edx = _p1.x - _p0.x, _edy = _p1.y - _p0.y, _edz = _p1.z - _p0.z;
+        const _edLenSq = _edx * _edx + _edy * _edy + _edz * _edz;
+        // Relaxed tolerance: 10× weld tol, at least 1e-6. Fine enough to reject
+        // off-axis fillet arcs, loose enough to accept floating-point jitter on a
+        // shared flat face boundary.
+        const collinTolSq = Math.max(tolSq * 100, 1e-6);
         for (const ds of disj) {
           if (!regionCrease(t, ds)) continue;
           for (let dc = 0; dc < 3; dc++) {
@@ -236,6 +264,7 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
             const db = vi(ds, (dc + 1) % 3);
             const dax = pos.getX(da), day = pos.getY(da), daz = pos.getZ(da);
             const dbx = pos.getX(db), dby = pos.getY(db), dbz = pos.getZ(db);
+            // Exact-endpoint match (original check).
             const m00 = (dax - _p0.x) ** 2 + (day - _p0.y) ** 2 + (daz - _p0.z) ** 2;
             const m11 = (dbx - _p1.x) ** 2 + (dby - _p1.y) ** 2 + (dbz - _p1.z) ** 2;
             const m01 = (dax - _p1.x) ** 2 + (day - _p1.y) ** 2 + (daz - _p1.z) ** 2;
@@ -244,10 +273,59 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
               sharp = true;
               break;
             }
+            // Sub-segment match: both endpoints of the disjoint sibling's edge
+            // must lie on the line through _p0→_p1.
+            if (_edLenSq > 1e-12) {
+              const onLine = (px: number, py: number, pz: number): boolean => {
+                const wx = px - _p0.x, wy = py - _p0.y, wz = pz - _p0.z;
+                const tProj = (wx * _edx + wy * _edy + wz * _edz) / _edLenSq;
+                const rx = wx - tProj * _edx, ry = wy - tProj * _edy, rz = wz - tProj * _edz;
+                return rx * rx + ry * ry + rz * rz <= collinTolSq;
+              };
+              if (onLine(dax, day, daz) && onLine(dbx, dby, dbz)) {
+                sharp = true;
+                break;
+              }
+            }
           }
           if (sharp) break;
         }
       }
+      // posRegions fallback — runs for any sib=-1 edge that neither the manifold
+      // nor the disjoint check resolved. This covers two failure modes:
+      //   (A) disj=0: pure lone half-edge — artifact unless both endpoints
+      //       touch a common OTHER region with dihedral > 30°.
+      //   (B) disj>0 but ALL disjoint siblings in the SAME region as t
+      //       (e.g. the opposite face is subdivided into many small triangles
+      //       whose disjoint matches are top-face fragments, not the adjacent
+      //       flat face — the actual adjacent face ALSO has T-junction matches
+      //       but they share the current region, so regionCrease returns false
+      //       for every one).
+      //
+      // Safety: we only rescue when BOTH endpoints share a COMMON OTHER region
+      // with clearly different normal (>30°). Interior diagonals fail this test
+      // because their endpoints' regions don't share any common OTHER region.
+      if (!sharp && sib === -1) {
+        const rThis = find(t);
+        const nThis = regN.get(rThis);
+        if (nThis) {
+          const pidA = vId[t * 3 + e];
+          const pidB = vId[t * 3 + (e + 1) % 3];
+          const rsA = posRegions.get(pidA);
+          const rsB = posRegions.get(pidB);
+          if (rsA && rsB) {
+            for (const rOther of rsA) {
+              if (rOther === rThis || !rsB.has(rOther)) continue;
+              const nOther = regN.get(rOther);
+              if (nOther && Math.abs(nThis.dot(nOther)) < HARD_EDGE_COS) {
+                sharp = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+
       if (!sharp) continue;
 
       if (!keyPos.has(ka)) keyPos.set(ka, _p0.clone());

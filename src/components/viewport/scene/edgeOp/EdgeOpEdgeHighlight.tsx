@@ -28,7 +28,7 @@ import { buildPolylineGeometry } from '../pickerGeometry';
 import { applyLinePulse } from '../pickPulse';
 
 /** Version tag matching nearestEdge.ts — bump both when lazy-fallback logic changes. */
-const LAZY_TOPO_VERSION = 2;
+const LAZY_TOPO_VERSION = 3;
 
 interface EdgeOpEdgeHighlightProps {
   /** activeDialog matches this tool's dialog. */
