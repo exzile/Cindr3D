@@ -42,6 +42,9 @@ Note: the geometry-layer edge-dedupe above means even if parse returns duplicate
 - **Feed the boolean a welded INDEXED manifold source** instead of non-indexed soup — does NOT fix the quad-fan (top-front stayed 40) and slightly regressed the multi-edge case. Reverted.
 - Position-welded boundary/non-manifold counts OVER-COUNT on raw three-bvh-csg soup — valid only for RELATIVE comparison; the trustworthy absolute signal is **near-zero-area (degenerate) triangle count**.
 
+## PERF 2026-05-20 (round 11) — hoist edgeIds Set to a useMemo
+`EdgeOpEdgeHighlight.useFrame` was constructing `new Set(edgeIds)` on every frame for the selected-line cleanup membership check (~100 ops × 60 Hz = 6000/sec on a circle-rim selection). Hoisted into `const edgeIdSet = useMemo(() => new Set(edgeIds), [edgeIds])` so it's built once per edgeIds change. `handleClick` also switched to `edgeIdSet.has(id)` instead of `edgeIds.includes(id)` — O(1) vs O(N), and the callback's identity stability follows edgeIdSet (which already follows edgeIds).
+
 ## PERF 2026-05-20 (round 10) — let idle edge-picker idle
 `EdgeOpEdgeHighlight.useFrame` was calling `invalidate()` unconditionally on every frame while the picker was enabled, defeating R3F's `frameloop="demand"`: the canvas rendered at 60 Hz the whole time a Fillet/Chamfer dialog was open, even when the user sat still with no edge hovered and nothing selected. Gated on a `hasVisible` check (any hover, any selected line, any pending edgeIds), so pulse animation still runs whenever there's something animatable, but a truly idle picker (open dialog, cursor parked off the body, no picks yet) lets the canvas settle. Pointermove still wakes the loop: `handleHover` now calls `invalidate()` on every hover-change, so the next `useFrame` runs and picks up the result.
 

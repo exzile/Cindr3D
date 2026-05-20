@@ -134,16 +134,23 @@ export default function EdgeOpEdgeHighlight({
     invalidateFrame();
   }, []);
 
+  // Set form of edgeIds — used both in handleClick (toggle existing edge =
+  // O(1) lookup) and inside useFrame for the selected-line cleanup pass.
+  // Rebuilt only when the prop changes, not on every frame: while the picker
+  // is animating its pulse, useFrame can run at 60Hz; building this Set per
+  // frame for a ~100-segment circle-rim selection is ~6000 ops/sec saved.
+  const edgeIdSet = useMemo(() => new Set(edgeIds), [edgeIds]);
+
   const handleClick = useCallback((result: EdgePickResult) => {
     const id = edgeId(result);
     // Toggle: clicking an already-selected edge deselects it.
-    if (edgeIds.includes(id)) {
+    if (edgeIdSet.has(id)) {
       removeEdge(id);
       return;
     }
     addEdge(id);
     selectedEdgesDataRef.current.set(id, edgePoints(result).map((p) => p.clone()));
-  }, [addEdge, removeEdge, edgeIds]);
+  }, [addEdge, removeEdge, edgeIdSet]);
 
   useEdgePicker({
     enabled,
@@ -227,9 +234,10 @@ export default function EdgeOpEdgeHighlight({
     }
 
     // Sync selected lines with edgeIds. Per-frame loop, so the membership
-    // test goes through a Set instead of an `Array.includes` scan — N×M ->
-    // N+M on selections with many rim segments.
-    const edgeIdSet = new Set(edgeIds);
+    // test goes through the memoised `edgeIdSet` instead of an
+    // `Array.includes` scan — N×M -> N+M on selections with many rim
+    // segments, AND the Set itself is built only when edgeIds changes
+    // (not per frame).
     selectedLinesRef.current.forEach((line, id) => {
       if (!edgeIdSet.has(id)) {
         scene.remove(line);
