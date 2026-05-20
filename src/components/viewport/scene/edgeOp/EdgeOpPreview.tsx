@@ -129,21 +129,52 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
     const liveMesh = liveBodyMeshes.get(parsed.meshUuid);
     if (!liveMesh) { restoreLiveMesh(); invalidate(); return; }
 
-    // A circular rim (hole / boss) is cut by ONE analytic loop cutter — a
-    // single fast CSG regardless of segment count — so the preview must pass
-    // the WHOLE loop: decimating it to a handful of points destroys the circle
-    // fit and silently drops back to the per-segment path, which renders as a
-    // broken spike. For genuinely non-circular many-edge selections (e.g. a
-    // chamfer across lots of box edges, no loop cutter) keep the old cap so a
-    // long run of sequential synchronous CSG subtracts can't freeze the tab.
-    const MAX_PREVIEW_SEGMENTS = 6;
-    const isCircularLoop = fitEdgeCircle(parsed.edges) !== null;
-    const previewEdges =
-      isCircularLoop || parsed.edges.length <= MAX_PREVIEW_SEGMENTS
-        ? parsed.edges
-        : Array.from({ length: MAX_PREVIEW_SEGMENTS }, (_, i) =>
-            parsed.edges[Math.round((i * (parsed.edges.length - 1)) / (MAX_PREVIEW_SEGMENTS - 1))],
-          );
+    // Cluster edges by endpoint connectivity so we can apply the segment cap
+    // per-cluster rather than across the whole selection. This handles mixed
+    // selections (e.g. circular rim + box edge): the rim cluster is detected as
+    // circular and kept intact (the loop cutter handles it in O(1) CSG), while
+    // non-circular clusters are capped to prevent a sequential-CSG freeze.
+    // Previously fitEdgeCircle was called on ALL edges at once, so any
+    // non-circular edge defeated the torus path for the entire rim and the full
+    // set was randomly decimated to 6 edges — producing per-segment soup on the
+    // rim and breaking the fillet the moment a second edge was added.
+    const MAX_NON_CIRCLE_SEGS = 6;
+    const nearPrev = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => {
+      const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+      return dx * dx + dy * dy + dz * dz < 1e-8;
+    };
+    const edgeClusters: (typeof parsed.edges)[] = [];
+    {
+      const rem = [...parsed.edges];
+      while (rem.length > 0) {
+        const cl = [rem.shift()!];
+        let changed = true;
+        while (changed) {
+          changed = false;
+          for (let i = rem.length - 1; i >= 0; i--) {
+            const e = rem[i];
+            if (cl.some(c => nearPrev(c.a, e.a) || nearPrev(c.a, e.b) || nearPrev(c.b, e.a) || nearPrev(c.b, e.b))) {
+              cl.push(rem.splice(i, 1)[0]);
+              changed = true;
+            }
+          }
+        }
+        edgeClusters.push(cl);
+      }
+    }
+    const previewEdges: typeof parsed.edges = [];
+    for (const cluster of edgeClusters) {
+      if (fitEdgeCircle(cluster) !== null || cluster.length <= MAX_NON_CIRCLE_SEGS) {
+        // Circular cluster: keep ALL segments so the loop cutter gets the full
+        // circle. Small non-circular cluster: pass through as-is.
+        previewEdges.push(...cluster);
+      } else {
+        // Large non-circular cluster: sample down to cap sequential CSG cost.
+        for (let i = 0; i < MAX_NON_CIRCLE_SEGS; i++) {
+          previewEdges.push(cluster[Math.round((i * (cluster.length - 1)) / (MAX_NON_CIRCLE_SEGS - 1))]);
+        }
+      }
+    }
 
     // Reuse the cached non-indexed clone when the mesh hasn't changed — avoids
     // a clone + toNonIndexed on every debounced value change.

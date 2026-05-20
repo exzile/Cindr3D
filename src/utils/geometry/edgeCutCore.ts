@@ -642,66 +642,89 @@ export function computeEdgeCutGeometry(
     if (!dup) uniqueEdges.push(e);
   }
 
-  // ── Circular-rim fast path ────────────────────────────────────────────────
-  // If the whole selection is one planar circle and the tool supplied an
-  // analytic loop cutter, subtract it ONCE. This is the only way to get a
-  // clean Fusion-style toroidal fillet / conical chamfer: the per-segment
-  // path below tiles ~120 straight box cutters around the circle and the
-  // seams between them collapse into an unrenderable triangle soup.
-  if (makeLoopCutter) {
-    const circle = fitEdgeCircle(uniqueEdges);
-    if (circle) {
-      // Resolve a representative edge for orientation. Try the middle first
-      // (away from any seam artefacts), then scan outward for any that
-      // resolves cleanly.
-      let rep: ResolvedEdge | null = null;
-      const order = [Math.floor(uniqueEdges.length / 2)];
-      for (let i = 0; i < uniqueEdges.length; i++) if (i !== order[0]) order.push(i);
-      for (const idx of order) {
-        rep = resolveEdge(tris, uniqueEdges[idx], near, triIdx, eps);
-        if (rep) break;
+  // Cluster uniqueEdges by endpoint connectivity before deciding which path to
+  // use. This handles mixed selections (e.g. a circular rim + a box edge): each
+  // connected group is tested for circularity independently, so the loop cutter
+  // fires for the rim cluster while the box edge cluster falls through to the
+  // per-segment path. Previously fitEdgeCircle was called on ALL uniqueEdges at
+  // once — any non-circular edge in the selection defeated the torus path for the
+  // entire rim, sending all rim segments through the per-segment path and
+  // producing the triangle-soup seams.
+  const clusters: PickedEdge[][] = [];
+  {
+    const rem = [...uniqueEdges];
+    while (rem.length > 0) {
+      const cl: PickedEdge[] = [rem.shift()!];
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (let i = rem.length - 1; i >= 0; i--) {
+          const e = rem[i];
+          if (cl.some(c => near(c.a, e.a) || near(c.a, e.b) || near(c.b, e.a) || near(c.b, e.b))) {
+            cl.push(rem.splice(i, 1)[0]);
+            changed = true;
+          }
+        }
       }
-      if (rep) {
-        const loopCutter = makeLoopCutter(circle, rep);
-        if (loopCutter) {
-          try {
-            // GeometryEngine.csgSubtract welds + cleans + rebuilds topology
-            // internally, so the result is already a clean manifold.
-            const result = GeometryEngine.csgSubtract(srcGeo.clone(), loopCutter);
-            loopCutter.dispose();
-            const posN =
-              (result.attributes.position as THREE.BufferAttribute | undefined)?.count ?? 0;
-            if (posN > 0) {
-              try {
-                const creased = toCreasedNormals(result, THREE.MathUtils.degToRad(40));
+      clusters.push(cl);
+    }
+  }
+
+  let solid: THREE.BufferGeometry = srcGeo.clone();
+  let cut = 0;
+  // Counts only per-segment (non-loop-cutter) cuts. The final weldAndCleanSolid
+  // is gated on this: loop-cutter results are already clean manifolds (the CSG
+  // welds internally), so running weldAndCleanSolid on them is both unnecessary
+  // and slow (retriangulateCoplanarRegions on a torus freezes the preview).
+  let perSegCut = 0;
+  // Edges from non-circular clusters (or loop-cutter fallbacks) accumulate here
+  // and are processed by the per-segment CSG driver below.
+  const perSegEdges: PickedEdge[] = [];
+
+  for (const cluster of clusters) {
+    let handledByLoop = false;
+    if (makeLoopCutter) {
+      const circle = fitEdgeCircle(cluster);
+      if (circle) {
+        // Resolve a representative edge for orientation. Try the middle first
+        // (away from any seam artefacts), then scan outward for any that resolves.
+        let rep: ResolvedEdge | null = null;
+        const order = [Math.floor(cluster.length / 2)];
+        for (let i = 0; i < cluster.length; i++) if (i !== order[0]) order.push(i);
+        for (const idx of order) {
+          rep = resolveEdge(tris, cluster[idx], near, triIdx, eps);
+          if (rep) break;
+        }
+        if (rep) {
+          const loopCutter = makeLoopCutter(circle, rep);
+          if (loopCutter) {
+            try {
+              const result = GeometryEngine.csgSubtract(solid, loopCutter);
+              loopCutter.dispose();
+              const posN =
+                (result.attributes.position as THREE.BufferAttribute | undefined)?.count ?? 0;
+              if (posN > 0) {
+                solid.dispose();
+                solid = result;
+                cut++;
+                handledByLoop = true;
+              } else {
                 result.dispose();
-                creased.computeBoundingBox();
-                creased.computeBoundingSphere();
-                return creased;
-              } catch {
-                result.computeVertexNormals();
-                result.computeBoundingBox();
-                result.computeBoundingSphere();
-                return result;
+                // Empty result → fall through to per-segment for this cluster.
               }
+            } catch (err) {
+              loopCutter.dispose();
+              console.error(`[${tag}] loop cutter csgSubtract threw — falling back:`, err);
             }
-            result.dispose();
-            // Empty result → fall through to the per-segment path.
-          } catch (err) {
-            loopCutter.dispose();
-            console.error(`[${tag}] loop cutter csgSubtract threw — falling back:`, err);
           }
         }
       }
     }
+    if (!handledByLoop) perSegEdges.push(...cluster);
   }
 
-  // Running solid: start from a clone of the source so we never mutate the
-  // caller's geometry; subtract each edge cutter in turn.
-  let solid: THREE.BufferGeometry = srcGeo.clone();
-  let cut = 0;
-
-  for (const e of uniqueEdges) {
+  // Per-segment path for non-circular clusters (straight edges, arcs, etc.).
+  for (const e of perSegEdges) {
     const re = resolveEdge(tris, e, near, triIdx, eps);
     if (!re) continue;
     // Small overhang past the edge ends so the boolean is clean at the ends
@@ -721,25 +744,23 @@ export function computeEdgeCutGeometry(
     cutter.dispose();
     if (!next) continue;
     solid.dispose();
-    // In commit mode (fast=false) re-weld after every edge: this eliminates
-    // degenerate slivers at shared corners (e.g. the same box vertex touched
-    // by two perpendicular filleted edges). In fast/preview mode we skip
-    // intermediate welds — non-overlapping cutters (rim fillets, isolated box
-    // edges) don't need them, and avoiding N weld calls is the dominant
-    // speedup for high-segment rims (60–120 edges).
-    if (!fast) {
-      try {
-        const cleaned = weldAndCleanSolid(next, false);
-        next.dispose();
-        solid = cleaned;
-      } catch (err) {
-        console.error(`[${tag}] weld/clean failed — keeping raw CSG result:`, err);
-        solid = next;
-      }
-    } else {
+    // Re-weld after every edge to keep the running solid manifold before the
+    // next CSG subtract. Without this, adjacent-segment cutters (e.g. a straight
+    // model edge stored as 6 sub-segments, or two box edges sharing a corner)
+    // operate on raw triangle soup and produce seam artifacts.
+    // In commit mode use fast=false (full retriangulate); in preview mode use
+    // fast=true (cheap weld, skip retriangulate) — a final full weld below
+    // handles the coplanar fan before the geometry is handed to the renderer.
+    try {
+      const cleaned = weldAndCleanSolid(next, fast ? true : false);
+      next.dispose();
+      solid = cleaned;
+    } catch (err) {
+      console.error(`[${tag}] weld/clean failed — keeping raw CSG result:`, err);
       solid = next;
     }
     cut++;
+    perSegCut++;
   }
 
   if (cut === 0) {
@@ -748,14 +769,15 @@ export function computeEdgeCutGeometry(
     return null;
   }
 
-  // Fast/preview mode skipped intermediate welds — do one final clean now so
-  // the preview mesh is manifold and toCreasedNormals has good vertex sharing.
-  // Use fast=false (full retriangulate) even in preview mode: the coplanar-fan
-  // collapse (retriangulateCoplanarRegions) fixes the giant diagonal "broken
-  // face" the CSG boolean leaves on flat sides — skipping it makes the preview
-  // look like the old rolling-ball artifact. Skipping intermediate welds already
-  // gave us the main speedup; one full weld at the end is still much faster.
-  if (fast && cut > 0) {
+  // Final weld for per-segment paths in preview mode: the intermediate cheap
+  // welds (fast=true) leave coplanar fans on flat sides; one full weld here
+  // (retriangulateCoplanarRegions) collapses them so the preview doesn't show
+  // the rolling-ball artifact. Gated on perSegCut, NOT cut: loop-cutter results
+  // are already clean manifolds (GeometryEngine.csgSubtract welds internally),
+  // so running weldAndCleanSolid on them is unnecessary and expensive — it runs
+  // retriangulateCoplanarRegions on the torus/cone surface, which is slow enough
+  // to freeze the preview thread and also corrupts the smooth curved geometry.
+  if (fast && perSegCut > 0) {
     try {
       const cleaned = weldAndCleanSolid(solid, false);
       solid.dispose();
