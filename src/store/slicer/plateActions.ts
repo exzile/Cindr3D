@@ -82,9 +82,9 @@ function objectTransformMatrix(obj: PlateObject): THREE.Matrix4 {
   const sx = (obj.scale?.x ?? 1) * (obj.mirrorX ? -1 : 1);
   const sy = (obj.scale?.y ?? 1) * (obj.mirrorY ? -1 : 1);
   const sz = (obj.scale?.z ?? 1) * (obj.mirrorZ ? -1 : 1);
-  const rx = ((obj.rotation?.x ?? 0) * Math.PI) / 180;
-  const ry = ((obj.rotation?.y ?? 0) * Math.PI) / 180;
-  const rz = ((obj.rotation?.z ?? 0) * Math.PI) / 180;
+  const rx = obj.rotation?.x ?? 0;
+  const ry = obj.rotation?.y ?? 0;
+  const rz = obj.rotation?.z ?? 0;
   return new THREE.Matrix4().compose(
     new THREE.Vector3(obj.position.x, obj.position.y, obj.position.z ?? 0),
     new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)),
@@ -342,8 +342,8 @@ export function createPlateActions({
     const dz = obj.boundingBox.max.z - obj.boundingBox.min.z;
     const minDim = Math.min(dx, dy, dz);
     let rotation = { x: 0, y: 0, z: 0 };
-    if (minDim === dx) rotation = { x: 0, y: 90, z: 0 };
-    else if (minDim === dy) rotation = { x: 90, y: 0, z: 0 };
+    if (minDim === dx) rotation = { x: 0, y: Math.PI / 2, z: 0 };
+    else if (minDim === dy) rotation = { x: Math.PI / 2, y: 0, z: 0 };
     // else (minDim === dz) — already flat, leave rotation zero.
     pushHistory();
     set((state) => ({
@@ -364,9 +364,9 @@ export function createPlateActions({
     const sx = (obj.scale?.x ?? 1) * (obj.mirrorX ? -1 : 1);
     const sy = (obj.scale?.y ?? 1) * (obj.mirrorY ? -1 : 1);
     const sz = (obj.scale?.z ?? 1) * (obj.mirrorZ ? -1 : 1);
-    const rx = ((obj.rotation?.x ?? 0) * Math.PI) / 180;
-    const ry = ((obj.rotation?.y ?? 0) * Math.PI) / 180;
-    const rz = ((obj.rotation?.z ?? 0) * Math.PI) / 180;
+    const rx = obj.rotation?.x ?? 0;
+    const ry = obj.rotation?.y ?? 0;
+    const rz = obj.rotation?.z ?? 0;
     const m = new THREE.Matrix4().compose(
       new THREE.Vector3(0, 0, 0),
       new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)),
@@ -548,12 +548,17 @@ export function createPlateActions({
       // The picked normal is in the mesh's local space, but we apply it on
       // top of the existing rotation. Bake the existing rotation into the
       // normal so the new rotation acts as an absolute orientation.
-      const rx = ((obj.rotation?.x ?? 0) * Math.PI) / 180;
-      const ry = ((obj.rotation?.y ?? 0) * Math.PI) / 180;
-      const rz = ((obj.rotation?.z ?? 0) * Math.PI) / 180;
+      const rx = obj.rotation?.x ?? 0;
+      const ry = obj.rotation?.y ?? 0;
+      const rz = obj.rotation?.z ?? 0;
       const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz));
       const worldNormal = n.clone().applyQuaternion(q);
-      const rot = rotationForFaceDown(worldNormal);
+      const rotDeg = rotationForFaceDown(worldNormal);
+      const rot = {
+        x: (rotDeg.x * Math.PI) / 180,
+        y: (rotDeg.y * Math.PI) / 180,
+        z: (rotDeg.z * Math.PI) / 180,
+      };
       pushHistory();
       set((state) => ({
         plateObjects: state.plateObjects.map((o) =>
@@ -569,7 +574,12 @@ export function createPlateActions({
       const { autoOrient } = await import('../../engine/plateGeometryOps');
       const obj = get().plateObjects.find((o) => o.id === id);
       if (!obj || !(obj.geometry instanceof THREE.BufferGeometry)) return;
-      const rot = autoOrient(obj.geometry);
+      const rotDeg = autoOrient(obj.geometry);
+      const rot = {
+        x: (rotDeg.x * Math.PI) / 180,
+        y: (rotDeg.y * Math.PI) / 180,
+        z: (rotDeg.z * Math.PI) / 180,
+      };
       pushHistory();
       set((state) => ({
         plateObjects: state.plateObjects.map((o) =>
@@ -623,9 +633,9 @@ export function createPlateActions({
       const sx = (o.scale?.x ?? 1) * (o.mirrorX ? -1 : 1);
       const sy = (o.scale?.y ?? 1) * (o.mirrorY ? -1 : 1);
       const sz = (o.scale?.z ?? 1) * (o.mirrorZ ? -1 : 1);
-      const rx = ((o.rotation?.x ?? 0) * Math.PI) / 180;
-      const ry = ((o.rotation?.y ?? 0) * Math.PI) / 180;
-      const rz = ((o.rotation?.z ?? 0) * Math.PI) / 180;
+      const rx = o.rotation?.x ?? 0;
+      const ry = o.rotation?.y ?? 0;
+      const rz = o.rotation?.z ?? 0;
       const m = new THREE.Matrix4().compose(
         new THREE.Vector3(o.position.x, o.position.y, o.position.z),
         new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)),
@@ -812,12 +822,33 @@ export function createPlateActions({
         const arranged = plateObjects.map((o) => {
           const p = placementById.get(o.id);
           if (!p) return o;
-          const sx = o.scale?.x ?? 1;
-          const sy = o.scale?.y ?? 1;
-          const sz = o.scale?.z ?? 1;
-          const minX = (o.boundingBox.min.x ?? 0) * sx;
-          const minY = (o.boundingBox.min.y ?? 0) * sy;
-          const minZ = (o.boundingBox.min.z ?? 0) * sz;
+          const sx = (o.scale?.x ?? 1) * (o.mirrorX ? -1 : 1);
+          const sy = (o.scale?.y ?? 1) * (o.mirrorY ? -1 : 1);
+          const sz = (o.scale?.z ?? 1) * (o.mirrorZ ? -1 : 1);
+          const rx = o.rotation?.x ?? 0;
+          const ry = o.rotation?.y ?? 0;
+          const rz = o.rotation?.z ?? 0;
+          const minX = (o.boundingBox.min.x ?? 0) * Math.abs(sx);
+          const minY = (o.boundingBox.min.y ?? 0) * Math.abs(sy);
+          // Compute world-space minimum Z by transforming all 8 bbox corners
+          // through rotation + scale so rotated objects land correctly on the bed.
+          const rotMat = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rx, ry, rz));
+          const corners: [number, number, number][] = [
+            [o.boundingBox.min.x, o.boundingBox.min.y, o.boundingBox.min.z],
+            [o.boundingBox.max.x, o.boundingBox.min.y, o.boundingBox.min.z],
+            [o.boundingBox.min.x, o.boundingBox.max.y, o.boundingBox.min.z],
+            [o.boundingBox.max.x, o.boundingBox.max.y, o.boundingBox.min.z],
+            [o.boundingBox.min.x, o.boundingBox.min.y, o.boundingBox.max.z],
+            [o.boundingBox.max.x, o.boundingBox.min.y, o.boundingBox.max.z],
+            [o.boundingBox.min.x, o.boundingBox.max.y, o.boundingBox.max.z],
+            [o.boundingBox.max.x, o.boundingBox.max.y, o.boundingBox.max.z],
+          ];
+          const v = new THREE.Vector3();
+          let worldMinZ = Infinity;
+          for (const [cx, cy, cz] of corners) {
+            v.set(cx * sx, cy * sy, cz * sz).applyMatrix4(rotMat);
+            if (v.z < worldMinZ) worldMinZ = v.z;
+          }
           // The rotated case (90°) implies the bin packer wants the object turned,
           // but rotating the mesh changes its slicing — out of scope for the
           // arrange action. Treat `rotated:true` as a hint we ignore.
@@ -826,12 +857,13 @@ export function createPlateActions({
             position: {
               x: p.x - minX,
               y: p.y - minY,
-              z: isFinite(minZ) ? -minZ : 0,
+              z: isFinite(worldMinZ) ? -worldMinZ : 0,
             },
           };
         });
 
         set({ plateObjects: applyAnchoredModifierTransforms(arranged) });
+        void Promise.resolve().then(() => get().runPrintabilityCheck());
       } catch (err) {
         console.error('[autoArrange] failed:', err);
       }

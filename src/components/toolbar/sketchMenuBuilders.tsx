@@ -92,6 +92,7 @@ export function buildSketchMenus({
   const sketchCreateMenuItems: MenuItem[] = [
     {
       icon: <Minus size={MI} />, label: 'Line', shortcut: 'L',
+      onClick: () => setActiveTool('line'),
       submenu: [
         { icon: <Minus size={MI} />, label: 'Line', shortcut: 'L', onClick: () => setActiveTool('line') },
         { icon: <Minus size={MI} />, label: 'Construction Line', onClick: () => setActiveTool('construction-line') },
@@ -101,6 +102,7 @@ export function buildSketchMenus({
     },
     {
       icon: <Square size={MI} />, label: 'Rectangle', shortcut: 'R',
+      onClick: () => setActiveTool('rectangle'),
       submenu: [
         { icon: <RectangleHorizontal size={MI} />, label: '2-Point Rectangle', shortcut: 'R', onClick: () => setActiveTool('rectangle') },
         { icon: <Square size={MI} />, label: '3-Point Rectangle', onClick: () => setActiveTool('rectangle-3point') },
@@ -109,6 +111,7 @@ export function buildSketchMenus({
     },
     {
       icon: <Circle size={MI} />, label: 'Circle', shortcut: 'C',
+      onClick: () => setActiveTool('circle'),
       submenu: [
         { icon: <Circle size={MI} />, label: 'Center Diameter Circle', shortcut: 'C', onClick: () => setActiveTool('circle') },
         { icon: <Circle size={MI} />, label: '2-Point Circle', onClick: () => setActiveTool('circle-2point') },
@@ -119,6 +122,7 @@ export function buildSketchMenus({
     },
     {
       icon: <Spline size={MI} />, label: 'Arc',
+      onClick: () => setActiveTool('arc-3point'),
       submenu: [
         { icon: <Spline size={MI} />, label: '3-Point Arc', onClick: () => setActiveTool('arc-3point') },
         { icon: <Spline size={MI} />, label: 'Center Point Arc', onClick: () => setActiveTool('arc') },
@@ -127,6 +131,7 @@ export function buildSketchMenus({
     },
     {
       icon: <Hexagon size={MI} />, label: 'Polygon',
+      onClick: () => setActiveTool('polygon-inscribed'),
       submenu: [
         { icon: <Hexagon size={MI} />, label: 'Inscribed Polygon', onClick: () => setActiveTool('polygon-inscribed') },
         { icon: <Hexagon size={MI} />, label: 'Circumscribed Polygon', onClick: () => setActiveTool('polygon-circumscribed') },
@@ -143,6 +148,7 @@ export function buildSketchMenus({
     },
     {
       icon: <Circle size={MI} />, label: 'Slot',
+      onClick: () => { setActiveTool('slot-center'); setStatusMessage('Center Slot: click first centre, then second centre, then width'); },
       submenu: [
         { icon: <Circle size={MI} />, label: 'Center to Center Slot', onClick: () => { setActiveTool('slot-center'); setStatusMessage('Center Slot: click first centre, then second centre, then width'); } },
         { icon: <Circle size={MI} />, label: 'Overall Slot', onClick: () => { setActiveTool('slot-overall'); setStatusMessage('Overall Slot: click first end, then second end, then width'); } },

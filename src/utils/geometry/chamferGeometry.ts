@@ -55,6 +55,10 @@ function buildChamferCutter(
   if (phi < 0.05 || phi > Math.PI - 0.05) return null;
   if (!(d1 > 0) || !(d2 > 0)) return null;
 
+  // No segment-length guard: setback is perpendicular to the edge and is
+  // independent of tessellation density. Circle rim segments are short by
+  // construction; the CSG driver's try/catch handles any degenerate cases.
+
   // (u1, u2, edgeDir) is RIGHT-handed for some edges and LEFT-handed for
   // others (it depends purely on the edge's world orientation + which adjacent
   // triangle resolveEdge happened to list first). A left-handed basis makes
@@ -118,6 +122,7 @@ export function computeChamferGeometry(
   edges: PickedEdge[],
   distance: number,
   distance2?: number,
+  fast?: boolean,
 ): THREE.BufferGeometry | null {
   if (!(distance > 0)) return null;
   const d1 = distance;
@@ -127,5 +132,6 @@ export function computeChamferGeometry(
     edges,
     (re, eps) => buildChamferCutter(re, d1, d2, eps),
     'chamfer',
+    fast,
   );
 }

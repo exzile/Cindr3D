@@ -5,9 +5,10 @@ import {
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore';
 import { useSlicerStore } from '../../store/slicerStore';
+import { useComponentStore } from '../../store/componentStore';
 import { usePrinterStore } from '../../store/printerStore';
 import { DEFAULT_PRINTER_PROFILES } from '../../types/slicer';
-import { NON_BODY_FEATURE_TYPES } from '../slicer/slicerFeatureTypes';
+import { bodyIdGeometryCache } from '../../store/meshRegistry';
 import { RibbonSection } from './FlyoutMenu';
 import { ToolButton } from './ToolButton';
 import { SlicerPrinterManagerModal } from '../slicer/workspace/modals/SlicerPrinterManagerModal';
@@ -27,8 +28,6 @@ const ICON_SM = 18;
 
 export function RibbonPrepareTab() {
   const setStatusMessage     = useCADStore((s) => s.setStatusMessage);
-  const features             = useCADStore((s) => s.features);
-  const selectedFeatureId    = useCADStore((s) => s.selectedFeatureId);
   const printerConnected     = usePrinterStore((s) => s.connected);
   const sliceProgress        = useSlicerStore((s) => s.sliceProgress);
   const sliceResult          = useSlicerStore((s) => s.sliceResult);
@@ -51,20 +50,39 @@ export function RibbonPrepareTab() {
   );
 
   // ── Build plate actions ──────────────────────────────────────────────────
-  const addableFeatures = features.filter((f) =>
-    !NON_BODY_FEATURE_TYPES.has(f.type) && !f.suppressed,
-  );
+  const allBodies = useComponentStore((s) => s.bodies);
+  const addableBodies = Object.values(allBodies).filter((b) => b.visible !== false);
 
-  const handleAddModel = (id?: string) => {
-    const target = (id && addableFeatures.find((f) => f.id === id))
-      ?? (selectedFeatureId && addableFeatures.find((f) => f.id === selectedFeatureId))
-      ?? addableFeatures[0];
-    if (!target) {
+  const sendBodyToPlate = (bodyId: string) => {
+    const body = allBodies[bodyId];
+    if (!body) return;
+    const geomSrc = bodyIdGeometryCache.get(bodyId);
+    if (!geomSrc) {
+      setStatusMessage('Body geometry not available — try again after the model renders');
+      return;
+    }
+    const geom = geomSrc.clone();
+    geom.computeBoundingBox();
+    const bbox = geom.boundingBox!;
+    const cx = (bbox.min.x + bbox.max.x) / 2;
+    const cy = (bbox.min.y + bbox.max.y) / 2;
+    geom.translate(-cx, -cy, -bbox.min.z);
+    geom.computeBoundingBox();
+    useSlicerStore.getState().addToPlate(bodyId, body.name, geom);
+    useCADStore.getState().setWorkspaceMode('prepare');
+    setStatusMessage(`Added "${body.name}" to build plate`);
+  };
+
+  const handleAddModel = (bodyId?: string) => {
+    if (bodyId) {
+      sendBodyToPlate(bodyId);
+      return;
+    }
+    if (addableBodies.length === 0) {
       setStatusMessage('No models to add. Create a design first.');
       return;
     }
-    useSlicerStore.getState().addToPlate(target.id, target.name, (target as { mesh?: unknown }).mesh);
-    setStatusMessage(`Added "${target.name}" to build plate`);
+    sendBodyToPlate(addableBodies[0].id);
   };
 
   const isSlicing = sliceProgress.stage === 'preparing'
@@ -92,11 +110,11 @@ export function RibbonPrepareTab() {
           icon={<Box size={ICON_LG} />}
           label="Add Model"
           onClick={() => handleAddModel()}
-          disabled={addableFeatures.length === 0}
-          dropdown={addableFeatures.length > 0 ? addableFeatures.map((f) => ({
-            label: f.name,
+          disabled={addableBodies.length === 0}
+          dropdown={addableBodies.length > 0 ? addableBodies.map((b) => ({
+            label: b.name,
             icon: <Box size={12} />,
-            onClick: () => handleAddModel(f.id),
+            onClick: () => handleAddModel(b.id),
           })) : undefined}
           large
           colorClass="icon-blue"

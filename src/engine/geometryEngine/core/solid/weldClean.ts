@@ -544,6 +544,9 @@ export function earClip(
  * behind. Returns a fresh NON-INDEXED, position-only geometry (callers add
  * uv/normal as needed).
  *
+ * `fast`: skip `retriangulateCoplanarRegions` and the final sliver cull. Used
+ * by live-preview paths where cosmetic quality is less important than latency.
+ *
  * Why: a CSG result is a triangle soup with coincident-but-not-shared vertices
  * along every cut seam. three-bvh-csg is fragile when a *subsequent* cutter
  * slices that soup near a shared corner — it emits inverted/degenerate slivers
@@ -554,7 +557,7 @@ export function earClip(
  * attributes, so the normal/uv attributes are dropped first to unify purely by
  * position (same pattern shellMesh/extrusionInternals use).
  */
-export function weldAndCleanSolid(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+export function weldAndCleanSolid(geo: THREE.BufferGeometry, fast?: boolean): THREE.BufferGeometry {
   let work: THREE.BufferGeometry | null = null;
   let welded: THREE.BufferGeometry | null = null;
   let ni: THREE.BufferGeometry | null = null;
@@ -605,50 +608,49 @@ export function weldAndCleanSolid(geo: THREE.BufferGeometry): THREE.BufferGeomet
     ni = null;
 
     const cleanPos = w === kept.length ? kept : kept.subarray(0, w);
-    // Collapse three-bvh-csg's coplanar fan (the giant skewed "broken face")
-    // back to a minimal triangulation. Region-by-region conservative: on any
-    // doubt a region is emitted unchanged, so this never corrupts geometry.
-    let finalPos: ArrayLike<number>;
-    try {
-      finalPos = retriangulateCoplanarRegions(
-        cleanPos instanceof Float32Array ? cleanPos : new Float32Array(cleanPos),
-        diag,
-      );
-    } catch {
-      finalPos = cleanPos; // any failure → keep the (correct, if coarse) soup
-    }
 
-    // FINAL sliver cull. The degenerate cull above runs BEFORE
-    // retriangulateCoplanarRegions, whose ear-clip/bridge can re-emit thin
-    // slivers where several chamfered edges meet a shared corner (the visible
-    // "floating triangle flaps" at box corners when many edges are cut). Drop
-    // any triangle whose minimum height (2·area / longest edge) is below the
-    // weld tolerance — i.e. it is thinner than the merge resolution, so it is
-    // a degenerate sliver, never real surface. A legitimately thin-but-real
-    // face strip has a height far above weldTol and is kept; this only ever
-    // removes non-contributing slivers, so it cannot corrupt the solid.
-    {
-      const fp = finalPos instanceof Float32Array ? finalPos : new Float32Array(finalPos);
-      const triN = (fp.length / 9) | 0;
-      const culled = new Float32Array(fp.length);
-      let cw = 0;
-      const minHeightSq = weldTol * weldTol;
-      for (let t = 0; t < triN; t++) {
-        const o = t * 9;
-        e1.set(fp[o + 3] - fp[o], fp[o + 4] - fp[o + 1], fp[o + 5] - fp[o + 2]);
-        e2.set(fp[o + 6] - fp[o], fp[o + 7] - fp[o + 1], fp[o + 8] - fp[o + 2]);
-        cr.crossVectors(e1, e2);
-        const areaSq4 = cr.lengthSq();              // (2·area)²
-        const l1 = e1.lengthSq();
-        const l3 = e2.lengthSq();
-        e1.set(fp[o + 6] - fp[o + 3], fp[o + 7] - fp[o + 4], fp[o + 8] - fp[o + 5]);
-        const l2 = e1.lengthSq();
-        const longestSq = Math.max(l1, l2, l3);
-        // minHeight = 2·area / longestEdge ⇒ minHeight² = areaSq4 / longestSq
-        if (longestSq < 1e-18 || areaSq4 / longestSq < minHeightSq) continue;
-        for (let k = 0; k < 9; k++) culled[cw++] = fp[o + k];
+    // fast mode: skip the expensive coplanar-retriangulation + sliver cull.
+    // Preview paths use this — cosmetic quality matters less than latency.
+    let finalPos: ArrayLike<number>;
+    if (fast) {
+      finalPos = cleanPos;
+    } else {
+      // Collapse three-bvh-csg's coplanar fan (the giant skewed "broken face")
+      // back to a minimal triangulation. Region-by-region conservative: on any
+      // doubt a region is emitted unchanged, so this never corrupts geometry.
+      try {
+        finalPos = retriangulateCoplanarRegions(
+          cleanPos instanceof Float32Array ? cleanPos : new Float32Array(cleanPos),
+          diag,
+        );
+      } catch {
+        finalPos = cleanPos;
       }
-      finalPos = cw === culled.length ? culled : culled.subarray(0, cw);
+
+      // FINAL sliver cull — runs after retriangulation whose ear-clip can
+      // re-emit thin slivers at shared corners.
+      {
+        const fp = finalPos instanceof Float32Array ? finalPos : new Float32Array(finalPos);
+        const triN = (fp.length / 9) | 0;
+        const culled = new Float32Array(fp.length);
+        let cw = 0;
+        const minHeightSq = weldTol * weldTol;
+        for (let t = 0; t < triN; t++) {
+          const o = t * 9;
+          e1.set(fp[o + 3] - fp[o], fp[o + 4] - fp[o + 1], fp[o + 5] - fp[o + 2]);
+          e2.set(fp[o + 6] - fp[o], fp[o + 7] - fp[o + 1], fp[o + 8] - fp[o + 2]);
+          cr.crossVectors(e1, e2);
+          const areaSq4 = cr.lengthSq();
+          const l1 = e1.lengthSq();
+          const l3 = e2.lengthSq();
+          e1.set(fp[o + 6] - fp[o + 3], fp[o + 7] - fp[o + 4], fp[o + 8] - fp[o + 5]);
+          const l2 = e1.lengthSq();
+          const longestSq = Math.max(l1, l2, l3);
+          if (longestSq < 1e-18 || areaSq4 / longestSq < minHeightSq) continue;
+          for (let k = 0; k < 9; k++) culled[cw++] = fp[o + k];
+        }
+        finalPos = cw === culled.length ? culled : culled.subarray(0, cw);
+      }
     }
     const fw = (finalPos as ArrayLike<number>).length;
 

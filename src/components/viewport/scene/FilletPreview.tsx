@@ -18,7 +18,7 @@ export default function FilletPreview() {
 
   const compute = useCallback(
     (srcGeo: THREE.BufferGeometry, edges: PickedEdge[], value: number) =>
-      computeFilletGeometry(srcGeo, edges, value, 4),
+      computeFilletGeometry(srcGeo, edges, value, 4, true),
     [],
   );
 

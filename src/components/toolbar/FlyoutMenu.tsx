@@ -8,22 +8,42 @@ import { useEscapeKey } from '../../hooks/useEscapeKey';
 
 export function FlyoutMenuItem({ item, onClose }: { item: MenuItem; onClose: () => void }) {
   const [submenuOpen, setSubmenuOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [submenuPos, setSubmenuPos] = useState({ top: 0, left: 0 });
 
   const handleClick = () => {
     if (item.disabled) return;
-    if (item.submenu) {
-      setSubmenuOpen(!submenuOpen);
+    if (item.onClick) {
+      item.onClick();
+      onClose();
       return;
     }
-    if (item.onClick) item.onClick();
-    onClose();
+    if (item.submenu) {
+      setSubmenuOpen(!submenuOpen);
+    }
+  };
+
+  const openSubmenu = () => {
+    if (!item.submenu) return;
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    if (wrapperRef.current) {
+      const rect = wrapperRef.current.getBoundingClientRect();
+      setSubmenuPos({ top: rect.top, left: rect.right });
+    }
+    setSubmenuOpen(true);
+  };
+
+  const scheduleClose = () => {
+    closeTimerRef.current = setTimeout(() => setSubmenuOpen(false), 120);
   };
 
   return (
     <div
+      ref={wrapperRef}
       className="flyout-menu-item-wrapper"
-      onMouseEnter={() => item.submenu && setSubmenuOpen(true)}
-      onMouseLeave={() => item.submenu && setSubmenuOpen(false)}
+      onMouseEnter={openSubmenu}
+      onMouseLeave={scheduleClose}
     >
       <button
         className={`flyout-menu-item ${item.disabled ? 'disabled' : ''} ${item.checked ? 'checked' : ''}`}
@@ -37,15 +57,21 @@ export function FlyoutMenuItem({ item, onClose }: { item: MenuItem; onClose: () 
         {item.submenu && <ChevronRight size={12} className="flyout-menu-item-arrow" />}
         {item.checked && <Check size={12} className="flyout-menu-item-check" />}
       </button>
-      {item.submenu && submenuOpen && (
-        <div className="flyout-submenu">
+      {item.submenu && submenuOpen && createPortal(
+        <div
+          className="flyout-submenu"
+          style={{ position: 'fixed', top: submenuPos.top, left: submenuPos.left }}
+          onMouseEnter={() => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current); }}
+          onMouseLeave={scheduleClose}
+        >
           {item.submenu.map((sub, i) => (
             <div key={i}>
               {sub.separator && <div className="flyout-menu-separator" />}
               <FlyoutMenuItem item={sub} onClose={onClose} />
             </div>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

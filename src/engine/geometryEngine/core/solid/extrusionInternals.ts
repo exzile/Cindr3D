@@ -125,7 +125,7 @@ export function buildExtrudeGeomHolesAware(
       const holeShape = new THREE.Shape(holePath.getPoints(holeSegs));
       const holeSettings: THREE.ExtrudeGeometryOptions = {
         ...extrudeSettings,
-        depth: (extrudeSettings.depth ?? 1) + 2,
+        depth: (extrudeSettings.depth ?? 1) + 0.002,
         curveSegments: holeSegs,
       };
       const holeRaw = new THREE.ExtrudeGeometry(holeShape, holeSettings);
@@ -133,7 +133,7 @@ export function buildExtrudeGeomHolesAware(
       holeRaw.dispose();
       const holeGeom = removeDegenerateTriangles(holeNonIndexed);
       holeNonIndexed.dispose();
-      holeGeom.translate(0, 0, -1);
+      holeGeom.translate(0, 0, -0.001);
       const subtracted = csgSubtract(solid, holeGeom);
       solid.dispose();
       holeGeom.dispose();

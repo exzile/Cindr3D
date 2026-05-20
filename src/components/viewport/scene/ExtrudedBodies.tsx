@@ -371,15 +371,6 @@ export default function ExtrudedBodies() {
     const taperAngle2 = (feature.params.taperAngle2 as number) ?? taperAngle;
     const m = GeometryEngine.buildExtrudeFeatureMesh(sketchForOp, distance, direction, taperAngle, startOffset, distance2, taperAngle2);
     if (m) {
-      // Exact edge topology from the CLEAN, indexed THREE.ExtrudeGeometry —
-      // before bake/CSG turns it into the non-manifold soup. This is the
-      // correct source for pure-extrude bodies (profile loops + side seams);
-      // it never produces the soup-residual hole-region lines. Stored LOCAL;
-      // transformed to world at bake time. CSG-modified bodies fall back to
-      // soup-region extraction in commitCurrent.
-      // EXACT edges from the sketch profile loops (clean by construction —
-      // already in WORLD space). Falls back to mesh-soup extraction only for
-      // taper / custom-plane, where profile-derived caps aren't exact.
       const pt = extrudeProfileTopology(sketchForOp, distance, direction, startOffset, distance2, taperAngle2);
       if (pt.edges.length > 0) {
         m.userData.topoWorld = pt;

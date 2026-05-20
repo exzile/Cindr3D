@@ -25,10 +25,10 @@
  * pickable/featureId userData, so picked edge IDs match the selection IDs.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { parseEdgeIds } from '../../../../utils/geometry/edgeCutCore';
+import { parseEdgeIds, fitEdgeCircle } from '../../../../utils/geometry/edgeCutCore';
 import { liveBodyMeshes } from '../../../../store/meshRegistry';
 import type { PickedEdge } from '../../../../utils/geometry/edgeCutCore';
 
@@ -51,6 +51,19 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
   // Invisible (material.visible=false) but raycastable stand-in for the hidden
   // live body, so the edge picker keeps working while a preview is shown.
   const pickProxyRef = useRef<THREE.Mesh | null>(null);
+  // Cache the non-indexed clone of the live mesh geometry so we don't re-clone
+  // on every debounced value change (only mesh identity changes require a new clone).
+  const srcGeoCacheRef = useRef<{ meshUuid: string; geo: THREE.BufferGeometry } | null>(null);
+
+  // Debounce liveValue: CSG is expensive — only recompute 150 ms after the
+  // user stops dragging the gizmo or typing, not on every intermediate event.
+  const [debouncedValue, setDebouncedValue] = useState(liveValue);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setDebouncedValue(liveValue), 150);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [liveValue]);
 
   const removePickProxy = (sceneRef: THREE.Scene) => {
     if (pickProxyRef.current) {
@@ -76,6 +89,8 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
         previewMeshRef.current = null;
       }
       removePickProxy(sceneRef);
+      srcGeoCacheRef.current?.geo.dispose();
+      srcGeoCacheRef.current = null;
       invalidate();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,7 +117,7 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
       removePickProxy(scene);
     };
 
-    if (!enabled || edgeIds.length === 0 || !(liveValue > 0)) {
+    if (!enabled || edgeIds.length === 0 || !(debouncedValue > 0)) {
       restoreLiveMesh();
       invalidate();
       return;
@@ -114,11 +129,68 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
     const liveMesh = liveBodyMeshes.get(parsed.meshUuid);
     if (!liveMesh) { restoreLiveMesh(); invalidate(); return; }
 
-    const srcGeo = liveMesh.geometry.index
-      ? liveMesh.geometry.clone().toNonIndexed()
-      : liveMesh.geometry.clone();
-    const previewGeo = compute(srcGeo, parsed.edges, liveValue);
-    srcGeo.dispose();
+    // Cluster edges by endpoint connectivity so we can apply the segment cap
+    // per-cluster rather than across the whole selection. This handles mixed
+    // selections (e.g. circular rim + box edge): the rim cluster is detected as
+    // circular and kept intact (the loop cutter handles it in O(1) CSG), while
+    // non-circular clusters are capped to prevent a sequential-CSG freeze.
+    // Previously fitEdgeCircle was called on ALL edges at once, so any
+    // non-circular edge defeated the torus path for the entire rim and the full
+    // set was randomly decimated to 6 edges — producing per-segment soup on the
+    // rim and breaking the fillet the moment a second edge was added.
+    const MAX_NON_CIRCLE_SEGS = 6;
+    const nearPrev = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => {
+      const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+      return dx * dx + dy * dy + dz * dz < 1e-8;
+    };
+    const edgeClusters: (typeof parsed.edges)[] = [];
+    {
+      const rem = [...parsed.edges];
+      while (rem.length > 0) {
+        const cl = [rem.shift()!];
+        let changed = true;
+        while (changed) {
+          changed = false;
+          for (let i = rem.length - 1; i >= 0; i--) {
+            const e = rem[i];
+            if (cl.some(c => nearPrev(c.a, e.a) || nearPrev(c.a, e.b) || nearPrev(c.b, e.a) || nearPrev(c.b, e.b))) {
+              cl.push(rem.splice(i, 1)[0]);
+              changed = true;
+            }
+          }
+        }
+        edgeClusters.push(cl);
+      }
+    }
+    const previewEdges: typeof parsed.edges = [];
+    for (const cluster of edgeClusters) {
+      if (fitEdgeCircle(cluster) !== null || cluster.length <= MAX_NON_CIRCLE_SEGS) {
+        // Circular cluster: keep ALL segments so the loop cutter gets the full
+        // circle. Small non-circular cluster: pass through as-is.
+        previewEdges.push(...cluster);
+      } else {
+        // Large non-circular cluster: sample down to cap sequential CSG cost.
+        for (let i = 0; i < MAX_NON_CIRCLE_SEGS; i++) {
+          previewEdges.push(cluster[Math.round((i * (cluster.length - 1)) / (MAX_NON_CIRCLE_SEGS - 1))]);
+        }
+      }
+    }
+
+    // Reuse the cached non-indexed clone when the mesh hasn't changed — avoids
+    // a clone + toNonIndexed on every debounced value change.
+    if (srcGeoCacheRef.current?.meshUuid !== parsed.meshUuid) {
+      srcGeoCacheRef.current?.geo.dispose();
+      const geo = liveMesh.geometry.index
+        ? liveMesh.geometry.clone().toNonIndexed()
+        : liveMesh.geometry.clone();
+      srcGeoCacheRef.current = { meshUuid: parsed.meshUuid, geo };
+    }
+    let previewGeo: THREE.BufferGeometry | null = null;
+    try {
+      previewGeo = compute(srcGeoCacheRef.current.geo, previewEdges, debouncedValue);
+    } catch (err) {
+      console.error('[EdgeOpPreview] compute threw:', err);
+    }
 
     if (!previewGeo) { restoreLiveMesh(); invalidate(); return; }
 
@@ -179,7 +251,7 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
     previewMeshRef.current = previewMesh;
 
     invalidate();
-  }, [enabled, edgeIds, liveValue, compute, scene, invalidate]);
+  }, [enabled, edgeIds, debouncedValue, compute, scene, invalidate]);
 
   return null;
 }
