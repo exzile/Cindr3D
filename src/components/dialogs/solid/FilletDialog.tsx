@@ -1,8 +1,9 @@
-import { useState, useEffect, type FocusEvent, type MouseEvent } from 'react';
+import { useState, useEffect, useMemo, type FocusEvent, type MouseEvent } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
+import { parseEdgeLabel } from '../../../utils/geometry/edgeCutCore';
 
 /** SOL-I1: Fillet type discriminator — CORR-3: added chord-length */
 export type FilletMode = 'constant' | 'variable' | 'full-round' | 'chord-length';
@@ -56,20 +57,11 @@ interface FilletDialogProps {
   onConfirm: (params: FilletParams) => void;
 }
 
-function parseEdgeLabel(id: string, index: number): string {
-  let rest = id;
-  const pipe = id.indexOf('|');
-  if (pipe > 0) rest = id.slice(pipe + 1);
-  const parts = rest.split(':');
-  if (parts.length < 3) return `Edge ${index + 1}`;
-  const a = parts[1].split(',').map(Number);
-  const b = parts[2].split(',').map(Number);
-  if (a.length !== 3 || b.length !== 3) return `Edge ${index + 1}`;
-  const fmt = (n: number) => n.toFixed(1);
-  return `Edge ${index + 1}  (${fmt(a[0])}, ${fmt(a[1])}, ${fmt(a[2])}) → (${fmt(b[0])}, ${fmt(b[1])}, ${fmt(b[2])})`;
-}
-
 function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClose, onConfirm }: FilletDialogProps) {
+  // Memo the edge labels: the dialog re-renders on every filletLiveRadius
+  // change (gizmo drag, ~60Hz), but edgeIds only changes when the user
+  // adds/removes an edge. Memoising keeps the rendered list cheap.
+  const edgeLabels = useMemo(() => edgeIds.map((id, i) => parseEdgeLabel(id, i)), [edgeIds]);
   // filletLiveRadius is updated by FilletGizmo drags so the dialog reflects
   // the radius while the user drags the on-canvas handle.
   const filletLiveRadius = useCADStore((s) => s.filletLiveRadius);
@@ -158,7 +150,7 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
               }}
             >
               <span style={{ fontFamily: 'monospace', color: '#ccc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 4 }}>
-                {parseEdgeLabel(id, i)}
+                {edgeLabels[i]}
               </span>
               <button
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cc4444', padding: '0 2px', fontSize: 14, lineHeight: 1 }}

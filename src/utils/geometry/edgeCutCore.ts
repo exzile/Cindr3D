@@ -110,12 +110,26 @@ export function parseEdgeIds(edgeIds: string[]): ParsedEdges | null {
     // consecutive segments (the whole box edge / hole-rim loop). Decoding the
     // chain into its segments means the cut pipeline chamfers the ENTIRE edge.
     const pts: THREE.Vector3[] = [];
+    let parseOk = true;
     for (let pi = 1; pi < parts.length; pi++) {
-      const c = parts[pi].split(',').map(Number);
-      if (c.length !== 3 || c.some((n) => !Number.isFinite(n))) { pts.length = 0; break; }
-      pts.push(new THREE.Vector3(c[0], c[1], c[2]));
+      // Parse each "x,y,z" coord directly via two indexOf splits instead of
+      // `split(',').map(Number).some(...)`. Avoids two transient arrays per
+      // point on multi-point chain IDs — circle-rim selections arrive with
+      // 30+ points per ID, so this matters when the user picks several.
+      const seg = parts[pi];
+      const c1 = seg.indexOf(',');
+      const c2 = c1 < 0 ? -1 : seg.indexOf(',', c1 + 1);
+      if (c2 < 0) { parseOk = false; break; }
+      const x = +seg.slice(0, c1);
+      const y = +seg.slice(c1 + 1, c2);
+      const z = +seg.slice(c2 + 1);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+        parseOk = false;
+        break;
+      }
+      pts.push(new THREE.Vector3(x, y, z));
     }
-    if (pts.length < 2) continue;
+    if (!parseOk || pts.length < 2) continue;
     const segs: PickedEdge[] = [];
     for (let pi = 0; pi < pts.length - 1; pi++) {
       segs.push({ a: pts[pi], b: pts[pi + 1] });
@@ -150,27 +164,75 @@ export function parseEdgeIds(edgeIds: string[]): ParsedEdges | null {
   return target;
 }
 
+/**
+ * Cheap human-readable label for an edge ID — shown in the Fillet/Chamfer
+ * dialogs' selected-edges list. Decodes ONLY the first chord of the ID
+ * (`parts[1]` → `parts[2]`), which is what the previous duplicated copies in
+ * FilletDialog/ChamferDialog rendered; chained model edges would still show
+ * their first chord's endpoints, matching the prior UI exactly. Falls back to
+ * `Edge {n}` on any parse failure.
+ */
+export function parseEdgeLabel(id: string, index: number): string {
+  let rest = id;
+  const pipe = id.indexOf('|');
+  if (pipe > 0) rest = id.slice(pipe + 1);
+  const parts = rest.split(':');
+  if (parts.length < 3) return `Edge ${index + 1}`;
+  const a = parts[1].split(',').map(Number);
+  const b = parts[2].split(',').map(Number);
+  if (a.length !== 3 || b.length !== 3) return `Edge ${index + 1}`;
+  if (a.some((n) => !Number.isFinite(n)) || b.some((n) => !Number.isFinite(n))) return `Edge ${index + 1}`;
+  const fmt = (n: number) => n.toFixed(1);
+  return `Edge ${index + 1}  (${fmt(a[0])}, ${fmt(a[1])}, ${fmt(a[2])}) → (${fmt(b[0])}, ${fmt(b[1])}, ${fmt(b[2])})`;
+}
+
 // ---------------------------------------------------------------------------
 // Triangle list + position tolerance
 // ---------------------------------------------------------------------------
 
-/** Build a flat triangle list from a NON-INDEXED, world-space geometry. */
+/**
+ * Build a flat triangle list from a world-space geometry. The driver
+ * (`computeEdgeCutGeometry`) still expects a NON-INDEXED `srcGeo` because the
+ * CSG path operates on the cloned solid in non-indexed form, but read-only
+ * consumers (`computeEdgeGizmoDir`) can pass an indexed `srcGeo` and skip the
+ * caller-side `.clone().toNonIndexed()` — same triangles emitted either way.
+ */
 export function buildTriangleList(srcGeo: THREE.BufferGeometry): THREE.Vector3[][] {
-  const src = srcGeo.attributes.position.array as ArrayLike<number>;
+  const pa = srcGeo.attributes.position.array as ArrayLike<number>;
+  const idxAttr = srcGeo.index;
   const tris: THREE.Vector3[][] = [];
-  for (let i = 0; i < src.length; i += 9) {
-    tris.push([
-      new THREE.Vector3(src[i],     src[i + 1], src[i + 2]),
-      new THREE.Vector3(src[i + 3], src[i + 4], src[i + 5]),
-      new THREE.Vector3(src[i + 6], src[i + 7], src[i + 8]),
-    ]);
+  if (idxAttr) {
+    const ia = idxAttr.array as ArrayLike<number>;
+    // BufferAttribute.count is items, not array length — same value for
+    // itemSize=1 (the index attribute) but use the explicit count anyway in
+    // case the underlying array carries spare capacity past `count`.
+    const n = idxAttr.count;
+    for (let i = 0; i < n; i += 3) {
+      const i0 = ia[i] * 3, i1 = ia[i + 1] * 3, i2 = ia[i + 2] * 3;
+      tris.push([
+        new THREE.Vector3(pa[i0],     pa[i0 + 1], pa[i0 + 2]),
+        new THREE.Vector3(pa[i1],     pa[i1 + 1], pa[i1 + 2]),
+        new THREE.Vector3(pa[i2],     pa[i2 + 1], pa[i2 + 2]),
+      ]);
+    }
+  } else {
+    for (let i = 0; i < pa.length; i += 9) {
+      tris.push([
+        new THREE.Vector3(pa[i],     pa[i + 1], pa[i + 2]),
+        new THREE.Vector3(pa[i + 3], pa[i + 4], pa[i + 5]),
+        new THREE.Vector3(pa[i + 6], pa[i + 7], pa[i + 8]),
+      ]);
+    }
   }
   return tris;
 }
 
 /** Position tolerance scaled to the geometry's bounding-box diagonal. */
 export function computePositionEps(srcGeo: THREE.BufferGeometry): number {
-  srcGeo.computeBoundingBox();
+  // The render pipeline almost always has the bbox computed already (it needs
+  // it for frustum culling); only recompute when actually missing. Avoids the
+  // redundant O(N) recompute on every parsedAndClustered memo run.
+  if (!srcGeo.boundingBox) srcGeo.computeBoundingBox();
   const diag = srcGeo.boundingBox
     ? srcGeo.boundingBox.min.distanceTo(srcGeo.boundingBox.max)
     : 1;
@@ -194,23 +256,77 @@ export function makeNear(srcGeo: THREE.BufferGeometry): (p: THREE.Vector3, q: TH
 // scan over all tris makes each edge resolution prohibitively slow.
 // ---------------------------------------------------------------------------
 
-/** Quantize a position to a grid cell key. */
-function triIdxKey(v: THREE.Vector3, eps: number): string {
-  return `${Math.round(v.x / eps)},${Math.round(v.y / eps)},${Math.round(v.z / eps)}`;
+// Cell-key packing: hash (cx,cy,cz) into a single number so the spatial index
+// can use a Map<number, number[]> instead of Map<string, number[]>. String
+// concatenation per lookup was the dominant cost on circle-rim selections
+// (~30-100+ vertex lookups per edge × 27 neighbours each). 21-bit signed cell
+// indices give ±1M-cell range, more than enough for any tessellated model at
+// our eps (diag·1e-4); collisions are NOT possible inside that range because
+// each axis fits its own bit field.
+const CELL_BITS = 21;
+const CELL_MASK = (1 << CELL_BITS) - 1;
+const CELL_BIAS = 1 << (CELL_BITS - 1); // bias to make negatives non-negative
+
+// ---------------------------------------------------------------------------
+// Per-srcGeo cache (tris + spatial index + eps)
+//
+// buildTriangleList + buildTriangleIndex + computePositionEps depend only on
+// srcGeo's position attribute, which never changes for the lifetime of the
+// non-indexed clone EdgeOpPreview caches. Without this WeakMap, every
+// debounced preview tick (and every commit's gizmo + commit call chain)
+// re-allocated ~3·tris Vector3 instances and ~3·tris Map entries from scratch.
+// WeakMap auto-evicts when the source geometry is GC'd; no manual eviction
+// required. The driver never mutates srcGeo (it clones for the cut solid),
+// so the cache stays valid across calls.
+// ---------------------------------------------------------------------------
+interface SrcGeoCache {
+  tris: THREE.Vector3[][];
+  triIdx: Map<number, number[]>;
+  eps: number;
+}
+const _srcGeoCache = new WeakMap<THREE.BufferGeometry, SrcGeoCache>();
+
+function getOrBuildSrcCache(srcGeo: THREE.BufferGeometry): SrcGeoCache {
+  let entry = _srcGeoCache.get(srcGeo);
+  if (entry) return entry;
+  const tris = buildTriangleList(srcGeo);
+  const eps = computePositionEps(srcGeo);
+  const triIdx = buildTriangleIndex(tris, eps);
+  entry = { tris, triIdx, eps };
+  _srcGeoCache.set(srcGeo, entry);
+  return entry;
+}
+
+/** Pack quantized (cx,cy,cz) into a single 53-bit-safe number key. */
+function packCell(cx: number, cy: number, cz: number): number {
+  // Bias each coord into [0, 2^21) then pack: (cx) | (cy<<21) | (cz<<42).
+  // Number.MAX_SAFE_INTEGER is 2^53-1, so 3×21 = 63 bits would overflow — use
+  // multiplication for the top field so we stay inside the safe range.
+  const ax = (cx + CELL_BIAS) & CELL_MASK;
+  const ay = (cy + CELL_BIAS) & CELL_MASK;
+  const az = (cz + CELL_BIAS) & CELL_MASK;
+  return ax + ay * (1 << CELL_BITS) + az * (1 << (CELL_BITS * 2));
 }
 
 /** Build a spatial index mapping quantized vertex positions → triangle indices. */
-export function buildTriangleIndex(tris: THREE.Vector3[][], eps: number): Map<string, number[]> {
-  const map = new Map<string, number[]>();
+export function buildTriangleIndex(tris: THREE.Vector3[][], eps: number): Map<number, number[]> {
+  const map = new Map<number, number[]>();
+  const inv = 1 / eps;
   for (let i = 0; i < tris.length; i++) {
-    for (const v of tris[i]) {
-      const k = triIdxKey(v, eps);
+    const tri = tris[i];
+    for (let j = 0; j < 3; j++) {
+      const v = tri[j];
+      const k = packCell(Math.round(v.x * inv), Math.round(v.y * inv), Math.round(v.z * inv));
       const arr = map.get(k);
       if (arr) arr.push(i); else map.set(k, [i]);
     }
   }
   return map;
 }
+
+// Scratch set reused across getCandidatesNear calls. resolveEdge runs this
+// many times per edge; allocating a fresh Set every call is wasteful.
+const _candSeen = new Set<number>();
 
 /**
  * Returns deduplicated triangle indices whose bounding cells overlap the 3×3×3
@@ -220,16 +336,17 @@ export function buildTriangleIndex(tris: THREE.Vector3[][], eps: number): Map<st
  * primary-pass adj array, making adj.length > 2 and causing resolveEdge to
  * return null for valid edges.
  */
-function getCandidatesNear(p: THREE.Vector3, map: Map<string, number[]>, eps: number): number[] {
-  const cx = Math.round(p.x / eps), cy = Math.round(p.y / eps), cz = Math.round(p.z / eps);
-  const seen = new Set<number>();
+function getCandidatesNear(p: THREE.Vector3, map: Map<number, number[]>, eps: number): number[] {
+  const inv = 1 / eps;
+  const cx = Math.round(p.x * inv), cy = Math.round(p.y * inv), cz = Math.round(p.z * inv);
+  _candSeen.clear();
   for (let dx = -1; dx <= 1; dx++)
     for (let dy = -1; dy <= 1; dy++)
       for (let dz = -1; dz <= 1; dz++) {
-        const arr = map.get(`${cx + dx},${cy + dy},${cz + dz}`);
-        if (arr) for (const t of arr) seen.add(t);
+        const arr = map.get(packCell(cx + dx, cy + dy, cz + dz));
+        if (arr) for (let i = 0; i < arr.length; i++) _candSeen.add(arr[i]);
       }
-  return Array.from(seen);
+  return Array.from(_candSeen);
 }
 
 // ---------------------------------------------------------------------------
@@ -327,7 +444,7 @@ export function resolveEdge(
   tris: THREE.Vector3[][],
   e: PickedEdge,
   near: (p: THREE.Vector3, q: THREE.Vector3) => boolean,
-  triIdx?: Map<string, number[]>,
+  triIdx?: Map<number, number[]>,
   eps?: number,
 ): ResolvedEdge | null {
   // With a spatial index: only visit triangles in the 3×3×3 neighbourhood of
@@ -580,11 +697,9 @@ export function computeEdgeGizmoDir(
   srcGeo: THREE.BufferGeometry,
   edges: PickedEdge[],
 ): THREE.Vector3 | null {
-  const tris = buildTriangleList(srcGeo);
-  const eps = computePositionEps(srcGeo);
+  const { tris, triIdx, eps } = getOrBuildSrcCache(srcGeo);
   const epsSq = eps * eps;
   const near = (p: THREE.Vector3, q: THREE.Vector3) => p.distanceToSquared(q) <= epsSq;
-  const triIdx = buildTriangleIndex(tris, eps);
 
   const acc = new THREE.Vector3();
   let n = 0;
@@ -597,6 +712,137 @@ export function computeEdgeGizmoDir(
   }
   if (n === 0 || acc.lengthSq() < 1e-9) return null;
   return acc.normalize();
+}
+
+// ---------------------------------------------------------------------------
+// Edge dedupe + clustering helpers
+//
+// Both operations used to be O(N²) (linear-scan dedupe / repeated `Array.some`
+// connectivity test). Selection sizes are typically small (≤12 for box edges),
+// but circle-rim selections balloon to 30-100+ tiny segments and live-preview
+// re-registration / tangent-edge propagation can compound that further. The
+// O(N²) version cost tens of milliseconds per debounced preview tick on those
+// selections; replacing with endpoint spatial-hash makes it linear and keeps
+// the visible response inside one frame.
+// ---------------------------------------------------------------------------
+/** Unordered-pair canonical key for two endpoint cell hashes. */
+function unorderedPairKey(a: number, b: number): string {
+  return a < b ? `${a}_${b}` : `${b}_${a}`;
+}
+
+/**
+ * O(N) endpoint-based dedupe. Two edges are duplicates when their {a,b} cell
+ * hashes match in either direction. To handle the cell-boundary straddling
+ * case (two points within eps but quantized into adjacent cells — what the old
+ * O(N²) pairwise `near` would still catch), each endpoint is resolved to a
+ * CANONICAL cell key by checking a 3×3×3 neighbourhood for an earlier endpoint
+ * that we've already cataloged within eps; if found, this endpoint inherits
+ * that cell key. This keeps dedupe correctness byte-equivalent for the inputs
+ * the driver actually sees while being linear in N. Same 3-neighbour pattern
+ * the spatial triangle index already uses.
+ */
+export function dedupEdgesByEndpoints(edges: PickedEdge[], eps: number): PickedEdge[] {
+  const out: PickedEdge[] = [];
+  const seen = new Set<string>();
+  const inv = 1 / eps;
+  const epsSq = eps * eps;
+  // canonical-cell-key map: anchor point cell → canonical key (the first such
+  // cell hash encountered). Subsequent endpoints in the cell's 3×3×3 hood
+  // within eps reuse that key.
+  const canon = new Map<number, { key: number; x: number; y: number; z: number }>();
+  const canonicalize = (v: THREE.Vector3): number => {
+    const cx = Math.round(v.x * inv), cy = Math.round(v.y * inv), cz = Math.round(v.z * inv);
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dz = -1; dz <= 1; dz++) {
+          const k = packCell(cx + dx, cy + dy, cz + dz);
+          const hit = canon.get(k);
+          if (hit !== undefined) {
+            const ddx = hit.x - v.x, ddy = hit.y - v.y, ddz = hit.z - v.z;
+            if (ddx * ddx + ddy * ddy + ddz * ddz <= epsSq) return hit.key;
+          }
+        }
+    const self = packCell(cx, cy, cz);
+    canon.set(self, { key: self, x: v.x, y: v.y, z: v.z });
+    return self;
+  };
+  for (const e of edges) {
+    const ka = canonicalize(e.a);
+    const kb = canonicalize(e.b);
+    if (ka === kb) continue; // zero-length edge guard
+    const k = unorderedPairKey(ka, kb);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(e);
+  }
+  return out;
+}
+
+/**
+ * O(N+α(N)) union-find clustering by shared endpoint cell. Replaces the prior
+ * "while (changed) for each remaining edge" O(N²) loop. Two endpoints land in
+ * the same group when their canonical cell keys match (same 3×3×3 neighbourhood
+ * canonicalization the dedup uses, so it tolerates a small straddle across a
+ * cell line in the same way the old `near`-based connectivity did).
+ */
+export function clusterEdgesByEndpointConnectivity(
+  edges: PickedEdge[],
+  eps: number,
+): PickedEdge[][] {
+  if (edges.length === 0) return [];
+  const inv = 1 / eps;
+  const epsSq = eps * eps;
+  const n = edges.length;
+  const parent = new Int32Array(n);
+  for (let i = 0; i < n; i++) parent[i] = i;
+  const find = (x: number): number => {
+    let r = x;
+    while (parent[r] !== r) r = parent[r];
+    while (parent[x] !== r) { const next = parent[x]; parent[x] = r; x = next; }
+    return r;
+  };
+  const union = (a: number, b: number) => {
+    const ra = find(a), rb = find(b);
+    if (ra !== rb) parent[ra] = rb;
+  };
+
+  const canon = new Map<number, { key: number; x: number; y: number; z: number }>();
+  const canonicalize = (v: THREE.Vector3): number => {
+    const cx = Math.round(v.x * inv), cy = Math.round(v.y * inv), cz = Math.round(v.z * inv);
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dz = -1; dz <= 1; dz++) {
+          const k = packCell(cx + dx, cy + dy, cz + dz);
+          const hit = canon.get(k);
+          if (hit !== undefined) {
+            const ddx = hit.x - v.x, ddy = hit.y - v.y, ddz = hit.z - v.z;
+            if (ddx * ddx + ddy * ddy + ddz * ddz <= epsSq) return hit.key;
+          }
+        }
+    const self = packCell(cx, cy, cz);
+    canon.set(self, { key: self, x: v.x, y: v.y, z: v.z });
+    return self;
+  };
+
+  // First edge owning each canonical endpoint cell — anything else that touches
+  // that cell unions into the same group.
+  const cellOwner = new Map<number, number>();
+  for (let i = 0; i < n; i++) {
+    const ka = canonicalize(edges[i].a);
+    const kb = canonicalize(edges[i].b);
+    const ownerA = cellOwner.get(ka);
+    if (ownerA === undefined) cellOwner.set(ka, i); else union(i, ownerA);
+    const ownerB = cellOwner.get(kb);
+    if (ownerB === undefined) cellOwner.set(kb, i); else union(i, ownerB);
+  }
+
+  const groups = new Map<number, PickedEdge[]>();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    const g = groups.get(r);
+    if (g) g.push(edges[i]); else groups.set(r, [edges[i]]);
+  }
+  return [...groups.values()];
 }
 
 // ---------------------------------------------------------------------------
@@ -621,26 +867,18 @@ export function computeEdgeCutGeometry(
   fast?: boolean,
   makeLoopCutter?: LoopCutterFn,
 ): THREE.BufferGeometry | null {
-  const tris = buildTriangleList(srcGeo);
-  const eps = computePositionEps(srcGeo);
+  const { tris, triIdx, eps } = getOrBuildSrcCache(srcGeo);
   const epsSq = eps * eps;
   const near = (p: THREE.Vector3, q: THREE.Vector3) => p.distanceToSquared(q) <= epsSq;
-  const triIdx = buildTriangleIndex(tris, eps);
 
   // Dedupe edges by GEOMETRY (endpoint pair, either direction, within the
   // edge-match tolerance). Tangent-edge propagation and live-preview
   // re-registration routinely hand the SAME physical edge in multiple times
   // (sometimes slightly jittered); cutting it twice double-bevels it and adds
   // spurious geometry / can over-cut. One cut per distinct edge is correct.
-  const uniqueEdges: PickedEdge[] = [];
-  for (const e of edges) {
-    const dup = uniqueEdges.some(
-      (u) =>
-        (near(u.a, e.a) && near(u.b, e.b)) ||
-        (near(u.a, e.b) && near(u.b, e.a)),
-    );
-    if (!dup) uniqueEdges.push(e);
-  }
+  // Uses a spatial-hash → O(N) instead of the prior O(N²) scan; matters on
+  // circle-rim selections that arrive as 30-100+ short segments.
+  const uniqueEdges = dedupEdgesByEndpoints(edges, eps);
 
   // Cluster uniqueEdges by endpoint connectivity before deciding which path to
   // use. This handles mixed selections (e.g. a circular rim + a box edge): each
@@ -650,25 +888,8 @@ export function computeEdgeCutGeometry(
   // once — any non-circular edge in the selection defeated the torus path for the
   // entire rim, sending all rim segments through the per-segment path and
   // producing the triangle-soup seams.
-  const clusters: PickedEdge[][] = [];
-  {
-    const rem = [...uniqueEdges];
-    while (rem.length > 0) {
-      const cl: PickedEdge[] = [rem.shift()!];
-      let changed = true;
-      while (changed) {
-        changed = false;
-        for (let i = rem.length - 1; i >= 0; i--) {
-          const e = rem[i];
-          if (cl.some(c => near(c.a, e.a) || near(c.a, e.b) || near(c.b, e.a) || near(c.b, e.b))) {
-            cl.push(rem.splice(i, 1)[0]);
-            changed = true;
-          }
-        }
-      }
-      clusters.push(cl);
-    }
-  }
+  // O(N) via union-find keyed by an endpoint-cell spatial hash.
+  const clusters = clusterEdgesByEndpointConnectivity(uniqueEdges, eps);
 
   let solid: THREE.BufferGeometry = srcGeo.clone();
   let cut = 0;

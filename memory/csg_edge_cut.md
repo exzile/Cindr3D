@@ -42,5 +42,80 @@ Note: the geometry-layer edge-dedupe above means even if parse returns duplicate
 - **Feed the boolean a welded INDEXED manifold source** instead of non-indexed soup — does NOT fix the quad-fan (top-front stayed 40) and slightly regressed the multi-edge case. Reverted.
 - Position-welded boundary/non-manifold counts OVER-COUNT on raw three-bvh-csg soup — valid only for RELATIVE comparison; the trustworthy absolute signal is **near-zero-area (degenerate) triangle count**.
 
+## PERF 2026-05-20 (round 12) — parseEdgeIds avoids per-point split+map+some allocations
+The chain-segment parse loop ran `parts[pi].split(',').map(Number)` plus `.some((n) => !Number.isFinite(n))` per point — three transient arrays + a closure invocation per point. Circle-rim selections arrive with 30+ points per ID, and with several picked rims the loop allocates hundreds of throw-away arrays per parse. Switched to direct `indexOf`/`slice`/`+` parsing (no transient arrays, no closure) with explicit `Number.isFinite` checks on the three scalars. Behaviour-equivalent — added 8 new unit tests covering simple/legacy/featureId-prefixed IDs, chained multi-segment IDs, malformed IDs, NaN/Infinity rejection, and the null-featureId upgrade case to lock in the contract. Also added 3 tests for `parseEdgeLabel`'s `Number.isFinite` guard (no `NaN` in the dialog).
+
+## PERF 2026-05-20 (round 11) — hoist edgeIds Set to a useMemo
+`EdgeOpEdgeHighlight.useFrame` was constructing `new Set(edgeIds)` on every frame for the selected-line cleanup membership check (~100 ops × 60 Hz = 6000/sec on a circle-rim selection). Hoisted into `const edgeIdSet = useMemo(() => new Set(edgeIds), [edgeIds])` so it's built once per edgeIds change. `handleClick` also switched to `edgeIdSet.has(id)` instead of `edgeIds.includes(id)` — O(1) vs O(N), and the callback's identity stability follows edgeIdSet (which already follows edgeIds).
+
+## PERF 2026-05-20 (round 10) — let idle edge-picker idle
+`EdgeOpEdgeHighlight.useFrame` was calling `invalidate()` unconditionally on every frame while the picker was enabled, defeating R3F's `frameloop="demand"`: the canvas rendered at 60 Hz the whole time a Fillet/Chamfer dialog was open, even when the user sat still with no edge hovered and nothing selected. Gated on a `hasVisible` check (any hover, any selected line, any pending edgeIds), so pulse animation still runs whenever there's something animatable, but a truly idle picker (open dialog, cursor parked off the body, no picks yet) lets the canvas settle. Pointermove still wakes the loop: `handleHover` now calls `invalidate()` on every hover-change, so the next `useFrame` runs and picks up the result.
+
+## PERF 2026-05-20 (round 9) — skip redundant computeBoundingBox
+`computePositionEps` was unconditionally calling `srcGeo.computeBoundingBox()` on every invocation. The render pipeline almost always has the bbox set (frustum culling needs it), so the recompute was wasted O(N) work. Now guarded by `if (!srcGeo.boundingBox) srcGeo.computeBoundingBox()`. Hit primarily by `EdgeOpPreview.parsedAndClustered` memo (runs `computePositionEps(liveMesh.geometry)` on every edges change) and indirectly through the per-srcGeo cache's first miss.
+
+## PERF 2026-05-20 (round 8) — EdgeOpPreview reuses preview mesh across updates
+Previously every debounced value tick (every 150 ms during gizmo drag) did `scene.remove(previewMesh) + previewMesh.geometry.dispose() + new THREE.Mesh(...) + scene.add(newMesh)` — a full scenegraph remove/add cycle plus shadow-flag setup. Now we keep the same `THREE.Mesh` wrapper in the scene across updates and just swap its `geometry` field (the geometry itself MUST be a new buffer per tick — positions differ). The previous geometry is disposed AFTER the swap so the mesh is never temporarily geometry-less.
+
+The mesh is still rebuilt fresh when `liveMesh.material` swaps (i.e. body identity changes under us) — same conservatism as before. Bail-out paths (`!parsedAndClustered`, `!previewGeo`, empty positions) now also clean up the lingering preview mesh through a single `restoreLiveMesh()` helper, so the "we kept the mesh between ticks" optimisation can never strand it on dialog close or mesh-disappear.
+
+## PERF 2026-05-20 (round 7) — cached edge chain in topology cache
+`pickNearestEdge` allocated a fresh `THREE.Vector3[]` for the whole edge polyline every time it returned (continuous hover at 60 Hz, up to ~30 segments per circle-rim edge). Moved the chain materialisation into `topologyCache.getCachedChain(ce)` — lazily built on first access, then reused for the cached edge's lifetime. WeakMap-evicts with the geometry; rebuilds automatically on cache miss (when geom/topo/matrix changes).
+
+Safety contract documented in the type: the returned chain is read-only. Verified existing consumers in `EdgeOpEdgeHighlight.handleClick` (clones via `.map(p => p.clone())`) and `EdgeOpEdgeHighlight.useFrame` (read-only iteration into `buildPolylineGeometry`). `midpoint` and `direction` on the result still depend on the hovered segment so they remain freshly allocated per call.
+
+## PERF 2026-05-20 (round 6) — topology cache matrix snapshot
+`getCachedEdges` in `src/hooks/edgePicker/topologyCache.ts` is on the pointermove hot path (called from `pickNearestEdge` on every cursor move while an edge picker is active). The cache hit check compared `matrixKey` strings — and BUILT the string `` `${e0},${e1},...` `` on every call. ~100 char concat + ~100 char comparison per move at 60 Hz = ~6 KB/sec of garbage and an O(string-length) `===` check.
+
+Replaced with a 12-float `Float32Array` snapshot of the affine matrix elements + element-wise `matrixSnapEq` compare. Cache hit short-circuits on the first element (live body meshes have identity `matrixWorld` so `1 === 1` ends the loop fast). No allocations on cache hit; the snapshot is allocated only on cache miss (alongside the cached edges themselves).
+
+## PERF 2026-05-20 (round 5) — pointermove scratch in EdgeOpGizmo
+EdgeOpGizmo's window pointermove handler was allocating a fresh `new THREE.Vector2()` per event during gizmo drag. Switched to the module-level `_scratchNdc` already used by `onPointerDown`. Same scratch — onPointerDown runs once, then onMove fires until onUp, no overlap.
+
+## PERF 2026-05-20 (round 4) — dialog edge-label memo + extracted parseEdgeLabel helper
+Fillet/Chamfer dialogs both re-render on every gizmo drag tick (the `*LiveRadius` / `*LiveDistance` store subscriptions update at ~60 Hz during drag). The selected-edges list was re-parsing every edge ID on every render (`{edgeIds.map((id, i) => parseEdgeLabel(id, i))}` inline). For a circle-rim selection (~100 edges) that's ~6000 string splits + Number.toFixed per second of drag.
+
+- Extracted the duplicated `parseEdgeLabel` from both dialogs into `edgeCutCore.ts` (the edge-ID format lives there). Added Number.isFinite guard so a malformed coord doesn't print `NaN` in the dialog.
+- Both dialogs now `useMemo(() => edgeIds.map(parseEdgeLabel), [edgeIds])` so the labels are computed only when the selection actually changes; render is a cheap `edgeLabels[i]` lookup.
+
+## PERF 2026-05-20 (round 3) — index-aware buildTriangleList + half-edge integer keys + shared-material single-pulse + parse consolidation
+Round 3 followups:
+
+- **`buildTriangleList` now handles BOTH indexed and non-indexed geometry.** The driver (`computeEdgeCutGeometry`) still expects non-indexed because the CSG operand path requires it; but read-only consumers (`computeEdgeGizmoDir`) can now pass a live `THREE.BufferGeometry` straight from `liveBodyMeshes` regardless of indexing. **`EdgeOpGizmo` drops its `liveMesh.geometry.clone().toNonIndexed()` + dispose** entirely — was a per-edges-change alloc scaling with mesh tri count. As a side bonus, because `getOrBuildSrcCache` is keyed on the geometry reference and the gizmo now passes the live mesh's own geometry, **every gizmo recompute hits the cache for the lifetime of the body** (vs the old "fresh clone, fresh cache entry, immediate dispose" cycle that defeated caching).
+
+- **`retriangulateCoplanarRegions` half-edge keys are now packed numbers** (`u·2^26 + v`) instead of `\`${u}_${v}\`` strings. Same role as the spatial-hash repack from round 1; per-region vertex IDs come from the local `vid()` counter so they're tiny non-negative integers, far under 2^26. Cuts the per-region directed-edge bookkeeping cost on complex CSG results (many small fan-collapse regions).
+
+- **`EdgeOpEdgeHighlight` per-frame pulse: one mutation per shared material.** Every selected line shares one `selectedMat` (created once via `useMemo`), so the previous `forEach(line => applyLinePulse(line, ...))` mutated `mat.opacity` N times per frame with the identical result. Now we pulse one representative line — `mat.opacity` updates once and every line picks it up. The hover line has its own material so it's still pulsed directly. N×60 → 60 mutations/sec.
+
+- **`EdgeOpGizmo` consolidates parse + centroid + dir into one `useMemo`.** Previously `parseEdgeCentroid` (a duplicated mini-parser) and `gizmoDir` each ran `parseEdgeIds` (or a partial reimplementation) on the same edge IDs. Now a single `computeGizmoAnchor(edgeIds)` parses once, computes both, and **fixes a latent bug**: the old `parseEdgeCentroid` only read `parts[1]`/`parts[2]` — the first chord of each edge ID — so a chained multi-segment model edge anchored the gizmo to its first chord's midpoint instead of the full edge centroid. Using `parseEdgeIds` walks every chord segment of the chain.
+
+Tests: 14 unit tests (added 2 for indexed/non-indexed `buildTriangleList` parity and `computeEdgeGizmoDir` indexed acceptance). All 1295 existing tests pass.
+
+## PERF 2026-05-20 (round 2) — per-srcGeo WeakMap cache + idle-gizmo invalidate guard + Set-based per-frame ID lookup
+Followup pass building on round 1:
+
+- **`edgeCutCore.ts` — WeakMap-cached `getOrBuildSrcCache(srcGeo)`** memoises `{tris, triIdx, eps}` per source-geometry reference. Both `computeEdgeCutGeometry` and `computeEdgeGizmoDir` use it. The previous code rebuilt the triangle list (3·N `THREE.Vector3` allocations) and the spatial index on every preview tick even though `EdgeOpPreview`'s `srcGeoCacheRef` already pinned the same non-indexed source geometry across all ticks of one drag. With this cache the second-and-later ticks hit the cache and do zero allocation for tris/index. WeakMap evicts automatically when the source geometry is GC'd (which happens promptly when `EdgeOpPreview` cleans up on dialog close), so no manual eviction is needed. The driver never mutates `srcGeo` — `solid` is a separate clone — so the cache stays valid for the geometry's lifetime.
+
+- **`EdgeOpGizmo.tsx` — `lastAppliedValueRef` skip-when-unchanged guard.** The `useFrame` callback unconditionally called `invalidate()` whenever the gizmo was active, which kept R3F's `frameloop="demand"` spinning at 60 Hz even when neither the live value nor the drag offset had changed. Now the frame work and `invalidate()` only fire when the value differs from the previously applied one; `useEffect([gizmoDir, edgeCentroid])` clears the guard so a different selection re-renders next frame. Idle gizmo = idle canvas.
+
+- **`EdgeOpEdgeHighlight.tsx` — per-frame `Set`-based membership check.** The selected-line sync built one `Set` from `edgeIds` once per frame and reused it for the cleanup pass, replacing `edgeIds.includes(id)` inside the `forEach`. Trivial on box selections (≤12) but matters on full-rim selections (~100 ids × ~100 lines × 60 fps).
+
+- **`EdgeOpPreview.tsx` — condition + deps cleanup.** Effect gate simplified to `!parsedAndClustered || !(debouncedValue > 0)` (the memo already encodes `enabled` and `debouncedEdgeIds.length === 0` as null); effect deps reduced to `[debouncedValue, compute, scene, invalidate, parsedAndClustered]` since the omitted ones flow through the memo identity.
+
+## PERF 2026-05-20 — O(N²) → O(N) on dedupe + clustering + numeric spatial-hash
+Live-preview latency on circle-rim selections (30-100+ chord segments, sometimes doubled by tangent-edge propagation / preview re-registration) was dominated by three O(N²) hot spots that all live in `edgeCutCore.ts`:
+
+1. **Edge dedupe** — `uniqueEdges.some(...)` scan per input edge. Replaced by `dedupEdgesByEndpoints(edges, eps)`: spatial-hash canonical-cell key per endpoint with a 3×3×3 neighbour probe for cell-boundary straddling (same probe pattern `buildTriangleIndex` already uses), unordered-pair Set lookup. O(N) instead of O(N²).
+2. **Endpoint connectivity clustering** — `while(changed) for(rem)` linear-scan reconvergence. Replaced by `clusterEdgesByEndpointConnectivity(edges, eps)`: union-find keyed on canonicalised endpoint cells. O(N·α(N)).
+3. **Spatial triangle index** — `triIdxKey` returned a 3-comma string; every `getCandidatesNear` lookup did 27 `Map.get` calls on freshly-concatenated strings. Switched to a packed-integer key (`packCell` packs 3×21-bit biased cell indices into a single JS number, 53-bit-safe; collision-free over a ±1M-cell range). Map became `Map<number, number[]>`; signatures of `buildTriangleIndex` / `resolveEdge` / `getCandidatesNear` updated. Also reuses a module-level scratch `Set` in `getCandidatesNear` instead of allocating per call.
+
+**`EdgeOpPreview.tsx`** had a SECOND inline O(N²) clustering loop on the picked edges before delegating to the driver (it needed clusters to apply the `MAX_NON_CIRCLE_SEGS=6` decimation cap per-cluster, so a circular rim is kept intact while a non-circular cluster is capped). Replaced with a `useMemo` over the shared `clusterEdgesByEndpointConnectivity` — and moved the whole parse+cluster+cap work into that memo so it now only re-runs when `debouncedEdgeIds` changes (not on every `debouncedValue` tick during gizmo drag). Memo also caches the resolved `liveMesh`, `parsed`, and capped `previewEdges` together so the compute effect is a thin consumer.
+
+**Numbers (synthetic bench, 400 input edges from a doubled 200-segment rim):** dedupe 2.8 ms (down from prior ~50-200 ms for the pairwise-near scan), cluster 1.4 ms; both run inside one rAF frame. Real-app preview latency on circular-rim fillet/chamfer drops noticeably during slider drag because the per-tick cluster recomputation is gone entirely.
+
+**Correctness:** tolerance-equivalent to the previous `near()` predicate (eps = bbox-diagonal · 1e-4, with the 3×3×3 probe to handle within-eps points across a cell line). 12 unit tests in `src/utils/geometry/edgeCutCore.test.ts` cover: exact dup, reversed-direction dup, jittered-across-cell-boundary dup, zero-length guard, distinct-edges retention, single chain, disjoint groups, closed loop, jittered shared endpoint, and a 200-edge scaling case. tsc clean (only pre-existing `HalfEdgeMap` errors in `edgeTopology.ts` remain — unrelated, on HEAD too).
+
+**Public API additions in `edgeCutCore.ts`:** `dedupEdgesByEndpoints(edges, eps)` and `clusterEdgesByEndpointConnectivity(edges, eps)` are exported so `EdgeOpPreview.tsx` (and any future consumer that needs to make per-cluster decisions) can share the exact same canonicalisation as the driver.
+
 ## Test harness (preview_eval, dev server :5173)
 Offscreen render loop is FROZEN → screenshots are stale; rely on numeric measurement + ask user to eyeball. Hard-reload (`location.reload()`, wait ~6s) before each measurement to defeat HMR module caching. Build `PickedEdge` objects directly from the live mesh (bypasses edge-ID parsing): import `/src/store/meshRegistry.ts`, `/src/utils/geometry/chamferGeometry.ts`, `/node_modules/.vite/deps/three.js`; `srcGeo = liveMesh.geometry.clone().toNonIndexed(); srcGeo.applyMatrix4(mesh.matrixWorld)`; call `computeChamferGeometry(srcGeo.clone(), [{a,b}], dist)`; measure `position.count/3`.

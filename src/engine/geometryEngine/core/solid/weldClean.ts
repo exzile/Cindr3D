@@ -235,24 +235,33 @@ export function retriangulateCoplanarRegions(
 
     // Directed boundary half-edges: an edge interior to the region appears
     // once in each direction; a boundary edge appears in one direction only.
-    const dirCount = new Map<string, number>();
-    const dKey = (u: number, v: number) => `${u}_${v}`;
+    // Half-edges are keyed by a packed integer (u·2^26 + v) instead of the
+    // earlier `${u}_${v}` string — same role as the spatial-hash packing in
+    // edgeCutCore, identical correctness at this scale (vertex IDs come from
+    // the per-region `vid()` counter so they're tiny non-negative integers,
+    // well under 2^26). String concat + Number-split was a noticeable share
+    // of the retriangulate cost on selections that produce many regions.
+    const HEDGE_MULT = 0x4000000; // 2^26
+    const dKey = (u: number, v: number) => u * HEDGE_MULT + v;
+    const dirCount = new Map<number, number>();
     for (const t of ts) {
       const a = triV[t * 3], b = triV[t * 3 + 1], c = triV[t * 3 + 2];
-      for (const [u, v] of [[a, b], [b, c], [c, a]] as [number, number][]) {
-        dirCount.set(dKey(u, v), (dirCount.get(dKey(u, v)) ?? 0) + 1);
-      }
+      const k0 = dKey(a, b), k1 = dKey(b, c), k2 = dKey(c, a);
+      dirCount.set(k0, (dirCount.get(k0) ?? 0) + 1);
+      dirCount.set(k1, (dirCount.get(k1) ?? 0) + 1);
+      dirCount.set(k2, (dirCount.get(k2) ?? 0) + 1);
     }
     // Net half-edges: an interior edge of the region is traversed once in
     // each direction (net 0); a boundary edge survives once. Each surviving
     // directed edge u→v is a directed boundary segment.
     const bsegs: [number, number][] = [];
     let boundaryOk = true;
-    const seen = new Set<string>();
+    const seen = new Set<number>();
     for (const [k, cnt] of dirCount) {
       if (seen.has(k)) continue;
-      const [u, v] = k.split('_').map(Number);
-      const rk = dKey(v, u);
+      const u = Math.floor(k / HEDGE_MULT);
+      const v = k - u * HEDGE_MULT;
+      const rk = v * HEDGE_MULT + u;
       seen.add(k); seen.add(rk);
       const opp = dirCount.get(rk) ?? 0;
       const net = cnt - opp;

@@ -20,7 +20,7 @@
 
 import { useRef, useCallback, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
-import { useFrame, useThree } from '@react-three/fiber';
+import { useFrame, useThree, invalidate as invalidateFrame } from '@react-three/fiber';
 import { useEdgePicker, type EdgePickResult } from '../../../../hooks/useEdgePicker';
 import { buildPolylineGeometry } from '../pickerGeometry';
 import { applyLinePulse } from '../pickPulse';
@@ -126,18 +126,31 @@ export default function EdgeOpEdgeHighlight({
 
   const handleHover = useCallback((result: EdgePickResult | null) => {
     hoverResultRef.current = result;
+    // Wake the demand loop so useFrame applies the hover change. Without
+    // this, useFrame would need to invalidate every frame (~60 Hz) just to
+    // stay alive in case the cursor moved — wasted renders while the user
+    // is sitting still with the picker active. Invalidating only on
+    // hover-change means an idle picker truly idles.
+    invalidateFrame();
   }, []);
+
+  // Set form of edgeIds — used both in handleClick (toggle existing edge =
+  // O(1) lookup) and inside useFrame for the selected-line cleanup pass.
+  // Rebuilt only when the prop changes, not on every frame: while the picker
+  // is animating its pulse, useFrame can run at 60Hz; building this Set per
+  // frame for a ~100-segment circle-rim selection is ~6000 ops/sec saved.
+  const edgeIdSet = useMemo(() => new Set(edgeIds), [edgeIds]);
 
   const handleClick = useCallback((result: EdgePickResult) => {
     const id = edgeId(result);
     // Toggle: clicking an already-selected edge deselects it.
-    if (edgeIds.includes(id)) {
+    if (edgeIdSet.has(id)) {
       removeEdge(id);
       return;
     }
     addEdge(id);
     selectedEdgesDataRef.current.set(id, edgePoints(result).map((p) => p.clone()));
-  }, [addEdge, removeEdge, edgeIds]);
+  }, [addEdge, removeEdge, edgeIdSet]);
 
   useEdgePicker({
     enabled,
@@ -170,7 +183,14 @@ export default function EdgeOpEdgeHighlight({
       }
       return;
     }
-    invalidate(); // keep rendering while picker is active (pulse + demand loop)
+    // Only keep the demand loop spinning while there's something visible to
+    // animate (the pulse). When no edge is hovered AND no edge is selected,
+    // the picker has nothing to render — let the canvas idle. Hover changes
+    // already wake the loop via invalidate in handleHover; edgeIds changes
+    // trigger a React re-render which runs useFrame at least once anyway.
+    const hasVisible =
+      hoverResultRef.current !== null || selectedLinesRef.current.size > 0 || edgeIds.length > 0;
+    if (hasVisible) invalidate();
 
     const hr = hoverResultRef.current;
 
@@ -213,9 +233,13 @@ export default function EdgeOpEdgeHighlight({
       renderedHoverIdRef.current = null;
     }
 
-    // Sync selected lines with edgeIds
+    // Sync selected lines with edgeIds. Per-frame loop, so the membership
+    // test goes through the memoised `edgeIdSet` instead of an
+    // `Array.includes` scan — N×M -> N+M on selections with many rim
+    // segments, AND the Set itself is built only when edgeIds changes
+    // (not per frame).
     selectedLinesRef.current.forEach((line, id) => {
-      if (!edgeIds.includes(id)) {
+      if (!edgeIdSet.has(id)) {
         scene.remove(line);
         line.geometry.dispose();
         selectedLinesRef.current.delete(id);
@@ -235,9 +259,15 @@ export default function EdgeOpEdgeHighlight({
     }
 
     // Pulse: hovered line bright, selected lines a subtler steady pulse.
+    // applyLinePulse mutates material.opacity, and every selected line shares
+    // ONE selectedMat (created once via useMemo), so calling it per-line
+    // mutated the same material N times per frame with the same result. We
+    // pulse the material reference once instead — every selected line picks
+    // up the new opacity. The hover line has its own material.
     const now = performance.now();
     if (hoverLineRef.current) applyLinePulse(hoverLineRef.current, 1, now);
-    selectedLinesRef.current.forEach((line) => applyLinePulse(line, 1.0, now));
+    const repSelected = selectedLinesRef.current.values().next().value as THREE.Line | undefined;
+    if (repSelected) applyLinePulse(repSelected, 1.0, now);
   });
 
   return null;
