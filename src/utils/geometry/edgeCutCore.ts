@@ -154,16 +154,39 @@ export function parseEdgeIds(edgeIds: string[]): ParsedEdges | null {
 // Triangle list + position tolerance
 // ---------------------------------------------------------------------------
 
-/** Build a flat triangle list from a NON-INDEXED, world-space geometry. */
+/**
+ * Build a flat triangle list from a world-space geometry. The driver
+ * (`computeEdgeCutGeometry`) still expects a NON-INDEXED `srcGeo` because the
+ * CSG path operates on the cloned solid in non-indexed form, but read-only
+ * consumers (`computeEdgeGizmoDir`) can pass an indexed `srcGeo` and skip the
+ * caller-side `.clone().toNonIndexed()` — same triangles emitted either way.
+ */
 export function buildTriangleList(srcGeo: THREE.BufferGeometry): THREE.Vector3[][] {
-  const src = srcGeo.attributes.position.array as ArrayLike<number>;
+  const pa = srcGeo.attributes.position.array as ArrayLike<number>;
+  const idxAttr = srcGeo.index;
   const tris: THREE.Vector3[][] = [];
-  for (let i = 0; i < src.length; i += 9) {
-    tris.push([
-      new THREE.Vector3(src[i],     src[i + 1], src[i + 2]),
-      new THREE.Vector3(src[i + 3], src[i + 4], src[i + 5]),
-      new THREE.Vector3(src[i + 6], src[i + 7], src[i + 8]),
-    ]);
+  if (idxAttr) {
+    const ia = idxAttr.array as ArrayLike<number>;
+    // BufferAttribute.count is items, not array length — same value for
+    // itemSize=1 (the index attribute) but use the explicit count anyway in
+    // case the underlying array carries spare capacity past `count`.
+    const n = idxAttr.count;
+    for (let i = 0; i < n; i += 3) {
+      const i0 = ia[i] * 3, i1 = ia[i + 1] * 3, i2 = ia[i + 2] * 3;
+      tris.push([
+        new THREE.Vector3(pa[i0],     pa[i0 + 1], pa[i0 + 2]),
+        new THREE.Vector3(pa[i1],     pa[i1 + 1], pa[i1 + 2]),
+        new THREE.Vector3(pa[i2],     pa[i2 + 1], pa[i2 + 2]),
+      ]);
+    }
+  } else {
+    for (let i = 0; i < pa.length; i += 9) {
+      tris.push([
+        new THREE.Vector3(pa[i],     pa[i + 1], pa[i + 2]),
+        new THREE.Vector3(pa[i + 3], pa[i + 4], pa[i + 5]),
+        new THREE.Vector3(pa[i + 6], pa[i + 7], pa[i + 8]),
+      ]);
+    }
   }
   return tris;
 }

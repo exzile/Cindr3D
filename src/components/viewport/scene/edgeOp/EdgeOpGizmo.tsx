@@ -38,25 +38,41 @@ interface EdgeOpGizmoProps {
   handleColor: number;
 }
 
-function parseEdgeCentroid(edgeIds: string[]): THREE.Vector3 | null {
+// Compute the gizmo's anchor centroid + the exterior bisector direction from
+// the picked edges in one pass. Combines what used to be two separate useMemos
+// (each parsing edgeIds independently) so the parse happens once per change.
+//
+// FIX (along the way): the previous standalone parseEdgeCentroid only read the
+// FIRST chord of each edge ID (parts[1]/parts[2]), so a chained model edge
+// stored as N+1 ordered points anchored the gizmo to its first chord's
+// midpoint instead of the edge's full centroid. Using `parseEdgeIds` gives us
+// every segment of the chain, matching what the cut pipeline actually sees.
+function computeGizmoAnchor(edgeIds: string[]): {
+  centroid: THREE.Vector3;
+  dir: THREE.Vector3;
+} {
+  const fallbackDir = new THREE.Vector3(0, 1, 0);
+  const empty = { centroid: new THREE.Vector3(), dir: fallbackDir };
+  const parsed = parseEdgeIds(edgeIds);
+  if (!parsed || parsed.edges.length === 0) return empty;
+
   const centroid = new THREE.Vector3();
-  let count = 0;
-  for (const id of edgeIds) {
-    let rest = id;
-    const pipe = id.indexOf('|');
-    if (pipe > 0) rest = id.slice(pipe + 1);
-    const parts = rest.split(':');
-    if (parts.length < 3) continue;
-    const a = parts[1].split(',').map(Number);
-    const b = parts[2].split(',').map(Number);
-    if (a.length !== 3 || b.length !== 3) continue;
-    centroid.x += (a[0] + b[0]) / 2;
-    centroid.y += (a[1] + b[1]) / 2;
-    centroid.z += (a[2] + b[2]) / 2;
-    count++;
+  for (const e of parsed.edges) {
+    centroid.x += (e.a.x + e.b.x) * 0.5;
+    centroid.y += (e.a.y + e.b.y) * 0.5;
+    centroid.z += (e.a.z + e.b.z) * 0.5;
   }
-  if (count === 0) return null;
-  return centroid.divideScalar(count);
+  centroid.divideScalar(parsed.edges.length);
+
+  const liveMesh = liveBodyMeshes.get(parsed.meshUuid);
+  if (!liveMesh) return { centroid, dir: fallbackDir };
+  let dir: THREE.Vector3 | null = null;
+  try {
+    dir = computeEdgeGizmoDir(liveMesh.geometry, parsed.edges);
+  } catch (err) {
+    console.error('[EdgeOpGizmo] gizmoDir threw:', err);
+  }
+  return { centroid, dir: dir ?? fallbackDir };
 }
 
 export default function EdgeOpGizmo({
@@ -84,29 +100,14 @@ export default function EdgeOpGizmo({
   useEffect(() => () => { handleMat.dispose(); }, [handleMat]);
   useEffect(() => () => { lineMat.dispose(); }, [lineMat]);
 
-  const edgeCentroid = useMemo(
-    () => parseEdgeCentroid(edgeIds) ?? new THREE.Vector3(),
+  // Centroid + direction share one parseEdgeIds (avoids parsing edge IDs
+  // twice every time the selection changes). computeEdgeGizmoDir now handles
+  // indexed geometry too (buildTriangleList walks the index when present),
+  // so we hand it liveMesh.geometry directly — no clone / toNonIndexed.
+  const { centroid: edgeCentroid, dir: gizmoDir } = useMemo(
+    () => computeGizmoAnchor(edgeIds),
     [edgeIds],
   );
-
-  const gizmoDir = useMemo(() => {
-    const fallback = new THREE.Vector3(0, 1, 0);
-    try {
-      const parsed = parseEdgeIds(edgeIds);
-      if (!parsed) return fallback;
-      const liveMesh = liveBodyMeshes.get(parsed.meshUuid);
-      if (!liveMesh) return fallback;
-      const srcGeo = liveMesh.geometry.index
-        ? liveMesh.geometry.clone().toNonIndexed()
-        : liveMesh.geometry.clone();
-      const dir = computeEdgeGizmoDir(srcGeo, parsed.edges);
-      srcGeo.dispose();
-      return dir ?? fallback;
-    } catch (err) {
-      console.error('[EdgeOpGizmo] gizmoDir threw:', err);
-      return fallback;
-    }
-  }, [edgeIds]);
 
   const draggingRef = useRef(false);
   const dragOffsetRef = useRef(0);

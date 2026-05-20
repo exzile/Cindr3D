@@ -238,9 +238,15 @@ export default function EdgeOpEdgeHighlight({
     }
 
     // Pulse: hovered line bright, selected lines a subtler steady pulse.
+    // applyLinePulse mutates material.opacity, and every selected line shares
+    // ONE selectedMat (created once via useMemo), so calling it per-line
+    // mutated the same material N times per frame with the same result. We
+    // pulse the material reference once instead — every selected line picks
+    // up the new opacity. The hover line has its own material.
     const now = performance.now();
     if (hoverLineRef.current) applyLinePulse(hoverLineRef.current, 1, now);
-    selectedLinesRef.current.forEach((line) => applyLinePulse(line, 1.0, now));
+    const repSelected = selectedLinesRef.current.values().next().value as THREE.Line | undefined;
+    if (repSelected) applyLinePulse(repSelected, 1.0, now);
   });
 
   return null;

@@ -42,6 +42,19 @@ Note: the geometry-layer edge-dedupe above means even if parse returns duplicate
 - **Feed the boolean a welded INDEXED manifold source** instead of non-indexed soup — does NOT fix the quad-fan (top-front stayed 40) and slightly regressed the multi-edge case. Reverted.
 - Position-welded boundary/non-manifold counts OVER-COUNT on raw three-bvh-csg soup — valid only for RELATIVE comparison; the trustworthy absolute signal is **near-zero-area (degenerate) triangle count**.
 
+## PERF 2026-05-20 (round 3) — index-aware buildTriangleList + half-edge integer keys + shared-material single-pulse + parse consolidation
+Round 3 followups:
+
+- **`buildTriangleList` now handles BOTH indexed and non-indexed geometry.** The driver (`computeEdgeCutGeometry`) still expects non-indexed because the CSG operand path requires it; but read-only consumers (`computeEdgeGizmoDir`) can now pass a live `THREE.BufferGeometry` straight from `liveBodyMeshes` regardless of indexing. **`EdgeOpGizmo` drops its `liveMesh.geometry.clone().toNonIndexed()` + dispose** entirely — was a per-edges-change alloc scaling with mesh tri count. As a side bonus, because `getOrBuildSrcCache` is keyed on the geometry reference and the gizmo now passes the live mesh's own geometry, **every gizmo recompute hits the cache for the lifetime of the body** (vs the old "fresh clone, fresh cache entry, immediate dispose" cycle that defeated caching).
+
+- **`retriangulateCoplanarRegions` half-edge keys are now packed numbers** (`u·2^26 + v`) instead of `\`${u}_${v}\`` strings. Same role as the spatial-hash repack from round 1; per-region vertex IDs come from the local `vid()` counter so they're tiny non-negative integers, far under 2^26. Cuts the per-region directed-edge bookkeeping cost on complex CSG results (many small fan-collapse regions).
+
+- **`EdgeOpEdgeHighlight` per-frame pulse: one mutation per shared material.** Every selected line shares one `selectedMat` (created once via `useMemo`), so the previous `forEach(line => applyLinePulse(line, ...))` mutated `mat.opacity` N times per frame with the identical result. Now we pulse one representative line — `mat.opacity` updates once and every line picks it up. The hover line has its own material so it's still pulsed directly. N×60 → 60 mutations/sec.
+
+- **`EdgeOpGizmo` consolidates parse + centroid + dir into one `useMemo`.** Previously `parseEdgeCentroid` (a duplicated mini-parser) and `gizmoDir` each ran `parseEdgeIds` (or a partial reimplementation) on the same edge IDs. Now a single `computeGizmoAnchor(edgeIds)` parses once, computes both, and **fixes a latent bug**: the old `parseEdgeCentroid` only read `parts[1]`/`parts[2]` — the first chord of each edge ID — so a chained multi-segment model edge anchored the gizmo to its first chord's midpoint instead of the full edge centroid. Using `parseEdgeIds` walks every chord segment of the chain.
+
+Tests: 14 unit tests (added 2 for indexed/non-indexed `buildTriangleList` parity and `computeEdgeGizmoDir` indexed acceptance). All 1295 existing tests pass.
+
 ## PERF 2026-05-20 (round 2) — per-srcGeo WeakMap cache + idle-gizmo invalidate guard + Set-based per-frame ID lookup
 Followup pass building on round 1:
 
