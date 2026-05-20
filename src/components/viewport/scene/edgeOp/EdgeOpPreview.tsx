@@ -65,6 +65,17 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [liveValue]);
 
+  // Debounce edgeIds: when the user clicks several edges in quick succession
+  // each click fires a recompute; debouncing coalesces those into one run so
+  // intermediate states don't queue up and stall the thread.
+  const [debouncedEdgeIds, setDebouncedEdgeIds] = useState(edgeIds);
+  const edgeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (edgeDebounceRef.current) clearTimeout(edgeDebounceRef.current);
+    edgeDebounceRef.current = setTimeout(() => setDebouncedEdgeIds(edgeIds), 80);
+    return () => { if (edgeDebounceRef.current) clearTimeout(edgeDebounceRef.current); };
+  }, [edgeIds]);
+
   const removePickProxy = (sceneRef: THREE.Scene) => {
     if (pickProxyRef.current) {
       sceneRef.remove(pickProxyRef.current);
@@ -117,13 +128,13 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
       removePickProxy(scene);
     };
 
-    if (!enabled || edgeIds.length === 0 || !(debouncedValue > 0)) {
+    if (!enabled || debouncedEdgeIds.length === 0 || !(debouncedValue > 0)) {
       restoreLiveMesh();
       invalidate();
       return;
     }
 
-    const parsed = parseEdgeIds(edgeIds);
+    const parsed = parseEdgeIds(debouncedEdgeIds);
     if (!parsed) { restoreLiveMesh(); invalidate(); return; }
 
     const liveMesh = liveBodyMeshes.get(parsed.meshUuid);
@@ -251,7 +262,7 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
     previewMeshRef.current = previewMesh;
 
     invalidate();
-  }, [enabled, edgeIds, debouncedValue, compute, scene, invalidate]);
+  }, [enabled, debouncedEdgeIds, debouncedValue, compute, scene, invalidate]);
 
   return null;
 }

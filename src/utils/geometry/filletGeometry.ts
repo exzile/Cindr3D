@@ -156,6 +156,7 @@ function buildFilletLoopCutter(
   re: ResolvedEdge,
   radius: number,
   radialSeg: number,
+  fast?: boolean,
 ): THREE.BufferGeometry | null {
   const cosPhi = THREE.MathUtils.clamp(re.u1.dot(re.u2), -1, 1);
   const phi = Math.acos(cosPhi);
@@ -204,8 +205,12 @@ function buildFilletLoopCutter(
   const innerR = Math.max(R - pad, 1e-4);
   const ringLen = setback + 2 * pad; // +pad past the cap face for a clean exit
 
-  const tubSeg = Math.max(48, Math.min(256, circleSegments(Math.max(majorR, ringOuterR))));
-  const radSeg = Math.max(24, Math.min(96, Math.round(radialSeg)));
+  // In fast (preview) mode use fewer tube segments — the cutter only needs to
+  // look plausible while dragging. Commit mode uses full adaptive density.
+  const tubSeg = fast
+    ? Math.max(24, Math.min(64, circleSegments(Math.max(majorR, ringOuterR))))
+    : Math.max(48, Math.min(256, circleSegments(Math.max(majorR, ringOuterR))));
+  const radSeg = Math.max(fast ? 12 : 24, Math.min(fast ? 48 : 96, Math.round(radialSeg)));
 
   const yAxis = new THREE.Vector3(0, 1, 0);
   const zAxis = new THREE.Vector3(0, 0, 1);
@@ -287,6 +292,6 @@ export function computeFilletGeometry(
     (re, eps) => buildFilletCutter(re, radius, radialSeg, eps),
     'fillet',
     fast,
-    (circle, re) => buildFilletLoopCutter(circle, re, radius, radialSeg),
+    (circle, re) => buildFilletLoopCutter(circle, re, radius, radialSeg, fast),
   );
 }
