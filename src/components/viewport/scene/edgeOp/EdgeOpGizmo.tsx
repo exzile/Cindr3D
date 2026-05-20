@@ -216,11 +216,13 @@ export default function EdgeOpGizmo({
     const onMove = (ev: PointerEvent) => {
       if (!draggingRef.current || !mountedRef.current) return;
       const rect = gl.domElement.getBoundingClientRect();
-      const ndc = new THREE.Vector2(
+      // Reuse the module-level scratch Vector2 — pointermove fires up to 60Hz
+      // during drag, the R3F per-frame-alloc rule applies.
+      _scratchNdc.set(
         ((ev.clientX - rect.left) / rect.width) * 2 - 1,
         -((ev.clientY - rect.top) / rect.height) * 2 + 1,
       );
-      const s = rayToAxis(ndc);
+      const s = rayToAxis(_scratchNdc);
       if (s === null) return;
       liveValueRef.current = Math.max(0.01, Math.round((s + dragOffsetRef.current) * 100) / 100);
       if (!pendingTimeoutRef.current) {
