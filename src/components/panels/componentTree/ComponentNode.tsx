@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   ChevronRight, ChevronDown, Eye, EyeOff, Box, Layers,
-  Plus, Trash2, Copy, Anchor, MoreHorizontal, Circle, Minus, Unlink,
+  Plus, Trash2, Copy, Anchor, MoreHorizontal, Circle, Minus, Unlink, Pencil,
 } from 'lucide-react';
 import { useComponentStore } from '../../../store/componentStore';
 import { useCADStore } from '../../../store/cadStore';
@@ -248,6 +248,13 @@ export function ComponentNode({ componentId, depth = 0 }: { componentId: string;
       {/* Context menu */}
       {showContextMenu && (
         <div className="tree-context-menu" onMouseLeave={() => setShowContextMenu(false)}>
+          <button onClick={() => {
+            setNewName(component.name);
+            setRenaming(true);
+            setShowContextMenu(false);
+          }}>
+            <Pencil size={12} /> Rename
+          </button>
           <button onClick={() => { addComponent(componentId); setShowContextMenu(false); }}>
             <Plus size={12} /> New Component
           </button>

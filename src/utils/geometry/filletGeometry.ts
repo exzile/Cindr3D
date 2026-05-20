@@ -20,7 +20,7 @@
  * affected; the rest of every face stays perfectly flat.
  */
 import * as THREE from 'three';
-import { GeometryEngine } from '../../engine/GeometryEngine';
+import { csgSubtract as csgSubtractRaw } from '../../engine/geometryEngine/core/solid/csg';
 import { circleSegments } from '../../engine/geometryEngine/core/sketch/sketchProfiles';
 import {
   type PickedEdge,
@@ -109,7 +109,9 @@ function buildFilletCutter(
   //    `a + bis*axisDist`, length = edge length + 2*eps.
   //    radialSeg is the FULL-circle segment count; the visible fillet is only
   //    a ~(180°-φ) arc of it, so we need a generous count for a smooth round.
-  const cyl = new THREE.CylinderGeometry(radius, radius, length + 2 * eps, Math.max(24, Math.min(96, radialSeg)));
+  // Lower floor (8) so fast/preview mode can use a coarser cylinder without
+  // being clamped up to 24. Commit mode passes a higher radialSeg anyway.
+  const cyl = new THREE.CylinderGeometry(radius, radius, length + 2 * eps, Math.max(8, Math.min(96, radialSeg)));
   // Default cylinder axis is +Y → rotate +Y to edgeDir, then position at the
   // axis midpoint.
   const yAxis = new THREE.Vector3(0, 1, 0);
@@ -120,8 +122,9 @@ function buildFilletCutter(
   const cylMat = new THREE.Matrix4().compose(axisMid, quat, new THREE.Vector3(1, 1, 1));
   cyl.applyMatrix4(cylMat);
 
-  // Cutter = prism − cylinder (the sharp sliver between the corner and the arc).
-  const cutter = GeometryEngine.csgSubtract(prism, cyl);
+  // Cutter = prism − cylinder. Raw CSG (no weld/topology) is correct here:
+  // this geometry is operand B in the solid subtract, never rendered or picked.
+  const cutter = csgSubtractRaw(prism, cyl);
   prism.dispose();
   cyl.dispose();
   return cutter;
@@ -207,10 +210,17 @@ function buildFilletLoopCutter(
 
   // In fast (preview) mode use fewer tube segments — the cutter only needs to
   // look plausible while dragging. Commit mode uses full adaptive density.
+  // Fast (preview) mode uses a fixed 24-segment ring instead of adaptive
+  // circleSegments (which floors at 32). Fewer torus triangles → faster
+  // main-body CSG while still looking smooth enough for a live drag preview.
   const tubSeg = fast
-    ? Math.max(24, Math.min(64, circleSegments(Math.max(majorR, ringOuterR))))
+    ? 24
     : Math.max(48, Math.min(256, circleSegments(Math.max(majorR, ringOuterR))));
-  const radSeg = Math.max(fast ? 12 : 24, Math.min(fast ? 48 : 96, Math.round(radialSeg)));
+  // radSeg: 16 for preview (visible arc is ~90° → 4 visible facets, smooth
+  // enough without excess triangles), full adaptive range for commit.
+  const radSeg = fast
+    ? 16
+    : Math.max(24, Math.min(96, Math.round(radialSeg)));
 
   const yAxis = new THREE.Vector3(0, 1, 0);
   const zAxis = new THREE.Vector3(0, 0, 1);
@@ -232,7 +242,8 @@ function buildFilletLoopCutter(
 
   let ring: THREE.BufferGeometry;
   try {
-    ring = GeometryEngine.csgSubtract(outerCyl, innerCyl);
+    // Raw CSG — ring is an intermediate operand, not rendered or picked.
+    ring = csgSubtractRaw(outerCyl, innerCyl);
   } catch {
     outerCyl.dispose();
     innerCyl.dispose();
@@ -247,7 +258,8 @@ function buildFilletLoopCutter(
 
   let cutter: THREE.BufferGeometry;
   try {
-    cutter = GeometryEngine.csgSubtract(ring, torus);
+    // Raw CSG — cutter is operand B in the solid subtract, never rendered.
+    cutter = csgSubtractRaw(ring, torus);
   } catch {
     ring.dispose();
     torus.dispose();
@@ -284,7 +296,7 @@ export function computeFilletGeometry(
   // In fast (preview) mode use fewer segments — half the cylinder complexity,
   // still visually smooth enough for a live preview.
   const radialSeg = fast
-    ? Math.max(12, Math.round(segments) * 6)
+    ? Math.max(16, Math.round(segments) * 6)  // 24 for segments=4 → 6 visible facets on 90° arc
     : Math.max(24, Math.round(segments) * 12);
   return computeEdgeCutGeometry(
     srcGeo,

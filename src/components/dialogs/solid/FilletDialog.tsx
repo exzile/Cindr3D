@@ -437,8 +437,14 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
         timestamp: Date.now(),
       };
       addFeature(feature);
-      // Actually round the geometry (was previously a no-op stub).
-      commitFillet(params.radius, 4);
+      // Close the dialog immediately so the UI is responsive, then compute
+      // the CSG on the next task (after React has painted the close).
+      // filletEdgeIds is preserved in the store until the next fillet dialog
+      // open (setActiveDialog clears them only on dialog === 'fillet').
+      onClose();
+      const r = params.radius;
+      setTimeout(() => commitFillet(r, 4), 0);
+      return;
     }
     onClose();
   };

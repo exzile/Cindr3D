@@ -6,8 +6,11 @@
  *   point — i.e. the edge is behind the body from the current view. You must
  *   rotate so the edge is actually visible before it can be picked.
  * - Proximity: rejects the edge if the cursor is further than EDGE_PICK_PX
- *   screen pixels from the projected edge segment — you must point AT the
- *   line, not anywhere on the face it bounds.
+ *   screen pixels from the FULL projected edge chain. The nearest 3D segment
+ *   (edgeVertexA/B) is not always the closest segment in screen space — a
+ *   perspective camera foreshortens the edge so the 3D-nearest segment can
+ *   project far from the cursor. We therefore walk the entire chain and accept
+ *   when ANY segment is within the threshold.
  *
  * All scratch is module-level (R3F hot-path rule — no per-event allocation).
  */
@@ -15,8 +18,13 @@ import * as THREE from 'three';
 import type { EdgePickResult } from '../../types/edge-picker.types';
 import { closestPointOnSegment, segDistSqPx } from './segmentMath';
 
-/** Max distance (CSS px) the cursor may be from an edge to pick/hover it. */
-export const EDGE_PICK_PX = 12;
+/**
+ * Max distance (CSS px) the cursor may be from an edge to pick/hover it.
+ * 12 was too tight on perspective/isometric views — edges foreshorten so the
+ * cursor lands a handful of pixels off even when it visually appears on the
+ * line. 20 matches Fusion-style slop comfortably.
+ */
+export const EDGE_PICK_PX = 20;
 
 // Module-level scratch — no per-event allocation.
 const _occRay = new THREE.Raycaster();
@@ -36,24 +44,38 @@ export function edgeIsPickable(
   rectW: number,
   rectH: number,
 ): boolean {
-  const ea = result.edgeVertexA;
-  const eb = result.edgeVertexB;
+  const chain = result.chain;
 
   // ── Proximity (screen space) ──────────────────────────────────────────────
-  _projA.copy(ea).project(camera);
-  _projB.copy(eb).project(camera);
-  // Behind the camera → not pickable here.
-  if (_projA.z > 1 || _projB.z > 1) return false;
-  const ax = (_projA.x * 0.5 + 0.5) * rectW;
-  const ay = (1 - (_projA.y * 0.5 + 0.5)) * rectH;
-  const bx = (_projB.x * 0.5 + 0.5) * rectW;
-  const by = (1 - (_projB.y * 0.5 + 0.5)) * rectH;
-  if (segDistSqPx(cursorPx, cursorPy, ax, ay, bx, by) > EDGE_PICK_PX * EDGE_PICK_PX) {
-    return false;
+  // Walk every segment of the full edge chain and accept when ANY segment is
+  // within EDGE_PICK_PX pixels. Using only edgeVertexA/B (the 3D-nearest
+  // segment) is wrong: perspective foreshortening means the 3D-nearest segment
+  // can project far from the cursor even while the user is pointing directly
+  // at a different part of the same edge.
+  const threshold = EDGE_PICK_PX * EDGE_PICK_PX;
+  let minProxSq = Infinity;
+  const nPts = chain.length;
+  for (let i = 0; i + 1 < nPts; i++) {
+    const wa = chain[i];
+    const wb = chain[i + 1];
+    _projA.copy(wa).project(camera);
+    _projB.copy(wb).project(camera);
+    // Skip segment if either endpoint is behind the near plane.
+    if (_projA.z > 1 || _projB.z > 1) continue;
+    const ax = (_projA.x * 0.5 + 0.5) * rectW;
+    const ay = (1 - (_projA.y * 0.5 + 0.5)) * rectH;
+    const bx = (_projB.x * 0.5 + 0.5) * rectW;
+    const by = (1 - (_projB.y * 0.5 + 0.5)) * rectH;
+    const dSq = segDistSqPx(cursorPx, cursorPy, ax, ay, bx, by);
+    if (dSq < minProxSq) minProxSq = dSq;
+    if (dSq <= threshold) break; // early-out: already within threshold
   }
+  if (minProxSq > threshold) return false;
 
   // ── Occlusion (depth) ─────────────────────────────────────────────────────
-  // Point on the edge nearest the cursor's surface hit, in world space.
+  // Point on the nearest 3D segment nearest to the surface hit, in world space.
+  const ea = result.edgeVertexA;
+  const eb = result.edgeVertexB;
   closestPointOnSegment(hitPoint, ea, eb, _occPt);
   // Build the view ray through that point via its NDC — correct for BOTH
   // perspective and orthographic cameras (this app uses an ortho camera, where
