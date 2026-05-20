@@ -42,6 +42,14 @@ Note: the geometry-layer edge-dedupe above means even if parse returns duplicate
 - **Feed the boolean a welded INDEXED manifold source** instead of non-indexed soup — does NOT fix the quad-fan (top-front stayed 40) and slightly regressed the multi-edge case. Reverted.
 - Position-welded boundary/non-manifold counts OVER-COUNT on raw three-bvh-csg soup — valid only for RELATIVE comparison; the trustworthy absolute signal is **near-zero-area (degenerate) triangle count**.
 
+## PERF 2026-05-20 (round 6) — topology cache matrix snapshot
+`getCachedEdges` in `src/hooks/edgePicker/topologyCache.ts` is on the pointermove hot path (called from `pickNearestEdge` on every cursor move while an edge picker is active). The cache hit check compared `matrixKey` strings — and BUILT the string `` `${e0},${e1},...` `` on every call. ~100 char concat + ~100 char comparison per move at 60 Hz = ~6 KB/sec of garbage and an O(string-length) `===` check.
+
+Replaced with a 12-float `Float32Array` snapshot of the affine matrix elements + element-wise `matrixSnapEq` compare. Cache hit short-circuits on the first element (live body meshes have identity `matrixWorld` so `1 === 1` ends the loop fast). No allocations on cache hit; the snapshot is allocated only on cache miss (alongside the cached edges themselves).
+
+## PERF 2026-05-20 (round 5) — pointermove scratch in EdgeOpGizmo
+EdgeOpGizmo's window pointermove handler was allocating a fresh `new THREE.Vector2()` per event during gizmo drag. Switched to the module-level `_scratchNdc` already used by `onPointerDown`. Same scratch — onPointerDown runs once, then onMove fires until onUp, no overlap.
+
 ## PERF 2026-05-20 (round 4) — dialog edge-label memo + extracted parseEdgeLabel helper
 Fillet/Chamfer dialogs both re-render on every gizmo drag tick (the `*LiveRadius` / `*LiveDistance` store subscriptions update at ~60 Hz during drag). The selected-edges list was re-parsing every edge ID on every render (`{edgeIds.map((id, i) => parseEdgeLabel(id, i))}` inline). For a circle-rim selection (~100 edges) that's ~6000 string splits + Number.toFixed per second of drag.
 

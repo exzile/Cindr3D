@@ -29,23 +29,48 @@ export interface CachedEdge {
 
 interface TopoCache {
   topo: BodyTopologyLike;
-  matrixKey: string;
+  /** 12-float snapshot of the matrix's affine elements (skips the bottom row). */
+  matrixSnap: Float32Array;
   edges: CachedEdge[];
 }
 
 const _topoCache = new WeakMap<THREE.BufferGeometry, TopoCache>();
 const _t = new THREE.Vector3();
 
+/** Element-wise compare of two 12-float matrix snapshots. */
+function matrixSnapEq(a: Float32Array, m: THREE.Matrix4): boolean {
+  const me = m.elements;
+  return (
+    a[0] === me[0] && a[1] === me[1] && a[2]  === me[2]  &&
+    a[3] === me[4] && a[4] === me[5] && a[5]  === me[6]  &&
+    a[6] === me[8] && a[7] === me[9] && a[8]  === me[10] &&
+    a[9] === me[12] && a[10] === me[13] && a[11] === me[14]
+  );
+}
+
+function snapshotMatrix(m: THREE.Matrix4): Float32Array {
+  const me = m.elements;
+  return new Float32Array([
+    me[0], me[1], me[2],
+    me[4], me[5], me[6],
+    me[8], me[9], me[10],
+    me[12], me[13], me[14],
+  ]);
+}
+
 export function getCachedEdges(
   geom: THREE.BufferGeometry,
   topo: BodyTopologyLike,
   m: THREE.Matrix4,
 ): CachedEdge[] {
-  const me = m.elements;
-  const matrixKey =
-    `${me[0]},${me[1]},${me[2]},${me[4]},${me[5]},${me[6]},${me[8]},${me[9]},${me[10]},${me[12]},${me[13]},${me[14]}`;
+  // pointermove fires up to ~60 Hz; the prior version built a fresh
+  // `${e0},${e1},...` string each call AND used string equality to compare.
+  // Storing a 12-float snapshot + element-wise compare avoids both the
+  // per-move concat allocation and the O(string-length) cmp. Live body
+  // meshes typically have identity matrixWorld, so the compare returns true
+  // on the very first row and short-circuits.
   const hit = _topoCache.get(geom);
-  if (hit && hit.topo === topo && hit.matrixKey === matrixKey) return hit.edges;
+  if (hit && hit.topo === topo && matrixSnapEq(hit.matrixSnap, m)) return hit.edges;
 
   const edges: CachedEdge[] = topo.edges.map((edge) => {
     const pl = edge.polyline;
@@ -61,7 +86,7 @@ export function getCachedEdges(
     }
     return { pts, aabb: new Float64Array([mnx, mny, mnz, mxx, mxy, mxz]), ref: edge };
   });
-  _topoCache.set(geom, { topo, matrixKey, edges });
+  _topoCache.set(geom, { topo, matrixSnap: snapshotMatrix(m), edges });
   return edges;
 }
 
