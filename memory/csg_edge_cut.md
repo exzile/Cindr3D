@@ -42,6 +42,12 @@ Note: the geometry-layer edge-dedupe above means even if parse returns duplicate
 - **Feed the boolean a welded INDEXED manifold source** instead of non-indexed soup — does NOT fix the quad-fan (top-front stayed 40) and slightly regressed the multi-edge case. Reverted.
 - Position-welded boundary/non-manifold counts OVER-COUNT on raw three-bvh-csg soup — valid only for RELATIVE comparison; the trustworthy absolute signal is **near-zero-area (degenerate) triangle count**.
 
+## PERF 2026-05-20 (round 4) — dialog edge-label memo + extracted parseEdgeLabel helper
+Fillet/Chamfer dialogs both re-render on every gizmo drag tick (the `*LiveRadius` / `*LiveDistance` store subscriptions update at ~60 Hz during drag). The selected-edges list was re-parsing every edge ID on every render (`{edgeIds.map((id, i) => parseEdgeLabel(id, i))}` inline). For a circle-rim selection (~100 edges) that's ~6000 string splits + Number.toFixed per second of drag.
+
+- Extracted the duplicated `parseEdgeLabel` from both dialogs into `edgeCutCore.ts` (the edge-ID format lives there). Added Number.isFinite guard so a malformed coord doesn't print `NaN` in the dialog.
+- Both dialogs now `useMemo(() => edgeIds.map(parseEdgeLabel), [edgeIds])` so the labels are computed only when the selection actually changes; render is a cheap `edgeLabels[i]` lookup.
+
 ## PERF 2026-05-20 (round 3) — index-aware buildTriangleList + half-edge integer keys + shared-material single-pulse + parse consolidation
 Round 3 followups:
 

@@ -150,6 +150,28 @@ export function parseEdgeIds(edgeIds: string[]): ParsedEdges | null {
   return target;
 }
 
+/**
+ * Cheap human-readable label for an edge ID — shown in the Fillet/Chamfer
+ * dialogs' selected-edges list. Decodes ONLY the first chord of the ID
+ * (`parts[1]` → `parts[2]`), which is what the previous duplicated copies in
+ * FilletDialog/ChamferDialog rendered; chained model edges would still show
+ * their first chord's endpoints, matching the prior UI exactly. Falls back to
+ * `Edge {n}` on any parse failure.
+ */
+export function parseEdgeLabel(id: string, index: number): string {
+  let rest = id;
+  const pipe = id.indexOf('|');
+  if (pipe > 0) rest = id.slice(pipe + 1);
+  const parts = rest.split(':');
+  if (parts.length < 3) return `Edge ${index + 1}`;
+  const a = parts[1].split(',').map(Number);
+  const b = parts[2].split(',').map(Number);
+  if (a.length !== 3 || b.length !== 3) return `Edge ${index + 1}`;
+  if (a.some((n) => !Number.isFinite(n)) || b.some((n) => !Number.isFinite(n))) return `Edge ${index + 1}`;
+  const fmt = (n: number) => n.toFixed(1);
+  return `Edge ${index + 1}  (${fmt(a[0])}, ${fmt(a[1])}, ${fmt(a[2])}) → (${fmt(b[0])}, ${fmt(b[1])}, ${fmt(b[2])})`;
+}
+
 // ---------------------------------------------------------------------------
 // Triangle list + position tolerance
 // ---------------------------------------------------------------------------

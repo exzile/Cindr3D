@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useCADStore } from '../../../store/cadStore';
 import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
+import { parseEdgeLabel } from '../../../utils/geometry/edgeCutCore';
 
 const clampDeg = (a: number) => Math.max(1, Math.min(89, a));
 
@@ -41,20 +42,11 @@ interface ChamferDialogProps {
   onConfirm: (params: ChamferParams) => void;
 }
 
-function parseEdgeLabel(id: string, index: number): string {
-  let rest = id;
-  const pipe = id.indexOf('|');
-  if (pipe > 0) rest = id.slice(pipe + 1);
-  const parts = rest.split(':');
-  if (parts.length < 3) return `Edge ${index + 1}`;
-  const a = parts[1].split(',').map(Number);
-  const b = parts[2].split(',').map(Number);
-  if (a.length !== 3 || b.length !== 3) return `Edge ${index + 1}`;
-  const fmt = (n: number) => n.toFixed(1);
-  return `Edge ${index + 1}  (${fmt(a[0])}, ${fmt(a[1])}, ${fmt(a[2])}) → (${fmt(b[0])}, ${fmt(b[1])}, ${fmt(b[2])})`;
-}
-
 function ChamferDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClose, onConfirm }: ChamferDialogProps) {
+  // Memo edge labels: the dialog re-renders on every chamferLiveDistance
+  // change (gizmo drag, ~60Hz), but edgeIds only changes when the user adds
+  // or removes an edge.
+  const edgeLabels = useMemo(() => edgeIds.map((id, i) => parseEdgeLabel(id, i)), [edgeIds]);
   // chamferLiveDistance is updated by ChamferGizmo drags so the dialog
   // reflects the distance while the user drags the on-canvas handle.
   const chamferLiveDistance = useCADStore((s) => s.chamferLiveDistance);
@@ -114,7 +106,7 @@ function ChamferDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClo
               }}
             >
               <span style={{ fontFamily: 'monospace', color: '#ccc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 4 }}>
-                {parseEdgeLabel(id, i)}
+                {edgeLabels[i]}
               </span>
               <button
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cc4444', padding: '0 2px', fontSize: 14, lineHeight: 1 }}
