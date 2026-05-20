@@ -16,11 +16,19 @@
  * a shared module so it's tool-agnostic.
  */
 let _gizmoDragging = false;
+const _dragEndListeners = new Set<() => void>();
 
 export function setGizmoDragging(v: boolean): void {
   _gizmoDragging = v;
+  if (!v) _dragEndListeners.forEach((fn) => fn());
 }
 
 export function isGizmoDragging(): boolean {
   return _gizmoDragging;
+}
+
+/** Subscribe to gizmo drag-end events. Returns an unsubscribe function. */
+export function subscribeGizmoDragEnd(fn: () => void): () => void {
+  _dragEndListeners.add(fn);
+  return () => _dragEndListeners.delete(fn);
 }

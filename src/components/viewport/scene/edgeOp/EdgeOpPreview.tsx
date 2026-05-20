@@ -5,14 +5,15 @@
  * On every change of the selected edges or the live size it:
  *  1. Looks up the live rendered mesh from liveBodyMeshes (keyed by the mesh
  *     UUID embedded in the edge ID — populated by BodyMesh on mount).
- *  2. Clones + non-indexes that geometry, runs the tool's `compute`.
- *  3. Imperatively adds a preview mesh and hides the original so there is no
- *     z-fighting overlap.
+ *  2. Clones + non-indexes that geometry, serialises it and the picked edges,
+ *     and posts a 'compute' message to edgeOpWorker (off-main-thread CSG).
+ *  3. On the worker result, imperatively adds a preview mesh and hides the
+ *     original so there is no z-fighting overlap.
  *  4. On cleanup restores the original mesh and disposes the preview geometry.
  *
- * The same `compute` function is used here and in the commit (applyEdgeCut),
- * so the preview matches the committed result exactly. Shared by
- * FilletPreview / ChamferPreview.
+ * The same compute functions are used here (in the worker) and in the commit
+ * (applyEdgeCut), so the preview matches the committed result exactly. Shared
+ * by FilletPreview / ChamferPreview.
  *
  * EDGE-PICK PROXY: hiding the live body (`visible = false`) also makes it
  * un-raycastable (THREE.Raycaster skips invisible objects), and the preview
@@ -23,6 +24,12 @@
  * picking alive we add an invisible-material, still-raycastable proxy that
  * wraps the ORIGINAL live geometry and mirrors the live mesh's uuid +
  * pickable/featureId userData, so picked edge IDs match the selection IDs.
+ *
+ * WORKER PING-PONG: CSG runs off the main thread so the canvas stays
+ * responsive during live drag. Dispatches are immediate (no debounce on
+ * liveValue): if the worker is busy when a new value arrives, it is saved to
+ * pendingJobRef and dispatched the instant the worker replies — so the preview
+ * always catches up to the final dragged value with at most one queued job.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -44,11 +51,25 @@ interface EdgeOpPreviewProps {
   edgeIds: string[];
   /** Current live size (radius / distance). */
   liveValue: number;
-  /** Build the previewed geometry — same fn the commit uses. */
-  compute: (srcGeo: THREE.BufferGeometry, edges: PickedEdge[], value: number) => THREE.BufferGeometry | null;
+  /** Which tool to run in the worker — determines which compute fn is called. */
+  toolType: 'fillet' | 'chamfer';
+  /** Arc-resolution hint passed to the compute fn (default 4). */
+  segments?: number;
 }
 
-export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: EdgeOpPreviewProps) {
+interface ParsedAndClustered {
+  parsed: ReturnType<typeof parseEdgeIds> & {};
+  liveMesh: THREE.Mesh;
+  previewEdges: PickedEdge[];
+}
+
+export default function EdgeOpPreview({
+  enabled,
+  edgeIds,
+  liveValue,
+  toolType,
+  segments = 4,
+}: EdgeOpPreviewProps) {
   const { scene, invalidate } = useThree();
 
   const previewMeshRef = useRef<THREE.Mesh | null>(null);
@@ -57,18 +78,17 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
   // live body, so the edge picker keeps working while a preview is shown.
   const pickProxyRef = useRef<THREE.Mesh | null>(null);
   // Cache the non-indexed clone of the live mesh geometry so we don't re-clone
-  // on every debounced value change (only mesh identity changes require a new clone).
+  // on every value change (only mesh identity changes require a new clone).
   const srcGeoCacheRef = useRef<{ meshUuid: string; geo: THREE.BufferGeometry } | null>(null);
 
-  // Debounce liveValue: CSG is expensive — only recompute 150 ms after the
-  // user stops dragging the gizmo or typing, not on every intermediate event.
-  const [debouncedValue, setDebouncedValue] = useState(liveValue);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => setDebouncedValue(liveValue), 150);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [liveValue]);
+  const workerRef = useRef<Worker | null>(null);
+  const requestIdRef = useRef(0);
+  const latestRequestIdRef = useRef(0);
+
+  // Ping-pong backpressure: at most one in-flight job. If the worker is busy
+  // when a new value arrives, save it here and dispatch once the result lands.
+  const inFlightRef = useRef(false);
+  const pendingJobRef = useRef<{ pac: ParsedAndClustered; value: number } | null>(null);
 
   // Debounce edgeIds: when the user clicks several edges in quick succession
   // each click fires a recompute; debouncing coalesces those into one run so
@@ -81,11 +101,11 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
     return () => { if (edgeDebounceRef.current) clearTimeout(edgeDebounceRef.current); };
   }, [edgeIds]);
 
-  // Parse + cluster + cap once per debouncedEdgeIds. The compute effect runs on
-  // every debouncedValue change too — without this memo the cluster work
+  // Parse + cluster + cap once per debouncedEdgeIds. The dispatch effect runs on
+  // every liveValue change too — without this memo the cluster work
   // re-ran on every slider tick, which is O(N) but adds up on circle-rim
   // selections (30-100+ segments) at preview refresh rate.
-  const parsedAndClustered = useMemo(() => {
+  const parsedAndClustered = useMemo((): ParsedAndClustered | null => {
     if (!enabled || debouncedEdgeIds.length === 0) return null;
     const parsed = parseEdgeIds(debouncedEdgeIds);
     if (!parsed) return null;
@@ -111,76 +131,23 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
   // re-runs. enabled gate keeps preview disabled state cheap.
   }, [enabled, debouncedEdgeIds]);
 
-  const removePickProxy = (sceneRef: THREE.Scene) => {
-    if (pickProxyRef.current) {
-      sceneRef.remove(pickProxyRef.current);
-      (pickProxyRef.current.material as THREE.Material).dispose();
-      pickProxyRef.current = null;
-    }
-  };
+  // Keep stable refs to scene-mutable state so the worker message handler
+  // (created once on mount) always reads current values without being recreated.
+  const sceneRef = useRef(scene);
+  sceneRef.current = scene;
+  const invalidateRef = useRef(invalidate);
+  invalidateRef.current = invalidate;
+  const parsedAndClusteredRef = useRef(parsedAndClustered);
+  parsedAndClusteredRef.current = parsedAndClustered;
 
-  // Unmount cleanup — never strand a hidden live mesh or the pick proxy.
-  useEffect(() => {
-    const sceneRef = scene;
-    return () => {
-      if (hiddenMeshRef.current) {
-        /* eslint-disable react-hooks/immutability */
-        hiddenMeshRef.current.visible = true;
-        /* eslint-enable react-hooks/immutability */
-        hiddenMeshRef.current = null;
-      }
-      if (previewMeshRef.current) {
-        sceneRef.remove(previewMeshRef.current);
-        previewMeshRef.current.geometry.dispose();
-        previewMeshRef.current = null;
-      }
-      removePickProxy(sceneRef);
-      srcGeoCacheRef.current?.geo.dispose();
-      srcGeoCacheRef.current = null;
-      invalidate();
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scene]); // invalidate stable; scene stable for Canvas lifetime
+  // Stable ref to the dispatch function so the worker result handler can
+  // kick off the next pending job without causing the worker effect to re-run.
+  const dispatchJobRef = useRef<(pac: ParsedAndClustered, value: number) => void>(() => {});
+  dispatchJobRef.current = (pac: ParsedAndClustered, value: number) => {
+    if (!workerRef.current) return;
 
-  useEffect(() => {
-    // Hold a local reference to the previous geometry so we can dispose it
-    // ONLY after the new preview is in place — and only the geometry, never
-    // the mesh wrapper. Keeping the mesh in the scene across updates avoids
-    // the remove/add round-trip on every debounced value tick (R3F also
-    // skips re-allocating the renderlist entry). Geometry still has to swap
-    // because the new positions are a fresh buffer.
-    const oldPreviewGeo: THREE.BufferGeometry | null =
-      previewMeshRef.current?.geometry ?? null;
+    const { parsed, liveMesh, previewEdges } = pac;
 
-    const restoreLiveMesh = () => {
-      if (hiddenMeshRef.current) {
-        /* eslint-disable react-hooks/immutability */
-        hiddenMeshRef.current.visible = true;
-        /* eslint-enable react-hooks/immutability */
-        hiddenMeshRef.current = null;
-      }
-      // No preview → the real (now visible) body is pickable again; drop proxy.
-      removePickProxy(scene);
-      // Strand-safe: if we're bailing out, drop the lingering preview mesh too.
-      if (previewMeshRef.current) {
-        scene.remove(previewMeshRef.current);
-        previewMeshRef.current.geometry.dispose();
-        previewMeshRef.current = null;
-      }
-    };
-
-    // parsedAndClustered is null when !enabled, edges empty, or no live mesh —
-    // so we only need the value gate here on top of it.
-    if (!parsedAndClustered || !(debouncedValue > 0)) {
-      restoreLiveMesh();
-      invalidate();
-      return;
-    }
-
-    const { parsed, liveMesh, previewEdges } = parsedAndClustered;
-
-    // Reuse the cached non-indexed clone when the mesh hasn't changed — avoids
-    // a clone + toNonIndexed on every debounced value change.
     if (srcGeoCacheRef.current?.meshUuid !== parsed.meshUuid) {
       srcGeoCacheRef.current?.geo.dispose();
       const geo = liveMesh.geometry.index
@@ -188,87 +155,230 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
         : liveMesh.geometry.clone();
       srcGeoCacheRef.current = { meshUuid: parsed.meshUuid, geo };
     }
-    let previewGeo: THREE.BufferGeometry | null = null;
-    try {
-      previewGeo = compute(srcGeoCacheRef.current.geo, previewEdges, debouncedValue);
-    } catch (err) {
-      console.error('[EdgeOpPreview] compute threw:', err);
+
+    const id = ++requestIdRef.current;
+    latestRequestIdRef.current = id;
+    inFlightRef.current = true;
+
+    // Slice (copy) the positions — we keep the cache in srcGeoCacheRef so we
+    // must not transfer (detach) the original buffer.
+    const posCopy = (
+      srcGeoCacheRef.current.geo.attributes.position.array as Float32Array
+    ).slice();
+
+    const edgesData = previewEdges.map((e) => ({
+      ax: e.a.x, ay: e.a.y, az: e.a.z,
+      bx: e.b.x, by: e.b.y, bz: e.b.z,
+    }));
+
+    workerRef.current.postMessage(
+      {
+        type: 'compute',
+        requestId: id,
+        srcGeoPositions: posCopy.buffer,
+        edges: edgesData,
+        toolType,
+        value,
+        segments,
+        fast: true,
+      },
+      [posCopy.buffer],
+    );
+  };
+
+  // Handler ref pattern: worker.onmessage delegates to this ref so we never
+  // need to recreate the worker when callbacks change.
+  const workerOnMessageRef = useRef((_e: MessageEvent) => {});
+  workerOnMessageRef.current = (e: MessageEvent) => {
+    const { type, requestId, positions, normals } = e.data;
+    if (type !== 'result') return;
+    // Discard stale results from superseded requests.
+    if (requestId !== latestRequestIdRef.current) {
+      inFlightRef.current = false;
+      return;
     }
 
-    if (!previewGeo) { restoreLiveMesh(); invalidate(); return; }
+    inFlightRef.current = false;
+    const sc = sceneRef.current;
 
-    // Reject genuinely empty output only. The previous guard used
-    // `count < srcVertCount` assuming chamfer/fillet always add vertices, but
-    // `retriangulateCoplanarRegions` (run inside weldAndCleanSolid after the CSG
-    // subtract) merges coplanar fans and can legally reduce vertex count below
-    // the source even for a perfectly valid result — causing false rejections
-    // that left the preview blank while the body stayed visible.
-    if (previewGeo.attributes.position.count === 0) {
-      previewGeo.dispose();
+    const restoreLiveMesh = () => {
+      if (hiddenMeshRef.current) {
+        hiddenMeshRef.current.visible = true;
+        hiddenMeshRef.current = null;
+      }
+      if (pickProxyRef.current) {
+        sc.remove(pickProxyRef.current);
+        (pickProxyRef.current.material as THREE.Material).dispose();
+        pickProxyRef.current = null;
+      }
+      if (previewMeshRef.current) {
+        sc.remove(previewMeshRef.current);
+        previewMeshRef.current.geometry.dispose();
+        previewMeshRef.current = null;
+      }
+    };
+
+    if (!positions) {
       restoreLiveMesh();
+      invalidateRef.current();
+    } else {
+      const pac = parsedAndClusteredRef.current;
+      if (!pac) {
+        restoreLiveMesh();
+        invalidateRef.current();
+      } else {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute(
+          'position',
+          new THREE.BufferAttribute(new Float32Array(positions), 3),
+        );
+        if (normals) {
+          // Use the creased normals computed inside the worker (toCreasedNormals)
+          // for smooth shading on the fillet arc.
+          geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
+        } else {
+          geo.computeVertexNormals();
+        }
+
+        const { liveMesh } = pac;
+        const oldPreviewGeo = previewMeshRef.current?.geometry ?? null;
+
+        // If the target mesh changed, restore old and drop the stale proxy.
+        if (hiddenMeshRef.current && hiddenMeshRef.current !== liveMesh) {
+          hiddenMeshRef.current.visible = true;
+          hiddenMeshRef.current = null;
+          if (pickProxyRef.current) {
+            sc.remove(pickProxyRef.current);
+            (pickProxyRef.current.material as THREE.Material).dispose();
+            pickProxyRef.current = null;
+          }
+        }
+
+        if (!hiddenMeshRef.current) {
+          liveMesh.visible = false;
+          hiddenMeshRef.current = liveMesh;
+        }
+
+        // Edge-pick proxy: the hidden live mesh is no longer raycastable and the
+        // preview geometry no longer contains the original sharp edges, so without
+        // this the picker can't toggle (deselect) or add edges while a preview is
+        // shown. The proxy shares the live mesh's geometry (original edges intact),
+        // uuid (so `edgeId()` produces IDs that match the selection list), and
+        // pickable/featureId userData (so `collectPickable()` + its filter accept
+        // it). `material.visible = false` keeps it out of the render but
+        // Raycaster still hits it (it checks Object3D.visible, which stays true).
+        if (!pickProxyRef.current) {
+          const proxyMat = new THREE.MeshBasicMaterial({ visible: false });
+          const proxy = new THREE.Mesh(liveMesh.geometry, proxyMat);
+          proxy.uuid = liveMesh.uuid;
+          proxy.userData.pickable = liveMesh.userData.pickable;
+          proxy.userData.featureId = liveMesh.userData.featureId;
+          proxy.renderOrder = -1;
+          sc.add(proxy);
+          pickProxyRef.current = proxy;
+        }
+
+        if (previewMeshRef.current && previewMeshRef.current.material === liveMesh.material) {
+          previewMeshRef.current.geometry = geo;
+        } else {
+          if (previewMeshRef.current) sc.remove(previewMeshRef.current);
+          const previewMesh = new THREE.Mesh(geo, liveMesh.material);
+          previewMesh.castShadow = true;
+          previewMesh.receiveShadow = true;
+          sc.add(previewMesh);
+          previewMeshRef.current = previewMesh;
+        }
+
+        // Dispose the previous geometry AFTER the new one is in place so there's
+        // never a window where the mesh is temporarily geometry-less.
+        if (oldPreviewGeo && oldPreviewGeo !== geo) oldPreviewGeo.dispose();
+
+        invalidateRef.current();
+      }
+    }
+
+    // Dispatch the pending job (if any) now that the worker is free.
+    const pending = pendingJobRef.current;
+    pendingJobRef.current = null;
+    if (pending) dispatchJobRef.current(pending.pac, pending.value);
+  };
+
+  // Create the worker once on mount; terminate on unmount.
+  useEffect(() => {
+    const worker = new Worker(
+      new URL('../../../../workers/edgeOpWorker.ts', import.meta.url),
+      { type: 'module' },
+    );
+    worker.onmessage = (e) => workerOnMessageRef.current(e);
+    worker.onerror = (e) => console.error('[EdgeOpPreview] worker error:', e);
+    workerRef.current = worker;
+    return () => {
+      worker.terminate();
+      workerRef.current = null;
+    };
+  }, []);
+
+  // Unmount cleanup — never strand a hidden live mesh or the pick proxy.
+  useEffect(() => {
+    const sceneSnapshot = scene;
+    return () => {
+      if (hiddenMeshRef.current) {
+        hiddenMeshRef.current.visible = true;
+        hiddenMeshRef.current = null;
+      }
+      if (previewMeshRef.current) {
+        sceneSnapshot.remove(previewMeshRef.current);
+        previewMeshRef.current.geometry.dispose();
+        previewMeshRef.current = null;
+      }
+      if (pickProxyRef.current) {
+        sceneSnapshot.remove(pickProxyRef.current);
+        (pickProxyRef.current.material as THREE.Material).dispose();
+        pickProxyRef.current = null;
+      }
+      srcGeoCacheRef.current?.geo.dispose();
+      srcGeoCacheRef.current = null;
+      invalidate();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scene]); // invalidate stable; scene stable for Canvas lifetime
+
+  // Dispatch to worker on value / edge change (immediate — no liveValue debounce).
+  useEffect(() => {
+    const sc = scene;
+
+    const restoreLiveMeshSync = () => {
+      pendingJobRef.current = null;
+      if (hiddenMeshRef.current) {
+        hiddenMeshRef.current.visible = true;
+        hiddenMeshRef.current = null;
+      }
+      if (pickProxyRef.current) {
+        sc.remove(pickProxyRef.current);
+        (pickProxyRef.current.material as THREE.Material).dispose();
+        pickProxyRef.current = null;
+      }
+      if (previewMeshRef.current) {
+        sc.remove(previewMeshRef.current);
+        previewMeshRef.current.geometry.dispose();
+        previewMeshRef.current = null;
+      }
+    };
+
+    if (!parsedAndClustered || !(liveValue > 0)) {
+      restoreLiveMeshSync();
       invalidate();
       return;
     }
 
-    // If the target mesh changed (different mesh than last preview), restore old
-    // and drop the stale proxy so it is rebuilt against the new geometry/uuid.
-    if (hiddenMeshRef.current && hiddenMeshRef.current !== liveMesh) {
-      /* eslint-disable react-hooks/immutability */
-      hiddenMeshRef.current.visible = true;
-      /* eslint-enable react-hooks/immutability */
-      hiddenMeshRef.current = null;
-      removePickProxy(scene);
+    if (inFlightRef.current) {
+      // Worker is busy — save this as the pending job to run when it finishes.
+      pendingJobRef.current = { pac: parsedAndClustered, value: liveValue };
+      return;
     }
 
-    // Hide the live mesh only if not already hidden (avoids redundant DOM write).
-    if (!hiddenMeshRef.current) {
-      /* eslint-disable react-hooks/immutability */
-      liveMesh.visible = false;
-      /* eslint-enable react-hooks/immutability */
-      hiddenMeshRef.current = liveMesh;
-    }
-
-    // Edge-pick proxy: the hidden live mesh is no longer raycastable and the
-    // preview geometry no longer contains the original sharp edges, so without
-    // this the picker can't toggle (deselect) or add edges while a preview is
-    // shown. The proxy shares the live mesh's geometry (original edges intact),
-    // uuid (so `edgeId()` produces IDs that match the selection list), and
-    // pickable/featureId userData (so `collectPickable()` + its filter accept
-    // it). `material.visible = false` keeps it out of the render but
-    // Raycaster still hits it (it checks Object3D.visible, which stays true).
-    if (!pickProxyRef.current) {
-      const proxyMat = new THREE.MeshBasicMaterial({ visible: false });
-      const proxy = new THREE.Mesh(liveMesh.geometry, proxyMat);
-      proxy.uuid = liveMesh.uuid;
-      proxy.userData.pickable = liveMesh.userData.pickable;
-      proxy.userData.featureId = liveMesh.userData.featureId;
-      proxy.renderOrder = -1;
-      scene.add(proxy);
-      pickProxyRef.current = proxy;
-    }
-
-    if (previewMeshRef.current && previewMeshRef.current.material === liveMesh.material) {
-      // Reuse the mesh: just swap in the new geometry. Stays in the scene
-      // across debounced ticks so R3F's renderlist entry isn't recycled.
-      previewMeshRef.current.geometry = previewGeo;
-    } else {
-      // First preview, or the live mesh swapped under us: build a fresh mesh.
-      if (previewMeshRef.current) scene.remove(previewMeshRef.current);
-      const previewMesh = new THREE.Mesh(previewGeo, liveMesh.material);
-      previewMesh.castShadow = true;
-      previewMesh.receiveShadow = true;
-      scene.add(previewMesh);
-      previewMeshRef.current = previewMesh;
-    }
-
-    // Dispose the previous geometry AFTER the new one is in place so there's
-    // never a window where the mesh is temporarily geometry-less.
-    if (oldPreviewGeo && oldPreviewGeo !== previewGeo) oldPreviewGeo.dispose();
-
-    invalidate();
-    // parsedAndClustered carries enabled+debouncedEdgeIds as its own deps; the
-    // effect only needs the value gate plus the compute fn / scene refs.
-  }, [debouncedValue, compute, scene, invalidate, parsedAndClustered]);
+    dispatchJobRef.current(parsedAndClustered, liveValue);
+  }, [liveValue, parsedAndClustered, scene, invalidate]);
 
   return null;
 }

@@ -98,7 +98,9 @@ export const serializeFeature = (feature: Feature): SerializedFeature => {
   if (topCached) return topCached;
   const { mesh, ...rest } = feature;
   const serialized: SerializedFeature = { ...rest };
-  if (MESH_ONLY_TYPES.has(feature.type) && mesh) {
+  // Serialize mesh geometry for MESH_ONLY_TYPES (always have mesh) AND for any
+  // feature type that acquired a mesh via edge-cut (fillet/chamfer on extrude/primitive).
+  if (mesh) {
     const geometry = (mesh as THREE.Mesh).geometry;
     if (geometry) {
       const cached = serializedMeshDataCache.get(geometry);
@@ -130,7 +132,7 @@ const REHYDRATED_FEATURE_MATERIAL: THREE.MeshPhysicalMaterial = (() => {
 
 export const deserializeFeature = (feature: Feature): Feature => {
   const serializedFeature = feature as unknown as SerializedFeature;
-  if (MESH_ONLY_TYPES.has(feature.type) && serializedFeature._meshData) {
+  if (serializedFeature._meshData) {
     const { position, index, normal } = serializedFeature._meshData;
     const geometry = new THREE.BufferGeometry();
     if (position) geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(position), 3));

@@ -231,10 +231,13 @@ export function ChamferDialog({ onClose }: { onClose: () => void }) {
         timestamp: Date.now(),
       };
       addFeature(feature);
-      // Actually bevel the geometry (was previously a no-op stub, exactly as
-      // commitFillet was before the fillet fix). The dialog mode resolves the
-      // face-2 setback; the gizmo/preview drive the primary distance.
-      commitChamfer(params.distance, resolveChamferDistance2(params));
+      // Close immediately so the UI is responsive; defer the CSG compute.
+      // chamferEdgeIds stays in the store until the next chamfer dialog open.
+      onClose();
+      const d1 = params.distance;
+      const d2 = resolveChamferDistance2(params);
+      setTimeout(() => commitChamfer(d1, d2), 0);
+      return;
     }
     onClose();
   };
