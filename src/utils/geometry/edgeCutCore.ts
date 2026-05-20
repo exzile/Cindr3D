@@ -215,7 +215,10 @@ export function buildTriangleList(srcGeo: THREE.BufferGeometry): THREE.Vector3[]
 
 /** Position tolerance scaled to the geometry's bounding-box diagonal. */
 export function computePositionEps(srcGeo: THREE.BufferGeometry): number {
-  srcGeo.computeBoundingBox();
+  // The render pipeline almost always has the bbox computed already (it needs
+  // it for frustum culling); only recompute when actually missing. Avoids the
+  // redundant O(N) recompute on every parsedAndClustered memo run.
+  if (!srcGeo.boundingBox) srcGeo.computeBoundingBox();
   const diag = srcGeo.boundingBox
     ? srcGeo.boundingBox.min.distanceTo(srcGeo.boundingBox.max)
     : 1;
