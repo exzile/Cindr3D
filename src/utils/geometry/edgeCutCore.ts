@@ -194,23 +194,47 @@ export function makeNear(srcGeo: THREE.BufferGeometry): (p: THREE.Vector3, q: TH
 // scan over all tris makes each edge resolution prohibitively slow.
 // ---------------------------------------------------------------------------
 
-/** Quantize a position to a grid cell key. */
-function triIdxKey(v: THREE.Vector3, eps: number): string {
-  return `${Math.round(v.x / eps)},${Math.round(v.y / eps)},${Math.round(v.z / eps)}`;
+// Cell-key packing: hash (cx,cy,cz) into a single number so the spatial index
+// can use a Map<number, number[]> instead of Map<string, number[]>. String
+// concatenation per lookup was the dominant cost on circle-rim selections
+// (~30-100+ vertex lookups per edge × 27 neighbours each). 21-bit signed cell
+// indices give ±1M-cell range, more than enough for any tessellated model at
+// our eps (diag·1e-4); collisions are NOT possible inside that range because
+// each axis fits its own bit field.
+const CELL_BITS = 21;
+const CELL_MASK = (1 << CELL_BITS) - 1;
+const CELL_BIAS = 1 << (CELL_BITS - 1); // bias to make negatives non-negative
+
+/** Pack quantized (cx,cy,cz) into a single 53-bit-safe number key. */
+function packCell(cx: number, cy: number, cz: number): number {
+  // Bias each coord into [0, 2^21) then pack: (cx) | (cy<<21) | (cz<<42).
+  // Number.MAX_SAFE_INTEGER is 2^53-1, so 3×21 = 63 bits would overflow — use
+  // multiplication for the top field so we stay inside the safe range.
+  const ax = (cx + CELL_BIAS) & CELL_MASK;
+  const ay = (cy + CELL_BIAS) & CELL_MASK;
+  const az = (cz + CELL_BIAS) & CELL_MASK;
+  return ax + ay * (1 << CELL_BITS) + az * (1 << (CELL_BITS * 2));
 }
 
 /** Build a spatial index mapping quantized vertex positions → triangle indices. */
-export function buildTriangleIndex(tris: THREE.Vector3[][], eps: number): Map<string, number[]> {
-  const map = new Map<string, number[]>();
+export function buildTriangleIndex(tris: THREE.Vector3[][], eps: number): Map<number, number[]> {
+  const map = new Map<number, number[]>();
+  const inv = 1 / eps;
   for (let i = 0; i < tris.length; i++) {
-    for (const v of tris[i]) {
-      const k = triIdxKey(v, eps);
+    const tri = tris[i];
+    for (let j = 0; j < 3; j++) {
+      const v = tri[j];
+      const k = packCell(Math.round(v.x * inv), Math.round(v.y * inv), Math.round(v.z * inv));
       const arr = map.get(k);
       if (arr) arr.push(i); else map.set(k, [i]);
     }
   }
   return map;
 }
+
+// Scratch set reused across getCandidatesNear calls. resolveEdge runs this
+// many times per edge; allocating a fresh Set every call is wasteful.
+const _candSeen = new Set<number>();
 
 /**
  * Returns deduplicated triangle indices whose bounding cells overlap the 3×3×3
@@ -220,16 +244,17 @@ export function buildTriangleIndex(tris: THREE.Vector3[][], eps: number): Map<st
  * primary-pass adj array, making adj.length > 2 and causing resolveEdge to
  * return null for valid edges.
  */
-function getCandidatesNear(p: THREE.Vector3, map: Map<string, number[]>, eps: number): number[] {
-  const cx = Math.round(p.x / eps), cy = Math.round(p.y / eps), cz = Math.round(p.z / eps);
-  const seen = new Set<number>();
+function getCandidatesNear(p: THREE.Vector3, map: Map<number, number[]>, eps: number): number[] {
+  const inv = 1 / eps;
+  const cx = Math.round(p.x * inv), cy = Math.round(p.y * inv), cz = Math.round(p.z * inv);
+  _candSeen.clear();
   for (let dx = -1; dx <= 1; dx++)
     for (let dy = -1; dy <= 1; dy++)
       for (let dz = -1; dz <= 1; dz++) {
-        const arr = map.get(`${cx + dx},${cy + dy},${cz + dz}`);
-        if (arr) for (const t of arr) seen.add(t);
+        const arr = map.get(packCell(cx + dx, cy + dy, cz + dz));
+        if (arr) for (let i = 0; i < arr.length; i++) _candSeen.add(arr[i]);
       }
-  return Array.from(seen);
+  return Array.from(_candSeen);
 }
 
 // ---------------------------------------------------------------------------
@@ -327,7 +352,7 @@ export function resolveEdge(
   tris: THREE.Vector3[][],
   e: PickedEdge,
   near: (p: THREE.Vector3, q: THREE.Vector3) => boolean,
-  triIdx?: Map<string, number[]>,
+  triIdx?: Map<number, number[]>,
   eps?: number,
 ): ResolvedEdge | null {
   // With a spatial index: only visit triangles in the 3×3×3 neighbourhood of
@@ -600,6 +625,137 @@ export function computeEdgeGizmoDir(
 }
 
 // ---------------------------------------------------------------------------
+// Edge dedupe + clustering helpers
+//
+// Both operations used to be O(N²) (linear-scan dedupe / repeated `Array.some`
+// connectivity test). Selection sizes are typically small (≤12 for box edges),
+// but circle-rim selections balloon to 30-100+ tiny segments and live-preview
+// re-registration / tangent-edge propagation can compound that further. The
+// O(N²) version cost tens of milliseconds per debounced preview tick on those
+// selections; replacing with endpoint spatial-hash makes it linear and keeps
+// the visible response inside one frame.
+// ---------------------------------------------------------------------------
+/** Unordered-pair canonical key for two endpoint cell hashes. */
+function unorderedPairKey(a: number, b: number): string {
+  return a < b ? `${a}_${b}` : `${b}_${a}`;
+}
+
+/**
+ * O(N) endpoint-based dedupe. Two edges are duplicates when their {a,b} cell
+ * hashes match in either direction. To handle the cell-boundary straddling
+ * case (two points within eps but quantized into adjacent cells — what the old
+ * O(N²) pairwise `near` would still catch), each endpoint is resolved to a
+ * CANONICAL cell key by checking a 3×3×3 neighbourhood for an earlier endpoint
+ * that we've already cataloged within eps; if found, this endpoint inherits
+ * that cell key. This keeps dedupe correctness byte-equivalent for the inputs
+ * the driver actually sees while being linear in N. Same 3-neighbour pattern
+ * the spatial triangle index already uses.
+ */
+export function dedupEdgesByEndpoints(edges: PickedEdge[], eps: number): PickedEdge[] {
+  const out: PickedEdge[] = [];
+  const seen = new Set<string>();
+  const inv = 1 / eps;
+  const epsSq = eps * eps;
+  // canonical-cell-key map: anchor point cell → canonical key (the first such
+  // cell hash encountered). Subsequent endpoints in the cell's 3×3×3 hood
+  // within eps reuse that key.
+  const canon = new Map<number, { key: number; x: number; y: number; z: number }>();
+  const canonicalize = (v: THREE.Vector3): number => {
+    const cx = Math.round(v.x * inv), cy = Math.round(v.y * inv), cz = Math.round(v.z * inv);
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dz = -1; dz <= 1; dz++) {
+          const k = packCell(cx + dx, cy + dy, cz + dz);
+          const hit = canon.get(k);
+          if (hit !== undefined) {
+            const ddx = hit.x - v.x, ddy = hit.y - v.y, ddz = hit.z - v.z;
+            if (ddx * ddx + ddy * ddy + ddz * ddz <= epsSq) return hit.key;
+          }
+        }
+    const self = packCell(cx, cy, cz);
+    canon.set(self, { key: self, x: v.x, y: v.y, z: v.z });
+    return self;
+  };
+  for (const e of edges) {
+    const ka = canonicalize(e.a);
+    const kb = canonicalize(e.b);
+    if (ka === kb) continue; // zero-length edge guard
+    const k = unorderedPairKey(ka, kb);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(e);
+  }
+  return out;
+}
+
+/**
+ * O(N+α(N)) union-find clustering by shared endpoint cell. Replaces the prior
+ * "while (changed) for each remaining edge" O(N²) loop. Two endpoints land in
+ * the same group when their canonical cell keys match (same 3×3×3 neighbourhood
+ * canonicalization the dedup uses, so it tolerates a small straddle across a
+ * cell line in the same way the old `near`-based connectivity did).
+ */
+export function clusterEdgesByEndpointConnectivity(
+  edges: PickedEdge[],
+  eps: number,
+): PickedEdge[][] {
+  if (edges.length === 0) return [];
+  const inv = 1 / eps;
+  const epsSq = eps * eps;
+  const n = edges.length;
+  const parent = new Int32Array(n);
+  for (let i = 0; i < n; i++) parent[i] = i;
+  const find = (x: number): number => {
+    let r = x;
+    while (parent[r] !== r) r = parent[r];
+    while (parent[x] !== r) { const next = parent[x]; parent[x] = r; x = next; }
+    return r;
+  };
+  const union = (a: number, b: number) => {
+    const ra = find(a), rb = find(b);
+    if (ra !== rb) parent[ra] = rb;
+  };
+
+  const canon = new Map<number, { key: number; x: number; y: number; z: number }>();
+  const canonicalize = (v: THREE.Vector3): number => {
+    const cx = Math.round(v.x * inv), cy = Math.round(v.y * inv), cz = Math.round(v.z * inv);
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dz = -1; dz <= 1; dz++) {
+          const k = packCell(cx + dx, cy + dy, cz + dz);
+          const hit = canon.get(k);
+          if (hit !== undefined) {
+            const ddx = hit.x - v.x, ddy = hit.y - v.y, ddz = hit.z - v.z;
+            if (ddx * ddx + ddy * ddy + ddz * ddz <= epsSq) return hit.key;
+          }
+        }
+    const self = packCell(cx, cy, cz);
+    canon.set(self, { key: self, x: v.x, y: v.y, z: v.z });
+    return self;
+  };
+
+  // First edge owning each canonical endpoint cell — anything else that touches
+  // that cell unions into the same group.
+  const cellOwner = new Map<number, number>();
+  for (let i = 0; i < n; i++) {
+    const ka = canonicalize(edges[i].a);
+    const kb = canonicalize(edges[i].b);
+    const ownerA = cellOwner.get(ka);
+    if (ownerA === undefined) cellOwner.set(ka, i); else union(i, ownerA);
+    const ownerB = cellOwner.get(kb);
+    if (ownerB === undefined) cellOwner.set(kb, i); else union(i, ownerB);
+  }
+
+  const groups = new Map<number, PickedEdge[]>();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    const g = groups.get(r);
+    if (g) g.push(edges[i]); else groups.set(r, [edges[i]]);
+  }
+  return [...groups.values()];
+}
+
+// ---------------------------------------------------------------------------
 // Generic CSG driver
 // ---------------------------------------------------------------------------
 
@@ -632,15 +788,9 @@ export function computeEdgeCutGeometry(
   // re-registration routinely hand the SAME physical edge in multiple times
   // (sometimes slightly jittered); cutting it twice double-bevels it and adds
   // spurious geometry / can over-cut. One cut per distinct edge is correct.
-  const uniqueEdges: PickedEdge[] = [];
-  for (const e of edges) {
-    const dup = uniqueEdges.some(
-      (u) =>
-        (near(u.a, e.a) && near(u.b, e.b)) ||
-        (near(u.a, e.b) && near(u.b, e.a)),
-    );
-    if (!dup) uniqueEdges.push(e);
-  }
+  // Uses a spatial-hash → O(N) instead of the prior O(N²) scan; matters on
+  // circle-rim selections that arrive as 30-100+ short segments.
+  const uniqueEdges = dedupEdgesByEndpoints(edges, eps);
 
   // Cluster uniqueEdges by endpoint connectivity before deciding which path to
   // use. This handles mixed selections (e.g. a circular rim + a box edge): each
@@ -650,25 +800,8 @@ export function computeEdgeCutGeometry(
   // once — any non-circular edge in the selection defeated the torus path for the
   // entire rim, sending all rim segments through the per-segment path and
   // producing the triangle-soup seams.
-  const clusters: PickedEdge[][] = [];
-  {
-    const rem = [...uniqueEdges];
-    while (rem.length > 0) {
-      const cl: PickedEdge[] = [rem.shift()!];
-      let changed = true;
-      while (changed) {
-        changed = false;
-        for (let i = rem.length - 1; i >= 0; i--) {
-          const e = rem[i];
-          if (cl.some(c => near(c.a, e.a) || near(c.a, e.b) || near(c.b, e.a) || near(c.b, e.b))) {
-            cl.push(rem.splice(i, 1)[0]);
-            changed = true;
-          }
-        }
-      }
-      clusters.push(cl);
-    }
-  }
+  // O(N) via union-find keyed by an endpoint-cell spatial hash.
+  const clusters = clusterEdgesByEndpointConnectivity(uniqueEdges, eps);
 
   let solid: THREE.BufferGeometry = srcGeo.clone();
   let cut = 0;

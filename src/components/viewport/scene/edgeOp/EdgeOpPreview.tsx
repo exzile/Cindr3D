@@ -25,10 +25,15 @@
  * pickable/featureId userData, so picked edge IDs match the selection IDs.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { parseEdgeIds, fitEdgeCircle } from '../../../../utils/geometry/edgeCutCore';
+import {
+  parseEdgeIds,
+  fitEdgeCircle,
+  clusterEdgesByEndpointConnectivity,
+  computePositionEps,
+} from '../../../../utils/geometry/edgeCutCore';
 import { liveBodyMeshes } from '../../../../store/meshRegistry';
 import type { PickedEdge } from '../../../../utils/geometry/edgeCutCore';
 
@@ -75,6 +80,36 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
     edgeDebounceRef.current = setTimeout(() => setDebouncedEdgeIds(edgeIds), 80);
     return () => { if (edgeDebounceRef.current) clearTimeout(edgeDebounceRef.current); };
   }, [edgeIds]);
+
+  // Parse + cluster + cap once per debouncedEdgeIds. The compute effect runs on
+  // every debouncedValue change too — without this memo the cluster work
+  // re-ran on every slider tick, which is O(N) but adds up on circle-rim
+  // selections (30-100+ segments) at preview refresh rate.
+  const parsedAndClustered = useMemo(() => {
+    if (!enabled || debouncedEdgeIds.length === 0) return null;
+    const parsed = parseEdgeIds(debouncedEdgeIds);
+    if (!parsed) return null;
+    const liveMesh = liveBodyMeshes.get(parsed.meshUuid);
+    if (!liveMesh) return null;
+
+    const MAX_NON_CIRCLE_SEGS = 6;
+    const clusterEps = computePositionEps(liveMesh.geometry);
+    const edgeClusters = clusterEdgesByEndpointConnectivity(parsed.edges, clusterEps);
+    const previewEdges: PickedEdge[] = [];
+    for (const cluster of edgeClusters) {
+      if (cluster.length <= MAX_NON_CIRCLE_SEGS || fitEdgeCircle(cluster) !== null) {
+        previewEdges.push(...cluster);
+      } else {
+        for (let i = 0; i < MAX_NON_CIRCLE_SEGS; i++) {
+          previewEdges.push(cluster[Math.round((i * (cluster.length - 1)) / (MAX_NON_CIRCLE_SEGS - 1))]);
+        }
+      }
+    }
+    return { parsed, liveMesh, previewEdges };
+  // liveBodyMeshes is a module-level mutable Map; the meshUuid identity drives
+  // re-runs through `debouncedEdgeIds`, and a remount swaps the uuid → memo
+  // re-runs. enabled gate keeps preview disabled state cheap.
+  }, [enabled, debouncedEdgeIds]);
 
   const removePickProxy = (sceneRef: THREE.Scene) => {
     if (pickProxyRef.current) {
@@ -128,64 +163,13 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
       removePickProxy(scene);
     };
 
-    if (!enabled || debouncedEdgeIds.length === 0 || !(debouncedValue > 0)) {
+    if (!enabled || debouncedEdgeIds.length === 0 || !(debouncedValue > 0) || !parsedAndClustered) {
       restoreLiveMesh();
       invalidate();
       return;
     }
 
-    const parsed = parseEdgeIds(debouncedEdgeIds);
-    if (!parsed) { restoreLiveMesh(); invalidate(); return; }
-
-    const liveMesh = liveBodyMeshes.get(parsed.meshUuid);
-    if (!liveMesh) { restoreLiveMesh(); invalidate(); return; }
-
-    // Cluster edges by endpoint connectivity so we can apply the segment cap
-    // per-cluster rather than across the whole selection. This handles mixed
-    // selections (e.g. circular rim + box edge): the rim cluster is detected as
-    // circular and kept intact (the loop cutter handles it in O(1) CSG), while
-    // non-circular clusters are capped to prevent a sequential-CSG freeze.
-    // Previously fitEdgeCircle was called on ALL edges at once, so any
-    // non-circular edge defeated the torus path for the entire rim and the full
-    // set was randomly decimated to 6 edges — producing per-segment soup on the
-    // rim and breaking the fillet the moment a second edge was added.
-    const MAX_NON_CIRCLE_SEGS = 6;
-    const nearPrev = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => {
-      const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
-      return dx * dx + dy * dy + dz * dz < 1e-8;
-    };
-    const edgeClusters: (typeof parsed.edges)[] = [];
-    {
-      const rem = [...parsed.edges];
-      while (rem.length > 0) {
-        const cl = [rem.shift()!];
-        let changed = true;
-        while (changed) {
-          changed = false;
-          for (let i = rem.length - 1; i >= 0; i--) {
-            const e = rem[i];
-            if (cl.some(c => nearPrev(c.a, e.a) || nearPrev(c.a, e.b) || nearPrev(c.b, e.a) || nearPrev(c.b, e.b))) {
-              cl.push(rem.splice(i, 1)[0]);
-              changed = true;
-            }
-          }
-        }
-        edgeClusters.push(cl);
-      }
-    }
-    const previewEdges: typeof parsed.edges = [];
-    for (const cluster of edgeClusters) {
-      if (fitEdgeCircle(cluster) !== null || cluster.length <= MAX_NON_CIRCLE_SEGS) {
-        // Circular cluster: keep ALL segments so the loop cutter gets the full
-        // circle. Small non-circular cluster: pass through as-is.
-        previewEdges.push(...cluster);
-      } else {
-        // Large non-circular cluster: sample down to cap sequential CSG cost.
-        for (let i = 0; i < MAX_NON_CIRCLE_SEGS; i++) {
-          previewEdges.push(cluster[Math.round((i * (cluster.length - 1)) / (MAX_NON_CIRCLE_SEGS - 1))]);
-        }
-      }
-    }
+    const { parsed, liveMesh, previewEdges } = parsedAndClustered;
 
     // Reuse the cached non-indexed clone when the mesh hasn't changed — avoids
     // a clone + toNonIndexed on every debounced value change.
@@ -262,7 +246,7 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
     previewMeshRef.current = previewMesh;
 
     invalidate();
-  }, [enabled, debouncedEdgeIds, debouncedValue, compute, scene, invalidate]);
+  }, [enabled, debouncedEdgeIds, debouncedValue, compute, scene, invalidate, parsedAndClustered]);
 
   return null;
 }
