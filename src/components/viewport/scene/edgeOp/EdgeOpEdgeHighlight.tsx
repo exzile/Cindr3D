@@ -20,7 +20,7 @@
 
 import { useRef, useCallback, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
-import { useFrame, useThree } from '@react-three/fiber';
+import { useFrame, useThree, invalidate as invalidateFrame } from '@react-three/fiber';
 import { useEdgePicker, type EdgePickResult } from '../../../../hooks/useEdgePicker';
 import { buildPolylineGeometry } from '../pickerGeometry';
 import { applyLinePulse } from '../pickPulse';
@@ -126,6 +126,12 @@ export default function EdgeOpEdgeHighlight({
 
   const handleHover = useCallback((result: EdgePickResult | null) => {
     hoverResultRef.current = result;
+    // Wake the demand loop so useFrame applies the hover change. Without
+    // this, useFrame would need to invalidate every frame (~60 Hz) just to
+    // stay alive in case the cursor moved — wasted renders while the user
+    // is sitting still with the picker active. Invalidating only on
+    // hover-change means an idle picker truly idles.
+    invalidateFrame();
   }, []);
 
   const handleClick = useCallback((result: EdgePickResult) => {
@@ -170,7 +176,14 @@ export default function EdgeOpEdgeHighlight({
       }
       return;
     }
-    invalidate(); // keep rendering while picker is active (pulse + demand loop)
+    // Only keep the demand loop spinning while there's something visible to
+    // animate (the pulse). When no edge is hovered AND no edge is selected,
+    // the picker has nothing to render — let the canvas idle. Hover changes
+    // already wake the loop via invalidate in handleHover; edgeIds changes
+    // trigger a React re-render which runs useFrame at least once anyway.
+    const hasVisible =
+      hoverResultRef.current !== null || selectedLinesRef.current.size > 0 || edgeIds.length > 0;
+    if (hasVisible) invalidate();
 
     const hr = hoverResultRef.current;
 
