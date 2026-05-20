@@ -14,6 +14,7 @@ import type { EdgePickResult } from '../../types/edge-picker.types';
 import { closestPointOnSegment } from './segmentMath';
 import {
   getCachedEdges,
+  getCachedChain,
   pointAabbDistSq,
   type BodyTopologyLike,
   type CachedEdge,
@@ -66,9 +67,11 @@ export function pickNearestEdge(
   const bo = bestI * 3;
   const ea = new THREE.Vector3(bp[bo], bp[bo + 1], bp[bo + 2]);
   const eb = new THREE.Vector3(bp[bo + 3], bp[bo + 4], bp[bo + 5]);
-  // Full edge polyline (world) for highlight + stable id + cut.
-  const chain: THREE.Vector3[] = [];
-  for (let i = 0; i < bp.length; i += 3) chain.push(new THREE.Vector3(bp[i], bp[i + 1], bp[i + 2]));
+  // Full edge polyline (world) for highlight + stable id + cut. Cached on the
+  // CachedEdge so continuous-hover pointermove doesn't allocate ~N Vector3
+  // instances per event (N up to ~30 for circle rims). Treated as read-only
+  // by consumers — handleClick clones it before storing in selection state.
+  const chain = getCachedChain(bestEdge);
   const midpoint = new THREE.Vector3().addVectors(ea, eb).multiplyScalar(0.5);
   const direction = new THREE.Vector3().subVectors(eb, ea).normalize();
 

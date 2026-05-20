@@ -25,6 +25,29 @@ export interface CachedEdge {
   pts: Float64Array;
   aabb: Float64Array;
   ref: BodyTopologyLike['edges'][number];
+  /**
+   * World-space chain as Vector3[] — same data as `pts`, but in the shape
+   * pickNearestEdge needs to return as `EdgePickResult.chain`. Built lazily
+   * on first access via `getCachedChain()` and reused forever for the
+   * cached edge's lifetime. Hot pointermove path re-used the result, so
+   * before this cache every continuous hover allocated ~N Vector3
+   * instances per pointermove event (N = polyline length, up to ~30 for
+   * circle rims). Treat the returned array as read-only.
+   */
+  chain?: THREE.Vector3[];
+}
+
+/** Lazily materialise the world-space Vector3 chain for a cached edge. */
+export function getCachedChain(ce: CachedEdge): THREE.Vector3[] {
+  if (ce.chain) return ce.chain;
+  const p = ce.pts;
+  const out: THREE.Vector3[] = new Array((p.length / 3) | 0);
+  for (let i = 0; i < out.length; i++) {
+    const o = i * 3;
+    out[i] = new THREE.Vector3(p[o], p[o + 1], p[o + 2]);
+  }
+  ce.chain = out;
+  return out;
 }
 
 interface TopoCache {

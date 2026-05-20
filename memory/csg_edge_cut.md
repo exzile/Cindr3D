@@ -42,6 +42,11 @@ Note: the geometry-layer edge-dedupe above means even if parse returns duplicate
 - **Feed the boolean a welded INDEXED manifold source** instead of non-indexed soup — does NOT fix the quad-fan (top-front stayed 40) and slightly regressed the multi-edge case. Reverted.
 - Position-welded boundary/non-manifold counts OVER-COUNT on raw three-bvh-csg soup — valid only for RELATIVE comparison; the trustworthy absolute signal is **near-zero-area (degenerate) triangle count**.
 
+## PERF 2026-05-20 (round 7) — cached edge chain in topology cache
+`pickNearestEdge` allocated a fresh `THREE.Vector3[]` for the whole edge polyline every time it returned (continuous hover at 60 Hz, up to ~30 segments per circle-rim edge). Moved the chain materialisation into `topologyCache.getCachedChain(ce)` — lazily built on first access, then reused for the cached edge's lifetime. WeakMap-evicts with the geometry; rebuilds automatically on cache miss (when geom/topo/matrix changes).
+
+Safety contract documented in the type: the returned chain is read-only. Verified existing consumers in `EdgeOpEdgeHighlight.handleClick` (clones via `.map(p => p.clone())`) and `EdgeOpEdgeHighlight.useFrame` (read-only iteration into `buildPolylineGeometry`). `midpoint` and `direction` on the result still depend on the hovered segment so they remain freshly allocated per call.
+
 ## PERF 2026-05-20 (round 6) — topology cache matrix snapshot
 `getCachedEdges` in `src/hooks/edgePicker/topologyCache.ts` is on the pointermove hot path (called from `pickNearestEdge` on every cursor move while an edge picker is active). The cache hit check compared `matrixKey` strings — and BUILT the string `` `${e0},${e1},...` `` on every call. ~100 char concat + ~100 char comparison per move at 60 Hz = ~6 KB/sec of garbage and an O(string-length) `===` check.
 
