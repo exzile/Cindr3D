@@ -43,7 +43,7 @@ const _projB = new THREE.Vector3();
 // geometries cached with an older run are automatically re-extracted.
 // edgeCutCore.ts stamps the same version on topologies it extracts before
 // toCreasedNormals so those are never overridden by the lazy path.
-const LAZY_TOPO_VERSION = 2;
+const LAZY_TOPO_VERSION = 3;
 
 export function pickNearestEdge(
   mesh: THREE.Mesh,
