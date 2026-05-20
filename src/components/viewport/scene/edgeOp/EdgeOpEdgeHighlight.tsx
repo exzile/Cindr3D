@@ -20,10 +20,15 @@
 
 import { useRef, useCallback, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { useFrame, useThree, invalidate as invalidateFrame } from '@react-three/fiber';
 import { useEdgePicker, type EdgePickResult } from '../../../../hooks/useEdgePicker';
+import { extractEdgeTopology } from '../../../../engine/geometryEngine/core/solid/edgeTopology';
 import { buildPolylineGeometry } from '../pickerGeometry';
 import { applyLinePulse } from '../pickPulse';
+
+/** Version tag matching nearestEdge.ts — bump both when lazy-fallback logic changes. */
+const LAZY_TOPO_VERSION = 2;
 
 interface EdgeOpEdgeHighlightProps {
   /** activeDialog matches this tool's dialog. */
@@ -186,8 +191,27 @@ export default function EdgeOpEdgeHighlight({
       if (!m.isMesh || typeof m.userData?.featureId !== 'string') return;
       m.updateWorldMatrix(true, false);
       const mw = m.matrixWorld;
-      const topo = m.geometry.userData.topology as { edges?: Array<{ polyline: THREE.Vector3[] }> } | undefined;
-      const ghost = m.geometry.userData.ghostTopology as { edges?: Array<{ polyline: THREE.Vector3[] }> } | undefined;
+      const geom = m.geometry;
+      // Lazy topology extraction for old committed meshes that pre-date the
+      // pre-toCreasedNormals extraction path (same fallback as nearestEdge.ts).
+      // Without this, the overlay is silent on any fillet/chamfer committed
+      // before topology stamping was added — the user sees no orange lines.
+      const existingTopo = geom.userData.topology as { edges?: unknown[] } | undefined;
+      if (!existingTopo?.edges?.length || geom.userData._topoV !== LAZY_TOPO_VERSION) {
+        try {
+          geom.computeBoundingBox();
+          const bb = geom.boundingBox;
+          const diag = bb ? bb.min.distanceTo(bb.max) : 1;
+          const tol = Math.max(diag * 1e-4, 1e-5);
+          const indexed = mergeVertices(geom, tol);
+          const extracted = extractEdgeTopology(indexed);
+          indexed.dispose();
+          geom.userData.topology = extracted;
+          geom.userData._topoV = LAZY_TOPO_VERSION;
+        } catch { /* leave topology as-is — picker will retry on hover */ }
+      }
+      const topo = geom.userData.topology as { edges?: Array<{ polyline: THREE.Vector3[] }> } | undefined;
+      const ghost = geom.userData.ghostTopology as { edges?: Array<{ polyline: THREE.Vector3[] }> } | undefined;
       const edges = [...(topo?.edges ?? []), ...(ghost?.edges ?? [])];
       for (const e of edges) {
         const pl = e.polyline;

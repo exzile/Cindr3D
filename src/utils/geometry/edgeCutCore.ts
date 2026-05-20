@@ -1045,8 +1045,15 @@ export function computeEdgeCutGeometry(
   // We run on the still-indexed solid here and carry the result through.
   // Gate on !_fast: the preview/worker path doesn't need topology (it's
   // discarded); the commit path (fast=undefined/false) does.
-  let savedTopology: object | undefined = solid.userData.topology as object | undefined;
-  if (!_fast && !savedTopology) {
+  //
+  // IMPORTANT: always re-extract from the CUT RESULT (solid), never reuse
+  // solid.userData.topology. solid is a clone of srcGeo which inherited
+  // srcGeo.userData.topology (the PRE-CUT source topology). Reusing that would
+  // stamp the source's edge set — which may be empty, wrong, or missing the
+  // new fillet/chamfer arcs — on the result. The source topology is captured
+  // above as ghostEdges; the result needs its own fresh extraction.
+  let savedTopology: ReturnType<typeof extractEdgeTopology> | undefined;
+  if (!_fast) {
     try { savedTopology = extractEdgeTopology(solid); }
     catch { savedTopology = { edges: [] }; }
   }
