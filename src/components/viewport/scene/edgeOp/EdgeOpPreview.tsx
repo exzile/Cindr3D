@@ -163,7 +163,9 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
       removePickProxy(scene);
     };
 
-    if (!enabled || debouncedEdgeIds.length === 0 || !(debouncedValue > 0) || !parsedAndClustered) {
+    // parsedAndClustered is null when !enabled, edges empty, or no live mesh —
+    // so we only need the value gate here on top of it.
+    if (!parsedAndClustered || !(debouncedValue > 0)) {
       restoreLiveMesh();
       invalidate();
       return;
@@ -246,7 +248,9 @@ export default function EdgeOpPreview({ enabled, edgeIds, liveValue, compute }: 
     previewMeshRef.current = previewMesh;
 
     invalidate();
-  }, [enabled, debouncedEdgeIds, debouncedValue, compute, scene, invalidate, parsedAndClustered]);
+    // parsedAndClustered carries enabled+debouncedEdgeIds as its own deps; the
+    // effect only needs the value gate plus the compute fn / scene refs.
+  }, [debouncedValue, compute, scene, invalidate, parsedAndClustered]);
 
   return null;
 }

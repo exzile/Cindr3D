@@ -124,12 +124,19 @@ export default function EdgeOpGizmo({
   }, [lineObj]);
 
   const tipScratch = useRef(new THREE.Vector3());
+  // Last applied value — used to skip the no-op invalidate+upload when the
+  // store value (or drag offset) hasn't moved since the previous frame.
+  // R3F's frameloop="demand" means an unconditional invalidate() keeps the
+  // render loop spinning even when the gizmo is idle; guarding here lets the
+  // canvas actually settle.
+  const lastAppliedValueRef = useRef<number | null>(null);
   useFrame(({ invalidate }) => {
     if (!active) return;
-    invalidate();
     const value = draggingRef.current && liveValueRef.current !== null
       ? liveValueRef.current
       : getLiveValue();
+    if (value === lastAppliedValueRef.current) return; // idle frame; nothing changed
+    lastAppliedValueRef.current = value;
 
     const pos = lineObj.geometry.getAttribute('position') as THREE.BufferAttribute;
     const tip = tipScratch.current
@@ -145,7 +152,13 @@ export default function EdgeOpGizmo({
       coneRef.current.quaternion.setFromUnitVectors(_coneLocalUp, gizmoDir);
       /* eslint-enable react-hooks/immutability */
     }
+    invalidate();
   });
+
+  // When the gizmo direction or centroid changes (different edges picked), the
+  // cached "last value" is stale relative to the new orientation — force a
+  // recompute next frame by clearing the guard.
+  useEffect(() => { lastAppliedValueRef.current = null; }, [gizmoDir, edgeCentroid]);
 
   const rayToAxis = useCallback((ndc: THREE.Vector2): number | null => {
     _scratchRay.origin.setFromMatrixPosition(camera.matrixWorld);

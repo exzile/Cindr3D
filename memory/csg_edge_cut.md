@@ -42,6 +42,17 @@ Note: the geometry-layer edge-dedupe above means even if parse returns duplicate
 - **Feed the boolean a welded INDEXED manifold source** instead of non-indexed soup — does NOT fix the quad-fan (top-front stayed 40) and slightly regressed the multi-edge case. Reverted.
 - Position-welded boundary/non-manifold counts OVER-COUNT on raw three-bvh-csg soup — valid only for RELATIVE comparison; the trustworthy absolute signal is **near-zero-area (degenerate) triangle count**.
 
+## PERF 2026-05-20 (round 2) — per-srcGeo WeakMap cache + idle-gizmo invalidate guard + Set-based per-frame ID lookup
+Followup pass building on round 1:
+
+- **`edgeCutCore.ts` — WeakMap-cached `getOrBuildSrcCache(srcGeo)`** memoises `{tris, triIdx, eps}` per source-geometry reference. Both `computeEdgeCutGeometry` and `computeEdgeGizmoDir` use it. The previous code rebuilt the triangle list (3·N `THREE.Vector3` allocations) and the spatial index on every preview tick even though `EdgeOpPreview`'s `srcGeoCacheRef` already pinned the same non-indexed source geometry across all ticks of one drag. With this cache the second-and-later ticks hit the cache and do zero allocation for tris/index. WeakMap evicts automatically when the source geometry is GC'd (which happens promptly when `EdgeOpPreview` cleans up on dialog close), so no manual eviction is needed. The driver never mutates `srcGeo` — `solid` is a separate clone — so the cache stays valid for the geometry's lifetime.
+
+- **`EdgeOpGizmo.tsx` — `lastAppliedValueRef` skip-when-unchanged guard.** The `useFrame` callback unconditionally called `invalidate()` whenever the gizmo was active, which kept R3F's `frameloop="demand"` spinning at 60 Hz even when neither the live value nor the drag offset had changed. Now the frame work and `invalidate()` only fire when the value differs from the previously applied one; `useEffect([gizmoDir, edgeCentroid])` clears the guard so a different selection re-renders next frame. Idle gizmo = idle canvas.
+
+- **`EdgeOpEdgeHighlight.tsx` — per-frame `Set`-based membership check.** The selected-line sync built one `Set` from `edgeIds` once per frame and reused it for the cleanup pass, replacing `edgeIds.includes(id)` inside the `forEach`. Trivial on box selections (≤12) but matters on full-rim selections (~100 ids × ~100 lines × 60 fps).
+
+- **`EdgeOpPreview.tsx` — condition + deps cleanup.** Effect gate simplified to `!parsedAndClustered || !(debouncedValue > 0)` (the memo already encodes `enabled` and `debouncedEdgeIds.length === 0` as null); effect deps reduced to `[debouncedValue, compute, scene, invalidate, parsedAndClustered]` since the omitted ones flow through the memo identity.
+
 ## PERF 2026-05-20 — O(N²) → O(N) on dedupe + clustering + numeric spatial-hash
 Live-preview latency on circle-rim selections (30-100+ chord segments, sometimes doubled by tangent-edge propagation / preview re-registration) was dominated by three O(N²) hot spots that all live in `edgeCutCore.ts`:
 

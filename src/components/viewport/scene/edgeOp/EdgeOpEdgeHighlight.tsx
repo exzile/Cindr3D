@@ -213,9 +213,12 @@ export default function EdgeOpEdgeHighlight({
       renderedHoverIdRef.current = null;
     }
 
-    // Sync selected lines with edgeIds
+    // Sync selected lines with edgeIds. Per-frame loop, so the membership
+    // test goes through a Set instead of an `Array.includes` scan — N×M ->
+    // N+M on selections with many rim segments.
+    const edgeIdSet = new Set(edgeIds);
     selectedLinesRef.current.forEach((line, id) => {
-      if (!edgeIds.includes(id)) {
+      if (!edgeIdSet.has(id)) {
         scene.remove(line);
         line.geometry.dispose();
         selectedLinesRef.current.delete(id);

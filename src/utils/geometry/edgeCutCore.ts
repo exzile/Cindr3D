@@ -205,6 +205,36 @@ const CELL_BITS = 21;
 const CELL_MASK = (1 << CELL_BITS) - 1;
 const CELL_BIAS = 1 << (CELL_BITS - 1); // bias to make negatives non-negative
 
+// ---------------------------------------------------------------------------
+// Per-srcGeo cache (tris + spatial index + eps)
+//
+// buildTriangleList + buildTriangleIndex + computePositionEps depend only on
+// srcGeo's position attribute, which never changes for the lifetime of the
+// non-indexed clone EdgeOpPreview caches. Without this WeakMap, every
+// debounced preview tick (and every commit's gizmo + commit call chain)
+// re-allocated ~3·tris Vector3 instances and ~3·tris Map entries from scratch.
+// WeakMap auto-evicts when the source geometry is GC'd; no manual eviction
+// required. The driver never mutates srcGeo (it clones for the cut solid),
+// so the cache stays valid across calls.
+// ---------------------------------------------------------------------------
+interface SrcGeoCache {
+  tris: THREE.Vector3[][];
+  triIdx: Map<number, number[]>;
+  eps: number;
+}
+const _srcGeoCache = new WeakMap<THREE.BufferGeometry, SrcGeoCache>();
+
+function getOrBuildSrcCache(srcGeo: THREE.BufferGeometry): SrcGeoCache {
+  let entry = _srcGeoCache.get(srcGeo);
+  if (entry) return entry;
+  const tris = buildTriangleList(srcGeo);
+  const eps = computePositionEps(srcGeo);
+  const triIdx = buildTriangleIndex(tris, eps);
+  entry = { tris, triIdx, eps };
+  _srcGeoCache.set(srcGeo, entry);
+  return entry;
+}
+
 /** Pack quantized (cx,cy,cz) into a single 53-bit-safe number key. */
 function packCell(cx: number, cy: number, cz: number): number {
   // Bias each coord into [0, 2^21) then pack: (cx) | (cy<<21) | (cz<<42).
@@ -605,11 +635,9 @@ export function computeEdgeGizmoDir(
   srcGeo: THREE.BufferGeometry,
   edges: PickedEdge[],
 ): THREE.Vector3 | null {
-  const tris = buildTriangleList(srcGeo);
-  const eps = computePositionEps(srcGeo);
+  const { tris, triIdx, eps } = getOrBuildSrcCache(srcGeo);
   const epsSq = eps * eps;
   const near = (p: THREE.Vector3, q: THREE.Vector3) => p.distanceToSquared(q) <= epsSq;
-  const triIdx = buildTriangleIndex(tris, eps);
 
   const acc = new THREE.Vector3();
   let n = 0;
@@ -777,11 +805,9 @@ export function computeEdgeCutGeometry(
   fast?: boolean,
   makeLoopCutter?: LoopCutterFn,
 ): THREE.BufferGeometry | null {
-  const tris = buildTriangleList(srcGeo);
-  const eps = computePositionEps(srcGeo);
+  const { tris, triIdx, eps } = getOrBuildSrcCache(srcGeo);
   const epsSq = eps * eps;
   const near = (p: THREE.Vector3, q: THREE.Vector3) => p.distanceToSquared(q) <= epsSq;
-  const triIdx = buildTriangleIndex(tris, eps);
 
   // Dedupe edges by GEOMETRY (endpoint pair, either direction, within the
   // edge-match tolerance). Tangent-edge propagation and live-preview
