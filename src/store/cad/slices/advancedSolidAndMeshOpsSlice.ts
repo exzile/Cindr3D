@@ -390,6 +390,111 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     get().setStatusMessage(`Pipe updated: ⌀${outerDiameter}mm${hollow ? `, ${wallThickness}mm wall` : ''}`);
   },
 
+  updateRibGeometry: (featureId, sketchId, thickness, height, extras) => {
+    const { features, sketches } = get();
+    const existing = features.find((f) => f.id === featureId);
+    if (!existing) { get().setStatusMessage('Rib: feature not found'); return; }
+    const sketch = sketches.find((s) => s.id === sketchId);
+    if (!sketch) { get().setStatusMessage('Rib: sketch not found'); return; }
+    get().pushUndo();
+    const pts: THREE.Vector3[] = [];
+    for (const e of sketch.entities) {
+      if (e.type === 'line' && e.points.length >= 2) {
+        const p0 = e.points[0];
+        const p1 = e.points[e.points.length - 1];
+        pts.push(new THREE.Vector3(p0.x, p0.y, p0.z));
+        pts.push(new THREE.Vector3(p1.x, p1.y, p1.z));
+      }
+    }
+    const normal = sketch.planeNormal?.clone() ?? new THREE.Vector3(0, 1, 0);
+    const ribMesh = pts.length >= 2 ? GeometryEngine.createRib(pts, thickness, height, normal) : undefined;
+    if (!ribMesh) { get().setStatusMessage('Rib: profile sketch has no line entities'); return; }
+    ribMesh.castShadow = true;
+    ribMesh.receiveShadow = true;
+    (existing.mesh as THREE.Mesh | undefined)?.geometry?.dispose();
+    set({
+      features: features.map((f) =>
+        f.id === featureId
+          ? { ...f, sketchId, mesh: ribMesh, params: { ...f.params, thickness, height, ...(extras ?? {}) } }
+          : f,
+      ),
+    });
+    get().setStatusMessage(`Rib updated: ${thickness}mm thick`);
+  },
+
+  updateWebGeometry: (featureId, sketchId, thickness, height, extras) => {
+    const { features, sketches } = get();
+    const existing = features.find((f) => f.id === featureId);
+    if (!existing) { get().setStatusMessage('Web: feature not found'); return; }
+    const sketch = sketches.find((s) => s.id === sketchId);
+    if (!sketch) { get().setStatusMessage('Web: sketch not found'); return; }
+    get().pushUndo();
+    const entityPoints: THREE.Vector3[][] = [];
+    for (const e of sketch.entities) {
+      if (e.type === 'line' && e.points.length >= 2) {
+        const p0 = e.points[0];
+        const p1 = e.points[e.points.length - 1];
+        entityPoints.push([
+          new THREE.Vector3(p0.x, p0.y, p0.z),
+          new THREE.Vector3(p1.x, p1.y, p1.z),
+        ]);
+      }
+    }
+    const normal = sketch.planeNormal?.clone() ?? new THREE.Vector3(0, 1, 0);
+    const webMesh = entityPoints.length > 0 ? GeometryEngine.createWeb(entityPoints, thickness, height, normal) : undefined;
+    if (!webMesh) { get().setStatusMessage('Web: profile sketch has no line entities'); return; }
+    webMesh.castShadow = true;
+    webMesh.receiveShadow = true;
+    (existing.mesh as THREE.Mesh | undefined)?.geometry?.dispose();
+    set({
+      features: features.map((f) =>
+        f.id === featureId
+          ? { ...f, sketchId, mesh: webMesh, params: { ...f.params, thickness, height, webStyle: 'perpendicular', ...(extras ?? {}) } }
+          : f,
+      ),
+    });
+    get().setStatusMessage(`Web updated: ${thickness}mm thick`);
+  },
+
+  updateRestGeometry: (featureId, params) => {
+    const { features } = get();
+    const existing = features.find((f) => f.id === featureId);
+    if (!existing) { get().setStatusMessage('Rest: feature not found'); return; }
+    get().pushUndo();
+    const restMesh = GeometryEngine.createRest(
+      params.centerX, params.centerY, params.centerZ,
+      params.normalX, params.normalY, params.normalZ,
+      params.width, params.depth, params.thickness,
+    );
+    restMesh.castShadow = true;
+    restMesh.receiveShadow = true;
+    (existing.mesh as THREE.Mesh | undefined)?.geometry?.dispose();
+    set({
+      features: features.map((f) =>
+        f.id === featureId
+          ? { ...f, mesh: restMesh, params: { ...f.params, ...params, ...(params.extras ?? {}), restStyle: 'rest' } }
+          : f,
+      ),
+    });
+    get().setStatusMessage(`Rest updated: ${params.width}×${params.depth}×${params.thickness}mm`);
+  },
+
+  updateCoilFeatureMesh: (featureId, mesh, params) => {
+    const { features } = get();
+    const existing = features.find((f) => f.id === featureId);
+    if (!existing) { get().setStatusMessage('Coil: feature not found'); return; }
+    get().pushUndo();
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    (existing.mesh as THREE.Mesh | undefined)?.geometry?.dispose();
+    set({
+      features: features.map((f) =>
+        f.id === featureId ? { ...f, mesh, params: { ...f.params, ...params } } : f,
+      ),
+    });
+    get().setStatusMessage(`Coil updated`);
+  },
+
   // ── SLD4 — Rest ──────────────────────────────────────────────────────────
   commitRest: (params) => {
     const { features } = get();
