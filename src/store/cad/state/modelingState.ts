@@ -229,12 +229,17 @@ export interface CADModelingState {
   // SLD13 — Scale (commit)
   commitScale: (featureId: string, sx: number, sy: number, sz: number) => void;
 
-  // 3D edge fillet (commit) — rounds edges in filletEdgeIds on the target body
-  commitFillet: (radius: number, segments: number) => void;
+  // 3D edge fillet (commit) — rounds edges in filletEdgeIds on the target body.
+  // featureId: non-destructive path — store result on the fillet feature node.
+  // filletParams: extended params (mode, chordLength, startRadius, endRadius, propagate).
+  commitFillet: (radius: number, segments: number, featureId?: string, filletParams?: Record<string, unknown>) => void;
 
   // 3D edge chamfer (commit) — bevels edges in chamferEdgeIds. distance is the
   // face-1 / live setback; distance2 (optional) is the face-2 setback.
-  commitChamfer: (distance: number, distance2?: number) => void;
+  commitChamfer: (distance: number, distance2?: number, featureId?: string, chamferParams?: Record<string, unknown>) => void;
+
+  // Replay (re-run CSG) an existing fillet/chamfer feature — used on edit.
+  replayEdgeCutFeature: (featureId: string) => void;
 
   // Align tool — geometry-pair picking + transform commit
   alignPickStage: 'idle' | 'source' | 'target';

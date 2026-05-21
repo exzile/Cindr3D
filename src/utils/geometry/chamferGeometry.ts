@@ -21,6 +21,60 @@ import {
 // The chamfer module's public API names (commit + preview import these).
 export const parseChamferEdgeIds = parseEdgeIds;
 
+/** Mirrors Fusion 360's chamfer modes. */
+export type ChamferMode = 'equal-dist' | 'two-dist' | 'dist-angle' | 'three-face';
+
+/**
+ * Corner type for multi-edge chamfer junctions.
+ * - 'patch' (default): fill the corner gap with a small polygon patch.
+ * - 'miter': extend adjacent chamfer faces until they meet at a sharp line.
+ * Mirrors Fusion SDK ChamferCornerTypes.
+ */
+export type ChamferCornerType = 'patch' | 'miter';
+
+export interface ChamferParams {
+  mode: ChamferMode;
+  distance: number;
+  distance2?: number;
+  angle?: number;
+  edgeIds: string[];
+  propagate: boolean;
+  /** Flip face-1/face-2 assignment for two-dist and dist-angle modes. */
+  isFlipped?: boolean;
+  /** Corner type at multi-edge junctions (default: 'patch'). */
+  cornerType?: ChamferCornerType;
+}
+
+/**
+ * Resolve the face-2 setback from the dialog mode (mirrors Fusion):
+ *  - equal-dist / three-face → equal to face-1 distance
+ *  - two-dist                → explicit second distance
+ *  - dist-angle              → distance · tan(angle from face 1)
+ *
+ * When `isFlipped` is true, d1 and d2 are swapped before returning
+ * (mirrors Fusion's TwoDistancesChamferEdgeSet.isFlipped /
+ * DistanceAndAngleChamferEdgeSet.isFlipped).
+ */
+const clampDeg = (a: number) => Math.max(1, Math.min(89, a));
+export function resolveChamferDistance2(p: Pick<ChamferParams, 'mode' | 'distance' | 'distance2' | 'angle' | 'isFlipped'>): number {
+  if (p.mode === 'two-dist') return p.distance2 ?? p.distance;
+  if (p.mode === 'dist-angle') {
+    const a = clampDeg(p.angle ?? 45);
+    return Math.max(0.01, p.distance * Math.tan((a * Math.PI) / 180));
+  }
+  return p.distance;
+}
+
+/**
+ * Return the resolved [d1, d2] pair, applying `isFlipped` if set.
+ * Used by commitChamfer and replayEdgeCutFeature.
+ */
+export function resolveChamferDistances(p: Pick<ChamferParams, 'mode' | 'distance' | 'distance2' | 'angle' | 'isFlipped'>): [number, number] {
+  const d1 = p.distance;
+  const d2 = resolveChamferDistance2(p);
+  return p.isFlipped ? [d2, d1] : [d1, d2];
+}
+
 // ---------------------------------------------------------------------------
 // Chamfer-specific triangular-wedge cutting tool
 // ---------------------------------------------------------------------------
@@ -123,6 +177,7 @@ export function computeChamferGeometry(
   distance: number,
   distance2?: number,
   fast?: boolean,
+  params?: Record<string, unknown>,
 ): THREE.BufferGeometry | null {
   if (!(distance > 0)) return null;
   const d1 = distance;
@@ -133,5 +188,7 @@ export function computeChamferGeometry(
     (re, eps) => buildChamferCutter(re, d1, d2, eps),
     'chamfer',
     fast,
+    undefined,
+    { propagate: params?.propagate as boolean | undefined },
   );
 }

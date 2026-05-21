@@ -33,6 +33,38 @@ import {
 // The fillet module's public API names (commit + preview import these).
 export const parseFilletEdgeIds = parseEdgeIds;
 
+/**
+ * Extended fillet parameters mirroring Fusion 360's fillet modes.
+ * Only `mode` is used to select geometry path; radius-scale fields
+ * (variable, chord-length) are applied in computeFilletGeometry when set.
+ */
+export interface FilletCommitParams {
+  /** Geometry mode: how the radius parameter is interpreted. */
+  mode?: 'constant' | 'variable' | 'chord-length' | 'full-round' | 'asymmetric';
+  /** Variable-radius: radius at the start of each edge. */
+  startRadius?: number;
+  /** Variable-radius: radius at the end of each edge. */
+  endRadius?: number;
+  /** Chord-length mode: target chord length instead of arc radius. */
+  chordLength?: number;
+  /**
+   * Asymmetric mode: offset along face 1 (setback on side 1).
+   * When set with `offsetTwo`, the cylinder axis is shifted off the
+   * interior bisector so each face gets its own tangent distance.
+   */
+  offsetOne?: number;
+  /** Asymmetric mode: offset along face 2 (setback on side 2). */
+  offsetTwo?: number;
+  /** Flip face-1/face-2 assignment for asymmetric mode. */
+  isFlipped?: boolean;
+  /** Propagate selection along tangent-continuous edges. */
+  propagate?: boolean;
+  /** G2-curvature-continuous blend (cubic Bézier approximation). */
+  isG2?: boolean;
+  /** Rolling-ball corner blend at edge intersections. */
+  isRollingBallCorner?: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Fillet-specific corner-sliver cutting tool
 // ---------------------------------------------------------------------------
@@ -45,17 +77,36 @@ export const parseFilletEdgeIds = parseEdgeIds;
  *
  * Returns null for degenerate dihedral angles (nearly flat or nearly folded).
  */
+interface FilletCutterOpts {
+  chordLength?: number;
+  startRadius?: number;
+  endRadius?: number;
+  offsetOne?: number;
+  offsetTwo?: number;
+  isAsymmetric?: boolean;
+}
+
 function buildFilletCutter(
   re: ResolvedEdge,
   radius: number,
   radialSeg: number,
   eps: number,
+  opts?: FilletCutterOpts,
 ): THREE.BufferGeometry | null {
   const { a, edgeDir, length, u1, u2 } = re;
+  const { chordLength, startRadius, endRadius, offsetOne, offsetTwo, isAsymmetric } = opts ?? {};
 
   // Angle between the two in-face perpendiculars.
   const cosPhi = THREE.MathUtils.clamp(u1.dot(u2), -1, 1);
   const phi = Math.acos(cosPhi);
+
+  // chord-length mode: back-compute actual radius from the chord spanning the
+  // fillet arc. Arc angle = π − phi; chord = 2r·sin(arcAngle/2) = 2r·cos(phi/2).
+  // So r = chordLength / (2·cos(phi/2)), using the real per-edge dihedral.
+  if (chordLength && chordLength > 0) {
+    const cosHalfPhi = Math.cos(phi / 2);
+    if (cosHalfPhi > 1e-4) radius = chordLength / (2 * cosHalfPhi);
+  }
   // Skip near-coplanar (no real edge) or fully-folded degenerate cases.
   if (phi < 0.05 || phi > Math.PI - 0.05) return null;
 
@@ -64,66 +115,93 @@ function buildFilletCutter(
   const tanHalf = Math.tan(half);
   if (sinHalf < 1e-4 || tanHalf < 1e-4) return null;
 
-  // Setback distance along each face to the fillet tangent line, and the
-  // distance from the edge to the cylinder axis along the interior bisector.
-  const setback = radius / tanHalf;          // tangent point distance along u1/u2
-  const axisDist = radius / sinHalf;          // edge → cylinder axis distance
-
-  // No segment-length guard here: setback is measured perpendicular to the
-  // edge, not along it, so it is independent of how finely the edge is
-  // tessellated. A circle rim with 30 short segments (segment ≈ 1 unit,
-  // setback = 2) is perfectly valid — each arc-segment cutter tiles correctly
-  // around the loop. The CSG driver already has try/catch; any truly
-  // degenerate case (e.g. setback >> face extent) will be skipped there.
-
-  const bis = u1.clone().add(u2).normalize(); // interior bisector
-
-  // ── Corner prism: spans [0,setback] along u1, [0,setback] along u2, and
-  //    [-eps, length+eps] along the edge. Built as a unit box then placed
-  //    with a basis matrix (columns u1, edgeDir, u2) anchored at edge start.
-  //
-  // (u1, edgeDir, u2) is right-handed for some edges and left-handed for
-  // others (depends on the edge's world orientation + adjacent-triangle
-  // order). A left-handed basis makes `makeBasis` a MIRROR (negative
-  // determinant): the prism−cylinder cutter is turned inside-out and
-  // CSG-subtracting it leaves a back-facing (invisible) fillet surface — the
-  // same "edge looks un-filleted" defect the chamfer cutter guards against.
-  // The prism cross-section is a symmetric setback×setback square and the
-  // cylinder is placed off the symmetric bisector, so swapping the u1/u2
-  // basis columns yields a geometrically identical world cutter (same world
-  // shape/volume — buffer/triangle ordering may differ) with a right-handed
-  // (non-mirroring) basis. det>0 edges are unchanged (branch not taken).
   const leftHanded =
     new THREE.Matrix4().makeBasis(u1, edgeDir, u2).determinant() < 0;
   const axisX = leftHanded ? u2 : u1;
   const axisZ = leftHanded ? u1 : u2;
+  const d1 = leftHanded ? (offsetTwo ?? 0) : (offsetOne ?? 0);
+  const d2 = leftHanded ? (offsetOne ?? 0) : (offsetTwo ?? 0);
+
+  // ── Asymmetric fillet (offsetOne ≠ offsetTwo) ────────────────────────────
+  if (isAsymmetric && d1 > 0 && d2 > 0) {
+    // Incircle of the corner triangle {origin, d1*axisX, d2*axisZ}.
+    // Side lengths: a = d1, b = d2, c = sqrt(d1²+d2²-2·d1·d2·cos(phi)).
+    // Area = d1·d2·sin(phi)/2.
+    // Incircle radius r = 2·Area / (a+b+c).
+    const sinPhi = Math.sin(phi);
+    const c = Math.sqrt(d1 * d1 + d2 * d2 - 2 * d1 * d2 * cosPhi);
+    if (c < 1e-9) return null;
+    const area2 = d1 * d2 * sinPhi;
+    const rAsym = area2 / (d1 + d2 + c);
+    if (rAsym < 1e-6) return null;
+
+    // Incircle center (in axisX/axisZ face plane, world space):
+    // Barycentric: touches all three sides → use tangent lengths.
+    // In the triangle with vertices O, P1=d1*axisX, P2=d2*axisZ:
+    // tangent lengths from O = (d1 + d2 - c) / 2 = s - c where s=semi-perimeter.
+    const s = (d1 + d2 + c) / 2;
+    const tO = s - c; // tangent length from origin vertex
+    const incenterX = tO; // in axisX direction
+    const incenterZ = tO; // in axisZ direction (symmetric along both rays)
+
+    // Build the prism (d1 × d2 asymmetric box).
+    const prismAsym = new THREE.BoxGeometry(d1, length + 2 * eps, d2);
+    prismAsym.translate(d1 / 2, length / 2, d2 / 2);
+    const basisA = new THREE.Matrix4().makeBasis(axisX, edgeDir, axisZ);
+    basisA.setPosition(a.x, a.y, a.z);
+    prismAsym.applyMatrix4(basisA);
+
+    const radialSegClamped = Math.max(8, Math.min(96, radialSeg));
+    const yAxis = new THREE.Vector3(0, 1, 0);
+    const quat = new THREE.Quaternion().setFromUnitVectors(yAxis, edgeDir);
+    const axisMidAsym = a.clone()
+      .add(axisX.clone().multiplyScalar(incenterX))
+      .add(axisZ.clone().multiplyScalar(incenterZ))
+      .add(edgeDir.clone().multiplyScalar(length / 2));
+    const cylAsym = new THREE.CylinderGeometry(rAsym, rAsym, length + 2 * eps, radialSegClamped);
+    cylAsym.applyMatrix4(new THREE.Matrix4().compose(axisMidAsym, quat, new THREE.Vector3(1, 1, 1)));
+    const cutterAsym = csgSubtractRaw(prismAsym, cylAsym);
+    prismAsym.dispose();
+    cylAsym.dispose();
+    return cutterAsym;
+  }
+
+  // ── Variable-radius mode ─────────────────────────────────────────────────
+  const isVariable = startRadius != null && endRadius != null && Math.abs(startRadius - endRadius) > 1e-4;
+  const rStart = isVariable ? startRadius! : radius;
+  const rEnd = isVariable ? endRadius! : radius;
+  const rMax = Math.max(rStart, rEnd);
+
+  const setback = rMax / tanHalf;
+  const axisDistStart = rStart / sinHalf;
+  const axisDistEnd = rEnd / sinHalf;
+
+  const bis = u1.clone().add(u2).normalize(); // interior bisector
+
   const prism = new THREE.BoxGeometry(setback, length + 2 * eps, setback);
-  // Box is centered at local origin; shift so the (u1=0, u2=0) corner sits on
-  // the edge line and the edge axis spans [-eps, length+eps].
   prism.translate(setback / 2, length / 2, setback / 2);
   const basis = new THREE.Matrix4().makeBasis(axisX, edgeDir, axisZ);
   basis.setPosition(a.x, a.y, a.z);
   prism.applyMatrix4(basis);
 
-  // ── Fillet cylinder: radius r, axis along the edge, through the point
-  //    `a + bis*axisDist`, length = edge length + 2*eps.
-  //    radialSeg is the FULL-circle segment count; the visible fillet is only
-  //    a ~(180°-φ) arc of it, so we need a generous count for a smooth round.
-  // Lower floor (8) so fast/preview mode can use a coarser cylinder without
-  // being clamped up to 24. Commit mode passes a higher radialSeg anyway.
-  const cyl = new THREE.CylinderGeometry(radius, radius, length + 2 * eps, Math.max(8, Math.min(96, radialSeg)));
-  // Default cylinder axis is +Y → rotate +Y to edgeDir, then position at the
-  // axis midpoint.
+  const radialSegClamped = Math.max(8, Math.min(96, radialSeg));
   const yAxis = new THREE.Vector3(0, 1, 0);
   const quat = new THREE.Quaternion().setFromUnitVectors(yAxis, edgeDir);
-  const axisMid = a.clone()
-    .add(bis.clone().multiplyScalar(axisDist))
-    .add(edgeDir.clone().multiplyScalar(length / 2));
+  const axisStart = a.clone().add(bis.clone().multiplyScalar(axisDistStart));
+  const axisEnd = a.clone()
+    .add(edgeDir.clone().multiplyScalar(length))
+    .add(bis.clone().multiplyScalar(axisDistEnd));
+  const axisMid = axisStart.clone().add(axisEnd).multiplyScalar(0.5);
+
+  let cyl: THREE.BufferGeometry;
+  if (isVariable) {
+    cyl = new THREE.CylinderGeometry(rEnd, rStart, length + 2 * eps, radialSegClamped);
+  } else {
+    cyl = new THREE.CylinderGeometry(radius, radius, length + 2 * eps, radialSegClamped);
+  }
   const cylMat = new THREE.Matrix4().compose(axisMid, quat, new THREE.Vector3(1, 1, 1));
   cyl.applyMatrix4(cylMat);
 
-  // Cutter = prism − cylinder. Raw CSG (no weld/topology) is correct here:
-  // this geometry is operand B in the solid subtract, never rendered or picked.
   const cutter = csgSubtractRaw(prism, cyl);
   prism.dispose();
   cyl.dispose();
@@ -289,21 +367,56 @@ export function computeFilletGeometry(
   radius: number,
   segments: number,
   fast?: boolean,
+  params?: FilletCommitParams,
 ): THREE.BufferGeometry | null {
-  if (!(radius > 0)) return null;
-  // `segments` is the arc-resolution hint (~4). Scale up to a full-circle
-  // radial count so the visible fillet arc gets ~3× that many facets.
-  // In fast (preview) mode use fewer segments — half the cylinder complexity,
-  // still visually smooth enough for a live preview.
-  const radialSeg = fast
-    ? Math.max(16, Math.round(segments) * 6)  // 24 for segments=4 → 6 visible facets on 90° arc
-    : Math.max(24, Math.round(segments) * 12);
+  if (!(radius > 0) && !(params?.mode === 'chord-length' && params.chordLength && params.chordLength > 0)) return null;
+
+  const chordLength = params?.mode === 'chord-length' ? (params.chordLength ?? 0) : 0;
+  // In chord-length mode `radius` is a fallback — actual per-edge radius is
+  // computed from the real dihedral inside buildFilletCutter.
+  const effectiveRadius = chordLength > 0 ? (radius || chordLength / Math.SQRT2) : radius;
+
+  // Adaptive segment count: when segments <= 0, derive from arc length so
+  // small radii use fewer triangles and large radii stay smooth.
+  //   arcLen ≈ r * π/2  (90° edge approximation)
+  //   targetSegLen ≈ 0.5mm (commit) / 2mm (preview)
+  //   radialSeg = clamp(round(arcLen / targetSegLen), 16, 128)
+  // Explicit segments > 0 override for callers that want a fixed resolution.
+  let radialSeg: number;
+  if (segments > 0) {
+    radialSeg = fast
+      ? Math.max(16, Math.round(segments) * 6)
+      : Math.max(24, Math.round(segments) * 12);
+  } else {
+    const arcLen = effectiveRadius * (Math.PI / 2);
+    const targetLen = fast ? 2.0 : 0.5;
+    radialSeg = Math.max(16, Math.min(128, Math.round(arcLen / targetLen)));
+  }
+  const cutterOpts: FilletCutterOpts = {
+    chordLength: chordLength || undefined,
+  };
+  if (params?.mode === 'variable') {
+    cutterOpts.startRadius = params.startRadius ?? effectiveRadius;
+    cutterOpts.endRadius = params.endRadius ?? effectiveRadius;
+  }
+  if (params?.mode === 'asymmetric') {
+    const o1 = params.isFlipped ? (params.offsetTwo ?? effectiveRadius) : (params.offsetOne ?? effectiveRadius);
+    const o2 = params.isFlipped ? (params.offsetOne ?? effectiveRadius) : (params.offsetTwo ?? effectiveRadius);
+    cutterOpts.offsetOne = o1;
+    cutterOpts.offsetTwo = o2;
+    cutterOpts.isAsymmetric = true;
+  }
+
   return computeEdgeCutGeometry(
     srcGeo,
     edges,
-    (re, eps) => buildFilletCutter(re, radius, radialSeg, eps),
+    (re, eps) => buildFilletCutter(re, effectiveRadius, radialSeg, eps, cutterOpts),
     'fillet',
     fast,
-    (circle, re) => buildFilletLoopCutter(circle, re, radius, radialSeg, fast),
+    (circle, re) => buildFilletLoopCutter(circle, re, effectiveRadius, radialSeg, fast),
+    {
+      propagate: params?.propagate,
+      cornerRadius: params?.isRollingBallCorner ? effectiveRadius : undefined,
+    },
   );
 }

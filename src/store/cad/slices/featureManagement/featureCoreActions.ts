@@ -306,14 +306,61 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
       statusMessage: 'Feature parameters updated',
     }));
   },
-  // D189 reorder feature
+  // D189 reorder feature — with dependency validation (Task 16)
   reorderFeature: (id, newIndex) => set((state) => {
     const idx = state.features.findIndex((f) => f.id === id);
     if (idx === -1) return {};
+    const moved = state.features[idx];
+
+    // Dependency check: fillet/chamfer nodes must come AFTER their parent.
+    // If the feature being moved is a parent of a fillet/chamfer, it can't
+    // move past that downstream feature. If the feature IS a fillet/chamfer,
+    // it can't move before its parent.
+    const clamped = Math.max(0, Math.min(newIndex, state.features.length - 1));
+
+    // Build dependency sets: features that must come BEFORE `moved`.
+    const mustBeBefore = new Set<string>(); // ids that must appear before moved
+    const mustBeAfter = new Set<string>();  // ids that must appear after moved
+
+    for (const f of state.features) {
+      // If f is a downstream edge-cut of `moved`, f must be after moved.
+      const parentId = f.parentFeatureId ?? (f.params.parentFeatureId as string | undefined);
+      if ((f.type === 'fillet' || f.type === 'chamfer') && parentId === moved.id) {
+        mustBeAfter.add(f.id);
+      }
+      // If `moved` is a downstream edge-cut of f, f must be before moved.
+      const movedParentId = moved.parentFeatureId ?? (moved.params.parentFeatureId as string | undefined);
+      if ((moved.type === 'fillet' || moved.type === 'chamfer') && f.id === movedParentId) {
+        mustBeBefore.add(f.id);
+      }
+      // Boolean dependencies: combine/target/tool order
+      if (moved.type === 'combine') {
+        const targetId = moved.params.targetId as string | undefined;
+        const toolId = moved.params.toolId as string | undefined;
+        if (targetId && f.id === targetId) mustBeBefore.add(f.id);
+        if (toolId && f.id === toolId) mustBeBefore.add(f.id);
+      }
+    }
+
+    // Compute the earliest valid index (all mustBeBefore must be at < this index).
+    let earliest = 0;
+    for (let i = 0; i < state.features.length; i++) {
+      if (mustBeBefore.has(state.features[i].id)) earliest = i + 1;
+    }
+    // Compute the latest valid index (all mustBeAfter must be at > this index).
+    let latest = state.features.length - 1;
+    for (let i = state.features.length - 1; i >= 0; i--) {
+      if (mustBeAfter.has(state.features[i].id)) latest = i - 1;
+    }
+
+    if (earliest > latest) {
+      return { statusMessage: `Cannot move ${moved.name}: dependency conflict` };
+    }
+    const validIndex = Math.max(earliest, Math.min(latest, clamped));
+
     const next = [...state.features];
-    const [moved] = next.splice(idx, 1);
-    const clamped = Math.max(0, Math.min(newIndex, next.length));
-    next.splice(clamped, 0, moved);
+    next.splice(idx, 1);
+    next.splice(validIndex > idx ? validIndex - 1 : validIndex, 0, moved);
     return { features: next, statusMessage: `Moved ${moved.name}` };
   }),
   // D190 rollback bar

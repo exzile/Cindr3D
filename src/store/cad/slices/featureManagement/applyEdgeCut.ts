@@ -1,13 +1,13 @@
 /**
  * applyEdgeCut — shared commit flow for edge-modification tools.
  *
- * commitFillet and commitChamfer are identical apart from which edge-ID list
- * they read, the parse fn, the geometry fn, and the status wording. This
- * captures the common pipeline once:
- *   validate → parse → find source feature → resolveBodySource → compute new
- *   geometry → pushUndo → swap mesh in (mesh-backed propagates boolean
- *   dependents; primitive/extrude stores the mesh so the CSG/primitive
- *   render path skips it).
+ * Non-destructive architecture (Phase 0): the CSG result is stored on the
+ * fillet/chamfer feature's own mesh, NOT on the parent feature. The parent
+ * mesh is never modified or disposed. Rendering skips the parent when it has
+ * an active downstream edge-cut feature (one whose mesh is set).
+ *
+ * Passing spec.featureId activates the non-destructive path. Callers that
+ * omit it fall back to the legacy destructive path for backwards compat.
  */
 import * as THREE from 'three';
 import type { ParsedEdges } from '../../../../utils/geometry/edgeCutCore';
@@ -30,6 +30,32 @@ export interface EdgeCutSpec {
   pastVerb: string;
   /** Size suffix for the success message, e.g. `r=2` / `d=1.5`. */
   sizeLabel: string;
+  /**
+   * Non-destructive path: ID of the already-created fillet/chamfer feature
+   * node to store the CSG result on. When provided the parent's mesh is never
+   * modified; when omitted the legacy path mutates the parent (backwards compat).
+   */
+  featureId?: string;
+}
+
+/** Session-only source geometry cache keyed by fillet/chamfer feature ID. */
+const _srcGeoCache = new Map<string, THREE.BufferGeometry>();
+
+/** Store pre-fillet source geometry so edit/replay can find it without re-rendering. */
+export function cacheEdgeCutSource(featureId: string, geo: THREE.BufferGeometry): void {
+  // Dispose any prior entry for this feature (e.g. second commit after edit)
+  const prev = _srcGeoCache.get(featureId);
+  if (prev) prev.dispose();
+  _srcGeoCache.set(featureId, geo);
+}
+
+export function getCachedEdgeCutSource(featureId: string): THREE.BufferGeometry | undefined {
+  return _srcGeoCache.get(featureId);
+}
+
+export function evictEdgeCutSource(featureId: string): void {
+  const entry = _srcGeoCache.get(featureId);
+  if (entry) { entry.dispose(); _srcGeoCache.delete(featureId); }
 }
 
 export function applyEdgeCut(store: CADSliceContext, spec: EdgeCutSpec): void {
@@ -58,12 +84,61 @@ export function applyEdgeCut(store: CADSliceContext, spec: EdgeCutSpec): void {
   const { srcGeo, srcMaterial, hasMesh, oldGeomToDispose } = src;
 
   const newGeo = compute(srcGeo, edges);
-  srcGeo.dispose();
+
   if (!newGeo) {
+    srcGeo.dispose();
     get().setStatusMessage(`${tool}: no eligible edges (need an edge shared by two faces)`);
     return;
   }
 
+  // ── Non-destructive path ──────────────────────────────────────────────────
+  if (spec.featureId) {
+    const edgeCutFid = spec.featureId;
+
+    // Cache the source geometry for future edit/replay within this session.
+    cacheEdgeCutSource(edgeCutFid, srcGeo.clone());
+    srcGeo.dispose();
+
+    const newMesh = new THREE.Mesh(newGeo, srcMaterial);
+    // Tag so undo/redo doesn't accidentally carry this mesh onto a non-edge-cut restore.
+    newMesh.userData._edgeCutApplied = true;
+    newMesh.userData.pickable = true;
+    newMesh.userData.featureId = edgeCutFid;
+    newMesh.castShadow = true;
+    newMesh.receiveShadow = true;
+
+    const failedCount: number = (newGeo.userData.failedEdgeCount as number | undefined) ?? 0;
+    const totalCount: number = (newGeo.userData.totalEdgeCount as number | undefined) ?? edges.length;
+    const successCount = totalCount - failedCount;
+    const statusMessage = failedCount > 0
+      ? `${pastVerb} ${successCount} of ${totalCount} edge(s) at ${sizeLabel} (${failedCount} skipped)`
+      : `${pastVerb} ${edges.length} edge(s) at ${sizeLabel}`;
+    const healthState = failedCount > 0 ? 'warning' as const : 'healthy' as const;
+    const healthMessage = failedCount > 0
+      ? `${failedCount} of ${totalCount} edge(s) could not be processed`
+      : undefined;
+
+    get().pushUndo();
+    set((state) => ({
+      features: state.features.map((f) => {
+        if (f.id === edgeCutFid) {
+          return {
+            ...f,
+            mesh: newMesh,
+            parentFeatureId: feature.id,
+            healthState,
+            healthMessage,
+          };
+        }
+        return f;
+      }),
+      statusMessage,
+    }));
+    return;
+  }
+
+  // ── Legacy destructive path (no featureId provided) ───────────────────────
+  srcGeo.dispose();
   get().pushUndo();
   const newMesh = new THREE.Mesh(newGeo, srcMaterial);
   newMesh.userData = hasMesh
@@ -74,7 +149,6 @@ export function applyEdgeCut(store: CADSliceContext, spec: EdgeCutSpec): void {
 
   const statusMessage = `${pastVerb} ${edges.length} edge(s) at ${sizeLabel}`;
   if (hasMesh) {
-    // Mesh-backed feature: replace mesh and propagate boolean dependents.
     set((state) => ({
       features: recomputeBooleanDependents(
         state.features.map((f) => (f.id === feature.id ? { ...f, mesh: newMesh } : f)),
@@ -84,10 +158,6 @@ export function applyEdgeCut(store: CADSliceContext, spec: EdgeCutSpec): void {
     }));
     if (oldGeomToDispose) setTimeout(() => oldGeomToDispose.dispose(), 0);
   } else {
-    // Primitive OR extrude (from registry): store the cut mesh so
-    // PrimitiveBodies skips it (skip-if-mesh guard) and ExtrudedBodies
-    // renders it via the stored-mesh path (the CSG pipeline also skips it
-    // because of the `!f.mesh` filter in its feature list).
     set((state) => ({
       features: state.features.map((f) => (f.id === feature.id ? { ...f, mesh: newMesh } : f)),
       statusMessage,

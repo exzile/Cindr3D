@@ -39,6 +39,13 @@ export interface ModelEdge {
   /** Ordered LOCAL-space polyline. Straight edge → 2 points; arc/loop → many; closed loop repeats the first point. */
   polyline: THREE.Vector3[];
   kind: 'crease' | 'boundary';
+  /**
+   * Convexity of the edge relative to the solid interior.
+   * Convex = the edge protrudes outward (like a box corner to fillet).
+   * Concave = the edge recedes inward (like a pocket or slot — needs fillet to fill).
+   * Mirrors Fusion SDK BRepBody.concaveEdges() / convexEdges().
+   */
+  convexity?: 'convex' | 'concave';
 }
 
 export interface BodyTopology {
@@ -198,6 +205,7 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
   // ── Collect crease / boundary segments (deduped by canonical endpoint key) ──
   const rawByKey = new Map<string, RawEdge>();
   const keyPos = new Map<string, THREE.Vector3>();
+  const convexityByKey = new Map<string, 'convex' | 'concave'>();
   const _p0 = new THREE.Vector3();
   const _p1 = new THREE.Vector3();
 
@@ -331,6 +339,23 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
       if (!keyPos.has(ka)) keyPos.set(ka, _p0.clone());
       if (!keyPos.has(kb)) keyPos.set(kb, _p1.clone());
       rawByKey.set(ek, { ka, kb, kind: 'crease' });
+
+      // Convexity: classify using n1 × n2 dotted with the edge direction.
+      // Positive cross-product dot = concave (normals lean toward each other);
+      // negative = convex (normals lean away — outer corner to fillet).
+      if (sib !== -1) {
+        const edx = _p1.x - _p0.x, edy = _p1.y - _p0.y, edz = _p1.z - _p0.z;
+        const el = Math.sqrt(edx * edx + edy * edy + edz * edz);
+        if (el > 1e-9) {
+          const n1x = nx[t], n1y = ny[t], n1z = nz[t];
+          const n2x = nx[sib], n2y = ny[sib], n2z = nz[sib];
+          const cxn = n1y * n2z - n1z * n2y;
+          const cyn = n1z * n2x - n1x * n2z;
+          const czn = n1x * n2y - n1y * n2x;
+          const sign = cxn * (edx / el) + cyn * (edy / el) + czn * (edz / el);
+          convexityByKey.set(ek, sign < 0 ? 'convex' : 'concave');
+        }
+      }
     }
   }
 
@@ -349,13 +374,26 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
   // surface line because only creases are emitted.
   interface Seg { a: string; b: string; }
   const segs: Seg[] = [];
+  const segEk: string[] = [];
   const vertSegs = new Map<string, number[]>();
-  for (const r of rawByKey.values()) {
+  for (const [ek, r] of rawByKey.entries()) {
     const i = segs.length;
     segs.push({ a: r.ka, b: r.kb });
+    segEk.push(ek);
     (vertSegs.get(r.ka) ?? vertSegs.set(r.ka, []).get(r.ka)!).push(i);
     (vertSegs.get(r.kb) ?? vertSegs.set(r.kb, []).get(r.kb)!).push(i);
   }
+  // Resolve convexity for a cluster of segment indices: majority vote.
+  const clusterConvexity = (indices: number[]): 'convex' | 'concave' | undefined => {
+    let cvx = 0, ccv = 0;
+    for (const ci of indices) {
+      const c = convexityByKey.get(segEk[ci]);
+      if (c === 'convex') cvx++;
+      else if (c === 'concave') ccv++;
+    }
+    if (cvx === 0 && ccv === 0) return undefined;
+    return cvx >= ccv ? 'convex' : 'concave';
+  };
 
   const lexLess = (a: THREE.Vector3, b: THREE.Vector3): boolean =>
     a.x !== b.x ? a.x < b.x : a.y !== b.y ? a.y < b.y : a.z < b.z;
@@ -383,7 +421,8 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
     if (dl < 1e-9) {
       used.add(si);
       const pts = mk(sA, sB);
-      edges.push({ id: modelEdgeId(pts), polyline: pts, kind: 'crease' });
+      const cv0 = clusterConvexity([si]);
+      edges.push({ id: modelEdgeId(pts), polyline: pts, kind: 'crease', ...(cv0 ? { convexity: cv0 } : {}) });
       continue;
     }
     _D.divideScalar(dl);
@@ -445,10 +484,11 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
     // leaves a near-zero-length crease fragment that is not a real model edge
     // and only clutters the picker.
     const qSq = q * q;
+    const clusterCv = clusterConvexity(cluster);
     if (cluster.length === 1 || maxDevSq <= qSq) {
       if (pMin.distanceToSquared(pMax) >= qSq) {
         const pts = mk(pMin, pMax);
-        edges.push({ id: modelEdgeId(pts), polyline: pts, kind: 'crease' });
+        edges.push({ id: modelEdgeId(pts), polyline: pts, kind: 'crease', ...(clusterCv ? { convexity: clusterCv } : {}) });
       }
     } else {
       for (const ci of cluster) {
@@ -456,7 +496,8 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
         const b = keyPos.get(segs[ci].b)!;
         if (a.distanceToSquared(b) < qSq) continue;
         const segPts = mk(a, b);
-        edges.push({ id: modelEdgeId(segPts), polyline: segPts, kind: 'crease' });
+        const segCv = convexityByKey.get(segEk[ci]);
+        edges.push({ id: modelEdgeId(segPts), polyline: segPts, kind: 'crease', ...(segCv ? { convexity: segCv } : {}) });
       }
     }
   }
