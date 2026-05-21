@@ -4,8 +4,55 @@ import { GeometryEngine } from '../../../engine/GeometryEngine';
 import { errorMessage } from '../../../utils/errorHandling';
 import type { CADSliceContext } from '../sliceContext';
 import type { CADState } from '../state';
-import { placeToolFeature, pickMostRecentSolidTarget } from './featureManagement/bodyBoolean';
+import { placeToolFeature, pickMostRecentSolidTarget, applyBodyBoolean } from './featureManagement/bodyBoolean';
 import { liveBodyMeshes } from '../../meshRegistry';
+
+/**
+ * Session-only cache of the pre-shell source mesh geometry + world matrix,
+ * keyed by featureId. commitShell mutates the source feature's mesh in-place,
+ * so a second call would shell the already-shelled result. Caching the
+ * pre-shell snapshot on first commit lets every subsequent edit re-shell from
+ * the original — the same Phase-0 non-destructive pattern fillet/chamfer use.
+ */
+const _shellSrcCache = new Map<string, { geom: THREE.BufferGeometry; matrix: THREE.Matrix4 }>();
+
+/** Evict the cached pre-shell source for a feature (called on feature delete). */
+export function evictShellSource(featureId: string): void {
+  const entry = _shellSrcCache.get(featureId);
+  if (entry) { entry.geom.dispose(); _shellSrcCache.delete(featureId); }
+}
+
+/**
+ * Non-destructive replay helper for tool features (Pipe / SnapFit / LipGroove).
+ * Given a freshly-built tool mesh and the target operation, returns the final
+ * mesh to store on `feature.mesh`:
+ *   - operation is boolean and feature.parentFeatureId resolves → CSG the tool
+ *     against the parent's mesh, return result
+ *   - otherwise → return the tool mesh standalone
+ * If the boolean fails for any reason (degenerate input, target not found),
+ * falls back to the tool mesh so editing never produces an empty body.
+ */
+function replayToolBoolean(
+  features: Feature[],
+  feature: Feature,
+  toolMesh: THREE.Mesh,
+  operation: 'new-body' | 'join' | 'cut' | 'intersect',
+): { mesh: THREE.Mesh; note: string } {
+  if (operation === 'new-body') return { mesh: toolMesh, note: '' };
+  const parentId = feature.parentFeatureId;
+  if (!parentId) return { mesh: toolMesh, note: ` (${operation}: no parent target — standalone)` };
+  const parent = features.find((f) => f.id === parentId);
+  if (!(parent?.mesh instanceof THREE.Mesh)) {
+    return { mesh: toolMesh, note: ` (${operation}: parent body missing — standalone)` };
+  }
+  const result = applyBodyBoolean(parent.mesh, toolMesh, operation);
+  if (!result) return { mesh: toolMesh, note: ` (${operation} failed — standalone body)` };
+  result.userData.pickable = true;
+  result.userData.featureId = feature.id;
+  // Tool mesh was just for CSG input — dispose its geometry, we keep the result.
+  toolMesh.geometry.dispose();
+  return { mesh: result, note: ` (${operation} with ${parent.name})` };
+}
 
 /** Boundary-fill target = shared most-recent-solid pick, skipping the tool
  *  bodies that define the boundary and any prior boundary-fill body. */
@@ -314,11 +361,12 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     if (!existing) { get().setStatusMessage('Lip and Groove: feature not found'); return; }
     get().pushUndo();
     const geom = GeometryEngine.lipGrooveGeometry(lipWidth, lipHeight, grooveWidth, grooveDepth, clearance, includeGroove);
-    const mesh = new THREE.Mesh(geom);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.userData.pickable = true;
-    mesh.userData.featureId = featureId;
+    const toolMesh = new THREE.Mesh(geom);
+    toolMesh.castShadow = true;
+    toolMesh.receiveShadow = true;
+    toolMesh.userData.pickable = true;
+    toolMesh.userData.featureId = featureId;
+    const { mesh, note } = replayToolBoolean(features, existing, toolMesh, operation);
     (existing.mesh as THREE.Mesh | undefined)?.geometry?.dispose();
     set({
       features: features.map((f) =>
@@ -327,7 +375,7 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
           : f,
       ),
     });
-    get().setStatusMessage(`Lip and Groove updated: lip ${lipWidth}×${lipHeight}mm${includeGroove ? `, groove ${grooveWidth}×${grooveDepth}mm` : ''}`);
+    get().setStatusMessage(`Lip and Groove updated: lip ${lipWidth}×${lipHeight}mm${includeGroove ? `, groove ${grooveWidth}×${grooveDepth}mm` : ''}${note}`);
   },
 
   updateSnapFitGeometry: (featureId, params) => {
@@ -337,11 +385,12 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     if (!existing) { get().setStatusMessage('Snap Fit: feature not found'); return; }
     get().pushUndo();
     const geom = GeometryEngine.snapFitGeometry(length, width, thickness, overhang, overhangAngle, returnAngle);
-    const mesh = new THREE.Mesh(geom);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.userData.pickable = true;
-    mesh.userData.featureId = featureId;
+    const toolMesh = new THREE.Mesh(geom);
+    toolMesh.castShadow = true;
+    toolMesh.receiveShadow = true;
+    toolMesh.userData.pickable = true;
+    toolMesh.userData.featureId = featureId;
+    const { mesh, note } = replayToolBoolean(features, existing, toolMesh, operation);
     (existing.mesh as THREE.Mesh | undefined)?.geometry?.dispose();
     set({
       features: features.map((f) =>
@@ -350,7 +399,7 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
           : f,
       ),
     });
-    get().setStatusMessage(`Snap Fit updated: ${snapType}, ${length}×${width}×${thickness}mm`);
+    get().setStatusMessage(`Snap Fit updated: ${snapType}, ${length}×${width}×${thickness}mm${note}`);
   },
 
   updatePipeGeometry: (featureId, params) => {
@@ -368,11 +417,12 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     }
     get().pushUndo();
     const geom = GeometryEngine.pipeGeometry(pathPoints, outerDiameter, hollow, wallThickness);
-    const mesh = new THREE.Mesh(geom);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.userData.pickable = true;
-    mesh.userData.featureId = featureId;
+    const toolMesh = new THREE.Mesh(geom);
+    toolMesh.castShadow = true;
+    toolMesh.receiveShadow = true;
+    toolMesh.userData.pickable = true;
+    toolMesh.userData.featureId = featureId;
+    const { mesh, note } = replayToolBoolean(features, existing, toolMesh, operation);
     (existing.mesh as THREE.Mesh | undefined)?.geometry?.dispose();
     set({
       features: features.map((f) =>
@@ -387,7 +437,7 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
           : f,
       ),
     });
-    get().setStatusMessage(`Pipe updated: ⌀${outerDiameter}mm${hollow ? `, ${wallThickness}mm wall` : ''}`);
+    get().setStatusMessage(`Pipe updated: ⌀${outerDiameter}mm${hollow ? `, ${wallThickness}mm wall` : ''}${note}`);
   },
 
   updateRibGeometry: (featureId, sketchId, thickness, height, extras) => {
@@ -628,6 +678,24 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
       get().setStatusMessage('Shell: no mesh found for selected feature');
       return;
     }
+
+    // Non-destructive replay: on first commit cache the pre-shell snapshot;
+    // on subsequent commits (edits) rehydrate a temp mesh from the cache so we
+    // never shell an already-shelled body.
+    let tempGeomToDispose: THREE.BufferGeometry | null = null;
+    const cached = _shellSrcCache.get(featureId);
+    if (cached) {
+      tempGeomToDispose = cached.geom.clone();
+      const tmp = new THREE.Mesh(tempGeomToDispose, srcMesh.material);
+      tmp.applyMatrix4(cached.matrix);
+      tmp.updateMatrixWorld(true);
+      srcMesh = tmp;
+    } else {
+      _shellSrcCache.set(featureId, {
+        geom: srcMesh.geometry.clone(),
+        matrix: srcMesh.matrixWorld.clone(),
+      });
+    }
     const { insideThickness, outsideThickness, shellType, removeFaces, faceThicknesses } = opts;
     const tin = Number.isFinite(insideThickness) ? Math.max(0, insideThickness) : 0;
     const tout = Number.isFinite(outsideThickness) ? Math.max(0, outsideThickness) : 0;
@@ -653,9 +721,12 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
         faceThicknesses: faceThicknesses.map(toSpec),
       });
     } catch (err) {
+      tempGeomToDispose?.dispose();
       get().setStatusMessage(`Shell failed: ${errorMessage(err, 'CSG error')}`);
       return;
     }
+    // shellSolid clones the input geometry internally, so we can release ours.
+    tempGeomToDispose?.dispose();
     result.castShadow = true;
     result.receiveShadow = true;
     const nextFeatures = features.map((f) =>
