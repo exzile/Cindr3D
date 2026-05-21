@@ -328,6 +328,13 @@ interface SrcGeoCache {
   tris: THREE.Vector3[][];
   triIdx: Map<number, number[]>;
   eps: number;
+  /**
+   * Optional O(1) topology fast-path. Built from `srcGeo.userData.topology`
+   * when available (bodies that went through `csgSubtractWithTopology`).
+   * Key: `${packCell(ax)}|${packCell(bx)}` using eps-quantized endpoints in
+   * BOTH directions so lookups succeed regardless of edge orientation.
+   */
+  topoMap?: Map<string, { u1: THREE.Vector3; u2: THREE.Vector3 }>;
 }
 const _srcGeoCache = new WeakMap<THREE.BufferGeometry, SrcGeoCache>();
 
@@ -338,6 +345,27 @@ function getOrBuildSrcCache(srcGeo: THREE.BufferGeometry): SrcGeoCache {
   const eps = computePositionEps(srcGeo);
   const triIdx = buildTriangleIndex(tris, eps);
   entry = { tris, triIdx, eps };
+
+  // Build topoMap from pre-computed topology when present.
+  const topo = (srcGeo.userData as { topology?: BodyTopology }).topology;
+  if (topo?.edges?.length) {
+    const inv = 1 / eps;
+    const topoMap = new Map<string, { u1: THREE.Vector3; u2: THREE.Vector3 }>();
+    for (const me of topo.edges) {
+      if (!me.u1 || !me.u2 || me.polyline.length < 2) continue;
+      // Use first and last points of the polyline as key anchors.
+      const A = me.polyline[0];
+      const B = me.polyline[me.polyline.length - 1];
+      const kA = packCell(Math.round(A.x * inv), Math.round(A.y * inv), Math.round(A.z * inv));
+      const kB = packCell(Math.round(B.x * inv), Math.round(B.y * inv), Math.round(B.z * inv));
+      const fwd = `${kA}|${kB}`;
+      const rev = `${kB}|${kA}`;
+      if (!topoMap.has(fwd)) topoMap.set(fwd, { u1: me.u1, u2: me.u2 });
+      if (!topoMap.has(rev)) topoMap.set(rev, { u1: me.u2, u2: me.u1 }); // reversed: swap u1/u2
+    }
+    entry.topoMap = topoMap;
+  }
+
   _srcGeoCache.set(srcGeo, entry);
   return entry;
 }
@@ -549,7 +577,26 @@ export function resolveEdge(
   near: (p: THREE.Vector3, q: THREE.Vector3) => boolean,
   triIdx?: Map<number, number[]>,
   eps?: number,
+  topoMap?: Map<string, { u1: THREE.Vector3; u2: THREE.Vector3 }>,
 ): ResolvedEdge | null {
+  // Fast-path: if the caller supplied a topology map (precomputed u1/u2 for
+  // every model edge of the CSG result), look up this edge's endpoints directly.
+  // Avoids the entire 4-pass fallback chain for Manifold-pipeline bodies.
+  if (topoMap && eps != null) {
+    const inv = 1 / eps;
+    const kA = packCell(Math.round(e.a.x * inv), Math.round(e.a.y * inv), Math.round(e.a.z * inv));
+    const kB = packCell(Math.round(e.b.x * inv), Math.round(e.b.y * inv), Math.round(e.b.z * inv));
+    const hit = topoMap.get(`${kA}|${kB}`) ?? topoMap.get(`${kB}|${kA}`);
+    if (hit) {
+      const edgeDir = e.b.clone().sub(e.a);
+      const length = edgeDir.length();
+      if (length > 1e-9) {
+        edgeDir.divideScalar(length);
+        return { a: e.a.clone(), b: e.b.clone(), edgeDir, length, u1: hit.u1.clone(), u2: hit.u2.clone() };
+      }
+    }
+  }
+
   // With a spatial index: only visit triangles in the 3×3×3 neighbourhood of
   // e.a — every triangle containing e.a as a vertex is guaranteed to appear
   // there. Without: fall back to the original linear scan (all tris).
@@ -800,14 +847,14 @@ export function computeEdgeGizmoDir(
   srcGeo: THREE.BufferGeometry,
   edges: PickedEdge[],
 ): THREE.Vector3 | null {
-  const { tris, triIdx, eps } = getOrBuildSrcCache(srcGeo);
+  const { tris, triIdx, eps, topoMap } = getOrBuildSrcCache(srcGeo);
   const epsSq = eps * eps;
   const near = (p: THREE.Vector3, q: THREE.Vector3) => p.distanceToSquared(q) <= epsSq;
 
   const acc = new THREE.Vector3();
   let n = 0;
   for (const e of edges) {
-    const re = resolveEdge(tris, e, near, triIdx, eps);
+    const re = resolveEdge(tris, e, near, triIdx, eps, topoMap);
     if (!re) continue;
     // Interior bisector (u1+u2) points into the solid; negate for exterior.
     acc.add(re.u1.clone().add(re.u2).normalize().negate());
@@ -1138,7 +1185,7 @@ export function computeEdgeCutGeometry(
   makeLoopCutter?: LoopCutterFn,
   options?: EdgeCutOptions,
 ): THREE.BufferGeometry | null {
-  const { tris, triIdx, eps } = getOrBuildSrcCache(srcGeo);
+  const { tris, triIdx, eps, topoMap } = getOrBuildSrcCache(srcGeo);
   const epsSq = eps * eps;
   const near = (p: THREE.Vector3, q: THREE.Vector3) => p.distanceToSquared(q) <= epsSq;
 
@@ -1238,7 +1285,7 @@ export function computeEdgeCutGeometry(
         const order = [Math.floor(cluster.length / 2)];
         for (let i = 0; i < cluster.length; i++) if (i !== order[0]) order.push(i);
         for (const idx of order) {
-          rep = resolveEdge(tris, cluster[idx], near, triIdx, eps);
+          rep = resolveEdge(tris, cluster[idx], near, triIdx, eps, topoMap);
           if (rep) break;
         }
         if (rep) {
@@ -1279,7 +1326,7 @@ export function computeEdgeCutGeometry(
 
   // Per-segment path for non-circular clusters (straight edges, arcs, etc.).
   for (const e of perSegEdges) {
-    const re = resolveEdge(tris, e, near, triIdx, eps);
+    const re = resolveEdge(tris, e, near, triIdx, eps, topoMap);
     if (!re) { failedSegCount++; continue; }
     // Collect per-vertex resolved-edge data for miter corner computation.
     if (miterVtxEdges) {

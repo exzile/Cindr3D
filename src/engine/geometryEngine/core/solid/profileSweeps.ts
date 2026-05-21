@@ -4,6 +4,7 @@ import { SURFACE_MATERIAL } from '../../../../components/viewport/scene/bodyMate
 import { EXTRUDE_MATERIAL } from '../../materials';
 import { getSketchAxes as getSketchAxesUtil } from '../../planeUtils';
 import { entitiesToShape, sketchToShape } from '../sketch/sketchProfiles';
+import { extractEdgeTopology } from './edgeTopology';
 
 export function loftSketches(profileSketches: Sketch[], surface = false): THREE.Mesh | null {
   if (profileSketches.length < 2) return null;
@@ -87,6 +88,9 @@ export function loftSketches(profileSketches: Sketch[], surface = false): THREE.
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
+  if (!surface) {
+    try { geometry.userData.topology = extractEdgeTopology(geometry); } catch { /* non-fatal */ }
+  }
   const mesh = new THREE.Mesh(geometry, surface ? SURFACE_MATERIAL : EXTRUDE_MATERIAL);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -229,7 +233,9 @@ function sweepWithCurve(
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
-
+  if (!surface) {
+    try { geometry.userData.topology = extractEdgeTopology(geometry); } catch { /* non-fatal */ }
+  }
   const mesh = new THREE.Mesh(geometry, surface ? SURFACE_MATERIAL : EXTRUDE_MATERIAL);
   mesh.castShadow = true;
   mesh.receiveShadow = true;

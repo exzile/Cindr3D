@@ -1,5 +1,7 @@
 import * as THREE from 'three';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { csgUnion } from './csg';
+import { extractEdgeTopology } from './edgeTopology';
 
 /**
  * Builds a cantilever snap-fit hook solid from the SnapFitDialog parameters.
@@ -101,5 +103,10 @@ export function snapFitGeometry(
   for (const g of created) g.dispose();
 
   solid.computeVertexNormals();
+  try {
+    const forTopo = mergeVertices(solid, 1e-6);
+    solid.userData.topology = extractEdgeTopology(forTopo);
+    forTopo.dispose();
+  } catch { /* non-fatal */ }
   return solid;
 }

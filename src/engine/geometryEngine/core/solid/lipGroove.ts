@@ -1,5 +1,7 @@
 import * as THREE from 'three';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { csgUnion, csgSubtract } from './csg';
+import { extractEdgeTopology } from './edgeTopology';
 
 /**
  * Builds a representative **Lip and Groove** mating-edge pair from the
@@ -97,5 +99,10 @@ export function lipGrooveGeometry(
   for (const g of created) g.dispose();
 
   solid.computeVertexNormals();
+  try {
+    const forTopo = mergeVertices(solid, 1e-6);
+    solid.userData.topology = extractEdgeTopology(forTopo);
+    forTopo.dispose();
+  } catch { /* non-fatal */ }
   return solid;
 }

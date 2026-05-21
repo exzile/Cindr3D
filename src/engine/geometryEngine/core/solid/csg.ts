@@ -263,6 +263,110 @@ export function csgIntersect(a: THREE.BufferGeometry, b: THREE.BufferGeometry): 
 }
 
 /**
+ * Union `a` and `b` AND extract the result's edge topology.
+ * Mirrors csgSubtractWithTopology exactly — same Manifold-first / BVH-fallback
+ * structure, same weldAndCleanSolid repair on the fallback path.
+ */
+export function csgUnionWithTopology(
+  a: THREE.BufferGeometry,
+  b: THREE.BufferGeometry,
+): { geometry: THREE.BufferGeometry; topology: BodyTopology } {
+  const manifoldResult = _manifoldUnion(a, b);
+  if (manifoldResult) {
+    let topology: BodyTopology;
+    try {
+      const forTopo = mergeVertices(manifoldResult, 1e-6);
+      topology = extractEdgeTopology(forTopo);
+      forTopo.dispose();
+    } catch {
+      topology = { edges: [] };
+    }
+    manifoldResult.userData.topology = topology;
+    return { geometry: manifoldResult, topology };
+  }
+
+  _ensureUVs(a);
+  _ensureUVs(b);
+  const brushA = new Brush(a);
+  const brushB = new Brush(b);
+  brushA.updateMatrixWorld();
+  brushB.updateMatrixWorld();
+  const result = _csgEvaluator.evaluate(brushA, brushB, ADDITION);
+
+  let solid: THREE.BufferGeometry;
+  try {
+    solid = weldAndCleanSolid(result.geometry);
+    result.geometry.dispose();
+  } catch {
+    solid = result.geometry.index
+      ? result.geometry.toNonIndexed()
+      : result.geometry;
+    if (solid !== result.geometry) result.geometry.dispose();
+    solid.computeVertexNormals();
+  }
+
+  let topology: BodyTopology;
+  try {
+    topology = extractEdgeTopology(solid);
+  } catch {
+    topology = { edges: [] };
+  }
+  solid.userData.topology = topology;
+  return { geometry: solid, topology };
+}
+
+/**
+ * Intersect `a` and `b` AND extract the result's edge topology.
+ */
+export function csgIntersectWithTopology(
+  a: THREE.BufferGeometry,
+  b: THREE.BufferGeometry,
+): { geometry: THREE.BufferGeometry; topology: BodyTopology } {
+  const manifoldResult = _manifoldIntersect(a, b);
+  if (manifoldResult) {
+    let topology: BodyTopology;
+    try {
+      const forTopo = mergeVertices(manifoldResult, 1e-6);
+      topology = extractEdgeTopology(forTopo);
+      forTopo.dispose();
+    } catch {
+      topology = { edges: [] };
+    }
+    manifoldResult.userData.topology = topology;
+    return { geometry: manifoldResult, topology };
+  }
+
+  _ensureUVs(a);
+  _ensureUVs(b);
+  const brushA = new Brush(a);
+  const brushB = new Brush(b);
+  brushA.updateMatrixWorld();
+  brushB.updateMatrixWorld();
+  const result = _csgEvaluator.evaluate(brushA, brushB, INTERSECTION);
+
+  let solid: THREE.BufferGeometry;
+  try {
+    solid = weldAndCleanSolid(result.geometry);
+    result.geometry.dispose();
+  } catch {
+    solid = result.geometry.index
+      ? result.geometry.toNonIndexed()
+      : result.geometry;
+    if (solid !== result.geometry) result.geometry.dispose();
+    solid.computeVertexNormals();
+  }
+
+  let topology: BodyTopology;
+  try {
+    topology = extractEdgeTopology(solid);
+  } catch {
+    topology = { edges: [] };
+  }
+  solid.userData.topology = topology;
+  return { geometry: solid, topology };
+}
+
+/**
  * Subtract `b` from `a` AND extract the result's edge topology.
  *
  * When Manifold succeeds: the output is already a clean manifold — no
