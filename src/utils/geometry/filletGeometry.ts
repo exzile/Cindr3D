@@ -356,6 +356,74 @@ function buildFilletLoopCutter(
 }
 
 // ---------------------------------------------------------------------------
+// G2 curvature-continuous fillet cutter
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds a G2-continuous (curvature-continuous) cutter for one edge using a
+ * cubic Bézier cross-section instead of a circular arc.
+ *
+ * Cross-section profile (in the axisX / axisZ face plane):
+ *   P0 = (sb, 0)  — tangent point on face 1
+ *   P1 = (sb, sb) — both control points at the corner
+ *   P2 = (sb, sb)   (P1 = P2 gives κ = 0 at both tangent points)
+ *   P3 = (0,  sb) — tangent point on face 2
+ * Close via origin to form the cutter solid.
+ *
+ * With α = 1 (control points at the corner), the curvature of the cubic
+ * Bézier is exactly 0 at P0 and P3, which matches the infinite-radius
+ * (flat) faces → G2 continuity. The profile bulges slightly closer to the
+ * corner than a G1 circular arc, giving the characteristic "tighter"
+ * look of curvature-continuous blends.
+ *
+ * Uses THREE.ExtrudeGeometry for a clean single-step construction (no
+ * intermediate CSG). Returns null for degenerate dihedral angles.
+ */
+function buildG2FilletCutter(
+  re: ResolvedEdge,
+  radius: number,
+  eps: number,
+): THREE.BufferGeometry | null {
+  const { a, edgeDir, length, u1, u2 } = re;
+  const cosPhi = THREE.MathUtils.clamp(u1.dot(u2), -1, 1);
+  const phi = Math.acos(cosPhi);
+  if (phi < 0.05 || phi > Math.PI - 0.05) return null;
+  const half = phi / 2;
+  const tanHalf = Math.tan(half);
+  if (tanHalf < 1e-4) return null;
+
+  const sb = radius / tanHalf;
+
+  const leftHanded =
+    new THREE.Matrix4().makeBasis(u1, edgeDir, u2).determinant() < 0;
+  const axisX = leftHanded ? u2 : u1;
+  const axisZ = leftHanded ? u1 : u2;
+
+  // G2 Bézier cross-section: P0=(sb,0) → P3=(0,sb) with P1=P2=(sb,sb).
+  // Closing lines: (0,sb) → (0,0) → (sb,0).
+  const shape = new THREE.Shape();
+  shape.moveTo(sb, 0);
+  shape.bezierCurveTo(sb, sb, sb, sb, 0, sb);
+  shape.lineTo(0, 0);
+  // Shape auto-closes back to (sb, 0).
+
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: length + 2 * eps,
+    bevelEnabled: false,
+    curveSegments: 16,
+  });
+
+  // Apply edge frame: shape-X → axisX, shape-Y → axisZ, extrude-Z → edgeDir.
+  // Shift start back by eps so the cutter fully overlaps both edge endpoints.
+  const origin = a.clone().addScaledVector(edgeDir, -eps);
+  const basis = new THREE.Matrix4().makeBasis(axisX, axisZ, edgeDir);
+  basis.setPosition(origin.x, origin.y, origin.z);
+  geo.applyMatrix4(basis);
+
+  return geo;
+}
+
+// ---------------------------------------------------------------------------
 // Public: compute the filleted geometry
 // ---------------------------------------------------------------------------
 
@@ -421,10 +489,18 @@ export function computeFilletGeometry(
     cutterOpts.isAsymmetric = true;
   }
 
+  // G2 mode is only compatible with constant-radius (no variable, chord-length,
+  // or asymmetric modes — those use the G1 cutter regardless of isG2).
+  const useG2 = params?.isG2 === true &&
+    (!params.mode || params.mode === 'constant') &&
+    !cutterOpts.chordLength && !cutterOpts.startRadius && !cutterOpts.isAsymmetric;
+
   return computeEdgeCutGeometry(
     srcGeo,
     edges,
-    (re, eps) => buildFilletCutter(re, effectiveRadius, radialSeg, eps, cutterOpts),
+    useG2
+      ? (re, eps) => buildG2FilletCutter(re, effectiveRadius, eps)
+      : (re, eps) => buildFilletCutter(re, effectiveRadius, radialSeg, eps, cutterOpts),
     'fillet',
     fast,
     (circle, re) => buildFilletLoopCutter(circle, re, effectiveRadius, radialSeg, fast),

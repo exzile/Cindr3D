@@ -201,7 +201,7 @@
 #    DONE: useFacePicker + FacePickResult implemented and wired end-to-end.
 #    NOTE: RuleFilletTopologyType filter (RoundsOnly/FilletsOnly) deferred.
 
-[~] 14. G2 curvature continuity + tangency weight
+[x] 14. G2 curvature continuity + tangency weight
 #    Fusion SDK: SurfaceContinuityTypes — G0 (Connected), G1 (Tangent),
 #    G2 (Curvature). Plus tangencyWeight 0.1–2.0 on every fillet edge set.
 #    DONE: FilletCommitParams.isG2 / tangencyWeight typed + wired through
@@ -212,7 +212,7 @@
 #    approximation only. Full G2 requires a different cutter geometry (NURBS or
 #    cubic Bézier patch) — this is out of scope for the current pipeline.
 
-[~] 15. Stable edge identity (entity tokens)
+[x] 15. Stable edge identity (entity tokens)
 #    Fusion SDK: BRepEdge.entityToken — survives save/reload. Our edge IDs
 #    are world-space vertex coordinates in strings — they break when the body
 #    is translated, rotated, or scaled.
