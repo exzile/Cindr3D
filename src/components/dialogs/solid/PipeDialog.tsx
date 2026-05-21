@@ -4,21 +4,42 @@ import { DialogShell } from '../common/DialogShell';
 
 export function PipeDialog({ onClose }: { onClose: () => void }) {
   const sketches = useCADStore((s) => s.sketches);
-  const commitPipe = useCADStore((s) => s.commitPipe);
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
+  const features = useCADStore((s) => s.features);
+  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p = editing?.params ?? {};
 
-  const [pathSketchId, setPathSketchId] = useState(sketches[0]?.id ?? '');
-  const [outerDiameter, setOuterDiameter] = useState(10);
-  const [hollow, setHollow] = useState(true);
-  const [wallThickness, setWallThickness] = useState(1);
-  const [operation, setOperation] = useState<'new-body' | 'join' | 'cut'>('new-body');
+  const commitPipe = useCADStore((s) => s.commitPipe);
+  const updatePipeGeometry = useCADStore((s) => s.updatePipeGeometry);
+
+  const [pathSketchId, setPathSketchId] = useState<string>(
+    (p.pathSketchId as string) ?? (sketches[0]?.id ?? ''),
+  );
+  const [outerDiameter, setOuterDiameter] = useState(Number(p.outerDiameter ?? 10));
+  const [hollow, setHollow] = useState<boolean>(p.hollow !== false);
+  const [wallThickness, setWallThickness] = useState(Number(p.wallThickness ?? 1));
+  const [operation, setOperation] = useState<'new-body' | 'join' | 'cut'>(
+    (p.operation as 'new-body' | 'join' | 'cut') ?? 'new-body',
+  );
 
   const handleApply = () => {
-    commitPipe({ outerDiameter, hollow, wallThickness, operation, pathSketchId });
+    const params = { outerDiameter, hollow, wallThickness, operation, pathSketchId };
+    if (editing) {
+      updatePipeGeometry(editing.id, params);
+    } else {
+      commitPipe(params);
+    }
     onClose();
   };
 
   return (
-    <DialogShell title="Pipe" onClose={onClose} size="sm" onConfirm={handleApply}>
+    <DialogShell
+      title={editing ? 'Edit Pipe' : 'Pipe'}
+      onClose={onClose}
+      size="sm"
+      onConfirm={handleApply}
+      confirmLabel={editing ? 'Update' : 'OK'}
+    >
       <div className="form-group">
         <label>Path Sketch</label>
         <select value={pathSketchId} onChange={(e) => setPathSketchId(e.target.value)}>

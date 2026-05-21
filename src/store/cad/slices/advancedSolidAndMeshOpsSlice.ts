@@ -307,6 +307,89 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     );
   },
 
+  updateLipGrooveGeometry: (featureId, params) => {
+    const { features } = get();
+    const { lipWidth, lipHeight, grooveWidth, grooveDepth, clearance, includeGroove, operation } = params;
+    const existing = features.find((f) => f.id === featureId);
+    if (!existing) { get().setStatusMessage('Lip and Groove: feature not found'); return; }
+    get().pushUndo();
+    const geom = GeometryEngine.lipGrooveGeometry(lipWidth, lipHeight, grooveWidth, grooveDepth, clearance, includeGroove);
+    const mesh = new THREE.Mesh(geom);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.pickable = true;
+    mesh.userData.featureId = featureId;
+    (existing.mesh as THREE.Mesh | undefined)?.geometry?.dispose();
+    set({
+      features: features.map((f) =>
+        f.id === featureId
+          ? { ...f, mesh, params: { ...f.params, lipWidth, lipHeight, grooveWidth, grooveDepth, clearance, includeGroove, operation } }
+          : f,
+      ),
+    });
+    get().setStatusMessage(`Lip and Groove updated: lip ${lipWidth}×${lipHeight}mm${includeGroove ? `, groove ${grooveWidth}×${grooveDepth}mm` : ''}`);
+  },
+
+  updateSnapFitGeometry: (featureId, params) => {
+    const { features } = get();
+    const { snapType, length, width, thickness, overhang, overhangAngle, returnAngle, operation } = params;
+    const existing = features.find((f) => f.id === featureId);
+    if (!existing) { get().setStatusMessage('Snap Fit: feature not found'); return; }
+    get().pushUndo();
+    const geom = GeometryEngine.snapFitGeometry(length, width, thickness, overhang, overhangAngle, returnAngle);
+    const mesh = new THREE.Mesh(geom);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.pickable = true;
+    mesh.userData.featureId = featureId;
+    (existing.mesh as THREE.Mesh | undefined)?.geometry?.dispose();
+    set({
+      features: features.map((f) =>
+        f.id === featureId
+          ? { ...f, mesh, params: { ...f.params, snapType, length, width, thickness, overhang, overhangAngle, returnAngle, operation } }
+          : f,
+      ),
+    });
+    get().setStatusMessage(`Snap Fit updated: ${snapType}, ${length}×${width}×${thickness}mm`);
+  },
+
+  updatePipeGeometry: (featureId, params) => {
+    const { features, sketches } = get();
+    const { outerDiameter, hollow, wallThickness, operation, pathSketchId } = params;
+    const existing = features.find((f) => f.id === featureId);
+    if (!existing) { get().setStatusMessage('Pipe: feature not found'); return; }
+    const sketch = sketches.find((s) => s.id === pathSketchId);
+    const pathPoints: THREE.Vector3[] = [];
+    if (sketch) {
+      for (const e of sketch.entities) {
+        if (e.type === 'centerline' || e.type === 'construction-line' || e.isConstruction) continue;
+        for (const p of e.points) pathPoints.push(new THREE.Vector3(p.x, p.y, p.z));
+      }
+    }
+    get().pushUndo();
+    const geom = GeometryEngine.pipeGeometry(pathPoints, outerDiameter, hollow, wallThickness);
+    const mesh = new THREE.Mesh(geom);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.pickable = true;
+    mesh.userData.featureId = featureId;
+    (existing.mesh as THREE.Mesh | undefined)?.geometry?.dispose();
+    set({
+      features: features.map((f) =>
+        f.id === featureId
+          ? {
+              ...f,
+              mesh,
+              name: `Pipe (⌀${outerDiameter}mm)`,
+              sketchId: sketch ? pathSketchId : undefined,
+              params: { ...f.params, outerDiameter, hollow, wallThickness, operation, pathSketchId },
+            }
+          : f,
+      ),
+    });
+    get().setStatusMessage(`Pipe updated: ⌀${outerDiameter}mm${hollow ? `, ${wallThickness}mm wall` : ''}`);
+  },
+
   // ── SLD4 — Rest ──────────────────────────────────────────────────────────
   commitRest: (params) => {
     const { features } = get();
