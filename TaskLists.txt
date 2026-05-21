@@ -1,4 +1,5 @@
 ## Fillet & Chamfer — Accuracy / Reliability / Rollback Improvement Plan
+## Status key: [x] done  [~] partial (UI wired, geometry stub only)  [ ] not started
 ## Based on Fusion 360 SDK deep audit (2026-05-20)
 ## Ordered by ROI: fix architecture first, then broken params, then reliability,
 ## then feature parity. Architecture must come first because everything else
@@ -27,7 +28,7 @@
 # marker before the feature, and the kernel replays forward from there.
 # isSuppressed triggers re-evaluation. deleteMe() removes + re-evaluates.
 
-[ ] 0a. Fillet/chamfer as proper feature nodes
+[x] 0a. Fillet/chamfer as proper feature nodes
 #   Instead of mutating the parent feature's mesh, create a new feature node:
 #     { type: 'fillet', params: { radius, mode, edgeIds, ... },
 #       parentFeatureId: '<source body>', mesh: <result> }
@@ -40,7 +41,7 @@
 #   applyEdgeCut.ts, ExtrudedBodies.tsx (render the fillet feature's mesh
 #   instead of the parent's when the fillet is active and not suppressed).
 
-[ ] 0b. Source mesh preservation
+[x] 0b. Source mesh preservation
 #   The parent feature's mesh must be preserved (never disposed) when a
 #   downstream fillet/chamfer is applied. Currently applyEdgeCut clones the
 #   source geometry then replaces the parent mesh. Instead:
@@ -50,7 +51,7 @@
 #     4. Rendering logic: show the LAST non-suppressed feature in the chain
 #   This is the "non-destructive" pattern that enables undo/suppress/delete.
 
-[ ] 0c. Feature replay engine
+[x] 0c. Feature replay engine
 #   When a fillet/chamfer is suppressed, deleted, or edited:
 #     1. Find the parent feature (the source body)
 #     2. Find all fillet/chamfer features that depend on it (ordered by index)
@@ -62,7 +63,7 @@
 #
 #   Fusion SDK parallel: TimelineObject.rollTo(true) + forward replay.
 
-[ ] 0d. Fix undo mesh recovery
+[x] 0d. Fix undo mesh recovery
 #   snapshotCADState strips meshes to undefined. On restore, liveMeshById
 #   lookup matches by feature ID — but after a fillet, the parent's old mesh
 #   is disposed, so restoration gets the post-fillet mesh (wrong).
@@ -70,7 +71,7 @@
 #   disposed. Undo restore finds the correct live mesh for both parent and
 #   fillet features. If mesh is missing, trigger replay from params.
 
-[ ] 0e. Feature health states
+[x] 0e. Feature health states
 #   Every feature should report its health: Healthy / Warning / Error.
 #   When computeEdgeCutGeometry fails or partially succeeds, store the
 #   diagnostic on the feature node: feature.healthState = 'warning',
@@ -85,14 +86,14 @@
 # These are the most urgent after Phase 0 — the UI already shows controls
 # for each one, but the commit path silently ignores them.
 
-[ ] 1. Wire edit fillet/chamfer → re-run geometry
+[x] 1. Wire edit fillet/chamfer → re-run geometry
 #   FilletDialog.tsx line 426: editing branch calls updateFeatureParams but
 #   NEVER calls commitFillet. Editing is a complete no-op — mesh not touched.
 #   Fix: after Phase 0, editing updates feature.params and triggers the
 #   replay engine (0c) which re-runs geometry from the parent mesh.
 #   Same fix applies to chamfer editing.
 
-[ ] 2. Wire chord-length fillet into buildFilletCutter
+[x] 2. Wire chord-length fillet into buildFilletCutter
 #   FilletDialog collects chordLength but handleConfirm (line 446) calls
 #   commitFillet(r, 4) — always the global radius, never chordLength.
 #   Fix: when mode === 'chord-length', convert per-edge at CSG time:
@@ -100,7 +101,7 @@
 #   computed as 'phi' in buildFilletCutter).
 #   Fusion SDK: ChordLengthFilletEdgeSetInput.chordLength
 
-[ ] 3. Wire variable-radius fillet into buildFilletCutter
+[x] 3. Wire variable-radius fillet into buildFilletCutter
 #   startRadius/endRadius collected but commitFillet uses constant radius.
 #   Fix: when r1 ≠ r2, buildFilletCutter builds a ConeGeometry (frustum)
 #   instead of CylinderGeometry. Parameterize: r(t) = r1 + t*(r2 - r1).
@@ -108,7 +109,7 @@
 #   Also: add mid-point radius support (addMidPosition/deleteMidPosition).
 #   Fusion SDK: VariableRadiusFilletEdgeSetInput.setMidRadii(radii[], positions[])
 
-[ ] 4. Add Flip button for two-distance AND distance+angle chamfer
+[x] 4. Add Flip button for two-distance AND distance+angle chamfer
 #   Which face is "face 1" vs "face 2" depends on arbitrary triangle scan
 #   order in resolveEdge. User has no control.
 #   Fix: add Flip toggle to ChamferDialog for both two-dist and dist-angle
@@ -116,7 +117,7 @@
 #   Fusion SDK: TwoDistancesChamferEdgeSet.isFlipped(),
 #               DistanceAndAngleChamferEdgeSet.isFlipped()
 
-[ ] 5. Surface failed-edge count in status bar
+[x] 5. Surface failed-edge count in status bar
 #   When resolveEdge fails, the edge is silently skipped.
 #   Fix: computeEdgeCutGeometry returns { geometry, failedCount }.
 #   applyEdgeCut surfaces "N of M edges could not be processed" via
@@ -127,7 +128,7 @@
 # PHASE 2 — Reliability: silent failures, junction artifacts, UX
 # ══════════════════════════════════════════════════════════════════════════════
 
-[ ] 6. Wire propagate → tangent edge auto-expansion
+[x] 6. Wire propagate → tangent edge auto-expansion
 #   "Propagate Along Tangent Edges" checkbox is stored but never applied.
 #   Fix: after edge picker returns a set, walk geometry.userData.topology
 #   to find all tangent-connected edges (dihedral < 5°). Add them to the
@@ -136,21 +137,21 @@
 #   tangent chain, already ordered. We build the equivalent walk on our
 #   extracted topology (posRegions + region normals).
 
-[ ] 7. Rolling-ball corner sphere at multi-edge junctions
+[x] 7. Rolling-ball corner sphere at multi-edge junctions
 #   When 3+ filleted edges meet at one vertex, each edge is cut independently
 #   leaving a triangular gap at the corner.
 #   Fix: detect shared endpoints across filleted edges. For each vertex
 #   shared by ≥ 3 filleted edges, CSG-subtract a sphere of radius r.
 #   Fusion SDK: isRollingBallCorner on FilletFeatureInput
 
-[ ] 8. Adaptive segment count (not hardcoded to 4/48)
+[x] 8. Adaptive segment count (not hardcoded to 4/48)
 #   commitFillet(r, 4) always passes segments=4 → radialSeg=48.
 #   Fix: compute radialSeg from arc length:
 #     arcLen = r * (π - phi)
 #     radialSeg = clamp(round(arcLen / targetSegLen), 16, 128)
 #     targetSegLen ≈ 0.5mm for commit, 2mm for preview
 
-[ ] 9. Convex/concave edge classification
+[x] 9. Convex/concave edge classification
 #   Fusion SDK: BRepBody.concaveEdges() / convexEdges() — pre-classified
 #   edge sets. Critical for rule fillets and for visual feedback (showing
 #   different colors for concave vs convex edges in the overlay).
@@ -163,22 +164,24 @@
 # PHASE 3 — Feature parity: Fusion capabilities we don't have
 # ══════════════════════════════════════════════════════════════════════════════
 
-[ ] 10. Chamfer corner type selector
+[~] 10. Chamfer corner type selector
 #    Fusion: ChamferCornerTypes — ChamferCornerType (patch), MiterCornerType
 #    (extend+intersect), BlendCornertype (smooth blend).
-#    Fix: add Corner dropdown to ChamferDialog (Patch / Miter). For Miter:
-#    detect shared vertices, compute chamfer-face intersection lines, clip.
+#    DONE: ChamferDialog has Patch/Miter dropdown, ChamferParams.cornerType typed.
+#    MISSING: edgeCutCore doesn't use cornerType yet — miter intersection logic
+#    (extend adjacent chamfer faces + clip) not implemented. Falls back to patch.
 
-[ ] 11. Asymmetric fillet (different offsets each side)
+[x] 11. Asymmetric fillet (different offsets each side)
 #    Fusion SDK: AsymmetricFilletEdgeSetInput — offsetOne, offsetTwo, isFlipped.
 #    Fix: add Asymmetric mode to FilletDialog. buildFilletCutter supports
 #    two independent setback values with cylinder axis shifted off bisector.
 
-[ ] 12. Full-round fillet (3-face rolling ball)
+[~] 12. Full-round fillet (3-face rolling ball)
 #    Fusion SDK: FullRoundFilletFeatureInput — centerFace + sideOneFaces +
 #    sideTwoFaces + areAutomaticSideFaces (auto-infer from adjacency).
-#    Fix: switch picker to face-selection mode in full-round mode. Compute
-#    inscribed circle from three-face corner. Build cutter from result.
+#    DONE: 'full-round' listed in FilletCommitParams.mode type.
+#    MISSING: no geometry path — computeFilletGeometry treats full-round the
+#    same as constant. Needs face-picker mode + inscribed-circle cutter logic.
 
 [ ] 13. Rule fillet (fillet all edges of a selected face/feature)
 #    Fusion SDK: RuleFilletFeatureInput — setByAllEdges(faces[]) or
@@ -187,14 +190,15 @@
 #    Fix: add face-picker mode in FilletEdgeHighlight. Click face → extract
 #    all topology edges of that face → add to selection in one shot.
 
-[ ] 14. G2 curvature continuity + tangency weight
+[~] 14. G2 curvature continuity + tangency weight
 #    Fusion SDK: SurfaceContinuityTypes — G0 (Connected), G1 (Tangent),
 #    G2 (Curvature). Plus tangencyWeight 0.1–2.0 on every fillet edge set.
-#    G2 requires generating a curvature-continuous blend surface instead of
-#    a circular arc (the cylinder cutter approach is inherently G1). This is
-#    a significant geometry engine change — the cutter would need to be a
-#    NURBS surface or a higher-order polynomial blend.
-#    Tangency weight scales how far the blend extends along each face.
+#    DONE: FilletCommitParams.isG2 / tangencyWeight typed + wired through
+#    computeFilletGeometry; tangencyWeight adjusts effective radius as an
+#    approximation. FilletDialog exposes G2 toggle.
+#    MISSING: true G2 (curvature-continuous Bézier blend surface) not built —
+#    the cylinder cutter is inherently G1. tangencyWeight is an approximation
+#    only. Full G2 requires a different cutter geometry (NURBS or cubic patch).
 
 [ ] 15. Stable edge identity (entity tokens)
 #    Fusion SDK: BRepEdge.entityToken — survives save/reload. Our edge IDs
@@ -204,7 +208,7 @@
 #    body's bounding box, making IDs transform-invariant. Store on the
 #    feature node so edge references survive across sessions.
 
-[ ] 16. Feature reordering with dependency validation
+[x] 16. Feature reordering with dependency validation
 #    Fusion SDK: TimelineObject.canReorder(beforeIndex) / reorder(beforeIndex).
 #    Our reorderFeature exists but has no dependency checking — you can move
 #    a fillet before its parent body, breaking the chain.
