@@ -10,8 +10,7 @@ export function LipGrooveDialog({ onClose }: { onClose: () => void }) {
   const p = editing?.params ?? {};
 
   const commitLipGroove = useCADStore((s) => s.commitLipGroove);
-  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
-  const setStatusMessage = useCADStore((s) => s.setStatusMessage);
+  const updateLipGrooveGeometry = useCADStore((s) => s.updateLipGrooveGeometry);
 
   const [lipWidth, setLipWidth] = useState(Number(p.lipWidth ?? 2));
   const [lipHeight, setLipHeight] = useState(Number(p.lipHeight ?? 2));
@@ -26,8 +25,7 @@ export function LipGrooveDialog({ onClose }: { onClose: () => void }) {
   const handleApply = () => {
     const params = { lipWidth, lipHeight, grooveWidth, grooveDepth, clearance, includeGroove, operation };
     if (editing) {
-      updateFeatureParams(editing.id, params);
-      setStatusMessage(`Updated Lip and Groove`);
+      updateLipGrooveGeometry(editing.id, params);
     } else {
       commitLipGroove(params);
     }
