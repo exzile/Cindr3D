@@ -44,6 +44,12 @@ export interface FilletParams {
   propagate: boolean;
   /** CORR-11: G2 curvature-continuous fillet (smoother blend than G1 tangent) */
   isG2: boolean;
+  /**
+   * Tangency weight 0.1–2.0 (Fusion SDK FilletEdgeSet.tangencyWeight).
+   * Scales the effective blend extent along adjacent faces. 1.0 = default.
+   * Values > 1 extend the blend; < 1 tighten it. Only meaningful for G1/G2.
+   */
+  tangencyWeight?: number;
   /** CORR-12: rolling-ball corner setback solution method */
   isRollingBallCorner: boolean;
   /**
@@ -72,10 +78,21 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
   // the radius while the user drags the on-canvas handle.
   const filletLiveRadius = useCADStore((s) => s.filletLiveRadius);
   const setFilletLiveRadius = useCADStore((s) => s.setFilletLiveRadius);
+  const filletPickMode = useCADStore((s) => s.filletPickMode);
+  const setFilletPickMode = useCADStore((s) => s.setFilletPickMode);
   const [radius, setRadius] = useState(() => filletLiveRadius);
-  // Sync gizmo drag → dialog input (no loop: input onChange only fires on user events).
+  // Sync gizmo drag and face-pick auto-radius → dialog input.
   useEffect(() => { setRadius(filletLiveRadius); }, [filletLiveRadius]);
   const [mode, setMode] = useState<FilletMode>('constant');
+
+  // When full-round mode is selected, automatically switch to face-pick mode.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (mode === 'full-round') setFilletPickMode('face');
+    else if (filletPickMode === 'face') setFilletPickMode('edge');
+  // Only react to mode changes, not filletPickMode (would cause a loop).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
   const [startRadius, setStartRadius] = useState(1);
   const [endRadius, setEndRadius] = useState(4);
   const [chordLength, setChordLength] = useState(5);
@@ -87,6 +104,7 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
   const [isRollingBallCorner, setIsRollingBallCorner] = useState(false);
   const [propagate, setPropagate] = useState(true);
   const [isG2, setIsG2] = useState(false);
+  const [tangencyWeight, setTangencyWeight] = useState(1.0);
   // CORR-3: per-edge edge sets — optional, appended below the global mode
   const [edgeSets, setEdgeSets] = useState<FilletEdgeSet[]>([]);
   const [showEdgeSets, setShowEdgeSets] = useState(false);
@@ -102,6 +120,7 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
       setbackDistance: setback ? setbackDistance : 0,
       propagate,
       isG2,
+      tangencyWeight: tangencyWeight !== 1.0 ? tangencyWeight : undefined,
       isRollingBallCorner: setback && isRollingBallCorner,
     };
     if (mode === 'variable') {
@@ -147,9 +166,30 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
       onConfirm={handleOK}
       confirmDisabled={selectedEdgeCount === 0}
     >
-      <p className="dialog-hint">
-        {selectedEdgeCount} edge(s) selected
-      </p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <p className="dialog-hint" style={{ margin: 0 }}>
+          {mode === 'full-round'
+            ? selectedEdgeCount > 0 ? `${selectedEdgeCount} face edge(s) selected` : 'Click a face to select all its edges'
+            : `${selectedEdgeCount} edge(s) selected`}
+        </p>
+        {mode !== 'full-round' && (
+          <button
+            style={{
+              background: filletPickMode === 'face' ? '#5b9bd5' : 'none',
+              border: '1px solid #555',
+              borderRadius: 3,
+              cursor: 'pointer',
+              color: filletPickMode === 'face' ? '#fff' : '#aaa',
+              padding: '2px 7px',
+              fontSize: 11,
+            }}
+            onClick={() => setFilletPickMode(filletPickMode === 'face' ? 'edge' : 'face')}
+            title={filletPickMode === 'face' ? 'Switch to edge picking' : 'Switch to face picking (selects all edges of a face)'}
+          >
+            {filletPickMode === 'face' ? 'Face' : 'Edge'}
+          </button>
+        )}
+      </div>
 
       {edgeIds.length > 0 && (
         <div style={{ maxHeight: 110, overflowY: 'auto', border: '1px solid #444', borderRadius: 4, marginBottom: 8 }}>
@@ -189,6 +229,32 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
           <option value="full-round">Full Round</option>
         </select>
       </div>
+
+      {mode === 'full-round' && (
+        <>
+          <p className="dialog-hint">
+            Click the center face to auto-compute the fillet radius and select its edges.
+            The radius is set to the inradius of the face (distance from centroid to nearest edge).
+          </p>
+          <div className="form-group">
+            <label>Radius (mm, auto)</label>
+            <input
+              type="number"
+              value={radius}
+              onFocus={selectNumberText}
+              onClick={selectNumberText}
+              onChange={(e) => {
+                const r = clamp(parseFloat(e.target.value) || 2, 0.01, 500);
+                setRadius(r);
+                setFilletLiveRadius(r);
+              }}
+              min={0.01}
+              max={500}
+              step={0.5}
+            />
+          </div>
+        </>
+      )}
 
       {mode === 'constant' && (
         <div className="form-group">
@@ -453,6 +519,23 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
           G2 Smooth (curvature continuity)
         </label>
       </div>
+
+      {isG2 && (
+        <div className="form-group" style={{ paddingLeft: 16 }}>
+          <label>Tangency Weight</label>
+          <input
+            type="number"
+            value={tangencyWeight}
+            onFocus={selectNumberText}
+            onClick={selectNumberText}
+            onChange={(e) => setTangencyWeight(clamp(parseFloat(e.target.value) || 1.0, 0.1, 2.0))}
+            min={0.1}
+            max={2.0}
+            step={0.1}
+            title="1.0 = standard blend; > 1.0 extends blend along adjacent faces; < 1.0 tightens it"
+          />
+        </div>
+      )}
     </DialogShell>
   );
 }

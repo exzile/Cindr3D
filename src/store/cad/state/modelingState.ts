@@ -267,6 +267,9 @@ export interface CADModelingState {
   clearFilletEdges: () => void;
   filletLiveRadius: number;
   setFilletLiveRadius: (r: number) => void;
+  /** Task 13/12: 'edge' picks individual edges; 'face' picks whole face boundaries. */
+  filletPickMode: 'edge' | 'face';
+  setFilletPickMode: (mode: 'edge' | 'face') => void;
 
   // D7 Chamfer edge selection + live distance (synced with ChamferGizmo drag)
   chamferEdgeIds: string[];
