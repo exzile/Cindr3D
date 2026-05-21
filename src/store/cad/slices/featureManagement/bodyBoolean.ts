@@ -135,7 +135,10 @@ export function placeToolFeature(
 
   result.userData.pickable = true;
   result.userData.featureId = feature.id;
-  const combined: Feature = { ...feature, mesh: result };
+  // Record the target body's id on the result feature so the non-destructive
+  // edit-replay path can re-apply the boolean against the original target on
+  // every parameter change (Phase-0 pattern from applyEdgeCut/fillet+chamfer).
+  const combined: Feature = { ...feature, mesh: result, parentFeatureId: target.id };
 
   const features = state.features.map((f) =>
     f.id === target.id ? { ...f, suppressed: true, visible: false } : f,
