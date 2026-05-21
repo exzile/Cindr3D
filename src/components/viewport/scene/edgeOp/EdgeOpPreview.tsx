@@ -38,6 +38,7 @@ import * as THREE from 'three';
 import {
   parseEdgeIds,
   fitEdgeCircle,
+  fitEdgeCircleOrArc,
   clusterEdgesByEndpointConnectivity,
   computePositionEps,
 } from '../../../../utils/geometry/edgeCutCore';
@@ -117,7 +118,8 @@ export default function EdgeOpPreview({
     const edgeClusters = clusterEdgesByEndpointConnectivity(parsed.edges, clusterEps);
     const previewEdges: PickedEdge[] = [];
     for (const cluster of edgeClusters) {
-      if (cluster.length <= MAX_NON_CIRCLE_SEGS || fitEdgeCircle(cluster) !== null) {
+      const circleFit = toolType === 'fillet' ? fitEdgeCircleOrArc(cluster) : fitEdgeCircle(cluster);
+      if (cluster.length <= MAX_NON_CIRCLE_SEGS || circleFit !== null) {
         previewEdges.push(...cluster);
       } else {
         for (let i = 0; i < MAX_NON_CIRCLE_SEGS; i++) {
