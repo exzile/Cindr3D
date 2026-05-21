@@ -22,8 +22,10 @@ import { initManifold } from './engine/geometryEngine/core/solid/manifoldWasm';
 // This directly benefits the edge picker (click → face hit → nearest edge),
 // the sketch plane hit test, and any other Raycaster.intersectObjects() call.
 // The patch is idempotent — safe to call multiple times.
-THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
-THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(THREE.BufferGeometry.prototype as any).computeBoundsTree = computeBoundsTree;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(THREE.BufferGeometry.prototype as any).disposeBoundsTree = disposeBoundsTree;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (THREE.Mesh.prototype as any).raycast = acceleratedRaycast;
 

@@ -24,14 +24,7 @@
  * additive metadata.
  */
 import * as THREE from 'three';
-import { HalfEdgeMap } from 'three-bvh-csg';
 import { modelEdgeId } from './edgeId';
-
-type HalfEdgeMapWithDisjointEdges = HalfEdgeMap & {
-  matchDisjointEdges: boolean;
-  useDrawRange: boolean;
-  getDisjointSiblingTriangleIndices(triIndex: number, edgeIndex: number): number[];
-};
 
 export interface ModelEdge {
   /** Stable id (canonical endpoint hash) — same regardless of which segment was hit. */
@@ -192,15 +185,37 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
     return Math.abs(n0.dot(n1)) < HARD_EDGE_COS; // distinct regions, >30° → crease
   };
 
-  // Position-hashed half-edge map; disjoint matching stitches CSG T-junctions.
-  const hem = new HalfEdgeMap() as HalfEdgeMapWithDisjointEdges;
-  hem.matchDisjointEdges = true;
-  hem.useDrawRange = false;
-  try {
-    hem.updateFrom(geo);
-  } catch {
-    return { edges: [] }; // never break the CSG path on a topology hiccup
+  // ── Inline position-hashed half-edge map (no three-bvh-csg dependency) ──────
+  // Maps the directed position-id edge (vIdA→vIdB) to the triangle that owns it.
+  // Two triangles sharing a manifold edge appear as (A→B) in one and (B→A) in
+  // the other — so the sibling lookup is a single Map.get of the reversed key.
+  // For T-junctions (disjoint siblings), we return all triangles that touch
+  // either endpoint position-id and let the geometric filters in the crease loop
+  // cull non-matching ones (same correctness guarantee as HalfEdgeMap, because
+  // the downstream code always re-checks geometry before accepting a match).
+  const posHalfEdgeToTri = new Map<string, number>();
+  for (let t = 0; t < triCount; t++) {
+    for (let e = 0; e < 3; e++) {
+      const a = vId[t * 3 + e];
+      const b = vId[t * 3 + (e + 1) % 3];
+      const k = `${a}|${b}`;
+      if (!posHalfEdgeToTri.has(k)) posHalfEdgeToTri.set(k, t);
+    }
   }
+  const getSiblingTri = (t: number, e: number): number => {
+    const a = vId[t * 3 + e];
+    const b = vId[t * 3 + (e + 1) % 3];
+    const sib = posHalfEdgeToTri.get(`${b}|${a}`);
+    return sib !== undefined && sib !== t ? sib : -1;
+  };
+  const getDisjointSiblingTris = (t: number, e: number): number[] => {
+    const pidA = vId[t * 3 + e];
+    const pidB = vId[t * 3 + (e + 1) % 3];
+    const result = new Set<number>();
+    for (const tr of vTris.get(pidA) ?? []) if (tr !== t) result.add(tr);
+    for (const tr of vTris.get(pidB) ?? []) if (tr !== t) result.add(tr);
+    return [...result];
+  };
 
   // ── Collect crease / boundary segments (deduped by canonical endpoint key) ──
   const rawByKey = new Map<string, RawEdge>();
@@ -222,8 +237,8 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
 
       if (rawByKey.has(ek)) continue;
 
-      const sib = hem.getSiblingTriangleIndex(t, e);
-      const disj = hem.getDisjointSiblingTriangleIndices(t, e);
+      const sib = getSiblingTri(t, e);
+      const disj = getDisjointSiblingTris(t, e);
 
       // The input has been welded + cleaned toward a manifold solid before
       // this runs (csgSubtractWithTopology), which removes the LONG broken-fan

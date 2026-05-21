@@ -548,7 +548,7 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
     if (feature.type === 'fillet') {
       const radius = (params.radius as number) ?? 2;
       const fp: FilletCommitParams = {
-        mode: (params.mode as string) ?? 'constant',
+        mode: (params.mode as FilletCommitParams['mode']) ?? 'constant',
         chordLength: params.chordLength as number | undefined,
         startRadius: params.startRadius as number | undefined,
         endRadius: params.endRadius as number | undefined,
