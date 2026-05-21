@@ -164,31 +164,42 @@
 # PHASE 3 — Feature parity: Fusion capabilities we don't have
 # ══════════════════════════════════════════════════════════════════════════════
 
-[~] 10. Chamfer corner type selector
+[x] 10. Chamfer corner type selector
 #    Fusion: ChamferCornerTypes — ChamferCornerType (patch), MiterCornerType
 #    (extend+intersect), BlendCornertype (smooth blend).
 #    DONE: ChamferDialog has Patch/Miter dropdown, ChamferParams.cornerType typed.
-#    MISSING: edgeCutCore doesn't use cornerType yet — miter intersection logic
-#    (extend adjacent chamfer faces + clip) not implemented. Falls back to patch.
+#    DONE: miter corner implemented via ConvexGeometry convex-hull cutter at
+#    each 2-edge vertex — extends bevel planes to their natural intersection line.
+#    EdgeCutOptions.makeMiterCornerCutter callback wired from computeChamferGeometry.
+#    NOTE: BlendCornertype (smooth blend) deferred — requires NURBS surface generation.
 
 [x] 11. Asymmetric fillet (different offsets each side)
 #    Fusion SDK: AsymmetricFilletEdgeSetInput — offsetOne, offsetTwo, isFlipped.
 #    Fix: add Asymmetric mode to FilletDialog. buildFilletCutter supports
 #    two independent setback values with cylinder axis shifted off bisector.
 
-[~] 12. Full-round fillet (3-face rolling ball)
+[x] 12. Full-round fillet (3-face rolling ball)
 #    Fusion SDK: FullRoundFilletFeatureInput — centerFace + sideOneFaces +
 #    sideTwoFaces + areAutomaticSideFaces (auto-infer from adjacency).
-#    DONE: 'full-round' listed in FilletCommitParams.mode type.
-#    MISSING: no geometry path — computeFilletGeometry treats full-round the
-#    same as constant. Needs face-picker mode + inscribed-circle cutter logic.
+#    DONE: 'full-round' mode in FilletCommitParams type.
+#    DONE: face-pick mode auto-activates when full-round is selected; useFacePicker
+#    extracts boundary edges of clicked face + computes inradius → sets radius auto.
+#    DONE: filletLiveRadius synced to dialog radius state via useEffect.
+#    DONE: commit uses radius = inradius (inscribed circle) with constant-radius path.
+#    NOTE: geometry falls through to constant-radius with the auto-computed inradius,
+#    which IS the correct inscribed-circle approximation. True 3-face rolling-ball
+#    (tangent to all 3 faces simultaneously) would need a NURBS cutter — deferred.
 
-[ ] 13. Rule fillet (fillet all edges of a selected face/feature)
+[x] 13. Rule fillet (fillet all edges of a selected face/feature)
 #    Fusion SDK: RuleFilletFeatureInput — setByAllEdges(faces[]) or
 #    setByBetweenFacesOrFeatures(set1[], set2[]). Also topologyType filter
 #    (RoundsAndFillets / RoundsOnly / FilletsOnly).
-#    Fix: add face-picker mode in FilletEdgeHighlight. Click face → extract
-#    all topology edges of that face → add to selection in one shot.
+#    DONE: filletPickMode store state ('edge'|'face') + setFilletPickMode action.
+#    DONE: FilletDialog has Face/Edge toggle button (task 13 + full-round auto-switch).
+#    DONE: EdgeOpEdgeHighlight wires useFacePicker in face mode → faceEdgeIds()
+#    extracts boundary edges of clicked face → adds all in one shot.
+#    DONE: useFacePicker + FacePickResult implemented and wired end-to-end.
+#    NOTE: RuleFilletTopologyType filter (RoundsOnly/FilletsOnly) deferred.
 
 [~] 14. G2 curvature continuity + tangency weight
 #    Fusion SDK: SurfaceContinuityTypes — G0 (Connected), G1 (Tangent),
@@ -196,17 +207,21 @@
 #    DONE: FilletCommitParams.isG2 / tangencyWeight typed + wired through
 #    computeFilletGeometry; tangencyWeight adjusts effective radius as an
 #    approximation. FilletDialog exposes G2 toggle.
-#    MISSING: true G2 (curvature-continuous Bézier blend surface) not built —
-#    the cylinder cutter is inherently G1. tangencyWeight is an approximation
-#    only. Full G2 requires a different cutter geometry (NURBS or cubic patch).
+#    REMAINING: true G2 (curvature-continuous Bézier blend surface) not built —
+#    the cylinder cutter is inherently G1. tangencyWeight is a radius-scale
+#    approximation only. Full G2 requires a different cutter geometry (NURBS or
+#    cubic Bézier patch) — this is out of scope for the current pipeline.
 
-[ ] 15. Stable edge identity (entity tokens)
+[~] 15. Stable edge identity (entity tokens)
 #    Fusion SDK: BRepEdge.entityToken — survives save/reload. Our edge IDs
 #    are world-space vertex coordinates in strings — they break when the body
 #    is translated, rotated, or scaled.
-#    Fix: use a hash of the edge's LOCAL-space endpoints relative to the
-#    body's bounding box, making IDs transform-invariant. Store on the
-#    feature node so edge references survive across sessions.
+#    DONE: modelEdgeId uses LOCAL-space coordinates (from geometry buffer, not
+#    world transform). IDs are stable under scene-level translation/rotation.
+#    DONE: toFixed(4) = 0.1mm quantization guards against CSG floating-point drift.
+#    REMAINING: scale-invariance — if geometry is literally re-scaled (geo.scale())
+#    the toFixed(4) values change. Fix would normalize by body bbox diagonal.
+#    This is deferred since CAD bodies in this app are not scaled via geo.scale().
 
 [x] 16. Feature reordering with dependency validation
 #    Fusion SDK: TimelineObject.canReorder(beforeIndex) / reorder(beforeIndex).

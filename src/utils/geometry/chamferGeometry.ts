@@ -11,6 +11,7 @@
  * preview) so the preview matches the committed result exactly.
  */
 import * as THREE from 'three';
+import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
 import {
   type PickedEdge,
   type ResolvedEdge,
@@ -157,6 +158,55 @@ function buildChamferCutter(
 }
 
 // ---------------------------------------------------------------------------
+// Miter corner cutter (Task 10 — ChamferCornerType === 'miter')
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds a convex-hull wedge cutter for the miter corner at vertex V where
+ * two chamfer edges (reA, reB) meet. Subtracting this wedge from the solid
+ * extends the two chamfer bevel faces to their natural intersection line,
+ * producing a sharp miter joint instead of leaving a triangular gap.
+ *
+ * The wedge is the convex hull of {V, s1A, s2A, s1B, s2B} where s*X are the
+ * setback points (V + d*uX) of each chamfer edge at the shared vertex.
+ * ConvexGeometry handles degenerate cases (coplanar, nearly-zero volume, …)
+ * by returning null from the try/catch.
+ *
+ * Returns null for degenerate configurations (< eps clearance → skip corner).
+ */
+function buildMiterCornerCutter(
+  V: THREE.Vector3,
+  reA: ResolvedEdge,
+  reB: ResolvedEdge,
+  d1: number,
+  d2: number,
+  eps: number,
+): THREE.BufferGeometry | null {
+  // Setback points along each edge's face-perpendicular directions at V.
+  // u1/u2 are unit vectors pointing away from the edge, into the two adjacent faces.
+  const s1A = V.clone().addScaledVector(reA.u1, d1);
+  const s2A = V.clone().addScaledVector(reA.u2, d2);
+  const s1B = V.clone().addScaledVector(reB.u1, d1);
+  const s2B = V.clone().addScaledVector(reB.u2, d2);
+
+  // Skip degenerate corners where a setback collapses onto V (tiny chamfer
+  // distance or near-coplanar adjacent faces). CSG on a near-zero volume
+  // cutter can throw or produce broken topology.
+  const minClear = eps * 4;
+  if (s1A.distanceTo(V) < minClear || s2A.distanceTo(V) < minClear ||
+      s1B.distanceTo(V) < minClear || s2B.distanceTo(V) < minClear) return null;
+
+  // ConvexGeometry builds the convex hull of the five points. This is
+  // geometrically the miter corner region to subtract: the wedge bounded
+  // by the two chamfer bevel planes and the original solid corner face.
+  try {
+    return new ConvexGeometry([V, s1A, s2A, s1B, s2B]);
+  } catch {
+    return null; // degenerate convex hull → skip this corner
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Public: compute the chamfered geometry
 // ---------------------------------------------------------------------------
 
@@ -170,6 +220,7 @@ function buildChamferCutter(
  * - `distance` is the setback along face 1; `distance2` along face 2
  *   (caller resolves it from the dialog mode — equal / two-dist / angle).
  *   When omitted, an equal-distance chamfer (distance2 = distance) is used.
+ * - `params.cornerType === 'miter'` activates the miter corner cutter (Task 10).
  */
 export function computeChamferGeometry(
   srcGeo: THREE.BufferGeometry,
@@ -182,6 +233,7 @@ export function computeChamferGeometry(
   if (!(distance > 0)) return null;
   const d1 = distance;
   const d2 = distance2 && distance2 > 0 ? distance2 : distance;
+  const isMiter = (params?.cornerType as string | undefined) === 'miter';
   return computeEdgeCutGeometry(
     srcGeo,
     edges,
@@ -189,6 +241,11 @@ export function computeChamferGeometry(
     'chamfer',
     fast,
     undefined,
-    { propagate: params?.propagate as boolean | undefined },
+    {
+      propagate: params?.propagate as boolean | undefined,
+      makeMiterCornerCutter: isMiter
+        ? (V, reA, reB, eps) => buildMiterCornerCutter(V, reA, reB, d1, d2, eps)
+        : undefined,
+    },
   );
 }
