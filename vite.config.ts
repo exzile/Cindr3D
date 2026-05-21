@@ -2475,6 +2475,13 @@ function silenceThreeClockPlugin(): Plugin {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [silenceThreeClockPlugin(), react(), wasm(), duetProxyPlugin(), cameraProxyPlugin(), cameraCommandProxyPlugin(), rtspHlsBridgePlugin(), rtspRecordingPlugin(), githubProxyPlugin(), cindr3dMcpPlugin(), homeAssistantBridgePlugin(), noCacheDevAssetsPlugin()],
+  // manifold-3d ships its own WASM and uses top-level await inside its JS
+  // bundle — exclude it from Vite's pre-bundler (esbuild) so the async
+  // Module() factory isn't inlined or transformed in a way that breaks WASM
+  // loading. three-mesh-bvh is a pure-JS library and can be pre-bundled.
+  optimizeDeps: {
+    exclude: ['manifold-3d'],
+  },
   resolve: {
     alias: {
       module: fileURLToPath(new URL('./src/shims/nodeModule.ts', import.meta.url)),
