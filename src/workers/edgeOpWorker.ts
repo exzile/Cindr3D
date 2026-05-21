@@ -17,12 +17,25 @@
  * srcGeoPositions is a flat Float32Array of xyz triples (non-indexed geometry).
  * positions in the result is the same layout; main thread reconstructs a
  * BufferGeometry from it and calls computeVertexNormals().
+ *
+ * Manifold WASM is initialised once on first message receipt, then reused for
+ * all subsequent CSG operations in this worker (same singleton pattern as main
+ * thread). Falls back to three-bvh-csg if Manifold init fails.
  */
 
 import * as THREE from 'three';
+import { initManifold } from '../engine/geometryEngine/core/solid/manifoldWasm';
 import { computeFilletGeometry } from '../utils/geometry/filletGeometry';
 import { computeChamferGeometry } from '../utils/geometry/chamferGeometry';
 import type { PickedEdge } from '../utils/geometry/edgeCutCore';
+
+// Init Manifold WASM once per worker process (runs in background while idle).
+// If this rejects we still work — csg.ts falls back to three-bvh-csg.
+const _manifoldReady: Promise<void> = initManifold()
+  .then(() => undefined)
+  .catch(() => {
+    console.warn('[edgeOpWorker] Manifold WASM init failed — using three-bvh-csg fallback');
+  });
 
 interface EdgeData {
   ax: number; ay: number; az: number;
@@ -41,9 +54,13 @@ interface ComputeMsg {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-(self as any).onmessage = (e: MessageEvent<ComputeMsg>) => {
+(self as any).onmessage = async (e: MessageEvent<ComputeMsg>) => {
   const msg = e.data;
   if (msg.type !== 'compute') return;
+
+  // Ensure Manifold is ready before the first CSG call so we don't race
+  // (subsequent calls return immediately from the resolved promise).
+  await _manifoldReady;
 
   const { requestId, srcGeoPositions, edges, toolType, value, segments, fast } = msg;
 
@@ -51,9 +68,7 @@ interface ComputeMsg {
   const srcGeo = new THREE.BufferGeometry();
   const posArr = new Float32Array(srcGeoPositions);
   srcGeo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
-  // three-bvh-csg's Evaluator requires a normal attribute on any geometry it
-  // operates on. The main-thread path gets normals for free from the live mesh
-  // clone; here we compute them from positions before passing into CSG.
+  // Normals needed for per-face shading after CSG; compute from positions.
   srcGeo.computeVertexNormals();
 
   // Deserialise edges.
