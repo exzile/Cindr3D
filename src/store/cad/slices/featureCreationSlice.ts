@@ -2,7 +2,7 @@ import type { Feature, Tool } from '../../../types/cad';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
 import type { CADSliceContext } from '../sliceContext';
 import type { CADState } from '../state';
-import { placeToolFeature, type BodyBooleanOp } from './featureManagement/bodyBoolean';
+import { placeToolFeatureAsync, type BodyBooleanOp } from './featureManagement/bodyBoolean';
 
 /**
  * Map a panel operation (which may include 'new-component') + body kind to a
@@ -57,7 +57,7 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
     set({ activeTool: 'sweep', sweepProfileSketchId: null, sweepPathSketchId: null, statusMessage: 'Sweep — pick a profile sketch, then a path sketch in the panel' });
   },
   cancelSweepTool: () => set({ activeTool: 'select', sweepProfileSketchId: null, sweepPathSketchId: null, sweepOrientation: 'perpendicular', sweepTwistAngle: 0, sweepTaperAngle: 0, sweepGuideRailId: null, sweepDistance: 'entire', sweepDistanceOne: 0, sweepDistanceTwo: 1, statusMessage: 'Sweep cancelled' }),
-  commitSweep: () => {
+  commitSweep: async () => {
     const { sweepProfileSketchId, sweepPathSketchId, sweepBodyKind, sweepDistance, sweepDistanceOne, sweepDistanceTwo, sweepOrientation, sweepProfileScaling, sweepTwistAngle, sweepTaperAngle, sweepGuideRailId, sweepOperation, sketches, features, units } = get();
     if (!sweepProfileSketchId || !sweepPathSketchId) {
       set({ statusMessage: 'Select both a profile sketch and a path sketch' });
@@ -93,22 +93,15 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
       mesh: mesh ?? undefined,
       bodyKind: sweepBodyKind === 'surface' ? 'surface' : 'solid',
     };
-    let opNote = '';
-    set((s) => {
-      const r = placeToolFeature(
-        s, feature,
-        toolBooleanOp(sweepOperation, sweepBodyKind === 'surface', !!mesh),
-      );
-      opNote = r.note;
-      return {
-        features: r.features,
-        designConfigurations: r.designConfigurations,
-        activeTool: 'select',
-        sweepProfileSketchId: null,
-        sweepPathSketchId: null,
-        sweepBodyKind: 'solid',
-        statusMessage: `${sweepBodyKind === 'surface' ? 'Surface ' : ''}Sweep created${opNote} (${units})`,
-      };
+    const r = await placeToolFeatureAsync(get(), feature, toolBooleanOp(sweepOperation, sweepBodyKind === 'surface', !!mesh));
+    set({
+      features: r.features,
+      designConfigurations: r.designConfigurations,
+      activeTool: 'select',
+      sweepProfileSketchId: null,
+      sweepPathSketchId: null,
+      sweepBodyKind: 'solid',
+      statusMessage: `${sweepBodyKind === 'surface' ? 'Surface ' : ''}Sweep created${r.note} (${units})`,
     });
   },
 
@@ -139,7 +132,7 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
     set({ activeTool: 'loft', loftProfileSketchIds: ['', ''], statusMessage: 'Loft — select 2+ profile sketches in the panel, then OK' });
   },
   cancelLoftTool: () => set({ activeTool: 'select', loftProfileSketchIds: [], loftClosed: false, loftTangentEdgesMerged: false, loftStartCondition: 'free', loftEndCondition: 'free', loftRailSketchId: null, loftOperation: 'new-body', statusMessage: 'Loft cancelled' }),
-  commitLoft: () => {
+  commitLoft: async () => {
     const { loftProfileSketchIds, loftBodyKind, loftOperation, sketches, features, units } = get();
     const validIds = loftProfileSketchIds.filter(Boolean);
     if (validIds.length < 2) {
@@ -165,20 +158,13 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
       mesh: mesh ?? undefined,
       bodyKind: loftBodyKind === 'surface' ? 'surface' : 'solid',
     };
-    let opNote = '';
-    set((s) => {
-      const r = placeToolFeature(
-        s, feature,
-        toolBooleanOp(loftOperation, loftBodyKind === 'surface', !!mesh),
-      );
-      opNote = r.note;
-      return {
-        features: r.features,
-        designConfigurations: r.designConfigurations,
-        activeTool: 'select',
-        loftProfileSketchIds: [],
-        statusMessage: `${loftBodyKind === 'surface' ? 'Surface ' : ''}Loft created across ${profileSketches.length} profiles${opNote} (${units})`,
-      };
+    const r = await placeToolFeatureAsync(get(), feature, toolBooleanOp(loftOperation, loftBodyKind === 'surface', !!mesh));
+    set({
+      features: r.features,
+      designConfigurations: r.designConfigurations,
+      activeTool: 'select',
+      loftProfileSketchIds: [],
+      statusMessage: `${loftBodyKind === 'surface' ? 'Surface ' : ''}Loft created across ${profileSketches.length} profiles${r.note} (${units})`,
     });
   },
 
