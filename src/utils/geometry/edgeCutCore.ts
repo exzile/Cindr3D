@@ -79,6 +79,20 @@ export interface EdgeCutOptions {
    * 3 or more selected edges meet (rolling-ball corner blend).
    */
   cornerRadius?: number;
+  /**
+   * When set, called at each vertex where exactly 2 per-segment edges meet to
+   * build a miter-corner CSG cutter. Used by the chamfer miter corner type
+   * (ChamferCornerType === 'miter'). The two resolved edges (reA, reB) share
+   * the given vertex; the callback builds a convex-hull wedge that fills the
+   * gap between the two bevel faces at the corner intersection line.
+   * Returns null to skip the corner (degenerate geometry).
+   */
+  makeMiterCornerCutter?: (
+    vertex: THREE.Vector3,
+    reA: ResolvedEdge,
+    reB: ResolvedEdge,
+    eps: number,
+  ) => THREE.BufferGeometry | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1255,10 +1269,27 @@ export function computeEdgeCutGeometry(
     if (!handledByLoop) perSegEdges.push(...cluster);
   }
 
+  // Miter corner: collect resolved edges per vertex during the per-segment loop.
+  // Key: quantized vertex cell string → resolved edges that touch this vertex.
+  const miterVtxEdges = options?.makeMiterCornerCutter
+    ? new Map<string, { pos: THREE.Vector3; res: ResolvedEdge[] }>()
+    : null;
+  const miterVtxKey = (v: THREE.Vector3) =>
+    `${Math.round(v.x / eps)}_${Math.round(v.y / eps)}_${Math.round(v.z / eps)}`;
+
   // Per-segment path for non-circular clusters (straight edges, arcs, etc.).
   for (const e of perSegEdges) {
     const re = resolveEdge(tris, e, near, triIdx, eps);
     if (!re) { failedSegCount++; continue; }
+    // Collect per-vertex resolved-edge data for miter corner computation.
+    if (miterVtxEdges) {
+      for (const v of [re.a, re.b]) {
+        const k = miterVtxKey(v);
+        let entry = miterVtxEdges.get(k);
+        if (!entry) { entry = { pos: v.clone(), res: [] }; miterVtxEdges.set(k, entry); }
+        entry.res.push(re);
+      }
+    }
     // Small overhang past the edge ends so the boolean is clean at the ends
     // without visibly notching the adjacent faces.
     const edgeEps = Math.max(re.length * 1e-3, 1e-4);
@@ -1311,6 +1342,32 @@ export function computeEdgeCutGeometry(
     console.warn(`[${tag}] no edges cut → returning null`);
     solid.dispose();
     return null;
+  }
+
+  // Task 10: Miter corner at 2-edge vertices (chamfer cornerType='miter').
+  // At each vertex where exactly 2 per-segment chamfer edges meet, the two
+  // chamfer bevel planes must be extended to their natural intersection line
+  // (the miter). We do this by CSG-subtracting a convex-hull wedge that
+  // exactly spans the gap between the two bevel faces at the shared corner.
+  if (miterVtxEdges && options?.makeMiterCornerCutter) {
+    for (const { pos, res } of miterVtxEdges.values()) {
+      if (res.length !== 2) continue; // only exactly-2-edge corners → miter
+      const miterCutter = options.makeMiterCornerCutter(pos, res[0], res[1], eps);
+      if (!miterCutter) continue;
+      try {
+        const next = csgSubtractRaw(solid, miterCutter);
+        miterCutter.dispose();
+        const posCount = (next.attributes.position as THREE.BufferAttribute | undefined)?.count ?? 0;
+        if (posCount > 0) {
+          solid.dispose();
+          solid = next;
+        } else {
+          next.dispose();
+        }
+      } catch {
+        miterCutter.dispose();
+      }
+    }
   }
 
   // Task 7: Rolling-ball corner sphere at multi-edge junctions.
