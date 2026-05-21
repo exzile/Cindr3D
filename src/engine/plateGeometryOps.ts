@@ -3,7 +3,7 @@
 // so the slicer store can stay framework-free.
 
 import * as THREE from 'three';
-import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
+import { csgSubtract } from './geometryEngine/core/solid/csg';
 
 /**
  * Quaternion that rotates `from` onto `to`. Handles antiparallel and
@@ -175,14 +175,7 @@ export function hollowMesh(
   inner.computeVertexNormals();
 
   try {
-    const a = new Brush(outer);
-    const b = new Brush(inner);
-    a.updateMatrixWorld();
-    b.updateMatrixWorld();
-    const ev = new Evaluator();
-    const result = ev.evaluate(a, b, SUBTRACTION);
-    const out = result.geometry.clone();
-    out.computeVertexNormals();
+    const out = csgSubtract(outer, inner);
     out.computeBoundingBox();
     return out;
   } catch (err) {
@@ -225,17 +218,11 @@ export function cutMeshByPlane(
     return box;
   };
 
-  const ev = new Evaluator();
-  const base = new Brush(geo.clone());
-  base.updateMatrixWorld();
+  const baseGeo = geo.clone();
 
   const subtract = (halfspace: THREE.BufferGeometry) => {
     try {
-      const b = new Brush(halfspace);
-      b.updateMatrixWorld();
-      const r = ev.evaluate(base, b, SUBTRACTION);
-      const out = r.geometry.clone();
-      out.computeVertexNormals();
+      const out = csgSubtract(baseGeo, halfspace);
       out.computeBoundingBox();
       const posAttr = out.getAttribute('position');
       if (!posAttr || posAttr.count === 0) return null;
