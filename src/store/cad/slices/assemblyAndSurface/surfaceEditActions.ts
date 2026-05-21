@@ -3,7 +3,7 @@ import type { Feature } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
-import { placeToolFeature } from '../featureManagement/bodyBoolean';
+import { placeToolFeatureAsync } from '../featureManagement/bodyBoolean';
 
 const SURFACE_MATERIAL = () =>
   new THREE.MeshPhysicalMaterial({
@@ -384,7 +384,7 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
       get().setStatusMessage(`Unstitch ${n}: separated into ${newFeatures.length} face${newFeatures.length !== 1 ? 's' : ''}`);
     },
 
-    commitThicken: (params) => {
+    commitThicken: async (params) => {
       const { features } = get();
       const n = features.filter((f) => f.params?.featureKind === 'thicken-solid').length + 1;
       const sourceMesh = [...features]
@@ -407,13 +407,9 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
       // Thicken yields a solid — honour operation join/cut against the most
       // recent solid body via the shared helper (was: always standalone).
       get().pushUndo();
-      let opNote = '';
-      set((s) => {
-        const r = placeToolFeature(s, feature, params.operation ?? 'new-body');
-        opNote = r.note;
-        return { features: r.features, designConfigurations: r.designConfigurations };
-      });
-      get().setStatusMessage(`Thicken ${n}: ${params.thickness}mm ${params.direction}${opNote}`);
+      const r = await placeToolFeatureAsync(get(), feature, params.operation ?? 'new-body');
+      set({ features: r.features, designConfigurations: r.designConfigurations });
+      get().setStatusMessage(`Thicken ${n}: ${params.thickness}mm ${params.direction}${r.note}`);
     },
   };
 }

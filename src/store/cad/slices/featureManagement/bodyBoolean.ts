@@ -12,10 +12,13 @@
  * copies had.
  */
 import * as THREE from 'three';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Feature } from '../../../../types/cad';
 import type { CADState } from '../../state';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import { errorMessage } from '../../../../utils/errorHandling';
+import { csgAsync } from '../../../../workers/csgWorkerPool';
+import { extractEdgeTopology } from '../../../../engine/geometryEngine/core/solid/edgeTopology';
 
 export type BodyBooleanOp = 'new-body' | 'join' | 'cut' | 'intersect';
 
@@ -138,6 +141,86 @@ export function placeToolFeature(
   // Record the target body's id on the result feature so the non-destructive
   // edit-replay path can re-apply the boolean against the original target on
   // every parameter change (Phase-0 pattern from applyEdgeCut/fillet+chamfer).
+  const combined: Feature = { ...feature, mesh: result, parentFeatureId: target.id };
+
+  const features = state.features.map((f) =>
+    f.id === target.id ? { ...f, suppressed: true, visible: false } : f,
+  );
+  features.push(combined);
+
+  return {
+    features,
+    designConfigurations: syncConfigurationSuppression(state, {
+      [feature.id]: false,
+      [target.id]: true,
+    }),
+    note: ` (${operation} with ${target.name})`,
+  };
+}
+
+/**
+ * Async version of applyBodyBoolean — runs CSG in a worker pool so the main
+ * thread stays responsive. Returns null on failure (caller falls back to
+ * standalone body). Attaches edge topology to the result geometry for
+ * fillet/chamfer edge picking.
+ */
+export async function applyBodyBooleanAsync(
+  targetMesh: THREE.Mesh,
+  toolMesh: THREE.Mesh,
+  operation: 'join' | 'cut' | 'intersect',
+): Promise<THREE.Mesh | null> {
+  try {
+    const targetGeom = GeometryEngine.bakeMeshWorldGeometry(targetMesh);
+    const toolGeom = GeometryEngine.bakeMeshWorldGeometry(toolMesh);
+    const opKey = operation === 'join' ? 'union' : operation === 'cut' ? 'subtract' : 'intersect';
+    const resultGeom = await csgAsync(targetGeom, toolGeom, opKey);
+    targetGeom.dispose();
+    toolGeom.dispose();
+    if (!resultGeom) return null;
+    try {
+      const forTopo = mergeVertices(resultGeom, 1e-6);
+      resultGeom.userData.topology = extractEdgeTopology(forTopo);
+      forTopo.dispose();
+    } catch { /* non-fatal */ }
+    const mesh = new THREE.Mesh(resultGeom, targetMesh.material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
+  } catch (err) {
+    void errorMessage(err, 'unknown CSG error');
+    return null;
+  }
+}
+
+/**
+ * Async version of placeToolFeature — CSG runs in a worker pool rather than
+ * blocking the main thread. State snapshot is captured at call time; the
+ * caller calls set() with the resolved result.
+ */
+export async function placeToolFeatureAsync(
+  state: CADState,
+  feature: Feature,
+  operation: BodyBooleanOp,
+  pickOpts: PickOpts = {},
+): Promise<{ features: Feature[]; designConfigurations: CADState['designConfigurations']; note: string }> {
+  const append = (note: string) => ({
+    features: [...state.features, feature],
+    designConfigurations: state.designConfigurations,
+    note,
+  });
+
+  if (operation === 'new-body') return append('');
+
+  const target = pickMostRecentSolidTarget(state.features, pickOpts);
+  if (!target || !(target.mesh instanceof THREE.Mesh) || !(feature.mesh instanceof THREE.Mesh)) {
+    return append(` (${operation}: no target body — standalone)`);
+  }
+
+  const result = await applyBodyBooleanAsync(target.mesh, feature.mesh, operation);
+  if (!result) return append(` (${operation} failed — standalone body)`);
+
+  result.userData.pickable = true;
+  result.userData.featureId = feature.id;
   const combined: Feature = { ...feature, mesh: result, parentFeatureId: target.id };
 
   const features = state.features.map((f) =>

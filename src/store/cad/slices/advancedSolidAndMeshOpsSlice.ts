@@ -4,7 +4,7 @@ import { GeometryEngine } from '../../../engine/GeometryEngine';
 import { errorMessage } from '../../../utils/errorHandling';
 import type { CADSliceContext } from '../sliceContext';
 import type { CADState } from '../state';
-import { placeToolFeature, pickMostRecentSolidTarget, applyBodyBoolean } from './featureManagement/bodyBoolean';
+import { placeToolFeature, pickMostRecentSolidTarget, applyBodyBoolean, applyBodyBooleanAsync, placeToolFeatureAsync } from './featureManagement/bodyBoolean';
 import { liveBodyMeshes } from '../../meshRegistry';
 
 /**
@@ -50,6 +50,28 @@ function replayToolBoolean(
   result.userData.pickable = true;
   result.userData.featureId = feature.id;
   // Tool mesh was just for CSG input — dispose its geometry, we keep the result.
+  toolMesh.geometry.dispose();
+  return { mesh: result, note: ` (${operation} with ${parent.name})` };
+}
+
+/** Async version of replayToolBoolean — CSG runs in the worker pool. */
+async function replayToolBooleanAsync(
+  features: Feature[],
+  feature: Feature,
+  toolMesh: THREE.Mesh,
+  operation: 'new-body' | 'join' | 'cut' | 'intersect',
+): Promise<{ mesh: THREE.Mesh; note: string }> {
+  if (operation === 'new-body') return { mesh: toolMesh, note: '' };
+  const parentId = feature.parentFeatureId;
+  if (!parentId) return { mesh: toolMesh, note: ` (${operation}: no parent target — standalone)` };
+  const parent = features.find((f) => f.id === parentId);
+  if (!(parent?.mesh instanceof THREE.Mesh)) {
+    return { mesh: toolMesh, note: ` (${operation}: parent body missing — standalone)` };
+  }
+  const result = await applyBodyBooleanAsync(parent.mesh, toolMesh, operation);
+  if (!result) return { mesh: toolMesh, note: ` (${operation} failed — standalone body)` };
+  result.userData.pickable = true;
+  result.userData.featureId = feature.id;
   toolMesh.geometry.dispose();
   return { mesh: result, note: ` (${operation} with ${parent.name})` };
 }
@@ -221,7 +243,7 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
   },
 
   // ── SLD — Pipe ───────────────────────────────────────────────────────────
-  commitPipe: (params) => {
+  commitPipe: async (params) => {
     const { features, sketches } = get();
     const { outerDiameter, hollow, wallThickness, operation, pathSketchId } = params;
     if (!Number.isFinite(outerDiameter) || outerDiameter <= 0) {
@@ -260,17 +282,13 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
       suppressed: false,
       timestamp: Date.now(),
     };
-    let opNote = '';
-    set((s) => {
-      const r = placeToolFeature(s, feature, operation);
-      opNote = r.note;
-      return { features: r.features, designConfigurations: r.designConfigurations };
-    });
-    get().setStatusMessage(`Pipe ${n} created: ⌀${outerDiameter}mm${hollow ? `, ${wallThickness}mm wall` : ''}${opNote}`);
+    const r = await placeToolFeatureAsync(get(), feature, operation);
+    set({ features: r.features, designConfigurations: r.designConfigurations });
+    get().setStatusMessage(`Pipe ${n} created: ⌀${outerDiameter}mm${hollow ? `, ${wallThickness}mm wall` : ''}${r.note}`);
   },
 
   // ── SLD — Snap Fit (cantilever snap-hook) ────────────────────────────────
-  commitSnapFit: (params) => {
+  commitSnapFit: async (params) => {
     const { features } = get();
     const { snapType, length, width, thickness, overhang, overhangAngle, returnAngle, operation } = params;
     if (![length, width, thickness].every((v) => Number.isFinite(v) && v > 0)) {
@@ -299,17 +317,13 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
       suppressed: false,
       timestamp: Date.now(),
     };
-    let opNote = '';
-    set((s) => {
-      const r = placeToolFeature(s, feature, operation);
-      opNote = r.note;
-      return { features: r.features, designConfigurations: r.designConfigurations };
-    });
-    get().setStatusMessage(`Snap Fit ${n} created: ${snapType}, ${length}×${width}×${thickness}mm${opNote}`);
+    const r = await placeToolFeatureAsync(get(), feature, operation);
+    set({ features: r.features, designConfigurations: r.designConfigurations });
+    get().setStatusMessage(`Snap Fit ${n} created: ${snapType}, ${length}×${width}×${thickness}mm${r.note}`);
   },
 
   // ── SLD — Lip and Groove ─────────────────────────────────────────────────
-  commitLipGroove: (params) => {
+  commitLipGroove: async (params) => {
     const { features } = get();
     const { lipWidth, lipHeight, grooveWidth, grooveDepth, clearance, includeGroove, operation } = params;
     if (![lipWidth, lipHeight].every((v) => Number.isFinite(v) && v > 0)) {
@@ -342,19 +356,15 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
       suppressed: false,
       timestamp: Date.now(),
     };
-    let opNote = '';
-    set((s) => {
-      const r = placeToolFeature(s, feature, operation);
-      opNote = r.note;
-      return { features: r.features, designConfigurations: r.designConfigurations };
-    });
+    const r = await placeToolFeatureAsync(get(), feature, operation);
+    set({ features: r.features, designConfigurations: r.designConfigurations });
     get().setStatusMessage(
       `Lip and Groove ${n} created: lip ${lipWidth}×${lipHeight}mm`
-      + `${includeGroove ? `, groove ${grooveWidth}×${grooveDepth}mm (${clearance}mm clearance)` : ''}${opNote}`,
+      + `${includeGroove ? `, groove ${grooveWidth}×${grooveDepth}mm (${clearance}mm clearance)` : ''}${r.note}`,
     );
   },
 
-  updateLipGrooveGeometry: (featureId, params) => {
+  updateLipGrooveGeometry: async (featureId, params) => {
     const { features } = get();
     const { lipWidth, lipHeight, grooveWidth, grooveDepth, clearance, includeGroove, operation } = params;
     const existing = features.find((f) => f.id === featureId);
@@ -366,10 +376,10 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     toolMesh.receiveShadow = true;
     toolMesh.userData.pickable = true;
     toolMesh.userData.featureId = featureId;
-    const { mesh, note } = replayToolBoolean(features, existing, toolMesh, operation);
+    const { mesh, note } = await replayToolBooleanAsync(features, existing, toolMesh, operation);
     (existing.mesh as THREE.Mesh | undefined)?.geometry?.dispose();
     set({
-      features: features.map((f) =>
+      features: get().features.map((f) =>
         f.id === featureId
           ? { ...f, mesh, params: { ...f.params, lipWidth, lipHeight, grooveWidth, grooveDepth, clearance, includeGroove, operation } }
           : f,
@@ -378,7 +388,7 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     get().setStatusMessage(`Lip and Groove updated: lip ${lipWidth}×${lipHeight}mm${includeGroove ? `, groove ${grooveWidth}×${grooveDepth}mm` : ''}${note}`);
   },
 
-  updateSnapFitGeometry: (featureId, params) => {
+  updateSnapFitGeometry: async (featureId, params) => {
     const { features } = get();
     const { snapType, length, width, thickness, overhang, overhangAngle, returnAngle, operation } = params;
     const existing = features.find((f) => f.id === featureId);
@@ -390,10 +400,10 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     toolMesh.receiveShadow = true;
     toolMesh.userData.pickable = true;
     toolMesh.userData.featureId = featureId;
-    const { mesh, note } = replayToolBoolean(features, existing, toolMesh, operation);
+    const { mesh, note } = await replayToolBooleanAsync(features, existing, toolMesh, operation);
     (existing.mesh as THREE.Mesh | undefined)?.geometry?.dispose();
     set({
-      features: features.map((f) =>
+      features: get().features.map((f) =>
         f.id === featureId
           ? { ...f, mesh, params: { ...f.params, snapType, length, width, thickness, overhang, overhangAngle, returnAngle, operation } }
           : f,
@@ -402,7 +412,7 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     get().setStatusMessage(`Snap Fit updated: ${snapType}, ${length}×${width}×${thickness}mm${note}`);
   },
 
-  updatePipeGeometry: (featureId, params) => {
+  updatePipeGeometry: async (featureId, params) => {
     const { features, sketches } = get();
     const { outerDiameter, hollow, wallThickness, operation, pathSketchId } = params;
     const existing = features.find((f) => f.id === featureId);
@@ -422,10 +432,10 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     toolMesh.receiveShadow = true;
     toolMesh.userData.pickable = true;
     toolMesh.userData.featureId = featureId;
-    const { mesh, note } = replayToolBoolean(features, existing, toolMesh, operation);
+    const { mesh, note } = await replayToolBooleanAsync(features, existing, toolMesh, operation);
     (existing.mesh as THREE.Mesh | undefined)?.geometry?.dispose();
     set({
-      features: features.map((f) =>
+      features: get().features.map((f) =>
         f.id === featureId
           ? {
               ...f,
@@ -828,7 +838,7 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
   },
 
   // ── SLD3 — Emboss ────────────────────────────────────────────────────────
-  commitEmboss: (sketchId, depth, style) => {
+  commitEmboss: async (sketchId, depth, style) => {
     const { sketches, features } = get();
     const sketch = sketches.find((s) => s.id === sketchId);
     if (!sketch) {
@@ -858,13 +868,9 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     // (cut). Route through the shared helper so it actually booleans against
     // the target body instead of leaving a floating slab.
     get().pushUndo();
-    let opNote = '';
-    set((s) => {
-      const r = placeToolFeature(s, feature, style === 'deboss' ? 'cut' : 'join');
-      opNote = r.note;
-      return { features: r.features, designConfigurations: r.designConfigurations };
-    });
-    get().setStatusMessage(`Emboss ${n}: ${style} ${depth}mm${opNote}`);
+    const r = await placeToolFeatureAsync(get(), feature, style === 'deboss' ? 'cut' : 'join');
+    set({ features: r.features, designConfigurations: r.designConfigurations });
+    get().setStatusMessage(`Emboss ${n}: ${style} ${depth}mm${r.note}`);
   },
 
   // ── SLD6 — Boundary Fill ─────────────────────────────────────────────────
