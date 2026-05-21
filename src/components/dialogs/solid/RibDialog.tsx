@@ -10,7 +10,7 @@ export function RibDialog({ onClose }: { onClose: () => void }) {
 
   const sketches = useCADStore((s) => s.sketches);
   const commitRibFromDialog = useCADStore((s) => s.commitRibFromDialog);
-  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
+  const updateRibGeometry = useCADStore((s) => s.updateRibGeometry);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const [sketchId, setSketchId] = useState(String(p.sketchId ?? editing?.sketchId ?? ''));
@@ -24,8 +24,8 @@ export function RibDialog({ onClose }: { onClose: () => void }) {
 
   const handleApply = () => {
     if (editing) {
-      updateFeatureParams(editing.id, { sketchId, thickness, height, direction, operation, fillAllEnclosedFaces, preserveCorners });
-      setStatusMessage(`Updated rib: ${thickness}mm thick`);
+      if (!sketchId) { setStatusMessage('Rib: select a profile sketch'); return; }
+      updateRibGeometry(editing.id, sketchId, thickness, height, { direction, operation, fillAllEnclosedFaces, preserveCorners });
       onClose();
     } else {
       if (!sketchId) { setStatusMessage('Rib: select a profile sketch'); return; }
