@@ -437,7 +437,7 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
       used.add(si);
       const pts = mk(sA, sB);
       const cv0 = clusterConvexity([si]);
-      edges.push({ id: modelEdgeId(pts), polyline: pts, kind: 'crease', ...(cv0 ? { convexity: cv0 } : {}) });
+      edges.push({ id: modelEdgeId(pts, diag), polyline: pts, kind: 'crease', ...(cv0 ? { convexity: cv0 } : {}) });
       continue;
     }
     _D.divideScalar(dl);
@@ -503,7 +503,7 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
     if (cluster.length === 1 || maxDevSq <= qSq) {
       if (pMin.distanceToSquared(pMax) >= qSq) {
         const pts = mk(pMin, pMax);
-        edges.push({ id: modelEdgeId(pts), polyline: pts, kind: 'crease', ...(clusterCv ? { convexity: clusterCv } : {}) });
+        edges.push({ id: modelEdgeId(pts, diag), polyline: pts, kind: 'crease', ...(clusterCv ? { convexity: clusterCv } : {}) });
       }
     } else {
       for (const ci of cluster) {
@@ -512,7 +512,7 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
         if (a.distanceToSquared(b) < qSq) continue;
         const segPts = mk(a, b);
         const segCv = convexityByKey.get(segEk[ci]);
-        edges.push({ id: modelEdgeId(segPts), polyline: segPts, kind: 'crease', ...(segCv ? { convexity: segCv } : {}) });
+        edges.push({ id: modelEdgeId(segPts, diag), polyline: segPts, kind: 'crease', ...(segCv ? { convexity: segCv } : {}) });
       }
     }
   }
