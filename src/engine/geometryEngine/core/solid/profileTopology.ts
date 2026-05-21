@@ -88,6 +88,33 @@ export function extrudeProfileTopology(
     pts.length >= 2 && pts[pts.length - 1].distanceTo(pts[0]) < 1e-6
       ? pts.slice(0, -1) : pts;
 
+  const pointOnSegment = (p: THREE.Vector2, a: THREE.Vector2, b: THREE.Vector2): boolean => {
+    const ab = b.clone().sub(a);
+    const ap = p.clone().sub(a);
+    const lenSq = ab.lengthSq();
+    if (lenSq < 1e-12) return p.distanceTo(a) <= 1e-6;
+    const t = ap.dot(ab) / lenSq;
+    if (t < -1e-6 || t > 1 + 1e-6) return false;
+    const closest = a.clone().addScaledVector(ab, t);
+    return closest.distanceTo(p) <= 1e-5;
+  };
+
+  const pointInPolygon = (p: THREE.Vector2, polygon: THREE.Vector2[]): boolean => {
+    for (let i = 0; i < polygon.length; i++) {
+      if (pointOnSegment(p, polygon[i], polygon[(i + 1) % polygon.length])) return true;
+    }
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const pi = polygon[i];
+      const pj = polygon[j];
+      if (((pi.y > p.y) !== (pj.y > p.y)) &&
+          p.x < ((pj.x - pi.x) * (p.y - pi.y)) / (pj.y - pi.y) + pi.x) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  };
+
   const emitLoop = (raw: THREE.Vector2[]): void => {
     const p = strip(raw);
     const n = p.length;
@@ -129,13 +156,53 @@ export function extrudeProfileTopology(
     }
   };
 
+  const emitOpenRun = (raw: THREE.Vector2[]): void => {
+    const p = raw.filter((pt, i) => i === 0 || pt.distanceTo(raw[i - 1]) > 1e-6);
+    if (p.length < 2) return;
+    for (const z of capZs) pushEdge(p.map((q) => toWorld(q.x, q.y, z)));
+  };
+
+  const emitHoleLoop = (raw: THREE.Vector2[], outerRaw: THREE.Vector2[]): void => {
+    const hole = strip(raw);
+    const outer = strip(outerRaw);
+    if (hole.length < 2 || outer.length < 3) return;
+    const inside = hole.map((p) => pointInPolygon(p, outer));
+    if (inside.every(Boolean)) {
+      emitLoop(raw);
+      return;
+    }
+
+    let run: THREE.Vector2[] = [];
+    const flush = () => {
+      if (run.length >= 2) emitOpenRun(run);
+      run = [];
+    };
+
+    for (let i = 0; i < hole.length; i++) {
+      const a = hole[i];
+      const b = hole[(i + 1) % hole.length];
+      const aIn = inside[i];
+      const bIn = inside[(i + 1) % hole.length];
+      if (aIn && run.length === 0) run.push(a);
+      if (aIn && bIn) {
+        run.push(b);
+      } else if (aIn && !bIn) {
+        flush();
+      } else if (!aIn && bIn) {
+        run = [b];
+      }
+    }
+    flush();
+  };
+
   for (const shape of shapes) {
     // Mirror buildExtrudeGeomHolesAware's sampling so topology vertex positions
     // exactly match the rendered mesh.  Using a fixed SEG=64 produced a mismatch
     // (64 vs the adaptive count, e.g. 71 for a 5-unit-radius circle) that caused
     // resolveEdge to fail — the topology arc endpoints did not exist in the mesh.
     const outerSeg = adaptiveCurveSegments(shape);
-    emitLoop(shape.getPoints(outerSeg));
+    const outerPoints = shape.getPoints(outerSeg);
+    emitLoop(outerPoints);
     for (const holePath of shape.holes) {
       // Per-hole adaptive count mirrors buildExtrudeGeomHolesAware exactly.
       let holeMaxR = 0;
@@ -146,7 +213,7 @@ export function extrudeProfileTopology(
         }
       }
       const holeSeg = holeMaxR > 0 ? circleSegments(holeMaxR) : 64;
-      emitLoop(holePath.getPoints(holeSeg));
+      emitHoleLoop(holePath.getPoints(holeSeg), outerPoints);
     }
   }
   return { edges };

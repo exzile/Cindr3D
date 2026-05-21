@@ -73,17 +73,55 @@ describe('Persistence round-trip', () => {
     expect(roundGeom.attributes.position.count).toBe(geom.attributes.position.count);
   });
 
-  it('WeakMap cache returns identical object for same feature reference', () => {
-    const geom = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
-    const mesh = new THREE.Mesh(geom);
+  it('WeakMap cache returns identical object for same non-mesh feature reference', () => {
     const feature: Feature = {
-      id: 'f3', name: 'x', type: 'import', params: {}, mesh,
+      id: 'f3', name: 'x', type: 'extrude', params: {},
       visible: true, suppressed: false, timestamp: 1,
     };
     const a = serializeFeature(feature);
     const b = serializeFeature(feature);
     // Same Feature reference → cache hit → same SerializedFeature reference
     expect(a).toBe(b);
+  });
+
+  it('mesh feature topology metadata survives round-trip', () => {
+    const geom = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
+    geom.userData._topoV = 10;
+    geom.userData.topology = {
+      edges: [{
+        id: 'edge-a',
+        kind: 'crease',
+        polyline: [new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 0, 0)],
+      }],
+    };
+    geom.userData.displayTopology = {
+      edges: [{
+        id: 'display-a',
+        kind: 'crease',
+        polyline: [new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 1, 0)],
+      }],
+    };
+    geom.userData.ghostTopology = {
+      edges: [{
+        id: 'ghost-a',
+        kind: 'boundary',
+        polyline: [new THREE.Vector3(0, 2, 0), new THREE.Vector3(1, 2, 0)],
+      }],
+    };
+    const feature: Feature = {
+      id: 'f-topology', name: 'x', type: 'import', params: {}, mesh: new THREE.Mesh(geom),
+      visible: true, suppressed: false, timestamp: 1,
+    };
+
+    const serialized = serializeFeature(feature);
+    const round = deserializeFeature(serialized as Feature);
+    const roundGeom = (round.mesh as THREE.Mesh).geometry;
+
+    expect(roundGeom.userData._topoV).toBe(10);
+    expect(roundGeom.userData.topology.edges[0].id).toBe('edge-a');
+    expect(roundGeom.userData.displayTopology.edges[0].polyline[1]).toBeInstanceOf(THREE.Vector3);
+    expect(roundGeom.userData.displayTopology.edges[0].polyline[1].x).toBe(1);
+    expect(roundGeom.userData.ghostTopology.edges[0].kind).toBe('boundary');
     geom.dispose();
   });
 

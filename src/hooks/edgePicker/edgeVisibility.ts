@@ -44,7 +44,9 @@ export function edgeIsPickable(
   rectW: number,
   rectH: number,
 ): boolean {
-  const chain = result.chain;
+  const chain = result.chain && result.chain.length >= 2
+    ? result.chain
+    : [result.edgeVertexA, result.edgeVertexB];
 
   // ── Proximity (screen space) ──────────────────────────────────────────────
   // Walk every segment of the full edge chain and accept when ANY segment is

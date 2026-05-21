@@ -1,831 +1,308 @@
-## 3D Edge Fillet engine  (IMPLEMENTED 2026-05-15 — approximate blend; Chamfer still stub)
-# Fillet now actually rounds geometry: commitFillet in
-# featureMeshActions.ts parses filletEdgeIds (mesh.uuid:A:B), finds the
-# target mesh-backed feature, clones geom toNonIndexed, and for each edge
-# shared by exactly 2 triangles sets back both faces by `radius` and
-# stitches a 4-segment slerp arc band. Wired from FilletDialog.handleConfirm
-# (new branch) + exposed on the Surface ribbon tab.
-# REMAINING REFINEMENT (still [ ]):
-#   [ ] Exact rolling-ball tangency (current: equal `radius` setback on
-#       both faces — not true tangent arc for non-90° dihedral angles).
-#   [ ] Single-face / open surface-sheet edges (currently skipped — need
-#       2 adjacent tris).
-#   [ ] Per-edge variable radius / chord-length edge-sets (FilletParams
-#       already models these; commitFillet uses one global radius).
-#   [ ] Chamfer is still a no-op stub — mirror commitFillet as
-#       commitChamfer (flat single-segment bevel, seg=1, no arc).
-#
-# Original finding (for context): Chamfer + (old) Fillet were no-op
-# placeholders; createFilletGeometry at sketchRendering.ts:54 ignores
-# radius and is never called.
-#
-# Evidence:
-#   - createFilletGeometry(mesh,_radius) at
-#     src/engine/geometryEngine/core/sketch/sketchRendering.ts:54 explicitly
-#     ignores radius (`void _radius`) and returns mesh.clone() — documented
-#     no-op. It is NEVER called anywhere.
-#   - No feature pipeline consumes `type:'fillet'` / `type:'chamfer'`.
-#     FilletDialog.tsx / ChamferDialog.tsx create a Feature with
-#     params.edgeIds (comma-joined edge ids) + radius; nothing rounds geometry.
-#   - FilletEdgeHighlight.tsx / ChamferEdgeHighlight.tsx only highlight picked
-#     edges; pickerGeometry.ts is overlay-only.
-#
-# IMPLEMENTATION PLAN (do in a fresh session — needs full context budget):
-#   [ ] Build a mesh edge-fillet engine: given a feature's BufferGeometry +
-#       selected edge ids + radius, identify the edge loop(s), generate a
-#       rolling-ball blend strip, retriangulate/weld adjacent faces. Must
-#       work for BOTH closed solids and open surface sheets.
-#   [ ] Add commitFillet (and commitChamfer) store actions mirroring the
-#       commitScale/commitAlign pattern in
-#       src/store/cad/slices/featureManagement/featureMeshActions.ts
-#       (clone geom → transform → replace feature.mesh →
-#       recomputeBooleanDependents → deferred old-geom dispose).
-#   [ ] Wire FilletDialog/ChamferDialog handleConfirm to call the new
-#       commit action instead of just addFeature.
-#   [ ] Edge-id scheme: see how FilletEdgeHighlight maps edge ids to
-#       geometry (the edge picker) so the engine can resolve ids → segments.
-#   [ ] Body model: mesh-backed features render via feature.mesh in
-#       ExtrudedBodies.tsx (features.filter(f=>isActive(f)&&f.mesh));
-#       primitives regenerate from params in PrimitiveBodies.tsx (no
-#       persistent mesh) — fillet only applies to mesh-backed bodies.
-#   [ ] Surface parity: add a Fillet ToolButton to
-#       src/components/toolbar/RibbonSurfaceTab.tsx (currently absent) and
-#       reuse the same dialog/engine for surface bodies.
-
-## Per-object mesh override system  (architectural — partially wired)
-# Cura's "Infill Mesh", "Cutting Mesh", "Support Mesh", and "Anti-Overhang
-# Mesh" features all depend on a per-object override resolution layer
-# (per-object > profile > default) and boolean operations between object
-# pairs feeding the slice run.
-#
-# DEFERRED (next session):
-#   [ ] infill_mesh per-region wall + skin overrides at emit time —
-#       sparse-infill density and pattern are wired (subdivideInfillRegionByOverrides
-#       in modifierMeshes.ts subdivides each base region by the layer's
-#       infillOverrides MPs and emits per-sub-region with the modifier's
-#       density/pattern). The wallCount / topLayers / bottomLayers fields
-#       on ModifierMeshSettings are still unwired — those need the wall
-#       generator (emitGroupedAndContourWalls) to consult per-region
-#       overrides and the layer-classification logic (isSolidTop /
-#       isSolidBottom) to be region-aware too.
-#   [ ] Smooth top/custom triangle-tagged modifier metadata per object —
-#       Phase 15 now generates modifier mesh volumes for painted regions,
-#       but true triangle-tagged per-object metadata is deferred until the
-#       override system can resolve region-specific skin/wall behavior.
-
-## Multi-mesh repair  (depends on per-object framework)
-# Extends beyond the single-mesh removeAllHoles already wired. Requires
-# the per-object framework above to express which meshes participate.
-#
-# Affected:
-#   [ ] extensiveStitching      (non-coplanar gap closure across meshes)
-#   [ ] mergedMeshesOverlap     (multi-mesh pre-processing)
-#   [ ] removeMeshIntersection  (boolean cleanup between meshes)
-#   [ ] alternateMeshRemoval    (sequenced multi-mesh boolean)
-# ============================================================================
-# REMAINING WORK — single-feature items, deferred for stated reasons
+## Fillet & Chamfer — Accuracy / Reliability / Rollback Improvement Plan
+## Based on Fusion 360 SDK deep audit (2026-05-20)
+## Ordered by ROI: fix architecture first, then broken params, then reliability,
+## then feature parity. Architecture must come first because everything else
+## depends on fillets/chamfers being proper feature nodes with stored params.
 # ============================================================================
 
-## Bridge skin classification — preview / gcode test
-#   File: src/engine/slicer/pipeline/execution/steps/emitContourInfill.ts
-# Inline per-line bridge classification is already wired (move-type / speed /
-# flow switch on isInBridgeRegion(midpoint), bridgeFanSpeed override fires
-# on entry/exit, ;TYPE:Internal Bridge marker emits on bridge entry and
-# restores on exit). The remaining gap is verification — there's no
-# regression test yet that pins down the behaviour end-to-end.
-#   [ ] Test: layer with overhang region produces bridge moves with
-#       correct color in preview + bridge fan speed in gcode
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHASE 0 — Architecture: Non-destructive feature model + undo/rollback
+# ══════════════════════════════════════════════════════════════════════════════
+# Currently fillets/chamfers are DESTRUCTIVE MESH MUTATIONS on the parent
+# feature. applyEdgeCut replaces the parent's mesh in-place and disposes the
+# old geometry. This means:
+#   • No fillet/chamfer entry exists in the feature tree — the operation is
+#     invisible in the timeline
+#   • Undo can't recover the mesh — snapshotCADState strips meshes to
+#     undefined, so on restore the old pre-fillet body is gone
+#   • Suppression is cosmetic — flips a boolean, doesn't re-evaluate geometry
+#   • rollbackIndex is render-only — hides features past the bar but doesn't
+#     replay the feature tree
+#   • Edit doesn't work — updateFeatureParams stores new radius but never
+#     re-runs the geometry
+#
+# Fusion's approach: every fillet/chamfer is a separate TimelineObject with
+# stored params + edge references. rollTo(true) repositions the timeline
+# marker before the feature, and the kernel replays forward from there.
+# isSuppressed triggers re-evaluation. deleteMe() removes + re-evaluates.
+
+[ ] 0a. Fillet/chamfer as proper feature nodes
+#   Instead of mutating the parent feature's mesh, create a new feature node:
+#     { type: 'fillet', params: { radius, mode, edgeIds, ... },
+#       parentFeatureId: '<source body>', mesh: <result> }
+#   The parent feature retains its ORIGINAL mesh (never disposed).
+#   The fillet feature's mesh is the CSG result computed from the parent's mesh.
+#   Store the complete FilletParams/ChamferParams on the feature so they can
+#   be edited and replayed.
+#
+#   Impact: FilletDialog.handleConfirm, ChamferDialog.handleConfirm,
+#   applyEdgeCut.ts, ExtrudedBodies.tsx (render the fillet feature's mesh
+#   instead of the parent's when the fillet is active and not suppressed).
+
+[ ] 0b. Source mesh preservation
+#   The parent feature's mesh must be preserved (never disposed) when a
+#   downstream fillet/chamfer is applied. Currently applyEdgeCut clones the
+#   source geometry then replaces the parent mesh. Instead:
+#     1. Clone the parent mesh for CSG input (already done)
+#     2. Store the CSG result on the NEW fillet feature's mesh
+#     3. Leave the parent's mesh untouched
+#     4. Rendering logic: show the LAST non-suppressed feature in the chain
+#   This is the "non-destructive" pattern that enables undo/suppress/delete.
+
+[ ] 0c. Feature replay engine
+#   When a fillet/chamfer is suppressed, deleted, or edited:
+#     1. Find the parent feature (the source body)
+#     2. Find all fillet/chamfer features that depend on it (ordered by index)
+#     3. Replay from the parent's original mesh, applying each non-suppressed
+#        fillet/chamfer in sequence
+#     4. Update each feature's mesh with the intermediate result
+#   This is the minimal parametric re-evaluation engine. It extends the
+#   existing recomputeBooleanDependents pattern to cover fillet/chamfer.
+#
+#   Fusion SDK parallel: TimelineObject.rollTo(true) + forward replay.
+
+[ ] 0d. Fix undo mesh recovery
+#   snapshotCADState strips meshes to undefined. On restore, liveMeshById
+#   lookup matches by feature ID — but after a fillet, the parent's old mesh
+#   is disposed, so restoration gets the post-fillet mesh (wrong).
+#   Fix: when fillets are proper feature nodes, the parent mesh is never
+#   disposed. Undo restore finds the correct live mesh for both parent and
+#   fillet features. If mesh is missing, trigger replay from params.
+
+[ ] 0e. Feature health states
+#   Every feature should report its health: Healthy / Warning / Error.
+#   When computeEdgeCutGeometry fails or partially succeeds, store the
+#   diagnostic on the feature node: feature.healthState = 'warning',
+#   feature.healthMessage = '3 of 5 edges could not be processed'.
+#   Surface this in the feature tree with an icon (green/yellow/red dot).
+#   Fusion SDK: Feature.healthState(), errorOrWarningMessage()
 
 
-# ============================================================================
-# SHIPPED — AI Assistant (MCP server + BYOK chat panel)  [DONE 2026-05-03]
-# ============================================================================
-# Phases 1-6 complete. Local MCP server on :5174 with token-paired auth,
-# 29-tool surface (primitives, sketches, features, booleans, transforms,
-# export). BYOK chat panel reuses the same tool definitions over Anthropic
-# and OpenAI/OpenRouter streaming. See README "Use your own Claude with
-# Cindr3D" and docs/ai-examples.md for the full reference.
-#
-# Files of record:
-#   src/services/mcp/                    — server, tool handlers, byokDefs
-#   src/store/aiAssistantStore.ts        — provider/model/key/preferences
-#   src/components/ai/AiAssistantPanel.tsx — UI (MCP tab + Chat tab)
+# ══════════════════════════════════════════════════════════════════════════════
+# PHASE 1 — Bugs: params collected but geometry ignores them
+# ══════════════════════════════════════════════════════════════════════════════
+# These are the most urgent after Phase 0 — the UI already shows controls
+# for each one, but the commit path silently ignores them.
+
+[ ] 1. Wire edit fillet/chamfer → re-run geometry
+#   FilletDialog.tsx line 426: editing branch calls updateFeatureParams but
+#   NEVER calls commitFillet. Editing is a complete no-op — mesh not touched.
+#   Fix: after Phase 0, editing updates feature.params and triggers the
+#   replay engine (0c) which re-runs geometry from the parent mesh.
+#   Same fix applies to chamfer editing.
+
+[ ] 2. Wire chord-length fillet into buildFilletCutter
+#   FilletDialog collects chordLength but handleConfirm (line 446) calls
+#   commitFillet(r, 4) — always the global radius, never chordLength.
+#   Fix: when mode === 'chord-length', convert per-edge at CSG time:
+#   r = chordLen / (2 * sin(φ/2)) where φ = dihedral angle (already
+#   computed as 'phi' in buildFilletCutter).
+#   Fusion SDK: ChordLengthFilletEdgeSetInput.chordLength
+
+[ ] 3. Wire variable-radius fillet into buildFilletCutter
+#   startRadius/endRadius collected but commitFillet uses constant radius.
+#   Fix: when r1 ≠ r2, buildFilletCutter builds a ConeGeometry (frustum)
+#   instead of CylinderGeometry. Parameterize: r(t) = r1 + t*(r2 - r1).
+#   Setback per end: sb(t) = r(t) / tan(phi/2).
+#   Also: add mid-point radius support (addMidPosition/deleteMidPosition).
+#   Fusion SDK: VariableRadiusFilletEdgeSetInput.setMidRadii(radii[], positions[])
+
+[ ] 4. Add Flip button for two-distance AND distance+angle chamfer
+#   Which face is "face 1" vs "face 2" depends on arbitrary triangle scan
+#   order in resolveEdge. User has no control.
+#   Fix: add Flip toggle to ChamferDialog for both two-dist and dist-angle
+#   modes. On confirm, when flipped, swap d1/d2. Store isFlipped in params.
+#   Fusion SDK: TwoDistancesChamferEdgeSet.isFlipped(),
+#               DistanceAndAngleChamferEdgeSet.isFlipped()
+
+[ ] 5. Surface failed-edge count in status bar
+#   When resolveEdge fails, the edge is silently skipped.
+#   Fix: computeEdgeCutGeometry returns { geometry, failedCount }.
+#   applyEdgeCut surfaces "N of M edges could not be processed" via
+#   setStatusMessage. After Phase 0e, also store on feature.healthState.
 
 
-# ============================================================================
-# SHIPPED — Cross-firmware printer features  [DONE 2026-05-03]
-# ============================================================================
-# Klipper-style features unified across firmwares: Bed Map, Exclude Object,
-# Updates, Power, Input Shaper, Pressure Advance, Spools, and Timelapse all
-# routed through universal wrappers that delegate to firmware-specific paths
-# (Klipper/Moonraker, Duet/RRF, Marlin/USB, others). Mid-print object
-# cancellation surfaced via M486 (Duet ≥ 3.5, Marlin ≥ 2.0.9) and
-# EXCLUDE_OBJECT (Klipper) in three places: dedicated tab, dashboard list,
-# and 3D Print Preview viewport with right-click context menus.
-#
-# Slicer pipeline now emits M486 S<id> A"<name>" / S-1 / T<n> labels per
-# slice group. MoonrakerService gained getPrintStatus() for live progress;
-# DuetService.connectSerial subscribes to the WebSerial stream and parses
-# M73 / "echo:Layer N/M" updates into model.job.layer for cross-firmware
-# layer awareness. Shared utilities at src/services/gcode/{m486Labels,
-# objectNameMatch, marlinProgressParser}.ts.
-#
-# Help guide updated: new "Mid-print object cancellation" and "Print tuning
-# & utilities" topics; Per-printer tool tabs list refreshed.
+# ══════════════════════════════════════════════════════════════════════════════
+# PHASE 2 — Reliability: silent failures, junction artifacts, UX
+# ══════════════════════════════════════════════════════════════════════════════
+
+[ ] 6. Wire propagate → tangent edge auto-expansion
+#   "Propagate Along Tangent Edges" checkbox is stored but never applied.
+#   Fix: after edge picker returns a set, walk geometry.userData.topology
+#   to find all tangent-connected edges (dihedral < 5°). Add them to the
+#   working set before passing to computeEdgeCutGeometry.
+#   Fusion SDK: BRepEdge.tangentiallyConnectedEdges() — returns the full
+#   tangent chain, already ordered. We build the equivalent walk on our
+#   extracted topology (posRegions + region normals).
+
+[ ] 7. Rolling-ball corner sphere at multi-edge junctions
+#   When 3+ filleted edges meet at one vertex, each edge is cut independently
+#   leaving a triangular gap at the corner.
+#   Fix: detect shared endpoints across filleted edges. For each vertex
+#   shared by ≥ 3 filleted edges, CSG-subtract a sphere of radius r.
+#   Fusion SDK: isRollingBallCorner on FilletFeatureInput
+
+[ ] 8. Adaptive segment count (not hardcoded to 4/48)
+#   commitFillet(r, 4) always passes segments=4 → radialSeg=48.
+#   Fix: compute radialSeg from arc length:
+#     arcLen = r * (π - phi)
+#     radialSeg = clamp(round(arcLen / targetSegLen), 16, 128)
+#     targetSegLen ≈ 0.5mm for commit, 2mm for preview
+
+[ ] 9. Convex/concave edge classification
+#   Fusion SDK: BRepBody.concaveEdges() / convexEdges() — pre-classified
+#   edge sets. Critical for rule fillets and for visual feedback (showing
+#   different colors for concave vs convex edges in the overlay).
+#   Fix: after extractEdgeTopology, classify each edge by the cross product
+#   of its two adjacent face normals dotted with the edge midpoint→face
+#   centroid vector. Store concave/convex flag on ModelEdge.
 
 
-# ============================================================================
-# REMAINING WORK — Phases 7-19 (post-Klipper-unification feature plan)
-# ============================================================================
-# Following the cross-firmware printer work shipped 2026-05-03, the next
-# batch expands Cindr3D into a print-farm-scale tool with vision-based
-# intelligence, AR overlays, energy/cost tracking, maintenance lifecycle,
-# integrations with home-automation systems, and operational polish
-# (mobile UI, i18n, a11y, session resume, profile diff). Slicer
-# fundamentals also expand (tree supports, adaptive layers, non-planar
-# ironing, profile import).
-#
-# Multi-user accounts, voice control, acoustic anomaly detection, and
-# the print quote engine are explicitly out of scope. The plugin /
-# extension system (Phase 16) is captured here for future planning only
-# and is NOT scheduled — feature designs in Phases 7-15 should be
-# plugin-shaped where natural so a later plugin runtime can adopt them.
-#
-# Phases are scoped to be parallelizable across feature groups; within a
-# group, sub-phases are dependency-ordered. Effort markers:
-#   S  = 1-2 days       L  = 1-2 weeks
-#   M  = 3-5 days       XL = 2-4 weeks
+# ══════════════════════════════════════════════════════════════════════════════
+# PHASE 3 — Feature parity: Fusion capabilities we don't have
+# ══════════════════════════════════════════════════════════════════════════════
+
+[ ] 10. Chamfer corner type selector
+#    Fusion: ChamferCornerTypes — ChamferCornerType (patch), MiterCornerType
+#    (extend+intersect), BlendCornertype (smooth blend).
+#    Fix: add Corner dropdown to ChamferDialog (Patch / Miter). For Miter:
+#    detect shared vertices, compute chamfer-face intersection lines, clip.
+
+[ ] 11. Asymmetric fillet (different offsets each side)
+#    Fusion SDK: AsymmetricFilletEdgeSetInput — offsetOne, offsetTwo, isFlipped.
+#    Fix: add Asymmetric mode to FilletDialog. buildFilletCutter supports
+#    two independent setback values with cylinder axis shifted off bisector.
+
+[ ] 12. Full-round fillet (3-face rolling ball)
+#    Fusion SDK: FullRoundFilletFeatureInput — centerFace + sideOneFaces +
+#    sideTwoFaces + areAutomaticSideFaces (auto-infer from adjacency).
+#    Fix: switch picker to face-selection mode in full-round mode. Compute
+#    inscribed circle from three-face corner. Build cutter from result.
+
+[ ] 13. Rule fillet (fillet all edges of a selected face/feature)
+#    Fusion SDK: RuleFilletFeatureInput — setByAllEdges(faces[]) or
+#    setByBetweenFacesOrFeatures(set1[], set2[]). Also topologyType filter
+#    (RoundsAndFillets / RoundsOnly / FilletsOnly).
+#    Fix: add face-picker mode in FilletEdgeHighlight. Click face → extract
+#    all topology edges of that face → add to selection in one shot.
+
+[ ] 14. G2 curvature continuity + tangency weight
+#    Fusion SDK: SurfaceContinuityTypes — G0 (Connected), G1 (Tangent),
+#    G2 (Curvature). Plus tangencyWeight 0.1–2.0 on every fillet edge set.
+#    G2 requires generating a curvature-continuous blend surface instead of
+#    a circular arc (the cylinder cutter approach is inherently G1). This is
+#    a significant geometry engine change — the cutter would need to be a
+#    NURBS surface or a higher-order polynomial blend.
+#    Tangency weight scales how far the blend extends along each face.
+
+[ ] 15. Stable edge identity (entity tokens)
+#    Fusion SDK: BRepEdge.entityToken — survives save/reload. Our edge IDs
+#    are world-space vertex coordinates in strings — they break when the body
+#    is translated, rotated, or scaled.
+#    Fix: use a hash of the edge's LOCAL-space endpoints relative to the
+#    body's bounding box, making IDs transform-invariant. Store on the
+#    feature node so edge references survive across sessions.
+
+[ ] 16. Feature reordering with dependency validation
+#    Fusion SDK: TimelineObject.canReorder(beforeIndex) / reorder(beforeIndex).
+#    Our reorderFeature exists but has no dependency checking — you can move
+#    a fillet before its parent body, breaking the chain.
+#    Fix: validate that a feature's dependencies all appear before it in the
+#    array before allowing reorder. Block and surface a warning if not.
 
 
-
-## SHIPPED - Phases 7-9: Farm intelligence, vision, and AR overlay [DONE 2026-05-05]
-# Phase 7 delivered the farm controller layer: cross-printer queue, all-camera
-# wall view, A/B comparison, fleet inventory, multi-camera support, layer
-# gallery, PTZ controls, and WebRTC streaming.
+# ══════════════════════════════════════════════════════════════════════════════
+# Implementation order
+# ══════════════════════════════════════════════════════════════════════════════
 #
-# Phase 8 delivered vision-assisted monitoring and tuning: failure detection,
-# diagnostics, tower analysis, camera measurement, and guarded natural-language
-# printer control.
+# Wave 1 (foundation — everything else depends on this):
+#   0a → 0b → 0c → 0d → 0e   (non-destructive feature model + replay)
 #
-# Phase 9 delivered camera AR: pose calibration, live toolpath overlay,
-# right-click object cancel from camera, and post-print comparison. Detailed
-# implementation notes live in the shipped PR history and relevant component
-# folders.
-
-## SHIPPED - Phase 10: Cost & energy [DONE 2026-05-05]
-# Phase 10 turned spool and power telemetry into cost, scheduling, and
-# sustainability intelligence:
-#   - Added per-spool cost-per-kg tracking and filament cost estimates with
-#     defaults for unknown spool pricing.
-#   - Added per-print cost modeling for filament, electricity, energy use,
-#     CO2 estimate, live print ticker, and completed-job receipt rows.
-#   - Added cost analytics grouped by project/file, filament/material,
-#     printer, month, and printer-month.
-#   - Added per-printer time-of-use rate windows, utility-rate config fields,
-#     cheapest-window planning, and schedule-at-cheapest-window integration
-#     with the existing scheduled-print queue.
-#   - Added solar-surplus gates for Tesla Powerwall, Enphase Envoy,
-#     SolarEdge, and custom providers so prints can wait for a minimum
-#     available surplus.
-#   - Added sustainability rollups for filament mass, kWh, estimated CO2,
-#     per-printer/per-month breakdowns, and CSV / JSON exports.
+# Wave 2 (fix broken UI controls — can parallelize after Wave 1):
+#   1, 2, 3, 4, 5             (wire dead params into geometry)
 #
-# Files of record:
-#   src/utils/printCost.ts
-#   src/store/spoolStore.ts
-#   src/store/schedulingStore.ts
-#   src/components/printer/DuetAnalytics.tsx
-#   src/components/printer/SpoolManager.tsx
-
-## SHIPPED - Phase 11: Maintenance & calibration lifecycle [DONE 2026-05-05]
-## Phase 11 delivered the maintenance lifecycle layer:
-#   - Calibration aging per printer, including bed mesh, pressure advance,
-#     input shaper, Z-offset, and first-layer checks with configurable
-#     service intervals and overdue/upcoming status.
-#   - Wear tracking for belts, bearings, nozzles, hotends, and build plates,
-#     with hours / filament counters, replacement thresholds, and service log.
-#   - Filament moisture estimates from opened-on date and humidity, surfaced
-#     in the Calibration tab and pre-flight checklist warnings.
+# Wave 3 (reliability + UX — can parallelize after Wave 1):
+#   6, 7, 8, 9                (tangent propagation, corners, segments, classify)
 #
-# Files of record:
-#   src/store/calibrationStore.ts
-#   src/components/printer/calibration/PrinterCalibrationPanel.tsx
-#   src/components/printer/scheduling/StartChecklist.tsx
-
-## SHIPPED - Phase 12: Print scheduling [DONE 2026-05-05]
-# Time-aware orchestration is complete: day/week scheduling calendar, quiet
-# hours, scheduled-print editing, bed-clear auto-queue flow, and pre-flight
-# checklist with per-printer overrides. Review follow-ups also landed for
-# overnight quiet windows and keyboard/screen-reader accessibility.
+# Wave 4 (feature parity — independent items, can parallelize):
+#   10, 11, 12, 13            (chamfer corners, asymmetric, full-round, rule)
 #
-# Files of record:
-#   src/store/schedulingStore.ts
-#   src/components/printer/scheduling/
-
-## ── Phase 13: Integrations ────────────────────────────────────────────────
-## Goal: hook into the broader ecosystem — home automation, messaging,
-## webhooks, external slicers, power-loss recovery.
-## Status: DONE 2026-05-06
-## Completed feature summary:
-#   - Webhook, Discord, Slack, Telegram, MQTT, and Home Assistant integration
-#     surfaces for print events, telemetry, and remote pause/resume/cancel.
-#   - External slicer/profile exchange with Cura, Orca, Bambu, Prusa-style
-#     config import plus Cindr3D 3MF plate export/import round-tripping.
-#   - Power-loss recovery snapshots with reconnect detection and resumable
-#     bed/tool heat, Z restore, and file-position resume commands.
-#   - Enclosure controls for chamber temperature, ramping, preheat/cooldown,
-#     door-open safety, air-quality thresholds, and MQTT sensor ingestion.
-#   - Stepper driver tuning dashboard with current, microsteps, mode switching,
-#     quick wiggle tests, and per-printer presets.
-
-## ── Phase 14: Operational polish ──────────────────────────────────────────
-## Status: DONE 2026-05-05
-## Completed feature summary:
-#   - Print-session resume across browser sessions and devices, including
-#     reconnect banners for active jobs.
-#   - Mobile and tablet UI mode with touch detection, bottom-sheet monitor
-#     navigation, larger tap targets, and kiosk-style printer controls.
-#   - Internationalization foundation with translation bundles, language
-#     selection, generated English string coverage, and catalog freshness checks.
-#   - Accessibility polish with screen-reader labels across interactive controls,
-#     runtime label inference, keyboard navigation, high contrast, and reduced
-#     motion support.
-#   - Profile versioning with automatic snapshots, profile diffing, and restore
-#     flows for individual or full profile changes.
-#   - Self-hosted profile and spool sync with import/export payload tracking,
-#     startup pull, save push, and conflict handling.
-#   - PWA installability with manifest metadata, service-worker asset caching,
-#     offline project handoff, splash metadata, and maskable icons.
-#   - Print-from-URL workflows for direct model files and model-sharing pages,
-#     including source metadata capture, auto-arrange, and local caching.
+# Wave 5 (advanced — requires deeper engine work):
+#   14, 15, 16                (G2 continuity, stable IDs, reorder validation)
 
 
-## SHIPPED - Phase 15: Slicer fundamentals [DONE 2026-05-05]
-# Phase 15 closed major Cura / Orca / Bambu-style print-quality gaps:
-#   - Added tree supports with branch growth, per-region support density,
-#     collision avoidance, and distinct wireframe preview rendering.
-#   - Added adaptive layer heights with slope-based subdivision, min/max
-#     controls, and variable-height preview support.
-#   - Added non-planar surface ironing that follows local top-skin Z gradients
-#     with slow zero-extrusion smoothing moves.
-#   - Added vase mode, fuzzy skin, and organic / gyroid / lightning infill
-#     with per-object controls where appropriate.
-#   - Added multi-color tool-change slicing with per-object tool indices,
-#     tool-selection G-code, and prime-tower purge moves between tools.
-#   - Added bed-mesh-aware auto-arrange that favors flatter regions and avoids
-#     known dead spots when mesh data is available.
-#   - Added print-history analytics for failure patterns across profiles,
-#     filament, and printers.
-#   - Added embedded G-code thumbnails for modern firmware file pickers.
-#   - Added Z-seam painting with per-object seam metadata, painted seam
-#     selection, and viewport seam markers.
-#   - Added sequential printing with clearance validation, per-object
-#     skirt/brim handling, and safer travel ordering.
-#   - Added modifier-region painting that stores generated modifier mesh
-#     volumes and feeds dense infill / support / cutting roles into the
-#     slicer pipeline.
-#   - Added coasting, wiping, and scarf seam controls for improved seam
-#     quality.
-
-
-## SHIPPED - Phase 16: Design workspace [DONE 2026-05-06]
-# Phase 16 brought the CAD workspace closer to mature desktop CAD:
-#   - Added a parametric model library with customizable bins, insert bosses,
-#     brackets, project boxes, cable clips, and gear blanks.
-#   - Added design configurations with saved parameter sets, per-variant
-#     feature suppression, ribbon switching, and configuration export.
-#   - Added a Drawing workspace that generates top/front/right views,
-#     inferred dimensions, title block metadata, and SVG/DXF/PDF output.
-#   - Added mesh repair tools with manifold reports, duplicate-vertex welding,
-#     normal repair/flip actions, auto-fix support, and STL import healing.
-#   - Expanded sketch constraints with tangent solving while preserving the
-#     existing constraint icons and over-constrained sketch feedback.
-#   - Completed the threading checklist with metric thread presets, helix
-#     thread geometry, configurable pitch/length/class, and hardware workflows.
-#   - Added non-destructive boolean history with parent links in the feature
-#     tree and recompute propagation when parent meshes change.
-
-
-## SHIPPED - Phase 17: Onboarding & education [DONE 2026-05-05]
-# Phase 17 lowered the onboarding floor and deepened in-app learning:
-#   - Added a printer-panel Calibration tab with one-click calibration
-#     G-code presets.
-#   - Expanded the Prepare calibration menu with cube, first-layer,
-#     dimensional accuracy, pressure-advance tower, and input-shaper tower
-#     presets.
-#   - Added guided Help tutorials with browser-local resumable progress.
-#   - Extended slicer setting help with richer contextual fields and
-#     Markdown-authored source pages under src/help/settings/.
-
-
-## ── Phase 18: Plugin / extension system  [FUTURE — not scheduled]  ────────
-## Goal: let users add their own panels, slicer post-processors, MCP
-## tools, dashboard cards without forking. Captured here so feature
-## designs in Phases 7-17 are plugin-shaped from day one.
+# ══════════════════════════════════════════════════════════════════════════════
+# SDK reference (Fusion 360 header paths)
+# ══════════════════════════════════════════════════════════════════════════════
+# SDK install: C:\Users\joeyp\AppData\Local\Autodesk\webdeploy\production\
+#              4bca736941837d3e42bba21bb36b9891e34b2fce\CPP\include\Fusion\
 #
-#   Open questions (resolve before implementation):
-#     - Manifest format (JSON / TS module / both?)
-#     - Sandbox boundary (iframe / Web Worker / runtime caps)
-#     - Distribution channel (manual install / registry / both?)
-#     - API stability commitment (semver, deprecation policy)
+# Feature base class:
+#   Features/Feature.h — name, deleteMe(), dissolve(), isSuppressed,
+#     isParametric, faces(), bodies(), timelineObject(), linkedFeatures(),
+#     healthState(), errorOrWarningMessage(), entityToken(), attributes()
 #
-#   Once scoped, plugin shape would mirror MCP tool registration plus a
-#   panel-mount API, a slicer post-processor hook, and a parametric-model
-#   registration hook (Phase 16.1). Defer until enough of Phases 7-17
-#   ships that the plugin surface is informed by real integration patterns.
-
-
-## SHIPPED - Phase 19: Dashboard print preview card [DONE 2026-05-05]
-# Phase 19 turned the dashboard Print Preview card into a compact live print
-# situational-awareness panel:
-#   - Added dashboard preview camera presets, fit actions, persisted view
-#     state, and orbit recovery around the active print bounds.
-#   - Added current-layer emphasis, printed/future layer dimming modes, live
-#     layer progress, and a mini layer/timeline scrubber with return-to-live.
-#   - Added object status badges, stable object hover details, material
-#     estimates, and object matching shared with right-click cancellation.
-#   - Added live nozzle position, optional recent-motion trails, and graceful
-#     firmware fallbacks when XYZ data is unavailable.
-#   - Added preview color modes for line type, speed, layer time, extrusion,
-#     and object view with compact legends when needed.
-#   - Added diagnostic problem markers for adhesion risk, layer anomalies,
-#     and object-at-risk explanations.
-#   - Added camera/AR sync actions and shared saved-view, layer, and object
-#     selection events for CameraOverlayPanel.
-#   - Added a dense print stats strip with layer, Z height, progress, active
-#     object, elapsed time, and remaining time.
-
-
-
-## SHIPPED - Phase 20: Printer calibration center [DONE 2026-05-07]
-## Goal: extend the Phase 11 calibrationStore and Phase 17 Calibration tab
-## into a guided closed-loop calibration center on the 3D Printer page that
-## generates, runs, inspects, applies, and remembers calibration tests per
-## printer / filament / spool / nozzle / profile.
+# Timeline:
+#   Design/Timeline.h — markerPosition, moveToBeginning/End/Next/Previous,
+#     play(), deleteAllAfterMarker(), timelineGroups
+#   Design/TimelineObject.h — isSuppressed, index, isRolledBack,
+#     rollTo(rollBefore), canReorder/reorder, entity(), name, healthState
 #
-# Why:
-#   - Calibration is currently scattered across one-off presets (Phase 17),
-#     slicer settings, firmware commands, camera views, and user memory.
-#   - Phase 11 tracks calibration aging but not result values, measurements,
-#     or photos.
-#   - Cindr3D can close the loop: load the model, slice it, send it, monitor
-#     it, inspect it, recommend values, and save the result back into the
-#     right printer/profile context.
+# Fillet:
+#   Features/FilletFeatures.h — createInput()+add(), createFullRoundFilletInput()
+#     +addFullRoundFillet(), createRuleFilletInput()+addRuleFillet()
+#   Features/FilletFeatureInput.h — edgeSetInputs(), isRollingBallCorner
+#   Features/FilletFeature.h — edgeSets(), filletFeatureType(), convert(),
+#     ruleFilletSettings(), fullRoundFilletFaceSets()
+#   Features/FilletEdgeSetInputs.h — addConstantRadius/Variable/ChordLength/Asymmetric
+#   Features/FilletEdgeSet.h — isTangentChain, continuity, tangencyWeight, deleteMe
+#   Features/ConstantRadiusFilletEdgeSet.h — edges(), radius (ModelParameter)
+#   Features/ConstantRadiusFilletEdgeSetInput.h — radius (ValueInput)
+#   Features/VariableRadiusFilletEdgeSet.h — edges(), startRadius, endRadius,
+#     midRadii, midPositions, addMidPosition(pos, radius), deleteMidPosition(index)
+#   Features/VariableRadiusFilletEdgeSetInput.h — startRadius, endRadius, setMidRadii
+#   Features/AsymmetricFilletEdgeSet.h — edges(), offsetOne, offsetTwo, isFlipped
+#   Features/AsymmetricFilletEdgeSetInput.h — offsetOne, offsetTwo, isFlipped
+#   Features/ChordLengthFilletEdgeSet.h — edges(), chordLength (ModelParameter)
+#   Features/ChordLengthFilletEdgeSetInput.h — chordLength (ValueInput)
+#   Features/RuleFilletFeatureInput.h — setByAllEdges, setByBetweenFaces,
+#     ruleType, topologyType, radius/asymmetricOffsets, isRollingBallCorner
+#   Features/RuleFilletSettings.h — ruleType, topologyType, isConstantRadius,
+#     radius/asymmetricOffsetOne/Two, isRollingBallCorner, facesOrFeatures
+#   Features/FullRoundFilletFeatureInput.h — faceSets()
+#   Features/FullRoundFilletFaceSet.h — centerFace, sideOneFaces, sideTwoFaces,
+#     areAutomaticSideFaces
+#   Features/FullRoundFilletFaceSets.h — add(center, side1, side2, autoSides)
 #
-# Dependencies (extends existing systems, does NOT replace):
-#   - Phase 11 calibrationStore.ts: extend CalibrationItemId list and
-#     CalibrationRecord with results history, measurements, photos
-#   - Phase 17 Calibration tab + Prepare calibration menu: subsume the
-#     one-click presets into the new wizard cards (existing presets become
-#     "quick run" entry points into the wizard)
-#   - Phase 12 schedulingStore: queue calibration prints alongside normal jobs
-#   - Phase 9 camera AR / pose calibration: reuse for band labeling overlays
-#   - Phase 1-6 MCP tools + AiAssistantPanel: BYOK vision analysis path
-#   - Phase 16 Drawing workspace PDF export: reuse for printable result sheets
+# Chamfer:
+#   Features/ChamferFeatures.h — createInput2()+add()
+#   Features/ChamferFeatureInput.h — chamferEdgeSets(), cornerType
+#   Features/ChamferFeature.h — edgeSets(), cornerType, chamferType (retired)
+#   Features/ChamferEdgeSet.h — isTangentChain, deleteMe (base)
+#   Features/EqualDistanceChamferEdgeSet.h — edges(), distance (ModelParameter)
+#   Features/TwoDistancesChamferEdgeSet.h — edges(), distanceOne, distanceTwo,
+#     isFlipped (ModelParameter)
+#   Features/DistanceAndAngleChamferEdgeSet.h — edges(), distance, angle,
+#     isFlipped (ModelParameter)
 #
-# Phase 20.1 - Calibration Center shell
-#   - Expand src/components/printer/calibration/PrinterCalibrationPanel into
-#     a card-based section with: First Layer, Flow Rate, Temperature Tower,
-#     Retraction, Pressure Advance / Linear Advance, Input Shaper / Resonance,
-#     Dimensional Accuracy, Max Volumetric Speed, and Firmware Health Checks.
-#   - Existing aging rows (bed-mesh, PA, input-shaper, z-offset, first-layer)
-#     surface as status badges on the matching cards.
-#   - Show recommended next calibration based on printer firmware, material,
-#     nozzle size, stale calibration age, recent failures, and profile state.
-#   - Add calibration history rows with date, printer, material, spool,
-#     nozzle, profile, result, applied value, notes, and linked photos/G-code.
+# BRep topology:
+#   BRep/BRepEdge.h — startVertex, endVertex, faces(), coEdges(),
+#     tangentiallyConnectedEdges(), geometry() → Curve3D, evaluator(),
+#     length(), isDegenerate, isTolerant, tempId, entityToken, pointOnEdge()
+#   BRep/BRepFace.h — edges(), vertices(), loops(),
+#     tangentiallyConnectedFaces(), geometry() → Surface, evaluator(),
+#     isPointOnFace(), area(), centroid(), boundingBox()
+#   BRep/BRepBody.h — concaveEdges(), convexEdges(), isSolid, volume(),
+#     area(), revisionId(), findByTempId()
 #
-# Phase 20.2 - Calibration models library
-#   - Pre-built calibration test models (first-layer patches/grids, flow
-#     cubes/surfaces, temperature towers, retraction towers, PA/LA towers,
-#     ringing towers, dimensional cubes, hole tests, tolerance tests, max
-#     volumetric speed towers) ship in a project folder
-#     (e.g. assets/calibration-models/) as STL files.
-#   - Models can be sourced from Thingiverse, GitHub, or other repositories.
-#   - One base STL per test type, scaled at load time based on the active
-#     printer's nozzle diameter and profile layer height.
-#   - Pass calibration metadata through slicing so G-code includes test type,
-#     band labels, object names, firmware-specific commands, and result
-#     capture hints.
-#   - Support profile overrides for calibration prints without permanently
-#     mutating the user's normal print profile until the result is accepted.
-#
-# Phase 20.3 - Guided calibration wizards
-#   - Each calibration card opens a step-by-step wizard:
-#       1. Pick printer (defaults to active)
-#       2. Pick filament / spool (defaults to printer's loaded spool)
-#       3. Setup checks (firmware ready, nozzle size, bed temp limits, etc.)
-#       4. Load model (from calibration models library)
-#       5. Slice and preview (with calibration profile overrides)
-#       6. Queue / send (slot into scheduling queue or send now)
-#       7. Monitor print
-#       8. Inspect or measure (camera, manual, or AI-assisted)
-#       9. Apply and save result
-#   - Include firmware-aware instructions for Duet/RRF, Klipper/Moonraker,
-#     and Marlin/WebSerial.
-#   - Show estimated run time and offer "queue on next available printer".
-#   - Capture manual measurement fields for calipers, wall thickness,
-#     band selection, best temperature, stringing score, ringing band,
-#     first-layer quality, and dimensional error.
-#   - Allow "abort and home" mid-print for first-layer tests with bad Z.
-#
-# Phase 20.4 - Firmware-specific apply commands
-#   - Klipper: pressure advance, input shaper commands, velocity/accel test
-#     helpers, and optional accelerometer-assisted SHAPER_CALIBRATE flow.
-#   - Marlin: linear advance, PID/autotune helpers, EEPROM save prompts,
-#     and WebSerial-safe command sequencing.
-#   - Duet/RRF: pressure advance / firmware-equivalent settings, config.g
-#     guidance, object model reads, and safe apply/rollback prompts.
-#   - Always separate "recommended", "preview command", "apply now", and
-#     "save to config/profile" so users understand what changes firmware.
-#   - Config-write safety workflow (applies to all firmwares):
-#       a. Snapshot existing config (config.g / printer.cfg / EEPROM dump)
-#          to project folder before any write
-#       b. Show diff (existing -> proposed) for user review
-#       c. Require typed confirmation for irreversible writes (M500,
-#          SAVE_CONFIG, EEPROM commits)
-#       d. Provide one-click "restore previous config" using the snapshot
-#
-# Phase 20.5 - Camera-assisted inspection
-#   - Capture photos during calibration jobs and attach them to results.
-#   - Let users crop/select regions for banded tests, first-layer grids,
-#     temperature towers, stringing towers, corners, and ringing artifacts.
-#   - Use existing camera calibration/AR tools (Phase 9) to label test
-#     bands and keep ruler/measurement overlays aligned with the video.
-#   - Offline fallback: generate printable result sheets (reuse Phase 16
-#     PDF export) with band labels and a measurement grid so users can
-#     photograph results manually and attach JPEGs.
-#
-# Phase 20.6 - AI-assisted recommendations
-#   - Add AI prompts/tools for "analyze first layer", "pick best temperature
-#     band", "score stringing", "find pressure advance corner artifacts",
-#     "identify ringing band", and "summarize calibration report".
-#   - Two analysis modes (user picks per run):
-#       a. BYOK cloud vision via the existing AiAssistantPanel provider
-#          (Anthropic / OpenAI) - uses photos + measurements
-#       b. Manual scoring only - skip AI entirely, user fills measurement
-#          fields directly
-#     (Note: the local MCP server is a tool surface, not a vision model;
-#     image analysis always requires a cloud call when AI is used.)
-#   - AI must cite observed evidence, ask for missing measurements, and
-#     separate confidence from the final recommended value.
-#   - Never auto-apply printer-affecting values without explicit user
-#     confirmation.
-#
-# Phase 20.7 - Result storage and reporting
-#   - Extend calibrationStore with a results array per CalibrationRecord:
-#     per (printer x material x spool x nozzle x profile) tuple, store
-#     up to 5 most recent results with date, applied value, measurements,
-#     photos, AI confidence, and notes (rolling window).
-#   - Stale intervals continue to integrate with Phase 11 maintenance
-#     reminders.
-#   - Feed accepted values into slicer profiles, printer settings, and
-#     pre-flight warnings where appropriate.
-#   - Add exportable calibration reports (PDF + JSON) with photos, G-code
-#     metadata, recommended/applied values, measurements, and before/after
-#     notes.
-#
-# Phase 20.8 - Confidence & repeatability
-#   - Track measurement variance across the 5 stored results.
-#   - Highlight high-confidence bands for banded tests (temperature, PA, etc.)
-#     and suggest re-runs if results disagree beyond tolerance.
-#   - Surface confidence levels in recommendations and result history so
-#     users understand which values are stable vs. noisy.
-#
-# Initial calibration order (matches the 9 cards in 20.1):
-#   1. Firmware and hardware health checks
-#   2. First layer / Z offset
-#   3. Flow rate
-#   4. Temperature tower
-#   5. Retraction
-#   6. Pressure advance / linear advance
-#   7. Input shaper / resonance and acceleration limits
-#   8. Dimensional accuracy
-#   9. Max volumetric speed
-#
-# Resolved decisions:
-#   - Models: pre-built STLs in assets/calibration-models/, downloadable
-#     from Thingiverse / GitHub. One base STL per test type, scaled at
-#     load time by nozzle diameter and layer height (no sibling variants,
-#     no parametric Phase 16 generation).
-#   - "5 prior results" applies to calibration results history per
-#     (printer x material x spool x nozzle x profile) tuple in 20.7.
-#   - Storage: extend Phase 11 calibrationStore (no parallel store).
-#   - AI analysis: per-run choice between BYOK cloud vision and manual-only.
-#   - Firmware rollback: snapshot-diff-confirm-restore workflow in 20.4.
-#   - Phase 17 Prepare calibration menu: kept in place; clicks route through
-#     the new wizard cards rather than firing one-shot G-code presets.
-#
-# ---------------------------------------------------------------------------
-# Phase 20 Codex parallel task breakdown (Wave 1 — no file conflicts)
-# ---------------------------------------------------------------------------
-# All three Wave 1 tasks touch disjoint file sets and can be run in parallel.
-# Merge in any order. Wave 2 depends on all three Wave 1 tasks being merged.
-#
-# Task A — Data layer (calibrationStore.ts only)
-#   Files: src/store/calibrationStore.ts
-#   Goal:  Extend CalibrationRecord with a rolling 5-result history and
-#          confidence helpers.  Bump persist version 1 → 2.
-#
-#   1. Add CalibrationResult type (export):
-#        id: string
-#        recordedAt: number
-#        appliedValue: number | null
-#        measurements: Record<string, number>
-#        photoIds: string[]
-#        aiConfidence: number | null
-#        note: string
-#
-#   2. Add  results: CalibrationResult[]  (default []) to CalibrationRecord.
-#
-#   3. Add to CalibrationStore interface:
-#        addCalibrationResult(printerId, itemId, result): void
-#        getCalibrationResults(printerId, itemId): CalibrationResult[]
-#
-#   4. Implement addCalibrationResult: prepend result, slice(0,5).
-#      uid() for result.id = uid('result').
-#
-#   5. Export getCalibrationConfidence(results: CalibrationResult[]):
-#        { mean: number|null; stdDev: number|null;
-#          isStable: boolean; highConfidence: boolean; sampleCount: number }
-#      Logic: filter records with appliedValue != null; compute mean + stdDev;
-#      isStable = stdDev < mean*0.05; highConfidence = count>=3 && isStable.
-#      Return nulls when count === 0.
-#
-#   6. Bump persist: { name: 'cindr3d-calibration-lifecycle', version: 2 }
-#      Add migrate: { 2: (state) => add results:[] to each CalibrationRecord
-#      inside calibrationByPrinterId }
-#
-#   Constraints: no new files, no imports, no changes to existing helpers.
-#   TSC must pass.
-#
-# Task B — Asset library (new files only)
-#   Files: assets/calibration-models/manifest.json (new)
-#          assets/calibration-models/*.stl  (9 stub files, new)
-#          src/calibration/calibrationModels.ts (new)
-#
-#   Goal:  Manifest + STL stubs + Vite-importable scaling utility.
-#
-#   1. assets/calibration-models/manifest.json — array of 9 objects:
-#        { id, testType, filename, baseDimMm, baseNozzleDiameter,
-#          baseLayerHeight, description }
-#      testTypes (in order):
-#        firmware-health, first-layer, flow-rate, temperature-tower,
-#        retraction, pressure-advance, input-shaper,
-#        dimensional-accuracy, max-volumetric-speed
-#
-#   2. 9 binary STL stubs — 84 bytes each:
-#        80-byte ASCII header (pad with 0x00)
-#        uint32 LE triangle count = 1
-#        one triangle (12 floats × 4 bytes = 48 bytes + 2-byte attr = 50 bytes)
-#      Name files: firmware-health.stl, first-layer.stl, flow-rate.stl,
-#        temperature-tower.stl, retraction.stl, pressure-advance.stl,
-#        input-shaper.stl, dimensional-accuracy.stl, max-volumetric-speed.stl
-#
-#   3. src/calibration/calibrationModels.ts exports:
-#        interface CalibrationModelEntry {
-#          id: string; testType: string; filename: string;
-#          baseDimMm: number; baseNozzleDiameter: number;
-#          baseLayerHeight: number; description: string;
-#        }
-#        interface CalibrationModelScale {
-#          nozzleScale: number; layerScale: number; uniformScale: number;
-#        }
-#        getCalibrationModels(): CalibrationModelEntry[]
-#        getModelScale(entry, nozzleDiameter, layerHeight): CalibrationModelScale
-#          uniformScale = Math.sqrt(nozzleScale * layerScale)
-#          nozzleScale = nozzleDiameter / entry.baseNozzleDiameter
-#          layerScale = layerHeight / entry.baseLayerHeight
-#        getModelUrl(entry): string  — Vite ?url import per filename
-#
-#   Constraints: no changes to existing files.  TSC must pass.
-#
-# Task C — UI shell (PrinterCalibrationPanel.tsx + CSS only)
-#   Files: src/components/printer/calibration/PrinterCalibrationPanel.tsx
-#          src/components/printer/calibration/PrinterCalibrationPanel.css
-#
-#   Goal:  Add a 9-card Calibration Center section between the header and
-#          the existing lifecycle section.  No wizard logic.  Keep ALL
-#          existing code intact.
-#
-#   1. Define CALIBRATION_CARDS array (inside the file, not exported):
-#        { id, testType, category, title, description, linkedItemIds }
-#      Nine cards (same order as Task B testTypes):
-#        firmware-health  → linkedItemIds: []
-#        first-layer      → linkedItemIds: ['first-layer', 'z-offset']
-#        flow-rate        → linkedItemIds: []
-#        temperature-tower → linkedItemIds: []
-#        retraction       → linkedItemIds: []
-#        pressure-advance → linkedItemIds: ['pressure-advance']
-#        input-shaper     → linkedItemIds: ['input-shaper']
-#        dimensional-accuracy → linkedItemIds: []
-#        max-volumetric-speed → linkedItemIds: []
-#
-#   2. Add  <section className="calib-center">  between the </header> close
-#      and the existing .printer-calibration-panel__lifecycle section.
-#
-#   3. Card JSX per card:
-#        .calib-center__card (+ status class: is-overdue | is-upcoming | is-ok)
-#          .calib-center__card-body
-#            span.calib-center__category  (card.category)
-#            strong.calib-center__title   (card.title)
-#            p.calib-center__desc         (card.description)
-#            div.calib-center__badges     (statusLabel() pill for each
-#                                          linked CalibrationItemId — reuse
-#                                          statusLabel() already in the file)
-#          button.calib-center__start  disabled   "Start"
-#      Card status = worst status among linkedItemIds (overdue > upcoming > ok).
-#      Cards with no linkedItemIds → default to 'ok' class.
-#
-#   4. New CSS in PrinterCalibrationPanel.css:
-#        .calib-center          — margin-bottom: 14px
-#        .calib-center__grid    — display:grid; grid-template-columns:
-#                                 repeat(auto-fill, minmax(200px,1fr)); gap:10px
-#        .calib-center__card    — border, border-radius:8px, background,
-#                                 padding, display:grid, gap:8px
-#                                 is-overdue / is-upcoming / is-ok variants
-#                                 use same --row-color pattern as
-#                                 .printer-calibration-panel__life-row
-#        .calib-center__category — text-secondary, 10px, uppercase, letter-spacing
-#        .calib-center__title    — text-primary, 13px, bold
-#        .calib-center__desc     — text-secondary, 12px, line-height:1.4
-#        .calib-center__badges   — display:flex, flex-wrap:wrap, gap:4px
-#        .calib-center__start    — same base style as
-#                                  .printer-calibration-panel__section-head button
-#
-#   Constraints: keep all existing JSX and CSS.  TSC must pass.
-#
-# ---------------------------------------------------------------------------
-# Wave 2 architecture prep (completed pre-merge — safe to start coding after
-# all three Wave 1 PRs are merged into master)
-# ---------------------------------------------------------------------------
-#
-# Blast radius of Task A on existing code:
-#   useCalibrationStore has exactly 2 non-test consumers:
-#     - PrinterCalibrationPanel.tsx  (Task C territory; safe)
-#     - StartChecklist.tsx           (reads moistureBySpoolId only; untouched)
-#   Adding results: CalibrationResult[] is strictly additive.  Risk: LOW.
-#
-# Task D — Firmware apply commands  (20.4)
-#   New file: src/calibration/firmwareApply.ts  (no blast on existing code)
-#   Pattern:  follow stepperTuning.ts — take firmware flavor + value,
-#             return string[] of GCode commands.
-#   Firmware flavors: 'reprap' | 'marlin' | 'klipper' | 'duet'
-#     (gcodeFlavorType field on PrinterProfile in src/types/slicer/profiles/printer.ts)
-#   Send path: printerStore.sendGCode (universal; delegates to DuetService /
-#             MoonrakerService / OctoPrint/WebSerial).
-#
-#   Existing infrastructure already in place:
-#     - src/services/MoonrakerService.ts:
-#         sendGCode(), SET_PRESSURE_ADVANCE (line 268), TEST_RESONANCES (236),
-#         BED_MESH_CALIBRATE (218) — Klipper commands already exist
-#     - src/services/integrations/stepperTuning.ts:
-#         buildStepperTuningCommands(boardType, axis, tuning) — per-firmware
-#         pattern to copy exactly
-#     - src/utils/firmwareCompatibility.ts:
-#         getFirmwareIncompatibilities(flavor) — which settings are
-#         unsupported per firmware (already maps pressure advance / linear
-#         advance to marlin/klipper only)
-#     - src/store/printer/actions/controls.ts:
-#         All sendGCode call sites for reference (M290, M220, M221, etc.)
-#
-#   Functions to build in firmwareApply.ts:
-#     buildPressureAdvanceCommands(flavor, value):
-#       klipper → SET_PRESSURE_ADVANCE EXTRUDER=extruder ADVANCE={value}
-#       marlin  → M900 K{value}
-#       duet    → M572 D0 S{value}
-#       reprap  → M572 D0 S{value}
-#     buildInputShaperCommands(flavor, freqX, freqY, shaperType, dampingX, dampingY):
-#       klipper → SET_INPUT_SHAPER SHAPER_FREQ_X={freqX} SHAPER_FREQ_Y={freqY}
-#                 SHAPER_TYPE={shaperType} DAMPING_RATIO_X={dampingX} ...
-#       marlin  → not supported (return warning string[], no GCode)
-#       duet    → not supported (return warning string[])
-#     buildSaveConfigCommands(flavor):
-#       klipper → ['SAVE_CONFIG']
-#       marlin  → ['M500']
-#       duet    → [] + note: config.g must be edited via file API
-#     buildConfigSnapshotNote(flavor):
-#       returns human-readable string describing the snapshot step per firmware
-#
-#   UX flow (4 steps, displayed inside Task E wizard StepApplyResult):
-#     1. Recommended value (read-only display from TuningTowerRecommendation)
-#     2. Preview commands (show command list, no send)
-#     3. Apply now (send via sendGCode, confirm dialog for irreversible writes)
-#     4. Save to config (SAVE_CONFIG / M500 / file-API note per firmware)
-#
-#   Impact targets: firmwareApply.ts is new — zero blast radius.
-#   PrinterCalibrationPanel.tsx (Task C) wires Apply buttons in StepApplyResult.
-#
-# Task E — Guided calibration wizards  (20.3)
-#   New files: src/calibration/wizard/CalibrationWizard.tsx + .css
-#              src/calibration/wizard/steps/*.tsx (one per step)
-#
-#   Existing infrastructure to reuse directly:
-#     - src/services/vision/tuningWizards.ts:
-#         TuningWizardKind: 'pressure-advance' | 'retraction' | 'temperature'
-#                           | 'first-layer-squish' | 'input-shaper'
-#         TuningTowerContext, AnalyzeTuningTowerInput, TuningTowerRecommendation
-#         analyzeTuningTower(input) → Promise<TuningTowerRecommendation>
-#         pressureAdvanceValueFromHeight() helper
-#       MISSING wizard kinds (add to union):
-#         'firmware-health' | 'flow-rate' | 'dimensional-accuracy'
-#         | 'max-volumetric-speed'
-#     - src/store/visionStore.ts:
-#         recentFrames: VisionFrameRecord[] (last 25, each with VisionFrameSample)
-#         recordFrame(record) — call after each camera snapshot
-#     - src/calibration/calibrationModels.ts (Task B output):
-#         getCalibrationModels(), getModelScale(), getModelUrl()
-#     - src/store/calibrationStore.ts (Task A output):
-#         addCalibrationResult(printerId, itemId, result)
-#
-#   Steps to build (in src/calibration/wizard/steps/):
-#     StepPickPrinter.tsx    — select printer; default activePrinterId
-#     StepPickFilament.tsx   — select spool/filament; default loaded spool
-#     StepSetupCheck.tsx     — firmware ready, nozzle size, bed temp limits
-#                              uses firmwareCompatibility.ts for feature gating
-#     StepLoadModel.tsx      — shows model from Task B; getModelScale() preview
-#     StepSlicePreview.tsx   — stub (future Phase 20.3 deep integration)
-#     StepQueue.tsx          — stub (Phase 12 scheduling hook)
-#     StepMonitor.tsx        — stub (links to existing printer dashboard)
-#     StepInspect.tsx        — camera capture (Task F component) +
-#                              manual measurement fields +
-#                              AI analysis via analyzeTuningTower()
-#     StepApplyResult.tsx    — TuningTowerRecommendation display +
-#                              Task D firmwareApply commands +
-#                              addCalibrationResult() call
-#
-#   Wire-up: Task C's card "Start" button (currently disabled) calls
-#   onStartWizard(card.testType) which opens CalibrationWizard.
-#
-#   Impact targets: all new files.  Only touch tuningWizards.ts to extend
-#   the TuningWizardKind union (additive, no callers break).
-#
-# Task F — Camera inspection stub  (20.5)
-#   New files: src/calibration/camera/CalibrationCameraCapture.tsx + .css
-#
-#   Existing infrastructure to reuse directly:
-#     - src/components/printer/dashboard/CameraDashboardPanel.tsx:
-#         Full camera UI exists — do NOT duplicate or modify it.
-#         CalibrationCameraCapture is a lean read-only subset.
-#     - src/services/vision/cameraMeasurement.ts:
-#         solveCameraHomography(), distanceBetweenImagePointsMm(),
-#         projectImagePointToBed() — spatial measurement already solved.
-#     - src/services/vision/cameraPose.ts:
-#         assessPoseCalibration(), solveCameraPoseCalibration() — pose
-#         calibration already solved; use to check if camera is calibrated.
-#     - src/store/visionStore.ts:
-#         recordFrame(VisionFrameRecord) — save captured frames.
-#         recentFrames — feed into StepInspect → analyzeTuningTower().
-#     - src/utils/cameraStreamUrl.ts:
-#         normalizeCameraStreamUrl(), enabledCamerasFromPrefs() — stream
-#         URL helpers already implemented.
-#     - src/services/vision/failureDetector.ts:
-#         VisionFrameSample — the frame type that analyzeTuningTower() consumes.
-#
-#   CalibrationCameraCapture props interface:
-#     printerId: string
-#     onFramesCaptured: (frames: VisionFrameSample[]) => void
-#     maxFrames?: number (default 5)
-#   Behaviour:
-#     - Show live camera feed (read prefs via getDuetPrefs / enabledCamerasFromPrefs)
-#     - "Capture frame" button → canvas snapshot → VisionFrameSample (base64 dataUrl)
-#     - Display thumbnail strip of captured frames, allow delete
-#     - "Analyse" button enabled when frames.length > 0
-#     - calls visionStore.recordFrame() for each snapshot
-#     - calls onFramesCaptured(frames) for StepInspect to pass to analyzeTuningTower()
-#
-#   Impact targets: new files only.  Reads useVisionStore (readonly), reads
-#   usePrinterStore prefs (readonly).  Does not modify CameraDashboardPanel.
-#
-# Wave 2 merge order: D, E, F are file-disjoint and can be merged in any order.
-# Wave 3 (after Wave 2): Task G (20.6 AI recommendations — extends
-#   tuningWizards.ts buildTuningPrompt and adds a report-generation layer).
-# ---------------------------------------------------------------------------
-#
-
-
-# ============================================================================
-# INTENTIONALLY NOT IMPLEMENTED — documented for completeness
-# ============================================================================
-# These entries record settings that appear in Cura's UI but that we will
-# never wire up. They live here so that "did you forget X?" audits resolve
-# quickly without re-walking the same ground.
-#
-# Multi-extruder
-#   - Wipe Nozzle Between Layers and all Wipe sub-params
-#   - All prime tower / ooze shield / nozzle-switch / interlocking structure
-#
-# Hardware-only (firmware fields, not G-code)
-#   - Machine Type, Material Type/Brand, Nozzle geometry, Steps/mm,
-#     Endstops, Extruder-sharing params
-#
-# Hardware/image-based
-#   - Flow Temperature Graph, Cross Infill Density Image
-#
-# Major feature deferred
-#   - Infill Support (`infillSupport`)
-#
-# Inherent behavior — already correct without explicit wiring
-#   - noSkinInZGaps   (our slicer already skips skin in Z gaps; the storage
-#                     flag has no effect to wire because the behavior is
-#                     inherent to the layer-classification logic)
+# Enums (FusionTypeDefs.h):
+#   FilletFeatureTypes — FilletFeatureType(0), RuleFilletFeatureType(1),
+#     FullRoundFilletFeatureType(2)
+#   ChamferCornerTypes — ChamferCornerType, MiterCornerType, BlendCornertype
+#   ChamferTypes — EqualDistance, TwoDistances, DistanceAndAngle
+#   SurfaceContinuityTypes — Connected(G0), Tangent(G1), Curvature(G2)
+#   RuleFilletRuleTypes — AllEdges(0), BetweenFacesOrFeatures(1)
+#   RuleFilletTopologyTypes — RoundsAndFillets(0), RoundsOnly(1), FilletsOnly(2)
+#   FeatureHealthStates — HealthyFeatureHealthState, WarningFeatureHealthState,
+#     ErrorFeatureHealthState

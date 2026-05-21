@@ -19,7 +19,8 @@ import {
   csgSubtract as csgSubtractRaw,
   csgSubtractWithTopology,
 } from '../../engine/geometryEngine/core/solid/csg';
-import { extractEdgeTopology } from '../../engine/geometryEngine/core/solid/edgeTopology';
+import { extractEdgeTopology, type BodyTopology, type ModelEdge } from '../../engine/geometryEngine/core/solid/edgeTopology';
+import { modelEdgeId } from '../../engine/geometryEngine/core/solid/edgeId';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -371,7 +372,7 @@ export interface EdgeLoopCircle {
 }
 
 /**
- * If the picked edges' endpoints form a single planar circle (closed loop,
+ * If the picked edges' endpoints form a single planar circle or circular arc,
  * all points coplanar and equidistant from the centroid), returns its
  * {center, radius, axis}. Otherwise null (box edges, arcs, splines, multi-loop
  * selections all fall back to the per-segment cutter path).
@@ -429,6 +430,64 @@ export function fitEdgeCircle(edges: PickedEdge[]): EdgeLoopCircle | null {
   if (maxPlaneDev > rAvg * 0.05) return null;
 
   return { center, radius: rAvg, axis };
+}
+
+function fitOpenEdgeCircle(edges: PickedEdge[]): EdgeLoopCircle | null {
+  if (edges.length < 8) return null;
+
+  const pts: THREE.Vector3[] = edges.map((e) => e.a);
+  pts.push(edges[edges.length - 1].b);
+
+  const span = pts[0].distanceTo(pts[Math.floor(pts.length / 2)]);
+  if (span < 1e-6) return null;
+  if (pts[0].distanceTo(pts[pts.length - 1]) <= span * 0.05) return null;
+
+  const p0 = pts[0];
+  const p1 = pts[Math.floor(pts.length / 2)];
+  const p2 = pts[pts.length - 1];
+  const ab = p1.clone().sub(p0);
+  const ac = p2.clone().sub(p0);
+  const axis = ab.clone().cross(ac);
+  const axisLenSq = axis.lengthSq();
+  if (axisLenSq < 1e-10) return null;
+
+  const center = p0.clone().add(
+    axis.clone().cross(ab).multiplyScalar(ac.lengthSq())
+      .add(ac.clone().cross(axis).multiplyScalar(ab.lengthSq()))
+      .multiplyScalar(1 / (2 * axisLenSq)),
+  );
+  axis.normalize();
+
+  let rMin = Infinity;
+  let rMax = 0;
+  let rSum = 0;
+  let maxPlaneDev = 0;
+  const w = new THREE.Vector3();
+  for (const p of pts) {
+    w.subVectors(p, center);
+    const planeDev = Math.abs(w.dot(axis));
+    if (planeDev > maxPlaneDev) maxPlaneDev = planeDev;
+    const r = Math.sqrt(Math.max(0, w.lengthSq() - planeDev * planeDev));
+    if (r < rMin) rMin = r;
+    if (r > rMax) rMax = r;
+    rSum += r;
+  }
+
+  const rAvg = rSum / pts.length;
+  if (rAvg < 1e-6) return null;
+  if ((rMax - rMin) / rAvg > 0.05) return null;
+  if (maxPlaneDev > rAvg * 0.05) return null;
+
+  const start = pts[0].clone().sub(center).projectOnPlane(axis).normalize();
+  const end = pts[pts.length - 1].clone().sub(center).projectOnPlane(axis).normalize();
+  const arcSpan = Math.acos(THREE.MathUtils.clamp(start.dot(end), -1, 1));
+  if (arcSpan < Math.PI / 10) return null;
+
+  return { center, radius: rAvg, axis };
+}
+
+export function fitEdgeCircleOrArc(edges: PickedEdge[]): EdgeLoopCircle | null {
+  return fitEdgeCircle(edges) ?? fitOpenEdgeCircle(edges);
 }
 
 // ---------------------------------------------------------------------------
@@ -845,6 +904,87 @@ export function clusterEdgesByEndpointConnectivity(
   return [...groups.values()];
 }
 
+type TopologyEdgeLike = {
+  id?: string;
+  kind?: ModelEdge['kind'];
+  polyline?: THREE.Vector3[];
+};
+
+function cloneTopologyEdge(edge: TopologyEdgeLike): ModelEdge | null {
+  const polyline = edge.polyline;
+  if (!polyline || polyline.length < 2) return null;
+  const pts = polyline.map((p) => p.clone());
+  return {
+    id: edge.id ?? modelEdgeId(pts),
+    polyline: pts,
+    kind: edge.kind ?? 'crease',
+  };
+}
+
+function polylinesMatchApprox(a: THREE.Vector3[], b: THREE.Vector3[], tolSq: number): boolean {
+  if (a.length < 2 || b.length < 2) return false;
+  const a0 = a[0];
+  const a1 = a[a.length - 1];
+  const b0 = b[0];
+  const b1 = b[b.length - 1];
+  return (a0.distanceToSquared(b0) <= tolSq && a1.distanceToSquared(b1) <= tolSq)
+    || (a0.distanceToSquared(b1) <= tolSq && a1.distanceToSquared(b0) <= tolSq);
+}
+
+function pointSegmentDistSq(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): number {
+  const ab = b.clone().sub(a);
+  const lenSq = ab.lengthSq();
+  if (lenSq < 1e-12) return p.distanceToSquared(a);
+  const t = THREE.MathUtils.clamp(p.clone().sub(a).dot(ab) / lenSq, 0, 1);
+  return p.distanceToSquared(a.clone().addScaledVector(ab, t));
+}
+
+function pointPolylineDistSq(p: THREE.Vector3, polyline: THREE.Vector3[]): number {
+  let best = Infinity;
+  for (let i = 0; i + 1 < polyline.length; i++) {
+    best = Math.min(best, pointSegmentDistSq(p, polyline[i], polyline[i + 1]));
+  }
+  return best;
+}
+
+function polylineShadowsRetained(candidate: THREE.Vector3[], retained: ModelEdge[], tolSq: number): boolean {
+  if (candidate.length < 2) return false;
+  let nearCount = 0;
+  for (const p of candidate) {
+    if (retained.some((edge) => pointPolylineDistSq(p, edge.polyline) <= tolSq)) nearCount++;
+  }
+  return nearCount / candidate.length >= 0.65;
+}
+
+function mergeRetainedAndResultTopology(
+  resultTopology: BodyTopology | undefined,
+  retainedEdges: ModelEdge[],
+  srcBounds: THREE.Box3 | null,
+  includeResultEdges = true,
+): BodyTopology | undefined {
+  if (!resultTopology?.edges?.length) {
+    return retainedEdges.length ? { edges: retainedEdges.map((e) => cloneTopologyEdge(e)!).filter(Boolean) } : resultTopology;
+  }
+  if (retainedEdges.length === 0) return includeResultEdges ? resultTopology : { edges: [] };
+  if (!includeResultEdges) {
+    return { edges: retainedEdges.map((e) => cloneTopologyEdge(e)).filter((e): e is ModelEdge => e !== null) };
+  }
+
+  const diag = Math.max(srcBounds?.min.distanceTo(srcBounds.max) ?? 1, 1);
+  const endpointTolSq = Math.max((diag * 1e-4) ** 2, 1e-10);
+  const shadowTolSq = Math.max((diag * 2e-3) ** 2, 1e-8);
+  const retained = retainedEdges.map((e) => cloneTopologyEdge(e)).filter((e): e is ModelEdge => e !== null);
+  const resultOnly: ModelEdge[] = [];
+  for (const edge of resultTopology.edges) {
+    const cloned = cloneTopologyEdge(edge);
+    if (!cloned) continue;
+    if (retained.some((r) => polylinesMatchApprox(r.polyline, cloned.polyline, endpointTolSq))) continue;
+    if (polylineShadowsRetained(cloned.polyline, retained, shadowTolSq)) continue;
+    resultOnly.push(cloned);
+  }
+  return { edges: [...retained, ...resultOnly] };
+}
+
 // ---------------------------------------------------------------------------
 // Generic CSG driver
 // ---------------------------------------------------------------------------
@@ -867,18 +1007,6 @@ export function computeEdgeCutGeometry(
   _fast?: boolean,
   makeLoopCutter?: LoopCutterFn,
 ): THREE.BufferGeometry | null {
-  // Capture source topology + any prior ghost so the picker can still find
-  // edges that this cut consumes (fillet replaces the box's sharp top-left
-  // corner with an arc — the picker would otherwise be blind to it). Stored
-  // on the OUTPUT as `ghostTopology` for nearestEdge.ts to merge into its
-  // screen-space search. Source's own ghost is unioned in so multi-step chains
-  // (box → fillet → chamfer → …) keep history intact.
-  const srcTopo = (srcGeo.userData?.topology as { edges?: unknown[] } | undefined)?.edges;
-  const srcGhost = (srcGeo.userData?.ghostTopology as { edges?: unknown[] } | undefined)?.edges;
-  const ghostEdges: unknown[] = [];
-  if (Array.isArray(srcTopo)) ghostEdges.push(...srcTopo);
-  if (Array.isArray(srcGhost)) ghostEdges.push(...srcGhost);
-
   const { tris, triIdx, eps } = getOrBuildSrcCache(srcGeo);
   const epsSq = eps * eps;
   const near = (p: THREE.Vector3, q: THREE.Vector3) => p.distanceToSquared(q) <= epsSq;
@@ -891,6 +1019,51 @@ export function computeEdgeCutGeometry(
   // Uses a spatial-hash → O(N) instead of the prior O(N²) scan; matters on
   // circle-rim selections that arrive as 30-100+ short segments.
   const uniqueEdges = dedupEdgesByEndpoints(edges, eps);
+
+  // Capture only the source topology edges this cut actually consumes, plus
+  // any prior consumed-edge ghosts. The picker can still find already-cut
+  // edges later, but a second Fillet/Chamfer won't inherit the entire old body
+  // as stale ghost candidates.
+  const srcDisplayTopo = (srcGeo.userData?.displayTopology as { edges?: TopologyEdgeLike[] } | undefined)?.edges;
+  const srcTopo = (srcGeo.userData?.topology as { edges?: TopologyEdgeLike[] } | undefined)?.edges;
+  const displayEdges = Array.isArray(srcDisplayTopo) ? srcDisplayTopo : srcTopo;
+  const srcGhost = (srcGeo.userData?.ghostTopology as { edges?: unknown[] } | undefined)?.edges;
+  const ghostEdges: unknown[] = [];
+  const retainedDisplayEdges: ModelEdge[] = [];
+  const displaySegmentWasPicked = (a: THREE.Vector3, b: THREE.Vector3): boolean => {
+    for (const e of uniqueEdges) {
+      if ((near(a, e.a) && near(b, e.b)) || (near(a, e.b) && near(b, e.a))) return true;
+    }
+    return false;
+  };
+  if (Array.isArray(displayEdges)) {
+    for (const edge of displayEdges) {
+      const polyline = edge.polyline;
+      if (!polyline || polyline.length < 2) continue;
+      let pickedAny = false;
+      let retainedPart: THREE.Vector3[] = [];
+      const flushRetainedPart = () => {
+        if (retainedPart.length >= 2) {
+          const retained = cloneTopologyEdge({ ...edge, polyline: retainedPart });
+          if (retained) retainedDisplayEdges.push(retained);
+        }
+        retainedPart = [];
+      };
+      for (let i = 0; i + 1 < polyline.length; i++) {
+        const a = polyline[i], b = polyline[i + 1];
+        if (displaySegmentWasPicked(a, b)) {
+          pickedAny = true;
+          flushRetainedPart();
+        } else {
+          if (retainedPart.length === 0) retainedPart.push(a);
+          retainedPart.push(b);
+        }
+      }
+      flushRetainedPart();
+      if (pickedAny) ghostEdges.push(edge);
+    }
+  }
+  if (Array.isArray(srcGhost)) ghostEdges.push(...srcGhost);
 
   // Cluster uniqueEdges by endpoint connectivity before deciding which path to
   // use. This handles mixed selections (e.g. a circular rim + a box edge): each
@@ -917,7 +1090,7 @@ export function computeEdgeCutGeometry(
   for (const cluster of clusters) {
     let handledByLoop = false;
     if (makeLoopCutter) {
-      const circle = fitEdgeCircle(cluster);
+      const circle = tag === 'fillet' ? fitEdgeCircleOrArc(cluster) : fitEdgeCircle(cluster);
       if (circle) {
         // Resolve a representative edge for orientation. Try the middle first
         // (away from any seam artefacts), then scan outward for any that resolves.
@@ -1054,8 +1227,20 @@ export function computeEdgeCutGeometry(
   // above as ghostEdges; the result needs its own fresh extraction.
   let savedTopology: ReturnType<typeof extractEdgeTopology> | undefined;
   if (!_fast) {
-    try { savedTopology = extractEdgeTopology(solid); }
-    catch { savedTopology = { edges: [] }; }
+    try {
+      savedTopology = extractEdgeTopology(solid);
+      solid.computeBoundingBox();
+      savedTopology = mergeRetainedAndResultTopology(
+        savedTopology,
+        retainedDisplayEdges,
+        solid.boundingBox ?? null,
+        tag !== 'fillet',
+      );
+    }
+    catch {
+      solid.computeBoundingBox();
+      savedTopology = mergeRetainedAndResultTopology(undefined, retainedDisplayEdges, solid.boundingBox ?? null) ?? { edges: [] };
+    }
   }
 
   // Crease-aware normals: smooth on the curved fillet/chamfer arc (adjacent
@@ -1067,8 +1252,10 @@ export function computeEdgeCutGeometry(
       creased.userData.topology = savedTopology;
       // Mark as current version so the lazy fallback in nearestEdge.ts never
       // clobbers this higher-quality pre-toCreasedNormals extraction.
-      creased.userData._topoV = 2;
+      creased.userData._topoV = 10;
     }
+    if (savedTopology?.edges?.length) creased.userData.displayTopology = { edges: savedTopology.edges };
+    else if (retainedDisplayEdges.length) creased.userData.displayTopology = { edges: retainedDisplayEdges };
     if (ghostEdges.length > 0) creased.userData.ghostTopology = { edges: ghostEdges };
     solid.dispose();
     solid = creased;
@@ -1076,8 +1263,10 @@ export function computeEdgeCutGeometry(
     solid.computeVertexNormals();
     if (savedTopology) {
       solid.userData.topology = savedTopology;
-      solid.userData._topoV = 2;
+      solid.userData._topoV = 10;
     }
+    if (savedTopology?.edges?.length) solid.userData.displayTopology = { edges: savedTopology.edges };
+    else if (retainedDisplayEdges.length) solid.userData.displayTopology = { edges: retainedDisplayEdges };
     if (ghostEdges.length > 0) solid.userData.ghostTopology = { edges: ghostEdges };
   }
   solid.computeBoundingBox();

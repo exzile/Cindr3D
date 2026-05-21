@@ -43,7 +43,7 @@ const _projB = new THREE.Vector3();
 // geometries cached with an older run are automatically re-extracted.
 // edgeCutCore.ts stamps the same version on topologies it extracts before
 // toCreasedNormals so those are never overridden by the lazy path.
-const LAZY_TOPO_VERSION = 3;
+const LAZY_TOPO_VERSION = 10;
 
 export function pickNearestEdge(
   mesh: THREE.Mesh,
@@ -57,7 +57,12 @@ export function pickNearestEdge(
 ): EdgePickResult | null {
   const geom = mesh.geometry;
   let topo = geom.userData?.topology as BodyTopologyLike | undefined;
-  if (!topo || !topo.edges || topo.edges.length === 0 || geom.userData._topoV !== LAZY_TOPO_VERSION) {
+  const topoV = geom.userData._topoV as number | undefined;
+  const hasEdgeCutMetadata = !!geom.userData.displayTopology || !!geom.userData.ghostTopology;
+  const staleTopology = topoV !== undefined
+    ? topoV < LAZY_TOPO_VERSION
+    : hasEdgeCutMetadata;
+  if (!topo || !topo.edges || topo.edges.length === 0 || staleTopology) {
     // Lazy fallback: committed edge-cut meshes lack topology when they were
     // produced before the pre-toCreasedNormals extraction was in place.
     // Re-weld the non-indexed creased geometry back to indexed and extract.
@@ -130,9 +135,10 @@ export function pickNearestEdge(
   scan(cached);
   if (ghostCached) scan(ghostCached);
 
-  if (!bestEdge) return null;
+  const pickedEdge = bestEdge as CachedEdge | null;
+  if (!pickedEdge) return null;
 
-  const bp = bestEdge.pts;
+  const bp = pickedEdge.pts;
   const bo = bestI * 3;
   const ea = new THREE.Vector3(bp[bo], bp[bo + 1], bp[bo + 2]);
   const eb = new THREE.Vector3(bp[bo + 3], bp[bo + 4], bp[bo + 5]);
@@ -140,7 +146,7 @@ export function pickNearestEdge(
   // CachedEdge so continuous-hover pointermove doesn't allocate ~N Vector3
   // instances per event (N up to ~30 for circle rims). Treated as read-only
   // by consumers — handleClick clones it before storing in selection state.
-  const chain = getCachedChain(bestEdge);
+  const chain = getCachedChain(pickedEdge);
   const midpoint = new THREE.Vector3().addVectors(ea, eb).multiplyScalar(0.5);
   const direction = new THREE.Vector3().subVectors(eb, ea).normalize();
 
