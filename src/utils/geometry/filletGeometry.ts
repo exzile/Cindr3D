@@ -61,6 +61,13 @@ export interface FilletCommitParams {
   propagate?: boolean;
   /** G2-curvature-continuous blend (cubic Bézier approximation). */
   isG2?: boolean;
+  /**
+   * Tangency weight 0.1–2.0 (Fusion FilletEdgeSet.tangencyWeight).
+   * Scales the effective cutter radius so the blend extends further (> 1.0)
+   * or less far (< 1.0) along adjacent faces. 1.0 = standard circular arc.
+   * Only applied when isG2 is true.
+   */
+  tangencyWeight?: number;
   /** Rolling-ball corner blend at edge intersections. */
   isRollingBallCorner?: boolean;
 }
@@ -374,7 +381,14 @@ export function computeFilletGeometry(
   const chordLength = params?.mode === 'chord-length' ? (params.chordLength ?? 0) : 0;
   // In chord-length mode `radius` is a fallback — actual per-edge radius is
   // computed from the real dihedral inside buildFilletCutter.
-  const effectiveRadius = chordLength > 0 ? (radius || chordLength / Math.SQRT2) : radius;
+  const baseRadius = chordLength > 0 ? (radius || chordLength / Math.SQRT2) : radius;
+  // Tangency weight scales the blend extent (Fusion FilletEdgeSet.tangencyWeight).
+  // Values > 1.0 extend the cutter radius (bigger blend); < 1.0 shrink it.
+  // Only applied when isG2 is explicitly true — leaves standard G1 unaffected.
+  const tw = (params?.isG2 && params.tangencyWeight && params.tangencyWeight !== 1.0)
+    ? Math.max(0.1, Math.min(2.0, params.tangencyWeight))
+    : 1.0;
+  const effectiveRadius = baseRadius * tw;
 
   // Adaptive segment count: when segments <= 0, derive from arc length so
   // small radii use fewer triangles and large radii stay smooth.

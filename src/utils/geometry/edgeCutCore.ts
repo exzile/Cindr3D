@@ -160,6 +160,25 @@ export function parseEdgeIds(edgeIds: string[]): ParsedEdges | null {
   }
 
   if (byMesh.size === 0) return null;
+
+  // Task 15: when the meshUuid is stale but we have a featureId, scan liveBodyMeshes
+  // to find the mesh whose userData.featureId matches. This makes edge IDs survive
+  // session reloads / mesh remounts where the THREE.js UUID changes but the
+  // feature identity is preserved.
+  for (const group of byMesh.values()) {
+    if (!liveBodyMeshes.has(group.meshUuid) && group.featureId) {
+      for (const [uuid, mesh] of liveBodyMeshes.entries()) {
+        if ((mesh.userData?.featureId as string | undefined) === group.featureId) {
+          // Remap to the current live UUID so the commit path finds the mesh.
+          byMesh.delete(group.meshUuid);
+          group.meshUuid = uuid;
+          byMesh.set(uuid, group);
+          break;
+        }
+      }
+    }
+  }
+
   // Common case: every edge is on one physical body — return them all, no drop.
   if (byMesh.size === 1) return byMesh.values().next().value as ParsedEdges;
 
