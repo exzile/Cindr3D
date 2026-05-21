@@ -10,7 +10,7 @@ export function RestDialog({ onClose }: { onClose: () => void }) {
 
   const sketches = useCADStore((s) => s.sketches);
   const commitRest = useCADStore((s) => s.commitRest);
-  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
+  const updateRestGeometry = useCADStore((s) => s.updateRestGeometry);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const [profileId, setProfileId] = useState(String(p.profileId ?? ''));
@@ -22,8 +22,16 @@ export function RestDialog({ onClose }: { onClose: () => void }) {
   const handleApply = () => {
     const sketch = sketches.find((s) => s.id === profileId);
     if (editing) {
-      updateFeatureParams(editing.id, { profileId, profileName: sketch?.name ?? '', width, depth, thickness, operation, restStyle: 'rest' });
-      setStatusMessage(`Updated rest feature`);
+      if (!profileId) { setStatusMessage('Rest: select a profile sketch'); return; }
+      const normal = sketch?.planeNormal ?? { x: 0, y: 1, z: 0 };
+      const origin = sketch?.planeOrigin ?? { x: 0, y: 0, z: 0 };
+      updateRestGeometry(editing.id, {
+        profileId,
+        width, depth, thickness,
+        normalX: normal.x, normalY: normal.y, normalZ: normal.z,
+        centerX: origin.x, centerY: origin.y, centerZ: origin.z,
+        extras: { profileName: sketch?.name ?? '', operation },
+      });
       onClose();
     } else {
       if (!profileId) { setStatusMessage('Rest: select a profile sketch'); return; }

@@ -10,7 +10,7 @@ export function WebDialog({ onClose }: { onClose: () => void }) {
 
   const sketches = useCADStore((s) => s.sketches);
   const commitWeb = useCADStore((s) => s.commitWeb);
-  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
+  const updateWebGeometry = useCADStore((s) => s.updateWebGeometry);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const [sketchId, setSketchId] = useState(String(p.sketchId ?? editing?.sketchId ?? ''));
@@ -21,8 +21,8 @@ export function WebDialog({ onClose }: { onClose: () => void }) {
 
   const handleApply = () => {
     if (editing) {
-      updateFeatureParams(editing.id, { sketchId, thickness, height, direction, operation, webStyle: 'perpendicular' });
-      setStatusMessage(`Updated web: ${thickness}mm thick`);
+      if (!sketchId) { setStatusMessage('Web: select a profile sketch'); return; }
+      updateWebGeometry(editing.id, sketchId, thickness, height, { direction, operation });
       onClose();
     } else {
       if (!sketchId) { setStatusMessage('Web: select a profile sketch'); return; }

@@ -241,6 +241,23 @@ export interface CADAnalysisState {
     pathSketchId: string;
   }): void;
 
+  updateRibGeometry(featureId: string, sketchId: string, thickness: number, height: number, extras?: Record<string, unknown>): void;
+  updateWebGeometry(featureId: string, sketchId: string, thickness: number, height: number, extras?: Record<string, unknown>): void;
+  updateRestGeometry(featureId: string, params: {
+    profileId: string;
+    width: number;
+    depth: number;
+    thickness: number;
+    normalX: number;
+    normalY: number;
+    normalZ: number;
+    centerX: number;
+    centerY: number;
+    centerZ: number;
+    extras?: Record<string, unknown>;
+  }): void;
+  updateCoilFeatureMesh(featureId: string, mesh: THREE.Mesh, params: Record<string, unknown>): void;
+
   // ── SLD4 — Rest ──────────────────────────────────────────────────────────
   commitRest(params: { profileId: string; width: number; depth: number; thickness: number; normalX: number; normalY: number; normalZ: number; centerX: number; centerY: number; centerZ: number }): void;
 
