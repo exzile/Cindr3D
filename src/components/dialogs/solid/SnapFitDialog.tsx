@@ -10,8 +10,7 @@ export function SnapFitDialog({ onClose }: { onClose: () => void }) {
   const p = editing?.params ?? {};
 
   const commitSnapFit = useCADStore((s) => s.commitSnapFit);
-  const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
-  const setStatusMessage = useCADStore((s) => s.setStatusMessage);
+  const updateSnapFitGeometry = useCADStore((s) => s.updateSnapFitGeometry);
 
   const [snapType, setSnapType] = useState<'cantilever' | 'annular' | 'torsional'>(
     (p.snapType as 'cantilever' | 'annular' | 'torsional') ?? 'cantilever'
@@ -29,10 +28,7 @@ export function SnapFitDialog({ onClose }: { onClose: () => void }) {
   const handleApply = () => {
     const params = { snapType, length, width, thickness, overhang, overhangAngle, returnAngle, operation };
     if (editing) {
-      // Re-create the hook with the new params (rebuilds feature.mesh) rather
-      // than only mutating params, which would leave stale geometry.
-      updateFeatureParams(editing.id, params);
-      setStatusMessage(`Updated Snap Fit`);
+      updateSnapFitGeometry(editing.id, params);
     } else {
       commitSnapFit(params);
     }
