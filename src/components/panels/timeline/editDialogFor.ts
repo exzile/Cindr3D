@@ -17,6 +17,8 @@ const FEATURE_DIALOG_MAP: Record<string, string | null> = {
   'offset-face': 'offset-face',
   emboss: 'emboss',
   pipe: 'pipe',
+  snapFit: 'snap-fit',
+  lipGroove: 'lip-groove',
   coil: 'coil',
   'boundary-fill': 'boundary-fill',
   'construction-plane': 'construction-plane',

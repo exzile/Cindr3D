@@ -88,6 +88,8 @@ import {
   ConvertMeshToBRepDialog,
   MeshRepairDialog,
   PipeDialog,
+  SnapFitDialog,
+  LipGrooveDialog,
   CoilDialog,
   MoveBodyDialog,
   SplitBodyDialog,
@@ -327,7 +329,7 @@ const TOOL_DIALOG_SCOPE = new Set<string>([
   'mesh-section-sketch', 'mesh-primitives', 'remesh', 'plane-cut', 'make-closed-mesh',
   'erase-and-fill', 'mesh-smooth', 'mesh-shell', 'mesh-combine', 'mesh-reverse-normal',
   'mesh-align', 'mesh-separate', 'mesh-transform', 'convert-mesh-to-brep', 'mesh-repair',
-  'pipe', 'coil', 'move-body', 'split', 'insert-svg', 'insert-dxf', 'insert-canvas',
+  'pipe', 'snap-fit', 'lip-groove', 'coil', 'move-body', 'split', 'insert-svg', 'insert-dxf', 'insert-canvas',
   'direct-edit', 'texture-extrude', 'decal', 'attached-canvas', 'split-face', 'bounding-solid',
 ]);
 
@@ -416,6 +418,8 @@ export default function ActiveDialog() {
     case 'convert-mesh-to-brep': return <ConvertMeshToBRepDialog onClose={close} />;
     case 'mesh-repair': return <MeshRepairDialog onClose={close} />;
     case 'pipe': return <PipeDialog onClose={close} />;
+    case 'snap-fit': return <SnapFitDialog onClose={close} />;
+    case 'lip-groove': return <LipGrooveDialog onClose={close} />;
     case 'coil': return <CoilDialog onClose={close} />;
     case 'move-body': return <MoveBodyDialog onClose={close} />;
     case 'split': return <SplitBodyDialog onClose={close} />;
