@@ -18,6 +18,7 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { csgSubtract } from '../solid/csg';
+import { extractEdgeTopology } from '../solid/edgeTopology';
 import { computePlaneAxesFromNormal } from '../../planeUtils';
 
 export interface ShellFaceSpec {
@@ -272,7 +273,8 @@ export function shellSolid(mesh: THREE.Mesh, opts: ShellOptions): THREE.Mesh {
   const cleaned = mergeVertices(hollow, 1e-4);
   hollow.dispose();
   cleaned.computeVertexNormals();
+  try { cleaned.userData.topology = extractEdgeTopology(cleaned); } catch { /* non-fatal */ }
   const result = new THREE.Mesh(cleaned, mesh.material);
-  result.userData = { ...mesh.userData };
+  result.userData = { ...mesh.userData, topology: cleaned.userData.topology };
   return result;
 }

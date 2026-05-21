@@ -87,9 +87,9 @@ import {
 } from './mesh/meshEditing';
 import { shellSolid as shellSolidImpl, type ShellOptions } from './mesh/shellSolid';
 import {
-  csgIntersect as csgIntersectImpl,
+  csgIntersectWithTopology as csgIntersectWithTopologyImpl,
   csgSubtractWithTopology as csgSubtractWithTopologyImpl,
-  csgUnion as csgUnionImpl,
+  csgUnionWithTopology as csgUnionWithTopologyImpl,
 } from './solid/csg';
 import {
   createSurfacePrimitive as createSurfacePrimitiveImpl,
@@ -266,11 +266,11 @@ export class GeometryEngine {
   }
 
   static csgUnion(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.BufferGeometry {
-    return csgUnionImpl(a, b);
+    return csgUnionWithTopologyImpl(a, b).geometry;
   }
 
   static csgIntersect(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.BufferGeometry {
-    return csgIntersectImpl(a, b);
+    return csgIntersectWithTopologyImpl(a, b).geometry;
   }
 
   static revolveFaceBoundary(

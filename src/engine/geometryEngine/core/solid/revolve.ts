@@ -3,6 +3,7 @@ import type { Sketch } from '../../../../types/cad';
 import { SURFACE_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
 import { EXTRUDE_MATERIAL } from '../../materials';
 import { sketchToShape as sketchToShapeImpl } from '../sketch/sketchProfiles';
+import { extractEdgeTopology } from './edgeTopology';
 
 export type RevolveDirection = 'one-side' | 'symmetric' | 'two-sides';
 
@@ -107,6 +108,9 @@ export function revolveFaceBoundary(
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
+  if (!isSurface) {
+    try { geometry.userData.topology = extractEdgeTopology(geometry); } catch { /* non-fatal */ }
+  }
   const mesh = new THREE.Mesh(geometry, isSurface ? SURFACE_MATERIAL : EXTRUDE_MATERIAL);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -145,6 +149,7 @@ export function revolveSketch(
     }
   }
 
+  try { geometry.userData.topology = extractEdgeTopology(geometry); } catch { /* non-fatal */ }
   const mesh = new THREE.Mesh(geometry, EXTRUDE_MATERIAL);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -226,5 +231,6 @@ export function coilGeometry(
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
+  try { geometry.userData.topology = extractEdgeTopology(geometry); } catch { /* non-fatal */ }
   return geometry;
 }

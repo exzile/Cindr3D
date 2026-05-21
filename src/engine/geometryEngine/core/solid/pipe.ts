@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { csgSubtract } from './csg';
+import { csgSubtractWithTopology } from './csg';
 
 /**
  * Builds a solid pipe by sweeping a circular profile of `radius` along a path
@@ -113,7 +113,7 @@ export function pipeGeometry(
   extended[extended.length - 1].addScaledVector(dir, 0.5);
   const inner = buildSolidTube(extended, innerRadius);
 
-  const bored = csgSubtract(outer, inner);
+  const { geometry: bored } = csgSubtractWithTopology(outer, inner);
   outer.dispose();
   inner.dispose();
   return bored;
