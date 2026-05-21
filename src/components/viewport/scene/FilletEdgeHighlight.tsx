@@ -19,6 +19,7 @@ export default function FilletEdgeHighlight() {
       addEdge={addFilletEdge}
       removeEdge={removeFilletEdge}
       selectedColor={0xaa44ff}
+      allowCurvedEdges
     />
   );
 }

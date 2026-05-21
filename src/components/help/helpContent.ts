@@ -401,13 +401,34 @@ export const HELP_TOPICS: HelpTopic[] = [
       {
         heading: 'Printer and material profiles',
         intro: 'Two profiles are always active: one for the printer machine, one for the material.',
-        image: { src: '/help/help-prepare-profile.png', alt: 'Profile row showing printer and material profile pickers with a quality preset dropdown', caption: 'Profile row — switch printer and material profile in one click; the quality preset is above.' },
+        image: { src: '/help/help-prepare-profiles-ribbon-crop.png', alt: 'Prepare ribbon profile buttons showing the active printer and active filament', caption: 'Profile buttons - the active printer and filament are visible before every slice.' },
         items: [
-          'Printer profile — defines the build volume, kinematics type (Cartesian / CoreXY / Delta), max feedrates, and acceleration limits.',
+          'Printer profile - defines the build volume, plate shape, origin, G-code flavor, printhead clearances, extruder count, and start/end G-code.',
           'Material profile — defines hotend and bed temperatures, fan speed curve, retraction distance and speed, and flow.',
           'Quality preset (top of Settings panel) — a named combination of layer height and line widths; pick Standard, Fine, or Draft, or enter custom values.',
           'Profiles are independent — any printer can be paired with any material profile.',
-          'Create or edit profiles in Settings → Profiles. Changes apply to the current plate immediately.',
+          'Click the printer profile button to open the profile editor. Changes apply to the current plate immediately.',
+        ],
+      },
+      {
+        heading: 'Adding a printer profile',
+        intro: 'Printer profiles can be created directly from the Prepare profile editor.',
+        image: { src: '/help/help-prepare-add-printer-create.png', alt: 'Add Printer form inside the Prepare printer profile editor', caption: 'Add Printer - name a machine profile, optionally import Duet config.g, then create it.' },
+        items: [
+          'Click the active printer profile in the Prepare ribbon, then choose Add Printer at the bottom of the list.',
+          'Enter a printer name. For Duet/RRF machines, Import from config.g can seed dimensions and firmware settings from a known-good machine config.',
+          'Choose Create to add the profile and make it active.',
+          'Review dimensions, G-code flavor, printhead clearance, gantry height, extruder count, and start/end G-code before slicing real jobs.',
+        ],
+      },
+      {
+        heading: 'Editing the created printer',
+        intro: 'After a profile is created, it appears in the printer list and the editor switches to that machine.',
+        image: { src: '/help/help-prepare-created-printer-settings.png', alt: 'Created printer profile with build volume, printhead settings, and start and end G-code fields', caption: 'Created profile - tune machine dimensions and startup/shutdown G-code before slicing.' },
+        items: [
+          'The active printer name updates in the ribbon as soon as the profile is selected.',
+          'Use the left list to switch between built-in and custom machines or remove profiles you no longer need.',
+          'Start G-code usually handles homing, bed leveling, purge, and priming. End G-code usually turns heaters off and parks the toolhead.',
         ],
       },
       {
@@ -458,6 +479,40 @@ export const HELP_TOPICS: HelpTopic[] = [
         ],
       },
       {
+        heading: 'G-code simulation and breakpoints',
+        intro: 'The Preview workspace includes a G-code dock for line-level inspection and a simulation footer for stepping through generated moves.',
+        image: { src: '/help/help-prepare-gcode-breakpoint.png', alt: 'G-code panel with a breakpoint set in the line-number gutter', caption: 'G-code breakpoints - mark important lines while inspecting generated moves.' },
+        items: [
+          'Open the G-code panel to inspect line numbers, comments, object labels, and generated motion commands.',
+          'Use breakpoint buttons in the G-code gutter to pause inspection at specific lines while debugging a slice.',
+          'Press Play to animate the toolpath, or drag the scrubber to jump to a specific point in the generated file.',
+          'Section view clips the toolpath so internal paths, supports, and infill can be inspected without visual clutter.',
+        ],
+        notes: [
+          'Breakpoints and simulation are inspection tools; they do not change the exported G-code.',
+        ],
+      },
+      {
+        heading: 'Simulation controls',
+        intro: 'The simulation footer stays at the bottom of Preview so playback is available while inspecting layers or G-code.',
+        image: { src: '/help/help-prepare-gcode-simulation-footer.png', alt: 'G-code simulation footer showing playback, scrub, speed, and section controls', caption: 'Simulation footer - play, scrub, step, change speed, and toggle section view from the bottom of Preview.' },
+        items: [
+          'Use Play and Pause to animate the generated toolpath.',
+          'Drag the scrubber for manual inspection or use stepping controls to advance through the file in smaller increments.',
+          'Change speed when you need a slower diagnostic pass or a faster overview.',
+        ],
+      },
+      {
+        heading: 'Section view',
+        intro: 'Section view trims the preview volume so hidden paths become easier to see.',
+        image: { src: '/help/help-prepare-gcode-section-view.png', alt: 'Sliced preview with section view enabled to reveal internal toolpaths', caption: 'Section view - clip the preview to inspect interior walls, infill, support, and travel moves.' },
+        items: [
+          'Use section view when dense toolpaths make the layer hard to read.',
+          'Combine section view with color modes to compare walls, infill, bridges, support, travel, speed, flow, or seam placement.',
+          'Turn section view off before a final visual pass so the full build volume is visible again.',
+        ],
+      },
+      {
         heading: 'Exporting G-code',
         items: [
           'Save G-code (ribbon EXPORT section) writes a standard .gcode file you can copy to an SD card or upload via OctoPrint / Mainsail / Fluidd.',
@@ -499,6 +554,27 @@ export const HELP_TOPICS: HelpTopic[] = [
           'The context strip names the active printer, host, board mode, and current online/offline state so you can tell which machine you are controlling.',
           'The bottom footer repeats machine status, current tool, uptime, and progress for quick scanning while switching tabs.',
           'Open Camera uses the saved per-printer camera profile and expands into the full camera workspace.',
+        ],
+      },
+      {
+        heading: 'Customizing dashboard cards',
+        intro: 'Dashboard layout editing lets each printer dashboard match the machine and operator workflow.',
+        image: { src: '/help/help-printer-dashboard-edit-layout.png', alt: 'Printer dashboard in edit layout mode with movable cards and card controls', caption: 'Edit layout - rearrange, resize, hide, and restore dashboard cards for the selected printer.' },
+        items: [
+          'Open edit layout mode from the dashboard controls, then drag cards by their headers to reposition them.',
+          'Resize cards from their handles so camera, temperature, files, macros, and preview panels get the right amount of space.',
+          'Hide cards you do not use and restore them later from the hidden-card controls.',
+          'Layouts persist per browser and printer, so a production printer can have a different dashboard from a calibration bench machine.',
+        ],
+      },
+      {
+        heading: 'Moving cards',
+        intro: 'A moved card shows how the layout grid responds while preserving the rest of the dashboard.',
+        image: { src: '/help/help-printer-dashboard-card-moved.png', alt: 'Printer dashboard with a card moved to a new position in the layout grid', caption: 'Moved card - cards snap into the grid and keep their content intact while editing.' },
+        items: [
+          'Use card movement to keep the most-used controls in the first viewport.',
+          'Put live status, temperature, camera, and macro controls near each other for repeated printer operation.',
+          'Keep lower-priority diagnostics lower on the page and restore them only when needed.',
         ],
       },
       {

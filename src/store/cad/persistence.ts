@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 import type { Feature, Sketch } from '../../types/cad';
+import type { BodyTopology, ModelEdge } from '../../engine/geometryEngine/core/solid/edgeTopology';
 
 function openCadDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -71,31 +72,91 @@ export const deserializeSketch = (sketch: Sketch): Sketch => ({
   planeOrigin: toVector3((sketch as unknown as { planeOrigin: unknown }).planeOrigin, [0, 0, 0]),
 });
 
-const MESH_ONLY_TYPES = new Set([
-  'fastener', 'derive', 'mesh-import', 'tessellate',
-  'mesh-combine', 'mesh-smooth', 'mesh-separate', 'import', 'primitive', 'combine',
-]);
-
-interface SerializedFeature extends Omit<Feature, 'mesh'> {
-  _meshData?: {
-    position: number[] | null;
-    index: number[] | null;
-    normal: number[] | null;
-  };
-}
-
 type SerializedMeshData = {
   position: number[] | null;
   index: number[] | null;
   normal: number[] | null;
+  edgeMeta?: SerializedEdgeMeta;
+};
+
+interface SerializedFeature extends Omit<Feature, 'mesh'> {
+  _meshData?: SerializedMeshData;
+}
+
+type SerializedEdge = {
+  id?: string;
+  kind?: ModelEdge['kind'];
+  polyline: number[][];
+};
+
+type SerializedTopology = {
+  edges: SerializedEdge[];
+};
+
+type SerializedEdgeMeta = {
+  topoV?: number;
+  topology?: SerializedTopology;
+  displayTopology?: SerializedTopology;
+  ghostTopology?: SerializedTopology;
 };
 
 const serializedMeshDataCache = new WeakMap<THREE.BufferGeometry, SerializedMeshData>();
 const serializedFeatureCache = new WeakMap<Feature, SerializedFeature>();
 
+function serializeTopology(topology: unknown): SerializedTopology | undefined {
+  const edges = (topology as BodyTopology | undefined)?.edges;
+  if (!Array.isArray(edges) || edges.length === 0) return undefined;
+  const serializedEdges = edges
+    .map((edge): SerializedEdge | null => {
+      if (!Array.isArray(edge.polyline) || edge.polyline.length < 2) return null;
+      return {
+        id: typeof edge.id === 'string' ? edge.id : undefined,
+        kind: edge.kind === 'boundary' ? 'boundary' : 'crease',
+        polyline: edge.polyline.map((p) => [p.x, p.y, p.z]),
+      };
+    })
+    .filter((edge): edge is SerializedEdge => edge !== null);
+  return serializedEdges.length ? { edges: serializedEdges } : undefined;
+}
+
+function deserializeTopology(topology: SerializedTopology | undefined): BodyTopology | undefined {
+  if (!Array.isArray(topology?.edges) || topology.edges.length === 0) return undefined;
+  const edges = topology.edges
+    .map((edge): ModelEdge | null => {
+      if (!Array.isArray(edge.polyline) || edge.polyline.length < 2) return null;
+      return {
+        id: typeof edge.id === 'string' ? edge.id : '',
+        kind: edge.kind === 'boundary' ? 'boundary' : 'crease',
+        polyline: edge.polyline.map((p) => new THREE.Vector3(Number(p[0]) || 0, Number(p[1]) || 0, Number(p[2]) || 0)),
+      };
+    })
+    .filter((edge): edge is ModelEdge => edge !== null);
+  return edges.length ? { edges } : undefined;
+}
+
+function serializeEdgeMeta(geometry: THREE.BufferGeometry): SerializedEdgeMeta | undefined {
+  const topology = serializeTopology(geometry.userData.topology);
+  const displayTopology = serializeTopology(geometry.userData.displayTopology);
+  const ghostTopology = serializeTopology(geometry.userData.ghostTopology);
+  const topoV = typeof geometry.userData._topoV === 'number' ? geometry.userData._topoV : undefined;
+  if (!topology && !displayTopology && !ghostTopology && topoV === undefined) return undefined;
+  return { topoV, topology, displayTopology, ghostTopology };
+}
+
+function restoreEdgeMeta(geometry: THREE.BufferGeometry, edgeMeta: SerializedEdgeMeta | undefined): void {
+  if (!edgeMeta) return;
+  const topology = deserializeTopology(edgeMeta.topology);
+  const displayTopology = deserializeTopology(edgeMeta.displayTopology);
+  const ghostTopology = deserializeTopology(edgeMeta.ghostTopology);
+  if (topology) geometry.userData.topology = topology;
+  if (displayTopology) geometry.userData.displayTopology = displayTopology;
+  if (ghostTopology) geometry.userData.ghostTopology = ghostTopology;
+  if (typeof edgeMeta.topoV === 'number') geometry.userData._topoV = edgeMeta.topoV;
+}
+
 export const serializeFeature = (feature: Feature): SerializedFeature => {
   const topCached = serializedFeatureCache.get(feature);
-  if (topCached) return topCached;
+  if (topCached && !feature.mesh) return topCached;
   const { mesh, ...rest } = feature;
   const serialized: SerializedFeature = { ...rest };
   // Serialize mesh geometry for MESH_ONLY_TYPES (always have mesh) AND for any
@@ -104,8 +165,9 @@ export const serializeFeature = (feature: Feature): SerializedFeature => {
     const geometry = (mesh as THREE.Mesh).geometry;
     if (geometry) {
       const cached = serializedMeshDataCache.get(geometry);
+      const edgeMeta = serializeEdgeMeta(geometry);
       if (cached) {
-        serialized._meshData = cached;
+        serialized._meshData = { ...cached, edgeMeta };
       } else {
         const position = geometry.attributes.position?.array;
         const index = geometry.index?.array;
@@ -114,6 +176,7 @@ export const serializeFeature = (feature: Feature): SerializedFeature => {
           position: position ? Array.from(position) : null,
           index: index ? Array.from(index) : null,
           normal: normal ? Array.from(normal) : null,
+          edgeMeta,
         };
         serializedMeshDataCache.set(geometry, data);
         serialized._meshData = data;
@@ -139,6 +202,7 @@ export const deserializeFeature = (feature: Feature): Feature => {
     if (index) geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(index), 1));
     if (normal) geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normal), 3));
     else if (position) geometry.computeVertexNormals();
+    restoreEdgeMeta(geometry, serializedFeature._meshData.edgeMeta);
     const mesh = new THREE.Mesh(geometry, REHYDRATED_FEATURE_MATERIAL);
     const { _meshData: _ignored, ...rest } = serializedFeature;
     void _ignored;

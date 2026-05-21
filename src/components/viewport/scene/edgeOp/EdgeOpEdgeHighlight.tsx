@@ -28,7 +28,7 @@ import { buildPolylineGeometry } from '../pickerGeometry';
 import { applyLinePulse } from '../pickPulse';
 
 /** Version tag matching nearestEdge.ts — bump both when lazy-fallback logic changes. */
-const LAZY_TOPO_VERSION = 3;
+const LAZY_TOPO_VERSION = 10;
 
 interface EdgeOpEdgeHighlightProps {
   /** activeDialog matches this tool's dialog. */
@@ -41,6 +41,8 @@ interface EdgeOpEdgeHighlightProps {
   removeEdge: (id: string) => void;
   /** Selected-edge line colour (hover is always blue). */
   selectedColor: number;
+  /** Whether this operation supports curved/circular edge chains. */
+  allowCurvedEdges?: boolean;
 }
 
 /** Ordered points representing the picked edge: the full chained model edge
@@ -58,29 +60,113 @@ function edgeId(result: EdgePickResult): string {
   return `${prefix}${result.mesh.uuid}:${pts}`;
 }
 
+function isCurvedEdge(edge: { polyline?: THREE.Vector3[] } | EdgePickResult): boolean {
+  const pts = 'mesh' in edge ? edgePoints(edge) : edge.polyline;
+  return (pts?.length ?? 0) > 2;
+}
+
+function guideEdgesForOverlay(
+  displayEdges: Array<{ polyline: THREE.Vector3[] }> | undefined,
+  ghostEdges: Array<{ polyline: THREE.Vector3[] }> | undefined,
+  topoEdges: Array<{ polyline: THREE.Vector3[] }>,
+  allowCurvedEdges: boolean,
+): Array<{ polyline: THREE.Vector3[] }> {
+  const edges = displayEdges?.length ? displayEdges : ghostEdges?.length ? ghostEdges : topoEdges;
+  return allowCurvedEdges ? edges : edges.filter((edge) => !isCurvedEdge(edge));
+}
+
+function pointSegmentDistanceSq(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): number {
+  const ab = b.clone().sub(a);
+  const lenSq = ab.lengthSq();
+  if (lenSq < 1e-12) return p.distanceToSquared(a);
+  const t = THREE.MathUtils.clamp(p.clone().sub(a).dot(ab) / lenSq, 0, 1);
+  return p.distanceToSquared(a.clone().addScaledVector(ab, t));
+}
+
+function pointPolylineDistanceSq(p: THREE.Vector3, polyline: THREE.Vector3[]): number {
+  let best = Infinity;
+  for (let i = 0; i + 1 < polyline.length; i++) {
+    best = Math.min(best, pointSegmentDistanceSq(p, polyline[i], polyline[i + 1]));
+  }
+  return best;
+}
+
+function filterStaleDisplayEdges(
+  displayEdges: Array<{ polyline: THREE.Vector3[] }> | undefined,
+  ghostEdges: Array<{ polyline: THREE.Vector3[] }> | undefined,
+  bounds: THREE.Box3 | null,
+): Array<{ polyline: THREE.Vector3[] }> | undefined {
+  if (!displayEdges?.length) return displayEdges;
+  const diag = Math.max(bounds?.min.distanceTo(bounds.max) ?? 1, 1);
+  const nearSq = Math.max((diag * 1.5e-2) ** 2, 1e-6);
+  const curveEdges = displayEdges.filter((edge) => (edge.polyline?.length ?? 0) > 2);
+  return displayEdges.filter((edge) => {
+    const pl = edge.polyline;
+    if (!pl || pl.length < 2) return false;
+    if (ghostEdges?.length) {
+      let nearGhost = 0;
+      for (const p of pl) {
+        if (ghostEdges.some((ghost) => pointPolylineDistanceSq(p, ghost.polyline) <= nearSq)) nearGhost++;
+      }
+      if (nearGhost / pl.length >= 0.5) return false;
+    }
+    if (pl.length === 2 && curveEdges.length > 0) {
+      const aNearCurve = curveEdges.some((curve) => pointPolylineDistanceSq(pl[0], curve.polyline) <= nearSq);
+      const bNearCurve = curveEdges.some((curve) => pointPolylineDistanceSq(pl[1], curve.polyline) <= nearSq);
+      if (aNearCurve || bNearCurve) {
+        const mid = pl[0].clone().add(pl[1]).multiplyScalar(0.5);
+        const midNearCurve = curveEdges.some((curve) => pointPolylineDistanceSq(mid, curve.polyline) <= nearSq * 4);
+        if (!midNearCurve) return false;
+      }
+    }
+    return true;
+  });
+}
+
+function guideSegmentIsVisible(
+  a: THREE.Vector3,
+  b: THREE.Vector3,
+  camera: THREE.Camera,
+  raycaster: THREE.Raycaster,
+  pickables: THREE.Mesh[],
+): boolean {
+  const mid = a.clone().add(b).multiplyScalar(0.5);
+  const ndc = mid.clone().project(camera);
+  if (ndc.z > 1) return false;
+  raycaster.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), camera);
+  const distToEdge = raycaster.ray.origin.distanceTo(mid);
+  if (distToEdge < 1e-6) return true;
+  raycaster.far = distToEdge * 1.5;
+  const hits = raycaster.intersectObjects(pickables, false);
+  if (hits.length === 0) return true;
+  const eps = Math.max(distToEdge * 0.005, 1e-3);
+  return hits[0].distance >= distToEdge - eps;
+}
+
 export default function EdgeOpEdgeHighlight({
   enabled,
   edgeIds,
   addEdge,
   removeEdge,
   selectedColor,
+  allowCurvedEdges = false,
 }: EdgeOpEdgeHighlightProps) {
   // Per-instance materials (NOT module singletons) so we can pulse opacity
   // without mutating shared state. Disposed on unmount.
   const hoverMat = useMemo(
-    () => new THREE.LineBasicMaterial({ color: 0x2196f3, linewidth: 2, transparent: true, depthTest: false }),
+    () => new THREE.LineBasicMaterial({ color: 0x2196f3, linewidth: 2, transparent: true, depthTest: false, depthWrite: false }),
     [],
   );
   const selectedMat = useMemo(
-    () => new THREE.LineBasicMaterial({ color: selectedColor, linewidth: 3, transparent: true, depthTest: false }),
+    () => new THREE.LineBasicMaterial({ color: selectedColor, linewidth: 3, transparent: true, depthTest: false, depthWrite: false }),
     [selectedColor],
   );
-  // Dark-orange overlay drawn under hover/selected to show ALL pickable edges
+  // Orange overlay drawn under hover/selected to show all pickable guide edges.
   // while the edge-op dialog is open. Lets the user see what's selectable
   // before they hover. Pulses subtly so it reads as interactive without
   // competing with hover/selection.
   const allEdgesMat = useMemo(
-    () => new THREE.LineBasicMaterial({ color: 0xb35900, transparent: true, depthTest: false }),
+    () => new THREE.LineBasicMaterial({ color: 0xff7a00, transparent: true, depthTest: true, depthWrite: false }),
     [],
   );
   useEffect(() => () => { hoverMat.dispose(); }, [hoverMat]);
@@ -108,7 +194,7 @@ export default function EdgeOpEdgeHighlight({
   // pointermove (the dep-storm the R3F patterns warn about), so the cursor is
   // driven in useFrame from the hover ref instead. cursorOnRef avoids
   // redundant DOM writes every frame.
-  const { scene: _scene, gl } = useThree();
+  const { scene: _scene, gl, camera } = useThree();
   const cursorOnRef = useRef(false);
 
   // Unmount cleanup — useFrame's `!enabled` branch only fires while still
@@ -141,6 +227,11 @@ export default function EdgeOpEdgeHighlight({
   }, [_scene, gl]);
 
   const handleHover = useCallback((result: EdgePickResult | null) => {
+    if (result && !allowCurvedEdges && isCurvedEdge(result)) {
+      hoverResultRef.current = null;
+      invalidateFrame();
+      return;
+    }
     hoverResultRef.current = result;
     // Wake the demand loop so useFrame applies the hover change. Without
     // this, useFrame would need to invalidate every frame (~60 Hz) just to
@@ -148,7 +239,7 @@ export default function EdgeOpEdgeHighlight({
     // is sitting still with the picker active. Invalidating only on
     // hover-change means an idle picker truly idles.
     invalidateFrame();
-  }, []);
+  }, [allowCurvedEdges]);
 
   // Set form of edgeIds — used both in handleClick (toggle existing edge =
   // O(1) lookup) and inside useFrame for the selected-line cleanup pass.
@@ -158,6 +249,7 @@ export default function EdgeOpEdgeHighlight({
   const edgeIdSet = useMemo(() => new Set(edgeIds), [edgeIds]);
 
   const handleClick = useCallback((result: EdgePickResult) => {
+    if (!allowCurvedEdges && isCurvedEdge(result)) return;
     const id = edgeId(result);
     // Toggle: clicking an already-selected edge deselects it.
     if (edgeIdSet.has(id)) {
@@ -166,7 +258,7 @@ export default function EdgeOpEdgeHighlight({
     }
     addEdge(id);
     selectedEdgesDataRef.current.set(id, edgePoints(result).map((p) => p.clone()));
-  }, [addEdge, removeEdge, edgeIdSet]);
+  }, [addEdge, removeEdge, edgeIdSet, allowCurvedEdges]);
 
   useEdgePicker({
     enabled,
@@ -176,32 +268,45 @@ export default function EdgeOpEdgeHighlight({
   });
 
   // Build the all-edges overlay when the dialog opens. Walks every pickable
-  // mesh in the scene, collects every segment of every edge in BOTH the live
-  // topology and the ghostTopology (pre-cut edges from prior fillet/chamfer),
+  // mesh in the scene, collects every segment of every display topology edge,
   // and packs them into one LineSegments — far cheaper than one Line per edge
-  // for circle-rim bodies that have ~100 edges per body.
+  // for circle-rim bodies that have ~100 edges per body. Edge-cut results may
+  // carry a clean `displayTopology` because their extracted post-CSG topology
+  // can include noisy fan edges. Ghost topology remains searchable by the
+  // picker; for older committed meshes that predate displayTopology, it is a
+  // better visual fallback than the noisy post-cut extraction.
   useEffect(() => {
     if (!enabled) return;
     const sceneSnap = _scene;
     const positions: number[] = [];
     const _t1 = new THREE.Vector3();
     const _t2 = new THREE.Vector3();
+    const pickables: THREE.Mesh[] = [];
     sceneSnap.traverse((obj) => {
       const m = obj as THREE.Mesh;
       if (!m.isMesh || typeof m.userData?.featureId !== 'string') return;
+      pickables.push(m);
+    });
+    const guideRaycaster = new THREE.Raycaster();
+    for (const m of pickables) {
       m.updateWorldMatrix(true, false);
       const mw = m.matrixWorld;
       const geom = m.geometry;
+      geom.computeBoundingBox();
+      const geomBounds = geom.boundingBox;
       // Lazy topology extraction for old committed meshes that pre-date the
       // pre-toCreasedNormals extraction path (same fallback as nearestEdge.ts).
       // Without this, the overlay is silent on any fillet/chamfer committed
       // before topology stamping was added — the user sees no orange lines.
       const existingTopo = geom.userData.topology as { edges?: unknown[] } | undefined;
-      if (!existingTopo?.edges?.length || geom.userData._topoV !== LAZY_TOPO_VERSION) {
+      const topoV = geom.userData._topoV as number | undefined;
+      const hasEdgeCutMetadata = !!geom.userData.displayTopology || !!geom.userData.ghostTopology;
+      const staleTopology = topoV !== undefined
+        ? topoV < LAZY_TOPO_VERSION
+        : hasEdgeCutMetadata;
+      if (!existingTopo?.edges?.length || staleTopology) {
         try {
-          geom.computeBoundingBox();
-          const bb = geom.boundingBox;
-          const diag = bb ? bb.min.distanceTo(bb.max) : 1;
+          const diag = geomBounds ? geomBounds.min.distanceTo(geomBounds.max) : 1;
           const tol = Math.max(diag * 1e-4, 1e-5);
           const indexed = mergeVertices(geom, tol);
           const extracted = extractEdgeTopology(indexed);
@@ -210,24 +315,30 @@ export default function EdgeOpEdgeHighlight({
           geom.userData._topoV = LAZY_TOPO_VERSION;
         } catch { /* leave topology as-is — picker will retry on hover */ }
       }
-      const topo = geom.userData.topology as { edges?: Array<{ polyline: THREE.Vector3[] }> } | undefined;
+      const displayTopo = geom.userData.displayTopology as { edges?: Array<{ polyline: THREE.Vector3[] }> } | undefined;
       const ghost = geom.userData.ghostTopology as { edges?: Array<{ polyline: THREE.Vector3[] }> } | undefined;
-      const edges = [...(topo?.edges ?? []), ...(ghost?.edges ?? [])];
+      const topo = geom.userData.topology as { edges?: Array<{ polyline: THREE.Vector3[] }> } | undefined;
+      const topoEdges = topo?.edges ?? [];
+      const displayEdges = staleTopology
+        ? filterStaleDisplayEdges(displayTopo?.edges, ghost?.edges, geomBounds)
+        : displayTopo?.edges;
+      const edges = guideEdgesForOverlay(displayEdges, ghost?.edges, topoEdges, allowCurvedEdges);
       for (const e of edges) {
         const pl = e.polyline;
         if (!pl || pl.length < 2) continue;
         for (let i = 0; i + 1 < pl.length; i++) {
           _t1.copy(pl[i]).applyMatrix4(mw);
           _t2.copy(pl[i + 1]).applyMatrix4(mw);
+          if (!guideSegmentIsVisible(_t1, _t2, camera, guideRaycaster, pickables)) continue;
           positions.push(_t1.x, _t1.y, _t1.z, _t2.x, _t2.y, _t2.z);
         }
       }
-    });
+    }
     if (positions.length === 0) return;
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
     const segs = new THREE.LineSegments(geom, allEdgesMat);
-    segs.renderOrder = 99; // under hover (100) and selected (100)
+    segs.renderOrder = 1400; // above sketch display, under hover/selected.
     sceneSnap.add(segs);
     allEdgesRef.current = segs;
     invalidateFrame();
@@ -238,7 +349,7 @@ export default function EdgeOpEdgeHighlight({
     };
   // edgeIds is included so a re-render after commit (which can swap geometry)
   // refreshes the overlay against the new mesh references.
-  }, [enabled, _scene, allEdgesMat, edgeIds]);
+  }, [enabled, _scene, camera, allEdgesMat, edgeIds, allowCurvedEdges]);
 
   useFrame(({ scene, invalidate }) => {
     if (!enabled) {
@@ -297,7 +408,7 @@ export default function EdgeOpEdgeHighlight({
             : [hr.edgeVertexA, hr.edgeVertexB];
           if (!hoverLineRef.current) {
             const line = new THREE.Line(buildPolylineGeometry(hPts), hoverMat);
-            line.renderOrder = 100;
+            line.renderOrder = 1401;
             scene.add(line);
             hoverLineRef.current = line;
           } else {
@@ -332,7 +443,7 @@ export default function EdgeOpEdgeHighlight({
         const edgeData = selectedEdgesDataRef.current.get(id);
         if (edgeData && edgeData.length >= 2) {
           const line = new THREE.Line(buildPolylineGeometry(edgeData), selectedMat);
-          line.renderOrder = 100;
+          line.renderOrder = 1401;
           scene.add(line);
           selectedLinesRef.current.set(id, line);
         }
@@ -353,7 +464,7 @@ export default function EdgeOpEdgeHighlight({
     // without competing with the brighter hover/selected lines.
     if (allEdgesRef.current) {
       const t = (now % 1000) / 1000; // 0..1 over 1s
-      allEdgesMat.opacity = 0.45 + 0.25 * Math.sin(t * Math.PI * 2);
+      allEdgesMat.opacity = 0.75 + 0.15 * Math.sin(t * Math.PI * 2);
     }
   });
 

@@ -3,6 +3,7 @@ import * as THREE from 'three';
 
 import {
   dedupEdgesByEndpoints,
+  fitEdgeCircleOrArc,
   clusterEdgesByEndpointConnectivity,
   buildTriangleList,
   computeEdgeGizmoDir,
@@ -135,6 +136,38 @@ describe('clusterEdgesByEndpointConnectivity', () => {
     const clusters = clusterEdgesByEndpointConnectivity(e, eps);
     expect(clusters).toHaveLength(1);
     expect(clusters[0]).toHaveLength(200);
+  });
+});
+
+describe('fitEdgeCircleOrArc', () => {
+  it('recognizes an open circular rim arc', () => {
+    const radius = 5;
+    const edgeCount = 24;
+    const edges: PickedEdge[] = [];
+    for (let i = 0; i < edgeCount; i++) {
+      const t0 = (Math.PI * i) / edgeCount;
+      const t1 = (Math.PI * (i + 1)) / edgeCount;
+      edges.push({
+        a: v(Math.cos(t0) * radius, Math.sin(t0) * radius, 2),
+        b: v(Math.cos(t1) * radius, Math.sin(t1) * radius, 2),
+      });
+    }
+
+    const fit = fitEdgeCircleOrArc(edges);
+
+    expect(fit).not.toBeNull();
+    expect(fit!.center.x).toBeCloseTo(0, 6);
+    expect(fit!.center.y).toBeCloseTo(0, 6);
+    expect(fit!.center.z).toBeCloseTo(2, 6);
+    expect(fit!.radius).toBeCloseTo(radius, 6);
+    expect(Math.abs(fit!.axis.z)).toBeCloseTo(1, 6);
+  });
+
+  it('rejects a straight chain', () => {
+    const edges: PickedEdge[] = [];
+    for (let i = 0; i < 12; i++) edges.push({ a: v(i, 0, 0), b: v(i + 1, 0, 0) });
+
+    expect(fitEdgeCircleOrArc(edges)).toBeNull();
   });
 });
 
