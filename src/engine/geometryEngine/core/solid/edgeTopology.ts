@@ -39,6 +39,15 @@ export interface ModelEdge {
    * Mirrors Fusion SDK BRepBody.concaveEdges() / convexEdges().
    */
   convexity?: 'convex' | 'concave';
+  /**
+   * Unit in-face perpendicular pointing away from the edge into face 1 (LOCAL space).
+   * Precomputed at topology-extraction time using the IC vertex of the primary
+   * adjacent triangle. Allows resolveEdge to skip its 4-pass fallback chain for
+   * bodies that went through the Manifold CSG pipeline.
+   */
+  u1?: THREE.Vector3;
+  /** Unit in-face perpendicular pointing away from the edge into face 2 (LOCAL space). */
+  u2?: THREE.Vector3;
 }
 
 export interface BodyTopology {
@@ -47,11 +56,29 @@ export interface BodyTopology {
 
 const HARD_EDGE_COS = Math.cos(30 * Math.PI / 180); // crease threshold
 
-interface RawEdge { ka: string; kb: string; kind: 'crease' }
+interface RawEdge {
+  ka: string;
+  kb: string;
+  kind: 'crease';
+  /** IC vertex (off-edge corner) of the primary triangle — used to precompute u1. */
+  ic1?: THREE.Vector3;
+  /** IC vertex (off-edge corner) of the sibling triangle — used to precompute u2. */
+  ic2?: THREE.Vector3;
+}
 
 /** Quantized vertex key (bbox-relative) for chaining the extracted segments. */
 function keyFn(x: number, y: number, z: number, q: number): string {
   return `${Math.round(x / q)}_${Math.round(y / q)}_${Math.round(z / q)}`;
+}
+
+/**
+ * Unit in-plane perpendicular pointing from `edgeA` away from the edge into the
+ * face. `ic` is the off-edge corner vertex; `edgeA` is one edge endpoint.
+ * Returns a zero vector (caller checks lengthSq) if the ic is degenerate.
+ */
+function inPlanePerp(ic: THREE.Vector3, edgeA: THREE.Vector3, edgeDir: THREE.Vector3): THREE.Vector3 {
+  const w = ic.clone().sub(edgeA);
+  return w.sub(edgeDir.clone().multiplyScalar(w.dot(edgeDir))).normalize();
 }
 
 /**
@@ -353,7 +380,32 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
 
       if (!keyPos.has(ka)) keyPos.set(ka, _p0.clone());
       if (!keyPos.has(kb)) keyPos.set(kb, _p1.clone());
-      rawByKey.set(ek, { ka, kb, kind: 'crease' });
+      // Store IC vertices for u1/u2 precomputation at emission time.
+      // ic1 = off-edge corner of primary triangle t; ic2 = off-edge corner of
+      // sibling (when available — manifold crease). Both known here cheaply.
+      let ic1: THREE.Vector3 | undefined;
+      let ic2: THREE.Vector3 | undefined;
+      {
+        const icIdx1 = vi(t, (e + 2) % 3);
+        ic1 = new THREE.Vector3().fromBufferAttribute(pos, icIdx1);
+        if (sib !== -1) {
+          // Find the edge local index in sib that corresponds to vb→va (reversed),
+          // then the IC is the remaining vertex (3 - ea_in_sib - eb_in_sib).
+          const sibVa = vId[t * 3 + e];
+          const sibVb = vId[t * 3 + (e + 1) % 3];
+          let eaInSib = -1, ebInSib = -1;
+          for (let sc = 0; sc < 3; sc++) {
+            const sv = vId[sib * 3 + sc];
+            if (sv === sibVa) eaInSib = sc;
+            else if (sv === sibVb) ebInSib = sc;
+          }
+          if (eaInSib >= 0 && ebInSib >= 0) {
+            const icIdx2 = vi(sib, 3 - eaInSib - ebInSib);
+            ic2 = new THREE.Vector3().fromBufferAttribute(pos, icIdx2);
+          }
+        }
+      }
+      rawByKey.set(ek, { ka, kb, kind: 'crease', ic1, ic2 });
 
       // Convexity: classify using n1 × n2 dotted with the edge direction.
       // Positive cross-product dot = concave (normals lean toward each other);
@@ -437,7 +489,14 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
       used.add(si);
       const pts = mk(sA, sB);
       const cv0 = clusterConvexity([si]);
-      edges.push({ id: modelEdgeId(pts, diag), polyline: pts, kind: 'crease', ...(cv0 ? { convexity: cv0 } : {}) });
+      const raw0 = rawByKey.get(segEk[si]);
+      const me0: ModelEdge = { id: modelEdgeId(pts, diag), polyline: pts, kind: 'crease', ...(cv0 ? { convexity: cv0 } : {}) };
+      if (raw0) {
+        const ed0 = pts[1].clone().sub(pts[0]).normalize();
+        if (raw0.ic1) { const u = inPlanePerp(raw0.ic1, pts[0], ed0); if (u.lengthSq() > 0.5) me0.u1 = u; }
+        if (raw0.ic2) { const u = inPlanePerp(raw0.ic2, pts[0], ed0); if (u.lengthSq() > 0.5) me0.u2 = u; }
+      }
+      edges.push(me0);
       continue;
     }
     _D.divideScalar(dl);
@@ -503,7 +562,17 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
     if (cluster.length === 1 || maxDevSq <= qSq) {
       if (pMin.distanceToSquared(pMax) >= qSq) {
         const pts = mk(pMin, pMax);
-        edges.push({ id: modelEdgeId(pts, diag), polyline: pts, kind: 'crease', ...(clusterCv ? { convexity: clusterCv } : {}) });
+        const me1: ModelEdge = { id: modelEdgeId(pts, diag), polyline: pts, kind: 'crease', ...(clusterCv ? { convexity: clusterCv } : {}) };
+        // Use IC from the first cluster segment that has both ic1 and ic2.
+        const ed1 = pts[1].clone().sub(pts[0]).normalize();
+        for (const ci of cluster) {
+          const raw1 = rawByKey.get(segEk[ci]);
+          if (!raw1) continue;
+          if (!me1.u1 && raw1.ic1) { const u = inPlanePerp(raw1.ic1, pts[0], ed1); if (u.lengthSq() > 0.5) me1.u1 = u; }
+          if (!me1.u2 && raw1.ic2) { const u = inPlanePerp(raw1.ic2, pts[0], ed1); if (u.lengthSq() > 0.5) me1.u2 = u; }
+          if (me1.u1 && me1.u2) break;
+        }
+        edges.push(me1);
       }
     } else {
       for (const ci of cluster) {
@@ -512,7 +581,14 @@ export function extractEdgeTopology(geo: THREE.BufferGeometry): BodyTopology {
         if (a.distanceToSquared(b) < qSq) continue;
         const segPts = mk(a, b);
         const segCv = convexityByKey.get(segEk[ci]);
-        edges.push({ id: modelEdgeId(segPts, diag), polyline: segPts, kind: 'crease', ...(segCv ? { convexity: segCv } : {}) });
+        const me2: ModelEdge = { id: modelEdgeId(segPts, diag), polyline: segPts, kind: 'crease', ...(segCv ? { convexity: segCv } : {}) };
+        const raw2 = rawByKey.get(segEk[ci]);
+        if (raw2) {
+          const ed2 = segPts[1].clone().sub(segPts[0]).normalize();
+          if (raw2.ic1) { const u = inPlanePerp(raw2.ic1, segPts[0], ed2); if (u.lengthSq() > 0.5) me2.u1 = u; }
+          if (raw2.ic2) { const u = inPlanePerp(raw2.ic2, segPts[0], ed2); if (u.lengthSq() > 0.5) me2.u2 = u; }
+        }
+        edges.push(me2);
       }
     }
   }
