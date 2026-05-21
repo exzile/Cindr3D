@@ -549,7 +549,6 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
   const features = useCADStore((s) => s.features);
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const renameFeature = useCADStore((s) => s.renameFeature);
-  const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const commitFillet = useCADStore((s) => s.commitFillet);
   const replayEdgeCutFeature = useCADStore((s) => s.replayEdgeCutFeature);
 
@@ -586,7 +585,7 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
       // Pass segments=0 for adaptive arc resolution based on radius.
       // Pass the new feature's id and full params so the non-destructive path
       // stores the result on the fillet node instead of mutating the parent.
-      setTimeout(() => commitFillet(r, 0, feature.id, params as Record<string, unknown>), 0);
+      setTimeout(() => commitFillet(r, 0, feature.id, params as unknown as Record<string, unknown>), 0);
       return;
     }
     onClose();

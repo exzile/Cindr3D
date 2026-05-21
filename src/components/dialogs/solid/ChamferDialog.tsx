@@ -245,7 +245,7 @@ export function ChamferDialog({ onClose }: { onClose: () => void }) {
       const [d1, d2] = resolveChamferDistances(params);
       // Pass featureId so the non-destructive path stores the result on the
       // chamfer node instead of mutating the parent.
-      setTimeout(() => commitChamfer(d1, d2, feature.id, params as Record<string, unknown>), 0);
+      setTimeout(() => commitChamfer(d1, d2, feature.id, params as unknown as Record<string, unknown>), 0);
       return;
     }
     onClose();
