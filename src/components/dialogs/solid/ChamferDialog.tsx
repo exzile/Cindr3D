@@ -3,35 +3,16 @@ import { useCADStore } from '../../../store/cadStore';
 import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
 import { parseEdgeLabel } from '../../../utils/geometry/edgeCutCore';
+import {
+  type ChamferMode,
+  type ChamferCornerType,
+  type ChamferParams,
+  resolveChamferDistance2,
+  resolveChamferDistances,
+} from '../../../utils/geometry/chamferGeometry';
 
-const clampDeg = (a: number) => Math.max(1, Math.min(89, a));
-
-/**
- * Resolve the face-2 setback from the dialog mode (mirrors Fusion):
- *  - equal-dist / three-face → equal to face-1 distance
- *  - two-dist                → explicit second distance
- *  - dist-angle              → distance · tan(angle from face 1)
- */
-export function resolveChamferDistance2(p: ChamferParams): number {
-  if (p.mode === 'two-dist') return p.distance2 ?? p.distance;
-  if (p.mode === 'dist-angle') {
-    const a = clampDeg(p.angle ?? 45);
-    return Math.max(0.01, p.distance * Math.tan((a * Math.PI) / 180));
-  }
-  return p.distance;
-}
-
-/** SOL-I6: 'three-face' added per Fusion SDK ThreeEdgeChamferEdge */
-export type ChamferMode = 'equal-dist' | 'two-dist' | 'dist-angle' | 'three-face';
-
-export interface ChamferParams {
-  mode: ChamferMode;
-  distance: number;
-  distance2?: number;
-  angle?: number;
-  edgeIds: string[];
-  propagate: boolean;
-}
+export type { ChamferMode, ChamferCornerType, ChamferParams };
+export { resolveChamferDistance2, resolveChamferDistances };
 
 interface ChamferDialogProps {
   open: boolean;
@@ -58,6 +39,8 @@ function ChamferDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClo
   const [distance2, setDistance2] = useState(2);
   const [angle, setAngle] = useState(45);
   const [propagate, setPropagate] = useState(true);
+  const [isFlipped, setIsFlipped] = useState(false);
+  const [cornerType, setCornerType] = useState<ChamferCornerType>('patch');
 
   if (!open) return null;
 
@@ -67,12 +50,15 @@ function ChamferDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClo
       distance,
       edgeIds: [],
       propagate,
+      cornerType,
     };
     if (mode === 'two-dist') {
       params.distance2 = distance2;
+      params.isFlipped = isFlipped;
     }
     if (mode === 'dist-angle') {
       params.angle = angle;
+      params.isFlipped = isFlipped;
     }
     onConfirm(params);
   };
@@ -184,6 +170,27 @@ function ChamferDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClo
         </div>
       )}
 
+      {(mode === 'two-dist' || mode === 'dist-angle') && (
+        <div className="form-group">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={isFlipped}
+              onChange={(e) => setIsFlipped(e.target.checked)}
+            />
+            Flip Faces
+          </label>
+        </div>
+      )}
+
+      <div className="form-group">
+        <label>Corner Type</label>
+        <select value={cornerType} onChange={(e) => setCornerType(e.target.value as ChamferCornerType)}>
+          <option value="patch">Patch</option>
+          <option value="miter">Miter</option>
+        </select>
+      </div>
+
       {mode !== 'three-face' && (
         <div className="form-group">
           <label className="checkbox-label">
@@ -208,8 +215,8 @@ export function ChamferDialog({ onClose }: { onClose: () => void }) {
   const editingFeatureId = useCADStore((s) => s.editingFeatureId);
   const features = useCADStore((s) => s.features);
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
-  const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const commitChamfer = useCADStore((s) => s.commitChamfer);
+  const replayEdgeCutFeature = useCADStore((s) => s.replayEdgeCutFeature);
 
   const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
   const p = editing?.params ?? {};
@@ -219,7 +226,8 @@ export function ChamferDialog({ onClose }: { onClose: () => void }) {
     const edgeIdsStr = edgeIds.join(',');
     if (editing) {
       updateFeatureParams(editing.id, { ...params, edgeIds: edgeIdsStr });
-      setStatusMessage(`Updated chamfer: d=${params.distance}`);
+      // Re-run CSG with the updated params.
+      replayEdgeCutFeature(editing.id);
     } else {
       const feature: Feature = {
         id: crypto.randomUUID(),
@@ -234,9 +242,10 @@ export function ChamferDialog({ onClose }: { onClose: () => void }) {
       // Close immediately so the UI is responsive; defer the CSG compute.
       // chamferEdgeIds stays in the store until the next chamfer dialog open.
       onClose();
-      const d1 = params.distance;
-      const d2 = resolveChamferDistance2(params);
-      setTimeout(() => commitChamfer(d1, d2), 0);
+      const [d1, d2] = resolveChamferDistances(params);
+      // Pass featureId so the non-destructive path stores the result on the
+      // chamfer node instead of mutating the parent.
+      setTimeout(() => commitChamfer(d1, d2, feature.id, params as Record<string, unknown>), 0);
       return;
     }
     onClose();

@@ -70,6 +70,17 @@ export type LoopCutterFn = (
   re: ResolvedEdge,
 ) => THREE.BufferGeometry | null;
 
+/** Options bag for computeEdgeCutGeometry (all optional for backwards compat). */
+export interface EdgeCutOptions {
+  /** When true, expand the selected edges along tangent-continuous chains before cutting. */
+  propagate?: boolean;
+  /**
+   * When set, CSG-subtract a sphere of this radius at each vertex where
+   * 3 or more selected edges meet (rolling-ball corner blend).
+   */
+  cornerRadius?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Edge-ID parsing
 // ---------------------------------------------------------------------------
@@ -986,6 +997,92 @@ function mergeRetainedAndResultTopology(
 }
 
 // ---------------------------------------------------------------------------
+// Tangent-edge propagation (Task 6: "Propagate Along Tangent Edges")
+// ---------------------------------------------------------------------------
+
+/**
+ * Expands the picked edge set by walking to tangent-connected topology edges.
+ * Two edges are considered tangent-connected when they:
+ *   1. Share an endpoint (within `eps`)
+ *   2. Have directions aligned within ~12° (cos > TANGENT_DOT)
+ *
+ * Uses BFS from every initially-picked edge. The topology edges stored in
+ * `srcGeo.userData.topology.edges` (world-space polylines) are the walk graph.
+ */
+const TANGENT_DOT = Math.cos((12 * Math.PI) / 180);
+export function propagateEdgesAlongTangents(
+  picked: PickedEdge[],
+  srcGeo: THREE.BufferGeometry,
+  eps: number,
+): PickedEdge[] {
+  const topoEdges = (
+    (srcGeo.userData?.displayTopology ?? srcGeo.userData?.topology) as
+      | { edges?: Array<{ polyline: THREE.Vector3[] }> }
+      | undefined
+  )?.edges;
+  if (!topoEdges || topoEdges.length === 0) return picked;
+
+  const epsSq = eps * eps;
+  const nearV = (a: THREE.Vector3, b: THREE.Vector3) => a.distanceToSquared(b) <= epsSq;
+
+  // Convert topology edges to {a, b, dir} for quick lookup.
+  interface TopoEdge { a: THREE.Vector3; b: THREE.Vector3; dir: THREE.Vector3; }
+  const allEdges: TopoEdge[] = [];
+  for (const te of topoEdges) {
+    if (!te.polyline || te.polyline.length < 2) continue;
+    const a = te.polyline[0];
+    const b = te.polyline[te.polyline.length - 1];
+    const dir = b.clone().sub(a);
+    const len = dir.length();
+    if (len < 1e-9) continue;
+    dir.divideScalar(len);
+    allEdges.push({ a, b, dir });
+  }
+
+  // Seed BFS with the initially-picked edges (as PickedEdge world-coord objects).
+  const queue: PickedEdge[] = [...picked];
+  const visited = new Set<number>(); // index into allEdges
+
+  // Mark any topology edge already matching a picked edge as visited.
+  for (let i = 0; i < allEdges.length; i++) {
+    const te = allEdges[i];
+    for (const pe of picked) {
+      if ((nearV(te.a, pe.a) && nearV(te.b, pe.b)) ||
+          (nearV(te.a, pe.b) && nearV(te.b, pe.a))) {
+        visited.add(i);
+        break;
+      }
+    }
+  }
+
+  const result: PickedEdge[] = [...picked];
+  while (queue.length > 0) {
+    const cur = queue.pop()!;
+    const curDir = cur.b.clone().sub(cur.a);
+    const curLen = curDir.length();
+    if (curLen < 1e-9) continue;
+    curDir.divideScalar(curLen);
+
+    for (let i = 0; i < allEdges.length; i++) {
+      if (visited.has(i)) continue;
+      const te = allEdges[i];
+      // Shares an endpoint with cur?
+      const sharesA = nearV(te.a, cur.a) || nearV(te.a, cur.b);
+      const sharesB = nearV(te.b, cur.a) || nearV(te.b, cur.b);
+      if (!sharesA && !sharesB) continue;
+      // Tangent direction check: align direction from the shared vertex.
+      const dot = Math.abs(te.dir.dot(curDir));
+      if (dot < TANGENT_DOT) continue;
+      visited.add(i);
+      const newEdge: PickedEdge = { a: te.a.clone(), b: te.b.clone() };
+      result.push(newEdge);
+      queue.push(newEdge);
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Generic CSG driver
 // ---------------------------------------------------------------------------
 
@@ -1006,6 +1103,7 @@ export function computeEdgeCutGeometry(
   tag: string,
   _fast?: boolean,
   makeLoopCutter?: LoopCutterFn,
+  options?: EdgeCutOptions,
 ): THREE.BufferGeometry | null {
   const { tris, triIdx, eps } = getOrBuildSrcCache(srcGeo);
   const epsSq = eps * eps;
@@ -1018,7 +1116,15 @@ export function computeEdgeCutGeometry(
   // spurious geometry / can over-cut. One cut per distinct edge is correct.
   // Uses a spatial-hash → O(N) instead of the prior O(N²) scan; matters on
   // circle-rim selections that arrive as 30-100+ short segments.
-  const uniqueEdges = dedupEdgesByEndpoints(edges, eps);
+  let uniqueEdges = dedupEdgesByEndpoints(edges, eps);
+
+  // Task 6: Propagate along tangent edges when requested.
+  if (options?.propagate) {
+    uniqueEdges = dedupEdgesByEndpoints(
+      propagateEdgesAlongTangents(uniqueEdges, srcGeo, eps),
+      eps,
+    );
+  }
 
   // Capture only the source topology edges this cut actually consumes, plus
   // any prior consumed-edge ghosts. The picker can still find already-cut
@@ -1078,6 +1184,7 @@ export function computeEdgeCutGeometry(
 
   let solid: THREE.BufferGeometry = srcGeo.clone();
   let cut = 0;
+  let failedSegCount = 0;
   // Counts only per-segment (non-loop-cutter) cuts. The final weldAndCleanSolid
   // is gated on this: loop-cutter results are already clean manifolds (the CSG
   // welds internally), so running weldAndCleanSolid on them is both unnecessary
@@ -1132,12 +1239,12 @@ export function computeEdgeCutGeometry(
   // Per-segment path for non-circular clusters (straight edges, arcs, etc.).
   for (const e of perSegEdges) {
     const re = resolveEdge(tris, e, near, triIdx, eps);
-    if (!re) continue;
+    if (!re) { failedSegCount++; continue; }
     // Small overhang past the edge ends so the boolean is clean at the ends
     // without visibly notching the adjacent faces.
     const edgeEps = Math.max(re.length * 1e-3, 1e-4);
     const cutter = makeCutter(re, edgeEps);
-    if (!cutter) { console.warn(`[${tag}] degenerate dihedral — edge skipped`); continue; }
+    if (!cutter) { console.warn(`[${tag}] degenerate dihedral — edge skipped`); failedSegCount++; continue; }
     // three-bvh-csg can throw on degenerate / non-manifold inputs. Catch so
     // one bad edge doesn't abort the whole commit (which would also skip the
     // dialog's onClose).
@@ -1151,6 +1258,7 @@ export function computeEdgeCutGeometry(
       next = csgSubtractRaw(solid, cutter);
     } catch (err) {
       console.error(`[${tag}] csgSubtract threw — edge skipped:`, err);
+      failedSegCount++;
     }
     cutter.dispose();
     if (!next) continue;
@@ -1184,6 +1292,44 @@ export function computeEdgeCutGeometry(
     console.warn(`[${tag}] no edges cut → returning null`);
     solid.dispose();
     return null;
+  }
+
+  // Task 7: Rolling-ball corner sphere at multi-edge junctions.
+  // When 3+ selected edges share an endpoint, a small triangular gap is left
+  // at the corner after independent edge cuts. Subtracting a sphere of the
+  // fillet/chamfer radius there fills the gap with a smooth spherical patch —
+  // the same "rolling-ball corner" Fusion's isRollingBallCorner applies.
+  if (options?.cornerRadius && options.cornerRadius > 0) {
+    const r = options.cornerRadius;
+    // Count how many unique edges touch each vertex (within eps).
+    const vtxCount = new Map<string, { pos: THREE.Vector3; count: number }>();
+    const vtxKey = (v: THREE.Vector3) =>
+      `${Math.round(v.x / eps)}_${Math.round(v.y / eps)}_${Math.round(v.z / eps)}`;
+    for (const e of uniqueEdges) {
+      for (const v of [e.a, e.b]) {
+        const k = vtxKey(v);
+        const entry = vtxCount.get(k);
+        if (entry) entry.count++;
+        else vtxCount.set(k, { pos: v.clone(), count: 1 });
+      }
+    }
+    for (const { pos, count } of vtxCount.values()) {
+      if (count < 3) continue;
+      const sphere = new THREE.SphereGeometry(r, 16, 12);
+      sphere.translate(pos.x, pos.y, pos.z);
+      try {
+        const next = csgSubtractRaw(solid, sphere);
+        sphere.dispose();
+        if ((next.attributes.position as THREE.BufferAttribute | undefined)?.count ?? 0 > 0) {
+          solid.dispose();
+          solid = next;
+        } else {
+          next.dispose();
+        }
+      } catch {
+        sphere.dispose();
+      }
+    }
   }
 
   // Final full weld for per-segment paths: the cheap intermediate welds leave
@@ -1271,5 +1417,8 @@ export function computeEdgeCutGeometry(
   }
   solid.computeBoundingBox();
   solid.computeBoundingSphere();
+  // Surface diagnostics for callers (applyEdgeCut reads these for status messages).
+  solid.userData.failedEdgeCount = failedSegCount;
+  solid.userData.totalEdgeCount = uniqueEdges.length;
   return solid;
 }

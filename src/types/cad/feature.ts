@@ -69,6 +69,12 @@ export interface Feature {
   endFaceIds?: string[];
   sideFaceIds?: string[];
   derivedFrom?: string;
+  /** For fillet/chamfer: the feature this operation was applied to (non-destructive). */
+  parentFeatureId?: string;
+  /** Computed health: set by the geometry engine after each commit or replay. */
+  healthState?: 'healthy' | 'warning' | 'error';
+  /** Human-readable diagnosis when healthState is 'warning' or 'error'. */
+  healthMessage?: string;
 }
 
 export interface FeatureGroup {

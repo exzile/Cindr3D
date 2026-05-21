@@ -100,8 +100,21 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
       // source data — without this lookup, undo permanently destroys their
       // geometry. Map lookup keeps undo→redo round-trips loss-free as long as
       // the original mesh is still alive somewhere in the live state.
+      //
+      // Exception: meshes tagged `_edgeCutApplied` were placed by a non-destructive
+      // fillet/chamfer commit. If we're undoing PAST that commit, the fillet
+      // feature no longer exists in the snapshot, so we must NOT re-apply its
+      // mesh to the parent. The snapshot's `mesh: undefined` is the correct
+      // restored value for the parent.
       const liveMeshById = new Map<string, Feature['mesh']>();
-      for (const f of state.features) if (f.mesh) liveMeshById.set(f.id, f.mesh);
+      for (const f of state.features) {
+        if (!f.mesh) continue;
+        const m = f.mesh as THREE.Mesh;
+        // Skip edge-cut meshes — they belong to fillet/chamfer feature nodes
+        // that may not exist in the target snapshot.
+        if (m.userData?._edgeCutApplied) continue;
+        liveMeshById.set(f.id, f.mesh);
+      }
       const restoredSketches = parsed.sketches.map((s) => deserializeSketch(s as unknown as Sketch));
       const restoredActiveSketch = parsed.activeSketch
         ? deserializeSketch(parsed.activeSketch as unknown as Sketch)
@@ -145,7 +158,12 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
         throw new Error('Invalid snapshot: missing sketches array');
       }
       const liveMeshById = new Map<string, Feature['mesh']>();
-      for (const f of state.features) if (f.mesh) liveMeshById.set(f.id, f.mesh);
+      for (const f of state.features) {
+        if (!f.mesh) continue;
+        const m = f.mesh as THREE.Mesh;
+        if (m.userData?._edgeCutApplied) continue;
+        liveMeshById.set(f.id, f.mesh);
+      }
       const restoredSketches = parsed.sketches.map((s) => deserializeSketch(s as unknown as Sketch));
       const restoredActiveSketch = parsed.activeSketch
         ? deserializeSketch(parsed.activeSketch as unknown as Sketch)

@@ -5,8 +5,8 @@ import { DialogShell } from '../common/DialogShell';
 import type { Feature } from '../../../types/cad';
 import { parseEdgeLabel } from '../../../utils/geometry/edgeCutCore';
 
-/** SOL-I1: Fillet type discriminator — CORR-3: added chord-length */
-export type FilletMode = 'constant' | 'variable' | 'full-round' | 'chord-length';
+/** SOL-I1: Fillet type discriminator — CORR-3: added chord-length, asymmetric */
+export type FilletMode = 'constant' | 'variable' | 'full-round' | 'chord-length' | 'asymmetric';
 
 /** CORR-3: per-edge radius set (mirrors SDK ConstantRadiusEdgeSet / VariableRadiusEdgeSet / ChordLengthEdgeSet) */
 export interface FilletEdgeSet {
@@ -32,6 +32,12 @@ export interface FilletParams {
   endRadius?: number;
   /** CORR-3: chord-length mode value */
   chordLength?: number;
+  /** Asymmetric mode: offset on face 1 (mirrors SDK AsymmetricFilletEdgeSetInput.offsetOne). */
+  offsetOne?: number;
+  /** Asymmetric mode: offset on face 2. */
+  offsetTwo?: number;
+  /** Asymmetric mode: flip face assignment. */
+  isFlipped?: boolean;
   setback: boolean;
   /** SDK-9: setback distance at each vertex where three or more edges meet */
   setbackDistance: number;
@@ -73,6 +79,9 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
   const [startRadius, setStartRadius] = useState(1);
   const [endRadius, setEndRadius] = useState(4);
   const [chordLength, setChordLength] = useState(5);
+  const [offsetOne, setOffsetOne] = useState(2);
+  const [offsetTwo, setOffsetTwo] = useState(3);
+  const [isFlipped, setIsFlipped] = useState(false);
   const [setback, setSetback] = useState(false);
   const [setbackDistance, setSetbackDistance] = useState(1);
   const [isRollingBallCorner, setIsRollingBallCorner] = useState(false);
@@ -101,6 +110,11 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
     }
     if (mode === 'chord-length') {
       params.chordLength = chordLength;
+    }
+    if (mode === 'asymmetric') {
+      params.offsetOne = isFlipped ? offsetTwo : offsetOne;
+      params.offsetTwo = isFlipped ? offsetOne : offsetTwo;
+      params.isFlipped = isFlipped;
     }
     if (edgeSets.length > 0) {
       params.edgeSets = edgeSets;
@@ -171,6 +185,7 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
           <option value="constant">Constant Radius</option>
           <option value="variable">Variable Radius</option>
           <option value="chord-length">Chord Length</option>
+          <option value="asymmetric">Asymmetric</option>
           <option value="full-round">Full Round</option>
         </select>
       </div>
@@ -247,6 +262,45 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
             r = chordLen / (2 sin(θ/2)) for the edge dihedral angle θ.
           </p>
         </div>
+      )}
+
+      {mode === 'asymmetric' && (
+        <>
+          <div className="settings-grid">
+            <div className="form-group">
+              <label>Offset 1 (mm)</label>
+              <input
+                type="number"
+                value={offsetOne}
+                onFocus={selectNumberText}
+                onClick={selectNumberText}
+                onChange={(e) => setOffsetOne(clamp(parseFloat(e.target.value) || 2, 0.01, 500))}
+                min={0.01}
+                max={500}
+                step={0.5}
+              />
+            </div>
+            <div className="form-group">
+              <label>Offset 2 (mm)</label>
+              <input
+                type="number"
+                value={offsetTwo}
+                onFocus={selectNumberText}
+                onClick={selectNumberText}
+                onChange={(e) => setOffsetTwo(clamp(parseFloat(e.target.value) || 3, 0.01, 500))}
+                min={0.01}
+                max={500}
+                step={0.5}
+              />
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="checkbox-label">
+              <input type="checkbox" checked={isFlipped} onChange={(e) => setIsFlipped(e.target.checked)} />
+              Flip Faces
+            </label>
+          </div>
+        </>
       )}
 
       {mode === 'full-round' && (
@@ -414,6 +468,7 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
   const renameFeature = useCADStore((s) => s.renameFeature);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const commitFillet = useCADStore((s) => s.commitFillet);
+  const replayEdgeCutFeature = useCADStore((s) => s.replayEdgeCutFeature);
 
   const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
   const p = editing?.params ?? {};
@@ -423,9 +478,11 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
     const edgeIds = filletEdgeIds.length > 0 ? filletEdgeIds : existingEdgeIds;
     const edgeIdsStr = edgeIds.join(',');
     if (editing) {
+      // Update stored params first so replayEdgeCutFeature reads the latest values.
       updateFeatureParams(editing.id, { ...params, edgeIds: edgeIdsStr });
       renameFeature(editing.id, `Fillet (r=${params.radius})`);
-      setStatusMessage(`Updated fillet: r=${params.radius}`);
+      // Re-run CSG with the updated params (replay from parent mesh / session cache).
+      replayEdgeCutFeature(editing.id);
     } else {
       const feature: Feature = {
         id: crypto.randomUUID(),
@@ -443,7 +500,10 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
       // open (setActiveDialog clears them only on dialog === 'fillet').
       onClose();
       const r = params.radius;
-      setTimeout(() => commitFillet(r, 4), 0);
+      // Pass segments=0 for adaptive arc resolution based on radius.
+      // Pass the new feature's id and full params so the non-destructive path
+      // stores the result on the fillet node instead of mutating the parent.
+      setTimeout(() => commitFillet(r, 0, feature.id, params as Record<string, unknown>), 0);
       return;
     }
     onClose();
