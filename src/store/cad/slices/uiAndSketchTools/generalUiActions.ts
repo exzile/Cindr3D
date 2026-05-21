@@ -19,6 +19,8 @@ export function createGeneralUiActions({ set, get }: CADSliceContext): Partial<C
   clearFilletEdges: () => set({ filletEdgeIds: [] }),
   filletLiveRadius: 2,
   setFilletLiveRadius: (r) => set({ filletLiveRadius: Math.max(0.01, r) }),
+  filletPickMode: 'edge' as 'edge' | 'face',
+  setFilletPickMode: (mode) => set({ filletPickMode: mode }),
 
   // D7 Chamfer edge selection + live distance for gizmo drag feedback
   chamferEdgeIds: [],
@@ -38,6 +40,7 @@ export function createGeneralUiActions({ set, get }: CADSliceContext): Partial<C
     // Clear edge selections and reset live radius when opening fillet/chamfer dialogs
     filletEdgeIds: dialog === 'fillet' ? [] : state.filletEdgeIds,
     filletLiveRadius: dialog === 'fillet' ? 2 : state.filletLiveRadius,
+    filletPickMode: dialog === 'fillet' ? 'edge' : state.filletPickMode,
     chamferEdgeIds: dialog === 'chamfer' ? [] : state.chamferEdgeIds,
     chamferLiveDistance: dialog === 'chamfer' ? 2 : state.chamferLiveDistance,
   })),
