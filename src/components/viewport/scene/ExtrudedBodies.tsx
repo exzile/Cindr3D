@@ -651,6 +651,21 @@ export default function ExtrudedBodies() {
     return true;
   };
 
+  // Non-destructive edge-cut: when a fillet/chamfer feature has been committed
+  // with a mesh (Phase 0 — it stores the result on its own node), the parent
+  // feature must be hidden so the two bodies don't overlap. A downstream
+  // edge-cut is "active" only when it has a computed mesh; while it's pending
+  // (just added, CSG not yet run) the parent stays visible so resolveBodySource
+  // can find it in liveBodyMeshes.
+  const hasActiveDownstreamEdgeCut = (featureId: string): boolean =>
+    features.some(
+      (f) =>
+        (f.type === 'fillet' || f.type === 'chamfer') &&
+        (f.parentFeatureId === featureId || f.params.parentFeatureId === featureId) &&
+        f.visible && !f.suppressed &&
+        f.mesh != null,
+    );
+
   const buildToolMesh = (feature: Feature, sketch: Sketch): THREE.Mesh | null => {
     const distance = (feature.params.distance as number) || 10;
     const distance2 = (feature.params.distance2 as number) || distance;
@@ -710,7 +725,7 @@ export default function ExtrudedBodies() {
   const relevantSketchesSig = useMemo(() => {
     const usedIds = new Set<string>();
     for (const f of features) {
-      if (f.type === 'extrude' && isActive(f) && !f.mesh && f.sketchId) usedIds.add(f.sketchId);
+      if (f.type === 'extrude' && isActive(f) && !f.mesh && !hasActiveDownstreamEdgeCut(f.id) && f.sketchId) usedIds.add(f.sketchId);
     }
     const parts: string[] = [];
     for (const s of sketches) {
@@ -725,7 +740,7 @@ export default function ExtrudedBodies() {
   const { bodies, featureIds, featureComponentIds, featureBodyIds } = useMemo(() => {
     // Features with a stored mesh (thin/taper extrude) are rendered directly — skip CSG.
     const extrudeFeatures = [...features]
-      .filter((f) => f.type === 'extrude' && isActive(f) && !f.mesh)
+      .filter((f) => f.type === 'extrude' && isActive(f) && !f.mesh && !hasActiveDownstreamEdgeCut(f.id))
       .sort((a, b) => a.timestamp - b.timestamp);
 
     const outBodies: THREE.BufferGeometry[] = [];
@@ -1033,7 +1048,7 @@ export default function ExtrudedBodies() {
           />
         );
       })}
-      {features.filter((f) => f.type === 'revolve' && isActive(f) && !f.mesh).map((feature) => {
+      {features.filter((f) => f.type === 'revolve' && isActive(f) && !f.mesh && !hasActiveDownstreamEdgeCut(f.id)).map((feature) => {
         const bodyId = resolveBodyId(feature.id, feature.bodyId);
         const material = getMaterial(feature.componentId, bodyId, feature.bodyKind === 'surface');
         if (feature.params.faceRevolve) {
@@ -1046,7 +1061,7 @@ export default function ExtrudedBodies() {
       {/* Render features that have a pre-built stored mesh (D30 Sweep, D66 Thin Extrude,
           D69 Taper Extrude, D73 Rib). All these set feature.mesh at commit time.
           Material assignment is done in a useEffect below — never in render. */}
-      {features.filter((f) => isActive(f) && f.mesh).map((feature) => (
+      {features.filter((f) => isActive(f) && f.mesh && !hasActiveDownstreamEdgeCut(f.id)).map((feature) => (
         <primitive
           key={feature.id}
           object={feature.mesh!}

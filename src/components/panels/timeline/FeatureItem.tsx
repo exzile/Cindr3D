@@ -127,6 +127,22 @@ export function FeatureItem({ feature, index, indented }: { feature: Feature; in
           {booleanParentNames && (
             <span className="timeline-item-type">parents: {booleanParentNames}</span>
           )}
+          {feature.healthState === 'warning' && (
+            <span
+              title={feature.healthMessage ?? 'Warning'}
+              style={{ color: '#f0a030', fontSize: 11, marginLeft: 4, cursor: 'help' }}
+            >
+              ⚠ {feature.healthMessage}
+            </span>
+          )}
+          {feature.healthState === 'error' && (
+            <span
+              title={feature.healthMessage ?? 'Error'}
+              style={{ color: '#e05050', fontSize: 11, marginLeft: 4, cursor: 'help' }}
+            >
+              ✕ {feature.healthMessage}
+            </span>
+          )}
         </div>
         <div className="timeline-item-actions">
           <button className={`timeline-action-btn ${rollbackIndex === index ? 'active' : ''}`} onClick={handleRollbackClick} title={rollbackIndex === index ? 'Clear rollback' : 'Roll back to this feature'}>

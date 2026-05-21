@@ -5,9 +5,10 @@ import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
 import { recomputeBooleanDependents, runBoolean } from './featureBooleanUtils';
 import { errorMessage } from '../../../../utils/errorHandling';
-import { parseFilletEdgeIds, computeFilletGeometry } from '../../../../utils/geometry/filletGeometry';
-import { parseChamferEdgeIds, computeChamferGeometry } from '../../../../utils/geometry/chamferGeometry';
-import { applyEdgeCut } from './applyEdgeCut';
+import { parseFilletEdgeIds, computeFilletGeometry, type FilletCommitParams } from '../../../../utils/geometry/filletGeometry';
+import { parseChamferEdgeIds, computeChamferGeometry, resolveChamferDistances } from '../../../../utils/geometry/chamferGeometry';
+import { applyEdgeCut, cacheEdgeCutSource, getCachedEdgeCutSource } from './applyEdgeCut';
+import { liveBodyMeshes, bodyGeometryCache } from '../../../../store/meshRegistry';
 
 function getBooleanParentIds(feature: Feature): string[] {
   const fromArray = feature.params.booleanParentIds;
@@ -463,19 +464,20 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
   // 3D edge fillet — rounds picked edges of a mesh-backed, primitive, OR
   // extrude (CSG-pipeline) body. Edge IDs (filletEdgeIds) use the format
   //   `${featureId}|${meshUuid}:${ax,ay,az}:${bx,by,bz}`
-  // The whole flow (parse → resolve source geometry → CSG → mesh swap) is
-  // shared with commitChamfer via applyEdgeCut; the rounding itself is
-  // computeFilletGeometry, shared with FilletPreview so the committed result
-  // matches the preview exactly.
-  commitFillet: (radius, segments) => {
+  // Non-destructive path: pass featureId to store the result on the fillet
+  // feature node instead of mutating the parent. Omit featureId for legacy
+  // behaviour (backwards compat with callers that don't use the new UI flow).
+  commitFillet: (radius, segments, featureId?, filletParams?) => {
+    const fp = filletParams as FilletCommitParams | undefined;
     applyEdgeCut({ get, set }, {
       tool: 'Fillet',
       edgeIds: get().filletEdgeIds,
       sizeValid: radius > 0,
       parse: parseFilletEdgeIds,
-      compute: (srcGeo, edges) => computeFilletGeometry(srcGeo, edges, radius, segments),
+      compute: (srcGeo, edges) => computeFilletGeometry(srcGeo, edges, radius, segments, false, fp),
       pastVerb: 'Filleted',
       sizeLabel: `r=${radius}`,
+      featureId,
     });
   },
 
@@ -484,16 +486,120 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
   // cutter differs (triangular wedge vs prism−cylinder). distance is the
   // live/face-1 setback; distance2 is the face-2 setback the dialog resolves
   // from its mode (equal / two-distance / distance+angle).
-  commitChamfer: (distance, distance2) => {
+  commitChamfer: (distance, distance2, featureId?, chamferParams?) => {
     applyEdgeCut({ get, set }, {
       tool: 'Chamfer',
       edgeIds: get().chamferEdgeIds,
       sizeValid: distance > 0,
       parse: parseChamferEdgeIds,
-      compute: (srcGeo, edges) => computeChamferGeometry(srcGeo, edges, distance, distance2),
+      compute: (srcGeo, edges) => computeChamferGeometry(srcGeo, edges, distance, distance2, false, chamferParams as Record<string, unknown> | undefined),
       pastVerb: 'Chamfered',
       sizeLabel: `d=${distance}`,
+      featureId,
     });
+  },
+
+  // Replay an existing fillet/chamfer feature with updated params (used by edit).
+  // Resolves source geometry from the session cache or parent feature mesh.
+  replayEdgeCutFeature: (featureId: string) => {
+    const { features } = get();
+    const feature = features.find((f) => f.id === featureId);
+    if (!feature || (feature.type !== 'fillet' && feature.type !== 'chamfer')) return;
+
+    const params = feature.params;
+    const edgeIdsStr = typeof params.edgeIds === 'string' ? params.edgeIds : '';
+    const edgeIds = edgeIdsStr.split(',').filter(Boolean);
+    if (edgeIds.length === 0) {
+      get().setStatusMessage(`Edit ${feature.type}: no edge IDs stored`);
+      return;
+    }
+
+    // Resolve source geometry: session cache > parent mesh > live body meshes
+    let srcGeo: THREE.BufferGeometry | null = null;
+    const cached = getCachedEdgeCutSource(featureId);
+    if (cached) {
+      srcGeo = cached.clone();
+    } else {
+      // Try parent feature's mesh
+      const parentId = (params.parentFeatureId as string | undefined) ?? feature.parentFeatureId;
+      const parent = parentId ? features.find((f) => f.id === parentId) : null;
+      if (parent?.mesh instanceof THREE.Mesh) {
+        srcGeo = parent.mesh.geometry.clone().toNonIndexed();
+      } else if (parentId) {
+        // Try bodyGeometryCache (populated by ExtrudedBodies for extrudes)
+        const cached2 = bodyGeometryCache.get(parentId);
+        if (cached2) srcGeo = cached2.clone().toNonIndexed();
+      }
+      // Fallback: try liveBodyMeshes by meshUuid embedded in edge ID
+      if (!srcGeo && edgeIds.length > 0) {
+        const rest = edgeIds[0].includes('|') ? edgeIds[0].split('|')[1] : edgeIds[0];
+        const meshUuid = rest.split(':')[0];
+        const liveMesh = liveBodyMeshes.get(meshUuid);
+        if (liveMesh) srcGeo = liveMesh.geometry.clone().toNonIndexed();
+      }
+    }
+    if (!srcGeo) {
+      get().setStatusMessage(`Edit ${feature.type}: source geometry unavailable — re-apply the operation`);
+      return;
+    }
+
+    // Build new geometry with updated params
+    let newGeo: THREE.BufferGeometry | null = null;
+    if (feature.type === 'fillet') {
+      const radius = (params.radius as number) ?? 2;
+      const fp: FilletCommitParams = {
+        mode: (params.mode as string) ?? 'constant',
+        chordLength: params.chordLength as number | undefined,
+        startRadius: params.startRadius as number | undefined,
+        endRadius: params.endRadius as number | undefined,
+        propagate: params.propagate as boolean | undefined,
+      };
+      const parsedEdges = parseFilletEdgeIds(edgeIds);
+      if (parsedEdges) newGeo = computeFilletGeometry(srcGeo, parsedEdges.edges, radius, 0, false, fp);
+    } else {
+      const parsedEdges = parseChamferEdgeIds(edgeIds);
+      const [d1, d2] = resolveChamferDistances({
+        mode: (params.mode as string ?? 'equal-dist') as import('../../../../utils/geometry/chamferGeometry').ChamferMode,
+        distance: (params.distance as number) ?? 2,
+        distance2: params.distance2 as number | undefined,
+        angle: params.angle as number | undefined,
+        isFlipped: params.isFlipped as boolean | undefined,
+      });
+      if (parsedEdges) newGeo = computeChamferGeometry(srcGeo, parsedEdges.edges, d1, d2);
+    }
+    srcGeo.dispose();
+
+    if (!newGeo) {
+      get().setStatusMessage(`Edit ${feature.type}: geometry computation failed`);
+      set((state) => ({
+        features: state.features.map((f) =>
+          f.id === featureId ? { ...f, healthState: 'error' as const, healthMessage: 'CSG failed — try adjusting the radius or edges' } : f,
+        ),
+      }));
+      return;
+    }
+
+    // Keep existing material if possible
+    const existingMesh = feature.mesh instanceof THREE.Mesh ? (feature.mesh as THREE.Mesh) : null;
+    const mat = existingMesh?.material ?? new THREE.MeshStandardMaterial({ color: 0x5b9bd5, roughness: 0.4, metalness: 0.1 });
+    const newMesh = new THREE.Mesh(newGeo, mat);
+    newMesh.userData._edgeCutApplied = true;
+    newMesh.userData.pickable = true;
+    newMesh.userData.featureId = featureId;
+    newMesh.castShadow = true;
+    newMesh.receiveShadow = true;
+
+    get().pushUndo();
+    set((state) => ({
+      features: state.features.map((f) =>
+        f.id === featureId
+          ? { ...f, mesh: newMesh, healthState: 'healthy' as const, healthMessage: undefined }
+          : f,
+      ),
+      statusMessage: `Updated ${feature.type}`,
+    }));
+    // Update session source cache with the same source
+    if (cached) cacheEdgeCutSource(featureId, cached.clone());
   },
 
   // SLD12 Ã¢â‚¬â€ commitCombine: boolean op on two feature meshes
