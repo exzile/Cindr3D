@@ -1,6 +1,9 @@
 name: Azure Static Web Apps CI/CD
 
 on:
+  push:
+    branches:
+      - master
   workflow_dispatch:
 
 # Deny all permissions by default; grant only what each job needs.
