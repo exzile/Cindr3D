@@ -506,7 +506,12 @@ export function computeFilletGeometry(
     (circle, re) => buildFilletLoopCutter(circle, re, effectiveRadius, radialSeg, fast),
     {
       propagate: params?.propagate,
-      cornerRadius: params?.isRollingBallCorner ? effectiveRadius : undefined,
+      // Rolling-ball corner is ON by default (Fusion 360 default behaviour).
+      // The sphere fills the trihedral corner left by three edge cutters;
+      // without it the Steinmetz intersection of the three fillet cylinders
+      // is never removed and appears as a spike/cone at the corner vertex.
+      // Pass isRollingBallCorner: false to explicitly disable.
+      cornerRadius: params?.isRollingBallCorner === false ? undefined : effectiveRadius,
     },
   );
 }

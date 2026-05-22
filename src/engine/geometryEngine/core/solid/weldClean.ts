@@ -548,6 +548,145 @@ export function earClip(
 }
 
 /**
+ * Splits non-manifold vertices — vertices whose incident triangle fans form more
+ * than one connected component (figure-8 topology). This is the defect produced
+ * by EarCut hole bridging in THREE.js ExtrudeGeometry: the bridge edge is added
+ * twice (forward + backward), so the bridge vertex has two disconnected fans.
+ * `mergeVertices` merges them by position → one vertex index, two fans → Manifold
+ * rejects with "Not manifold". Splitting the vertex into N copies (one per fan)
+ * restores a valid manifold half-edge structure.
+ *
+ * Input: indexed or non-indexed BufferGeometry (position attribute only needed).
+ * Output: new indexed geometry with the same surface and all fans manifold.
+ * Returns the input unchanged (as a clone) if no splits were needed.
+ */
+export function repairNonManifoldVertices(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  // Ensure we have indexed geometry to work with
+  let indexed: THREE.BufferGeometry;
+  let ownIndexed = false;
+  if (geo.index) {
+    indexed = geo;
+  } else {
+    const posOnly = new THREE.BufferGeometry();
+    posOnly.setAttribute('position', geo.attributes.position as THREE.BufferAttribute);
+    const bb = new THREE.Box3().setFromBufferAttribute(geo.attributes.position as THREE.BufferAttribute);
+    const diag = Math.max(bb.min.distanceTo(bb.max), 1);
+    indexed = mergeVertices(posOnly, Math.max(diag * 1e-5, 1e-6));
+    posOnly.dispose();
+    ownIndexed = true;
+  }
+
+  try {
+    const posAttr = indexed.attributes.position as THREE.BufferAttribute;
+    const idxAttr = indexed.index!;
+    const nVerts = posAttr.count;
+    const nTris = idxAttr.count / 3;
+
+    // For each original vertex, which triangles contain it (original indices)
+    const vertToTris: number[][] = Array.from({ length: nVerts }, () => []);
+    for (let t = 0; t < nTris; t++) {
+      vertToTris[idxAttr.getX(t * 3)].push(t);
+      vertToTris[idxAttr.getX(t * 3 + 1)].push(t);
+      vertToTris[idxAttr.getX(t * 3 + 2)].push(t);
+    }
+
+    // Build undirected edge → triangle list from original indices
+    // Key: min(a,b) * nVerts + max(a,b) — safe up to ~94M verts
+    const edgeToTris = new Map<number, number[]>();
+    for (let t = 0; t < nTris; t++) {
+      const i0 = idxAttr.getX(t * 3), i1 = idxAttr.getX(t * 3 + 1), i2 = idxAttr.getX(t * 3 + 2);
+      for (const [a, b] of [[i0, i1], [i1, i2], [i2, i0]] as [number, number][]) {
+        const lo = a < b ? a : b, hi = a < b ? b : a;
+        const k = lo * nVerts + hi;
+        const arr = edgeToTris.get(k);
+        if (arr) arr.push(t); else edgeToTris.set(k, [t]);
+      }
+    }
+
+    // Working index array — only modified for split vertices
+    const newIdx = new Uint32Array(idxAttr.count);
+    for (let i = 0; i < idxAttr.count; i++) newIdx[i] = idxAttr.getX(i);
+
+    // Position list — grows as we add split copies
+    const newPos: number[] = [];
+    for (let i = 0; i < nVerts; i++) {
+      newPos.push(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+    }
+
+    let nextVert = nVerts;
+    let didSplit = false;
+
+    for (let v = 0; v < nVerts; v++) {
+      const tris = vertToTris[v];
+      if (tris.length < 2) continue;
+
+      // BFS to find connected components among tris around vertex v.
+      // Two triangles are in the same component if they share an edge that
+      // includes v. Use ORIGINAL indices (idxAttr) for edge lookups so
+      // earlier splits don't invalidate the edgeToTris map.
+      const visited = new Set<number>();
+      const components: number[][] = [];
+
+      for (const seed of tris) {
+        if (visited.has(seed)) continue;
+        const comp: number[] = [];
+        const queue: number[] = [seed];
+        visited.add(seed);
+        while (queue.length > 0) {
+          const t = queue.shift()!;
+          comp.push(t);
+          // Edges of triangle t that include original vertex v
+          const oi0 = idxAttr.getX(t * 3), oi1 = idxAttr.getX(t * 3 + 1), oi2 = idxAttr.getX(t * 3 + 2);
+          const tv = [oi0, oi1, oi2];
+          for (let j = 0; j < 3; j++) {
+            const a = tv[j], b = tv[(j + 1) % 3];
+            if (a !== v && b !== v) continue;
+            const lo = a < b ? a : b, hi = a < b ? b : a;
+            const adj = edgeToTris.get(lo * nVerts + hi);
+            if (!adj) continue;
+            for (const t2 of adj) {
+              if (t2 !== t && !visited.has(t2)) {
+                visited.add(t2);
+                queue.push(t2);
+              }
+            }
+          }
+        }
+        components.push(comp);
+      }
+
+      if (components.length <= 1) continue; // manifold at this vertex
+
+      // Split: first component keeps v; each additional component gets a new vertex
+      for (let c = 1; c < components.length; c++) {
+        const newV = nextVert++;
+        newPos.push(posAttr.getX(v), posAttr.getY(v), posAttr.getZ(v));
+        for (const t of components[c]) {
+          for (let j = 0; j < 3; j++) {
+            if (newIdx[t * 3 + j] === v) newIdx[t * 3 + j] = newV;
+          }
+        }
+        didSplit = true;
+      }
+    }
+
+    if (!didSplit) {
+      const clone = new THREE.BufferGeometry();
+      clone.setAttribute('position', indexed.attributes.position);
+      clone.setIndex(indexed.index);
+      return clone;
+    }
+
+    const result = new THREE.BufferGeometry();
+    result.setAttribute('position', new THREE.BufferAttribute(new Float32Array(newPos), 3));
+    result.setIndex(new THREE.BufferAttribute(newIdx, 1));
+    return result;
+  } finally {
+    if (ownIndexed) indexed.dispose();
+  }
+}
+
+/**
  * Welds the unwelded triangle-soup that three-bvh-csg emits back into a clean
  * manifold and drops the near-zero-area sliver triangles a boolean can leave
  * behind. Returns a fresh NON-INDEXED, position-only geometry (callers add

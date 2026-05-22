@@ -6,6 +6,7 @@ import type {
   JointOriginRecord,
 } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
+import { csgAsync } from '../../../../workers/csgWorkerPool';
 import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
 import { useComponentStore } from '../../../componentStore';
 import type { CADSliceContext } from '../../sliceContext';
@@ -78,7 +79,7 @@ export function createAssemblyActions({ set, get }: CADSliceContext): Partial<CA
       }
       set({ interferenceResults: results });
     },
-    commitInterferenceBodies: () => {
+    commitInterferenceBodies: async () => {
       const { features } = get();
       const solidFeatures = features.filter(
         (f) => f.mesh && f.visible && (!f.bodyKind || f.bodyKind === 'solid') && (f.mesh as THREE.Mesh).isMesh,
@@ -99,18 +100,15 @@ export function createAssemblyActions({ set, get }: CADSliceContext): Partial<CA
           if (!boxA.intersectsBox(boxB)) continue;
           // Clone-then-bake so the world-baked intermediates are owned here and
           // disposed after CSG — never the shared feature geometry singletons.
-          let geomA: THREE.BufferGeometry | null = null;
-          let geomB: THREE.BufferGeometry | null = null;
-          let result: THREE.BufferGeometry | null = null;
           try {
-            geomA = GeometryEngine.bakeMeshWorldGeometry(meshA);
-            geomB = GeometryEngine.bakeMeshWorldGeometry(meshB);
-            result = GeometryEngine.csgIntersect(geomA, geomB);
-            const posAttr = result.getAttribute('position') as THREE.BufferAttribute | undefined;
-            const vertCount = posAttr ? posAttr.count : 0;
-            // Guard tiny / edge-kiss results the same way the extrude overlap
-            // rule does (>6 verts ⇒ a real volume, not a coincident face/edge).
-            if (vertCount > 6) {
+            const geomA = GeometryEngine.bakeMeshWorldGeometry(meshA);
+            const geomB = GeometryEngine.bakeMeshWorldGeometry(meshB);
+            const result = await csgAsync(geomA, geomB, 'intersect');
+            geomA.dispose();
+            geomB.dispose();
+            const vertCount = (result?.getAttribute('position') as THREE.BufferAttribute | undefined)?.count ?? 0;
+            // Guard tiny / edge-kiss results (>6 verts ⇒ real volume).
+            if (result && vertCount > 6) {
               baseIndex += 1;
               const mesh = new THREE.Mesh(result, BODY_MATERIAL);
               mesh.castShadow = true;
@@ -133,7 +131,8 @@ export function createAssemblyActions({ set, get }: CADSliceContext): Partial<CA
               mesh.userData.pickable = true;
               mesh.userData.featureId = interferenceFeature.id;
               newFeatures.push(interferenceFeature);
-              result = null; // ownership transferred to the feature mesh
+            } else {
+              result?.dispose();
             }
           } catch (err) {
             // A single non-manifold / degenerate pair must not abort the rest.
@@ -142,10 +141,6 @@ export function createAssemblyActions({ set, get }: CADSliceContext): Partial<CA
                 err instanceof Error ? err.message : 'CSG error'
               }`,
             );
-          } finally {
-            geomA?.dispose();
-            geomB?.dispose();
-            result?.dispose();
           }
         }
       }

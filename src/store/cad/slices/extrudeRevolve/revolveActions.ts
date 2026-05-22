@@ -3,7 +3,7 @@ import type { Feature } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import {
   pickMostRecentSolidTarget,
-  applyBodyBoolean,
+  applyBodyBooleanAsync,
   syncConfigurationSuppression,
 } from '../featureManagement/bodyBoolean';
 import { REVOLVE_DEFAULTS } from '../../defaults';
@@ -68,7 +68,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       statusMessage: 'Revolve cancelled',
     });
   },
-  commitRevolve: () => {
+  commitRevolve: async () => {
     const { revolveProfileMode, revolveSelectedSketchId, revolveFaceBoundary, revolveAxis, revolveAngle, revolveDirection, revolveAngle2, revolveBodyKind, revolveOperation, revolveIsProjectAxis, sketches, features, units } = get();
 
     // Ã¢â€â‚¬Ã¢â€â‚¬ Face mode Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -119,27 +119,26 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
           }
           const revolveMesh = GeometryEngine.revolveFaceBoundary(boundary, axisVec, sweep, false, phiStart);
           if (revolveMesh) {
-            const result = applyBodyBoolean(target.mesh as THREE.Mesh, revolveMesh, revolveOperation);
+            const result = await applyBodyBooleanAsync(target.mesh as THREE.Mesh, revolveMesh, revolveOperation);
             revolveMesh.geometry.dispose();
             if (result) {
               feature.mesh = result;
               feature.bodyKind = 'solid';
               feature.params.targetFeatureId = target.id;
               get().pushUndo();
-              set((state) => {
-                const updated = state.features.map((f) =>
-                  f.id === target.id ? { ...f, suppressed: true, visible: false } : f,
-                );
-                return {
-                  features: [...updated, feature],
-                  designConfigurations: syncConfigurationSuppression(state, {
-                    [feature.id]: false,
-                    [target.id]: true,
-                  }),
-                  activeTool: 'select',
-                  ...REVOLVE_DEFAULTS,
-                  statusMessage: `Revolve ${revolveOperation} with ${target.name} (${units})`,
-                };
+              const state = get();
+              const updated = state.features.map((f) =>
+                f.id === target.id ? { ...f, suppressed: true, visible: false } : f,
+              );
+              set({
+                features: [...updated, feature],
+                designConfigurations: syncConfigurationSuppression(state, {
+                  [feature.id]: false,
+                  [target.id]: true,
+                }),
+                activeTool: 'select',
+                ...REVOLVE_DEFAULTS,
+                statusMessage: `Revolve ${revolveOperation} with ${target.name} (${units})`,
               });
               return;
             }
@@ -236,26 +235,25 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
         const axisVec = resolveRevolveAxisVec(resolvedAxisKey, centerlineAxisDirection);
         const revolveMesh = GeometryEngine.revolveSketch(sketch, sweep, axisVec, phiStart);
         if (revolveMesh) {
-          const result = applyBodyBoolean(target.mesh as THREE.Mesh, revolveMesh, revolveOperation);
+          const result = await applyBodyBooleanAsync(target.mesh as THREE.Mesh, revolveMesh, revolveOperation);
           revolveMesh.geometry.dispose();
           if (result) {
             feature.mesh = result;
             feature.bodyKind = 'solid';
             feature.params.targetFeatureId = target.id;
-            set((state) => {
-              const updated = state.features.map((f) =>
-                f.id === target.id ? { ...f, suppressed: true, visible: false } : f,
-              );
-              return {
-                features: [...updated, feature],
-                designConfigurations: syncConfigurationSuppression(state, {
-                  [feature.id]: false,
-                  [target.id]: true,
-                }),
-                activeTool: 'select',
-                ...REVOLVE_DEFAULTS,
-                statusMessage: `Revolve ${revolveOperation} with ${target.name} (${units})`,
-              };
+            const state = get();
+            const updated = state.features.map((f) =>
+              f.id === target.id ? { ...f, suppressed: true, visible: false } : f,
+            );
+            set({
+              features: [...updated, feature],
+              designConfigurations: syncConfigurationSuppression(state, {
+                [feature.id]: false,
+                [target.id]: true,
+              }),
+              activeTool: 'select',
+              ...REVOLVE_DEFAULTS,
+              statusMessage: `Revolve ${revolveOperation} with ${target.name} (${units})`,
             });
             return;
           }

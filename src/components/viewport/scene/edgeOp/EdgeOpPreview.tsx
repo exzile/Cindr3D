@@ -306,6 +306,8 @@ export default function EdgeOpPreview({
   };
 
   // Create the worker once on mount; terminate on unmount.
+  // Also register an HMR listener so editing edgeOpWorker / csg / edgeCutCore
+  // during development terminates the stale worker — the next render recreates it.
   useEffect(() => {
     const worker = new Worker(
       new URL('../../../../workers/edgeOpWorker.ts', import.meta.url),
@@ -314,7 +316,17 @@ export default function EdgeOpPreview({
     worker.onmessage = (e) => workerOnMessageRef.current(e);
     worker.onerror = (e) => console.error('[EdgeOpPreview] worker error:', e);
     workerRef.current = worker;
+
+    const hmrCleanup = import.meta.hot
+      ? (() => {
+          const onUpdate = () => { worker.terminate(); workerRef.current = null; };
+          import.meta.hot!.on('vite:beforeUpdate', onUpdate);
+          return () => import.meta.hot!.off('vite:beforeUpdate', onUpdate);
+        })()
+      : undefined;
+
     return () => {
+      hmrCleanup?.();
       worker.terminate();
       workerRef.current = null;
     };

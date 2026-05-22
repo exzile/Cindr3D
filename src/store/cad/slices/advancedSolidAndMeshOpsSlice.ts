@@ -4,7 +4,8 @@ import { GeometryEngine } from '../../../engine/GeometryEngine';
 import { errorMessage } from '../../../utils/errorHandling';
 import type { CADSliceContext } from '../sliceContext';
 import type { CADState } from '../state';
-import { placeToolFeature, pickMostRecentSolidTarget, applyBodyBoolean, applyBodyBooleanAsync, placeToolFeatureAsync } from './featureManagement/bodyBoolean';
+import { pickMostRecentSolidTarget, applyBodyBooleanAsync, placeToolFeatureAsync } from './featureManagement/bodyBoolean';
+import { csgAsync } from '../../../workers/csgWorkerPool';
 import { liveBodyMeshes } from '../../meshRegistry';
 
 /**
@@ -22,39 +23,7 @@ export function evictShellSource(featureId: string): void {
   if (entry) { entry.geom.dispose(); _shellSrcCache.delete(featureId); }
 }
 
-/**
- * Non-destructive replay helper for tool features (Pipe / SnapFit / LipGroove).
- * Given a freshly-built tool mesh and the target operation, returns the final
- * mesh to store on `feature.mesh`:
- *   - operation is boolean and feature.parentFeatureId resolves → CSG the tool
- *     against the parent's mesh, return result
- *   - otherwise → return the tool mesh standalone
- * If the boolean fails for any reason (degenerate input, target not found),
- * falls back to the tool mesh so editing never produces an empty body.
- */
-function replayToolBoolean(
-  features: Feature[],
-  feature: Feature,
-  toolMesh: THREE.Mesh,
-  operation: 'new-body' | 'join' | 'cut' | 'intersect',
-): { mesh: THREE.Mesh; note: string } {
-  if (operation === 'new-body') return { mesh: toolMesh, note: '' };
-  const parentId = feature.parentFeatureId;
-  if (!parentId) return { mesh: toolMesh, note: ` (${operation}: no parent target — standalone)` };
-  const parent = features.find((f) => f.id === parentId);
-  if (!(parent?.mesh instanceof THREE.Mesh)) {
-    return { mesh: toolMesh, note: ` (${operation}: parent body missing — standalone)` };
-  }
-  const result = applyBodyBoolean(parent.mesh, toolMesh, operation);
-  if (!result) return { mesh: toolMesh, note: ` (${operation} failed — standalone body)` };
-  result.userData.pickable = true;
-  result.userData.featureId = feature.id;
-  // Tool mesh was just for CSG input — dispose its geometry, we keep the result.
-  toolMesh.geometry.dispose();
-  return { mesh: result, note: ` (${operation} with ${parent.name})` };
-}
-
-/** Async version of replayToolBoolean — CSG runs in the worker pool. */
+/** Async replay helper for tool features (Pipe / SnapFit / LipGroove) — CSG runs in the worker pool. */
 async function replayToolBooleanAsync(
   features: Feature[],
   feature: Feature,
@@ -99,9 +68,9 @@ function pickBoundaryFillTarget(features: Feature[], excludeIds: Set<string>): F
  * caller. `note` is '' on a clean fill, otherwise a human-readable reason the
  * fallback box was used.
  */
-function computeBoundaryFillGeometry(
+async function computeBoundaryFillGeometry(
   toolFeatures: Feature[],
-): { geometry: THREE.BufferGeometry; note: string } {
+): Promise<{ geometry: THREE.BufferGeometry; note: string }> {
   const meshes = toolFeatures
     .map((f) => f.mesh)
     .filter((m): m is THREE.Mesh => m instanceof THREE.Mesh);
@@ -136,10 +105,13 @@ function computeBoundaryFillGeometry(
   try {
     // ── ≥2 tool bodies: enclosed common region = iterative intersection ──
     if (baked.length >= 2) {
-      let acc = baked[0].clone();
+      let acc: THREE.BufferGeometry = baked[0].clone();
       for (let i = 1; i < baked.length; i++) {
-        const next = GeometryEngine.csgIntersect(acc, baked[i]);
+        const next = await csgAsync(acc, baked[i], 'intersect');
         acc.dispose();
+        if (!next) {
+          return fallbackBox('selected bodies do not enclose a common region');
+        }
         acc = next;
       }
       const posAttr = acc.getAttribute('position');
@@ -880,7 +852,7 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
   // surfaces → stitched-closed shell; un-closeable input → bounding box of
   // the SELECTED meshes (with a status note). join/cut operations boolean the
   // fill against the most-recent solid (revolve-style target pick).
-  commitBoundaryFill: (toolFeatureIds, operation) => {
+  commitBoundaryFill: async (toolFeatureIds, operation) => {
     const { features } = get();
     const idSet = new Set(toolFeatureIds);
     const toolFeatures = toolFeatureIds
@@ -893,7 +865,7 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
 
     // Build the fill geometry. Failures inside fall back to a bounding box +
     // note rather than throwing, so state is never corrupted.
-    const { geometry: fillGeom, note: fillNote } = computeBoundaryFillGeometry(toolFeatures);
+    const { geometry: fillGeom, note: fillNote } = await computeBoundaryFillGeometry(toolFeatures);
 
     // ── operation: join / cut against an existing solid body ──
     // Bake the fill, CSG it against the most-recent solid target (same
@@ -907,22 +879,15 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
       if (!target || !(target.mesh instanceof THREE.Mesh)) {
         opNote = ` (no solid body to ${operation} — standalone body)`;
       } else {
-        let targetGeom: THREE.BufferGeometry | undefined;
-        try {
-          targetGeom = GeometryEngine.bakeMeshWorldGeometry(target.mesh);
-          const combined = operation === 'join'
-            ? GeometryEngine.csgUnion(targetGeom, fillGeom)
-            : GeometryEngine.csgSubtract(targetGeom, fillGeom);
-          targetGeom.dispose();
+        const targetGeom = GeometryEngine.bakeMeshWorldGeometry(target.mesh);
+        const combined = await csgAsync(targetGeom, fillGeom, operation === 'join' ? 'union' : 'subtract');
+        targetGeom.dispose();
+        if (combined) {
           fillGeom.dispose();
           resultGeom = combined;
           consumedTargetId = target.id;
-        } catch (err) {
-          // Baked target geom is an intermediate — dispose it; keep fillGeom
-          // alive as the standalone-body fallback (resultGeom === fillGeom).
-          targetGeom?.dispose();
-          opNote = ` (${operation} failed: ${errorMessage(err, 'CSG error')} — standalone body)`;
-          resultGeom = fillGeom;
+        } else {
+          opNote = ` (${operation} failed — standalone body)`;
         }
       }
     }

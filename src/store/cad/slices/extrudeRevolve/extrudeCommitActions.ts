@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Feature, Sketch } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
+import { csgAsync } from '../../../../workers/csgWorkerPool';
 import { useComponentStore } from '../../../componentStore';
 import { EXTRUDE_DEFAULTS } from '../../defaults';
 import { boxesHaveJoinableContact, boxesShareFaceContact } from '../../../../utils/geometry/boundsContact';
@@ -15,7 +16,8 @@ type SelectedExtrudeProfile = {
   profileIndices?: number[];
 };
 
-function buildExtrudeMeshForProfileSelection(
+
+async function buildExtrudeMeshForProfileSelectionAsync(
   selected: SelectedExtrudeProfile,
   distance: number,
   direction: 'positive' | 'negative' | 'symmetric' | 'two-sides',
@@ -23,7 +25,7 @@ function buildExtrudeMeshForProfileSelection(
   startOffset: number,
   distance2: number,
   taperAngle2: number,
-): THREE.Mesh | null {
+): Promise<THREE.Mesh | null> {
   const profileIndices = selected.profileIndices;
   if (!profileIndices || profileIndices.length <= 1) {
     return GeometryEngine.buildExtrudeFeatureMesh(
@@ -56,7 +58,7 @@ function buildExtrudeMeshForProfileSelection(
     if (!merged) {
       merged = geom;
     } else {
-      const next = GeometryEngine.csgUnion(merged, geom);
+      const next = await csgAsync(merged, geom, 'union');
       merged.dispose();
       geom.dispose();
       merged = next;
@@ -68,7 +70,7 @@ function buildExtrudeMeshForProfileSelection(
 
 export function createExtrudeCommitActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
-  commitExtrude: () => {
+  commitExtrude: async () => {
     const {
       extrudeSelectedSketchId, extrudeSelectedSketchIds, extrudeDistance, extrudeDistance2, extrudeDirection,
       extrudeOperation, extrudeThinEnabled, extrudeThinThickness, extrudeThinSide,
@@ -257,7 +259,7 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
           // Build the proposed geometry once. We need its bbox for cheap
           // pre-filtering AND the baked world-space geometry for the exact
           // CSG-intersection test that determines real overlap.
-          const proposedMesh = buildExtrudeMeshForProfileSelection(
+          const proposedMesh = await buildExtrudeMeshForProfileSelectionAsync(
             selected, absDistance, finalDirection, extrudeTaperAngle,
             extrudeStartType === 'offset' ? extrudeStartOffset : 0,
             absDistance2,
@@ -309,15 +311,15 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
               const efGeomW = GeometryEngine.bakeMeshWorldGeometry(efMesh);
               efMesh.geometry.dispose();
               try {
-                const inter = GeometryEngine.csgIntersect(proposedGeomW, efGeomW);
-                const triVerts = (inter.attributes.position as THREE.BufferAttribute | undefined)?.count ?? 0;
-                inter.dispose();
+                const inter = await csgAsync(proposedGeomW, efGeomW, 'intersect');
+                const triVerts = (inter?.getAttribute('position') as THREE.BufferAttribute | undefined)?.count ?? 0;
+                inter?.dispose();
                 if (triVerts > 6 || hasSharedFaceContact) {
                   intersectsAny = true;
                   efGeomW.dispose();
                   break;
                 }
-              } catch { /* malformed geometry â€” fall back to bbox result */
+              } catch { /* malformed geometry — fall back to bbox result */
                 intersectsAny = true;
                 efGeomW.dispose();
                 break;
@@ -359,7 +361,7 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
         // Detect disconnected pieces â€” only for standard (CSG-pipeline) solids.
         if (!needsStoredMesh && createdBodyId) {
           try {
-            const probe = buildExtrudeMeshForProfileSelection(
+            const probe = await buildExtrudeMeshForProfileSelectionAsync(
               selected,
               absDistance,
               finalDirection,
