@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -6,6 +6,7 @@ import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
 import { liveBodyMeshes, bodyGeometryCache, bodyIdGeometryCache } from '../../../store/meshRegistry';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
+import { csgAsync } from '../../../workers/csgWorkerPool';
 import { extractEdgeTopology, type BodyTopology, type ModelEdge } from '../../../engine/geometryEngine/core/solid/edgeTopology';
 import { modelEdgeId } from '../../../engine/geometryEngine/core/solid/edgeId';
 import { extrudeProfileTopology } from '../../../engine/geometryEngine/core/solid/profileTopology';
@@ -737,7 +738,20 @@ export default function ExtrudedBodies() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [features, sketches]);
 
-  const { bodies, featureIds, featureComponentIds, featureBodyIds } = useMemo(() => {
+  const [pipelineResult, setPipelineResult] = useState<{
+    bodies: THREE.BufferGeometry[];
+    featureIds: string[];
+    featureComponentIds: (string | undefined)[];
+    featureBodyIds: (string | undefined)[];
+  }>({ bodies: [], featureIds: [], featureComponentIds: [], featureBodyIds: [] });
+  const { bodies, featureIds, featureComponentIds, featureBodyIds } = pipelineResult;
+
+  // Async CSG pipeline — runs off the main thread via csgWorkerPool.
+  // Keeps stale results visible while the new pipeline computes; cancelled
+  // runs dispose any geometry they allocated before exiting.
+  useEffect(() => {
+    let cancelled = false;
+
     // Features with a stored mesh (thin/taper extrude) are rendered directly — skip CSG.
     const extrudeFeatures = [...features]
       .filter((f) => f.type === 'extrude' && isActive(f) && !f.mesh && !hasActiveDownstreamEdgeCut(f.id))
@@ -753,6 +767,12 @@ export default function ExtrudedBodies() {
     let currentBodyId: string | undefined;
     let currentExtraBodyIds: string[] = [];
 
+    const disposeInProgress = () => {
+      if (currentGeom) { currentGeom.dispose(); currentGeom = null; }
+      for (const g of outBodies) g.dispose();
+      outBodies.length = 0;
+    };
+
     const targetsBody = (feature: Feature, bodyId: string | undefined): boolean => {
       const participants = Array.isArray(feature.params.participantBodyIds)
         ? feature.params.participantBodyIds as string[]
@@ -760,23 +780,26 @@ export default function ExtrudedBodies() {
       return participants.length === 0 || (!!bodyId && participants.includes(bodyId));
     };
 
-    const applyBooleanToCommittedBodies = (
+    const applyBooleanToCommittedBodiesAsync = async (
       feature: Feature,
       toolGeom: THREE.BufferGeometry,
       operation: 'cut' | 'intersect',
-    ): number => {
+    ): Promise<number> => {
       let changed = 0;
       for (let i = 0; i < outBodies.length; i++) {
         if (!targetsBody(feature, outBodyIds[i])) continue;
         const toolForBody = toolGeom.clone();
         const next = operation === 'cut'
-          ? GeometryEngine.csgSubtract(outBodies[i], toolForBody)
-          : GeometryEngine.csgIntersect(outBodies[i], toolForBody);
-        outBodies[i].dispose();
+          ? await csgAsync(outBodies[i], toolForBody, 'subtract')
+          : await csgAsync(outBodies[i], toolForBody, 'intersect');
         toolForBody.dispose();
-        outBodies[i] = next;
-        outIds[i] = feature.id;
-        changed += 1;
+        if (next) {
+          outBodies[i].dispose();
+          outBodies[i] = next;
+          outIds[i] = feature.id;
+          changed += 1;
+        }
+        // If csgAsync returns null, keep the original body unchanged.
       }
       return changed;
     };
@@ -829,122 +852,147 @@ export default function ExtrudedBodies() {
       currentExtraBodyIds = [];
     };
 
-    for (const feature of extrudeFeatures) {
-      const sketch = sketches.find((s) => s.id === feature.sketchId);
-      if (!sketch) continue;
-      const toolMesh = buildToolMesh(feature, sketch);
-      if (!toolMesh) continue;
+    async function run() {
+      for (const feature of extrudeFeatures) {
+        if (cancelled) { disposeInProgress(); return; }
+        const sketch = sketches.find((s) => s.id === feature.sketchId);
+        if (!sketch) continue;
+        const toolMesh = buildToolMesh(feature, sketch);
+        if (!toolMesh) continue;
 
-      const toolGeom = GeometryEngine.bakeMeshWorldGeometry(toolMesh);
-      // Exact profile-derived topology is already in WORLD space → attach
-      // verbatim. The legacy LOCAL soup-fallback path is transformed by
-      // matrixWorld to match the baked geometry.
-      const tw = toolMesh.userData.topoWorld as
-        | { edges: { id: string; polyline: THREE.Vector3[]; kind: string }[] }
-        | undefined;
-      const lt = toolMesh.userData.localTopo as
-        | { edges: { id: string; polyline: THREE.Vector3[]; kind: string }[] }
-        | undefined;
-      if (tw) {
-        toolGeom.userData.topology = tw;
-      } else if (lt) {
-        toolMesh.updateMatrixWorld(true);
-        const m4 = toolMesh.matrixWorld;
-        toolGeom.userData.topology = {
-          edges: lt.edges.map((e) => ({
-            id: e.id,
-            kind: e.kind,
-            polyline: e.polyline.map((p) => p.clone().applyMatrix4(m4)),
-          })),
-        };
-      }
-      toolMesh.geometry.dispose();
-
-      const op = (feature.params.operation as 'new-body' | 'join' | 'cut' | 'intersect') ?? 'new-body';
-
-      if (!currentGeom || op === 'new-body') {
-        commitCurrent();
-        currentGeom = toolGeom;
-        currentFeatureId = feature.id;
-        currentComponentId = feature.componentId ?? (feature.bodyId ? bodiesById[feature.bodyId]?.componentId : undefined);
-        currentBodyId = feature.bodyId;
-        currentExtraBodyIds = (feature.params.extraBodyIds as string[] | undefined) ?? [];
-        continue;
-      }
-
-      if (op === 'cut') {
-        const committedTargets = applyBooleanToCommittedBodies(feature, toolGeom, 'cut');
-        if (!targetsBody(feature, currentBodyId) && committedTargets > 0) {
-          toolGeom.dispose();
-          continue;
+        const toolGeom = GeometryEngine.bakeMeshWorldGeometry(toolMesh);
+        // Exact profile-derived topology is already in WORLD space → attach
+        // verbatim. The legacy LOCAL soup-fallback path is transformed by
+        // matrixWorld to match the baked geometry.
+        const tw = toolMesh.userData.topoWorld as
+          | { edges: { id: string; polyline: THREE.Vector3[]; kind: string }[] }
+          | undefined;
+        const lt = toolMesh.userData.localTopo as
+          | { edges: { id: string; polyline: THREE.Vector3[]; kind: string }[] }
+          | undefined;
+        if (tw) {
+          toolGeom.userData.topology = tw;
+        } else if (lt) {
+          toolMesh.updateMatrixWorld(true);
+          const m4 = toolMesh.matrixWorld;
+          toolGeom.userData.topology = {
+            edges: lt.edges.map((e) => ({
+              id: e.id,
+              kind: e.kind,
+              polyline: e.polyline.map((p) => p.clone().applyMatrix4(m4)),
+            })),
+          };
         }
-        // Pre-cut exact topology + the tool's world AABB, captured BEFORE the
-        // boolean disposes them. A through/blind cut clear of the outer edges
-        // leaves them unchanged, so they are preserved verbatim below.
-        const preCutTopo = (currentGeom.userData as { topology?: BodyTopology }).topology;
-        const bodyBox = new THREE.Box3().setFromBufferAttribute(
-          currentGeom.attributes.position as THREE.BufferAttribute,
-        );
-        const toolTopo = (toolGeom.userData as { topology?: BodyTopology }).topology;
-        const toolBox = new THREE.Box3().setFromBufferAttribute(
-          toolGeom.attributes.position as THREE.BufferAttribute,
-        );
-        // Pad by ~0.5% of the tool's diagonal so an outer edge that merely
-        // grazes the tool is still treated as cut-affected (taken from the
-        // post extraction), never falsely "preserved".
-        toolBox.expandByScalar(Math.max(toolBox.min.distanceTo(toolBox.max) * 5e-3, 1e-4));
-        const next = GeometryEngine.csgSubtract(currentGeom, toolGeom);
-        currentGeom.dispose();
-        toolGeom.dispose();
-        const merged = mergeCutTopology(
-          preCutTopo,
-          (next.userData as { topology?: BodyTopology }).topology,
-          toolBox,
-          bodyBox,
-          toolTopo,
-        );
-        if (merged) next.userData.topology = merged;
-        currentGeom = next;
-        currentFeatureId = feature.id;
-        // Keep the original body's component/body association — cut features
-        // have no componentId/bodyId of their own.
-      } else if (op === 'intersect') {
-        const committedTargets = applyBooleanToCommittedBodies(feature, toolGeom, 'intersect');
-        if (!targetsBody(feature, currentBodyId) && committedTargets > 0) {
-          toolGeom.dispose();
-          continue;
-        }
-        const next = GeometryEngine.csgIntersect(currentGeom, toolGeom);
-        currentGeom.dispose();
-        toolGeom.dispose();
-        currentGeom = next;
-        currentFeatureId = feature.id;
-      } else if (op === 'join') {
-        // Fusion 360 parity: only merge bodies that actually overlap.
-        // If the join geometry doesn't contact the current body through volume
-        // or a shared face, start a new separate body.
-        _boxCurrent.setFromBufferAttribute(currentGeom.attributes.position as THREE.BufferAttribute);
-        _boxTool.setFromBufferAttribute(toolGeom.attributes.position as THREE.BufferAttribute);
-        if (!boxesHaveJoinableContact(_boxCurrent, _boxTool)) {
+        toolMesh.geometry.dispose();
+
+        const op = (feature.params.operation as 'new-body' | 'join' | 'cut' | 'intersect') ?? 'new-body';
+
+        if (!currentGeom || op === 'new-body') {
           commitCurrent();
           currentGeom = toolGeom;
           currentFeatureId = feature.id;
           currentComponentId = feature.componentId ?? (feature.bodyId ? bodiesById[feature.bodyId]?.componentId : undefined);
           currentBodyId = feature.bodyId;
           currentExtraBodyIds = (feature.params.extraBodyIds as string[] | undefined) ?? [];
-        } else {
-          const next = GeometryEngine.csgUnion(currentGeom, toolGeom);
-          currentGeom.dispose();
-          toolGeom.dispose();
-          currentGeom = next;
+          continue;
+        }
+
+        if (op === 'cut') {
+          const committedTargets = await applyBooleanToCommittedBodiesAsync(feature, toolGeom, 'cut');
+          if (cancelled) { toolGeom.dispose(); disposeInProgress(); return; }
+          if (!targetsBody(feature, currentBodyId) && committedTargets > 0) {
+            toolGeom.dispose();
+            continue;
+          }
+          // Pre-cut exact topology + the tool's world AABB, captured BEFORE the
+          // boolean disposes them. A through/blind cut clear of the outer edges
+          // leaves them unchanged, so they are preserved verbatim below.
+          const preCutTopo = (currentGeom.userData as { topology?: BodyTopology }).topology;
+          const bodyBox = new THREE.Box3().setFromBufferAttribute(
+            currentGeom.attributes.position as THREE.BufferAttribute,
+          );
+          const toolTopo = (toolGeom.userData as { topology?: BodyTopology }).topology;
+          const toolBox = new THREE.Box3().setFromBufferAttribute(
+            toolGeom.attributes.position as THREE.BufferAttribute,
+          );
+          // Pad by ~0.5% of the tool's diagonal so an outer edge that merely
+          // grazes the tool is still treated as cut-affected (taken from the
+          // post extraction), never falsely "preserved".
+          toolBox.expandByScalar(Math.max(toolBox.min.distanceTo(toolBox.max) * 5e-3, 1e-4));
+          const next = await csgAsync(currentGeom, toolGeom, 'subtract');
+          if (cancelled) { currentGeom.dispose(); toolGeom.dispose(); next?.dispose(); disposeInProgress(); return; }
+          if (next) {
+            currentGeom.dispose();
+            toolGeom.dispose();
+            const merged = mergeCutTopology(
+              preCutTopo,
+              (next.userData as { topology?: BodyTopology }).topology,
+              toolBox,
+              bodyBox,
+              toolTopo,
+            );
+            if (merged) next.userData.topology = merged;
+            currentGeom = next;
+          } else {
+            toolGeom.dispose();
+          }
           currentFeatureId = feature.id;
-          // Keep the original body's component/body association for joined bodies.
+          // Keep the original body's component/body association — cut features
+          // have no componentId/bodyId of their own.
+        } else if (op === 'intersect') {
+          const committedTargets = await applyBooleanToCommittedBodiesAsync(feature, toolGeom, 'intersect');
+          if (cancelled) { toolGeom.dispose(); disposeInProgress(); return; }
+          if (!targetsBody(feature, currentBodyId) && committedTargets > 0) {
+            toolGeom.dispose();
+            continue;
+          }
+          const next = await csgAsync(currentGeom, toolGeom, 'intersect');
+          if (cancelled) { currentGeom.dispose(); toolGeom.dispose(); next?.dispose(); disposeInProgress(); return; }
+          if (next) {
+            currentGeom.dispose();
+            toolGeom.dispose();
+            currentGeom = next;
+          } else {
+            toolGeom.dispose();
+          }
+          currentFeatureId = feature.id;
+        } else if (op === 'join') {
+          // Fusion 360 parity: only merge bodies that actually overlap.
+          // If the join geometry doesn't contact the current body through volume
+          // or a shared face, start a new separate body.
+          _boxCurrent.setFromBufferAttribute(currentGeom.attributes.position as THREE.BufferAttribute);
+          _boxTool.setFromBufferAttribute(toolGeom.attributes.position as THREE.BufferAttribute);
+          if (!boxesHaveJoinableContact(_boxCurrent, _boxTool)) {
+            commitCurrent();
+            currentGeom = toolGeom;
+            currentFeatureId = feature.id;
+            currentComponentId = feature.componentId ?? (feature.bodyId ? bodiesById[feature.bodyId]?.componentId : undefined);
+            currentBodyId = feature.bodyId;
+            currentExtraBodyIds = (feature.params.extraBodyIds as string[] | undefined) ?? [];
+          } else {
+            const next = await csgAsync(currentGeom, toolGeom, 'union');
+            if (cancelled) { currentGeom.dispose(); toolGeom.dispose(); next?.dispose(); disposeInProgress(); return; }
+            if (next) {
+              currentGeom.dispose();
+              toolGeom.dispose();
+              currentGeom = next;
+            } else {
+              toolGeom.dispose();
+            }
+            currentFeatureId = feature.id;
+            // Keep the original body's component/body association for joined bodies.
+          }
         }
       }
-    }
-    commitCurrent();
+      commitCurrent();
 
-    return { bodies: outBodies, featureIds: outIds, featureComponentIds: outComponentIds, featureBodyIds: outBodyIds };
+      if (cancelled) { disposeInProgress(); return; }
+      setPipelineResult({ bodies: outBodies, featureIds: outIds, featureComponentIds: outComponentIds, featureBodyIds: outBodyIds });
+    }
+
+    run();
+
+    return () => { cancelled = true; };
   // `relevantSketchesSig` is the content signature of only the sketches
   // referenced by active extrude features — so unrelated sketch edits
   // (renaming a measurement sketch, drawing in a non-extrude sketch, etc.)

@@ -101,7 +101,7 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
   const [isFlipped, setIsFlipped] = useState(false);
   const [setback, setSetback] = useState(false);
   const [setbackDistance, setSetbackDistance] = useState(1);
-  const [isRollingBallCorner, setIsRollingBallCorner] = useState(false);
+  const [isRollingBallCorner, setIsRollingBallCorner] = useState(true);
   const [propagate, setPropagate] = useState(true);
   const [isG2, setIsG2] = useState(false);
   const [tangencyWeight, setTangencyWeight] = useState(1.0);
@@ -121,7 +121,7 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
       propagate,
       isG2,
       tangencyWeight: tangencyWeight !== 1.0 ? tangencyWeight : undefined,
-      isRollingBallCorner: setback && isRollingBallCorner,
+      isRollingBallCorner,
     };
     if (mode === 'variable') {
       params.startRadius = startRadius;
@@ -482,32 +482,31 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
         </label>
       </div>
       {setback && (
-        <>
-          <div className="form-group" style={{ paddingLeft: 16 }}>
-            <label>Setback Distance (mm)</label>
-            <input
-              type="number"
-              value={setbackDistance}
-              onFocus={selectNumberText}
-              onClick={selectNumberText}
-              onChange={(e) => setSetbackDistance(Math.max(0, parseFloat(e.target.value) || 0))}
-              min={0}
-              max={500}
-              step={0.5}
-            />
-          </div>
-          <div className="form-group" style={{ paddingLeft: 16 }}>
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={isRollingBallCorner}
-                onChange={(e) => setIsRollingBallCorner(e.target.checked)}
-              />
-              Rolling Ball Corner
-            </label>
-          </div>
-        </>
+        <div className="form-group" style={{ paddingLeft: 16 }}>
+          <label>Setback Distance (mm)</label>
+          <input
+            type="number"
+            value={setbackDistance}
+            onFocus={selectNumberText}
+            onClick={selectNumberText}
+            onChange={(e) => setSetbackDistance(Math.max(0, parseFloat(e.target.value) || 0))}
+            min={0}
+            max={500}
+            step={0.5}
+          />
+        </div>
       )}
+
+      <div className="form-group">
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={isRollingBallCorner}
+            onChange={(e) => setIsRollingBallCorner(e.target.checked)}
+          />
+          Rolling Ball Corner
+        </label>
+      </div>
 
       <div className="form-group">
         <label className="checkbox-label">

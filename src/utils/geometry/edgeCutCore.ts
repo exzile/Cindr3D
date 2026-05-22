@@ -16,8 +16,9 @@ import { liveBodyMeshes } from '../../store/meshRegistry';
 import { weldAndCleanSolid } from '../../engine/geometryEngine/core/solid/weldClean';
 export { weldAndCleanSolid } from '../../engine/geometryEngine/core/solid/weldClean';
 import {
-  csgSubtract as csgSubtractRaw,
   csgSubtractWithTopology,
+  csgSubtractMany,
+  type CornerBlendSpec,
 } from '../../engine/geometryEngine/core/solid/csg';
 import { extractEdgeTopology, type BodyTopology, type ModelEdge } from '../../engine/geometryEngine/core/solid/edgeTopology';
 import { modelEdgeId } from '../../engine/geometryEngine/core/solid/edgeId';
@@ -1316,15 +1317,20 @@ export function computeEdgeCutGeometry(
     if (!handledByLoop) perSegEdges.push(...cluster);
   }
 
-  // Miter corner: collect resolved edges per vertex during the per-segment loop.
-  // Key: quantized vertex cell string → resolved edges that touch this vertex.
-  const miterVtxEdges = options?.makeMiterCornerCutter
+  // Per-vertex resolved-edge map — used by both Phase 2 (miter corners) and
+  // Phase 3 (rolling-ball corner spheres).  Activated whenever either feature
+  // is requested so we only pay the per-vertex bookkeeping cost when needed.
+  const miterVtxEdges = (options?.makeMiterCornerCutter || (options?.cornerRadius && options.cornerRadius > 0))
     ? new Map<string, { pos: THREE.Vector3; res: ResolvedEdge[] }>()
     : null;
   const miterVtxKey = (v: THREE.Vector3) =>
     `${Math.round(v.x / eps)}_${Math.round(v.y / eps)}_${Math.round(v.z / eps)}`;
 
-  // Per-segment path for non-circular clusters (straight edges, arcs, etc.).
+  // Collect all cutters in phases 1–3, then pass the full list to
+  // csgSubtractMany (phase 4) which chains all subtracts in Manifold space.
+
+  // Phase 1: collect per-segment cutters.
+  const perSegCuttersList: THREE.BufferGeometry[] = [];
   for (const e of perSegEdges) {
     const re = resolveEdge(tris, e, near, triIdx, eps, topoMap);
     if (!re) { failedSegCount++; continue; }
@@ -1337,122 +1343,198 @@ export function computeEdgeCutGeometry(
         entry.res.push(re);
       }
     }
-    // Small overhang past the edge ends so the boolean is clean at the ends
-    // without visibly notching the adjacent faces.
     const edgeEps = Math.max(re.length * 1e-3, 1e-4);
     const cutter = makeCutter(re, edgeEps);
     if (!cutter) { console.warn(`[${tag}] degenerate dihedral — edge skipped`); failedSegCount++; continue; }
-    // three-bvh-csg can throw on degenerate / non-manifold inputs. Catch so
-    // one bad edge doesn't abort the whole commit (which would also skip the
-    // dialog's onClose).
-    let next: THREE.BufferGeometry | null = null;
-    try {
-      // Raw CSG (no weld/topology) for per-segment cuts. The intermediate
-      // weldAndCleanSolid below fuses the seam verts before the next cut;
-      // the final weldAndCleanSolid(false) after the loop runs retriangulate
-      // once for the finished solid. GeometryEngine.csgSubtract runs a full
-      // weld + topology on every call — redundant and expensive for N>1 cuts.
-      next = csgSubtractRaw(solid, cutter);
-    } catch (err) {
-      console.error(`[${tag}] csgSubtract threw — edge skipped:`, err);
-      failedSegCount++;
+    perSegCuttersList.push(cutter);
+  }
+
+  // Phase 2: collect miter corner cutters.
+  const extraCutters: THREE.BufferGeometry[] = [];
+  if (miterVtxEdges && options?.makeMiterCornerCutter) {
+    for (const { pos, res } of miterVtxEdges.values()) {
+      if (res.length !== 2) continue;
+      const mc = options.makeMiterCornerCutter(pos, res[0], res[1], eps);
+      if (mc) extraCutters.push(mc);
     }
-    cutter.dispose();
-    if (!next) continue;
-    solid.dispose();
-    // Re-weld after every edge to keep the running solid manifold before the
-    // next CSG subtract. Without this, adjacent-segment cutters (e.g. a straight
-    // model edge stored as 6 sub-segments, or two box edges sharing a corner)
-    // operate on raw triangle soup and produce seam artifacts.
-    // In commit mode use fast=false (full retriangulate); in preview mode use
-    // fast=true (cheap weld, skip retriangulate) — a final full weld below
-    // handles the coplanar fan before the geometry is handed to the renderer.
-    try {
-      // Always use fast (cheap) weld between sequential CSG cuts — the weld
-      // only needs to hand a manifold solid to the next boolean (corner-spike
-      // fix); retriangulateCoplanarRegions is cosmetic and only needed once on
-      // the final result. Running it after every edge was O(N×retriangulate)
-      // in commit mode; the single final weld below (always-on for per-segment
-      // paths) gives identical quality in O(1×retriangulate).
-      const cleaned = weldAndCleanSolid(next, true);
-      next.dispose();
-      solid = cleaned;
-    } catch (err) {
-      console.error(`[${tag}] weld/clean failed — keeping raw CSG result:`, err);
-      solid = next;
+  }
+
+  // Phase 3: rolling-ball corner blend specs.
+  //
+  // After 3 per-edge prism−cylinder cutters the "Steinmetz spike" (the region
+  // that was inside ALL THREE fillet cylinders simultaneously) is never removed
+  // by any single edge cutter and appears as a visible protrusion.
+  //
+  // KEY INSIGHT: after the three edge cuts, the ONLY material that remains
+  // inside the corner prism-intersection region is exactly the Steinmetz spike.
+  // Everything else in that region was already removed by the edge cutters
+  // (it was inside a prism but outside the corresponding cylinder).  Therefore:
+  //
+  //   corner_cutter = cornerBox − rollingBallSphere
+  //
+  // Subtracting `corner_cutter` from the solid removes the spike (the part of
+  // the Steinmetz solid outside the sphere) and PRESERVES a spherical patch
+  // (the Steinmetz material still inside the sphere), which is exactly the G1
+  // rolling-ball corner patch Fusion 360 generates at 3-edge corners.
+  //
+  // WHY THIS IS BETTER THAN CSG-INTERSECTING 3 CYLINDERS:
+  //   Three-way intersection of tessellated cylinders is numerically fragile —
+  //   Manifold often rejects the degenerate micro-geometry and the BVH fallback
+  //   returns empty or malformed output.  One box-minus-sphere subtract is rock
+  //   solid: both operands are well-conditioned primitives.
+  //
+  // ROLLING-BALL SPHERE CENTER:
+  //   Each fillet cylinder's axis passes through A_i = pos + bis_i * axisDist_i
+  //   along edgeDir_i.  For a clean 3-edge corner all three axes meet at one
+  //   point — the rolling-ball centre C.  We find C via the two-line closest-
+  //   point formula on axes 0 and 1 (exact for non-skew lines).
+  //
+  // Instead of pre-building a cornerCutter geometry (which requires a CSG
+  // round-trip through Three.js), we collect CornerBlendSpec objects and pass
+  // them to csgSubtractMany, which builds box+sphere directly in Manifold space
+  // using native primitives (Manifold.cube / Manifold.sphere) — no conversion
+  // loss, no degenerate-mesh failures.
+  const cornerBlends: CornerBlendSpec[] = [];
+  if (options?.cornerRadius && options.cornerRadius > 0 && miterVtxEdges) {
+    const r = options.cornerRadius;
+    console.log(`[fillet] Phase3 enter — cornerRadius=${r}, vtxCount=${miterVtxEdges.size}`);
+
+    for (const { pos, res } of miterVtxEdges.values()) {
+      console.log(`[fillet] Phase3 vtx pos=(${pos.x.toFixed(3)},${pos.y.toFixed(3)},${pos.z.toFixed(3)}) res.length=${res.length}`);
+      if (res.length < 3) continue;
+      const edges3 = res.slice(0, 3);
+
+      // ── Per-edge geometry ────────────────────────────────────────────────
+      let buildFailed = false;
+      const edgeInfos: Array<{
+        setback: number; axisDist: number;
+        bis: THREE.Vector3; edgeDir: THREE.Vector3;
+        u1: THREE.Vector3; u2: THREE.Vector3;
+      }> = [];
+
+      for (const re of edges3) {
+        const cosPhi = THREE.MathUtils.clamp(re.u1.dot(re.u2), -1, 1);
+        const phi    = Math.acos(cosPhi);
+        if (phi < 0.05 || phi > Math.PI - 0.05) { buildFailed = true; break; }
+        const sinHalf = Math.sin(phi / 2);
+        const tanHalf = Math.tan(phi / 2);
+        if (sinHalf < 1e-4 || tanHalf < 1e-4) { buildFailed = true; break; }
+        edgeInfos.push({
+          setback:  r / tanHalf,
+          axisDist: r / sinHalf,
+          bis: re.u1.clone().add(re.u2).normalize(),
+          edgeDir:  re.edgeDir.clone(),
+          u1: re.u1.clone(),
+          u2: re.u2.clone(),
+        });
+      }
+      if (buildFailed || edgeInfos.length < 3) {
+        console.warn(`[fillet] Phase3 skipped vtx — buildFailed=${buildFailed} edgeInfos.length=${edgeInfos.length}`);
+        continue;
+      }
+
+      // ── Rolling-ball sphere centre: intersection of the 3 cylinder axes ──
+      // Axis i: point A_i = pos + bis_i * axisDist_i, direction D_i = edgeDir_i
+      const axA = edgeInfos.map(ei => pos.clone().addScaledVector(ei.bis, ei.axisDist));
+      const axD = edgeInfos.map(ei => ei.edgeDir);
+
+      // Two-line closest-point for axes 0 and 1:
+      //   t0 = ((A1−A0)·D0 − b·(A1−A0)·D1) / (1−b²), b = D0·D1
+      //   C = A0 + t0 * D0
+      const w01 = axA[1].clone().sub(axA[0]);
+      const b01 = axD[0].dot(axD[1]);
+      const den01 = 1 - b01 * b01;
+
+      let sphereCenter: THREE.Vector3;
+      if (Math.abs(den01) < 1e-6) {
+        // Parallel axes (degenerate corner) — fall back to face-normal sum
+        // C = pos + r*(n1+n2+n3): exact for 90° corners, good approximation otherwise
+        sphereCenter = pos.clone();
+        const seenNormals: THREE.Vector3[] = [];
+        for (const ei of edgeInfos) {
+          for (const u of [ei.u1, ei.u2]) {
+            if (!seenNormals.some(n => n.dot(u) > 1 - 1e-3)) {
+              seenNormals.push(u.clone());
+              sphereCenter.addScaledVector(u, r);
+            }
+          }
+        }
+      } else {
+        const c0 = w01.dot(axD[0]);
+        const c1 = w01.dot(axD[1]);
+        const t0 = (c0 - c1 * b01) / den01;
+        sphereCenter = axA[0].clone().addScaledVector(axD[0], t0);
+      }
+
+      console.log(`[fillet] Phase3 sphereCenter=(${sphereCenter.x.toFixed(3)},${sphereCenter.y.toFixed(3)},${sphereCenter.z.toFixed(3)}) r=${r} sphere_r=${(r*1.1).toFixed(3)}`);
+
+      // ── Corner box: AABB over the prism-intersection setback points ──────
+      // Proof that this is safe: after the 3 edge cuts any point in this AABB
+      // that is NOT in the Steinmetz spike was already removed by the edge
+      // cutters (it was inside a prism but outside its cylinder).  So the
+      // corner_cutter only touches the spike, never uncut face material.
+      const cornerPts: THREE.Vector3[] = [pos.clone()];
+      for (const ei of edgeInfos) {
+        cornerPts.push(pos.clone().addScaledVector(ei.u1, ei.setback + eps));
+        cornerPts.push(pos.clone().addScaledVector(ei.u2, ei.setback + eps));
+        // Cross-term vertex so AABB covers the full prism corner cube
+        cornerPts.push(
+          pos.clone()
+            .addScaledVector(ei.u1, ei.setback)
+            .addScaledVector(ei.u2, ei.setback),
+        );
+      }
+      const aabb = new THREE.Box3().setFromPoints(cornerPts);
+      aabb.expandByScalar(eps);
+      const bsz = aabb.max.clone().sub(aabb.min);
+      if (bsz.x < 1e-6 || bsz.y < 1e-6 || bsz.z < 1e-6) continue;
+
+      // ── Emit a CornerBlendSpec — built in Manifold space, no roundtrip ───
+      // Sphere radius r*1.1: exact r makes the sphere tangent to all three face
+      // planes at single points (degenerate cusps).  1.1r gives solid
+      // intersection circles on each face and still sits inside the spike tip
+      // (at ≈ 1.225r from sphereCenter), so the spike is fully removed.
+      cornerBlends.push({
+        sphereCenter: [sphereCenter.x, sphereCenter.y, sphereCenter.z],
+        sphereRadius: r * 1.1,
+        boxMin: [aabb.min.x, aabb.min.y, aabb.min.z],
+        boxMax: [aabb.max.x, aabb.max.y, aabb.max.z],
+      });
+      console.log(`[fillet] Phase3 CornerBlendSpec added — center=(${sphereCenter.x.toFixed(3)},${sphereCenter.y.toFixed(3)},${sphereCenter.z.toFixed(3)}) r=${(r*1.1).toFixed(3)}`);
     }
-    cut++;
-    perSegCut++;
+  }
+
+  // Phase 4: subtract all cutters + corner blends via csgSubtractMany.
+  // Edge cutters and miter cutters run as Three.js geometries; rolling-ball
+  // corner blends are built natively inside Manifold (Manifold.cube / .sphere)
+  // so there is no Three.js↔Manifold roundtrip for the corner geometry.
+  const allCutters = [...perSegCuttersList, ...extraCutters];
+  console.log(`[fillet] Phase4 — perSegCutters=${perSegCuttersList.length} extraCutters=${extraCutters.length} cornerBlends=${cornerBlends.length}`);
+  if (allCutters.length > 0 || cornerBlends.length > 0) {
+    try {
+      const result = csgSubtractMany(solid, allCutters, cornerBlends.length > 0 ? cornerBlends : undefined);
+      const posCount = (result?.attributes?.position as THREE.BufferAttribute | undefined)?.count ?? 0;
+      console.log(`[fillet] Phase4 csgSubtractMany result posCount=${posCount}`);
+      if (posCount > 0) {
+        solid.dispose();
+        solid = result;
+        cut += perSegCuttersList.length;
+        perSegCut += perSegCuttersList.length;
+      } else {
+        result?.dispose();
+        console.warn(`[${tag}] combined csgSubtract produced empty result`);
+      }
+    } catch (err) {
+      console.error(`[${tag}] combined csgSubtract threw:`, err);
+    } finally {
+      for (const c of allCutters) c.dispose();
+    }
   }
 
   if (cut === 0) {
     console.warn(`[${tag}] no edges cut → returning null`);
     solid.dispose();
     return null;
-  }
-
-  // Task 10: Miter corner at 2-edge vertices (chamfer cornerType='miter').
-  // At each vertex where exactly 2 per-segment chamfer edges meet, the two
-  // chamfer bevel planes must be extended to their natural intersection line
-  // (the miter). We do this by CSG-subtracting a convex-hull wedge that
-  // exactly spans the gap between the two bevel faces at the shared corner.
-  if (miterVtxEdges && options?.makeMiterCornerCutter) {
-    for (const { pos, res } of miterVtxEdges.values()) {
-      if (res.length !== 2) continue; // only exactly-2-edge corners → miter
-      const miterCutter = options.makeMiterCornerCutter(pos, res[0], res[1], eps);
-      if (!miterCutter) continue;
-      try {
-        const next = csgSubtractRaw(solid, miterCutter);
-        miterCutter.dispose();
-        const posCount = (next.attributes.position as THREE.BufferAttribute | undefined)?.count ?? 0;
-        if (posCount > 0) {
-          solid.dispose();
-          solid = next;
-        } else {
-          next.dispose();
-        }
-      } catch {
-        miterCutter.dispose();
-      }
-    }
-  }
-
-  // Task 7: Rolling-ball corner sphere at multi-edge junctions.
-  // When 3+ selected edges share an endpoint, a small triangular gap is left
-  // at the corner after independent edge cuts. Subtracting a sphere of the
-  // fillet/chamfer radius there fills the gap with a smooth spherical patch —
-  // the same "rolling-ball corner" Fusion's isRollingBallCorner applies.
-  if (options?.cornerRadius && options.cornerRadius > 0) {
-    const r = options.cornerRadius;
-    // Count how many unique edges touch each vertex (within eps).
-    const vtxCount = new Map<string, { pos: THREE.Vector3; count: number }>();
-    const vtxKey = (v: THREE.Vector3) =>
-      `${Math.round(v.x / eps)}_${Math.round(v.y / eps)}_${Math.round(v.z / eps)}`;
-    for (const e of uniqueEdges) {
-      for (const v of [e.a, e.b]) {
-        const k = vtxKey(v);
-        const entry = vtxCount.get(k);
-        if (entry) entry.count++;
-        else vtxCount.set(k, { pos: v.clone(), count: 1 });
-      }
-    }
-    for (const { pos, count } of vtxCount.values()) {
-      if (count < 3) continue;
-      const sphere = new THREE.SphereGeometry(r, 16, 12);
-      sphere.translate(pos.x, pos.y, pos.z);
-      try {
-        const next = csgSubtractRaw(solid, sphere);
-        sphere.dispose();
-        if ((next.attributes.position as THREE.BufferAttribute | undefined)?.count ?? 0 > 0) {
-          solid.dispose();
-          solid = next;
-        } else {
-          next.dispose();
-        }
-      } catch {
-        sphere.dispose();
-      }
-    }
   }
 
   // Final full weld for per-segment paths: the cheap intermediate welds leave

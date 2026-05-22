@@ -3,14 +3,44 @@
     {
       "route": "/",
       "redirect": "/home",
-      "statusCode": 302
+      "statusCode": 301
+    },
+    {
+      "route": "/home",
+      "rewrite": "/home/index.html"
+    },
+    {
+      "route": "/design",
+      "rewrite": "/design/index.html"
+    },
+    {
+      "route": "/prepare",
+      "rewrite": "/prepare/index.html"
+    },
+    {
+      "route": "/printer/dashboard",
+      "rewrite": "/printer/dashboard/index.html"
     }
   ],
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/assets/*", "/*.js", "/*.css", "/*.ico", "/*.png", "/*.svg"]
+    "exclude": [
+      "/assets/*",
+      "/*.js",
+      "/*.css",
+      "/*.ico",
+      "/*.png",
+      "/*.svg",
+      "/*.webmanifest",
+      "/BingSiteAuth.xml",
+      "/robots.txt",
+      "/sitemap.xml"
+    ]
   },
   "mimeTypes": {
+    ".txt": "text/plain",
+    ".xml": "text/xml",
+    ".webmanifest": "application/manifest+json",
     ".wasm": "application/wasm"
   },
   "globalHeaders": {

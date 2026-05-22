@@ -10,8 +10,6 @@
  */
 
 import * as THREE from 'three';
-import { freshWorkerUrl } from './freshWorkerUrl';
-
 const POOL_SIZE = 2;
 
 export type CsgOp = 'union' | 'subtract' | 'intersect';
@@ -28,7 +26,7 @@ const _pending = new Map<number, PendingEntry>();
 
 function buildWorker(id: number): Worker {
   const w = new Worker(
-    freshWorkerUrl(new URL('./csgWorker.ts', import.meta.url)),
+    new URL('./csgWorker.ts', import.meta.url),
     { type: 'module' },
   );
   w.onmessage = (e: MessageEvent) => {

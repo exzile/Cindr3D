@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Feature } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
+import { csgAsync } from '../../../../workers/csgWorkerPool';
 
 export type CombineOperation = 'join' | 'cut' | 'intersect';
 
@@ -8,6 +9,11 @@ export function runBoolean(targetMesh: THREE.Mesh, toolMesh: THREE.Mesh, operati
   if (operation === 'join') return GeometryEngine.csgUnion(targetMesh.geometry, toolMesh.geometry);
   if (operation === 'cut') return GeometryEngine.csgSubtract(targetMesh.geometry, toolMesh.geometry);
   return GeometryEngine.csgIntersect(targetMesh.geometry, toolMesh.geometry);
+}
+
+export async function runBooleanAsync(targetMesh: THREE.Mesh, toolMesh: THREE.Mesh, operation: CombineOperation): Promise<THREE.BufferGeometry | null> {
+  const opKey = operation === 'join' ? 'union' : operation === 'cut' ? 'subtract' : 'intersect';
+  return csgAsync(targetMesh.geometry as THREE.BufferGeometry, toolMesh.geometry as THREE.BufferGeometry, opKey);
 }
 
 export const MAX_RECOMPUTE_ITERATIONS = 32;

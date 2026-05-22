@@ -3,7 +3,7 @@ import type { Feature } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
-import { recomputeBooleanDependents, runBoolean } from './featureBooleanUtils';
+import { recomputeBooleanDependents, runBooleanAsync } from './featureBooleanUtils';
 import { errorMessage } from '../../../../utils/errorHandling';
 import { parseFilletEdgeIds, computeFilletGeometry, type FilletCommitParams } from '../../../../utils/geometry/filletGeometry';
 import { parseChamferEdgeIds, computeChamferGeometry, resolveChamferDistances } from '../../../../utils/geometry/chamferGeometry';
@@ -603,7 +603,7 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
   },
 
   // SLD12 Ã¢â‚¬â€ commitCombine: boolean op on two feature meshes
-  commitCombine: (targetFeatureId, toolFeatureId, operation, keepTool) => {
+  commitCombine: async (targetFeatureId, toolFeatureId, operation, keepTool) => {
     const { features } = get();
     const targetFeature = features.find((f) => f.id === targetFeatureId);
     const toolFeature = features.find((f) => f.id === toolFeatureId);
@@ -617,23 +617,30 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
     }
     const tgtMesh = targetFeature.mesh as THREE.Mesh;
     const toolMesh = toolFeature.mesh as THREE.Mesh;
-    let resultGeom: THREE.BufferGeometry;
+    const bodyKind = targetFeature.bodyKind;
     // CSG can throw on degenerate / non-manifold inputs. Catch + report so
     // the user gets a status message instead of a silent broken state, and
     // the partially-built result (if any) doesn't end up in the scene.
     // pushUndo is called AFTER the try/catch so a failed CSG doesn't leave
     // an orphaned snapshot on the undo stack.
+    let resultGeom: THREE.BufferGeometry | null;
     try {
-      resultGeom = runBoolean(tgtMesh, toolMesh, operation);
+      resultGeom = await runBooleanAsync(tgtMesh, toolMesh, operation);
     } catch (err) {
       get().setStatusMessage(`Combine (${operation}) failed: ${errorMessage(err, 'unknown CSG error')}`);
+      return;
+    }
+    if (!resultGeom) {
+      get().setStatusMessage(`Combine (${operation}) failed: CSG returned no result`);
       return;
     }
     get().pushUndo();
     const newMesh = new THREE.Mesh(resultGeom, tgtMesh.material);
     newMesh.castShadow = true;
     newMesh.receiveShadow = true;
-    const n = features.filter((f) => f.type === 'combine').length + 1;
+    // Use fresh state snapshot after the await so the feature list is current.
+    const state = get();
+    const n = state.features.filter((f) => f.type === 'combine').length + 1;
     const combineFeature: Feature = {
       id: crypto.randomUUID(),
       name: `Combine ${n} (${operation})`,
@@ -650,24 +657,22 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
       visible: true,
       suppressed: false,
       timestamp: Date.now(),
-      bodyKind: targetFeature.bodyKind,
+      bodyKind,
     };
-    set((state) => {
-      const updated = state.features.map((f) =>
-        !keepTool && (f.id === targetFeatureId || f.id === toolFeatureId)
-          ? { ...f, suppressed: true }
-          : f
-      );
-      const suppressionEntries: Record<string, boolean> = {
-        [combineFeature.id]: false,
-        [targetFeatureId]: !keepTool,
-        [toolFeatureId]: !keepTool,
-      };
-      return {
-        features: [...updated, combineFeature],
-        designConfigurations: syncActiveConfigurationSuppression(state, suppressionEntries),
-        statusMessage: `Combine (${operation}) created with editable parents`,
-      };
+    const updated = state.features.map((f) =>
+      !keepTool && (f.id === targetFeatureId || f.id === toolFeatureId)
+        ? { ...f, suppressed: true }
+        : f
+    );
+    const suppressionEntries: Record<string, boolean> = {
+      [combineFeature.id]: false,
+      [targetFeatureId]: !keepTool,
+      [toolFeatureId]: !keepTool,
+    };
+    set({
+      features: [...updated, combineFeature],
+      designConfigurations: syncActiveConfigurationSuppression(state, suppressionEntries),
+      statusMessage: `Combine (${operation}) created with editable parents`,
     });
   },
 
@@ -709,7 +714,7 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
   // SLD12-edit — re-run CSG on an existing combine feature with new params.
   // Atomically updates params + mesh in one pushUndo so the edit is a single
   // undo step (avoids double-snapshot from separate updateFeatureParams + CSG).
-  recommitCombine: (featureId, params) => {
+  recommitCombine: async (featureId, params) => {
     const { features } = get();
     const feature = features.find((f) => f.id === featureId);
     if (!feature || feature.type !== 'combine') {
@@ -729,44 +734,48 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
     }
     const tgtMesh = targetFeature.mesh as THREE.Mesh;
     const toolMesh = toolFeature.mesh as THREE.Mesh;
-    let resultGeom: THREE.BufferGeometry;
+    const oldMesh = feature.mesh;
+    let resultGeom: THREE.BufferGeometry | null;
     try {
-      resultGeom = runBoolean(tgtMesh, toolMesh, operation);
+      resultGeom = await runBooleanAsync(tgtMesh, toolMesh, operation);
     } catch (err) {
       get().setStatusMessage(`Combine (edit) failed: ${errorMessage(err, 'unknown CSG error')}`);
+      return;
+    }
+    if (!resultGeom) {
+      get().setStatusMessage(`Combine (edit) failed: CSG returned no result`);
       return;
     }
     get().pushUndo();
     const newMesh = new THREE.Mesh(resultGeom, tgtMesh.material);
     newMesh.castShadow = true;
     newMesh.receiveShadow = true;
-    const oldMesh = feature.mesh;
-    set((state) => {
-      const oldParentIds = getBooleanParentIds(feature);
-      const nextParentIds = [targetId, toolId];
-      const affectedParentIds = Array.from(new Set([...oldParentIds, ...nextParentIds]));
-      const features = state.features.map((f) => {
-        if (f.id === featureId) {
-          return { ...f, mesh: newMesh, params: { ...f.params, operation, keepTools, targetId, toolId, booleanParentIds: [targetId, toolId], recomputeOnParentChange: true } };
-        }
-        if (affectedParentIds.includes(f.id)) {
-          const isNextParent = nextParentIds.includes(f.id);
-          const shouldSuppress = isNextParent
-            ? !keepTools
-            : parentIsHiddenByAnotherCombine(state.features, f.id, featureId);
-          return { ...f, suppressed: shouldSuppress };
-        }
-        return f;
-      });
-      const suppressionEntries: Record<string, boolean> = { [featureId]: false };
-      for (const id of affectedParentIds) {
-        suppressionEntries[id] = !!features.find((candidate) => candidate.id === id)?.suppressed;
+    // Use fresh state snapshot after the await so the feature list is current.
+    const state = get();
+    const oldParentIds = getBooleanParentIds(feature);
+    const nextParentIds = [targetId, toolId];
+    const affectedParentIds = Array.from(new Set([...oldParentIds, ...nextParentIds]));
+    const updatedFeatures = state.features.map((f) => {
+      if (f.id === featureId) {
+        return { ...f, mesh: newMesh, params: { ...f.params, operation, keepTools, targetId, toolId, booleanParentIds: [targetId, toolId], recomputeOnParentChange: true } };
       }
-      return {
-        features,
-        designConfigurations: syncActiveConfigurationSuppression(state, suppressionEntries),
-        statusMessage: `Combine (${operation}) updated`,
-      };
+      if (affectedParentIds.includes(f.id)) {
+        const isNextParent = nextParentIds.includes(f.id);
+        const shouldSuppress = isNextParent
+          ? !keepTools
+          : parentIsHiddenByAnotherCombine(state.features, f.id, featureId);
+        return { ...f, suppressed: shouldSuppress };
+      }
+      return f;
+    });
+    const suppressionEntries: Record<string, boolean> = { [featureId]: false };
+    for (const id of affectedParentIds) {
+      suppressionEntries[id] = !!updatedFeatures.find((candidate) => candidate.id === id)?.suppressed;
+    }
+    set({
+      features: updatedFeatures,
+      designConfigurations: syncActiveConfigurationSuppression(state, suppressionEntries),
+      statusMessage: `Combine (${operation}) updated`,
     });
     if (oldMesh instanceof THREE.Mesh) {
       const geo = oldMesh.geometry;

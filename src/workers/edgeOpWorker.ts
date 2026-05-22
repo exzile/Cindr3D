@@ -81,7 +81,13 @@ interface ComputeMsg {
   try {
     result =
       toolType === 'fillet'
-        ? computeFilletGeometry(srcGeo, pickedEdges, value, segments, fast)
+        ? computeFilletGeometry(srcGeo, pickedEdges, value, segments, fast, {
+            // Always apply rolling-ball corner blend — matches Fusion 360 default
+            // behaviour where the sphere patch fills the trihedral corner left by
+            // the three edge cutters.  Without it the Steinmetz intersection of
+            // the three fillet cylinders is never removed, producing the spike.
+            isRollingBallCorner: true,
+          })
         : computeChamferGeometry(srcGeo, pickedEdges, value, undefined, fast);
   } catch {
     // CSG errors are expected for degenerate geometry; result stays null.
