@@ -505,7 +505,12 @@ function RevolveItem({
       mesh.userData.bodyId = bodyId;
     }
     /* eslint-enable react-hooks/immutability */
-    return () => { mesh?.geometry.dispose(); };
+    return () => {
+      const toDispose = mesh;
+      // Defer by one tick so R3F finishes its current render cycle before
+      // the GPU buffers are freed (prevents one-frame blank on geometry swap).
+      setTimeout(() => { toDispose?.geometry.dispose(); }, 0);
+    };
   }, [mesh, feature.id, bodyId]);
   if (!mesh) return null;
   return <primitive object={mesh} />;
@@ -961,6 +966,16 @@ export default function ExtrudedBodies() {
   // Keep the persistent geometry caches in sync so the slicer can read real
   // geometry even when this viewport is unmounted (e.g. navigated to /prepare).
   useEffect(() => {
+    // Evict stale entries for features/bodies that no longer exist.
+    const liveFeatureIds = new Set(featureIds.filter(Boolean));
+    const liveBodyIds = new Set(featureBodyIds.filter(Boolean));
+    for (const [fId, geo] of bodyGeometryCache) {
+      if (!liveFeatureIds.has(fId)) { geo.dispose(); bodyGeometryCache.delete(fId); }
+    }
+    for (const [bId, geo] of bodyIdGeometryCache) {
+      if (!liveBodyIds.has(bId)) { geo.dispose(); bodyIdGeometryCache.delete(bId); }
+    }
+
     // featureId-keyed cache (used by commitFillet and other ops that target a feature)
     bodies.forEach((geom, i) => {
       const fId = featureIds[i];

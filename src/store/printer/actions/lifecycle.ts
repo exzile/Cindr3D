@@ -49,7 +49,7 @@ export function createLifecycleActions(
 
         service.on('error', (err) => {
           const state = get();
-          if (state.service !== null && state.service !== service) return;
+          if (state.service !== service) return;
           set({ error: `Printer connection issue: ${errorMessage(err, 'Unknown transport error')}` });
         });
 

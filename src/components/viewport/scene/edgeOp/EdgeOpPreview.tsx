@@ -73,6 +73,7 @@ export default function EdgeOpPreview({
 }: EdgeOpPreviewProps) {
   const { scene, invalidate } = useThree();
 
+  const unmountedRef = useRef(false);
   const previewMeshRef = useRef<THREE.Mesh | null>(null);
   const hiddenMeshRef = useRef<THREE.Mesh | null>(null);
   // Invisible (material.visible=false) but raycastable stand-in for the hidden
@@ -192,6 +193,7 @@ export default function EdgeOpPreview({
   // need to recreate the worker when callbacks change.
   const workerOnMessageRef = useRef((_e: MessageEvent) => {});
   workerOnMessageRef.current = (e: MessageEvent) => {
+    if (unmountedRef.current) return;
     const { type, requestId, positions, normals } = e.data;
     if (type !== 'result') return;
     // Discard stale results from superseded requests.
@@ -240,6 +242,15 @@ export default function EdgeOpPreview({
           geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
         } else {
           geo.computeVertexNormals();
+          // Sanitize NaN normals produced by degenerate zero-area triangles
+          // (small fillet radii). A single NaN contaminates the whole draw call.
+          const normalArr = geo.attributes.normal.array as Float32Array;
+          for (let i = 0; i < normalArr.length; i += 3) {
+            if (!isFinite(normalArr[i]) || !isFinite(normalArr[i + 1]) || !isFinite(normalArr[i + 2])) {
+              normalArr[i] = 0; normalArr[i + 1] = 1; normalArr[i + 2] = 0;
+            }
+          }
+          geo.attributes.normal.needsUpdate = true;
         }
 
         const { liveMesh } = pac;
@@ -324,6 +335,7 @@ export default function EdgeOpPreview({
   useEffect(() => {
     const sceneSnapshot = scene;
     return () => {
+      unmountedRef.current = true;
       if (hiddenMeshRef.current) {
         hiddenMeshRef.current.visible = true;
         hiddenMeshRef.current = null;

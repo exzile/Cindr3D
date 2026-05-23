@@ -28,9 +28,11 @@ export function useKlipperPrintStatus(intervalMs = 3000): MoonrakerPrintStatus |
 
     const svc = new MoonrakerService(hostname);
     let cancelled = false;
+    let seq = 0;
     const tick = async () => {
+      const mySeq = ++seq;
       const s = await svc.getPrintStatus();
-      if (!cancelled) setStatus(s);
+      if (!cancelled && mySeq === seq) setStatus(s);
     };
     void tick();
     const id = setInterval(tick, intervalMs);
