@@ -409,10 +409,10 @@ function BodyMesh({
     if (!mesh) return;
     liveBodyMeshes.set(mesh.uuid, mesh);
     return () => { liveBodyMeshes.delete(mesh.uuid); };
-  // geometry is in deps so the registry is refreshed whenever the body's
-  // rendered geometry changes (e.g. after a fillet/chamfer commit).  The mesh
-  // object (and its uuid) stays the same — only the BufferGeometry is swapped.
-  }, [geometry]);
+  // geometry + featureId in deps so the registry is refreshed whenever the
+  // body's rendered geometry changes or its feature association changes.
+  // The mesh object (and its uuid) stays the same across both updates.
+  }, [geometry, featureId]);
 
   useFrame(({ clock, invalidate }) => {
     if (!isSelected) return;

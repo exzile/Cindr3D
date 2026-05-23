@@ -203,7 +203,15 @@ function _bvhSubtract(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.B
   const brushB = new Brush(b);
   brushA.updateMatrixWorld();
   brushB.updateMatrixWorld();
-  const result = _csgEvaluator.evaluate(brushA, brushB, SUBTRACTION);
+  let result: InstanceType<typeof Brush>;
+  try {
+    result = _csgEvaluator.evaluate(brushA, brushB, SUBTRACTION);
+  } catch (err) {
+    // evaluate() failed — release BVH structures the library may have built
+    if (typeof brushA.geometry?.disposeBoundsTree === 'function') brushA.geometry.disposeBoundsTree();
+    if (typeof brushB.geometry?.disposeBoundsTree === 'function') brushB.geometry.disposeBoundsTree();
+    throw err;
+  }
   const nonIndexed = result.geometry.index
     ? result.geometry.toNonIndexed()
     : result.geometry;
@@ -225,7 +233,14 @@ function _bvhUnion(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.Buff
   const brushB = new Brush(b);
   brushA.updateMatrixWorld();
   brushB.updateMatrixWorld();
-  const result = _csgEvaluator.evaluate(brushA, brushB, ADDITION);
+  let result: InstanceType<typeof Brush>;
+  try {
+    result = _csgEvaluator.evaluate(brushA, brushB, ADDITION);
+  } catch (err) {
+    if (typeof brushA.geometry?.disposeBoundsTree === 'function') brushA.geometry.disposeBoundsTree();
+    if (typeof brushB.geometry?.disposeBoundsTree === 'function') brushB.geometry.disposeBoundsTree();
+    throw err;
+  }
   try {
     result.geometry.computeVertexNormals();
   } catch (err) {
@@ -242,7 +257,14 @@ function _bvhIntersect(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.
   const brushB = new Brush(b);
   brushA.updateMatrixWorld();
   brushB.updateMatrixWorld();
-  const result = _csgEvaluator.evaluate(brushA, brushB, INTERSECTION);
+  let result: InstanceType<typeof Brush>;
+  try {
+    result = _csgEvaluator.evaluate(brushA, brushB, INTERSECTION);
+  } catch (err) {
+    if (typeof brushA.geometry?.disposeBoundsTree === 'function') brushA.geometry.disposeBoundsTree();
+    if (typeof brushB.geometry?.disposeBoundsTree === 'function') brushB.geometry.disposeBoundsTree();
+    throw err;
+  }
   try {
     result.geometry.computeVertexNormals();
   } catch (err) {
@@ -307,7 +329,14 @@ export function csgUnionWithTopology(
   const brushB = new Brush(b);
   brushA.updateMatrixWorld();
   brushB.updateMatrixWorld();
-  const result = _csgEvaluator.evaluate(brushA, brushB, ADDITION);
+  let result: InstanceType<typeof Brush>;
+  try {
+    result = _csgEvaluator.evaluate(brushA, brushB, ADDITION);
+  } catch (err) {
+    if (typeof brushA.geometry?.disposeBoundsTree === 'function') brushA.geometry.disposeBoundsTree();
+    if (typeof brushB.geometry?.disposeBoundsTree === 'function') brushB.geometry.disposeBoundsTree();
+    throw err;
+  }
 
   let solid: THREE.BufferGeometry;
   try {
@@ -358,7 +387,14 @@ export function csgIntersectWithTopology(
   const brushB = new Brush(b);
   brushA.updateMatrixWorld();
   brushB.updateMatrixWorld();
-  const result = _csgEvaluator.evaluate(brushA, brushB, INTERSECTION);
+  let result: InstanceType<typeof Brush>;
+  try {
+    result = _csgEvaluator.evaluate(brushA, brushB, INTERSECTION);
+  } catch (err) {
+    if (typeof brushA.geometry?.disposeBoundsTree === 'function') brushA.geometry.disposeBoundsTree();
+    if (typeof brushB.geometry?.disposeBoundsTree === 'function') brushB.geometry.disposeBoundsTree();
+    throw err;
+  }
 
   let solid: THREE.BufferGeometry;
   try {
@@ -421,7 +457,14 @@ export function csgSubtractWithTopology(
   const brushB = new Brush(b);
   brushA.updateMatrixWorld();
   brushB.updateMatrixWorld();
-  const result = _csgEvaluator.evaluate(brushA, brushB, SUBTRACTION);
+  let result: InstanceType<typeof Brush>;
+  try {
+    result = _csgEvaluator.evaluate(brushA, brushB, SUBTRACTION);
+  } catch (err) {
+    if (typeof brushA.geometry?.disposeBoundsTree === 'function') brushA.geometry.disposeBoundsTree();
+    if (typeof brushB.geometry?.disposeBoundsTree === 'function') brushB.geometry.disposeBoundsTree();
+    throw err;
+  }
 
   // three-bvh-csg outputs non-manifold soup — repair before topology extraction
   let solid: THREE.BufferGeometry;

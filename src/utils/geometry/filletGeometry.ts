@@ -143,14 +143,17 @@ function buildFilletCutter(
     const rAsym = area2 / (d1 + d2 + c);
     if (rAsym < 1e-6) return null;
 
-    // Incircle center (in axisX/axisZ face plane, world space):
-    // Barycentric: touches all three sides → use tangent lengths.
-    // In the triangle with vertices O, P1=d1*axisX, P2=d2*axisZ:
-    // tangent lengths from O = (d1 + d2 - c) / 2 = s - c where s=semi-perimeter.
+    // Incircle center in world space, expressed in the skewed (axisX, axisZ) basis.
+    // The included angle between axisX and axisZ is phi (the dihedral angle).
+    // In an orthonormal frame aligned to axisX, the incircle center sits at
+    // (tO, r) where tO = s - c (tangent length from origin) and r is the inradius.
+    // Converting to the skewed basis (axisX at angle 0, axisZ at angle phi):
+    //   incenterZ_coeff = r / sinPhi
+    //   incenterX_coeff = tO - r * cosPhi / sinPhi
     const s = (d1 + d2 + c) / 2;
-    const tO = s - c; // tangent length from origin vertex
-    const incenterX = tO; // in axisX direction
-    const incenterZ = tO; // in axisZ direction (symmetric along both rays)
+    const tO = s - c;
+    const incenterX = tO - rAsym * cosPhi / sinPhi;
+    const incenterZ = rAsym / sinPhi;
 
     // Build the prism (d1 × d2 asymmetric box).
     const prismAsym = new THREE.BoxGeometry(d1, length + 2 * eps, d2);
@@ -395,7 +398,9 @@ function buildG2FilletCutter(
 
   const sb = radius / tanHalf;
 
-  const det = new THREE.Matrix4().makeBasis(u1, edgeDir, u2).determinant();
+  // Handedness test must match the actual basis used: makeBasis(axisX, axisZ, edgeDir).
+  // Column order: [u1 | u2 | edgeDir] (right-handed = same winding as ExtrudeGeometry shape).
+  const det = new THREE.Matrix4().makeBasis(u1, u2, edgeDir).determinant();
   if (Math.abs(det) < 1e-9) return null; // degenerate basis — u1/u2 nearly parallel
   const leftHanded = det < 0;
   const axisX = leftHanded ? u2 : u1;
