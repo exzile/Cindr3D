@@ -234,18 +234,27 @@ export function shellSolid(mesh: THREE.Mesh, opts: ShellOptions): THREE.Mesh {
   let hollow: THREE.BufferGeometry;
   if (tin > 0 && tout <= 0) {
     const inner = offsetSolid(outer, -tin, sharp, overrideFor);
-    hollow = csgSubtract(outer, inner);
-    inner.dispose();
+    try {
+      hollow = csgSubtract(outer, inner);
+    } finally {
+      inner.dispose();
+    }
   } else if (tout > 0 && tin <= 0) {
     const expanded = offsetSolid(outer, tout, sharp, () => null);
-    hollow = csgSubtract(expanded, outer);
-    expanded.dispose();
+    try {
+      hollow = csgSubtract(expanded, outer);
+    } finally {
+      expanded.dispose();
+    }
   } else if (tin > 0 && tout > 0) {
     const expanded = offsetSolid(outer, tout, sharp, () => null);
     const inner = offsetSolid(outer, -tin, sharp, overrideFor);
-    hollow = csgSubtract(expanded, inner);
-    expanded.dispose();
-    inner.dispose();
+    try {
+      hollow = csgSubtract(expanded, inner);
+    } finally {
+      expanded.dispose();
+      inner.dispose();
+    }
   } else {
     // Nothing to do — return a copy of the input.
     const m = new THREE.Mesh(outer, mesh.material);

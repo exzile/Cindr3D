@@ -122,11 +122,15 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
         ? deserializeSketch(parsed.activeSketch as unknown as Sketch)
         : null;
       restoreComponentStoreSnapshot(parsed.componentStore);
-      // Evict src-geo cache for fillet/chamfer features removed by this undo.
+      // Evict src-geo cache and collect mesh geometries for features removed by undo.
       const restoredIds = new Set(parsed.features.map((f: Feature) => f.id));
+      const undoRemovedGeos: THREE.BufferGeometry[] = [];
       for (const f of state.features) {
-        if ((f.type === 'fillet' || f.type === 'chamfer') && !restoredIds.has(f.id)) {
-          evictEdgeCutSource(f.id);
+        if (restoredIds.has(f.id)) continue;
+        if (f.type === 'fillet' || f.type === 'chamfer') evictEdgeCutSource(f.id);
+        if (f.mesh instanceof THREE.Mesh) {
+          const geo = (f.mesh as THREE.Mesh).geometry;
+          if (geo) undoRemovedGeos.push(geo);
         }
       }
       set({
@@ -135,7 +139,11 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
         features: parsed.features.map((f) => {
           const restored = deserializeFeature(f as Feature);
           const live = liveMeshById.get(restored.id);
-          return live ? { ...restored, mesh: live } : restored;
+          // Only reuse a live mesh if its geometry is still valid (not disposed).
+          if (live instanceof THREE.Mesh && (live as THREE.Mesh).geometry?.attributes?.position) {
+            return { ...restored, mesh: live };
+          }
+          return restored;
         }),
         sketches: restoredSketches,
         activeSketch: restoredActiveSketch,
@@ -144,6 +152,8 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
         activeDesignConfigurationId: parsed.activeDesignConfigurationId ?? state.activeDesignConfigurationId,
         statusMessage: 'Undo',
       });
+      // Defer-dispose removed geometries after R3F has a cycle to unmount old meshes.
+      if (undoRemovedGeos.length > 0) setTimeout(() => { for (const g of undoRemovedGeos) g.dispose(); }, 0);
     } catch {
       // Malformed snapshot — POP it so the next undo doesn't hit the same
       // broken entry forever. Without `set({ undoStack: stack })` the failed
@@ -178,11 +188,15 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
         ? deserializeSketch(parsed.activeSketch as unknown as Sketch)
         : null;
       restoreComponentStoreSnapshot(parsed.componentStore);
-      // Evict src-geo cache for fillet/chamfer features removed by this redo.
+      // Evict src-geo cache and collect mesh geometries for features removed by redo.
       const restoredIdsRedo = new Set(parsed.features.map((f: Feature) => f.id));
+      const redoRemovedGeos: THREE.BufferGeometry[] = [];
       for (const f of state.features) {
-        if ((f.type === 'fillet' || f.type === 'chamfer') && !restoredIdsRedo.has(f.id)) {
-          evictEdgeCutSource(f.id);
+        if (restoredIdsRedo.has(f.id)) continue;
+        if (f.type === 'fillet' || f.type === 'chamfer') evictEdgeCutSource(f.id);
+        if (f.mesh instanceof THREE.Mesh) {
+          const geo = (f.mesh as THREE.Mesh).geometry;
+          if (geo) redoRemovedGeos.push(geo);
         }
       }
       set({
@@ -191,7 +205,10 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
         features: parsed.features.map((f) => {
           const restored = deserializeFeature(f as Feature);
           const live = liveMeshById.get(restored.id);
-          return live ? { ...restored, mesh: live } : restored;
+          if (live instanceof THREE.Mesh && (live as THREE.Mesh).geometry?.attributes?.position) {
+            return { ...restored, mesh: live };
+          }
+          return restored;
         }),
         sketches: restoredSketches,
         activeSketch: restoredActiveSketch,
@@ -200,6 +217,7 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
         activeDesignConfigurationId: parsed.activeDesignConfigurationId ?? state.activeDesignConfigurationId,
         statusMessage: 'Redo',
       });
+      if (redoRemovedGeos.length > 0) setTimeout(() => { for (const g of redoRemovedGeos) g.dispose(); }, 0);
     } catch {
       // Malformed snapshot — pop it so the user can keep redoing past it.
       set({ redoStack: stack, statusMessage: 'Redo: corrupted snapshot skipped' });
@@ -446,6 +464,10 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
 
   // ── UTL2 — Save / Load ───────────────────────────────────────────────────
   newDocument: () => {
+    // Dispose stored feature meshes before clearing state.
+    for (const f of get().features) {
+      if (f.mesh instanceof THREE.Mesh) (f.mesh as THREE.Mesh).geometry?.dispose();
+    }
     clearAllEdgeCutSources();
     for (const geo of bodyGeometryCache.values()) geo.dispose();
     bodyGeometryCache.clear();
@@ -509,6 +531,10 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
   },
 
   loadFromFile: (json: string) => {
+    // Dispose stored feature meshes before replacing the document.
+    for (const f of get().features) {
+      if (f.mesh instanceof THREE.Mesh) (f.mesh as THREE.Mesh).geometry?.dispose();
+    }
     clearAllEdgeCutSources();
     for (const geo of bodyGeometryCache.values()) geo.dispose();
     bodyGeometryCache.clear();

@@ -69,34 +69,42 @@ export function lipGrooveGeometry(
   lip.translate(-runLength / 2 + segLen / 2, wallHt + lipH / 2, 0);
   created.push(lip);
 
-  const lipHalf = csgUnion(leftWall, lip);
-
   // ── Right wall − groove channel ──────────────────────────────────────────
   const rightWall = new THREE.BoxGeometry(segLen, wallHt, wallThk);
   rightWall.translate(runLength / 2 - segLen / 2, wallHt / 2, 0);
   created.push(rightWall);
 
+  // Wrap CSG chain in try/finally so all intermediate geometries are released
+  // even when a CSG operation throws on degenerate input.
+  let lipHalf: THREE.BufferGeometry | null = null;
+  let grooveHalf: THREE.BufferGeometry | null = null;
   let solid: THREE.BufferGeometry;
-  if (includeGroove) {
-    // Channel cut down from the top face; overshoot in +Y so CSG opens the
-    // top face cleanly instead of leaving a coplanar sliver.
-    const cutter = new THREE.BoxGeometry(segLen + 1, grvD + 1, grvW);
-    cutter.translate(
-      runLength / 2 - segLen / 2,
-      wallHt - grvD / 2 + 1, // top of the cutter pokes above the wall by ~1mm
-      0,
-    );
-    created.push(cutter);
-    const grooveHalf = csgSubtract(rightWall, cutter);
-    solid = csgUnion(lipHalf, grooveHalf);
-    lipHalf.dispose();
-    grooveHalf.dispose();
-  } else {
-    solid = csgUnion(lipHalf, rightWall);
-    lipHalf.dispose();
-  }
+  try {
+    lipHalf = csgUnion(leftWall, lip);
 
-  for (const g of created) g.dispose();
+    if (includeGroove) {
+      // Channel cut down from the top face; overshoot in +Y so CSG opens the
+      // top face cleanly instead of leaving a coplanar sliver.
+      const cutter = new THREE.BoxGeometry(segLen + 1, grvD + 1, grvW);
+      cutter.translate(
+        runLength / 2 - segLen / 2,
+        wallHt - grvD / 2 + 1, // top of the cutter pokes above the wall by ~1mm
+        0,
+      );
+      created.push(cutter);
+      grooveHalf = csgSubtract(rightWall, cutter);
+      solid = csgUnion(lipHalf, grooveHalf);
+      grooveHalf.dispose(); grooveHalf = null;
+      lipHalf.dispose(); lipHalf = null;
+    } else {
+      solid = csgUnion(lipHalf, rightWall);
+      lipHalf.dispose(); lipHalf = null;
+    }
+  } finally {
+    lipHalf?.dispose();
+    grooveHalf?.dispose();
+    for (const g of created) g.dispose();
+  }
 
   solid.computeVertexNormals();
   try {
