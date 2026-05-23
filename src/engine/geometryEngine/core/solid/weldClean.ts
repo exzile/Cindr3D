@@ -414,7 +414,9 @@ export function retriangulateCoplanarRegions(
     }
 
     // Bridge holes into the outer loop, then ear-clip the simple polygon.
-    const poly = bridgeHoles(outer, holes, to2D);
+    // Pass the vertex arrays so bridgeHoles can insert edge-midpoint vertices
+    // when the nearest bridge target is on an edge interior (not a vertex).
+    const poly = bridgeHoles(outer, holes, to2D, vx, vy, vz);
     const tri2 = earClip(poly, to2D);
     if (!tri2 || tri2.length === 0) { for (const t of ts) emitOriginal(t); continue; }
 
@@ -468,13 +470,24 @@ export function retriangulateCoplanarRegions(
 /**
  * Joins hole loops into an outer loop by adding zero-width bridge edges (the
  * classic "keyhole" ear-clipping preprocessing): for each hole pick its
- * rightmost vertex, find a mutually-visible outer vertex, and splice the hole
- * in. Good enough for the convex/near-convex faces CSG edge-cuts produce.
+ * rightmost vertex, find a mutually-visible outer edge point, and splice the
+ * hole in.
+ *
+ * Uses nearest-EDGE-POINT rather than nearest-VERTEX. When the nearest point
+ * falls on the interior of an outer edge, a new vertex is inserted there (into
+ * `vx`/`vy`/`vz`) so the bridge is as short as possible. This avoids the
+ * "long diagonal bridge" that the nearest-vertex heuristic creates for holes
+ * whose rightmost point is close to an edge midpoint but far from any vertex —
+ * e.g. the boss-cylinder boundary at X=0 whose topmost arc is 0.04mm below
+ * the bracket's top edge but 27mm from the nearest outer vertex.
  */
 export function bridgeHoles(
   outer: number[],
   holes: number[][],
   to2D: (id: number) => [number, number],
+  vx: number[],
+  vy: number[],
+  vz: number[],
 ): number[] {
   let poly = outer.slice();
   // Process holes by descending rightmost-x so nested splices stay valid.
@@ -492,19 +505,51 @@ export function bridgeHoles(
   for (const { h, bi } of ordered) {
     const hv = h[bi];
     const [hx, hy] = to2D(hv);
-    // Nearest outer vertex to the hole's rightmost point (visibility proxy —
-    // exact for the small convex faces here).
-    let best = -1, bestD = Infinity;
+
+    // Find the nearest point on any outer boundary edge (not just vertices).
+    // Using per-edge closest-point avoids the long diagonal bridge that the
+    // nearest-vertex heuristic creates when the hole's rightmost vertex is
+    // near an edge midpoint but far from any outer vertex.
+    let best = -1, bestD = Infinity, bestT = 0, bestIsEdge = false;
     for (let i = 0; i < poly.length; i++) {
+      // Check outer vertex i
       const [ox, oy] = to2D(poly[i]);
-      const d = (ox - hx) * (ox - hx) + (oy - hy) * (oy - hy);
-      if (d < bestD) { bestD = d; best = i; }
+      const dv = (ox - hx) * (ox - hx) + (oy - hy) * (oy - hy);
+      if (dv < bestD) { bestD = dv; best = i; bestIsEdge = false; bestT = 0; }
+      // Check interior of edge i → (i+1)
+      const j = (i + 1) % poly.length;
+      const [nx, ny] = to2D(poly[j]);
+      const dx = nx - ox, dy = ny - oy;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq < 1e-18) continue;
+      const t = Math.max(0, Math.min(1, ((hx - ox) * dx + (hy - oy) * dy) / lenSq));
+      if (t < 1e-6 || t > 1 - 1e-6) continue; // endpoint → already handled as vertex
+      const px = ox + t * dx, py = oy + t * dy;
+      const de = (px - hx) * (px - hx) + (py - hy) * (py - hy);
+      if (de < bestD) { bestD = de; best = i; bestIsEdge = true; bestT = t; }
     }
     if (best < 0) return outer; // give up → caller falls back to originals
-    // Splice: ...outer[best], hole(bi..end..bi), outer[best], ...
+
+    // If the nearest point is on an edge interior, insert a new vertex there.
+    let insertAt: number;
+    if (bestIsEdge) {
+      const j = (best + 1) % poly.length;
+      const newVtx = vx.length;
+      const t = bestT;
+      vx.push(vx[poly[best]] + t * (vx[poly[j]] - vx[poly[best]]));
+      vy.push(vy[poly[best]] + t * (vy[poly[j]] - vy[poly[best]]));
+      vz.push(vz[poly[best]] + t * (vz[poly[j]] - vz[poly[best]]));
+      // Insert the new vertex into the outer loop after position `best`.
+      poly = poly.slice(0, best + 1).concat([newVtx], poly.slice(best + 1));
+      insertAt = best + 1; // newVtx is now poly[insertAt]
+    } else {
+      insertAt = best;
+    }
+
+    // Splice the hole into poly at insertAt (keyhole bridge).
     const rot = h.slice(bi).concat(h.slice(0, bi));
-    const merged = poly.slice(0, best + 1)
-      .concat([rot[0]], rot.slice(1), [rot[0]], [poly[best]], poly.slice(best + 1));
+    const merged = poly.slice(0, insertAt + 1)
+      .concat([rot[0]], rot.slice(1), [rot[0]], [poly[insertAt]], poly.slice(insertAt + 1));
     poly = merged;
   }
   return poly;
