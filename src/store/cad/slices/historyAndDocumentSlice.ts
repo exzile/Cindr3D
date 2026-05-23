@@ -7,6 +7,7 @@ import { snapshotCADState } from '../historyUtils';
 import type { CADSliceContext } from '../sliceContext';
 import type { CADState } from '../state';
 import type { DesignConfiguration } from '../state/coreState';
+import { clearAllEdgeCutSources, evictEdgeCutSource } from './featureManagement/applyEdgeCut';
 
 type HistorySketch = Sketch & {
   planeNormal: [number, number, number] | null;
@@ -120,6 +121,13 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
         ? deserializeSketch(parsed.activeSketch as unknown as Sketch)
         : null;
       restoreComponentStoreSnapshot(parsed.componentStore);
+      // Evict src-geo cache for fillet/chamfer features removed by this undo.
+      const restoredIds = new Set(parsed.features.map((f: Feature) => f.id));
+      for (const f of state.features) {
+        if ((f.type === 'fillet' || f.type === 'chamfer') && !restoredIds.has(f.id)) {
+          evictEdgeCutSource(f.id);
+        }
+      }
       set({
         undoStack: stack,
         redoStack: [...state.redoStack, currentSnapshot],
@@ -169,6 +177,13 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
         ? deserializeSketch(parsed.activeSketch as unknown as Sketch)
         : null;
       restoreComponentStoreSnapshot(parsed.componentStore);
+      // Evict src-geo cache for fillet/chamfer features removed by this redo.
+      const restoredIdsRedo = new Set(parsed.features.map((f: Feature) => f.id));
+      for (const f of state.features) {
+        if ((f.type === 'fillet' || f.type === 'chamfer') && !restoredIdsRedo.has(f.id)) {
+          evictEdgeCutSource(f.id);
+        }
+      }
       set({
         redoStack: stack,
         undoStack: [...state.undoStack, currentSnapshot],
@@ -430,6 +445,7 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
 
   // ── UTL2 — Save / Load ───────────────────────────────────────────────────
   newDocument: () => {
+    clearAllEdgeCutSources();
     set({
       // Geometry content
       features: [],
@@ -488,6 +504,7 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
   },
 
   loadFromFile: (json: string) => {
+    clearAllEdgeCutSources();
     try {
       const parsed = JSON.parse(json) as {
         version: number;

@@ -131,7 +131,7 @@ export default function EdgeOpPreview({
   // liveBodyMeshes is a module-level mutable Map; the meshUuid identity drives
   // re-runs through `debouncedEdgeIds`, and a remount swaps the uuid → memo
   // re-runs. enabled gate keeps preview disabled state cheap.
-  }, [enabled, debouncedEdgeIds]);
+  }, [enabled, debouncedEdgeIds, toolType]);
 
   // Keep stable refs to scene-mutable state so the worker message handler
   // (created once on mount) always reads current values without being recreated.
@@ -365,6 +365,8 @@ export default function EdgeOpPreview({
         previewMeshRef.current.geometry.dispose();
         previewMeshRef.current = null;
       }
+      srcGeoCacheRef.current?.geo.dispose();
+      srcGeoCacheRef.current = null;
     };
 
     if (!parsedAndClustered || !(liveValue > 0)) {

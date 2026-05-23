@@ -80,6 +80,11 @@ export function evictEdgeCutSource(featureId: string): void {
   if (entry) { entry.dispose(); _srcGeoCache.delete(featureId); }
 }
 
+export function clearAllEdgeCutSources(): void {
+  for (const geo of _srcGeoCache.values()) geo.dispose();
+  _srcGeoCache.clear();
+}
+
 export function applyEdgeCut(store: CADSliceContext, spec: EdgeCutSpec): void {
   const { get, set } = store;
   const { tool, edgeIds, sizeValid, parse, compute, pastVerb, sizeLabel } = spec;

@@ -156,10 +156,11 @@ export default function EdgeOpGizmo({
     invalidate();
   });
 
-  // When the gizmo direction or centroid changes (different edges picked), the
-  // cached "last value" is stale relative to the new orientation — force a
-  // recompute next frame by clearing the guard.
+  // When the gizmo direction or centroid changes (different edges picked), or
+  // the gizmo becomes active (dialog opened / edges added), the cached "last
+  // value" is stale — force a recompute next frame by clearing the guard.
   useEffect(() => { lastAppliedValueRef.current = null; }, [gizmoDir, edgeCentroid]);
+  useEffect(() => { lastAppliedValueRef.current = null; }, [active]);
 
   const rayToAxis = useCallback((ndc: THREE.Vector2): number | null => {
     _scratchRay.origin.setFromMatrixPosition(camera.matrixWorld);

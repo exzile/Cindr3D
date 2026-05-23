@@ -1533,7 +1533,9 @@ export function computeEdgeCutGeometry(
     if (savedTopology?.edges?.length) creased.userData.displayTopology = { edges: savedTopology.edges };
     else if (retainedDisplayEdges.length) creased.userData.displayTopology = { edges: retainedDisplayEdges };
     if (ghostEdges.length > 0) creased.userData.ghostTopology = { edges: ghostEdges };
-    solid.dispose();
+    // Guard: toCreasedNormals typically returns a new geometry, but defensively
+    // check identity before disposing so we never double-dispose the solid.
+    if (creased !== solid) solid.dispose();
     solid = creased;
   } catch {
     solid.computeVertexNormals();

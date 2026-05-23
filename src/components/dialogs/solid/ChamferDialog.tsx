@@ -21,9 +21,11 @@ interface ChamferDialogProps {
   onRemoveEdge: (id: string) => void;
   onClose: () => void;
   onConfirm: (params: ChamferParams) => void;
+  /** When editing an existing chamfer, seed all fields from the stored params. */
+  initialParams?: Record<string, unknown>;
 }
 
-function ChamferDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClose, onConfirm }: ChamferDialogProps) {
+function ChamferDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClose, onConfirm, initialParams }: ChamferDialogProps) {
   // Memo edge labels: the dialog re-renders on every chamferLiveDistance
   // change (gizmo drag, ~60Hz), but edgeIds only changes when the user adds
   // or removes an edge.
@@ -32,15 +34,15 @@ function ChamferDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClo
   // reflects the distance while the user drags the on-canvas handle.
   const chamferLiveDistance = useCADStore((s) => s.chamferLiveDistance);
   const setChamferLiveDistance = useCADStore((s) => s.setChamferLiveDistance);
-  const [mode, setMode] = useState<ChamferMode>('equal-dist');
-  const [distance, setDistance] = useState(() => chamferLiveDistance);
-  // Sync gizmo drag → dialog input (no loop: input onChange only fires on user events).
-  useEffect(() => { setDistance(chamferLiveDistance); }, [chamferLiveDistance]);
-  const [distance2, setDistance2] = useState(2);
-  const [angle, setAngle] = useState(45);
-  const [propagate, setPropagate] = useState(true);
-  const [isFlipped, setIsFlipped] = useState(false);
-  const [cornerType, setCornerType] = useState<ChamferCornerType>('patch');
+  const [mode, setMode] = useState<ChamferMode>(() => (initialParams?.mode as ChamferMode | undefined) ?? 'equal-dist');
+  const [distance, setDistance] = useState(() => (initialParams?.distance as number | undefined) ?? chamferLiveDistance);
+  // Sync gizmo drag → dialog input only when not editing (initialParams seeds the stored value).
+  useEffect(() => { if (!initialParams) setDistance(chamferLiveDistance); }, [chamferLiveDistance, initialParams]);
+  const [distance2, setDistance2] = useState(() => (initialParams?.distance2 as number | undefined) ?? 2);
+  const [angle, setAngle] = useState(() => (initialParams?.angle as number | undefined) ?? 45);
+  const [propagate, setPropagate] = useState(() => (initialParams?.propagate as boolean | undefined) ?? true);
+  const [isFlipped, setIsFlipped] = useState(() => (initialParams?.isFlipped as boolean | undefined) ?? false);
+  const [cornerType, setCornerType] = useState<ChamferCornerType>(() => (initialParams?.cornerType as ChamferCornerType | undefined) ?? 'patch');
 
   if (!open) return null;
 
@@ -253,12 +255,14 @@ export function ChamferDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <ChamferDialogUI
+      key={editingFeatureId ?? 'new'}
       open={true}
       selectedEdgeCount={chamferEdgeIds.length}
       edgeIds={chamferEdgeIds}
       onRemoveEdge={removeChamferEdge}
       onClose={onClose}
       onConfirm={handleConfirm}
+      initialParams={editing ? (p as Record<string, unknown>) : undefined}
     />
   );
 }

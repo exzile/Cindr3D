@@ -88,12 +88,14 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
   const [mode, setMode] = useState<FilletMode>(() => (initialParams?.mode as FilletMode | undefined) ?? 'constant');
 
   // When full-round mode is selected, automatically switch to face-pick mode.
-  // filletPickMode is included in deps so the effect re-evaluates when it
-  // changes externally (e.g. store reset on dialog open), preventing stale reads.
+  // Guards prevent the setter from firing when the state is already correct.
+  // setFilletPickMode is a stable Zustand action and intentionally excluded
+  // from the deps array to avoid spurious re-runs.
   useEffect(() => {
-    if (mode === 'full-round') setFilletPickMode('face');
-    else if (filletPickMode === 'face') setFilletPickMode('edge');
-  }, [mode, filletPickMode, setFilletPickMode]);
+    if (mode === 'full-round' && filletPickMode !== 'face') setFilletPickMode('face');
+    else if (mode !== 'full-round' && filletPickMode === 'face') setFilletPickMode('edge');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, filletPickMode]);
   const [startRadius, setStartRadius] = useState(() => (initialParams?.startRadius as number | undefined) ?? 1);
   const [endRadius, setEndRadius] = useState(() => (initialParams?.endRadius as number | undefined) ?? 4);
   const [chordLength, setChordLength] = useState(() => (initialParams?.chordLength as number | undefined) ?? 5);
