@@ -55,6 +55,7 @@ export interface ComponentStore {
   setBodyMaterial: (id: string, material: MaterialAppearance) => void;
   setBodyMesh: (id: string, mesh: THREE.Mesh | THREE.Group) => void;
   addFeatureToBody: (bodyId: string, featureId: string) => void;
+  removeFeatureFromBody: (bodyId: string, featureId: string) => void;
   setBodyOpacity: (id: string, opacity: number) => void;
   toggleBodySelectable: (id: string) => void;
   mirrorBody: (bodyId: string, plane: 'XY' | 'XZ' | 'YZ') => string | null;

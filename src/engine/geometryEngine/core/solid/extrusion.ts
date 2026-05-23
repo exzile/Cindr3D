@@ -281,9 +281,13 @@ export function buildExtrudeFeatureMesh(
     meshNeg.updateMatrixWorld(true);
     const gPos = meshPos.geometry.clone().applyMatrix4(meshPos.matrixWorld);
     const gNeg = meshNeg.geometry.clone().applyMatrix4(meshNeg.matrixWorld);
-    const merged = csgUnion(gPos, gNeg);
-    gPos.dispose();
-    gNeg.dispose();
+    let merged: THREE.BufferGeometry;
+    try {
+      merged = csgUnion(gPos, gNeg);
+    } finally {
+      gPos.dispose();
+      gNeg.dispose();
+    }
     meshPos.geometry.dispose();
     meshNeg.geometry.dispose();
     const result = new THREE.Mesh(merged, BODY_MATERIAL);

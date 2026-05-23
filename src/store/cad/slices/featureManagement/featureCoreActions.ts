@@ -232,11 +232,17 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
     if (target?.bodyId) {
       const componentStore = useComponentStore.getState();
       const body = componentStore.bodies[target.bodyId];
-      if (body && body.featureIds.length > 0 && body.featureIds.every((fid) => fid === id)) {
-        // Evict the bodyId-keyed geometry cache entry when the body is fully removed.
-        bodyIdGeometryCache.get(target.bodyId)?.dispose();
-        bodyIdGeometryCache.delete(target.bodyId);
-        componentStore.removeBody(target.bodyId);
+      if (body) {
+        const remaining = body.featureIds.filter((fid) => fid !== id);
+        if (remaining.length === 0) {
+          // Last feature in this body — remove the body entirely.
+          bodyIdGeometryCache.get(target.bodyId)?.dispose();
+          bodyIdGeometryCache.delete(target.bodyId);
+          componentStore.removeBody(target.bodyId);
+        } else {
+          // Other features still own this body — just unlink this feature.
+          componentStore.removeFeatureFromBody(target.bodyId, id);
+        }
       }
     }
 

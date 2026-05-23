@@ -63,7 +63,13 @@ export function snapFitGeometry(
   base.translate(baseLen / 2 - baseLen * 0.5, baseH / 2, 0);
   created.push(base);
 
-  let solid = csgUnion(beam, base);
+  let solid: THREE.BufferGeometry;
+  try {
+    solid = csgUnion(beam, base);
+  } catch (err) {
+    for (const g of created) g.dispose();
+    throw err;
+  }
 
   // ── Hook / barb at the free end ──────────────────────────────────────────
   if (O > 1e-3) {
@@ -94,7 +100,14 @@ export function snapFitGeometry(
     barb.translate(0, 0, -W / 2);
     created.push(barb);
 
-    const withHook = csgUnion(solid, barb);
+    let withHook: THREE.BufferGeometry;
+    try {
+      withHook = csgUnion(solid, barb);
+    } catch (err) {
+      solid.dispose();
+      for (const g of created) g.dispose();
+      throw err;
+    }
     solid.dispose();
     solid = withHook;
   }
