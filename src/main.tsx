@@ -34,7 +34,7 @@ import { initManifold } from './engine/geometryEngine/core/solid/manifoldWasm';
 // means fillet/chamfer/extrude CSG ops that follow app load don't stall. Falls
 // back to three-bvh-csg gracefully if this fails (bad network, CSP, etc.).
 void initManifold().catch(() => {
-  console.warn('[main] Manifold WASM init failed — CSG will use three-bvh-csg fallback');
+  console.warn('[main] manifold× → bvh-fbk');
 });
 
 createRoot(document.getElementById('root')!).render(

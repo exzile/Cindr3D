@@ -1307,7 +1307,7 @@ export function computeEdgeCutGeometry(
               }
             } catch (err) {
               loopCutter.dispose();
-              console.error(`[${tag}] loop cutter csgSubtract threw — falling back:`, err);
+              console.error(`[${tag}] loop-CSG× → seg-fbk:`, err instanceof Error ? err.message : err);
             }
           }
         }
@@ -1341,7 +1341,7 @@ export function computeEdgeCutGeometry(
     // without visibly notching the adjacent faces.
     const edgeEps = Math.max(re.length * 1e-3, 1e-4);
     const cutter = makeCutter(re, edgeEps);
-    if (!cutter) { console.warn(`[${tag}] degenerate dihedral — edge skipped`); failedSegCount++; continue; }
+    if (!cutter) { console.warn(`[${tag}] skip:degen-phi`); failedSegCount++; continue; }
     // three-bvh-csg can throw on degenerate / non-manifold inputs. Catch so
     // one bad edge doesn't abort the whole commit (which would also skip the
     // dialog's onClose).
@@ -1354,7 +1354,7 @@ export function computeEdgeCutGeometry(
       // weld + topology on every call — redundant and expensive for N>1 cuts.
       next = csgSubtractRaw(solid, cutter);
     } catch (err) {
-      console.error(`[${tag}] csgSubtract threw — edge skipped:`, err);
+      console.error(`[${tag}] CSG×:`, err instanceof Error ? err.message : err);
       failedSegCount++;
     }
     cutter.dispose();
@@ -1378,7 +1378,7 @@ export function computeEdgeCutGeometry(
       next.dispose();
       solid = cleaned;
     } catch (err) {
-      console.error(`[${tag}] weld/clean failed — keeping raw CSG result:`, err);
+      console.error(`[${tag}] weld× → raw:`, err instanceof Error ? err.message : err);
       solid = next;
     }
     cut++;
@@ -1386,7 +1386,7 @@ export function computeEdgeCutGeometry(
   }
 
   if (cut === 0) {
-    console.warn(`[${tag}] no edges cut → returning null`);
+    console.warn(`[${tag}] 0 cuts (fail=${failedSegCount}) → null`);
     solid.dispose();
     return null;
   }
@@ -1468,7 +1468,7 @@ export function computeEdgeCutGeometry(
       solid.dispose();
       solid = cleaned;
     } catch (err) {
-      console.error(`[${tag}] final weld/clean failed:`, err);
+      console.error(`[${tag}] final-weld×:`, err instanceof Error ? err.message : err);
     }
   }
 
@@ -1476,7 +1476,7 @@ export function computeEdgeCutGeometry(
   // entire body) — storing an empty mesh looks like the body vanished.
   const posCount = (solid.attributes.position as THREE.BufferAttribute | undefined)?.count ?? 0;
   if (posCount === 0) {
-    console.warn(`[${tag}] CSG produced empty geometry (size too large?) → null`);
+    console.warn(`[${tag}] CSG→empty → null`);
     solid.dispose();
     return null;
   }

@@ -34,7 +34,7 @@ import type { PickedEdge } from '../utils/geometry/edgeCutCore';
 const _manifoldReady: Promise<void> = initManifold()
   .then(() => undefined)
   .catch(() => {
-    console.warn('[edgeOpWorker] Manifold WASM init failed — using three-bvh-csg fallback');
+    console.warn('[edgeOpWorker] manifold× → bvh-fbk');
   });
 
 interface EdgeData {

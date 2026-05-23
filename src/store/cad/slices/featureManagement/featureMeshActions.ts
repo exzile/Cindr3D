@@ -510,7 +510,7 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
     const edgeIdsStr = typeof params.edgeIds === 'string' ? params.edgeIds : '';
     const edgeIds = edgeIdsStr.split(',').filter(Boolean);
     if (edgeIds.length === 0) {
-      get().setStatusMessage(`Edit ${feature.type}: no edge IDs stored`);
+      get().setStatusMessage(`${feature.type}: no edgeIds stored`);
       return;
     }
 
@@ -539,7 +539,7 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
       }
     }
     if (!srcGeo) {
-      get().setStatusMessage(`Edit ${feature.type}: source geometry unavailable — re-apply the operation`);
+      get().setStatusMessage(`${feature.type}: srcGeo unavailable — re-apply`);
       return;
     }
 
@@ -570,10 +570,10 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
     srcGeo.dispose();
 
     if (!newGeo) {
-      get().setStatusMessage(`Edit ${feature.type}: geometry computation failed`);
+      get().setStatusMessage(`${feature.type}: CSG failed`);
       set((state) => ({
         features: state.features.map((f) =>
-          f.id === featureId ? { ...f, healthState: 'error' as const, healthMessage: 'CSG failed — try adjusting the radius or edges' } : f,
+          f.id === featureId ? { ...f, healthState: 'error' as const, healthMessage: 'CSG× — adjust radius/edges' } : f,
         ),
       }));
       return;

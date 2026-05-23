@@ -63,11 +63,11 @@ export function applyEdgeCut(store: CADSliceContext, spec: EdgeCutSpec): void {
   const { tool, edgeIds, sizeValid, parse, compute, pastVerb, sizeLabel } = spec;
 
   if (!sizeValid || edgeIds.length === 0) {
-    get().setStatusMessage(`${tool}: pick edges and set a size > 0`);
+    get().setStatusMessage(`${tool}: select edges + size > 0`);
     return;
   }
   const parsed = parse(edgeIds);
-  if (!parsed) { get().setStatusMessage(`${tool}: no valid edges parsed`); return; }
+  if (!parsed) { get().setStatusMessage(`${tool}: no edges parsed`); return; }
   const { featureId: targetFid, meshUuid: targetMeshUuid, edges } = parsed;
 
   const features = get().features;
@@ -75,7 +75,7 @@ export function applyEdgeCut(store: CADSliceContext, spec: EdgeCutSpec): void {
     ? features.find((f) => f.id === targetFid)
     : features.find((f) => f.mesh instanceof THREE.Mesh && (f.mesh as THREE.Object3D).uuid === targetMeshUuid);
   if (!feature) {
-    get().setStatusMessage(`${tool}: selected edges are not on a solid/surface body`);
+    get().setStatusMessage(`${tool}: edges not on a solid body`);
     return;
   }
 
@@ -87,7 +87,7 @@ export function applyEdgeCut(store: CADSliceContext, spec: EdgeCutSpec): void {
 
   if (!newGeo) {
     srcGeo.dispose();
-    get().setStatusMessage(`${tool}: no eligible edges (need an edge shared by two faces)`);
+    get().setStatusMessage(`${tool}: no 2-face edges found`);
     return;
   }
 

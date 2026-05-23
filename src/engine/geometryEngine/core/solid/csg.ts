@@ -94,7 +94,7 @@ function _toManifold(geo: THREE.BufferGeometry): any | null {
     return new (wasm as any).Manifold(mesh);
   } catch (err) {
     // Non-manifold input: Manifold throws 'NotManifold'. Fall back.
-    console.warn('[csg] Manifold rejected input (non-manifold?), using fallback:', err);
+    console.warn('[csg] manifold×(non-manifold?) → fbk:', err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -145,7 +145,7 @@ function _manifoldSubtract(
     if (typeof mb.delete === 'function') mb.delete();
     return _fromManifold(result);
   } catch (err) {
-    console.warn('[csg] Manifold subtract failed, using fallback:', err);
+    console.warn('[csg] sub× → fbk:', err instanceof Error ? err.message : err);
     if (typeof ma.delete === 'function') ma.delete();
     if (typeof mb.delete === 'function') mb.delete();
     return null;
@@ -166,7 +166,7 @@ function _manifoldUnion(
     if (typeof mb.delete === 'function') mb.delete();
     return _fromManifold(result);
   } catch (err) {
-    console.warn('[csg] Manifold union failed, using fallback:', err);
+    console.warn('[csg] union× → fbk:', err instanceof Error ? err.message : err);
     if (typeof ma.delete === 'function') ma.delete();
     if (typeof mb.delete === 'function') mb.delete();
     return null;
@@ -187,7 +187,7 @@ function _manifoldIntersect(
     if (typeof mb.delete === 'function') mb.delete();
     return _fromManifold(result);
   } catch (err) {
-    console.warn('[csg] Manifold intersect failed, using fallback:', err);
+    console.warn('[csg] intersect× → fbk:', err instanceof Error ? err.message : err);
     if (typeof ma.delete === 'function') ma.delete();
     if (typeof mb.delete === 'function') mb.delete();
     return null;
