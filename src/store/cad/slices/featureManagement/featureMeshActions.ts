@@ -606,8 +606,6 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
       ),
       statusMessage: `Updated ${feature.type}`,
     }));
-    // Update session source cache with the same source
-    if (cached) cacheEdgeCutSource(featureId, cached.clone());
   },
 
   // SLD12 Ã¢â‚¬â€ commitCombine: boolean op on two feature meshes

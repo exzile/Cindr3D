@@ -114,7 +114,7 @@ function faceInradius(boundary: THREE.Vector3[], centroid: THREE.Vector3): numbe
     const dist = centroid.distanceTo(a.clone().addScaledVector(_seg, t));
     if (dist < minDist) minDist = dist;
   }
-  return minDist === Infinity ? 0 : minDist;
+  return Math.max(0.01, minDist === Infinity ? 0 : minDist);
 }
 
 function isCurvedEdge(edge: { polyline?: THREE.Vector3[] } | EdgePickResult): boolean {

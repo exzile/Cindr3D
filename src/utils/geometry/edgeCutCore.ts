@@ -179,17 +179,24 @@ export function parseEdgeIds(edgeIds: string[]): ParsedEdges | null {
   // to find the mesh whose userData.featureId matches. This makes edge IDs survive
   // session reloads / mesh remounts where the THREE.js UUID changes but the
   // feature identity is preserved.
+  // Two-pass: collect remaps first, then apply — avoids mutating the Map during iteration.
+  const _remaps: Array<[string, string]> = [];
   for (const group of byMesh.values()) {
     if (!liveBodyMeshes.has(group.meshUuid) && group.featureId) {
       for (const [uuid, mesh] of liveBodyMeshes.entries()) {
         if ((mesh.userData?.featureId as string | undefined) === group.featureId) {
-          // Remap to the current live UUID so the commit path finds the mesh.
-          byMesh.delete(group.meshUuid);
-          group.meshUuid = uuid;
-          byMesh.set(uuid, group);
+          _remaps.push([group.meshUuid, uuid]);
           break;
         }
       }
+    }
+  }
+  for (const [oldUuid, newUuid] of _remaps) {
+    const group = byMesh.get(oldUuid);
+    if (group) {
+      group.meshUuid = newUuid;
+      byMesh.delete(oldUuid);
+      byMesh.set(newUuid, group);
     }
   }
 

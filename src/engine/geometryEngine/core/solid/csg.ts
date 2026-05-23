@@ -207,7 +207,13 @@ function _bvhSubtract(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.B
   const nonIndexed = result.geometry.index
     ? result.geometry.toNonIndexed()
     : result.geometry;
-  nonIndexed.computeVertexNormals();
+  try {
+    nonIndexed.computeVertexNormals();
+  } catch (err) {
+    nonIndexed.dispose();
+    if (nonIndexed !== result.geometry) result.geometry.dispose();
+    throw err;
+  }
   if (nonIndexed !== result.geometry) result.geometry.dispose();
   return nonIndexed;
 }
@@ -220,7 +226,12 @@ function _bvhUnion(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.Buff
   brushA.updateMatrixWorld();
   brushB.updateMatrixWorld();
   const result = _csgEvaluator.evaluate(brushA, brushB, ADDITION);
-  result.geometry.computeVertexNormals();
+  try {
+    result.geometry.computeVertexNormals();
+  } catch (err) {
+    result.geometry.dispose();
+    throw err;
+  }
   return result.geometry;
 }
 
@@ -232,7 +243,12 @@ function _bvhIntersect(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.
   brushA.updateMatrixWorld();
   brushB.updateMatrixWorld();
   const result = _csgEvaluator.evaluate(brushA, brushB, INTERSECTION);
-  result.geometry.computeVertexNormals();
+  try {
+    result.geometry.computeVertexNormals();
+  } catch (err) {
+    result.geometry.dispose();
+    throw err;
+  }
   return result.geometry;
 }
 

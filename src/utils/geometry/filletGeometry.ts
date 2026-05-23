@@ -122,8 +122,9 @@ function buildFilletCutter(
   const tanHalf = Math.tan(half);
   if (sinHalf < 1e-4 || tanHalf < 1e-4) return null;
 
-  const leftHanded =
-    new THREE.Matrix4().makeBasis(u1, edgeDir, u2).determinant() < 0;
+  const det = new THREE.Matrix4().makeBasis(u1, edgeDir, u2).determinant();
+  if (Math.abs(det) < 1e-9) return null; // degenerate basis — u1/u2 nearly parallel
+  const leftHanded = det < 0;
   const axisX = leftHanded ? u2 : u1;
   const axisZ = leftHanded ? u1 : u2;
   const d1 = leftHanded ? (offsetTwo ?? 0) : (offsetOne ?? 0);
@@ -394,8 +395,9 @@ function buildG2FilletCutter(
 
   const sb = radius / tanHalf;
 
-  const leftHanded =
-    new THREE.Matrix4().makeBasis(u1, edgeDir, u2).determinant() < 0;
+  const det = new THREE.Matrix4().makeBasis(u1, edgeDir, u2).determinant();
+  if (Math.abs(det) < 1e-9) return null; // degenerate basis — u1/u2 nearly parallel
+  const leftHanded = det < 0;
   const axisX = leftHanded ? u2 : u1;
   const axisZ = leftHanded ? u1 : u2;
 

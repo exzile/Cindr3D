@@ -67,9 +67,11 @@ interface FilletDialogProps {
   onRemoveEdge: (id: string) => void;
   onClose: () => void;
   onConfirm: (params: FilletParams) => void;
+  /** When editing an existing fillet, seed all fields from the stored params. */
+  initialParams?: Record<string, unknown>;
 }
 
-function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClose, onConfirm }: FilletDialogProps) {
+function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClose, onConfirm, initialParams }: FilletDialogProps) {
   // Memo the edge labels: the dialog re-renders on every filletLiveRadius
   // change (gizmo drag, ~60Hz), but edgeIds only changes when the user
   // adds/removes an edge. Memoising keeps the rendered list cheap.
@@ -80,33 +82,32 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
   const setFilletLiveRadius = useCADStore((s) => s.setFilletLiveRadius);
   const filletPickMode = useCADStore((s) => s.filletPickMode);
   const setFilletPickMode = useCADStore((s) => s.setFilletPickMode);
-  const [radius, setRadius] = useState(() => filletLiveRadius);
+  const [radius, setRadius] = useState(() => (initialParams?.radius as number | undefined) ?? filletLiveRadius);
   // Sync gizmo drag and face-pick auto-radius → dialog input.
   useEffect(() => { setRadius(filletLiveRadius); }, [filletLiveRadius]);
-  const [mode, setMode] = useState<FilletMode>('constant');
+  const [mode, setMode] = useState<FilletMode>(() => (initialParams?.mode as FilletMode | undefined) ?? 'constant');
 
   // When full-round mode is selected, automatically switch to face-pick mode.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // filletPickMode is included in deps so the effect re-evaluates when it
+  // changes externally (e.g. store reset on dialog open), preventing stale reads.
   useEffect(() => {
     if (mode === 'full-round') setFilletPickMode('face');
     else if (filletPickMode === 'face') setFilletPickMode('edge');
-  // Only react to mode changes, not filletPickMode (would cause a loop).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
-  const [startRadius, setStartRadius] = useState(1);
-  const [endRadius, setEndRadius] = useState(4);
-  const [chordLength, setChordLength] = useState(5);
-  const [offsetOne, setOffsetOne] = useState(2);
-  const [offsetTwo, setOffsetTwo] = useState(3);
-  const [isFlipped, setIsFlipped] = useState(false);
-  const [setback, setSetback] = useState(false);
-  const [setbackDistance, setSetbackDistance] = useState(1);
-  const [isRollingBallCorner, setIsRollingBallCorner] = useState(false);
-  const [propagate, setPropagate] = useState(true);
-  const [isG2, setIsG2] = useState(false);
-  const [tangencyWeight, setTangencyWeight] = useState(1.0);
+  }, [mode, filletPickMode, setFilletPickMode]);
+  const [startRadius, setStartRadius] = useState(() => (initialParams?.startRadius as number | undefined) ?? 1);
+  const [endRadius, setEndRadius] = useState(() => (initialParams?.endRadius as number | undefined) ?? 4);
+  const [chordLength, setChordLength] = useState(() => (initialParams?.chordLength as number | undefined) ?? 5);
+  const [offsetOne, setOffsetOne] = useState(() => (initialParams?.offsetOne as number | undefined) ?? 2);
+  const [offsetTwo, setOffsetTwo] = useState(() => (initialParams?.offsetTwo as number | undefined) ?? 3);
+  const [isFlipped, setIsFlipped] = useState(() => (initialParams?.isFlipped as boolean | undefined) ?? false);
+  const [setback, setSetback] = useState(() => (initialParams?.setback as boolean | undefined) ?? false);
+  const [setbackDistance, setSetbackDistance] = useState(() => (initialParams?.setbackDistance as number | undefined) ?? 1);
+  const [isRollingBallCorner, setIsRollingBallCorner] = useState(() => (initialParams?.isRollingBallCorner as boolean | undefined) ?? false);
+  const [propagate, setPropagate] = useState(() => (initialParams?.propagate as boolean | undefined) ?? true);
+  const [isG2, setIsG2] = useState(() => (initialParams?.isG2 as boolean | undefined) ?? false);
+  const [tangencyWeight, setTangencyWeight] = useState(() => (initialParams?.tangencyWeight as number | undefined) ?? 1.0);
   // CORR-3: per-edge edge sets — optional, appended below the global mode
-  const [edgeSets, setEdgeSets] = useState<FilletEdgeSet[]>([]);
+  const [edgeSets, setEdgeSets] = useState<FilletEdgeSet[]>(() => (initialParams?.edgeSets as FilletEdgeSet[] | undefined) ?? []);
   const [showEdgeSets, setShowEdgeSets] = useState(false);
 
   if (!open) return null;
@@ -593,12 +594,14 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <FilletDialogUI
+      key={editingFeatureId ?? 'new'}
       open={true}
       selectedEdgeCount={filletEdgeIds.length || existingEdgeIds.length}
       edgeIds={filletEdgeIds}
       onRemoveEdge={removeFilletEdge}
       onClose={onClose}
       onConfirm={handleConfirm}
+      initialParams={editing ? (p as Record<string, unknown>) : undefined}
     />
   );
 }
