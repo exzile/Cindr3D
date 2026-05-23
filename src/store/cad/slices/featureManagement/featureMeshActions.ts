@@ -688,6 +688,15 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
         statusMessage: `Combine (${operation}) created with editable parents`,
       };
     });
+    // Free GPU buffers for suppressed source meshes. THREE.js dispose() only
+    // triggers the renderer to release WebGL buffers — the CPU-side Float32Arrays
+    // remain, so recomputeBooleanDependents can still read geometry for CSG.
+    if (!keepTool) {
+      setTimeout(() => {
+        tgtMesh.geometry.dispose();
+        toolMesh.geometry.dispose();
+      }, 0);
+    }
   },
 
   // SLD17 Ã¢â‚¬â€ commitMirrorFeature: mirror a feature's mesh across a plane
