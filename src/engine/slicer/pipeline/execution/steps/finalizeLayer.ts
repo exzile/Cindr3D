@@ -289,6 +289,8 @@ export function finalizeLayer(
         emitter.currentX = line.to.x; emitter.currentY = line.to.y;
         moves.push({ type: 'ironing', from: { x: line.from.x, y: line.from.y }, to: { x: line.to.x, y: line.to.y }, speed: pp.ironingSpeed, extrusion: e, lineWidth: pp.ironingSpacing });
       }
+      // Retract after ironing so the nozzle doesn't ooze during the Z move to the next layer.
+      emitter.retract();
     }
   }
 
