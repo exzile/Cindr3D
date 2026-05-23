@@ -61,10 +61,16 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
         setDrawingPoints([sketchPoint]);
         setStatusMessage(`${lineLabel} start placed — click to set end point (right-click to cancel)`);
       } else {
+        const p0 = drawingPoints[0];
+        const dx = sketchPoint.x - p0.x, dy = sketchPoint.y - p0.y, dz = sketchPoint.z - p0.z;
+        if (Math.sqrt(dx * dx + dy * dy + dz * dz) < 1e-6) {
+          setStatusMessage('Line too short — click a different location');
+          break;
+        }
         const entity: SketchEntity = {
           id: crypto.randomUUID(),
           type: activeTool,
-          points: [drawingPoints[0], sketchPoint],
+          points: [p0, sketchPoint],
         };
         addSketchEntity(entity);
         setDrawingPoints([sketchPoint]); // Chain lines — next start = this end

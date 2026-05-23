@@ -40,6 +40,7 @@ export function DecalDialog({ open, onOk, onClose, faceId }: Props) {
     reader.onload = () => {
       if (typeof reader.result === 'string') setImageUrl(reader.result);
     };
+    reader.onerror = () => { setImageUrl(''); };
     reader.readAsDataURL(file); // data: URL — consumed by THREE.TextureLoader
   };
 
