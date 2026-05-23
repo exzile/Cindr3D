@@ -148,6 +148,11 @@ export function applyEdgeCut(store: CADSliceContext, spec: EdgeCutSpec): void {
 
     logEdgeCutSummary(tool, edgeCutFid, sizeLabel, totalCount, successCount, failedCount, 'live', t0, failedCount > 0 ? 'warning' : 'ok');
 
+    // Capture old geometry BEFORE pushUndo so we can defer-dispose it after state
+    // is updated (gives R3F a render cycle to unmount the old mesh first).
+    const prevEdgeCutMesh = get().features.find((f) => f.id === edgeCutFid)?.mesh;
+    const prevGeo = prevEdgeCutMesh instanceof THREE.Mesh ? prevEdgeCutMesh.geometry : null;
+
     get().pushUndo();
     set((state) => ({
       features: state.features.map((f) => {
@@ -164,6 +169,7 @@ export function applyEdgeCut(store: CADSliceContext, spec: EdgeCutSpec): void {
       }),
       statusMessage,
     }));
+    if (prevGeo && prevGeo !== newGeo) setTimeout(() => prevGeo.dispose(), 0);
     return;
   }
 

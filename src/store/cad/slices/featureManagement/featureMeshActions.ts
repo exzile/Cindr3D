@@ -586,6 +586,7 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
 
     // Keep existing material if possible
     const existingMesh = feature.mesh instanceof THREE.Mesh ? (feature.mesh as THREE.Mesh) : null;
+    const prevGeo = existingMesh?.geometry ?? null;
     const mat = existingMesh?.material ?? new THREE.MeshStandardMaterial({ color: 0x5b9bd5, roughness: 0.4, metalness: 0.1 });
     const newMesh = new THREE.Mesh(newGeo, mat);
     newMesh.userData._edgeCutApplied = true;
@@ -610,6 +611,8 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
       ),
       statusMessage: `Updated ${feature.type}`,
     }));
+    // Defer-dispose the replaced geometry after R3F has a cycle to unmount the old mesh.
+    if (prevGeo && prevGeo !== newGeo) setTimeout(() => prevGeo.dispose(), 0);
   },
 
   // SLD12 Ã¢â‚¬â€ commitCombine: boolean op on two feature meshes
