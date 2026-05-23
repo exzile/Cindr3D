@@ -38,6 +38,28 @@ export interface EdgeCutSpec {
   featureId?: string;
 }
 
+/**
+ * One-line structured debug summary for a fillet/chamfer commit or replay.
+ * Format: [op] id=<short-id> <size> edges=<total>→cut=<cut> fail=<fail> src=<src> ms=<ms> → <health>
+ * All fields on one line so a single grep/filter shows the full picture.
+ */
+export function logEdgeCutSummary(
+  tag: string,
+  featureId: string,
+  sizeLabel: string,
+  totalEdges: number,
+  cutEdges: number,
+  failedEdges: number,
+  src: 'cache' | 'parent' | 'bodyCache' | 'live' | 'unknown',
+  startMs: number,
+  health: 'ok' | 'warning' | 'error',
+): void {
+  const id = featureId.slice(-6);
+  const ms = Math.round(performance.now() - startMs);
+  const tag3 = tag.slice(0, 3);
+  console.log(`[${tag3}] id=..${id} ${sizeLabel} edges=${totalEdges}→cut=${cutEdges} fail=${failedEdges} src=${src} ms=${ms} → ${health}`);
+}
+
 /** Session-only source geometry cache keyed by fillet/chamfer feature ID. */
 const _srcGeoCache = new Map<string, THREE.BufferGeometry>();
 
@@ -61,6 +83,7 @@ export function evictEdgeCutSource(featureId: string): void {
 export function applyEdgeCut(store: CADSliceContext, spec: EdgeCutSpec): void {
   const { get, set } = store;
   const { tool, edgeIds, sizeValid, parse, compute, pastVerb, sizeLabel } = spec;
+  const t0 = performance.now();
 
   if (!sizeValid || edgeIds.length === 0) {
     get().setStatusMessage(`${tool}: select edges + size > 0`);
@@ -117,6 +140,8 @@ export function applyEdgeCut(store: CADSliceContext, spec: EdgeCutSpec): void {
     const healthMessage = failedCount > 0
       ? `${failedCount} of ${totalCount} edge(s) could not be processed`
       : undefined;
+
+    logEdgeCutSummary(tool, edgeCutFid, sizeLabel, totalCount, successCount, failedCount, 'live', t0, failedCount > 0 ? 'warning' : 'ok');
 
     get().pushUndo();
     set((state) => ({

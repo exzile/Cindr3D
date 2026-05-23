@@ -7,7 +7,7 @@ import { recomputeBooleanDependents, runBoolean } from './featureBooleanUtils';
 import { errorMessage } from '../../../../utils/errorHandling';
 import { parseFilletEdgeIds, computeFilletGeometry, type FilletCommitParams } from '../../../../utils/geometry/filletGeometry';
 import { parseChamferEdgeIds, computeChamferGeometry, resolveChamferDistances } from '../../../../utils/geometry/chamferGeometry';
-import { applyEdgeCut, cacheEdgeCutSource, getCachedEdgeCutSource } from './applyEdgeCut';
+import { applyEdgeCut, cacheEdgeCutSource, getCachedEdgeCutSource, logEdgeCutSummary } from './applyEdgeCut';
 import { liveBodyMeshes, bodyGeometryCache } from '../../../../store/meshRegistry';
 
 function getBooleanParentIds(feature: Feature): string[] {
@@ -505,6 +505,7 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
     const { features } = get();
     const feature = features.find((f) => f.id === featureId);
     if (!feature || (feature.type !== 'fillet' && feature.type !== 'chamfer')) return;
+    const t0 = performance.now();
 
     const params = feature.params;
     const edgeIdsStr = typeof params.edgeIds === 'string' ? params.edgeIds : '';
@@ -514,28 +515,28 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
       return;
     }
 
-    // Resolve source geometry: session cache > parent mesh > live body meshes
+    // Resolve source geometry: session cache > parent mesh > bodyCache > live mesh
     let srcGeo: THREE.BufferGeometry | null = null;
+    let srcLabel: 'cache' | 'parent' | 'bodyCache' | 'live' | 'unknown' = 'unknown';
     const cached = getCachedEdgeCutSource(featureId);
     if (cached) {
       srcGeo = cached.clone();
+      srcLabel = 'cache';
     } else {
-      // Try parent feature's mesh
       const parentId = (params.parentFeatureId as string | undefined) ?? feature.parentFeatureId;
       const parent = parentId ? features.find((f) => f.id === parentId) : null;
       if (parent?.mesh instanceof THREE.Mesh) {
         srcGeo = parent.mesh.geometry.clone().toNonIndexed();
+        srcLabel = 'parent';
       } else if (parentId) {
-        // Try bodyGeometryCache (populated by ExtrudedBodies for extrudes)
         const cached2 = bodyGeometryCache.get(parentId);
-        if (cached2) srcGeo = cached2.clone().toNonIndexed();
+        if (cached2) { srcGeo = cached2.clone().toNonIndexed(); srcLabel = 'bodyCache'; }
       }
-      // Fallback: try liveBodyMeshes by meshUuid embedded in edge ID
       if (!srcGeo && edgeIds.length > 0) {
         const rest = edgeIds[0].includes('|') ? edgeIds[0].split('|')[1] : edgeIds[0];
         const meshUuid = rest.split(':')[0];
         const liveMesh = liveBodyMeshes.get(meshUuid);
-        if (liveMesh) srcGeo = liveMesh.geometry.clone().toNonIndexed();
+        if (liveMesh) { srcGeo = liveMesh.geometry.clone().toNonIndexed(); srcLabel = 'live'; }
       }
     }
     if (!srcGeo) {
@@ -589,11 +590,18 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
     newMesh.castShadow = true;
     newMesh.receiveShadow = true;
 
+    const failedCount: number = (newGeo.userData.failedEdgeCount as number | undefined) ?? 0;
+    const totalCount: number = (newGeo.userData.totalEdgeCount as number | undefined) ?? edgeIds.length;
+    const sizeLabel = feature.type === 'fillet'
+      ? `r=${(params.radius as number ?? 0).toFixed(1)}`
+      : `d=${(params.distance as number ?? 0).toFixed(1)}`;
+    logEdgeCutSummary(feature.type, featureId, sizeLabel, totalCount, totalCount - failedCount, failedCount, srcLabel, t0, failedCount > 0 ? 'warning' : 'ok');
+
     get().pushUndo();
     set((state) => ({
       features: state.features.map((f) =>
         f.id === featureId
-          ? { ...f, mesh: newMesh, healthState: 'healthy' as const, healthMessage: undefined }
+          ? { ...f, mesh: newMesh, healthState: failedCount > 0 ? 'warning' as const : 'healthy' as const, healthMessage: failedCount > 0 ? `${failedCount} of ${totalCount} edge(s) could not be processed` : undefined }
           : f,
       ),
       statusMessage: `Updated ${feature.type}`,
