@@ -16,6 +16,15 @@ import * as THREE from 'three';
 import type { Feature } from '../../../../types/cad';
 import { liveBodyMeshes } from '../../../../store/meshRegistry';
 
+/** Clone and ensure non-indexed. Avoids the THREE.js "already non-indexed" warning. */
+function cloneNonIndexed(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  const cloned = geo.clone();
+  if (!cloned.index) return cloned;
+  const ni = cloned.toNonIndexed();
+  cloned.dispose();
+  return ni;
+}
+
 export interface BodySource {
   /** Non-indexed, world-space. Caller owns it — dispose after use. */
   srcGeo: THREE.BufferGeometry;
@@ -35,7 +44,7 @@ export function resolveBodySource(
   if (hasMesh) {
     const srcMesh = feature.mesh as THREE.Mesh;
     return {
-      srcGeo: srcMesh.geometry.clone().toNonIndexed(),
+      srcGeo: cloneNonIndexed(srcMesh.geometry),
       srcMaterial: srcMesh.material,
       hasMesh: true,
       oldGeomToDispose: srcMesh.geometry,
@@ -66,7 +75,7 @@ export function resolveBodySource(
       THREE.MathUtils.degToRad(Number(p.rz) || 0),
     ));
     baseGeo.applyMatrix4(new THREE.Matrix4().compose(pos, quat, new THREE.Vector3(1, 1, 1)));
-    const srcGeo = baseGeo.toNonIndexed();
+    const srcGeo = cloneNonIndexed(baseGeo);
     baseGeo.dispose();
     return {
       srcGeo,
@@ -84,7 +93,7 @@ export function resolveBodySource(
     return { error: 'body not yet rendered — select the edge and try again' };
   }
   return {
-    srcGeo: liveMesh.geometry.clone().toNonIndexed(),
+    srcGeo: cloneNonIndexed(liveMesh.geometry),
     srcMaterial: liveMesh.material,
     hasMesh: false,
     oldGeomToDispose: null,

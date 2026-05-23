@@ -2,6 +2,103 @@ import * as THREE from 'three';
 import { mergeVertices, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { csgSubtract } from './csg';
 import { circleSegments } from '../sketch/sketchProfiles';
+import { getManifoldModule } from './manifoldWasm';
+
+/**
+ * Manifold-native extrude — converts a single THREE.Shape (outer + holes) to a
+ * Manifold body via `Manifold.extrude(polygons, height)`.  The result mesh is
+ * GUARANTEED manifold and carries `_manifoldData` so subsequent CSG operations
+ * (fillet, chamfer, shell, boolean) hit the fast path back into Manifold and
+ * stay in the exact-arithmetic kernel end-to-end — no figure-8 bridging
+ * artefacts, no BVH sliver spikes.
+ *
+ * Replaces `new THREE.ExtrudeGeometry(shape, {...})` which produces non-
+ * manifold output (bridging vertex at holes, T-junctions on side faces)
+ * that fails Manifold validation and forces every downstream CSG onto BVH.
+ *
+ * Returns null when Manifold WASM isn't yet loaded or the cross-section is
+ * degenerate so the caller falls back to the THREE.ExtrudeGeometry path.
+ */
+function buildShapeManifold(
+  shape: THREE.Shape,
+  depth: number,
+  outerSegments: number,
+): THREE.BufferGeometry | null {
+  const wasm = getManifoldModule();
+  if (!wasm) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ManifoldCtor = (wasm as any).Manifold;
+  if (!ManifoldCtor) return null;
+
+  // Outer ring at the adaptive segment density used by the legacy path.
+  const outerPts = shape.getPoints(outerSegments);
+  if (outerPts.length < 3) return null;
+  const outerPoly: [number, number][] = outerPts.map((p) => [p.x, p.y]);
+
+  // Each hole at its own adaptive density based on hole radius.
+  const holePolys: [number, number][][] = [];
+  for (const hole of shape.holes) {
+    let holeMaxR = 0;
+    for (const c of hole.curves) {
+      if (c instanceof THREE.EllipseCurve) {
+        const r = Math.max(c.xRadius, c.yRadius);
+        if (r > holeMaxR) holeMaxR = r;
+      }
+    }
+    const holeSegs = holeMaxR > 0 ? circleSegments(holeMaxR) : 64;
+    const holePts = hole.getPoints(holeSegs);
+    if (holePts.length < 3) continue;
+    holePolys.push(holePts.map((p) => [p.x, p.y]));
+  }
+
+  // Manifold expects polygons as [outer, hole1, hole2, ...] with EvenOdd
+  // fill-rule resolving outer-vs-hole regardless of winding.  Pre-built
+  // explicitly so we don't depend on THREE.Path's winding convention.
+  const polygons: [number, number][][] = [outerPoly, ...holePolys];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let m: any = null;
+  try {
+    m = ManifoldCtor.extrude(polygons, depth);
+    // Manifold.extrude returns an empty manifold when the cross-section is
+    // self-intersecting or degenerate; bail so caller can fall back.
+    if (typeof m.isEmpty === 'function' && m.isEmpty()) {
+      if (typeof m.delete === 'function') m.delete();
+      return null;
+    }
+    return _fromManifoldExtrude(m); // also deletes m
+  } catch (err) {
+    console.warn('[extrude] Manifold-native extrude failed, falling back:', err);
+    try { if (m && typeof m.delete === 'function') m.delete(); } catch {}
+    return null;
+  }
+}
+
+/**
+ * Convert a Manifold extrude result to a Three.js BufferGeometry with the
+ * `_manifoldData` cache attached so the next CSG roundtrip skips mergeVertices.
+ *
+ * Mirrors `_fromManifold` in csg.ts but kept here to avoid an import cycle —
+ * csg.ts already imports from this module via the existing extrude pipeline.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function _fromManifoldExtrude(result: any): THREE.BufferGeometry {
+  const mesh = result.getMesh() as { vertProperties: Float32Array; triVerts: Uint32Array };
+  const vpCopy = new Float32Array(mesh.vertProperties);
+  const tvCopy = new Uint32Array(mesh.triVerts);
+
+  const indexed = new THREE.BufferGeometry();
+  indexed.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vpCopy), 3));
+  indexed.setIndex(new THREE.BufferAttribute(new Uint32Array(tvCopy), 1));
+  const nonIndexed = indexed.toNonIndexed();
+  nonIndexed.computeVertexNormals();
+  indexed.dispose();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (nonIndexed.userData as any)._manifoldData = { vertProperties: vpCopy, triVerts: tvCopy };
+  if (typeof result.delete === 'function') result.delete();
+  return nonIndexed;
+}
 
 /**
  * Walk a Shape's underlying curves (outer ring + hole rings) and return
@@ -84,6 +181,17 @@ export function buildExtrudeGeomHolesAware(
 ): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
 
+  // Reject the Manifold-native path for extrude settings it can't model —
+  // taper (scaleTop), twist, custom step counts mid-extrude, beveling, and
+  // extrudePath all need the THREE.ExtrudeGeometry pipeline.  Plain
+  // straight extrudes (the overwhelmingly common case) take the native path.
+  const settingsAreNativeCompatible =
+    !extrudeSettings.bevelEnabled &&
+    !extrudeSettings.extrudePath &&
+    (extrudeSettings.steps == null || extrudeSettings.steps === 1) &&
+    typeof extrudeSettings.depth === 'number' &&
+    extrudeSettings.depth > 0;
+
   for (const shape of shapes) {
     // ExtrudeGeometry's default curveSegments=12 makes circles look
     // polygonal in the slice. Override per-shape to keep arcs round.
@@ -91,6 +199,19 @@ export function buildExtrudeGeomHolesAware(
       curveSegments: adaptiveCurveSegments(shape),
       ...extrudeSettings,
     };
+
+    // Manifold-native fast path — guaranteed-manifold output, no figure-8
+    // bridging, no T-junctions, _manifoldData baked in for downstream CSG.
+    if (settingsAreNativeCompatible) {
+      const outerSegs = adaptiveCurveSegments(shape);
+      const native = buildShapeManifold(shape, extrudeSettings.depth as number, outerSegs);
+      if (native) {
+        parts.push(native);
+        continue;
+      }
+      // Fall through to the legacy THREE.ExtrudeGeometry path on any failure.
+    }
+
     if (shape.holes.length === 0) {
       const geometry = new THREE.ExtrudeGeometry(shape, shapeSettings);
       const nonIndexed = toNonIndexedGeometry(geometry);
@@ -143,23 +264,51 @@ export function buildExtrudeGeomHolesAware(
     parts.push(solid);
   }
 
-  let combined: THREE.BufferGeometry;
+  // Single-part case: short-circuit so we don't run mergeVertices on a
+  // Manifold-native geometry — that would re-merge co-positional vertices
+  // and break the `_manifoldData` cache invariant, kicking downstream CSG
+  // back onto the BVH path that produces the spike artefacts we just fixed.
   if (parts.length === 1) {
-    combined = parts[0];
-  } else {
-    const totalCount = parts.reduce((sum, geometry) => sum + geometry.attributes.position.count, 0);
-    const mergedPositions = new Float32Array(totalCount * 3);
-    let offset = 0;
-    for (const geometry of parts) {
-      const arr = (geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
-      mergedPositions.set(arr, offset);
-      offset += arr.length;
-      geometry.dispose();
+    const only = parts[0];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((only.userData as any)?._manifoldData) {
+      // Already manifold + welded by Manifold; compute creased normals for
+      // smooth shading on curved sides, then RE-ATTACH _manifoldData so
+      // downstream CSG (fillet / chamfer) uses the Manifold fast-path.
+      // toCreasedNormals only changes normals (splits vertices at crease
+      // edges for rendering) — positions are unchanged, so _manifoldData
+      // remains valid for Manifold re-import.  Without this re-attach the
+      // body fails _toManifoldWithRepair (874-vert non-indexed mesh) and
+      // every fillet falls back to BVH, producing the spike artefacts.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const manifoldData = (only.userData as any)._manifoldData;
+      const creased = toCreasedNormals(only, Math.PI / 6);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (creased.userData as any)._manifoldData = manifoldData;
+      return creased;
     }
-    combined = new THREE.BufferGeometry();
-    combined.setAttribute('position', new THREE.Float32BufferAttribute(mergedPositions, 3));
+    const merged = mergeVertices(only, 1e-4);
+    only.dispose();
+    return toCreasedNormals(merged, Math.PI / 6);
   }
 
+  // Multi-part case (sketch with several disconnected outer profiles):
+  // concatenate triangle soup, weld, recompute creases.  This loses any
+  // per-part `_manifoldData` — downstream CSG will rebuild the manifold
+  // representation via `_toManifoldWithRepair`.  Acceptable because
+  // multi-profile sketches are uncommon and Manifold can repair welded
+  // multi-shell input without the figure-8 artefact (no holes involved).
+  const totalCount = parts.reduce((sum, geometry) => sum + geometry.attributes.position.count, 0);
+  const mergedPositions = new Float32Array(totalCount * 3);
+  let offset = 0;
+  for (const geometry of parts) {
+    const arr = (geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
+    mergedPositions.set(arr, offset);
+    offset += arr.length;
+    geometry.dispose();
+  }
+  const combined = new THREE.BufferGeometry();
+  combined.setAttribute('position', new THREE.Float32BufferAttribute(mergedPositions, 3));
   const merged = mergeVertices(combined, 1e-4);
   combined.dispose();
   return toCreasedNormals(merged, Math.PI / 6);

@@ -41,6 +41,41 @@ function _ensureUVs(geometry: THREE.BufferGeometry): void {
 // ─── Manifold conversion ─────────────────────────────────────────────────────
 
 /**
+ * Check signed volume of an indexed triangle mesh.  If negative (inverted
+ * winding — inward-facing normals), swap indices 1↔2 in every triangle to
+ * flip to outward-facing CCW winding.  Mutates `triVerts` in-place.
+ *
+ * Manifold accepts consistently-wound meshes with either orientation, but an
+ * inward-wound mesh represents the *complement* of the intended solid.  CSG
+ * subtract on a complement produces no visible change because the cutter sits
+ * inside the original shape (the complement's "exterior").  This check catches
+ * inverted meshes from THREE.js ExtrudeGeometry, BVH-CSG, and similar sources.
+ */
+function _fixWindingIfInverted(vertProperties: Float32Array, triVerts: Uint32Array): void {
+  let signedVol6 = 0;
+  const nTris = triVerts.length / 3;
+  for (let ti = 0; ti < nTris; ti++) {
+    const i0 = triVerts[ti * 3] * 3;
+    const i1 = triVerts[ti * 3 + 1] * 3;
+    const i2 = triVerts[ti * 3 + 2] * 3;
+    const ax = vertProperties[i0], ay = vertProperties[i0 + 1], az = vertProperties[i0 + 2];
+    const bx = vertProperties[i1], by = vertProperties[i1 + 1], bz = vertProperties[i1 + 2];
+    const cx = vertProperties[i2], cy = vertProperties[i2 + 1], cz = vertProperties[i2 + 2];
+    signedVol6 += ax * (by * cz - bz * cy)
+                + ay * (bz * cx - bx * cz)
+                + az * (bx * cy - by * cx);
+  }
+  if (signedVol6 < 0) {
+    for (let ti = 0; ti < nTris; ti++) {
+      const tmp = triVerts[ti * 3 + 1];
+      triVerts[ti * 3 + 1] = triVerts[ti * 3 + 2];
+      triVerts[ti * 3 + 2] = tmp;
+    }
+    console.warn(`[csg] _fixWindingIfInverted: flipped winding (signedVol6=${signedVol6.toFixed(2)})`);
+  }
+}
+
+/**
  * Convert a THREE.BufferGeometry to a Manifold instance.
  *
  * Manifold requires indexed geometry (triVerts) with Float32 positions.
@@ -84,7 +119,6 @@ function _toManifold(geo: THREE.BufferGeometry): any | null {
       const m = new (wasm as any).Mesh({ numProp: 3, vertProperties: md.vertProperties, triVerts: md.triVerts });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const mf = new (wasm as any).Manifold(m);
-      console.warn(`[csg] _manifoldData fast-path hit: verts=${md.vertProperties.length / 3} tris=${md.triVerts.length / 3}`);
       return mf;
     } catch (err) {
       console.warn('[csg] _manifoldData fast-path reimport failed, falling through:', err);
@@ -130,11 +164,15 @@ function _toManifold(geo: THREE.BufferGeometry): any | null {
 
   indexed.dispose();
 
+  // Fix inverted winding before building Manifold (see _fixWindingIfInverted).
+  _fixWindingIfInverted(vertProperties, triVerts);
+
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mesh = new (wasm as any).Mesh({ numProp: 3, vertProperties, triVerts });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return new (wasm as any).Manifold(mesh);
+    const mf = new (wasm as any).Manifold(mesh);
+    return mf;
   } catch (err) {
     console.warn(
       `[csg] Manifold rejected input: verts=${posAttr.count} tris=${idxAttr.count / 3} err="${err}"`,
@@ -167,6 +205,9 @@ function _toManifoldFromSplit(indexed: THREE.BufferGeometry): any | null {
   }
   const triVerts = new Uint32Array(idxAttr.count);
   for (let i = 0; i < idxAttr.count; i++) triVerts[i] = idxAttr.getX(i);
+
+  // Signed-volume winding fix (same as _toManifold slow path — see comment there).
+  _fixWindingIfInverted(vertProperties, triVerts);
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -285,11 +326,28 @@ function _manifoldSubtract(
   b: THREE.BufferGeometry,
 ): THREE.BufferGeometry | null {
   const ma = _toManifoldWithRepair(a);
-  if (!ma) return null;
+  if (!ma) { console.warn('[csg] _manifoldSubtract: solid→Manifold failed'); return null; }
   const mb = _toManifoldWithRepair(b);
-  if (!mb) { if (typeof ma.delete === 'function') ma.delete(); return null; }
+  if (!mb) { console.warn('[csg] _manifoldSubtract: cutter→Manifold failed'); if (typeof ma.delete === 'function') ma.delete(); return null; }
   try {
+    const maVerts = typeof ma.numVert === 'function' ? ma.numVert() : -1;
+    const maTris  = typeof ma.numTri  === 'function' ? ma.numTri()  : -1;
+
     const result = ma.subtract(mb);
+    const mrVerts = typeof result.numVert === 'function' ? result.numVert() : -1;
+    const mrTris  = typeof result.numTri  === 'function' ? result.numTri()  : -1;
+
+    // If Manifold produced zero geometric change (result ≡ solid), the body's
+    // Manifold representation is degenerate (mergeVertices figure-8 topology at
+    // a boss/bracket junction).  Fall to BVH; the fillet pipeline runs
+    // removeSpikeComponents after weldAndCleanSolid to clean up the BVH output.
+    if (mrVerts === maVerts && mrTris === maTris && maVerts > 0) {
+      if (typeof result.delete === 'function') result.delete();
+      if (typeof ma.delete === 'function') ma.delete();
+      if (typeof mb.delete === 'function') mb.delete();
+      return null;
+    }
+
     if (typeof ma.delete === 'function') ma.delete();
     if (typeof mb.delete === 'function') mb.delete();
     return _fromManifold(result);
@@ -425,6 +483,343 @@ export function csgSubtract(a: THREE.BufferGeometry, b: THREE.BufferGeometry): T
 }
 
 /**
+ * Per-edge fillet cutter built ENTIRELY in Manifold-native space.
+ *
+ * Background — why this exists:
+ *   The Three.js path (`new THREE.BoxGeometry(...) − new THREE.CylinderGeometry(...)`
+ *   via `csgSubtract`) produces a cutter mesh that Manifold subsequently rejects
+ *   as non-manifold when it tries to apply the cutter to the body.  That forces
+ *   the body subtract onto the BVH fallback, whose sliver-triangle output is
+ *   visible as the fillet "spike" artefact at corner regions.
+ *
+ *   Building the cutter directly from `Manifold.cube` − `Manifold.cylinder`
+ *   keeps every triangle vertex in Manifold's exact-arithmetic grid; the
+ *   returned BufferGeometry carries `_manifoldData` so the next CSG call
+ *   re-imports it as a guaranteed-valid manifold via the fast path, and the
+ *   whole fillet stays in the exact CSG kernel — no spikes.
+ *
+ * Geometry — the cutter is the same shape as the legacy Three.js path:
+ *   - Prism: axis-aligned box of size (setback, length+2eps, setback) in the
+ *     edge-local frame (axisX, edgeDir, axisZ) with one corner at edge start `a`.
+ *   - Cylinder: radius `radius`, length `length+2eps`, axis passing through
+ *     `a + bis·axisDist` and `a + length·edgeDir + bis·axisDist`.
+ *   - Cutter = prism − cylinder.
+ *
+ * Returns null when Manifold WASM is not yet available (caller falls back).
+ */
+export function buildFilletCutterManifold(
+  a: THREE.Vector3,
+  edgeDir: THREE.Vector3,
+  length: number,
+  axisX: THREE.Vector3,
+  axisZ: THREE.Vector3,
+  bis: THREE.Vector3,
+  setback: number,
+  axisDist: number,
+  radius: number,
+  eps: number,
+  radialSeg: number,
+): THREE.BufferGeometry | null {
+  const wasm = getManifoldModule();
+  if (!wasm) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ManifoldCtor = (wasm as any).Manifold;
+  if (!ManifoldCtor) return null;
+
+  const totalLen = length + 2 * eps;
+
+  // ── Cylinder axis midpoint (world space) ───────────────────────────────────
+  const axisMid = a.clone()
+    .addScaledVector(bis, axisDist)
+    .addScaledVector(edgeDir, length / 2);
+
+  // ── Prism: parallelipiped built from world-space vertices ──────────────────
+  // axisX and axisZ are the in-face perpendiculars u1/u2.  When the dihedral
+  // angle φ ≠ 90° these vectors are NOT orthogonal (dot = cos φ).  The old
+  // approach decomposed a non-orthogonal basis into Euler angles via
+  // setFromRotationMatrix, but Euler angles can only represent orthonormal
+  // rotations — the decomposition silently produced wrong angles, causing the
+  // prism to be misaligned and barely intersect the body.
+  //
+  // Fix: compute the 8 parallelipiped vertices directly in world space and
+  // build the Manifold mesh from raw vertices + triangle indices.  This works
+  // for any dihedral angle.
+  const eBack = edgeDir.clone().multiplyScalar(-eps);
+  const eFwd  = edgeDir.clone().multiplyScalar(length + eps);
+
+  // Extend the prism slightly PAST the body surface in the −axisX and −axisZ
+  // directions.  Without this, the prism's boundary faces at axisX=0 and
+  // axisZ=0 are exactly coplanar with the body's adjacent faces (e.g. the
+  // front face at z=41 and top face at y=19.25).  Manifold CSG produces a
+  // degenerate zero-thickness intersection at coplanar boundaries, so the
+  // subtraction removes almost no material.  The extra `pad` extends the
+  // prism past the body surface; the overshoot is outside the body and gets
+  // ignored by the final body−cutter subtract.
+  const pad = Math.max(setback * 0.02, 1e-3);
+  const sx  = axisX.clone().multiplyScalar(setback + pad);
+  const sz  = axisZ.clone().multiplyScalar(setback + pad);
+  const originShift = new THREE.Vector3()
+    .addScaledVector(axisX, -pad)
+    .addScaledVector(axisZ, -pad);
+
+  // 8 vertices: 4 at edge-start (−eps), 4 at edge-end (+eps).
+  //   v0 = corner slightly past the body surface (shifted by −pad in both
+  //        face directions so the prism extends past the edge)
+  //   v3/v7 = opposite corner (full setback + pad in both face directions)
+  const v0 = a.clone().add(eBack).add(originShift);
+  const v1 = v0.clone().add(sx);
+  const v2 = v0.clone().add(sz);
+  const v3 = v0.clone().add(sx).add(sz);
+  const v4 = a.clone().add(eFwd).add(originShift);
+  const v5 = v4.clone().add(sx);
+  const v6 = v4.clone().add(sz);
+  const v7 = v4.clone().add(sx).add(sz);
+
+  const vertProperties = new Float32Array([
+    v0.x, v0.y, v0.z,  // 0
+    v1.x, v1.y, v1.z,  // 1
+    v2.x, v2.y, v2.z,  // 2
+    v3.x, v3.y, v3.z,  // 3
+    v4.x, v4.y, v4.z,  // 4
+    v5.x, v5.y, v5.z,  // 5
+    v6.x, v6.y, v6.z,  // 6
+    v7.x, v7.y, v7.z,  // 7
+  ]);
+
+  // 12 triangles (6 quad faces).  Winding is CCW when viewed from outside,
+  // producing outward-pointing normals.  The (axisX, edgeDir, axisZ) basis
+  // is always right-handed (buildFilletCutter swaps for left-handed cases).
+  const triVerts = new Uint32Array([
+    0, 1, 3,  0, 3, 2,   // back  (−edgeDir end)
+    4, 6, 7,  4, 7, 5,   // front (+edgeDir end)
+    0, 4, 5,  0, 5, 1,   // bottom (axisZ = 0 face)
+    2, 3, 7,  2, 7, 6,   // top    (axisZ = setback face)
+    0, 2, 6,  0, 6, 4,   // left   (axisX = 0 face)
+    1, 5, 7,  1, 7, 3,   // right  (axisX = setback face)
+  ]);
+
+  // Cylinder rotation: rotate local Z onto edgeDir.  Use a quaternion to derive
+  // a clean rotation matrix, then convert to Euler 'XYZ' degrees for Manifold.
+  // (This decomposition is valid because setFromUnitVectors produces a genuine
+  // orthonormal rotation — unlike the old prism path.)
+  const RAD2DEG = 180 / Math.PI;
+  const zAxis = new THREE.Vector3(0, 0, 1);
+  const edgeDirN = edgeDir.clone().normalize();
+  const cylQuat = new THREE.Quaternion().setFromUnitVectors(zAxis, edgeDirN);
+  const cylRotMat = new THREE.Matrix4().makeRotationFromQuaternion(cylQuat);
+  const cylEuler = new THREE.Euler().setFromRotationMatrix(cylRotMat, 'XYZ');
+  const cylDeg: [number, number, number] = [
+    cylEuler.x * RAD2DEG,
+    cylEuler.y * RAD2DEG,
+    cylEuler.z * RAD2DEG,
+  ];
+
+  const segs = Math.max(8, Math.min(96, radialSeg));
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let prismM: any = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let cylM: any = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let cutterM: any = null;
+  try {
+    // Prism: build from raw mesh data (handles non-orthogonal axisX/axisZ).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const prismMesh = new (wasm as any).Mesh({ numProp: 3, vertProperties, triVerts });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    prismM = new (wasm as any).Manifold(prismMesh);
+    // Snapshot prism counts BEFORE the subtract so we can detect a no-change
+    // result (cylinder didn't intersect the prism — degenerate raw-mesh Manifold).
+    const prismVerts = typeof prismM.numVert === 'function' ? prismM.numVert() : -1;
+    const prismTris  = typeof prismM.numTri  === 'function' ? prismM.numTri()  : -1;
+
+    // Cylinder: along local Z from 0 to totalLen.  Centre on its own Z (subtract
+    // totalLen/2), rotate so local Z lands on edgeDir, then translate to axisMid.
+    cylM = ManifoldCtor.cylinder(totalLen, radius, radius, segs)
+      .translate([0, 0, -totalLen / 2])
+      .rotate(cylDeg)
+      .translate([axisMid.x, axisMid.y, axisMid.z]);
+
+    cutterM = prismM.subtract(cylM);
+
+    const cutterVerts = typeof cutterM.numVert === 'function' ? cutterM.numVert() : -1;
+    const cutterTris  = typeof cutterM.numTri  === 'function' ? cutterM.numTri()  : -1;
+
+    if (typeof prismM.delete === 'function') prismM.delete();
+    if (typeof cylM.delete === 'function') cylM.delete();
+    prismM = null;
+    cylM = null;
+
+    // Zero-change guard: if prism.subtract(cyl) returned the unchanged prism,
+    // the cylinder didn't intersect (raw-mesh Manifold degenerate for this
+    // corner region).  Return null so the caller falls through to the Three.js
+    // BoxGeometry + CylinderGeometry path, which builds the cutter with clean
+    // THREE.js primitives whose Manifold import always succeeds.
+    if (prismVerts > 0 && cutterVerts === prismVerts && cutterTris === prismTris) {
+      console.warn(
+        `[csg] buildFilletCutterManifold: prism.subtract(cyl) no change ` +
+        `(v=${prismVerts} t=${prismTris}) — cylinder did not intersect prism, ` +
+        `falling through to Three.js path`,
+      );
+      if (typeof cutterM.delete === 'function') cutterM.delete();
+      return null;
+    }
+
+    const result = _fromManifold(cutterM); // also deletes cutterM
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const md = (result.userData as any)._manifoldData;
+    const vCount = md?.vertProperties?.length ? md.vertProperties.length / 3 : 0;
+    if (vCount === 0) {
+      console.warn(`[csg] buildFilletCutterManifold produced EMPTY cutter — cylDeg=[${cylDeg.map(d => d.toFixed(1))}] setback=${setback.toFixed(3)} r=${radius.toFixed(3)} axisDist=${axisDist.toFixed(3)}`);
+      result.dispose();
+      return null; // let caller fall through to Three.js path
+    }
+    return result;
+  } catch (err) {
+    console.warn('[csg] Manifold-native fillet cutter build failed:', err);
+    try { if (prismM && typeof prismM.delete === 'function') prismM.delete(); } catch {}
+    try { if (cylM && typeof cylM.delete === 'function') cylM.delete(); } catch {}
+    try { if (cutterM && typeof cutterM.delete === 'function') cutterM.delete(); } catch {}
+    return null;
+  }
+}
+
+/**
+ * Build the loop-cutter for a circular-rim fillet entirely in Manifold space.
+ *
+ * The cutter geometry is: annular ring − torus
+ *   ring  = outer cylinder (radius=ringOuterR, height=ringLen) minus
+ *           inner cylinder (radius=innerR, height=ringLen+4*pad)
+ *           both centred at `ringCenter`, axis = `bodyAxial`
+ *   torus = Manifold.revolve of a circle (majorR, minorR) around axis `A`,
+ *           centred at `torusCenter`
+ *   cutter = ring − torus
+ *
+ * Building natively in Manifold avoids the T-junction artefacts that
+ * `csgSubtractRaw(outerCyl, innerCyl)` (Three.js BVH path) produces, which
+ * prevent the loop-cutter from being re-imported into Manifold and force the
+ * entire fillet onto the BVH path — the root cause of the Steinmetz spike at
+ * the junction between the circular-rim fillet and adjacent straight edges.
+ *
+ * Returns null when Manifold WASM is not yet loaded or the build fails so
+ * the caller can fall back to the Three.js BVH path.
+ */
+export function buildFilletLoopCutterManifold(
+  majorR: number,
+  minorR: number,
+  ringOuterR: number,
+  innerR: number,
+  ringLen: number,
+  pad: number,
+  ringCenter: THREE.Vector3,
+  torusCenter: THREE.Vector3,
+  bodyAxial: THREE.Vector3,
+  A: THREE.Vector3,
+  tubSeg: number,
+  radSeg: number,
+): THREE.BufferGeometry | null {
+  const wasm = getManifoldModule();
+  if (!wasm) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ManifoldCtor = (wasm as any).Manifold;
+  if (!ManifoldCtor) return null;
+
+  const RAD2DEG = 180 / Math.PI;
+  const zAxis = new THREE.Vector3(0, 0, 1);
+
+  /** Euler XYZ degrees that rotate local +Z onto `target`. */
+  const zToEulerDeg = (target: THREE.Vector3): [number, number, number] => {
+    const t = target.clone().normalize();
+    const q = new THREE.Quaternion().setFromUnitVectors(zAxis, t);
+    const mat = new THREE.Matrix4().makeRotationFromQuaternion(q);
+    const euler = new THREE.Euler().setFromRotationMatrix(mat, 'XYZ');
+    return [euler.x * RAD2DEG, euler.y * RAD2DEG, euler.z * RAD2DEG];
+  };
+
+  const cylDeg = zToEulerDeg(bodyAxial); // ring cylinders: local Z → bodyAxial
+  const torDeg = zToEulerDeg(A);         // torus revolution axis: local Z → A
+
+  // Torus cross-section polygon: a circle of radius `minorR` centred at
+  // (majorR, 0) in the Manifold revolve cross-section plane.
+  // Manifold.revolve revolves around Y, then aliases Y → Z in the result, so:
+  //   cross-section X = radial distance from the revolution axis (≥ 0)
+  //   cross-section Y = axial position along the revolution axis
+  // `majorR > minorR` is validated by the caller so all X values are > 0.
+  const crossSeg = Math.max(8, radSeg);
+  const circlePts: [number, number][] = [];
+  for (let i = 0; i < crossSeg; i++) {
+    const t = (i / crossSeg) * 2 * Math.PI;
+    circlePts.push([majorR + minorR * Math.cos(t), minorR * Math.sin(t)]);
+  }
+
+  const segs = Math.max(8, tubSeg);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let outerCylM: any = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let innerCylM: any = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let ringM: any = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let torusM: any = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let cutterM: any = null;
+
+  try {
+    // Ring: outer minus inner.  Manifold.cylinder spans z=[0, height]; shift by
+    // -height/2 to centre at origin before rotating and positioning.
+    outerCylM = ManifoldCtor.cylinder(ringLen, ringOuterR, ringOuterR, segs)
+      .translate([0, 0, -ringLen / 2])
+      .rotate(cylDeg)
+      .translate([ringCenter.x, ringCenter.y, ringCenter.z]);
+
+    const innerLen = ringLen + 4 * pad;
+    innerCylM = ManifoldCtor.cylinder(innerLen, innerR, innerR, segs)
+      .translate([0, 0, -innerLen / 2])
+      .rotate(cylDeg)
+      .translate([ringCenter.x, ringCenter.y, ringCenter.z]);
+
+    ringM = outerCylM.subtract(innerCylM);
+    if (typeof outerCylM.delete === 'function') outerCylM.delete();
+    if (typeof innerCylM.delete === 'function') innerCylM.delete();
+    outerCylM = null;
+    innerCylM = null;
+
+    // Torus: revolve the circle cross-section (Manifold revolves around Y →
+    // result Z = revolution axis), then rotate Z → A and translate to centre.
+    torusM = ManifoldCtor.revolve([circlePts], segs)
+      .rotate(torDeg)
+      .translate([torusCenter.x, torusCenter.y, torusCenter.z]);
+
+    cutterM = ringM.subtract(torusM);
+    if (typeof ringM.delete === 'function') ringM.delete();
+    if (typeof torusM.delete === 'function') torusM.delete();
+    ringM = null;
+    torusM = null;
+
+    const result = _fromManifold(cutterM); // also deletes cutterM
+    cutterM = null;
+
+    // Validate non-empty result before returning.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const md = (result.userData as any)._manifoldData;
+    if (!md?.vertProperties?.length) {
+      result.dispose();
+      return null;
+    }
+    return result;
+  } catch (err) {
+    console.warn('[csg] buildFilletLoopCutterManifold failed:', err);
+    try { if (outerCylM && typeof outerCylM.delete === 'function') outerCylM.delete(); } catch { /* no-op */ }
+    try { if (innerCylM && typeof innerCylM.delete === 'function') innerCylM.delete(); } catch { /* no-op */ }
+    try { if (ringM && typeof ringM.delete === 'function') ringM.delete(); } catch { /* no-op */ }
+    try { if (torusM && typeof torusM.delete === 'function') torusM.delete(); } catch { /* no-op */ }
+    try { if (cutterM && typeof cutterM.delete === 'function') cutterM.delete(); } catch { /* no-op */ }
+    return null;
+  }
+}
+
+/**
  * Subtract multiple cutters from a solid, keeping all operations in Manifold
  * space when possible to avoid the spike artifact at 3+-edge corners.
  *
@@ -458,6 +853,8 @@ export function csgSubtractMany(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let accM: any = _toManifoldWithRepair(solid);
   if (accM) {
+    const solidVerts = typeof accM.numVert === 'function' ? accM.numVert() : -1;
+    const solidTris  = typeof accM.numTri  === 'function' ? accM.numTri()  : -1;
     const bvhCutters: THREE.BufferGeometry[] = [];
     for (const cutter of cutters) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -465,6 +862,17 @@ export function csgSubtractMany(
       if (!mc) { bvhCutters.push(cutter); continue; }
       try {
         const next = accM.subtract(mc);
+        const nextVerts = typeof next.numVert === 'function' ? next.numVert() : -1;
+        const nextTris  = typeof next.numTri  === 'function' ? next.numTri()  : -1;
+        if (nextVerts === solidVerts && nextTris === solidTris && solidVerts > 0) {
+          // Manifold produced no change — body Manifold is degenerate in this
+          // region (mergeVertices figure-8 issue).  Use BVH for this cutter.
+          console.warn('[csg] Manifold batch subtract produced no change — routing to BVH');
+          if (typeof next.delete === 'function') next.delete();
+          if (typeof mc.delete === 'function') mc.delete();
+          bvhCutters.push(cutter);
+          continue;
+        }
         if (typeof accM.delete === 'function') accM.delete();
         if (typeof mc.delete === 'function') mc.delete();
         accM = next;

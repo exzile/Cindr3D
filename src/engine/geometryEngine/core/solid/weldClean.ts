@@ -687,6 +687,98 @@ export function repairNonManifoldVertices(geo: THREE.BufferGeometry): THREE.Buff
 }
 
 /**
+ * Remove "spike" triangle components from a non-indexed position-only geometry.
+ *
+ * A spike is a connected set of triangles that attaches to the rest of the mesh
+ * through exactly ONE apex vertex — all non-apex vertices of those triangles
+ * appear ONLY in other triangles that also contain the apex.  This is the shape
+ * three-bvh-csg leaves at a fillet endpoint when the cutter's end cap meets a
+ * curved boss surface at a degenerate intersection seam.
+ *
+ * The detection is purely topological: no geometric thresholds.  It is safe to
+ * run on any non-indexed geometry — legitimate sharp-corner fans, pyramids, or
+ * sphere facets are never removed because their base vertices are always shared
+ * with surrounding (non-spike) triangles.
+ *
+ * Returns the input geometry unchanged if no spikes are found, otherwise a new
+ * geometry with the spike triangles removed and recomputed vertex normals.
+ */
+export function removeSpikeComponents(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  const posAttr = geo.attributes.position as THREE.BufferAttribute | undefined;
+  if (!posAttr) return geo;
+  const pos = posAttr.array as Float32Array;
+  const triCount = (pos.length / 9) | 0;
+  if (triCount < 4) return geo;
+
+  // Build position → unique vertex index via quantised-coordinate string key.
+  // The geometry was already run through mergeVertices (by weldAndCleanSolid)
+  // and then toNonIndexed, so each unique position appears as exact float copies.
+  const vmap = new Map<string, number>();
+  const vidx = new Int32Array(triCount * 3);
+  let nv = 0;
+  for (let t = 0; t < triCount; t++) {
+    for (let j = 0; j < 3; j++) {
+      const o = t * 9 + j * 3;
+      const key = `${pos[o].toFixed(6)},${pos[o + 1].toFixed(6)},${pos[o + 2].toFixed(6)}`;
+      let vi = vmap.get(key);
+      if (vi === undefined) { vi = nv++; vmap.set(key, vi); }
+      vidx[t * 3 + j] = vi;
+    }
+  }
+
+  // Vertex → triangle list (valence map).
+  const vtris: number[][] = Array.from({ length: nv }, () => []);
+  for (let t = 0; t < triCount; t++) {
+    vtris[vidx[t * 3]].push(t);
+    vtris[vidx[t * 3 + 1]].push(t);
+    vtris[vidx[t * 3 + 2]].push(t);
+  }
+
+  const removeSet = new Set<number>();
+
+  for (let v = 0; v < nv; v++) {
+    const T_V = vtris[v];
+    if (T_V.length < 2) continue;      // need at least spike + body
+    const T_V_set = new Set<number>(T_V);
+
+    // Classify each of V's triangles: is it a "spike" triangle?
+    // A triangle T is a spike candidate when ALL of its non-V vertices only
+    // appear in triangles that also contain V (i.e. nowhere outside T_V).
+    const spikeTriangles: number[] = [];
+    for (const t of T_V) {
+      const i0 = vidx[t * 3], i1 = vidx[t * 3 + 1], i2 = vidx[t * 3 + 2];
+      let isSpike = true;
+      for (const nvi of [i0, i1, i2]) {
+        if (nvi === v) continue;
+        for (const t2 of vtris[nvi]) {
+          if (!T_V_set.has(t2)) { isSpike = false; break; }
+        }
+        if (!isSpike) break;
+      }
+      if (isSpike) spikeTriangles.push(t);
+    }
+
+    // Remove only if the spike is a STRICT SUBSET of V's triangles — never
+    // remove all of V's triangles (that would leave a hole in the body).
+    if (spikeTriangles.length > 0 && spikeTriangles.length < T_V.length) {
+      for (const t of spikeTriangles) removeSet.add(t);
+    }
+  }
+
+  if (removeSet.size === 0) return geo;
+
+  const newPos = new Float32Array((triCount - removeSet.size) * 9);
+  let w = 0;
+  for (let t = 0; t < triCount; t++) {
+    if (!removeSet.has(t)) for (let k = 0; k < 9; k++) newPos[w++] = pos[t * 9 + k];
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(newPos, 3));
+  out.computeVertexNormals();
+  return out;
+}
+
+/**
  * Welds the unwelded triangle-soup that three-bvh-csg emits back into a clean
  * manifold and drops the near-zero-area sliver triangles a boolean can leave
  * behind. Returns a fresh NON-INDEXED, position-only geometry (callers add

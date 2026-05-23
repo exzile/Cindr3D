@@ -13,7 +13,7 @@
 import * as THREE from 'three';
 import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { liveBodyMeshes } from '../../store/meshRegistry';
-import { weldAndCleanSolid } from '../../engine/geometryEngine/core/solid/weldClean';
+import { weldAndCleanSolid, removeSpikeComponents } from '../../engine/geometryEngine/core/solid/weldClean';
 export { weldAndCleanSolid } from '../../engine/geometryEngine/core/solid/weldClean';
 import {
   csgSubtractWithTopology,
@@ -329,6 +329,8 @@ interface SrcGeoCache {
   tris: THREE.Vector3[][];
   triIdx: Map<number, number[]>;
   eps: number;
+  /** Centroid of the source mesh — used to disambiguate multi-face junctions. */
+  centroid: THREE.Vector3;
   /**
    * Optional O(1) topology fast-path. Built from `srcGeo.userData.topology`
    * when available (bodies that went through `csgSubtractWithTopology`).
@@ -345,7 +347,16 @@ function getOrBuildSrcCache(srcGeo: THREE.BufferGeometry): SrcGeoCache {
   const tris = buildTriangleList(srcGeo);
   const eps = computePositionEps(srcGeo);
   const triIdx = buildTriangleIndex(tris, eps);
-  entry = { tris, triIdx, eps };
+  // Compute centroid (average of all triangle vertices) for multi-face junction
+  // disambiguation — tells resolveEdge which face pair represents the convex
+  // exterior corner (bisector points toward centroid = interior of solid).
+  const centroid = new THREE.Vector3();
+  let vtxCount = 0;
+  for (const tri of tris) {
+    for (const v of tri) { centroid.add(v); vtxCount++; }
+  }
+  if (vtxCount > 0) centroid.divideScalar(vtxCount);
+  entry = { tris, triIdx, eps, centroid };
 
   // Build topoMap from pre-computed topology when present.
   const topo = (srcGeo.userData as { topology?: BodyTopology }).topology;
@@ -453,29 +464,40 @@ export interface EdgeLoopCircle {
 export function fitEdgeCircle(edges: PickedEdge[]): EdgeLoopCircle | null {
   if (edges.length < 8) return null; // too few segments to trust a circle fit
 
-  // Ordered point list = each segment's start (the loop is consecutive
-  // segments a→b, b→c, …). Use the a's plus the final b.
-  const pts: THREE.Vector3[] = edges.map((e) => e.a);
-  pts.push(edges[edges.length - 1].b);
+  // Closed-loop check: every a-endpoint must also appear as a b-endpoint and
+  // vice versa (the edges form a topological cycle).  This is order-independent
+  // — the previous check `pts[0] ≈ pts[last]` failed whenever BFS propagation
+  // returned the arc segments in non-cyclic order (e.g. when the first and last
+  // edges happen to be adjacent on the circle), causing the full-circle loop
+  // cutter to silently fall back to per-segment cutters (spike + dark-body).
+  const avgSegLen = edges.reduce((s, e) => s + e.a.distanceTo(e.b), 0) / edges.length;
+  const snapTol = Math.max(avgSegLen * 0.1, 1e-6);
+  const vtxKey = (v: THREE.Vector3) =>
+    `${Math.round(v.x / snapTol)}_${Math.round(v.y / snapTol)}_${Math.round(v.z / snapTol)}`;
+  const aKeys = new Set(edges.map((e) => vtxKey(e.a)));
+  const bKeys = new Set(edges.map((e) => vtxKey(e.b)));
+  for (const k of aKeys) if (!bKeys.has(k)) return null;
+  for (const k of bKeys) if (!aKeys.has(k)) return null;
 
-  // Closed-loop check: last point ≈ first point.
-  const span = pts[0].distanceTo(pts[Math.floor(pts.length / 2)]);
-  if (span < 1e-6) return null;
-  if (pts[0].distanceTo(pts[pts.length - 1]) > span * 0.05) return null;
-  pts.pop(); // drop the duplicate closing point
+  // All a-endpoints (= unique circle vertices for a closed loop).
+  const pts: THREE.Vector3[] = edges.map((e) => e.a);
 
   const center = new THREE.Vector3();
   for (const p of pts) center.add(p);
   center.divideScalar(pts.length);
 
-  // Newell's method → robust plane normal for the (near-planar) polygon.
+  // Circle plane normal: accumulate cross products of radius vectors from the
+  // centroid. For ordered input this is equivalent to Newell's method, but it
+  // also works on unordered BFS-propagated edge lists because each cross product
+  // (r_0 × r_i) is parallel (±) to the true circle normal — the accumulation
+  // averages out noise. Consistent-sign ensures they don't cancel.
   const axis = new THREE.Vector3();
-  for (let i = 0; i < pts.length; i++) {
-    const cur = pts[i];
-    const nxt = pts[(i + 1) % pts.length];
-    axis.x += (cur.y - nxt.y) * (cur.z + nxt.z);
-    axis.y += (cur.z - nxt.z) * (cur.x + nxt.x);
-    axis.z += (cur.x - nxt.x) * (cur.y + nxt.y);
+  const vRef = pts[0].clone().sub(center);
+  const crossTmp = new THREE.Vector3();
+  for (let i = 1; i < pts.length; i++) {
+    crossTmp.subVectors(pts[i], center).cross(vRef);
+    if (crossTmp.dot(axis) < 0) crossTmp.negate();
+    axis.add(crossTmp);
   }
   if (axis.lengthSq() < 1e-12) return null;
   axis.normalize();
@@ -564,6 +586,140 @@ export function fitEdgeCircleOrArc(edges: PickedEdge[]): EdgeLoopCircle | null {
 }
 
 // ---------------------------------------------------------------------------
+// Multi-face junction disambiguation
+//
+// At corners where 3+ distinct faces converge (e.g. bracket-body-front +
+// screw-boss-front + bracket-top all touch the same edge), the primary
+// resolveEdge pass picks whichever 2 faces happen to share both edge endpoints
+// in the mesh triangulation — often an interior or wrong pair.
+//
+// Critical insight: coplanar faces on *opposite sides* of the edge (e.g.
+// bracket-front-body with ic below y=19.25 and screw-boss-front with ic above)
+// share the same face-plane normal but produce opposite u directions. The old
+// "group by normal" strategy collapsed them into one representative, potentially
+// choosing the wrong side.  This helper uses *half-plane* grouping (same normal
+// AND same u direction), samples candidates near A, midpoint AND B so faces
+// whose triangulation vertices fall in the interior of the edge are also found,
+// and uses a body-centroid heuristic to pick the convex-exterior corner pair.
+// ---------------------------------------------------------------------------
+
+/**
+ * Searches ALL distinct half-planes (face planes with a specific u direction)
+ * touching the edge line and returns the best u1/u2 pair by body-centroid
+ * heuristic.  Returns null when ≤2 half-planes are found so the caller can
+ * fall back to its normal result.
+ *
+ * @param edgeDir   Already-normalized e.b − e.a direction.
+ * @param minPlanes Minimum number of half-planes required to return a result.
+ *                  Use 3 for multi-face disambiguation (need a third plane to
+ *                  confirm a junction exists), 2 for last-resort fallback (any
+ *                  two valid planes suffice when the primary pass failed).
+ */
+function _resolveEdgeMF(
+  tris: THREE.Vector3[][],
+  triIdx: Map<number, number[]>,
+  e: PickedEdge,
+  edgeDir: THREE.Vector3,
+  edgeLen: number,
+  eps: number,
+  bodyCentroid: THREE.Vector3,
+  minPlanes = 3,
+): { u1: THREE.Vector3; u2: THREE.Vector3 } | null {
+  const planeTolMF = 1 - 1e-4; // |n1·n2| > this ⟹ same plane normal
+  const epsWide    = eps * 3;  // wider perp tolerance for CSG-precision offsets
+
+  // Centroid direction — needed early to sign-correct u via normal×edgeDir.
+  const edgeMidPt = e.a.clone().add(e.b).multiplyScalar(0.5);
+  const toCentroid = bodyCentroid.clone().sub(edgeMidPt).normalize();
+
+  // Sample near A, midpoint and B so we catch triangles whose vertices lie
+  // anywhere along the full edge length (not just at the two endpoints).
+  const edgeMid = edgeMidPt; // reuse
+  const setA    = getCandidatesNear(e.a,     triIdx, eps);
+  const setB    = getCandidatesNear(e.b,     triIdx, eps);
+  const setMid  = getCandidatesNear(edgeMid, triIdx, eps);
+  const allCands = Array.from(new Set([...setA, ...setB, ...setMid]));
+
+  interface HalfPlane { normal: THREE.Vector3; u: THREE.Vector3; }
+  const halfPlanes: HalfPlane[] = [];
+
+  for (const idx of allCands) {
+    const tri = tris[idx];
+
+    // At least one vertex must lie ON the edge segment (within epsWide perp.).
+    let hasEdgeLine = false;
+    for (let k = 0; k < 3; k++) {
+      const v = tri[k];
+      const w = v.clone().sub(e.a);
+      const tPar = w.dot(edgeDir);
+      const proj = e.a.clone().addScaledVector(edgeDir, tPar);
+      const perp = v.distanceTo(proj);
+      if (tPar >= -epsWide && tPar <= edgeLen + epsWide && perp <= epsWide) {
+        hasEdgeLine = true;
+        break;
+      }
+    }
+    if (!hasEdgeLine) continue;
+
+    // Triangle normal.
+    const tn = new THREE.Vector3().crossVectors(
+      tri[1].clone().sub(tri[0]), tri[2].clone().sub(tri[0]),
+    );
+    const tnLen = tn.length();
+    if (tnLen < 1e-18) continue;
+    tn.divideScalar(tnLen);
+
+    // Compute u from face normal: u = normal × edgeDir, sign toward centroid.
+    // This is independent of WHICH triangle was found for a face — it depends
+    // only on the face's orientation — so it gives the correct in-face
+    // perpendicular even when the only candidate triangle's ic vertex is on
+    // the "wrong side" (e.g. in a screw-boss region above the edge).
+    const uRaw = new THREE.Vector3().crossVectors(tn, edgeDir);
+    const uLen = uRaw.length();
+    if (uLen < 0.5) continue; // edge parallel to face normal → can't fillet
+    uRaw.divideScalar(uLen);
+    if (uRaw.dot(toCentroid) < 0) uRaw.negate();
+
+    // Exterior-face filter: for a convex exterior corner, the correct faces are
+    // those whose outward normal points AWAY from the body centroid (n·toCentroid < 0).
+    // Interior surfaces adjacent to the edge (e.g. a cylinder boss whose curved
+    // surface touches the edge line at its base) have their outward normal pointing
+    // TOWARD the centroid (n·toCentroid > 0) — skip them.  Threshold 0.05 rather
+    // than 0 to tolerate near-perpendicular faces, but firmly reject clearly-inward
+    // surfaces (dot ~0.5–1.0 for boss surfaces near the edge).
+    if (tn.dot(toCentroid) > 0.05) continue;
+
+    // Dedup: same face normal ⟹ same face → skip.
+    if (halfPlanes.some(p => Math.abs(p.normal.dot(tn)) > planeTolMF)) continue;
+
+    halfPlanes.push({ normal: tn, u: uRaw });
+  }
+
+  if (halfPlanes.length < minPlanes) return null; // insufficient planes found
+
+  // Centroid heuristic: the bisector (u1+u2) of the correct exterior-corner
+  // pair points INTO the solid, i.e. toward the body centroid.
+  // (toCentroid was already computed above for the normal×edgeDir sign correction.)
+  let bestI = 0, bestJ = 1, bestScore = -Infinity;
+  for (let i = 0; i < halfPlanes.length; i++) {
+    for (let j = i + 1; j < halfPlanes.length; j++) {
+      const u1t = halfPlanes[i].u;
+      const u2t = halfPlanes[j].u;
+      const cosPhi = THREE.MathUtils.clamp(u1t.dot(u2t), -1, 1);
+      const phi = Math.acos(cosPhi);
+      if (phi < 0.10 || phi > Math.PI - 0.10) continue; // degenerate dihedral
+      const bis = u1t.clone().add(u2t).normalize();
+      const score = bis.dot(toCentroid);
+      if (score > bestScore) { bestScore = score; bestI = i; bestJ = j; }
+    }
+  }
+
+  if (bestScore === -Infinity) return null; // all pairs degenerate
+
+  return { u1: halfPlanes[bestI].u.clone(), u2: halfPlanes[bestJ].u.clone() };
+}
+
+// ---------------------------------------------------------------------------
 // Per-edge face resolution
 //
 // Finds the two triangles that share `edge` (by world-space vertex match) and
@@ -579,6 +735,7 @@ export function resolveEdge(
   triIdx?: Map<number, number[]>,
   eps?: number,
   topoMap?: Map<string, { u1: THREE.Vector3; u2: THREE.Vector3 }>,
+  bodyCentroid?: THREE.Vector3,
 ): ResolvedEdge | null {
   // Fast-path: if the caller supplied a topology map (precomputed u1/u2 for
   // every model edge of the CSG result), look up this edge's endpoints directly.
@@ -593,6 +750,15 @@ export function resolveEdge(
       const length = edgeDir.length();
       if (length > 1e-9) {
         edgeDir.divideScalar(length);
+        // At multi-face junctions the topology may store u1/u2 for an interior
+        // face pair (e.g. shelf/boss) rather than the convex exterior corner the
+        // user wants to fillet.  Run the MF heuristic and prefer its result.
+        if (bodyCentroid && triIdx && eps != null) {
+          const mfU = _resolveEdgeMF(tris, triIdx, e, edgeDir, length, eps, bodyCentroid, 2);
+          if (mfU) {
+            return { a: e.a.clone(), b: e.b.clone(), edgeDir, length, u1: mfU.u1, u2: mfU.u2 };
+          }
+        }
         return { a: e.a.clone(), b: e.b.clone(), edgeDir, length, u1: hit.u1.clone(), u2: hit.u2.clone() };
       }
     }
@@ -661,6 +827,23 @@ export function resolveEdge(
     }
     adj.length = 0;
     for (const { rep } of planes) adj.push(rep);
+  }
+
+  // ── Multi-face junction disambiguation ──────────────────────────────────
+  // Delegated to _resolveEdgeMF (see its comment above).  When it finds >2
+  // distinct half-planes and a clear centroid-scoring winner, return that pair
+  // directly rather than continuing through the split/flat-face fallbacks.
+  if (adj.length === 2 && bodyCentroid && triIdx && eps != null) {
+    const ev = e.b.clone().sub(e.a);
+    const el = ev.length();
+    if (el > 1e-9) {
+      // minPlanes=2: the normal×edgeDir u computation is correct even with
+      // only 2 planes, so always prefer it over the ic-vertex approach.
+      const mfU = _resolveEdgeMF(tris, triIdx, e, ev.clone().divideScalar(el), el, eps, bodyCentroid, 2);
+      if (mfU) {
+        return { a: e.a.clone(), b: e.b.clone(), edgeDir: ev.divideScalar(el), length: el, u1: mfU.u1, u2: mfU.u2 };
+      }
+    }
   }
 
   // Split-edge fallback: when the geometry triangulates two adjacent faces with
@@ -811,6 +994,25 @@ export function resolveEdge(
     if (bestFlatCandidate) adj.push(bestFlatCandidate);
   }
 
+  // ── Last-resort broad edge-line search ──────────────────────────────────
+  // When the primary pass + all fallbacks couldn't find 2 adjacent faces
+  // (often because CSG operations shifted vertex positions slightly so they
+  // no longer match exact endpoint coordinates), fall back to the broad
+  // half-plane search that accepts any vertex within epsWide of the edge line.
+  // minPlanes=2 so it returns even when only 2 planes are found (unlike the
+  // disambiguation call above which needed a 3rd plane as evidence of a
+  // multi-face junction).
+  if (adj.length !== 2 && bodyCentroid && triIdx && eps != null) {
+    const ev = e.b.clone().sub(e.a);
+    const el = ev.length();
+    if (el > 1e-9) {
+      const mfU = _resolveEdgeMF(tris, triIdx, e, ev.clone().divideScalar(el), el, eps, bodyCentroid, 2);
+      if (mfU) {
+        return { a: e.a.clone(), b: e.b.clone(), edgeDir: ev.divideScalar(el), length: el, u1: mfU.u1, u2: mfU.u2 };
+      }
+    }
+  }
+
   if (adj.length !== 2) return null;
 
   const edgeDir = e.b.clone().sub(e.a);
@@ -848,14 +1050,14 @@ export function computeEdgeGizmoDir(
   srcGeo: THREE.BufferGeometry,
   edges: PickedEdge[],
 ): THREE.Vector3 | null {
-  const { tris, triIdx, eps, topoMap } = getOrBuildSrcCache(srcGeo);
+  const { tris, triIdx, eps, topoMap, centroid } = getOrBuildSrcCache(srcGeo);
   const epsSq = eps * eps;
   const near = (p: THREE.Vector3, q: THREE.Vector3) => p.distanceToSquared(q) <= epsSq;
 
   const acc = new THREE.Vector3();
   let n = 0;
   for (const e of edges) {
-    const re = resolveEdge(tris, e, near, triIdx, eps, topoMap);
+    const re = resolveEdge(tris, e, near, triIdx, eps, topoMap, centroid);
     if (!re) continue;
     // Interior bisector (u1+u2) points into the solid; negate for exterior.
     acc.add(re.u1.clone().add(re.u2).normalize().negate());
@@ -1106,8 +1308,19 @@ export function propagateEdgesAlongTangents(
   const epsSq = eps * eps;
   const nearV = (a: THREE.Vector3, b: THREE.Vector3) => a.distanceToSquared(b) <= epsSq;
 
-  // Convert topology edges to {a, b, dir} for quick lookup.
-  interface TopoEdge { a: THREE.Vector3; b: THREE.Vector3; dir: THREE.Vector3; }
+  // Convert topology edges to {a, b, dir, polyline} for quick lookup.  We keep
+  // the FULL polyline so when a tangent-connected arc is picked up, we can
+  // expand it into all its constituent segments — otherwise a 68-segment arc
+  // becomes one straight "edge" from polyline[0] to polyline[end], the
+  // cluster step can't detect it as an arc, and the per-segment fillet path
+  // builds a chord-shaped cylinder cutter where a torus is required.  Result:
+  // visible CSG slivers where the chord cutter fails to match the real arc.
+  interface TopoEdge {
+    a: THREE.Vector3;
+    b: THREE.Vector3;
+    dir: THREE.Vector3;
+    polyline: THREE.Vector3[];
+  }
   const allEdges: TopoEdge[] = [];
   for (const te of topoEdges) {
     if (!te.polyline || te.polyline.length < 2) continue;
@@ -1117,7 +1330,7 @@ export function propagateEdgesAlongTangents(
     const len = dir.length();
     if (len < 1e-9) continue;
     dir.divideScalar(len);
-    allEdges.push({ a, b, dir });
+    allEdges.push({ a, b, dir, polyline: te.polyline });
   }
 
   // Seed BFS with the initially-picked edges (as PickedEdge world-coord objects).
@@ -1155,9 +1368,20 @@ export function propagateEdgesAlongTangents(
       const dot = Math.abs(te.dir.dot(curDir));
       if (dot < TANGENT_DOT) continue;
       visited.add(i);
-      const newEdge: PickedEdge = { a: te.a.clone(), b: te.b.clone() };
-      result.push(newEdge);
-      queue.push(newEdge);
+      // Expand the topology edge's polyline into individual segments so the
+      // cluster step downstream can recognise the arc (and route it through
+      // the loop-cutter / torus path).  If we only emitted one big a→b edge
+      // for a 68-segment arc the chord-cylinder per-segment fillet would be
+      // used instead, leaving visible slivers along the arc.
+      for (let p = 0; p + 1 < te.polyline.length; p++) {
+        const segA = te.polyline[p];
+        const segB = te.polyline[p + 1];
+        if (segA.distanceToSquared(segB) < 1e-12) continue;
+        result.push({ a: segA.clone(), b: segB.clone() });
+      }
+      // Use a representative segment as the BFS frontier for further tangent
+      // walking (whole-edge tangency is preserved by the dir vector).
+      queue.push({ a: te.a.clone(), b: te.b.clone() });
     }
   }
   return result;
@@ -1186,7 +1410,7 @@ export function computeEdgeCutGeometry(
   makeLoopCutter?: LoopCutterFn,
   options?: EdgeCutOptions,
 ): THREE.BufferGeometry | null {
-  const { tris, triIdx, eps, topoMap } = getOrBuildSrcCache(srcGeo);
+  const { tris, triIdx, eps, topoMap, centroid } = getOrBuildSrcCache(srcGeo);
   const epsSq = eps * eps;
   const near = (p: THREE.Vector3, q: THREE.Vector3) => p.distanceToSquared(q) <= epsSq;
 
@@ -1271,22 +1495,86 @@ export function computeEdgeCutGeometry(
   // welds internally), so running weldAndCleanSolid on them is both unnecessary
   // and slow (retriangulateCoplanarRegions on a torus freezes the preview).
   let perSegCut = 0;
+  // Diagnostic lines — collected throughout and emitted as ONE console.warn at the end.
+  const diagLines: string[] = [];
   // Edges from non-circular clusters (or loop-cutter fallbacks) accumulate here
   // and are processed by the per-segment CSG driver below.
   const perSegEdges: PickedEdge[] = [];
 
+  // Per-vertex resolved-edge map — used by both Phase 2 (miter corners) and
+  // Phase 3 (rolling-ball corner spheres).  Hoisted above the cluster loop so
+  // loop-handled clusters (arc fillets via torus cutter) can also register
+  // their *open-end* vertices into the map — that is how the rolling-ball
+  // blend sees an arc↔straight transition where the arc went through the
+  // loop-cutter path and the straight edge through the per-segment path.
+  const miterVtxEdges = (options?.makeMiterCornerCutter || (options?.cornerRadius && options.cornerRadius > 0))
+    ? new Map<string, { pos: THREE.Vector3; res: ResolvedEdge[] }>()
+    : null;
+  const miterVtxKey = (v: THREE.Vector3) =>
+    `${Math.round(v.x / eps)}_${Math.round(v.y / eps)}_${Math.round(v.z / eps)}`;
+
+  // Tracks circles where the loop cutter fired successfully.  Used after
+  // Phase 1 to synthesise arc ResolvedEdges at straight-edge endpoints that
+  // lie on the circle rim so the corner blend (Phase 3) fires at those junctions.
+  const loopCutCircles: Array<{ circle: EdgeLoopCircle; rep: ResolvedEdge }> = [];
+
   for (const cluster of clusters) {
     let handledByLoop = false;
+    // Non-arc edges (straight lines merged into the arc cluster by tangent
+    // propagation) that should be re-routed to the per-segment path after the
+    // loop cutter runs on the pure-arc subset.
+    let clusterNonArcEdges: PickedEdge[] = [];
+    // Hoisted so the handledByLoop block (outside if(makeLoopCutter)) can use
+    // the post-split arc-only subset for open-endpoint detection.
+    let arcEdges: PickedEdge[] = cluster;
+
     if (makeLoopCutter) {
-      const circle = tag === 'fillet' ? fitEdgeCircleOrArc(cluster) : fitEdgeCircle(cluster);
+      let circle = tag === 'fillet' ? fitEdgeCircleOrArc(arcEdges) : fitEdgeCircle(arcEdges);
+
+      // When `propagateEdgesAlongTangents` adds arc segments, they share an
+      // endpoint with the originating straight edge and end up in the same
+      // cluster.  The combined cluster fails fitEdgeCircleOrArc because the
+      // straight edge's far endpoint lies well off the circle.
+      //
+      // Fix: classify edges topologically.  Arc segments form a chain where
+      // each segment's endpoint (e.b) is the start (e.a) of the next segment.
+      // "Branch" edges (straight/non-arc) have a terminal far endpoint (e.b)
+      // that does not appear as the start of any other cluster edge.
+      //
+      // This is more robust than the previous 5× median-length heuristic,
+      // which failed when short bracket ribs sat adjacent to large-radius arc
+      // segments of similar chord length (causing the split not to trigger and
+      // the full mixed cluster to fail the circle fit → no loop cutter fired
+      // → spike + dark-body artifacts on the bracket geometry).
+      if (!circle && cluster.length >= 8) {
+        const keyOf = (v: THREE.Vector3) =>
+          `${Math.round(v.x / eps)}_${Math.round(v.y / eps)}_${Math.round(v.z / eps)}`;
+        const aKeys = new Set(cluster.map((e) => keyOf(e.a)));
+        const arcOnly  = cluster.filter((e) =>  aKeys.has(keyOf(e.b)));
+        const straight = cluster.filter((e) => !aKeys.has(keyOf(e.b)));
+        if (arcOnly.length >= 8 && straight.length > 0) {
+          const maybeCircle = tag === 'fillet' ? fitEdgeCircleOrArc(arcOnly) : fitEdgeCircle(arcOnly);
+          if (maybeCircle) {
+            circle              = maybeCircle;
+            arcEdges            = arcOnly;
+            clusterNonArcEdges  = straight;
+          }
+        }
+      }
+
+      if (!circle) {
+        // No circle fit — will fall through to per-segment processing.
+        const e0 = cluster[0];
+        diagLines.push(`no-circle cluster=${cluster.length} a=(${e0.a.x.toFixed(2)},${e0.a.y.toFixed(2)},${e0.a.z.toFixed(2)}) b=(${e0.b.x.toFixed(2)},${e0.b.y.toFixed(2)},${e0.b.z.toFixed(2)})`);
+      }
       if (circle) {
         // Resolve a representative edge for orientation. Try the middle first
         // (away from any seam artefacts), then scan outward for any that resolves.
         let rep: ResolvedEdge | null = null;
-        const order = [Math.floor(cluster.length / 2)];
-        for (let i = 0; i < cluster.length; i++) if (i !== order[0]) order.push(i);
+        const order = [Math.floor(arcEdges.length / 2)];
+        for (let i = 0; i < arcEdges.length; i++) if (i !== order[0]) order.push(i);
         for (const idx of order) {
-          rep = resolveEdge(tris, cluster[idx], near, triIdx, eps, topoMap);
+          rep = resolveEdge(tris, arcEdges[idx], near, triIdx, eps, topoMap, centroid);
           if (rep) break;
         }
         if (rep) {
@@ -1300,8 +1588,12 @@ export function computeEdgeCutGeometry(
               if (posN > 0) {
                 solid.dispose();
                 solid = result;
-                cut++;
+                // Credit every arc edge handled by the loop cutter so the
+                // "N of M could not be processed" counter stays accurate.
+                cut += arcEdges.length;
                 handledByLoop = true;
+                // Track so Phase 1.5 can synthesise arc REs at junction vertices.
+                loopCutCircles.push({ circle, rep });
               } else {
                 result.dispose();
                 // Empty result → fall through to per-segment for this cluster.
@@ -1314,26 +1606,64 @@ export function computeEdgeCutGeometry(
         }
       }
     }
-    if (!handledByLoop) perSegEdges.push(...cluster);
-  }
+    if (handledByLoop) {
+      // Straight edges that were separated from the arc cluster (tangent-
+      // propagation artefact) go back to the per-segment path.
+      if (clusterNonArcEdges.length > 0) perSegEdges.push(...clusterNonArcEdges);
 
-  // Per-vertex resolved-edge map — used by both Phase 2 (miter corners) and
-  // Phase 3 (rolling-ball corner spheres).  Activated whenever either feature
-  // is requested so we only pay the per-vertex bookkeeping cost when needed.
-  const miterVtxEdges = (options?.makeMiterCornerCutter || (options?.cornerRadius && options.cornerRadius > 0))
-    ? new Map<string, { pos: THREE.Vector3; res: ResolvedEdge[] }>()
-    : null;
-  const miterVtxKey = (v: THREE.Vector3) =>
-    `${Math.round(v.x / eps)}_${Math.round(v.y / eps)}_${Math.round(v.z / eps)}`;
+      // Register the loop cluster's OPEN endpoint segments into miterVtxEdges
+      // so the rolling-ball corner blend (Phase 3) sees the arc↔line transition
+      // vertices.  An "open endpoint" is a vertex touched by exactly one edge
+      // in the cluster — i.e. an arc terminus (a full closed circle has no
+      // open endpoints and falls through harmlessly).
+      if (miterVtxEdges) {
+        const clusterVtxCount = new Map<string, { v: THREE.Vector3; edges: PickedEdge[] }>();
+        // Use arcEdges (not cluster) so that the open-endpoint check only fires
+        // for genuine arc terminus vertices.  When the mixed-cluster split fires,
+        // cluster also contains straight nonArc rib edges.  Those rib edges have
+        // a "far" endpoint (the end NOT on the circle) that would appear as an
+        // open endpoint in the full cluster, but NOT in arcEdges.  Using cluster
+        // pre-populates miterVtxEdges at that far endpoint with 1 RE; then Phase 1
+        // (per-segment) adds a second RE there → spurious res.length=2 → corner
+        // blend fires at a box corner with a wrong sphere centre.
+        // arcEdges = cluster when there is no mixed split, so this is a no-op
+        // for pure-arc clusters and for non-loop-cutter paths.
+        for (const ce of arcEdges) {
+          for (const v of [ce.a, ce.b]) {
+            const k = miterVtxKey(v);
+            let entry = clusterVtxCount.get(k);
+            if (!entry) { entry = { v: v.clone(), edges: [] }; clusterVtxCount.set(k, entry); }
+            entry.edges.push(ce);
+          }
+        }
+        for (const { v, edges } of clusterVtxCount.values()) {
+          if (edges.length !== 1) continue; // open endpoint only
+          const re = resolveEdge(tris, edges[0], near, triIdx, eps, topoMap, centroid);
+          if (!re) continue;
+          const k = miterVtxKey(v);
+          let entry = miterVtxEdges.get(k);
+          if (!entry) { entry = { pos: v.clone(), res: [] }; miterVtxEdges.set(k, entry); }
+          entry.res.push(re);
+        }
+      }
+    } else {
+      perSegEdges.push(...cluster);
+    }
+  }
 
   // Collect all cutters in phases 1–3, then pass the full list to
   // csgSubtractMany (phase 4) which chains all subtracts in Manifold space.
 
   // Phase 1: collect per-segment cutters.
   const perSegCuttersList: THREE.BufferGeometry[] = [];
+  // Parallel metadata for post-Phase-4 cone diagnostics.
+  const perSegReData: Array<{ a: THREE.Vector3; b: THREE.Vector3; edgeDir: THREE.Vector3; u1: THREE.Vector3; u2: THREE.Vector3 }> = [];
   for (const e of perSegEdges) {
-    const re = resolveEdge(tris, e, near, triIdx, eps, topoMap);
-    if (!re) { failedSegCount++; continue; }
+    const re = resolveEdge(tris, e, near, triIdx, eps, topoMap, centroid);
+    if (!re) {
+      console.warn(`[${tag}] resolveEdge null a=(${e.a.x.toFixed(2)},${e.a.y.toFixed(2)},${e.a.z.toFixed(2)}) b=(${e.b.x.toFixed(2)},${e.b.y.toFixed(2)},${e.b.z.toFixed(2)})`);
+      failedSegCount++; continue;
+    }
     // Collect per-vertex resolved-edge data for miter corner computation.
     if (miterVtxEdges) {
       for (const v of [re.a, re.b]) {
@@ -1345,8 +1675,103 @@ export function computeEdgeCutGeometry(
     }
     const edgeEps = Math.max(re.length * 1e-3, 1e-4);
     const cutter = makeCutter(re, edgeEps);
-    if (!cutter) { console.warn(`[${tag}] degenerate dihedral — edge skipped`); failedSegCount++; continue; }
+    if (!cutter) {
+      console.warn(`[${tag}] degenerate a=(${re.a.x.toFixed(2)},${re.a.y.toFixed(2)},${re.a.z.toFixed(2)}) b=(${re.b.x.toFixed(2)},${re.b.y.toFixed(2)},${re.b.z.toFixed(2)})`);
+      // Degenerate dihedral (< 0.10 rad) — edge is tangent to the loop-cutter
+      // surface. Skip per-segment cutter; the torus handles this transition.
+      failedSegCount++;
+      // Remove from miterVtxEdges: the per-segment cutter didn't run, so there
+      // is no Steinmetz spike to blend at this junction.  The torus loop cutter
+      // already handles the transition tangentially, so a corner blend here
+      // would over-cut clean material.
+      if (miterVtxEdges) {
+        for (const endV of [re.a, re.b]) {
+          const k = miterVtxKey(endV);
+          const entry = miterVtxEdges.get(k);
+          if (entry) {
+            entry.res = entry.res.filter(r => r !== re);
+            if (entry.res.length === 0) miterVtxEdges.delete(k);
+          }
+        }
+      }
+      continue;
+    }
+    const phi = Math.acos(THREE.MathUtils.clamp(re.u1.dot(re.u2), -1, 1));
+    diagLines.push(`perSeg cutter OK a=(${re.a.x.toFixed(2)},${re.a.y.toFixed(2)},${re.a.z.toFixed(2)}) b=(${re.b.x.toFixed(2)},${re.b.y.toFixed(2)},${re.b.z.toFixed(2)}) phi=${phi.toFixed(3)} u1=(${re.u1.x.toFixed(3)},${re.u1.y.toFixed(3)},${re.u1.z.toFixed(3)}) u2=(${re.u2.x.toFixed(3)},${re.u2.y.toFixed(3)},${re.u2.z.toFixed(3)}) cutterVerts=${(cutter.attributes.position as THREE.BufferAttribute)?.count ?? 0}`);
+    perSegReData.push({ a: re.a.clone(), b: re.b.clone(), edgeDir: re.edgeDir.clone(), u1: re.u1.clone(), u2: re.u2.clone() });
     perSegCuttersList.push(cutter);
+  }
+
+  // Phase 1.5: synthesise arc ResolvedEdges at straight-edge endpoints that
+  // sit on a loop-cut circle.
+  //
+  // WHY: a full closed circle has no open endpoints, so the handledByLoop block
+  // never adds any entries to miterVtxEdges for the arc.  After Phase 1 the
+  // junction vertex (where straight meets arc) has res.length === 1 — only the
+  // straight edge — and the Phase 3 corner-blend guard (`res.length < 2`) fires,
+  // leaving a spike/cone at every arc↔straight transition.
+  //
+  // FIX: for each vertex that has exactly one straight-edge entry AND lies on a
+  // successfully loop-cut circle (in its plane, at its radius), compute the arc
+  // tangent direction at that point and push a synthetic ResolvedEdge so Phase 3
+  // sees res.length === 2 and builds the rolling-ball blend.
+  if (miterVtxEdges && loopCutCircles.length > 0) {
+    for (const entry of miterVtxEdges.values()) {
+      if (entry.res.length !== 1) continue; // already has 2+ entries (or zero)
+      const v = entry.pos;
+      for (const { circle, rep } of loopCutCircles) {
+        // Wider than eps: mesh vertices with slight tessellation jitter (e.g.
+        // nonArc rib endpoint at z=40.96 when the fitted circle is at z=41.00)
+        // must still pass the "on the circle" test.
+        // 0.5 % of radius ≈ 0.05 mm for a 10 mm boss; 0.1 mm absolute floor.
+        const onCircleTol = Math.max(circle.radius * 0.005, 0.1);
+        // Is v in the circle's plane?
+        const toV = new THREE.Vector3().subVectors(v, circle.center);
+        const axialDist = Math.abs(circle.axis.dot(toV));
+        if (axialDist > onCircleTol) continue;
+        // Is v on the circle rim (radial distance ≈ radius)?
+        const radialVec = toV.clone().addScaledVector(circle.axis, -circle.axis.dot(toV));
+        const radialDist = radialVec.length();
+        if (Math.abs(radialDist - circle.radius) > onCircleTol) continue;
+
+        // Compute arc tangent at v: axis × radial (CCW around axis)
+        const radialDir = radialVec.clone().divideScalar(radialDist);
+        const tangent = new THREE.Vector3().crossVectors(circle.axis, radialDir).normalize();
+        // Orient consistently with the representative arc edge direction
+        if (rep.edgeDir.dot(tangent) < 0) tangent.negate();
+
+        // Synthesise a ResolvedEdge whose u1/u2/edgeDir model the arc geometry.
+        //
+        // u1/u2 are the in-face perpendiculars pointing AWAY from the edge into
+        // each adjacent face.  For a planar circular hole:
+        //   • Cylindrical-wall face: u ≈ −circle.axis (constant everywhere) ✓
+        //   • Flat-cap face:         u ≈ radial direction at that rim point  ✗
+        //     The representative's flat-face u is only correct at the rep's own
+        //     angle; at the junction the radial direction is different, so using
+        //     rep.u1/u2 directly gives wrong setbacks → giant AABB → box notches.
+        //
+        // Fix: detect which representative normal belongs to the cylindrical wall
+        // (aligned with ±circle.axis) vs the flat face (perpendicular to axis),
+        // then replace the flat-face u with the radial direction at the junction.
+        const axisAlignU1 = Math.abs(rep.u1.dot(circle.axis));
+        const u1IsWall = axisAlignU1 > 0.7; // cylindrical-wall u ≈ ±circle.axis
+        const wallU    = (u1IsWall ? rep.u1 : rep.u2).clone();
+        // Flat-face u at this specific junction vertex = radialDir at that point.
+        const flatU    = radialDir.clone(); // already normalised above
+        const synthU1  = u1IsWall ? wallU : flatU;
+        const synthU2  = u1IsWall ? flatU : wallU;
+        const arcRE: ResolvedEdge = {
+          a: v.clone(),
+          b: v.clone().addScaledVector(tangent, rep.length),
+          edgeDir: tangent,
+          length: rep.length,
+          u1: synthU1,
+          u2: synthU2,
+        };
+        entry.res.push(arcRE);
+        break; // a vertex can only lie on one circle
+      }
+    }
   }
 
   // Phase 2: collect miter corner cutters.
@@ -1395,13 +1820,21 @@ export function computeEdgeCutGeometry(
   // using native primitives (Manifold.cube / Manifold.sphere) — no conversion
   // loss, no degenerate-mesh failures.
   const cornerBlends: CornerBlendSpec[] = [];
+  // Track junction vertex positions that have already received a blend so the
+  // same vertex is never blended twice.  This can happen when Phase 1.5 (loop
+  // cutter synthesis) and the Phase 2 per-segment path BOTH register a RE for
+  // the same arc↔straight junction vertex — they emit duplicate entries in
+  // miterVtxEdges with different sphere centres, producing two overlapping
+  // sphere cuts that mangle the geometry at that corner.
+  const seenBlendPos = new Set<string>();
   if (options?.cornerRadius && options.cornerRadius > 0 && miterVtxEdges) {
     const r = options.cornerRadius;
-    console.log(`[fillet] Phase3 enter — cornerRadius=${r}, vtxCount=${miterVtxEdges.size}`);
-
     for (const { pos, res } of miterVtxEdges.values()) {
-      console.log(`[fillet] Phase3 vtx pos=(${pos.x.toFixed(3)},${pos.y.toFixed(3)},${pos.z.toFixed(3)}) res.length=${res.length}`);
-      if (res.length < 3) continue;
+      // 2+ edges: rolling-ball blend at the transition vertex.  At a 2-edge
+      // vertex (e.g. arc meeting straight line at a slot end) the two cylinder
+      // fillet cutters meet at non-tangent angles and leave a spike — same
+      // family of artefact as the 3-edge Steinmetz spike, fixed the same way.
+      if (res.length < 2) continue;
       const edges3 = res.slice(0, 3);
 
       // ── Per-edge geometry ────────────────────────────────────────────────
@@ -1415,7 +1848,9 @@ export function computeEdgeCutGeometry(
       for (const re of edges3) {
         const cosPhi = THREE.MathUtils.clamp(re.u1.dot(re.u2), -1, 1);
         const phi    = Math.acos(cosPhi);
-        if (phi < 0.05 || phi > Math.PI - 0.05) { buildFailed = true; break; }
+        // 0.10 rad (≈5.7°) — matches the cutter builders so tessellation seams
+        // from an already-filleted torus surface are ignored here too.
+        if (phi < 0.10 || phi > Math.PI - 0.10) { buildFailed = true; break; }
         const sinHalf = Math.sin(phi / 2);
         const tanHalf = Math.tan(phi / 2);
         if (sinHalf < 1e-4 || tanHalf < 1e-4) { buildFailed = true; break; }
@@ -1428,10 +1863,7 @@ export function computeEdgeCutGeometry(
           u2: re.u2.clone(),
         });
       }
-      if (buildFailed || edgeInfos.length < 3) {
-        console.warn(`[fillet] Phase3 skipped vtx — buildFailed=${buildFailed} edgeInfos.length=${edgeInfos.length}`);
-        continue;
-      }
+      if (buildFailed || edgeInfos.length < 2) continue;
 
       // ── Rolling-ball sphere centre: intersection of the 3 cylinder axes ──
       // Axis i: point A_i = pos + bis_i * axisDist_i, direction D_i = edgeDir_i
@@ -1447,18 +1879,19 @@ export function computeEdgeCutGeometry(
 
       let sphereCenter: THREE.Vector3;
       if (Math.abs(den01) < 1e-6) {
-        // Parallel axes (degenerate corner) — fall back to face-normal sum
-        // C = pos + r*(n1+n2+n3): exact for 90° corners, good approximation otherwise
-        sphereCenter = pos.clone();
-        const seenNormals: THREE.Vector3[] = [];
-        for (const ei of edgeInfos) {
-          for (const u of [ei.u1, ei.u2]) {
-            if (!seenNormals.some(n => n.dot(u) > 1 - 1e-3)) {
-              seenNormals.push(u.clone());
-              sphereCenter.addScaledVector(u, r);
-            }
-          }
-        }
+        // Parallel axes — tangent junction (straight edge tangent to arc).
+        //
+        // The old face-normal-sum formula: C = pos + r*(u1+u2+u3+...) often
+        // evaluates to near zero for this case because the flat-face normal and
+        // the cylindrical-wall normal point in opposite directions and cancel.
+        // The sphere ends up outside the solid and removes nothing.
+        //
+        // Correct placement: the rolling-ball sphere sits equidistant between
+        // the two parallel fillet cylinder axes.  axA[i] = pos + bis_i * axisDist_i
+        // is the point on each cylinder axis at the junction; midpoint(axA[0], axA[1])
+        // is therefore inside the solid, centred between the two fillet surfaces —
+        // exactly where the sphere needs to sit to round off the flat end-cap spike.
+        sphereCenter = axA[0].clone().add(axA[axA.length > 1 ? 1 : 0]).multiplyScalar(0.5);
       } else {
         const c0 = w01.dot(axD[0]);
         const c1 = w01.dot(axD[1]);
@@ -1466,7 +1899,6 @@ export function computeEdgeCutGeometry(
         sphereCenter = axA[0].clone().addScaledVector(axD[0], t0);
       }
 
-      console.log(`[fillet] Phase3 sphereCenter=(${sphereCenter.x.toFixed(3)},${sphereCenter.y.toFixed(3)},${sphereCenter.z.toFixed(3)}) r=${r} sphere_r=${(r*1.1).toFixed(3)}`);
 
       // ── Corner box: AABB over the prism-intersection setback points ──────
       // Proof that this is safe: after the 3 edge cuts any point in this AABB
@@ -1494,13 +1926,21 @@ export function computeEdgeCutGeometry(
       // planes at single points (degenerate cusps).  1.1r gives solid
       // intersection circles on each face and still sits inside the spike tip
       // (at ≈ 1.225r from sphereCenter), so the spike is fully removed.
+      // Dedup: skip if this junction vertex already has a blend registered.
+      // Use r*0.1 as snap tolerance (e.g. 0.2 mm for r=2 mm) — wide enough to
+      // merge the ~0.04 mm discrepancy between Phase-1.5 arc RE synthesis and
+      // actual mesh vertex positions, but not so wide it merges distinct junctions.
+      const posSnapTol = r * 0.1;
+      const posKey = `${Math.round(pos.x / posSnapTol)}_${Math.round(pos.y / posSnapTol)}_${Math.round(pos.z / posSnapTol)}`;
+      if (seenBlendPos.has(posKey)) continue;
+      seenBlendPos.add(posKey);
+
       cornerBlends.push({
         sphereCenter: [sphereCenter.x, sphereCenter.y, sphereCenter.z],
         sphereRadius: r * 1.1,
         boxMin: [aabb.min.x, aabb.min.y, aabb.min.z],
         boxMax: [aabb.max.x, aabb.max.y, aabb.max.z],
       });
-      console.log(`[fillet] Phase3 CornerBlendSpec added — center=(${sphereCenter.x.toFixed(3)},${sphereCenter.y.toFixed(3)},${sphereCenter.z.toFixed(3)}) r=${(r*1.1).toFixed(3)}`);
     }
   }
 
@@ -1508,16 +1948,78 @@ export function computeEdgeCutGeometry(
   // Edge cutters and miter cutters run as Three.js geometries; rolling-ball
   // corner blends are built natively inside Manifold (Manifold.cube / .sphere)
   // so there is no Three.js↔Manifold roundtrip for the corner geometry.
+  //
   const allCutters = [...perSegCuttersList, ...extraCutters];
-  console.log(`[fillet] Phase4 — perSegCutters=${perSegCuttersList.length} extraCutters=${extraCutters.length} cornerBlends=${cornerBlends.length}`);
   if (allCutters.length > 0 || cornerBlends.length > 0) {
+    const preCount = (solid.attributes.position as THREE.BufferAttribute | undefined)?.count ?? 0;
+    diagLines.push(`Phase4 preCount=${preCount} perSeg=${perSegCuttersList.length} extra=${extraCutters.length} blends=${cornerBlends.length}`);
+
+    // [DIAG-PRE] Hash every pre-Phase4 triangle so we can identify new ones after.
+    const preTriHash = new Set<string>();
+    {
+      const pa = solid.attributes.position?.array as Float32Array | undefined;
+      if (pa) {
+        const n = (pa.length / 9) | 0;
+        for (let t = 0; t < n; t++) {
+          const o = t * 9;
+          preTriHash.add(
+            `${pa[o].toFixed(4)},${pa[o+1].toFixed(4)},${pa[o+2].toFixed(4)}|` +
+            `${pa[o+3].toFixed(4)},${pa[o+4].toFixed(4)},${pa[o+5].toFixed(4)}|` +
+            `${pa[o+6].toFixed(4)},${pa[o+7].toFixed(4)},${pa[o+8].toFixed(4)}`
+          );
+        }
+      }
+    }
+
     try {
       const result = csgSubtractMany(solid, allCutters, cornerBlends.length > 0 ? cornerBlends : undefined);
       const posCount = (result?.attributes?.position as THREE.BufferAttribute | undefined)?.count ?? 0;
-      console.log(`[fillet] Phase4 csgSubtractMany result posCount=${posCount}`);
+      diagLines.push(`Phase4 postCount=${posCount}`);
       if (posCount > 0) {
         solid.dispose();
         solid = result;
+
+        // [DIAG-NEW] Log all triangles that BVH ADDED (not in pre-hash). These are
+        // the new fillet-surface triangles, fillet end-caps, and any cone artifacts.
+        {
+          const qa = solid.attributes.position?.array as Float32Array | undefined;
+          if (qa) {
+            const nNew = (qa.length / 9) | 0;
+            const newRows: string[] = [];
+            for (let t = 0; t < nNew; t++) {
+              const o = t * 9;
+              const key =
+                `${qa[o].toFixed(4)},${qa[o+1].toFixed(4)},${qa[o+2].toFixed(4)}|` +
+                `${qa[o+3].toFixed(4)},${qa[o+4].toFixed(4)},${qa[o+5].toFixed(4)}|` +
+                `${qa[o+6].toFixed(4)},${qa[o+7].toFixed(4)},${qa[o+8].toFixed(4)}`;
+              if (preTriHash.has(key)) continue; // unchanged triangle
+              const v: [number,number,number][] = [
+                [qa[o],   qa[o+1], qa[o+2]],
+                [qa[o+3], qa[o+4], qa[o+5]],
+                [qa[o+6], qa[o+7], qa[o+8]],
+              ];
+              const e1 = [v[1][0]-v[0][0], v[1][1]-v[0][1], v[1][2]-v[0][2]];
+              const e2 = [v[2][0]-v[0][0], v[2][1]-v[0][1], v[2][2]-v[0][2]];
+              const nx = e1[1]*e2[2]-e1[2]*e2[1], ny = e1[2]*e2[0]-e1[0]*e2[2], nz = e1[0]*e2[1]-e1[1]*e2[0];
+              const nm = Math.sqrt(nx*nx+ny*ny+nz*nz);
+              if (nm < 1e-10) continue;
+              const fnx = nx/nm, fny = ny/nm, fnz = nz/nm;
+              let maxEdge = 0;
+              for (let i = 0; i < 3; i++) {
+                const va = v[i], vb = v[(i+1)%3];
+                const d = Math.sqrt((vb[0]-va[0])**2+(vb[1]-va[1])**2+(vb[2]-va[2])**2);
+                if (d > maxEdge) maxEdge = d;
+              }
+              const cx = (v[0][0]+v[1][0]+v[2][0])/3, cy = (v[0][1]+v[1][1]+v[2][1])/3, cz = (v[0][2]+v[1][2]+v[2][2])/3;
+              newRows.push(
+                `n=(${fnx.toFixed(2)},${fny.toFixed(2)},${fnz.toFixed(2)}) maxE=${maxEdge.toFixed(2)} c=(${cx.toFixed(2)},${cy.toFixed(2)},${cz.toFixed(2)})` +
+                ` v0=(${v[0].map(x => x.toFixed(2)).join(',')}) v1=(${v[1].map(x => x.toFixed(2)).join(',')}) v2=(${v[2].map(x => x.toFixed(2)).join(',')})`
+              );
+            }
+            diagLines.push(`DIAG-NEW: ${newRows.length} triangles added by BVH`);
+            for (const r of newRows) diagLines.push('  ' + r);
+          }
+        }
         cut += perSegCuttersList.length;
         perSegCut += perSegCuttersList.length;
       } else {
@@ -1552,6 +2054,107 @@ export function computeEdgeCutGeometry(
     } catch (err) {
       console.error(`[${tag}] final weld/clean failed:`, err);
     }
+    // Remove spike components left by BVH at edge endpoints adjacent to complex
+    // geometry (e.g. a boss cylinder junction).  removeSpikeComponents detects
+    // triangles whose non-apex vertices are isolated from the rest of the mesh
+    // (attached only through the apex vertex) and removes them.
+    try {
+      const depiked = removeSpikeComponents(solid);
+      if (depiked !== solid) { solid.dispose(); solid = depiked; }
+    } catch (err) {
+      console.error(`[${tag}] removeSpikeComponents failed:`, err);
+    }
+
+    // [DIAG-A] Wide-net endpoint search (2 mm radius around each endpoint).
+    if (perSegReData.length > 0) {
+      const diagArr = solid.attributes.position?.array as Float32Array | undefined;
+      if (diagArr) {
+        const nTri = (diagArr.length / 9) | 0;
+        for (const re of perSegReData) {
+          for (const ep of [re.a, re.b]) {
+            const thresh = 2.0; // wide — cone apex may have drifted from exact endpoint
+            const rows: string[] = [];
+            for (let t = 0; t < nTri; t++) {
+              let hasEp = false;
+              const v: [number,number,number][] = [];
+              for (let j = 0; j < 3; j++) {
+                const o = t * 9 + j * 3;
+                const px = diagArr[o], py = diagArr[o + 1], pz = diagArr[o + 2];
+                v.push([px, py, pz]);
+                if (!hasEp && Math.abs(px - ep.x) < thresh && Math.abs(py - ep.y) < thresh && Math.abs(pz - ep.z) < thresh) hasEp = true;
+              }
+              if (!hasEp) continue;
+              const e1 = [v[1][0]-v[0][0], v[1][1]-v[0][1], v[1][2]-v[0][2]];
+              const e2 = [v[2][0]-v[0][0], v[2][1]-v[0][1], v[2][2]-v[0][2]];
+              const nx = e1[1]*e2[2]-e1[2]*e2[1], ny = e1[2]*e2[0]-e1[0]*e2[2], nz = e1[0]*e2[1]-e1[1]*e2[0];
+              const nm = Math.sqrt(nx*nx+ny*ny+nz*nz);
+              if (nm < 1e-10) continue;
+              const fnx = nx/nm, fny = ny/nm, fnz = nz/nm;
+              const dot = fnx*re.edgeDir.x + fny*re.edgeDir.y + fnz*re.edgeDir.z;
+              let maxEdge = 0;
+              for (let i = 0; i < 3; i++) {
+                const va = v[i], vb = v[(i+1)%3];
+                const d = Math.sqrt((vb[0]-va[0])**2+(vb[1]-va[1])**2+(vb[2]-va[2])**2);
+                if (d > maxEdge) maxEdge = d;
+              }
+              rows.push(
+                `n=(${fnx.toFixed(2)},${fny.toFixed(2)},${fnz.toFixed(2)}) eDot=${dot.toFixed(2)} maxE=${maxEdge.toFixed(2)}` +
+                ` v0=(${v[0].map(x => x.toFixed(2)).join(',')})` +
+                ` v1=(${v[1].map(x => x.toFixed(2)).join(',')})` +
+                ` v2=(${v[2].map(x => x.toFixed(2)).join(',')})`
+              );
+            }
+            diagLines.push(`DIAG-A ep=(${ep.x.toFixed(2)},${ep.y.toFixed(2)},${ep.z.toFixed(2)}): ${rows.length} tris within 2mm`);
+            for (const r of rows) diagLines.push('  ' + r);
+          }
+        }
+      }
+    }
+
+    // [DIAG-B] Scan ALL triangles near the left face (X < 1) for X-facing normals.
+    // These are "end-cap" candidates regardless of exact vertex position.
+    if (perSegReData.length > 0) {
+      const diagArr2 = solid.attributes.position?.array as Float32Array | undefined;
+      if (diagArr2) {
+        const nTri = (diagArr2.length / 9) | 0;
+        const re0 = perSegReData[0];
+        const leftX = Math.min(re0.a.x, re0.b.x); // expect 0 for the boss-junction edge
+        const rows: string[] = [];
+        for (let t = 0; t < nTri; t++) {
+          const x0 = diagArr2[t*9], x1 = diagArr2[t*9+3], x2 = diagArr2[t*9+6];
+          // Only triangles whose MAXIMUM X < leftX + 1.0 (near the left face)
+          if (Math.max(x0, x1, x2) > leftX + 1.0) continue;
+          const v: [number,number,number][] = [
+            [diagArr2[t*9],   diagArr2[t*9+1], diagArr2[t*9+2]],
+            [diagArr2[t*9+3], diagArr2[t*9+4], diagArr2[t*9+5]],
+            [diagArr2[t*9+6], diagArr2[t*9+7], diagArr2[t*9+8]],
+          ];
+          const e1 = [v[1][0]-v[0][0], v[1][1]-v[0][1], v[1][2]-v[0][2]];
+          const e2 = [v[2][0]-v[0][0], v[2][1]-v[0][1], v[2][2]-v[0][2]];
+          const nx = e1[1]*e2[2]-e1[2]*e2[1], ny = e1[2]*e2[0]-e1[0]*e2[2], nz = e1[0]*e2[1]-e1[1]*e2[0];
+          const nm = Math.sqrt(nx*nx+ny*ny+nz*nz);
+          if (nm < 1e-10) continue;
+          const fnx = nx/nm, fny = ny/nm, fnz = nz/nm;
+          const dot = fnx*re0.edgeDir.x + fny*re0.edgeDir.y + fnz*re0.edgeDir.z;
+          // Only report X-facing (|dot| > 0.4) triangles
+          if (Math.abs(dot) < 0.4) continue;
+          let maxEdge = 0;
+          for (let i = 0; i < 3; i++) {
+            const va = v[i], vb = v[(i+1)%3];
+            const d = Math.sqrt((vb[0]-va[0])**2+(vb[1]-va[1])**2+(vb[2]-va[2])**2);
+            if (d > maxEdge) maxEdge = d;
+          }
+          const cx = (v[0][0]+v[1][0]+v[2][0])/3, cy = (v[0][1]+v[1][1]+v[2][1])/3, cz = (v[0][2]+v[1][2]+v[2][2])/3;
+          rows.push(
+            `n=(${fnx.toFixed(2)},${fny.toFixed(2)},${fnz.toFixed(2)}) dot=${dot.toFixed(2)} maxE=${maxEdge.toFixed(2)} c=(${cx.toFixed(2)},${cy.toFixed(2)},${cz.toFixed(2)})` +
+            ` v0=(${v[0].map(x => x.toFixed(2)).join(',')}) v1=(${v[1].map(x => x.toFixed(2)).join(',')}) v2=(${v[2].map(x => x.toFixed(2)).join(',')})`
+          );
+        }
+        diagLines.push(`DIAG-B X-facing tris near X=${leftX.toFixed(1)}: ${rows.length} total`);
+        for (const r of rows) diagLines.push('  ' + r);
+      }
+    }
+    if (diagLines.length > 0) console.warn(`[${tag}] DIAG:\n${diagLines.join('\n')}`);
   }
 
   // Guard against an empty result (e.g. size so large the cutter removed the

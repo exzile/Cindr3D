@@ -524,18 +524,28 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
       const parentId = (params.parentFeatureId as string | undefined) ?? feature.parentFeatureId;
       const parent = parentId ? features.find((f) => f.id === parentId) : null;
       if (parent?.mesh instanceof THREE.Mesh) {
-        srcGeo = parent.mesh.geometry.clone().toNonIndexed();
+        const c = parent.mesh.geometry.clone();
+        srcGeo = c.index ? c.toNonIndexed() : c;
+        if (srcGeo !== c) c.dispose();
       } else if (parentId) {
         // Try bodyGeometryCache (populated by ExtrudedBodies for extrudes)
         const cached2 = bodyGeometryCache.get(parentId);
-        if (cached2) srcGeo = cached2.clone().toNonIndexed();
+        if (cached2) {
+          const c = cached2.clone();
+          srcGeo = c.index ? c.toNonIndexed() : c;
+          if (srcGeo !== c) c.dispose();
+        }
       }
       // Fallback: try liveBodyMeshes by meshUuid embedded in edge ID
       if (!srcGeo && edgeIds.length > 0) {
         const rest = edgeIds[0].includes('|') ? edgeIds[0].split('|')[1] : edgeIds[0];
         const meshUuid = rest.split(':')[0];
         const liveMesh = liveBodyMeshes.get(meshUuid);
-        if (liveMesh) srcGeo = liveMesh.geometry.clone().toNonIndexed();
+        if (liveMesh) {
+          const c = liveMesh.geometry.clone();
+          srcGeo = c.index ? c.toNonIndexed() : c;
+          if (srcGeo !== c) c.dispose();
+        }
       }
     }
     if (!srcGeo) {
