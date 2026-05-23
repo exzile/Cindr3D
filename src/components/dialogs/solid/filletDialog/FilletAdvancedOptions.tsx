@@ -42,16 +42,18 @@ export function FilletAdvancedOptions({ dialog }: FilletAdvancedOptionsProps) {
         />
       )}
 
-      <div className="form-group">
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={dialog.isRollingBallCorner}
-            onChange={(e) => dialog.setIsRollingBallCorner(e.target.checked)}
-          />
-          Rolling Ball Corner
-        </label>
-      </div>
+      {dialog.setback && (
+        <div className="form-group" style={{ paddingLeft: 16 }}>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={dialog.isRollingBallCorner}
+              onChange={(e) => dialog.setIsRollingBallCorner(e.target.checked)}
+            />
+            Rolling Ball Corner
+          </label>
+        </div>
+      )}
 
       <div className="form-group">
         <label className="checkbox-label">

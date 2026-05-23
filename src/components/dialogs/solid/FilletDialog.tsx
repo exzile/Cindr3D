@@ -1,64 +1,19 @@
-import { useState, useEffect, useMemo, type FocusEvent, type MouseEvent } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
-import { useCADStore } from '../../../store/cadStore';
-import { DialogShell } from '../common/DialogShell';
-import type { Feature } from '../../../types/cad';
-import { parseEdgeLabel } from '../../../utils/geometry/edgeCutCore';
+import { useCADStore } from "../../../store/cadStore";
+import type { Feature } from "../../../types/cad";
+import { DialogShell } from "../common/DialogShell";
+import { EdgeSelectionList } from "./edgeDialog/EdgeSelectionList";
+import { FilletAdvancedOptions } from "./filletDialog/FilletAdvancedOptions";
+import { FilletEdgeSets } from "./filletDialog/FilletEdgeSets";
+import { FilletModeFields } from "./filletDialog/FilletModeFields";
+import { FilletPickHeader } from "./filletDialog/FilletPickHeader";
+import type { FilletParams } from "./filletDialog/types";
+import { useFilletDialogState } from "./filletDialog/useFilletDialogState";
 
-/** SOL-I1: Fillet type discriminator — CORR-3: added chord-length, asymmetric */
-export type FilletMode = 'constant' | 'variable' | 'full-round' | 'chord-length' | 'asymmetric';
-
-/** CORR-3: per-edge radius set (mirrors SDK ConstantRadiusEdgeSet / VariableRadiusEdgeSet / ChordLengthEdgeSet) */
-export interface FilletEdgeSet {
-  /** subset of selected edges assigned to this set */
-  edgeIds: string[];
-  type: 'constant' | 'variable' | 'chord-length';
-  /** constant / variable start */
-  radius?: number;
-  /** variable end */
-  endRadius?: number;
-  /** chord-length mode */
-  chordLength?: number;
-  /** variable: optional intermediate control points {t: 0-1, r: mm} */
-  radiiPoints?: { t: number; r: number }[];
-}
-
-export interface FilletParams {
-  radius: number;
-  edgeIds: string[];
-  /** SOL-I1: fillet mode */
-  mode: FilletMode;
-  startRadius?: number;
-  endRadius?: number;
-  /** CORR-3: chord-length mode value */
-  chordLength?: number;
-  /** Asymmetric mode: offset on face 1 (mirrors SDK AsymmetricFilletEdgeSetInput.offsetOne). */
-  offsetOne?: number;
-  /** Asymmetric mode: offset on face 2. */
-  offsetTwo?: number;
-  /** Asymmetric mode: flip face assignment. */
-  isFlipped?: boolean;
-  setback: boolean;
-  /** SDK-9: setback distance at each vertex where three or more edges meet */
-  setbackDistance: number;
-  propagate: boolean;
-  /** CORR-11: G2 curvature-continuous fillet (smoother blend than G1 tangent) */
-  isG2: boolean;
-  /**
-   * Tangency weight 0.1–2.0 (Fusion SDK FilletEdgeSet.tangencyWeight).
-   * Scales the effective blend extent along adjacent faces. 1.0 = default.
-   * Values > 1 extend the blend; < 1 tighten it. Only meaningful for G1/G2.
-   */
-  tangencyWeight?: number;
-  /** CORR-12: rolling-ball corner setback solution method */
-  isRollingBallCorner: boolean;
-  /**
-   * CORR-3: optional per-edge edge-sets (overrides global mode/radius when present).
-   * When non-empty, each set carries its own type + radius/chordLength for a subset
-   * of the selected edges. Matches SDK FilletFeatureInput edge-set API.
-   */
-  edgeSets?: FilletEdgeSet[];
-}
+export type {
+  FilletEdgeSet,
+  FilletMode,
+  FilletParams,
+} from "./filletDialog/types";
 
 interface FilletDialogProps {
   open: boolean;
@@ -71,96 +26,18 @@ interface FilletDialogProps {
   initialParams?: Record<string, unknown>;
 }
 
-function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClose, onConfirm, initialParams }: FilletDialogProps) {
-  // Memo the edge labels: the dialog re-renders on every filletLiveRadius
-  // change (gizmo drag, ~60Hz), but edgeIds only changes when the user
-  // adds/removes an edge. Memoising keeps the rendered list cheap.
-  const edgeLabels = useMemo(() => edgeIds.map((id, i) => parseEdgeLabel(id, i)), [edgeIds]);
-  // filletLiveRadius is updated by FilletGizmo drags so the dialog reflects
-  // the radius while the user drags the on-canvas handle.
-  const filletLiveRadius = useCADStore((s) => s.filletLiveRadius);
-  const setFilletLiveRadius = useCADStore((s) => s.setFilletLiveRadius);
-  const filletPickMode = useCADStore((s) => s.filletPickMode);
-  const setFilletPickMode = useCADStore((s) => s.setFilletPickMode);
-  const [radius, setRadius] = useState(() => (initialParams?.radius as number | undefined) ?? filletLiveRadius);
-  // Sync gizmo drag and face-pick auto-radius → dialog input.
-  // Guard: when editing an existing fillet (initialParams set), don't let the
-  // gizmo's current live radius overwrite the stored params on mount/drag.
-  useEffect(() => { if (!initialParams) setRadius(filletLiveRadius); }, [filletLiveRadius, initialParams]);
-  const [mode, setMode] = useState<FilletMode>(() => (initialParams?.mode as FilletMode | undefined) ?? 'constant');
-
-  // When full-round mode is selected, automatically switch to face-pick mode.
-  // Guards prevent the setter from firing when the state is already correct.
-  // setFilletPickMode is a stable Zustand action and intentionally excluded
-  // from the deps array to avoid spurious re-runs.
-  useEffect(() => {
-    if (mode === 'full-round' && filletPickMode !== 'face') setFilletPickMode('face');
-    else if (mode !== 'full-round' && filletPickMode === 'face') setFilletPickMode('edge');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, filletPickMode]);
-  const [startRadius, setStartRadius] = useState(() => (initialParams?.startRadius as number | undefined) ?? 1);
-  const [endRadius, setEndRadius] = useState(() => (initialParams?.endRadius as number | undefined) ?? 4);
-  const [chordLength, setChordLength] = useState(() => (initialParams?.chordLength as number | undefined) ?? 5);
-  const [offsetOne, setOffsetOne] = useState(() => (initialParams?.offsetOne as number | undefined) ?? 2);
-  const [offsetTwo, setOffsetTwo] = useState(() => (initialParams?.offsetTwo as number | undefined) ?? 3);
-  const [isFlipped, setIsFlipped] = useState(() => (initialParams?.isFlipped as boolean | undefined) ?? false);
-  const [setback, setSetback] = useState(() => (initialParams?.setback as boolean | undefined) ?? false);
-  const [setbackDistance, setSetbackDistance] = useState(() => (initialParams?.setbackDistance as number | undefined) ?? 1);
-  const [isRollingBallCorner, setIsRollingBallCorner] = useState(() => (initialParams?.isRollingBallCorner as boolean | undefined) ?? false);
-  const [propagate, setPropagate] = useState(() => (initialParams?.propagate as boolean | undefined) ?? true);
-  const [isG2, setIsG2] = useState(() => (initialParams?.isG2 as boolean | undefined) ?? false);
-  const [tangencyWeight, setTangencyWeight] = useState(() => (initialParams?.tangencyWeight as number | undefined) ?? 1.0);
-  // CORR-3: per-edge edge sets — optional, appended below the global mode
-  const [edgeSets, setEdgeSets] = useState<FilletEdgeSet[]>(() => (initialParams?.edgeSets as FilletEdgeSet[] | undefined) ?? []);
-  const [showEdgeSets, setShowEdgeSets] = useState(false);
+function FilletDialogUI({
+  open,
+  selectedEdgeCount,
+  edgeIds,
+  onRemoveEdge,
+  onClose,
+  onConfirm,
+  initialParams,
+}: FilletDialogProps) {
+  const dialog = useFilletDialogState(onConfirm, initialParams);
 
   if (!open) return null;
-
-  const handleOK = () => {
-    const params: FilletParams = {
-      radius,
-      edgeIds: [],
-      mode,
-      setback,
-      setbackDistance: setback ? setbackDistance : 0,
-      propagate,
-      isG2,
-      tangencyWeight: tangencyWeight !== 1.0 ? tangencyWeight : undefined,
-      isRollingBallCorner: setback && isRollingBallCorner,
-    };
-    if (mode === 'variable') {
-      params.startRadius = startRadius;
-      params.endRadius = endRadius;
-    }
-    if (mode === 'chord-length') {
-      params.chordLength = chordLength;
-    }
-    if (mode === 'asymmetric') {
-      params.offsetOne = isFlipped ? offsetTwo : offsetOne;
-      params.offsetTwo = isFlipped ? offsetOne : offsetTwo;
-      params.isFlipped = isFlipped;
-    }
-    if (edgeSets.length > 0) {
-      params.edgeSets = edgeSets;
-    }
-    onConfirm(params);
-  };
-
-  const addEdgeSet = () => {
-    setEdgeSets((prev) => [...prev, { edgeIds: [], type: 'constant', radius: 2 }]);
-    setShowEdgeSets(true);
-  };
-
-  const removeEdgeSet = (i: number) => setEdgeSets((prev) => prev.filter((_, idx) => idx !== i));
-
-  const updateEdgeSet = (i: number, patch: Partial<FilletEdgeSet>) =>
-    setEdgeSets((prev) => prev.map((s, idx) => idx === i ? { ...s, ...patch } : s));
-
-  const clamp = (val: number, min: number, max: number) =>
-    Math.max(min, Math.min(max, val));
-  const selectNumberText = (e: FocusEvent<HTMLInputElement> | MouseEvent<HTMLInputElement>) => {
-    e.currentTarget.select();
-  };
 
   return (
     <DialogShell
@@ -168,384 +45,19 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
       onClose={onClose}
       size="sm"
       overlayClassName="edge-pick-dialog"
-      onConfirm={handleOK}
+      onConfirm={dialog.handleConfirm}
       confirmDisabled={selectedEdgeCount === 0}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-        <p className="dialog-hint" style={{ margin: 0 }}>
-          {mode === 'full-round'
-            ? selectedEdgeCount > 0 ? `${selectedEdgeCount} face edge(s) selected` : 'Click a face to select all its edges'
-            : `${selectedEdgeCount} edge(s) selected`}
-        </p>
-        {mode !== 'full-round' && (
-          <button
-            style={{
-              background: filletPickMode === 'face' ? '#5b9bd5' : 'none',
-              border: '1px solid #555',
-              borderRadius: 3,
-              cursor: 'pointer',
-              color: filletPickMode === 'face' ? '#fff' : '#aaa',
-              padding: '2px 7px',
-              fontSize: 11,
-            }}
-            onClick={() => setFilletPickMode(filletPickMode === 'face' ? 'edge' : 'face')}
-            title={filletPickMode === 'face' ? 'Switch to edge picking' : 'Switch to face picking (selects all edges of a face)'}
-          >
-            {filletPickMode === 'face' ? 'Face' : 'Edge'}
-          </button>
-        )}
-      </div>
-
-      {edgeIds.length > 0 && (
-        <div style={{ maxHeight: 110, overflowY: 'auto', border: '1px solid #444', borderRadius: 4, marginBottom: 8 }}>
-          {edgeIds.map((id, i) => (
-            <div
-              key={id}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '3px 6px',
-                borderBottom: i < edgeIds.length - 1 ? '1px solid #333' : 'none',
-                fontSize: 11,
-              }}
-            >
-              <span style={{ fontFamily: 'monospace', color: '#ccc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 4 }}>
-                {edgeLabels[i]}
-              </span>
-              <button
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cc4444', padding: '0 2px', fontSize: 14, lineHeight: 1 }}
-                onClick={() => onRemoveEdge(id)}
-                title="Remove edge"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* SOL-I1 / CORR-3: Fillet mode */}
-      <div className="form-group">
-        <label>Type</label>
-        <select value={mode} onChange={(e) => setMode(e.target.value as FilletMode)}>
-          <option value="constant">Constant Radius</option>
-          <option value="variable">Variable Radius</option>
-          <option value="chord-length">Chord Length</option>
-          <option value="asymmetric">Asymmetric</option>
-          <option value="full-round">Full Round</option>
-        </select>
-      </div>
-
-      {mode === 'full-round' && (
-        <>
-          <p className="dialog-hint">
-            Click the center face to auto-compute the fillet radius and select its edges.
-            The radius is set to the inradius of the face (distance from centroid to nearest edge).
-          </p>
-          <div className="form-group">
-            <label>Radius (mm, auto)</label>
-            <input
-              type="number"
-              value={radius}
-              onFocus={selectNumberText}
-              onClick={selectNumberText}
-              onChange={(e) => {
-                const r = clamp(parseFloat(e.target.value) || 2, 0.01, 500);
-                setRadius(r);
-                setFilletLiveRadius(r);
-              }}
-              min={0.01}
-              max={500}
-              step={0.5}
-            />
-          </div>
-        </>
-      )}
-
-      {mode === 'constant' && (
-        <div className="form-group">
-          <label>Radius (mm)</label>
-          <input
-            type="number"
-            value={radius}
-            onFocus={selectNumberText}
-            onClick={selectNumberText}
-            onChange={(e) => {
-              const r = clamp(parseFloat(e.target.value) || 2, 0.01, 500);
-              setRadius(r);
-              setFilletLiveRadius(r);
-            }}
-            min={0.01}
-            max={500}
-            step={0.5}
-          />
-        </div>
-      )}
-
-      {mode === 'variable' && (
-        <>
-          <div className="settings-grid">
-            <div className="form-group">
-              <label>Start Radius (mm)</label>
-              <input
-                type="number"
-                value={startRadius}
-                onFocus={selectNumberText}
-                onClick={selectNumberText}
-                onChange={(e) => setStartRadius(clamp(parseFloat(e.target.value) || 1, 0.01, 500))}
-                min={0.01}
-                max={500}
-                step={0.5}
-              />
-            </div>
-            <div className="form-group">
-              <label>End Radius (mm)</label>
-              <input
-                type="number"
-                value={endRadius}
-                onFocus={selectNumberText}
-                onClick={selectNumberText}
-                onChange={(e) => setEndRadius(clamp(parseFloat(e.target.value) || 4, 0.01, 500))}
-                min={0.01}
-                max={500}
-                step={0.5}
-              />
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* CORR-3: Chord Length mode */}
-      {mode === 'chord-length' && (
-        <div className="form-group">
-          <label>Chord Length (mm)</label>
-          <input
-            type="number"
-            value={chordLength}
-            onFocus={selectNumberText}
-            onClick={selectNumberText}
-            onChange={(e) => setChordLength(clamp(parseFloat(e.target.value) || 5, 0.01, 1000))}
-            min={0.01}
-            max={1000}
-            step={0.5}
-          />
-          <p className="dialog-hint" style={{ marginTop: 4 }}>
-            Chord length controls the width of the fillet arc rather than its radius.
-            r = chordLen / (2 sin(θ/2)) for the edge dihedral angle θ.
-          </p>
-        </div>
-      )}
-
-      {mode === 'asymmetric' && (
-        <>
-          <div className="settings-grid">
-            <div className="form-group">
-              <label>Offset 1 (mm)</label>
-              <input
-                type="number"
-                value={offsetOne}
-                onFocus={selectNumberText}
-                onClick={selectNumberText}
-                onChange={(e) => setOffsetOne(clamp(parseFloat(e.target.value) || 2, 0.01, 500))}
-                min={0.01}
-                max={500}
-                step={0.5}
-              />
-            </div>
-            <div className="form-group">
-              <label>Offset 2 (mm)</label>
-              <input
-                type="number"
-                value={offsetTwo}
-                onFocus={selectNumberText}
-                onClick={selectNumberText}
-                onChange={(e) => setOffsetTwo(clamp(parseFloat(e.target.value) || 3, 0.01, 500))}
-                min={0.01}
-                max={500}
-                step={0.5}
-              />
-            </div>
-          </div>
-          <div className="form-group">
-            <label className="checkbox-label">
-              <input type="checkbox" checked={isFlipped} onChange={(e) => setIsFlipped(e.target.checked)} />
-              Flip Faces
-            </label>
-          </div>
-        </>
-      )}
-
-      {mode === 'full-round' && (
-        <p className="dialog-hint">
-          Select three edge sets: Side Face 1 → Center Face → Side Face 2.
-          The fillet radius is computed automatically to create a tangent blend.
-        </p>
-      )}
-
-      {/* CORR-3: Per-edge edge sets — lets each edge have its own radius type */}
-      <div className="form-group">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <label style={{ marginBottom: 0 }}>Edge Sets</label>
-          <button
-            className="btn btn-xs"
-            style={{ padding: '2px 8px', fontSize: 11 }}
-            onClick={addEdgeSet}
-            title="Add an edge set with its own radius type (SDK FilletFeatureInput edge-set API)"
-          >
-            <Plus size={11} /> Add Set
-          </button>
-        </div>
-        {edgeSets.length === 0 && (
-          <p className="dialog-hint" style={{ marginTop: 4 }}>
-            Optional: add per-edge radius sets to assign different types to subsets of selected edges.
-          </p>
-        )}
-        {showEdgeSets && edgeSets.map((set, i) => (
-          <div key={i} style={{ border: '1px solid #555', borderRadius: 4, padding: '6px 8px', marginTop: 6, position: 'relative' }}>
-            <button
-              style={{ position: 'absolute', top: 4, right: 4, background: 'none', border: 'none', cursor: 'pointer', color: '#cc4444', padding: 0 }}
-              onClick={() => removeEdgeSet(i)}
-              title="Remove this edge set"
-            >
-              <Trash2 size={12} />
-            </button>
-            <div className="settings-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '4px 8px' }}>
-              <div className="form-group" style={{ marginBottom: 4 }}>
-                <label style={{ fontSize: 11 }}>Type</label>
-                <select
-                  style={{ fontSize: 11 }}
-                  value={set.type}
-                  onChange={(e) => updateEdgeSet(i, { type: e.target.value as FilletEdgeSet['type'] })}
-                >
-                  <option value="constant">Constant</option>
-                  <option value="variable">Variable</option>
-                  <option value="chord-length">Chord Length</option>
-                </select>
-              </div>
-              {set.type === 'constant' && (
-                <div className="form-group" style={{ marginBottom: 4 }}>
-                  <label style={{ fontSize: 11 }}>Radius (mm)</label>
-                  <input type="number" style={{ fontSize: 11 }} value={set.radius ?? 2} min={0.01} step={0.5}
-                    onFocus={selectNumberText}
-                    onClick={selectNumberText}
-                    onChange={(e) => updateEdgeSet(i, { radius: Math.max(0.01, parseFloat(e.target.value) || 2) })} />
-                </div>
-              )}
-              {set.type === 'variable' && (
-                <>
-                  <div className="form-group" style={{ marginBottom: 4 }}>
-                    <label style={{ fontSize: 11 }}>Start R (mm)</label>
-                    <input type="number" style={{ fontSize: 11 }} value={set.radius ?? 1} min={0.01} step={0.5}
-                      onFocus={selectNumberText}
-                      onClick={selectNumberText}
-                      onChange={(e) => updateEdgeSet(i, { radius: Math.max(0.01, parseFloat(e.target.value) || 1) })} />
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 4 }}>
-                    <label style={{ fontSize: 11 }}>End R (mm)</label>
-                    <input type="number" style={{ fontSize: 11 }} value={set.endRadius ?? 4} min={0.01} step={0.5}
-                      onFocus={selectNumberText}
-                      onClick={selectNumberText}
-                      onChange={(e) => updateEdgeSet(i, { endRadius: Math.max(0.01, parseFloat(e.target.value) || 4) })} />
-                  </div>
-                </>
-              )}
-              {set.type === 'chord-length' && (
-                <div className="form-group" style={{ marginBottom: 4 }}>
-                  <label style={{ fontSize: 11 }}>Chord Len (mm)</label>
-                  <input type="number" style={{ fontSize: 11 }} value={set.chordLength ?? 5} min={0.01} step={0.5}
-                    onFocus={selectNumberText}
-                    onClick={selectNumberText}
-                    onChange={(e) => updateEdgeSet(i, { chordLength: Math.max(0.01, parseFloat(e.target.value) || 5) })} />
-                </div>
-              )}
-            </div>
-            <p className="dialog-hint" style={{ margin: '4px 0 0', fontSize: 10 }}>
-              Edge IDs assigned automatically from the current selection when this set is the only one, or via edge picker (deferred).
-            </p>
-          </div>
-        ))}
-      </div>
-
-      <div className="form-group">
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={propagate}
-            onChange={(e) => setPropagate(e.target.checked)}
-          />
-          Propagate Along Tangent Edges
-        </label>
-      </div>
-
-      <div className="form-group">
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={setback}
-            onChange={(e) => setSetback(e.target.checked)}
-          />
-          Setback
-        </label>
-      </div>
-      {setback && (
-        <>
-          <div className="form-group" style={{ paddingLeft: 16 }}>
-            <label>Setback Distance (mm)</label>
-            <input
-              type="number"
-              value={setbackDistance}
-              onFocus={selectNumberText}
-              onClick={selectNumberText}
-              onChange={(e) => setSetbackDistance(Math.max(0, parseFloat(e.target.value) || 0))}
-              min={0}
-              max={500}
-              step={0.5}
-            />
-          </div>
-          <div className="form-group" style={{ paddingLeft: 16 }}>
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={isRollingBallCorner}
-                onChange={(e) => setIsRollingBallCorner(e.target.checked)}
-              />
-              Rolling Ball Corner
-            </label>
-          </div>
-        </>
-      )}
-
-      <div className="form-group">
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={isG2}
-            onChange={(e) => setIsG2(e.target.checked)}
-          />
-          G2 Smooth (curvature continuity)
-        </label>
-      </div>
-
-      {isG2 && (
-        <div className="form-group" style={{ paddingLeft: 16 }}>
-          <label>Tangency Weight</label>
-          <input
-            type="number"
-            value={tangencyWeight}
-            onFocus={selectNumberText}
-            onClick={selectNumberText}
-            onChange={(e) => setTangencyWeight(clamp(parseFloat(e.target.value) || 1.0, 0.1, 2.0))}
-            min={0.1}
-            max={2.0}
-            step={0.1}
-            title="1.0 = standard blend; > 1.0 extends blend along adjacent faces; < 1.0 tightens it"
-          />
-        </div>
-      )}
+      <FilletPickHeader selectedEdgeCount={selectedEdgeCount} dialog={dialog} />
+      <EdgeSelectionList edgeIds={edgeIds} onRemoveEdge={onRemoveEdge} />
+      <FilletModeFields dialog={dialog} />
+      <FilletEdgeSets dialog={dialog} />
+      <FilletAdvancedOptions dialog={dialog} />
     </DialogShell>
   );
 }
 
-// ── Store-connected wrapper (used via activeDialog='fillet') ─────────────────
+// Store-connected wrapper (used via activeDialog='fillet')
 export function FilletDialog({ onClose }: { onClose: () => void }) {
   const addFeature = useCADStore((s) => s.addFeature);
   const filletEdgeIds = useCADStore((s) => s.filletEdgeIds);
@@ -557,40 +69,44 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
   const commitFillet = useCADStore((s) => s.commitFillet);
   const replayEdgeCutFeature = useCADStore((s) => s.replayEdgeCutFeature);
 
-  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
-  const p = editing?.params ?? {};
-  const existingEdgeIds = typeof p.edgeIds === 'string' ? p.edgeIds.split(',').filter(Boolean) : [];
+  const editing = editingFeatureId
+    ? features.find((feature) => feature.id === editingFeatureId)
+    : null;
+  const params = editing?.params ?? {};
+  const existingEdgeIds =
+    typeof params.edgeIds === "string"
+      ? params.edgeIds.split(",").filter(Boolean)
+      : [];
 
-  const handleConfirm = (params: FilletParams) => {
+  const handleConfirm = (nextParams: FilletParams) => {
     const edgeIds = filletEdgeIds.length > 0 ? filletEdgeIds : existingEdgeIds;
-    const edgeIdsStr = edgeIds.join(',');
+    const edgeIdsStr = edgeIds.join(",");
     if (editing) {
-      // Update stored params first so replayEdgeCutFeature reads the latest values.
-      updateFeatureParams(editing.id, { ...params, edgeIds: edgeIdsStr });
-      renameFeature(editing.id, `Fillet (r=${params.radius})`);
-      // Re-run CSG with the updated params (replay from parent mesh / session cache).
+      updateFeatureParams(editing.id, { ...nextParams, edgeIds: edgeIdsStr });
+      renameFeature(editing.id, `Fillet (r=${nextParams.radius})`);
       replayEdgeCutFeature(editing.id);
     } else {
       const feature: Feature = {
         id: crypto.randomUUID(),
-        name: `Fillet (r=${params.radius})`,
-        type: 'fillet',
-        params: { ...params, edgeIds: edgeIdsStr },
+        name: `Fillet (r=${nextParams.radius})`,
+        type: "fillet",
+        params: { ...nextParams, edgeIds: edgeIdsStr },
         visible: true,
         suppressed: false,
         timestamp: Date.now(),
       };
       addFeature(feature);
-      // Close the dialog immediately so the UI is responsive, then compute
-      // the CSG on the next task (after React has painted the close).
-      // filletEdgeIds is preserved in the store until the next fillet dialog
-      // open (setActiveDialog clears them only on dialog === 'fillet').
       onClose();
-      const r = params.radius;
-      // Pass segments=0 for adaptive arc resolution based on radius.
-      // Pass the new feature's id and full params so the non-destructive path
-      // stores the result on the fillet node instead of mutating the parent.
-      setTimeout(() => commitFillet(r, 0, feature.id, params as unknown as Record<string, unknown>), 0);
+      setTimeout(
+        () =>
+          commitFillet(
+            nextParams.radius,
+            0,
+            feature.id,
+            nextParams as unknown as Record<string, unknown>,
+          ),
+        0,
+      );
       return;
     }
     onClose();
@@ -598,14 +114,13 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <FilletDialogUI
-      key={editingFeatureId ?? 'new'}
-      open={true}
+      open
       selectedEdgeCount={filletEdgeIds.length || existingEdgeIds.length}
-      edgeIds={filletEdgeIds}
+      edgeIds={filletEdgeIds.length > 0 ? filletEdgeIds : existingEdgeIds}
       onRemoveEdge={removeFilletEdge}
       onClose={onClose}
       onConfirm={handleConfirm}
-      initialParams={editing ? (p as Record<string, unknown>) : undefined}
+      initialParams={editing ? params : undefined}
     />
   );
 }

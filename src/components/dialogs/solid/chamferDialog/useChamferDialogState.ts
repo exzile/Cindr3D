@@ -4,20 +4,44 @@ import type { ChamferCornerType, ChamferMode, ChamferParams } from "./types";
 
 export function useChamferDialogState(
   onConfirm: (params: ChamferParams) => void,
+  initialParams?: Record<string, unknown>,
 ) {
   const chamferLiveDistance = useCADStore((s) => s.chamferLiveDistance);
   const setChamferLiveDistance = useCADStore((s) => s.setChamferLiveDistance);
-  const [mode, setMode] = useState<ChamferMode>("equal-dist");
-  const [distance, setDistance] = useState(() => chamferLiveDistance);
-  const [distance2, setDistance2] = useState(2);
-  const [angle, setAngle] = useState(45);
-  const [propagate, setPropagate] = useState(true);
-  const [isFlipped, setIsFlipped] = useState(false);
-  const [cornerType, setCornerType] = useState<ChamferCornerType>("patch");
+  const [mode, setMode] = useState<ChamferMode>(
+    () => (initialParams?.mode as ChamferMode | undefined) ?? "equal-dist",
+  );
+  const [distance, setDistance] = useState(
+    () =>
+      (initialParams?.distance as number | undefined) ?? chamferLiveDistance,
+  );
+  const [distance2, setDistance2] = useState(
+    () => (initialParams?.distance2 as number | undefined) ?? 2,
+  );
+  const [angle, setAngle] = useState(
+    () => (initialParams?.angle as number | undefined) ?? 45,
+  );
+  const [propagate, setPropagate] = useState(
+    () => (initialParams?.propagate as boolean | undefined) ?? true,
+  );
+  const [isFlipped, setIsFlipped] = useState(
+    () => (initialParams?.isFlipped as boolean | undefined) ?? false,
+  );
+  const [cornerType, setCornerType] = useState<ChamferCornerType>(
+    () =>
+      (initialParams?.cornerType as ChamferCornerType | undefined) ?? "patch",
+  );
 
   useEffect(() => {
-    setDistance(chamferLiveDistance);
-  }, [chamferLiveDistance]);
+    if (initialParams) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setDistance(chamferLiveDistance);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [chamferLiveDistance, initialParams]);
 
   const setDistanceAndLive = (value: number) => {
     setDistance(value);

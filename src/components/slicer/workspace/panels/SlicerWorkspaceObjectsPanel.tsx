@@ -1,26 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import * as React from "react";
 import * as THREE from "three";
-import {
-  Plus,
-  Trash2,
-  LayoutGrid,
-  XCircle,
-  Upload,
-  Box,
-  Layers,
-  Copy,
-  Eye,
-  EyeOff,
-  Lock,
-  Unlock,
-  Palette,
-  AlertTriangle,
-  Save,
-  FolderOpen,
-  Wrench,
-  Link2,
-} from "lucide-react";
+import { LayoutGrid, XCircle, Layers } from "lucide-react";
 import { useSlicerStore } from "../../../../store/slicerStore";
 import { errorMessage } from "../../../../utils/errorHandling";
 import { useCADStore } from "../../../../store/cadStore";
@@ -32,8 +13,13 @@ import { ContextMenu, type ContextMenuItem } from "../ContextMenu";
 import { GeometryToolsModal, type GeometryTool } from "../GeometryToolsModal";
 import { computeMeshStats } from "../../../../engine/meshStats";
 import { fetchModelUrlToFile } from "../../../../utils/printFromUrl";
+import { AddCadMenu } from "./objectsPanel/AddCadMenu";
 import { resolveCadBodyGeometry } from "./objectsPanel/addCadBodyToPlate";
+import { ImportControls } from "./objectsPanel/ImportControls";
 import { buildObjectContextMenuItems } from "./objectsPanel/objectContextMenu";
+import { ObjectRow } from "./objectsPanel/ObjectRow";
+import { PlateFileActions } from "./objectsPanel/PlateFileActions";
+import { ValidationSummary } from "./objectsPanel/ValidationSummary";
 import "./SlicerWorkspaceObjectsPanel.css";
 
 export function SlicerWorkspaceObjectsPanel() {
@@ -505,84 +491,22 @@ export function SlicerWorkspaceObjectsPanel() {
       </div>
 
       <div className="slicer-workspace-objects-panel__list">
-        <div
-          onDragOver={handleDragOver}
+        <ImportControls
+          fileInputRef={fileInputRef}
+          importError={importError}
+          importing={importing}
+          isDragging={isDragging}
+          modelUrl={modelUrl}
           onDragLeave={() => setIsDragging(false)}
+          onDragOver={handleDragOver}
           onDrop={handleDrop}
-          className={`slicer-workspace-objects-panel__dropzone ${isDragging ? "is-dragging" : ""}`}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <Upload
-            size={16}
-            className="slicer-workspace-objects-panel__dropzone-icon"
-          />
-          {importing ? "Importing..." : "Drop STL/OBJ/3MF/.plate.json or click"}
-        </div>
-        {importError && (
-          <div className="slicer-workspace-objects-panel__import-error">
-            {importError}
-          </div>
-        )}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".stl,.obj,.3mf,.amf,.step,.stp,.json"
-          className="slicer-workspace-objects-panel__file-input"
-          onChange={handleFileInput}
+          onFileInput={handleFileInput}
+          onModelUrlChange={setModelUrl}
+          onOpenFileDialog={() => fileInputRef.current?.click()}
+          onSubmitUrl={() => void handleImportUrl()}
         />
 
-        <form
-          className="slicer-workspace-objects-panel__url-import"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void handleImportUrl();
-          }}
-        >
-          <Link2
-            size={13}
-            className="slicer-workspace-objects-panel__url-icon"
-          />
-          <input
-            type="url"
-            value={modelUrl}
-            onChange={(e) => setModelUrl(e.target.value)}
-            placeholder="Paste model or marketplace URL"
-            className="slicer-workspace-objects-panel__url-input"
-            aria-label="STL OBJ 3MF AMF STEP model URL or marketplace model page"
-          />
-          <button
-            type="submit"
-            className="slicer-workspace-objects-panel__url-button"
-            disabled={importing || modelUrl.trim().length === 0}
-          >
-            Import
-          </button>
-        </form>
-
-        {validation.hasIssues && (
-          <div
-            className="slicer-workspace-objects-panel__validation"
-            role="alert"
-          >
-            <AlertTriangle
-              size={11}
-              style={{ verticalAlign: "middle", marginRight: 4 }}
-            />
-            {validation.outOfBounds.length > 0 && (
-              <div>
-                {validation.outOfBounds.length} object
-                {validation.outOfBounds.length === 1 ? "" : "s"} outside build
-                volume
-              </div>
-            )}
-            {validation.overlapping.length > 0 && (
-              <div>
-                {validation.overlapping.length} object overlap
-                {validation.overlapping.length === 1 ? "" : "s"} detected
-              </div>
-            )}
-          </div>
-        )}
+        <ValidationSummary validation={validation} />
 
         {plateObjects.length === 0 && !importing && (
           <div className="slicer-workspace-objects-panel__empty">
@@ -591,188 +515,35 @@ export function SlicerWorkspaceObjectsPanel() {
         )}
         <div role="listbox" aria-label="Objects on build plate">
           {plateObjects.map((obj) => {
-            const w = obj.boundingBox.max.x - obj.boundingBox.min.x;
-            const d = obj.boundingBox.max.y - obj.boundingBox.min.y;
-            const h = obj.boundingBox.max.z - obj.boundingBox.min.z;
-            const initials = obj.name.slice(0, 2).toUpperCase();
             const inSelection = selectedIds.includes(obj.id);
             const isAnchor = obj.id === selectedId;
             const issues = validation.issuesById.get(obj.id);
-            const isModifier =
-              obj.modifierMeshRole && obj.modifierMeshRole !== "normal";
             return (
-              <div
+              <ObjectRow
                 key={obj.id}
-                role="option"
-                tabIndex={0}
-                aria-selected={inSelection}
-                aria-label={`${obj.name}, ${w.toFixed(1)} by ${d.toFixed(1)} by ${h.toFixed(1)} millimeters${issues ? `, ${issues.length} issue${issues.length === 1 ? "" : "s"}` : ""}`}
-                data-plate-row-id={obj.id}
-                draggable
-                onDragStart={(e) => handleRowDragStart(e, obj.id)}
-                onDragOver={handleRowDragOver}
-                onDrop={(e) => handleRowDrop(e, obj.id)}
+                object={obj}
+                inSelection={inSelection}
+                isAnchor={isAnchor}
+                issues={issues}
+                dragRowId={dragRowId}
+                tooltip={buildRowTooltip(obj)}
+                duplicatePlateObject={duplicatePlateObject}
+                onColorPick={openColorPicker}
+                onContextMenu={handleRowContextMenu}
                 onDragEnd={() => setDragRowId(null)}
-                onClick={(e) => handleRowClick(e, obj.id)}
-                onKeyDown={(e) => handleRowKeyDown(e, obj.id)}
-                onContextMenu={(e) => handleRowContextMenu(e, obj.id)}
-                className={`slicer-workspace-objects-panel__row${isAnchor ? " is-selected" : ""}${inSelection && !isAnchor ? " is-multi" : ""}${dragRowId === obj.id ? " is-dragging" : ""}`}
-                title={[buildRowTooltip(obj), issues?.join("\n")]
-                  .filter(Boolean)
-                  .join("\n\n")}
-              >
-                <div
-                  className="slicer-workspace-objects-panel__thumb"
-                  aria-hidden
-                  style={obj.color ? { color: obj.color } : undefined}
-                >
-                  <svg
-                    viewBox="0 0 28 28"
-                    width="28"
-                    height="28"
-                    className="slicer-workspace-objects-panel__thumb-svg"
-                  >
-                    <polygon
-                      points="14,4 24,9 24,19 14,24 4,19 4,9"
-                      className="slicer-workspace-objects-panel__thumb-hex"
-                      style={
-                        obj.color
-                          ? { fill: obj.color, opacity: 0.45 }
-                          : undefined
-                      }
-                    />
-                    <polyline
-                      points="14,4 14,14"
-                      className="slicer-workspace-objects-panel__thumb-edge"
-                    />
-                    <polyline
-                      points="14,14 24,9"
-                      className="slicer-workspace-objects-panel__thumb-edge"
-                    />
-                    <polyline
-                      points="14,14 4,9"
-                      className="slicer-workspace-objects-panel__thumb-edge"
-                    />
-                    <text
-                      x="14"
-                      y="17"
-                      textAnchor="middle"
-                      className="slicer-workspace-objects-panel__thumb-text"
-                    >
-                      {initials}
-                    </text>
-                  </svg>
-                </div>
-                <div className="slicer-workspace-objects-panel__row-info">
-                  <div
-                    className="slicer-workspace-objects-panel__name"
-                    title={obj.name}
-                  >
-                    {issues && (
-                      <AlertTriangle
-                        size={10}
-                        style={{
-                          color: "var(--warning, #d68a00)",
-                          marginRight: 3,
-                          verticalAlign: "middle",
-                        }}
-                      />
-                    )}
-                    {isModifier && (
-                      <Wrench
-                        size={10}
-                        style={{
-                          color: "var(--accent)",
-                          marginRight: 3,
-                          verticalAlign: "middle",
-                        }}
-                      />
-                    )}
-                    {obj.name}
-                  </div>
-                  <div className="slicer-workspace-objects-panel__size">
-                    {w.toFixed(1)} × {d.toFixed(1)} × {h.toFixed(1)} mm
-                  </div>
-                  {obj.sourceMetadata && (
-                    <div
-                      className="slicer-workspace-objects-panel__source"
-                      title={obj.sourceMetadata.url}
-                    >
-                      Source:{" "}
-                      {obj.sourceMetadata.sourceSite === "direct"
-                        ? "URL"
-                        : obj.sourceMetadata.sourceSite}
-                    </div>
-                  )}
-                </div>
-                <div className="slicer-workspace-objects-panel__row-icons">
-                  <button
-                    type="button"
-                    title={obj.hidden ? "Show object" : "Hide object"}
-                    aria-label={`${obj.hidden ? "Show" : "Hide"} ${obj.name}`}
-                    className={`slicer-workspace-objects-panel__icon-btn${obj.hidden ? " is-active" : ""}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      updatePlateObject(obj.id, {
-                        hidden: !obj.hidden,
-                      } as Partial<PlateObject>);
-                    }}
-                  >
-                    {obj.hidden ? <EyeOff size={12} /> : <Eye size={12} />}
-                  </button>
-                  <button
-                    type="button"
-                    title={obj.locked ? "Unlock object" : "Lock object"}
-                    aria-label={`${obj.locked ? "Unlock" : "Lock"} ${obj.name}`}
-                    className={`slicer-workspace-objects-panel__icon-btn${obj.locked ? " is-active" : ""}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      updatePlateObject(obj.id, {
-                        locked: !obj.locked,
-                      } as Partial<PlateObject>);
-                    }}
-                  >
-                    {obj.locked ? <Lock size={12} /> : <Unlock size={12} />}
-                  </button>
-                  <button
-                    type="button"
-                    title="Set object color"
-                    aria-label={`Set color for ${obj.name}`}
-                    className="slicer-workspace-objects-panel__icon-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openColorPicker(obj.id);
-                    }}
-                    style={obj.color ? { color: obj.color } : undefined}
-                  >
-                    <Palette size={12} />
-                  </button>
-                  <button
-                    type="button"
-                    title={`Duplicate ${obj.name} (Ctrl+D)`}
-                    aria-label={`Duplicate ${obj.name}`}
-                    className="slicer-workspace-objects-panel__icon-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      duplicatePlateObject(obj.id);
-                    }}
-                  >
-                    <Copy size={12} />
-                  </button>
-                  <button
-                    type="button"
-                    title={`Remove ${obj.name} (Del)`}
-                    aria-label={`Remove ${obj.name}`}
-                    className="slicer-workspace-objects-panel__icon-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeFromPlate(obj.id);
-                    }}
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              </div>
+                onDragOver={handleRowDragOver}
+                onDragStart={handleRowDragStart}
+                onDrop={handleRowDrop}
+                onKeyDown={handleRowKeyDown}
+                onRowClick={handleRowClick}
+                onRemove={removeFromPlate}
+                onToggleHidden={(id, hidden) =>
+                  updatePlateObject(id, { hidden } as Partial<PlateObject>)
+                }
+                onToggleLocked={(id, locked) =>
+                  updatePlateObject(id, { locked } as Partial<PlateObject>)
+                }
+              />
             );
           })}
         </div>
@@ -791,46 +562,15 @@ export function SlicerWorkspaceObjectsPanel() {
       />
 
       <div className="slicer-workspace-objects-panel__actions">
-        <div className="slicer-workspace-objects-panel__add-wrap">
-          <button
-            className="slicer-workspace-objects-panel__action-button"
-            onClick={() => setShowAddMenu((prev) => !prev)}
-          >
-            <Plus size={14} /> Add from CAD
-          </button>
-          {showAddMenu && (
-            <div className="slicer-workspace-objects-panel__menu">
-              <input
-                type="text"
-                placeholder="Search bodies..."
-                className="slicer-workspace-objects-panel__menu-search"
-                value={addSearch}
-                onChange={(e) => setAddSearch(e.target.value)}
-                autoFocus
-              />
-              {filteredBodies.length === 0 && (
-                <div className="slicer-workspace-objects-panel__menu-empty">
-                  {addableBodies.length === 0
-                    ? "No CAD bodies available."
-                    : "No matches."}
-                </div>
-              )}
-              {filteredBodies.map((b) => (
-                <div
-                  key={b.id}
-                  onClick={() => handleAddBody(b.id, b.name)}
-                  className="slicer-workspace-objects-panel__menu-item"
-                >
-                  <Box
-                    size={12}
-                    className="slicer-workspace-objects-panel__menu-item-icon"
-                  />
-                  {b.name}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <AddCadMenu
+          addSearch={addSearch}
+          addableBodiesCount={addableBodies.length}
+          filteredBodies={filteredBodies}
+          onAddBody={handleAddBody}
+          onSearchChange={setAddSearch}
+          onToggleMenu={() => setShowAddMenu((prev) => !prev)}
+          showAddMenu={showAddMenu}
+        />
         <button
           className="slicer-workspace-objects-panel__secondary-button"
           onClick={() => {
@@ -853,35 +593,12 @@ export function SlicerWorkspaceObjectsPanel() {
         >
           <XCircle size={14} /> Clear Plate
         </button>
-        <div className="slicer-workspace-objects-panel__plate-io">
-          <button
-            className="slicer-workspace-objects-panel__secondary-button"
-            onClick={handleSavePlate}
-            title="Save plate to file"
-          >
-            <Save size={14} /> Save JSON
-          </button>
-          <button
-            className="slicer-workspace-objects-panel__secondary-button"
-            onClick={() => void handleSavePlateThreeMf()}
-            title="Save round-trippable 3MF plate"
-          >
-            <Save size={14} /> Save 3MF
-          </button>
-          <button
-            className="slicer-workspace-objects-panel__secondary-button"
-            onClick={() => plateLoadInputRef.current?.click()}
-            title="Load plate from file"
-          >
-            <FolderOpen size={14} /> Load
-          </button>
-        </div>
-        <input
-          ref={plateLoadInputRef}
-          type="file"
-          accept=".json,.dzign-plate.json,.3mf"
-          className="slicer-workspace-objects-panel__file-input"
-          onChange={handleLoadPlate}
+        <PlateFileActions
+          loadInputRef={plateLoadInputRef}
+          onLoadPlate={handleLoadPlate}
+          onOpenLoad={() => plateLoadInputRef.current?.click()}
+          onSaveJson={handleSavePlate}
+          onSaveThreeMf={() => void handleSavePlateThreeMf()}
         />
         <CalibrationMenu
           activePrinter={getActivePrinterProfile()}

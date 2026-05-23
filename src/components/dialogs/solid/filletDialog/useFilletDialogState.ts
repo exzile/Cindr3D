@@ -1,35 +1,77 @@
-import { useEffect, useState } from 'react';
-import { useCADStore } from '../../../../store/cadStore';
-import type { FilletEdgeSet, FilletMode, FilletParams } from './types';
+import { useEffect, useState } from "react";
+import { useCADStore } from "../../../../store/cadStore";
+import type { FilletEdgeSet, FilletMode, FilletParams } from "./types";
 
-export function useFilletDialogState(onConfirm: (params: FilletParams) => void) {
+export function useFilletDialogState(
+  onConfirm: (params: FilletParams) => void,
+  initialParams?: Record<string, unknown>,
+) {
   const filletLiveRadius = useCADStore((s) => s.filletLiveRadius);
   const setFilletLiveRadius = useCADStore((s) => s.setFilletLiveRadius);
   const filletPickMode = useCADStore((s) => s.filletPickMode);
   const setFilletPickMode = useCADStore((s) => s.setFilletPickMode);
 
-  const [radius, setRadius] = useState(() => filletLiveRadius);
-  const [mode, setMode] = useState<FilletMode>('constant');
-  const [startRadius, setStartRadius] = useState(1);
-  const [endRadius, setEndRadius] = useState(4);
-  const [chordLength, setChordLength] = useState(5);
-  const [offsetOne, setOffsetOne] = useState(2);
-  const [offsetTwo, setOffsetTwo] = useState(3);
-  const [isFlipped, setIsFlipped] = useState(false);
-  const [setback, setSetback] = useState(false);
-  const [setbackDistance, setSetbackDistance] = useState(1);
-  const [isRollingBallCorner, setIsRollingBallCorner] = useState(true);
-  const [propagate, setPropagate] = useState(true);
-  const [isG2, setIsG2] = useState(false);
-  const [tangencyWeight, setTangencyWeight] = useState(1.0);
-  const [edgeSets, setEdgeSets] = useState<FilletEdgeSet[]>([]);
+  const [radius, setRadius] = useState(
+    () => (initialParams?.radius as number | undefined) ?? filletLiveRadius,
+  );
+  const [mode, setMode] = useState<FilletMode>(
+    () => (initialParams?.mode as FilletMode | undefined) ?? "constant",
+  );
+  const [startRadius, setStartRadius] = useState(
+    () => (initialParams?.startRadius as number | undefined) ?? 1,
+  );
+  const [endRadius, setEndRadius] = useState(
+    () => (initialParams?.endRadius as number | undefined) ?? 4,
+  );
+  const [chordLength, setChordLength] = useState(
+    () => (initialParams?.chordLength as number | undefined) ?? 5,
+  );
+  const [offsetOne, setOffsetOne] = useState(
+    () => (initialParams?.offsetOne as number | undefined) ?? 2,
+  );
+  const [offsetTwo, setOffsetTwo] = useState(
+    () => (initialParams?.offsetTwo as number | undefined) ?? 3,
+  );
+  const [isFlipped, setIsFlipped] = useState(
+    () => (initialParams?.isFlipped as boolean | undefined) ?? false,
+  );
+  const [setback, setSetback] = useState(
+    () => (initialParams?.setback as boolean | undefined) ?? false,
+  );
+  const [setbackDistance, setSetbackDistance] = useState(
+    () => (initialParams?.setbackDistance as number | undefined) ?? 1,
+  );
+  const [isRollingBallCorner, setIsRollingBallCorner] = useState(
+    () => (initialParams?.isRollingBallCorner as boolean | undefined) ?? false,
+  );
+  const [propagate, setPropagate] = useState(
+    () => (initialParams?.propagate as boolean | undefined) ?? true,
+  );
+  const [isG2, setIsG2] = useState(
+    () => (initialParams?.isG2 as boolean | undefined) ?? false,
+  );
+  const [tangencyWeight, setTangencyWeight] = useState(
+    () => (initialParams?.tangencyWeight as number | undefined) ?? 1.0,
+  );
+  const [edgeSets, setEdgeSets] = useState<FilletEdgeSet[]>(
+    () => (initialParams?.edgeSets as FilletEdgeSet[] | undefined) ?? [],
+  );
   const [showEdgeSets, setShowEdgeSets] = useState(false);
 
-  useEffect(() => { setRadius(filletLiveRadius); }, [filletLiveRadius]);
+  useEffect(() => {
+    if (initialParams) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setRadius(filletLiveRadius);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [filletLiveRadius, initialParams]);
 
   useEffect(() => {
-    if (mode === 'full-round') setFilletPickMode('face');
-    else if (filletPickMode === 'face') setFilletPickMode('edge');
+    if (mode === "full-round") setFilletPickMode("face");
+    else if (filletPickMode === "face") setFilletPickMode("edge");
   }, [mode, filletPickMode, setFilletPickMode]);
 
   const setRadiusAndLive = (value: number) => {
@@ -38,14 +80,20 @@ export function useFilletDialogState(onConfirm: (params: FilletParams) => void) 
   };
 
   const addEdgeSet = () => {
-    setEdgeSets((prev) => [...prev, { edgeIds: [], type: 'constant', radius: 2 }]);
+    setEdgeSets((prev) => [
+      ...prev,
+      { edgeIds: [], type: "constant", radius: 2 },
+    ]);
     setShowEdgeSets(true);
   };
 
-  const removeEdgeSet = (i: number) => setEdgeSets((prev) => prev.filter((_, idx) => idx !== i));
+  const removeEdgeSet = (i: number) =>
+    setEdgeSets((prev) => prev.filter((_, idx) => idx !== i));
 
   const updateEdgeSet = (i: number, patch: Partial<FilletEdgeSet>) =>
-    setEdgeSets((prev) => prev.map((set, idx) => idx === i ? { ...set, ...patch } : set));
+    setEdgeSets((prev) =>
+      prev.map((set, idx) => (idx === i ? { ...set, ...patch } : set)),
+    );
 
   const handleConfirm = () => {
     const params: FilletParams = {
@@ -57,14 +105,14 @@ export function useFilletDialogState(onConfirm: (params: FilletParams) => void) 
       propagate,
       isG2,
       tangencyWeight: tangencyWeight !== 1.0 ? tangencyWeight : undefined,
-      isRollingBallCorner,
+      isRollingBallCorner: setback && isRollingBallCorner,
     };
-    if (mode === 'variable') {
+    if (mode === "variable") {
       params.startRadius = startRadius;
       params.endRadius = endRadius;
     }
-    if (mode === 'chord-length') params.chordLength = chordLength;
-    if (mode === 'asymmetric') {
+    if (mode === "chord-length") params.chordLength = chordLength;
+    if (mode === "asymmetric") {
       params.offsetOne = isFlipped ? offsetTwo : offsetOne;
       params.offsetTwo = isFlipped ? offsetOne : offsetTwo;
       params.isFlipped = isFlipped;
@@ -114,4 +162,3 @@ export function useFilletDialogState(onConfirm: (params: FilletParams) => void) 
 }
 
 export type FilletDialogState = ReturnType<typeof useFilletDialogState>;
-
