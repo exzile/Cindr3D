@@ -4,46 +4,8 @@ import { GeometryEngine } from '../../../engine/GeometryEngine';
 import { errorMessage } from '../../../utils/errorHandling';
 import type { CADSliceContext } from '../sliceContext';
 import type { CADState } from '../state';
-import { pickMostRecentSolidTarget, applyBodyBooleanAsync, placeToolFeatureAsync } from './featureManagement/bodyBoolean';
-import { csgAsync } from '../../../workers/csgWorkerPool';
+import { placeToolFeature, pickMostRecentSolidTarget } from './featureManagement/bodyBoolean';
 import { liveBodyMeshes } from '../../meshRegistry';
-
-/**
- * Session-only cache of the pre-shell source mesh geometry + world matrix,
- * keyed by featureId. commitShell mutates the source feature's mesh in-place,
- * so a second call would shell the already-shelled result. Caching the
- * pre-shell snapshot on first commit lets every subsequent edit re-shell from
- * the original — the same Phase-0 non-destructive pattern fillet/chamfer use.
- */
-const _shellSrcCache = new Map<string, { geom: THREE.BufferGeometry; matrix: THREE.Matrix4 }>();
-
-/** Evict the cached pre-shell source for a feature (called on feature delete). */
-export function evictShellSource(featureId: string): void {
-  const entry = _shellSrcCache.get(featureId);
-  if (entry) { entry.geom.dispose(); _shellSrcCache.delete(featureId); }
-}
-
-/** Async replay helper for tool features (Pipe / SnapFit / LipGroove) — CSG runs in the worker pool. */
-async function replayToolBooleanAsync(
-  features: Feature[],
-  feature: Feature,
-  toolMesh: THREE.Mesh,
-  operation: 'new-body' | 'join' | 'cut' | 'intersect',
-): Promise<{ mesh: THREE.Mesh; note: string }> {
-  if (operation === 'new-body') return { mesh: toolMesh, note: '' };
-  const parentId = feature.parentFeatureId;
-  if (!parentId) return { mesh: toolMesh, note: ` (${operation}: no parent target — standalone)` };
-  const parent = features.find((f) => f.id === parentId);
-  if (!(parent?.mesh instanceof THREE.Mesh)) {
-    return { mesh: toolMesh, note: ` (${operation}: parent body missing — standalone)` };
-  }
-  const result = await applyBodyBooleanAsync(parent.mesh, toolMesh, operation);
-  if (!result) return { mesh: toolMesh, note: ` (${operation} failed — standalone body)` };
-  result.userData.pickable = true;
-  result.userData.featureId = feature.id;
-  toolMesh.geometry.dispose();
-  return { mesh: result, note: ` (${operation} with ${parent.name})` };
-}
 
 /** Boundary-fill target = shared most-recent-solid pick, skipping the tool
  *  bodies that define the boundary and any prior boundary-fill body. */
@@ -68,9 +30,9 @@ function pickBoundaryFillTarget(features: Feature[], excludeIds: Set<string>): F
  * caller. `note` is '' on a clean fill, otherwise a human-readable reason the
  * fallback box was used.
  */
-async function computeBoundaryFillGeometry(
+function computeBoundaryFillGeometry(
   toolFeatures: Feature[],
-): Promise<{ geometry: THREE.BufferGeometry; note: string }> {
+): { geometry: THREE.BufferGeometry; note: string } {
   const meshes = toolFeatures
     .map((f) => f.mesh)
     .filter((m): m is THREE.Mesh => m instanceof THREE.Mesh);
@@ -105,13 +67,10 @@ async function computeBoundaryFillGeometry(
   try {
     // ── ≥2 tool bodies: enclosed common region = iterative intersection ──
     if (baked.length >= 2) {
-      let acc: THREE.BufferGeometry = baked[0].clone();
+      let acc = baked[0].clone();
       for (let i = 1; i < baked.length; i++) {
-        const next = await csgAsync(acc, baked[i], 'intersect');
+        const next = GeometryEngine.csgIntersect(acc, baked[i]);
         acc.dispose();
-        if (!next) {
-          return fallbackBox('selected bodies do not enclose a common region');
-        }
         acc = next;
       }
       const posAttr = acc.getAttribute('position');
@@ -215,7 +174,7 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
   },
 
   // ── SLD — Pipe ───────────────────────────────────────────────────────────
-  commitPipe: async (params) => {
+  commitPipe: (params) => {
     const { features, sketches } = get();
     const { outerDiameter, hollow, wallThickness, operation, pathSketchId } = params;
     if (!Number.isFinite(outerDiameter) || outerDiameter <= 0) {
@@ -254,13 +213,17 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
       suppressed: false,
       timestamp: Date.now(),
     };
-    const r = await placeToolFeatureAsync(get(), feature, operation);
-    set({ features: r.features, designConfigurations: r.designConfigurations });
-    get().setStatusMessage(`Pipe ${n} created: ⌀${outerDiameter}mm${hollow ? `, ${wallThickness}mm wall` : ''}${r.note}`);
+    let opNote = '';
+    set((s) => {
+      const r = placeToolFeature(s, feature, operation);
+      opNote = r.note;
+      return { features: r.features, designConfigurations: r.designConfigurations };
+    });
+    get().setStatusMessage(`Pipe ${n} created: ⌀${outerDiameter}mm${hollow ? `, ${wallThickness}mm wall` : ''}${opNote}`);
   },
 
   // ── SLD — Snap Fit (cantilever snap-hook) ────────────────────────────────
-  commitSnapFit: async (params) => {
+  commitSnapFit: (params) => {
     const { features } = get();
     const { snapType, length, width, thickness, overhang, overhangAngle, returnAngle, operation } = params;
     if (![length, width, thickness].every((v) => Number.isFinite(v) && v > 0)) {
@@ -289,13 +252,17 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
       suppressed: false,
       timestamp: Date.now(),
     };
-    const r = await placeToolFeatureAsync(get(), feature, operation);
-    set({ features: r.features, designConfigurations: r.designConfigurations });
-    get().setStatusMessage(`Snap Fit ${n} created: ${snapType}, ${length}×${width}×${thickness}mm${r.note}`);
+    let opNote = '';
+    set((s) => {
+      const r = placeToolFeature(s, feature, operation);
+      opNote = r.note;
+      return { features: r.features, designConfigurations: r.designConfigurations };
+    });
+    get().setStatusMessage(`Snap Fit ${n} created: ${snapType}, ${length}×${width}×${thickness}mm${opNote}`);
   },
 
   // ── SLD — Lip and Groove ─────────────────────────────────────────────────
-  commitLipGroove: async (params) => {
+  commitLipGroove: (params) => {
     const { features } = get();
     const { lipWidth, lipHeight, grooveWidth, grooveDepth, clearance, includeGroove, operation } = params;
     if (![lipWidth, lipHeight].every((v) => Number.isFinite(v) && v > 0)) {
@@ -328,63 +295,65 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
       suppressed: false,
       timestamp: Date.now(),
     };
-    const r = await placeToolFeatureAsync(get(), feature, operation);
-    set({ features: r.features, designConfigurations: r.designConfigurations });
+    let opNote = '';
+    set((s) => {
+      const r = placeToolFeature(s, feature, operation);
+      opNote = r.note;
+      return { features: r.features, designConfigurations: r.designConfigurations };
+    });
     get().setStatusMessage(
       `Lip and Groove ${n} created: lip ${lipWidth}×${lipHeight}mm`
-      + `${includeGroove ? `, groove ${grooveWidth}×${grooveDepth}mm (${clearance}mm clearance)` : ''}${r.note}`,
+      + `${includeGroove ? `, groove ${grooveWidth}×${grooveDepth}mm (${clearance}mm clearance)` : ''}${opNote}`,
     );
   },
 
-  updateLipGrooveGeometry: async (featureId, params) => {
+  updateLipGrooveGeometry: (featureId, params) => {
     const { features } = get();
     const { lipWidth, lipHeight, grooveWidth, grooveDepth, clearance, includeGroove, operation } = params;
     const existing = features.find((f) => f.id === featureId);
     if (!existing) { get().setStatusMessage('Lip and Groove: feature not found'); return; }
     get().pushUndo();
     const geom = GeometryEngine.lipGrooveGeometry(lipWidth, lipHeight, grooveWidth, grooveDepth, clearance, includeGroove);
-    const toolMesh = new THREE.Mesh(geom);
-    toolMesh.castShadow = true;
-    toolMesh.receiveShadow = true;
-    toolMesh.userData.pickable = true;
-    toolMesh.userData.featureId = featureId;
-    const { mesh, note } = await replayToolBooleanAsync(features, existing, toolMesh, operation);
+    const mesh = new THREE.Mesh(geom);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.pickable = true;
+    mesh.userData.featureId = featureId;
     (existing.mesh as THREE.Mesh | undefined)?.geometry?.dispose();
     set({
-      features: get().features.map((f) =>
+      features: features.map((f) =>
         f.id === featureId
           ? { ...f, mesh, params: { ...f.params, lipWidth, lipHeight, grooveWidth, grooveDepth, clearance, includeGroove, operation } }
           : f,
       ),
     });
-    get().setStatusMessage(`Lip and Groove updated: lip ${lipWidth}×${lipHeight}mm${includeGroove ? `, groove ${grooveWidth}×${grooveDepth}mm` : ''}${note}`);
+    get().setStatusMessage(`Lip and Groove updated: lip ${lipWidth}×${lipHeight}mm${includeGroove ? `, groove ${grooveWidth}×${grooveDepth}mm` : ''}`);
   },
 
-  updateSnapFitGeometry: async (featureId, params) => {
+  updateSnapFitGeometry: (featureId, params) => {
     const { features } = get();
     const { snapType, length, width, thickness, overhang, overhangAngle, returnAngle, operation } = params;
     const existing = features.find((f) => f.id === featureId);
     if (!existing) { get().setStatusMessage('Snap Fit: feature not found'); return; }
     get().pushUndo();
     const geom = GeometryEngine.snapFitGeometry(length, width, thickness, overhang, overhangAngle, returnAngle);
-    const toolMesh = new THREE.Mesh(geom);
-    toolMesh.castShadow = true;
-    toolMesh.receiveShadow = true;
-    toolMesh.userData.pickable = true;
-    toolMesh.userData.featureId = featureId;
-    const { mesh, note } = await replayToolBooleanAsync(features, existing, toolMesh, operation);
+    const mesh = new THREE.Mesh(geom);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.pickable = true;
+    mesh.userData.featureId = featureId;
     (existing.mesh as THREE.Mesh | undefined)?.geometry?.dispose();
     set({
-      features: get().features.map((f) =>
+      features: features.map((f) =>
         f.id === featureId
           ? { ...f, mesh, params: { ...f.params, snapType, length, width, thickness, overhang, overhangAngle, returnAngle, operation } }
           : f,
       ),
     });
-    get().setStatusMessage(`Snap Fit updated: ${snapType}, ${length}×${width}×${thickness}mm${note}`);
+    get().setStatusMessage(`Snap Fit updated: ${snapType}, ${length}×${width}×${thickness}mm`);
   },
 
-  updatePipeGeometry: async (featureId, params) => {
+  updatePipeGeometry: (featureId, params) => {
     const { features, sketches } = get();
     const { outerDiameter, hollow, wallThickness, operation, pathSketchId } = params;
     const existing = features.find((f) => f.id === featureId);
@@ -399,15 +368,14 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     }
     get().pushUndo();
     const geom = GeometryEngine.pipeGeometry(pathPoints, outerDiameter, hollow, wallThickness);
-    const toolMesh = new THREE.Mesh(geom);
-    toolMesh.castShadow = true;
-    toolMesh.receiveShadow = true;
-    toolMesh.userData.pickable = true;
-    toolMesh.userData.featureId = featureId;
-    const { mesh, note } = await replayToolBooleanAsync(features, existing, toolMesh, operation);
+    const mesh = new THREE.Mesh(geom);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.pickable = true;
+    mesh.userData.featureId = featureId;
     (existing.mesh as THREE.Mesh | undefined)?.geometry?.dispose();
     set({
-      features: get().features.map((f) =>
+      features: features.map((f) =>
         f.id === featureId
           ? {
               ...f,
@@ -419,7 +387,7 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
           : f,
       ),
     });
-    get().setStatusMessage(`Pipe updated: ⌀${outerDiameter}mm${hollow ? `, ${wallThickness}mm wall` : ''}${note}`);
+    get().setStatusMessage(`Pipe updated: ⌀${outerDiameter}mm${hollow ? `, ${wallThickness}mm wall` : ''}`);
   },
 
   updateRibGeometry: (featureId, sketchId, thickness, height, extras) => {
@@ -660,24 +628,6 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
       get().setStatusMessage('Shell: no mesh found for selected feature');
       return;
     }
-
-    // Non-destructive replay: on first commit cache the pre-shell snapshot;
-    // on subsequent commits (edits) rehydrate a temp mesh from the cache so we
-    // never shell an already-shelled body.
-    let tempGeomToDispose: THREE.BufferGeometry | null = null;
-    const cached = _shellSrcCache.get(featureId);
-    if (cached) {
-      tempGeomToDispose = cached.geom.clone();
-      const tmp = new THREE.Mesh(tempGeomToDispose, srcMesh.material);
-      tmp.applyMatrix4(cached.matrix);
-      tmp.updateMatrixWorld(true);
-      srcMesh = tmp;
-    } else {
-      _shellSrcCache.set(featureId, {
-        geom: srcMesh.geometry.clone(),
-        matrix: srcMesh.matrixWorld.clone(),
-      });
-    }
     const { insideThickness, outsideThickness, shellType, removeFaces, faceThicknesses } = opts;
     const tin = Number.isFinite(insideThickness) ? Math.max(0, insideThickness) : 0;
     const tout = Number.isFinite(outsideThickness) ? Math.max(0, outsideThickness) : 0;
@@ -703,12 +653,9 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
         faceThicknesses: faceThicknesses.map(toSpec),
       });
     } catch (err) {
-      tempGeomToDispose?.dispose();
       get().setStatusMessage(`Shell failed: ${errorMessage(err, 'CSG error')}`);
       return;
     }
-    // shellSolid clones the input geometry internally, so we can release ours.
-    tempGeomToDispose?.dispose();
     result.castShadow = true;
     result.receiveShadow = true;
     const nextFeatures = features.map((f) =>
@@ -810,7 +757,7 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
   },
 
   // ── SLD3 — Emboss ────────────────────────────────────────────────────────
-  commitEmboss: async (sketchId, depth, style) => {
+  commitEmboss: (sketchId, depth, style) => {
     const { sketches, features } = get();
     const sketch = sketches.find((s) => s.id === sketchId);
     if (!sketch) {
@@ -840,9 +787,13 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     // (cut). Route through the shared helper so it actually booleans against
     // the target body instead of leaving a floating slab.
     get().pushUndo();
-    const r = await placeToolFeatureAsync(get(), feature, style === 'deboss' ? 'cut' : 'join');
-    set({ features: r.features, designConfigurations: r.designConfigurations });
-    get().setStatusMessage(`Emboss ${n}: ${style} ${depth}mm${r.note}`);
+    let opNote = '';
+    set((s) => {
+      const r = placeToolFeature(s, feature, style === 'deboss' ? 'cut' : 'join');
+      opNote = r.note;
+      return { features: r.features, designConfigurations: r.designConfigurations };
+    });
+    get().setStatusMessage(`Emboss ${n}: ${style} ${depth}mm${opNote}`);
   },
 
   // ── SLD6 — Boundary Fill ─────────────────────────────────────────────────
@@ -852,7 +803,7 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
   // surfaces → stitched-closed shell; un-closeable input → bounding box of
   // the SELECTED meshes (with a status note). join/cut operations boolean the
   // fill against the most-recent solid (revolve-style target pick).
-  commitBoundaryFill: async (toolFeatureIds, operation) => {
+  commitBoundaryFill: (toolFeatureIds, operation) => {
     const { features } = get();
     const idSet = new Set(toolFeatureIds);
     const toolFeatures = toolFeatureIds
@@ -865,7 +816,7 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
 
     // Build the fill geometry. Failures inside fall back to a bounding box +
     // note rather than throwing, so state is never corrupted.
-    const { geometry: fillGeom, note: fillNote } = await computeBoundaryFillGeometry(toolFeatures);
+    const { geometry: fillGeom, note: fillNote } = computeBoundaryFillGeometry(toolFeatures);
 
     // ── operation: join / cut against an existing solid body ──
     // Bake the fill, CSG it against the most-recent solid target (same
@@ -879,15 +830,22 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
       if (!target || !(target.mesh instanceof THREE.Mesh)) {
         opNote = ` (no solid body to ${operation} — standalone body)`;
       } else {
-        const targetGeom = GeometryEngine.bakeMeshWorldGeometry(target.mesh);
-        const combined = await csgAsync(targetGeom, fillGeom, operation === 'join' ? 'union' : 'subtract');
-        targetGeom.dispose();
-        if (combined) {
+        let targetGeom: THREE.BufferGeometry | undefined;
+        try {
+          targetGeom = GeometryEngine.bakeMeshWorldGeometry(target.mesh);
+          const combined = operation === 'join'
+            ? GeometryEngine.csgUnion(targetGeom, fillGeom)
+            : GeometryEngine.csgSubtract(targetGeom, fillGeom);
+          targetGeom.dispose();
           fillGeom.dispose();
           resultGeom = combined;
           consumedTargetId = target.id;
-        } else {
-          opNote = ` (${operation} failed — standalone body)`;
+        } catch (err) {
+          // Baked target geom is an intermediate — dispose it; keep fillGeom
+          // alive as the standalone-body fallback (resultGeom === fillGeom).
+          targetGeom?.dispose();
+          opNote = ` (${operation} failed: ${errorMessage(err, 'CSG error')} — standalone body)`;
+          resultGeom = fillGeom;
         }
       }
     }

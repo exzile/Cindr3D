@@ -591,14 +591,15 @@ export class DuetService {
       return res.text();
     }
 
-    // Standalone: send then read reply
+    // Standalone: send then read reply.
+    // Stamp lastGCodeSentAt BEFORE dispatching so the background poll loop
+    // doesn't race rr_reply reads during the request/delay window.
+    this.lastGCodeSentAt = Date.now();
     const sendUrl = `${this.baseUrl}/rr_gcode?gcode=${encodeURIComponent(code)}`;
     await this.request(sendUrl);
 
     // Small delay to let firmware process
     await new Promise((r) => setTimeout(r, 50));
-
-    this.lastGCodeSentAt = Date.now();
     const replyUrl = `${this.baseUrl}/rr_reply`;
     const reply = await this.request<string>(replyUrl);
     return typeof reply === 'string' ? reply : JSON.stringify(reply);

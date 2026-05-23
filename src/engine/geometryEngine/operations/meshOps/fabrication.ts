@@ -23,7 +23,9 @@ export function createRib(
   for (let i = 0; i + 1 < profilePoints.length; i++) {
     const p0 = profilePoints[i];
     const p1 = profilePoints[i + 1];
-    const dir = p1.clone().sub(p0).normalize();
+    const rawDir = p1.clone().sub(p0);
+    if (rawDir.length() < 1e-9) continue; // skip degenerate zero-length segments
+    const dir = rawDir.normalize();
     const side = new THREE.Vector3().crossVectors(dir, n).normalize().multiplyScalar(thickness / 2);
     const up = n.clone().multiplyScalar(height);
 
@@ -65,6 +67,7 @@ export function createWeb(
     const pos = ribMesh.geometry.attributes.position as THREE.BufferAttribute;
     const arr = pos.array as Float32Array;
     for (let i = 0; i < arr.length; i++) allVerts.push(arr[i]);
+    ribMesh.geometry.dispose();
   }
   const geom = new THREE.BufferGeometry();
   geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(allVerts), 3));
@@ -87,12 +90,15 @@ export function createRest(
   const baseGeom = new THREE.BoxGeometry(width, thickness, depth);
   const normal = new THREE.Vector3(normalX, normalY, normalZ).normalize();
   const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
-  const mesh = new THREE.Mesh(baseGeom, new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4 }));
-  mesh.position.set(centerX, centerY, centerZ);
-  mesh.quaternion.copy(quat);
-  mesh.updateMatrixWorld(true);
+  // Compute world matrix without creating a persistent Mesh+Material pair.
+  const worldMatrix = new THREE.Matrix4().compose(
+    new THREE.Vector3(centerX, centerY, centerZ),
+    quat,
+    new THREE.Vector3(1, 1, 1),
+  );
   const geom = baseGeom.clone();
-  geom.applyMatrix4(mesh.matrixWorld);
+  baseGeom.dispose();
+  geom.applyMatrix4(worldMatrix);
   geom.computeVertexNormals();
   attachTopology(geom);
   return new THREE.Mesh(geom, new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4 }));
@@ -128,8 +134,10 @@ export function remesh(mesh: THREE.Mesh, mode: 'refine' | 'coarsen', iterations:
           newVerts.push(x.x, x.y, x.z, y.x, y.y, y.z, z.x, z.y, z.z);
         }
       }
+      const prevGeom = geom;
       geom = new THREE.BufferGeometry();
       geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(newVerts), 3));
+      prevGeom.dispose();
     }
     geom.computeVertexNormals();
     const result = new THREE.Mesh(geom, mesh.material);

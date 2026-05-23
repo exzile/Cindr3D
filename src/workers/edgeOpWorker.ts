@@ -34,7 +34,7 @@ import type { PickedEdge } from '../utils/geometry/edgeCutCore';
 const _manifoldReady: Promise<void> = initManifold()
   .then(() => undefined)
   .catch(() => {
-    console.warn('[edgeOpWorker] Manifold WASM init failed — using three-bvh-csg fallback');
+    console.warn('[edgeOpWorker] manifold× → bvh-fbk');
   });
 
 interface EdgeData {
@@ -81,13 +81,7 @@ interface ComputeMsg {
   try {
     result =
       toolType === 'fillet'
-        ? computeFilletGeometry(srcGeo, pickedEdges, value, segments, fast, {
-            // Always apply rolling-ball corner blend — matches Fusion 360 default
-            // behaviour where the sphere patch fills the trihedral corner left by
-            // the three edge cutters.  Without it the Steinmetz intersection of
-            // the three fillet cylinders is never removed, producing the spike.
-            isRollingBallCorner: true,
-          })
+        ? computeFilletGeometry(srcGeo, pickedEdges, value, segments, fast)
         : computeChamferGeometry(srcGeo, pickedEdges, value, undefined, fast);
   } catch {
     // CSG errors are expected for degenerate geometry; result stays null.
@@ -95,7 +89,7 @@ interface ComputeMsg {
 
   srcGeo.dispose();
 
-  if (!result || result.attributes.position.count === 0) {
+  if (!result || !result.attributes.position || result.attributes.position.count === 0) {
     result?.dispose();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (self as any).postMessage({ type: 'result', requestId, positions: null });

@@ -27,6 +27,7 @@ export function createBodyActions({ get, set }: ComponentStoreApi): Pick<
   | 'setBodyOpacity'
   | 'toggleBodySelectable'
   | 'addFeatureToBody'
+  | 'removeFeatureFromBody'
   | 'mirrorBody'
 > {
   return {
@@ -144,6 +145,13 @@ export function createBodyActions({ get, set }: ComponentStoreApi): Pick<
       const body = bodies[bodyId];
       if (!body) return;
       set({ bodies: { ...bodies, [bodyId]: { ...body, featureIds: [...body.featureIds, featureId] } } });
+    },
+
+    removeFeatureFromBody: (bodyId, featureId) => {
+      const { bodies } = get();
+      const body = bodies[bodyId];
+      if (!body) return;
+      set({ bodies: { ...bodies, [bodyId]: { ...body, featureIds: body.featureIds.filter((fid) => fid !== featureId) } } });
     },
 
     mirrorBody: (bodyId, plane) => {

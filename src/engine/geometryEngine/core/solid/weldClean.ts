@@ -311,8 +311,19 @@ export function retriangulateCoplanarRegions(
         }
       }
       on.sort((p, q) => p.t - q.t);
+      // Deduplicate split points at nearly-identical parametric positions.
+      // Multiple region vertices can be within colTol of the edge line at the
+      // same t value (e.g. two seam-duplicate verts the weld tolerance didn't
+      // fuse). Keeping both creates a branch in the successor graph that causes
+      // incomplete loops downstream.
+      const dedupedOn: { id: number; t: number }[] = [];
+      for (const pt of on) {
+        if (dedupedOn.length === 0 || pt.t - dedupedOn[dedupedOn.length - 1].t > 1e-6) {
+          dedupedOn.push(pt);
+        }
+      }
       let prev = u;
-      for (const { id } of on) { addSucc(prev, id); prev = id; }
+      for (const { id } of dedupedOn) { addSucc(prev, id); prev = id; }
       addSucc(prev, v);
     }
 

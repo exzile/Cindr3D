@@ -249,6 +249,12 @@ export function prepareSliceGeometryRun(
     }
   }
 
+  // Adaptive layers unconditionally pushes the first-layer Z before the loop,
+  // so a model thinner than firstLayerHeight produces a single entry whose Z
+  // is above the model top — an empty slice, not a real layer.
+  if (pp.adaptiveLayersEnabled && layerZs.length === 1 && layerZs[0] / zScale > modelHeight + 0.0001) {
+    layerZs = [];
+  }
   const totalLayers = layerZs.length;
   if (totalLayers === 0) throw new Error('Model too thin to slice at the given layer height.');
 

@@ -16,17 +16,22 @@ export function linearPattern(
   const dir2 = params.dir2X !== undefined
     ? new THREE.Vector3(params.dir2X, params.dir2Y ?? 0, params.dir2Z ?? 0).normalize()
     : null;
-  for (let j = 0; j < count2; j++) {
-    for (let i = 0; i < params.count; i++) {
-      if (i === 0 && j === 0) continue;
-      const offset = dir1.clone().multiplyScalar(i * params.spacing);
-      if (dir2) offset.addScaledVector(dir2, j * spacing2);
-      const geom = mesh.geometry.clone();
-      geom.translate(offset.x, offset.y, offset.z);
-      const copy = new THREE.Mesh(geom, mesh.material);
-      copy.userData = { ...mesh.userData };
-      results.push(copy);
+  try {
+    for (let j = 0; j < count2; j++) {
+      for (let i = 0; i < params.count; i++) {
+        if (i === 0 && j === 0) continue;
+        const offset = dir1.clone().multiplyScalar(i * params.spacing);
+        if (dir2) offset.addScaledVector(dir2, j * spacing2);
+        const geom = mesh.geometry.clone();
+        geom.translate(offset.x, offset.y, offset.z);
+        const copy = new THREE.Mesh(geom, mesh.material);
+        copy.userData = { ...mesh.userData };
+        results.push(copy);
+      }
     }
+  } catch (err) {
+    for (const m of results) m.geometry.dispose();
+    throw err;
   }
   return results;
 }
@@ -43,20 +48,25 @@ export function circularPattern(
   const origin = new THREE.Vector3(params.originX, params.originY, params.originZ);
   const results: THREE.Mesh[] = [];
   const angleStep = (params.totalAngle / params.count) * (Math.PI / 180);
-  for (let i = 1; i < params.count; i++) {
-    const angle = angleStep * i;
-    const quat = new THREE.Quaternion().setFromAxisAngle(axis, angle);
-    const geom = mesh.geometry.clone();
-    const pos = geom.attributes.position as THREE.BufferAttribute;
-    for (let v = 0; v < pos.count; v++) {
-      const point = new THREE.Vector3().fromBufferAttribute(pos, v).sub(origin).applyQuaternion(quat).add(origin);
-      pos.setXYZ(v, point.x, point.y, point.z);
+  try {
+    for (let i = 1; i < params.count; i++) {
+      const angle = angleStep * i;
+      const quat = new THREE.Quaternion().setFromAxisAngle(axis, angle);
+      const geom = mesh.geometry.clone();
+      const pos = geom.attributes.position as THREE.BufferAttribute;
+      for (let v = 0; v < pos.count; v++) {
+        const point = new THREE.Vector3().fromBufferAttribute(pos, v).sub(origin).applyQuaternion(quat).add(origin);
+        pos.setXYZ(v, point.x, point.y, point.z);
+      }
+      pos.needsUpdate = true;
+      geom.computeVertexNormals();
+      const copy = new THREE.Mesh(geom, mesh.material);
+      copy.userData = { ...mesh.userData };
+      results.push(copy);
     }
-    pos.needsUpdate = true;
-    geom.computeVertexNormals();
-    const copy = new THREE.Mesh(geom, mesh.material);
-    copy.userData = { ...mesh.userData };
-    results.push(copy);
+  } catch (err) {
+    for (const m of results) m.geometry.dispose();
+    throw err;
   }
   return results;
 }
@@ -80,7 +90,9 @@ export function patternOnPath(mesh: THREE.Mesh, pathPoints: THREE.Vector3[], cou
       ? (targetLen - arcLens[seg]) / (arcLens[seg + 1] - arcLens[seg])
       : 0;
     const pos = pathPoints[seg].clone().lerp(pathPoints[Math.min(seg + 1, pathPoints.length - 1)], segT);
-    const tangent = pathPoints[Math.min(seg + 1, pathPoints.length - 1)].clone().sub(pathPoints[seg]).normalize();
+    const rawTangent = pathPoints[Math.min(seg + 1, pathPoints.length - 1)].clone().sub(pathPoints[seg]);
+    const tangentLen = rawTangent.length();
+    const tangent = tangentLen > 1e-9 ? rawTangent.divideScalar(tangentLen) : new THREE.Vector3(0, 1, 0);
     const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), tangent);
     const geom = mesh.geometry.clone();
     const matrix = new THREE.Matrix4().compose(pos, quat, new THREE.Vector3(1, 1, 1));

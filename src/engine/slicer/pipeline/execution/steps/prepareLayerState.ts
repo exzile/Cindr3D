@@ -345,6 +345,9 @@ export function emitLayerStartState(
   const { li, layerZ, layerH, isFirstLayer, contours, printZ } = geometryState;
   const moves: SliceMove[] = [];
   let layerTime = 0;
+  // Reset bridge flag so pool-path callers (which bypass prepareLayerGeometryState)
+  // don't carry stale true into finalizeLayer fan-speed and dwell calculations.
+  run.layerHadBridge = false;
 
   emitter.currentLayerTravelSpeed = (li === 0 && (pp.initialLayerTravelSpeed ?? 0) > 0) ? pp.initialLayerTravelSpeed! : pp.travelSpeed;
   const initialLayerFlow = pp.initialLayerFlow ?? 0;

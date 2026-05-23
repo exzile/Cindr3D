@@ -8,6 +8,8 @@ import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
 import type { DesignConfiguration } from '../../state/coreState';
 import { recomputeBooleanDependents } from './featureBooleanUtils';
+import { evictEdgeCutSource } from './applyEdgeCut';
+import { bodyGeometryCache, bodyIdGeometryCache } from '../../../../store/meshRegistry';
 
 const BASE_CONFIGURATION_ID = 'default';
 
@@ -218,6 +220,11 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
     // the feature is out of state (prevents renderer accessing disposed GPU resources).
     const target = get().features.find((f) => f.id === id);
     const removedSketchId = target?.type === 'sketch' ? target.sketchId : null;
+    // Evict the pre-fillet/chamfer source geometry cache to prevent session-long leaks.
+    if (target?.type === 'fillet' || target?.type === 'chamfer') evictEdgeCutSource(id);
+    // Evict the persistent geometry cache entry for this feature (keyed by featureId).
+    bodyGeometryCache.get(id)?.dispose();
+    bodyGeometryCache.delete(id);
 
     // Clean up the body that owned this feature when it was the sole occupant.
     // Without this, deleting a "new-body" extrude leaves an orphaned body entry
@@ -225,8 +232,17 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
     if (target?.bodyId) {
       const componentStore = useComponentStore.getState();
       const body = componentStore.bodies[target.bodyId];
-      if (body && body.featureIds.length > 0 && body.featureIds.every((fid) => fid === id)) {
-        componentStore.removeBody(target.bodyId);
+      if (body) {
+        const remaining = body.featureIds.filter((fid) => fid !== id);
+        if (remaining.length === 0) {
+          // Last feature in this body — remove the body entirely.
+          bodyIdGeometryCache.get(target.bodyId)?.dispose();
+          bodyIdGeometryCache.delete(target.bodyId);
+          componentStore.removeBody(target.bodyId);
+        } else {
+          // Other features still own this body — just unlink this feature.
+          componentStore.removeFeatureFromBody(target.bodyId, id);
+        }
       }
     }
 
@@ -316,7 +332,8 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
     // If the feature being moved is a parent of a fillet/chamfer, it can't
     // move past that downstream feature. If the feature IS a fillet/chamfer,
     // it can't move before its parent.
-    const clamped = Math.max(0, Math.min(newIndex, state.features.length - 1));
+    // Allow newIndex === features.length as "append at end" (Timeline end-drop zone passes this).
+    const clamped = Math.max(0, Math.min(newIndex, state.features.length));
 
     // Build dependency sets: features that must come BEFORE `moved`.
     const mustBeBefore = new Set<string>(); // ids that must appear before moved
@@ -348,7 +365,7 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
       if (mustBeBefore.has(state.features[i].id)) earliest = i + 1;
     }
     // Compute the latest valid index (all mustBeAfter must be at > this index).
-    let latest = state.features.length - 1;
+    let latest = state.features.length;
     for (let i = state.features.length - 1; i >= 0; i--) {
       if (mustBeAfter.has(state.features[i].id)) latest = i - 1;
     }

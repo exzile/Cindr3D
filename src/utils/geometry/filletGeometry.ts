@@ -20,11 +20,7 @@
  * affected; the rest of every face stays perfectly flat.
  */
 import * as THREE from 'three';
-import {
-  csgSubtract as csgSubtractRaw,
-  buildFilletCutterManifold,
-  buildFilletLoopCutterManifold,
-} from '../../engine/geometryEngine/core/solid/csg';
+import { csgSubtract as csgSubtractRaw } from '../../engine/geometryEngine/core/solid/csg';
 import { circleSegments } from '../../engine/geometryEngine/core/sketch/sketchProfiles';
 import {
   type PickedEdge,
@@ -119,29 +115,16 @@ function buildFilletCutter(
     if (cosHalfPhi > 1e-4) radius = chordLength / (2 * cosHalfPhi);
   }
   // Skip near-coplanar (no real edge) or fully-folded degenerate cases.
-  // 0.10 rad (≈5.7°) rather than 0.05 so tessellation-approximation seams on
-  // already-filleted torus surfaces (phi ≈ 0.065 for 48-seg torus) are treated
-  // as flat and ignored — prevents the "staircase" artifact when a second fillet
-  // is applied to a body that already has a circular-rim fillet.
-  if (phi < 0.10 || phi > Math.PI - 0.10) return null;
-
-  // Skip edges shorter than half the fillet radius — a fillet on a sub-radius
-  // edge is geometrically ill-posed (the swept cylinder extends well past
-  // the edge endpoints, intersecting unrelated geometry).  Manifold returns
-  // an empty/degenerate result for these, which then falls back to BVH and
-  // produces sliver spikes.  These tiny edges come from tangent-edge
-  // propagation walking individual segments of a high-density arc; the arc
-  // as a whole is filleted via the loop-cutter (torus) path, so skipping
-  // each sub-segment here is correct.
-  if (length < radius * 0.5) return null;
+  if (phi < 0.05 || phi > Math.PI - 0.05) return null;
 
   const half = phi / 2;
   const sinHalf = Math.sin(half);
   const tanHalf = Math.tan(half);
   if (sinHalf < 1e-4 || tanHalf < 1e-4) return null;
 
-  const leftHanded =
-    new THREE.Matrix4().makeBasis(u1, edgeDir, u2).determinant() < 0;
+  const det = new THREE.Matrix4().makeBasis(u1, edgeDir, u2).determinant();
+  if (Math.abs(det) < 1e-9) return null; // degenerate basis — u1/u2 nearly parallel
+  const leftHanded = det < 0;
   const axisX = leftHanded ? u2 : u1;
   const axisZ = leftHanded ? u1 : u2;
   const d1 = leftHanded ? (offsetTwo ?? 0) : (offsetOne ?? 0);
@@ -160,14 +143,17 @@ function buildFilletCutter(
     const rAsym = area2 / (d1 + d2 + c);
     if (rAsym < 1e-6) return null;
 
-    // Incircle center (in axisX/axisZ face plane, world space):
-    // Barycentric: touches all three sides → use tangent lengths.
-    // In the triangle with vertices O, P1=d1*axisX, P2=d2*axisZ:
-    // tangent lengths from O = (d1 + d2 - c) / 2 = s - c where s=semi-perimeter.
+    // Incircle center in world space, expressed in the skewed (axisX, axisZ) basis.
+    // The included angle between axisX and axisZ is phi (the dihedral angle).
+    // In an orthonormal frame aligned to axisX, the incircle center sits at
+    // (tO, r) where tO = s - c (tangent length from origin) and r is the inradius.
+    // Converting to the skewed basis (axisX at angle 0, axisZ at angle phi):
+    //   incenterZ_coeff = r / sinPhi
+    //   incenterX_coeff = tO - r * cosPhi / sinPhi
     const s = (d1 + d2 + c) / 2;
-    const tO = s - c; // tangent length from origin vertex
-    const incenterX = tO; // in axisX direction
-    const incenterZ = tO; // in axisZ direction (symmetric along both rays)
+    const tO = s - c;
+    const incenterX = tO - rAsym * cosPhi / sinPhi;
+    const incenterZ = rAsym / sinPhi;
 
     // Build the prism (d1 × d2 asymmetric box).
     const prismAsym = new THREE.BoxGeometry(d1, length + 2 * eps, d2);
@@ -203,28 +189,8 @@ function buildFilletCutter(
 
   const bis = u1.clone().add(u2).normalize(); // interior bisector
 
-  // Fast path: constant-radius (most common) cutter built entirely in Manifold
-  // space.  Keeps the cutter exact-manifold so the body subtract can stay in
-  // the Manifold kernel and not produce the BVH sliver-spike artefact.
-  if (!isVariable) {
-    const native = buildFilletCutterManifold(
-      a, edgeDir, length, axisX, axisZ, bis,
-      setback, axisDistStart, radius, eps,
-      Math.max(8, Math.min(96, radialSeg)),
-    );
-    if (native) return native;
-    // Fall through to the Three.js path if Manifold WASM isn't ready or the
-    // primitive build raised (e.g. degenerate parameters).
-  }
-
-  // Extend the prism slightly past the body surface (−pad in axisX/axisZ)
-  // to avoid coplanar-face degenerate intersections in Manifold CSG.
-  const pad = Math.max(setback * 0.02, 1e-3);
-  // Only extend past the RIGHT endpoint (a + edgeDir*length), not the left (a).
-  // Extending left into the boss cylinder region creates a degenerate BVH
-  // intersection that produces a cone/flap artifact at the boss junction.
-  const prism = new THREE.BoxGeometry(setback + pad, length + eps, setback + pad);
-  prism.translate((setback - pad) / 2, (length + eps) / 2, (setback - pad) / 2);
+  const prism = new THREE.BoxGeometry(setback, length + 2 * eps, setback);
+  prism.translate(setback / 2, length / 2, setback / 2);
   const basis = new THREE.Matrix4().makeBasis(axisX, edgeDir, axisZ);
   basis.setPosition(a.x, a.y, a.z);
   prism.applyMatrix4(basis);
@@ -237,16 +203,14 @@ function buildFilletCutter(
     .add(edgeDir.clone().multiplyScalar(length))
     .add(bis.clone().multiplyScalar(axisDistEnd));
   const axisMid = axisStart.clone().add(axisEnd).multiplyScalar(0.5);
-  // Shift cylinder centre by +eps/2 along edgeDir to match the right-only extension.
-  const cylMidAdj = axisMid.clone().addScaledVector(edgeDir, eps / 2);
 
   let cyl: THREE.BufferGeometry;
   if (isVariable) {
-    cyl = new THREE.CylinderGeometry(rEnd, rStart, length + eps, radialSegClamped);
+    cyl = new THREE.CylinderGeometry(rEnd, rStart, length + 2 * eps, radialSegClamped);
   } else {
-    cyl = new THREE.CylinderGeometry(radius, radius, length + eps, radialSegClamped);
+    cyl = new THREE.CylinderGeometry(radius, radius, length + 2 * eps, radialSegClamped);
   }
-  const cylMat = new THREE.Matrix4().compose(cylMidAdj, quat, new THREE.Vector3(1, 1, 1));
+  const cylMat = new THREE.Matrix4().compose(axisMid, quat, new THREE.Vector3(1, 1, 1));
   cyl.applyMatrix4(cylMat);
 
   const cutter = csgSubtractRaw(prism, cyl);
@@ -288,11 +252,7 @@ function buildFilletLoopCutter(
 ): THREE.BufferGeometry | null {
   const cosPhi = THREE.MathUtils.clamp(re.u1.dot(re.u2), -1, 1);
   const phi = Math.acos(cosPhi);
-  // 0.10 rad (≈5.7°) — same threshold as buildFilletCutter so near-tangent edges
-  // from an already-filleted torus surface (phi ≈ 0.065 for 48-seg) are skipped.
-  if (phi < 0.10 || phi > Math.PI - 0.10) {
-    return null;
-  }
+  if (phi < 0.05 || phi > Math.PI - 0.05) return null;
   const half = phi / 2;
   const sinH = Math.sin(half);
   const tanH = Math.tan(half);
@@ -305,15 +265,6 @@ function buildFilletLoopCutter(
   const O = circle.center;
   const R = circle.radius;
   if (!(R > 1e-6)) return null;
-
-  // If the setback exceeds the circle radius the cutter would extend far outside
-  // the rim — this happens when phi is tiny (near-flat tessellation seam from an
-  // existing fillet).  The phi guard above already catches this for well-behaved
-  // meshes, but this is an explicit belt-and-suspenders sanity check that works
-  // regardless of segment count or floating-point fuzz.
-  if (setback > R) {
-    return null;
-  }
 
   // Of the two in-face perpendiculars, the one most aligned with the circle
   // axis runs along the wall (into the body); the other is the radial (cap)
@@ -337,9 +288,7 @@ function buildFilletLoopCutter(
   const majorR = R + bisRadial * axisDist; // fillet-tube centre-circle radius
   const minorR = radius;
   const torusAxialOffset = bisAxial * axisDist; // cap → tube-centre, into body
-  if (!(majorR > minorR + 1e-6)) {
-    return null; // would self-intersect (spindle)
-  }
+  if (!(majorR > minorR + 1e-6)) return null; // would self-intersect (spindle)
 
   const pad = Math.max(setback * 1e-3, 1e-4);
   const ringOuterR = R + setback;
@@ -371,19 +320,6 @@ function buildFilletLoopCutter(
   // is at O + bodyAxial*((setback - pad)/2 ... use ringLen midpoint).
   const ringCenter = O.clone().add(bodyAxial.clone().multiplyScalar(ringLen / 2 - pad));
   const torusCenter = O.clone().add(bodyAxial.clone().multiplyScalar(torusAxialOffset));
-
-  // Manifold-native fast path: builds ring + torus entirely in Manifold space,
-  // producing a cutter with _manifoldData.  When this succeeds the loop-cutter
-  // subtract stays in the Manifold kernel and the solid keeps its _manifoldData
-  // for the subsequent per-segment phase — eliminating the Steinmetz BVH spike.
-  const nativeCutter = buildFilletLoopCutterManifold(
-    majorR, minorR, ringOuterR, innerR, ringLen, pad,
-    ringCenter, torusCenter, bodyAxial, A, tubSeg, radSeg,
-  );
-  if (nativeCutter) {
-    return nativeCutter;
-  }
-  // Fall through to Three.js BVH path if Manifold WASM not ready or build fails.
 
   const outerCyl = new THREE.CylinderGeometry(ringOuterR, ringOuterR, ringLen, tubSeg);
   outerCyl.applyQuaternion(qCyl);
@@ -462,8 +398,11 @@ function buildG2FilletCutter(
 
   const sb = radius / tanHalf;
 
-  const leftHanded =
-    new THREE.Matrix4().makeBasis(u1, edgeDir, u2).determinant() < 0;
+  // Handedness test must match the actual basis used: makeBasis(axisX, axisZ, edgeDir).
+  // Column order: [u1 | u2 | edgeDir] (right-handed = same winding as ExtrudeGeometry shape).
+  const det = new THREE.Matrix4().makeBasis(u1, u2, edgeDir).determinant();
+  if (Math.abs(det) < 1e-9) return null; // degenerate basis — u1/u2 nearly parallel
+  const leftHanded = det < 0;
   const axisX = leftHanded ? u2 : u1;
   const axisZ = leftHanded ? u1 : u2;
 
@@ -574,12 +513,7 @@ export function computeFilletGeometry(
     (circle, re) => buildFilletLoopCutter(circle, re, effectiveRadius, radialSeg, fast),
     {
       propagate: params?.propagate,
-      // Rolling-ball corner is ON by default (Fusion 360 default behaviour).
-      // The sphere fills the trihedral corner left by three edge cutters;
-      // without it the Steinmetz intersection of the three fillet cylinders
-      // is never removed and appears as a spike/cone at the corner vertex.
-      // Pass isRollingBallCorner: false to explicitly disable.
-      cornerRadius: params?.isRollingBallCorner === false ? undefined : effectiveRadius,
+      cornerRadius: params?.isRollingBallCorner ? effectiveRadius : undefined,
     },
   );
 }

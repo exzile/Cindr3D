@@ -63,6 +63,7 @@ export function InsertSVGDialog({ onClose }: { onClose: () => void }) {
     setFileName(file.name);
 
     const reader = new FileReader();
+    reader.onerror = () => setStatusMessage('Failed to read SVG file');
     reader.onload = (evt) => {
       const svgText = evt.target?.result as string;
       if (!svgText) return;

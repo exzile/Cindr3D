@@ -12,6 +12,10 @@ export default function SceneTheme() {
     gl.setClearColor(color);
     // eslint-disable-next-line react-hooks/immutability
     scene.background = color;
+    return () => {
+      // eslint-disable-next-line react-hooks/immutability
+      scene.background = null;
+    };
   }, [canvasBg, gl, scene]);
 
   return null;

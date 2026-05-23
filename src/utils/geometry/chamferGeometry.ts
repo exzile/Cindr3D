@@ -128,8 +128,9 @@ function buildChamferCutter(
   // handedness flips to right-handed, so no mirror and the facet comes out
   // correctly outward-wound. det>0 edges are completely unchanged (branch
   // not taken).
-  const leftHanded =
-    new THREE.Matrix4().makeBasis(u1, u2, edgeDir).determinant() < 0;
+  const det = new THREE.Matrix4().makeBasis(u1, u2, edgeDir).determinant();
+  if (Math.abs(det) < 1e-9) return null; // degenerate basis — u1/u2 nearly parallel
+  const leftHanded = det < 0;
   const axisX = leftHanded ? u2 : u1;
   const axisY = leftHanded ? u1 : u2;
   const legX = leftHanded ? d2 : d1;

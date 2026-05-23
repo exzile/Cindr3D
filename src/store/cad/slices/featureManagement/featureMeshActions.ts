@@ -3,11 +3,11 @@ import type { Feature } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
-import { recomputeBooleanDependents, runBooleanAsync } from './featureBooleanUtils';
+import { recomputeBooleanDependents, runBoolean } from './featureBooleanUtils';
 import { errorMessage } from '../../../../utils/errorHandling';
 import { parseFilletEdgeIds, computeFilletGeometry, type FilletCommitParams } from '../../../../utils/geometry/filletGeometry';
 import { parseChamferEdgeIds, computeChamferGeometry, resolveChamferDistances } from '../../../../utils/geometry/chamferGeometry';
-import { applyEdgeCut, cacheEdgeCutSource, getCachedEdgeCutSource } from './applyEdgeCut';
+import { applyEdgeCut, cacheEdgeCutSource, getCachedEdgeCutSource, logEdgeCutSummary } from './applyEdgeCut';
 import { liveBodyMeshes, bodyGeometryCache } from '../../../../store/meshRegistry';
 
 function getBooleanParentIds(feature: Feature): string[] {
@@ -438,6 +438,12 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
       const srcMesh = feature.mesh;
       const geom = srcMesh.geometry.clone();
       geom.applyMatrix4(M);
+      // Topology polylines are in the pre-transform local frame; delete them so
+      // the lazy picker re-extracts from the new world-baked vertex positions.
+      delete geom.userData.topology;
+      delete geom.userData.displayTopology;
+      delete geom.userData.ghostTopology;
+      delete geom.userData._topoV;
       geom.computeVertexNormals();
       const newMesh = new THREE.Mesh(geom, srcMesh.material);
       newMesh.userData = { ...srcMesh.userData };
@@ -505,85 +511,80 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
     const { features } = get();
     const feature = features.find((f) => f.id === featureId);
     if (!feature || (feature.type !== 'fillet' && feature.type !== 'chamfer')) return;
+    const t0 = performance.now();
 
     const params = feature.params;
     const edgeIdsStr = typeof params.edgeIds === 'string' ? params.edgeIds : '';
     const edgeIds = edgeIdsStr.split(',').filter(Boolean);
     if (edgeIds.length === 0) {
-      get().setStatusMessage(`Edit ${feature.type}: no edge IDs stored`);
+      get().setStatusMessage(`${feature.type}: no edgeIds stored`);
       return;
     }
 
-    // Resolve source geometry: session cache > parent mesh > live body meshes
+    // Resolve source geometry: session cache > parent mesh > bodyCache > live mesh
     let srcGeo: THREE.BufferGeometry | null = null;
+    let srcLabel: 'cache' | 'parent' | 'bodyCache' | 'live' | 'unknown' = 'unknown';
     const cached = getCachedEdgeCutSource(featureId);
     if (cached) {
       srcGeo = cached.clone();
+      srcLabel = 'cache';
     } else {
-      // Try parent feature's mesh
       const parentId = (params.parentFeatureId as string | undefined) ?? feature.parentFeatureId;
       const parent = parentId ? features.find((f) => f.id === parentId) : null;
       if (parent?.mesh instanceof THREE.Mesh) {
-        const c = parent.mesh.geometry.clone();
-        srcGeo = c.index ? c.toNonIndexed() : c;
-        if (srcGeo !== c) c.dispose();
+        srcGeo = parent.mesh.geometry.clone().toNonIndexed();
+        srcLabel = 'parent';
       } else if (parentId) {
-        // Try bodyGeometryCache (populated by ExtrudedBodies for extrudes)
         const cached2 = bodyGeometryCache.get(parentId);
-        if (cached2) {
-          const c = cached2.clone();
-          srcGeo = c.index ? c.toNonIndexed() : c;
-          if (srcGeo !== c) c.dispose();
-        }
+        if (cached2) { srcGeo = cached2.clone().toNonIndexed(); srcLabel = 'bodyCache'; }
       }
-      // Fallback: try liveBodyMeshes by meshUuid embedded in edge ID
       if (!srcGeo && edgeIds.length > 0) {
         const rest = edgeIds[0].includes('|') ? edgeIds[0].split('|')[1] : edgeIds[0];
         const meshUuid = rest.split(':')[0];
         const liveMesh = liveBodyMeshes.get(meshUuid);
-        if (liveMesh) {
-          const c = liveMesh.geometry.clone();
-          srcGeo = c.index ? c.toNonIndexed() : c;
-          if (srcGeo !== c) c.dispose();
-        }
+        if (liveMesh) { srcGeo = liveMesh.geometry.clone().toNonIndexed(); srcLabel = 'live'; }
       }
     }
     if (!srcGeo) {
-      get().setStatusMessage(`Edit ${feature.type}: source geometry unavailable — re-apply the operation`);
+      get().setStatusMessage(`${feature.type}: srcGeo unavailable — re-apply`);
       return;
     }
 
-    // Build new geometry with updated params
+    // Build new geometry with updated params.
+    // try/finally guarantees srcGeo is disposed even if the compute function throws.
     let newGeo: THREE.BufferGeometry | null = null;
-    if (feature.type === 'fillet') {
-      const radius = (params.radius as number) ?? 2;
-      const fp: FilletCommitParams = {
-        mode: (params.mode as FilletCommitParams['mode']) ?? 'constant',
-        chordLength: params.chordLength as number | undefined,
-        startRadius: params.startRadius as number | undefined,
-        endRadius: params.endRadius as number | undefined,
-        propagate: params.propagate as boolean | undefined,
-      };
-      const parsedEdges = parseFilletEdgeIds(edgeIds);
-      if (parsedEdges) newGeo = computeFilletGeometry(srcGeo, parsedEdges.edges, radius, 0, false, fp);
-    } else {
-      const parsedEdges = parseChamferEdgeIds(edgeIds);
-      const [d1, d2] = resolveChamferDistances({
-        mode: (params.mode as string ?? 'equal-dist') as import('../../../../utils/geometry/chamferGeometry').ChamferMode,
-        distance: (params.distance as number) ?? 2,
-        distance2: params.distance2 as number | undefined,
-        angle: params.angle as number | undefined,
-        isFlipped: params.isFlipped as boolean | undefined,
-      });
-      if (parsedEdges) newGeo = computeChamferGeometry(srcGeo, parsedEdges.edges, d1, d2);
+    try {
+      if (feature.type === 'fillet') {
+        const radius = (params.radius as number) ?? 2;
+        const fp: FilletCommitParams = {
+          mode: (params.mode as FilletCommitParams['mode']) ?? 'constant',
+          chordLength: params.chordLength as number | undefined,
+          startRadius: params.startRadius as number | undefined,
+          endRadius: params.endRadius as number | undefined,
+          propagate: params.propagate as boolean | undefined,
+        };
+        const parsedEdges = parseFilletEdgeIds(edgeIds);
+        if (parsedEdges) newGeo = computeFilletGeometry(srcGeo, parsedEdges.edges, radius, 0, false, fp);
+      } else {
+        const parsedEdges = parseChamferEdgeIds(edgeIds);
+        const [d1, d2] = resolveChamferDistances({
+          mode: (params.mode as string ?? 'equal-dist') as import('../../../../utils/geometry/chamferGeometry').ChamferMode,
+          distance: (params.distance as number) ?? 2,
+          distance2: params.distance2 as number | undefined,
+          angle: params.angle as number | undefined,
+          isFlipped: params.isFlipped as boolean | undefined,
+        });
+        if (parsedEdges) newGeo = computeChamferGeometry(srcGeo, parsedEdges.edges, d1, d2);
+      }
+    } finally {
+      srcGeo.dispose();
     }
-    srcGeo.dispose();
 
     if (!newGeo) {
-      get().setStatusMessage(`Edit ${feature.type}: geometry computation failed`);
+      get().setStatusMessage(`${feature.type}: CSG failed`);
       set((state) => ({
         features: state.features.map((f) =>
-          f.id === featureId ? { ...f, healthState: 'error' as const, healthMessage: 'CSG failed — try adjusting the radius or edges' } : f,
+          f.id === featureId ? { ...f, healthState: 'error' as const, healthMessage: 'CSG× — adjust radius/edges' } : f,
         ),
       }));
       return;
@@ -591,6 +592,7 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
 
     // Keep existing material if possible
     const existingMesh = feature.mesh instanceof THREE.Mesh ? (feature.mesh as THREE.Mesh) : null;
+    const prevGeo = existingMesh?.geometry ?? null;
     const mat = existingMesh?.material ?? new THREE.MeshStandardMaterial({ color: 0x5b9bd5, roughness: 0.4, metalness: 0.1 });
     const newMesh = new THREE.Mesh(newGeo, mat);
     newMesh.userData._edgeCutApplied = true;
@@ -599,21 +601,28 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
     newMesh.castShadow = true;
     newMesh.receiveShadow = true;
 
+    const failedCount: number = (newGeo.userData.failedEdgeCount as number | undefined) ?? 0;
+    const totalCount: number = (newGeo.userData.totalEdgeCount as number | undefined) ?? edgeIds.length;
+    const sizeLabel = feature.type === 'fillet'
+      ? `r=${(params.radius as number ?? 0).toFixed(1)}`
+      : `d=${(params.distance as number ?? 0).toFixed(1)}`;
+    logEdgeCutSummary(feature.type, featureId, sizeLabel, totalCount, totalCount - failedCount, failedCount, srcLabel, t0, failedCount > 0 ? 'warning' : 'ok');
+
     get().pushUndo();
     set((state) => ({
       features: state.features.map((f) =>
         f.id === featureId
-          ? { ...f, mesh: newMesh, healthState: 'healthy' as const, healthMessage: undefined }
+          ? { ...f, mesh: newMesh, healthState: failedCount > 0 ? 'warning' as const : 'healthy' as const, healthMessage: failedCount > 0 ? `${failedCount} of ${totalCount} edge(s) could not be processed` : undefined }
           : f,
       ),
       statusMessage: `Updated ${feature.type}`,
     }));
-    // Update session source cache with the same source
-    if (cached) cacheEdgeCutSource(featureId, cached.clone());
+    // Defer-dispose the replaced geometry after R3F has a cycle to unmount the old mesh.
+    if (prevGeo && prevGeo !== newGeo) setTimeout(() => prevGeo.dispose(), 0);
   },
 
   // SLD12 Ã¢â‚¬â€ commitCombine: boolean op on two feature meshes
-  commitCombine: async (targetFeatureId, toolFeatureId, operation, keepTool) => {
+  commitCombine: (targetFeatureId, toolFeatureId, operation, keepTool) => {
     const { features } = get();
     const targetFeature = features.find((f) => f.id === targetFeatureId);
     const toolFeature = features.find((f) => f.id === toolFeatureId);
@@ -627,30 +636,23 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
     }
     const tgtMesh = targetFeature.mesh as THREE.Mesh;
     const toolMesh = toolFeature.mesh as THREE.Mesh;
-    const bodyKind = targetFeature.bodyKind;
+    let resultGeom: THREE.BufferGeometry;
     // CSG can throw on degenerate / non-manifold inputs. Catch + report so
     // the user gets a status message instead of a silent broken state, and
     // the partially-built result (if any) doesn't end up in the scene.
     // pushUndo is called AFTER the try/catch so a failed CSG doesn't leave
     // an orphaned snapshot on the undo stack.
-    let resultGeom: THREE.BufferGeometry | null;
     try {
-      resultGeom = await runBooleanAsync(tgtMesh, toolMesh, operation);
+      resultGeom = runBoolean(tgtMesh, toolMesh, operation);
     } catch (err) {
       get().setStatusMessage(`Combine (${operation}) failed: ${errorMessage(err, 'unknown CSG error')}`);
-      return;
-    }
-    if (!resultGeom) {
-      get().setStatusMessage(`Combine (${operation}) failed: CSG returned no result`);
       return;
     }
     get().pushUndo();
     const newMesh = new THREE.Mesh(resultGeom, tgtMesh.material);
     newMesh.castShadow = true;
     newMesh.receiveShadow = true;
-    // Use fresh state snapshot after the await so the feature list is current.
-    const state = get();
-    const n = state.features.filter((f) => f.type === 'combine').length + 1;
+    const n = features.filter((f) => f.type === 'combine').length + 1;
     const combineFeature: Feature = {
       id: crypto.randomUUID(),
       name: `Combine ${n} (${operation})`,
@@ -667,23 +669,34 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
       visible: true,
       suppressed: false,
       timestamp: Date.now(),
-      bodyKind,
+      bodyKind: targetFeature.bodyKind,
     };
-    const updated = state.features.map((f) =>
-      !keepTool && (f.id === targetFeatureId || f.id === toolFeatureId)
-        ? { ...f, suppressed: true }
-        : f
-    );
-    const suppressionEntries: Record<string, boolean> = {
-      [combineFeature.id]: false,
-      [targetFeatureId]: !keepTool,
-      [toolFeatureId]: !keepTool,
-    };
-    set({
-      features: [...updated, combineFeature],
-      designConfigurations: syncActiveConfigurationSuppression(state, suppressionEntries),
-      statusMessage: `Combine (${operation}) created with editable parents`,
+    set((state) => {
+      const updated = state.features.map((f) =>
+        !keepTool && (f.id === targetFeatureId || f.id === toolFeatureId)
+          ? { ...f, suppressed: true }
+          : f
+      );
+      const suppressionEntries: Record<string, boolean> = {
+        [combineFeature.id]: false,
+        [targetFeatureId]: !keepTool,
+        [toolFeatureId]: !keepTool,
+      };
+      return {
+        features: [...updated, combineFeature],
+        designConfigurations: syncActiveConfigurationSuppression(state, suppressionEntries),
+        statusMessage: `Combine (${operation}) created with editable parents`,
+      };
     });
+    // Free GPU buffers for suppressed source meshes. THREE.js dispose() only
+    // triggers the renderer to release WebGL buffers — the CPU-side Float32Arrays
+    // remain, so recomputeBooleanDependents can still read geometry for CSG.
+    if (!keepTool) {
+      setTimeout(() => {
+        tgtMesh.geometry.dispose();
+        toolMesh.geometry.dispose();
+      }, 0);
+    }
   },
 
   // SLD17 Ã¢â‚¬â€ commitMirrorFeature: mirror a feature's mesh across a plane
@@ -724,7 +737,7 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
   // SLD12-edit — re-run CSG on an existing combine feature with new params.
   // Atomically updates params + mesh in one pushUndo so the edit is a single
   // undo step (avoids double-snapshot from separate updateFeatureParams + CSG).
-  recommitCombine: async (featureId, params) => {
+  recommitCombine: (featureId, params) => {
     const { features } = get();
     const feature = features.find((f) => f.id === featureId);
     if (!feature || feature.type !== 'combine') {
@@ -744,48 +757,44 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
     }
     const tgtMesh = targetFeature.mesh as THREE.Mesh;
     const toolMesh = toolFeature.mesh as THREE.Mesh;
-    const oldMesh = feature.mesh;
-    let resultGeom: THREE.BufferGeometry | null;
+    let resultGeom: THREE.BufferGeometry;
     try {
-      resultGeom = await runBooleanAsync(tgtMesh, toolMesh, operation);
+      resultGeom = runBoolean(tgtMesh, toolMesh, operation);
     } catch (err) {
       get().setStatusMessage(`Combine (edit) failed: ${errorMessage(err, 'unknown CSG error')}`);
-      return;
-    }
-    if (!resultGeom) {
-      get().setStatusMessage(`Combine (edit) failed: CSG returned no result`);
       return;
     }
     get().pushUndo();
     const newMesh = new THREE.Mesh(resultGeom, tgtMesh.material);
     newMesh.castShadow = true;
     newMesh.receiveShadow = true;
-    // Use fresh state snapshot after the await so the feature list is current.
-    const state = get();
-    const oldParentIds = getBooleanParentIds(feature);
-    const nextParentIds = [targetId, toolId];
-    const affectedParentIds = Array.from(new Set([...oldParentIds, ...nextParentIds]));
-    const updatedFeatures = state.features.map((f) => {
-      if (f.id === featureId) {
-        return { ...f, mesh: newMesh, params: { ...f.params, operation, keepTools, targetId, toolId, booleanParentIds: [targetId, toolId], recomputeOnParentChange: true } };
+    const oldMesh = feature.mesh;
+    set((state) => {
+      const oldParentIds = getBooleanParentIds(feature);
+      const nextParentIds = [targetId, toolId];
+      const affectedParentIds = Array.from(new Set([...oldParentIds, ...nextParentIds]));
+      const features = state.features.map((f) => {
+        if (f.id === featureId) {
+          return { ...f, mesh: newMesh, params: { ...f.params, operation, keepTools, targetId, toolId, booleanParentIds: [targetId, toolId], recomputeOnParentChange: true } };
+        }
+        if (affectedParentIds.includes(f.id)) {
+          const isNextParent = nextParentIds.includes(f.id);
+          const shouldSuppress = isNextParent
+            ? !keepTools
+            : parentIsHiddenByAnotherCombine(state.features, f.id, featureId);
+          return { ...f, suppressed: shouldSuppress };
+        }
+        return f;
+      });
+      const suppressionEntries: Record<string, boolean> = { [featureId]: false };
+      for (const id of affectedParentIds) {
+        suppressionEntries[id] = !!features.find((candidate) => candidate.id === id)?.suppressed;
       }
-      if (affectedParentIds.includes(f.id)) {
-        const isNextParent = nextParentIds.includes(f.id);
-        const shouldSuppress = isNextParent
-          ? !keepTools
-          : parentIsHiddenByAnotherCombine(state.features, f.id, featureId);
-        return { ...f, suppressed: shouldSuppress };
-      }
-      return f;
-    });
-    const suppressionEntries: Record<string, boolean> = { [featureId]: false };
-    for (const id of affectedParentIds) {
-      suppressionEntries[id] = !!updatedFeatures.find((candidate) => candidate.id === id)?.suppressed;
-    }
-    set({
-      features: updatedFeatures,
-      designConfigurations: syncActiveConfigurationSuppression(state, suppressionEntries),
-      statusMessage: `Combine (${operation}) updated`,
+      return {
+        features,
+        designConfigurations: syncActiveConfigurationSuppression(state, suppressionEntries),
+        statusMessage: `Combine (${operation}) updated`,
+      };
     });
     if (oldMesh instanceof THREE.Mesh) {
       const geo = oldMesh.geometry;

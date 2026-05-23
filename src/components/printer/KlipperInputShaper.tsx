@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { WifiOff, Cpu, Play, Settings, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { errorMessage } from '../../utils/errorHandling';
 import { usePrinterStore } from '../../store/printerStore';
@@ -21,7 +21,7 @@ export default function KlipperInputShaper() {
   const [dampingRatio, setDampingRatio] = useState(0.1);
   const [error, setError] = useState<string | null>(null);
   const [applied, setApplied] = useState(false);
-  const [service] = useState(() => connected ? new MoonrakerService(config.hostname) : null);
+  const service = useMemo(() => connected ? new MoonrakerService(config.hostname) : null, [connected, config.hostname]);
 
   const handleTestX = useCallback(async () => {
     if (!service) return;

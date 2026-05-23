@@ -272,7 +272,9 @@ export function generatePerimetersArachne(
       ({ innermostHoles, infillRegions } = stroked);
     } else {
       const measuredCoverage = computeMaxPathInset(paths, outerContour, holeContours);
-      const fallbackCoverage = (wallCount + 0.5) * lineWidth;
+      // Fallback: all walls span wallCount * lineWidth from outer wall inset.
+      // The +0.5 correction ensures infill starts just past the inner wall edge.
+      const fallbackCoverage = wallCount * lineWidth;
       const insetDistance = outerWallInset
         + Math.max(measuredCoverage, fallbackCoverage)
         + lineWidth * 0.5;

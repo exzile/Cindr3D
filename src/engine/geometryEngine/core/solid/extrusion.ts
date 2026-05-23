@@ -49,14 +49,24 @@ export function extrudeThinSketch(
       const prev = points[(i - 1 + points.length) % points.length];
       const curr = points[i];
       const next = points[(i + 1) % points.length];
-      const seg1 = new THREE.Vector2(curr.x - prev.x, curr.y - prev.y).normalize();
-      const seg2 = new THREE.Vector2(next.x - curr.x, next.y - curr.y).normalize();
+      const d1 = new THREE.Vector2(curr.x - prev.x, curr.y - prev.y);
+      const d2 = new THREE.Vector2(next.x - curr.x, next.y - curr.y);
+      // Guard against coincident consecutive vertices (would normalize to NaN).
+      if (d1.lengthSq() < 1e-20 || d2.lengthSq() < 1e-20) {
+        result.push(curr.clone());
+        continue;
+      }
+      const seg1 = d1.normalize();
+      const seg2 = d2.normalize();
       const n1 = new THREE.Vector2(-seg1.y, seg1.x);
       const n2 = new THREE.Vector2(-seg2.y, seg2.x);
-      const avg = n1.clone().add(n2).normalize();
-      const dot = n1.dot(avg);
+      const avgVec = n1.clone().add(n2);
+      const avgLen = avgVec.length();
+      if (avgLen < 1e-10) { result.push(curr.clone()); continue; }
+      avgVec.divideScalar(avgLen);
+      const dot = n1.dot(avgVec);
       const scale = dot > 0.01 ? 1 / dot : 1;
-      result.push(new THREE.Vector2(curr.x + avg.x * delta * scale, curr.y + avg.y * delta * scale));
+      result.push(new THREE.Vector2(curr.x + avgVec.x * delta * scale, curr.y + avgVec.y * delta * scale));
     }
     return result;
   };
@@ -271,11 +281,15 @@ export function buildExtrudeFeatureMesh(
     meshNeg.updateMatrixWorld(true);
     const gPos = meshPos.geometry.clone().applyMatrix4(meshPos.matrixWorld);
     const gNeg = meshNeg.geometry.clone().applyMatrix4(meshNeg.matrixWorld);
-    const merged = csgUnion(gPos, gNeg);
-    gPos.dispose();
-    gNeg.dispose();
-    meshPos.geometry.dispose();
-    meshNeg.geometry.dispose();
+    let merged: THREE.BufferGeometry;
+    try {
+      merged = csgUnion(gPos, gNeg);
+    } finally {
+      gPos.dispose();
+      gNeg.dispose();
+      meshPos.geometry.dispose();
+      meshNeg.geometry.dispose();
+    }
     const result = new THREE.Mesh(merged, BODY_MATERIAL);
     result.castShadow = true;
     result.receiveShadow = true;

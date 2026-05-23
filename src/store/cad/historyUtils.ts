@@ -1,5 +1,6 @@
 import type { CADState } from './state';
 import { useComponentStore } from '../componentStore';
+import { serializeFeature } from './persistence';
 
 type HistorySketch = CADState['sketches'][number];
 
@@ -13,10 +14,7 @@ export function snapshotCADState(state: CADState): string {
   const componentState = useComponentStore.getState();
 
   return JSON.stringify({
-    features: state.features.map((f) => ({
-      ...f,
-      mesh: undefined,
-    })),
+    features: state.features.map((f) => serializeFeature(f)),
     sketches: state.sketches.map(serializeSketchForHistory),
     activeSketch: state.activeSketch ? serializeSketchForHistory(state.activeSketch) : null,
     featureGroups: state.featureGroups,

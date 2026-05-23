@@ -8,8 +8,10 @@ export function deepMerge(
     const tgtVal = target[key];
     if (Array.isArray(srcVal) && Array.isArray(tgtVal)) {
       output[key] = srcVal.map((sv, index) => {
+        // RRF diff mode sends null at an array index to mean "unchanged" — keep existing.
+        if (sv === null || sv === undefined) return tgtVal[index];
         const tv = tgtVal[index];
-        if (sv && typeof sv === 'object' && !Array.isArray(sv) && tv && typeof tv === 'object' && !Array.isArray(tv)) {
+        if (typeof sv === 'object' && !Array.isArray(sv) && tv && typeof tv === 'object' && !Array.isArray(tv)) {
           return deepMerge(tv as Record<string, unknown>, sv as Record<string, unknown>);
         }
         return sv;

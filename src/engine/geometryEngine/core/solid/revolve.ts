@@ -44,6 +44,7 @@ export function revolveFaceBoundary(
   const indices: number[] = [];
   const rotation = new THREE.Quaternion();
   const point = new THREE.Vector3();
+  if (axisDir.lengthSq() < 1e-20) return null;
   const axis = axisDir.clone().normalize();
 
   for (let segment = 0; segment <= segments; segment++) {
@@ -133,6 +134,7 @@ export function revolveSketch(
   const maxX = points.reduce((max, point) => Math.max(max, point.x), -Infinity);
   if (minX < -1e-3 && maxX > 1e-3) return null;
 
+  if (axis.lengthSq() < 1e-20) return null;
   const lathePoints = points.map((point) => new THREE.Vector2(Math.abs(point.x), point.y));
   const geometry = new THREE.LatheGeometry(lathePoints, 64, phiStart, sweep);
   const targetAxis = axis.clone().normalize();

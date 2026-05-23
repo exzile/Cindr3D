@@ -255,9 +255,13 @@ export function buildExtrudeGeomHolesAware(
       const holeGeom = removeDegenerateTriangles(holeNonIndexed);
       holeNonIndexed.dispose();
       holeGeom.translate(0, 0, -0.001);
-      const subtracted = csgSubtract(solid, holeGeom);
-      solid.dispose();
-      holeGeom.dispose();
+      let subtracted: THREE.BufferGeometry;
+      try {
+        subtracted = csgSubtract(solid, holeGeom);
+      } finally {
+        solid.dispose();
+        holeGeom.dispose();
+      }
       solid = subtracted;
     }
 

@@ -1,12 +1,90 @@
 ---
 name: CSG Edge-Cut (Chamfer/Fillet)
-description: Shared edge-cut driver, three-bvh-csg quad-fan + corner-spike defects, weld-between-cuts requirement, ruled-out approaches
+description: Shared edge-cut driver, non-destructive feature model, Manifold WASM backend, weld-between-cuts, quad-fan, and all Fusion 360 fillet/chamfer parity tasks
 type: project
 ---
+**All 17 Fusion 360 fillet/chamfer parity tasks (0a–0e, 1–16) are COMPLETE** as of 2026-05 (branch codex/authored-edge-topology-fillet / PR #66).
+
 Chamfer and fillet are ONE operation differing only in the per-edge cutter. Shared driver: `src/utils/geometry/edgeCutCore.ts` → `computeEdgeCutGeometry` (sequential per-edge `csgSubtract` loop). Cutters: `chamferGeometry.ts` `buildChamferCutter` (triangular ExtrudeGeometry prism), `filletGeometry.ts` `buildFilletCutter` (prism − cylinder). HIGH blast radius — one driver feeds **4 paths**: commit (`featureMeshActions.ts` commitFillet/commitChamfer → `applyEdgeCut.ts`) ×2 tools, and live preview (`FilletPreview`/`ChamferPreview` → `EdgeOpPreview.tsx`) ×2 tools. `parseEdgeIds` (re-exported as parse{Fillet,Chamfer}EdgeIds) also used by all 4.
 
+## NON-DESTRUCTIVE ARCHITECTURE (Phase 0, shipped 2026-05)
+
+Fillet/chamfer are now proper feature nodes — parent mesh is **never mutated**. Key pieces:
+
+- **`EdgeCutSpec.featureId`** (in `applyEdgeCut.ts`): when set, activates non-destructive path — CSG result stored on the fillet/chamfer feature's own `mesh`, not on the parent.
+- **Feature shape**: `{ type:'fillet'|'chamfer', params:{radius, edgeIds, mode, ...}, parentFeatureId:'<source body id>', mesh:<CSG result>, healthState, healthMessage }`. `edgeIds` stored as comma-separated string in `params.edgeIds`.
+- **Source geometry cache** (`applyEdgeCut.ts`): `_srcGeoCache: Map<featureId, BufferGeometry>` — session-only, keyed by fillet/chamfer feature ID. `cacheEdgeCutSource(fid, geo)` / `getCachedEdgeCutSource(fid)` / `evictEdgeCutSource(fid)`. Stores a clone of the parent's pre-fillet geo so edit/replay never needs to re-render.
+- **`replayEdgeCutFeature(featureId)`** in `featureMeshActions.ts`: called on edit-confirm, suppress, and delete-dependent. Source resolution waterfall: (1) session cache → (2) `feature.parentFeatureId` → live parent mesh → (3) `bodyGeometryCache` → (4) stale-UUID rescue via `liveBodyMeshes`. Sets `srcLabel` for diagnostic output.
+- **Rendering**: `ExtrudedBodies.tsx` shows the fillet/chamfer feature's mesh instead of the parent's when the feature is active and unsuppressed.
+- **Mesh tagging**: `newMesh.userData._edgeCutApplied = true` — guards undo/redo from carrying the mesh onto a non-edge-cut restore.
+- **Health states**: `feature.healthState: 'healthy'|'warning'|'error'` + `feature.healthMessage`. Set from `newGeo.userData.failedEdgeCount` / `totalEdgeCount`. Surfaced in feature tree with icon.
+
+## MANIFOLD WASM CSG backend (shipped 2026-05)
+
+Primary CSG engine is now `manifold-3d` (WASM). Three-bvh-csg is the fallback.
+
+- **`src/engine/geometryEngine/core/solid/manifoldWasm.ts`**: singleton loader. `initManifold()` (async, call at app startup + once per worker); `getManifoldModule()` (sync, returns module or null). Pre-warmed in `main.tsx` and `edgeOpWorker.ts`.
+- **`src/engine/geometryEngine/core/solid/csg.ts`**: `csgSubtract/csgUnion/csgIntersect` — try Manifold first (convert geometry → Manifold mesh → op → convert back), fall back to three-bvh-csg if Manifold isn't loaded yet or throws. Manifold guarantees valid manifold output — no post-processing soup repair needed on that path.
+- **Fallback triggers**: (a) Manifold WASM not yet resolved (startup race), (b) source mesh is non-manifold (legacy files from before Manifold was added). Compact warn: `manifold×(non-manifold?) → fbk: <msg>` / `sub× → fbk: <msg>`.
+- **Off-thread**: `edgeOpWorker.ts` also calls `initManifold()` so live-preview CSG in the worker uses Manifold too.
+
+## SHIPPED Tasks 12–15 (full-round, rule fillet, G2, stable IDs)
+
+**Task 12 — Full-round fillet + face pick mode**
+- `filletPickMode: 'edge'|'face'` in store (`state/modelingState.ts`, init + reset-on-dialog-open in `generalUiActions.ts`).
+- `FilletEdgeHighlight.tsx` passes `pickMode={filletPickMode}` and `onFacePicked={setFilletLiveRadius}` to `EdgeOpEdgeHighlight`.
+- `EdgeOpEdgeHighlight`: when `pickMode='face'`, uses `useFacePicker`; on click, calls `addEdge` for each boundary segment of the hit face, then `onFacePicked(inradius)`. `faceInradius` = min distance from face centroid to any boundary segment midpoint. Full-round dialog auto-switches to face-pick.
+
+**Task 13 — Rule fillet**: same face-pick path; clicking a face selects all its boundary edges.
+
+**Task 14 — G2 curvature continuity + tangency weight**
+- `FilletCommitParams.tangencyWeight?: number` in `filletGeometry.ts`. When `isG2=true` and `tangencyWeight` is set: `effectiveRadius = baseRadius * clamp(tangencyWeight, 0.1, 2.0)`. Tangency Weight input shown in `FilletDialog` when G2 is checked.
+
+**Task 15 — Stable edge IDs (stale UUID fallback)**
+- Coords normalised to 4 d.p. in `EdgeOpEdgeHighlight.tsx` `edgeId()` (`normCoord = (n) => +n.toFixed(4)`).
+- `parseEdgeIds` in `edgeCutCore.ts`: after grouping by `featureId|meshUuid`, scans any group whose `meshUuid` is not in `liveBodyMeshes`. If `featureId` is set, searches `liveBodyMeshes` for a mesh whose `userData.featureId` matches → rewrites `group.meshUuid` to the new live UUID. Handles BodyMesh remount / HMR without losing edge selection.
+
+## DIAGNOSTIC: logEdgeCutSummary (shipped 2026-05)
+
+`logEdgeCutSummary(tag, featureId, sizeLabel, totalEdges, cutEdges, failedEdges, src, startMs, health)` in `applyEdgeCut.ts` — emits one grep-able log line per operation:
+
+```
+[fil] id=..abc123 r=2.0 edges=5→cut=3 fail=2 src=cache ms=38 → warning
+[cha] id=..d4e5f6 d=1.5 edges=2→cut=2 fail=0 src=live ms=12 → ok
+```
+
+- `src` values: `cache` (session srcGeo cache hit) | `parent` (live parent mesh) | `bodyCache` (bodyGeometryCache) | `live` (liveBodyMeshes stale-UUID rescue) | `unknown`.
+- Called in `applyEdgeCut` (non-destructive path, `src='live'`) and `replayEdgeCutFeature` (all src variants).
+- Compact status messages use `×` = fail, `→` = consequence, `fbk` = fallback; see `edgeCutCore.ts` and `csg.ts`.
+
 ## Edge-ID format
-`${featureId}|${meshUuid}:${ax,ay,az}:${bx,by,bz}` (world coords; legacy = no `featureId|`). `meshUuid` is VOLATILE (recreated on geometry swap / BodyMesh remount / HMR). Built in `EdgeOpEdgeHighlight.tsx` `edgeId(result)`.
+`${featureId}|${meshUuid}:${ax,ay,az}:${bx,by,bz}` (world coords; legacy = no `featureId|`). `meshUuid` is VOLATILE (recreated on geometry swap / BodyMesh remount / HMR). Built in `EdgeOpEdgeHighlight.tsx` `edgeId(result)`. Coords normalised to 4 d.p. so minor float drift doesn't invalidate IDs. Stale UUID healed at parse time by featureId lookup (see Task 15 above).
+
+## FIXED 2026-05-20 — ghost topology (selection of pre-cut edges through filleted/chamfered geometry)
+When a fillet/chamfer cut consumes a sharp edge it leaves no detectable edge in `extractEdgeTopology` (fillet transitions have ~0–7.5° dihedral, well below the 30° threshold; chamfer endpoint transitions are tangent). The picker was blind to those edges and users couldn't chamfer-the-already-filleted-edge.
+
+**Fix**: `computeEdgeCutGeometry` in `edgeCutCore.ts` now captures `srcGeo.userData.topology + srcGeo.userData.ghostTopology` at the top of the function and stamps the union as `output.userData.ghostTopology = { edges: [...] }`. Multi-step chains (box → fillet → chamfer → …) accumulate the history: each operation's source-topology contribution flows into the result's ghost.
+
+**Picker**: `pickNearestEdge` reads `geom.userData.ghostTopology` alongside `geom.userData.topology` and walks both through the same screen-space-nearest loop — whichever segment is closer wins. Ghost edges are returned through the same `EdgePickResult` shape (no `isGhost` flag yet — added if/when the highlight needs to render them differently).
+
+**Cache**: `topologyCache.getCachedEdges` was a one-entry-per-geom WeakMap; ghost + live with the same geom thrashed it. Refactored to `WeakMap<geom, Map<topo, entry>>` so both topologies stay warm. matrixSnap compare unchanged.
+
+**Migration**: existing committed fillets have NO `ghostTopology` — they were stamped before this code landed. Users must delete + re-apply the fillet feature for ghost edges to materialize on that body. Documented user-facing.
+
+**Chamfer-on-ghost-edge commit caveat**: the cutter is built at the original (pre-fillet) edge coordinates and CSG-subtracted from the current (filleted) geometry. Result is geometrically valid but may render as a chamfer-stacked-on-fillet faceted shape rather than a clean "fillet replaced by chamfer". Cleaner replacement requires timeline-aware logic (suppress the prior fillet before re-applying chamfer) — separate change.
+
+## FIXED 2026-05-20 — edge picker uses SCREEN-space distance (KEEP)
+`pickNearestEdge` (in `src/hooks/edgePicker/nearestEdge.ts`) previously found the edge nearest the 3D ray-hit point. **This is wrong** on perspective/isometric views: when the raycast lands on a face, the 3D-nearest edge to that hit point is often NOT the edge the user is visually pointing at. Symptom: on a filleted box viewed from a TOP perspective, the user couldn't pick the visible "front-top edge" — the algorithm kept selecting the left-top or back-top edge (3D-nearer to the cursor's surface hit) and the proximity gate then rejected it because that 3D-nearest edge projected ~120-160 px away in screen space.
+
+**Fix:** changed the inner loop to project every cached-edge segment to canvas-pixel space and pick the segment with the minimum `segDistSqPx` to the cursor. The 3D `hitPoint` is no longer consulted for edge selection (param kept and underscored). Signature now takes `camera, cursorPx, cursorPy, rectW, rectH`; both callsites in `useEdgePicker.ts` (`handlePointerMove` + `handleClick`) updated.
+
+**Why this is safe for circles/rims:** a circle is ONE `CachedEdge` with N segments — the closest segment determines screen distance, but the whole `chain` (full polyline) is still returned for highlight/cut. Selection behavior on circles is identical. The cached-chain pattern (PERF round 7) is untouched: `getCachedChain(bestEdge)` is still called once per pick.
+
+**Why occlusion still works:** `edgeIsPickable` still casts a ray through the segment's nearest-to-hitpoint NDC. If the picked edge is behind the body, the front face is hit first → rejected. The `hitPoint` parameter still feeds the occlusion check via the caller, even though `pickNearestEdge` itself doesn't use it for selection.
+
+**Companion changes:** `EDGE_PICK_PX` bumped 12→20 in `edgeVisibility.ts` (perspective foreshortening leaves the cursor a few px off the projected line even when it looks "on" the edge — matches Fusion-style slop). `edgeIsPickable` now walks the full chain in screen space (was only checking `edgeVertexA/B`).
+
+**Perf:** ~300 segment projections per pointermove worst case (98 edges × avg 2 segments + a few rims), <0.1 ms. The broad-phase AABB skip was removed (it gated on 3D distance, which is no longer the metric) — net cost still well under one frame.
 
 ## FIXED 2026-05-20 — ghost topology (selection of pre-cut edges through filleted/chamfered geometry)
 When a fillet/chamfer cut consumes a sharp edge it leaves no detectable edge in `extractEdgeTopology` (fillet transitions have ~0–7.5° dihedral, well below the 30° threshold; chamfer endpoint transitions are tangent). The picker was blind to those edges and users couldn't chamfer-the-already-filleted-edge.

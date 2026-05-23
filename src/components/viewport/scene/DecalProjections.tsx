@@ -111,6 +111,13 @@ function DecalProjection({ spec }: { spec: DecalSpec }) {
   const targetRef = useRef<THREE.Mesh | null>(null);
   const pollAttemptsRef = useRef(0);
   const [targetReady, setTargetReady] = useState(false);
+  // Reset resolution state when the target feature changes so we re-poll
+  // against the new mesh rather than continuing with the stale ref.
+  useEffect(() => {
+    targetRef.current = null;
+    pollAttemptsRef.current = 0;
+    setTargetReady(false);
+  }, [spec.targetFeatureId]);
   useFrame(() => {
     if (targetRef.current) return;
     const t = resolveTargetMesh(scene, spec.targetFeatureId);

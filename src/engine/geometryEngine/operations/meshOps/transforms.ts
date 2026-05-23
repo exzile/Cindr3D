@@ -102,6 +102,7 @@ export function combineMeshes(meshes: THREE.Mesh[]): THREE.Mesh {
     positions.set(positionArray, offset);
     offset += positionArray.length;
   }
+  for (const geometry of geoms) geometry.dispose();
   const merged = new THREE.BufferGeometry();
   merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   merged.computeVertexNormals();

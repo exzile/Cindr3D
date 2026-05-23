@@ -333,8 +333,10 @@ function computeResiduals(
         const a0 = getPoint(eA.id, 0, pointMap);
         const a1 = getPoint(eA.id, eA.points.length - 1, pointMap);
         const b0 = getPoint(eB.id, 0, pointMap);
-        // (a1-a0) × (b0-a0) = 0
+        const b1col = getPoint(eB.id, eB.points.length - 1, pointMap);
+        // (a1-a0) × (b0-a0) = 0 and (a1-a0) × (b1-a0) = 0
         residuals.push((a1.x - a0.x) * (b0.y - a0.y) - (a1.y - a0.y) * (b0.x - a0.x));
+        residuals.push((a1.x - a0.x) * (b1col.y - a0.y) - (a1.y - a0.y) * (b1col.x - a0.x));
         break;
       }
       case 'parallel': {
@@ -369,6 +371,9 @@ function computeResiduals(
         const eA = entityMap.get(c.entityIds[0]);
         const eB = entityMap.get(c.entityIds[1]);
         if (!eA || !eB) break;
+        // radius is not a solver DOF — skip equal-radius constraint between circles
+        // to avoid permanently blocking solver convergence on a non-solvable residual
+        if (eA.type === 'circle' && eB.type === 'circle') break;
         const lenOf = (e: SketchEntity): number => {
           if (e.type === 'circle') return e.radius ?? 0;
           if (e.points.length < 2) return 0;
@@ -484,11 +489,10 @@ function computeResiduals(
         // 1. Parallel residual
         residuals.push(adx * bdy - ady * bdx);
         // 2. Perpendicular distance residual: signed cross / |a| - value
+        // Always push to keep residual count stable across Jacobian perturbations
         const aLen = Math.sqrt(adx * adx + ady * ady);
-        if (aLen > 1e-10) {
-          const crossBA = (b0.x - a0.x) * ady - (b0.y - a0.y) * adx;
-          residuals.push(crossBA / aLen - (c.value ?? 10));
-        }
+        const crossBA = (b0.x - a0.x) * ady - (b0.y - a0.y) * adx;
+        residuals.push(aLen > 1e-10 ? crossBA / aLen - (c.value ?? 0) : crossBA - (c.value ?? 0));
         break;
       }
       case 'curvature': {

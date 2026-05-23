@@ -86,8 +86,8 @@ export default function AnalysisOverlay() {
   if (!result || result.objects.length === 0) return null;
   return (
     <>
-      {result.objects.map((object, index) => (
-        <primitive key={index} object={object} />
+      {result.objects.map((object) => (
+        <primitive key={object.uuid} object={object} />
       ))}
     </>
   );

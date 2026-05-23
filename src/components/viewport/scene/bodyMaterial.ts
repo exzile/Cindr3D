@@ -32,6 +32,13 @@ export function componentColorMaterial(color: string): THREE.Material {
   const key = color.toLowerCase();
   const cached = COMPONENT_COLOR_MATERIALS.get(key);
   if (cached) return cached;
+  // Evict oldest entry before growing past limit to prevent unbounded GPU leak
+  // when components cycle through many colors over a session.
+  if (COMPONENT_COLOR_MATERIALS.size >= 64) {
+    const firstKey = COMPONENT_COLOR_MATERIALS.keys().next().value!;
+    COMPONENT_COLOR_MATERIALS.get(firstKey)?.dispose();
+    COMPONENT_COLOR_MATERIALS.delete(firstKey);
+  }
   const material = new THREE.MeshPhysicalMaterial({
     color,
     metalness: 0,

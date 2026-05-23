@@ -107,7 +107,8 @@ export function pipeGeometry(
 
   // Slightly overshoot the bore beyond the ends so CSG cleanly opens both
   // faces instead of leaving razor-thin coplanar slivers.
-  const dir = path[1].clone().sub(path[0]).normalize();
+  const rawDir = path[1].clone().sub(path[0]);
+  const dir = rawDir.lengthSq() > 1e-20 ? rawDir.normalize() : new THREE.Vector3(0, 1, 0);
   const extended = path.map((p) => p.clone());
   extended[0].addScaledVector(dir, -0.5);
   extended[extended.length - 1].addScaledVector(dir, 0.5);
