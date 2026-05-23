@@ -44,6 +44,8 @@ export function retriangulateCoplanarRegions(
 ): Float32Array {
   const triCount = (posIn.length / 9) | 0;
   if (triCount === 0) return posIn;
+  // BUILD-STAMP: v3-repair-debug — confirms fresh weldClean code is running
+  console.warn(`[retriangulate] v3-repair-debug entry triCount=${triCount}`);
 
   // ── Weld positions to integer vertex ids for adjacency. Uses makeNear's
   //    edge-match tolerance (diag·1e-4) — the SAME tolerance the driver
@@ -241,6 +243,13 @@ export function retriangulateCoplanarRegions(
     // the per-region `vid()` counter so they're tiny non-negative integers,
     // well under 2^26). String concat + Number-split was a noticeable share
     // of the retriangulate cost on selections that produce many regions.
+    // Per-region normal (used for targeted debug logging of the X=0 wing face).
+    const rnx = nrm[ts[0] * 3], rny = nrm[ts[0] * 3 + 1], rnz = nrm[ts[0] * 3 + 2];
+    const isXFace = rnx < -0.9; // X=0 left face has normal ≈ (-1,0,0)
+    if (isXFace || ts.length > 100) {
+      console.warn(`[retriangulate] r=${r} ts=${ts.length} n=(${rnx.toFixed(2)},${rny.toFixed(2)},${rnz.toFixed(2)})`);
+    }
+
     const HEDGE_MULT = 0x4000000; // 2^26
     const dKey = (u: number, v: number) => u * HEDGE_MULT + v;
     const dirCount = new Map<number, number>();
@@ -251,6 +260,56 @@ export function retriangulateCoplanarRegions(
       dirCount.set(k1, (dirCount.get(k1) ?? 0) + 1);
       dirCount.set(k2, (dirCount.get(k2) ?? 0) + 1);
     }
+
+    // ── Non-manifold repair: BVH boolean sometimes leaves a region with
+    // "wing" or bridge triangles whose directed edges appear more than once
+    // in the same direction (|net| > 1). Walk every half-edge pair; for each
+    // over-counted direction remove the largest-area triangle that contains
+    // that half-edge (the wing/bridge), then recompute dirCount from the
+    // survivors. We only do this if removals are a small fraction of the
+    // region (< half) so genuinely bad geometry just bails out normally.
+    let repairTs = ts;
+    {
+      const toRemove = new Set<number>();
+      for (const [k, cnt] of dirCount) {
+        const u = Math.floor(k / HEDGE_MULT);
+        const v = k - u * HEDGE_MULT;
+        const rk = v * HEDGE_MULT + u;
+        const opp = dirCount.get(rk) ?? 0;
+        const net = cnt - opp;
+        if (net <= 1) continue; // boundary OK or interior — no over-count
+        // This directed half-edge u→v appears more times than its reverse.
+        // Find the largest-area triangle that owns this half-edge — that is
+        // the wing/bridge triangle inserted by the BVH re-triangulator.
+        let worstT = -1, worstArea = -1;
+        for (const t of ts) {
+          if (toRemove.has(t)) continue;
+          const ta = triV[t * 3], tb = triV[t * 3 + 1], tc = triV[t * 3 + 2];
+          if (!((ta === u && tb === v) || (tb === u && tc === v) || (tc === u && ta === v))) continue;
+          const o = t * 9;
+          e1.set(posIn[o + 3] - posIn[o], posIn[o + 4] - posIn[o + 1], posIn[o + 5] - posIn[o + 2]);
+          e2.set(posIn[o + 6] - posIn[o], posIn[o + 7] - posIn[o + 1], posIn[o + 8] - posIn[o + 2]);
+          const area = cr.crossVectors(e1, e2).length();
+          if (area > worstArea) { worstArea = area; worstT = t; }
+        }
+        if (worstT >= 0) toRemove.add(worstT);
+      }
+      if (toRemove.size > 0 && toRemove.size < ts.length / 2) {
+        repairTs = ts.filter(t => !toRemove.has(t));
+        dirCount.clear();
+        for (const t of repairTs) {
+          const a = triV[t * 3], b = triV[t * 3 + 1], c = triV[t * 3 + 2];
+          const k0 = dKey(a, b), k1 = dKey(b, c), k2 = dKey(c, a);
+          dirCount.set(k0, (dirCount.get(k0) ?? 0) + 1);
+          dirCount.set(k1, (dirCount.get(k1) ?? 0) + 1);
+          dirCount.set(k2, (dirCount.get(k2) ?? 0) + 1);
+        }
+      }
+      if (isXFace || toRemove.size > 0) {
+        console.warn(`[retriangulate REPAIR] r=${r} ts=${ts.length} removed=${toRemove.size} repairTs=${repairTs.length}`);
+      }
+    }
+
     // Net half-edges: an interior edge of the region is traversed once in
     // each direction (net 0); a boundary edge survives once. Each surviving
     // directed edge u→v is a directed boundary segment.
@@ -268,7 +327,10 @@ export function retriangulateCoplanarRegions(
       if (net === 0) continue;                       // interior edge
       const fwdU = net > 0 ? u : v;
       const fwdV = net > 0 ? v : u;
-      if (Math.abs(net) !== 1) { boundaryOk = false; break; } // non-manifold rim
+      if (Math.abs(net) !== 1) {
+        if (isXFace) console.warn(`[retriangulate REPAIR] r=${r} boundaryOk=false net=${net} u=${u} v=${v}`);
+        boundaryOk = false; break;
+      } // non-manifold rim
       bsegs.push([fwdU, fwdV]);
     }
     if (!boundaryOk) { for (const t of ts) emitOriginal(t); continue; }
@@ -279,7 +341,7 @@ export function retriangulateCoplanarRegions(
     // loop won't close. Split every boundary segment at any region vertex
     // lying on its interior so the rim becomes a proper closed polyline.
     const regVerts = new Set<number>();
-    for (const t of ts) {
+    for (const t of repairTs) {
       regVerts.add(triV[t * 3]); regVerts.add(triV[t * 3 + 1]); regVerts.add(triV[t * 3 + 2]);
     }
     const regVertArr = [...regVerts];
@@ -348,7 +410,10 @@ export function retriangulateCoplanarRegions(
       }
       if (!walkOk) break;
     }
-    if (!walkOk || loops.length === 0) { for (const t of ts) emitOriginal(t); continue; }
+    if (!walkOk || loops.length === 0) {
+      if (isXFace) console.warn(`[retriangulate REPAIR] r=${r} walkOk=${walkOk} loops=${loops.length} → emit originals`);
+      for (const t of ts) emitOriginal(t); continue;
+    }
 
     // 2D basis in the region's plane (use the first tri's normal).
     const t0 = ts[0];
@@ -416,9 +481,13 @@ export function retriangulateCoplanarRegions(
     // Bridge holes into the outer loop, then ear-clip the simple polygon.
     // Pass the vertex arrays so bridgeHoles can insert edge-midpoint vertices
     // when the nearest bridge target is on an edge interior (not a vertex).
+    if (isXFace) console.warn(`[retriangulate REPAIR] r=${r} loops=${loops.length} outer=${outer.length} holes=${holes.length} loopSizes=${loops.map(l=>l.length).join(',')}`);
     const poly = bridgeHoles(outer, holes, to2D, vx, vy, vz);
     const tri2 = earClip(poly, to2D);
-    if (!tri2 || tri2.length === 0) { for (const t of ts) emitOriginal(t); continue; }
+    if (!tri2 || tri2.length === 0) {
+      if (isXFace) console.warn(`[retriangulate REPAIR] r=${r} earClip EMPTY poly=${poly.length} loops=${loops.length} outer=${outer.length} holes=${holes.length}`);
+      for (const t of ts) emitOriginal(t); continue;
+    }
 
     // Build the new triangles, then accept them ONLY if they cover the same
     // surface area as the originals. Collapsing a flat fan is exactly
@@ -430,7 +499,7 @@ export function retriangulateCoplanarRegions(
     // tidy the pathological CSG fan and never delete real geometry.
     const degSq = Math.max(diag * 1e-7, 1e-7) ** 2;
     let origArea = 0;
-    for (const t of ts) {
+    for (const t of repairTs) {
       const o = t * 9;
       e1.set(posIn[o + 3] - posIn[o], posIn[o + 4] - posIn[o + 1], posIn[o + 5] - posIn[o + 2]);
       e2.set(posIn[o + 6] - posIn[o], posIn[o + 7] - posIn[o + 1], posIn[o + 8] - posIn[o + 2]);
@@ -458,9 +527,11 @@ export function retriangulateCoplanarRegions(
       pending.length < 9 ||
       Math.abs(newArea - origArea) > 1e-3 * Math.max(origArea, 1e-9)
     ) {
+      if (isXFace) console.warn(`[retriangulate REPAIR] r=${r} ts=${ts.length} area-check FAIL: newArea=${newArea.toFixed(3)} origArea=${origArea.toFixed(3)} pending=${pending.length}`);
       for (const t of ts) emitOriginal(t);
       continue;
     }
+    if (isXFace) console.warn(`[retriangulate REPAIR] r=${r} ts=${ts.length} → SUCCESS pending=${pending.length/9} tris loops=${loops.length}`);
     for (const f of pending) outFloats.push(f);
   }
 

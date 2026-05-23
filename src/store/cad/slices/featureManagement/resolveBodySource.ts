@@ -12,9 +12,11 @@
  *     look up the live rendered mesh from the BodyMesh registry
  *     (`liveBodyMeshes`, keyed by THREE.js mesh UUID, embedded in the edge ID).
  */
-import * as THREE from 'three';
-import type { Feature } from '../../../../types/cad';
-import { liveBodyMeshes } from '../../../../store/meshRegistry';
+import * as THREE from "three";
+import type { Feature } from "../../../../types/cad";
+import { liveBodyMeshes } from "../../../../store/meshRegistry";
+
+export type BodySourceLabel = "mesh" | "primitive" | "live";
 
 /** Clone and ensure non-indexed. Avoids the THREE.js "already non-indexed" warning. */
 function cloneNonIndexed(geo: THREE.BufferGeometry): THREE.BufferGeometry {
@@ -33,6 +35,7 @@ export interface BodySource {
   hasMesh: boolean;
   /** The replaced mesh's geometry — dispose AFTER the state set() completes. */
   oldGeomToDispose: THREE.BufferGeometry | null;
+  srcLabel: BodySourceLabel;
 }
 
 export function resolveBodySource(
@@ -48,54 +51,81 @@ export function resolveBodySource(
       srcMaterial: srcMesh.material,
       hasMesh: true,
       oldGeomToDispose: srcMesh.geometry,
+      srcLabel: "mesh",
     };
   }
 
-  if (feature.type === 'primitive') {
+  if (feature.type === "primitive") {
     const p = feature.params;
     const kind = p.kind as string;
     let baseGeo: THREE.BufferGeometry | null = null;
-    if (kind === 'box') {
-      baseGeo = new THREE.BoxGeometry(Number(p.width) || 20, Number(p.height) || 20, Number(p.depth) || 20);
-    } else if (kind === 'cylinder') {
-      baseGeo = new THREE.CylinderGeometry(
-        Number(p.radius) || 10, Number(p.radiusTop ?? p.radius) || 10, Number(p.height) || 20, 48,
+    if (kind === "box") {
+      baseGeo = new THREE.BoxGeometry(
+        Number(p.width) || 20,
+        Number(p.height) || 20,
+        Number(p.depth) || 20,
       );
-    } else if (kind === 'sphere') {
+    } else if (kind === "cylinder") {
+      baseGeo = new THREE.CylinderGeometry(
+        Number(p.radius) || 10,
+        Number(p.radiusTop ?? p.radius) || 10,
+        Number(p.height) || 20,
+        48,
+      );
+    } else if (kind === "sphere") {
       baseGeo = new THREE.SphereGeometry(Number(p.radius) || 10, 48, 32);
-    } else if (kind === 'torus') {
-      baseGeo = new THREE.TorusGeometry(Number(p.radius) || 15, Number(p.tubeRadius) || 3, 24, 48);
+    } else if (kind === "torus") {
+      baseGeo = new THREE.TorusGeometry(
+        Number(p.radius) || 15,
+        Number(p.tubeRadius) || 3,
+        24,
+        48,
+      );
     }
-    if (!baseGeo) return { error: 'unsupported primitive type' };
+    if (!baseGeo) return { error: "unsupported primitive type" };
     // Apply world transform so edge coords (world-space) match vertices.
-    const pos = new THREE.Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0);
-    const quat = new THREE.Quaternion().setFromEuler(new THREE.Euler(
-      THREE.MathUtils.degToRad(Number(p.rx) || 0),
-      THREE.MathUtils.degToRad(Number(p.ry) || 0),
-      THREE.MathUtils.degToRad(Number(p.rz) || 0),
-    ));
-    baseGeo.applyMatrix4(new THREE.Matrix4().compose(pos, quat, new THREE.Vector3(1, 1, 1)));
+    const pos = new THREE.Vector3(
+      Number(p.x) || 0,
+      Number(p.y) || 0,
+      Number(p.z) || 0,
+    );
+    const quat = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(
+        THREE.MathUtils.degToRad(Number(p.rx) || 0),
+        THREE.MathUtils.degToRad(Number(p.ry) || 0),
+        THREE.MathUtils.degToRad(Number(p.rz) || 0),
+      ),
+    );
+    baseGeo.applyMatrix4(
+      new THREE.Matrix4().compose(pos, quat, new THREE.Vector3(1, 1, 1)),
+    );
     const srcGeo = cloneNonIndexed(baseGeo);
     baseGeo.dispose();
     return {
       srcGeo,
       // Placeholder — ExtrudedBodies overrides on next render via its
       // material useEffect.
-      srcMaterial: new THREE.MeshStandardMaterial({ color: 0x5b9bd5, roughness: 0.4, metalness: 0.1 }),
+      srcMaterial: new THREE.MeshStandardMaterial({
+        color: 0x5b9bd5,
+        roughness: 0.4,
+        metalness: 0.1,
+      }),
       hasMesh: false,
       oldGeomToDispose: null,
+      srcLabel: "primitive",
     };
   }
 
   // Extrude (CSG-pipeline) feature: geometry lives only in the R3F scene.
   const liveMesh = liveBodyMeshes.get(meshUuid);
   if (!liveMesh) {
-    return { error: 'body not yet rendered — select the edge and try again' };
+    return { error: "body not yet rendered — select the edge and try again" };
   }
   return {
     srcGeo: cloneNonIndexed(liveMesh.geometry),
     srcMaterial: liveMesh.material,
     hasMesh: false,
     oldGeomToDispose: null,
+    srcLabel: "live",
   };
 }

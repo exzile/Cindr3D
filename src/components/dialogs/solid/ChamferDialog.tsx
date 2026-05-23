@@ -26,6 +26,15 @@ interface ChamferDialogProps {
   initialParams?: Record<string, unknown>;
 }
 
+function storedEdgeIds(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((id): id is string => typeof id === "string");
+  }
+  if (typeof value !== "string") return [];
+  if (value.includes("\u001f")) return value.split("\u001f").filter(Boolean);
+  return value.split(",").filter(Boolean);
+}
+
 function ChamferDialogUI({
   open,
   selectedEdgeCount,
@@ -72,18 +81,14 @@ export function ChamferDialog({ onClose }: { onClose: () => void }) {
     ? features.find((feature) => feature.id === editingFeatureId)
     : null;
   const params = editing?.params ?? {};
-  const existingEdgeIds =
-    typeof params.edgeIds === "string"
-      ? params.edgeIds.split(",").filter(Boolean)
-      : [];
+  const existingEdgeIds = storedEdgeIds(params.edgeIds);
 
   const handleConfirm = (nextParams: ChamferParams) => {
     const edgeIds =
       chamferEdgeIds.length > 0 ? chamferEdgeIds : existingEdgeIds;
-    const edgeIdsStr = edgeIds.join(",");
     const [d1, d2] = resolveChamferDistances(nextParams);
     if (editing) {
-      updateFeatureParams(editing.id, { ...nextParams, edgeIds: edgeIdsStr });
+      updateFeatureParams(editing.id, { ...nextParams, edgeIds });
       renameFeature(editing.id, `Chamfer (d=${d1})`);
       replayEdgeCutFeature(editing.id);
     } else {
@@ -91,7 +96,7 @@ export function ChamferDialog({ onClose }: { onClose: () => void }) {
         id: crypto.randomUUID(),
         name: `Chamfer (d=${d1})`,
         type: "chamfer",
-        params: { ...nextParams, edgeIds: edgeIdsStr },
+        params: { ...nextParams, edgeIds },
         visible: true,
         suppressed: false,
         timestamp: Date.now(),

@@ -7,67 +7,96 @@
  *   Main → Worker
  *     { type:'compute', requestId:number, srcGeoPositions:ArrayBuffer,
  *       edges:{ax,ay,az,bx,by,bz}[], toolType:'fillet'|'chamfer',
- *       value:number, segments:number, fast:boolean }
+ *       value:number, segments:number, fast:boolean, params?:object }
  *     transfer: [srcGeoPositions]
  *
  *   Worker → Main
- *     { type:'result', requestId:number, positions:ArrayBuffer|null }
- *     transfer: [positions]  (or no transfer when null)
+ *     { type:'result', requestId:number,
+ *       positions:ArrayBuffer|null, normals:ArrayBuffer|null }
+ *     transfer: [positions, normals]  (or no transfer when null)
  *
  * srcGeoPositions is a flat Float32Array of xyz triples (non-indexed geometry).
- * positions in the result is the same layout; main thread reconstructs a
- * BufferGeometry from it and calls computeVertexNormals().
+ * positions/normals in the result use the same layout; main thread uses
+ * transferred normals when present and recomputes only as a fallback.
  *
  * Manifold WASM is initialised once on first message receipt, then reused for
  * all subsequent CSG operations in this worker (same singleton pattern as main
  * thread). Falls back to three-bvh-csg if Manifold init fails.
  */
 
-import * as THREE from 'three';
-import { initManifold } from '../engine/geometryEngine/core/solid/manifoldWasm';
-import { computeFilletGeometry } from '../utils/geometry/filletGeometry';
-import { computeChamferGeometry } from '../utils/geometry/chamferGeometry';
-import type { PickedEdge } from '../utils/geometry/edgeCutCore';
+import * as THREE from "three";
+import { initManifold } from "../engine/geometryEngine/core/solid/manifoldWasm";
+import {
+  computeFilletGeometry,
+  type FilletCommitParams,
+} from "../utils/geometry/filletGeometry";
+import {
+  computeChamferGeometry,
+  resolveChamferDistances,
+  type ChamferParams,
+} from "../utils/geometry/chamferGeometry";
+import type { PickedEdge } from "../utils/geometry/edgeCutCore";
 
 // Init Manifold WASM once per worker process (runs in background while idle).
 // If this rejects we still work — csg.ts falls back to three-bvh-csg.
 const _manifoldReady: Promise<void> = initManifold()
   .then(() => undefined)
   .catch(() => {
-    console.warn('[edgeOpWorker] manifold× → bvh-fbk');
+    console.warn("[edgeOpWorker] manifold× → bvh-fbk");
   });
 
 interface EdgeData {
-  ax: number; ay: number; az: number;
-  bx: number; by: number; bz: number;
+  ax: number;
+  ay: number;
+  az: number;
+  bx: number;
+  by: number;
+  bz: number;
 }
 
 interface ComputeMsg {
-  type: 'compute';
+  type: "compute";
   requestId: number;
   srcGeoPositions: ArrayBuffer;
   edges: EdgeData[];
-  toolType: 'fillet' | 'chamfer';
+  toolType: "fillet" | "chamfer";
   value: number;
   segments: number;
   fast: boolean;
+  params?: Record<string, unknown>;
+}
+
+interface ResultMsg {
+  type: "result";
+  requestId: number;
+  positions: ArrayBuffer | null;
+  normals: ArrayBuffer | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (self as any).onmessage = async (e: MessageEvent<ComputeMsg>) => {
   const msg = e.data;
-  if (msg.type !== 'compute') return;
+  if (msg.type !== "compute") return;
 
   // Ensure Manifold is ready before the first CSG call so we don't race
   // (subsequent calls return immediately from the resolved promise).
   await _manifoldReady;
 
-  const { requestId, srcGeoPositions, edges, toolType, value, segments, fast } = msg;
+  const {
+    requestId,
+    srcGeoPositions,
+    edges,
+    toolType,
+    value,
+    segments,
+    fast,
+    params,
+  } = msg;
 
   // Reconstruct source geometry from transferred positions buffer.
   const srcGeo = new THREE.BufferGeometry();
   const posArr = new Float32Array(srcGeoPositions);
-  srcGeo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+  srcGeo.setAttribute("position", new THREE.BufferAttribute(posArr, 3));
   // Normals needed for per-face shading after CSG; compute from positions.
   srcGeo.computeVertexNormals();
 
@@ -79,20 +108,53 @@ interface ComputeMsg {
 
   let result: THREE.BufferGeometry | null = null;
   try {
-    result =
-      toolType === 'fillet'
-        ? computeFilletGeometry(srcGeo, pickedEdges, value, segments, fast)
-        : computeChamferGeometry(srcGeo, pickedEdges, value, undefined, fast);
+    if (toolType === "fillet") {
+      result = computeFilletGeometry(
+        srcGeo,
+        pickedEdges,
+        value,
+        segments,
+        fast,
+        params as FilletCommitParams | undefined,
+      );
+    } else {
+      const chamferParams = params as Partial<ChamferParams> | undefined;
+      const [d1, d2] = resolveChamferDistances({
+        mode: chamferParams?.mode ?? "equal-dist",
+        distance: value,
+        distance2: chamferParams?.distance2,
+        angle: chamferParams?.angle,
+        isFlipped: chamferParams?.isFlipped,
+      });
+      result = computeChamferGeometry(
+        srcGeo,
+        pickedEdges,
+        d1,
+        d2,
+        fast,
+        params,
+      );
+    }
   } catch {
     // CSG errors are expected for degenerate geometry; result stays null.
   }
 
   srcGeo.dispose();
 
-  if (!result || !result.attributes.position || result.attributes.position.count === 0) {
+  if (
+    !result ||
+    !result.attributes.position ||
+    result.attributes.position.count === 0
+  ) {
     result?.dispose();
+    const msgOut: ResultMsg = {
+      type: "result",
+      requestId,
+      positions: null,
+      normals: null,
+    };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (self as any).postMessage({ type: 'result', requestId, positions: null });
+    (self as any).postMessage(msgOut);
     return;
   }
 
@@ -107,9 +169,12 @@ interface ComputeMsg {
   const transferList: ArrayBuffer[] = [posCopy.buffer];
   if (normCopy) transferList.push(normCopy.buffer);
 
+  const msgOut: ResultMsg = {
+    type: "result",
+    requestId,
+    positions: posCopy.buffer,
+    normals: normCopy?.buffer ?? null,
+  };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (self as any).postMessage(
-    { type: 'result', requestId, positions: posCopy.buffer, normals: normCopy?.buffer ?? null },
-    transferList,
-  );
+  (self as any).postMessage(msgOut, transferList);
 };

@@ -32,18 +32,18 @@
  * always catches up to the final dragged value with at most one queued job.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useThree } from '@react-three/fiber';
-import * as THREE from 'three';
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useThree } from "@react-three/fiber";
+import * as THREE from "three";
 import {
   parseEdgeIds,
   fitEdgeCircle,
   fitEdgeCircleOrArc,
   clusterEdgesByEndpointConnectivity,
   computePositionEps,
-} from '../../../../utils/geometry/edgeCutCore';
-import { liveBodyMeshes } from '../../../../store/meshRegistry';
-import type { PickedEdge } from '../../../../utils/geometry/edgeCutCore';
+} from "../../../../utils/geometry/edgeCutCore";
+import { liveBodyMeshes } from "../../../../store/meshRegistry";
+import type { PickedEdge } from "../../../../utils/geometry/edgeCutCore";
 
 interface EdgeOpPreviewProps {
   /** activeDialog matches this tool's dialog. */
@@ -53,9 +53,11 @@ interface EdgeOpPreviewProps {
   /** Current live size (radius / distance). */
   liveValue: number;
   /** Which tool to run in the worker — determines which compute fn is called. */
-  toolType: 'fillet' | 'chamfer';
+  toolType: "fillet" | "chamfer";
   /** Arc-resolution hint passed to the compute fn (default 4). */
   segments?: number;
+  /** Tool-specific dialog options used so preview matches commit/replay. */
+  params?: Record<string, unknown>;
 }
 
 interface ParsedAndClustered {
@@ -68,6 +70,7 @@ export default function EdgeOpPreview({
   enabled,
   edgeIds,
   liveValue,
+  params,
   toolType,
   segments = 4,
 }: EdgeOpPreviewProps) {
@@ -81,7 +84,10 @@ export default function EdgeOpPreview({
   const pickProxyRef = useRef<THREE.Mesh | null>(null);
   // Cache the non-indexed clone of the live mesh geometry so we don't re-clone
   // on every value change (only mesh identity changes require a new clone).
-  const srcGeoCacheRef = useRef<{ meshUuid: string; geo: THREE.BufferGeometry } | null>(null);
+  const srcGeoCacheRef = useRef<{
+    meshUuid: string;
+    geo: THREE.BufferGeometry;
+  } | null>(null);
 
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
@@ -90,7 +96,11 @@ export default function EdgeOpPreview({
   // Ping-pong backpressure: at most one in-flight job. If the worker is busy
   // when a new value arrives, save it here and dispatch once the result lands.
   const inFlightRef = useRef(false);
-  const pendingJobRef = useRef<{ pac: ParsedAndClustered; value: number } | null>(null);
+  const pendingJobRef = useRef<{
+    pac: ParsedAndClustered;
+    params: Record<string, unknown> | undefined;
+    value: number;
+  } | null>(null);
 
   // Debounce edgeIds: when the user clicks several edges in quick succession
   // each click fires a recompute; debouncing coalesces those into one run so
@@ -99,8 +109,13 @@ export default function EdgeOpPreview({
   const edgeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (edgeDebounceRef.current) clearTimeout(edgeDebounceRef.current);
-    edgeDebounceRef.current = setTimeout(() => setDebouncedEdgeIds(edgeIds), 80);
-    return () => { if (edgeDebounceRef.current) clearTimeout(edgeDebounceRef.current); };
+    edgeDebounceRef.current = setTimeout(
+      () => setDebouncedEdgeIds(edgeIds),
+      80,
+    );
+    return () => {
+      if (edgeDebounceRef.current) clearTimeout(edgeDebounceRef.current);
+    };
   }, [edgeIds]);
 
   // Parse + cluster + cap once per debouncedEdgeIds. The dispatch effect runs on
@@ -116,22 +131,32 @@ export default function EdgeOpPreview({
 
     const MAX_NON_CIRCLE_SEGS = 6;
     const clusterEps = computePositionEps(liveMesh.geometry);
-    const edgeClusters = clusterEdgesByEndpointConnectivity(parsed.edges, clusterEps);
+    const edgeClusters = clusterEdgesByEndpointConnectivity(
+      parsed.edges,
+      clusterEps,
+    );
     const previewEdges: PickedEdge[] = [];
     for (const cluster of edgeClusters) {
-      const circleFit = toolType === 'fillet' ? fitEdgeCircleOrArc(cluster) : fitEdgeCircle(cluster);
+      const circleFit =
+        toolType === "fillet"
+          ? fitEdgeCircleOrArc(cluster)
+          : fitEdgeCircle(cluster);
       if (cluster.length <= MAX_NON_CIRCLE_SEGS || circleFit !== null) {
         previewEdges.push(...cluster);
       } else {
         for (let i = 0; i < MAX_NON_CIRCLE_SEGS; i++) {
-          previewEdges.push(cluster[Math.round((i * (cluster.length - 1)) / (MAX_NON_CIRCLE_SEGS - 1))]);
+          previewEdges.push(
+            cluster[
+              Math.round((i * (cluster.length - 1)) / (MAX_NON_CIRCLE_SEGS - 1))
+            ],
+          );
         }
       }
     }
     return { parsed, liveMesh, previewEdges };
-  // liveBodyMeshes is a module-level mutable Map; the meshUuid identity drives
-  // re-runs through `debouncedEdgeIds`, and a remount swaps the uuid → memo
-  // re-runs. enabled gate keeps preview disabled state cheap.
+    // liveBodyMeshes is a module-level mutable Map; the meshUuid identity drives
+    // re-runs through `debouncedEdgeIds`, and a remount swaps the uuid → memo
+    // re-runs. enabled gate keeps preview disabled state cheap.
   }, [enabled, debouncedEdgeIds, toolType]);
 
   // Keep stable refs to scene-mutable state so the worker message handler
@@ -145,8 +170,18 @@ export default function EdgeOpPreview({
 
   // Stable ref to the dispatch function so the worker result handler can
   // kick off the next pending job without causing the worker effect to re-run.
-  const dispatchJobRef = useRef<(pac: ParsedAndClustered, value: number) => void>(() => {});
-  dispatchJobRef.current = (pac: ParsedAndClustered, value: number) => {
+  const dispatchJobRef = useRef<
+    (
+      pac: ParsedAndClustered,
+      value: number,
+      jobParams: Record<string, unknown> | undefined,
+    ) => void
+  >(() => {});
+  dispatchJobRef.current = (
+    pac: ParsedAndClustered,
+    value: number,
+    jobParams: Record<string, unknown> | undefined,
+  ) => {
     if (!workerRef.current) return;
 
     const { parsed, liveMesh, previewEdges } = pac;
@@ -170,13 +205,17 @@ export default function EdgeOpPreview({
     ).slice();
 
     const edgesData = previewEdges.map((e) => ({
-      ax: e.a.x, ay: e.a.y, az: e.a.z,
-      bx: e.b.x, by: e.b.y, bz: e.b.z,
+      ax: e.a.x,
+      ay: e.a.y,
+      az: e.a.z,
+      bx: e.b.x,
+      by: e.b.y,
+      bz: e.b.z,
     }));
 
     workerRef.current.postMessage(
       {
-        type: 'compute',
+        type: "compute",
         requestId: id,
         srcGeoPositions: posCopy.buffer,
         edges: edgesData,
@@ -184,6 +223,7 @@ export default function EdgeOpPreview({
         value,
         segments,
         fast: true,
+        params: jobParams,
       },
       [posCopy.buffer],
     );
@@ -191,11 +231,11 @@ export default function EdgeOpPreview({
 
   // Handler ref pattern: worker.onmessage delegates to this ref so we never
   // need to recreate the worker when callbacks change.
-  const workerOnMessageRef = useRef((_e: MessageEvent) => {});
+  const workerOnMessageRef = useRef<(e: MessageEvent) => void>(() => undefined);
   workerOnMessageRef.current = (e: MessageEvent) => {
     if (unmountedRef.current) return;
     const { type, requestId, positions, normals } = e.data;
-    if (type !== 'result') return;
+    if (type !== "result") return;
     // Discard stale results from superseded requests.
     if (requestId !== latestRequestIdRef.current) {
       inFlightRef.current = false;
@@ -233,21 +273,30 @@ export default function EdgeOpPreview({
       } else {
         const geo = new THREE.BufferGeometry();
         geo.setAttribute(
-          'position',
+          "position",
           new THREE.BufferAttribute(new Float32Array(positions), 3),
         );
         if (normals) {
           // Use the creased normals computed inside the worker (toCreasedNormals)
           // for smooth shading on the fillet arc.
-          geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
+          geo.setAttribute(
+            "normal",
+            new THREE.BufferAttribute(new Float32Array(normals), 3),
+          );
         } else {
           geo.computeVertexNormals();
           // Sanitize NaN normals produced by degenerate zero-area triangles
           // (small fillet radii). A single NaN contaminates the whole draw call.
           const normalArr = geo.attributes.normal.array as Float32Array;
           for (let i = 0; i < normalArr.length; i += 3) {
-            if (!isFinite(normalArr[i]) || !isFinite(normalArr[i + 1]) || !isFinite(normalArr[i + 2])) {
-              normalArr[i] = 0; normalArr[i + 1] = 1; normalArr[i + 2] = 0;
+            if (
+              !isFinite(normalArr[i]) ||
+              !isFinite(normalArr[i + 1]) ||
+              !isFinite(normalArr[i + 2])
+            ) {
+              normalArr[i] = 0;
+              normalArr[i + 1] = 1;
+              normalArr[i + 2] = 0;
             }
           }
           geo.attributes.normal.needsUpdate = true;
@@ -291,7 +340,10 @@ export default function EdgeOpPreview({
           pickProxyRef.current = proxy;
         }
 
-        if (previewMeshRef.current && previewMeshRef.current.material === liveMesh.material) {
+        if (
+          previewMeshRef.current &&
+          previewMeshRef.current.material === liveMesh.material
+        ) {
           previewMeshRef.current.geometry = geo;
         } else {
           if (previewMeshRef.current) sc.remove(previewMeshRef.current);
@@ -313,17 +365,19 @@ export default function EdgeOpPreview({
     // Dispatch the pending job (if any) now that the worker is free.
     const pending = pendingJobRef.current;
     pendingJobRef.current = null;
-    if (pending) dispatchJobRef.current(pending.pac, pending.value);
+    if (pending) {
+      dispatchJobRef.current(pending.pac, pending.value, pending.params);
+    }
   };
 
   // Create the worker once on mount; terminate on unmount.
   useEffect(() => {
     const worker = new Worker(
-      new URL('../../../../workers/edgeOpWorker.ts', import.meta.url),
-      { type: 'module' },
+      new URL("../../../../workers/edgeOpWorker.ts", import.meta.url),
+      { type: "module" },
     );
     worker.onmessage = (e) => workerOnMessageRef.current(e);
-    worker.onerror = (e) => console.error('[EdgeOpPreview] worker error:', e);
+    worker.onerror = (e) => console.error("[EdgeOpPreview] worker error:", e);
     workerRef.current = worker;
     return () => {
       worker.terminate();
@@ -354,7 +408,7 @@ export default function EdgeOpPreview({
       srcGeoCacheRef.current = null;
       invalidate();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene]); // invalidate stable; scene stable for Canvas lifetime
 
   // Dispatch to worker on value / edge change (immediate — no liveValue debounce).
@@ -389,12 +443,16 @@ export default function EdgeOpPreview({
 
     if (inFlightRef.current) {
       // Worker is busy — save this as the pending job to run when it finishes.
-      pendingJobRef.current = { pac: parsedAndClustered, value: liveValue };
+      pendingJobRef.current = {
+        pac: parsedAndClustered,
+        params,
+        value: liveValue,
+      };
       return;
     }
 
-    dispatchJobRef.current(parsedAndClustered, liveValue);
-  }, [liveValue, parsedAndClustered, scene, invalidate]);
+    dispatchJobRef.current(parsedAndClustered, liveValue, params);
+  }, [liveValue, params, parsedAndClustered, scene, invalidate]);
 
   return null;
 }

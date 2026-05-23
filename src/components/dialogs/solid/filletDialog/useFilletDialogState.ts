@@ -10,6 +10,7 @@ export function useFilletDialogState(
   const setFilletLiveRadius = useCADStore((s) => s.setFilletLiveRadius);
   const filletPickMode = useCADStore((s) => s.filletPickMode);
   const setFilletPickMode = useCADStore((s) => s.setFilletPickMode);
+  const setFilletPreviewParams = useCADStore((s) => s.setFilletPreviewParams);
 
   const [radius, setRadius] = useState(
     () => (initialParams?.radius as number | undefined) ?? filletLiveRadius,
@@ -95,7 +96,7 @@ export function useFilletDialogState(
       prev.map((set, idx) => (idx === i ? { ...set, ...patch } : set)),
     );
 
-  const handleConfirm = () => {
+  const buildParams = (): FilletParams => {
     const params: FilletParams = {
       radius,
       edgeIds: [],
@@ -113,12 +114,25 @@ export function useFilletDialogState(
     }
     if (mode === "chord-length") params.chordLength = chordLength;
     if (mode === "asymmetric") {
-      params.offsetOne = isFlipped ? offsetTwo : offsetOne;
-      params.offsetTwo = isFlipped ? offsetOne : offsetTwo;
+      params.offsetOne = offsetOne;
+      params.offsetTwo = offsetTwo;
       params.isFlipped = isFlipped;
     }
     if (edgeSets.length > 0) params.edgeSets = edgeSets;
-    onConfirm(params);
+    return params;
+  };
+
+  useEffect(() => {
+    setFilletPreviewParams(buildParams() as unknown as Record<string, unknown>);
+  });
+
+  useEffect(
+    () => () => setFilletPreviewParams(undefined),
+    [setFilletPreviewParams],
+  );
+
+  const handleConfirm = () => {
+    onConfirm(buildParams());
   };
 
   return {

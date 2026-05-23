@@ -8,6 +8,7 @@ export function useChamferDialogState(
 ) {
   const chamferLiveDistance = useCADStore((s) => s.chamferLiveDistance);
   const setChamferLiveDistance = useCADStore((s) => s.setChamferLiveDistance);
+  const setChamferPreviewParams = useCADStore((s) => s.setChamferPreviewParams);
   const [mode, setMode] = useState<ChamferMode>(
     () => (initialParams?.mode as ChamferMode | undefined) ?? "equal-dist",
   );
@@ -48,7 +49,7 @@ export function useChamferDialogState(
     setChamferLiveDistance(value);
   };
 
-  const handleConfirm = () => {
+  const buildParams = (): ChamferParams => {
     const params: ChamferParams = {
       mode,
       distance,
@@ -64,7 +65,22 @@ export function useChamferDialogState(
       params.angle = angle;
       params.isFlipped = isFlipped;
     }
-    onConfirm(params);
+    return params;
+  };
+
+  useEffect(() => {
+    setChamferPreviewParams(
+      buildParams() as unknown as Record<string, unknown>,
+    );
+  });
+
+  useEffect(
+    () => () => setChamferPreviewParams(undefined),
+    [setChamferPreviewParams],
+  );
+
+  const handleConfirm = () => {
+    onConfirm(buildParams());
   };
 
   return {

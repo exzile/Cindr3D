@@ -1,21 +1,23 @@
-import { getDuetPrefs } from '../../../utils/duetPrefs';
-import type { PrinterStore } from '../../printerStore';
-import type { PrinterStoreApi } from '../storeApi';
+import { getDuetPrefs } from "../../../utils/duetPrefs";
+import type { PrinterStore } from "../../printerStore";
+import type { PrinterStoreApi } from "../storeApi";
 
 let autoReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let autoReconnectAttempts = 0;
 
-export function createUiActions(api: PrinterStoreApi): Pick<
+export function createUiActions(
+  api: PrinterStoreApi,
+): Pick<
   PrinterStore,
-  | 'startAutoReconnect'
-  | 'stopAutoReconnect'
-  | 'setShowPrinter'
-  | 'setShowSettings'
-  | 'setActiveTab'
-  | 'setJogDistance'
-  | 'setError'
-  | 'dismissAlert'
-  | 'setSuppressPrinterAlerts'
+  | "startAutoReconnect"
+  | "stopAutoReconnect"
+  | "setShowPrinter"
+  | "setShowSettings"
+  | "setActiveTab"
+  | "setJogDistance"
+  | "setError"
+  | "dismissAlert"
+  | "setSuppressPrinterAlerts"
 > {
   const { get, set } = api;
 
@@ -29,6 +31,8 @@ export function createUiActions(api: PrinterStoreApi): Pick<
 
       autoReconnectAttempts = 0;
       set({ reconnecting: true });
+
+      const reconnectInterval = () => getDuetPrefs().reconnectInterval ?? 5000;
 
       const attempt = () => {
         const currentPrefs = getDuetPrefs();
@@ -46,14 +50,20 @@ export function createUiActions(api: PrinterStoreApi): Pick<
 
         autoReconnectAttempts++;
         if (!unlimitedRetries && autoReconnectAttempts > maxRetries) {
-          set({ error: `Auto-reconnect failed after ${maxRetries} attempts`, reconnecting: false });
+          set({
+            error: `Auto-reconnect failed after ${maxRetries} attempts`,
+            reconnecting: false,
+          });
           autoReconnectTimer = null;
           autoReconnectAttempts = 0;
           return;
         }
 
-        set({ error: `Reconnecting... attempt ${autoReconnectAttempts}/${unlimitedRetries ? 'unlimited' : maxRetries}` });
-        state.connect()
+        set({
+          error: `Reconnecting... attempt ${autoReconnectAttempts}/${unlimitedRetries ? "unlimited" : maxRetries}`,
+        });
+        state
+          .connect()
           .then(() => {
             if (get().connected) {
               autoReconnectTimer = null;
@@ -68,7 +78,7 @@ export function createUiActions(api: PrinterStoreApi): Pick<
           });
       };
 
-      autoReconnectTimer = setTimeout(attempt, prefs.reconnectInterval ?? 5000);
+      autoReconnectTimer = setTimeout(attempt, reconnectInterval());
     },
 
     stopAutoReconnect: () => {
@@ -85,7 +95,11 @@ export function createUiActions(api: PrinterStoreApi): Pick<
     setActiveTab: (tab) => set({ activeTab: tab }),
     setJogDistance: (distance) => set({ jogDistance: distance }),
     setError: (error) => set({ error }),
-    dismissAlert: (id) => set((state) => ({ printerAlerts: state.printerAlerts.filter((a) => a.id !== id) })),
-    setSuppressPrinterAlerts: (suppress: boolean) => set({ suppressPrinterAlerts: suppress }),
+    dismissAlert: (id) =>
+      set((state) => ({
+        printerAlerts: state.printerAlerts.filter((a) => a.id !== id),
+      })),
+    setSuppressPrinterAlerts: (suppress: boolean) =>
+      set({ suppressPrinterAlerts: suppress }),
   };
 }

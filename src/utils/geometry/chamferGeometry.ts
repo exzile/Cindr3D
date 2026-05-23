@@ -10,20 +10,24 @@
  * Used by both commitChamfer (permanent commit) and ChamferPreview (live
  * preview) so the preview matches the committed result exactly.
  */
-import * as THREE from 'three';
-import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
+import * as THREE from "three";
+import { ConvexGeometry } from "three/examples/jsm/geometries/ConvexGeometry.js";
 import {
   type PickedEdge,
   type ResolvedEdge,
   parseEdgeIds,
   computeEdgeCutGeometry,
-} from './edgeCutCore';
+} from "./edgeCutCore";
 
 // The chamfer module's public API names (commit + preview import these).
 export const parseChamferEdgeIds = parseEdgeIds;
 
 /** Mirrors Fusion 360's chamfer modes. */
-export type ChamferMode = 'equal-dist' | 'two-dist' | 'dist-angle' | 'three-face';
+export type ChamferMode =
+  | "equal-dist"
+  | "two-dist"
+  | "dist-angle"
+  | "three-face";
 
 /**
  * Corner type for multi-edge chamfer junctions.
@@ -31,7 +35,7 @@ export type ChamferMode = 'equal-dist' | 'two-dist' | 'dist-angle' | 'three-face
  * - 'miter': extend adjacent chamfer faces until they meet at a sharp line.
  * Mirrors Fusion SDK ChamferCornerTypes.
  */
-export type ChamferCornerType = 'patch' | 'miter';
+export type ChamferCornerType = "patch" | "miter";
 
 export interface ChamferParams {
   mode: ChamferMode;
@@ -52,14 +56,18 @@ export interface ChamferParams {
  *  - two-dist                → explicit second distance
  *  - dist-angle              → distance · tan(angle from face 1)
  *
- * When `isFlipped` is true, d1 and d2 are swapped before returning
- * (mirrors Fusion's TwoDistancesChamferEdgeSet.isFlipped /
- * DistanceAndAngleChamferEdgeSet.isFlipped).
+ * Flipping is applied by resolveChamferDistances(), which returns the final
+ * [d1, d2] pair for commit and replay.
  */
 const clampDeg = (a: number) => Math.max(1, Math.min(89, a));
-export function resolveChamferDistance2(p: Pick<ChamferParams, 'mode' | 'distance' | 'distance2' | 'angle' | 'isFlipped'>): number {
-  if (p.mode === 'two-dist') return p.distance2 ?? p.distance;
-  if (p.mode === 'dist-angle') {
+export function resolveChamferDistance2(
+  p: Pick<
+    ChamferParams,
+    "mode" | "distance" | "distance2" | "angle" | "isFlipped"
+  >,
+): number {
+  if (p.mode === "two-dist") return p.distance2 ?? p.distance;
+  if (p.mode === "dist-angle") {
     const a = clampDeg(p.angle ?? 45);
     return Math.max(0.01, p.distance * Math.tan((a * Math.PI) / 180));
   }
@@ -70,7 +78,12 @@ export function resolveChamferDistance2(p: Pick<ChamferParams, 'mode' | 'distanc
  * Return the resolved [d1, d2] pair, applying `isFlipped` if set.
  * Used by commitChamfer and replayEdgeCutFeature.
  */
-export function resolveChamferDistances(p: Pick<ChamferParams, 'mode' | 'distance' | 'distance2' | 'angle' | 'isFlipped'>): [number, number] {
+export function resolveChamferDistances(
+  p: Pick<
+    ChamferParams,
+    "mode" | "distance" | "distance2" | "angle" | "isFlipped"
+  >,
+): [number, number] {
   const d1 = p.distance;
   const d2 = resolveChamferDistance2(p);
   return p.isFlipped ? [d2, d1] : [d1, d2];
@@ -138,9 +151,9 @@ function buildChamferCutter(
 
   // Local corner triangle in the XY plane; extruded along +Z (the edge).
   const shape = new THREE.Shape();
-  shape.moveTo(0, 0);         // sharp corner, on the edge line
-  shape.lineTo(legX, 0);      // axis-X setback
-  shape.lineTo(0, legY);      // axis-Y setback
+  shape.moveTo(0, 0); // sharp corner, on the edge line
+  shape.lineTo(legX, 0); // axis-X setback
+  shape.lineTo(0, legY); // axis-Y setback
   shape.lineTo(0, 0);
 
   const prism = new THREE.ExtrudeGeometry(shape, {
@@ -194,8 +207,13 @@ function buildMiterCornerCutter(
   // distance or near-coplanar adjacent faces). CSG on a near-zero volume
   // cutter can throw or produce broken topology.
   const minClear = eps * 4;
-  if (s1A.distanceTo(V) < minClear || s2A.distanceTo(V) < minClear ||
-      s1B.distanceTo(V) < minClear || s2B.distanceTo(V) < minClear) return null;
+  if (
+    s1A.distanceTo(V) < minClear ||
+    s2A.distanceTo(V) < minClear ||
+    s1B.distanceTo(V) < minClear ||
+    s2B.distanceTo(V) < minClear
+  )
+    return null;
 
   // ConvexGeometry builds the convex hull of the five points. This is
   // geometrically the miter corner region to subtract: the wedge bounded
@@ -234,12 +252,12 @@ export function computeChamferGeometry(
   if (!(distance > 0)) return null;
   const d1 = distance;
   const d2 = distance2 && distance2 > 0 ? distance2 : distance;
-  const isMiter = (params?.cornerType as string | undefined) === 'miter';
+  const isMiter = (params?.cornerType as string | undefined) === "miter";
   return computeEdgeCutGeometry(
     srcGeo,
     edges,
     (re, eps) => buildChamferCutter(re, d1, d2, eps),
-    'chamfer',
+    "chamfer",
     fast,
     undefined,
     {

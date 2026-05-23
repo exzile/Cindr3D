@@ -26,6 +26,15 @@ interface FilletDialogProps {
   initialParams?: Record<string, unknown>;
 }
 
+function storedEdgeIds(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((id): id is string => typeof id === "string");
+  }
+  if (typeof value !== "string") return [];
+  if (value.includes("\u001f")) return value.split("\u001f").filter(Boolean);
+  return value.split(",").filter(Boolean);
+}
+
 function FilletDialogUI({
   open,
   selectedEdgeCount,
@@ -73,16 +82,12 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
     ? features.find((feature) => feature.id === editingFeatureId)
     : null;
   const params = editing?.params ?? {};
-  const existingEdgeIds =
-    typeof params.edgeIds === "string"
-      ? params.edgeIds.split(",").filter(Boolean)
-      : [];
+  const existingEdgeIds = storedEdgeIds(params.edgeIds);
 
   const handleConfirm = (nextParams: FilletParams) => {
     const edgeIds = filletEdgeIds.length > 0 ? filletEdgeIds : existingEdgeIds;
-    const edgeIdsStr = edgeIds.join(",");
     if (editing) {
-      updateFeatureParams(editing.id, { ...nextParams, edgeIds: edgeIdsStr });
+      updateFeatureParams(editing.id, { ...nextParams, edgeIds });
       renameFeature(editing.id, `Fillet (r=${nextParams.radius})`);
       replayEdgeCutFeature(editing.id);
     } else {
@@ -90,7 +95,7 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
         id: crypto.randomUUID(),
         name: `Fillet (r=${nextParams.radius})`,
         type: "fillet",
-        params: { ...nextParams, edgeIds: edgeIdsStr },
+        params: { ...nextParams, edgeIds },
         visible: true,
         suppressed: false,
         timestamp: Date.now(),
