@@ -332,7 +332,8 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
     // If the feature being moved is a parent of a fillet/chamfer, it can't
     // move past that downstream feature. If the feature IS a fillet/chamfer,
     // it can't move before its parent.
-    const clamped = Math.max(0, Math.min(newIndex, state.features.length - 1));
+    // Allow newIndex === features.length as "append at end" (Timeline end-drop zone passes this).
+    const clamped = Math.max(0, Math.min(newIndex, state.features.length));
 
     // Build dependency sets: features that must come BEFORE `moved`.
     const mustBeBefore = new Set<string>(); // ids that must appear before moved
@@ -364,7 +365,7 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
       if (mustBeBefore.has(state.features[i].id)) earliest = i + 1;
     }
     // Compute the latest valid index (all mustBeAfter must be at > this index).
-    let latest = state.features.length - 1;
+    let latest = state.features.length;
     for (let i = state.features.length - 1; i >= 0; i--) {
       if (mustBeAfter.has(state.features[i].id)) latest = i - 1;
     }

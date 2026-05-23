@@ -90,7 +90,9 @@ export function patternOnPath(mesh: THREE.Mesh, pathPoints: THREE.Vector3[], cou
       ? (targetLen - arcLens[seg]) / (arcLens[seg + 1] - arcLens[seg])
       : 0;
     const pos = pathPoints[seg].clone().lerp(pathPoints[Math.min(seg + 1, pathPoints.length - 1)], segT);
-    const tangent = pathPoints[Math.min(seg + 1, pathPoints.length - 1)].clone().sub(pathPoints[seg]).normalize();
+    const rawTangent = pathPoints[Math.min(seg + 1, pathPoints.length - 1)].clone().sub(pathPoints[seg]);
+    const tangentLen = rawTangent.length();
+    const tangent = tangentLen > 1e-9 ? rawTangent.divideScalar(tangentLen) : new THREE.Vector3(0, 1, 0);
     const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), tangent);
     const geom = mesh.geometry.clone();
     const matrix = new THREE.Matrix4().compose(pos, quat, new THREE.Vector3(1, 1, 1));

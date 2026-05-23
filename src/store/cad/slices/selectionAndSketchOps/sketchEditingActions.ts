@@ -48,6 +48,7 @@ export function createSketchEditingActions({ set, get }: CADSliceContext): Parti
     commitSketchRectPattern: () => {
       const { activeSketch, sketchRectPatternCountX: cx, sketchRectPatternCountY: cy, sketchRectPatternSpacingX: sx, sketchRectPatternSpacingY: sy } = get();
       if (!activeSketch || activeSketch.entities.length === 0) return;
+      get().pushUndo();
       const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
       const copies: SketchEntity[] = [];
       for (let row = 0; row < cy; row++) {
@@ -83,6 +84,7 @@ export function createSketchEditingActions({ set, get }: CADSliceContext): Parti
     commitSketchCircPattern: () => {
       const { activeSketch, sketchCircPatternCount: cnt, sketchCircPatternAngle: totalDeg } = get();
       if (!activeSketch || activeSketch.entities.length === 0) return;
+      get().pushUndo();
       const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
       let cx = 0, cy2 = 0, cz = 0, ptCount = 0;
       for (const ent of activeSketch.entities) {
@@ -141,6 +143,7 @@ export function createSketchEditingActions({ set, get }: CADSliceContext): Parti
     commitSketchPathPattern: () => {
       const { activeSketch, sketchPathPatternCount: cnt, sketchPathPatternPathEntityId: pathId, sketchPathPatternAlignment: alignment } = get();
       if (!activeSketch) return;
+      get().pushUndo();
       const pathEnt = activeSketch.entities.find((e) => e.id === pathId);
       if (!pathEnt || pathEnt.points.length < 2) {
         set({ statusMessage: 'Pattern on Path: select a path curve with at least 2 points' });
