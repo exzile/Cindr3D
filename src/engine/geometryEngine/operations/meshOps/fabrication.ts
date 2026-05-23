@@ -67,6 +67,7 @@ export function createWeb(
     const pos = ribMesh.geometry.attributes.position as THREE.BufferAttribute;
     const arr = pos.array as Float32Array;
     for (let i = 0; i < arr.length; i++) allVerts.push(arr[i]);
+    ribMesh.geometry.dispose();
   }
   const geom = new THREE.BufferGeometry();
   geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(allVerts), 3));
@@ -133,8 +134,10 @@ export function remesh(mesh: THREE.Mesh, mode: 'refine' | 'coarsen', iterations:
           newVerts.push(x.x, x.y, x.z, y.x, y.y, y.z, z.x, z.y, z.z);
         }
       }
+      const prevGeom = geom;
       geom = new THREE.BufferGeometry();
       geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(newVerts), 3));
+      prevGeom.dispose();
     }
     geom.computeVertexNormals();
     const result = new THREE.Mesh(geom, mesh.material);

@@ -209,7 +209,8 @@ export function sampleEntityPoints(e: SketchEntity, arcSamples = 8, axes: Sketch
       const cosR = Math.cos(rot);
       const sinR = Math.sin(rot);
       const sa = e.startAngle ?? 0;
-      const ea = e.endAngle ?? Math.PI;
+      let ea = e.endAngle ?? Math.PI;
+      if (ea <= sa) ea += 2 * Math.PI;
       const pts: Pt2[] = [];
       for (let i = 0; i <= arcSamples; i++) {
         const t = sa + ((ea - sa) * i) / arcSamples;

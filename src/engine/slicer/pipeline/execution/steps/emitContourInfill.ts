@@ -1117,6 +1117,7 @@ export function emitContourInfill(
         const wx = effTo.x + ux * infillWipeDistance, wy = effTo.y + uy * infillWipeDistance;
         gcode.push(`G0 X${wx.toFixed(3)} Y${wy.toFixed(3)} F${(speed * 60).toFixed(0)} ; Infill wipe`);
         emitter.currentX = wx; emitter.currentY = wy;
+        emitter.extrudedSinceRetract = 0;
       }
     }
     } // end pass loop (per-feature top-skin split)

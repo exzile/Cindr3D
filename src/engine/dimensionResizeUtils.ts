@@ -180,8 +180,14 @@ export function applyDimensionResize(
 
     if (entity.id !== entityId0 && entity.id !== entityId1) return entity;
 
-    if (dimension.type === 'radial' || dimension.type === 'diameter') {
+    if (dimension.type === 'radial' || dimension.type === 'diameter' || dimension.type === 'linear-diameter') {
       return entity.id === entityId0 ? resizeCircle(entity) : entity;
+    }
+    if (dimension.type === 'ellipse-major') {
+      return entity.id === entityId0 ? { ...entity, majorRadius: newValue } : entity;
+    }
+    if (dimension.type === 'ellipse-minor') {
+      return entity.id === entityId0 ? { ...entity, minorRadius: newValue } : entity;
     }
 
     // Angular / arc-length: geometry unchanged, dimension is measurement only.
@@ -199,7 +205,7 @@ export function applyDimensionResize(
       const axis: 'x' | 'y' = dimension.orientation === 'vertical' ? 'y' : 'x';
       const avgOnAxis = (ent: SketchEntity) => {
         const pts = ent.points.map(toLocal);
-        return pts.reduce((s, p) => s + p[axis], 0) / pts.length;
+        return pts.length > 0 ? pts.reduce((s, p) => s + p[axis], 0) / pts.length : 0;
       };
       const anchor = avgOnAxis(anchorEnt);
       const current = avgOnAxis(entity);

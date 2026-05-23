@@ -29,11 +29,13 @@ export function createUiActions(api: PrinterStoreApi): Pick<
 
       autoReconnectAttempts = 0;
       set({ reconnecting: true });
-      const interval = prefs.reconnectInterval ?? 5000;
-      const maxRetries = prefs.maxRetries ?? 10;
-      const unlimitedRetries = maxRetries === 0;
 
       const attempt = () => {
+        const currentPrefs = getDuetPrefs();
+        const interval = currentPrefs.reconnectInterval ?? 5000;
+        const maxRetries = currentPrefs.maxRetries ?? 10;
+        const unlimitedRetries = maxRetries === 0;
+
         const state = get();
         if (state.connected || !state.config.hostname) {
           autoReconnectTimer = null;
@@ -66,7 +68,7 @@ export function createUiActions(api: PrinterStoreApi): Pick<
           });
       };
 
-      autoReconnectTimer = setTimeout(attempt, interval);
+      autoReconnectTimer = setTimeout(attempt, prefs.reconnectInterval ?? 5000);
     },
 
     stopAutoReconnect: () => {

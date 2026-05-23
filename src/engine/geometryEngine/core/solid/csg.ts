@@ -256,6 +256,7 @@ function _bvhUnion(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.Buff
     nonIndexedUnion.computeVertexNormals();
   } catch (err) {
     nonIndexedUnion.dispose();
+    if (nonIndexedUnion !== result.geometry) result.geometry.dispose();
     throw err;
   }
   if (nonIndexedUnion !== result.geometry) result.geometry.dispose();

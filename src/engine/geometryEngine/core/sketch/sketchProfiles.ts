@@ -467,7 +467,8 @@ export function entitiesToShape(
           const c = project(entity.points[0]);
           const rot = entity.rotation ?? 0;
           const sa = entity.startAngle ?? 0;
-          const ea = entity.endAngle ?? Math.PI;
+          let ea = entity.endAngle ?? Math.PI;
+          if (ea <= sa) ea += Math.PI * 2;
           if (!hasContent) {
             const cos = Math.cos(rot);
             const sin = Math.sin(rot);

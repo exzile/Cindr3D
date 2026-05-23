@@ -167,7 +167,7 @@ export class OctoPrintService {
 
   async listFiles(): Promise<PrinterFile[]> {
     const data = await this.request<OctoFilesResponse>('/files');
-    return data.files.map((f) => ({
+    return (data.files ?? []).map((f) => ({
       name: f.name,
       path: f.path || f.name,
       type: f.type,

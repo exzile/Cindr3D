@@ -89,7 +89,7 @@ interface ComputeMsg {
 
   srcGeo.dispose();
 
-  if (!result || result.attributes.position.count === 0) {
+  if (!result || !result.attributes.position || result.attributes.position.count === 0) {
     result?.dispose();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (self as any).postMessage({ type: 'result', requestId, positions: null });
