@@ -7,7 +7,7 @@ import { recomputeBooleanDependents, runBoolean } from './featureBooleanUtils';
 import { errorMessage } from '../../../../utils/errorHandling';
 import { parseFilletEdgeIds, computeFilletGeometry, type FilletCommitParams } from '../../../../utils/geometry/filletGeometry';
 import { parseChamferEdgeIds, computeChamferGeometry, resolveChamferDistances } from '../../../../utils/geometry/chamferGeometry';
-import { applyEdgeCut, cacheEdgeCutSource, getCachedEdgeCutSource, logEdgeCutSummary } from './applyEdgeCut';
+import { applyEdgeCut, getCachedEdgeCutSource, logEdgeCutSummary } from './applyEdgeCut';
 import { liveBodyMeshes, bodyGeometryCache } from '../../../../store/meshRegistry';
 
 function getBooleanParentIds(feature: Feature): string[] {
