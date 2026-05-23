@@ -26,6 +26,10 @@ Always `getSketchAxes(sketch)` → `t1`/`t2` dot products. Raw `p.x, p.y` only w
 
 `polygon-clipping` (npm) for 2D planar arrangement; Clipper2 WASM is faster fast-path with polygon-clipping fallback. `computeAtomicRegions(shapes)` in `core/sketch/profileGeometry.ts` splits closed 2D shapes into atomic regions.
 
+## 3D CSG
+
+Primary engine: `manifold-3d` npm WASM package — guaranteed-manifold output, no soup repair. Fallback: `three-bvh-csg` (used when Manifold hasn't loaded or throws on non-manifold source). API: `csgSubtract/csgUnion/csgIntersect` in `engine/geometryEngine/core/solid/csg.ts`. Singleton loaded via `core/solid/manifoldWasm.ts` (`initManifold()` async at app startup + in `edgeOpWorker.ts`). See `csg_edge_cut.md` for full details.
+
 ## Persistence caches
 
 `store/cad/persistence.ts` exports `serializeFeature`/`deserializeFeature` with two `WeakMap`s: per-geometry mesh-data cache + per-Feature serialized cache. `cadStore.onRehydrateStorage` waits for `componentStore.persist.onFinishHydration` to prevent double-add on refresh.
