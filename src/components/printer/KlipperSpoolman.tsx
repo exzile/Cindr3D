@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { errorMessage } from '../../utils/errorHandling';
 import { WifiOff, Package, RefreshCw, ExternalLink, AlertCircle } from 'lucide-react';
@@ -14,7 +14,7 @@ export default function KlipperSpoolman() {
   const [loading, setLoading] = useState(false);
   const [newSpoolId, setNewSpoolId] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [service] = useState(() => connected ? new MoonrakerService(config.hostname) : null);
+  const service = useMemo(() => connected ? new MoonrakerService(config.hostname) : null, [connected, config.hostname]);
 
   const run = useAsyncAction(setLoading, setError, 'Failed to load spool — ensure [spoolman] is in moonraker.conf');
   const refresh = useCallback(async () => {

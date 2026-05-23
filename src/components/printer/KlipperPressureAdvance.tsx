@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { WifiOff, TrendingUp, Play, Settings, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { errorMessage } from '../../utils/errorHandling';
 import { usePrinterStore } from '../../store/printerStore';
@@ -17,7 +17,7 @@ export default function KlipperPressureAdvance() {
   const [printingTower, setPrintingTower] = useState(false);
   const [applied, setApplied] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [service] = useState(() => connected ? new MoonrakerService(config.hostname) : null);
+  const service = useMemo(() => connected ? new MoonrakerService(config.hostname) : null, [connected, config.hostname]);
 
   const handlePrintTower = useCallback(async () => {
     if (!service) return;

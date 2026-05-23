@@ -307,7 +307,7 @@ export function createSketchEditingActions({ set, get }: CADSliceContext): Parti
           y: cy2 + (p.y - cy2) * factor,
           z: cz + (p.z - cz) * factor,
         })),
-        radius: e.radius !== undefined ? e.radius * Math.abs(factor) : undefined,
+        radius: e.radius !== undefined ? Math.abs(e.radius * factor) : undefined,
       }));
       set({
         activeSketch: { ...activeSketch, entities: scaled },

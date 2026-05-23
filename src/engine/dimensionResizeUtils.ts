@@ -72,6 +72,7 @@ export function applyDimensionResize(
     const dir = end.clone().sub(start);
     const len = dir.length();
     if (len < 1e-8) return entity;
+    if (newValue <= 0) return entity;
     const nextEnd = start.clone().add(dir.multiplyScalar(newValue / len));
     return {
       ...entity,

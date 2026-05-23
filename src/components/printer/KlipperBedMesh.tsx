@@ -72,7 +72,7 @@ export default function KlipperBedMesh() {
   const [selectedProfile, setSelectedProfile] = useState('');
   const [saveAs, setSaveAs] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [service] = useState(() => connected ? new MoonrakerService(config.hostname) : null);
+  const service = useMemo(() => connected ? new MoonrakerService(config.hostname) : null, [connected, config.hostname]);
 
   const run = useAsyncAction(setLoading, setError, 'Failed to load bed mesh — ensure [bed_mesh] is in printer.cfg');
   const runCalibrate = useAsyncAction(setCalibrating, setError, 'Calibration failed');

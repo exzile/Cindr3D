@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { errorMessage } from '../../utils/errorHandling';
 import { RefreshCw, WifiOff, Layers, X } from 'lucide-react';
@@ -13,7 +13,7 @@ export default function KlipperExcludeObject() {
   const [status, setStatus] = useState<MoonrakerExcludeObjectStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [service] = useState(() => connected ? new MoonrakerService(config.hostname) : null);
+  const service = useMemo(() => connected ? new MoonrakerService(config.hostname) : null, [connected, config.hostname]);
 
   const run = useAsyncAction(setLoading, setError, 'Failed to load object list');
   const refresh = useCallback(async () => {
