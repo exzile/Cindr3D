@@ -84,7 +84,9 @@ function FilletDialogUI({ open, selectedEdgeCount, edgeIds, onRemoveEdge, onClos
   const setFilletPickMode = useCADStore((s) => s.setFilletPickMode);
   const [radius, setRadius] = useState(() => (initialParams?.radius as number | undefined) ?? filletLiveRadius);
   // Sync gizmo drag and face-pick auto-radius → dialog input.
-  useEffect(() => { setRadius(filletLiveRadius); }, [filletLiveRadius]);
+  // Guard: when editing an existing fillet (initialParams set), don't let the
+  // gizmo's current live radius overwrite the stored params on mount/drag.
+  useEffect(() => { if (!initialParams) setRadius(filletLiveRadius); }, [filletLiveRadius, initialParams]);
   const [mode, setMode] = useState<FilletMode>(() => (initialParams?.mode as FilletMode | undefined) ?? 'constant');
 
   // When full-round mode is selected, automatically switch to face-pick mode.

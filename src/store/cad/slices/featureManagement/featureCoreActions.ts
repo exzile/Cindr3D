@@ -9,6 +9,7 @@ import type { CADState } from '../../state';
 import type { DesignConfiguration } from '../../state/coreState';
 import { recomputeBooleanDependents } from './featureBooleanUtils';
 import { evictEdgeCutSource } from './applyEdgeCut';
+import { bodyGeometryCache, bodyIdGeometryCache } from '../../../../store/meshRegistry';
 
 const BASE_CONFIGURATION_ID = 'default';
 
@@ -221,6 +222,9 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
     const removedSketchId = target?.type === 'sketch' ? target.sketchId : null;
     // Evict the pre-fillet/chamfer source geometry cache to prevent session-long leaks.
     if (target?.type === 'fillet' || target?.type === 'chamfer') evictEdgeCutSource(id);
+    // Evict the persistent geometry cache entry for this feature (keyed by featureId).
+    bodyGeometryCache.get(id)?.dispose();
+    bodyGeometryCache.delete(id);
 
     // Clean up the body that owned this feature when it was the sole occupant.
     // Without this, deleting a "new-body" extrude leaves an orphaned body entry
@@ -229,6 +233,9 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
       const componentStore = useComponentStore.getState();
       const body = componentStore.bodies[target.bodyId];
       if (body && body.featureIds.length > 0 && body.featureIds.every((fid) => fid === id)) {
+        // Evict the bodyId-keyed geometry cache entry when the body is fully removed.
+        bodyIdGeometryCache.get(target.bodyId)?.dispose();
+        bodyIdGeometryCache.delete(target.bodyId);
         componentStore.removeBody(target.bodyId);
       }
     }

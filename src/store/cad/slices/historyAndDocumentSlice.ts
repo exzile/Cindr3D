@@ -8,6 +8,7 @@ import type { CADSliceContext } from '../sliceContext';
 import type { CADState } from '../state';
 import type { DesignConfiguration } from '../state/coreState';
 import { clearAllEdgeCutSources, evictEdgeCutSource } from './featureManagement/applyEdgeCut';
+import { bodyGeometryCache, bodyIdGeometryCache } from '../../meshRegistry';
 
 type HistorySketch = Sketch & {
   planeNormal: [number, number, number] | null;
@@ -446,6 +447,10 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
   // ── UTL2 — Save / Load ───────────────────────────────────────────────────
   newDocument: () => {
     clearAllEdgeCutSources();
+    for (const geo of bodyGeometryCache.values()) geo.dispose();
+    bodyGeometryCache.clear();
+    for (const geo of bodyIdGeometryCache.values()) geo.dispose();
+    bodyIdGeometryCache.clear();
     set({
       // Geometry content
       features: [],
@@ -505,6 +510,10 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
 
   loadFromFile: (json: string) => {
     clearAllEdgeCutSources();
+    for (const geo of bodyGeometryCache.values()) geo.dispose();
+    bodyGeometryCache.clear();
+    for (const geo of bodyIdGeometryCache.values()) geo.dispose();
+    bodyIdGeometryCache.clear();
     try {
       const parsed = JSON.parse(json) as {
         version: number;

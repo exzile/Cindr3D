@@ -544,31 +544,35 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
       return;
     }
 
-    // Build new geometry with updated params
+    // Build new geometry with updated params.
+    // try/finally guarantees srcGeo is disposed even if the compute function throws.
     let newGeo: THREE.BufferGeometry | null = null;
-    if (feature.type === 'fillet') {
-      const radius = (params.radius as number) ?? 2;
-      const fp: FilletCommitParams = {
-        mode: (params.mode as FilletCommitParams['mode']) ?? 'constant',
-        chordLength: params.chordLength as number | undefined,
-        startRadius: params.startRadius as number | undefined,
-        endRadius: params.endRadius as number | undefined,
-        propagate: params.propagate as boolean | undefined,
-      };
-      const parsedEdges = parseFilletEdgeIds(edgeIds);
-      if (parsedEdges) newGeo = computeFilletGeometry(srcGeo, parsedEdges.edges, radius, 0, false, fp);
-    } else {
-      const parsedEdges = parseChamferEdgeIds(edgeIds);
-      const [d1, d2] = resolveChamferDistances({
-        mode: (params.mode as string ?? 'equal-dist') as import('../../../../utils/geometry/chamferGeometry').ChamferMode,
-        distance: (params.distance as number) ?? 2,
-        distance2: params.distance2 as number | undefined,
-        angle: params.angle as number | undefined,
-        isFlipped: params.isFlipped as boolean | undefined,
-      });
-      if (parsedEdges) newGeo = computeChamferGeometry(srcGeo, parsedEdges.edges, d1, d2);
+    try {
+      if (feature.type === 'fillet') {
+        const radius = (params.radius as number) ?? 2;
+        const fp: FilletCommitParams = {
+          mode: (params.mode as FilletCommitParams['mode']) ?? 'constant',
+          chordLength: params.chordLength as number | undefined,
+          startRadius: params.startRadius as number | undefined,
+          endRadius: params.endRadius as number | undefined,
+          propagate: params.propagate as boolean | undefined,
+        };
+        const parsedEdges = parseFilletEdgeIds(edgeIds);
+        if (parsedEdges) newGeo = computeFilletGeometry(srcGeo, parsedEdges.edges, radius, 0, false, fp);
+      } else {
+        const parsedEdges = parseChamferEdgeIds(edgeIds);
+        const [d1, d2] = resolveChamferDistances({
+          mode: (params.mode as string ?? 'equal-dist') as import('../../../../utils/geometry/chamferGeometry').ChamferMode,
+          distance: (params.distance as number) ?? 2,
+          distance2: params.distance2 as number | undefined,
+          angle: params.angle as number | undefined,
+          isFlipped: params.isFlipped as boolean | undefined,
+        });
+        if (parsedEdges) newGeo = computeChamferGeometry(srcGeo, parsedEdges.edges, d1, d2);
+      }
+    } finally {
+      srcGeo.dispose();
     }
-    srcGeo.dispose();
 
     if (!newGeo) {
       get().setStatusMessage(`${feature.type}: CSG failed`);
