@@ -385,7 +385,7 @@ function packCell(cx: number, cy: number, cz: number): number {
   const ax = (cx + CELL_BIAS) & CELL_MASK;
   const ay = (cy + CELL_BIAS) & CELL_MASK;
   const az = (cz + CELL_BIAS) & CELL_MASK;
-  return ax + ay * (1 << CELL_BITS) + az * (1 << (CELL_BITS * 2));
+  return ax + ay * (1 << CELL_BITS) + az * 2 ** (CELL_BITS * 2);
 }
 
 /** Build a spatial index mapping quantized vertex positions → triangle indices. */

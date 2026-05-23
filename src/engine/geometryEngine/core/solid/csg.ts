@@ -104,9 +104,19 @@ function _toManifold(geo: THREE.BufferGeometry): any | null {
  * Returns non-indexed geometry with per-face normals (same as legacy path).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function _fromManifold(result: any): THREE.BufferGeometry {
+function _fromManifold(result: any): THREE.BufferGeometry | null {
+  // An empty Manifold result (e.g. non-overlapping intersect or fully-enclosed subtract)
+  // returns zero-triangle mesh data. Treat it as null so callers fall back to BVH.
+  if (typeof result.isEmpty === 'function' && result.isEmpty()) {
+    if (typeof result.delete === 'function') result.delete();
+    return null;
+  }
   const mesh = result.getMesh() as { vertProperties: Float32Array; triVerts: Uint32Array };
   const { vertProperties, triVerts } = mesh;
+  if (!vertProperties?.length || !triVerts?.length) {
+    if (typeof result.delete === 'function') result.delete();
+    return null;
+  }
 
   // Build indexed geometry from manifold's flat arrays
   const indexed = new THREE.BufferGeometry();
@@ -241,13 +251,15 @@ function _bvhUnion(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.Buff
     if (typeof brushB.geometry?.disposeBoundsTree === 'function') brushB.geometry.disposeBoundsTree();
     throw err;
   }
+  const nonIndexedUnion = result.geometry.index ? result.geometry.toNonIndexed() : result.geometry;
   try {
-    result.geometry.computeVertexNormals();
+    nonIndexedUnion.computeVertexNormals();
   } catch (err) {
-    result.geometry.dispose();
+    nonIndexedUnion.dispose();
     throw err;
   }
-  return result.geometry;
+  if (nonIndexedUnion !== result.geometry) result.geometry.dispose();
+  return nonIndexedUnion;
 }
 
 function _bvhIntersect(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.BufferGeometry {
@@ -265,13 +277,15 @@ function _bvhIntersect(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.
     if (typeof brushB.geometry?.disposeBoundsTree === 'function') brushB.geometry.disposeBoundsTree();
     throw err;
   }
+  const nonIndexedIntersect = result.geometry.index ? result.geometry.toNonIndexed() : result.geometry;
   try {
-    result.geometry.computeVertexNormals();
+    nonIndexedIntersect.computeVertexNormals();
   } catch (err) {
-    result.geometry.dispose();
+    nonIndexedIntersect.dispose();
     throw err;
   }
-  return result.geometry;
+  if (nonIndexedIntersect !== result.geometry) result.geometry.dispose();
+  return nonIndexedIntersect;
 }
 
 // ─── Public API (identical signatures to before) ─────────────────────────────

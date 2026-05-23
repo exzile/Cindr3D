@@ -438,6 +438,12 @@ export function createFeatureMeshActions({ set, get }: CADSliceContext): Partial
       const srcMesh = feature.mesh;
       const geom = srcMesh.geometry.clone();
       geom.applyMatrix4(M);
+      // Topology polylines are in the pre-transform local frame; delete them so
+      // the lazy picker re-extracts from the new world-baked vertex positions.
+      delete geom.userData.topology;
+      delete geom.userData.displayTopology;
+      delete geom.userData.ghostTopology;
+      delete geom.userData._topoV;
       geom.computeVertexNormals();
       const newMesh = new THREE.Mesh(geom, srcMesh.material);
       newMesh.userData = { ...srcMesh.userData };

@@ -423,12 +423,14 @@ export function entitiesToShape(
       case 'arc': {
         if (entity.points.length >= 1 && entity.radius) {
           const c = project(entity.points[0]);
+          const sa = entity.startAngle ?? 0;
+          let ea = entity.endAngle ?? Math.PI;
+          if (ea <= sa) ea += Math.PI * 2;
           if (!hasContent) {
-            const sa = entity.startAngle || 0;
             shape.moveTo(c.u + Math.cos(sa) * entity.radius, c.v + Math.sin(sa) * entity.radius);
             hasContent = true;
           }
-          shape.absarc(c.u, c.v, entity.radius, entity.startAngle || 0, entity.endAngle || Math.PI, false);
+          shape.absarc(c.u, c.v, entity.radius, sa, ea, false);
         }
         break;
       }

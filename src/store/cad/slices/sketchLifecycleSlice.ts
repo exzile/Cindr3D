@@ -209,6 +209,8 @@ export function createSketchLifecycleSlice({ set, get }: CADSliceContext) {
       cameraTargetQuaternion: targetQuat,
       cameraTargetOrbit: origin,
       statusMessage: `Editing ${sketch.name}${isCustom ? ' on face' : ` on ${sketch.plane} plane`}`,
+      selectedEntityIds: [],
+      constraintSelection: [],
       // CORR-6: restore per-sketch display flags (fallback to global defaults if undefined)
       ...(sketch.arePointsShown !== undefined ? { showSketchPoints: sketch.arePointsShown } : {}),
       ...(sketch.areProfilesShown !== undefined ? { showSketchProfile: sketch.areProfilesShown } : {}),
@@ -301,10 +303,15 @@ export function createSketchLifecycleSlice({ set, get }: CADSliceContext) {
 
   replaceSketchEntities: (entities) => {
     const { activeSketch, sketches } = get();
-    if (activeSketch) {
-      const nextSketch = { ...activeSketch, entities };
-      set({ activeSketch: nextSketch, sketches: upsertSketch(sketches, nextSketch) });
-    }
+    if (!activeSketch) return;
+    const liveIds = new Set(entities.map((e) => e.id));
+    const nextSketch = {
+      ...activeSketch,
+      entities,
+      constraints: activeSketch.constraints?.filter((c) => c.entityIds.every((id) => liveIds.has(id))) ?? [],
+      dimensions: activeSketch.dimensions?.filter((d) => d.entityIds.every((id) => liveIds.has(id.split('::')[0]))) ?? [],
+    };
+    set({ activeSketch: nextSketch, sketches: upsertSketch(sketches, nextSketch) });
   },
 
   cycleEntityLinetype: (entityId) => {

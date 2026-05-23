@@ -287,9 +287,9 @@ export function buildExtrudeFeatureMesh(
     } finally {
       gPos.dispose();
       gNeg.dispose();
+      meshPos.geometry.dispose();
+      meshNeg.geometry.dispose();
     }
-    meshPos.geometry.dispose();
-    meshNeg.geometry.dispose();
     const result = new THREE.Mesh(merged, BODY_MATERIAL);
     result.castShadow = true;
     result.receiveShadow = true;

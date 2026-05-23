@@ -149,8 +149,9 @@ function createArc(
 ): THREE.Line {
   const centerPoint = entity.points[0];
   const radius = entity.radius || 1;
-  const startAngle = entity.startAngle || 0;
-  const endAngle = entity.endAngle || Math.PI;
+  const startAngle = entity.startAngle ?? 0;
+  let endAngle = entity.endAngle ?? Math.PI;
+  if (endAngle <= startAngle) endAngle += Math.PI * 2;
   const segments = 32;
   const center = new THREE.Vector3(centerPoint.x, centerPoint.y, centerPoint.z);
   const { t1, t2 } = axes;

@@ -372,8 +372,12 @@ export function createSketchEditingActions({ set, get }: CADSliceContext): Parti
         ...e,
         id: crypto.randomUUID(),
         points: e.points.map(mirrorPt),
-        startAngle: e.startAngle !== undefined ? -e.endAngle! : undefined,
-        endAngle: e.endAngle !== undefined ? -e.startAngle! : undefined,
+        startAngle: (e.startAngle !== undefined && e.endAngle !== undefined)
+          ? (sketchMirrorAxis === 'vertical' ? Math.PI - e.endAngle : -e.endAngle)
+          : undefined,
+        endAngle: (e.startAngle !== undefined && e.endAngle !== undefined)
+          ? (sketchMirrorAxis === 'vertical' ? Math.PI - e.startAngle : -e.startAngle)
+          : undefined,
       }));
       set({
         activeSketch: { ...activeSketch, entities: [...activeSketch.entities, ...mirrored] },
