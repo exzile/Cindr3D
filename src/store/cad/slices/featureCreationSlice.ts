@@ -7,7 +7,9 @@ import { placeToolFeatureAsync, type BodyBooleanOp } from './featureManagement/b
 import { createOccPlaneFrameFromSketch } from '../../../engine/occ/plane';
 import { getOccSync } from '../../../engine/occ/loader';
 import { occLoftWithInstance } from '../../../engine/occ/ops/loft';
+import { occSweepFromPathWireWithInstance } from '../../../engine/occ/ops/sweep';
 import type { SketchProfile } from '../../../engine/occ/ops/sketchToWire';
+import { sketchEntitiesToWire } from '../../../engine/occ/sketchEntityToWire';
 import { globalBRepBodyRegistry } from '../../../engine/occ/globalRegistry';
 import { tessellateWithInstance, tessellationToGeometry } from '../../../engine/occ/tessellate';
 import { attachTessellationToMesh } from '../../../engine/occ/picking';
@@ -90,9 +92,71 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
       return;
     }
     get().pushUndo();
-    const mesh = GeometryEngine.sweepSketchInternal(profileSketch, pathSketch, sweepBodyKind === 'surface');
+    const featureId = crypto.randomUUID();
+
+    // OCC path: build an exact BRep solid sweep for non-surface, new-body solids.
+    // Uses sketchEntitiesToWire for the path so open paths (lines/arcs) are handled
+    // correctly — sketchProfileToWires would wrongly close an open path.
+    let mesh: THREE.Mesh | null = null;
+    if (sweepBodyKind === 'solid') {
+      const occ = getOccSync();
+      if (occ) {
+        try {
+          const profileShapes = GeometryEngine.sketchToProfileShapesFlat(profileSketch);
+          const firstShape = profileShapes[0];
+          if (firstShape) {
+            const sketchProfile: SketchProfile = {
+              outer: firstShape.getPoints(96),
+              holes: firstShape.holes.map((h) => h.getPoints(96)).filter((pts) => pts.length >= 3),
+            };
+            const profileFrame = createOccPlaneFrameFromSketch(profileSketch);
+            const pathFrame = createOccPlaneFrameFromSketch(pathSketch);
+            const pathWire = sketchEntitiesToWire(occ.oc, pathSketch.entities, pathFrame);
+            if (pathWire) {
+              // Guide wire: build from guide rail sketch if provided
+              let guideWire: unknown | undefined;
+              if (sweepGuideRailId) {
+                const guideSketch = get().sketches.find((s) => s.id === sweepGuideRailId);
+                if (guideSketch) {
+                  const guideFrame = createOccPlaneFrameFromSketch(guideSketch);
+                  guideWire = sketchEntitiesToWire(occ.oc, guideSketch.entities, guideFrame) ?? undefined;
+                }
+              }
+              const occBody = occSweepFromPathWireWithInstance(occ.oc, sketchProfile, profileFrame, pathWire, {
+                id: featureId,
+                sourceFeatureId: featureId,
+                orientation: sweepOrientation === 'default' ? 'perpendicular' : sweepOrientation as 'perpendicular' | 'frenet' | 'horizontal' | 'vertical',
+                guideWire,
+              });
+              pathWire.delete();
+              if (guideWire) (guideWire as { delete(): void }).delete();
+              globalBRepBodyRegistry.add(occBody);
+              const tess = tessellateWithInstance(occ.oc, occBody);
+              const geo = tessellationToGeometry(tess);
+              const mat = new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide });
+              const occMesh = new THREE.Mesh(geo, mat);
+              attachTessellationToMesh(occMesh, tess, occBody.id);
+              occMesh.userData.pickable = true;
+              occMesh.userData.featureId = featureId;
+              occMesh.castShadow = true;
+              occMesh.receiveShadow = true;
+              mesh = occMesh;
+            }
+          }
+        } catch (err) {
+          console.warn(`[commitSweep] OCC path failed (${errorMessage(err, 'unknown')}); using CSG fallback`);
+          mesh = null;
+        }
+      }
+    }
+
+    // CSG fallback for surface sweeps or when OCC fails/is not loaded.
+    if (!mesh) {
+      mesh = GeometryEngine.sweepSketchInternal(profileSketch, pathSketch, sweepBodyKind === 'surface');
+    }
+
     const feature: Feature = {
-      id: crypto.randomUUID(),
+      id: featureId,
       name: `${sweepBodyKind === 'surface' ? 'Surface ' : ''}Sweep ${features.filter((f) => f.type === 'sweep').length + 1}`,
       type: 'sweep',
       sketchId: sweepProfileSketchId,

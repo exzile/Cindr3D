@@ -157,3 +157,89 @@ export function occSweepWithInstance(
     sourceFeatureId: options.sourceFeatureId,
   });
 }
+
+/**
+ * Like occSweepWithInstance but accepts a pre-built path wire (OCC TopoDS_Wire).
+ * Use this from commit actions where the path sketch is an open curve whose
+ * entities have been converted via sketchEntitiesToWire — sketchProfileToWires
+ * would incorrectly close an open path back to the start point.
+ */
+export function occSweepFromPathWireWithInstance(
+  oc: OcctRaw,
+  profile: SketchProfile,
+  profileFrame: OccPlaneFrame,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pathWire: any,
+  options: Omit<OccSweepOptions, 'guideRail' | 'guideRailFrame'> & {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    guideWire?: any;
+  } = {},
+): BRepBody {
+  const occ = oc as OccSweepApi;
+
+  const profileWires = sketchProfileToWires(oc, profile, profileFrame);
+  if (!profileWires) throw new Error('[occSweep] failed to build profile wires');
+
+  const useAdvanced =
+    options.guideWire !== undefined ||
+    (options.orientation !== undefined && options.orientation !== 'perpendicular');
+
+  let resultShape: unknown;
+
+  if (!useAdvanced) {
+    const profileFace = wireToFace(oc, profileWires.outerWire, profileWires.holeWires);
+    profileWires.outerWire.delete();
+    for (const hw of profileWires.holeWires) hw.delete();
+    if (!profileFace) throw new Error('[occSweep] failed to build profile face');
+
+    const pipe = new occ.BRepOffsetAPI_MakePipe_1(pathWire, profileFace);
+    const progress = new occ.Message_ProgressRange_1();
+    try {
+      pipe.Build(progress);
+      resultShape = pipe.Shape();
+    } finally {
+      progress.delete?.();
+      pipe.delete();
+      profileFace.delete();
+    }
+  } else {
+    const pipeShell = new occ.BRepOffsetAPI_MakePipeShell_1(pathWire);
+
+    if (options.orientation === 'frenet') {
+      pipeShell.SetMode_2(true);
+    } else if (options.orientation === 'horizontal') {
+      const hDir = new occ.gp_Dir_4(0, 1, 0);
+      try { pipeShell.SetMode_3(hDir); } catch { pipeShell.SetMode_2(true); }
+      hDir.delete();
+    } else if (options.orientation === 'vertical') {
+      const vDir = new occ.gp_Dir_4(0, 0, 1);
+      try { pipeShell.SetMode_3(vDir); } catch { pipeShell.SetMode_2(true); }
+      vDir.delete();
+    }
+
+    pipeShell.SetTolerance(1e-4, 1e-4, 1e-6);
+    pipeShell.Add_2(profileWires.outerWire, false, true);
+
+    if (options.guideWire) {
+      pipeShell.Add_2(options.guideWire, true, true);
+    }
+
+    const progress = new occ.Message_ProgressRange_1();
+    try {
+      if (pipeShell.IsReady?.() === false) throw new Error('[occSweep] MakePipeShell not ready');
+      pipeShell.Build(progress);
+      if (!pipeShell.IsDone?.()) throw new Error('[occSweep] MakePipeShell Build failed');
+      resultShape = pipeShell.Shape();
+    } finally {
+      progress.delete?.();
+      pipeShell.delete();
+      profileWires.outerWire.delete();
+      for (const hw of profileWires.holeWires) hw.delete();
+    }
+  }
+
+  return makeBRepBodyFromOccShape(oc, resultShape, {
+    id: options.id,
+    sourceFeatureId: options.sourceFeatureId,
+  });
+}

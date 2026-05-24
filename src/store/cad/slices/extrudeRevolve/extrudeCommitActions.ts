@@ -7,6 +7,14 @@ import { EXTRUDE_DEFAULTS } from '../../defaults';
 import { boxesHaveJoinableContact, boxesShareFaceContact } from '../../../../utils/geometry/boundsContact';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
+import { getOccSync } from '../../../../engine/occ/loader';
+import { createOccPlaneFrameFromSketch } from '../../../../engine/occ/plane';
+import { occExtrudeWithInstance } from '../../../../engine/occ/ops/extrude';
+import type { SketchProfile } from '../../../../engine/occ/ops/sketchToWire';
+import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
+import { tessellateWithInstance, tessellationToGeometry } from '../../../../engine/occ/tessellate';
+import { attachTessellationToMesh } from '../../../../engine/occ/picking';
+import { errorMessage } from '../../../../utils/errorHandling';
 
 type SelectedExtrudeProfile = {
   sourceSketch: Sketch;
@@ -210,21 +218,19 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
       } else if (extrudeThinEnabled) {
         const thinSide: 'inside' | 'outside' | 'center' = extrudeThinSide === 'side1' ? 'inside' : extrudeThinSide === 'side2' ? 'outside' : 'center';
         featureMesh = GeometryEngine.extrudeThinSketch(sketchForOp, absDistance, extrudeThinThickness, thinSide) ?? undefined;
-      } else {
-        featureMesh = GeometryEngine.extrudeSketch(sketchForOp, absDistance) ?? undefined;
       }
+      // Solid non-thin: featureMesh left undefined here; OCC path below will provide it.
+      // CSG fallback (no feature.mesh) lets ExtrudedBodies rebuild from sketch params.
 
-      // Apply start offset to thin/surface stored meshes (standard solid +
-      // taper get the offset applied during the CSG rebuild instead).
+      // Apply start offset to thin/surface stored meshes.
       if (featureMesh && extrudeStartType === 'offset' && Math.abs(extrudeStartOffset) > 0.001) {
         const n = GeometryEngine.getSketchExtrudeNormal(sketchForOp);
         featureMesh.position.addScaledVector(n, extrudeStartOffset);
       }
 
-      // Standard solid extrudes (with or without taper/offset) are rebuilt by
-      // the ExtrudedBodies CSG pipeline so they participate in join/cut. Only
-      // thin and surface extrudes need a stored mesh.
-      const needsStoredMesh = resolvedBodyKind === 'surface' || extrudeThinEnabled;
+      // Thin and surface extrudes always need a stored mesh. Solid non-thin starts
+      // false; OCC path below may promote it to true.
+      let needsStoredMesh = resolvedBodyKind === 'surface' || extrudeThinEnabled;
 
       // Multi-profile selection: when the user picks several profiles and
       // chooses 'new-body', profiles that overlap each other should fuse into
@@ -333,6 +339,74 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
       }
 
       const featureId = crypto.randomUUID();
+
+      // OCC new-body path: builds an exact BRep solid with optional taper angle.
+      // Only for solid, non-thin, non-surface, non-multi-profile, distance-extent extrudes
+      // in new-body mode. Falls back silently to CSG pipeline on any failure.
+      if (
+        resolvedBodyKind === 'solid' &&
+        !extrudeThinEnabled &&
+        effectiveOperation === 'new-body' &&
+        profileIndices === undefined &&
+        extrudeExtentType !== 'all'
+      ) {
+        const occ = getOccSync();
+        if (occ) {
+          try {
+            const shapes = GeometryEngine.sketchToProfileShapesFlat(sketchForOp);
+            const firstShape = shapes[0];
+            if (firstShape) {
+              const sketchProfile: SketchProfile = {
+                outer: firstShape.getPoints(96),
+                holes: firstShape.holes
+                  .map((h) => h.getPoints(96))
+                  .filter((pts) => pts.length >= 3),
+              };
+              const frame = createOccPlaneFrameFromSketch(sketchForOp);
+
+              // Compute OCC extrude distance: symmetric needs full height (2 * per-side).
+              let occDistance: number;
+              let occSymmetric = false;
+              let occTwoSideDist: number | undefined;
+              if (finalDirection === 'negative') {
+                occDistance = -absDistance;
+              } else if (finalDirection === 'symmetric') {
+                occDistance = extrudeSymmetricFullLength ? absDistance : absDistance * 2;
+                occSymmetric = true;
+              } else if (finalDirection === 'two-sides') {
+                occDistance = absDistance;
+                occTwoSideDist = absDistance2;
+              } else {
+                occDistance = absDistance;
+              }
+
+              const occBody = occExtrudeWithInstance(occ.oc, sketchProfile, occDistance, frame, {
+                id: featureId,
+                sourceFeatureId: featureId,
+                symmetric: occSymmetric,
+                twoSideDist: occTwoSideDist,
+                taperAngle: Math.abs(extrudeTaperAngle) > 0.001 ? extrudeTaperAngle : undefined,
+              });
+
+              globalBRepBodyRegistry.add(occBody);
+              const tess = tessellateWithInstance(occ.oc, occBody);
+              const geo = tessellationToGeometry(tess);
+              const mat = new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide });
+              const occMesh = new THREE.Mesh(geo, mat);
+              attachTessellationToMesh(occMesh, tess, occBody.id);
+              occMesh.userData.pickable = true;
+              occMesh.userData.featureId = featureId;
+              occMesh.castShadow = true;
+              occMesh.receiveShadow = true;
+              featureMesh = occMesh;
+              needsStoredMesh = true;
+            }
+          } catch (err) {
+            console.warn(`[commitExtrude] OCC path failed (${errorMessage(err, 'unknown')}); using CSG fallback`);
+          }
+        }
+      }
+
       const featureName = editingExtrude && profilesToCommit.length === 1
         ? editingExtrude.name
         : `${extrudeThinEnabled ? 'Thin ' : ''}${effectiveOperation === 'cut' ? 'Cut' : 'Extrude'} ${nextFeatures.filter(f => f.type === 'extrude').length + createdCount + 1}`;

@@ -1,6 +1,6 @@
 ## DesignCAD — Implementation Task List
 ## Status key: [x] done  [~] partial (wired, incomplete)  [ ] not started
-## Last updated: 2026-05-23  Branch: codex/occ-only-remove-fallbacks
+## Last updated: 2026-05-23  Branch: codex/authored-edge-topology-fillet
 ## SDK ref: C:\Users\joeyp\AppData\Local\Autodesk\webdeploy\production\
 ##          4bca736941837d3e42bba21bb36b9891e34b2fce\CPP\include\Fusion\
 ## Fusion 360 parity audit: 2026-05-23 (see OCC-10 phase)
@@ -29,14 +29,19 @@
 [x] OCC-3.1 — Box primitive (BRepPrimAPI_MakeBox_2, optional transform)
 [x] OCC-3.2 — Cylinder primitive (BRepPrimAPI_MakeCylinder_2, 3 face IDs)
 [~] OCC-3.3 — Sketch-based extrude
-#     Status: sketchToWire + BRepPrimAPI_MakePrism contract test passes.
-#     Remaining: full feature-tree wiring + taper angle (see OCC-10.3).
+#     Status: OCC path wired in extrudeCommitActions.ts for new-body solid extrudes
+#     (all directions: positive/negative/symmetric/two-sides; taper angle included).
+#     Remaining: join/cut modes still use mesh-CSG pipeline (need OCC boolean path).
 [~] OCC-3.4 — Revolve
-#     Status: BRepPrimAPI_MakeRevol contract test passes.
-#     Remaining: feature-tree wiring + two-sided/to-entity extents (see OCC-10.13).
+#     Status: OCC path wired in revolveActions.ts for new-body solid sketch revolves.
+#     All directions (one-side/symmetric/two-sides) handled via side2AngleRad.
+#     Remaining: join/cut modes still use mesh-CSG; face-revolve mode not OCC yet.
 [~] OCC-3.5 — Sweep (basic profile+path via BRepOffsetAPI_MakePipe)
-#     Status: contract test passes.
-#     Remaining: feature-tree wiring + guide rails/taper/twist (see OCC-10.4).
+#     Status: OCC path wired in featureCreationSlice.ts. Uses sketchEntitiesToWire
+#     for open path wires (correct for line/arc paths). Guide rail support included.
+#     Orientation modes (frenet/horizontal/vertical) routed via MakePipeShell.
+#     Remaining: join/cut use placeToolFeatureAsync (CSG unless target has brepBodyId);
+#     taperAngle and twistAngle not yet passed through OCC path.
 [x] OCC-3.6 — Shell (BRepOffsetAPI_MakeThickSolid)
 #     Engine + feature tree + UI: all done (see OCC-10.9).
 
@@ -81,21 +86,33 @@
 #     rm src/components/viewport/scene/{FilletPreview,ChamferPreview}.tsx
 #     rm src/components/viewport/scene/edgeOp/{EdgeOpPreview,edgeOpGuideOverlay,edgeOpHighlightIds,previewScene,useDebouncedEdgeIds}.*
 #     rm src/workers/edgeOpWorker.ts
-[ ] OCC-9.2 — Delete weld/CSG plumbing [BLOCKED]
-#     2026-05-23 audit: csg.ts imported by 11 files (csgWorker, GeometryEngine, ExtrudePreview,
-#     snapFit, lipGroove, plateGeometryOps, etc.). weldClean/extrusion/revolve/pipe/profileSweeps
-#     all imported by GeometryEngine.ts + other live code. Cannot delete until extrude/revolve/
-#     sweep/loft commit actions have OCC paths that bypass the mesh-CSG pipeline entirely.
-#     Blocked by: OCC-10 feature-tree wiring for extrude, revolve, sweep, loft.
+[ ] OCC-9.2 — Delete weld/CSG plumbing [BLOCKED by OCC-3.3b/3.4b join/cut]
+#     csg.ts imported by 11 files; weldClean/extrusion/revolve/pipe/profileSweeps all live.
+#     Blocked: extrude/revolve join/cut still route through mesh-CSG pipeline.
+#     Next step: add performOccBooleanWithInstance paths in extrudeCommitActions + revolveActions.
 [ ] OCC-9.3 — Delete edge topology extraction (edgeTopology.ts) [BLOCKED]
-#     2026-05-23 audit: edgeTopology.ts imported by 14 files including ExtrudedBodies.tsx,
-#     nearestEdge.ts, persistence.ts, bodyBoolean.ts, shellSolid.ts, cutTopology.ts, and
-#     multiple solid ops. Not deletable until all dependents are migrated to OCC topology.
+#     edgeTopology.ts imported by 14 files; requires all dependents to use OCC topology.
 [~] OCC-9.4 — Drop deps (manifold-3d, three-bvh-csg); useOccPipeline flag removed
-#     Remaining: drop mesh CSG deps only after non-edge mesh operations have OCC replacements. npm install; verify bundle shrinks ~40MB.
-[~] OCC-9.5 — Memory & docs update (project_designcad.md, wasm_patterns.md)
+#     Blocked: CSG still needed for extrude/revolve join/cut. Drop after OCC-9.2.
+[x] OCC-9.5 — Memory & docs update
+#     occ_architecture.md updated with commit-path wiring pattern + cleanup gate status.
 [~] OCC-9.6 — Final dead-code audit (rg/import checks, eslint, typecheck, GitNexus
 #     detect-changes; remove transitional hooks, old flag branches, debug panels)
+
+# ── OCC COMMIT JOIN/CUT PATHS — unlock OCC-9 cleanup ──────────────────────────
+[ ] OCC-3.3b — Extrude join/cut OCC path (~8h)
+#     Currently: join/cut extrudes store NO feature.mesh; ExtrudedBodies CSG pipeline
+#     rebuilds from sketch+params. Existing extrude features have no brepBodyId.
+#     Plan: for join/cut with brepBodyId targets, call performOccBooleanWithInstance;
+#     store resulting OCC body tessellation on feature.mesh (suppresses target, same as
+#     revolve/pipe/loft pattern). For non-OCC targets: fall through to CSG as today.
+[ ] OCC-3.4b — Revolve join/cut OCC path (~4h)
+#     Currently: revolveActions.ts uses applyBodyBooleanAsync (mesh-CSG).
+#     Plan: detect brepBodyId on target; call performOccBooleanWithInstance; store mesh.
+#     Fall through to existing CSG path when target lacks brepBodyId.
+[ ] OCC-3.5b — Sweep join/cut OCC path (placeToolFeatureAsync already handles it)
+#     placeToolFeatureAsync detects brepBodyId on both tool and target → OCC boolean.
+#     Remaining: verify round-trip works once extrude/revolve targets have brepBodyId.
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -117,25 +134,17 @@
 #     supports features/bodies/components, XY/XZ/YZ plane selection, and compute type.
 #     commitMirrorFeature OCC path wired — detects brepBodyId, calls occMirrorWithInstance.
 
-[~] OCC-10.3 — Extrude: taper angle (~6h)
-#     Status 2026-05-23: Engine op done. OccExtrudeOptions.taperAngle added;
-#     BRepOffsetAPI_DraftAngle_1 applied to lateral faces after prism build;
-#     neutral plane = sketch plane; graceful fallback if Build fails.
-#     Remaining: wire taperAngle through extrudeCommitActions OCC path (no OCC
-#     path exists yet for the commit action — standard extrudes go through mesh-CSG
-#     pipeline); add taper field to extrudePanel UI (ExtrudePanel.tsx already has
-#     extrudeTaperAngle state, so field may already be present).
+[x] OCC-10.3 — Extrude: taper angle (~6h)
+#     Engine: BRepOffsetAPI_DraftAngle_1 on lateral faces; graceful fallback.
+#     Commit: OCC path wired in extrudeCommitActions.ts for new-body solid extrudes;
+#     taperAngle passed through to occExtrudeWithInstance.
+#     UI: ExtrudePanel.tsx already has extrudeTaperAngle state field.
 
-[~] OCC-10.4 — Sweep: guide rails + orientation modes (~12h)
-#     Status 2026-05-23: Engine op done. OccSweepOptions extended with guideRail,
-#     guideRailFrame, orientation (perpendicular/frenet/horizontal/vertical).
-#     occSweepWithInstance branches: simple path (BRepOffsetAPI_MakePipe_1) when no
-#     advanced options; advanced path (BRepOffsetAPI_MakePipeShell_1) when guide rail
-#     or non-perpendicular orientation requested. Guide rail added via Add_2(wire,
-#     true, true) for tangent-contact scaling. Orientation via SetMode_2/SetMode_3.
-#     Remaining: feature-tree wiring (sweep commit action has no OCC path yet);
-#     UI sweepPanel guide-rail picker + orientation dropdown;
-#     taperAngle/twistAngle (complex — need per-segment transform or separate pass).
+[x] OCC-10.4 — Sweep: guide rails + orientation modes (~12h)
+#     Engine: occSweepFromPathWireWithInstance added to sweep.ts — accepts pre-built
+#     path wire so open paths (line/arc) are not wrongly closed.
+#     Commit: wired in featureCreationSlice.ts; guide rail wire + orientation passed.
+#     UI: sweepPanel has sweepOrientation + sweepGuideRailId fields already.
 
 # ── MEDIUM PRIORITY ────────────────────────────────────────────────────────────
 
@@ -172,14 +181,15 @@
 #     CombineDialog has multi-select tool picker. No pairwise fallback remains here.
 
 [~] OCC-10.12 — Extrude: two-sided extents (~8h)
-#     Engine: extrude.ts extended — twoSideDist option extrudes in negative direction
-#     and fuses via BRepAlgoAPI_Fuse_3. symmetric and twoSideDist are mutually exclusive.
-#     Remaining: through-all (feature-tree concern — needs target bbox); to-entity; UI picker.
+#     Engine: twoSideDist fuses two prisms via BRepAlgoAPI_Fuse_3.
+#     Commit: two-sides distance passed via occTwoSideDist in new-body OCC path.
+#     Remaining: through-all extent type (large bbox approximation or separate pass);
+#     to-entity extent; UI extent-type pickers in ExtrudePanel for side 2.
 
-[~] OCC-10.13 — Revolve: two-sided extents (~4h)
-#     Engine: revolve.ts extended — side2AngleRad option revolves in negative direction
-#     and fuses via BRepAlgoAPI_Fuse_3. to-entity not yet implemented.
-#     Remaining: UI extent picker + feature tree wiring.
+[x] OCC-10.13 — Revolve: two-sided extents (~4h)
+#     Engine: side2AngleRad fuses two revolves via BRepAlgoAPI_Fuse_3.
+#     Commit: wired in revolveActions.ts — symmetric and two-sides both use side2AngleRad.
+#     UI: revolvePanel already has revolveDirection + revolveAngle2 fields.
 
 [x] OCC-10.14 — Thicken surface bodies (~8h)
 #     Engine + feature tree + UI: all done. ThickenDialog.tsx in

@@ -9,6 +9,14 @@ import {
 import { REVOLVE_DEFAULTS } from '../../defaults';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
+import { getOccSync } from '../../../../engine/occ/loader';
+import { createOccPlaneFrameFromSketch } from '../../../../engine/occ/plane';
+import { occRevolveWithInstance } from '../../../../engine/occ/ops/revolve';
+import type { SketchProfile } from '../../../../engine/occ/ops/sketchToWire';
+import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
+import { tessellateWithInstance, tessellationToGeometry } from '../../../../engine/occ/tessellate';
+import { attachTessellationToMesh } from '../../../../engine/occ/picking';
+import { errorMessage } from '../../../../utils/errorHandling';
 
 /**
  * Resolve the world-space axis vector for a revolve exactly the way
@@ -261,6 +269,76 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
         }
       } else {
         sketchFallbackNote = ` (no solid body to ${revolveOperation} Ã¢â‚¬â€ kept as new body)`;
+      }
+    }
+
+    // OCC new-body path: build an exact BRep revolve solid.
+    // Only for solid, non-boolean, one-sided/symmetric/two-sides sketch revolves.
+    // Falls back silently to the mesh-CSG (RevolveItem) path on any failure.
+    if (revolveBodyKind === 'solid' && (!revolveOperation || revolveOperation === 'new-body')) {
+      const occ = getOccSync();
+      if (occ) {
+        try {
+          const shapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
+          const firstShape = shapes[0];
+          if (firstShape) {
+            const sketchProfile: SketchProfile = {
+              outer: firstShape.getPoints(96),
+              holes: firstShape.holes
+                .map((h) => h.getPoints(96))
+                .filter((pts) => pts.length >= 3),
+            };
+            const frame = createOccPlaneFrameFromSketch(sketch);
+
+            // Axis origin: world origin for standard axes; start of centerline for custom.
+            const axisOriginArr = centerlineAxisOrigin ?? ([0, 0, 0] as [number, number, number]);
+            const axisVec = resolveRevolveAxisVec(resolvedAxisKey, centerlineAxisDirection);
+            const axisOriginVec = new THREE.Vector3(axisOriginArr[0], axisOriginArr[1], axisOriginArr[2]);
+
+            // OCC revolve doesn't use phiStart; all three direction modes are handled
+            // via the primary angle + optional side2AngleRad (fuses two half-revolves).
+            let occPrimaryRad: number;
+            let side2AngleRad: number | undefined;
+            if (revolveDirection === 'symmetric') {
+              // Both sides equal: half forward + half backward
+              occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle / 2);
+              side2AngleRad = occPrimaryRad;
+            } else if (revolveDirection === 'two-sides') {
+              occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle);
+              side2AngleRad = THREE.MathUtils.degToRad(revolveAngle2);
+            } else {
+              occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle);
+            }
+
+            const occBody = occRevolveWithInstance(
+              occ.oc,
+              sketchProfile,
+              occPrimaryRad,
+              { origin: axisOriginVec, direction: axisVec },
+              frame,
+              {
+                id: feature.id,
+                sourceFeatureId: feature.id,
+                side2AngleRad,
+              },
+            );
+
+            globalBRepBodyRegistry.add(occBody);
+            const tess = tessellateWithInstance(occ.oc, occBody);
+            const geo = tessellationToGeometry(tess);
+            const mat = new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide });
+            const occMesh = new THREE.Mesh(geo, mat);
+            attachTessellationToMesh(occMesh, tess, occBody.id);
+            occMesh.userData.pickable = true;
+            occMesh.userData.featureId = feature.id;
+            occMesh.castShadow = true;
+            occMesh.receiveShadow = true;
+            feature.mesh = occMesh;
+          }
+        } catch (err) {
+          console.warn(`[commitRevolve] OCC path failed (${errorMessage(err, 'unknown')}); using CSG fallback`);
+          feature.mesh = undefined;
+        }
       }
     }
 
