@@ -231,3 +231,78 @@
 #     length (start→end vertex), not per-face — this is the best approximation
 #     available without BRepFilletAPI_MakeFilletFaceSet (which lacks JS bindings).
 #     UI: filletDialog already has offsetOne/offsetTwo fields in useFilletDialogState.
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SDK reference (Fusion 360 header paths)
+# ══════════════════════════════════════════════════════════════════════════════
+# SDK install: local Fusion 360 webdeploy SDK headers under the current user's
+#              Autodesk install directory. Do not commit machine-specific paths.
+#
+# Feature base class:
+#   Features/Feature.h — name, deleteMe(), dissolve(), isSuppressed,
+#     isParametric, faces(), bodies(), timelineObject(), linkedFeatures(),
+#     healthState(), errorOrWarningMessage(), entityToken(), attributes()
+#
+# Timeline:
+#   Design/Timeline.h — markerPosition, moveToBeginning/End/Next/Previous,
+#     play(), deleteAllAfterMarker(), timelineGroups
+#   Design/TimelineObject.h — isSuppressed, index, isRolledBack,
+#     rollTo(rollBefore), canReorder/reorder, entity(), name, healthState
+#
+# Fillet:
+#   Features/FilletFeatures.h — createInput()+add(), createFullRoundFilletInput()
+#     +addFullRoundFillet(), createRuleFilletInput()+addRuleFillet()
+#   Features/FilletFeatureInput.h — edgeSetInputs(), isRollingBallCorner
+#   Features/FilletFeature.h — edgeSets(), filletFeatureType(), convert(),
+#     ruleFilletSettings(), fullRoundFilletFaceSets()
+#   Features/FilletEdgeSetInputs.h — addConstantRadius/Variable/ChordLength/Asymmetric
+#   Features/FilletEdgeSet.h — isTangentChain, continuity, tangencyWeight, deleteMe
+#   Features/ConstantRadiusFilletEdgeSet.h — edges(), radius (ModelParameter)
+#   Features/ConstantRadiusFilletEdgeSetInput.h — radius (ValueInput)
+#   Features/VariableRadiusFilletEdgeSet.h — edges(), startRadius, endRadius,
+#     midRadii, midPositions, addMidPosition(pos, radius), deleteMidPosition(index)
+#   Features/VariableRadiusFilletEdgeSetInput.h — startRadius, endRadius, setMidRadii
+#   Features/AsymmetricFilletEdgeSet.h — edges(), offsetOne, offsetTwo, isFlipped
+#   Features/AsymmetricFilletEdgeSetInput.h — offsetOne, offsetTwo, isFlipped
+#   Features/ChordLengthFilletEdgeSet.h — edges(), chordLength (ModelParameter)
+#   Features/ChordLengthFilletEdgeSetInput.h — chordLength (ValueInput)
+#   Features/RuleFilletFeatureInput.h — setByAllEdges, setByBetweenFaces,
+#     ruleType, topologyType, radius/asymmetricOffsets, isRollingBallCorner
+#   Features/RuleFilletSettings.h — ruleType, topologyType, isConstantRadius,
+#     radius/asymmetricOffsetOne/Two, isRollingBallCorner, facesOrFeatures
+#   Features/FullRoundFilletFeatureInput.h — faceSets()
+#   Features/FullRoundFilletFaceSet.h — centerFace, sideOneFaces, sideTwoFaces,
+#     areAutomaticSideFaces
+#   Features/FullRoundFilletFaceSets.h — add(center, side1, side2, autoSides)
+#
+# Chamfer:
+#   Features/ChamferFeatures.h — createInput2()+add()
+#   Features/ChamferFeatureInput.h — chamferEdgeSets(), cornerType
+#   Features/ChamferFeature.h — edgeSets(), cornerType, chamferType (retired)
+#   Features/ChamferEdgeSet.h — isTangentChain, deleteMe (base)
+#   Features/EqualDistanceChamferEdgeSet.h — edges(), distance (ModelParameter)
+#   Features/TwoDistancesChamferEdgeSet.h — edges(), distanceOne, distanceTwo,
+#     isFlipped (ModelParameter)
+#   Features/DistanceAndAngleChamferEdgeSet.h — edges(), distance, angle,
+#     isFlipped (ModelParameter)
+#
+# BRep topology:
+#   BRep/BRepEdge.h — startVertex, endVertex, faces(), coEdges(),
+#     tangentiallyConnectedEdges(), geometry() → Curve3D, evaluator(),
+#     length(), isDegenerate, isTolerant, tempId, entityToken, pointOnEdge()
+#   BRep/BRepFace.h — edges(), vertices(), loops(),
+#     tangentiallyConnectedFaces(), geometry() → Surface, evaluator(),
+#     isPointOnFace(), area(), centroid(), boundingBox()
+#   BRep/BRepBody.h — concaveEdges(), convexEdges(), isSolid, volume(),
+#     area(), revisionId(), findByTempId()
+#
+# Enums (FusionTypeDefs.h):
+#   FilletFeatureTypes — FilletFeatureType(0), RuleFilletFeatureType(1),
+#     FullRoundFilletFeatureType(2)
+#   ChamferCornerTypes — ChamferCornerType, MiterCornerType, BlendCornertype
+#   ChamferTypes — EqualDistance, TwoDistances, DistanceAndAngle
+#   SurfaceContinuityTypes — Connected(G0), Tangent(G1), Curvature(G2)
+#   RuleFilletRuleTypes — AllEdges(0), BetweenFacesOrFeatures(1)
+#   RuleFilletTopologyTypes — RoundsAndFillets(0), RoundsOnly(1), FilletsOnly(2)
+#   FeatureHealthStates — HealthyFeatureHealthState, WarningFeatureHealthState,
+#     ErrorFeatureHealthState

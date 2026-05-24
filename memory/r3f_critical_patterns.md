@@ -2,7 +2,6 @@
 name: R3F Critical Patterns
 description: Recurring Three.js/R3F bugs that must be avoided — per-frame allocs, plane-aware math, disposal, stale closures, ref-sync, JSX bufferAttribute leaks
 type: project
-originSessionId: 6f52931a-2f78-47ac-9277-a63615943896
 ---
 These patterns have caused real bugs fixed 3+ times. Apply to all viewport/interaction code.
 

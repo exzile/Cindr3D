@@ -19,6 +19,6 @@ Web-based CAD + slicer + Duet3D printer-control app, branded **Cindr3D**.
 
 **How to apply:** When extending features, check the corresponding reference tool. For slicer settings, the source of truth is Cura's `resources/definitions/fdmprinter.def.json`. For CAD UX, mimic Fusion 360.
 
-**Launch:** Public launch at `cindr3d.com` is intentionally deferred until the user says "go live." Until then, the app ships to the Azure staging URL on every push to `master`. See `azure_hosting.md`.
+**Launch:** Public launch and hosting details are managed outside the public repo. Do not commit provider resource IDs, subscription IDs, DNS records, staging URLs, or registrar details to project memory.
 
 **Rebrand done:** All occurrences of "Cindr3D" in user-visible strings (browser title, G-code headers, exports, localStorage keys, IndexedDB names) were changed to "Cindr3D". The repo, project, and solution files still use the Cindr3D name.

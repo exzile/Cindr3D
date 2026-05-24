@@ -2,7 +2,6 @@
 name: Code Quality Feedback
 description: User wants clean, refactored code split by responsibility (not line count); shared abstractions over duplication
 type: feedback
-originSessionId: 6f52931a-2f78-47ac-9277-a63615943896
 ---
 Always write clean, refactored, simplified code. **Split by responsibility, not by line count.**
 

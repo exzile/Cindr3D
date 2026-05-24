@@ -35,5 +35,4 @@
 
 ## References
 
-- [azure_hosting.md](azure_hosting.md) - Azure Static Web App resource IDs and deferred cindr3d.com domain plan
-- [fusion360_sdk.md](fusion360_sdk.md) - local SDK install path; C++ headers for Features/, BRep/, Sketch/; canonical enum names
+- [fusion360_sdk.md](fusion360_sdk.md) — Fusion 360 SDK header reference; canonical enum names

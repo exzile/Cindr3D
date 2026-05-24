@@ -2,7 +2,6 @@
 name: WASM Adapter Patterns
 description: Recurring gotchas when writing TS adapters over emsdk-built WASM modules — node-env loading, heap alignment, capacity ABI, single-instance state.
 type: feedback
-originSessionId: 768c4a3e-fc4c-4a2b-ba31-60db44f6dc31
 ---
 # WASM adapter patterns (post-2026-04-25, ARACHNE-9 Phase 1 + 9.4A)
 
