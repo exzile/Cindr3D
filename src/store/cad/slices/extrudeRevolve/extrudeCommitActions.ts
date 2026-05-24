@@ -8,6 +8,7 @@ import { boxesHaveJoinableContact, boxesShareFaceContact } from '../../../../uti
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
 import { getOccSync } from '../../../../engine/occ/loader';
+import { disposeBRepBody } from '../../../../engine/occ/brepBody';
 import { createOccPlaneFrameFromSketch } from '../../../../engine/occ/plane';
 import { occExtrudeWithInstance } from '../../../../engine/occ/ops/extrude';
 import type { SketchProfile } from '../../../../engine/occ/ops/sketchToWire';
@@ -462,33 +463,37 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
                   twoSideDist: occTwoSideDist,
                   taperAngle: Math.abs(extrudeTaperAngle) > 0.001 ? extrudeTaperAngle : undefined,
                 });
-                const targetMesh = occTarget.mesh as THREE.Mesh;
-                const targetOccBodyId = targetMesh.userData['brepBodyId'] as string;
-                const targetOccBody = globalBRepBodyRegistry.get(targetOccBodyId);
-                if (targetOccBody) {
-                  const occOp: OccBooleanOperation = effectiveOperation === 'join' ? 'union' : effectiveOperation === 'cut' ? 'subtract' : 'intersect';
-                  const boolResult = performOccBooleanWithInstance(occ.oc, occOp, targetOccBody, toolBody, {
-                    id: featureId,
-                    sourceFeatureId: featureId,
-                  });
-                  if (boolResult) {
-                    globalBRepBodyRegistry.add(boolResult);
-                    const tess = tessellateWithInstance(occ.oc, boolResult);
-                    const geo = tessellationToGeometry(tess);
-                    const mat = new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide });
-                    const occMesh = new THREE.Mesh(geo, mat);
-                    attachTessellationToMesh(occMesh, tess, boolResult.id);
-                    occMesh.userData['pickable'] = true;
-                    occMesh.userData['featureId'] = featureId;
-                    occMesh.castShadow = true;
-                    occMesh.receiveShadow = true;
-                    featureMesh = occMesh;
-                    needsStoredMesh = true;
-                    const tgtIdx = nextFeatures.findIndex((f) => f.id === occTarget!.id);
-                    if (tgtIdx >= 0) {
-                      nextFeatures[tgtIdx] = { ...nextFeatures[tgtIdx], suppressed: true, visible: false };
+                try {
+                  const targetMesh = occTarget.mesh as THREE.Mesh;
+                  const targetOccBodyId = targetMesh.userData['brepBodyId'] as string;
+                  const targetOccBody = globalBRepBodyRegistry.get(targetOccBodyId);
+                  if (targetOccBody) {
+                    const occOp: OccBooleanOperation = effectiveOperation === 'join' ? 'union' : effectiveOperation === 'cut' ? 'subtract' : 'intersect';
+                    const boolResult = performOccBooleanWithInstance(occ.oc, occOp, targetOccBody, toolBody, {
+                      id: featureId,
+                      sourceFeatureId: featureId,
+                    });
+                    if (boolResult) {
+                      globalBRepBodyRegistry.add(boolResult);
+                      const tess = tessellateWithInstance(occ.oc, boolResult);
+                      const geo = tessellationToGeometry(tess);
+                      const mat = new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide });
+                      const occMesh = new THREE.Mesh(geo, mat);
+                      attachTessellationToMesh(occMesh, tess, boolResult.id);
+                      occMesh.userData['pickable'] = true;
+                      occMesh.userData['featureId'] = featureId;
+                      occMesh.castShadow = true;
+                      occMesh.receiveShadow = true;
+                      featureMesh = occMesh;
+                      needsStoredMesh = true;
+                      const tgtIdx = nextFeatures.findIndex((f) => f.id === occTarget!.id);
+                      if (tgtIdx >= 0) {
+                        nextFeatures[tgtIdx] = { ...nextFeatures[tgtIdx], suppressed: true, visible: false };
+                      }
                     }
                   }
+                } finally {
+                  disposeBRepBody(toolBody);
                 }
               }
             } catch (err) {

@@ -8,10 +8,10 @@ All OCC phases complete. The remaining non-OCC CSG usage is for geometry buildin
 
 ## OCC boolean commit path summary
 
-- `extrudeCommitActions.ts`: new-body uses `occExtrudeWithInstance`; join/cut uses `performOccBooleanWithInstance` against the most recent OCC target; CSG fallback for non-OCC targets.
-- `revolveActions.ts`: new-body uses `occRevolveWithInstance`; sketch-mode join/cut uses OCC boolean; face-mode stays on CSG (no OCC tool body).
+- `extrudeCommitActions.ts`: new-body uses `occExtrudeWithInstance`; join/cut uses `performOccBooleanWithInstance` against the most recent OCC target; CSG fallback for non-OCC targets. Tool body wrapped in `try/finally { disposeBRepBody(toolBody) }` for deterministic C++ cleanup.
+- `revolveActions.ts`: new-body uses `occRevolveWithInstance`; sketch-mode join/cut uses OCC boolean (tool body disposed via inner try/finally); face-mode stays on CSG (no OCC tool body).
 - `featureCreationSlice.ts` (sweep): new-body uses `occSweepFromPathWireWithInstance` with taperAngle; join/cut via `placeToolFeatureAsync` which now uses OCC boolean when both tool+target have `brepBodyId`.
-- `bodyBoolean.ts` (`placeToolFeatureAsync`): OCC boolean path for loft/sweep/pipe/boundary-fill when both meshes have `brepBodyId`; CSG fallback otherwise.
+- `bodyBoolean.ts` (`placeToolFeatureAsync`): OCC boolean path for loft/sweep/pipe/boundary-fill when both meshes have `brepBodyId`; CSG fallback otherwise. Uses existing registry bodies (no temp tool body to dispose).
 
 ## Remaining cleanup gates
 

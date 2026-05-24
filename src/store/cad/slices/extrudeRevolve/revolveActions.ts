@@ -10,6 +10,7 @@ import { REVOLVE_DEFAULTS } from '../../defaults';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
 import { getOccSync } from '../../../../engine/occ/loader';
+import { disposeBRepBody } from '../../../../engine/occ/brepBody';
 import { createOccPlaneFrameFromSketch } from '../../../../engine/occ/plane';
 import { occRevolveWithInstance } from '../../../../engine/occ/ops/revolve';
 import type { SketchProfile } from '../../../../engine/occ/ops/sketchToWire';
@@ -271,37 +272,41 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
                 occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle);
               }
               const toolBody = occRevolveWithInstance(occ.oc, sketchProfile, { origin: axisOriginVec, direction: axisVecOcc }, occPrimaryRad, frame, { id: `${feature.id}_tool`, sourceFeatureId: feature.id, side2AngleRad });
-              const occOp: OccBooleanOperation = revolveOperation === 'join' ? 'union' : revolveOperation === 'cut' ? 'subtract' : 'intersect';
-              const boolResult = performOccBooleanWithInstance(occ.oc, occOp, targetOccBody, toolBody, { id: feature.id, sourceFeatureId: feature.id });
-              if (boolResult) {
-                globalBRepBodyRegistry.add(boolResult);
-                const tess = tessellateWithInstance(occ.oc, boolResult);
-                const geo = tessellationToGeometry(tess);
-                const mat = new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide });
-                const occMesh = new THREE.Mesh(geo, mat);
-                attachTessellationToMesh(occMesh, tess, boolResult.id);
-                occMesh.userData['pickable'] = true;
-                occMesh.userData['featureId'] = feature.id;
-                occMesh.castShadow = true;
-                occMesh.receiveShadow = true;
-                feature.mesh = occMesh;
-                feature.bodyKind = 'solid';
-                feature.params.targetFeatureId = target.id;
-                const state = get();
-                const updated = state.features.map((f) =>
-                  f.id === target.id ? { ...f, suppressed: true, visible: false } : f,
-                );
-                set({
-                  features: [...updated, feature],
-                  designConfigurations: syncConfigurationSuppression(state, {
-                    [feature.id]: false,
-                    [target.id]: true,
-                  }),
-                  activeTool: 'select',
-                  ...REVOLVE_DEFAULTS,
-                  statusMessage: `Revolve ${revolveOperation} with ${target.name} (${units})`,
-                });
-                return;
+              try {
+                const occOp: OccBooleanOperation = revolveOperation === 'join' ? 'union' : revolveOperation === 'cut' ? 'subtract' : 'intersect';
+                const boolResult = performOccBooleanWithInstance(occ.oc, occOp, targetOccBody, toolBody, { id: feature.id, sourceFeatureId: feature.id });
+                if (boolResult) {
+                  globalBRepBodyRegistry.add(boolResult);
+                  const tess = tessellateWithInstance(occ.oc, boolResult);
+                  const geo = tessellationToGeometry(tess);
+                  const mat = new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide });
+                  const occMesh = new THREE.Mesh(geo, mat);
+                  attachTessellationToMesh(occMesh, tess, boolResult.id);
+                  occMesh.userData['pickable'] = true;
+                  occMesh.userData['featureId'] = feature.id;
+                  occMesh.castShadow = true;
+                  occMesh.receiveShadow = true;
+                  feature.mesh = occMesh;
+                  feature.bodyKind = 'solid';
+                  feature.params.targetFeatureId = target.id;
+                  const state = get();
+                  const updated = state.features.map((f) =>
+                    f.id === target.id ? { ...f, suppressed: true, visible: false } : f,
+                  );
+                  set({
+                    features: [...updated, feature],
+                    designConfigurations: syncConfigurationSuppression(state, {
+                      [feature.id]: false,
+                      [target.id]: true,
+                    }),
+                    activeTool: 'select',
+                    ...REVOLVE_DEFAULTS,
+                    statusMessage: `Revolve ${revolveOperation} with ${target.name} (${units})`,
+                  });
+                  return;
+                }
+              } finally {
+                disposeBRepBody(toolBody);
               }
             }
           } catch (err) {
