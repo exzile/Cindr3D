@@ -2,7 +2,6 @@
 name: Duet Service Architecture
 description: Duet3D printer API — DuetService facade + sibling sub-API modules + event bus; where to add/edit which concern
 type: project
-originSessionId: e1e3f23a-f47d-4fbb-9116-3ea9059d054b
 ---
 Duet3D support is a substantial subsystem: live printer connection (standalone RepRapFirmware OR SBC DuetSoftwareFramework), object-model polling, file management, g-code upload, macro control, height-map, webcam. The service was broken out of a fat `DuetService.ts` monolith into a facade + per-concern sibling modules.
 

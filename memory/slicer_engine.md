@@ -2,7 +2,6 @@
 name: Slicer Engine Architecture
 description: Slicer invariants — pipeline contracts, two-emission-site rule, calcExtrusion-as-method, layer-height contract, scarf seam duality, layerMaterialCache pre-pass + per-region top-skin splitting
 type: project
-originSessionId: 768c4a3e-fc4c-4a2b-ba31-60db44f6dc31
 ---
 `engine/slicer/` has three subdirs: `geometry/`, `pipeline/` (with `pipeline/execution/{steps,base}/`), `gcode/`. Top-level `Slicer.ts` is a tiny `SlicePipeline` subclass.
 

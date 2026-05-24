@@ -2,7 +2,6 @@
 name: Sketch Interaction Pipeline
 description: Chain-of-responsibility commit dispatch + parallel preview pipeline with fingerprint LRU, SketchCommitCtx shape, where to add new tools
 type: project
-originSessionId: 768c4a3e-fc4c-4a2b-ba31-60db44f6dc31
 ---
 Sketch tool runtime split into preview (per-frame, non-committing) and commit (on-click). Both driven by a `ctx` object assembled by `SketchInteraction.tsx` (orchestrator) and dispatched across small handler modules in `viewport/interaction/sketchInteraction/`.
 

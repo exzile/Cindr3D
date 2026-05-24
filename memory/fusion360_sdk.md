@@ -1,10 +1,9 @@
 ---
 name: Fusion 360 SDK Reference
-description: Local Fusion 360 SDK install path + canonical enum names used to audit Cindr3D dialog parity
+description: Fusion 360 SDK header reference and canonical enum names used to audit Cindr3D dialog parity
 type: reference
-originSessionId: 44b47ea6-8828-4fd8-9638-602fb35b76e7
 ---
-Local install: `C:\Users\joeyp\AppData\Local\Autodesk\webdeploy\production\ca305acf3852cfce8e837ee5435adf649bc398ca\`
+Local reference: Fusion 360 installs SDK headers under the Autodesk webdeploy production directory for the current user. Do not commit machine-specific install paths or deployment hashes.
 
 **Feature headers (most useful for dialog parity):** `…\CPP\include\Fusion\Features\`
 - `ExtrudeFeatureInput.h` — ExtrudeDirection: `Positive/Negative/Symmetric`; ThinWallSide: `Side1/Side2/Center`; FeatureOperation: `NewBody/Join/Cut/Intersect/NewComponent`

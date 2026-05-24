@@ -58,7 +58,7 @@ Audited every modeling tool for the "dialog adds a feature but no geometry / par
 
 ## Cross-references
 
-Detailed pipeline docs live under auto-memory at `~/.claude/projects/C--Users-joeyp-source-repos-exzile-Cindr3D/memory/`:
+Detailed pipeline docs may also live under local Claude auto-memory outside the repo. Do not commit machine-specific auto-memory paths:
 - `project_designcad.md` — fuller architectural snapshot (shim+subdir, store slices, material singletons, persistence caches)
 - `extrude_pipeline.md`, `slicer_engine.md`, `arachne_subsystem.md`, `sketch_interaction_pipeline.md`, `duet_service_architecture.md`
 - `r3f_critical_patterns.md` — recurring R3F bug catalog

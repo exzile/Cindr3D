@@ -2,7 +2,6 @@
 name: Canonical Dialog Style — ExtrudePanel
 description: All tool dialogs/panels should match the Extrude panel look — non-modal floating panel, tp-* classes from common/ToolPanel.css
 type: feedback
-originSessionId: 41af41c8-5267-46c1-bc59-dbc0fb757714
 ---
 The **ExtrudePanel** look is the canonical visual style for ALL tool dialogs/panels in Cindr3D.
 

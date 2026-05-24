@@ -254,8 +254,8 @@
 # ══════════════════════════════════════════════════════════════════════════════
 # SDK reference (Fusion 360 header paths)
 # ══════════════════════════════════════════════════════════════════════════════
-# SDK install: C:\Users\joeyp\AppData\Local\Autodesk\webdeploy\production\
-#              4bca736941837d3e42bba21bb36b9891e34b2fce\CPP\include\Fusion\
+# SDK install: local Fusion 360 webdeploy SDK headers under the current user's
+#              Autodesk install directory. Do not commit machine-specific paths.
 #
 # Feature base class:
 #   Features/Feature.h — name, deleteMe(), dissolve(), isSuppressed,

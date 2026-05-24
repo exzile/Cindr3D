@@ -2,7 +2,6 @@
 name: Arachne Variable-Width Walls
 description: Pure-JS Arachne pipeline + WASM (post-9.2/9.4) — flap-topology limit, perf cliff, libArachne integration, diagnostic patterns, what doesn't work
 type: project
-originSessionId: 768c4a3e-fc4c-4a2b-ba31-60db44f6dc31
 ---
 Variable-width wall generator at `src/engine/slicer/pipeline/arachne/`, gated on `printProfile.wallGenerator: 'classic' | 'arachne'`, backend selected by `arachneBackend: 'js' | 'wasm'`.
 

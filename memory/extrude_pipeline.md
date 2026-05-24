@@ -2,7 +2,6 @@
 name: Extrude Pipeline Architecture
 description: Profile flat list + atomic regions, smallest-wins picker, csgIntersect overlap rule, disconnected-body splitting, selection pulse
 type: project
-originSessionId: 768c4a3e-fc4c-4a2b-ba31-60db44f6dc31
 ---
 Files spread across `engine/geometryEngine/core/{sketch,solid,mesh}/`, `components/viewport/{tools,extrude,scene,panels}/`, and `store/cad/slices/extrudeRevolve/` — use Glob if exact paths matter.
 
