@@ -19,6 +19,12 @@ import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import { errorMessage } from '../../../../utils/errorHandling';
 import { csgAsync } from '../../../../workers/csgWorkerPool';
 import { extractEdgeTopology } from '../../../../engine/geometryEngine/core/solid/edgeTopology';
+import { getOccSync } from '../../../../engine/occ/loader';
+import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
+import { performOccBooleanWithInstance } from '../../../../engine/occ/ops/booleanCore';
+import type { OccBooleanOperation } from '../../../../engine/occ/ops/booleanCore';
+import { tessellateWithInstance, tessellationToGeometry } from '../../../../engine/occ/tessellate';
+import { attachTessellationToMesh } from '../../../../engine/occ/picking';
 
 export type BodyBooleanOp = 'new-body' | 'join' | 'cut' | 'intersect';
 
@@ -131,6 +137,54 @@ export async function placeToolFeatureAsync(
   const target = pickMostRecentSolidTarget(state.features, pickOpts);
   if (!target || !(target.mesh instanceof THREE.Mesh) || !(feature.mesh instanceof THREE.Mesh)) {
     return append(` (${operation}: no target body — standalone)`);
+  }
+
+  // OCC boolean path: when both tool and target have OCC bodies, use exact BRep boolean.
+  const toolMesh = feature.mesh as THREE.Mesh;
+  const targetMesh = target.mesh as THREE.Mesh;
+  const toolOccBodyId = toolMesh.userData['brepBodyId'] as string | undefined;
+  const targetOccBodyId = targetMesh.userData['brepBodyId'] as string | undefined;
+  if (toolOccBodyId && targetOccBodyId) {
+    const occ = getOccSync();
+    const toolOccBody = occ ? globalBRepBodyRegistry.get(toolOccBodyId) : undefined;
+    const targetOccBody = occ ? globalBRepBodyRegistry.get(targetOccBodyId) : undefined;
+    if (occ && toolOccBody && targetOccBody) {
+      try {
+        const occOp: OccBooleanOperation = operation === 'join' ? 'union' : operation === 'cut' ? 'subtract' : 'intersect';
+        const boolResult = performOccBooleanWithInstance(occ.oc, occOp, targetOccBody, toolOccBody, {
+          id: feature.id,
+          sourceFeatureId: feature.id,
+        });
+        if (boolResult) {
+          boolResult.id = feature.id;
+          boolResult.sourceFeatureId = feature.id;
+          globalBRepBodyRegistry.add(boolResult);
+          const tess = tessellateWithInstance(occ.oc, boolResult);
+          const geo = tessellationToGeometry(tess);
+          const occMesh = new THREE.Mesh(geo, targetMesh.material);
+          attachTessellationToMesh(occMesh, tess, boolResult.id);
+          occMesh.userData['pickable'] = true;
+          occMesh.userData['featureId'] = feature.id;
+          occMesh.castShadow = true;
+          occMesh.receiveShadow = true;
+          const combined: Feature = { ...feature, mesh: occMesh, parentFeatureId: target.id };
+          const features = state.features.map((f) =>
+            f.id === target.id ? { ...f, suppressed: true, visible: false } : f,
+          );
+          features.push(combined);
+          return {
+            features,
+            designConfigurations: syncConfigurationSuppression(state, {
+              [feature.id]: false,
+              [target.id]: true,
+            }),
+            note: ` (${operation} with ${target.name})`,
+          };
+        }
+      } catch (err) {
+        void errorMessage(err, 'OCC boolean error');
+      }
+    }
   }
 
   const result = await applyBodyBooleanAsync(target.mesh, feature.mesh, operation);

@@ -127,6 +127,7 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
                 sourceFeatureId: featureId,
                 orientation: sweepOrientation === 'default' ? 'perpendicular' : sweepOrientation as 'perpendicular' | 'frenet' | 'horizontal' | 'vertical',
                 guideWire,
+                taperAngle: Math.abs(sweepTaperAngle) > 0.001 ? sweepTaperAngle : undefined,
               });
               pathWire.delete();
               if (guideWire) (guideWire as { delete(): void }).delete();

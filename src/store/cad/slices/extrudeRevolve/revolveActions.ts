@@ -16,6 +16,8 @@ import type { SketchProfile } from '../../../../engine/occ/ops/sketchToWire';
 import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
 import { tessellateWithInstance, tessellationToGeometry } from '../../../../engine/occ/tessellate';
 import { attachTessellationToMesh } from '../../../../engine/occ/picking';
+import { performOccBooleanWithInstance } from '../../../../engine/occ/ops/booleanCore';
+import type { OccBooleanOperation } from '../../../../engine/occ/ops/booleanCore';
 import { errorMessage } from '../../../../utils/errorHandling';
 
 /**
@@ -239,6 +241,75 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
     if (revolveOperation && revolveOperation !== 'new-body' && revolveOperation !== 'new-component' && revolveBodyKind !== 'surface') {
       const target = pickMostRecentSolidTarget(features, { excludeType: 'revolve' });
       if (target) {
+        const occ = getOccSync();
+        const targetOccBodyId = (target.mesh as THREE.Mesh | undefined)?.userData?.['brepBodyId'] as string | undefined;
+        const targetOccBody = occ && targetOccBodyId ? globalBRepBodyRegistry.get(targetOccBodyId) : undefined;
+
+        // OCC boolean path: build tool body and boolean against OCC target
+        if (occ && targetOccBody) {
+          try {
+            const shapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
+            const firstShape = shapes[0];
+            if (firstShape) {
+              const sketchProfile: SketchProfile = {
+                outer: firstShape.getPoints(96),
+                holes: firstShape.holes.map((h) => h.getPoints(96)).filter((pts) => pts.length >= 3),
+              };
+              const frame = createOccPlaneFrameFromSketch(sketch);
+              const axisOriginArr = centerlineAxisOrigin ?? ([0, 0, 0] as [number, number, number]);
+              const axisVecOcc = resolveRevolveAxisVec(resolvedAxisKey, centerlineAxisDirection);
+              const axisOriginVec = new THREE.Vector3(axisOriginArr[0], axisOriginArr[1], axisOriginArr[2]);
+              let occPrimaryRad: number;
+              let side2AngleRad: number | undefined;
+              if (revolveDirection === 'symmetric') {
+                occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle / 2);
+                side2AngleRad = occPrimaryRad;
+              } else if (revolveDirection === 'two-sides') {
+                occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle);
+                side2AngleRad = THREE.MathUtils.degToRad(revolveAngle2);
+              } else {
+                occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle);
+              }
+              const toolBody = occRevolveWithInstance(occ.oc, sketchProfile, { origin: axisOriginVec, direction: axisVecOcc }, occPrimaryRad, frame, { id: `${feature.id}_tool`, sourceFeatureId: feature.id, side2AngleRad });
+              const occOp: OccBooleanOperation = revolveOperation === 'join' ? 'union' : revolveOperation === 'cut' ? 'subtract' : 'intersect';
+              const boolResult = performOccBooleanWithInstance(occ.oc, occOp, targetOccBody, toolBody, { id: feature.id, sourceFeatureId: feature.id });
+              if (boolResult) {
+                globalBRepBodyRegistry.add(boolResult);
+                const tess = tessellateWithInstance(occ.oc, boolResult);
+                const geo = tessellationToGeometry(tess);
+                const mat = new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide });
+                const occMesh = new THREE.Mesh(geo, mat);
+                attachTessellationToMesh(occMesh, tess, boolResult.id);
+                occMesh.userData['pickable'] = true;
+                occMesh.userData['featureId'] = feature.id;
+                occMesh.castShadow = true;
+                occMesh.receiveShadow = true;
+                feature.mesh = occMesh;
+                feature.bodyKind = 'solid';
+                feature.params.targetFeatureId = target.id;
+                const state = get();
+                const updated = state.features.map((f) =>
+                  f.id === target.id ? { ...f, suppressed: true, visible: false } : f,
+                );
+                set({
+                  features: [...updated, feature],
+                  designConfigurations: syncConfigurationSuppression(state, {
+                    [feature.id]: false,
+                    [target.id]: true,
+                  }),
+                  activeTool: 'select',
+                  ...REVOLVE_DEFAULTS,
+                  statusMessage: `Revolve ${revolveOperation} with ${target.name} (${units})`,
+                });
+                return;
+              }
+            }
+          } catch (err) {
+            console.warn(`[commitRevolve] OCC ${revolveOperation} path failed (${errorMessage(err, 'unknown')}); falling back to CSG`);
+          }
+        }
+
+        // CSG fallback
         const { phiStart, sweep } = GeometryEngine.resolveRevolveSweep(revolveAngle, revolveAngle2, revolveDirection);
         const axisVec = resolveRevolveAxisVec(resolvedAxisKey, centerlineAxisDirection);
         const revolveMesh = GeometryEngine.revolveSketch(sketch, sweep, axisVec, phiStart);
@@ -265,10 +336,10 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
             });
             return;
           }
-          sketchFallbackNote = ` (${revolveOperation} failed Ã¢â‚¬â€ kept as new body)`;
+          sketchFallbackNote = ` (${revolveOperation} failed — kept as new body)`;
         }
       } else {
-        sketchFallbackNote = ` (no solid body to ${revolveOperation} Ã¢â‚¬â€ kept as new body)`;
+        sketchFallbackNote = ` (no solid body to ${revolveOperation} — kept as new body)`;
       }
     }
 
@@ -313,8 +384,8 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
             const occBody = occRevolveWithInstance(
               occ.oc,
               sketchProfile,
-              occPrimaryRad,
               { origin: axisOriginVec, direction: axisVec },
+              occPrimaryRad,
               frame,
               {
                 id: feature.id,

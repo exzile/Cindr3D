@@ -13,6 +13,7 @@
 - [arachne_subsystem.md](arachne_subsystem.md) - variable-width walls (pure-JS + WASM post-9.2/9.4), flap-topology limit, libArachne integration, diagnostic patterns, what doesn't work
 - [extrude_pipeline.md](extrude_pipeline.md) - profile flat list + atomic regions, smallest-wins picker, csgIntersect overlap rule, disconnected-body splitting
 - [csg_edge_cut.md](csg_edge_cut.md) - archive of removed mesh-CSG fillet/chamfer pipeline; OCC-only edge-modification notes and deleted file list
+- [occ_parallel_handoff.md](occ_parallel_handoff.md) - OCC migration complete status; boolean commit path summary; remaining cleanup gates
 - [sketch_interaction_pipeline.md](sketch_interaction_pipeline.md) - chain-of-responsibility commit dispatch, fingerprint-LRU preview cache, SketchCommitCtx shape
 - [duet_service_architecture.md](duet_service_architecture.md) - DuetService facade + per-concern sibling modules, where to add new API calls
 

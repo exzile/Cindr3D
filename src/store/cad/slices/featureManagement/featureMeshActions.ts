@@ -8,6 +8,7 @@ import { errorMessage } from "../../../../utils/errorHandling";
 import { globalBRepBodyRegistry } from "../../../../engine/occ/globalRegistry";
 import {
   occFilletEdgeSetsWithInstance,
+  occFullRoundFilletWithInstance,
   type OccFilletEdgeSet,
 } from "../../../../engine/occ/ops/fillet";
 import type { BRepBody } from "../../../../engine/occ/brepBody";
@@ -222,6 +223,7 @@ export function createFeatureMeshActions({
     distance,
     distance2,
     pushUndo = false,
+    fullRoundFaces,
   }: {
     tool: "Fillet" | "Chamfer";
     featureId?: string;
@@ -232,6 +234,7 @@ export function createFeatureMeshActions({
     distance?: number;
     distance2?: number;
     pushUndo?: boolean;
+    fullRoundFaces?: { centerFaceId: number; sideFaceIds: [number, number] };
   }): boolean => {
     if (!featureId) {
       return markOccEdgeModificationError(undefined, tool, "OCC edge operations require a feature id");
@@ -264,12 +267,20 @@ export function createFeatureMeshActions({
 
     const result =
       tool === "Fillet"
-        ? occFilletEdgeSetsWithInstance(
-            occ.oc,
-            srcBody,
-            effectiveFilletEdgeSets,
-            { sourceFeatureId: featureId, continuity },
-          )
+        ? (fullRoundFaces
+            ? occFullRoundFilletWithInstance(
+                occ.oc,
+                srcBody,
+                fullRoundFaces.centerFaceId,
+                fullRoundFaces.sideFaceIds,
+                { sourceFeatureId: featureId },
+              )
+            : occFilletEdgeSetsWithInstance(
+                occ.oc,
+                srcBody,
+                effectiveFilletEdgeSets,
+                { sourceFeatureId: featureId, continuity },
+              ))
         : occChamferWithInstance(occ.oc, srcBody, numericEdgeIds, distance ?? 0, {
             distance2:
               distance2 !== undefined && distance2 !== distance ? distance2 : undefined,
@@ -884,12 +895,23 @@ export function createFeatureMeshActions({
           ? resolveOccFilletEdgeSets(numericEdgeIds, srcBody, filletParams, radius)
         : undefined;
       const { continuity } = resolveOccFilletOptions(filletParams);
+
+      // Full-round with explicit face IDs: use occFullRoundFilletWithInstance
+      const centerFaceId = typeof filletParams?.centerFaceId === 'number' ? filletParams.centerFaceId : undefined;
+      const rawSideIds = Array.isArray(filletParams?.sideFaceIds) ? filletParams!.sideFaceIds as unknown[] : undefined;
+      const sideFaceIds: [number, number] | undefined =
+        rawSideIds && rawSideIds.length >= 2 && typeof rawSideIds[0] === 'number' && typeof rawSideIds[1] === 'number'
+          ? [rawSideIds[0] as number, rawSideIds[1] as number]
+          : undefined;
+      const fullRoundFaces = centerFaceId !== undefined && sideFaceIds ? { centerFaceId, sideFaceIds } : undefined;
+
       applyOccEdgeModification({
         tool: "Fillet",
         featureId,
         edgeIds,
         filletEdgeSets,
         continuity,
+        fullRoundFaces,
       });
     },
     // 3D edge chamfer using exact OCC topology edge IDs.
@@ -935,6 +957,15 @@ export function createFeatureMeshActions({
           ? resolveOccFilletEdgeSets(numericEdgeIds, srcBody, params)
           : undefined;
         const { continuity } = resolveOccFilletOptions(params);
+        const replayCenterFaceId = typeof params.centerFaceId === 'number' ? params.centerFaceId : undefined;
+        const rawReplaySideIds = Array.isArray(params.sideFaceIds) ? params.sideFaceIds as unknown[] : undefined;
+        const replaySideFaceIds: [number, number] | undefined =
+          rawReplaySideIds && rawReplaySideIds.length >= 2 && typeof rawReplaySideIds[0] === 'number' && typeof rawReplaySideIds[1] === 'number'
+            ? [rawReplaySideIds[0] as number, rawReplaySideIds[1] as number]
+            : undefined;
+        const replayFullRoundFaces = replayCenterFaceId !== undefined && replaySideFaceIds
+          ? { centerFaceId: replayCenterFaceId, sideFaceIds: replaySideFaceIds }
+          : undefined;
         applyOccEdgeModification({
           tool: "Fillet",
           featureId,
@@ -942,6 +973,7 @@ export function createFeatureMeshActions({
           filletEdgeSets,
           continuity,
           pushUndo: true,
+          fullRoundFaces: replayFullRoundFaces,
         });
         return;
       }

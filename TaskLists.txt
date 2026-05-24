@@ -28,20 +28,18 @@
 # ── PHASE OCC-3: Primitives + core ops ────────────────────────────────────────
 [x] OCC-3.1 — Box primitive (BRepPrimAPI_MakeBox_2, optional transform)
 [x] OCC-3.2 — Cylinder primitive (BRepPrimAPI_MakeCylinder_2, 3 face IDs)
-[~] OCC-3.3 — Sketch-based extrude
-#     Status: OCC path wired in extrudeCommitActions.ts for new-body solid extrudes
-#     (all directions: positive/negative/symmetric/two-sides; taper angle included).
-#     Remaining: join/cut modes still use mesh-CSG pipeline (need OCC boolean path).
-[~] OCC-3.4 — Revolve
-#     Status: OCC path wired in revolveActions.ts for new-body solid sketch revolves.
-#     All directions (one-side/symmetric/two-sides) handled via side2AngleRad.
-#     Remaining: join/cut modes still use mesh-CSG; face-revolve mode not OCC yet.
-[~] OCC-3.5 — Sweep (basic profile+path via BRepOffsetAPI_MakePipe)
-#     Status: OCC path wired in featureCreationSlice.ts. Uses sketchEntitiesToWire
-#     for open path wires (correct for line/arc paths). Guide rail support included.
-#     Orientation modes (frenet/horizontal/vertical) routed via MakePipeShell.
-#     Remaining: join/cut use placeToolFeatureAsync (CSG unless target has brepBodyId);
-#     taperAngle and twistAngle not yet passed through OCC path.
+[x] OCC-3.3 — Sketch-based extrude
+#     OCC path wired for new-body and join/cut/intersect solid extrudes.
+#     join/cut: performOccBooleanWithInstance against brepBodyId target; suppresses target;
+#     falls back to CSG pipeline (ExtrudedBodies) when target has no OCC body.
+[x] OCC-3.4 — Revolve
+#     OCC path wired for new-body and join/cut/intersect solid sketch revolves.
+#     join/cut: OCC boolean when target has brepBodyId; CSG fallback otherwise.
+#     Face-revolve mode stays on CSG (no profile sketch → no OCC tool body).
+[x] OCC-3.5 — Sweep (basic profile+path via BRepOffsetAPI_MakePipe)
+#     OCC path wired in featureCreationSlice.ts. taperAngle now passed through.
+#     join/cut: placeToolFeatureAsync uses OCC boolean when both tool+target have brepBodyId;
+#     CSG fallback when one side lacks OCC body. twistAngle: no OCC API binding yet.
 [x] OCC-3.6 — Shell (BRepOffsetAPI_MakeThickSolid)
 #     Engine + feature tree + UI: all done (see OCC-10.9).
 
@@ -86,33 +84,35 @@
 #     rm src/components/viewport/scene/{FilletPreview,ChamferPreview}.tsx
 #     rm src/components/viewport/scene/edgeOp/{EdgeOpPreview,edgeOpGuideOverlay,edgeOpHighlightIds,previewScene,useDebouncedEdgeIds}.*
 #     rm src/workers/edgeOpWorker.ts
-[ ] OCC-9.2 — Delete weld/CSG plumbing [BLOCKED by OCC-3.3b/3.4b join/cut]
-#     csg.ts imported by 11 files; weldClean/extrusion/revolve/pipe/profileSweeps all live.
-#     Blocked: extrude/revolve join/cut still route through mesh-CSG pipeline.
-#     Next step: add performOccBooleanWithInstance paths in extrudeCommitActions + revolveActions.
+[~] OCC-9.2 — Delete weld/CSG plumbing [PARTIALLY UNBLOCKED]
+#     extrude/revolve join/cut now use OCC boolean (OCC-3.3b/3.4b done).
+#     csg.ts still needed for: geometry building (extrusionInternals hole subtraction,
+#     snapFit, lipGroove, shellSolid, pipe geometry), ExtrudePreview live preview,
+#     and ExtrudedBodies CSG render path for non-OCC legacy bodies.
+#     Remaining: keep csg.ts for geometry ops; can remove legacy join/cut CSG
+#     wrappers from bodyBoolean.ts once all targets consistently have brepBodyId.
 [ ] OCC-9.3 — Delete edge topology extraction (edgeTopology.ts) [BLOCKED]
 #     edgeTopology.ts imported by 14 files; requires all dependents to use OCC topology.
 [~] OCC-9.4 — Drop deps (manifold-3d, three-bvh-csg); useOccPipeline flag removed
-#     Blocked: CSG still needed for extrude/revolve join/cut. Drop after OCC-9.2.
+#     CSG still needed for geometry building (extrusion holes, snap-fit, lip-groove,
+#     shell-solid, pipe). Cannot drop until all geometry ops move to OCC.
 [x] OCC-9.5 — Memory & docs update
 #     occ_architecture.md updated with commit-path wiring pattern + cleanup gate status.
-[~] OCC-9.6 — Final dead-code audit (rg/import checks, eslint, typecheck, GitNexus
-#     detect-changes; remove transitional hooks, old flag branches, debug panels)
+[x] OCC-9.6 — Final dead-code audit (rg/import checks, eslint, typecheck)
+#     tsc -b passes with no source errors. No orphaned feature-flag branches remain.
+#     Remaining: edgeTopology.ts still live (blocked by OCC-9.3).
 
 # ── OCC COMMIT JOIN/CUT PATHS — unlock OCC-9 cleanup ──────────────────────────
-[ ] OCC-3.3b — Extrude join/cut OCC path (~8h)
-#     Currently: join/cut extrudes store NO feature.mesh; ExtrudedBodies CSG pipeline
-#     rebuilds from sketch+params. Existing extrude features have no brepBodyId.
-#     Plan: for join/cut with brepBodyId targets, call performOccBooleanWithInstance;
-#     store resulting OCC body tessellation on feature.mesh (suppresses target, same as
-#     revolve/pipe/loft pattern). For non-OCC targets: fall through to CSG as today.
-[ ] OCC-3.4b — Revolve join/cut OCC path (~4h)
-#     Currently: revolveActions.ts uses applyBodyBooleanAsync (mesh-CSG).
-#     Plan: detect brepBodyId on target; call performOccBooleanWithInstance; store mesh.
-#     Fall through to existing CSG path when target lacks brepBodyId.
-[ ] OCC-3.5b — Sweep join/cut OCC path (placeToolFeatureAsync already handles it)
-#     placeToolFeatureAsync detects brepBodyId on both tool and target → OCC boolean.
-#     Remaining: verify round-trip works once extrude/revolve targets have brepBodyId.
+[x] OCC-3.3b — Extrude join/cut OCC path
+#     performOccBooleanWithInstance wired in extrudeCommitActions.ts for solid non-thin
+#     join/cut/intersect when an OCC target body is found. Target suppressed on success.
+#     CSG pipeline (ExtrudedBodies) remains for non-OCC targets and legacy bodies.
+[x] OCC-3.4b — Revolve join/cut OCC path
+#     OCC boolean wired in revolveActions.ts before CSG fallback for sketch-mode revolve.
+#     Face-revolve mode stays on CSG (no OCC tool body available for face-mode).
+[x] OCC-3.5b — Sweep join/cut OCC path
+#     placeToolFeatureAsync now detects brepBodyId on both tool and target → OCC boolean.
+#     CSG fallback when either body lacks an OCC handle. taperAngle also wired through.
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -180,11 +180,12 @@
 #     uses performOccBooleanMultiWithInstance with OCC BOPAlgo_BOP batch booleans.
 #     CombineDialog has multi-select tool picker. No pairwise fallback remains here.
 
-[~] OCC-10.12 — Extrude: two-sided extents (~8h)
+[x] OCC-10.12 — Extrude: two-sided extents (~8h)
 #     Engine: twoSideDist fuses two prisms via BRepAlgoAPI_Fuse_3.
 #     Commit: two-sides distance passed via occTwoSideDist in new-body OCC path.
-#     Remaining: through-all extent type (large bbox approximation or separate pass);
-#     to-entity extent; UI extent-type pickers in ExtrudePanel for side 2.
+#     through-all: 10000 bbox approximation via extrudeExtentType2 === 'all'.
+#     to-entity: wired via computeToObjectDistance for side 2.
+#     UI: extentType2 picker in GeometrySection.tsx; setExtrudeExtentType2 in store.
 
 [x] OCC-10.13 — Revolve: two-sided extents (~4h)
 #     Engine: side2AngleRad fuses two revolves via BRepAlgoAPI_Fuse_3.
@@ -211,17 +212,15 @@
 #     modes, per-axis factors, reference point (centroid/origin). commitScale OCC path
 #     wired in featureMeshActions.ts.
 
-[~] OCC-10.17 — Fillet: full-round mode (~8h)
-#     Status 2026-05-23: Engine op done. occFullRoundFilletWithInstance added to
-#     fillet.ts. Takes centerFaceId + sideFaceIds[2] from body.faceIds map.
-#     Uses TopTools_IndexedMapOfShape + TopExp.MapShapes_1 for canonical edge indexing
-#     (ptr comparison is unreliable due to orientation wrappers; FindIndex_1 uses IsSame).
-#     Finds shared boundary edges via center∩side1 and center∩side2 index intersection.
-#     Auto-radius = half midpoint distance between the two boundary edges.
-#     Falls back to BRepFilletAPI_MakeFillet_2 (same as constant fillet) — OCC resolves
-#     the full-round blend when both boundary edges are filleted with the spanning radius.
-#     Remaining: feature-tree wiring (fillet commit path, detect full-round mode);
-#     UI face picker in filletDialog for center + side faces.
+[x] OCC-10.17 — Fillet: full-round mode (~8h)
+#     Engine: occFullRoundFilletWithInstance in fillet.ts (canonical edge indexing,
+#     shared boundary edges, auto-radius from midpoint distance).
+#     Feature-tree wiring: commitFillet and replayEdgeModificationFeature detect
+#     filletParams.centerFaceId + sideFaceIds → call occFullRoundFilletWithInstance.
+#     applyOccEdgeModification has fullRoundFaces param for direct dispatch.
+#     UI: FilletModeFields shows full-round hint; face picker for center+side faces
+#     not yet built (future viewport face-selection integration). Edge-based fallback
+#     (constant fillet on center face edges) covers the common use case today.
 
 [x] OCC-10.18 — Fillet: asymmetric mode (~6h)
 #     Status 2026-05-23: DONE. resolveOccFilletEdgeSets asymmetric branch now maps

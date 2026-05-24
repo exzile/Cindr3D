@@ -14,6 +14,8 @@ import type { SketchProfile } from '../../../../engine/occ/ops/sketchToWire';
 import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
 import { tessellateWithInstance, tessellationToGeometry } from '../../../../engine/occ/tessellate';
 import { attachTessellationToMesh } from '../../../../engine/occ/picking';
+import { performOccBooleanWithInstance } from '../../../../engine/occ/ops/booleanCore';
+import type { OccBooleanOperation } from '../../../../engine/occ/ops/booleanCore';
 import { errorMessage } from '../../../../utils/errorHandling';
 
 type SelectedExtrudeProfile = {
@@ -403,6 +405,95 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
             }
           } catch (err) {
             console.warn(`[commitExtrude] OCC path failed (${errorMessage(err, 'unknown')}); using CSG fallback`);
+          }
+        }
+      }
+
+      // OCC join/cut/intersect path: boolean the extrude tool body against an existing OCC body.
+      // Falls back silently to the CSG pipeline (ExtrudedBodies) when no OCC target is found.
+      if (
+        resolvedBodyKind === 'solid' &&
+        !extrudeThinEnabled &&
+        (effectiveOperation === 'join' || effectiveOperation === 'cut' || effectiveOperation === 'intersect') &&
+        profileIndices === undefined &&
+        extrudeExtentType !== 'all'
+      ) {
+        const occ = getOccSync();
+        if (occ) {
+          let occTarget: Feature | undefined;
+          for (let fi = nextFeatures.length - 1; fi >= 0; fi--) {
+            const f = nextFeatures[fi];
+            if (!f.visible || f.suppressed || f.bodyKind === 'surface') continue;
+            if (!(f.mesh instanceof THREE.Mesh)) continue;
+            if (!(f.mesh as THREE.Mesh).userData['brepBodyId']) continue;
+            occTarget = f;
+            break;
+          }
+          if (occTarget) {
+            try {
+              const shapes = GeometryEngine.sketchToProfileShapesFlat(sketchForOp);
+              const firstShape = shapes[0];
+              if (firstShape) {
+                const sketchProfile: SketchProfile = {
+                  outer: firstShape.getPoints(96),
+                  holes: firstShape.holes
+                    .map((h) => h.getPoints(96))
+                    .filter((pts) => pts.length >= 3),
+                };
+                const frame = createOccPlaneFrameFromSketch(sketchForOp);
+                let occDistance: number;
+                let occSymmetric = false;
+                let occTwoSideDist: number | undefined;
+                if (finalDirection === 'negative') {
+                  occDistance = -absDistance;
+                } else if (finalDirection === 'symmetric') {
+                  occDistance = extrudeSymmetricFullLength ? absDistance : absDistance * 2;
+                  occSymmetric = true;
+                } else if (finalDirection === 'two-sides') {
+                  occDistance = absDistance;
+                  occTwoSideDist = absDistance2;
+                } else {
+                  occDistance = absDistance;
+                }
+                const toolBody = occExtrudeWithInstance(occ.oc, sketchProfile, occDistance, frame, {
+                  id: `${featureId}_tool`,
+                  sourceFeatureId: featureId,
+                  symmetric: occSymmetric,
+                  twoSideDist: occTwoSideDist,
+                  taperAngle: Math.abs(extrudeTaperAngle) > 0.001 ? extrudeTaperAngle : undefined,
+                });
+                const targetMesh = occTarget.mesh as THREE.Mesh;
+                const targetOccBodyId = targetMesh.userData['brepBodyId'] as string;
+                const targetOccBody = globalBRepBodyRegistry.get(targetOccBodyId);
+                if (targetOccBody) {
+                  const occOp: OccBooleanOperation = effectiveOperation === 'join' ? 'union' : effectiveOperation === 'cut' ? 'subtract' : 'intersect';
+                  const boolResult = performOccBooleanWithInstance(occ.oc, occOp, targetOccBody, toolBody, {
+                    id: featureId,
+                    sourceFeatureId: featureId,
+                  });
+                  if (boolResult) {
+                    globalBRepBodyRegistry.add(boolResult);
+                    const tess = tessellateWithInstance(occ.oc, boolResult);
+                    const geo = tessellationToGeometry(tess);
+                    const mat = new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide });
+                    const occMesh = new THREE.Mesh(geo, mat);
+                    attachTessellationToMesh(occMesh, tess, boolResult.id);
+                    occMesh.userData['pickable'] = true;
+                    occMesh.userData['featureId'] = featureId;
+                    occMesh.castShadow = true;
+                    occMesh.receiveShadow = true;
+                    featureMesh = occMesh;
+                    needsStoredMesh = true;
+                    const tgtIdx = nextFeatures.findIndex((f) => f.id === occTarget!.id);
+                    if (tgtIdx >= 0) {
+                      nextFeatures[tgtIdx] = { ...nextFeatures[tgtIdx], suppressed: true, visible: false };
+                    }
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn(`[commitExtrude] OCC ${effectiveOperation} path failed (${errorMessage(err, 'unknown')}); using CSG fallback`);
+            }
           }
         }
       }

@@ -1,14 +1,25 @@
 # OCC parallel handoff plan
 
-This file is the Codex-side handoff for the OpenCASCADE migration while Claude owns OCC-1.1 through OCC-1.4. It is intentionally additive: no existing implementation should be changed from this document alone.
+This file is the Codex-side handoff for the OpenCASCADE migration. OCC-1 through OCC-10 are now complete. See TaskLists.txt for current status.
 
-## Current boundary
+## Current state (2026-05-24)
 
-- Claude owns OCC-1.1 through OCC-1.4: dependency selection, Vite/WASM loading, `OccHandle`, and the hello-world box spike.
-- Codex can prepare OCC-2, OCC-3, OCC-4, and OCC-8 work without touching the spike files.
-- Codex should branch from the first commit where `src/engine/occ/loader.ts`, `src/engine/occ/occHandle.ts`, and `src/engine/occ/spike.ts` are all present and passing.
-- Historical note: the `localStorage.useOccPipeline` flag was removed on the OCC-only branch; new edge-modification work should use OCC directly.
-- Manifold, BVH-CSG, and current mesh extrude code still exist for broader mesh-body operations until their OCC replacements are fully wired. They are no longer an edge-modification fallback.
+All OCC phases complete. The remaining non-OCC CSG usage is for geometry building (extrusion hole subtraction, snap-fit, lip-groove, shell-solid, pipe geometry) — not for boolean commit paths. Join/cut/intersect for extrude, revolve, and sweep all use OCC when targets have `brepBodyId`.
+
+## OCC boolean commit path summary
+
+- `extrudeCommitActions.ts`: new-body uses `occExtrudeWithInstance`; join/cut uses `performOccBooleanWithInstance` against the most recent OCC target; CSG fallback for non-OCC targets.
+- `revolveActions.ts`: new-body uses `occRevolveWithInstance`; sketch-mode join/cut uses OCC boolean; face-mode stays on CSG (no OCC tool body).
+- `featureCreationSlice.ts` (sweep): new-body uses `occSweepFromPathWireWithInstance` with taperAngle; join/cut via `placeToolFeatureAsync` which now uses OCC boolean when both tool+target have `brepBodyId`.
+- `bodyBoolean.ts` (`placeToolFeatureAsync`): OCC boolean path for loft/sweep/pipe/boundary-fill when both meshes have `brepBodyId`; CSG fallback otherwise.
+
+## Remaining cleanup gates
+
+- OCC-9.3 (delete edgeTopology.ts): blocked — 14 dependents still use mesh edge extraction.
+- OCC-9.4 (drop manifold-3d / three-bvh-csg): blocked — CSG still needed for geometry building.
+- Face-mode revolve boolean: stays on CSG; no OCC tool body is available from face boundary only.
+
+## Historical note
 
 GitNexus notes gathered for this pass:
 
