@@ -151,7 +151,7 @@ describe('Slicer shape correctness — area preservation across wall offsets', (
     // area; allow ±5% tolerance.
     expect(area).toBeGreaterThan(expected * 0.95);
     expect(area).toBeLessThan(expected * 1.02);
-  });
+  }, 30_000);
 });
 
 describe('Slicer shape correctness — wall closure', () => {

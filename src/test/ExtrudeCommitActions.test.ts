@@ -86,7 +86,7 @@ describe('commitExtrude join operation', () => {
       extrudeSelectedSketchId: `${sketchA.id}::0`,
       extrudeOperation: 'new-body',
     });
-    useCADStore.getState().commitExtrude();
+    await useCADStore.getState().commitExtrude();
 
     useCADStore.setState({
       sketches: [sketchA, sketchB],
@@ -94,7 +94,7 @@ describe('commitExtrude join operation', () => {
       extrudeSelectedSketchId: `${sketchB.id}::0`,
       extrudeOperation: 'join',
     });
-    useCADStore.getState().commitExtrude();
+    await useCADStore.getState().commitExtrude();
 
     const state = useCADStore.getState();
     expect(state.features.filter((f) => f.type === 'extrude')).toHaveLength(2);
@@ -116,7 +116,7 @@ describe('commitExtrude join operation', () => {
       extrudeSelectedSketchId: `${sketchA.id}::0`,
       extrudeOperation: 'new-body',
     });
-    useCADStore.getState().commitExtrude();
+    await useCADStore.getState().commitExtrude();
 
     useCADStore.setState({
       sketches: [sketchA, sketchB],
@@ -124,7 +124,7 @@ describe('commitExtrude join operation', () => {
       extrudeSelectedSketchId: `${sketchB.id}::0`,
       extrudeOperation: 'join',
     });
-    useCADStore.getState().commitExtrude();
+    await useCADStore.getState().commitExtrude();
 
     const state = useCADStore.getState();
     expect(state.features.filter((f) => f.type === 'extrude')).toHaveLength(2);
