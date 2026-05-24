@@ -12,7 +12,7 @@
  *     transparently; otherwise sets the imageFailed flag so the empty
  *     state renders.
  */
-import { useCallback, useRef } from 'react';
+import { useCallback, useState } from 'react';
 import type { DuetPrefs } from '../../../../utils/duetPrefs';
 
 export interface UseCameraConnectionDeps {
@@ -36,15 +36,15 @@ export function useCameraConnection(deps: UseCameraConnectionDeps) {
     setReconnectCount, setStreamRevision, setMessage,
   } = deps;
 
-  // Internal — sliding window of recent reconnect timestamps. Exposed via
-  // the return so the Health card can show "last reconnect at …".
-  const reconnectHistoryRef = useRef<number[]>([]);
+  // Exposed so the Health card can show "last reconnect at ...".
+  const [lastReconnectAt, setLastReconnectAt] = useState<number | null>(null);
 
   const reconnectCamera = useCallback(() => {
     setImageFailed(false);
     setWebRtcFailed(false);
     setLastFrameAt(null);
-    reconnectHistoryRef.current = [...reconnectHistoryRef.current, Date.now()].slice(-10);
+    const now = Date.now();
+    setLastReconnectAt(now);
     setReconnectCount((value) => value + 1);
     setStreamRevision((value) => value + 1);
     setMessage('Reconnecting camera stream...');
@@ -64,5 +64,5 @@ export function useCameraConnection(deps: UseCameraConnectionDeps) {
     setImageFailed(true);
   }, [activePrinterId, setImageFailed, setMessage, setStreamRevision, updatePrinterPrefs, webcamStreamPreference]);
 
-  return { reconnectCamera, handleCameraError, reconnectHistoryRef };
+  return { reconnectCamera, handleCameraError, lastReconnectAt };
 }

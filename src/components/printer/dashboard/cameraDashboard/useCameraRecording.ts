@@ -98,6 +98,7 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
   const recordingThumbnailRef = useRef<Blob | undefined>(undefined);
   const backendRecordingRef = useRef<BackendRecordingSession | null>(null);
   const frameTimerRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
 
   const [recordingKind, setRecordingKind] = useState<CameraClipKind | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -111,6 +112,18 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
       : 'Ready';
   const recordingMarkerCount = recordingMarkersRef.current.length;
 
+  const safeSetBusy = useCallback((busy: boolean) => {
+    if (mountedRef.current) setBusy(busy);
+  }, [setBusy]);
+
+  const safeSetMessage = useCallback((message: string) => {
+    if (mountedRef.current) setMessage(message);
+  }, [setMessage]);
+
+  const safeRefreshClips = useCallback(async () => {
+    if (mountedRef.current) await refreshClips();
+  }, [refreshClips]);
+
   const stopBackend = useCallback(async () => {
     const session = backendRecordingRef.current;
     if (!session) return false;
@@ -120,8 +133,10 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
     recordingJobRef.current = undefined;
     recordingMarkersRef.current = [];
     recordingThumbnailRef.current = undefined;
-    setRecordingKind(null);
-    setElapsedMs(0);
+    if (mountedRef.current) {
+      setRecordingKind(null);
+      setElapsedMs(0);
+    }
     try {
       const { blob, durationHeader } = await stopBackendRecordingFetch(session.id);
       await persistRecordedClip({
@@ -134,13 +149,13 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
         mimeTypeFallback: 'video/mp4',
         printerId, printerName,
         saveErrorMessage: 'Unable to save backend camera recording.',
-        setBusy, setMessage, refreshClips,
+        setBusy: safeSetBusy, setMessage: safeSetMessage, refreshClips: safeRefreshClips,
       });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to save backend camera recording.');
+      safeSetMessage(error instanceof Error ? error.message : 'Unable to save backend camera recording.');
     }
     return true;
-  }, [printerId, printerName, refreshClips, setBusy, setMessage]);
+  }, [printerId, printerName, safeRefreshClips, safeSetBusy, safeSetMessage]);
 
   const stopRecording = useCallback(() => {
     if (frameTimerRef.current !== null) {
@@ -176,6 +191,7 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
         });
         backendRecordingRef.current = { id, kind, jobName, markers: [], startedAt, thumbnailBlob };
         persistBackendSession(printerId, { id, kind, jobName, markers: [], startedAt });
+        if (!mountedRef.current) return;
         startedAtRef.current = startedAt;
         recordingKindRef.current = kind;
         recordingJobRef.current = jobName;
@@ -183,15 +199,15 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
         recordingThumbnailRef.current = thumbnailBlob;
         setRecordingKind(kind);
         setElapsedMs(0);
-        setMessage(kind === 'timelapse' ? 'Backend timelapse recording started...' : kind === 'auto' ? 'Backend auto-recording active print...' : 'Backend camera recording started...');
+        safeSetMessage(kind === 'timelapse' ? 'Backend timelapse recording started...' : kind === 'auto' ? 'Backend auto-recording active print...' : 'Backend camera recording started...');
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : 'Unable to start backend camera recording.');
+        safeSetMessage(error instanceof Error ? error.message : 'Unable to start backend camera recording.');
       }
       return;
     }
 
     if (!('MediaRecorder' in window)) {
-      setMessage('This browser does not support camera clip recording.');
+      safeSetMessage('This browser does not support camera clip recording.');
       return;
     }
 
@@ -200,6 +216,7 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
       const canvas = canvasRef.current;
       if (!canvas) throw new Error('Recording canvas is not ready.');
       recordingThumbnailRef.current = await canvasBlob('image/jpeg', 0.75);
+      if (!mountedRef.current) return;
       const stream = canvas.captureStream(kind === 'timelapse' ? timelapseFps : RECORDING_FPS);
       const mimeType = pickRecordingMimeType();
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
@@ -226,20 +243,22 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
         recordingJobRef.current = undefined;
         recordingMarkersRef.current = [];
         recordingThumbnailRef.current = undefined;
-        setRecordingKind(null);
-        setElapsedMs(0);
+        if (mountedRef.current) {
+          setRecordingKind(null);
+          setElapsedMs(0);
+        }
         void persistRecordedClip({
           blob, durationMs, kind: stoppedKind, jobName: stoppedJob,
           markers: stoppedMarkers, thumbnailBlob: stoppedThumbnail,
           mimeTypeFallback: type,
           printerId, printerName,
           saveErrorMessage: 'Unable to save camera clip.',
-          setBusy, setMessage, refreshClips,
+          setBusy: safeSetBusy, setMessage: safeSetMessage, refreshClips: safeRefreshClips,
         });
       };
 
       recorder.onerror = () => {
-        setMessage('Recording stopped because the camera stream could not be captured.');
+        safeSetMessage('Recording stopped because the camera stream could not be captured.');
         stopRecording();
       };
 
@@ -249,23 +268,23 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
           drawFrame();
         } catch {
           stopRecording();
-          setMessage('Recording stopped because the camera frame could not be read.');
+          safeSetMessage('Recording stopped because the camera frame could not be read.');
         }
       }, kind === 'timelapse' ? Math.max(1, timelapseIntervalSec) * 1000 : Math.round(1000 / RECORDING_FPS));
 
       recorder.start(1000);
       setRecordingKind(kind);
       setElapsedMs(0);
-      setMessage(kind === 'timelapse' ? 'Recording timelapse...' : kind === 'auto' ? 'Auto-recording active print...' : 'Recording camera clip...');
+      safeSetMessage(kind === 'timelapse' ? 'Recording timelapse...' : kind === 'auto' ? 'Auto-recording active print...' : 'Recording camera clip...');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to start recording.');
+      safeSetMessage(error instanceof Error ? error.message : 'Unable to start recording.');
     }
   }, [
     backendRecordingRef, backendRecordingUrl, canUseBackendRecording, canvasBlob, canvasRef,
     chunksRef, drawFrame, frameTimerRef, hasCamera, hdBridgeQuality, isServerUsbCamera,
     printerId, printerName, recorderRef, recording, recordingJobRef, recordingKindRef,
-    recordingMarkersRef, recordingThumbnailRef, refreshClips, setBusy, setElapsedMs,
-    setMessage, setRecordingKind, startedAtRef, stopRecording, timelapseFps, timelapseIntervalSec,
+    recordingMarkersRef, recordingThumbnailRef, safeRefreshClips, safeSetBusy, safeSetMessage,
+    setElapsedMs, setRecordingKind, startedAtRef, stopRecording, timelapseFps, timelapseIntervalSec,
   ]);
 
   // Restore a backend-recording session from sessionStorage. The session
@@ -290,7 +309,9 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
     setRecordingKind(stored.kind);
     setElapsedMs(Date.now() - stored.startedAt);
 
+    let disposed = false;
     void fetchBackendRecordingStatus().then((status) => {
+      if (disposed) return;
       if (status.recordings.some((rec) => rec.id === stored.id)) return;
       clearBackendSession(printerId);
       if (backendRecordingRef.current?.id === stored.id) {
@@ -302,6 +323,7 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
         setElapsedMs(0);
       }
     }).catch(() => {});
+    return () => { disposed = true; };
   }, [printerId]);
 
   // Auto-record on print transitions: kick off when a print becomes active,
@@ -331,11 +353,18 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
   // Clear the per-frame sampling interval on unmount — MediaRecorder
   // itself releases its stream tracks, but the timer that re-draws into
   // the canvas would tick forever if not cleared.
-  useEffect(() => () => {
-    if (frameTimerRef.current !== null) {
-      window.clearInterval(frameTimerRef.current);
-      frameTimerRef.current = null;
-    }
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (frameTimerRef.current !== null) {
+        window.clearInterval(frameTimerRef.current);
+        frameTimerRef.current = null;
+      }
+      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+        recorderRef.current.stop();
+      }
+    };
   }, [frameTimerRef]);
 
   // Manual marker — fired from the record-strip button while a recording
@@ -362,11 +391,11 @@ export function useCameraRecording(deps: UseCameraRecordingDeps) {
         markers: session.markers, startedAt: session.startedAt,
       });
     }
-    setMessage(`Added marker at ${formatClipDuration(atMs)}.`);
+    safeSetMessage(`Added marker at ${formatClipDuration(atMs)}.`);
     captureAnomaly(`manual marker ${formatClipDuration(atMs)}`);
   }, [
     backendRecordingRef, captureAnomaly, printerId, recording,
-    recordingMarkersRef, setMessage, startedAtRef,
+    recordingMarkersRef, safeSetMessage, startedAtRef,
   ]);
 
   return {

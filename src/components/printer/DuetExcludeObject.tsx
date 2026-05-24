@@ -44,6 +44,7 @@ export default function DuetExcludeObject() {
   const [confirmIndex, setConfirmIndex] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const run = useAsyncAction(setBusy, setError, 'Failed to send M486');
 
   if (!connected) {
     return (
@@ -74,7 +75,6 @@ export default function DuetExcludeObject() {
   const cancelledCount = objects.filter((o) => o.cancelled).length;
   const remainingCount = objects.length - cancelledCount;
 
-  const run = useAsyncAction(setBusy, setError, 'Failed to send M486');
   const handleCancel = async (index: number) => {
     if (!supported) return;
     await run(async () => {

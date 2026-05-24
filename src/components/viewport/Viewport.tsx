@@ -40,10 +40,8 @@ import SketchPlaneDragger from './sketch/SketchPlaneDragger';
 import Sketch3DPlaneIndicator from './sketch/Sketch3DPlaneIndicator';
 import FilletEdgeHighlight from './scene/FilletEdgeHighlight';
 import FilletGizmo from './scene/FilletGizmo';
-import FilletPreview from './scene/FilletPreview';
 import ChamferEdgeHighlight from './scene/ChamferEdgeHighlight';
 import ChamferGizmo from './scene/ChamferGizmo';
-import ChamferPreview from './scene/ChamferPreview';
 import ConstructionGeometryInteraction from './scene/ConstructionGeometryInteraction';
 import ConstructionGeometryRenderer from './scene/ConstructionGeometryRenderer';
 import ReplaceFaceInteraction from './scene/ReplaceFaceInteraction';
@@ -57,6 +55,7 @@ import RemoveFacePicker from './scene/RemoveFacePicker';
 import DeleteFacePicker from './scene/DeleteFacePicker';
 import DraftPartingLinePicker from './scene/DraftPartingLinePicker';
 import DraftPullDirectionPicker from './scene/DraftPullDirectionPicker';
+import OffsetFacePicker from './scene/OffsetFacePicker';
 import JointDialogPicker from './scene/JointDialogPicker';
 import AlignPicker from './scene/AlignPicker';
 import MeshExporter from './scene/MeshExporter';
@@ -254,10 +253,8 @@ export default function Viewport() {
         <CrashBoundary label="EdgeOp">
           <FilletEdgeHighlight />
           <FilletGizmo />
-          <FilletPreview />
           <ChamferEdgeHighlight />
           <ChamferGizmo />
-          <ChamferPreview />
         </CrashBoundary>
         <ConstructionGeometryInteraction />
         <ConstructionGeometryRenderer />
@@ -272,6 +269,7 @@ export default function Viewport() {
         <DeleteFacePicker />
         <DraftPartingLinePicker />
         <DraftPullDirectionPicker />
+        <OffsetFacePicker />
         <MeshExporter />
         <SnapFitFacePicker />
         <LipGrooveEdgePicker />

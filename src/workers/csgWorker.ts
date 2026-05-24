@@ -14,8 +14,8 @@
  *     transfer: [positions, normals] when non-null
  *
  * Geometry is world-space (caller bakes the matrix before serialising).
- * Manifold WASM initialises once on first message — same singleton pattern as
- * edgeOpWorker. Falls back to three-bvh-csg if Manifold init fails.
+ * Manifold WASM initialises once on first message.
+ * Falls back to three-bvh-csg if Manifold init fails.
  */
 
 import * as THREE from 'three';

@@ -278,37 +278,69 @@ export function createSurfaceUiActions({ set, get }: CADSliceContext): Partial<C
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ SOL-I3: Draft parting line face picker Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   draftPartingFaceId: null,
+  draftPartingOccBodyId: null,
+  draftPartingOccFaceId: null,
   draftPartingFaceNormal: null,
   draftPartingFaceCentroid: null,
-  setDraftPartingFace: (id, normal, centroid) => set({
+  setDraftPartingFace: (id, normal, centroid, occ) => set({
     draftPartingFaceId: id,
+    draftPartingOccBodyId: occ?.bodyId ?? null,
+    draftPartingOccFaceId: occ?.faceId ?? null,
     draftPartingFaceNormal: normal,
     draftPartingFaceCentroid: centroid,
   }),
   clearDraftPartingFace: () => set({
     draftPartingFaceId: null,
+    draftPartingOccBodyId: null,
+    draftPartingOccFaceId: null,
     draftPartingFaceNormal: null,
     draftPartingFaceCentroid: null,
   }),
 
   // ── SOL-F2: Draft pull direction face picker ──────────────────────────
   draftPullFaceId: null,
+  draftPullOccBodyId: null,
+  draftPullOccFaceId: null,
   draftPullFaceNormal: null,
   draftPullFaceCentroid: null,
   draftPullFacePickActive: false,
-  setDraftPullFace: (id, normal, centroid) => set({
+  setDraftPullFace: (id, normal, centroid, occ) => set({
     draftPullFaceId: id,
+    draftPullOccBodyId: occ?.bodyId ?? null,
+    draftPullOccFaceId: occ?.faceId ?? null,
     draftPullFaceNormal: normal,
     draftPullFaceCentroid: centroid,
     draftPullFacePickActive: false,
   }),
   clearDraftPullFace: () => set({
     draftPullFaceId: null,
+    draftPullOccBodyId: null,
+    draftPullOccFaceId: null,
     draftPullFaceNormal: null,
     draftPullFaceCentroid: null,
     draftPullFacePickActive: false,
   }),
   setDraftPullFacePickActive: (v) => set({ draftPullFacePickActive: v }),
+
+  offsetFaceId: null,
+  offsetOccBodyId: null,
+  offsetOccFaceId: null,
+  offsetFaceNormal: null,
+  offsetFaceCentroid: null,
+  setOffsetFace: (id, normal, centroid, occ) => set({
+    offsetFaceId: id,
+    offsetOccBodyId: occ?.bodyId ?? null,
+    offsetOccFaceId: occ?.faceId ?? null,
+    offsetFaceNormal: normal,
+    offsetFaceCentroid: centroid,
+  }),
+  clearOffsetFace: () => set({
+    offsetFaceId: null,
+    offsetOccBodyId: null,
+    offsetOccFaceId: null,
+    offsetFaceNormal: null,
+    offsetFaceCentroid: null,
+  }),
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ SOL-I5: Remove Face face picker Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   removeFaceFaceId: null,

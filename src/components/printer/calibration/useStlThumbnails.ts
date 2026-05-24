@@ -14,6 +14,7 @@ export function useStlThumbnails(entries: ThumbnailEntry[]): Map<string, string>
 
   useEffect(() => {
     let disposed = false;
+    let renderer: THREE.WebGLRenderer | null = null;
 
     (async () => {
       const { STLLoader } = await import('three/examples/jsm/loaders/STLLoader.js');
@@ -21,10 +22,11 @@ export function useStlThumbnails(entries: ThumbnailEntry[]): Map<string, string>
 
       const W = 320;
       const H = 200;
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setSize(W, H);
-      renderer.setPixelRatio(1);
-      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      const activeRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer = activeRenderer;
+      activeRenderer.setSize(W, H);
+      activeRenderer.setPixelRatio(1);
+      activeRenderer.outputColorSpace = THREE.SRGBColorSpace;
 
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(38, W / H, 0.1, 5000);
@@ -76,8 +78,8 @@ export function useStlThumbnails(entries: ThumbnailEntry[]): Map<string, string>
               camera.position.set(dist * 0.12, -dist, Math.max(size.z * 0.24, maxDim * 0.2));
               camera.lookAt(0, 0, Math.max(size.z * 0.08, maxDim * 0.05));
 
-              renderer.render(scene, camera);
-              const dataUrl = renderer.domElement.toDataURL('image/png');
+              activeRenderer.render(scene, camera);
+              const dataUrl = activeRenderer.domElement.toDataURL('image/png');
 
               setThumbnails((prev) => new Map(prev).set(url, dataUrl));
 
@@ -92,10 +94,15 @@ export function useStlThumbnails(entries: ThumbnailEntry[]): Map<string, string>
         });
       }
 
-      renderer.dispose();
+      activeRenderer.dispose();
+      if (renderer === activeRenderer) renderer = null;
     })();
 
-    return () => { disposed = true; };
+    return () => {
+      disposed = true;
+      renderer?.dispose();
+      renderer = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

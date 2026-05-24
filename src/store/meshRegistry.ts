@@ -2,8 +2,8 @@
  * Live body-mesh registry.
  *
  * BodyMesh (ExtrudedBodies) registers its THREE.Mesh here by the mesh's own
- * THREE.js UUID on mount and unregisters on unmount.  commitFillet (and future
- * store actions) read from here to obtain the rendered geometry for extrude
+ * THREE.js UUID on mount and unregisters on unmount. Export, slicer, and
+ * downstream feature code can read from here to obtain the rendered geometry for extrude
  * features, which never store their mesh in feature.mesh — they are computed
  * on-the-fly in ExtrudedBodies.useMemo and passed as a geometry prop to
  * BodyMesh.
@@ -14,7 +14,7 @@
  * Implementation note — globalThis singletons:
  *   Vite's HMR can re-evaluate this module when its importers change, producing
  *   a second Map instance.  BodyMesh (ExtrudedBodies) writes to the first
- *   instance while EdgeOpPreview reads from the second, causing a permanent
+ *   instance while downstream consumers read from the second, causing a permanent
  *   MISS even though the mesh is registered.  Storing the Maps on globalThis
  *   means every re-evaluation picks up the existing instance instead of
  *   creating a new empty one, so HMR never splits the registries.

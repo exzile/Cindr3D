@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Search, Check, Download, Settings, Puzzle, Package,
   Cloud, Zap, FileOutput, Wrench,
@@ -150,10 +150,14 @@ export function SlicerWorkspacePluginsPage() {
     () => new Set(PLUGIN_DATA.filter((p) => p.installedInitially).map((p) => p.id)),
   );
   const [installingIds, setInstallingIds] = useState<Set<string>>(new Set());
+  const installTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const handleInstall = (id: string) => {
     setInstallingIds((prev) => new Set([...prev, id]));
-    setTimeout(() => {
+    const existingTimer = installTimersRef.current.get(id);
+    if (existingTimer) clearTimeout(existingTimer);
+    const timer = setTimeout(() => {
+      installTimersRef.current.delete(id);
       setInstalledIds((prev) => new Set([...prev, id]));
       setInstallingIds((prev) => {
         const next = new Set(prev);
@@ -161,7 +165,13 @@ export function SlicerWorkspacePluginsPage() {
         return next;
       });
     }, 1000);
+    installTimersRef.current.set(id, timer);
   };
+
+  useEffect(() => () => {
+    for (const timer of installTimersRef.current.values()) clearTimeout(timer);
+    installTimersRef.current.clear();
+  }, []);
 
   const filteredPlugins = useMemo(() => {
     const q = search.toLowerCase();

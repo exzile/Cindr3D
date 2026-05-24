@@ -94,11 +94,9 @@ export function getCachedEdges(
   // meshes typically have identity matrixWorld, so the compare returns true
   // on the very first row and short-circuits.
   //
-  // GHOST TOPOLOGY SUPPORT: nearestEdge.ts calls this twice per pointermove —
-  // once with the live topology and once with `geom.userData.ghostTopology`.
-  // Both share the same `geom` but the `topo` reference differs, so we key the
-  // inner cache on the topo identity to keep both warm. WeakMap on geom evicts
-  // when the geometry is GC'd; the inner Map shares that lifetime.
+  // Key the inner cache on topology identity so replacing geom.userData.topology
+  // invalidates cached world-space polylines without touching the geometry.
+  // WeakMap on geom evicts when the geometry is GC'd.
   let perGeom = _topoCacheV2.get(geom);
   if (perGeom) {
     const hit = perGeom.get(topo);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { File, Loader2 } from 'lucide-react';
 import type { DuetService } from '../../../services/DuetService';
 import { normalizeThumbDataUrl } from './qoiDecoder';
@@ -12,23 +12,36 @@ import { normalizeThumbDataUrl } from './qoiDecoder';
 // concurrent request so we don't saturate the board's single-threaded server.
 const MAX_CONCURRENT = 1;
 let inFlight = 0;
-const waitQueue: Array<() => void> = [];
+const waitQueue: Array<{ isCancelled: () => boolean; resolve: (acquired: boolean) => void }> = [];
 
-function acquireSlot(): Promise<void> {
+function acquireSlot(isCancelled: () => boolean): Promise<boolean> {
   return new Promise((resolve) => {
+    if (isCancelled()) {
+      resolve(false);
+      return;
+    }
     if (inFlight < MAX_CONCURRENT) {
       inFlight++;
-      resolve();
+      resolve(true);
     } else {
-      waitQueue.push(() => { inFlight++; resolve(); });
+      waitQueue.push({ isCancelled, resolve });
     }
   });
 }
 
 function releaseSlot() {
   inFlight = Math.max(0, inFlight - 1);
-  const next = waitQueue.shift();
-  if (next) next();
+  while (waitQueue.length > 0) {
+    const next = waitQueue.shift();
+    if (!next) return;
+    if (next.isCancelled()) {
+      next.resolve(false);
+      continue;
+    }
+    inFlight++;
+    next.resolve(true);
+    return;
+  }
 }
 
 /* ── Component ────────────────────────────────────────────────────────────── */
@@ -43,29 +56,35 @@ export function GCodeThumbnail({
   path: string;
   service: DuetService | null;
 }) {
-  const cancelledRef = useRef(false);
   const [state, setState] = useState<State>('idle');
   const [src,   setSrc]   = useState<string | null>(null);
 
   useEffect(() => {
     if (!service) return;
 
-    cancelledRef.current = false;
+    let cancelled = false;
     setState('loading');
 
     void (async () => {
-      await acquireSlot();
+      const acquired = await acquireSlot(() => cancelled);
+      if (!acquired) return;
+      let fileInfoTimeout: ReturnType<typeof setTimeout> | null = null;
+      let thumbTimeout: ReturnType<typeof setTimeout> | null = null;
       try {
-        if (cancelledRef.current) return;
+        if (cancelled) return;
 
         // rr_fileinfo on standalone Duet boards parses the whole file —
         // cap the wait so a slow/large file doesn't spin forever.
-        const timeout = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('thumbnail timeout')), 30_000),
-        );
+        const timeout = new Promise<never>((_, reject) => {
+          fileInfoTimeout = setTimeout(() => reject(new Error('thumbnail timeout')), 30_000);
+        });
 
         const info = await Promise.race([service.getFileInfo(path), timeout]);
-        if (cancelledRef.current) return;
+        if (fileInfoTimeout) {
+          clearTimeout(fileInfoTimeout);
+          fileInfoTimeout = null;
+        }
+        if (cancelled) return;
 
 
         if (!info.thumbnails?.length) {
@@ -80,9 +99,15 @@ export function GCodeThumbnail({
 
         const dataUrl = await Promise.race([
           service.getThumbnail(path, thumb.offset),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 30_000)),
+          new Promise<null>((resolve) => {
+            thumbTimeout = setTimeout(() => resolve(null), 30_000);
+          }),
         ]);
-        if (cancelledRef.current) return;
+        if (thumbTimeout) {
+          clearTimeout(thumbTimeout);
+          thumbTimeout = null;
+        }
+        if (cancelled) return;
 
         if (dataUrl) {
           // QOI thumbnails arrive labelled as image/png but contain raw QOI
@@ -98,14 +123,16 @@ export function GCodeThumbnail({
           setState('none');
         }
       } catch {
-        if (!cancelledRef.current) setState('none');
+        if (!cancelled) setState('none');
       } finally {
+        if (fileInfoTimeout) clearTimeout(fileInfoTimeout);
+        if (thumbTimeout) clearTimeout(thumbTimeout);
         releaseSlot();
       }
     })();
 
     return () => {
-      cancelledRef.current = true;
+      cancelled = true;
     };
   }, [service, path]);
 

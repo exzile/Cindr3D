@@ -1,8 +1,17 @@
 import type { Feature, Tool } from '../../../types/cad';
+import * as THREE from 'three';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
 import type { CADSliceContext } from '../sliceContext';
 import type { CADState } from '../state';
 import { placeToolFeatureAsync, type BodyBooleanOp } from './featureManagement/bodyBoolean';
+import { createOccPlaneFrameFromSketch } from '../../../engine/occ/plane';
+import { getOccSync } from '../../../engine/occ/loader';
+import { occLoftWithInstance } from '../../../engine/occ/ops/loft';
+import type { SketchProfile } from '../../../engine/occ/ops/sketchToWire';
+import { globalBRepBodyRegistry } from '../../../engine/occ/globalRegistry';
+import { tessellateWithInstance, tessellationToGeometry } from '../../../engine/occ/tessellate';
+import { attachTessellationToMesh } from '../../../engine/occ/picking';
+import { errorMessage } from '../../../utils/errorHandling';
 
 /**
  * Map a panel operation (which may include 'new-component') + body kind to a
@@ -18,6 +27,17 @@ function toolBooleanOp(
   return operation === 'join' || operation === 'cut' || operation === 'intersect'
     ? operation
     : 'new-body';
+}
+
+function shapeToOccSketchProfile(shape: THREE.Shape): SketchProfile | null {
+  const outer = shape.getPoints(96);
+  if (outer.length < 3) return null;
+  return {
+    outer,
+    holes: shape.holes
+      .map((hole) => hole.getPoints(96))
+      .filter((points) => points.length >= 3),
+  };
 }
 
 export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
@@ -144,10 +164,65 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
       set({ statusMessage: 'One or more selected profiles not found' });
       return;
     }
+    const featureId = crypto.randomUUID();
+    let mesh: Feature['mesh'] | undefined;
+    if (loftBodyKind === 'solid') {
+      const occ = getOccSync();
+      if (!occ) {
+        set({ statusMessage: 'Loft: OCC kernel is still loading; try again in a moment' });
+        return;
+      }
+      try {
+        const sections = profileSketches.map((sketch) => {
+          const shape = GeometryEngine.sketchToProfileShapesFlat(sketch)[0];
+          return shape ? shapeToOccSketchProfile(shape) : null;
+        });
+        if (sections.some((section) => section === null)) {
+          set({ statusMessage: 'Loft: every selected sketch needs a closed profile' });
+          return;
+        }
+        const frames = profileSketches.map(createOccPlaneFrameFromSketch);
+        const body = occLoftWithInstance(
+          occ.oc,
+          sections as SketchProfile[],
+          frames,
+          {
+            sourceFeatureId: featureId,
+            closed: get().loftClosed,
+            ruled: get().loftStartCondition === 'free' && get().loftEndCondition === 'free',
+            smooth: get().loftStartCondition !== 'free' || get().loftEndCondition !== 'free',
+          },
+        );
+        if (!body) {
+          set({ statusMessage: 'Loft: OCC failed to build the selected profiles' });
+          return;
+        }
+        globalBRepBodyRegistry.add(body);
+        const tess = tessellateWithInstance(occ.oc, body);
+        const geo = tessellationToGeometry(tess);
+        const mat = new THREE.MeshPhysicalMaterial({
+          color: 0x8899aa,
+          metalness: 0.3,
+          roughness: 0.4,
+          side: THREE.DoubleSide,
+        });
+        const loftMesh = new THREE.Mesh(geo, mat);
+        attachTessellationToMesh(loftMesh, tess, body.id);
+        loftMesh.userData.pickable = true;
+        loftMesh.userData.featureId = featureId;
+        loftMesh.castShadow = true;
+        loftMesh.receiveShadow = true;
+        mesh = loftMesh;
+      } catch (err) {
+        set({ statusMessage: `Loft: OCC failed (${errorMessage(err, 'unknown OCC error')})` });
+        return;
+      }
+    } else {
+      mesh = GeometryEngine.loftSketches(profileSketches, true) ?? undefined;
+    }
     get().pushUndo();
-    const mesh = GeometryEngine.loftSketches(profileSketches, loftBodyKind === 'surface');
     const feature: Feature = {
-      id: crypto.randomUUID(),
+      id: featureId,
       name: `${loftBodyKind === 'surface' ? 'Surface ' : ''}Loft ${features.filter((f) => f.type === 'loft').length + 1}`,
       type: 'loft',
       sketchId: validIds[0],

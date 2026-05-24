@@ -1,5 +1,4 @@
 import type { Sketch, SketchEntity, SketchPoint } from '../../../../types/cad';
-import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import { EXTRUDE_DEFAULTS } from '../../defaults';
 import type { ExtrudeDirection, ExtrudeOperation } from '../../../../types/cad-extrude.types';
 import { useComponentStore } from '../../../componentStore';
@@ -204,14 +203,15 @@ export function createExtrudeSetupActions({ set, get }: CADSliceContext): Partia
     if (!feature || feature.type !== 'extrude') return;
     const p = feature.params;
     const sketchId = feature.sketchId ?? null;
-    const sketch = sketchId ? get().sketches.find((item) => item.id === sketchId) : null;
     const profileIndices = Array.isArray(p.profileIndices) ? (p.profileIndices as number[]) : null;
-    const profileCount = sketch ? GeometryEngine.sketchToShapes(sketch).length : 0;
+    const profileIndex = typeof p.profileIndex === 'number' && Number.isFinite(p.profileIndex)
+      ? p.profileIndex
+      : null;
     const selectedSketchIds = sketchId
       ? profileIndices?.length
         ? profileIndices.map((index) => `${sketchId}::${index}`)
-        : profileCount > 0
-          ? Array.from({ length: profileCount }, (_, index) => `${sketchId}::${index}`)
+        : profileIndex !== null
+          ? [`${sketchId}::${profileIndex}`]
           : [sketchId]
       : [];
     const operation = (p.operation as ExtrudeOperation) ?? 'new-body';

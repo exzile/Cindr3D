@@ -13,6 +13,9 @@ export function OffsetFaceDialog({ onClose }: { onClose: () => void }) {
   const addFeature = useCADStore((s) => s.addFeature);
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const commitOffsetFace = useCADStore((s) => s.commitOffsetFace);
+  const offsetFaceId = useCADStore((s) => s.offsetFaceId);
+  const offsetOccFaceId = useCADStore((s) => s.offsetOccFaceId);
+  const clearOffsetFace = useCADStore((s) => s.clearOffsetFace);
 
   const [selectedBodyId, setSelectedBodyId] = useState<string>(String(p.bodyId ?? bodyFeatures[0]?.id ?? ''));
   const [offsetDistance, setOffsetDistance] = useState(Number(p.offsetDistance ?? 1));
@@ -21,11 +24,12 @@ export function OffsetFaceDialog({ onClose }: { onClose: () => void }) {
 
   const handleOK = () => {
     const signedDist = direction === 'inward' ? -Math.abs(offsetDistance) : Math.abs(offsetDistance);
+    const faceIds = offsetOccFaceId !== null ? [offsetOccFaceId] : [];
     if (editing) {
-      updateFeatureParams(editing.id, { offsetDistance, direction, extent, isOffsetFace: true, bodyId: selectedBodyId });
-      if (selectedBodyId) commitOffsetFace(selectedBodyId, signedDist);
+      updateFeatureParams(editing.id, { offsetDistance, direction, extent, isOffsetFace: true, bodyId: selectedBodyId, offsetFaceIds: faceIds });
+      if (selectedBodyId) commitOffsetFace(selectedBodyId, signedDist, { faceIds });
     } else if (selectedBodyId) {
-      commitOffsetFace(selectedBodyId, signedDist);
+      commitOffsetFace(selectedBodyId, signedDist, { faceIds });
     } else {
       const n = features.filter((f) => f.name.startsWith('Offset Face')).length + 1;
       addFeature({
@@ -38,6 +42,7 @@ export function OffsetFaceDialog({ onClose }: { onClose: () => void }) {
         timestamp: Date.now(),
       });
     }
+    clearOffsetFace();
     onClose();
   };
 
@@ -55,6 +60,14 @@ export function OffsetFaceDialog({ onClose }: { onClose: () => void }) {
             <option key={f.id} value={f.id}>{f.name}</option>
           ))}
         </select>
+      </div>
+      <div className="dialog-field">
+        <label className="dialog-label">Face</label>
+        <div className="face-selector">
+          <span className="face-selector__chip">
+            {offsetFaceId ? '1 face selected' : 'Click a face in the viewport'}
+          </span>
+        </div>
       </div>
       <div className="dialog-field">
         <label className="dialog-label">Offset Distance (mm)</label>

@@ -32,11 +32,20 @@ export function recomputeBooleanDependents(features: Feature[], changedFeatureId
       const parentIds = Array.isArray(feature.params.booleanParentIds) ? feature.params.booleanParentIds.map(String) : [];
       if (!parentIds.some((id) => changed.has(id))) return feature;
       const target = byId.get(String(feature.params.targetId ?? parentIds[0] ?? ''));
-      const tool = byId.get(String(feature.params.toolId ?? parentIds[1] ?? ''));
+      const toolIds = Array.isArray(feature.params.toolIds)
+        ? feature.params.toolIds.map(String)
+        : [String(feature.params.toolId ?? parentIds[1] ?? '')].filter(Boolean);
+      const tools = toolIds.map((id) => byId.get(id)).filter((f): f is Feature => !!f);
       const operation = (feature.params.operation as CombineOperation) ?? 'join';
-      if (!target?.mesh || !tool?.mesh || !(target.mesh instanceof THREE.Mesh) || !(tool.mesh instanceof THREE.Mesh)) return feature;
+      if (!target?.mesh || !(target.mesh instanceof THREE.Mesh)) return feature;
+      if (tools.length === 0 || tools.some((tool) => !(tool.mesh instanceof THREE.Mesh))) return feature;
       try {
-        const mesh = new THREE.Mesh(runBoolean(target.mesh, tool.mesh, operation), target.mesh.material);
+        const resultGeometry = tools.reduce(
+          (acc, tool) =>
+            runBoolean(new THREE.Mesh(acc, target.mesh!.material), tool.mesh as THREE.Mesh, operation),
+          target.mesh.geometry as THREE.BufferGeometry,
+        );
+        const mesh = new THREE.Mesh(resultGeometry, target.mesh.material);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         changed.add(feature.id);

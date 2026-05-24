@@ -28,7 +28,9 @@ Always `getSketchAxes(sketch)` → `t1`/`t2` dot products. Raw `p.x, p.y` only w
 
 ## 3D CSG
 
-Primary engine: `manifold-3d` npm WASM package — guaranteed-manifold output, no soup repair. Fallback: `three-bvh-csg` (used when Manifold hasn't loaded or throws on non-manifold source). API: `csgSubtract/csgUnion/csgIntersect` in `engine/geometryEngine/core/solid/csg.ts`. Singleton loaded via `core/solid/manifoldWasm.ts` (`initManifold()` async at app startup + in `edgeOpWorker.ts`). See `csg_edge_cut.md` for full details.
+Primary mesh-boolean engine: `manifold-3d` npm WASM package. Fallback: `three-bvh-csg` for remaining mesh-body operations when Manifold has not loaded or rejects non-manifold legacy geometry. API: `csgSubtract/csgUnion/csgIntersect` in `engine/geometryEngine/core/solid/csg.ts`. Singleton loaded via `core/solid/manifoldWasm.ts`.
+
+Fillet/chamfer edge modification is no longer mesh-CSG: it is OCC-only through the BRep registry and OCC edge IDs. See `csg_edge_cut.md` for the removed legacy edge-cut archive.
 
 ## Persistence caches
 

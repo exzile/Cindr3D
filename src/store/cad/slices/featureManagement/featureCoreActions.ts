@@ -8,8 +8,14 @@ import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
 import type { DesignConfiguration } from '../../state/coreState';
 import { recomputeBooleanDependents } from './featureBooleanUtils';
-import { evictEdgeCutSource } from './applyEdgeCut';
 import { bodyGeometryCache, bodyIdGeometryCache } from '../../../../store/meshRegistry';
+import { errorMessage } from '../../../../utils/errorHandling';
+import { getOccSync } from '../../../../engine/occ/loader';
+import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
+import { occSphereWithInstance } from '../../../../engine/occ/ops/sphere';
+import { occTorusWithInstance } from '../../../../engine/occ/ops/torus';
+import { tessellateWithInstance, tessellationToGeometry } from '../../../../engine/occ/tessellate';
+import { attachTessellationToMesh } from '../../../../engine/occ/picking';
 
 const BASE_CONFIGURATION_ID = 'default';
 
@@ -116,13 +122,15 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
       };
     });
   },
-  addPrimitive: (kind, params) => set((state) => {
+  addPrimitive: (kind, params) => {
     const label =
       kind === 'box' ? 'Box' :
       kind === 'cylinder' ? 'Cylinder' :
       kind === 'sphere' ? 'Sphere' :
-      kind === 'coil' ? 'Coil' : 'Torus';
-    const count = state.features.filter((f) => f.type === 'primitive').length + 1;
+      kind === 'coil' ? 'Coil' :
+      'Torus';
+
+    const featureId = crypto.randomUUID();
 
     // For coil we pre-build the mesh so PrimitiveBodies doesn't need to handle it
     let mesh: Feature['mesh'] | undefined;
@@ -140,22 +148,81 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
       m.receiveShadow = true;
       mesh = m;
     }
+    if (kind === 'sphere' || kind === 'torus') {
+      const occ = getOccSync();
+      if (!occ) {
+        set({ statusMessage: `${label}: OCC kernel is still loading; try again in a moment` });
+        return;
+      }
+      try {
+        const transform = new THREE.Matrix4().compose(
+          new THREE.Vector3(
+            (params.x as number) || 0,
+            (params.y as number) || 0,
+            (params.z as number) || 0,
+          ),
+          new THREE.Quaternion().setFromEuler(
+            new THREE.Euler(
+              THREE.MathUtils.degToRad((params.rx as number) || 0),
+              THREE.MathUtils.degToRad((params.ry as number) || 0),
+              THREE.MathUtils.degToRad((params.rz as number) || 0),
+            ),
+          ),
+          new THREE.Vector3(1, 1, 1),
+        );
+        const body = kind === 'sphere'
+          ? occSphereWithInstance(occ.oc, (params.radius as number) || 10, {
+              sourceFeatureId: featureId,
+              transform,
+            })
+          : occTorusWithInstance(
+              occ.oc,
+              (params.radius as number) || 15,
+              (params.tubeRadius as number) || 3,
+              { sourceFeatureId: featureId, transform },
+            );
+        globalBRepBodyRegistry.add(body);
+        const tess = tessellateWithInstance(occ.oc, body);
+        const geo = tessellationToGeometry(tess);
+        const mat = new THREE.MeshPhysicalMaterial({
+          color: 0x8899aa,
+          metalness: 0.3,
+          roughness: 0.4,
+          side: THREE.DoubleSide,
+        });
+        const m = new THREE.Mesh(geo, mat);
+        attachTessellationToMesh(m, tess, body.id);
+        m.userData.pickable = true;
+        m.userData.featureId = featureId;
+        m.castShadow = true;
+        m.receiveShadow = true;
+        mesh = m;
+      } catch (err) {
+        set({
+          statusMessage: `${label}: OCC body creation failed (${errorMessage(err, 'unknown OCC error')})`,
+        });
+        return;
+      }
+    }
 
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `${label} ${count}`,
-      type: 'primitive',
-      params: { kind, ...params },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-      ...(mesh ? { mesh } : {}),
-    };
-    return {
-      features: [...state.features, feature],
-      statusMessage: `${label} added`,
-    };
-  }),
+    set((state) => {
+      const count = state.features.filter((f) => f.type === 'primitive').length + 1;
+      const feature: Feature = {
+        id: featureId,
+        name: `${label} ${count}`,
+        type: 'primitive',
+        params: { kind, ...params },
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+        ...(mesh ? { mesh } : {}),
+      };
+      return {
+        features: [...state.features, feature],
+        statusMessage: `${label} added`,
+      };
+    });
+  },
 
   insertFastener: (params) => {
     get().pushUndo();
@@ -220,8 +287,6 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
     // the feature is out of state (prevents renderer accessing disposed GPU resources).
     const target = get().features.find((f) => f.id === id);
     const removedSketchId = target?.type === 'sketch' ? target.sketchId : null;
-    // Evict the pre-fillet/chamfer source geometry cache to prevent session-long leaks.
-    if (target?.type === 'fillet' || target?.type === 'chamfer') evictEdgeCutSource(id);
     // Evict the persistent geometry cache entry for this feature (keyed by featureId).
     bodyGeometryCache.get(id)?.dispose();
     bodyGeometryCache.delete(id);
@@ -340,12 +405,12 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
     const mustBeAfter = new Set<string>();  // ids that must appear after moved
 
     for (const f of state.features) {
-      // If f is a downstream edge-cut of `moved`, f must be after moved.
+      // If f is a downstream edge modification of `moved`, f must be after moved.
       const parentId = f.parentFeatureId ?? (f.params.parentFeatureId as string | undefined);
       if ((f.type === 'fillet' || f.type === 'chamfer') && parentId === moved.id) {
         mustBeAfter.add(f.id);
       }
-      // If `moved` is a downstream edge-cut of f, f must be before moved.
+      // If `moved` is a downstream edge modification of f, f must be before moved.
       const movedParentId = moved.parentFeatureId ?? (moved.params.parentFeatureId as string | undefined);
       if ((moved.type === 'fillet' || moved.type === 'chamfer') && f.id === movedParentId) {
         mustBeBefore.add(f.id);

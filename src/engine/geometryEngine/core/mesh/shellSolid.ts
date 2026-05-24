@@ -11,7 +11,7 @@
  *   - supports sharp vs rounded inner corners (Fusion ShellTypes).
  *
  * Geometry approach: build an inner (eroded) and/or outer (dilated) offset
- * solid, then `outer − inner` via three-bvh-csg. For each removed face a
+ * solid, then subtract through the shared mesh CSG backend. For each removed face a
  * prism cutter spanning the full wall band is subtracted; CSG generates the
  * rim walls automatically and keeps the body watertight.
  */

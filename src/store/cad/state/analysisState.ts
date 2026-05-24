@@ -274,10 +274,20 @@ export interface CADAnalysisState {
   commitShell(featureId: string, opts: ShellCommitOptions): void;
 
   // ── SLD11 — Draft ────────────────────────────────────────────────────────
-  commitDraft(featureId: string, pullAxisDir: THREE.Vector3, draftAngle: number, fixedPlaneY: number): void;
+  commitDraft(
+    featureId: string,
+    pullAxisDir: THREE.Vector3,
+    draftAngle: number,
+    fixedPlaneY: number,
+    options?: { faceIds?: number[]; neutralPlaneOrigin?: THREE.Vector3; neutralPlaneNormal?: THREE.Vector3 },
+  ): void;
 
   // ── SLD14 — Offset Face ──────────────────────────────────────────────────
-  commitOffsetFace(featureId: string, distance: number): void;
+  commitOffsetFace(
+    featureId: string,
+    distance: number,
+    options?: { faceIds?: number[] },
+  ): void;
 
   // ── SLD16 — Remove Face ──────────────────────────────────────────────────
   commitRemoveFace(featureId: string, faceNormal: THREE.Vector3, faceCentroid: THREE.Vector3): void;

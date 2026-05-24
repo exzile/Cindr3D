@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useCADStore } from "../../../../store/cadStore";
 import type { ChamferCornerType, ChamferMode, ChamferParams } from "./types";
 
@@ -8,7 +8,6 @@ export function useChamferDialogState(
 ) {
   const chamferLiveDistance = useCADStore((s) => s.chamferLiveDistance);
   const setChamferLiveDistance = useCADStore((s) => s.setChamferLiveDistance);
-  const setChamferPreviewParams = useCADStore((s) => s.setChamferPreviewParams);
   const [mode, setMode] = useState<ChamferMode>(
     () => (initialParams?.mode as ChamferMode | undefined) ?? "equal-dist",
   );
@@ -49,7 +48,7 @@ export function useChamferDialogState(
     setChamferLiveDistance(value);
   };
 
-  const buildParams = (): ChamferParams => {
+  const previewParams = useMemo<ChamferParams>(() => {
     const params: ChamferParams = {
       mode,
       distance,
@@ -66,18 +65,9 @@ export function useChamferDialogState(
       params.isFlipped = isFlipped;
     }
     return params;
-  };
+  }, [angle, cornerType, distance, distance2, isFlipped, mode, propagate]);
 
-  useEffect(() => {
-    setChamferPreviewParams(
-      buildParams() as unknown as Record<string, unknown>,
-    );
-  });
-
-  useEffect(
-    () => () => setChamferPreviewParams(undefined),
-    [setChamferPreviewParams],
-  );
+  const buildParams = (): ChamferParams => previewParams;
 
   const handleConfirm = () => {
     onConfirm(buildParams());

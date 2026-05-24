@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { GeometryEngine } from '../engine/GeometryEngine';
-import type { Sketch, SketchEntity } from '../types/cad';
+import type { Feature, Sketch, SketchEntity } from '../types/cad';
 
 const mkPoint = (id: string, x: number, y: number, z: number) => ({ id, x, y, z });
 
@@ -26,6 +26,34 @@ function mkActiveRectangleSketch(planeNormal: THREE.Vector3): Sketch {
     constraints: [],
     dimensions: [],
     fullyConstrained: false,
+  };
+}
+
+function mkSketchWithCircle(): Sketch {
+  const rect = mkActiveRectangleSketch(new THREE.Vector3(0, 0, 1));
+  const circle: SketchEntity = {
+    id: 'circle-1',
+    type: 'circle',
+    points: [mkPoint('c1', 10, 5, 0)],
+    radius: 2,
+  };
+  return {
+    ...rect,
+    id: 'sketch-with-circle',
+    entities: [...rect.entities, circle],
+  };
+}
+
+function mkExtrudeFeature(sketchId: string, params: Feature['params']): Feature {
+  return {
+    id: 'extrude-1',
+    name: 'Extrude 1',
+    type: 'extrude',
+    sketchId,
+    params,
+    visible: true,
+    suppressed: false,
+    timestamp: 1,
   };
 }
 
@@ -94,5 +122,47 @@ describe('startExtrudeTool', () => {
     expect(state.extrudeSelectedSketchIds).toEqual([`${state.sketches[0].id}::0`]);
     expect(state.extrudeSelectedSketchId).toBe(`${state.sketches[0].id}::0`);
     expect(GeometryEngine.createProfileSketch(state.sketches[0], 0)).not.toBeNull();
+  });
+
+  it('preserves legacy whole-sketch extrudes when loading an edit', async () => {
+    const [{ useCADStore }] = await Promise.all([
+      import('../store/cadStore'),
+    ]);
+    const sketch = mkSketchWithCircle();
+
+    useCADStore.setState({
+      sketches: [sketch],
+      features: [mkExtrudeFeature(sketch.id, { distance: 5, operation: 'new-body' })],
+      extrudeSelectedSketchId: null,
+      extrudeSelectedSketchIds: [],
+      editingFeatureId: null,
+    });
+
+    useCADStore.getState().loadExtrudeForEdit('extrude-1');
+
+    const state = useCADStore.getState();
+    expect(state.extrudeSelectedSketchIds).toEqual([sketch.id]);
+    expect(state.extrudeSelectedSketchId).toBe(sketch.id);
+  });
+
+  it('restores a single concrete profile when loading an edit', async () => {
+    const [{ useCADStore }] = await Promise.all([
+      import('../store/cadStore'),
+    ]);
+    const sketch = mkSketchWithCircle();
+
+    useCADStore.setState({
+      sketches: [sketch],
+      features: [mkExtrudeFeature(sketch.id, { distance: 5, operation: 'new-body', profileIndex: 1 })],
+      extrudeSelectedSketchId: null,
+      extrudeSelectedSketchIds: [],
+      editingFeatureId: null,
+    });
+
+    useCADStore.getState().loadExtrudeForEdit('extrude-1');
+
+    const state = useCADStore.getState();
+    expect(state.extrudeSelectedSketchIds).toEqual([`${sketch.id}::1`]);
+    expect(state.extrudeSelectedSketchId).toBe(sketch.id);
   });
 });

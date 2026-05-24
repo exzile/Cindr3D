@@ -76,7 +76,7 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const renameFeature = useCADStore((s) => s.renameFeature);
   const commitFillet = useCADStore((s) => s.commitFillet);
-  const replayEdgeCutFeature = useCADStore((s) => s.replayEdgeCutFeature);
+  const replayEdgeModificationFeature = useCADStore((s) => s.replayEdgeModificationFeature);
 
   const editing = editingFeatureId
     ? features.find((feature) => feature.id === editingFeatureId)
@@ -89,7 +89,7 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
     if (editing) {
       updateFeatureParams(editing.id, { ...nextParams, edgeIds });
       renameFeature(editing.id, `Fillet (r=${nextParams.radius})`);
-      replayEdgeCutFeature(editing.id);
+      replayEdgeModificationFeature(editing.id);
     } else {
       const feature: Feature = {
         id: crypto.randomUUID(),

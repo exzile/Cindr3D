@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useCADStore } from "../../../../store/cadStore";
 import type { FilletEdgeSet, FilletMode, FilletParams } from "./types";
 
@@ -8,9 +8,6 @@ export function useFilletDialogState(
 ) {
   const filletLiveRadius = useCADStore((s) => s.filletLiveRadius);
   const setFilletLiveRadius = useCADStore((s) => s.setFilletLiveRadius);
-  const filletPickMode = useCADStore((s) => s.filletPickMode);
-  const setFilletPickMode = useCADStore((s) => s.setFilletPickMode);
-  const setFilletPreviewParams = useCADStore((s) => s.setFilletPreviewParams);
 
   const [radius, setRadius] = useState(
     () => (initialParams?.radius as number | undefined) ?? filletLiveRadius,
@@ -43,7 +40,7 @@ export function useFilletDialogState(
     () => (initialParams?.setbackDistance as number | undefined) ?? 1,
   );
   const [isRollingBallCorner, setIsRollingBallCorner] = useState(
-    () => (initialParams?.isRollingBallCorner as boolean | undefined) ?? false,
+    () => (initialParams?.isRollingBallCorner as boolean | undefined) ?? true,
   );
   const [propagate, setPropagate] = useState(
     () => (initialParams?.propagate as boolean | undefined) ?? true,
@@ -70,11 +67,6 @@ export function useFilletDialogState(
     };
   }, [filletLiveRadius, initialParams]);
 
-  useEffect(() => {
-    if (mode === "full-round") setFilletPickMode("face");
-    else if (filletPickMode === "face") setFilletPickMode("edge");
-  }, [mode, filletPickMode, setFilletPickMode]);
-
   const setRadiusAndLive = (value: number) => {
     setRadius(value);
     setFilletLiveRadius(value);
@@ -96,7 +88,7 @@ export function useFilletDialogState(
       prev.map((set, idx) => (idx === i ? { ...set, ...patch } : set)),
     );
 
-  const buildParams = (): FilletParams => {
+  const previewParams = useMemo<FilletParams>(() => {
     const params: FilletParams = {
       radius,
       edgeIds: [],
@@ -106,7 +98,7 @@ export function useFilletDialogState(
       propagate,
       isG2,
       tangencyWeight: tangencyWeight !== 1.0 ? tangencyWeight : undefined,
-      isRollingBallCorner: setback && isRollingBallCorner,
+      isRollingBallCorner,
     };
     if (mode === "variable") {
       params.startRadius = startRadius;
@@ -120,16 +112,25 @@ export function useFilletDialogState(
     }
     if (edgeSets.length > 0) params.edgeSets = edgeSets;
     return params;
-  };
+  }, [
+    chordLength,
+    edgeSets,
+    endRadius,
+    isFlipped,
+    isG2,
+    isRollingBallCorner,
+    mode,
+    offsetOne,
+    offsetTwo,
+    propagate,
+    radius,
+    setback,
+    setbackDistance,
+    startRadius,
+    tangencyWeight,
+  ]);
 
-  useEffect(() => {
-    setFilletPreviewParams(buildParams() as unknown as Record<string, unknown>);
-  });
-
-  useEffect(
-    () => () => setFilletPreviewParams(undefined),
-    [setFilletPreviewParams],
-  );
+  const buildParams = (): FilletParams => previewParams;
 
   const handleConfirm = () => {
     onConfirm(buildParams());
@@ -169,8 +170,6 @@ export function useFilletDialogState(
     addEdgeSet,
     removeEdgeSet,
     updateEdgeSet,
-    filletPickMode,
-    setFilletPickMode,
     handleConfirm,
   };
 }

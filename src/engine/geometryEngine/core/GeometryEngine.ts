@@ -260,8 +260,7 @@ export class GeometryEngine {
     // Phase 2: route through the topology-extracting variant. Render geometry
     // is byte-identical to the legacy path (same toNonIndexed + per-face
     // normals); the model-edge topology is attached as userData.topology for
-    // the edge picker / fillet / chamfer. csgSubtractImpl is kept for callers
-    // (e.g. shellSolid) that don't need topology.
+    // mesh-body edge pickers and downstream mesh tools.
     return csgSubtractWithTopologyImpl(a, b).geometry;
   }
 

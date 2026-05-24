@@ -94,20 +94,6 @@ describe('Persistence round-trip', () => {
         polyline: [new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 0, 0)],
       }],
     };
-    geom.userData.displayTopology = {
-      edges: [{
-        id: 'display-a',
-        kind: 'crease',
-        polyline: [new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 1, 0)],
-      }],
-    };
-    geom.userData.ghostTopology = {
-      edges: [{
-        id: 'ghost-a',
-        kind: 'boundary',
-        polyline: [new THREE.Vector3(0, 2, 0), new THREE.Vector3(1, 2, 0)],
-      }],
-    };
     const feature: Feature = {
       id: 'f-topology', name: 'x', type: 'import', params: {}, mesh: new THREE.Mesh(geom),
       visible: true, suppressed: false, timestamp: 1,
@@ -119,9 +105,6 @@ describe('Persistence round-trip', () => {
 
     expect(roundGeom.userData._topoV).toBe(10);
     expect(roundGeom.userData.topology.edges[0].id).toBe('edge-a');
-    expect(roundGeom.userData.displayTopology.edges[0].polyline[1]).toBeInstanceOf(THREE.Vector3);
-    expect(roundGeom.userData.displayTopology.edges[0].polyline[1].x).toBe(1);
-    expect(roundGeom.userData.ghostTopology.edges[0].kind).toBe('boundary');
     geom.dispose();
   });
 

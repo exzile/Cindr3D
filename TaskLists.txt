@@ -1,327 +1,223 @@
-## Fillet & Chamfer — Accuracy / Reliability / Rollback Improvement Plan
-## Status key: [x] done  [~] partial (UI wired, geometry stub only)  [ ] not started
-## Based on Fusion 360 SDK deep audit (2026-05-20)
-## Ordered by ROI: fix architecture first, then broken params, then reliability,
-## then feature parity. Architecture must come first because everything else
-## depends on fillets/chamfers being proper feature nodes with stored params.
-# ============================================================================
+## DesignCAD — Implementation Task List
+## Status key: [x] done  [~] partial (wired, incomplete)  [ ] not started
+## Last updated: 2026-05-23  Branch: codex/occ-only-remove-fallbacks
+## SDK ref: C:\Users\joeyp\AppData\Local\Autodesk\webdeploy\production\
+##          4bca736941837d3e42bba21bb36b9891e34b2fce\CPP\include\Fusion\
+## Fusion 360 parity audit: 2026-05-23 (see OCC-10 phase)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PHASE 0 — Architecture: Non-destructive feature model + undo/rollback
+# OPENCASCADE WASM MIGRATION — Replace mesh-CSG with BRep kernel
+# WHY: mesh-CSG + earcut cannot produce CAD-quality fillets (wing artifact
+# is mathematically inherent). OCC produces exact toroidal surfaces.
+# GATE: removed. OCC is now the only edge-modification path.
 # ══════════════════════════════════════════════════════════════════════════════
-# Currently fillets/chamfers are DESTRUCTIVE MESH MUTATIONS on the parent
-# feature. applyEdgeCut replaces the parent's mesh in-place and disposes the
-# old geometry. This means:
-#   • No fillet/chamfer entry exists in the feature tree — the operation is
-#     invisible in the timeline
-#   • Undo can't recover the mesh — snapshotCADState strips meshes to
-#     undefined, so on restore the old pre-fillet body is gone
-#   • Suppression is cosmetic — flips a boolean, doesn't re-evaluate geometry
-#   • rollbackIndex is render-only — hides features past the bar but doesn't
-#     replay the feature tree
-#   • Edit doesn't work — updateFeatureParams stores new radius but never
-#     re-runs the geometry
-#
-# Fusion's approach: every fillet/chamfer is a separate TimelineObject with
-# stored params + edge references. rollTo(true) repositions the timeline
-# marker before the feature, and the kernel replays forward from there.
-# isSuppressed triggers re-evaluation. deleteMe() removes + re-evaluates.
 
-[x] 0a. Fillet/chamfer as proper feature nodes
-#   Instead of mutating the parent feature's mesh, create a new feature node:
-#     { type: 'fillet', params: { radius, mode, edgeIds, ... },
-#       parentFeatureId: '<source body>', mesh: <result> }
-#   The parent feature retains its ORIGINAL mesh (never disposed).
-#   The fillet feature's mesh is the CSG result computed from the parent's mesh.
-#   Store the complete FilletParams/ChamferParams on the feature so they can
-#   be edited and replayed.
-#
-#   Impact: FilletDialog.handleConfirm, ChamferDialog.handleConfirm,
-#   applyEdgeCut.ts, ExtrudedBodies.tsx (render the fillet feature's mesh
-#   instead of the parent's when the fillet is active and not suppressed).
+# ── PHASE OCC-1: Foundation ────────────────────────────────────────────────────
+[x] OCC-1.1 — WASM build selection (package.json dep, vite config, wasm chunk)
+[x] OCC-1.2 — Loader scaffold (getOcc/getOccSync singleton, src/engine/occ/loader.ts)
+[x] OCC-1.3 — OccHandle wrapper + FinalizationRegistry auto-delete (occHandle.ts)
+[x] OCC-1.4 — Hello-world spike (box + tessellate + render, OccSpikePanel)
 
-[x] 0b. Source mesh preservation
-#   The parent feature's mesh must be preserved (never disposed) when a
-#   downstream fillet/chamfer is applied. Currently applyEdgeCut clones the
-#   source geometry then replaces the parent mesh. Instead:
-#     1. Clone the parent mesh for CSG input (already done)
-#     2. Store the CSG result on the NEW fillet feature's mesh
-#     3. Leave the parent's mesh untouched
-#     4. Rendering logic: show the LAST non-suppressed feature in the chain
-#   This is the "non-destructive" pattern that enables undo/suppress/delete.
+# ── PHASE OCC-2: BRep data model ───────────────────────────────────────────────
+[x] OCC-2.1 — BRepBody interface (shape OccHandle, faceIds/edgeIds/vertexIds Maps)
+[x] OCC-2.2 — STEP serializer (shapeToStep / shapeFromStep via Emscripten FS)
+[x] OCC-2.3 — Tessellator (BRepTessellation: positions/normals/faceIds/edgePolylines)
+[x] OCC-2.4 — Re-tessellate-on-zoom hook (linearDeflection scales with camera distance)
 
-[x] 0c. Feature replay engine
-#   When a fillet/chamfer is suppressed, deleted, or edited:
-#     1. Find the parent feature (the source body)
-#     2. Find all fillet/chamfer features that depend on it (ordered by index)
-#     3. Replay from the parent's original mesh, applying each non-suppressed
-#        fillet/chamfer in sequence
-#     4. Update each feature's mesh with the intermediate result
-#   This is the minimal parametric re-evaluation engine. It extends the
-#   existing recomputeBooleanDependents pattern to cover fillet/chamfer.
-#
-#   Fusion SDK parallel: TimelineObject.rollTo(true) + forward replay.
+# ── PHASE OCC-3: Primitives + core ops ────────────────────────────────────────
+[x] OCC-3.1 — Box primitive (BRepPrimAPI_MakeBox_2, optional transform)
+[x] OCC-3.2 — Cylinder primitive (BRepPrimAPI_MakeCylinder_2, 3 face IDs)
+[~] OCC-3.3 — Sketch-based extrude
+#     Status: sketchToWire + BRepPrimAPI_MakePrism contract test passes.
+#     Remaining: full feature-tree wiring + taper angle (see OCC-10.3).
+[~] OCC-3.4 — Revolve
+#     Status: BRepPrimAPI_MakeRevol contract test passes.
+#     Remaining: feature-tree wiring + two-sided/to-entity extents (see OCC-10.13).
+[~] OCC-3.5 — Sweep (basic profile+path via BRepOffsetAPI_MakePipe)
+#     Status: contract test passes.
+#     Remaining: feature-tree wiring + guide rails/taper/twist (see OCC-10.4).
+[x] OCC-3.6 — Shell (BRepOffsetAPI_MakeThickSolid)
+#     Engine + feature tree + UI: all done (see OCC-10.9).
 
-[x] 0d. Fix undo mesh recovery
-#   snapshotCADState strips meshes to undefined. On restore, liveMeshById
-#   lookup matches by feature ID — but after a fillet, the parent's old mesh
-#   is disposed, so restoration gets the post-fillet mesh (wrong).
-#   Fix: when fillets are proper feature nodes, the parent mesh is never
-#   disposed. Undo restore finds the correct live mesh for both parent and
-#   fillet features. If mesh is missing, trigger replay from params.
+# ── PHASE OCC-4: Booleans ──────────────────────────────────────────────────────
+[x] OCC-4.1 — Subtract (BRepAlgoAPI_Cut_3)
+[x] OCC-4.2 — Union (BRepAlgoAPI_Fuse_3)
+[x] OCC-4.3 — Intersect (BRepAlgoAPI_Common_3)
 
-[x] 0e. Feature health states
-#   Every feature should report its health: Healthy / Warning / Error.
-#   When computeEdgeCutGeometry fails or partially succeeds, store the
-#   diagnostic on the feature node: feature.healthState = 'warning',
-#   feature.healthMessage = '3 of 5 edges could not be processed'.
-#   Surface this in the feature tree with an icon (green/yellow/red dot).
-#   Fusion SDK: Feature.healthState(), errorOrWarningMessage()
+# ── PHASE OCC-5: Fillet & Chamfer ─────────────────────────────────────────────
+[x] OCC-5.1 — Fillet (constant Add_2, variable Add_3, chord-length, G2 ChFi3d_Polynomial,
+#              multi-set OccFilletEdgeSet collection; featureMeshActions.ts wired)
+[x] OCC-5.2 — Chamfer (equal-distance, two-distance; featureMeshActions.ts wired)
+[x] OCC-5.3 — Bracket-boss verification & migration cutover (flag default ON)
 
+# ── PHASE OCC-6: Sketch → BRep face ───────────────────────────────────────────
+[x] OCC-6.1 — Sketch segments to TopoDS_Edge (line/arc/circle/ellipse/spline)
+[x] OCC-6.2 — Closed loop to TopoDS_Wire (normalize, degenerate detection, auto-close)
+#     Implemented: sketchEntitiesToWire in src/engine/occ/sketchEntityToWire.ts
+[x] OCC-6.3 — Region with holes to TopoDS_Face (hole orientation via BRepBuilderAPI_MakeFace)
+#     Implemented: wiresToFace in src/engine/occ/sketchEntityToWire.ts
+[x] OCC-6.4 — sketchPlaneFromFace (BRep_Tool.Surface → SketchPlane for planar faces)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PHASE 1 — Bugs: params collected but geometry ignores them
-# ══════════════════════════════════════════════════════════════════════════════
-# These are the most urgent after Phase 0 — the UI already shows controls
-# for each one, but the commit path silently ignores them.
+# ── PHASE OCC-7: Feature tree wiring ──────────────────────────────────────────
+[x] OCC-7.1 — BodyDef.shape replaces BodyDef.mesh; useBodyMesh lazy tessellation selector
+[x] OCC-7.2 — Feature evaluation pipeline (featureEvaluator cache, cascade invalidation)
+[x] OCC-7.3 — Undo / STEP snapshots (captureOccSnapshot / restoreOccSnapshot)
+[x] OCC-7.4 — Persistence in .exzile v2 files (stepString blobs, backward compat v1)
 
-[x] 1. Wire edit fillet/chamfer → re-run geometry
-#   FilletDialog.tsx line 426: editing branch calls updateFeatureParams but
-#   NEVER calls commitFillet. Editing is a complete no-op — mesh not touched.
-#   Fix: after Phase 0, editing updates feature.params and triggers the
-#   replay engine (0c) which re-runs geometry from the parent mesh.
-#   Same fix applies to chamfer editing.
+# ── PHASE OCC-8: Selection migration ──────────────────────────────────────────
+[x] OCC-8.1 — Face picker (BRepTessellation.faceIds triangle lookup, OccFacePicker)
+[x] OCC-8.2 — Edge picker (edgePolylines LineSegments, edgeId raycast)
+[x] OCC-8.3 — Sketch-plane picker (HoleFacePicker OCC path, planar face validation)
 
-[x] 2. Wire chord-length fillet into buildFilletCutter
-#   FilletDialog collects chordLength but handleConfirm (line 446) calls
-#   commitFillet(r, 4) — always the global radius, never chordLength.
-#   Fix: when mode === 'chord-length', convert per-edge at CSG time:
-#   r = chordLen / (2 * sin(φ/2)) where φ = dihedral angle (already
-#   computed as 'phi' in buildFilletCutter).
-#   Fusion SDK: ChordLengthFilletEdgeSetInput.chordLength
-
-[x] 3. Wire variable-radius fillet into buildFilletCutter
-#   startRadius/endRadius collected but commitFillet uses constant radius.
-#   Fix: when r1 ≠ r2, buildFilletCutter builds a ConeGeometry (frustum)
-#   instead of CylinderGeometry. Parameterize: r(t) = r1 + t*(r2 - r1).
-#   Setback per end: sb(t) = r(t) / tan(phi/2).
-#   Also: add mid-point radius support (addMidPosition/deleteMidPosition).
-#   Fusion SDK: VariableRadiusFilletEdgeSetInput.setMidRadii(radii[], positions[])
-
-[x] 4. Add Flip button for two-distance AND distance+angle chamfer
-#   Which face is "face 1" vs "face 2" depends on arbitrary triangle scan
-#   order in resolveEdge. User has no control.
-#   Fix: add Flip toggle to ChamferDialog for both two-dist and dist-angle
-#   modes. On confirm, when flipped, swap d1/d2. Store isFlipped in params.
-#   Fusion SDK: TwoDistancesChamferEdgeSet.isFlipped(),
-#               DistanceAndAngleChamferEdgeSet.isFlipped()
-
-[x] 5. Surface failed-edge count in status bar
-#   When resolveEdge fails, the edge is silently skipped.
-#   Fix: computeEdgeCutGeometry returns { geometry, failedCount }.
-#   applyEdgeCut surfaces "N of M edges could not be processed" via
-#   setStatusMessage. After Phase 0e, also store on feature.healthState.
+# ── PHASE OCC-9: Cleanup (OCC-only branch) ──
+[x] OCC-9.1 — Delete mesh-CSG edge-cut entry points
+#     rm src/utils/geometry/edgeCutCore.ts
+#     rm src/utils/geometry/filletGeometry.ts
+#     rm src/utils/geometry/chamferGeometry.ts
+#     rm src/store/cad/slices/featureManagement/applyEdgeCut.ts
+#     rm src/store/cad/slices/featureManagement/resolveBodySource.ts
+[x] OCC-9.1b — Delete live edge-cut preview helpers
+#     rm src/components/viewport/scene/{FilletPreview,ChamferPreview}.tsx
+#     rm src/components/viewport/scene/edgeOp/{EdgeOpPreview,edgeOpGuideOverlay,edgeOpHighlightIds,previewScene,useDebouncedEdgeIds}.*
+#     rm src/workers/edgeOpWorker.ts
+[ ] OCC-9.2 — Delete weld/CSG plumbing [BLOCKED]
+#     2026-05-23 audit: csg.ts imported by 11 files (csgWorker, GeometryEngine, ExtrudePreview,
+#     snapFit, lipGroove, plateGeometryOps, etc.). weldClean/extrusion/revolve/pipe/profileSweeps
+#     all imported by GeometryEngine.ts + other live code. Cannot delete until extrude/revolve/
+#     sweep/loft commit actions have OCC paths that bypass the mesh-CSG pipeline entirely.
+#     Blocked by: OCC-10 feature-tree wiring for extrude, revolve, sweep, loft.
+[ ] OCC-9.3 — Delete edge topology extraction (edgeTopology.ts) [BLOCKED]
+#     2026-05-23 audit: edgeTopology.ts imported by 14 files including ExtrudedBodies.tsx,
+#     nearestEdge.ts, persistence.ts, bodyBoolean.ts, shellSolid.ts, cutTopology.ts, and
+#     multiple solid ops. Not deletable until all dependents are migrated to OCC topology.
+[~] OCC-9.4 — Drop deps (manifold-3d, three-bvh-csg); useOccPipeline flag removed
+#     Remaining: drop mesh CSG deps only after non-edge mesh operations have OCC replacements. npm install; verify bundle shrinks ~40MB.
+[~] OCC-9.5 — Memory & docs update (project_designcad.md, wasm_patterns.md)
+[~] OCC-9.6 — Final dead-code audit (rg/import checks, eslint, typecheck, GitNexus
+#     detect-changes; remove transitional hooks, old flag branches, debug panels)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PHASE 2 — Reliability: silent failures, junction artifacts, UX
+# PHASE OCC-10: Fusion 360 Feature Parity
+# Source: 2026-05-23 audit against CPP/include/Fusion/ SDK headers
+# All items are independent unless noted. Ordered by priority (high → low).
 # ══════════════════════════════════════════════════════════════════════════════
 
-[x] 6. Wire propagate → tangent edge auto-expansion
-#   "Propagate Along Tangent Edges" checkbox is stored but never applied.
-#   Fix: after edge picker returns a set, walk geometry.userData.topology
-#   to find all tangent-connected edges (dihedral < 5°). Add them to the
-#   working set before passing to computeEdgeCutGeometry.
-#   Fusion SDK: BRepEdge.tangentiallyConnectedEdges() — returns the full
-#   tangent chain, already ordered. We build the equivalent walk on our
-#   extracted topology (posRegions + region normals).
+# ── HIGH PRIORITY ──────────────────────────────────────────────────────────────
 
-[x] 7. Rolling-ball corner sphere at multi-edge junctions
-#   When 3+ filleted edges meet at one vertex, each edge is cut independently
-#   leaving a triangular gap at the corner.
-#   Fix: detect shared endpoints across filleted edges. For each vertex
-#   shared by ≥ 3 filleted edges, CSG-subtract a sphere of radius r.
-#   Fusion SDK: isRollingBallCorner on FilletFeatureInput
+[x] OCC-10.1 — Loft (~16h)
+#     Engine + feature tree + UI: all done. LoftPanel.tsx (viewport tool panel)
+#     in src/components/viewport/panels/ handles profile/guide-rail selection,
+#     start/end conditions, closed/smoothing options, operation type.
+#     commitLoft OCC path wired (occLoftWithInstance, tessellate, attach brepBodyId).
 
-[x] 8. Adaptive segment count (not hardcoded to 4/48)
-#   commitFillet(r, 4) always passes segments=4 → radialSeg=48.
-#   Fix: compute radialSeg from arc length:
-#     arcLen = r * (π - phi)
-#     radialSeg = clamp(round(arcLen / targetSegLen), 16, 128)
-#     targetSegLen ≈ 0.5mm for commit, 2mm for preview
+[x] OCC-10.2 — Mirror (~8h)
+#     Engine + feature tree + UI: all done. MirrorDialog.tsx in src/components/dialogs/pattern/
+#     supports features/bodies/components, XY/XZ/YZ plane selection, and compute type.
+#     commitMirrorFeature OCC path wired — detects brepBodyId, calls occMirrorWithInstance.
 
-[x] 9. Convex/concave edge classification
-#   Fusion SDK: BRepBody.concaveEdges() / convexEdges() — pre-classified
-#   edge sets. Critical for rule fillets and for visual feedback (showing
-#   different colors for concave vs convex edges in the overlay).
-#   Fix: after extractEdgeTopology, classify each edge by the cross product
-#   of its two adjacent face normals dotted with the edge midpoint→face
-#   centroid vector. Store concave/convex flag on ModelEdge.
+[~] OCC-10.3 — Extrude: taper angle (~6h)
+#     Status 2026-05-23: Engine op done. OccExtrudeOptions.taperAngle added;
+#     BRepOffsetAPI_DraftAngle_1 applied to lateral faces after prism build;
+#     neutral plane = sketch plane; graceful fallback if Build fails.
+#     Remaining: wire taperAngle through extrudeCommitActions OCC path (no OCC
+#     path exists yet for the commit action — standard extrudes go through mesh-CSG
+#     pipeline); add taper field to extrudePanel UI (ExtrudePanel.tsx already has
+#     extrudeTaperAngle state, so field may already be present).
 
+[~] OCC-10.4 — Sweep: guide rails + orientation modes (~12h)
+#     Status 2026-05-23: Engine op done. OccSweepOptions extended with guideRail,
+#     guideRailFrame, orientation (perpendicular/frenet/horizontal/vertical).
+#     occSweepWithInstance branches: simple path (BRepOffsetAPI_MakePipe_1) when no
+#     advanced options; advanced path (BRepOffsetAPI_MakePipeShell_1) when guide rail
+#     or non-perpendicular orientation requested. Guide rail added via Add_2(wire,
+#     true, true) for tangent-contact scaling. Orientation via SetMode_2/SetMode_3.
+#     Remaining: feature-tree wiring (sweep commit action has no OCC path yet);
+#     UI sweepPanel guide-rail picker + orientation dropdown;
+#     taperAngle/twistAngle (complex — need per-segment transform or separate pass).
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PHASE 3 — Feature parity: Fusion capabilities we don't have
-# ══════════════════════════════════════════════════════════════════════════════
+# ── MEDIUM PRIORITY ────────────────────────────────────────────────────────────
 
-[x] 10. Chamfer corner type selector
-#    Fusion: ChamferCornerTypes — ChamferCornerType (patch), MiterCornerType
-#    (extend+intersect), BlendCornertype (smooth blend).
-#    DONE: ChamferDialog has Patch/Miter dropdown, ChamferParams.cornerType typed.
-#    DONE: miter corner implemented via ConvexGeometry convex-hull cutter at
-#    each 2-edge vertex — extends bevel planes to their natural intersection line.
-#    EdgeCutOptions.makeMiterCornerCutter callback wired from computeChamferGeometry.
-#    NOTE: BlendCornertype (smooth blend) deferred — requires NURBS surface generation.
+[x] OCC-10.5 — Rectangular pattern (~8h)
+#     Engine + feature tree + UI: all done. RectangularPatternDialog + LinearPatternDialog
+#     in src/components/dialogs/pattern/ registered in ActiveDialog.tsx.
 
-[x] 11. Asymmetric fillet (different offsets each side)
-#    Fusion SDK: AsymmetricFilletEdgeSetInput — offsetOne, offsetTwo, isFlipped.
-#    Fix: add Asymmetric mode to FilletDialog. buildFilletCutter supports
-#    two independent setback values with cylinder axis shifted off bisector.
+[x] OCC-10.6 — Circular pattern (~6h)
+#     Engine + feature tree + UI: all done. CircularPatternDialog in
+#     src/components/dialogs/pattern/ registered in ActiveDialog.tsx.
 
-[x] 12. Full-round fillet (3-face rolling ball)
-#    Fusion SDK: FullRoundFilletFeatureInput — centerFace + sideOneFaces +
-#    sideTwoFaces + areAutomaticSideFaces (auto-infer from adjacency).
-#    DONE: 'full-round' mode in FilletCommitParams type.
-#    DONE: face-pick mode auto-activates when full-round is selected; useFacePicker
-#    extracts boundary edges of clicked face + computes inradius → sets radius auto.
-#    DONE: filletLiveRadius synced to dialog radius state via useEffect.
-#    DONE: commit uses radius = inradius (inscribed circle) with constant-radius path.
-#    NOTE: geometry falls through to constant-radius with the auto-computed inradius,
-#    which IS the correct inscribed-circle approximation. True 3-face rolling-ball
-#    (tangent to all 3 faces simultaneously) would need a NURBS cutter — deferred.
+[x] OCC-10.7 — Offset faces (press-pull) (~6h)
+#     Engine + feature tree + UI: all done. OffsetFaceDialog.tsx provides distance control.
+#     commitOffsetFace OCC path calls occOffsetFacesWithInstance with exact faceIds.
 
-[x] 13. Rule fillet (fillet all edges of a selected face/feature)
-#    Fusion SDK: RuleFilletFeatureInput — setByAllEdges(faces[]) or
-#    setByBetweenFacesOrFeatures(set1[], set2[]). Also topologyType filter
-#    (RoundsAndFillets / RoundsOnly / FilletsOnly).
-#    DONE: filletPickMode store state ('edge'|'face') + setFilletPickMode action.
-#    DONE: FilletDialog has Face/Edge toggle button (task 13 + full-round auto-switch).
-#    DONE: EdgeOpEdgeHighlight wires useFacePicker in face mode → faceEdgeIds()
-#    extracts boundary edges of clicked face → adds all in one shot.
-#    DONE: useFacePicker + FacePickResult implemented and wired end-to-end.
-#    NOTE: RuleFilletTopologyType filter (RoundsOnly/FilletsOnly) deferred.
+[x] OCC-10.8 — Draft (~8h)
+#     Engine + feature tree + UI: all done. DraftDialog.tsx in src/components/dialogs/solid/
+#     provides angle, pull direction, and face picker. commitDraft OCC path calls
+#     occDraftWithInstance with exact faceIds + pull direction + neutral plane.
 
-[x] 14. G2 curvature continuity + tangency weight
-#    Fusion SDK: SurfaceContinuityTypes — G0 (Connected), G1 (Tangent),
-#    G2 (Curvature). Plus tangencyWeight 0.1–2.0 on every fillet edge set.
-#    DONE: FilletCommitParams.isG2 / tangencyWeight typed + wired through
-#    computeFilletGeometry; tangencyWeight adjusts effective radius as an
-#    approximation. FilletDialog exposes G2 toggle.
-#    REMAINING: true G2 (curvature-continuous Bézier blend surface) not built —
-#    the cylinder cutter is inherently G1. tangencyWeight is a radius-scale
-#    approximation only. Full G2 requires a different cutter geometry (NURBS or
-#    cubic Bézier patch) — this is out of scope for the current pipeline.
+[x] OCC-10.9 — Shell: outside thickness + shell type (~4h)
+#     Engine + feature tree + UI: all done. ShellDialog.tsx has direction (inside/outside/both),
+#     insideThickness, outsideThickness, shellType (sharp/rounded), tangent chain, and
+#     individual face offsets (SOL-I7). commitShell OCC path wired in advancedSolidAndMeshOpsSlice.
 
-[x] 15. Stable edge identity (entity tokens)
-#    Fusion SDK: BRepEdge.entityToken — survives save/reload. Our edge IDs
-#    are world-space vertex coordinates in strings — they break when the body
-#    is translated, rotated, or scaled.
-#    DONE: modelEdgeId uses LOCAL-space coordinates (from geometry buffer, not
-#    world transform). IDs are stable under scene-level translation/rotation.
-#    DONE: toFixed(4) = 0.1mm quantization guards against CSG floating-point drift.
-#    REMAINING: scale-invariance — if geometry is literally re-scaled (geo.scale())
-#    the toFixed(4) values change. Fix would normalize by body bbox diagonal.
-#    This is deferred since CAD bodies in this app are not scaled via geo.scale().
+[x] OCC-10.10 — Chamfer: distance-and-angle mode (~4h)
+#     Already wired: resolveOccChamferDistances in featureMeshActions.ts converts
+#     mode='dist-angle' → distance2 = distance * tan(angle), passed to occChamferWithInstance
+#     which uses Add_3(d1, d2, edge, refFace). Corner types have no OCC equivalent (UI-only).
 
-[x] 16. Feature reordering with dependency validation
-#    Fusion SDK: TimelineObject.canReorder(beforeIndex) / reorder(beforeIndex).
-#    Our reorderFeature exists but has no dependency checking — you can move
-#    a fillet before its parent body, breaking the chain.
-#    Fix: validate that a feature's dependencies all appear before it in the
-#    array before allowing reorder. Block and surface a warning if not.
+[x] OCC-10.11 — Combine: multiple tool bodies (~4h)
+#     Engine + feature tree + UI: all done. commitCombine accepts multiple tool IDs,
+#     uses performOccBooleanMultiWithInstance with OCC BOPAlgo_BOP batch booleans.
+#     CombineDialog has multi-select tool picker. No pairwise fallback remains here.
 
+[~] OCC-10.12 — Extrude: two-sided extents (~8h)
+#     Engine: extrude.ts extended — twoSideDist option extrudes in negative direction
+#     and fuses via BRepAlgoAPI_Fuse_3. symmetric and twoSideDist are mutually exclusive.
+#     Remaining: through-all (feature-tree concern — needs target bbox); to-entity; UI picker.
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Implementation order
-# ══════════════════════════════════════════════════════════════════════════════
-#
-# Wave 1 (foundation — everything else depends on this):
-#   0a → 0b → 0c → 0d → 0e   (non-destructive feature model + replay)
-#
-# Wave 2 (fix broken UI controls — can parallelize after Wave 1):
-#   1, 2, 3, 4, 5             (wire dead params into geometry)
-#
-# Wave 3 (reliability + UX — can parallelize after Wave 1):
-#   6, 7, 8, 9                (tangent propagation, corners, segments, classify)
-#
-# Wave 4 (feature parity — independent items, can parallelize):
-#   10, 11, 12, 13            (chamfer corners, asymmetric, full-round, rule)
-#
-# Wave 5 (advanced — requires deeper engine work):
-#   14, 15, 16                (G2 continuity, stable IDs, reorder validation)
+[~] OCC-10.13 — Revolve: two-sided extents (~4h)
+#     Engine: revolve.ts extended — side2AngleRad option revolves in negative direction
+#     and fuses via BRepAlgoAPI_Fuse_3. to-entity not yet implemented.
+#     Remaining: UI extent picker + feature tree wiring.
 
+[x] OCC-10.14 — Thicken surface bodies (~8h)
+#     Engine + feature tree + UI: all done. ThickenDialog.tsx in
+#     src/components/dialogs/surface/ has thickness, direction (inside/outside/symmetric),
+#     operation (new-body/join/cut). Registered as 'thicken' in ActiveDialog.tsx.
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SDK reference (Fusion 360 header paths)
-# ══════════════════════════════════════════════════════════════════════════════
-# SDK install: C:\Users\joeyp\AppData\Local\Autodesk\webdeploy\production\
-#              4bca736941837d3e42bba21bb36b9891e34b2fce\CPP\include\Fusion\
-#
-# Feature base class:
-#   Features/Feature.h — name, deleteMe(), dissolve(), isSuppressed,
-#     isParametric, faces(), bodies(), timelineObject(), linkedFeatures(),
-#     healthState(), errorOrWarningMessage(), entityToken(), attributes()
-#
-# Timeline:
-#   Design/Timeline.h — markerPosition, moveToBeginning/End/Next/Previous,
-#     play(), deleteAllAfterMarker(), timelineGroups
-#   Design/TimelineObject.h — isSuppressed, index, isRolledBack,
-#     rollTo(rollBefore), canReorder/reorder, entity(), name, healthState
-#
-# Fillet:
-#   Features/FilletFeatures.h — createInput()+add(), createFullRoundFilletInput()
-#     +addFullRoundFillet(), createRuleFilletInput()+addRuleFillet()
-#   Features/FilletFeatureInput.h — edgeSetInputs(), isRollingBallCorner
-#   Features/FilletFeature.h — edgeSets(), filletFeatureType(), convert(),
-#     ruleFilletSettings(), fullRoundFilletFaceSets()
-#   Features/FilletEdgeSetInputs.h — addConstantRadius/Variable/ChordLength/Asymmetric
-#   Features/FilletEdgeSet.h — isTangentChain, continuity, tangencyWeight, deleteMe
-#   Features/ConstantRadiusFilletEdgeSet.h — edges(), radius (ModelParameter)
-#   Features/ConstantRadiusFilletEdgeSetInput.h — radius (ValueInput)
-#   Features/VariableRadiusFilletEdgeSet.h — edges(), startRadius, endRadius,
-#     midRadii, midPositions, addMidPosition(pos, radius), deleteMidPosition(index)
-#   Features/VariableRadiusFilletEdgeSetInput.h — startRadius, endRadius, setMidRadii
-#   Features/AsymmetricFilletEdgeSet.h — edges(), offsetOne, offsetTwo, isFlipped
-#   Features/AsymmetricFilletEdgeSetInput.h — offsetOne, offsetTwo, isFlipped
-#   Features/ChordLengthFilletEdgeSet.h — edges(), chordLength (ModelParameter)
-#   Features/ChordLengthFilletEdgeSetInput.h — chordLength (ValueInput)
-#   Features/RuleFilletFeatureInput.h — setByAllEdges, setByBetweenFaces,
-#     ruleType, topologyType, radius/asymmetricOffsets, isRollingBallCorner
-#   Features/RuleFilletSettings.h — ruleType, topologyType, isConstantRadius,
-#     radius/asymmetricOffsetOne/Two, isRollingBallCorner, facesOrFeatures
-#   Features/FullRoundFilletFeatureInput.h — faceSets()
-#   Features/FullRoundFilletFaceSet.h — centerFace, sideOneFaces, sideTwoFaces,
-#     areAutomaticSideFaces
-#   Features/FullRoundFilletFaceSets.h — add(center, side1, side2, autoSides)
-#
-# Chamfer:
-#   Features/ChamferFeatures.h — createInput2()+add()
-#   Features/ChamferFeatureInput.h — chamferEdgeSets(), cornerType
-#   Features/ChamferFeature.h — edgeSets(), cornerType, chamferType (retired)
-#   Features/ChamferEdgeSet.h — isTangentChain, deleteMe (base)
-#   Features/EqualDistanceChamferEdgeSet.h — edges(), distance (ModelParameter)
-#   Features/TwoDistancesChamferEdgeSet.h — edges(), distanceOne, distanceTwo,
-#     isFlipped (ModelParameter)
-#   Features/DistanceAndAngleChamferEdgeSet.h — edges(), distance, angle,
-#     isFlipped (ModelParameter)
-#
-# BRep topology:
-#   BRep/BRepEdge.h — startVertex, endVertex, faces(), coEdges(),
-#     tangentiallyConnectedEdges(), geometry() → Curve3D, evaluator(),
-#     length(), isDegenerate, isTolerant, tempId, entityToken, pointOnEdge()
-#   BRep/BRepFace.h — edges(), vertices(), loops(),
-#     tangentiallyConnectedFaces(), geometry() → Surface, evaluator(),
-#     isPointOnFace(), area(), centroid(), boundingBox()
-#   BRep/BRepBody.h — concaveEdges(), convexEdges(), isSolid, volume(),
-#     area(), revisionId(), findByTempId()
-#
-# Enums (FusionTypeDefs.h):
-#   FilletFeatureTypes — FilletFeatureType(0), RuleFilletFeatureType(1),
-#     FullRoundFilletFeatureType(2)
-#   ChamferCornerTypes — ChamferCornerType, MiterCornerType, BlendCornertype
-#   ChamferTypes — EqualDistance, TwoDistances, DistanceAndAngle
-#   SurfaceContinuityTypes — Connected(G0), Tangent(G1), Curvature(G2)
-#   RuleFilletRuleTypes — AllEdges(0), BetweenFacesOrFeatures(1)
-#   RuleFilletTopologyTypes — RoundsAndFillets(0), RoundsOnly(1), FilletsOnly(2)
-#   FeatureHealthStates — HealthyFeatureHealthState, WarningFeatureHealthState,
-#     ErrorFeatureHealthState
+# ── LOW PRIORITY ────────────────────────────────────────────────────────────────
+
+[x] OCC-10.15 — Sphere + Torus primitives (~4h)
+#     Engine: src/engine/occ/ops/sphere.ts DONE (BRepPrimAPI_MakeSphere_2, optional transform).
+#             src/engine/occ/ops/torus.ts DONE (BRepPrimAPI_MakeTorus_2, majorRadius > minorRadius guard).
+#     Remaining: UI primitives toolbar buttons + feature tree wiring.
+#     2026-05-23: addPrimitive now creates OCC sphere/torus bodies, tessellates
+#     them into stored meshes, attaches brepBodyId, and uses the existing
+#     Primitive dialog/toolbar flow.
+
+[x] OCC-10.16 — Scale (uniform + non-uniform) (~4h)
+#     Engine + feature tree + UI: all done. ScaleDialog.tsx has uniform/non-uniform
+#     modes, per-axis factors, reference point (centroid/origin). commitScale OCC path
+#     wired in featureMeshActions.ts.
+
+[~] OCC-10.17 — Fillet: full-round mode (~8h)
+#     Status 2026-05-23: Engine op done. occFullRoundFilletWithInstance added to
+#     fillet.ts. Takes centerFaceId + sideFaceIds[2] from body.faceIds map.
+#     Uses TopTools_IndexedMapOfShape + TopExp.MapShapes_1 for canonical edge indexing
+#     (ptr comparison is unreliable due to orientation wrappers; FindIndex_1 uses IsSame).
+#     Finds shared boundary edges via center∩side1 and center∩side2 index intersection.
+#     Auto-radius = half midpoint distance between the two boundary edges.
+#     Falls back to BRepFilletAPI_MakeFillet_2 (same as constant fillet) — OCC resolves
+#     the full-round blend when both boundary edges are filleted with the spanning radius.
+#     Remaining: feature-tree wiring (fillet commit path, detect full-round mode);
+#     UI face picker in filletDialog for center + side faces.
+
+[x] OCC-10.18 — Fillet: asymmetric mode (~6h)
+#     Status 2026-05-23: DONE. resolveOccFilletEdgeSets asymmetric branch now maps
+#     offsetOne → startRadius, offsetTwo → endRadius → OCC Add_3(r1, r2, edge).
+#     Multi-set loop also handles type='asymmetric' with the same mapping.
+#     Removes the console.warn fallback. Limitation: Add_3 varies radius along edge
+#     length (start→end vertex), not per-face — this is the best approximation
+#     available without BRepFilletAPI_MakeFilletFaceSet (which lacks JS bindings).
+#     UI: filletDialog already has offsetOne/offsetTwo fields in useFilletDialogState.

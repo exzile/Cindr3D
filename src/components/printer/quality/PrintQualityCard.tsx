@@ -33,7 +33,7 @@ function BucketIcon({ bucket }: { bucket: PrintQualityBucket }) {
 export function PrintQualityCard({ record, thumbnailDataUrl }: PrintQualityCardProps) {
   const bucket = bucketDiagnosis(record.result);
   const when = new Date(record.createdAt).toLocaleString();
-  const filename = extractFileName(record.result.rawText, record.result.summary);
+  const filename = extractFileName(record.result.rawText);
 
   return (
     <div className={`print-quality-card print-quality-card--${bucket}`}>
@@ -76,7 +76,7 @@ export function PrintQualityCard({ record, thumbnailDataUrl }: PrintQualityCardP
  * Try to extract a job filename from the telemetry that the analyzer echoes
  * back in `rawText`. Falls back to undefined — the summary still renders.
  */
-function extractFileName(rawText: string | undefined, _summary: string): string | undefined {
+function extractFileName(rawText: string | undefined): string | undefined {
   if (!rawText) return undefined;
   const match = /job\.fileName=([^"\s,}]+)/.exec(rawText);
   return match?.[1];

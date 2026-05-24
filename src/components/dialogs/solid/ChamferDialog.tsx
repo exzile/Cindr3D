@@ -1,6 +1,5 @@
 import { useCADStore } from "../../../store/cadStore";
 import type { Feature } from "../../../types/cad";
-import { resolveChamferDistances } from "../../../utils/geometry/chamferGeometry";
 import { DialogShell } from "../common/DialogShell";
 import { ChamferAdvancedOptions } from "./chamferDialog/ChamferAdvancedOptions";
 import { ChamferModeFields } from "./chamferDialog/ChamferModeFields";
@@ -33,6 +32,28 @@ function storedEdgeIds(value: unknown): string[] {
   if (typeof value !== "string") return [];
   if (value.includes("\u001f")) return value.split("\u001f").filter(Boolean);
   return value.split(",").filter(Boolean);
+}
+
+function resolveChamferDistance2(
+  p: Pick<ChamferParams, "mode" | "distance" | "distance2" | "angle">,
+): number {
+  if (p.mode === "two-dist") return p.distance2 ?? p.distance;
+  if (p.mode === "dist-angle") {
+    const angle = Math.max(1, Math.min(89, p.angle ?? 45));
+    return Math.max(0.01, p.distance * Math.tan((angle * Math.PI) / 180));
+  }
+  return p.distance;
+}
+
+function resolveChamferDistances(
+  p: Pick<
+    ChamferParams,
+    "mode" | "distance" | "distance2" | "angle" | "isFlipped"
+  >,
+): [number, number] {
+  const d1 = p.distance;
+  const d2 = resolveChamferDistance2(p);
+  return p.isFlipped ? [d2, d1] : [d1, d2];
 }
 
 function ChamferDialogUI({
@@ -75,7 +96,7 @@ export function ChamferDialog({ onClose }: { onClose: () => void }) {
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const renameFeature = useCADStore((s) => s.renameFeature);
   const commitChamfer = useCADStore((s) => s.commitChamfer);
-  const replayEdgeCutFeature = useCADStore((s) => s.replayEdgeCutFeature);
+  const replayEdgeModificationFeature = useCADStore((s) => s.replayEdgeModificationFeature);
 
   const editing = editingFeatureId
     ? features.find((feature) => feature.id === editingFeatureId)
@@ -90,7 +111,7 @@ export function ChamferDialog({ onClose }: { onClose: () => void }) {
     if (editing) {
       updateFeatureParams(editing.id, { ...nextParams, edgeIds });
       renameFeature(editing.id, `Chamfer (d=${d1})`);
-      replayEdgeCutFeature(editing.id);
+      replayEdgeModificationFeature(editing.id);
     } else {
       const feature: Feature = {
         id: crypto.randomUUID(),

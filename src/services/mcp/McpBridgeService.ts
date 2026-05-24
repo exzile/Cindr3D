@@ -23,6 +23,7 @@ interface RelayCall {
 class McpBridgeServiceClass {
   private evtSource: EventSource | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private stopping = false;
 
   start(): void {
@@ -34,6 +35,7 @@ class McpBridgeServiceClass {
 
   stop(): void {
     this.stopping = true;
+    this.clearReconnectTimer();
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
@@ -45,6 +47,7 @@ class McpBridgeServiceClass {
 
   private connectRelay(): void {
     if (this.stopping) return;
+    this.clearReconnectTimer();
     const src = new EventSource(`${CONTROL_BASE}/relay`);
     this.evtSource = src;
 
@@ -61,10 +64,19 @@ class McpBridgeServiceClass {
     src.onerror = () => {
       // SSE dropped; close and reconnect after a delay
       this.closeRelay();
-      if (!this.stopping) {
-        setTimeout(() => this.connectRelay(), 2_000);
+      if (!this.stopping && this.reconnectTimer === null) {
+        this.reconnectTimer = setTimeout(() => {
+          this.reconnectTimer = null;
+          this.connectRelay();
+        }, 2_000);
       }
     };
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer === null) return;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
   }
 
   private closeRelay(): void {
@@ -103,6 +115,7 @@ class McpBridgeServiceClass {
   }
 
   private startHeartbeat(): void {
+    if (this.heartbeatTimer) return;
     // Send an immediate heartbeat so the MCP server starts right away
     void fetch(`${CONTROL_BASE}/heartbeat`).catch(() => undefined);
     this.heartbeatTimer = setInterval(() => {

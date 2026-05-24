@@ -96,8 +96,6 @@ type SerializedTopology = {
 type SerializedEdgeMeta = {
   topoV?: number;
   topology?: SerializedTopology;
-  displayTopology?: SerializedTopology;
-  ghostTopology?: SerializedTopology;
 };
 
 const serializedMeshDataCache = new WeakMap<THREE.BufferGeometry, SerializedMeshData>();
@@ -136,21 +134,15 @@ function deserializeTopology(topology: SerializedTopology | undefined): BodyTopo
 
 function serializeEdgeMeta(geometry: THREE.BufferGeometry): SerializedEdgeMeta | undefined {
   const topology = serializeTopology(geometry.userData.topology);
-  const displayTopology = serializeTopology(geometry.userData.displayTopology);
-  const ghostTopology = serializeTopology(geometry.userData.ghostTopology);
   const topoV = typeof geometry.userData._topoV === 'number' ? geometry.userData._topoV : undefined;
-  if (!topology && !displayTopology && !ghostTopology && topoV === undefined) return undefined;
-  return { topoV, topology, displayTopology, ghostTopology };
+  if (!topology && topoV === undefined) return undefined;
+  return { topoV, topology };
 }
 
 function restoreEdgeMeta(geometry: THREE.BufferGeometry, edgeMeta: SerializedEdgeMeta | undefined): void {
   if (!edgeMeta) return;
   const topology = deserializeTopology(edgeMeta.topology);
-  const displayTopology = deserializeTopology(edgeMeta.displayTopology);
-  const ghostTopology = deserializeTopology(edgeMeta.ghostTopology);
   if (topology) geometry.userData.topology = topology;
-  if (displayTopology) geometry.userData.displayTopology = displayTopology;
-  if (ghostTopology) geometry.userData.ghostTopology = ghostTopology;
   if (typeof edgeMeta.topoV === 'number') geometry.userData._topoV = edgeMeta.topoV;
 }
 
@@ -159,8 +151,7 @@ export const serializeFeature = (feature: Feature): SerializedFeature => {
   if (topCached && !feature.mesh) return topCached;
   const { mesh, ...rest } = feature;
   const serialized: SerializedFeature = { ...rest };
-  // Serialize mesh geometry for MESH_ONLY_TYPES (always have mesh) AND for any
-  // feature type that acquired a mesh via edge-cut (fillet/chamfer on extrude/primitive).
+  // Serialize mesh geometry for features that carry explicit display mesh data.
   if (mesh) {
     const geometry = (mesh as THREE.Mesh).geometry;
     if (geometry) {

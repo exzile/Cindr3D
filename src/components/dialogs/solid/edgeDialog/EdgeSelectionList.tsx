@@ -1,9 +1,16 @@
 import { useMemo } from "react";
-import { parseEdgeLabel } from "../../../../utils/geometry/edgeCutCore";
 
 interface EdgeSelectionListProps {
   edgeIds: string[];
   onRemoveEdge: (id: string) => void;
+}
+
+function parseEdgeLabel(id: string, index: number): string {
+  if (id.startsWith("occ:")) {
+    const [, , edgeId] = id.split(":");
+    return edgeId ? `Edge ${index + 1} (OCC ${edgeId})` : `Edge ${index + 1}`;
+  }
+  return `Edge ${index + 1}`;
 }
 
 export function EdgeSelectionList({

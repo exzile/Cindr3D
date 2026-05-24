@@ -69,7 +69,7 @@ function buildShapeManifold(
     return _fromManifoldExtrude(m); // also deletes m
   } catch (err) {
     console.warn('[extrude] Manifold-native extrude failed, falling back:', err);
-    try { if (m && typeof m.delete === 'function') m.delete(); } catch {}
+    try { if (m && typeof m.delete === 'function') m.delete(); } catch { /* ignore cleanup failures during fallback */ }
     return null;
   }
 }

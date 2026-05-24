@@ -62,6 +62,7 @@ export function useBrowserUsbCamera(deps: UseBrowserUsbCameraDeps) {
         setMessage(webcamUsbDeviceLabel ? `Using USB camera: ${webcamUsbDeviceLabel}` : 'Using browser USB camera.');
       })
       .catch(() => {
+        if (disposed) return;
         setImageFailed(true);
         setMessage('Unable to open USB camera. Check browser permissions and camera settings.');
       });

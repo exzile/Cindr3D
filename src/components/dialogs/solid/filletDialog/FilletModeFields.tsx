@@ -90,8 +90,8 @@ export function FilletModeFields({ dialog }: FilletModeFieldsProps) {
           />
           <p className="dialog-hint" style={{ marginTop: 4 }}>
             Chord length controls the width of the fillet arc rather than its
-            radius. r = chordLen / (2 sin(theta/2)) for the edge dihedral angle
-            theta.
+            radius. r = chordLen / (2 cos(phi/2)) for the edge dihedral angle
+            phi used by the geometry solver.
           </p>
         </div>
       )}
@@ -129,13 +129,6 @@ export function FilletModeFields({ dialog }: FilletModeFieldsProps) {
             </label>
           </div>
         </>
-      )}
-
-      {dialog.mode === "full-round" && (
-        <p className="dialog-hint">
-          Select three edge sets: Side Face 1 - Center Face - Side Face 2. The
-          fillet radius is computed automatically to create a tangent blend.
-        </p>
       )}
     </>
   );

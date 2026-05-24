@@ -297,8 +297,8 @@ export interface CADModelingState {
     chamferParams?: Record<string, unknown>,
   ) => void;
 
-  // Replay (re-run CSG) an existing fillet/chamfer feature — used on edit.
-  replayEdgeCutFeature: (featureId: string) => void;
+  // Replay an existing OCC fillet/chamfer feature — used on edit.
+  replayEdgeModificationFeature: (featureId: string) => void;
 
   // Align tool — geometry-pair picking + transform commit
   alignPickStage: "idle" | "source" | "target";
@@ -319,7 +319,7 @@ export interface CADModelingState {
   // SLD12 — Combine / Boolean (commit)
   commitCombine: (
     targetFeatureId: string,
-    toolFeatureId: string,
+    toolFeatureId: string | string[],
     operation: "join" | "cut" | "intersect",
     keepTool: boolean,
   ) => void;
@@ -330,6 +330,7 @@ export interface CADModelingState {
       keepTools: boolean;
       targetId: string;
       toolId: string;
+      toolIds?: string[];
     },
   ) => void;
 
@@ -343,11 +344,6 @@ export interface CADModelingState {
   clearFilletEdges: () => void;
   filletLiveRadius: number;
   setFilletLiveRadius: (r: number) => void;
-  filletPreviewParams?: Record<string, unknown>;
-  setFilletPreviewParams: (params: Record<string, unknown> | undefined) => void;
-  /** Task 13/12: 'edge' picks individual edges; 'face' picks whole face boundaries. */
-  filletPickMode: "edge" | "face";
-  setFilletPickMode: (mode: "edge" | "face") => void;
 
   // D7 Chamfer edge selection + live distance (synced with ChamferGizmo drag)
   chamferEdgeIds: string[];
@@ -356,10 +352,6 @@ export interface CADModelingState {
   clearChamferEdges: () => void;
   chamferLiveDistance: number;
   setChamferLiveDistance: (d: number) => void;
-  chamferPreviewParams?: Record<string, unknown>;
-  setChamferPreviewParams: (
-    params: Record<string, unknown> | undefined,
-  ) => void;
 
   // Active feature dialog
   activeDialog: string | null;

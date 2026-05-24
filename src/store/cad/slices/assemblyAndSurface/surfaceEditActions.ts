@@ -4,6 +4,11 @@ import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
 import { placeToolFeatureAsync } from '../featureManagement/bodyBoolean';
+import { occThickenWithInstance } from '../../../../engine/occ/ops/thicken';
+import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
+import { getOccSync } from '../../../../engine/occ/loader';
+import { tessellateWithInstance, tessellationToGeometry } from '../../../../engine/occ/tessellate';
+import { attachTessellationToMesh } from '../../../../engine/occ/picking';
 
 const SURFACE_MATERIAL = () =>
   new THREE.MeshPhysicalMaterial({
@@ -387,9 +392,52 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
     commitThicken: async (params) => {
       const { features } = get();
       const n = features.filter((f) => f.params?.featureKind === 'thicken-solid').length + 1;
-      const sourceMesh = [...features]
+      const sourceFeature = [...features]
         .reverse()
-        .find((f) => f.mesh && (f.mesh as THREE.Mesh).isMesh && f.bodyKind === 'surface')?.mesh as THREE.Mesh | undefined;
+        .find((f) => f.mesh && (f.mesh as THREE.Mesh).isMesh && f.bodyKind === 'surface');
+      const sourceMesh = sourceFeature?.mesh as THREE.Mesh | undefined;
+
+      // OCC path: thicken via BRep when the source surface has an OCC body
+      const thickenOccBodyId = sourceMesh?.userData?.['brepBodyId'] as string | undefined;
+      if (thickenOccBodyId) {
+        const occ = getOccSync();
+        const thickenSrcBody = occ ? globalBRepBodyRegistry.get(thickenOccBodyId) : undefined;
+        if (occ && thickenSrcBody) {
+          const isSymmetric = params.direction === 'symmetric';
+          const thickness = Math.abs(params.thickness);
+          const thickenResult = occThickenWithInstance(occ.oc, thickenSrcBody, thickness, { symmetric: isSymmetric });
+          if (thickenResult) {
+            const newFeatureId = crypto.randomUUID();
+            thickenResult.sourceFeatureId = newFeatureId;
+            globalBRepBodyRegistry.add(thickenResult);
+            const tess = tessellateWithInstance(occ.oc, thickenResult);
+            const geo = tessellationToGeometry(tess);
+            const thickenMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x4488cc }));
+            attachTessellationToMesh(thickenMesh, tess, thickenResult.id);
+            thickenMesh.userData.pickable = true;
+            thickenMesh.userData.featureId = newFeatureId;
+            thickenMesh.castShadow = true;
+            thickenMesh.receiveShadow = true;
+            const occThickenFeature: Feature = {
+              id: newFeatureId,
+              name: `Thicken (${thickness}mm, ${params.direction})`,
+              type: 'thicken',
+              params: { featureKind: 'thicken-solid', ...params },
+              mesh: thickenMesh,
+              visible: true,
+              suppressed: false,
+              timestamp: Date.now(),
+              bodyKind: 'solid',
+            };
+            get().pushUndo();
+            const r = await placeToolFeatureAsync(get(), occThickenFeature, params.operation ?? 'new-body');
+            set({ features: r.features, designConfigurations: r.designConfigurations });
+            get().setStatusMessage(`Thicken ${n} (OCC): ${thickness}mm ${params.direction}${r.note}`);
+            return;
+          }
+        }
+      }
+
       const mesh = sourceMesh
         ? configureMesh(GeometryEngine.thickenSurface(sourceMesh, params.thickness, params.direction))
         : undefined;

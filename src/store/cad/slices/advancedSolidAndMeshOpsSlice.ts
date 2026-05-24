@@ -7,6 +7,14 @@ import type { CADState } from '../state';
 import { pickMostRecentSolidTarget, applyBodyBooleanAsync, placeToolFeatureAsync } from './featureManagement/bodyBoolean';
 import { csgAsync } from '../../../workers/csgWorkerPool';
 import { liveBodyMeshes } from '../../meshRegistry';
+import { occShellWithInstance } from '../../../engine/occ/ops/shell';
+import { occDraftWithInstance } from '../../../engine/occ/ops/draft';
+import { occOffsetFacesWithInstance } from '../../../engine/occ/ops/offsetFaces';
+import { globalBRepBodyRegistry } from '../../../engine/occ/globalRegistry';
+import { getOccSync } from '../../../engine/occ/loader';
+import { tessellateWithInstance, tessellationToGeometry } from '../../../engine/occ/tessellate';
+import { attachTessellationToMesh } from '../../../engine/occ/picking';
+import type { BRepTessellation } from '../../../engine/occ/brepBody';
 
 /**
  * Session-only cache of the pre-shell source mesh geometry + world matrix,
@@ -16,6 +24,33 @@ import { liveBodyMeshes } from '../../meshRegistry';
  * the original — the same Phase-0 non-destructive pattern fillet/chamfer use.
  */
 const _shellSrcCache = new Map<string, { geom: THREE.BufferGeometry; matrix: THREE.Matrix4 }>();
+
+/** Find the OCC face ID whose tessellation centroid is closest to a world-space target centroid. */
+function findOccFaceIdByCentroid(
+  tess: BRepTessellation,
+  targetCentroid: [number, number, number],
+): number | null {
+  const faceCentroids = new Map<number, { sx: number; sy: number; sz: number; n: number }>();
+  const numTris = tess.faceIds.length;
+  for (let i = 0; i < numTris; i++) {
+    const faceId = tess.faceIds[i];
+    const b = i * 9;
+    const cx = (tess.positions[b] + tess.positions[b + 3] + tess.positions[b + 6]) / 3;
+    const cy = (tess.positions[b + 1] + tess.positions[b + 4] + tess.positions[b + 7]) / 3;
+    const cz = (tess.positions[b + 2] + tess.positions[b + 5] + tess.positions[b + 8]) / 3;
+    const entry = faceCentroids.get(faceId);
+    if (entry) { entry.sx += cx; entry.sy += cy; entry.sz += cz; entry.n++; }
+    else faceCentroids.set(faceId, { sx: cx, sy: cy, sz: cz, n: 1 });
+  }
+  const [tx, ty, tz] = targetCentroid;
+  let bestId: number | null = null;
+  let bestDist = Infinity;
+  for (const [id, { sx, sy, sz, n }] of faceCentroids) {
+    const d = (sx / n - tx) ** 2 + (sy / n - ty) ** 2 + (sz / n - tz) ** 2;
+    if (d < bestDist) { bestDist = d; bestId = id; }
+  }
+  return bestId;
+}
 
 /** Evict the cached pre-shell source for a feature (called on feature delete). */
 export function evictShellSource(featureId: string): void {
@@ -661,6 +696,60 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
       return;
     }
 
+    // OCC path: use exact BRep shell when source has an OCC body
+    const occBodyId = srcMesh.userData['brepBodyId'] as string | undefined;
+    if (occBodyId) {
+      const occ = getOccSync();
+      const srcBody = occ ? globalBRepBodyRegistry.get(occBodyId) : undefined;
+      if (occ && srcBody) {
+        const tess = srcMesh.userData['brepTessellation'] as BRepTessellation | undefined;
+        const tin = Number.isFinite(opts.insideThickness) ? Math.max(0, opts.insideThickness) : 0;
+        const tout = Number.isFinite(opts.outsideThickness) ? Math.max(0, opts.outsideThickness) : 0;
+        if (tin <= 0 && tout <= 0) {
+          get().setStatusMessage('Shell: set a positive inside or outside thickness');
+          return;
+        }
+        const occFaceIds: number[] = tess
+          ? opts.removeFaces
+              .map((d) => findOccFaceIdByCentroid(tess, d.centroid))
+              .filter((id): id is number => id !== null)
+          : [];
+        if (occFaceIds.length === 0) {
+          get().setStatusMessage('Shell (OCC): select at least one face to open');
+          return;
+        }
+        const shellResult = occShellWithInstance(occ.oc, srcBody, occFaceIds, tin, {
+          sourceFeatureId: featureId,
+          outsideThickness: tout > 0 ? tout : undefined,
+          shellType: opts.shellType === 'rounded' ? 'rolling-ball' : 'sharp',
+        });
+        if (!shellResult) {
+          get().setStatusMessage('Shell (OCC): BRep operation failed — check face selection');
+          return;
+        }
+        shellResult.sourceFeatureId = featureId;
+        globalBRepBodyRegistry.add(shellResult);
+        const newTess = tessellateWithInstance(occ.oc, shellResult);
+        const geo = tessellationToGeometry(newTess);
+        const shellMesh = new THREE.Mesh(geo, srcMesh.material);
+        attachTessellationToMesh(shellMesh, newTess, shellResult.id);
+        shellMesh.userData.pickable = true;
+        shellMesh.userData.featureId = featureId;
+        shellMesh.castShadow = true;
+        shellMesh.receiveShadow = true;
+        get().pushUndo();
+        set((state) => ({
+          features: state.features.map((f) =>
+            f.id === featureId
+              ? { ...f, mesh: shellMesh, params: { ...f.params, insideThickness: tin, outsideThickness: tout, shellType: opts.shellType, removeFaceCount: opts.removeFaces.length, featureKind: 'shell' } }
+              : f,
+          ),
+          statusMessage: `Shell (OCC) applied (in ${tin}mm / out ${tout}mm, ${occFaceIds.length} opening(s))`,
+        }));
+        return;
+      }
+    }
+
     // Non-destructive replay: on first commit cache the pre-shell snapshot;
     // on subsequent commits (edits) rehydrate a temp mesh from the cache so we
     // never shell an already-shelled body.
@@ -733,7 +822,7 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
   },
 
   // ── SLD11 — Draft ────────────────────────────────────────────────────────
-  commitDraft: (featureId, pullAxisDir, draftAngle, fixedPlaneY) => {
+  commitDraft: (featureId, pullAxisDir, draftAngle, fixedPlaneY, options) => {
     const { features } = get();
     const srcFeature = features.find((f) => f.id === featureId);
     const srcMesh = srcFeature?.mesh as THREE.Mesh | undefined;
@@ -744,6 +833,56 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     // 90° collapses the geometry; >=90° produces a degenerate mesh.
     if (!Number.isFinite(draftAngle) || Math.abs(draftAngle) >= 90) {
       get().setStatusMessage('Draft: angle must be finite and within (-90°, 90°)');
+      return;
+    }
+    const occBodyId = srcMesh.userData['brepBodyId'] as string | undefined;
+    const faceIds = options?.faceIds?.filter((faceId) => Number.isInteger(faceId)) ?? [];
+    if (occBodyId && faceIds.length > 0) {
+      const occ = getOccSync();
+      const srcBody = occ ? globalBRepBodyRegistry.get(occBodyId) : undefined;
+      if (!occ || !srcBody) {
+        get().setStatusMessage('Draft: OCC source body is no longer available');
+        return;
+      }
+      const pull = pullAxisDir.clone().normalize();
+      const draftResult = occDraftWithInstance(
+        occ.oc,
+        srcBody,
+        faceIds,
+        pull,
+        THREE.MathUtils.degToRad(draftAngle),
+        {
+          origin: options?.neutralPlaneOrigin
+            ? options.neutralPlaneOrigin.clone()
+            : pull.clone().multiplyScalar(fixedPlaneY),
+          normal: options?.neutralPlaneNormal
+            ? options.neutralPlaneNormal.clone().normalize()
+            : pull.clone(),
+        },
+        { sourceFeatureId: featureId },
+      );
+      if (!draftResult) {
+        get().setStatusMessage('Draft: OCC operation failed for the selected face set');
+        return;
+      }
+      get().pushUndo();
+      draftResult.sourceFeatureId = featureId;
+      globalBRepBodyRegistry.add(draftResult);
+      const tess = tessellateWithInstance(occ.oc, draftResult);
+      const geo = tessellationToGeometry(tess);
+      const result = new THREE.Mesh(geo, srcMesh.material);
+      attachTessellationToMesh(result, tess, draftResult.id);
+      result.userData.pickable = true;
+      result.userData.featureId = featureId;
+      result.castShadow = true;
+      result.receiveShadow = true;
+      const nextFeatures = features.map((f) =>
+        f.id === featureId
+          ? { ...f, mesh: result, params: { ...f.params, draftAngle, fixedPlaneY, draftFaceIds: faceIds, featureKind: 'draft' } }
+          : f,
+      );
+      set({ features: nextFeatures });
+      get().setStatusMessage(`Draft (${draftAngle}°) applied with OCC`);
       return;
     }
     get().pushUndo();
@@ -760,7 +899,7 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
   },
 
   // ── SLD14 — Offset Face ──────────────────────────────────────────────────
-  commitOffsetFace: (featureId, distance) => {
+  commitOffsetFace: (featureId, distance, options) => {
     const { features } = get();
     const srcFeature = features.find((f) => f.id === featureId);
     const srcMesh = srcFeature?.mesh as THREE.Mesh | undefined;
@@ -770,6 +909,46 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
     }
     if (!Number.isFinite(distance)) {
       get().setStatusMessage('Offset Face: distance must be a finite number');
+      return;
+    }
+    const occBodyId = srcMesh.userData['brepBodyId'] as string | undefined;
+    const faceIds = options?.faceIds?.filter((faceId) => Number.isInteger(faceId)) ?? [];
+    if (occBodyId && faceIds.length > 0) {
+      const occ = getOccSync();
+      const srcBody = occ ? globalBRepBodyRegistry.get(occBodyId) : undefined;
+      if (!occ || !srcBody) {
+        get().setStatusMessage('Offset Face: OCC source body is no longer available');
+        return;
+      }
+      const offsetResult = occOffsetFacesWithInstance(
+        occ.oc,
+        srcBody,
+        faceIds,
+        distance,
+        { sourceFeatureId: featureId },
+      );
+      if (!offsetResult) {
+        get().setStatusMessage('Offset Face: OCC operation failed for the selected face set');
+        return;
+      }
+      get().pushUndo();
+      offsetResult.sourceFeatureId = featureId;
+      globalBRepBodyRegistry.add(offsetResult);
+      const tess = tessellateWithInstance(occ.oc, offsetResult);
+      const geo = tessellationToGeometry(tess);
+      const result = new THREE.Mesh(geo, srcMesh.material);
+      attachTessellationToMesh(result, tess, offsetResult.id);
+      result.userData.pickable = true;
+      result.userData.featureId = featureId;
+      result.castShadow = true;
+      result.receiveShadow = true;
+      const nextFeatures = features.map((f) =>
+        f.id === featureId
+          ? { ...f, mesh: result, params: { ...f.params, offsetDistance: distance, offsetFaceIds: faceIds, featureKind: 'offset-face' } }
+          : f,
+      );
+      set({ features: nextFeatures });
+      get().setStatusMessage(`Offset Face (${distance > 0 ? '+' : ''}${distance}mm) applied with OCC`);
       return;
     }
     get().pushUndo();
@@ -1146,4 +1325,3 @@ export function createAdvancedSolidAndMeshOpsSlice({ set, get }: CADSliceContext
 
   return slice;
 }
-

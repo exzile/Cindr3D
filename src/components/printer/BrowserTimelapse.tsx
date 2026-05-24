@@ -20,6 +20,9 @@ export default function BrowserTimelapse() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const mountedRef = useRef(true);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const revokeTimersRef = useRef<number[]>([]);
 
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -33,14 +36,22 @@ export default function BrowserTimelapse() {
     setCameraError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      if (!mountedRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
+      if (!mountedRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       setCameraActive(true);
     } catch (e) {
-      setCameraError(errorMessage(e, 'Camera access denied'));
+      if (mountedRef.current) setCameraError(errorMessage(e, 'Camera access denied'));
     }
   }, []);
 
@@ -48,11 +59,20 @@ export default function BrowserTimelapse() {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     if (videoRef.current) { videoRef.current.srcObject = null; }
-    setCameraActive(false);
+    if (mountedRef.current) setCameraActive(false);
   }, []);
 
   // Cleanup on unmount
-  useEffect(() => () => { streamRef.current?.getTracks().forEach((t) => t.stop()); }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+      for (const timer of revokeTimersRef.current) window.clearTimeout(timer);
+      revokeTimersRef.current = [];
+    };
+  }, []);
 
   // Capture a single frame from the video feed
   const captureFrame = useCallback(() => {
@@ -93,6 +113,7 @@ export default function BrowserTimelapse() {
       const chunks: Blob[] = [];
       const stream = canvas.captureStream(fps);
       const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
+      recorderRef.current = recorder;
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
 
       const done = new Promise<void>((res) => { recorder.onstop = () => res(); });
@@ -100,17 +121,21 @@ export default function BrowserTimelapse() {
 
       const msPerFrame = 1000 / fps;
       for (const frame of frames) {
+        if (!mountedRef.current) break;
         const imgEl = new window.Image();
         await new Promise<void>((res, rej) => {
           imgEl.onload = () => res();
           imgEl.onerror = rej;
           imgEl.src = frame.dataUrl;
         });
+        if (!mountedRef.current) break;
         ctx.drawImage(imgEl, 0, 0, canvas.width, canvas.height);
         await new Promise<void>((res) => setTimeout(res, msPerFrame));
       }
-      recorder.stop();
+      if (recorder.state !== 'inactive') recorder.stop();
       await done;
+      recorderRef.current = null;
+      if (!mountedRef.current) return;
 
       const blob = new Blob(chunks, { type: 'video/webm' });
       const url = URL.createObjectURL(blob);
@@ -118,11 +143,16 @@ export default function BrowserTimelapse() {
       a.href = url;
       a.download = `timelapse-${Date.now()}.webm`;
       a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      const revokeTimer = window.setTimeout(() => {
+        URL.revokeObjectURL(url);
+        revokeTimersRef.current = revokeTimersRef.current.filter((timer) => timer !== revokeTimer);
+      }, 10_000);
+      revokeTimersRef.current.push(revokeTimer);
     } catch (e) {
-      setRenderError(errorMessage(e, 'Render failed'));
+      if (mountedRef.current) setRenderError(errorMessage(e, 'Render failed'));
     } finally {
-      setRendering(false);
+      recorderRef.current = null;
+      if (mountedRef.current) setRendering(false);
     }
   }, [frames, fps]);
 

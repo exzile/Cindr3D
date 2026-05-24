@@ -52,6 +52,7 @@ export default function MarlinExcludeObject() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [manualId, setManualId] = useState('');
+  const run = useAsyncAction(setBusy, setError, 'Failed to send M486');
 
   const board = model.boards?.[0];
   const firmwareVersion = board?.firmwareVersion ?? board?.firmwareName;
@@ -79,7 +80,6 @@ export default function MarlinExcludeObject() {
     );
   }
 
-  const run = useAsyncAction(setBusy, setError, 'Failed to send M486');
   const sendCancel = async (id: number) => {
     if (!supported || cancelled.has(id)) return;
     await run(async () => {

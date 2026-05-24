@@ -52,6 +52,7 @@ export function useClipEditorDrafts(selectedClip: CameraClip | null) {
   const [trimEnd, setTrimEnd] = useState('');
 
   // Re-hydrate every draft when the user picks a new clip (or clears it).
+  /* eslint-disable react-hooks/set-state-in-effect -- selectedClip changes are the source of truth for this editable draft bundle. */
   useEffect(() => {
     if (!selectedClip) {
       setClipDraftName('');
@@ -94,9 +95,8 @@ export function useClipEditorDrafts(selectedClip: CameraClip | null) {
     setSnapshotAnnotation(selectedClip.snapshotAdjustments?.annotation ?? '');
     setTrimStart(formatClipDuration(selectedClip.trimStartMs ?? 0));
     setTrimEnd(selectedClip.trimEndMs ? formatClipDuration(selectedClip.trimEndMs) : '');
-    // setters are stable; only the selected clip identity drives re-sync.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClip]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   return {
     clipDraftName, setClipDraftName,

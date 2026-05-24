@@ -11,8 +11,6 @@ export default function FilletEdgeHighlight() {
   const filletEdgeIds = useCADStore((s) => s.filletEdgeIds);
   const addFilletEdge = useCADStore((s) => s.addFilletEdge);
   const removeFilletEdge = useCADStore((s) => s.removeFilletEdge);
-  const filletPickMode = useCADStore((s) => s.filletPickMode);
-  const setFilletLiveRadius = useCADStore((s) => s.setFilletLiveRadius);
 
   return (
     <EdgeOpEdgeHighlight
@@ -22,8 +20,6 @@ export default function FilletEdgeHighlight() {
       removeEdge={removeFilletEdge}
       selectedColor={0xaa44ff}
       allowCurvedEdges
-      pickMode={filletPickMode}
-      onFacePicked={setFilletLiveRadius}
     />
   );
 }

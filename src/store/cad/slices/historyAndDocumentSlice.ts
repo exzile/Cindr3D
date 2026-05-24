@@ -18,11 +18,13 @@ import {
 import { snapshotCADState } from "../historyUtils";
 import type { CADSliceContext } from "../sliceContext";
 import type { CADState } from "../state";
+import { occRectangularPatternWithInstance, occCircularPatternWithInstance } from "../../../engine/occ/ops/pattern";
+import { globalBRepBodyRegistry } from "../../../engine/occ/globalRegistry";
+import { getOccSync } from "../../../engine/occ/loader";
+import { tessellateWithInstance, tessellationToGeometry } from "../../../engine/occ/tessellate";
+import { attachTessellationToMesh } from "../../../engine/occ/picking";
+import { restoreOccSnapshot, type OccBodySnapshot } from "../../../engine/occ/occSnapshot";
 import type { DesignConfiguration } from "../state/coreState";
-import {
-  clearAllEdgeCutSources,
-  evictEdgeCutSource,
-} from "./featureManagement/applyEdgeCut";
 import { bodyGeometryCache, bodyIdGeometryCache } from "../../meshRegistry";
 
 type HistorySketch = Sketch & {
@@ -159,23 +161,9 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
         // source data — without this lookup, undo permanently destroys their
         // geometry. Map lookup keeps undo→redo round-trips loss-free as long as
         // the original mesh is still alive somewhere in the live state.
-        //
-        // Exception: meshes tagged `_edgeCutApplied` were placed by a non-destructive
-        // fillet/chamfer commit. If we're undoing PAST that commit, the fillet
-        // feature no longer exists in the snapshot, so we must NOT re-apply its
-        // mesh to the parent. The snapshot's `mesh: undefined` is the correct
-        // restored value for the parent.
-        const snapshotFeatureIds = new Set(
-          parsed.features.map((f: Feature) => f.id),
-        );
         const liveMeshById = new Map<string, Feature["mesh"]>();
         for (const f of state.features) {
           if (!f.mesh) continue;
-          const m = f.mesh as THREE.Mesh;
-          // Skip edge-cut meshes — they belong to fillet/chamfer feature nodes
-          // that may not exist in the target snapshot.
-          if (m.userData?._edgeCutApplied && !snapshotFeatureIds.has(f.id))
-            continue;
           liveMeshById.set(f.id, f.mesh);
         }
         const restoredSketches = parsed.sketches.map((s) =>
@@ -190,8 +178,6 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
         const undoRemovedGeos: THREE.BufferGeometry[] = [];
         for (const f of state.features) {
           if (restoredIds.has(f.id)) continue;
-          if (f.type === "fillet" || f.type === "chamfer")
-            evictEdgeCutSource(f.id);
           if (f.mesh instanceof THREE.Mesh) {
             const geo = (f.mesh as THREE.Mesh).geometry;
             if (geo) undoRemovedGeos.push(geo);
@@ -222,6 +208,12 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
             state.activeDesignConfigurationId,
           statusMessage: "Undo",
         });
+        // OCC-7.3: restore BRepBodies from STEP snapshot if present
+        if (Array.isArray((parsed as Record<string, unknown>).occBodies)) {
+          void restoreOccSnapshot(
+            (parsed as Record<string, unknown>).occBodies as OccBodySnapshot[],
+          );
+        }
         // Defer-dispose removed geometries after R3F has a cycle to unmount old meshes.
         if (undoRemovedGeos.length > 0)
           setTimeout(() => {
@@ -255,8 +247,6 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
         const liveMeshById = new Map<string, Feature["mesh"]>();
         for (const f of state.features) {
           if (!f.mesh) continue;
-          const m = f.mesh as THREE.Mesh;
-          if (m.userData?._edgeCutApplied) continue;
           liveMeshById.set(f.id, f.mesh);
         }
         const restoredSketches = parsed.sketches.map((s) =>
@@ -273,8 +263,6 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
         const redoRemovedGeos: THREE.BufferGeometry[] = [];
         for (const f of state.features) {
           if (restoredIdsRedo.has(f.id)) continue;
-          if (f.type === "fillet" || f.type === "chamfer")
-            evictEdgeCutSource(f.id);
           if (f.mesh instanceof THREE.Mesh) {
             const geo = (f.mesh as THREE.Mesh).geometry;
             if (geo) redoRemovedGeos.push(geo);
@@ -328,6 +316,53 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
         );
         return;
       }
+
+      // OCC path: fuse all copies into a single BRep body
+      const occBodyId = srcMesh.userData['brepBodyId'] as string | undefined;
+      if (occBodyId) {
+        const occ = getOccSync();
+        const srcBody = occ ? globalBRepBodyRegistry.get(occBodyId) : undefined;
+        if (occ && srcBody) {
+          const dirX = new THREE.Vector3(params.dirX, params.dirY, params.dirZ);
+          const countX = Math.max(1, Math.round(params.count));
+          const spacingX = params.spacing;
+          const countY = params.count2 ? Math.max(1, Math.round(params.count2)) : 1;
+          const spacingY = params.spacing2 ?? 0;
+          const dirY = params.dir2X !== undefined
+            ? new THREE.Vector3(params.dir2X, params.dir2Y ?? 0, params.dir2Z ?? 0)
+            : new THREE.Vector3(0, dirX.y !== 0 ? 0 : 1, dirX.y !== 0 ? 1 : 0);
+          const newFeatureId = crypto.randomUUID();
+          const occResult = occRectangularPatternWithInstance(occ.oc, srcBody, countX, spacingX, countY, spacingY, dirX, dirY, { sourceFeatureId: newFeatureId });
+          if (occResult) {
+            occResult.sourceFeatureId = newFeatureId;
+            globalBRepBodyRegistry.add(occResult);
+            const tess = tessellateWithInstance(occ.oc, occResult);
+            const geo = tessellationToGeometry(tess);
+            const patMesh = new THREE.Mesh(geo, srcMesh.material);
+            attachTessellationToMesh(patMesh, tess, occResult.id);
+            patMesh.userData.pickable = true;
+            patMesh.userData.featureId = newFeatureId;
+            patMesh.castShadow = true;
+            patMesh.receiveShadow = true;
+            const nPat = features.filter((f) => f.params?.featureKind === 'rect-pattern').length + 1;
+            const patFeature: Feature = {
+              id: newFeatureId,
+              name: `Pattern ${nPat}`,
+              type: 'primitive',
+              params: { featureKind: 'rect-pattern', sourceFeatureId: featureId, countX, spacingX, countY, spacingY },
+              mesh: patMesh,
+              visible: true,
+              suppressed: false,
+              timestamp: Date.now(),
+              bodyKind: srcFeature.bodyKind ?? 'solid',
+            };
+            get().pushUndo();
+            set({ features: [...features, patFeature], statusMessage: `OCC Linear Pattern: ${countX * countY} copies (merged)` });
+            return;
+          }
+        }
+      }
+
       get().pushUndo();
       const copies = GeometryEngine.linearPattern(srcMesh, params);
       const newFeatures: Feature[] = copies.map((copy, idx) => ({
@@ -360,6 +395,51 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
         );
         return;
       }
+
+      // OCC path: fuse all rotation copies into a single BRep body
+      const occBodyId = srcMesh.userData['brepBodyId'] as string | undefined;
+      if (occBodyId) {
+        const occ = getOccSync();
+        const srcBody = occ ? globalBRepBodyRegistry.get(occBodyId) : undefined;
+        if (occ && srcBody) {
+          const axis = {
+            origin: new THREE.Vector3(params.originX, params.originY, params.originZ),
+            direction: new THREE.Vector3(params.axisX, params.axisY, params.axisZ),
+          };
+          const count = Math.max(1, Math.round(params.count));
+          const totalAngleRad = THREE.MathUtils.degToRad(params.totalAngle);
+          const newFeatureId = crypto.randomUUID();
+          const occResult = occCircularPatternWithInstance(occ.oc, srcBody, axis, count, totalAngleRad, { sourceFeatureId: newFeatureId });
+          if (occResult) {
+            occResult.sourceFeatureId = newFeatureId;
+            globalBRepBodyRegistry.add(occResult);
+            const tess = tessellateWithInstance(occ.oc, occResult);
+            const geo = tessellationToGeometry(tess);
+            const patMesh = new THREE.Mesh(geo, srcMesh.material);
+            attachTessellationToMesh(patMesh, tess, occResult.id);
+            patMesh.userData.pickable = true;
+            patMesh.userData.featureId = newFeatureId;
+            patMesh.castShadow = true;
+            patMesh.receiveShadow = true;
+            const nPat = features.filter((f) => f.params?.featureKind === 'circ-pattern').length + 1;
+            const patFeature: Feature = {
+              id: newFeatureId,
+              name: `Circular Pattern ${nPat}`,
+              type: 'primitive',
+              params: { featureKind: 'circ-pattern', sourceFeatureId: featureId, count, totalAngle: params.totalAngle },
+              mesh: patMesh,
+              visible: true,
+              suppressed: false,
+              timestamp: Date.now(),
+              bodyKind: srcFeature.bodyKind ?? 'solid',
+            };
+            get().pushUndo();
+            set({ features: [...features, patFeature], statusMessage: `OCC Circular Pattern: ${count} copies (merged)` });
+            return;
+          }
+        }
+      }
+
       get().pushUndo();
       const copies = GeometryEngine.circularPattern(srcMesh, params);
       const newFeatures: Feature[] = copies.map((copy, idx) => ({
@@ -616,7 +696,6 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
     newDocument: () => {
       // Dispose stored feature meshes before clearing state.
       for (const f of get().features) disposeFeatureObjectGeometry(f.mesh);
-      clearAllEdgeCutSources();
       for (const geo of bodyGeometryCache.values()) geo.dispose();
       bodyGeometryCache.clear();
       for (const geo of bodyIdGeometryCache.values()) geo.dispose();
@@ -687,7 +766,6 @@ export function createHistoryAndDocumentSlice({ set, get }: CADSliceContext) {
     loadFromFile: (json: string) => {
       // Dispose stored feature meshes before replacing the document.
       for (const f of get().features) disposeFeatureObjectGeometry(f.mesh);
-      clearAllEdgeCutSources();
       for (const geo of bodyGeometryCache.values()) geo.dispose();
       bodyGeometryCache.clear();
       for (const geo of bodyIdGeometryCache.values()) geo.dispose();

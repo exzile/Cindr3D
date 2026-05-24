@@ -35,8 +35,13 @@ export function FlyoutMenuItem({ item, onClose }: { item: MenuItem; onClose: () 
   };
 
   const scheduleClose = () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     closeTimerRef.current = setTimeout(() => setSubmenuOpen(false), 120);
   };
+
+  useEffect(() => () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+  }, []);
 
   return (
     <div

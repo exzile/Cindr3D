@@ -135,7 +135,7 @@ export function SlicerGCodeDockPanel() {
   // synchronously inside the Zustand/R3F subscriber (which would trigger a render
   // mid-render and crash).
   const pendingScrollRef  = useRef<{ top: number; idx: number } | null>(null);
-  const rafScheduledRef   = useRef(false);
+  const rafIdRef          = useRef<number | null>(null);
 
   // Reset scroll + highlight when layer changes
   useEffect(() => {
@@ -231,10 +231,9 @@ export function SlicerGCodeDockPanel() {
               body.scrollTop  = targetTop;
               scrollTopRef.current = targetTop;
               pendingScrollRef.current = { top: targetTop, idx: i };
-              if (!rafScheduledRef.current) {
-                rafScheduledRef.current = true;
-                requestAnimationFrame(() => {
-                  rafScheduledRef.current = false;
+              if (rafIdRef.current === null) {
+                rafIdRef.current = requestAnimationFrame(() => {
+                  rafIdRef.current = null;
                   const p = pendingScrollRef.current;
                   if (p) { pendingScrollRef.current = null; setScrollTop(p.top); setHighlightIdx(p.idx); }
                 });
@@ -261,10 +260,9 @@ export function SlicerGCodeDockPanel() {
       // setState here would schedule a render while R3F's useFrame may already
       // be mid-render, which crashes the app.
       pendingScrollRef.current = { top: targetTop, idx: lineIdx };
-      if (!rafScheduledRef.current) {
-        rafScheduledRef.current = true;
-        requestAnimationFrame(() => {
-          rafScheduledRef.current = false;
+      if (rafIdRef.current === null) {
+        rafIdRef.current = requestAnimationFrame(() => {
+          rafIdRef.current = null;
           const p = pendingScrollRef.current;
           if (p) {
             pendingScrollRef.current = null;
@@ -278,6 +276,8 @@ export function SlicerGCodeDockPanel() {
 
   useEffect(() => () => {
     if (layerTimerRef.current) clearTimeout(layerTimerRef.current);
+    if (rafIdRef.current !== null) cancelAnimationFrame(rafIdRef.current);
+    rafIdRef.current = null;
     pendingScrollRef.current = null;
   }, []);
 

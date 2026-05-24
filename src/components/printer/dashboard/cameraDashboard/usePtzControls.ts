@@ -35,6 +35,12 @@ export function usePtzControls(deps: UsePtzControlsDeps) {
     isPrintActive, printStatus,
     activePtzStartPreset, setMessage, updateActiveCamera,
   } = deps;
+  const stopCommandTimersRef = useRef<number[]>([]);
+
+  useEffect(() => () => {
+    for (const timer of stopCommandTimersRef.current) window.clearTimeout(timer);
+    stopCommandTimersRef.current = [];
+  }, []);
 
   const runPtzCommand = useCallback((direction: PtzDirection) => {
     if (!ptzEnabled) {
@@ -54,9 +60,11 @@ export function usePtzControls(deps: UsePtzControlsDeps) {
 
     void sendCameraCommand(request.startUrl, request.username, request.password, 250);
     if (request.stopUrl) {
-      window.setTimeout(() => {
+      const stopTimer = window.setTimeout(() => {
+        stopCommandTimersRef.current = stopCommandTimersRef.current.filter((timer) => timer !== stopTimer);
         void sendCameraCommand(request.stopUrl ?? '', request.username, request.password, 250);
       }, 260);
+      stopCommandTimersRef.current.push(stopTimer);
     }
     setMessage(`Sent PTZ ${direction.replace(/([A-Z])/g, ' $1').toLowerCase()} command.`);
   }, [activeCamera, canUsePtz, hostname, ptzEnabled, ptzSpeed, setMessage]);

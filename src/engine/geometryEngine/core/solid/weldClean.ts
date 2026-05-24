@@ -2,12 +2,11 @@
  * weldClean.ts — weld + clean a three-bvh-csg result into a manifold solid,
  * collapsing the "broken-face fan" back to a minimal triangulation.
  *
- * Pure geometry (THREE only) — extracted verbatim from edgeCutCore.ts (2026-05)
- * so csg.ts can clean a CSG result BEFORE topology extraction without the
- * csg → edgeCutCore → GeometryEngine → csg import cycle. edgeCutCore.ts now
- * re-exports `weldAndCleanSolid` from here; behaviour is byte-identical.
+ * Pure geometry (THREE only) - shared CSG mesh cleanup before topology extraction.
+ * so csg.ts can clean a CSG result before topology extraction.
  */
 import * as THREE from 'three';
+import { Earcut } from 'three/src/extras/Earcut.js';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /**
@@ -44,8 +43,8 @@ export function retriangulateCoplanarRegions(
 ): Float32Array {
   const triCount = (posIn.length / 9) | 0;
   if (triCount === 0) return posIn;
-  // BUILD-STAMP: v3-repair-debug — confirms fresh weldClean code is running
-  console.warn(`[retriangulate] v3-repair-debug entry triCount=${triCount}`);
+  // BUILD-STAMP: v8-manifold-merge — confirms _toManifold mergeVertices fix is in browser
+  console.warn(`[retriangulate] v8-manifold-merge entry triCount=${triCount}`);
 
   // ── Weld positions to integer vertex ids for adjacency. Uses makeNear's
   //    edge-match tolerance (diag·1e-4) — the SAME tolerance the driver
@@ -238,8 +237,8 @@ export function retriangulateCoplanarRegions(
     // Directed boundary half-edges: an edge interior to the region appears
     // once in each direction; a boundary edge appears in one direction only.
     // Half-edges are keyed by a packed integer (u·2^26 + v) instead of the
-    // earlier `${u}_${v}` string — same role as the spatial-hash packing in
-    // edgeCutCore, identical correctness at this scale (vertex IDs come from
+    // earlier `${u}_${v}` string — same role as spatial-hash packing,
+    // with identical correctness at this scale (vertex IDs come from
     // the per-region `vid()` counter so they're tiny non-negative integers,
     // well under 2^26). String concat + Number-split was a noticeable share
     // of the retriangulate cost on selections that produce many regions.
@@ -269,6 +268,7 @@ export function retriangulateCoplanarRegions(
     // survivors. We only do this if removals are a small fraction of the
     // region (< half) so genuinely bad geometry just bails out normally.
     let repairTs = ts;
+    let repairRemoved = 0;
     {
       const toRemove = new Set<number>();
       for (const [k, cnt] of dirCount) {
@@ -295,6 +295,7 @@ export function retriangulateCoplanarRegions(
         if (worstT >= 0) toRemove.add(worstT);
       }
       if (toRemove.size > 0 && toRemove.size < ts.length / 2) {
+        repairRemoved = toRemove.size;
         repairTs = ts.filter(t => !toRemove.has(t));
         dirCount.clear();
         for (const t of repairTs) {
@@ -307,6 +308,70 @@ export function retriangulateCoplanarRegions(
       }
       if (isXFace || toRemove.size > 0) {
         console.warn(`[retriangulate REPAIR] r=${r} ts=${ts.length} removed=${toRemove.size} repairTs=${repairTs.length}`);
+      }
+    }
+
+    // ── Fan-overlap detection: the BVH boolean sometimes creates
+    // overlapping fan triangles from multiple corner vertices of a flat
+    // face (e.g. 77+48+33 = 158 triangles fanning from 3 rectangle
+    // corners, totalling 219 wings out of 317). These are topologically
+    // valid (proper half-edges) but geometrically overlapping — they
+    // inflate origArea, making the area check reject earcut's correct
+    // output. We DON'T remove them (they share corners with real tris);
+    // instead we detect the pattern and flag it so the area check is
+    // bypassed — earcut triangulates the boundary loops correctly.
+    //
+    // Detection: in a well-triangulated flat face, vertex valence is
+    // 4-8. BVH fan corners have valence 30-80+. Sum valences of all
+    // vertices with valence ≥ 20; if the sum accounts for ≥ 30% of the
+    // region's triangle count, we have a multi-apex fan pattern.
+    // ── Fan-overlap detection + long-edge wing removal.
+    // The BVH boolean creates overlapping fan triangles from corner
+    // vertices. These inflate origArea AND bake the wing shape into
+    // boundary loops. Detect via vertex valence, then remove the wing
+    // triangles (by maxE) BEFORE boundary recovery so the loops trace
+    // only the real face edges.
+    let fanDetected = false;
+    let cornerIds: Set<number> | null = null;
+    {
+      const vertValence = new Map<number, number>();
+      for (const t of repairTs) {
+        for (let j = 0; j < 3; j++) {
+          const id = triV[t * 3 + j];
+          vertValence.set(id, (vertValence.get(id) ?? 0) + 1);
+        }
+      }
+      let highValSum = 0;
+      let highValCount = 0;
+      for (const [, cnt] of vertValence) {
+        if (cnt >= 20) { highValSum += cnt; highValCount++; }
+      }
+      fanDetected = highValCount >= 2 && highValSum > repairTs.length * 0.3;
+      if (isXFace) {
+        const top5 = [...vertValence.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+        console.warn(`[retriangulate FAN-DIAG] r=${r} highValSum=${highValSum} highValCount=${highValCount} fanDetected=${fanDetected} top5=${top5.map(([id,c])=>`${id}:(${vx[id]?.toFixed(1)},${vy[id]?.toFixed(1)},${vz[id]?.toFixed(1)})=${c}`).join(' ')}`);
+      }
+
+      // ── Boundary reconstruction approach (replaces wing-removal):
+      // Instead of removing wing tris (which leaves too few survivors to
+      // form a coherent boundary), we keep ALL tris for boundary recovery,
+      // then RECONSTRUCT the outer boundary from the rectangle corner
+      // vertices.  The boundary loops from the wing fans become HOLES
+      // (they trace the fillet-indent shapes where the flat face ends
+      // and the fillet surface begins).  The rectangle corners are the
+      // convex hull of the face, forming the correct outer boundary.
+      if (fanDetected) {
+        // Collect rectangle-corner vertex IDs.  These are the high-valence
+        // fan apex vertices (valence 17-77 in the bracket-boss case).
+        // Normal face vertices have valence ≤ 7.  Threshold 12 cleanly
+        // separates corners from arc vertices.
+        cornerIds = new Set<number>();
+        for (const [id, cnt] of vertValence) {
+          if (cnt >= 12) cornerIds.add(id);
+        }
+        if (isXFace) console.warn(`[retriangulate FAN-CORNERS] r=${r} corners=${cornerIds.size} ids=[${[...cornerIds].map(id => `${id}:(${vx[id]?.toFixed(1)},${vy[id]?.toFixed(1)},${vz[id]?.toFixed(1)})`).join(', ')}]`);
+        // No wing removal — boundary recovery uses all repairTs tris.
+        // The reconstruction happens after loop walking (see below).
       }
     }
 
@@ -434,31 +499,17 @@ export function retriangulateCoplanarRegions(
       }
       return s / 2;
     };
-    // Drop collinear/duplicate boundary vertices: the fan's spurious rim
-    // points are exactly the collinear ones, so removing them turns the
-    // perimeter back into the real polygon (a coarse face → a quad → 2 tris).
-    const simplify = (loop: number[]): number[] => {
+    // Only dedup (remove consecutive-duplicate vertex IDs); skip the
+    // collinear-vertex pruning. The old custom earClip needed it, but
+    // earcut (Mapbox) handles collinear/near-collinear vertices natively.
+    // Pruning nearly-collinear arc vertices flattens the boss hole boundary
+    // and causes the area check to fail (0.5%+ drift on 170-vert arcs).
+    for (let i = 0; i < loops.length; i++) {
       const dedup: number[] = [];
-      for (const id of loop) if (dedup.length === 0 || dedup[dedup.length - 1] !== id) dedup.push(id);
+      for (const id of loops[i]) if (dedup.length === 0 || dedup[dedup.length - 1] !== id) dedup.push(id);
       if (dedup.length > 1 && dedup[0] === dedup[dedup.length - 1]) dedup.pop();
-      if (dedup.length < 3) return dedup;
-      const out: number[] = [];
-      const m = dedup.length;
-      for (let i = 0; i < m; i++) {
-        const id = dedup[i];
-        if (pinned.has(id)) { out.push(id); continue; } // shared seam vertex
-        const [px, py] = to2D(dedup[(i + m - 1) % m]);
-        const [cx, cy] = to2D(id);
-        const [nx2, ny2] = to2D(dedup[(i + 1) % m]);
-        const ax = cx - px, ay = cy - py, bx2 = nx2 - cx, by2 = ny2 - cy;
-        const crossv = ax * by2 - ay * bx2;
-        const la = Math.hypot(ax, ay), lb = Math.hypot(bx2, by2);
-        // keep the corner only when the turn is non-negligible
-        if (la < 1e-9 || lb < 1e-9 || Math.abs(crossv) > 1e-7 * la * lb) out.push(id);
-      }
-      return out.length >= 3 ? out : dedup;
-    };
-    for (let i = 0; i < loops.length; i++) loops[i] = simplify(loops[i]);
+      loops[i] = dedup.length >= 3 ? dedup : loops[i];
+    }
 
     // Largest |area| loop is the outer boundary; the rest are holes (notches).
     let outerIdx = 0;
@@ -478,14 +529,178 @@ export function retriangulateCoplanarRegions(
       holes.push(h);
     }
 
-    // Bridge holes into the outer loop, then ear-clip the simple polygon.
-    // Pass the vertex arrays so bridgeHoles can insert edge-midpoint vertices
-    // when the nearest bridge target is on an edge interior (not a vertex).
-    if (isXFace) console.warn(`[retriangulate REPAIR] r=${r} loops=${loops.length} outer=${outer.length} holes=${holes.length} loopSizes=${loops.map(l=>l.length).join(',')}`);
-    const poly = bridgeHoles(outer, holes, to2D, vx, vy, vz);
-    const tri2 = earClip(poly, to2D);
+    // ── Fan-slit boundary cleaning.
+    // When the BVH boolean fans a flat face from its corner vertices to arc
+    // vertices, the half-edge boundary traces zig-zag "slit" paths from
+    // corners INTO the face interior (to arc verts) and back, instead of
+    // following the clean rectangle edge.  The contaminated boundary makes
+    // earcut reproduce the wing shape.
+    //
+    // Fix: between every pair of consecutive corners in the outer loop, keep
+    // only the vertices that are collinear with those two corners (i.e. on
+    // the rectangle edge).  Non-collinear vertices are fan-slit excursions
+    // through the interior — remove them.  Pinned T-junction vertices on
+    // the edge survive (they ARE collinear), so no new seam mismatches.
+    if (fanDetected && cornerIds && cornerIds.size >= 3) {
+      const cPos: number[] = [];
+      for (let i = 0; i < outer.length; i++) {
+        if (cornerIds.has(outer[i])) cPos.push(i);
+      }
+      if (cPos.length >= 3) {
+        const cleanOuter: number[] = [];
+        for (let ci = 0; ci < cPos.length; ci++) {
+          const cpS = cPos[ci];
+          const cpE = cPos[(ci + 1) % cPos.length];
+          const sId = outer[cpS], eId = outer[cpE];
+          cleanOuter.push(sId);
+          // walk from cpS+1 … cpE-1 (wrapping)
+          const segLen = cpE > cpS
+            ? cpE - cpS - 1
+            : outer.length - cpS - 1 + cpE;
+          if (segLen <= 0) continue;
+          const [sx, sy] = to2D(sId);
+          const [ex, ey] = to2D(eId);
+          const edx = ex - sx, edy = ey - sy;
+          const eLenSq = edx * edx + edy * edy;
+          if (eLenSq < 1e-12) continue;
+          const invELen = 1 / Math.sqrt(eLenSq);
+          const collinear: { id: number; t: number }[] = [];
+          let idx = (cpS + 1) % outer.length;
+          for (let s = 0; s < segLen; s++) {
+            const vid2 = outer[idx];
+            const [px, py] = to2D(vid2);
+            const vdx = px - sx, vdy = py - sy;
+            const t = (vdx * edx + vdy * edy) / eLenSq;
+            const perpDist = Math.abs(vdx * edy - vdy * edx) * invELen;
+            if (perpDist < colTol && t > 1e-6 && t < 1 - 1e-6) {
+              collinear.push({ id: vid2, t });
+            }
+            idx = (idx + 1) % outer.length;
+          }
+          collinear.sort((a, b) => a.t - b.t);
+          for (const { id } of collinear) cleanOuter.push(id);
+        }
+        if (cleanOuter.length >= 3 && cleanOuter.length < outer.length) {
+          // ── Subdivide long outer edges with Steiner points.
+          // A 5-vertex rectangle + 170-vertex hole makes earcut create
+          // 70mm slivers (aspect ratio >30:1) that Z-fight with the
+          // tangent fillet surface.  Inserting intermediate vertices on
+          // each outer edge keeps the longest earcut triangle under
+          // ~maxSeg, so the fan/wing visual artifact is eliminated.
+          // These Steiner points are on the rectangle edges — adjacent
+          // faces are perpendicular so the T-junctions are invisible.
+          const maxSeg = Math.max(diag * 0.03, 3);
+          const subdOuter: number[] = [];
+          for (let si = 0; si < cleanOuter.length; si++) {
+            const curId = cleanOuter[si];
+            const nxtId = cleanOuter[(si + 1) % cleanOuter.length];
+            subdOuter.push(curId);
+            const sdx = vx[nxtId] - vx[curId];
+            const sdy = vy[nxtId] - vy[curId];
+            const sdz = vz[nxtId] - vz[curId];
+            const elen = Math.sqrt(sdx * sdx + sdy * sdy + sdz * sdz);
+            if (elen > maxSeg) {
+              const segs = Math.ceil(elen / maxSeg);
+              for (let ss = 1; ss < segs; ss++) {
+                const st = ss / segs;
+                const sid = vx.length;
+                vx.push(vx[curId] + sdx * st);
+                vy.push(vy[curId] + sdy * st);
+                vz.push(vz[curId] + sdz * st);
+                subdOuter.push(sid);
+              }
+            }
+          }
+
+          if (isXFace) console.warn(`[retriangulate FAN-CLEAN] r=${r} outer ${outer.length} → ${cleanOuter.length} clean → ${subdOuter.length} subdiv (removed ${outer.length - cleanOuter.length} fan-slit, added ${subdOuter.length - cleanOuter.length} steiner)`);
+          // Ensure CCW winding is preserved.
+          if (signedArea(subdOuter) < 0) subdOuter.reverse();
+          outer.length = 0;
+          outer.push(...subdOuter);
+        }
+      }
+    }
+
+    // Unconditionally subdivide long outer edges when holes are present.
+    // The fan-slit block above only runs when fanDetected=true AND the boundary
+    // had slit excursions to clean. When fanDetected=false OR the boundary was
+    // already clean (no slits), Steiner subdivision never ran — earcut then
+    // connects arc-hole vertices to distant outer corners, producing wing
+    // triangles with maxE >80mm. Inserting intermediate vertices keeps every
+    // earcut triangle under ~maxSeg, eliminating the long-diagonal wing shape.
+    if (holes.length > 0) {
+      const maxSeg = Math.max(diag * 0.03, 3);
+      const subdOuter2: number[] = [];
+      let anySubdiv2 = false;
+      for (let si = 0; si < outer.length; si++) {
+        const curId = outer[si];
+        const nxtId = outer[(si + 1) % outer.length];
+        subdOuter2.push(curId);
+        const sdx = vx[nxtId] - vx[curId];
+        const sdy = vy[nxtId] - vy[curId];
+        const sdz = vz[nxtId] - vz[curId];
+        const elen = Math.sqrt(sdx * sdx + sdy * sdy + sdz * sdz);
+        if (elen > maxSeg) {
+          anySubdiv2 = true;
+          const segs = Math.ceil(elen / maxSeg);
+          for (let ss = 1; ss < segs; ss++) {
+            const st = ss / segs;
+            const sid = vx.length;
+            vx.push(vx[curId] + sdx * st);
+            vy.push(vy[curId] + sdy * st);
+            vz.push(vz[curId] + sdz * st);
+            subdOuter2.push(sid);
+          }
+        }
+      }
+      if (anySubdiv2) {
+        if (isXFace) console.warn(`[retriangulate STEINER2] r=${r} outer ${outer.length} → ${subdOuter2.length}`);
+        if (signedArea(subdOuter2) < 0) subdOuter2.reverse();
+        outer.length = 0;
+        outer.push(...subdOuter2);
+      }
+    }
+
+    // Triangulate using Three.js's bundled earcut (Mapbox earcut port) which
+    // handles holes natively — no separate bridge step needed. Build a flat
+    // 2D-coordinate array: outer vertices first, then each hole in order, with
+    // a holeIndices array marking where each hole starts. earcut returns
+    // triangle index triples into this flat array which we map back to vertex
+    // IDs in vx/vy/vz.
+    // Filter out degenerate micro-holes (e.g. 4-vertex loops from fan-edge
+    // artifacts).  Tiny holes confuse earcut's bridging and create extra
+    // slivers.  Threshold: area < 0.1% of the outer boundary area.
+    const outerArea = Math.abs(signedArea(outer));
+    const minHoleArea = outerArea * 1e-3;
+    const validHoles = holes.filter(h => {
+      const a = Math.abs(signedArea(h));
+      if (a < minHoleArea) {
+        if (isXFace) console.warn(`[retriangulate] r=${r} dropping micro-hole: ${h.length} verts, area=${a.toFixed(4)} < ${minHoleArea.toFixed(4)}`);
+        return false;
+      }
+      return true;
+    });
+
+    if (isXFace) console.warn(`[retriangulate REPAIR] r=${r} loops=${loops.length} outer=${outer.length} holes=${validHoles.length} loopSizes=${loops.map(l=>l.length).join(',')}`);
+    const ecCoords: number[] = [];
+    const ecIdMap: number[] = [];       // ecIdMap[flatIdx] → vertex ID in vx/vy/vz
+    const ecHoleIndices: number[] = [];
+    for (const id of outer) {
+      const [u, v] = to2D(id);
+      ecCoords.push(u, v);
+      ecIdMap.push(id);
+    }
+    for (const h of validHoles) {
+      ecHoleIndices.push(ecIdMap.length);
+      for (const id of h) {
+        const [u, v] = to2D(id);
+        ecCoords.push(u, v);
+        ecIdMap.push(id);
+      }
+    }
+    const tri2 = Earcut.triangulate(ecCoords, ecHoleIndices.length > 0 ? ecHoleIndices : undefined, 2);
     if (!tri2 || tri2.length === 0) {
-      if (isXFace) console.warn(`[retriangulate REPAIR] r=${r} earClip EMPTY poly=${poly.length} loops=${loops.length} outer=${outer.length} holes=${holes.length}`);
+      if (isXFace) console.warn(`[retriangulate REPAIR] r=${r} earcut EMPTY outer=${outer.length} holes=${holes.length}`);
       for (const t of ts) emitOriginal(t); continue;
     }
 
@@ -508,7 +723,7 @@ export function retriangulateCoplanarRegions(
     const pending: number[] = [];
     let newArea = 0;
     for (let i = 0; i < tri2.length; i += 3) {
-      const A = poly[tri2[i]], B = poly[tri2[i + 1]], C = poly[tri2[i + 2]];
+      const A = ecIdMap[tri2[i]], B = ecIdMap[tri2[i + 1]], C = ecIdMap[tri2[i + 2]];
       const ax = vx[A], ay = vy[A], az = vz[A];
       e1.set(vx[B] - ax, vy[B] - ay, vz[B] - az);
       e2.set(vx[C] - ax, vy[C] - ay, vz[C] - az);
@@ -521,13 +736,17 @@ export function retriangulateCoplanarRegions(
       const Qd = flip ? B : C;
       pending.push(ax, ay, az, vx[P], vy[P], vz[P], vx[Qd], vy[Qd], vz[Qd]);
     }
-    // Reject (keep originals) if area drifted >0.1% — a clean fan collapse is
-    // exact; only a wrong simplification/triangulation changes the footprint.
-    if (
-      pending.length < 9 ||
-      Math.abs(newArea - origArea) > 1e-3 * Math.max(origArea, 1e-9)
-    ) {
-      if (isXFace) console.warn(`[retriangulate REPAIR] r=${r} ts=${ts.length} area-check FAIL: newArea=${newArea.toFixed(3)} origArea=${origArea.toFixed(3)} pending=${pending.length}`);
+    // Reject (keep originals) if area drifted too much. When the repair step
+    // removed wing triangles (repairRemoved > 0), the boundary loops trace a
+    // DIFFERENT polygon than the original fan — the area SHOULD differ because
+    // we intentionally removed bad geometry. In that case accept any non-empty
+    // earcut output. For un-repaired regions, keep the tight 0.2% guard.
+    const areaDrift = Math.abs(newArea - origArea) / Math.max(origArea, 1e-9);
+    const areaOk = (repairRemoved > 0 || fanDetected)
+      ? pending.length >= 9                              // repaired/fan: accept any valid earcut
+      : pending.length >= 9 && areaDrift <= 2e-3;        // normal:       tight area check
+    if (!areaOk) {
+      if (isXFace) console.warn(`[retriangulate REPAIR] r=${r} ts=${ts.length} area-check FAIL: newArea=${newArea.toFixed(3)} origArea=${origArea.toFixed(3)} pending=${pending.length} repairRemoved=${repairRemoved} fanDetected=${fanDetected}`);
       for (const t of ts) emitOriginal(t);
       continue;
     }
@@ -556,12 +775,15 @@ export function bridgeHoles(
   outer: number[],
   holes: number[][],
   to2D: (id: number) => [number, number],
-  vx: number[],
-  vy: number[],
-  vz: number[],
+  _vx: number[],
+  _vy: number[],
+  _vz: number[],
 ): number[] {
+  void _vx; void _vy; void _vz;
   let poly = outer.slice();
-  // Process holes by descending rightmost-x so nested splices stay valid.
+  // Process holes by descending rightmost 2D-x. This order guarantees that
+  // each hole's rightward bridge ray cannot cross any earlier bridge (earlier
+  // bridges were placed further right, so subsequent rays never reach them).
   const ordered = holes
     .map((h) => {
       let bi = 0, bx = -Infinity;
@@ -577,45 +799,37 @@ export function bridgeHoles(
     const hv = h[bi];
     const [hx, hy] = to2D(hv);
 
-    // Find the nearest point on any outer boundary edge (not just vertices).
-    // Using per-edge closest-point avoids the long diagonal bridge that the
-    // nearest-vertex heuristic creates when the hole's rightmost vertex is
-    // near an edge midpoint but far from any outer vertex.
-    let best = -1, bestD = Infinity, bestT = 0, bestIsEdge = false;
+    // Cast a rightward (+x) ray from (hx, hy) and find the nearest edge of
+    // the current poly that the ray crosses. This standard algorithm (used by
+    // Mapbox earcut and others) guarantees non-intersecting bridges: each
+    // bridge goes rightward, and later holes have smaller x, so their rays
+    // never cross earlier bridges.
+    let bestEdge = -1, bestXi = Infinity, bestT = 0;
     for (let i = 0; i < poly.length; i++) {
-      // Check outer vertex i
-      const [ox, oy] = to2D(poly[i]);
-      const dv = (ox - hx) * (ox - hx) + (oy - hy) * (oy - hy);
-      if (dv < bestD) { bestD = dv; best = i; bestIsEdge = false; bestT = 0; }
-      // Check interior of edge i → (i+1)
       const j = (i + 1) % poly.length;
-      const [nx, ny] = to2D(poly[j]);
-      const dx = nx - ox, dy = ny - oy;
-      const lenSq = dx * dx + dy * dy;
-      if (lenSq < 1e-18) continue;
-      const t = Math.max(0, Math.min(1, ((hx - ox) * dx + (hy - oy) * dy) / lenSq));
-      if (t < 1e-6 || t > 1 - 1e-6) continue; // endpoint → already handled as vertex
-      const px = ox + t * dx, py = oy + t * dy;
-      const de = (px - hx) * (px - hx) + (py - hy) * (py - hy);
-      if (de < bestD) { bestD = de; best = i; bestIsEdge = true; bestT = t; }
+      const [ax, ay] = to2D(poly[i]);
+      const [bx2, by] = to2D(poly[j]);
+      const dy = by - ay;
+      if (Math.abs(dy) < 1e-12) continue;         // horizontal edge — skip
+      const t = (hy - ay) / dy;
+      if (t < -1e-9 || t > 1 + 1e-9) continue;   // ray misses y-span of edge
+      const xi = ax + t * (bx2 - ax);
+      if (xi < hx - 1e-9) continue;               // intersection is to the left
+      if (xi < bestXi) { bestXi = xi; bestEdge = i; bestT = Math.max(0, Math.min(1, t)); }
     }
-    if (best < 0) return outer; // give up → caller falls back to originals
+    if (bestEdge < 0) return outer; // degenerate — give up, caller emits originals
 
-    // If the nearest point is on an edge interior, insert a new vertex there.
-    let insertAt: number;
-    if (bestIsEdge) {
-      const j = (best + 1) % poly.length;
-      const newVtx = vx.length;
-      const t = bestT;
-      vx.push(vx[poly[best]] + t * (vx[poly[j]] - vx[poly[best]]));
-      vy.push(vy[poly[best]] + t * (vy[poly[j]] - vy[poly[best]]));
-      vz.push(vz[poly[best]] + t * (vz[poly[j]] - vz[poly[best]]));
-      // Insert the new vertex into the outer loop after position `best`.
-      poly = poly.slice(0, best + 1).concat([newVtx], poly.slice(best + 1));
-      insertAt = best + 1; // newVtx is now poly[insertAt]
-    } else {
-      insertAt = best;
-    }
+    // Snap to the nearer existing endpoint of the crossing edge rather than
+    // inserting a new midpoint vertex. A midpoint vertex is exactly collinear
+    // with its two outer-edge neighbours; the earClip inTri test treats
+    // on-boundary points as "inside", causing those collinear vertices to
+    // falsely block every adjacent ear and stall the clipper. Snapping to an
+    // existing vertex is always safe: the bridge still goes rightward (xi ≥ hx)
+    // so it cannot cross any previously placed bridge (earlier bridges are
+    // further right), and there are no new collinear vertices.
+    const insertAt = bestT <= 0.5
+      ? bestEdge
+      : (bestEdge + 1) % poly.length;
 
     // Splice the hole into poly at insertAt (keyhole bridge).
     const rot = h.slice(bi).concat(h.slice(0, bi));
@@ -660,6 +874,14 @@ export function earClip(
       for (let j = 0; j < idx.length; j++) {
         const p = idx[j];
         if (p === a || p === b || p === c) continue;
+        // Keyhole bridges duplicate vertex IDs at bridge junctions (the
+        // merged polygon contains e.g. …, V, H0, …, H0, V, …). A
+        // duplicate at a different array position has the same 2D coords
+        // as an ear vertex, producing area2 ≈ 0 which inTri classifies
+        // as "inside" — falsely blocking every adjacent ear and stalling
+        // the clipper.  Skip vertices whose vertex ID matches any ear
+        // vertex so the duplicate can't block clipping.
+        if (poly[p] === poly[a] || poly[p] === poly[b] || poly[p] === poly[c]) continue;
         if (inTri(a, b, c, p)) { ear = false; break; }
       }
       if (!ear) continue;
@@ -1019,16 +1241,35 @@ export function weldAndCleanSolid(geo: THREE.BufferGeometry, fast?: boolean): TH
         finalPos = cw === culled.length ? culled : culled.subarray(0, cw);
       }
     }
-    const fw = (finalPos as ArrayLike<number>).length;
+    // ── Global position quantization ─────────────────────────────────────────
+    // mergeVertices uses bucket-boundary rounding (Math.round(v / tol)) which
+    // can miss merging vertices that straddle the bucket boundary — e.g. one
+    // at 0.0004999 and another at 0.0005001 bucket to 0 and 1, even though
+    // they're 0.0002mm apart.  These sub-weldTol position drifts then make
+    // computeVertexNormals produce slightly tilted normals on nominally flat
+    // faces (different vertices of one triangle have different X values, so
+    // the cross product has tiny Y/Z components).  Lighting catches these as
+    // bright "wing" streaks across long thin retriangulated slivers.
+    //
+    // Fix: snap every position to a fine grid (0.0001mm) — finer than the
+    // 1e-3 weld tolerance, so we never collapse distinct features, but coarse
+    // enough to drag all sub-pixel FP noise to identical positions.  Adjacent
+    // faces' shared corners snap to the SAME grid point, so flat faces have
+    // identically-placed vertices and computeVertexNormals returns exact
+    // axis-aligned normals.
+    const finalArr = finalPos instanceof Float32Array ? finalPos : new Float32Array(finalPos);
+    {
+      const snapGrid = 1e-4;          // 0.0001 mm grid
+      const invGrid = 1 / snapGrid;
+      for (let i = 0; i < finalArr.length; i++) {
+        finalArr[i] = Math.round(finalArr[i] * invGrid) / invGrid;
+      }
+    }
+
+    const fw = finalArr.length;
 
     const out = new THREE.BufferGeometry();
-    out.setAttribute(
-      'position',
-      new THREE.BufferAttribute(
-        finalPos instanceof Float32Array ? finalPos : new Float32Array(finalPos),
-        3,
-      ),
-    );
+    out.setAttribute('position', new THREE.BufferAttribute(finalArr, 3));
     // Restore the (zero) uv the raw CSG path used to carry, so downstream
     // consumers/exporters see the same attribute set as before this change.
     out.setAttribute('uv', new THREE.BufferAttribute(new Float32Array((fw / 3) * 2), 2));

@@ -1,6 +1,7 @@
 import type { CADState } from './state';
 import { useComponentStore } from '../componentStore';
 import { serializeFeature } from './persistence';
+import { captureOccSnapshot } from '../../engine/occ/occSnapshot';
 
 type HistorySketch = CADState['sketches'][number];
 
@@ -20,6 +21,8 @@ export function snapshotCADState(state: CADState): string {
     featureGroups: state.featureGroups,
     designConfigurations: state.designConfigurations,
     activeDesignConfigurationId: state.activeDesignConfigurationId,
+    // OCC-7.3: STEP-serialized BRepBodies for undo/redo
+    occBodies: captureOccSnapshot(),
     componentStore: {
       rootComponentId: componentState.rootComponentId,
       activeComponentId: componentState.activeComponentId,

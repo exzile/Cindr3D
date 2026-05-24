@@ -8,6 +8,7 @@ import {
 } from '../../../store/cadStore';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
 import { useComponentStore } from '../../../store/componentStore';
+import { getExtrudeProfileOptions, getExtrudeProfileUsage } from '../extrude/profileSelection';
 import { ProfileSection } from './extrudePanel/ProfileSection';
 import { GeometrySection } from './extrudePanel/GeometrySection';
 import { OptionsSection } from './extrudePanel/OptionsSection';
@@ -89,50 +90,24 @@ export default function ExtrudePanel() {
       .map((feature) => [feature.sketchId as string, feature.name]),
   ), [features]);
 
-  const usedSketchIds = new Set(
-    features
-      .filter((f) => f.type === 'extrude' && f.id !== editingFeatureId)
-      .map((f) => f.sketchId?.split('::')[0])
-      .filter((id): id is string => !!id),
+  const profileUsage = useMemo(
+    () => getExtrudeProfileUsage(features, editingFeatureId),
+    [features, editingFeatureId],
   );
   const extrudable = sketches.filter(
     (sketch) =>
       sketch.entities.length > 0 &&
       timelineSketchNames.has(sketch.id) &&
-      !usedSketchIds.has(sketch.id) &&
+      !profileUsage.fullyUsedSketchIds.has(sketch.id) &&
       !sketch.name.startsWith('Press Pull Profile'),
   );
-  const profileOptions = useMemo(() => {
-    const activeSketchIds = new Set(selectedIds.map((id) => id.split('::')[0]));
-    const allRelevant = [
-      ...extrudable,
-      ...sketches.filter((sketch) => activeSketchIds.has(sketch.id) && !extrudable.includes(sketch)),
-    ];
-    const options = allRelevant.flatMap((sketch) => {
-      const count = GeometryEngine.sketchToShapes(sketch).length;
-      return Array.from({ length: count }, (_, index) => ({
-        id: `${sketch.id}::${index}`,
-        label: `${timelineSketchNames.get(sketch.id) ?? sketch.name} • Profile ${index + 1}`,
-        sketchId: sketch.id,
-      })).filter(({ sketchId, id }) => {
-        const source = allRelevant.find((item) => item.id === sketchId);
-        if (!source) return false;
-        const profileIndex = Number(id.split('::')[1]);
-        return Number.isFinite(profileIndex) && GeometryEngine.createProfileSketch(source, profileIndex) !== null;
-      });
-    });
-
-    for (const id of selectedIds) {
-      if (id.includes('::')) continue;
-      if (options.some((option) => option.id === id)) continue;
-      const sketch = sketches.find((item) => item.id === id);
-      if (sketch && timelineSketchNames.has(sketch.id)) {
-        options.push({ id, label: timelineSketchNames.get(sketch.id) ?? sketch.name, sketchId: id });
-      }
-    }
-
-    return options;
-  }, [extrudable, selectedIds, sketches, timelineSketchNames]);
+  const profileOptions = useMemo(() => getExtrudeProfileOptions({
+    extrudable,
+    sketches,
+    selectedIds,
+    timelineSketchNames,
+    consumedProfileIds: profileUsage.consumedProfileIds,
+  }), [extrudable, profileUsage.consumedProfileIds, selectedIds, sketches, timelineSketchNames]);
 
   const selectedProfileSketches = selectedIds
     .map((id) => {

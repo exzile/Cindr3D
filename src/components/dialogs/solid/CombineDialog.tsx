@@ -14,7 +14,11 @@ export function CombineDialog({ onClose }: { onClose: () => void }) {
   const [operation, setOperation] = useState<CombineOperation>((p.operation as CombineOperation) ?? 'join');
   const [keepTools, setKeepTools] = useState(p.keepTools !== false && !!p.keepTools);
   const [targetId, setTargetId] = useState<string>(String(p.targetId ?? ''));
-  const [toolId, setToolId] = useState<string>(String(p.toolId ?? ''));
+  const [toolIds, setToolIds] = useState<string[]>(
+    Array.isArray(p.toolIds)
+      ? p.toolIds.map(String)
+      : String(p.toolId ?? '') ? [String(p.toolId)] : [],
+  );
 
   const addFeature = useCADStore((s) => s.addFeature);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
@@ -25,15 +29,15 @@ export function CombineDialog({ onClose }: { onClose: () => void }) {
 
   const handleApply = () => {
     if (editing) {
-      recommitCombine(editing.id, { operation, keepTools, targetId, toolId });
-    } else if (targetId && toolId) {
-      commitCombine(targetId, toolId, operation, keepTools);
+      recommitCombine(editing.id, { operation, keepTools, targetId, toolId: toolIds[0] ?? '', toolIds });
+    } else if (targetId && toolIds.length > 0) {
+      commitCombine(targetId, toolIds, operation, keepTools);
     } else {
       const feature: Feature = {
         id: crypto.randomUUID(),
         name: `Combine (${operation})`,
         type: 'combine',
-        params: { operation, keepTools, targetId, toolId },
+        params: { operation, keepTools, targetId, toolId: toolIds[0] ?? '', toolIds },
         visible: true,
         suppressed: false,
         timestamp: Date.now(),
@@ -48,7 +52,11 @@ export function CombineDialog({ onClose }: { onClose: () => void }) {
     <DialogShell title={editing ? 'Edit Combine Bodies' : 'Combine Bodies'} onClose={onClose} size="sm" onConfirm={handleApply}>
       <div className="form-group">
         <label>Target Body</label>
-        <select value={targetId} onChange={(e) => setTargetId(e.target.value)}>
+        <select value={targetId} onChange={(e) => {
+          const nextTarget = e.target.value;
+          setTargetId(nextTarget);
+          setToolIds((ids) => ids.filter((id) => id !== nextTarget));
+        }}>
           <option value="">(select target)</option>
           {meshFeatures.map((f) => (
             <option key={f.id} value={f.id}>{f.name}</option>
@@ -56,9 +64,15 @@ export function CombineDialog({ onClose }: { onClose: () => void }) {
         </select>
       </div>
       <div className="form-group">
-        <label>Tool Body</label>
-        <select value={toolId} onChange={(e) => setToolId(e.target.value)}>
-          <option value="">(select tool)</option>
+        <label>Tool Bodies</label>
+        <select
+          multiple
+          value={toolIds}
+          onChange={(e) => setToolIds(
+            Array.from(e.currentTarget.selectedOptions).map((option) => option.value),
+          )}
+          size={Math.min(6, Math.max(3, meshFeatures.length - 1))}
+        >
           {meshFeatures.filter((f) => f.id !== targetId).map((f) => (
             <option key={f.id} value={f.id}>{f.name}</option>
           ))}
@@ -83,7 +97,7 @@ export function CombineDialog({ onClose }: { onClose: () => void }) {
         <input type="checkbox" checked={keepTools} onChange={(e) => setKeepTools(e.target.checked)} />
         Keep Tools (preserve tool bodies)
       </label>
-      <p className="dialog-hint">Select a target body and a tool body to combine.</p>
+      <p className="dialog-hint">Select a target body and one or more tool bodies to combine.</p>
     </DialogShell>
   );
 }

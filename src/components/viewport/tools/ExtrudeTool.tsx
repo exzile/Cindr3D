@@ -8,6 +8,7 @@ import SketchProfile from '../extrude/SketchProfile';
 import ExtrudePreview from '../extrude/ExtrudePreview';
 import ExtrudeGizmo from '../extrude/ExtrudeGizmo';
 import FaceHighlight from '../extrude/FaceHighlight';
+import { getExtrudeProfileUsage } from '../extrude/profileSelection';
 import { useFacePicker } from '../../../hooks/useFacePicker';
 import type { FacePickResult } from '../../../hooks/useFacePicker';
 
@@ -78,6 +79,11 @@ export default function ExtrudeTool() {
     return selectedFeature?.type === 'sketch' ? selectedFeature.sketchId : null;
   }, [features, selectedFeatureId]);
 
+  const profileUsage = useMemo(
+    () => getExtrudeProfileUsage(features, editingFeatureId),
+    [features, editingFeatureId],
+  );
+
   // Only hide profiles that are already consumed by an extrude feature.
   const extrudable = useMemo(() => {
     const timelineSketchIds = new Set(
@@ -85,19 +91,10 @@ export default function ExtrudeTool() {
         .filter((feature) => feature.type === 'sketch' && feature.sketchId)
         .map((feature) => feature.sketchId),
     );
-    const fullyUsedSketchIds = new Set<string>();
-    for (const feature of features.filter((f) => f.type === 'extrude' && !f.suppressed && f.id !== editingFeatureId)) {
-      const sketchId = feature.sketchId?.split('::')[0];
-      if (!sketchId) continue;
-      const profileIndex = feature.params.profileIndex;
-      if (!(typeof profileIndex === 'number' && Number.isFinite(profileIndex))) {
-        fullyUsedSketchIds.add(sketchId);
-      }
-    }
     const candidates = sketches.filter((s) =>
       s.entities.length > 0 &&
       timelineSketchIds.has(s.id) &&
-      !fullyUsedSketchIds.has(s.id) &&
+      !profileUsage.fullyUsedSketchIds.has(s.id) &&
       (!focusedSketchId || s.id === focusedSketchId)
     );
     const sketchTimelineIndex = new Map<string, number>();
@@ -123,22 +120,7 @@ export default function ExtrudeTool() {
         return otherFeatureIndex > sketchIndex;
       })
     );
-  }, [sketches, features, focusedSketchId, editingFeatureId]);
-
-  const consumedProfileIds = useMemo(() => new Set(
-      features
-        .filter((f) => f.type === 'extrude' && !f.suppressed && f.id !== editingFeatureId)
-        .map((f) => {
-          const sketchId = f.sketchId?.split('::')[0];
-          const profileIndex = f.params.profileIndex;
-          return sketchId && typeof profileIndex === 'number' && Number.isFinite(profileIndex)
-            ? buildSelectionId(sketchId, profileIndex)
-            : null;
-        })
-        .filter((id): id is string => !!id),
-    ),
-    [features, editingFeatureId],
-  );
+  }, [sketches, features, focusedSketchId, profileUsage.fullyUsedSketchIds]);
 
   const profileEntries = useMemo(() => {
     // Use the FLAT shape list so every closed region is a selectable profile
@@ -150,16 +132,19 @@ export default function ExtrudeTool() {
         profileIndex,
         selectionId: buildSelectionId(sketch.id, profileIndex),
       })).filter(({ selectionId, profileIndex }) =>
-        !consumedProfileIds.has(selectionId) &&
+        !profileUsage.consumedProfileIds.has(selectionId) &&
         GeometryEngine.createProfileSketch(sketch, profileIndex) !== null
       );
     });
-  }, [extrudable, consumedProfileIds]);
+  }, [extrudable, profileUsage.consumedProfileIds]);
 
-  const availableProfileIds = useMemo(
-    () => new Set(profileEntries.map((entry) => entry.selectionId)),
-    [profileEntries],
-  );
+  const availableProfileIds = useMemo(() => {
+    const ids = new Set(profileEntries.map((entry) => entry.selectionId));
+    for (const id of selectedIds) {
+      if (!id.includes('::')) ids.add(id);
+    }
+    return ids;
+  }, [profileEntries, selectedIds]);
 
   useEffect(() => {
     if (activeTool !== 'extrude') return;
@@ -208,7 +193,14 @@ export default function ExtrudeTool() {
         setStatusMessage('Profile selection moved to the clicked sketch plane');
         return;
       }
-      if (!additive && !sameSourceSketch) {
+      // Non-additive click always replaces — Shift/Ctrl required to add profiles
+      if (!additive) {
+        setSelectedIds([selectionId]);
+        setStatusMessage('1 profile selected — drag arrow or set distance, then OK');
+        return;
+      }
+      // Additive (Shift/Ctrl) cross-sketch on same plane: replace (can only multi-select within one sketch)
+      if (!sameSourceSketch) {
         setSelectedIds([selectionId]);
         setStatusMessage('1 profile selected — drag arrow or set distance, then OK');
         return;
@@ -389,6 +381,7 @@ export default function ExtrudeTool() {
       canvas.removeEventListener('pointerdown', handlePointerDown);
       canvas.removeEventListener('pointermove', handlePointerMove);
       canvas.removeEventListener('click', handleClick, true);
+      cachedMeshes = null;
       if (hoveredIdRef.current !== null) {
         hoveredIdRef.current = null;
         setHoveredIdRef.current(null);

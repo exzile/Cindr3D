@@ -16,7 +16,7 @@
  *   • three-bvh-csg can be removed once Manifold is proven stable on all
  *     input geometry in production.
  *
- * ALL callers (edgeCutCore, extrusionInternals, shellSolid, lipGroove,
+ * ALL callers (extrusionInternals, shellSolid, lipGroove,
  * pipe, snapFit, featureMeshActions, ExtrudePreview) use the same four
  * exports with identical signatures — no caller changes required.
  */
@@ -54,15 +54,26 @@ function _toManifold(geo: THREE.BufferGeometry): any | null {
   const wasm = getManifoldModule();
   if (!wasm) return null;
 
-  // Ensure indexed — Manifold needs triangle index array (triVerts)
-  let indexed: THREE.BufferGeometry;
-  let disposeIndexed = false;
-  if (geo.index) {
-    indexed = geo;
-  } else {
-    indexed = mergeVertices(geo, 1e-6);
-    disposeIndexed = true;
-  }
+  // Ensure indexed AND position-deduplicated.  Three.js's primitive geometries
+  // (BoxGeometry, CylinderGeometry, etc.) ARE indexed but emit separate vertex
+  // COPIES per face for UV/normal mapping — each box corner has 3 copies, same
+  // position, different indices.  Manifold-rs treats those as topologically
+  // disconnected (every edge looks like a 1-triangle edge) and throws
+  // "NotManifold", forcing the BVH fallback whose CSG fan output produces the
+  // "wing" visual.  ALWAYS run mergeVertices so position-duplicates collapse
+  // to single indices and Manifold sees a true closed manifold.  Tolerance is
+  // bbox-scaled (same convention as the rest of weldClean).
+  const bbox = new THREE.Box3().setFromBufferAttribute(geo.attributes.position as THREE.BufferAttribute);
+  const diag = Math.max(bbox.min.distanceTo(bbox.max), 1);
+  const weldTol = Math.max(diag * 1e-5, 1e-6);
+  // mergeVertices welds by ALL attributes; drop normal/uv so it unifies on
+  // position only (same pattern weldAndCleanSolid uses).
+  const posOnly = new THREE.BufferGeometry();
+  posOnly.setAttribute('position', geo.attributes.position as THREE.BufferAttribute);
+  if (geo.index) posOnly.setIndex(geo.index);
+  const indexed: THREE.BufferGeometry = mergeVertices(posOnly, weldTol);
+  posOnly.dispose();
+  const disposeIndexed = true;
 
   const posAttr = indexed.attributes.position as THREE.BufferAttribute | undefined;
   const idxAttr = indexed.index;

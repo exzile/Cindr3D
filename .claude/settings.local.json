@@ -105,7 +105,18 @@
       "mcp__gitnexus__impact",
       "mcp__gitnexus__detect_changes",
       "mcp__gitnexus__context",
-      "Bash(tee /tmp/tsc.log)"
+      "Bash(tee /tmp/tsc.log)",
+      "Bash(Select-String -Path \"C:\\\\Users\\\\joeyp\\\\.claude\\\\projects\\\\C--Users-joeyp-source-repos-exzile-DesignCAD\\\\acde9dbb-dfdd-4b82-8965-c9873d67a5e7\\\\tool-results\\\\mcp-Claude_Preview-preview_console_logs-1779582481320.txt\" -Pattern \"STEINER2|v8-manifold-merge|FAN-DIAG|wing candidates\")",
+      "Bash(Select-Object -Last 20)",
+      "Bash(Format-Table LineNumber, Line -Wrap)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\joeyp\\\\AppData\\\\Local\\\\Autodesk\\\\webdeploy\\\\production\\\\\" -ErrorAction SilentlyContinue | Select-Object -First 5)",
+      "Bash(ls -la \"C:\\\\Users\\\\joeyp\\\\AppData\\\\Local\\\\Autodesk\\\\webdeploy\\\\production\\\\\" 2>&1 | head -20)",
+      "Bash(find /c/Users/joeyp/AppData/Local/Autodesk -type d -name \"Fusion\" 2>/dev/null)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\joeyp\\\\AppData\\\\Local\\\\Autodesk\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object -First 20)",
+      "Bash(find \"C:/Users/joeyp\" -maxdepth 4 -type d -name \"*fusion*\" -o -type d -name \"*Autodesk*\" 2>/dev/null | head -20)",
+      "Bash(grep -r \"Loft\\\\|loft\" src/app/ActiveDialog.tsx src/components/dialogs/solid/ --include=\"*.tsx\" -l)",
+      "Bash(grep -r \"'loft'\" src/app/ActiveDialog.tsx)"
     ]
   }
 }

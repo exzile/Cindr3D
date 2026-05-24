@@ -136,18 +136,18 @@ export function bakeMeshWorldGeometry(mesh: THREE.Mesh): THREE.BufferGeometry {
   mesh.updateMatrixWorld(true);
   const geometry = mesh.geometry.clone();
   geometry.applyMatrix4(mesh.matrixWorld);
-  // After applyMatrix4 the position attribute is in world space.  Any
+  // After applyMatrix4 the position attribute is in world space. Any
   // `_manifoldData` cache (from Manifold-native builders) holds vertex
-  // coordinates in the original local frame — they must be transformed too
-  // so downstream CSG fast-paths stay in the Manifold kernel.
+  // coordinates in the original local frame, so transform those coordinates
+  // too before downstream mesh CSG consumers read them.
   //
-  // We deep-copy vertProperties (clone() gives a shallow userData copy that
-  // would share the array with the live mesh — mutating in-place corrupts
-  // the rendered mesh) then apply the world matrix to every position.
+  // We deep-copy vertProperties because clone() gives a shallow userData copy
+  // that would share the array with the live mesh; mutating in place corrupts
+  // the rendered mesh. Then apply the world matrix to every position.
   // triVerts are indices, unchanged by a rigid transform.
   //
-  // Without this: fillet / chamfer falls back to BVH (not-manifold error on
-  // the 874-vert body) and produces the visible spike / cone artefacts.
+  // Without this, mesh CSG can hit a false NotManifold path and produce
+  // invalid topology from otherwise valid Manifold-native builders.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const md = (geometry.userData as any)?._manifoldData;
   if (md?.vertProperties) {

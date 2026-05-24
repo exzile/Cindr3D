@@ -306,7 +306,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
     setBusy, setMessage, refreshClips,
   });
 
-  const { reconnectCamera, handleCameraError, reconnectHistoryRef } = useCameraConnection({
+  const { reconnectCamera, handleCameraError, lastReconnectAt } = useCameraConnection({
     activePrinterId,
     webcamStreamPreference: prefs.webcamStreamPreference,
     updatePrinterPrefs,
@@ -456,7 +456,7 @@ export default function CameraDashboardPanel({ compact = false }: CameraDashboar
             healthProps={{
               estimatedFps, healthPanelOpen, setHealthPanelOpen,
               droppedFrameWarning, frameAgeMs, lastFrameAt, nowTick,
-              frameCount, reconnectCount, reconnectHistoryRef,
+              frameCount, reconnectCount, lastReconnectAt,
             }}
             timelineProps={{
               timelineJobName, timelineClips, busy,

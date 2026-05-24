@@ -1,6 +1,5 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import * as React from "react";
-import * as THREE from "three";
 import { LayoutGrid, XCircle, Layers } from "lucide-react";
 import { useSlicerStore } from "../../../../store/slicerStore";
 import { errorMessage } from "../../../../utils/errorHandling";
@@ -9,17 +8,18 @@ import { useComponentStore } from "../../../../store/componentStore";
 import type { PlateObject } from "../../../../types/slicer";
 import { validatePlate } from "../../../../store/slicer/plateValidation";
 import { CalibrationMenu } from "../bottom/CalibrationMenu";
-import { ContextMenu, type ContextMenuItem } from "../ContextMenu";
+import { ContextMenu } from "../ContextMenu";
 import { GeometryToolsModal, type GeometryTool } from "../GeometryToolsModal";
-import { computeMeshStats } from "../../../../engine/meshStats";
-import { fetchModelUrlToFile } from "../../../../utils/printFromUrl";
 import { AddCadMenu } from "./objectsPanel/AddCadMenu";
 import { resolveCadBodyGeometry } from "./objectsPanel/addCadBodyToPlate";
 import { ImportControls } from "./objectsPanel/ImportControls";
-import { buildObjectContextMenuItems } from "./objectsPanel/objectContextMenu";
 import { ObjectRow } from "./objectsPanel/ObjectRow";
 import { PlateFileActions } from "./objectsPanel/PlateFileActions";
 import { ValidationSummary } from "./objectsPanel/ValidationSummary";
+import { useObjectContextMenu } from "./objectsPanel/useObjectContextMenu";
+import { useObjectImportControls } from "./objectsPanel/useObjectImportControls";
+import { usePlateObjectRows } from "./objectsPanel/usePlateObjectRows";
+import { usePlateObjectTooltips } from "./objectsPanel/usePlateObjectTooltips";
 import "./SlicerWorkspaceObjectsPanel.css";
 
 export function SlicerWorkspaceObjectsPanel() {
@@ -63,88 +63,85 @@ export function SlicerWorkspaceObjectsPanel() {
 
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [addSearch, setAddSearch] = useState("");
-  const [importing, setImporting] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
-  const [modelUrl, setModelUrl] = useState("");
-  const [isDragging, setIsDragging] = useState(false);
   const [colorPickerForId, setColorPickerForId] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<{
-    id: string;
-    x: number;
-    y: number;
-    items: ContextMenuItem[];
-  } | null>(null);
   const [activeTool, setActiveTool] = useState<{
     tool: GeometryTool;
     id: string;
   } | null>(null);
-  const [dragRowId, setDragRowId] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const plateLoadInputRef = useRef<HTMLInputElement>(null);
   const colorInputRef = useRef<HTMLInputElement>(null);
-  const isMountedRef = useRef(true);
-
-  useEffect(() => {
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
+  const colorPickerFrameRef = useRef<number | null>(null);
 
   const openColorPicker = useCallback((id: string) => {
     setColorPickerForId(id);
-    requestAnimationFrame(() => colorInputRef.current?.click());
+    if (colorPickerFrameRef.current !== null) {
+      cancelAnimationFrame(colorPickerFrameRef.current);
+    }
+    colorPickerFrameRef.current = requestAnimationFrame(() => {
+      colorPickerFrameRef.current = null;
+      colorInputRef.current?.click();
+    });
   }, []);
 
-  const buildContextMenuItems = useCallback(
-    (id: string): ContextMenuItem[] => {
-      const obj = plateObjects.find((o) => o.id === id);
-      return buildObjectContextMenuItems({
-        id,
-        object: obj,
-        duplicatePlateObject,
-        updatePlateObject,
-        layFlatPlateObject,
-        autoOrientPlateObject,
-        dropToBedPlateObject,
-        centerPlateObject,
-        resolveOverlapForObject,
-        openColorPicker,
-        removeFromPlate,
-        setActiveTool,
-      });
-    },
-    [
-      plateObjects,
-      duplicatePlateObject,
-      updatePlateObject,
-      layFlatPlateObject,
+  useEffect(() => () => {
+    if (colorPickerFrameRef.current !== null) {
+      cancelAnimationFrame(colorPickerFrameRef.current);
+    }
+  }, []);
+
+  const {
+    fileInputRef,
+    importError,
+    importing,
+    isDragging,
+    modelUrl,
+    handleDragOver,
+    handleDrop,
+    handleFileInput,
+    handleImportUrl,
+    openFileDialog,
+    setIsDragging,
+    setModelUrl,
+  } = useObjectImportControls({ importFileToPlate, updatePlateObject });
+
+  const { contextMenu, openContextMenu, setContextMenu } =
+    useObjectContextMenu({
       autoOrientPlateObject,
-      dropToBedPlateObject,
       centerPlateObject,
-      resolveOverlapForObject,
+      dropToBedPlateObject,
+      duplicatePlateObject,
+      layFlatPlateObject,
       openColorPicker,
+      plateObjects,
       removeFromPlate,
-    ],
-  );
+      resolveOverlapForObject,
+      setActiveTool,
+      updatePlateObject,
+    });
 
-  // Listen for "open context menu for this object" events fired from the
-  // viewport mesh on right-click. Keeps the menu logic in one place
-  // (here) rather than duplicating it inside the 3D scene.
-  useEffect(() => {
-    const handler = (ev: Event) => {
-      const detail = (ev as CustomEvent<{ id: string; x: number; y: number }>)
-        .detail;
-      setContextMenu({ ...detail, items: buildContextMenuItems(detail.id) });
-    };
-    window.addEventListener("slicer:object-context-menu", handler);
-    return () =>
-      window.removeEventListener("slicer:object-context-menu", handler);
-  }, [buildContextMenuItems]);
+  const {
+    dragRowId,
+    handleRowClick,
+    handleRowContextMenu,
+    handleRowDragOver,
+    handleRowDragStart,
+    handleRowDrop,
+    handleRowKeyDown,
+    selectedIds,
+    setDragRowId,
+  } = usePlateObjectRows({
+    additionalSelectedIds,
+    openContextMenu,
+    plateObjects,
+    removeFromPlate,
+    reorderPlateObjects,
+    selectPlateObject,
+    selectPlateObjectRange,
+    selectedId,
+    togglePlateObjectInSelection,
+  });
 
-  const selectedIds = useMemo(
-    () => (selectedId ? [selectedId, ...additionalSelectedIds] : []),
-    [selectedId, additionalSelectedIds],
-  );
+  const buildRowTooltip = usePlateObjectTooltips(plateObjects);
 
   const printer = getActivePrinterProfile();
   const validation = useMemo(
@@ -159,70 +156,6 @@ export function SlicerWorkspaceObjectsPanel() {
     [plateObjects, printer?.buildVolume, printer?.originCenter],
   );
 
-  const handleImportFile = useCallback(
-    async (file: File) => {
-      if (isMountedRef.current) {
-        setImporting(true);
-        setImportError(null);
-      }
-      try {
-        await importFileToPlate(file);
-      } catch (err) {
-        if (isMountedRef.current) {
-          setImportError(errorMessage(err, "Unknown error"));
-        }
-      } finally {
-        if (isMountedRef.current) {
-          setImporting(false);
-        }
-      }
-    },
-    [importFileToPlate],
-  );
-
-  const handleFileInput = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) handleImportFile(file);
-      if (e.target) e.target.value = "";
-    },
-    [handleImportFile],
-  );
-
-  const handleImportUrl = useCallback(async () => {
-    const url = modelUrl.trim();
-    if (!url) return;
-    if (isMountedRef.current) {
-      setImporting(true);
-      setImportError(null);
-    }
-    try {
-      const { file, sourceMetadata } = await fetchModelUrlToFile(url);
-      const importedId = await importFileToPlate(file);
-      if (importedId) {
-        useSlicerStore.getState().updatePlateObject(importedId, {
-          sourceMetadata,
-        } as Partial<PlateObject>);
-      }
-      if (isMountedRef.current) setModelUrl("");
-    } catch (err) {
-      if (isMountedRef.current)
-        setImportError(errorMessage(err, "Unknown error"));
-    } finally {
-      if (isMountedRef.current) setImporting(false);
-    }
-  }, [importFileToPlate, modelUrl]);
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragging(false);
-      const file = e.dataTransfer.files?.[0];
-      if (file) handleImportFile(file);
-    },
-    [handleImportFile],
-  );
-
   const handleAddBody = useCallback(
     (bodyId: string, bodyName: string) => {
       const geo = resolveCadBodyGeometry(bodyId, features);
@@ -231,14 +164,6 @@ export function SlicerWorkspaceObjectsPanel() {
       setAddSearch("");
     },
     [addToPlate, features],
-  );
-
-  const handleDragOver = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      if (!isDragging) setIsDragging(true);
-    },
-    [isDragging],
   );
 
   // Bodies visible in the current design, sorted by name.
@@ -255,103 +180,6 @@ export function SlicerWorkspaceObjectsPanel() {
     if (!q) return addableBodies;
     return addableBodies.filter((b) => b.name.toLowerCase().includes(q));
   }, [addableBodies, addSearch]);
-
-  const handleRowClick = useCallback(
-    (e: React.MouseEvent, id: string) => {
-      if (e.shiftKey && selectedId) {
-        selectPlateObjectRange(selectedId, id);
-      } else if (e.ctrlKey || e.metaKey) {
-        togglePlateObjectInSelection(id);
-      } else {
-        selectPlateObject(id);
-      }
-    },
-    [
-      selectedId,
-      selectPlateObject,
-      togglePlateObjectInSelection,
-      selectPlateObjectRange,
-    ],
-  );
-
-  const handleRowKeyboardSelect = useCallback(
-    (e: React.KeyboardEvent, id: string) => {
-      if (e.shiftKey && selectedId) {
-        selectPlateObjectRange(selectedId, id);
-      } else if (e.ctrlKey || e.metaKey) {
-        togglePlateObjectInSelection(id);
-      } else {
-        selectPlateObject(id);
-      }
-    },
-    [
-      selectedId,
-      selectPlateObject,
-      togglePlateObjectInSelection,
-      selectPlateObjectRange,
-    ],
-  );
-
-  const focusPlateRow = useCallback(
-    (index: number) => {
-      const bounded = Math.max(0, Math.min(plateObjects.length - 1, index));
-      const id = plateObjects[bounded]?.id;
-      if (!id) return;
-      const row = document.querySelector<HTMLElement>(
-        `[data-plate-row-id="${CSS.escape(id)}"]`,
-      );
-      row?.focus();
-      selectPlateObject(id);
-    },
-    [plateObjects, selectPlateObject],
-  );
-
-  const handleRowKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>, id: string) => {
-      if (e.target !== e.currentTarget) return;
-      const index = plateObjects.findIndex((obj) => obj.id === id);
-      if (index < 0) return;
-
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        focusPlateRow(index + 1);
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        focusPlateRow(index - 1);
-      } else if (e.key === "Home") {
-        e.preventDefault();
-        focusPlateRow(0);
-      } else if (e.key === "End") {
-        e.preventDefault();
-        focusPlateRow(plateObjects.length - 1);
-      } else if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        handleRowKeyboardSelect(e, id);
-      } else if (e.key === "Delete" || e.key === "Backspace") {
-        e.preventDefault();
-        removeFromPlate(id);
-      } else if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
-        e.preventDefault();
-        if (!selectedIds.includes(id)) selectPlateObject(id);
-        const rect = e.currentTarget.getBoundingClientRect();
-        setContextMenu({
-          id,
-          x: rect.left + 16,
-          y: rect.top + 16,
-          items: buildContextMenuItems(id),
-        });
-      }
-    },
-    [
-      focusPlateRow,
-      handleRowKeyboardSelect,
-      plateObjects,
-      removeFromPlate,
-      selectedIds,
-      selectPlateObject,
-      buildContextMenuItems,
-    ],
-  );
 
   const handleColorChange = useCallback(
     (color: string) => {
@@ -406,83 +234,6 @@ export function SlicerWorkspaceObjectsPanel() {
     [importFileToPlate, importPlateJson],
   );
 
-  // Drag-to-reorder handlers. We use HTML5 drag events on the rows; Vite
-  // / React-DnD would be heavier than needed here. The drag identifier is
-  // the source object id; on drop we splice it before the target.
-  const handleRowDragStart = useCallback((e: React.DragEvent, id: string) => {
-    setDragRowId(id);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plate-object-id", id);
-  }, []);
-  const handleRowDragOver = useCallback(
-    (e: React.DragEvent) => {
-      if (dragRowId) e.preventDefault();
-    },
-    [dragRowId],
-  );
-  const handleRowDrop = useCallback(
-    (e: React.DragEvent, targetId: string) => {
-      e.preventDefault();
-      const sourceId = dragRowId;
-      setDragRowId(null);
-      if (!sourceId || sourceId === targetId) return;
-      const ids = plateObjects.map((o) => o.id);
-      const fromIdx = ids.indexOf(sourceId);
-      const toIdx = ids.indexOf(targetId);
-      if (fromIdx < 0 || toIdx < 0) return;
-      const reordered = [...ids];
-      reordered.splice(fromIdx, 1);
-      const insertAt = toIdx + (toIdx > fromIdx ? -1 : 0);
-      reordered.splice(insertAt, 0, sourceId);
-      reorderPlateObjects(reordered);
-    },
-    [dragRowId, plateObjects, reorderPlateObjects],
-  );
-
-  const handleRowContextMenu = useCallback(
-    (e: React.MouseEvent, id: string) => {
-      e.preventDefault();
-      if (!selectedIds.includes(id)) selectPlateObject(id);
-      setContextMenu({
-        id,
-        x: e.clientX,
-        y: e.clientY,
-        items: buildContextMenuItems(id),
-      });
-    },
-    [selectedIds, selectPlateObject, buildContextMenuItems],
-  );
-
-  // Per-row stats. Computed lazily via tooltip — heavy meshes don't pay
-  // unless the user actually hovers. We memoize per-id to avoid re-computing
-  // on every render.
-  const statsCacheRef = useRef(new Map<string, string>());
-  const buildRowTooltip = (obj: PlateObject): string => {
-    const cached = statsCacheRef.current.get(obj.id);
-    if (cached) return cached;
-    if (!(obj.geometry instanceof THREE.BufferGeometry)) return obj.name;
-    try {
-      const stats = computeMeshStats(obj.geometry);
-      const sx = obj.scale?.x ?? 1;
-      const sy = obj.scale?.y ?? 1;
-      const sz = obj.scale?.z ?? 1;
-      const volScale = Math.abs(sx * sy * sz);
-      const volMl = (stats.volumeMm3 * volScale) / 1000;
-      const surfaceCm2 =
-        (stats.surfaceAreaMm2 * Math.cbrt(volScale * volScale)) / 100;
-      const text = [
-        obj.name,
-        `Triangles: ${stats.triangleCount.toLocaleString()}`,
-        `Volume: ${volMl.toFixed(2)} cm³`,
-        `Surface area: ${surfaceCm2.toFixed(1)} cm²`,
-      ].join("\n");
-      statsCacheRef.current.set(obj.id, text);
-      return text;
-    } catch {
-      return obj.name;
-    }
-  };
-
   return (
     <div className="slicer-workspace-objects-panel">
       <div className="slicer-workspace-objects-panel__header">
@@ -502,7 +253,7 @@ export function SlicerWorkspaceObjectsPanel() {
           onDrop={handleDrop}
           onFileInput={handleFileInput}
           onModelUrlChange={setModelUrl}
-          onOpenFileDialog={() => fileInputRef.current?.click()}
+          onOpenFileDialog={openFileDialog}
           onSubmitUrl={() => void handleImportUrl()}
         />
 

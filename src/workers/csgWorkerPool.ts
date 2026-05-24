@@ -104,7 +104,7 @@ export async function csgAsync(
 }
 
 // Terminate workers on HMR so the next operation spawns fresh ones with
-// the latest engine code (same pattern as SlicerWorker / edgeOpWorker).
+// the latest engine code (same pattern as SlicerWorker).
 if (import.meta.hot) {
   import.meta.hot.on('vite:beforeUpdate', () => {
     _workers?.forEach((w) => w.terminate());

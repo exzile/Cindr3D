@@ -1,4 +1,5 @@
 import type * as React from 'react';
+import { useEffect, useRef } from 'react';
 import { Eye, Layers, Undo2, Redo2 } from 'lucide-react';
 import { useSlicerStore } from '../../../../store/slicerStore';
 import { useLanguageStore } from '../../../../store/languageStore';
@@ -6,6 +7,7 @@ import { translate, type TranslationKey } from '../../../../i18n';
 export type { SlicerPage } from '../../../../types/slicer-nav.types';
 
 export function SlicerWorkspaceTopNav() {
+  const focusFrameRef = useRef<number | null>(null);
   const language = useLanguageStore((s) => s.language);
   const sliceResult = useSlicerStore((s) => s.sliceResult);
   const previewMode = useSlicerStore((s) => s.previewMode);
@@ -33,10 +35,16 @@ export function SlicerWorkspaceTopNav() {
     event.preventDefault();
     const nextMode = availableModes[nextIndex];
     setPreviewMode(nextMode);
-    requestAnimationFrame(() => {
+    if (focusFrameRef.current !== null) cancelAnimationFrame(focusFrameRef.current);
+    focusFrameRef.current = requestAnimationFrame(() => {
+      focusFrameRef.current = null;
       document.querySelector<HTMLButtonElement>(`[data-slicer-preview-mode="${nextMode}"]`)?.focus();
     });
   };
+
+  useEffect(() => () => {
+    if (focusFrameRef.current !== null) cancelAnimationFrame(focusFrameRef.current);
+  }, []);
 
   return (
     <div className="slicer-workspace-nav">
