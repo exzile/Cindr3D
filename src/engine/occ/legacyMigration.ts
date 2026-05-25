@@ -256,6 +256,15 @@ function buildFeatureSketchProfile(
     const rawProfile = buildLargestRawSketchProfile(sketch);
     if (rawProfile) return rawProfile;
   }
+  // Multi-profile selection: use first index for the OCC path (each region is extruded
+  // individually by migrateNewBodyExtrude when profileIndices is present).
+  const profileIndices = feature.params.profileIndices;
+  if (Array.isArray(profileIndices) && profileIndices.length > 0) {
+    const idx = profileIndices[0] as number;
+    const shapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
+    const shape = shapes[idx];
+    return shape ? shapeToSketchProfile(shape) : null;
+  }
   const profileIndex = feature.params.profileIndex;
   if (typeof profileIndex === 'number' && Number.isFinite(profileIndex)) {
     const shape = GeometryEngine.sketchToProfileShapesFlat(sketch)[profileIndex];
@@ -399,10 +408,6 @@ function migrateNewBodyExtrude(
   let occBody: BRepBody | null = null;
   let registered = false;
   try {
-    const profile = buildFeatureSketchProfile(feature, sketch, { preferRawBaseProfile: true });
-    if (!profile) {
-      return feature;
-    }
     const frame = createOccPlaneFrameFromSketch(sketch);
 
     const distance = readNumberParam(feature, ['distance', 'extrudeDistance'], 10);
@@ -433,13 +438,46 @@ function migrateNewBodyExtrude(
       occDistance = absDistance;
     }
 
-    occBody = occExtrudeWithInstance(occ.oc, profile, occDistance, frame, {
+    const extrudeOpts = {
       id: feature.id,
       sourceFeatureId: feature.id,
       symmetric: occSymmetric,
       twoSideDist: occTwoSideDist,
       taperAngle: Math.abs(taperAngle) > 0.001 ? taperAngle : undefined,
-    });
+    };
+
+    // Multi-profile selection: extrude each region separately and union.
+    const profileIndices = feature.params.profileIndices;
+    if (Array.isArray(profileIndices) && profileIndices.length > 1) {
+      const allShapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
+      const bodies: BRepBody[] = [];
+      try {
+        for (const idx of profileIndices as number[]) {
+          const shape = allShapes[idx];
+          if (!shape) continue;
+          const profile = shapeToSketchProfile(shape);
+          bodies.push(occExtrudeWithInstance(occ.oc, profile, occDistance, frame, extrudeOpts));
+        }
+        if (bodies.length === 0) return feature;
+        occBody = bodies[0];
+        for (let i = 1; i < bodies.length; i++) {
+          const fused = performOccBooleanWithInstance(occ.oc, 'union', occBody, bodies[i], {
+            id: feature.id, sourceFeatureId: feature.id,
+          });
+          occBody.dispose();
+          bodies[i].dispose();
+          if (!fused) return feature;
+          occBody = fused;
+        }
+      } catch (err) {
+        for (const b of bodies) try { b.dispose(); } catch { /* ignore */ }
+        throw err;
+      }
+    } else {
+      const profile = buildFeatureSketchProfile(feature, sketch, { preferRawBaseProfile: true });
+      if (!profile) return feature;
+      occBody = occExtrudeWithInstance(occ.oc, profile, occDistance, frame, extrudeOpts);
+    }
     const tess = tessellateWithInstance(occ.oc, occBody);
     const geo = tessellationToGeometry(tess);
     const mesh = new THREE.Mesh(geo, MIGRATED_MATERIAL);
@@ -499,6 +537,7 @@ function migrateJoinCutExtrude(
     );
     const distance2 = readNumberParam(feature, ['distance2', 'extrudeDistance2'], distance);
     const taperAngle = readNumberParam(feature, ['taperAngle', 'extrudeTaperAngle'], 0);
+    const symmetricFull = readBooleanParam(feature, ['symmetricFullLength', 'extrudeSymmetricFullLength'], false);
     const absDistance = Math.max(0.001, Math.abs(distance));
     const operation =
       (feature.params.operation as string | undefined) ??
@@ -524,7 +563,7 @@ function migrateJoinCutExtrude(
     let occSymmetric = false;
     let occTwoSideDist: number | undefined;
     if (booleanDirection === 'symmetric') {
-      occDistance = absDistance;
+      occDistance = symmetricFull ? absDistance : absDistance * 2;
       occSymmetric = true;
     } else if (booleanDirection === 'two-sides') {
       occTwoSideDist = Math.max(0.001, Math.abs(distance2));

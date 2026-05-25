@@ -277,8 +277,9 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
                 }
 
                 const toolBody = occRevolveWithInstance(
-                  occ.oc, sketchProfile, occPrimaryRad,
+                  occ.oc, sketchProfile,
                   { origin: axisOriginVec, direction: axisVec },
+                  occPrimaryRad,
                   frame,
                   { id: feature.id + '_tool', side2AngleRad },
                 );
