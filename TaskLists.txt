@@ -178,14 +178,14 @@
            adding a version prefix) must be applied in 3 independent places.
     Fix: Extract to `src/utils/occEdgeUtils.ts` and import from all three call sites.
 
-[ ] `performOccBooleanMultiWithInstance` called without import in legacyMigration.ts (severity: HIGH)
+[x] `performOccBooleanMultiWithInstance` called without import in legacyMigration.ts (severity: HIGH)
     File: src/engine/occ/legacyMigration.ts (~line 497)
     Issue: `performOccBooleanMultiWithInstance` is called for legacy join/cut extrude migration but
            is never imported — only `performOccBooleanWithInstance` is imported from `./ops/booleanCore`.
            This causes a ReferenceError at runtime when any multi-body legacy feature is migrated.
     Fix: Add `performOccBooleanMultiWithInstance` to the import from `./ops/booleanCore`.
 
-[ ] Duplicate `shapeToSketchProfile` / `shapeToSolidSketchProfile` functions in legacyMigration.ts (severity: MEDIUM)
+[x] Duplicate `shapeToSketchProfile` / `shapeToSolidSketchProfile` functions in legacyMigration.ts (severity: MEDIUM)
     File: src/engine/occ/legacyMigration.ts (~lines 139, 148)
     Issue: Both functions have identical bodies extracting UV points from a THREE.Shape; the
            "Solid" variant adds no meaningful distinction, doubling maintenance surface for profile extraction.
@@ -215,7 +215,7 @@
            commitThicken each allocate a full copy of the features array to find the last surface.
     Fix: Replace with a backward for-loop `for (let i = features.length - 1; i >= 0; i--)`.
 
-[ ] `appendFaceTriangles` in tessellate.ts allocates multiple `new THREE.Vector3()` per triangle (severity: MEDIUM)
+[x] `appendFaceTriangles` in tessellate.ts allocates multiple `new THREE.Vector3()` per triangle (severity: MEDIUM)
     File: src/engine/occ/tessellate.ts (~lines 161-169)
     Issue: Inside the per-triangle loop, `points.map()` allocates 3 Vector3 instances and
            `new THREE.Vector3().subVectors(...).cross(new THREE.Vector3().subVectors(...))` allocates
@@ -249,7 +249,7 @@
 #     to-entity: wired via computeToObjectDistance for side 2.
 #     UI: extentType2 picker in GeometrySection.tsx; setExtrudeExtentType2 in store.
 
-[ ] historyAndDocumentSlice.ts mixes 6 unrelated concerns at 862 lines (severity: MEDIUM)
+[x] historyAndDocumentSlice.ts mixes 6 unrelated concerns at 862 lines (severity: MEDIUM)
     File: src/store/cad/slices/historyAndDocumentSlice.ts (862 lines)
     Issue: Contains undo/redo (MM2), linear/circular pattern (SLD7/SLD8), plane cut (MSH2),
            mesh close/smooth/separate/section (MSH3/5/10/13), and save/load (UTL2).
@@ -258,7 +258,7 @@
          advancedSolidAndMeshOps/. Move mesh ops to meshOpsActions.ts. Keep undo/redo/save/load
          in historyAndDocumentSlice.ts. Wire the new files through the shim slice.
 
-[ ] featureMeshActions.ts mixes edge-modification, mesh-transform, align, and boolean-combine (severity: LOW)
+[x] featureMeshActions.ts mixes edge-modification, mesh-transform, align, and boolean-combine (severity: LOW)
     File: src/store/cad/slices/featureManagement/featureMeshActions.ts (1373 lines)
     Issue: Fillet/chamfer, scale/mirror/align, mesh-transform, tessellate, meshCombine, and
            commitCombine are all co-located. Combine ops and align are independent concerns.
@@ -287,13 +287,13 @@
            propagation path. The algo shape is known (has .Shape(), .Modified(), etc.).
     Fix: Define a minimal `OccBooleanAlgo` interface with required methods and replace `any`.
 
-[ ] Magic number `96` for edge polyline divisions in tessellate.ts `sampleEdgePolyline` (severity: LOW)
+[x] Magic number `96` for edge polyline divisions in tessellate.ts `sampleEdgePolyline` (severity: LOW)
     File: src/engine/occ/tessellate.ts (~line 217)
     Issue: `const divisions = 96` is inline with no reference to `OCC_PROFILE_POINT_COUNT`,
            breaking the single-source-of-truth that was established for profile point counts.
     Fix: Import `OCC_PROFILE_POINT_COUNT` from the shared constants file and replace the inline literal.
 
-[ ] `createBooleanOperation` in booleanCore.ts uses `any` for shape params (severity: LOW)
+[x] `createBooleanOperation` in booleanCore.ts uses `any` for shape params (severity: LOW)
     File: src/engine/occ/ops/booleanCore.ts (~line 101)
     Issue: `targetShape: any` and `toolShape: any` disable TS type-checking on the primary
            boolean dispatch path despite OCC shape types being available from the OcctRaw interface.
@@ -348,7 +348,7 @@
 
 ## OCC-SPECIFIC
 
-[ ] OCC poly node objects not deleted in `appendFaceTriangles` in tessellate.ts (severity: MEDIUM)
+[x] OCC poly node objects not deleted in `appendFaceTriangles` in tessellate.ts (severity: MEDIUM)
     File: src/engine/occ/tessellate.ts (~lines 162-163)
     Issue: `poly.Node(nodeIndex)` and `node.Transformed(transform)` return OCC C++ heap objects
            that are never `.delete()`'d inside the per-triangle loop, causing a WASM heap leak
