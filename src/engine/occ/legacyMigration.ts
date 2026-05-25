@@ -31,7 +31,7 @@ import {
   performOccBooleanMultiWithInstance,
   type OccBooleanOperation,
 } from './ops/booleanCore';
-import { tessellateWithInstance, tessellationToGeometry } from './tessellate';
+import { tessellateEdgesOnly, tessellateWithInstance, tessellationToGeometry } from './tessellate';
 import { attachTessellationToMesh } from './picking';
 import type { SketchProfile } from './ops/sketchToWire';
 import type { BRepBody } from './brepBody';
@@ -40,12 +40,6 @@ import { OCC_PROFILE_POINT_COUNT, OCC_BOOLEAN_VERSION } from '../../utils/occCon
 
 function pushMigrationDebug(entry: unknown): void {
   void entry;
-  if (typeof document !== 'undefined') {
-    const existing = document.body.dataset.cindrMigrationAll;
-    const entries = existing ? JSON.parse(existing) as unknown[] : [];
-    entries.push(entry);
-    document.body.dataset.cindrMigrationAll = JSON.stringify(entries.slice(-12));
-  }
 }
 
 /** Shared material for migrated feature meshes (same style as new-commit OCC path). */
@@ -114,7 +108,8 @@ function hasLiveOccBody(feature: Feature): boolean {
   }
   const mesh = feature.mesh as THREE.Mesh | undefined;
   const bodyId = mesh?.isMesh ? (mesh.userData['brepBodyId'] as string | undefined) : undefined;
-  return !!bodyId && !!globalBRepBodyRegistry.get(bodyId);
+  return (!!bodyId && !!globalBRepBodyRegistry.get(bodyId)) ||
+    globalBRepBodyRegistry.getByFeature(feature.id).some((body) => !!body._tessellation);
 }
 
 function featureHasRegisteredOccBody(feature: Feature | undefined): boolean {
@@ -456,16 +451,18 @@ function migrateNewBodyExtrude(
     } else {
       const profile = buildFeatureSketchProfile(feature, sketch, { preferRawBaseProfile: true });
       if (!profile) return feature;
-      pushMigrationDebug({
-        phase: 'new-body-profile',
-        featureId: feature.id,
-        outer: profile.outer.length,
-        holes: profile.holes.map((hole) => hole.length),
-      });
       occBody = occExtrudeWithInstance(occ.oc, profile, occDistance, frame, extrudeOpts);
     }
-    pushMigrationDebug({ phase: 'new-body-extruded', featureId: feature.id, bodyId: occBody.id });
-    const tess = tessellateWithInstance(occ.oc, occBody);
+    let tess;
+    try {
+      tess = tessellateWithInstance(occ.oc, occBody);
+    } catch (error) {
+      void error;
+      tessellateEdgesOnly(occ.oc, occBody);
+      globalBRepBodyRegistry.add(occBody);
+      registered = true;
+      return { ...feature };
+    }
     const geo = tessellationToGeometry(tess);
     const mesh = new THREE.Mesh(geo, MIGRATED_MATERIAL);
     attachTessellationToMesh(mesh, tess, occBody.id);

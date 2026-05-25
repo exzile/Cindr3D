@@ -14,10 +14,7 @@ import {
 } from "../../../../engine/occ/picking";
 import type { BRepTessellation } from "../../../../engine/occ/brepBody";
 import type { BodyTopology } from "../../../../engine/geometryEngine/core/solid/edgeTypes";
-import { extrudeProfileTopology } from "../../../../engine/geometryEngine/core/solid/profileTopology";
-import { GeometryEngine } from "../../../../engine/GeometryEngine";
 import { useCADStore } from "../../../../store/cadStore";
-import type { Feature, Sketch } from "../../../../types/cad";
 
 interface EdgeOpEdgeHighlightProps {
   enabled: boolean;
@@ -28,7 +25,9 @@ interface EdgeOpEdgeHighlightProps {
   allowCurvedEdges?: boolean;
 }
 
-const CSG_CUT_OVERTRAVEL_MM = 0.05;
+const EDGE_GUIDE_RENDER_ORDER = 1398;
+const EDGE_HOVER_RENDER_ORDER = 1402;
+const EDGE_SELECTED_RENDER_ORDER = 1403;
 
 function occEdgeId(result: OccEdgePickResult): string {
   return `occ:${result.bodyId}:${result.edgeId}`;
@@ -75,11 +74,10 @@ function resolveMeshOccTessellation(mesh: THREE.Mesh) {
   let bodyId = mesh.userData.brepBodyId as string | undefined;
   if (tess && bodyId) return { tess, bodyId };
 
+  const featureId = mesh.userData.featureId as string | undefined;
   const body =
     (bodyId ? globalBRepBodyRegistry.get(bodyId) : undefined) ??
-    ((mesh.userData.featureId as string | undefined)
-      ? globalBRepBodyRegistry.getByFeature(mesh.userData.featureId as string)[0]
-      : undefined);
+    (featureId ? globalBRepBodyRegistry.getByFeature(featureId).find((candidate) => candidate._tessellation) : undefined);
   if (!body) return null;
 
   tess = body._tessellation ?? null;
@@ -193,256 +191,9 @@ function mergeGuideGeometries(geometries: (THREE.BufferGeometry | null)[]): THRE
   return geometry;
 }
 
-function projectClosedLoopToBoxFace(polyline: THREE.Vector3[], box: THREE.Box3): THREE.Vector3[] | null {
-  if (polyline.length < 4 || polyline[0].distanceToSquared(polyline[polyline.length - 1]) > 1e-10) {
-    return null;
-  }
-
-  const diag = Math.max(box.min.distanceTo(box.max), 1);
-  const planeTol = Math.max(diag * 1e-6, 1e-6);
-  const insideTol = Math.max(diag * 2e-3, 1e-4);
-  const axes = ["x", "y", "z"] as const;
-
-  for (const axis of axes) {
-    let min = Infinity;
-    let max = -Infinity;
-    for (const point of polyline) {
-      min = Math.min(min, point[axis]);
-      max = Math.max(max, point[axis]);
-    }
-    if (max - min > planeTol) continue;
-    const coord = (min + max) * 0.5;
-    const target =
-      coord < box.min[axis] ? box.min[axis] :
-      coord > box.max[axis] ? box.max[axis] :
-      undefined;
-    if (target === undefined) continue;
-
-    const otherAxes = axes.filter((candidate) => candidate !== axis);
-    const overlapsFace = polyline.some((point) =>
-      otherAxes.every((other) =>
-        point[other] >= box.min[other] - insideTol &&
-        point[other] <= box.max[other] + insideTol,
-      ),
-    );
-    if (!overlapsFace) continue;
-
-    return polyline.map((point) => {
-      const next = point.clone();
-      next[axis] = target;
-      return next;
-    });
-  }
-
-  return null;
-}
-
-function buildLegacyCutRimGuideGeometry(
-  mesh: THREE.Mesh,
-  features: Feature[],
-  sketches: Sketch[],
-  allowCurvedEdges: boolean,
-): THREE.BufferGeometry | null {
-  if (!allowCurvedEdges) return null;
-  const featureId = mesh.userData.featureId as string | undefined;
-  const feature = featureId ? features.find((candidate) => candidate.id === featureId) : undefined;
-  const operation = feature?.params.operation ?? feature?.params.extrudeOperation;
-  if (!feature || feature.type !== "extrude" || operation !== "cut") return null;
-  if (mesh.userData.brepBodyId) return null;
-
-  const sketch = sketches.find((candidate) => candidate.id === feature.sketchId);
-  if (!sketch) return null;
-
-  let distance = (feature.params.distance as number | undefined) ?? 10;
-  let distance2 = (feature.params.distance2 as number | undefined) ?? distance;
-  let startOffset = feature.params.startType === "offset"
-    ? ((feature.params.startOffset as number | undefined) ?? 0)
-    : 0;
-  const direction = (feature.params.direction as "positive" | "negative" | "symmetric" | "two-sides" | undefined) ?? "positive";
-  const taperAngle = (feature.params.taperAngle as number | undefined) ?? 0;
-  const taperAngle2 = (feature.params.taperAngle2 as number | undefined) ?? taperAngle;
-  const overtravel = Math.max(CSG_CUT_OVERTRAVEL_MM, Math.abs(distance) * 1e-4);
-  if (direction === "positive") {
-    startOffset -= overtravel;
-    distance += overtravel * 2;
-  } else if (direction === "negative") {
-    startOffset += overtravel;
-    distance += overtravel * 2;
-  } else if (direction === "symmetric") {
-    distance += overtravel * 2;
-  } else {
-    distance += overtravel;
-    distance2 += Math.max(CSG_CUT_OVERTRAVEL_MM, Math.abs(distance2) * 1e-4);
-  }
-
-  const profileIndices = Array.isArray(feature.params.profileIndices)
-    ? feature.params.profileIndices as number[]
-    : feature.params.profileIndex !== undefined
-      ? [feature.params.profileIndex as number]
-      : [undefined];
-  const bodyBox = new THREE.Box3().setFromBufferAttribute(
-    mesh.geometry.getAttribute("position") as THREE.BufferAttribute,
-  );
-  const positions: number[] = [];
-  const world = mesh.matrixWorld;
-  for (const profileIndex of profileIndices) {
-    const profileSketch = profileIndex !== undefined
-      ? GeometryEngine.createProfileSketch(sketch, profileIndex)
-      : sketch;
-    if (!profileSketch) continue;
-    const topology = extrudeProfileTopology(profileSketch, distance, direction, startOffset, distance2, taperAngle2);
-    for (const edge of topology.edges) {
-      if (!polylineIsCurved(edge.polyline)) continue;
-      const projected = projectClosedLoopToBoxFace(edge.polyline, bodyBox);
-      if (!projected || projected.length < 2) continue;
-      for (let index = 0; index < projected.length - 1; index += 1) {
-        const a = projected[index].clone().applyMatrix4(world);
-        const b = projected[index + 1].clone().applyMatrix4(world);
-        positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
-      }
-    }
-  }
-
-  if (positions.length === 0) return null;
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
-  return geometry;
-}
-
-function appendCircularBoundaryGuidePositions(
-  positions: number[],
-  boundaryEdges: { a: THREE.Vector3; b: THREE.Vector3 }[],
-  world: THREE.Matrix4,
-  bounds: THREE.Box3,
-) {
-  if (boundaryEdges.length < 6) return;
-
-  type Segment = { a: THREE.Vector3; b: THREE.Vector3 };
-  type Bucket = { axis: 0 | 1 | 2; coord: number; segments: Segment[] };
-  type CircleFit = { axis: 0 | 1 | 2; centerA: number; centerB: number; radius: number; score: number };
-
-  const diag = Math.max(bounds.min.distanceTo(bounds.max), 1);
-  const planeTol = Math.max(diag * 2e-3, 1e-4);
-  const radialTol = Math.max(diag * 8e-3, 5e-4);
-  const pointTolSq = planeTol * planeTol;
-  const buckets: Bucket[] = [];
-  const coordAt = (p: THREE.Vector3, axis: 0 | 1 | 2) =>
-    axis === 0 ? p.x : axis === 1 ? p.y : p.z;
-  const project = (p: THREE.Vector3, axis: 0 | 1 | 2): [number, number] => {
-    if (axis === 0) return [p.y, p.z];
-    if (axis === 1) return [p.x, p.z];
-    return [p.x, p.y];
-  };
-
-  for (const edge of boundaryEdges) {
-    let axis: 0 | 1 | 2 = 0;
-    let span = Math.abs(edge.a.x - edge.b.x);
-    const spanY = Math.abs(edge.a.y - edge.b.y);
-    const spanZ = Math.abs(edge.a.z - edge.b.z);
-    if (spanY < span) {
-      axis = 1;
-      span = spanY;
-    }
-    if (spanZ < span) {
-      axis = 2;
-      span = spanZ;
-    }
-    if (span > planeTol) continue;
-    const coord = (coordAt(edge.a, axis) + coordAt(edge.b, axis)) * 0.5;
-    let bucket = buckets.find((candidate) => candidate.axis === axis && Math.abs(candidate.coord - coord) <= planeTol);
-    if (!bucket) {
-      bucket = { axis, coord, segments: [] };
-      buckets.push(bucket);
-    }
-    bucket.segments.push(edge);
-  }
-
-  const fitCircle3 = (
-    p1: [number, number],
-    p2: [number, number],
-    p3: [number, number],
-  ): { centerA: number; centerB: number; radius: number } | null => {
-    const [x1, y1] = p1;
-    const [x2, y2] = p2;
-    const [x3, y3] = p3;
-    const d = 2 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2));
-    if (Math.abs(d) < 1e-9) return null;
-    const x1s = x1 * x1 + y1 * y1;
-    const x2s = x2 * x2 + y2 * y2;
-    const x3s = x3 * x3 + y3 * y3;
-    const centerA = (x1s * (y2 - y3) + x2s * (y3 - y1) + x3s * (y1 - y2)) / d;
-    const centerB = (x1s * (x3 - x2) + x2s * (x1 - x3) + x3s * (x2 - x1)) / d;
-    const radius = Math.hypot(x1 - centerA, y1 - centerB);
-    return Number.isFinite(radius) && radius > radialTol * 2
-      ? { centerA, centerB, radius }
-      : null;
-  };
-
-  for (const bucket of buckets) {
-    const unique: THREE.Vector3[] = [];
-    for (const segment of bucket.segments) {
-      for (const point of [segment.a, segment.b]) {
-        if (!unique.some((candidate) => candidate.distanceToSquared(point) <= pointTolSq)) {
-          unique.push(point);
-        }
-      }
-    }
-    if (unique.length < 6) continue;
-    const points = unique.slice(0, 96);
-    const points2 = points.map((point) => project(point, bucket.axis));
-    let best: CircleFit | null = null;
-    for (let i = 0; i < points2.length - 2; i += 1) {
-      for (let j = i + 1; j < points2.length - 1; j += 1) {
-        for (let k = j + 1; k < points2.length; k += 1) {
-          const fit = fitCircle3(points2[i], points2[j], points2[k]);
-          if (!fit) continue;
-          let score = 0;
-          for (const [a, b] of points2) {
-            if (Math.abs(Math.hypot(a - fit.centerA, b - fit.centerB) - fit.radius) <= radialTol) {
-              score += 1;
-            }
-          }
-          if (score >= 6 && (!best || score > best.score)) {
-            best = { axis: bucket.axis, centerA: fit.centerA, centerB: fit.centerB, radius: fit.radius, score };
-          }
-        }
-      }
-    }
-    if (!best) continue;
-
-    const inlierAngles: number[] = [];
-    for (const [a, b] of points2) {
-      if (Math.abs(Math.hypot(a - best.centerA, b - best.centerB) - best.radius) <= radialTol) {
-        inlierAngles.push(Math.atan2(b - best.centerB, a - best.centerA));
-      }
-    }
-    inlierAngles.sort((a, b) => a - b);
-    if (inlierAngles.length < 6) continue;
-    const gaps = inlierAngles.map((angle, index) => {
-      const next = inlierAngles[(index + 1) % inlierAngles.length];
-      return index + 1 < inlierAngles.length ? next - angle : next + Math.PI * 2 - angle;
-    });
-    if (Math.max(...gaps) > Math.PI * 0.9) continue;
-
-    const pointAt = (angle: number) => {
-      const a = best!.centerA + Math.cos(angle) * best!.radius;
-      const b = best!.centerB + Math.sin(angle) * best!.radius;
-      if (best!.axis === 0) return new THREE.Vector3(bucket.coord, a, b);
-      if (best!.axis === 1) return new THREE.Vector3(a, bucket.coord, b);
-      return new THREE.Vector3(a, b, bucket.coord);
-    };
-    const segments = 96;
-    let previous = pointAt(0).applyMatrix4(world);
-    for (let index = 1; index <= segments; index += 1) {
-      const next = pointAt((index / segments) * Math.PI * 2).applyMatrix4(world);
-      positions.push(previous.x, previous.y, previous.z, next.x, next.y, next.z);
-      previous = next;
-    }
-  }
-}
-
 function buildMergedMeshCreaseGuideGeometry(
   mesh: THREE.Mesh,
+  allowCurvedEdges: boolean,
 ): THREE.BufferGeometry | null {
   const source = mesh.geometry;
   const merged = mergeVertices(source, 1e-4);
@@ -459,6 +210,7 @@ function buildMergedMeshCreaseGuideGeometry(
   const p2 = new THREE.Vector3();
   const n = new THREE.Vector3();
   const q = (v: THREE.Vector3) => `${Math.round(v.x * 10000)},${Math.round(v.y * 10000)},${Math.round(v.z * 10000)}`;
+  type BoundaryEdge = { a: THREE.Vector3; b: THREE.Vector3; keyA: string; keyB: string };
 
   const addEdge = (a: THREE.Vector3, b: THREE.Vector3, normal: THREE.Vector3) => {
     const qa = q(a);
@@ -495,12 +247,64 @@ function buildMergedMeshCreaseGuideGeometry(
   const creaseThreshold = THREE.MathUtils.degToRad(20);
   const positions: number[] = [];
   const world = mesh.matrixWorld;
-  const bounds = new THREE.Box3().setFromBufferAttribute(position);
-  const roundCandidateEdges: { a: THREE.Vector3; b: THREE.Vector3 }[] = [];
+  const boundaryEdges: BoundaryEdge[] = [];
+  const appendSegment = (edge: { a: THREE.Vector3; b: THREE.Vector3 }) => {
+    const a = edge.a.clone().applyMatrix4(world);
+    const b = edge.b.clone().applyMatrix4(world);
+    positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+  };
+  const appendClosedBoundaryLoops = () => {
+    if (!allowCurvedEdges || boundaryEdges.length < 8) return;
+    const incident = new Map<string, number[]>();
+    boundaryEdges.forEach((edge, index) => {
+      const aList = incident.get(edge.keyA) ?? [];
+      aList.push(index);
+      incident.set(edge.keyA, aList);
+      const bList = incident.get(edge.keyB) ?? [];
+      bList.push(index);
+      incident.set(edge.keyB, bList);
+    });
+
+    const visited = new Set<number>();
+    for (let start = 0; start < boundaryEdges.length; start += 1) {
+      if (visited.has(start)) continue;
+      const component: number[] = [];
+      const stack = [start];
+      visited.add(start);
+      while (stack.length > 0) {
+        const index = stack.pop()!;
+        component.push(index);
+        const edge = boundaryEdges[index];
+        for (const key of [edge.keyA, edge.keyB]) {
+          for (const next of incident.get(key) ?? []) {
+            if (visited.has(next)) continue;
+            visited.add(next);
+            stack.push(next);
+          }
+        }
+      }
+      if (component.length < 8) continue;
+      const componentKeys = new Set<string>();
+      for (const index of component) {
+        componentKeys.add(boundaryEdges[index].keyA);
+        componentKeys.add(boundaryEdges[index].keyB);
+      }
+      const mostlyClosed = [...componentKeys].filter((key) => (incident.get(key)?.length ?? 0) === 2).length;
+      if (mostlyClosed < componentKeys.size * 0.85) continue;
+      for (const index of component) {
+        const edge = boundaryEdges[index];
+        const degreeA = incident.get(edge.keyA)?.length ?? 0;
+        const degreeB = incident.get(edge.keyB)?.length ?? 0;
+        if (degreeA !== 2 || degreeB !== 2) continue;
+        appendSegment(edge);
+      }
+    }
+  };
+
   for (const edge of edgeMap.values()) {
     let include = false;
     if (edge.normals.length === 1) {
-      roundCandidateEdges.push({ a: edge.a, b: edge.b });
+      boundaryEdges.push({ a: edge.a, b: edge.b, keyA: q(edge.a), keyB: q(edge.b) });
       continue;
     }
     if (!include) {
@@ -514,12 +318,9 @@ function buildMergedMeshCreaseGuideGeometry(
       }
     }
     if (!include) continue;
-    roundCandidateEdges.push({ a: edge.a, b: edge.b });
-    const a = edge.a.clone().applyMatrix4(world);
-    const b = edge.b.clone().applyMatrix4(world);
-    positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    appendSegment(edge);
   }
-  appendCircularBoundaryGuidePositions(positions, roundCandidateEdges, world, bounds);
+  appendClosedBoundaryLoops();
   merged.dispose();
 
   if (positions.length === 0) return null;
@@ -593,6 +394,15 @@ export default function EdgeOpEdgeHighlight({
         .filter((feature) => feature.visible && !feature.suppressed)
         .map((feature) => `${feature.id}:${feature.timestamp}:${feature.mesh instanceof THREE.Mesh ? feature.mesh.uuid : ''}`)
         .join("|"),
+    [features],
+  );
+  const visibleBodyFeatureIds = useMemo(
+    () =>
+      new Set(
+        features
+          .filter((feature) => feature.visible && !feature.suppressed && feature.type !== "sketch")
+          .map((feature) => feature.id),
+      ),
     [features],
   );
 
@@ -718,14 +528,19 @@ export default function EdgeOpEdgeHighlight({
       _scene.traverse((obj) => {
         if (!(obj instanceof THREE.Mesh) && !(obj as THREE.Mesh).isMesh) return;
         const mesh = obj as THREE.Mesh;
+        if (!mesh.visible) return;
+        const featureId = mesh.userData.featureId as string | undefined;
+        const bodyId = mesh.userData.brepBodyId as string | undefined;
+        if (featureId && !visibleBodyFeatureIds.has(featureId)) return;
+        if (!featureId && !bodyId) return;
         const resolved = resolveMeshOccTessellation(mesh);
+        if (bodyId && !resolved) return;
         const batched = resolved
           ? buildBatchedEdgeLineGeometry(resolved.tess, allowCurvedEdges)
           : null;
         const guideGeometry = batched?.geometry
           ?? mergeGuideGeometries([
-            buildMergedMeshCreaseGuideGeometry(mesh),
-            buildLegacyCutRimGuideGeometry(mesh, features, sketches, allowCurvedEdges),
+            buildMergedMeshCreaseGuideGeometry(mesh, allowCurvedEdges),
             buildMeshTopologyGuideGeometry(mesh, allowCurvedEdges, allowCurvedEdges),
           ]);
         if (!guideGeometry) return;
@@ -737,7 +552,7 @@ export default function EdgeOpEdgeHighlight({
         line.frustumCulled = false;
         line.matrixAutoUpdate = false;
         line.matrix.identity();
-        line.renderOrder = 10000;
+        line.renderOrder = EDGE_GUIDE_RENDER_ORDER;
         _scene.add(line);
         lines.push(line);
       });
@@ -775,10 +590,12 @@ export default function EdgeOpEdgeHighlight({
       }
       allEdgeLinesRef.current = [];
     };
-  }, [enabled, _scene, allEdgesMat, allowCurvedEdges, edgeSourceSignature]);
+  }, [enabled, _scene, allEdgesMat, allowCurvedEdges, edgeSourceSignature, visibleBodyFeatureIds]);
 
   useFrame(({ scene, invalidate }) => {
     if (!enabled) {
+      /* eslint-disable-next-line react-hooks/immutability */
+      allEdgesMat.opacity = 1;
       if (hoverLineRef.current) {
         scene.remove(hoverLineRef.current);
         hoverLineRef.current.geometry.dispose();
@@ -801,7 +618,7 @@ export default function EdgeOpEdgeHighlight({
       return;
     }
 
-    if (occHoverRef.current || selectedLinesRef.current.size > 0 || edgeIds.length > 0) {
+    if (allEdgeLinesRef.current.length > 0 || occHoverRef.current || selectedLinesRef.current.size > 0 || edgeIds.length > 0) {
       invalidate();
     }
 
@@ -820,7 +637,7 @@ export default function EdgeOpEdgeHighlight({
         if (hPts) {
           if (!hoverLineRef.current) {
             const line = new THREE.Line(buildPolylineGeometry(hPts), hoverMat);
-            line.renderOrder = 1401;
+            line.renderOrder = EDGE_HOVER_RENDER_ORDER;
             scene.add(line);
             hoverLineRef.current = line;
           } else {
@@ -849,7 +666,7 @@ export default function EdgeOpEdgeHighlight({
         const edgeData = selectedEdgesDataRef.current.get(id);
         if (edgeData && edgeData.length >= 2) {
           const line = new THREE.Line(buildPolylineGeometry(edgeData), selectedMat);
-          line.renderOrder = 1401;
+          line.renderOrder = EDGE_SELECTED_RENDER_ORDER;
           scene.add(line);
           selectedLinesRef.current.set(id, line);
         }
@@ -857,9 +674,15 @@ export default function EdgeOpEdgeHighlight({
     }
 
     const now = performance.now();
+    if (allEdgeLinesRef.current.length > 0) {
+      allEdgesMat.opacity = 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(now * 0.006));
+    }
     if (hoverLineRef.current) applyLinePulse(hoverLineRef.current, 1, now);
-    const selectedLine = selectedLinesRef.current.values().next().value as THREE.Line | undefined;
-    if (selectedLine) applyLinePulse(selectedLine, 1, now);
+    selectedLinesRef.current.forEach((line) => {
+      const material = line.material as THREE.Material;
+      material.opacity = 0.65 + 0.35 * (0.5 + 0.5 * Math.sin(now * 0.006));
+      material.transparent = true;
+    });
   });
 
   return null;

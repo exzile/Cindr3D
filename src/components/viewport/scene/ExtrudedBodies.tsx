@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -509,7 +509,7 @@ function BodyMesh({
 
 /** React.memo wrapper for BodyMesh — skips re-renders when geometry identity is unchanged.
  *  Internal useComponentStore subscription still fires when selection changes. */
-const BodyMeshMemo = React.memo(BodyMesh, (prev, next) =>
+const BodyMeshMemo = memo(BodyMesh, (prev, next) =>
   prev.geometry === next.geometry &&
   prev.material === next.material &&
   prev.featureId === next.featureId &&

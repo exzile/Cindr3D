@@ -146,6 +146,21 @@ function restoreEdgeMeta(geometry: THREE.BufferGeometry, edgeMeta: SerializedEdg
   if (typeof edgeMeta.topoV === 'number') geometry.userData._topoV = edgeMeta.topoV;
 }
 
+function shouldRebuildExtrudeMeshFromParams(feature: Feature): boolean {
+  if (feature.type !== 'extrude') return false;
+  if (feature.bodyKind === 'surface') return false;
+  const operation =
+    (feature.params.operation as string | undefined) ??
+    (feature.params.extrudeOperation as string | undefined) ??
+    'new-body';
+  if (operation !== 'new-body') return false;
+  if (feature.params.thin === true) return false;
+  return (
+    typeof feature.params.profileIndex === 'number' ||
+    Array.isArray(feature.params.profileIndices)
+  );
+}
+
 export const serializeFeature = (feature: Feature): SerializedFeature => {
   const topCached = serializedFeatureCache.get(feature);
   if (topCached && !feature.mesh) return topCached;
@@ -186,6 +201,11 @@ const REHYDRATED_FEATURE_MATERIAL: THREE.MeshPhysicalMaterial = (() => {
 
 export const deserializeFeature = (feature: Feature): Feature => {
   const serializedFeature = feature as unknown as SerializedFeature;
+  if (shouldRebuildExtrudeMeshFromParams(serializedFeature as unknown as Feature)) {
+    const { _meshData: _ignored, ...rest } = serializedFeature;
+    void _ignored;
+    return { ...(rest as unknown as Feature), mesh: undefined };
+  }
   if (serializedFeature._meshData) {
     const { position, index, normal } = serializedFeature._meshData;
     const geometry = new THREE.BufferGeometry();

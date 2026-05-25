@@ -98,6 +98,20 @@ export function tessellate(
 
 export const tessellateWithInstance = tessellate;
 
+export function tessellateEdgesOnly(
+  oc: OcctRaw,
+  body: BRepBody,
+): BRepTessellation {
+  const tessellation: BRepTessellation = {
+    positions: new Float32Array(),
+    normals: new Float32Array(),
+    faceIds: new Uint32Array(),
+    edgePolylines: buildEdgePolylines(oc, body),
+  };
+  body._tessellation = tessellation;
+  return tessellation;
+}
+
 function performMesh(
   oc: OcctRaw,
   mesher: { Perform: (...args: unknown[]) => void },

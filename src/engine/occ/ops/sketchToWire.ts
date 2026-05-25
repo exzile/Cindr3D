@@ -106,6 +106,8 @@ export function pointLoopToWire(oc: OcctRaw, points: THREE.Vector3[]): any | nul
   const retainedPoints: any[] = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const retainedBuilders: any[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const retainedEdges: any[] = [];
   let keepPolygonMakerAlive = false;
   try {
     for (let i = 0; i < loop.length; i++) {
@@ -117,6 +119,7 @@ export function pointLoopToWire(oc: OcctRaw, points: THREE.Vector3[]): any | nul
 
     if (retainedPoints.length < 3) return null;
     if (retainedPoints.length === 3) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       polygonMaker = new (oc as any).BRepBuilderAPI_MakePolygon_3(
         retainedPoints[0],
         retainedPoints[1],
@@ -124,6 +127,7 @@ export function pointLoopToWire(oc: OcctRaw, points: THREE.Vector3[]): any | nul
         true,
       );
     } else if (retainedPoints.length === 4) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       polygonMaker = new (oc as any).BRepBuilderAPI_MakePolygon_4(
         retainedPoints[0],
         retainedPoints[1],
@@ -132,10 +136,12 @@ export function pointLoopToWire(oc: OcctRaw, points: THREE.Vector3[]): any | nul
         true,
       );
     } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const wireMaker = new (oc as any).BRepBuilderAPI_MakeWire_1();
       retainedBuilders.push(wireMaker);
       for (let i = 0; i < retainedPoints.length; i++) {
         const next = (i + 1) % retainedPoints.length;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const edgeMaker = new (oc as any).BRepBuilderAPI_MakeEdge_3(
           retainedPoints[i],
           retainedPoints[next],
@@ -143,17 +149,15 @@ export function pointLoopToWire(oc: OcctRaw, points: THREE.Vector3[]): any | nul
         retainedBuilders.push(edgeMaker);
         if (!edgeMaker.IsDone()) return null;
         const edge = edgeMaker.Edge();
-        try {
-          wireMaker.Add_1(edge);
-        } finally {
-          safeDeleteOcc(edge);
-        }
+        retainedEdges.push(edge);
+        wireMaker.Add_1(edge);
       }
       if (!wireMaker.IsDone()) return null;
       const wire = wireMaker.Wire();
       keepPolygonMakerAlive = true;
       (wire as { [OCC_OWNED_RESOURCES]?: OccOwnedResource[] })[OCC_OWNED_RESOURCES] = [
         ...retainedBuilders,
+        ...retainedEdges,
         ...retainedPoints,
       ];
       return wire;
@@ -173,6 +177,9 @@ export function pointLoopToWire(oc: OcctRaw, points: THREE.Vector3[]): any | nul
       for (const builder of retainedBuilders) safeDeleteOcc(builder);
     }
     if (!keepPolygonMakerAlive) {
+      for (const edge of retainedEdges) safeDeleteOcc(edge);
+    }
+    if (!keepPolygonMakerAlive) {
       for (const point of retainedPoints) safeDeleteOcc(point);
     }
   }
@@ -187,10 +194,8 @@ export function sketchProfileToWires(
   profile: SketchProfile,
   frame: SketchPlaneFrame,
 ): {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  outerWire: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  holeWires: any[];
+  outerWire: unknown;
+  holeWires: unknown[];
 } | null {
   const toWorld = (uv: THREE.Vector2): THREE.Vector3 =>
     frame.origin.clone()
@@ -211,8 +216,7 @@ export function sketchProfileToWires(
       if (!normalizedHole) return null;
       return pointLoopToWire(oc, orientLoop2D(normalizedHole, !outerClockwise).map(toWorld));
     })
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .filter((w): w is any => w !== null);
+    .filter((w): w is unknown => w !== null);
 
   return { outerWire, holeWires };
 }
@@ -221,13 +225,12 @@ export function sketchProfileToWires(
  * Build a TopoDS_Face from outer wire + optional hole wires.
  * Caller owns cleanup of the returned face.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function wireToFace(
   oc: OcctRaw,
-  outerWire: any,
-  holeWires: any[],
+  outerWire: unknown,
+  holeWires: unknown[],
   frame?: SketchPlaneFrame,
-): any | null {
+): unknown | null {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const occ = oc as any;
   const planePoint = frame ? new occ.gp_Pnt_3(frame.origin.x, frame.origin.y, frame.origin.z) : null;
