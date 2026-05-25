@@ -120,7 +120,9 @@
       "Bash(cd /mnt/c/Users/joeyp/source/repos/exzile/DesignCAD && npx tsc -b --noEmit 2>&1 | head -60)",
       "Bash(del \"C:\\\\Users\\\\joeyp\\\\source\\\\repos\\\\exzile\\\\DesignCAD\\\\src\\\\workers\\\\csgWorker.ts\")",
       "Bash(del \"C:\\\\Users\\\\joeyp\\\\source\\\\repos\\\\exzile\\\\DesignCAD\\\\src\\\\workers\\\\csgWorkerPool.ts\")",
-      "Bash(node -e \"const p = require\\('./node_modules/zustand/package.json'\\); console.log\\(p.version\\)\")"
+      "Bash(node -e \"const p = require\\('./node_modules/zustand/package.json'\\); console.log\\(p.version\\)\")",
+      "Bash(git log *)",
+      "Bash(cd \"C:\\\\Users\\\\joeyp\\\\source\\\\repos\\\\exzile\\\\DesignCAD\" && git show HEAD:src/store/cad/slices/featureManagement/featureMeshActions.ts > /tmp/featureMeshActions_orig.ts && wc -l /tmp/featureMeshActions_orig.ts)"
     ]
   }
 }

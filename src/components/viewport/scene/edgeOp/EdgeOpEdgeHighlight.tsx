@@ -28,6 +28,7 @@ interface EdgeOpEdgeHighlightProps {
 const EDGE_GUIDE_RENDER_ORDER = 1398;
 const EDGE_HOVER_RENDER_ORDER = 1402;
 const EDGE_SELECTED_RENDER_ORDER = 1403;
+const _guideOffset = new THREE.Vector3();
 
 function occEdgeId(result: OccEdgePickResult): string {
   return `occ:${result.bodyId}:${result.edgeId}`;
@@ -93,8 +94,10 @@ function buildBatchedEdgeLineGeometry(
 ): { geometry: THREE.BufferGeometry; edgeIdsBySegment: number[] } | null {
   const positions: number[] = [];
   const edgeIdsBySegment: number[] = [];
+  const syntheticEdgeIds = detectSyntheticGeneratorEdges(tess);
 
   for (const [edgeId, polyline] of tess.edgePolylines) {
+    if (syntheticEdgeIds.has(edgeId)) continue;
     if (!allowCurvedEdges && polylineIsCurved(polyline)) continue;
     const pointCount = polyline.length / 3;
     if (pointCount < 2) continue;
@@ -119,6 +122,124 @@ function buildBatchedEdgeLineGeometry(
   return { geometry, edgeIdsBySegment };
 }
 
+type StraightEdgeInfo = {
+  edgeId: number | string;
+  center: THREE.Vector3;
+  length: number;
+  direction: THREE.Vector3;
+};
+
+function canonicalDirection(direction: THREE.Vector3): THREE.Vector3 {
+  const out = direction.clone().normalize();
+  if (
+    out.x < -1e-6 ||
+    (Math.abs(out.x) <= 1e-6 && out.y < -1e-6) ||
+    (Math.abs(out.x) <= 1e-6 && Math.abs(out.y) <= 1e-6 && out.z < -1e-6)
+  ) {
+    out.multiplyScalar(-1);
+  }
+  return out;
+}
+
+function straightEdgeInfo(edgeId: number | string, polyline: Float32Array): StraightEdgeInfo | null {
+  const pointCount = polyline.length / 3;
+  if (pointCount < 2) return null;
+  const first = new THREE.Vector3(polyline[0], polyline[1], polyline[2]);
+  const last = new THREE.Vector3(
+    polyline[(pointCount - 1) * 3],
+    polyline[(pointCount - 1) * 3 + 1],
+    polyline[(pointCount - 1) * 3 + 2],
+  );
+  const delta = last.clone().sub(first);
+  const length = delta.length();
+  if (length < 1e-5) return null;
+  const direction = delta.clone().normalize();
+  const maxDeviation = Math.max(length * 0.0075, 1e-4);
+  for (let index = 1; index < pointCount - 1; index += 1) {
+    const point = new THREE.Vector3(polyline[index * 3], polyline[index * 3 + 1], polyline[index * 3 + 2]);
+    const offset = point.clone().sub(first);
+    const projected = first.clone().addScaledVector(direction, offset.dot(direction));
+    if (point.distanceTo(projected) > maxDeviation) return null;
+  }
+  return {
+    edgeId,
+    center: first.add(last).multiplyScalar(0.5),
+    length,
+    direction: canonicalDirection(direction),
+  };
+}
+
+function straightVectorEdgeInfo(edgeId: string, polyline: THREE.Vector3[]): StraightEdgeInfo | null {
+  if (polyline.length < 2) return null;
+  const first = polyline[0];
+  const last = polyline[polyline.length - 1];
+  const delta = last.clone().sub(first);
+  const length = delta.length();
+  if (length < 1e-5) return null;
+  const direction = delta.clone().normalize();
+  const maxDeviation = Math.max(length * 0.0075, 1e-4);
+  for (let index = 1; index < polyline.length - 1; index += 1) {
+    const point = polyline[index];
+    const offset = point.clone().sub(first);
+    const projected = first.clone().addScaledVector(direction, offset.dot(direction));
+    if (point.distanceTo(projected) > maxDeviation) return null;
+  }
+  return {
+    edgeId,
+    center: first.clone().add(last).multiplyScalar(0.5),
+    length,
+    direction: canonicalDirection(direction),
+  };
+}
+
+function straightEdgeGroupKey(info: StraightEdgeInfo): string {
+  const dir = info.direction;
+  const quantizedLength = Math.round(info.length * 1000);
+  return [
+    Math.round(dir.x * 100),
+    Math.round(dir.y * 100),
+    Math.round(dir.z * 100),
+    quantizedLength,
+  ].join(":");
+}
+
+function detectSyntheticEdgeInfos(infos: StraightEdgeInfo[]): Set<number | string> {
+  const groups = new Map<string, StraightEdgeInfo[]>();
+  for (const info of infos) {
+    const key = straightEdgeGroupKey(info);
+    const group = groups.get(key) ?? [];
+    group.push(info);
+    groups.set(key, group);
+  }
+
+  const hidden = new Set<number | string>();
+  for (const group of groups.values()) {
+    if (group.length < 9) continue;
+
+    // Many same-length, same-direction straight OCC edges are usually ruled
+    // surface generator strips from cylindrical/lofted faces. They are not
+    // fillet/chamfer targets; the selectable edges are the boundary loops.
+    for (const info of group) hidden.add(info.edgeId);
+  }
+  return hidden;
+}
+
+function detectSyntheticGeneratorEdges(tess: BRepTessellation): Set<number | string> {
+  const infos: StraightEdgeInfo[] = [];
+  for (const [edgeId, polyline] of tess.edgePolylines) {
+    const info = straightEdgeInfo(edgeId, polyline);
+    if (info) infos.push(info);
+  }
+  return detectSyntheticEdgeInfos(infos);
+}
+
+function detectSyntheticTopologyEdges(topology: BodyTopology): Set<number | string> {
+  const infos = topology.edges
+    .map((edge) => straightVectorEdgeInfo(edge.id, edge.polyline))
+    .filter((info): info is StraightEdgeInfo => !!info);
+  return detectSyntheticEdgeInfos(infos);
+}
+
 function buildMeshTopologyGuideGeometry(
   mesh: THREE.Mesh,
   allowCurvedEdges: boolean,
@@ -131,7 +252,9 @@ function buildMeshTopologyGuideGeometry(
   const b = new THREE.Vector3();
 
   if (!topology?.edges?.length) return null;
+  const syntheticEdgeIds = detectSyntheticTopologyEdges(topology);
   for (const edge of topology.edges) {
+    if (syntheticEdgeIds.has(edge.id)) continue;
     const curved = polylineIsCurved(edge.polyline);
     if (curvedOnly && !curved) continue;
     if (!allowCurvedEdges && curved) continue;
@@ -143,48 +266,6 @@ function buildMeshTopologyGuideGeometry(
     }
   }
 
-  if (positions.length === 0) return null;
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
-  return geometry;
-}
-
-function appendGuideGeometryPositions(
-  target: number[],
-  seen: Set<string>,
-  geometry: THREE.BufferGeometry | null,
-) {
-  if (!geometry) return;
-  const position = geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
-  if (!position || position.count < 2) return;
-
-  const keyFor = (ax: number, ay: number, az: number, bx: number, by: number, bz: number) => {
-    const a = `${Math.round(ax * 10000)},${Math.round(ay * 10000)},${Math.round(az * 10000)}`;
-    const b = `${Math.round(bx * 10000)},${Math.round(by * 10000)},${Math.round(bz * 10000)}`;
-    return a < b ? `${a}|${b}` : `${b}|${a}`;
-  };
-
-  for (let index = 0; index + 1 < position.count; index += 2) {
-    const ax = position.getX(index);
-    const ay = position.getY(index);
-    const az = position.getZ(index);
-    const bx = position.getX(index + 1);
-    const by = position.getY(index + 1);
-    const bz = position.getZ(index + 1);
-    const key = keyFor(ax, ay, az, bx, by, bz);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    target.push(ax, ay, az, bx, by, bz);
-  }
-}
-
-function mergeGuideGeometries(geometries: (THREE.BufferGeometry | null)[]): THREE.BufferGeometry | null {
-  const positions: number[] = [];
-  const seen = new Set<string>();
-  for (const geometry of geometries) {
-    appendGuideGeometryPositions(positions, seen, geometry);
-    geometry?.dispose();
-  }
   if (positions.length === 0) return null;
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
@@ -365,6 +446,18 @@ export default function EdgeOpEdgeHighlight({
         color: 0xff6a00,
         transparent: true,
         opacity: 1,
+        depthTest: true,
+        depthWrite: false,
+        toneMapped: false,
+      }),
+    [],
+  );
+  const pickEdgesMat = useMemo(
+    () =>
+      new THREE.LineBasicMaterial({
+        color: 0xff6a00,
+        transparent: true,
+        opacity: 0,
         depthTest: false,
         depthWrite: false,
         toneMapped: false,
@@ -375,6 +468,7 @@ export default function EdgeOpEdgeHighlight({
   useEffect(() => () => hoverMat.dispose(), [hoverMat]);
   useEffect(() => () => selectedMat.dispose(), [selectedMat]);
   useEffect(() => () => allEdgesMat.dispose(), [allEdgesMat]);
+  useEffect(() => () => pickEdgesMat.dispose(), [pickEdgesMat]);
 
   const allEdgeLinesRef = useRef<THREE.LineSegments[]>([]);
   const hoverLineRef = useRef<THREE.Line | null>(null);
@@ -384,7 +478,7 @@ export default function EdgeOpEdgeHighlight({
   const selectedEdgesDataRef = useRef<Map<string, THREE.Vector3[]>>(new Map());
   const lastMigrationKeyRef = useRef<string | null>(null);
   const cursorOnRef = useRef(false);
-  const { scene: _scene, gl } = useThree();
+  const { scene: _scene, gl, camera } = useThree();
   const features = useCADStore((state) => state.features);
   const sketches = useCADStore((state) => state.sketches);
 
@@ -538,23 +632,28 @@ export default function EdgeOpEdgeHighlight({
         const batched = resolved
           ? buildBatchedEdgeLineGeometry(resolved.tess, allowCurvedEdges)
           : null;
-        const guideGeometry = batched?.geometry
-          ?? mergeGuideGeometries([
-            buildMergedMeshCreaseGuideGeometry(mesh, allowCurvedEdges),
-            buildMeshTopologyGuideGeometry(mesh, allowCurvedEdges, allowCurvedEdges),
-          ]);
-        if (!guideGeometry) return;
-        const line = new THREE.LineSegments(guideGeometry, allEdgesMat);
-        if (batched && resolved) {
-          line.userData.edgeIdsBySegment = batched.edgeIdsBySegment;
-          line.userData.brepBodyId = resolved.bodyId;
+        const topologyGuideGeometry = buildMeshTopologyGuideGeometry(mesh, allowCurvedEdges);
+        const fallbackGuideGeometry =
+          topologyGuideGeometry ?? (!resolved ? buildMergedMeshCreaseGuideGeometry(mesh, allowCurvedEdges) : null);
+        if (!batched && !fallbackGuideGeometry) return;
+        if (batched) {
+          const pickLine = new THREE.LineSegments(batched.geometry, pickEdgesMat);
+          pickLine.userData.edgeIdsBySegment = batched.edgeIdsBySegment;
+          pickLine.userData.brepBodyId = resolved!.bodyId;
+          pickLine.frustumCulled = false;
+          pickLine.matrixAutoUpdate = true;
+          pickLine.renderOrder = EDGE_GUIDE_RENDER_ORDER;
+          _scene.add(pickLine);
+          lines.push(pickLine);
         }
-        line.frustumCulled = false;
-        line.matrixAutoUpdate = false;
-        line.matrix.identity();
-        line.renderOrder = EDGE_GUIDE_RENDER_ORDER;
-        _scene.add(line);
-        lines.push(line);
+        if (fallbackGuideGeometry) {
+          const guideLine = new THREE.LineSegments(fallbackGuideGeometry, allEdgesMat);
+          guideLine.frustumCulled = false;
+          guideLine.matrixAutoUpdate = true;
+          guideLine.renderOrder = EDGE_GUIDE_RENDER_ORDER;
+          _scene.add(guideLine);
+          lines.push(guideLine);
+        }
       });
       allEdgeLinesRef.current = lines;
       invalidateFrame();
@@ -590,7 +689,7 @@ export default function EdgeOpEdgeHighlight({
       }
       allEdgeLinesRef.current = [];
     };
-  }, [enabled, _scene, allEdgesMat, allowCurvedEdges, edgeSourceSignature, visibleBodyFeatureIds]);
+  }, [enabled, _scene, allEdgesMat, pickEdgesMat, allowCurvedEdges, edgeSourceSignature, visibleBodyFeatureIds]);
 
   useFrame(({ scene, invalidate }) => {
     if (!enabled) {
@@ -620,6 +719,11 @@ export default function EdgeOpEdgeHighlight({
 
     if (allEdgeLinesRef.current.length > 0 || occHoverRef.current || selectedLinesRef.current.size > 0 || edgeIds.length > 0) {
       invalidate();
+    }
+
+    const guideOffset = camera.getWorldDirection(_guideOffset).multiplyScalar(-0.12);
+    for (const line of allEdgeLinesRef.current) {
+      line.position.copy(guideOffset);
     }
 
     const wantCursor = !!occHoverRef.current;

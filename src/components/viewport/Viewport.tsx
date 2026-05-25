@@ -106,6 +106,7 @@ export default function Viewport() {
   const activeDialog = useCADStore((s) => s.activeDialog);
   const setCameraTargetQuaternion = useCADStore((s) => s.setCameraTargetQuaternion);
   const themeColors = useThemeStore((s) => s.colors);
+  const edgeOperationActive = activeDialog === 'fillet' || activeDialog === 'chamfer';
 
   // D204/D205 — Window & Lasso selection
   // D207
@@ -231,11 +232,15 @@ export default function Viewport() {
         <SketchPlaneSelector />
 
         {/* CAD Content */}
-        <SketchRenderer />
-        <SketchConstraintOverlay />
-        <SketchDimensionAnnotations />
-        <SketchDimensionPreview />
-        <SketchSplineHandles />
+        {!edgeOperationActive && (
+          <>
+            <SketchRenderer />
+            <SketchConstraintOverlay />
+            <SketchDimensionAnnotations />
+            <SketchDimensionPreview />
+            <SketchSplineHandles />
+          </>
+        )}
         <ExtrudedBodies />
         <PrimitiveBodies />
         <FastenerBodies />
