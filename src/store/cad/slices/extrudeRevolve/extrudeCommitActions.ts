@@ -29,10 +29,8 @@ import { errorMessage } from '../../../../utils/errorHandling';
 import { csgSubtract } from '../../../../engine/geometryEngine/core/solid/csg';
 import { extrudeProfileTopology } from '../../../../engine/geometryEngine/core/solid/profileTopology';
 import type { BodyTopology } from '../../../../engine/geometryEngine/core/solid/edgeTypes';
-import { OCC_PROFILE_POINT_COUNT } from '../../../../utils/occConstants';
+import { OCC_PROFILE_POINT_COUNT, OCC_BOOLEAN_VERSION } from '../../../../utils/occConstants';
 import { sketchEntitiesToWire, wiresToFace } from '../../../../engine/occ/sketchEntityToWire';
-
-const OCC_BOOLEAN_RESULT_VERSION = 2;
 
 // Scratch Box3 instances reused across the existingSolids overlap loop in commitExtrude.
 // Safe because the loop is synchronous; no await can interleave while these are live.
@@ -633,6 +631,9 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
                   .filter((pts) => pts.length >= 3),
               };
               const frame = createOccPlaneFrameFromSketch(sketchForOp);
+              if (extrudeStartType === 'offset' && Math.abs(extrudeStartOffset) > 0.001) {
+                frame.origin.addScaledVector(frame.normal, extrudeStartOffset);
+              }
 
               // Compute OCC extrude distance: symmetric needs full height (2 * per-side).
               let occDistance: number;
@@ -656,6 +657,7 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
                 symmetric: occSymmetric,
                 twoSideDist: occTwoSideDist,
                 taperAngle: Math.abs(extrudeTaperAngle) > 0.001 ? extrudeTaperAngle : undefined,
+                taperAngle2: Math.abs(extrudeTaperAngle2 ?? 0) > 0.001 ? extrudeTaperAngle2 : undefined,
               });
 
               featureMesh = createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, featureId);
@@ -699,6 +701,9 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
                     .filter((pts) => pts.length >= 3),
                 };
                 const frame = createOccPlaneFrameFromSketch(sketchForOp);
+                if (extrudeStartType === 'offset' && Math.abs(extrudeStartOffset) > 0.001) {
+                  frame.origin.addScaledVector(frame.normal, extrudeStartOffset);
+                }
                 let occDistance: number;
                 let occSymmetric = false;
                 let occTwoSideDist: number | undefined;
@@ -719,6 +724,7 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
                   symmetric: occSymmetric,
                   twoSideDist: occTwoSideDist,
                   taperAngle: Math.abs(extrudeTaperAngle) > 0.001 ? extrudeTaperAngle : undefined,
+                  taperAngle2: Math.abs(extrudeTaperAngle2 ?? 0) > 0.001 ? extrudeTaperAngle2 : undefined,
                 });
                 try {
                   const targetMesh = occTarget.mesh as THREE.Mesh;
@@ -1023,7 +1029,7 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
           ...(extraBodyIds.length > 0 ? { extraBodyIds } : {}),
           direction: committedDirection,
           operation: effectiveOperation,
-          ...(occBooleanResolved && !csgBooleanFallbackResolved ? { occBooleanVersion: OCC_BOOLEAN_RESULT_VERSION } : {}),
+          ...(occBooleanResolved && !csgBooleanFallbackResolved ? { occBooleanVersion: OCC_BOOLEAN_VERSION } : {}),
           ...(csgBooleanFallbackResolved ? { csgBooleanFallbackVersion: CSG_BOOLEAN_FALLBACK_VERSION } : {}),
           thin: extrudeThinEnabled,
           thinThickness: extrudeThinThickness,

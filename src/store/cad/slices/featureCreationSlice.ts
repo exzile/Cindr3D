@@ -97,8 +97,10 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
     // OCC path: build an exact BRep solid sweep for non-surface, new-body solids.
     // Uses sketchEntitiesToWire for the path so open paths (lines/arcs) are handled
     // correctly — sketchProfileToWires would wrongly close an open path.
+    // Skip OCC when twistAngle is set: BRepOffsetAPI_MakePipeShell has no twist-angle
+    // binding in the current WASM build; fall through to the CSG path which handles it.
     let mesh: THREE.Mesh | null = null;
-    if (sweepBodyKind === 'solid') {
+    if (sweepBodyKind === 'solid' && Math.abs(sweepTwistAngle ?? 0) < 0.001) {
       const occ = getOccSync();
       if (occ) {
         try {

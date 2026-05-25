@@ -33,8 +33,11 @@ export interface OccExtrudeOptions {
   symmetric?: boolean;
   /** When set, also extrude in the opposite direction by this distance and union. */
   twoSideDist?: number;
-  /** Draft/taper angle in degrees. Positive = outward, negative = inward. */
+  /** Draft/taper angle in degrees for the primary (side-1) extrusion. Positive = outward, negative = inward. */
   taperAngle?: number;
+  /** Draft/taper angle in degrees for the secondary (side-2) extrusion when using two-sided extrude.
+   *  Falls back to taperAngle when not specified. */
+  taperAngle2?: number;
 }
 
 export interface OccExtrudedShape {
@@ -82,7 +85,6 @@ export function occExtrudeShapeWithInstance(
   frame: OccPlaneFrame,
   options: OccExtrudeOptions = {},
 ): OccExtrudedShape {
-  const occ = oc as OccExtrudeApi;
   const wires = sketchProfileToWires(oc, profile, frame);
   if (!wires) throw new Error('[occExtrude] failed to build wires from profile');
 
@@ -122,60 +124,20 @@ export function occExtrudeFaceShapeWithInstance(
     (face as { delete?: () => void }).delete?.();
   }
 
-  const extDir = new oc.gp_Vec_4(
-    dir.x * distance,
-    dir.y * distance,
-    dir.z * distance,
-  );
-
-  const prism = new occ.BRepPrimAPI_MakePrism_1(startFace, extDir, true, true);
-  let resultShape: unknown;
-  try {
-    prism.Build();
-    resultShape = prism.Shape();
-  } catch (error) {
-    prism.delete();
-    throw error;
-  } finally {
-    extDir.delete();
-  }
-  ownedResources.push(prism);
-
-  // Two-sided: extrude in the negative direction by twoSideDist and fuse
-  if (options.twoSideDist !== undefined && options.twoSideDist > 0 && !options.symmetric) {
-    const negDir = new occ.gp_Vec_4(-dir.x * options.twoSideDist, -dir.y * options.twoSideDist, -dir.z * options.twoSideDist);
-    const prism2 = new occ.BRepPrimAPI_MakePrism_1(startFace, negDir, true, true);
-    let side2Shape: unknown;
-    try {
-      prism2.Build();
-      side2Shape = prism2.Shape();
-    } finally {
-      prism2.delete();
-      negDir.delete();
-    }
-    const fuse = new occ.BRepAlgoAPI_Fuse_3(resultShape, side2Shape);
-    fuse.SetNonDestructive?.(true);
-    fuse.Build();
-    if (fuse.IsDone?.() !== false && !fuse.HasErrors?.()) {
-      resultShape = fuse.Shape();
-    }
-    fuse.delete();
-    // BRepAlgoAPI_Fuse takes shapes by reference (not ownership) — delete side2Shape ourselves
-    (side2Shape as { delete?: () => void }).delete?.();
-  }
-
-  if (options.taperAngle !== undefined && Math.abs(options.taperAngle) > 0.001) {
-    const taperRad = THREE.MathUtils.degToRad(options.taperAngle);
-    const drafter = new occ.BRepOffsetAPI_DraftAngle_1(resultShape);
+  /** Apply BRepOffsetAPI_DraftAngle to a shape along `dir` with neutral plane at frame.origin. */
+  function applyDraftAngle(shape: unknown, taperDeg: number, neutralOrigin: THREE.Vector3): unknown {
+    if (Math.abs(taperDeg) <= 0.001) return shape;
+    const taperRad = THREE.MathUtils.degToRad(taperDeg);
+    const drafter = new occ.BRepOffsetAPI_DraftAngle_1(shape);
     const pullDir = new occ.gp_Dir_4(dir.x, dir.y, dir.z);
-    const planePnt = new occ.gp_Pnt_3(frame.origin.x, frame.origin.y, frame.origin.z);
+    const planePnt = new occ.gp_Pnt_3(neutralOrigin.x, neutralOrigin.y, neutralOrigin.z);
     const planeNrm = new occ.gp_Dir_4(dir.x, dir.y, dir.z);
     const neutralPlane = new occ.gp_Pln_3(planePnt, planeNrm);
 
     const allFaces: unknown[] = [];
     const lateralIndices: number[] = [];
     const explorer = new occ.TopExp_Explorer_2(
-      resultShape,
+      shape,
       occ.TopAbs_ShapeEnum.TopAbs_FACE,
       occ.TopAbs_ShapeEnum.TopAbs_SHAPE,
     );
@@ -212,6 +174,7 @@ export function occExtrudeFaceShapeWithInstance(
       try { drafter.Add(allFaces[idx], pullDir, taperRad, neutralPlane); addedAny = true; } catch { /* skip face */ }
     }
 
+    let resultShape = shape;
     if (addedAny) {
       const draftProg = new occ.Message_ProgressRange_1();
       try {
@@ -234,7 +197,85 @@ export function occExtrudeFaceShapeWithInstance(
     planeNrm.delete();
     planePnt.delete();
     pullDir.delete();
+    return resultShape;
   }
+
+  const extDir = new oc.gp_Vec_4(
+    dir.x * distance,
+    dir.y * distance,
+    dir.z * distance,
+  );
+
+  const prism = new occ.BRepPrimAPI_MakePrism_1(startFace, extDir, true, true);
+  let resultShape: unknown;
+  try {
+    prism.Build();
+    resultShape = prism.Shape();
+  } catch (error) {
+    prism.delete();
+    throw error;
+  } finally {
+    extDir.delete();
+  }
+  ownedResources.push(prism);
+
+  // Two-sided: extrude in the negative direction by twoSideDist and fuse.
+  // When taperAngle2 differs from taperAngle, apply taper separately per-side before fusing
+  // so each side uses its own draft angle.
+  if (options.twoSideDist !== undefined && options.twoSideDist > 0 && !options.symmetric) {
+    const negDir = new occ.gp_Vec_4(-dir.x * options.twoSideDist, -dir.y * options.twoSideDist, -dir.z * options.twoSideDist);
+    const prism2 = new occ.BRepPrimAPI_MakePrism_1(startFace, negDir, true, true);
+    let side2Shape: unknown;
+    try {
+      prism2.Build();
+      side2Shape = prism2.Shape();
+    } finally {
+      prism2.delete();
+      negDir.delete();
+    }
+
+    const ta1 = options.taperAngle ?? 0;
+    const ta2 = options.taperAngle2 ?? ta1;
+    const tapersDiffer = Math.abs(ta1 - ta2) > 0.001;
+
+    if (tapersDiffer) {
+      // Apply taper per-side before fusing; side-2 neutral plane is offset by -twoSideDist along normal
+      const side2Origin = frame.origin.clone().addScaledVector(dir, -options.twoSideDist);
+      resultShape = applyDraftAngle(resultShape, ta1, frame.origin);
+      side2Shape = applyDraftAngle(side2Shape, ta2, side2Origin);
+    }
+
+    const fuse = new occ.BRepAlgoAPI_Fuse_3(resultShape, side2Shape);
+    fuse.SetNonDestructive?.(true);
+    fuse.Build();
+    if (fuse.IsDone?.() !== false && !fuse.HasErrors?.()) {
+      resultShape = fuse.Shape();
+    }
+    fuse.delete();
+    // BRepAlgoAPI_Fuse takes shapes by reference (not ownership) — delete side2Shape ourselves
+    (side2Shape as { delete?: () => void }).delete?.();
+
+    if (tapersDiffer) {
+      // Taper already applied per-side; skip the unified pass below
+      (startFace as { delete?: () => void }).delete?.();
+      for (const resource of profileResources) {
+        try { resource.delete?.(); } catch { /* already freed */ }
+      }
+      return {
+        shape: resultShape,
+        ownedResources,
+        dispose() {
+          (resultShape as { delete?: () => void }).delete?.();
+          for (const resource of ownedResources) {
+            try { resource.delete?.(); } catch { /* already freed */ }
+          }
+        },
+      };
+    }
+  }
+
+  // Single taper applied to the (possibly already fused) shape
+  resultShape = applyDraftAngle(resultShape, options.taperAngle ?? 0, frame.origin);
 
   (startFace as { delete?: () => void }).delete?.();
   for (const resource of profileResources) {
