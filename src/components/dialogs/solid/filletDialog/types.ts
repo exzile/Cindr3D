@@ -26,5 +26,10 @@ export interface FilletParams {
   tangencyWeight?: number;
   isRollingBallCorner: boolean;
   edgeSets?: FilletEdgeSet[];
+  // Full-round fillet face IDs (persisted to feature params for replay)
+  centerOccBodyId?: string;
+  centerOccFaceId?: number;
+  side1OccFaceId?: number;
+  side2OccFaceId?: number;
 }
 

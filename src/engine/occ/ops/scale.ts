@@ -54,6 +54,8 @@ export function occScaleWithInstance(
   } catch (e) {
     console.warn('[occScale] failed:', e);
     return null;
+  } finally {
+    rawShape.delete?.();
   }
 }
 
@@ -66,13 +68,14 @@ function uniformScale(
 ): BRepBody | null {
   const occOrigin = new occ.gp_Pnt_3(origin.x, origin.y, origin.z);
   const trsf = new occ.gp_Trsf_1();
+  let transformer: InstanceType<OccScaleApi['BRepBuilderAPI_Transform_2']> | null = null;
   try {
     trsf.SetScale(occOrigin, factor);
-    const transformer = new occ.BRepBuilderAPI_Transform_2(rawShape, trsf, true);
+    transformer = new occ.BRepBuilderAPI_Transform_2(rawShape, trsf, true);
     const resultShape = transformer.Shape();
-    transformer.delete();
     return makeBRepBodyFromOccShape(occ as unknown as OcctRaw, resultShape, options);
   } finally {
+    transformer?.delete();
     trsf.delete();
     occOrigin.delete();
   }
@@ -86,18 +89,18 @@ function nonUniformScale(
 ): BRepBody | null {
   const mat = new occ.gp_Mat_1();
   const gTrsf = new occ.gp_GTrsf_1();
+  let transformer: InstanceType<OccScaleApi['BRepBuilderAPI_GTransform_2']> | null = null;
   try {
     mat.SetDiag(scale.x, scale.y, scale.z);
     gTrsf.SetVectorialPart(mat);
-    const transformer = new occ.BRepBuilderAPI_GTransform_2(rawShape, gTrsf, true);
+    transformer = new occ.BRepBuilderAPI_GTransform_2(rawShape, gTrsf, true);
     if (!transformer.IsDone()) {
-      transformer.delete();
       return null;
     }
     const resultShape = transformer.Shape();
-    transformer.delete();
     return makeBRepBodyFromOccShape(occ as unknown as OcctRaw, resultShape, options);
   } finally {
+    transformer?.delete();
     gTrsf.delete();
     mat.delete();
   }

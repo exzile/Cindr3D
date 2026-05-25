@@ -59,6 +59,12 @@ export interface ComponentStore {
   setBodyOpacity: (id: string, opacity: number) => void;
   toggleBodySelectable: (id: string) => void;
   mirrorBody: (bodyId: string, plane: 'XY' | 'XZ' | 'YZ') => string | null;
+  copyBody: (bodyId: string) => string | null;
+  createComponentFromBody: (bodyId: string) => string | null;
+  clipboardBodyId: string | null;
+  setClipboardBody: (bodyId: string | null) => void;
+  pasteBody: () => string | null;
+  setBodyDeflectionOverride: (bodyId: string, deflection: number | undefined) => void;
 
   addConstruction: (geometry: Omit<ConstructionGeometry, 'id'>) => string;
   removeConstruction: (id: string) => void;

@@ -22,6 +22,7 @@ export interface BRepBody {
   sourceFeatureId?: string;
   mesh?: THREE.BufferGeometry;
   _tessellation?: BRepTessellation;
+  ownedResources?: Array<{ delete?: () => void }>;
   dispose(): void;
 }
 
@@ -35,11 +36,19 @@ export interface CreateBRepBodyOptions {
   sourceFeatureId?: string;
   mesh?: THREE.BufferGeometry;
   tessellation?: BRepTessellation;
+  ownedResources?: Array<{ delete?: () => void }>;
 }
 
 /** Reconstruct a typed OCC object from an OccHandle's raw pointer. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function occDeref(oc: OcctRaw, handle: OccHandle, ctor: any): any {
+  if (typeof oc.wrapPointer !== 'function') {
+    const object = handle.deref();
+    if (!object) {
+      throw new Error(`Cannot dereference disposed OCC handle ${handle.type}:${handle.ptr}`);
+    }
+    return object;
+  }
   return oc.wrapPointer(handle.ptr, ctor);
 }
 
@@ -53,58 +62,45 @@ export function occDeref(oc: OcctRaw, handle: OccHandle, ctor: any): any {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function makeBRepBodyFromOccShape(oc: OcctRaw, rawShape: any, options: Omit<CreateBRepBodyOptions, 'shape' | 'faceIds' | 'edgeIds' | 'vertexIds'> = {}): BRepBody {
   const shapeHandle = occWrap(rawShape, 'TopoDS_Shape');
-
-  // Walk faces
   const faceHandles: OccHandle[] = [];
-  {
-    const explorer = new oc.TopExp_Explorer_2(rawShape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
-    while (explorer.More()) {
-      const s = explorer.Current();
-      const face = oc.TopoDS.Face_1(s);
-      s.delete();
-      faceHandles.push(occWrap(face, 'TopoDS_Face'));
-      explorer.Next();
-    }
-    explorer.delete();
-  }
-
-  // Walk edges
   const edgeHandles: OccHandle[] = [];
-  {
-    const explorer = new oc.TopExp_Explorer_2(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
-    while (explorer.More()) {
-      const s = explorer.Current();
-      const edge = oc.TopoDS.Edge_1(s);
-      s.delete();
-      edgeHandles.push(occWrap(edge, 'TopoDS_Edge'));
-      explorer.Next();
-    }
-    explorer.delete();
-  }
-
-  // Walk vertices
   const vertexHandles: OccHandle[] = [];
-  {
-    const explorer = new oc.TopExp_Explorer_2(rawShape, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
-    while (explorer.More()) {
-      const s = explorer.Current();
-      const vertex = oc.TopoDS.Vertex_1(s);
-      s.delete();
+
+  try {
+    // Walk faces
+    collectTopologyHandles(oc, rawShape, oc.TopAbs_ShapeEnum.TopAbs_FACE, (shape) => {
+      const face = oc.TopoDS.Face_1(shape);
+      faceHandles.push(occWrap(face, 'TopoDS_Face'));
+    });
+
+    // Walk edges
+    collectTopologyHandles(oc, rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, (shape) => {
+      const edge = oc.TopoDS.Edge_1(shape);
+      edgeHandles.push(occWrap(edge, 'TopoDS_Edge'));
+    });
+
+    // Walk vertices
+    collectTopologyHandles(oc, rawShape, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, (shape) => {
+      const vertex = oc.TopoDS.Vertex_1(shape);
       vertexHandles.push(occWrap(vertex, 'TopoDS_Vertex'));
-      explorer.Next();
-    }
-    explorer.delete();
+    });
+
+    const faceAlloc = createBRepIdAllocator(0);
+    const edgeAlloc = createBRepIdAllocator(0);
+    const vertexAlloc = createBRepIdAllocator(0);
+
+    const { ids: faceIds } = assignTopologyIds(faceHandles, faceAlloc);
+    const { ids: edgeIds } = assignTopologyIds(edgeHandles, edgeAlloc);
+    const { ids: vertexIds } = assignTopologyIds(vertexHandles, vertexAlloc);
+
+    return createBRepBody({ ...options, shape: shapeHandle, faceIds, edgeIds, vertexIds });
+  } catch (error) {
+    shapeHandle.dispose();
+    disposeHandleList(faceHandles);
+    disposeHandleList(edgeHandles);
+    disposeHandleList(vertexHandles);
+    throw error;
   }
-
-  const faceAlloc = createBRepIdAllocator(0);
-  const edgeAlloc = createBRepIdAllocator(0);
-  const vertexAlloc = createBRepIdAllocator(0);
-
-  const { ids: faceIds } = assignTopologyIds(faceHandles, faceAlloc);
-  const { ids: edgeIds } = assignTopologyIds(edgeHandles, edgeAlloc);
-  const { ids: vertexIds } = assignTopologyIds(vertexHandles, vertexAlloc);
-
-  return createBRepBody({ ...options, shape: shapeHandle, faceIds, edgeIds, vertexIds });
 }
 
 let nextBodyId = 1;
@@ -121,6 +117,7 @@ export function createBRepBody(options: CreateBRepBodyOptions): BRepBody {
     sourceFeatureId: options.sourceFeatureId,
     mesh: options.mesh,
     _tessellation: options.tessellation,
+    ownedResources: options.ownedResources,
     dispose() {
       disposeBRepBody(body);
     },
@@ -133,6 +130,10 @@ export function disposeBRepBody(body: BRepBody): void {
   disposeTopologyMap(body.faceIds);
   disposeTopologyMap(body.edgeIds);
   disposeTopologyMap(body.vertexIds);
+  for (const resource of body.ownedResources ?? []) {
+    try { resource.delete?.(); } catch { /* already freed */ }
+  }
+  body.ownedResources = undefined;
   body.mesh?.dispose();
   body.mesh = undefined;
   body._tessellation = undefined;
@@ -150,4 +151,33 @@ function disposeTopologyMap(handles: Map<number, BRepTopologyHandle>): void {
     handle.dispose();
   }
   handles.clear();
+}
+
+function collectTopologyHandles(
+  oc: OcctRaw,
+  rawShape: unknown,
+  shapeType: unknown,
+  wrapShape: (shape: { delete(): void }) => void,
+): void {
+  const explorer = new oc.TopExp_Explorer_2(rawShape, shapeType, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+  try {
+    while (explorer.More()) {
+      const shape = explorer.Current();
+      try {
+        wrapShape(shape);
+      } finally {
+        shape.delete();
+      }
+      explorer.Next();
+    }
+  } finally {
+    explorer.delete();
+  }
+}
+
+function disposeHandleList(handles: OccHandle[]): void {
+  for (const handle of handles) {
+    handle.dispose();
+  }
+  handles.length = 0;
 }

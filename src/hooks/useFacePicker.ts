@@ -130,6 +130,7 @@ export function useFacePicker(options: UseFacePickerOptions): void {
     return () => {
       canvas.removeEventListener('pointermove', handlePointerMove);
       canvas.removeEventListener('click', handleClick, true);
+      _checkedMeshes.clear();
       if (hoverRef.current !== null) {
         hoverRef.current = null;
         optionsRef.current.onHover?.(null);

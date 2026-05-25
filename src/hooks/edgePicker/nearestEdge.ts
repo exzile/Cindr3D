@@ -23,8 +23,6 @@
  * subsequent hovers hit the normal fast path.
  */
 import * as THREE from 'three';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { extractEdgeTopology } from '../../engine/geometryEngine/core/solid/edgeTopology';
 import type { EdgePickResult } from '../../types/edge-picker.types';
 import { segDistSqPx } from './segmentMath';
 import {
@@ -38,11 +36,6 @@ import {
 const _projA = new THREE.Vector3();
 const _projB = new THREE.Vector3();
 
-// Bump this whenever the lazy topology recovery logic changes so that
-// geometries cached with an older run are automatically re-extracted.
-// Geometry-build paths stamp the same version on topologies extracted before
-// toCreasedNormals so those are never overridden by the lazy path.
-const LAZY_TOPO_VERSION = 10;
 
 export function pickNearestEdge(
   mesh: THREE.Mesh,
@@ -55,34 +48,8 @@ export function pickNearestEdge(
   rectH: number,
 ): EdgePickResult | null {
   const geom = mesh.geometry;
-  let topo = geom.userData?.topology as BodyTopologyLike | undefined;
-  const topoV = geom.userData._topoV as number | undefined;
-  const staleTopology = topoV !== undefined && topoV < LAZY_TOPO_VERSION;
-  if (!topo || !topo.edges || topo.edges.length === 0 || staleTopology) {
-    // Lazy recovery: older mesh bodies can lack topology when they were
-    // produced before pre-toCreasedNormals extraction was in place.
-    // Re-weld the non-indexed creased geometry back to indexed and extract.
-    // Runs once; result cached on userData.topology for all subsequent hovers.
-    try {
-      // Use a tolerance that matches extractEdgeTopology's own quantization
-      // (diag * 1e-4) so vertices that were merged by weldAndCleanSolid
-      // (which uses diag * 1e-5) are reliably re-merged here.
-      geom.computeBoundingBox();
-      const bb = geom.boundingBox;
-      const diag = bb ? bb.min.distanceTo(bb.max) : 1;
-      const tol = Math.max(diag * 1e-4, 1e-5);
-      const indexed = mergeVertices(geom, tol);
-      const extracted = extractEdgeTopology(indexed);
-      indexed.dispose();
-      geom.userData.topology = extracted;
-      geom.userData._topoV = LAZY_TOPO_VERSION;
-      topo = extracted as BodyTopologyLike;
-    } catch {
-      geom.userData.topology = { edges: [] };
-      geom.userData._topoV = LAZY_TOPO_VERSION;
-    }
-    if (!topo || !topo.edges || topo.edges.length === 0) return null;
-  }
+  const topo = geom.userData?.topology as BodyTopologyLike | undefined;
+  if (!topo || !topo.edges || topo.edges.length === 0) return null;
 
   mesh.updateWorldMatrix(true, false);
   const cached = getCachedEdges(geom, topo, mesh.matrixWorld);

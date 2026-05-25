@@ -56,10 +56,14 @@ export async function restoreOccSnapshot(snapshots: OccBodySnapshot[]): Promise<
   // Clear the existing registry first so stale bodies don't accumulate.
   globalBRepBodyRegistry.clear();
 
-  for (const { featureId, stepString } of snapshots) {
+  for (const { featureId, bodyId, stepString } of snapshots) {
     const result = shapeFromStep(occ.oc, stepString);
     if (result.ok) {
       const body = result.value;
+      // Restore the original body ID so mesh.userData.brepBodyId keeps working
+      // after file load / undo-redo — avoids OCC boolean ops silently falling
+      // back to CSG because the registry lookup misses on the stale ID.
+      body.id = bodyId;
       body.sourceFeatureId = featureId;
       globalBRepBodyRegistry.add(body);
     }

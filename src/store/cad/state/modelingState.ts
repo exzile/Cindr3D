@@ -345,6 +345,24 @@ export interface CADModelingState {
   filletLiveRadius: number;
   setFilletLiveRadius: (r: number) => void;
 
+  // D6b Full-round fillet face picker (center face + two side faces)
+  filletFullRoundCenterFaceId: string | null;
+  filletFullRoundCenterOccBodyId: string | null;
+  filletFullRoundCenterOccFaceId: number | null;
+  filletFullRoundSide1FaceId: string | null;
+  filletFullRoundSide1OccFaceId: number | null;
+  filletFullRoundSide2FaceId: string | null;
+  filletFullRoundSide2OccFaceId: number | null;
+  filletFullRoundPickSlot: 'center' | 'side1' | 'side2' | null;
+  setFilletFullRoundFace: (
+    slot: 'center' | 'side1' | 'side2',
+    faceId: string | null,
+    occBodyId: string | null,
+    occFaceId: number | null,
+  ) => void;
+  clearFilletFullRoundFaces: () => void;
+  setFilletFullRoundPickSlot: (slot: 'center' | 'side1' | 'side2' | null) => void;
+
   // D7 Chamfer edge selection + live distance (synced with ChamferGizmo drag)
   chamferEdgeIds: string[];
   addChamferEdge: (id: string) => void;

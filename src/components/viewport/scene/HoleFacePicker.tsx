@@ -73,15 +73,23 @@ export default function HoleFacePicker() {
   const hoverMeshRef = useRef<THREE.Mesh | null>(null);
   const selectedMeshRef = useRef<THREE.Mesh | null>(null);
   const previewMeshRef = useRef<THREE.Mesh | null>(null);
+  const hoverSigRef = useRef<string | null>(null);
+  const selectedSigRef = useRef<string | null>(null);
   const previewSigRef = useRef<{ dia: number; depth: number }>({ dia: -1, depth: -1 });
+  const planarFaceCacheRef = useRef<Map<string, boolean>>(new Map());
   usePickerSceneCleanup([hoverMeshRef, selectedMeshRef, previewMeshRef]);
 
   const isOccFacePlanar = useCallback((result: OccFacePickResult): boolean => {
+    const key = `${result.bodyId}:${result.faceId}`;
+    const cached = planarFaceCacheRef.current.get(key);
+    if (cached !== undefined) return cached;
     const occ = getOccSync();
     if (!occ) return false;
     const body = globalBRepBodyRegistry.get(result.bodyId);
     if (!body) return false;
-    return isFacePlanar(occ.oc, body, result.faceId);
+    const planar = isFacePlanar(occ.oc, body, result.faceId);
+    planarFaceCacheRef.current.set(key, planar);
+    return planar;
   }, []);
 
   const handleOccHover = useCallback((result: OccFacePickResult | null) => {
@@ -109,16 +117,19 @@ export default function HoleFacePicker() {
 
   useFrame(({ scene, invalidate, clock }) => {
     if (!overlayEnabled) {
+      planarFaceCacheRef.current.clear();
       if (hoverMeshRef.current) {
         scene.remove(hoverMeshRef.current);
         hoverMeshRef.current.geometry.dispose();
         hoverMeshRef.current = null;
       }
+      hoverSigRef.current = null;
       if (selectedMeshRef.current) {
         scene.remove(selectedMeshRef.current);
         selectedMeshRef.current.geometry.dispose();
         selectedMeshRef.current = null;
       }
+      selectedSigRef.current = null;
       if (previewMeshRef.current) {
         scene.remove(previewMeshRef.current);
         previewMeshRef.current.geometry.dispose();
@@ -128,50 +139,66 @@ export default function HoleFacePicker() {
       occSelectedRef.current = null;
       return;
     }
-    invalidate();
+    if (pickEnabled && occHoverRef.current) invalidate();
 
     if (pickEnabled) {
       const occHover = occHoverRef.current;
       const tess = occHover ? getMeshTessellation(occHover.mesh) : null;
-      const hoverGeo = occHover && tess ? buildFaceHighlightGeometry(tess, occHover.faceId) : null;
       const pulseHoverMat = pulseHoverMatRef.current;
-      if (hoverGeo && pulseHoverMat) {
-        if (!hoverMeshRef.current) {
-          const mesh = new THREE.Mesh(hoverGeo, pulseHoverMat);
-          mesh.renderOrder = 99;
-          scene.add(mesh);
-          hoverMeshRef.current = mesh;
-        } else {
-          hoverMeshRef.current.geometry.dispose();
-          hoverMeshRef.current.geometry = hoverGeo;
+      if (occHover && tess && pulseHoverMat) {
+        const sig = `${occHover.bodyId}:${occHover.faceId}`;
+        if (!hoverMeshRef.current || hoverSigRef.current !== sig) {
+          const hoverGeo = buildFaceHighlightGeometry(tess, occHover.faceId);
+          if (hoverMeshRef.current) {
+            hoverMeshRef.current.geometry.dispose();
+            hoverMeshRef.current.geometry = hoverGeo;
+          } else {
+            const mesh = new THREE.Mesh(hoverGeo, pulseHoverMat);
+            mesh.renderOrder = 99;
+            scene.add(mesh);
+            hoverMeshRef.current = mesh;
+          }
+          hoverSigRef.current = sig;
         }
         pulseHoverMat.opacity = 0.3 + 0.35 * pulseFactor(clock.elapsedTime * 1000);
       } else if (hoverMeshRef.current) {
         scene.remove(hoverMeshRef.current);
         hoverMeshRef.current.geometry.dispose();
         hoverMeshRef.current = null;
+        hoverSigRef.current = null;
       }
     } else if (hoverMeshRef.current) {
       scene.remove(hoverMeshRef.current);
       hoverMeshRef.current.geometry.dispose();
       hoverMeshRef.current = null;
+      hoverSigRef.current = null;
     }
 
     const occSelected = occSelectedRef.current;
     if (holeFaceId && occSelected) {
       const tess = getMeshTessellation(occSelected.mesh);
-      const selectedGeo = tess ? buildFaceHighlightGeometry(tess, occSelected.faceId) : null;
-      if (selectedGeo && !selectedMeshRef.current) {
-        const mesh = new THREE.Mesh(selectedGeo, SELECTED_MAT);
-        mesh.renderOrder = 100;
-        scene.add(mesh);
-        selectedMeshRef.current = mesh;
+      if (tess) {
+        const sig = `${occSelected.bodyId}:${occSelected.faceId}`;
+        if (!selectedMeshRef.current || selectedSigRef.current !== sig) {
+          const selectedGeo = buildFaceHighlightGeometry(tess, occSelected.faceId);
+          if (selectedMeshRef.current) {
+            selectedMeshRef.current.geometry.dispose();
+            selectedMeshRef.current.geometry = selectedGeo;
+          } else {
+            const mesh = new THREE.Mesh(selectedGeo, SELECTED_MAT);
+            mesh.renderOrder = 100;
+            scene.add(mesh);
+            selectedMeshRef.current = mesh;
+          }
+          selectedSigRef.current = sig;
+        }
       }
     }
     if (!holeFaceId && selectedMeshRef.current) {
       scene.remove(selectedMeshRef.current);
       selectedMeshRef.current.geometry.dispose();
       selectedMeshRef.current = null;
+      selectedSigRef.current = null;
       occSelectedRef.current = null;
     }
 

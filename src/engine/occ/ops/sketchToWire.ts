@@ -20,9 +20,28 @@ export interface SketchPlaneFrame {
   vDir: THREE.Vector3;
 }
 
+export const OCC_OWNED_RESOURCES = Symbol.for('cindr3d.occOwnedResources');
+
+type OccOwnedResource = { delete?: () => void };
+
 const DEFAULT_LOOP_TOLERANCE = 1e-5;
 const DEFAULT_LOOP_TOLERANCE_SQ = DEFAULT_LOOP_TOLERANCE * DEFAULT_LOOP_TOLERANCE;
 const MIN_LOOP_AREA = 1e-10;
+
+function safeDeleteOcc(value: { delete?: () => void } | null | undefined): void {
+  try {
+    value?.delete?.();
+  } catch {
+    // Some OCC builder result proxies are invalidated by their owning builder.
+  }
+}
+
+export function takeOccOwnedResources(value: unknown): OccOwnedResource[] {
+  const carrier = value as { [OCC_OWNED_RESOURCES]?: OccOwnedResource[] } | null | undefined;
+  const resources = carrier?.[OCC_OWNED_RESOURCES] ?? [];
+  if (carrier) carrier[OCC_OWNED_RESOURCES] = undefined;
+  return resources;
+}
 
 export function signedArea2D(points: readonly THREE.Vector2[]): number {
   let area = 0;
@@ -76,44 +95,87 @@ function makeGpPnt(oc: OcctRaw, v: THREE.Vector3): any {
 export function pointLoopToWire(oc: OcctRaw, points: THREE.Vector3[]): any | null {
   if (points.length < 3) return null;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const wireMaker: any = new oc.BRepBuilderAPI_MakeWire_1();
   const loop = points.slice();
   if (loop.length > 1 && loop[0].distanceToSquared(loop.at(-1)!) <= DEFAULT_LOOP_TOLERANCE_SQ) {
     loop.pop();
   }
 
-  let edgeCount = 0;
-  for (let i = 0; i < loop.length; i++) {
-    const a = loop[i];
-    const b = loop[(i + 1) % loop.length];
-    if (a.distanceToSquared(b) < 1e-12) continue;
-
-    const pa = makeGpPnt(oc, a);
-    const pb = makeGpPnt(oc, b);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const edgeMaker = new (oc as any).BRepBuilderAPI_MakeEdge_3(pa, pb);
-    pa.delete();
-    pb.delete();
-
-    if (!edgeMaker.IsDone()) {
-      edgeMaker.delete();
-      continue;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let polygonMaker: any | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const retainedPoints: any[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const retainedBuilders: any[] = [];
+  let keepPolygonMakerAlive = false;
+  try {
+    for (let i = 0; i < loop.length; i++) {
+      const point = loop[i];
+      if (i > 0 && point.distanceToSquared(loop[i - 1]) < 1e-12) continue;
+      const gp = makeGpPnt(oc, point);
+      retainedPoints.push(gp);
     }
 
-    wireMaker.Add_1(edgeMaker.Edge());
-    edgeMaker.delete();
-    edgeCount += 1;
-  }
+    if (retainedPoints.length < 3) return null;
+    if (retainedPoints.length === 3) {
+      polygonMaker = new (oc as any).BRepBuilderAPI_MakePolygon_3(
+        retainedPoints[0],
+        retainedPoints[1],
+        retainedPoints[2],
+        true,
+      );
+    } else if (retainedPoints.length === 4) {
+      polygonMaker = new (oc as any).BRepBuilderAPI_MakePolygon_4(
+        retainedPoints[0],
+        retainedPoints[1],
+        retainedPoints[2],
+        retainedPoints[3],
+        true,
+      );
+    } else {
+      const wireMaker = new (oc as any).BRepBuilderAPI_MakeWire_1();
+      retainedBuilders.push(wireMaker);
+      for (let i = 0; i < retainedPoints.length; i++) {
+        const next = (i + 1) % retainedPoints.length;
+        const edgeMaker = new (oc as any).BRepBuilderAPI_MakeEdge_3(
+          retainedPoints[i],
+          retainedPoints[next],
+        );
+        retainedBuilders.push(edgeMaker);
+        if (!edgeMaker.IsDone()) return null;
+        const edge = edgeMaker.Edge();
+        try {
+          wireMaker.Add_1(edge);
+        } finally {
+          safeDeleteOcc(edge);
+        }
+      }
+      if (!wireMaker.IsDone()) return null;
+      const wire = wireMaker.Wire();
+      keepPolygonMakerAlive = true;
+      (wire as { [OCC_OWNED_RESOURCES]?: OccOwnedResource[] })[OCC_OWNED_RESOURCES] = [
+        ...retainedBuilders,
+        ...retainedPoints,
+      ];
+      return wire;
+    }
+    if (!polygonMaker?.IsDone()) return null;
 
-  if (edgeCount < 3 || !wireMaker.IsDone()) {
-    wireMaker.delete();
-    return null;
+    const wire = polygonMaker.Wire();
+    keepPolygonMakerAlive = true;
+    (wire as { [OCC_OWNED_RESOURCES]?: OccOwnedResource[] })[OCC_OWNED_RESOURCES] = [
+      polygonMaker,
+      ...retainedPoints,
+    ];
+    return wire;
+  } finally {
+    if (!keepPolygonMakerAlive) safeDeleteOcc(polygonMaker);
+    if (!keepPolygonMakerAlive) {
+      for (const builder of retainedBuilders) safeDeleteOcc(builder);
+    }
+    if (!keepPolygonMakerAlive) {
+      for (const point of retainedPoints) safeDeleteOcc(point);
+    }
   }
-
-  const wire = wireMaker.Wire();
-  wireMaker.delete();
-  return wire;
 }
 
 /**
@@ -160,9 +222,23 @@ export function sketchProfileToWires(
  * Caller owns cleanup of the returned face.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function wireToFace(oc: OcctRaw, outerWire: any, holeWires: any[]): any | null {
+export function wireToFace(
+  oc: OcctRaw,
+  outerWire: any,
+  holeWires: any[],
+  frame?: SketchPlaneFrame,
+): any | null {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const faceMaker = new (oc as any).BRepBuilderAPI_MakeFace_15(outerWire, false);
+  const occ = oc as any;
+  const planePoint = frame ? new occ.gp_Pnt_3(frame.origin.x, frame.origin.y, frame.origin.z) : null;
+  const planeDir = frame ? new occ.gp_Dir_4(frame.normal.x, frame.normal.y, frame.normal.z) : null;
+  const plane = planePoint && planeDir ? new occ.gp_Pln_3(planePoint, planeDir) : null;
+  const faceMaker = plane
+    ? new occ.BRepBuilderAPI_MakeFace_16(plane, outerWire, true)
+    : new occ.BRepBuilderAPI_MakeFace_15(outerWire, false);
+  safeDeleteOcc(plane);
+  safeDeleteOcc(planeDir);
+  safeDeleteOcc(planePoint);
   for (const holeWire of holeWires) {
     faceMaker.Add(holeWire);
   }
@@ -171,6 +247,11 @@ export function wireToFace(oc: OcctRaw, outerWire: any, holeWires: any[]): any |
     return null;
   }
   const face = faceMaker.Face();
-  faceMaker.delete();
+  const ownedResources = [
+    ...takeOccOwnedResources(outerWire),
+    ...holeWires.flatMap((holeWire) => takeOccOwnedResources(holeWire)),
+    faceMaker,
+  ];
+  (face as { [OCC_OWNED_RESOURCES]?: OccOwnedResource[] })[OCC_OWNED_RESOURCES] = ownedResources;
   return face;
 }

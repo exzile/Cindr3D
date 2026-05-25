@@ -91,6 +91,8 @@ export function occRevolveWithInstance(
       resultShape = fuse.Shape();
     }
     fuse.delete();
+    // BRepAlgoAPI_Fuse takes shapes by reference (not ownership) — delete side2Shape ourselves
+    (side2Shape as { delete?: () => void }).delete?.();
   }
 
   occAxis.delete();

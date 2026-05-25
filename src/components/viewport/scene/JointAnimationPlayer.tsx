@@ -1,4 +1,6 @@
+import { useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
+import * as THREE from 'three';
 import { useComponentStore, _liveJointValues } from '../../../store/componentStore';
 
 /**
@@ -6,45 +8,90 @@ import { useComponentStore, _liveJointValues } from '../../../store/componentSto
  * Runs inside the R3F Canvas; uses useFrame to advance animation each tick.
  * Returns null — no rendered geometry.
  *
- * Performance: tickAnimation now writes joint values to the module-level
+ * Performance: tickAnimation writes joint values to the module-level
  * _liveJointValues map instead of calling Zustand set({ joints }). This
  * prevents 60Hz React re-renders across all joint subscribers during playback.
- *
- * TODO (next step): Read _liveJointValues here and apply transforms directly
- * to body meshes via useComponentStore.getState().bodies — imperative mesh
- * mutation entirely bypasses React's render cycle. This requires the Joint
- * type to carry enough info to resolve which body mesh to rotate and around
- * which axis/origin. Currently the body-mesh transform side is not wired up,
- * so this component only drives the animation clock.
+ * Body mesh transforms are then applied imperatively here, also bypassing React.
  */
+
+// Module-level temporaries — never allocate inside useFrame.
+const _q = new THREE.Quaternion();
+const _v = new THREE.Vector3();
+
 export default function JointAnimationPlayer() {
   const animationPlaying = useComponentStore((s) => s.animationPlaying);
   const tickAnimation = useComponentStore((s) => s.tickAnimation);
 
+  // Snapshot of each body mesh's original position + quaternion, captured when
+  // animation starts. Used as the stable base for each frame's incremental
+  // transform so rotations don't accumulate across ticks.
+  const baseTransforms = useRef<
+    Map<string, { position: THREE.Vector3; quaternion: THREE.Quaternion }>
+  >(new Map());
+
+  // Capture base transforms when animation starts; restore meshes when it stops.
+  useEffect(() => {
+    const { bodies } = useComponentStore.getState();
+    if (animationPlaying) {
+      baseTransforms.current.clear();
+      for (const body of Object.values(bodies)) {
+        if (!body.mesh) continue;
+        baseTransforms.current.set(body.id, {
+          position: body.mesh.position.clone(),
+          quaternion: body.mesh.quaternion.clone(),
+        });
+      }
+    } else {
+      // Reset all driven meshes back to their pre-animation transforms.
+      for (const [bodyId, orig] of baseTransforms.current) {
+        const body = bodies[bodyId];
+        if (!body?.mesh) continue;
+        body.mesh.position.copy(orig.position);
+        body.mesh.quaternion.copy(orig.quaternion);
+      }
+      baseTransforms.current.clear();
+    }
+  }, [animationPlaying]);
+
   useFrame(({ invalidate }, delta) => {
     if (!animationPlaying) return;
     tickAnimation(delta);
-    invalidate(); // keep advancing frames while animation is running (frameloop="demand")
-    // _liveJointValues is now populated by tickAnimation above.
-    // Direct mesh mutation (bypassing React) would go here once the
-    // body-transform logic is implemented.
-    // Example skeleton (not yet active):
-    //   const { joints, bodies } = useComponentStore.getState();
-    //   for (const [jointId, vals] of Object.entries(_liveJointValues)) {
-    //     const joint = joints[jointId];
-    //     if (!joint?.axis) continue;
-    //     const body = Object.values(bodies).find(b => b.componentId === joint.componentId2);
-    //     if (body?.mesh) {
-    //       const angle = vals.rotationValue;
-    //       body.mesh.setRotationFromAxisAngle(joint.axis, angle);
-    //     }
-    //   }
-  });
+    invalidate();
 
-  // Suppress unused-import warning for _liveJointValues (used in useFrame above
-  // as a reference for the TODO skeleton and will be used when mesh transforms
-  // are wired up).
-  void _liveJointValues;
+    // Apply joint-driven transforms imperatively — bypasses React render cycle.
+    const { joints, bodies } = useComponentStore.getState();
+
+    for (const [jointId, vals] of Object.entries(_liveJointValues)) {
+      const joint = joints[jointId];
+      // Revolute / cylindrical / pin-slot: need a rotation axis.
+      if (!joint?.axis) continue;
+
+      const axis = _v.copy(joint.axis).normalize();
+      const origin = joint.origin;
+      const angle = vals.rotationValue;
+
+      _q.setFromAxisAngle(axis, angle);
+
+      // Apply to every body belonging to the driven component (componentId2).
+      for (const body of Object.values(bodies)) {
+        if (body.componentId !== joint.componentId2 || !body.mesh) continue;
+
+        const orig = baseTransforms.current.get(body.id);
+        if (!orig) continue;
+
+        // Rotate original position around the joint origin:
+        //   newPos = origin + rotate(origPos - origin, q)
+        body.mesh.position
+          .copy(orig.position)
+          .sub(origin)
+          .applyQuaternion(_q)
+          .add(origin);
+
+        // Compose new orientation: q * originalQuaternion.
+        body.mesh.quaternion.copy(_q).premultiply(orig.quaternion);
+      }
+    }
+  });
 
   return null;
 }

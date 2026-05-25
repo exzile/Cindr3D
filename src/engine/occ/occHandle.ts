@@ -28,13 +28,21 @@ export class OccHandle<_T = unknown> {
   readonly ptr: number;
   readonly type: string;
   readonly __type?: _T;
+  private readonly _object: unknown | null;
   private _dispose: DisposeFn | null;
 
-  constructor(ptr: number, type: string, dispose: DisposeFn) {
+  constructor(ptr: number, type: string, dispose: DisposeFn, object: unknown | null = null) {
     this.ptr = ptr;
     this.type = type;
+    this._object = object;
     this._dispose = dispose;
     _registry.register(this, dispose, this);
+  }
+
+  deref(): unknown | null {
+    if (!this._object || this.isDisposed) return null;
+    const clone = (this._object as { clone?: () => unknown }).clone;
+    return typeof clone === 'function' ? clone.call(this._object) : this._object;
   }
 
   dispose(): void {
@@ -55,5 +63,5 @@ export class OccHandle<_T = unknown> {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function occWrap<_T>(obj: any, type: string): OccHandle<_T> {
-  return new OccHandle<_T>(obj.ptr as number, type, () => obj.delete());
+  return new OccHandle<_T>(obj.ptr as number, type, () => obj.delete(), obj);
 }

@@ -116,7 +116,11 @@
       "Bash(Select-Object -First 20)",
       "Bash(find \"C:/Users/joeyp\" -maxdepth 4 -type d -name \"*fusion*\" -o -type d -name \"*Autodesk*\" 2>/dev/null | head -20)",
       "Bash(grep -r \"Loft\\\\|loft\" src/app/ActiveDialog.tsx src/components/dialogs/solid/ --include=\"*.tsx\" -l)",
-      "Bash(grep -r \"'loft'\" src/app/ActiveDialog.tsx)"
+      "Bash(grep -r \"'loft'\" src/app/ActiveDialog.tsx)",
+      "Bash(cd /mnt/c/Users/joeyp/source/repos/exzile/DesignCAD && npx tsc -b --noEmit 2>&1 | head -60)",
+      "Bash(del \"C:\\\\Users\\\\joeyp\\\\source\\\\repos\\\\exzile\\\\DesignCAD\\\\src\\\\workers\\\\csgWorker.ts\")",
+      "Bash(del \"C:\\\\Users\\\\joeyp\\\\source\\\\repos\\\\exzile\\\\DesignCAD\\\\src\\\\workers\\\\csgWorkerPool.ts\")",
+      "Bash(node -e \"const p = require\\('./node_modules/zustand/package.json'\\); console.log\\(p.version\\)\")"
     ]
   }
 }

@@ -66,7 +66,9 @@ export default function SketchProfile({
       targetOpacity = 0;
     } else if (state === 'selected') {
       targetColor = PROFILE_SELECTED_MATERIAL.color.getHex();
-      targetOpacity = 0.48;
+      const pulse = 0.5 + 0.5 * Math.sin(clock.elapsedTime * 6);
+      targetOpacity = 0.34 + pulse * 0.24;
+      pulsing = true;
     } else if (state === 'hover') {
       targetColor = PROFILE_HOVER_MATERIAL.color.getHex();
       const pulse = 0.5 + 0.5 * Math.sin(clock.elapsedTime * 6);
@@ -74,8 +76,9 @@ export default function SketchProfile({
       pulsing = true;
     } else {
       targetColor = PROFILE_MATERIAL.color.getHex();
-      targetOpacity = 0.18;
+      targetOpacity = 0;
     }
+    m.depthTest = state === 'idle';
     // Only invalidate (request a re-render) when a value actually changed OR
     // a pulse is active — keeps frameloop="demand" from running every frame.
     const prevColor = m.color.getHex();

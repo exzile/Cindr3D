@@ -62,6 +62,7 @@ export function occMirrorWithInstance(
     console.warn('[occMirror] transform failed:', e);
     return null;
   } finally {
+    rawShape.delete?.();
     trsf.delete();
     ax2.delete();
     occNormal.delete();

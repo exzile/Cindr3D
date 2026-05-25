@@ -8,11 +8,11 @@ import type { OcctRaw } from '../types';
 import { makeBRepBodyFromOccShape, type BRepBody } from '../brepBody';
 import { getOcc } from '../loader';
 import type { OccPlaneFrame } from '../plane';
-import { type SketchProfile, sketchProfileToWires, wireToFace } from './sketchToWire';
+import { type SketchProfile, sketchProfileToWires, takeOccOwnedResources, wireToFace } from './sketchToWire';
 
 type OccExtrudeApi = OcctRaw & {
   BRepBuilderAPI_Transform_2: new (shape: unknown, trsf: unknown, copy: boolean) => { Shape(): unknown; delete(): void };
-  BRepPrimAPI_MakePrism_1: new (shape: unknown, vector: unknown, copy: boolean, canonize: boolean) => { Build(progress: unknown): void; Shape(): unknown; delete(): void };
+  BRepPrimAPI_MakePrism_1: new (shape: unknown, vector: unknown, copy: boolean, canonize: boolean) => { Build(): void; Shape(): unknown; delete(): void };
   BRepAlgoAPI_Fuse_3: new (a: unknown, b: unknown) => { SetNonDestructive?(v: boolean): void; Build(p?: unknown): void; IsDone?(): boolean; HasErrors?(): boolean; Shape(): unknown; delete(): void };
   BRepOffsetAPI_DraftAngle_1: new (shape: unknown) => { Add(face: unknown, dir: unknown, angle: number, plane: unknown): void; Build(progress: unknown): void; IsDone?(): boolean; HasErrors?(): boolean; Shape(): unknown; delete(): void };
   BRepAdaptor_Surface_2: new (face: unknown, restricted: boolean) => { FirstUParameter(): number; LastUParameter(): number; FirstVParameter(): number; LastVParameter(): number; Value(u: number, v: number): { X(): number; Y(): number; Z(): number; delete(): void }; delete(): void };
@@ -37,6 +37,12 @@ export interface OccExtrudeOptions {
   taperAngle?: number;
 }
 
+export interface OccExtrudedShape {
+  shape: unknown;
+  ownedResources: Array<{ delete?: () => void }>;
+  dispose(): void;
+}
+
 export async function occExtrude(
   profile: SketchProfile,
   distance: number,
@@ -54,16 +60,51 @@ export function occExtrudeWithInstance(
   frame: OccPlaneFrame,
   options: OccExtrudeOptions = {},
 ): BRepBody {
+  const extruded = occExtrudeShapeWithInstance(oc, profile, distance, frame, options);
+  let consumed = false;
+  try {
+    const body = makeBRepBodyFromOccShape(oc, extruded.shape, {
+      id: options.id,
+      sourceFeatureId: options.sourceFeatureId,
+      ownedResources: extruded.ownedResources,
+    });
+    consumed = true;
+    return body;
+  } finally {
+    if (!consumed) extruded.dispose();
+  }
+}
+
+export function occExtrudeShapeWithInstance(
+  oc: OcctRaw,
+  profile: SketchProfile,
+  distance: number,
+  frame: OccPlaneFrame,
+  options: OccExtrudeOptions = {},
+): OccExtrudedShape {
   const occ = oc as OccExtrudeApi;
   const wires = sketchProfileToWires(oc, profile, frame);
   if (!wires) throw new Error('[occExtrude] failed to build wires from profile');
 
-  const face = wireToFace(oc, wires.outerWire, wires.holeWires);
-  wires.outerWire.delete();
-  for (const hw of wires.holeWires) hw.delete();
+  const face = wireToFace(oc, wires.outerWire, wires.holeWires, frame);
+  const profileResources = face ? takeOccOwnedResources(face) : [];
+  profileResources.push(wires.outerWire, ...wires.holeWires);
 
   if (!face) throw new Error('[occExtrude] failed to build face from wires');
 
+  return occExtrudeFaceShapeWithInstance(oc, face, distance, frame, options, profileResources);
+}
+
+export function occExtrudeFaceShapeWithInstance(
+  oc: OcctRaw,
+  face: unknown,
+  distance: number,
+  frame: OccPlaneFrame,
+  options: OccExtrudeOptions = {},
+  profileResources: Array<{ delete?: () => void }> = [],
+): OccExtrudedShape {
+  const occ = oc as OccExtrudeApi;
+  const ownedResources: Array<{ delete?: () => void }> = [];
   const dir = frame.normal.clone();
   let startFace = face;
 
@@ -78,7 +119,7 @@ export function occExtrudeWithInstance(
     mover.delete();
     offset.delete();
     trsf.delete();
-    face.delete();
+    (face as { delete?: () => void }).delete?.();
   }
 
   const extDir = new oc.gp_Vec_4(
@@ -87,29 +128,28 @@ export function occExtrudeWithInstance(
     dir.z * distance,
   );
 
-  const prism = new occ.BRepPrimAPI_MakePrism_1(startFace, extDir, false, true);
-  const progress = new occ.Message_ProgressRange_1();
+  const prism = new occ.BRepPrimAPI_MakePrism_1(startFace, extDir, true, true);
   let resultShape: unknown;
   try {
-    prism.Build(progress);
+    prism.Build();
     resultShape = prism.Shape();
-  } finally {
-    progress.delete?.();
+  } catch (error) {
     prism.delete();
+    throw error;
+  } finally {
     extDir.delete();
   }
+  ownedResources.push(prism);
 
   // Two-sided: extrude in the negative direction by twoSideDist and fuse
   if (options.twoSideDist !== undefined && options.twoSideDist > 0 && !options.symmetric) {
     const negDir = new occ.gp_Vec_4(-dir.x * options.twoSideDist, -dir.y * options.twoSideDist, -dir.z * options.twoSideDist);
-    const prism2 = new occ.BRepPrimAPI_MakePrism_1(startFace, negDir, false, true);
-    const progress2 = new occ.Message_ProgressRange_1();
+    const prism2 = new occ.BRepPrimAPI_MakePrism_1(startFace, negDir, true, true);
     let side2Shape: unknown;
     try {
-      prism2.Build(progress2);
+      prism2.Build();
       side2Shape = prism2.Shape();
     } finally {
-      progress2.delete?.();
       prism2.delete();
       negDir.delete();
     }
@@ -120,6 +160,8 @@ export function occExtrudeWithInstance(
       resultShape = fuse.Shape();
     }
     fuse.delete();
+    // BRepAlgoAPI_Fuse takes shapes by reference (not ownership) — delete side2Shape ourselves
+    (side2Shape as { delete?: () => void }).delete?.();
   }
 
   if (options.taperAngle !== undefined && Math.abs(options.taperAngle) > 0.001) {
@@ -194,12 +236,21 @@ export function occExtrudeWithInstance(
     pullDir.delete();
   }
 
-  startFace.delete();
+  (startFace as { delete?: () => void }).delete?.();
+  for (const resource of profileResources) {
+    try { resource.delete?.(); } catch { /* already freed */ }
+  }
 
-  return makeBRepBodyFromOccShape(oc, resultShape, {
-    id: options.id,
-    sourceFeatureId: options.sourceFeatureId,
-  });
+  return {
+    shape: resultShape,
+    ownedResources,
+    dispose() {
+      (resultShape as { delete?: () => void }).delete?.();
+      for (const resource of ownedResources) {
+        try { resource.delete?.(); } catch { /* already freed */ }
+      }
+    },
+  };
 }
 
 /** Convenience: extrude a simple rectangular profile (no holes). */

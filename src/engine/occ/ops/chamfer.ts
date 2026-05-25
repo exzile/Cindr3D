@@ -25,6 +25,14 @@ type OccChamferApi = OcctRaw & {
     Next(): void;
     delete(): void;
   };
+  TopTools_IndexedMapOfShape_1: new () => {
+    FindIndex_1(shape: unknown): number;
+    Extent(): number;
+    delete(): void;
+  };
+  TopExp: {
+    MapShapes_1(shape: unknown, type: unknown, map: unknown): void;
+  };
 };
 
 export interface OccChamferOptions {
@@ -58,37 +66,42 @@ export function occChamferWithInstance(
   const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
   const mk = new occ.BRepFilletAPI_MakeChamfer(rawShape);
 
-  let addedAny = false;
-  for (const edgeId of edgeIds) {
-    const edgeHandle = body.edgeIds.get(edgeId);
-    if (!edgeHandle) continue;
-    const rawEdge = occDeref(oc, edgeHandle, oc.TopoDS_Edge);
+  try {
+    let addedAny = false;
+    for (const edgeId of edgeIds) {
+      const edgeHandle = body.edgeIds.get(edgeId);
+      if (!edgeHandle) continue;
+      const rawEdge = occDeref(oc, edgeHandle, oc.TopoDS_Edge);
 
-    try {
-      if (options.distance2 !== undefined) {
-        // Two-distance: need a reference face adjacent to the edge
-        const refFaceHandle = findAdjacentFace(oc, body, rawShape, rawEdge);
-        if (refFaceHandle) {
-          const rawFace = occDeref(oc, refFaceHandle, oc.TopoDS_Face);
-          mk.Add_3(distance, options.distance2, rawEdge, rawFace);
+      try {
+        if (options.distance2 !== undefined) {
+          // Two-distance: need a reference face adjacent to the edge
+          const refFaceHandle = findAdjacentFace(oc, body, rawShape, rawEdge);
+          if (refFaceHandle) {
+            const rawFace = occDeref(oc, refFaceHandle, oc.TopoDS_Face);
+            try {
+              mk.Add_3(distance, options.distance2, rawEdge, rawFace);
+            } finally {
+              rawFace.delete?.();
+            }
+          } else {
+            mk.Add_2(distance, rawEdge);
+          }
         } else {
           mk.Add_2(distance, rawEdge);
         }
-      } else {
-        mk.Add_2(distance, rawEdge);
+        addedAny = true;
+      } catch (e) {
+        console.warn(`[occChamfer] could not add edge ${edgeId}:`, e);
+      } finally {
+        rawEdge.delete?.();
       }
-      addedAny = true;
-    } catch (e) {
-      console.warn(`[occChamfer] could not add edge ${edgeId}:`, e);
     }
-  }
 
-  if (!addedAny) {
-    mk.delete();
-    return null;
-  }
+    if (!addedAny) {
+      return null;
+    }
 
-  try {
     const progress = new occ.Message_ProgressRange_1();
     try {
       mk.Build(progress);
@@ -109,12 +122,18 @@ export function occChamferWithInstance(
     return null;
   } finally {
     mk.delete();
+    rawShape.delete?.();
   }
 }
 
 /**
  * Find the first face in body that is adjacent (shares the edge) and return its handle.
  * Used for two-distance chamfer reference face selection.
+ *
+ * Uses canonical TopTools_IndexedMapOfShape indices for identity comparison —
+ * ptr comparison is unreliable because orientation wrappers produce different
+ * ptr values for the same underlying shape (same bug fixed in computeChordLengthRadius
+ * in fillet.ts).
  */
 function findAdjacentFace(
   oc: OcctRaw,
@@ -123,9 +142,29 @@ function findAdjacentFace(
   rawEdge: OccShapeRef,
 ): (typeof body.faceIds extends Map<number, infer V> ? V : never) | undefined {
   const occ = oc as OccChamferApi;
+
+  // Build canonical edge + face index maps so identity comparisons are reliable.
+  const edgeMap = new occ.TopTools_IndexedMapOfShape_1();
+  const faceMap = new occ.TopTools_IndexedMapOfShape_1();
   try {
-    // Walk faces and check if this edge appears in the face's edge loop
-    const faceExplorer = new occ.TopExp_Explorer_2(
+    occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, edgeMap);
+    occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_FACE, faceMap);
+  } catch {
+    edgeMap.delete();
+    faceMap.delete();
+    return undefined;
+  }
+
+  const targetEdgeIdx = edgeMap.FindIndex_1(rawEdge);
+  if (targetEdgeIdx <= 0) {
+    edgeMap.delete();
+    faceMap.delete();
+    return undefined;
+  }
+
+  let faceExplorer: InstanceType<OccChamferApi['TopExp_Explorer_2']> | null = null;
+  try {
+    faceExplorer = new occ.TopExp_Explorer_2(
       rawShape,
       oc.TopAbs_ShapeEnum.TopAbs_FACE,
       oc.TopAbs_ShapeEnum.TopAbs_SHAPE,
@@ -137,31 +176,52 @@ function findAdjacentFace(
         oc.TopAbs_ShapeEnum.TopAbs_EDGE,
         oc.TopAbs_ShapeEnum.TopAbs_SHAPE,
       );
+      let edgeFound = false;
       while (edgeExp.More()) {
         const e = edgeExp.Current();
-        if (e.ptr === rawEdge.ptr) {
+        const idx = edgeMap.FindIndex_1(e);
+        e.delete();
+        if (idx === targetEdgeIdx) {
+          edgeFound = true;
           edgeExp.delete();
-          const face = oc.TopoDS.Face_1(faceShape);
-          // Find handle in body.faceIds matching this ptr
-          for (const [, handle] of body.faceIds) {
-            if (handle.ptr === face.ptr) {
-              face.delete();
-              faceShape.delete();
-              faceExplorer.delete();
-              return handle as ReturnType<typeof findAdjacentFace>;
-            }
-          }
-          face.delete();
           break;
         }
-        e.delete();
         edgeExp.Next();
       }
-      edgeExp.delete();
+      if (!edgeFound) {
+        edgeExp.delete();
+        faceShape.delete();
+        faceExplorer.Next();
+        continue;
+      }
+
+      // Found an adjacent face — resolve its canonical index then look it up in
+      // body.faceIds using the same map (avoids ptr comparison).
+      const targetFaceIdx = faceMap.FindIndex_1(faceShape);
       faceShape.delete();
+
+      if (targetFaceIdx > 0) {
+        for (const [, handle] of body.faceIds) {
+          const rawFaceHandle = occDeref(oc, handle, oc.TopoDS_Shape) as OccShapeRef;
+          try {
+            const handleIdx = faceMap.FindIndex_1(rawFaceHandle);
+            if (handleIdx === targetFaceIdx) {
+              return handle as ReturnType<typeof findAdjacentFace>;
+            }
+          } finally {
+            rawFaceHandle.delete?.();
+          }
+        }
+      }
+
+      // Face not in body registry — try next face.
       faceExplorer.Next();
     }
-    faceExplorer.delete();
   } catch { /* topology walk failed */ }
+  finally {
+    faceExplorer?.delete();
+    edgeMap.delete();
+    faceMap.delete();
+  }
   return undefined;
 }

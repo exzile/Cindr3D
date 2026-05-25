@@ -1,0 +1,57 @@
+/* ===== Body Properties Dialog ===== */
+
+.bp-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-secondary, #888);
+  margin-bottom: 4px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--color-border, #333);
+}
+
+.bp-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 0;
+  font-size: 12px;
+  gap: 12px;
+}
+
+.bp-row__label {
+  color: var(--color-text-secondary, #aaa);
+  flex-shrink: 0;
+}
+
+.bp-row__value {
+  color: var(--color-text-primary, #eee);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bp-color-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid var(--color-border, #555);
+  vertical-align: middle;
+}
+
+.bp-note {
+  font-size: 11px;
+  color: var(--color-text-secondary, #888);
+  padding: 6px 0;
+  font-style: italic;
+}
+
+.bp-empty {
+  font-size: 12px;
+  color: var(--color-text-secondary, #888);
+  padding: 8px 0;
+}

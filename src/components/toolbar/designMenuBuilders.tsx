@@ -178,7 +178,7 @@ export function buildDesignMenus({
     { icon: <MapPin size={MI} />, label: 'Joint Origin', onClick: openJointOriginDialog },
     { icon: <Diamond size={MI} />, label: 'Drive Joints', onClick: () => setActiveDialog('drive-joints') },
     { icon: <GitMerge size={MI} />, label: 'Motion Link', onClick: () => setActiveDialog('motion-link') },
-    { icon: <Move size={MI} />, label: 'Motion Study', onClick: comingSoon('Motion Study') },
+    { icon: <Move size={MI} />, label: 'Motion Study', onClick: () => setActiveDialog('motion-study') },
     { icon: <Expand size={MI} />, label: 'Exploded View', onClick: toggleExplode, checked: explodeActive },
     { separator: true, icon: <Repeat size={MI} />, label: 'Component Pattern', onClick: () => setActiveDialog('component-pattern') },
     {

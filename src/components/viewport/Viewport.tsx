@@ -56,6 +56,7 @@ import DeleteFacePicker from './scene/DeleteFacePicker';
 import DraftPartingLinePicker from './scene/DraftPartingLinePicker';
 import DraftPullDirectionPicker from './scene/DraftPullDirectionPicker';
 import OffsetFacePicker from './scene/OffsetFacePicker';
+import FilletFullRoundPicker from './scene/FilletFullRoundPicker';
 import JointDialogPicker from './scene/JointDialogPicker';
 import AlignPicker from './scene/AlignPicker';
 import MeshExporter from './scene/MeshExporter';
@@ -102,6 +103,7 @@ export default function Viewport() {
   const groundPlaneOffset = useCADStore((s) => s.groundPlaneOffset);
   const shadowSoftness = useCADStore((s) => s.shadowSoftness);
   const ambientOcclusionEnabled = useCADStore((s) => s.ambientOcclusionEnabled);
+  const activeDialog = useCADStore((s) => s.activeDialog);
   const setCameraTargetQuaternion = useCADStore((s) => s.setCameraTargetQuaternion);
   const themeColors = useThemeStore((s) => s.colors);
 
@@ -250,7 +252,7 @@ export default function Viewport() {
         <JointAnimationPlayer />
         <SketchPlaneDragger />
         <Sketch3DPlaneIndicator />
-        <CrashBoundary label="EdgeOp">
+        <CrashBoundary label="EdgeOp" resetKey={activeDialog}>
           <FilletEdgeHighlight />
           <FilletGizmo />
           <ChamferEdgeHighlight />
@@ -270,6 +272,7 @@ export default function Viewport() {
         <DraftPartingLinePicker />
         <DraftPullDirectionPicker />
         <OffsetFacePicker />
+        <FilletFullRoundPicker />
         <MeshExporter />
         <SnapFitFacePicker />
         <LipGrooveEdgePicker />

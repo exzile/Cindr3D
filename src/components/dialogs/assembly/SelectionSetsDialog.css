@@ -1,0 +1,128 @@
+/* ===== Selection Sets Dialog ===== */
+
+.ss-create-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.ss-create-input { flex: 1; }
+
+.ss-create-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.ss-empty {
+  font-size: 12px;
+  color: var(--color-text-secondary, #888);
+  padding: 6px 0;
+}
+
+.ss-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ss-item {
+  border: 1px solid var(--color-border, #333);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ss-item__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: var(--color-bg-elevated, #1e1e1e);
+}
+
+.ss-item__expand {
+  color: var(--color-text-secondary, #888);
+  flex-shrink: 0;
+}
+
+.ss-item__name {
+  flex: 1;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+}
+
+.ss-item__name:hover {
+  color: var(--color-accent, #60a5fa);
+}
+
+.ss-item__name-input {
+  flex: 1;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
+.ss-item__count {
+  font-size: 10px;
+  color: var(--color-text-secondary, #888);
+  margin-left: 4px;
+}
+
+.ss-item__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.ss-item__bodies {
+  padding: 4px 8px 4px 28px;
+  background: var(--color-bg-base, #111);
+  border-top: 1px solid var(--color-border, #2a2a2a);
+}
+
+.ss-item__empty {
+  font-size: 11px;
+  color: var(--color-text-secondary, #666);
+  padding: 4px 8px 4px 28px;
+  font-style: italic;
+  background: var(--color-bg-base, #111);
+  border-top: 1px solid var(--color-border, #2a2a2a);
+}
+
+.ss-body-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 0;
+  gap: 4px;
+}
+
+.ss-body-row__name {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-primary, #ddd);
+}
+
+/* Shared btn-icon style if not already in global CSS */
+.btn-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-secondary, #888);
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  border-radius: 3px;
+  transition: color 0.1s, background 0.1s;
+}
+.btn-icon:hover { color: var(--color-text-primary, #eee); background: var(--color-bg-hover, #333); }
+.btn-icon.danger:hover { color: var(--color-accent-error, #ef4444); }
+.btn-icon:disabled { opacity: 0.3; cursor: not-allowed; }

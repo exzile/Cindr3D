@@ -11,7 +11,7 @@ import { getOcc } from '../loader';
 
 type OccOffsetFacesApi = OcctRaw & {
   BRepPrimAPI_MakePrism_1: new (shape: unknown, vec: unknown, copy: boolean, canonize: boolean) => {
-    Build(progress: unknown): void;
+    Build(): void;
     Shape(): unknown;
     delete(): void;
   };
@@ -69,61 +69,79 @@ export function occOffsetFacesWithInstance(
 
   const occ = oc as OccOffsetFacesApi;
   const rawBody = occDeref(oc, body.shape, oc.TopoDS_Shape);
-  let accumulated: unknown = rawBody;
+  let accumulated: { delete?: () => void } | unknown = rawBody;
   let changed = false;
 
-  for (const faceId of faceIds) {
-    const handle = body.faceIds.get(faceId);
-    if (!handle) continue;
-    const rawFace = occDeref(oc, handle, oc.TopoDS_Face);
+  try {
+    for (const faceId of faceIds) {
+      const handle = body.faceIds.get(faceId);
+      if (!handle) continue;
+      const rawFace = occDeref(oc, handle, oc.TopoDS_Face);
+      let prismShape: { delete?: () => void } | null = null;
 
-    const [nx, ny, nz] = sampleFaceNormal(occ, rawFace);
+      try {
+        const [nx, ny, nz] = sampleFaceNormal(occ, rawFace);
 
-    const extVec = new occ.gp_Vec_4(
-      nx * Math.abs(distance),
-      ny * Math.abs(distance),
-      nz * Math.abs(distance),
-    );
-    const prismProgress = new occ.Message_ProgressRange_1();
-    const prism = new occ.BRepPrimAPI_MakePrism_1(rawFace, extVec, true, true);
-    let prismShape: unknown;
-    try {
-      prism.Build(prismProgress);
-      prismShape = prism.Shape();
-    } finally {
-      prismProgress.delete?.();
-      prism.delete();
-      extVec.delete();
-    }
-
-    const boolProgress = new occ.Message_ProgressRange_1();
-    try {
-      if (distance > 0) {
-        const fuse = new occ.BRepAlgoAPI_Fuse_3(accumulated, prismShape);
-        fuse.SetNonDestructive?.(true);
-        fuse.Build(boolProgress);
-        if (fuse.IsDone?.() !== false && !fuse.HasErrors?.()) {
-          accumulated = fuse.Shape();
-          changed = true;
+        const extVec = new occ.gp_Vec_4(
+          nx * Math.abs(distance),
+          ny * Math.abs(distance),
+          nz * Math.abs(distance),
+        );
+        const prism = new occ.BRepPrimAPI_MakePrism_1(rawFace, extVec, true, true);
+        try {
+          prism.Build();
+          prismShape = prism.Shape() as { delete?: () => void };
+        } finally {
+          prism.delete();
+          extVec.delete();
         }
-        fuse.delete();
-      } else {
-        const cut = new occ.BRepAlgoAPI_Cut_3(accumulated, prismShape);
-        cut.SetNonDestructive?.(true);
-        cut.Build(boolProgress);
-        if (cut.IsDone?.() !== false && !cut.HasErrors?.()) {
-          accumulated = cut.Shape();
-          changed = true;
+
+        const boolProgress = new occ.Message_ProgressRange_1();
+        try {
+          if (distance > 0) {
+            const fuse = new occ.BRepAlgoAPI_Fuse_3(accumulated, prismShape);
+            try {
+              fuse.SetNonDestructive?.(true);
+              fuse.Build(boolProgress);
+              if (fuse.IsDone?.() !== false && !fuse.HasErrors?.()) {
+                if (changed) (accumulated as { delete?: () => void }).delete?.();
+                accumulated = fuse.Shape();
+                changed = true;
+              }
+            } finally {
+              fuse.delete();
+            }
+          } else {
+            const cut = new occ.BRepAlgoAPI_Cut_3(accumulated, prismShape);
+            try {
+              cut.SetNonDestructive?.(true);
+              cut.Build(boolProgress);
+              if (cut.IsDone?.() !== false && !cut.HasErrors?.()) {
+                if (changed) (accumulated as { delete?: () => void }).delete?.();
+                accumulated = cut.Shape();
+                changed = true;
+              }
+            } finally {
+              cut.delete();
+            }
+          }
+        } finally {
+          boolProgress.delete?.();
+          prismShape?.delete?.();
         }
-        cut.delete();
+      } finally {
+        rawFace.delete?.();
       }
-    } finally {
-      boolProgress.delete?.();
     }
-  }
 
-  if (!changed) return null;
-  return makeBRepBodyFromOccShape(oc, accumulated, options);
+    if (!changed) return null;
+    return makeBRepBodyFromOccShape(oc, accumulated, options);
+  } finally {
+    if (!changed) {
+      (accumulated as { delete?: () => void }).delete?.();
+    }
+    rawBody.delete?.();
+  }
 }
 
 function sampleFaceNormal(occ: OccOffsetFacesApi, rawFace: unknown): [number, number, number] {

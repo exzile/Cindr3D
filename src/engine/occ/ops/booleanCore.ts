@@ -67,6 +67,36 @@ export function performOccBooleanWithInstance(
   }
 }
 
+export function performOccBooleanWithRawTool(
+  oc: OcctRaw,
+  operation: OccBooleanOperation,
+  target: BRepBody,
+  toolShape: unknown,
+  options: OccBooleanOptions = {},
+): BRepBody | null {
+  const targetShape = occDeref(oc, target.shape, oc.TopoDS_Shape);
+  const op = createBooleanOperation(oc, operation, targetShape, toolShape);
+
+  try {
+    op.SetNonDestructive?.(true);
+    if (options.fuzzyValue !== undefined) op.SetFuzzyValue?.(options.fuzzyValue);
+    if (options.runParallel !== undefined) op.SetRunParallel?.(options.runParallel);
+    op.Build();
+
+    if (op.IsDone?.() === false || op.HasErrors?.()) {
+      return null;
+    }
+
+    const result = propagateBooleanIds(oc, op, [target]);
+    if (options.id) result.id = options.id;
+    if (options.sourceFeatureId) result.sourceFeatureId = options.sourceFeatureId;
+    return result;
+  } finally {
+    op.delete?.();
+    targetShape.delete?.();
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function createBooleanOperation(oc: OcctRaw, operation: OccBooleanOperation, targetShape: any, toolShape: any): any {
   if (operation === 'subtract') return new oc.BRepAlgoAPI_Cut_3(targetShape, toolShape);

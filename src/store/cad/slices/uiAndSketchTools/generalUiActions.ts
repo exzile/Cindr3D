@@ -32,6 +32,34 @@ export function createGeneralUiActions({
     filletLiveRadius: 2,
     setFilletLiveRadius: (r) => set({ filletLiveRadius: Math.max(0.01, r) }),
 
+    // D6b Full-round fillet face picker
+    filletFullRoundCenterFaceId: null,
+    filletFullRoundCenterOccBodyId: null,
+    filletFullRoundCenterOccFaceId: null,
+    filletFullRoundSide1FaceId: null,
+    filletFullRoundSide1OccFaceId: null,
+    filletFullRoundSide2FaceId: null,
+    filletFullRoundSide2OccFaceId: null,
+    filletFullRoundPickSlot: null,
+    setFilletFullRoundFace: (slot, faceId, occBodyId, occFaceId) => set(
+      slot === 'center'
+        ? { filletFullRoundCenterFaceId: faceId, filletFullRoundCenterOccBodyId: occBodyId, filletFullRoundCenterOccFaceId: occFaceId, filletFullRoundPickSlot: null }
+        : slot === 'side1'
+          ? { filletFullRoundSide1FaceId: faceId, filletFullRoundSide1OccFaceId: occFaceId, filletFullRoundPickSlot: null }
+          : { filletFullRoundSide2FaceId: faceId, filletFullRoundSide2OccFaceId: occFaceId, filletFullRoundPickSlot: null },
+    ),
+    clearFilletFullRoundFaces: () => set({
+      filletFullRoundCenterFaceId: null,
+      filletFullRoundCenterOccBodyId: null,
+      filletFullRoundCenterOccFaceId: null,
+      filletFullRoundSide1FaceId: null,
+      filletFullRoundSide1OccFaceId: null,
+      filletFullRoundSide2FaceId: null,
+      filletFullRoundSide2OccFaceId: null,
+      filletFullRoundPickSlot: null,
+    }),
+    setFilletFullRoundPickSlot: (slot) => set({ filletFullRoundPickSlot: slot }),
+
     // D7 Chamfer edge selection + live distance for gizmo drag feedback
     chamferEdgeIds: [],
     addChamferEdge: (id) =>
@@ -58,6 +86,14 @@ export function createGeneralUiActions({
         // Clear edge selections and reset live radius when opening fillet/chamfer dialogs
         filletEdgeIds: dialog === "fillet" ? [] : state.filletEdgeIds,
         filletLiveRadius: dialog === "fillet" ? 2 : state.filletLiveRadius,
+        filletFullRoundCenterFaceId: dialog === "fillet" ? null : state.filletFullRoundCenterFaceId,
+        filletFullRoundCenterOccBodyId: dialog === "fillet" ? null : state.filletFullRoundCenterOccBodyId,
+        filletFullRoundCenterOccFaceId: dialog === "fillet" ? null : state.filletFullRoundCenterOccFaceId,
+        filletFullRoundSide1FaceId: dialog === "fillet" ? null : state.filletFullRoundSide1FaceId,
+        filletFullRoundSide1OccFaceId: dialog === "fillet" ? null : state.filletFullRoundSide1OccFaceId,
+        filletFullRoundSide2FaceId: dialog === "fillet" ? null : state.filletFullRoundSide2FaceId,
+        filletFullRoundSide2OccFaceId: dialog === "fillet" ? null : state.filletFullRoundSide2OccFaceId,
+        filletFullRoundPickSlot: dialog === "fillet" ? null : state.filletFullRoundPickSlot,
         chamferEdgeIds: dialog === "chamfer" ? [] : state.chamferEdgeIds,
         chamferLiveDistance:
           dialog === "chamfer" ? 2 : state.chamferLiveDistance,

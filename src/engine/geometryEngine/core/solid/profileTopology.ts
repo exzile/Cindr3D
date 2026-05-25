@@ -30,7 +30,7 @@ import { entitiesToShapes, circleSegments } from '../sketch/sketchProfiles';
 import { adaptiveCurveSegments } from './extrusionInternals';
 import { getRightHandedFrame } from './extrusion';
 import { modelEdgeId } from './edgeId';
-import type { ModelEdge } from './edgeTopology';
+import type { ModelEdge } from './edgeTypes';
 
 export function extrudeProfileTopology(
   sketch: Sketch,

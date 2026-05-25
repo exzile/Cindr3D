@@ -7,10 +7,8 @@
 import { useState, useMemo } from 'react';
 import { X, Check } from 'lucide-react';
 import * as THREE from 'three';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { useCADStore } from '../../../store/cadStore';
 import type { Feature } from '../../../types/cad';
-import { extractEdgeTopology } from '../../../engine/geometryEngine/core/solid/edgeTopology';
 import '../common/ToolPanel.css';
 
 type CoilType = 'pitch-height' | 'pitch-revolutions' | 'height-revolutions';
@@ -113,11 +111,6 @@ export function CoilDialog({ onClose }: { onClose: () => void }) {
   const buildCoilMesh = (): THREE.Mesh | null => {
     const geo = buildCoilGeometry(coilDiameter, pitch, effectiveHeight, effectiveRevolutions, sectionDiameter, section, direction);
     if (!geo) return null;
-    try {
-      const forTopo = geo.index ? geo : mergeVertices(geo, 1e-6);
-      geo.userData.topology = extractEdgeTopology(forTopo);
-      if (forTopo !== geo) forTopo.dispose();
-    } catch { /* non-fatal */ }
     return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x8899aa, roughness: 0.5, metalness: 0.3 }));
   };
 

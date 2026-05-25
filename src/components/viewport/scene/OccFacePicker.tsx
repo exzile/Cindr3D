@@ -17,8 +17,6 @@ import {
   faceIdAtTriangle,
   buildFaceHighlightGeometry,
 } from '../../../engine/occ/picking';
-import { getOccSync } from '../../../engine/occ/loader';
-import { tessellateWithInstance } from '../../../engine/occ/tessellate';
 import { globalBRepBodyRegistry } from '../../../engine/occ/globalRegistry';
 
 export interface OccFacePickResult {
@@ -40,6 +38,24 @@ export interface UseOccFacePickerOptions {
 const _mouse = new THREE.Vector2();
 const _normal = new THREE.Vector3();
 
+function resolveMeshTessellation(mesh: THREE.Mesh) {
+  let tess = getMeshTessellation(mesh);
+  let bodyId = mesh.userData.brepBodyId as string | undefined;
+  if (tess && bodyId) return { tess, bodyId };
+
+  const body =
+    (bodyId ? globalBRepBodyRegistry.get(bodyId) : undefined) ??
+    ((mesh.userData.featureId as string | undefined)
+      ? globalBRepBodyRegistry.getByFeature(mesh.userData.featureId as string)[0]
+      : undefined);
+  if (!body?._tessellation) return null;
+
+  tess = body._tessellation;
+  bodyId = body.id;
+  attachTessellationToMesh(mesh, tess, bodyId);
+  return { tess, bodyId };
+}
+
 export function useOccFacePicker(options: UseOccFacePickerOptions): void {
   const { gl, camera, raycaster, scene } = useThree();
   const optionsRef = useRef(options);
@@ -58,19 +74,9 @@ export function useOccFacePicker(options: UseOccFacePickerOptions): void {
     raycaster.setFromCamera(_mouse, camera);
 
     const meshes: THREE.Mesh[] = [];
-    const occ = getOccSync();
     scene.traverse((obj) => {
       if (!(obj instanceof THREE.Mesh)) return;
-      let tess = getMeshTessellation(obj);
-      if (!tess && occ) {
-        const featureId = obj.userData.featureId as string | undefined;
-        const body = featureId ? globalBRepBodyRegistry.getByFeature(featureId)[0] : undefined;
-        if (body) {
-          tess = tessellateWithInstance(occ.oc, body);
-          attachTessellationToMesh(obj, tess, body.id);
-        }
-      }
-      if (tess !== null && (!optionsRef.current.filter || optionsRef.current.filter(obj))) {
+      if (resolveMeshTessellation(obj) && (!optionsRef.current.filter || optionsRef.current.filter(obj))) {
         meshes.push(obj);
       }
     });
@@ -80,11 +86,11 @@ export function useOccFacePicker(options: UseOccFacePickerOptions): void {
 
     const hit = hits[0];
     const mesh = hit.object as THREE.Mesh;
-    const tess = getMeshTessellation(mesh);
-    if (!tess || hit.faceIndex == null) return null;
+    const resolved = resolveMeshTessellation(mesh);
+    if (!resolved || hit.faceIndex == null) return null;
+    const { tess, bodyId } = resolved;
 
     const faceId = faceIdAtTriangle(tess, hit.faceIndex);
-    const bodyId = (mesh.userData['brepBodyId'] as string) ?? '';
 
     // Compute face normal from tessellation
     const base = hit.faceIndex * 9;

@@ -6,3 +6,9 @@
 import { BRepBodyRegistry } from './bodyRegistry';
 
 export const globalBRepBodyRegistry = new BRepBodyRegistry();
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    globalBRepBodyRegistry.clear();
+  });
+}

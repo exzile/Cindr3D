@@ -10,6 +10,12 @@ const SKETCH_PREVIEW_RENDER_ORDER = 1001;
 const PREVIEW_FINGERPRINT_CACHE = new Map<string, string>();
 const CACHE_MAX = 32;
 
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    PREVIEW_FINGERPRINT_CACHE.clear();
+  });
+}
+
 function setFingerprint(key: string, value: string): void {
   if (PREVIEW_FINGERPRINT_CACHE.has(key)) {
     PREVIEW_FINGERPRINT_CACHE.delete(key);

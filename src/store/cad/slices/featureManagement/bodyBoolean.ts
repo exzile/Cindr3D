@@ -12,18 +12,13 @@
  * copies had.
  */
 import * as THREE from 'three';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Feature } from '../../../../types/cad';
 import type { CADState } from '../../state';
-import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import { errorMessage } from '../../../../utils/errorHandling';
-import { csgAsync } from '../../../../workers/csgWorkerPool';
-import { extractEdgeTopology } from '../../../../engine/geometryEngine/core/solid/edgeTopology';
-import { getOccSync } from '../../../../engine/occ/loader';
+import { getOcc, getOccSync } from '../../../../engine/occ/loader';
 import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
-import { performOccBooleanWithInstance } from '../../../../engine/occ/ops/booleanCore';
-import type { OccBooleanOperation } from '../../../../engine/occ/ops/booleanCore';
-import { tessellateWithInstance, tessellationToGeometry } from '../../../../engine/occ/tessellate';
+import { performOccBooleanWithInstance, type OccBooleanOperation } from '../../../../engine/occ/ops/booleanCore';
+import { tessellate, tessellateWithInstance, tessellationToGeometry } from '../../../../engine/occ/tessellate';
 import { attachTessellationToMesh } from '../../../../engine/occ/picking';
 
 export type BodyBooleanOp = 'new-body' | 'join' | 'cut' | 'intersect';
@@ -82,35 +77,50 @@ export function syncConfigurationSuppression(
 
 
 /**
- * Async version of applyBodyBoolean — runs CSG in a worker pool so the main
- * thread stays responsive. Returns null on failure (caller falls back to
- * standalone body). Attaches edge topology to the result geometry for
- * fillet/chamfer edge picking.
+ * Async boolean (join/cut/intersect) via the OCC BRep pipeline.
+ * Both meshes must carry a `brepBodyId` referencing a live BRepBody in the
+ * global registry; returns null (standalone body) if either is missing.
  */
 export async function applyBodyBooleanAsync(
   targetMesh: THREE.Mesh,
   toolMesh: THREE.Mesh,
   operation: 'join' | 'cut' | 'intersect',
 ): Promise<THREE.Mesh | null> {
+  const targetBodyId = targetMesh.userData['brepBodyId'] as string | undefined;
+  const toolBodyId = toolMesh.userData['brepBodyId'] as string | undefined;
+  if (!targetBodyId || !toolBodyId) return null;
+
   try {
-    const targetGeom = GeometryEngine.bakeMeshWorldGeometry(targetMesh);
-    const toolGeom = GeometryEngine.bakeMeshWorldGeometry(toolMesh);
-    const opKey = operation === 'join' ? 'union' : operation === 'cut' ? 'subtract' : 'intersect';
-    const resultGeom = await csgAsync(targetGeom, toolGeom, opKey);
-    targetGeom.dispose();
-    toolGeom.dispose();
-    if (!resultGeom) return null;
+    const { oc } = await getOcc();
+    const targetBody = globalBRepBodyRegistry.get(targetBodyId);
+    const toolBody = globalBRepBodyRegistry.get(toolBodyId);
+    if (!targetBody || !toolBody) return null;
+
+    const boolOp: OccBooleanOperation =
+      operation === 'join' ? 'union' : operation === 'cut' ? 'subtract' : 'intersect';
+    const resultBody = performOccBooleanWithInstance(oc, boolOp, targetBody, toolBody);
+    if (!resultBody) return null;
+
     try {
-      const forTopo = mergeVertices(resultGeom, 1e-6);
-      resultGeom.userData.topology = extractEdgeTopology(forTopo);
-      forTopo.dispose();
-    } catch { /* non-fatal */ }
-    const mesh = new THREE.Mesh(resultGeom, targetMesh.material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    return mesh;
+      const tess = tessellate(oc, resultBody);
+      const geo = tessellationToGeometry(tess);
+      globalBRepBodyRegistry.add(resultBody);
+      // The tool body is consumed by the boolean and will no longer be referenced
+      // by any feature in the returned state — evict it to free the WASM heap entry.
+      // Target body is intentionally kept: the suppressed target feature still holds
+      // a mesh.userData reference to it and may be needed for undo re-evaluation.
+      globalBRepBodyRegistry.delete(toolBodyId);
+      const mesh = new THREE.Mesh(geo, targetMesh.material);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.userData['brepBodyId'] = resultBody.id;
+      return mesh;
+    } catch (err) {
+      resultBody.dispose();
+      throw err;
+    }
   } catch (err) {
-    void errorMessage(err, 'unknown CSG error');
+    void errorMessage(err, 'OCC boolean error');
     return null;
   }
 }

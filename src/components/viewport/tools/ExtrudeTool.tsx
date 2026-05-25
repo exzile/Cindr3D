@@ -415,13 +415,6 @@ export default function ExtrudeTool() {
 
   if (activeTool !== 'extrude') return null;
 
-  // Once a preview is active, hide the SELECTED profile overlays visually —
-  // they would ghost through the solid preview fill. But keep the meshes
-  // IN THE SCENE (hidden via opacity 0, not unmounted) so the DOM profile
-  // picker can still raycast them for deselect/toggle clicks. Idle and hover
-  // overlays always stay visible so the user can add more profiles.
-  const previewActive = Math.abs(distance) >= 0.001;
-
   return (
     <group>
       {profileEntries.map(({ sketch, profileIndex, selectionId }) => {
@@ -435,7 +428,6 @@ export default function ExtrudeTool() {
               isSelected ? 'selected' :
               selectionId === hoveredId ? 'hover' : 'idle'
             }
-            hidden={previewActive && isSelected}
           />
         );
       })}

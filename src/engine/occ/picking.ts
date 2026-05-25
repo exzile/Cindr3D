@@ -29,6 +29,42 @@ export function getMeshTessellation(mesh: THREE.Mesh): BRepTessellation | null {
   return (mesh.userData[BREP_TESS_KEY] as BRepTessellation | undefined) ?? null;
 }
 
+/**
+ * Null out tessellation + bodyId from mesh userData.
+ * Call alongside geometry.dispose() to release the CPU-side typed arrays
+ * (positions, normals, faceIds, edgePolylines Map) that are NOT freed by
+ * geometry.dispose() — those only release the WebGL-side buffer objects.
+ */
+export function detachTessellationFromMesh(mesh: THREE.Mesh): void {
+  mesh.userData[BREP_TESS_KEY] = null;
+  mesh.userData[BREP_BODY_ID_KEY] = null;
+}
+
+/**
+ * Dispose a mesh's geometry and detach tessellation data after the current
+ * render tick. Safe to call on both OCC-backed and CSG-only meshes.
+ * Deferred so any in-flight draw call using the old geometry can complete first.
+ */
+export function disposeMeshDeferred(mesh: THREE.Mesh): void {
+  setTimeout(() => {
+    mesh.geometry.dispose();
+    detachTessellationFromMesh(mesh);
+  }, 0);
+}
+
+/**
+ * Dispose multiple meshes' geometries and detach tessellation after the
+ * current render tick. Batches all disposals into a single setTimeout.
+ */
+export function disposeMeshesDeferred(meshes: THREE.Mesh[]): void {
+  setTimeout(() => {
+    for (const m of meshes) {
+      m.geometry.dispose();
+      detachTessellationFromMesh(m);
+    }
+  }, 0);
+}
+
 /** Return the faceId for the triangle at `triangleIndex` in the tessellation. */
 export function faceIdAtTriangle(tess: BRepTessellation, triangleIndex: number): number {
   return tess.faceIds[triangleIndex] ?? 0;

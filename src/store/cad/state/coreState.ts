@@ -56,6 +56,8 @@ export interface CADCoreState {
   renameSketch: (id: string, name: string) => void;
   /** D60: Redefine the plane of an existing sketch */
   redefineSketchPlane: (id: string, plane: SketchPlane, normal: THREE.Vector3, origin: THREE.Vector3) => void;
+  /** Slice Sketch: intersect the active body with the current sketch plane and import the cross-section edges */
+  sliceSketch: (sketchId: string) => void;
   /** D50: Auto-detect and apply geometric constraints (horizontal/vertical/coincident/parallel/equal) */
   autoConstrainSketch: () => void;
   /** D27: Run the Newton-Raphson constraint solver on the active sketch. */

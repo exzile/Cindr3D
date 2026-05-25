@@ -93,6 +93,9 @@ export function evaluateFeature(
 
   // Register and cache
   result.sourceFeatureId = featureId;
+  if (entry && entry.bodyId !== result.id) {
+    globalBRepBodyRegistry.delete(entry.bodyId);
+  }
   globalBRepBodyRegistry.add(result);
 
   _cache.set(featureId, {
@@ -117,5 +120,15 @@ export function invalidateFeature(featureId: string, dependentIds: string[] = []
 
 /** Clear the entire evaluation cache (e.g. on document close). */
 export function clearFeatureEvaluationCache(): void {
+  for (const entry of _cache.values()) {
+    globalBRepBodyRegistry.delete(entry.bodyId);
+  }
   _cache.clear();
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    clearFeatureEvaluationCache();
+    _evaluators.clear();
+  });
 }

@@ -17,10 +17,12 @@ export function SketchContextMenu({ menu, onClose }: { menu: SketchCtxMenu; onCl
   const editSketch                = useCADStore((s) => s.editSketch);
   const copySketch                = useCADStore((s) => s.copySketch);
   const deleteSketch              = useCADStore((s) => s.deleteSketch);
+  const sliceSketch               = useCADStore((s) => s.sliceSketch);
   const setActiveDialog           = useCADStore((s) => s.setActiveDialog);
   const setDialogPayload          = useCADStore((s) => s.setDialogPayload);
   const setStatusMessage          = useCADStore((s) => s.setStatusMessage);
   const setCameraTargetQuaternion = useCADStore((s) => s.setCameraTargetQuaternion);
+  const setCameraTargetOrbit      = useCADStore((s) => s.setCameraTargetOrbit);
   const toggleFeatureVisibility   = useCADStore((s) => s.toggleFeatureVisibility);
   const features                  = useCADStore((s) => s.features);
   const sketches                  = useCADStore((s) => s.sketches);
@@ -51,6 +53,21 @@ export function SketchContextMenu({ menu, onClose }: { menu: SketchCtxMenu; onCl
     onClose();
   };
 
+  const handleFindInWindow = () => {
+    const sketch = sketches.find((s) => s.id === menu.sketchId);
+    if (!sketch) { onClose(); return; }
+    // Orient camera to face the sketch plane (same as Look At)
+    const normal = sketch.planeNormal.clone().normalize();
+    const up = Math.abs(normal.y) < 0.99 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+    const m = new THREE.Matrix4();
+    m.lookAt(normal, new THREE.Vector3(0, 0, 0), up);
+    setCameraTargetQuaternion(new THREE.Quaternion().setFromRotationMatrix(m));
+    // Also orbit-centre on the sketch origin so the camera frames the sketch
+    setCameraTargetOrbit(sketch.planeOrigin.clone());
+    setStatusMessage(`Found: ${menu.sketchName}`);
+    onClose();
+  };
+
   const handleToggleVisibility = () => {
     if (sketchFeature) {
       toggleFeatureVisibility(sketchFeature.id);
@@ -61,13 +78,13 @@ export function SketchContextMenu({ menu, onClose }: { menu: SketchCtxMenu; onCl
 
   const items: Array<{ label: string; shortcut?: string; icon?: React.ReactNode; danger?: boolean; separator?: boolean; onClick: () => void }> = [
     { label: 'Move to Group', icon: <FolderOpen size={13} />, onClick: cs('Move to Group') },
-    { label: 'Create Selection Set', icon: <Layers size={13} />, onClick: cs('Create Selection Set') },
+    { label: 'Create Selection Set', icon: <Layers size={13} />, onClick: () => { setActiveDialog('selection-sets'); onClose(); } },
     { label: 'Offset Plane', icon: <Layers size={13} />, onClick: () => { setActiveDialog('construction-plane'); onClose(); } },
     { separator: true, label: '', onClick: () => {} },
     { label: 'Edit Sketch', icon: <PenTool size={13} />, onClick: () => { editSketch(menu.sketchId); onClose(); } },
     { label: 'Copy Sketch', icon: <Copy size={13} />, onClick: () => { copySketch(menu.sketchId); onClose(); } },
     { label: 'Redefine Sketch Plane', icon: <PenTool size={13} />, onClick: () => { setActiveDialog('redefine-sketch-plane'); onClose(); } },
-    { label: 'Slice Sketch', icon: <Scissors size={13} />, onClick: cs('Slice Sketch') },
+    { label: 'Slice Sketch', icon: <Scissors size={13} />, onClick: () => { sliceSketch(menu.sketchId); onClose(); } },
     { label: 'Configure', icon: <Settings size={13} />, onClick: cs('Configure') },
     { separator: true, label: '', onClick: () => {} },
     { label: 'Delete', shortcut: 'Del', icon: <Trash2 size={13} />, danger: true, onClick: () => { deleteSketch(menu.sketchId); onClose(); } },
@@ -98,7 +115,7 @@ export function SketchContextMenu({ menu, onClose }: { menu: SketchCtxMenu; onCl
       onClick: () => { setShowConstructionGeometries(!showConstructionGeometries); onClose(); },
     },
     { separator: true, label: '', onClick: () => {} },
-    { label: 'Find in Window', icon: <Search size={13} />, onClick: cs('Find in Window') },
+    { label: 'Find in Window', icon: <Search size={13} />, onClick: handleFindInWindow },
     { label: 'Find in Timeline', icon: <Search size={13} />, onClick: cs('Find in Timeline') },
   ];
 

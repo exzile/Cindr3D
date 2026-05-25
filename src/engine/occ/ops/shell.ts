@@ -137,6 +137,7 @@ export function occShellWithInstance(
     joinProgress.delete?.();
     buildProgress.delete?.();
     for (const rawFace of rawFaces) rawFace.delete?.();
+    rawBody.delete?.();
     thickSolid.delete();
     faceList.delete();
   }

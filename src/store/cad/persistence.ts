@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 import type { Feature, Sketch } from '../../types/cad';
-import type { BodyTopology, ModelEdge } from '../../engine/geometryEngine/core/solid/edgeTopology';
+import type { BodyTopology, ModelEdge } from '../../engine/geometryEngine/core/solid/edgeTypes';
 
 function openCadDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

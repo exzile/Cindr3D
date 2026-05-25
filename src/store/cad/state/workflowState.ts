@@ -6,6 +6,7 @@ import type {
   InterferenceResult,
   JointOriginRecord,
 } from '../../../types/cad';
+import type { SelectionSet } from '../../../types/cad/assembly/relationships';
 import type { InsertComponentParams } from '../../../components/dialogs/assembly/InsertComponentDialog';
 import type { DirectEditParams } from '../../../components/dialogs/solid/DirectEditDialog';
 import type { TextureExtrudeParams } from '../../../components/dialogs/solid/TextureExtrudeDialog';
@@ -237,4 +238,13 @@ export interface CADWorkflowState {
   openInsertComponentDialog(): void;
   closeInsertComponentDialog(): void;
   commitInsertComponent(params: InsertComponentParams): void;
+
+  // ── Selection Sets ────────────────────────────────────────────────────────
+  selectionSets: SelectionSet[];
+  addSelectionSet(name: string, bodyIds: string[]): string;
+  removeSelectionSet(id: string): void;
+  renameSelectionSet(id: string, name: string): void;
+  addBodiesToSelectionSet(id: string, bodyIds: string[]): void;
+  removeBodyFromSelectionSet(setId: string, bodyId: string): void;
+  selectSelectionSet(id: string): void;
 }

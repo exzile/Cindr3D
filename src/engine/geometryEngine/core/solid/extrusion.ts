@@ -7,7 +7,7 @@ import {
   getSketchExtrudeNormal as getSketchExtrudeNormalUtil,
 } from '../../planeUtils';
 import { entitiesToShapes, sketchToShape } from '../sketch/sketchProfiles';
-import { csgUnion } from './csg';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildExtrudeGeomHolesAware } from './extrusionInternals';
 
 export function getRightHandedFrame(sketch: Sketch): { t1: THREE.Vector3; t2: THREE.Vector3; normal: THREE.Vector3 } {
@@ -281,15 +281,12 @@ export function buildExtrudeFeatureMesh(
     meshNeg.updateMatrixWorld(true);
     const gPos = meshPos.geometry.clone().applyMatrix4(meshPos.matrixWorld);
     const gNeg = meshNeg.geometry.clone().applyMatrix4(meshNeg.matrixWorld);
-    let merged: THREE.BufferGeometry;
-    try {
-      merged = csgUnion(gPos, gNeg);
-    } finally {
-      gPos.dispose();
-      gNeg.dispose();
-      meshPos.geometry.dispose();
-      meshNeg.geometry.dispose();
-    }
+    const merged = mergeGeometries([gPos, gNeg]) ?? new THREE.BufferGeometry();
+    merged.computeVertexNormals();
+    gPos.dispose();
+    gNeg.dispose();
+    meshPos.geometry.dispose();
+    meshNeg.geometry.dispose();
     const result = new THREE.Mesh(merged, BODY_MATERIAL);
     result.castShadow = true;
     result.receiveShadow = true;

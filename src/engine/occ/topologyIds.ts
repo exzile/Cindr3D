@@ -50,14 +50,9 @@ export function assignTopologyIds(
   const byPtr = new Map<number, number>();
 
   for (const handle of handles) {
-    const existingId = byPtr.get(handle.ptr);
-    if (existingId !== undefined) {
-      ids.set(existingId, handle);
-      continue;
-    }
     const id = allocator.next();
     ids.set(id, handle);
-    byPtr.set(handle.ptr, id);
+    if (!byPtr.has(handle.ptr)) byPtr.set(handle.ptr, id);
   }
 
   return { ids, byPtr };

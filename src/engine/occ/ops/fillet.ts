@@ -83,12 +83,6 @@ export interface OccFilletEdgeSet {
   chordLength?: number;
 }
 
-/** @deprecated Use OccFilletEdgeSet instead. Kept for backward compat. */
-export interface OccFilletVariableRadius {
-  start: number;
-  end: number;
-}
-
 export interface OccFilletOptions {
   id?: string;
   sourceFeatureId?: string;
@@ -123,6 +117,22 @@ function computeChordLengthRadius(
   try {
     const occ = oc as OccFilletApi;
 
+    // Build a canonical edge index so identity comparisons survive orientation
+    // wrappers — ptr comparison is unreliable for the same reason noted in
+    // occFullRoundFilletWithInstance (different orientation gives different ptr).
+    const edgeMap = new occ.TopTools_IndexedMapOfShape_1();
+    try {
+      occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, edgeMap);
+    } catch {
+      edgeMap.delete();
+      return fallback;
+    }
+    const targetIdx = edgeMap.FindIndex_1(rawEdge);
+    if (targetIdx <= 0) {
+      edgeMap.delete();
+      return fallback;
+    }
+
     // Collect up to 2 faces adjacent to this edge.
     const adjacentFaces: unknown[] = [];
     const faceExp = new occ.TopExp_Explorer_2(
@@ -140,13 +150,13 @@ function computeChordLengthRadius(
       let found = false;
       while (edgeExp.More()) {
         const e = edgeExp.Current();
-        if (e.ptr === rawEdge.ptr) {
+        const idx = edgeMap.FindIndex_1(e);
+        e.delete();
+        if (idx === targetIdx) {
           found = true;
-          e.delete();
           edgeExp.delete();
           break;
         }
-        e.delete();
         edgeExp.Next();
       }
       if (!found) edgeExp.delete();
@@ -155,6 +165,7 @@ function computeChordLengthRadius(
       faceExp.Next();
     }
     faceExp.delete();
+    edgeMap.delete();
 
     if (adjacentFaces.length < 2) {
       for (const f of adjacentFaces) (f as { delete(): void }).delete();
@@ -229,37 +240,37 @@ export function occFilletEdgeSetsWithInstance(
     : occ.ChFi3d_FilletShape.ChFi3d_Rational;
 
   const mk = new occ.BRepFilletAPI_MakeFillet_2(rawShape, filletShape);
-
-  let addedAny = false;
-  for (const edgeSet of edgeSets) {
-    for (const edgeId of edgeSet.edgeIds) {
-      const handle = body.edgeIds.get(edgeId);
-      if (!handle) continue;
-      const rawEdge = occDeref(oc, handle, oc.TopoDS_Edge) as { ptr: number };
-      try {
-        if (edgeSet.startRadius !== undefined && edgeSet.endRadius !== undefined) {
-          // Variable radius: different at each end of the edge.
-          mk.Add_3(edgeSet.startRadius, edgeSet.endRadius, rawEdge);
-        } else if (edgeSet.chordLength !== undefined && edgeSet.chordLength > 0) {
-          // Chord-length: derive radius from the edge's dihedral angle.
-          const r = computeChordLengthRadius(oc, rawShape, rawEdge, edgeSet.chordLength);
-          mk.Add_2(Math.max(r, 0.001), rawEdge);
-        } else {
-          mk.Add_2(Math.max(edgeSet.radius ?? 2, 0.001), rawEdge);
+  try {
+    let addedAny = false;
+    for (const edgeSet of edgeSets) {
+      for (const edgeId of edgeSet.edgeIds) {
+        const handle = body.edgeIds.get(edgeId);
+        if (!handle) continue;
+        const rawEdge = occDeref(oc, handle, oc.TopoDS_Edge) as { ptr: number; delete?: () => void };
+        try {
+          if (edgeSet.startRadius !== undefined && edgeSet.endRadius !== undefined) {
+            // Variable radius: different at each end of the edge.
+            mk.Add_3(edgeSet.startRadius, edgeSet.endRadius, rawEdge);
+          } else if (edgeSet.chordLength !== undefined && edgeSet.chordLength > 0) {
+            // Chord-length: derive radius from the edge's dihedral angle.
+            const r = computeChordLengthRadius(oc, rawShape, rawEdge, edgeSet.chordLength);
+            mk.Add_2(Math.max(r, 0.001), rawEdge);
+          } else {
+            mk.Add_2(Math.max(edgeSet.radius ?? 2, 0.001), rawEdge);
+          }
+          addedAny = true;
+        } catch (e) {
+          console.warn(`[occFillet] could not add edge ${edgeId}:`, e);
+        } finally {
+          rawEdge.delete?.();
         }
-        addedAny = true;
-      } catch (e) {
-        console.warn(`[occFillet] could not add edge ${edgeId}:`, e);
       }
     }
-  }
 
-  if (!addedAny) {
-    mk.delete();
-    return null;
-  }
+    if (!addedAny) {
+      return null;
+    }
 
-  try {
     const progress = new occ.Message_ProgressRange_1();
     try {
       mk.Build(progress);
@@ -282,6 +293,7 @@ export function occFilletEdgeSetsWithInstance(
     return null;
   } finally {
     mk.delete();
+    rawShape.delete?.();
   }
 }
 
@@ -291,11 +303,10 @@ export async function occFillet(
   body: BRepBody,
   edgeIds: number[],
   radius: number,
-  variableRadius?: OccFilletVariableRadius,
   options: OccFilletOptions = {},
 ): Promise<BRepBody | null> {
   const { oc } = await getOcc();
-  return occFilletWithInstance(oc, body, edgeIds, radius, variableRadius, options);
+  return occFilletWithInstance(oc, body, edgeIds, radius, options);
 }
 
 export function occFilletWithInstance(
@@ -303,16 +314,13 @@ export function occFilletWithInstance(
   body: BRepBody,
   edgeIds: number[],
   radius: number,
-  variableRadius?: OccFilletVariableRadius,
   options: OccFilletOptions = {},
 ): BRepBody | null {
   if (edgeIds.length === 0) return null;
-  if (!variableRadius && radius <= 0) return null;
+  if (radius <= 0) return null;
   return occFilletEdgeSetsWithInstance(oc, body, [{
     edgeIds,
-    radius: variableRadius ? undefined : radius,
-    startRadius: variableRadius?.start,
-    endRadius: variableRadius?.end,
+    radius,
   }], options);
 }
 
@@ -356,19 +364,41 @@ export function occFullRoundFilletWithInstance(
 
   const occ = oc as OccFilletApi;
   const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
-  const centerFaceRaw = oc.TopoDS.Face_1(occDeref(oc, centerHandle, oc.TopoDS_Shape));
-  const side1FaceRaw = oc.TopoDS.Face_1(occDeref(oc, side1Handle, oc.TopoDS_Shape));
-  const side2FaceRaw = oc.TopoDS.Face_1(occDeref(oc, side2Handle, oc.TopoDS_Shape));
+  const centerShapeRaw = occDeref(oc, centerHandle, oc.TopoDS_Shape);
+  const side1ShapeRaw = occDeref(oc, side1Handle, oc.TopoDS_Shape);
+  const side2ShapeRaw = occDeref(oc, side2Handle, oc.TopoDS_Shape);
+  const centerFaceRaw = oc.TopoDS.Face_1(centerShapeRaw);
+  const side1FaceRaw = oc.TopoDS.Face_1(side1ShapeRaw);
+  const side2FaceRaw = oc.TopoDS.Face_1(side2ShapeRaw);
 
   // Build a canonical edge index so we can compare edge identity across
   // different TopExp_Explorer passes (ptr comparison is unreliable due to
   // orientation wrappers; FindIndex_1 uses IsSame under the hood).
   const edgeMap = new occ.TopTools_IndexedMapOfShape_1();
+  let cleanedFullRoundInputs = false;
+  const cleanupFullRoundInputs = () => {
+    if (cleanedFullRoundInputs) return;
+    cleanedFullRoundInputs = true;
+    edgeMap.delete();
+    centerFaceRaw.delete?.();
+    side1FaceRaw.delete?.();
+    side2FaceRaw.delete?.();
+    centerShapeRaw.delete?.();
+    side1ShapeRaw.delete?.();
+    side2ShapeRaw.delete?.();
+    rawShape.delete?.();
+  };
+
   try {
     occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, edgeMap);
   } catch (e) {
-    edgeMap.delete();
     console.warn('[occFullRoundFillet] TopExp.MapShapes failed:', e);
+    cleanupFullRoundInputs();
+    return null;
+  }
+
+  if (edgeMap.Extent() === 0) {
+    cleanupFullRoundInputs();
     return null;
   }
 
@@ -396,27 +426,34 @@ export function occFullRoundFilletWithInstance(
   const shared2 = [...centerIndices].filter(i => side2Indices.has(i));
 
   if (shared1.length === 0 || shared2.length === 0) {
-    edgeMap.delete();
     console.warn('[occFullRoundFillet] no shared edges found between center and side faces');
+    cleanupFullRoundInputs();
     return null;
   }
 
   // Estimate auto-radius: midpoint of edge1 ↔ midpoint of edge2, half that distance.
   function edgeMidpoint(edgeIdx: number): [number, number, number] | null {
+    let edgeShape: { delete?: () => void } | null = null;
+    let rawEdge: { delete?: () => void } | null = null;
+    let curve: { FirstParameter(): number; LastParameter(): number; D0(u: number, p: unknown): void; delete(): void } | null = null;
+    let pt: { X(): number; Y(): number; Z(): number; delete(): void } | null = null;
     try {
-      const edgeShape = edgeMap.FindKey_1(edgeIdx);
-      const rawEdge = oc.TopoDS.Edge_1(edgeShape);
-      const curve = new occ.BRepAdaptor_Curve_2(rawEdge);
+      edgeShape = edgeMap.FindKey_1(edgeIdx) as { delete?: () => void };
+      rawEdge = oc.TopoDS.Edge_1(edgeShape) as { delete?: () => void };
+      curve = new occ.BRepAdaptor_Curve_2(rawEdge);
       const t0 = curve.FirstParameter(), t1 = curve.LastParameter();
       const tMid = (t0 + t1) / 2;
-      const pt = new occ.gp_Pnt_1();
+      pt = new occ.gp_Pnt_1();
       curve.D0(tMid, pt);
       const result: [number, number, number] = [pt.X(), pt.Y(), pt.Z()];
-      pt.delete();
-      curve.delete();
       return result;
     } catch {
       return null;
+    } finally {
+      pt?.delete();
+      curve?.delete();
+      rawEdge?.delete?.();
+      edgeShape?.delete?.();
     }
   }
 
@@ -436,15 +473,18 @@ export function occFullRoundFilletWithInstance(
   const bodyEdge2Ids: number[] = [];
 
   for (const [bodyEdgeId, edgeHandle] of body.edgeIds) {
+    let rawEdge: { delete?: () => void } | null = null;
     try {
-      const rawEdge = occDeref(oc, edgeHandle, oc.TopoDS_Shape);
+      rawEdge = occDeref(oc, edgeHandle, oc.TopoDS_Shape) as { delete?: () => void };
       const idx = edgeMap.FindIndex_1(rawEdge);
       if (shared1.includes(idx)) bodyEdge1Ids.push(bodyEdgeId);
       if (shared2.includes(idx)) bodyEdge2Ids.push(bodyEdgeId);
-    } catch { /* skip */ }
+    } catch { /* skip */ } finally {
+      rawEdge?.delete?.();
+    }
   }
 
-  edgeMap.delete();
+  cleanupFullRoundInputs();
 
   const allBodyEdgeIds = [...bodyEdge1Ids, ...bodyEdge2Ids];
   if (allBodyEdgeIds.length === 0) {

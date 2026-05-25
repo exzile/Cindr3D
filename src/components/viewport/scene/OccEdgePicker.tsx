@@ -30,10 +30,32 @@ export interface UseOccEdgePickerOptions {
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
 
-const _mouse = new THREE.Vector2();
+const _edgeWorldA = new THREE.Vector3();
+const _edgeWorldB = new THREE.Vector3();
+const _edgeProjA = new THREE.Vector3();
+const _edgeProjB = new THREE.Vector3();
+
+function segDistSqPx(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const vx = bx - ax;
+  const vy = by - ay;
+  const wx = px - ax;
+  const wy = py - ay;
+  const lenSq = vx * vx + vy * vy;
+  if (lenSq <= 1e-9) {
+    const dx = px - ax;
+    const dy = py - ay;
+    return dx * dx + dy * dy;
+  }
+  const t = Math.max(0, Math.min(1, (wx * vx + wy * vy) / lenSq));
+  const cx = ax + vx * t;
+  const cy = ay + vy * t;
+  const dx = px - cx;
+  const dy = py - cy;
+  return dx * dx + dy * dy;
+}
 
 export function useOccEdgePicker(options: UseOccEdgePickerOptions): void {
-  const { gl, camera, raycaster, scene } = useThree();
+  const { gl, camera, scene } = useThree();
   const optionsRef = useRef(options);
   const hoverRef = useRef<OccEdgePickResult | null>(null);
 
@@ -52,29 +74,60 @@ export function useOccEdgePicker(options: UseOccEdgePickerOptions): void {
 
     const pick = (clientX: number, clientY: number): OccEdgePickResult | null => {
       const rect = gl.domElement.getBoundingClientRect();
-      _mouse.set(
-        ((clientX - rect.left) / rect.width) * 2 - 1,
-        -((clientY - rect.top) / rect.height) * 2 + 1,
-      );
-      raycaster.setFromCamera(_mouse, camera);
-      raycaster.params.Line = { threshold: 0.5 };
 
       const lines: THREE.LineSegments[] = [];
       scene.traverse((obj) => {
-        if (obj instanceof THREE.LineSegments && obj.userData['edgeId'] !== undefined) {
+        if (
+          obj instanceof THREE.LineSegments &&
+          (obj.userData['edgeId'] !== undefined || Array.isArray(obj.userData['edgeIdsBySegment']))
+        ) {
           lines.push(obj);
         }
       });
 
-      const hits = raycaster.intersectObjects(lines, false);
-      if (hits.length === 0) return null;
-      const hit = hits[0];
-      const ls = hit.object as THREE.LineSegments;
+      let best: OccEdgePickResult | null = null;
+      let bestDistSq = Infinity;
+      const px = clientX - rect.left;
+      const py = clientY - rect.top;
+      const halfW = rect.width * 0.5;
+      const halfH = rect.height * 0.5;
+      const thresholdSq = 14 * 14;
+
+      for (const ls of lines) {
+        const position = ls.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+        if (!position || position.count < 2) continue;
+        const edgeIdsBySegment = ls.userData['edgeIdsBySegment'] as number[] | undefined;
+        ls.updateWorldMatrix(true, false);
+        const segmentCount = Math.floor(position.count / 2);
+        for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
+          const aIndex = segmentIndex * 2;
+          const bIndex = aIndex + 1;
+          _edgeWorldA.fromBufferAttribute(position, aIndex).applyMatrix4(ls.matrixWorld);
+          _edgeWorldB.fromBufferAttribute(position, bIndex).applyMatrix4(ls.matrixWorld);
+          _edgeProjA.copy(_edgeWorldA).project(camera);
+          _edgeProjB.copy(_edgeWorldB).project(camera);
+          if (_edgeProjA.z > 1 || _edgeProjB.z > 1) continue;
+          const ax = (_edgeProjA.x + 1) * halfW;
+          const ay = (1 - _edgeProjA.y) * halfH;
+          const bx = (_edgeProjB.x + 1) * halfW;
+          const by = (1 - _edgeProjB.y) * halfH;
+          const distSq = segDistSqPx(px, py, ax, ay, bx, by);
+          if (distSq >= bestDistSq || distSq > thresholdSq) continue;
+          const edgeId = edgeIdsBySegment?.[segmentIndex] ?? (ls.userData['edgeId'] as number | undefined);
+          if (edgeId === undefined) continue;
+          bestDistSq = distSq;
+          best = {
+            edgeId,
+            bodyId: (ls.userData['brepBodyId'] as string) ?? '',
+            mesh: ls,
+            point: _edgeWorldA.clone().lerp(_edgeWorldB, 0.5),
+          };
+        }
+      }
+
+      if (!best) return null;
       return {
-        edgeId: ls.userData['edgeId'] as number,
-        bodyId: (ls.userData['brepBodyId'] as string) ?? '',
-        mesh: ls,
-        point: hit.point.clone(),
+        ...best,
       };
     };
 
@@ -98,7 +151,7 @@ export function useOccEdgePicker(options: UseOccEdgePickerOptions): void {
       dom.removeEventListener('pointermove', onMove);
       dom.removeEventListener('click', onClick, { capture: true });
     };
-  }, [options.enabled, gl, camera, raycaster, scene]);
+  }, [options.enabled, gl, camera, scene]);
 }
 
 // ── EdgeOverlay component ─────────────────────────────────────────────────────

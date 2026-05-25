@@ -80,6 +80,8 @@ export function occDraftWithInstance(
       addedAny = true;
     } catch (e) {
       console.warn(`[occDraft] could not add face ${faceId}:`, e);
+    } finally {
+      rawFace.delete?.();
     }
   }
 
@@ -89,6 +91,7 @@ export function occDraftWithInstance(
     occPlaneNormal.delete();
     occPlaneOrigin.delete();
     occPullDir.delete();
+    rawShape.delete?.();
     return null;
   }
 
@@ -114,5 +117,6 @@ export function occDraftWithInstance(
     occPlaneNormal.delete();
     occPlaneOrigin.delete();
     occPullDir.delete();
+    rawShape.delete?.();
   }
 }

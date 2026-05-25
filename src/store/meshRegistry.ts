@@ -50,3 +50,13 @@ export const bodyGeometryCache = _g.__cindr3d_bodyGeometryCache__ as Map<string,
  */
 _g.__cindr3d_bodyIdGeometryCache__ ??= new Map<string, THREE.BufferGeometry>();
 export const bodyIdGeometryCache = _g.__cindr3d_bodyIdGeometryCache__ as Map<string, THREE.BufferGeometry>;
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    liveBodyMeshes.clear();
+    for (const geometry of bodyGeometryCache.values()) geometry.dispose();
+    bodyGeometryCache.clear();
+    for (const geometry of bodyIdGeometryCache.values()) geometry.dispose();
+    bodyIdGeometryCache.clear();
+  });
+}

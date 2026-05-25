@@ -53,6 +53,8 @@ describe('OCC feature evaluator cache', () => {
 
     expect(updated?.id).toBe('upstream-result-2');
     expect(calls).toBe(2);
+    expect(globalBRepBodyRegistry.get('upstream-result-1')).toBeUndefined();
+    expect(globalBRepBodyRegistry.getByFeature('feature-b')).toHaveLength(1);
   });
 
   it('rebuilds a cache hit when the registry no longer has the body', () => {
@@ -82,5 +84,17 @@ describe('OCC feature evaluator cache', () => {
 
     expect(globalBRepBodyRegistry.getByFeature('parent')).toEqual([]);
     expect(globalBRepBodyRegistry.getByFeature('child')).toEqual([]);
+  });
+
+  it('clears cached bodies from the registry when the cache is reset', () => {
+    registerFeatureEvaluator('clear-test', (_oc, featureId) => fakeBody(`body-${featureId}`));
+
+    evaluateFeature({}, 'clear-test', 'clear-a', {});
+    evaluateFeature({}, 'clear-test', 'clear-b', {});
+
+    clearFeatureEvaluationCache();
+
+    expect(globalBRepBodyRegistry.getByFeature('clear-a')).toEqual([]);
+    expect(globalBRepBodyRegistry.getByFeature('clear-b')).toEqual([]);
   });
 });

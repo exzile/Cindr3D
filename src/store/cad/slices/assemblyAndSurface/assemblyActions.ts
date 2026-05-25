@@ -5,9 +5,13 @@ import type {
   InterferenceResult,
   JointOriginRecord,
 } from '../../../../types/cad';
+import type { SelectionSet } from '../../../../types/cad/assembly/relationships';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
-import { csgAsync } from '../../../../workers/csgWorkerPool';
 import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
+import { getOccSync } from '../../../../engine/occ/loader';
+import { performOccBooleanWithInstance } from '../../../../engine/occ/ops/booleanCore';
+import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
+import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
 import { useComponentStore } from '../../../componentStore';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
@@ -98,23 +102,27 @@ export function createAssemblyActions({ set, get }: CADSliceContext): Partial<CA
           const boxA = new THREE.Box3().setFromObject(meshA);
           const boxB = new THREE.Box3().setFromObject(meshB);
           if (!boxA.intersectsBox(boxB)) continue;
-          // Clone-then-bake so the world-baked intermediates are owned here and
-          // disposed after CSG — never the shared feature geometry singletons.
+          // OCC intersection: requires both bodies to carry a live brepBodyId.
+          // Skip non-OCC pairs (legacy mesh bodies without an OCC representation).
+          const idA = meshA.userData['brepBodyId'] as string | undefined;
+          const idB = meshB.userData['brepBodyId'] as string | undefined;
+          const occ = getOccSync();
+          if (!idA || !idB || !occ) continue;
           try {
-            const geomA = GeometryEngine.bakeMeshWorldGeometry(meshA);
-            const geomB = GeometryEngine.bakeMeshWorldGeometry(meshB);
-            const result = await csgAsync(geomA, geomB, 'intersect');
-            geomA.dispose();
-            geomB.dispose();
-            const vertCount = (result?.getAttribute('position') as THREE.BufferAttribute | undefined)?.count ?? 0;
+            const bodyA = globalBRepBodyRegistry.get(idA);
+            const bodyB = globalBRepBodyRegistry.get(idB);
+            if (!bodyA || !bodyB) continue;
+            const resultBody = performOccBooleanWithInstance(occ.oc, 'intersect', bodyA, bodyB);
+            if (!resultBody) continue;
+            const featureId = crypto.randomUUID();
+            resultBody.sourceFeatureId = featureId;
+            const mesh = createRegisteredOccMesh(occ.oc, resultBody, BODY_MATERIAL, featureId);
+            const result = mesh.geometry;
             // Guard tiny / edge-kiss results (>6 verts ⇒ real volume).
-            if (result && vertCount > 6) {
+            if (result.getAttribute('position').count > 6) {
               baseIndex += 1;
-              const mesh = new THREE.Mesh(result, BODY_MATERIAL);
-              mesh.castShadow = true;
-              mesh.receiveShadow = true;
               const interferenceFeature: Feature = {
-                id: crypto.randomUUID(),
+                id: featureId,
                 name: `Interference ${baseIndex} (${fA.name}∩${fB.name})`,
                 type: 'combine',
                 params: {
@@ -128,17 +136,17 @@ export function createAssemblyActions({ set, get }: CADSliceContext): Partial<CA
                 suppressed: false,
                 timestamp: Date.now(),
               };
-              mesh.userData.pickable = true;
-              mesh.userData.featureId = interferenceFeature.id;
               newFeatures.push(interferenceFeature);
             } else {
-              result?.dispose();
+              const bodyId = mesh.userData['brepBodyId'] as string | undefined;
+              if (bodyId) globalBRepBodyRegistry.delete(bodyId);
+              result.dispose();
             }
           } catch (err) {
-            // A single non-manifold / degenerate pair must not abort the rest.
+            // A single degenerate pair must not abort the rest.
             get().setStatusMessage(
               `Interference body (${fA.name}∩${fB.name}) skipped: ${
-                err instanceof Error ? err.message : 'CSG error'
+                err instanceof Error ? err.message : 'OCC error'
               }`,
             );
           }
@@ -287,6 +295,54 @@ export function createAssemblyActions({ set, get }: CADSliceContext): Partial<CA
       get().addFeature(feature);
       set({ activeDialog: null, showInsertComponentDialog: false });
       get().setStatusMessage(`Inserted component: ${params.name} (mesh loading deferred)`);
+    },
+
+    // ── Selection Sets ────────────────────────────────────────────────────
+    selectionSets: [],
+
+    addSelectionSet: (name, bodyIds) => {
+      const id = crypto.randomUUID();
+      set((state) => {
+        const n = state.selectionSets.length + 1;
+        const entry: SelectionSet = { id, name: name || `Selection Set ${n}`, bodyIds: [...bodyIds] };
+        return { selectionSets: [...state.selectionSets, entry] };
+      });
+      return id;
+    },
+
+    removeSelectionSet: (id) => {
+      set((state) => ({ selectionSets: state.selectionSets.filter((s) => s.id !== id) }));
+    },
+
+    renameSelectionSet: (id, name) => {
+      set((state) => ({ selectionSets: state.selectionSets.map((s) => s.id === id ? { ...s, name } : s) }));
+    },
+
+    addBodiesToSelectionSet: (id, bodyIds) => {
+      set((state) => ({
+        selectionSets: state.selectionSets.map((s) => {
+          if (s.id !== id) return s;
+          const existing = new Set(s.bodyIds);
+          return { ...s, bodyIds: [...s.bodyIds, ...bodyIds.filter((b) => !existing.has(b))] };
+        }),
+      }));
+    },
+
+    removeBodyFromSelectionSet: (setId, bodyId) => {
+      set((state) => ({
+        selectionSets: state.selectionSets.map((s) =>
+          s.id === setId ? { ...s, bodyIds: s.bodyIds.filter((b) => b !== bodyId) } : s,
+        ),
+      }));
+    },
+
+    selectSelectionSet: (id) => {
+      const componentStore = useComponentStore.getState();
+      const ss = get().selectionSets.find((s) => s.id === id);
+      if (!ss || ss.bodyIds.length === 0) return;
+      // Select the first body; highlight all via status message.
+      componentStore.setSelectedBodyId(ss.bodyIds[0]);
+      get().setStatusMessage(`Selection set "${ss.name}": ${ss.bodyIds.length} bodies selected`);
     },
   };
 }

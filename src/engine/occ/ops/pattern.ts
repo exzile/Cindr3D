@@ -76,29 +76,40 @@ export function occRectangularPatternWithInstance(
   const rawOriginal = occDeref(oc, body.shape, oc.TopoDS_Shape);
 
   const copies: unknown[] = [];
+  let copiesTransferred = false;
 
-  for (let i = 0; i < countX; i++) {
-    for (let j = 0; j < countY; j++) {
-      if (i === 0 && j === 0) {
-        copies.push(rawOriginal);
-        continue;
+  try {
+    for (let i = 0; i < countX; i++) {
+      for (let j = 0; j < countY; j++) {
+        if (i === 0 && j === 0) {
+          copies.push(rawOriginal);
+          continue;
+        }
+        const dx = nx.x * i * spacingX + ny.x * j * spacingY;
+        const dy = nx.y * i * spacingX + ny.y * j * spacingY;
+        const dz = nx.z * i * spacingX + ny.z * j * spacingY;
+
+        const vec = new occ.gp_Vec_4(dx, dy, dz);
+        const trsf = new occ.gp_Trsf_1();
+        let transformer: InstanceType<OccPatternApi['BRepBuilderAPI_Transform_2']> | null = null;
+        try {
+          trsf.SetTranslation_1(vec);
+          transformer = new occ.BRepBuilderAPI_Transform_2(rawOriginal, trsf, true);
+          copies.push(transformer.Shape());
+        } finally {
+          transformer?.delete();
+          trsf.delete();
+          vec.delete();
+        }
       }
-      const dx = nx.x * i * spacingX + ny.x * j * spacingY;
-      const dy = nx.y * i * spacingX + ny.y * j * spacingY;
-      const dz = nx.z * i * spacingX + ny.z * j * spacingY;
-
-      const vec = new occ.gp_Vec_4(dx, dy, dz);
-      const trsf = new occ.gp_Trsf_1();
-      trsf.SetTranslation_1(vec);
-      const transformer = new occ.BRepBuilderAPI_Transform_2(rawOriginal, trsf, true);
-      copies.push(transformer.Shape());
-      transformer.delete();
-      trsf.delete();
-      vec.delete();
+    }
+    copiesTransferred = true;
+    return fuseShapes(occ, oc, copies, options);
+  } finally {
+    if (!copiesTransferred) {
+      for (const shape of copies) releaseOccShape(shape);
     }
   }
-
-  return fuseShapes(occ, oc, copies, options);
 }
 
 // ── Circular pattern ──────────────────────────────────────────────────────────
@@ -135,6 +146,7 @@ export function occCircularPatternWithInstance(
   const occAxis = new occ.gp_Ax1_2(occOrigin, occDir);
 
   const copies: unknown[] = [];
+  let copiesTransferred = false;
 
   try {
     for (let i = 0; i < count; i++) {
@@ -143,19 +155,26 @@ export function occCircularPatternWithInstance(
         continue;
       }
       const trsf = new occ.gp_Trsf_1();
-      trsf.SetRotation(occAxis, i * deltaAngle);
-      const transformer = new occ.BRepBuilderAPI_Transform_2(rawOriginal, trsf, true);
-      copies.push(transformer.Shape());
-      transformer.delete();
-      trsf.delete();
+      let transformer: InstanceType<OccPatternApi['BRepBuilderAPI_Transform_2']> | null = null;
+      try {
+        trsf.SetRotation(occAxis, i * deltaAngle);
+        transformer = new occ.BRepBuilderAPI_Transform_2(rawOriginal, trsf, true);
+        copies.push(transformer.Shape());
+      } finally {
+        transformer?.delete();
+        trsf.delete();
+      }
     }
+    copiesTransferred = true;
+    return fuseShapes(occ, oc, copies, options);
   } finally {
+    if (!copiesTransferred) {
+      for (const shape of copies) releaseOccShape(shape);
+    }
     occAxis.delete();
     occDir.delete();
     occOrigin.delete();
   }
-
-  return fuseShapes(occ, oc, copies, options);
 }
 
 // ── Shared fuse helper ────────────────────────────────────────────────────────
@@ -171,7 +190,9 @@ function fuseShapes(
     return makeBRepBodyFromOccShape(oc, shapes[0], options);
   }
 
+  const liveShapes = new Set(shapes);
   let accumulated = shapes[0];
+  try {
   for (let k = 1; k < shapes.length; k++) {
     const fuse = new occ.BRepAlgoAPI_Fuse_3(accumulated, shapes[k]);
     fuse.SetNonDestructive?.(true);
@@ -180,16 +201,31 @@ function fuseShapes(
       fuse.Build(progress);
       if (fuse.IsDone?.() === false || fuse.HasErrors?.()) {
         console.warn(`[occPattern] fuse step ${k} failed — using compound`);
-        fuse.delete();
+        liveShapes.delete(shapes[k]);
+        releaseOccShape(shapes[k]);
         continue;
       }
+      const previous = accumulated;
       const next = fuse.Shape();
-      fuse.delete();
       accumulated = next;
+      liveShapes.add(next);
+      liveShapes.delete(previous);
+      releaseOccShape(previous);
+      liveShapes.delete(shapes[k]);
+      releaseOccShape(shapes[k]);
     } finally {
       progress.delete?.();
+      fuse.delete();
     }
   }
 
+  liveShapes.delete(accumulated);
   return makeBRepBodyFromOccShape(oc, accumulated, options);
+  } finally {
+    for (const shape of liveShapes) releaseOccShape(shape);
+  }
+}
+
+function releaseOccShape(shape: unknown): void {
+  (shape as { delete?: () => void } | null | undefined)?.delete?.();
 }

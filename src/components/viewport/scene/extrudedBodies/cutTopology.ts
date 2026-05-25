@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type {
   BodyTopology,
   ModelEdge,
-} from "../../../../engine/geometryEngine/core/solid/edgeTopology";
+} from "../../../../engine/geometryEngine/core/solid/edgeTypes";
 import { modelEdgeId } from "../../../../engine/geometryEngine/core/solid/edgeId";
 
 // A cut that doesn't reach the body's outer edges leaves every one of them
@@ -47,10 +47,66 @@ function clipSegmentToBox(
   return [a.clone().addScaledVector(d, t0), a.clone().addScaledVector(d, t1)];
 }
 
+function projectClosedLoopToBoxFace(
+  edge: ModelEdge,
+  box: THREE.Box3,
+): ModelEdge | null {
+  const poly = edge.polyline;
+  if (poly.length < 4 || poly[0].distanceToSquared(poly[poly.length - 1]) > 1e-10) {
+    return null;
+  }
+
+  const diag = Math.max(box.min.distanceTo(box.max), 1);
+  const planeTol = Math.max(diag * 1e-6, 1e-6);
+  const insideTol = Math.max(diag * 2e-3, 1e-4);
+  const axes = ['x', 'y', 'z'] as const;
+
+  for (let axisIndex = 0; axisIndex < axes.length; axisIndex += 1) {
+    const axis = axes[axisIndex];
+    let min = Infinity;
+    let max = -Infinity;
+    for (const point of poly) {
+      min = Math.min(min, point[axis]);
+      max = Math.max(max, point[axis]);
+    }
+    if (max - min > planeTol) continue;
+
+    const coord = (min + max) * 0.5;
+    const target =
+      coord < box.min[axis] ? box.min[axis] :
+      coord > box.max[axis] ? box.max[axis] :
+      undefined;
+    if (target === undefined) continue;
+
+    const otherAxes = axes.filter((candidate) => candidate !== axis);
+    const overlapsFace = poly.some((point) =>
+      otherAxes.every((other) =>
+        point[other] >= box.min[other] - insideTol &&
+        point[other] <= box.max[other] + insideTol,
+      ),
+    );
+    if (!overlapsFace) continue;
+
+    const projected = poly.map((point) => {
+      const next = point.clone();
+      next[axis] = target;
+      return next;
+    });
+    return { id: modelEdgeId(projected), polyline: projected, kind: edge.kind };
+  }
+
+  return null;
+}
+
 function clipTopologyToBox(edges: ModelEdge[], box: THREE.Box3): ModelEdge[] {
   const out: ModelEdge[] = [];
   const epsSq = Math.max(box.min.distanceToSquared(box.max) * 1e-10, 1e-8);
   for (const edge of edges) {
+    const projectedLoop = projectClosedLoopToBoxFace(edge, box);
+    if (projectedLoop) {
+      out.push(projectedLoop);
+      continue;
+    }
     let run: THREE.Vector3[] = [];
     const flush = () => {
       if (run.length >= 2) {

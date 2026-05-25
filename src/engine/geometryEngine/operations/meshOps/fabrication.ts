@@ -1,15 +1,6 @@
 import * as THREE from 'three';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { SimplifyModifier } from 'three/examples/jsm/modifiers/SimplifyModifier.js';
-import { extractEdgeTopology } from '../../core/solid/edgeTopology';
-
-function attachTopology(geom: THREE.BufferGeometry): void {
-  try {
-    const forTopo = geom.index ? geom : mergeVertices(geom, 1e-6);
-    geom.userData.topology = extractEdgeTopology(forTopo);
-    if (forTopo !== geom) forTopo.dispose();
-  } catch { /* non-fatal */ }
-}
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 export function createRib(
   profilePoints: THREE.Vector3[],
@@ -50,7 +41,6 @@ export function createRib(
   const geom = new THREE.BufferGeometry();
   geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
   geom.computeVertexNormals();
-  attachTopology(geom);
   return new THREE.Mesh(geom, new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4 }));
 }
 
@@ -72,7 +62,6 @@ export function createWeb(
   const geom = new THREE.BufferGeometry();
   geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(allVerts), 3));
   geom.computeVertexNormals();
-  attachTopology(geom);
   return new THREE.Mesh(geom, new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4 }));
 }
 
@@ -100,7 +89,6 @@ export function createRest(
   baseGeom.dispose();
   geom.applyMatrix4(worldMatrix);
   geom.computeVertexNormals();
-  attachTopology(geom);
   return new THREE.Mesh(geom, new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4 }));
 }
 

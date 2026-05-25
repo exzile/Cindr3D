@@ -1,19 +1,40 @@
 import * as THREE from 'three';
 import type { Feature } from '../../../../types/cad';
-import { GeometryEngine } from '../../../../engine/GeometryEngine';
-import { csgAsync } from '../../../../workers/csgWorkerPool';
+import { getOccSync } from '../../../../engine/occ/loader';
+import { performOccBooleanWithInstance, type OccBooleanOperation } from '../../../../engine/occ/ops/booleanCore';
+import { tessellate, tessellationToGeometry } from '../../../../engine/occ/tessellate';
+import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
+import { disposeMeshDeferred } from '../../../../engine/occ/picking';
 
 export type CombineOperation = 'join' | 'cut' | 'intersect';
 
 export function runBoolean(targetMesh: THREE.Mesh, toolMesh: THREE.Mesh, operation: CombineOperation): THREE.BufferGeometry {
-  if (operation === 'join') return GeometryEngine.csgUnion(targetMesh.geometry, toolMesh.geometry);
-  if (operation === 'cut') return GeometryEngine.csgSubtract(targetMesh.geometry, toolMesh.geometry);
-  return GeometryEngine.csgIntersect(targetMesh.geometry, toolMesh.geometry);
-}
-
-export async function runBooleanAsync(targetMesh: THREE.Mesh, toolMesh: THREE.Mesh, operation: CombineOperation): Promise<THREE.BufferGeometry | null> {
-  const opKey = operation === 'join' ? 'union' : operation === 'cut' ? 'subtract' : 'intersect';
-  return csgAsync(targetMesh.geometry as THREE.BufferGeometry, toolMesh.geometry as THREE.BufferGeometry, opKey);
+  // OCC primary: both meshes must carry a live brepBodyId and OCC must be loaded.
+  const targetBodyId = targetMesh.userData['brepBodyId'] as string | undefined;
+  const toolBodyId = toolMesh.userData['brepBodyId'] as string | undefined;
+  const occ = getOccSync();
+  if (targetBodyId && toolBodyId && occ) {
+    const targetBody = globalBRepBodyRegistry.get(targetBodyId);
+    const toolBody = globalBRepBodyRegistry.get(toolBodyId);
+    if (targetBody && toolBody) {
+      const boolOp: OccBooleanOperation =
+        operation === 'join' ? 'union' : operation === 'cut' ? 'subtract' : 'intersect';
+      const resultBody = performOccBooleanWithInstance(occ.oc, boolOp, targetBody, toolBody);
+      if (resultBody) {
+        try {
+          const tess = tessellate(occ.oc, resultBody);
+          const geometry = tessellationToGeometry(tess);
+          globalBRepBodyRegistry.add(resultBody);
+          return geometry;
+        } catch (err) {
+          resultBody.dispose();
+          throw err;
+        }
+      }
+    }
+  }
+  // Bodies lack OCC representation — cannot perform boolean on legacy mesh-only bodies.
+  throw new Error(`runBoolean: bodies lack OCC representation (operation: ${operation})`);
 }
 
 export const MAX_RECOMPUTE_ITERATIONS = 32;
@@ -51,8 +72,8 @@ export function recomputeBooleanDependents(features: Feature[], changedFeatureId
         changed.add(feature.id);
         didUpdate = true;
         if (feature.mesh instanceof THREE.Mesh) {
-          const oldGeom = feature.mesh.geometry;
-          setTimeout(() => oldGeom.dispose(), 0);
+          const oldMeshRef = feature.mesh;
+          disposeMeshDeferred(oldMeshRef);
         }
         return { ...feature, mesh };
       } catch {

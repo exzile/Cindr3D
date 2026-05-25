@@ -14,7 +14,6 @@ import './effects/printSessionResume';
 import './effects/profileSpoolSync';
 import { registerServiceWorker } from './pwa/registerServiceWorker';
 import { installInteractiveLabelGuard } from './accessibility/interactiveLabels';
-import { initManifold } from './engine/geometryEngine/core/solid/manifoldWasm';
 import { getOcc } from './engine/occ/loader';
 
 // ─── three-mesh-bvh: accelerate all Three.js raycasting globally ─────────────
@@ -29,14 +28,6 @@ import { getOcc } from './engine/occ/loader';
 (THREE.BufferGeometry.prototype as any).disposeBoundsTree = disposeBoundsTree;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (THREE.Mesh.prototype as any).raycast = acceleratedRaycast;
-
-// ─── Manifold WASM: pre-load so the first CSG call is fast ───────────────────
-// initManifold() resolves in ~50-200ms (WASM fetch + compile). Starting it here
-// keeps mesh-boolean/extrude CSG ops from stalling on first use. Non-edge mesh
-// booleans still fall back to three-bvh-csg if Manifold cannot initialize.
-void initManifold().catch(() => {
-  console.warn('[main] Manifold WASM initialization failed; falling back to three-bvh-csg for CSG operations.');
-});
 
 void getOcc().catch(() => {
   console.warn('[main] OpenCASCADE WASM initialization failed; OCC pipeline unavailable.');

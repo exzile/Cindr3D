@@ -68,6 +68,9 @@ const get_object_properties: ToolHandler = async ({ id }) => {
   if (!f) throw new Error(`Feature ${String(id)} not found.`);
   const { mesh: _mesh, ...rest } = f;
   const hasMesh = !!_mesh;
+  const linkedSketch = f.sketchId
+    ? store().sketches.find((sketch) => sketch.id === f.sketchId) ?? null
+    : null;
   let bbox = null;
   if (_mesh) {
     try {
@@ -76,7 +79,36 @@ const get_object_properties: ToolHandler = async ({ id }) => {
       if (box) bbox = { min: box.min.toArray(), max: box.max.toArray() };
     } catch { /* no bbox */ }
   }
-  return { ...rest, hasMesh, bbox };
+  return {
+    ...rest,
+    hasMesh,
+    bbox,
+    meshUserData: _mesh ? {
+      brepBodyId: (_mesh as { userData?: Record<string, unknown> }).userData?.brepBodyId ?? null,
+      featureId: (_mesh as { userData?: Record<string, unknown> }).userData?.featureId ?? null,
+      pickable: (_mesh as { userData?: Record<string, unknown> }).userData?.pickable ?? null,
+    } : null,
+    sketch: linkedSketch ? {
+      id: linkedSketch.id,
+      name: linkedSketch.name,
+      plane: linkedSketch.plane,
+      planeOrigin: linkedSketch.planeOrigin.toArray(),
+      planeNormal: linkedSketch.planeNormal.toArray(),
+      entityCount: linkedSketch.entities.length,
+      entities: linkedSketch.entities.map((entity) => ({
+        id: entity.id,
+        type: entity.type,
+        radius: entity.radius ?? null,
+        closed: entity.closed ?? false,
+        points: entity.points.map((point) => ({
+          id: point.id,
+          x: point.x,
+          y: point.y,
+          z: point.z,
+        })),
+      })),
+    } : null,
+  };
 };
 
 const select_objects: ToolHandler = async ({ ids }) => {

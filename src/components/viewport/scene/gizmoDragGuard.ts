@@ -32,3 +32,10 @@ export function subscribeGizmoDragEnd(fn: () => void): () => void {
   _dragEndListeners.add(fn);
   return () => _dragEndListeners.delete(fn);
 }
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    _gizmoDragging = false;
+    _dragEndListeners.clear();
+  });
+}

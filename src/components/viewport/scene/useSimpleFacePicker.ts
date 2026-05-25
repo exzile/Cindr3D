@@ -57,6 +57,8 @@ export function useSimpleFacePicker({
 
   const hoverMeshRef = useRef<THREE.Mesh | null>(null);
   const selectedMeshRef = useRef<THREE.Mesh | null>(null);
+  const hoverSigRef = useRef<string | null>(null);
+  const selectedSigRef = useRef<string | null>(null);
   usePickerSceneCleanup([hoverMeshRef, selectedMeshRef]);
 
   const occHoverRef = useRef<OccFacePickResult | null>(null);
@@ -95,63 +97,75 @@ export function useSimpleFacePicker({
         hoverMeshRef.current.geometry.dispose();
         hoverMeshRef.current = null;
       }
+      hoverSigRef.current = null;
       if (selectedMeshRef.current) {
         scene.remove(selectedMeshRef.current);
         selectedMeshRef.current.geometry.dispose();
         selectedMeshRef.current = null;
       }
+      selectedSigRef.current = null;
       occSelectedRef.current = null;
       return;
     }
-    invalidate();
+    if (pickEnabled && occHoverRef.current) invalidate();
 
     if (pickEnabled) {
       const occ = occHoverRef.current;
       const tess = occ ? getMeshTessellation(occ.mesh) : null;
-      const hoverGeo = occ && tess
-        ? buildFaceHighlightGeometry(tess, faceIdAtTriangle(tess, occ.triangleIndex))
-        : null;
-      if (hoverGeo) {
-        if (!hoverMeshRef.current) {
-          const mesh = new THREE.Mesh(hoverGeo, hoverMat);
-          mesh.renderOrder = 99;
-          scene.add(mesh);
-          hoverMeshRef.current = mesh;
-        } else {
-          hoverMeshRef.current.geometry.dispose();
-          hoverMeshRef.current.geometry = hoverGeo;
+      if (occ && tess) {
+        const faceId = faceIdAtTriangle(tess, occ.triangleIndex);
+        const sig = `${occ.bodyId}:${faceId}`;
+        if (!hoverMeshRef.current || hoverSigRef.current !== sig) {
+          const hoverGeo = buildFaceHighlightGeometry(tess, faceId);
+          if (hoverMeshRef.current) {
+            hoverMeshRef.current.geometry.dispose();
+            hoverMeshRef.current.geometry = hoverGeo;
+          } else {
+            const mesh = new THREE.Mesh(hoverGeo, hoverMat);
+            mesh.renderOrder = 99;
+            scene.add(mesh);
+            hoverMeshRef.current = mesh;
+          }
+          hoverSigRef.current = sig;
         }
         hoverMat.opacity = 0.3 + 0.35 * pulseFactor(clock.elapsedTime * 1000);
       } else if (hoverMeshRef.current) {
         scene.remove(hoverMeshRef.current);
         hoverMeshRef.current.geometry.dispose();
         hoverMeshRef.current = null;
+        hoverSigRef.current = null;
       }
     } else if (hoverMeshRef.current) {
       scene.remove(hoverMeshRef.current);
       hoverMeshRef.current.geometry.dispose();
       hoverMeshRef.current = null;
+      hoverSigRef.current = null;
     }
 
     const selectedOcc = occSelectedRef.current;
     if (selectedFaceId && selectedOcc) {
       const tess = getMeshTessellation(selectedOcc.mesh);
-      const selectedGeo = tess ? buildFaceHighlightGeometry(tess, selectedOcc.faceId) : null;
-      if (selectedGeo) {
-        if (!selectedMeshRef.current) {
-          const mesh = new THREE.Mesh(selectedGeo, selectedMat);
-          mesh.renderOrder = 100;
-          scene.add(mesh);
-          selectedMeshRef.current = mesh;
-        } else {
-          selectedMeshRef.current.geometry.dispose();
-          selectedMeshRef.current.geometry = selectedGeo;
+      if (tess) {
+        const sig = `${selectedOcc.bodyId}:${selectedOcc.faceId}`;
+        if (!selectedMeshRef.current || selectedSigRef.current !== sig) {
+          const selectedGeo = buildFaceHighlightGeometry(tess, selectedOcc.faceId);
+          if (selectedMeshRef.current) {
+            selectedMeshRef.current.geometry.dispose();
+            selectedMeshRef.current.geometry = selectedGeo;
+          } else {
+            const mesh = new THREE.Mesh(selectedGeo, selectedMat);
+            mesh.renderOrder = 100;
+            scene.add(mesh);
+            selectedMeshRef.current = mesh;
+          }
+          selectedSigRef.current = sig;
         }
       }
     } else if (selectedMeshRef.current) {
       scene.remove(selectedMeshRef.current);
       selectedMeshRef.current.geometry.dispose();
       selectedMeshRef.current = null;
+      selectedSigRef.current = null;
       occSelectedRef.current = null;
     }
   });

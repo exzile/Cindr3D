@@ -63,6 +63,10 @@ import {
   PointAlongPathDialog,
   AsBuiltJointDialog,
   DriveJointsDialog,
+  MotionStudyDialog,
+  BodyPropertiesDialog,
+  DisplayDetailControlDialog,
+  SelectionSetsDialog,
   MotionLinkDialog,
   RigidGroupDialog,
   ComponentPatternDialog,
@@ -394,6 +398,10 @@ export default function ActiveDialog() {
     case 'point-at-edge-plane': return <PointAtEdgeAndPlaneDialog onClose={close} />;
     case 'point-along-path': return <PointAlongPathDialog onClose={close} />;
     case 'drive-joints': return <DriveJointsDialog onClose={close} />;
+    case 'motion-study': return <MotionStudyDialog onClose={close} />;
+    case 'body-properties': return <BodyPropertiesDialog onClose={close} bodyId={dialogPayload ?? undefined} />;
+    case 'display-detail': return <DisplayDetailControlDialog onClose={close} bodyId={dialogPayload ?? undefined} />;
+    case 'selection-sets': return <SelectionSetsDialog onClose={close} />;
     case 'motion-link': return <MotionLinkDialog onClose={close} />;
     case 'rigid-group': return <RigidGroupDialog onClose={close} />;
     case 'untrim': return <UntrimDialog onClose={close} />;

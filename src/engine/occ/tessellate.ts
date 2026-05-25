@@ -34,58 +34,91 @@ export function tessellate(
   }
 
   const shape = occDeref(oc, body.shape, oc.TopoDS_Shape);
-  const mesher = new oc.BRepMesh_IncrementalMesh_2(
-    shape,
-    options.linearDeflection ?? 0.1,
-    options.relative ?? false,
-    options.angularDeflection ?? 0.5,
-    options.parallel ?? false,
-  );
-  mesher.Perform();
-  mesher.delete();
-
-  const positions: number[] = [];
-  const normals: number[] = [];
-  const faceIds: number[] = [];
-
-  const faceLookup = new Map<number, number>();
-  for (const [faceId, handle] of body.faceIds) {
-    faceLookup.set(handle.ptr, faceId);
-  }
-
-  const explorer = new oc.TopExp_Explorer_2(shape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
-  let fallbackFaceId = 0;
-  while (explorer.More()) {
-    const current = explorer.Current();
-    const face = oc.TopoDS.Face_1(current);
-    const faceId = faceLookup.get(face.ptr) ?? fallbackFaceId;
-    fallbackFaceId += 1;
-    const location = new oc.TopLoc_Location_1();
-    const triangulation = oc.BRep_Tool.Triangulation(face, location);
-
-    if (!triangulation.IsNull()) {
-      appendFaceTriangles(oc, triangulation, location, face, faceId, positions, normals, faceIds);
+  try {
+    const mesher = new oc.BRepMesh_IncrementalMesh_2(
+      shape,
+      options.linearDeflection ?? 0.1,
+      options.relative ?? false,
+      options.angularDeflection ?? 0.5,
+      options.parallel ?? false,
+    );
+    try {
+      performMesh(oc, mesher);
+    } finally {
+      mesher.delete();
     }
 
-    triangulation.delete();
-    location.delete();
-    face.delete();
-    current.delete();
-    explorer.Next();
-  }
-  explorer.delete();
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const faceIds: number[] = [];
 
-  const tessellation: BRepTessellation = {
-    positions: new Float32Array(positions),
-    normals: new Float32Array(normals),
-    faceIds: new Uint32Array(faceIds),
-    edgePolylines: buildEdgePolylines(oc, body),
-  };
-  body._tessellation = tessellation;
-  return tessellation;
+    const faceLookup = new Map<number, number>();
+    for (const [faceId, handle] of body.faceIds) {
+      faceLookup.set(handle.ptr, faceId);
+    }
+
+    const explorer = new oc.TopExp_Explorer_2(shape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+    let fallbackFaceId = 0;
+    try {
+      while (explorer.More()) {
+        const current = explorer.Current();
+        const face = oc.TopoDS.Face_1(current);
+        const faceId = faceLookup.get(face.ptr) ?? fallbackFaceId;
+        fallbackFaceId += 1;
+        const location = new oc.TopLoc_Location_1();
+        const triangulation = oc.BRep_Tool.Triangulation(face, location);
+
+        if (!triangulation.IsNull()) {
+          appendFaceTriangles(oc, triangulation, location, face, faceId, positions, normals, faceIds);
+        }
+
+        triangulation.delete();
+        location.delete();
+        face.delete();
+        current.delete();
+        explorer.Next();
+      }
+    } finally {
+      explorer.delete();
+    }
+
+    const tessellation: BRepTessellation = {
+      positions: new Float32Array(positions),
+      normals: new Float32Array(normals),
+      faceIds: new Uint32Array(faceIds),
+      edgePolylines: buildEdgePolylines(oc, body),
+    };
+    body._tessellation = tessellation;
+    return tessellation;
+  } finally {
+    shape.delete?.();
+  }
 }
 
 export const tessellateWithInstance = tessellate;
+
+function performMesh(
+  oc: OcctRaw,
+  mesher: { Perform: (...args: unknown[]) => void },
+): void {
+  if (typeof oc.Message_ProgressRange_1 !== 'function') {
+    mesher.Perform();
+    return;
+  }
+
+  const progress = new oc.Message_ProgressRange_1();
+  try {
+    mesher.Perform(progress);
+  } catch (error) {
+    const message = String((error as { message?: unknown })?.message ?? error);
+    if (!message.includes('expected 0 args')) {
+      throw error;
+    }
+    mesher.Perform();
+  } finally {
+    progress.delete?.();
+  }
+}
 
 export function tessellationToGeometry(tessellation: BRepTessellation): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
@@ -156,6 +189,8 @@ function buildEdgePolylines(oc: OcctRaw, body: BRepBody): Map<number, Float32Arr
       if (polyline.length >= 6) edgePolylines.set(edgeId, polyline);
     } catch {
       // Keep tessellation usable even if a rare OCC curve adapter is unavailable.
+    } finally {
+      rawEdge.delete?.();
     }
   }
   return edgePolylines;

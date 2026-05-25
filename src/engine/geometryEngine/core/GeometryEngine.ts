@@ -85,12 +85,6 @@ import {
   removeFaceAndHeal as removeFaceAndHealImpl,
   shellMesh as shellMeshImpl,
 } from './mesh/meshEditing';
-import { shellSolid as shellSolidImpl, type ShellOptions } from './mesh/shellSolid';
-import {
-  csgIntersectWithTopology as csgIntersectWithTopologyImpl,
-  csgSubtractWithTopology as csgSubtractWithTopologyImpl,
-  csgUnionWithTopology as csgUnionWithTopologyImpl,
-} from './solid/csg';
 import {
   createSurfacePrimitive as createSurfacePrimitiveImpl,
   fillSurface as fillSurfaceImpl,
@@ -256,22 +250,6 @@ export class GeometryEngine {
     return bakeMeshWorldGeometryImpl(mesh);
   }
 
-  static csgSubtract(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.BufferGeometry {
-    // Phase 2: route through the topology-extracting variant. Render geometry
-    // is byte-identical to the legacy path (same toNonIndexed + per-face
-    // normals); the model-edge topology is attached as userData.topology for
-    // mesh-body edge pickers and downstream mesh tools.
-    return csgSubtractWithTopologyImpl(a, b).geometry;
-  }
-
-  static csgUnion(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.BufferGeometry {
-    return csgUnionWithTopologyImpl(a, b).geometry;
-  }
-
-  static csgIntersect(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.BufferGeometry {
-    return csgIntersectWithTopologyImpl(a, b).geometry;
-  }
-
   static revolveFaceBoundary(
     boundary: THREE.Vector3[],
     axisDir: THREE.Vector3,
@@ -325,34 +303,34 @@ export class GeometryEngine {
     return coilGeometryImpl(outerRadius, wireRadius, pitch, turns);
   }
 
-  static pipeGeometry(
+  static async pipeGeometry(
     points: THREE.Vector3[],
     outerDiameter: number,
     hollow: boolean,
     wallThickness: number,
-  ): THREE.BufferGeometry {
+  ): Promise<THREE.BufferGeometry> {
     return pipeGeometryImpl(points, outerDiameter, hollow, wallThickness);
   }
 
-  static snapFitGeometry(
+  static async snapFitGeometry(
     length: number,
     width: number,
     thickness: number,
     overhang: number,
     overhangAngleDeg: number,
     returnAngleDeg: number,
-  ): THREE.BufferGeometry {
+  ): Promise<THREE.BufferGeometry> {
     return snapFitGeometryImpl(length, width, thickness, overhang, overhangAngleDeg, returnAngleDeg);
   }
 
-  static lipGrooveGeometry(
+  static async lipGrooveGeometry(
     lipWidth: number,
     lipHeight: number,
     grooveWidth: number,
     grooveDepth: number,
     clearance: number,
     includeGroove: boolean,
-  ): THREE.BufferGeometry {
+  ): Promise<THREE.BufferGeometry> {
     return lipGrooveGeometryImpl(lipWidth, lipHeight, grooveWidth, grooveDepth, clearance, includeGroove);
   }
 
@@ -589,11 +567,6 @@ export class GeometryEngine {
 
   static shellMesh(mesh: THREE.Mesh, thickness: number, direction: 'inward' | 'outward' | 'symmetric'): THREE.Mesh {
     return shellMeshImpl(mesh, thickness, direction);
-  }
-
-  /** Fusion-parity solid shell (watertight, face removal, two-thickness). */
-  static shellSolid(mesh: THREE.Mesh, opts: ShellOptions): THREE.Mesh {
-    return shellSolidImpl(mesh, opts);
   }
 
   static draftMesh(mesh: THREE.Mesh, pullAxisDir: THREE.Vector3, draftAngle: number, fixedPlaneY: number = 0): THREE.Mesh {

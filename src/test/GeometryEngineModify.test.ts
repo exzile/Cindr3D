@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { GeometryEngine } from '../engine/GeometryEngine';
-
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /** Count unique vertex positions in a non-indexed geometry (within tol). */
@@ -64,114 +63,6 @@ describe('GeometryEngine.shellMesh', () => {
     expect(unique).toBeLessThanOrEqual(30);
     shelled.geometry.dispose();
     src.geometry.dispose();
-  });
-});
-
-// ─── shellSolid (Fusion-parity) ─────────────────────────────────────────────
-
-/** Fraction of edges used by exactly one triangle (open boundary edges). */
-function boundaryEdgeFraction(geom: THREE.BufferGeometry, tol = 1e-3): number {
-  const pos = geom.attributes.position as THREE.BufferAttribute;
-  const idx = geom.index;
-  const triCount = idx ? idx.count / 3 : pos.count / 3;
-  const q = 1 / tol;
-  const key = (i: number) => {
-    const vi = idx ? idx.getX(i) : i;
-    return `${Math.round(pos.getX(vi) * q)},${Math.round(pos.getY(vi) * q)},${Math.round(pos.getZ(vi) * q)}`;
-  };
-  const edges = new Map<string, number>();
-  for (let t = 0; t < triCount; t++) {
-    const a = key(t * 3), b = key(t * 3 + 1), c = key(t * 3 + 2);
-    for (const [u, v] of [[a, b], [b, c], [c, a]]) {
-      const ek = u < v ? `${u}|${v}` : `${v}|${u}`;
-      edges.set(ek, (edges.get(ek) ?? 0) + 1);
-    }
-  }
-  let boundary = 0;
-  for (const n of edges.values()) if (n === 1) boundary++;
-  return boundary / Math.max(1, edges.size);
-}
-
-/** Count triangles whose centroid is in the +Y top footprint at y≈maxY, facing +Y. */
-function topCapTriangles(geom: THREE.BufferGeometry, halfY: number, halfXZ: number): number {
-  const pos = geom.attributes.position as THREE.BufferAttribute;
-  const idx = geom.index;
-  const triCount = idx ? idx.count / 3 : pos.count / 3;
-  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
-  let count = 0;
-  for (let t = 0; t < triCount; t++) {
-    const ia = idx ? idx.getX(t * 3) : t * 3;
-    const ib = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
-    const ic = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
-    a.fromBufferAttribute(pos, ia); b.fromBufferAttribute(pos, ib); c.fromBufferAttribute(pos, ic);
-    const cy = (a.y + b.y + c.y) / 3;
-    const cx = (a.x + b.x + c.x) / 3;
-    const cz = (a.z + b.z + c.z) / 3;
-    if (cy < halfY - 0.25) continue;
-    if (Math.abs(cx) > halfXZ * 0.6 || Math.abs(cz) > halfXZ * 0.6) continue;
-    const n = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)).normalize();
-    if (n.y > 0.85) count++;
-  }
-  return count;
-}
-
-describe('GeometryEngine.shellSolid (Fusion parity)', () => {
-  it('closed hollow shell is a watertight manifold (not disjoint surface soup)', () => {
-    // The OLD vertex-push shellMesh concatenated outer+inner with no rim, so
-    // ~half the edges were open boundaries. A correct CSG hollow solid is a
-    // closed 2-manifold → essentially zero boundary edges.
-    const src = mkMesh(new THREE.BoxGeometry(10, 10, 10));
-    const shelled = GeometryEngine.shellSolid(src, {
-      insideThickness: 1.5, outsideThickness: 0, shellType: 'sharp',
-      removeFaces: [], faceThicknesses: [],
-    });
-    expect(shelled.geometry.attributes.position.count).toBeGreaterThan(0);
-    expect(boundaryEdgeFraction(shelled.geometry)).toBeLessThan(0.02);
-    shelled.geometry.dispose();
-    src.geometry.dispose();
-  });
-
-  it('two-thickness model: outside expands bbox, inside preserves it, both differ', () => {
-    const mk = () => mkMesh(new THREE.BoxGeometry(10, 10, 10));
-    const inside = GeometryEngine.shellSolid(mk(), { insideThickness: 2, outsideThickness: 0, shellType: 'sharp', removeFaces: [], faceThicknesses: [] });
-    const outside = GeometryEngine.shellSolid(mk(), { insideThickness: 0, outsideThickness: 2, shellType: 'sharp', removeFaces: [], faceThicknesses: [] });
-    const both = GeometryEngine.shellSolid(mk(), { insideThickness: 2, outsideThickness: 2, shellType: 'sharp', removeFaces: [], faceThicknesses: [] });
-    const bb = (m: THREE.Mesh) => new THREE.Box3().setFromBufferAttribute(m.geometry.attributes.position as THREE.BufferAttribute);
-    // Inside-only keeps the original ±5 outer box.
-    expect(bb(inside).max.x).toBeCloseTo(5, 1);
-    // Outside-only grows the box outward (~+2). Old impl left this degenerate.
-    expect(bb(outside).max.x).toBeGreaterThan(6.5);
-    // Both grows outward too, and differs from inside (old impl: symmetric==inward).
-    expect(bb(both).max.x).toBeGreaterThan(6.5);
-    inside.geometry.dispose(); outside.geometry.dispose(); both.geometry.dispose();
-  });
-
-  it('removing the top face creates a real opening (no outer top cap)', () => {
-    const closed = GeometryEngine.shellSolid(mkMesh(new THREE.BoxGeometry(10, 10, 10)), {
-      insideThickness: 1.5, outsideThickness: 0, shellType: 'sharp',
-      removeFaces: [], faceThicknesses: [],
-    });
-    const topRemoved = GeometryEngine.shellSolid(mkMesh(new THREE.BoxGeometry(10, 10, 10)), {
-      insideThickness: 1.5, outsideThickness: 0, shellType: 'sharp',
-      removeFaces: [{
-        normal: new THREE.Vector3(0, 1, 0),
-        centroid: new THREE.Vector3(0, 5, 0),
-        boundary: [
-          new THREE.Vector3(-5, 5, -5),
-          new THREE.Vector3(5, 5, -5),
-          new THREE.Vector3(5, 5, 5),
-          new THREE.Vector3(-5, 5, 5),
-        ],
-      }],
-      faceThicknesses: [],
-    });
-    // Closed shell has a solid outer top cap; removing +Y must eliminate it.
-    expect(topCapTriangles(closed.geometry, 5, 5)).toBeGreaterThan(0);
-    expect(topCapTriangles(topRemoved.geometry, 5, 5)).toBe(0);
-    // Still one connected body (a valid cup), not shattered.
-    expect(GeometryEngine.splitByConnectedComponents(topRemoved.geometry).length).toBe(1);
-    closed.geometry.dispose();
-    topRemoved.geometry.dispose();
   });
 });
 
