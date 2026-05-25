@@ -221,7 +221,9 @@ function tryBuildExactCircleToolShape(
 function shapeToSolidSketchProfile(shape: THREE.Shape): SketchProfile {
   return {
     outer: shape.getPoints(OCC_PROFILE_POINT_COUNT),
-    holes: [],
+    holes: shape.holes
+      .map((h) => h.getPoints(OCC_PROFILE_POINT_COUNT))
+      .filter((pts) => pts.length >= 3),
   };
 }
 
