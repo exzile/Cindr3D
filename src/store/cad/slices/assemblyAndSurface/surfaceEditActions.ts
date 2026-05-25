@@ -7,19 +7,20 @@ import { placeToolFeatureAsync } from '../featureManagement/bodyBoolean';
 import { occThickenWithInstance } from '../../../../engine/occ/ops/thicken';
 import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
 import { getOccSync } from '../../../../engine/occ/loader';
-import { tessellateWithInstance, tessellationToGeometry } from '../../../../engine/occ/tessellate';
-import { attachTessellationToMesh } from '../../../../engine/occ/picking';
+import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
+import { disposeMeshDeferred, disposeMeshesDeferred } from '../../../../engine/occ/picking';
+import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
 
-const SURFACE_MATERIAL = () =>
-  new THREE.MeshPhysicalMaterial({
-    color: 0x8899aa,
-    metalness: 0.3,
-    roughness: 0.4,
-    side: THREE.DoubleSide,
-  });
+const SURFACE_MATERIAL = new THREE.MeshPhysicalMaterial({
+  color: 0x8899aa,
+  metalness: 0.3,
+  roughness: 0.4,
+  side: THREE.DoubleSide,
+});
+SURFACE_MATERIAL.userData['shared'] = true;
 
 function configureMesh(geom: THREE.BufferGeometry) {
-  const mesh = new THREE.Mesh(geom, SURFACE_MATERIAL());
+  const mesh = new THREE.Mesh(geom, SURFACE_MATERIAL);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;
@@ -62,16 +63,22 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
       }
       let removed = 0;
       const nextMesh = new Map<string, THREE.Mesh>();
+      const originalMeshes: THREE.Mesh[] = [];
       for (const [featureId, picks] of byFeature) {
         const srcMesh = features.find((f) => f.id === featureId)?.mesh as THREE.Mesh | undefined;
         if (!srcMesh?.isMesh) continue;
+        originalMeshes.push(srcMesh);
         let working = srcMesh;
         for (const p of picks) {
+          const prev = working;
           working = GeometryEngine.removeFaceAndHeal(
-            working,
+            prev,
             new THREE.Vector3(...p.normal),
             new THREE.Vector3(...p.centroid),
           );
+          // Dispose intermediate meshes immediately — each call produces a fresh mesh.
+          // The originals are deferred until after set() below.
+          if (prev !== srcMesh) prev.geometry.dispose();
           removed++;
         }
         working.castShadow = true;
@@ -94,6 +101,8 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
         deleteFaceIds: [],
         deleteFacePicks: [],
       });
+      // Defer original mesh disposal until after state is committed.
+      disposeMeshesDeferred(originalMeshes);
       get().setStatusMessage(`Delete Face: removed ${removed} face${removed !== 1 ? 's' : ''}`);
     },
 
@@ -129,6 +138,7 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
           feature,
         ],
       });
+      disposeMeshDeferred(srcMesh);
       get().setStatusMessage(`Surface Trim ${n}: kept ${params.keepSide} side`);
     },
 
@@ -191,9 +201,11 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
     commitOffsetSurface: (params) => {
       const { features } = get();
       const n = features.filter((f) => f.params?.featureKind === 'offset-surface').length + 1;
-      const sourceMesh = [...features]
-        .reverse()
-        .find((f) => f.mesh && (f.mesh as THREE.Mesh).isMesh && f.bodyKind === 'surface')?.mesh as THREE.Mesh | undefined;
+      let sourceMesh: THREE.Mesh | undefined;
+      for (let i = features.length - 1; i >= 0; i--) {
+        const f = features[i];
+        if (f.mesh && (f.mesh as THREE.Mesh).isMesh && f.bodyKind === 'surface') { sourceMesh = f.mesh as THREE.Mesh; break; }
+      }
       const signedDistance =
         params.direction === 'inward' ? -params.offsetDistance : params.offsetDistance;
       let mesh = sourceMesh
@@ -206,12 +218,15 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
       let joinNote = '';
       let consumedSourceId: string | undefined;
       if (params.operation === 'join' && sourceMesh && mesh) {
-        const srcFeature = [...features].reverse().find(
-          (f) => f.mesh === sourceMesh && f.bodyKind === 'surface',
-        );
+        let srcFeature: (typeof features)[number] | undefined;
+        for (let i = features.length - 1; i >= 0; i--) {
+          if (features[i].mesh === sourceMesh && features[i].bodyKind === 'surface') { srcFeature = features[i]; break; }
+        }
         try {
           const merged = configureMesh(GeometryEngine.mergeSurfaces(mesh, sourceMesh));
           mesh.geometry.dispose();
+          const oldMat = mesh.material as THREE.Material | undefined;
+          if (oldMat && !oldMat.userData?.['shared']) oldMat.dispose();
           mesh = merged;
           consumedSourceId = srcFeature?.id;
           joinNote = srcFeature ? ` (merged with ${srcFeature.name})` : '';
@@ -246,9 +261,11 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
     commitSurfaceExtend: (params) => {
       const { features } = get();
       const n = features.filter((f) => f.params?.featureKind === 'surface-extend').length + 1;
-      const sourceMesh = [...features]
-        .reverse()
-        .find((f) => f.mesh && (f.mesh as THREE.Mesh).isMesh && f.bodyKind === 'surface')?.mesh as THREE.Mesh | undefined;
+      let sourceMesh: THREE.Mesh | undefined;
+      for (let i = features.length - 1; i >= 0; i--) {
+        const f = features[i];
+        if (f.mesh && (f.mesh as THREE.Mesh).isMesh && f.bodyKind === 'surface') { sourceMesh = f.mesh as THREE.Mesh; break; }
+      }
       const mode =
         params.extensionType === 'natural'
           ? 'natural'
@@ -392,9 +409,11 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
     commitThicken: async (params) => {
       const { features } = get();
       const n = features.filter((f) => f.params?.featureKind === 'thicken-solid').length + 1;
-      const sourceFeature = [...features]
-        .reverse()
-        .find((f) => f.mesh && (f.mesh as THREE.Mesh).isMesh && f.bodyKind === 'surface');
+      let sourceFeature: (typeof features)[number] | undefined;
+      for (let i = features.length - 1; i >= 0; i--) {
+        const f = features[i];
+        if (f.mesh && (f.mesh as THREE.Mesh).isMesh && f.bodyKind === 'surface') { sourceFeature = f; break; }
+      }
       const sourceMesh = sourceFeature?.mesh as THREE.Mesh | undefined;
 
       // OCC path: thicken via BRep when the source surface has an OCC body
@@ -409,15 +428,13 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
           if (thickenResult) {
             const newFeatureId = crypto.randomUUID();
             thickenResult.sourceFeatureId = newFeatureId;
-            globalBRepBodyRegistry.add(thickenResult);
-            const tess = tessellateWithInstance(occ.oc, thickenResult);
-            const geo = tessellationToGeometry(tess);
-            const thickenMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x4488cc }));
-            attachTessellationToMesh(thickenMesh, tess, thickenResult.id);
-            thickenMesh.userData.pickable = true;
-            thickenMesh.userData.featureId = newFeatureId;
-            thickenMesh.castShadow = true;
-            thickenMesh.receiveShadow = true;
+            let thickenMesh: THREE.Mesh;
+            try {
+              thickenMesh = createRegisteredOccMesh(occ.oc, thickenResult, BODY_MATERIAL, newFeatureId);
+            } catch (err) {
+              get().setStatusMessage(`Thicken (OCC) failed: ${err instanceof Error ? err.message : String(err)}`);
+              return;
+            }
             const occThickenFeature: Feature = {
               id: newFeatureId,
               name: `Thicken (${thickness}mm, ${params.direction})`,
@@ -431,6 +448,13 @@ export function createSurfaceEditActions({ set, get }: CADSliceContext): Partial
             };
             get().pushUndo();
             const r = await placeToolFeatureAsync(get(), occThickenFeature, params.operation ?? 'new-body');
+            // If the boolean was actually applied (tool mesh consumed into a result),
+            // the tool BRepBody is no longer referenced by any feature — evict it from
+            // the registry so the WASM heap entry is freed.
+            const toolBrepBodyId = thickenMesh.userData['brepBodyId'] as string | undefined;
+            if (toolBrepBodyId && !r.features.some((f) => f.mesh === thickenMesh)) {
+              globalBRepBodyRegistry.delete(toolBrepBodyId);
+            }
             set({ features: r.features, designConfigurations: r.designConfigurations });
             get().setStatusMessage(`Thicken ${n} (OCC): ${thickness}mm ${params.direction}${r.note}`);
             return;

@@ -12,10 +12,12 @@ import { bodyGeometryCache, bodyIdGeometryCache } from '../../../../store/meshRe
 import { errorMessage } from '../../../../utils/errorHandling';
 import { getOccSync } from '../../../../engine/occ/loader';
 import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
+import { invalidateFeature } from '../../../../engine/occ/featureEvaluator';
 import { occSphereWithInstance } from '../../../../engine/occ/ops/sphere';
 import { occTorusWithInstance } from '../../../../engine/occ/ops/torus';
-import { tessellateWithInstance, tessellationToGeometry } from '../../../../engine/occ/tessellate';
-import { attachTessellationToMesh } from '../../../../engine/occ/picking';
+import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
+import { detachTessellationFromMesh } from '../../../../engine/occ/picking';
+import { BODY_MATERIAL, FASTENER_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
 
 const BASE_CONFIGURATION_ID = 'default';
 
@@ -141,9 +143,7 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
         (params.pitch as number) || 10,
         (params.turns as number) || 5,
       );
-      // Use a fresh MeshPhysicalMaterial matching the EXTRUDE_MATERIAL style
-      const mat = new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide });
-      const m = new THREE.Mesh(geom, mat);
+      const m = new THREE.Mesh(geom, BODY_MATERIAL);
       m.castShadow = true;
       m.receiveShadow = true;
       mesh = m;
@@ -181,22 +181,7 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
               (params.tubeRadius as number) || 3,
               { sourceFeatureId: featureId, transform },
             );
-        globalBRepBodyRegistry.add(body);
-        const tess = tessellateWithInstance(occ.oc, body);
-        const geo = tessellationToGeometry(tess);
-        const mat = new THREE.MeshPhysicalMaterial({
-          color: 0x8899aa,
-          metalness: 0.3,
-          roughness: 0.4,
-          side: THREE.DoubleSide,
-        });
-        const m = new THREE.Mesh(geo, mat);
-        attachTessellationToMesh(m, tess, body.id);
-        m.userData.pickable = true;
-        m.userData.featureId = featureId;
-        m.castShadow = true;
-        m.receiveShadow = true;
-        mesh = m;
+        mesh = createRegisteredOccMesh(occ.oc, body, BODY_MATERIAL, featureId);
       } catch (err) {
         set({
           statusMessage: `${label}: OCC body creation failed (${errorMessage(err, 'unknown OCC error')})`,
@@ -242,14 +227,14 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
 
     if (!isNut && !isWasher) {
       const shankGeo = new THREE.CylinderGeometry(d / 2, d / 2, len, 16);
-      const shankMesh = new THREE.Mesh(shankGeo, new THREE.MeshStandardMaterial({ color: '#B0B8C0', metalness: 0.8, roughness: 0.3 }));
+      const shankMesh = new THREE.Mesh(shankGeo, FASTENER_MATERIAL);
       shankMesh.position.y = -len / 2;
       group.add(shankMesh);
     }
 
     const headSegs = (params.type === 'hex-bolt' || params.type === 'hex-nut') ? 6 : 16;
     const headGeo = new THREE.CylinderGeometry(hd / 2, hd / 2, hh, headSegs);
-    const headMesh = new THREE.Mesh(headGeo, new THREE.MeshStandardMaterial({ color: '#B0B8C0', metalness: 0.8, roughness: 0.3 }));
+    const headMesh = new THREE.Mesh(headGeo, FASTENER_MATERIAL);
 
     if (isNut || isWasher) {
       headMesh.position.y = 0;
@@ -272,7 +257,7 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
       name: `${params.size} ${params.type.replace(/-/g, ' ')}`,
       type: 'fastener',
       params: { ...params } as unknown as Record<string, number | string | boolean | number[]>,
-      mesh: group as unknown as THREE.Mesh,
+      mesh: group,
       visible: true,
       suppressed: false,
       timestamp: Date.now(),
@@ -290,6 +275,15 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
     // Evict the persistent geometry cache entry for this feature (keyed by featureId).
     bodyGeometryCache.get(id)?.dispose();
     bodyGeometryCache.delete(id);
+    // Evict any OCC bodies registered directly against this feature (fillets, chamfers,
+    // sweeps, primitives etc. that bypass featureEvaluator and add to globalBRepBodyRegistry
+    // directly). removeBody() handles the mesh-owned brepBodyId path, but features that
+    // committed OCC bodies without a componentStore body (e.g. boolean results) need this.
+    for (const occBody of globalBRepBodyRegistry.getByFeature(id)) {
+      globalBRepBodyRegistry.delete(occBody.id);
+    }
+    // Invalidate the feature evaluator cache so stale CacheEntry objects don't accumulate.
+    invalidateFeature(id);
 
     // Clean up the body that owned this feature when it was the sole occupant.
     // Without this, deleting a "new-body" extrude leaves an orphaned body entry
@@ -345,11 +339,13 @@ export function createFeatureCoreActions({ set, get }: CADSliceContext): Partial
       const m = target.mesh as THREE.Object3D;
       if (m instanceof THREE.Mesh) {
         m.geometry?.dispose();
+        detachTessellationFromMesh(m);
         disposeMat(m.material);
       } else if (m instanceof THREE.Group) {
         m.traverse((child) => {
           if (child instanceof THREE.Mesh) {
             child.geometry?.dispose();
+            detachTessellationFromMesh(child);
             disposeMat(child.material);
           }
         });

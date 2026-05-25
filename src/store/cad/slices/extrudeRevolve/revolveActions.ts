@@ -10,16 +10,15 @@ import { REVOLVE_DEFAULTS } from '../../defaults';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
 import { getOccSync } from '../../../../engine/occ/loader';
-import { disposeBRepBody } from '../../../../engine/occ/brepBody';
 import { createOccPlaneFrameFromSketch } from '../../../../engine/occ/plane';
 import { occRevolveWithInstance } from '../../../../engine/occ/ops/revolve';
+import { performOccBooleanWithInstance, type OccBooleanOperation } from '../../../../engine/occ/ops/booleanCore';
 import type { SketchProfile } from '../../../../engine/occ/ops/sketchToWire';
 import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
-import { tessellateWithInstance, tessellationToGeometry } from '../../../../engine/occ/tessellate';
-import { attachTessellationToMesh } from '../../../../engine/occ/picking';
-import { performOccBooleanWithInstance } from '../../../../engine/occ/ops/booleanCore';
-import type { OccBooleanOperation } from '../../../../engine/occ/ops/booleanCore';
+import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
 import { errorMessage } from '../../../../utils/errorHandling';
+import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
+import { OCC_PROFILE_POINT_COUNT } from '../../../../utils/occConstants';
 
 /**
  * Resolve the world-space axis vector for a revolve exactly the way
@@ -242,53 +241,68 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
     if (revolveOperation && revolveOperation !== 'new-body' && revolveOperation !== 'new-component' && revolveBodyKind !== 'surface') {
       const target = pickMostRecentSolidTarget(features, { excludeType: 'revolve' });
       if (target) {
-        const occ = getOccSync();
-        const targetOccBodyId = (target.mesh as THREE.Mesh | undefined)?.userData?.['brepBodyId'] as string | undefined;
-        const targetOccBody = occ && targetOccBodyId ? globalBRepBodyRegistry.get(targetOccBodyId) : undefined;
+        // Shared axis for both OCC and CSG paths
+        const axisVec = resolveRevolveAxisVec(resolvedAxisKey, centerlineAxisDirection);
 
-        // OCC boolean path: build tool body and boolean against OCC target
-        if (occ && targetOccBody) {
-          try {
-            const shapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
-            const firstShape = shapes[0];
-            if (firstShape) {
-              const sketchProfile: SketchProfile = {
-                outer: firstShape.getPoints(96),
-                holes: firstShape.holes.map((h) => h.getPoints(96)).filter((pts) => pts.length >= 3),
-              };
-              const frame = createOccPlaneFrameFromSketch(sketch);
-              const axisOriginArr = centerlineAxisOrigin ?? ([0, 0, 0] as [number, number, number]);
-              const axisVecOcc = resolveRevolveAxisVec(resolvedAxisKey, centerlineAxisDirection);
-              const axisOriginVec = new THREE.Vector3(axisOriginArr[0], axisOriginArr[1], axisOriginArr[2]);
-              let occPrimaryRad: number;
-              let side2AngleRad: number | undefined;
-              if (revolveDirection === 'symmetric') {
-                occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle / 2);
-                side2AngleRad = occPrimaryRad;
-              } else if (revolveDirection === 'two-sides') {
-                occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle);
-                side2AngleRad = THREE.MathUtils.degToRad(revolveAngle2);
-              } else {
-                occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle);
-              }
-              const toolBody = occRevolveWithInstance(occ.oc, sketchProfile, { origin: axisOriginVec, direction: axisVecOcc }, occPrimaryRad, frame, { id: `${feature.id}_tool`, sourceFeatureId: feature.id, side2AngleRad });
-              try {
-                const occOp: OccBooleanOperation = revolveOperation === 'join' ? 'union' : revolveOperation === 'cut' ? 'subtract' : 'intersect';
-                const boolResult = performOccBooleanWithInstance(occ.oc, occOp, targetOccBody, toolBody, { id: feature.id, sourceFeatureId: feature.id });
-                if (boolResult) {
-                  globalBRepBodyRegistry.add(boolResult);
-                  const tess = tessellateWithInstance(occ.oc, boolResult);
-                  const geo = tessellationToGeometry(tess);
-                  const mat = new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide });
-                  const occMesh = new THREE.Mesh(geo, mat);
-                  attachTessellationToMesh(occMesh, tess, boolResult.id);
-                  occMesh.userData['pickable'] = true;
-                  occMesh.userData['featureId'] = feature.id;
-                  occMesh.castShadow = true;
-                  occMesh.receiveShadow = true;
-                  feature.mesh = occMesh;
+        // ── OCC boolean path: used when the target was produced by the OCC pipeline ──
+        const targetBrepBodyId = target.mesh instanceof THREE.Mesh
+          ? (target.mesh.userData['brepBodyId'] as string | undefined)
+          : undefined;
+        const targetBRepBody = targetBrepBodyId ? globalBRepBodyRegistry.get(targetBrepBodyId) : undefined;
+        if (targetBRepBody) {
+          const occ = getOccSync();
+          if (occ) {
+            try {
+              const shapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
+              const firstShape = shapes[0];
+              if (firstShape) {
+                const sketchProfile: SketchProfile = {
+                  outer: firstShape.getPoints(OCC_PROFILE_POINT_COUNT),
+                  holes: firstShape.holes.map((h) => h.getPoints(OCC_PROFILE_POINT_COUNT)).filter((pts) => pts.length >= 3),
+                };
+                const frame = createOccPlaneFrameFromSketch(sketch);
+                const axisOriginArr = centerlineAxisOrigin ?? ([0, 0, 0] as [number, number, number]);
+                const axisOriginVec = new THREE.Vector3(axisOriginArr[0], axisOriginArr[1], axisOriginArr[2]);
+
+                let occPrimaryRad: number;
+                let side2AngleRad: number | undefined;
+                if (revolveDirection === 'symmetric') {
+                  occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle / 2);
+                  side2AngleRad = occPrimaryRad;
+                } else if (revolveDirection === 'two-sides') {
+                  occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle);
+                  side2AngleRad = THREE.MathUtils.degToRad(revolveAngle2);
+                } else {
+                  occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle);
+                }
+
+                const toolBody = occRevolveWithInstance(
+                  occ.oc, sketchProfile, occPrimaryRad,
+                  { origin: axisOriginVec, direction: axisVec },
+                  frame,
+                  { id: feature.id + '_tool', side2AngleRad },
+                );
+
+                const boolOp: OccBooleanOperation =
+                  revolveOperation === 'cut' ? 'subtract' :
+                  revolveOperation === 'intersect' ? 'intersect' : 'union';
+
+                let resultBody;
+                try {
+                  resultBody = performOccBooleanWithInstance(
+                    occ.oc, boolOp, targetBRepBody, toolBody,
+                    { id: feature.id, sourceFeatureId: feature.id },
+                  );
+                } finally {
+                  toolBody.dispose();
+                }
+
+                if (resultBody) {
+                  feature.mesh = createRegisteredOccMesh(occ.oc, resultBody, BODY_MATERIAL, feature.id);
                   feature.bodyKind = 'solid';
                   feature.params.targetFeatureId = target.id;
+                  feature.bodyId = target.bodyId;
+                  feature.componentId = target.componentId;
                   const state = get();
                   const updated = state.features.map((f) =>
                     f.id === target.id ? { ...f, suppressed: true, visible: false } : f,
@@ -305,18 +319,15 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
                   });
                   return;
                 }
-              } finally {
-                disposeBRepBody(toolBody);
               }
+            } catch (err) {
+              console.warn(`[commitRevolve] OCC boolean path failed (${errorMessage(err, 'unknown')}); using CSG fallback`);
             }
-          } catch (err) {
-            console.warn(`[commitRevolve] OCC ${revolveOperation} path failed (${errorMessage(err, 'unknown')}); falling back to CSG`);
           }
         }
 
-        // CSG fallback
+        // ── CSG boolean path (fallback when target lacks brepBodyId or OCC fails) ──
         const { phiStart, sweep } = GeometryEngine.resolveRevolveSweep(revolveAngle, revolveAngle2, revolveDirection);
-        const axisVec = resolveRevolveAxisVec(resolvedAxisKey, centerlineAxisDirection);
         const revolveMesh = GeometryEngine.revolveSketch(sketch, sweep, axisVec, phiStart);
         if (revolveMesh) {
           const result = await applyBodyBooleanAsync(target.mesh as THREE.Mesh, revolveMesh, revolveOperation);
@@ -359,9 +370,9 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
           const firstShape = shapes[0];
           if (firstShape) {
             const sketchProfile: SketchProfile = {
-              outer: firstShape.getPoints(96),
+              outer: firstShape.getPoints(OCC_PROFILE_POINT_COUNT),
               holes: firstShape.holes
-                .map((h) => h.getPoints(96))
+                .map((h) => h.getPoints(OCC_PROFILE_POINT_COUNT))
                 .filter((pts) => pts.length >= 3),
             };
             const frame = createOccPlaneFrameFromSketch(sketch);
@@ -399,17 +410,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
               },
             );
 
-            globalBRepBodyRegistry.add(occBody);
-            const tess = tessellateWithInstance(occ.oc, occBody);
-            const geo = tessellationToGeometry(tess);
-            const mat = new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide });
-            const occMesh = new THREE.Mesh(geo, mat);
-            attachTessellationToMesh(occMesh, tess, occBody.id);
-            occMesh.userData.pickable = true;
-            occMesh.userData.featureId = feature.id;
-            occMesh.castShadow = true;
-            occMesh.receiveShadow = true;
-            feature.mesh = occMesh;
+            feature.mesh = createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, feature.id);
           }
         } catch (err) {
           console.warn(`[commitRevolve] OCC path failed (${errorMessage(err, 'unknown')}); using CSG fallback`);

@@ -1,4 +1,4 @@
-import * as THREE from "three";
+﻿import * as THREE from "three";
 import type { Feature } from "../../../../types/cad";
 import { GeometryEngine } from "../../../../engine/GeometryEngine";
 import type { CADSliceContext } from "../../sliceContext";
@@ -13,12 +13,18 @@ import {
 } from "../../../../engine/occ/ops/fillet";
 import type { BRepBody } from "../../../../engine/occ/brepBody";
 import { occChamferWithInstance } from "../../../../engine/occ/ops/chamfer";
-import { tessellateWithInstance, tessellationToGeometry } from "../../../../engine/occ/tessellate";
 import { getOccSync } from "../../../../engine/occ/loader";
-import { attachTessellationToMesh } from "../../../../engine/occ/picking";
 import { occMirrorWithInstance, type OccMirrorPlane } from "../../../../engine/occ/ops/mirror";
 import { occScaleWithInstance } from "../../../../engine/occ/ops/scale";
 import { performOccBooleanMultiWithInstance } from "../../../../engine/occ/ops/booleanCore";
+import { createRegisteredOccMesh } from "../../../../engine/occ/registeredMesh";
+import { storedEdgeIds, parseOccEdgeSelection, type OccEdgeSelection } from "../../../../utils/occEdgeUtils";
+import { disposeMeshDeferred, disposeMeshesDeferred } from "../../../../engine/occ/picking";
+import { syncConfigurationSuppression } from "./bodyBoolean";
+import { BODY_MATERIAL } from "../../../../components/viewport/scene/bodyMaterial";
+
+const DEFAULT_FILLET_RADIUS = 2;
+const DEFAULT_CHAMFER_DISTANCE = 2;
 
 function getBooleanParentIds(feature: Feature): string[] {
   const fromArray = feature.params.booleanParentIds;
@@ -46,34 +52,6 @@ function parentIsHiddenByAnotherCombine(
   );
 }
 
-function storedEdgeIds(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.filter((id): id is string => typeof id === "string");
-  }
-  if (typeof value !== "string") return [];
-  if (value.includes("\u001f")) return value.split("\u001f").filter(Boolean);
-  return value.split(",").filter(Boolean);
-}
-
-type OccEdgeSelection = {
-  bodyId: string;
-  edgeIds: number[];
-};
-
-function parseOccEdgeSelection(edgeIds: string[]): OccEdgeSelection | null {
-  if (edgeIds.length === 0) return null;
-  const parsed = edgeIds.map((id) => {
-    const parts = id.split(":");
-    if (parts[0] !== "occ" || !parts[1]) return null;
-    const edgeId = Number(parts[2]);
-    if (!Number.isInteger(edgeId)) return null;
-    return { bodyId: parts[1], edgeId };
-  });
-  if (parsed.some((item) => item === null)) return null;
-  const bodyId = parsed[0]!.bodyId;
-  if (!parsed.every((item) => item!.bodyId === bodyId)) return null;
-  return { bodyId, edgeIds: parsed.map((item) => item!.edgeId) };
-}
 
 function mirrorPlaneFromString(plane: string): OccMirrorPlane {
   const origin = new THREE.Vector3(0, 0, 0);
@@ -90,7 +68,7 @@ function resolveOccFilletEdgeSets(
   numericEdgeIds: number[],
   srcBody: BRepBody,
   params?: Record<string, unknown>,
-  fallbackRadius = 2,
+  fallbackRadius = DEFAULT_FILLET_RADIUS,
 ): OccFilletEdgeSet[] {
   if (!params) return [{ edgeIds: numericEdgeIds, radius: fallbackRadius }];
 
@@ -113,11 +91,11 @@ function resolveOccFilletEdgeSets(
       } else if (s.type === 'variable' && typeof s.radius === 'number' && typeof s.endRadius === 'number') {
         sets.push({ edgeIds: setNumericIds, startRadius: s.radius, endRadius: s.endRadius });
       } else if (s.type === 'asymmetric') {
-        const r1 = typeof s.offsetOne === 'number' ? Math.max(s.offsetOne, 0.001) : (params.radius as number) ?? 2;
+        const r1 = typeof s.offsetOne === 'number' ? Math.max(s.offsetOne, 0.001) : (params.radius as number) ?? DEFAULT_FILLET_RADIUS;
         const r2 = typeof s.offsetTwo === 'number' ? Math.max(s.offsetTwo, 0.001) : r1;
         sets.push({ edgeIds: setNumericIds, startRadius: r1, endRadius: r2 });
       } else {
-        sets.push({ edgeIds: setNumericIds, radius: typeof s.radius === 'number' ? s.radius : (params.radius as number) ?? 2 });
+        sets.push({ edgeIds: setNumericIds, radius: typeof s.radius === 'number' ? s.radius : (params.radius as number) ?? DEFAULT_FILLET_RADIUS });
       }
     }
     if (sets.length > 0) return sets;
@@ -134,13 +112,6 @@ function resolveOccFilletEdgeSets(
     const r2 = typeof params.offsetTwo === 'number' ? Math.max(params.offsetTwo, 0.001) : r1;
     return [{ edgeIds: numericEdgeIds, startRadius: r1, endRadius: r2 }];
   }
-  if (mode === 'full-round') {
-    // UI auto-selects the center face's edges and computes the inradius; we
-    // pass those edges + radius to occFilletEdgeSetsWithInstance which applies
-    // the spanning fillet. occFullRoundFilletWithInstance is available for the
-    // future face-picker path that supplies centerFaceId + sideFaceIds directly.
-    return [{ edgeIds: numericEdgeIds, radius: fallbackR }];
-  }
   if (mode === 'chord-length') {
     const chord = typeof params.chordLength === 'number' ? params.chordLength : fallbackR;
     return [{ edgeIds: numericEdgeIds, chordLength: chord }];
@@ -154,7 +125,7 @@ function resolveOccFilletEdgeSets(
 }
 
 function resolveOccChamferDistances(params: Record<string, unknown>): [number, number] {
-  const distance = typeof params.distance === "number" ? params.distance : 2;
+  const distance = typeof params.distance === "number" ? params.distance : DEFAULT_CHAMFER_DISTANCE;
   const mode = typeof params.mode === "string" ? params.mode : "equal-dist";
   let distance2 = typeof params.distance2 === "number" ? params.distance2 : distance;
   if (mode === "dist-angle") {
@@ -167,25 +138,6 @@ function resolveOccChamferDistances(params: Record<string, unknown>): [number, n
     distance2 = distance;
   }
   return params.isFlipped ? [distance2, distance] : [distance, distance2];
-}
-
-function syncActiveConfigurationSuppression(
-  state: CADState,
-  entries: Record<string, boolean>,
-): CADState["designConfigurations"] {
-  const updatedAt = Date.now();
-  return state.designConfigurations.map((configuration) =>
-    configuration.id === state.activeDesignConfigurationId
-      ? {
-          ...configuration,
-          featureSuppression: {
-            ...configuration.featureSuppression,
-            ...entries,
-          },
-          updatedAt,
-        }
-      : configuration,
-  );
 }
 
 export function createFeatureMeshActions({
@@ -263,7 +215,7 @@ export function createFeatureMeshActions({
     }
 
     const effectiveFilletEdgeSets: OccFilletEdgeSet[] =
-      filletEdgeSets ?? [{ edgeIds: numericEdgeIds, radius: radius ?? 2 }];
+      filletEdgeSets ?? [{ edgeIds: numericEdgeIds, radius: radius ?? DEFAULT_FILLET_RADIUS }];
 
     const result =
       tool === "Fillet"
@@ -290,31 +242,33 @@ export function createFeatureMeshActions({
       return markOccEdgeModificationError(featureId, tool, "OCC operation failed for the selected edge set");
     }
 
-    result.sourceFeatureId = featureId;
-    globalBRepBodyRegistry.add(result);
-    const tess = tessellateWithInstance(occ.oc, result);
-    const geo = tessellationToGeometry(tess);
     const srcFeatureId = srcBody.sourceFeatureId;
     const srcFeature = srcFeatureId
       ? get().features.find((feature) => feature.id === srcFeatureId)
       : undefined;
     const srcMesh = srcFeature?.mesh;
-    const material =
-      srcMesh instanceof THREE.Mesh
-        ? srcMesh.material
-        : new THREE.MeshStandardMaterial({ color: 0x4488cc });
-    const newMesh = new THREE.Mesh(geo, material);
-    attachTessellationToMesh(newMesh, tess, result.id);
-    newMesh.userData.pickable = true;
-    newMesh.userData.featureId = featureId;
-    newMesh.castShadow = true;
-    newMesh.receiveShadow = true;
+    // Use the shared BODY_MATERIAL singleton when the source has no stored mesh
+    // (e.g. extrudes rendered via ExtrudedBodies). Creating a new material here
+    // was a per-fillet leak — BODY_MATERIAL is a module-level singleton that is
+    // never disposed, so it is safe to share across all edge-modification meshes.
+    const material = srcMesh instanceof THREE.Mesh ? srcMesh.material : BODY_MATERIAL;
+    let newMesh: THREE.Mesh;
+    try {
+      result.sourceFeatureId = featureId;
+      newMesh = createRegisteredOccMesh(occ.oc, result, material, featureId);
+    } catch (err) {
+      return markOccEdgeModificationError(
+        featureId,
+        tool,
+        `OCC tessellation failed: ${errorMessage(err, "unknown error")}`,
+      );
+    }
 
     const currentFeature = get().features.find((feature) => feature.id === featureId);
-    const previousGeo =
-      currentFeature?.mesh instanceof THREE.Mesh
-        ? currentFeature.mesh.geometry
-        : null;
+    const prevMesh = currentFeature?.mesh instanceof THREE.Mesh ? currentFeature.mesh : null;
+    // Capture the old body ID before set() so we can evict it from the registry
+    // after the state update. Without this, each replay leaks one WASM OCC shape.
+    const oldBodyId = prevMesh?.userData['brepBodyId'] as string | undefined;
     if (pushUndo) get().pushUndo();
     set((state) => ({
       features: state.features.map((feature) =>
@@ -332,7 +286,10 @@ export function createFeatureMeshActions({
           ? `Filleted ${numericEdgeIds.length} OCC edge(s)${continuity === 'G2' ? ' (G2)' : ''}`
           : `Chamfered ${numericEdgeIds.length} OCC edge(s) at d=${distance}`,
     }));
-    if (previousGeo && previousGeo !== geo) setTimeout(() => previousGeo.dispose(), 0);
+    if (prevMesh && prevMesh.geometry !== newMesh.geometry) {
+      disposeMeshDeferred(prevMesh);
+      if (oldBodyId) globalBRepBodyRegistry.delete(oldBodyId);
+    }
     return true;
   };
 
@@ -352,13 +309,7 @@ export function createFeatureMeshActions({
         get().setStatusMessage("No mesh found on selected feature");
         return;
       }
-      const mat = new THREE.MeshPhysicalMaterial({
-        color: 0x8899aa,
-        metalness: 0.3,
-        roughness: 0.4,
-        side: THREE.DoubleSide,
-      });
-      const newMesh = new THREE.Mesh(geom, mat);
+      const newMesh = new THREE.Mesh(geom, BODY_MATERIAL);
       newMesh.castShadow = true;
       newMesh.receiveShadow = true;
       const n =
@@ -456,7 +407,7 @@ export function createFeatureMeshActions({
             set((state) => ({
               features: state.features.map((f) =>
                 f.id === featureId
-                  ? { ...f, mesh: newGroup as unknown as THREE.Mesh }
+                  ? { ...f, mesh: newGroup }
                   : f,
               ),
             }));
@@ -623,10 +574,7 @@ export function createFeatureMeshActions({
       }));
       // Defer disposal so undo can still reference the old geometry.
       // setTimeout(0) ensures the set() completes and state is stable first.
-      if (oldMesh instanceof THREE.Mesh) {
-        const geo = oldMesh.geometry;
-        setTimeout(() => geo.dispose(), 0);
-      }
+      if (oldMesh instanceof THREE.Mesh) disposeMeshDeferred(oldMesh as THREE.Mesh);
     },
 
     // SLD13 Ã¢â‚¬â€ commitScale: scale a feature mesh by sx/sy/sz
@@ -666,17 +614,14 @@ export function createFeatureMeshActions({
           const newFeatureId = featureId;
           const scaleResult = occScaleWithInstance(occ.oc, scaleBody, new THREE.Vector3(0, 0, 0), scaleFactor, { sourceFeatureId: newFeatureId });
           if (scaleResult) {
-            scaleResult.sourceFeatureId = newFeatureId;
-            globalBRepBodyRegistry.add(scaleResult);
-            const tess = tessellateWithInstance(occ.oc, scaleResult);
-            const geo = tessellationToGeometry(tess);
-            const scaledMesh = new THREE.Mesh(geo, srcMesh.material);
-            attachTessellationToMesh(scaledMesh, tess, scaleResult.id);
-            scaledMesh.userData.pickable = true;
-            scaledMesh.userData.featureId = newFeatureId;
-            scaledMesh.castShadow = true;
-            scaledMesh.receiveShadow = true;
-            const oldScaleGeom = srcMesh.geometry;
+            let scaledMesh: THREE.Mesh;
+            try {
+              scaleResult.sourceFeatureId = newFeatureId;
+              scaledMesh = createRegisteredOccMesh(occ.oc, scaleResult, srcMesh.material, newFeatureId);
+            } catch (err) {
+              get().setStatusMessage(`Scale (OCC) failed: ${errorMessage(err, "unknown error")}`);
+              return;
+            }
             get().pushUndo();
             set((state) => ({
               features: recomputeBooleanDependents(
@@ -685,7 +630,7 @@ export function createFeatureMeshActions({
               ),
               statusMessage: `Scaled (OCC) ${sx}×${sy}×${sz}`,
             }));
-            setTimeout(() => oldScaleGeom.dispose(), 0);
+            disposeMeshDeferred(srcMesh);
             return;
           }
         }
@@ -695,7 +640,6 @@ export function createFeatureMeshActions({
       const newMesh = GeometryEngine.scaleMesh(srcMesh, sx, sy, sz);
       newMesh.castShadow = true;
       newMesh.receiveShadow = true;
-      const oldGeom = srcMesh.geometry;
       set((state) => {
         const features = state.features.map((f) =>
           f.id === featureId ? { ...f, mesh: newMesh } : f,
@@ -706,7 +650,7 @@ export function createFeatureMeshActions({
         };
       });
       // Defer so the undo snapshot can still reference the old geometry if needed.
-      setTimeout(() => oldGeom.dispose(), 0);
+      disposeMeshDeferred(srcMesh);
     },
 
     // Align tool — geometry-pair picking state
@@ -855,7 +799,6 @@ export function createFeatureMeshActions({
         newMesh.userData = { ...srcMesh.userData };
         newMesh.castShadow = true;
         newMesh.receiveShadow = true;
-        const oldGeom = srcMesh.geometry;
         set((state) => ({
           features: recomputeBooleanDependents(
             state.features.map((f) =>
@@ -868,7 +811,7 @@ export function createFeatureMeshActions({
           alignSource: null,
           alignTarget: null,
         }));
-        setTimeout(() => oldGeom.dispose(), 0);
+        disposeMeshDeferred(srcMesh);
         return;
       }
 
@@ -881,6 +824,72 @@ export function createFeatureMeshActions({
       const feature = featureId
         ? get().features.find((candidate) => candidate.id === featureId)
         : undefined;
+
+      // ── Full-round fillet path: uses center + two side faces, not edge IDs ──
+      const mode = (filletParams?.mode ?? feature?.params.mode) as string | undefined;
+      if (mode === 'full-round') {
+        const {
+          filletFullRoundCenterOccBodyId,
+          filletFullRoundCenterOccFaceId,
+          filletFullRoundSide1OccFaceId,
+          filletFullRoundSide2OccFaceId,
+        } = get();
+        // Fall back to stored face IDs when replaying a feature (no live state)
+        const centerOccBodyId = filletFullRoundCenterOccBodyId ?? (filletParams?.centerOccBodyId as string | undefined) ?? (feature?.params.centerOccBodyId as string | undefined);
+        const centerOccFaceId = filletFullRoundCenterOccFaceId ?? (filletParams?.centerOccFaceId as number | undefined) ?? (feature?.params.centerOccFaceId as number | undefined);
+        const side1OccFaceId = filletFullRoundSide1OccFaceId ?? (filletParams?.side1OccFaceId as number | undefined) ?? (feature?.params.side1OccFaceId as number | undefined);
+        const side2OccFaceId = filletFullRoundSide2OccFaceId ?? (filletParams?.side2OccFaceId as number | undefined) ?? (feature?.params.side2OccFaceId as number | undefined);
+
+        if (!featureId) { get().setStatusMessage('Full-Round Fillet: requires a feature id'); return; }
+        if (!centerOccBodyId || !Number.isInteger(centerOccFaceId) || !Number.isInteger(side1OccFaceId) || !Number.isInteger(side2OccFaceId)) {
+          get().setStatusMessage('Full-Round Fillet: select center face and both side faces first');
+          return;
+        }
+        const occ = getOccSync();
+        if (!occ) { get().setStatusMessage('Full-Round Fillet: OCC kernel is still loading'); return; }
+        const srcBody = globalBRepBodyRegistry.get(centerOccBodyId);
+        if (!srcBody) { get().setStatusMessage('Full-Round Fillet: source body is no longer available'); return; }
+
+        const resultBody = occFullRoundFilletWithInstance(
+          occ.oc, srcBody,
+          centerOccFaceId!,
+          [side1OccFaceId!, side2OccFaceId!],
+          { sourceFeatureId: featureId },
+        );
+        if (!resultBody) {
+          markOccEdgeModificationError(featureId, 'Full-Round Fillet', 'OCC operation failed');
+          return;
+        }
+
+        const srcFeature = get().features.find((f) => f.id === srcBody.sourceFeatureId);
+        const material = srcFeature?.mesh instanceof THREE.Mesh ? srcFeature.mesh.material : BODY_MATERIAL;
+        let newMesh: THREE.Mesh;
+        try {
+          resultBody.sourceFeatureId = featureId;
+          newMesh = createRegisteredOccMesh(occ.oc, resultBody, material, featureId);
+        } catch (err) {
+          markOccEdgeModificationError(featureId, 'Full-Round Fillet', errorMessage(err, 'unknown error'));
+          return;
+        }
+        const currentFeature = get().features.find((f) => f.id === featureId);
+        const prevMesh = currentFeature?.mesh instanceof THREE.Mesh ? currentFeature.mesh : null;
+        const oldBodyId = prevMesh?.userData['brepBodyId'] as string | undefined;
+        set((state) => ({
+          features: state.features.map((f) =>
+            f.id === featureId
+              ? { ...f, mesh: newMesh, healthState: 'healthy' as const, healthMessage: undefined }
+              : f,
+          ),
+          statusMessage: 'Full-round fillet applied',
+        }));
+        if (prevMesh && prevMesh.geometry !== newMesh.geometry) {
+          disposeMeshDeferred(prevMesh);
+          if (oldBodyId) globalBRepBodyRegistry.delete(oldBodyId);
+        }
+        return;
+      }
+
+      // ── Standard edge-based fillet path ──
       const edgeIds =
         get().filletEdgeIds.length > 0
           ? get().filletEdgeIds
@@ -940,6 +949,15 @@ export function createFeatureMeshActions({
         return;
 
       const params = feature.params;
+
+      // Full-round fillet replay uses face IDs stored in params, not edgeIds
+      if (feature.type === "fillet" && params.mode === 'full-round') {
+        const radius = typeof params.radius === 'number' ? params.radius : DEFAULT_FILLET_RADIUS;
+        get().pushUndo();
+        get().commitFillet(radius, 0, featureId, params as Record<string, unknown>);
+        return;
+      }
+
       const edgeIds = storedEdgeIds(params.edgeIds);
       if (edgeIds.length === 0) {
         get().setStatusMessage(`${feature.type}: no edgeIds stored`);
@@ -1028,17 +1046,15 @@ export function createFeatureMeshActions({
           get().setStatusMessage(`Combine (${operation}) failed: OCC boolean failed`);
           return;
         }
+        let occMesh: THREE.Mesh;
+        try {
+          occResult.sourceFeatureId = featureId;
+          occMesh = createRegisteredOccMesh(occ.oc, occResult, tgtMesh.material, featureId);
+        } catch (err) {
+          get().setStatusMessage(`Combine (${operation}) failed: ${errorMessage(err, "unknown error")}`);
+          return;
+        }
         get().pushUndo();
-        occResult.sourceFeatureId = featureId;
-        globalBRepBodyRegistry.add(occResult);
-        const tess = tessellateWithInstance(occ.oc, occResult);
-        const geo = tessellationToGeometry(tess);
-        const occMesh = new THREE.Mesh(geo, tgtMesh.material);
-        attachTessellationToMesh(occMesh, tess, occResult.id);
-        occMesh.userData.pickable = true;
-        occMesh.userData.featureId = featureId;
-        occMesh.castShadow = true;
-        occMesh.receiveShadow = true;
         const n = features.filter((f) => f.type === "combine").length + 1;
         const combineFeature: Feature = {
           id: featureId,
@@ -1072,13 +1088,19 @@ export function createFeatureMeshActions({
           };
           return {
             features: [...updated, combineFeature],
-            designConfigurations: syncActiveConfigurationSuppression(
+            designConfigurations: syncConfigurationSuppression(
               state,
               suppressionEntries,
             ),
             statusMessage: `Combine (${operation}) created with ${toolFeatureIds.length} tool bodies (OCC)`,
           };
         });
+        // Dispose suppressed parent geometries after state is committed.
+        // Defer to next tick so any in-flight renders still referencing the
+        // old geometry can finish before the WebGL buffers are released.
+        if (!keepTool) {
+          disposeMeshesDeferred([tgtMesh, ...toolMeshes]);
+        }
         return;
       }
       let resultGeom: THREE.BufferGeometry;
@@ -1136,7 +1158,7 @@ export function createFeatureMeshActions({
         };
         return {
           features: [...updated, combineFeature],
-          designConfigurations: syncActiveConfigurationSuppression(
+          designConfigurations: syncConfigurationSuppression(
             state,
             suppressionEntries,
           ),
@@ -1176,16 +1198,14 @@ export function createFeatureMeshActions({
           const newFeatureId = crypto.randomUUID();
           const occResult = occMirrorWithInstance(occ.oc, srcBody, mirrorPlaneFromString(plane), { sourceFeatureId: newFeatureId });
           if (occResult) {
-            occResult.sourceFeatureId = newFeatureId;
-            globalBRepBodyRegistry.add(occResult);
-            const tess = tessellateWithInstance(occ.oc, occResult);
-            const geo = tessellationToGeometry(tess);
-            const occMirroredMesh = new THREE.Mesh(geo, srcMesh.material);
-            attachTessellationToMesh(occMirroredMesh, tess, occResult.id);
-            occMirroredMesh.userData.pickable = true;
-            occMirroredMesh.userData.featureId = newFeatureId;
-            occMirroredMesh.castShadow = true;
-            occMirroredMesh.receiveShadow = true;
+            let occMirroredMesh: THREE.Mesh;
+            try {
+              occResult.sourceFeatureId = newFeatureId;
+              occMirroredMesh = createRegisteredOccMesh(occ.oc, occResult, srcMesh.material, newFeatureId);
+            } catch (err) {
+              get().setStatusMessage(`Mirror Feature failed: ${errorMessage(err, "unknown error")}`);
+              return;
+            }
             const nOcc = features.filter((f) => f.name.startsWith('Mirror Feature')).length + 1;
             const occMirrorFeature: Feature = {
               id: newFeatureId,
@@ -1317,17 +1337,14 @@ export function createFeatureMeshActions({
         }
         return {
           features,
-          designConfigurations: syncActiveConfigurationSuppression(
+          designConfigurations: syncConfigurationSuppression(
             state,
             suppressionEntries,
           ),
           statusMessage: `Combine (${operation}) updated`,
         };
       });
-      if (oldMesh instanceof THREE.Mesh) {
-        const geo = oldMesh.geometry;
-        setTimeout(() => geo.dispose(), 0);
-      }
+      if (oldMesh instanceof THREE.Mesh) disposeMeshDeferred(oldMesh as THREE.Mesh);
     },
 
     toggleFeatureVisibility: (id) =>

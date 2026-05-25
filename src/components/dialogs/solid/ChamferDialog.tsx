@@ -1,4 +1,4 @@
-import { useCADStore } from "../../../store/cadStore";
+﻿import { useCADStore } from "../../../store/cadStore";
 import type { Feature } from "../../../types/cad";
 import { DialogShell } from "../common/DialogShell";
 import { ChamferAdvancedOptions } from "./chamferDialog/ChamferAdvancedOptions";
@@ -7,6 +7,7 @@ import { ChamferPickHeader } from "./chamferDialog/ChamferPickHeader";
 import type { ChamferParams } from "./chamferDialog/types";
 import { useChamferDialogState } from "./chamferDialog/useChamferDialogState";
 import { EdgeSelectionList } from "./edgeDialog/EdgeSelectionList";
+import { storedEdgeIds } from "../../../utils/occEdgeUtils";
 
 export type {
   ChamferCornerType,
@@ -23,15 +24,6 @@ interface ChamferDialogProps {
   onConfirm: (params: ChamferParams) => void;
   /** When editing an existing chamfer, seed all fields from the stored params. */
   initialParams?: Record<string, unknown>;
-}
-
-function storedEdgeIds(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.filter((id): id is string => typeof id === "string");
-  }
-  if (typeof value !== "string") return [];
-  if (value.includes("\u001f")) return value.split("\u001f").filter(Boolean);
-  return value.split(",").filter(Boolean);
 }
 
 function resolveChamferDistance2(

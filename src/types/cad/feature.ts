@@ -56,7 +56,8 @@ export interface Feature {
   bodyId?: string;
   componentId?: string;
   params: Record<string, unknown>;
-  mesh?: THREE.Mesh;
+  /** Pre-built geometry node. May be a Mesh, Group (imported OBJ/GLTF), or Line (cosmetic thread). */
+  mesh?: THREE.Object3D;
   bodyKind?: BodyKind;
   visible: boolean;
   suppressed: boolean;

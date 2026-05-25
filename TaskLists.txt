@@ -1,17 +1,43 @@
 ## DesignCAD — Implementation Task List
 ## Status key: [x] done  [~] partial (wired, incomplete)  [ ] not started
-## Last updated: 2026-05-23  Branch: codex/authored-edge-topology-fillet
+## Last updated: 2026-05-24 (body ops + properties)  Branch: codex/authored-edge-topology-fillet
 ## SDK ref: C:\Users\joeyp\AppData\Local\Autodesk\webdeploy\production\
 ##          4bca736941837d3e42bba21bb36b9891e34b2fce\CPP\include\Fusion\
 ## Fusion 360 parity audit: 2026-05-23 (see OCC-10 phase)
 
+# OCC Migration (OCC-1 through OCC-10): ALL 59 TASKS COMPLETE as of 2026-05-24.
+# Deleted: weldClean.ts, shellSolid.ts, csgWorker.ts, csgWorkerPool.ts,
+#   edgeTopology.ts, manifoldWasm.ts, applyEdgeCut.ts, resolveBodySource.ts,
+#   FilletPreview.tsx, ChamferPreview.tsx, EdgeOpPreview and edgeOp/ helpers.
+# Surviving: csg.ts (80-line slicer-only csgSubtract), three-bvh-csg dep (slicer hollow/plane-cut).
+# OCC is now the primary path for all solid ops; mesh-CSG fallback removed.
 
 # ══════════════════════════════════════════════════════════════════════════════
-# OPENCASCADE WASM MIGRATION — Replace mesh-CSG with BRep kernel
-# WHY: mesh-CSG + earcut cannot produce CAD-quality fillets (wing artifact
-# is mathematically inherent). OCC produces exact toroidal surfaces.
-# GATE: removed. OCC is now the only edge-modification path.
+# PHASE OCC-11: Motion Study
 # ══════════════════════════════════════════════════════════════════════════════
+
+[x] OCC-11.1 — Motion Study dialog/panel UI
+[x] OCC-11.2 — Body context menu: wire Move/Copy, Contact Sets; implement Copy, Cut, Remove, Create Components from Bodies, Properties
+#     Move/Copy → setActiveDialog('move-body') (MoveBodyDialog already existed).
+#     Enable Contact Sets → setActiveDialog('contact-sets').
+#     Copy body: new copyBody(bodyId) action in bodies.ts — clones mesh, same componentId, new UUID.
+#     Cut body: copyBody + removeBody; status message notes paste not yet supported.
+#     Remove: wired to removeBody (was cs() stub, same as Delete but separate label).
+#     Create Components from Bodies: new createComponentFromBody(bodyId) action — creates a sibling
+#       component under the source component's parent, moves the body into it.
+#     Properties: new BodyPropertiesDialog.tsx + BodyPropertiesDialog.css in dialogs/assembly/.
+#       Reads OCC BRepGProp (VolumeProperties + SurfaceProperties_1) for volume/surface area/CoM.
+#       Falls back gracefully if OCC unavailable. Also shows bbox, triangle count, material colour.
+#       New occComputeBodyProperties() in engine/occ/ops/properties.ts + exported from ops/index.ts.
+#       Wired: ActiveDialog 'body-properties' case; setDialogPayload(bodyId) in context menu.
+#       TSC: 0 errors.
+#     DONE (2026-05-24): MotionStudyDialog.tsx in dialogs/assembly/.
+#     Features: transport bar (play/pause/stop/loop), visual timeline with per-track
+#     gradient bars + amber playhead scrubber, track editor (start/end/easing per
+#     joint), playback speed selector (0.25×–4×), Export stub button (Film icon).
+#     CSS: MotionStudyDialog.css with timeline ruler + track rows + scrubber overlay.
+#     Wired: ActiveDialog.tsx case 'motion-study'; index.ts export;
+#     designMenuBuilders.tsx comingSoon → setActiveDialog('motion-study'). TSC: 0 errors.
 
 # ── PHASE OCC-1: Foundation ────────────────────────────────────────────────────
 [x] OCC-1.1 — WASM build selection (package.json dep, vite config, wasm chunk)
@@ -114,71 +140,87 @@
 #     placeToolFeatureAsync now detects brepBodyId on both tool and target → OCC boolean.
 #     CSG fallback when either body lacks an OCC handle. taperAngle also wired through.
 
-
 # ══════════════════════════════════════════════════════════════════════════════
-# PHASE OCC-10: Fusion 360 Feature Parity
-# Source: 2026-05-23 audit against CPP/include/Fusion/ SDK headers
-# All items are independent unless noted. Ordered by priority (high → low).
+# REFACTOR PASS — 2026-05-24
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── HIGH PRIORITY ──────────────────────────────────────────────────────────────
+## BUGS
 
-[x] OCC-10.1 — Loft (~16h)
-#     Engine + feature tree + UI: all done. LoftPanel.tsx (viewport tool panel)
-#     in src/components/viewport/panels/ handles profile/guide-rail selection,
-#     start/end conditions, closed/smoothing options, operation type.
-#     commitLoft OCC path wired (occLoftWithInstance, tessellate, attach brepBodyId).
+[x] SURFACE_MATERIAL singleton disposed in commitOffsetSurface join path (severity: HIGH)
+    File: src/store/cad/slices/assemblyAndSurface/surfaceEditActions.ts (~line 224)
+    Issue: `(mesh.material as THREE.Material)?.dispose?.()` is called on a mesh whose material
+           is the local SURFACE_MATERIAL singleton. This kills the material for every other
+           surface body rendered after the first join-offset, producing black/missing geometry.
+    Fix: Guard with `if (!mesh.material?.userData?.shared)` before calling dispose, OR tag the
+         local SURFACE_MATERIAL with `userData.shared = true` like the singletons in bodyMaterial.ts.
 
-[x] OCC-10.2 — Mirror (~8h)
-#     Engine + feature tree + UI: all done. MirrorDialog.tsx in src/components/dialogs/pattern/
-#     supports features/bodies/components, XY/XZ/YZ plane selection, and compute type.
-#     commitMirrorFeature OCC path wired — detects brepBodyId, calls occMirrorWithInstance.
+[x] OCC tool-body handle leaked on boolean throw in commitRevolve (severity: HIGH)
+    File: src/store/cad/slices/extrudeRevolve/revolveActions.ts (~line 289)
+    Issue: `toolBody` built by `occRevolveWithInstance` has `.dispose()` called only on the
+           success branch (line 293). If `performOccBooleanWithInstance` throws, `toolBody` is
+           never deleted, leaking a WASM shape on the C++ heap.
+    Fix: Wrap `performOccBooleanWithInstance` + `toolBody.dispose()` in a try/finally block.
 
-[x] OCC-10.3 — Extrude: taper angle (~6h)
-#     Engine: BRepOffsetAPI_DraftAngle_1 on lateral faces; graceful fallback.
-#     Commit: OCC path wired in extrudeCommitActions.ts for new-body solid extrudes;
-#     taperAngle passed through to occExtrudeWithInstance.
-#     UI: ExtrudePanel.tsx already has extrudeTaperAngle state field.
+[x] Stale `features` capture across awaits in commitExtrude (severity: MEDIUM)
+    File: src/store/cad/slices/extrudeRevolve/extrudeCommitActions.ts (~line 347)
+    Issue: `features` is destructured from `get()` at the top of commitExtrude before multiple
+           `await` calls. After any await a concurrent undo/removeFeature can change the live
+           state; nextFeatures mutations after those awaits are based on a stale snapshot and
+           can resurrect deleted features or mis-index them.
+    Fix: Re-read `get().features` after each critical await, or introduce a generation counter
+         and abort if the generation changed.
 
-[x] OCC-10.4 — Sweep: guide rails + orientation modes (~12h)
-#     Engine: occSweepFromPathWireWithInstance added to sweep.ts — accepts pre-built
-#     path wire so open paths (line/arc) are not wrongly closed.
-#     Commit: wired in featureCreationSlice.ts; guide rail wire + orientation passed.
-#     UI: sweepPanel has sweepOrientation + sweepGuideRailId fields already.
+[x] storedEdgeIds + parseOccEdgeSelection duplicated in 3 files (severity: MEDIUM)
+    Files: src/store/cad/slices/featureManagement/featureMeshActions.ts (~lines 51, 65)
+           src/components/dialogs/solid/FilletDialog.tsx
+           src/components/dialogs/solid/ChamferDialog.tsx
+    Issue: Identical helper functions are copy-pasted; any OCC edge ID format change (e.g.
+           adding a version prefix) must be applied in 3 independent places.
+    Fix: Extract to `src/utils/occEdgeUtils.ts` and import from all three call sites.
 
-# ── MEDIUM PRIORITY ────────────────────────────────────────────────────────────
+## HOT-PATH-ALLOCS
 
-[x] OCC-10.5 — Rectangular pattern (~8h)
-#     Engine + feature tree + UI: all done. RectangularPatternDialog + LinearPatternDialog
-#     in src/components/dialogs/pattern/ registered in ActiveDialog.tsx.
+[x] new THREE.Box3() allocations inside existingSolids loop in commitExtrude (severity: MEDIUM)
+    File: src/store/cad/slices/extrudeRevolve/extrudeCommitActions.ts (~lines 127, 146, 553, 575)
+    Issue: `new THREE.Box3().setFromObject(mesh)` is called inside the N-feature loop that
+           probes for join/cut overlap on every commitExtrude, allocating one Box3 per existing
+           solid per commit. Also `buildExtrudeProbeBox` allocates `new THREE.Box3()` per call.
+    Fix: Hoist two module-level scratch `_probeBox` / `_targetBox` Box3 instances and reuse
+         them; same pattern as `_boxCurrent`/`_boxTool` already used in ExtrudedBodies.tsx.
 
-[x] OCC-10.6 — Circular pattern (~6h)
-#     Engine + feature tree + UI: all done. CircularPatternDialog in
-#     src/components/dialogs/pattern/ registered in ActiveDialog.tsx.
+[x] filter().map() on full features array in ExtrudedBodies render (severity: MEDIUM)
+    File: src/components/viewport/scene/ExtrudedBodies.tsx (~lines 1214, 1227)
+    Issue: Two `features.filter(...).map(...)` chains run on every render, allocating fresh
+           arrays each time. ExtrudedBodies re-renders on any feature array reference change
+           (see MOBILE-OPT below), so these run frequently.
+    Fix: Wrap both chains in `useMemo` keyed on `features` so they only recompute when
+         the features array identity changes.
 
-[x] OCC-10.7 — Offset faces (press-pull) (~6h)
-#     Engine + feature tree + UI: all done. OffsetFaceDialog.tsx provides distance control.
-#     commitOffsetFace OCC path calls occOffsetFacesWithInstance with exact faceIds.
+[x] [...features].reverse() spread allocation in surfaceEditActions (severity: LOW)
+    File: src/store/cad/slices/assemblyAndSurface/surfaceEditActions.ts (~lines 203, 260, 406)
+    Issue: `[...features].reverse()` in commitOffsetSurface, commitSurfaceExtend, and
+           commitThicken each allocate a full copy of the features array to find the last surface.
+    Fix: Replace with a backward for-loop `for (let i = features.length - 1; i >= 0; i--)`.
 
-[x] OCC-10.8 — Draft (~8h)
-#     Engine + feature tree + UI: all done. DraftDialog.tsx in src/components/dialogs/solid/
-#     provides angle, pull direction, and face picker. commitDraft OCC path calls
-#     occDraftWithInstance with exact faceIds + pull direction + neutral plane.
+## FRAMEWORK-DEDUP
 
-[x] OCC-10.9 — Shell: outside thickness + shell type (~4h)
-#     Engine + feature tree + UI: all done. ShellDialog.tsx has direction (inside/outside/both),
-#     insideThickness, outsideThickness, shellType (sharp/rounded), tangent chain, and
-#     individual face offsets (SOL-I7). commitShell OCC path wired in advancedSolidAndMeshOpsSlice.
+[x] Duplicate SURFACE_MATERIAL singleton defined in 3 files (severity: HIGH)
+    Files: src/store/cad/slices/assemblyAndSurface/surfaceEditActions.ts (~line 14)
+           src/store/cad/slices/assemblyAndSurface/surfaceCreationActions.ts (~line 7)
+           src/components/viewport/scene/bodyMaterial.ts (~line 12) — canonical exported version
+    Issue: The store action files define private copies with slightly different color/opacity
+           values AND without `userData.shared = true`, so dispose-guards in featureCoreActions
+           and historyAndDocumentSlice are silently bypassed for surface meshes from these actions.
+    Fix: Delete both local definitions; import `SURFACE_MATERIAL` from bodyMaterial.ts instead.
 
-[x] OCC-10.10 — Chamfer: distance-and-angle mode (~4h)
-#     Already wired: resolveOccChamferDistances in featureMeshActions.ts converts
-#     mode='dist-angle' → distance2 = distance * tan(angle), passed to occChamferWithInstance
-#     which uses Add_3(d1, d2, edge, refFace). Corner types have no OCC equivalent (UI-only).
+[x] Inline errorMessage pattern re-implemented in historyAndDocumentSlice (severity: LOW)
+    File: src/store/cad/slices/historyAndDocumentSlice.ts (~lines 399, 474)
+    Issue: `err instanceof Error ? err.message : String(err)` is inlined in
+           commitLinearPattern and commitCircularPattern instead of the shared `errorMessage()`
+           utility already available in `src/utils/errorHandling.ts`.
+    Fix: Import `errorMessage` and replace both inline patterns.
 
-[x] OCC-10.11 — Combine: multiple tool bodies (~4h)
-#     Engine + feature tree + UI: all done. commitCombine accepts multiple tool IDs,
-#     uses performOccBooleanMultiWithInstance with OCC BOPAlgo_BOP batch booleans.
-#     CombineDialog has multi-select tool picker. No pairwise fallback remains here.
+## FILE-LAYOUT
 
 [x] OCC-10.12 — Extrude: two-sided extents (~8h)
 #     Engine: twoSideDist fuses two prisms via BRepAlgoAPI_Fuse_3.
@@ -187,30 +229,43 @@
 #     to-entity: wired via computeToObjectDistance for side 2.
 #     UI: extentType2 picker in GeometrySection.tsx; setExtrudeExtentType2 in store.
 
-[x] OCC-10.13 — Revolve: two-sided extents (~4h)
-#     Engine: side2AngleRad fuses two revolves via BRepAlgoAPI_Fuse_3.
-#     Commit: wired in revolveActions.ts — symmetric and two-sides both use side2AngleRad.
-#     UI: revolvePanel already has revolveDirection + revolveAngle2 fields.
+[ ] historyAndDocumentSlice.ts mixes 6 unrelated concerns at 862 lines (severity: MEDIUM)
+    File: src/store/cad/slices/historyAndDocumentSlice.ts (862 lines)
+    Issue: Contains undo/redo (MM2), linear/circular pattern (SLD7/SLD8), plane cut (MSH2),
+           mesh close/smooth/separate/section (MSH3/5/10/13), and save/load (UTL2).
+           Pattern + mesh ops belong in the advancedSolidAndMeshOps sub-files.
+    Fix: Move commitLinearPattern/commitCircularPattern to a new `patternActions.ts` inside
+         advancedSolidAndMeshOps/. Move mesh ops to meshOpsActions.ts. Keep undo/redo/save/load
+         in historyAndDocumentSlice.ts. Wire the new files through the shim slice.
 
-[x] OCC-10.14 — Thicken surface bodies (~8h)
-#     Engine + feature tree + UI: all done. ThickenDialog.tsx in
-#     src/components/dialogs/surface/ has thickness, direction (inside/outside/symmetric),
-#     operation (new-body/join/cut). Registered as 'thicken' in ActiveDialog.tsx.
+[ ] featureMeshActions.ts mixes edge-modification, mesh-transform, align, and boolean-combine (severity: LOW)
+    File: src/store/cad/slices/featureManagement/featureMeshActions.ts (1373 lines)
+    Issue: Fillet/chamfer, scale/mirror/align, mesh-transform, tessellate, meshCombine, and
+           commitCombine are all co-located. Combine ops and align are independent concerns.
+    Fix: Extract commitCombine/recommitCombine to `featureManagement/combineActions.ts` and
+         commitAlign/commitMirrorFeature to `featureManagement/transformActions.ts`.
 
-# ── LOW PRIORITY ────────────────────────────────────────────────────────────────
+## STANDARDS
 
-[x] OCC-10.15 — Sphere + Torus primitives (~4h)
-#     Engine: src/engine/occ/ops/sphere.ts DONE (BRepPrimAPI_MakeSphere_2, optional transform).
-#             src/engine/occ/ops/torus.ts DONE (BRepPrimAPI_MakeTorus_2, majorRadius > minorRadius guard).
-#     Remaining: UI primitives toolbar buttons + feature tree wiring.
-#     2026-05-23: addPrimitive now creates OCC sphere/torus bodies, tessellates
-#     them into stored meshes, attaches brepBodyId, and uses the existing
-#     Primitive dialog/toolbar flow.
+[x] Magic number `2` for default fillet radius / chamfer distance not named (severity: LOW)
+    File: src/store/cad/slices/featureManagement/featureMeshActions.ts (~lines 95, 152, 240, 958)
+    Issue: Bare literal `2` used as default radius and distance in resolveOccFilletEdgeSets,
+           resolveOccChamferDistances, applyOccEdgeModification, and replayEdgeModificationFeature.
+    Fix: Declare `const DEFAULT_FILLET_RADIUS = 2` and `const DEFAULT_CHAMFER_DISTANCE = 2`
+         at module top.
 
-[x] OCC-10.16 — Scale (uniform + non-uniform) (~4h)
-#     Engine + feature tree + UI: all done. ScaleDialog.tsx has uniform/non-uniform
-#     modes, per-axis factors, reference point (centroid/origin). commitScale OCC path
-#     wired in featureMeshActions.ts.
+[x] Magic number `96` for OCC profile point count not named (severity: LOW)
+    Files: src/store/cad/slices/extrudeRevolve/extrudeCommitActions.ts (~lines 608, 769)
+           src/store/cad/slices/extrudeRevolve/revolveActions.ts (~lines 259, 367)
+           src/store/cad/slices/featureCreationSlice.ts (~lines 108, 370)
+    Issue: `shape.getPoints(96)` is scattered across 6+ call sites with no named constant.
+    Fix: Declare `const OCC_PROFILE_POINT_COUNT = 96` in a shared constants file and use it.
+
+[x] `any` type annotations in booleanBase.ts on algo parameter (severity: LOW)
+    File: src/engine/occ/ops/booleanBase.ts (~lines 14, 18, 81, 83, 89)
+    Issue: `algo: any`, `rawResult: any`, `ctor: any` suppress TS checks on the core boolean
+           propagation path. The algo shape is known (has .Shape(), .Modified(), etc.).
+    Fix: Define a minimal `OccBooleanAlgo` interface with required methods and replace `any`.
 
 [x] OCC-10.17 — Fillet: full-round mode (~8h)
 #     Engine: occFullRoundFilletWithInstance in fillet.ts (canonical edge indexing,
@@ -230,6 +285,33 @@
 #     length (start→end vertex), not per-face — this is the best approximation
 #     available without BRepFilletAPI_MakeFilletFaceSet (which lacks JS bindings).
 #     UI: filletDialog already has offsetOne/offsetTwo fields in useFilletDialogState.
+
+[x] `as unknown as THREE.Mesh` double-casts for Groups mask a type-safety hole (severity: LOW)
+    Files: src/store/cad/slices/featureManagement/featureMeshActions.ts (~line 424)
+           src/store/cad/slices/featureManagement/featureCoreActions.ts (~lines 259-260)
+    Issue: `THREE.Group` is stored in `Feature.mesh` typed as `THREE.Mesh` via double-cast,
+           causing any code that trusts `feature.mesh instanceof THREE.Mesh` to silently miss
+           Group-backed features.
+    Fix: Widen `Feature.mesh` to `THREE.Mesh | THREE.Group` (or `THREE.Object3D`) and update
+         all instanceof guards.
+
+## MOBILE-OPT
+
+[x] ExtrudedBodies subscribes to entire features array without shallow equality (severity: MEDIUM)
+    File: src/components/viewport/scene/ExtrudedBodies.tsx (~line 626)
+    Issue: `useCADStore((s) => s.features)` triggers a re-render on every array reference change
+           (any set() call that touches features), including visibility toggles and status messages
+           that produce a new array. This fires the expensive geometry useMemo hooks constantly.
+    Fix: Use `shallow` from `zustand/shallow` for the features selector, or narrow the
+         subscription to a stable hash (e.g. feature ids + timestamps joined) so incidental
+         state changes do not trigger geometry recomputation.
+
+[x] BodyMesh sub-component in ExtrudedBodies not wrapped in React.memo (severity: LOW)
+    File: src/components/viewport/scene/ExtrudedBodies.tsx (~line 1195 render section)
+    Issue: `<BodyMesh>` is rendered in a .map() inside ExtrudedBodies. Without React.memo,
+           every ExtrudedBodies re-render forces all BodyMesh children to reconcile even when
+           their geometry/material/featureId/bodyId props are unchanged.
+    Fix: Export BodyMesh wrapped in `React.memo` with a custom comparator on geometry identity.
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SDK reference (Fusion 360 header paths)

@@ -10,10 +10,10 @@ import { occLoftWithInstance } from '../../../engine/occ/ops/loft';
 import { occSweepFromPathWireWithInstance } from '../../../engine/occ/ops/sweep';
 import type { SketchProfile } from '../../../engine/occ/ops/sketchToWire';
 import { sketchEntitiesToWire } from '../../../engine/occ/sketchEntityToWire';
-import { globalBRepBodyRegistry } from '../../../engine/occ/globalRegistry';
-import { tessellateWithInstance, tessellationToGeometry } from '../../../engine/occ/tessellate';
-import { attachTessellationToMesh } from '../../../engine/occ/picking';
+import { createRegisteredOccMesh } from '../../../engine/occ/registeredMesh';
+import { BODY_MATERIAL } from '../../../components/viewport/scene/bodyMaterial';
 import { errorMessage } from '../../../utils/errorHandling';
+import { OCC_PROFILE_POINT_COUNT } from '../../../utils/occConstants';
 
 /**
  * Map a panel operation (which may include 'new-component') + body kind to a
@@ -32,12 +32,12 @@ function toolBooleanOp(
 }
 
 function shapeToOccSketchProfile(shape: THREE.Shape): SketchProfile | null {
-  const outer = shape.getPoints(96);
+  const outer = shape.getPoints(OCC_PROFILE_POINT_COUNT);
   if (outer.length < 3) return null;
   return {
     outer,
     holes: shape.holes
-      .map((hole) => hole.getPoints(96))
+      .map((hole) => hole.getPoints(OCC_PROFILE_POINT_COUNT))
       .filter((points) => points.length >= 3),
   };
 }
@@ -106,8 +106,8 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
           const firstShape = profileShapes[0];
           if (firstShape) {
             const sketchProfile: SketchProfile = {
-              outer: firstShape.getPoints(96),
-              holes: firstShape.holes.map((h) => h.getPoints(96)).filter((pts) => pts.length >= 3),
+              outer: firstShape.getPoints(OCC_PROFILE_POINT_COUNT),
+              holes: firstShape.holes.map((h) => h.getPoints(OCC_PROFILE_POINT_COUNT)).filter((pts) => pts.length >= 3),
             };
             const profileFrame = createOccPlaneFrameFromSketch(profileSketch);
             const pathFrame = createOccPlaneFrameFromSketch(pathSketch);
@@ -131,17 +131,7 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
               });
               pathWire.delete();
               if (guideWire) (guideWire as { delete(): void }).delete();
-              globalBRepBodyRegistry.add(occBody);
-              const tess = tessellateWithInstance(occ.oc, occBody);
-              const geo = tessellationToGeometry(tess);
-              const mat = new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide });
-              const occMesh = new THREE.Mesh(geo, mat);
-              attachTessellationToMesh(occMesh, tess, occBody.id);
-              occMesh.userData.pickable = true;
-              occMesh.userData.featureId = featureId;
-              occMesh.castShadow = true;
-              occMesh.receiveShadow = true;
-              mesh = occMesh;
+              mesh = createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, featureId);
             }
           }
         } catch (err) {
@@ -262,22 +252,7 @@ export function createFeatureCreationSlice({ set, get }: CADSliceContext) {
           set({ statusMessage: 'Loft: OCC failed to build the selected profiles' });
           return;
         }
-        globalBRepBodyRegistry.add(body);
-        const tess = tessellateWithInstance(occ.oc, body);
-        const geo = tessellationToGeometry(tess);
-        const mat = new THREE.MeshPhysicalMaterial({
-          color: 0x8899aa,
-          metalness: 0.3,
-          roughness: 0.4,
-          side: THREE.DoubleSide,
-        });
-        const loftMesh = new THREE.Mesh(geo, mat);
-        attachTessellationToMesh(loftMesh, tess, body.id);
-        loftMesh.userData.pickable = true;
-        loftMesh.userData.featureId = featureId;
-        loftMesh.castShadow = true;
-        loftMesh.receiveShadow = true;
-        mesh = loftMesh;
+        mesh = createRegisteredOccMesh(occ.oc, body, BODY_MATERIAL, featureId);
       } catch (err) {
         set({ statusMessage: `Loft: OCC failed (${errorMessage(err, 'unknown OCC error')})` });
         return;

@@ -1,4 +1,4 @@
-import { useCADStore } from "../../../store/cadStore";
+﻿import { useCADStore } from "../../../store/cadStore";
 import type { Feature } from "../../../types/cad";
 import { DialogShell } from "../common/DialogShell";
 import { EdgeSelectionList } from "./edgeDialog/EdgeSelectionList";
@@ -8,6 +8,7 @@ import { FilletModeFields } from "./filletDialog/FilletModeFields";
 import { FilletPickHeader } from "./filletDialog/FilletPickHeader";
 import type { FilletParams } from "./filletDialog/types";
 import { useFilletDialogState } from "./filletDialog/useFilletDialogState";
+import { storedEdgeIds } from "../../../utils/occEdgeUtils";
 
 export type {
   FilletEdgeSet,
@@ -24,15 +25,6 @@ interface FilletDialogProps {
   onConfirm: (params: FilletParams) => void;
   /** When editing an existing fillet, seed all fields from the stored params. */
   initialParams?: Record<string, unknown>;
-}
-
-function storedEdgeIds(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.filter((id): id is string => typeof id === "string");
-  }
-  if (typeof value !== "string") return [];
-  if (value.includes("\u001f")) return value.split("\u001f").filter(Boolean);
-  return value.split(",").filter(Boolean);
 }
 
 function FilletDialogUI({
@@ -77,6 +69,11 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
   const renameFeature = useCADStore((s) => s.renameFeature);
   const commitFillet = useCADStore((s) => s.commitFillet);
   const replayEdgeModificationFeature = useCADStore((s) => s.replayEdgeModificationFeature);
+  // Full-round face picker state
+  const filletFullRoundCenterOccBodyId = useCADStore((s) => s.filletFullRoundCenterOccBodyId);
+  const filletFullRoundCenterOccFaceId = useCADStore((s) => s.filletFullRoundCenterOccFaceId);
+  const filletFullRoundSide1OccFaceId = useCADStore((s) => s.filletFullRoundSide1OccFaceId);
+  const filletFullRoundSide2OccFaceId = useCADStore((s) => s.filletFullRoundSide2OccFaceId);
 
   const editing = editingFeatureId
     ? features.find((feature) => feature.id === editingFeatureId)
@@ -85,17 +82,29 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
   const existingEdgeIds = storedEdgeIds(params.edgeIds);
 
   const handleConfirm = (nextParams: FilletParams) => {
+    // Augment full-round params with picked face IDs so they get persisted for replay
+    const isFullRound = nextParams.mode === 'full-round';
+    const fullRoundParams: FilletParams = isFullRound
+      ? {
+          ...nextParams,
+          centerOccBodyId: filletFullRoundCenterOccBodyId ?? undefined,
+          centerOccFaceId: filletFullRoundCenterOccFaceId ?? undefined,
+          side1OccFaceId: filletFullRoundSide1OccFaceId ?? undefined,
+          side2OccFaceId: filletFullRoundSide2OccFaceId ?? undefined,
+        }
+      : nextParams;
+
     const edgeIds = filletEdgeIds.length > 0 ? filletEdgeIds : existingEdgeIds;
     if (editing) {
-      updateFeatureParams(editing.id, { ...nextParams, edgeIds });
+      updateFeatureParams(editing.id, { ...fullRoundParams, edgeIds });
       renameFeature(editing.id, `Fillet (r=${nextParams.radius})`);
       replayEdgeModificationFeature(editing.id);
     } else {
       const feature: Feature = {
         id: crypto.randomUUID(),
-        name: `Fillet (r=${nextParams.radius})`,
+        name: isFullRound ? 'Full-Round Fillet' : `Fillet (r=${nextParams.radius})`,
         type: "fillet",
-        params: { ...nextParams, edgeIds },
+        params: { ...fullRoundParams, edgeIds },
         visible: true,
         suppressed: false,
         timestamp: Date.now(),
@@ -108,7 +117,7 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
             nextParams.radius,
             0,
             feature.id,
-            nextParams as unknown as Record<string, unknown>,
+            fullRoundParams as unknown as Record<string, unknown>,
           ),
         0,
       );

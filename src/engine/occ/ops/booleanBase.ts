@@ -8,14 +8,19 @@ import type { BRepBody, BRepTopologyHandle } from '../brepBody';
 import { occDeref, makeBRepBodyFromOccShape } from '../brepBody';
 import { occWrap } from '../occHandle';
 
+/** Minimal structural interface for OCC BRepAlgoAPI_* algo objects used in
+ *  propagateBooleanIds. The actual WASM objects satisfy this shape at runtime. */
+export interface OccBooleanAlgo {
+  Shape(): { delete?: () => void };
+  Modified(shape: { delete?: () => void }): { delete?: () => void };
+}
+
 export function propagateBooleanIds(
   oc: OcctRaw,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  algo: any,
+  algo: OccBooleanAlgo,
   sources: BRepBody[],
 ): BRepBody {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rawResult: any = algo.Shape();
+  const rawResult = algo.Shape();
   const newBody = makeBRepBodyFromOccShape(oc, rawResult);
 
   // Build ptr→newFaceId lookup from the newly assigned IDs
@@ -31,50 +36,56 @@ export function propagateBooleanIds(
   for (const src of sources) {
     for (const [oldId, handle] of src.faceIds) {
       const rawFace = occDeref(oc, handle, oc.TopoDS_Face);
+      let modList: { delete?: () => void } | null = null;
+      let it: { More(): boolean; Value(): { delete?: () => void }; Next(): void; delete?: () => void } | null = null;
       try {
-        const modList = algo.Modified(rawFace);
+        modList = algo.Modified(rawFace);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const it = new (oc as any).TopTools_ListIteratorOfListOfShape_1(modList);
+        it = new (oc as any).TopTools_ListIteratorOfListOfShape_1(modList);
         while (it.More()) {
           const modShape = it.Value();
-          // Re-tag: if this new face's ptr matches a face in newBody, override its ID
-          const newFace = oc.TopoDS.Face_1(modShape);
-          const existingId = ptrToNewId.get(newFace.ptr);
-          if (existingId !== undefined && existingId !== oldId) {
-            // Swap IDs so the modified face keeps the old ID
-            const oldHandle = newBody.faceIds.get(existingId) as BRepTopologyHandle;
-            const newHandle = newBody.faceIds.get(oldId);
-            if (oldHandle && !newHandle) {
-              newBody.faceIds.delete(existingId);
-              newBody.faceIds.set(oldId, oldHandle);
-              ptrToNewId.set(newFace.ptr, oldId);
+          try {
+            // Re-tag: if this new face's ptr matches a face in newBody, override its ID
+            const newFace = oc.TopoDS.Face_1(modShape);
+            try {
+              const existingId = ptrToNewId.get(newFace.ptr);
+              if (existingId !== undefined && existingId !== oldId) {
+                // Swap IDs so the modified face keeps the old ID
+                const oldHandle = newBody.faceIds.get(existingId) as BRepTopologyHandle;
+                const newHandle = newBody.faceIds.get(oldId);
+                if (oldHandle && !newHandle) {
+                  newBody.faceIds.delete(existingId);
+                  newBody.faceIds.set(oldId, oldHandle);
+                  ptrToNewId.set(newFace.ptr, oldId);
+                }
+              }
+            } finally {
+              newFace.delete?.();
             }
+          } finally {
+            modShape.delete?.();
           }
-          modShape.delete();
           it.Next();
         }
-        it.delete();
-        modList.delete();
       } catch { /* face may have been deleted; skip */ }
+      finally {
+        it?.delete?.();
+        modList?.delete?.();
+        rawFace.delete?.();
+      }
     }
   }
 
   return newBody;
 }
 
-export function buildOccShape(
-  oc: OcctRaw,
-  handle: BRepTopologyHandle,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ctor: any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): any {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function buildOccShape(oc: OcctRaw, handle: BRepTopologyHandle, ctor: new (...args: any[]) => unknown): unknown {
   return occDeref(oc, handle, ctor);
 }
 
 /** Wrap a raw OCC shape returned by an algo as an OccHandle. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function wrapResultShape(oc: OcctRaw, rawShape: any): BRepTopologyHandle {
+export function wrapResultShape(oc: OcctRaw, rawShape: { delete?: () => void }): BRepTopologyHandle {
   void oc;
   return occWrap(rawShape, 'TopoDS_Shape');
 }

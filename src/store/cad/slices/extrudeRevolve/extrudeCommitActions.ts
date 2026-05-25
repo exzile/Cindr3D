@@ -1,23 +1,45 @@
 import * as THREE from 'three';
-import type { Feature, Sketch } from '../../../../types/cad';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import type { Feature, Sketch, SketchEntity } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
-import { csgAsync } from '../../../../workers/csgWorkerPool';
 import { useComponentStore } from '../../../componentStore';
 import { EXTRUDE_DEFAULTS } from '../../defaults';
-import { boxesHaveJoinableContact, boxesShareFaceContact } from '../../../../utils/geometry/boundsContact';
+import { boxesHaveJoinableContact } from '../../../../utils/geometry/boundsContact';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
-import { getOccSync } from '../../../../engine/occ/loader';
+import { getOcc, getOccSync } from '../../../../engine/occ/loader';
 import { disposeBRepBody } from '../../../../engine/occ/brepBody';
 import { createOccPlaneFrameFromSketch } from '../../../../engine/occ/plane';
-import { occExtrudeWithInstance } from '../../../../engine/occ/ops/extrude';
+import { occExtrudeFaceShapeWithInstance, occExtrudeShapeWithInstance, occExtrudeWithInstance } from '../../../../engine/occ/ops/extrude';
+import {
+  performOccBooleanWithRawTool,
+  performOccBooleanWithInstance,
+  type OccBooleanOptions,
+  type OccBooleanOperation,
+} from '../../../../engine/occ/ops/booleanCore';
 import type { SketchProfile } from '../../../../engine/occ/ops/sketchToWire';
 import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
 import { tessellateWithInstance, tessellationToGeometry } from '../../../../engine/occ/tessellate';
-import { attachTessellationToMesh } from '../../../../engine/occ/picking';
-import { performOccBooleanWithInstance } from '../../../../engine/occ/ops/booleanCore';
-import type { OccBooleanOperation } from '../../../../engine/occ/ops/booleanCore';
+import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
+import { attachTessellationToMesh, detachTessellationFromMesh } from '../../../../engine/occ/picking';
+import { migrateLegacyExtrudeFeatures } from '../../../../engine/occ/legacyMigration';
+import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
+import { mergeCutTopology } from '../../../../components/viewport/scene/extrudedBodies/cutTopology';
 import { errorMessage } from '../../../../utils/errorHandling';
+import { csgSubtract } from '../../../../engine/geometryEngine/core/solid/csg';
+import { extrudeProfileTopology } from '../../../../engine/geometryEngine/core/solid/profileTopology';
+import type { BodyTopology } from '../../../../engine/geometryEngine/core/solid/edgeTypes';
+import { OCC_PROFILE_POINT_COUNT } from '../../../../utils/occConstants';
+import { sketchEntitiesToWire, wiresToFace } from '../../../../engine/occ/sketchEntityToWire';
+
+const OCC_BOOLEAN_RESULT_VERSION = 2;
+
+// Scratch Box3 instances reused across the existingSolids overlap loop in commitExtrude.
+// Safe because the loop is synchronous; no await can interleave while these are live.
+const _proposedBox = new THREE.Box3();
+const _efBox = new THREE.Box3();
+const CSG_BOOLEAN_FALLBACK_VERSION = 1;
+const OCC_CUT_OVERTRAVEL_MM = 0.05;
 
 type SelectedExtrudeProfile = {
   sourceSketch: Sketch;
@@ -26,7 +48,6 @@ type SelectedExtrudeProfile = {
   profileIndex: number | undefined;
   profileIndices?: number[];
 };
-
 
 async function buildExtrudeMeshForProfileSelectionAsync(
   selected: SelectedExtrudeProfile,
@@ -69,7 +90,7 @@ async function buildExtrudeMeshForProfileSelectionAsync(
     if (!merged) {
       merged = geom;
     } else {
-      const next = await csgAsync(merged, geom, 'union');
+      const next = mergeGeometries([merged, geom]);
       merged.dispose();
       geom.dispose();
       merged = next;
@@ -77,6 +98,262 @@ async function buildExtrudeMeshForProfileSelectionAsync(
   }
 
   return merged ? new THREE.Mesh(merged) : null;
+}
+
+function boxesOverlapVolume(a: THREE.Box3, b: THREE.Box3): boolean {
+  const x = Math.min(a.max.x, b.max.x) - Math.max(a.min.x, b.min.x);
+  const y = Math.min(a.max.y, b.max.y) - Math.max(a.min.y, b.min.y);
+  const z = Math.min(a.max.z, b.max.z) - Math.max(a.min.z, b.min.z);
+  const scale = Math.max(
+    a.min.distanceTo(a.max),
+    b.min.distanceTo(b.max),
+    1,
+  );
+  const tolerance = scale * 1e-5;
+  return x > tolerance && y > tolerance && z > tolerance;
+}
+
+async function buildExtrudeProbeBox(
+  selected: SelectedExtrudeProfile,
+  distance: number,
+  direction: 'positive' | 'negative' | 'symmetric' | 'two-sides',
+  taperAngle: number,
+  startOffset: number,
+  distance2: number,
+  taperAngle2: number,
+): Promise<THREE.Box3 | null> {
+  const mesh = await buildExtrudeMeshForProfileSelectionAsync(
+    selected,
+    distance,
+    direction,
+    taperAngle,
+    startOffset,
+    distance2,
+    taperAngle2,
+  );
+  if (!mesh) return null;
+  try {
+    mesh.updateMatrixWorld(true);
+    return new THREE.Box3().setFromObject(mesh);
+  } finally {
+    mesh.geometry.dispose();
+  }
+}
+
+async function resolveBooleanExtrudeDirection(
+  selected: SelectedExtrudeProfile,
+  targetMesh: THREE.Mesh,
+  direction: 'positive' | 'negative' | 'symmetric' | 'two-sides',
+  distance: number,
+  taperAngle: number,
+  startOffset: number,
+  distance2: number,
+  taperAngle2: number,
+): Promise<'positive' | 'negative' | 'symmetric' | 'two-sides'> {
+  if (direction !== 'positive' && direction !== 'negative') return direction;
+
+  targetMesh.updateMatrixWorld(true);
+  const targetBox = new THREE.Box3().setFromObject(targetMesh);
+  const forwardBox = await buildExtrudeProbeBox(
+    selected,
+    distance,
+    direction,
+    taperAngle,
+    startOffset,
+    distance2,
+    taperAngle2,
+  );
+  if (forwardBox && boxesOverlapVolume(forwardBox, targetBox)) return direction;
+
+  const reverseDirection = direction === 'positive' ? 'negative' : 'positive';
+  const reverseBox = await buildExtrudeProbeBox(
+    selected,
+    distance,
+    reverseDirection,
+    taperAngle,
+    startOffset,
+    distance2,
+    taperAngle2,
+  );
+  return reverseBox && boxesOverlapVolume(reverseBox, targetBox)
+    ? reverseDirection
+    : direction;
+}
+
+function makeCutOvertravelFrame(
+  frame: ReturnType<typeof createOccPlaneFrameFromSketch>,
+  signedDistance: number,
+): { frame: ReturnType<typeof createOccPlaneFrameFromSketch>; distance: number } {
+  const sign = signedDistance < 0 ? -1 : 1;
+  const overtravel = Math.max(OCC_CUT_OVERTRAVEL_MM, Math.abs(signedDistance) * 1e-4);
+  return {
+    frame: {
+      ...frame,
+      origin: frame.origin.clone().addScaledVector(frame.normal, -sign * overtravel),
+    },
+    distance: signedDistance + sign * overtravel * 2,
+  };
+}
+
+function polygonArea2D(points: readonly THREE.Vector2[]): number {
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    area += a.x * b.y - b.x * a.y;
+  }
+  return Math.abs(area) / 2;
+}
+
+function projectSketchPointToFrame(
+  point: { x: number; y: number; z: number },
+  frame: ReturnType<typeof createOccPlaneFrameFromSketch>,
+): THREE.Vector2 {
+  const d = new THREE.Vector3(point.x, point.y, point.z).sub(frame.origin);
+  return new THREE.Vector2(d.dot(frame.uDir), d.dot(frame.vDir));
+}
+
+function profileCentroid(profile: SketchProfile): THREE.Vector2 {
+  const center = new THREE.Vector2();
+  for (const point of profile.outer) center.add(point);
+  return profile.outer.length > 0 ? center.multiplyScalar(1 / profile.outer.length) : center;
+}
+
+function findMatchingCircularProfileEntity(
+  sourceSketch: Sketch,
+  profile: SketchProfile,
+  frame: ReturnType<typeof createOccPlaneFrameFromSketch>,
+): SketchEntity | null {
+  if (profile.holes.length > 0 || profile.outer.length < 8) return null;
+  const profileArea = polygonArea2D(profile.outer);
+  const center = profileCentroid(profile);
+  let best: { entity: SketchEntity; score: number } | null = null;
+
+  for (const entity of sourceSketch.entities) {
+    if (entity.type !== 'circle' || typeof entity.radius !== 'number' || entity.radius <= 0 || !entity.points[0]) continue;
+    const expectedArea = Math.PI * entity.radius * entity.radius;
+    const areaError = Math.abs(profileArea - expectedArea) / Math.max(expectedArea, 1e-6);
+    if (areaError > 0.08) continue;
+    const circleCenter = projectSketchPointToFrame(entity.points[0], frame);
+    const centerError = circleCenter.distanceTo(center) / Math.max(entity.radius, 1);
+    if (centerError > 0.08) continue;
+    const score = areaError + centerError;
+    if (!best || score < best.score) best = { entity, score };
+  }
+
+  return best?.entity ?? null;
+}
+
+function tryBuildExactCircleToolShape(
+  oc: unknown,
+  sourceSketch: Sketch,
+  profile: SketchProfile,
+  distance: number,
+  frame: ReturnType<typeof createOccPlaneFrameFromSketch>,
+) {
+  const circle = findMatchingCircularProfileEntity(sourceSketch, profile, frame);
+  if (!circle) return null;
+  const wire = sketchEntitiesToWire(oc as never, [circle], frame);
+  if (!wire) return null;
+  const face = wiresToFace(oc as never, wire, []);
+  if (!face) {
+    (wire as { delete?: () => void }).delete?.();
+    return null;
+  }
+  return occExtrudeFaceShapeWithInstance(oc as never, face, distance, frame, {}, [wire]);
+}
+
+function performRobustBooleanWithRawTool(
+  oc: unknown,
+  operation: OccBooleanOperation,
+  targetBody: Parameters<typeof performOccBooleanWithInstance>[2],
+  toolShape: unknown,
+  options: OccBooleanOptions,
+): ReturnType<typeof performOccBooleanWithInstance> {
+  return performOccBooleanWithRawTool(oc, operation, targetBody, toolShape, {
+    ...options,
+    fuzzyValue: options.fuzzyValue ?? 1e-5,
+  });
+}
+
+async function buildCsgCutFallbackMesh(
+  selected: SelectedExtrudeProfile,
+  targetMesh: THREE.Mesh,
+  distance: number,
+  direction: 'positive' | 'negative' | 'symmetric' | 'two-sides',
+  taperAngle: number,
+  startOffset: number,
+  distance2: number,
+  taperAngle2: number,
+  featureId: string,
+): Promise<THREE.Mesh | null> {
+  let fallbackDistance = distance;
+  let fallbackDistance2 = distance2;
+  let fallbackStartOffset = startOffset;
+  const overtravel = Math.max(OCC_CUT_OVERTRAVEL_MM, Math.abs(distance) * 1e-4);
+  if (direction === 'positive') {
+    fallbackStartOffset -= overtravel;
+    fallbackDistance += overtravel * 2;
+  } else if (direction === 'negative') {
+    fallbackStartOffset += overtravel;
+    fallbackDistance += overtravel * 2;
+  } else if (direction === 'symmetric') {
+    fallbackDistance += overtravel * 2;
+  } else {
+    fallbackDistance += overtravel;
+    fallbackDistance2 += Math.max(OCC_CUT_OVERTRAVEL_MM, Math.abs(distance2) * 1e-4);
+  }
+
+  const toolMesh = await buildExtrudeMeshForProfileSelectionAsync(
+    selected,
+    fallbackDistance,
+    direction,
+    taperAngle,
+    fallbackStartOffset,
+    fallbackDistance2,
+    taperAngle2,
+  );
+  if (!toolMesh) return null;
+
+  const targetGeom = GeometryEngine.bakeMeshWorldGeometry(targetMesh);
+  const toolGeom = GeometryEngine.bakeMeshWorldGeometry(toolMesh);
+  const toolTopo = extrudeProfileTopology(
+    selected.sketchForOp,
+    fallbackDistance,
+    direction,
+    fallbackStartOffset,
+    fallbackDistance2,
+    taperAngle2,
+  );
+  const targetTopo = targetMesh.geometry.userData?.topology as BodyTopology | undefined;
+  const bodyBox = new THREE.Box3().setFromBufferAttribute(
+    targetGeom.attributes.position as THREE.BufferAttribute,
+  );
+  const toolBox = new THREE.Box3().setFromBufferAttribute(
+    toolGeom.attributes.position as THREE.BufferAttribute,
+  );
+  toolBox.expandByScalar(Math.max(toolBox.min.distanceTo(toolBox.max) * 5e-3, 1e-4));
+  toolMesh.geometry.dispose();
+  try {
+    const resultGeom = csgSubtract(targetGeom, toolGeom);
+    const mergedTopology = mergeCutTopology(
+      targetTopo,
+      resultGeom.userData?.topology as BodyTopology | undefined,
+      toolBox,
+      bodyBox,
+      toolTopo.edges.length > 0 ? toolTopo : undefined,
+    );
+    if (mergedTopology) resultGeom.userData.topology = mergedTopology;
+    const mesh = new THREE.Mesh(resultGeom, BODY_MATERIAL);
+    mesh.userData.pickable = true;
+    mesh.userData.featureId = featureId;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
+  } finally {
+    targetGeom.dispose();
+    toolGeom.dispose();
+  }
 }
 
 export function createExtrudeCommitActions({ set, get }: CADSliceContext): Partial<CADState> {
@@ -104,6 +381,10 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
       ? features.find((f) => f.id === editingFeatureId && f.type === 'extrude') ?? null
       : null;
     const editingIndex = editingExtrude ? features.findIndex((f) => f.id === editingFeatureId) : -1;
+    // Capture old mesh + brepBodyId before the filter discards the feature.
+    // Must be done here — after filter the reference is gone from nextFeatures.
+    const editingOldMesh = editingExtrude?.mesh instanceof THREE.Mesh ? editingExtrude.mesh : null;
+    const editingOldBrepBodyId = editingOldMesh?.userData['brepBodyId'] as string | undefined;
     const selectedSketchIds =
       extrudeSelectedSketchIds.length > 0
         ? extrudeSelectedSketchIds
@@ -193,14 +474,30 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
     const finalOperation = extrudeOperation;
 
     // EX-13: in edit mode, remove the old feature first (new one inserts at same position)
+    // Re-read from get() at each await boundary — concurrent undo/removeFeature can change
+    // the live features array while we're in an async OCC op.
     const nextFeatures = editingExtrude
       ? features.filter((f) => f.id !== editingFeatureId)
       : [...features];
+    if (!editingExtrude && (finalOperation === 'join' || finalOperation === 'cut' || finalOperation === 'intersect')) {
+      const migrationOcc = getOccSync() ?? await getOcc();
+      // Re-read after await: abort if a concurrent undo changed the feature list.
+      const liveAfterMigrationInit = get().features;
+      if (liveAfterMigrationInit !== features) {
+        console.warn('[commitExtrude] features changed during OCC init – aborting stale commit');
+        return;
+      }
+      const migrated = migrateLegacyExtrudeFeatures(nextFeatures, sketches, migrationOcc);
+      if (migrated.some((feature, index) => feature !== nextFeatures[index])) {
+        nextFeatures.splice(0, nextFeatures.length, ...migrated);
+      }
+    }
     let createdCount = 0;
     let firstCreatedSketchName: string | null = null;
 
     for (const selected of profilesToCommit) {
       const { sourceSketch, sketchForOp, profileIndex, profileIndices } = selected;
+      let committedDirection = finalDirection;
       const requestedBoolean = finalOperation === 'cut' || finalOperation === 'intersect';
       const isClosedProfile = profileIndices?.length
         ? profileIndices.every((index) => GeometryEngine.createProfileSketch(sourceSketch, index) !== null)
@@ -276,8 +573,7 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
           );
           if (proposedMesh) {
             proposedMesh.updateMatrixWorld(true);
-            const proposedBox = new THREE.Box3().setFromObject(proposedMesh);
-            const proposedGeomW = GeometryEngine.bakeMeshWorldGeometry(proposedMesh);
+            _proposedBox.setFromObject(proposedMesh);
             proposedMesh.geometry.dispose();
 
             let intersectsAny = false;
@@ -299,43 +595,15 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
               );
               if (!efMesh) continue;
               efMesh.updateMatrixWorld(true);
-              const efBox = new THREE.Box3().setFromObject(efMesh);
-              // Cheap bbox pre-filter. If the boxes don't even touch or share
-              // a real face/volume contact, we can skip the expensive CSG work.
-              // Face-touching solids are valid join candidates; edge/corner
-              // contact stays detached.
-              const hasJoinableContact = boxesHaveJoinableContact(proposedBox, efBox);
-              const hasSharedFaceContact = boxesShareFaceContact(proposedBox, efBox);
-              if (!hasJoinableContact) {
-                efMesh.geometry.dispose();
-                continue;
-              }
-              // Accurate test: do the two solids truly overlap in volume,
-              // or do they just touch? CSG intersection produces an empty
-              // (or near-empty) geometry for coplanar face contact.
-              // Threshold 6 = 2 triangles; anything less is degenerate
-              // coplanar contact. Because hasJoinableContact already rejected
-              // edge/corner-only contact, a degenerate result here still means
-              // face contact and should remain a join.
-              const efGeomW = GeometryEngine.bakeMeshWorldGeometry(efMesh);
+              _efBox.setFromObject(efMesh);
               efMesh.geometry.dispose();
-              try {
-                const inter = await csgAsync(proposedGeomW, efGeomW, 'intersect');
-                const triVerts = (inter?.getAttribute('position') as THREE.BufferAttribute | undefined)?.count ?? 0;
-                inter?.dispose();
-                if (triVerts > 6 || hasSharedFaceContact) {
-                  intersectsAny = true;
-                  efGeomW.dispose();
-                  break;
-                }
-              } catch { /* malformed geometry — fall back to bbox result */
+              // hasJoinableContact rejects edge/corner-only contact; face or volume
+              // contact is sufficient to auto-promote from new-body to join/cut.
+              if (boxesHaveJoinableContact(_proposedBox, _efBox)) {
                 intersectsAny = true;
-                efGeomW.dispose();
                 break;
               }
-              efGeomW.dispose();
             }
-            proposedGeomW.dispose();
             if (!intersectsAny) effectiveOperation = 'new-body';
           }
         }
@@ -344,25 +612,24 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
       const featureId = crypto.randomUUID();
 
       // OCC new-body path: builds an exact BRep solid with optional taper angle.
-      // Only for solid, non-thin, non-surface, non-multi-profile, distance-extent extrudes
-      // in new-body mode. Falls back silently to CSG pipeline on any failure.
+      // Handles distance, symmetric, two-sides, to-object, and through-all (all) extents.
+      // Falls back silently to CSG pipeline on any failure.
       if (
         resolvedBodyKind === 'solid' &&
         !extrudeThinEnabled &&
         effectiveOperation === 'new-body' &&
-        profileIndices === undefined &&
-        extrudeExtentType !== 'all'
+        profileIndices === undefined
       ) {
-        const occ = getOccSync();
+        const occ = getOccSync() ?? await getOcc();
         if (occ) {
           try {
             const shapes = GeometryEngine.sketchToProfileShapesFlat(sketchForOp);
             const firstShape = shapes[0];
             if (firstShape) {
               const sketchProfile: SketchProfile = {
-                outer: firstShape.getPoints(96),
+                outer: firstShape.getPoints(OCC_PROFILE_POINT_COUNT),
                 holes: firstShape.holes
-                  .map((h) => h.getPoints(96))
+                  .map((h) => h.getPoints(OCC_PROFILE_POINT_COUNT))
                   .filter((pts) => pts.length >= 3),
               };
               const frame = createOccPlaneFrameFromSketch(sketchForOp);
@@ -391,17 +658,7 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
                 taperAngle: Math.abs(extrudeTaperAngle) > 0.001 ? extrudeTaperAngle : undefined,
               });
 
-              globalBRepBodyRegistry.add(occBody);
-              const tess = tessellateWithInstance(occ.oc, occBody);
-              const geo = tessellationToGeometry(tess);
-              const mat = new THREE.MeshPhysicalMaterial({ color: 0x8899aa, metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide });
-              const occMesh = new THREE.Mesh(geo, mat);
-              attachTessellationToMesh(occMesh, tess, occBody.id);
-              occMesh.userData.pickable = true;
-              occMesh.userData.featureId = featureId;
-              occMesh.castShadow = true;
-              occMesh.receiveShadow = true;
-              featureMesh = occMesh;
+              featureMesh = createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, featureId);
               needsStoredMesh = true;
             }
           } catch (err) {
@@ -580,6 +837,173 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
         }
       }
 
+      // OCC join/cut path: boolean the extrude against the most recent OCC-backed solid target.
+      // Only runs for solid, non-thin, distance-extent extrudes in join/cut/intersect mode where
+      // the target already carries a brepBodyId (was produced by the OCC pipeline).
+      // Falls through to the CSG pipeline on no OCC target or any OCC failure.
+      let occBoolTargetIdToSuppress: string | undefined;
+      let occBooleanResolved = false;
+      let csgBooleanFallbackResolved = false;
+      if (
+        resolvedBodyKind === 'solid' &&
+        !extrudeThinEnabled &&
+        !needsStoredMesh &&
+        (effectiveOperation === 'join' || effectiveOperation === 'cut' || effectiveOperation === 'intersect') &&
+        profileIndices === undefined
+      ) {
+        const occ = getOccSync() ?? await getOcc();
+        // Re-read after await: abort if a concurrent undo changed the feature list.
+        if (get().features !== features) {
+          console.warn('[commitExtrude] features changed during OCC boolean init – aborting stale commit');
+          return;
+        }
+        if (occ) {
+          // Reverse-scan nextFeatures for the most recent OCC-backed solid
+          let occTargetFeature: Feature | undefined;
+          for (let i = nextFeatures.length - 1; i >= 0; i--) {
+            const f = nextFeatures[i];
+            if (
+              !f.suppressed && f.visible &&
+              f.bodyKind !== 'surface' &&
+              f.mesh instanceof THREE.Mesh &&
+              (f.mesh as THREE.Mesh).userData['brepBodyId']
+            ) {
+              occTargetFeature = f;
+              break;
+            }
+          }
+          const targetBrepBodyId = occTargetFeature?.mesh instanceof THREE.Mesh
+            ? ((occTargetFeature.mesh as THREE.Mesh).userData['brepBodyId'] as string | undefined)
+            : undefined;
+          const targetBRepBody = targetBrepBodyId
+            ? globalBRepBodyRegistry.get(targetBrepBodyId)
+            : undefined;
+
+          if (targetBRepBody && occTargetFeature) {
+            try {
+              const shapes = GeometryEngine.sketchToProfileShapesFlat(sketchForOp);
+              const firstShape = shapes[0];
+              if (firstShape) {
+                const sketchProfile: SketchProfile = {
+                  outer: firstShape.getPoints(OCC_PROFILE_POINT_COUNT),
+                  holes: firstShape.holes
+                    .map((h) => h.getPoints(OCC_PROFILE_POINT_COUNT))
+                    .filter((pts) => pts.length >= 3),
+                };
+                const frame = createOccPlaneFrameFromSketch(sketchForOp);
+
+                const booleanDirection = await resolveBooleanExtrudeDirection(
+                  selected,
+                  occTargetFeature.mesh as THREE.Mesh,
+                  finalDirection,
+                  absDistance,
+                  extrudeTaperAngle,
+                  extrudeStartType === 'offset' ? extrudeStartOffset : 0,
+                  absDistance2,
+                  extrudeTaperAngle2,
+                );
+
+                let occDistance: number;
+                let occSymmetric = false;
+                let occTwoSideDist: number | undefined;
+                if (booleanDirection === 'negative') {
+                  occDistance = -absDistance;
+                } else if (booleanDirection === 'symmetric') {
+                  occDistance = extrudeSymmetricFullLength ? absDistance : absDistance * 2;
+                  occSymmetric = true;
+                } else if (booleanDirection === 'two-sides') {
+                  occDistance = absDistance;
+                  occTwoSideDist = absDistance2;
+                } else {
+                  occDistance = absDistance;
+                }
+
+                const boolOp: OccBooleanOperation =
+                  effectiveOperation === 'cut' ? 'subtract' :
+                  effectiveOperation === 'intersect' ? 'intersect' : 'union';
+                const toolExtrude = boolOp === 'subtract' && !occSymmetric && occTwoSideDist === undefined
+                  ? makeCutOvertravelFrame(frame, occDistance)
+                  : { frame, distance: occDistance };
+
+                let resultBody = null;
+                try {
+                  const exactCircleToolShape = boolOp === 'subtract' && !occSymmetric && occTwoSideDist === undefined && Math.abs(extrudeTaperAngle) <= 0.001
+                    ? tryBuildExactCircleToolShape(occ.oc, sourceSketch, sketchProfile, toolExtrude.distance, toolExtrude.frame)
+                    : null;
+                  const toolShape = exactCircleToolShape ?? occExtrudeShapeWithInstance(occ.oc, sketchProfile, toolExtrude.distance, toolExtrude.frame, {
+                    symmetric: occSymmetric,
+                    twoSideDist: occTwoSideDist,
+                    taperAngle: Math.abs(extrudeTaperAngle) > 0.001 ? extrudeTaperAngle : undefined,
+                  });
+
+                  resultBody = (() => {
+                    try {
+                      return performRobustBooleanWithRawTool(
+                        occ.oc, boolOp, targetBRepBody, toolShape.shape,
+                        { id: featureId, sourceFeatureId: featureId },
+                      );
+                    } finally {
+                      toolShape.dispose();
+                    }
+                  })();
+                } catch (err) {
+                  console.warn(`[commitExtrude] OCC boolean path failed (${errorMessage(err, 'unknown')}); using CSG fallback`);
+                }
+
+                if (resultBody) {
+                  featureMesh = createRegisteredOccMesh(occ.oc, resultBody, BODY_MATERIAL, featureId);
+                  needsStoredMesh = true;
+                  committedDirection = booleanDirection;
+                  occBoolTargetIdToSuppress = occTargetFeature.id;
+                  // Inherit the target's body slot so the result stays in the same Bodies entry
+                  bodyId = occTargetFeature.bodyId;
+                  componentId = occTargetFeature.componentId;
+                  if (bodyId && featureMesh) {
+                    const cs = useComponentStore.getState();
+                    cs.addFeatureToBody(bodyId, featureId);
+                    cs.setBodyMesh(bodyId, featureMesh);
+                  }
+                  occBooleanResolved = true;
+                } else if (boolOp === 'subtract') {
+                  const fallbackMesh = await buildCsgCutFallbackMesh(
+                    selected,
+                    occTargetFeature.mesh as THREE.Mesh,
+                    absDistance,
+                    booleanDirection,
+                    extrudeTaperAngle,
+                    extrudeStartType === 'offset' ? extrudeStartOffset : 0,
+                    absDistance2,
+                    extrudeTaperAngle2,
+                    featureId,
+                  );
+                  if (fallbackMesh) {
+                    featureMesh = fallbackMesh;
+                    needsStoredMesh = true;
+                    committedDirection = booleanDirection;
+                    occBoolTargetIdToSuppress = occTargetFeature.id;
+                    bodyId = occTargetFeature.bodyId;
+                    componentId = occTargetFeature.componentId;
+                    if (bodyId) {
+                      const cs = useComponentStore.getState();
+                      cs.addFeatureToBody(bodyId, featureId);
+                      cs.setBodyMesh(bodyId, featureMesh);
+                    }
+                    occBooleanResolved = true;
+                    csgBooleanFallbackResolved = true;
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn(`[commitExtrude] OCC boolean path failed (${errorMessage(err, 'unknown')}); using CSG fallback`);
+            }
+          }
+        }
+      }
+
+      if (requestedBoolean && !occBooleanResolved) {
+        needsStoredMesh = false;
+      }
+
       const feature: Feature = {
         id: featureId,
         name: featureName,
@@ -597,8 +1021,10 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
           // renderer uses these to label each split component separately so
           // every disconnected piece becomes its own row in the Bodies list.
           ...(extraBodyIds.length > 0 ? { extraBodyIds } : {}),
-          direction: finalDirection,
+          direction: committedDirection,
           operation: effectiveOperation,
+          ...(occBooleanResolved && !csgBooleanFallbackResolved ? { occBooleanVersion: OCC_BOOLEAN_RESULT_VERSION } : {}),
+          ...(csgBooleanFallbackResolved ? { csgBooleanFallbackVersion: CSG_BOOLEAN_FALLBACK_VERSION } : {}),
           thin: extrudeThinEnabled,
           thinThickness: extrudeThinThickness,
           thinSide: extrudeThinSide,
@@ -658,6 +1084,13 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
       } else {
         nextFeatures.push(feature);
       }
+      // Suppress the OCC target that was consumed by this boolean operation
+      if (occBoolTargetIdToSuppress) {
+        const tidx = nextFeatures.findIndex((f) => f.id === occBoolTargetIdToSuppress);
+        if (tidx >= 0) {
+          nextFeatures[tidx] = { ...nextFeatures[tidx], suppressed: true, visible: false };
+        }
+      }
       createdCount += 1;
       if (!firstCreatedSketchName) firstCreatedSketchName = sourceSketch.name;
     }
@@ -673,6 +1106,20 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
           ? `${actionVerb} ${createdCount} profiles${extrudeExtentType === 'all' ? ' (All)' : ` by ${absDistance}${units}`}`
           : `${actionVerb} ${firstCreatedSketchName ?? 'profile'}${extrudeExtentType === 'all' ? ' (All)' : ` by ${absDistance}${units}`}`,
     });
+    // EX-13 edit mode: dispose the old stored mesh after the new feature is committed.
+    // Defer so any in-flight render using the old geometry can finish first.
+    if (editingOldMesh) {
+      setTimeout(() => {
+        editingOldMesh.geometry.dispose();
+        detachTessellationFromMesh(editingOldMesh);
+        if (editingOldBrepBodyId) globalBRepBodyRegistry.delete(editingOldBrepBodyId);
+        // OCC extrude allocates a fresh MeshPhysicalMaterial per commit — dispose
+        // it here since it has no userData.shared flag (not a shared singleton).
+        const oldMat = editingOldMesh.material;
+        const mats = Array.isArray(oldMat) ? oldMat : (oldMat ? [oldMat] : []);
+        for (const m of mats) { if (m && !m.userData?.shared) m.dispose(); }
+      }, 0);
+    }
   },
 
   };

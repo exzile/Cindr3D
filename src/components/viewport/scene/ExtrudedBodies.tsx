@@ -1,14 +1,21 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { useCADStore } from '../../../store/cadStore';
+import { shallow } from 'zustand/shallow';
 import { useComponentStore } from '../../../store/componentStore';
 import { liveBodyMeshes, bodyGeometryCache, bodyIdGeometryCache } from '../../../store/meshRegistry';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
-import { extractEdgeTopology, type BodyTopology, type ModelEdge } from '../../../engine/geometryEngine/core/solid/edgeTopology';
+import { csgSubtract } from '../../../engine/geometryEngine/core/solid/csg';
+import type { BodyTopology, ModelEdge } from '../../../engine/geometryEngine/core/solid/edgeTypes';
 import { modelEdgeId } from '../../../engine/geometryEngine/core/solid/edgeId';
 import { extrudeProfileTopology } from '../../../engine/geometryEngine/core/solid/profileTopology';
+import { getOcc } from '../../../engine/occ/loader';
+import { migrateLegacyExtrudeFeatures } from '../../../engine/occ/legacyMigration';
+
+const OCC_EXTRUDE_MIGRATION_PASS_VERSION = 3;
+const CSG_CUT_OVERTRAVEL_MM = 0.05;
 
 // A cut that doesn't reach the body's outer edges leaves every one of them
 // geometrically UNCHANGED — but re-extracting topology from the CSG result
@@ -362,6 +369,64 @@ import { BODY_MATERIAL, SURFACE_MATERIAL, DIM_MATERIAL, componentColorMaterial }
 const _boxCurrent = new THREE.Box3();
 const _boxTool = new THREE.Box3();
 
+type PersistHydrationApi = {
+  persist?: {
+    hasHydrated: () => boolean;
+    onFinishHydration: (cb: () => void) => (() => void) | void;
+  };
+};
+
+function storeHasHydrated(store: PersistHydrationApi): boolean {
+  return store.persist?.hasHydrated() ?? true;
+}
+
+function useSceneStoresHydrated(): boolean {
+  const [hydrated, setHydrated] = useState(
+    () => storeHasHydrated(useCADStore as unknown as PersistHydrationApi) &&
+      storeHasHydrated(useComponentStore as unknown as PersistHydrationApi),
+  );
+
+  useEffect(() => {
+    if (hydrated) return undefined;
+
+    const cadStore = useCADStore as unknown as PersistHydrationApi;
+    const componentStore = useComponentStore as unknown as PersistHydrationApi;
+    const check = () => {
+      if (storeHasHydrated(cadStore) && storeHasHydrated(componentStore)) {
+        setHydrated(true);
+      }
+    };
+    const disposers: Array<() => void> = [];
+
+    if (!storeHasHydrated(cadStore)) {
+      const unsub = cadStore.persist?.onFinishHydration(check);
+      if (typeof unsub === 'function') disposers.push(unsub);
+    }
+    if (!storeHasHydrated(componentStore)) {
+      const unsub = componentStore.persist?.onFinishHydration(check);
+      if (typeof unsub === 'function') disposers.push(unsub);
+    }
+
+    check();
+    return () => {
+      for (const dispose of disposers) dispose();
+    };
+  }, [hydrated]);
+
+  return hydrated;
+}
+
+function featureNeedsBody(feature: Feature, bodiesById: ReturnType<typeof useComponentStore.getState>['bodies']): boolean {
+  if (feature.type !== 'extrude' || feature.suppressed) return false;
+  const operation =
+    (feature.params?.operation as string | undefined) ??
+    (feature.params?.extrudeOperation as string | undefined) ??
+    'new-body';
+  if (operation !== 'new-body') return false;
+  if (feature.bodyId && bodiesById[feature.bodyId]) return false;
+  return !Object.values(bodiesById).some((body) => body.featureIds.includes(feature.id));
+}
+
 /**
  * Wraps a single body mesh and pulses an emissive highlight when its bodyId
  * matches the currently-selected body from the browser panel. Using a
@@ -441,6 +506,16 @@ function BodyMesh({
     />
   );
 }
+
+/** React.memo wrapper for BodyMesh — skips re-renders when geometry identity is unchanged.
+ *  Internal useComponentStore subscription still fires when selection changes. */
+const BodyMeshMemo = React.memo(BodyMesh, (prev, next) =>
+  prev.geometry === next.geometry &&
+  prev.material === next.material &&
+  prev.featureId === next.featureId &&
+  prev.bodyId === next.bodyId &&
+  prev.pickable === next.pickable,
+);
 
 /** Revolve geometry item — memoized, disposes geometry on change/unmount. */
 function RevolveItem({
@@ -558,7 +633,8 @@ function sketchStructuralSig(s: Sketch): string {
 }
 
 export default function ExtrudedBodies() {
-  const features = useCADStore((s) => s.features);
+  const sceneStoresHydrated = useSceneStoresHydrated();
+  const features = useCADStore((s) => s.features, shallow);
   const sketches = useCADStore((s) => s.sketches);
   const rollbackIndex = useCADStore((s) => s.rollbackIndex);
   const activeComponentId = useComponentStore((s) => s.activeComponentId);
@@ -567,6 +643,53 @@ export default function ExtrudedBodies() {
   const showComponentColors = useCADStore((s) => s.showComponentColors);
 
   const bodiesById = useComponentStore((s) => s.bodies);
+  const lastOccMigrationKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!sceneStoresHydrated) return;
+    const componentStore = useComponentStore.getState();
+    const parentId = componentStore.activeComponentId ?? componentStore.rootComponentId;
+    const missing = features.filter((feature) => featureNeedsBody(feature, componentStore.bodies));
+    for (const feature of missing) {
+      const label = `${feature.bodyKind === 'surface' ? 'Surface' : 'Body'} ${Object.keys(componentStore.bodies).length + 1}`;
+      const bodyId = componentStore.addBody(parentId, label);
+      if (bodyId) componentStore.addFeatureToBody(bodyId, feature.id);
+    }
+  }, [sceneStoresHydrated, features, bodiesById]);
+
+  useEffect(() => {
+    if (!sceneStoresHydrated) return undefined;
+
+    const migrationKey = `${OCC_EXTRUDE_MIGRATION_PASS_VERSION}|${features
+      .filter((feature) => feature.type === 'extrude' && !feature.suppressed)
+      .map((feature) => {
+        const brepBodyId = feature.mesh instanceof THREE.Mesh
+          ? feature.mesh.userData.brepBodyId ?? ''
+          : '';
+        return `${feature.id}:${feature.timestamp}:${feature.visible}:${feature.params.operation ?? feature.params.extrudeOperation ?? ''}:${brepBodyId}`;
+      })
+      .join('|')}`;
+    if (!migrationKey || migrationKey === lastOccMigrationKeyRef.current) return undefined;
+
+    let cancelled = false;
+    getOcc()
+      .then((occ) => {
+        if (cancelled) return;
+        const migrated = migrateLegacyExtrudeFeatures(features, sketches, occ);
+        const changed = migrated.some((feature, index) => feature !== features[index]);
+        lastOccMigrationKeyRef.current = migrationKey;
+        if (changed) {
+          useCADStore.setState({ features: migrated });
+        }
+      })
+      .catch((error) => {
+        console.warn('[ExtrudedBodies] OCC migration failed before rendering extrudes', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sceneStoresHydrated, features, sketches]);
 
   // When a non-root component is active, dim features that belong to other components.
   const editingInPlace = !!activeComponentId && activeComponentId !== rootComponentId;
@@ -671,17 +794,35 @@ export default function ExtrudedBodies() {
     );
 
   const buildToolMesh = (feature: Feature, sketch: Sketch): THREE.Mesh | null => {
-    const distance = (feature.params.distance as number) || 10;
-    const distance2 = (feature.params.distance2 as number) || distance;
+    let distance = (feature.params.distance as number) || 10;
+    let distance2 = (feature.params.distance2 as number) || distance;
     const direction = ((feature.params.direction as 'positive' | 'negative' | 'symmetric' | 'two-sides') ?? 'positive');
     const profileIndex = feature.params.profileIndex as number | undefined;
     const profileIndices = Array.isArray(feature.params.profileIndices)
       ? feature.params.profileIndices as number[]
       : null;
     const taperAngle = (feature.params.taperAngle as number) ?? 0;
-    const startOffset = (feature.params.startType as string) === 'offset'
+    let startOffset = (feature.params.startType as string) === 'offset'
       ? ((feature.params.startOffset as number) ?? 0)
       : 0;
+    const operation =
+      (feature.params.operation as string | undefined) ??
+      (feature.params.extrudeOperation as string | undefined);
+    if (operation === 'cut') {
+      const overtravel = Math.max(CSG_CUT_OVERTRAVEL_MM, Math.abs(distance) * 1e-4);
+      if (direction === 'positive') {
+        startOffset -= overtravel;
+        distance += overtravel * 2;
+      } else if (direction === 'negative') {
+        startOffset += overtravel;
+        distance += overtravel * 2;
+      } else if (direction === 'symmetric') {
+        distance += overtravel * 2;
+      } else {
+        distance += overtravel;
+        distance2 += Math.max(CSG_CUT_OVERTRAVEL_MM, Math.abs(distance2) * 1e-4);
+      }
+    }
     if (profileIndices && profileIndices.length > 1) {
       const geometries: THREE.BufferGeometry[] = [];
       // Exact per-profile edges from the sketch loops (already WORLD space).
@@ -713,8 +854,6 @@ export default function ExtrudedBodies() {
       const pt = extrudeProfileTopology(sketchForOp, distance, direction, startOffset, distance2, taperAngle2);
       if (pt.edges.length > 0) {
         m.userData.topoWorld = pt;
-      } else {
-        try { m.userData.localTopo = extractEdgeTopology(m.geometry); } catch { /* soup fallback */ }
       }
     }
     return m;
@@ -742,6 +881,15 @@ export default function ExtrudedBodies() {
   }, [features, sketches]);
 
   const { bodies, featureIds, featureComponentIds, featureBodyIds } = useMemo(() => {
+    if (!sceneStoresHydrated) {
+      return {
+        bodies: [],
+        featureIds: [],
+        featureComponentIds: [],
+        featureBodyIds: [],
+      };
+    }
+
     // Features with a stored mesh (thin/taper extrude) are rendered directly — skip CSG.
     const extrudeFeatures = [...features]
       .filter((f) => f.type === 'extrude' && isActive(f) && !f.mesh && !hasActiveDownstreamEdgeModification(f.id))
@@ -772,13 +920,18 @@ export default function ExtrudedBodies() {
       let changed = 0;
       for (let i = 0; i < outBodies.length; i++) {
         if (!targetsBody(feature, outBodyIds[i])) continue;
-        const toolForBody = toolGeom.clone();
-        const next = operation === 'cut'
-          ? GeometryEngine.csgSubtract(outBodies[i], toolForBody)
-          : GeometryEngine.csgIntersect(outBodies[i], toolForBody);
-        outBodies[i].dispose();
-        toolForBody.dispose();
-        outBodies[i] = next;
+        if (operation === 'cut') {
+          const toolForBody = toolGeom.clone();
+          try {
+            const next = csgSubtract(outBodies[i], toolForBody);
+            outBodies[i].dispose();
+            outBodies[i] = next;
+          } catch (error) {
+            console.warn('[ExtrudedBodies] Legacy committed-body cut fallback failed; keeping body unchanged', error);
+          } finally {
+            toolForBody.dispose();
+          }
+        }
         outIds[i] = feature.id;
         changed += 1;
       }
@@ -810,12 +963,7 @@ export default function ExtrudedBodies() {
             // (zero soup-residual hole lines).
             parts[i].userData.topology = exactTopo;
           } else {
-            // CSG result or split body → soup-region extraction (best effort).
-            try {
-              parts[i].userData.topology = extractEdgeTopology(parts[i]);
-            } catch {
-              parts[i].userData.topology = { edges: [] };
-            }
+            parts[i].userData.topology = { edges: [] };
           }
           outBodies.push(parts[i]);
           outIds.push(currentFeatureId);
@@ -897,9 +1045,17 @@ export default function ExtrudedBodies() {
         // grazes the tool is still treated as cut-affected (taken from the
         // post extraction), never falsely "preserved".
         toolBox.expandByScalar(Math.max(toolBox.min.distanceTo(toolBox.max) * 5e-3, 1e-4));
-        const next = GeometryEngine.csgSubtract(currentGeom, toolGeom);
-        currentGeom.dispose();
-        toolGeom.dispose();
+        // Legacy/no-mesh cut features have no OCC body; apply the mesh fallback
+        // so a failed OCC cut still removes material in the viewport.
+        let next = currentGeom;
+        try {
+          next = csgSubtract(currentGeom, toolGeom);
+          currentGeom.dispose();
+        } catch (error) {
+          console.warn('[ExtrudedBodies] Legacy cut fallback failed; keeping body unchanged', error);
+        } finally {
+          toolGeom.dispose();
+        }
         const merged = mergeCutTopology(
           preCutTopo,
           (next.userData as { topology?: BodyTopology }).topology,
@@ -918,10 +1074,8 @@ export default function ExtrudedBodies() {
           toolGeom.dispose();
           continue;
         }
-        const next = GeometryEngine.csgIntersect(currentGeom, toolGeom);
-        currentGeom.dispose();
+        // Legacy !f.mesh features have no OCC body; skip the boolean — body unchanged.
         toolGeom.dispose();
-        currentGeom = next;
         currentFeatureId = feature.id;
       } else if (op === 'join') {
         // Fusion 360 parity: only merge bodies that actually overlap.
@@ -937,10 +1091,12 @@ export default function ExtrudedBodies() {
           currentBodyId = feature.bodyId;
           currentExtraBodyIds = (feature.params.extraBodyIds as string[] | undefined) ?? [];
         } else {
-          const next = GeometryEngine.csgUnion(currentGeom, toolGeom);
+          // Legacy !f.mesh features have no OCC body; merge geometries (overlapping,
+          // not true union) as a best-effort fallback for migration failures.
+          const merged = mergeGeometries([currentGeom, toolGeom], false);
           currentGeom.dispose();
           toolGeom.dispose();
-          currentGeom = next;
+          currentGeom = merged ?? currentGeom;
           currentFeatureId = feature.id;
           // Keep the original body's component/body association for joined bodies.
         }
@@ -954,7 +1110,7 @@ export default function ExtrudedBodies() {
   // (renaming a measurement sketch, drawing in a non-extrude sketch, etc.)
   // leave this stable and do not rebuild every body.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [features, relevantSketchesSig, rollbackIndex, bodiesById]);
+  }, [sceneStoresHydrated, features, relevantSketchesSig, rollbackIndex, bodiesById]);
 
   useEffect(() => {
     return () => {
@@ -965,6 +1121,7 @@ export default function ExtrudedBodies() {
   // Keep the persistent geometry caches in sync so the slicer can read real
   // geometry even when this viewport is unmounted (e.g. navigated to /prepare).
   useEffect(() => {
+    if (!sceneStoresHydrated) return;
     // Evict stale entries for features/bodies that no longer exist.
     const liveFeatureIds = new Set(featureIds.filter(Boolean));
     const liveBodyIds = new Set(featureBodyIds.filter(Boolean));
@@ -1000,13 +1157,14 @@ export default function ExtrudedBodies() {
       })();
       bodyIdGeometryCache.set(bId, merged);
     }
-  }, [bodies, featureIds, featureBodyIds]);
+  }, [sceneStoresHydrated, bodies, featureIds, featureBodyIds]);
 
   // Register stored-mesh features (fillet/chamfer/sweep/etc.) in liveBodyMeshes
   // so downstream tools and export/slicer caches can locate their geometry.
   // BodyMesh handles its own registration; <primitive>-rendered meshes do not,
   // so we mirror the same pattern here for them.
   useEffect(() => {
+    if (!sceneStoresHydrated) return undefined;
     const stored: Array<{ uuid: string }> = [];
     for (const f of features) {
       if (!isActive(f) || !f.mesh) continue;
@@ -1023,11 +1181,12 @@ export default function ExtrudedBodies() {
     }
     return () => { stored.forEach(({ uuid }) => liveBodyMeshes.delete(uuid)); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [features, rollbackIndex]);
+  }, [sceneStoresHydrated, features, rollbackIndex]);
 
   // Apply dim / appearance materials on pre-built stored meshes in an effect,
   // never in render, so cleanup is guaranteed when Edit In Place exits.
   useEffect(() => {
+    if (!sceneStoresHydrated) return;
     const storedMeshFeatures = features.filter((f) => isActive(f) && f.mesh);
     storedMeshFeatures.forEach((feature) => {
       const mesh = feature.mesh!;
@@ -1038,7 +1197,24 @@ export default function ExtrudedBodies() {
       mesh.material = getMaterial(feature.componentId, bodyId, isSurface);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [features, editingInPlace, activeComponentId, rollbackIndex, bodiesById, getMaterial, resolveBodyId]);
+  }, [sceneStoresHydrated, features, editingInPlace, activeComponentId, rollbackIndex, bodiesById, getMaterial, resolveBodyId]);
+
+  // Memoised filtered lists — avoid re-allocating on every render when only unrelated
+  // state changes (e.g. visibility toggles, status messages that bump features ref).
+  // isActive / hasActiveDownstreamEdgeModification close over features + rollbackIndex,
+  // so those two are the only deps needed.
+  const revolveFeaturesFiltered = useMemo(
+    () => features.filter((f) => f.type === 'revolve' && isActive(f) && !f.mesh && !hasActiveDownstreamEdgeModification(f.id)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [features, rollbackIndex],
+  );
+  const storedMeshFeaturesFiltered = useMemo(
+    () => features.filter((f) => isActive(f) && f.mesh && !hasActiveDownstreamEdgeModification(f.id)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [features, rollbackIndex],
+  );
+
+  if (!sceneStoresHydrated) return null;
 
   return (
     <>
@@ -1047,7 +1223,7 @@ export default function ExtrudedBodies() {
         const bodyId = featureBodyIds[i];
         const bodySelectable = bodyId ? (bodiesById[bodyId]?.selectable !== false) : true;
         return (
-          <BodyMesh
+          <BodyMeshMemo
             // Always include the index — when a feature's split produces more
             // parts than allocated extraBodyIds, the fallback reuses the primary
             // bodyId for multiple entries and React would drop all but one
@@ -1061,7 +1237,7 @@ export default function ExtrudedBodies() {
           />
         );
       })}
-      {features.filter((f) => f.type === 'revolve' && isActive(f) && !f.mesh && !hasActiveDownstreamEdgeModification(f.id)).map((feature) => {
+      {revolveFeaturesFiltered.map((feature) => {
         const bodyId = resolveBodyId(feature.id, feature.bodyId);
         const material = getMaterial(feature.componentId, bodyId, feature.bodyKind === 'surface');
         if (feature.params.faceRevolve) {
@@ -1074,7 +1250,7 @@ export default function ExtrudedBodies() {
       {/* Render features that have a pre-built stored mesh (D30 Sweep, D66 Thin Extrude,
           D69 Taper Extrude, D73 Rib). All these set feature.mesh at commit time.
           Material assignment is done in a useEffect below — never in render. */}
-      {features.filter((f) => isActive(f) && f.mesh && !hasActiveDownstreamEdgeModification(f.id)).map((feature) => (
+      {storedMeshFeaturesFiltered.map((feature) => (
         <primitive
           key={feature.id}
           object={feature.mesh!}

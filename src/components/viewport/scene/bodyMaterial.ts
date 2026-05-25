@@ -26,7 +26,29 @@ export const DIM_MATERIAL = new THREE.MeshBasicMaterial({
   side: THREE.DoubleSide,
 });
 
+/** Material for bounding-solid helper meshes — semi-transparent blue. Never dispose. */
+export const BOUNDING_SOLID_MATERIAL = new THREE.MeshStandardMaterial({
+  color: 0x4488ff,
+  transparent: true,
+  opacity: 0.3,
+  side: THREE.DoubleSide,
+});
+
+/** Material for fastener meshes (bolts, nuts, washers) — metallic silver. Never dispose. */
+export const FASTENER_MATERIAL = new THREE.MeshStandardMaterial({
+  color: '#B0B8C0',
+  metalness: 0.8,
+  roughness: 0.3,
+});
+
 const COMPONENT_COLOR_MATERIALS = new Map<string, THREE.MeshPhysicalMaterial>();
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    for (const material of COMPONENT_COLOR_MATERIALS.values()) material.dispose();
+    COMPONENT_COLOR_MATERIALS.clear();
+  });
+}
 
 export function componentColorMaterial(color: string): THREE.Material {
   const key = color.toLowerCase();

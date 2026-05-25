@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Feature } from '../../../../types/cad';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
+import { BOUNDING_SOLID_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
 
 export function createSurfaceUiActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -404,8 +405,7 @@ export function createSurfaceUiActions({ set, get }: CADSliceContext): Partial<C
         geom = new THREE.CylinderGeometry(r, r, size.y + padding * 2, 32);
       }
 
-      const mat = new THREE.MeshStandardMaterial({ color: 0x4488ff, transparent: true, opacity: 0.3, wireframe: false });
-      const mesh = new THREE.Mesh(geom, mat);
+      const mesh = new THREE.Mesh(geom, BOUNDING_SOLID_MATERIAL);
 
       const center2 = new THREE.Vector3();
       box.getCenter(center2);
@@ -427,8 +427,7 @@ export function createSurfaceUiActions({ set, get }: CADSliceContext): Partial<C
     }
 
     // Fallback path (no geometry)
-    const mat = new THREE.MeshStandardMaterial({ color: 0x4488ff, transparent: true, opacity: 0.3 });
-    const mesh = new THREE.Mesh(geom, mat);
+    const mesh = new THREE.Mesh(geom, BOUNDING_SOLID_MATERIAL);
     const feature: Feature = {
       id: crypto.randomUUID(),
       name: `Bounding Solid ${n}`,
