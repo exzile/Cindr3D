@@ -28,6 +28,7 @@ import { globalBRepBodyRegistry } from './globalRegistry';
 import { occExtrudeWithInstance } from './ops/extrude';
 import {
   performOccBooleanWithInstance,
+  performOccBooleanMultiWithInstance,
   type OccBooleanOperation,
 } from './ops/booleanCore';
 import { tessellateWithInstance, tessellationToGeometry } from './tessellate';
@@ -39,6 +40,12 @@ import { OCC_PROFILE_POINT_COUNT, OCC_BOOLEAN_VERSION } from '../../utils/occCon
 
 function pushMigrationDebug(entry: unknown): void {
   void entry;
+  if (typeof document !== 'undefined') {
+    const existing = document.body.dataset.cindrMigrationAll;
+    const entries = existing ? JSON.parse(existing) as unknown[] : [];
+    entries.push(entry);
+    document.body.dataset.cindrMigrationAll = JSON.stringify(entries.slice(-12));
+  }
 }
 
 /** Shared material for migrated feature meshes (same style as new-commit OCC path). */
@@ -130,29 +137,26 @@ function stripMigrationDebug(feature: Feature): Feature {
   return { ...feature, params };
 }
 
-function buildSketchProfile(sketch: Sketch): SketchProfile | null {
+function buildSketchProfile(sketch: Sketch, pointCount = OCC_PROFILE_POINT_COUNT): SketchProfile | null {
   const shapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
   const first = shapes[0];
-  return first ? shapeToSketchProfile(first) : null;
+  return first ? shapeToSketchProfile(first, pointCount) : null;
 }
 
-function shapeToSketchProfile(shape: THREE.Shape): SketchProfile {
+function pathPoints(path: THREE.Path, pointCount: number): THREE.Vector2[] {
+  return path.getSpacedPoints(Math.max(8, pointCount));
+}
+
+function shapeToSketchProfile(shape: THREE.Shape, pointCount = OCC_PROFILE_POINT_COUNT): SketchProfile {
   return {
-    outer: shape.getPoints(OCC_PROFILE_POINT_COUNT),
+    outer: pathPoints(shape, pointCount),
     holes: shape.holes
-      .map((h) => h.getPoints(OCC_PROFILE_POINT_COUNT))
+      .map((h) => pathPoints(h, pointCount))
       .filter((pts) => pts.length >= 3),
   };
 }
 
-function shapeToSolidSketchProfile(shape: THREE.Shape): SketchProfile {
-  return {
-    outer: shape.getPoints(OCC_PROFILE_POINT_COUNT),
-    holes: shape.holes
-      .map((h) => h.getPoints(OCC_PROFILE_POINT_COUNT))
-      .filter((pts) => pts.length >= 3),
-  };
-}
+
 
 function buildLargestRawSketchProfile(sketch: Sketch): SketchProfile | null {
   const shapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
@@ -171,7 +175,89 @@ function buildLargestRawSketchProfile(sketch: Sketch): SketchProfile | null {
       bestArea = absArea;
     }
   }
-  return best ? shapeToSolidSketchProfile(best) : null;
+  return best ? shapeToSketchProfile(best) : null;
+}
+
+function shapeArea(points: THREE.Vector2[]): number {
+  let area = 0;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    area += points[i].x * points[j].y - points[j].x * points[i].y;
+  }
+  return Math.abs(area) * 0.5;
+}
+
+function shapeCentroid(points: THREE.Vector2[]): THREE.Vector2 {
+  const center = new THREE.Vector2();
+  for (const point of points) center.add(point);
+  return points.length > 0 ? center.divideScalar(points.length) : center;
+}
+
+function pointInPolygon(point: THREE.Vector2, polygon: THREE.Vector2[]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[i];
+    const b = polygon[j];
+    const crosses = (a.y > point.y) !== (b.y > point.y);
+    if (!crosses) continue;
+    const x = ((b.x - a.x) * (point.y - a.y)) / ((b.y - a.y) || 1e-12) + a.x;
+    if (point.x < x) inside = !inside;
+  }
+  return inside;
+}
+
+function buildEnclosingRawProfileForAtomicIndex(sketch: Sketch, profileIndex: number): SketchProfile | null {
+  const shapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
+  const selected = shapes[profileIndex];
+  if (!selected) return null;
+
+  const rawLimit = Math.max(1, sketch.entities.length);
+  if (profileIndex < rawLimit) return null;
+
+  const selectedPoints = selected.getPoints(64);
+  const selectedCenter = shapeCentroid(selectedPoints);
+  const selectedArea = shapeArea(selectedPoints);
+  let enclosing: { shape: THREE.Shape; points: THREE.Vector2[]; area: number; index: number } | null = null;
+
+  for (let index = 0; index < Math.min(rawLimit, shapes.length); index += 1) {
+    const shape = shapes[index];
+    const points = shape.getPoints(64);
+    const area = shapeArea(points);
+    if (area + 1e-6 < selectedArea) continue;
+    if (!pointInPolygon(selectedCenter, points)) continue;
+    if (!enclosing || area < enclosing.area) {
+      enclosing = { shape, points, area, index };
+    }
+  }
+
+  if (!enclosing) return null;
+  const holes: THREE.Vector2[][] = [];
+  for (let index = 0; index < Math.min(rawLimit, shapes.length); index += 1) {
+    if (index === enclosing.index) continue;
+    const shape = shapes[index];
+    const points = pathPoints(shape, 32);
+    if (shapeArea(points) >= enclosing.area) continue;
+    if (pointInPolygon(shapeCentroid(points), enclosing.points)) {
+      holes.push(points);
+    }
+  }
+
+  return {
+    outer: pathPoints(enclosing.shape, 32),
+    holes: holes.filter((pts) => pts.length >= 3),
+  };
+}
+
+function buildProfileSketchProfileFromIndex(sketch: Sketch, profileIndex: number): SketchProfile | null {
+  const enclosingProfile = buildEnclosingRawProfileForAtomicIndex(sketch, profileIndex);
+  if (enclosingProfile) return enclosingProfile;
+
+  const profileSketch = GeometryEngine.createProfileSketch(sketch, profileIndex);
+  if (profileSketch) {
+    const profile = buildSketchProfile(profileSketch, 32);
+    if (profile) return profile;
+  }
+  const shape = GeometryEngine.sketchToProfileShapesFlat(sketch)[profileIndex];
+  return shape ? shapeToSketchProfile(shape, 32) : null;
 }
 
 function buildFeatureSketchProfile(
@@ -185,14 +271,11 @@ function buildFeatureSketchProfile(
   const profileIndices = feature.params.profileIndices;
   if (Array.isArray(profileIndices) && profileIndices.length > 0) {
     const idx = profileIndices[0] as number;
-    const shapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
-    const shape = shapes[idx];
-    return shape ? shapeToSketchProfile(shape) : null;
+    return buildProfileSketchProfileFromIndex(sketch, idx);
   }
   const profileIndex = feature.params.profileIndex;
   if (typeof profileIndex === 'number' && Number.isFinite(profileIndex)) {
-    const shape = GeometryEngine.sketchToProfileShapesFlat(sketch)[profileIndex];
-    return shape ? shapeToSketchProfile(shape) : null;
+    return buildProfileSketchProfileFromIndex(sketch, profileIndex);
   }
   if (options.preferRawBaseProfile) {
     const rawProfile = buildLargestRawSketchProfile(sketch);
@@ -348,13 +431,11 @@ function migrateNewBodyExtrude(
     // Multi-profile selection: extrude each region separately and union.
     const profileIndices = feature.params.profileIndices;
     if (Array.isArray(profileIndices) && profileIndices.length > 1) {
-      const allShapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
       const bodies: BRepBody[] = [];
       try {
         for (const idx of profileIndices as number[]) {
-          const shape = allShapes[idx];
-          if (!shape) continue;
-          const profile = shapeToSketchProfile(shape);
+          const profile = buildProfileSketchProfileFromIndex(sketch, idx);
+          if (!profile) continue;
           bodies.push(occExtrudeWithInstance(occ.oc, profile, occDistance, frame, extrudeOpts));
         }
         if (bodies.length === 0) return feature;
@@ -375,8 +456,15 @@ function migrateNewBodyExtrude(
     } else {
       const profile = buildFeatureSketchProfile(feature, sketch, { preferRawBaseProfile: true });
       if (!profile) return feature;
+      pushMigrationDebug({
+        phase: 'new-body-profile',
+        featureId: feature.id,
+        outer: profile.outer.length,
+        holes: profile.holes.map((hole) => hole.length),
+      });
       occBody = occExtrudeWithInstance(occ.oc, profile, occDistance, frame, extrudeOpts);
     }
+    pushMigrationDebug({ phase: 'new-body-extruded', featureId: feature.id, bodyId: occBody.id });
     const tess = tessellateWithInstance(occ.oc, occBody);
     const geo = tessellationToGeometry(tess);
     const mesh = new THREE.Mesh(geo, MIGRATED_MATERIAL);

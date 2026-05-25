@@ -11,6 +11,26 @@ export interface OccBooleanOptions {
   runParallel?: boolean;
 }
 
+/** Shared interface for the single-pair BRepAlgoAPI_* boolean builders. */
+interface OccBooleanBuilder {
+  Build(): void;
+  IsDone?(): boolean;
+  HasErrors?(): boolean;
+  Shape(): unknown;
+  Modified?(shape: unknown): unknown;
+  Generated?(shape: unknown): unknown;
+  SetNonDestructive?(value: boolean): void;
+  SetFuzzyValue?(value: number): void;
+  SetRunParallel?(value: boolean): void;
+  delete?(): void;
+}
+
+type OccBooleanPairApi = OcctRaw & {
+  BRepAlgoAPI_Cut_3: new (target: unknown, tool: unknown) => OccBooleanBuilder;
+  BRepAlgoAPI_Fuse_3: new (target: unknown, tool: unknown) => OccBooleanBuilder;
+  BRepAlgoAPI_Common_3: new (target: unknown, tool: unknown) => OccBooleanBuilder;
+};
+
 interface OccBooleanBatchApi {
   TopoDS_Shape: unknown;
   TopTools_ListOfShape_1: new () => { Append_1(shape: unknown): void; delete(): void };
@@ -97,11 +117,11 @@ export function performOccBooleanWithRawTool(
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function createBooleanOperation(oc: OcctRaw, operation: OccBooleanOperation, targetShape: any, toolShape: any): any {
-  if (operation === 'subtract') return new oc.BRepAlgoAPI_Cut_3(targetShape, toolShape);
-  if (operation === 'union') return new oc.BRepAlgoAPI_Fuse_3(targetShape, toolShape);
-  return new oc.BRepAlgoAPI_Common_3(targetShape, toolShape);
+function createBooleanOperation(oc: OcctRaw, operation: OccBooleanOperation, targetShape: unknown, toolShape: unknown): OccBooleanBuilder {
+  const api = oc as OccBooleanPairApi;
+  if (operation === 'subtract') return new api.BRepAlgoAPI_Cut_3(targetShape, toolShape);
+  if (operation === 'union') return new api.BRepAlgoAPI_Fuse_3(targetShape, toolShape);
+  return new api.BRepAlgoAPI_Common_3(targetShape, toolShape);
 }
 
 /**

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { occDeref, type BRepBody, type BRepTessellation } from './brepBody';
 import { getOcc } from './loader';
 import type { OcctRaw } from './types';
+import { OCC_PROFILE_POINT_COUNT } from '../../utils/occConstants';
 
 export interface BRepTessellateOptions {
   linearDeflection?: number;
@@ -153,27 +154,46 @@ function appendFaceTriangles(
   const triCount = poly.NbTriangles();
   const reversed = face.Orientation_1() === oc.TopAbs_Orientation.TopAbs_REVERSED;
 
+  // Reusable scalar buffers — avoids THREE.Vector3 allocations per triangle.
+  const px = [0, 0, 0];
+  const py = [0, 0, 0];
+  const pz = [0, 0, 0];
+
   for (let index = 1; index <= triCount; index += 1) {
     const tri = poly.Triangle(index);
-    const indices = reversed
-      ? [tri.Value(1), tri.Value(3), tri.Value(2)]
-      : [tri.Value(1), tri.Value(2), tri.Value(3)];
-    const points = indices.map((nodeIndex) => {
-      const node = poly.Node(nodeIndex);
-      const point = transform ? node.Transformed(transform) : node;
-      return new THREE.Vector3(point.X(), point.Y(), point.Z());
-    });
-    const normal = new THREE.Vector3()
-      .subVectors(points[1], points[0])
-      .cross(new THREE.Vector3().subVectors(points[2], points[0]))
-      .normalize();
+    const v0 = tri.Value(1);
+    const v1 = reversed ? tri.Value(3) : tri.Value(2);
+    const v2 = reversed ? tri.Value(2) : tri.Value(3);
+    tri.delete();
 
-    for (const point of points) {
-      positions.push(point.x, point.y, point.z);
-      normals.push(normal.x, normal.y, normal.z);
+    const nodeIndices = [v0, v1, v2];
+    for (let k = 0; k < 3; k++) {
+      const node = poly.Node(nodeIndices[k]);
+      if (transform) {
+        const pt = node.Transformed(transform);
+        node.delete();
+        px[k] = pt.X(); py[k] = pt.Y(); pz[k] = pt.Z();
+        pt.delete();
+      } else {
+        px[k] = node.X(); py[k] = node.Y(); pz[k] = node.Z();
+        node.delete();
+      }
+    }
+
+    // Compute face normal inline — no THREE.Vector3 allocations.
+    const ax = px[1] - px[0], ay = py[1] - py[0], az = pz[1] - pz[0];
+    const bx = px[2] - px[0], by = py[2] - py[0], bz = pz[2] - pz[0];
+    let nx = ay * bz - az * by;
+    let ny = az * bx - ax * bz;
+    let nz = ax * by - ay * bx;
+    const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+    if (len > 1e-10) { nx /= len; ny /= len; nz /= len; }
+
+    for (let k = 0; k < 3; k++) {
+      positions.push(px[k], py[k], pz[k]);
+      normals.push(nx, ny, nz);
     }
     faceIds.push(faceId);
-    tri.delete();
   }
 
   poly.delete();
@@ -213,7 +233,7 @@ function sampleEdgePolyline(
     if (!Number.isFinite(first) || !Number.isFinite(last) || first === last) {
       return new Float32Array();
     }
-    const divisions = 96;
+    const divisions = OCC_PROFILE_POINT_COUNT;
     const out: number[] = [];
     for (let i = 0; i <= divisions; i += 1) {
       const u = first + ((last - first) * i) / divisions;
