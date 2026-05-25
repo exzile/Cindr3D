@@ -1,7 +1,7 @@
 /**
  * OCC-5.1 — Exact fillet via BRepFilletAPI_MakeFillet.
- * This is the wing-killer: OCC produces an exact toroidal surface that
- * tessellates uniformly with no fan triangulation artifacts.
+ * OCC produces an exact toroidal surface that tessellates uniformly with no
+ * fan triangulation artifacts.
  *
  * Supports:
  *  - Constant radius (Add_2)
@@ -9,22 +9,28 @@
  *  - Chord-length (dihedral-angle derived radius, then Add_2)
  *  - Multiple mixed edge sets in one Build pass
  *  - G2 surface continuity (ChFi3d_Polynomial surface type)
+ *  - Rolling-ball vs quasi-angular corner shape (ChFi3d_FilletShape)
+ *  - Asymmetric per-face distance (Add_4(d1, d2, edge, face) when available)
+ *  - Full-round with multi-face per side and auto-side inference
  *
- * Supported via workaround:
- *  - Asymmetric (Fusion offsetOne/offsetTwo) — mapped to Add_3(offsetOne, offsetTwo, edge);
- *    varies radius along edge length rather than per-face, but uses both offset values.
- *  - Full-round — occFullRoundFilletWithInstance; auto-radius from boundary edge midpoints.
- * Not supported:
- *  - N mid-point variable radius — OCC Add_3 is start+end only
+ * Not supported natively (documented limitations):
+ *  - N mid-point variable radius (FILLET-9). OCC BRepFilletAPI_MakeFillet
+ *    only exposes start+end (Add_3) and a constant radius. opencascade.js
+ *    does not bind the Law_Function or TColgp_Array1OfPnt2d overloads
+ *    that would allow arbitrary mid-points. Caller must collapse mid-radii
+ *    to a piecewise approximation if needed.
  */
 import type { OcctRaw } from '../types';
 import { makeBRepBodyFromOccShape, occDeref, type BRepBody } from '../brepBody';
 import { getOcc } from '../loader';
+import { findAdjacentFace, findAdjacentFacesToFace, collectFaceEdgeIds, collectSharedEdgeIds } from './adjacency';
 
 type OccFilletApi = OcctRaw & {
   BRepFilletAPI_MakeFillet_2: new (shape: unknown, filletShape: unknown) => {
     Add_2(radius: number, edge: unknown): void;
     Add_3(startRadius: number, endRadius: number, edge: unknown): void;
+    /** Per-face asymmetric — optional binding; not present in all opencascade.js builds. */
+    Add_4?(distance1: number, distance2: number, edge: unknown, face: unknown): void;
     Build(progress: unknown): void;
     IsDone(): boolean;
     Shape(): unknown;
@@ -81,6 +87,13 @@ export interface OccFilletEdgeSet {
   endRadius?: number;
   /** Chord-length mode: arc chord width. Converted to equivalent radius via dihedral angle. */
   chordLength?: number;
+  /**
+   * Per-face asymmetric mode. When true, startRadius/endRadius are interpreted
+   * as per-face distances (d1 on the reference face, d2 on the other) and
+   * applied via Add_4(d1, d2, edge, face). Falls back to Add_2 with the average
+   * if Add_4 is unavailable in the OCC binding or no adjacent face is found.
+   */
+  isAsymmetric?: boolean;
 }
 
 export interface OccFilletOptions {
@@ -88,11 +101,15 @@ export interface OccFilletOptions {
   sourceFeatureId?: string;
   /**
    * G1 (default) — ChFi3d_Rational tangent surface.
-   * G2 — ChFi3d_Polynomial for higher-quality blending (best-effort; OCC
-   *      BRepFilletAPI_MakeFillet is always at least G1 tangent — this
-   *      changes the surface parameterisation toward curvature continuity).
+   * G2 — ChFi3d_Polynomial for higher-quality curvature blending.
    */
   continuity?: 'G1' | 'G2';
+  /**
+   * Corner shape when isRollingBallCorner === false → ChFi3d_QuasiAngular
+   * (non-rolling-ball, setback-style). Defaults to true (ChFi3d_Rational).
+   * Ignored when continuity === 'G2' (G2 always uses ChFi3d_Polynomial).
+   */
+  isRollingBallCorner?: boolean;
 }
 
 // ── Chord-length radius computation ──────────────────────────────────────────
@@ -117,9 +134,6 @@ function computeChordLengthRadius(
   try {
     const occ = oc as OccFilletApi;
 
-    // Build a canonical edge index so identity comparisons survive orientation
-    // wrappers — ptr comparison is unreliable for the same reason noted in
-    // occFullRoundFilletWithInstance (different orientation gives different ptr).
     const edgeMap = new occ.TopTools_IndexedMapOfShape_1();
     try {
       occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, edgeMap);
@@ -133,7 +147,6 @@ function computeChordLengthRadius(
       return fallback;
     }
 
-    // Collect up to 2 faces adjacent to this edge.
     const adjacentFaces: unknown[] = [];
     const faceExp = new occ.TopExp_Explorer_2(
       rawShape,
@@ -172,9 +185,6 @@ function computeChordLengthRadius(
       return fallback;
     }
 
-    // Evaluate face normals at each face's UV centre using BRepAdaptor_Surface.
-    // We sample 3 points and compute the cross product so we don't need
-    // BRepLProp_SLProps (which may not be bound in older opencascade.js builds).
     const normals: [number, number, number][] = [];
     for (const face of adjacentFaces) {
       try {
@@ -200,8 +210,6 @@ function computeChordLengthRadius(
 
     if (normals.length < 2) return fallback;
 
-    // Interior dihedral: outward normals point away from each face interior.
-    // For a convex edge the normals diverge → dot < 0; α = π − acos(dot).
     const dot = normals[0][0] * normals[1][0]
               + normals[0][1] * normals[1][1]
               + normals[0][2] * normals[1][2];
@@ -218,10 +226,9 @@ function computeChordLengthRadius(
 
 /**
  * Build a fillet from an ordered list of edge sets, each with its own
- * radius specification (constant / variable / chord-length).
+ * radius specification (constant / variable / chord-length / asymmetric).
  * All sets are added to a single BRepFilletAPI_MakeFillet builder and
- * committed in one Build() call — this is correct; OCC propagates corner
- * blending between adjacent fillets automatically.
+ * committed in one Build() call.
  */
 export function occFilletEdgeSetsWithInstance(
   oc: OcctRaw,
@@ -234,10 +241,15 @@ export function occFilletEdgeSetsWithInstance(
   const occ = oc as OccFilletApi;
   const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
 
-  // G2 uses polynomial parameterisation (higher-quality blending).
+  // Surface enum:
+  //  - G2 mode always uses ChFi3d_Polynomial (curvature continuity).
+  //  - !isRollingBallCorner → ChFi3d_QuasiAngular (setback-style, non-rolling).
+  //  - else → ChFi3d_Rational (default rolling-ball).
   const filletShape = options.continuity === 'G2'
     ? occ.ChFi3d_FilletShape.ChFi3d_Polynomial
-    : occ.ChFi3d_FilletShape.ChFi3d_Rational;
+    : options.isRollingBallCorner === false
+      ? occ.ChFi3d_FilletShape.ChFi3d_QuasiAngular
+      : occ.ChFi3d_FilletShape.ChFi3d_Rational;
 
   const mk = new occ.BRepFilletAPI_MakeFillet_2(rawShape, filletShape);
   try {
@@ -246,13 +258,37 @@ export function occFilletEdgeSetsWithInstance(
       for (const edgeId of edgeSet.edgeIds) {
         const handle = body.edgeIds.get(edgeId);
         if (!handle) continue;
-        const rawEdge = occDeref(oc, handle, oc.TopoDS_Edge) as { ptr: number; delete?: () => void };
+        const rawEdge = occDeref(oc, handle, oc.TopoDS_Edge) as { ptr: number; delete(): void };
         try {
-          if (edgeSet.startRadius !== undefined && edgeSet.endRadius !== undefined) {
-            // Variable radius: different at each end of the edge.
+          if (edgeSet.isAsymmetric && edgeSet.startRadius !== undefined && edgeSet.endRadius !== undefined) {
+            // Per-face asymmetric: try Add_4(d1, d2, edge, face) if available.
+            // Falls back to Add_2(avg) if no adjacent face or binding is missing.
+            const d1 = Math.max(edgeSet.startRadius, 0.001);
+            const d2 = Math.max(edgeSet.endRadius, 0.001);
+            let addedAsymmetric = false;
+            if (typeof mk.Add_4 === 'function') {
+              const refFaceHandle = findAdjacentFace(oc, body, rawShape, rawEdge);
+              if (refFaceHandle) {
+                const rawFace = occDeref(oc, refFaceHandle, oc.TopoDS_Face);
+                try {
+                  mk.Add_4(d1, d2, rawEdge, rawFace);
+                  addedAsymmetric = true;
+                } catch (e) {
+                  console.warn('[occFillet] Add_4 (asymmetric) failed; falling back:', e);
+                } finally {
+                  rawFace.delete?.();
+                }
+              }
+            }
+            if (!addedAsymmetric) {
+              // OCC binding missing or no adjacent face — collapse to a
+              // single radius (average) so the fillet still produces a result.
+              mk.Add_2(Math.max((d1 + d2) / 2, 0.001), rawEdge);
+            }
+          } else if (edgeSet.startRadius !== undefined && edgeSet.endRadius !== undefined) {
+            // Variable radius along edge length (start vertex → end vertex).
             mk.Add_3(edgeSet.startRadius, edgeSet.endRadius, rawEdge);
           } else if (edgeSet.chordLength !== undefined && edgeSet.chordLength > 0) {
-            // Chord-length: derive radius from the edge's dihedral angle.
             const r = computeChordLengthRadius(oc, rawShape, rawEdge, edgeSet.chordLength);
             mk.Add_2(Math.max(r, 0.001), rawEdge);
           } else {
@@ -262,7 +298,7 @@ export function occFilletEdgeSetsWithInstance(
         } catch (e) {
           console.warn(`[occFillet] could not add edge ${edgeId}:`, e);
         } finally {
-          rawEdge.delete?.();
+          rawEdge.delete();
         }
       }
     }
@@ -332,60 +368,72 @@ export interface OccFullRoundFilletOptions {
 }
 
 /**
+ * Side-face specification for full-round fillets.
+ * Accepts a single face id (legacy) or an array of face ids per side group.
+ */
+export type FullRoundSideFaces =
+  | [number, number]            // legacy: one face per side
+  | [number[], number[]]        // multi-face per side
+  | null;                       // auto-detect from center face's adjacency
+
+/**
  * Full-round fillet: replaces a narrow center face with a circular arc blend
  * tangent to both adjacent side faces. Equivalent to Fusion 360's
  * FullRoundFilletFaceSets.
  *
- * Algorithm:
- * 1. Build a canonical edge index over the whole shape (TopTools_IndexedMapOfShape).
- * 2. Walk center-face edges → record their canonical indices.
- * 3. Walk side-face edges → intersect with center-face edge indices to find the
- *    two shared boundary edges (one per side).
- * 4. Estimate the fillet radius from the edge midpoint separation (≈ half the
- *    distance between the two boundary lines), which is the inscribed-circle radius.
- * 5. Apply BRepFilletAPI_MakeFillet_2 to both boundary edges simultaneously —
- *    OCC resolves the full-round blend automatically when both edges are filleted
- *    with a radius that spans the center face.
+ * - `sideFaces=[a, b]`: single side face per side (legacy behaviour).
+ * - `sideFaces=[[a, b], [c, d]]`: multiple side faces per side; all shared
+ *   boundary edges across each side group are collected.
+ * - `sideFaces=null`: auto-detect — find all faces adjacent to the center face
+ *   and split them into two groups via topology graph 2-coloring (best-effort).
  */
 export function occFullRoundFilletWithInstance(
   oc: OcctRaw,
   body: BRepBody,
   centerFaceId: number,
-  sideFaceIds: [number, number],
+  sideFaces: FullRoundSideFaces,
   options: OccFullRoundFilletOptions = {},
 ): BRepBody | null {
   const centerHandle = body.faceIds.get(centerFaceId);
-  const side1Handle = body.faceIds.get(sideFaceIds[0]);
-  const side2Handle = body.faceIds.get(sideFaceIds[1]);
-  if (!centerHandle || !side1Handle || !side2Handle) {
-    console.warn('[occFullRoundFillet] one or more face IDs not found in body');
+  if (!centerHandle) {
+    console.warn('[occFullRoundFillet] center face id not found in body');
+    return null;
+  }
+
+  // Normalise sideFaces to [number[], number[]].
+  let sideGroups: [number[], number[]] | null;
+  if (sideFaces === null) {
+    sideGroups = autoInferSideFaceGroups(oc, body, centerFaceId);
+    if (!sideGroups) {
+      console.warn('[occFullRoundFillet] auto-side-face inference failed');
+      return null;
+    }
+  } else if (Array.isArray(sideFaces[0])) {
+    sideGroups = sideFaces as [number[], number[]];
+  } else {
+    const [a, b] = sideFaces as [number, number];
+    sideGroups = [[a], [b]];
+  }
+
+  const [side1Group, side2Group] = sideGroups;
+  if (side1Group.length === 0 || side2Group.length === 0) {
+    console.warn('[occFullRoundFillet] one or both side-face groups are empty');
     return null;
   }
 
   const occ = oc as OccFilletApi;
   const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
   const centerShapeRaw = occDeref(oc, centerHandle, oc.TopoDS_Shape);
-  const side1ShapeRaw = occDeref(oc, side1Handle, oc.TopoDS_Shape);
-  const side2ShapeRaw = occDeref(oc, side2Handle, oc.TopoDS_Shape);
   const centerFaceRaw = oc.TopoDS.Face_1(centerShapeRaw);
-  const side1FaceRaw = oc.TopoDS.Face_1(side1ShapeRaw);
-  const side2FaceRaw = oc.TopoDS.Face_1(side2ShapeRaw);
 
-  // Build a canonical edge index so we can compare edge identity across
-  // different TopExp_Explorer passes (ptr comparison is unreliable due to
-  // orientation wrappers; FindIndex_1 uses IsSame under the hood).
   const edgeMap = new occ.TopTools_IndexedMapOfShape_1();
-  let cleanedFullRoundInputs = false;
-  const cleanupFullRoundInputs = () => {
-    if (cleanedFullRoundInputs) return;
-    cleanedFullRoundInputs = true;
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
     edgeMap.delete();
     centerFaceRaw.delete?.();
-    side1FaceRaw.delete?.();
-    side2FaceRaw.delete?.();
     centerShapeRaw.delete?.();
-    side1ShapeRaw.delete?.();
-    side2ShapeRaw.delete?.();
     rawShape.delete?.();
   };
 
@@ -393,67 +441,84 @@ export function occFullRoundFilletWithInstance(
     occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, edgeMap);
   } catch (e) {
     console.warn('[occFullRoundFillet] TopExp.MapShapes failed:', e);
-    cleanupFullRoundInputs();
+    cleanup();
     return null;
   }
 
   if (edgeMap.Extent() === 0) {
-    cleanupFullRoundInputs();
+    cleanup();
     return null;
   }
 
-  // Collect canonical edge indices for each face.
-  function faceEdgeIndices(faceShape: unknown): Set<number> {
+  function faceEdgeIndicesById(faceId: number): Set<number> {
+    const handle = body.faceIds.get(faceId);
+    if (!handle) return new Set();
+    const sRaw = occDeref(oc, handle, oc.TopoDS_Shape) as { delete?: () => void };
+    const fRaw = oc.TopoDS.Face_1(sRaw) as { delete?: () => void };
     const result = new Set<number>();
-    const exp = new occ.TopExp_Explorer_2(faceShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
-    while (exp.More()) {
-      const e = exp.Current();
-      const idx = edgeMap.FindIndex_1(e);
-      if (idx > 0) result.add(idx);
-      e.delete();
-      exp.Next();
+    try {
+      const exp = new occ.TopExp_Explorer_2(fRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+      while (exp.More()) {
+        const e = exp.Current();
+        const idx = edgeMap.FindIndex_1(e);
+        e.delete();
+        if (idx > 0) result.add(idx);
+        exp.Next();
+      }
+      exp.delete();
+    } finally {
+      fRaw.delete?.();
+      sRaw.delete?.();
     }
-    exp.delete();
     return result;
   }
 
-  const centerIndices = faceEdgeIndices(centerFaceRaw);
-  const side1Indices = faceEdgeIndices(side1FaceRaw);
-  const side2Indices = faceEdgeIndices(side2FaceRaw);
+  const centerExp = new occ.TopExp_Explorer_2(centerFaceRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+  const centerIndices = new Set<number>();
+  while (centerExp.More()) {
+    const e = centerExp.Current();
+    const idx = edgeMap.FindIndex_1(e);
+    e.delete();
+    if (idx > 0) centerIndices.add(idx);
+    centerExp.Next();
+  }
+  centerExp.delete();
 
-  // Shared edges: center∩side1 and center∩side2
+  const side1Indices = new Set<number>();
+  for (const id of side1Group) for (const i of faceEdgeIndicesById(id)) side1Indices.add(i);
+  const side2Indices = new Set<number>();
+  for (const id of side2Group) for (const i of faceEdgeIndicesById(id)) side2Indices.add(i);
+
   const shared1 = [...centerIndices].filter(i => side1Indices.has(i));
   const shared2 = [...centerIndices].filter(i => side2Indices.has(i));
 
   if (shared1.length === 0 || shared2.length === 0) {
     console.warn('[occFullRoundFillet] no shared edges found between center and side faces');
-    cleanupFullRoundInputs();
+    cleanup();
     return null;
   }
 
-  // Estimate auto-radius: midpoint of edge1 ↔ midpoint of edge2, half that distance.
   function edgeMidpoint(edgeIdx: number): [number, number, number] | null {
-    let edgeShape: { delete?: () => void } | null = null;
-    let rawEdge: { delete?: () => void } | null = null;
-    let curve: { FirstParameter(): number; LastParameter(): number; D0(u: number, p: unknown): void; delete(): void } | null = null;
-    let pt: { X(): number; Y(): number; Z(): number; delete(): void } | null = null;
+    const trash: Array<{ delete?: () => void }> = [];
     try {
-      edgeShape = edgeMap.FindKey_1(edgeIdx) as { delete?: () => void };
-      rawEdge = oc.TopoDS.Edge_1(edgeShape) as { delete?: () => void };
-      curve = new occ.BRepAdaptor_Curve_2(rawEdge);
+      const edgeShape = edgeMap.FindKey_1(edgeIdx) as { delete?: () => void };
+      trash.push(edgeShape);
+      const rawEdge = oc.TopoDS.Edge_1(edgeShape) as { delete?: () => void };
+      trash.push(rawEdge);
+      const curve = new occ.BRepAdaptor_Curve_2(rawEdge);
+      trash.push(curve);
       const t0 = curve.FirstParameter(), t1 = curve.LastParameter();
       const tMid = (t0 + t1) / 2;
-      pt = new occ.gp_Pnt_1();
+      const pt = new occ.gp_Pnt_1();
+      trash.push(pt);
       curve.D0(tMid, pt);
-      const result: [number, number, number] = [pt.X(), pt.Y(), pt.Z()];
-      return result;
+      return [pt.X(), pt.Y(), pt.Z()];
     } catch {
       return null;
     } finally {
-      pt?.delete();
-      curve?.delete();
-      rawEdge?.delete?.();
-      edgeShape?.delete?.();
+      for (let i = trash.length - 1; i >= 0; i--) {
+        try { trash[i].delete?.(); } catch { /* already freed */ }
+      }
     }
   }
 
@@ -465,35 +530,166 @@ export function occFullRoundFilletWithInstance(
     autoRadius = Math.max(0.001, Math.sqrt(dx * dx + dy * dy + dz * dz) / 2);
   }
 
-  // Build edge set for both boundary edges (all canonical indices, first match each)
-  // Use BRepBody edgeIds that correspond to these OCC indices.
-  // We need the BRepBody integer ids for occFilletEdgeSetsWithInstance.
-  // Walk body.edgeIds to find which body edge ids match our canonical indices.
-  const bodyEdge1Ids: number[] = [];
-  const bodyEdge2Ids: number[] = [];
-
+  const sharedSet = new Set<number>([...shared1, ...shared2]);
+  const bodyEdgeIds: number[] = [];
   for (const [bodyEdgeId, edgeHandle] of body.edgeIds) {
     let rawEdge: { delete?: () => void } | null = null;
     try {
       rawEdge = occDeref(oc, edgeHandle, oc.TopoDS_Shape) as { delete?: () => void };
       const idx = edgeMap.FindIndex_1(rawEdge);
-      if (shared1.includes(idx)) bodyEdge1Ids.push(bodyEdgeId);
-      if (shared2.includes(idx)) bodyEdge2Ids.push(bodyEdgeId);
+      if (sharedSet.has(idx)) bodyEdgeIds.push(bodyEdgeId);
     } catch { /* skip */ } finally {
       rawEdge?.delete?.();
     }
   }
 
-  cleanupFullRoundInputs();
+  cleanup();
 
-  const allBodyEdgeIds = [...bodyEdge1Ids, ...bodyEdge2Ids];
-  if (allBodyEdgeIds.length === 0) {
+  if (bodyEdgeIds.length === 0) {
     console.warn('[occFullRoundFillet] could not map canonical edge indices to body edge IDs');
     return null;
   }
 
   return occFilletEdgeSetsWithInstance(oc, body, [{
-    edgeIds: allBodyEdgeIds,
+    edgeIds: bodyEdgeIds,
     radius: autoRadius,
   }], { id: options.id, sourceFeatureId: options.sourceFeatureId });
+}
+
+/**
+ * Best-effort auto-detect of side-face groups for full-round fillet.
+ * Strategy: collect all faces adjacent to the center face, then partition by
+ * which boundary edge of the center face they share. Faces that touch the
+ * same boundary edge group together.
+ */
+function autoInferSideFaceGroups(
+  oc: OcctRaw,
+  body: BRepBody,
+  centerFaceId: number,
+): [number[], number[]] | null {
+  const occ = oc as OccFilletApi;
+  const adjacent = findAdjacentFacesToFace(oc, body, occDeref(oc, body.shape, oc.TopoDS_Shape), centerFaceId);
+  if (adjacent.length < 2) return null;
+
+  const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
+  const edgeMap = new occ.TopTools_IndexedMapOfShape_1();
+  try {
+    occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, edgeMap);
+  } catch {
+    edgeMap.delete();
+    rawShape.delete?.();
+    return null;
+  }
+
+  const centerHandle = body.faceIds.get(centerFaceId);
+  if (!centerHandle) { edgeMap.delete(); rawShape.delete?.(); return null; }
+  const centerRaw = occDeref(oc, centerHandle, oc.TopoDS_Shape) as { delete?: () => void };
+  const centerEdgeList: number[] = [];
+  try {
+    const exp = new occ.TopExp_Explorer_2(centerRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+    while (exp.More()) {
+      const e = exp.Current();
+      const idx = edgeMap.FindIndex_1(e);
+      e.delete();
+      if (idx > 0 && !centerEdgeList.includes(idx)) centerEdgeList.push(idx);
+      exp.Next();
+    }
+    exp.delete();
+  } finally {
+    centerRaw.delete?.();
+  }
+
+  if (centerEdgeList.length < 2) {
+    edgeMap.delete();
+    rawShape.delete?.();
+    return null;
+  }
+
+  // For each adjacent face, find which center-edge index it shares.
+  const faceToEdgeIdx = new Map<number, number>();
+  for (const adjFaceId of adjacent) {
+    const handle = body.faceIds.get(adjFaceId);
+    if (!handle) continue;
+    const fRaw = occDeref(oc, handle, oc.TopoDS_Shape) as { delete?: () => void };
+    try {
+      const exp = new occ.TopExp_Explorer_2(fRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+      while (exp.More()) {
+        const e = exp.Current();
+        const idx = edgeMap.FindIndex_1(e);
+        e.delete();
+        if (centerEdgeList.includes(idx)) {
+          faceToEdgeIdx.set(adjFaceId, idx);
+          exp.delete();
+          break;
+        }
+        exp.Next();
+      }
+      if (!faceToEdgeIdx.has(adjFaceId)) exp.delete();
+    } finally {
+      fRaw.delete?.();
+    }
+  }
+
+  edgeMap.delete();
+  rawShape.delete?.();
+
+  // Bucket faces by edge index, pick the two largest buckets as the side groups.
+  const buckets = new Map<number, number[]>();
+  for (const [faceId, edgeIdx] of faceToEdgeIdx) {
+    const list = buckets.get(edgeIdx);
+    if (list) list.push(faceId); else buckets.set(edgeIdx, [faceId]);
+  }
+  if (buckets.size < 2) return null;
+  const sorted = [...buckets.values()].sort((a, b) => b.length - a.length);
+  return [sorted[0], sorted[1]];
+}
+
+// ── Rule fillet (Fusion RuleFilletFeature) ───────────────────────────────────
+
+export interface OccRuleFilletOptions extends OccFilletOptions {
+  /** Fillet radius applied to all collected edges. */
+  radius?: number;
+}
+
+/**
+ * Rule fillet — AllEdges mode.
+ * Collects every edge of the given face(s) and fillets them as a single set.
+ */
+export function occRuleFilletAllEdgesWithInstance(
+  oc: OcctRaw,
+  body: BRepBody,
+  faceIds: number[],
+  radius: number,
+  options: OccFilletOptions = {},
+): BRepBody | null {
+  if (faceIds.length === 0) return null;
+  const edgeIds = new Set<number>();
+  for (const faceId of faceIds) {
+    for (const e of collectFaceEdgeIds(oc, body, faceId)) edgeIds.add(e);
+  }
+  if (edgeIds.size === 0) return null;
+  return occFilletEdgeSetsWithInstance(oc, body, [{
+    edgeIds: [...edgeIds],
+    radius,
+  }], options);
+}
+
+/**
+ * Rule fillet — BetweenFaces mode.
+ * Fillets only the edges shared between any face in `groupA` and any face in `groupB`.
+ */
+export function occRuleFilletBetweenFacesWithInstance(
+  oc: OcctRaw,
+  body: BRepBody,
+  groupA: number[],
+  groupB: number[],
+  radius: number,
+  options: OccFilletOptions = {},
+): BRepBody | null {
+  const edgeIds = collectSharedEdgeIds(oc, body, groupA, groupB);
+  if (edgeIds.length === 0) return null;
+  return occFilletEdgeSetsWithInstance(oc, body, [{
+    edgeIds,
+    radius,
+  }], options);
 }

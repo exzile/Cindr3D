@@ -23,6 +23,8 @@ interface FilletDialogProps {
   onRemoveEdge: (id: string) => void;
   onClose: () => void;
   onConfirm: (params: FilletParams) => void;
+  /** True when face-picker driven modes (full-round / rule-fillet) have picked enough faces. */
+  facesReady: boolean;
   /** When editing an existing fillet, seed all fields from the stored params. */
   initialParams?: Record<string, unknown>;
 }
@@ -34,11 +36,18 @@ function FilletDialogUI({
   onRemoveEdge,
   onClose,
   onConfirm,
+  facesReady,
   initialParams,
 }: FilletDialogProps) {
   const dialog = useFilletDialogState(onConfirm, initialParams);
 
   if (!open) return null;
+
+  const isFacePickerMode = dialog.mode === 'full-round' ||
+    (dialog.mode === 'rule-fillet');
+  const confirmDisabled = isFacePickerMode
+    ? !facesReady
+    : selectedEdgeCount === 0;
 
   return (
     <DialogShell
@@ -47,7 +56,7 @@ function FilletDialogUI({
       size="sm"
       overlayClassName="edge-pick-dialog"
       onConfirm={dialog.handleConfirm}
-      confirmDisabled={selectedEdgeCount === 0}
+      confirmDisabled={confirmDisabled}
     >
       <FilletPickHeader selectedEdgeCount={selectedEdgeCount} dialog={dialog} />
       <EdgeSelectionList edgeIds={edgeIds} onRemoveEdge={onRemoveEdge} />
@@ -82,29 +91,40 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
   const existingEdgeIds = storedEdgeIds(params.edgeIds);
 
   const handleConfirm = (nextParams: FilletParams) => {
-    // Augment full-round params with picked face IDs so they get persisted for replay
+    // Augment full-round + rule-fillet params with picked face IDs so they
+    // get persisted for replay. Both modes use the same face-picker state.
     const isFullRound = nextParams.mode === 'full-round';
-    const fullRoundParams: FilletParams = isFullRound
+    const isRuleFillet = nextParams.mode === 'rule-fillet';
+    const augmented: FilletParams = (isFullRound || isRuleFillet)
       ? {
           ...nextParams,
           centerOccBodyId: filletFullRoundCenterOccBodyId ?? undefined,
           centerOccFaceId: filletFullRoundCenterOccFaceId ?? undefined,
           side1OccFaceId: filletFullRoundSide1OccFaceId ?? undefined,
           side2OccFaceId: filletFullRoundSide2OccFaceId ?? undefined,
+          // FILLET-7: rule-fillet AllEdges stores its target face(s) here.
+          ruleFaceIds: isRuleFillet && nextParams.ruleType === 'all-edges' && filletFullRoundCenterOccFaceId !== null
+            ? [filletFullRoundCenterOccFaceId]
+            : nextParams.ruleFaceIds,
         }
       : nextParams;
 
     const edgeIds = filletEdgeIds.length > 0 ? filletEdgeIds : existingEdgeIds;
+    const displayName = isFullRound
+      ? 'Full-Round Fillet'
+      : isRuleFillet
+        ? `Rule Fillet (r=${nextParams.radius})`
+        : `Fillet (r=${nextParams.radius})`;
     if (editing) {
-      updateFeatureParams(editing.id, { ...fullRoundParams, edgeIds });
-      renameFeature(editing.id, `Fillet (r=${nextParams.radius})`);
+      updateFeatureParams(editing.id, { ...augmented, edgeIds });
+      renameFeature(editing.id, displayName);
       replayEdgeModificationFeature(editing.id);
     } else {
       const feature: Feature = {
         id: crypto.randomUUID(),
-        name: isFullRound ? 'Full-Round Fillet' : `Fillet (r=${nextParams.radius})`,
+        name: displayName,
         type: "fillet",
-        params: { ...fullRoundParams, edgeIds },
+        params: { ...augmented, edgeIds },
         visible: true,
         suppressed: false,
         timestamp: Date.now(),
@@ -117,7 +137,7 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
             nextParams.radius,
             0,
             feature.id,
-            fullRoundParams as unknown as Record<string, unknown>,
+            augmented as unknown as Record<string, unknown>,
           ),
         0,
       );
@@ -125,6 +145,14 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
     }
     onClose();
   };
+
+  // Face-picker readiness:
+  //  - full-round needs center + both sides (sides may be auto-inferred when null,
+  //    so center alone is sufficient to enable confirm)
+  //  - rule-fillet AllEdges needs center, BetweenFaces needs both sides
+  const facesReady =
+    filletFullRoundCenterOccFaceId !== null ||
+    (filletFullRoundSide1OccFaceId !== null && filletFullRoundSide2OccFaceId !== null);
 
   return (
     <FilletDialogUI
@@ -134,6 +162,7 @@ export function FilletDialog({ onClose }: { onClose: () => void }) {
       onRemoveEdge={removeFilletEdge}
       onClose={onClose}
       onConfirm={handleConfirm}
+      facesReady={facesReady}
       initialParams={editing ? params : undefined}
     />
   );

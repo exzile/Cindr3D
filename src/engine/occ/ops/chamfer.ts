@@ -6,8 +6,7 @@
 import type { OcctRaw } from '../types';
 import { makeBRepBodyFromOccShape, occDeref, type BRepBody } from '../brepBody';
 import { getOcc } from '../loader';
-
-type OccShapeRef = { ptr: number; delete(): void };
+import { findAdjacentFace } from './adjacency';
 
 type OccChamferApi = OcctRaw & {
   BRepFilletAPI_MakeChamfer: new (shape: unknown) => {
@@ -19,20 +18,6 @@ type OccChamferApi = OcctRaw & {
     delete(): void;
   };
   Message_ProgressRange_1: new () => { delete?: () => void };
-  TopExp_Explorer_2: new (shape: unknown, toFind: unknown, toAvoid: unknown) => {
-    More(): boolean;
-    Current(): OccShapeRef;
-    Next(): void;
-    delete(): void;
-  };
-  TopTools_IndexedMapOfShape_1: new () => {
-    FindIndex_1(shape: unknown): number;
-    Extent(): number;
-    delete(): void;
-  };
-  TopExp: {
-    MapShapes_1(shape: unknown, type: unknown, map: unknown): void;
-  };
 };
 
 export interface OccChamferOptions {
@@ -126,102 +111,3 @@ export function occChamferWithInstance(
   }
 }
 
-/**
- * Find the first face in body that is adjacent (shares the edge) and return its handle.
- * Used for two-distance chamfer reference face selection.
- *
- * Uses canonical TopTools_IndexedMapOfShape indices for identity comparison —
- * ptr comparison is unreliable because orientation wrappers produce different
- * ptr values for the same underlying shape (same bug fixed in computeChordLengthRadius
- * in fillet.ts).
- */
-function findAdjacentFace(
-  oc: OcctRaw,
-  body: BRepBody,
-  rawShape: unknown,
-  rawEdge: OccShapeRef,
-): (typeof body.faceIds extends Map<number, infer V> ? V : never) | undefined {
-  const occ = oc as OccChamferApi;
-
-  // Build canonical edge + face index maps so identity comparisons are reliable.
-  const edgeMap = new occ.TopTools_IndexedMapOfShape_1();
-  const faceMap = new occ.TopTools_IndexedMapOfShape_1();
-  try {
-    occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, edgeMap);
-    occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_FACE, faceMap);
-  } catch {
-    edgeMap.delete();
-    faceMap.delete();
-    return undefined;
-  }
-
-  const targetEdgeIdx = edgeMap.FindIndex_1(rawEdge);
-  if (targetEdgeIdx <= 0) {
-    edgeMap.delete();
-    faceMap.delete();
-    return undefined;
-  }
-
-  let faceExplorer: InstanceType<OccChamferApi['TopExp_Explorer_2']> | null = null;
-  try {
-    faceExplorer = new occ.TopExp_Explorer_2(
-      rawShape,
-      oc.TopAbs_ShapeEnum.TopAbs_FACE,
-      oc.TopAbs_ShapeEnum.TopAbs_SHAPE,
-    );
-    while (faceExplorer.More()) {
-      const faceShape = faceExplorer.Current();
-      const edgeExp = new occ.TopExp_Explorer_2(
-        faceShape,
-        oc.TopAbs_ShapeEnum.TopAbs_EDGE,
-        oc.TopAbs_ShapeEnum.TopAbs_SHAPE,
-      );
-      let edgeFound = false;
-      while (edgeExp.More()) {
-        const e = edgeExp.Current();
-        const idx = edgeMap.FindIndex_1(e);
-        e.delete();
-        if (idx === targetEdgeIdx) {
-          edgeFound = true;
-          edgeExp.delete();
-          break;
-        }
-        edgeExp.Next();
-      }
-      if (!edgeFound) {
-        edgeExp.delete();
-        faceShape.delete();
-        faceExplorer.Next();
-        continue;
-      }
-
-      // Found an adjacent face — resolve its canonical index then look it up in
-      // body.faceIds using the same map (avoids ptr comparison).
-      const targetFaceIdx = faceMap.FindIndex_1(faceShape);
-      faceShape.delete();
-
-      if (targetFaceIdx > 0) {
-        for (const [, handle] of body.faceIds) {
-          const rawFaceHandle = occDeref(oc, handle, oc.TopoDS_Shape) as OccShapeRef;
-          try {
-            const handleIdx = faceMap.FindIndex_1(rawFaceHandle);
-            if (handleIdx === targetFaceIdx) {
-              return handle as ReturnType<typeof findAdjacentFace>;
-            }
-          } finally {
-            rawFaceHandle.delete?.();
-          }
-        }
-      }
-
-      // Face not in body registry — try next face.
-      faceExplorer.Next();
-    }
-  } catch { /* topology walk failed */ }
-  finally {
-    faceExplorer?.delete();
-    edgeMap.delete();
-    faceMap.delete();
-  }
-  return undefined;
-}

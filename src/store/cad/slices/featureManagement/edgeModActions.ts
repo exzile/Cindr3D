@@ -6,10 +6,14 @@ import { globalBRepBodyRegistry } from "../../../../engine/occ/globalRegistry";
 import {
   occFilletEdgeSetsWithInstance,
   occFullRoundFilletWithInstance,
+  occRuleFilletAllEdgesWithInstance,
+  occRuleFilletBetweenFacesWithInstance,
+  type FullRoundSideFaces,
   type OccFilletEdgeSet,
 } from "../../../../engine/occ/ops/fillet";
 import type { BRepBody } from "../../../../engine/occ/brepBody";
 import { occChamferWithInstance } from "../../../../engine/occ/ops/chamfer";
+import { collectTangentChainEdges } from "../../../../engine/occ/ops/adjacency";
 import { getOccSync } from "../../../../engine/occ/loader";
 import { createRegisteredOccMesh } from "../../../../engine/occ/registeredMesh";
 import { storedEdgeIds, parseOccEdgeSelection } from "../../../../utils/occEdgeUtils";
@@ -19,8 +23,30 @@ import { BODY_MATERIAL } from "../../../../components/viewport/scene/bodyMateria
 const DEFAULT_FILLET_RADIUS = 2;
 const DEFAULT_CHAMFER_DISTANCE = 2;
 
-function resolveOccFilletOptions(params?: Record<string, unknown>): { continuity?: 'G1' | 'G2' } {
-  return { continuity: params?.isG2 === true ? 'G2' : 'G1' };
+function resolveOccFilletOptions(params?: Record<string, unknown>): {
+  continuity?: 'G1' | 'G2';
+  isRollingBallCorner?: boolean;
+} {
+  return {
+    continuity: params?.isG2 === true ? 'G2' : 'G1',
+    isRollingBallCorner: params?.isRollingBallCorner !== false,
+  };
+}
+
+function expandTangentChain(
+  occ: ReturnType<typeof getOccSync>,
+  srcBody: BRepBody,
+  edgeIds: number[],
+): number[] {
+  if (!occ || edgeIds.length === 0) return edgeIds;
+  try {
+    const expanded = collectTangentChainEdges(occ.oc, srcBody, edgeIds);
+    if (expanded.length > edgeIds.length) return expanded;
+    return edgeIds;
+  } catch (e) {
+    console.warn('[fillet.propagate] tangent-chain walk failed:', e);
+    return edgeIds;
+  }
 }
 
 function resolveOccFilletEdgeSets(
@@ -30,6 +56,13 @@ function resolveOccFilletEdgeSets(
   fallbackRadius = DEFAULT_FILLET_RADIUS,
 ): OccFilletEdgeSet[] {
   if (!params) return [{ edgeIds: numericEdgeIds, radius: fallbackRadius }];
+
+  // FILLET-4: when propagate=true, walk BRep topology to include tangent-
+  // connected edges. OCC's BRepFilletAPI_MakeFillet does not auto-propagate.
+  const propagate = params.propagate === true;
+  const occ = propagate ? getOccSync() : null;
+  const expand = (ids: number[]): number[] =>
+    propagate && occ ? expandTangentChain(occ, srcBody, ids) : ids;
 
   // Multi-set collection: each set carries its own type and radii.
   if (Array.isArray(params.edgeSets) && (params.edgeSets as unknown[]).length > 0) {
@@ -45,16 +78,20 @@ function resolveOccFilletEdgeSets(
         })
         .filter((n): n is number => n !== null);
       if (setNumericIds.length === 0) continue;
+      const expandedIds = expand(setNumericIds);
       if (s.type === 'chord-length' && typeof s.chordLength === 'number') {
-        sets.push({ edgeIds: setNumericIds, chordLength: s.chordLength });
+        sets.push({ edgeIds: expandedIds, chordLength: s.chordLength });
       } else if (s.type === 'variable' && typeof s.radius === 'number' && typeof s.endRadius === 'number') {
-        sets.push({ edgeIds: setNumericIds, startRadius: s.radius, endRadius: s.endRadius });
+        sets.push({ edgeIds: expandedIds, startRadius: s.radius, endRadius: s.endRadius });
       } else if (s.type === 'asymmetric') {
-        const r1 = typeof s.offsetOne === 'number' ? Math.max(s.offsetOne, 0.001) : (params.radius as number) ?? DEFAULT_FILLET_RADIUS;
-        const r2 = typeof s.offsetTwo === 'number' ? Math.max(s.offsetTwo, 0.001) : r1;
-        sets.push({ edgeIds: setNumericIds, startRadius: r1, endRadius: r2 });
+        // FILLET-1: per-set isFlipped swaps offsetOne ↔ offsetTwo.
+        // FILLET-3: per-face asymmetric — isAsymmetric routes to Add_4(d1, d2, edge, face).
+        let r1 = typeof s.offsetOne === 'number' ? Math.max(s.offsetOne, 0.001) : (params.radius as number) ?? DEFAULT_FILLET_RADIUS;
+        let r2 = typeof s.offsetTwo === 'number' ? Math.max(s.offsetTwo, 0.001) : r1;
+        if (s.isFlipped === true) [r1, r2] = [r2, r1];
+        sets.push({ edgeIds: expandedIds, startRadius: r1, endRadius: r2, isAsymmetric: true });
       } else {
-        sets.push({ edgeIds: setNumericIds, radius: typeof s.radius === 'number' ? s.radius : (params.radius as number) ?? DEFAULT_FILLET_RADIUS });
+        sets.push({ edgeIds: expandedIds, radius: typeof s.radius === 'number' ? s.radius : (params.radius as number) ?? DEFAULT_FILLET_RADIUS });
       }
     }
     if (sets.length > 0) return sets;
@@ -62,25 +99,66 @@ function resolveOccFilletEdgeSets(
 
   const mode = typeof params.mode === 'string' ? params.mode : 'constant';
   const fallbackR = typeof params.radius === 'number' ? params.radius : fallbackRadius;
+  const expandedTopLevelIds = expand(numericEdgeIds);
 
   if (mode === 'asymmetric') {
-    // Map Fusion offsetOne/offsetTwo → OCC Add_3(r1, r2, edge).
-    // Add_3 varies radius along the edge length (start vertex → end vertex),
-    // which approximates per-face asymmetric setback when both offsets differ.
-    const r1 = typeof params.offsetOne === 'number' ? Math.max(params.offsetOne, 0.001) : fallbackR;
-    const r2 = typeof params.offsetTwo === 'number' ? Math.max(params.offsetTwo, 0.001) : r1;
-    return [{ edgeIds: numericEdgeIds, startRadius: r1, endRadius: r2 }];
+    // FILLET-1: swap offsetOne/offsetTwo when isFlipped checkbox is on.
+    // FILLET-3: emit isAsymmetric so the OCC builder uses Add_4(d1, d2, edge, face)
+    // when the binding is available; falls back to Add_2(avg) inside the builder.
+    let r1 = typeof params.offsetOne === 'number' ? Math.max(params.offsetOne, 0.001) : fallbackR;
+    let r2 = typeof params.offsetTwo === 'number' ? Math.max(params.offsetTwo, 0.001) : r1;
+    if (params.isFlipped === true) [r1, r2] = [r2, r1];
+    return [{ edgeIds: expandedTopLevelIds, startRadius: r1, endRadius: r2, isAsymmetric: true }];
   }
   if (mode === 'chord-length') {
     const chord = typeof params.chordLength === 'number' ? params.chordLength : fallbackR;
-    return [{ edgeIds: numericEdgeIds, chordLength: chord }];
+    return [{ edgeIds: expandedTopLevelIds, chordLength: chord }];
   }
   if (mode === 'variable') {
     const start = typeof params.startRadius === 'number' ? params.startRadius : fallbackR;
     const end = typeof params.endRadius === 'number' ? params.endRadius : start;
-    return [{ edgeIds: numericEdgeIds, startRadius: start, endRadius: end }];
+    return [{ edgeIds: expandedTopLevelIds, startRadius: start, endRadius: end }];
   }
-  return [{ edgeIds: numericEdgeIds, radius: fallbackR }];
+  return [{ edgeIds: expandedTopLevelIds, radius: fallbackR }];
+}
+
+/**
+ * Resolve the side-face group for full-round fillet from live store state,
+ * dialog params, or replayed feature params.
+ *
+ * Priority order:
+ *  1. params.side{1|2}OccFaceIds (multi-face per side, array)
+ *  2. feature.params.side{1|2}OccFaceIds (replay multi-face)
+ *  3. params.side{1|2}OccFaceId (legacy single face)
+ *  4. feature.params.side{1|2}OccFaceId (replay legacy single)
+ *  5. live store state (single face id)
+ *
+ * Returns `null` when no face has been picked, signalling auto-detect.
+ */
+function pickSideGroup(
+  dialogParams: Record<string, unknown> | undefined,
+  featureParams: Record<string, unknown> | undefined,
+  slot: 'side1' | 'side2',
+  liveStateOccFaceId: number | null | undefined,
+): number[] | null {
+  const arrKey = `${slot}OccFaceIds` as const;
+  const singleKey = `${slot}OccFaceId` as const;
+  const fromArr = (src: Record<string, unknown> | undefined): number[] | null => {
+    if (!src) return null;
+    const v = src[arrKey];
+    if (Array.isArray(v) && v.every((x) => Number.isInteger(x))) return v as number[];
+    return null;
+  };
+  const fromSingle = (src: Record<string, unknown> | undefined): number | null => {
+    if (!src) return null;
+    const v = src[singleKey];
+    return Number.isInteger(v) ? (v as number) : null;
+  };
+  const arr = fromArr(dialogParams) ?? fromArr(featureParams);
+  if (arr && arr.length > 0) return arr;
+  const single = fromSingle(dialogParams) ?? fromSingle(featureParams) ?? liveStateOccFaceId ?? null;
+  if (Number.isInteger(single)) return [single as number];
+  return null;
 }
 
 function resolveOccChamferDistances(params: Record<string, unknown>): [number, number] {
@@ -124,6 +202,59 @@ export function createEdgeModActions({
     return false;
   };
 
+  /**
+   * Install an OCC result body onto a feature: tessellate, register the mesh,
+   * update store state, free the old WASM shape. Shared between standard
+   * fillet/chamfer, full-round, and rule-fillet paths.
+   */
+  const installResultMesh = (
+    tool: string,
+    featureId: string,
+    srcBody: BRepBody,
+    resultBody: BRepBody,
+    statusMessage: string,
+    pushUndo: boolean,
+  ): boolean => {
+    const occ = getOccSync();
+    if (!occ) {
+      return markOccEdgeModificationError(featureId, tool, "OCC kernel is no longer available");
+    }
+    const srcFeatureId = srcBody.sourceFeatureId;
+    const srcFeature = srcFeatureId
+      ? get().features.find((feature) => feature.id === srcFeatureId)
+      : undefined;
+    const srcMesh = srcFeature?.mesh;
+    const material = srcMesh instanceof THREE.Mesh ? srcMesh.material : BODY_MATERIAL;
+    let newMesh: THREE.Mesh;
+    try {
+      resultBody.sourceFeatureId = featureId;
+      newMesh = createRegisteredOccMesh(occ.oc, resultBody, material, featureId);
+    } catch (err) {
+      return markOccEdgeModificationError(
+        featureId,
+        tool,
+        `OCC tessellation failed: ${errorMessage(err, "unknown error")}`,
+      );
+    }
+    const currentFeature = get().features.find((feature) => feature.id === featureId);
+    const prevMesh = currentFeature?.mesh instanceof THREE.Mesh ? currentFeature.mesh : null;
+    const oldBodyId = prevMesh?.userData['brepBodyId'] as string | undefined;
+    if (pushUndo) get().pushUndo();
+    set((state) => ({
+      features: state.features.map((feature) =>
+        feature.id === featureId
+          ? { ...feature, mesh: newMesh, healthState: "healthy" as const, healthMessage: undefined }
+          : feature,
+      ),
+      statusMessage,
+    }));
+    if (prevMesh && prevMesh.geometry !== newMesh.geometry) {
+      disposeMeshDeferred(prevMesh);
+      if (oldBodyId) globalBRepBodyRegistry.delete(oldBodyId);
+    }
+    return true;
+  };
+
   const applyOccEdgeModification = ({
     tool,
     featureId,
@@ -131,6 +262,7 @@ export function createEdgeModActions({
     radius,
     filletEdgeSets,
     continuity,
+    isRollingBallCorner,
     distance,
     distance2,
     pushUndo = false,
@@ -142,10 +274,11 @@ export function createEdgeModActions({
     radius?: number;
     filletEdgeSets?: OccFilletEdgeSet[];
     continuity?: 'G1' | 'G2';
+    isRollingBallCorner?: boolean;
     distance?: number;
     distance2?: number;
     pushUndo?: boolean;
-    fullRoundFaces?: { centerFaceId: number; sideFaceIds: [number, number] };
+    fullRoundFaces?: { centerFaceId: number; sideFaces: FullRoundSideFaces };
   }): boolean => {
     if (!featureId) {
       return markOccEdgeModificationError(undefined, tool, "OCC edge operations require a feature id");
@@ -183,14 +316,14 @@ export function createEdgeModActions({
                 occ.oc,
                 srcBody,
                 fullRoundFaces.centerFaceId,
-                fullRoundFaces.sideFaceIds,
+                fullRoundFaces.sideFaces,
                 { sourceFeatureId: featureId },
               )
             : occFilletEdgeSetsWithInstance(
                 occ.oc,
                 srcBody,
                 effectiveFilletEdgeSets,
-                { sourceFeatureId: featureId, continuity },
+                { sourceFeatureId: featureId, continuity, isRollingBallCorner },
               ))
         : occChamferWithInstance(occ.oc, srcBody, numericEdgeIds, distance ?? 0, {
             distance2:
@@ -201,55 +334,11 @@ export function createEdgeModActions({
       return markOccEdgeModificationError(featureId, tool, "OCC operation failed for the selected edge set");
     }
 
-    const srcFeatureId = srcBody.sourceFeatureId;
-    const srcFeature = srcFeatureId
-      ? get().features.find((feature) => feature.id === srcFeatureId)
-      : undefined;
-    const srcMesh = srcFeature?.mesh;
-    // Use the shared BODY_MATERIAL singleton when the source has no stored mesh
-    // (e.g. extrudes rendered via ExtrudedBodies). Creating a new material here
-    // was a per-fillet leak — BODY_MATERIAL is a module-level singleton that is
-    // never disposed, so it is safe to share across all edge-modification meshes.
-    const material = srcMesh instanceof THREE.Mesh ? srcMesh.material : BODY_MATERIAL;
-    let newMesh: THREE.Mesh;
-    try {
-      result.sourceFeatureId = featureId;
-      newMesh = createRegisteredOccMesh(occ.oc, result, material, featureId);
-    } catch (err) {
-      return markOccEdgeModificationError(
-        featureId,
-        tool,
-        `OCC tessellation failed: ${errorMessage(err, "unknown error")}`,
-      );
-    }
-
-    const currentFeature = get().features.find((feature) => feature.id === featureId);
-    const prevMesh = currentFeature?.mesh instanceof THREE.Mesh ? currentFeature.mesh : null;
-    // Capture the old body ID before set() so we can evict it from the registry
-    // after the state update. Without this, each replay leaks one WASM OCC shape.
-    const oldBodyId = prevMesh?.userData['brepBodyId'] as string | undefined;
-    if (pushUndo) get().pushUndo();
-    set((state) => ({
-      features: state.features.map((feature) =>
-        feature.id === featureId
-          ? {
-              ...feature,
-              mesh: newMesh,
-              healthState: "healthy" as const,
-              healthMessage: undefined,
-            }
-          : feature,
-      ),
-      statusMessage:
-        tool === "Fillet"
-          ? `Filleted ${numericEdgeIds.length} OCC edge(s)${continuity === 'G2' ? ' (G2)' : ''}`
-          : `Chamfered ${numericEdgeIds.length} OCC edge(s) at d=${distance}`,
-    }));
-    if (prevMesh && prevMesh.geometry !== newMesh.geometry) {
-      disposeMeshDeferred(prevMesh);
-      if (oldBodyId) globalBRepBodyRegistry.delete(oldBodyId);
-    }
-    return true;
+    const statusMessage =
+      tool === "Fillet"
+        ? `Filleted ${numericEdgeIds.length} OCC edge(s)${continuity === 'G2' ? ' (G2)' : ''}`
+        : `Chamfered ${numericEdgeIds.length} OCC edge(s) at d=${distance}`;
+    return installResultMesh(tool, featureId, srcBody, result, statusMessage, pushUndo);
   };
 
   return {
@@ -260,7 +349,7 @@ export function createEdgeModActions({
         ? get().features.find((candidate) => candidate.id === featureId)
         : undefined;
 
-      // ── Full-round fillet path: uses center + two side faces, not edge IDs ──
+      // ── Full-round fillet path: uses center + two side face groups, not edge IDs ──
       const mode = (filletParams?.mode ?? feature?.params.mode) as string | undefined;
       if (mode === 'full-round') {
         const {
@@ -272,12 +361,17 @@ export function createEdgeModActions({
         // Fall back to stored face IDs when replaying a feature (no live state)
         const centerOccBodyId = filletFullRoundCenterOccBodyId ?? (filletParams?.centerOccBodyId as string | undefined) ?? (feature?.params.centerOccBodyId as string | undefined);
         const centerOccFaceId = filletFullRoundCenterOccFaceId ?? (filletParams?.centerOccFaceId as number | undefined) ?? (feature?.params.centerOccFaceId as number | undefined);
-        const side1OccFaceId = filletFullRoundSide1OccFaceId ?? (filletParams?.side1OccFaceId as number | undefined) ?? (feature?.params.side1OccFaceId as number | undefined);
-        const side2OccFaceId = filletFullRoundSide2OccFaceId ?? (filletParams?.side2OccFaceId as number | undefined) ?? (feature?.params.side2OccFaceId as number | undefined);
+        // FILLET-8: side groups may be either single-face (legacy single OccFaceId)
+        // or arrays of face IDs (multi-face per side). When neither single nor
+        // multi is provided, fall through to auto-side inference.
+        const side1Group = pickSideGroup(filletParams, feature?.params, 'side1', filletFullRoundSide1OccFaceId);
+        const side2Group = pickSideGroup(filletParams, feature?.params, 'side2', filletFullRoundSide2OccFaceId);
+        const sideFaces: FullRoundSideFaces =
+          side1Group && side2Group ? [side1Group, side2Group] : null;
 
         if (!featureId) { get().setStatusMessage('Full-Round Fillet: requires a feature id'); return; }
-        if (!centerOccBodyId || !Number.isInteger(centerOccFaceId) || !Number.isInteger(side1OccFaceId) || !Number.isInteger(side2OccFaceId)) {
-          get().setStatusMessage('Full-Round Fillet: select center face and both side faces first');
+        if (!centerOccBodyId || !Number.isInteger(centerOccFaceId)) {
+          get().setStatusMessage('Full-Round Fillet: select center face first');
           return;
         }
         const occ = getOccSync();
@@ -288,39 +382,85 @@ export function createEdgeModActions({
         const resultBody = occFullRoundFilletWithInstance(
           occ.oc, srcBody,
           centerOccFaceId!,
-          [side1OccFaceId!, side2OccFaceId!],
+          sideFaces,
           { sourceFeatureId: featureId },
         );
         if (!resultBody) {
           markOccEdgeModificationError(featureId, 'Full-Round Fillet', 'OCC operation failed');
           return;
         }
+        installResultMesh('Full-Round Fillet', featureId, srcBody, resultBody, 'Full-round fillet applied', false);
+        return;
+      }
 
-        const srcFeature = get().features.find((f) => f.id === srcBody.sourceFeatureId);
-        const material = srcFeature?.mesh instanceof THREE.Mesh ? srcFeature.mesh.material : BODY_MATERIAL;
-        let newMesh: THREE.Mesh;
-        try {
-          resultBody.sourceFeatureId = featureId;
-          newMesh = createRegisteredOccMesh(occ.oc, resultBody, material, featureId);
-        } catch (err) {
-          markOccEdgeModificationError(featureId, 'Full-Round Fillet', errorMessage(err, 'unknown error'));
+      // ── Rule fillet path: AllEdges (pick face → fillet all its edges)
+      //                     BetweenFaces (intersect two face sets) ──
+      if (mode === 'rule-fillet') {
+        const ruleType = (filletParams?.ruleType ?? feature?.params.ruleType) as
+          | 'all-edges'
+          | 'between-faces'
+          | undefined;
+        if (!featureId) { get().setStatusMessage('Rule Fillet: requires a feature id'); return; }
+        const occ = getOccSync();
+        if (!occ) { get().setStatusMessage('Rule Fillet: OCC kernel is still loading'); return; }
+        const centerOccBodyId =
+          (filletParams?.centerOccBodyId as string | undefined) ??
+          (feature?.params.centerOccBodyId as string | undefined) ??
+          (get().filletFullRoundCenterOccBodyId ?? undefined);
+        if (!centerOccBodyId) {
+          get().setStatusMessage('Rule Fillet: pick a face on a body first');
           return;
         }
-        const currentFeature = get().features.find((f) => f.id === featureId);
-        const prevMesh = currentFeature?.mesh instanceof THREE.Mesh ? currentFeature.mesh : null;
-        const oldBodyId = prevMesh?.userData['brepBodyId'] as string | undefined;
-        set((state) => ({
-          features: state.features.map((f) =>
-            f.id === featureId
-              ? { ...f, mesh: newMesh, healthState: 'healthy' as const, healthMessage: undefined }
-              : f,
-          ),
-          statusMessage: 'Full-round fillet applied',
-        }));
-        if (prevMesh && prevMesh.geometry !== newMesh.geometry) {
-          disposeMeshDeferred(prevMesh);
-          if (oldBodyId) globalBRepBodyRegistry.delete(oldBodyId);
+        const srcBody = globalBRepBodyRegistry.get(centerOccBodyId);
+        if (!srcBody) { get().setStatusMessage('Rule Fillet: source body is no longer available'); return; }
+        const { continuity, isRollingBallCorner } = resolveOccFilletOptions(filletParams);
+
+        let resultBody = null as ReturnType<typeof occRuleFilletAllEdgesWithInstance>;
+        if (ruleType === 'between-faces') {
+          const groupA = pickSideGroup(filletParams, feature?.params, 'side1', get().filletFullRoundSide1OccFaceId);
+          const groupB = pickSideGroup(filletParams, feature?.params, 'side2', get().filletFullRoundSide2OccFaceId);
+          if (!groupA || !groupB) {
+            get().setStatusMessage('Rule Fillet (Between Faces): pick both face sets first');
+            return;
+          }
+          resultBody = occRuleFilletBetweenFacesWithInstance(
+            occ.oc, srcBody, groupA, groupB, Math.max(radius, 0.001),
+            { sourceFeatureId: featureId, continuity, isRollingBallCorner },
+          );
+        } else {
+          // AllEdges: collect every edge of the picked face(s).
+          const centerOccFaceId =
+            (filletParams?.centerOccFaceId as number | undefined) ??
+            (feature?.params.centerOccFaceId as number | undefined) ??
+            (get().filletFullRoundCenterOccFaceId ?? undefined);
+          const faceIds: number[] = [];
+          if (Array.isArray(filletParams?.ruleFaceIds)) {
+            for (const f of filletParams!.ruleFaceIds as unknown[]) {
+              if (Number.isInteger(f)) faceIds.push(f as number);
+            }
+          } else if (Array.isArray(feature?.params.ruleFaceIds)) {
+            for (const f of feature!.params.ruleFaceIds as unknown[]) {
+              if (Number.isInteger(f)) faceIds.push(f as number);
+            }
+          }
+          if (faceIds.length === 0 && Number.isInteger(centerOccFaceId)) {
+            faceIds.push(centerOccFaceId as number);
+          }
+          if (faceIds.length === 0) {
+            get().setStatusMessage('Rule Fillet (All Edges): pick a face first');
+            return;
+          }
+          resultBody = occRuleFilletAllEdgesWithInstance(
+            occ.oc, srcBody, faceIds, Math.max(radius, 0.001),
+            { sourceFeatureId: featureId, continuity, isRollingBallCorner },
+          );
         }
+
+        if (!resultBody) {
+          markOccEdgeModificationError(featureId, 'Rule Fillet', 'OCC operation failed (no edges collected?)');
+          return;
+        }
+        installResultMesh('Rule Fillet', featureId, srcBody, resultBody, 'Rule fillet applied', false);
         return;
       }
 
@@ -338,16 +478,18 @@ export function createEdgeModActions({
       const filletEdgeSets = srcBody
           ? resolveOccFilletEdgeSets(numericEdgeIds, srcBody, filletParams, radius)
         : undefined;
-      const { continuity } = resolveOccFilletOptions(filletParams);
+      const { continuity, isRollingBallCorner } = resolveOccFilletOptions(filletParams);
 
       // Full-round with explicit face IDs: use occFullRoundFilletWithInstance
       const centerFaceId = typeof filletParams?.centerFaceId === 'number' ? filletParams.centerFaceId : undefined;
-      const rawSideIds = Array.isArray(filletParams?.sideFaceIds) ? filletParams!.sideFaceIds as unknown[] : undefined;
-      const sideFaceIds: [number, number] | undefined =
-        rawSideIds && rawSideIds.length >= 2 && typeof rawSideIds[0] === 'number' && typeof rawSideIds[1] === 'number'
-          ? [rawSideIds[0] as number, rawSideIds[1] as number]
+      const side1FromParams = pickSideGroup(filletParams, feature?.params, 'side1', null);
+      const side2FromParams = pickSideGroup(filletParams, feature?.params, 'side2', null);
+      const inlineSideFaces: FullRoundSideFaces | undefined =
+        side1FromParams && side2FromParams ? [side1FromParams, side2FromParams] : undefined;
+      const fullRoundFaces =
+        centerFaceId !== undefined && inlineSideFaces
+          ? { centerFaceId, sideFaces: inlineSideFaces }
           : undefined;
-      const fullRoundFaces = centerFaceId !== undefined && sideFaceIds ? { centerFaceId, sideFaceIds } : undefined;
 
       applyOccEdgeModification({
         tool: "Fillet",
@@ -355,6 +497,7 @@ export function createEdgeModActions({
         edgeIds,
         filletEdgeSets,
         continuity,
+        isRollingBallCorner,
         fullRoundFaces,
       });
     },
@@ -385,8 +528,8 @@ export function createEdgeModActions({
 
       const params = feature.params;
 
-      // Full-round fillet replay uses face IDs stored in params, not edgeIds
-      if (feature.type === "fillet" && params.mode === 'full-round') {
+      // Full-round / rule-fillet replay routes through commitFillet
+      if (feature.type === "fillet" && (params.mode === 'full-round' || params.mode === 'rule-fillet')) {
         const radius = typeof params.radius === 'number' ? params.radius : DEFAULT_FILLET_RADIUS;
         get().pushUndo();
         get().commitFillet(radius, 0, featureId, params as Record<string, unknown>);
@@ -409,15 +552,14 @@ export function createEdgeModActions({
         const filletEdgeSets = srcBody
           ? resolveOccFilletEdgeSets(numericEdgeIds, srcBody, params)
           : undefined;
-        const { continuity } = resolveOccFilletOptions(params);
+        const { continuity, isRollingBallCorner } = resolveOccFilletOptions(params);
         const replayCenterFaceId = typeof params.centerFaceId === 'number' ? params.centerFaceId : undefined;
-        const rawReplaySideIds = Array.isArray(params.sideFaceIds) ? params.sideFaceIds as unknown[] : undefined;
-        const replaySideFaceIds: [number, number] | undefined =
-          rawReplaySideIds && rawReplaySideIds.length >= 2 && typeof rawReplaySideIds[0] === 'number' && typeof rawReplaySideIds[1] === 'number'
-            ? [rawReplaySideIds[0] as number, rawReplaySideIds[1] as number]
-            : undefined;
-        const replayFullRoundFaces = replayCenterFaceId !== undefined && replaySideFaceIds
-          ? { centerFaceId: replayCenterFaceId, sideFaceIds: replaySideFaceIds }
+        const replaySide1 = pickSideGroup(params, undefined, 'side1', null);
+        const replaySide2 = pickSideGroup(params, undefined, 'side2', null);
+        const replaySideFaces: FullRoundSideFaces | undefined =
+          replaySide1 && replaySide2 ? [replaySide1, replaySide2] : undefined;
+        const replayFullRoundFaces = replayCenterFaceId !== undefined && replaySideFaces
+          ? { centerFaceId: replayCenterFaceId, sideFaces: replaySideFaces }
           : undefined;
         applyOccEdgeModification({
           tool: "Fillet",
@@ -425,6 +567,7 @@ export function createEdgeModActions({
           edgeIds,
           filletEdgeSets,
           continuity,
+          isRollingBallCorner,
           pushUndo: true,
           fullRoundFaces: replayFullRoundFaces,
         });

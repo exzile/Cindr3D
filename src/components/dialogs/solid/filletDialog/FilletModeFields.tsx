@@ -1,5 +1,5 @@
 import { useCADStore } from "../../../../store/cadStore";
-import type { FilletMode } from "./types";
+import type { FilletMode, RuleFilletType } from "./types";
 import type { FilletDialogState } from "./useFilletDialogState";
 import { NumberInput } from "../edgeDialog/NumberInput";
 
@@ -68,8 +68,70 @@ export function FilletModeFields({ dialog }: FilletModeFieldsProps) {
           <option value="chord-length">Chord Length</option>
           <option value="asymmetric">Asymmetric</option>
           <option value="full-round">Full Round</option>
+          <option value="rule-fillet">Rule Fillet</option>
         </select>
       </div>
+
+      {dialog.mode === "rule-fillet" && (
+        <>
+          <div className="form-group">
+            <label>Rule</label>
+            <select
+              value={dialog.ruleType}
+              onChange={(e) => dialog.setRuleType(e.target.value as RuleFilletType)}
+            >
+              <option value="all-edges">All Edges of Face</option>
+              <option value="between-faces">Between Two Face Sets</option>
+            </select>
+          </div>
+          <NumberInput
+            label="Radius (mm)"
+            value={dialog.radius}
+            onChange={dialog.setRadiusAndLive}
+            min={0.01}
+            max={500}
+            step={0.5}
+            fallback={2}
+          />
+          {dialog.ruleType === 'all-edges' ? (
+            <>
+              <p className="dialog-hint">
+                Pick a face. Every edge of that face will be filleted at the radius above.
+              </p>
+              <FullRoundFacePickerRow
+                slot="center"
+                label="Target face"
+                faceId={filletFullRoundCenterFaceId}
+                isActive={filletFullRoundPickSlot === 'center'}
+                onActivate={() => setFilletFullRoundPickSlot('center')}
+                onClear={() => setFilletFullRoundFace('center', null, null, null)}
+              />
+            </>
+          ) : (
+            <>
+              <p className="dialog-hint">
+                Pick two faces. Only edges shared between them will be filleted.
+              </p>
+              <FullRoundFacePickerRow
+                slot="side1"
+                label="Face set A"
+                faceId={filletFullRoundSide1FaceId}
+                isActive={filletFullRoundPickSlot === 'side1'}
+                onActivate={() => setFilletFullRoundPickSlot('side1')}
+                onClear={() => setFilletFullRoundFace('side1', null, null, null)}
+              />
+              <FullRoundFacePickerRow
+                slot="side2"
+                label="Face set B"
+                faceId={filletFullRoundSide2FaceId}
+                isActive={filletFullRoundPickSlot === 'side2'}
+                onActivate={() => setFilletFullRoundPickSlot('side2')}
+                onClear={() => setFilletFullRoundFace('side2', null, null, null)}
+              />
+            </>
+          )}
+        </>
+      )}
 
       {dialog.mode === "full-round" && (
         <>

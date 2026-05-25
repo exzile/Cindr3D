@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useCADStore } from "../../../../store/cadStore";
-import type { FilletEdgeSet, FilletMode, FilletParams } from "./types";
+import type { FilletEdgeSet, FilletMode, FilletParams, RuleFilletType } from "./types";
 
 export function useFilletDialogState(
   onConfirm: (params: FilletParams) => void,
@@ -55,6 +55,9 @@ export function useFilletDialogState(
     () => (initialParams?.edgeSets as FilletEdgeSet[] | undefined) ?? [],
   );
   const [showEdgeSets, setShowEdgeSets] = useState(false);
+  const [ruleType, setRuleType] = useState<RuleFilletType>(
+    () => (initialParams?.ruleType as RuleFilletType | undefined) ?? 'all-edges',
+  );
 
   useEffect(() => {
     if (initialParams) return;
@@ -110,6 +113,9 @@ export function useFilletDialogState(
       params.offsetTwo = offsetTwo;
       params.isFlipped = isFlipped;
     }
+    if (mode === "rule-fillet") {
+      params.ruleType = ruleType;
+    }
     if (edgeSets.length > 0) params.edgeSets = edgeSets;
     return params;
   }, [
@@ -124,6 +130,7 @@ export function useFilletDialogState(
     offsetTwo,
     propagate,
     radius,
+    ruleType,
     setback,
     setbackDistance,
     startRadius,
@@ -170,6 +177,8 @@ export function useFilletDialogState(
     addEdgeSet,
     removeEdgeSet,
     updateEdgeSet,
+    ruleType,
+    setRuleType,
     handleConfirm,
   };
 }

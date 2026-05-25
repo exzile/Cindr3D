@@ -38,6 +38,11 @@ export function FilletAdvancedOptions({ dialog }: FilletAdvancedOptionsProps) {
           max={500}
           step={0.5}
           fallback={0}
+          // FILLET-5: OCC has no per-edge setback distance binding —
+          // corner shape is controlled by the Rolling Ball Corner toggle
+          // (ChFi3d_QuasiAngular vs ChFi3d_Rational). This field is kept
+          // for Fusion 360 file round-trip but does not affect geometry today.
+          title="OCC does not bind per-edge setback distance — corner shape is controlled by the Rolling Ball Corner toggle below. Stored for future use."
           style={{ paddingLeft: 16 }}
         />
       )}
@@ -75,7 +80,10 @@ export function FilletAdvancedOptions({ dialog }: FilletAdvancedOptionsProps) {
           max={2.0}
           step={0.1}
           fallback={1.0}
-          title="1.0 = standard blend; > 1.0 extends blend along adjacent faces; < 1.0 tightens it"
+          // FILLET-6: opencascade.js does not expose a per-edge tangency weight
+          // on BRepFilletAPI_MakeFillet; the field is stored for Fusion 360
+          // file round-trip but does not affect the produced blend today.
+          title="Tangency weight is not supported by the OCC kernel — value stored for Fusion 360 file round-trip only."
           style={{ paddingLeft: 16 }}
         />
       )}

@@ -146,36 +146,25 @@
 
 ## BUGS
 
-[ ] FILLET-1  isFlipped not applied in asymmetric fillet resolveOccFilletEdgeSets (severity: HIGH)
-    File: src/store/cad/slices/featureManagement/edgeModActions.ts (~lines 53-55, 70-72)
-    Issue: resolveOccFilletEdgeSets reads offsetOne/offsetTwo and assigns r1/r2 but never checks
-           params.isFlipped (or s.isFlipped in the per-edgeSet branch), so the Flip Faces checkbox
-           is a no-op — geometry is identical whether checked or not.
-    Fix: After assigning r1/r2, swap them when params?.isFlipped === true (or s.isFlipped in the
-         per-set branch). Chamfer already does this correctly at line 99.
+[x] FILLET-1  isFlipped now applied in asymmetric fillet resolveOccFilletEdgeSets (severity: HIGH)
+    DONE 2026-05-25: both the per-set asymmetric branch (~line 71-75) and the standalone
+    asymmetric branch (~line 105-111) in resolveOccFilletEdgeSets now swap r1/r2 when
+    isFlipped === true. Mirrors the chamfer behaviour.
 
-[ ] FILLET-2  isRollingBallCorner not passed to OCC fillet shape enum (severity: MEDIUM)
-    Files: src/store/cad/slices/featureManagement/edgeModActions.ts (~line 22)
-           src/engine/occ/ops/fillet.ts (~line 238)
-    Issue: resolveOccFilletOptions returns { continuity } only; isRollingBallCorner is never read.
-           occFilletEdgeSetsWithInstance always picks ChFi3d_Rational (rolling ball) or
-           ChFi3d_Polynomial (G2) — ChFi3d_QuasiAngular (setback/non-rolling) is never used,
-           so the Rolling Ball Corner checkbox in the dialog is a no-op.
-    Fix: Add isRollingBallCorner?: boolean to OccFilletOptions. In resolveOccFilletOptions return
-         it from params. In occFilletEdgeSetsWithInstance select:
-         G2 → ChFi3d_Polynomial, !isRollingBallCorner → ChFi3d_QuasiAngular, else ChFi3d_Rational.
+[x] FILLET-2  isRollingBallCorner now threaded to OCC fillet shape enum (severity: MEDIUM)
+    DONE 2026-05-25: OccFilletOptions gained `isRollingBallCorner?: boolean`.
+    resolveOccFilletOptions returns it. occFilletEdgeSetsWithInstance now selects:
+    G2 → ChFi3d_Polynomial, isRollingBallCorner=false → ChFi3d_QuasiAngular, else ChFi3d_Rational.
+    Threaded through applyOccEdgeModification and replayEdgeModificationFeature.
 
-[ ] FILLET-3  Asymmetric fillet uses Add_3 (variable-along-edge) instead of Add(d1,d2,edge,face) (severity: HIGH)
-    Files: src/engine/occ/ops/fillet.ts (~line 252)
-           src/store/cad/slices/featureManagement/edgeModActions.ts (~lines 53-55, 70-72)
-    Issue: Fusion 360 asymmetric means different per-face tangent setback distances (oval
-           cross-section). Our implementation maps offsetOne → startRadius, offsetTwo → endRadius
-           and calls Add_3(r1, r2, edge) which varies radius from start vertex to end vertex —
-           a completely different geometric operation. Result looks wrong on non-trivial geometry.
-    Fix: Add Add_4(d1: number, d2: number, edge: unknown, face: unknown): void to OccFilletApi
-         type binding. Reuse chamfer.ts findAdjacentFace to pick a reference face. Call
-         mk.Add_4(offsetOne, offsetTwo, rawEdge, refFace) in the asymmetric branch; fall back to
-         Add_2(avg) if no adjacent face is found. Update the comment in fillet.ts accordingly.
+[x] FILLET-3  Asymmetric fillet now tries Add_4(d1, d2, edge, face) with Add_2 fallback (severity: HIGH)
+    DONE 2026-05-25: OccFilletEdgeSet gained `isAsymmetric?: boolean`.
+    Add_4(distance1, distance2, edge, face) added to OccFilletApi binding (optional —
+    not present in all opencascade.js builds). When isAsymmetric=true the builder
+    looks up an adjacent face via the shared findAdjacentFace helper and calls
+    mk.Add_4(d1, d2, edge, face); falls back to Add_2(avg) when Add_4 is unbound,
+    no adjacent face is found, or the OCC call throws. findAdjacentFace was extracted
+    from chamfer.ts to a new shared module src/engine/occ/ops/adjacency.ts.
 
 [x] SURFACE_MATERIAL singleton disposed in commitOffsetSurface join path (severity: HIGH)
     File: src/store/cad/slices/assemblyAndSurface/surfaceEditActions.ts (~line 224)
@@ -389,66 +378,48 @@
 
 ## FILLET-GAPS (params wired in UI but silently ignored by OCC; missing feature types)
 
-[ ] FILLET-4  propagate (isTangentChain) param collected but never applied to OCC (severity: MEDIUM)
-    File: src/store/cad/slices/featureManagement/edgeModActions.ts (resolveOccFilletEdgeSets)
-    Issue: "Propagate Along Tangent Edges" checkbox is stored in params.propagate and passed to
-           resolveOccFilletEdgeSets, but neither that function nor occFilletEdgeSetsWithInstance
-           reads it. OCC does not auto-propagate — tangent-connected edges must be collected
-           manually via BRep topology walk (BRepEdge::tangentiallyConnectedEdges equivalent).
-    Fix: When params.propagate === true, walk body.edgeIds to find all edges that share a vertex
-         with a selected edge and whose adjacent face normals are tangent (dot ≈ 1), then add
-         them to the edge set. Repeat recursively until no new edges are found.
+[x] FILLET-4  propagate (isTangentChain) now walks BRep topology to expand the edge set (severity: MEDIUM)
+    DONE 2026-05-25: new `collectTangentChainEdges` helper in adjacency.ts performs a
+    BFS over the vertex→edges graph, accepting only edges whose curve tangent at the
+    shared vertex is parallel (|dot| > 0.995) to the seed edge. resolveOccFilletEdgeSets
+    expands every edge set's edgeIds through this helper when params.propagate === true.
+    Robust failure: any topology-walk exception falls back to the original seed set.
 
-[ ] FILLET-5  setbackDistance has no OCC mapping — UI field is a dead param (severity: LOW)
-    Files: src/components/dialogs/solid/filletDialog/FilletAdvancedOptions.tsx
-           src/components/dialogs/solid/filletDialog/useFilletDialogState.ts
-    Issue: "Setback Distance" input is stored in params.setbackDistance and passed in previewParams,
-           but OCC BRepFilletAPI_MakeFillet has no per-edge setback distance parameter. The
-           global corner treatment is controlled by ChFi3d_FilletShape (FILLET-2), not a distance.
-    Fix: Either remove setbackDistance from the UI and FilletParams, or add a tooltip/help text
-         "not implemented — controls corner shape via Rolling Ball toggle instead."
+[x] FILLET-5  setbackDistance: tooltip explaining the OCC limitation (severity: LOW)
+    DONE 2026-05-25: NumberInput now carries a tooltip ("OCC does not bind per-edge
+    setback distance — corner shape is controlled by the Rolling Ball Corner toggle
+    below. Stored for future use.") so users understand the field is stored for
+    Fusion 360 round-trip but does not affect the produced blend.
 
-[ ] FILLET-6  tangencyWeight has no OCC mapping — UI field is a dead param (severity: LOW)
-    Files: src/components/dialogs/solid/filletDialog/FilletAdvancedOptions.tsx
-           src/engine/occ/ops/fillet.ts
-    Issue: tangencyWeight (0.1–2.0) is a Fusion 360–specific per-edge-set param from
-           FilletEdgeSetInput.tangencyWeight. OCC BRepFilletAPI_MakeFillet has no equivalent.
-           The field is stored in params and flows into resolveOccFilletOptions return value but
-           occFilletEdgeSetsWithInstance never reads it. Shown only under G2 mode.
-    Fix: Add a tooltip "tangency weight is not supported by the OCC kernel" next to the input,
-         or remove it. Do not silently store a value that has no effect.
+[x] FILLET-6  tangencyWeight: tooltip explaining the OCC limitation (severity: LOW)
+    DONE 2026-05-25: NumberInput tooltip now reads "Tangency weight is not supported
+    by the OCC kernel — value stored for Fusion 360 file round-trip only.", warning
+    users that the input has no geometric effect today.
 
-[ ] FILLET-7  Rule Fillet type entirely missing (severity: LOW)
-    Files: src/engine/occ/ops/fillet.ts, src/store/cad/slices/featureManagement/edgeModActions.ts
-           src/components/dialogs/solid/FilletDialog.tsx
-    Issue: Fusion 360 has RuleFilletFeature with two modes: AllEdges (fillet all edges of a face
-           or feature) and BetweenFaces (fillet only edges shared between two face sets). We have
-           no UI mode, no store action, and no OCC implementation for rule fillets.
-    Fix: Add 'rule-fillet' to FilletMode. Implement two sub-modes in the dialog: pick a face for
-         AllEdges (collect all face edges via BRep explorer, call occFilletEdgeSetsWithInstance),
-         and pick two face sets for BetweenFaces (intersect edge sets of both faces).
+[x] FILLET-7  Rule Fillet type implemented (AllEdges + BetweenFaces) (severity: LOW)
+    DONE 2026-05-25: FilletMode gained 'rule-fillet'. New `occRuleFilletAllEdgesWithInstance`
+    collects every edge of the picked face(s) via collectFaceEdgeIds in adjacency.ts.
+    New `occRuleFilletBetweenFacesWithInstance` collects only edges shared between two
+    face sets via collectSharedEdgeIds. Dialog now has a Rule sub-mode picker; face
+    picking reuses the existing full-round picker state (center for AllEdges; side1+side2
+    for BetweenFaces). commitFillet dispatches to the new ops; replay routes back through
+    commitFillet for both rule-fillet and full-round.
 
-[ ] FILLET-8  Full-round fillet only supports one face per side; no auto-side-face inference (severity: LOW)
-    Files: src/engine/occ/ops/fillet.ts (occFullRoundFilletWithInstance)
-           src/store/cad/slices/featureManagement/edgeModActions.ts
-    Issue: Fusion 360's FullRoundFilletFaceSets.add() accepts arrays of side faces and has an
-           areAutomaticSideFaces flag that auto-infers side faces from the center face selection.
-           Our implementation is limited to exactly [side1, side2] — no multi-face sides and no
-           auto-inference. Selecting a complex center face with multiple adjacent side faces fails.
-    Fix: Change sideFaceIds param to [number[], number[]] arrays. In occFullRoundFilletWithInstance
-         collect all shared edges between center and each side-face set. Add auto-detect path: when
-         sideFaceIds is omitted, find all faces adjacent to the center face and split them into
-         two groups by which boundary edge they share.
+[x] FILLET-8  Full-round multi-face per side + auto-side inference (severity: LOW)
+    DONE 2026-05-25: occFullRoundFilletWithInstance now accepts either
+    [number, number] (legacy), [number[], number[]] (multi-face per side), or null
+    (auto-infer). FullRoundSideFaces type exported. New `autoInferSideFaceGroups`
+    helper finds all faces adjacent to the center face and partitions them into two
+    groups by which center-face boundary edge they share. FilletParams + replay path
+    plumb side1OccFaceIds / side2OccFaceIds arrays alongside the legacy single-face
+    fields; `pickSideGroup` in edgeModActions.ts resolves the priority order.
 
-[ ] FILLET-9  Variable radius mid-points not supported (start/end only) (severity: LOW)
-    File: src/engine/occ/ops/fillet.ts (~line 252)
-    Issue: Fusion 360 VariableRadiusFilletEdgeSetInput.setMidRadii(radii[], positions[]) allows
-           N arbitrary mid-point radii at fractional positions (0–1) along the edge. Our OCC
-           binding only uses Add_3(startR, endR, edge) — two endpoints. OCC BRepFilletAPI_MakeFillet
-           does not expose a direct multi-point variant in opencascade.js bindings.
-    Fix: Investigate whether opencascade.js exposes a multi-point Add overload. If not, approximate
-         N mid-points by splitting the edge set into N-1 segments with piecewise Add_3 calls
-         (requires edge splitting which is complex). Document limitation if not feasible.
+[x] FILLET-9  Variable-radius mid-points: limitation documented in fillet.ts (severity: LOW)
+    DONE 2026-05-25: fillet.ts header documents that opencascade.js does not bind
+    the Law_Function or TColgp_Array1OfPnt2d Add overloads, so OCC only supports
+    start+end variable radius. Mid-radii cannot be approximated without edge splitting,
+    which is unsupported by the current OCC binding surface. Caller must collapse
+    mid-radii to a piecewise approximation if needed; documented as a known limitation.
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SDK reference (Fusion 360 header paths)
