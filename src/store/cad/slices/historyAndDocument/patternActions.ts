@@ -45,7 +45,7 @@ export function createPatternActions({ set, get }: CADSliceContext): Partial<CAD
               occResult.sourceFeatureId = newFeatureId;
               patMesh = createRegisteredOccMesh(occ.oc, occResult, srcMesh.material, newFeatureId);
             } catch (err) {
-              get().setStatusMessage(`OCC Linear Pattern failed: ${errorMessage(err)}`);
+              get().setStatusMessage(`OCC Linear Pattern failed: ${errorMessage(err, 'unknown error')}`);
               return;
             }
             const nPat = features.filter((f) => f.params?.featureKind === 'rect-pattern').length + 1;
@@ -120,7 +120,7 @@ export function createPatternActions({ set, get }: CADSliceContext): Partial<CAD
               occResult.sourceFeatureId = newFeatureId;
               patMesh = createRegisteredOccMesh(occ.oc, occResult, srcMesh.material, newFeatureId);
             } catch (err) {
-              get().setStatusMessage(`OCC Circular Pattern failed: ${errorMessage(err)}`);
+              get().setStatusMessage(`OCC Circular Pattern failed: ${errorMessage(err, 'unknown error')}`);
               return;
             }
             const nPat = features.filter((f) => f.params?.featureKind === 'circ-pattern').length + 1;

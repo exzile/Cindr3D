@@ -1,8 +1,7 @@
 /**
  * ChamferEdgeHighlight — Chamfer-dialog config over the shared
- * EdgeOpEdgeHighlight. Now uses the same `featureId|meshUuid:…` edge-ID
- * format as fillet (the old bespoke copy used the legacy prefix-less format
- * and so could not resolve primitive bodies on commit).
+ * EdgeOpEdgeHighlight. It uses the same `featureId|meshUuid:...` edge-ID
+ * format as fillet so primitive/body edge selections resolve on commit.
  */
 
 import { useCADStore } from '../../../store/cadStore';

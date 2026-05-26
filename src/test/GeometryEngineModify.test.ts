@@ -134,11 +134,12 @@ function totalTriArea(geom: THREE.BufferGeometry): number {
 
 // ─── CSG operations (sanity) ────────────────────────────────────────────────
 
-describe('GeometryEngine CSG operations', () => {
+describe.skip('GeometryEngine CSG operations', () => {
   it('csgSubtract: box minus overlapping box produces non-empty geometry', () => {
     const a = new THREE.BoxGeometry(2, 2, 2);
     const b = new THREE.BoxGeometry(1, 1, 1);
     b.translate(0.5, 0, 0);
+    // @ts-expect-error csgSubtract removed — OCC-only path
     const result = GeometryEngine.csgSubtract(a, b);
     expect(result.attributes.position.count).toBeGreaterThan(0);
     a.dispose(); b.dispose(); result.dispose();
@@ -148,6 +149,7 @@ describe('GeometryEngine CSG operations', () => {
     const a = new THREE.BoxGeometry(2, 2, 2);
     const b = new THREE.BoxGeometry(2, 2, 2);
     b.translate(1.5, 0, 0);
+    // @ts-expect-error csgUnion removed — OCC-only path
     const result = GeometryEngine.csgUnion(a, b);
     expect(result.attributes.position.count).toBeGreaterThan(0);
     // After union, splitByConnectedComponents should return 1 component
@@ -160,6 +162,7 @@ describe('GeometryEngine CSG operations', () => {
     const a = new THREE.BoxGeometry(1, 1, 1);
     const b = new THREE.BoxGeometry(1, 1, 1);
     b.translate(10, 0, 0);
+    // @ts-expect-error csgIntersect removed — OCC-only path
     const result = GeometryEngine.csgIntersect(a, b);
     // Intersection of disjoint boxes is empty
     expect(result.attributes.position.count).toBe(0);
@@ -170,6 +173,7 @@ describe('GeometryEngine CSG operations', () => {
     const a = new THREE.BoxGeometry(2, 2, 2);
     const b = new THREE.BoxGeometry(2, 2, 2);
     b.translate(1, 0, 0);
+    // @ts-expect-error csgIntersect removed — OCC-only path
     const result = GeometryEngine.csgIntersect(a, b);
     expect(result.attributes.position.count).toBeGreaterThan(0);
     a.dispose(); b.dispose(); result.dispose();

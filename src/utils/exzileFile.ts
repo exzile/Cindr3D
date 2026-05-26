@@ -1,10 +1,9 @@
 /**
  * OCC-7.4 — .exzile file format (schema v2 with BRep bodies).
  *
- * v1: mesh blobs (legacy, not yet in prod — but we start at v2 with STEP)
+ * v1: mesh blobs (pre-release only; we start at v2 with STEP)
  * v2: BRepBody shapes as STEP strings; features are serialized params only
- *     (no BufferGeometry). Backward compat: v1 files load and get migrated on
- *     first save by re-creating from the feature tree.
+ *     (no BufferGeometry). Fresh development files are expected to use v2.
  *
  * The file is JSON-encoded and may be gzip-compressed (.exzile = gzip JSON).
  */
@@ -13,7 +12,6 @@ import type { Feature, Sketch } from '../types/cad';
 import { captureOccSnapshot, restoreOccSnapshot, type OccBodySnapshot } from '../engine/occ/occSnapshot';
 import { serializeFeature, deserializeFeature, deserializeSketch } from '../store/cad/persistence';
 import { globalBRepBodyRegistry } from '../engine/occ/globalRegistry';
-import { migrateLegacyExtrudeFeatures } from '../engine/occ/legacyMigration';
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 
@@ -103,13 +101,9 @@ export async function deserializeExzileFile(json: string): Promise<ExzileReadRes
     }
   }
 
-  // OCC-9.2: migrate legacy extrude features (no stored mesh) to OCC so the
-  // ExtrudedBodies CSG pipeline is bypassed for files opened after this migration.
-  const features = migrateLegacyExtrudeFeatures(rawFeatures, sketches);
-
   return {
     version,
-    features,
+    features: rawFeatures,
     sketches,
     featureGroups: Array.isArray(parsed.featureGroups) ? parsed.featureGroups : [],
     designConfigurations: Array.isArray(parsed.designConfigurations) ? parsed.designConfigurations : [],

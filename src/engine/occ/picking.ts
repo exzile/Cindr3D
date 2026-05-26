@@ -42,7 +42,7 @@ export function detachTessellationFromMesh(mesh: THREE.Mesh): void {
 
 /**
  * Dispose a mesh's geometry and detach tessellation data after the current
- * render tick. Safe to call on both OCC-backed and CSG-only meshes.
+ * render tick. Safe to call on OCC-backed meshes and transient preview meshes.
  * Deferred so any in-flight draw call using the old geometry can complete first.
  */
 export function disposeMeshDeferred(mesh: THREE.Mesh): void {

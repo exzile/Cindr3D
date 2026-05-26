@@ -7,7 +7,7 @@
  */
 import { shapeToStep, shapeFromStep } from './stepIO';
 import { globalBRepBodyRegistry } from './globalRegistry';
-import { getOccSync } from './loader';
+import { getOcc, getOccSync } from './loader';
 
 export interface OccBodySnapshot {
   featureId: string;
@@ -50,8 +50,10 @@ export function captureOccSnapshot(): OccBodySnapshot[] {
 export async function restoreOccSnapshot(snapshots: OccBodySnapshot[]): Promise<void> {
   if (snapshots.length === 0) return;
 
-  const occ = getOccSync();
-  if (!occ) return;
+  // Use getOcc() (not getOccSync) so we wait for the WASM module to finish
+  // loading rather than silently bailing if it isn't ready yet — that was the
+  // root cause of files loading with an empty registry (OCC-7.4 race fix).
+  const occ = await getOcc();
 
   // Clear the existing registry first so stale bodies don't accumulate.
   globalBRepBodyRegistry.clear();
@@ -61,8 +63,7 @@ export async function restoreOccSnapshot(snapshots: OccBodySnapshot[]): Promise<
     if (result.ok) {
       const body = result.value;
       // Restore the original body ID so mesh.userData.brepBodyId keeps working
-      // after file load / undo-redo — avoids OCC boolean ops silently falling
-      // back to CSG because the registry lookup misses on the stale ID.
+      // after file load / undo-redo; strict OCC ops require a live registry hit.
       body.id = bodyId;
       body.sourceFeatureId = featureId;
       globalBRepBodyRegistry.add(body);

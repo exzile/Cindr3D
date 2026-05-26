@@ -8,15 +8,15 @@ All OCC phases complete. The remaining non-OCC CSG usage is for geometry buildin
 
 ## OCC boolean commit path summary
 
-- `extrudeCommitActions.ts`: new-body uses `occExtrudeWithInstance`; join/cut uses `performOccBooleanWithInstance` against the most recent OCC target; CSG fallback for non-OCC targets. Tool body wrapped in `try/finally { disposeBRepBody(toolBody) }` for deterministic C++ cleanup.
+- `extrudeCommitActions.ts`: new-body uses `occExtrudeWithInstance`; join/cut uses `performOccBooleanWithInstance` against the most recent OCC target. Non-OCC solid targets are rejected instead of rerouting through mesh CSG. Tool body wrapped in `try/finally { disposeBRepBody(toolBody) }` for deterministic C++ cleanup.
 - `revolveActions.ts`: new-body uses `occRevolveWithInstance`; sketch-mode join/cut uses OCC boolean (tool body disposed via inner try/finally); face-mode stays on CSG (no OCC tool body).
 - `featureCreationSlice.ts` (sweep): new-body uses `occSweepFromPathWireWithInstance` with taperAngle; join/cut via `placeToolFeatureAsync` which now uses OCC boolean when both tool+target have `brepBodyId`.
-- `bodyBoolean.ts` (`placeToolFeatureAsync`): OCC boolean path for loft/sweep/pipe/boundary-fill when both meshes have `brepBodyId`; CSG fallback otherwise. Uses existing registry bodies (no temp tool body to dispose).
+- `bodyBoolean.ts` (`placeToolFeatureAsync`): OCC boolean path for loft/sweep/pipe/boundary-fill when both meshes have `brepBodyId`; otherwise the operation fails with an OCC-backed target/tool message. Uses existing registry bodies (no temp tool body to dispose).
 
 ## Remaining cleanup gates
 
 - OCC-9.3 (delete edgeTopology.ts): blocked — 14 dependents still use mesh edge extraction.
-- OCC-9.4 (drop manifold-3d / three-bvh-csg): blocked — CSG still needed for geometry building.
+- OCC-9.4 (drop manifold-3d / three-bvh-csg): partially unblocked for CAD booleans, but still blocked for slicer/preview geometry helpers that intentionally use mesh CSG.
 - Face-mode revolve boolean: stays on CSG; no OCC tool body is available from face boundary only.
 
 ## Historical note

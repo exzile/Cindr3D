@@ -46,9 +46,12 @@ export function occRevolveWithInstance(
   const wires = sketchProfileToWires(oc, profile, frame);
   if (!wires) throw new Error('[occRevolve] failed to build wires from profile');
 
-  const face = wireToFace(oc, wires.outerWire, wires.holeWires);
-  wires.outerWire.delete();
-  for (const hw of wires.holeWires) hw.delete();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const face = wireToFace(oc, wires.outerWire as any, wires.holeWires as any[]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (wires.outerWire as any).delete();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const hw of wires.holeWires) (hw as any).delete();
   if (!face) throw new Error('[occRevolve] failed to build face from wires');
 
   const { origin, direction } = axis;
@@ -98,7 +101,8 @@ export function occRevolveWithInstance(
   occAxis.delete();
   occDir.delete();
   occOrigin.delete();
-  face.delete();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (face as any).delete();
 
   return makeBRepBodyFromOccShape(oc, resultShape, {
     id: options.id,

@@ -5,6 +5,10 @@ type: feedback
 ---
 Global `feedback_session_rules.md` already mandates one background agent at a time. Cindr3D-specific addendum: the 2026-04 refactor broke old monolith hot files into shim + subdirs, so conflict surface moved. Never run two agents that might touch the same file below.
 
+**GitNexus-first search rule:** when an agent needs to locate files, discover where a feature lives, or choose what to inspect/edit, it must run a GitNexus query first. Use filesystem search (`rg`, Glob, file tree scans) only after GitNexus has supplied candidate symbols/flows/paths.
+
+**GitNexus repo name:** this project is indexed as **`Cindr3D`**. Always pass `repo: "Cindr3D"` to every GitNexus tool call — the index spans multiple repos and queries without `repo` silently search the wrong one. CLI equivalent: `npx gitnexus query "..." --repo Cindr3D`.
+
 **Current hot files** (post-refactor):
 - `src/store/cadStore.ts` (shim) and `src/store/cad/state.ts` / `state/*.ts` (types + aggregator)
 - `src/store/cad/slices/*Slice.ts` + `src/store/cad/slices/<slice>/*Actions.ts` — the per-slice action files are now the real editing targets

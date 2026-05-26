@@ -27,7 +27,7 @@ Always `getSketchAxes(sketch)` → `t1`/`t2` dot products. Raw `p.x, p.y` only w
 
 ## 3D CSG
 
-Primary mesh-boolean engine: `manifold-3d` npm WASM package. Fallback: `three-bvh-csg` for remaining mesh-body operations when Manifold has not loaded or rejects non-manifold legacy geometry. API: `csgSubtract/csgUnion/csgIntersect` in `engine/geometryEngine/core/solid/csg.ts`. Singleton loaded via `core/solid/manifoldWasm.ts`.
+CAD solid booleans should use the OCC BRep registry. Mesh CSG is retained for slicer/preview geometry helpers and explicitly bounded utility paths, not as a fallback for CAD solid operations.
 
 Fillet/chamfer edge modification is no longer mesh-CSG: it is OCC-only through the BRep registry and OCC edge IDs. See `csg_edge_cut.md` for the removed legacy edge-cut archive.
 

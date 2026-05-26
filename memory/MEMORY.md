@@ -2,6 +2,7 @@
 
 ## Read first
 
+- GitNexus-first navigation rule: when locating code, finding files, tracing unfamiliar flows, or deciding what to inspect/edit, run a GitNexus query first (`gitnexus_query` / `npx gitnexus query "...concept..." --repo Cindr3D`). Use `rg`/Glob only after GitNexus to verify or narrow the surfaced paths.
 - [intent.md](intent.md) - what we're building (Fusion 360 + Cura 5 + Duet3D parity), launch plan, what the user expects from Claude
 - [feedback_memory_first.md](feedback_memory_first.md) - read memory before launching Explore agents (saves massive tokens)
 - [code_graph.md](code_graph.md) - workspace anchors + "where to add X" lookup table
@@ -21,7 +22,7 @@
 
 - [r3f_critical_patterns.md](r3f_critical_patterns.md) - recurring R3F bugs: per-frame allocs, plane-aware math, disposal, stale closures, JSX bufferAttribute leaks, material mutation rules
 - [gotchas.md](gotchas.md) - Vite/rolldown `import type`, drei Grid on non-horizontal planes, R3F 9.6.0 minimum, hook-rules crash, getPlaneAxes SoT
-- [wasm_patterns.md](wasm_patterns.md) - emsdk loading gotchas (HEAP32, node wasmBinary, vite-ignore), 8-byte align, single-instance ABI, warm-up pattern
+- [wasm_patterns.md](wasm_patterns.md) - emsdk loading gotchas (HEAP32, node wasmBinary, vite-ignore), 8-byte align, single-instance ABI, warm-up pattern; **OCCT VIEW-delete rules** (FindKey_1/Face_1/faceMaker.Face()/Wire() are VIEWs — never `.delete()` or double-push to ownedResources)
 
 ## Slicer parity
 

@@ -3,39 +3,26 @@ import type { Feature } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import {
   pickMostRecentSolidTarget,
-  applyBodyBooleanAsync,
   syncConfigurationSuppression,
 } from '../featureManagement/bodyBoolean';
 import { REVOLVE_DEFAULTS } from '../../defaults';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
 import { getOccSync } from '../../../../engine/occ/loader';
-import { createOccPlaneFrameFromSketch } from '../../../../engine/occ/plane';
+import { createOccPlaneFrame, createOccPlaneFrameFromSketch } from '../../../../engine/occ/plane';
 import { occRevolveWithInstance } from '../../../../engine/occ/ops/revolve';
 import { performOccBooleanWithInstance, type OccBooleanOperation } from '../../../../engine/occ/ops/booleanCore';
-import type { SketchProfile } from '../../../../engine/occ/ops/sketchToWire';
 import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
 import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
 import { errorMessage } from '../../../../utils/errorHandling';
 import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
-import { OCC_PROFILE_POINT_COUNT } from '../../../../utils/occConstants';
-
-/**
- * Resolve the world-space axis vector for a revolve exactly the way
- * RevolveItem (the renderer) does: an explicit centerline direction wins,
- * otherwise the named X/Y/Z axis (default Y).
- */
-function resolveRevolveAxisVec(
-  axisKey: string,
-  axisDirection: [number, number, number] | undefined,
-): THREE.Vector3 {
-  if (axisDirection) {
-    return new THREE.Vector3(axisDirection[0], axisDirection[1], axisDirection[2]);
-  }
-  if (axisKey === 'X') return new THREE.Vector3(1, 0, 0);
-  if (axisKey === 'Z') return new THREE.Vector3(0, 0, 1);
-  return new THREE.Vector3(0, 1, 0);
-}
+import {
+  makeFaceBoundarySketchProfile,
+  makeRevolveSketchProfileFromShape,
+  resolveRevolveAngles,
+  resolveRevolveAxisVec,
+  revolveAxisOriginVector,
+} from './revolveHelpers';
 
 export function createRevolveActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -79,7 +66,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
     });
   },
   commitRevolve: async () => {
-    const { revolveProfileMode, revolveSelectedSketchId, revolveFaceBoundary, revolveAxis, revolveAngle, revolveDirection, revolveAngle2, revolveBodyKind, revolveOperation, revolveIsProjectAxis, sketches, features, units } = get();
+    const { revolveProfileMode, revolveSelectedSketchId, revolveFaceBoundary, revolveFaceNormal, revolveAxis, revolveAngle, revolveDirection, revolveAngle2, revolveBodyKind, revolveOperation, revolveIsProjectAxis, sketches, features, units } = get();
 
     // Ã¢â€â‚¬Ã¢â€â‚¬ Face mode Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     if (revolveProfileMode === 'face') {
@@ -87,7 +74,8 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
         set({ statusMessage: 'Click a face in the viewport first' });
         return;
       }
-      const primaryAngle = revolveDirection === 'symmetric' ? revolveAngle / 2 : revolveAngle;
+      const revolveAngles = resolveRevolveAngles(revolveDirection, revolveAngle, revolveAngle2);
+      const primaryAngle = revolveAngles.primaryAngleDeg;
       if (Math.abs(primaryAngle) < 0.5) {
         set({ statusMessage: 'Angle must be greater than 0' });
         return;
@@ -113,50 +101,105 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       };
       const angleDesc = revolveDirection === 'symmetric' ? `Ã‚Â±${revolveAngle / 2}Ã‚Â°` : `${revolveAngle}Ã‚Â°`;
 
-      // Ã¢â€â‚¬Ã¢â€â‚¬ Boolean operation (join / cut / intersect) Ã¢â€â‚¬Ã¢â€â‚¬
-      // For non-new-body ops, bake the revolve mesh NOW (same math as
-      // RevolveItem) and CSG it against the chosen target body, storing the
-      // result on feature.mesh so the stored-mesh render path handles it.
-      let faceFallbackNote = '';
+      const faceFallbackNote = '';
       if (revolveOperation && revolveOperation !== 'new-body' && revolveOperation !== 'new-component' && revolveBodyKind !== 'surface') {
+        // ── OCC face revolve boolean path ──
         const target = pickMostRecentSolidTarget(features, { excludeType: 'revolve' });
-        if (target) {
-          const { phiStart, sweep } = GeometryEngine.resolveRevolveSweep(revolveAngle, revolveAngle2, revolveDirection);
-          const axisVec = resolveRevolveAxisVec(revolveAxis as string, undefined);
-          const boundary: THREE.Vector3[] = [];
-          for (let i = 0; i < revolveFaceBoundary.length; i += 3) {
-            boundary.push(new THREE.Vector3(revolveFaceBoundary[i], revolveFaceBoundary[i + 1], revolveFaceBoundary[i + 2]));
+        if (!target) {
+          set({ statusMessage: `Face revolve ${revolveOperation} requires a target body` });
+          return;
+        }
+        const targetBrepBodyId = target.mesh instanceof THREE.Mesh
+          ? (target.mesh.userData['brepBodyId'] as string | undefined)
+          : undefined;
+        const targetBRepBody = targetBrepBodyId ? globalBRepBodyRegistry.get(targetBrepBodyId) : undefined;
+        if (!targetBRepBody) {
+          set({ statusMessage: `Face revolve ${revolveOperation} requires an OCC-backed target body` });
+          return;
+        }
+        const occ = getOccSync();
+        if (!occ) {
+          set({ statusMessage: 'Face revolve requires OCC to be loaded' });
+          return;
+        }
+        try {
+          // Reconstruct boundary vertices from flat array [x,y,z,x,y,z,...]
+          const pts3d: THREE.Vector3[] = [];
+          for (let i = 0; i + 2 < revolveFaceBoundary.length; i += 3) {
+            pts3d.push(new THREE.Vector3(revolveFaceBoundary[i], revolveFaceBoundary[i + 1], revolveFaceBoundary[i + 2]));
           }
-          const revolveMesh = GeometryEngine.revolveFaceBoundary(boundary, axisVec, sweep, false, phiStart);
-          if (revolveMesh) {
-            const result = await applyBodyBooleanAsync(target.mesh as THREE.Mesh, revolveMesh, revolveOperation);
-            revolveMesh.geometry.dispose();
-            if (result) {
-              feature.mesh = result;
-              feature.bodyKind = 'solid';
-              feature.params.targetFeatureId = target.id;
-              get().pushUndo();
-              const state = get();
-              const updated = state.features.map((f) =>
-                f.id === target.id ? { ...f, suppressed: true, visible: false } : f,
-              );
-              set({
-                features: [...updated, feature],
-                designConfigurations: syncConfigurationSuppression(state, {
-                  [feature.id]: false,
-                  [target.id]: true,
-                }),
-                activeTool: 'select',
-                ...REVOLVE_DEFAULTS,
-                statusMessage: `Revolve ${revolveOperation} with ${target.name} (${units})`,
-              });
-              return;
-            }
-            // CSG failed Ã¢â‚¬â€ fall through to new-body behaviour with a note.
-            faceFallbackNote = ` (${revolveOperation} failed Ã¢â‚¬â€ kept as new body)`;
+
+          // Build a plane frame from face centroid + stored normal
+          const centroid = pts3d.reduce((acc, p) => acc.clone().add(p), new THREE.Vector3()).divideScalar(pts3d.length);
+          const normalVec = revolveFaceNormal
+            ? new THREE.Vector3(revolveFaceNormal[0], revolveFaceNormal[1], revolveFaceNormal[2])
+            : new THREE.Vector3(0, 1, 0);
+          const frame = createOccPlaneFrame(centroid, normalVec);
+
+          const sketchProfile = makeFaceBoundarySketchProfile(pts3d, frame);
+          const axisVec = resolveRevolveAxisVec(
+            revolveAxis === 'centerline' ? 'Y' : revolveAxis as string,
+            undefined,
+          );
+          const axisOriginVec = new THREE.Vector3(0, 0, 0);
+
+          const toolBody = occRevolveWithInstance(
+            occ.oc, sketchProfile,
+            { origin: axisOriginVec, direction: axisVec },
+            revolveAngles.primaryAngleRad,
+            frame,
+            { id: feature.id + '_tool', side2AngleRad: revolveAngles.side2AngleRad },
+          );
+          if (!toolBody) {
+            set({ statusMessage: `Face revolve ${revolveOperation}: OCC revolve returned no body` });
+            return;
           }
-        } else {
-          faceFallbackNote = ` (no solid body to ${revolveOperation} Ã¢â‚¬â€ kept as new body)`;
+
+          const boolOp: OccBooleanOperation =
+            revolveOperation === 'cut' ? 'subtract' :
+            revolveOperation === 'intersect' ? 'intersect' : 'union';
+          let resultBody;
+          try {
+            resultBody = performOccBooleanWithInstance(
+              occ.oc, boolOp, targetBRepBody, toolBody,
+              { id: feature.id, sourceFeatureId: feature.id },
+            );
+          } finally {
+            toolBody.dispose();
+          }
+
+          if (!resultBody) {
+            set({ statusMessage: `Face revolve ${revolveOperation}: OCC boolean returned no result` });
+            return;
+          }
+
+          feature.mesh = createRegisteredOccMesh(occ.oc, resultBody, BODY_MATERIAL, feature.id);
+          feature.bodyKind = 'solid';
+          feature.params.targetFeatureId = target.id;
+          feature.bodyId = target.bodyId;
+          feature.componentId = target.componentId;
+          const state = get();
+          const updated = state.features.map((f) =>
+            f.id === target.id ? { ...f, suppressed: true, visible: false } : f,
+          );
+          const angleDesc2 = revolveDirection === 'symmetric'
+            ? `±${revolveAngle / 2}°`
+            : `${revolveAngle}°`;
+          set({
+            features: [...updated, feature],
+            designConfigurations: syncConfigurationSuppression(state, {
+              [feature.id]: false,
+              [target.id]: true,
+            }),
+            activeTool: 'select',
+            ...REVOLVE_DEFAULTS,
+            statusMessage: `Face revolve ${revolveOperation} with ${target.name} by ${angleDesc2} (${units})`,
+          });
+          return;
+        } catch (err) {
+          console.warn(`[commitRevolve] OCC face boolean path failed (${errorMessage(err, 'unknown')})`);
+          set({ statusMessage: `Face revolve ${revolveOperation} failed in OCC: ${errorMessage(err, 'unknown')}` });
+          return;
         }
       }
 
@@ -182,7 +225,8 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
     }
     // For symmetric, each side gets angle/2; for two-sides, side1=revolveAngle, side2=revolveAngle2.
     // The stored angle is always the primary (or full) angle Ã¢â‚¬â€ the renderer uses revolveDirection.
-    const primaryAngle = revolveDirection === 'symmetric' ? revolveAngle / 2 : revolveAngle;
+    const sketchRevolveAngles = resolveRevolveAngles(revolveDirection, revolveAngle, revolveAngle2);
+    const primaryAngle = sketchRevolveAngles.primaryAngleDeg;
     if (Math.abs(primaryAngle) < 0.5) {
       set({ statusMessage: 'Angle must be greater than 0' });
       return;
@@ -202,7 +246,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       const dir = new THREE.Vector3(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z).normalize();
       centerlineAxisDirection = [dir.x, dir.y, dir.z];
       centerlineAxisOrigin = [p0.x, p0.y, p0.z];
-      // Map to nearest standard axis for LatheGeometry orientation fallback
+      // Map to nearest standard axis for profile orientation metadata
       const ax = Math.abs(dir.x), ay = Math.abs(dir.y), az = Math.abs(dir.z);
       resolvedAxisKey = ax >= ay && ax >= az ? 'X' : ay >= ax && ay >= az ? 'Y' : 'Z';
     }
@@ -233,15 +277,14 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
         : `${revolveAngle}Ã‚Â°`;
 
     // Ã¢â€â‚¬Ã¢â€â‚¬ Boolean operation (join / cut / intersect) Ã¢â€â‚¬Ã¢â€â‚¬
-    // Bake the revolve mesh NOW with the SAME math RevolveItem uses, CSG it
-    // against the chosen target body, and store the result on feature.mesh
-    // (the stored-mesh render path then draws it; RevolveItem is skipped via
-    // the !f.mesh guard in ExtrudedBodies). new-body falls through unchanged.
-    let sketchFallbackNote = '';
+    // For non-new-body ops, run an OCC boolean against the chosen target body
+    // and store the result on feature.mesh so the stored-mesh render path draws it.
+    // new-body falls through unchanged.
+    const sketchFallbackNote = '';
     if (revolveOperation && revolveOperation !== 'new-body' && revolveOperation !== 'new-component' && revolveBodyKind !== 'surface') {
       const target = pickMostRecentSolidTarget(features, { excludeType: 'revolve' });
       if (target) {
-        // Shared axis for both OCC and CSG paths
+        // Revolve axis
         const axisVec = resolveRevolveAxisVec(resolvedAxisKey, centerlineAxisDirection);
 
         // ── OCC boolean path: used when the target was produced by the OCC pipeline ──
@@ -256,32 +299,16 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
               const shapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
               const firstShape = shapes[0];
               if (firstShape) {
-                const sketchProfile: SketchProfile = {
-                  outer: firstShape.getPoints(OCC_PROFILE_POINT_COUNT),
-                  holes: firstShape.holes.map((h) => h.getPoints(OCC_PROFILE_POINT_COUNT)).filter((pts) => pts.length >= 3),
-                };
+                const sketchProfile = makeRevolveSketchProfileFromShape(firstShape);
                 const frame = createOccPlaneFrameFromSketch(sketch);
-                const axisOriginArr = centerlineAxisOrigin ?? ([0, 0, 0] as [number, number, number]);
-                const axisOriginVec = new THREE.Vector3(axisOriginArr[0], axisOriginArr[1], axisOriginArr[2]);
-
-                let occPrimaryRad: number;
-                let side2AngleRad: number | undefined;
-                if (revolveDirection === 'symmetric') {
-                  occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle / 2);
-                  side2AngleRad = occPrimaryRad;
-                } else if (revolveDirection === 'two-sides') {
-                  occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle);
-                  side2AngleRad = THREE.MathUtils.degToRad(revolveAngle2);
-                } else {
-                  occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle);
-                }
+                const axisOriginVec = revolveAxisOriginVector(centerlineAxisOrigin);
 
                 const toolBody = occRevolveWithInstance(
                   occ.oc, sketchProfile,
                   { origin: axisOriginVec, direction: axisVec },
-                  occPrimaryRad,
+                  sketchRevolveAngles.primaryAngleRad,
                   frame,
-                  { id: feature.id + '_tool', side2AngleRad },
+                  { id: feature.id + '_tool', side2AngleRad: sketchRevolveAngles.side2AngleRad },
                 );
 
                 const boolOp: OccBooleanOperation =
@@ -322,101 +349,60 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
                 }
               }
             } catch (err) {
-              console.warn(`[commitRevolve] OCC boolean path failed (${errorMessage(err, 'unknown')}); using CSG fallback`);
+              console.warn(`[commitRevolve] OCC boolean path failed (${errorMessage(err, 'unknown')})`);
             }
           }
         }
 
-        // ── CSG boolean path (fallback when target lacks brepBodyId or OCC fails) ──
-        const { phiStart, sweep } = GeometryEngine.resolveRevolveSweep(revolveAngle, revolveAngle2, revolveDirection);
-        const revolveMesh = GeometryEngine.revolveSketch(sketch, sweep, axisVec, phiStart);
-        if (revolveMesh) {
-          const result = await applyBodyBooleanAsync(target.mesh as THREE.Mesh, revolveMesh, revolveOperation);
-          revolveMesh.geometry.dispose();
-          if (result) {
-            feature.mesh = result;
-            feature.bodyKind = 'solid';
-            feature.params.targetFeatureId = target.id;
-            const state = get();
-            const updated = state.features.map((f) =>
-              f.id === target.id ? { ...f, suppressed: true, visible: false } : f,
-            );
-            set({
-              features: [...updated, feature],
-              designConfigurations: syncConfigurationSuppression(state, {
-                [feature.id]: false,
-                [target.id]: true,
-              }),
-              activeTool: 'select',
-              ...REVOLVE_DEFAULTS,
-              statusMessage: `Revolve ${revolveOperation} with ${target.name} (${units})`,
-            });
-            return;
-          }
-          sketchFallbackNote = ` (${revolveOperation} failed — kept as new body)`;
+        if (!feature.mesh) {
+          set({ statusMessage: `Revolve ${revolveOperation} requires an OCC-backed target body` });
+          return;
         }
       } else {
-        sketchFallbackNote = ` (no solid body to ${revolveOperation} — kept as new body)`;
+        set({ statusMessage: `Revolve ${revolveOperation} requires a target body` });
+        return;
       }
     }
 
     // OCC new-body path: build an exact BRep revolve solid.
     // Only for solid, non-boolean, one-sided/symmetric/two-sides sketch revolves.
-    // Falls back silently to the mesh-CSG (RevolveItem) path on any failure.
     if (revolveBodyKind === 'solid' && (!revolveOperation || revolveOperation === 'new-body')) {
       const occ = getOccSync();
-      if (occ) {
-        try {
-          const shapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
-          const firstShape = shapes[0];
-          if (firstShape) {
-            const sketchProfile: SketchProfile = {
-              outer: firstShape.getPoints(OCC_PROFILE_POINT_COUNT),
-              holes: firstShape.holes
-                .map((h) => h.getPoints(OCC_PROFILE_POINT_COUNT))
-                .filter((pts) => pts.length >= 3),
-            };
-            const frame = createOccPlaneFrameFromSketch(sketch);
+      if (!occ) {
+        set({ statusMessage: 'Revolve requires OCC to be loaded' });
+        return;
+      }
+      try {
+        const shapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
+        const firstShape = shapes[0];
+        if (firstShape) {
+          const sketchProfile = makeRevolveSketchProfileFromShape(firstShape);
+          const frame = createOccPlaneFrameFromSketch(sketch);
 
             // Axis origin: world origin for standard axes; start of centerline for custom.
-            const axisOriginArr = centerlineAxisOrigin ?? ([0, 0, 0] as [number, number, number]);
             const axisVec = resolveRevolveAxisVec(resolvedAxisKey, centerlineAxisDirection);
-            const axisOriginVec = new THREE.Vector3(axisOriginArr[0], axisOriginArr[1], axisOriginArr[2]);
-
-            // OCC revolve doesn't use phiStart; all three direction modes are handled
-            // via the primary angle + optional side2AngleRad (fuses two half-revolves).
-            let occPrimaryRad: number;
-            let side2AngleRad: number | undefined;
-            if (revolveDirection === 'symmetric') {
-              // Both sides equal: half forward + half backward
-              occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle / 2);
-              side2AngleRad = occPrimaryRad;
-            } else if (revolveDirection === 'two-sides') {
-              occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle);
-              side2AngleRad = THREE.MathUtils.degToRad(revolveAngle2);
-            } else {
-              occPrimaryRad = THREE.MathUtils.degToRad(revolveAngle);
-            }
+            const axisOriginVec = revolveAxisOriginVector(centerlineAxisOrigin);
 
             const occBody = occRevolveWithInstance(
               occ.oc,
               sketchProfile,
               { origin: axisOriginVec, direction: axisVec },
-              occPrimaryRad,
+              sketchRevolveAngles.primaryAngleRad,
               frame,
               {
                 id: feature.id,
                 sourceFeatureId: feature.id,
-                side2AngleRad,
+                side2AngleRad: sketchRevolveAngles.side2AngleRad,
               },
             );
 
-            feature.mesh = createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, feature.id);
-          }
-        } catch (err) {
-          console.warn(`[commitRevolve] OCC path failed (${errorMessage(err, 'unknown')}); using CSG fallback`);
-          feature.mesh = undefined;
+          feature.mesh = createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, feature.id);
         }
+      } catch (err) {
+        const message = errorMessage(err, 'unknown');
+        console.warn(`[commitRevolve] OCC path failed (${message})`);
+        set({ statusMessage: `Revolve failed in OCC: ${message}` });
+        return;
       }
     }
 

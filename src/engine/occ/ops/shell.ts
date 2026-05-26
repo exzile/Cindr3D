@@ -136,8 +136,7 @@ export function occShellWithInstance(
   } finally {
     joinProgress.delete?.();
     buildProgress.delete?.();
-    for (const rawFace of rawFaces) rawFace.delete?.();
-    rawBody.delete?.();
+    // NOTE: rawFaces and rawBody are occDeref wrapPointer VIEWs — do NOT delete.
     thickSolid.delete();
     faceList.delete();
   }

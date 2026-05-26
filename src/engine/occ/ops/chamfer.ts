@@ -64,11 +64,8 @@ export function occChamferWithInstance(
           const refFaceHandle = findAdjacentFace(oc, body, rawShape, rawEdge);
           if (refFaceHandle) {
             const rawFace = occDeref(oc, refFaceHandle, oc.TopoDS_Face);
-            try {
-              mk.Add_3(distance, options.distance2, rawEdge, rawFace);
-            } finally {
-              rawFace.delete?.();
-            }
+            mk.Add_3(distance, options.distance2, rawEdge, rawFace);
+            // NOTE: rawFace is an occDeref wrapPointer VIEW — do NOT delete.
           } else {
             mk.Add_2(distance, rawEdge);
           }
@@ -78,9 +75,8 @@ export function occChamferWithInstance(
         addedAny = true;
       } catch (e) {
         console.warn(`[occChamfer] could not add edge ${edgeId}:`, e);
-      } finally {
-        rawEdge.delete?.();
       }
+      // NOTE: rawEdge is an occDeref wrapPointer VIEW — do NOT delete.
     }
 
     if (!addedAny) {
@@ -107,7 +103,7 @@ export function occChamferWithInstance(
     return null;
   } finally {
     mk.delete();
-    rawShape.delete?.();
+    // NOTE: rawShape is an occDeref wrapPointer VIEW — do NOT delete.
   }
 }
 

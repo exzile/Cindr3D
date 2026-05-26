@@ -42,6 +42,7 @@ export function propagateBooleanIds(
         modList = algo.Modified(rawFace);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         it = new (oc as any).TopTools_ListIteratorOfListOfShape_1(modList);
+        if (!it) continue;
         while (it.More()) {
           const modShape = it.Value();
           try {
@@ -71,7 +72,7 @@ export function propagateBooleanIds(
       finally {
         it?.delete?.();
         modList?.delete?.();
-        rawFace.delete?.();
+        // NOTE: rawFace is an occDeref wrapPointer VIEW — do NOT delete.
       }
     }
   }

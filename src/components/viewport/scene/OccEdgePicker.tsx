@@ -85,6 +85,15 @@ export function useOccEdgePicker(options: UseOccEdgePickerOptions): void {
         }
       });
 
+      // DEBUG — remove after investigation
+      if ((globalThis as Record<string, unknown>).__EDGE_PICK_DEBUG) {
+        const segCounts = lines.map(ls => {
+          const pos = ls.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+          return { segments: pos ? Math.floor(pos.count / 2) : 0, bodyId: ls.userData['brepBodyId'], hasEdgeIds: Array.isArray(ls.userData['edgeIdsBySegment']) };
+        });
+        console.log('[picker] lines found:', lines.length, segCounts);
+      }
+
       let best: OccEdgePickResult | null = null;
       let bestDistSq = Infinity;
       const px = clientX - rect.left;
@@ -122,6 +131,35 @@ export function useOccEdgePicker(options: UseOccEdgePickerOptions): void {
             mesh: ls,
             point: _edgeWorldA.clone().lerp(_edgeWorldB, 0.5),
           };
+        }
+      }
+
+      // DEBUG — remove after investigation
+      if ((globalThis as Record<string, unknown>).__EDGE_PICK_DEBUG) {
+        if (best) {
+          console.log('[picker] HIT edgeId=', best.edgeId, 'bodyId=', best.bodyId, 'distSq=', bestDistSq);
+        } else {
+          // log closest distance to any segment
+          let closestDist = Infinity;
+          for (const ls of lines) {
+            const position = ls.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+            if (!position) continue;
+            const sc = Math.floor(position.count / 2);
+            for (let si = 0; si < sc; si++) {
+              _edgeWorldA.fromBufferAttribute(position, si * 2).applyMatrix4(ls.matrixWorld);
+              _edgeWorldB.fromBufferAttribute(position, si * 2 + 1).applyMatrix4(ls.matrixWorld);
+              _edgeProjA.copy(_edgeWorldA).project(camera);
+              _edgeProjB.copy(_edgeWorldB).project(camera);
+              if (_edgeProjA.z > 1 || _edgeProjB.z > 1) continue;
+              const sax = (_edgeProjA.x + 1) * halfW;
+              const say = (1 - _edgeProjA.y) * halfH;
+              const sbx = (_edgeProjB.x + 1) * halfW;
+              const sby = (1 - _edgeProjB.y) * halfH;
+              const d = segDistSqPx(px, py, sax, say, sbx, sby);
+              if (d < closestDist) closestDist = d;
+            }
+          }
+          console.log('[picker] MISS closest distSq=', closestDist.toFixed(1), 'threshold=', thresholdSq, 'px=', px.toFixed(0), 'py=', py.toFixed(0));
         }
       }
 

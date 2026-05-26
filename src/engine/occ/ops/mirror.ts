@@ -62,7 +62,7 @@ export function occMirrorWithInstance(
     console.warn('[occMirror] transform failed:', e);
     return null;
   } finally {
-    rawShape.delete?.();
+    // NOTE: rawShape is an occDeref wrapPointer VIEW — do NOT delete.
     trsf.delete();
     ax2.delete();
     occNormal.delete();

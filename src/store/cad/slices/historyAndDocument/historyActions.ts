@@ -1,9 +1,6 @@
 import * as THREE from "three";
 import type {
-  Body,
-  Component,
   Feature,
-  FeatureGroup,
   Sketch,
 } from "../../../../types/cad";
 import {
@@ -14,95 +11,12 @@ import { snapshotCADState } from "../../historyUtils";
 import type { CADSliceContext } from "../../sliceContext";
 import type { CADState } from "../../state";
 import { globalBRepBodyRegistry } from "../../../../engine/occ/globalRegistry";
-import { detachTessellationFromMesh } from "../../../../engine/occ/picking";
 import { restoreOccSnapshot, type OccBodySnapshot } from "../../../../engine/occ/occSnapshot";
-import type { DesignConfiguration } from "../../state/coreState";
 import { bodyGeometryCache } from "../../../meshRegistry";
-import { useComponentStore } from "../../../componentStore";
-
-type HistorySketch = Sketch & {
-  planeNormal: [number, number, number] | null;
-  planeOrigin: [number, number, number] | null;
-};
-
-type HistorySnapshot = {
-  features: Feature[];
-  sketches: HistorySketch[];
-  activeSketch?: HistorySketch | null;
-  featureGroups: FeatureGroup[];
-  designConfigurations?: DesignConfiguration[];
-  activeDesignConfigurationId?: string;
-  componentStore?: {
-    rootComponentId: string;
-    activeComponentId: string | null;
-    selectedBodyId: string | null;
-    components: Record<
-      string,
-      Component & { transform: number[] | { elements?: number[] } }
-    >;
-    bodies: Record<string, Body>;
-  };
-};
-
-const restoreComponentStoreSnapshot = (
-  snapshot: HistorySnapshot["componentStore"],
-) => {
-  if (!snapshot) return;
-
-  // Dispose GPU geometry for bodies that exist now but are absent from the
-  // incoming snapshot (e.g. bodies created by copyBody / pasteBody that are
-  // being rolled back). The snapshot restores mesh: null so the live
-  // BufferGeometry would otherwise become unreachable without being freed.
-  const currentBodies = useComponentStore.getState().bodies;
-  const snapshotBodyIds = new Set(Object.keys(snapshot.bodies));
-  for (const [id, body] of Object.entries(currentBodies)) {
-    if (!snapshotBodyIds.has(id) && body.mesh) {
-      if (body.mesh instanceof THREE.Mesh) {
-        body.mesh.geometry?.dispose();
-        detachTessellationFromMesh(body.mesh);
-      } else if (body.mesh instanceof THREE.Group) {
-        body.mesh.traverse((child) => {
-          if (child instanceof THREE.Mesh) { child.geometry?.dispose(); detachTessellationFromMesh(child); }
-        });
-      }
-      // Also evict the OCC body if one was registered for this mesh.
-      const brepBodyId =
-        body.mesh instanceof THREE.Mesh
-          ? (body.mesh.userData["brepBodyId"] as string | undefined)
-          : undefined;
-      if (brepBodyId) globalBRepBodyRegistry.delete(brepBodyId);
-    }
-  }
-
-  useComponentStore.setState({
-    rootComponentId: snapshot.rootComponentId,
-    activeComponentId: snapshot.activeComponentId ?? snapshot.rootComponentId,
-    selectedBodyId: snapshot.selectedBodyId,
-    components: Object.fromEntries(
-      Object.entries(snapshot.components).map(([id, component]) => {
-        const rawTransform = component.transform;
-        const transformArray = Array.isArray(rawTransform)
-          ? rawTransform
-          : rawTransform?.elements;
-        return [
-          id,
-          {
-            ...component,
-            transform: Array.isArray(transformArray)
-              ? new THREE.Matrix4().fromArray(transformArray)
-              : new THREE.Matrix4(),
-          },
-        ];
-      }),
-    ),
-    bodies: Object.fromEntries(
-      Object.entries(snapshot.bodies).map(([id, body]) => [
-        id,
-        { ...body, mesh: null },
-      ]),
-    ),
-  });
-};
+import {
+  restoreComponentStoreSnapshot,
+  type HistorySnapshot,
+} from "./historyRestoreHelpers";
 
 export function createHistoryActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {

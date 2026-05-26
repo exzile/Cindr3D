@@ -2,7 +2,6 @@ import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { useCADStore } from '../../store/cadStore';
 import { useComponentStore } from '../../store/componentStore';
 import type { Tool, Feature } from '../../types/cad';
-import type * as THREE from 'three';
 import './Toolbar.css';
 import { errorMessage } from '../../utils/errorHandling';
 import { QuickAccessBar } from './QuickAccessBar';

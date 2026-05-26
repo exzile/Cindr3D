@@ -105,11 +105,12 @@ export interface OccFilletOptions {
    */
   continuity?: 'G1' | 'G2';
   /**
-   * Corner shape when isRollingBallCorner === false → ChFi3d_QuasiAngular
-   * (non-rolling-ball, setback-style). Defaults to true (ChFi3d_Rational).
-   * Ignored when continuity === 'G2' (G2 always uses ChFi3d_Polynomial).
+   * Tangency weight for G2 continuity mode (range 0.1–2.0).
+   * Reserved for future OCC binding extension — BRepFilletAPI_MakeFillet does
+   * not currently expose a SetParams/weight API in the opencascade.js WASM build.
+   * Stored here so callers can round-trip the value without loss.
    */
-  isRollingBallCorner?: boolean;
+  tangencyWeight?: number;
 }
 
 // ── Chord-length radius computation ──────────────────────────────────────────
@@ -241,15 +242,10 @@ export function occFilletEdgeSetsWithInstance(
   const occ = oc as OccFilletApi;
   const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
 
-  // Surface enum:
-  //  - G2 mode always uses ChFi3d_Polynomial (curvature continuity).
-  //  - !isRollingBallCorner → ChFi3d_QuasiAngular (setback-style, non-rolling).
-  //  - else → ChFi3d_Rational (default rolling-ball).
+  // Surface enum: G2 always uses ChFi3d_Polynomial; default is ChFi3d_Rational.
   const filletShape = options.continuity === 'G2'
     ? occ.ChFi3d_FilletShape.ChFi3d_Polynomial
-    : options.isRollingBallCorner === false
-      ? occ.ChFi3d_FilletShape.ChFi3d_QuasiAngular
-      : occ.ChFi3d_FilletShape.ChFi3d_Rational;
+    : occ.ChFi3d_FilletShape.ChFi3d_Rational;
 
   const mk = new occ.BRepFilletAPI_MakeFillet_2(rawShape, filletShape);
   try {
@@ -297,9 +293,8 @@ export function occFilletEdgeSetsWithInstance(
           addedAny = true;
         } catch (e) {
           console.warn(`[occFillet] could not add edge ${edgeId}:`, e);
-        } finally {
-          rawEdge.delete();
         }
+        // NOTE: rawEdge is an occDeref wrapPointer VIEW — do NOT delete.
       }
     }
 
@@ -329,7 +324,7 @@ export function occFilletEdgeSetsWithInstance(
     return null;
   } finally {
     mk.delete();
-    rawShape.delete?.();
+    // rawShape is an occDeref wrapPointer VIEW — do NOT delete.
   }
 }
 
@@ -432,9 +427,8 @@ export function occFullRoundFilletWithInstance(
     if (cleaned) return;
     cleaned = true;
     edgeMap.delete();
-    centerFaceRaw.delete?.();
-    centerShapeRaw.delete?.();
-    rawShape.delete?.();
+    // centerFaceRaw is a TopoDS.Face_1 cast of an occDeref view; do not delete.
+    // centerShapeRaw/rawShape are occDeref views; do not delete.
   };
 
   try {
@@ -453,11 +447,12 @@ export function occFullRoundFilletWithInstance(
   function faceEdgeIndicesById(faceId: number): Set<number> {
     const handle = body.faceIds.get(faceId);
     if (!handle) return new Set();
-    const sRaw = occDeref(oc, handle, oc.TopoDS_Shape) as { delete?: () => void };
-    const fRaw = oc.TopoDS.Face_1(sRaw) as { delete?: () => void };
+    const sRaw = occDeref(oc, handle, oc.TopoDS_Shape);
+    const fRaw = oc.TopoDS.Face_1(sRaw);
+    // sRaw and fRaw are occDeref VIEW / TopoDS.Face_1 VIEW — do NOT delete.
     const result = new Set<number>();
+    const exp = new occ.TopExp_Explorer_2(fRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
     try {
-      const exp = new occ.TopExp_Explorer_2(fRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
       while (exp.More()) {
         const e = exp.Current();
         const idx = edgeMap.FindIndex_1(e);
@@ -465,10 +460,8 @@ export function occFullRoundFilletWithInstance(
         if (idx > 0) result.add(idx);
         exp.Next();
       }
-      exp.delete();
     } finally {
-      fRaw.delete?.();
-      sRaw.delete?.();
+      exp.delete();
     }
     return result;
   }
@@ -499,26 +492,22 @@ export function occFullRoundFilletWithInstance(
   }
 
   function edgeMidpoint(edgeIdx: number): [number, number, number] | null {
-    const trash: Array<{ delete?: () => void }> = [];
+    let curve: { FirstParameter(): number; LastParameter(): number; D0(u: number, p: unknown): void; delete?: () => void } | null = null;
+    let pt: { X(): number; Y(): number; Z(): number; delete?: () => void } | null = null;
     try {
-      const edgeShape = edgeMap.FindKey_1(edgeIdx) as { delete?: () => void };
-      trash.push(edgeShape);
-      const rawEdge = oc.TopoDS.Edge_1(edgeShape) as { delete?: () => void };
-      trash.push(rawEdge);
-      const curve = new occ.BRepAdaptor_Curve_2(rawEdge);
-      trash.push(curve);
+      const edgeShape = edgeMap.FindKey_1(edgeIdx);
+      const rawEdge = oc.TopoDS.Edge_1(edgeShape);
+      curve = new occ.BRepAdaptor_Curve_2(rawEdge);
       const t0 = curve.FirstParameter(), t1 = curve.LastParameter();
       const tMid = (t0 + t1) / 2;
-      const pt = new occ.gp_Pnt_1();
-      trash.push(pt);
+      pt = new occ.gp_Pnt_1();
       curve.D0(tMid, pt);
       return [pt.X(), pt.Y(), pt.Z()];
     } catch {
       return null;
     } finally {
-      for (let i = trash.length - 1; i >= 0; i--) {
-        try { trash[i].delete?.(); } catch { /* already freed */ }
-      }
+      pt?.delete?.();
+      curve?.delete?.();
     }
   }
 
@@ -571,37 +560,35 @@ function autoInferSideFaceGroups(
   const adjacent = findAdjacentFacesToFace(oc, body, occDeref(oc, body.shape, oc.TopoDS_Shape), centerFaceId);
   if (adjacent.length < 2) return null;
 
+  // rawShape/centerRaw/fRaw are all occDeref wrapPointer VIEWs — do NOT delete.
   const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
   const edgeMap = new occ.TopTools_IndexedMapOfShape_1();
   try {
     occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, edgeMap);
   } catch {
     edgeMap.delete();
-    rawShape.delete?.();
     return null;
   }
 
   const centerHandle = body.faceIds.get(centerFaceId);
-  if (!centerHandle) { edgeMap.delete(); rawShape.delete?.(); return null; }
-  const centerRaw = occDeref(oc, centerHandle, oc.TopoDS_Shape) as { delete?: () => void };
+  if (!centerHandle) { edgeMap.delete(); return null; }
+  const centerRaw = occDeref(oc, centerHandle, oc.TopoDS_Shape);
   const centerEdgeList: number[] = [];
+  const centerExp = new occ.TopExp_Explorer_2(centerRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
   try {
-    const exp = new occ.TopExp_Explorer_2(centerRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
-    while (exp.More()) {
-      const e = exp.Current();
+    while (centerExp.More()) {
+      const e = centerExp.Current();
       const idx = edgeMap.FindIndex_1(e);
       e.delete();
       if (idx > 0 && !centerEdgeList.includes(idx)) centerEdgeList.push(idx);
-      exp.Next();
+      centerExp.Next();
     }
-    exp.delete();
   } finally {
-    centerRaw.delete?.();
+    centerExp.delete();
   }
 
   if (centerEdgeList.length < 2) {
     edgeMap.delete();
-    rawShape.delete?.();
     return null;
   }
 
@@ -610,28 +597,25 @@ function autoInferSideFaceGroups(
   for (const adjFaceId of adjacent) {
     const handle = body.faceIds.get(adjFaceId);
     if (!handle) continue;
-    const fRaw = occDeref(oc, handle, oc.TopoDS_Shape) as { delete?: () => void };
+    const fRaw = occDeref(oc, handle, oc.TopoDS_Shape);
+    const exp = new occ.TopExp_Explorer_2(fRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
     try {
-      const exp = new occ.TopExp_Explorer_2(fRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
       while (exp.More()) {
         const e = exp.Current();
         const idx = edgeMap.FindIndex_1(e);
         e.delete();
         if (centerEdgeList.includes(idx)) {
           faceToEdgeIdx.set(adjFaceId, idx);
-          exp.delete();
           break;
         }
         exp.Next();
       }
-      if (!faceToEdgeIdx.has(adjFaceId)) exp.delete();
     } finally {
-      fRaw.delete?.();
+      exp.delete();
     }
   }
 
   edgeMap.delete();
-  rawShape.delete?.();
 
   // Bucket faces by edge index, pick the two largest buckets as the side groups.
   const buckets = new Map<number, number[]>();

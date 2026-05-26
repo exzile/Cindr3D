@@ -131,6 +131,7 @@ function computeBodyNormal(occ: OccThickenApi, body: BRepBody): [number, number,
       p0 = surf.Value(uC, vC);
       p1 = surf.Value(uC + du, vC);
       p2 = surf.Value(uC, vC + dv);
+      if (!p0 || !p1 || !p2) throw new Error('surf.Value returned null');
       const ax = p1.X() - p0.X(), ay = p1.Y() - p0.Y(), az = p1.Z() - p0.Z();
       const bx = p2.X() - p0.X(), by = p2.Y() - p0.Y(), bz = p2.Z() - p0.Z();
       const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;

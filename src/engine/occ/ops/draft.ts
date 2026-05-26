@@ -80,9 +80,8 @@ export function occDraftWithInstance(
       addedAny = true;
     } catch (e) {
       console.warn(`[occDraft] could not add face ${faceId}:`, e);
-    } finally {
-      rawFace.delete?.();
     }
+    // NOTE: rawFace is an occDeref wrapPointer VIEW — do NOT delete.
   }
 
   if (!addedAny) {
@@ -91,7 +90,7 @@ export function occDraftWithInstance(
     occPlaneNormal.delete();
     occPlaneOrigin.delete();
     occPullDir.delete();
-    rawShape.delete?.();
+    // NOTE: rawShape is an occDeref wrapPointer VIEW — do NOT delete.
     return null;
   }
 
@@ -117,6 +116,6 @@ export function occDraftWithInstance(
     occPlaneNormal.delete();
     occPlaneOrigin.delete();
     occPullDir.delete();
-    rawShape.delete?.();
+    // NOTE: rawShape is an occDeref wrapPointer VIEW — do NOT delete.
   }
 }

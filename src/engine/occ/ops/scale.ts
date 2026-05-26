@@ -54,9 +54,8 @@ export function occScaleWithInstance(
   } catch (e) {
     console.warn('[occScale] failed:', e);
     return null;
-  } finally {
-    rawShape.delete?.();
   }
+  // NOTE: rawShape is an occDeref wrapPointer VIEW — do NOT delete.
 }
 
 function uniformScale(

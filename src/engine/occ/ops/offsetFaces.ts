@@ -76,10 +76,11 @@ export function occOffsetFacesWithInstance(
     for (const faceId of faceIds) {
       const handle = body.faceIds.get(faceId);
       if (!handle) continue;
+      // NOTE: rawFace is an occDeref wrapPointer VIEW — do NOT delete.
       const rawFace = occDeref(oc, handle, oc.TopoDS_Face);
       let prismShape: { delete?: () => void } | null = null;
 
-      try {
+      {
         const [nx, ny, nz] = sampleFaceNormal(occ, rawFace);
 
         const extVec = new occ.gp_Vec_4(
@@ -129,8 +130,6 @@ export function occOffsetFacesWithInstance(
           boolProgress.delete?.();
           prismShape?.delete?.();
         }
-      } finally {
-        rawFace.delete?.();
       }
     }
 
@@ -140,7 +139,7 @@ export function occOffsetFacesWithInstance(
     if (!changed) {
       (accumulated as { delete?: () => void }).delete?.();
     }
-    rawBody.delete?.();
+    // NOTE: rawBody is an occDeref wrapPointer VIEW — do NOT delete.
   }
 }
 

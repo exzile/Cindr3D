@@ -6,9 +6,28 @@ import type { CADState } from './state';
 
 function rebuildExtrudeBodies(state: CADState) {
   const componentStore = useComponentStore.getState();
-  const existingBodyIds = new Set(Object.keys(componentStore.bodies));
+
+  // ── Prune orphaned bodies ─────────────────────────────────────────────────
+  // A body is orphaned when its featureIds list has NO entry that matches an
+  // existing cadStore feature.  This happens when commitExtrude's OCC path
+  // previously failed after addBody() but before the feature was pushed to
+  // cadStore -- leaving a persisted body with no matching feature.
+  const allFeatureIds = new Set(state.features.map((f) => f.id));
+  for (const [bodyId, body] of Object.entries(componentStore.bodies)) {
+    const featureIds: string[] = (body as { featureIds?: string[] }).featureIds ?? [];
+    const hasMatchingFeature = featureIds.some((fid) => allFeatureIds.has(fid));
+    if (!hasMatchingFeature) {
+      componentStore.removeBody(bodyId);
+    }
+  }
+
+  // ── Rebuild missing bodies ────────────────────────────────────────────────
+  // Re-read after pruning since removeBody mutates the store.
+  const existingBodyIds = new Set(Object.keys(useComponentStore.getState().bodies));
   const indexedFeatureIds = new Set(
-    Object.values(componentStore.bodies).flatMap((b) => b.featureIds),
+    Object.values(useComponentStore.getState().bodies).flatMap(
+      (b) => (b as { featureIds?: string[] }).featureIds ?? [],
+    ),
   );
   const createdThisRun = new Set<string>();
 
@@ -23,7 +42,7 @@ function rebuildExtrudeBodies(state: CADState) {
     const bodyLabel =
       (feature.bodyKind === 'surface' ? 'Surface' : 'Body') +
       ' ' +
-      (Object.keys(componentStore.bodies).length + 1);
+      (Object.keys(useComponentStore.getState().bodies).length + 1);
     const bodyId = componentStore.addBody(parentId, bodyLabel);
     if (bodyId) {
       componentStore.addFeatureToBody(bodyId, feature.id);
@@ -85,8 +104,8 @@ export function createCADPersistConfig(): PersistOptions<CADState, Partial<CADSt
       // as `undefined` if a persisted blob explicitly stored undefined
       // (e.g. older code persisted these and Zustand's spread merge
       // overrode currentState's default). Each crash we've debugged
-      // here was the same shape — a `.length` or `.map` on undefined
-      // — so the cheapest durable fix is to guarantee these fields
+      // here was the same shape -- a `.length` or `.map` on undefined
+      // -- so the cheapest durable fix is to guarantee these fields
       // are always arrays regardless of what storage produced.
       const ARRAY_FIELDS: Array<keyof CADState> = [
         'extrudeSelectedSketchIds',

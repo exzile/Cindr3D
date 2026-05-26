@@ -82,9 +82,12 @@ export function occLoftWithInstance(
       loftMaker.delete();
       return null;
     }
-    loftMaker.AddWire(wires.outerWire);
-    builtWires.push(wires.outerWire);
-    for (const hw of wires.holeWires) hw.delete();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    loftMaker.AddWire(wires.outerWire as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    builtWires.push(wires.outerWire as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const hw of wires.holeWires) (hw as any).delete();
   }
 
   const progress = new occ.Message_ProgressRange_1();

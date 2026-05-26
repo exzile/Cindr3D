@@ -32,8 +32,10 @@ function store() { return useCADStore.getState(); }
 function featureSummary(f: Feature) {
   const bbox = f.mesh ? (() => {
     try {
-      f.mesh.geometry.computeBoundingBox();
-      const box = f.mesh.geometry.boundingBox;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (f.mesh as any).geometry.computeBoundingBox();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const box = (f.mesh as any).geometry.boundingBox;
       return box
         ? { min: box.min.toArray(), max: box.max.toArray() }
         : null;
@@ -74,8 +76,10 @@ const get_object_properties: ToolHandler = async ({ id }) => {
   let bbox = null;
   if (_mesh) {
     try {
-      _mesh.geometry.computeBoundingBox();
-      const box = _mesh.geometry.boundingBox;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (_mesh as any).geometry.computeBoundingBox();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const box = (_mesh as any).geometry.boundingBox;
       if (box) bbox = { min: box.min.toArray(), max: box.max.toArray() };
     } catch { /* no bbox */ }
   }
@@ -427,8 +431,10 @@ const resource_feature_tree: ToolHandler = async (args) => {
 
   const bbox = feature.mesh ? (() => {
     try {
-      feature.mesh!.geometry.computeBoundingBox();
-      const box = feature.mesh!.geometry.boundingBox;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (feature.mesh as any).geometry.computeBoundingBox();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const box = (feature.mesh as any).geometry.boundingBox;
       return box ? { min: box.min.toArray(), max: box.max.toArray() } : null;
     } catch { return null; }
   })() : null;

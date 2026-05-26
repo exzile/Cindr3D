@@ -67,7 +67,8 @@ export function occSweepWithInstance(
 
   const profileWires = sketchProfileToWires(oc, profile, profileFrame);
   if (!profileWires) {
-    pathWires.outerWire.delete();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (pathWires.outerWire as any).delete();
     throw new Error('[occSweep] failed to build profile wires');
   }
 
@@ -79,15 +80,20 @@ export function occSweepWithInstance(
 
   if (!useAdvanced) {
     // ── Simple path: BRepOffsetAPI_MakePipe_1 ────────────────────────────────
-    const profileFace = wireToFace(oc, profileWires.outerWire, profileWires.holeWires);
-    profileWires.outerWire.delete();
-    for (const hw of profileWires.holeWires) hw.delete();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const profileFace = wireToFace(oc, profileWires.outerWire as any, profileWires.holeWires as any[]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (profileWires.outerWire as any).delete();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const hw of profileWires.holeWires) (hw as any).delete();
     if (!profileFace) {
-      pathWires.outerWire.delete();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (pathWires.outerWire as any).delete();
       throw new Error('[occSweep] failed to build profile face');
     }
 
-    const pipe = new occ.BRepOffsetAPI_MakePipe_1(pathWires.outerWire, profileFace);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pipe = new occ.BRepOffsetAPI_MakePipe_1(pathWires.outerWire as any, profileFace);
     const progress = new occ.Message_ProgressRange_1();
     try {
       pipe.Build(progress);
@@ -95,8 +101,10 @@ export function occSweepWithInstance(
     } finally {
       progress.delete?.();
       pipe.delete();
-      pathWires.outerWire.delete();
-      profileFace.delete();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (pathWires.outerWire as any).delete();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (profileFace as any).delete();
     }
   } else {
     // ── Advanced path: BRepOffsetAPI_MakePipeShell_1 ─────────────────────────
@@ -105,7 +113,8 @@ export function occSweepWithInstance(
       guideWires = sketchProfileToWires(oc, options.guideRail, options.guideRailFrame);
     }
 
-    const pipeShell = new occ.BRepOffsetAPI_MakePipeShell_1(pathWires.outerWire);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pipeShell = new occ.BRepOffsetAPI_MakePipeShell_1(pathWires.outerWire as any);
 
     // Orientation / trihedron mode
     if (options.orientation === 'frenet') {
@@ -124,12 +133,14 @@ export function occSweepWithInstance(
     pipeShell.SetTolerance(1e-4, 1e-4, 1e-6);
 
     // Profile wire (cross-section)
-    pipeShell.Add_2(profileWires.outerWire, false, true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    pipeShell.Add_2(profileWires.outerWire as any, false, true);
 
     // Guide rail wire — withContact=true, withCorrection=true causes the
     // profile to scale so it remains tangent to the guide.
     if (guideWires) {
-      pipeShell.Add_2(guideWires.outerWire, true, true);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      pipeShell.Add_2(guideWires.outerWire as any, true, true);
     }
 
     const progress = new occ.Message_ProgressRange_1();
@@ -142,12 +153,17 @@ export function occSweepWithInstance(
     } finally {
       progress.delete?.();
       pipeShell.delete();
-      pathWires.outerWire.delete();
-      profileWires.outerWire.delete();
-      for (const hw of profileWires.holeWires) hw.delete();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (pathWires.outerWire as any).delete();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (profileWires.outerWire as any).delete();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const hw of profileWires.holeWires) (hw as any).delete();
       if (guideWires) {
-        guideWires.outerWire.delete();
-        for (const hw of guideWires.holeWires) hw.delete();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (guideWires.outerWire as any).delete();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const hw of guideWires.holeWires) (hw as any).delete();
       }
     }
   }
@@ -187,9 +203,12 @@ export function occSweepFromPathWireWithInstance(
   let resultShape: unknown;
 
   if (!useAdvanced) {
-    const profileFace = wireToFace(oc, profileWires.outerWire, profileWires.holeWires);
-    profileWires.outerWire.delete();
-    for (const hw of profileWires.holeWires) hw.delete();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const profileFace = wireToFace(oc, profileWires.outerWire as any, profileWires.holeWires as any[]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (profileWires.outerWire as any).delete();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const hw of profileWires.holeWires) (hw as any).delete();
     if (!profileFace) throw new Error('[occSweep] failed to build profile face');
 
     const pipe = new occ.BRepOffsetAPI_MakePipe_1(pathWire, profileFace);
@@ -200,7 +219,8 @@ export function occSweepFromPathWireWithInstance(
     } finally {
       progress.delete?.();
       pipe.delete();
-      profileFace.delete();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (profileFace as any).delete();
     }
   } else {
     const pipeShell = new occ.BRepOffsetAPI_MakePipeShell_1(pathWire);
@@ -218,7 +238,8 @@ export function occSweepFromPathWireWithInstance(
     }
 
     pipeShell.SetTolerance(1e-4, 1e-4, 1e-6);
-    pipeShell.Add_2(profileWires.outerWire, false, true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    pipeShell.Add_2(profileWires.outerWire as any, false, true);
 
     if (options.guideWire) {
       pipeShell.Add_2(options.guideWire, true, true);
@@ -233,8 +254,10 @@ export function occSweepFromPathWireWithInstance(
     } finally {
       progress.delete?.();
       pipeShell.delete();
-      profileWires.outerWire.delete();
-      for (const hw of profileWires.holeWires) hw.delete();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (profileWires.outerWire as any).delete();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const hw of profileWires.holeWires) (hw as any).delete();
     }
   }
 

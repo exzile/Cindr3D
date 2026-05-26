@@ -1,6 +1,6 @@
 import { occDeref, type BRepBody } from '../brepBody';
 import type { OcctRaw } from '../types';
-import { propagateBooleanIds } from './booleanBase';
+import { propagateBooleanIds, type OccBooleanAlgo } from './booleanBase';
 
 export type OccBooleanOperation = 'subtract' | 'union' | 'intersect';
 
@@ -76,14 +76,14 @@ export function performOccBooleanWithInstance(
       return null;
     }
 
-    const result = propagateBooleanIds(oc, op, [target, tool]);
+    const result = propagateBooleanIds(oc, op as unknown as OccBooleanAlgo, [target, tool]);
     if (options.id) result.id = options.id;
     if (options.sourceFeatureId) result.sourceFeatureId = options.sourceFeatureId;
     return result;
   } finally {
     op.delete?.();
-    targetShape.delete?.();
-    toolShape.delete?.();
+    // NOTE: targetShape/toolShape are occDeref wrapPointer VIEWs — do NOT delete.
+    // The OccHandle in body.shape owns the C++ lifetime.
   }
 }
 
@@ -107,13 +107,13 @@ export function performOccBooleanWithRawTool(
       return null;
     }
 
-    const result = propagateBooleanIds(oc, op, [target]);
+    const result = propagateBooleanIds(oc, op as unknown as OccBooleanAlgo, [target]);
     if (options.id) result.id = options.id;
     if (options.sourceFeatureId) result.sourceFeatureId = options.sourceFeatureId;
     return result;
   } finally {
     op.delete?.();
-    targetShape.delete?.();
+    // NOTE: targetShape is an occDeref wrapPointer VIEW — do NOT delete.
   }
 }
 
@@ -165,13 +165,13 @@ export function performOccBooleanMultiWithInstance(
       return null;
     }
 
-    const result = propagateBooleanIds(oc, bop, [target, ...tools]);
+    const result = propagateBooleanIds(oc, bop as unknown as OccBooleanAlgo, [target, ...tools]);
     if (options.id) result.id = options.id;
     if (options.sourceFeatureId) result.sourceFeatureId = options.sourceFeatureId;
     return result;
   } finally {
     bop.delete?.();
-    for (const rawShape of rawShapes) rawShape.delete?.();
+    // NOTE: rawShapes are occDeref wrapPointer VIEWs — do NOT delete.
     toolList.delete();
     objectList.delete();
   }
