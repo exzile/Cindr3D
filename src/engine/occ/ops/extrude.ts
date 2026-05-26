@@ -256,11 +256,9 @@ export function occExtrudeFaceShapeWithInstance(
     (side2Shape as { delete?: () => void }).delete?.();
 
     if (tapersDiffer) {
-      // Taper already applied per-side; skip the unified pass below
-      (startFace as { delete?: () => void }).delete?.();
-      for (const resource of profileResources) {
-        try { resource.delete?.(); } catch { /* already freed */ }
-      }
+      // Taper already applied per-side; skip the unified pass below.
+      // Defer face/resource cleanup — see comment at end of function.
+      ownedResources.push(startFace as { delete?: () => void }, ...profileResources);
       return {
         shape: resultShape,
         ownedResources,
@@ -277,10 +275,12 @@ export function occExtrudeFaceShapeWithInstance(
   // Single taper applied to the (possibly already fused) shape
   resultShape = applyDraftAngle(resultShape, options.taperAngle ?? 0, frame.origin);
 
-  (startFace as { delete?: () => void }).delete?.();
-  for (const resource of profileResources) {
-    try { resource.delete?.(); } catch { /* already freed */ }
-  }
+  // Defer cleanup of startFace and profileResources instead of deleting them
+  // eagerly.  In the WASM build, BRepPrimAPI_MakePrism_1 may retain shallow
+  // references to the face/wire builder data; freeing them immediately can
+  // corrupt the prism's internal geometry and poison subsequent OCC operations.
+  // Keeping them alive until the body is disposed is safe and avoids the crash.
+  ownedResources.push(startFace as { delete?: () => void }, ...profileResources);
 
   return {
     shape: resultShape,

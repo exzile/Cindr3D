@@ -1,7 +1,7 @@
 import { useRef, useCallback, useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { useFrame, useThree, invalidate as invalidateFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { buildPolylineGeometry } from "../pickerGeometry";
 import { applyLinePulse } from "../pickPulse";
 import { useOccEdgePicker, type OccEdgePickResult } from "../OccEdgePicker";
@@ -28,7 +28,6 @@ interface EdgeOpEdgeHighlightProps {
 const EDGE_GUIDE_RENDER_ORDER = 1398;
 const EDGE_HOVER_RENDER_ORDER = 1402;
 const EDGE_SELECTED_RENDER_ORDER = 1403;
-const _guideOffset = new THREE.Vector3();
 
 function occEdgeId(result: OccEdgePickResult): string {
   return `occ:${result.bodyId}:${result.edgeId}`;
@@ -94,10 +93,8 @@ function buildBatchedEdgeLineGeometry(
 ): { geometry: THREE.BufferGeometry; edgeIdsBySegment: number[] } | null {
   const positions: number[] = [];
   const edgeIdsBySegment: number[] = [];
-  const syntheticEdgeIds = detectSyntheticGeneratorEdges(tess);
 
   for (const [edgeId, polyline] of tess.edgePolylines) {
-    if (syntheticEdgeIds.has(edgeId)) continue;
     if (!allowCurvedEdges && polylineIsCurved(polyline)) continue;
     const pointCount = polyline.length / 3;
     if (pointCount < 2) continue;
@@ -169,29 +166,6 @@ function straightEdgeInfo(edgeId: number | string, polyline: Float32Array): Stra
   };
 }
 
-function straightVectorEdgeInfo(edgeId: string, polyline: THREE.Vector3[]): StraightEdgeInfo | null {
-  if (polyline.length < 2) return null;
-  const first = polyline[0];
-  const last = polyline[polyline.length - 1];
-  const delta = last.clone().sub(first);
-  const length = delta.length();
-  if (length < 1e-5) return null;
-  const direction = delta.clone().normalize();
-  const maxDeviation = Math.max(length * 0.0075, 1e-4);
-  for (let index = 1; index < polyline.length - 1; index += 1) {
-    const point = polyline[index];
-    const offset = point.clone().sub(first);
-    const projected = first.clone().addScaledVector(direction, offset.dot(direction));
-    if (point.distanceTo(projected) > maxDeviation) return null;
-  }
-  return {
-    edgeId,
-    center: first.clone().add(last).multiplyScalar(0.5),
-    length,
-    direction: canonicalDirection(direction),
-  };
-}
-
 function straightEdgeGroupKey(info: StraightEdgeInfo): string {
   const dir = info.direction;
   const quantizedLength = Math.round(info.length * 1000);
@@ -203,7 +177,10 @@ function straightEdgeGroupKey(info: StraightEdgeInfo): string {
   ].join(":");
 }
 
-function detectSyntheticEdgeInfos(infos: StraightEdgeInfo[]): Set<number | string> {
+function detectSyntheticEdgeInfos(
+  infos: StraightEdgeInfo[],
+  bounds?: { min: THREE.Vector3; max: THREE.Vector3 },
+): Set<number | string> {
   const groups = new Map<string, StraightEdgeInfo[]>();
   for (const info of infos) {
     const key = straightEdgeGroupKey(info);
@@ -213,69 +190,178 @@ function detectSyntheticEdgeInfos(infos: StraightEdgeInfo[]): Set<number | strin
   }
 
   const hidden = new Set<number | string>();
+  const boundsSize = bounds ? bounds.max.clone().sub(bounds.min) : null;
+  const boundsTolerance = boundsSize ? Math.max(boundsSize.length() * 1e-4, 1e-4) : 0;
+  const isOnExteriorBounds = (info: StraightEdgeInfo) =>
+    !!bounds &&
+    (Math.abs(info.center.x - bounds.min.x) <= boundsTolerance ||
+      Math.abs(info.center.x - bounds.max.x) <= boundsTolerance ||
+      Math.abs(info.center.y - bounds.min.y) <= boundsTolerance ||
+      Math.abs(info.center.y - bounds.max.y) <= boundsTolerance ||
+      Math.abs(info.center.z - bounds.min.z) <= boundsTolerance ||
+      Math.abs(info.center.z - bounds.max.z) <= boundsTolerance);
+
   for (const group of groups.values()) {
     if (group.length < 9) continue;
 
     // Many same-length, same-direction straight OCC edges are usually ruled
     // surface generator strips from cylindrical/lofted faces. They are not
     // fillet/chamfer targets; the selectable edges are the boundary loops.
-    for (const info of group) hidden.add(info.edgeId);
+    // Preserve true exterior box/plate edges that happen to share the same
+    // direction/length as those generators.
+    for (const info of group) {
+      if (isOnExteriorBounds(info)) continue;
+      hidden.add(info.edgeId);
+    }
   }
   return hidden;
 }
 
 function detectSyntheticGeneratorEdges(tess: BRepTessellation): Set<number | string> {
   const infos: StraightEdgeInfo[] = [];
+  const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+  const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
   for (const [edgeId, polyline] of tess.edgePolylines) {
+    for (let index = 0; index + 2 < polyline.length; index += 3) {
+      min.min(new THREE.Vector3(polyline[index], polyline[index + 1], polyline[index + 2]));
+      max.max(new THREE.Vector3(polyline[index], polyline[index + 1], polyline[index + 2]));
+    }
     const info = straightEdgeInfo(edgeId, polyline);
     if (info) infos.push(info);
   }
-  return detectSyntheticEdgeInfos(infos);
+  const bounds = Number.isFinite(min.x) ? { min, max } : undefined;
+  return detectSyntheticEdgeInfos(infos, bounds);
 }
 
-function detectSyntheticTopologyEdges(topology: BodyTopology): Set<number | string> {
-  const infos = topology.edges
-    .map((edge) => straightVectorEdgeInfo(edge.id, edge.polyline))
-    .filter((info): info is StraightEdgeInfo => !!info);
-  return detectSyntheticEdgeInfos(infos);
-}
+type GuideGeometryResult = {
+  geometry: THREE.BufferGeometry;
+  edgeIdsBySegment: number[];
+  edgePolylines: Map<number, THREE.Vector3[]>;
+};
 
-function buildMeshTopologyGuideGeometry(
-  mesh: THREE.Mesh,
-  allowCurvedEdges: boolean,
-  curvedOnly = false,
-): THREE.BufferGeometry | null {
-  const topology = mesh.geometry.userData?.topology as BodyTopology | undefined;
+function mergedGuideGeometryResults(
+  ...results: Array<GuideGeometryResult | null | undefined>
+): GuideGeometryResult | null {
   const positions: number[] = [];
-  const world = mesh.matrixWorld;
-  const a = new THREE.Vector3();
-  const b = new THREE.Vector3();
+  const edgeIdsBySegment: number[] = [];
+  const edgePolylines = new Map<number, THREE.Vector3[]>();
+  const seenSegments = new Set<string>();
+  let nextEdgeId = 0;
 
-  if (!topology?.edges?.length) return null;
-  const syntheticEdgeIds = detectSyntheticTopologyEdges(topology);
-  for (const edge of topology.edges) {
-    if (syntheticEdgeIds.has(edge.id)) continue;
-    const curved = polylineIsCurved(edge.polyline);
-    if (curvedOnly && !curved) continue;
-    if (!allowCurvedEdges && curved) continue;
-    if (edge.polyline.length < 2) continue;
-    for (let index = 0; index < edge.polyline.length - 1; index += 1) {
-      a.copy(edge.polyline[index]).applyMatrix4(world);
-      b.copy(edge.polyline[index + 1]).applyMatrix4(world);
-      positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+  const quantizedPoint = (point: THREE.Vector3) =>
+    `${Math.round(point.x * 10000)},${Math.round(point.y * 10000)},${Math.round(point.z * 10000)}`;
+  const segmentKey = (a: THREE.Vector3, b: THREE.Vector3) => {
+    const qa = quantizedPoint(a);
+    const qb = quantizedPoint(b);
+    return qa < qb ? `${qa}|${qb}` : `${qb}|${qa}`;
+  };
+
+  for (const result of results) {
+    if (!result) continue;
+    for (const sourcePolyline of result.edgePolylines.values()) {
+      if (sourcePolyline.length < 2) continue;
+      const edgeId = nextEdgeId;
+      let appended = false;
+      for (let index = 0; index < sourcePolyline.length - 1; index += 1) {
+        const a = sourcePolyline[index];
+        const b = sourcePolyline[index + 1];
+        if (a.distanceToSquared(b) < 1e-10) continue;
+        const key = segmentKey(a, b);
+        if (seenSegments.has(key)) continue;
+        seenSegments.add(key);
+        positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+        edgeIdsBySegment.push(edgeId);
+        appended = true;
+      }
+      if (!appended) continue;
+      edgePolylines.set(edgeId, sourcePolyline.map((point) => point.clone()));
+      nextEdgeId += 1;
     }
   }
 
   if (positions.length === 0) return null;
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
-  return geometry;
+  return { geometry, edgeIdsBySegment, edgePolylines };
+}
+
+// Used as the visible guide for OCC bodies whose mesh has no BodyTopology userData
+// (i.e. bodies rendered directly from tessellation, not via CSG).
+// Stores world-space polylines keyed by the real OCC edge ID so handleOccClick
+// can use the edgeId directly without proximity remapping.
+function buildTessellationGuideGeometry(
+  tess: BRepTessellation,
+  meshMatrix: THREE.Matrix4,
+  allowCurvedEdges: boolean,
+): GuideGeometryResult | null {
+  const positions: number[] = [];
+  const edgeIdsBySegment: number[] = [];
+  const edgePolylines = new Map<number, THREE.Vector3[]>();
+
+  for (const [edgeId, polyline] of tess.edgePolylines) {
+    if (!allowCurvedEdges && polylineIsCurved(polyline)) continue;
+    const pointCount = polyline.length / 3;
+    if (pointCount < 2) continue;
+    const worldPts: THREE.Vector3[] = [];
+    for (let i = 0; i < pointCount; i++) {
+      worldPts.push(new THREE.Vector3(polyline[i * 3], polyline[i * 3 + 1], polyline[i * 3 + 2]).applyMatrix4(meshMatrix));
+    }
+    edgePolylines.set(edgeId, worldPts);
+    for (let index = 0; index < pointCount - 1; index++) {
+      const a = worldPts[index];
+      const b = worldPts[index + 1];
+      positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+      edgeIdsBySegment.push(edgeId);
+    }
+  }
+
+  if (positions.length === 0) return null;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+  return { geometry, edgeIdsBySegment, edgePolylines };
+}
+
+function buildMeshTopologyGuideGeometry(
+  mesh: THREE.Mesh,
+  allowCurvedEdges: boolean,
+  curvedOnly = false,
+): GuideGeometryResult | null {
+  const topology = mesh.geometry.userData?.topology as BodyTopology | undefined;
+  const positions: number[] = [];
+  const edgeIdsBySegment: number[] = [];
+  const edgePolylines = new Map<number, THREE.Vector3[]>();
+  const world = mesh.matrixWorld;
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+
+  if (!topology?.edges?.length) return null;
+  let edgeIndex = 0;
+  for (const edge of topology.edges) {
+    const curved = polylineIsCurved(edge.polyline);
+    if (curvedOnly && !curved) continue;
+    if (!allowCurvedEdges && curved) continue;
+    if (edge.polyline.length < 2) continue;
+    const worldPts = edge.polyline.map((pt) => pt.clone().applyMatrix4(world));
+    edgePolylines.set(edgeIndex, worldPts);
+    for (let index = 0; index < edge.polyline.length - 1; index += 1) {
+      a.copy(edge.polyline[index]).applyMatrix4(world);
+      b.copy(edge.polyline[index + 1]).applyMatrix4(world);
+      positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+      edgeIdsBySegment.push(edgeIndex);
+    }
+    edgeIndex += 1;
+  }
+
+  if (positions.length === 0) return null;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
+  return { geometry, edgeIdsBySegment, edgePolylines };
 }
 
 function buildMergedMeshCreaseGuideGeometry(
   mesh: THREE.Mesh,
   allowCurvedEdges: boolean,
-): THREE.BufferGeometry | null {
+): GuideGeometryResult | null {
   const source = mesh.geometry;
   const merged = mergeVertices(source, 1e-4);
   const position = merged.getAttribute("position") as THREE.BufferAttribute | undefined;
@@ -327,15 +413,22 @@ function buildMergedMeshCreaseGuideGeometry(
   // edge polylines above.
   const creaseThreshold = THREE.MathUtils.degToRad(20);
   const positions: number[] = [];
+  const edgeIdsBySegment: number[] = [];
+  const edgePolylines = new Map<number, THREE.Vector3[]>();
   const world = mesh.matrixWorld;
   const boundaryEdges: BoundaryEdge[] = [];
+  const appendedBoundaryEdges = new Set<number>();
+  let segmentId = 0;
   const appendSegment = (edge: { a: THREE.Vector3; b: THREE.Vector3 }) => {
-    const a = edge.a.clone().applyMatrix4(world);
-    const b = edge.b.clone().applyMatrix4(world);
-    positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    const wa = edge.a.clone().applyMatrix4(world);
+    const wb = edge.b.clone().applyMatrix4(world);
+    positions.push(wa.x, wa.y, wa.z, wb.x, wb.y, wb.z);
+    edgeIdsBySegment.push(segmentId);
+    edgePolylines.set(segmentId, [wa, wb]);
+    segmentId += 1;
   };
-  const appendClosedBoundaryLoops = () => {
-    if (!allowCurvedEdges || boundaryEdges.length < 8) return;
+  const appendBoundaryTopologyEdges = () => {
+    if (boundaryEdges.length === 0) return;
     const incident = new Map<string, number[]>();
     boundaryEdges.forEach((edge, index) => {
       const aList = incident.get(edge.keyA) ?? [];
@@ -364,19 +457,28 @@ function buildMergedMeshCreaseGuideGeometry(
           }
         }
       }
-      if (component.length < 8) continue;
       const componentKeys = new Set<string>();
       for (const index of component) {
         componentKeys.add(boundaryEdges[index].keyA);
         componentKeys.add(boundaryEdges[index].keyB);
       }
-      const mostlyClosed = [...componentKeys].filter((key) => (incident.get(key)?.length ?? 0) === 2).length;
-      if (mostlyClosed < componentKeys.size * 0.85) continue;
+      const degrees = [...componentKeys].map((key) => incident.get(key)?.length ?? 0);
+      const maxDegree = Math.max(...degrees);
+      if (maxDegree > 2) continue;
+      const closedCount = degrees.filter((degree) => degree === 2).length;
+      const endpointCount = degrees.filter((degree) => degree === 1).length;
+      const mostlyClosed = closedCount >= componentKeys.size * 0.85;
+      const openChain = endpointCount === 2 && closedCount === componentKeys.size - 2;
+      if (!openChain && (!allowCurvedEdges || component.length < 8 || !mostlyClosed)) continue;
       for (const index of component) {
+        if (appendedBoundaryEdges.has(index)) continue;
         const edge = boundaryEdges[index];
-        const degreeA = incident.get(edge.keyA)?.length ?? 0;
-        const degreeB = incident.get(edge.keyB)?.length ?? 0;
-        if (degreeA !== 2 || degreeB !== 2) continue;
+        if (mostlyClosed) {
+          const degreeA = incident.get(edge.keyA)?.length ?? 0;
+          const degreeB = incident.get(edge.keyB)?.length ?? 0;
+          if (degreeA !== 2 || degreeB !== 2) continue;
+        }
+        appendedBoundaryEdges.add(index);
         appendSegment(edge);
       }
     }
@@ -401,13 +503,112 @@ function buildMergedMeshCreaseGuideGeometry(
     if (!include) continue;
     appendSegment(edge);
   }
-  appendClosedBoundaryLoops();
+  appendBoundaryTopologyEdges();
   merged.dispose();
 
   if (positions.length === 0) return null;
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
-  return geometry;
+  return { geometry, edgeIdsBySegment, edgePolylines };
+}
+
+/**
+ * When a topology-based guideLine is clicked on an OCC body, the edgeId is a
+ * sequential topology index, not an OCC edge number. This resolves it by finding
+ * the tessellation edge whose midpoint (in world space) is closest to the topology
+ * edge's midpoint so fillet/chamfer commit always receives a valid OCC edge ID.
+ */
+function findClosestOccEdge(
+  tess: BRepTessellation,
+  topologyPolylineWorld: THREE.Vector3[],
+  meshMatrix: THREE.Matrix4,
+  allowCurvedEdges: boolean,
+): { edgeId: number; polylineWorld: THREE.Vector3[]; distance: number } | null {
+  if (topologyPolylineWorld.length === 0) return null;
+  const mid = topologyPolylineWorld[Math.floor(topologyPolylineWorld.length / 2)].clone();
+  const first = topologyPolylineWorld[0];
+  const last = topologyPolylineWorld[topologyPolylineWorld.length - 1];
+  const syntheticEdgeIds = detectSyntheticGeneratorEdges(tess);
+  let bestId: number | null = null;
+  let bestDist = Infinity;
+  for (const [edgeId, pts] of tess.edgePolylines) {
+    if (syntheticEdgeIds.has(edgeId)) continue;
+    if (!allowCurvedEdges && polylineIsCurved(pts)) continue;
+    const count = pts.length / 3;
+    const ci = Math.floor(count / 2);
+    const tessFirst = new THREE.Vector3(pts[0], pts[1], pts[2]).applyMatrix4(meshMatrix);
+    const tessMid = new THREE.Vector3(pts[ci * 3], pts[ci * 3 + 1], pts[ci * 3 + 2]).applyMatrix4(meshMatrix);
+    const tessLast = new THREE.Vector3(
+      pts[(count - 1) * 3],
+      pts[(count - 1) * 3 + 1],
+      pts[(count - 1) * 3 + 2],
+    ).applyMatrix4(meshMatrix);
+    const sameDirection = first.distanceTo(tessFirst) + last.distanceTo(tessLast);
+    const reversed = first.distanceTo(tessLast) + last.distanceTo(tessFirst);
+    const endpointDist = Math.min(sameDirection, reversed);
+    const dist = mid.distanceTo(tessMid) + endpointDist * 0.5;
+    if (dist < bestDist) { bestDist = dist; bestId = edgeId; }
+  }
+  if (bestId === null) return null;
+  const pts = tess.edgePolylines.get(bestId)!;
+  const count = pts.length / 3;
+  const polylineWorld: THREE.Vector3[] = [];
+  for (let i = 0; i < count; i++) {
+    polylineWorld.push(new THREE.Vector3(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]).applyMatrix4(meshMatrix));
+  }
+  return { edgeId: bestId, polylineWorld, distance: bestDist };
+}
+
+type ResolvedOccEdgeSelection = {
+  bodyId: string;
+  edgeId: number;
+  polylineWorld: THREE.Vector3[];
+};
+
+function findClosestLiveOccEdge(
+  topologyPolylineWorld: THREE.Vector3[],
+  allowCurvedEdges: boolean,
+  preferredBodyId?: string,
+  preferredFeatureId?: string,
+  meshMatrix = new THREE.Matrix4(),
+): ResolvedOccEdgeSelection | null {
+  const candidates: Array<{ bodyId: string; matrix: THREE.Matrix4 }> = [];
+  const seen = new Set<string>();
+  const addCandidate = (bodyId: string | undefined, matrix: THREE.Matrix4) => {
+    if (!bodyId || seen.has(bodyId)) return;
+    const body = globalBRepBodyRegistry.get(bodyId);
+    if (!body?._tessellation) return;
+    seen.add(bodyId);
+    candidates.push({ bodyId, matrix });
+  };
+
+  addCandidate(preferredBodyId, meshMatrix);
+  if (preferredFeatureId) {
+    for (const body of globalBRepBodyRegistry.getByFeature(preferredFeatureId)) {
+      addCandidate(body.id, meshMatrix);
+    }
+  }
+  if (candidates.length === 0) {
+    for (const bodyId of globalBRepBodyRegistry.snapshot().bodyIds) {
+      addCandidate(bodyId, new THREE.Matrix4());
+    }
+  }
+
+  let best: ResolvedOccEdgeSelection | null = null;
+  let bestDistance = Infinity;
+  for (const candidate of candidates) {
+    const body = globalBRepBodyRegistry.get(candidate.bodyId);
+    if (!body?._tessellation) continue;
+    const edge = findClosestOccEdge(body._tessellation, topologyPolylineWorld, candidate.matrix, allowCurvedEdges);
+    if (!edge || edge.distance >= bestDistance) continue;
+    bestDistance = edge.distance;
+    best = {
+      bodyId: candidate.bodyId,
+      edgeId: edge.edgeId,
+      polylineWorld: edge.polylineWorld,
+    };
+  }
+  return best;
 }
 
 export default function EdgeOpEdgeHighlight({
@@ -446,7 +647,7 @@ export default function EdgeOpEdgeHighlight({
         color: 0xff6a00,
         transparent: true,
         opacity: 1,
-        depthTest: true,
+        depthTest: false,
         depthWrite: false,
         toneMapped: false,
       }),
@@ -477,8 +678,11 @@ export default function EdgeOpEdgeHighlight({
   const selectedLinesRef = useRef<Map<string, THREE.Line>>(new Map());
   const selectedEdgesDataRef = useRef<Map<string, THREE.Vector3[]>>(new Map());
   const lastMigrationKeyRef = useRef<string | null>(null);
+  // Feature IDs that have already been attempted in migration (success or crash).
+  // Prevents the infinite retry loop when OCC WASM crashes on a legacy feature.
+  const attemptedMigrationIdsRef = useRef<Set<string>>(new Set());
   const cursorOnRef = useRef(false);
-  const { scene: _scene, gl, camera } = useThree();
+  const { scene: _scene, gl, invalidate: invalidateCanvas } = useThree();
   const features = useCADStore((state) => state.features);
   const sketches = useCADStore((state) => state.sketches);
 
@@ -490,14 +694,21 @@ export default function EdgeOpEdgeHighlight({
         .join("|"),
     [features],
   );
-  const visibleBodyFeatureIds = useMemo(
+
+  // Compute a stable string key so that visibleBodyFeatureIds is only a new
+  // Set reference when the actual IDs change — not on every features re-render.
+  const visibleBodyFeatureIdsKey = useMemo(
     () =>
-      new Set(
-        features
-          .filter((feature) => feature.visible && !feature.suppressed && feature.type !== "sketch")
-          .map((feature) => feature.id),
-      ),
+      features
+        .filter((feature) => feature.visible && !feature.suppressed && feature.type !== "sketch")
+        .map((feature) => feature.id)
+        .sort()
+        .join(","),
     [features],
+  );
+  const visibleBodyFeatureIds = useMemo(
+    () => new Set(visibleBodyFeatureIdsKey ? visibleBodyFeatureIdsKey.split(",") : []),
+    [visibleBodyFeatureIdsKey],
   );
 
   const edgeIdSet = useMemo(() => new Set(edgeIds), [edgeIds]);
@@ -532,29 +743,94 @@ export default function EdgeOpEdgeHighlight({
   }, [_scene, gl]);
 
   const handleOccHover = useCallback((result: OccEdgePickResult | null) => {
-    if (result && !allowCurvedEdges) {
-      const body = globalBRepBodyRegistry.get(result.bodyId);
-      const polyline = body?._tessellation?.edgePolylines.get(result.edgeId);
-      if (polyline && polylineIsCurved(polyline)) {
+    if (result && !result.bodyId) {
+      const stored = result.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined;
+      const pts = stored?.get(result.edgeId);
+      const featureId = result.mesh.userData['sourceFeatureId'] as string | undefined;
+      const meshMatrix = (result.mesh.userData['meshMatrix'] as THREE.Matrix4 | undefined) ?? new THREE.Matrix4();
+      if (!pts || !findClosestLiveOccEdge(pts, allowCurvedEdges, undefined, featureId, meshMatrix)) {
         occHoverRef.current = null;
-        invalidateFrame();
+        invalidateCanvas();
         return;
       }
     }
+    if (result && !allowCurvedEdges) {
+      // guideLine (topology) has edgePolylines; pickLine (OCC tessellation) does not.
+      const isTopologyHit = result.mesh.userData['edgePolylines'] !== undefined;
+      if (isTopologyHit) {
+        const stored = result.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined;
+        const pts = stored?.get(result.edgeId);
+        if (pts && polylineIsCurved(pts)) {
+          occHoverRef.current = null;
+          invalidateCanvas();
+          return;
+        }
+      } else {
+        const body = globalBRepBodyRegistry.get(result.bodyId);
+        const occPolyline = body?._tessellation?.edgePolylines.get(result.edgeId);
+        if (occPolyline && polylineIsCurved(occPolyline)) {
+          occHoverRef.current = null;
+          invalidateCanvas();
+          return;
+        }
+      }
+    }
     occHoverRef.current = result;
-    invalidateFrame();
-  }, [allowCurvedEdges]);
+    invalidateCanvas();
+  }, [allowCurvedEdges, invalidateCanvas]);
 
   const handleOccClick = useCallback((result: OccEdgePickResult) => {
-    const polyline = getOccEdgePolyline(result);
-    if (!polyline) return;
+
+    // guideLine (topology) has edgePolylines; pickLine (OCC tessellation) does not.
+    const isTopologyHit = result.mesh.userData['edgePolylines'] !== undefined;
+    let polyline: THREE.Vector3[] | null = null;
+    let displayPolyline: THREE.Vector3[] | null = null;
+    let resolvedBodyId = result.bodyId;
+    let resolvedEdgeId = result.edgeId;
+    let sourceBody = globalBRepBodyRegistry.get(result.bodyId);
+    let visualSourceFeatureId: string | undefined;
+
+    if (!isTopologyHit) {
+      // pickLine hit: OCC edge ID is already correct — use tessellation directly.
+      polyline = getOccEdgePolyline(result);
+      displayPolyline = polyline;
+    }
+
+    if (!polyline) {
+      // topology guideLine hit (or OCC lookup failed): get stored world-space polyline.
+      const stored = result.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined;
+      polyline = stored?.get(result.edgeId) ?? null;
+      displayPolyline = polyline;
+
+      // For OCC bodies, resolve the topology index → nearest OCC tessellation edge ID
+      // so that fillet/chamfer commit always receives a valid numeric OCC edge number.
+      if (polyline) {
+        const meshMatrix = (result.mesh.userData['meshMatrix'] as THREE.Matrix4 | undefined) ?? new THREE.Matrix4();
+        const featureId = result.mesh.userData['sourceFeatureId'] as string | undefined;
+        const occ = sourceBody?._tessellation
+          ? findClosestOccEdge(sourceBody._tessellation, polyline, meshMatrix, allowCurvedEdges)
+          : findClosestLiveOccEdge(polyline, allowCurvedEdges, resolvedBodyId, featureId, meshMatrix);
+        if (occ) {
+          polyline = occ.polylineWorld;
+          resolvedEdgeId = occ.edgeId;
+          if ('bodyId' in occ) {
+            if (!resolvedBodyId && featureId) visualSourceFeatureId = featureId;
+            resolvedBodyId = occ.bodyId;
+            sourceBody = globalBRepBodyRegistry.get(resolvedBodyId);
+          }
+        }
+      }
+    }
+    if (!polyline || !sourceBody || !resolvedBodyId) return;
     if (!allowCurvedEdges && polylineIsCurved(polyline)) return;
-    const id = occEdgeId(result);
+    const id = visualSourceFeatureId
+      ? `occ:${resolvedBodyId}:${resolvedEdgeId}:feature:${visualSourceFeatureId}`
+      : `occ:${resolvedBodyId}:${resolvedEdgeId}`;
     if (edgeIdSet.has(id)) {
       removeEdge(id);
       return;
     }
-    selectedEdgesDataRef.current.set(id, polyline);
+    selectedEdgesDataRef.current.set(id, displayPolyline ?? polyline);
     addEdge(id);
   }, [addEdge, removeEdge, edgeIdSet, allowCurvedEdges]);
 
@@ -569,20 +845,31 @@ export default function EdgeOpEdgeHighlight({
     let cancelled = false;
 
     const migrate = (occ: Awaited<ReturnType<typeof getOcc>>) => {
+      // Key off only feature IDs so mesh-UUID churn from CSG fallback doesn't
+      // cause retries. Once every current extrude ID has been attempted, stop.
+      const pendingIds = features
+        .filter((f) => f.type === "extrude" && !attemptedMigrationIdsRef.current.has(f.id))
+        .map((f) => f.id);
+      if (pendingIds.length === 0) return;
+
       const legacyKey = features
         .filter((feature) => feature.type === "extrude")
-        .map((feature) => {
-          const bodyId = feature.mesh instanceof THREE.Mesh ? feature.mesh.userData.brepBodyId ?? "" : "";
-          return `${feature.id}:${feature.timestamp}:${feature.visible}:${feature.suppressed}:${bodyId}`;
-        })
+        .map((feature) => feature.id)
         .join("|");
       if (!legacyKey || legacyKey === lastMigrationKeyRef.current) return;
+
       const migrated = migrateLegacyExtrudeFeatures(features, sketches, occ);
+
       const changed = migrated.some((feature, index) => feature !== features[index]);
       if (changed) {
-        lastMigrationKeyRef.current = legacyKey;
         useCADStore.setState({ features: migrated });
         return;
+      }
+      // Only mark a no-change pass as attempted. If migration changed any
+      // upstream feature, downstream booleans may become migratable on the
+      // next render and must not be blocked by this crash guard.
+      for (const id of pendingIds) {
+        attemptedMigrationIdsRef.current.add(id);
       }
       lastMigrationKeyRef.current = legacyKey;
     };
@@ -632,11 +919,41 @@ export default function EdgeOpEdgeHighlight({
         const batched = resolved
           ? buildBatchedEdgeLineGeometry(resolved.tess, allowCurvedEdges)
           : null;
-        const topologyGuideGeometry = buildMeshTopologyGuideGeometry(mesh, allowCurvedEdges);
-        const fallbackGuideGeometry =
-          topologyGuideGeometry ?? (!resolved ? buildMergedMeshCreaseGuideGeometry(mesh, allowCurvedEdges) : null);
-        if (!batched && !fallbackGuideGeometry) return;
-        if (batched) {
+
+        // Visible orange guide — always built from topology/crease so every boundary
+        // edge of the mesh is shown regardless of OCC tessellation filtering.
+        // edgeIdsBySegment is always set so the picker detects it for hover/cursor.
+        // meshMatrix lets handleOccClick map a topology-index hit back to the nearest
+        // OCC tessellation edge ID when an OCC body is present.
+        const topologyGuideResult = buildMeshTopologyGuideGeometry(mesh, allowCurvedEdges);
+        const renderedGuideResult = buildMergedMeshCreaseGuideGeometry(mesh, allowCurvedEdges);
+        const tessellationGuideResult = resolved
+          ? buildTessellationGuideGeometry(resolved.tess, mesh.matrixWorld, allowCurvedEdges)
+          : null;
+        const fallbackGuideResult = allowCurvedEdges
+          ? mergedGuideGeometryResults(topologyGuideResult, tessellationGuideResult, renderedGuideResult)
+          : topologyGuideResult ?? renderedGuideResult ?? tessellationGuideResult;
+        if (!batched && !fallbackGuideResult) return;
+        if (fallbackGuideResult) {
+          const guideLine = new THREE.LineSegments(fallbackGuideResult.geometry, allEdgesMat);
+          guideLine.userData.edgeIdsBySegment = fallbackGuideResult.edgeIdsBySegment;
+          guideLine.userData.edgePolylines = fallbackGuideResult.edgePolylines;
+          guideLine.userData.brepBodyId = resolved?.bodyId ?? "";
+          guideLine.userData.sourceFeatureId = featureId ?? "";
+          guideLine.userData.meshMatrix = mesh.matrixWorld.clone();
+          if (resolved?.bodyId) {
+            guideLine.userData.brepBodyId = resolved.bodyId;
+          }
+          guideLine.frustumCulled = false;
+          guideLine.matrixAutoUpdate = true;
+          guideLine.renderOrder = EDGE_GUIDE_RENDER_ORDER;
+          _scene.add(guideLine);
+          lines.push(guideLine);
+        }
+        // Invisible OCC tessellation pick target — carries exact OCC edge IDs needed
+        // when no visible guide could be built. If both exist, the visible guide wins
+        // so selected feedback matches the line the user actually clicked.
+        if (batched && !fallbackGuideResult) {
           const pickLine = new THREE.LineSegments(batched.geometry, pickEdgesMat);
           pickLine.userData.edgeIdsBySegment = batched.edgeIdsBySegment;
           pickLine.userData.brepBodyId = resolved!.bodyId;
@@ -646,17 +963,9 @@ export default function EdgeOpEdgeHighlight({
           _scene.add(pickLine);
           lines.push(pickLine);
         }
-        if (fallbackGuideGeometry) {
-          const guideLine = new THREE.LineSegments(fallbackGuideGeometry, allEdgesMat);
-          guideLine.frustumCulled = false;
-          guideLine.matrixAutoUpdate = true;
-          guideLine.renderOrder = EDGE_GUIDE_RENDER_ORDER;
-          _scene.add(guideLine);
-          lines.push(guideLine);
-        }
       });
       allEdgeLinesRef.current = lines;
-      invalidateFrame();
+      invalidateCanvas();
       return lines.length;
     };
 
@@ -689,7 +998,7 @@ export default function EdgeOpEdgeHighlight({
       }
       allEdgeLinesRef.current = [];
     };
-  }, [enabled, _scene, allEdgesMat, pickEdgesMat, allowCurvedEdges, edgeSourceSignature, visibleBodyFeatureIds]);
+  }, [enabled, _scene, allEdgesMat, pickEdgesMat, allowCurvedEdges, edgeSourceSignature, visibleBodyFeatureIds, invalidateCanvas]);
 
   useFrame(({ scene, invalidate }) => {
     if (!enabled) {
@@ -721,11 +1030,6 @@ export default function EdgeOpEdgeHighlight({
       invalidate();
     }
 
-    const guideOffset = camera.getWorldDirection(_guideOffset).multiplyScalar(-0.12);
-    for (const line of allEdgeLinesRef.current) {
-      line.position.copy(guideOffset);
-    }
-
     const wantCursor = !!occHoverRef.current;
     if (wantCursor !== cursorOnRef.current) {
       gl.domElement.style.cursor = wantCursor ? "crosshair" : "";
@@ -737,7 +1041,10 @@ export default function EdgeOpEdgeHighlight({
       const id = occEdgeId(occHover);
       if (id !== renderedHoverIdRef.current || !hoverLineRef.current) {
         renderedHoverIdRef.current = id;
-        const hPts = getOccEdgePolyline(occHover);
+        // OCC body: get polyline from tessellation; topology guideLine: fall back to stored polyline.
+        const hPts = getOccEdgePolyline(occHover)
+          ?? (occHover.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined)?.get(occHover.edgeId)
+          ?? null;
         if (hPts) {
           if (!hoverLineRef.current) {
             const line = new THREE.Line(buildPolylineGeometry(hPts), hoverMat);
@@ -779,7 +1086,7 @@ export default function EdgeOpEdgeHighlight({
 
     const now = performance.now();
     if (allEdgeLinesRef.current.length > 0) {
-      allEdgesMat.opacity = 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(now * 0.006));
+      allEdgesMat.opacity = 0.82 + 0.18 * (0.5 + 0.5 * Math.sin(now * 0.006));
     }
     if (hoverLineRef.current) applyLinePulse(hoverLineRef.current, 1, now);
     selectedLinesRef.current.forEach((line) => {

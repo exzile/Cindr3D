@@ -21,6 +21,7 @@ export function storedEdgeIds(value: unknown): string[] {
 export type OccEdgeSelection = {
   bodyId: string;
   edgeIds: number[];
+  sourceFeatureId?: string;
 };
 
 /**
@@ -34,10 +35,13 @@ export function parseOccEdgeSelection(edgeIds: string[]): OccEdgeSelection | nul
     if (parts[0] !== 'occ' || !parts[1]) return null;
     const edgeId = Number(parts[2]);
     if (!Number.isInteger(edgeId)) return null;
-    return { bodyId: parts[1], edgeId };
+    const sourceFeatureId = parts[3] === 'feature' && parts[4] ? parts[4] : undefined;
+    return { bodyId: parts[1], edgeId, sourceFeatureId };
   });
   if (parsed.some((item) => item === null)) return null;
   const bodyId = parsed[0]!.bodyId;
   if (!parsed.every((item) => item!.bodyId === bodyId)) return null;
-  return { bodyId, edgeIds: parsed.map((item) => item!.edgeId) };
+  const sourceFeatureId = parsed[0]!.sourceFeatureId;
+  if (!parsed.every((item) => item!.sourceFeatureId === sourceFeatureId)) return null;
+  return { bodyId, edgeIds: parsed.map((item) => item!.edgeId), sourceFeatureId };
 }

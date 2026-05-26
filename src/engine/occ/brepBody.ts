@@ -153,12 +153,44 @@ function disposeTopologyMap(handles: Map<number, BRepTopologyHandle>): void {
   handles.clear();
 }
 
+/**
+ * Collect unique topology sub-shapes using TopExp.MapShapes (deduplicated via
+ * OCC's IsSame identity).  Falls back to TopExp_Explorer when MapShapes is
+ * unavailable.
+ *
+ * Without dedup, TopExp_Explorer visits shared edges/vertices once per
+ * adjacent face, inflating the edge count.  The synthetic-edge filter in
+ * EdgeOpEdgeHighlight then incorrectly hides real edges when the duplicate
+ * count pushes a direction-group over its threshold.
+ */
 function collectTopologyHandles(
   oc: OcctRaw,
   rawShape: unknown,
   shapeType: unknown,
   wrapShape: (shape: { delete(): void }) => void,
 ): void {
+  // Prefer MapShapes for dedup — same approach as fillet.ts / chamfer.ts.
+  if (typeof oc.TopTools_IndexedMapOfShape_1 === 'function' && oc.TopExp?.MapShapes_1) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const map = new oc.TopTools_IndexedMapOfShape_1() as any;
+    try {
+      oc.TopExp.MapShapes_1(rawShape, shapeType, map);
+      const count: number = map.Extent();
+      for (let i = 1; i <= count; i++) {
+        const shape = map.FindKey_1(i);
+        try {
+          wrapShape(shape);
+        } finally {
+          shape.delete?.();
+        }
+      }
+    } finally {
+      map.delete();
+    }
+    return;
+  }
+
+  // Fallback: raw explorer (no dedup).
   const explorer = new oc.TopExp_Explorer_2(rawShape, shapeType, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
   try {
     while (explorer.More()) {

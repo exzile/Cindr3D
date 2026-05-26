@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ChevronRight, ChevronDown, Eye, EyeOff, FolderOpen } from 'lucide-react';
-import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
 import { BodyNode } from './BodyNode';
 
@@ -13,44 +12,12 @@ const EMPTY_IDS: string[] = [];
 export function BodiesFolder({ componentId }: { componentId?: string }) {
   const bodies = useComponentStore((s) => s.bodies);
   const components = useComponentStore((s) => s.components);
-  const activeComponentId = useComponentStore((s) => s.activeComponentId);
-  const features = useCADStore((s) => s.features);
-  const addBody = useComponentStore((s) => s.addBody);
-  const addFeatureToBody = useComponentStore((s) => s.addFeatureToBody);
   const componentBodyIds = useComponentStore((s) => (
     componentId ? (s.components[componentId]?.bodyIds ?? EMPTY_IDS) : EMPTY_IDS
   ));
+  const activeComponentId = useComponentStore((s) => s.activeComponentId);
   const toggleVis = useComponentStore((s) => s.toggleBodyVisibility);
   const [expanded, setExpanded] = useState(true);
-
-  useEffect(() => {
-    if (!componentId || !components[componentId]) return;
-
-    let recoveredCount = 0;
-    for (const feature of features) {
-      if (feature.type !== 'extrude') continue;
-      if ((feature.params?.operation as string | undefined) !== 'new-body') continue;
-      if (feature.suppressed || feature.visible === false) continue;
-
-      const featureComponentId = feature.componentId;
-      const belongsHere =
-        featureComponentId === componentId ||
-        (componentId === activeComponentId && (!featureComponentId || !components[featureComponentId]));
-      if (!belongsHere) continue;
-
-      const alreadyIndexed = Object.values(bodies).some((body) => body.featureIds.includes(feature.id));
-      if (alreadyIndexed) continue;
-
-      const bodyName = feature.bodyKind === 'surface'
-        ? `Surface ${Object.keys(bodies).length + recoveredCount + 1}`
-        : `Body ${Object.keys(bodies).length + recoveredCount + 1}`;
-      const bodyId = addBody(componentId, bodyName);
-      if (bodyId) {
-        addFeatureToBody(bodyId, feature.id);
-        recoveredCount += 1;
-      }
-    }
-  }, [activeComponentId, addBody, addFeatureToBody, bodies, componentId, components, features]);
 
   const bodyIds = Object.keys(bodies).filter((id) => (
     !componentId ||

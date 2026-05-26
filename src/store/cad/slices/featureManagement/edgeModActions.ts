@@ -15,6 +15,7 @@ import type { BRepBody } from "../../../../engine/occ/brepBody";
 import { occChamferWithInstance } from "../../../../engine/occ/ops/chamfer";
 import { collectTangentChainEdges } from "../../../../engine/occ/ops/adjacency";
 import { getOccSync } from "../../../../engine/occ/loader";
+import { migrateLegacyExtrudeFeatures } from "../../../../engine/occ/legacyMigration";
 import { createRegisteredOccMesh } from "../../../../engine/occ/registeredMesh";
 import { storedEdgeIds, parseOccEdgeSelection } from "../../../../utils/occEdgeUtils";
 import { disposeMeshDeferred } from "../../../../engine/occ/picking";
@@ -255,6 +256,59 @@ export function createEdgeModActions({
     return true;
   };
 
+  const bodyForFeature = (feature: CADState['features'][number] | undefined): BRepBody | undefined => {
+    if (!feature) return undefined;
+    const meshBodyId =
+      feature.mesh instanceof THREE.Mesh
+        ? (feature.mesh.userData['brepBodyId'] as string | undefined)
+        : undefined;
+    if (meshBodyId) {
+      const body = globalBRepBodyRegistry.get(meshBodyId);
+      if (body) return body;
+    }
+    return globalBRepBodyRegistry.getByFeature(feature.id)[0];
+  };
+
+  const resolveLiveSourceBody = (
+    selectionBodyId: string,
+    selectionEdgeIds: number[],
+    featureId: string,
+  ): BRepBody | undefined => {
+    const direct = globalBRepBodyRegistry.get(selectionBodyId);
+    if (direct) return direct;
+
+    const matchingLiveBody = globalBRepBodyRegistry
+      .snapshot()
+      .bodyIds
+      .map((bodyId) => globalBRepBodyRegistry.get(bodyId))
+      .find((body): body is BRepBody =>
+        !!body && selectionEdgeIds.every((edgeId) => body.edgeIds.has(edgeId)),
+      );
+    if (matchingLiveBody) return matchingLiveBody;
+
+    const features = get().features;
+    const feature = features.find((candidate) => candidate.id === featureId);
+    const currentBody = bodyForFeature(feature);
+    if (currentBody) return currentBody;
+
+    const sourceFeatureId =
+      (feature?.params.sourceFeatureId as string | undefined) ??
+      (feature?.params.parentFeatureId as string | undefined) ??
+      (feature?.parentFeatureId as string | undefined) ??
+      (feature?.params.targetId as string | undefined);
+    const sourceBody = bodyForFeature(features.find((candidate) => candidate.id === sourceFeatureId));
+    if (sourceBody) return sourceBody;
+
+    const featureIndex = features.findIndex((candidate) => candidate.id === featureId);
+    for (let index = featureIndex - 1; index >= 0; index -= 1) {
+      const candidate = features[index];
+      if (candidate.type === 'sketch' || candidate.suppressed) continue;
+      const body = bodyForFeature(candidate);
+      if (body) return body;
+    }
+    return undefined;
+  };
+
   const applyOccEdgeModification = ({
     tool,
     featureId,
@@ -295,7 +349,13 @@ export function createEdgeModActions({
         "Only OCC topology edge selections are supported on this branch",
       );
     }
-    const srcBody = globalBRepBodyRegistry.get(selection.bodyId);
+    let srcBody = resolveLiveSourceBody(selection.bodyId, selection.edgeIds, featureId);
+    if (!srcBody) {
+      const migrated = migrateLegacyExtrudeFeatures(get().features, get().sketches, occ);
+      const changed = migrated.some((feature, index) => feature !== get().features[index]);
+      if (changed) set({ features: migrated });
+      srcBody = resolveLiveSourceBody(selection.bodyId, selection.edgeIds, featureId);
+    }
     if (!srcBody) {
       return markOccEdgeModificationError(featureId, tool, "Selected OCC source body is no longer available");
     }

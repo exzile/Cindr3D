@@ -7,6 +7,9 @@ import type { CADState } from './state';
 function rebuildExtrudeBodies(state: CADState) {
   const componentStore = useComponentStore.getState();
   const existingBodyIds = new Set(Object.keys(componentStore.bodies));
+  const indexedFeatureIds = new Set(
+    Object.values(componentStore.bodies).flatMap((b) => b.featureIds),
+  );
   const createdThisRun = new Set<string>();
 
   for (const feature of state.features) {
@@ -14,6 +17,7 @@ function rebuildExtrudeBodies(state: CADState) {
     const op = (feature.params?.operation as string) ?? 'new-body';
     if (op !== 'new-body') continue;
     if (feature.bodyId && (existingBodyIds.has(feature.bodyId) || createdThisRun.has(feature.bodyId))) continue;
+    if (indexedFeatureIds.has(feature.id)) continue;
 
     const parentId = componentStore.activeComponentId ?? componentStore.rootComponentId;
     const bodyLabel =

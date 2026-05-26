@@ -621,14 +621,14 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
         const occ = getOccSync() ?? await getOcc();
         if (occ) {
           try {
-            const shapes = GeometryEngine.sketchToProfileShapesFlat(sketchForOp);
-            const firstShape = shapes[0];
-            if (firstShape) {
+            const shapes = GeometryEngine.sketchToProfileShapesFlat(sourceSketch);
+            const firstShape = profileIndex !== undefined ? shapes[profileIndex] : shapes[0];
+            // Profiles with holes cause a WASM memory fault in BRepBuilderAPI_MakeEdge_3;
+            // skip OCC and let the CSG fallback handle them correctly.
+            if (firstShape && firstShape.holes.length === 0) {
               const sketchProfile: SketchProfile = {
                 outer: firstShape.getPoints(OCC_PROFILE_POINT_COUNT),
-                holes: firstShape.holes
-                  .map((h) => h.getPoints(OCC_PROFILE_POINT_COUNT))
-                  .filter((pts) => pts.length >= 3),
+                holes: [],
               };
               const frame = createOccPlaneFrameFromSketch(sketchForOp);
               if (extrudeStartType === 'offset' && Math.abs(extrudeStartOffset) > 0.001) {
@@ -691,14 +691,12 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
           }
           if (occTarget) {
             try {
-              const shapes = GeometryEngine.sketchToProfileShapesFlat(sketchForOp);
-              const firstShape = shapes[0];
-              if (firstShape) {
+              const shapes = GeometryEngine.sketchToProfileShapesFlat(sourceSketch);
+              const firstShape = profileIndex !== undefined ? shapes[profileIndex] : shapes[0];
+              if (firstShape && firstShape.holes.length === 0) {
                 const sketchProfile: SketchProfile = {
                   outer: firstShape.getPoints(96),
-                  holes: firstShape.holes
-                    .map((h) => h.getPoints(96))
-                    .filter((pts) => pts.length >= 3),
+                  holes: [],
                 };
                 const frame = createOccPlaneFrameFromSketch(sketchForOp);
                 if (extrudeStartType === 'offset' && Math.abs(extrudeStartOffset) > 0.001) {
@@ -887,14 +885,12 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
 
           if (targetBRepBody && occTargetFeature) {
             try {
-              const shapes = GeometryEngine.sketchToProfileShapesFlat(sketchForOp);
-              const firstShape = shapes[0];
-              if (firstShape) {
+              const shapes = GeometryEngine.sketchToProfileShapesFlat(sourceSketch);
+              const firstShape = profileIndex !== undefined ? shapes[profileIndex] : shapes[0];
+              if (firstShape && firstShape.holes.length === 0) {
                 const sketchProfile: SketchProfile = {
                   outer: firstShape.getPoints(OCC_PROFILE_POINT_COUNT),
-                  holes: firstShape.holes
-                    .map((h) => h.getPoints(OCC_PROFILE_POINT_COUNT))
-                    .filter((pts) => pts.length >= 3),
+                  holes: [],
                 };
                 const frame = createOccPlaneFrameFromSketch(sketchForOp);
 

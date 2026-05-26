@@ -20,15 +20,20 @@
  */
 
 import * as THREE from 'three';
-import type { Feature, Sketch } from '../../types/cad';
+import type { Feature, Sketch, SketchEntity } from '../../types/cad';
 import { GeometryEngine } from '../GeometryEngine';
 import { getOccSync } from './loader';
 import { createOccPlaneFrameFromSketch } from './plane';
 import { globalBRepBodyRegistry } from './globalRegistry';
-import { occExtrudeWithInstance } from './ops/extrude';
 import {
+  occExtrudeShapeWithInstance,
+  occExtrudeWithInstance,
+  occExtrudeFaceShapeWithInstance,
+} from './ops/extrude';
+import { sketchEntitiesToWire, wiresToFace } from './sketchEntityToWire';
+import {
+  performOccBooleanWithRawTool,
   performOccBooleanWithInstance,
-  performOccBooleanMultiWithInstance,
   type OccBooleanOperation,
 } from './ops/booleanCore';
 import { tessellateEdgesOnly, tessellateWithInstance, tessellationToGeometry } from './tessellate';
@@ -40,6 +45,21 @@ import { OCC_PROFILE_POINT_COUNT, OCC_BOOLEAN_VERSION } from '../../utils/occCon
 
 function pushMigrationDebug(entry: unknown): void {
   void entry;
+}
+
+/**
+ * Quick WASM health probe — creates and destroys a trivial gp_Pnt to verify
+ * the OCC WASM heap is not corrupted.  Returns false if the heap is bad.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function isOccWasmHealthy(oc: any): boolean {
+  try {
+    const pt = new oc.gp_Pnt_3(0, 0, 0);
+    pt.delete();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Shared material for migrated feature meshes (same style as new-commit OCC path). */
@@ -115,7 +135,8 @@ function hasLiveOccBody(feature: Feature): boolean {
 function featureHasRegisteredOccBody(feature: Feature | undefined): boolean {
   const mesh = feature?.mesh as THREE.Mesh | undefined;
   const bodyId = mesh?.isMesh ? (mesh.userData['brepBodyId'] as string | undefined) : undefined;
-  return !!bodyId && !!globalBRepBodyRegistry.get(bodyId);
+  return (!!bodyId && !!globalBRepBodyRegistry.get(bodyId)) ||
+    (!!feature && globalBRepBodyRegistry.getByFeature(feature.id).length > 0);
 }
 
 function isBooleanExtrudeOperation(feature: Feature): boolean {
@@ -135,7 +156,8 @@ function stripMigrationDebug(feature: Feature): Feature {
 function buildSketchProfile(sketch: Sketch, pointCount = OCC_PROFILE_POINT_COUNT): SketchProfile | null {
   const shapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
   const first = shapes[0];
-  return first ? shapeToSketchProfile(first, pointCount) : null;
+  if (!first || first.holes.length > 0) return null;
+  return shapeToSketchProfile(first, pointCount);
 }
 
 function pathPoints(path: THREE.Path, pointCount: number): THREE.Vector2[] {
@@ -185,6 +207,34 @@ function shapeCentroid(points: THREE.Vector2[]): THREE.Vector2 {
   const center = new THREE.Vector2();
   for (const point of points) center.add(point);
   return points.length > 0 ? center.divideScalar(points.length) : center;
+}
+
+function normalizeCircleLikeProfile(profile: SketchProfile): SketchProfile {
+  if (profile.holes.length > 0 || profile.outer.length < 8) return profile;
+  const xs = profile.outer.map((point) => point.x);
+  const ys = profile.outer.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const width = maxX - minX;
+  const height = maxY - minY;
+  const aspect = Math.max(width, height) / Math.max(Math.min(width, height), 1e-6);
+  pushMigrationDebug({ phase: 'circle-profile-bounds', points: profile.outer.length, width, height, aspect });
+  if (!Number.isFinite(aspect) || aspect > 1.35) return profile;
+  const center = new THREE.Vector2((minX + maxX) / 2, (minY + maxY) / 2);
+  const radius = (width + height) / 4;
+  if (!Number.isFinite(radius) || radius <= 1e-6) return profile;
+  pushMigrationDebug({ phase: 'circle-profile-normalized', points: profile.outer.length, radius, aspect });
+  const segmentCount = Math.max(32, Math.min(64, profile.outer.length * 2));
+  const outer = Array.from({ length: segmentCount }, (_, index) => {
+    const angle = index / segmentCount * Math.PI * 2;
+    return new THREE.Vector2(
+      center.x + Math.cos(angle) * radius,
+      center.y + Math.sin(angle) * radius,
+    );
+  });
+  return { outer, holes: [] };
 }
 
 function pointInPolygon(point: THREE.Vector2, polygon: THREE.Vector2[]): boolean {
@@ -252,7 +302,45 @@ function buildProfileSketchProfileFromIndex(sketch: Sketch, profileIndex: number
     if (profile) return profile;
   }
   const shape = GeometryEngine.sketchToProfileShapesFlat(sketch)[profileIndex];
-  return shape ? shapeToSketchProfile(shape, 32) : null;
+  // Profiles with holes crash BRepBuilderAPI_MakeEdge_3 in WASM; skip OCC for them.
+  if (!shape || shape.holes.length > 0) return null;
+  return shapeToSketchProfile(shape, 32);
+}
+
+function buildAtomicSketchProfileFromIndex(sketch: Sketch, profileIndex: number): SketchProfile | null {
+  const profileSketch = GeometryEngine.createProfileSketch(sketch, profileIndex);
+  if (profileSketch) {
+    const profile = buildSketchProfile(profileSketch, 32);
+    if (profile) return normalizeCircleLikeProfile(profile);
+  }
+  const shape = GeometryEngine.sketchToProfileShapesFlat(sketch)[profileIndex];
+  if (!shape || shape.holes.length > 0) return null;
+  return normalizeCircleLikeProfile(shapeToSketchProfile(shape, 32));
+}
+
+function buildBooleanToolProfiles(feature: Feature, sketch: Sketch): SketchProfile[] {
+  const profileIndices = feature.params.profileIndices;
+  if (Array.isArray(profileIndices) && profileIndices.length > 0) {
+    pushMigrationDebug({ phase: 'tool-profile-indices', featureId: feature.id, profileIndices });
+    return (profileIndices as number[])
+      .map((idx) => buildAtomicSketchProfileFromIndex(sketch, idx))
+      .filter((profile): profile is SketchProfile => !!profile);
+  }
+  const profileIndex = feature.params.profileIndex;
+  if (typeof profileIndex === 'number' && Number.isFinite(profileIndex)) {
+    pushMigrationDebug({
+      phase: 'tool-profile-index',
+      featureId: feature.id,
+      profileIndex,
+      params: feature.params,
+      entityTypes: sketch.entities.map((entity) => entity.type),
+    });
+    const profile = buildAtomicSketchProfileFromIndex(sketch, profileIndex);
+    return profile ? [profile] : [];
+  }
+  pushMigrationDebug({ phase: 'tool-profile-default', featureId: feature.id });
+  const profile = buildFeatureSketchProfile(feature, sketch);
+  return profile ? [profile] : [];
 }
 
 function buildFeatureSketchProfile(
@@ -482,6 +570,81 @@ function migrateNewBodyExtrude(
   }
 }
 
+// ── Exact-circle tool-shape helpers (avoids polygon-approx WASM crash) ──────────
+
+function polygonArea2DMigration(points: readonly { x: number; y: number }[]): number {
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    area += a.x * b.y - b.x * a.y;
+  }
+  return Math.abs(area) / 2;
+}
+
+function profileCentroid2D(points: readonly { x: number; y: number }[]): { x: number; y: number } {
+  let cx = 0, cy = 0;
+  for (const p of points) { cx += p.x; cy += p.y; }
+  const n = points.length || 1;
+  return { x: cx / n, y: cy / n };
+}
+
+function findCircleEntityForProfile(
+  sketch: Sketch,
+  profile: SketchProfile,
+  frame: ReturnType<typeof createOccPlaneFrameFromSketch>,
+): SketchEntity | null {
+  if (profile.holes.length > 0 || profile.outer.length < 8) return null;
+  const profileArea = polygonArea2DMigration(profile.outer);
+  const { x: cx, y: cy } = profileCentroid2D(profile.outer);
+  const center = { x: cx, y: cy };
+  let best: { entity: SketchEntity; score: number } | null = null;
+
+  for (const entity of sketch.entities) {
+    if (entity.type !== 'circle' || typeof entity.radius !== 'number' || entity.radius <= 0) continue;
+    const firstPt = entity.points[0];
+    if (!firstPt) continue;
+    const expectedArea = Math.PI * entity.radius * entity.radius;
+    const areaError = Math.abs(profileArea - expectedArea) / Math.max(expectedArea, 1e-6);
+    if (areaError > 0.08) continue;
+    const d3 = new THREE.Vector3(firstPt.x, firstPt.y, firstPt.z).sub(frame.origin);
+    const pu = d3.dot(frame.uDir), pv = d3.dot(frame.vDir);
+    const dist = Math.sqrt((pu - center.x) ** 2 + (pv - center.y) ** 2);
+    const centerError = dist / Math.max(entity.radius, 1);
+    if (centerError > 0.08) continue;
+    const score = areaError + centerError;
+    if (!best || score < best.score) best = { entity, score };
+  }
+
+  return best?.entity ?? null;
+}
+
+/** Try to build an exact OCC circle tool shape — avoids polygon-approximation
+ *  crash in pointLoopToWire (BRepBuilderAPI_MakeEdge_3 / WASM memory issue).
+ *  Returns null if the profile isn't a recognisable circle. */
+function tryExactCircleToolShapeForMigration(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  oc: any,
+  sketch: Sketch,
+  profile: SketchProfile,
+  distance: number,
+  frame: ReturnType<typeof createOccPlaneFrameFromSketch>,
+) {
+  const circle = findCircleEntityForProfile(sketch, profile, frame);
+  if (!circle) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const wire = sketchEntitiesToWire(oc as any, [circle], frame);
+  if (!wire) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const face = wiresToFace(oc as any, wire, []);
+  if (!face) {
+    (wire as { delete?: () => void }).delete?.();
+    return null;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return occExtrudeFaceShapeWithInstance(oc as any, face, distance, frame, {}, [wire]);
+}
+
 /**
  * Attempt to apply an OCC boolean for a legacy join/cut/intersect extrude.
  * The target must already have an OCC body in the registry (either loaded from
@@ -497,20 +660,19 @@ function migrateJoinCutExtrude(
   if (!occ) return feature;
 
   const targetMesh = targetFeature.mesh as THREE.Mesh | undefined;
-  if (!targetMesh?.isMesh) return feature;
-  const targetBodyId = targetMesh.userData['brepBodyId'] as string | undefined;
-  if (!targetBodyId) return feature;
-  const targetBody = globalBRepBodyRegistry.get(targetBodyId);
+  const targetBodyId = targetMesh?.isMesh ? (targetMesh.userData['brepBodyId'] as string | undefined) : undefined;
+  const targetBody =
+    (targetBodyId ? globalBRepBodyRegistry.get(targetBodyId) : undefined) ??
+    globalBRepBodyRegistry.getByFeature(targetFeature.id)[0];
   if (!targetBody) return feature;
 
-  let toolBody: BRepBody | null = null;
   let resultBody: BRepBody | null = null;
   let registered = false;
   try {
     const sketchForOp = featureSketchForProfile(feature, sketch);
     if (!sketchForOp) return feature;
-    const profile = buildFeatureSketchProfile(feature, sketch);
-    if (!profile) return feature;
+    const toolProfiles = buildBooleanToolProfiles(feature, sketch);
+    if (toolProfiles.length === 0) return feature;
     const frame = createOccPlaneFrameFromSketch(sketch);
 
     const distance = readNumberParam(feature, ['distance', 'extrudeDistance'], 10);
@@ -538,15 +700,30 @@ function migrateJoinCutExtrude(
       : 'union';
 
     // Build tool body (new-body shape; distance direction already encodes sign)
-    const booleanDirection = resolveBooleanDirection(
-      feature,
-      sketchForOp,
-      targetMesh,
-      direction,
-      absDistance,
-      Math.max(0.001, Math.abs(distance2)),
-      taperAngle,
-    );
+    let targetProbeMesh = targetMesh?.isMesh ? targetMesh : null;
+    let temporaryTargetGeometry: THREE.BufferGeometry | null = null;
+    if (!targetProbeMesh) {
+      try {
+        const tess = tessellateWithInstance(occ.oc, targetBody);
+        temporaryTargetGeometry = tessellationToGeometry(tess);
+        targetProbeMesh = new THREE.Mesh(temporaryTargetGeometry);
+      } catch {
+        targetProbeMesh = null;
+      }
+    }
+
+    const booleanDirection = targetProbeMesh
+      ? resolveBooleanDirection(
+          feature,
+          sketchForOp,
+          targetProbeMesh,
+          direction,
+          absDistance,
+          Math.max(0.001, Math.abs(distance2)),
+          taperAngle,
+        )
+      : direction;
+    temporaryTargetGeometry?.dispose();
 
     let occDistance = absDistance;
     if (booleanDirection === 'negative') occDistance = -absDistance;
@@ -563,22 +740,42 @@ function migrateJoinCutExtrude(
       ? makeCutOvertravelFrame(frame, occDistance)
       : { frame, distance: occDistance };
 
-    pushMigrationDebug({ phase: 'tool-extrude-start', featureId: feature.id, operation: occOp });
-    toolBody = occExtrudeWithInstance(occ.oc, profile, toolExtrude.distance, toolExtrude.frame, {
-      sourceFeatureId: feature.id,
-      symmetric: occSymmetric,
-      twoSideDist: occTwoSideDist,
-      taperAngle: Math.abs(taperAngle) > 0.001 ? taperAngle : undefined,
-      taperAngle2: Math.abs(taperAngle2) > 0.001 ? taperAngle2 : undefined,
-    });
-    pushMigrationDebug({ phase: 'tool-extrude-done', featureId: feature.id });
-
-    pushMigrationDebug({ phase: 'boolean-start', featureId: feature.id, operation: occOp });
-    resultBody = performOccBooleanMultiWithInstance(occ.oc, occOp, targetBody, [toolBody], {
-      id: feature.id,
-      sourceFeatureId: feature.id,
-      fuzzyValue: 1e-5,
-    });
+    pushMigrationDebug({ phase: 'boolean-start', featureId: feature.id, operation: occOp, toolCount: toolProfiles.length });
+    let workingBody = targetBody;
+    let ownsWorkingBody = false;
+    for (const profile of toolProfiles) {
+      pushMigrationDebug({ phase: 'tool-profile-start', featureId: feature.id, pointCount: profile.outer.length });
+      const exactCircleToolShape = occOp === 'subtract' && !occSymmetric && occTwoSideDist === undefined && Math.abs(taperAngle) <= 0.001
+        ? tryExactCircleToolShapeForMigration(occ.oc, sketch, profile, toolExtrude.distance, toolExtrude.frame)
+        : null;
+      pushMigrationDebug({ phase: exactCircleToolShape ? 'exact-circle-tool' : 'profile-tool', featureId: feature.id });
+      const toolShape = exactCircleToolShape ?? occExtrudeShapeWithInstance(occ.oc, profile, toolExtrude.distance, toolExtrude.frame, {
+        sourceFeatureId: feature.id,
+        symmetric: occSymmetric,
+        twoSideDist: occTwoSideDist,
+        taperAngle: Math.abs(taperAngle) > 0.001 ? taperAngle : undefined,
+        taperAngle2: Math.abs(taperAngle2) > 0.001 ? taperAngle2 : undefined,
+      });
+      pushMigrationDebug({ phase: 'tool-shape-done', featureId: feature.id });
+      try {
+        const nextBody = performOccBooleanWithRawTool(occ.oc, occOp, workingBody, toolShape.shape, {
+          id: feature.id,
+          sourceFeatureId: feature.id,
+          fuzzyValue: 1e-5,
+        });
+        if (!nextBody) {
+          pushMigrationDebug({ phase: 'boolean-null', featureId: feature.id, operation: occOp });
+          if (ownsWorkingBody) workingBody.dispose();
+          return feature;
+        }
+        if (ownsWorkingBody) workingBody.dispose();
+        workingBody = nextBody;
+        ownsWorkingBody = true;
+      } finally {
+        toolShape.dispose();
+      }
+    }
+    resultBody = ownsWorkingBody ? workingBody : null;
     if (!resultBody) {
       pushMigrationDebug({ phase: 'boolean-null', featureId: feature.id, operation: occOp });
       return feature; // OCC boolean returned null — CSG pipeline handles it
@@ -611,8 +808,6 @@ function migrateJoinCutExtrude(
     pushMigrationDebug({ phase: 'boolean-error', featureId: feature.id, error: String(err instanceof Error ? err.message : err) });
     console.warn('[legacyMigration] OCC join/cut extrude failed for feature', feature.id, err);
     return feature;
-  } finally {
-    toolBody?.dispose();
   }
 }
 
@@ -633,7 +828,6 @@ export function migrateLegacyExtrudeFeatures(
     pushMigrationDebug({ phase: 'skip-no-occ', featureCount: features.length });
     return features; // OCC not yet loaded — skip; ExtrudedBodies CSG handles it
   }
-
   // Check if there are any legacy features to migrate. A rehydrated persisted
   // mesh can have geometry but no live OCC body registry entry, which is still
   // legacy for OCC-only edge picking.
@@ -730,6 +924,15 @@ export function migrateLegacyExtrudeFeatures(
       (feature.params.operation as string | undefined) ??
       (feature.params.extrudeOperation as string | undefined) ??
       'new-body';
+
+    // Defence in depth: verify the WASM heap is still healthy before each
+    // migration step.  If a previous step silently corrupted the heap, bail
+    // out early instead of cascading crashes.
+    if (!isOccWasmHealthy(occ.oc)) {
+      console.warn('[legacyMigration] WASM heap corrupted — aborting remaining migrations');
+      migratedById.set(feature.id, feature);
+      continue;
+    }
 
     if (operation === 'new-body') {
       const migrated = migrateNewBodyExtrude(feature, sketch, occ);

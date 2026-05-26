@@ -136,31 +136,15 @@ export function pointLoopToWire(oc: OcctRaw, points: THREE.Vector3[]): any | nul
         true,
       );
     } else {
+      // Use BRepBuilderAPI_MakePolygon incremental API — avoids the
+      // BRepBuilderAPI_MakeEdge_3 WASM "memory access out of bounds" crash
+      // that occurs with 5+ point polygons on some OCC WASM builds.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const wireMaker = new (oc as any).BRepBuilderAPI_MakeWire_1();
-      retainedBuilders.push(wireMaker);
-      for (let i = 0; i < retainedPoints.length; i++) {
-        const next = (i + 1) % retainedPoints.length;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const edgeMaker = new (oc as any).BRepBuilderAPI_MakeEdge_3(
-          retainedPoints[i],
-          retainedPoints[next],
-        );
-        retainedBuilders.push(edgeMaker);
-        if (!edgeMaker.IsDone()) return null;
-        const edge = edgeMaker.Edge();
-        retainedEdges.push(edge);
-        wireMaker.Add_1(edge);
+      polygonMaker = new (oc as any).BRepBuilderAPI_MakePolygon_1();
+      for (const pt of retainedPoints) {
+        polygonMaker.Add_1(pt);
       }
-      if (!wireMaker.IsDone()) return null;
-      const wire = wireMaker.Wire();
-      keepPolygonMakerAlive = true;
-      (wire as { [OCC_OWNED_RESOURCES]?: OccOwnedResource[] })[OCC_OWNED_RESOURCES] = [
-        ...retainedBuilders,
-        ...retainedEdges,
-        ...retainedPoints,
-      ];
-      return wire;
+      polygonMaker.Close();
     }
     if (!polygonMaker?.IsDone()) return null;
 

@@ -13,6 +13,8 @@ import { modelEdgeId } from '../../../engine/geometryEngine/core/solid/edgeId';
 import { extrudeProfileTopology } from '../../../engine/geometryEngine/core/solid/profileTopology';
 import { getOcc } from '../../../engine/occ/loader';
 import { migrateLegacyExtrudeFeatures } from '../../../engine/occ/legacyMigration';
+import { globalBRepBodyRegistry } from '../../../engine/occ/globalRegistry';
+import { parseOccEdgeSelection, storedEdgeIds } from '../../../utils/occEdgeUtils';
 
 const OCC_EXTRUDE_MIGRATION_PASS_VERSION = 3;
 const CSG_CUT_OVERTRAVEL_MM = 0.05;
@@ -677,10 +679,11 @@ export default function ExtrudedBodies() {
         if (cancelled) return;
         const migrated = migrateLegacyExtrudeFeatures(features, sketches, occ);
         const changed = migrated.some((feature, index) => feature !== features[index]);
-        lastOccMigrationKeyRef.current = migrationKey;
         if (changed) {
           useCADStore.setState({ features: migrated });
+          return;
         }
+        lastOccMigrationKeyRef.current = migrationKey;
       })
       .catch((error) => {
         console.warn('[ExtrudedBodies] OCC migration failed before rendering extrudes', error);
@@ -784,14 +787,24 @@ export default function ExtrudedBodies() {
   // feature must be hidden so the two bodies don't overlap. A downstream
   // edge modification is "active" only when it has a computed mesh; while it's pending
   // (just added, OCC not yet run) the parent stays visible for replay.
+  const edgeModificationSourceFeatureId = (feature: Feature): string | undefined => {
+    const explicit =
+      feature.parentFeatureId ??
+      (feature.params.parentFeatureId as string | undefined) ??
+      (feature.params.sourceFeatureId as string | undefined);
+    if (explicit) return explicit;
+
+    const selection = parseOccEdgeSelection(storedEdgeIds(feature.params.edgeIds));
+    if (!selection) return undefined;
+    return globalBRepBodyRegistry.get(selection.bodyId)?.sourceFeatureId;
+  };
+
   const hasActiveDownstreamEdgeModification = (featureId: string): boolean =>
-    features.some(
-      (f) =>
-        (f.type === 'fillet' || f.type === 'chamfer') &&
-        (f.parentFeatureId === featureId || f.params.parentFeatureId === featureId) &&
-        f.visible && !f.suppressed &&
-        f.mesh != null,
-    );
+    features.some((f) => {
+      if (f.type !== 'fillet' && f.type !== 'chamfer') return false;
+      if (!f.visible || f.suppressed || f.mesh == null) return false;
+      return edgeModificationSourceFeatureId(f) === featureId;
+    });
 
   const buildToolMesh = (feature: Feature, sketch: Sketch): THREE.Mesh | null => {
     let distance = (feature.params.distance as number) || 10;
