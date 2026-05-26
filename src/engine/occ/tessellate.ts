@@ -34,66 +34,69 @@ export function tessellate(
     return body._tessellation;
   }
 
+  // NOTE: occDeref returns a wrapPointer VIEW — do NOT call shape.delete().
+  // The OccHandle in body.shape owns the C++ lifetime (FinalizationRegistry).
+  // Calling delete on the view would free body.shape's C++ object and corrupt
+  // any subsequent OCC op (fillet, boolean, re-tessellate) with a BindingError.
   const shape = occDeref(oc, body.shape, oc.TopoDS_Shape);
+
+  const mesher = new oc.BRepMesh_IncrementalMesh_2(
+    shape,
+    options.linearDeflection ?? 0.1,
+    options.relative ?? false,
+    options.angularDeflection ?? 0.5,
+    options.parallel ?? false,
+  );
   try {
-    const mesher = new oc.BRepMesh_IncrementalMesh_2(
-      shape,
-      options.linearDeflection ?? 0.1,
-      options.relative ?? false,
-      options.angularDeflection ?? 0.5,
-      options.parallel ?? false,
-    );
-    try {
-      performMesh(oc, mesher);
-    } finally {
-      mesher.delete();
-    }
-
-    const positions: number[] = [];
-    const normals: number[] = [];
-    const faceIds: number[] = [];
-
-    const faceLookup = new Map<number, number>();
-    for (const [faceId, handle] of body.faceIds) {
-      faceLookup.set(handle.ptr, faceId);
-    }
-
-    const explorer = new oc.TopExp_Explorer_2(shape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
-    let fallbackFaceId = 0;
-    try {
-      while (explorer.More()) {
-        const current = explorer.Current();
-        const face = oc.TopoDS.Face_1(current);
-        const faceId = faceLookup.get(face.ptr) ?? fallbackFaceId;
-        fallbackFaceId += 1;
-        const location = new oc.TopLoc_Location_1();
-        const triangulation = oc.BRep_Tool.Triangulation(face, location);
-
-        if (!triangulation.IsNull()) {
-          appendFaceTriangles(oc, triangulation, location, face, faceId, positions, normals, faceIds);
-        }
-
-        triangulation.delete();
-        location.delete();
-        face.delete();
-        current.delete();
-        explorer.Next();
-      }
-    } finally {
-      explorer.delete();
-    }
-
-    const tessellation: BRepTessellation = {
-      positions: new Float32Array(positions),
-      normals: new Float32Array(normals),
-      faceIds: new Uint32Array(faceIds),
-      edgePolylines: buildEdgePolylines(oc, body),
-    };
-    body._tessellation = tessellation;
-    return tessellation;
+    performMesh(oc, mesher);
   } finally {
-    shape.delete?.();
+    mesher.delete();
   }
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const faceIds: number[] = [];
+
+  const faceLookup = new Map<number, number>();
+  for (const [faceId, handle] of body.faceIds) {
+    faceLookup.set(handle.ptr, faceId);
+  }
+
+  const explorer = new oc.TopExp_Explorer_2(shape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+  let fallbackFaceId = 0;
+  try {
+    while (explorer.More()) {
+      const current = explorer.Current();
+      const face = oc.TopoDS.Face_1(current);
+      const faceId = faceLookup.get(face.ptr) ?? fallbackFaceId;
+      fallbackFaceId += 1;
+      const location = new oc.TopLoc_Location_1();
+      const triangulation = oc.BRep_Tool.Triangulation(face, location);
+
+      if (!triangulation.IsNull()) {
+        appendFaceTriangles(oc, triangulation, location, face, faceId, positions, normals, faceIds);
+      }
+
+      triangulation.delete();
+      location.delete();
+      // NOTE: face = TopoDS.Face_1(current) is a wrapPointer VIEW (same ptr as current).
+      // Do NOT call face.delete() — that would free current's memory, making the subsequent
+      // current.delete() a double-free that corrupts the WASM heap (→ OOM on later operations).
+      current.delete();
+      explorer.Next();
+    }
+  } finally {
+    explorer.delete();
+  }
+
+  const tessellation: BRepTessellation = {
+    positions: new Float32Array(positions),
+    normals: new Float32Array(normals),
+    faceIds: new Uint32Array(faceIds),
+    edgePolylines: buildEdgePolylines(oc, body),
+  };
+  body._tessellation = tessellation;
+  return tessellation;
 }
 
 export const tessellateWithInstance = tessellate;
@@ -210,21 +213,28 @@ function appendFaceTriangles(
     faceIds.push(faceId);
   }
 
-  poly.delete();
+  // NOTE: do NOT call poly.delete() here.
+  // poly = triangulation.get() is a wrapPointer VIEW of the Handle-managed Poly_Triangulation.
+  // Calling poly.delete() runs ~Poly_Triangulation() directly, bypassing OCCT's
+  // reference-counting and corrupting the WASM heap (memory access out of bounds).
+  // triangulation.delete() in the caller (tessellate.ts) releases the Handle reference correctly.
   transform?.delete();
 }
 
 function buildEdgePolylines(oc: OcctRaw, body: BRepBody): Map<number, Float32Array> {
   const edgePolylines = new Map<number, Float32Array>();
   for (const [edgeId, edgeHandle] of body.edgeIds) {
-    const rawEdge = occDeref(oc, edgeHandle, oc.TopoDS_Edge);
     try {
+      // NOTE: occDeref is inside the try — stale/null handles (e.g. map-path VIEW handles)
+      // will throw here and be swallowed, leaving that edge without a polyline.
+      const rawEdge = occDeref(oc, edgeHandle, oc.TopoDS_Edge);
+      // NOTE: do NOT call rawEdge.delete() — occDeref returns a wrapPointer VIEW.
+      // The OccHandle in body.edgeIds owns the C++ edge lifetime.
       const polyline = sampleEdgePolyline(oc, rawEdge);
       if (polyline.length >= 6) edgePolylines.set(edgeId, polyline);
     } catch {
-      // Keep tessellation usable even if a rare OCC curve adapter is unavailable.
-    } finally {
-      rawEdge.delete?.();
+      // Keep tessellation usable even if a rare OCC curve adapter is unavailable
+      // or the edge handle is a stale VIEW from the MAP path.
     }
   }
   return edgePolylines;

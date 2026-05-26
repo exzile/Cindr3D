@@ -227,7 +227,19 @@ export function wiresToFace(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const faceMaker = new (oc as any).BRepBuilderAPI_MakeFace_15(outerWire, false);
   for (const hw of holeWires) {
-    faceMaker.Add(hw);
+    // Inner (hole) wires must have REVERSED topological orientation in OCCT.
+    // TopoDS_Shape.Reversed() returns TopoDS_Shape (base class); cast to TopoDS_Wire
+    // via TopoDS.Wire_1() (VIEW — same ptr) before passing to Add(), which expects
+    // TopoDS_Wire. Delete the owned TopoDS_Shape copy immediately after.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const reversedShape = (hw as any).Reversed();
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const reversedWire = (oc as any).TopoDS.Wire_1(reversedShape);
+      faceMaker.Add(reversedWire);
+    } finally {
+      reversedShape.delete?.();
+    }
   }
   if (!faceMaker.IsDone()) {
     faceMaker.delete();

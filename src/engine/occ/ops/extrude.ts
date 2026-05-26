@@ -1,5 +1,5 @@
 /**
- * OCC-3.3 — Sketch-based extrude.
+ * OCC-3.3 -- Sketch-based extrude.
  * Converts a SketchProfile (UV polygon) + plane frame into a solid via
  * BRepPrimAPI_MakePrism_1.
  */
@@ -89,8 +89,12 @@ export function occExtrudeShapeWithInstance(
   if (!wires) throw new Error('[occExtrude] failed to build wires from profile');
 
   const face = wireToFace(oc, wires.outerWire, wires.holeWires, frame);
+  // takeOccOwnedResources already transfers polygonMaker (which owns outerWire) and
+  // holeWire polygonMakers into profileResources. Do NOT push outerWire/holeWires
+  // themselves -- they are wrapPointer VIEWs of their respective polygonMaker's
+  // internal Wire(). Pushing them alongside their owning builders causes a
+  // double-destroy (polygonMaker.delete() + wire.delete() -> same C++ memory freed twice).
   const profileResources = face ? takeOccOwnedResources(face) : [];
-  profileResources.push(wires.outerWire, ...wires.holeWires);
 
   if (!face) throw new Error('[occExtrude] failed to build face from wires');
 
@@ -182,7 +186,7 @@ export function occExtrudeFaceShapeWithInstance(
         if (drafter.IsDone?.() !== false && !drafter.HasErrors?.()) {
           resultShape = drafter.Shape();
         } else {
-          console.warn('[occExtrude] DraftAngle Build failed — using untapered shape');
+          console.warn('[occExtrude] DraftAngle Build failed -- using untapered shape');
         }
       } catch (e) {
         console.warn('[occExtrude] DraftAngle threw:', e);
@@ -252,18 +256,21 @@ export function occExtrudeFaceShapeWithInstance(
       resultShape = fuse.Shape();
     }
     fuse.delete();
-    // BRepAlgoAPI_Fuse takes shapes by reference (not ownership) — delete side2Shape ourselves
+    // BRepAlgoAPI_Fuse takes shapes by reference (not ownership) -- delete side2Shape ourselves
     (side2Shape as { delete?: () => void }).delete?.();
 
     if (tapersDiffer) {
       // Taper already applied per-side; skip the unified pass below.
-      // Defer face/resource cleanup — see comment at end of function.
-      ownedResources.push(startFace as { delete?: () => void }, ...profileResources);
+      // Defer face/resource cleanup -- see comment at end of function.
+      // NOTE: do NOT push startFace separately. startFace = faceMaker.Face() which is a
+      // wrapPointer VIEW of faceMaker's internal TopoDS_Face. faceMaker is already in
+      // profileResources. Pushing startFace would double-destroy that memory at disposal.
+      ownedResources.push(...profileResources);
       return {
         shape: resultShape,
         ownedResources,
         dispose() {
-          (resultShape as { delete?: () => void }).delete?.();
+          try { (resultShape as { delete?: () => void }).delete?.(); } catch { /* already freed by makeBRepBodyFromOccShape error path */ }
           for (const resource of ownedResources) {
             try { resource.delete?.(); } catch { /* already freed */ }
           }
@@ -275,18 +282,21 @@ export function occExtrudeFaceShapeWithInstance(
   // Single taper applied to the (possibly already fused) shape
   resultShape = applyDraftAngle(resultShape, options.taperAngle ?? 0, frame.origin);
 
-  // Defer cleanup of startFace and profileResources instead of deleting them
-  // eagerly.  In the WASM build, BRepPrimAPI_MakePrism_1 may retain shallow
-  // references to the face/wire builder data; freeing them immediately can
-  // corrupt the prism's internal geometry and poison subsequent OCC operations.
-  // Keeping them alive until the body is disposed is safe and avoids the crash.
-  ownedResources.push(startFace as { delete?: () => void }, ...profileResources);
+  // Defer cleanup of profileResources instead of deleting them eagerly. In the
+  // WASM build, BRepPrimAPI_MakePrism_1 may retain shallow references to the
+  // face/wire builder data; freeing them immediately can corrupt the prism's
+  // internal geometry and poison subsequent OCC operations.
+  // NOTE: do NOT push startFace separately. In the non-symmetric case startFace
+  // IS face = faceMaker.Face() -- a wrapPointer VIEW of faceMaker's internal
+  // TopoDS_Face. faceMaker is already in profileResources. Double-pushing would
+  // call ~TopoDS_Face() on faceMaker-owned memory twice -> WASM heap corruption.
+  ownedResources.push(...profileResources);
 
   return {
     shape: resultShape,
     ownedResources,
     dispose() {
-      (resultShape as { delete?: () => void }).delete?.();
+      try { (resultShape as { delete?: () => void }).delete?.(); } catch { /* already freed by makeBRepBodyFromOccShape error path */ }
       for (const resource of ownedResources) {
         try { resource.delete?.(); } catch { /* already freed */ }
       }

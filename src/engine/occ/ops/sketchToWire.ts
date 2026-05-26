@@ -198,7 +198,13 @@ export function sketchProfileToWires(
     .map((hole) => {
       const normalizedHole = normalizeClosedLoop2D(hole);
       if (!normalizedHole) return null;
-      return pointLoopToWire(oc, orientLoop2D(normalizedHole, !outerClockwise).map(toWorld));
+      // Keep hole wire in the SAME winding order as the outer wire (CCW for standard
+      // Three.js shapes). wireToFace calls holeWire.Reversed() before Add(), which
+      // sets the topological orientation to REVERSED (= inner/hole in OCCT) and makes
+      // the effective traversal CW — producing correct inward-facing hole-wall normals.
+      // Reversing the geometry here AND applying REVERSED topologically would double-negate,
+      // making inner walls face outward.
+      return pointLoopToWire(oc, orientLoop2D(normalizedHole, outerClockwise).map(toWorld));
     })
     .filter((w): w is unknown => w !== null);
 
@@ -227,7 +233,26 @@ export function wireToFace(
   safeDeleteOcc(planeDir);
   safeDeleteOcc(planePoint);
   for (const holeWire of holeWires) {
-    faceMaker.Add(holeWire);
+    // OCCT classifies wires in a face by topological orientation:
+    //   FORWARD  = outer boundary
+    //   REVERSED = inner boundary (hole)
+    // BRepBuilderAPI_MakePolygon always produces FORWARD wires.
+    // We must pass a REVERSED copy to Add() so OCCT treats it as a hole.
+    //
+    // TopoDS_Shape.Reversed() returns TopoDS_Shape (base class), but faceMaker.Add()
+    // expects TopoDS_Wire — the Emscripten binding does a strict instanceof check and
+    // throws if given a base-class instance. Cast to TopoDS_Wire via TopoDS.Wire_1()
+    // (a VIEW — same ptr, no extra ownership). Delete the owned TopoDS_Shape copy after.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const reversedShape = (holeWire as any).Reversed();
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const reversedWire = (occ as any).TopoDS.Wire_1(reversedShape); // VIEW — same ptr
+      faceMaker.Add(reversedWire);
+      // reversedWire is a VIEW (do NOT delete it); reversedShape is the owned copy (deleted in finally)
+    } finally {
+      reversedShape.delete?.();
+    }
   }
   if (!faceMaker.IsDone()) {
     faceMaker.delete();
