@@ -54,10 +54,7 @@ export function resolveMeshOccTessellation(mesh: THREE.Mesh) {
   // ExtrudedBodies.tsx for stored-mesh features that never went through
   // attachTessellationToMesh. Accept either key so stored extrude/boolean meshes work.
   let bodyId = (mesh.userData.brepBodyId ?? mesh.userData.bodyId) as string | undefined;
-  // A cached tess with no edge polylines is a stale tessellation built before
-  // the edge-polyline cast fix (TopoDS.Edge_1) — force rebuild from the body.
-  const cachedHasEdges = tess && tess.edgePolylines.size > 0;
-  if (cachedHasEdges && bodyId) return { tess: tess!, bodyId };
+  if (tess && bodyId) return { tess, bodyId };
 
   const featureId = mesh.userData.featureId as string | undefined;
   const body =
@@ -66,13 +63,12 @@ export function resolveMeshOccTessellation(mesh: THREE.Mesh) {
 
   if (!body) return null;
 
-  // Tessellate on-demand if the body exists but _tessellation hasn't been cached yet,
-  // OR if the cached tessellation has no edge polylines (stale pre-fix data).
-  if (!body._tessellation || body._tessellation.edgePolylines.size === 0) {
+  // Tessellate on-demand if the body exists but _tessellation hasn't been cached yet.
+  if (!body._tessellation) {
     const occ = getOccSync();
     if (!occ) return null;
     try {
-      body._tessellation = tessellate(occ.oc, body, { useCache: false });
+      body._tessellation = tessellate(occ.oc, body);
     } catch (e) {
       console.warn('[resolveMeshOcc] on-demand tessellate failed:', e);
       return null;

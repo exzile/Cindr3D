@@ -9,7 +9,6 @@ import { makeBRepBodyFromOccShape, type BRepBody } from '../brepBody';
 import { getOcc } from '../loader';
 import type { OccPlaneFrame } from '../plane';
 import { type SketchProfile, sketchProfileToWires, wireToFace } from './sketchToWire';
-import { unifyRawShape } from './unifyShape';
 
 type OccRevolveApi = OcctRaw & {
   BRepPrimAPI_MakeRevol_2: new (shape: unknown, axis: unknown, angle: number, copy: boolean) => { Build(progress: unknown): void; Shape(): unknown; delete(): void };
@@ -105,15 +104,8 @@ export function occRevolveWithInstance(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (face as any).delete();
 
-  // Unify same-domain faces/edges so the result has CAD-clean topology
-  // (e.g. a full 360° revolve of a circle profile yields 1 toroidal face
-  // with 1 seam edge instead of N polygonal sub-faces).
-  const unified = unifyRawShape(oc, resultShape, { unifyEdges: true, unifyFaces: true });
-  const shapeForBody = unified?.rawShape ?? resultShape;
-  const ownedResources = unified ? [unified.unifier] : [];
-  return makeBRepBodyFromOccShape(oc, shapeForBody, {
+  return makeBRepBodyFromOccShape(oc, resultShape, {
     id: options.id,
     sourceFeatureId: options.sourceFeatureId,
-    ownedResources,
   });
 }
