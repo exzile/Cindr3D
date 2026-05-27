@@ -91,8 +91,14 @@ export function buildBatchedEdgeLineGeometry(
 ): { geometry: THREE.BufferGeometry; edgeIdsBySegment: number[] } | null {
   const positions: number[] = [];
   const edgeIdsBySegment: number[] = [];
+  // Filter out synthetic generator edges (polygonal cylinder facet lines, etc.):
+  // OCC tessellation often includes ~N parallel straight edges for cylindrical /
+  // toroidal faces. detectSyntheticGeneratorEdges flags groups of 9+ parallel
+  // same-length edges that aren't on the model's exterior bounds.
+  const synthetic = detectSyntheticGeneratorEdges(tess);
 
   for (const [edgeId, polyline] of tess.edgePolylines) {
+    if (synthetic.has(edgeId)) continue;
     if (!allowCurvedEdges && polylineIsCurved(polyline)) continue;
     const pointCount = polyline.length / 3;
     if (pointCount < 2) continue;
@@ -272,8 +278,12 @@ export function buildTessellationGuideGeometry(
   const positions: number[] = [];
   const edgeIdsBySegment: number[] = [];
   const edgePolylines = new Map<number, THREE.Vector3[]>();
+  // Skip synthetic generator edges (polygonal facet iso-lines on cylinders /
+  // tori / sweeps) so the user sees only real CAD edges.
+  const synthetic = detectSyntheticGeneratorEdges(tess);
 
   for (const [edgeId, polyline] of tess.edgePolylines) {
+    if (synthetic.has(edgeId)) continue;
     if (!allowCurvedEdges && polylineIsCurved(polyline)) continue;
     const pointCount = polyline.length / 3;
     if (pointCount < 2) continue;

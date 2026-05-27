@@ -315,19 +315,31 @@ export default function EdgeOpEdgeHighlight({
           ? buildBatchedEdgeLineGeometry(resolved.tess, allowCurvedEdges)
           : null;
 
-        // Visible orange guide — always built from topology/crease so every boundary
-        // edge of the mesh is shown regardless of OCC tessellation filtering.
-        // edgeIdsBySegment is always set so the picker detects it for hover/cursor.
-        // meshMatrix lets handleOccClick map a topology-index hit back to the nearest
-        // OCC tessellation edge ID when an OCC body is present.
-        const topologyGuideResult = buildMeshTopologyGuideGeometry(mesh, allowCurvedEdges);
-        const renderedGuideResult = buildMergedMeshCreaseGuideGeometry(mesh, allowCurvedEdges);
+        // Visible orange guide. When we have an OCC tessellation with edge
+        // polylines, USE ONLY that — it carries OCC's authoritative boundary
+        // edges (the actual CAD edges of each face). Mixing in the mesh-derived
+        // topology/crease guides causes tessellation triangle edges on curved
+        // surfaces to be drawn as creases (adjacent-triangle normal angle
+        // exceeds the 20° crease threshold), producing iso-lines that wrap
+        // the entire cylinder.
+        //
+        // The topology + crease guides remain as the fallback for legacy
+        // meshes without an OCC body.
+        const hasOccTess = !!resolved && (batched?.edgeIdsBySegment?.length ?? 0) > 0;
         const tessellationGuideResult = resolved
           ? buildTessellationGuideGeometry(resolved.tess, mesh.matrixWorld, allowCurvedEdges)
           : null;
-        const visibleGuideResult = allowCurvedEdges
-          ? mergedGuideGeometryResults(topologyGuideResult, tessellationGuideResult, renderedGuideResult)
-          : topologyGuideResult ?? renderedGuideResult ?? tessellationGuideResult;
+        const topologyGuideResult = hasOccTess
+          ? null
+          : buildMeshTopologyGuideGeometry(mesh, allowCurvedEdges);
+        const renderedGuideResult = hasOccTess
+          ? null
+          : buildMergedMeshCreaseGuideGeometry(mesh, allowCurvedEdges);
+        const visibleGuideResult = hasOccTess
+          ? tessellationGuideResult
+          : allowCurvedEdges
+            ? mergedGuideGeometryResults(topologyGuideResult, tessellationGuideResult, renderedGuideResult)
+            : topologyGuideResult ?? renderedGuideResult ?? tessellationGuideResult;
         if (!batched && !visibleGuideResult) return;
         if (visibleGuideResult) {
           const guideLine = new THREE.LineSegments(visibleGuideResult.geometry, allEdgesMat);
