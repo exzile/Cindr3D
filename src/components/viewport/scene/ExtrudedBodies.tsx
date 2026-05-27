@@ -161,6 +161,7 @@ export default function ExtrudedBodies() {
         roughness: m.roughness,
         opacity: finalOpacity,
         transparent: finalOpacity < 1,
+        side: THREE.DoubleSide,
       });
       materialCache.current.set(bodyId, { mat, key });
       return mat;

@@ -2,15 +2,16 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Sketch, SketchEntity } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
-import { createOccPlaneFrameFromSketch } from '../../../../engine/occ/plane';
-import { occExtrudeFaceShapeWithInstance } from '../../../../engine/occ/ops/extrude';
+import { createOccPlaneFrameFromSketch, type OccPlaneFrame } from '../../../../engine/occ/plane';
+import { occExtrudeFaceShapeWithInstance, type OccExtrudeOptions } from '../../../../engine/occ/ops/extrude';
+import { makeBRepBodyFromOccShape, type BRepBody } from '../../../../engine/occ/brepBody';
 import {
   performOccBooleanWithRawTool,
   performOccBooleanWithInstance,
   type OccBooleanOptions,
   type OccBooleanOperation,
 } from '../../../../engine/occ/ops/booleanCore';
-import type { SketchProfile } from '../../../../engine/occ/ops/sketchToWire';
+import { pointLoopToWire, takeOccOwnedResources, wireToFace, type SketchProfile } from '../../../../engine/occ/ops/sketchToWire';
 import { sketchEntitiesToWire, wiresToFace } from '../../../../engine/occ/sketchEntityToWire';
 import { OCC_PROFILE_POINT_COUNT } from '../../../../utils/occConstants';
 
@@ -26,14 +27,51 @@ export type SelectedExtrudeProfile = {
 
 export type ExtrudeDirection = 'positive' | 'negative' | 'symmetric' | 'two-sides';
 
+/**
+ * Extract profile points from a THREE.Shape or THREE.Path for the OCC pipeline.
+ *
+ * For shapes produced by computeAtomicRegions (all-LineCurve paths built from
+ * simplifyRing output), extract the actual control-point corners directly from
+ * shape.curves instead of re-sampling with getPoints(96). Re-sampling a
+ * 4-corner rectangle to 97 points produces 97 collinear edges on the straight
+ * sides; BRepPrimAPI_MakePrism_1 then sweeps each into a separate coplanar face,
+ * which can confuse BRepMesh_IncrementalMesh_2 and produce null triangulations
+ * (silently skipped in tessellate.ts → visually missing faces). Using the raw
+ * corners (4 for a rectangle, ~64 for a Clipper2-sampled circle) gives a clean
+ * minimal-edge wire and proper rectangular lateral faces.
+ *
+ * Falls back to getPoints(OCC_PROFILE_POINT_COUNT) for shapes with arc/spline
+ * curves that need parametric sampling.
+ */
+function getShapeProfilePoints(shape: THREE.Shape | THREE.Path): THREE.Vector2[] {
+  if (
+    shape.curves.length > 0 &&
+    shape.curves.every((c) => c.type === 'LineCurve')
+  ) {
+    const points: THREE.Vector2[] = [];
+    for (const curve of shape.curves) {
+      const lc = curve as unknown as { v1: THREE.Vector2; v2: THREE.Vector2 };
+      points.push(lc.v1.clone());
+    }
+    // The closing segment is implicit in THREE.Shape/Path. If the last LineCurve's
+    // endpoint doesn't coincide with the first point, add it as the final vertex.
+    const lastCurve = shape.curves[shape.curves.length - 1] as unknown as { v2: THREE.Vector2 };
+    if (lastCurve.v2.distanceTo(points[0]) > 1e-10) {
+      points.push(lastCurve.v2.clone());
+    }
+    return points;
+  }
+  return shape.getPoints(OCC_PROFILE_POINT_COUNT);
+}
+
 export function makeSketchProfileFromShape(
   shape: THREE.Shape,
   includeHoles = true,
 ): SketchProfile {
   return {
-    outer: shape.getPoints(OCC_PROFILE_POINT_COUNT),
+    outer: getShapeProfilePoints(shape),
     holes: includeHoles
-      ? shape.holes.map((hole) => hole.getPoints(OCC_PROFILE_POINT_COUNT))
+      ? shape.holes.map((hole) => getShapeProfilePoints(hole))
       : [],
   };
 }
@@ -365,6 +403,83 @@ export function tryBuildExactCircleToolShape(
     return null;
   }
   return occExtrudeFaceShapeWithInstance(oc as never, face, distance, frame, {}, [wire]);
+}
+
+/**
+ * Build an analytical extrude body where circular holes use GC_MakeCircle_2
+ * edges instead of 96-segment polygon approximations.
+ *
+ * Polygon-approximated circles produce ~726 BRep edges on a box-with-holes,
+ * causing BRepFilletAPI_MakeFillet.IsDone()=false. This function matches each
+ * hole profile to a circle entity in the source sketch and builds an exact
+ * analytical wire (1 circular edge) instead of 96 polygon edges.  The result
+ * is a clean 12–16 edge BRep body that fillets correctly.
+ *
+ * Returns null if any hole cannot be matched to a circle entity — caller falls
+ * back to the standard polygon path.
+ */
+export function tryBuildAnalyticalExtrudeBody(
+  oc: unknown,
+  sourceSketch: Sketch,
+  shape: THREE.Shape,
+  distance: number,
+  frame: OccPlaneFrame,
+  options: OccExtrudeOptions,
+): BRepBody | null {
+  if (shape.holes.length === 0) return null;
+
+  const toWorld = (uv: THREE.Vector2): THREE.Vector3 =>
+    frame.origin.clone()
+      .addScaledVector(frame.uDir, uv.x)
+      .addScaledVector(frame.vDir, uv.y);
+
+  const outerPoints = getShapeProfilePoints(shape);
+  if (outerPoints.length < 3) return null;
+
+  const outerWire = pointLoopToWire(oc as never, outerPoints.map(toWorld));
+  if (!outerWire) return null;
+
+  const analyticalHoleWires: unknown[] = [];
+  try {
+    for (const hole of shape.holes) {
+      const holePoints = getShapeProfilePoints(hole);
+      const holeProfile: SketchProfile = { outer: holePoints, holes: [] };
+      const circleEntity = findMatchingCircularProfileEntity(sourceSketch, holeProfile, frame);
+      if (!circleEntity) return null; // hole is not a detectable circle — fall back
+
+      const holeWire = sketchEntitiesToWire(oc as never, [circleEntity], frame);
+      if (!holeWire) return null;
+      analyticalHoleWires.push(holeWire);
+    }
+
+    const face = wireToFace(oc as never, outerWire, analyticalHoleWires, frame);
+    if (!face) return null;
+
+    // takeOccOwnedResources transfers polygon maker + points (from outerWire) into
+    // profileResources via OCC_OWNED_RESOURCES. analyticalHoleWires have no
+    // OCC_OWNED_RESOURCES (sketchEntitiesToWire doesn't set them), so add
+    // the wire handles explicitly so they're deleted after the prism is built.
+    const profileResources = [
+      ...takeOccOwnedResources(face),
+      ...(analyticalHoleWires as Array<{ delete?: () => void }>),
+    ];
+
+    const extruded = occExtrudeFaceShapeWithInstance(oc as never, face, distance, frame, options, profileResources);
+    let consumed = false;
+    try {
+      const body = makeBRepBodyFromOccShape(oc as never, extruded.shape, {
+        id: options.id,
+        sourceFeatureId: options.sourceFeatureId,
+        ownedResources: extruded.ownedResources,
+      });
+      consumed = true;
+      return body;
+    } finally {
+      if (!consumed) extruded.dispose();
+    }
+  } catch {
+    return null;
+  }
 }
 
 export function performRobustBooleanWithRawTool(

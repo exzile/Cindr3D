@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { occDeref, type BRepBody } from '../../../../engine/occ/brepBody';
+import type { BRepBody } from '../../../../engine/occ/brepBody';
 import { getOccSync } from '../../../../engine/occ/loader';
 import { collectTangentChainEdges } from '../../../../engine/occ/ops/adjacency';
 import type { OccFilletEdgeSet } from '../../../../engine/occ/ops/fillet';
@@ -24,163 +24,12 @@ export function propagateTangentEdges(
   seedEdgeIds: number[],
 ): number[] {
   if (!oc) return seedEdgeIds;
-
-  const occ = oc.oc as {
-    TopAbs_ShapeEnum: { TopAbs_FACE: unknown; TopAbs_EDGE: unknown; TopAbs_VERTEX: unknown; TopAbs_SHAPE: unknown };
-    TopExp_Explorer_2: new (shape: unknown, toFind: unknown, toAvoid: unknown) => {
-      More(): boolean;
-      Current(): { ptr: number; delete(): void };
-      Next(): void;
-      delete(): void;
-    };
-    TopTools_IndexedMapOfShape_1: new () => {
-      FindIndex_1(shape: unknown): number;
-      FindKey_1(idx: number): unknown;
-      Extent(): number;
-      delete(): void;
-    };
-    TopExp: { MapShapes_1(shape: unknown, type: unknown, map: unknown): void };
-    TopoDS_Shape: unknown;
-    TopoDS_Edge: unknown;
-    TopoDS_Vertex: unknown;
-  } & typeof oc.oc;
-
-  const rawShape = occDeref(oc.oc, body.shape, occ.TopoDS_Shape);
-  const edgeIndexMap = new occ.TopTools_IndexedMapOfShape_1();
-  const vertexIndexMap = new occ.TopTools_IndexedMapOfShape_1();
   try {
-    occ.TopExp.MapShapes_1(rawShape, occ.TopAbs_ShapeEnum.TopAbs_EDGE, edgeIndexMap);
-    occ.TopExp.MapShapes_1(rawShape, occ.TopAbs_ShapeEnum.TopAbs_VERTEX, vertexIndexMap);
-  } catch {
-    edgeIndexMap.delete();
-    vertexIndexMap.delete();
+    return collectTangentChainEdges(oc.oc, body, seedEdgeIds);
+  } catch (err) {
+    console.warn('[edgeMod.propagate] tangent-chain walk failed:', err);
     return seedEdgeIds;
   }
-
-  const bodyEdgeToIndex = new Map<number, number>();
-  const indexToBodyEdge = new Map<number, number>();
-  for (const [bodyEdgeId, handle] of body.edgeIds) {
-    try {
-      const rawEdge = occDeref(oc.oc, handle, occ.TopoDS_Shape);
-      const idx = edgeIndexMap.FindIndex_1(rawEdge);
-      if (idx > 0) {
-        bodyEdgeToIndex.set(bodyEdgeId, idx);
-        indexToBodyEdge.set(idx, bodyEdgeId);
-      }
-    } catch {
-      // Ignore stale or unresolvable edge handles.
-    }
-  }
-
-  const edgeVertices = new Map<number, Set<number>>();
-  const vertexEdges = new Map<number, Set<number>>();
-  const edgeExp = new occ.TopExp_Explorer_2(
-    rawShape,
-    occ.TopAbs_ShapeEnum.TopAbs_EDGE,
-    occ.TopAbs_ShapeEnum.TopAbs_SHAPE,
-  );
-  while (edgeExp.More()) {
-    const edgeShape = edgeExp.Current();
-    const edgeIdx = edgeIndexMap.FindIndex_1(edgeShape);
-    edgeShape.delete();
-    edgeExp.Next();
-    if (edgeIdx <= 0) continue;
-
-    const vExp = new occ.TopExp_Explorer_2(
-      edgeIndexMap.FindKey_1(edgeIdx),
-      occ.TopAbs_ShapeEnum.TopAbs_VERTEX,
-      occ.TopAbs_ShapeEnum.TopAbs_SHAPE,
-    );
-    while (vExp.More()) {
-      const vShape = vExp.Current();
-      const vIdx = vertexIndexMap.FindIndex_1(vShape);
-      vShape.delete();
-      vExp.Next();
-      if (vIdx <= 0) continue;
-
-      if (!edgeVertices.has(edgeIdx)) edgeVertices.set(edgeIdx, new Set());
-      edgeVertices.get(edgeIdx)!.add(vIdx);
-
-      if (!vertexEdges.has(vIdx)) vertexEdges.set(vIdx, new Set());
-      vertexEdges.get(vIdx)!.add(edgeIdx);
-    }
-    vExp.delete();
-  }
-  edgeExp.delete();
-
-  const faceEdges = new Map<number, Set<number>>();
-  const faceIndexMap = new occ.TopTools_IndexedMapOfShape_1();
-  try {
-    occ.TopExp.MapShapes_1(rawShape, occ.TopAbs_ShapeEnum.TopAbs_FACE, faceIndexMap);
-  } catch {
-    edgeIndexMap.delete();
-    vertexIndexMap.delete();
-    faceIndexMap.delete();
-    return seedEdgeIds;
-  }
-
-  const faceCount = faceIndexMap.Extent();
-  for (let fi = 1; fi <= faceCount; fi++) {
-    const faceShape = faceIndexMap.FindKey_1(fi);
-    const eExp = new occ.TopExp_Explorer_2(
-      faceShape,
-      occ.TopAbs_ShapeEnum.TopAbs_EDGE,
-      occ.TopAbs_ShapeEnum.TopAbs_SHAPE,
-    );
-    const edgesOnFace = new Set<number>();
-    while (eExp.More()) {
-      const eShape = eExp.Current();
-      const eIdx = edgeIndexMap.FindIndex_1(eShape);
-      eShape.delete();
-      eExp.Next();
-      if (eIdx > 0) edgesOnFace.add(eIdx);
-    }
-    eExp.delete();
-    faceEdges.set(fi, edgesOnFace);
-    (faceShape as { delete?: () => void }).delete?.();
-  }
-
-  edgeIndexMap.delete();
-  vertexIndexMap.delete();
-  faceIndexMap.delete();
-
-  const resultSet = new Set<number>(seedEdgeIds);
-  const queue = [...seedEdgeIds];
-
-  while (queue.length > 0) {
-    const currentBodyEdgeId = queue.shift()!;
-    const currentIdx = bodyEdgeToIndex.get(currentBodyEdgeId);
-    if (currentIdx === undefined) continue;
-
-    const currentVertices = edgeVertices.get(currentIdx);
-    if (!currentVertices) continue;
-
-    for (const vIdx of currentVertices) {
-      const adjacentEdgeIndices = vertexEdges.get(vIdx);
-      if (!adjacentEdgeIndices) continue;
-
-      for (const candidateIdx of adjacentEdgeIndices) {
-        if (candidateIdx === currentIdx) continue;
-
-        let sharesFace = false;
-        for (const [, faceEdgeSet] of faceEdges) {
-          if (faceEdgeSet.has(currentIdx) && faceEdgeSet.has(candidateIdx)) {
-            sharesFace = true;
-            break;
-          }
-        }
-        if (!sharesFace) continue;
-
-        const candidateBodyEdgeId = indexToBodyEdge.get(candidateIdx);
-        if (candidateBodyEdgeId === undefined || resultSet.has(candidateBodyEdgeId)) continue;
-
-        resultSet.add(candidateBodyEdgeId);
-        queue.push(candidateBodyEdgeId);
-      }
-    }
-  }
-
-  return [...resultSet];
 }
 
 export function resolveOccFilletEdgeSets(

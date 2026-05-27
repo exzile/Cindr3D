@@ -9,6 +9,7 @@ import {
 import { globalBRepBodyRegistry } from "../../../../engine/occ/globalRegistry";
 import { clearFeatureEvaluationCache } from "../../../../engine/occ/featureEvaluator";
 import { bodyGeometryCache, bodyIdGeometryCache } from "../../../meshRegistry";
+import { detachTessellationFromMesh } from "../../../../engine/occ/picking";
 import * as THREE from "three";
 
 const disposeFeatureObjectGeometry = (mesh: Feature["mesh"] | undefined) => {
@@ -26,6 +27,7 @@ const disposeFeatureObjectGeometry = (mesh: Feature["mesh"] | undefined) => {
   const object = mesh as unknown as THREE.Object3D;
   if (object instanceof THREE.Mesh) {
     object.geometry?.dispose();
+    detachTessellationFromMesh(object);
     disposeMaterial(object.material);
     return;
   }
@@ -33,10 +35,20 @@ const disposeFeatureObjectGeometry = (mesh: Feature["mesh"] | undefined) => {
     object.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         child.geometry?.dispose();
+        detachTessellationFromMesh(child);
         disposeMaterial(child.material);
       }
     });
   }
+};
+
+const clearDocumentRuntimeCaches = () => {
+  for (const geo of bodyGeometryCache.values()) geo.dispose();
+  bodyGeometryCache.clear();
+  for (const geo of bodyIdGeometryCache.values()) geo.dispose();
+  bodyIdGeometryCache.clear();
+  globalBRepBodyRegistry.clear();
+  clearFeatureEvaluationCache();
 };
 
 export function createDocumentActions({ set, get }: CADSliceContext): Partial<CADState> {
@@ -45,14 +57,9 @@ export function createDocumentActions({ set, get }: CADSliceContext): Partial<CA
     newDocument: () => {
       // Dispose stored feature meshes before clearing state.
       for (const f of get().features) disposeFeatureObjectGeometry(f.mesh);
-      for (const geo of bodyGeometryCache.values()) geo.dispose();
-      bodyGeometryCache.clear();
-      for (const geo of bodyIdGeometryCache.values()) geo.dispose();
-      bodyIdGeometryCache.clear();
       // Dispose all OCC WASM bodies and clear the evaluator cache so none
       // of the prior document's shapes linger on the C++ heap.
-      globalBRepBodyRegistry.clear();
-      clearFeatureEvaluationCache();
+      clearDocumentRuntimeCaches();
       set({
         // Geometry content
         features: [],
@@ -117,12 +124,6 @@ export function createDocumentActions({ set, get }: CADSliceContext): Partial<CA
     },
 
     loadFromFile: (json: string) => {
-      // Dispose stored feature meshes before replacing the document.
-      for (const f of get().features) disposeFeatureObjectGeometry(f.mesh);
-      for (const geo of bodyGeometryCache.values()) geo.dispose();
-      bodyGeometryCache.clear();
-      for (const geo of bodyIdGeometryCache.values()) geo.dispose();
-      bodyIdGeometryCache.clear();
       try {
         const parsed = JSON.parse(json) as {
           version: number;
@@ -142,11 +143,18 @@ export function createDocumentActions({ set, get }: CADSliceContext): Partial<CA
         if (!Array.isArray(parsed.sketches)) {
           throw new Error("Invalid snapshot: missing sketches array");
         }
+        const nextFeatures = (parsed.features ?? []).map((f) => deserializeFeature(f));
+        const nextSketches = (parsed.sketches ?? []).map((s) =>
+          deserializeSketch(s as unknown as Sketch),
+        );
+
+        // Dispose the current runtime state only after the new file validates.
+        for (const f of get().features) disposeFeatureObjectGeometry(f.mesh);
+        clearDocumentRuntimeCaches();
+
         set({
-          features: (parsed.features ?? []).map((f) => deserializeFeature(f)),
-          sketches: (parsed.sketches ?? []).map((s) =>
-            deserializeSketch(s as unknown as Sketch),
-          ),
+          features: nextFeatures,
+          sketches: nextSketches,
           featureGroups: parsed.featureGroups ?? [],
           historyEnabled: parsed.historyEnabled ?? true,
           statusMessage: "Design loaded from file",

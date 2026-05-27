@@ -72,7 +72,7 @@ export function useOccEdgePicker(options: UseOccEdgePickerOptions): void {
       return;
     }
 
-    const pick = (clientX: number, clientY: number): OccEdgePickResult | null => {
+    const pick = (clientX: number, clientY: number, debug = false): OccEdgePickResult | null => {
       const rect = gl.domElement.getBoundingClientRect();
 
       const lines: THREE.LineSegments[] = [];
@@ -85,8 +85,8 @@ export function useOccEdgePicker(options: UseOccEdgePickerOptions): void {
         }
       });
 
-      // DEBUG — remove after investigation
-      if ((globalThis as Record<string, unknown>).__EDGE_PICK_DEBUG) {
+      // DEBUG — logged only on click
+      if (debug) {
         const segCounts = lines.map(ls => {
           const pos = ls.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
           return { segments: pos ? Math.floor(pos.count / 2) : 0, bodyId: ls.userData['brepBodyId'], hasEdgeIds: Array.isArray(ls.userData['edgeIdsBySegment']) };
@@ -134,8 +134,8 @@ export function useOccEdgePicker(options: UseOccEdgePickerOptions): void {
         }
       }
 
-      // DEBUG — remove after investigation
-      if ((globalThis as Record<string, unknown>).__EDGE_PICK_DEBUG) {
+      // DEBUG — logged only on click
+      if (debug) {
         if (best) {
           console.log('[picker] HIT edgeId=', best.edgeId, 'bodyId=', best.bodyId, 'distSq=', bestDistSq);
         } else {
@@ -178,7 +178,7 @@ export function useOccEdgePicker(options: UseOccEdgePickerOptions): void {
     };
 
     const onClick = (e: MouseEvent) => {
-      const result = pick(e.clientX, e.clientY);
+      const result = pick(e.clientX, e.clientY, true);
       if (result) optionsRef.current.onClick?.(result);
     };
 

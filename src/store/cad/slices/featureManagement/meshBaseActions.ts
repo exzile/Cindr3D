@@ -5,6 +5,11 @@ import type { CADSliceContext } from "../../sliceContext";
 import type { CADState } from "../../state";
 import { errorMessage } from "../../../../utils/errorHandling";
 import { BODY_MATERIAL } from "../../../../components/viewport/scene/bodyMaterial";
+import {
+  detachTessellationFromMesh,
+  disposeMeshDeferred,
+  disposeMeshesDeferred,
+} from "../../../../engine/occ/picking";
 
 export function createMeshBaseActions({
   set,
@@ -68,6 +73,7 @@ export function createMeshBaseActions({
         clone.castShadow = m.castShadow;
         clone.receiveShadow = m.receiveShadow;
         Object.assign(clone.userData, m.userData);
+        detachTessellationFromMesh(clone);
         return clone;
       };
       const featureMesh = feature.mesh as THREE.Object3D;
@@ -102,7 +108,7 @@ export function createMeshBaseActions({
               ),
             }));
             // Dispose old geometry AFTER removing from state
-            if (oldMesh instanceof THREE.Mesh) oldMesh.geometry.dispose();
+            if (oldMesh instanceof THREE.Mesh) disposeMeshDeferred(oldMesh);
             get().setStatusMessage(`Mesh reduced by ${reductionPercent}%`);
           })
           .catch(onErr);
@@ -130,9 +136,11 @@ export function createMeshBaseActions({
             }));
             // Dispose old geometries AFTER removal
             if (oldGroup instanceof THREE.Group) {
+              const oldMeshes: THREE.Mesh[] = [];
               oldGroup.traverse((child) => {
-                if (child instanceof THREE.Mesh) child.geometry.dispose();
+                if (child instanceof THREE.Mesh) oldMeshes.push(child);
               });
+              disposeMeshesDeferred(oldMeshes);
             }
             get().setStatusMessage(`Mesh reduced by ${reductionPercent}%`);
           })
@@ -152,10 +160,13 @@ export function createMeshBaseActions({
       const featureMesh = feature.mesh as THREE.Object3D;
       if (featureMesh instanceof THREE.Mesh) {
         GeometryEngine.reverseNormals(featureMesh.geometry);
+        detachTessellationFromMesh(featureMesh);
       } else if (featureMesh instanceof THREE.Group) {
         featureMesh.traverse((child) => {
-          if (child instanceof THREE.Mesh)
+          if (child instanceof THREE.Mesh) {
             GeometryEngine.reverseNormals(child.geometry);
+            detachTessellationFromMesh(child);
+          }
         });
       }
       // Mutating mesh.geometry in place doesn't notify Zustand subscribers — replace
@@ -197,6 +208,7 @@ export function createMeshBaseActions({
       const newMesh = GeometryEngine.reverseMeshNormals(srcMesh);
       newMesh.castShadow = true;
       newMesh.receiveShadow = true;
+      detachTessellationFromMesh(newMesh);
       // Dispose the previous geometry — reverseMeshNormals returns a fresh
       // mesh with cloned geometry, so the source's BufferGeometry is now orphan.
       const oldMesh = feature.mesh;
@@ -206,7 +218,7 @@ export function createMeshBaseActions({
         ),
         statusMessage: "Mesh normals reversed",
       }));
-      if (oldMesh instanceof THREE.Mesh) oldMesh.geometry.dispose();
+      if (oldMesh instanceof THREE.Mesh) disposeMeshDeferred(oldMesh);
     },
 
     toggleFeatureVisibility: (id) =>

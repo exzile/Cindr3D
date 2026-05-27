@@ -2,6 +2,11 @@ import * as THREE from 'three';
 
 import type { Feature, Sketch } from '../../types/cad';
 import type { BodyTopology, ModelEdge } from '../../engine/geometryEngine/core/solid/edgeTypes';
+import { getOcc, getOccSync } from '../../engine/occ/loader';
+import { globalBRepBodyRegistry } from '../../engine/occ/globalRegistry';
+import { attachTessellationToMesh, BREP_BODY_ID_KEY } from '../../engine/occ/picking';
+import { shapeFromStep, shapeToStep } from '../../engine/occ/stepIO';
+import { tessellateWithInstance } from '../../engine/occ/tessellate';
 
 function openCadDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -79,8 +84,16 @@ type SerializedMeshData = {
   edgeMeta?: SerializedEdgeMeta;
 };
 
+type SerializedOccBodyData = {
+  bodyId: string;
+  sourceFeatureId?: string;
+  revision: number;
+  stepString: string;
+};
+
 interface SerializedFeature extends Omit<Feature, 'mesh'> {
   _meshData?: SerializedMeshData;
+  _occStepData?: SerializedOccBodyData;
 }
 
 type SerializedEdge = {
@@ -100,6 +113,7 @@ type SerializedEdgeMeta = {
 
 const serializedMeshDataCache = new WeakMap<THREE.BufferGeometry, SerializedMeshData>();
 const serializedFeatureCache = new WeakMap<Feature, SerializedFeature>();
+const serializedOccBodyCache = new WeakMap<object, SerializedOccBodyData>();
 
 function serializeTopology(topology: unknown): SerializedTopology | undefined {
   const edges = (topology as BodyTopology | undefined)?.edges;
@@ -146,6 +160,29 @@ function restoreEdgeMeta(geometry: THREE.BufferGeometry, edgeMeta: SerializedEdg
   if (typeof edgeMeta.topoV === 'number') geometry.userData._topoV = edgeMeta.topoV;
 }
 
+function serializeOccBodyData(feature: Feature, mesh: THREE.Mesh): SerializedOccBodyData | undefined {
+  const bodyId = mesh.userData[BREP_BODY_ID_KEY] as string | undefined;
+  if (!bodyId) return undefined;
+  const body = globalBRepBodyRegistry.get(bodyId);
+  const occ = getOccSync();
+  if (!body || !occ) return (feature as unknown as SerializedFeature)._occStepData;
+
+  const cached = serializedOccBodyCache.get(body as unknown as object);
+  if (cached && cached.revision === body.revision) return cached;
+
+  const result = shapeToStep(occ.oc, body);
+  if (!result.ok) return (feature as unknown as SerializedFeature)._occStepData;
+
+  const data: SerializedOccBodyData = {
+    bodyId,
+    sourceFeatureId: body.sourceFeatureId ?? feature.id,
+    revision: body.revision,
+    stepString: result.value,
+  };
+  serializedOccBodyCache.set(body as unknown as object, data);
+  return data;
+}
+
 export const serializeFeature = (feature: Feature): SerializedFeature => {
   const topCached = serializedFeatureCache.get(feature);
   if (topCached && !feature.mesh) return topCached;
@@ -173,13 +210,22 @@ export const serializeFeature = (feature: Feature): SerializedFeature => {
         serialized._meshData = data;
       }
     }
+    if (mesh instanceof THREE.Mesh) {
+      const occStepData = serializeOccBodyData(feature, mesh);
+      if (occStepData) serialized._occStepData = occStepData;
+    }
   }
   serializedFeatureCache.set(feature, serialized);
   return serialized;
 };
 
 const REHYDRATED_FEATURE_MATERIAL: THREE.MeshPhysicalMaterial = (() => {
-  const material = new THREE.MeshPhysicalMaterial({ color: 0x888888, roughness: 0.4, metalness: 0.2 });
+  const material = new THREE.MeshPhysicalMaterial({
+    color: 0x888888,
+    roughness: 0.4,
+    metalness: 0.2,
+    side: THREE.DoubleSide,
+  });
   material.userData.shared = true;
   return material;
 })();
@@ -201,9 +247,47 @@ export const deserializeFeature = (feature: Feature): Feature => {
     else if (position) geometry.computeVertexNormals();
     restoreEdgeMeta(geometry, serializedFeature._meshData.edgeMeta);
     const mesh = new THREE.Mesh(geometry, REHYDRATED_FEATURE_MATERIAL);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     const { _meshData: _ignored, ...rest } = serializedFeature;
     void _ignored;
     return { ...(rest as unknown as Feature), mesh };
   }
   return { ...feature, mesh: undefined };
 };
+
+export async function ensureFeatureOccBody(feature: Feature): Promise<boolean> {
+  const serializedFeature = feature as unknown as SerializedFeature;
+  const mesh = feature.mesh;
+  if (!(mesh instanceof THREE.Mesh)) return false;
+
+  const liveBodyId = mesh.userData[BREP_BODY_ID_KEY] as string | undefined;
+  if (liveBodyId && globalBRepBodyRegistry.get(liveBodyId)) return true;
+
+  const occStepData = serializedFeature._occStepData;
+  if (!occStepData?.stepString || !occStepData.bodyId) return false;
+
+  const existing = globalBRepBodyRegistry.get(occStepData.bodyId);
+  if (existing) {
+    const { oc } = await getOcc();
+    const tessellation = tessellateWithInstance(oc, existing);
+    attachTessellationToMesh(mesh, tessellation, existing.id);
+    return true;
+  }
+
+  const { oc } = await getOcc();
+  const result = shapeFromStep(oc, occStepData.stepString);
+  if (!result.ok) {
+    console.warn(`[persistence] Failed to restore OCC body for ${feature.id}: ${result.error.message}`);
+    return false;
+  }
+
+  const body = result.value;
+  body.id = occStepData.bodyId;
+  body.sourceFeatureId = occStepData.sourceFeatureId ?? feature.id;
+  globalBRepBodyRegistry.add(body);
+
+  const tessellation = tessellateWithInstance(oc, body);
+  attachTessellationToMesh(mesh, tessellation, body.id);
+  return true;
+}

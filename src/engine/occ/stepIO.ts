@@ -18,6 +18,9 @@ const TMP_READ  = '/occ_step_in.step';
 
 export function shapeToStep(oc: OcctRaw, body: BRepBody): OccOperationResult<string> {
   const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
+  const shouldDeleteRawShape =
+    typeof oc.wrapPointer !== 'function' &&
+    typeof (rawShape as { clone?: unknown }).clone === 'function';
 
   let writer: unknown;
   try {
@@ -37,7 +40,7 @@ export function shapeToStep(oc: OcctRaw, body: BRepBody): OccOperationResult<str
   } finally {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (writer as any)?.delete?.();
-    rawShape.delete?.();
+    if (shouldDeleteRawShape) rawShape.delete?.();
   }
 
   let stepString: string;

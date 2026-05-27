@@ -18,7 +18,8 @@ type OccAdjacencyApi = OcctRaw & {
     delete(): void;
   };
   TopTools_IndexedMapOfShape_1: new () => {
-    FindIndex_1(shape: unknown): number;
+    FindIndex_1?(shape: unknown): number;
+    FindIndex?(shape: unknown): number;
     FindKey_1(idx: number): unknown;
     Extent(): number;
     delete(): void;
@@ -34,6 +35,16 @@ type OccAdjacencyApi = OcctRaw & {
   };
   gp_Pnt_1: new () => { X(): number; Y(): number; Z(): number; delete(): void };
 };
+
+type IndexedShapeMap = {
+  FindIndex_1?(shape: unknown): number;
+  FindIndex?(shape: unknown): number;
+};
+
+export function findShapeIndex(map: IndexedShapeMap, shape: unknown): number {
+  const fn = map.FindIndex_1 ?? map.FindIndex;
+  return fn ? fn.call(map, shape) : 0;
+}
 
 /**
  * Find a face in `body.faceIds` that shares the given edge.
@@ -59,7 +70,7 @@ export function findAdjacentFace(
     return undefined;
   }
 
-  const targetEdgeIdx = edgeMap.FindIndex_1(rawEdge);
+  const targetEdgeIdx = findShapeIndex(edgeMap, rawEdge);
   if (targetEdgeIdx <= 0) {
     edgeMap.delete();
     faceMap.delete();
@@ -83,7 +94,7 @@ export function findAdjacentFace(
       let edgeFound = false;
       while (edgeExp.More()) {
         const e = edgeExp.Current();
-        const idx = edgeMap.FindIndex_1(e);
+        const idx = findShapeIndex(edgeMap, e);
         e.delete();
         if (idx === targetEdgeIdx) {
           edgeFound = true;
@@ -99,14 +110,14 @@ export function findAdjacentFace(
         continue;
       }
 
-      const targetFaceIdx = faceMap.FindIndex_1(faceShape);
+      const targetFaceIdx = findShapeIndex(faceMap, faceShape);
       faceShape.delete();
 
       if (targetFaceIdx > 0) {
         for (const [, handle] of body.faceIds) {
           const rawFaceHandle = occDeref(oc, handle, oc.TopoDS_Shape) as OccShapeRef;
           try {
-            const handleIdx = faceMap.FindIndex_1(rawFaceHandle);
+            const handleIdx = findShapeIndex(faceMap, rawFaceHandle);
             if (handleIdx === targetFaceIdx) {
               return handle;
             }
@@ -157,11 +168,11 @@ export function findAdjacentFacesToFace(
   const centerEdgeIndices = new Set<number>();
   let centerFaceIdx = -1;
   try {
-    centerFaceIdx = faceMap.FindIndex_1(centerRaw);
+    centerFaceIdx = findShapeIndex(faceMap, centerRaw);
     const exp = new occ.TopExp_Explorer_2(centerRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
     while (exp.More()) {
       const e = exp.Current();
-      const idx = edgeMap.FindIndex_1(e);
+      const idx = findShapeIndex(edgeMap, e);
       e.delete();
       if (idx > 0) centerEdgeIndices.add(idx);
       exp.Next();
@@ -182,13 +193,13 @@ export function findAdjacentFacesToFace(
     if (bodyFaceId === centerFaceId) continue;
     const faceRaw = occDeref(oc, handle, oc.TopoDS_Shape) as OccShapeRef;
     try {
-      const thisIdx = faceMap.FindIndex_1(faceRaw);
+      const thisIdx = findShapeIndex(faceMap, faceRaw);
       if (thisIdx === centerFaceIdx) continue;
       const exp = new occ.TopExp_Explorer_2(faceRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
       let touches = false;
       while (exp.More()) {
         const e = exp.Current();
-        const idx = edgeMap.FindIndex_1(e);
+        const idx = findShapeIndex(edgeMap, e);
         e.delete();
         if (idx > 0 && centerEdgeIndices.has(idx)) {
           touches = true;
@@ -245,7 +256,7 @@ export function collectTangentChainEdges(
   for (const [bodyEdgeId, edgeHandle] of body.edgeIds) {
     const raw = occDeref(oc, edgeHandle, oc.TopoDS_Shape) as OccShapeRef;
     try {
-      const idx = edgeMap.FindIndex_1(raw);
+      const idx = findShapeIndex(edgeMap, raw);
       if (idx > 0) {
         bodyIdToCanonical.set(bodyEdgeId, idx);
         canonicalToBodyId.set(idx, bodyEdgeId);
@@ -298,7 +309,7 @@ export function collectTangentChainEdges(
       const verts: number[] = [];
       while (vexp.More() && verts.length < 2) {
         const v = vexp.Current();
-        const vIdx = vertMap.FindIndex_1(v);
+        const vIdx = findShapeIndex(vertMap, v);
         v.delete();
         if (vIdx > 0) verts.push(vIdx);
         vexp.Next();
@@ -415,7 +426,7 @@ export function collectFaceEdgeIds(
     const exp = new occ.TopExp_Explorer_2(faceRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
     while (exp.More()) {
       const e = exp.Current();
-      const idx = edgeMap.FindIndex_1(e);
+      const idx = findShapeIndex(edgeMap, e);
       e.delete();
       if (idx > 0) faceEdgeIndices.add(idx);
       exp.Next();
@@ -429,7 +440,7 @@ export function collectFaceEdgeIds(
   for (const [bodyEdgeId, edgeHandle] of body.edgeIds) {
     const raw = occDeref(oc, edgeHandle, oc.TopoDS_Shape) as OccShapeRef;
     try {
-      const idx = edgeMap.FindIndex_1(raw);
+      const idx = findShapeIndex(edgeMap, raw);
       if (idx > 0 && faceEdgeIndices.has(idx)) result.push(bodyEdgeId);
     } finally {
       raw.delete?.();
@@ -473,7 +484,7 @@ export function collectSharedEdgeIds(
       const exp = new occ.TopExp_Explorer_2(faceRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
       while (exp.More()) {
         const e = exp.Current();
-        const idx = edgeMap.FindIndex_1(e);
+        const idx = findShapeIndex(edgeMap, e);
         e.delete();
         if (idx > 0) set.add(idx);
         exp.Next();
@@ -497,7 +508,7 @@ export function collectSharedEdgeIds(
   for (const [bodyEdgeId, edgeHandle] of body.edgeIds) {
     const raw = occDeref(oc, edgeHandle, oc.TopoDS_Shape) as OccShapeRef;
     try {
-      const idx = edgeMap.FindIndex_1(raw);
+      const idx = findShapeIndex(edgeMap, raw);
       if (idx > 0 && sharedCanonical.has(idx)) result.push(bodyEdgeId);
     } finally {
       raw.delete?.();

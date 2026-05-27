@@ -141,7 +141,8 @@
       "Bash(node -e \"const fs=require\\('fs'\\);const files=['src/engine/occ/ops/extrude.ts','src/store/cad/persistConfig.ts','src/engine/occ/brepBody.ts'];for\\(const f of files\\){const d=fs.readFileSync\\(f,'utf8'\\);const fx=d.replace\\(/‘/g,\\\\\"'\\\\\"\\).replace\\(/’/g,\\\\\"'\\\\\"\\).replace\\(/“/g,'\\\\\"'\\).replace\\(/”/g,'\\\\\"'\\).replace\\(/–/g,'-'\\).replace\\(/—/g,'--'\\).replace\\(/→/g,'->'\\);const n=\\(d.match\\(/[‘’“”–—→]/g\\)||[]\\).length;if\\(n>0\\){fs.writeFileSync\\(f,fx,'utf8'\\);console.log\\(f,n\\);}else console.log\\(f,'clean'\\);}\")",
       "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\);const p=JSON.parse\\(d\\);console.log\\('build:',p.scripts.build\\);console.log\\('typecheck:',p.scripts.typecheck\\);\")",
       "Bash(node -p \"JSON.parse\\(require\\('fs'\\).readFileSync\\('package.json','utf8'\\)\\).scripts.build\")",
-      "Bash(node -p \"JSON.parse\\(require\\('fs'\\).readFileSync\\('tsconfig.app.json','utf8'\\)\\).compilerOptions.strict\")"
+      "Bash(node -p \"JSON.parse\\(require\\('fs'\\).readFileSync\\('tsconfig.app.json','utf8'\\)\\).compilerOptions.strict\")",
+      "Bash(findstr \":5173\")"
     ]
   }
 }

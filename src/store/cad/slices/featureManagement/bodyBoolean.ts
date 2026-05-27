@@ -19,7 +19,7 @@ import { getOcc, getOccSync } from '../../../../engine/occ/loader';
 import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
 import { performOccBooleanWithInstance, type OccBooleanOperation } from '../../../../engine/occ/ops/booleanCore';
 import { tessellate, tessellateWithInstance, tessellationToGeometry } from '../../../../engine/occ/tessellate';
-import { attachTessellationToMesh } from '../../../../engine/occ/picking';
+import { attachTessellationToMesh, detachTessellationFromMesh } from '../../../../engine/occ/picking';
 
 export type BodyBooleanOp = 'new-body' | 'join' | 'cut' | 'intersect';
 
@@ -109,6 +109,7 @@ export function disposeUnplacedToolMesh(mesh: THREE.Mesh | null | undefined): vo
   const bodyId = mesh.userData['brepBodyId'] as string | undefined;
   if (bodyId) globalBRepBodyRegistry.delete(bodyId);
   mesh.geometry.dispose();
+  detachTessellationFromMesh(mesh);
 }
 
 /**

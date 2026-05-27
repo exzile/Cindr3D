@@ -7,6 +7,8 @@ import {
 import { globalBRepBodyRegistry } from "../../../../engine/occ/globalRegistry";
 import type { BRepTessellation } from "../../../../engine/occ/brepBody";
 import type { BodyTopology } from "../../../../engine/geometryEngine/core/solid/edgeTypes";
+import { getOccSync } from "../../../../engine/occ/loader";
+import { tessellate } from "../../../../engine/occ/tessellate";
 
 export type GuideGeometryResult = {
   geometry: THREE.BufferGeometry;
@@ -48,28 +50,32 @@ export function polylineIsCurved(polyline: Float32Array | THREE.Vector3[]): bool
 
 export function resolveMeshOccTessellation(mesh: THREE.Mesh) {
   let tess = getMeshTessellation(mesh);
-  let bodyId = mesh.userData.brepBodyId as string | undefined;
+  // brepBodyId is set by attachTessellationToMesh; bodyId (no-prefix) is set by
+  // ExtrudedBodies.tsx for stored-mesh features that never went through
+  // attachTessellationToMesh. Accept either key so stored extrude/boolean meshes work.
+  let bodyId = (mesh.userData.brepBodyId ?? mesh.userData.bodyId) as string | undefined;
   if (tess && bodyId) return { tess, bodyId };
 
   const featureId = mesh.userData.featureId as string | undefined;
-  let body =
+  const body =
     (bodyId ? globalBRepBodyRegistry.get(bodyId) : undefined) ??
-    (featureId ? globalBRepBodyRegistry.getByFeature(featureId).find((candidate) => candidate._tessellation) : undefined);
+    (featureId ? globalBRepBodyRegistry.getByFeature(featureId).find((candidate) => candidate._tessellation ?? candidate.shape) : undefined);
 
-  if (!body) {
-    const allIds = globalBRepBodyRegistry.snapshot().bodyIds;
-    for (const candidateId of allIds) {
-      const candidate = globalBRepBodyRegistry.get(candidateId);
-      if (candidate?._tessellation) {
-        body = candidate;
-        break;
-      }
-    }
-  }
   if (!body) return null;
 
-  tess = body._tessellation ?? null;
-  if (!tess) return null;
+  // Tessellate on-demand if the body exists but _tessellation hasn't been cached yet
+  if (!body._tessellation) {
+    const occ = getOccSync();
+    if (!occ) return null;
+    try {
+      body._tessellation = tessellate(occ.oc, body);
+    } catch (e) {
+      console.warn('[resolveMeshOcc] on-demand tessellate failed:', e);
+      return null;
+    }
+  }
+
+  tess = body._tessellation;
   bodyId = body.id;
   attachTessellationToMesh(mesh, tess, body.id);
   return { tess, bodyId };

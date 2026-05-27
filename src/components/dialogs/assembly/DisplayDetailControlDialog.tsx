@@ -6,7 +6,7 @@ import { useCADStore } from '../../../store/cadStore';
 import { getOccSync } from '../../../engine/occ/loader';
 import { globalBRepBodyRegistry } from '../../../engine/occ/globalRegistry';
 import { tessellateWithInstance, tessellationToGeometry } from '../../../engine/occ/tessellate';
-import { attachTessellationToMesh } from '../../../engine/occ/picking';
+import { attachTessellationToMesh, disposeMeshDeferred } from '../../../engine/occ/picking';
 
 interface QualityPreset { label: string; deflection: number }
 const PRESETS: QualityPreset[] = [
@@ -87,9 +87,9 @@ export function DisplayDetailControlDialog({
         linearDeflection: deflection,
         useCache: false,
       });
-      // Dispose old geometry before replacing to prevent GPU memory leak
+      // Release old GPU geometry and OCC CPU-side tessellation after replacement.
       if (body.mesh instanceof THREE.Mesh) {
-        body.mesh.geometry.dispose();
+        disposeMeshDeferred(body.mesh);
       }
       const geo = tessellationToGeometry(tess);
       // Narrow material — meshes can have Material | Material[]
@@ -102,7 +102,7 @@ export function DisplayDetailControlDialog({
       setBodyDeflectionOverride(resolvedId, deflection);
       setStatusMessage(`Detail updated: ${deflection} mm deflection`);
       onClose();
-    } catch (e) {
+    } catch {
       setStatusMessage('Re-tessellation failed');
     } finally {
       setApplying(false);

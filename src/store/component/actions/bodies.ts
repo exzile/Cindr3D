@@ -69,8 +69,12 @@ export function createBodyActions({ get, set }: ComponentStoreApi): Pick<
       if (!body) return;
 
       // Dispose GPU resources so the old geometry doesn't linger on the GPU heap.
+      const brepBodyIds = new Set<string>();
       if (body.mesh instanceof THREE.Mesh) {
+        const brepBodyId = body.mesh.userData['brepBodyId'] as string | undefined;
+        if (brepBodyId) brepBodyIds.add(brepBodyId);
         body.mesh.geometry?.dispose();
+        detachTessellationFromMesh(body.mesh);
         // Only dispose materials this body owns exclusively (shared library materials are singletons).
         const mat = body.mesh.material;
         if (mat) {
@@ -81,16 +85,17 @@ export function createBodyActions({ get, set }: ComponentStoreApi): Pick<
         }
       } else if (body.mesh instanceof THREE.Group) {
         body.mesh.traverse((child) => {
-          if (child instanceof THREE.Mesh) child.geometry?.dispose();
+          if (child instanceof THREE.Mesh) {
+            const brepBodyId = child.userData['brepBodyId'] as string | undefined;
+            if (brepBodyId) brepBodyIds.add(brepBodyId);
+            child.geometry?.dispose();
+            detachTessellationFromMesh(child);
+          }
         });
       }
 
       // Evict the OCC body from the registry (calls body.dispose() internally).
-      const brepBodyId =
-        body.mesh instanceof THREE.Mesh
-          ? (body.mesh.userData['brepBodyId'] as string | undefined)
-          : undefined;
-      if (brepBodyId) globalBRepBodyRegistry.delete(brepBodyId);
+      for (const brepBodyId of brepBodyIds) globalBRepBodyRegistry.delete(brepBodyId);
 
       const comp = components[body.componentId];
       const updatedBodies = { ...bodies };

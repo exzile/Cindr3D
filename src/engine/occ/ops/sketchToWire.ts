@@ -255,9 +255,11 @@ export function wireToFace(
     }
   }
   if (!faceMaker.IsDone()) {
+    console.warn('[wireToFace] BRepBuilderAPI_MakeFace not done after', holeWires.length, 'holes');
     faceMaker.delete();
     return null;
   }
+  console.debug('[wireToFace] face built OK, holes:', holeWires.length);
   const face = faceMaker.Face();
   const ownedResources = [
     ...takeOccOwnedResources(outerWire),

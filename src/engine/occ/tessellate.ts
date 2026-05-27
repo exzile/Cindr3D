@@ -64,6 +64,9 @@ export function tessellate(
 
   const explorer = new oc.TopExp_Explorer_2(shape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
   let fallbackFaceId = 0;
+  // DEBUG: track faces with null triangulation
+  let dbgTotal = 0;
+  let dbgNull = 0;
   try {
     while (explorer.More()) {
       const current = explorer.Current();
@@ -72,9 +75,20 @@ export function tessellate(
       fallbackFaceId += 1;
       const location = new oc.TopLoc_Location_1();
       const triangulation = oc.BRep_Tool.Triangulation(face, location);
+      dbgTotal += 1;
 
       if (!triangulation.IsNull()) {
+        const trisBefore = positions.length / 3;
         appendFaceTriangles(oc, triangulation, location, face, faceId, positions, normals, faceIds);
+        const trisAdded = positions.length / 3 - trisBefore;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const orient = (oc as any).TopAbs_Orientation;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const faceOrient = (face as any).Orientation_1?.();
+        console.debug(`[tessellate] face ${fallbackFaceId - 1}: ${trisAdded / 3} triangles, orient=${faceOrient === orient?.TopAbs_REVERSED ? 'REVERSED' : 'FORWARD'}`);
+      } else {
+        dbgNull += 1;
+        console.warn(`[tessellate] null triangulation for face ${fallbackFaceId - 1} (ptr=${face.ptr})`);
       }
 
       triangulation.delete();
@@ -87,6 +101,11 @@ export function tessellate(
     }
   } finally {
     explorer.delete();
+  }
+  if (dbgNull > 0) {
+    console.warn(`[tessellate] ${dbgNull}/${dbgTotal} faces had null triangulation — body ${body.id} (${body.sourceFeatureId ?? 'no-feature'})`);
+  } else {
+    console.debug(`[tessellate] ${dbgTotal} faces all tessellated OK — body ${body.id}`);
   }
 
   const tessellation: BRepTessellation = {

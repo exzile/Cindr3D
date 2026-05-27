@@ -23,10 +23,37 @@
 import type { OcctRaw } from '../types';
 import { makeBRepBodyFromOccShape, occDeref, type BRepBody } from '../brepBody';
 import { getOcc } from '../loader';
-import { findAdjacentFace, findAdjacentFacesToFace, collectFaceEdgeIds, collectSharedEdgeIds } from './adjacency';
+import {
+  collectFaceEdgeIds,
+  collectSharedEdgeIds,
+  findAdjacentFace,
+  findAdjacentFacesToFace,
+  findShapeIndex,
+} from './adjacency';
+
+interface OccFilletBuilder {
+  Add_2(radius: number, edge: unknown): void;
+  Add_3(startRadius: number, endRadius: number, edge: unknown): void;
+  Add_4?(distance1: number, distance2: number, edge: unknown, face: unknown): void;
+  Build(progress?: unknown): void;
+  IsDone?(): boolean;
+  HasResult?(): boolean;
+  Shape(): unknown;
+  delete(): void;
+}
+
+function createFilletBuilder(occ: OccFilletApi, rawShape: unknown, filletShape: unknown): OccFilletBuilder | null {
+  const api = occ as OccFilletApi & {
+    BRepFilletAPI_MakeFillet?: new (shape: unknown, filletShape: unknown) => OccFilletBuilder;
+    BRepFilletAPI_MakeFillet_2?: new (shape: unknown, filletShape: unknown) => OccFilletBuilder;
+  };
+  const ctor = api.BRepFilletAPI_MakeFillet_2 ?? api.BRepFilletAPI_MakeFillet;
+  return ctor ? new ctor(rawShape, filletShape) : null;
+}
 
 type OccFilletApi = OcctRaw & {
-  BRepFilletAPI_MakeFillet_2: new (shape: unknown, filletShape: unknown) => {
+  BRepFilletAPI_MakeFillet?: new (shape: unknown, filletShape: unknown) => OccFilletBuilder;
+  BRepFilletAPI_MakeFillet_2?: new (shape: unknown, filletShape: unknown) => {
     Add_2(radius: number, edge: unknown): void;
     Add_3(startRadius: number, endRadius: number, edge: unknown): void;
     /** Per-face asymmetric — optional binding; not present in all opencascade.js builds. */
@@ -49,7 +76,8 @@ type OccFilletApi = OcctRaw & {
     delete(): void;
   };
   TopTools_IndexedMapOfShape_1: new () => {
-    FindIndex_1(shape: unknown): number;
+    FindIndex_1?(shape: unknown): number;
+    FindIndex?(shape: unknown): number;
     FindKey_1(idx: number): unknown;
     Extent(): number;
     delete(): void;
@@ -142,7 +170,7 @@ function computeChordLengthRadius(
       edgeMap.delete();
       return fallback;
     }
-    const targetIdx = edgeMap.FindIndex_1(rawEdge);
+    const targetIdx = findShapeIndex(edgeMap, rawEdge);
     if (targetIdx <= 0) {
       edgeMap.delete();
       return fallback;
@@ -164,7 +192,7 @@ function computeChordLengthRadius(
       let found = false;
       while (edgeExp.More()) {
         const e = edgeExp.Current();
-        const idx = edgeMap.FindIndex_1(e);
+        const idx = findShapeIndex(edgeMap, e);
         e.delete();
         if (idx === targetIdx) {
           found = true;
@@ -247,7 +275,11 @@ export function occFilletEdgeSetsWithInstance(
     ? occ.ChFi3d_FilletShape.ChFi3d_Polynomial
     : occ.ChFi3d_FilletShape.ChFi3d_Rational;
 
-  const mk = new occ.BRepFilletAPI_MakeFillet_2(rawShape, filletShape);
+  const mk = createFilletBuilder(occ, rawShape, filletShape);
+  if (!mk) {
+    console.warn('[occFillet] BRepFilletAPI_MakeFillet is not bound in this OCC build');
+    return null;
+  }
   try {
     let addedAny = false;
     for (const edgeSet of edgeSets) {
@@ -302,15 +334,10 @@ export function occFilletEdgeSetsWithInstance(
       return null;
     }
 
-    const progress = new occ.Message_ProgressRange_1();
-    try {
-      mk.Build(progress);
-    } finally {
-      progress.delete?.();
-    }
+    mk.Build();
 
-    if (!mk.IsDone()) {
-      console.warn('[occFillet] BRepFilletAPI_MakeFillet.IsDone() = false');
+    if (mk.IsDone?.() === false || mk.HasResult?.() === false) {
+      console.warn('[occFillet] BRepFilletAPI_MakeFillet.IsDone() = false — addedAny was true, edgeSets:', JSON.stringify(edgeSets.map(s => ({ edgeIds: s.edgeIds, radius: s.radius }))));
       return null;
     }
 
@@ -455,7 +482,7 @@ export function occFullRoundFilletWithInstance(
     try {
       while (exp.More()) {
         const e = exp.Current();
-        const idx = edgeMap.FindIndex_1(e);
+        const idx = findShapeIndex(edgeMap, e);
         e.delete();
         if (idx > 0) result.add(idx);
         exp.Next();
@@ -470,7 +497,7 @@ export function occFullRoundFilletWithInstance(
   const centerIndices = new Set<number>();
   while (centerExp.More()) {
     const e = centerExp.Current();
-    const idx = edgeMap.FindIndex_1(e);
+    const idx = findShapeIndex(edgeMap, e);
     e.delete();
     if (idx > 0) centerIndices.add(idx);
     centerExp.Next();
@@ -525,7 +552,7 @@ export function occFullRoundFilletWithInstance(
     let rawEdge: { delete?: () => void } | null = null;
     try {
       rawEdge = occDeref(oc, edgeHandle, oc.TopoDS_Shape) as { delete?: () => void };
-      const idx = edgeMap.FindIndex_1(rawEdge);
+      const idx = findShapeIndex(edgeMap, rawEdge);
       if (sharedSet.has(idx)) bodyEdgeIds.push(bodyEdgeId);
     } catch { /* skip */ } finally {
       rawEdge?.delete?.();
@@ -578,7 +605,7 @@ function autoInferSideFaceGroups(
   try {
     while (centerExp.More()) {
       const e = centerExp.Current();
-      const idx = edgeMap.FindIndex_1(e);
+      const idx = findShapeIndex(edgeMap, e);
       e.delete();
       if (idx > 0 && !centerEdgeList.includes(idx)) centerEdgeList.push(idx);
       centerExp.Next();
@@ -602,7 +629,7 @@ function autoInferSideFaceGroups(
     try {
       while (exp.More()) {
         const e = exp.Current();
-        const idx = edgeMap.FindIndex_1(e);
+        const idx = findShapeIndex(edgeMap, e);
         e.delete();
         if (centerEdgeList.includes(idx)) {
           faceToEdgeIdx.set(adjFaceId, idx);
