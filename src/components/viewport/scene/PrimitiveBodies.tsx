@@ -12,6 +12,7 @@ import { occTorusWithInstance } from '../../../engine/occ/ops/torus';
 import { tessellationToGeometry, tessellate } from '../../../engine/occ/tessellate';
 import { attachTessellationToMesh } from '../../../engine/occ/picking';
 import { globalBRepBodyRegistry } from '../../../engine/occ/globalRegistry';
+import { parseOccEdgeSelection, storedEdgeIds } from '../../../utils/occEdgeUtils';
 import type { BRepBody } from '../../../engine/occ/brepBody';
 import type { OcctRaw } from '../../../engine/occ/types';
 import type { Feature } from '../../../types/cad';
@@ -163,9 +164,10 @@ interface PrimitiveMeshProps {
   spec: PrimitiveSpec;
   isDimmed: boolean;
   componentMaterial: THREE.Material;
+  hidden: boolean;
 }
 
-function PrimitiveMesh({ spec, isDimmed, componentMaterial }: PrimitiveMeshProps) {
+function PrimitiveMesh({ spec, isDimmed, componentMaterial, hidden }: PrimitiveMeshProps) {
   // Try a synchronous OCC build first; if OCC isn't loaded yet, kick off an
   // async load and re-render once it resolves. Until then, render the
   // fallback THREE geometry (no edge-pick support during the warmup).
@@ -232,8 +234,14 @@ function PrimitiveMesh({ spec, isDimmed, componentMaterial }: PrimitiveMeshProps
       rotation={spec.rotation}
       castShadow
       receiveShadow
+      // When a downstream fillet/chamfer has produced a result mesh, the
+      // filleted body is rendered via ExtrudedBodies' stored-mesh path.
+      // Hide the original primitive mesh so the rounded edges show through,
+      // but keep the component mounted so the OCC body stays in the registry
+      // for fillet replay.
+      visible={!hidden}
       onUpdate={(m) => {
-        m.userData.pickable = true;
+        m.userData.pickable = !hidden;
         m.userData.featureId = spec.featureId;
         if (state.bodyId && state.body?._tessellation) {
           attachTessellationToMesh(m, state.body._tessellation, state.bodyId);
@@ -253,8 +261,34 @@ export default function PrimitiveBodies() {
 
   const editingInPlace = !!activeComponentId && activeComponentId !== rootComponentId;
 
+  // Mirrors ExtrudedBodies.edgeModificationSourceFeatureId: a fillet/chamfer
+  // feature points back to its source via parentFeatureId or via the source
+  // body's sourceFeatureId on the parsed edge selection. Used to hide the
+  // original primitive once it has been filleted / chamfered.
+  const downstreamEdgeModSourceIds = useMemo(() => {
+    const out = new Set<string>();
+    for (const f of features) {
+      if (f.type !== 'fillet' && f.type !== 'chamfer') continue;
+      if (!f.visible || f.suppressed || f.mesh == null) continue;
+      const explicit =
+        f.parentFeatureId ??
+        (f.params.parentFeatureId as string | undefined) ??
+        (f.params.sourceFeatureId as string | undefined);
+      if (explicit) {
+        out.add(explicit);
+        continue;
+      }
+      const selection = parseOccEdgeSelection(storedEdgeIds(f.params.edgeIds));
+      const sourceFeatureId = selection
+        ? globalBRepBodyRegistry.get(selection.bodyId)?.sourceFeatureId
+        : undefined;
+      if (sourceFeatureId) out.add(sourceFeatureId);
+    }
+    return out;
+  }, [features]);
+
   const specs = useMemo(() => {
-    const out: PrimitiveSpec[] = [];
+    const out: Array<{ spec: PrimitiveSpec; hidden: boolean }> = [];
     for (const f of features) {
       if (f.type !== 'primitive') continue;
       if (!f.visible || f.suppressed) continue;
@@ -268,14 +302,20 @@ export default function PrimitiveBodies() {
         if (idx > rollbackIndex) continue;
       }
       const spec = buildPrimitiveSpec(f);
-      if (spec) out.push(spec);
+      if (!spec) continue;
+      // When a downstream fillet/chamfer has a result mesh, hide the
+      // original primitive so the rounded edges aren't visually masked.
+      // The OCC body stays alive so fillet replay can still find it via
+      // globalBRepBodyRegistry.
+      const hidden = downstreamEdgeModSourceIds.has(f.id);
+      out.push({ spec, hidden });
     }
     return out;
-  }, [features, rollbackIndex, components]);
+  }, [features, rollbackIndex, components, downstreamEdgeModSourceIds]);
 
   return (
     <>
-      {specs.map((spec) => {
+      {specs.map(({ spec, hidden }) => {
         const dim = editingInPlace && spec.componentId !== activeComponentId;
         const componentMaterial = showComponentColors && spec.componentId
           ? componentColorMaterial(components[spec.componentId]?.color ?? '#5B9BD5')
@@ -286,6 +326,7 @@ export default function PrimitiveBodies() {
             spec={spec}
             isDimmed={dim}
             componentMaterial={componentMaterial}
+            hidden={hidden}
           />
         );
       })}
