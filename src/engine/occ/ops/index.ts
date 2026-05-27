@@ -21,4 +21,5 @@ export * from './sweep';
 export * from './thicken';
 export * from './torus';
 export * from './sliceSketch';
+export * from './unifyShape';
 export * from './union';

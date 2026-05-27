@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import type { OcctRaw } from '../types';
 import { makeBRepBodyFromOccShape, type BRepBody } from '../brepBody';
+import { unifyRawShape } from './unifyShape';
 import { getOcc } from '../loader';
 import type { OccPlaneFrame } from '../plane';
 import { type SketchProfile, sketchProfileToWires, takeOccOwnedResources, wireToFace } from './sketchToWire';
@@ -66,10 +67,20 @@ export function occExtrudeWithInstance(
   const extruded = occExtrudeShapeWithInstance(oc, profile, distance, frame, options);
   let consumed = false;
   try {
-    const body = makeBRepBodyFromOccShape(oc, extruded.shape, {
+    // Unify same-domain faces/edges from the prism so a sketch with a
+    // polygonalized circle (64 line-segments) produces a single cylindrical
+    // face with 3 edges, not 64 flat side faces. The unifier handle is added
+    // to ownedResources so its Shape() VIEW stays valid for the body's lifetime.
+    const unified = unifyRawShape(oc, extruded.shape, { unifyEdges: true, unifyFaces: true });
+    const shapeForBody = unified?.rawShape ?? extruded.shape;
+    const ownedResources = [
+      ...extruded.ownedResources,
+      ...(unified ? [unified.unifier] : []),
+    ];
+    const body = makeBRepBodyFromOccShape(oc, shapeForBody, {
       id: options.id,
       sourceFeatureId: options.sourceFeatureId,
-      ownedResources: extruded.ownedResources,
+      ownedResources,
     });
     consumed = true;
     return body;

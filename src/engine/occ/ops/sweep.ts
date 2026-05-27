@@ -5,6 +5,7 @@
  */
 import type { OcctRaw } from '../types';
 import { makeBRepBodyFromOccShape, type BRepBody } from '../brepBody';
+import { unifyRawShape } from './unifyShape';
 import { getOcc } from '../loader';
 import type { OccPlaneFrame } from '../plane';
 import { type SketchProfile, sketchProfileToWires, wireToFace } from './sketchToWire';
@@ -168,9 +169,11 @@ export function occSweepWithInstance(
     }
   }
 
-  return makeBRepBodyFromOccShape(oc, resultShape, {
+  const unified = unifyRawShape(oc, resultShape, { unifyEdges: true, unifyFaces: true });
+  return makeBRepBodyFromOccShape(oc, unified?.rawShape ?? resultShape, {
     id: options.id,
     sourceFeatureId: options.sourceFeatureId,
+    ownedResources: unified ? [unified.unifier] : [],
   });
 }
 
@@ -261,8 +264,10 @@ export function occSweepFromPathWireWithInstance(
     }
   }
 
-  return makeBRepBodyFromOccShape(oc, resultShape, {
+  const unified = unifyRawShape(oc, resultShape, { unifyEdges: true, unifyFaces: true });
+  return makeBRepBodyFromOccShape(oc, unified?.rawShape ?? resultShape, {
     id: options.id,
     sourceFeatureId: options.sourceFeatureId,
+    ownedResources: unified ? [unified.unifier] : [],
   });
 }
