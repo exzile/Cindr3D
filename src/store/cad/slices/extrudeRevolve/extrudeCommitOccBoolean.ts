@@ -107,7 +107,9 @@ export function buildImmediateOccBooleanExtrudeMesh({
 
   try {
     const shapes = GeometryEngine.sketchToProfileShapesFlat(sourceSketch);
-    const firstShape = profileIndex !== undefined ? shapes[profileIndex] : shapes[0];
+    const firstShape = profileIndex !== undefined
+      ? shapes[profileIndex]
+      : (GeometryEngine.sketchToShape(sourceSketch) ?? shapes[0]);
     if (!firstShape) return { needsStoredMesh: false, occFailureMessage: null };
 
     const sketchProfile = makeSketchProfileFromShape(firstShape);

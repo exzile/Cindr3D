@@ -116,7 +116,13 @@ export async function buildOccNewBodyExtrudeMesh({
 
   try {
     const shapes = GeometryEngine.sketchToProfileShapesFlat(sourceSketch);
-    const firstShape = profileIndex !== undefined ? shapes[profileIndex] : shapes[0];
+    // When no specific profile is selected (whole-sketch mode), use sketchToShape
+    // which sorts by area (largest first) and nests holes — so a rectangle containing
+    // circles correctly becomes a profile with through-holes rather than a standalone
+    // cylinder (which would happen if circles happen to appear first in the entity list).
+    const firstShape = profileIndex !== undefined
+      ? shapes[profileIndex]
+      : (GeometryEngine.sketchToShape(sourceSketch) ?? shapes[0]);
     if (!firstShape) return { needsStoredMesh: false, occFailureMessage: null };
 
     const sketchProfile = makeSketchProfileFromShape(firstShape);

@@ -193,14 +193,11 @@ export function sketchToShapes(sketch: Sketch): THREE.Shape[] {
 export function sketchToProfileShapesFlat(sketch: Sketch): THREE.Shape[] {
   const { t1, t2 } = getSketchAxesUtil(sketch);
   const origin = sketch.planeOrigin;
-  const rawShapes = entitiesToShapes(
-    sketch.entities,
-    (p) => {
-      const d = new THREE.Vector3(p.x - origin.x, p.y - origin.y, p.z - origin.z);
-      return { u: d.dot(t1), v: d.dot(t2) };
-    },
-    { nestHoles: false },
-  );
+  const project = (p: SketchPoint) => {
+    const d = new THREE.Vector3(p.x - origin.x, p.y - origin.y, p.z - origin.z);
+    return { u: d.dot(t1), v: d.dot(t2) };
+  };
+  const rawShapes = entitiesToShapes(sketch.entities, project, { nestHoles: false });
 
   const atomic = computeAtomicRegions(rawShapes);
   if (atomic.length === 0) return rawShapes;
@@ -265,6 +262,25 @@ export function sketchToProfileShapesFlat(sketch: Sketch): THREE.Shape[] {
       combined.push(atom);
     }
   }
+
+  // Pure-JS fallback: apply holes from entitiesToShapes(nestHoles:true) onto any
+  // combined shape that still has no holes but should have some.  This runs without
+  // Clipper2 WASM and catches the common "circles inside a rectangle" case even
+  // when the WASM hasn't loaded yet, guaranteeing the primary profile always
+  // carries its through-holes.
+  const nestedShapes = entitiesToShapes(sketch.entities, project, { nestHoles: true });
+  for (const nested of nestedShapes) {
+    if (nested.holes.length === 0) continue;
+    const nestedSig = shapeSignature(nested);
+    for (let i = 0; i < combined.length; i++) {
+      if (combined[i].holes.length >= nested.holes.length) continue;
+      if (sameShape(shapeSignature(combined[i]), nestedSig)) {
+        combined[i] = nested;
+        break;
+      }
+    }
+  }
+
   return combined;
 }
 
