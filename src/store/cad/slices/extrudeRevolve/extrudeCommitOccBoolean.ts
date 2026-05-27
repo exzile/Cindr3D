@@ -282,8 +282,12 @@ export async function buildSingleProfileOccBooleanExtrudeMesh({
 
     let resultBody = null;
     try {
+      // Use analytical circle wire for ANY boolean op (subtract / union /
+      // intersect) when the tool sketch is a circle profile and the extrude has
+      // no taper/symmetric/two-side modifiers.  Produces a clean cylindrical
+      // tool body (3 edges instead of N polygonal segments) so the boolean
+      // result has minimal seam topology and fillet works on the rim edges.
       const exactCircleToolShape =
-        boolOp === 'subtract' &&
         !occSymmetric &&
         occTwoSideDist === undefined &&
         Math.abs(extrudeTaperAngle) <= 0.001

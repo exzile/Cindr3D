@@ -355,26 +355,31 @@ function projectSketchPointToFrame(
   return new THREE.Vector2(d.dot(frame.uDir), d.dot(frame.vDir));
 }
 
-function profileCentroid(profile: SketchProfile): THREE.Vector2 {
-  const center = new THREE.Vector2();
-  for (const point of profile.outer) center.add(point);
-  return profile.outer.length > 0 ? center.multiplyScalar(1 / profile.outer.length) : center;
-}
-
-function findMatchingCircularProfileEntity(
+/**
+ * Find the source-sketch circle entity that matches a single closed polygonal
+ * loop (outer of a THREE.Shape or one of its holes).  Score = (area error) +
+ * (center error), normalised to expected radius; both must be within 8 %.
+ *
+ * The polygonal loop is the result of getShapeProfilePoints — for circles it is
+ * a ~64-point regular polygon; for rectangles only 4 points.  The 8-point lower
+ * bound filters out non-circle loops.
+ */
+function findMatchingCircleEntityForLoop(
   sourceSketch: Sketch,
-  profile: SketchProfile,
+  loop: readonly THREE.Vector2[],
   frame: ReturnType<typeof createOccPlaneFrameFromSketch>,
 ): SketchEntity | null {
-  if (profile.holes.length > 0 || profile.outer.length < 8) return null;
-  const profileArea = polygonArea2D(profile.outer);
-  const center = profileCentroid(profile);
-  let best: { entity: SketchEntity; score: number } | null = null;
+  if (loop.length < 8) return null;
+  const area = polygonArea2D(loop);
+  const center = new THREE.Vector2();
+  for (const point of loop) center.add(point);
+  if (loop.length > 0) center.multiplyScalar(1 / loop.length);
 
+  let best: { entity: SketchEntity; score: number } | null = null;
   for (const entity of sourceSketch.entities) {
     if (entity.type !== 'circle' || typeof entity.radius !== 'number' || entity.radius <= 0 || !entity.points[0]) continue;
     const expectedArea = Math.PI * entity.radius * entity.radius;
-    const areaError = Math.abs(profileArea - expectedArea) / Math.max(expectedArea, 1e-6);
+    const areaError = Math.abs(area - expectedArea) / Math.max(expectedArea, 1e-6);
     if (areaError > 0.08) continue;
     const circleCenter = projectSketchPointToFrame(entity.points[0], frame);
     const centerError = circleCenter.distanceTo(center) / Math.max(entity.radius, 1);
@@ -382,17 +387,16 @@ function findMatchingCircularProfileEntity(
     const score = areaError + centerError;
     if (!best || score < best.score) best = { entity, score };
   }
-
-  if (!best) {
-    console.warn('[analyticalExtrude] findMatchingCircle: no match — pts:', profile.outer.length,
-      'area:', polygonArea2D(profile.outer).toFixed(4),
-      'center:', center.x.toFixed(3), center.y.toFixed(3),
-      'candidates:', sourceSketch.entities.filter(e => e.type === 'circle').map(e =>
-        `r=${e.radius?.toFixed(3)} cx=${e.points[0]?.x?.toFixed(3)},${e.points[0]?.y?.toFixed(3)}`
-      ).join(' | '),
-    );
-  }
   return best?.entity ?? null;
+}
+
+function findMatchingCircularProfileEntity(
+  sourceSketch: Sketch,
+  profile: SketchProfile,
+  frame: ReturnType<typeof createOccPlaneFrameFromSketch>,
+): SketchEntity | null {
+  if (profile.holes.length > 0) return null;
+  return findMatchingCircleEntityForLoop(sourceSketch, profile.outer, frame);
 }
 
 export function tryBuildExactCircleToolShape(
@@ -415,17 +419,21 @@ export function tryBuildExactCircleToolShape(
 }
 
 /**
- * Build an analytical extrude body where circular holes use GC_MakeCircle_2
- * edges instead of 96-segment polygon approximations.
+ * Build an analytical extrude body where any loop matching a circle entity in
+ * the source sketch uses an exact `GC_MakeCircle_2` edge instead of an N-segment
+ * polygon approximation.
  *
- * Polygon-approximated circles produce ~726 BRep edges on a box-with-holes,
- * causing BRepFilletAPI_MakeFillet.IsDone()=false. This function matches each
- * hole profile to a circle entity in the source sketch and builds an exact
- * analytical wire (1 circular edge) instead of 96 polygon edges.  The result
- * is a clean 12–16 edge BRep body that fillets correctly.
+ * Polygon-approximated circles cause ~726 BRep edges on a box-with-holes,
+ * making BRepFilletAPI_MakeFillet.IsDone()=false and producing visual iso-lines
+ * on the resulting cylindrical surfaces.  Using `Geom_Circle` edges produces a
+ * clean 3-edges-per-cylindrical-face body (top ring, bottom ring, seam).
  *
- * Returns null if any hole cannot be matched to a circle entity — caller falls
- * back to the standard polygon path.
+ * Both the outer profile AND each hole are tested independently:
+ *   - circle entity found → analytical edge via sketchEntitiesToWire
+ *   - no circle entity     → polygonal pointLoopToWire as before
+ *
+ * Returns null if NO loop matched a circle and the polygonal path would have
+ * produced an identical result — the caller falls back to occExtrudeWithInstance.
  */
 export function tryBuildAnalyticalExtrudeBody(
   oc: unknown,
@@ -435,8 +443,6 @@ export function tryBuildAnalyticalExtrudeBody(
   frame: OccPlaneFrame,
   options: OccExtrudeOptions,
 ): BRepBody | null {
-  if (shape.holes.length === 0) return null;
-
   const toWorld = (uv: THREE.Vector2): THREE.Vector3 =>
     frame.origin.clone()
       .addScaledVector(frame.uDir, uv.x)
@@ -445,32 +451,59 @@ export function tryBuildAnalyticalExtrudeBody(
   const outerPoints = getShapeProfilePoints(shape);
   if (outerPoints.length < 3) return null;
 
-  const outerWire = pointLoopToWire(oc as never, outerPoints.map(toWorld));
-  if (!outerWire) return null;
+  // Track analytical wires separately from polygonal wires for owned-resource
+  // bookkeeping: pointLoopToWire stores its polygonMaker via OCC_OWNED_RESOURCES,
+  // while sketchEntitiesToWire's wires have no such carrier and must be deleted
+  // explicitly via the resources list passed to the extrude builder.
+  const analyticalWires: unknown[] = [];
+  let analyticalCount = 0;
 
-  const analyticalHoleWires: unknown[] = [];
-  try {
-    for (const hole of shape.holes) {
-      const holePoints = getShapeProfilePoints(hole);
-      const holeProfile: SketchProfile = { outer: holePoints, holes: [] };
-      const circleEntity = findMatchingCircularProfileEntity(sourceSketch, holeProfile, frame);
-      if (!circleEntity) return null; // hole is not a detectable circle — fall back
+  // ── Outer wire ──────────────────────────────────────────────────────────────
+  const outerCircleEntity = findMatchingCircleEntityForLoop(sourceSketch, outerPoints, frame);
+  let outerWire: unknown;
+  if (outerCircleEntity) {
+    outerWire = sketchEntitiesToWire(oc as never, [outerCircleEntity], frame);
+    if (!outerWire) return null;
+    analyticalWires.push(outerWire);
+    analyticalCount += 1;
+  } else {
+    outerWire = pointLoopToWire(oc as never, outerPoints.map(toWorld));
+    if (!outerWire) return null;
+  }
 
-      const holeWire = sketchEntitiesToWire(oc as never, [circleEntity], frame);
+  // ── Hole wires ──────────────────────────────────────────────────────────────
+  const holeWires: unknown[] = [];
+  for (const hole of shape.holes) {
+    const holePoints = getShapeProfilePoints(hole);
+    const holeCircleEntity = findMatchingCircleEntityForLoop(sourceSketch, holePoints, frame);
+    if (holeCircleEntity) {
+      const holeWire = sketchEntitiesToWire(oc as never, [holeCircleEntity], frame);
       if (!holeWire) return null;
-      analyticalHoleWires.push(holeWire);
+      holeWires.push(holeWire);
+      analyticalWires.push(holeWire);
+      analyticalCount += 1;
+    } else {
+      const holeWire = pointLoopToWire(oc as never, holePoints.map(toWorld));
+      if (!holeWire) return null;
+      holeWires.push(holeWire);
     }
+  }
 
-    const face = wireToFace(oc as never, outerWire, analyticalHoleWires, frame);
+  // No loops became analytical — the polygonal path would produce the same
+  // result.  Bail so the caller's standard path runs (avoids duplicate work).
+  if (analyticalCount === 0) return null;
+
+  try {
+    const face = wireToFace(oc as never, outerWire, holeWires, frame);
     if (!face) return null;
 
-    // takeOccOwnedResources transfers polygon maker + points (from outerWire) into
-    // profileResources via OCC_OWNED_RESOURCES. analyticalHoleWires have no
-    // OCC_OWNED_RESOURCES (sketchEntitiesToWire doesn't set them), so add
-    // the wire handles explicitly so they're deleted after the prism is built.
+    // takeOccOwnedResources transfers each polygonal wire's polygonMaker (set
+    // via OCC_OWNED_RESOURCES inside pointLoopToWire) into profileResources.
+    // Analytical wires have no carrier and must be deleted explicitly after
+    // the prism is built — add them here.
     const profileResources = [
       ...takeOccOwnedResources(face),
-      ...(analyticalHoleWires as Array<{ delete?: () => void }>),
+      ...(analyticalWires as Array<{ delete?: () => void }>),
     ];
 
     const extruded = occExtrudeFaceShapeWithInstance(oc as never, face, distance, frame, options, profileResources);
