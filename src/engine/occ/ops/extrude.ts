@@ -226,14 +226,6 @@ export function occExtrudeFaceShapeWithInstance(
   try {
     prism.Build();
     resultShape = prism.Shape();
-    // DEBUG: count faces in the prism result
-    try {
-      const dbgExp = new occ.TopExp_Explorer_2(resultShape, occ.TopAbs_ShapeEnum.TopAbs_FACE, occ.TopAbs_ShapeEnum.TopAbs_SHAPE);
-      let dbgFaceCount = 0;
-      while (dbgExp.More()) { const s = dbgExp.Current(); s.delete(); dbgFaceCount++; dbgExp.Next(); }
-      dbgExp.delete();
-      console.debug(`[occExtrude] prism produced ${dbgFaceCount} faces`);
-    } catch { /* ignore debug counting errors */ }
   } catch (error) {
     prism.delete();
     throw error;
