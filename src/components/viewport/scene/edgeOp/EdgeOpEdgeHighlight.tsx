@@ -10,6 +10,7 @@ import {
   buildMergedMeshCreaseGuideGeometry,
   buildMeshTopologyGuideGeometry,
   buildTessellationGuideGeometry,
+  disposeGuideGeometryResult,
   mergedGuideGeometryResults,
   polylineIsCurved,
   resolveMeshOccTessellation,
@@ -340,6 +341,9 @@ export default function EdgeOpEdgeHighlight({
           : allowCurvedEdges
             ? mergedGuideGeometryResults(topologyGuideResult, tessellationGuideResult, renderedGuideResult)
             : topologyGuideResult ?? renderedGuideResult ?? tessellationGuideResult;
+        if (visibleGuideResult !== topologyGuideResult) disposeGuideGeometryResult(topologyGuideResult);
+        if (visibleGuideResult !== tessellationGuideResult) disposeGuideGeometryResult(tessellationGuideResult);
+        if (visibleGuideResult !== renderedGuideResult) disposeGuideGeometryResult(renderedGuideResult);
         if (!batched && !visibleGuideResult) return;
         if (visibleGuideResult) {
           const guideLine = new THREE.LineSegments(visibleGuideResult.geometry, allEdgesMat);
@@ -464,7 +468,9 @@ export default function EdgeOpEdgeHighlight({
       return;
     }
 
-    if (allEdgeLinesRef.current.length > 0 || occHoverRef.current || selectedLinesRef.current.size > 0 || edgeIds.length > 0) {
+    // Only drive continuous frames when something is actually animating (hover pulse
+    // or selected-edge pulse). The static guide lines don't need per-frame redraws.
+    if (occHoverRef.current || selectedLinesRef.current.size > 0) {
       invalidate();
     }
 
@@ -523,9 +529,9 @@ export default function EdgeOpEdgeHighlight({
     }
 
     const now = performance.now();
-    if (allEdgeLinesRef.current.length > 0) {
-      allEdgesMat.opacity = 0.82 + 0.18 * (0.5 + 0.5 * Math.sin(now * 0.006));
-    }
+    // Guide lines stay at static opacity — animating them every frame causes
+    // an invalidate() → useFrame → invalidate() loop that locks the renderer
+    // at 60fps even when nothing is changing.
     if (hoverLineRef.current) applyLinePulse(hoverLineRef.current, 1, now);
     selectedLinesRef.current.forEach((line) => {
       const material = line.material as THREE.Material;

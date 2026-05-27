@@ -13,6 +13,7 @@
 
 import type { Feature, Sketch } from '../../../../types/cad';
 import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
+import { detachTessellationFromMesh } from '../../../../engine/occ/picking';
 import { buildOccNewBodyExtrudeMesh } from './extrudeCommitOccNewBody';
 import type { ExtrudeDirection } from './extrudeCommitHelpers';
 import type { ExtrudeOperation } from './extrudeCommitOperation';
@@ -91,11 +92,12 @@ export async function rehydrateExtrudeOccBody(
     if (result.featureMesh) {
       // The body is now in the registry (side effect of createRegisteredOccMesh).
       // We only needed the body — free the display geometry we'll never render.
+      detachTessellationFromMesh(result.featureMesh);
       result.featureMesh.geometry.dispose();
     }
 
     return result.needsStoredMesh;
-  } catch {
+  } catch (e) {
     return false;
   }
 }
@@ -127,5 +129,6 @@ export async function rehydrateMissingExtrudeOccBodies(
     candidates.map((f) => rehydrateExtrudeOccBody(f, sketches)),
   );
 
-  return results.filter(Boolean).length;
+  const successCount = results.filter(Boolean).length;
+  return successCount;
 }

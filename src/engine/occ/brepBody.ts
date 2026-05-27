@@ -131,7 +131,8 @@ export function makeBRepBodyFromOccShape(oc: OcctRaw, rawShape: any, options: Om
     const { ids: vertexIds } = assignTopologyIds(vertexHandles, vertexAlloc);
 
     const ownedResources = [...(options.ownedResources ?? []), ...retainedMaps];
-    return createBRepBody({ ...options, shape: shapeHandle, faceIds, edgeIds, vertexIds, ownedResources });
+    const body = createBRepBody({ ...options, shape: shapeHandle, faceIds, edgeIds, vertexIds, ownedResources });
+    return body;
   } catch (error) {
     console.error('[makeBRepBodyFromOccShape] failed building topology handles:', error);
     shapeHandle.dispose();

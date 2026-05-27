@@ -276,7 +276,9 @@ export async function ensureFeatureOccBody(feature: Feature): Promise<boolean> {
   const liveBodyId = mesh.userData[BREP_BODY_ID_KEY] as string | undefined;
   if (liveBodyId) {
     const liveBody = globalBRepBodyRegistry.get(liveBodyId);
-    if (liveBody && isBRepBodyAlive(liveBody)) return true;
+    if (liveBody && isBRepBodyAlive(liveBody)) {
+      return true;
+    }
     // Body exists but shape is stale — evict so we fall through to STEP restore.
     if (liveBody) globalBRepBodyRegistry.delete(liveBodyId);
   }
