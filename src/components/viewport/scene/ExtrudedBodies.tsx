@@ -282,6 +282,30 @@ export default function ExtrudedBodies() {
       m.userData.pickable = true;
       m.userData.featureId = f.id;
       m.userData.bodyId = resolveBodyId(f.id, f.bodyId);
+      // Re-sync the stored mesh's position/rotation to the source primitive's
+      // current params on every render — primitives apply their transform at
+      // the React mesh level, and the OCC tessellation is in local body
+      // space, so without this the rounded body would still display at the
+      // primitive's position from fillet-commit time even after a user moves
+      // or rotates the primitive.
+      const parentId =
+        f.parentFeatureId ??
+        (f.params.parentFeatureId as string | undefined) ??
+        (f.params.sourceFeatureId as string | undefined);
+      const parent = parentId ? features.find((c) => c.id === parentId) : undefined;
+      if (parent?.type === 'primitive') {
+        const p = parent.params;
+        m.position.set(
+          (p.x as number) || 0,
+          (p.y as number) || 0,
+          (p.z as number) || 0,
+        );
+        m.rotation.set(
+          THREE.MathUtils.degToRad((p.rx as number) || 0),
+          THREE.MathUtils.degToRad((p.ry as number) || 0),
+          THREE.MathUtils.degToRad((p.rz as number) || 0),
+        );
+      }
       liveBodyMeshes.set(m.uuid, m);
       stored.push({ uuid: m.uuid });
     }

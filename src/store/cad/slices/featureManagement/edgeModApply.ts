@@ -18,6 +18,36 @@ import { disposeMeshDeferred } from "../../../../engine/occ/picking";
 import { BODY_MATERIAL } from "../../../../components/viewport/scene/bodyMaterial";
 import { DEFAULT_FILLET_RADIUS, propagateTangentEdges } from "./edgeModHelpers";
 
+type SourceFeature = CADState['features'][number];
+
+/**
+ * Primitives apply their position / rotation at the React mesh level (params
+ * x/y/z + rx/ry/rz in degrees) — the OCC tessellation is in local body space,
+ * centered at origin. When a fillet / chamfer creates a new BRep body, the
+ * result tessellation inherits that local space and the new THREE.Mesh
+ * defaults to position (0,0,0). Without this transfer the rounded body
+ * appears at world origin instead of where the primitive sits.
+ *
+ * Extrudes / revolves bake their world transform into their geometry, so
+ * they have no params.x/y/z to copy — this is a no-op for them.
+ */
+function copySourceTransformToMesh(srcFeature: SourceFeature | undefined, mesh: THREE.Mesh): void {
+  if (!srcFeature) return;
+  if (srcFeature.type !== 'primitive') return;
+  const { params } = srcFeature;
+  mesh.position.set(
+    (params.x as number) || 0,
+    (params.y as number) || 0,
+    (params.z as number) || 0,
+  );
+  mesh.rotation.set(
+    THREE.MathUtils.degToRad((params.rx as number) || 0),
+    THREE.MathUtils.degToRad((params.ry as number) || 0),
+    THREE.MathUtils.degToRad((params.rz as number) || 0),
+  );
+  mesh.updateMatrix();
+}
+
 export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) {
   const markOccEdgeModificationError = (featureId: string | undefined, tool: string, message: string): false => {
     const statusMessage = `${tool}: ${message}`;
@@ -119,6 +149,7 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     try {
       resultBody.sourceFeatureId = featureId;
       newMesh = createRegisteredOccMesh(occ.oc, resultBody, material, featureId);
+      copySourceTransformToMesh(srcFeature, newMesh);
     } catch (err) {
       return markOccEdgeModificationError(featureId, tool, `OCC tessellation failed: ${errorMessage(err, "unknown error")}`);
     }
@@ -241,6 +272,7 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     try {
       result.sourceFeatureId = featureId;
       newMesh = createRegisteredOccMesh(occ.oc, result, material, featureId);
+      copySourceTransformToMesh(srcFeature, newMesh);
     } catch (err) {
       return markOccEdgeModificationError(
         featureId,
