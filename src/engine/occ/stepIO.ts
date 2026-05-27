@@ -17,10 +17,18 @@ const TMP_READ  = '/occ_step_in.step';
 // ── Write ────────────────────────────────────────────────────────────────────
 
 export function shapeToStep(oc: OcctRaw, body: BRepBody): OccOperationResult<string> {
-  const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
-  const shouldDeleteRawShape =
-    typeof oc.wrapPointer !== 'function' &&
-    typeof (rawShape as { clone?: unknown }).clone === 'function';
+  let rawShape: unknown;
+  try {
+    rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (typeof (rawShape as any)?.isDeleted === 'function' && (rawShape as any).isDeleted()) {
+      return occErr(occMessage('error', 'STEP_SHAPE_DELETED', 'Body shape WASM wrapper is already deleted'));
+    }
+  } catch (e) {
+    return occErr(occMessage('error', 'STEP_DEREF_FAIL', String(e)));
+  }
+  // NOTE: rawShape is a VIEW from occDeref (returns body.shape._object directly).
+  // Do NOT delete it — that would destroy the body's own shape handle.
 
   let writer: unknown;
   try {
@@ -40,7 +48,7 @@ export function shapeToStep(oc: OcctRaw, body: BRepBody): OccOperationResult<str
   } finally {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (writer as any)?.delete?.();
-    if (shouldDeleteRawShape) rawShape.delete?.();
+    // rawShape is a VIEW — do NOT delete.
   }
 
   let stepString: string;
@@ -65,7 +73,6 @@ export function shapeFromStep(oc: OcctRaw, stepString: string): OccOperationResu
     return occErr(occMessage('error', 'STEP_FS_WRITE_FAIL', String(e)));
   }
 
-  let rawShape: unknown;
   let reader: unknown;
   try {
     reader = new oc.STEPControl_Reader_1();
@@ -82,23 +89,26 @@ export function shapeFromStep(oc: OcctRaw, stepString: string): OccOperationResu
       progress.delete?.();
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rawShape = (reader as any).Shape(1);
-  } catch (e) {
-    return occErr(occMessage('error', 'STEP_READ_EXCEPTION', String(e)));
-  } finally {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (reader as any)?.delete?.();
-    try { oc.FS.unlink(TMP_READ); } catch { /* best effort */ }
-  }
+    const rawShape = (reader as any).Shape(1);
+    if (!rawShape) {
+      return occErr(occMessage('error', 'STEP_NO_SHAPE', 'STEP reader produced no shape'));
+    }
 
-  if (!rawShape) {
-    return occErr(occMessage('error', 'STEP_NO_SHAPE', 'STEP reader produced no shape'));
-  }
-
-  try {
-    const body = makeBRepBodyFromOccShape(oc, rawShape);
+    // Build the BRepBody BEFORE the reader is deleted.
+    // reader.Shape(1) returns a reference into the reader's internal data —
+    // deleting the reader invalidates rawShape.  makeBRepBodyFromOccShape
+    // must consume rawShape (and its topology) while the reader is still alive.
+    // Pass the reader as an ownedResource so it stays alive as long as the body.
+    // rawShape (from reader.Shape(1)) is a reference into the reader's internal
+    // storage — deleting the reader would invalidate it.
+    const body = makeBRepBodyFromOccShape(oc, rawShape, { ownedResources: [reader as { delete?: () => void }] });
     return occOk(body);
   } catch (e) {
-    return occErr(occMessage('error', 'STEP_BODY_WRAP_FAIL', String(e)));
+    // Body creation failed — reader was NOT transferred to ownedResources, delete it.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    try { (reader as any)?.delete?.(); } catch { /* already freed */ }
+    return occErr(occMessage('error', 'STEP_READ_EXCEPTION', String(e)));
+  } finally {
+    try { oc.FS.unlink(TMP_READ); } catch { /* best effort */ }
   }
 }

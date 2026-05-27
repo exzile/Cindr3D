@@ -78,7 +78,7 @@ export async function registerExtrudeBody({
         extrudeTaperAngle,
         extrudeStartType === 'offset' ? extrudeStartOffset : 0,
         absDistance2,
-        extrudeTaperAngle2,
+        extrudeTaperAngle2 ?? 0,
       );
       if (probe) {
         const parts = GeometryEngine.splitByConnectedComponents(probe.geometry);

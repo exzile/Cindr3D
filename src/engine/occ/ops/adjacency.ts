@@ -115,14 +115,11 @@ export function findAdjacentFace(
 
       if (targetFaceIdx > 0) {
         for (const [, handle] of body.faceIds) {
+          // rawFaceHandle is a VIEW from occDeref — do NOT delete.
           const rawFaceHandle = occDeref(oc, handle, oc.TopoDS_Shape) as OccShapeRef;
-          try {
-            const handleIdx = findShapeIndex(faceMap, rawFaceHandle);
-            if (handleIdx === targetFaceIdx) {
-              return handle;
-            }
-          } finally {
-            rawFaceHandle.delete?.();
+          const handleIdx = findShapeIndex(faceMap, rawFaceHandle);
+          if (handleIdx === targetFaceIdx) {
+            return handle;
           }
         }
       }
@@ -164,22 +161,22 @@ export function findAdjacentFacesToFace(
     return [];
   }
 
+  // centerRaw is a VIEW from occDeref — do NOT delete.
   const centerRaw = occDeref(oc, centerHandle, oc.TopoDS_Shape) as OccShapeRef;
   const centerEdgeIndices = new Set<number>();
   let centerFaceIdx = -1;
+  centerFaceIdx = findShapeIndex(faceMap, centerRaw);
+  const centerExp = new occ.TopExp_Explorer_2(centerRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
   try {
-    centerFaceIdx = findShapeIndex(faceMap, centerRaw);
-    const exp = new occ.TopExp_Explorer_2(centerRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
-    while (exp.More()) {
-      const e = exp.Current();
+    while (centerExp.More()) {
+      const e = centerExp.Current();
       const idx = findShapeIndex(edgeMap, e);
       e.delete();
       if (idx > 0) centerEdgeIndices.add(idx);
-      exp.Next();
+      centerExp.Next();
     }
-    exp.delete();
   } finally {
-    centerRaw.delete?.();
+    centerExp.delete();
   }
 
   const adjacentBodyFaceIds: number[] = [];
@@ -191,28 +188,25 @@ export function findAdjacentFacesToFace(
 
   for (const [bodyFaceId, handle] of body.faceIds) {
     if (bodyFaceId === centerFaceId) continue;
+    // faceRaw is a VIEW from occDeref — do NOT delete.
     const faceRaw = occDeref(oc, handle, oc.TopoDS_Shape) as OccShapeRef;
-    try {
-      const thisIdx = findShapeIndex(faceMap, faceRaw);
-      if (thisIdx === centerFaceIdx) continue;
-      const exp = new occ.TopExp_Explorer_2(faceRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
-      let touches = false;
-      while (exp.More()) {
-        const e = exp.Current();
-        const idx = findShapeIndex(edgeMap, e);
-        e.delete();
-        if (idx > 0 && centerEdgeIndices.has(idx)) {
-          touches = true;
-          exp.delete();
-          break;
-        }
-        exp.Next();
+    const thisIdx = findShapeIndex(faceMap, faceRaw);
+    if (thisIdx === centerFaceIdx) continue;
+    const exp = new occ.TopExp_Explorer_2(faceRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+    let touches = false;
+    while (exp.More()) {
+      const e = exp.Current();
+      const idx = findShapeIndex(edgeMap, e);
+      e.delete();
+      if (idx > 0 && centerEdgeIndices.has(idx)) {
+        touches = true;
+        exp.delete();
+        break;
       }
-      if (!touches) exp.delete();
-      if (touches) adjacentBodyFaceIds.push(bodyFaceId);
-    } finally {
-      faceRaw.delete?.();
+      exp.Next();
     }
+    if (!touches) exp.delete();
+    if (touches) adjacentBodyFaceIds.push(bodyFaceId);
   }
 
   edgeMap.delete();
@@ -246,7 +240,7 @@ export function collectTangentChainEdges(
   } catch {
     edgeMap.delete();
     vertMap.delete();
-    rawShape.delete?.();
+    // rawShape is a VIEW from occDeref — do NOT delete.
     return [...new Set(seedEdgeIds)];
   }
 
@@ -255,14 +249,11 @@ export function collectTangentChainEdges(
   const canonicalToBodyId = new Map<number, number>();
   for (const [bodyEdgeId, edgeHandle] of body.edgeIds) {
     const raw = occDeref(oc, edgeHandle, oc.TopoDS_Shape) as OccShapeRef;
-    try {
-      const idx = findShapeIndex(edgeMap, raw);
-      if (idx > 0) {
-        bodyIdToCanonical.set(bodyEdgeId, idx);
-        canonicalToBodyId.set(idx, bodyEdgeId);
-      }
-    } finally {
-      raw.delete?.();
+    // raw is a VIEW from occDeref — do NOT delete.
+    const idx = findShapeIndex(edgeMap, raw);
+    if (idx > 0) {
+      bodyIdToCanonical.set(bodyEdgeId, idx);
+      canonicalToBodyId.set(idx, bodyEdgeId);
     }
   }
 
@@ -385,7 +376,7 @@ export function collectTangentChainEdges(
 
   edgeMap.delete();
   vertMap.delete();
-  rawShape.delete?.();
+  // rawShape is a VIEW from occDeref — do NOT delete.
 
   const result: number[] = [];
   for (const cIdx of visited) {
@@ -408,6 +399,7 @@ export function collectFaceEdgeIds(
   const faceHandle = body.faceIds.get(faceId);
   if (!faceHandle) return [];
 
+  // rawShape and faceRaw are VIEWs from occDeref — do NOT delete.
   const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
   const faceRaw = occDeref(oc, faceHandle, oc.TopoDS_Shape) as OccShapeRef;
   const edgeMap = new occ.TopTools_IndexedMapOfShape_1();
@@ -416,14 +408,12 @@ export function collectFaceEdgeIds(
     occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, edgeMap);
   } catch {
     edgeMap.delete();
-    faceRaw.delete?.();
-    rawShape.delete?.();
     return [];
   }
 
   const faceEdgeIndices = new Set<number>();
+  const exp = new occ.TopExp_Explorer_2(faceRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
   try {
-    const exp = new occ.TopExp_Explorer_2(faceRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
     while (exp.More()) {
       const e = exp.Current();
       const idx = findShapeIndex(edgeMap, e);
@@ -431,24 +421,19 @@ export function collectFaceEdgeIds(
       if (idx > 0) faceEdgeIndices.add(idx);
       exp.Next();
     }
-    exp.delete();
   } finally {
-    faceRaw.delete?.();
+    exp.delete();
   }
 
   const result: number[] = [];
   for (const [bodyEdgeId, edgeHandle] of body.edgeIds) {
+    // raw is a VIEW from occDeref — do NOT delete.
     const raw = occDeref(oc, edgeHandle, oc.TopoDS_Shape) as OccShapeRef;
-    try {
-      const idx = findShapeIndex(edgeMap, raw);
-      if (idx > 0 && faceEdgeIndices.has(idx)) result.push(bodyEdgeId);
-    } finally {
-      raw.delete?.();
-    }
+    const idx = findShapeIndex(edgeMap, raw);
+    if (idx > 0 && faceEdgeIndices.has(idx)) result.push(bodyEdgeId);
   }
 
   edgeMap.delete();
-  rawShape.delete?.();
   return result;
 }
 
@@ -465,23 +450,24 @@ export function collectSharedEdgeIds(
   if (groupA.length === 0 || groupB.length === 0) return [];
   const occ = oc as OccAdjacencyApi;
 
+  // rawShape is a VIEW from occDeref — do NOT delete.
   const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
   const edgeMap = new occ.TopTools_IndexedMapOfShape_1();
   try {
     occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, edgeMap);
   } catch {
     edgeMap.delete();
-    rawShape.delete?.();
     return [];
   }
 
   function faceEdgeIndices(faceId: number): Set<number> {
     const handle = body.faceIds.get(faceId);
     if (!handle) return new Set();
+    // faceRaw is a VIEW from occDeref — do NOT delete.
     const faceRaw = occDeref(oc, handle, oc.TopoDS_Shape) as OccShapeRef;
     const set = new Set<number>();
+    const exp = new occ.TopExp_Explorer_2(faceRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
     try {
-      const exp = new occ.TopExp_Explorer_2(faceRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
       while (exp.More()) {
         const e = exp.Current();
         const idx = findShapeIndex(edgeMap, e);
@@ -489,9 +475,8 @@ export function collectSharedEdgeIds(
         if (idx > 0) set.add(idx);
         exp.Next();
       }
-      exp.delete();
     } finally {
-      faceRaw.delete?.();
+      exp.delete();
     }
     return set;
   }
@@ -506,16 +491,12 @@ export function collectSharedEdgeIds(
 
   const result: number[] = [];
   for (const [bodyEdgeId, edgeHandle] of body.edgeIds) {
+    // raw is a VIEW from occDeref — do NOT delete.
     const raw = occDeref(oc, edgeHandle, oc.TopoDS_Shape) as OccShapeRef;
-    try {
-      const idx = findShapeIndex(edgeMap, raw);
-      if (idx > 0 && sharedCanonical.has(idx)) result.push(bodyEdgeId);
-    } finally {
-      raw.delete?.();
-    }
+    const idx = findShapeIndex(edgeMap, raw);
+    if (idx > 0 && sharedCanonical.has(idx)) result.push(bodyEdgeId);
   }
 
   edgeMap.delete();
-  rawShape.delete?.();
   return result;
 }

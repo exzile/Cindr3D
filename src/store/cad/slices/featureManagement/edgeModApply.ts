@@ -16,6 +16,8 @@ import { createRegisteredOccMesh } from "../../../../engine/occ/registeredMesh";
 import { parseOccEdgeSelection } from "../../../../utils/occEdgeUtils";
 import { disposeMeshDeferred } from "../../../../engine/occ/picking";
 import { BODY_MATERIAL } from "../../../../components/viewport/scene/bodyMaterial";
+import { isBRepBodyAlive } from "../../../../engine/occ/brepBody";
+import { refreshStaleBodySync } from "../../persistence";
 import { DEFAULT_FILLET_RADIUS, propagateTangentEdges } from "./edgeModHelpers";
 
 type SourceFeature = CADState['features'][number];
@@ -83,14 +85,61 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     return globalBRepBodyRegistry.getByFeature(feature.id)[0];
   };
 
+  /**
+   * If a body's WASM shape wrapper is stale ("already deleted"), attempt to
+   * restore it from the feature's serialized STEP data synchronously.
+   * Returns the refreshed body, or undefined if restoration failed.
+   */
+  const ensureBodyAlive = (body: BRepBody, bodyId: string): BRepBody | undefined => {
+    if (isBRepBodyAlive(body)) return body;
+    // Body shape is stale — find the feature that owns it and restore from STEP.
+    const features = get().features;
+    const ownerFeature = features.find((f) => {
+      if (!(f.mesh instanceof THREE.Mesh)) return false;
+      return f.mesh.userData['brepBodyId'] === bodyId;
+    }) ?? features.find((f) => f.id === body.sourceFeatureId);
+    if (ownerFeature && refreshStaleBodySync(ownerFeature, bodyId)) {
+      return globalBRepBodyRegistry.get(bodyId);
+    }
+    return undefined;
+  };
+
+  /**
+   * After a hard refresh the registry is empty but features still carry
+   * _occStepData and mesh.userData.brepBodyId. Find the feature that owns
+   * the given bodyId and restore its OCC body from STEP synchronously.
+   */
+  const restoreMissingBodyFromFeature = (bodyId: string): BRepBody | undefined => {
+    const features = get().features;
+    const ownerFeature = features.find((f) => {
+      if (!(f.mesh instanceof THREE.Mesh)) return false;
+      return f.mesh.userData['brepBodyId'] === bodyId;
+    });
+    if (ownerFeature && refreshStaleBodySync(ownerFeature, bodyId)) {
+      return globalBRepBodyRegistry.get(bodyId);
+    }
+    return undefined;
+  };
+
   const resolveLiveSourceBody = (
     selectionBodyId: string,
     selectionEdgeIds: number[],
     featureId: string,
   ): BRepBody | undefined => {
+    // 1. Direct lookup by selection body ID.
     const direct = globalBRepBodyRegistry.get(selectionBodyId);
-    if (direct) return direct;
+    if (direct) {
+      const alive = ensureBodyAlive(direct, selectionBodyId);
+      if (alive) return alive;
+    }
 
+    // 2. Body missing entirely (e.g. after hard refresh) — restore from STEP.
+    if (!direct) {
+      const restored = restoreMissingBodyFromFeature(selectionBodyId);
+      if (restored) return restored;
+    }
+
+    // 3. Search registry for any body that has all the selected edges.
     const matchingLiveBody = globalBRepBodyRegistry
       .snapshot()
       .bodyIds
@@ -98,27 +147,72 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       .find((body): body is BRepBody =>
         !!body && selectionEdgeIds.every((edgeId) => body.edgeIds.has(edgeId)),
       );
-    if (matchingLiveBody) return matchingLiveBody;
+    if (matchingLiveBody) {
+      const alive = ensureBodyAlive(matchingLiveBody, matchingLiveBody.id);
+      if (alive) return alive;
+    }
 
+    // 4. Look up body via feature associations.
     const features = get().features;
     const feature = features.find((candidate) => candidate.id === featureId);
-    const currentBody = bodyForFeature(feature);
-    if (currentBody) return currentBody;
 
+    // 4a. Try restoring from the fillet feature's own source/parent feature.
     const sourceFeatureId =
       (feature?.params.sourceFeatureId as string | undefined) ??
       (feature?.params.parentFeatureId as string | undefined) ??
       (feature?.parentFeatureId as string | undefined) ??
       (feature?.params.targetId as string | undefined);
-    const sourceBody = bodyForFeature(features.find((candidate) => candidate.id === sourceFeatureId));
-    if (sourceBody) return sourceBody;
+    if (sourceFeatureId) {
+      const sourceFeature = features.find((candidate) => candidate.id === sourceFeatureId);
+      if (sourceFeature) {
+        const srcBodyId = sourceFeature.mesh instanceof THREE.Mesh
+          ? (sourceFeature.mesh.userData['brepBodyId'] as string | undefined)
+          : undefined;
+        if (srcBodyId) {
+          const existing = globalBRepBodyRegistry.get(srcBodyId);
+          if (existing) {
+            const alive = ensureBodyAlive(existing, srcBodyId);
+            if (alive) return alive;
+          } else {
+            const restored = restoreMissingBodyFromFeature(srcBodyId);
+            if (restored) return restored;
+          }
+        }
+      }
+    }
 
+    // 4b. Current feature's body.
+    const currentBody = bodyForFeature(feature);
+    if (currentBody) {
+      const alive = ensureBodyAlive(currentBody, currentBody.id);
+      if (alive) return alive;
+    }
+
+    // 4c. Source feature's body (via bodyForFeature).
+    const sourceBody = bodyForFeature(features.find((candidate) => candidate.id === sourceFeatureId));
+    if (sourceBody) {
+      const alive = ensureBodyAlive(sourceBody, sourceBody.id);
+      if (alive) return alive;
+    }
+
+    // 5. Walk backwards through feature list for any body.
     const featureIndex = features.findIndex((candidate) => candidate.id === featureId);
     for (let index = featureIndex - 1; index >= 0; index -= 1) {
       const candidate = features[index];
       if (candidate.type === 'sketch' || candidate.suppressed) continue;
       const body = bodyForFeature(candidate);
-      if (body) return body;
+      if (body) {
+        const alive = ensureBodyAlive(body, body.id);
+        if (alive) return alive;
+      }
+      // Body not in registry — try STEP restore from this feature.
+      const candidateBodyId = candidate.mesh instanceof THREE.Mesh
+        ? (candidate.mesh.userData['brepBodyId'] as string | undefined)
+        : undefined;
+      if (candidateBodyId && !globalBRepBodyRegistry.get(candidateBodyId)) {
+        const restored = restoreMissingBodyFromFeature(candidateBodyId);
+        if (restored) return restored;
+      }
     }
     return undefined;
   };

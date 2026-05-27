@@ -267,7 +267,7 @@ export async function buildSingleProfileOccBooleanExtrudeMesh({
       extrudeTaperAngle,
       extrudeStartType === 'offset' ? extrudeStartOffset : 0,
       absDistance2,
-      extrudeTaperAngle2,
+      extrudeTaperAngle2 ?? 0,
     );
     const { occDistance, occSymmetric, occTwoSideDist } = resolveOccExtrudeDistance(
       booleanDirection,

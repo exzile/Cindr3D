@@ -6,8 +6,8 @@ import { disposeMeshDeferred } from "../../../../../engine/occ/picking";
 import { occScaleWithInstance } from "../../../../../engine/occ/ops/scale";
 import { createRegisteredOccMesh } from "../../../../../engine/occ/registeredMesh";
 import { errorMessage } from "../../../../../utils/errorHandling";
-import type { CADSliceContext } from "../../sliceContext";
-import type { CADState } from "../../state";
+import type { CADSliceContext } from "../../../sliceContext";
+import type { CADState } from "../../../state";
 import { recomputeBooleanDependents } from "../featureBooleanUtils";
 
 export function createTransformScaleActions({ set, get }: CADSliceContext): Partial<CADState> {

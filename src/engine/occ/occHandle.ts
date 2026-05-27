@@ -59,9 +59,12 @@ export class OccHandle<_T = unknown> {
 
 /**
  * Wrap an OCCT object in an OccHandle.
- * `obj` must have `.ptr: number` and `.delete(): void` (standard opencascade.js shape).
+ * `obj` must have `.delete(): void` (standard opencascade.js shape).
+ * `.ptr` is used when available; some opencascade.js builds don't expose it,
+ * in which case the raw JS object reference is stored and used for deref.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function occWrap<_T>(obj: any, type: string): OccHandle<_T> {
-  return new OccHandle<_T>(obj.ptr as number, type, () => obj.delete(), obj);
+  const ptr = typeof obj.ptr === 'number' ? obj.ptr : 0;
+  return new OccHandle<_T>(ptr, type, () => obj.delete(), obj);
 }

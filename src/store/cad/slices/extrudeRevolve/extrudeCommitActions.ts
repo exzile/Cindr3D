@@ -337,6 +337,7 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
         profileIndices,
         extrudeExtentType,
         nextFeatures,
+        sketches,
         sourceSketch,
         sketchForOp,
         featureId,

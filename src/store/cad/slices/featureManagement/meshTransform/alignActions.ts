@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { disposeMeshDeferred } from "../../../../../engine/occ/picking";
-import type { CADSliceContext } from "../../sliceContext";
-import type { CADState } from "../../state";
+import type { CADSliceContext } from "../../../sliceContext";
+import type { CADState } from "../../../state";
 import { recomputeBooleanDependents } from "../featureBooleanUtils";
 
 export function createAlignActions({ set, get }: CADSliceContext): Partial<CADState> {

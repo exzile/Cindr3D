@@ -383,6 +383,15 @@ function findMatchingCircularProfileEntity(
     if (!best || score < best.score) best = { entity, score };
   }
 
+  if (!best) {
+    console.warn('[analyticalExtrude] findMatchingCircle: no match — pts:', profile.outer.length,
+      'area:', polygonArea2D(profile.outer).toFixed(4),
+      'center:', center.x.toFixed(3), center.y.toFixed(3),
+      'candidates:', sourceSketch.entities.filter(e => e.type === 'circle').map(e =>
+        `r=${e.radius?.toFixed(3)} cx=${e.points[0]?.x?.toFixed(3)},${e.points[0]?.y?.toFixed(3)}`
+      ).join(' | '),
+    );
+  }
   return best?.entity ?? null;
 }
 

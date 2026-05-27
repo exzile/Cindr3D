@@ -21,6 +21,7 @@ import {
   occEdgeId,
 } from "./edgeOpEdgeSelection";
 import { useCADStore } from "../../../../store/cadStore";
+import { rehydrateMissingExtrudeOccBodies } from "../../../../store/cad/slices/extrudeRevolve/rehydrateExtrudeOccBody";
 
 interface EdgeOpEdgeHighlightProps {
   enabled: boolean;
@@ -104,6 +105,11 @@ export default function EdgeOpEdgeHighlight({
   const cursorOnRef = useRef(false);
   const { scene: _scene, gl, invalidate: invalidateCanvas } = useThree();
   const features = useCADStore((state) => state.features);
+  const sketches = useCADStore((state) => state.sketches);
+
+  // Ref exposed to the rehydration effect so it can force a guide-line rebuild
+  // after OCC bodies are re-registered (needed after full page refresh).
+  const triggerRebuildRef = useRef<(() => void) | null>(null);
 
   const edgeSourceSignature = useMemo(
     () =>
@@ -183,8 +189,10 @@ export default function EdgeOpEdgeHighlight({
       }
     }
     if (result && !allowCurvedEdges) {
-      // guideLine (topology) has edgePolylines; pickLine (OCC tessellation) does not.
-      const isTopologyHit = result.mesh.userData['edgePolylines'] !== undefined;
+      // occDirect pick line or old pick line → use OCC tessellation polyline for curved check.
+      // Merged guide line → use stored edgePolylines.
+      const isOccDirectHover = result.mesh.userData['occDirect'] === true;
+      const isTopologyHit = !isOccDirectHover && result.mesh.userData['edgePolylines'] !== undefined;
       if (isTopologyHit) {
         const stored = result.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined;
         const pts = stored?.get(result.edgeId);
@@ -209,8 +217,12 @@ export default function EdgeOpEdgeHighlight({
 
   const handleOccClick = useCallback((result: OccEdgePickResult) => {
 
-    // guideLine (topology) has edgePolylines; pickLine (OCC tessellation) does not.
-    const isTopologyHit = result.mesh.userData['edgePolylines'] !== undefined;
+    // Three hit types:
+    // 1. occDirect pick line — invisible line with exact OCC edge IDs + body-local geometry
+    // 2. Old-style pick line — no edgePolylines, OCC edge IDs, tessellation lookup
+    // 3. Merged guide line — has edgePolylines, needs spatial remapping via findClosestOccEdge
+    const isOccDirect = result.mesh.userData['occDirect'] === true;
+    const isTopologyHit = !isOccDirect && result.mesh.userData['edgePolylines'] !== undefined;
     let polyline: THREE.Vector3[] | null = null;
     let displayPolyline: THREE.Vector3[] | null = null;
     let resolvedBodyId = result.bodyId;
@@ -218,14 +230,16 @@ export default function EdgeOpEdgeHighlight({
     let sourceBody = globalBRepBodyRegistry.get(result.bodyId);
     let visualSourceFeatureId: string | undefined;
 
-    if (!isTopologyHit) {
-      // pickLine hit: OCC edge ID is already correct — use tessellation directly.
+    if (isOccDirect || !isTopologyHit) {
+      // OCC pick line hit: edge ID is already a correct OCC edge ID.
+      // Look up the polyline from the body's tessellation and transform
+      // to world space using the pick line's matrixWorld (= source mesh matrix).
       polyline = getOccEdgePolyline(result);
       displayPolyline = polyline;
     }
 
     if (!polyline) {
-      // topology guideLine hit (or OCC lookup failed): get stored world-space polyline.
+      // topology/merged guideLine hit (or OCC lookup failed): get stored world-space polyline.
       const stored = result.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined;
       polyline = stored?.get(result.edgeId) ?? null;
       displayPolyline = polyline;
@@ -331,15 +345,23 @@ export default function EdgeOpEdgeHighlight({
           _scene.add(guideLine);
           lines.push(guideLine);
         }
-        // Invisible OCC tessellation pick target — carries exact OCC edge IDs needed
-        // when no visible guide could be built. If both exist, the visible guide wins
-        // so selected feedback matches the line the user actually clicked.
-        if (batched && !visibleGuideResult) {
+        // Invisible OCC tessellation pick target — carries exact OCC edge IDs.
+        // ALWAYS added alongside the visible guide so that the picker can match
+        // against it directly. When hit, handleOccClick detects `occDirect` and
+        // uses the OCC edge ID without spatial remapping — this avoids the
+        // findClosestOccEdge mismatch that occurs when the merged visible guide
+        // reassigns sequential IDs that don't match OCC topology.
+        if (batched) {
           const pickLine = new THREE.LineSegments(batched.geometry, pickEdgesMat);
           pickLine.userData.edgeIdsBySegment = batched.edgeIdsBySegment;
           pickLine.userData.brepBodyId = resolved!.bodyId;
+          pickLine.userData.occDirect = true;
           pickLine.frustumCulled = false;
-          pickLine.matrixAutoUpdate = true;
+          // Geometry is in body-local space; apply the mesh's world matrix so the
+          // picker's screen-space distance check places segments correctly.
+          pickLine.matrixAutoUpdate = false;
+          pickLine.matrix.copy(mesh.matrixWorld);
+          pickLine.matrixWorld.copy(mesh.matrixWorld);
           pickLine.renderOrder = EDGE_GUIDE_RENDER_ORDER;
           _scene.add(pickLine);
           lines.push(pickLine);
@@ -369,8 +391,13 @@ export default function EdgeOpEdgeHighlight({
       scheduleBuild(125);
     }, 250);
 
+    // Expose buildLines so the rehydration effect can force a rebuild after OCC
+    // bodies are re-registered (needed after full page refresh wipes the heap).
+    triggerRebuildRef.current = buildLines;
+
     return () => {
       cancelled = true;
+      triggerRebuildRef.current = null;
       if (initialBuildHandle !== null) window.clearTimeout(initialBuildHandle);
       if (retryHandle !== null) window.clearTimeout(retryHandle);
       for (const line of allEdgeLinesRef.current) {
@@ -380,6 +407,24 @@ export default function EdgeOpEdgeHighlight({
       allEdgeLinesRef.current = [];
     };
   }, [enabled, _scene, allEdgesMat, pickEdgesMat, allowCurvedEdges, edgeSourceSignature, visibleBodyFeatureIds, invalidateCanvas]);
+
+  // After page refresh the OCC WASM heap is wiped so the registry is empty even
+  // though feature meshes are still in the scene.  Rebuild missing BRep bodies for
+  // visible solid extrudes whenever edge-op mode is activated, then force a guide-
+  // line rebuild so the orange lines carry a valid brepBodyId for click resolution.
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+
+    rehydrateMissingExtrudeOccBodies(features, sketches).then((rehydrated) => {
+      if (cancelled || rehydrated === 0) return;
+      // Bodies are now registered — rebuild guide lines so they get brepBodyId set.
+      triggerRebuildRef.current?.();
+      invalidateCanvas();
+    });
+
+    return () => { cancelled = true; };
+  }, [enabled, features, sketches, invalidateCanvas]);
 
   useFrame(({ scene, invalidate }) => {
     if (!enabled) {

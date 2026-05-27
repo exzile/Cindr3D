@@ -5,6 +5,7 @@ import type { BodyTopology, ModelEdge } from '../../engine/geometryEngine/core/s
 import { getOcc, getOccSync } from '../../engine/occ/loader';
 import { globalBRepBodyRegistry } from '../../engine/occ/globalRegistry';
 import { attachTessellationToMesh, BREP_BODY_ID_KEY } from '../../engine/occ/picking';
+import { isBRepBodyAlive } from '../../engine/occ/brepBody';
 import { shapeFromStep, shapeToStep } from '../../engine/occ/stepIO';
 import { tessellateWithInstance } from '../../engine/occ/tessellate';
 
@@ -170,7 +171,14 @@ function serializeOccBodyData(feature: Feature, mesh: THREE.Mesh): SerializedOcc
   const cached = serializedOccBodyCache.get(body as unknown as object);
   if (cached && cached.revision === body.revision) return cached;
 
-  const result = shapeToStep(occ.oc, body);
+  let result: ReturnType<typeof shapeToStep>;
+  try {
+    result = shapeToStep(occ.oc, body);
+  } catch {
+    // Body shape may be an invalidated WASM reference (e.g. after HMR or
+    // builder cleanup).  Fall back to previously cached STEP data.
+    return (feature as unknown as SerializedFeature)._occStepData;
+  }
   if (!result.ok) return (feature as unknown as SerializedFeature)._occStepData;
 
   const data: SerializedOccBodyData = {
@@ -249,6 +257,10 @@ export const deserializeFeature = (feature: Feature): Feature => {
     const mesh = new THREE.Mesh(geometry, REHYDRATED_FEATURE_MATERIAL);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    // Restore brepBodyId so the fillet/chamfer path can find the body's STEP data.
+    if (serializedFeature._occStepData?.bodyId) {
+      mesh.userData[BREP_BODY_ID_KEY] = serializedFeature._occStepData.bodyId;
+    }
     const { _meshData: _ignored, ...rest } = serializedFeature;
     void _ignored;
     return { ...(rest as unknown as Feature), mesh };
@@ -262,23 +274,30 @@ export async function ensureFeatureOccBody(feature: Feature): Promise<boolean> {
   if (!(mesh instanceof THREE.Mesh)) return false;
 
   const liveBodyId = mesh.userData[BREP_BODY_ID_KEY] as string | undefined;
-  if (liveBodyId && globalBRepBodyRegistry.get(liveBodyId)) return true;
+  if (liveBodyId) {
+    const liveBody = globalBRepBodyRegistry.get(liveBodyId);
+    if (liveBody && isBRepBodyAlive(liveBody)) return true;
+    // Body exists but shape is stale — evict so we fall through to STEP restore.
+    if (liveBody) globalBRepBodyRegistry.delete(liveBodyId);
+  }
 
   const occStepData = serializedFeature._occStepData;
   if (!occStepData?.stepString || !occStepData.bodyId) return false;
 
   const existing = globalBRepBodyRegistry.get(occStepData.bodyId);
-  if (existing) {
+  if (existing && isBRepBodyAlive(existing)) {
     const { oc } = await getOcc();
     const tessellation = tessellateWithInstance(oc, existing);
     attachTessellationToMesh(mesh, tessellation, existing.id);
     return true;
   }
+  // Evict stale body if present.
+  if (existing) globalBRepBodyRegistry.delete(occStepData.bodyId);
 
   const { oc } = await getOcc();
   const result = shapeFromStep(oc, occStepData.stepString);
   if (!result.ok) {
-    console.warn(`[persistence] Failed to restore OCC body for ${feature.id}: ${result.error.message}`);
+    console.warn(`[persistence] Failed to restore OCC body for ${feature.id}: ${result.messages[0]?.message ?? 'unknown error'}`);
     return false;
   }
 
@@ -289,5 +308,42 @@ export async function ensureFeatureOccBody(feature: Feature): Promise<boolean> {
 
   const tessellation = tessellateWithInstance(oc, body);
   attachTessellationToMesh(mesh, tessellation, body.id);
+  return true;
+}
+
+/**
+ * Synchronous variant of ensureFeatureOccBody for use in sync call paths
+ * (e.g. fillet/chamfer which use getOccSync). Returns the refreshed BRepBody
+ * if the body was stale and successfully restored from STEP, or the existing
+ * live body. Returns undefined if OCC isn't loaded yet or STEP data is missing.
+ */
+export function refreshStaleBodySync(feature: Feature, bodyId: string): boolean {
+  const serializedFeature = feature as unknown as SerializedFeature;
+  const occStepData = serializedFeature._occStepData;
+  if (!occStepData?.stepString) return false;
+
+  const occ = getOccSync();
+  if (!occ) return false;
+
+  // Evict the stale body.
+  globalBRepBodyRegistry.delete(bodyId);
+
+  const result = shapeFromStep(occ.oc, occStepData.stepString);
+  if (!result.ok) {
+    console.warn(`[persistence] Sync STEP restore failed for ${feature.id}: ${result.messages[0]?.message ?? 'unknown error'}`);
+    return false;
+  }
+
+  const body = result.value;
+  body.id = occStepData.bodyId ?? bodyId;
+  body.sourceFeatureId = occStepData.sourceFeatureId ?? feature.id;
+  globalBRepBodyRegistry.add(body);
+
+  // Re-tessellate and attach to mesh if present.
+  const mesh = feature.mesh;
+  if (mesh instanceof THREE.Mesh) {
+    const tessellation = tessellateWithInstance(occ.oc, body);
+    attachTessellationToMesh(mesh, tessellation, body.id);
+  }
   return true;
 }

@@ -6,8 +6,8 @@ import { occMirrorWithInstance, type OccMirrorPlane } from "../../../../../engin
 import { createRegisteredOccMesh } from "../../../../../engine/occ/registeredMesh";
 import { errorMessage } from "../../../../../utils/errorHandling";
 import type { Feature } from "../../../../../types/cad";
-import type { CADSliceContext } from "../../sliceContext";
-import type { CADState } from "../../state";
+import type { CADSliceContext } from "../../../sliceContext";
+import type { CADState } from "../../../state";
 
 function mirrorPlaneFromString(plane: string): OccMirrorPlane {
   const origin = new THREE.Vector3(0, 0, 0);

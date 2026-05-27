@@ -26,7 +26,6 @@ import { getOcc } from '../loader';
 import {
   collectFaceEdgeIds,
   collectSharedEdgeIds,
-  findAdjacentFace,
   findAdjacentFacesToFace,
   findShapeIndex,
 } from './adjacency';
@@ -268,7 +267,20 @@ export function occFilletEdgeSetsWithInstance(
   if (edgeSets.length === 0) return null;
 
   const occ = oc as OccFilletApi;
-  const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
+
+  // Resolve the body shape — try stored handle first, fall back to fresh dereference.
+  let rawShape: unknown;
+  try {
+    rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
+    // Verify the shape is still alive (embind objects have isDeleted)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (typeof (rawShape as any)?.isDeleted === 'function' && (rawShape as any).isDeleted()) {
+      throw new Error('shape is deleted');
+    }
+  } catch {
+    console.warn('[occFillet] body.shape handle is stale');
+    return null;
+  }
 
   // Surface enum: G2 always uses ChFi3d_Polynomial; default is ChFi3d_Rational.
   const filletShape = options.continuity === 'G2'
@@ -284,40 +296,30 @@ export function occFilletEdgeSetsWithInstance(
     let addedAny = false;
     for (const edgeSet of edgeSets) {
       for (const edgeId of edgeSet.edgeIds) {
-        const handle = body.edgeIds.get(edgeId);
-        if (!handle) continue;
-        const rawEdge = occDeref(oc, handle, oc.TopoDS_Edge) as { ptr: number; delete(): void };
+        const edgeHandle = body.edgeIds.get(edgeId);
+        if (!edgeHandle) continue;
+        // Use the body's stored edge handle directly — it's the authoritative
+        // reference from the original topology walk. occDeref returns a VIEW
+        // into the retained IndexedMap. Cast to TopoDS_Edge for the fillet API.
+        let rawEdge: unknown;
+        try {
+          const rawEdgeShape = occDeref(oc, edgeHandle, oc.TopoDS_Shape);
+          // Edge_1 is a wrapPointer VIEW (same ptr) — do NOT delete rawEdge.
+          rawEdge = oc.TopoDS.Edge_1(rawEdgeShape);
+        } catch {
+          console.warn(`[occFillet] could not deref edge ${edgeId}`);
+          continue;
+        }
         try {
           if (edgeSet.isAsymmetric && edgeSet.startRadius !== undefined && edgeSet.endRadius !== undefined) {
-            // Per-face asymmetric: try Add_4(d1, d2, edge, face) if available.
-            // Falls back to Add_2(avg) if no adjacent face or binding is missing.
             const d1 = Math.max(edgeSet.startRadius, 0.001);
             const d2 = Math.max(edgeSet.endRadius, 0.001);
-            let addedAsymmetric = false;
-            if (typeof mk.Add_4 === 'function') {
-              const refFaceHandle = findAdjacentFace(oc, body, rawShape, rawEdge);
-              if (refFaceHandle) {
-                const rawFace = occDeref(oc, refFaceHandle, oc.TopoDS_Face);
-                try {
-                  mk.Add_4(d1, d2, rawEdge, rawFace);
-                  addedAsymmetric = true;
-                } catch (e) {
-                  console.warn('[occFillet] Add_4 (asymmetric) failed; falling back:', e);
-                } finally {
-                  rawFace.delete?.();
-                }
-              }
-            }
-            if (!addedAsymmetric) {
-              // OCC binding missing or no adjacent face — collapse to a
-              // single radius (average) so the fillet still produces a result.
-              mk.Add_2(Math.max((d1 + d2) / 2, 0.001), rawEdge);
-            }
+            // Asymmetric mode not supported with fresh resolution — use average.
+            mk.Add_2(Math.max((d1 + d2) / 2, 0.001), rawEdge);
           } else if (edgeSet.startRadius !== undefined && edgeSet.endRadius !== undefined) {
-            // Variable radius along edge length (start vertex → end vertex).
             mk.Add_3(edgeSet.startRadius, edgeSet.endRadius, rawEdge);
           } else if (edgeSet.chordLength !== undefined && edgeSet.chordLength > 0) {
-            const r = computeChordLengthRadius(oc, rawShape, rawEdge, edgeSet.chordLength);
+            const r = computeChordLengthRadius(oc, rawShape, rawEdge as { ptr: number }, edgeSet.chordLength);
             mk.Add_2(Math.max(r, 0.001), rawEdge);
           } else {
             mk.Add_2(Math.max(edgeSet.radius ?? 2, 0.001), rawEdge);
@@ -326,7 +328,6 @@ export function occFilletEdgeSetsWithInstance(
         } catch (e) {
           console.warn(`[occFillet] could not add edge ${edgeId}:`, e);
         }
-        // NOTE: rawEdge is an occDeref wrapPointer VIEW — do NOT delete.
       }
     }
 
@@ -336,23 +337,25 @@ export function occFilletEdgeSetsWithInstance(
 
     mk.Build();
 
-    if (mk.IsDone?.() === false || mk.HasResult?.() === false) {
-      console.warn('[occFillet] BRepFilletAPI_MakeFillet.IsDone() = false — addedAny was true, edgeSets:', JSON.stringify(edgeSets.map(s => ({ edgeIds: s.edgeIds, radius: s.radius }))));
+    if (mk.IsDone?.() === false) {
+      console.warn('[occFillet] BRepFilletAPI_MakeFillet.IsDone() = false');
       return null;
     }
 
     const resultShape = mk.Shape();
+    // Keep the fillet builder alive — resultShape is a reference into it.
     return makeBRepBodyFromOccShape(oc, resultShape, {
       id: options.id,
       sourceFeatureId: options.sourceFeatureId,
+      ownedResources: [mk],
     });
   } catch (e) {
     console.warn('[occFillet] threw during Build/Shape:', e);
-    return null;
-  } finally {
     mk.delete();
-    // rawShape is an occDeref wrapPointer VIEW — do NOT delete.
+    return null;
   }
+  // NOTE: mk is NOT deleted here — it's transferred to ownedResources so that
+  // resultShape (a reference into the builder) stays valid.
 }
 
 // ── Convenience wrappers (backward-compatible) ────────────────────────────────
@@ -524,12 +527,14 @@ export function occFullRoundFilletWithInstance(
     try {
       const edgeShape = edgeMap.FindKey_1(edgeIdx);
       const rawEdge = oc.TopoDS.Edge_1(edgeShape);
-      curve = new occ.BRepAdaptor_Curve_2(rawEdge);
-      const t0 = curve.FirstParameter(), t1 = curve.LastParameter();
+      const c = new occ.BRepAdaptor_Curve_2(rawEdge);
+      curve = c;
+      const t0 = c.FirstParameter(), t1 = c.LastParameter();
       const tMid = (t0 + t1) / 2;
-      pt = new occ.gp_Pnt_1();
-      curve.D0(tMid, pt);
-      return [pt.X(), pt.Y(), pt.Z()];
+      const p = new occ.gp_Pnt_1();
+      pt = p;
+      c.D0(tMid, p);
+      return [p.X(), p.Y(), p.Z()];
     } catch {
       return null;
     } finally {
@@ -549,14 +554,12 @@ export function occFullRoundFilletWithInstance(
   const sharedSet = new Set<number>([...shared1, ...shared2]);
   const bodyEdgeIds: number[] = [];
   for (const [bodyEdgeId, edgeHandle] of body.edgeIds) {
-    let rawEdge: { delete?: () => void } | null = null;
     try {
-      rawEdge = occDeref(oc, edgeHandle, oc.TopoDS_Shape) as { delete?: () => void };
+      // rawEdge is a VIEW from occDeref — do NOT delete.
+      const rawEdge = occDeref(oc, edgeHandle, oc.TopoDS_Shape);
       const idx = findShapeIndex(edgeMap, rawEdge);
       if (sharedSet.has(idx)) bodyEdgeIds.push(bodyEdgeId);
-    } catch { /* skip */ } finally {
-      rawEdge?.delete?.();
-    }
+    } catch { /* skip */ }
   }
 
   cleanup();

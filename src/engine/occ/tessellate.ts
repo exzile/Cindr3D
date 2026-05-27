@@ -64,9 +64,6 @@ export function tessellate(
 
   const explorer = new oc.TopExp_Explorer_2(shape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
   let fallbackFaceId = 0;
-  // DEBUG: track faces with null triangulation
-  let dbgTotal = 0;
-  let dbgNull = 0;
   try {
     while (explorer.More()) {
       const current = explorer.Current();
@@ -75,20 +72,9 @@ export function tessellate(
       fallbackFaceId += 1;
       const location = new oc.TopLoc_Location_1();
       const triangulation = oc.BRep_Tool.Triangulation(face, location);
-      dbgTotal += 1;
 
       if (!triangulation.IsNull()) {
-        const trisBefore = positions.length / 3;
         appendFaceTriangles(oc, triangulation, location, face, faceId, positions, normals, faceIds);
-        const trisAdded = positions.length / 3 - trisBefore;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const orient = (oc as any).TopAbs_Orientation;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const faceOrient = (face as any).Orientation_1?.();
-        console.debug(`[tessellate] face ${fallbackFaceId - 1}: ${trisAdded / 3} triangles, orient=${faceOrient === orient?.TopAbs_REVERSED ? 'REVERSED' : 'FORWARD'}`);
-      } else {
-        dbgNull += 1;
-        console.warn(`[tessellate] null triangulation for face ${fallbackFaceId - 1} (ptr=${face.ptr})`);
       }
 
       triangulation.delete();
@@ -101,11 +87,6 @@ export function tessellate(
     }
   } finally {
     explorer.delete();
-  }
-  if (dbgNull > 0) {
-    console.warn(`[tessellate] ${dbgNull}/${dbgTotal} faces had null triangulation — body ${body.id} (${body.sourceFeatureId ?? 'no-feature'})`);
-  } else {
-    console.debug(`[tessellate] ${dbgTotal} faces all tessellated OK — body ${body.id}`);
   }
 
   const tessellation: BRepTessellation = {
@@ -242,13 +223,17 @@ function appendFaceTriangles(
 
 function buildEdgePolylines(oc: OcctRaw, body: BRepBody): Map<number, Float32Array> {
   const edgePolylines = new Map<number, Float32Array>();
+  // In opencascade.js builds without .ptr, occDeref returns the stored _object
+  // which is a TopoDS_Shape (from IndexedMap.FindKey). BRepAdaptor_Curve_2
+  // requires a TopoDS_Edge — embind's type check rejects the Shape directly.
+  // Cast via TopoDS.Edge_1 (wrapPointer VIEW, same ptr — do NOT delete).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const topoDS = (oc as any).TopoDS;
   for (const [edgeId, edgeHandle] of body.edgeIds) {
     try {
-      // NOTE: occDeref is inside the try — stale/null handles (e.g. map-path VIEW handles)
-      // will throw here and be swallowed, leaving that edge without a polyline.
-      const rawEdge = occDeref(oc, edgeHandle, oc.TopoDS_Edge);
-      // NOTE: do NOT call rawEdge.delete() — occDeref returns a wrapPointer VIEW.
-      // The OccHandle in body.edgeIds owns the C++ edge lifetime.
+      const rawShape = occDeref(oc, edgeHandle, oc.TopoDS_Shape);
+      const rawEdge = topoDS?.Edge_1 ? topoDS.Edge_1(rawShape) : rawShape;
+      // NOTE: do NOT call rawEdge.delete() — both occDeref and TopoDS.Edge_1 return VIEWs.
       const polyline = sampleEdgePolyline(oc, rawEdge);
       if (polyline.length >= 6) edgePolylines.set(edgeId, polyline);
     } catch {
