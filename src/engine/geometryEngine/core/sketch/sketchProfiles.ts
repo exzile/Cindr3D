@@ -234,11 +234,36 @@ export function sketchToProfileShapesFlat(sketch: Sketch): THREE.Shape[] {
   };
 
   const originalSignatures = rawShapes.map(shapeSignature);
+
+  // Start from a mutable copy. For each atomic region we either:
+  //  (a) replace the corresponding raw shape in-place when the atomic version
+  //      adds holes that the raw shape lacks (e.g. a rectangle that contains
+  //      circles: raw shape has holes=[], atomic version has holes=[circle1, circle2]),
+  //  (b) append it as a new independent region if no raw shape matches.
+  //
+  // Replacing in-place preserves the index positions stored in existing
+  // feature.params.profileIndex / profileIndices so saved models stay valid.
   const combined: THREE.Shape[] = [...rawShapes];
+  const matchedRawIndices = new Set<number>();
+
   for (const atom of atomic) {
     const atomSignature = shapeSignature(atom);
-    if (originalSignatures.some((signature) => sameShape(signature, atomSignature))) continue;
-    combined.push(atom);
+    const matchIdx = originalSignatures.findIndex(
+      (sig, i) => !matchedRawIndices.has(i) && sameShape(sig, atomSignature),
+    );
+
+    if (matchIdx >= 0) {
+      matchedRawIndices.add(matchIdx);
+      // Replace the raw shape when the atomic version carries holes that the
+      // raw (nestHoles:false) shape is missing — this is the fix for the
+      // "circles inside a rectangle don't become through-holes" bug.
+      if (atom.holes.length > combined[matchIdx].holes.length) {
+        combined[matchIdx] = atom;
+      }
+    } else {
+      // Genuinely new atomic region (a sub-region from overlapping shapes).
+      combined.push(atom);
+    }
   }
   return combined;
 }
