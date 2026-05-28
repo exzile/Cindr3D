@@ -406,9 +406,7 @@ function findMatchingRectangleEntityForLoop(
 ): SketchEntity | null {
   if (loop.length < 3) return null;
 
-  // Compute bounding box AND area of loop points in UV space.
-  // Area check is critical: a D-shape (arc + line) has the same bounding box as
-  // its enclosing rectangle but a different area, so we guard against false matches.
+  // Compute bounding box of loop points in UV space.
   let loopMinX = Infinity, loopMaxX = -Infinity, loopMinY = Infinity, loopMaxY = -Infinity;
   for (const p of loop) {
     if (p.x < loopMinX) loopMinX = p.x;
@@ -421,7 +419,6 @@ function findMatchingRectangleEntityForLoop(
   if (loopW < 1e-10 || loopH < 1e-10) return null;
   const loopCx = loopMinX + loopW / 2;
   const loopCy = loopMinY + loopH / 2;
-  const loopArea = polygonArea2D(loop);
 
   for (const entity of sourceSketch.entities) {
     // Rectangles are stored as 2 diagonal corners; 4-corner storage is also accepted.
@@ -439,20 +436,31 @@ function findMatchingRectangleEntityForLoop(
     if (entW < 1e-10 || entH < 1e-10) continue;
     const entCx = entMinX + entW / 2;
     const entCy = entMinY + entH / 2;
-    const entArea = entW * entH;
 
     const wErr = Math.abs(entW - loopW) / loopW;
     const hErr = Math.abs(entH - loopH) / loopH;
     const cxErr = Math.abs(entCx - loopCx) / loopW;
     const cyErr = Math.abs(entCy - loopCy) / loopH;
-    // Area check: a true rectangle has loopArea ≈ entW*entH.
-    // Non-rectangular loops (D-shapes, slot outlines, etc.) have different areas
-    // even when their bounding boxes coincide with the rectangle entity.
-    const areaErr = Math.abs(loopArea - entArea) / Math.max(entArea, 1e-6);
+    if (wErr >= 0.08 || hErr >= 0.08 || cxErr >= 0.08 || cyErr >= 0.08) continue;
 
-    if (wErr < 0.08 && hErr < 0.08 && cxErr < 0.08 && cyErr < 0.08 && areaErr < 0.08) {
-      return entity;
-    }
+    // Definitive rectangle check: every loop point must lie on one of the 4 edges.
+    // A clean rectangle sampled with getPoints(N) has all points exactly on the line
+    // segments. Bitten rectangles (partial-circle overlap), D-shapes, and slots all
+    // have arc points that deviate from the edges — those profiles must use the
+    // polygon path to preserve the correct outer boundary shape.
+    // Tolerance: 0.5% of the shorter edge length handles float sampling error while
+    // still rejecting even small arc deviations.
+    const edgeTol = Math.min(entW, entH) * 0.005;
+    const allOnEdges = loop.every((p) => {
+      const onLeft  = Math.abs(p.x - entMinX) <= edgeTol && p.y >= entMinY - edgeTol && p.y <= entMaxY + edgeTol;
+      const onRight = Math.abs(p.x - entMaxX) <= edgeTol && p.y >= entMinY - edgeTol && p.y <= entMaxY + edgeTol;
+      const onBot   = Math.abs(p.y - entMinY) <= edgeTol && p.x >= entMinX - edgeTol && p.x <= entMaxX + edgeTol;
+      const onTop   = Math.abs(p.y - entMaxY) <= edgeTol && p.x >= entMinX - edgeTol && p.x <= entMaxX + edgeTol;
+      return onLeft || onRight || onBot || onTop;
+    });
+    if (!allOnEdges) continue;
+
+    return entity;
   }
   return null;
 }
