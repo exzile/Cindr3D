@@ -406,7 +406,9 @@ function findMatchingRectangleEntityForLoop(
 ): SketchEntity | null {
   if (loop.length < 3) return null;
 
-  // Compute bounding box of loop points in UV space
+  // Compute bounding box AND area of loop points in UV space.
+  // Area check is critical: a D-shape (arc + line) has the same bounding box as
+  // its enclosing rectangle but a different area, so we guard against false matches.
   let loopMinX = Infinity, loopMaxX = -Infinity, loopMinY = Infinity, loopMaxY = -Infinity;
   for (const p of loop) {
     if (p.x < loopMinX) loopMinX = p.x;
@@ -419,6 +421,7 @@ function findMatchingRectangleEntityForLoop(
   if (loopW < 1e-10 || loopH < 1e-10) return null;
   const loopCx = loopMinX + loopW / 2;
   const loopCy = loopMinY + loopH / 2;
+  const loopArea = polygonArea2D(loop);
 
   for (const entity of sourceSketch.entities) {
     // Rectangles are stored as 2 diagonal corners; 4-corner storage is also accepted.
@@ -436,13 +439,18 @@ function findMatchingRectangleEntityForLoop(
     if (entW < 1e-10 || entH < 1e-10) continue;
     const entCx = entMinX + entW / 2;
     const entCy = entMinY + entH / 2;
+    const entArea = entW * entH;
 
     const wErr = Math.abs(entW - loopW) / loopW;
     const hErr = Math.abs(entH - loopH) / loopH;
     const cxErr = Math.abs(entCx - loopCx) / loopW;
     const cyErr = Math.abs(entCy - loopCy) / loopH;
+    // Area check: a true rectangle has loopArea ≈ entW*entH.
+    // Non-rectangular loops (D-shapes, slot outlines, etc.) have different areas
+    // even when their bounding boxes coincide with the rectangle entity.
+    const areaErr = Math.abs(loopArea - entArea) / Math.max(entArea, 1e-6);
 
-    if (wErr < 0.08 && hErr < 0.08 && cxErr < 0.08 && cyErr < 0.08) {
+    if (wErr < 0.08 && hErr < 0.08 && cxErr < 0.08 && cyErr < 0.08 && areaErr < 0.08) {
       return entity;
     }
   }
