@@ -8,8 +8,7 @@
  *  - Variable radius start→end (Add_3)
  *  - Chord-length (dihedral-angle derived radius, then Add_2)
  *  - Multiple mixed edge sets in one Build pass
- *  - G2 surface continuity (ChFi3d_Polynomial surface type)
- *  - Rolling-ball vs quasi-angular corner shape (ChFi3d_FilletShape)
+ *  - G2 surface continuity (ChFi3d_Polynomial surface form + best-effort SetContinuity)
  *  - Asymmetric per-face distance (Add_4(d1, d2, edge, face) when available)
  *  - Full-round with multi-face per side and auto-side inference
  *
@@ -83,6 +82,32 @@ function buildFilletBuilder(occ: OccFilletApi, mk: OccFilletBuilder): void {
     }
   }
   mk.Build();
+}
+
+/**
+ * OCC-13.1 — best-effort G2 continuity via BRepFilletAPI_MakeFillet.SetContinuity
+ * (GeomAbs_C2) when bound. opencascade.js builds vary on whether this is exposed
+ * (SetContinuity / SetContinuity_1) and on its arity; any mismatch is swallowed so
+ * the ChFi3d_Polynomial surface form (set by the caller) stays in effect.
+ */
+function trySetG2Continuity(occ: OccFilletApi, mk: OccFilletBuilder): void {
+  const builder = mk as unknown as {
+    SetContinuity?: (...args: unknown[]) => void;
+    SetContinuity_1?: (...args: unknown[]) => void;
+  };
+  const setter = builder.SetContinuity ?? builder.SetContinuity_1;
+  if (typeof setter !== 'function') return;
+  const c2 = (occ as { GeomAbs_Shape?: { GeomAbs_C2?: unknown } }).GeomAbs_Shape?.GeomAbs_C2;
+  if (c2 === undefined) return;
+  try {
+    setter.call(builder, c2, 1e-4);
+  } catch {
+    try {
+      setter.call(builder, c2);
+    } catch {
+      /* binding mismatch — ChFi3d_Polynomial surface form remains in effect */
+    }
+  }
 }
 
 type OccFilletApi = OcctRaw & {
@@ -175,8 +200,10 @@ export interface OccFilletOptions {
    */
   tangencyWeight?: number;
   /**
-   * Chooses the non-G2 fillet surface shape. `true` keeps OCC's rational
-   * rolling-ball-style blend; `false` switches to quasi-angular corners.
+   * Corner SOLUTION request (rolling-ball vs setback). Round-trip-only:
+   * BRepFilletAPI_MakeFillet computes vertex corners automatically and exposes no
+   * toggle, so this is stored for Fusion 360 round-trip but does not change the
+   * produced geometry. (It no longer selects the surface form — see OCC-13.1.)
    */
   isRollingBallCorner?: boolean;
 }
@@ -364,6 +391,135 @@ function countAdjacentFacesForEdge(
   }
 }
 
+// ── Radius pre-validation (OCC-13.2) ──────────────────────────────────────────
+
+/**
+ * Pre-validate fillet radii against local topology so an over-large radius is
+ * clamped to a valid value instead of throwing inside Build() (the dominant
+ * cause of adjacent-corner failures).
+ *
+ * For each filleted edge we measure the chord length of every edge sharing one
+ * of its endpoints. The limiting dimension is:
+ *   - a NON-filleted neighbour of chord length L → the fillet can consume almost
+ *     all of L (cap 0.95·L);
+ *   - a co-filleted neighbour of chord length L → two fillets eat into L from
+ *     both ends, so each is capped at ~0.49·L.
+ * Closed edges (circle seams/caps, chord ≈ 0) do not participate — their
+ * over-radius failures are caught post-hoc by the open-mesh guard.
+ *
+ * Returns edgeId → maxSafeRadius only where a finite limit exists. Never throws.
+ */
+export function computeSafeFilletRadii(
+  oc: OcctRaw,
+  body: BRepBody,
+  rawShape: unknown,
+  filletedEdgeIds: Set<number>,
+): Map<number, number> {
+  const result = new Map<number, number>();
+  const occ = oc as OccFilletApi;
+
+  const edgeMap = new occ.TopTools_IndexedMapOfShape_1();
+  const vertMap = new occ.TopTools_IndexedMapOfShape_1();
+  try {
+    occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, edgeMap);
+    occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, vertMap);
+  } catch {
+    edgeMap.delete();
+    vertMap.delete();
+    return result;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const findKey = ((edgeMap as any).FindKey_1 ?? (edgeMap as any).FindKey)?.bind(edgeMap) as
+    | ((i: number) => unknown)
+    | undefined;
+
+  interface EdgeGeom { len: number; verts: number[]; bodyEdgeId: number; canonical: number }
+  const byCanonical = new Map<number, EdgeGeom>();
+  const vertexToCanonical = new Map<number, number[]>();
+  const filletedCanonical = new Set<number>();
+
+  for (const [bodyEdgeId, edgeHandle] of body.edgeIds) {
+    const raw = occDeref(oc, edgeHandle, oc.TopoDS_Shape) as { ptr: number };
+    const canonical = findShapeIndex(edgeMap as Parameters<typeof findShapeIndex>[0], raw);
+    if (canonical <= 0) continue;
+
+    // Chord length via curve endpoints; closed edges (≈0) are non-constraining.
+    let len = Infinity;
+    try {
+      // rawEdge is a VIEW (TopoDS.Edge_1 of the occDeref VIEW) — do NOT delete.
+      const rawEdge = oc.TopoDS.Edge_1(raw);
+      const curve = new occ.BRepAdaptor_Curve_2(rawEdge);
+      const p0 = new occ.gp_Pnt_1();
+      const p1 = new occ.gp_Pnt_1();
+      try {
+        const t0 = curve.FirstParameter();
+        const t1 = curve.LastParameter();
+        curve.D0(t0, p0);
+        curve.D0(t1, p1);
+        const dx = p1.X() - p0.X(), dy = p1.Y() - p0.Y(), dz = p1.Z() - p0.Z();
+        const chord = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        len = chord > 1e-6 ? chord : Infinity;
+      } finally {
+        p0.delete?.();
+        p1.delete?.();
+        curve.delete?.();
+      }
+    } catch {
+      len = Infinity;
+    }
+
+    // Endpoint vertices (canonical indices).
+    const verts: number[] = [];
+    try {
+      // rawEdge VIEW again — do NOT delete.
+      const rawEdge = oc.TopoDS.Edge_1(raw);
+      const vexp = new occ.TopExp_Explorer_2(rawEdge, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+      try {
+        while (vexp.More() && verts.length < 2) {
+          const v = vexp.Current();
+          const vi = findShapeIndex(vertMap as Parameters<typeof findShapeIndex>[0], v);
+          v.delete();
+          if (vi > 0 && !verts.includes(vi)) verts.push(vi);
+          vexp.Next();
+        }
+      } finally {
+        vexp.delete();
+      }
+    } catch { /* leave verts as found */ }
+
+    byCanonical.set(canonical, { len, verts, bodyEdgeId, canonical });
+    if (filletedEdgeIds.has(bodyEdgeId)) filletedCanonical.add(canonical);
+    for (const v of verts) {
+      const list = vertexToCanonical.get(v);
+      if (list) list.push(canonical); else vertexToCanonical.set(v, [canonical]);
+    }
+  }
+
+  // Keep the FindKey reference reachable for type-checkers (used implicitly via
+  // canonical indices); no FindKey lookups are needed beyond MapShapes ordering.
+  void findKey;
+
+  for (const geom of byCanonical.values()) {
+    if (!filletedCanonical.has(geom.canonical)) continue;
+    let limit = Infinity;
+    for (const v of geom.verts) {
+      for (const n of vertexToCanonical.get(v) ?? []) {
+        if (n === geom.canonical) continue;
+        const nb = byCanonical.get(n);
+        if (!nb || !Number.isFinite(nb.len)) continue;
+        const contribution = filletedCanonical.has(n) ? nb.len * 0.49 : nb.len * 0.95;
+        if (contribution < limit) limit = contribution;
+      }
+    }
+    if (Number.isFinite(limit)) result.set(geom.bodyEdgeId, limit);
+  }
+
+  edgeMap.delete();
+  vertMap.delete();
+  return result;
+}
+
 // ── Core builder ──────────────────────────────────────────────────────────────
 
 /**
@@ -396,18 +552,32 @@ export function occFilletEdgeSetsWithInstance(
     return null;
   }
 
-  // Surface enum: G2 always uses ChFi3d_Polynomial. For G1, expose the
-  // rolling-ball vs quasi-angular choice already present in the UI.
+  // OCC-13.1 — ChFi3d_FilletShape is the SURFACE cross-section form, NOT the
+  // corner solution. It must be chosen from CONTINUITY only:
+  //   G2 → ChFi3d_Polynomial (curvature-continuous blend)
+  //   G1 → ChFi3d_Rational   (tangent-continuous, OCC default)
+  // isRollingBallCorner controls the VERTEX corner solution (rolling-ball vs
+  // setback), which BRepFilletAPI_MakeFillet computes automatically and exposes
+  // no toggle for — so it is round-trip-only (stored, no geometric effect today).
+  // The previous code mapped isRollingBallCorner→ChFi3d_QuasiAngular, conflating
+  // the corner solution with the surface form and giving a false impression that
+  // the corner toggle was wired.
   const filletShape = options.continuity === 'G2'
     ? occ.ChFi3d_FilletShape.ChFi3d_Polynomial
-    : options.isRollingBallCorner === false
-      ? occ.ChFi3d_FilletShape.ChFi3d_QuasiAngular
-      : occ.ChFi3d_FilletShape.ChFi3d_Rational;
+    : occ.ChFi3d_FilletShape.ChFi3d_Rational;
 
   const mk = createFilletBuilder(occ, rawShape, filletShape);
   if (!mk) {
     console.warn('[occFillet] BRepFilletAPI_MakeFillet is not bound in this OCC build');
     return null;
+  }
+
+  // Prefer the explicit continuity API for G2 when this opencascade.js build
+  // binds it — it controls the approximation continuity directly rather than via
+  // the surface-form enum. Best-effort: any binding-shape mismatch is swallowed
+  // and the ChFi3d_Polynomial surface form above remains in effect.
+  if (options.continuity === 'G2') {
+    trySetG2Continuity(occ, mk);
   }
   try {
     // Build a shape→index map once for seam-edge detection.
@@ -422,6 +592,31 @@ export function occFilletEdgeSetsWithInstance(
     } catch {
       // Non-fatal: seam detection degrades gracefully (we'll attempt Build() anyway).
     }
+
+    // OCC-13.2 — clamp over-large radii to local topology so a corner blend that
+    // would self-intersect is shrunk to a valid value instead of throwing in Build().
+    const filletedEdgeIds = new Set<number>();
+    for (const es of edgeSets) for (const id of es.edgeIds) filletedEdgeIds.add(id);
+    let safeRadii: Map<number, number>;
+    try {
+      safeRadii = computeSafeFilletRadii(oc, body, rawShape, filletedEdgeIds);
+    } catch {
+      safeRadii = new Map();
+    }
+    let clampWarned = false;
+    const clampRadius = (edgeId: number, requested: number): number => {
+      const cap = safeRadii.get(edgeId);
+      if (cap !== undefined && requested > cap) {
+        if (!clampWarned) {
+          console.warn(
+            `[occFillet] radius ${requested} too large for edge ${edgeId}; clamped to ${cap.toFixed(3)} to fit the corner`,
+          );
+          clampWarned = true;
+        }
+        return cap;
+      }
+      return requested;
+    };
 
     let addedAny = false;
     for (const edgeSet of edgeSets) {
@@ -455,14 +650,18 @@ export function occFilletEdgeSetsWithInstance(
             const d1 = Math.max(edgeSet.startRadius, 0.001);
             const d2 = Math.max(edgeSet.endRadius, 0.001);
             // Asymmetric mode not supported with fresh resolution — use average.
-            mk.Add_2(Math.max((d1 + d2) / 2, 0.001), rawEdge);
+            mk.Add_2(Math.max(clampRadius(edgeId, (d1 + d2) / 2), 0.001), rawEdge);
           } else if (edgeSet.startRadius !== undefined && edgeSet.endRadius !== undefined) {
-            mk.Add_3(edgeSet.startRadius, edgeSet.endRadius, rawEdge);
+            mk.Add_3(
+              Math.max(clampRadius(edgeId, edgeSet.startRadius), 0.001),
+              Math.max(clampRadius(edgeId, edgeSet.endRadius), 0.001),
+              rawEdge,
+            );
           } else if (edgeSet.chordLength !== undefined && edgeSet.chordLength > 0) {
             const r = computeChordLengthRadius(oc, rawShape, rawEdge as { ptr: number }, edgeSet.chordLength);
-            mk.Add_2(Math.max(r, 0.001), rawEdge);
+            mk.Add_2(Math.max(clampRadius(edgeId, r), 0.001), rawEdge);
           } else {
-            mk.Add_2(Math.max(edgeSet.radius ?? 2, 0.001), rawEdge);
+            mk.Add_2(Math.max(clampRadius(edgeId, edgeSet.radius ?? 2), 0.001), rawEdge);
           }
           addedAny = true;
         } catch (e) {

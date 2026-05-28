@@ -23,7 +23,7 @@ export function FilletAdvancedOptions({ dialog }: FilletAdvancedOptionsProps) {
         <FilletCheckboxOption
           checked={dialog.setback}
           onChange={dialog.setSetback}
-          description="Shows corner setback controls. The value is stored for CAD round-trip, while the current OCC output uses the rolling-ball corner mode below."
+          description="Shows corner setback controls. The OpenCASCADE kernel computes vertex corners automatically and exposes no setback toggle, so these values are stored for Fusion 360 round-trip but do not change geometry today."
         >
           Setback
         </FilletCheckboxOption>
@@ -37,11 +37,11 @@ export function FilletAdvancedOptions({ dialog }: FilletAdvancedOptionsProps) {
           max={500}
           step={0.5}
           fallback={0}
-          // FILLET-5: OCC has no per-edge setback distance binding —
-          // corner shape is controlled by the Rolling Ball Corner toggle
-          // (ChFi3d_QuasiAngular vs ChFi3d_Rational). This field is kept
-          // for Fusion 360 file round-trip but does not affect geometry today.
-          title="OCC does not bind per-edge setback distance — corner shape is controlled by the Rolling Ball Corner toggle below. Stored for future use."
+          // OCC-13.1: OCC has no per-edge setback distance binding, and the
+          // rolling-ball-vs-setback corner SOLUTION is computed automatically by
+          // BRepFilletAPI_MakeFillet (no toggle). This field is kept for Fusion 360
+          // file round-trip but does not affect geometry today.
+          title="OpenCASCADE does not bind a per-edge setback distance and computes the corner solution automatically. Stored for Fusion 360 round-trip only."
           style={{ paddingLeft: 16 }}
         />
       )}
@@ -51,7 +51,7 @@ export function FilletAdvancedOptions({ dialog }: FilletAdvancedOptionsProps) {
           <FilletCheckboxOption
             checked={dialog.isRollingBallCorner}
             onChange={dialog.setIsRollingBallCorner}
-            description="Uses a rolling-ball corner blend at multi-edge intersections for a smoother, more natural corner transition."
+            description="Requests a rolling-ball corner blend at multi-edge intersections. OpenCASCADE computes the vertex corner automatically and exposes no rolling-ball/setback toggle, so this is stored for Fusion 360 round-trip and does not change geometry today."
           >
             Rolling Ball Corner
           </FilletCheckboxOption>
