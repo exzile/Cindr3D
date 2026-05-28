@@ -99,13 +99,17 @@ function circleToEdge(
   const ax2 = new (oc as any).gp_Ax2_3(gc, gn);
   gc.delete(); gn.delete();
   try {
+    // Use gp_Circ (value type) + BRepBuilderAPI_MakeEdge_8 for a full closed circle edge.
+    // MakeEdge_24 expects Handle(Geom_TrimmedCurve) (the arc path); passing a
+    // Handle(Geom_Circle) to it silently fails IsDone().
+    // MakeEdge_8 is the overload that takes gp_Circ directly (no start/end params →
+    // full closed periodic edge). MakeEdge_2 takes two TopoDS_Vertex — wrong type.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const circleMk = new (oc as any).GC_MakeCircle_2(ax2, radius);
+    const circ = new (oc as any).gp_Circ_2(ax2, radius);
     ax2.delete();
-    if (!circleMk.IsDone()) { circleMk.delete(); return null; }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const edgeMk = new (oc as any).BRepBuilderAPI_MakeEdge_24(circleMk.Value());
-    circleMk.delete();
+    const edgeMk = new (oc as any).BRepBuilderAPI_MakeEdge_8(circ);
+    circ.delete();
     if (!edgeMk.IsDone()) { edgeMk.delete(); return null; }
     const edge = edgeMk.Edge();
     edgeMk.delete();
@@ -148,11 +152,31 @@ function entityToEdges(oc: OcctRaw, entity: SketchEntity, frame: OccPlaneFrame):
     }
 
     case 'rectangle': {
-      // Rectangle: 4 corner points in order
-      if (pts.length < 4) return [];
+      // Rectangle may be stored as either 4 explicit corners or 2 diagonal corners.
+      // For the 2-point case, derive the other two corners using the plane basis vectors
+      // so the edges lie exactly in the sketch plane.
+      let corners: THREE.Vector3[];
+      if (pts.length >= 4) {
+        corners = pts.slice(0, 4);
+      } else if (pts.length === 2) {
+        const p0 = pts[0];
+        const p1 = pts[1];
+        const d0 = p0.clone().sub(frame.origin);
+        const d1 = p1.clone().sub(frame.origin);
+        const u0 = d0.dot(frame.uDir), v0 = d0.dot(frame.vDir);
+        const u1 = d1.dot(frame.uDir), v1 = d1.dot(frame.vDir);
+        corners = [
+          uvToWorld(frame, u0, v0),   // p0
+          uvToWorld(frame, u1, v0),   // (u1, v0)
+          uvToWorld(frame, u1, v1),   // p1
+          uvToWorld(frame, u0, v1),   // (u0, v1)
+        ];
+      } else {
+        return [];
+      }
       const edges: unknown[] = [];
       for (let i = 0; i < 4; i++) {
-        const e = lineToEdge(oc, pts[i], pts[(i + 1) % 4]);
+        const e = lineToEdge(oc, corners[i], corners[(i + 1) % 4]);
         if (e) edges.push(e);
       }
       return edges as unknown[];
@@ -189,10 +213,12 @@ export function sketchEntitiesToWire(
   const wireMaker = new (oc as any).BRepBuilderAPI_MakeWire_1();
   let edgeCount = 0;
 
+  const diagEdgesPerEntity: string[] = [];
   for (const entity of entities) {
     if (entity.isConstruction) continue;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const edges = entityToEdges(oc, entity, frame) as any[];
+    diagEdgesPerEntity.push(`${entity.type}:${edges.length}(r=${(entity as { radius?: number }).radius ?? '-'})`);
     for (const edge of edges) {
       wireMaker.Add_1(edge);
       edge.delete();
@@ -201,6 +227,10 @@ export function sketchEntitiesToWire(
   }
 
   if (edgeCount === 0 || !wireMaker.IsDone()) {
+    console.warn(
+      `[sketchEntitiesToWire] wire build failed: edgeCount=${edgeCount} wireDone=${wireMaker.IsDone?.()}` +
+      ` entities=[${diagEdgesPerEntity.join(', ')}]`,
+    );
     wireMaker.delete();
     return null;
   }

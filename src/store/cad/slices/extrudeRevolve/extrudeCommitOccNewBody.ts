@@ -157,10 +157,6 @@ export async function buildOccNewBodyExtrudeMesh({
       ? tryBuildAnalyticalExtrudeBodyFromEntities(occ.oc, sourceSketch.entities, hasHoles, occDistance, frame, extrudeOptions)
       : null;
     const occBody = analyticalCircle ?? analyticalArc ?? occExtrudeWithInstance(occ.oc, sketchProfile, occDistance, frame, extrudeOptions);
-    console.log(
-      `[commitExtrude] builder=${analyticalCircle ? 'analyticalCircle' : analyticalArc ? 'analyticalArc' : 'polygon'}` +
-      ` edges=${occBody.edgeIds.size} faces=${occBody.faceIds.size} id=${featureId}`,
-    );
 
     return {
       featureMesh: createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, featureId),

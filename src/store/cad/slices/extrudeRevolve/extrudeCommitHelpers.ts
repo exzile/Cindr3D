@@ -376,18 +376,77 @@ function findMatchingCircleEntityForLoop(
   if (loop.length > 0) center.multiplyScalar(1 / loop.length);
 
   let best: { entity: SketchEntity; score: number } | null = null;
+  let nearest: { areaError: number; centerError: number; radius: number } | null = null;
   for (const entity of sourceSketch.entities) {
     if (entity.type !== 'circle' || typeof entity.radius !== 'number' || entity.radius <= 0 || !entity.points[0]) continue;
     const expectedArea = Math.PI * entity.radius * entity.radius;
     const areaError = Math.abs(area - expectedArea) / Math.max(expectedArea, 1e-6);
-    if (areaError > 0.08) continue;
     const circleCenter = projectSketchPointToFrame(entity.points[0], frame);
     const centerError = circleCenter.distanceTo(center) / Math.max(entity.radius, 1);
+    if (!nearest || areaError + centerError < nearest.areaError + nearest.centerError) {
+      nearest = { areaError, centerError, radius: entity.radius };
+    }
+    if (areaError > 0.08) continue;
     if (centerError > 0.08) continue;
     const score = areaError + centerError;
     if (!best || score < best.score) best = { entity, score };
   }
   return best?.entity ?? null;
+}
+
+/**
+ * Find a rectangle entity whose bounding box matches the tessellated loop.
+ * Used to replace polygon outer loops with clean 4-edge rectangle wires so
+ * rect-with-hole profiles produce analytically correct BRep bodies.
+ */
+function findMatchingRectangleEntityForLoop(
+  sourceSketch: Sketch,
+  loop: readonly THREE.Vector2[],
+  frame: ReturnType<typeof createOccPlaneFrameFromSketch>,
+): SketchEntity | null {
+  if (loop.length < 3) return null;
+
+  // Compute bounding box of loop points in UV space
+  let loopMinX = Infinity, loopMaxX = -Infinity, loopMinY = Infinity, loopMaxY = -Infinity;
+  for (const p of loop) {
+    if (p.x < loopMinX) loopMinX = p.x;
+    if (p.x > loopMaxX) loopMaxX = p.x;
+    if (p.y < loopMinY) loopMinY = p.y;
+    if (p.y > loopMaxY) loopMaxY = p.y;
+  }
+  const loopW = loopMaxX - loopMinX;
+  const loopH = loopMaxY - loopMinY;
+  if (loopW < 1e-10 || loopH < 1e-10) return null;
+  const loopCx = loopMinX + loopW / 2;
+  const loopCy = loopMinY + loopH / 2;
+
+  for (const entity of sourceSketch.entities) {
+    // Rectangles are stored as 2 diagonal corners; 4-corner storage is also accepted.
+    if (entity.isConstruction || entity.type !== 'rectangle' || entity.points.length < 2) continue;
+    let entMinX = Infinity, entMaxX = -Infinity, entMinY = Infinity, entMaxY = -Infinity;
+    for (const pt of entity.points) {
+      const uv = projectSketchPointToFrame(pt, frame);
+      if (uv.x < entMinX) entMinX = uv.x;
+      if (uv.x > entMaxX) entMaxX = uv.x;
+      if (uv.y < entMinY) entMinY = uv.y;
+      if (uv.y > entMaxY) entMaxY = uv.y;
+    }
+    const entW = entMaxX - entMinX;
+    const entH = entMaxY - entMinY;
+    if (entW < 1e-10 || entH < 1e-10) continue;
+    const entCx = entMinX + entW / 2;
+    const entCy = entMinY + entH / 2;
+
+    const wErr = Math.abs(entW - loopW) / loopW;
+    const hErr = Math.abs(entH - loopH) / loopH;
+    const cxErr = Math.abs(entCx - loopCx) / loopW;
+    const cyErr = Math.abs(entCy - loopCy) / loopH;
+
+    if (wErr < 0.08 && hErr < 0.08 && cxErr < 0.08 && cyErr < 0.08) {
+      return entity;
+    }
+  }
+  return null;
 }
 
 function findMatchingCircularProfileEntity(
@@ -460,9 +519,17 @@ export function tryBuildAnalyticalExtrudeBody(
 
   // ── Outer wire ──────────────────────────────────────────────────────────────
   const outerCircleEntity = findMatchingCircleEntityForLoop(sourceSketch, outerPoints, frame);
+  const outerRectEntity = !outerCircleEntity
+    ? findMatchingRectangleEntityForLoop(sourceSketch, outerPoints, frame)
+    : null;
   let outerWire: unknown;
   if (outerCircleEntity) {
     outerWire = sketchEntitiesToWire(oc as never, [outerCircleEntity], frame);
+    if (!outerWire) return null;
+    analyticalWires.push(outerWire);
+    analyticalCount += 1;
+  } else if (outerRectEntity) {
+    outerWire = sketchEntitiesToWire(oc as never, [outerRectEntity], frame);
     if (!outerWire) return null;
     analyticalWires.push(outerWire);
     analyticalCount += 1;
@@ -478,13 +545,13 @@ export function tryBuildAnalyticalExtrudeBody(
     const holeCircleEntity = findMatchingCircleEntityForLoop(sourceSketch, holePoints, frame);
     if (holeCircleEntity) {
       const holeWire = sketchEntitiesToWire(oc as never, [holeCircleEntity], frame);
-      if (!holeWire) return null;
+      if (!holeWire) { console.log('[analyticalCircle] bail: hole sketchEntitiesToWire returned null (circle matched but wire build failed)'); return null; }
       holeWires.push(holeWire);
       analyticalWires.push(holeWire);
       analyticalCount += 1;
     } else {
       const holeWire = pointLoopToWire(oc as never, holePoints.map(toWorld));
-      if (!holeWire) return null;
+      if (!holeWire) { console.log('[analyticalCircle] bail: polygon hole wire build returned null'); return null; }
       holeWires.push(holeWire);
     }
   }
@@ -495,7 +562,7 @@ export function tryBuildAnalyticalExtrudeBody(
 
   try {
     const face = wireToFace(oc as never, outerWire, holeWires, frame);
-    if (!face) return null;
+    if (!face) { console.log('[analyticalCircle] bail: wireToFace returned null (mixed polygon-outer + analytic-hole face build failed)'); return null; }
 
     // takeOccOwnedResources transfers each polygonal wire's polygonMaker (set
     // via OCC_OWNED_RESOURCES inside pointLoopToWire) into profileResources.
@@ -546,19 +613,20 @@ export function tryBuildAnalyticalExtrudeBodyFromEntities(
   options: OccExtrudeOptions,
 ): BRepBody | null {
   // Hole support requires entity-to-loop classification — not yet implemented.
-  if (hasHoles) return null;
+  if (hasHoles) { console.log('[analyticalArc] bail: hasHoles (hole support not implemented)'); return null; }
   const nonConstruction = entities.filter((e) => !e.isConstruction);
   // Only activate when at least one arc is present; other entity types are handled
   // correctly by the polygon path or the circle-detection path.
-  if (!nonConstruction.some((e) => e.type === 'arc')) return null;
+  if (!nonConstruction.some((e) => e.type === 'arc')) { console.log('[analyticalArc] bail: no arc entity in profile'); return null; }
 
   let outerWire: unknown;
   try {
     outerWire = sketchEntitiesToWire(oc as never, nonConstruction, frame);
-  } catch {
+  } catch (e) {
+    console.log(`[analyticalArc] bail: sketchEntitiesToWire threw (${nonConstruction.length} entities) —`, e);
     return null;
   }
-  if (!outerWire) return null;
+  if (!outerWire) { console.log(`[analyticalArc] bail: sketchEntitiesToWire returned null (${nonConstruction.length} entities, likely not one closed loop)`); return null; }
 
   // Follow the same pattern as tryBuildAnalyticalExtrudeBody:
   //   wireToFace → takeOccOwnedResources (gets faceMaker) → add outerWire explicitly
@@ -566,6 +634,7 @@ export function tryBuildAnalyticalExtrudeBodyFromEntities(
   try {
     const face = wireToFace(oc as never, outerWire, [], frame);
     if (!face) {
+      console.log('[analyticalArc] bail: wireToFace returned null (wire not a valid face boundary)');
       (outerWire as { delete?: () => void }).delete?.();
       return null;
     }
@@ -586,7 +655,8 @@ export function tryBuildAnalyticalExtrudeBodyFromEntities(
     } finally {
       if (!consumed) extruded.dispose();
     }
-  } catch {
+  } catch (e) {
+    console.log('[analyticalArc] bail: extrude/face build threw —', e);
     return null;
   }
 }
