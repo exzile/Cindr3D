@@ -11,9 +11,12 @@ import {
   buildMeshTopologyGuideGeometry,
   buildTessellationGuideGeometry,
   disposeGuideGeometryResult,
+  expandChainEdges,
+  getSelectableEdgesForBody,
   mergedGuideGeometryResults,
   polylineIsCurved,
   resolveMeshOccTessellation,
+  USE_OCC_SELECTABLE_EDGES,
 } from "./edgeOpEdgeGeometry";
 import {
   findClosestLiveOccEdge,
@@ -379,22 +382,49 @@ export default function EdgeOpEdgeHighlight({
     // segment of a curved edge selects the entire arc visually.
     // Uses the guide line's edgePolylines (pure geometry, no OCC WASM needed).
     let finalDisplay = displayPolyline ?? polyline;
-    // Resolve edgePolylines — may come from the hit mesh directly, or from the
-    // sibling visible guide line when the hit landed on an occDirect pick line.
+    // Resolve edgePolylines (+ authoritative chainId map) — may come from the hit
+    // mesh directly, or from the sibling visible guide line when the hit landed on
+    // an occDirect pick line (which carries no edgePolylines/chainIdByEdgeId).
     let guidePolylines = result.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined;
+    let chainMap = result.mesh.userData['chainIdByEdgeId'] as Map<number, number> | undefined;
     if (!guidePolylines) {
       for (const line of allEdgeLinesRef.current) {
         if (line.userData['occDirect']) continue;
         const lineBodyId = line.userData['brepBodyId'] as string | undefined;
         if (lineBodyId === resolvedBodyId && line.userData['edgePolylines']) {
           guidePolylines = line.userData['edgePolylines'] as Map<number, THREE.Vector3[]>;
+          chainMap = line.userData['chainIdByEdgeId'] as Map<number, number> | undefined;
           break;
         }
       }
     }
 
+    const buildChainDisplay = (chainSet: Set<number>): THREE.Vector3[] | null => {
+      if (!guidePolylines || chainSet.size <= 1) return null;
+      const chainPts: THREE.Vector3[] = [];
+      for (const eid of chainSet) {
+        const pts = guidePolylines.get(eid);
+        if (!pts || pts.length < 2) continue;
+        // Segment pairs for LineSegments.
+        for (let i = 0; i + 1 < pts.length; i++) chainPts.push(pts[i], pts[i + 1]);
+      }
+      return chainPts.length >= 2 ? chainPts : null;
+    };
+
     let isChainExpanded = false;
-    if (guidePolylines && guidePolylines.size > 1) {
+    if (USE_OCC_SELECTABLE_EDGES && chainMap && guidePolylines) {
+      // OCC-12.B3 — authoritative chainId expansion. With analytical arcs each arc
+      // is ONE OCC edge, so the clicked edgeId is already canonical: no Math.min
+      // normalization needed. The chain set is only used for the visual highlight.
+      const chainSet = expandChainEdges(chainMap, guidePolylines, result.edgeId);
+      const chainPts = buildChainDisplay(chainSet);
+      if (chainPts) {
+        isChainExpanded = true;
+        finalDisplay = chainPts;
+      }
+    } else if (guidePolylines && guidePolylines.size > 1) {
+      // Legacy fallback (flag off / non-OCC mesh body): geometric tangent BFS +
+      // Math.min canonical normalization to stabilise repeat clicks on polygon arcs.
       const chainSet = polylineTangentChain(guidePolylines, result.edgeId);
       if (chainSet.size <= 1 && resolvedEdgeId !== result.edgeId) {
         const altChain = polylineTangentChain(guidePolylines, resolvedEdgeId);
@@ -404,10 +434,6 @@ export default function EdgeOpEdgeHighlight({
       }
 
       if (chainSet.size > 1) {
-        // Normalize resolvedEdgeId so that clicking ANY segment of the same
-        // tangent chain produces the same selection ID.  Run polylineTangentChain
-        // on the body's own tessellation polylines (which use OCC edge IDs) to
-        // find every OCC edge in this chain, then pick the minimum as canonical.
         const tessPolylines = sourceBody._tessellation?.edgePolylines;
         if (tessPolylines && tessPolylines.size > 0) {
           const occChain = polylineTangentChain(tessPolylines, resolvedEdgeId);
@@ -415,18 +441,9 @@ export default function EdgeOpEdgeHighlight({
             resolvedEdgeId = Math.min(...occChain);
           }
         }
-        isChainExpanded = true;
-
-        const chainPts: THREE.Vector3[] = [];
-        for (const eid of chainSet) {
-          const pts = guidePolylines.get(eid);
-          if (!pts || pts.length < 2) continue;
-          // Segment pairs for LineSegments.
-          for (let i = 0; i + 1 < pts.length; i++) {
-            chainPts.push(pts[i], pts[i + 1]);
-          }
-        }
-        if (chainPts.length >= 2) {
+        const chainPts = buildChainDisplay(chainSet);
+        if (chainPts) {
+          isChainExpanded = true;
           finalDisplay = chainPts;
         }
       }
@@ -485,8 +502,11 @@ export default function EdgeOpEdgeHighlight({
         if (!featureId && !bodyId) return;
         const resolved = resolveMeshOccTessellation(mesh);
         if (bodyId && !resolved) return;
+        // OCC-12.B1 — authoritative selectable-edge metadata for this OCC body
+        // (filletable filter + chainId). null when the flag is off / OCC body gone.
+        const meta = resolved ? getSelectableEdgesForBody(resolved.bodyId) : null;
         const batched = resolved
-          ? buildBatchedEdgeLineGeometry(resolved.tess, allowCurvedEdges)
+          ? buildBatchedEdgeLineGeometry(resolved.tess, allowCurvedEdges, meta)
           : null;
 
         // Visible orange guide. When we have an OCC tessellation with edge
@@ -501,7 +521,7 @@ export default function EdgeOpEdgeHighlight({
         // meshes without an OCC body.
         const hasOccTess = !!resolved && (batched?.edgeIdsBySegment?.length ?? 0) > 0;
         const tessellationGuideResult = resolved
-          ? buildTessellationGuideGeometry(resolved.tess, mesh.matrixWorld, allowCurvedEdges)
+          ? buildTessellationGuideGeometry(resolved.tess, mesh.matrixWorld, allowCurvedEdges, meta)
           : null;
         const topologyGuideResult = hasOccTess
           ? null
@@ -522,6 +542,7 @@ export default function EdgeOpEdgeHighlight({
           const guideLine = new THREE.LineSegments(visibleGuideResult.geometry, allEdgesMat);
           guideLine.userData.edgeIdsBySegment = visibleGuideResult.edgeIdsBySegment;
           guideLine.userData.edgePolylines = visibleGuideResult.edgePolylines;
+          guideLine.userData.chainIdByEdgeId = visibleGuideResult.chainIdByEdgeId;
           guideLine.userData.brepBodyId = resolved?.bodyId ?? "";
           guideLine.userData.sourceFeatureId = featureId ?? "";
           guideLine.userData.meshMatrix = mesh.matrixWorld.clone();
@@ -692,6 +713,7 @@ export default function EdgeOpEdgeHighlight({
         // (sequential IDs) — it only relies on endpoint proximity + tangent direction.
         let builtChain = false;
         let guidePolylines = occHover.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined;
+        let chainMap = occHover.mesh.userData['chainIdByEdgeId'] as Map<number, number> | undefined;
         // The invisible occDirect pick line doesn't carry edgePolylines — find
         // the sibling visible guide line for the same body.
         if (!guidePolylines && occHover.mesh.userData['occDirect'] && occHover.bodyId) {
@@ -699,12 +721,17 @@ export default function EdgeOpEdgeHighlight({
             if (line.userData['occDirect']) continue;
             if (line.userData['brepBodyId'] === occHover.bodyId && line.userData['edgePolylines']) {
               guidePolylines = line.userData['edgePolylines'] as Map<number, THREE.Vector3[]>;
+              chainMap = line.userData['chainIdByEdgeId'] as Map<number, number> | undefined;
               break;
             }
           }
         }
         if (guidePolylines && guidePolylines.size > 1) {
-          const chainSet = polylineTangentChain(guidePolylines, occHover.edgeId);
+          // OCC-12.B2 — authoritative chainId grouping (no per-hover geometric BFS)
+          // when meta is available; legacy polylineTangentChain otherwise.
+          const chainSet = USE_OCC_SELECTABLE_EDGES && chainMap
+            ? expandChainEdges(chainMap, guidePolylines, occHover.edgeId)
+            : polylineTangentChain(guidePolylines, occHover.edgeId);
           if (chainSet.size > 1) {
             // Build world-space segment pairs from all chain edges' polylines.
             const positions: number[] = [];

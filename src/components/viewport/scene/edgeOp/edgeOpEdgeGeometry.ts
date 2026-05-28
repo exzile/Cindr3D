@@ -9,12 +9,67 @@ import type { BRepTessellation } from "../../../../engine/occ/brepBody";
 import type { BodyTopology } from "../../../../engine/geometryEngine/core/solid/edgeTypes";
 import { getOccSync } from "../../../../engine/occ/loader";
 import { tessellate } from "../../../../engine/occ/tessellate";
+import {
+  getSelectableEdges,
+  type SelectableEdgeMeta,
+} from "../../../../engine/occ/ops/selectableEdges";
+
+/**
+ * OCC-12.B0 — gate the authoritative selectable-edge path (filletable filter +
+ * chainId hover/click) so the legacy detectSyntheticGeneratorEdges /
+ * polylineTangentChain heuristics remain as a fallback for OCC bodies.
+ * Non-OCC mesh bodies always use the legacy mesh-topology/crease guides.
+ */
+export const USE_OCC_SELECTABLE_EDGES = true;
 
 export type GuideGeometryResult = {
   geometry: THREE.BufferGeometry;
   edgeIdsBySegment: number[];
   edgePolylines: Map<number, THREE.Vector3[]>;
+  /** OCC-12.B1 — edgeId → tangent chainId (only when built from selectable-edge meta). */
+  chainIdByEdgeId?: Map<number, number>;
 };
+
+/**
+ * Resolve authoritative selectable-edge metadata for an OCC body.
+ * Returns null when the flag is off, the body is gone, or OCC is still loading
+ * — callers then fall back to the legacy geometric heuristics.
+ */
+export function getSelectableEdgesForBody(
+  bodyId: string | undefined,
+): Map<number, SelectableEdgeMeta> | null {
+  if (!USE_OCC_SELECTABLE_EDGES || !bodyId) return null;
+  const body = globalBRepBodyRegistry.get(bodyId);
+  if (!body) return null;
+  const occ = getOccSync();
+  if (!occ) return null;
+  try {
+    return getSelectableEdges(occ.oc, body);
+  } catch (e) {
+    console.warn("[selectableEdges] metadata build failed; using legacy heuristics:", e);
+    return null;
+  }
+}
+
+/**
+ * OCC-12.B2/B3 — expand a clicked/hovered edge to its tangent chain using the
+ * authoritative chainId map (the SAME grouping fillet `propagate` uses), instead
+ * of the per-frame polylineTangentChain geometric BFS.
+ */
+export function expandChainEdges(
+  chainMap: Map<number, number> | undefined,
+  edgePolylines: Map<number, THREE.Vector3[]>,
+  seedEdgeId: number,
+): Set<number> {
+  const result = new Set<number>([seedEdgeId]);
+  if (!chainMap) return result;
+  const chainId = chainMap.get(seedEdgeId);
+  if (chainId === undefined) return result;
+  for (const [edgeId, cid] of chainMap) {
+    if (cid === chainId && edgePolylines.has(edgeId)) result.add(edgeId);
+  }
+  return result;
+}
 
 export function disposeGuideGeometryResult(result: GuideGeometryResult | null | undefined): void {
   result?.geometry.dispose();
@@ -89,17 +144,22 @@ export function resolveMeshOccTessellation(mesh: THREE.Mesh) {
 export function buildBatchedEdgeLineGeometry(
   tess: BRepTessellation,
   allowCurvedEdges: boolean,
+  meta?: Map<number, SelectableEdgeMeta> | null,
 ): { geometry: THREE.BufferGeometry; edgeIdsBySegment: number[] } | null {
   const positions: number[] = [];
   const edgeIdsBySegment: number[] = [];
-  // Filter out synthetic generator edges (polygonal cylinder facet lines, etc.):
-  // OCC tessellation often includes ~N parallel straight edges for cylindrical /
-  // toroidal faces. detectSyntheticGeneratorEdges flags groups of 9+ parallel
-  // same-length edges that aren't on the model's exterior bounds.
-  const synthetic = detectSyntheticGeneratorEdges(tess);
+  // OCC-12.B1 — when authoritative meta is available, hide non-filletable edges
+  // (seams/boundaries) using BRep face-count instead of the geometric
+  // detectSyntheticGeneratorEdges guess. Falls back to the heuristic otherwise.
+  const useMeta = USE_OCC_SELECTABLE_EDGES && !!meta;
+  const synthetic = useMeta ? null : detectSyntheticGeneratorEdges(tess);
 
   for (const [edgeId, polyline] of tess.edgePolylines) {
-    if (synthetic.has(edgeId)) continue;
+    if (useMeta) {
+      if (meta!.get(edgeId)?.filletable === false) continue;
+    } else if (synthetic!.has(edgeId)) {
+      continue;
+    }
     if (!allowCurvedEdges && polylineIsCurved(polyline)) continue;
     const pointCount = polyline.length / 3;
     if (pointCount < 2) continue;
@@ -275,16 +335,25 @@ export function buildTessellationGuideGeometry(
   tess: BRepTessellation,
   meshMatrix: THREE.Matrix4,
   allowCurvedEdges: boolean,
+  meta?: Map<number, SelectableEdgeMeta> | null,
 ): GuideGeometryResult | null {
   const positions: number[] = [];
   const edgeIdsBySegment: number[] = [];
   const edgePolylines = new Map<number, THREE.Vector3[]>();
-  // Skip synthetic generator edges (polygonal facet iso-lines on cylinders /
-  // tori / sweeps) so the user sees only real CAD edges.
-  const synthetic = detectSyntheticGeneratorEdges(tess);
+  const chainIdByEdgeId = new Map<number, number>();
+  // OCC-12.B1 — authoritative filletable filter + chainId exposure when meta is
+  // available; otherwise the legacy synthetic-generator-edge heuristic.
+  const useMeta = USE_OCC_SELECTABLE_EDGES && !!meta;
+  const synthetic = useMeta ? null : detectSyntheticGeneratorEdges(tess);
 
   for (const [edgeId, polyline] of tess.edgePolylines) {
-    if (synthetic.has(edgeId)) continue;
+    if (useMeta) {
+      const m = meta!.get(edgeId);
+      if (m?.filletable === false) continue;
+      if (m && m.chainId >= 0) chainIdByEdgeId.set(edgeId, m.chainId);
+    } else if (synthetic!.has(edgeId)) {
+      continue;
+    }
     if (!allowCurvedEdges && polylineIsCurved(polyline)) continue;
     const pointCount = polyline.length / 3;
     if (pointCount < 2) continue;
@@ -304,7 +373,12 @@ export function buildTessellationGuideGeometry(
   if (positions.length === 0) return null;
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
-  return { geometry, edgeIdsBySegment, edgePolylines };
+  return {
+    geometry,
+    edgeIdsBySegment,
+    edgePolylines,
+    chainIdByEdgeId: useMeta ? chainIdByEdgeId : undefined,
+  };
 }
 
 export function buildMeshTopologyGuideGeometry(
