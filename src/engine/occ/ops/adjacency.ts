@@ -20,7 +20,8 @@ type OccAdjacencyApi = OcctRaw & {
   TopTools_IndexedMapOfShape_1: new () => {
     FindIndex_1?(shape: unknown): number;
     FindIndex?(shape: unknown): number;
-    FindKey_1(idx: number): unknown;
+    FindKey_1?(idx: number): unknown;
+    FindKey?(idx: number): unknown;
     Extent(): number;
     delete(): void;
   };
@@ -44,6 +45,17 @@ type IndexedShapeMap = {
 export function findShapeIndex(map: IndexedShapeMap, shape: unknown): number {
   const fn = map.FindIndex_1 ?? map.FindIndex;
   return fn ? fn.call(map, shape) : 0;
+}
+
+type IndexedShapeMapWithFindKey = {
+  FindKey_1?(idx: number): unknown;
+  FindKey?(idx: number): unknown;
+};
+
+/** Defensive FindKey — opencascade.js WASM builds expose either FindKey_1 or FindKey. */
+function findShapeByKey(map: IndexedShapeMapWithFindKey, idx: number): unknown | null {
+  const fn = map.FindKey_1 ?? map.FindKey;
+  return fn ? fn.call(map, idx) : null;
 }
 
 /**
@@ -247,6 +259,7 @@ export function collectTangentChainEdges(
   // Map bodyEdgeId ↔ canonical edge index.
   const bodyIdToCanonical = new Map<number, number>();
   const canonicalToBodyId = new Map<number, number>();
+  let mapMisses = 0;
   for (const [bodyEdgeId, edgeHandle] of body.edgeIds) {
     const raw = occDeref(oc, edgeHandle, oc.TopoDS_Shape) as OccShapeRef;
     // raw is a VIEW from occDeref — do NOT delete.
@@ -254,9 +267,10 @@ export function collectTangentChainEdges(
     if (idx > 0) {
       bodyIdToCanonical.set(bodyEdgeId, idx);
       canonicalToBodyId.set(idx, bodyEdgeId);
+    } else {
+      mapMisses++;
     }
   }
-
   // For each canonical edge index, compute endpoint vertex indices and tangents.
   interface EdgeInfo {
     vStart: number;
@@ -276,7 +290,8 @@ export function collectTangentChainEdges(
       }
     };
     try {
-      const edgeShape = edgeMap.FindKey_1(canonicalIdx) as { delete?: () => void };
+      const edgeShape = findShapeByKey(edgeMap, canonicalIdx) as { delete?: () => void } | null;
+      if (!edgeShape) return null;
       trash.push(edgeShape);
       const rawEdge = oc.TopoDS.Edge_1(edgeShape) as { delete?: () => void };
       trash.push(rawEdge);
@@ -316,12 +331,17 @@ export function collectTangentChainEdges(
       };
       edgeInfo.set(canonicalIdx, info);
       return info;
-    } catch {
+    } catch (err) {
+      if (!getEdgeInfo._warned) {
+        console.warn(`[tangentChain] getEdgeInfo(${canonicalIdx}) threw:`, err);
+        getEdgeInfo._warned = true;
+      }
       return null;
     } finally {
       dispose();
     }
   }
+  getEdgeInfo._warned = false;
 
   // Build a vertex → incident edges index over all body edges.
   const vertexToEdges = new Map<number, number[]>();

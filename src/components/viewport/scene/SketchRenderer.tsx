@@ -581,6 +581,17 @@ export default function SketchRenderer() {
   const rollbackIndex = useCADStore((s) => s.rollbackIndex);
   const components = useComponentStore((s) => s.components);
   const activeSketchComponentVisible = !activeSketch || isComponentVisible(components, activeSketch.componentId);
+  const sketchById = useMemo(() => new Map(sketches.map((sketch) => [sketch.id, sketch])), [sketches]);
+  const visibleSketchFeatures = useMemo(
+    () =>
+      features.filter((feature, index) => {
+        // D187 suppress + D190 rollback + visibility
+        if (feature.type !== 'sketch' || !feature.visible || feature.suppressed) return false;
+        if (rollbackIndex >= 0 && index > rollbackIndex) return false;
+        return true;
+      }),
+    [features, rollbackIndex],
+  );
 
   const profileMaterial = useMemo(() => new THREE.MeshBasicMaterial({
     color: 0x3a7fcc, opacity: 0.25, transparent: true, side: THREE.DoubleSide, depthWrite: false,
@@ -608,13 +619,8 @@ export default function SketchRenderer() {
 
   return (
     <>
-      {entityVisSketchBodies && features.filter((f, i) => {
-        // D187 suppress + D190 rollback + visibility
-        if (f.type !== 'sketch' || !f.visible || f.suppressed) return false;
-        if (rollbackIndex >= 0 && i > rollbackIndex) return false;
-        return true;
-      }).map((feature) => {
-        const sketch = sketches.find(s => s.id === feature.sketchId);
+      {entityVisSketchBodies && visibleSketchFeatures.map((feature) => {
+        const sketch = sketchById.get(feature.sketchId ?? "");
         if (!sketch) return null;
         if (!isComponentVisible(components, sketch.componentId ?? feature.componentId)) return null;
         return <SketchGeometry key={feature.id} sketch={sketch} />;

@@ -11,7 +11,9 @@ export class BRepBodyRegistry {
   private readonly featureToBodyIds = new Map<string, Set<string>>();
 
   add(body: BRepBody): void {
-    this.delete(body.id);
+    const existing = this.bodies.get(body.id);
+    if (existing === body) return;
+    if (existing) this.delete(body.id);
     this.bodies.set(body.id, body);
     if (body.sourceFeatureId) {
       let bodyIds = this.featureToBodyIds.get(body.sourceFeatureId);

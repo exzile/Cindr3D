@@ -10,12 +10,16 @@ export const DEFAULT_CHAMFER_DISTANCE = 2;
 export function resolveOccFilletOptions(params?: Record<string, unknown>): {
   continuity?: 'G1' | 'G2';
   tangencyWeight?: number;
+  isRollingBallCorner?: boolean;
 } {
   const continuity: 'G1' | 'G2' = params?.isG2 === true ? 'G2' : 'G1';
   const tangencyWeight = (continuity === 'G2' && typeof params?.tangencyWeight === 'number')
     ? params.tangencyWeight
     : undefined;
-  return { continuity, tangencyWeight };
+  const isRollingBallCorner = typeof params?.isRollingBallCorner === 'boolean'
+    ? params.isRollingBallCorner
+    : undefined;
+  return { continuity, tangencyWeight, isRollingBallCorner };
 }
 
 export function propagateTangentEdges(

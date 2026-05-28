@@ -524,6 +524,73 @@ export function tryBuildAnalyticalExtrudeBody(
   }
 }
 
+/**
+ * Build an exact OCC extrude from profile sketch entities that include arc curves.
+ *
+ * When a closed profile contains arc entities (e.g. half-circle = arc + closing line),
+ * `sketchEntitiesToWire` produces exact GC_MakeArcOfCircle_4 edges — one OCC edge
+ * per arc. The polygon path (`pointLoopToWire`) produces N tiny straight edges for
+ * the same arc, which appear as separate selectable edges in the fillet picker and
+ * cause `BRepFilletAPI_MakeFillet.Build()` to corrupt topology for any other fillet
+ * features on the body.
+ *
+ * Only used for profiles without holes. Returns null on any failure so the caller
+ * falls back to the existing circle-detection or polygon path.
+ */
+export function tryBuildAnalyticalExtrudeBodyFromEntities(
+  oc: unknown,
+  entities: SketchEntity[],
+  hasHoles: boolean,
+  distance: number,
+  frame: OccPlaneFrame,
+  options: OccExtrudeOptions,
+): BRepBody | null {
+  // Hole support requires entity-to-loop classification — not yet implemented.
+  if (hasHoles) return null;
+  const nonConstruction = entities.filter((e) => !e.isConstruction);
+  // Only activate when at least one arc is present; other entity types are handled
+  // correctly by the polygon path or the circle-detection path.
+  if (!nonConstruction.some((e) => e.type === 'arc')) return null;
+
+  let outerWire: unknown;
+  try {
+    outerWire = sketchEntitiesToWire(oc as never, nonConstruction, frame);
+  } catch {
+    return null;
+  }
+  if (!outerWire) return null;
+
+  // Follow the same pattern as tryBuildAnalyticalExtrudeBody:
+  //   wireToFace → takeOccOwnedResources (gets faceMaker) → add outerWire explicitly
+  //   → occExtrudeFaceShapeWithInstance with combined profileResources.
+  try {
+    const face = wireToFace(oc as never, outerWire, [], frame);
+    if (!face) {
+      (outerWire as { delete?: () => void }).delete?.();
+      return null;
+    }
+    const profileResources: Array<{ delete?: () => void }> = [
+      ...takeOccOwnedResources(face),              // faceMaker (and any polygon makers — none here)
+      outerWire as { delete?: () => void },         // analytical wire has no OCC_OWNED_RESOURCES carrier
+    ];
+    const extruded = occExtrudeFaceShapeWithInstance(oc as never, face, distance, frame, options, profileResources);
+    let consumed = false;
+    try {
+      const body = makeBRepBodyFromOccShape(oc as never, extruded.shape, {
+        id: options.id,
+        sourceFeatureId: options.sourceFeatureId,
+        ownedResources: extruded.ownedResources,
+      });
+      consumed = true;
+      return body;
+    } finally {
+      if (!consumed) extruded.dispose();
+    }
+  } catch {
+    return null;
+  }
+}
+
 export function performRobustBooleanWithRawTool(
   oc: unknown,
   operation: OccBooleanOperation,

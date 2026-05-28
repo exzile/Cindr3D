@@ -2,6 +2,7 @@ import { useCADStore } from "../../../../store/cadStore";
 import type { FilletMode, RuleFilletType } from "./types";
 import type { FilletDialogState } from "./useFilletDialogState";
 import { NumberInput } from "../edgeDialog/NumberInput";
+import { FilletCheckboxOption } from "./FilletCheckboxOption";
 
 interface FilletModeFieldsProps {
   dialog: FilletDialogState;
@@ -243,14 +244,13 @@ export function FilletModeFields({ dialog }: FilletModeFieldsProps) {
             />
           </div>
           <div className="form-group">
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={dialog.isFlipped}
-                onChange={(e) => dialog.setIsFlipped(e.target.checked)}
-              />
+            <FilletCheckboxOption
+              checked={dialog.isFlipped}
+              onChange={dialog.setIsFlipped}
+              description="Swaps which adjacent face receives Offset 1 versus Offset 2 for asymmetric fillets."
+            >
               Flip Faces
-            </label>
+            </FilletCheckboxOption>
           </div>
         </>
       )}

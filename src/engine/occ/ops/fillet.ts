@@ -42,12 +42,47 @@ interface OccFilletBuilder {
 }
 
 function createFilletBuilder(occ: OccFilletApi, rawShape: unknown, filletShape: unknown): OccFilletBuilder | null {
-  const api = occ as OccFilletApi & {
-    BRepFilletAPI_MakeFillet?: new (shape: unknown, filletShape: unknown) => OccFilletBuilder;
-    BRepFilletAPI_MakeFillet_2?: new (shape: unknown, filletShape: unknown) => OccFilletBuilder;
-  };
-  const ctor = api.BRepFilletAPI_MakeFillet_2 ?? api.BRepFilletAPI_MakeFillet;
-  return ctor ? new ctor(rawShape, filletShape) : null;
+  const api = occ as OccFilletApi & Record<string, unknown>;
+  const constructors = [
+    api.BRepFilletAPI_MakeFillet_2,
+    api.BRepFilletAPI_MakeFillet,
+  ].filter((ctor): ctor is new (...args: unknown[]) => OccFilletBuilder => typeof ctor === 'function');
+
+  for (const ctor of constructors) {
+    try {
+      return new ctor(rawShape, filletShape);
+    } catch {
+      try {
+        return new ctor(rawShape);
+      } catch {
+        // Try the next binding overload.
+      }
+    }
+  }
+  return null;
+}
+
+function buildFilletBuilder(occ: OccFilletApi, mk: OccFilletBuilder): void {
+  if (typeof occ.Message_ProgressRange_1 === 'function') {
+    const progress = new occ.Message_ProgressRange_1();
+    try {
+      mk.Build(progress);
+      return;
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof (err as { message?: unknown })?.message === 'string'
+            ? (err as { message: string }).message
+            : String(err);
+      if (!message.includes('expected 0 args')) {
+        throw err;
+      }
+    } finally {
+      progress.delete?.();
+    }
+  }
+  mk.Build();
 }
 
 type OccFilletApi = OcctRaw & {
@@ -77,7 +112,8 @@ type OccFilletApi = OcctRaw & {
   TopTools_IndexedMapOfShape_1: new () => {
     FindIndex_1?(shape: unknown): number;
     FindIndex?(shape: unknown): number;
-    FindKey_1(idx: number): unknown;
+    FindKey_1?(idx: number): unknown;
+    FindKey?(idx: number): unknown;
     Extent(): number;
     delete(): void;
   };
@@ -138,6 +174,11 @@ export interface OccFilletOptions {
    * Stored here so callers can round-trip the value without loss.
    */
   tangencyWeight?: number;
+  /**
+   * Chooses the non-G2 fillet surface shape. `true` keeps OCC's rational
+   * rolling-ball-style blend; `false` switches to quasi-angular corners.
+   */
+  isRollingBallCorner?: boolean;
 }
 
 // ── Chord-length radius computation ──────────────────────────────────────────
@@ -201,8 +242,15 @@ function computeChordLengthRadius(
         edgeExp.Next();
       }
       if (!found) edgeExp.delete();
-      if (found) adjacentFaces.push(oc.TopoDS.Face_1(faceShape));
-      faceShape.delete();
+      // Push the owned Current() copy into adjacentFaces so it stays alive for
+      // BRepAdaptor_Surface_2 below. Face_1 is a VIEW (same ptr as faceShape) —
+      // if we pushed Face_1 and immediately deleted faceShape we'd have a dangling
+      // reference. Keep faceShape alive; delete it only when not needed.
+      if (found) {
+        adjacentFaces.push(faceShape); // faceShape ownership transferred to adjacentFaces
+      } else {
+        faceShape.delete();
+      }
       faceExp.Next();
     }
     faceExp.delete();
@@ -250,6 +298,72 @@ function computeChordLengthRadius(
   }
 }
 
+// ── Seam-edge detection ───────────────────────────────────────────────────────
+
+/**
+ * Counts the number of distinct faces in `rawShape` that contain `rawEdge`
+ * in their wire boundary.
+ *
+ * Regular corner edges are shared by exactly 2 faces.
+ * Seam edges on analytic surfaces (cylinders, tori) appear in only 1 face's
+ * wire (the face wraps around and re-uses the same parametric seam). OCC's
+ * BRepFilletAPI_MakeFillet cannot fillet seam edges — Build() throws.
+ *
+ * Returns 2 on any topology error so the caller never skips a valid edge.
+ */
+function countAdjacentFacesForEdge(
+  occ: OccFilletApi,
+  oc: OcctRaw,
+  rawShape: unknown,
+  edgeMap: { FindIndex_1?(s: unknown): number; FindIndex?(s: unknown): number; Extent(): number },
+  rawEdge: { ptr: number },
+): number {
+  try {
+    const targetIdx = findShapeIndex(edgeMap as Parameters<typeof findShapeIndex>[0], rawEdge);
+    if (targetIdx <= 0) return 2; // can't detect — assume fillable
+
+    let count = 0;
+    const faceExp = new occ.TopExp_Explorer_2(
+      rawShape,
+      oc.TopAbs_ShapeEnum.TopAbs_FACE,
+      oc.TopAbs_ShapeEnum.TopAbs_SHAPE,
+    );
+    try {
+      while (faceExp.More()) {
+        const faceShape = faceExp.Current();
+        const edgeExp = new occ.TopExp_Explorer_2(
+          faceShape,
+          oc.TopAbs_ShapeEnum.TopAbs_EDGE,
+          oc.TopAbs_ShapeEnum.TopAbs_SHAPE,
+        );
+        let found = false;
+        try {
+          while (edgeExp.More()) {
+            const e = edgeExp.Current();
+            const idx = findShapeIndex(edgeMap as Parameters<typeof findShapeIndex>[0], e);
+            e.delete();
+            if (idx === targetIdx) {
+              found = true;
+              break;
+            }
+            edgeExp.Next();
+          }
+        } finally {
+          edgeExp.delete();
+        }
+        faceShape.delete();
+        if (found) count++;
+        faceExp.Next();
+      }
+    } finally {
+      faceExp.delete();
+    }
+    return count;
+  } catch {
+    return 2; // assume fillable on error — never skip a valid edge
+  }
+}
+
 // ── Core builder ──────────────────────────────────────────────────────────────
 
 /**
@@ -282,10 +396,13 @@ export function occFilletEdgeSetsWithInstance(
     return null;
   }
 
-  // Surface enum: G2 always uses ChFi3d_Polynomial; default is ChFi3d_Rational.
+  // Surface enum: G2 always uses ChFi3d_Polynomial. For G1, expose the
+  // rolling-ball vs quasi-angular choice already present in the UI.
   const filletShape = options.continuity === 'G2'
     ? occ.ChFi3d_FilletShape.ChFi3d_Polynomial
-    : occ.ChFi3d_FilletShape.ChFi3d_Rational;
+    : options.isRollingBallCorner === false
+      ? occ.ChFi3d_FilletShape.ChFi3d_QuasiAngular
+      : occ.ChFi3d_FilletShape.ChFi3d_Rational;
 
   const mk = createFilletBuilder(occ, rawShape, filletShape);
   if (!mk) {
@@ -293,6 +410,19 @@ export function occFilletEdgeSetsWithInstance(
     return null;
   }
   try {
+    // Build a shape→index map once for seam-edge detection.
+    // Seam edges (cylinder/torus parametric seam) are adjacent to < 2 faces
+    // and cause BRepFilletAPI_MakeFillet.Build() to throw. We skip them here
+    // so Build() never sees them, producing a clean null rather than an exception.
+    const seamDetectMap = new occ.TopTools_IndexedMapOfShape_1();
+    let seamDetectReady = false;
+    try {
+      occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, seamDetectMap);
+      seamDetectReady = seamDetectMap.Extent() > 0;
+    } catch {
+      // Non-fatal: seam detection degrades gracefully (we'll attempt Build() anyway).
+    }
+
     let addedAny = false;
     for (const edgeSet of edgeSets) {
       for (const edgeId of edgeSet.edgeIds) {
@@ -310,6 +440,16 @@ export function occFilletEdgeSetsWithInstance(
           console.warn(`[occFillet] could not deref edge ${edgeId}`);
           continue;
         }
+
+        // Skip seam/boundary edges — they cause Build() to throw.
+        if (seamDetectReady) {
+          const adjFaces = countAdjacentFacesForEdge(occ, oc, rawShape, seamDetectMap, rawEdge as { ptr: number });
+          if (adjFaces < 2) {
+            console.warn(`[occFillet] skipping edge ${edgeId}: seam or boundary edge (adjacent to ${adjFaces} face(s))`);
+            continue;
+          }
+        }
+
         try {
           if (edgeSet.isAsymmetric && edgeSet.startRadius !== undefined && edgeSet.endRadius !== undefined) {
             const d1 = Math.max(edgeSet.startRadius, 0.001);
@@ -331,14 +471,27 @@ export function occFilletEdgeSetsWithInstance(
       }
     }
 
+    seamDetectMap.delete();
+
     if (!addedAny) {
+      mk.delete();
       return null;
     }
 
-    mk.Build();
+    try {
+      buildFilletBuilder(occ, mk);
+    } catch (buildErr) {
+      // OCC can expose HasResult() after a failed Build(), but that partial
+      // shape may be an open or missing-face solid. Never install partial
+      // fillets into the model; let the caller preserve the previous body.
+      console.warn('[occFillet] Build() threw; rejecting partial result. Error:', buildErr);
+      mk.delete();
+      return null;
+    }
 
     if (mk.IsDone?.() === false) {
-      console.warn('[occFillet] BRepFilletAPI_MakeFillet.IsDone() = false');
+      console.warn('[occFillet] BRepFilletAPI_MakeFillet.IsDone() = false; rejecting partial result');
+      mk.delete();
       return null;
     }
 
@@ -350,7 +503,7 @@ export function occFilletEdgeSetsWithInstance(
       ownedResources: [mk],
     });
   } catch (e) {
-    console.warn('[occFillet] threw during Build/Shape:', e);
+    console.warn('[occFillet] threw outside Build/Shape:', e);
     mk.delete();
     return null;
   }
@@ -387,7 +540,7 @@ export function occFilletWithInstance(
 
 // ── Full-round fillet ─────────────────────────────────────────────────────────
 
-export interface OccFullRoundFilletOptions {
+export interface OccFullRoundFilletOptions extends OccFilletOptions {
   id?: string;
   sourceFeatureId?: string;
 }
@@ -525,7 +678,9 @@ export function occFullRoundFilletWithInstance(
     let curve: { FirstParameter(): number; LastParameter(): number; D0(u: number, p: unknown): void; delete?: () => void } | null = null;
     let pt: { X(): number; Y(): number; Z(): number; delete?: () => void } | null = null;
     try {
-      const edgeShape = edgeMap.FindKey_1(edgeIdx);
+      const findKeyFn = edgeMap.FindKey_1 ?? edgeMap.FindKey;
+      if (!findKeyFn) return null;
+      const edgeShape = findKeyFn.call(edgeMap, edgeIdx);
       const rawEdge = oc.TopoDS.Edge_1(edgeShape);
       const c = new occ.BRepAdaptor_Curve_2(rawEdge);
       curve = c;
@@ -572,7 +727,7 @@ export function occFullRoundFilletWithInstance(
   return occFilletEdgeSetsWithInstance(oc, body, [{
     edgeIds: bodyEdgeIds,
     radius: autoRadius,
-  }], { id: options.id, sourceFeatureId: options.sourceFeatureId });
+  }], options);
 }
 
 /**

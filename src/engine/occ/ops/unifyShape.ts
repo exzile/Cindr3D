@@ -86,13 +86,15 @@ export function unifyRawShape(
     } else {
       return null;
     }
-    unifier.Build();
-    const unified = unifier.Shape();
+    const activeUnifier = unifier;
+    if (!activeUnifier) return null;
+    activeUnifier.Build();
+    const unified = activeUnifier.Shape();
     if (!unified) {
-      unifier.delete?.();
+      activeUnifier.delete?.();
       return null;
     }
-    return { rawShape: unified, unifier };
+    return { rawShape: unified, unifier: activeUnifier };
   } catch (e) {
     console.warn('[unifyShape] ShapeUpgrade_UnifySameDomain failed:', e);
     unifier?.delete?.();

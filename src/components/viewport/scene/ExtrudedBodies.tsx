@@ -181,22 +181,44 @@ export default function ExtrudedBodies() {
   );
 
   // D187 + D190: a feature is skipped when it is suppressed, hidden, or
-  // rolled back past the marker.
-  const isActive = (f: Feature) => {
-    if (!f.visible || f.suppressed) return false;
-    if (rollbackIndex >= 0) {
-      const idx = features.indexOf(f);
-      if (idx > rollbackIndex) return false;
+  // rolled back past the marker. Precompute IDs once so callers don't do
+  // repeated indexOf scans during cache sync and stored-mesh filtering.
+  const activeFeatureIds = useMemo(() => {
+    const ids = new Set<string>();
+    const lastIndex = rollbackIndex >= 0 ? Math.min(rollbackIndex, features.length - 1) : features.length - 1;
+    for (let index = 0; index <= lastIndex; index += 1) {
+      const feature = features[index];
+      if (feature.visible && !feature.suppressed) ids.add(feature.id);
     }
-    return true;
-  };
+    return ids;
+  }, [features, rollbackIndex]);
+
+  const isActive = (feature: Feature) => activeFeatureIds.has(feature.id);
 
   // Non-destructive OCC edge modification: when a fillet/chamfer feature has been committed
   // with a mesh (Phase 0 — it stores the result on its own node), the parent
   // feature must be hidden so the two bodies don't overlap. A downstream
   // edge modification is "active" only when it has a computed mesh; while it's pending
   // (just added, OCC not yet run) the parent stays visible for replay.
-  const edgeModificationSourceFeatureId = (feature: Feature): string | undefined => {
+  const featureById = useMemo(() => {
+    const map = new Map<string, Feature>();
+    for (const feature of features) map.set(feature.id, feature);
+    return map;
+  }, [features]);
+
+  const activeDownstreamEdgeModificationSourceIds = useMemo(() => {
+    const sourceIds = new Set<string>();
+    for (const feature of features) {
+      if (feature.type !== 'fillet' && feature.type !== 'chamfer') continue;
+      if (!feature.visible || feature.suppressed || feature.mesh == null) continue;
+
+      const sourceFeatureId = edgeModificationSourceFeatureId(feature);
+      if (sourceFeatureId) sourceIds.add(sourceFeatureId);
+    }
+    return sourceIds;
+  }, [features]);
+
+  function edgeModificationSourceFeatureId(feature: Feature): string | undefined {
     const explicit =
       feature.parentFeatureId ??
       (feature.params.parentFeatureId as string | undefined) ??
@@ -206,14 +228,10 @@ export default function ExtrudedBodies() {
     const selection = parseOccEdgeSelection(storedEdgeIds(feature.params.edgeIds));
     if (!selection) return undefined;
     return globalBRepBodyRegistry.get(selection.bodyId)?.sourceFeatureId;
-  };
+  }
 
   const hasActiveDownstreamEdgeModification = (featureId: string): boolean =>
-    features.some((f) => {
-      if (f.type !== 'fillet' && f.type !== 'chamfer') return false;
-      if (!f.visible || f.suppressed || f.mesh == null) return false;
-      return edgeModificationSourceFeatureId(f) === featureId;
-    });
+    activeDownstreamEdgeModificationSourceIds.has(featureId);
 
   // Keep the persistent geometry caches in sync from committed OCC meshes so
   // Prepare/export can resolve body geometry from committed OCC/stored meshes.
@@ -292,7 +310,7 @@ export default function ExtrudedBodies() {
         f.parentFeatureId ??
         (f.params.parentFeatureId as string | undefined) ??
         (f.params.sourceFeatureId as string | undefined);
-      const parent = parentId ? features.find((c) => c.id === parentId) : undefined;
+      const parent = parentId ? featureById.get(parentId) : undefined;
       if (parent?.type === 'primitive') {
         const p = parent.params;
         m.position.set(

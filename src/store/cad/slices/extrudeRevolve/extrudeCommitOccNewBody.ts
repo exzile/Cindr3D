@@ -13,6 +13,7 @@ import {
   makeSketchProfileFromShape,
   resolveOccExtrudeDistance,
   tryBuildAnalyticalExtrudeBody,
+  tryBuildAnalyticalExtrudeBodyFromEntities,
   type ExtrudeDirection,
 } from './extrudeCommitHelpers';
 import type { ExtrudeOperation } from './extrudeCommitOperation';
@@ -141,12 +142,25 @@ export async function buildOccNewBodyExtrudeMesh({
       taperAngle: Math.abs(extrudeTaperAngle) > 0.001 ? extrudeTaperAngle : undefined,
       taperAngle2: Math.abs(extrudeTaperAngle2 ?? 0) > 0.001 ? extrudeTaperAngle2 : undefined,
     };
-    // Try analytical path first: builds exact GC_MakeCircle_2 edges for circular holes
-    // so the body has ~16 edges (not ~726 polygon segments) and fillets correctly.
-    // Falls back to polygon path if any hole is not a detectable circle.
-    const occBody =
-      tryBuildAnalyticalExtrudeBody(occ.oc, sourceSketch, firstShape, occDistance, frame, extrudeOptions)
-      ?? occExtrudeWithInstance(occ.oc, sketchProfile, occDistance, frame, extrudeOptions);
+    // Analytical path priority:
+    //  1. Circle-detection path: builds exact GC_MakeCircle_2 edges for circular loops so
+    //     the body has ~16 edges (not ~726 polygon segments) and fillets correctly.
+    //  2. Arc-entity path: builds exact GC_MakeArcOfCircle_4 edges for profiles containing
+    //     arcs (e.g. half-circle = arc + closing line). Produces clean OCC geometry that
+    //     BRepFilletAPI_MakeFillet can handle — the polygon path's hundreds of tiny edges
+    //     cause Build() to fail. Edge IDs change vs. the polygon path, but polygon-arc
+    //     fillets are geometrically impossible so there's nothing to preserve.
+    //  3. Polygon fallback.
+    const hasHoles = (firstShape.holes?.length ?? 0) > 0;
+    const analyticalCircle = tryBuildAnalyticalExtrudeBody(occ.oc, sourceSketch, firstShape, occDistance, frame, extrudeOptions);
+    const analyticalArc = !analyticalCircle
+      ? tryBuildAnalyticalExtrudeBodyFromEntities(occ.oc, sourceSketch.entities, hasHoles, occDistance, frame, extrudeOptions)
+      : null;
+    const occBody = analyticalCircle ?? analyticalArc ?? occExtrudeWithInstance(occ.oc, sketchProfile, occDistance, frame, extrudeOptions);
+    console.log(
+      `[commitExtrude] builder=${analyticalCircle ? 'analyticalCircle' : analyticalArc ? 'analyticalArc' : 'polygon'}` +
+      ` edges=${occBody.edgeIds.size} faces=${occBody.faceIds.size} id=${featureId}`,
+    );
 
     return {
       featureMesh: createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, featureId),

@@ -16,6 +16,11 @@ export type GuideGeometryResult = {
   edgePolylines: Map<number, THREE.Vector3[]>;
 };
 
+export function disposeGuideGeometryResult(result: GuideGeometryResult | null | undefined): void {
+  result?.geometry.dispose();
+  result?.edgePolylines.clear();
+}
+
 type StraightEdgeInfo = {
   edgeId: number | string;
   center: THREE.Vector3;

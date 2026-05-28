@@ -142,7 +142,11 @@
       "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\);const p=JSON.parse\\(d\\);console.log\\('build:',p.scripts.build\\);console.log\\('typecheck:',p.scripts.typecheck\\);\")",
       "Bash(node -p \"JSON.parse\\(require\\('fs'\\).readFileSync\\('package.json','utf8'\\)\\).scripts.build\")",
       "Bash(node -p \"JSON.parse\\(require\\('fs'\\).readFileSync\\('tsconfig.app.json','utf8'\\)\\).compilerOptions.strict\")",
-      "Bash(findstr \":5173\")"
+      "Bash(findstr \":5173\")",
+      "Bash(Get-ChildItem -Path src/types -Filter \"*.ts\" -File)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "mcp__Desktop_Commander__read_file",
+      "Bash(npx gitnexus *)"
     ]
   }
 }

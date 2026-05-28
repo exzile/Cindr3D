@@ -8,11 +8,10 @@ import {
   type FullRoundSideFaces,
 } from "../../../../engine/occ/ops/fillet";
 import { getOccSync } from "../../../../engine/occ/loader";
-import { storedEdgeIds, parseOccEdgeSelection } from "../../../../utils/occEdgeUtils";
+import { storedEdgeIds } from "../../../../utils/occEdgeUtils";
 import {
   DEFAULT_FILLET_RADIUS,
   resolveOccChamferDistances,
-  resolveOccFilletEdgeSets,
   resolveOccFilletOptions,
 } from "./edgeModHelpers";
 import { createOccEdgeModificationHelpers } from "./edgeModApply";
@@ -107,12 +106,15 @@ export function createEdgeModActions({
           return;
         }
 
+        const { continuity, tangencyWeight, isRollingBallCorner } = resolveOccFilletOptions(
+          filletParams ?? feature?.params,
+        );
         const resultBody = occFullRoundFilletWithInstance(
           occ.oc,
           srcBody,
           centerOccFaceId!,
           sideFaces,
-          { sourceFeatureId: featureId },
+          { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
         );
         if (!resultBody) {
           markOccEdgeModificationError(featureId, "Full-Round Fillet", "OCC operation failed");
@@ -156,7 +158,9 @@ export function createEdgeModActions({
           get().setStatusMessage("Rule Fillet: source body is no longer available");
           return;
         }
-        const { continuity, tangencyWeight } = resolveOccFilletOptions(filletParams);
+        const { continuity, tangencyWeight, isRollingBallCorner } = resolveOccFilletOptions(
+          filletParams ?? feature?.params,
+        );
 
         let resultBody = null as ReturnType<typeof occRuleFilletAllEdgesWithInstance>;
         if (ruleType === "between-faces") {
@@ -172,7 +176,7 @@ export function createEdgeModActions({
             groupA,
             groupB,
             Math.max(radius, 0.001),
-            { sourceFeatureId: featureId, continuity, tangencyWeight },
+            { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
           );
         } else {
           const centerOccFaceId =
@@ -201,7 +205,7 @@ export function createEdgeModActions({
             srcBody,
             faceIds,
             Math.max(radius, 0.001),
-            { sourceFeatureId: featureId, continuity, tangencyWeight },
+            { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
           );
         }
 
@@ -217,14 +221,6 @@ export function createEdgeModActions({
         get().filletEdgeIds.length > 0
           ? get().filletEdgeIds
           : storedEdgeIds(feature?.params.edgeIds);
-      const occ = getOccSync();
-      const selection = occ ? parseOccEdgeSelection(edgeIds) : null;
-      const srcBody = selection ? globalBRepBodyRegistry.get(selection.bodyId) : undefined;
-
-      const numericEdgeIds = srcBody
-        ? selection!.edgeIds.filter((id) => srcBody.edgeIds.has(id))
-        : [];
-
       const wantsSetback = filletParams?.setback === true && typeof filletParams?.setbackDistance === "number";
       if (wantsSetback) {
         console.warn(
@@ -236,10 +232,9 @@ export function createEdgeModActions({
         }
       }
 
-      const filletEdgeSets = srcBody
-        ? resolveOccFilletEdgeSets(numericEdgeIds, srcBody, filletParams, radius)
-        : undefined;
-      const { continuity, tangencyWeight } = resolveOccFilletOptions(filletParams);
+      const { continuity, tangencyWeight, isRollingBallCorner } = resolveOccFilletOptions(
+        filletParams ?? feature?.params,
+      );
 
       const centerFaceId = typeof filletParams?.centerFaceId === "number" ? filletParams.centerFaceId : undefined;
       const side1FromParams = pickSideGroup(filletParams, feature?.params, "side1", null);
@@ -255,9 +250,11 @@ export function createEdgeModActions({
         tool: "Fillet",
         featureId,
         edgeIds,
-        filletEdgeSets,
+        radius,
+        filletParams,
         continuity,
         tangencyWeight,
+        isRollingBallCorner,
         fullRoundFaces,
       });
     },
@@ -323,16 +320,8 @@ export function createEdgeModActions({
       }
 
       if (feature.type === "fillet") {
-        const occ = getOccSync();
-        const selection = occ ? parseOccEdgeSelection(edgeIds) : null;
-        const srcBody = selection ? globalBRepBodyRegistry.get(selection.bodyId) : undefined;
-        const numericEdgeIds = srcBody
-          ? selection!.edgeIds.filter((id) => srcBody.edgeIds.has(id))
-          : [];
-        const filletEdgeSets = srcBody
-          ? resolveOccFilletEdgeSets(numericEdgeIds, srcBody, params)
-          : undefined;
-        const { continuity, tangencyWeight } = resolveOccFilletOptions(params);
+        const radius = typeof params.radius === "number" ? params.radius : DEFAULT_FILLET_RADIUS;
+        const { continuity, tangencyWeight, isRollingBallCorner } = resolveOccFilletOptions(params);
         const replayCenterFaceId = typeof params.centerFaceId === "number" ? params.centerFaceId : undefined;
         const replaySide1 = pickSideGroup(params, undefined, "side1", null);
         const replaySide2 = pickSideGroup(params, undefined, "side2", null);
@@ -346,9 +335,11 @@ export function createEdgeModActions({
           tool: "Fillet",
           featureId,
           edgeIds,
-          filletEdgeSets,
+          radius,
+          filletParams: params as Record<string, unknown>,
           continuity,
           tangencyWeight,
+          isRollingBallCorner,
           pushUndo: true,
           fullRoundFaces: replayFullRoundFaces,
         });

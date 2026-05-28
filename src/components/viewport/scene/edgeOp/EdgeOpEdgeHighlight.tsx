@@ -22,7 +22,10 @@ import {
   occEdgeId,
 } from "./edgeOpEdgeSelection";
 import { useCADStore } from "../../../../store/cadStore";
-import { rehydrateMissingExtrudeOccBodies } from "../../../../store/cad/slices/extrudeRevolve/rehydrateExtrudeOccBody";
+import { ensureOccBodyForFeature } from "../../../../store/cad/slices/extrudeRevolve/extrudeCommitOccTarget";
+// collectTangentChainEdges and getOccSync are NOT used here — the hover/click
+// chain expansion uses pure-geometry polylineTangentChain instead (no OCC WASM
+// dependency, works with topology guides that lack OCC edge IDs).
 
 interface EdgeOpEdgeHighlightProps {
   enabled: boolean;
@@ -31,6 +34,105 @@ interface EdgeOpEdgeHighlightProps {
   removeEdge: (id: string) => void;
   selectedColor: number;
   allowCurvedEdges?: boolean;
+}
+
+/**
+ * Detect tangent-continuous edges from guide-line polylines — pure geometry, no OCC.
+ * Two edges share a vertex when an endpoint of one is within `eps` of an endpoint of
+ * the other. They are tangent when the dot product of their tangent directions at the
+ * shared vertex exceeds `cosTol`.
+ *
+ * Returns a Set containing the seed edge ID and all transitively tangent-connected IDs.
+ */
+type EdgeChainPolyline = { x: number; y: number; z: number }[] | Float32Array;
+
+function polylineTangentChain(
+  edgePolylines: Map<number, EdgeChainPolyline>,
+  seedEdgeId: number,
+  eps = 1e-4,
+  cosTol = 0.995,
+): Set<number> {
+  const result = new Set<number>();
+  if (!edgePolylines.has(seedEdgeId)) return result;
+  result.add(seedEdgeId);
+
+  // Plain-object 3D helpers (no THREE.Vector3 dependency — tessellation
+  // polylines may store plain {x,y,z} objects without .clone/.sub/.dot).
+  type P3 = { x: number; y: number; z: number };
+  const sub = (a: P3, b: P3): P3 => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+  const len = (v: P3) => Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+  const norm = (v: P3): P3 => { const l = len(v) || 1; return { x: v.x / l, y: v.y / l, z: v.z / l }; };
+  const dot = (a: P3, b: P3) => a.x * b.x + a.y * b.y + a.z * b.z;
+  const dist2 = (a: P3, b: P3) => { const d = sub(a, b); return dot(d, d); };
+  const pointCount = (pts: EdgeChainPolyline) => Array.isArray(pts) ? pts.length : pts.length / 3;
+  const pointAt = (pts: EdgeChainPolyline, index: number): P3 => {
+    if (Array.isArray(pts)) return pts[index];
+    const offset = index * 3;
+    return { x: pts[offset], y: pts[offset + 1], z: pts[offset + 2] };
+  };
+
+  // Pre-compute endpoints & tangent directions for every edge.
+  interface EdgeEndpoints { start: P3; end: P3; dirStart: P3; dirEnd: P3; }
+  const edgeData = new Map<number, EdgeEndpoints>();
+  for (const [id, pts] of edgePolylines) {
+    const count = pointCount(pts);
+    if (count < 2) continue;
+    const a = pointAt(pts, 0);
+    const b = pointAt(pts, count - 1);
+    const dStart = norm(sub(pointAt(pts, 1), a));
+    const dEnd = norm(sub(b, pointAt(pts, count - 2)));
+    edgeData.set(id, { start: a, end: b, dirStart: dStart, dirEnd: dEnd });
+  }
+
+  // Spatial index: bucket endpoints by rounded position key.
+  const bucketSize = eps * 10;
+  const bucketKey = (v: P3) =>
+    `${Math.round(v.x / bucketSize)},${Math.round(v.y / bucketSize)},${Math.round(v.z / bucketSize)}`;
+  const endpointBuckets = new Map<string, Array<{ id: number; isStart: boolean }>>();
+  for (const [id, data] of edgeData) {
+    for (const isStart of [true, false]) {
+      const pt = isStart ? data.start : data.end;
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dz = -1; dz <= 1; dz++) {
+            const nKey = `${Math.round(pt.x / bucketSize) + dx},${Math.round(pt.y / bucketSize) + dy},${Math.round(pt.z / bucketSize) + dz}`;
+            let bucket = endpointBuckets.get(nKey);
+            if (!bucket) { bucket = []; endpointBuckets.set(nKey, bucket); }
+            bucket.push({ id, isStart });
+          }
+        }
+      }
+    }
+  }
+
+  // BFS from seed.
+  const queue = [seedEdgeId];
+  const eps2 = eps * eps;
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    const curData = edgeData.get(cur);
+    if (!curData) continue;
+    for (const isStartOfCur of [true, false] as const) {
+      const curPt = isStartOfCur ? curData.start : curData.end;
+      const curDir = isStartOfCur ? curData.dirStart : curData.dirEnd;
+      const key = bucketKey(curPt);
+      const candidates = endpointBuckets.get(key);
+      if (!candidates) continue;
+      for (const cand of candidates) {
+        if (cand.id === cur || result.has(cand.id)) continue;
+        const candData = edgeData.get(cand.id);
+        if (!candData) continue;
+        const candPt = cand.isStart ? candData.start : candData.end;
+        if (dist2(curPt, candPt) > eps2) continue;
+        const candDir = cand.isStart ? candData.dirStart : candData.dirEnd;
+        if (Math.abs(dot(curDir, candDir)) > cosTol) {
+          result.add(cand.id);
+          queue.push(cand.id);
+        }
+      }
+    }
+  }
+  return result;
 }
 
 const EDGE_GUIDE_RENDER_ORDER = 1398;
@@ -103,6 +205,8 @@ export default function EdgeOpEdgeHighlight({
   const renderedHoverIdRef = useRef<string | null>(null);
   const selectedLinesRef = useRef<Map<string, THREE.Line>>(new Map());
   const selectedEdgesDataRef = useRef<Map<string, THREE.Vector3[]>>(new Map());
+  /** Edge IDs whose display polyline was expanded to a tangent chain (segment-pair format for LineSegments). */
+  const selectedChainIdsRef = useRef<Set<string>>(new Set());
   const cursorOnRef = useRef(false);
   const { scene: _scene, gl, invalidate: invalidateCanvas } = useThree();
   const features = useCADStore((state) => state.features);
@@ -112,26 +216,28 @@ export default function EdgeOpEdgeHighlight({
   // after OCC bodies are re-registered (needed after full page refresh).
   const triggerRebuildRef = useRef<(() => void) | null>(null);
 
-  const edgeSourceSignature = useMemo(
-    () =>
-      features
-        .filter((feature) => feature.visible && !feature.suppressed)
-        .map((feature) => `${feature.id}:${feature.timestamp}:${feature.mesh instanceof THREE.Mesh ? feature.mesh.uuid : ''}`)
-        .join("|"),
-    [features],
-  );
+  const edgeSourceMeta = useMemo(() => {
+    const signatureParts: string[] = [];
+    const visibleBodyIds: string[] = [];
 
-  // Compute a stable string key so that visibleBodyFeatureIds is only a new
-  // Set reference when the actual IDs change — not on every features re-render.
-  const visibleBodyFeatureIdsKey = useMemo(
-    () =>
-      features
-        .filter((feature) => feature.visible && !feature.suppressed && feature.type !== "sketch")
-        .map((feature) => feature.id)
-        .sort()
-        .join(","),
-    [features],
-  );
+    for (const feature of features) {
+      if (!feature.visible || feature.suppressed) continue;
+
+      signatureParts.push(
+        `${feature.id}:${feature.timestamp}:${feature.mesh instanceof THREE.Mesh ? feature.mesh.uuid : ''}`,
+      );
+      if (feature.type !== "sketch") visibleBodyIds.push(feature.id);
+    }
+
+    visibleBodyIds.sort();
+    return {
+      edgeSourceSignature: signatureParts.join("|"),
+      visibleBodyFeatureIdsKey: visibleBodyIds.join(","),
+    };
+  }, [features]);
+
+  // Keep the Set stable unless the actual visible body IDs change.
+  const { edgeSourceSignature, visibleBodyFeatureIdsKey } = edgeSourceMeta;
   const visibleBodyFeatureIds = useMemo(
     () => new Set(visibleBodyFeatureIdsKey ? visibleBodyFeatureIdsKey.split(",") : []),
     [visibleBodyFeatureIdsKey],
@@ -144,6 +250,7 @@ export default function EdgeOpEdgeHighlight({
     const canvas = gl.domElement;
     const selectedLines = selectedLinesRef.current;
     const selectedEdges = selectedEdgesDataRef.current;
+    const selectedChainIds = selectedChainIdsRef.current;
     return () => {
       if (hoverLineRef.current) {
         sceneRef.remove(hoverLineRef.current);
@@ -161,6 +268,7 @@ export default function EdgeOpEdgeHighlight({
       });
       selectedLines.clear();
       selectedEdges.clear();
+      selectedChainIds.clear();
       if (cursorOnRef.current) {
         canvas.style.cursor = "";
         cursorOnRef.current = false;
@@ -217,7 +325,6 @@ export default function EdgeOpEdgeHighlight({
   }, [allowCurvedEdges, invalidateCanvas]);
 
   const handleOccClick = useCallback((result: OccEdgePickResult) => {
-
     // Three hit types:
     // 1. occDirect pick line — invisible line with exact OCC edge IDs + body-local geometry
     // 2. Old-style pick line — no edgePolylines, OCC edge IDs, tessellation lookup
@@ -264,16 +371,82 @@ export default function EdgeOpEdgeHighlight({
         }
       }
     }
+
     if (!polyline || !sourceBody || !resolvedBodyId) return;
     if (!allowCurvedEdges && polylineIsCurved(polyline)) return;
+
+    // Expand to full tangent chain for visual display so that clicking one polygon
+    // segment of a curved edge selects the entire arc visually.
+    // Uses the guide line's edgePolylines (pure geometry, no OCC WASM needed).
+    let finalDisplay = displayPolyline ?? polyline;
+    // Resolve edgePolylines — may come from the hit mesh directly, or from the
+    // sibling visible guide line when the hit landed on an occDirect pick line.
+    let guidePolylines = result.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined;
+    if (!guidePolylines) {
+      for (const line of allEdgeLinesRef.current) {
+        if (line.userData['occDirect']) continue;
+        const lineBodyId = line.userData['brepBodyId'] as string | undefined;
+        if (lineBodyId === resolvedBodyId && line.userData['edgePolylines']) {
+          guidePolylines = line.userData['edgePolylines'] as Map<number, THREE.Vector3[]>;
+          break;
+        }
+      }
+    }
+
+    let isChainExpanded = false;
+    if (guidePolylines && guidePolylines.size > 1) {
+      const chainSet = polylineTangentChain(guidePolylines, result.edgeId);
+      if (chainSet.size <= 1 && resolvedEdgeId !== result.edgeId) {
+        const altChain = polylineTangentChain(guidePolylines, resolvedEdgeId);
+        if (altChain.size > chainSet.size) {
+          for (const eid of altChain) chainSet.add(eid);
+        }
+      }
+
+      if (chainSet.size > 1) {
+        // Normalize resolvedEdgeId so that clicking ANY segment of the same
+        // tangent chain produces the same selection ID.  Run polylineTangentChain
+        // on the body's own tessellation polylines (which use OCC edge IDs) to
+        // find every OCC edge in this chain, then pick the minimum as canonical.
+        const tessPolylines = sourceBody._tessellation?.edgePolylines;
+        if (tessPolylines && tessPolylines.size > 0) {
+          const occChain = polylineTangentChain(tessPolylines, resolvedEdgeId);
+          if (occChain.size > 1) {
+            resolvedEdgeId = Math.min(...occChain);
+          }
+        }
+        isChainExpanded = true;
+
+        const chainPts: THREE.Vector3[] = [];
+        for (const eid of chainSet) {
+          const pts = guidePolylines.get(eid);
+          if (!pts || pts.length < 2) continue;
+          // Segment pairs for LineSegments.
+          for (let i = 0; i + 1 < pts.length; i++) {
+            chainPts.push(pts[i], pts[i + 1]);
+          }
+        }
+        if (chainPts.length >= 2) {
+          finalDisplay = chainPts;
+        }
+      }
+    }
+
+    // Compute the selection ID AFTER chain normalization so that clicking any
+    // segment of the same tangent chain produces the same canonical ID.
     const id = visualSourceFeatureId
       ? `occ:${resolvedBodyId}:${resolvedEdgeId}:feature:${visualSourceFeatureId}`
       : `occ:${resolvedBodyId}:${resolvedEdgeId}`;
+
     if (edgeIdSet.has(id)) {
       removeEdge(id);
+      selectedChainIdsRef.current.delete(id);
       return;
     }
-    selectedEdgesDataRef.current.set(id, displayPolyline ?? polyline);
+    if (isChainExpanded) {
+      selectedChainIdsRef.current.add(id);
+    }
+    selectedEdgesDataRef.current.set(id, finalDisplay);
     addEdge(id);
   }, [addEdge, removeEdge, edgeIdSet, allowCurvedEdges]);
 
@@ -432,8 +605,24 @@ export default function EdgeOpEdgeHighlight({
     if (!enabled) return;
     let cancelled = false;
 
-    rehydrateMissingExtrudeOccBodies(features, sketches).then((rehydrated) => {
-      if (cancelled || rehydrated === 0) return;
+    // Replay ALL visible solid features (not just the latest) so that every
+    // extrude body is rebuilt with analytical arc edges when possible.
+    // ensureOccBodyForFeature tries replay first (which uses the latest
+    // analytical builders), falling back to STEP restore only when replay fails.
+    const candidates = features.filter(
+      (feature) =>
+        feature.visible &&
+        !feature.suppressed &&
+        feature.type !== "sketch" &&
+        feature.mesh instanceof THREE.Mesh,
+    );
+    Promise.all(
+      candidates.map((feature) =>
+        ensureOccBodyForFeature(feature, features, sketches, undefined, { forceAnalyticalReplay: true }),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      if (!results.some(Boolean)) return;
       // Bodies are now registered — rebuild guide lines so they get brepBodyId set.
       triggerRebuildRef.current?.();
       invalidateCanvas();
@@ -485,19 +674,75 @@ export default function EdgeOpEdgeHighlight({
       const id = occEdgeId(occHover);
       if (id !== renderedHoverIdRef.current || !hoverLineRef.current) {
         renderedHoverIdRef.current = id;
-        // OCC body: get polyline from tessellation; topology guideLine: fall back to stored polyline.
-        const hPts = getOccEdgePolyline(occHover)
-          ?? (occHover.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined)?.get(occHover.edgeId)
-          ?? null;
-        if (hPts) {
-          if (!hoverLineRef.current) {
+
+        // Remove any existing hover line so we can create the correct type
+        // (Line vs LineSegments may change depending on tangent-chain expansion).
+        if (hoverLineRef.current) {
+          scene.remove(hoverLineRef.current);
+          hoverLineRef.current.geometry.dispose();
+          hoverLineRef.current = null;
+        }
+
+        // Expand to the full tangent chain so that hovering over any single polygon
+        // segment of a curved edge (e.g. the arc of a half-circle extrude) highlights
+        // the entire edge instead of one tiny tessellation segment.
+        //
+        // Uses the guide line's own edgePolylines (pure geometry, no OCC WASM needed).
+        // This works for both tessellation guides (OCC edge IDs) and topology guides
+        // (sequential IDs) — it only relies on endpoint proximity + tangent direction.
+        let builtChain = false;
+        let guidePolylines = occHover.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined;
+        // The invisible occDirect pick line doesn't carry edgePolylines — find
+        // the sibling visible guide line for the same body.
+        if (!guidePolylines && occHover.mesh.userData['occDirect'] && occHover.bodyId) {
+          for (const line of allEdgeLinesRef.current) {
+            if (line.userData['occDirect']) continue;
+            if (line.userData['brepBodyId'] === occHover.bodyId && line.userData['edgePolylines']) {
+              guidePolylines = line.userData['edgePolylines'] as Map<number, THREE.Vector3[]>;
+              break;
+            }
+          }
+        }
+        if (guidePolylines && guidePolylines.size > 1) {
+          const chainSet = polylineTangentChain(guidePolylines, occHover.edgeId);
+          if (chainSet.size > 1) {
+            // Build world-space segment pairs from all chain edges' polylines.
+            const positions: number[] = [];
+            for (const eid of chainSet) {
+              const pts = guidePolylines.get(eid);
+              if (!pts || pts.length < 2) continue;
+              for (let i = 0; i + 1 < pts.length; i++) {
+                positions.push(
+                  pts[i].x, pts[i].y, pts[i].z,
+                  pts[i + 1].x, pts[i + 1].y, pts[i + 1].z,
+                );
+              }
+            }
+            if (positions.length >= 6) {
+              // Runs once per hover-id change, not per frame.
+              const geom = new THREE.BufferGeometry();
+              geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+              const line = new THREE.LineSegments(geom, hoverMat);
+              line.renderOrder = EDGE_HOVER_RENDER_ORDER;
+              line.frustumCulled = false;
+              scene.add(line);
+              hoverLineRef.current = line;
+              builtChain = true;
+            }
+          }
+        }
+
+        if (!builtChain) {
+          // Fallback: single-edge world-space polyline (straight edges, or when OCC
+          // is not available, or when the edge has no tangent neighbours).
+          const hPts = getOccEdgePolyline(occHover)
+            ?? (occHover.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined)?.get(occHover.edgeId)
+            ?? null;
+          if (hPts) {
             const line = new THREE.Line(buildPolylineGeometry(hPts), hoverMat);
             line.renderOrder = EDGE_HOVER_RENDER_ORDER;
             scene.add(line);
             hoverLineRef.current = line;
-          } else {
-            hoverLineRef.current.geometry.dispose();
-            hoverLineRef.current.geometry = buildPolylineGeometry(hPts);
           }
         }
       }
@@ -514,13 +759,19 @@ export default function EdgeOpEdgeHighlight({
         line.geometry.dispose();
         selectedLinesRef.current.delete(id);
         selectedEdgesDataRef.current.delete(id);
+        selectedChainIdsRef.current.delete(id);
       }
     });
     for (const id of edgeIds) {
       if (!selectedLinesRef.current.has(id)) {
         const edgeData = selectedEdgesDataRef.current.get(id);
         if (edgeData && edgeData.length >= 2) {
-          const line = new THREE.Line(buildPolylineGeometry(edgeData), selectedMat);
+          // Chain-expanded edges use LineSegments (segment-pair format);
+          // single edges use Line (continuous polyline).
+          const isChain = selectedChainIdsRef.current.has(id);
+          const line = isChain
+            ? new THREE.LineSegments(buildPolylineGeometry(edgeData), selectedMat)
+            : new THREE.Line(buildPolylineGeometry(edgeData), selectedMat);
           line.renderOrder = EDGE_SELECTED_RENDER_ORDER;
           scene.add(line);
           selectedLinesRef.current.set(id, line);

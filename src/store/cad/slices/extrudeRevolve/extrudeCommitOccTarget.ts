@@ -149,10 +149,35 @@ function findBooleanReplayTarget(feature: Feature, features: Feature[]): Feature
       return candidate;
     }
   }
+
+  for (let index = featureIndex - 1; index >= 0; index--) {
+    const candidate = features[index];
+    if (
+      candidate.type !== 'sketch' &&
+      candidate.bodyKind !== 'surface' &&
+      candidate.mesh instanceof THREE.Mesh
+    ) {
+      return candidate;
+    }
+  }
   return undefined;
 }
 
-async function ensureOccBodyForFeature(feature: Feature, features: Feature[], sketches: Sketch[], visited = new Set<string>()): Promise<boolean> {
+/**
+ * High edge-count threshold: bodies with more edges than this per face are likely
+ * polygon-approximated arcs that should be rebuilt with analytical geometry for
+ * fillet compatibility. A half-circle extrude produces ~362 polygon edges per arc;
+ * analytical arcs produce ~3 edges per curved face.
+ */
+const POLYGON_ARC_EDGE_THRESHOLD = 50;
+
+export async function ensureOccBodyForFeature(
+  feature: Feature,
+  features: Feature[],
+  sketches: Sketch[],
+  visited = new Set<string>(),
+  options?: { forceAnalyticalReplay?: boolean },
+): Promise<boolean> {
   if (visited.has(feature.id)) return false;
   visited.add(feature.id);
 
@@ -160,9 +185,33 @@ async function ensureOccBodyForFeature(feature: Feature, features: Feature[], sk
   if (!(mesh instanceof THREE.Mesh)) return false;
 
   const liveBodyId = mesh.userData[BREP_BODY_ID_KEY] as string | undefined;
-  if (liveBodyId && globalBRepBodyRegistry.get(liveBodyId)) return true;
-  if (await ensureFeatureOccBody(feature)) return true;
+  const liveBody = liveBodyId ? globalBRepBodyRegistry.get(liveBodyId) : undefined;
+
+  // When forceAnalyticalReplay is requested (fillet mode), check if the live body
+  // has suspiciously many edges (polygon-approximated arcs). If so, dispose it and
+  // replay with the latest analytical builders that produce clean arc edges.
+  if (liveBody) {
+    if (
+      options?.forceAnalyticalReplay &&
+      feature.type === 'extrude' &&
+      liveBody.edgeIds.size > POLYGON_ARC_EDGE_THRESHOLD
+    ) {
+      console.log(
+        `[ensureOccBody] force-replaying ${feature.id}: edgeCount=${liveBody.edgeIds.size}` +
+        ` exceeds threshold=${POLYGON_ARC_EDGE_THRESHOLD} (likely polygon arcs)`,
+      );
+      disposeBRepBody(liveBody);
+      // Fall through to replay path below.
+    } else {
+      return true;
+    }
+  }
+
+  // Prefer replay over STEP restore for new-body extrudes: the replay path uses
+  // the latest analytical arc/circle builders, producing clean OCC geometry that
+  // fillets correctly. STEP restore would reproduce old polygon-approximated arcs.
   if (await replayOccNewBodyTarget(feature, sketches)) return true;
+  if (await ensureFeatureOccBody(feature)) return true;
 
   if (feature.type !== 'extrude') return false;
   const operation = extrudeOperation(feature);

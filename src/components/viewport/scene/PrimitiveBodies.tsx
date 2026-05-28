@@ -160,6 +160,20 @@ function buildOccPrimitive(spec: PrimitiveSpec, oc: OcctRaw): OccPrimitiveBuildR
   }
 }
 
+function disposeOccPrimitiveBuild(result: OccPrimitiveBuildResult): void {
+  result.geometry.dispose();
+  if (result.bodyId) {
+    const deleted = globalBRepBodyRegistry.delete(result.bodyId);
+    if (!deleted) result.body?.dispose();
+  } else {
+    result.body?.dispose();
+  }
+}
+
+function disposeOccPrimitiveBuildDeferred(result: OccPrimitiveBuildResult): void {
+  setTimeout(() => disposeOccPrimitiveBuild(result), 0);
+}
+
 interface PrimitiveMeshProps {
   spec: PrimitiveSpec;
   isDimmed: boolean;
@@ -168,61 +182,63 @@ interface PrimitiveMeshProps {
 }
 
 function PrimitiveMesh({ spec, isDimmed, componentMaterial, hidden }: PrimitiveMeshProps) {
-  // Try a synchronous OCC build first; if OCC isn't loaded yet, kick off an
-  // async load and re-render once it resolves. Until then, render the
-  // fallback THREE geometry (no edge-pick support during the warmup).
-  const initial = useMemo<OccPrimitiveBuildResult | { geometry: THREE.BufferGeometry; bodyId: null; body: null }>(() => {
+  const [state, setState] = useState<OccPrimitiveBuildResult | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let current: OccPrimitiveBuildResult | null = null;
+
+    const install = (next: OccPrimitiveBuildResult): void => {
+      if (cancelled) {
+        disposeOccPrimitiveBuild(next);
+        return;
+      }
+      if (current) disposeOccPrimitiveBuildDeferred(current);
+      current = next;
+      setState(next);
+    };
+    const cleanupCurrent = (): void => {
+      cancelled = true;
+      if (current) {
+        disposeOccPrimitiveBuildDeferred(current);
+        current = null;
+      }
+    };
+
     const occ = getOccSync();
     if (occ) {
       const built = buildOccPrimitive(spec, occ.oc);
-      if (built) return built;
+      if (built) {
+        install(built);
+        return cleanupCurrent;
+      }
     }
-    return { geometry: spec.fallbackGeometry(), bodyId: null, body: null };
-  // Only depend on the param key — same params produce the same OCC body.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spec.paramKey]);
 
-  const [state, setState] = useState(initial);
+    install({ geometry: spec.fallbackGeometry(), bodyId: null, body: null });
 
-  useEffect(() => {
-    setState(initial);
-  }, [initial]);
+    if (occ) {
+      return cleanupCurrent;
+    }
 
-  // If we fell back synchronously because OCC wasn't loaded, retry async.
-  useEffect(() => {
-    if (state.bodyId !== null) return; // already OCC-backed
-    let cancelled = false;
     getOcc()
       .then(({ oc }) => {
         if (cancelled) return;
         const built = buildOccPrimitive(spec, oc);
-        if (built) setState(built);
-      })
-      .catch(() => { /* OCC unavailable — keep fallback */ });
-    return () => { cancelled = true; };
-  }, [spec, state.bodyId]);
-
-  // Dispose the geometry + OCC body when this mesh unmounts or rebuilds.
-  useEffect(() => {
-    const geom = state.geometry;
-    const bodyId = state.bodyId;
-    const body = state.body;
-    return () => {
-      // Defer disposal one tick so any in-flight draw using the geometry can
-      // complete first. globalBRepBodyRegistry.delete() also calls
-      // body.dispose() — only fall through to direct dispose() when the body
-      // is not in the registry.
-      setTimeout(() => {
-        geom.dispose();
-        if (bodyId) {
-          const deleted = globalBRepBodyRegistry.delete(bodyId);
-          if (!deleted) body?.dispose();
-        } else {
-          body?.dispose();
+        if (!built) return;
+        if (cancelled) {
+          disposeOccPrimitiveBuild(built);
+          return;
         }
-      }, 0);
-    };
-  }, [state]);
+        install(built);
+      })
+      .catch(() => { /* OCC unavailable - keep fallback */ });
+    return cleanupCurrent;
+  // Only depend on identity + geometry params. Position/rotation/visibility are
+  // applied as mesh props and do not require rebuilding OCC geometry.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spec.featureId, spec.paramKey]);
+
+  if (!state) return null;
 
   const material = isDimmed ? DIM_MATERIAL : componentMaterial;
 

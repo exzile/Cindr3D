@@ -140,16 +140,36 @@ export function useOccEdgePicker(options: UseOccEdgePickerOptions): void {
       optionsRef.current.onHover?.(result);
     };
 
-    const onClick = (e: MouseEvent) => {
+    let suppressNextClick = false;
+
+    const selectFromEvent = (e: PointerEvent | MouseEvent) => {
       const result = pick(e.clientX, e.clientY, true);
-      if (result) optionsRef.current.onClick?.(result);
+      if (!result) return false;
+      e.preventDefault();
+      e.stopPropagation();
+      optionsRef.current.onClick?.(result);
+      return true;
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (selectFromEvent(e)) suppressNextClick = true;
+    };
+
+    const onClick = (e: MouseEvent) => {
+      if (suppressNextClick) {
+        suppressNextClick = false;
+        return;
+      }
+      selectFromEvent(e);
     };
 
     const dom = gl.domElement;
     dom.addEventListener('pointermove', onMove);
+    dom.addEventListener('pointerdown', onPointerDown, { capture: true });
     dom.addEventListener('click', onClick, { capture: true });
     return () => {
       dom.removeEventListener('pointermove', onMove);
+      dom.removeEventListener('pointerdown', onPointerDown, { capture: true });
       dom.removeEventListener('click', onClick, { capture: true });
     };
   }, [options.enabled, gl, camera, scene]);

@@ -1,5 +1,6 @@
 import type { FilletDialogState } from "./useFilletDialogState";
 import { NumberInput } from "../edgeDialog/NumberInput";
+import { FilletCheckboxOption } from "./FilletCheckboxOption";
 
 interface FilletAdvancedOptionsProps {
   dialog: FilletDialogState;
@@ -9,25 +10,23 @@ export function FilletAdvancedOptions({ dialog }: FilletAdvancedOptionsProps) {
   return (
     <>
       <div className="form-group">
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={dialog.propagate}
-            onChange={(e) => dialog.setPropagate(e.target.checked)}
-          />
+        <FilletCheckboxOption
+          checked={dialog.propagate}
+          onChange={dialog.setPropagate}
+          description="Continues the fillet through smoothly tangent connected edges, so a rounded chain can be selected and applied together."
+        >
           Propagate Along Tangent Edges
-        </label>
+        </FilletCheckboxOption>
       </div>
 
       <div className="form-group">
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={dialog.setback}
-            onChange={(e) => dialog.setSetback(e.target.checked)}
-          />
+        <FilletCheckboxOption
+          checked={dialog.setback}
+          onChange={dialog.setSetback}
+          description="Shows corner setback controls. The value is stored for CAD round-trip, while the current OCC output uses the rolling-ball corner mode below."
+        >
           Setback
-        </label>
+        </FilletCheckboxOption>
       </div>
       {dialog.setback && (
         <NumberInput
@@ -49,26 +48,24 @@ export function FilletAdvancedOptions({ dialog }: FilletAdvancedOptionsProps) {
 
       {dialog.setback && (
         <div className="form-group" style={{ paddingLeft: 16 }}>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={dialog.isRollingBallCorner}
-              onChange={(e) => dialog.setIsRollingBallCorner(e.target.checked)}
-            />
+          <FilletCheckboxOption
+            checked={dialog.isRollingBallCorner}
+            onChange={dialog.setIsRollingBallCorner}
+            description="Uses a rolling-ball corner blend at multi-edge intersections for a smoother, more natural corner transition."
+          >
             Rolling Ball Corner
-          </label>
+          </FilletCheckboxOption>
         </div>
       )}
 
       <div className="form-group">
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={dialog.isG2}
-            onChange={(e) => dialog.setIsG2(e.target.checked)}
-          />
+        <FilletCheckboxOption
+          checked={dialog.isG2}
+          onChange={dialog.setIsG2}
+          description="Requests curvature-continuous smoothing where the OCC kernel supports it, producing a softer transition than standard tangency."
+        >
           G2 Smooth (curvature continuity)
-        </label>
+        </FilletCheckboxOption>
       </div>
 
       {dialog.isG2 && (

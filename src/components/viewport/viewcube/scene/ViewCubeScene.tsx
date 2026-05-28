@@ -246,20 +246,28 @@ export default function ViewCubeScene({
   mainCameraQuaternion: THREE.Quaternion;
   onOrient: (q: THREE.Quaternion) => void;
 }) {
-  const { camera } = useThree();
+  const { camera, invalidate } = useThree();
   const [hoveredZone, setHoveredZone] = useState<string | null>(null);
   const groupRef = useRef<THREE.Group>(null);
 
   // Sync mini-camera to mirror main camera rotation.
-  // Scratch vector — reused so we don't allocate a Vector3 every frame.
+  // Strategy: request ONE frame per quaternion update (via useEffect), then
+  // update the mini-camera in that frame. Never call invalidate() inside useFrame
+  // — that would create the unconditional 60fps loop that previously locked both
+  // canvases at full frame rate even when the viewport was completely idle.
   const dirScratch = useRef(new THREE.Vector3());
-  useFrame(({ invalidate }) => {
-    // Position the mini camera to look at origin from the same orientation as the main camera
+  useEffect(() => {
+    // Each time the quaternion prop changes, schedule one render frame so the
+    // view cube mini-camera gets updated.  useFrame then applies the new
+    // orientation without scheduling any further frames.
+    invalidate();
+  }, [mainCameraQuaternion, invalidate]);
+  useFrame(() => {
     const dir = dirScratch.current.set(0, 0, 1).applyQuaternion(mainCameraQuaternion);
     camera.position.copy(dir).multiplyScalar(5);
     camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
-    invalidate(); // keep view cube in sync with main camera in frameloop="demand" mode
+    // No invalidate() here — one frame per quaternion update is enough.
   });
 
   const handleFaceClick = useCallback((face: FaceDef) => {

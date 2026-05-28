@@ -23,11 +23,7 @@ export function propagateBooleanIds(
 ): BRepBody {
   const rawResult = algo.Shape();
   // Unify same-domain faces/edges before assigning topology IDs so the resulting
-  // body has a clean CAD-style topology (e.g. a cylinder ends up with 3 edges
-  // and 1 lateral face, not 64 flat faces with 64 shared edges).  Falls back to
-  // the raw boolean result if the binding is unavailable.  The unifier wrapper
-  // is pushed to ownedResources so its Shape() VIEW stays valid for the
-  // body's lifetime.
+  // body has CAD-style topology instead of tessellation-like fragments.
   const unified = unifyRawShape(oc, rawResult, { unifyEdges: true, unifyFaces: true });
   const shapeForBody = unified?.rawShape ?? rawResult;
   const ownedResources = unified ? [unified.unifier] : [];

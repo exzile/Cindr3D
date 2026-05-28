@@ -1,6 +1,6 @@
 // @refresh reset
 import "./overlays/ViewportOverlay.css";
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
 import type { PresetsType } from '@react-three/drei/helpers/environment-assets';
@@ -102,6 +102,17 @@ export default function Viewport() {
   const showGroundPlane = useCADStore((s) => s.showGroundPlane);
   const groundPlaneOffset = useCADStore((s) => s.groundPlaneOffset);
   const shadowSoftness = useCADStore((s) => s.shadowSoftness);
+  // ContactShadows re-render key: remount whenever the visible feature set changes
+  // so cached shadows reflect the current geometry. Does NOT change on camera moves,
+  // which is the whole point — shadows are baked once per scene-change, not per frame.
+  const features = useCADStore((s) => s.features);
+  const shadowKey = useMemo(() => {
+    const visibleFeatureIds: string[] = [];
+    for (const feature of features) {
+      if (feature.visible && !feature.suppressed) visibleFeatureIds.push(feature.id);
+    }
+    return visibleFeatureIds.join(',');
+  }, [features]);
   const ambientOcclusionEnabled = useCADStore((s) => s.ambientOcclusionEnabled);
   const activeDialog = useCADStore((s) => s.activeDialog);
   const setCameraTargetQuaternion = useCADStore((s) => s.setCameraTargetQuaternion);
@@ -203,6 +214,8 @@ export default function Viewport() {
         )}
         {showShadows && showGroundPlane && (
           <ContactShadows
+            key={shadowKey}
+            frames={1}
             position={[0, groundPlaneOffset - 0.01, 0]}
             opacity={0.3}
             scale={100}

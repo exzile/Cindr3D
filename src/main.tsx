@@ -14,7 +14,6 @@ import './effects/printSessionResume';
 import './effects/profileSpoolSync';
 import { registerServiceWorker } from './pwa/registerServiceWorker';
 import { installInteractiveLabelGuard } from './accessibility/interactiveLabels';
-import { getOcc } from './engine/occ/loader';
 
 // ─── three-mesh-bvh: accelerate all Three.js raycasting globally ─────────────
 // Patching the prototype once here makes every Mesh in the scene use BVH-backed
@@ -29,9 +28,10 @@ import { getOcc } from './engine/occ/loader';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (THREE.Mesh.prototype as any).raycast = acceleratedRaycast;
 
-void getOcc().catch(() => {
-  console.warn('[main] OpenCASCADE WASM initialization failed; OCC pipeline unavailable.');
-});
+// OCC WASM loads lazily on first use (first extrude, fillet, etc.).
+// Any background prewarm — idle callback or setTimeout — competes with React
+// rendering and Three.js WebGL for memory, causing OOM in the Toolbar on
+// complex models. Keep it purely lazy.
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
