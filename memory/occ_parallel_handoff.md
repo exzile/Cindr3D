@@ -2,6 +2,24 @@
 
 This file is the Codex-side handoff for the OpenCASCADE migration. OCC-1 through OCC-10 are now complete. See TaskLists.txt for current status.
 
+## Update (2026-05-28) — OCC-12 / OCC-13
+
+- **OCC-12 Track A/B/D** landed: `src/engine/occ/ops/selectableEdges.ts`
+  (`getSelectableEdges`) is the authoritative edge-metadata layer (kind / radius /
+  adjacentFaceIds / filletable / chainId, keyed by the real `body.edgeIds` keys,
+  memoized on `revision`). The OCC edge picker (`edgeOpEdgeGeometry.ts` +
+  `EdgeOpEdgeHighlight.tsx`) now filters non-filletable seams via `filletable` and
+  expands hover/click chains via `chainId`, gated behind `USE_OCC_SELECTABLE_EDGES`
+  (default ON). Legacy `detectSyntheticGeneratorEdges` / `polylineTangentChain`
+  remain as the flag-off + non-OCC-mesh fallback (OCC-12.C2 deletion gated on QA).
+- **OCC-13** landed: 13.1 (continuity↔surface-form fix; isRollingBallCorner now
+  round-trip-only), 13.2 (`computeSafeFilletRadii` radius clamp), 13.5/13.7 (chamfer
+  robustness parity + single-pass corners), 13.6 (Distance+Angle via tan-conversion),
+  13.8 (`memory/occ_fillet_chamfer_parity.md` capability matrix). Shared helpers
+  `countAdjacentFacesForEdge` + `runEdgeOpBuild` moved to `adjacency.ts`.
+- **Still open (interactive QA):** OCC-12.C1/C2/D2, OCC-13.3 auto-include experiment,
+  OCC-13.4 Fusion comparison. See TaskLists.txt.
+
 ## Current state (2026-05-24)
 
 All OCC phases complete. The remaining non-OCC CSG usage is for geometry building (extrusion hole subtraction, snap-fit, lip-groove, shell-solid, pipe geometry) — not for boolean commit paths. Join/cut/intersect for extrude, revolve, and sweep all use OCC when targets have `brepBodyId`.

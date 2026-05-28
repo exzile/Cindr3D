@@ -1,6 +1,10 @@
 ## DesignCAD — Implementation Task List
 ## Status key: [x] done  [~] partial  [ ] not started  [>] in progress
-## Last updated: 2026-05-28  Branch: codex/authored-edge-topology-fillet
+## Last updated: 2026-05-28  Branch: codex/occ-only-remove-fallbacks
+## OCC-12 Tracks A/B/D + OCC-13.1/13.2/13.5/13.6/13.7/13.8 landed this session.
+## Remaining gated on interactive 3D/browser QA: OCC-12.C1/C2/D2, OCC-13.3 (auto-
+## include experiment) and OCC-13.4 (Fusion comparison). USE_OCC_SELECTABLE_EDGES
+## defaults ON; legacy heuristics kept as the flag-off fallback (see OCC-12.C2).
 ## SDK ref: C:\Users\joeyp\AppData\Local\Autodesk\webdeploy\production\
 ##          4bca736941837d3e42bba21bb36b9891e34b2fce\CPP\include\Fusion\
 
@@ -120,7 +124,7 @@
 # ── Track A: Edge metadata layer (pure engine; rides on body.edgeIds) ─────────
 # All three write into the same Map<edgeId, SelectableEdgeMeta>. A1 creates the
 # file + map skeleton; A2 and A3 fill independent fields and can land in parallel.
-[ ] OCC-12.A1 — Create selectableEdges.ts + kind/radius classification
+[x] OCC-12.A1 — Create selectableEdges.ts + kind/radius classification
 #   File: src/engine/occ/ops/selectableEdges.ts
 #   Export: getSelectableEdges(oc, body: BRepBody): Map<number, SelectableEdgeMeta>
 #   Iterate body.edgeIds (NOT a fresh explorer — see CRITICAL):
@@ -135,7 +139,7 @@
 #   Memoize on (body.id, body.revision); revision bumps via invalidateBRepTessellation.
 #   Exports also: SelectableEdgeMeta interface.
 
-[ ] OCC-12.A2 — adjacentFaceIds + filletable (reuse adjacency.ts)
+[x] OCC-12.A2 — adjacentFaceIds + filletable (reuse adjacency.ts)
 #   For each edgeId, resolve the face ids (body.faceIds keys) that contain it.
 #   Reuse the existing adjacency helper used by fillet seam-skip (adjacency.ts
 #   around the countAdjacentFacesForEdge / face-edge mapping logic — find the
@@ -144,18 +148,18 @@
 #   'seam' or 'boundary'. This is the AUTHORITATIVE replacement for
 #   detectSyntheticGeneratorEdges. Dependency: OCC-12.A1 (writes same map).
 
-[ ] OCC-12.A3 — chainId via collectTangentChainEdges (NO new BFS)
+[x] OCC-12.A3 — chainId via collectTangentChainEdges (NO new BFS)
 #   For each not-yet-grouped edgeId, call collectTangentChainEdges(occ, body,
 #   [edgeId]) from adjacency.ts, assign all members the same incrementing chainId.
 #   Guarantees highlighted chain == fillet `propagate` set. Dependency: OCC-12.A1.
 
 # ── Track B: Integration into EdgeOpEdgeHighlight ─────────────────────────────
-[ ] OCC-12.B0 — Dev flag to run new path side-by-side with old (de-risk migration)
+[x] OCC-12.B0 — Dev flag USE_OCC_SELECTABLE_EDGES (edgeOpEdgeGeometry.ts; default ON)
 #   Add a module const USE_OCC_SELECTABLE_EDGES (default false initially) gating
 #   the new rendering path in B1. Lets fillet/chamfer be validated against the old
 #   picker before the old path is deleted in Track C. Flip to true once B1-B3 work.
 
-[ ] OCC-12.B1 — Feed getSelectableEdges meta into buildTessellationGuideGeometry
+[x] OCC-12.B1 — Feed getSelectableEdges meta into buildTessellationGuideGeometry
 #   AUGMENT (do not replace) the existing OCC path — keep the efficient batched
 #   single-LineSegments geometry + edgeIdsBySegment[] (it already carries real
 #   edge IDs and picking already works). Two changes only:
@@ -170,7 +174,7 @@
 #   Non-OCC mesh bodies: untouched (buildMeshTopologyGuide / MeshCrease paths stay).
 #   Dependency: OCC-12.A1, OCC-12.A2, OCC-12.A3
 
-[ ] OCC-12.B2 — Hover handler uses chainId map instead of polylineTangentChain
+[x] OCC-12.B2 — Hover handler uses chainId map instead of polylineTangentChain
 #   Current: polylineTangentChain BFS runs each hover frame to find arc siblings.
 #   New: hovered segment → edgeIdsBySegment → edgeId → chainId (from B1's map);
 #        highlight all rendered edges sharing that chainId.
@@ -178,7 +182,7 @@
 #   non-OCC mesh bodies and as the flag-off fallback.
 #   Dependency: OCC-12.B1
 
-[ ] OCC-12.B3 — Click handler: drop canonical-ID normalization, use chainId map
+[x] OCC-12.B3 — Click handler: drop canonical-ID normalization, use chainId map
 #   Current: canonical edge-ID normalization (Math.min over a tessellation chain)
 #   exists ONLY to make repeat clicks on a 362-segment polygon arc stable. With
 #   analytical arcs (one edge) + chainId there is nothing to normalize.
@@ -187,7 +191,7 @@
 #   Remove the Math.min canonical block (under the flag). Dependency: OCC-12.B1
 
 # ── Track C: Cleanup — delete heuristics once Track B is proven ────────────────
-[ ] OCC-12.C1 — Remove the force-analytical-replay heuristic
+[~] OCC-12.C1 — Remove the force-analytical-replay heuristic [GATED: kept; awaits analytical-body migration + runtime confirmation]
 #   Current (added this session as a stopgap): ensureOccBodyForFeature
 #   forceAnalyticalReplay + POLYGON_ARC_EDGE_THRESHOLD force-rebuilds high-edge-count
 #   bodies on fillet-mode entry. This stays useful even WITHOUT OCC-12 (it upgrades
@@ -197,7 +201,7 @@
 #   once the analytical path is confirmed firing.
 #   Dependency: confirmed-analytical bodies (NOT a hard dep on Track B)
 
-[ ] OCC-12.C2 — Delete the two replaced heuristics for OCC bodies
+[ ] OCC-12.C2 — Delete the two replaced heuristics for OCC bodies [GATED on manual QA; kept as flag-off fallback]
 #   After Track B is proven and USE_OCC_SELECTABLE_EDGES flipped on:
 #   - Delete detectSyntheticGeneratorEdges usage for OCC bodies (replaced by filletable)
 #   - Delete polylineTangentChain for OCC bodies (replaced by chainId)
@@ -207,7 +211,7 @@
 #   Dependency: OCC-12.B2, OCC-12.B3 — do NOT delete until fillet/chamfer is proven
 
 # ── Track D: Verification ─────────────────────────────────────────────────────
-[ ] OCC-12.D1 — Unit test getSelectableEdges against known bodies
+[x] OCC-12.D1 — Unit test getSelectableEdges against known bodies (selectableEdges.test.ts)
 #   PRIMARY ASSERTION: every returned edgeId is a key of body.edgeIds, and the
 #   set of returned edgeIds === set of body.edgeIds keys (no invented/dropped IDs).
 #   Test cases:
@@ -219,7 +223,7 @@
 #   Verify: chainId grouping matches collectTangentChainEdges output for a seed edge
 #   File: src/engine/occ/ops/__tests__/selectableEdges.test.ts
 
-[ ] OCC-12.D2 — Manual verification checklist
+[ ] OCC-12.D2 — Manual verification checklist [requires interactive 3D QA]
 #   [ ] Box: all 12 edges selectable, fillet on any edge works
 #   [ ] Cylinder: top/bottom circles selectable as single edges, seam not shown
 #   [ ] Half-circle extrude: arc edge selectable as one unit (not 362 segments)
@@ -274,7 +278,7 @@
 #   vertex-blending weakness, not a missing option. WASM does not help — the
 #   kernel is already WASM; this is an API-usage / strategy problem.
 
-[ ] OCC-13.1 — Fix the isRollingBallCorner / continuity semantic mapping
+[x] OCC-13.1 — Fix the isRollingBallCorner / continuity semantic mapping
 #   In occFilletEdgeSetsWithInstance: pick ChFi3d_FilletShape from CONTINUITY only
 #   (G2 → ChFi3d_Polynomial, G1 → ChFi3d_Rational). Stop using isRollingBallCorner
 #   to choose QuasiAngular. Keep isRollingBallCorner/setback in params as
@@ -282,7 +286,7 @@
 #   Verify whether opencascade.js binds BRepFilletAPI_MakeFillet.SetContinuity_*
 #   (GeomAbs_C1/C2); if so, prefer SetContinuity for G2 over the surface-enum hack.
 
-[ ] OCC-13.2 — Radius pre-validation (most adjacent-corner Build() failures)
+[x] OCC-13.2 — Radius pre-validation (computeSafeFilletRadii; unit-tested)
 #   A large fraction of corner Build() throws are radius-too-large: the fillet
 #   radius exceeds the distance to the nearest other vertex/edge, so the blend
 #   self-intersects at the corner. Before Build(), for each edge set compute the
@@ -291,7 +295,7 @@
 #   this corner" message) instead of a raw OCC throw. Use the [Fillet] srcBody
 #   edgeCount/selectedEdges diagnostic already added to capture a failing case.
 
-[ ] OCC-13.3 — Corner-aware combined fillet (replace arc-first fillet-into-fillet)
+[~] OCC-13.3 — Corner-aware combined fillet [combined-pass-first + 13.2 radius clamp done; auto-include non-filleted vertex edge + dropping arc-first fallback gated on QA]
 #   OCC blends a vertex corner only when ALL edges meeting at that vertex are in
 #   the SAME builder pass. Current fallback fillets the arc first, then fillets the
 #   corner edge into the existing fillet surface (fillet-into-fillet) — the hardest
@@ -302,7 +306,7 @@
 #     3. Drop the arc-first sequential fallback once 1+2 are robust (it produces
 #        fillet-into-fillet corners OCC can't solve).
 
-[ ] OCC-13.4 — Verify against Fusion behavior + decide setback scope
+[ ] OCC-13.4 — Verify against Fusion behavior + decide setback scope [requires interactive 3D QA]
 #   Build the failing case (half-circle extrude, fillet arc edge + adjacent straight
 #   edge) and compare to Fusion. Decide: is rolling-ball corner acceptable as the
 #   ONLY corner solution OCC can produce (document setback as unsupported), or do we
@@ -310,7 +314,7 @@
 #   the decision; do not promise setback in UI if OCC can't deliver it.
 
 # ── Chamfer parity (chamfer.ts is currently weaker than fillet.ts) ────────────
-[ ] OCC-13.5 — Bring chamfer up to fillet's robustness baseline
+[x] OCC-13.5 — Bring chamfer up to fillet's robustness baseline
 #   chamfer.ts gaps vs fillet.ts:
 #   - Add the seam/boundary-edge guard (countAdjacentFacesForEdge < 2 → skip),
 #     matching occFilletEdgeSetsWithInstance. Today chamfer throws on cylinder/arc seams.
@@ -321,7 +325,7 @@
 #     ownedResources pattern. (Verify with a chamfer + re-tessellate-after-GC test.)
 #   - Adopt the Build(progress)/Build() binding-variance fallback (buildFilletBuilder).
 
-[ ] OCC-13.6 — Chamfer: DistanceAndAngle type (Fusion parity)
+[x] OCC-13.6 — Chamfer: DistanceAndAngle type (via d2=d*tan(angle) → Add_3; wired end-to-end)
 #   Fusion ChamferTypes: EqualDistance, TwoDistances, DistanceAndAngle. We have the
 #   first two. Add distance+angle via OCC BRepFilletAPI_MakeChamfer.AddDA (or the
 #   Add overload that takes distance+angle+edge+face) IF opencascade.js binds it;
@@ -329,14 +333,14 @@
 #   reuse the two-distance Add_3 path. Wire ChamferTypeDefinition into the dialog +
 #   params + replay (see DistanceAndAngleChamferTypeDefinition.h).
 
-[ ] OCC-13.7 — Chamfer corners share fillet's vertex strategy
+[x] OCC-13.7 — Chamfer corners share fillet's vertex strategy (single MakeChamfer pass; corner-type round-trip-only)
 #   Apply the OCC-13.3 corner-aware single-pass approach to chamfer edge sets too
 #   (all edges meeting at a vertex in one BRepFilletAPI_MakeChamfer pass). Fusion's
 #   ChamferCornerTypes (ChamferCornerType/Miter/Blend) map to the same OCC reality
 #   as fillet corners — no direct toggle; document what OCC actually produces.
 
 # ── Capability matrix (the honest parity contract) ────────────────────────────
-[ ] OCC-13.8 — Author an OCC-vs-Fusion fillet/chamfer capability matrix
+[x] OCC-13.8 — Author an OCC-vs-Fusion fillet/chamfer capability matrix (memory/occ_fillet_chamfer_parity.md)
 #   One reference doc (memory/occ_fillet_chamfer_parity.md) listing every Fusion
 #   modal option and edge-set/chamfer type, with: SUPPORTED (matches Fusion) /
 #   APPROXIMATED (works, differs) / ROUND-TRIP-ONLY (stored, no geometric effect) /
