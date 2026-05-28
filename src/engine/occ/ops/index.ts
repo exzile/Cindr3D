@@ -13,6 +13,7 @@ export * from './pattern';
 export * from './properties';
 export * from './revolve';
 export * from './scale';
+export * from './selectableEdges';
 export * from './shell';
 export * from './sketchToWire';
 export * from './sphere';
