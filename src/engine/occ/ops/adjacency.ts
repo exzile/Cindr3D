@@ -59,6 +59,89 @@ function findShapeByKey(map: IndexedShapeMapWithFindKey, idx: number): unknown |
 }
 
 /**
+ * Counts how many distinct faces of `rawShape` contain `rawEdge` in their wire.
+ * Regular corner edges → 2; seam edges on analytic surfaces (cylinder/torus) → 1;
+ * free boundary edges → 1 (open shells). BRepFilletAPI_Make* throws on < 2.
+ * Returns 2 on any topology error so a valid edge is never skipped.
+ *
+ * `edgeMap` must already be populated via TopExp.MapShapes(rawShape, EDGE, edgeMap).
+ */
+export function countAdjacentFacesForEdge(
+  oc: OcctRaw,
+  rawShape: unknown,
+  edgeMap: IndexedShapeMap,
+  rawEdge: unknown,
+): number {
+  const occ = oc as OccAdjacencyApi;
+  try {
+    const targetIdx = findShapeIndex(edgeMap, rawEdge);
+    if (targetIdx <= 0) return 2; // can't detect — assume fillable
+
+    let count = 0;
+    const faceExp = new occ.TopExp_Explorer_2(
+      rawShape,
+      oc.TopAbs_ShapeEnum.TopAbs_FACE,
+      oc.TopAbs_ShapeEnum.TopAbs_SHAPE,
+    );
+    try {
+      while (faceExp.More()) {
+        const faceShape = faceExp.Current();
+        const edgeExp = new occ.TopExp_Explorer_2(
+          faceShape,
+          oc.TopAbs_ShapeEnum.TopAbs_EDGE,
+          oc.TopAbs_ShapeEnum.TopAbs_SHAPE,
+        );
+        let found = false;
+        try {
+          while (edgeExp.More()) {
+            const e = edgeExp.Current();
+            const idx = findShapeIndex(edgeMap, e);
+            e.delete();
+            if (idx === targetIdx) { found = true; break; }
+            edgeExp.Next();
+          }
+        } finally {
+          edgeExp.delete();
+        }
+        faceShape.delete();
+        if (found) count++;
+        faceExp.Next();
+      }
+    } finally {
+      faceExp.delete();
+    }
+    return count;
+  } catch {
+    return 2;
+  }
+}
+
+/**
+ * Run BRepFilletAPI_Make{Fillet,Chamfer}.Build() across opencascade.js binding
+ * variants: some builds require a Message_ProgressRange argument, others reject
+ * it ("expected 0 args"). Tries the progress form first, then the no-arg form.
+ */
+export function runEdgeOpBuild(
+  oc: OcctRaw,
+  mk: { Build(progress?: unknown): void },
+): void {
+  const occ = oc as OcctRaw & { Message_ProgressRange_1?: new () => { delete?: () => void } };
+  if (typeof occ.Message_ProgressRange_1 === 'function') {
+    const progress = new occ.Message_ProgressRange_1();
+    try {
+      mk.Build(progress);
+      return;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String((err as { message?: unknown })?.message ?? err);
+      if (!message.includes('expected 0 args')) throw err;
+    } finally {
+      progress.delete?.();
+    }
+  }
+  mk.Build();
+}
+
+/**
  * Find a face in `body.faceIds` that shares the given edge.
  * Returns the BRepTopologyHandle (caller must deref to get raw face).
  * Used for two-distance chamfer + asymmetric fillet reference face selection.
