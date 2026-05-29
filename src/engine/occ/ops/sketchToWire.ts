@@ -347,6 +347,37 @@ type LoopSegment =
   | { kind: 'arc'; a: THREE.Vector2; mid: THREE.Vector2; b: THREE.Vector2; centre: { x: number; y: number }; radius: number };
 
 /**
+ * Detect a faceted FULL circle: every vertex on a common circle and the loop sweeps
+ * ~360°. Returns the circle (UV) or null. Lets a polygon-approximated circle loop
+ * (from a Clipper2 region) become one analytic gp_Circ edge instead of N facets —
+ * the refit's 3-point arc can't do a closed circle (start≈end).
+ */
+function detectFullCircleLoop(pts: THREE.Vector2[]): { x: number; y: number; r: number } | null {
+  const n = pts.length;
+  if (n < 8) return null;
+  const circ = circumcircle2D(pts[0], pts[Math.floor(n / 3)], pts[Math.floor((2 * n) / 3)]);
+  if (!circ || circ.r > ARC_MAX_RADIUS || circ.r < 1e-6) return null;
+  const tol = Math.max(ARC_FIT_TOL, circ.r * 5e-3);
+  let sweep = 0;
+  for (let i = 0; i < n; i++) {
+    const cur = pts[i], nxt = pts[(i + 1) % n];
+    if (Math.abs(Math.hypot(cur.x - circ.x, cur.y - circ.y) - circ.r) > tol) return null;
+    // A segment whose MIDPOINT is off the circle is a chord across it (e.g. the flat
+    // diameter of a half-disc whose endpoints happen to sit on the circle), not a
+    // facet of a real circle. Also reject big angular steps (a true faceted circle
+    // has small steps; a chord across the centre spans a large angle).
+    const mx = (cur.x + nxt.x) / 2, my = (cur.y + nxt.y) / 2;
+    if (Math.abs(Math.hypot(mx - circ.x, my - circ.y) - circ.r) > tol) return null;
+    const a1 = Math.atan2(cur.y - circ.y, cur.x - circ.x);
+    const a2 = Math.atan2(nxt.y - circ.y, nxt.x - circ.x);
+    const step = Math.abs(Math.atan2(Math.sin(a2 - a1), Math.cos(a2 - a1)));
+    if (step > Math.PI / 3) return null;
+    sweep += step;
+  }
+  return Math.abs(sweep - 2 * Math.PI) < 0.2 ? circ : null;
+}
+
+/**
  * Group a closed polygon's vertices (in order, implicitly closed) into line + arc
  * segments. Rotates the loop to start at the sharpest corner so an arc never
  * straddles the closing seam.
@@ -436,12 +467,22 @@ function buildAnalyticWire(oc: OcctRaw, curves: ThreeCurve[], frame: SketchPlane
     // Faceted region loop → recover arcs from the polygon vertices.
     let pts = curves.map((c) => (c.v1 as THREE.Vector2).clone());
     if (reverse) pts = pts.reverse();
-    for (const seg of refitLoopArcs(pts)) {
-      const edge = seg.kind === 'line'
-        ? lineEdgeWorld(oc, uvToWorld3(frame, seg.a), uvToWorld3(frame, seg.b))
-        : arcEdgeUV(oc, frame, seg.centre, seg.radius, seg.a, seg.mid, seg.b);
+    // A faceted full circle becomes ONE analytic circle edge (the refit's 3-point
+    // arc can't close a circle since start≈end).
+    const fullCircle = detectFullCircleLoop(pts);
+    if (fullCircle) {
+      const normal = reverse ? frame.normal.clone().negate() : frame.normal.clone();
+      const edge = circleEdgeWorld(oc, uvToWorld3(frame, new THREE.Vector2(fullCircle.x, fullCircle.y)), normal, fullCircle.r);
       if (!edge) { cleanup(); return null; }
       edges.push(edge);
+    } else {
+      for (const seg of refitLoopArcs(pts)) {
+        const edge = seg.kind === 'line'
+          ? lineEdgeWorld(oc, uvToWorld3(frame, seg.a), uvToWorld3(frame, seg.b))
+          : arcEdgeUV(oc, frame, seg.centre, seg.radius, seg.a, seg.mid, seg.b);
+        if (!edge) { cleanup(); return null; }
+        edges.push(edge);
+      }
     }
   } else {
     const ordered = reverse ? [...curves].reverse() : curves;

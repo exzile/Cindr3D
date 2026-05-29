@@ -146,21 +146,23 @@ export async function buildOccNewBodyExtrudeMesh({
       taperAngle: Math.abs(extrudeTaperAngle) > 0.001 ? extrudeTaperAngle : undefined,
       taperAngle2: Math.abs(extrudeTaperAngle2 ?? 0) > 0.001 ? extrudeTaperAngle2 : undefined,
     };
-    // Analytical path priority:
-    //  1. Circle-detection path: builds exact GC_MakeCircle_2 edges for circular loops so
-    //     the body has ~16 edges (not ~726 polygon segments) and fillets correctly.
-    //  2. Arc-entity path: builds exact GC_MakeArcOfCircle_4 edges for profiles containing
-    //     arcs (e.g. half-circle = arc + closing line). Produces clean OCC geometry that
-    //     BRepFilletAPI_MakeFillet can handle — the polygon path's hundreds of tiny edges
-    //     cause Build() to fail. Edge IDs change vs. the polygon path, but polygon-arc
-    //     fillets are geometrically impossible so there's nothing to preserve.
-    //  3. Polygon fallback.
+    // OCC-15: occExtrude with `profileShape` builds analytic edges for the WHOLE
+    // profile — lines, circles (gp_Circ), partial arcs (refit/MakeEdge_10), and
+    // analytic holes — so a rect-with-notch outer no longer facets. It is strictly
+    // better than the legacy circle/arc special paths (which faceted any non-circle
+    // outer), so it is now primary; the legacy paths only run if the analytic build
+    // throws outright.
     const hasHoles = (firstShape.holes?.length ?? 0) > 0;
-    const analyticalCircle = tryBuildAnalyticalExtrudeBody(occ.oc, sourceSketch, firstShape, occDistance, frame, extrudeOptions);
-    const analyticalArc = !analyticalCircle
-      ? tryBuildAnalyticalExtrudeBodyFromEntities(occ.oc, sourceSketch.entities, hasHoles, occDistance, frame, extrudeOptions)
-      : null;
-    const occBody = analyticalCircle ?? analyticalArc ?? occExtrudeWithInstance(occ.oc, sketchProfile, occDistance, frame, extrudeOptions);
+    let occBody: BRepBody | null;
+    try {
+      occBody = occExtrudeWithInstance(occ.oc, sketchProfile, occDistance, frame, extrudeOptions);
+    } catch (analyticErr) {
+      console.warn('[commitExtrude] analytic extrude threw; trying legacy analytic paths', analyticErr);
+      occBody =
+        tryBuildAnalyticalExtrudeBody(occ.oc, sourceSketch, firstShape, occDistance, frame, extrudeOptions) ??
+        tryBuildAnalyticalExtrudeBodyFromEntities(occ.oc, sourceSketch.entities, hasHoles, occDistance, frame, extrudeOptions);
+      if (!occBody) throw analyticErr;
+    }
 
     return {
       featureMesh: createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, featureId),
