@@ -379,6 +379,7 @@ const resetComponentDocumentForFeatures = (features: Feature[]): void => {
     componentConstraints: [],
     rigidGroups: [],
     motionLinks: [],
+    animationTracks: [],
     occurrences: {},
     definitions: {},
     explodedOffsets: {},

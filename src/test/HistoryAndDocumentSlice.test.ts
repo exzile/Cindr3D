@@ -164,6 +164,42 @@ describe('history and document undo/redo', () => {
     expect(restored?.definition).toEqual(construction.definition);
   });
 
+  it('clears component animation tracks on cad New Document', async () => {
+    const [{ useCADStore }, { useComponentStore }] = await Promise.all([
+      import('../store/cadStore'),
+      import('../store/componentStore'),
+    ]);
+    useComponentStore.setState({
+      animationTracks: [{ jointId: 'j-anim', startValue: 0, endValue: 90, easing: 'linear' }],
+    });
+
+    useCADStore.getState().newDocument();
+
+    expect(useComponentStore.getState().animationTracks).toEqual([]);
+  });
+
+  it('component New Document resets the full document field set', async () => {
+    const { useComponentStore } = await import('../store/componentStore');
+    useComponentStore.setState({
+      animationTracks: [{ jointId: 'j-anim', startValue: 0, endValue: 90, easing: 'linear' }],
+      rigidGroups: [{ id: 'rg1' } as never],
+      motionLinks: [{ id: 'ml1' } as never],
+      occurrences: { o1: {} as never },
+      definitions: { d1: {} as never },
+      explodedOffsets: { e1: {} as never },
+    });
+
+    useComponentStore.getState().newDocument();
+
+    const state = useComponentStore.getState();
+    expect(state.animationTracks).toEqual([]);
+    expect(state.rigidGroups).toEqual([]);
+    expect(state.motionLinks).toEqual([]);
+    expect(state.occurrences).toEqual({});
+    expect(state.definitions).toEqual({});
+    expect(state.explodedOffsets).toEqual({});
+  });
+
   it('restores design and component metadata through undo', async () => {
     const [{ useCADStore }, { useComponentStore }] = await Promise.all([
       import('../store/cadStore'),

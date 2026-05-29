@@ -40,6 +40,9 @@ export function createComponentActions(
   return {
     newDocument: () => {
       const newRootId = crypto.randomUUID();
+      // Reset the FULL document field set so this is correct standalone — not only
+      // when paired with the cad-store reset. Leaving any document field unset here
+      // would leak the previous design's data (e.g. animation tracks, occurrences).
       set({
         rootComponentId: newRootId,
         activeComponentId: newRootId,
@@ -49,6 +52,13 @@ export function createComponentActions(
         constructions: {},
         joints: {},
         componentConstraints: [],
+        rigidGroups: [],
+        motionLinks: [],
+        animationTracks: [],
+        occurrences: {},
+        definitions: {},
+        explodedOffsets: {},
+        expandedIds: new Set([newRootId]),
       });
     },
 
