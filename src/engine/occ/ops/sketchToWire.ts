@@ -230,7 +230,6 @@ function lineEdgeWorld(oc: OcctRaw, a: THREE.Vector3, b: THREE.Vector3): any | n
  * it. The arc runs CCW around the circle axis from a→b; we pick the axis sign from
  * the (a, mid, b) UV winding so the arc passes through `mid` (the correct half).
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function arcEdgeUV(
   oc: OcctRaw,
   frame: SketchPlaneFrame,
@@ -328,9 +327,11 @@ function curveToAnalyticEdge(oc: OcctRaw, curve: ThreeCurve, frame: SketchPlaneF
 // and stay lines. On any uncertainty the run stays lines, and the whole analytic
 // build still falls back to the faceted path if it can't close.
 
-const ARC_FIT_TOL = 1e-3;     // mm — max point deviation from the fitted circle
-const ARC_MIN_PTS = 4;        // need ≥4 points to treat a run as an arc
-const ARC_MAX_RADIUS = 1e5;   // reject near-straight "arcs"
+const ARC_FIT_TOL = 1e-3;       // mm — max point deviation from the fitted circle
+const ARC_MIN_PTS = 4;          // need ≥4 points to treat a run as an arc
+const ARC_MAX_RADIUS = 1e5;     // reject near-straight "arcs"
+const ARC_MIN_ANGLE = 0.12;     // rad (~7°) — reject near-straight runs that fit a huge circle
+const SEG_MIN_LEN = 1e-6;       // mm — drop degenerate (zero-length) segments
 
 function circumcircle2D(a: THREE.Vector2, b: THREE.Vector2, c: THREE.Vector2): { x: number; y: number; r: number } | null {
   const d = 2 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y));
@@ -386,12 +387,23 @@ function refitLoopArcs(pts: THREE.Vector2[]): LoopSegment[] {
       if (ok) arcEnd = k; else break;
     }
     const fc = arcEnd >= 0 ? circumcircle2D(loop[i], loop[i + Math.floor((arcEnd - i) / 2)], loop[arcEnd]) : null;
-    if (arcEnd >= 0 && fc && (arcEnd - i) >= ARC_MIN_PTS - 1) {
+    // Subtended angle a→b about the fitted centre. A near-straight run of points
+    // can fit a huge circle within tolerance but subtends almost no angle — those
+    // are NOT arcs (they're a polygon side); only accept a genuine sweep.
+    let arcAngle = 0;
+    if (fc) {
+      const a1 = Math.atan2(loop[i].y - fc.y, loop[i].x - fc.x);
+      const a2 = Math.atan2(loop[arcEnd].y - fc.y, loop[arcEnd].x - fc.x);
+      arcAngle = Math.abs(Math.atan2(Math.sin(a2 - a1), Math.cos(a2 - a1)));
+    }
+    if (arcEnd >= 0 && fc && (arcEnd - i) >= ARC_MIN_PTS - 1 && arcAngle >= ARC_MIN_ANGLE) {
       const midIdx = i + Math.floor((arcEnd - i) / 2);
       segs.push({ kind: 'arc', a: loop[i], mid: loop[midIdx], b: loop[arcEnd], centre: { x: fc.x, y: fc.y }, radius: fc.r });
       i = arcEnd;
     } else {
-      segs.push({ kind: 'line', a: loop[i], b: loop[i + 1] });
+      if (loop[i].distanceTo(loop[i + 1]) >= SEG_MIN_LEN) {
+        segs.push({ kind: 'line', a: loop[i], b: loop[i + 1] });
+      }
       i += 1;
     }
   }
